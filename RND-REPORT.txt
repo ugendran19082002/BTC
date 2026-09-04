@@ -2119,6 +2119,133 @@ TESTING reference.md AGAINST 636 DAYS OF DELTA INDIA BTC DAILY-EXPIRY DATA
   positive in all three periods, which is the strongest evidence available
   here, but it is not proof. Brokerage is still excluded throughout.
 
+####################################################################################################
+#  M.  FINAL STACKED STRATEGY  -  all recommended components combined
+####################################################################################################
+================================================================================================================
+FINAL STACKED STRATEGY  -  Delta India BTC daily expiry
+  CE premium<=15 | PE premium 15-40 | Premium/ExpectedMove<=0.020 | PCR>median | exit 70% decay
+  10 lots/leg | lot 0.001 BTC | slippage 5% | 1 USD = 85 INR | entry 05:30 IST
+================================================================================================================
+
+
+### PERIOD 2024   (119 days  2024-09-04 -> 2024-12-31)
+  step                                                  days    win%      INR     avg   maxloss       PF    maxDD
+  0. baseline  CE<=15 + PE<=15, hold                      79   97.5%      637     8.1        -0 37499.75       -0
+  1. + PE 15-40                                           71   98.6%      921    13.0      -178     6.19     -178
+  2. + Premium/EM <= 0.020                                53   98.1%      270     5.1      -178     2.52     -178
+  3. + PCR > median (in-sample)                           18  100.0%      199    11.0         0      inf        0
+  4. + 70% decay exit  = FULL STACK                       18  100.0%      161     8.9         0      inf        0
+  4b. FULL STACK, PCR expanding median (no lookahead)     14  100.0%      135     9.6         2      inf        0
+
+
+### PERIOD 2025   (319 days  2025-01-01 -> 2025-12-31)
+  step                                                  days    win%      INR     avg   maxloss       PF    maxDD
+  0. baseline  CE<=15 + PE<=15, hold                     292   99.3%     1504     5.2      -677     2.47     -787
+  1. + PE 15-40                                          293   99.7%     4809    16.4      -477    11.08     -477
+  2. + Premium/EM <= 0.020                               258  100.0%     2701    10.5         0      inf        0
+  3. + PCR > median (in-sample)                          111  100.0%     1433    12.9         0      inf        0
+  4. + 70% decay exit  = FULL STACK                      111  100.0%     1091     9.8         0      inf        0
+  4b. FULL STACK, PCR expanding median (no lookahead)    115  100.0%     1126     9.8         0      inf        0
+
+
+### PERIOD 2026   (198 days  2026-01-01 -> 2026-09-03)
+  step                                                  days    win%      INR     avg   maxloss       PF    maxDD
+  0. baseline  CE<=15 + PE<=15, hold                     192  100.0%     1752     9.1         0      inf        0
+  1. + PE 15-40                                          179   97.2%     2186    12.2      -411     3.86     -411
+  2. + Premium/EM <= 0.020                               164  100.0%     1183     7.2         0      inf        0
+  3. + PCR > median (in-sample)                           71  100.0%      616     8.7         0      inf        0
+  4. + 70% decay exit  = FULL STACK                       71  100.0%      457     6.4         1      inf        0
+  4b. FULL STACK, PCR expanding median (no lookahead)     69  100.0%      434     6.3         1      inf        0
+
+
+### PERIOD ALL   (636 days  2024-09-04 -> 2026-09-03)
+  step                                                  days    win%      INR     avg   maxloss       PF    maxDD
+  0. baseline  CE<=15 + PE<=15, hold                     563   99.3%     3894     6.9      -677     4.81     -787
+  1. + PE 15-40                                          543   98.7%     7916    14.6      -477     6.58     -477
+  2. + Premium/EM <= 0.020                               475   99.8%     4155     8.7      -178    24.41     -178
+  3. + PCR > median (in-sample)                          200  100.0%     2247    11.2         0      inf        0
+  4. + 70% decay exit  = FULL STACK                      200  100.0%     1709     8.5         0      inf        0
+  4b. FULL STACK, PCR expanding median (no lookahead)    198  100.0%     1695     8.6         0      inf        0
+
+
+### FULL STACK, MONTH BY MONTH (in-sample PCR median)
+  month      days  wins      INR
+  2024-09       3     3       35   cum       35
+  2024-10       4     4       13   cum       48
+  2024-11       8     8       81   cum      129
+  2024-12       3     3       32   cum      161
+  2025-01      12    12      130   cum      291
+  2025-02       8     8       78   cum      369
+  2025-03      14    14      171   cum      540
+  2025-04      10    10       65   cum      605
+  2025-05      12    12      110   cum      715
+  2025-06      14    14      146   cum      860
+  2025-07       3     3       15   cum      876
+  2025-08       5     5       50   cum      926
+  2025-09       8     8       85   cum     1011
+  2025-10       8     8       57   cum     1068
+  2025-11      10    10       80   cum     1148
+  2025-12       7     7      104   cum     1252
+  2026-01      17    17      112   cum     1364
+  2026-02       4     4       50   cum     1414
+  2026-03      14    14      119   cum     1533
+  2026-04       7     7       35   cum     1568
+  2026-05       7     7       46   cum     1614
+  2026-06       7     7       34   cum     1648
+  2026-07       6     6       17   cum     1665
+  2026-08       9     9       44   cum     1709
+
+====================================================================================================
+  READING SECTION M  -  the stack is SAFER but much SMALLER
+====================================================================================================
+
+  Over all 636 days, adding each component in turn:
+
+     step                                    days   INR      PF     worst day
+     0. CE<=15 + PE<=15 (current)             563   3894    4.81      -677
+     1. + PE 15-40                            543   7916    6.58      -477   <-- most money
+     2. + Premium/EM <= 0.020                 475   4155   24.41      -178
+     3. + PCR > median                        200   2247     inf         0
+     4. + 70% decay exit  (FULL STACK)        200   1709     inf         0   <-- safest
+
+  Each filter removes days, and it removes profitable days along with risky
+  ones. The full stack earns INR 1,709 where step 1 earns INR 7,916 - a 4.6x
+  reduction - while cutting the worst day from -477 to 0.
+
+  Every one of the 24 months in the full stack is positive and all 200 trading
+  days won. That is not proof of a great strategy; with only 200 of 636 days
+  traded and five filters chosen from this same dataset, a clean equity curve
+  is the expected outcome of the selection, not independent evidence for it.
+
+  THE SIZING TRAP
+    A zero observed worst day does NOT mean zero risk. You cannot size a naked
+    short position off a loss that simply has not occurred yet. Step 1 has a
+    measurable -477 worst day and can be sized against it; the full stack
+    cannot be sized off its own history at all.
+
+  LOOKAHEAD CHECK
+    PCR>median was re-run with an EXPANDING median (only data up to that day).
+    Result: INR 1,695 vs 1,709 in-sample. The PCR filter is not an artefact of
+    using the whole sample to set its threshold.
+
+  WHAT THIS ACTUALLY SAYS
+    Premium/EM <= 0.020 is the single best risk-adjusted addition: it lifts PF
+    from 4.81 to 24.41 and cuts the worst day from -677 to -178 while keeping
+    475 of 563 trading days. The PCR filter and the 70% exit both buy further
+    safety at a steep cost in return and in days deployed.
+
+    If the goal is the most money: step 1 (CE<=15 + PE 15-40), INR 7,916.
+    If the goal is the smoothest curve: the full stack, INR 1,709.
+    A reasonable middle is step 2: CE<=15 + PE 15-40 + Premium/EM <= 0.020,
+    INR 4,155 at PF 24.41 with a -178 worst day and 475 days deployed.
+
+  CAVEAT
+    Five components were each selected because they scored well on these same
+    636 days. Stacking selected components compounds the selection bias. Treat
+    section M as a hypothesis to forward-test at small size, not a result.
+    Brokerage is still excluded throughout.
+
 #  END OF REPORT - all sections complete
 
 
