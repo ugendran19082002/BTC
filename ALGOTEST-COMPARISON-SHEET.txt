@@ -111,3 +111,42 @@
   +168) and R/MDD is 18.75 and 10.51. A short-premium strategy with a -209
   worst drawdown over a full year is unusual enough to be worth checking
   rather than accepting.
+
+
+====================================================================================================
+  A REAL FLAW FOUND IN THIS REPRODUCTION  (found while waiting for the 29-Mar log)
+====================================================================================================
+
+  These far-OTM options are thin. Many simply are not quoted at 05:30 IST.
+  The reproduction's price_at() used a 15-MINUTE tolerance, so it happily
+  took whatever bar appeared first and called it the 05:30 entry.
+
+  Measured over the baseline run:
+      legs traded                          845
+      first bar more than 2 min after 05:30  582   (68.9%)
+      PnL contributed by those late legs   INR 2,294  of  INR 3,894  (59%)
+
+  On 2025-03-29 specifically:
+      P-BTC-83000 had NO bar at 05:30. Its first trade was 05:39,
+      on a volume of ONE contract, at 13.00.
+      P-BTC-84000 did have a 05:30 bar, at 99.00.
+      C-BTC-86000 did have a 05:30 bar, at 10.50  (the CE pick was fine).
+  So the reproduction sold a strike that was not quoted when the decision was
+  supposedly made, at a price set by a single-contract print.
+
+  RE-PRICED ON MARK  (exchange fair value, always available at 05:30):
+      baseline A on MARK : 567 days, 99.5% win, INR 4,122, worst -683
+      baseline A traded  : 563 days, 99.3% win, INR 3,894, worst -677
+
+  IMPORTANT: THIS DOES NOT EXPLAIN ALGOTEST.
+  The 29-Mar-2025 loss survives both pricings (-677 traded, -683 on mark),
+  because the loss is intrinsic: spot fell 84,340 -> 82,255 and the 83,000
+  put finished 745 in the money. Mark at expiry was 812.92.
+  So AlgoTest showing +383 for March 2025 is still unexplained. It is either
+  selling a different strike that day, or not trading that day at all.
+
+  STATUS
+    - the flaw is real and is now documented; overall totals move only a
+      little (3,894 -> 4,122) but every variant ranking in this repo was
+      computed with the loose tolerance and should be re-run before use
+    - the AlgoTest gap is SEPARATE and still needs the 29-Mar-2025 trade log
