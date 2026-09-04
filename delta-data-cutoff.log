@@ -1,0 +1,13 @@
+### WHEN DOES REAL PRE-EXPIRY OPTION DATA START? (Delta India, 1m)
+expiry       verdict            symbol                 detail
+2024-01-15   no_spot            -                      
+2024-04-15   REAL               C-BTC-66000-150424     715 pre-expiry bars, 145 distinct px, first 05:34
+2024-07-15   REAL               C-BTC-61000-150724     718 pre-expiry bars, 90 distinct px, first 05:31
+2024-10-15   REAL               C-BTC-66000-151024     701 pre-expiry bars, 129 distinct px, first 05:48
+2024-12-15   REAL               C-BTC-101000-151224    715 pre-expiry bars, 65 distinct px, first 05:34
+2025-01-15   REAL               C-BTC-97000-150125     713 pre-expiry bars, 343 distinct px, first 05:36
+2025-02-15   REAL               C-BTC-97000-150225     716 pre-expiry bars, 135 distinct px, first 05:33
+2025-03-15   REAL               C-BTC-84000-150325     719 pre-expiry bars, 292 distinct px, first 05:30
+2025-04-15   REAL               C-BTC-85000-150425     714 pre-expiry bars, 292 distinct px, first 05:35
+2025-06-15   REAL               C-BTC-105000-150625    714 pre-expiry bars, 275 distinct px, first 05:35
+2025-09-15   REAL               C-BTC-115000-150925    715 pre-expiry bars, 306 distinct px, first 05:34

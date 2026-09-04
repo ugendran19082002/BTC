@@ -1,0 +1,5 @@
+# harvested option-chain cache - regenerate with harvest.py (large, ~100s of MB)
+cache/
+btc_daily.json
+__pycache__/
+*.pyc

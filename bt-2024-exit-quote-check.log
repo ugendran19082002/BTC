@@ -1,0 +1,19 @@
+### Did the 17:29 EXIT quote actually exist, or was it assumed 0?
+
+2024-06-27  spot@05:30=60879.0
+   P-BTC-59000-270624     entry@05:30=   5.00  exit@17:29=              0.10   last bar 17:28 px=0.10
+   C-BTC-63000-270624     entry@05:30=   3.00  exit@17:29=              0.10   last bar 17:28 px=0.10
+   C-BTC-64000-270624     entry@05:30=   1.00  exit@17:29=              0.10   last bar 17:28 px=0.10
+
+2024-07-10  spot@05:30=58021.5
+   P-BTC-52000-100724     entry@05:30=   0.20  exit@17:29=              0.10   last bar 17:28 px=0.10
+   C-BTC-60000-100724     entry@05:30=  14.00  exit@17:29=              0.10   last bar 17:28 px=0.10
+
+2024-07-11  spot@05:30=57673.5
+   P-BTC-54000-110724     entry@05:30=   2.00  exit@17:29=              1.00   last bar 17:28 px=1.00
+   P-BTC-55000-110724     entry@05:30=   7.00  exit@17:29=              0.10   last bar 17:28 px=0.10
+   C-BTC-60000-110724     entry@05:30=   9.00  exit@17:29=              0.10   last bar 17:28 px=0.10
+
+2024-12-29  spot@05:30=95227.5
+   P-BTC-92000-291224     entry@05:30=   0.30  exit@17:29=              0.10   last bar 17:28 px=0.10
+   C-BTC-98000-291224     entry@05:30=   8.50  exit@17:29=              0.10   last bar 17:28 px=0.10

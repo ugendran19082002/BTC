@@ -1,0 +1,18 @@
+
+==========================================================================
+2024 APRIL VALIDATION   2024-04-12 -> 2024-04-18   (7 days)
+==========================================================================
+date        status                     spot strk  cheapest      pnl$
+2024-04-12  TRADED                  70019.0   62       2.0    0.1024
+2024-04-13  no_fill_premium_cap     67100.0   19      21.0    0.0000
+2024-04-14  no_fill_premium_cap     63998.5   27      32.0    0.0000
+2024-04-15  no_fill_premium_cap     65541.5   24     100.0    0.0000
+2024-04-16  no_fill_premium_cap     63356.0   22      22.0    0.0000
+2024-04-17  no_fill_premium_cap     63821.5   20      37.0    0.0000
+2024-04-18  no_fill_premium_cap     61291.5   24       5.0    0.0000
+
+  days scanned      : 7
+  days TRADED       : 1
+  days no_fill_premium_cap: 6
+  win rate          : 1/1 = 100.0%
+  TOTAL PnL         : $0.10   (= INR 9 @85)

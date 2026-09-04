@@ -1,0 +1,62 @@
+================================================================
+ DELTA EXCHANGE (INDIA) - HISTORICAL DATA AVAILABILITY
+ Probed: 2026-09-04 08:33 IST   Host: api.india.delta.exchange
+ India entity only. No API key used. Public endpoints only.
+ No trading / no order / no account access performed.
+================================================================
+
+[1] EXPIRY TIME CONFIRMED (IST)
+    settlement_time from API = 12:00 UTC  =  17:30 IST
+    -> your Exit 17:29 IST is exactly 1 minute before settlement
+    -> your Entry 05:30 IST = 00:00 UTC (start of UTC day)
+    -> holding window = 11h 59m of the contract's final day
+
+[2] BTCUSD PERPETUAL (underlying reference)
+    975 real daily candles
+    2023-12-29  ->  2026-08-29        (~2 years 8 months)
+
+[3] DAILY-EXPIRY BTC OPTIONS  (what your strategy trades)
+    Validation rule: a series is believed ONLY if it ends on or
+    before its own expiry date. Series that "run past expiry"
+    are the API loose-matching a live contract = NOT real history.
+
+    2023-09-15   NO DATA (no such contract)
+    2023-12-15   NO DATA (no such contract)
+    2024-02-15   inconclusive (loose-match)
+    2024-04-15   inconclusive (loose-match)
+    2024-07-15   inconclusive (loose-match)
+    2024-09-15   VALID  C-BTC-60000-150924   3 candles  2024-09-12 -> 2024-09-14
+    2024-11-15   VALID  C-BTC-90000-151124   2 candles  2024-11-13 -> 2024-11-14
+    2025-03-15   inconclusive (loose-match)
+    2025-09-15   inconclusive (loose-match)
+
+    CONFIRMED EARLIEST daily-option data: SEPTEMBER 2024
+    Daily options are listed only ~2-3 days before expiry.
+
+[4] EXPIRED CONTRACT REGISTRY
+    60,000 expired option contracts scanned (60 pages, hit page cap)
+    Oldest reachable: C-BTC-101000-190525
+      expiry 2025-05-19 12:00 UTC = 2025-05-19 17:30 IST
+    NOTE: pagination hit its cap, so this is the oldest REACHABLE,
+    not proof of the oldest that exists.
+
+[5] 2017 / 2018 / 2019  ->  DOES NOT EXIST, ANYWHERE
+    Delta Exchange launched BTC options only in 2020
+    (BTC-MOVE Aug 2020, USDT-settled Call/Put Sep 2020).
+    Delta INDIA entity data begins Dec 2023.
+    No API call can recover 2017-2023 BTCUSD option history.
+
+================================================================
+ HOW MANY YEARS OF DATA - SHORT ANSWER
+================================================================
+  AlgoTest backtest (what you can actually run) : ~1 year
+                                                  Sep 2025 -> now
+  Delta India raw API - daily options            : ~2 years
+                                                  Sep 2024 -> now
+  Delta India raw API - BTCUSD perp              : ~2 yr 8 mo
+                                                  Dec 2023 -> now
+  2017 - 2023                                    : NOT AVAILABLE
+
+  P&L note: AlgoTest shows P&L in INR (already x85).
+            Divide by 85 for USD. 1 USD = 85 INR.
+================================================================
