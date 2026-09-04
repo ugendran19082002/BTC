@@ -2246,6 +2246,251 @@ FINAL STACKED STRATEGY  -  Delta India BTC daily expiry
     section M as a hypothesis to forward-test at small size, not a result.
     Brokerage is still excluded throughout.
 
+####################################################################################################
+#  N-Q.  RECONCILIATION PACK, VARIANTS, PE BAND SWEEP, ADAPTIVE PE
+####################################################################################################
+======================================================================================================================
+  N.  RECONCILIATION PACK  -  paste your AlgoTest trade log for these days and compare line by line
+======================================================================================================================
+
+
+  ==============================================================================================================
+  DATE 2025-02-28   spot@05:30 = 84699.0   ATM IV = 42.8%   ExpectedMove = 1341
+  ==============================================================================================================
+  FULL CHAIN as harvested (1-minute candle CLOSE).  'picked' = what this reproduction chose.
+  symbol                     strike  entry@05:30  exit@17:29   dist%    IV%  prem/EM        vol       OI  picked
+  C-BTC-84000-280225          84000       912.00        1.00   0.83%  38.9%   0.6799      91608     0.00
+  C-BTC-86000-280225          86000       121.00        0.20   1.54%  42.8%   0.0902      47922     7.79
+  C-BTC-87000-280225          87000        49.00        0.10   2.72%  49.2%   0.0365      22404     8.33
+  C-BTC-88000-280225          88000        26.00        0.10   3.90%  57.3%   0.0194     157292    16.20
+  C-BTC-89000-280225          89000        10.00        0.20   5.08%  61.2%   0.0075      57604    14.85  <== CE (prem<=15)
+  C-BTC-90000-280225          90000         6.00        0.20   6.26%  68.3%   0.0045      44538    36.85
+  C-BTC-91000-280225          91000         4.00        1.00   7.44%  75.5%   0.0030      31748    29.41
+  C-BTC-92000-280225          92000         2.00        1.00   8.62%  79.8%   0.0015      21573    16.62
+  C-BTC-94000-280225          94000         0.20        0.10  10.98%  81.8%   0.0001       7803     5.72
+  C-BTC-95000-280225          95000         1.00        1.00  12.16% 101.0%   0.0007      28335    14.99
+  P-BTC-78000-280225          78000         2.00        0.20   7.91%  80.2%   0.0015     180493    18.34
+  P-BTC-79000-280225          79000         4.00        0.30   6.73%  74.2%   0.0030     398498    16.92
+  P-BTC-80000-280225          80000         7.00        1.00   5.55%  66.5%   0.0052     221554    15.72
+  P-BTC-81000-280225          81000        10.00      404.00   4.37%  56.4%   0.0075      84472    14.47  <== PE (prem<=15)
+  P-BTC-82000-280225          82000        51.00     1320.00   3.19%  57.9%   0.0380      59994    13.22
+  P-BTC-83000-280225          83000       118.00     2329.00   2.01%  51.5%   0.0880      13065     5.39
+  P-BTC-84000-280225          84000       235.00     3389.00   0.83%  41.0%   0.1752      25442     0.00
+  P-BTC-85000-280225          85000       700.00     4446.00   0.36%  42.8%   0.5218       8324     0.00
+
+  WHAT TO CHECK AGAINST AlgoTest for 2025-02-28:
+    1. Did AlgoTest pick the same two symbols marked <== above?
+    2. Are its entry prices the same as 'entry@05:30'?
+    3. Are its exit prices the same as 'exit@17:29'?
+    4. What charges did it deduct on this day?
+
+
+  ==============================================================================================================
+  DATE 2025-03-29   spot@05:30 = 84340.5   ATM IV = 23.3%   ExpectedMove = 727
+  ==============================================================================================================
+  FULL CHAIN as harvested (1-minute candle CLOSE).  'picked' = what this reproduction chose.
+  symbol                     strike  entry@05:30  exit@17:29   dist%    IV%  prem/EM        vol       OI  picked
+  C-BTC-84000-290325          84000       491.00        0.10   0.40%  23.3%   0.6754     240605     0.00
+  C-BTC-85000-290325          85000        46.00        0.10   0.78%  19.8%   0.0633     229303     8.40
+  C-BTC-86000-290325          86000        10.50        0.10   1.97%  28.1%   0.0144      73377    39.13  <== CE (prem<=15)
+  C-BTC-87000-290325          87000         4.00        1.00   3.15%  36.2%   0.0055      39169     6.74
+  C-BTC-90000-290325          90000         1.00        0.10   6.71%  60.2%   0.0014       8629     5.63
+  P-BTC-82000-290325          82000         4.00        0.10   2.78%  33.4%   0.0055     525403    19.47
+  P-BTC-83000-290325          83000        13.00      780.00   1.59%  25.0%   0.0179     278824     6.45  <== PE (prem<=15)
+  P-BTC-84000-290325          84000        99.00     1830.00   0.40%  18.5%   0.1362     189245    18.34
+  P-BTC-85000-290325          85000       676.00     2899.00   0.78%  14.9%   0.9298      15412     0.00
+
+  WHAT TO CHECK AGAINST AlgoTest for 2025-03-29:
+    1. Did AlgoTest pick the same two symbols marked <== above?
+    2. Are its entry prices the same as 'entry@05:30'?
+    3. Are its exit prices the same as 'exit@17:29'?
+    4. What charges did it deduct on this day?
+
+
+======================================================================================================================
+  O.  FOUR VARIANTS, FULL PERIOD AND PER YEAR
+======================================================================================================================
+
+  PERIOD 2024  (119 days)
+  variant                                 days    win%      INR     avg   maxloss       PF    maxDD
+  A  CE<=15 + PE<=15                        79   97.5%      637     8.1        -0 37499.75       -0
+  B  CE<=15 + PE 15-40                      71   98.6%      921    13.0      -178     6.19     -178
+  C  B + Prem/EM<=2% both legs              53   98.1%      270     5.1      -178     2.52     -178
+  D  Prem/EM<=2% both legs only             85   96.5%      737     8.7      -178     5.15     -178
+
+  PERIOD 2025  (319 days)
+  variant                                 days    win%      INR     avg   maxloss       PF    maxDD
+  A  CE<=15 + PE<=15                       292   99.3%     1504     5.2      -677     2.47     -787
+  B  CE<=15 + PE 15-40                     293   99.7%     4809    16.4      -477    11.08     -477
+  C  B + Prem/EM<=2% both legs             258  100.0%     2701    10.5         0      inf        0
+  D  Prem/EM<=2% both legs only            309   99.4%     3873    12.5      -677     4.84     -677
+
+  PERIOD 2026  (198 days)
+  variant                                 days    win%      INR     avg   maxloss       PF    maxDD
+  A  CE<=15 + PE<=15                       192  100.0%     1752     9.1         0      inf        0
+  B  CE<=15 + PE 15-40                     179   97.2%     2186    12.2      -411     3.86     -411
+  C  B + Prem/EM<=2% both legs             164  100.0%     1183     7.2         0      inf        0
+  D  Prem/EM<=2% both legs only            197   99.5%     1978    10.0      -223     9.87     -223
+
+  PERIOD ALL  (636 days)
+  variant                                 days    win%      INR     avg   maxloss       PF    maxDD
+  A  CE<=15 + PE<=15                       563   99.3%     3894     6.9      -677     4.81     -787
+  B  CE<=15 + PE 15-40                     543   98.7%     7916    14.6      -477     6.58     -477
+  C  B + Prem/EM<=2% both legs             475   99.8%     4155     8.7      -178    24.41     -178
+  D  Prem/EM<=2% both legs only            591   99.0%     6588    11.1      -677     5.67     -677
+
+
+======================================================================================================================
+  P.  PE BAND SWEEP  (CE fixed at prem<=15)  -  tested separately per period
+======================================================================================================================
+
+  PERIOD 2024  (119 days)
+  variant                                 days    win%      INR     avg   maxloss       PF    maxDD
+  PE <=15  (baseline)                       79   97.5%      637     8.1        -0 37499.75       -0
+  PE 10-15                                  64  100.0%      526     8.2         1      inf        0
+  PE 15-20                                  54   98.1%      262     4.9      -178     2.48     -178
+  PE 15-25                                  60   98.3%      444     7.4      -178     3.50     -178
+  PE 15-30                                  67   98.5%      694    10.4      -178     4.91     -178
+  PE 15-40                                  71   98.6%      921    13.0      -178     6.19     -178
+  PE 20-40                                  68   98.5%      840    12.3      -178     5.73     -178
+  PE 20-50                                  78   98.7%     1428    18.3      -178     9.04     -178
+  PE 25-50                                  70  100.0%     1397    20.0         1      inf        0
+
+  PERIOD 2025  (319 days)
+  variant                                 days    win%      INR     avg   maxloss       PF    maxDD
+  PE <=15  (baseline)                      292   99.3%     1504     5.2      -677     2.47     -787
+  PE 10-15                                 242   98.8%      893     3.7      -677     1.87     -852
+  PE 15-20                                 241   99.6%     2292     9.5        -0 269598.00       -0
+  PE 15-25                                 259   99.6%     2944    11.4        -0 346398.50       -0
+  PE 15-30                                 276  100.0%     3999    14.5         0      inf        0
+  PE 15-40                                 293   99.7%     4809    16.4      -477    11.08     -477
+  PE 20-40                                 283   99.6%     4280    15.1      -477     9.97     -477
+  PE 20-50                                 291   99.3%     5622    19.3      -477     6.94     -477
+  PE 25-50                                 277   99.3%     5011    18.1      -477     6.29     -477
+
+  PERIOD 2026  (198 days)
+  variant                                 days    win%      INR     avg   maxloss       PF    maxDD
+  PE <=15  (baseline)                      192  100.0%     1752     9.1         0      inf        0
+  PE 10-15                                 173  100.0%     1413     8.2         0      inf        0
+  PE 15-20                                 167   99.4%     1363     8.2       -23    60.77      -23
+  PE 15-25                                 172   98.3%     1717    10.0      -110     8.99     -111
+  PE 15-30                                 173   97.7%     1887    10.9      -138     6.35     -138
+  PE 15-40                                 179   97.2%     2186    12.2      -411     3.86     -411
+  PE 20-40                                 172   97.7%     1862    10.8      -411     3.51     -411
+  PE 20-50                                 182   96.7%     2237    12.3      -504     2.55     -699
+  PE 25-50                                 177   97.7%     1954    11.0      -504     2.57     -699
+
+  PERIOD ALL  (636 days)
+  variant                                 days    win%      INR     avg   maxloss       PF    maxDD
+  PE <=15  (baseline)                      563   99.3%     3894     6.9      -677     4.81     -787
+  PE 10-15                                 479   99.4%     2832     5.9      -677     3.77     -852
+  PE 15-20                                 462   99.4%     3917     8.5      -178    20.55     -178
+  PE 15-25                                 491   99.0%     5106    10.4      -178    14.01     -178
+  PE 15-30                                 516   99.0%     6579    12.8      -178    13.40     -178
+  PE 15-40                                 543   98.7%     7916    14.6      -477     6.58     -477
+  PE 20-40                                 523   98.9%     6981    13.3      -477     6.00     -477
+  PE 20-50                                 551   98.4%     9288    16.9      -504     4.62     -699
+  PE 25-50                                 524   98.9%     8362    16.0      -504     4.81     -699
+
+
+======================================================================================================================
+  Q.  ADAPTIVE PE  -  PE band chosen by market condition, known at 05:30
+======================================================================================================================
+
+  PERIOD 2024  (119 days)
+  variant                                 days    win%      INR     avg   maxloss       PF    maxDD
+  PE 15-40 fixed                            71   98.6%      921    13.0      -178     6.19     -178
+  PE wide(15-40) if IV>32% else 15-20       67   98.5%      706    10.5      -178     4.98     -178
+  PE wide(15-40) if IV<32% else 15-20       58   98.3%      477     8.2      -178     3.69     -178
+  PE wide(15-40) if ATR%>med else 15-20     67   98.5%      712    10.6      -178     5.01     -178
+  PE wide(15-40) if ATR%<med else 15-20     58   98.3%      471     8.1      -178     3.65     -178
+
+  PERIOD 2025  (319 days)
+  variant                                 days    win%      INR     avg   maxloss       PF    maxDD
+  PE 15-40 fixed                           293   99.7%     4809    16.4      -477    11.08     -477
+  PE wide(15-40) if IV>32% else 15-20      275  100.0%     3643    13.2         0      inf        0
+  PE wide(15-40) if IV<32% else 15-20      259   99.2%     3458    13.4      -477     8.25     -477
+  PE wide(15-40) if ATR%>med else 15-20    272  100.0%     3863    14.2         0      inf        0
+  PE wide(15-40) if ATR%<med else 15-20    262   99.2%     3238    12.4      -477     7.78     -477
+
+  PERIOD 2026  (198 days)
+  variant                                 days    win%      INR     avg   maxloss       PF    maxDD
+  PE 15-40 fixed                           179   97.2%     2186    12.2      -411     3.86     -411
+  PE wide(15-40) if IV>32% else 15-20      177   98.9%     1702     9.6      -411     4.92     -411
+  PE wide(15-40) if IV<32% else 15-20      169   97.6%     1847    10.9      -138     6.23     -138
+  PE wide(15-40) if ATR%>med else 15-20    172   99.4%     1996    11.6       -23    88.54      -23
+  PE wide(15-40) if ATR%<med else 15-20    174   97.1%     1553     8.9      -411     3.03     -411
+
+  PERIOD ALL  (636 days)
+  variant                                 days    win%      INR     avg   maxloss       PF    maxDD
+  PE 15-40 fixed                           543   98.7%     7916    14.6      -477     6.58     -477
+  PE wide(15-40) if IV>32% else 15-20      519   99.4%     6051    11.7      -411    10.89     -411
+  PE wide(15-40) if IV<32% else 15-20      486   98.6%     5782    11.9      -477     6.74     -477
+  PE wide(15-40) if ATR%>med else 15-20    511   99.6%     6572    12.9      -178    33.81     -178
+  PE wide(15-40) if ATR%<med else 15-20    494   98.4%     5261    10.7      -477     4.71     -477
+
+====================================================================================================
+  READING SECTIONS N - Q
+====================================================================================================
+
+  N. RECONCILIATION  -  BLOCKED, needs your input
+     The full chain for 2025-02-28 and 2025-03-29 is printed above with every
+     strike, its 05:30 entry and 17:29 exit, distance, IV, premium/EM, volume
+     and OI. The two strikes this reproduction picked are marked "<==".
+     Send the AlgoTest trade log for either day and the mismatch can be
+     localised in one pass: same strikes or not, same prices or not, charges.
+     Until that is done, do NOT raise lots on any variant below.
+
+  P. PE BAND SWEEP  -  the clearest new result
+     Widening the PE band helps, but only up to a point, and 15-40 is NOT the
+     best stopping point once drawdown is counted:
+
+        band        ALL INR    PF     worst day   2024   2025   2026
+        PE <=15        3894   4.81      -677      +637  +1504  +1752
+        PE 15-20       3917  20.55      -178      +262  +2292  +1363
+        PE 15-25       5106  14.01      -178      +444  +2944  +1717
+        PE 15-30       6579  13.40      -178      +694  +3999  +1887   <-- best balance
+        PE 15-40       7916   6.58      -477      +921  +4809  +2186
+        PE 20-50       9288   4.62      -504     +1428  +5622  +2237   <-- most money
+        PE 25-50       8362   4.81      -504     +1397  +5011  +1954
+
+     PE 15-30 keeps 83% of the profit of 15-40, doubles the profit factor
+     (13.40 vs 6.58) and cuts the worst day from -477 to -178. It is positive
+     in all three periods. PE 20-50 earns the most but its worst day and
+     drawdown are the largest and its 2026 result is the weakest of the three
+     years, which is the direction you do not want a rule to drift.
+
+  Q. ADAPTIVE PE  -  more complexity, no real gain
+     Switching the PE band by regime (wide when ATR% is above median, narrow
+     otherwise) gives INR 6,572 at PF 33.81 with a -178 worst day. That reads
+     well, but plain PE 15-30 gives INR 6,579 at PF 13.40 with the same -178
+     worst day - the same money from a rule with no regime switch in it.
+     The adaptive version is not buying anything the simpler band does not
+     already give. Prefer PE 15-30.
+
+  O. THE FOUR VARIANTS
+        A  CE<=15 + PE<=15              3894   PF  4.81   worst -677
+        B  CE<=15 + PE 15-40            7916   PF  6.58   worst -477
+        C  B + Prem/EM<=2% both legs    4155   PF 24.41   worst -178
+        D  Prem/EM<=2% both legs only   6588   PF  5.67   worst -677
+     D is worth noting: a single normalised rule applied to both legs, with no
+     per-leg special-casing, beats A by 69% and is positive in all three
+     periods (+737 / +3873 / +1978). It is the least hand-fitted of the four.
+
+  WHERE THIS LEAVES THE RANKING
+        live now, unchanged  : A
+        best risk-adjusted   : CE<=15 + PE 15-30      (6579, PF 13.40, -178)
+        most money           : CE<=15 + PE 20-50      (9288, PF  4.62, -504)
+        least fitted         : D, Prem/EM<=2% both    (6588, PF  5.67, -677)
+
+  CAVEAT
+     Eight PE bands were swept on the same 636 days. The band that looks best
+     is partly the band that happened to fit. PE 15-30 being positive in all
+     three periods and monotonic with its neighbours (15-25 and 15-40 both
+     also work) is more reassuring than a lone spike would be, but it is still
+     one dataset. Brokerage is still excluded. The AlgoTest mismatch in the
+     ALGO-BACKTEST-REPORT is still unresolved.
+
 #  END OF REPORT - all sections complete
 
 
