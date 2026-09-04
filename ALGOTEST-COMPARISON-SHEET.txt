@@ -1,0 +1,49 @@
+========================================================================================================
+  AlgoTest vs REPRODUCTION  -  comparison sheet
+  Settings to use on AlgoTest for EVERY run (must be identical):
+     Filter by      : CLEARED  (click the X - no M/T/W/Th/F/Sa/Su selected)
+     Date range     : same for all four
+     Lots           : 10 per leg        Slippage : 5%
+     Include Brokerage : OFF            Taxes & charges : ON
+     Entry 05:30 IST, Exit 17:29 IST, Expiry Today, no SL, no target
+========================================================================================================
+
+  REPRODUCTION side (already computed, 2024-09-04 -> 2026-09-03, 636 days, no charges):
+
+  variant                                         days    win%      INR   maxloss       PF    maxDD
+  A   CE<=15  + PE<=15                             563   99.3%     3894      -677     4.81     -787
+  B   CE<=15  + PE 15-30                           516   99.0%     6579      -178    13.40     -178
+  C   CE<=15  + PE 15-40                           543   98.7%     7916      -477     6.58     -477
+  D   Prem/EM<=2% both legs                        591   99.0%     6588      -677     5.67     -677
+  D'  CE<=20  + PE<=20  (AlgoTest stand-in for D)   580   99.0%     5905      -677     5.83     -677
+
+  Same, SATURDAYS EXCLUDED (secondary hypothesis only):
+
+  A   CE<=15  + PE<=15                             475   99.4%     3752      -345    11.89     -345
+  B   CE<=15  + PE 15-30                           434   99.1%     5535      -178    11.90     -178
+  C   CE<=15  + PE 15-40                           460   98.9%     7172      -411     8.80     -411
+  D   Prem/EM<=2% both legs                        502   99.0%     6422      -332     9.77     -332
+  D'  CE<=20  + PE<=20  (AlgoTest stand-in for D)   491   99.2%     5513      -345    11.56     -345
+
+
+  ALGOTEST side  -  fill these in after each run
+  ---------------------------------------------------------------------------------------
+   variant                     2025 Total   2025 MaxDD   2026 Total   2026 MaxDD   charges
+   A   CE<=15 + PE<=15         __________   __________   __________   __________   _______
+   B   CE<=15 + PE 15-30       __________   __________   __________   __________   _______
+   C   CE<=15 + PE 15-40       __________   __________   __________   __________   _______
+   D'  CE<=20 + PE<=20         __________   __________   __________   __________   _______
+
+  TWO THINGS TO CONFIRM BEFORE RUNNING
+   1. Variant D (Premium/ExpectedMove <= 2%) CANNOT be set in AlgoTest.
+      Its cap moves day to day: p10 = 11.7, median = 20.3, p90 = 32.1 USD.
+      A fixed "premium <= 20" is the closest single number, but it picks a
+      DIFFERENT strike from true D on 22.8% of legs. So D' is an
+      approximation, not variant D. Label it as such.
+
+   2. How did you set PE 15-30 in AlgoTest? The Leg Builder screenshot shows
+      only "Premium <=" with one value. A 15-30 BAND needs either a
+      "Premium >=" option as well, or a different Strike Criteria entry.
+      If it was approximated, the AlgoTest PE 15-30 run is not the same rule
+      as the reproduction's PE 15-30 and cannot be compared directly.
+
