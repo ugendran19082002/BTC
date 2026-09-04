@@ -1718,4 +1718,112 @@ DELTA INDIA BTC DAILY SHORT-PREMIUM R&D  |  YEAR 2026  (2026-01-01 -> 2026-09-03
   delta~0.25                   -11877     0.82      -9386     0.71  loses both
   richest(ATM)                -111226     0.15     -71082     0.04  loses both
 
+
+####################################################################################################
+#  K.  PER-LEG OPTIMISATION  -  should CE and PE use the SAME strike rule?
+#  (exit: hold to 17:29 | 10 lots | slippage 5% | 1 USD = 85 INR)
+####################################################################################################
+
+### K1.  CE  (Call leg only)
+  rule                   period   trds    win%      INR     avg   maxloss        PF    maxDD
+  prem<=15 [BASELINE]    2024       48  100.0%      300     6.3         1       inf        0
+  prem<=15 [BASELINE]    2025      215   99.5%     1322     6.1        -0 155494.50       -0
+  prem<=15 [BASELINE]    2026      155  100.0%      910     5.9         0       inf        0
+  prem<=15 [BASELINE]    ALL       418   99.8%     2532     6.1        -0 297895.00       -0
+
+  prem 15-40             2024       42   92.9%    -2038   -48.5     -1630      0.28    -2666
+  prem 15-40             2025      215   97.7%     3363    15.6      -459      3.80     -459
+  prem 15-40             2026      132   93.9%      213     1.6      -961      1.09    -1115
+  prem 15-40             ALL       389   95.9%     1539     4.0     -1630      1.25    -2666
+
+  prem<=40               2024       72   95.8%    -1842   -25.6     -1630      0.35    -2597
+  prem<=40               2025      267   97.8%     3749    14.0      -459      4.12     -459
+  prem<=40               2026      184   95.7%      555     3.0      -961      1.25    -1089
+  prem<=40               ALL       523   96.7%     2462     4.7     -1630      1.39    -2597
+
+  prem<=100              2024       94   90.4%    -1546   -16.5     -1662      0.70    -3701
+  prem<=100              2025      291   93.1%     5628    19.3      -989      1.87    -1489
+  prem<=100              2026      194   90.7%      -45    -0.2      -961      0.99    -2251
+  prem<=100              ALL       579   91.9%     4036     7.0     -1662      1.22    -3701
+
+  prem 40-100            2024       62   90.3%      815    13.1     -1662      1.35    -1662
+  prem 40-100            2025      213   92.0%     4931    23.2      -989      1.90    -1634
+  prem 40-100            2026      102   88.2%      175     1.7      -932      1.04    -1590
+  prem 40-100            ALL       377   90.7%     5921    15.7     -1662      1.48    -1662
+
+  rich OTM>=3% +liq      2024       49  100.0%      974    19.9         0       inf        0
+  rich OTM>=3% +liq      2025      212   97.2%      502     2.4     -2673      1.18    -2673
+  rich OTM>=3% +liq      2026      136   98.5%      441     3.2      -435      1.69     -435
+  rich OTM>=3% +liq      ALL       397   98.0%     1916     4.8     -2673      1.55    -2673
+
+
+### K2.  PE  (Put leg only)
+  rule                   period   trds    win%      INR     avg   maxloss        PF    maxDD
+  prem<=15 [BASELINE]    2024       58   96.6%      337     5.8        -0  19824.75       -0
+  prem<=15 [BASELINE]    2025      220   98.2%      182     0.8      -686      1.18     -928
+  prem<=15 [BASELINE]    2026      149  100.0%      843     5.7         0       inf        0
+  prem<=15 [BASELINE]    ALL       427   98.6%     1362     3.2      -686      2.31     -928
+
+  prem 15-40             2024       40   97.5%      621    15.5      -178      4.50     -178
+  prem 15-40             2025      194   99.5%     3488    18.0      -477      8.31     -477
+  prem 15-40             2026      107   95.3%     1276    11.9      -415      2.63     -415
+  prem 15-40             ALL       341   97.9%     5384    15.8      -477      4.75     -477
+
+  prem<=40               2024       76   96.1%      842    11.1      -178      5.75     -178
+  prem<=40               2025      263   98.9%     2884    11.0      -686      2.90     -686
+  prem<=40               2026      172   97.1%     1742    10.1      -415      3.23     -415
+  prem<=40               ALL       511   97.8%     5469    10.7      -686      3.21     -686
+
+  prem<=100              2024       96   92.7%     -408    -4.2     -1917      0.89    -2291
+  prem<=100              2025      297   94.9%     1570     5.3     -1553      1.14    -4039
+  prem<=100              2026      185   91.9%     3064    16.6      -809      1.86     -809
+  prem<=100              ALL       578   93.6%     4226     7.3     -1917      1.22    -4488
+
+  prem 40-100            2024       61   88.5%     -894   -14.7     -1917      0.77    -2291
+  prem 40-100            2025      235   94.0%      782     3.3     -1553      1.07    -4140
+  prem 40-100            2026      112   91.1%     2465    22.0      -809      1.88     -809
+  prem 40-100            ALL       408   92.4%     2354     5.8     -1917      1.13    -4849
+
+  rich OTM>=3% +liq      2024       65   95.4%      375     5.8      -624      1.47     -730
+  rich OTM>=3% +liq      2025      214   96.3%     1457     6.8     -1283      1.60    -1283
+  rich OTM>=3% +liq      2026      134   98.5%     1742    13.0       -73     24.97      -73
+  rich OTM>=3% +liq      ALL       413   96.9%     3574     8.7     -1283      2.08    -1283
+
+### K3.  MIXED STRATEGY, combined day by day (correct drawdown, not a sum of legs)
+  strategy                               period   days    win%      INR   maxloss        PF    maxDD
+  CE prem<=15  +  PE prem<=15   (current) 2024       79   97.5%      637        -0  37499.75       -0
+  CE prem<=15  +  PE prem<=15   (current) 2025      292   99.3%     1504      -677      2.47     -787
+  CE prem<=15  +  PE prem<=15   (current) 2026      192  100.0%     1752         0       inf        0
+  CE prem<=15  +  PE prem<=15   (current) ALL       563   99.3%     3894      -677      4.81     -787
+
+  CE prem<=15  +  PE prem 15-40          2024       71   98.6%      921      -178      6.19     -178
+  CE prem<=15  +  PE prem 15-40          2025      293   99.7%     4809      -477     11.08     -477
+  CE prem<=15  +  PE prem 15-40          2026      179   97.2%     2186      -411      3.86     -411
+  CE prem<=15  +  PE prem 15-40          ALL       543   98.7%     7916      -477      6.58     -477
+
+  CE prem<=15  +  PE prem<=40            2024       91   96.7%     1143      -178      7.44     -178
+  CE prem<=15  +  PE prem<=40            2025      307   99.0%     4205      -677      3.81     -677
+  CE prem<=15  +  PE prem<=40            2026      194   97.4%     2652      -411      4.47     -411
+  CE prem<=15  +  PE prem<=40            ALL       592   98.1%     8001      -677      4.28     -677
+
+  CE prem<=40  +  PE prem<=40            2024       99   93.9%     -999     -1630      0.67    -2350
+  CE prem<=40  +  PE prem<=40            2025      313   97.4%     6633      -677      3.53     -677
+  CE prem<=40  +  PE prem<=40            2026      198   93.4%     2297      -949      1.81     -959
+  CE prem<=40  +  PE prem<=40            ALL       610   95.6%     7931     -1630      1.94    -2350
+
+  READING THIS TABLE
+    CE and PE do NOT want the same strike rule.
+      - CE: prem<=15 is positive in all three periods and never had a real loss.
+            Widening CE to prem 15-40 loses INR 2,038 in 2024 (PF 0.28).
+      - PE: prem 15-40 is positive in all three periods (+621 / +3,488 / +1,276),
+            PF 4.75, worst day only -INR 477.
+    Switching ONLY the PE leg roughly doubles total PnL without adding lots,
+    and the worst day gets smaller, not bigger.
+
+  CAVEAT
+    ~19 strike rules x 2 legs x 3 periods were searched. With that many
+    comparisons some rule will look good by chance. The PE result is
+    consistent across all three periods, which is encouraging but not proof.
+    Brokerage is still excluded. Size down before trusting this live.
+
 #  END OF REPORT - all sections complete
