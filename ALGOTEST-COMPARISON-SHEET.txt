@@ -29,7 +29,9 @@
   ALGOTEST side  -  fill these in after each run
   ---------------------------------------------------------------------------------------
    variant                     2025 Total   2025 MaxDD   2026 Total   2026 MaxDD   charges
-   A   CE<=15 + PE<=15         __________   __________   __________   __________   _______
+   A   Premium Range 0-15          3,931         -209        2,665         -374    336.09
+       (filter CLEARED, all days, taxes ON, 5% slippage)   2025+2026 = 6,596
+   A   "Premium <=" 15 (earlier)     1,855           ?         3,371           ?    273.46
    B   CE<=15 + PE 15-30       __________   __________   __________   __________   _______
    C   CE<=15 + PE 15-40       __________   __________   __________   __________   _______
    D'  CE<=20 + PE<=20         __________   __________   __________   __________   _______
@@ -67,3 +69,45 @@
    2. B  (CE Premium Range 0-15, PE Premium Range 15-30)
    3. C  (CE Premium Range 0-15, PE Premium Range 15-40)
    4. D' (Premium Range 0-20 both legs)    <- approximation, label it
+
+
+====================================================================================================
+  RESULT OF STEP 1  -  three different answers for what should be one rule
+====================================================================================================
+
+                                     2025 Total  2025 MDD  2026 Total  2026 MDD   sum
+   AlgoTest  "Premium <= 15"              1,855         ?       3,371         ?   5,226
+   AlgoTest  "Premium Range 0-15"         3,931      -209       2,665      -374   6,596
+   Reproduction (this repo)               1,504      -787       1,752         0   3,256
+
+  FINDING 1  -  "Premium <=" and "Premium Range 0-15" are NOT the same rule.
+    Same platform, same strategy, same period, and 2025 goes 1,855 -> 3,931
+    while 2026 goes 3,371 -> 2,665. Whatever "Premium <=" does, it is not
+    "take the highest premium at or below 15". That alone was one real source
+    of the gap and it is now identified.
+
+  FINDING 2  -  the reproduction's two worst days do not exist in AlgoTest.
+    Reproduction worst days:  2025-02-28  -345      2025-03-29  -677
+    AlgoTest Premium Range:   Feb 2025 = +378       Mar 2025 = +383
+    AlgoTest's own drawdown days are completely different:
+      2025 MDD = 8/10/2025      2026 MDD = 2/14/2026
+    So on 29 Mar 2025 AlgoTest either did not take the trade, took a
+    different strike, or exited at a different price. On that day the
+    harvested chain had only four PE strikes:
+      P-82000 @ 4.00   P-83000 @ 13.00   P-84000 @ 99.00   P-85000 @ 676.00
+    The highest premium at or below 15 is P-83000 @ 13.00, which is what the
+    reproduction sold, and it closed at 780.00. If AlgoTest shows a profit
+    that day it is not selling that strike, or not at that price.
+
+  THIS IS THE WHOLE RECONCILIATION IN ONE DAY.
+    Open the AlgoTest trade log for 29-Mar-2025 and record:
+       PE strike, PE entry price, PE exit price
+       CE strike, CE entry price, CE exit price
+       day P&L
+    That single row explains the remaining gap.
+
+  NOTE ON QUALITY  -  the AlgoTest Premium Range run looks far smoother than
+  either of the other two: 2025 has no losing month at all (worst is Aug at
+  +168) and R/MDD is 18.75 and 10.51. A short-premium strategy with a -209
+  worst drawdown over a full year is unusual enough to be worth checking
+  rather than accepting.
