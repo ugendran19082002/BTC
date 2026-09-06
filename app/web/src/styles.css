@@ -240,3 +240,27 @@ th.askcol, td.askcol { color: var(--down); background: #f851490a; }
   border-radius: 999px; padding: 1px 9px; font-size: 10.5px; cursor: pointer;
 }
 .pinned:hover { background: #d2992230; }
+
+/* ── what to sell ─────────────────────────────────────────────────────────── */
+.recommend { grid-column: span 2; }
+.rec-side {
+  border: 1px solid var(--line); border-radius: 8px;
+  padding: 10px 12px; margin-bottom: 10px; background: var(--bg);
+}
+.rec-order {
+  display: flex; align-items: baseline; gap: 8px;
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 15px;
+}
+.rec-order .ml-auto { margin-left: auto; }
+.rec-chance { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+.chance {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 26px; font-weight: 650; letter-spacing: -0.5px; flex: none;
+}
+.chance-label { font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+.rec-foot { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 4px; }
+
+th.zerocol, td.zerocol {
+  background: #58a6ff10; font-weight: 600;
+  border-left: 1px solid var(--line); border-right: 1px solid var(--line);
+}

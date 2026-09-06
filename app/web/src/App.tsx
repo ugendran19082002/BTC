@@ -3,10 +3,10 @@ import { getChain, getExpiries, getHealth } from './api';
 import type { ChainResponse, ExpiryOption } from './types';
 import { ChainTable } from './components/ChainTable';
 import { BiasPanel } from './components/BiasPanel';
-import { PicksPanel } from './components/PicksPanel';
 import { BacktestPanel } from './components/BacktestPanel';
 import { FloorPanel } from './components/FloorPanel';
 import { VerdictPanel } from './components/VerdictPanel';
+import { RecommendPanel } from './components/RecommendPanel';
 import { DateTimePicker, istToEpoch, type IstMoment } from './components/DateTimePicker';
 import { usePersisted } from './hooks/usePersisted';
 import { AccountPanel } from './components/AccountPanel';
@@ -301,8 +301,8 @@ export default function App() {
                     </p>
                   </Metric>
                 </div>
+                <RecommendPanel rec={data.recommendation} market={data.market} minPremium={minPremium} />
                 <BiasPanel bias={data.bias} snap={snap} />
-                <PicksPanel picks={data.picks} lots={lots} usdinr={data.usdinr} minPremium={minPremium} />
                 <AccountPanel usdinr={data.usdinr} />
               </div>
 

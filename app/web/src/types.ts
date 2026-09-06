@@ -1,3 +1,10 @@
+export type ZeroChance = {
+  model: number;
+  historical: number | null;
+  sample: number | null;
+  gap: number | null;
+};
+
 export type Leg = {
   cp: 'C' | 'P';
   strike: number;
@@ -19,8 +26,57 @@ export type Leg = {
   pOtm: number | null;
   edge: number | null;
   emDistance: number | null;
+  zero: ZeroChance | null;
+  zeroByDistance: ZeroChance | null;
   score: number | null;
   reasons: string[];
+};
+
+export type TimeframeRead = {
+  tf: '5m' | '15m' | '1h' | '4h' | '1d';
+  bars: number;
+  close: number;
+  ema9: number | null;
+  ema21: number | null;
+  ema50: number | null;
+  rsi14: number | null;
+  atrPct: number | null;
+  trend: -1 | 0 | 1;
+  label: string;
+};
+
+export type MarketRead = {
+  spot: number;
+  return24h: number | null;
+  timeframes: TimeframeRead[];
+  agreement: number;
+  regime: string;
+  realisedVol: number | null;
+};
+
+export type SideRecommendation = {
+  side: 'CE' | 'PE';
+  leg: Leg;
+  lots: number;
+  price: number;
+  creditUsd: number;
+  creditInr: number;
+  zeroChance: number | null;
+  modelChance: number | null;
+  sample: number | null;
+  order: string;
+};
+
+export type Recommendation = {
+  ok: boolean;
+  why: string | null;
+  sides: SideRecommendation[];
+  split: { ce: number; pe: number };
+  splitReason: string;
+  totalCreditUsd: number;
+  totalCreditInr: number;
+  bothZeroChance: number | null;
+  marginUsd: number;
 };
 
 export type SnapshotMeta = {
@@ -84,6 +140,8 @@ export type ChainResponse = {
   legs: Leg[];
   bias: Bias;
   picks: Pick[];
+  market: MarketRead | null;
+  recommendation: Recommendation;
   verdict: Verdict;
   usdinr: number;
 };

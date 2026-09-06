@@ -10,6 +10,22 @@ const compact = (v: number | null | undefined) => {
   return v.toFixed(0);
 };
 
+/**
+ * How often strikes like this one actually expired worthless, from 733
+ * settlements — not the model's opinion, which sits in the next column so the
+ * two can be compared.
+ */
+function Zero({ leg }: { leg: Leg | undefined }) {
+  const p = leg?.zero?.historical ?? null;
+  if (p === null) return <td className="zerocol dim">·</td>;
+  const cls = p >= 0.97 ? 'up' : p >= 0.9 ? 'warn' : 'down';
+  return (
+    <td className={`zerocol ${cls}`} title={`${leg?.zero?.sample ?? 0} comparable strikes`}>
+      {(p * 100).toFixed(1)}%
+    </td>
+  );
+}
+
 /** A traded price nobody has hit in a while is not a price you can sell at. */
 function Age({ min }: { min: number | null }) {
   if (min === null) return <span className="dim">—</span>;
@@ -36,16 +52,18 @@ export function ChainTable({ legs, snap }: { legs: Leg[]; snap: SnapshotMeta }) 
       <table>
         <thead>
           <tr>
-            <th colSpan={9} className="left ce">CALLS</th>
+            <th colSpan={10} className="left ce">CALLS</th>
             <th>STRIKE</th>
-            <th colSpan={9} className="left pe">PUTS</th>
+            <th colSpan={10} className="left pe">PUTS</th>
           </tr>
           <tr>
-            <th>OI</th><th>Vol</th><th>Age</th><th>Δ</th><th>P(OTM)</th>
-            <th>IV</th><th className="askcol">Ask</th><th>Mark</th><th className="bidcol">Bid</th>
+            <th>OI</th><th>Vol</th><th>Age</th><th>Δ</th><th>IV</th>
+            <th className="zerocol">→ 0</th><th>model</th>
+            <th className="askcol">Ask</th><th>Mark</th><th className="bidcol">Bid</th>
             <th></th>
-            <th className="bidcol">Bid</th><th>Mark</th><th className="askcol">Ask</th><th>IV</th>
-            <th>P(OTM)</th><th>Δ</th><th>Age</th><th>Vol</th><th>OI</th>
+            <th className="bidcol">Bid</th><th>Mark</th><th className="askcol">Ask</th>
+            <th>model</th><th className="zerocol">→ 0</th>
+            <th>IV</th><th>Δ</th><th>Age</th><th>Vol</th><th>OI</th>
           </tr>
         </thead>
         <tbody>
@@ -58,8 +76,9 @@ export function ChainTable({ legs, snap }: { legs: Leg[]; snap: SnapshotMeta }) 
                 <td className="dim">{compact(c?.volume ?? null)}</td>
                 <td><Age min={c?.ageMin ?? null} /></td>
                 <td>{n(c?.delta ?? null, 3)}</td>
-                <td>{c?.pOtm != null ? (c.pOtm * 100).toFixed(0) + '%' : '·'}</td>
                 <td className="dim">{c?.iv != null ? (c.iv * 100).toFixed(1) : '·'}</td>
+                <Zero leg={c} />
+                <td className="dim">{c?.pOtm != null ? (c.pOtm * 100).toFixed(0) + '%' : '·'}</td>
                 <td className="askcol">{n(c?.ask ?? null)}</td>
                 <td>{n(c?.mark ?? null)}</td>
                 <td className="bidcol">{n(c?.bid ?? null)}</td>
@@ -72,8 +91,9 @@ export function ChainTable({ legs, snap }: { legs: Leg[]; snap: SnapshotMeta }) 
                 <td className="bidcol">{n(p?.bid ?? null)}</td>
                 <td>{n(p?.mark ?? null)}</td>
                 <td className="askcol">{n(p?.ask ?? null)}</td>
+                <td className="dim">{p?.pOtm != null ? (p.pOtm * 100).toFixed(0) + '%' : '·'}</td>
+                <Zero leg={p} />
                 <td className="dim">{p?.iv != null ? (p.iv * 100).toFixed(1) : '·'}</td>
-                <td>{p?.pOtm != null ? (p.pOtm * 100).toFixed(0) + '%' : '·'}</td>
                 <td>{n(p?.delta ?? null, 3)}</td>
                 <td><Age min={p?.ageMin ?? null} /></td>
                 <td className="dim">{compact(p?.volume ?? null)}</td>
@@ -87,6 +107,8 @@ export function ChainTable({ legs, snap }: { legs: Leg[]; snap: SnapshotMeta }) 
         <b className="up">Bid</b> is what you receive when you <b>sell</b>.
         {' '}<b className="down">Ask</b> is what you pay when you <b>buy</b> — the hedge leg.
         {' '}Mark is Delta's fair value: use it to judge, never as your fill.
+        {' '}<b className="up">→ 0</b> is how often strikes like this one actually expired
+        worthless across 733 settlements; <b>model</b> is what Black-Scholes predicts.
       </div>
       {!hasBook && (
         <div className="note" style={{ padding: '8px 12px', margin: 0 }}>

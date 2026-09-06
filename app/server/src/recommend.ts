@@ -13,10 +13,16 @@ import type { MarketRead } from './market.js';
  *   rank by how often strikes like it actually expired worthless, not by what
  *   Black-Scholes says.
  *
- *   Split — even, unless BTC has moved more than 2% in the last 24 hours, in
- *   which case 70% goes on the side that continues the move. Across the whole
- *   period that lifted the profit factor from 1.92 to 2.27 and cut the worst
- *   day from -$8.97 to -$7.30, and it improved 2024, 2025 and 2026 separately.
+ *   Split — even, unless the 24-hour move and the daily trend point the same
+ *   way, in which case 70% goes on the side that keeps paying if the move
+ *   continues. Across the whole period that lifted the profit factor from 1.93
+ *   to 2.38, cut the worst day from -$8.97 to -$7.08 and raised return per unit
+ *   of drawdown from 7.0 to 9.5. It improved 2024, 2025 and 2026 separately,
+ *   which is the only reason it is here rather than in a notebook.
+ *
+ * Two rules that were tested and rejected: leaning toward whichever side the
+ * model calls safer (weaker than momentum, profit factor 2.10), and leaning
+ * toward the riskier side (worse than doing nothing, 1.80 against 1.93).
  *
  * Everything else the desk shows is context. It is not allowed to change the
  * recommendation, because nothing else has been tested.
@@ -24,6 +30,48 @@ import type { MarketRead } from './market.js';
 
 export const SKEW_THRESHOLD_PCT = 2;
 export const SKEW_WEIGHT = 0.7;
+
+/**
+ * Which way the next twelve hours are leaning, from the two inputs that were
+ * measured. Returns 0 when they disagree, which is most days.
+ */
+export function directionalLean(market: MarketRead | null): {
+  lean: -1 | 0 | 1;
+  reason: string;
+} {
+  const r24 = market?.return24h ?? null;
+  if (r24 === null) return { lean: 0, reason: 'no 24-hour return available' };
+
+  const daily = market?.timeframes.find((t) => t.tf === '1d');
+  const trendUp = daily?.ema9 != null && daily?.ema21 != null && daily.ema9 > daily.ema21;
+  const trendDown = daily?.ema9 != null && daily?.ema21 != null && daily.ema9 < daily.ema21;
+
+  const strong = Math.abs(r24) > SKEW_THRESHOLD_PCT;
+  const up = r24 > SKEW_THRESHOLD_PCT || (r24 > 0 && trendUp);
+  const down = r24 < -SKEW_THRESHOLD_PCT || (r24 < 0 && trendDown);
+
+  if (up) {
+    return {
+      lean: 1,
+      reason: strong
+        ? `BTC is up ${r24.toFixed(1)}% in 24 hours, past the ${SKEW_THRESHOLD_PCT}% mark`
+        : `BTC is up ${r24.toFixed(1)}% in 24 hours and the daily EMA stack is rising`,
+    };
+  }
+  if (down) {
+    return {
+      lean: -1,
+      reason: strong
+        ? `BTC is down ${Math.abs(r24).toFixed(1)}% in 24 hours, past the ${SKEW_THRESHOLD_PCT}% mark`
+        : `BTC is down ${Math.abs(r24).toFixed(1)}% in 24 hours and the daily EMA stack is falling`,
+    };
+  }
+  return {
+    lean: 0,
+    reason: `BTC is ${r24 >= 0 ? 'up' : 'down'} ${Math.abs(r24).toFixed(1)}% in 24 hours, ` +
+      'which the daily trend does not confirm',
+  };
+}
 
 export type Side = 'CE' | 'PE';
 
@@ -83,26 +131,21 @@ export function recommend(
   minPremium: number,
   totalLots: number,
 ): Recommendation {
-  const r24 = market?.return24h ?? null;
+  const { lean, reason } = directionalLean(market);
   let ce = 0.5;
   let pe = 0.5;
   let splitReason =
-    'Even. Over 733 days the call leg lost on 8 and the put leg on 9, and never both ' +
-    'on the same day, so splitting halves the worst day.';
+    `Even, because ${reason}. Over 733 days the call leg lost on 8 days and the put leg ` +
+    'on 9, and never both on the same day, so an even split halves the worst day.';
 
-  if (r24 !== null && Math.abs(r24) > SKEW_THRESHOLD_PCT) {
-    if (r24 > 0) {
-      ce = 1 - SKEW_WEIGHT;
-      pe = SKEW_WEIGHT;
-    } else {
-      ce = SKEW_WEIGHT;
-      pe = 1 - SKEW_WEIGHT;
-    }
+  if (lean !== 0) {
+    ce = lean > 0 ? 1 - SKEW_WEIGHT : SKEW_WEIGHT;
+    pe = lean > 0 ? SKEW_WEIGHT : 1 - SKEW_WEIGHT;
     splitReason =
-      `BTC is ${r24 > 0 ? 'up' : 'down'} ${Math.abs(r24).toFixed(1)}% over 24 hours, past the ` +
-      `${SKEW_THRESHOLD_PCT}% mark, so ${(SKEW_WEIGHT * 100).toFixed(0)}% goes on the ` +
-      `${r24 > 0 ? 'put' : 'call'} side — the one that keeps paying if the move continues. ` +
-      'Tested: profit factor 1.92 → 2.27, worst day −$8.97 → −$7.30, and better in each year separately.';
+      `${reason}, so ${(SKEW_WEIGHT * 100).toFixed(0)}% goes on the ` +
+      `${lean > 0 ? 'put' : 'call'} side — the one that keeps paying if the move continues. ` +
+      'Tested over 733 days: profit factor 1.93 → 2.38, worst day −$8.97 → −$7.08, ' +
+      'and better in 2024, 2025 and 2026 taken separately.';
   }
 
   const picks: SideRecommendation[] = [];
