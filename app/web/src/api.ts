@@ -17,6 +17,8 @@ export function getChain(
   lots: number,
   expiry?: string,
   requireHedge = false,
+  mode: 'premium' | 'safety' = 'premium',
+  safetyBar = 0.99,
 ) {
   const q = new URLSearchParams({
     at,
@@ -27,6 +29,10 @@ export function getChain(
   });
   if (expiry) q.set('expiry', expiry);
   if (requireHedge) q.set('requireHedge', '1');
+  if (mode === 'safety') {
+    q.set('mode', 'safety');
+    q.set('safetyBar', String(safetyBar));
+  }
   return json<ChainResponse>(`/api/chain?${q}`);
 }
 

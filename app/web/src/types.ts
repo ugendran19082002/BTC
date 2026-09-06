@@ -112,6 +112,8 @@ export type Recommendation = {
   marginUsd: number;
   totalMaxLossUsd: number | null;
   rewardToRisk: number | null;
+  mode: 'premium' | 'safety';
+  safetyBar: number;
   expectedProfitUsd: number | null;
   expectedProfitInr: number | null;
   returnOnMarginPct: number | null;

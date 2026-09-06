@@ -5,7 +5,7 @@ import { scoreLegs, pickSells, bias, verdict, maxLots, MARGIN_PER_LOT_USD, USDIN
 import { run, floorSweep, loadDays, reloadDays, DEFAULTS, type Params } from './backtest.js';
 import { loadCalibration, reloadCalibration } from './calibration.js';
 import { readMarket } from './market.js';
-import { recommend } from './recommend.js';
+import { recommend, type PickMode } from './recommend.js';
 import { optionStructure } from './structure.js';
 import { forecast, reloadHorizons } from './forecast.js';
 import { credsFromEnv, getBalances, getPositions, NotConfigured } from './auth.js';
@@ -56,7 +56,7 @@ app.get('/api/health', async () => {
 });
 
 app.get('/api/chain', async (req, reply) => {
-  const q = req.query as { at?: string; width?: string; minPremium?: string; hedgeGap?: string; lots?: string; expiry?: string; requireHedge?: string };
+  const q = req.query as { at?: string; width?: string; minPremium?: string; hedgeGap?: string; lots?: string; expiry?: string; requireHedge?: string; mode?: string; safetyBar?: string };
   try {
     const width = Number(q.width ?? 12);
     const snap = await snapshotFor(q.at, Number.isFinite(width) ? width : 12, q.expiry || undefined);
@@ -65,6 +65,8 @@ app.get('/api/chain', async (req, reply) => {
     const hedgeGap = Number(q.hedgeGap ?? 3);
     const lots = Number(q.lots ?? 10);
     const requireHedge = q.requireHedge === '1' || q.requireHedge === 'true';
+    const mode: PickMode = q.mode === 'safety' ? 'safety' : 'premium';
+    const safetyBar = Math.min(0.999, Math.max(0.5, Number(q.safetyBar ?? 0.99)));
     const picks = pickSells(snap, scored, minPremium, hedgeGap);
     // Market context is best-effort: a throttled candle feed must not take the
     // chain down with it, it only costs the split its tested skew.
@@ -77,11 +79,11 @@ app.get('/api/chain', async (req, reply) => {
       market,
       structure: optionStructure(snap, market?.realisedVol ?? null),
       forecast: forecast(snap),
-      recommendation: recommend(snap, scored, market, minPremium, lots, hedgeGap),
+      recommendation: recommend(snap, scored, market, minPremium, lots, hedgeGap, mode, safetyBar),
       requireHedge,
       verdict: verdict(snap, picks, minPremium, lots, market, {
         requireHedge,
-        hedgeMissing: recommend(snap, scored, market, minPremium, lots, hedgeGap).hedgeMissing,
+        hedgeMissing: recommend(snap, scored, market, minPremium, lots, hedgeGap, mode, safetyBar).hedgeMissing,
       }),
       usdinr: USDINR,
     };

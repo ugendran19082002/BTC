@@ -143,7 +143,11 @@ tbody tr:hover { background: #ffffff08; }
 tr.atm td { background: #58a6ff14; }
 tr.atm td:first-child, tr.atm td:last-child { font-weight: 600; }
 
-.scroll { overflow: auto; max-height: 62vh; border: 1px solid var(--line); border-radius: 8px; }
+.scroll {
+  overflow: auto; max-height: 62vh;
+  border: 1px solid var(--line); border-radius: 8px;
+  margin-bottom: 12px;
+}
 .scroll table th { background: var(--panel-2); }
 
 .up { color: var(--up); }

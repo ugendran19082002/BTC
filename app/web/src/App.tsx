@@ -55,6 +55,8 @@ export default function App() {
   const [expiries, setExpiries] = useState<ExpiryOption[]>([]);
   const [width, setWidth] = usePersisted('width', 20);
   const [minPremium, setMinPremium] = usePersisted('minPremium', 15);
+  const [mode, setMode] = usePersisted<'premium' | 'safety'>('mode', 'premium');
+  const [safetyBar, setSafetyBar] = usePersisted('safetyBar', 99);
   const [hedgeGap, setHedgeGap] = usePersisted('hedgeGap', 0);
   const [requireHedge, setRequireHedge] = usePersisted('requireHedge', false);
   const [lots, setLots] = usePersisted('lots', 10);
@@ -74,7 +76,7 @@ export default function App() {
     setErr(null);
     try {
       const at = live ? 'now' : new Date(istToEpoch(when) * 1000).toISOString();
-      const r = await getChain(at, width, minPremium, hedgeGap, lots, expiry || undefined, requireHedge);
+      const r = await getChain(at, width, minPremium, hedgeGap, lots, expiry || undefined, requireHedge, mode, safetyBar / 100);
       // a slow earlier request must not overwrite a newer one
       if (my === seq.current) setData(r);
     } catch (e) {
@@ -85,7 +87,7 @@ export default function App() {
     } finally {
       if (my === seq.current) setBusy(false);
     }
-  }, [live, when, width, minPremium, hedgeGap, lots, expiry, requireHedge]);
+  }, [live, when, width, minPremium, hedgeGap, lots, expiry, requireHedge, mode, safetyBar]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { getHealth().then((h) => setDays(h.days)).catch(() => setDays(null)); }, []);
@@ -174,6 +176,53 @@ export default function App() {
                 </button>
               )}
             </div>
+
+            <Field
+              label="pick the strike by"
+              help={
+                <>
+                  <p>
+                    <b>Most premium</b> takes the furthest strike that still pays your
+                    floor. Over 733 days: profit factor 3.08, worst day −$7.08, a trade
+                    on 653 days, average premium $27.
+                  </p>
+                  <p>
+                    <b>Safest</b> takes the richest strike whose measured chance of
+                    expiring worthless clears your bar. At 99%: profit factor 9.83,
+                    worst day −$1.71, a trade on 450 days, average premium $12.
+                  </p>
+                  <p>
+                    Asking for more safety does not get you more premium — it gets you
+                    less. A strike that safe is a long way out, and strikes that far out
+                    are cheap. What you are buying is a smaller worst day.
+                  </p>
+                </>
+              }
+            >
+              <Select value={mode} onChange={(e) => setMode(e.target.value as 'premium' | 'safety')}>
+                <option value="premium">most premium</option>
+                <option value="safety">safest</option>
+              </Select>
+            </Field>
+
+            {mode === 'safety' && (
+              <Field
+                label="safety bar %"
+                help={
+                  <p>
+                    The lowest measured chance of expiring worthless you will accept.
+                    Higher means fewer trades and smaller losses: 98% gave a profit
+                    factor of 6.08, 99% gave 9.83, 99.2% gave 11.57.
+                  </p>
+                }
+              >
+                <input
+                  type="number" step="0.1" min="50" max="99.9"
+                  value={safetyBar}
+                  onChange={(e) => setSafetyBar(Number(e.target.value))}
+                />
+              </Field>
+            )}
 
             <Field
               label="min premium $"
@@ -279,6 +328,15 @@ export default function App() {
 
           {data && snap && (
             <>
+              <ChainTable legs={data.legs} snap={snap} />
+              <div className="note">
+                Age is minutes since a real trade printed. Delta's candle feed
+                forward-fills quiet minutes, so a traded price with a large age is a
+                carry-forward, not a quote you can hit — the mark is the honest number
+                there. Historical rows have no order book, so bid and ask are blank and
+                the mark is used as the sell estimate.
+              </div>
+
               <VerdictPanel
                 verdict={data.verdict}
                 picks={data.picks}
@@ -410,14 +468,6 @@ export default function App() {
                 <AccountPanel usdinr={data.usdinr} />
               </div>
 
-              <ChainTable legs={data.legs} snap={snap} />
-              <div className="note">
-                Age is minutes since a real trade printed. Delta's candle feed
-                forward-fills quiet minutes, so a traded price with a large age is a
-                carry-forward, not a quote you can hit — the mark is the honest number
-                there. Historical rows have no order book, so bid and ask are blank and
-                the mark is used as the sell estimate.
-              </div>
             </>
           )}
         </>
