@@ -153,3 +153,18 @@ test('too few strikes to judge falls back rather than guessing', () => {
   assert.equal(detectStrikeStep([80_000], 80_000), 200);
   assert.equal(detectStrikeStep([], 80_000), 200);
 });
+
+test('the split is a clean percentage, not a floating point artefact', () => {
+  // 1 - 0.7 is 0.30000000000000004, and it reached the screen as
+  // "30.000000000000004% calls"
+  for (const m of [marketWith(3, 100, 200), marketWith(-3, 200, 100), marketWith(0, 100, 200)]) {
+    const { lean } = directionalLean(m);
+    const light = Math.round((1 - 0.7) * 100) / 100;
+    const heavy = 0.7;
+    const ce = lean === 0 ? 0.5 : lean > 0 ? light : heavy;
+    const pe = lean === 0 ? 0.5 : lean > 0 ? heavy : light;
+    assert.equal(ce + pe, 1, 'the two sides must add to one exactly');
+    assert.equal(String(ce * 100).length <= 4, true, `${ce * 100} is not a clean percentage`);
+    assert.equal(String(pe * 100).length <= 4, true, `${pe * 100} is not a clean percentage`);
+  }
+});

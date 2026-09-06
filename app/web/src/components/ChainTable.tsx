@@ -11,17 +11,26 @@ const compact = (v: number | null | undefined) => {
 };
 
 /**
- * How often strikes like this one actually expired worthless, from 733
- * settlements — not the model's opinion, which sits in the next column so the
- * two can be compared.
+ * This strike's own chance of expiring worthless: the maths, corrected by what
+ * really happened to strikes like it. The raw maths sits in the next column so
+ * the size of the correction is visible rather than hidden.
+ *
+ * Reading the history bucket straight off instead gave every strike in a
+ * five-point bucket the same percentage, which is what made a call and a put
+ * with different open interest show an identical number.
  */
 function Zero({ leg }: { leg: Leg | undefined }) {
-  const p = leg?.zero?.historical ?? null;
-  if (p === null) return <td className="zerocol dim">·</td>;
+  const z = leg?.zero ?? null;
+  const p = z?.adjusted ?? null;
+  if (z === null || p === null) return <td className="zerocol dim">—</td>;
   const cls = p >= 0.97 ? 'up' : p >= 0.9 ? 'warn' : 'down';
+  const title = z.outsideTable
+    ? 'Past the range the history covers, so the nearest correction was used'
+    : `${z.sample?.toLocaleString() ?? 0} strikes like this settled; the maths alone said ${(z.model * 100).toFixed(1)}%`;
   return (
-    <td className={`zerocol ${cls}`} title={`${leg?.zero?.sample ?? 0} comparable strikes`}>
+    <td className={`zerocol ${cls}`} title={title}>
       {(p * 100).toFixed(1)}%
+      {z.outsideTable && <span className="dim">*</span>}
     </td>
   );
 }

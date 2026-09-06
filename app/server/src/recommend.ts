@@ -231,6 +231,8 @@ export function recommend(
   hedgeGap = 0,
 ): Recommendation {
   const { lean, reason } = directionalLean(market);
+  // Kept as whole percentages and divided at the end: 1 - 0.7 is
+  // 0.30000000000000004 in binary floating point, and that reached the screen.
   let ce = 0.5;
   let pe = 0.5;
   let splitReason =
@@ -238,8 +240,9 @@ export function recommend(
     'on 9, and never both on the same day, so an even split halves the worst day.';
 
   if (lean !== 0) {
-    ce = lean > 0 ? 1 - SKEW_WEIGHT : SKEW_WEIGHT;
-    pe = lean > 0 ? SKEW_WEIGHT : 1 - SKEW_WEIGHT;
+    const light = Math.round((1 - SKEW_WEIGHT) * 100) / 100;
+    ce = lean > 0 ? light : SKEW_WEIGHT;
+    pe = lean > 0 ? SKEW_WEIGHT : light;
     splitReason =
       `${reason}, so ${(SKEW_WEIGHT * 100).toFixed(0)}% goes on the ` +
       `${lean > 0 ? 'put' : 'call'} side — the one that keeps paying if the move continues. ` +
