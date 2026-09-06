@@ -1,76 +1,90 @@
-# Deploying to delta.thannigo.in (204.168.233.179)
+# Deployment — delta.thannigo.in
 
-Nothing here has been run against your server. These are the files and the
-exact commands; run them yourself, or give me SSH access and say the word and
-I will run them.
+**Live**: https://delta.thannigo.in
 
-## Before anything else
+This is the state as actually deployed, not a plan.
 
-1. **Revoke the Delta API key that is in `app-ket.txt`.** It was pasted into
-   chat more than once. Issue a fresh one only if you actually want the account
-   panel, and give it read-only permissions.
-2. Decide whether this host should be public at all. Right now it answers
-   HTTP 301. If this desk is only for you, put it behind basic auth or a
-   VPN — it shows your positions and your sizing.
+## What runs where
 
-## One-time server setup
+`204.168.233.179` **is this machine**. `delta.thannigo.in` resolves to it, and
+the repo lives on it at `/home/agent/test-delta`. `deploy.sh --host` therefore
+loops back over SSH to localhost, which works but is pointless — use the plain
+form.
+
+```
+browser ──443──> host nginx 1.18 ──> 127.0.0.1:8099 ──> btc-desk-web  (nginx:1.27-alpine, static build)
+                                                              └──────> btc-desk-api  (Fastify, no host port)
+                                                                              └────> /srv/data/chain.db  (volume)
+```
+
+Certificate: Let's Encrypt for `delta.thannigo.in`, auto-renewing, installed by
+certbot. Site config: `/etc/nginx/sites-available/delta.thannigo.in`, a copy of
+`deploy/nginx.conf`.
+
+## Deploy a change
 
 ```bash
-adduser --system --group --home /srv/btc-desk btcdesk
-apt-get install -y nginx certbot python3-certbot-nginx
-curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-apt-get install -y nodejs
+./deploy/deploy.sh          # type-checks, builds, starts, health-checks, rolls back on failure
 ```
 
-## Deploy
+Then, if the nginx site config changed:
 
 ```bash
-# on your machine
-rsync -av --exclude node_modules --exclude .env --exclude app-ket.txt \
-      ./ root@204.168.233.179:/srv/btc-desk/
-
-# on the server
-cd /srv/btc-desk/app/server && npm ci && npm run build
-cd /srv/btc-desk/app/web    && npm ci && npm run build
-chown -R btcdesk:btcdesk /srv/btc-desk
-
-install -m 644 /srv/btc-desk/deploy/btc-desk-api.service /etc/systemd/system/
-systemctl daemon-reload && systemctl enable --now btc-desk-api
-
-install -m 644 /srv/btc-desk/deploy/nginx.conf \
-        /etc/nginx/sites-available/delta.thannigo.in
-ln -sf /etc/nginx/sites-available/delta.thannigo.in /etc/nginx/sites-enabled/
-nginx -t && systemctl reload nginx
-
-certbot --nginx -d delta.thannigo.in
+sudo install -m 644 deploy/nginx.conf /etc/nginx/sites-available/delta.thannigo.in
+sudo nginx -t && sudo systemctl reload nginx
 ```
 
-## Credentials, if you enable the account panel
+`nginx -t` before the reload is not optional.
+
+## Keeping the data fresh
+
+`deploy/refresh.sh` harvests yesterday and today, snapshots the database and
+hands the running container a consistent copy. Installed in cron:
+
+```
+40 12 * * * /home/agent/test-delta/deploy/refresh.sh >> /home/agent/test-delta/refresh.log 2>&1
+```
+
+12:40 UTC is forty minutes after the daily settlement, so the day is final. Run
+it by hand any time; it skips days it already has.
+
+## Two traps this deployment actually hit
+
+**`pkill -f nginx` kills nginx inside containers too.** Container processes are
+visible in the host's process table, so a pattern kill reaches them. Doing this
+to free ports 80 and 443 stopped `banknifty-proxy-1`, the edge proxy that was
+fronting `thannigo.in`, `tailscale.thannigo.in` and `house.api.thannigo.in`, and
+took all three offline. To free a port, stop the specific service:
+`docker stop <container>` or `systemctl stop nginx` — never a pattern kill.
+
+**The host nginx is 1.18, not 1.27.** The `http2 on;` directive arrived in 1.25;
+on 1.18 it is an unknown directive and the whole config fails to load. This file
+set uses `listen 443 ssl http2;`, which both versions accept.
+
+## Other stacks on this host
+
+`banknifty` (in `/home/agent/trade`), `house` and `house-dev` are **stopped**,
+at your request. Restarting `banknifty` will fail or conflict while the host
+nginx holds 80 and 443 — that proxy publishes those ports. If you bring it back,
+pick one owner for those ports: either stop the host nginx and add a
+`delta.conf.template` vhost to `/home/agent/trade/infra/nginx/` (follow
+`house.conf.template`, and attach `btc-desk-web` to the `edge` network), or
+leave the host nginx in charge and give the other sites vhosts there instead.
+
+## Access
+
+The desk is on the open internet. It shows position sizing, and would show open
+positions if the account panel were ever enabled. To require a password,
+uncomment the two `auth_basic` lines in `deploy/nginx.conf` and create the file:
 
 ```bash
-install -o btcdesk -g btcdesk -m 600 /dev/null /srv/btc-desk/app/server/.env
-# then edit it and put the NEW key in; never commit this file
-systemctl restart btc-desk-api
+sudo htpasswd -c /etc/nginx/.htpasswd-delta <username>
+sudo nginx -t && sudo systemctl reload nginx
 ```
 
-Without that file the desk still works. Every chain, candle, ticker and
-backtest endpoint reads public market data.
+## Credentials
 
-## Keeping the chain cache fresh
-
-The backtest reads `chain/*.json`. Refresh daily, after the 12:00 UTC
-settlement:
-
-```
-30 12 * * *  btcdesk  cd /srv/btc-desk && /usr/bin/python3 harvest_chain.py \
-             $(date -u +\%Y-\%m-\%d) $(date -u +\%Y-\%m-\%d) >> /var/log/btc-desk-harvest.log 2>&1
-```
-
-Then `curl -X POST localhost:8787/api/reload` so the running process picks the
-new day up.
-
-## What is deliberately not here
-
-No order placement, no withdrawal, no key in any config that ships. If you want
-the desk to trade, that is a separate decision and a separate review — and not
-one to take while the AlgoTest reconciliation in `TODO.md` is still open.
+None are deployed. Every endpoint the desk reads is public. The account panel
+stays disabled unless `DELTA_API_KEY` / `DELTA_API_SECRET` appear in
+`app/server/.env`, which is git-ignored and not in any image. `deploy.sh`
+refuses to build if `app-ket.txt` is tracked by git or present in its history.
