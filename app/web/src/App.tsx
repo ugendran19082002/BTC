@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getAccount, getChain, getExpiries, getHealth } from './api';
+import { getAccount, getChain, getExpiries, getHealth, getMe, logout, NotSignedIn } from './api';
 import type { ChainResponse, ExpiryOption } from './types';
 import { ChainTable } from './components/ChainTable';
 import { BiasPanel } from './components/BiasPanel';
@@ -12,6 +12,7 @@ import { StructurePanel } from './components/StructurePanel';
 import { ForecastPanel } from './components/ForecastPanel';
 import { DateTimePicker, istToEpoch, type IstMoment } from './components/DateTimePicker';
 import { usePersisted } from './hooks/usePersisted';
+import { LoginPage } from './components/LoginPage';
 import { Select } from './components/ui/select';
 import { Card, CardTitle, CardLead } from './components/ui/card';
 import { Stat, StatDivider } from './components/ui/stat';
@@ -68,6 +69,8 @@ export default function App() {
   const [err, setErr] = useState<string | null>(null);
   const [days, setDays] = useState<number | null>(null);
   const [accountLinked, setAccountLinked] = useState<boolean | null>(null);
+  // null while we are still asking the server whether a login is required
+  const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const seq = useRef(0);
 
   const load = useCallback(async () => {
@@ -81,7 +84,12 @@ export default function App() {
       if (my === seq.current) setData(r);
     } catch (e) {
       if (my === seq.current) {
-        setErr((e as Error).message);
+        if (e instanceof NotSignedIn) {
+          setSignedIn(false);
+          setErr(null);
+        } else {
+          setErr((e as Error).message);
+        }
         setData(null);
       }
     } finally {
@@ -90,6 +98,12 @@ export default function App() {
   }, [live, when, width, minPremium, hedgeGap, lots, expiry, requireHedge, mode, safetyBar]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    getMe()
+      .then((m) => setSignedIn(!m.required || m.signedIn))
+      .catch(() => setSignedIn(true)); // an older server without login: let it through
+  }, []);
+
   useEffect(() => { getHealth().then((h) => setDays(h.days)).catch(() => setDays(null)); }, []);
   useEffect(() => {
     getAccount().then((a) => setAccountLinked(a.configured)).catch(() => setAccountLinked(null));
@@ -116,6 +130,9 @@ export default function App() {
 
   const snap = data?.snapshot;
 
+  if (signedIn === null) return <div className="spinner">…</div>;
+  if (!signedIn) return <LoginPage onSignedIn={() => setSignedIn(true)} />;
+
   return (
     <div className="app">
       <header className="top">
@@ -125,6 +142,13 @@ export default function App() {
           {days !== null && <> · {days} days of history</>}
           {accountLinked === true && <> · account linked, read-only</>}
         </span>
+        <button
+          className="ghost"
+          style={{ marginLeft: 'auto' }}
+          onClick={() => { void logout().then(() => setSignedIn(false)); }}
+        >
+          sign out
+        </button>
       </header>
 
       <div className="tabs">

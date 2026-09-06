@@ -168,3 +168,91 @@ test('the split is a clean percentage, not a floating point artefact', () => {
     assert.equal(String(pe * 100).length <= 4, true, `${pe * 100} is not a clean percentage`);
   }
 });
+
+import {
+  hashPassword, verifyPassword, issueToken, tokenValid, readCookie, LoginLimiter,
+  type AuthConfig,
+} from '../src/session.js';
+
+const cfg: AuthConfig = {
+  enabled: true, username: 'someone', passwordHash: '', secret: 'test-secret', ttl: 3600,
+};
+
+test('a password verifies against its own hash and nothing else', () => {
+  const stored = hashPassword('correct horse battery staple');
+  assert.ok(verifyPassword('correct horse battery staple', stored));
+  assert.ok(!verifyPassword('correct horse battery stapl', stored));
+  assert.ok(!verifyPassword('', stored));
+  assert.ok(!verifyPassword('CORRECT HORSE BATTERY STAPLE', stored), 'case matters');
+});
+
+test('the same password hashes differently every time', () => {
+  // a shared salt would let one rainbow table cover every install
+  assert.notEqual(hashPassword('same'), hashPassword('same'));
+});
+
+test('the stored hash does not contain the password', () => {
+  const stored = hashPassword('hunter2');
+  assert.ok(!stored.includes('hunter2'));
+  assert.ok(stored.startsWith('scrypt:'));
+  assert.ok(!stored.includes('$'), 'no dollar signs: Docker Compose interpolates them out of env files');
+});
+
+test('a malformed stored hash is rejected, not crashed on', () => {
+  for (const bad of ['', 'nonsense', 'scrypt:', 'md5:aa:bb', 'scrypt:zz']) {
+    assert.equal(verifyPassword('x', bad), false, `should reject ${JSON.stringify(bad)}`);
+  }
+});
+
+test('a session token is accepted until it expires', () => {
+  const now = Date.now();
+  const token = issueToken(cfg, now);
+  assert.ok(tokenValid(cfg, token, now));
+  assert.ok(tokenValid(cfg, token, now + (cfg.ttl - 10) * 1000));
+  assert.ok(!tokenValid(cfg, token, now + (cfg.ttl + 10) * 1000), 'expired');
+});
+
+test('a token cannot be forged or extended', () => {
+  const now = Date.now();
+  const token = issueToken(cfg, now);
+  const [expires, sig] = token.split('.');
+  assert.ok(!tokenValid(cfg, `${Number(expires) + 99999}.${sig}`, now), 'expiry moved');
+  assert.ok(!tokenValid(cfg, `${expires}.${'0'.repeat(64)}`, now), 'signature replaced');
+  assert.ok(!tokenValid({ ...cfg, secret: 'other' }, token, now), 'different secret');
+  assert.ok(!tokenValid(cfg, undefined, now));
+  assert.ok(!tokenValid(cfg, 'garbage', now));
+});
+
+test('cookies are read by name, not by position', () => {
+  const header = 'other=1; desk_session=abc.def; another=2';
+  assert.equal(readCookie(header, 'desk_session'), 'abc.def');
+  assert.equal(readCookie(header, 'missing'), undefined);
+  assert.equal(readCookie(undefined, 'desk_session'), undefined);
+  assert.equal(readCookie('desk_session=a%20b', 'desk_session'), 'a b', 'decoded');
+});
+
+test('repeated wrong passwords get locked out, and a success clears it', () => {
+  const l = new LoginLimiter(3, 60_000);
+  assert.ok(!l.blocked('ip'));
+  l.fail('ip'); l.fail('ip');
+  assert.ok(!l.blocked('ip'), 'still under the limit');
+  l.fail('ip');
+  assert.ok(l.blocked('ip'), 'locked out');
+  l.succeed('ip');
+  assert.ok(!l.blocked('ip'), 'cleared after a success');
+});
+
+test('the lockout expires on its own', () => {
+  const l = new LoginLimiter(1, 1000);
+  const t = Date.now();
+  l.fail('ip', t);
+  assert.ok(l.blocked('ip', t));
+  assert.ok(!l.blocked('ip', t + 2000), 'window passed');
+});
+
+test('one address being locked out does not lock out another', () => {
+  const l = new LoginLimiter(1, 60_000);
+  l.fail('a');
+  assert.ok(l.blocked('a'));
+  assert.ok(!l.blocked('b'));
+});

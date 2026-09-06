@@ -17,13 +17,24 @@ run `./deploy/deploy.sh`.
 The setup around it is safe: the file is not in git, not in any Docker image,
 and only loaded when the server starts. Only the key itself is the problem.
 
-**2. Decide who can open the site.**
-Right now anyone who types the address can see it, including your position
-sizing. Two ways to close it:
-- Put a password on it — uncomment two lines in `deploy/nginx.conf`, then run
-  `sudo htpasswd -c /etc/nginx/.htpasswd-delta yourname`.
-- Or make it private — this machine already runs Tailscale, so change the web
-  port in `deploy/docker-compose.yml` to your Tailscale address.
+**2. Change the desk password.**
+There is a login now — username `ugendran` — but the password you chose was
+typed into chat, so treat it as public in the same way as the API key. Change
+it with:
+
+```bash
+cd app/server && npx tsx hash-password.mjs
+# paste the DESK_PASSWORD_HASH line it prints into app/server/.env
+cd ../.. && ./deploy/deploy.sh
+```
+
+The password itself is never stored — only a scrypt hash of it, in `.env`,
+which is git-ignored and not in any image. Sessions are a signed cookie that
+lasts a day; eight wrong attempts locks that address out for ten minutes.
+
+If you would rather it were not on the public internet at all, this machine
+runs Tailscale: change the web port in `deploy/docker-compose.yml` from
+`0.0.0.0` to your Tailscale address.
 
 **3. Get the 29-Mar-2025 trade log from AlgoTest.**
 Only you can log in and download it. AlgoTest says that day made money, my

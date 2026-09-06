@@ -8,13 +8,82 @@ import { readMarket } from './market.js';
 import { recommend, type PickMode } from './recommend.js';
 import { optionStructure } from './structure.js';
 import { forecast, reloadHorizons } from './forecast.js';
+import {
+  authFromEnv, COOKIE, issueToken, tokenValid, readCookie, verifyPassword, LoginLimiter,
+} from './session.js';
 import { credsFromEnv, getBalances, getPositions, NotConfigured } from './auth.js';
 
 // Read once at startup so a later log line cannot pick the secret out of env.
 const creds = credsFromEnv();
 
-const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' } });
-await app.register(cors, { origin: true });
+const app = Fastify({
+  logger: { level: process.env.LOG_LEVEL ?? 'info' },
+  // the proxy in front terminates TLS; trust it for the client address so the
+  // login limiter counts real callers rather than the proxy
+  trustProxy: true,
+});
+// Credentials must be allowed through for the session cookie, which means the
+// origin cannot be a wildcard.
+await app.register(cors, {
+  origin: (origin, cb) => cb(null, true),
+  credentials: true,
+});
+
+const auth = authFromEnv();
+const limiter = new LoginLimiter();
+
+/** Open without a session: the health probe, and login itself. */
+const PUBLIC_ROUTES = new Set(['/api/health', '/api/login', '/api/me']);
+
+app.addHook('onRequest', async (req, reply) => {
+  if (!auth.enabled) return;
+  const path = req.url.split('?')[0] ?? '';
+  if (!path.startsWith('/api/') || PUBLIC_ROUTES.has(path)) return;
+  const token = readCookie(req.headers.cookie, COOKIE);
+  if (tokenValid(auth, token)) return;
+  reply.code(401);
+  return reply.send({ error: 'not signed in' });
+});
+
+const cookieFor = (value: string, maxAge: number) =>
+  `${COOKIE}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=${maxAge}`;
+
+app.get('/api/me', async (req) => {
+  if (!auth.enabled) return { required: false, signedIn: true };
+  const signedIn = tokenValid(auth, readCookie(req.headers.cookie, COOKIE));
+  return { required: true, signedIn, username: signedIn ? auth.username : null };
+});
+
+app.post('/api/login', async (req, reply) => {
+  if (!auth.enabled) return { ok: true, required: false };
+  const who = req.ip || 'unknown';
+  if (limiter.blocked(who)) {
+    reply.code(429);
+    return { error: 'Too many attempts. Wait ten minutes and try again.' };
+  }
+  const { username, password } = (req.body ?? {}) as { username?: string; password?: string };
+  const ok =
+    typeof username === 'string' &&
+    typeof password === 'string' &&
+    username.trim() === auth.username &&
+    verifyPassword(password, auth.passwordHash);
+
+  if (!ok) {
+    limiter.fail(who);
+    // one message for both cases: saying which half was wrong tells an
+    // attacker whether the username exists
+    reply.code(401);
+    return { error: 'Wrong username or password.' };
+  }
+  limiter.succeed(who);
+  reply.header('Set-Cookie', cookieFor(issueToken(auth), auth.ttl));
+  return { ok: true, username: auth.username };
+});
+
+app.post('/api/logout', async (_req, reply) => {
+  reply.header('Set-Cookie', cookieFor('', 0));
+  return { ok: true };
+});
 
 /** Resolve the `at` query param: "now" (or absent) means live. */
 function resolveAt(at: string | undefined): number | null {
@@ -202,4 +271,9 @@ app.log.info(
   creds
     ? 'account endpoints enabled (read-only)'
     : 'account endpoints disabled -- no credentials in env, market data unaffected',
+);
+app.log.info(
+  auth.enabled
+    ? `login required, user "${auth.username}", sessions last ${auth.ttl / 3600}h`
+    : 'login NOT required -- set DESK_USER, DESK_PASSWORD_HASH and DESK_SESSION_SECRET to require one',
 );
