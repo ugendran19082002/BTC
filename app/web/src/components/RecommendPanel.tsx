@@ -20,10 +20,12 @@ export function RecommendPanel({
   rec,
   market,
   minPremium,
+  usdinr,
 }: {
   rec: Recommendation;
   market: MarketRead | null;
   minPremium: number;
+  usdinr: number;
 }) {
   if (!rec.ok) {
     return (
@@ -51,12 +53,14 @@ export function RecommendPanel({
             <span className="ml-auto">@ {s.price.toFixed(2)}</span>
           </div>
 
+          {s.hedgeOrder && <div className="rec-order rec-hedge">{s.hedgeOrder}</div>}
+
           <div className="rec-chance">
             <span className={`chance ${chanceClass(s.zeroChance)}`}>
               {pct(s.zeroChance, 2)}
             </span>
             <span className="chance-label">
-              chance it expires at zero
+              expired at zero, historically
               <br />
               <span className="dim">
                 {s.sample
@@ -73,6 +77,42 @@ export function RecommendPanel({
                   </>
                 )}
               </span>
+            </span>
+          </div>
+
+          <table className="probs">
+            <tbody>
+              <tr>
+                <td className="left">lands out of the money at settlement</td>
+                <td className={chanceClass(s.pExpireWorthless)}>{pct(s.pExpireWorthless, 2)}</td>
+              </tr>
+              <tr>
+                <td className="left">touches the strike at some point</td>
+                <td className={s.pTouch !== null && s.pTouch > 0.2 ? 'warn' : 'muted'}>
+                  {pct(s.pTouch, 1)}
+                </td>
+              </tr>
+              <tr>
+                <td className="left">premium collapses to near nothing first</td>
+                <td className="muted">{pct(s.pNearZero, 1)}</td>
+              </tr>
+              <tr>
+                <td className="left dim">strike distance</td>
+                <td className="dim">
+                  {s.leg.distancePct >= 0 ? '+' : ''}{s.leg.distancePct.toFixed(2)}%
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div className="kv" style={{ marginTop: 6 }}>
+            <span className="dim">break-even</span>
+            <span>{s.breakeven.toFixed(0)}</span>
+          </div>
+          <div className="kv">
+            <span className="dim">worst case, this leg</span>
+            <span className={s.maxLoss === null ? 'down' : 'warn'}>
+              {s.maxLoss === null ? 'unbounded — no hedge' : `$${s.maxLoss.toFixed(4)}`}
             </span>
           </div>
         </div>
@@ -92,10 +132,40 @@ export function RecommendPanel({
           <span className={chanceClass(rec.bothZeroChance)}>{pct(rec.bothZeroChance, 1)}</span>
         </div>
         <div className="kv">
+          <span>worst case, both legs</span>
+          <span className="down">
+            {rec.totalMaxLossUsd === null
+              ? 'unbounded'
+              : `$${rec.totalMaxLossUsd.toFixed(4)} · ₹${(rec.totalMaxLossUsd * usdinr).toFixed(2)}`}
+          </span>
+        </div>
+        <div className="kv">
+          <span>reward ÷ risk</span>
+          <span className={rec.rewardToRisk !== null && rec.rewardToRisk < 0.05 ? 'warn' : ''}>
+            {rec.rewardToRisk === null ? '·' : rec.rewardToRisk.toFixed(3)}
+          </span>
+        </div>
+        <div className="kv">
           <span>margin</span>
           <span>${rec.marginUsd.toFixed(2)}</span>
         </div>
       </div>
+
+      {rec.sides.some((s) => s.hedge) && rec.rewardToRisk !== null && rec.rewardToRisk < 0.05 && (
+        <div className="note warn">
+          The hedge costs nearly as much as the premium it protects. At the distance
+          this strategy sells, the strike you would buy is priced almost identically
+          to the one you sold, so the spread collects very little for the risk it
+          still carries. That is why the measured version of this strategy is naked
+          and controls risk by size instead.
+        </div>
+      )}
+      {rec.hedgeMissing && (
+        <div className="note warn">
+          No strike is listed to buy at the gap you asked for, so at least one leg is
+          naked. Across 733 days protection was available on roughly one day in four.
+        </div>
+      )}
 
       <div className="note">{rec.splitReason}</div>
 

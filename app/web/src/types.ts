@@ -24,6 +24,11 @@ export type Leg = {
   oi: number | null;
   volume: number | null;
   ageMin: number | null;
+  probs: { expireWorthless: number | null; touch: number | null; nearZero: number | null };
+  distancePct: number;
+  intrinsic: number;
+  extrinsic: number | null;
+  gammaExposure: number | null;
   pOtm: number | null;
   edge: number | null;
   emDistance: number | null;
@@ -68,6 +73,8 @@ export type MarketRead = {
   max24hRangePct: number | null;
 };
 
+export type Hedge = { strike: number; price: number; gapStrikes: number; widthUsd: number };
+
 export type SideRecommendation = {
   side: 'CE' | 'PE';
   leg: Leg;
@@ -78,12 +85,22 @@ export type SideRecommendation = {
   zeroChance: number | null;
   modelChance: number | null;
   sample: number | null;
+  pExpireWorthless: number | null;
+  pTouch: number | null;
+  pNearZero: number | null;
+  hedge: Hedge | null;
+  hedgeRequested: boolean;
+  maxProfit: number;
+  maxLoss: number | null;
+  breakeven: number;
   order: string;
+  hedgeOrder: string | null;
 };
 
 export type Recommendation = {
   ok: boolean;
   why: string | null;
+  hedgeMissing: boolean;
   sides: SideRecommendation[];
   split: { ce: number; pe: number };
   splitReason: string;
@@ -91,6 +108,26 @@ export type Recommendation = {
   totalCreditInr: number;
   bothZeroChance: number | null;
   marginUsd: number;
+  totalMaxLossUsd: number | null;
+  rewardToRisk: number | null;
+};
+
+export type Wall = { strike: number; value: number } | null;
+
+export type OptionStructure = {
+  ceOi: number;
+  peOi: number;
+  ceVolume: number;
+  peVolume: number;
+  pcrOi: number | null;
+  pcrVolume: number | null;
+  ceOiWall: Wall;
+  peOiWall: Wall;
+  gammaWall: Wall;
+  atmIv: number | null;
+  ivSkewPts: number | null;
+  volPremiumPts: number | null;
+  ranges: { sigma: number; low: number; high: number }[];
 };
 
 export type SnapshotMeta = {
@@ -155,7 +192,9 @@ export type ChainResponse = {
   bias: Bias;
   picks: Pick[];
   market: MarketRead | null;
+  structure: OptionStructure;
   recommendation: Recommendation;
+  requireHedge: boolean;
   verdict: Verdict;
   usdinr: number;
 };

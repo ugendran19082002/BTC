@@ -267,3 +267,9 @@ th.zerocol, td.zerocol {
 table.moves { font-size: 12px; margin-top: 2px; }
 table.moves th { position: static; background: transparent; padding-top: 0; }
 table.moves td, table.moves th { padding: 3px 6px; border-bottom: 1px solid #ffffff08; }
+.rec-hedge { font-size: 13px; color: var(--muted); margin-top: 3px; }
+table.probs { font-size: 11.8px; margin-top: 8px; width: 100%; }
+table.probs td { padding: 2px 0; border-bottom: 1px solid #ffffff06; }
+table.probs td.left { color: var(--muted); }
+.note.warn { color: var(--warn); }
+.pinned.off { background: transparent; border-color: var(--line); color: var(--dim); }

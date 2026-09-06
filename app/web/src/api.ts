@@ -16,6 +16,7 @@ export function getChain(
   hedgeGap: number,
   lots: number,
   expiry?: string,
+  requireHedge = false,
 ) {
   const q = new URLSearchParams({
     at,
@@ -25,6 +26,7 @@ export function getChain(
     lots: String(lots),
   });
   if (expiry) q.set('expiry', expiry);
+  if (requireHedge) q.set('requireHedge', '1');
   return json<ChainResponse>(`/api/chain?${q}`);
 }
 

@@ -8,6 +8,7 @@ import { FloorPanel } from './components/FloorPanel';
 import { VerdictPanel } from './components/VerdictPanel';
 import { RecommendPanel } from './components/RecommendPanel';
 import { MovePanel } from './components/MovePanel';
+import { StructurePanel } from './components/StructurePanel';
 import { DateTimePicker, istToEpoch, type IstMoment } from './components/DateTimePicker';
 import { usePersisted } from './hooks/usePersisted';
 import { AccountPanel } from './components/AccountPanel';
@@ -48,7 +49,8 @@ export default function App() {
   const [expiries, setExpiries] = useState<ExpiryOption[]>([]);
   const [width, setWidth] = usePersisted('width', 20);
   const [minPremium, setMinPremium] = usePersisted('minPremium', 15);
-  const hedgeGap = 0;
+  const [hedgeGap, setHedgeGap] = usePersisted('hedgeGap', 0);
+  const [requireHedge, setRequireHedge] = usePersisted('requireHedge', false);
   const [lots, setLots] = usePersisted('lots', 10);
   // On by default: a live chain that silently goes stale is worse than no chain.
   const [autoRefresh, setAutoRefresh] = usePersisted('autoRefresh', true);
@@ -65,7 +67,7 @@ export default function App() {
     setErr(null);
     try {
       const at = live ? 'now' : new Date(istToEpoch(when) * 1000).toISOString();
-      const r = await getChain(at, width, minPremium, hedgeGap, lots, expiry || undefined);
+      const r = await getChain(at, width, minPremium, hedgeGap, lots, expiry || undefined, requireHedge);
       // a slow earlier request must not overwrite a newer one
       if (my === seq.current) setData(r);
     } catch (e) {
@@ -76,7 +78,7 @@ export default function App() {
     } finally {
       if (my === seq.current) setBusy(false);
     }
-  }, [live, when, width, minPremium, hedgeGap, lots, expiry]);
+  }, [live, when, width, minPremium, hedgeGap, lots, expiry, requireHedge]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { getHealth().then((h) => setDays(h.days)).catch(() => setDays(null)); }, []);
@@ -201,6 +203,35 @@ export default function App() {
               }
             >
               <input type="number" value={lots} onChange={(e) => setLots(Number(e.target.value))} />
+            </Field>
+
+            <Field
+              label="hedge gap"
+              help={
+                <>
+                  <p>
+                    How many strikes past the one you sell to <b>buy</b> protection.
+                    Strikes are $200 apart, so a gap of 3 is $600, and the worst case
+                    becomes 600 minus the net credit.
+                  </p>
+                  <p>
+                    Set 0 for none. The measured strategy is naked: at these distances
+                    Delta lists nothing to buy on roughly three days in four, and where
+                    it does the hedge often costs almost as much as the premium.
+                  </p>
+                </>
+              }
+            >
+              <input type="number" value={hedgeGap} onChange={(e) => setHedgeGap(Number(e.target.value))} />
+              {hedgeGap > 0 && (
+                <button
+                  className={requireHedge ? 'pinned' : 'pinned off'}
+                  onClick={() => setRequireHedge((v) => !v)}
+                  title="refuse the trade when no hedge is listed"
+                >
+                  {requireHedge ? 'blocking without hedge' : 'allow naked'}
+                </button>
+              )}
             </Field>
 
             <Field
@@ -345,7 +376,8 @@ export default function App() {
                     </p>
                   </Metric>
                 </div>
-                <RecommendPanel rec={data.recommendation} market={data.market} minPremium={minPremium} />
+                <RecommendPanel rec={data.recommendation} market={data.market} minPremium={minPremium} usdinr={data.usdinr} />
+                <StructurePanel structure={data.structure} snap={snap} />
                 {data.market && <MovePanel market={data.market} snap={snap} />}
                 <BiasPanel bias={data.bias} snap={snap} />
                 <AccountPanel usdinr={data.usdinr} />
