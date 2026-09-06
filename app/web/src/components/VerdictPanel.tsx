@@ -29,20 +29,24 @@ export function VerdictPanel({
 
   return (
     <div className={`verdict ${tone}`}>
-      <div className="verdict-head">
-        <span className="verdict-word">{verdict.headline}</span>
-        {verdict.nextWindow && <span className="verdict-next">{verdict.nextWindow}</span>}
-      </div>
-      <p className="verdict-detail">{verdict.detail}</p>
+      <div className="verdict-body">
+        <div className="verdict-lead">
+          <div className="verdict-head">
+            <span className="verdict-word">{verdict.headline}</span>
+            {verdict.nextWindow && <span className="verdict-next">{verdict.nextWindow}</span>}
+          </div>
+          <p className="verdict-detail">{verdict.detail}</p>
+        </div>
 
-      <ul className="checks">
+        <ul className="checks">
         {verdict.checks.map((c, i) => (
           <li key={i} className={c.ok ? 'ok' : c.severity}>
             <span className="mark">{c.ok ? '✓' : c.severity === 'block' ? '✕' : '!'}</span>
             <span>{c.text}</span>
           </li>
         ))}
-      </ul>
+        </ul>
+      </div>
 
       {verdict.orders.length > 0 && (
         <div className="orders">

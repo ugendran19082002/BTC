@@ -53,11 +53,16 @@ function Age({ min }: { min: number | null }) {
  */
 export function ChainTable({ legs, snap }: { legs: Leg[]; snap: SnapshotMeta }) {
   const strikes = [...new Set(legs.map((l) => l.strike))].sort((a, b) => a - b);
+  // Show every strike you asked for. Capping this at a fraction of the viewport
+  // meant "20 each side" still ended in a scrollbar, which is the opposite of
+  // what the setting says. The page scrolls; the table does not need to as well.
+  // The header row stays stuck to the top so the columns remain readable.
+  const height = `${strikes.length * 22 + 96}px`;
   const at = (k: number, cp: 'C' | 'P') => legs.find((l) => l.strike === k && l.cp === cp);
   const hasBook = legs.some((l) => l.bid !== null || l.ask !== null);
 
   return (
-    <div className="scroll">
+    <div className="scroll" style={{ maxHeight: height }}>
       <table>
         <thead>
           <tr>

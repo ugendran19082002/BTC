@@ -35,7 +35,7 @@ export function ForecastPanel({
   const x = (pct: number) => 50 + (pct / halfSpan) * 50;
 
   return (
-    <Card className="lg:col-span-2">
+    <Card>
       <CardTitle
         right={
           <span className="flex items-center gap-2">

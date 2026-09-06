@@ -33,7 +33,7 @@ export function RecommendPanel({
 }) {
   if (!rec.ok) {
     return (
-      <Card className="lg:col-span-2">
+      <Card>
         <CardTitle>What to sell</CardTitle>
         <p className="m-0 text-[13.5px] text-foreground">{rec.why}</p>
         <Note>
@@ -47,7 +47,7 @@ export function RecommendPanel({
   const naked = rec.totalMaxLossUsd === null;
 
   return (
-    <Card className="lg:col-span-2">
+    <Card>
       <CardTitle right={<Badge tone="neutral">premium ≥ ${minPremium}</Badge>}>
         What to sell
       </CardTitle>
