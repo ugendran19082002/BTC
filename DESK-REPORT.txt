@@ -1,11 +1,11 @@
 ==========================================================================================================================
   BTC DAILY SHORT-STRANGLE -- DESK REPORT
-  generated 2026-09-06 08:34 UTC
+  generated 2026-09-06 11:44 UTC
 ==========================================================================================================================
-  data      : 732 expiry days, 2024-09-04 .. 2026-09-05
+  data      : 733 expiry days, 2024-09-04 .. 2026-09-06
               2024: 119 days
               2025: 365 days
-              2026: 248 days
+              2026: 249 days
   entry     : 05:30 IST mark price, 5% slippage, 10 lots (0.01 BTC)
   exit      : settlement intrinsic at 12:00 UTC -- exact, no exit quote needed
   currency  : 1 USD = Rs 85
@@ -18,12 +18,12 @@
 --------------------------------------------------------------------------------------------------------------------------
   1. THE FOUR VARIANTS -- full period
 --------------------------------------------------------------------------------------------------------------------------
-A   CE 0-15  + PE 0-15      670d  win  98.5%  $   93.25  Rs    7926  PF   4.14  worst $  -8.48  MDD $  8.48  R/MDD 11.00
-B   CE 0-15  + PE 15-30     694d  win  96.4%  $  123.64  Rs   10510  PF   2.61  worst $  -9.60  MDD $ 13.10  R/MDD  9.44
-C   CE 0-15  + PE 15-40     700d  win  94.3%  $  117.23  Rs    9964  PF   1.87  worst $ -14.81  MDD $ 17.92  R/MDD  6.54
-D'  CE 0-20  + PE 0-20      692d  win  97.7%  $  120.29  Rs   10225  PF   3.14  worst $ -12.30  MDD $ 14.08  R/MDD  8.55
-    CE only 0-15            563d  win  98.9%  $   46.84  Rs    3982  PF   4.13  worst $  -8.56  MDD $  8.56  R/MDD  5.47
-    PE only 0-15            581d  win  99.3%  $   46.40  Rs    3944  PF   3.96  worst $  -5.88  MDD $  8.02  R/MDD  5.79
+A   CE 0-15  + PE 0-15      671d  win  98.5%  $   93.50  Rs    7948  PF   4.15  worst $  -8.48  MDD $  8.48  R/MDD 11.03
+B   CE 0-15  + PE 15-30     695d  win  96.4%  $  123.99  Rs   10539  PF   2.62  worst $  -9.60  MDD $ 13.10  R/MDD  9.46
+C   CE 0-15  + PE 15-40     701d  win  94.3%  $  117.69  Rs   10004  PF   1.88  worst $ -14.81  MDD $ 17.92  R/MDD  6.57
+D'  CE 0-20  + PE 0-20      693d  win  97.7%  $  120.55  Rs   10247  PF   3.15  worst $ -12.30  MDD $ 14.08  R/MDD  8.56
+    CE only 0-15            564d  win  98.9%  $   46.96  Rs    3991  PF   4.14  worst $  -8.56  MDD $  8.56  R/MDD  5.49
+    PE only 0-15            582d  win  99.3%  $   46.55  Rs    3956  PF   3.97  worst $  -5.88  MDD $  8.02  R/MDD  5.81
 
 --------------------------------------------------------------------------------------------------------------------------
   2. THE SAME VARIANTS, YEAR BY YEAR
@@ -33,32 +33,32 @@ D'  CE 0-20  + PE 0-20      692d  win  97.7%  $  120.29  Rs   10225  PF   3.14  
   A   CE 0-15  + PE 0-15
     2024      107d  win  97.2%  $   10.16  Rs     863  PF   2.07  worst $  -8.48  MDD $  8.48  R/MDD  1.20
     2025      322d  win  99.1%  $   47.46  Rs    4034  PF   6.19  worst $  -5.77  MDD $  7.01  R/MDD  6.77
-    2026      241d  win  98.3%  $   35.63  Rs    3029  PF   4.24  worst $  -4.97  MDD $  6.48  R/MDD  5.50
+    2026      242d  win  98.3%  $   35.89  Rs    3051  PF   4.26  worst $  -4.97  MDD $  6.48  R/MDD  5.54
 
   B   CE 0-15  + PE 15-30
     2024      110d  win  95.5%  $   15.38  Rs    1308  PF   1.92  worst $  -8.28  MDD $  8.28  R/MDD  1.86
     2025      340d  win  97.4%  $   62.40  Rs    5304  PF   2.89  worst $  -9.60  MDD $ 13.10  R/MDD  4.76
-    2026      244d  win  95.5%  $   45.86  Rs    3898  PF   2.70  worst $  -6.89  MDD $  7.33  R/MDD  6.26
+    2026      245d  win  95.5%  $   46.20  Rs    3927  PF   2.71  worst $  -6.89  MDD $  7.33  R/MDD  6.30
 
   C   CE 0-15  + PE 15-40
     2024      110d  win  92.7%  $   13.02  Rs    1107  PF   1.49  worst $  -8.18  MDD $  8.73  R/MDD  1.49
     2025      345d  win  95.4%  $   59.90  Rs    5091  PF   1.96  worst $ -14.81  MDD $ 17.92  R/MDD  3.34
-    2026      245d  win  93.5%  $   44.31  Rs    3766  PF   1.98  worst $  -8.76  MDD $  8.76  R/MDD  5.06
+    2026      246d  win  93.5%  $   44.77  Rs    3806  PF   1.99  worst $  -8.76  MDD $  8.76  R/MDD  5.11
 
   D'  CE 0-20  + PE 0-20
     2024      109d  win  96.3%  $    5.45  Rs     463  PF   1.24  worst $ -12.30  MDD $ 14.08  R/MDD  0.39
     2025      339d  win  98.5%  $   68.38  Rs    5812  PF   5.81  worst $  -7.65  MDD $  7.90  R/MDD  8.65
-    2026      244d  win  97.1%  $   46.46  Rs    3949  PF   3.44  worst $  -6.87  MDD $ 10.79  R/MDD  4.30
+    2026      245d  win  97.1%  $   46.72  Rs    3971  PF   3.45  worst $  -6.87  MDD $ 10.79  R/MDD  4.33
 
       CE only 0-15
     2024       86d  win  96.5%  $   -0.49  Rs     -42  PF   0.95  worst $  -8.56  MDD $  8.56  R/MDD -0.06
     2025      260d  win  99.6%  $   27.80  Rs    2363  PF  74.02  worst $  -0.38  MDD $  0.38  R/MDD 73.02
-    2026      217d  win  99.1%  $   19.53  Rs    1660  PF   5.08  worst $  -3.85  MDD $  3.85  R/MDD  5.07
+    2026      218d  win  99.1%  $   19.65  Rs    1670  PF   5.10  worst $  -3.85  MDD $  3.85  R/MDD  5.10
 
       PE only 0-15
     2024       97d  win 100.0%  $   10.65  Rs     905  PF    inf  worst $   0.03  MDD $  0.00  R/MDD   inf
     2025      274d  win  99.3%  $   19.66  Rs    1671  PF   3.16  worst $  -5.88  MDD $  8.02  R/MDD  2.45
-    2026      210d  win  99.0%  $   16.10  Rs    1368  PF   3.44  worst $  -5.09  MDD $  5.09  R/MDD  3.16
+    2026      211d  win  99.1%  $   16.24  Rs    1381  PF   3.46  worst $  -5.09  MDD $  5.09  R/MDD  3.19
 
 --------------------------------------------------------------------------------------------------------------------------
   3. WEEKDAY vs WEEKEND -- the largest single effect in this data
@@ -67,31 +67,31 @@ D'  CE 0-20  + PE 0-20      692d  win  97.7%  $  120.29  Rs   10225  PF   3.14  
 
   A   CE 0-15  + PE 0-15
     Mon-Fri     461d  win  99.3%  $   78.83  Rs    6701  PF  43.51  worst $  -0.95  MDD $  0.95  R/MDD 82.83
-    Sat+Sun     209d  win  96.7%  $   14.41  Rs    1225  PF   1.52  worst $  -8.48  MDD $  9.60  R/MDD  1.50
+    Sat+Sun     210d  win  96.7%  $   14.67  Rs    1247  PF   1.53  worst $  -8.48  MDD $  9.60  R/MDD  1.53
       Sat       105d  win  96.2%  $    5.27  Rs     448  PF   1.33  worst $  -5.77  MDD $  8.48  R/MDD  0.62
-      Sun       104d  win  97.1%  $    9.14  Rs     777  PF   1.77  worst $  -8.48  MDD $  8.48  R/MDD  1.08
-    ALL         670d  win  98.5%  $   93.25  Rs    7926  PF   4.14  worst $  -8.48  MDD $  8.48  R/MDD 11.00
+      Sun       105d  win  97.1%  $    9.40  Rs     799  PF   1.79  worst $  -8.48  MDD $  8.48  R/MDD  1.11
+    ALL         671d  win  98.5%  $   93.50  Rs    7948  PF   4.15  worst $  -8.48  MDD $  8.48  R/MDD 11.03
 
   B   CE 0-15  + PE 15-30
     Mon-Fri     485d  win  97.3%  $  109.83  Rs    9335  PF   5.37  worst $  -3.85  MDD $  5.81  R/MDD 18.89
-    Sat+Sun     209d  win  94.3%  $   13.82  Rs    1174  PF   1.27  worst $  -9.60  MDD $ 17.19  R/MDD  0.80
+    Sat+Sun     210d  win  94.3%  $   14.16  Rs    1204  PF   1.27  worst $  -9.60  MDD $ 17.19  R/MDD  0.82
       Sat       105d  win  94.3%  $    5.36  Rs     455  PF   1.19  worst $  -9.60  MDD $ 11.10  R/MDD  0.48
-      Sun       104d  win  94.2%  $    8.46  Rs     719  PF   1.36  worst $  -8.28  MDD $ 11.85  R/MDD  0.71
-    ALL         694d  win  96.4%  $  123.64  Rs   10510  PF   2.61  worst $  -9.60  MDD $ 13.10  R/MDD  9.44
+      Sun       105d  win  94.3%  $    8.80  Rs     748  PF   1.37  worst $  -8.28  MDD $ 11.85  R/MDD  0.74
+    ALL         695d  win  96.4%  $  123.99  Rs   10539  PF   2.62  worst $  -9.60  MDD $ 13.10  R/MDD  9.46
 
   C   CE 0-15  + PE 15-40
     Mon-Fri     491d  win  95.5%  $  109.32  Rs    9292  PF   2.72  worst $ -14.81  MDD $ 14.81  R/MDD  7.38
-    Sat+Sun     209d  win  91.4%  $    7.91  Rs     672  PF   1.11  worst $ -11.49  MDD $ 20.13  R/MDD  0.39
+    Sat+Sun     210d  win  91.4%  $    8.37  Rs     712  PF   1.12  worst $ -11.49  MDD $ 20.13  R/MDD  0.42
       Sat       105d  win  90.5%  $   -1.44  Rs    -122  PF   0.96  worst $ -11.49  MDD $ 19.05  R/MDD -0.08
-      Sun       104d  win  92.3%  $    9.35  Rs     795  PF   1.31  worst $  -8.92  MDD $ 13.37  R/MDD  0.70
-    ALL         700d  win  94.3%  $  117.23  Rs    9964  PF   1.87  worst $ -14.81  MDD $ 17.92  R/MDD  6.54
+      Sun       105d  win  92.4%  $    9.81  Rs     834  PF   1.33  worst $  -8.92  MDD $ 13.37  R/MDD  0.73
+    ALL         701d  win  94.3%  $  117.69  Rs   10004  PF   1.88  worst $ -14.81  MDD $ 17.92  R/MDD  6.57
 
   D'  CE 0-20  + PE 0-20
     Mon-Fri     483d  win  98.3%  $   98.09  Rs    8337  PF   6.17  worst $  -4.82  MDD $  4.82  R/MDD 20.34
-    Sat+Sun     209d  win  96.2%  $   22.20  Rs    1887  PF   1.60  worst $ -12.30  MDD $ 12.30  R/MDD  1.81
+    Sat+Sun     210d  win  96.2%  $   22.46  Rs    1909  PF   1.60  worst $ -12.30  MDD $ 12.30  R/MDD  1.83
       Sat       105d  win  96.2%  $    8.13  Rs     691  PF   1.38  worst $  -7.65  MDD $ 12.26  R/MDD  0.66
-      Sun       104d  win  96.2%  $   14.07  Rs    1196  PF   1.90  worst $ -12.30  MDD $ 12.30  R/MDD  1.14
-    ALL         692d  win  97.7%  $  120.29  Rs   10225  PF   3.14  worst $ -12.30  MDD $ 14.08  R/MDD  8.55
+      Sun       105d  win  96.2%  $   14.33  Rs    1218  PF   1.92  worst $ -12.30  MDD $ 12.30  R/MDD  1.17
+    ALL         693d  win  97.7%  $  120.55  Rs   10247  PF   3.15  worst $ -12.30  MDD $ 14.08  R/MDD  8.56
 
   Variant A, each year on its own -- the split is not one period speaking:
 
@@ -102,7 +102,7 @@ D'  CE 0-20  + PE 0-20      692d  win  97.7%  $  120.29  Rs   10225  PF   3.14  
     2025 Sat+Sun      104d  win  97.1%  $   11.21  Rs     953  PF   2.23  worst $  -5.77  MDD $  8.51  R/MDD  1.32
 
     2026 Mon-Fri      170d  win  99.4%  $   31.39  Rs    2668  PF  39.11  worst $  -0.82  MDD $  0.82  R/MDD 38.11
-    2026 Sat+Sun       71d  win  95.8%  $    4.24  Rs     360  PF   1.42  worst $  -4.97  MDD $  8.01  R/MDD  0.53
+    2026 Sat+Sun       72d  win  95.8%  $    4.50  Rs     382  PF   1.44  worst $  -4.97  MDD $  8.01  R/MDD  0.56
 
   Where the losses actually are, variant A, full period:
 
@@ -111,7 +111,7 @@ D'  CE 0-20  + PE 0-20      692d  win  97.7%  $  120.29  Rs   10225  PF   3.14  
         2026-07-21 Tue  $  -0.82  Rs    -70
         2024-09-26 Thu  $  -0.08  Rs     -7
 
-    Sat+Sun    7 losing days out of 209
+    Sat+Sun    7 losing days out of 210
         2024-11-10 Sun  $  -8.48  Rs   -721
         2025-03-29 Sat  $  -5.77  Rs   -490
         2026-02-28 Sat  $  -4.97  Rs   -423
@@ -138,22 +138,22 @@ D'  CE 0-20  + PE 0-20      692d  win  97.7%  $  120.29  Rs   10225  PF   3.14  
   that still pays at least that much -- the most distance the market will give
   you at that price.
 
-floor $0                    732d  win  97.7%  $   72.18  Rs    6135  PF   1.64  worst $ -18.11  MDD $ 25.06  R/MDD  2.88  strike 4.26% out
-floor $5                    732d  win  97.1%  $   98.04  Rs    8334  PF   1.69  worst $ -18.02  MDD $ 29.06  R/MDD  3.37  strike 3.08% out
-floor $10                   732d  win  96.2%  $  141.64  Rs   12040  PF   1.87  worst $ -17.99  MDD $ 25.94  R/MDD  5.46  strike 2.74% out
-floor $15                   732d  win  95.8%  $  171.79  Rs   14602  PF   1.92  worst $ -17.94  MDD $ 24.45  R/MDD  7.03  strike 2.55% out
-floor $20                   732d  win  93.4%  $  176.03  Rs   14962  PF   1.74  worst $ -17.89  MDD $ 24.36  R/MDD  7.23  strike 2.36% out
-floor $25                   732d  win  91.8%  $  153.89  Rs   13081  PF   1.49  worst $ -21.52  MDD $ 26.58  R/MDD  5.79  strike 2.21% out
-floor $30                   732d  win  89.9%  $  162.91  Rs   13848  PF   1.46  worst $ -21.45  MDD $ 25.98  R/MDD  6.27  strike 2.05% out
-floor $40                   731d  win  86.3%  $  133.83  Rs   11376  PF   1.27  worst $ -21.64  MDD $ 33.54  R/MDD  3.99  strike 1.77% out
-floor $50                   729d  win  83.8%  $   95.59  Rs    8125  PF   1.15  worst $ -23.48  MDD $ 45.11  R/MDD  2.12  strike 1.55% out
-floor $75                   726d  win  78.1%  $   29.19  Rs    2481  PF   1.03  worst $ -25.35  MDD $ 80.95  R/MDD  0.36  strike 1.21% out
-floor $100                  709d  win  74.8%  $  -34.41  Rs   -2925  PF   0.97  worst $ -28.60  MDD $107.53  R/MDD -0.32  strike 1.00% out
+floor $0                    733d  win  97.7%  $   72.19  Rs    6136  PF   1.64  worst $ -18.11  MDD $ 25.06  R/MDD  2.88  strike 4.26% out
+floor $5                    733d  win  97.1%  $   98.16  Rs    8343  PF   1.69  worst $ -18.02  MDD $ 29.06  R/MDD  3.38  strike 3.08% out
+floor $10                   733d  win  96.2%  $  141.90  Rs   12062  PF   1.88  worst $ -17.99  MDD $ 25.94  R/MDD  5.47  strike 2.74% out
+floor $15                   733d  win  95.8%  $  172.21  Rs   14638  PF   1.93  worst $ -17.94  MDD $ 24.45  R/MDD  7.04  strike 2.54% out
+floor $20                   733d  win  93.5%  $  176.45  Rs   14998  PF   1.74  worst $ -17.89  MDD $ 24.36  R/MDD  7.24  strike 2.36% out
+floor $25                   733d  win  91.8%  $  154.49  Rs   13132  PF   1.49  worst $ -21.52  MDD $ 26.58  R/MDD  5.81  strike 2.21% out
+floor $30                   733d  win  89.9%  $  163.51  Rs   13899  PF   1.46  worst $ -21.45  MDD $ 25.98  R/MDD  6.29  strike 2.05% out
+floor $40                   732d  win  86.3%  $  134.76  Rs   11454  PF   1.28  worst $ -21.64  MDD $ 33.54  R/MDD  4.02  strike 1.77% out
+floor $50                   730d  win  83.8%  $   96.95  Rs    8241  PF   1.16  worst $ -23.48  MDD $ 45.11  R/MDD  2.15  strike 1.55% out
+floor $75                   727d  win  78.1%  $   31.31  Rs    2661  PF   1.04  worst $ -25.35  MDD $ 80.95  R/MDD  0.39  strike 1.21% out
+floor $100                  710d  win  74.8%  $  -32.29  Rs   -2744  PF   0.97  worst $ -28.60  MDD $107.53  R/MDD -0.30  strike 1.00% out
 
 --------------------------------------------------------------------------------------------------------------------------
   5. EVERY LOSING DAY, VARIANT A
 --------------------------------------------------------------------------------------------------------------------------
-  10 losing days out of 670 traded (1.5%)
+  10 losing days out of 671 traded (1.5%)
 
   2024-11-10 Sun      76694 ->     80062 (+4.39%)  $  -8.48  Rs   -721   CE 79200 @6.4->862  PE 74600 @8.7->0
   2025-03-29 Sat      84340 ->     82204 (-2.53%)  $  -5.77  Rs   -490   CE 86000 @11.7->0  PE 82800 @9.0->596
@@ -169,10 +169,10 @@ floor $100                  709d  win  74.8%  $  -34.41  Rs   -2925  PF   0.97  
 --------------------------------------------------------------------------------------------------------------------------
   6. HOW BIG A MOVE BREAKS EACH VARIANT
 --------------------------------------------------------------------------------------------------------------------------
-  A   CE 0-15  + PE 0-15     win-day move 0.63%   lose-day move 2.25%
+  A   CE 0-15  + PE 0-15     win-day move 0.62%   lose-day move 2.25%
   B   CE 0-15  + PE 15-30    win-day move 0.62%   lose-day move 2.20%
   C   CE 0-15  + PE 15-40    win-day move 0.60%   lose-day move 2.08%
-  D'  CE 0-20  + PE 0-20     win-day move 0.63%   lose-day move 2.25%
+  D'  CE 0-20  + PE 0-20     win-day move 0.62%   lose-day move 2.25%
 
 ==========================================================================================================================
   WHAT THIS DOES AND DOES NOT SAY
@@ -184,6 +184,10 @@ floor $100                  709d  win  74.8%  $  -34.41  Rs   -2925  PF   0.97  
     quiet, and its loss is large because the rare day is not.
   - On the most dangerous days Delta often lists no cheap strike at all, so
     the rule stands aside. Part of the win rate is that filter, not skill.
+  - What the model says and what happened are not the same number. Across
+    27,371 legs, where Black-Scholes claimed 95-100% the settlements came in
+    at 99.58%, and where it claimed 15-20% they came in at 12.28%. It is too
+    cautious about safe strikes and too generous about dangerous ones.
   - Protection is frequently unlisted at the distances this sells, so a
     bounded worst case is often unavailable. Size is the real risk control.
   - The largest effect in the data is not the strike rule at all. It is the

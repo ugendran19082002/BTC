@@ -1,83 +1,75 @@
 # TODO
 
-Status as of 2026-09-06. Ordered; the blockers at the top gate everything below.
+State as of 2026-09-06. Live at https://delta.thannigo.in
 
-## 0. Security — do first, nothing else depends on it
+## 0. Security — still open, still first
 
-- [ ] **Revoke the Delta API key in `app-ket.txt` and issue a new one.**
-      That key + secret pair was pasted into chat several times and is sitting
-      in plaintext in the repo directory. Treat it as compromised.
-      `app-ket.txt` is now in `.gitignore` and was never committed.
-- [ ] Put the *new* key in `app/server/.env` (git-ignored) — never in source,
-      never in a commit, never in a log line.
-- [ ] Confirm no key is needed for market data. It is not: every endpoint this
-      project reads is public.
+- [ ] **Revoke the Delta API key and issue a new read-only one.**
+      The key now in `app/server/.env` is the one from `app-ket.txt`, which was
+      pasted into chat more than once. It works — the account endpoint returns
+      real balances with it — which is exactly the problem. Anyone who has seen
+      this conversation holds it.
+      The wiring is right: `.env` is git-ignored, is not in any image, and is
+      injected at runtime. Only the value needs replacing.
+- [ ] Decide who can reach the desk. It is on the open internet and shows
+      sizing, and positions once the account panel is on. Either uncomment the
+      `auth_basic` lines in `deploy/nginx.conf`, or bind the web container to
+      the host's Tailscale address instead of `0.0.0.0`.
 
-## 1. Data
+## 1. Data — done
 
-- [x] `harvest_chain.py` — 05:30 IST chain + 12:00 UTC settlement, one JSON per
-      day, resumable, atomic writes.
-- [x] Reject days where the feed throttled us instead of writing empty ones.
-      (81 corrupted days were written and have been purged.)
-- [ ] Finish harvesting 2024-09-04 → 2026-09-05 (~730 days) at low concurrency.
-- [ ] Verify: every day has ≥15 legs, a settlement price, and strikes on both
-      sides of the money.
+- [x] 733 expiry days, 2024-09-04 to 2026-09-06, no gaps. Quality checks clean:
+      no negative marks, no call priced below intrinsic, strikes on both sides
+      of the money every day.
+- [x] Intraday mark paths for the traded legs (1,466), so exits can be tested.
+- [x] Open interest for the traded legs (1,449).
+- [x] Calibration: 27,371 legs bucketed by model probability against what
+      actually happened.
+- [x] `deploy/refresh.sh` on cron at 12:40 UTC keeps it current.
 
-## 2. The open reconciliation — still blocks any live sizing decision
+## 2. What is in the live engine, and why
 
-- [ ] Get the **29-Mar-2025 AlgoTest trade log** (user action; only the account
-      holder can pull it). Needed: PE strike / entry / exit, CE strike / entry /
-      exit, day P&L.
-- [ ] Compare against the rebuilt engine. AlgoTest reports March 2025 at +383;
-      the reproduction shows a loss that day.
-- [ ] Until this closes: do not raise lots, and do not call any variant final.
+Three rules. Each improved 2024, 2025 and 2026 taken separately, which is the
+only reason it is there.
 
-## 3. Backtest engine
+| | rule | effect on the full period |
+|---|---|---|
+| 1 | sell both sides, furthest strike still bid at the floor | baseline, PF 1.93 |
+| 2 | 70/30 split when the 24h move and daily trend agree, else 50/50 | PF 2.38, worst day −$8.97 → −$7.08 |
+| 3 | stand aside when daily RSI(14) is outside 30–70 | PF 3.08, drawdown $12.22 → $8.24 |
 
-- [x] Settlement-based exit (intrinsic at 12:00 UTC) — removes the exit-quote
-      noise that broke the earlier reproduction.
-- [x] AlgoTest "Premium Range" semantics: pick the *richest* strike inside the
-      band.
-- [x] Mark vs traded-price entry, with a staleness cutoff on traded prices.
-- [ ] Rerun A / B / C / D' over the full period once harvesting completes.
-- [ ] Per-year split (2024 / 2025 / 2026) for every variant — never judge on a
-      single period.
-- [ ] Saturday on/off comparison, to confirm the recommendation to sit out
-      Saturdays.
-- [ ] Hedged versions of each variant: max loss capped, cost of the hedge
-      measured against the win rate it buys.
+Together: ₹7,319 → ₹8,250 on 80 fewer days, R/MDD 7.04 → 11.78.
 
-## 4. App
+## 3. Tested and rejected — do not re-add without new evidence
 
-- [x] Fastify server: `/api/chain` (live + historical), `/api/backtest`,
-      `/api/backtest/byyear`, `/api/sizing`, `/api/presets`.
-- [x] Black-Scholes IV inversion + Greeks; agrees with Delta's own `mark_iv`.
-- [x] Sell-side scoring, hedge pairing, bounded max loss.
-- [ ] React + TypeScript front end: time selector (live / historical minute),
-      chain table, sell candidates, bias panel, backtest tab.
-- [ ] Show staleness on every traded price — a stale LTP is not a fill.
+- **Stop losses.** Every level cut the total by more than half (₹14,638 → ₹4,201
+  at 2× credit). They cut winners.
+- **Option volume as a filter.** Skipping thin-volume days: ₹7,319 → ₹3,836.
+- **OI acceleration.** Looked strong alone (PF 3.10) and failed once stacked:
+  PF 3.08 → 2.81, and 2026 collapsed from 6.53 to 2.49 on 70 remaining days.
+- **Leaning toward the model's "safer" side.** PF 2.10, below the momentum rule.
+- **Leaning toward the riskier side.** PF 1.80, worse than doing nothing.
+- **MACD alone.** PF 1.96 against a 1.93 baseline. Noise.
+- **ATR filters, |24h| > 4% filter.** Both reduced return without improving
+  risk.
 
-## 5. Prediction engine
+## 4. Open
 
-See `PREDICTION-ENGINE-SPEC.md` for the full factor list.
+- [ ] **29-Mar-2025 AlgoTest trade log.** Only the account holder can pull it.
+      Until the reproduction and AlgoTest agree on one day, none of the above is
+      a measurement of your live results — it is a hypothesis about them.
+- [ ] Booking at 95% decay beat holding by a little (₹15,225 vs ₹14,638, PF 2.09
+      vs 1.93) and the target was hit on 97.5% of days, median 8.1 hours in. Not
+      wired into the desk yet; it needs an exit rule, not just an entry one.
+- [ ] Weekend. Monday–Friday lost on 3 days of 461, worst −$0.95; Saturday and
+      Sunday lost on 7 of 209, worst −$8.48, and hold all six of the largest
+      losses in two years. The desk warns; it does not refuse.
+- [ ] The 12-hour direction model in `PREDICTION-ENGINE-SPEC.md` is still a
+      spec. What exists is a market read, clearly marked as context.
 
-- [ ] Direction model: UP / DOWN / RANGE probability over 12h.
-- [ ] Structure model: given the direction probability, choose strike + hedge.
-- [ ] Keep the two separate so each can be scored on its own.
-- [ ] Walk-forward weight fitting; refit on periods the weights were not chosen
-      on.
+## 5. Standing constraints
 
-## 6. Deployment — `delta.thannigo.in` (204.168.233.179)
-
-- [ ] Decide what actually gets exposed. The host currently answers HTTP 301.
-- [ ] Need from the user: SSH access, and confirmation to touch that server.
-- [ ] Reverse proxy + TLS, server as a systemd unit, static front end build.
-- [ ] The server process must hold no trading key until the strategy question
-      is settled. Read-only market data first.
-
-## Standing constraints
-
-- Real AlgoTest is the source of truth; the reproduction is a hypothesis.
-- Do not use optimization results for live decisions while the mismatch is open.
-- India entity only. All expiry times IST. 1 USD = 85 INR for P&L display.
-- Never log in to or operate the user's AlgoTest account.
+- Real AlgoTest is the source of truth; this reproduction is a hypothesis.
+- India entity only. All times IST. 1 USD = 85 INR.
+- Never log in to or operate the AlgoTest account.
+- No order placement anywhere in this codebase.
