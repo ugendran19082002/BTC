@@ -11,6 +11,8 @@ import { MovePanel } from './components/MovePanel';
 import { StructurePanel } from './components/StructurePanel';
 import { DateTimePicker, istToEpoch, type IstMoment } from './components/DateTimePicker';
 import { usePersisted } from './hooks/usePersisted';
+import { Select } from './components/ui/select';
+import { Button } from './components/ui/button';
 import { AccountPanel } from './components/AccountPanel';
 import { Metric, Formula, Field } from './components/Explain';
 
@@ -125,10 +127,10 @@ export default function App() {
           <div className="bar">
             <div className="field">
               <label>when</label>
-              <select value={live ? 'live' : 'past'} onChange={(e) => setLive(e.target.value === 'live')}>
+              <Select value={live ? 'live' : 'past'} onChange={(e) => setLive(e.target.value === 'live')}>
                 <option value="live">live now</option>
                 <option value="past">a past moment</option>
-              </select>
+              </Select>
             </div>
 
             {!live && (
@@ -140,7 +142,7 @@ export default function App() {
 
             <div className="field">
               <label>expiry</label>
-              <select value={expiry} onChange={(e) => setExpiry(e.target.value)} style={{ minWidth: 270 }}>
+              <Select value={expiry} onChange={(e) => setExpiry(e.target.value)} className="min-w-[260px]">
                 {expiries.length === 0 && <option value="">loading…</option>}
                 {expiries.map((e) => (
                   <option key={e.expiry} value={e.expiry}>
@@ -156,7 +158,7 @@ export default function App() {
                         : ' · not measured'}
                   </option>
                 ))}
-              </select>
+              </Select>
               {expiries.length > 0 && !expiries.find((e) => e.expiry === expiry)?.isNextEntry && (
                 <button className="pinned" onClick={forgetExpiry} title="back to the default">
                   pinned — reset
@@ -247,20 +249,20 @@ export default function App() {
               <input type="number" value={width} onChange={(e) => setWidth(Number(e.target.value))} />
             </Field>
 
-            <button className="go" onClick={() => void load()} disabled={busy}>
-              {busy ? 'loading…' : 'Refresh'}
-            </button>
-            {live && (
-              <button
-                className="ghost"
-                onClick={() => setAutoRefresh((v) => !v)}
-                title={`Re-fetch the live chain every ${REFRESH_SECONDS} seconds`}
-              >
-                {autoRefresh
-                  ? `⏱ auto-refreshing every ${REFRESH_SECONDS}s — click to stop`
-                  : `⏱ auto-refresh every ${REFRESH_SECONDS}s: off`}
-              </button>
-            )}
+            <div className="actions">
+              <Button onClick={() => void load()} disabled={busy}>
+                {busy ? 'loading…' : 'Refresh'}
+              </Button>
+              {live && (
+                <Button
+                  variant={autoRefresh ? 'default' : 'outline'}
+                  onClick={() => setAutoRefresh((v) => !v)}
+                  title={`Re-fetch the live chain every ${REFRESH_SECONDS} seconds`}
+                >
+                  {autoRefresh ? `auto ${REFRESH_SECONDS}s · on` : `auto ${REFRESH_SECONDS}s · off`}
+                </Button>
+              )}
+            </div>
           </div>
 
           {err && <div className="err">{err}</div>}

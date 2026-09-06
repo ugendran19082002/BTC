@@ -273,3 +273,44 @@ table.probs td { padding: 2px 0; border-bottom: 1px solid #ffffff06; }
 table.probs td.left { color: var(--muted); }
 .note.warn { color: var(--warn); }
 .pinned.off { background: transparent; border-color: var(--line); color: var(--dim); }
+
+.actions { display: flex; gap: 6px; align-items: flex-end; }
+
+/* ── phones ───────────────────────────────────────────────────────────────
+   The chain is genuinely wide and stays scrollable rather than being folded
+   into something unreadable; everything around it stacks. */
+@media (max-width: 760px) {
+  .app { padding: 12px 12px 48px; }
+  header.top { gap: 6px; }
+  header.top h1 { font-size: 15px; }
+  header.top .sub { font-size: 11px; }
+
+  .tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .tabs button { white-space: nowrap; padding: 6px 10px; font-size: 12.5px; }
+
+  .bar { padding: 10px; gap: 8px; }
+  .field { flex: 1 1 132px; min-width: 0; }
+  .field input, .field select { width: 100%; min-width: 0; }
+  .field-explain { max-width: none; }
+  .actions { flex: 1 1 100%; }
+  .actions > * { flex: 1; }
+
+  .grid.cols-3 { grid-template-columns: 1fr; }
+  .recommend { grid-column: auto; }
+
+  .verdict { padding: 13px 14px 15px; }
+  .verdict-word { font-size: 21px; }
+  .checks li { font-size: 12.2px; }
+  .chance { font-size: 22px; }
+  .rec-order { font-size: 13.5px; flex-wrap: wrap; }
+  .rec-order .ml-auto { margin-left: 0; }
+  .order { font-size: 11.5px; }
+  .scroll { max-height: 60vh; }
+  table { font-size: 11.5px; }
+  th, td { padding: 3px 5px; }
+}
+
+@media (max-width: 420px) {
+  .field { flex: 1 1 100%; }
+  .big { font-size: 19px; }
+}
