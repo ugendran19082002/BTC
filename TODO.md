@@ -113,6 +113,23 @@ Do not put these back without new evidence. Each looked promising and failed.
 
 ---
 
+### The "How far it could move" card
+
+Per horizon — 5m, 15m, 1h, 2h, 3h, 4h, 6h, 12h and whatever is left on the
+contract — it shows what BTC actually did over a year of windows, next to what
+today's option prices imply over the same stretch:
+
+| Column | Means |
+|---|---|
+| usually | half of past windows moved less than this |
+| 2 times in 3 | it stayed inside this about 68% of the time |
+| 19 times in 20 | it stayed inside this about 95% of the time |
+| worst seen | the single biggest move in the sample. Size against this one. |
+| market says | what implied volatility is pricing over the same stretch |
+| up | measured direction — a coin flip, and shown to prove it |
+
+Refresh the numbers with `python3 measure_horizons.py 365`.
+
 ### Other things that are worked out, not typed in
 
 - **The at-the-money strike** is calculated from live spot every refresh.
@@ -137,9 +154,14 @@ Do not put these back without new evidence. Each looked promising and failed.
   Delta lists nothing further out to buy on about 3 days in 4. Where it does,
   the hedge often costs almost as much as the premium. That is why the tested
   version is naked and controls risk with position size instead.
-- **12-hour direction forecast.** Still just a written plan in
-  `PREDICTION-ENGINE-SPEC.md`. What exists today is a market read, clearly
-  labelled as background information, not a signal.
+- **Direction forecasting is closed, not pending.** It was measured, not
+  assumed. Over 105,119 five-minute windows spanning a year, the chance BTC
+  finishes higher never moves further than **0.6 points** from a coin flip at
+  any horizon from 5 minutes to 12 hours. Filtering by trend, or by whether the
+  last bar was up, changes it by under a point. A 14-day sample suggested 64%,
+  which is exactly what noise looks like before you get more data.
+  So the desk forecasts **distance, not direction**, and the "up" column stays
+  on the page at ~50% to make the case against adding one later.
 
 ---
 

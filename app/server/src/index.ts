@@ -7,6 +7,7 @@ import { loadCalibration, reloadCalibration } from './calibration.js';
 import { readMarket } from './market.js';
 import { recommend } from './recommend.js';
 import { optionStructure } from './structure.js';
+import { forecast, reloadHorizons } from './forecast.js';
 import { credsFromEnv, getBalances, getPositions, NotConfigured } from './auth.js';
 
 // Read once at startup so a later log line cannot pick the secret out of env.
@@ -75,6 +76,7 @@ app.get('/api/chain', async (req, reply) => {
       picks,
       market,
       structure: optionStructure(snap, market?.realisedVol ?? null),
+      forecast: forecast(snap),
       recommendation: recommend(snap, scored, market, minPremium, lots, hedgeGap),
       requireHedge,
       verdict: verdict(snap, picks, minPremium, lots, market, {
@@ -188,6 +190,7 @@ app.get('/api/calibration', async () => ({ buckets: loadCalibration() }));
 app.post('/api/reload', async () => ({
   days: reloadDays(),
   calibrationBuckets: reloadCalibration(),
+  horizons: reloadHorizons(),
 }));
 
 const port = Number(process.env.PORT ?? 8787);

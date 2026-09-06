@@ -114,6 +114,30 @@ export type Recommendation = {
   rewardToRisk: number | null;
 };
 
+export type ForecastRow = {
+  label: string;
+  hours: number;
+  impliedUsd: number | null;
+  impliedPct: number | null;
+  typicalPct: number;
+  likelyPct: number;
+  outerPct: number;
+  worstPct: number;
+  rangePct: number;
+  pUp: number;
+  low: number;
+  high: number;
+  isExpiry: boolean;
+};
+
+export type Forecast = {
+  spot: number;
+  sampleWindows: number;
+  sampleDays: number;
+  rows: ForecastRow[];
+  directionEdgePts: number;
+};
+
 export type Wall = { strike: number; value: number } | null;
 
 export type OptionStructure = {
@@ -197,6 +221,7 @@ export type ChainResponse = {
   picks: Pick[];
   market: MarketRead | null;
   structure: OptionStructure;
+  forecast: Forecast | null;
   recommendation: Recommendation;
   requireHedge: boolean;
   verdict: Verdict;

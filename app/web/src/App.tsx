@@ -9,6 +9,7 @@ import { VerdictPanel } from './components/VerdictPanel';
 import { RecommendPanel } from './components/RecommendPanel';
 import { MovePanel } from './components/MovePanel';
 import { StructurePanel } from './components/StructurePanel';
+import { ForecastPanel } from './components/ForecastPanel';
 import { DateTimePicker, istToEpoch, type IstMoment } from './components/DateTimePicker';
 import { usePersisted } from './hooks/usePersisted';
 import { Select } from './components/ui/select';
@@ -390,6 +391,7 @@ export default function App() {
 
                 <RecommendPanel rec={data.recommendation} market={data.market} minPremium={minPremium} usdinr={data.usdinr} />
                 <StructurePanel structure={data.structure} snap={snap} />
+                {data.forecast && <ForecastPanel forecast={data.forecast} />}
                 {data.market && <MovePanel market={data.market} snap={snap} />}
                 <BiasPanel bias={data.bias} snap={snap} />
                 <AccountPanel usdinr={data.usdinr} />
