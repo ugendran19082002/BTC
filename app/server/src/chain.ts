@@ -1,5 +1,6 @@
 import { candles, liveTickers, spotAt, pool, type Ticker } from './delta.js';
 import { greeks, impliedVol, expectedMove } from './bs.js';
+import { strikeProbabilities, type StrikeProbabilities } from './probability.js';
 
 export const STRIKE_STEP = 200;
 /** Daily BTC options settle at 12:00 UTC == 17:30 IST. */
@@ -27,6 +28,18 @@ export type Leg = {
   volume: number | null;
   /** minutes since the last real trade; null when nothing traded */
   ageMin: number | null;
+  /**
+   * The three different senses of "expires at zero", kept apart on purpose.
+   * See probability.ts -- delta is none of them.
+   */
+  probs: StrikeProbabilities;
+  /** how far the strike sits from spot, as a percentage */
+  distancePct: number;
+  /** what the option is worth if nothing moves, and what is time value */
+  intrinsic: number;
+  extrinsic: number | null;
+  /** gamma weighted by open interest: where dealer hedging concentrates */
+  gammaExposure: number | null;
 };
 
 export type Snapshot = {
@@ -199,6 +212,14 @@ export async function liveChain(width = 25, wantExpiry?: string): Promise<Snapsh
     const ask = num(t.quotes?.best_ask ?? null);
     const mark = num(t.mark_price);
     const g = t.greeks;
+    const iv = num(t.quotes?.mark_iv ?? null);
+    const gamma = num(g?.gamma ?? null);
+    const oi = num(t.oi_contracts ?? t.oi);
+    const intrinsic = cp === 'C' ? Math.max(0, spot - strike) : Math.max(0, strike - spot);
+    // Simulation is expensive, so only the strikes anyone would actually sell:
+    // out of the money and still worth something.
+    const worthSimulating =
+      moneyness(cp, off) === 'OTM' && (mark ?? 0) >= 0.5 && Math.abs(off) <= 20;
     legs.push({
       cp,
       strike,
@@ -210,14 +231,19 @@ export async function liveChain(width = 25, wantExpiry?: string): Promise<Snapsh
       ask,
       // selling hits the bid; fall back to mark when the book is empty
       sellPrice: bid ?? mark,
-      iv: num(t.quotes?.mark_iv ?? null),
+      iv,
       delta: num(g?.delta ?? null),
-      gamma: num(g?.gamma ?? null),
+      gamma,
       theta: num(g?.theta ?? null),
       vega: num(g?.vega ?? null),
-      oi: num(t.oi_contracts ?? t.oi),
+      oi,
       volume: t.volume ?? null,
       ageMin: null,
+      probs: strikeProbabilities(cp, spot, strike, tte, iv, worthSimulating),
+      distancePct: ((strike - spot) / spot) * 100,
+      intrinsic,
+      extrinsic: mark === null ? null : Math.max(0, mark - intrinsic),
+      gammaExposure: gamma !== null && oi !== null ? gamma * oi : null,
     });
   }
   legs.sort((a, b) => a.strike - b.strike || a.cp.localeCompare(b.cp));
@@ -282,6 +308,9 @@ export async function historicalChain(
     const off = Math.round((strike - atm) / STRIKE_STEP);
     const iv = mark !== null ? impliedVol(cp, mark, spot, strike, tte) : null;
     const g = iv !== null ? greeks(cp, spot, strike, tte, iv) : null;
+    const intrinsic = cp === 'C' ? Math.max(0, spot - strike) : Math.max(0, strike - spot);
+    const worthSimulating =
+      moneyness(cp, off) === 'OTM' && (mark ?? 0) >= 0.5 && Math.abs(off) <= 20;
     const leg: Leg = {
       cp,
       strike,
@@ -301,6 +330,11 @@ export async function historicalChain(
       oi: null,
       volume: tr.reduce((a, c) => a + (c.volume ?? 0), 0),
       ageMin: last ? Math.round((minute - last.time) / 60) : null,
+      probs: strikeProbabilities(cp, spot, strike, tte, iv, worthSimulating),
+      distancePct: ((strike - spot) / spot) * 100,
+      intrinsic,
+      extrinsic: mark === null ? null : Math.max(0, mark - intrinsic),
+      gammaExposure: null,
     };
     return leg;
   });

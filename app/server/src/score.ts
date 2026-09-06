@@ -40,7 +40,9 @@ export function scoreLegs(snap: Snapshot): ScoredLeg[] {
   return snap.legs.map((leg) => {
     const reasons: string[] = [];
     const px = leg.sellPrice;
-    const pOtm = leg.delta === null ? null : clamp01(1 - Math.abs(leg.delta));
+    // N(d2), not 1 - |delta|. Delta is a sensitivity, and the two disagree most
+    // at the strikes this strategy actually sells.
+    const pOtm = leg.probs.expireWorthless;
     const edge = px !== null && leg.mark ? px / leg.mark : null;
     const emDistance =
       snap.expectedMove && snap.expectedMove > 0
@@ -80,6 +82,9 @@ export function scoreLegs(snap: Snapshot): ScoredLeg[] {
     if (leg.moneyness === 'ITM') {
       score *= 0.3;
       reasons.push('in the money');
+    }
+    if (leg.probs.touch !== null && leg.probs.touch > 0.25) {
+      reasons.push(`${(leg.probs.touch * 100).toFixed(0)}% chance it is touched at some point`);
     }
     if (zero?.historical != null) {
       reasons.push(`${(zero.historical * 100).toFixed(1)}% of ${zero.sample} like it expired at zero`);
@@ -286,6 +291,10 @@ export function verdict(
   minPremium: number,
   lots: number,
   market: MarketRead | null = null,
+  hedgePolicy: { requireHedge: boolean; hedgeMissing: boolean } = {
+    requireHedge: false,
+    hedgeMissing: false,
+  },
 ): Verdict {
   const ist = istParts(snap.ts);
   // The day that matters is the day the position is opened, not the day you
@@ -372,16 +381,22 @@ export function verdict(
     });
   }
 
-  // 4. Protection, when it exists.
+  // 4. Protection. A missing hedge only blocks when you have asked it to --
+  //    the measured strategy is naked, and Delta lists nothing to buy at these
+  //    distances on roughly three days in four, so requiring one refuses most
+  //    days. That is a legitimate choice, but it must be a choice.
   if (picks.length) {
     const naked = picks.filter((p) => p.naked);
+    const missing = hedgePolicy.hedgeMissing || naked.length > 0;
     checks.push({
-      ok: naked.length === 0,
-      severity: 'warn',
-      text: naked.length
-        ? `${naked.map((p) => p.side).join(' and ')} could not be hedged — no strike listed at that distance. ` +
-          `The loss on that leg is bounded only by how far BTC travels.`
-        : `Both legs hedged. Worst case is known before you enter.`,
+      ok: !missing,
+      severity: hedgePolicy.requireHedge ? 'block' : 'warn',
+      text: missing
+        ? (hedgePolicy.requireHedge
+            ? 'Entry blocked: you have required a hedge and no strike is listed to buy at that distance. '
+            : `${naked.map((p) => p.side).join(' and ') || 'One leg'} could not be hedged — no strike listed at that distance. `) +
+          'The loss on that leg is bounded only by how far BTC travels.'
+        : 'Both legs hedged. Worst case is known before you enter.',
     });
   }
 

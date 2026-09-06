@@ -75,6 +75,14 @@ export function directionalLean(market: MarketRead | null): {
 
 export type Side = 'CE' | 'PE';
 
+export type Hedge = {
+  strike: number;
+  /** what you pay to buy it: the ask */
+  price: number;
+  gapStrikes: number;
+  widthUsd: number;
+};
+
 export type SideRecommendation = {
   side: Side;
   leg: ScoredLeg;
@@ -87,12 +95,25 @@ export type SideRecommendation = {
   zeroChance: number | null;
   modelChance: number | null;
   sample: number | null;
+  /** the model's own three answers, which are three different questions */
+  pExpireWorthless: number | null;
+  pTouch: number | null;
+  pNearZero: number | null;
+  hedge: Hedge | null;
+  hedgeRequested: boolean;
+  /** per lot, in dollars */
+  maxProfit: number;
+  maxLoss: number | null;
+  breakeven: number;
   order: string;
+  hedgeOrder: string | null;
 };
 
 export type Recommendation = {
   ok: boolean;
   why: string | null;
+  /** true when a hedge was asked for and at least one side could not get one */
+  hedgeMissing: boolean;
   sides: SideRecommendation[];
   split: { ce: number; pe: number };
   splitReason: string;
@@ -101,7 +122,40 @@ export type Recommendation = {
   /** the chance BOTH legs expire worthless, if they were independent */
   bothZeroChance: number | null;
   marginUsd: number;
+  totalMaxLossUsd: number | null;
+  rewardToRisk: number | null;
 };
+
+/** Never let one side carry the whole book, however strong the signal looks. */
+export const MIN_LOTS_PER_SIDE = 2;
+export const MAX_LOTS_PER_SIDE = 8;
+
+/** Delta lists BTC strikes $200 apart near the money. */
+const STRIKE_STEP = 200;
+
+/**
+ * The nearest listed strike further out than the short, at or inside the
+ * requested gap. Walking inward rather than giving up means a missing strike
+ * degrades the protection instead of silently removing it.
+ */
+function findHedge(
+  scored: ScoredLeg[],
+  side: Side,
+  shortStrike: number,
+  gap: number,
+): Hedge | null {
+  if (gap <= 0) return null;
+  const cp = side === 'CE' ? 'C' : 'P';
+  for (let g = gap; g > 0; g--) {
+    const k = side === 'CE' ? shortStrike + g * STRIKE_STEP : shortStrike - g * STRIKE_STEP;
+    const leg = scored.find((l) => l.cp === cp && l.strike === k);
+    const cost = leg?.ask ?? leg?.mark ?? null;
+    if (leg && cost !== null) {
+      return { strike: k, price: cost, gapStrikes: g, widthUsd: Math.abs(k - shortStrike) };
+    }
+  }
+  return null;
+}
 
 /** The furthest strike that still pays the floor, ranked by observed outcome. */
 function bestLeg(scored: ScoredLeg[], side: Side, minPremium: number): ScoredLeg | null {
@@ -117,8 +171,8 @@ function bestLeg(scored: ScoredLeg[], side: Side, minPremium: number): ScoredLeg
   // highest observed zero-rate first; where the data cannot separate two
   // strikes, take the one further out, which is the cheaper mistake
   return eligible.reduce((a, b) => {
-    const az = a.zero?.historical ?? a.pOtm ?? 0;
-    const bz = b.zero?.historical ?? b.pOtm ?? 0;
+    const az = a.zero?.historical ?? a.probs.expireWorthless ?? 0;
+    const bz = b.zero?.historical ?? b.probs.expireWorthless ?? 0;
     if (Math.abs(az - bz) > 0.0005) return bz > az ? b : a;
     return (b.emDistance ?? 0) > (a.emDistance ?? 0) ? b : a;
   });
@@ -130,6 +184,7 @@ export function recommend(
   market: MarketRead | null,
   minPremium: number,
   totalLots: number,
+  hedgeGap = 0,
 ): Recommendation {
   const { lean, reason } = directionalLean(market);
   let ce = 0.5;
@@ -149,11 +204,24 @@ export function recommend(
   }
 
   const picks: SideRecommendation[] = [];
+  let hedgeMissing = false;
   for (const [side, weight] of [['CE', ce], ['PE', pe]] as const) {
     const leg = bestLeg(scored, side, minPremium);
     if (!leg || leg.sellPrice === null) continue;
-    const lots = Math.max(1, Math.round(totalLots * weight));
-    const credit = leg.sellPrice * lots * LOT_BTC;
+
+    const raw = totalLots * weight;
+    const lots = Math.max(
+      Math.min(MIN_LOTS_PER_SIDE, totalLots),
+      Math.min(MAX_LOTS_PER_SIDE, Math.round(raw)),
+    );
+
+    const hedge = findHedge(scored, side, leg.strike, hedgeGap);
+    if (hedgeGap > 0 && hedge === null) hedgeMissing = true;
+
+    const netPerBtc = leg.sellPrice - (hedge?.price ?? 0);
+    const credit = netPerBtc * lots * LOT_BTC;
+    const sym = side === 'CE' ? 'C' : 'P';
+
     picks.push({
       side,
       leg,
@@ -164,13 +232,25 @@ export function recommend(
       zeroChance: leg.zero?.historical ?? null,
       modelChance: leg.pOtm,
       sample: leg.zero?.sample ?? null,
-      order: `SELL ${lots} × ${side === 'CE' ? 'C' : 'P'}-BTC-${leg.strike}-${snap.expiry} @ ${leg.sellPrice.toFixed(2)}`,
+      pExpireWorthless: leg.probs.expireWorthless,
+      pTouch: leg.probs.touch,
+      pNearZero: leg.probs.nearZero,
+      hedge,
+      hedgeRequested: hedgeGap > 0,
+      maxProfit: netPerBtc * lots * LOT_BTC,
+      maxLoss: hedge ? (hedge.widthUsd - netPerBtc) * lots * LOT_BTC : null,
+      breakeven: side === 'CE' ? leg.strike + netPerBtc : leg.strike - netPerBtc,
+      order: `SELL ${lots} × ${sym}-BTC-${leg.strike}-${snap.expiry} @ ${leg.sellPrice.toFixed(2)}`,
+      hedgeOrder: hedge
+        ? `BUY  ${lots} × ${sym}-BTC-${hedge.strike}-${snap.expiry} @ ${hedge.price.toFixed(2)}`
+        : null,
     });
   }
 
   if (picks.length < 2) {
     return {
       ok: false,
+      hedgeMissing,
       why:
         picks.length === 0
           ? `Nothing out of the money is bid at $${minPremium} or more. The market is not paying enough for the risk today.`
@@ -182,12 +262,20 @@ export function recommend(
       totalCreditInr: picks.reduce((a, p) => a + p.creditInr, 0),
       bothZeroChance: null,
       marginUsd: totalLots * 0.5,
+      totalMaxLossUsd: null,
+      rewardToRisk: null,
     };
   }
 
   const zs = picks.map((p) => p.zeroChance).filter((z): z is number => z !== null);
+  const anyUnbounded = picks.some((p) => p.maxLoss === null);
+  const totalMaxLossUsd = anyUnbounded
+    ? null
+    : picks.reduce((a, p) => a + (p.maxLoss ?? 0), 0);
+  const totalCredit = picks.reduce((a, p) => a + p.creditUsd, 0);
   return {
     ok: true,
+    hedgeMissing,
     why: null,
     sides: picks,
     split: { ce, pe },
@@ -196,5 +284,8 @@ export function recommend(
     totalCreditInr: picks.reduce((a, p) => a + p.creditInr, 0),
     bothZeroChance: zs.length === 2 ? zs[0]! * zs[1]! : null,
     marginUsd: totalLots * 0.5,
+    totalMaxLossUsd,
+    rewardToRisk:
+      totalMaxLossUsd && totalMaxLossUsd > 0 ? totalCredit / totalMaxLossUsd : null,
   };
 }

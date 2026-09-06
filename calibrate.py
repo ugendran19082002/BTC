@@ -58,6 +58,18 @@ def delta(cp, s, k, t, v):
     return cdf(d1) if cp == 'C' else cdf(d1) - 1
 
 
+def p_expire_worthless(cp, s, k, t, v):
+    """N(-d2) for a call, N(d2) for a put.
+
+    Not 1 - |delta|. Delta is a sensitivity; the terminal probability is d2, and
+    the two diverge most at exactly the out-of-the-money strikes this strategy
+    sells, so the earlier table was calibrating against the wrong quantity.
+    """
+    sq = v * math.sqrt(t)
+    d2 = (math.log(s / k) + 0.5 * v * v * t) / sq - sq
+    return cdf(-d2) if cp == 'C' else cdf(d2)
+
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS calibration (
     kind       TEXT NOT NULL,      -- 'model_potm' or 'em_distance'
@@ -97,7 +109,7 @@ def main():
         if v is None:
             skipped += 1
             continue
-        p_otm = 1 - abs(delta(cp, s, k, T, v))
+        p_otm = p_expire_worthless(cp, s, k, T, v)
         worthless = 1 if l['settle_value'] == 0 else 0
         n += 1
 
@@ -139,7 +151,7 @@ def main():
                 )
 
     print(f'{n} legs calibrated, {skipped} unpriceable\n')
-    print('  MODEL SAYS  ->  ACTUALLY EXPIRED WORTHLESS')
+    print('  MODEL N(d2) SAYS  ->  ACTUALLY EXPIRED WORTHLESS')
     for r in con.execute("SELECT * FROM calibration WHERE kind='model_potm' ORDER BY bucket_lo"):
         gap = 100 * (r['rate'] - (r['bucket_lo'] + 0.025))
         print(f"   {r['bucket_lo']*100:>5.0f}-{r['bucket_hi']*100:<3.0f}%  "

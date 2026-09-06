@@ -132,7 +132,9 @@ export type MarketRead = {
 /** Close-to-close change and high-low range over the last `bars` bars. */
 function moveOver(bars: Candle[], count: number, hours: number, label: string): Move {
   const slice = bars.slice(-count);
-  if (slice.length < 2) {
+  // One bar is a perfectly good window -- open to close of that bar is exactly
+  // the move over its own duration. Requiring two dropped the 5-minute row.
+  if (slice.length < 1) {
     return { hours, label, changeUsd: null, changePct: null, rangeUsd: null, rangePct: null };
   }
   const first = slice[0]!;
