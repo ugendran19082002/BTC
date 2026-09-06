@@ -144,6 +144,7 @@ export type SnapshotMeta = {
   atm: number;
   atmIv: number | null;
   expectedMove: number | null;
+  expectedMoveAtEntry: number | null;
 };
 
 export type Pick = {

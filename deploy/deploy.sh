@@ -51,11 +51,14 @@ say "checking tooling"
 command -v docker >/dev/null || fail "docker is not installed"
 docker compose version >/dev/null 2>&1 || fail "docker compose v2 is required"
 
+say "running the test suite"
+( cd "$ROOT/app/server" && npm ci && npm test ) || fail "server tests failed"
+
 say "type-checking before we build"
 # Call the local binary rather than going through npx: npx will happily decide a
 # package is missing and offer to fetch it, which turns a dependency problem into
 # a confusing prompt in the middle of a deploy.
-( cd "$ROOT/app/server" && npm ci && ./node_modules/.bin/tsc -p tsconfig.json --noEmit ) \
+( cd "$ROOT/app/server" && ./node_modules/.bin/tsc -p tsconfig.json --noEmit ) \
   || fail "server type-check failed"
 ( cd "$ROOT/app/web"    && npm ci && ./node_modules/.bin/tsc -b --noEmit ) \
   || fail "web type-check failed"

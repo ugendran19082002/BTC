@@ -130,6 +130,49 @@ export type Recommendation = {
 export const MIN_LOTS_PER_SIDE = 2;
 export const MAX_LOTS_PER_SIDE = 8;
 
+/**
+ * Split `total` lots between two sides so they add up to exactly `total`.
+ *
+ * Rounding each side on its own does not: 7 lots at 30/70 rounds to 2 and 5,
+ * and with the per-side floor applied it can round to 2 and 6, which is 8 lots
+ * of margin for a 7 lot decision. Largest remainder gives the extra lot to
+ * whichever side was closest to earning it, and the caps are applied by moving
+ * a lot across rather than by inventing one.
+ */
+export function allocateLots(
+  total: number,
+  ceWeight: number,
+  peWeight: number,
+): { ce: number; pe: number } {
+  const t = Math.max(0, Math.floor(total));
+  if (t === 0) return { ce: 0, pe: 0 };
+  if (t === 1) return ceWeight >= peWeight ? { ce: 1, pe: 0 } : { ce: 0, pe: 1 };
+
+  const rawCe = (t * ceWeight) / (ceWeight + peWeight);
+  let ce = Math.floor(rawCe);
+  let pe = t - ce;
+  // hand the remaining lot to the side with the larger fractional claim
+  if (ce + pe < t) ce += t - (ce + pe);
+  if (rawCe - ce > 0.5 && pe > 0) {
+    ce += 1;
+    pe -= 1;
+  }
+
+  // Caps, applied by transfer so the total never changes. With few lots the cap
+  // may be unreachable; an even split is the honest fallback.
+  const lo = Math.min(MIN_LOTS_PER_SIDE, Math.floor(t / 2));
+  const hi = Math.max(MAX_LOTS_PER_SIDE, t - lo);
+  const move = (from: 'ce' | 'pe', n: number) => {
+    if (from === 'ce') { ce -= n; pe += n; } else { pe -= n; ce += n; }
+  };
+  if (ce < lo) move('pe', lo - ce);
+  if (pe < lo) move('ce', lo - pe);
+  if (ce > hi) move('ce', ce - hi);
+  if (pe > hi) move('pe', pe - hi);
+
+  return { ce, pe };
+}
+
 /** Delta lists BTC strikes $200 apart near the money. */
 const STRIKE_STEP = 200;
 
@@ -205,15 +248,11 @@ export function recommend(
 
   const picks: SideRecommendation[] = [];
   let hedgeMissing = false;
-  for (const [side, weight] of [['CE', ce], ['PE', pe]] as const) {
+  const allocation = allocateLots(totalLots, ce, pe);
+  for (const [side, lots] of [['CE', allocation.ce], ['PE', allocation.pe]] as const) {
+    if (lots <= 0) continue;
     const leg = bestLeg(scored, side, minPremium);
     if (!leg || leg.sellPrice === null) continue;
-
-    const raw = totalLots * weight;
-    const lots = Math.max(
-      Math.min(MIN_LOTS_PER_SIDE, totalLots),
-      Math.min(MAX_LOTS_PER_SIDE, Math.round(raw)),
-    );
 
     const hedge = findHedge(scored, side, leg.strike, hedgeGap);
     if (hedgeGap > 0 && hedge === null) hedgeMissing = true;

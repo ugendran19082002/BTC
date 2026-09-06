@@ -247,7 +247,9 @@ export function summarize(trades: TradeDay[]): Summary {
   const n = trades.length;
   const wins = trades.filter((t) => t.pnlUsd > 0).length;
   const grossWin = trades.filter((t) => t.pnlUsd > 0).reduce((a, t) => a + t.pnlUsd, 0);
-  const grossLoss = -trades.filter((t) => t.pnlUsd < 0).reduce((a, t) => a + t.pnlUsd, 0);
+  // `+ 0` normalises the -0 that negating an empty sum produces; it serialises
+  // the same either way, but Object.is(-0, 0) is false and that surprises people
+  const grossLoss = -trades.filter((t) => t.pnlUsd < 0).reduce((a, t) => a + t.pnlUsd, 0) + 0;
   const total = trades.reduce((a, t) => a + t.pnlUsd, 0);
   let peak = 0;
   let mdd = 0;

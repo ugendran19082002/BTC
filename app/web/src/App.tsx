@@ -377,6 +377,30 @@ export default function App() {
                       and a losing day moved 2.25%.
                     </p>
                   </Metric>
+
+                  {snap.expectedMoveAtEntry !== null &&
+                    snap.hoursToExpiry > 14 && (
+                    <Metric
+                      label="over the 12h you'd hold"
+                      value={'±$' + snap.expectedMoveAtEntry.toFixed(0)}
+                    >
+                      <p>
+                        The figure above covers all {snap.hoursToExpiry.toFixed(1)} hours
+                        still left on this contract. You would not hold it for all of
+                        them — entry is 05:30 IST and settlement is 17:30 the same day,
+                        so the trade spans about twelve.
+                      </p>
+                      <Formula>
+                        {snap.spot.toFixed(0)} × {snap.atmIv !== null ? (snap.atmIv * 100).toFixed(1) : '·'}% × √(12 ÷ 8760)
+                        <br />= ±${snap.expectedMoveAtEntry.toFixed(0)}
+                      </Formula>
+                      <p>
+                        This is the one to judge a strike against. It assumes today's
+                        at-the-money volatility still holds tomorrow morning, which it
+                        may not.
+                      </p>
+                    </Metric>
+                  )}
                 </div>
                 <RecommendPanel rec={data.recommendation} market={data.market} minPremium={minPremium} usdinr={data.usdinr} />
                 <StructurePanel structure={data.structure} snap={snap} />
