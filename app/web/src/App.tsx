@@ -9,7 +9,7 @@ import { FloorPanel } from './components/FloorPanel';
 import { VerdictPanel } from './components/VerdictPanel';
 import { DateTimePicker, istToEpoch, type IstMoment } from './components/DateTimePicker';
 import { AccountPanel } from './components/AccountPanel';
-import { Metric, Formula } from './components/Explain';
+import { Metric, Formula, Field } from './components/Explain';
 
 type Tab = 'desk' | 'backtest' | 'floors';
 
@@ -31,7 +31,8 @@ export default function App() {
   const [minPremium, setMinPremium] = useState(15);
   const [hedgeGap, setHedgeGap] = useState(3);
   const [lots, setLots] = useState(10);
-  const [autoRefresh, setAutoRefresh] = useState(false);
+  // On by default: a live chain that silently goes stale is worse than no chain.
+  const [autoRefresh, setAutoRefresh] = useState(true);
 
   const [data, setData] = useState<ChainResponse | null>(null);
   const [busy, setBusy] = useState(false);
@@ -60,7 +61,16 @@ export default function App() {
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { getHealth().then((h) => setDays(h.days)).catch(() => setDays(null)); }, []);
-  useEffect(() => { getExpiries().then((r) => setExpiries(r.expiries)).catch(() => setExpiries([])); }, []);
+  useEffect(() => {
+    getExpiries()
+      .then((r) => {
+        setExpiries(r.expiries);
+        // Land on the contract the next 05:30 entry would sell, not the nearest
+        // expiry. By afternoon the nearest has an hour left and is not a trade.
+        setExpiry((cur) => cur || r.expiries.find((e) => e.isNextEntry)?.expiry || '');
+      })
+      .catch(() => setExpiries([]));
+  }, []);
 
   useEffect(() => {
     if (!autoRefresh || !live) return;
@@ -106,35 +116,105 @@ export default function App() {
 
             <div className="field">
               <label>expiry</label>
-              <select value={expiry} onChange={(e) => setExpiry(e.target.value)} style={{ minWidth: 190 }}>
-                <option value="">today · the daily contract</option>
+              <select value={expiry} onChange={(e) => setExpiry(e.target.value)} style={{ minWidth: 270 }}>
+                {expiries.length === 0 && <option value="">loading…</option>}
                 {expiries.map((e) => (
                   <option key={e.expiry} value={e.expiry}>
-                    {e.iso} · {e.hoursAway < 48
-                      ? `${e.hoursAway.toFixed(0)}h away`
-                      : `${(e.hoursAway / 24).toFixed(0)} days away`}
-                    {e.isDaily ? ' · daily' : ''}
+                    {e.iso} · settles in {e.hoursAway < 48
+                      ? `${e.hoursAway.toFixed(0)}h`
+                      : `${(e.hoursAway / 24).toFixed(0)} days`}
+                    {e.isNextEntry
+                      ? ' ★ the one you would sell'
+                      : e.isDaily
+                        ? " · today's, mostly spent"
+                        : ' · not measured'}
                   </option>
                 ))}
               </select>
             </div>
 
-            <div className="field">
-              <label>min premium $</label>
+            <Field
+              label="min premium $"
+              help={
+                <>
+                  <p>
+                    The least you are willing to be paid per BTC for taking the risk.
+                    The desk then sells the <b>furthest</b> strike that still pays it —
+                    the most distance the market will hand you at that price.
+                  </p>
+                  <p>
+                    Asking for more walks the strike toward the money. Over 733 days:
+                    $15 won 95.8% of the time with the strike 2.5% away; $50 won 83.8%
+                    at 1.6% away; $100 lost money.
+                  </p>
+                </>
+              }
+            >
               <input type="number" value={minPremium} onChange={(e) => setMinPremium(Number(e.target.value))} />
-            </div>
-            <div className="field">
-              <label>lots</label>
+            </Field>
+
+            <Field
+              label="lots"
+              help={
+                <>
+                  <p>
+                    One lot is 0.001 BTC and costs about $0.50 of margin, so ten lots
+                    is 0.01 BTC and roughly $5 of margin.
+                  </p>
+                  <p>
+                    Split them evenly between the two sides. Across 733 days the call
+                    leg lost on 8 days and the put leg on 9, and the two <b>never lost
+                    on the same day</b> — so an even split halved the worst day
+                    (−$8.97 against −$18.11 all on one side) and more than doubled
+                    return per unit of drawdown.
+                  </p>
+                </>
+              }
+            >
               <input type="number" value={lots} onChange={(e) => setLots(Number(e.target.value))} />
-            </div>
-            <div className="field">
-              <label>hedge gap</label>
+            </Field>
+
+            <Field
+              label="hedge gap"
+              help={
+                <>
+                  <p>
+                    How many strikes past the one you sell to <b>buy</b> protection.
+                    Strikes are $200 apart, so a gap of 3 is $600.
+                  </p>
+                  <Formula>
+                    sell C-BTC-82000 &nbsp;→ collect the premium<br />
+                    buy&nbsp; C-BTC-82600 &nbsp;→ pay a little back (3 × 200)<br />
+                    worst case = 600 − net credit, and not a rupee more
+                  </Formula>
+                  <p>
+                    Without it the short is naked: if BTC runs, the loss keeps growing
+                    with it. With it you know the worst case before you enter, and it
+                    costs you part of the credit.
+                  </p>
+                  <p className="dim">
+                    Set 0 for no hedge. Be warned: at the distances this strategy sells,
+                    Delta often lists nothing further out to buy — protection was
+                    available on only about a quarter of days at a gap of 3.
+                  </p>
+                </>
+              }
+            >
               <input type="number" value={hedgeGap} onChange={(e) => setHedgeGap(Number(e.target.value))} />
-            </div>
-            <div className="field">
-              <label>strikes each side</label>
+            </Field>
+
+            <Field
+              label="strikes each side"
+              help={
+                <p>
+                  How much of the chain to fetch and display, counted in strikes above
+                  and below the money. Display only — it does not change the trade,
+                  though too small a window can hide the strike you want.
+                </p>
+              }
+            >
               <input type="number" value={width} onChange={(e) => setWidth(Number(e.target.value))} />
-            </div>
+            </Field>
 
             <button className="go" onClick={() => void load()} disabled={busy}>
               {busy ? 'loading…' : 'Refresh'}
@@ -168,7 +248,9 @@ export default function App() {
                 <div className="card">
                   <h2>
                     {snap.live ? 'Live' : 'Snapshot'} · expiry {snap.expiry}
-                    {!snap.isDaily && <span className="tag warn">not the daily</span>}
+                    {snap.isNextEntry
+                      ? <span className="tag ok">next entry</span>
+                      : <span className="tag warn">not the measured contract</span>}
                   </h2>
                   <div className="big">{snap.spot.toFixed(1)}</div>
                   <div className="kv"><span>as of</span>

@@ -255,49 +255,73 @@ function istParts(ts: number) {
 const DAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 export function verdict(
-  snap: { ts: number; live: boolean; hoursToExpiry: number; expiry: string; spot: number; isDaily: boolean },
+  snap: {
+    ts: number;
+    live: boolean;
+    hoursToExpiry: number;
+    expiry: string;
+    spot: number;
+    isDaily: boolean;
+    isNextEntry: boolean;
+    nextEntryTs: number;
+  },
   picks: SellPick[],
   minPremium: number,
   lots: number,
 ): Verdict {
   const ist = istParts(snap.ts);
+  // The day that matters is the day the position is opened, not the day you
+  // happen to be reading the screen. At 16:38 on a Sunday the next entry is a
+  // Monday, and warning about Saturdays and Sundays would be wrong.
+  const entryIst = istParts(snap.nextEntryTs);
   const checks: Check[] = [];
 
   // 1. The entry window. Everything measured assumes roughly 12 hours of decay
   //    ahead; entering late is a different trade with different odds.
   const minutesFromOpen = (ist.hh - ENTRY_UTC_HOUR - 5) * 60 + (ist.mm - 30);
   const inWindow = minutesFromOpen >= 0 && minutesFromOpen <= WINDOW_MINUTES;
+  const inWindowNow = inWindow;
+  const waitHours = (snap.nextEntryTs - snap.ts) / 3600;
   checks.push({
     ok: inWindow,
     severity: 'block',
     text: inWindow
       ? `In the entry window — ${ist.label}, ${snap.hoursToExpiry.toFixed(1)}h to settlement`
-      : `Outside the entry window. It is ${ist.label}; entry is 05:30–06:00 IST. ` +
-        `Only ${snap.hoursToExpiry.toFixed(1)}h of decay is left, not the ~12h every number here was measured over.`,
+      : snap.isNextEntry
+        ? `The window has not opened. It is ${ist.label}; entry is 05:30–06:00 IST, ` +
+          `${waitHours.toFixed(1)}h away. This is the right contract — come back then.`
+        : `Outside the entry window. It is ${ist.label}; entry is 05:30–06:00 IST. ` +
+          `Only ${snap.hoursToExpiry.toFixed(1)}h of decay is left here, not the ~12h every number was measured over.`,
   });
 
-  // 1b. Which contract. Everything measured is the same-day daily.
-  if (!snap.isDaily) {
+  // 1b. Which contract. Everything measured is a ~12 hour, same-session trade.
+  //     The contract the NEXT entry sells is the right one to be looking at,
+  //     even hours before the window opens.
+  if (!snap.isNextEntry) {
     checks.push({
       ok: false,
       severity: 'block',
       text:
-        `Expiry ${snap.expiry} is ${(snap.hoursToExpiry / 24).toFixed(1)} days out, not today. ` +
-        'Nothing in the backtest applies to it -- those numbers are all same-day, ~12 hour trades. ' +
-        'You can look at this chain, but the desk cannot tell you whether to trade it.',
+        `Expiry ${snap.expiry} is not the contract the next 05:30 entry would sell. ` +
+        (snap.hoursToExpiry < 12
+          ? `It settles in ${snap.hoursToExpiry.toFixed(1)}h, so most of its decay is already gone. `
+          : `It is ${(snap.hoursToExpiry / 24).toFixed(1)} days out. `) +
+        'Nothing measured applies to it — every number here came from ~12 hour trades. ' +
+        'Look at it if you want; the desk cannot tell you whether to trade it.',
     });
   }
 
   // 2. Day of week. The largest effect in two years of data, and the only one
   //    that is about when rather than what.
-  const weekend = ist.weekday === 0 || ist.weekday === 6;
+  const weekend = entryIst.weekday === 0 || entryIst.weekday === 6;
+  const when = inWindowNow ? 'today' : 'the next entry';
   checks.push({
     ok: !weekend,
     severity: 'warn',
     text: weekend
-      ? `${DAY[ist.weekday]} — the weekend holds all six of the largest losses in two years ` +
-        `(worst weekday loss $0.95, worst weekend loss $8.48). Size down or stand aside.`
-      : `${DAY[ist.weekday]} — a weekday. 3 losing days in 461, worst $0.95.`,
+      ? `${when} is a ${DAY[entryIst.weekday]} — the weekend holds all six of the largest losses ` +
+        `in two years (worst weekday loss $0.95, worst weekend loss $8.48). Size down or stand aside.`
+      : `${when} is a ${DAY[entryIst.weekday]}, a weekday. 3 losing days in 461, worst $0.95.`,
   });
 
   // 3. Is there anything worth selling?
@@ -336,18 +360,20 @@ export function verdict(
   });
 
   // The next 05:30 IST, expressed in the reader's terms.
-  const next = new Date(((Math.floor(snap.ts / 86400) + (minutesFromOpen > WINDOW_MINUTES ? 1 : 0)) * 86400) * 1000);
-  const nextDay = DAY[next.getUTCDay()]!;
+  const nextDay = DAY[entryIst.weekday]!;
 
   if (blocked) {
     const why = checks.find((c) => c.severity === 'block' && !c.ok)!;
+    const waiting = !inWindow && snap.isNextEntry;
     return {
       action: inWindow ? 'STAND_ASIDE' : 'WAIT',
-      headline: inWindow ? 'Stand aside' : 'Not now',
+      headline: inWindow ? 'Stand aside' : waiting ? 'Not yet' : 'Not now',
       detail: why.text,
       checks,
       orders: [],
-      nextWindow: inWindow ? null : `next window 05:30 IST, ${nextDay}`,
+      nextWindow: inWindow
+        ? null
+        : `entry in ${waitHours.toFixed(1)}h · 05:30 IST, ${nextDay}`,
     };
   }
 

@@ -36,15 +36,15 @@ export function ChainTable({ legs, snap }: { legs: Leg[]; snap: SnapshotMeta }) 
       <table>
         <thead>
           <tr>
-            <th colSpan={8} className="left ce">CALLS</th>
+            <th colSpan={9} className="left ce">CALLS</th>
             <th>STRIKE</th>
-            <th colSpan={8} className="left pe">PUTS</th>
+            <th colSpan={9} className="left pe">PUTS</th>
           </tr>
           <tr>
             <th>OI</th><th>Vol</th><th>Age</th><th>Δ</th><th>P(OTM)</th>
-            <th>IV</th><th className="bidcol">Bid</th><th>Mark</th>
+            <th>IV</th><th className="askcol">Ask</th><th>Mark</th><th className="bidcol">Bid</th>
             <th></th>
-            <th>Mark</th><th className="bidcol">Bid</th><th>IV</th>
+            <th className="bidcol">Bid</th><th>Mark</th><th className="askcol">Ask</th><th>IV</th>
             <th>P(OTM)</th><th>Δ</th><th>Age</th><th>Vol</th><th>OI</th>
           </tr>
         </thead>
@@ -60,16 +60,18 @@ export function ChainTable({ legs, snap }: { legs: Leg[]; snap: SnapshotMeta }) 
                 <td>{n(c?.delta ?? null, 3)}</td>
                 <td>{c?.pOtm != null ? (c.pOtm * 100).toFixed(0) + '%' : '·'}</td>
                 <td className="dim">{c?.iv != null ? (c.iv * 100).toFixed(1) : '·'}</td>
-                <td className="bidcol">{n(c?.bid ?? null)}</td>
+                <td className="askcol">{n(c?.ask ?? null)}</td>
                 <td>{n(c?.mark ?? null)}</td>
+                <td className="bidcol">{n(c?.bid ?? null)}</td>
 
                 <td className="mono strikecell">
                   {k}
                   {k === snap.atm && <span className="tag">ATM</span>}
                 </td>
 
-                <td>{n(p?.mark ?? null)}</td>
                 <td className="bidcol">{n(p?.bid ?? null)}</td>
+                <td>{n(p?.mark ?? null)}</td>
+                <td className="askcol">{n(p?.ask ?? null)}</td>
                 <td className="dim">{p?.iv != null ? (p.iv * 100).toFixed(1) : '·'}</td>
                 <td>{p?.pOtm != null ? (p.pOtm * 100).toFixed(0) + '%' : '·'}</td>
                 <td>{n(p?.delta ?? null, 3)}</td>
@@ -81,6 +83,11 @@ export function ChainTable({ legs, snap }: { legs: Leg[]; snap: SnapshotMeta }) 
           })}
         </tbody>
       </table>
+      <div className="note" style={{ padding: '8px 12px', margin: 0 }}>
+        <b className="up">Bid</b> is what you receive when you <b>sell</b>.
+        {' '}<b className="down">Ask</b> is what you pay when you <b>buy</b> — the hedge leg.
+        {' '}Mark is Delta's fair value: use it to judge, never as your fill.
+      </div>
       {!hasBook && (
         <div className="note" style={{ padding: '8px 12px', margin: 0 }}>
           No order book on a historical snapshot — bid and ask are live-only, so the

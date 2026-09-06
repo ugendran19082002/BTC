@@ -229,3 +229,8 @@ code {
   font-family: ui-monospace, Menlo, Consolas, monospace;
   background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-size: 11.5px;
 }
+.field-explain { max-width: 340px; white-space: normal; }
+.bar { align-items: flex-start; }
+/* Buying pays the ask; selling receives the bid. Two different numbers, and
+   confusing them is the difference between the backtest and the account. */
+th.askcol, td.askcol { color: var(--down); background: #f851490a; }

@@ -35,8 +35,12 @@ export type Snapshot = {
   live: boolean;
   expiry: string;
   expiryTs: number;
-  /** true when this is the same-day daily contract the backtest measured */
+  /** true when this is the nearest expiry */
   isDaily: boolean;
+  /** true when this is the contract the next 05:30 IST entry would sell */
+  isNextEntry: boolean;
+  /** epoch seconds of the next 05:30 IST */
+  nextEntryTs: number;
   /** time to expiry in years */
   tte: number;
   hoursToExpiry: number;
@@ -44,6 +48,8 @@ export type Snapshot = {
   atm: number;
   atmIv: number | null;
   expectedMove: number | null;
+  /** the same figure over the 12 hours the trade would actually span */
+  expectedMoveAtEntry: number | null;
   legs: Leg[];
 };
 
@@ -66,21 +72,50 @@ export function nextExpiry(ts: number): { expiry: string; expiryTs: number } {
   return { expiry: ddmmyy(new Date(expiryTs * 1000)), expiryTs };
 }
 
+/** Entry is 05:30 IST, which is 00:00 UTC. */
+export const ENTRY_HOUR_UTC = 0;
+const ENTRY_WINDOW_MINUTES = 30;
+
+/**
+ * The contract you would actually sell next, and when.
+ *
+ * Not the same as the nearest expiry. By late afternoon the day's contract has
+ * an hour left and is nothing this strategy would touch; the one that matters
+ * is the contract settling at the end of the *next* entry window. Pointing the
+ * desk at the nearest expiry all day shows a chain nobody is going to trade.
+ */
+export function nextEntry(ts: number): { entryTs: number; expiry: string; expiryTs: number } {
+  const d = new Date(ts * 1000);
+  const todayEntry = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), ENTRY_HOUR_UTC) / 1000;
+  // still inside today's window, or before it opens
+  const entryTs =
+    ts <= todayEntry + ENTRY_WINDOW_MINUTES * 60 ? todayEntry : todayEntry + 86400;
+  const expiryTs = entryTs + 12 * 3600;
+  return { entryTs, expiry: ddmmyy(new Date(expiryTs * 1000)), expiryTs };
+}
+
 function moneyness(cp: 'C' | 'P', off: number): Leg['moneyness'] {
   if (off === 0) return 'ATM';
   if (cp === 'C') return off > 0 ? 'OTM' : 'ITM';
   return off < 0 ? 'OTM' : 'ITM';
 }
 
-function finish(snap: Omit<Snapshot, 'atmIv' | 'expectedMove'>): Snapshot {
+function finish(snap: Omit<Snapshot, 'atmIv' | 'expectedMove' | 'expectedMoveAtEntry'>): Snapshot {
   const atmLegs = snap.legs.filter((l) => l.off === 0 && l.iv !== null);
   const atmIv = atmLegs.length
     ? atmLegs.reduce((a, l) => a + l.iv!, 0) / atmLegs.length
     : null;
+  const TWELVE_HOURS_IN_YEARS = 12 / (365 * 24);
   return {
     ...snap,
     atmIv,
     expectedMove: atmIv === null ? null : expectedMove(snap.spot, atmIv, snap.tte),
+    // What the move would be over the 12 hours the trade actually spans, if
+    // today's at-the-money volatility still held. Shown when you are looking
+    // ahead at a contract you have not entered yet, because the move over the
+    // time remaining right now is not the risk you would be taking.
+    expectedMoveAtEntry:
+      atmIv === null ? null : expectedMove(snap.spot, atmIv, TWELVE_HOURS_IN_YEARS),
   };
 }
 
@@ -97,8 +132,10 @@ export type ExpiryOption = {
   expiryTs: number;
   iso: string;
   hoursAway: number;
-  /** the same-day daily contract the strategy was measured on */
+  /** the nearest expiry, whatever is left of it */
   isDaily: boolean;
+  /** the contract the next 05:30 IST entry would sell -- what the desk defaults to */
+  isNextEntry: boolean;
   contracts: number;
 };
 
@@ -107,6 +144,7 @@ export async function liveExpiries(): Promise<ExpiryOption[]> {
   const tickers = await liveTickers();
   const now = Math.floor(Date.now() / 1000);
   const nearest = nextExpiry(now).expiry;
+  const upcoming = nextEntry(now).expiry;
   const counts = new Map<string, number>();
   for (const t of tickers) {
     const code = t.symbol.split('-').pop();
@@ -121,6 +159,7 @@ export async function liveExpiries(): Promise<ExpiryOption[]> {
         iso: new Date(ets * 1000).toISOString().slice(0, 10),
         hoursAway: (ets - now) / 3600,
         isDaily: expiry === nearest,
+        isNextEntry: expiry === upcoming,
         contracts,
       };
     })
@@ -139,9 +178,9 @@ export async function liveChain(width = 12, wantExpiry?: string): Promise<Snapsh
   const tickers = await liveTickers();
   if (!tickers.length) throw new Error('ticker feed empty');
   const ts = Math.floor(Date.now() / 1000);
-  const near = nextExpiry(ts);
-  const expiry = wantExpiry ?? near.expiry;
-  const expiryTs = wantExpiry ? expiryTsOf(wantExpiry) : near.expiryTs;
+  const upcoming = nextEntry(ts);
+  const expiry = wantExpiry ?? upcoming.expiry;
+  const expiryTs = wantExpiry ? expiryTsOf(wantExpiry) : upcoming.expiryTs;
   const day = tickers.filter((t) => t.symbol.endsWith('-' + expiry));
   if (!day.length) throw new Error(`no live contracts for expiry ${expiry}`);
 
@@ -187,7 +226,9 @@ export async function liveChain(width = 12, wantExpiry?: string): Promise<Snapsh
     live: true,
     expiry,
     expiryTs,
-    isDaily: expiry === near.expiry,
+    isDaily: expiry === nextExpiry(ts).expiry,
+    isNextEntry: expiry === upcoming.expiry,
+    nextEntryTs: upcoming.entryTs,
     tte,
     hoursToExpiry: (expiryTs - ts) / 3600,
     spot,
@@ -210,6 +251,7 @@ export async function historicalChain(
 ): Promise<Snapshot> {
   const minute = Math.floor(ts / 60) * 60;
   const near = nextExpiry(minute);
+  const upcoming = nextEntry(minute);
   const expiry = wantExpiry ?? near.expiry;
   const expiryTs = wantExpiry ? expiryTsOf(wantExpiry) : near.expiryTs;
   const spot = await spotAt(minute);
@@ -272,6 +314,8 @@ export async function historicalChain(
     expiry,
     expiryTs,
     isDaily: expiry === near.expiry,
+    isNextEntry: expiry === upcoming.expiry,
+    nextEntryTs: upcoming.entryTs,
     tte,
     hoursToExpiry: (expiryTs - minute) / 3600,
     spot,

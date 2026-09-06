@@ -48,3 +48,43 @@ export function Metric({
 export function Formula({ children }: { children: ReactNode }) {
   return <div className="formula">{children}</div>;
 }
+
+/**
+ * A labelled control that can explain itself.
+ *
+ * The controls on this desk are not self-evident -- "hedge gap" means nothing
+ * until someone tells you it is measured in strikes, and that each strike is
+ * $200 apart. The note opens under the field rather than in a tooltip so it can
+ * be read at length and stay open while you change the value.
+ */
+export function Field({
+  label,
+  children,
+  help,
+}: {
+  label: string;
+  children: ReactNode;
+  help?: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="field">
+      <label>
+        {label}
+        {help && (
+          <button
+            type="button"
+            className="explain-toggle"
+            aria-expanded={open}
+            onClick={() => setOpen((v) => !v)}
+            title={open ? 'hide' : `what ${label} means`}
+          >
+            ?
+          </button>
+        )}
+      </label>
+      {children}
+      {open && <div className="explain field-explain">{help}</div>}
+    </div>
+  );
+}

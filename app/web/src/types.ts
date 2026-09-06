@@ -29,6 +29,8 @@ export type SnapshotMeta = {
   expiry: string;
   expiryTs: number;
   isDaily: boolean;
+  isNextEntry: boolean;
+  nextEntryTs: number;
   tte: number;
   hoursToExpiry: number;
   spot: number;
@@ -73,6 +75,7 @@ export type ExpiryOption = {
   iso: string;
   hoursAway: number;
   isDaily: boolean;
+  isNextEntry: boolean;
   contracts: number;
 };
 
