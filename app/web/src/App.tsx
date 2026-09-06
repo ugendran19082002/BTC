@@ -8,6 +8,8 @@ import { BacktestPanel } from './components/BacktestPanel';
 import { FloorPanel } from './components/FloorPanel';
 import { VerdictPanel } from './components/VerdictPanel';
 import { DateTimePicker, istToEpoch, type IstMoment } from './components/DateTimePicker';
+import { AccountPanel } from './components/AccountPanel';
+import { Metric, Formula } from './components/Explain';
 
 type Tab = 'desk' | 'backtest' | 'floors';
 
@@ -174,13 +176,70 @@ export default function App() {
                   <div className="kv"><span>to settlement</span>
                     <span>{snap.hoursToExpiry.toFixed(2)} h</span></div>
                   <div className="kv"><span>ATM strike</span><span>{snap.atm}</span></div>
-                  <div className="kv"><span>ATM IV</span>
-                    <span>{snap.atmIv !== null ? (snap.atmIv * 100).toFixed(1) + '%' : '·'}</span></div>
-                  <div className="kv"><span>expected move</span>
-                    <span>{snap.expectedMove !== null ? '±$' + snap.expectedMove.toFixed(0) : '·'}</span></div>
+
+                  <Metric
+                    label="ATM IV"
+                    value={snap.atmIv !== null ? (snap.atmIv * 100).toFixed(1) + '%' : '·'}
+                  >
+                    <p>
+                      The volatility the market's own prices imply, quoted per year. We
+                      take the at-the-money mark price and ask which volatility makes
+                      Black-Scholes return exactly that price.
+                    </p>
+                    <p>
+                      Short-dated options carry lower implied volatility than longer
+                      ones, so this number on a same-day contract is not comparable to
+                      the one you see on a monthly.
+                    </p>
+                  </Metric>
+
+                  <Metric
+                    label="expected move"
+                    value={snap.expectedMove !== null ? '±$' + snap.expectedMove.toFixed(0) : '·'}
+                  >
+                    <p>How far the option market thinks BTC can travel before settlement.</p>
+                    <Formula>
+                      spot × ATM IV × √(hours ÷ 8760)
+                      {snap.atmIv !== null && (
+                        <>
+                          <br />
+                          {snap.spot.toFixed(0)} × {(snap.atmIv * 100).toFixed(1)}% × √({snap.hoursToExpiry.toFixed(2)} ÷ 8760)
+                          <br />= ±${snap.expectedMove?.toFixed(0)}
+                        </>
+                      )}
+                    </Formula>
+                    <p>
+                      8760 is hours in a year: implied volatility is quoted annually and
+                      has to be scaled down to the time actually left.
+                    </p>
+                    <p>
+                      It is one standard deviation — roughly a two-in-three chance BTC
+                      settles inside ±${snap.expectedMove?.toFixed(0)}, and a one-in-three
+                      chance it does not. A strike inside that band is not a safe strike.
+                    </p>
+                    <p className="dim">
+                      Measured against two years of settlements, this is a floor rather
+                      than a ceiling: every day that broke the strategy moved further
+                      than the market had priced.
+                    </p>
+                  </Metric>
+
+                  <Metric
+                    label="move as % of spot"
+                    value={snap.expectedMove !== null
+                      ? ((snap.expectedMove / snap.spot) * 100).toFixed(2) + '%'
+                      : '·'}
+                  >
+                    <p>
+                      The same number as a percentage, which is the form worth
+                      remembering: on the 733 days measured, a winning day moved 0.63%
+                      and a losing day moved 2.25%.
+                    </p>
+                  </Metric>
                 </div>
                 <BiasPanel bias={data.bias} snap={snap} />
                 <PicksPanel picks={data.picks} lots={lots} usdinr={data.usdinr} minPremium={minPremium} />
+                <AccountPanel usdinr={data.usdinr} />
               </div>
 
               <ChainTable legs={data.legs} snap={snap} />

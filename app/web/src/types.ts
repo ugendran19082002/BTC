@@ -151,3 +151,18 @@ export type ByYearResponse = {
 
 export type FloorRow = { floor: number; summary: Summary; medianOtmPct: number | null };
 export type FloorResponse = { rows: FloorRow[] };
+
+export type AccountResponse = {
+  configured: boolean;
+  message?: string;
+  error?: string;
+  availableUsd?: number;
+  availableInr?: number;
+  maxLots?: number;
+  positions?: {
+    product_symbol?: string;
+    size?: number;
+    entry_price?: string;
+    unrealized_pnl?: string;
+  }[];
+};

@@ -1,4 +1,4 @@
-import type { BacktestResponse, ByYearResponse, ChainResponse, ExpiryOption, FloorResponse, Params } from './types';
+import type { AccountResponse, BacktestResponse, ByYearResponse, ChainResponse, ExpiryOption, FloorResponse, Params } from './types';
 
 async function json<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
@@ -58,4 +58,10 @@ export function runFloors(params: Partial<Params> & { floors?: number[] }) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
+}
+
+/** 501 here is not an error: it is the server saying no key is configured. */
+export async function getAccount(): Promise<AccountResponse> {
+  const res = await fetch('/api/account');
+  return (await res.json()) as AccountResponse;
 }
