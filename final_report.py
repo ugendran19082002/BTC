@@ -7,7 +7,7 @@ Reads chain.db. Writes DESK-REPORT.txt.
 """
 import datetime, statistics as st, sys
 import store
-from study_premium import load, otm, pick_floor, pnl, stats, LOT, LOTS, SLIP, USDINR
+from study_premium import load, otm, pick_floor, pnl, stats, LOT, LOTS, SLIP, USDINR, FLOORS
 
 VARIANTS = [
     ("A   CE 0-15  + PE 0-15",  (0, 15), (0, 15)),
@@ -105,20 +105,77 @@ def main():
         p('')
 
     p('-' * 122)
-    p('  3. SATURDAY')
+    p('  3. WEEKDAY vs WEEKEND -- the largest single effect in this data')
     p('-' * 122)
+    p('  Monday to Friday and the weekend are close to two different strategies.')
+    p('')
+
+    def sub(wds, y=None):
+        return [d for d in days
+                if datetime.date.fromisoformat(d['date']).weekday() in wds
+                and (y is None or d['date'].startswith(y))]
+
     for name, ce, pe in VARIANTS[:4]:
-        allr = stats(run_variant(days, ce, pe))
-        nosat = stats(run_variant(days, ce, pe, skip_weekdays=(5,)))
-        p(row(name + '  all days', allr, width=34))
-        p(row(name + '  no Saturday', nosat, width=34))
-        if allr and nosat:
-            p(f'{"":34} delta: ${nosat["total"]-allr["total"]:+.2f}  '
-              f'MDD ${nosat["mdd"]-allr["mdd"]:+.2f}  PF {nosat["pf"]-allr["pf"]:+.2f}')
+        p(f'  {name}')
+        for label, wds in (('Mon-Fri', (0, 1, 2, 3, 4)), ('Sat+Sun', (5, 6)),
+                           ('  Sat', (5,)), ('  Sun', (6,)), ('ALL', tuple(range(7)))):
+            p('    ' + row(label, stats(run_variant(sub(wds), ce, pe)), width=10))
         p('')
 
+    p('  Variant A, each year on its own -- the split is not one period speaking:')
+    p('')
+    for y in years:
+        for label, wds in (('Mon-Fri', (0, 1, 2, 3, 4)), ('Sat+Sun', (5, 6))):
+            p('    ' + row(f'{y} {label}', stats(run_variant(sub(wds, y), (0, 15), (0, 15))),
+                           width=16))
+        p('')
+
+    p('  Where the losses actually are, variant A, full period:')
+    p('')
+    for label, wds in (('Mon-Fri', (0, 1, 2, 3, 4)), ('Sat+Sun', (5, 6))):
+        rows_ = run_variant(sub(wds), (0, 15), (0, 15))
+        bad_ = sorted([r for r in rows_ if r['pnl'] < 0], key=lambda r: r['pnl'])
+        p(f'    {label:8} {len(bad_):>3} losing days out of {len(rows_)}')
+        for r in bad_:
+            wd = datetime.date.fromisoformat(r['date']).strftime('%a')
+            p(f'        {r["date"]} {wd}  ${r["pnl"]:7.2f}  Rs{r["pnl"]*USDINR:7.0f}')
+        p('')
+
+    p('  A caution: ten losing days in total is a small number of events to lean on.')
+    p('  The asymmetry is stark -- the weekend is 31% of the days and carries 7 of the')
+    p('  10 losses and all 6 of the largest -- and it repeats in each year separately,')
+    p('  which is what makes it worth acting on. It is still ten events.')
+    p('')
+    p('  Note this contradicts the AlgoTest Saturday-only runs you pulled earlier,')
+    p('  which were negative in all four cases. Here Saturday is marginally positive')
+    p('  and merely low-quality. That gap belongs to the same unresolved')
+    p('  reconciliation as everything else, and is a reason to prefer the risk')
+    p('  argument below over the profit argument.')
+    p('')
+
     p('-' * 122)
-    p('  4. EVERY LOSING DAY, VARIANT A')
+    p('  4. HOW MUCH PREMIUM SHOULD YOU INSIST ON?')
+    p('-' * 122)
+    p('  For each floor, both legs are sold at the FURTHEST out-of-the-money strike')
+    p('  that still pays at least that much -- the most distance the market will give')
+    p('  you at that price.')
+    p('')
+    for f in FLOORS:
+        rows, dist = [], []
+        for d in days:
+            legs = [pick_floor(d, cp, f) for cp in 'CP']
+            legs = [l for l in legs if l]
+            if not legs:
+                continue
+            rows.append({'date': d['date'], 'pnl': sum(pnl(l) for l in legs)})
+            dist += [100 * abs(l['k'] - d['spot']) / d['spot'] for l in legs]
+        s4 = stats(rows)
+        md = f'{st.median(dist):.2f}%' if dist else '-'
+        p(row(f'floor ${f}', s4) + f'  strike {md} out')
+    p('')
+
+    p('-' * 122)
+    p('  5. EVERY LOSING DAY, VARIANT A')
     p('-' * 122)
     rows = []
     for d in days:
@@ -141,7 +198,7 @@ def main():
 
     p('')
     p('-' * 122)
-    p('  5. HOW BIG A MOVE BREAKS EACH VARIANT')
+    p('  6. HOW BIG A MOVE BREAKS EACH VARIANT')
     p('-' * 122)
     for name, ce, pe in VARIANTS[:4]:
         rs = []
@@ -171,6 +228,13 @@ def main():
     p('    the rule stands aside. Part of the win rate is that filter, not skill.')
     p('  - Protection is frequently unlisted at the distances this sells, so a')
     p('    bounded worst case is often unavailable. Size is the real risk control.')
+    p('  - The largest effect in the data is not the strike rule at all. It is the')
+    p('    calendar: Monday to Friday lost money on 3 days out of 461, worst -$0.95.')
+    p('    The weekend lost on 7 of 209, worst -$8.48, and holds all six of the')
+    p('    biggest losses in two years. Every year says the same thing.')
+    p('  - An earlier version of this analysis said Saturday loses money. On the')
+    p('    complete data it does not; it makes a little, badly. The case for standing')
+    p('    aside at the weekend is about where the tail lives, not about the average.')
     p('')
     out.close()
     print(f'\nwritten: DESK-REPORT.txt', file=sys.stderr)
