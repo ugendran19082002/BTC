@@ -30,7 +30,7 @@ export default function App() {
   // contract that has since settled must not pin the desk to a dead chain.
   const [expiry, setExpiry, forgetExpiry] = usePersisted<string>('expiry', '');
   const [expiries, setExpiries] = useState<ExpiryOption[]>([]);
-  const [width, setWidth] = usePersisted('width', 10);
+  const [width, setWidth] = usePersisted('width', 20);
   const [minPremium, setMinPremium] = usePersisted('minPremium', 15);
   const hedgeGap = 0;
   const [lots, setLots] = usePersisted('lots', 10);

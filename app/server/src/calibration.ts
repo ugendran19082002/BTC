@@ -73,7 +73,20 @@ export type ZeroChance = {
   sample: number | null;
   /** historical minus model, in percentage points */
   gap: number | null;
+  /**
+   * False when the snapshot's horizon is not the ~12 hours the table was built
+   * from. The mapping still applies loosely -- it says what happened when the
+   * model claimed a given probability -- but it was measured on same-session
+   * trades and should not be read as exact anywhere else.
+   */
+  comparableHorizon: boolean;
 };
+
+/** The table was built from 05:30 entries settling at 12:00 UTC. */
+export const CALIBRATED_HOURS = 12;
+export function horizonComparable(hoursToExpiry: number): boolean {
+  return hoursToExpiry >= 8 && hoursToExpiry <= 16;
+}
 
 /**
  * Map a model probability onto the frequency observed for strikes like it.
@@ -81,7 +94,10 @@ export type ZeroChance = {
  * Buckets are wide on purpose. A finer grid would put a handful of legs in each
  * one and dress up noise as precision.
  */
-export function zeroChance(modelPotm: number | null): ZeroChance | null {
+export function zeroChance(
+  modelPotm: number | null,
+  hoursToExpiry: number,
+): ZeroChance | null {
   if (modelPotm === null || !Number.isFinite(modelPotm)) return null;
   const buckets = loadCalibration().filter((b) => b.kind === 'model_potm');
   const hit = buckets.find((b) => modelPotm >= b.lo && modelPotm < b.hi)
@@ -91,16 +107,26 @@ export function zeroChance(modelPotm: number | null): ZeroChance | null {
     historical: hit?.rate ?? null,
     sample: hit?.legs ?? null,
     gap: hit ? (hit.rate - modelPotm) * 100 : null,
+    comparableHorizon: horizonComparable(hoursToExpiry),
   };
 }
 
 /** The same question asked of distance rather than delta. */
-export function zeroChanceByDistance(emDistance: number | null): ZeroChance | null {
+export function zeroChanceByDistance(
+  emDistance: number | null,
+  hoursToExpiry: number,
+): ZeroChance | null {
   if (emDistance === null || !Number.isFinite(emDistance)) return null;
   const buckets = loadCalibration().filter((b) => b.kind === 'em_distance');
   const hit = buckets.find((b) => emDistance >= b.lo && emDistance < b.hi)
     ?? buckets[buckets.length - 1];
   return hit
-    ? { model: emDistance, historical: hit.rate, sample: hit.legs, gap: null }
+    ? {
+        model: emDistance,
+        historical: hit.rate,
+        sample: hit.legs,
+        gap: null,
+        comparableHorizon: horizonComparable(hoursToExpiry),
+      }
     : null;
 }

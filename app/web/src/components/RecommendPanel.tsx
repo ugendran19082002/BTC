@@ -63,6 +63,15 @@ export function RecommendPanel({
                   ? `${s.sample.toLocaleString()} strikes like it, over 733 settlements`
                   : 'no comparable history'}
                 {s.modelChance !== null && ` · the model says ${pct(s.modelChance)}`}
+                {s.leg.zero && !s.leg.zero.comparableHorizon && (
+                  <>
+                    <br />
+                    <span className="warn">
+                      measured on ~12 hour trades; this contract has a different
+                      horizon, so read it as a guide rather than a rate
+                    </span>
+                  </>
+                )}
               </span>
             </span>
           </div>

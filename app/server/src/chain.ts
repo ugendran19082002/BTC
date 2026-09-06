@@ -174,7 +174,7 @@ export async function liveExpiries(): Promise<ExpiryOption[]> {
  * time to expiry is derived from the code, but nothing measured in the backtest
  * carries over to a longer-dated contract -- that is a different trade.
  */
-export async function liveChain(width = 12, wantExpiry?: string): Promise<Snapshot> {
+export async function liveChain(width = 25, wantExpiry?: string): Promise<Snapshot> {
   const tickers = await liveTickers();
   if (!tickers.length) throw new Error('ticker feed empty');
   const ts = Math.floor(Date.now() / 1000);

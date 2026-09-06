@@ -3,6 +3,7 @@ export type ZeroChance = {
   historical: number | null;
   sample: number | null;
   gap: number | null;
+  comparableHorizon: boolean;
 };
 
 export type Leg = {

@@ -46,8 +46,8 @@ export function scoreLegs(snap: Snapshot): ScoredLeg[] {
         ? Math.abs(leg.strike - snap.spot) / snap.expectedMove
         : null;
 
-    const zero = zeroChance(pOtm);
-    const zeroByDistance = zeroChanceByDistance(emDistance);
+    const zero = zeroChance(pOtm, snap.hoursToExpiry);
+    const zeroByDistance = zeroChanceByDistance(emDistance, snap.hoursToExpiry);
 
     if (px === null || pOtm === null) {
       return {
