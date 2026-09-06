@@ -1,75 +1,123 @@
 # TODO
 
-State as of 2026-09-06. Live at https://delta.thannigo.in
+Live: https://delta.thannigo.in
+Updated 6 Sep 2026
 
-## 0. Security — still open, still first
+---
 
-- [ ] **Revoke the Delta API key and issue a new read-only one.**
-      The key now in `app/server/.env` is the one from `app-ket.txt`, which was
-      pasted into chat more than once. It works — the account endpoint returns
-      real balances with it — which is exactly the problem. Anyone who has seen
-      this conversation holds it.
-      The wiring is right: `.env` is git-ignored, is not in any image, and is
-      injected at runtime. Only the value needs replacing.
-- [ ] Decide who can reach the desk. It is on the open internet and shows
-      sizing, and positions once the account panel is on. Either uncomment the
-      `auth_basic` lines in `deploy/nginx.conf`, or bind the web container to
-      the host's Tailscale address instead of `0.0.0.0`.
+## DO THIS FIRST
 
-## 1. Data — done
+**1. Change your Delta API key.**
+The key in `app/server/.env` is the same one from `app-ket.txt`. That file was
+pasted into chat several times, so anyone who saw the chat has your key. It
+works right now — the desk reads your balance with it. Go to Delta, delete that
+key, make a new read-only one, paste the new one into `app/server/.env`, and
+run `./deploy/deploy.sh`.
 
-- [x] 733 expiry days, 2024-09-04 to 2026-09-06, no gaps. Quality checks clean:
-      no negative marks, no call priced below intrinsic, strikes on both sides
-      of the money every day.
-- [x] Intraday mark paths for the traded legs (1,466), so exits can be tested.
-- [x] Open interest for the traded legs (1,449).
-- [x] Calibration: 27,371 legs bucketed by model probability against what
-      actually happened.
-- [x] `deploy/refresh.sh` on cron at 12:40 UTC keeps it current.
+The setup around it is safe: the file is not in git, not in any Docker image,
+and only loaded when the server starts. Only the key itself is the problem.
 
-## 2. What is in the live engine, and why
+**2. Decide who can open the site.**
+Right now anyone who types the address can see it, including your position
+sizing. Two ways to close it:
+- Put a password on it — uncomment two lines in `deploy/nginx.conf`, then run
+  `sudo htpasswd -c /etc/nginx/.htpasswd-delta yourname`.
+- Or make it private — this machine already runs Tailscale, so change the web
+  port in `deploy/docker-compose.yml` to your Tailscale address.
 
-Three rules. Each improved 2024, 2025 and 2026 taken separately, which is the
-only reason it is there.
+**3. Get the 29-Mar-2025 trade log from AlgoTest.**
+Only you can log in and download it. AlgoTest says that day made money, my
+version says it lost money, and until we know why, every number in this project
+is a *guess* about your real results, not a measurement of them.
 
-| | rule | effect on the full period |
-|---|---|---|
-| 1 | sell both sides, furthest strike still bid at the floor | baseline, PF 1.93 |
-| 2 | 70/30 split when the 24h move and daily trend agree, else 50/50 | PF 2.38, worst day −$8.97 → −$7.08 |
-| 3 | stand aside when daily RSI(14) is outside 30–70 | PF 3.08, drawdown $12.22 → $8.24 |
+---
 
-Together: ₹7,319 → ₹8,250 on 80 fewer days, R/MDD 7.04 → 11.78.
+## WHAT THE DESK DOES NOW
 
-## 3. Tested and rejected — do not re-add without new evidence
+You open it, and it tells you one of three things: **Enter**, **Not yet**, or
+**Stand aside** — with the reasons.
 
-- **Stop losses.** Every level cut the total by more than half (₹14,638 → ₹4,201
-  at 2× credit). They cut winners.
-- **Option volume as a filter.** Skipping thin-volume days: ₹7,319 → ₹3,836.
-- **OI acceleration.** Looked strong alone (PF 3.10) and failed once stacked:
-  PF 3.08 → 2.81, and 2026 collapsed from 6.53 to 2.49 on 70 remaining days.
-- **Leaning toward the model's "safer" side.** PF 2.10, below the momentum rule.
-- **Leaning toward the riskier side.** PF 1.80, worse than doing nothing.
-- **MACD alone.** PF 1.96 against a 1.93 baseline. Noise.
-- **ATR filters, |24h| > 4% filter.** Both reduced return without improving
-  risk.
+When it says Enter, it gives you the exact orders: which strike, which side,
+how many lots, at what price.
 
-## 4. Open
+### The rules it follows
 
-- [ ] **29-Mar-2025 AlgoTest trade log.** Only the account holder can pull it.
-      Until the reproduction and AlgoTest agree on one day, none of the above is
-      a measurement of your live results — it is a hypothesis about them.
-- [ ] Booking at 95% decay beat holding by a little (₹15,225 vs ₹14,638, PF 2.09
-      vs 1.93) and the target was hit on 97.5% of days, median 8.1 hours in. Not
-      wired into the desk yet; it needs an exit rule, not just an entry one.
-- [ ] Weekend. Monday–Friday lost on 3 days of 461, worst −$0.95; Saturday and
-      Sunday lost on 7 of 209, worst −$8.48, and hold all six of the largest
-      losses in two years. The desk warns; it does not refuse.
-- [ ] The 12-hour direction model in `PREDICTION-ENGINE-SPEC.md` is still a
-      spec. What exists is a market read, clearly marked as context.
+Three rules. Each one was tested on 733 days and had to work in 2024, 2025
+*and* 2026 separately before it was allowed in.
 
-## 5. Standing constraints
+**Rule 1 — pick the strike.**
+Take the furthest strike that still pays your minimum premium. Rank them by how
+often strikes like that actually expired worthless, using 27,371 real
+settlements — not by what the maths model claims.
 
-- Real AlgoTest is the source of truth; this reproduction is a hypothesis.
-- India entity only. All times IST. 1 USD = 85 INR.
-- Never log in to or operate the AlgoTest account.
-- No order placement anywhere in this codebase.
+**Rule 2 — split the lots.**
+Normally half calls, half puts. But if BTC moved more than 2% in 24 hours *and*
+the daily trend agrees, put 70% on the side that keeps paying if the move
+carries on.
+Result: profit factor 1.93 → 2.38. Worst day −$8.97 → −$7.08.
+
+**Rule 3 — skip bad days.**
+If daily RSI is above 70 or below 30, don't trade.
+Result: profit factor 1.93 → 2.59. Costs about one day in nine.
+
+**All three together:** ₹7,319 → ₹8,250, and it trades 80 *fewer* days.
+Profit factor 1.93 → 3.08. Biggest drawdown $12.22 → $8.24.
+
+### Three different "chance of going to zero"
+
+These are three different questions and the desk keeps them apart:
+
+| Shown as | Means |
+|---|---|
+| **expired at zero, historically** | out of 733 real settlements, how many strikes like this one ended worthless |
+| **lands out of the money** | the maths answer, N(d2) |
+| **touches the strike** | might cross it at some point, even if it comes back |
+| **premium collapses first** | the option price drops to near nothing before expiry — simulated |
+
+Note: **delta is not a probability.** The desk used to treat it as one. That was
+wrong and is now fixed.
+
+---
+
+## WHAT WAS TESTED AND THROWN OUT
+
+Do not put these back without new evidence. Each looked promising and failed.
+
+| Idea | What happened |
+|---|---|
+| Stop loss | Cut profit by more than half at every level. ₹14,638 → ₹4,201. It cuts winners. |
+| Skip low-volume days | ₹7,319 → ₹3,836 |
+| OI acceleration | Great on its own, useless combined. 2026 fell from 6.53 to 2.49 |
+| Lean toward the "safer" side | 2.10, worse than the momentum rule |
+| Lean toward the riskier side | 1.80, worse than doing nothing |
+| MACD alone | 1.96 against a 1.93 baseline. Noise. |
+| Skip when the market underprices risk | Looked brilliant in 2026, collapsed to 1.06 in 2024. Classic overfit. |
+| ATR filters | Less profit, no less risk |
+
+---
+
+## THINGS WORTH DOING NEXT
+
+- **Exit rule.** Closing when the option has lost 95% of its value beat holding
+  to expiry — ₹15,225 vs ₹14,638 — and the target was hit on 97.5% of days,
+  usually about 8 hours in. The desk only handles entries so far.
+- **Weekend.** Monday to Friday lost on 3 days out of 461, worst −$0.95.
+  Saturday and Sunday lost on 7 out of 209, worst −$8.48, and hold all six of
+  the biggest losses in two years. The desk warns you; it does not stop you.
+- **Hedging is mostly not available.** At the distance this strategy sells,
+  Delta lists nothing further out to buy on about 3 days in 4. Where it does,
+  the hedge often costs almost as much as the premium. That is why the tested
+  version is naked and controls risk with position size instead.
+- **12-hour direction forecast.** Still just a written plan in
+  `PREDICTION-ENGINE-SPEC.md`. What exists today is a market read, clearly
+  labelled as background information, not a signal.
+
+---
+
+## RULES I WORK BY
+
+- AlgoTest is the truth. This project is a hypothesis until they agree.
+- India only. All times IST. $1 = ₹85.
+- I never log into your AlgoTest account.
+- Nothing in this code can place an order. There is no code path for it.
+- Nothing goes into the recommendation unless it worked in all three years.
