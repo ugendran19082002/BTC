@@ -1,5 +1,23 @@
-# harvested option-chain cache - regenerate with harvest.py (large, ~100s of MB)
+# harvested option-chain cache - regenerate with harvest.py / harvest_chain.py
 cache/
+chain/
 btc_daily.json
 __pycache__/
 *.pyc
+hc-*.log
+
+# never commit credentials
+app-ket.txt
+*.key
+.env
+.env.*
+!.env.example
+
+node_modules/
+dist/
+app/*.log
+chain.db
+chain.db-wal
+chain.db-shm
+.playwright-mcp/
+desk.png

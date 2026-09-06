@@ -1,0 +1,22 @@
+# never let a credential into a build context
+app-ket.txt
+**/.env
+**/.env.*
+!**/.env.example
+*.key
+*.pem
+
+**/node_modules
+**/dist
+.git
+.github
+
+# the chain cache is a runtime volume, not image content
+chain/
+cache/
+*.log
+.playwright-mcp/
+
+# reports and scratch
+*.txt
+!requirements*.txt

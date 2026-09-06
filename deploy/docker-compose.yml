@@ -1,0 +1,90 @@
+# Run from the repository root:  docker compose -f deploy/docker-compose.yml up -d
+#
+# Nothing in this file contains a secret. Credentials, if you enable the account
+# panel at all, come from app/server/.env at runtime and never enter an image.
+
+name: btc-desk
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: btc-desk-api:${TAG:-latest}
+    restart: unless-stopped
+    env_file:
+      # optional; the desk runs fully on public market data without it
+      - path: ../app/server/.env
+        required: false
+    environment:
+      PORT: 8787
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      CHAIN_DB: /srv/data/chain.db
+    volumes:
+      - data:/srv/data
+    # No host port. The browser reaches the API through the web container over
+    # the compose network, so nothing on the host can talk to it directly.
+    # To poke at it while debugging:
+    #   docker compose exec api node -e "fetch('http://127.0.0.1:8787/api/health').then(r=>r.text()).then(console.log)"
+    expose:
+      - "8787"
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  web:
+    build:
+      context: ..
+      dockerfile: Dockerfile.web
+    image: btc-desk-web:${TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-8099}:80"
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # One-shot: tops the chain cache up with any day it is missing, then exits.
+  # Schedule it from cron or a systemd timer after the 12:00 UTC settlement.
+  harvester:
+    build:
+      context: ..
+      dockerfile: Dockerfile.harvester
+    image: btc-desk-harvester:${TAG:-latest}
+    profiles: ["ops"]
+    environment:
+      CHAIN_DB: /srv/data/chain.db
+    volumes:
+      - data:/srv/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  data:

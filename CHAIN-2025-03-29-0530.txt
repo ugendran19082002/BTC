@@ -1,0 +1,31 @@
+BTC OPTION CHAIN  |  29-Mar-2025  05:30 IST (00:00 UTC)  |  1m candle close
+Spot = 84340.5    ATM strike = 84400    step = 200
+
+ STRIKE  OFF |   CE LTP  CE MARK    AGE |   PE LTP  PE MARK    AGE | ZONE          
+===================================================================================
+  82400  -10 |  1891.00  1995.27   26m  |     6.00     4.79    3m  | CE ITM/PE OTM 
+  82600   -9 |  1356.00  1797.22  224m  |     9.00     5.47   10m  | CE ITM/PE OTM 
+  82800   -8 |  1384.00  1600.77  202m  |     7.00     9.04    2m  | CE ITM/PE OTM 
+  83000   -7 |  1532.00  1407.80   57m  |    17.90    15.82    1m  | CE ITM/PE OTM 
+  83200   -6 |  1136.00  1218.39   44m  |    30.00    27.15   live | CE ITM/PE OTM 
+  83400   -5 |   915.00  1030.64   28m  |    31.00    38.84   live | CE ITM/PE OTM 
+  83600   -4 |   871.00   841.34   17m  |    51.00    49.36    6m  | CE ITM/PE OTM 
+  83800   -3 |   668.00   661.30   18m  |    83.00    69.28   10m  | CE ITM/PE OTM 
+  84000   -2 |   505.00   494.10    4m  |    99.00   105.19   live | CE ITM/PE OTM 
+  84200   -1 |   347.00   341.56   live |   146.00   149.19   live | CE ITM/PE OTM 
+  84400  ATM |   220.00   216.27    1m  |   205.00   222.99   live | ATM           
+  84600   +1 |   148.00   129.20   live |   315.00   335.11   live | CE OTM/PE ITM 
+  84800   +2 |    71.00    77.15    8m  |   473.00   482.97   16m  | CE OTM/PE ITM 
+  85000   +3 |    50.00    48.04   12m  |   618.00   653.67    6m  | CE OTM/PE ITM 
+  85200   +4 |    34.00    31.26   12m  |   868.00   836.49   21m  | CE OTM/PE ITM 
+  85400   +5 |    21.00    21.71   31m  |  1367.00  1027.33  153m  | CE OTM/PE ITM 
+  85600   +6 |    22.00    17.32   57m  |  1152.00  1222.91   61m  | CE OTM/PE ITM 
+  85800   +7 |    12.00    15.50    2m  |  2200.00  1421.21  409m  | CE OTM/PE ITM 
+  86000   +8 |    10.50    11.66   live |  1652.00  1616.46    8m  | CE OTM/PE ITM 
+  86200   +9 |     8.00     7.75  288m  |  2467.00  1812.43  295m  | CE OTM/PE ITM 
+  86400  +10 |     7.00     4.78    8m  |  2707.00  2012.43  256m  | CE OTM/PE ITM 
+
+AGE = minutes since the last bar with real volume, at or before 05:30.
+      'live' = a trade printed inside the 05:30 bar itself.
+      Delta's candle API forward-fills zero-volume minutes, so an LTP with a
+      large AGE is a stale carry-forward, not a fresh quote -- trust MARK there.

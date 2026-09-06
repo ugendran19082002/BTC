@@ -1,0 +1,10 @@
+# syntax=docker/dockerfile:1.7
+# Keeps the chain cache current. Runs on a schedule, writes the shared volume,
+# and holds no credentials -- it reads public market data only.
+FROM python:3.12-alpine
+WORKDIR /srv
+COPY harvest_chain.py store.py ./
+ENV CHAIN_DB=/srv/data/chain.db
+RUN adduser -D -u 1000 harvester && mkdir -p /srv/data && chown harvester /srv/data
+USER harvester
+ENTRYPOINT ["python3", "harvest_chain.py"]
