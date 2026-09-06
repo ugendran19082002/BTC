@@ -40,6 +40,40 @@ You open it, and it tells you one of three things: **Enter**, **Not yet**, or
 When it says Enter, it gives you the exact orders: which strike, which side,
 how many lots, at what price.
 
+### Two ways to pick the strike
+
+You choose one at the top of the page. Both were measured on the same 733 days.
+
+| | most premium | safest |
+|---|---|---|
+| picks | furthest strike still paying your floor | richest strike clearing **both** your floor and your safety bar |
+| profit factor | 3.08 | **9.67** |
+| worst day | −$7.08 | **−$3.66** |
+| return ÷ drawdown | 11.8 | **23.4** |
+| days it trades | 653 | 456 |
+| total | ₹8,250 | ₹7,268 |
+
+Safest makes about 12% less money with three times the profit factor and half
+the worst day.
+
+**Two things about it that surprise people, both measured:**
+
+1. **A higher safety bar does not get you more premium.** A strike that safe is
+   a long way out, and strikes that far out are cheap. The bar buys a smaller
+   worst day, not income.
+2. **99% is worse than 98%.** It fails 2024 outright — profit factor 1.23 on 29
+   days — because it waits for conditions that year rarely offered. 98% is the
+   tightest bar that survived every year.
+
+**One side alone is normal in safety mode.** When only one side clears both
+bars, the whole position goes there. Skipping those days drops it from 456 days
+to 215 and the return per unit of drawdown from 23.4 to 13.6. Most qualifying
+days are one-sided.
+
+(In "most premium" mode this never comes up: at a $15 or $20 floor both sides
+always have something far enough out. Across 733 days there were no one-sided
+days at all, and only three at $25.)
+
 ### The rules it follows
 
 Three rules. Each one was tested on 733 days and had to work in 2024, 2025
