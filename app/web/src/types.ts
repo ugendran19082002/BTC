@@ -49,6 +49,7 @@ export type TimeframeRead = {
 export type MarketRead = {
   spot: number;
   return24h: number | null;
+  dailyRsiPrior: number | null;
   timeframes: TimeframeRead[];
   agreement: number;
   regime: string;

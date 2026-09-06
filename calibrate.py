@@ -90,9 +90,9 @@ def main():
         if not d or l['mark'] is None or l['mark'] <= 0:
             continue
         cp, k, s = l['cp'], l['k'], d['spot']
-        # out-of-the-money only: this is a table about strikes you would sell
-        if (cp == 'C' and k <= d['atm']) or (cp == 'P' and k >= d['atm']):
-            continue
+        # Every strike, not just the ones you would sell. An in-the-money strike
+        # that still expired worthless is rare and worth counting, and leaving
+        # them out left the table with nothing to say about half the chain.
         v = implied_vol(cp, l['mark'], s, k, T)
         if v is None:
             skipped += 1
@@ -101,7 +101,7 @@ def main():
         worthless = 1 if l['settle_value'] == 0 else 0
         n += 1
 
-        b = min(int(p_otm * 20) / 20, 0.95)          # 5-point buckets
+        b = max(0.0, min(int(p_otm * 20) / 20, 0.95))   # 5-point buckets, 0..95
         e = model_buckets.setdefault(b, [0, 0, 0.0])
         e[0] += 1; e[1] += worthless; e[2] += l['mark']
 
@@ -117,10 +117,11 @@ def main():
         for l in (r for r in rows if r['date'] == date):
             if l['mark'] is None or l['mark'] <= 0:
                 continue
-            if (l['cp'] == 'C' and l['k'] <= d['atm']) or (l['cp'] == 'P' and l['k'] >= d['atm']):
-                continue
-            r_ = abs(l['k'] - d['spot']) / em
-            b = min(round(r_ * 2) / 2, 5.0)
+            # signed distance: negative is in the money, and it belongs in the
+            # table too
+            otm = (l['cp'] == 'C' and l['k'] > d['atm']) or (l['cp'] == 'P' and l['k'] < d['atm'])
+            r_ = (1 if otm else -1) * abs(l['k'] - d['spot']) / em
+            b = max(-3.0, min(round(r_ * 2) / 2, 5.0))
             e = em_buckets.setdefault(b, [0, 0, 0.0])
             e[0] += 1; e[1] += (l['settle_value'] == 0); e[2] += l['mark']
 
@@ -137,7 +138,7 @@ def main():
                     (kind, b, b + step, legs, z, z / legs, msum / legs),
                 )
 
-    print(f'{n} out-of-the-money legs calibrated, {skipped} unpriceable\n')
+    print(f'{n} legs calibrated, {skipped} unpriceable\n')
     print('  MODEL SAYS  ->  ACTUALLY EXPIRED WORTHLESS')
     for r in con.execute("SELECT * FROM calibration WHERE kind='model_potm' ORDER BY bucket_lo"):
         gap = 100 * (r['rate'] - (r['bucket_lo'] + 0.025))

@@ -1,5 +1,6 @@
 import type { Leg, Snapshot } from './chain.js';
 import { zeroChance, zeroChanceByDistance, type ZeroChance } from './calibration.js';
+import type { MarketRead } from './market.js';
 
 /**
  * Ranking and sizing helpers.
@@ -284,6 +285,7 @@ export function verdict(
   picks: SellPick[],
   minPremium: number,
   lots: number,
+  market: MarketRead | null = null,
 ): Verdict {
   const ist = istParts(snap.ts);
   // The day that matters is the day the position is opened, not the day you
@@ -351,6 +353,24 @@ export function verdict(
         ? `Only the ${picks[0]!.side} leg is quoted at $${minPremium} or more. A one-sided short is a directional bet, not this strategy.`
         : `No out-of-the-money strike is quoted at $${minPremium} or more. The market is paying too little for the risk.`,
   });
+
+  // 3b. Daily RSI. The only indicator filter that improved 2024, 2025 and 2026
+  //     separately: standing aside when RSI(14) sits outside 30-70 lifted the
+  //     profit factor from 1.93 to 2.59 and cut the drawdown, at the cost of
+  //     about one day in nine. Combined with the split rule: 1.93 -> 3.08.
+  const rsi = market?.dailyRsiPrior ?? null;
+  if (rsi !== null) {
+    const calm = rsi >= 30 && rsi <= 70;
+    checks.push({
+      ok: calm,
+      severity: 'block',
+      text: calm
+        ? `Daily RSI is ${rsi.toFixed(0)}, inside the 30-70 band this does best in.`
+        : `Daily RSI is ${rsi.toFixed(0)}, ${rsi > 70 ? 'overbought' : 'oversold'} and outside ` +
+          '30-70. Standing aside on those days improved every year separately — ' +
+          'profit factor 1.93 → 2.59, and the worst drawdown fell with it.',
+    });
+  }
 
   // 4. Protection, when it exists.
   if (picks.length) {

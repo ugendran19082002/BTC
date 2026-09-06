@@ -73,7 +73,7 @@ app.get('/api/chain', async (req, reply) => {
       picks,
       market,
       recommendation: recommend(snap, scored, market, minPremium, lots),
-      verdict: verdict(snap, picks, minPremium, lots),
+      verdict: verdict(snap, picks, minPremium, lots, market),
       usdinr: USDINR,
     };
   } catch (e) {

@@ -98,6 +98,12 @@ export type MarketRead = {
   spot: number;
   /** the 24-hour return that decides the lot split; this one is tested */
   return24h: number | null;
+  /**
+   * Daily RSI(14) on the last COMPLETED bar. The backtest used the prior day's
+   * close, so today's half-formed bar must be excluded or the live signal is
+   * not the one that was measured.
+   */
+  dailyRsiPrior: number | null;
   timeframes: TimeframeRead[];
   /** how many of the five timeframes agree, signed */
   agreement: number;
@@ -132,6 +138,9 @@ export async function readMarket(): Promise<MarketRead> {
     return24h = ((spot - prev) / prev) * 100;
   }
 
+  // exclude the bar still forming, to match what the backtest could have known
+  const dailyRsiPrior = daily.length >= 16 ? rsi(daily.slice(0, -1).map((b) => b.close)) : null;
+
   let realisedVol: number | null = null;
   if (daily.length >= 21) {
     const rets = daily.slice(-21).map((b, i, a) => (i === 0 ? 0 : Math.log(b.close / a[i - 1]!.close)));
@@ -147,5 +156,5 @@ export async function readMarket(): Promise<MarketRead> {
     : timeframes.every((t) => t.trend === 0) ? 'quiet'
     : 'mixed';
 
-  return { spot, return24h, timeframes, agreement, regime, realisedVol };
+  return { spot, return24h, dailyRsiPrior, timeframes, agreement, regime, realisedVol };
 }

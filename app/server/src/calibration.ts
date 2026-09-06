@@ -100,8 +100,10 @@ export function zeroChance(
 ): ZeroChance | null {
   if (modelPotm === null || !Number.isFinite(modelPotm)) return null;
   const buckets = loadCalibration().filter((b) => b.kind === 'model_potm');
-  const hit = buckets.find((b) => modelPotm >= b.lo && modelPotm < b.hi)
-    ?? (modelPotm >= 0.95 ? buckets[buckets.length - 1] : undefined);
+  const hit =
+    buckets.find((b) => modelPotm >= b.lo && modelPotm < b.hi) ??
+    (modelPotm >= 0.95 ? buckets[buckets.length - 1] : undefined) ??
+    (modelPotm < (buckets[0]?.lo ?? 0) ? buckets[0] : undefined);
   return {
     model: modelPotm,
     historical: hit?.rate ?? null,

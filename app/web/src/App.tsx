@@ -16,6 +16,21 @@ type Tab = 'desk' | 'backtest' | 'floors';
 
 const REFRESH_SECONDS = 5;
 
+const IST_FMT = new Intl.DateTimeFormat('en-IN', {
+  timeZone: 'Asia/Kolkata',
+  weekday: 'short', day: 'numeric', month: 'short',
+  hour: '2-digit', minute: '2-digit', hour12: true,
+});
+
+/**
+ * Always India time, and always says so. The strategy is defined in IST, and a
+ * timestamp rendered in the viewer's own zone quietly means something different
+ * for every viewer.
+ */
+function istLabel(epochSeconds: number): string {
+  return IST_FMT.format(new Date(epochSeconds * 1000)).replace(/,/g, '') + ' IST';
+}
+
 /** Yesterday at the entry minute — a sensible historical default. */
 function defaultPast(): IstMoment {
   const d = new Date(Date.now() + 5.5 * 3600 * 1000 - 86400_000);
@@ -126,13 +141,15 @@ export default function App() {
                 {expiries.length === 0 && <option value="">loading…</option>}
                 {expiries.map((e) => (
                   <option key={e.expiry} value={e.expiry}>
-                    {e.iso} · settles in {e.hoursAway < 48
-                      ? `${e.hoursAway.toFixed(0)}h`
-                      : `${(e.hoursAway / 24).toFixed(0)} days`}
+                    {istLabel(e.expiryTs)}
+                    {' · '}
+                    {e.hoursAway < 48
+                      ? `in ${e.hoursAway.toFixed(0)}h`
+                      : `in ${(e.hoursAway / 24).toFixed(0)} days`}
                     {e.isNextEntry
                       ? ' ★ the one you would sell'
                       : e.isDaily
-                        ? " · today's, mostly spent"
+                        ? ' · today’s, mostly spent'
                         : ' · not measured'}
                   </option>
                 ))}
@@ -229,17 +246,43 @@ export default function App() {
               <div className="grid cols-3" style={{ marginBottom: 16 }}>
                 <div className="card">
                   <h2>
-                    {snap.live ? 'Live' : 'Snapshot'} · expiry {snap.expiry}
+                    {snap.live ? 'Live' : 'Snapshot'}
                     {snap.isNextEntry
                       ? <span className="tag ok">next entry</span>
                       : <span className="tag warn">not the measured contract</span>}
                   </h2>
                   <div className="big">{snap.spot.toFixed(1)}</div>
-                  <div className="kv"><span>as of</span>
-                    <span>{new Date(snap.ts * 1000).toLocaleString()}</span></div>
-                  <div className="kv"><span>to settlement</span>
-                    <span>{snap.hoursToExpiry.toFixed(2)} h</span></div>
-                  <div className="kv"><span>ATM strike</span><span>{snap.atm}</span></div>
+
+                  <div className="metric">
+                    <div className="metric-row">
+                      <span className="metric-label">settles</span>
+                      <span className="metric-value">{istLabel(snap.expiryTs)}</span>
+                    </div>
+                    <div className="metric-row">
+                      <span className="metric-label dim">contract</span>
+                      <span className="metric-value dim">
+                        {snap.expiry}
+                        {' · '}
+                        {snap.hoursToExpiry < 48
+                          ? `${snap.hoursToExpiry.toFixed(1)}h away`
+                          : `${(snap.hoursToExpiry / 24).toFixed(0)} days away`}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="metric">
+                    <div className="metric-row">
+                      <span className="metric-label">as of</span>
+                      <span className="metric-value">{istLabel(snap.ts)}</span>
+                    </div>
+                  </div>
+
+                  <div className="metric">
+                    <div className="metric-row">
+                      <span className="metric-label">ATM strike</span>
+                      <span className="metric-value">{snap.atm.toLocaleString()}</span>
+                    </div>
+                  </div>
 
                   <Metric
                     label="ATM IV"
