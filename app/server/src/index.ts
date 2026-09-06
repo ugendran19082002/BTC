@@ -1,7 +1,7 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
-import { liveChain, historicalChain, type Snapshot } from './chain.js';
-import { scoreLegs, pickSells, bias, maxLots, MARGIN_PER_LOT_USD, USDINR } from './score.js';
+import { liveChain, historicalChain, liveExpiries, type Snapshot } from './chain.js';
+import { scoreLegs, pickSells, bias, verdict, maxLots, MARGIN_PER_LOT_USD, USDINR } from './score.js';
 import { run, floorSweep, loadDays, reloadDays, DEFAULTS, type Params } from './backtest.js';
 import { credsFromEnv, getBalances, getPositions, NotConfigured } from './auth.js';
 
@@ -21,10 +21,23 @@ function resolveAt(at: string | undefined): number | null {
   return Math.floor(t / 1000);
 }
 
-async function snapshotFor(at: string | undefined, width: number): Promise<Snapshot> {
+async function snapshotFor(
+  at: string | undefined,
+  width: number,
+  expiry?: string,
+): Promise<Snapshot> {
   const ts = resolveAt(at);
-  return ts === null ? liveChain(width) : historicalChain(ts, width);
+  return ts === null ? liveChain(width, expiry) : historicalChain(ts, width, expiry);
 }
+
+app.get('/api/expiries', async (_req, reply) => {
+  try {
+    return { expiries: await liveExpiries() };
+  } catch (e) {
+    reply.code(502);
+    return { error: (e as Error).message };
+  }
+});
 
 app.get('/api/health', async () => {
   const days = loadDays();
@@ -38,18 +51,21 @@ app.get('/api/health', async () => {
 });
 
 app.get('/api/chain', async (req, reply) => {
-  const q = req.query as { at?: string; width?: string; minPremium?: string; hedgeGap?: string };
+  const q = req.query as { at?: string; width?: string; minPremium?: string; hedgeGap?: string; lots?: string; expiry?: string };
   try {
     const width = Number(q.width ?? 12);
-    const snap = await snapshotFor(q.at, Number.isFinite(width) ? width : 12);
+    const snap = await snapshotFor(q.at, Number.isFinite(width) ? width : 12, q.expiry || undefined);
     const scored = scoreLegs(snap);
     const minPremium = Number(q.minPremium ?? 15);
     const hedgeGap = Number(q.hedgeGap ?? 3);
+    const lots = Number(q.lots ?? 10);
+    const picks = pickSells(snap, scored, minPremium, hedgeGap);
     return {
       snapshot: { ...snap, legs: undefined },
       legs: scored,
       bias: bias(snap, scored),
-      picks: pickSells(snap, scored, minPremium, hedgeGap),
+      picks,
+      verdict: verdict(snap, picks, minPremium, lots),
       usdinr: USDINR,
     };
   } catch (e) {

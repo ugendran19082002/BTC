@@ -1,24 +1,30 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getChain, getHealth } from './api';
-import type { ChainResponse } from './types';
+import { getChain, getExpiries, getHealth } from './api';
+import type { ChainResponse, ExpiryOption } from './types';
 import { ChainTable } from './components/ChainTable';
 import { BiasPanel } from './components/BiasPanel';
 import { PicksPanel } from './components/PicksPanel';
 import { BacktestPanel } from './components/BacktestPanel';
 import { FloorPanel } from './components/FloorPanel';
+import { VerdictPanel } from './components/VerdictPanel';
+import { DateTimePicker, istToEpoch, type IstMoment } from './components/DateTimePicker';
 
 type Tab = 'desk' | 'backtest' | 'floors';
 
-/** `datetime-local` wants local wall time; the API speaks UTC. */
-function toLocalInput(d: Date): string {
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+const REFRESH_SECONDS = 5;
+
+/** Yesterday at the entry minute — a sensible historical default. */
+function defaultPast(): IstMoment {
+  const d = new Date(Date.now() + 5.5 * 3600 * 1000 - 86400_000);
+  return { date: d.toISOString().slice(0, 10), time: '05:30' };
 }
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('desk');
   const [live, setLive] = useState(true);
-  const [when, setWhen] = useState(() => toLocalInput(new Date(Date.now() - 86400_000)));
+  const [when, setWhen] = useState<IstMoment>(defaultPast);
+  const [expiry, setExpiry] = useState<string>('');
+  const [expiries, setExpiries] = useState<ExpiryOption[]>([]);
   const [width, setWidth] = useState(10);
   const [minPremium, setMinPremium] = useState(15);
   const [hedgeGap, setHedgeGap] = useState(3);
@@ -36,8 +42,8 @@ export default function App() {
     setBusy(true);
     setErr(null);
     try {
-      const at = live ? 'now' : new Date(when).toISOString();
-      const r = await getChain(at, width, minPremium, hedgeGap);
+      const at = live ? 'now' : new Date(istToEpoch(when) * 1000).toISOString();
+      const r = await getChain(at, width, minPremium, hedgeGap, lots, expiry || undefined);
       // a slow earlier request must not overwrite a newer one
       if (my === seq.current) setData(r);
     } catch (e) {
@@ -48,14 +54,15 @@ export default function App() {
     } finally {
       if (my === seq.current) setBusy(false);
     }
-  }, [live, when, width, minPremium, hedgeGap]);
+  }, [live, when, width, minPremium, hedgeGap, lots, expiry]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { getHealth().then((h) => setDays(h.days)).catch(() => setDays(null)); }, []);
+  useEffect(() => { getExpiries().then((r) => setExpiries(r.expiries)).catch(() => setExpiries([])); }, []);
 
   useEffect(() => {
     if (!autoRefresh || !live) return;
-    const id = setInterval(() => { void load(); }, 30_000);
+    const id = setInterval(() => { void load(); }, REFRESH_SECONDS * 1000);
     return () => clearInterval(id);
   }, [autoRefresh, live, load]);
 
@@ -67,12 +74,12 @@ export default function App() {
         <h1>BTC Options Desk</h1>
         <span className="sub">
           Delta Exchange India · public market data · no API key
-          {days !== null && <> · {days} days harvested</>}
+          {days !== null && <> · {days} days of history</>}
         </span>
       </header>
 
       <div className="tabs">
-        <button className={tab === 'desk' ? 'on' : ''} onClick={() => setTab('desk')}>Chain &amp; entry</button>
+        <button className={tab === 'desk' ? 'on' : ''} onClick={() => setTab('desk')}>Should I enter?</button>
         <button className={tab === 'backtest' ? 'on' : ''} onClick={() => setTab('backtest')}>Backtest</button>
         <button className={tab === 'floors' ? 'on' : ''} onClick={() => setTab('floors')}>How much premium?</button>
       </div>
@@ -84,37 +91,61 @@ export default function App() {
               <label>when</label>
               <select value={live ? 'live' : 'past'} onChange={(e) => setLive(e.target.value === 'live')}>
                 <option value="live">live now</option>
-                <option value="past">a past minute</option>
+                <option value="past">a past moment</option>
               </select>
             </div>
+
             {!live && (
               <div className="field">
-                <label>minute (your local time)</label>
-                <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} style={{ minWidth: 200 }} />
+                <label>date &amp; time (IST)</label>
+                <DateTimePicker value={when} onChange={setWhen} maxDate={new Date()} />
               </div>
             )}
+
             <div className="field">
-              <label>strikes each side</label>
-              <input type="number" value={width} onChange={(e) => setWidth(Number(e.target.value))} />
+              <label>expiry</label>
+              <select value={expiry} onChange={(e) => setExpiry(e.target.value)} style={{ minWidth: 190 }}>
+                <option value="">today · the daily contract</option>
+                {expiries.map((e) => (
+                  <option key={e.expiry} value={e.expiry}>
+                    {e.iso} · {e.hoursAway < 48
+                      ? `${e.hoursAway.toFixed(0)}h away`
+                      : `${(e.hoursAway / 24).toFixed(0)} days away`}
+                    {e.isDaily ? ' · daily' : ''}
+                  </option>
+                ))}
+              </select>
             </div>
+
             <div className="field">
               <label>min premium $</label>
               <input type="number" value={minPremium} onChange={(e) => setMinPremium(Number(e.target.value))} />
+            </div>
+            <div className="field">
+              <label>lots</label>
+              <input type="number" value={lots} onChange={(e) => setLots(Number(e.target.value))} />
             </div>
             <div className="field">
               <label>hedge gap</label>
               <input type="number" value={hedgeGap} onChange={(e) => setHedgeGap(Number(e.target.value))} />
             </div>
             <div className="field">
-              <label>lots</label>
-              <input type="number" value={lots} onChange={(e) => setLots(Number(e.target.value))} />
+              <label>strikes each side</label>
+              <input type="number" value={width} onChange={(e) => setWidth(Number(e.target.value))} />
             </div>
+
             <button className="go" onClick={() => void load()} disabled={busy}>
               {busy ? 'loading…' : 'Refresh'}
             </button>
             {live && (
-              <button className="ghost" onClick={() => setAutoRefresh((v) => !v)}>
-                auto 30s: {autoRefresh ? 'on' : 'off'}
+              <button
+                className="ghost"
+                onClick={() => setAutoRefresh((v) => !v)}
+                title={`Re-fetch the live chain every ${REFRESH_SECONDS} seconds`}
+              >
+                {autoRefresh
+                  ? `⏱ auto-refreshing every ${REFRESH_SECONDS}s — click to stop`
+                  : `⏱ auto-refresh every ${REFRESH_SECONDS}s: off`}
               </button>
             )}
           </div>
@@ -124,13 +155,23 @@ export default function App() {
 
           {data && snap && (
             <>
+              <VerdictPanel
+                verdict={data.verdict}
+                picks={data.picks}
+                lots={lots}
+                usdinr={data.usdinr}
+              />
+
               <div className="grid cols-3" style={{ marginBottom: 16 }}>
                 <div className="card">
-                  <h2>{snap.live ? 'Live' : 'Snapshot'} · expiry {snap.expiry}</h2>
+                  <h2>
+                    {snap.live ? 'Live' : 'Snapshot'} · expiry {snap.expiry}
+                    {!snap.isDaily && <span className="tag warn">not the daily</span>}
+                  </h2>
                   <div className="big">{snap.spot.toFixed(1)}</div>
                   <div className="kv"><span>as of</span>
                     <span>{new Date(snap.ts * 1000).toLocaleString()}</span></div>
-                  <div className="kv"><span>to expiry</span>
+                  <div className="kv"><span>to settlement</span>
                     <span>{snap.hoursToExpiry.toFixed(2)} h</span></div>
                   <div className="kv"><span>ATM strike</span><span>{snap.atm}</span></div>
                   <div className="kv"><span>ATM IV</span>
@@ -141,6 +182,7 @@ export default function App() {
                 <BiasPanel bias={data.bias} snap={snap} />
                 <PicksPanel picks={data.picks} lots={lots} usdinr={data.usdinr} minPremium={minPremium} />
               </div>
+
               <ChainTable legs={data.legs} snap={snap} />
               <div className="note">
                 Age is minutes since a real trade printed. Delta's candle feed

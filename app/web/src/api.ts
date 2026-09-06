@@ -1,4 +1,4 @@
-import type { BacktestResponse, ByYearResponse, ChainResponse, FloorResponse, Params } from './types';
+import type { BacktestResponse, ByYearResponse, ChainResponse, ExpiryOption, FloorResponse, Params } from './types';
 
 async function json<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
@@ -9,14 +9,27 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
-export function getChain(at: string, width: number, minPremium: number, hedgeGap: number) {
+export function getChain(
+  at: string,
+  width: number,
+  minPremium: number,
+  hedgeGap: number,
+  lots: number,
+  expiry?: string,
+) {
   const q = new URLSearchParams({
     at,
     width: String(width),
     minPremium: String(minPremium),
     hedgeGap: String(hedgeGap),
+    lots: String(lots),
   });
+  if (expiry) q.set('expiry', expiry);
   return json<ChainResponse>(`/api/chain?${q}`);
+}
+
+export function getExpiries() {
+  return json<{ expiries: ExpiryOption[] }>('/api/expiries');
 }
 
 export function runBacktest(params: Partial<Params>) {

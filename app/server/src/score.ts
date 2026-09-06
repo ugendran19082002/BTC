@@ -221,3 +221,144 @@ export function bias(snap: Snapshot, scored: ScoredLeg[]): Bias {
 export function maxLots(availableUsd: number): number {
   return Math.floor(availableUsd / MARGIN_PER_LOT_USD);
 }
+
+/**
+ * The one thing the desk exists to answer: enter now, or not?
+ *
+ * The rules are the ones the backtest actually measured, not a feel. Anything
+ * that was not measured is a warning, never a blocker.
+ */
+export type Check = { ok: boolean; severity: 'block' | 'warn' | 'info'; text: string };
+export type Verdict = {
+  action: 'ENTER' | 'WAIT' | 'STAND_ASIDE';
+  headline: string;
+  detail: string;
+  checks: Check[];
+  orders: string[];
+  nextWindow: string | null;
+};
+
+/** 05:30 IST is 00:00 UTC. The backtest enters there and nowhere else. */
+const ENTRY_UTC_HOUR = 0;
+const WINDOW_MINUTES = 30;
+
+function istParts(ts: number) {
+  const d = new Date((ts + 5.5 * 3600) * 1000);
+  return {
+    hh: d.getUTCHours(),
+    mm: d.getUTCMinutes(),
+    weekday: d.getUTCDay(), // 0 Sun .. 6 Sat, in IST
+    label: `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')} IST`,
+  };
+}
+
+const DAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+export function verdict(
+  snap: { ts: number; live: boolean; hoursToExpiry: number; expiry: string; spot: number; isDaily: boolean },
+  picks: SellPick[],
+  minPremium: number,
+  lots: number,
+): Verdict {
+  const ist = istParts(snap.ts);
+  const checks: Check[] = [];
+
+  // 1. The entry window. Everything measured assumes roughly 12 hours of decay
+  //    ahead; entering late is a different trade with different odds.
+  const minutesFromOpen = (ist.hh - ENTRY_UTC_HOUR - 5) * 60 + (ist.mm - 30);
+  const inWindow = minutesFromOpen >= 0 && minutesFromOpen <= WINDOW_MINUTES;
+  checks.push({
+    ok: inWindow,
+    severity: 'block',
+    text: inWindow
+      ? `In the entry window — ${ist.label}, ${snap.hoursToExpiry.toFixed(1)}h to settlement`
+      : `Outside the entry window. It is ${ist.label}; entry is 05:30–06:00 IST. ` +
+        `Only ${snap.hoursToExpiry.toFixed(1)}h of decay is left, not the ~12h every number here was measured over.`,
+  });
+
+  // 1b. Which contract. Everything measured is the same-day daily.
+  if (!snap.isDaily) {
+    checks.push({
+      ok: false,
+      severity: 'block',
+      text:
+        `Expiry ${snap.expiry} is ${(snap.hoursToExpiry / 24).toFixed(1)} days out, not today. ` +
+        'Nothing in the backtest applies to it -- those numbers are all same-day, ~12 hour trades. ' +
+        'You can look at this chain, but the desk cannot tell you whether to trade it.',
+    });
+  }
+
+  // 2. Day of week. The largest effect in two years of data, and the only one
+  //    that is about when rather than what.
+  const weekend = ist.weekday === 0 || ist.weekday === 6;
+  checks.push({
+    ok: !weekend,
+    severity: 'warn',
+    text: weekend
+      ? `${DAY[ist.weekday]} — the weekend holds all six of the largest losses in two years ` +
+        `(worst weekday loss $0.95, worst weekend loss $8.48). Size down or stand aside.`
+      : `${DAY[ist.weekday]} — a weekday. 3 losing days in 461, worst $0.95.`,
+  });
+
+  // 3. Is there anything worth selling?
+  const haveBoth = picks.length === 2;
+  checks.push({
+    ok: haveBoth,
+    severity: 'block',
+    text: haveBoth
+      ? `Both legs available at $${minPremium} or better`
+      : picks.length === 1
+        ? `Only the ${picks[0]!.side} leg is quoted at $${minPremium} or more. A one-sided short is a directional bet, not this strategy.`
+        : `No out-of-the-money strike is quoted at $${minPremium} or more. The market is paying too little for the risk.`,
+  });
+
+  // 4. Protection, when it exists.
+  if (picks.length) {
+    const naked = picks.filter((p) => p.naked);
+    checks.push({
+      ok: naked.length === 0,
+      severity: 'warn',
+      text: naked.length
+        ? `${naked.map((p) => p.side).join(' and ')} could not be hedged — no strike listed at that distance. ` +
+          `The loss on that leg is bounded only by how far BTC travels.`
+        : `Both legs hedged. Worst case is known before you enter.`,
+    });
+  }
+
+  const blocked = checks.some((c) => c.severity === 'block' && !c.ok);
+  const warned = checks.some((c) => c.severity === 'warn' && !c.ok);
+
+  const orders = picks.map((p) => {
+    const hedge = p.hedge
+      ? `  +  BUY ${lots} × ${p.side === 'CE' ? 'C' : 'P'}-BTC-${p.hedge.strike}-${snap.expiry}`
+      : '  (no hedge available)';
+    return `SELL ${lots} × ${p.side === 'CE' ? 'C' : 'P'}-BTC-${p.leg.strike}-${snap.expiry} @ ${p.leg.sellPrice?.toFixed(2)}${hedge}`;
+  });
+
+  // The next 05:30 IST, expressed in the reader's terms.
+  const next = new Date(((Math.floor(snap.ts / 86400) + (minutesFromOpen > WINDOW_MINUTES ? 1 : 0)) * 86400) * 1000);
+  const nextDay = DAY[next.getUTCDay()]!;
+
+  if (blocked) {
+    const why = checks.find((c) => c.severity === 'block' && !c.ok)!;
+    return {
+      action: inWindow ? 'STAND_ASIDE' : 'WAIT',
+      headline: inWindow ? 'Stand aside' : 'Not now',
+      detail: why.text,
+      checks,
+      orders: [],
+      nextWindow: inWindow ? null : `next window 05:30 IST, ${nextDay}`,
+    };
+  }
+
+  return {
+    action: 'ENTER',
+    headline: warned ? 'Enter, with a caveat' : 'Enter',
+    detail: warned
+      ? 'Every blocking condition is clear, but read the warning before you size this.'
+      : 'Every condition the backtest measured is satisfied.',
+    checks,
+    orders,
+    nextWindow: null,
+  };
+}

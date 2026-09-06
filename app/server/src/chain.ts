@@ -35,6 +35,8 @@ export type Snapshot = {
   live: boolean;
   expiry: string;
   expiryTs: number;
+  /** true when this is the same-day daily contract the backtest measured */
+  isDaily: boolean;
   /** time to expiry in years */
   tte: number;
   hoursToExpiry: number;
@@ -82,12 +84,64 @@ function finish(snap: Omit<Snapshot, 'atmIv' | 'expectedMove'>): Snapshot {
   };
 }
 
-/** Live chain for the nearest daily expiry, straight from the public ticker feed. */
-export async function liveChain(width = 12): Promise<Snapshot> {
+/** Parse a DDMMYY expiry code into its 12:00 UTC settlement. */
+export function expiryTsOf(code: string): number {
+  const d = Number(code.slice(0, 2));
+  const m = Number(code.slice(2, 4));
+  const y = 2000 + Number(code.slice(4, 6));
+  return Date.UTC(y, m - 1, d, SETTLE_HOUR_UTC) / 1000;
+}
+
+export type ExpiryOption = {
+  expiry: string;
+  expiryTs: number;
+  iso: string;
+  hoursAway: number;
+  /** the same-day daily contract the strategy was measured on */
+  isDaily: boolean;
+  contracts: number;
+};
+
+/** Every BTC option expiry Delta is currently listing, soonest first. */
+export async function liveExpiries(): Promise<ExpiryOption[]> {
+  const tickers = await liveTickers();
+  const now = Math.floor(Date.now() / 1000);
+  const nearest = nextExpiry(now).expiry;
+  const counts = new Map<string, number>();
+  for (const t of tickers) {
+    const code = t.symbol.split('-').pop();
+    if (code && /^\d{6}$/.test(code)) counts.set(code, (counts.get(code) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([expiry, contracts]) => {
+      const ets = expiryTsOf(expiry);
+      return {
+        expiry,
+        expiryTs: ets,
+        iso: new Date(ets * 1000).toISOString().slice(0, 10),
+        hoursAway: (ets - now) / 3600,
+        isDaily: expiry === nearest,
+        contracts,
+      };
+    })
+    .filter((e) => e.hoursAway > 0)
+    .sort((a, b) => a.expiryTs - b.expiryTs);
+}
+
+/**
+ * Live chain, by default for the nearest daily expiry.
+ *
+ * `wantExpiry` selects a different one. The Greeks follow automatically because
+ * time to expiry is derived from the code, but nothing measured in the backtest
+ * carries over to a longer-dated contract -- that is a different trade.
+ */
+export async function liveChain(width = 12, wantExpiry?: string): Promise<Snapshot> {
   const tickers = await liveTickers();
   if (!tickers.length) throw new Error('ticker feed empty');
   const ts = Math.floor(Date.now() / 1000);
-  const { expiry, expiryTs } = nextExpiry(ts);
+  const near = nextExpiry(ts);
+  const expiry = wantExpiry ?? near.expiry;
+  const expiryTs = wantExpiry ? expiryTsOf(wantExpiry) : near.expiryTs;
   const day = tickers.filter((t) => t.symbol.endsWith('-' + expiry));
   if (!day.length) throw new Error(`no live contracts for expiry ${expiry}`);
 
@@ -133,6 +187,7 @@ export async function liveChain(width = 12): Promise<Snapshot> {
     live: true,
     expiry,
     expiryTs,
+    isDaily: expiry === near.expiry,
     tte,
     hoursToExpiry: (expiryTs - ts) / 3600,
     spot,
@@ -148,9 +203,15 @@ export async function liveChain(width = 12): Promise<Snapshot> {
  * traded price is only trustworthy alongside its age. Greeks are derived from
  * the mark price, which is quoted continuously and does not go stale.
  */
-export async function historicalChain(ts: number, width = 12): Promise<Snapshot> {
+export async function historicalChain(
+  ts: number,
+  width = 12,
+  wantExpiry?: string,
+): Promise<Snapshot> {
   const minute = Math.floor(ts / 60) * 60;
-  const { expiry, expiryTs } = nextExpiry(minute);
+  const near = nextExpiry(minute);
+  const expiry = wantExpiry ?? near.expiry;
+  const expiryTs = wantExpiry ? expiryTsOf(wantExpiry) : near.expiryTs;
   const spot = await spotAt(minute);
   if (spot === null) {
     throw new Error(
@@ -210,6 +271,7 @@ export async function historicalChain(ts: number, width = 12): Promise<Snapshot>
     live: false,
     expiry,
     expiryTs,
+    isDaily: expiry === near.expiry,
     tte,
     hoursToExpiry: (expiryTs - minute) / 3600,
     spot,

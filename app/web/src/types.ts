@@ -28,6 +28,7 @@ export type SnapshotMeta = {
   live: boolean;
   expiry: string;
   expiryTs: number;
+  isDaily: boolean;
   tte: number;
   hoursToExpiry: number;
   spot: number;
@@ -55,11 +56,32 @@ export type Bias = {
   components: { name: string; value: number; weight: number; note: string }[];
 };
 
+export type Check = { ok: boolean; severity: 'block' | 'warn' | 'info'; text: string };
+
+export type Verdict = {
+  action: 'ENTER' | 'WAIT' | 'STAND_ASIDE';
+  headline: string;
+  detail: string;
+  checks: Check[];
+  orders: string[];
+  nextWindow: string | null;
+};
+
+export type ExpiryOption = {
+  expiry: string;
+  expiryTs: number;
+  iso: string;
+  hoursAway: number;
+  isDaily: boolean;
+  contracts: number;
+};
+
 export type ChainResponse = {
   snapshot: SnapshotMeta;
   legs: Leg[];
   bias: Bias;
   picks: Pick[];
+  verdict: Verdict;
   usdinr: number;
 };
 
