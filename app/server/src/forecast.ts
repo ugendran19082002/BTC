@@ -37,6 +37,8 @@ export type HorizonRow = {
   pUp: number;
   pUpTrend: number;
   sampleDays: number;
+  /** 101 percentiles of the signed return, in percent */
+  quantiles: number[];
 };
 
 let cache: HorizonRow[] | null = null;
@@ -63,6 +65,7 @@ export function loadHorizons(): HorizonRow[] {
       pUp: r.p_up as number,
       pUpTrend: r.p_up_trend as number,
       sampleDays: r.sample_days as number,
+      quantiles: JSON.parse((r.quantiles as string) ?? '[]') as number[],
     }));
     return cache;
   } catch {

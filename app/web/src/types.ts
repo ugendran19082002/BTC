@@ -112,6 +112,18 @@ export type Recommendation = {
   marginUsd: number;
   totalMaxLossUsd: number | null;
   rewardToRisk: number | null;
+  expectedProfitUsd: number | null;
+  expectedProfitInr: number | null;
+  returnOnMarginPct: number | null;
+  marginInr: number;
+  usdinr: number;
+  splitAlternatives: readonly {
+    name: string;
+    profitFactor: number;
+    worstDayUsd: number;
+    returnOverDrawdown: number;
+    chosen: boolean;
+  }[];
 };
 
 export type ForecastRow = {

@@ -56,13 +56,19 @@ export function AccountPanel({ usdinr }: { usdinr: number }) {
   }
 
   const lots = data.maxLots ?? 0;
+  const usd = data.availableUsd ?? 0;
+  // $0.00 on a balance of seven thousandths of a cent reads like a broken panel
+  const shown = usd > 0 && usd < 0.01 ? usd.toFixed(5) : usd.toFixed(2);
 
   return (
     <Card>
       <CardTitle>Your account</CardTitle>
-      <CardLead>${data.availableUsd?.toFixed(2)}</CardLead>
-      <Stat label="in rupees" value={`₹${(data.availableInr ?? 0).toFixed(0)}`} />
-      <Stat label="margin per lot" value="$0.50" tone="dim" />
+      <CardLead tone={lots > 0 ? 'plain' : 'warn'}>${shown}</CardLead>
+      <Stat
+        label="in rupees"
+        value={`₹${(data.availableInr ?? 0) < 1 ? (data.availableInr ?? 0).toFixed(3) : (data.availableInr ?? 0).toFixed(0)}`}
+      />
+      <Stat label="margin per lot" value="$0.50 · ₹42.50" tone="dim" />
       <Stat label="lots this covers" value={lots} tone={lots > 0 ? 'up' : 'warn'} />
 
       {data.positions && data.positions.length > 0 && (
@@ -79,6 +85,13 @@ export function AccountPanel({ usdinr }: { usdinr: number }) {
         </>
       )}
 
+      {lots === 0 && (
+        <Note tone="warn">
+          The key is working — this is your real balance, straight from Delta. There
+          is just nothing in the account to trade with. Ten lots needs $5, which is
+          about ₹{(5 * usdinr).toFixed(0)}.
+        </Note>
+      )}
       <Note tone="dim">
         Read-only. This desk cannot place or cancel an order. ₹{usdinr} to the dollar.
       </Note>

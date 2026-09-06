@@ -71,6 +71,27 @@ button.ghost {
   border-radius: 5px; padding: 6px 12px; cursor: pointer; font-size: 12px;
 }
 
+/* ── layout ───────────────────────────────────────────────────────────────
+   A single grid leaves holes: the tall "what to sell" card spans two columns
+   and nothing can flow underneath it. So the wide cards get explicit rows, and
+   the small ones flow in columns, which fills by height rather than by cell. */
+
+.lead-row {
+  display: grid; gap: 12px; margin-bottom: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+@media (min-width: 900px) {
+  .lead-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr) minmax(0, 1fr); }
+}
+
+.wide-row { margin-bottom: 12px; }
+
+.masonry { columns: 1; column-gap: 12px; margin-bottom: 12px; }
+.masonry > * { break-inside: avoid; margin-bottom: 12px; display: block; }
+@media (min-width: 760px)  { .masonry { columns: 2; } }
+@media (min-width: 1200px) { .masonry { columns: 3; } }
+
 .grid { display: grid; gap: 12px; }
 /* auto-fill rather than auto-fit so a wide screen keeps its column rhythm
    instead of stretching two cards across the whole width, and dense packing so
@@ -256,7 +277,9 @@ th.askcol, td.askcol { color: var(--down); background: #f851490a; }
 .pinned:hover { background: #d2992230; }
 
 /* ── what to sell ─────────────────────────────────────────────────────────── */
-@media (min-width: 1100px) { .recommend, .lg\:col-span-2 { grid-column: span 2; } }
+/* the recommendation is the widest thing in the lead row; the forecast chart
+   gets a row of its own so it is never squeezed */
+@media (min-width: 1100px) { .recommend { grid-column: auto; } }
 .rec-side {
   border: 1px solid var(--line); border-radius: 8px;
   padding: 10px 12px; margin-bottom: 10px; background: var(--bg);

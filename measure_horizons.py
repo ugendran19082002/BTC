@@ -8,7 +8,7 @@ forecast later on a hunch.
 
   python3 measure_horizons.py [days]
 """
-import datetime, sys
+import datetime, json, sys
 import store
 from study_horizons import candles, ema, HORIZONS
 
@@ -26,6 +26,9 @@ CREATE TABLE IF NOT EXISTS horizons (
     range_p95    REAL    NOT NULL,
     p_up         REAL    NOT NULL,   -- share of windows that closed higher
     p_up_trend   REAL    NOT NULL,   -- the same, when the trend was rising
+    -- 101 percentiles of the SIGNED return, so an option's expected payout can
+    -- be worked out against what BTC actually did rather than a lognormal
+    quantiles    TEXT    NOT NULL,
     measured_at  TEXT    NOT NULL,
     sample_days  INTEGER NOT NULL
 );
@@ -54,11 +57,12 @@ def main():
         con.execute('DELETE FROM horizons')
         for mins, label in HORIZONS:
             step = mins // 5
-            moves, ranges = [], []
+            moves, ranges, signed = [], [], []
             up = total = up_tr = n_tr = 0
             for i in range(len(closes) - step):
                 a, b = closes[i], closes[i + step]
                 moves.append(abs(b - a) / a * 100)
+                signed.append((b - a) / a * 100)
                 total += 1
                 up += b > a
                 if e9[i] > e21[i]:
@@ -68,14 +72,16 @@ def main():
                 hi = max(highs[i:i + step + 1])
                 lo = min(lows[i:i + step + 1])
                 ranges.append((hi - lo) / closes[i] * 100)
-            moves.sort(); ranges.sort()
+            moves.sort(); ranges.sort(); signed.sort()
             q = lambda xs, p: xs[min(int(p * len(xs)), len(xs) - 1)]
+            quantiles = [round(q(signed, i / 100), 4) for i in range(101)]
             con.execute(
-                'INSERT INTO horizons VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                'INSERT INTO horizons VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                 (mins, label, total,
                  q(moves, .5), q(moves, .68), q(moves, .95), moves[-1],
                  q(ranges, .5), q(ranges, .68), q(ranges, .95),
                  up / total, (up_tr / n_tr) if n_tr else 0.5,
+                 json.dumps(quantiles),
                  stamp, span))
             print(f'  {label:>4}  median {q(moves,.5):.2f}%  68% {q(moves,.68):.2f}%  '
                   f'95% {q(moves,.95):.2f}%  up {100*up/total:.1f}%')

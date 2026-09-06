@@ -129,7 +129,7 @@ export function RecommendPanel({
       <StatDivider />
       <Stat
         label="lots"
-        value={`${rec.split.ce * 100}% calls · ${rec.split.pe * 100}% puts`}
+        value={`${Math.round(rec.split.ce * 100)}% calls · ${Math.round(rec.split.pe * 100)}% puts`}
       />
       <Stat
         label="you keep if both expire worthless"
@@ -153,7 +153,35 @@ export function RecommendPanel({
           tone={rec.rewardToRisk !== null && rec.rewardToRisk < 0.05 ? 'warn' : 'plain'}
         />
       )}
-      <Stat label="margin needed" value={`$${rec.marginUsd.toFixed(2)}`} tone="dim" />
+      <Stat
+        label="margin it ties up"
+        value={`$${rec.marginUsd.toFixed(2)} · ₹${rec.marginInr.toFixed(0)}`}
+        tone="dim"
+      />
+      {rec.expectedProfitUsd !== null ? (
+        <>
+          <Stat
+            label="expected profit"
+            value={`$${rec.expectedProfitUsd.toFixed(4)} · ₹${rec.expectedProfitInr!.toFixed(2)}`}
+            tone={rec.expectedProfitUsd >= 0 ? 'up' : 'down'}
+            hint="Credit × chance it works, minus the loss × chance it does not."
+          />
+          <Stat
+            label="return on margin"
+            value={rec.returnOnMarginPct === null ? '—' : `${rec.returnOnMarginPct.toFixed(2)}%`}
+            tone={
+              rec.returnOnMarginPct !== null && rec.returnOnMarginPct >= 0 ? 'up' : 'down'
+            }
+          />
+        </>
+      ) : (
+        <Stat
+          label="expected profit"
+          value="cannot be stated"
+          tone="warn"
+          hint="With no hedge the loss has no ceiling, so an average cannot be worked out."
+        />
+      )}
 
       {naked && (
         <Note tone="warn">
@@ -171,6 +199,44 @@ export function RecommendPanel({
       )}
 
       <Note>{rec.splitReason}</Note>
+
+      <details className="mt-1.5">
+        <summary className="cursor-pointer text-[11.5px] text-[var(--dim)] hover:text-muted-foreground">
+          why 30/70 and not something calculated?
+        </summary>
+        <div className="mt-2 overflow-x-auto">
+          <table className="w-full text-[11px]">
+            <thead>
+              <tr className="text-[10px] uppercase tracking-wide text-[var(--dim)]">
+                <th className="py-1 pr-2 text-left font-normal">tried</th>
+                <th className="px-1 py-1 text-right font-normal">profit factor</th>
+                <th className="px-1 py-1 text-right font-normal">worst day</th>
+                <th className="px-1 py-1 text-right font-normal">return ÷ drawdown</th>
+              </tr>
+            </thead>
+            <tbody className="font-mono">
+              {rec.splitAlternatives.map((a) => (
+                <tr key={a.name} className={a.chosen ? 'text-[var(--up)]' : 'text-muted-foreground'}>
+                  <td className="py-[3px] pr-2 text-left font-sans">
+                    {a.name}{a.chosen && ' ←'}
+                  </td>
+                  <td className="px-1 py-[3px] text-right">{a.profitFactor.toFixed(2)}</td>
+                  <td className="px-1 py-[3px] text-right">−${Math.abs(a.worstDayUsd).toFixed(2)}</td>
+                  <td className="px-1 py-[3px] text-right">{a.returnOverDrawdown.toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <Note tone="dim">
+            The direction is worked out live from the 24-hour move and the daily
+            trend. Only the size of the tilt is fixed, and it was picked from a wide
+            flat region — 60/40 through 90/10 all beat an even split, so it is not
+            balanced on a knife edge. Weighting by each side's measured edge made
+            more money and took a worst day nearly twice as large, which is the
+            trade nobody wants.
+          </Note>
+        </div>
+      </details>
 
       {market && (
         <Note tone="dim">

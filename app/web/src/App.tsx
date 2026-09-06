@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getChain, getExpiries, getHealth } from './api';
+import { getAccount, getChain, getExpiries, getHealth } from './api';
 import type { ChainResponse, ExpiryOption } from './types';
 import { ChainTable } from './components/ChainTable';
 import { BiasPanel } from './components/BiasPanel';
@@ -65,6 +65,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [days, setDays] = useState<number | null>(null);
+  const [accountLinked, setAccountLinked] = useState<boolean | null>(null);
   const seq = useRef(0);
 
   const load = useCallback(async () => {
@@ -88,6 +89,9 @@ export default function App() {
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { getHealth().then((h) => setDays(h.days)).catch(() => setDays(null)); }, []);
+  useEffect(() => {
+    getAccount().then((a) => setAccountLinked(a.configured)).catch(() => setAccountLinked(null));
+  }, []);
   useEffect(() => {
     getExpiries()
       .then((r) => {
@@ -115,8 +119,9 @@ export default function App() {
       <header className="top">
         <h1>BTC Options Desk</h1>
         <span className="sub">
-          Delta Exchange India · public market data · no API key
+          Delta Exchange India · prices are public, no key needed
           {days !== null && <> · {days} days of history</>}
+          {accountLinked === true && <> · account linked, read-only</>}
         </span>
       </header>
 
@@ -281,7 +286,7 @@ export default function App() {
                 usdinr={data.usdinr}
               />
 
-              <div className="grid cols-3" style={{ marginBottom: 16 }}>
+              <div className="lead-row">
                 <Card>
                   <CardTitle
                     right={
@@ -391,7 +396,15 @@ export default function App() {
 
                 <RecommendPanel rec={data.recommendation} market={data.market} minPremium={minPremium} usdinr={data.usdinr} />
                 <StructurePanel structure={data.structure} snap={snap} />
-                {data.forecast && <ForecastPanel forecast={data.forecast} />}
+              </div>
+
+              {data.forecast && (
+                <div className="wide-row">
+                  <ForecastPanel forecast={data.forecast} sides={data.recommendation.sides} />
+                </div>
+              )}
+
+              <div className="masonry">
                 {data.market && <MovePanel market={data.market} snap={snap} />}
                 <BiasPanel bias={data.bias} snap={snap} />
                 <AccountPanel usdinr={data.usdinr} />
