@@ -128,3 +128,28 @@ test('tiny books do not break the floor rule', () => {
   assert.equal(allocateLots(2, 0.3, 0.7).ce + allocateLots(2, 0.3, 0.7).pe, 2);
   assert.deepEqual(allocateLots(0, 0.5, 0.5), { ce: 0, pe: 0 });
 });
+
+import { detectStrikeStep } from '../src/chain.js';
+
+test('the strike spacing is read from the chain, not assumed', () => {
+  const two = [79_600, 79_800, 80_000, 80_200, 80_400, 80_600];
+  assert.equal(detectStrikeStep(two, 80_000), 200);
+
+  const five = [79_000, 79_500, 80_000, 80_500, 81_000, 81_500];
+  assert.equal(detectStrikeStep(five, 80_000), 500);
+});
+
+test('wide spacing out in the tails does not fool the detector', () => {
+  // 200 near the money, 400 further out -- which is what Delta actually lists
+  const mixed = [
+    76_000, 77_000, 78_000,
+    79_400, 79_600, 79_800, 80_000, 80_200, 80_400, 80_600,
+    82_000, 83_000, 84_000,
+  ];
+  assert.equal(detectStrikeStep(mixed, 80_000), 200);
+});
+
+test('too few strikes to judge falls back rather than guessing', () => {
+  assert.equal(detectStrikeStep([80_000], 80_000), 200);
+  assert.equal(detectStrikeStep([], 80_000), 200);
+});

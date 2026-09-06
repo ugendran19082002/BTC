@@ -130,3 +130,41 @@ test('d2 sits below d1 by exactly one volatility unit', () => {
   const { d1, d2 } = d1d2(S, 82_000, T, V);
   close(d1 - d2, V * Math.sqrt(T), 1e-12, 'separation');
 });
+
+import { zeroChance } from '../src/calibration.js';
+
+test('every strike gets its own adjusted probability, not a bucket average', () => {
+  // Two strikes inside the same five-point bucket must not come back identical:
+  // that was the bug where a call and a put with different open interest showed
+  // the same number and looked broken.
+  const a = zeroChance(0.905, 12);
+  const b = zeroChance(0.945, 12);
+  if (a?.adjusted !== null && a !== null && b !== null && b.adjusted !== null) {
+    assert.notEqual(a.adjusted, b.adjusted, 'same bucket, different strikes, same number');
+    assert.ok(b.adjusted! > a.adjusted!, 'the safer strike should read safer');
+  }
+});
+
+test('the adjusted probability stays a probability', () => {
+  for (const m of [0.01, 0.2, 0.5, 0.8, 0.95, 0.999]) {
+    const z = zeroChance(m, 12);
+    if (z?.adjusted != null) {
+      assert.ok(z.adjusted >= 0 && z.adjusted <= 1, `out of range at ${m}: ${z.adjusted}`);
+    }
+  }
+});
+
+test('the adjustment is a correction, never a replacement', () => {
+  // it should stay near the model, not snap to some bucket rate far away
+  for (const m of [0.3, 0.6, 0.9, 0.99]) {
+    const z = zeroChance(m, 12);
+    if (z?.adjusted != null) {
+      assert.ok(Math.abs(z.adjusted - m) < 0.08, `moved too far from the model at ${m}`);
+    }
+  }
+});
+
+test('a longer horizon is flagged, because the table was built on 12-hour trades', () => {
+  assert.equal(zeroChance(0.95, 12)?.comparableHorizon, true);
+  assert.equal(zeroChance(0.95, 24)?.comparableHorizon, false);
+});

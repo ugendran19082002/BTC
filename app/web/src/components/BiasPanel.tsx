@@ -1,15 +1,20 @@
 import type { Bias, SnapshotMeta } from '../types';
+import { Card, CardTitle, CardLead, Note } from './ui/card';
+import { Stat } from './ui/stat';
 
+/** Which way the option board is leaning right now. */
 export function BiasPanel({ bias, snap }: { bias: Bias; snap: SnapshotMeta }) {
   const pct = ((bias.score + 1) / 2) * 100;
-  const tone = bias.score > 0.15 ? 'up' : bias.score < -0.15 ? 'down' : 'muted';
+  const tone = bias.score > 0.15 ? 'up' : bias.score < -0.15 ? 'down' : 'plain';
 
   return (
-    <div className="card">
-      <h2>Market tilt</h2>
-      <div className={`big ${tone}`}>{bias.label}</div>
-      <div className="meter" style={{ marginTop: 8 }}>
+    <Card>
+      <CardTitle>Which way it leans</CardTitle>
+      <CardLead tone={tone}>{bias.label}</CardLead>
+
+      <div className="relative mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
         <i
+          className="absolute inset-y-0 block"
           style={{
             left: `${Math.min(pct, 50)}%`,
             width: `${Math.abs(pct - 50)}%`,
@@ -17,25 +22,24 @@ export function BiasPanel({ bias, snap }: { bias: Bias; snap: SnapshotMeta }) {
           }}
         />
       </div>
-      <div className="kv" style={{ marginTop: 10 }}>
-        <span>score</span>
-        <span className={tone}>{bias.score >= 0 ? '+' : ''}{bias.score.toFixed(3)}</span>
+
+      <div className="mt-2.5">
+        {bias.components.map((c) => (
+          <Stat key={c.name} label={c.name} value={c.note} tone="dim" />
+        ))}
       </div>
-      {bias.components.map((c) => (
-        <div className="kv" key={c.name}>
-          <span>{c.name} <span className="dim">({(c.weight * 100).toFixed(0)}%)</span></span>
-          <span className="muted">{c.note}</span>
-        </div>
-      ))}
-      <div className="note">
-        Read off the current chain — put/call OI, 25-delta IV skew, volume tilt.
-        This describes how the option market is positioned right now. Over a 12-hour
-        horizon its predictive edge is small; it is one input, never the trade.
+
+      <Note>
+        Read straight off the board: how many puts against calls, whether puts cost
+        more than calls, and which side is trading more.
+      </Note>
+      <Note tone="dim">
+        Over 12 hours this barely predicts anything. It is background, never the
+        reason to trade.
         {snap.expectedMove !== null && (
-          <> The market is pricing a move of about ±${snap.expectedMove.toFixed(0)}
-          {' '}({((snap.expectedMove / snap.spot) * 100).toFixed(2)}%) by expiry.</>
+          <> The market is pricing about ±${snap.expectedMove.toFixed(0)} by settlement.</>
         )}
-      </div>
-    </div>
+      </Note>
+    </Card>
   );
 }

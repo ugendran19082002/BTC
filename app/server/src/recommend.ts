@@ -173,24 +173,25 @@ export function allocateLots(
   return { ce, pe };
 }
 
-/** Delta lists BTC strikes $200 apart near the money. */
-const STRIKE_STEP = 200;
-
 /**
  * The nearest listed strike further out than the short, at or inside the
  * requested gap. Walking inward rather than giving up means a missing strike
  * degrades the protection instead of silently removing it.
+ *
+ * `step` comes from the chain rather than a constant, so a gap of 3 means three
+ * actual strikes even when Delta changes its spacing.
  */
 function findHedge(
   scored: ScoredLeg[],
   side: Side,
   shortStrike: number,
   gap: number,
+  step: number,
 ): Hedge | null {
   if (gap <= 0) return null;
   const cp = side === 'CE' ? 'C' : 'P';
   for (let g = gap; g > 0; g--) {
-    const k = side === 'CE' ? shortStrike + g * STRIKE_STEP : shortStrike - g * STRIKE_STEP;
+    const k = side === 'CE' ? shortStrike + g * step : shortStrike - g * step;
     const leg = scored.find((l) => l.cp === cp && l.strike === k);
     const cost = leg?.ask ?? leg?.mark ?? null;
     if (leg && cost !== null) {
@@ -214,8 +215,8 @@ function bestLeg(scored: ScoredLeg[], side: Side, minPremium: number): ScoredLeg
   // highest observed zero-rate first; where the data cannot separate two
   // strikes, take the one further out, which is the cheaper mistake
   return eligible.reduce((a, b) => {
-    const az = a.zero?.historical ?? a.probs.expireWorthless ?? 0;
-    const bz = b.zero?.historical ?? b.probs.expireWorthless ?? 0;
+    const az = a.zero?.adjusted ?? a.probs.expireWorthless ?? 0;
+    const bz = b.zero?.adjusted ?? b.probs.expireWorthless ?? 0;
     if (Math.abs(az - bz) > 0.0005) return bz > az ? b : a;
     return (b.emDistance ?? 0) > (a.emDistance ?? 0) ? b : a;
   });
@@ -254,7 +255,7 @@ export function recommend(
     const leg = bestLeg(scored, side, minPremium);
     if (!leg || leg.sellPrice === null) continue;
 
-    const hedge = findHedge(scored, side, leg.strike, hedgeGap);
+    const hedge = findHedge(scored, side, leg.strike, hedgeGap, snap.step);
     if (hedgeGap > 0 && hedge === null) hedgeMissing = true;
 
     const netPerBtc = leg.sellPrice - (hedge?.price ?? 0);
@@ -268,7 +269,7 @@ export function recommend(
       price: leg.sellPrice,
       creditUsd: credit,
       creditInr: credit * USDINR,
-      zeroChance: leg.zero?.historical ?? null,
+      zeroChance: leg.zero?.adjusted ?? null,
       modelChance: leg.pOtm,
       sample: leg.zero?.sample ?? null,
       pExpireWorthless: leg.probs.expireWorthless,

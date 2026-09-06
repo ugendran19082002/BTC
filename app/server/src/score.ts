@@ -63,7 +63,9 @@ export function scoreLegs(snap: Snapshot): ScoredLeg[] {
     // is how likely the strike is to stay out of the money. Where two years of
     // settlements have an opinion about strikes like this one, prefer it to the
     // model's.
-    const safety = zero?.historical ?? pOtm;
+    // the model corrected by what actually happened, which keeps this strike's
+    // own probability rather than flattening it to a bucket average
+    const safety = zero?.adjusted ?? pOtm;
     // Selling above fair value is the only structural edge available; cap the
     // credit at 1.5x fair so one stale print cannot dominate the ranking.
     const edgeN = edge === null ? 0.5 : clamp01((edge - 0.7) / 0.8);
@@ -86,8 +88,8 @@ export function scoreLegs(snap: Snapshot): ScoredLeg[] {
     if (leg.probs.touch !== null && leg.probs.touch > 0.25) {
       reasons.push(`${(leg.probs.touch * 100).toFixed(0)}% chance it is touched at some point`);
     }
-    if (zero?.historical != null) {
-      reasons.push(`${(zero.historical * 100).toFixed(1)}% of ${zero.sample} like it expired at zero`);
+    if (zero?.adjusted != null) {
+      reasons.push(`${(zero.adjusted * 100).toFixed(1)}% chance it expires worthless`);
     } else if (pOtm > 0.9) {
       reasons.push(`${(pOtm * 100).toFixed(0)}% finish OTM`);
     }

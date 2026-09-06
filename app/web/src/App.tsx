@@ -12,6 +12,9 @@ import { StructurePanel } from './components/StructurePanel';
 import { DateTimePicker, istToEpoch, type IstMoment } from './components/DateTimePicker';
 import { usePersisted } from './hooks/usePersisted';
 import { Select } from './components/ui/select';
+import { Card, CardTitle, CardLead } from './components/ui/card';
+import { Stat, StatDivider } from './components/ui/stat';
+import { Badge } from './components/ui/badge';
 import { Button } from './components/ui/button';
 import { AccountPanel } from './components/AccountPanel';
 import { Metric, Formula, Field } from './components/Explain';
@@ -278,69 +281,56 @@ export default function App() {
               />
 
               <div className="grid cols-3" style={{ marginBottom: 16 }}>
-                <div className="card">
-                  <h2>
+                <Card>
+                  <CardTitle
+                    right={
+                      snap.isNextEntry
+                        ? <Badge tone="ok">next entry</Badge>
+                        : <Badge tone="warn">not the tested contract</Badge>
+                    }
+                  >
                     {snap.live ? 'Live' : 'Snapshot'}
-                    {snap.isNextEntry
-                      ? <span className="tag ok">next entry</span>
-                      : <span className="tag warn">not the measured contract</span>}
-                  </h2>
-                  <div className="big">{snap.spot.toFixed(1)}</div>
+                  </CardTitle>
 
-                  <div className="metric">
-                    <div className="metric-row">
-                      <span className="metric-label">settles</span>
-                      <span className="metric-value">{istLabel(snap.expiryTs)}</span>
-                    </div>
-                    <div className="metric-row">
-                      <span className="metric-label dim">contract</span>
-                      <span className="metric-value dim">
-                        {snap.expiry}
-                        {' · '}
-                        {snap.hoursToExpiry < 48
+                  <CardLead>{snap.spot.toFixed(1)}</CardLead>
+
+                  <div className="mt-2">
+                    <Stat label="settles" value={istLabel(snap.expiryTs)} />
+                    <Stat
+                      label="contract"
+                      value={`${snap.expiry} · ${
+                        snap.hoursToExpiry < 48
                           ? `${snap.hoursToExpiry.toFixed(1)}h away`
-                          : `${(snap.hoursToExpiry / 24).toFixed(0)} days away`}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="metric">
-                    <div className="metric-row">
-                      <span className="metric-label">as of</span>
-                      <span className="metric-value">{istLabel(snap.ts)}</span>
-                    </div>
-                  </div>
-
-                  <div className="metric">
-                    <div className="metric-row">
-                      <span className="metric-label">ATM strike</span>
-                      <span className="metric-value">{snap.atm.toLocaleString()}</span>
-                    </div>
+                          : `${(snap.hoursToExpiry / 24).toFixed(0)} days away`
+                      }`}
+                      tone="dim"
+                    />
+                    <Stat label="as of" value={istLabel(snap.ts)} tone="dim" />
+                    <StatDivider />
+                    <Stat label="at-the-money strike" value={snap.atm.toLocaleString()} />
                   </div>
 
                   <Metric
-                    label="ATM IV"
-                    value={snap.atmIv !== null ? (snap.atmIv * 100).toFixed(1) + '%' : '·'}
+                    label="how jumpy the market expects it to be"
+                    value={snap.atmIv !== null ? (snap.atmIv * 100).toFixed(1) + '%' : '—'}
                   >
                     <p>
-                      The volatility the market's own prices imply, quoted per year. We
-                      take the at-the-money mark price and ask which volatility makes
-                      Black-Scholes return exactly that price.
+                      Implied volatility: the volatility that makes the maths agree with
+                      the price people are actually paying. Quoted per year.
                     </p>
                     <p>
-                      Short-dated options carry lower implied volatility than longer
-                      ones, so this number on a same-day contract is not comparable to
-                      the one you see on a monthly.
+                      Same-day options carry a lower number than monthly ones, so do not
+                      compare this with what you see on a longer contract.
                     </p>
                   </Metric>
 
                   <Metric
-                    label="expected move"
-                    value={snap.expectedMove !== null ? '±$' + snap.expectedMove.toFixed(0) : '·'}
+                    label="how far it could move by settlement"
+                    value={snap.expectedMove !== null ? '±$' + snap.expectedMove.toFixed(0) : '—'}
                   >
-                    <p>How far the option market thinks BTC can travel before settlement.</p>
+                    <p>How far the market thinks BTC can travel before this contract ends.</p>
                     <Formula>
-                      spot × ATM IV × √(hours ÷ 8760)
+                      spot × volatility × √(hours ÷ 8760)
                       {snap.atmIv !== null && (
                         <>
                           <br />
@@ -350,58 +340,54 @@ export default function App() {
                       )}
                     </Formula>
                     <p>
-                      8760 is hours in a year: implied volatility is quoted annually and
-                      has to be scaled down to the time actually left.
+                      8760 is hours in a year. Volatility is quoted yearly, so it has to
+                      be scaled down to the time actually left.
                     </p>
                     <p>
-                      It is one standard deviation — roughly a two-in-three chance BTC
-                      settles inside ±${snap.expectedMove?.toFixed(0)}, and a one-in-three
-                      chance it does not. A strike inside that band is not a safe strike.
+                      Roughly a 2-in-3 chance it settles inside this range, 1-in-3 that
+                      it does not. A strike inside the range is not a safe strike.
                     </p>
                     <p className="dim">
-                      Measured against two years of settlements, this is a floor rather
-                      than a ceiling: every day that broke the strategy moved further
-                      than the market had priced.
+                      Across 733 days this was a floor, not a ceiling. Every day that
+                      broke the strategy moved further than the market had priced.
                     </p>
                   </Metric>
 
                   <Metric
-                    label="move as % of spot"
+                    label="that as a percentage"
                     value={snap.expectedMove !== null
                       ? ((snap.expectedMove / snap.spot) * 100).toFixed(2) + '%'
-                      : '·'}
+                      : '—'}
                   >
                     <p>
-                      The same number as a percentage, which is the form worth
-                      remembering: on the 733 days measured, a winning day moved 0.63%
-                      and a losing day moved 2.25%.
+                      Worth remembering in this form: over 733 days a winning day moved
+                      0.63% and a losing day moved 2.25%.
                     </p>
                   </Metric>
 
-                  {snap.expectedMoveAtEntry !== null &&
-                    snap.hoursToExpiry > 14 && (
+                  {snap.expectedMoveAtEntry !== null && snap.hoursToExpiry > 14 && (
                     <Metric
-                      label="over the 12h you'd hold"
+                      label="over the 12h you would actually hold"
                       value={'±$' + snap.expectedMoveAtEntry.toFixed(0)}
                     >
                       <p>
                         The figure above covers all {snap.hoursToExpiry.toFixed(1)} hours
-                        still left on this contract. You would not hold it for all of
-                        them — entry is 05:30 IST and settlement is 17:30 the same day,
-                        so the trade spans about twelve.
+                        left on this contract. You would not hold it that long — you
+                        enter at 05:30 and it settles at 17:30 the same day, about twelve
+                        hours.
                       </p>
                       <Formula>
-                        {snap.spot.toFixed(0)} × {snap.atmIv !== null ? (snap.atmIv * 100).toFixed(1) : '·'}% × √(12 ÷ 8760)
+                        {snap.spot.toFixed(0)} × {snap.atmIv !== null ? (snap.atmIv * 100).toFixed(1) : '—'}% × √(12 ÷ 8760)
                         <br />= ±${snap.expectedMoveAtEntry.toFixed(0)}
                       </Formula>
                       <p>
                         This is the one to judge a strike against. It assumes today's
-                        at-the-money volatility still holds tomorrow morning, which it
-                        may not.
+                        volatility still holds tomorrow morning, which it may not.
                       </p>
                     </Metric>
                   )}
-                </div>
+                </Card>
+
                 <RecommendPanel rec={data.recommendation} market={data.market} minPremium={minPremium} usdinr={data.usdinr} />
                 <StructurePanel structure={data.structure} snap={snap} />
                 {data.market && <MovePanel market={data.market} snap={snap} />}

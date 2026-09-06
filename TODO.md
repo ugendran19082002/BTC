@@ -69,13 +69,30 @@ These are three different questions and the desk keeps them apart:
 
 | Shown as | Means |
 |---|---|
-| **expired at zero, historically** | out of 733 real settlements, how many strikes like this one ended worthless |
-| **lands out of the money** | the maths answer, N(d2) |
-| **touches the strike** | might cross it at some point, even if it comes back |
-| **premium collapses first** | the option price drops to near nothing before expiry — simulated |
+| **→ 0** (big number) | the maths, corrected by what really happened to 27,371 strikes like it |
+| **ends out of the money** | the raw maths answer, N(d2), before that correction |
+| **ever touches your strike** | might cross it at some point, even if it comes back the right side |
+| **premium drops to near zero first** | the option price collapses before expiry — simulated, 2,000 paths |
 
-Note: **delta is not a probability.** The desk used to treat it as one. That was
-wrong and is now fixed.
+Two things that are **not** part of this:
+
+- **Delta is not a probability.** The desk used to treat it as one. Fixed.
+- **Open interest and volume are not part of it either.** They tell you whether
+  you can get filled and get out. They do not change the odds of the strike
+  expiring worthless — only distance, volatility and time do that.
+
+### Why every strike now shows a different number
+
+The history is grouped into 5-point buckets, so reading a bucket rate straight
+off gave every strike in the bucket the same percentage. A call and a put with
+completely different open interest showed an identical number, which looked
+broken — and it hid the difference between a strike at the edge of a bucket and
+one in the middle.
+
+The bucket now supplies a *correction* instead: how far reality sat from the
+maths for strikes like this, blended between neighbouring buckets and added to
+this strike's own number. So 78,000 reads 2.41% and 78,200 reads 4.16%, where
+both used to read 13.56%.
 
 ---
 
@@ -96,6 +113,18 @@ Do not put these back without new evidence. Each looked promising and failed.
 
 ---
 
+### Other things that are worked out, not typed in
+
+- **The at-the-money strike** is calculated from live spot every refresh.
+- **Strike spacing** is now read from the strikes Delta is actually listing,
+  not assumed to be $200. Delta uses $200 near the money and $400 further out,
+  and that is an observation about today, not a promise.
+- **Lots per side** are worked out each refresh from the 24-hour move and the
+  daily trend. The 70/30 figure is fixed — a version that scaled smoothly with
+  signal strength was tested and was worse in 2024 and 2026.
+- **The two sides always add up to your total.** They used to be able to sum to
+  eight lots for a seven-lot decision.
+
 ## THINGS WORTH DOING NEXT
 
 - **Exit rule.** Closing when the option has lost 95% of its value beat holding
@@ -113,6 +142,16 @@ Do not put these back without new evidence. Each looked promising and failed.
   labelled as background information, not a signal.
 
 ---
+
+## HOW THE CODE IS KEPT HONEST
+
+- **39 tests**, run automatically before every deploy. `npm test` in
+  `app/server`. They cover the probability maths, the pricer, the split rule,
+  lot allocation, strike-step detection and the summary statistics.
+- They have already caught three real bugs: lots summing above the total, a
+  negative zero in the statistics, and every strike in a bucket reading the same.
+- Nothing goes into the recommendation unless it worked in 2024, 2025 **and**
+  2026 separately. Everything else is shown as background and labelled as such.
 
 ## RULES I WORK BY
 

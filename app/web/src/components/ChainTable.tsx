@@ -107,8 +107,12 @@ export function ChainTable({ legs, snap }: { legs: Leg[]; snap: SnapshotMeta }) 
         <b className="up">Bid</b> is what you receive when you <b>sell</b>.
         {' '}<b className="down">Ask</b> is what you pay when you <b>buy</b> — the hedge leg.
         {' '}Mark is Delta's fair value: use it to judge, never as your fill.
-        {' '}<b className="up">→ 0</b> is how often strikes like this one actually expired
-        worthless across 733 settlements; <b>model</b> is what Black-Scholes predicts.
+        {' '}<b className="up">→ 0</b> is the chance this strike expires worthless — the
+        maths, corrected by what really happened to 27,371 strikes like it over 733
+        days. <b>model</b> is the raw maths before that correction. A <b>*</b> means
+        the history does not reach that far, so the nearest correction was used.
+        Open interest and volume tell you whether you can get filled; they do not
+        change these odds.
       </div>
       {!hasBook && (
         <div className="note" style={{ padding: '8px 12px', margin: 0 }}>

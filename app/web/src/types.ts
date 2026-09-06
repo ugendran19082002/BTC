@@ -1,9 +1,11 @@
 export type ZeroChance = {
   model: number;
+  adjusted: number | null;
   historical: number | null;
   sample: number | null;
   gap: number | null;
   comparableHorizon: boolean;
+  outsideTable: boolean;
 };
 
 export type Leg = {
@@ -138,6 +140,7 @@ export type SnapshotMeta = {
   isDaily: boolean;
   isNextEntry: boolean;
   nextEntryTs: number;
+  step: number;
   tte: number;
   hoursToExpiry: number;
   spot: number;

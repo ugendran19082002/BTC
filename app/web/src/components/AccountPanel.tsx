@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import type { AccountResponse } from '../types';
 import { getAccount } from '../api';
+import { Card, CardTitle, CardLead, Note } from './ui/card';
+import { Stat, StatDivider } from './ui/stat';
 
 /**
- * Balances and open positions, when a key is configured.
+ * Balance and open positions, only when a key is set.
  *
- * Market data needs no credentials and this panel is the only thing that does.
- * It stays dark until a key exists, and the server has no code path that can
- * place an order — reading is all it can do.
+ * Nothing else on this desk needs one, and there is no code path here that can
+ * place or cancel an order.
  */
 export function AccountPanel({ usdinr }: { usdinr: number }) {
   const [data, setData] = useState<AccountResponse | null>(null);
@@ -20,66 +21,67 @@ export function AccountPanel({ usdinr }: { usdinr: number }) {
 
   if (!data.configured) {
     return (
-      <div className="card">
-        <h2>Account</h2>
-        <div className="muted">Not connected.</div>
-        <div className="note">
-          Balances, margin and open positions need a Delta API key; everything else
-          on this desk does not. To switch it on, put a <b>new, read-only</b> key in
-          <code> app/server/.env</code> and redeploy:
-          <div className="formula" style={{ marginTop: 8 }}>
-            DELTA_API_KEY=…<br />
-            DELTA_API_SECRET=…
-          </div>
-          That file is git-ignored and never enters an image. Do not reuse a key that
-          has been pasted into a chat or a screenshot — treat it as public and issue
-          a fresh one.
+      <Card>
+        <CardTitle>Your account</CardTitle>
+        <p className="m-0 text-[13px] text-muted-foreground">Not connected.</p>
+        <Note>
+          Everything else here works without a key. To see your balance and open
+          positions, put a <b>new, read-only</b> key in <code>app/server/.env</code>{' '}
+          and redeploy.
+        </Note>
+        <div className="mt-2 rounded-md bg-muted px-2.5 py-2 font-mono text-[11.5px]">
+          DELTA_API_KEY=…
+          <br />
+          DELTA_API_SECRET=…
         </div>
-      </div>
+        <Note tone="warn">
+          Do not reuse a key that has been in a chat or a screenshot. Treat that one
+          as public and make a fresh one.
+        </Note>
+      </Card>
     );
   }
 
   if (data.error) {
     return (
-      <div className="card">
-        <h2>Account</h2>
-        <div className="down">{data.error}</div>
-        <div className="note">
-          The key is configured but Delta rejected the request. Usually the key was
-          revoked, or the server's IP is not on the key's allowlist.
-        </div>
-      </div>
+      <Card>
+        <CardTitle>Your account</CardTitle>
+        <p className="m-0 text-[13px] text-[var(--down)]">{data.error}</p>
+        <Note>
+          The key is set but Delta rejected it. Usually it has been revoked, or this
+          server's IP is not on the key's allowed list.
+        </Note>
+      </Card>
     );
   }
 
+  const lots = data.maxLots ?? 0;
+
   return (
-    <div className="card">
-      <h2>Account</h2>
-      <div className="big">${data.availableUsd?.toFixed(2)}</div>
-      <div className="kv"><span>available</span>
-        <span>₹{(data.availableInr ?? 0).toFixed(0)}</span></div>
-      <div className="kv"><span>margin per lot</span><span>$0.50</span></div>
-      <div className="kv"><span>lots this funds</span>
-        <span className="up">{data.maxLots}</span></div>
+    <Card>
+      <CardTitle>Your account</CardTitle>
+      <CardLead>${data.availableUsd?.toFixed(2)}</CardLead>
+      <Stat label="in rupees" value={`₹${(data.availableInr ?? 0).toFixed(0)}`} />
+      <Stat label="margin per lot" value="$0.50" tone="dim" />
+      <Stat label="lots this covers" value={lots} tone={lots > 0 ? 'up' : 'warn'} />
+
       {data.positions && data.positions.length > 0 && (
         <>
-          <div className="kv" style={{ marginTop: 10, borderTop: '1px solid var(--line)', paddingTop: 8 }}>
-            <span>open positions</span><span>{data.positions.length}</span>
-          </div>
+          <StatDivider />
           {data.positions.map((p, i) => (
-            <div className="kv" key={i}>
-              <span className="dim">{p.product_symbol}</span>
-              <span className={Number(p.unrealized_pnl ?? 0) >= 0 ? 'up' : 'down'}>
-                {p.size} @ {p.entry_price} · {Number(p.unrealized_pnl ?? 0).toFixed(2)}
-              </span>
-            </div>
+            <Stat
+              key={i}
+              label={p.product_symbol ?? '—'}
+              value={`${p.size} @ ${p.entry_price} · ${Number(p.unrealized_pnl ?? 0).toFixed(2)}`}
+              tone={Number(p.unrealized_pnl ?? 0) >= 0 ? 'up' : 'down'}
+            />
           ))}
         </>
       )}
-      <div className="note">
-        Read-only. This desk cannot place or cancel an order — there is no code
-        path for it. {usdinr} rupees to the dollar.
-      </div>
-    </div>
+
+      <Note tone="dim">
+        Read-only. This desk cannot place or cancel an order. ₹{usdinr} to the dollar.
+      </Note>
+    </Card>
   );
 }

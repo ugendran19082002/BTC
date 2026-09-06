@@ -2,7 +2,43 @@ import { candles, liveTickers, spotAt, pool, type Ticker } from './delta.js';
 import { greeks, impliedVol, expectedMove } from './bs.js';
 import { strikeProbabilities, type StrikeProbabilities } from './probability.js';
 
+/**
+ * Fallback spacing when the listed strikes cannot be read.
+ *
+ * Delta lists BTC $200 apart near the money and $400 further out, but that is
+ * an observation, not a promise -- it differs by underlying and by price level,
+ * and hard-coding it silently mislabels every strike the day it changes.
+ */
 export const STRIKE_STEP = 200;
+
+/**
+ * The spacing Delta is actually using right now, taken from the listed strikes
+ * themselves: the most common gap among the strikes nearest the money, which
+ * ignores the wider spacing out in the tails.
+ */
+export function detectStrikeStep(strikes: number[], spot: number): number {
+  const near = [...new Set(strikes)]
+    .sort((a, b) => Math.abs(a - spot) - Math.abs(b - spot))
+    .slice(0, 12)
+    .sort((a, b) => a - b);
+  if (near.length < 3) return STRIKE_STEP;
+
+  const gaps = new Map<number, number>();
+  for (let i = 1; i < near.length; i++) {
+    const g = near[i]! - near[i - 1]!;
+    if (g > 0) gaps.set(g, (gaps.get(g) ?? 0) + 1);
+  }
+  let best = STRIKE_STEP;
+  let seen = 0;
+  for (const [gap, count] of gaps) {
+    // ties go to the smaller gap: it is the one the ATM strike should snap to
+    if (count > seen || (count === seen && gap < best)) {
+      best = gap;
+      seen = count;
+    }
+  }
+  return best > 0 ? best : STRIKE_STEP;
+}
 /** Daily BTC options settle at 12:00 UTC == 17:30 IST. */
 export const SETTLE_HOUR_UTC = 12;
 const YEAR_MS = 365 * 24 * 3600 * 1000;
@@ -54,6 +90,8 @@ export type Snapshot = {
   isNextEntry: boolean;
   /** epoch seconds of the next 05:30 IST */
   nextEntryTs: number;
+  /** the strike spacing actually in use, read from the listed strikes */
+  step: number;
   /** time to expiry in years */
   tte: number;
   hoursToExpiry: number;
@@ -198,14 +236,16 @@ export async function liveChain(width = 25, wantExpiry?: string): Promise<Snapsh
   if (!day.length) throw new Error(`no live contracts for expiry ${expiry}`);
 
   const spot = num(day[0]!.spot_price) ?? num(day[0]!.greeks?.spot) ?? 0;
-  const atm = Math.round(spot / STRIKE_STEP) * STRIKE_STEP;
+  const listed = day.map((t) => num(t.strike_price)).filter((k): k is number => k !== null);
+  const step = detectStrikeStep(listed, spot);
+  const atm = Math.round(spot / step) * step;
   const tte = Math.max(0, (expiryTs * 1000 - Date.now()) / YEAR_MS);
 
   const legs: Leg[] = [];
   for (const t of day) {
     const strike = num(t.strike_price);
     if (strike === null) continue;
-    const off = Math.round((strike - atm) / STRIKE_STEP);
+    const off = Math.round((strike - atm) / step);
     if (Math.abs(off) > width) continue;
     const cp: 'C' | 'P' = t.contract_type === 'call_options' ? 'C' : 'P';
     const bid = num(t.quotes?.best_bid ?? null);
@@ -252,6 +292,7 @@ export async function liveChain(width = 25, wantExpiry?: string): Promise<Snapsh
     live: true,
     expiry,
     expiryTs,
+    step,
     isDaily: expiry === nextExpiry(ts).expiry,
     isNextEntry: expiry === upcoming.expiry,
     nextEntryTs: upcoming.entryTs,
@@ -287,12 +328,15 @@ export async function historicalChain(
         'that minute is likely before Delta India listed the market',
     );
   }
-  const atm = Math.round(spot / STRIKE_STEP) * STRIKE_STEP;
+  // No ticker feed for a past minute, so the grid has to be assumed here; the
+  // strikes that come back empty are simply dropped.
+  const step = STRIKE_STEP;
+  const atm = Math.round(spot / step) * step;
   const tte = Math.max(0, (expiryTs - minute) / (365 * 24 * 3600));
 
   const jobs: { cp: 'C' | 'P'; strike: number }[] = [];
   for (let k = -width; k <= width; k++) {
-    const strike = atm + k * STRIKE_STEP;
+    const strike = atm + k * step;
     jobs.push({ cp: 'C', strike }, { cp: 'P', strike });
   }
 
@@ -305,7 +349,7 @@ export async function historicalChain(
     const traded = tr.filter((c) => c.time <= minute && (c.volume ?? 0) > 0);
     const last = traded.length ? traded[traded.length - 1]! : null;
     const mark = mk.find((c) => c.time === minute)?.close ?? null;
-    const off = Math.round((strike - atm) / STRIKE_STEP);
+    const off = Math.round((strike - atm) / step);
     const iv = mark !== null ? impliedVol(cp, mark, spot, strike, tte) : null;
     const g = iv !== null ? greeks(cp, spot, strike, tte, iv) : null;
     const intrinsic = cp === 'C' ? Math.max(0, spot - strike) : Math.max(0, strike - spot);
@@ -350,6 +394,7 @@ export async function historicalChain(
     isDaily: expiry === near.expiry,
     isNextEntry: expiry === upcoming.expiry,
     nextEntryTs: upcoming.entryTs,
+    step,
     tte,
     hoursToExpiry: (expiryTs - minute) / 3600,
     spot,
