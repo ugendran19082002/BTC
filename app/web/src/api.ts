@@ -1,4 +1,4 @@
-import type { BacktestResponse, ByYearResponse, ChainResponse, Params } from './types';
+import type { BacktestResponse, ByYearResponse, ChainResponse, FloorResponse, Params } from './types';
 
 async function json<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
@@ -37,4 +37,12 @@ export function runByYear(params: Partial<Params>) {
 
 export function getHealth() {
   return json<{ ok: boolean; days: number; now: string }>('/api/health');
+}
+
+export function runFloors(params: Partial<Params> & { floors?: number[] }) {
+  return json<FloorResponse>('/api/floors', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
 }

@@ -275,3 +275,86 @@ export function summarize(trades: TradeDay[]): Summary {
     returnOverMdd: mdd > 0 ? total / mdd : Infinity,
   };
 }
+
+/**
+ * Premium-floor sweep: for each floor, sell the FURTHEST out-of-the-money
+ * strike that still pays at least that much.
+ *
+ * This is what "I want at least $N of premium" actually means for a seller --
+ * buy as much distance as the market will give you at that price -- and it is a
+ * different question from the band selection above, which takes the richest
+ * strike inside a range.
+ */
+export type FloorRow = { floor: number; summary: Summary; medianOtmPct: number | null };
+
+export function floorSweep(
+  floors: number[],
+  params: Partial<Params> = {},
+): FloorRow[] {
+  const p: Params = { ...DEFAULTS, ...params };
+  const days = loadDays();
+
+  return floors.map((floor) => {
+    const trades: TradeDay[] = [];
+    const distances: number[] = [];
+    let cum = 0;
+
+    for (const day of days) {
+      if (p.from && day.date < p.from) continue;
+      if (p.to && day.date > p.to) continue;
+      const weekday = new Date(day.date + 'T00:00:00Z').getUTCDay();
+      if (p.skipWeekdays.includes(weekday)) continue;
+
+      const legs: TradeLeg[] = [];
+      for (const [side, cp] of [
+        ['CE', 'C'],
+        ['PE', 'P'],
+      ] as const) {
+        if ((cp === 'C' && !p.ce) || (cp === 'P' && !p.pe)) continue;
+        const otm = day.legs.filter(
+          (l) => l.cp === cp && (cp === 'C' ? l.k > day.atm : l.k < day.atm),
+        );
+        const eligible = otm.filter((l) => {
+          const px = priceOf(l, p);
+          return px !== null && px >= floor;
+        });
+        if (!eligible.length) continue;
+        // cheapest of the eligible == furthest from the money
+        const short = eligible.reduce((a, b) => (priceOf(b, p)! < priceOf(a, p)! ? b : a));
+        const entry = priceOf(short, p)! * (1 - p.slippage);
+        legs.push({
+          side,
+          strike: short.k,
+          entry,
+          exit: short.settle_value,
+          hedgeStrike: null,
+          hedgeEntry: null,
+          hedgeExit: null,
+          pnlUsd: (entry - short.settle_value) * p.lots * LOT_BTC,
+        });
+        distances.push((Math.abs(short.k - day.spot) / day.spot) * 100);
+      }
+
+      if (!legs.length) continue;
+      const pnlUsd = legs.reduce((a, l) => a + l.pnlUsd, 0);
+      cum += pnlUsd;
+      trades.push({
+        date: day.date,
+        weekday,
+        spot: day.spot,
+        settle: day.settle,
+        legs,
+        pnlUsd,
+        pnlInr: pnlUsd * USDINR,
+        cum,
+      });
+    }
+
+    distances.sort((a, b) => a - b);
+    return {
+      floor,
+      summary: summarize(trades),
+      medianOtmPct: distances.length ? distances[Math.floor(distances.length / 2)]! : null,
+    };
+  });
+}

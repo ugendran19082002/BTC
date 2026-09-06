@@ -2,7 +2,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import { liveChain, historicalChain, type Snapshot } from './chain.js';
 import { scoreLegs, pickSells, bias, maxLots, MARGIN_PER_LOT_USD, USDINR } from './score.js';
-import { run, loadDays, reloadDays, DEFAULTS, type Params } from './backtest.js';
+import { run, floorSweep, loadDays, reloadDays, DEFAULTS, type Params } from './backtest.js';
 import { credsFromEnv, getBalances, getPositions, NotConfigured } from './auth.js';
 
 // Read once at startup so a later log line cannot pick the secret out of env.
@@ -127,6 +127,16 @@ app.post('/api/backtest/byyear', async (req) => {
       ...run({ ...params, from: `${y}-01-01`, to: `${y}-12-31` }).summary,
     })),
   };
+});
+
+/**
+ * "How much premium should I insist on?" answered from the data rather than
+ * from a rule of thumb.
+ */
+app.post('/api/floors', async (req) => {
+  const body = (req.body ?? {}) as Partial<Params> & { floors?: number[] };
+  const { floors = [0, 5, 10, 15, 20, 25, 30, 40, 50, 75, 100], ...params } = body;
+  return { rows: floorSweep(floors, params) };
 });
 
 app.get('/api/presets', async () => ({

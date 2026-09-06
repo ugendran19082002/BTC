@@ -1,0 +1,114 @@
+==========================================================================================================================
+  BTC DAILY SHORT-STRANGLE -- DESK REPORT
+  generated 2026-09-06 08:01 UTC
+==========================================================================================================================
+  data      : 304 expiry days, 2024-09-04 .. 2026-05-15
+              2024: 103 days
+              2025: 102 days
+              2026: 99 days
+  entry     : 05:30 IST mark price, 5% slippage, 10 lots (0.01 BTC)
+  exit      : settlement intrinsic at 12:00 UTC -- exact, no exit quote needed
+  currency  : 1 USD = Rs 85
+
+  Read this as a description of what these rules would have done on this
+  data. It is not a forecast, and it is not AlgoTest. The AlgoTest
+  reconciliation in TODO.md is still open; until it closes, treat every
+  number here as a hypothesis about your live results, not a measurement.
+
+--------------------------------------------------------------------------------------------------------------------------
+  1. THE FOUR VARIANTS -- full period
+--------------------------------------------------------------------------------------------------------------------------
+A   CE 0-15  + PE 0-15      283d  win  97.9%  $   36.18  Rs    3075  PF   3.29  worst $  -5.77  MDD $  6.48  R/MDD  5.58
+B   CE 0-15  + PE 15-30     293d  win  96.2%  $   51.02  Rs    4337  PF   2.47  worst $  -9.60  MDD $ 11.96  R/MDD  4.27
+C   CE 0-15  + PE 15-40     295d  win  94.2%  $   50.97  Rs    4332  PF   1.88  worst $ -11.49  MDD $ 13.85  R/MDD  3.68
+D'  CE 0-20  + PE 0-20      290d  win  96.6%  $   40.59  Rs    3450  PF   2.21  worst $  -7.65  MDD $ 10.79  R/MDD  3.76
+    CE only 0-15            234d  win  98.3%  $   20.77  Rs    1765  PF   4.80  worst $  -3.85  MDD $  3.85  R/MDD  5.39
+    PE only 0-15            247d  win  99.2%  $   15.41  Rs    1310  PF   2.40  worst $  -5.88  MDD $  5.88  R/MDD  2.62
+
+--------------------------------------------------------------------------------------------------------------------------
+  2. THE SAME VARIANTS, YEAR BY YEAR
+--------------------------------------------------------------------------------------------------------------------------
+  A rule that only works in one year has not been shown to work.
+
+  A   CE 0-15  + PE 0-15
+    2024       96d  win  97.9%  $   16.85  Rs    1432  PF  17.35  worst $  -0.95  MDD $  0.95  R/MDD 17.71
+    2025       94d  win  97.9%  $   10.71  Rs     910  PF   2.77  worst $  -5.77  MDD $  5.77  R/MDD  1.86
+    2026       93d  win  97.8%  $    8.62  Rs     733  PF   1.99  worst $  -4.97  MDD $  6.48  R/MDD  1.33
+
+  B   CE 0-15  + PE 15-30
+    2024       99d  win  97.0%  $   24.57  Rs    2089  PF   6.22  worst $  -2.37  MDD $  2.37  R/MDD 10.39
+    2025       99d  win  97.0%  $   15.84  Rs    1346  PF   2.19  worst $  -9.60  MDD $  9.60  R/MDD  1.65
+    2026       95d  win  94.7%  $   10.61  Rs     902  PF   1.63  worst $  -6.89  MDD $  7.33  R/MDD  1.45
+
+  C   CE 0-15  + PE 15-40
+    2024       99d  win  93.9%  $   25.30  Rs    2151  PF   3.30  worst $  -5.45  MDD $  5.45  R/MDD  4.65
+    2025      100d  win  95.0%  $   16.68  Rs    1418  PF   1.81  worst $ -11.49  MDD $ 11.49  R/MDD  1.45
+    2026       96d  win  93.8%  $    8.99  Rs     764  PF   1.34  worst $  -8.76  MDD $  8.76  R/MDD  1.03
+
+  D'  CE 0-20  + PE 0-20
+    2024       98d  win  96.9%  $   15.04  Rs    1278  PF   2.42  worst $  -4.82  MDD $  4.82  R/MDD  3.12
+    2025       97d  win  96.9%  $   15.88  Rs    1350  PF   2.97  worst $  -7.65  MDD $  7.65  R/MDD  2.08
+    2026       95d  win  95.8%  $    9.67  Rs     822  PF   1.65  worst $  -6.87  MDD $ 10.79  R/MDD  0.90
+
+      CE only 0-15
+    2024       77d  win  97.4%  $    7.12  Rs     605  PF   6.79  worst $  -1.04  MDD $  1.04  R/MDD  6.85
+    2025       77d  win  98.7%  $    8.15  Rs     692  PF  22.40  worst $  -0.38  MDD $  0.38  R/MDD 21.40
+    2026       80d  win  98.8%  $    5.50  Rs     468  PF   2.43  worst $  -3.85  MDD $  3.85  R/MDD  1.43
+
+      PE only 0-15
+    2024       87d  win 100.0%  $    9.73  Rs     827  PF    inf  worst $   0.03  MDD $  0.00  R/MDD   inf
+    2025       84d  win  98.8%  $    2.56  Rs     218  PF   1.44  worst $  -5.88  MDD $  5.88  R/MDD  0.44
+    2026       76d  win  98.7%  $    3.12  Rs     265  PF   1.61  worst $  -5.09  MDD $  5.09  R/MDD  0.61
+
+--------------------------------------------------------------------------------------------------------------------------
+  3. SATURDAY
+--------------------------------------------------------------------------------------------------------------------------
+A   CE 0-15  + PE 0-15  all days    283d  win  97.9%  $   36.18  Rs    3075  PF   3.29  worst $  -5.77  MDD $  6.48  R/MDD  5.58
+A   CE 0-15  + PE 0-15  no Saturday  239d  win  98.7%  $   41.76  Rs    3550  PF  32.76  worst $  -0.95  MDD $  0.95  R/MDD 43.88
+                                   delta: $+5.58  MDD $-5.53  PF +29.47
+
+B   CE 0-15  + PE 15-30  all days   293d  win  96.2%  $   51.02  Rs    4337  PF   2.47  worst $  -9.60  MDD $ 11.96  R/MDD  4.27
+B   CE 0-15  + PE 15-30  no Saturday  249d  win  97.6%  $   61.71  Rs    5245  PF   6.98  worst $  -3.92  MDD $  3.92  R/MDD 15.75
+                                   delta: $+10.68  MDD $-8.04  PF +4.51
+
+C   CE 0-15  + PE 15-40  all days   295d  win  94.2%  $   50.97  Rs    4332  PF   1.88  worst $ -11.49  MDD $ 13.85  R/MDD  3.68
+C   CE 0-15  + PE 15-40  no Saturday  251d  win  95.6%  $   66.77  Rs    5676  PF   3.62  worst $  -5.83  MDD $  6.67  R/MDD 10.01
+                                   delta: $+15.80  MDD $-7.18  PF +1.74
+
+D'  CE 0-20  + PE 0-20  all days    290d  win  96.6%  $   40.59  Rs    3450  PF   2.21  worst $  -7.65  MDD $ 10.79  R/MDD  3.76
+D'  CE 0-20  + PE 0-20  no Saturday  246d  win  97.2%  $   48.69  Rs    4139  PF   4.66  worst $  -4.82  MDD $  4.82  R/MDD 10.10
+                                   delta: $+8.10  MDD $-5.97  PF +2.44
+
+--------------------------------------------------------------------------------------------------------------------------
+  4. EVERY LOSING DAY, VARIANT A
+--------------------------------------------------------------------------------------------------------------------------
+  6 losing days out of 283 traded (2.1%)
+
+  2025-03-29 Sat      84340 ->     82204 (-2.53%)  $  -5.77  Rs   -490   CE 86000 @11.7->0  PE 82800 @9.0->596
+  2026-02-28 Sat      65818 ->     63882 (-2.94%)  $  -4.97  Rs   -423   CE 67000 @12.2->0  PE 64400 @9.1->518
+  2026-02-14 Sat      68820 ->     70396 (+2.29%)  $  -3.76  Rs   -320   CE 70000 @11.4->396  PE 67400 @9.4->0
+  2024-10-14 Mon      62864 ->     64915 (+3.26%)  $  -0.95  Rs    -81   CE 64800 @11.7->115  PE 60800 @9.2->0
+  2025-08-10 Sun     116443 ->    118251 (+1.55%)  $  -0.28  Rs    -24   CE 118200 @13.6->51  PE 115200 @10.2->0
+  2024-09-26 Thu      63124 ->     64430 (+2.07%)  $  -0.08  Rs     -7   CE 64400 @11.4->30  PE 61600 @11.8->0
+
+--------------------------------------------------------------------------------------------------------------------------
+  5. HOW BIG A MOVE BREAKS EACH VARIANT
+--------------------------------------------------------------------------------------------------------------------------
+  A   CE 0-15  + PE 0-15     win-day move 0.63%   lose-day move 2.41%
+  B   CE 0-15  + PE 15-30    win-day move 0.63%   lose-day move 2.53%
+  C   CE 0-15  + PE 15-40    win-day move 0.61%   lose-day move 2.21%
+  D'  CE 0-20  + PE 0-20     win-day move 0.62%   lose-day move 2.41%
+
+==========================================================================================================================
+  WHAT THIS DOES AND DOES NOT SAY
+==========================================================================================================================
+  - No premium floor and no variant reaches a 100% win rate. The best any
+    of them manages is in the high nineties, and the losses that remain are
+    the days BTC moved further in twelve hours than the strike was away.
+  - The strategy is short a tail. Its win rate is high because most days are
+    quiet, and its loss is large because the rare day is not.
+  - On the most dangerous days Delta often lists no cheap strike at all, so
+    the rule stands aside. Part of the win rate is that filter, not skill.
+  - Protection is frequently unlisted at the distances this sells, so a
+    bounded worst case is often unavailable. Size is the real risk control.
+

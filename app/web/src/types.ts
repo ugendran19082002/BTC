@@ -126,3 +126,6 @@ export type ByYearResponse = {
   overall: Summary;
   years: (Summary & { year: string })[];
 };
+
+export type FloorRow = { floor: number; summary: Summary; medianOtmPct: number | null };
+export type FloorResponse = { rows: FloorRow[] };

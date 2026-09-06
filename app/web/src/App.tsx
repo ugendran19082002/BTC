@@ -5,8 +5,9 @@ import { ChainTable } from './components/ChainTable';
 import { BiasPanel } from './components/BiasPanel';
 import { PicksPanel } from './components/PicksPanel';
 import { BacktestPanel } from './components/BacktestPanel';
+import { FloorPanel } from './components/FloorPanel';
 
-type Tab = 'desk' | 'backtest';
+type Tab = 'desk' | 'backtest' | 'floors';
 
 /** `datetime-local` wants local wall time; the API speaks UTC. */
 function toLocalInput(d: Date): string {
@@ -73,6 +74,7 @@ export default function App() {
       <div className="tabs">
         <button className={tab === 'desk' ? 'on' : ''} onClick={() => setTab('desk')}>Chain &amp; entry</button>
         <button className={tab === 'backtest' ? 'on' : ''} onClick={() => setTab('backtest')}>Backtest</button>
+        <button className={tab === 'floors' ? 'on' : ''} onClick={() => setTab('floors')}>How much premium?</button>
       </div>
 
       {tab === 'desk' ? (
@@ -150,8 +152,10 @@ export default function App() {
             </>
           )}
         </>
-      ) : (
+      ) : tab === 'backtest' ? (
         <BacktestPanel usdinr={data?.usdinr ?? 85} />
+      ) : (
+        <FloorPanel usdinr={data?.usdinr ?? 85} />
       )}
     </div>
   );
