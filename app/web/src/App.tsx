@@ -56,7 +56,7 @@ export default function App() {
   const [width, setWidth] = usePersisted('width', 20);
   const [minPremium, setMinPremium] = usePersisted('minPremium', 15);
   const [mode, setMode] = usePersisted<'premium' | 'safety'>('mode', 'premium');
-  const [safetyBar, setSafetyBar] = usePersisted('safetyBar', 99);
+  const [safetyBar, setSafetyBar] = usePersisted('safetyBar', 98);
   const [hedgeGap, setHedgeGap] = usePersisted('hedgeGap', 0);
   const [requireHedge, setRequireHedge] = usePersisted('requireHedge', false);
   const [lots, setLots] = usePersisted('lots', 10);
@@ -187,9 +187,14 @@ export default function App() {
                     on 653 days, average premium $27.
                   </p>
                   <p>
-                    <b>Safest</b> takes the richest strike whose measured chance of
-                    expiring worthless clears your bar. At 99%: profit factor 9.83,
-                    worst day −$1.71, a trade on 450 days, average premium $12.
+                    <b>Safest</b> takes the richest strike that clears <i>both</i> your
+                    premium floor and your safety bar. At $15 and 98%: profit factor
+                    9.67, worst day −$3.66, a trade on 456 days.
+                  </p>
+                  <p>
+                    In this mode a day where only one side clears both bars is still
+                    traded, with the whole position on that side. That matters: skipping
+                    those days drops it from 456 days to 215.
                   </p>
                   <p>
                     Asking for more safety does not get you more premium — it gets you
@@ -209,11 +214,18 @@ export default function App() {
               <Field
                 label="safety bar %"
                 help={
-                  <p>
-                    The lowest measured chance of expiring worthless you will accept.
-                    Higher means fewer trades and smaller losses: 98% gave a profit
-                    factor of 6.08, 99% gave 9.83, 99.2% gave 11.57.
-                  </p>
+                  <>
+                    <p>
+                      The lowest measured chance of expiring worthless you will accept
+                      on a strike.
+                    </p>
+                    <p>
+                      <b>98% is the tightest bar that worked in all three years.</b>{' '}
+                      Going to 99% looks better overall but fails 2024 outright —
+                      profit factor 1.23 on 29 days — because it waits for conditions
+                      that year rarely offered.
+                    </p>
+                  </>
                 }
               >
                 <input

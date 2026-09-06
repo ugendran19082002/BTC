@@ -240,15 +240,27 @@ function findHedge(
  *               more risk: profit factor 3.08, worst day -$7.08, and it finds
  *               a trade on 653 days.
  *
- *   'safety'  — the richest strike whose calibrated chance of expiring
- *               worthless clears a bar. Less money, far less risk: at a 99% bar
- *               the profit factor is 9.83, the worst day -$1.71, and it trades
- *               450 days. Better in 2024, 2025 and 2026 separately.
+ *   'safety'  — the richest strike that clears BOTH the premium floor and a
+ *               calibrated safety bar. At $15 and 98%: profit factor 9.67,
+ *               worst day -$3.66, return over drawdown 23.4, on 456 days.
+ *               Against the premium rule's 3.08, -$7.08 and 11.8, for about
+ *               12% less money. It improves 2024, 2025 and 2026 separately.
  *
- * Worth saying out loud because it surprises people: asking for 99% safety does
- * not get you more premium, it gets you less. The average premium collected
- * falls from $27.45 to $12.23, because a strike that safe is a long way out and
- * strikes that far out are cheap. What you buy is the risk profile, not income.
+ * In safety mode a day where only ONE side clears both bars is still traded,
+ * with the whole position on that side. That is not a small detail: skipping
+ * those days drops it from 456 days to 215 and the return over drawdown from
+ * 23.4 to 13.6. Most qualifying days are one-sided.
+ *
+ * Two things that surprise people, both measured:
+ *
+ *   Asking for more safety collects LESS premium, not more. Average premium
+ *   falls from $27.45 to about $18, because a strike that safe is a long way
+ *   out and strikes that far out are cheap. The bar buys a smaller worst day,
+ *   not income.
+ *
+ *   A 99% bar is worse than 98%, not better. It fails 2024 outright -- profit
+ *   factor 1.23 on 29 days -- because it waits for conditions that year rarely
+ *   offered. 98% is the tightest bar that survives every year.
  */
 export type PickMode = 'premium' | 'safety';
 
@@ -266,9 +278,11 @@ function bestLeg(
   const safetyOf = (l: ScoredLeg) => l.zero?.adjusted ?? l.probs.expireWorthless ?? 0;
 
   if (mode === 'safety') {
-    const safe = otm.filter((l) => safetyOf(l) >= safetyBar);
+    // both bars, not either: the premium floor keeps it worth doing and the
+    // safety bar keeps it survivable
+    const safe = otm.filter((l) => safetyOf(l) >= safetyBar && l.sellPrice! >= minPremium);
     if (!safe.length) return null;
-    // richest of the ones that clear the bar
+    // richest of the ones that clear both
     return safe.reduce((a, b) => (b.sellPrice! > a.sellPrice! ? b : a));
   }
 
@@ -292,7 +306,7 @@ export function recommend(
   totalLots: number,
   hedgeGap = 0,
   mode: PickMode = 'premium',
-  safetyBar = 0.99,
+  safetyBar = 0.98,
 ): Recommendation {
   const { lean, reason } = directionalLean(market);
   // Kept as whole percentages and divided at the end: 1 - 0.7 is
@@ -316,7 +330,17 @@ export function recommend(
 
   const picks: SideRecommendation[] = [];
   let hedgeMissing = false;
-  const allocation = allocateLots(totalLots, ce, pe);
+  // Work out which sides actually have something to sell before splitting the
+  // lots: in safety mode only one side often qualifies, and it should take the
+  // whole position rather than 30% of it with the rest left idle.
+  const available = ([['CE', ce], ['PE', pe]] as const).filter(
+    ([side]) => bestLeg(scored, side, minPremium, mode, safetyBar) !== null,
+  );
+  const allocation =
+    available.length === 1
+      ? { ce: available[0]![0] === 'CE' ? totalLots : 0, pe: available[0]![0] === 'PE' ? totalLots : 0 }
+      : allocateLots(totalLots, ce, pe);
+
   for (const [side, lots] of [['CE', allocation.ce], ['PE', allocation.pe]] as const) {
     if (lots <= 0) continue;
     const leg = bestLeg(scored, side, minPremium, mode, safetyBar);
@@ -354,7 +378,12 @@ export function recommend(
     });
   }
 
-  if (picks.length < 2) {
+  // In safety mode one side is a legitimate trade, and usually the only one on
+  // offer. In premium mode it is not: there both sides always qualify, so a
+  // single leg means something is wrong rather than something is selective.
+  const oneSidedIsFine = mode === 'safety' && picks.length === 1;
+
+  if (picks.length < 2 && !oneSidedIsFine) {
     return {
       ok: false,
       hedgeMissing,

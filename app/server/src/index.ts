@@ -66,7 +66,7 @@ app.get('/api/chain', async (req, reply) => {
     const lots = Number(q.lots ?? 10);
     const requireHedge = q.requireHedge === '1' || q.requireHedge === 'true';
     const mode: PickMode = q.mode === 'safety' ? 'safety' : 'premium';
-    const safetyBar = Math.min(0.999, Math.max(0.5, Number(q.safetyBar ?? 0.99)));
+    const safetyBar = Math.min(0.999, Math.max(0.5, Number(q.safetyBar ?? 0.98)));
     const picks = pickSells(snap, scored, minPremium, hedgeGap);
     // Market context is best-effort: a throttled candle feed must not take the
     // chain down with it, it only costs the split its tested skew.

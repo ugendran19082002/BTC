@@ -48,9 +48,26 @@ export function RecommendPanel({
 
   return (
     <Card>
-      <CardTitle right={<Badge tone="neutral">premium ≥ ${minPremium}</Badge>}>
+      <CardTitle
+        right={
+          <Badge tone="neutral">
+            {rec.mode === 'safety'
+              ? `≥ $${minPremium} and ≥ ${(rec.safetyBar * 100).toFixed(1)}% safe`
+              : `premium ≥ $${minPremium}`}
+          </Badge>
+        }
+      >
         What to sell
       </CardTitle>
+
+      {rec.sides.length === 1 && (
+        <Note tone="warn">
+          Only the {rec.sides[0]!.side} side has a strike clearing both bars today, so
+          the whole position goes there. That is the normal case in this mode, not a
+          failure — most qualifying days are one-sided, and skipping them cuts the
+          number of tradeable days by more than half.
+        </Note>
+      )}
 
       {rec.sides.map((s) => (
         <div key={s.side} className="mb-2.5 rounded-md border border-border bg-[var(--bg)] p-3">
@@ -129,7 +146,11 @@ export function RecommendPanel({
       <StatDivider />
       <Stat
         label="lots"
-        value={`${Math.round(rec.split.ce * 100)}% calls · ${Math.round(rec.split.pe * 100)}% puts`}
+        value={
+          rec.sides.length === 1
+            ? `100% ${rec.sides[0]!.side === 'CE' ? 'calls' : 'puts'} — only side that qualifies`
+            : `${Math.round(rec.split.ce * 100)}% calls · ${Math.round(rec.split.pe * 100)}% puts`
+        }
       />
       <Stat
         label="you keep if both expire worthless"
