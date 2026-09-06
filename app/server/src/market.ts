@@ -94,6 +94,18 @@ function readOne(tf: Timeframe, bars: Candle[]): TimeframeRead | null {
   };
 }
 
+export type Move = {
+  /** how long a window, in hours */
+  hours: number;
+  label: string;
+  /** close-to-close change over the window, in dollars */
+  changeUsd: number | null;
+  changePct: number | null;
+  /** high-to-low range over the window */
+  rangeUsd: number | null;
+  rangePct: number | null;
+};
+
 export type MarketRead = {
   spot: number;
   /** the 24-hour return that decides the lot split; this one is tested */
@@ -110,7 +122,33 @@ export type MarketRead = {
   regime: 'trending up' | 'trending down' | 'mixed' | 'quiet';
   /** realised volatility on the daily bars, annualised, as a percentage */
   realisedVol: number | null;
+  /** what BTC has actually done over several windows, points and percent */
+  moves: Move[];
+  /** the largest 24-hour range in the last 30 days */
+  max24hRangeUsd: number | null;
+  max24hRangePct: number | null;
 };
+
+/** Close-to-close change and high-low range over the last `bars` bars. */
+function moveOver(bars: Candle[], count: number, hours: number, label: string): Move {
+  const slice = bars.slice(-count);
+  if (slice.length < 2) {
+    return { hours, label, changeUsd: null, changePct: null, rangeUsd: null, rangePct: null };
+  }
+  const first = slice[0]!;
+  const last = slice[slice.length - 1]!;
+  const hi = Math.max(...slice.map((b) => b.high));
+  const lo = Math.min(...slice.map((b) => b.low));
+  const change = last.close - first.open;
+  return {
+    hours,
+    label,
+    changeUsd: change,
+    changePct: (change / first.open) * 100,
+    rangeUsd: hi - lo,
+    rangePct: ((hi - lo) / first.open) * 100,
+  };
+}
 
 export async function readMarket(): Promise<MarketRead> {
   const now = Math.floor(Date.now() / 1000);
@@ -149,6 +187,27 @@ export async function readMarket(): Promise<MarketRead> {
     realisedVol = Math.sqrt(varr * 365) * 100;
   }
 
+  const m5 = series.find(([tf]) => tf === '5m')?.[1] ?? [];
+  const h1 = series.find(([tf]) => tf === '1h')?.[1] ?? [];
+  const moves: Move[] = [
+    moveOver(m5, 1, 5 / 60, 'last 5m'),
+    moveOver(m5, 12, 1, 'last 1h'),
+    moveOver(h1, 12, 12, 'last 12h'),
+    moveOver(h1, 24, 24, 'last 24h'),
+  ];
+
+  // the biggest single day of the last month, as a reference for how wrong the
+  // expected move can be
+  let max24hRangeUsd: number | null = null;
+  let max24hRangePct: number | null = null;
+  if (daily.length >= 2) {
+    const recent = daily.slice(-30);
+    let best = recent[0]!;
+    for (const b of recent) if (b.high - b.low > best.high - best.low) best = b;
+    max24hRangeUsd = best.high - best.low;
+    max24hRangePct = ((best.high - best.low) / best.open) * 100;
+  }
+
   const agreement = timeframes.reduce((a, t) => a + t.trend, 0);
   const regime =
     agreement >= 3 ? 'trending up'
@@ -156,5 +215,8 @@ export async function readMarket(): Promise<MarketRead> {
     : timeframes.every((t) => t.trend === 0) ? 'quiet'
     : 'mixed';
 
-  return { spot, return24h, dailyRsiPrior, timeframes, agreement, regime, realisedVol };
+  return {
+    spot, return24h, dailyRsiPrior, timeframes, agreement, regime, realisedVol,
+    moves, max24hRangeUsd, max24hRangePct,
+  };
 }

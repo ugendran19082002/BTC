@@ -46,6 +46,15 @@ export type TimeframeRead = {
   label: string;
 };
 
+export type Move = {
+  hours: number;
+  label: string;
+  changeUsd: number | null;
+  changePct: number | null;
+  rangeUsd: number | null;
+  rangePct: number | null;
+};
+
 export type MarketRead = {
   spot: number;
   return24h: number | null;
@@ -54,6 +63,9 @@ export type MarketRead = {
   agreement: number;
   regime: string;
   realisedVol: number | null;
+  moves: Move[];
+  max24hRangeUsd: number | null;
+  max24hRangePct: number | null;
 };
 
 export type SideRecommendation = {

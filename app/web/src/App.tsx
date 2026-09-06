@@ -7,6 +7,7 @@ import { BacktestPanel } from './components/BacktestPanel';
 import { FloorPanel } from './components/FloorPanel';
 import { VerdictPanel } from './components/VerdictPanel';
 import { RecommendPanel } from './components/RecommendPanel';
+import { MovePanel } from './components/MovePanel';
 import { DateTimePicker, istToEpoch, type IstMoment } from './components/DateTimePicker';
 import { usePersisted } from './hooks/usePersisted';
 import { AccountPanel } from './components/AccountPanel';
@@ -345,6 +346,7 @@ export default function App() {
                   </Metric>
                 </div>
                 <RecommendPanel rec={data.recommendation} market={data.market} minPremium={minPremium} />
+                {data.market && <MovePanel market={data.market} snap={snap} />}
                 <BiasPanel bias={data.bias} snap={snap} />
                 <AccountPanel usdinr={data.usdinr} />
               </div>

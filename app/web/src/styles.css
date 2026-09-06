@@ -264,3 +264,6 @@ th.zerocol, td.zerocol {
   background: #58a6ff10; font-weight: 600;
   border-left: 1px solid var(--line); border-right: 1px solid var(--line);
 }
+table.moves { font-size: 12px; margin-top: 2px; }
+table.moves th { position: static; background: transparent; padding-top: 0; }
+table.moves td, table.moves th { padding: 3px 6px; border-bottom: 1px solid #ffffff08; }
