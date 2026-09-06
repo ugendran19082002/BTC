@@ -3,6 +3,9 @@ import cors from '@fastify/cors';
 import { liveChain, historicalChain, liveExpiries, type Snapshot } from './chain.js';
 import { scoreLegs, pickSells, bias, verdict, maxLots, MARGIN_PER_LOT_USD, USDINR } from './score.js';
 import { run, floorSweep, loadDays, reloadDays, DEFAULTS, type Params } from './backtest.js';
+import { loadCalibration, reloadCalibration } from './calibration.js';
+import { readMarket } from './market.js';
+import { recommend } from './recommend.js';
 import { credsFromEnv, getBalances, getPositions, NotConfigured } from './auth.js';
 
 // Read once at startup so a later log line cannot pick the secret out of env.
@@ -60,11 +63,16 @@ app.get('/api/chain', async (req, reply) => {
     const hedgeGap = Number(q.hedgeGap ?? 3);
     const lots = Number(q.lots ?? 10);
     const picks = pickSells(snap, scored, minPremium, hedgeGap);
+    // Market context is best-effort: a throttled candle feed must not take the
+    // chain down with it, it only costs the split its tested skew.
+    const market = snap.live ? await readMarket().catch(() => null) : null;
     return {
       snapshot: { ...snap, legs: undefined },
       legs: scored,
       bias: bias(snap, scored),
       picks,
+      market,
+      recommendation: recommend(snap, scored, market, minPremium, lots),
       verdict: verdict(snap, picks, minPremium, lots),
       usdinr: USDINR,
     };
@@ -168,7 +176,12 @@ app.get('/api/presets', async () => ({
   ],
 }));
 
-app.post('/api/reload', async () => ({ days: reloadDays() }));
+app.get('/api/calibration', async () => ({ buckets: loadCalibration() }));
+
+app.post('/api/reload', async () => ({
+  days: reloadDays(),
+  calibrationBuckets: reloadCalibration(),
+}));
 
 const port = Number(process.env.PORT ?? 8787);
 await app.listen({ port, host: '0.0.0.0' });

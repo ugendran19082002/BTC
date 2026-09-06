@@ -234,3 +234,9 @@ code {
 /* Buying pays the ask; selling receives the bid. Two different numbers, and
    confusing them is the difference between the backtest and the account. */
 th.askcol, td.askcol { color: var(--down); background: #f851490a; }
+.pinned {
+  margin-top: 4px; align-self: flex-start;
+  background: #d2992218; border: 1px solid #d2992255; color: var(--warn);
+  border-radius: 999px; padding: 1px 9px; font-size: 10.5px; cursor: pointer;
+}
+.pinned:hover { background: #d2992230; }

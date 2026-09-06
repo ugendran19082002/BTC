@@ -65,10 +65,19 @@ async function req<T>(path: string, tries = 5): Promise<T | null> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** 1-minute candles. `symbol` may carry a MARK: or OI: prefix. */
-export async function candles(symbol: string, start: number, end: number): Promise<Candle[]> {
+/**
+ * Candles at any resolution. `symbol` may carry a MARK: or OI: prefix; the
+ * resolution is a separate parameter, not part of the symbol.
+ */
+export async function candles(
+  symbol: string,
+  start: number,
+  end: number,
+  resolution = '1m',
+): Promise<Candle[]> {
   const r = await req<Candle[]>(
-    `/history/candles?resolution=1m&symbol=${encodeURIComponent(symbol)}&start=${start}&end=${end}`,
+    `/history/candles?resolution=${encodeURIComponent(resolution)}` +
+      `&symbol=${encodeURIComponent(symbol)}&start=${start}&end=${end}`,
   );
   return (r ?? []).sort((a, b) => a.time - b.time);
 }

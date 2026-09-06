@@ -1,4 +1,5 @@
 import type { Leg, Snapshot } from './chain.js';
+import { zeroChance, zeroChanceByDistance, type ZeroChance } from './calibration.js';
 
 /**
  * Ranking and sizing helpers.
@@ -16,6 +17,9 @@ export const USDINR = 85;
 export type ScoredLeg = Leg & {
   /** BS probability the option finishes worthless, i.e. the seller keeps it all */
   pOtm: number | null;
+  /** what actually happened to strikes like this one, over 733 settlements */
+  zero: ZeroChance | null;
+  zeroByDistance: ZeroChance | null;
   /** price received divided by the model's fair value; >1 means you sold rich */
   edge: number | null;
   /** distance to the strike measured in expected moves */
@@ -42,13 +46,21 @@ export function scoreLegs(snap: Snapshot): ScoredLeg[] {
         ? Math.abs(leg.strike - snap.spot) / snap.expectedMove
         : null;
 
+    const zero = zeroChance(pOtm);
+    const zeroByDistance = zeroChanceByDistance(emDistance);
+
     if (px === null || pOtm === null) {
-      return { ...leg, pOtm, edge, emDistance, score: null, reasons: ['no price'] };
+      return {
+        ...leg, pOtm, zero, zeroByDistance, edge, emDistance,
+        score: null, reasons: ['no price'],
+      };
     }
 
     // Safety dominates: for a seller the single biggest driver of the win rate
-    // is how likely the strike is to stay out of the money.
-    const safety = pOtm;
+    // is how likely the strike is to stay out of the money. Where two years of
+    // settlements have an opinion about strikes like this one, prefer it to the
+    // model's.
+    const safety = zero?.historical ?? pOtm;
     // Selling above fair value is the only structural edge available; cap the
     // credit at 1.5x fair so one stale print cannot dominate the ranking.
     const edgeN = edge === null ? 0.5 : clamp01((edge - 0.7) / 0.8);
@@ -68,11 +80,15 @@ export function scoreLegs(snap: Snapshot): ScoredLeg[] {
       score *= 0.3;
       reasons.push('in the money');
     }
-    if (pOtm > 0.9) reasons.push(`${(pOtm * 100).toFixed(0)}% finish OTM`);
+    if (zero?.historical != null) {
+      reasons.push(`${(zero.historical * 100).toFixed(1)}% of ${zero.sample} like it expired at zero`);
+    } else if (pOtm > 0.9) {
+      reasons.push(`${(pOtm * 100).toFixed(0)}% finish OTM`);
+    }
     if (edge !== null && edge > 1.05) reasons.push(`${((edge - 1) * 100).toFixed(0)}% above fair`);
     if (emDistance !== null && emDistance >= 1) reasons.push(`${emDistance.toFixed(2)} expected moves out`);
 
-    return { ...leg, pOtm, edge, emDistance, score, reasons };
+    return { ...leg, pOtm, zero, zeroByDistance, edge, emDistance, score, reasons };
   });
 }
 

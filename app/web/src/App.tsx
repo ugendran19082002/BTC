@@ -8,6 +8,7 @@ import { BacktestPanel } from './components/BacktestPanel';
 import { FloorPanel } from './components/FloorPanel';
 import { VerdictPanel } from './components/VerdictPanel';
 import { DateTimePicker, istToEpoch, type IstMoment } from './components/DateTimePicker';
+import { usePersisted } from './hooks/usePersisted';
 import { AccountPanel } from './components/AccountPanel';
 import { Metric, Formula, Field } from './components/Explain';
 
@@ -22,17 +23,19 @@ function defaultPast(): IstMoment {
 }
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>('desk');
-  const [live, setLive] = useState(true);
+  const [tab, setTab] = usePersisted<Tab>('tab', 'desk');
+  const [live, setLive] = usePersisted('live', true);
   const [when, setWhen] = useState<IstMoment>(defaultPast);
-  const [expiry, setExpiry] = useState<string>('');
+  // Remembered, but only honoured while that expiry is still listed -- a saved
+  // contract that has since settled must not pin the desk to a dead chain.
+  const [expiry, setExpiry, forgetExpiry] = usePersisted<string>('expiry', '');
   const [expiries, setExpiries] = useState<ExpiryOption[]>([]);
-  const [width, setWidth] = useState(10);
-  const [minPremium, setMinPremium] = useState(15);
-  const [hedgeGap, setHedgeGap] = useState(3);
-  const [lots, setLots] = useState(10);
+  const [width, setWidth] = usePersisted('width', 10);
+  const [minPremium, setMinPremium] = usePersisted('minPremium', 15);
+  const hedgeGap = 0;
+  const [lots, setLots] = usePersisted('lots', 10);
   // On by default: a live chain that silently goes stale is worse than no chain.
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [autoRefresh, setAutoRefresh] = usePersisted('autoRefresh', true);
 
   const [data, setData] = useState<ChainResponse | null>(null);
   const [busy, setBusy] = useState(false);
@@ -65,12 +68,15 @@ export default function App() {
     getExpiries()
       .then((r) => {
         setExpiries(r.expiries);
-        // Land on the contract the next 05:30 entry would sell, not the nearest
-        // expiry. By afternoon the nearest has an hour left and is not a trade.
-        setExpiry((cur) => cur || r.expiries.find((e) => e.isNextEntry)?.expiry || '');
+        const fallback = r.expiries.find((e) => e.isNextEntry)?.expiry ?? '';
+        setExpiry((cur) => {
+          // Keep a remembered choice only if that contract is still listed.
+          if (cur && r.expiries.some((e) => e.expiry === cur)) return cur;
+          return fallback;
+        });
       })
       .catch(() => setExpiries([]));
-  }, []);
+  }, [setExpiry]);
 
   useEffect(() => {
     if (!autoRefresh || !live) return;
@@ -131,6 +137,11 @@ export default function App() {
                   </option>
                 ))}
               </select>
+              {expiries.length > 0 && !expiries.find((e) => e.expiry === expiry)?.isNextEntry && (
+                <button className="pinned" onClick={forgetExpiry} title="back to the default">
+                  pinned — reset
+                </button>
+              )}
             </div>
 
             <Field
@@ -172,35 +183,6 @@ export default function App() {
               }
             >
               <input type="number" value={lots} onChange={(e) => setLots(Number(e.target.value))} />
-            </Field>
-
-            <Field
-              label="hedge gap"
-              help={
-                <>
-                  <p>
-                    How many strikes past the one you sell to <b>buy</b> protection.
-                    Strikes are $200 apart, so a gap of 3 is $600.
-                  </p>
-                  <Formula>
-                    sell C-BTC-82000 &nbsp;→ collect the premium<br />
-                    buy&nbsp; C-BTC-82600 &nbsp;→ pay a little back (3 × 200)<br />
-                    worst case = 600 − net credit, and not a rupee more
-                  </Formula>
-                  <p>
-                    Without it the short is naked: if BTC runs, the loss keeps growing
-                    with it. With it you know the worst case before you enter, and it
-                    costs you part of the credit.
-                  </p>
-                  <p className="dim">
-                    Set 0 for no hedge. Be warned: at the distances this strategy sells,
-                    Delta often lists nothing further out to buy — protection was
-                    available on only about a quarter of days at a gap of 3.
-                  </p>
-                </>
-              }
-            >
-              <input type="number" value={hedgeGap} onChange={(e) => setHedgeGap(Number(e.target.value))} />
             </Field>
 
             <Field
