@@ -1,19 +1,30 @@
 import type { MarketRead, SnapshotMeta } from '../types';
 import { Note } from './ui/card';
-import { CollapsibleCard } from './ui/collapsible-card';
 import { Stat, StatDivider } from './ui/stat';
 
 const money = (v: number | null) =>
   v === null ? '—' : (v >= 0 ? '+' : '−') + '$' + Math.abs(v).toFixed(0);
 
-/** What BTC has actually done, next to what the market says it will do. */
-export function MovePanel({ market, snap }: { market: MarketRead; snap: SnapshotMeta }) {
+/**
+ * What BTC has actually done, under what the market says it will do.
+ *
+ * A section rather than a card of its own: it used to sit in the reference row
+ * repeating the expected move that the contract card two feet away had already
+ * given, and the two only mean anything read together -- ±$650 priced against
+ * $1,772 travelled yesterday is the whole point, and it was split across the
+ * page. So it lives under the contract it describes.
+ */
+export function MoveSection({ market, snap }: { market: MarketRead; snap: SnapshotMeta }) {
   const last24 = market.moves.find((m) => m.hours === 24);
   const em = snap.expectedMove;
   const ratio = em && em > 0 && last24?.rangeUsd ? last24.rangeUsd / em : null;
 
   return (
-    <CollapsibleCard id="moved" title="How far it has moved">
+    <>
+      <StatDivider />
+      <div className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-[0.8px] text-muted-foreground">
+        how far it has actually moved
+      </div>
 
       <div className="-mx-1 overflow-x-auto">
         <table className="w-full text-[11.8px]">
@@ -62,9 +73,8 @@ export function MovePanel({ market, snap }: { market: MarketRead; snap: Snapshot
             : `$${market.max24hRangeUsd.toFixed(0)} · ${market.max24hRangePct?.toFixed(2)}%`
         }
       />
-      <Stat label="market expects" value={em === null ? '—' : `±$${em.toFixed(0)}`} />
       <Stat
-        label="yesterday vs that"
+        label="yesterday against what the market expects"
         value={ratio === null ? '—' : `${ratio.toFixed(2)}×`}
         tone={ratio === null ? 'plain' : ratio > 2 ? 'warn' : 'up'}
       />
@@ -74,6 +84,6 @@ export function MovePanel({ market, snap }: { market: MarketRead; snap: Snapshot
         that morning. A strike one expected move away is not one day's travel away —
         BTC covers that distance often.
       </Note>
-    </CollapsibleCard>
+    </>
   );
 }

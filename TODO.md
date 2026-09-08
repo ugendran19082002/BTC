@@ -183,6 +183,17 @@ rather than silently showing less than the setting reads.
 
 ### Layout, 8 Sep 2026
 
+**How far it has moved** is no longer a card of its own — it is a section under
+the contract card. It was repeating the expected move that card already gave,
+and the two only mean anything read together: ±$650 priced against $1,772
+travelled yesterday is the point, and it was split across the page.
+
+**Where the money sits** was removed on request. Nothing is lost from the
+decision: every figure on it — put/call ratios, open interest walls, gamma,
+IV skew — was tried as a trading rule and none held up across 2024, 2025 and
+2026, so none of them ever touched the recommendation. `/api/chain` still
+returns the numbers if you want them back.
+
 **Live** and **What to sell** now sit above the chain — the two things you read
 first are the two things you see first, without scrolling past twenty strikes.
 **Where the money sits** moved down beside the other reference cards.

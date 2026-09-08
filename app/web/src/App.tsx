@@ -2,13 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { getAccount, getChain, getExpiries, getHealth, getMe, logout, NotSignedIn } from './api';
 import type { ChainResponse, ExpiryOption } from './types';
 import { ChainTable } from './components/ChainTable';
-import { MovePanel } from './components/MovePanel';
+import { MoveSection } from './components/MoveSection';
 import { BiasPanel } from './components/BiasPanel';
 import { BacktestPanel } from './components/BacktestPanel';
 import { FloorPanel } from './components/FloorPanel';
 import { VerdictPanel } from './components/VerdictPanel';
 import { RecommendPanel } from './components/RecommendPanel';
-import { StructurePanel } from './components/StructurePanel';
 import { DateTimePicker, istToEpoch, type IstMoment } from './components/DateTimePicker';
 import { usePersisted } from './hooks/usePersisted';
 import { LoginPage } from './components/LoginPage';
@@ -520,6 +519,7 @@ export default function App() {
                       </p>
                     </Metric>
                   )}
+                  {data.market && <MoveSection market={data.market} snap={snap} />}
                 </CollapsibleCard>
 
                 <RecommendPanel rec={data.recommendation} market={data.market} minPremium={minPremium} usdinr={data.usdinr} />
@@ -564,8 +564,6 @@ export default function App() {
 
 
               <div className="refs">
-                {data.market && <MovePanel market={data.market} snap={snap} />}
-                <StructurePanel structure={data.structure} />
                 <BiasPanel bias={data.bias} />
                 <AccountPanel usdinr={data.usdinr} />
               </div>
