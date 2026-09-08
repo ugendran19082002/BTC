@@ -1,9 +1,9 @@
-import type { Bias, SnapshotMeta } from '../types';
+import type { Bias } from '../types';
 import { Card, CardTitle, CardLead, Note } from './ui/card';
 import { Stat } from './ui/stat';
 
 /** Which way the option board is leaning right now. */
-export function BiasPanel({ bias, snap }: { bias: Bias; snap: SnapshotMeta }) {
+export function BiasPanel({ bias }: { bias: Bias }) {
   const pct = ((bias.score + 1) / 2) * 100;
   const tone = bias.score > 0.15 ? 'up' : bias.score < -0.15 ? 'down' : 'plain';
 
@@ -30,15 +30,8 @@ export function BiasPanel({ bias, snap }: { bias: Bias; snap: SnapshotMeta }) {
       </div>
 
       <Note>
-        Read straight off the board: how many puts against calls, whether puts cost
-        more than calls, and which side is trading more.
-      </Note>
-      <Note tone="dim">
         Over 12 hours this barely predicts anything. It is background, never the
         reason to trade.
-        {snap.expectedMove !== null && (
-          <> The market is pricing about ±${snap.expectedMove.toFixed(0)} by settlement.</>
-        )}
       </Note>
     </Card>
   );

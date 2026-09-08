@@ -256,7 +256,12 @@ export type Check = { ok: boolean; severity: 'block' | 'warn' | 'info'; text: st
 export type Verdict = {
   action: 'ENTER' | 'WAIT' | 'STAND_ASIDE';
   headline: string;
-  detail: string;
+  /**
+   * A line of context under the headline, or null when the checks already say
+   * it. Blocked verdicts used to copy the first failing check here, so the same
+   * sentence appeared twice, once as prose and once with a cross beside it.
+   */
+  detail: string | null;
   checks: Check[];
   orders: string[];
   nextWindow: string | null;
@@ -416,12 +421,13 @@ export function verdict(
   const nextDay = DAY[entryIst.weekday]!;
 
   if (blocked) {
-    const why = checks.find((c) => c.severity === 'block' && !c.ok)!;
     const waiting = !inWindow && snap.isNextEntry;
     return {
       action: inWindow ? 'STAND_ASIDE' : 'WAIT',
       headline: inWindow ? 'Stand aside' : waiting ? 'Not yet' : 'Not now',
-      detail: why.text,
+      // The crossed lines below carry the reasons. Restating the first one here
+      // does not add a reason, it adds a paragraph.
+      detail: null,
       checks,
       orders: [],
       nextWindow: inWindow

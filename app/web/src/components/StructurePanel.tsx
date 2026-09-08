@@ -1,4 +1,4 @@
-import type { OptionStructure, SnapshotMeta } from '../types';
+import type { OptionStructure } from '../types';
 import { Card, CardTitle, Note } from './ui/card';
 import { Stat, StatDivider } from './ui/stat';
 
@@ -13,10 +13,8 @@ const n0 = (v: number | null | undefined) =>
  */
 export function StructurePanel({
   structure: st,
-  snap,
 }: {
   structure: OptionStructure;
-  snap: SnapshotMeta;
 }) {
   const cheapOptions = st.volPremiumPts !== null && st.volPremiumPts < 0;
 
@@ -90,14 +88,6 @@ export function StructurePanel({
           seller wants to be on.
         </Note>
       )}
-      <Note tone="dim">
-        Heavy open interest shows where people are positioned, not where price has
-        to stop. None of this is used to pick the trade.
-      </Note>
-      <Note tone="dim">
-        Spot {snap.spot.toFixed(0)} · at-the-money {snap.atm.toLocaleString()} ·{' '}
-        strikes {snap.step} apart
-      </Note>
     </Card>
   );
 }

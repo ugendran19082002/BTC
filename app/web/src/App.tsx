@@ -498,10 +498,10 @@ export default function App() {
               />
 
 
-              <div className="masonry">
+              <div className="refs">
                 {data.market && <MovePanel market={data.market} snap={snap} />}
-                <StructurePanel structure={data.structure} snap={snap} />
-                <BiasPanel bias={data.bias} snap={snap} />
+                <StructurePanel structure={data.structure} />
+                <BiasPanel bias={data.bias} />
                 <AccountPanel usdinr={data.usdinr} />
               </div>
 

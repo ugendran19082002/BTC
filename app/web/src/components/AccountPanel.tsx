@@ -92,9 +92,7 @@ export function AccountPanel({ usdinr }: { usdinr: number }) {
           about ₹{(5 * usdinr).toFixed(0)}.
         </Note>
       )}
-      <Note tone="dim">
-        Read-only. This desk cannot place or cancel an order. ₹{usdinr} to the dollar.
-      </Note>
+      <Note tone="dim">Read-only. This desk cannot place or cancel an order.</Note>
     </Card>
   );
 }

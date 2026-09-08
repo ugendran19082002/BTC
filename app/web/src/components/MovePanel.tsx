@@ -65,10 +65,6 @@ export function MovePanel({ market, snap }: { market: MarketRead; snap: Snapshot
         that morning. A strike one expected move away is not one day's travel away —
         BTC covers that distance often.
       </Note>
-      <Note tone="dim">
-        Background only. Skipping days when this ran hot was tested and thrown out:
-        it looked great in 2026 and lost money in 2024.
-      </Note>
     </Card>
   );
 }
