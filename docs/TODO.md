@@ -407,3 +407,47 @@ The reason it has not been done: the poll loop is what every one of the 199
 server tests drives, and a socket is a second code path into the same state
 machine. It should be added as a *source* that feeds the same `poll()` rather
 than as a parallel way to mutate a trade.
+
+## The Orders screen, and what it does not do yet
+
+There is one now: four statuses, an IST date range defaulting to today at both
+ends, and a CSV download that opens cleanly in Excel. The statuses come from the
+server (`trading/status.ts`) so the list, the counts and the download cannot
+disagree about what a trade was.
+
+Missing:
+
+- **Paging.** The range query caps at 1,000 rows and says nothing when it hits
+  the cap. Fine for a desk placing a handful of trades a day; wrong the moment
+  it is not.
+- **A total on the range.** The screen lists trades and never adds them up. The
+  first question about a week of orders is what the week made.
+- **The exchange's own record.** This lists what *this desk* did. A trade placed
+  from the Delta app is not in the journal and will never appear, which makes
+  the screen quietly incomplete rather than wrong. `/v2/orders/history` would
+  reconcile the two.
+
+## Exits can be moved now
+
+The stop and target were only ever chosen at entry -- the one moment you know
+least about how a trade is going. `updateProtection` takes the resting levels
+off the book before putting the new ones on, so there is never an instant with
+two live, and an explicit change skips the retry backoff because it is not a
+retry. Turning the stop off is a decision and does not raise the alarm.
+
+Still to do: **a trailing stop**. Delta accepts `trail_amount`, and a stop that
+follows the option down is the natural next thing once a position is in profit.
+It is not offered.
+
+## Refusals and where they are read
+
+Three gates can refuse one order at once, and the reasons used to sit under a
+summary long enough to push them off screen -- so the button was dead and the
+reason was a scroll away, which is the same as saying nothing. They are stuck to
+the bottom with the button now.
+
+The remaining rough edge: the three messages are written independently and read
+as a list rather than as an explanation. "Spread is 28.4%", "Needs $3.93, have
+$0.18" and "worst case exceeds today's budget" have one cause between them --
+the account is too small for this contract at this size -- and saying that once
+would beat saying three true things.
