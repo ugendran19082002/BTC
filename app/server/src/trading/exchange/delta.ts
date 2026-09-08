@@ -1,4 +1,4 @@
-import { DeltaRefused, RequestTimedOut, signed, type Creds } from '../../delta/signed.js';
+import { DeltaRefused, RateLimited, RequestTimedOut, signed, type Creds } from '../../delta/signed.js';
 import type {
   ExchangeOrder, ExchangePosition, OrderStatus, PlaceOrderRequest, ProductSpec, Quote,
 } from '../types.js';
@@ -188,6 +188,9 @@ export class DeltaExchange implements ExchangePort {
         // signing headers never reach here, and redact() catches the rest
         context: { body: req.body ?? null },
       });
+      // Being asked to wait is not an outage, but for anything that takes risk
+      // it has to behave like one: hold off rather than push through.
+      if (e instanceof RateLimited) throw new ExchangeUnavailable(e.message);
       if (e instanceof RequestTimedOut) throw new ExchangeUnavailable(e.message);
       throw e;
     }
@@ -211,6 +214,7 @@ export class DeltaExchange implements ExchangePort {
         context: { sent: body, detail: e instanceof DeltaRefused ? e.detail : null },
       });
       // The distinction the rest of the engine is built on.
+      if (e instanceof RateLimited) throw new ExchangeUnavailable(e.message);
       if (e instanceof RequestTimedOut) throw new SubmitTimeout(req.clientOrderId);
       if (e instanceof DeltaRefused) throw new OrderRejected(e.message);
       throw e;
@@ -239,6 +243,32 @@ export class DeltaExchange implements ExchangePort {
    * never existed" -- the single most dangerous wrong answer this method can
    * give, since it is what the engine consults after a submit times out.
    */
+  /**
+   * Move an order in place. `PUT /v2/orders`, which Delta documents as taking
+   * the order id, the product, the size and whichever price applies.
+   */
+  async editOrder(
+    order: { orderId: string; productId: number },
+    changes: { limitPrice?: number; stopPrice?: number; size?: number },
+  ): Promise<ExchangeOrder> {
+    const body: Record<string, unknown> = {
+      id: Number(order.orderId),
+      product_id: order.productId,
+    };
+    if (changes.size !== undefined) body.size = changes.size;
+    if (changes.limitPrice !== undefined) body.limit_price = String(changes.limitPrice);
+    if (changes.stopPrice !== undefined) body.stop_price = String(changes.stopPrice);
+    try {
+      return toOrder(await signed<DeltaOrder>(this.creds, {
+        method: 'PUT', path: '/v2/orders', body, timeoutMs: 10_000,
+      }));
+    } catch (e) {
+      if (e instanceof RequestTimedOut) throw new ExchangeUnavailable(e.message);
+      if (e instanceof DeltaRefused) throw new OrderRejected(e.message);
+      throw e;
+    }
+  }
+
   async getOrderByClientId(clientOrderId: string): Promise<ExchangeOrder | null> {
     const cid = encodeURIComponent(clientOrderId);
     const live = await this.call<DeltaOrder[]>({

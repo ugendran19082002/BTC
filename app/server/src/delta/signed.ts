@@ -36,6 +36,19 @@ export class RequestTimedOut extends Error {
   }
 }
 
+/**
+ * Delta said we are asking too often.
+ *
+ * Kept apart from an ordinary refusal because the response is different: an
+ * ordinary refusal means stop, this one means wait. The header says how long.
+ */
+export class RateLimited extends Error {
+  constructor(readonly retryAfterMs: number) {
+    super(`Delta rate limit reached; ${Math.ceil(retryAfterMs / 1000)}s until it resets.`);
+    this.name = 'RateLimited';
+  }
+}
+
 /** Delta answered and said no, with a reason. Nothing was created. */
 export class DeltaRefused extends Error {
   constructor(
@@ -111,6 +124,14 @@ export async function signed<T>(creds: Creds | null, req: SignedRequest): Promis
     // A timeout or a dropped socket says nothing about whether the exchange
     // acted on the request. Callers that write must treat this as "unknown".
     throw new RequestTimedOut(path);
+  }
+
+  // The quota is 20,000 per five minutes and this desk polls well inside it,
+  // but a burst -- a reconnect, several tabs, a retry storm -- can still land
+  // on it, and the header says exactly how long to wait.
+  if (res.status === 429) {
+    const reset = Number(res.headers.get('X-RATE-LIMIT-RESET') ?? 0);
+    throw new RateLimited(Number.isFinite(reset) && reset > 0 ? reset : 5_000);
   }
 
   const parsed = (await res.json().catch(() => null)) as

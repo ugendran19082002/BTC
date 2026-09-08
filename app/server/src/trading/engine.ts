@@ -94,6 +94,8 @@ export type EngineDeps = {
   /** BTC spot, for the margin and liquidation model. */
   spot?: () => number | null;
   onAlarm?: (trade: TradeState, message: string) => void;
+  /** A failure the engine carried on past. Best-effort, but not silent. */
+  onSwallowed?: (what: string, order: { orderId: string; symbol?: string }, error: Error) => void;
 };
 
 export type OpenResult =
@@ -160,6 +162,18 @@ export class TradeEngine {
     // Swallowed only for the chain's own bookkeeping; the caller still sees it.
     this.queue.set(tradeId, next.then(() => {}, () => {}));
     return next;
+  }
+
+  /**
+   * A failure we carry on past, written down.
+   *
+   * Best-effort is the right behaviour for a cancel -- the trade must not stop
+   * because one clean-up call failed -- but best-effort and *silent* are not
+   * the same thing, and the difference is a week of not knowing why the book
+   * disagreed with the screen. The engine keeps going; the log keeps the reason.
+   */
+  private note(what: string, order: { orderId: string; symbol?: string }, e: unknown): void {
+    this.d.onSwallowed?.(what, order, e as Error);
   }
 
   private get exchange() { return this.d.exchange; }
@@ -396,7 +410,7 @@ export class TradeEngine {
     const deadline = this.entryDeadline.get(tradeId);
     if (entry && (entry.status === 'open' || entry.status === 'partial') && deadline !== undefined && this.now() >= deadline) {
       rec = this.commit(rec, { t: 'entry_timeout', at: this.now() });
-      await this.exchange.cancelOrder(entry).catch(() => {});
+      await this.exchange.cancelOrder(entry).catch((e) => this.note('cancel entry', entry, e));
       this.entryDeadline.delete(tradeId);
       const after = await this.exchange.getOrderByClientId(entryId).catch(() => null);
       if (after) rec = this.absorb(rec, after, 'entry');
@@ -528,6 +542,33 @@ export class TradeEngine {
         ? undefined
         : live.find((o) => priceOf(o) === target && o.size === size);
 
+      /*
+       * One order is on the book at the wrong level, and one is wanted: move it
+       * rather than replacing it.
+       *
+       * Delta's PUT /v2/orders edits in place, which removes this whole class
+       * of failure -- there is no window where the position is unprotected, and
+       * no moment where two reduce-only orders exist and the exchange has to
+       * decide which of them over-commits the position. That moment is what
+       * produced "reduce only orders cancelled" and a book that disagreed with
+       * the screen.
+       */
+      if (!keep && target !== null && live.length === 1) {
+        const only = live[0]!;
+        try {
+          await this.exchange.editOrder(only, {
+            ...(role === 'stop_loss' ? { stopPrice: target } : { limitPrice: target }),
+            size,
+          });
+          return only.clientOrderId ?? clientId(rec.state.tradeId, role, attempt);
+        } catch (e) {
+          // Some venues refuse an edit that a cancel-and-replace would allow.
+          // Fall through and do it the long way, verifying as we go.
+          failure = null;
+          void e;
+        }
+      }
+
       for (const o of live) {
         if (o === keep) continue;
         const gone = await this.cancelAndVerify(o);
@@ -596,7 +637,7 @@ export class TradeEngine {
    * the order back.
    */
   private async cancelAndVerify(order: ExchangeOrder): Promise<boolean> {
-    await this.exchange.cancelOrder(order).catch(() => {});
+    await this.exchange.cancelOrder(order).catch((e) => this.note('cancel', order, e));
     if (!order.clientOrderId) return true;
     const after = await this.exchange.getOrderByClientId(order.clientOrderId).catch(() => null);
     if (after === null) return true;                       // gone from the book
@@ -618,7 +659,7 @@ export class TradeEngine {
     if (!oldCid || oldCid === newCid) return;
     const old = await this.exchange.getOrderByClientId(oldCid).catch(() => null);
     if (old && (old.status === 'open' || old.status === 'partial')) {
-      await this.exchange.cancelOrder(old).catch(() => {});
+      await this.exchange.cancelOrder(old).catch((e) => this.note('cancel superseded', old, e));
     }
   }
 
@@ -634,7 +675,7 @@ export class TradeEngine {
       if (!all && role === winner) continue;
       const o = await this.exchange.getOrderByClientId(cid).catch(() => null);
       if (o && (o.status === 'open' || o.status === 'partial')) {
-        await this.exchange.cancelOrder(o).catch(() => {});
+        await this.exchange.cancelOrder(o).catch((e) => this.note('cancel sibling', o, e));
       }
       rec = this.commit(rec, { t: 'sibling_cancelled', role, at: this.now() });
     }
@@ -654,7 +695,7 @@ export class TradeEngine {
 
     const order = await this.exchange.getOrderByClientId(clientId(tradeId, 'entry')).catch(() => null);
     if (order && (order.status === 'open' || order.status === 'partial')) {
-      await this.exchange.cancelOrder(order).catch(() => {});
+      await this.exchange.cancelOrder(order).catch((e) => this.note('cancel entry', order, e));
       const after = await this.exchange.getOrderByClientId(clientId(tradeId, 'entry')).catch(() => null);
       if (after) rec = this.absorb(rec, after, 'entry');
     }

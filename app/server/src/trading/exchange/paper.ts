@@ -242,6 +242,23 @@ export class PaperExchange implements ExchangePort {
     this.settle(o, 'cancelled');
   }
 
+  async editOrder(
+    order: { orderId: string },
+    changes: { limitPrice?: number; stopPrice?: number; size?: number },
+  ): Promise<ExchangeOrder> {
+    this.guard();
+    const o = this.orders.get(order.orderId);
+    if (!o) throw new OrderRejected('no such order');
+    if (o.status !== 'open' && o.status !== 'partial') throw new OrderRejected('order is not live');
+    if (changes.size !== undefined) o.size = changes.size;
+    if (changes.limitPrice !== undefined) o.limitPrice = changes.limitPrice;
+    if (changes.stopPrice !== undefined) o.stopPrice = changes.stopPrice;
+    o.updatedAt = Date.now();
+    // A move can make it marketable straight away, exactly as on a real venue.
+    if (o.type === 'limit') this.matchLimit(o);
+    return { ...o };
+  }
+
   async getOrderByClientId(clientOrderId: string): Promise<ExchangeOrder | null> {
     this.guard();
     const id = this.byClientId.get(clientOrderId);

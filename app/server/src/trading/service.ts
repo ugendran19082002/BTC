@@ -7,6 +7,7 @@ import { PaperExchange } from './exchange/paper.js';
 import { DEFAULT_LIMITS, dailyLossLimitFor, type RiskLimits } from './precheck.js';
 import { clampLeverage } from './margin.js';
 import { isDone } from './machine.js';
+import { noteError } from '../observability/errors.js';
 import type { ExchangePort } from './exchange/port.js';
 import type { ExchangePosition, TradeState } from './types.js';
 
@@ -113,6 +114,15 @@ export class TradingService {
       feedHealthy: () => this.feedOk,
       dayPnlUsd: () => this.store.realisedSince(startOfDayIst()),
       spot: () => this.lastSpot,
+      onSwallowed: (what, order, error) => {
+        noteError({
+          source: 'trading',
+          level: 'warn',
+          message: `${what} failed: ${error.message}`,
+          where: 'engine',
+          context: { orderId: order.orderId, symbol: order.symbol ?? null },
+        });
+      },
       onAlarm: (t, message) => {
         this.alarms.unshift({ tradeId: t.tradeId, message, at: Date.now() });
         this.alarms.length = Math.min(this.alarms.length, 50);

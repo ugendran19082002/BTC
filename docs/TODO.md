@@ -451,3 +451,43 @@ as a list rather than as an explanation. "Spread is 28.4%", "Needs $3.93, have
 $0.18" and "worst case exceeds today's budget" have one cause between them --
 the account is too small for this contract at this size -- and saying that once
 would beat saying three true things.
+
+## Audit, 8 September
+
+Ran over the whole tree: dead files, secrets, silent failures, the databases.
+
+**Fixed here.** `delta/account.ts` had no importers once the account route went.
+The order path swallowed five cancel failures silently, which is what hid the
+book/screen divergence for as long as it did — best-effort is right for a
+cleanup call, but best-effort and silent are not the same thing, and they are
+warnings in the error log now.
+
+**Still open, and the important one:** `app/server/.env` holds the API key that
+was pasted into a chat. It is gitignored and has never been committed — that
+much is verified — but a key that has been in a chat log is a public key. It
+needs deleting on Delta and replacing, ideally with an IP allowlist. Nothing
+else on this list matters next to it.
+
+## What the Delta docs changed
+
+Read properly rather than assumed, and two things came out of it.
+
+**`PUT /v2/orders` edits an order in place.** Delta takes the id, the product,
+the size and whichever price applies, and moves the order without it leaving
+the book. That is strictly better than cancel-and-replace and it removes the
+failure this desk kept hitting: no window where the position is unprotected, and
+no moment where two reduce-only orders exist for the exchange to choose between.
+`protect()` prefers it and falls back to the verified cancel-then-place for a
+venue that refuses an edit.
+
+**Rate limits: 20,000 per rolling five minutes**, weighted — 5 for placing,
+editing or cancelling, 3 for reading orders or balances, 10 for history. This
+desk polls at roughly four reads a second, which is about 1,200 a window against
+20,000, so the limit is not close. A 429 is nonetheless handled distinctly now:
+`X-RATE-LIMIT-RESET` says how long to wait, and anything that takes risk treats
+being asked to wait as an outage rather than pushing through.
+
+Not used, and each for a reason: `DELETE /v2/orders/all` (too blunt while a
+position needs its stop), `POST /v2/orders/batch` (nothing places more than two
+orders at once), and `trail_amount` for trailing stops, which is still the
+single most valuable thing not yet built.

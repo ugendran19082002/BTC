@@ -448,17 +448,21 @@ test('50 depth is only demanded of an order that has to fill now', async () => {
 
 // ------------------- 69-74 the book is the authority, not our memory
 
-test('69 [critical] a cancel that does not take stops the replacement being sent', async () => {
-  // Delta refused a cancel, the refusal was swallowed, the replacement went on
-  // beside the order it was meant to replace, and the exchange -- which will
-  // not hold two reduce-only orders totalling more than the position --
-  // cancelled one of them. The screen said 1.80 while the book had 26.40.
+test('69 [critical] when an edit is refused, a cancel that does not take stops the replacement', async () => {
+  // The original failure: Delta refused a cancel, the refusal was swallowed,
+  // the replacement went on beside the order it was meant to replace, and the
+  // exchange -- which will not hold two reduce-only orders totalling more than
+  // the position -- cancelled one of them. The screen said 1.80, the book 26.40.
+  //
+  // Editing in place is the first answer and avoids all of it. This is the
+  // fallback, for a venue that refuses the edit.
   const r = rig();
   const plan = planFor(ceProduct(), { lots: 1, stopPrice: null, takeProfitPrice: 90 });
   await r.engine.open(plan);
   await r.engine.poll(plan.tradeId);
   assert.equal((await r.ex.getOpenOrders(CE)).filter((o) => o.reduceOnly).length, 1);
 
+  r.ex.editOrder = async () => { throw new Error('edit not allowed'); };
   r.ex.cancelOrder = async () => {};             // the venue says yes and does nothing
 
   const s = await r.engine.updateProtection(plan.tradeId, { takeProfitPrice: 50 });
@@ -466,6 +470,26 @@ test('69 [critical] a cancel that does not take stops the replacement being sent
   assert.equal(live.length, 1, 'one order, not two: nothing was stacked on top');
   assert.equal(live[0]?.limitPrice, 90, 'and it is still the old one');
   assert.match(s?.note ?? '', /could not cancel/);
+});
+
+test('69b moving a level touches the book once, not three times', async () => {
+  const r = rig();
+  const plan = planFor(ceProduct(), { lots: 1, stopPrice: null, takeProfitPrice: 90 });
+  await r.engine.open(plan);
+  await r.engine.poll(plan.tradeId);
+
+  let placed = 0, cancelled = 0, edited = 0;
+  const place = r.ex.placeOrder.bind(r.ex);
+  const cancel = r.ex.cancelOrder.bind(r.ex);
+  const edit = r.ex.editOrder.bind(r.ex);
+  r.ex.placeOrder = async (q) => { placed++; return place(q); };
+  r.ex.cancelOrder = async (q) => { cancelled++; return cancel(q); };
+  r.ex.editOrder = async (q, c) => { edited++; return edit(q, c); };
+
+  await r.engine.updateProtection(plan.tradeId, { takeProfitPrice: 50 });
+  assert.equal(edited, 1);
+  assert.equal(placed, 0, 'nothing new was sent');
+  assert.equal(cancelled, 0, 'and nothing came off the book');
 });
 
 test('70 an order already at the right price is kept rather than replaced', async () => {
@@ -643,16 +667,18 @@ test('68 a failure on one trade does not stall the next caller', async () => {
 
 // -------------------------------- 59-63 moving the exits after the fact
 
-test('59 the stop can be moved on a position that is already on', async () => {
+test('59 the stop is moved in place, not cancelled and replaced', async () => {
+  // editing leaves no window where the position is unprotected, and no moment
+  // where two reduce-only orders exist for the exchange to choose between
   const r = rig();
   const plan = planFor(ceProduct());
   await r.engine.open(plan);
   const armed = await r.engine.poll(plan.tradeId);
-  const oldStop = armed!.protection.stopLoss!;
+  const before = armed!.protection.stopLoss!;
 
   const s = await r.engine.updateProtection(plan.tradeId, { stopPrice: 150 });
-  assert.notEqual(s?.protection.stopLoss, oldStop, 'a new order, not the old one');
-  assert.equal((await r.ex.getOrderByClientId(oldStop))?.status, 'cancelled');
+  assert.equal(s?.protection.stopLoss, before, 'the same order, moved');
+  assert.equal((await r.ex.getOrderByClientId(before))?.status, 'open', 'never off the book');
 
   const live = (await r.ex.getOpenOrders(CE)).filter((o) => o.reduceOnly);
   assert.equal(live.length, 2, 'exactly one target and one stop');

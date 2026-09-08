@@ -19,6 +19,19 @@ export interface ExchangePort {
    * a bug waiting to happen, and was one.
    */
   cancelOrder(order: Pick<ExchangeOrder, 'orderId' | 'productId'>): Promise<void>;
+  /**
+   * Move an order that is already on the book.
+   *
+   * Strictly better than cancelling and replacing: there is no window where the
+   * position is unprotected, and no moment where two orders exist and the
+   * exchange has to decide which of them over-commits the position. That moment
+   * is what produced "reduce only orders cancelled" and a book that disagreed
+   * with the screen.
+   */
+  editOrder(
+    order: Pick<ExchangeOrder, 'orderId' | 'productId'>,
+    changes: { limitPrice?: number; stopPrice?: number; size?: number },
+  ): Promise<ExchangeOrder>;
   /** `null` when the exchange has never heard of it -- which, after a timeout,
    * is the answer that says the order never landed. */
   getOrderByClientId(clientOrderId: string): Promise<ExchangeOrder | null>;
