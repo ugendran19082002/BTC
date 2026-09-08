@@ -308,9 +308,8 @@ export function OrderTicket({
                 onValueChange={(v) => v && setMode(v as PriceMode)}
                 className="mt-1 flex w-full"
               >
-                <ToggleGroupItem value="market">market</ToggleGroupItem>
-                <ToggleGroupItem value="bid">bid</ToggleGroupItem>
-                <ToggleGroupItem value="ask">ask</ToggleGroupItem>
+                <ToggleGroupItem value="now">now</ToggleGroupItem>
+                <ToggleGroupItem value="ask">offer</ToggleGroupItem>
                 <ToggleGroupItem value="custom">set</ToggleGroupItem>
               </ToggleGroup>
               <p className="m-0 mt-1.5 text-[11.5px] leading-snug text-muted-foreground">

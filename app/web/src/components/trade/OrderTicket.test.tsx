@@ -72,16 +72,18 @@ describe('the ticket opens ready to trade', () => {
     show();
     expect(screen.getByText('Sell 80,000 CE')).toBeInTheDocument();
     // selling at the bid gives away the spread on every single trade
-    expect(screen.getByRole('radio', { name: 'ask' })).toHaveAttribute('data-state', 'on');
+    expect(screen.getByRole('radio', { name: 'offer' })).toHaveAttribute('data-state', 'on');
     await waitFor(() => expect(previewOrder).toHaveBeenCalled());
     expect(previewOrder.mock.calls.at(-1)![0]).toMatchObject({ limitPrice: 11, lots: 1 });
   });
 
-  it('falls back to the market when the contract has no offer', async () => {
+  it('falls back to taking the bid when the contract has no offer', async () => {
+    getTradeQuote.mockResolvedValue({ quote: null, product: null });
     render(<OrderTicket seed={{ ...seed, symbol: 'C-BTC-1', ask: null }} open onOpenChange={() => {}} />);
-    expect(screen.getByRole('radio', { name: 'market' })).toHaveAttribute('data-state', 'on');
+    expect(screen.getByRole('radio', { name: 'now' })).toHaveAttribute('data-state', 'on');
+    // a limit AT the bid, not a market order: immediate, but with a floor
     await waitFor(() =>
-      expect(previewOrder.mock.calls.at(-1)![0]).toMatchObject({ limitPrice: null }),
+      expect(previewOrder.mock.calls.at(-1)![0]).toMatchObject({ limitPrice: 9 }),
     );
   });
 
@@ -138,22 +140,29 @@ describe('the book while the ticket is open', () => {
 });
 
 describe('choosing a price', () => {
-  it('sends the offer when the ask is chosen, and says it may not fill', async () => {
+  it('sends the offer when the offer is chosen', async () => {
     show();
-    fireEvent.click(screen.getByRole('radio', { name: 'ask' }));
-    expect(screen.getByText(/Rests at 11.00/)).toBeInTheDocument();
-    expect(screen.getByText(/may not fill at all/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('radio', { name: 'offer' }));
+    expect(screen.getByText(/Offers at 11.00/)).toBeInTheDocument();
     await waitFor(() =>
       expect(previewOrder.mock.calls.at(-1)![0]).toMatchObject({ limitPrice: 11 }),
     );
   });
 
-  it('sends the bid when the bid is chosen', async () => {
+  it('"now" is a limit at the bid, not a market order', async () => {
+    // case 07 walks a market sell through three levels for a quarter-point of
+    // slippage; a limit at the bid is just as immediate and has a floor
     show();
-    fireEvent.click(screen.getByRole('radio', { name: 'bid' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'now' }));
+    expect(screen.getByText(/a limit is a floor, so there is no slippage/)).toBeInTheDocument();
     await waitFor(() =>
       expect(previewOrder.mock.calls.at(-1)![0]).toMatchObject({ limitPrice: 9 }),
     );
+  });
+
+  it('offers no market order at all', () => {
+    show();
+    expect(screen.queryByRole('radio', { name: 'market' })).toBeNull();
   });
 
   it('treats an unparseable custom price as no price rather than as zero', async () => {
@@ -188,9 +197,7 @@ describe('converting to market', () => {
 
   it('is not offered on an order that is taken immediately', () => {
     show();
-    fireEvent.click(screen.getByRole('radio', { name: 'market' }));
-    expect(screen.queryByRole('checkbox', { name: /cross after/i })).toBeNull();
-    fireEvent.click(screen.getByRole('radio', { name: 'bid' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'now' }));
     expect(screen.queryByRole('checkbox', { name: /cross after/i })).toBeNull();
   });
 

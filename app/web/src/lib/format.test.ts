@@ -41,6 +41,13 @@ describe('usd', () => {
     expect(usd(0)).toBe('$0.00');
   });
 
+  it('rounds a real but tiny amount up to the smallest place, never down to zero', () => {
+    // "$0.000" reads as exactly nothing, which is a different claim
+    expect(usd(0.0001)).toBe('$0.001');
+    expect(usd(-0.0001)).toBe('-$0.001');
+    expect(inr(0.001)).toBe('₹0.01');
+  });
+
   it('has nothing to say about a missing number', () => {
     expect(usd(null)).toBe('—');
   });
