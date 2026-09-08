@@ -65,7 +65,18 @@ button {
   color: inherit;
   font: inherit;
   margin: 0;
+  /* Every button, once, here. Setting it per component means the one that gets
+     forgotten is the one that reads as decoration. */
+  cursor: pointer;
 }
+button:disabled { cursor: not-allowed; }
+
+/* Anything that behaves like a button, for the same reason. */
+[role='button'], [role='tab'], [role='radio'], [role='checkbox'], [role='slider'],
+label:has(input[type='checkbox']), summary {
+  cursor: pointer;
+}
+[role='button'][aria-disabled='true'], [data-disabled] { cursor: not-allowed; }
 input, select, textarea { font: inherit; }
 
 * { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
@@ -564,6 +575,13 @@ td.sellcell {
 
 /* The count of live positions, on the tab that holds them. */
 .liveprice .pts { margin-left: 5px; opacity: 0.75; font-size: 0.92em; }
+.liveprice .since {
+  margin-left: 6px; font-size: 0.82em; font-weight: 400;
+  color: var(--dim); letter-spacing: 0.2px;
+}
+/* The baseline is the first thing to go when the line gets tight; the tooltip
+   still says it, and the number itself is what you came for. */
+@media (max-width: 900px) { .liveprice .since { display: none; } }
 
 .tabs button .pnl { margin-left: 6px; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .tabs button .pnl.up { color: var(--up); }

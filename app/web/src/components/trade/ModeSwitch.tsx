@@ -61,7 +61,7 @@ export function ModeSwitch({ status, onChanged }: { status: TradeStatus | null; 
               : 'Live trading is not available on this server.'
         }
         className={cn(
-          'flex cursor-pointer appearance-none items-center gap-1.5 rounded-md border-0 px-2.5 py-1',
+          'flex appearance-none items-center gap-1.5 rounded-md border-0 px-2.5 py-1',
           'font-[inherit] text-[11px] font-semibold uppercase tracking-[0.7px] transition-opacity',
           'hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60',
           live ? 'mode-live' : 'mode-paper',

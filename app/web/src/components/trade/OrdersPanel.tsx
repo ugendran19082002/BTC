@@ -130,7 +130,7 @@ function OrderRow({ order }: { order: OrderRecord }) {
 
   return (
     <Collapsible.Root open={open} onOpenChange={setOpen} className="rounded-lg border border-border bg-muted">
-      <Collapsible.Trigger className="flex w-full cursor-pointer appearance-none items-start gap-2 border-0 bg-transparent p-2.5 text-left font-[inherit]">
+      <Collapsible.Trigger className="flex w-full appearance-none items-start gap-2 border-0 bg-transparent p-2.5 text-left font-[inherit]">
         <ChevronRight className={cn('mt-[3px] h-3.5 w-3.5 flex-none text-muted-foreground transition-transform', open && 'rotate-90')} />
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-baseline gap-x-2">

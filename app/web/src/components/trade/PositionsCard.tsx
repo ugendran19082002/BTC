@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { Clock, Loader2, ShieldAlert, ShieldCheck, X } from 'lucide-react';
+import { Clock, Loader2, Pencil, ShieldAlert, ShieldCheck, X } from 'lucide-react';
 import { cancelTrade, closeTrade } from '@/api/trade';
 import type { Trade } from '@/types/trade';
 import { Card, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CloseAllButton } from '@/components/trade/CloseAllButton';
+import { EditExitsSheet } from '@/components/trade/EditExitsSheet';
 import {
   ago, contractLabel, pct, price, signedInr, signedUsd, size as fmtSize, usdToInr,
 } from '@/lib/format';
@@ -159,6 +160,7 @@ function Figure({ label, value, second, tone, hint }: {
 
 function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => void }) {
   const [closing, setClosing] = useState(false);
+  const [editing, setEditing] = useState(false);
   const held = Math.abs(trade.position);
 
   /**
@@ -262,23 +264,36 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
             </span>
           )}
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={closing}
-          onClick={() => {
-            setClosing(true);
-            void closeTrade(trade.tradeId).finally(() => { setClosing(false); onChanged?.(); });
-          }}
-        >
-          {closing ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-          close now
-        </Button>
+        <div className="flex flex-none gap-1.5">
+          <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
+            <Pencil className="h-3 w-3" />
+            exits
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={closing}
+            onClick={() => {
+              setClosing(true);
+              void closeTrade(trade.tradeId).finally(() => { setClosing(false); onChanged?.(); });
+            }}
+          >
+            {closing ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+            close now
+          </Button>
+        </div>
       </div>
 
       {trade.alarm && (
         <p className="m-0 mt-2 text-[12px] font-medium text-[var(--down)]">{trade.alarm}</p>
       )}
+
+      <EditExitsSheet
+        trade={trade}
+        open={editing}
+        onOpenChange={setEditing}
+        onSaved={onChanged}
+      />
     </div>
   );
 }

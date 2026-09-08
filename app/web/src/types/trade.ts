@@ -173,3 +173,20 @@ export type Preview = {
 export type PlaceResult =
   | { mode: 'live' | 'paper'; ok: true; trade: Trade }
   | { mode: 'live' | 'paper'; ok: false; failures: PrecheckFailure[]; trade: Trade };
+
+export type OrderStatus = 'completed' | 'pending' | 'rejected' | 'cancelled';
+
+/** A trade as it appears in the order book, looking backwards. */
+export type OrderRecord = Trade & {
+  status: OrderStatus;
+  /** One line saying what happened. */
+  outcome: string;
+  openedAt: number;
+};
+
+export type OrderHistory = {
+  from: string;
+  to: string;
+  counts: Partial<Record<OrderStatus, number>>;
+  trades: OrderRecord[];
+};

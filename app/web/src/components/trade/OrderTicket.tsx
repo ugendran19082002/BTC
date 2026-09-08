@@ -365,22 +365,34 @@ export function OrderTicket({
                 </Stepper>
               </div>
               <div className="mt-1.5 flex gap-1.5">
-                {[1, 5, 10, 25, ...(capKnown ? [cap!] : [])]
-                  .filter((n, i, a) => n >= 1 && a.indexOf(n) === i)
-                  .sort((a, b) => a - b)
-                  .map((n) => (
+                {[1, 5, 10, 25].map((n) => (
                   <button
                     key={n}
-                    onClick={() => setSize(n)}
+                    type="button"
+                    aria-label={`add ${n} lot${n === 1 ? '' : 's'}`}
+                    onClick={() => step(n)}
                     className={cn(
-                      'flex-1 cursor-pointer appearance-none rounded-md border border-border bg-muted py-1',
-                      'font-[inherit] text-[11.5px] text-muted-foreground hover:text-foreground',
-                      lots === n && 'border-[var(--accent)] text-foreground',
+                      'flex-1 appearance-none rounded-md border border-border bg-muted py-1',
+                      'font-[inherit] text-[11.5px] text-muted-foreground hover:border-[var(--accent)] hover:text-foreground',
                     )}
                   >
-                    {capKnown && n === cap ? `${n} max` : n}
+                    +{n}
                   </button>
                 ))}
+                {capKnown && (
+                  <button
+                    type="button"
+                    aria-label="as many lots as the balance covers"
+                    onClick={() => setSize(cap!)}
+                    className={cn(
+                      'flex-1 appearance-none rounded-md border border-border bg-muted py-1',
+                      'font-[inherit] text-[11.5px] text-muted-foreground hover:border-[var(--accent)] hover:text-foreground',
+                      lots === cap && 'border-[var(--accent)] text-foreground',
+                    )}
+                  >
+                    max
+                  </button>
+                )}
               </div>
               {capKnown && (
                 <p className={cn('m-0 mt-1 text-[11px]', overCap ? 'text-[var(--warn)]' : 'text-muted-foreground')}>
@@ -460,17 +472,30 @@ export function OrderTicket({
               />
             </dl>
 
-            {blocked && (
-              <ul className="m-0 mt-3 flex list-none flex-col gap-1.5 rounded-lg border border-[var(--down)]/40 bg-[var(--down)]/10 p-2.5 pl-2.5">
-                {preview!.failures.map((f) => (
-                  <li key={f.code} className="flex gap-1.5 text-[12px] leading-snug text-[var(--down)]">
-                    <AlertTriangle className="mt-[1px] h-3.5 w-3.5 flex-none" />
-                    <span>{f.message}</span>
-                  </li>
-                ))}
-              </ul>
+            {/*
+              Stuck to the bottom, with the button.
+              These sat under a summary long enough to push them off screen, so
+              the button was dead and the reason for it was a scroll away --
+              which is the same as not saying anything.
+            */}
+            {(blocked || failed) && (
+              <div className="sticky bottom-[60px] z-10 -mx-4 mt-3 border-t border-[var(--down)]/30 bg-[var(--down-bg)] px-4 py-2.5">
+                <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+                  {preview?.failures.map((f) => (
+                    <li key={f.code} className="flex gap-1.5 text-[12px] leading-snug text-[var(--down)]">
+                      <AlertTriangle className="mt-[1px] h-3.5 w-3.5 flex-none" />
+                      <span>{f.message}</span>
+                    </li>
+                  ))}
+                  {failed && (
+                    <li className="flex gap-1.5 text-[12px] leading-snug text-[var(--down)]">
+                      <AlertTriangle className="mt-[1px] h-3.5 w-3.5 flex-none" />
+                      <span>{failed}</span>
+                    </li>
+                  )}
+                </ul>
+              </div>
             )}
-            {failed && <p className="m-0 mt-3 text-[12px] text-[var(--down)]">{failed}</p>}
 
             <SheetFooter>
               <Button variant="outline" className="h-11 flex-none px-4" onClick={() => onOpenChange(false)}>
@@ -543,7 +568,7 @@ function Stepper({ children, onClick, disabled, label }: {
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        'flex h-9 w-11 flex-none cursor-pointer appearance-none items-center justify-center',
+        'flex h-9 w-11 flex-none appearance-none items-center justify-center',
         'rounded-md border border-border bg-muted p-0 text-foreground',
         'disabled:cursor-not-allowed disabled:opacity-40',
       )}
@@ -558,7 +583,7 @@ function BookStrip({ bid, mark, ask, mode, onPick }: {
   bid: number | null; mark: number | null; ask: number | null;
   mode: PriceMode; onPick: (m: PriceMode) => void;
 }) {
-  const cell = 'flex flex-1 cursor-pointer appearance-none flex-col items-center gap-0.5 border-0 bg-transparent py-2 font-[inherit]';
+  const cell = 'flex flex-1 appearance-none flex-col items-center gap-0.5 border-0 bg-transparent py-2 font-[inherit]';
   return (
     <div className="flex overflow-hidden rounded-lg border border-border bg-muted">
       <button className={cn(cell, mode === 'bid' && 'bg-background')} onClick={() => onPick('bid')}>

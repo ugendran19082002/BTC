@@ -22,7 +22,7 @@ export function AlarmBanner({ status, onDismiss }: { status: TradeStatus | null;
       {onDismiss && (
         <button
           onClick={onDismiss}
-          className="cursor-pointer appearance-none border-0 bg-transparent p-0 font-[inherit] text-[11.5px] text-muted-foreground hover:text-foreground"
+          className="appearance-none border-0 bg-transparent p-0 font-[inherit] text-[11.5px] text-muted-foreground hover:text-foreground"
         >
           hide
         </button>

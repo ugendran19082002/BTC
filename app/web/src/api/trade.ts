@@ -1,5 +1,7 @@
 import { json, post } from '@/api/client';
-import type { OrderDraft, PlaceResult, Preview, Quote, ProductSpec, Trade, TradeStatus } from '@/types/trade';
+import type {
+  OrderDraft, OrderHistory, PlaceResult, Preview, Quote, ProductSpec, Trade, TradeStatus,
+} from '@/types/trade';
 
 /**
  * The order desk.
@@ -66,8 +68,23 @@ export const closeAllTrades = () =>
     failed: { tradeId: string; reason: string }[];
   }>('/api/trade/close-all', {});
 
+/** Move the stop or the target on a position that is already open. */
+export const updateExits = (tradeId: string, pct: { takeProfitPct?: number; stopLossPct?: number }) =>
+  post<{ ok: true; trade: Trade }>('/api/trade/protection', { tradeId, ...pct });
+
 export const reconcileTrade = (tradeId: string) =>
   post<{ ok: true; trade: Trade }>('/api/trade/reconcile', { tradeId });
 
-export const getTradeHistory = (limit = 50) =>
-  json<{ trades: Trade[] }>(`/api/trade/history?limit=${limit}`);
+/**
+ * The order book over a date range.
+ *
+ * Both dates are IST calendar days and both default to today on the server, so
+ * calling it with nothing is the common case rather than a special one.
+ */
+export function getOrderHistory(opts: { from?: string; to?: string; status?: string } = {}) {
+  const q = new URLSearchParams();
+  if (opts.from) q.set('from', opts.from);
+  if (opts.to) q.set('to', opts.to);
+  if (opts.status) q.set('status', opts.status);
+  return json<OrderHistory>(`/api/trade/history?${q}`);
+}

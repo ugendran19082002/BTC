@@ -530,6 +530,43 @@ export class TradeEngine {
     return rec.state;
   }
 
+  /**
+   * Move the stop or the target on a position that is already on.
+   *
+   * The exits were only ever chosen at entry, which is the one moment you know
+   * least about how the trade is going. This takes whatever is resting off the
+   * book and puts the new pair on -- in that order, so there is never a moment
+   * with two targets live, and never a fill against a level you have just
+   * moved away from.
+   *
+   * `null` turns one off. That is a decision like any other, and the trade
+   * stops asking for a stop it no longer wants rather than raising an alarm
+   * about it.
+   */
+  async updateProtection(
+    tradeId: string,
+    next: { takeProfitPrice?: number | null; stopPrice?: number | null },
+  ): Promise<TradeState | null> {
+    let rec = this.d.store.get(tradeId);
+    if (!rec) return null;
+    if (rec.state.position === 0) return rec.state;
+
+    rec.plan = {
+      ...rec.plan,
+      takeProfitPrice: next.takeProfitPrice !== undefined ? next.takeProfitPrice : rec.plan.takeProfitPrice,
+      stopPrice: next.stopPrice !== undefined ? next.stopPrice : rec.plan.stopPrice,
+    };
+    rec.state = { ...rec.state, wantsProtection: rec.plan.stopPrice !== null };
+
+    // Off the book first, so the old levels cannot fill while the new ones go on.
+    rec = await this.cancelSiblings(rec, true);
+    // An explicit change is not a retry, so the backoff does not apply to it.
+    this.protectAfter.delete(tradeId);
+    rec = await this.protect(rec);
+    this.d.store.save(rec);
+    return rec.state;
+  }
+
   // ------------------------------------------------------------ exits
   /** Close whatever is left, right now, at the market. Always reduce-only. */
   async closeNow(tradeId: string, reason = 'manual exit'): Promise<TradeState | null> {

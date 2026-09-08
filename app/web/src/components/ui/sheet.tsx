@@ -62,7 +62,7 @@ export function SheetContent({
           <Dialog.Close
             aria-label="close"
             // preflight is off, so a bare button keeps the platform's own chrome
-            className="-mr-1 flex h-7 w-7 flex-none cursor-pointer appearance-none items-center justify-center rounded-md border-0 bg-transparent p-0 text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="-mr-1 flex h-7 w-7 flex-none appearance-none items-center justify-center rounded-md border-0 bg-transparent p-0 text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             <X className="h-4 w-4" />
           </Dialog.Close>

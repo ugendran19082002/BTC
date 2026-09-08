@@ -144,7 +144,7 @@ function ErrorRowView({ row, onResolved }: { row: ErrorRow; onResolved: () => vo
     >
       <Collapsible.Trigger
         className={cn(
-          'flex w-full cursor-pointer appearance-none items-start gap-2 border-0 bg-transparent',
+          'flex w-full appearance-none items-start gap-2 border-0 bg-transparent',
           'p-2.5 text-left font-[inherit]',
         )}
       >

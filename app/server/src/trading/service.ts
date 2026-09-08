@@ -243,6 +243,24 @@ export class TradingService {
   cancel(tradeId: string) { return this.engine.cancelEntry(tradeId); }
 
   /**
+   * Move the exits on an open position.
+   *
+   * Percentages in, prices out, measured off the price the position was
+   * actually opened at -- not off the mark, which would move the stop every
+   * time the option did.
+   */
+  async updateExits(tradeId: string, pct: { takeProfitPct?: number; stopLossPct?: number }) {
+    const rec = this.store.get(tradeId);
+    if (!rec) return null;
+    const entry = rec.state.entryAvgPrice;
+    if (entry === null) return rec.state;
+    return this.engine.updateProtection(tradeId, {
+      takeProfitPrice: pct.takeProfitPct === undefined ? undefined : targetPriceFor(entry, pct.takeProfitPct),
+      stopPrice: pct.stopLossPct === undefined ? undefined : stopPriceFor(entry, pct.stopLossPct),
+    });
+  }
+
+  /**
    * Square off: buy back every position, pull every working order.
    *
    * One trade at a time, and a failure on one does not stop the rest -- the

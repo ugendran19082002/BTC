@@ -446,6 +446,76 @@ test('50 depth is only demanded of an order that has to fill now', async () => {
   assert.ok(!crossing.ok && failureCodes(crossing.precheck).includes('THIN_BOOK'));
 });
 
+// -------------------------------- 59-63 moving the exits after the fact
+
+test('59 the stop can be moved on a position that is already on', async () => {
+  const r = rig();
+  const plan = planFor(ceProduct());
+  await r.engine.open(plan);
+  const armed = await r.engine.poll(plan.tradeId);
+  const oldStop = armed!.protection.stopLoss!;
+
+  const s = await r.engine.updateProtection(plan.tradeId, { stopPrice: 150 });
+  assert.notEqual(s?.protection.stopLoss, oldStop, 'a new order, not the old one');
+  assert.equal((await r.ex.getOrderByClientId(oldStop))?.status, 'cancelled');
+
+  const live = (await r.ex.getOpenOrders(CE)).filter((o) => o.reduceOnly);
+  assert.equal(live.length, 2, 'exactly one target and one stop');
+  assert.ok(live.some((o) => o.stopPrice === 150));
+});
+
+test('60 the old level is off the book before the new one goes on', async () => {
+  // otherwise there is a moment with two stops live, and a fill against a level
+  // you have just moved away from
+  const r = rig();
+  const plan = planFor(ceProduct());
+  await r.engine.open(plan);
+  await r.engine.poll(plan.tradeId);
+  await r.engine.updateProtection(plan.tradeId, { stopPrice: 150, takeProfitPrice: 50 });
+
+  const live = (await r.ex.getOpenOrders(CE)).filter((o) => o.reduceOnly);
+  assert.equal(live.length, 2, 'never three');
+});
+
+test('61 turning the stop off is a decision, not an alarm', async () => {
+  const r = rig();
+  const plan = planFor(ceProduct());
+  await r.engine.open(plan);
+  await r.engine.poll(plan.tradeId);
+
+  const s = await r.engine.updateProtection(plan.tradeId, { stopPrice: null });
+  assert.equal(s?.protection.stopLoss, null);
+  assert.equal(s?.alarm, null, 'it was asked for, so it is not a malfunction');
+
+  // and it stays off rather than being put back by the next poll
+  r.advance(5_000);
+  const after = await r.engine.poll(plan.tradeId);
+  assert.equal(after?.protection.stopLoss, null);
+  assert.equal(after?.alarm, null);
+});
+
+test('62 the exits cannot be moved on a position that is not open', async () => {
+  const r = rig({ quotes: [quote(CE, 99, 101)] });
+  const plan = planFor(ceProduct(), {
+    entry: { type: 'limit', limitPrice: 101, timeoutMs: 0, marketFallback: false },
+  });
+  await r.engine.open(plan);
+  const s = await r.engine.updateProtection(plan.tradeId, { stopPrice: 150 });
+  assert.equal(s?.position, 0);
+  assert.equal(s?.protection.stopLoss, null, 'nothing to protect yet');
+});
+
+test('63 a change is not a retry, so a backoff does not swallow it', async () => {
+  const r = rig();
+  const plan = planFor(ceProduct());
+  await r.engine.open(plan);
+  r.ex.configure({ nextFault: { kind: 'unavailable' } });
+  await r.engine.poll(plan.tradeId);          // fails, and backs off two seconds
+
+  const s = await r.engine.updateProtection(plan.tradeId, { stopPrice: 150 });
+  assert.ok(s?.protection.stopLoss, 'the change went through immediately');
+});
+
 // ------------------------------- 54-58 a resting order is meant to rest
 
 test('54 [critical] an order resting at the offer is not cancelled on a timer', async () => {

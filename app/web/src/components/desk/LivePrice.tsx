@@ -52,7 +52,7 @@ export function LivePrice({
           className={move >= 0 ? 'up' : 'down'}
           title={
             fromContract
-              ? 'Since this contract opened at 05:30 IST — the point every strike is measured from.'
+              ? 'Since this contract opened at 05:30 IST — the point every strike on the board is measured from.'
               : 'Since you opened the page. The contract figure has not arrived yet.'
           }
         >
@@ -60,6 +60,13 @@ export function LivePrice({
           {fromContract && sinceOpenPct != null && (
             <span className="pts">{sinceOpenPct >= 0 ? '+' : '−'}{Math.abs(sinceOpenPct * 100).toFixed(2)}%</span>
           )}
+          {/*
+            "+5 pts" on its own could be since anything -- the tick, the hour,
+            the day. Naming the baseline is the whole difference between a
+            number you can act on and one you have to ask about. It is the first
+            thing to go on a narrow screen, where the tooltip still carries it.
+          */}
+          <span className="since">{fromContract ? 'since 05:30' : 'this session'}</span>
         </span>
       )}
     </span>

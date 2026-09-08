@@ -41,7 +41,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
         <p className="m-0 mt-1 text-[12px] text-muted-foreground">{error.message}</p>
         <button
           onClick={() => this.setState({ error: null })}
-          className="mt-2 cursor-pointer appearance-none rounded-md border border-border bg-muted px-2.5 py-1 font-[inherit] text-[12px] text-foreground"
+          className="mt-2 appearance-none rounded-md border border-border bg-muted px-2.5 py-1 font-[inherit] text-[12px] text-foreground"
         >
           try again
         </button>

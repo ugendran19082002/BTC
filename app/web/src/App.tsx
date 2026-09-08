@@ -9,6 +9,7 @@ import { ChainTable, type ChainSellIntent } from '@/components/chain/ChainTable'
 import { OrderTicket, type TicketSeed } from '@/components/trade/OrderTicket';
 import { PositionsCard } from '@/components/trade/PositionsCard';
 import { AccountCard } from '@/components/trade/AccountCard';
+import { OrdersPanel } from '@/components/trade/OrdersPanel';
 import { AlarmBanner } from '@/components/trade/ModeBanner';
 import { ModeSwitch } from '@/components/trade/ModeSwitch';
 import { getTradeStatus } from '@/api/trade';
@@ -33,7 +34,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Metric, Formula, Field } from '@/components/research/Explain';
 
-type Tab = 'desk' | 'trade' | 'backtest' | 'errors';
+type Tab = 'desk' | 'trade' | 'orders' | 'backtest' | 'errors';
 
 const REFRESH_SECONDS = 5;
 // The expiry list changes once a day, at settlement. A minute is often enough
@@ -260,6 +261,7 @@ export default function App() {
             </span>
           ) : null}
         </button>
+        <button className={tab === 'orders' ? 'on' : ''} onClick={() => setTab('orders')}>Orders</button>
         <button className={tab === 'backtest' ? 'on' : ''} onClick={() => setTab('backtest')}>Backtest</button>
         <button className={tab === 'errors' ? 'on' : ''} onClick={() => setTab('errors')}>
           Errors
@@ -693,6 +695,12 @@ export default function App() {
               <PositionsCard trades={trade?.open ?? []} onChanged={() => void refreshTrade()} />
             </ErrorBoundary>
           </div>
+        </div>
+      ) : tab === 'orders' ? (
+        <div className="lead-row" style={{ gridTemplateColumns: 'minmax(0, 1fr)' }}>
+          <ErrorBoundary where="Orders">
+            <OrdersPanel />
+          </ErrorBoundary>
         </div>
       ) : tab === 'errors' ? (
         <div className="lead-row" style={{ gridTemplateColumns: 'minmax(0, 1fr)' }}>

@@ -244,6 +244,31 @@ describe('size', () => {
     expect((screen.getByLabelText('lots') as HTMLInputElement).value).toBe('2');
   });
 
+  it('the quick chips add rather than replace, and say so', async () => {
+    // a chip that sets on the first tap and adds on the second is a rule
+    // nobody can see; "+5" is a rule anybody can
+    show();
+    const lots = screen.getByLabelText('lots') as HTMLInputElement;
+    fireEvent.click(screen.getByLabelText('add 5 lots'));
+    expect(lots.value).toBe('6');
+    fireEvent.click(screen.getByLabelText('add 5 lots'));
+    expect(lots.value).toBe('11');
+    fireEvent.click(screen.getByLabelText('add 25 lots'));
+    expect(lots.value).toBe('36');
+  });
+
+  it('max jumps straight to what the balance covers', async () => {
+    previewOrder.mockResolvedValue(ok({ maxLots: 7 }));
+    show();
+    fireEvent.click(await screen.findByLabelText('as many lots as the balance covers'));
+    expect((screen.getByLabelText('lots') as HTMLInputElement).value).toBe('7');
+  });
+
+  it('offers no max chip when the balance is unknown', () => {
+    show();
+    expect(screen.queryByLabelText('as many lots as the balance covers')).toBeNull();
+  });
+
   it('says how many lots the balance actually covers', async () => {
     previewOrder.mockResolvedValue(ok({ maxLots: 7 }));
     show();
@@ -297,6 +322,21 @@ describe('the gates', () => {
     expect(button).toBeDisabled();
     fireEvent.click(button);
     expect(placeOrder).not.toHaveBeenCalled();
+  });
+
+  it('lists every reason, not just the first', async () => {
+    previewOrder.mockResolvedValue(ok({
+      ok: false,
+      failures: [
+        { code: 'SPREAD_TOO_WIDE', message: 'Spread is 28.4%, limit is 4% for an order that crosses it.' },
+        { code: 'INSUFFICIENT_MARGIN', message: 'Needs $3.93 at 200x, have $0.18.' },
+        { code: 'DAILY_LOSS_LIMIT', message: "Worst case $2 exceeds the $1 left in today's loss budget." },
+      ],
+    }));
+    show();
+    await waitFor(() => expect(screen.getByText(/Spread is 28.4%/)).toBeInTheDocument());
+    expect(screen.getByText(/Needs \$3.93 at 200x/)).toBeInTheDocument();
+    expect(screen.getByText(/exceeds the \$1 left/)).toBeInTheDocument();
   });
 
   it('sends nothing while the gates are still being checked', () => {

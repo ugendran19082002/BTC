@@ -26,7 +26,7 @@ export const ToggleGroupItem = React.forwardRef<
   <TG.Item
     ref={ref}
     className={cn(
-      'cursor-pointer appearance-none border-0 bg-transparent font-[inherit]',
+      'appearance-none border-0 bg-transparent font-[inherit]',
       'inline-flex h-7 flex-none items-center justify-center gap-1 whitespace-nowrap rounded-md px-2.5',
       'text-[12.5px] font-medium',
       'text-muted-foreground transition-colors hover:text-foreground',

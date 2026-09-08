@@ -306,6 +306,18 @@ export function registerTradeRoutes(app: FastifyInstance) {
     return { ok: result.failed.length === 0, ...result };
   });
 
+  /** Move the stop or the target on a position that is already open. */
+  app.post('/api/trade/protection', async (req, reply) => {
+    const b = (req.body ?? {}) as { tradeId?: string; takeProfitPct?: number; stopLossPct?: number };
+    if (!b.tradeId) { reply.code(400); return { error: 'tradeId is required' }; }
+    const state = await svc.updateExits(b.tradeId, {
+      takeProfitPct: b.takeProfitPct === undefined ? undefined : pct(b.takeProfitPct, 0.99),
+      stopLossPct: b.stopLossPct === undefined ? undefined : pct(b.stopLossPct, 20),
+    });
+    if (!state) { reply.code(404); return { error: 'no such trade' }; }
+    return { ok: true, trade: state };
+  });
+
   /** Take a working entry off the book. Refuses once anything has filled. */
   app.post('/api/trade/cancel', async (req, reply) => {
     const { tradeId } = (req.body ?? {}) as { tradeId?: string };
