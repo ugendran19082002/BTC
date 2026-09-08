@@ -167,13 +167,23 @@ describe('choosing a price', () => {
 });
 
 describe('converting to market', () => {
-  it('is offered on an order that rests, and off until you ask for it', async () => {
+  it('is on by default, because the arithmetic says so', async () => {
+    // resting earns ~12% on a 6-13% wide book and Delta charges the same to
+    // make or take; crossing after a wait means there is no day it is worse
     show();                                    // opens on the offer, which rests
-    expect(screen.getByRole('checkbox', { name: /cross after/i })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /cross after/i })).toBeChecked();
+    await waitFor(() =>
+      expect(previewOrder.mock.calls.at(-1)![0]).toMatchObject({ convertToMarketAfterSec: 30 }),
+    );
+  });
+
+  it('can be turned off, and then says the order may never fill', async () => {
+    show();
+    fireEvent.click(screen.getByRole('checkbox', { name: /cross after/i }));
+    expect(screen.getByText(/may never fill/i)).toBeInTheDocument();
     await waitFor(() =>
       expect(previewOrder.mock.calls.at(-1)![0]).toMatchObject({ convertToMarketAfterSec: 0 }),
     );
-    expect(screen.getByText(/waits for as long as it takes/i)).toBeInTheDocument();
   });
 
   it('is not offered on an order that is taken immediately', () => {
@@ -184,18 +194,15 @@ describe('converting to market', () => {
     expect(screen.queryByRole('checkbox', { name: /cross after/i })).toBeNull();
   });
 
-  it('sends the wait once it is ticked', async () => {
+  it('says what the wait is worth on this book', async () => {
     show();
-    fireEvent.click(screen.getByRole('checkbox', { name: /cross after/i }));
-    await waitFor(() =>
-      expect(previewOrder.mock.calls.at(-1)![0]).toMatchObject({ convertToMarketAfterSec: 30 }),
-    );
-    expect(screen.getByText(/then takes the bid and pays the spread/i)).toBeInTheDocument();
+    // bid 9, ask 11: resting is worth 22% more premium than taking the bid
+    await waitFor(() => expect(screen.getByText(/worth about 22% extra/i)).toBeInTheDocument());
+    expect(screen.getByText(/then takes the bid/i)).toBeInTheDocument();
   });
 
   it('takes a different wait', async () => {
     show();
-    fireEvent.click(screen.getByRole('checkbox', { name: /cross after/i }));
     fireEvent.change(screen.getByLabelText('seconds before crossing'), { target: { value: '5' } });
     await waitFor(() =>
       expect(previewOrder.mock.calls.at(-1)![0]).toMatchObject({ convertToMarketAfterSec: 5 }),

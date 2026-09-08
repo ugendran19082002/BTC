@@ -87,9 +87,22 @@ export function OrderTicket({
   const [stopOn, setStopOn] = usePersisted('exit:stopOn', false);
   const [targetPct, setTargetPct] = usePersisted('exit:targetPct', 0.8);
   const [stopPct, setStopPct] = usePersisted('exit:stopPct', 1.5);
-  // "Convert to Market After", the way every options desk words it: rest at the
-  // offer, and if nobody has taken it in this long, cross and pay the spread.
-  const [convertOn, setConvertOn] = usePersisted('entry:convertOn', false);
+  /**
+   * Rest at the offer, and cross if nobody takes it. On by default.
+   *
+   * The arithmetic says so rather than a preference. These options are quoted
+   * 6-13% wide, and Delta charges the same 0.01% to make or to take, so the
+   * only prize for resting is the spread itself -- about 12% more premium at
+   * the median. Missing the day costs the whole premium, not the spread, so
+   * resting alone is worth it only while the offer fills more than about eight
+   * days in nine.
+   *
+   * Crossing after a wait removes that condition entirely: if someone lifts
+   * the offer you are 12% ahead, and if nobody does you get exactly what
+   * taking the bid would have given. There is no day on which it is worse, so
+   * it is not left as a setting to be found.
+   */
+  const [convertOn, setConvertOn] = usePersisted('entry:convertOn2', true);
   const [convertSec, setConvertSec] = usePersisted('entry:convertSec', 30);
   const [mode, setMode] = useState<PriceMode>('market');
   const [custom, setCustom] = useState('');
@@ -246,6 +259,9 @@ export function OrderTicket({
   /** Not enough free margin for the size asked for. Both lines go red together. */
   const short =
     preview?.marginUsd != null && balanceUsd !== null && preview.marginUsd > balanceUsd;
+  /** What resting at the offer is worth over taking the bid, on this book. */
+  const spreadGain =
+    book.bid && book.ask && book.bid > 0 ? (book.ask - book.bid) / book.bid : null;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -331,8 +347,12 @@ export function OrderTicket({
                   />
                   <p className="m-0 pl-[26px] text-[11.5px] leading-snug text-muted-foreground">
                     {convertOn
-                      ? `Waits ${convertSec}s at ${price(limitPrice)}, then takes the bid and pays the spread.`
-                      : 'Without it the order waits for as long as it takes.'}
+                      ? <>
+                          Waits {convertSec}s at {price(limitPrice)} for someone to take it — worth
+                          about {spreadGain === null ? 'more' : `${Math.round(spreadGain * 100)}%`} extra —
+                          then takes the bid, which is what the record was measured at.
+                        </>
+                      : 'Off: the order waits for as long as it takes, and may never fill.'}
                   </p>
                 </div>
               )}

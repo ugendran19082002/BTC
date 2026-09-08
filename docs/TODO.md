@@ -491,3 +491,43 @@ Not used, and each for a reason: `DELETE /v2/orders/all` (too blunt while a
 position needs its stop), `POST /v2/orders/batch` (nothing places more than two
 orders at once), and `trail_amount` for trailing stops, which is still the
 single most valuable thing not yet built.
+
+## Which price to sell at
+
+Answered from the book rather than from preference.
+
+    contract      bid    ask   spread   extra if you rest
+    81,200 CE      17     19    11.1%              12%
+    76,600 PE      32     34     6.1%               6%
+    76,600 PE      24     27    11.8%              12%
+    82,000 CE      15     17    12.5%              13%
+
+Delta charges 0.01% to make and 0.01% to take — the same. There is no maker
+rebate, so the only prize for resting is the spread itself, and on these
+contracts that is 6–13% of the premium.
+
+Against that: the 733-day record priced every fill at the **bid**. Profit factor
+1.93 and a 95.8% win rate all assume you took the bid, so selling at the offer
+cannot be worse than the record — it can only be unfilled.
+
+And unfilled is the expensive outcome. The edge comes from holding the short
+through twelve hours of decay, so missing the entry costs the whole day's
+premium, not the spread. Resting alone is therefore worth it only while it
+fills often enough:
+
+    (1 − miss) × 1.12 > 1.00   →   miss < 10.7%
+
+Roughly: if the offer goes untaken more than one day in nine, always taking the
+bid wins.
+
+**Rest at the offer, and cross after a wait.** That removes the condition
+rather than betting on it: if someone lifts the offer you are ~12% ahead, and if
+nobody does you cross and get exactly what taking the bid would have given.
+There is no day on which it is worse than the record's own assumption, so it is
+the default rather than a setting to be found — offer, cross after 30s.
+
+Still unknown, and worth measuring once there are enough trades: **how often the
+offer actually fills within thirty seconds.** If it is above 90% the wait could
+be longer; if it is very low the wait is just a delayed market order. The
+journal records every entry with its timestamps, so `/api/trade/history` already
+holds the data to answer it.
