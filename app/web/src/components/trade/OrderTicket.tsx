@@ -41,6 +41,9 @@ export type TicketSeed = {
 
 type PriceMode = 'market' | 'bid' | 'ask' | 'custom';
 
+/** A ceiling to stop a stray keystroke, not a risk limit. The gates do that. */
+const MAX_LOTS = 100_000;
+
 /** The rungs Delta's own app offers. */
 const LEVERAGE_STEPS = [1, 2, 3, 5, 10, 15, 20, 25, 50, 75, 100, 150, 200];
 
@@ -64,6 +67,15 @@ export function OrderTicket({
   balanceUsd?: number | null;
 }) {
   const [lots, setLots] = useState(1);
+  /**
+   * What is actually in the box while you are typing.
+   *
+   * The size has to be a number, but a half-typed number is a string -- and
+   * clamping every keystroke to at least 1 meant backspace did nothing and the
+   * field could never be cleared to type a new value. So the text is free while
+   * the field has focus and is settled on blur.
+   */
+  const [lotsText, setLotsText] = useState('1');
   const [leverage, setLeverage] = usePersisted('order:leverage', defaultLeverage);
   // The exits are a habit, not a per-trade decision, so they carry over between
   // tickets. Zero -- off -- is the default until you move them once.
@@ -85,7 +97,9 @@ export function OrderTicket({
   // how you sell ten lots of something you meant to sell one of.
   useEffect(() => {
     if (!seed) return;
-    setLots(Math.max(1, seed.lots ?? 1));
+    const start = Math.max(1, seed.lots ?? 1);
+    setLots(start);
+    setLotsText(String(start));
     // The offer, not the market. Selling at the bid gives away the spread on
     // every trade; on a $16 option that spread is a tenth of the premium.
     setMode(seed.ask !== null ? 'ask' : 'market');
@@ -155,13 +169,26 @@ export function OrderTicket({
     preview?.creditUsd ?? (working !== null ? working * lots * (preview?.contractValue ?? 0.001) : null);
   const blocked = preview !== null && !preview.ok;
   const canSend = !!preview?.ok && !placing && !checking;
-  // A cap of zero is not a cap, it is a missing answer -- and clamping to it
-  // pinned the size at zero and made the plus button do nothing. An unknown
-  // balance must not decide the size; the server refuses the order anyway if
-  // there is really no margin, and it says so in words.
+  /**
+   * What the balance covers -- shown, never enforced.
+   *
+   * Clamping the field to it made the plus button dead the moment the account
+   * was small, which is exactly when you most want to see what a bigger size
+   * would cost. Delta's own ticket lets you type any size and then says
+   * "Insufficient Balance", and that is the better shape: the size is yours to
+   * choose, the refusal comes from the gates, in words, with the number in it.
+   */
   const cap = maxLotsProp ?? preview?.maxLots ?? null;
-  const maxLots = cap !== null && cap > 0 ? cap : Number.MAX_SAFE_INTEGER;
   const capKnown = cap !== null && cap > 0;
+  const overCap = capKnown && lots > cap!;
+
+  /** Keep the number and the text in the box in step. */
+  const setSize = (n: number) => {
+    const next = Math.max(1, Math.min(MAX_LOTS, Math.floor(n)));
+    setLots(next);
+    setLotsText(String(next));
+  };
+  const step = (by: number) => setSize(lots + by);
   // How far the option can rise before the exchange closes the position, as a
   // multiple of what it was sold for. This is the number leverage actually moves.
   const room =
@@ -221,29 +248,37 @@ export function OrderTicket({
             <div className="mt-3.5">
               <Label>lots</Label>
               <div className="mt-1 flex items-center gap-2">
-                <Stepper onClick={() => setLots((n) => Math.max(1, n - 1))} disabled={lots <= 1} label="one fewer lot">
+                <Stepper onClick={() => step(-1)} disabled={lots <= 1} label="one fewer lot">
                   <Minus className="h-4 w-4" />
                 </Stepper>
                 <Input
                   className="flex-1 text-center text-[16px] font-semibold"
-                  type="number"
+                  type="text"
                   inputMode="numeric"
-                  value={lots}
-                  onChange={(e) => setLots(Math.max(1, Math.min(maxLots, Math.floor(Number(e.target.value) || 1))))}
+                  pattern="[0-9]*"
+                  value={lotsText}
+                  onFocus={(e) => e.currentTarget.select()}
+                  onChange={(e) => {
+                    const digits = e.target.value.replace(/[^0-9]/g, '');
+                    setLotsText(digits);
+                    const n = Number(digits);
+                    if (digits !== '' && n >= 1) setLots(Math.min(MAX_LOTS, n));
+                  }}
+                  onBlur={() => setLotsText(String(lots))}
                   aria-label="lots"
                 />
-                <Stepper onClick={() => setLots((n) => Math.min(maxLots, n + 1))} disabled={lots >= maxLots} label="one more lot">
+                <Stepper onClick={() => step(1)} disabled={lots >= MAX_LOTS} label="one more lot">
                   <Plus className="h-4 w-4" />
                 </Stepper>
               </div>
-              {/* only worth showing when there is more than one choice to make */}
-              <div className={cn('mt-1.5 flex gap-1.5', capKnown && cap! <= 1 && 'hidden')}>
+              <div className="mt-1.5 flex gap-1.5">
                 {[1, 5, 10, 25, ...(capKnown ? [cap!] : [])]
-                  .filter((n, i, a) => n >= 1 && a.indexOf(n) === i && n <= maxLots)
+                  .filter((n, i, a) => n >= 1 && a.indexOf(n) === i)
+                  .sort((a, b) => a - b)
                   .map((n) => (
                   <button
                     key={n}
-                    onClick={() => setLots(n)}
+                    onClick={() => setSize(n)}
                     className={cn(
                       'flex-1 cursor-pointer appearance-none rounded-md border border-border bg-muted py-1',
                       'font-[inherit] text-[11.5px] text-muted-foreground hover:text-foreground',
@@ -255,9 +290,10 @@ export function OrderTicket({
                 ))}
               </div>
               {capKnown && (
-                <p className="m-0 mt-1 text-[11px] text-muted-foreground">
+                <p className={cn('m-0 mt-1 text-[11px]', overCap ? 'text-[var(--warn)]' : 'text-muted-foreground')}>
                   {balanceUsd !== null && <>{usd(balanceUsd)} available — </>}
-                  {cap} lot{cap === 1 ? '' : 's'} at {leverage}x.
+                  {cap} lot{cap === 1 ? '' : 's'} at {leverage}x
+                  {overCap && <> · {lots} needs more margin than that</>}
                 </p>
               )}
             </div>

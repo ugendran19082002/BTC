@@ -14,6 +14,7 @@ export default {
         background: 'var(--panel)',
         foreground: 'var(--text)',
         muted: { DEFAULT: 'var(--panel-2)', foreground: 'var(--muted)' },
+        elevated: 'var(--panel-3)',
         accent: { DEFAULT: 'var(--panel-2)', foreground: 'var(--text)' },
         primary: { DEFAULT: 'var(--accent)', foreground: '#0b0e11' },
         popover: { DEFAULT: 'var(--panel)', foreground: 'var(--text)' },

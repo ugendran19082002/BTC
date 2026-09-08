@@ -61,14 +61,14 @@ export function ModeSwitch({ status, onChanged }: { status: TradeStatus | null; 
               : 'Live trading is not available on this server.'
         }
         className={cn(
-          'flex cursor-pointer appearance-none items-center gap-1.5 rounded-md border-0 px-2 py-1',
-          'font-[inherit] text-[11px] font-semibold uppercase tracking-[0.6px] transition-opacity',
-          'hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-60',
-          live ? 'bg-[var(--down)]/15 text-[var(--down)]' : 'bg-[var(--warn)]/15 text-[var(--warn)]',
+          'flex cursor-pointer appearance-none items-center gap-1.5 rounded-md border-0 px-2.5 py-1',
+          'font-[inherit] text-[11px] font-semibold uppercase tracking-[0.7px] transition-opacity',
+          'hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60',
+          live ? 'mode-live' : 'mode-paper',
         )}
       >
         {busy ? <Loader2 className="h-3 w-3 animate-spin" />
-          : live ? <Radio className="h-3 w-3" />
+          : live ? <Radio className="dot h-3 w-3" />
           : status.canGoLive ? <FlaskConical className="h-3 w-3" />
           : <Lock className="h-3 w-3" />}
         {live ? 'live · real money' : 'paper'}

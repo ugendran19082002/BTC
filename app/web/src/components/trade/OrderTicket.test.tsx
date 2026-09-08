@@ -139,11 +139,16 @@ describe('size', () => {
     expect(lots.value).toBe('1');
   });
 
-  it('will not step past the lots the account can carry', () => {
-    show({ maxLots: 3 });
+  it('lets you go past what the balance covers, and says so', async () => {
+    // Delta's own ticket does this: type any size, then "Insufficient Balance".
+    // Clamping instead made the plus button dead exactly when a small account
+    // most wants to see what a bigger size would cost.
+    previewOrder.mockResolvedValue(ok({ maxLots: 3 }));
+    show();
     const lots = screen.getByLabelText('lots') as HTMLInputElement;
-    for (let i = 0; i < 6; i++) fireEvent.click(screen.getByLabelText('one more lot'));
-    expect(lots.value).toBe('3');
+    for (let i = 0; i < 5; i++) fireEvent.click(screen.getByLabelText('one more lot'));
+    expect(lots.value).toBe('6');
+    await waitFor(() => expect(screen.getByText(/needs more margin than that/)).toBeInTheDocument());
   });
 
   it('still increases when the server could not work out a cap', async () => {
@@ -162,11 +167,39 @@ describe('size', () => {
     await waitFor(() => expect(screen.getByText(/7 lots at 200x/)).toBeInTheDocument());
   });
 
-  it('clamps a typed size to the cap instead of trusting it', () => {
-    show({ maxLots: 5 });
+  it('can be typed into, cleared and retyped', () => {
+    // clamping every keystroke to at least 1 meant backspace did nothing and
+    // the field could never be cleared to enter a new number
+    show();
     const lots = screen.getByLabelText('lots') as HTMLInputElement;
-    fireEvent.change(lots, { target: { value: '999' } });
-    expect(lots.value).toBe('5');
+    fireEvent.change(lots, { target: { value: '' } });
+    expect(lots.value).toBe('');
+    fireEvent.change(lots, { target: { value: '25' } });
+    expect(lots.value).toBe('25');
+  });
+
+  it('settles an empty box back to the last real size when it loses focus', () => {
+    show();
+    const lots = screen.getByLabelText('lots') as HTMLInputElement;
+    fireEvent.change(lots, { target: { value: '7' } });
+    fireEvent.change(lots, { target: { value: '' } });
+    fireEvent.blur(lots);
+    expect(lots.value).toBe('7');
+  });
+
+  it('ignores anything that is not a digit', () => {
+    show();
+    const lots = screen.getByLabelText('lots') as HTMLInputElement;
+    fireEvent.change(lots, { target: { value: '1e5' } });
+    expect(lots.value).toBe('15');
+  });
+
+  it('has no spinner arrows to mis-tap', () => {
+    show();
+    // type=number puts a two-pixel stepper against the value that changes the
+    // size by one per click; the buttons beside the field do that job properly
+    expect(screen.getByLabelText('lots')).toHaveAttribute('type', 'text');
+    expect(screen.getByLabelText('lots')).toHaveAttribute('inputMode', 'numeric');
   });
 });
 

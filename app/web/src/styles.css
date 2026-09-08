@@ -7,19 +7,24 @@
      a green and a red number sit at the same apparent brightness, so neither
      side of the book shouts louder than the other. Four steps of depth, so a
      card reads as raised without a border doing all the work. */
-  --bg: #0b0e11;
-  --panel: #181a20;
-  --panel-2: #1e2329;
-  --line: #2b3139;
-  --line-soft: #232830;
+  --bg: #0a0d10;
+  --panel: #14171c;
+  --panel-2: #1b1f26;
+  --panel-3: #232830;
+  --line: #2a303a;
+  --line-soft: #1f242c;
+  /* A one-pixel highlight along the top of a raised surface. Cheap, and it does
+     more for depth on a dark ground than any amount of shadow. */
+  --edge: #ffffff0d;
 
-  --text: #eaecef;
-  --muted: #848e9c;
-  --dim: #5e6673;
+  /* Three weights of text, all of them checked against --panel:
+       text  #e9edf2  13.9:1
+       muted #98a3b3   6.4:1
+       dim   #6c7686   3.4:1  -- labels only, never a number you must read */
+  --text: #e9edf2;
+  --muted: #98a3b3;
+  --dim: #6c7686;
 
-  /* Green up, red down, yellow for the thing you act on. The yellow is the
-     accent rather than a blue because on a board that is already half green and
-     half red, a third hue in the same family disappears; yellow does not. */
   --up: #0ecb81;
   --down: #f6465d;
   --warn: #f0b90b;
@@ -27,9 +32,23 @@
   --ce: #0ecb81;
   --pe: #f6465d;
 
-  --ring: #fcd53566;
+  /* Tinted grounds. Mixing into the panel rather than laying a translucent
+     colour over the page keeps a badge the same colour wherever it sits. */
+  --up-bg: #0b2a20;
+  --down-bg: #2e131a;
+  --warn-bg: #2b2410;
+
+  --ring: #fcd53580;
+  --shadow-lift: 0 1px 2px #00000059, 0 8px 24px -12px #00000080;
   color-scheme: dark;
 }
+
+/* A raised surface gets a lit top edge and a shadow under it. */
+.card, .bar, .chain, .note {
+  box-shadow: inset 0 1px 0 0 var(--edge), var(--shadow-lift);
+}
+
+::selection { background: #fcd53533; color: var(--text); }
 
 /* Slim, quiet scrollbars. The chain scrolls inside itself and the page scrolls
    behind it; two chunky platform bars beside each other read as chrome. */
@@ -37,7 +56,7 @@
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 999px; }
-::-webkit-scrollbar-thumb:hover { background: #33404f; }
+::-webkit-scrollbar-thumb:hover { background: var(--panel-3); }
 ::-webkit-scrollbar-corner { background: transparent; }
 
 * { box-sizing: border-box; }
@@ -538,3 +557,37 @@ td.sellcell {
 /* A slider inside a scrolling sheet must claim the horizontal drag, or the
    sheet swipes away under your thumb while you are trying to set a stop. */
 [data-radix-slider-root] { touch-action: none; }
+
+
+/* The one badge that must never be subtle.
+   A translucent red on a near-black ground reads as a grey smudge at a glance,
+   which is the opposite of what an indicator saying "this spends real money"
+   is for. Solid, white on red, and it pulses once a second so it is visible
+   from across the room. */
+.mode-live {
+  background: var(--down);
+  color: #fff;
+  box-shadow: 0 0 0 1px #f6465d66, 0 0 12px -2px #f6465d80;
+}
+.mode-live .dot { animation: mode-pulse 1.6s ease-in-out infinite; }
+.mode-paper {
+  background: var(--warn-bg);
+  color: var(--warn);
+  box-shadow: inset 0 0 0 1px #f0b90b40;
+}
+@keyframes mode-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mode-live .dot { animation: none; }
+}
+
+
+/* No spinner arrows, anywhere.
+   They sit a pixel from the value, they step by one, and on a trading field
+   that means a mis-tap changes the size. The stepper buttons beside the field
+   do the same job with a target you can actually hit. */
+input[type='number'] { -moz-appearance: textfield; appearance: textfield; }
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
