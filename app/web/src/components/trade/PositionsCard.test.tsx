@@ -99,6 +99,41 @@ describe('a protected position', () => {
   });
 });
 
+describe('what it is worth right now', () => {
+  const live = trade({
+    live: { markPrice: 6.5, unrealisedPnl: 0.4, decayed: 0.381, liquidationPrice: 215.6 },
+  });
+
+  it('shows the mark, the profit and how much has decayed', () => {
+    render(<PositionsCard trades={[live]} />);
+    expect(screen.getByText('6.50')).toBeInTheDocument();
+    expect(screen.getByText('+$0.400')).toBeInTheDocument();
+    expect(screen.getByText('38%')).toBeInTheDocument();
+  });
+
+  it('colours a loss red and a gain green, and leaves nothing neutral', () => {
+    const { rerender } = render(<PositionsCard trades={[live]} />);
+    expect(screen.getByText('+$0.400').className).toContain('--up');
+
+    rerender(<PositionsCard trades={[trade({
+      live: { markPrice: 14, unrealisedPnl: -0.35, decayed: -0.333, liquidationPrice: 215.6 },
+    })]} />);
+    expect(screen.getByText('−$0.350').className).toContain('--down');
+  });
+
+  it('names the close-out, which is the real exit when there is no stop', () => {
+    render(<PositionsCard trades={[live]} />);
+    expect(screen.getByText('215.60')).toBeInTheDocument();
+  });
+
+  it('shows a dash rather than a zero before the exchange has answered', () => {
+    render(<PositionsCard trades={[trade()]} />);
+    // "$0.00 profit" would be a claim; there is simply no number yet
+    const dashes = screen.getAllByText('—');
+    expect(dashes.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
 describe('a position with no stop behind it', () => {
   const naked = trade({ phase: 'unprotected', protection: { takeProfit: null, stopLoss: null }, alarm: 'POSITION UNPROTECTED: API down' });
 

@@ -561,6 +561,11 @@ td.sellcell {
 .chain td.tappable button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 /* The count of live positions, on the tab that holds them. */
+.tabs button .pnl { margin-left: 6px; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tabs button .pnl.up { color: var(--up); }
+.tabs button .pnl.down { color: var(--down); }
+@media (max-width: 760px) { .tabs button .pnl { display: none; } }
+
 .tabs button .pip.pip-bad { background: var(--down); color: #fff; }
 .tabs button .pip {
   display: inline-flex; align-items: center; justify-content: center;

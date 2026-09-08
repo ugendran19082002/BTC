@@ -11,6 +11,7 @@ import { PositionsCard } from '@/components/trade/PositionsCard';
 import { AlarmBanner } from '@/components/trade/ModeBanner';
 import { ModeSwitch } from '@/components/trade/ModeSwitch';
 import { getTradeStatus } from '@/api/trade';
+import { signedUsd } from '@/lib/format';
 import { getErrors } from '@/api/errors';
 import { ErrorLogPanel } from '@/components/layout/ErrorLogPanel';
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
@@ -222,6 +223,12 @@ export default function App() {
         <button className={tab === 'trade' ? 'on' : ''} onClick={() => setTab('trade')}>
           Positions
           {trade && trade.open.length > 0 && <span className="pip">{trade.open.length}</span>}
+          {/* The running total, on the tab, so it is readable without opening it. */}
+          {trade?.unrealisedPnlUsd ? (
+            <span className={`pnl ${trade.unrealisedPnlUsd > 0 ? 'up' : 'down'}`}>
+              {signedUsd(trade.unrealisedPnlUsd)}
+            </span>
+          ) : null}
         </button>
         <button className={tab === 'backtest' ? 'on' : ''} onClick={() => setTab('backtest')}>Backtest</button>
         <button className={tab === 'errors' ? 'on' : ''} onClick={() => setTab('errors')}>
