@@ -99,7 +99,19 @@ export function RecommendPanel({
             </span>
             <b>{s.leg.strike.toLocaleString()}</b>
             <span className="text-[var(--dim)]">×{s.lots} lots</span>
-            <span className="ml-auto">@ {s.price.toFixed(2)}</span>
+            {/*
+              The ticket price is the offer, not the bid. Hitting the bid fills
+              you now at the lower number; posting at the ask joins the offer and
+              pays the higher one when it fills. Both are shown because they are
+              two different trades, and every measured figure below is built on
+              the bid -- the conservative one.
+            */}
+            <span className="ml-auto">
+              @ {(s.askPrice ?? s.price).toFixed(2)}
+              {s.askPrice !== null && s.askPrice !== s.price && (
+                <span className="ml-1.5 text-[11.5px] text-[var(--dim)]">ask</span>
+              )}
+            </span>
           </div>
           {s.hedgeOrder && (
             <div className="mt-1 font-mono text-[12.5px] text-muted-foreground">{s.hedgeOrder}</div>
@@ -134,6 +146,14 @@ export function RecommendPanel({
           </div>
 
           <StatDivider />
+          {s.askPrice !== null && s.askPrice !== s.price && (
+            <Stat
+              label="fills straight away at"
+              value={s.price.toFixed(2)}
+              tone="dim"
+              hint="The bid. Every figure below is built on this one, because the 733-day record priced fills at the bid. Posting at the ask earns more only if it fills."
+            />
+          )}
           <Stat
             label="ends out of the money"
             value={pct(s.pExpireWorthless, 2)}

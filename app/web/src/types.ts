@@ -82,6 +82,7 @@ export type SideRecommendation = {
   leg: Leg;
   lots: number;
   price: number;
+  askPrice: number | null;
   creditUsd: number;
   creditInr: number;
   zeroChance: number | null;

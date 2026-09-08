@@ -88,7 +88,20 @@ export type SideRecommendation = {
   side: Side;
   leg: ScoredLeg;
   lots: number;
-  /** the price you would actually receive: the bid */
+  /**
+   * The limit price to place: the current best offer.
+   *
+   * A seller who hits the bid gets filled now and gets the lower number. A
+   * seller who posts at the ask joins the offer and gets the higher one, if it
+   * fills. This is the price to type into the ticket.
+   */
+  askPrice: number | null;
+  /**
+   * The price you would receive by hitting the bid, and the one every measured
+   * figure on this desk is built from. The backtest priced fills at the bid,
+   * so credit, expected profit and the whole 733-day record are on this
+   * number -- not on the ask, which is a hope until it fills.
+   */
   price: number;
   creditUsd: number;
   creditInr: number;
@@ -358,6 +371,7 @@ export function recommend(
       leg,
       lots,
       price: leg.sellPrice,
+      askPrice: leg.ask,
       creditUsd: credit,
       creditInr: credit * USDINR,
       zeroChance: leg.zero?.adjusted ?? null,
@@ -371,7 +385,8 @@ export function recommend(
       maxProfit: netPerBtc * lots * LOT_BTC,
       maxLoss: hedge ? (hedge.widthUsd - netPerBtc) * lots * LOT_BTC : null,
       breakeven: side === 'CE' ? leg.strike + netPerBtc : leg.strike - netPerBtc,
-      order: `SELL ${lots} × ${sym}-BTC-${leg.strike}-${snap.expiry} @ ${leg.sellPrice.toFixed(2)}`,
+      // the ticket is written at the offer; the measured numbers stay at the bid
+      order: `SELL ${lots} × ${sym}-BTC-${leg.strike}-${snap.expiry} @ ${(leg.ask ?? leg.sellPrice).toFixed(2)}`,
       hedgeOrder: hedge
         ? `BUY  ${lots} × ${sym}-BTC-${hedge.strike}-${snap.expiry} @ ${hedge.price.toFixed(2)}`
         : null,
