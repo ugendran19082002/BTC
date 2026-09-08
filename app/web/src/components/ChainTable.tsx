@@ -106,6 +106,9 @@ export function ChainTable({
   // what the setting says. The page scrolls; the table does not need to as well.
   // The header row stays stuck to the top so the columns remain readable.
   const height = `${strikes.length * 22 + 96}px`;
+  // visible columns each side of the strike: the four that settle the trade,
+  // plus the six reference ones when they are showing
+  const perSide = density === 'all' ? 10 : 4;
   const at = (k: number, cp: 'C' | 'P') => legs.find((l) => l.strike === k && l.cp === cp);
   const hasBook = legs.some((l) => l.bid !== null || l.ask !== null);
 
@@ -141,9 +144,16 @@ export function ChainTable({
       <table>
         <thead>
           <tr>
-            <th colSpan={10} className="left ce">CALLS</th>
+            {/*
+              This has to match what is actually on screen. Hiding the reference
+              columns with CSS while the span still claimed ten of them made the
+              table reserve width for columns that were not there -- a blank
+              strip down the right of the box, and the calls bid pushed off the
+              left edge on a phone.
+            */}
+            <th colSpan={perSide} className="left ce">CALLS</th>
             <th>STRIKE</th>
-            <th colSpan={10} className="left pe">PUTS</th>
+            <th colSpan={perSide} className="left pe">PUTS</th>
           </tr>
           <tr>
             <th className="aux">OI</th><th className="aux">Vol</th><th className="aux">Age</th>
