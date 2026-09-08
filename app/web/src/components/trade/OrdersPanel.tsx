@@ -6,9 +6,8 @@ import type { OrderRecord, OrderStatus } from '@/types/trade';
 import { usePoll } from '@/hooks/usePoll';
 import { Card, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { DateRangePicker, istToday } from '@/components/ui/date-range-picker';
 import { downloadCsv, toCsv } from '@/lib/csv';
 import { contractLabel, price, signedInr, signedUsd, stamp, usdToInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -34,12 +33,10 @@ const TONE: Record<OrderStatus, string> = {
   cancelled: 'text-muted-foreground',
 };
 
-const today = () => new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10);
-
 export function OrdersPanel() {
-  const [from, setFrom] = useState(today);
-  const [to, setTo] = useState(today);
+  const [range, setRange] = useState(() => ({ from: istToday(), to: istToday() }));
   const [status, setStatus] = useState<OrderStatus | 'all'>('all');
+  const { from, to } = range;
 
   const { data, loading } = usePoll(
     () => getOrderHistory({ from, to, status: status === 'all' ? undefined : status }),
@@ -67,31 +64,8 @@ export function OrdersPanel() {
         Orders
       </CardTitle>
 
-      <div className="mb-2.5 flex flex-wrap items-end gap-2">
-        <div>
-          <Label htmlFor="from">from</Label>
-          <Input
-            id="from" type="date" value={from} max={to}
-            onChange={(e) => setFrom(e.target.value)}
-            className="mt-1 w-[9.5rem]"
-          />
-        </div>
-        <div>
-          <Label htmlFor="to">to</Label>
-          <Input
-            id="to" type="date" value={to} min={from} max={today()}
-            onChange={(e) => setTo(e.target.value)}
-            className="mt-1 w-[9.5rem]"
-          />
-        </div>
-        {(from !== today() || to !== today()) && (
-          <Button
-            size="sm" variant="ghost"
-            onClick={() => { setFrom(today()); setTo(today()); }}
-          >
-            today
-          </Button>
-        )}
+      <div className="mb-2.5">
+        <DateRangePicker value={range} onChange={setRange} />
       </div>
 
       <ToggleGroup
@@ -112,7 +86,7 @@ export function OrdersPanel() {
         <p className="m-0 py-4 text-center text-[13px] text-muted-foreground">
           {loading ? 'looking…'
             : from === to
-              ? `Nothing ${from === today() ? 'today' : `on ${from}`}.`
+              ? `Nothing ${from === istToday() ? 'today' : `on ${from}`}.`
               : `Nothing between ${from} and ${to}.`}
         </p>
       ) : (
