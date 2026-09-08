@@ -1,5 +1,6 @@
 import type { OrderSide, OptionSide, ProductSpec, Quote } from './types.js';
 import { isWholeLots, spreadPct } from './money.js';
+import { clampLeverage, fundsRequiredPerContract, liquidationPrice } from './margin.js';
 
 /**
  * The gates a trade passes before a single byte goes to the exchange.
@@ -18,7 +19,8 @@ export type PrecheckCode =
   | 'MIN_SIZE' | 'LOT_SIZE'
   | 'PREMIUM_TOO_LOW'
   | 'INSUFFICIENT_MARGIN' | 'DUPLICATE_POSITION' | 'MAX_POSITION' | 'DAILY_LOSS_LIMIT'
-  | 'WRONG_EXIT_SIDE' | 'KILL_SWITCH';
+  | 'WRONG_EXIT_SIDE' | 'KILL_SWITCH'
+  | 'LEVERAGE_TOO_HIGH' | 'STOP_BEYOND_LIQUIDATION';
 
 export type Failure = { code: PrecheckCode; message: string };
 export type PrecheckResult = { ok: true } | { ok: false; failures: Failure[] };
@@ -40,8 +42,15 @@ export type RiskLimits = {
   minPremiumUsd: number;
   /** Off by default: a second short on the same contract is normally a bug. */
   allowPyramiding: boolean;
-  /** Margin the exchange holds per lot, in USD. */
-  marginPerLotUsd: number;
+  /**
+   * The most leverage this desk will use.
+   *
+   * Not a cap on what Delta allows -- Delta allows 200x -- but on what this
+   * desk will send without being told. Leverage does not change what a short
+   * option can lose; it changes how close the exchange is to closing you out,
+   * and 200x puts that close enough that an ordinary afternoon reaches it.
+   */
+  maxLeverage: number;
 };
 
 export const DEFAULT_LIMITS: RiskLimits = {
@@ -52,7 +61,7 @@ export const DEFAULT_LIMITS: RiskLimits = {
   maxDailyLossUsd: 5_000,
   minPremiumUsd: 5,
   allowPyramiding: false,
-  marginPerLotUsd: 30,
+  maxLeverage: 200,
 };
 
 export type PrecheckInput = {
@@ -67,7 +76,13 @@ export type PrecheckInput = {
     price: number | null;
     /** An exit may only reduce. */
     reduceOnly: boolean;
+    /** 1 to 200. Sets the margin, and with it the liquidation distance. */
+    leverage: number;
+    /** Where the stop buys back, if there is one. */
+    stopPrice?: number | null;
   };
+  /** BTC spot, for the margin model. */
+  spot: number | null;
   product: ProductSpec | null;
   quote: Quote | null;
   /** False when the price feed is disconnected or the order API is down. */
@@ -156,6 +171,31 @@ export function precheck(input: PrecheckInput): PrecheckResult {
     add('LOT_SIZE', `Size ${intent.size} is not a whole number of ${product.lotSize}-contract lots.`);
   }
 
+  // --- leverage, and what it puts the position next to --------------------
+  const leverage = clampLeverage(intent.leverage);
+  if (!intent.reduceOnly && leverage > limits.maxLeverage) {
+    add('LEVERAGE_TOO_HIGH', `${leverage}x is over this desk's ${limits.maxLeverage}x limit.`);
+  }
+
+  const marginInputs =
+    input.spot !== null && intent.price !== null
+      ? { spot: input.spot, premium: intent.price, leverage, contractValue: product?.contractValue }
+      : null;
+
+  if (!intent.reduceOnly && marginInputs && intent.stopPrice != null) {
+    const liq = liquidationPrice(marginInputs);
+    // A stop the exchange will never reach is not a stop. At high leverage the
+    // close-out sits below where the stop was placed, so the position is gone
+    // before the order that was meant to save it ever triggers.
+    if (liq !== null && intent.stopPrice >= liq) {
+      add(
+        'STOP_BEYOND_LIQUIDATION',
+        `Stop at ${intent.stopPrice.toFixed(2)} is past the ${liq.toFixed(2)} close-out at ${leverage}x — ` +
+          'you would be liquidated before it fired.',
+      );
+    }
+  }
+
   // --- opening trades only ----------------------------------------------
   if (!intent.reduceOnly) {
     if (intent.price !== null && intent.price < limits.minPremiumUsd) {
@@ -164,10 +204,16 @@ export function precheck(input: PrecheckInput): PrecheckResult {
     if (input.existingPosition !== 0 && !limits.allowPyramiding) {
       add('DUPLICATE_POSITION', `Already holding ${input.existingPosition} on this contract.`);
     }
-    const lots = product && product.lotSize > 0 ? intent.size / product.lotSize : intent.size;
-    const marginNeeded = lots * limits.marginPerLotUsd;
-    if (marginNeeded > input.account.availableUsd) {
-      add('INSUFFICIENT_MARGIN', `Needs $${marginNeeded.toFixed(0)}, have $${input.account.availableUsd.toFixed(0)}.`);
+    // Margin is a function of leverage, so it cannot be a constant. At 200x a
+    // lot costs cents; at 10x it costs dollars. Using one number for both is
+    // how a desk decides it can afford ten times the position it can survive.
+    // The fee is part of what has to be there, so it is part of the check.
+    const marginNeeded = marginInputs ? fundsRequiredPerContract(marginInputs) * intent.size : null;
+    if (marginNeeded !== null && marginNeeded > input.account.availableUsd) {
+      add(
+        'INSUFFICIENT_MARGIN',
+        `Needs $${marginNeeded.toFixed(2)} at ${leverage}x, have $${input.account.availableUsd.toFixed(2)}.`,
+      );
     }
     if (input.totalShortContracts + intent.size > limits.maxShortContracts) {
       add('MAX_POSITION', `Would take total short to ${input.totalShortContracts + intent.size}, limit is ${limits.maxShortContracts}.`);

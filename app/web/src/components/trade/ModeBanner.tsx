@@ -1,38 +1,6 @@
-import { AlertTriangle, FlaskConical, Radio } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import type { TradeStatus } from '@/types/trade';
-import { cn } from '@/lib/utils';
 import { clock } from '@/lib/format';
-
-/**
- * Whether this screen can spend money, said once, at the top, always.
- *
- * There is no state where the answer is implied. Paper is amber and says the
- * exchange is not being touched; live is red and says it is. A desk where you
- * have to remember which mode you are in is a desk that eventually places a
- * real order it did not mean to.
- */
-export function ModeBanner({ status }: { status: TradeStatus | null }) {
-  if (!status) return null;
-  const live = status.mode === 'live';
-  return (
-    <div
-      className={cn(
-        'flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.6px]',
-        live
-          ? 'bg-[var(--down)]/15 text-[var(--down)]'
-          : 'bg-[var(--warn)]/15 text-[var(--warn)]',
-      )}
-      title={
-        live
-          ? 'Orders placed here reach the real exchange and spend real money.'
-          : 'Orders are simulated. Nothing reaches the exchange. Set DELTA_LIVE_TRADING=1 to go live.'
-      }
-    >
-      {live ? <Radio className="h-3 w-3" /> : <FlaskConical className="h-3 w-3" />}
-      {live ? 'live · real money' : 'paper'}
-    </div>
-  );
-}
 
 /** A position with nothing behind it is the one thing that interrupts the page. */
 export function AlarmBanner({ status, onDismiss }: { status: TradeStatus | null; onDismiss?: () => void }) {

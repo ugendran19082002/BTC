@@ -3,6 +3,7 @@ import type {
   ExchangeOrder, ExchangePosition, OrderStatus, PlaceOrderRequest, ProductSpec, Quote,
 } from '../types.js';
 import { ExchangeUnavailable, OrderRejected, SubmitTimeout, type ExchangePort } from './port.js';
+import { noteError } from '../../observability/errors.js';
 
 /**
  * The real account.
@@ -122,6 +123,16 @@ export class DeltaExchange implements ExchangePort {
     try {
       return await signed<T>(this.creds, req);
     } catch (e) {
+      noteError({
+        source: 'exchange',
+        message: (e as Error).message,
+        code: e instanceof DeltaRefused ? e.code : (e as Error).name,
+        stack: (e as Error).stack ?? null,
+        where: `${req.method} ${req.path}`,
+        // the body can carry a size and a price, both of which help; the
+        // signing headers never reach here, and redact() catches the rest
+        context: { body: req.body ?? null },
+      });
       if (e instanceof RequestTimedOut) throw new ExchangeUnavailable(e.message);
       throw e;
     }
@@ -147,6 +158,14 @@ export class DeltaExchange implements ExchangePort {
       const o = await signed<DeltaOrder>(this.creds, { method: 'POST', path: '/v2/orders', body, timeoutMs: 10_000 });
       return toOrder(o);
     } catch (e) {
+      noteError({
+        source: 'exchange',
+        message: `order refused: ${(e as Error).message}`,
+        code: e instanceof DeltaRefused ? e.code : (e as Error).name,
+        stack: (e as Error).stack ?? null,
+        where: 'POST /v2/orders',
+        context: { clientOrderId: req.clientOrderId, symbol: req.symbol, side: req.side, size: req.size, type: req.type },
+      });
       // The distinction the rest of the engine is built on.
       if (e instanceof RequestTimedOut) throw new SubmitTimeout(req.clientOrderId);
       if (e instanceof DeltaRefused) throw new OrderRejected(`${e.code}`);
@@ -197,6 +216,21 @@ export class DeltaExchange implements ExchangePort {
         entryPrice: num(p.entry_price ?? null),
         unrealisedPnl: num(p.unrealized_pnl ?? null),
       }));
+  }
+
+  /**
+   * Delta stores leverage per product, so it is set on the product and then the
+   * order inherits it. A refusal here is worth surfacing rather than swallowing:
+   * carrying on would place the order at whatever leverage was left over from
+   * last time.
+   */
+  async setLeverage(productId: number, leverage: number): Promise<void> {
+    await this.call({
+      method: 'POST',
+      path: `/v2/products/${productId}/orders/leverage`,
+      body: { leverage: String(leverage) },
+      timeoutMs: 10_000,
+    });
   }
 
   async getBalanceUsd(): Promise<number> {

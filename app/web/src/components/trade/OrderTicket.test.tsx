@@ -40,6 +40,11 @@ const ok = (over: Partial<Preview> = {}): Preview => ({
   creditUsd: 9,
   worstCaseLossUsd: 13.5,
   stopPrice: 22.5,
+  leverage: 10,
+  spot: 78_405.5,
+  marginUsd: 7.84,
+  liquidationPrice: 3_929.3,
+  maxLots: 6,
   ...over,
 });
 

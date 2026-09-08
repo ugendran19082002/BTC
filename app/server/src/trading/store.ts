@@ -36,6 +36,10 @@ CREATE TABLE IF NOT EXISTS trade_events (
 );
 CREATE INDEX IF NOT EXISTS trade_events_by_trade ON trade_events (trade_id, seq);
 CREATE INDEX IF NOT EXISTS trades_by_phase ON trades (phase);
+CREATE TABLE IF NOT EXISTS settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 `;
 
 const OPEN_PHASES = "('precheck','entry_pending','entry_unknown','position_open','unprotected','protected','exit_pending')";
@@ -96,6 +100,19 @@ export class SqliteTradeStore implements TradeStore {
   /** Newest first, for the screen. */
   recent(limit = 50): TradeRecord[] {
     return this.query('SELECT trade_id, plan, state FROM trades ORDER BY updated_at DESC LIMIT ?', limit);
+  }
+
+  /** Desk settings that must outlive a restart. Currently just the mode. */
+  getSetting(key: string): string | null {
+    const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as
+      { value: string } | undefined;
+    return row?.value ?? null;
+  }
+
+  setSetting(key: string, value: string): void {
+    this.db
+      .prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+      .run(key, value);
   }
 
   events(tradeId: string): TradeEvent[] {

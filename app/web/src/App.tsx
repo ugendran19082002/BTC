@@ -8,8 +8,12 @@ import type { ChainResponse, ExpiryOption } from '@/types/desk';
 import { ChainTable, type ChainSellIntent } from '@/components/chain/ChainTable';
 import { OrderTicket, type TicketSeed } from '@/components/trade/OrderTicket';
 import { PositionsCard } from '@/components/trade/PositionsCard';
-import { AlarmBanner, ModeBanner } from '@/components/trade/ModeBanner';
+import { AlarmBanner } from '@/components/trade/ModeBanner';
+import { ModeSwitch } from '@/components/trade/ModeSwitch';
 import { getTradeStatus } from '@/api/trade';
+import { getErrors } from '@/api/errors';
+import { ErrorLogPanel } from '@/components/layout/ErrorLogPanel';
+import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
 import { usePoll } from '@/hooks/usePoll';
 import { MoveSection } from '@/components/desk/MoveSection';
 import { BiasSection } from '@/components/desk/BiasSection';
@@ -30,7 +34,7 @@ import { Button } from '@/components/ui/button';
 import { AccountSection } from '@/components/desk/AccountSection';
 import { Metric, Formula, Field } from '@/components/research/Explain';
 
-type Tab = 'desk' | 'trade' | 'backtest' | 'floors';
+type Tab = 'desk' | 'trade' | 'backtest' | 'floors' | 'errors';
 
 const REFRESH_SECONDS = 5;
 // The expiry list changes once a day, at settlement. A minute is often enough
@@ -160,6 +164,8 @@ export default function App() {
   // Positions and the alarm are polled on their own clock: they must keep
   // moving even while a chain fetch is in flight or has failed.
   const { data: trade, refresh: refreshTrade } = usePoll(getTradeStatus, 3_000, { enabled: signedIn === true });
+  // Only the count, on a slow clock: the list itself is fetched by the panel.
+  const { data: errors } = usePoll(() => getErrors({ limit: 1 }), 30_000, { enabled: signedIn === true });
 
   const openTicket = useCallback((i: ChainSellIntent) => {
     if (!snapRef.current) return;
@@ -184,7 +190,7 @@ export default function App() {
       <header className="top">
         <h1>BTC Options Desk</h1>
         {snap && <LivePrice spot={snap.spot} live={snap.live} />}
-        <ModeBanner status={trade} />
+        <ModeSwitch status={trade} onChanged={() => void refreshTrade()} />
         <span className="sub">
           Delta Exchange India · prices are public
           {days !== null && <> · {days} days of history</>}
@@ -212,6 +218,12 @@ export default function App() {
         </button>
         <button className={tab === 'backtest' ? 'on' : ''} onClick={() => setTab('backtest')}>Backtest</button>
         <button className={tab === 'floors' ? 'on' : ''} onClick={() => setTab('floors')}>How much premium?</button>
+        <button className={tab === 'errors' ? 'on' : ''} onClick={() => setTab('errors')}>
+          Errors
+          {errors && errors.summary.unresolved > 0 && (
+            <span className="pip pip-bad">{errors.summary.unresolved}</span>
+          )}
+        </button>
       </div>
 
       {tab === 'desk' ? (
@@ -609,6 +621,7 @@ export default function App() {
                   </Select>
                 </span>
               </div>
+              <ErrorBoundary where="Chain">
               <ChainTable
                 legs={data.legs}
                 snap={snap}
@@ -616,6 +629,7 @@ export default function App() {
                 density={density}
                 onSell={openTicket}
               />
+              </ErrorBoundary>
               <div className="note">
                 Age is minutes since a real trade printed. Delta's candle feed
                 forward-fills quiet minutes, so a traded price with a large age is a
@@ -638,7 +652,15 @@ export default function App() {
         </>
       ) : tab === 'trade' ? (
         <div className="lead-row" style={{ gridTemplateColumns: 'minmax(0, 1fr)' }}>
-          <PositionsCard trades={trade?.open ?? []} onChanged={() => void refreshTrade()} />
+          <ErrorBoundary where="Positions">
+            <PositionsCard trades={trade?.open ?? []} onChanged={() => void refreshTrade()} />
+          </ErrorBoundary>
+        </div>
+      ) : tab === 'errors' ? (
+        <div className="lead-row" style={{ gridTemplateColumns: 'minmax(0, 1fr)' }}>
+          <ErrorBoundary where="Error log">
+            <ErrorLogPanel />
+          </ErrorBoundary>
         </div>
       ) : tab === 'backtest' ? (
         <BacktestPanel usdinr={data?.usdinr ?? 85} />

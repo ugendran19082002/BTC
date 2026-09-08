@@ -10,17 +10,31 @@ const num = (v: string | undefined, fallback: number) => {
   return Number.isFinite(n) ? n : fallback;
 };
 
-const flag = (v: string | undefined) => v === '1' || v?.toLowerCase() === 'true';
+const isOff = (v: string | undefined) => v === '0' || v?.toLowerCase() === 'false';
 
 export type Config = {
   port: number;
   logLevel: string;
-  /** Placing real orders is off unless this is switched on deliberately. */
-  liveTrading: boolean;
+  /**
+   * Whether the desk starts on the real exchange.
+   *
+   * Live is the default once credentials exist, because a desk that silently
+   * paper-trades while you think it is working is its own kind of accident.
+   * `DELTA_LIVE_TRADING=0` forces paper and cannot be overridden from the
+   * browser; with no credentials at all it is paper regardless.
+   *
+   * Whichever this says, the mode is on screen at all times and the switch is
+   * one tap away.
+   */
+  liveTradingDefault: boolean;
+  /** True when the environment explicitly forbids live trading. */
+  paperLocked: boolean;
 };
 
 export const config: Config = {
   port: num(process.env.PORT, 8787),
   logLevel: process.env.LOG_LEVEL ?? 'info',
-  liveTrading: flag(process.env.DELTA_LIVE_TRADING),
+  liveTradingDefault: !isOff(process.env.DELTA_LIVE_TRADING),
+  paperLocked: isOff(process.env.DELTA_LIVE_TRADING),
 };
+

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Loader2, Minus, Plus } from 'lucide-react';
+import { AlertTriangle, Loader2, Minus, Plus, Zap } from 'lucide-react';
 import { placeOrder, previewOrder } from '@/api/trade';
 import type { OrderDraft, PlaceResult, Preview } from '@/types/trade';
 import { Sheet, SheetContent, SheetFooter } from '@/components/ui/sheet';
@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
+import { Select, SelectItem } from '@/components/ui/select';
 import { countdown, price, signedUsd, strike, usd } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -38,16 +39,28 @@ export type TicketSeed = {
 
 type PriceMode = 'market' | 'bid' | 'ask' | 'custom';
 
+/** The rungs Delta's own app offers. */
+const LEVERAGE_STEPS = [1, 2, 3, 5, 10, 15, 20, 25, 50, 75, 100, 150, 200];
+
+/**
+ * Above this, the option only has to move a fraction before the exchange closes
+ * the position. It is still allowed -- Delta allows 200x -- but it stops being
+ * the quiet default and starts being a thing the ticket argues with.
+ */
+const LOUD_LEVERAGE = 25;
+
 export function OrderTicket({
-  seed, open, onOpenChange, maxLots = 999, onPlaced,
+  seed, open, onOpenChange, maxLots: maxLotsProp, onPlaced, defaultLeverage = 10,
 }: {
   seed: TicketSeed | null;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   maxLots?: number;
   onPlaced?: (r: PlaceResult) => void;
+  defaultLeverage?: number;
 }) {
   const [lots, setLots] = useState(1);
+  const [leverage, setLeverage] = useState(defaultLeverage);
   const [mode, setMode] = useState<PriceMode>('market');
   const [custom, setCustom] = useState('');
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -60,13 +73,14 @@ export function OrderTicket({
   // how you sell ten lots of something you meant to sell one of.
   useEffect(() => {
     if (!seed) return;
-    setLots(Math.max(1, Math.min(maxLots, seed.lots ?? 1)));
+    setLots(Math.max(1, seed.lots ?? 1));
+    setLeverage(defaultLeverage);
     setMode('market');
     setCustom('');
     setResult(null);
     setFailed(null);
     setPreview(null);
-  }, [seed?.symbol, maxLots]);
+  }, [seed?.symbol, defaultLeverage]);
 
   const limitPrice = useMemo(() => {
     if (!seed) return null;
@@ -84,9 +98,9 @@ export function OrderTicket({
   const draft: OrderDraft | null = useMemo(
     () => seed && {
       symbol: seed.symbol, side: seed.side, strike: seed.strike,
-      expiryTs: seed.expiryTs, lots, limitPrice,
+      expiryTs: seed.expiryTs, lots, limitPrice, leverage,
     },
-    [seed, lots, limitPrice],
+    [seed, lots, limitPrice, leverage],
   );
 
   // Debounced, because typing a price should not be a request per keystroke.
@@ -123,6 +137,13 @@ export function OrderTicket({
   const credit = preview?.creditUsd ?? (working !== null ? working * lots : null);
   const blocked = preview !== null && !preview.ok;
   const canSend = !!preview?.ok && !placing && !checking;
+  const maxLots = maxLotsProp ?? preview?.maxLots ?? 999;
+  // How far the option can rise before the exchange closes the position, as a
+  // multiple of what it was sold for. This is the number leverage actually moves.
+  const room =
+    preview?.liquidationPrice != null && working
+      ? preview.liquidationPrice / working
+      : null;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -208,12 +229,36 @@ export function OrderTicket({
               </div>
             </div>
 
+            <div className="mt-3.5">
+              <Label>leverage</Label>
+              <div className="mt-1">
+                <Select ariaLabel="leverage" value={String(leverage)} onValueChange={(v) => setLeverage(Number(v))}>
+                  {LEVERAGE_STEPS.map((n) => (
+                    <SelectItem
+                      key={n}
+                      value={String(n)}
+                      hint={n >= LOUD_LEVERAGE ? 'little room before the close-out' : undefined}
+                    >
+                      {n}x
+                    </SelectItem>
+                  ))}
+                </Select>
+              </div>
+              <LeverageNote leverage={leverage} room={room} liquidation={preview?.liquidationPrice ?? null} />
+            </div>
+
             <Separator className="my-3.5" />
 
             <dl className="m-0 grid gap-1.5">
               <Line label="you receive" value={usd(credit)} strong />
-              <Line label="if it goes wrong" value={preview?.worstCaseLossUsd != null ? signedUsd(-preview.worstCaseLossUsd) : '—'} tone="down" />
+              <Line label="margin held" value={usd(preview?.marginUsd)} />
+              <Line
+                label="closed out if it reaches"
+                value={price(preview?.liquidationPrice)}
+                tone={room !== null && room < 2 ? 'down' : undefined}
+              />
               <Line label="stop buys back at" value={price(preview?.stopPrice)} />
+              <Line label="if it goes wrong" value={preview?.worstCaseLossUsd != null ? signedUsd(-preview.worstCaseLossUsd) : '—'} tone="down" />
               <Line label="contracts" value={preview ? String(preview.size) : String(lots)} />
             </dl>
 
@@ -251,6 +296,42 @@ export function OrderTicket({
         )}
       </SheetContent>
     </Sheet>
+  );
+}
+
+/**
+ * What this leverage buys and what it costs, in one line.
+ *
+ * Leverage does not change what a sold option can lose -- that is the same at
+ * 1x and at 200x. It changes how far the option can move before the exchange
+ * closes you out, and that is what this says, in the option's own prices.
+ */
+function LeverageNote({ leverage, room, liquidation }: {
+  leverage: number; room: number | null; liquidation: number | null;
+}) {
+  const loud = leverage >= LOUD_LEVERAGE;
+  return (
+    <p
+      className={cn(
+        'm-0 mt-1.5 flex items-start gap-1.5 text-[11.5px] leading-snug',
+        loud ? 'text-[var(--warn)]' : 'text-muted-foreground',
+      )}
+    >
+      {loud && <Zap className="mt-[2px] h-3.5 w-3.5 flex-none" />}
+      <span>
+        {liquidation === null || room === null ? (
+          <>Sets the margin held, and how far this can move before it is closed out.</>
+        ) : (
+          <>
+            Closed out at <b className="tabular-nums">{price(liquidation)}</b> — a{' '}
+            <b>{((room - 1) * 100).toFixed(0)}%</b> move.{' '}
+            {loud
+              ? 'Lower leverage holds more margin and gives the trade more room.'
+              : 'You lose the same either way; leverage only moves this line.'}
+          </>
+        )}
+      </span>
+    </p>
   );
 }
 

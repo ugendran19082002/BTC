@@ -356,10 +356,19 @@ test('26 a size that is not a whole lot is refused before the API is called', as
 // ------------------------------------------------- 27,28,29 account and risk
 
 test('27 not enough margin, no entry', async () => {
-  const r = rig({ balanceUsd: 1_200, limits: { marginPerLotUsd: 200 } });
+  // 100 contracts at 10x on an 80k spot is about $810 of margin
+  const r = rig({ balanceUsd: 500 });
   const res = await r.engine.open(planFor(ceProduct()));
   assert.equal(res.ok, false);
   assert.ok(!res.ok && failureCodes(res.precheck).includes('INSUFFICIENT_MARGIN'));
+});
+
+test('27b the same account affords the same trade at higher leverage', async () => {
+  // at 200x the margin is about $50, so it fits where $810 did not
+  const r = rig({ balanceUsd: 500 });
+  const res = await r.engine.open(planFor(ceProduct(), { leverage: 200, stopPrice: 130 }));
+  assert.equal(res.ok, true, JSON.stringify(res.ok ? '' : res.precheck));
+  assert.equal(res.state.position, -100);
 });
 
 test('28 an order that would breach the total short limit is refused', async () => {
@@ -377,6 +386,55 @@ test("29 a trade whose worst case would blow the day's loss budget is blocked", 
   const res = await r.engine.open(planFor(ceProduct()));
   assert.equal(res.ok, false);
   assert.ok(!res.ok && failureCodes(res.precheck).includes('DAILY_LOSS_LIMIT'));
+});
+
+// ------------------------------------------------------ 41-46 leverage
+
+test('41 leverage is set on the product before the order is sent, not after', async () => {
+  const r = rig();
+  await r.engine.open(planFor(ceProduct(), { leverage: 25 }));
+  assert.equal(r.ex.leverage.get(111), 25, 'the order inherits a leverage that was already right');
+});
+
+test('42 a leverage the exchange refuses stops the trade rather than filling at the old one', async () => {
+  const r = rig();
+  const original = r.ex.setLeverage.bind(r.ex);
+  void original;
+  r.ex.setLeverage = async () => { throw new Error('leverage change not allowed with an open position'); };
+  const res = await r.engine.open(planFor(ceProduct(), { leverage: 200 }));
+  assert.equal(res.ok, false);
+  assert.equal(res.state.position, 0, 'nothing was sold at whatever leverage was left over');
+  assert.equal((await r.ex.getOpenOrders()).length, 0);
+});
+
+test('43 leverage past the desk limit is refused even though Delta would allow it', async () => {
+  const r = rig({ limits: { maxLeverage: 50 } });
+  const res = await r.engine.open(planFor(ceProduct(), { leverage: 200 }));
+  assert.equal(res.ok, false);
+  assert.ok(!res.ok && failureCodes(res.precheck).includes('LEVERAGE_TOO_HIGH'));
+});
+
+test('44 [critical] a stop past the close-out price is refused, because it would never fire', async () => {
+  // 200x on an 80k spot leaves about $250 of room above a $100.50 option, so a
+  // stop at 251 sits beyond where the exchange has already closed the position
+  const r = rig();
+  const res = await r.engine.open(planFor(ceProduct(), { leverage: 200, stopPrice: 400, lots: 10 }));
+  assert.equal(res.ok, false);
+  assert.ok(!res.ok && failureCodes(res.precheck).includes('STOP_BEYOND_LIQUIDATION'));
+});
+
+test('45 the same stop is fine at lower leverage, because the close-out moves away', async () => {
+  const r = rig();
+  const res = await r.engine.open(planFor(ceProduct(), { leverage: 10, stopPrice: 400, lots: 10 }));
+  assert.ok(res.ok, JSON.stringify(res.ok ? '' : res.precheck));
+});
+
+test('46 with no spot to work from, the margin model refuses to invent one', async () => {
+  const r = rig({ spot: null, balanceUsd: 1 });
+  // $1 could not cover this at any leverage -- but with no spot there is no
+  // margin number, and a made-up one is worse than none
+  const res = await r.engine.open(planFor(ceProduct()));
+  assert.ok(res.ok, 'no spot means the margin gate abstains rather than guessing');
 });
 
 // ------------------------------------------------------------ 30 & 31 restart

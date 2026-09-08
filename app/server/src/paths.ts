@@ -26,3 +26,5 @@ export const CHAIN_DB = process.env.CHAIN_DB ?? join(ROOT, 'chain.db');
 /** Where the trade journal is written. Separate file: market data is disposable,
  * an order history is not. */
 export const TRADE_DB = process.env.TRADE_DB ?? join(ROOT, 'trades.db');
+/** Failures from the server, the browser and the exchange, in time order. */
+export const ERROR_DB = process.env.ERROR_DB ?? join(ROOT, 'errors.db');

@@ -10,6 +10,8 @@ import type { ProductSpec, Quote } from '../../src/trading/types.js';
 
 export const EXPIRY_TS = 1_700_040_000; // seconds
 export const T0 = 1_700_000_000_000;    // ms, well before the expiry
+/** BTC spot the margin model works from. */
+export const SPOT = 80_000;
 
 export const ceProduct = (over: Partial<ProductSpec> = {}): ProductSpec => ({
   symbol: 'C-BTC-80000-080926',
@@ -44,6 +46,7 @@ export function planFor(product: ProductSpec, over: Partial<TradePlan> = {}): Tr
     symbol: product.symbol,
     optionSide: product.optionSide,
     lots: 100,
+    leverage: 10,
     entry: { type: 'limit', limitPrice: 100.5, timeoutMs: 5_000, marketFallback: false },
     takeProfitPrice: 90,
     stopPrice: 110,
@@ -66,6 +69,7 @@ export type Rig = {
   now(): number;
   setFeed(healthy: boolean): void;
   setDayPnl(usd: number): void;
+  setSpot(usd: number | null): void;
   alarms: { tradeId: string; message: string }[];
 };
 
@@ -75,6 +79,7 @@ export function rig(opts: {
   balanceUsd?: number;
   limits?: Partial<RiskLimits>;
   tradingEnabled?: boolean;
+  spot?: number | null;
 } = {}): Rig {
   const ex = new PaperExchange({ balanceUsd: opts.balanceUsd ?? 100_000 });
   for (const p of opts.products ?? [ceProduct()]) ex.addProduct(p);
@@ -83,6 +88,7 @@ export function rig(opts: {
   let clock = T0;
   let feed = true;
   let pnl = 0;
+  let spot: number | null = opts.spot === undefined ? SPOT : opts.spot;
   const alarms: Rig['alarms'] = [];
   const store = new MemoryTradeStore();
 
@@ -94,6 +100,7 @@ export function rig(opts: {
     tradingEnabled: opts.tradingEnabled !== false,
     feedHealthy: () => feed,
     dayPnlUsd: () => pnl,
+    spot: () => spot,
     onAlarm: (t, message) => alarms.push({ tradeId: t.tradeId, message }),
   });
 
@@ -103,5 +110,6 @@ export function rig(opts: {
     now: () => clock,
     setFeed: (h) => { feed = h; },
     setDayPnl: (usd) => { pnl = usd; },
+    setSpot: (usd) => { spot = usd; },
   };
 }

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { tradingService } from '../../trading/service.js';
 import { lotsToContracts } from '../../trading/money.js';
 import { DEFAULT_LIMITS, precheck } from '../../trading/precheck.js';
+import { clampLeverage, fundsRequiredPerContract, liquidationPrice, maxLotsAt } from '../../trading/margin.js';
 import type { TradeRecord } from '../../trading/engine.js';
 
 /**
@@ -24,6 +25,7 @@ type PlaceBody = {
   takeProfitPrice?: number | null;
   stopPrice?: number | null;
   marketFallback?: boolean;
+  leverage?: number;
 };
 
 const view = (r: TradeRecord) => ({
@@ -50,6 +52,7 @@ function parse(body: PlaceBody) {
     takeProfitPrice: body.takeProfitPrice ?? null,
     stopPrice: body.stopPrice ?? null,
     marketFallback: body.marketFallback ?? false,
+    leverage: clampLeverage(Number(body.leverage ?? 10)),
   };
 }
 
@@ -67,12 +70,36 @@ export function registerTradeRoutes(app: FastifyInstance) {
       mode: svc.mode,
       /** True only when a real order would reach the real exchange. */
       live: svc.mode === 'live',
+      /** Whether the switch can be thrown at all from here. */
+      canGoLive: svc.canGoLive,
+      /** Why it cannot be thrown right now, if it cannot. */
+      switchBlockedBy: svc.openTrades().length > 0
+        ? `Close ${svc.openTrades().length} open position${svc.openTrades().length === 1 ? '' : 's'} first.`
+        : svc.canGoLive ? null : 'No Delta credentials configured on the server.',
       balanceUsd: balance,
       positions,
       open: svc.openTrades().map(view),
       alarms: svc.alarms,
       limits: DEFAULT_LIMITS,
     };
+  });
+
+  /**
+   * Throw the switch between the real exchange and the simulator.
+   *
+   * Server-side, and refused while anything is open: the browser asks, the
+   * server decides. A page that could put itself into live mode by setting a
+   * flag in its own state is a page that can do it by accident.
+   */
+  app.post('/api/trade/mode', async (req, reply) => {
+    const { mode } = (req.body ?? {}) as { mode?: string };
+    if (mode !== 'live' && mode !== 'paper') {
+      reply.code(400);
+      return { error: "mode must be 'live' or 'paper'" };
+    }
+    const res = svc.setMode(mode);
+    if (!res.ok) reply.code(409);
+    return res;
   });
 
   app.get('/api/trade/quote', async (req, reply) => {
@@ -103,12 +130,19 @@ export function registerTradeRoutes(app: FastifyInstance) {
       const credit = (price ?? 0) * size;
       const worstCase = stop !== null ? Math.max(0, stop * size - credit) : Infinity;
 
+      const spot = svc.spot;
+      const margin = spot !== null && price !== null
+        ? { spot, premium: price, leverage: p.leverage, contractValue: product?.contractValue }
+        : null;
+
       const gates = precheck({
         now: Date.now(),
         intent: {
           side: 'sell', size, price, reduceOnly: false,
+          leverage: p.leverage, stopPrice: stop,
           expect: { underlying: 'BTC', optionSide: p.side, strike: p.strike, expiryTs: p.expiryTs },
         },
+        spot,
         product, quote,
         feedHealthy: true,
         tradingEnabled: true,
@@ -129,6 +163,13 @@ export function registerTradeRoutes(app: FastifyInstance) {
         creditUsd: credit,
         worstCaseLossUsd: Number.isFinite(worstCase) ? worstCase : null,
         stopPrice: stop,
+        leverage: p.leverage,
+        spot,
+        marginUsd: margin ? fundsRequiredPerContract(margin) * size : null,
+        // The price this option has to reach before the exchange closes the
+        // position out. At 200x it is close; that is the whole point of showing it.
+        liquidationPrice: margin ? liquidationPrice(margin) : null,
+        maxLots: margin ? maxLotsAt(balance, margin, product?.lotSize ?? 1) : null,
       };
     } catch (e) {
       reply.code(400);

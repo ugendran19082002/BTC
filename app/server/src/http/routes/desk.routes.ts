@@ -7,6 +7,7 @@ import { optionStructure } from '../../domain/structure.js';
 import { forecast, reloadHorizons } from '../../domain/forecast.js';
 import { loadCalibration, reloadCalibration } from '../../domain/calibration.js';
 import { loadDays, reloadDays, DEFAULTS } from '../../backtest/backtest.js';
+import { tradingService } from '../../trading/service.js';
 
 /** Resolve the `at` query param: "now" (or absent) means live. */
 function resolveAt(at: string | undefined): number | null {
@@ -71,6 +72,9 @@ export function registerDeskRoutes(app: FastifyInstance) {
       const market = snap.live
         ? await readMarket(elapsedHours > 0 ? elapsedHours : undefined).catch(() => null)
         : null;
+
+      // The margin model needs a spot, and the chain is where one arrives.
+      if (snap.live) tradingService().noteSpot(snap.spot);
 
       const recommendation = recommend(snap, scored, market, minPremium, lots, hedgeGap, mode, safetyBar);
 

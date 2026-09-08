@@ -1,11 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { PositionsCard } from '@/components/trade/PositionsCard';
-import { AlarmBanner, ModeBanner } from '@/components/trade/ModeBanner';
+import { AlarmBanner } from '@/components/trade/ModeBanner';
+import { ModeSwitch } from '@/components/trade/ModeSwitch';
 import type { Trade, TradeStatus } from '@/types/trade';
 
 const closeTrade = vi.fn();
-vi.mock('@/api/trade', () => ({ closeTrade: (...a: unknown[]) => closeTrade(...a) }));
+const setTradeMode = vi.fn();
+vi.mock('@/api/trade', () => ({
+  closeTrade: (...a: unknown[]) => closeTrade(...a),
+  setTradeMode: (...a: unknown[]) => setTradeMode(...a),
+}));
 
 const trade = (over: Partial<Trade> = {}): Trade => ({
   tradeId: 't1',
@@ -90,22 +95,69 @@ describe('an empty desk', () => {
   });
 });
 
-describe('the mode banner', () => {
-  it('calls paper paper', () => {
-    render(<ModeBanner status={{ mode: 'paper' } as TradeStatus} />);
-    expect(screen.getByText('paper')).toBeInTheDocument();
+describe('the mode switch', () => {
+  const status = (over: Partial<TradeStatus> = {}): TradeStatus => ({
+    mode: 'paper', live: false, canGoLive: true, switchBlockedBy: null,
+    balanceUsd: 50, positions: [], open: [], alarms: [],
+    limits: {
+      maxLeverage: 200, maxQuoteAgeMs: 3000, maxSpreadPct: 0.04, minBookCoverage: 0.5,
+      maxShortContracts: 500, maxDailyLossUsd: 5000, minPremiumUsd: 5, allowPyramiding: false,
+    },
+    ...over,
   });
 
-  it('says real money when it is real money', () => {
-    render(<ModeBanner status={{ mode: 'live' } as TradeStatus} />);
+  beforeEach(() => setTradeMode.mockResolvedValue({ ok: true, mode: 'live' }));
+
+  it('calls paper paper, and real money real money', () => {
+    const { rerender } = render(<ModeSwitch status={status()} />);
+    expect(screen.getByText('paper')).toBeInTheDocument();
+    rerender(<ModeSwitch status={status({ mode: 'live', live: true })} />);
     expect(screen.getByText('live · real money')).toBeInTheDocument();
   });
 
   it('shows nothing before the server has answered, rather than guessing paper', () => {
     // guessing "paper" while the answer is still in flight is the one wrong
     // default here: it would say the desk is safe before anyone has checked
-    const { container } = render(<ModeBanner status={null} />);
+    const { container } = render(<ModeSwitch status={null} />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it('will not go live on one tap', async () => {
+    render(<ModeSwitch status={status()} />);
+    fireEvent.click(screen.getByRole('button', { name: /paper/i }));
+    await waitFor(() => expect(screen.getByText('Trade for real?')).toBeInTheDocument());
+    expect(setTradeMode).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: /go live/i }));
+    await waitFor(() => expect(setTradeMode).toHaveBeenCalledWith('live'));
+  });
+
+  it('goes back to paper on one tap, because leaving live is never the risky direction', async () => {
+    setTradeMode.mockResolvedValue({ ok: true, mode: 'paper' });
+    render(<ModeSwitch status={status({ mode: 'live', live: true })} />);
+    fireEvent.click(screen.getByRole('button', { name: /live/i }));
+    await waitFor(() => expect(setTradeMode).toHaveBeenCalledWith('paper'));
+    expect(screen.queryByText('Trade for real?')).toBeNull();
+  });
+
+  it('refuses to switch while a position is open, and says why', async () => {
+    render(<ModeSwitch status={status({ switchBlockedBy: 'Close 1 open position first.' })} />);
+    fireEvent.click(screen.getByRole('button', { name: /paper/i }));
+    await waitFor(() => expect(screen.getByText('Close 1 open position first.')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /go live/i })).toBeDisabled();
+  });
+
+  it('is dead when the server cannot go live at all', () => {
+    render(<ModeSwitch status={status({ canGoLive: false })} />);
+    expect(screen.getByRole('button', { name: /paper/i })).toBeDisabled();
+  });
+
+  it('surfaces the server’s refusal rather than pretending it worked', async () => {
+    setTradeMode.mockResolvedValue({ ok: false, mode: 'paper', reason: 'No Delta credentials configured.' });
+    render(<ModeSwitch status={status()} />);
+    fireEvent.click(screen.getByRole('button', { name: /paper/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /go live/i }));
+    await waitFor(() => expect(screen.getByText('No Delta credentials configured.')).toBeInTheDocument());
   });
 });
 

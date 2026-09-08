@@ -3,6 +3,7 @@ import { config } from './config.js';
 import { authFromEnv } from './http/session.js';
 import { loadDays } from './backtest/backtest.js';
 import { hasCredentials } from './http/routes/account.routes.js';
+import { tradingService } from './trading/service.js';
 
 /**
  * Start the desk.
@@ -22,10 +23,15 @@ app.log.info(
     ? 'Delta credentials present'
     : 'no Delta credentials -- account and order endpoints are off, market data unaffected',
 );
+const desk = tradingService();
 app.log.info(
-  config.liveTrading
+  desk.mode === 'live'
     ? 'LIVE TRADING IS ON -- orders placed here reach the real exchange'
-    : 'paper trading -- orders are simulated, nothing reaches the exchange',
+    : config.paperLocked
+      ? 'paper trading, locked by DELTA_LIVE_TRADING=0 -- the switch is disabled'
+      : desk.canGoLive
+        ? 'paper trading -- the switch on the desk can turn this live'
+        : 'paper trading -- no credentials, so live is not available',
 );
 app.log.info(
   auth.enabled

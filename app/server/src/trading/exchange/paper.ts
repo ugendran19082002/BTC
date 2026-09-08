@@ -38,6 +38,8 @@ export class PaperExchange implements ExchangePort {
   private quotes = new Map<string, Quote>();
   private products = new Map<string, ProductSpec>();
   private balance: number;
+  /** What leverage each product is set to. Tests read this back. */
+  readonly leverage = new Map<number, number>();
   private cfg: PaperConfig = {};
   /** Set false to make every call throw, as an outage does. */
   reachable = true;
@@ -248,6 +250,11 @@ export class PaperExchange implements ExchangePort {
   async getPositions(): Promise<ExchangePosition[]> {
     this.guard();
     return [...this.positions.values()].map((p) => ({ ...p }));
+  }
+
+  async setLeverage(productId: number, leverage: number): Promise<void> {
+    this.guard();
+    this.leverage.set(productId, leverage);
   }
 
   async getBalanceUsd(): Promise<number> { this.guard(); return this.balance; }

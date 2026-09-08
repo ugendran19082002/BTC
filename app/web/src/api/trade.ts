@@ -32,6 +32,22 @@ export async function placeOrder(draft: OrderDraft): Promise<PlaceResult> {
   return body;
 }
 
+/**
+ * Ask the server to change mode. It may say no -- while a position is open, the
+ * answer is always no -- so the reason comes back with the refusal.
+ */
+export async function setTradeMode(mode: 'live' | 'paper') {
+  const res = await fetch('/api/trade/mode', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode }),
+  });
+  return (await res.json()) as
+    | { ok: true; mode: 'live' | 'paper' }
+    | { ok: false; mode: 'live' | 'paper'; reason: string };
+}
+
 export const closeTrade = (tradeId: string) => post<{ ok: true; trade: Trade }>('/api/trade/close', { tradeId });
 
 export const reconcileTrade = (tradeId: string) =>

@@ -87,11 +87,16 @@ export type ExchangePosition = {
 export type TradeStatus = {
   mode: 'live' | 'paper';
   live: boolean;
+  /** Whether the switch can be thrown at all from this server. */
+  canGoLive: boolean;
+  /** Why it cannot be thrown right now, if it cannot. */
+  switchBlockedBy: string | null;
   balanceUsd: number | null;
   positions: ExchangePosition[];
   open: Trade[];
   alarms: { tradeId: string; message: string; at: number }[];
   limits: {
+    maxLeverage: number;
     maxQuoteAgeMs: number;
     maxSpreadPct: number;
     minBookCoverage: number;
@@ -99,7 +104,6 @@ export type TradeStatus = {
     maxDailyLossUsd: number;
     minPremiumUsd: number;
     allowPyramiding: boolean;
-    marginPerLotUsd: number;
   };
 };
 
@@ -109,6 +113,8 @@ export type OrderDraft = {
   strike: number;
   expiryTs: number;
   lots: number;
+  /** 1 to 200. Sets the margin, and how close the close-out sits. */
+  leverage: number;
   /** null means take the book at market. */
   limitPrice: number | null;
   takeProfitPrice?: number | null;
@@ -126,6 +132,14 @@ export type Preview = {
   creditUsd: number;
   worstCaseLossUsd: number | null;
   stopPrice: number | null;
+  leverage: number;
+  spot: number | null;
+  /** Margin the exchange will hold for the whole position, in USD. */
+  marginUsd: number | null;
+  /** Where the exchange closes the position out. Above where you sold. */
+  liquidationPrice: number | null;
+  /** Lots the balance could carry at this leverage. */
+  maxLots: number | null;
 };
 
 export type PlaceResult =

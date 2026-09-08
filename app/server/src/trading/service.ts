@@ -5,6 +5,7 @@ import { SqliteTradeStore } from './store.js';
 import { DeltaExchange } from './exchange/delta.js';
 import { PaperExchange } from './exchange/paper.js';
 import { DEFAULT_LIMITS, type RiskLimits } from './precheck.js';
+import { clampLeverage } from './margin.js';
 import { isDone } from './machine.js';
 import type { ExchangePort } from './exchange/port.js';
 import type { TradeState } from './types.js';
@@ -21,40 +22,103 @@ import type { TradeState } from './types.js';
  */
 
 const POLL_MS = 1_000;
+/**
+ * Ten, not two hundred.
+ *
+ * Delta will let a short option run at 200x, where the margin behind a lot is
+ * half a percent of spot and the close-out sits a short move above where you
+ * sold. The desk's default is the leverage a bad afternoon survives; anything
+ * higher is a decision, made on the ticket, with the close-out price on screen.
+ */
+const DEFAULT_LEVERAGE = 10;
 /** A sold option with no stop is an unbounded loss, so one is always derived. */
 const STOP_MULTIPLE = 2.5;
 const TARGET_FRACTION = 0.05;
 
 export type DeskMode = 'live' | 'paper';
 
+export type ModeSwitch =
+  | { ok: true; mode: DeskMode }
+  | { ok: false; mode: DeskMode; reason: string };
+
 export class TradingService {
-  readonly mode: DeskMode;
   readonly store: SqliteTradeStore;
-  private readonly exchange: ExchangePort;
+  /** Live unless the environment forbids it or there are no credentials. */
+  private currentMode: DeskMode;
+  private readonly live: ExchangePort | null;
+  private readonly paperExchange: PaperExchange;
   private readonly engine: TradeEngine;
   private timer: NodeJS.Timeout | null = null;
   private feedOk = true;
   private stepping = false;
+  /** Last BTC spot seen, for the margin and liquidation model. */
+  private lastSpot: number | null = null;
   readonly alarms: { tradeId: string; message: string; at: number }[] = [];
 
   constructor(limits: Partial<RiskLimits> = {}) {
     const creds = credsFromEnv();
-    this.mode = config.liveTrading && creds ? 'live' : 'paper';
-    this.exchange = this.mode === 'live' ? new DeltaExchange(creds) : new PaperExchange({ balanceUsd: 1_000 });
+    this.live = creds ? new DeltaExchange(creds) : null;
+    this.paperExchange = new PaperExchange({ balanceUsd: 1_000 });
     this.store = new SqliteTradeStore();
+    // A mode chosen in the browser outlives a restart; without one, the
+    // environment decides.
+    const remembered = this.store.getSetting('mode') as DeskMode | null;
+    const wanted = remembered ?? (config.liveTradingDefault ? 'live' : 'paper');
+    this.currentMode = wanted === 'live' && this.live && !config.paperLocked ? 'live' : 'paper';
+
     this.engine = new TradeEngine({
-      exchange: this.exchange,
+      // Resolved on every call rather than captured, so flipping the switch
+      // moves the whole engine at once instead of leaving half of it behind.
+      exchange: new Proxy({} as ExchangePort, {
+        get: (_t, key: string) => (this.exchange as unknown as Record<string, unknown>)[key],
+      }),
       store: this.store,
       now: () => Date.now(),
       limits: { ...DEFAULT_LIMITS, ...limits },
       tradingEnabled: true,
       feedHealthy: () => this.feedOk,
       dayPnlUsd: () => this.store.realisedSince(startOfDayIst()),
+      spot: () => this.lastSpot,
       onAlarm: (t, message) => {
         this.alarms.unshift({ tradeId: t.tradeId, message, at: Date.now() });
         this.alarms.length = Math.min(this.alarms.length, 50);
       },
     });
+  }
+
+  get mode(): DeskMode { return this.currentMode; }
+  /** Whether live is reachable at all: credentials present, env not forbidding. */
+  get canGoLive(): boolean { return this.live !== null && !config.paperLocked; }
+  private get exchange(): ExchangePort {
+    return this.currentMode === 'live' && this.live ? this.live : this.paperExchange;
+  }
+
+  /**
+   * Move the desk between the real exchange and the simulator.
+   *
+   * Refused while anything is open, and that is the important part: a position
+   * lives on one book or the other, and switching underneath it would leave the
+   * engine polling an exchange that has never heard of the order it is holding.
+   */
+  setMode(next: DeskMode): ModeSwitch {
+    if (next === this.currentMode) return { ok: true, mode: this.currentMode };
+    if (next === 'live' && !this.live) {
+      return { ok: false, mode: this.currentMode, reason: 'No Delta credentials configured.' };
+    }
+    if (next === 'live' && config.paperLocked) {
+      return { ok: false, mode: this.currentMode, reason: 'DELTA_LIVE_TRADING=0 forbids live trading on this server.' };
+    }
+    const open = this.openTrades();
+    if (open.length > 0) {
+      return {
+        ok: false,
+        mode: this.currentMode,
+        reason: `Close ${open.length} open ${open.length === 1 ? 'position' : 'positions'} first — a position cannot move between books.`,
+      };
+    }
+    this.currentMode = next;
+    this.store.setSetting('mode', next);
+    return { ok: true, mode: this.currentMode };
   }
 
   /** Pick up anything that was live when the process died, then start stepping. */
@@ -89,6 +153,8 @@ export class TradingService {
     strike: number;
     expiryTs: number;
     lots: number;
+    /** 1 to 200. Sets the margin, and how close the close-out sits. */
+    leverage?: number;
     /** Absent means take what the book offers. */
     limitPrice?: number;
     takeProfitPrice?: number | null;
@@ -102,6 +168,7 @@ export class TradingService {
       symbol: input.symbol,
       optionSide: input.optionSide,
       lots: input.lots,
+      leverage: clampLeverage(input.leverage ?? DEFAULT_LEVERAGE),
       entry: price === undefined
         ? { type: 'market', timeoutMs: input.timeoutMs ?? 5_000, marketFallback: false }
         : {
@@ -124,7 +191,11 @@ export class TradingService {
 
   close(tradeId: string) { return this.engine.closeNow(tradeId); }
   reconcile(tradeId: string) { return this.engine.reconcile(tradeId); }
+  /** Remembered on the way past, so the margin model has a spot to work from. */
+  noteSpot(spot: number | null) { if (spot && spot > 0) this.lastSpot = spot; }
+
   quote(symbol: string) { return this.exchange.getQuote(symbol); }
+  get spot() { return this.lastSpot; }
   product(symbol: string) { return this.exchange.getProduct(symbol); }
   positions() { return this.exchange.getPositions(); }
   balance() { return this.exchange.getBalanceUsd(); }
@@ -134,7 +205,7 @@ export class TradingService {
 
   /** Paper mode only: lets the desk seed the simulated book from live quotes. */
   paper(): PaperExchange | null {
-    return this.exchange instanceof PaperExchange ? this.exchange : null;
+    return this.currentMode === 'paper' ? this.paperExchange : null;
   }
 }
 

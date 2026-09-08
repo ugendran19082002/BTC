@@ -4,6 +4,7 @@ import type {
 import { applyEvent, initialTrade, isDone, protectionSize } from './machine.js';
 import { priceFor, lotsToContracts, stopPriceFor } from './money.js';
 import { DEFAULT_LIMITS, precheck, type PrecheckResult, type RiskLimits } from './precheck.js';
+import { clampLeverage } from './margin.js';
 import { ExchangeUnavailable, OrderRejected, SubmitTimeout, type ExchangePort } from './exchange/port.js';
 
 /**
@@ -38,6 +39,11 @@ export type TradePlan = {
   optionSide: OptionSide;
   lots: number;
   entry: EntryPlan;
+  /**
+   * 1 to 200. Sets the margin behind each lot, and with it how far the option
+   * can move before the exchange closes the position out.
+   */
+  leverage: number;
   /** Buy-back price that books the win. `null` means no target. */
   takeProfitPrice: number | null;
   /** Buy-back trigger that caps the loss. `null` means no stop -- and the
@@ -74,6 +80,8 @@ export type EngineDeps = {
   feedHealthy?: () => boolean;
   /** Today's realised P&L, in USD. */
   dayPnlUsd?: () => number;
+  /** BTC spot, for the margin and liquidation model. */
+  spot?: () => number | null;
   onAlarm?: (trade: TradeState, message: string) => void;
 };
 
@@ -110,10 +118,11 @@ export class TradeEngine {
 
   // ------------------------------------------------------------ prechecks
   async runPrecheck(plan: TradePlan, product: ProductSpec | null): Promise<PrecheckResult> {
-    const [quote, balance, positions] = await Promise.all([
+    const [quote, balance, positions, spot] = await Promise.all([
       this.exchange.getQuote(plan.symbol).catch(() => null),
       this.exchange.getBalanceUsd().catch(() => 0),
       this.exchange.getPositions().catch(() => []),
+      this.d.spot ? Promise.resolve(this.d.spot()) : Promise.resolve(null),
     ]);
     const size = product ? lotsToContracts(plan.lots, product.lotSize) : plan.lots;
     const held = positions.find((p) => p.symbol === plan.symbol)?.size ?? 0;
@@ -126,7 +135,11 @@ export class TradeEngine {
 
     return precheck({
       now: this.now(),
-      intent: { side: 'sell', size, expect: plan.expect, price, reduceOnly: false },
+      intent: {
+        side: 'sell', size, expect: plan.expect, price, reduceOnly: false,
+        leverage: clampLeverage(plan.leverage), stopPrice: plan.stopPrice,
+      },
+      spot,
       product,
       quote,
       feedHealthy: this.feedHealthy(),
@@ -165,6 +178,25 @@ export class TradeEngine {
       const why = gate.failures.map((x) => x.message).join(' ');
       rec = this.commit(rec, { t: 'precheck_failed', reason: why, at: this.now() });
       return { ok: false, state: rec.state, precheck: gate };
+    }
+
+    // Leverage is a product setting on Delta, so it has to be right before the
+    // order lands rather than travelling with it. If it cannot be set the trade
+    // does not go: the alternative is filling at whatever was left from last time.
+    if (product) {
+      try {
+        await this.exchange.setLeverage(product.productId, clampLeverage(plan.leverage));
+      } catch (e) {
+        rec = this.commit(rec, {
+          t: 'precheck_failed',
+          reason: `could not set ${clampLeverage(plan.leverage)}x leverage: ${(e as Error).message}`,
+          at: this.now(),
+        });
+        return {
+          ok: false, state: rec.state,
+          precheck: { ok: false, failures: [{ code: 'LEVERAGE_TOO_HIGH', message: rec.state.note ?? 'leverage refused' }] },
+        };
+      }
     }
 
     const tick = product?.tickSize ?? 0.1;

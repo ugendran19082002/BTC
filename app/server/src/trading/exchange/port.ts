@@ -21,6 +21,12 @@ export interface ExchangePort {
   getPositions(): Promise<ExchangePosition[]>;
   getBalanceUsd(): Promise<number>;
   getProduct(symbol: string): Promise<ProductSpec | null>;
+  /**
+   * Leverage is a property of the product on Delta, not of the order, so it is
+   * set before the order is sent and it stays set. Getting this wrong is not a
+   * rejection -- it is a fill at a margin you did not choose.
+   */
+  setLeverage(productId: number, leverage: number): Promise<void>;
   getQuote(symbol: string): Promise<Quote | null>;
 }
 
