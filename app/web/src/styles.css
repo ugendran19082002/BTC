@@ -3,21 +3,42 @@
 @tailwind utilities;
 
 :root {
-  --bg: #0d1117;
-  --panel: #151b23;
-  --panel-2: #1c232d;
-  --line: #2a3441;
-  --text: #d7dee7;
-  --muted: #8894a5;
-  --dim: #5d6878;
-  --up: #3fb950;
-  --down: #f85149;
-  --warn: #d29922;
-  --accent: #58a6ff;
-  --ce: #6ea8fe;
-  --pe: #f0a1a8;
+  /* Four steps of depth rather than three: the page sits below the cards, the
+     cards below their own inset panels, so a card reads as raised without a
+     border doing all the work. The base is deeper and slightly cooler than
+     before, which is what gives the numbers room to be bright. */
+  --bg: #090c12;
+  --panel: #11161f;
+  --panel-2: #19202b;
+  --line: #232c3a;
+  --line-soft: #1b2330;
+
+  --text: #dde4ed;
+  --muted: #8d99ab;
+  --dim: #5b6675;
+
+  /* Semantic colours pulled back from full saturation. A chain table is a
+     hundred coloured numbers at once, and fully saturated red and green over a
+     dark ground vibrate against each other and against the background. */
+  --up: #4ec97a;
+  --down: #ff6a63;
+  --warn: #dfa63f;
+  --accent: #6cb2ff;
+  --ce: #7fb8ff;
+  --pe: #ffa3ac;
+
+  --ring: #6cb2ff66;
   color-scheme: dark;
 }
+
+/* Slim, quiet scrollbars. The chain scrolls inside itself and the page scrolls
+   behind it; two chunky platform bars beside each other read as chrome. */
+* { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--line); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: #33404f; }
+::-webkit-scrollbar-corner { background: transparent; }
 
 * { box-sizing: border-box; }
 
@@ -385,4 +406,37 @@ table.probs td.left { color: var(--muted); }
   /* still two to a row -- the labels are short and the values are numbers */
   .field { flex: 1 1 calc(50% - 4px); }
   .big { font-size: 19px; }
+}
+
+/* ── the chain, marked up ────────────────────────────────────────────────────
+   The recommendation names a strike. This is the row it names. Without the
+   mark you are matching a number in a card against a column of twenty-four. */
+tr.sold td { background: #6cb2ff10; }
+td.sellcell {
+  background: #6cb2ff26; font-weight: 600;
+  box-shadow: inset 0 0 0 1px #6cb2ff55;
+}
+
+/* Columns that inform rather than decide. Hidden on a phone, and on any screen
+   when compact is on, so the seven columns that settle the trade fit without
+   sideways scrolling: open interest, the odds, the bid, and the strike. */
+.chain-compact .aux { display: none; }
+@media (max-width: 760px) {
+  .chain .aux { display: none; }
+}
+
+.chain-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-bottom: 6px; font-size: 11.5px; flex-wrap: wrap;
+}
+.chain-bar .pinned { margin-top: 0; }
+.pinned.off { background: transparent; border-color: var(--line); color: var(--dim); }
+
+/* No spinner arrows on the number fields. They are a five-pixel hit target that
+   steps by one, and every one of these settings is typed, not nudged: a safety
+   bar goes 98.8 → 99, lots go 10 → 3. The arrows only crowd the value. */
+.field input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
+.field input[type="number"]::-webkit-outer-spin-button,
+.field input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none; margin: 0;
 }

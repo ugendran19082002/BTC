@@ -58,6 +58,9 @@ export default function App() {
   const [expiry, setExpiry, forgetExpiry] = usePersisted<string>('expiry', '');
   const [expiries, setExpiries] = useState<ExpiryOption[]>([]);
   const [width, setWidth] = usePersisted('width', 20);
+  // Off by default on a desktop: the extra columns are why the table is worth
+  // looking at. On a phone the media query hides them regardless.
+  const [compactChain, setCompactChain] = usePersisted('chain:compact', false);
   const [minPremium, setMinPremium] = usePersisted('minPremium', 15);
   const [mode, setMode] = usePersisted<'premium' | 'safety'>('mode', 'premium');
   const [safetyBar, setSafetyBar] = usePersisted('safetyBar', 98);
@@ -521,7 +524,19 @@ export default function App() {
 
                 <RecommendPanel rec={data.recommendation} market={data.market} minPremium={minPremium} usdinr={data.usdinr} />
               </div>
-              <ChainTable legs={data.legs} snap={snap} />
+              <div className="chain-bar">
+                <span className="dim">
+                  {data.legs.length} legs · {snap.step} apart · marked where the desk would sell
+                </span>
+                <button
+                  className={compactChain ? 'pinned' : 'pinned off'}
+                  onClick={() => setCompactChain((v) => !v)}
+                  title="hide the columns that inform rather than decide"
+                >
+                  {compactChain ? 'compact — on' : 'compact — off'}
+                </button>
+              </div>
+              <ChainTable legs={data.legs} snap={snap} picks={data.picks} compact={compactChain} />
               <div className="note">
                 Age is minutes since a real trade printed. Delta's candle feed
                 forward-fills quiet minutes, so a traded price with a large age is a

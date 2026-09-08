@@ -46,6 +46,10 @@ export function CollapsibleCard({
     >
       <Collapsible.Trigger
         className={cn(
+          // Tailwind preflight is off, so a <button> keeps the platform's own
+          // border, background and padding. Left alone the card title rendered
+          // as a grey pill across the top of every card.
+          'appearance-none border-0 bg-transparent p-0 font-[inherit] cursor-pointer',
           'group flex w-full items-baseline justify-between gap-2 text-left',
           open ? 'mb-2.5' : 'mb-0',
           'focus:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded',

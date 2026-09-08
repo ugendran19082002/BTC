@@ -1,9 +1,10 @@
-import type { Leg, SnapshotMeta } from '../types';
+import { useEffect, useRef } from 'react';
+import type { Leg, Pick, SnapshotMeta } from '../types';
 
 const n = (v: number | null | undefined, d = 2) =>
   v === null || v === undefined ? '·' : v.toFixed(d);
 
-const compact = (v: number | null | undefined) => {
+const num = (v: number | null | undefined) => {
   if (v === null || v === undefined) return '·';
   if (v >= 1e6) return (v / 1e6).toFixed(1) + 'M';
   if (v >= 1e3) return (v / 1e3).toFixed(1) + 'k';
@@ -19,7 +20,7 @@ const compact = (v: number | null | undefined) => {
  * five-point bucket the same percentage, which is what made a call and a put
  * with different open interest show an identical number.
  */
-function Zero({ leg }: { leg: Leg | undefined }) {
+function Zero({ leg, sold = false }: { leg: Leg | undefined; sold?: boolean }) {
   const z = leg?.zero ?? null;
   const p = z?.adjusted ?? null;
   if (z === null || p === null) return <td className="zerocol dim">—</td>;
@@ -28,7 +29,7 @@ function Zero({ leg }: { leg: Leg | undefined }) {
     ? 'Past the range the history covers, so the nearest correction was used'
     : `${z.sample?.toLocaleString() ?? 0} strikes like this settled; the maths alone said ${(z.model * 100).toFixed(1)}%`;
   return (
-    <td className={`zerocol ${cls}`} title={title}>
+    <td className={`zerocol ${cls}${sold ? ' sellcell' : ''}`} title={title}>
       {(p * 100).toFixed(1)}%
       {z.outsideTable && <span className="dim">*</span>}
     </td>
@@ -73,7 +74,19 @@ function Coverage({ snap }: { snap: SnapshotMeta }) {
  * not the last trade. Reading the mark as your fill is how a backtest that
  * looks profitable turns into a live account that is not.
  */
-export function ChainTable({ legs, snap }: { legs: Leg[]; snap: SnapshotMeta }) {
+export function ChainTable({
+  legs,
+  snap,
+  picks = [],
+  compact = false,
+}: {
+  legs: Leg[];
+  snap: SnapshotMeta;
+  /** the strikes the desk chose, marked on the board they came from */
+  picks?: Pick[];
+  /** drop the columns that inform rather than decide */
+  compact?: boolean;
+}) {
   const strikes = [...new Set(legs.map((l) => l.strike))].sort((a, b) => a - b);
   // Show every strike you asked for. Capping this at a fraction of the viewport
   // meant "20 each side" still ended in a scrollbar, which is the opposite of
@@ -83,8 +96,28 @@ export function ChainTable({ legs, snap }: { legs: Leg[]; snap: SnapshotMeta }) 
   const at = (k: number, cp: 'C' | 'P') => legs.find((l) => l.strike === k && l.cp === cp);
   const hasBook = legs.some((l) => l.bid !== null || l.ask !== null);
 
+  // The recommendation names a strike; the chain is where that strike lives.
+  // Without this the two never meet on screen and you are left matching a
+  // number in a card against a number in a column of twenty-four.
+  const sold: Partial<Record<'C' | 'P', number>> = {};
+  for (const p of picks) sold[p.side === 'CE' ? 'C' : 'P'] = p.leg.strike;
+
+  // Open on the money. The interesting strikes are around spot, and a table
+  // that opens at its lowest strike makes you scroll to find where you are.
+  const box = useRef<HTMLDivElement>(null);
+  const atmRow = useRef<HTMLTableRowElement>(null);
+  useEffect(() => {
+    const b = box.current, r = atmRow.current;
+    if (!b || !r) return;
+    b.scrollTop = Math.max(0, r.offsetTop - b.clientHeight / 2 + r.clientHeight / 2);
+  }, [snap.atm, snap.expiry]);
+
   return (
-    <div className="scroll" style={{ maxHeight: height }}>
+    <div
+      className={`scroll chain${compact ? ' chain-compact' : ''}`}
+      style={{ maxHeight: height }}
+      ref={box}
+    >
       <Coverage snap={snap} />
       <table>
         <thead>
@@ -94,47 +127,60 @@ export function ChainTable({ legs, snap }: { legs: Leg[]; snap: SnapshotMeta }) 
             <th colSpan={10} className="left pe">PUTS</th>
           </tr>
           <tr>
-            <th>OI</th><th>Vol</th><th>Age</th><th>Δ</th><th>IV</th>
-            <th className="zerocol">→ 0</th><th>model</th>
-            <th className="askcol">Ask</th><th>Mark</th><th className="bidcol">Bid</th>
+            <th>OI</th><th className="aux">Vol</th><th className="aux">Age</th>
+            <th className="aux">Δ</th><th className="aux">IV</th>
+            <th className="zerocol">→ 0</th><th className="aux">model</th>
+            <th className="askcol aux">Ask</th><th className="aux">Mark</th>
+            <th className="bidcol">Bid</th>
             <th></th>
-            <th className="bidcol">Bid</th><th>Mark</th><th className="askcol">Ask</th>
-            <th>model</th><th className="zerocol">→ 0</th>
-            <th>IV</th><th>Δ</th><th>Age</th><th>Vol</th><th>OI</th>
+            <th className="bidcol">Bid</th><th className="aux">Mark</th>
+            <th className="askcol aux">Ask</th>
+            <th className="aux">model</th><th className="zerocol">→ 0</th>
+            <th className="aux">IV</th><th className="aux">Δ</th>
+            <th className="aux">Age</th><th className="aux">Vol</th><th>OI</th>
           </tr>
         </thead>
         <tbody>
           {strikes.map((k) => {
             const c = at(k, 'C');
             const p = at(k, 'P');
+            const sellC = sold.C === k;
+            const sellP = sold.P === k;
+            const isAtm = k === snap.atm;
             return (
-              <tr key={k} className={k === snap.atm ? 'atm' : undefined}>
-                <td className="dim">{compact(c?.oi ?? null)}</td>
-                <td className="dim">{compact(c?.volume ?? null)}</td>
-                <td><Age min={c?.ageMin ?? null} /></td>
-                <td>{n(c?.delta ?? null, 3)}</td>
-                <td className="dim">{c?.iv != null ? (c.iv * 100).toFixed(1) : '·'}</td>
-                <Zero leg={c} />
-                <td className="dim">{c?.pOtm != null ? (c.pOtm * 100).toFixed(0) + '%' : '·'}</td>
-                <td className="askcol">{n(c?.ask ?? null)}</td>
-                <td>{n(c?.mark ?? null)}</td>
-                <td className="bidcol">{n(c?.bid ?? null)}</td>
+              <tr
+                key={k}
+                ref={isAtm ? atmRow : undefined}
+                className={[isAtm ? 'atm' : '', sellC || sellP ? 'sold' : ''].filter(Boolean).join(' ') || undefined}
+              >
+                <td className="dim">{num(c?.oi ?? null)}</td>
+                <td className="dim aux">{num(c?.volume ?? null)}</td>
+                <td className="aux"><Age min={c?.ageMin ?? null} /></td>
+                <td className="aux">{n(c?.delta ?? null, 3)}</td>
+                <td className="dim aux">{c?.iv != null ? (c.iv * 100).toFixed(1) : '·'}</td>
+                <Zero leg={c} sold={sellC} />
+                <td className="dim aux">{c?.pOtm != null ? (c.pOtm * 100).toFixed(0) + '%' : '·'}</td>
+                <td className="askcol aux">{n(c?.ask ?? null)}</td>
+                <td className="aux">{n(c?.mark ?? null)}</td>
+                <td className={`bidcol${sellC ? ' sellcell' : ''}`}>{n(c?.bid ?? null)}</td>
 
                 <td className="mono strikecell">
                   {k}
-                  {k === snap.atm && <span className="tag">ATM</span>}
+                  {isAtm && <span className="tag">ATM</span>}
+                  {sellC && <span className="tag ok">SELL CE</span>}
+                  {sellP && <span className="tag ok">SELL PE</span>}
                 </td>
 
-                <td className="bidcol">{n(p?.bid ?? null)}</td>
-                <td>{n(p?.mark ?? null)}</td>
-                <td className="askcol">{n(p?.ask ?? null)}</td>
-                <td className="dim">{p?.pOtm != null ? (p.pOtm * 100).toFixed(0) + '%' : '·'}</td>
-                <Zero leg={p} />
-                <td className="dim">{p?.iv != null ? (p.iv * 100).toFixed(1) : '·'}</td>
-                <td>{n(p?.delta ?? null, 3)}</td>
-                <td><Age min={p?.ageMin ?? null} /></td>
-                <td className="dim">{compact(p?.volume ?? null)}</td>
-                <td className="dim">{compact(p?.oi ?? null)}</td>
+                <td className={`bidcol${sellP ? ' sellcell' : ''}`}>{n(p?.bid ?? null)}</td>
+                <td className="aux">{n(p?.mark ?? null)}</td>
+                <td className="askcol aux">{n(p?.ask ?? null)}</td>
+                <td className="dim aux">{p?.pOtm != null ? (p.pOtm * 100).toFixed(0) + '%' : '·'}</td>
+                <Zero leg={p} sold={sellP} />
+                <td className="dim aux">{p?.iv != null ? (p.iv * 100).toFixed(1) : '·'}</td>
+                <td className="aux">{n(p?.delta ?? null, 3)}</td>
+                <td className="aux"><Age min={p?.ageMin ?? null} /></td>
+                <td className="dim aux">{num(p?.volume ?? null)}</td>
+                <td className="dim">{num(p?.oi ?? null)}</td>
               </tr>
             );
           })}
