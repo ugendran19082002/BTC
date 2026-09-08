@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Select, SelectItem } from '@/components/ui/select';
 import { ExitBars } from '@/components/trade/ExitBars';
+import { Checkbox } from '@/components/ui/checkbox';
 import { usePersisted } from '@/hooks/usePersisted';
 import { countdown, price, signedUsd, strike, usd } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -85,6 +86,10 @@ export function OrderTicket({
   const [stopOn, setStopOn] = usePersisted('exit:stopOn', false);
   const [targetPct, setTargetPct] = usePersisted('exit:targetPct', 0.8);
   const [stopPct, setStopPct] = usePersisted('exit:stopPct', 1.5);
+  // "Convert to Market After", the way every options desk words it: rest at the
+  // offer, and if nobody has taken it in this long, cross and pay the spread.
+  const [convertOn, setConvertOn] = usePersisted('entry:convertOn', false);
+  const [convertSec, setConvertSec] = usePersisted('entry:convertSec', 30);
   const [mode, setMode] = useState<PriceMode>('market');
   const [custom, setCustom] = useState('');
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -109,6 +114,19 @@ export function OrderTicket({
     setPreview(null);
   }, [seed?.symbol]);
 
+  /**
+   * Does this order sit on the book, or is it taken at once?
+   *
+   * A limit at or below the bid is lifted immediately and pays the spread; one
+   * above it waits. Only a waiting order has anything to convert.
+   */
+  const rests = useMemo(() => {
+    if (mode === 'market' || mode === 'bid') return false;
+    if (!seed?.bid) return true;
+    const p = mode === 'ask' ? seed.ask : Number(custom);
+    return p !== null && Number.isFinite(p) && p > seed.bid;
+  }, [mode, custom, seed?.bid, seed?.ask]);
+
   const limitPrice = useMemo(() => {
     if (!seed) return null;
     switch (mode) {
@@ -128,8 +146,10 @@ export function OrderTicket({
       expiryTs: seed.expiryTs, lots, limitPrice, leverage,
       takeProfitPct: targetOn ? targetPct : 0,
       stopLossPct: stopOn ? stopPct : 0,
+      // Meaningless on an order that crosses immediately, so it is not sent.
+      convertToMarketAfterSec: rests && convertOn ? convertSec : 0,
     },
-    [seed, lots, limitPrice, leverage, targetPct, stopPct, targetOn, stopOn],
+    [seed, lots, limitPrice, leverage, targetPct, stopPct, targetOn, stopOn, rests, convertOn, convertSec],
   );
 
   // Debounced, because typing a price should not be a request per keystroke.
@@ -250,6 +270,43 @@ export function OrderTicket({
                   onChange={(e) => setCustom(e.target.value)}
                   aria-label="limit price"
                 />
+              )}
+
+              {rests && (
+                <div className="mt-2">
+                  <Checkbox
+                    checked={convertOn}
+                    onChange={(e) => setConvertOn(e.target.checked)}
+                    label={
+                      <span className="flex flex-wrap items-center gap-1.5">
+                        <span>if it has not filled, cross after</span>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          aria-label="seconds before crossing"
+                          value={convertSec}
+                          onClick={(e) => e.preventDefault()}
+                          onChange={(e) => {
+                            const n = Number(e.target.value.replace(/[^0-9]/g, ''));
+                            setConvertSec(Math.max(1, Math.min(600, n || 1)));
+                          }}
+                          disabled={!convertOn}
+                          className={cn(
+                            'h-6 w-12 rounded border border-border bg-muted px-1 text-center',
+                            'font-[inherit] text-[12px] tabular-nums text-foreground outline-none',
+                            'focus-visible:border-[var(--accent)] disabled:opacity-50',
+                          )}
+                        />
+                        <span>sec</span>
+                      </span>
+                    }
+                  />
+                  <p className="m-0 pl-[26px] text-[11.5px] leading-snug text-muted-foreground">
+                    {convertOn
+                      ? `Waits ${convertSec}s at ${price(limitPrice)}, then takes the bid and pays the spread.`
+                      : 'Without it the order waits for as long as it takes.'}
+                  </p>
+                </div>
               )}
             </div>
 

@@ -54,6 +54,18 @@ export const closeTrade = (tradeId: string) => post<{ ok: true; trade: Trade }>(
 export const cancelTrade = (tradeId: string) =>
   post<{ ok: true; trade: Trade }>('/api/trade/cancel', { tradeId });
 
+/**
+ * Square off everything. Reports per trade, because a partial result is the
+ * common one and a single tick would hide a position still on.
+ */
+export const closeAllTrades = () =>
+  post<{
+    ok: boolean;
+    cancelled: string[];
+    closed: string[];
+    failed: { tradeId: string; reason: string }[];
+  }>('/api/trade/close-all', {});
+
 export const reconcileTrade = (tradeId: string) =>
   post<{ ok: true; trade: Trade }>('/api/trade/reconcile', { tradeId });
 

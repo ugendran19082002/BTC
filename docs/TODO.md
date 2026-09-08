@@ -307,3 +307,50 @@ That is correct — it is your account — but the 733-day record it quotes was
 built entirely on 05:30 entries, so a trade taken at 21:49 is not the trade the
 numbers describe. The ticket should say so when the window is closed, in one
 line, without blocking anything.
+
+## Execution controls the desk does not have yet
+
+Measured against AlgoTest's leg configuration, which is the shape every options
+desk converges on. What exists is listed so the gap is visible rather than
+assumed.
+
+| Control | Here |
+|---|---|
+| Entry order type: limit / market | yes — four buttons, two order types |
+| Convert to market after N sec | yes |
+| Exit order type: limit / market | fixed: target is a limit, stop is a market |
+| Limit buffer (% off the reference price) | no |
+| Trigger buffer | no |
+| Target/stop reference: traded or LTP | fixed: the fill price, stop triggers on mark |
+| Monitoring frequency | fixed at one second |
+| Delay entry by N sec | no |
+| Auto square-off on margin error | no |
+
+The four price buttons are four ways of choosing a limit price, not four order
+types — `entry-types.test.ts` pins that mapping. What actually separates them is
+whether the order crosses the spread or rests on it.
+
+### post_only
+
+The most valuable single addition. `post_only: true` makes "rest at the offer"
+a guarantee: the exchange refuses the order rather than let it take liquidity.
+Right now resting is a hope — a price that has moved by the time the order lands
+can be crossed into, and the spread is paid on a trade that meant to earn it.
+It belongs on the ask button.
+
+### time_in_force: ioc
+
+Fill whatever is on the touch now and cancel the rest. A gentler market order
+for a thin book, and this book is thin. Delta accepts it; nothing sends it.
+
+### Stop entries and trailing stops
+
+`stop_order_type` on an entry ("sell when it reaches X") and `trail_amount` are
+both accepted by Delta and neither is offered. A stop here is only ever an exit.
+
+## Close-out price on a position without a stop
+
+A position with no stop exits at the exchange's close-out, and that price is on
+the ticket before the trade but nowhere afterwards. The position row shows
+"stop none", which is true and not useful: the row should name the price the
+exchange will act at, because that is the real exit.

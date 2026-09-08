@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Check, ChevronRight, Copy, Server, Globe, Landmark, Activity } from 'lucide-react';
+import { Check, ChevronRight, Copy, Server, Globe, Landmark, Activity, Trash2 } from 'lucide-react';
 import * as Collapsible from '@radix-ui/react-collapsible';
-import { getErrors, resolveError, resolveAllErrors } from '@/api/errors';
+import { deleteAllErrors, deleteError, getErrors, resolveError, resolveAllErrors } from '@/api/errors';
 import type { ErrorRow, ErrorSource } from '@/types/errors';
 import { usePoll } from '@/hooks/usePoll';
 import { Card, CardTitle } from '@/components/ui/card';
@@ -49,14 +49,27 @@ export function ErrorLogPanel() {
     <Card>
       <CardTitle
         right={
-          rows.length > 0 && !resolved ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => { void resolveAllErrors().then(() => refresh()); }}
-            >
-              mark all read
-            </Button>
+          rows.length > 0 ? (
+            <span className="flex items-center gap-1">
+              {!resolved && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => { void resolveAllErrors().then(() => refresh()); }}
+                >
+                  mark all read
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-[var(--down)] hover:bg-[var(--down-bg)]"
+                onClick={() => { void deleteAllErrors().then(() => refresh()); }}
+              >
+                <Trash2 className="h-3 w-3" />
+                clear
+              </Button>
+            </span>
           ) : null
         }
       >
@@ -184,6 +197,15 @@ function ErrorRowView({ row, onResolved }: { row: ErrorRow; onResolved: () => vo
                 mark read
               </Button>
             )}
+            <Button
+              size="sm"
+              variant="ghost"
+              className="ml-auto text-[var(--down)] hover:bg-[var(--down-bg)]"
+              onClick={() => { void deleteError(row.id).then(onResolved); }}
+            >
+              <Trash2 className="h-3 w-3" />
+              delete
+            </Button>
           </div>
         </div>
       </Collapsible.Content>

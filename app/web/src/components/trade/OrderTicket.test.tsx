@@ -127,6 +127,50 @@ describe('choosing a price', () => {
   });
 });
 
+describe('converting to market', () => {
+  it('is offered on an order that rests, and off until you ask for it', async () => {
+    show();                                    // opens on the offer, which rests
+    expect(screen.getByRole('checkbox', { name: /cross after/i })).not.toBeChecked();
+    await waitFor(() =>
+      expect(previewOrder.mock.calls.at(-1)![0]).toMatchObject({ convertToMarketAfterSec: 0 }),
+    );
+    expect(screen.getByText(/waits for as long as it takes/i)).toBeInTheDocument();
+  });
+
+  it('is not offered on an order that is taken immediately', () => {
+    show();
+    fireEvent.click(screen.getByRole('radio', { name: 'market' }));
+    expect(screen.queryByRole('checkbox', { name: /cross after/i })).toBeNull();
+    fireEvent.click(screen.getByRole('radio', { name: 'bid' }));
+    expect(screen.queryByRole('checkbox', { name: /cross after/i })).toBeNull();
+  });
+
+  it('sends the wait once it is ticked', async () => {
+    show();
+    fireEvent.click(screen.getByRole('checkbox', { name: /cross after/i }));
+    await waitFor(() =>
+      expect(previewOrder.mock.calls.at(-1)![0]).toMatchObject({ convertToMarketAfterSec: 30 }),
+    );
+    expect(screen.getByText(/then takes the bid and pays the spread/i)).toBeInTheDocument();
+  });
+
+  it('takes a different wait', async () => {
+    show();
+    fireEvent.click(screen.getByRole('checkbox', { name: /cross after/i }));
+    fireEvent.change(screen.getByLabelText('seconds before crossing'), { target: { value: '5' } });
+    await waitFor(() =>
+      expect(previewOrder.mock.calls.at(-1)![0]).toMatchObject({ convertToMarketAfterSec: 5 }),
+    );
+  });
+
+  it('treats a price set below the bid as crossing, so nothing to convert', () => {
+    show();
+    fireEvent.click(screen.getByRole('radio', { name: 'set' }));
+    fireEvent.change(screen.getByLabelText('limit price'), { target: { value: '5' } });
+    expect(screen.queryByRole('checkbox', { name: /cross after/i })).toBeNull();
+  });
+});
+
 describe('size', () => {
   it('steps up and down and never goes below one lot', () => {
     show();

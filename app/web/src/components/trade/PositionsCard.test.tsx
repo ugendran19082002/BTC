@@ -7,10 +7,12 @@ import type { Trade, TradeStatus } from '@/types/trade';
 
 const closeTrade = vi.fn();
 const cancelTrade = vi.fn();
+const closeAllTrades = vi.fn();
 const setTradeMode = vi.fn();
 vi.mock('@/api/trade', () => ({
   closeTrade: (...a: unknown[]) => closeTrade(...a),
   cancelTrade: (...a: unknown[]) => cancelTrade(...a),
+  closeAllTrades: (...a: unknown[]) => closeAllTrades(...a),
   setTradeMode: (...a: unknown[]) => setTradeMode(...a),
 }));
 
@@ -40,6 +42,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   closeTrade.mockResolvedValue({ ok: true });
   cancelTrade.mockResolvedValue({ ok: true });
+  closeAllTrades.mockResolvedValue({ ok: true, closed: ['t1'], cancelled: [], failed: [] });
 });
 
 /** A trade whose order is on the book and has not traded. */
@@ -230,5 +233,63 @@ describe('several positions', () => {
     render(<PositionsCard trades={[trade(), trade({ tradeId: 't2', symbol: 'P-BTC-77000-080926', optionSide: 'PE' })]} />);
     const heading = screen.getByText('Open positions').closest('div')!;
     expect(within(heading).getByText('2')).toBeInTheDocument();
+  });
+});
+
+
+describe('closing everything', () => {
+  it('is not offered when there is nothing on', () => {
+    render(<PositionsCard trades={[]} />);
+    expect(screen.queryByRole('button', { name: /close everything/i })).toBeNull();
+  });
+
+  it('does not act on the first tap', async () => {
+    render(<PositionsCard trades={[trade()]} />);
+    fireEvent.click(screen.getByRole('button', { name: /close everything/i }));
+    await waitFor(() => expect(screen.getByText('Close everything?')).toBeInTheDocument());
+    expect(closeAllTrades).not.toHaveBeenCalled();
+  });
+
+  it('names every position and order that would go', async () => {
+    render(<PositionsCard trades={[
+      trade(),
+      trade({ tradeId: 't2', symbol: 'P-BTC-77000-090926', optionSide: 'PE', phase: 'entry_pending', position: 0,
+        plan: { lots: 3, entry: { type: 'limit', limitPrice: 24, timeoutMs: 0, marketFallback: false }, takeProfitPrice: null, stopPrice: null } }),
+    ]} />);
+    fireEvent.click(screen.getByRole('button', { name: /close everything/i }));
+    await waitFor(() => expect(screen.getByText('1 position and 1 working order')).toBeInTheDocument());
+    // scoped to the sheet: "cancel order" also sits on the row behind it
+    const sheet = within(screen.getByRole('dialog'));
+    expect(sheet.getByText('buy back')).toBeInTheDocument();
+    expect(sheet.getByText('cancel')).toBeInTheDocument();
+    expect(sheet.getByText(/offering 3 at 24.00/)).toBeInTheDocument();
+  });
+
+  it('warns that the spread is paid and that it cannot be undone', async () => {
+    render(<PositionsCard trades={[trade()]} />);
+    fireEvent.click(screen.getByRole('button', { name: /close everything/i }));
+    await waitFor(() => expect(screen.getByText(/pay the spread on every one/)).toBeInTheDocument());
+    expect(screen.getByText(/cannot be undone/)).toBeInTheDocument();
+  });
+
+  it('runs on the second tap and reports what went through', async () => {
+    render(<PositionsCard trades={[trade()]} />);
+    fireEvent.click(screen.getByRole('button', { name: /close everything/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /^close everything$/i }));
+    await waitFor(() => expect(closeAllTrades).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByText('All clear')).toBeInTheDocument());
+  });
+
+  it('says which ones are still on rather than reporting a clean sweep', async () => {
+    closeAllTrades.mockResolvedValue({
+      ok: false, closed: ['t1'], cancelled: [],
+      failed: [{ tradeId: 't2', reason: 'still holding -2' }],
+    });
+    render(<PositionsCard trades={[trade()]} />);
+    fireEvent.click(screen.getByRole('button', { name: /close everything/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /^close everything$/i }));
+    await waitFor(() => expect(screen.getByText('Some are still on')).toBeInTheDocument());
+    expect(screen.getByText(/t2 — still holding -2/)).toBeInTheDocument();
+    expect(screen.getByText(/Close what is left by hand/)).toBeInTheDocument();
   });
 });

@@ -10,4 +10,8 @@ export function getErrors(opts: { source?: ErrorSource; resolved?: boolean; limi
 }
 
 export const resolveError = (id: number) => post<{ ok: true }>('/api/errors/resolve', { id });
+
+/** Removes the row. `resolveError` only hides it, and a repeat brings it back. */
+export const deleteError = (id: number) => post<{ ok: true; deleted: number }>('/api/errors/delete', { id });
+export const deleteAllErrors = () => post<{ ok: true; deleted: number }>('/api/errors/delete', { all: true });
 export const resolveAllErrors = () => post<{ ok: true; resolved: number }>('/api/errors/resolve', { all: true });

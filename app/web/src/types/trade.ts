@@ -121,7 +121,11 @@ export type OrderDraft = {
   takeProfitPct?: number;
   /** 0 upwards. Zero means no stop. */
   stopLossPct?: number;
-  marketFallback?: boolean;
+  /**
+   * Seconds to wait for a resting order before crossing the spread.
+   * Zero means wait for as long as it takes.
+   */
+  convertToMarketAfterSec?: number;
 };
 
 export type Preview = {

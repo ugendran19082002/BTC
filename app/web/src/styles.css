@@ -92,11 +92,33 @@ body {
 @media (min-width: 1800px) { .app { max-width: 1780px; } }
 
 header.top {
-  display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  display: flex; flex-direction: column; gap: 8px;
   padding-bottom: 12px; border-bottom: 1px solid var(--line); margin-bottom: 16px;
 }
-header.top h1 { font-size: 17px; margin: 0; font-weight: 600; letter-spacing: -0.2px; }
-header.top .sub { color: var(--muted); font-size: 12px; }
+header.top .top-row { display: flex; align-items: center; gap: 12px; min-width: 0; }
+header.top h1 {
+  font-size: 17px; margin: 0; font-weight: 600; letter-spacing: -0.2px;
+  white-space: nowrap;
+}
+header.top .sub { color: var(--muted); font-size: 12px; min-width: 0; }
+header.top .top-out { margin-left: auto; flex: none; }
+
+/* Above a phone the two rows are one, with the price beside the title. */
+@media (min-width: 720px) {
+  header.top { flex-direction: row; align-items: center; flex-wrap: wrap; }
+  header.top .top-row { flex: 0 1 auto; }
+  header.top .top-row:first-child { flex: 1 1 auto; order: 1; }
+  header.top .top-row-2 { order: 0; }
+  header.top .top-out { margin-left: auto; }
+}
+
+@media (max-width: 719px) {
+  /* The subtitle never changes and costs a whole line. The history count is the
+     only part that is ever news, and it is on the Backtest tab anyway. */
+  header.top .sub { display: none; }
+  header.top .top-row-2 { gap: 8px; }
+  header.top h1 { font-size: 15.5px; }
+}
 
 .tabs { display: flex; gap: 4px; margin-bottom: 16px; }
 .tabs button {

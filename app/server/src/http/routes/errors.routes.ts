@@ -52,6 +52,25 @@ export function registerErrorRoutes(app: FastifyInstance) {
     };
   });
 
+  /**
+   * Delete rather than hide.
+   *
+   * Separate from resolve on purpose: "mark read" says *I have seen this*, and
+   * a repeat brings it back. This says *stop keeping it*, which is what you
+   * want after a bug is fixed and its seventy retries are just noise.
+   */
+  app.post('/api/errors/delete', async (req, reply) => {
+    const { id, all } = (req.body ?? {}) as { id?: number; all?: boolean };
+    if (all) {
+      const n = log.summary().total;
+      log.clear();
+      return { ok: true, deleted: n };
+    }
+    if (typeof id !== 'number') { reply.code(400); return { error: 'id or all is required' }; }
+    log.remove(id);
+    return { ok: true, deleted: 1 };
+  });
+
   app.post('/api/errors/resolve', async (req, reply) => {
     const { id, all } = (req.body ?? {}) as { id?: number; all?: boolean };
     if (all) return { ok: true, resolved: log.resolveAll() };

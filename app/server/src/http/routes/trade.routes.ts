@@ -25,6 +25,8 @@ type PlaceBody = {
   takeProfitPrice?: number | null;
   stopPrice?: number | null;
   marketFallback?: boolean;
+  /** Seconds to wait for a resting order before crossing. 0 means wait forever. */
+  convertToMarketAfterSec?: number;
   leverage?: number;
   /** 0 to 0.99. Zero means no target. */
   takeProfitPct?: number;
@@ -60,7 +62,9 @@ function parse(body: PlaceBody) {
     limitPrice: body.limitPrice === null || body.limitPrice === undefined ? undefined : Number(body.limitPrice),
     takeProfitPrice: body.takeProfitPrice ?? null,
     stopPrice: body.stopPrice ?? null,
-    marketFallback: body.marketFallback ?? false,
+    // AlgoTest calls this "Convert to Market After", and it is the same idea:
+    // rest at the offer, and if nobody takes it within the wait, cross.
+    convertToMarketAfterSec: Math.max(0, Math.min(600, Number(body.convertToMarketAfterSec ?? 0) || 0)),
     leverage: clampLeverage(Number(body.leverage ?? 200)),
     takeProfitPct: pct(body.takeProfitPct, 0.99),
     stopLossPct: pct(body.stopLossPct, 20),
@@ -212,7 +216,8 @@ export function registerTradeRoutes(app: FastifyInstance) {
         limitPrice: p.limitPrice,
         takeProfitPct: p.takeProfitPct,
         stopLossPct: p.stopLossPct,
-        marketFallback: p.marketFallback,
+        marketFallback: p.convertToMarketAfterSec > 0,
+        timeoutMs: p.convertToMarketAfterSec * 1_000,
       });
       if (!res.ok) {
         reply.code(422);
@@ -236,6 +241,17 @@ export function registerTradeRoutes(app: FastifyInstance) {
     const state = await svc.close(tradeId);
     if (!state) { reply.code(404); return { error: 'no such trade' }; }
     return { ok: true, trade: state };
+  });
+
+  /**
+   * Square off everything.
+   *
+   * Deliberately not a DELETE on a collection: it is one irreversible action
+   * with a report, not a tidy REST verb, and the report is the point.
+   */
+  app.post('/api/trade/close-all', async () => {
+    const result = await svc.closeAll();
+    return { ok: result.failed.length === 0, ...result };
   });
 
   /** Take a working entry off the book. Refuses once anything has filled. */

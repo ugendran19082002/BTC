@@ -185,21 +185,30 @@ export default function App() {
 
   return (
     <div className="app">
+      {/*
+        Two rows on a phone, one on a desktop. Left as a single wrapping flex
+        line it broke into five ragged rows -- title, price, badge, subtitle,
+        button -- each on its own, which is a lot of vertical space spent on
+        things that never change.
+      */}
       <header className="top">
-        <h1>BTC Options Desk</h1>
-        {snap && <LivePrice spot={snap.spot} live={snap.live} />}
-        <ModeSwitch status={trade} onChanged={() => void refreshTrade()} />
-        <span className="sub">
-          Delta Exchange India · prices are public
-          {days !== null && <> · {days} days of history</>}
-        </span>
-        <button
-          className="ghost"
-          style={{ marginLeft: 'auto' }}
-          onClick={() => { void logout().then(() => setSignedIn(false)); }}
-        >
-          sign out
-        </button>
+        <div className="top-row">
+          <h1>BTC Options Desk</h1>
+          <span className="sub">
+            Delta Exchange India · prices are public
+            {days !== null && <> · {days} days of history</>}
+          </span>
+          <button
+            className="ghost top-out"
+            onClick={() => { void logout().then(() => setSignedIn(false)); }}
+          >
+            sign out
+          </button>
+        </div>
+        <div className="top-row top-row-2">
+          {snap && <LivePrice spot={snap.spot} live={snap.live} />}
+          <ModeSwitch status={trade} onChanged={() => void refreshTrade()} />
+        </div>
       </header>
 
       {trade && trade.open.some((t) => t.alarm) && (

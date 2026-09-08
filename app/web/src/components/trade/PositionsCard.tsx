@@ -5,6 +5,7 @@ import type { Trade } from '@/types/trade';
 import { Card, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { CloseAllButton } from '@/components/trade/CloseAllButton';
 import { ago, contractLabel, price, signedUsd, size as fmtSize } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -51,6 +52,10 @@ export function PositionsCard({ trades, onChanged }: { trades: Trade[]; onChange
 
   return (
     <div className="flex flex-col gap-3">
+      <div className="flex justify-end">
+        <CloseAllButton trades={trades} onChanged={onChanged} />
+      </div>
+
       {working.length > 0 && (
         <Card>
           <CardTitle right={<span className="text-[11px] text-muted-foreground">{working.length}</span>}>

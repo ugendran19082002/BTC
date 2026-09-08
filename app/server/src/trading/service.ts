@@ -230,6 +230,49 @@ export class TradingService {
 
   close(tradeId: string) { return this.engine.closeNow(tradeId); }
   cancel(tradeId: string) { return this.engine.cancelEntry(tradeId); }
+
+  /**
+   * Square off: buy back every position, pull every working order.
+   *
+   * One trade at a time, and a failure on one does not stop the rest -- the
+   * whole point of reaching for this is that something has gone wrong, and
+   * getting three of four positions closed beats getting none. What failed is
+   * named in the answer so it can be dealt with by hand.
+   *
+   * Orders are pulled before positions are bought back, so a target sitting on
+   * the book cannot fill halfway through and leave the size wrong.
+   */
+  async closeAll(): Promise<{
+    cancelled: string[];
+    closed: string[];
+    failed: { tradeId: string; reason: string }[];
+  }> {
+    const out = { cancelled: [] as string[], closed: [] as string[], failed: [] as { tradeId: string; reason: string }[] };
+    const open = this.openTrades();
+
+    for (const rec of open.filter((r) => r.state.position === 0)) {
+      try {
+        await this.engine.cancelEntry(rec.state.tradeId);
+        out.cancelled.push(rec.state.tradeId);
+      } catch (e) {
+        out.failed.push({ tradeId: rec.state.tradeId, reason: (e as Error).message });
+      }
+    }
+
+    for (const rec of open.filter((r) => r.state.position !== 0)) {
+      try {
+        const after = await this.engine.closeNow(rec.state.tradeId, 'square off');
+        if (after && after.position !== 0) {
+          out.failed.push({ tradeId: rec.state.tradeId, reason: `still holding ${after.position}` });
+        } else {
+          out.closed.push(rec.state.tradeId);
+        }
+      } catch (e) {
+        out.failed.push({ tradeId: rec.state.tradeId, reason: (e as Error).message });
+      }
+    }
+    return out;
+  }
   reconcile(tradeId: string) { return this.engine.reconcile(tradeId); }
   /** Remembered on the way past, so the margin model has a spot to work from. */
   noteSpot(spot: number | null) { if (spot && spot > 0) this.lastSpot = spot; }
