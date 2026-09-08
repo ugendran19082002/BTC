@@ -56,7 +56,8 @@ describe("the day's loss budget", () => {
 
   it('does not go negative when the day has gone past the limit', () => {
     render(<AccountCard status={status({ realisedTodayUsd: -9 })} />);
-    expect(screen.getByText(/of \$5.00 left/).previousSibling).toHaveTextContent('$0.00');
+    // the whole line, since the amount and "of $5.00 left" are separate nodes
+    expect(screen.getByText(/of \$5.00 left/).parentElement).toHaveTextContent('$0.00 of $5.00 left');
     expect(screen.getByText(/100% used/)).toBeInTheDocument();
   });
 
