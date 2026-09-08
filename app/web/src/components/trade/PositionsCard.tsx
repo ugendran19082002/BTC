@@ -6,7 +6,7 @@ import { Card, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CloseAllButton } from '@/components/trade/CloseAllButton';
-import { ago, contractLabel, price, signedUsd, size as fmtSize } from '@/lib/format';
+import { ago, contractLabel, pct, price, signedUsd, size as fmtSize } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 /**
@@ -128,6 +128,30 @@ function WorkingRow({ trade, onChanged }: { trade: Trade; onChanged?: () => void
   );
 }
 
+/** Green up, red down, neutral at nothing. Null is not zero. */
+const pnlTone = (n: number | null | undefined): 'up' | 'down' | undefined =>
+  n === null || n === undefined || n === 0 ? undefined : n > 0 ? 'up' : 'down';
+
+function Figure({ label, value, tone, hint }: {
+  label: string; value: string; tone?: 'up' | 'down'; hint?: string;
+}) {
+  return (
+    <div className="min-w-0" title={hint}>
+      <div className={cn('text-[10px] uppercase tracking-[0.6px] text-muted-foreground', hint && 'cursor-help')}>
+        {label}
+      </div>
+      <div
+        className={cn(
+          'truncate text-[14px] font-semibold tabular-nums',
+          tone === 'up' ? 'text-[var(--up)]' : tone === 'down' ? 'text-[var(--down)]' : 'text-foreground',
+        )}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
 function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => void }) {
   const [closing, setClosing] = useState(false);
   const held = Math.abs(trade.position);
@@ -176,8 +200,28 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
         </div>
       </div>
 
+      {/*
+        What it is worth right now, which is the first thing anybody wants and
+        was not on this card at all. The exchange's own mark and P&L, so the
+        number here and the number on the Delta screen cannot disagree.
+      */}
+      <div className="mt-2 grid grid-cols-3 gap-2 rounded-md bg-background px-2.5 py-2">
+        <Figure label="now" value={price(trade.live?.markPrice)} />
+        <Figure
+          label="profit"
+          value={signedUsd(trade.live?.unrealisedPnl)}
+          tone={pnlTone(trade.live?.unrealisedPnl)}
+        />
+        <Figure
+          label="decayed"
+          value={trade.live?.decayed != null ? pct(trade.live.decayed, 0) : '—'}
+          tone={pnlTone(trade.live?.decayed)}
+          hint="How much of the credit you took in has melted away. At 100% the option is worthless and the whole premium is yours."
+        />
+      </div>
+
       <div className="mt-2 flex items-center justify-between gap-2">
-        <div className="flex gap-3 text-[11.5px] text-muted-foreground">
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11.5px] text-muted-foreground">
           <span>
             target{' '}
             <span className="tabular-nums text-foreground">
@@ -195,9 +239,17 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
               {trade.protection.stopLoss ? price(trade.plan?.stopPrice) : 'none'}
             </span>
           </span>
+          {/* With no stop this is the real exit, so it is named rather than implied. */}
+          {trade.live?.liquidationPrice != null && (
+            <span title="Where the exchange buys the position back whether you want it to or not.">
+              closed out at{' '}
+              <span className="tabular-nums text-[var(--warn)]">{price(trade.live.liquidationPrice)}</span>
+            </span>
+          )}
+          {trade.plan?.leverage && <span className="text-[var(--dim)]">{trade.plan.leverage}x</span>}
           {trade.realisedPnl !== 0 && (
             <span className={cn('tabular-nums', trade.realisedPnl > 0 ? 'text-[var(--up)]' : 'text-[var(--down)]')}>
-              {signedUsd(trade.realisedPnl)}
+              booked {signedUsd(trade.realisedPnl)}
             </span>
           )}
         </div>

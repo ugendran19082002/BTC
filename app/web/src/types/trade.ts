@@ -48,6 +48,15 @@ export type Trade = {
     entry: { type: 'limit' | 'market'; limitPrice?: number; timeoutMs: number; marketFallback: boolean };
     takeProfitPrice: number | null;
     stopPrice: number | null;
+    leverage?: number;
+  };
+  /** The exchange's own figures, not a second opinion computed here. */
+  live?: {
+    markPrice: number | null;
+    unrealisedPnl: number | null;
+    /** Share of the credit already decayed away. 0.35 means a third is banked. */
+    decayed: number | null;
+    liquidationPrice: number | null;
   };
 };
 
@@ -82,6 +91,8 @@ export type ExchangePosition = {
   size: number;
   entryPrice: number | null;
   unrealisedPnl: number | null;
+  markPrice?: number | null;
+  liquidationPrice?: number | null;
 };
 
 export type TradeStatus = {
@@ -92,6 +103,8 @@ export type TradeStatus = {
   /** Why it cannot be thrown right now, if it cannot. */
   switchBlockedBy: string | null;
   balanceUsd: number | null;
+  /** Every open position added up. */
+  unrealisedPnlUsd?: number;
   positions: ExchangePosition[];
   open: Trade[];
   alarms: { tradeId: string; message: string; at: number }[];
