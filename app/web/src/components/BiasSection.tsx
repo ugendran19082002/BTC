@@ -1,15 +1,27 @@
 import type { Bias } from '../types';
-import { CardLead, Note } from './ui/card';
-import { CollapsibleCard } from './ui/collapsible-card';
-import { Stat } from './ui/stat';
+import { CardLead } from './ui/card';
+import { Stat, StatDivider } from './ui/stat';
+import { SectionTitle } from './ui/section';
 
-/** Which way the option board is leaning right now. */
-export function BiasPanel({ bias }: { bias: Bias }) {
+/**
+ * Which way the option board is leaning right now.
+ *
+ * A section under the contract, not a card. It is describing the same market
+ * the contract card is describing, and given a card of its own it read as an
+ * input to the decision. It is not one: every figure here was tried as a
+ * trading rule and none held up across all three years.
+ */
+export function BiasSection({ bias }: { bias: Bias }) {
   const pct = ((bias.score + 1) / 2) * 100;
   const tone = bias.score > 0.15 ? 'up' : bias.score < -0.15 ? 'down' : 'plain';
 
   return (
-    <CollapsibleCard id="bias" title="Which way it leans">
+    <>
+      <StatDivider />
+      <SectionTitle hint="Over 12 hours this barely predicts anything. Background, never the reason to trade.">
+        which way it leans · background only
+      </SectionTitle>
+
       <CardLead tone={tone}>{bias.label}</CardLead>
 
       <div className="relative mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
@@ -28,11 +40,6 @@ export function BiasPanel({ bias }: { bias: Bias }) {
           <Stat key={c.name} label={c.name} value={c.note} tone="dim" />
         ))}
       </div>
-
-      <Note>
-        Over 12 hours this barely predicts anything. It is background, never the
-        reason to trade.
-      </Note>
-    </CollapsibleCard>
+    </>
   );
 }

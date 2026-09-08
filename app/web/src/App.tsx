@@ -3,7 +3,7 @@ import { getAccount, getChain, getExpiries, getHealth, getMe, logout, NotSignedI
 import type { ChainResponse, ExpiryOption } from './types';
 import { ChainTable } from './components/ChainTable';
 import { MoveSection } from './components/MoveSection';
-import { BiasPanel } from './components/BiasPanel';
+import { BiasSection } from './components/BiasSection';
 import { BacktestPanel } from './components/BacktestPanel';
 import { FloorPanel } from './components/FloorPanel';
 import { VerdictPanel } from './components/VerdictPanel';
@@ -17,7 +17,7 @@ import { CollapsibleCard } from './components/ui/collapsible-card';
 import { Stat, StatDivider } from './components/ui/stat';
 import { Badge } from './components/ui/badge';
 import { Button } from './components/ui/button';
-import { AccountPanel } from './components/AccountPanel';
+import { AccountSection } from './components/AccountSection';
 import { Metric, Formula, Field } from './components/Explain';
 
 type Tab = 'desk' | 'backtest' | 'floors';
@@ -520,6 +520,8 @@ export default function App() {
                     </Metric>
                   )}
                   {data.market && <MoveSection market={data.market} snap={snap} />}
+                  <BiasSection bias={data.bias} />
+                  <AccountSection usdinr={data.usdinr} />
                 </CollapsibleCard>
 
                 <RecommendPanel rec={data.recommendation} market={data.market} minPremium={minPremium} usdinr={data.usdinr} />
@@ -563,10 +565,6 @@ export default function App() {
               />
 
 
-              <div className="refs">
-                <BiasPanel bias={data.bias} />
-                <AccountPanel usdinr={data.usdinr} />
-              </div>
 
             </>
           )}
