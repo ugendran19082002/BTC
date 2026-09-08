@@ -660,10 +660,8 @@ export default function App() {
             <ErrorLogPanel />
           </ErrorBoundary>
         </div>
-      ) : tab === 'backtest' ? (
-        <BacktestPanel usdinr={data?.usdinr ?? 85} />
       ) : (
-        <div />
+        <BacktestPanel usdinr={data?.usdinr ?? 85} />
       )}
       <OrderTicket
         seed={ticket}

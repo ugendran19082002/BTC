@@ -276,12 +276,3 @@ export function summarize(trades: TradeDay[]): Summary {
   };
 }
 
-/**
- * Premium-floor sweep: for each floor, sell the FURTHEST out-of-the-money
- * strike that still pays at least that much.
- *
- * This is what "I want at least $N of premium" actually means for a seller --
- * buy as much distance as the market will give you at that price -- and it is a
- * different question from the band selection above, which takes the richest
- * strike inside a range.
- */
