@@ -446,6 +446,75 @@ test('50 depth is only demanded of an order that has to fill now', async () => {
   assert.ok(!crossing.ok && failureCodes(crossing.precheck).includes('THIN_BOOK'));
 });
 
+// ------------------------------- 54-58 a resting order is meant to rest
+
+test('54 [critical] an order resting at the offer is not cancelled on a timer', async () => {
+  // this is the bug that made a live order appear, show "short 0", and vanish:
+  // the offer was taken off the book five seconds after it was placed, which
+  // guarantees the one thing the trade was trying to do
+  const r = rig({ quotes: [quote(CE, 99, 101)] });
+  const plan = planFor(ceProduct(), {
+    entry: { type: 'limit', limitPrice: 101, timeoutMs: 0, marketFallback: false },
+  });
+  await r.engine.open(plan);
+  assert.equal((await r.ex.getOpenOrders(CE)).length, 1);
+
+  r.advance(60_000);
+  const s = await r.engine.poll(plan.tradeId);
+  assert.equal((await r.ex.getOpenOrders(CE)).length, 1, 'still on the book a minute later');
+  assert.equal(s?.phase, 'entry_pending');
+});
+
+test('55 and it fills whenever the market finally comes to it', async () => {
+  const r = rig({ quotes: [quote(CE, 99, 101)] });
+  const plan = planFor(ceProduct(), {
+    entry: { type: 'limit', limitPrice: 101, timeoutMs: 0, marketFallback: false },
+  });
+  await r.engine.open(plan);
+  r.advance(120_000);
+  await r.engine.poll(plan.tradeId);
+
+  r.ex.tick(quote(CE, 101, 102, { ts: r.now() }));   // someone lifts the offer
+  const s = await r.engine.poll(plan.tradeId);
+  assert.equal(s?.position, -100);
+  assert.equal(s?.entryAvgPrice, 101);
+});
+
+test('56 a timeout still applies when one was asked for, with the fallback', async () => {
+  const r = rig({ quotes: [quote(CE, 99, 101)] });
+  const plan = planFor(ceProduct(), {
+    entry: { type: 'limit', limitPrice: 100, timeoutMs: 5_000, marketFallback: true },
+  });
+  await r.engine.open(plan);
+  r.advance(5_001);
+  r.ex.tick(quote(CE, 99, 101, { ts: r.now() }));
+  const s = await r.engine.poll(plan.tradeId);
+  assert.equal(s?.position, -100, 'the fallback crossed once the wait was over');
+});
+
+test('57 a working entry can be taken off the book on purpose', async () => {
+  const r = rig({ quotes: [quote(CE, 99, 101)] });
+  const plan = planFor(ceProduct(), {
+    entry: { type: 'limit', limitPrice: 101, timeoutMs: 0, marketFallback: false },
+  });
+  await r.engine.open(plan);
+  const s = await r.engine.cancelEntry(plan.tradeId);
+  assert.equal(s?.phase, 'aborted');
+  assert.equal(s?.position, 0);
+  assert.equal((await r.ex.getOpenOrders(CE)).length, 0);
+});
+
+test('58 cancelling refuses once contracts exist, because the way out is to buy them back', async () => {
+  const r = rig();
+  const plan = planFor(ceProduct());
+  await r.engine.open(plan);
+  assert.equal(r.store.get(plan.tradeId)!.state.position, -100);
+
+  const s = await r.engine.cancelEntry(plan.tradeId);
+  assert.equal(s?.position, -100, 'still short');
+  assert.notEqual(s?.phase, 'aborted');
+});
+
 // -------------------------------------- 51-53 the id the exchange sees
 
 test('51 the client order id is short and alphanumeric, because Delta rejects anything else', () => {

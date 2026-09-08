@@ -228,6 +228,7 @@ describe('the gates', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /Sell · \$0\.01/ })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: /Sell · \$0\.01/ }));
     await waitFor(() => expect(screen.getByText('Sold 1 at 9.00')).toBeInTheDocument());
+    expect(screen.getByText(/You are short 1 contract\./)).toBeInTheDocument();
     expect(placeOrder).toHaveBeenCalledTimes(1);
   });
 
@@ -240,7 +241,7 @@ describe('the gates', () => {
     show();
     await waitFor(() => expect(screen.getByRole('button', { name: /Sell/ })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: /Sell/ }));
-    await waitFor(() => expect(screen.getByText('Not sent')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Nothing was sent')).toBeInTheDocument());
     expect(screen.getByText('Needs $300, have $120.')).toBeInTheDocument();
   });
 });

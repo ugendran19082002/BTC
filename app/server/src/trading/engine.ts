@@ -27,7 +27,18 @@ export type EntryPlan = {
   type: 'limit' | 'market';
   /** For a limit: the price to work. Rounded to the tick before it is sent. */
   limitPrice?: number;
-  /** How long a resting entry gets before it is cancelled. */
+  /**
+   * How long a working entry gets before it is cancelled. **Zero means it
+   * rests until it fills or somebody cancels it.**
+   *
+   * Zero is the right default for the way this desk sells. An order resting at
+   * the offer is meant to sit there and be taken; cancelling it after five
+   * seconds guarantees it never fills, which is exactly what happened -- the
+   * order appeared, showed "short 0", and vanished on the next poll.
+   *
+   * A timeout belongs with `marketFallback`: wait this long for the offer to be
+   * taken, then cross and pay the spread.
+   */
   timeoutMs: number;
   /** Cross the spread after the timeout, once the gates are re-checked. */
   marketFallback: boolean;
@@ -243,7 +254,10 @@ export class TradeEngine {
     try {
       const ack = await this.exchange.placeOrder(req);
       rec = this.commit(rec, { t: 'entry_submitted', clientOrderId: req.clientOrderId, size, at: this.now() });
-      this.entryDeadline.set(plan.tradeId, this.now() + plan.entry.timeoutMs);
+      // No deadline at all when the order is meant to rest.
+      if (plan.entry.timeoutMs > 0) {
+        this.entryDeadline.set(plan.tradeId, this.now() + plan.entry.timeoutMs);
+      }
       rec = this.absorb(rec, ack, 'entry');
       return { ok: true, state: rec.state };
     } catch (e) {
@@ -458,6 +472,32 @@ export class TradeEngine {
       rec = this.commit(rec, { t: 'sibling_cancelled', role, at: this.now() });
     }
     return rec;
+  }
+
+  /**
+   * Take a working entry off the book and end the trade.
+   *
+   * Only ever the entry, and only while nothing has filled: once there are
+   * contracts, the way out is `closeNow`, which buys them back.
+   */
+  async cancelEntry(tradeId: string): Promise<TradeState | null> {
+    let rec = this.d.store.get(tradeId);
+    if (!rec) return null;
+    if (rec.state.position !== 0) return rec.state;
+
+    const order = await this.exchange.getOrderByClientId(clientId(tradeId, 'entry')).catch(() => null);
+    if (order && (order.status === 'open' || order.status === 'partial')) {
+      await this.exchange.cancelOrder(order).catch(() => {});
+      const after = await this.exchange.getOrderByClientId(clientId(tradeId, 'entry')).catch(() => null);
+      if (after) rec = this.absorb(rec, after, 'entry');
+    }
+    this.entryDeadline.delete(tradeId);
+    rec = this.commit(rec, {
+      t: 'entry_cancelled',
+      remaining: order ? order.size - order.filledSize : rec.state.requestedSize,
+      at: this.now(),
+    });
+    return rec.state;
   }
 
   // ------------------------------------------------------------ exits

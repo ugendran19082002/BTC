@@ -238,6 +238,15 @@ export function registerTradeRoutes(app: FastifyInstance) {
     return { ok: true, trade: state };
   });
 
+  /** Take a working entry off the book. Refuses once anything has filled. */
+  app.post('/api/trade/cancel', async (req, reply) => {
+    const { tradeId } = (req.body ?? {}) as { tradeId?: string };
+    if (!tradeId) { reply.code(400); return { error: 'tradeId is required' }; }
+    const state = await svc.cancel(tradeId);
+    if (!state) { reply.code(404); return { error: 'no such trade' }; }
+    return { ok: true, trade: state };
+  });
+
   /** Ask the exchange and believe it, on demand. */
   app.post('/api/trade/reconcile', async (req, reply) => {
     const { tradeId } = (req.body ?? {}) as { tradeId?: string };

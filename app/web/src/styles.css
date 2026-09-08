@@ -184,10 +184,12 @@ tr.atm td { background: #58a6ff14; }
 tr.atm td:first-child, tr.atm td:last-child { font-weight: 600; }
 
 .scroll {
-  overflow: auto; max-height: 62vh;
+  overflow-x: auto; overflow-y: visible;
   border: 1px solid var(--line); border-radius: 8px;
   margin-bottom: 12px;
 }
+/* The header follows you down the page instead of down a box. */
+.scroll table thead th { position: sticky; top: 0; z-index: 2; }
 .scroll table th { background: var(--panel-2); }
 
 .up { color: var(--up); }
@@ -515,6 +517,9 @@ td.sellcell {
   border-radius: 3px;
 }
 .chain td.tappable button:hover { background: var(--accent); color: #0b0e11; font-weight: 600; }
+.chain td.tappable button:focus { outline: none; }
+/* Only when the keyboard put it there. A ring left behind by a click reads as
+   a stuck cell, and there is no ring on a mouse user who can see the cursor. */
 .chain td.tappable button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 /* The count of live positions, on the tab that holds them. */

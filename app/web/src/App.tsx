@@ -18,7 +18,6 @@ import { usePoll } from '@/hooks/usePoll';
 import { MoveSection } from '@/components/desk/MoveSection';
 import { BiasSection } from '@/components/desk/BiasSection';
 import { BacktestPanel } from '@/components/research/BacktestPanel';
-import { VerdictPanel } from '@/components/desk/VerdictPanel';
 import { RecommendPanel } from '@/components/desk/RecommendPanel';
 import { DateTimePicker, istToEpoch, type IstMoment } from '@/components/research/DateTimePicker';
 import { usePersisted } from '@/hooks/usePersisted';
@@ -635,15 +634,6 @@ export default function App() {
                 there. Historical rows have no order book, so bid and ask are blank and
                 the mark is used as the sell estimate.
               </div>
-
-              <VerdictPanel
-                verdict={data.verdict}
-                picks={data.picks}
-                lots={lots}
-                usdinr={data.usdinr}
-              />
-
-
 
             </>
           )}

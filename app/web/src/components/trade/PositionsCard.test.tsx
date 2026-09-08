@@ -6,9 +6,11 @@ import { ModeSwitch } from '@/components/trade/ModeSwitch';
 import type { Trade, TradeStatus } from '@/types/trade';
 
 const closeTrade = vi.fn();
+const cancelTrade = vi.fn();
 const setTradeMode = vi.fn();
 vi.mock('@/api/trade', () => ({
   closeTrade: (...a: unknown[]) => closeTrade(...a),
+  cancelTrade: (...a: unknown[]) => cancelTrade(...a),
   setTradeMode: (...a: unknown[]) => setTradeMode(...a),
 }));
 
@@ -34,7 +36,56 @@ const trade = (over: Partial<Trade> = {}): Trade => ({
   ...over,
 });
 
-beforeEach(() => { vi.clearAllMocks(); closeTrade.mockResolvedValue({ ok: true }); });
+beforeEach(() => {
+  vi.clearAllMocks();
+  closeTrade.mockResolvedValue({ ok: true });
+  cancelTrade.mockResolvedValue({ ok: true });
+});
+
+/** A trade whose order is on the book and has not traded. */
+const working = (over: Partial<Trade> = {}): Trade => trade({
+  phase: 'entry_pending',
+  position: 0,
+  entrySize: 0,
+  entryAvgPrice: null,
+  protection: { takeProfit: null, stopLoss: null },
+  plan: { lots: 2, entry: { type: 'limit', limitPrice: 27, timeoutMs: 0, marketFallback: false }, takeProfitPrice: null, stopPrice: null },
+  ...over,
+});
+
+describe('an order that has not traded', () => {
+  it('is not called a position, and does not say "short 0"', () => {
+    render(<PositionsCard trades={[working()]} />);
+    expect(screen.getByText('Waiting on the book')).toBeInTheDocument();
+    expect(screen.queryByText('Open positions')).toBeNull();
+    expect(screen.queryByText(/short 0/)).toBeNull();
+  });
+
+  it('says what is being offered and that nothing has traded', () => {
+    render(<PositionsCard trades={[working()]} />);
+    expect(screen.getByText(/offering 2 at 27.00 — nothing traded yet/)).toBeInTheDocument();
+    expect(screen.getByText('on the book')).toBeInTheDocument();
+  });
+
+  it('can be pulled off the book', async () => {
+    const onChanged = vi.fn();
+    render(<PositionsCard trades={[working()]} onChanged={onChanged} />);
+    fireEvent.click(screen.getByRole('button', { name: /cancel order/i }));
+    await waitFor(() => expect(cancelTrade).toHaveBeenCalledWith('t1'));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
+
+  it('offers no close-now, because there is nothing to close', () => {
+    render(<PositionsCard trades={[working()]} />);
+    expect(screen.queryByRole('button', { name: /close now/i })).toBeNull();
+  });
+
+  it('sits in its own list alongside a real position', () => {
+    render(<PositionsCard trades={[working(), trade({ tradeId: 't2' })]} />);
+    expect(screen.getByText('Waiting on the book')).toBeInTheDocument();
+    expect(screen.getByText('Open positions')).toBeInTheDocument();
+  });
+});
 
 describe('a protected position', () => {
   it('names the contract, the size and where the stop is', () => {
@@ -82,9 +133,9 @@ describe('closing out', () => {
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
 
-  it('offers nothing to close on a position that is already flat', () => {
+  it('shows nothing at all for a trade that is already finished', () => {
     render(<PositionsCard trades={[trade({ position: 0, phase: 'flat' })]} />);
-    expect(screen.getByRole('button', { name: /close now/i })).toBeDisabled();
+    expect(screen.getByText('Nothing on.')).toBeInTheDocument();
   });
 });
 

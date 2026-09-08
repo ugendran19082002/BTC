@@ -210,7 +210,12 @@ export function OrderTicket({
         }
       >
         {result ? (
-          <Placed result={result} onDone={() => onOpenChange(false)} />
+          <Placed
+            result={result}
+            onDone={() => onOpenChange(false)}
+            working={working}
+            lots={lots}
+          />
         ) : (
           <>
             <BookStrip bid={seed.bid} mark={seed.mark} ask={seed.ask} mode={mode} onPick={setMode} />
@@ -512,40 +517,81 @@ function Line({ label, value, strong, tone, hint }: {
   );
 }
 
-function Placed({ result, onDone }: { result: PlaceResult; onDone: () => void }) {
+/**
+ * What happened, after the button.
+ *
+ * Three outcomes and they are not the same thing, so they do not read the same:
+ * filled (you are short, at this price), working (the order is on the book and
+ * has not traded), refused (nothing happened, here is why). "Order is working"
+ * on its own left the most important question unanswered -- am I short or not.
+ */
+function Placed({ result, onDone, working, lots }: {
+  result: PlaceResult;
+  onDone: () => void;
+  working: number | null;
+  lots: number;
+}) {
   const t = result.trade;
   const ok = result.ok;
+  const filled = ok && t.position !== 0;
+  const resting = ok && t.position === 0;
+
   return (
-    <div className="py-2">
+    <div className="py-1">
       <div
         className={cn(
           'rounded-lg border p-3',
-          ok ? 'border-[var(--up)]/40 bg-[var(--up)]/10' : 'border-[var(--down)]/40 bg-[var(--down)]/10',
+          filled ? 'border-[var(--up)]/40 bg-[var(--up)]/10'
+            : resting ? 'border-[var(--warn)]/40 bg-[var(--warn)]/10'
+            : 'border-[var(--down)]/40 bg-[var(--down)]/10',
         )}
       >
-        <p className={cn('m-0 text-[14px] font-semibold', ok ? 'text-[var(--up)]' : 'text-[var(--down)]')}>
-          {ok
-            ? t.position !== 0
-              ? `Sold ${Math.abs(t.position)} at ${price(t.entryAvgPrice)}`
-              : 'Order is working'
-            : 'Not sent'}
+        <p
+          className={cn(
+            'm-0 text-[15px] font-semibold',
+            filled ? 'text-[var(--up)]' : resting ? 'text-[var(--warn)]' : 'text-[var(--down)]',
+          )}
+        >
+          {filled ? `Sold ${Math.abs(t.position)} at ${price(t.entryAvgPrice)}`
+            : resting ? 'Waiting on the book'
+            : 'Nothing was sent'}
         </p>
+
+        <p className="m-0 mt-1 text-[12.5px] leading-snug text-muted-foreground">
+          {filled && <>You are short {Math.abs(t.position)} contract{Math.abs(t.position) === 1 ? '' : 's'}.</>}
+          {resting && (
+            <>
+              {lots} lot{lots === 1 ? '' : 's'} offered at {price(working)}. Nothing has traded
+              yet — it fills when someone takes it, and you are not short until then.
+            </>
+          )}
+          {!ok && <>No position was opened and no margin was used.</>}
+        </p>
+
         {!ok && (
-          <ul className="m-0 mt-1.5 flex list-none flex-col gap-1 p-0">
+          <ul className="m-0 mt-2 flex list-none flex-col gap-1 p-0">
             {result.failures.map((f) => (
-              <li key={f.code} className="text-[12px] text-[var(--down)]">{f.message}</li>
+              <li key={f.code} className="text-[12.5px] leading-snug text-[var(--down)]">{f.message}</li>
             ))}
           </ul>
         )}
-        {ok && t.note && <p className="m-0 mt-1 text-[12px] text-muted-foreground">{t.note}</p>}
+        {ok && t.note && <p className="m-0 mt-1.5 text-[12px] text-[var(--dim)]">{t.note}</p>}
       </div>
+
+      {ok && (
+        <p className="m-0 mt-2.5 text-[12px] text-muted-foreground">
+          {resting ? 'It will appear under Positions the moment it fills.' : 'Watch it under Positions.'}
+        </p>
+      )}
       {result.mode === 'paper' && (
-        <p className="m-0 mt-2.5 text-[12px] text-[var(--warn)]">
+        <p className="m-0 mt-1.5 text-[12px] text-[var(--warn)]">
           Paper. Nothing reached the exchange.
         </p>
       )}
+
       <SheetFooter>
-        <Button className="h-11 flex-1" onClick={onDone}>done</Button>
+        {/* An acknowledgement, not an action. The loud button was the Sell one. */}
+        <Button variant="outline" className="h-10 flex-1" onClick={onDone}>done</Button>
       </SheetFooter>
     </div>
   );

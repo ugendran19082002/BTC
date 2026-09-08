@@ -140,11 +140,6 @@ export function ChainTable({
   density?: 'default' | 'all';
 }) {
   const strikes = [...new Set(legs.map((l) => l.strike))].sort((a, b) => a - b);
-  // Show every strike you asked for. Capping this at a fraction of the viewport
-  // meant "20 each side" still ended in a scrollbar, which is the opposite of
-  // what the setting says. The page scrolls; the table does not need to as well.
-  // The header row stays stuck to the top so the columns remain readable.
-  const height = `${strikes.length * 22 + 96}px`;
   // visible columns each side of the strike: the odds, the raw model behind
   // them, and the ask -- plus the seven reference ones when they are showing
   const perSide = density === 'all' ? 10 : 3;
@@ -168,7 +163,9 @@ export function ChainTable({
   useEffect(() => {
     const b = box.current, r = atmRow.current;
     if (!b || !r) return;
-    b.scrollTop = Math.max(0, r.offsetTop - b.clientHeight / 2 + r.clientHeight / 2);
+    // The board no longer scrolls vertically, so the money is brought into view
+    // by moving the page rather than the box.
+    r.scrollIntoView({ block: 'center' });
     // The strike sits in the middle of the table, calls to its left and puts to
     // its right. On a phone the table is wider than the screen, and opening at
     // either edge shows one side of the board with the strike off-screen -- so
@@ -179,11 +176,14 @@ export function ChainTable({
   return (
     <>
     <Coverage snap={snap} />
-    <div
-      className={`scroll chain chain-${density}`}
-      style={{ maxHeight: height }}
-      ref={box}
-    >
+    {/*
+      Full height, always. A board of two dozen strikes inside its own scroller
+      means the page scrolls and then the table scrolls, and you lose your place
+      in both. The page is the only thing that scrolls vertically now; the box
+      still scrolls sideways, because on a phone the board is wider than the
+      screen and nothing can be done about that.
+    */}
+    <div className={`scroll chain chain-${density}`} ref={box}>
       <table>
         <thead>
           <tr>

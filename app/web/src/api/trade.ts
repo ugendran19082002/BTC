@@ -50,6 +50,10 @@ export async function setTradeMode(mode: 'live' | 'paper') {
 
 export const closeTrade = (tradeId: string) => post<{ ok: true; trade: Trade }>('/api/trade/close', { tradeId });
 
+/** Pull a working order off the book. Refused once anything has filled. */
+export const cancelTrade = (tradeId: string) =>
+  post<{ ok: true; trade: Trade }>('/api/trade/cancel', { tradeId });
+
 export const reconcileTrade = (tradeId: string) =>
   post<{ ok: true; trade: Trade }>('/api/trade/reconcile', { tradeId });
 

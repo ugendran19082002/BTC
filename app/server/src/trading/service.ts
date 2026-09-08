@@ -201,10 +201,13 @@ export class TradingService {
       lots: input.lots,
       leverage: clampLeverage(input.leverage ?? DEFAULT_LEVERAGE),
       entry: price === undefined
-        ? { type: 'market', timeoutMs: input.timeoutMs ?? 5_000, marketFallback: false }
+        ? { type: 'market', timeoutMs: 0, marketFallback: false }
         : {
             type: 'limit', limitPrice: price,
-            timeoutMs: input.timeoutMs ?? 5_000,
+            // A limit rests until it fills, unless the caller asked to cross
+            // after a wait. Cancelling a resting offer on a timer guarantees it
+            // never fills.
+            timeoutMs: input.marketFallback ? input.timeoutMs ?? 5_000 : 0,
             marketFallback: input.marketFallback ?? false,
           },
       takeProfitPrice:
@@ -226,6 +229,7 @@ export class TradingService {
   }
 
   close(tradeId: string) { return this.engine.closeNow(tradeId); }
+  cancel(tradeId: string) { return this.engine.cancelEntry(tradeId); }
   reconcile(tradeId: string) { return this.engine.reconcile(tradeId); }
   /** Remembered on the way past, so the margin model has a spot to work from. */
   noteSpot(spot: number | null) { if (spot && spot > 0) this.lastSpot = spot; }

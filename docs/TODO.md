@@ -267,3 +267,43 @@ To do it properly:
   - decide how to track the orders Delta creates, since the bracket response
     returns them rather than accepting our client_order_id;
   - port cases 17, 18, 32 and 36 onto the new path before switching.
+
+## Removed from the desk, kept in the API
+
+Two cards were taken off the page because they answered questions the desk had
+already answered elsewhere. Neither endpoint was removed, so both can come back
+without a server change.
+
+### The "Not yet" verdict card
+
+`VerdictPanel`, fed by `verdict` on `/api/chain`. It listed the entry window,
+the weekday record, whether both legs cleared the premium floor, the RSI band,
+and whether a hedge was available.
+
+Why it went: by the time you are looking at it, the recommendation card above
+has already said what to sell and the ticket refuses what it should refuse. The
+one line it carried that nothing else says is the hedge warning —
+
+    CE and PE could not be hedged — no strike listed at that distance.
+    The loss on that leg is bounded only by how far BTC travels.
+
+which is a real thing to know and now has nowhere to appear. Before this is
+called done, that belongs somewhere: most naturally on the ticket, beside the
+close-out price, since it is the same question — what is the worst case, and is
+it bounded.
+
+`VerdictPanel.tsx` is still in the tree and still compiles; it is simply not
+rendered.
+
+### The premium-floor sweep
+
+Already written up above.
+
+## Watch the entry window
+
+The verdict card was also the only thing that said "the window has not opened,
+entry is 05:30–06:00 IST, 7.7h away". The desk now lets you sell at any hour.
+That is correct — it is your account — but the 733-day record it quotes was
+built entirely on 05:30 entries, so a trade taken at 21:49 is not the trade the
+numbers describe. The ticket should say so when the window is closed, in one
+line, without blocking anything.
