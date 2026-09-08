@@ -403,7 +403,7 @@ describe('reopening the ticket', () => {
     rerender(<OrderTicket seed={seed} open={false} onOpenChange={() => {}} />);
     rerender(<OrderTicket seed={seed} open onOpenChange={() => {}} />);
     expect(screen.queryByText(/Sold 1 at 9.00/)).toBeNull();
-    expect(screen.getByRole('radio', { name: 'ask' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'offer' })).toBeInTheDocument();
   });
 
   it('starts from one lot again, whatever the last one was', async () => {
