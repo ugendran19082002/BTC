@@ -52,6 +52,22 @@
 
 /* Slim, quiet scrollbars. The chain scrolls inside itself and the page scrolls
    behind it; two chunky platform bars beside each other read as chrome. */
+/* Tailwind's preflight is off, so form controls keep the platform's own look
+   unless something says otherwise. That is fine for the hand-written stylesheet
+   below, which styles what it uses -- but a Tailwind-styled component that sets
+   only a colour gets the operating system's grey pill showing through, which
+   reads as a disabled control. So: a base reset here, and every rule below is
+   class-scoped and therefore still wins. */
+button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  margin: 0;
+}
+input, select, textarea { font: inherit; }
+
 * { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }

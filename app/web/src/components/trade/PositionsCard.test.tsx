@@ -110,6 +110,19 @@ describe('a position with no stop behind it', () => {
     // the phase can lag a reconcile by one poll; the missing stop cannot
     render(<PositionsCard trades={[trade({ protection: { takeProfit: 'tp', stopLoss: null } })]} />);
     expect(screen.getByText('none')).toBeInTheDocument();
+    expect(screen.getByText('NO STOP')).toBeInTheDocument();
+  });
+
+  it('does not cry wolf over a trade that chose to run without one', () => {
+    // painting a deliberate choice red every time is what makes a real alarm
+    // get ignored
+    render(<PositionsCard trades={[trade({
+      protection: { takeProfit: 'tp', stopLoss: null },
+      plan: { lots: 1, entry: { type: 'limit', timeoutMs: 0, marketFallback: false }, takeProfitPrice: 1.1, stopPrice: null },
+    })]} />);
+    expect(screen.getByText('none')).toBeInTheDocument();
+    expect(screen.queryByText('NO STOP')).toBeNull();
+    expect(screen.getByText('on')).toBeInTheDocument();
   });
 
   it('interrupts the page from the banner, naming the contract', () => {

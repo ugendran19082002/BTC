@@ -640,16 +640,69 @@ test('32 [critical] a filled entry whose protection fails raises an alarm, not a
   assert.equal(r.alarms.length, 1, 'somebody is told');
 });
 
-test('32b the next poll retries the protection and clears the alarm', async () => {
+test('32b protection is retried after a wait, and the alarm clears', async () => {
   const r = rig();
   const plan = planFor(ceProduct());
   await r.engine.open(plan);
   r.ex.configure({ nextFault: { kind: 'unavailable' } });
   await r.engine.poll(plan.tradeId);
+
+  // not immediately: a venue that just said no is not asked again this second
+  const tooSoon = await r.engine.poll(plan.tradeId);
+  assert.equal(tooSoon?.phase, 'unprotected');
+
+  r.advance(2_500);
   const s = await r.engine.poll(plan.tradeId);
   assert.equal(s?.phase, 'protected');
   assert.equal(s?.alarm, null);
   assert.ok(s?.protection.stopLoss, 'a stop is behind it now');
+});
+
+test('32c [critical] a target with no stop is placed once, not replaced every second', async () => {
+  // the loop that cancelled and re-placed a live order once a second: a trade
+  // with a target and no stop can never have a stopLoss, so "is the stop
+  // missing" was always true
+  const r = rig();
+  const plan = planFor(ceProduct(), { stopPrice: null, takeProfitPrice: 90 });
+  await r.engine.open(plan);
+
+  const first = await r.engine.poll(plan.tradeId);
+  const tp = first!.protection.takeProfit;
+  assert.ok(tp, 'the target went on');
+  assert.equal(first?.protection.stopLoss, null, 'and no stop was invented');
+
+  for (let i = 0; i < 5; i++) { r.advance(1_000); await r.engine.poll(plan.tradeId); }
+
+  const after = r.store.get(plan.tradeId)!.state;
+  assert.equal(after.protection.takeProfit, tp, 'the same order, not a new one');
+  const live = (await r.ex.getOpenOrders(CE)).filter((o) => o.reduceOnly);
+  assert.equal(live.length, 1, 'exactly one protective order on the book');
+  assert.equal(after.alarm, null, 'and choosing no stop is not an alarm');
+});
+
+test('32e a target that will not go on is a note, not an alarm', async () => {
+  const r = rig();
+  const plan = planFor(ceProduct(), { stopPrice: null, takeProfitPrice: 90 });
+  await r.engine.open(plan);
+  r.ex.configure({ nextFault: { kind: 'unavailable' } });
+  const s = await r.engine.poll(plan.tradeId);
+  assert.equal(s?.alarm, null, 'nothing extra is at risk: no stop was ever asked for');
+  assert.notEqual(s?.phase, 'unprotected');
+  assert.match(s?.note ?? '', /could not place the target/);
+});
+
+test('32d protection waits until the exchange agrees the position exists', async () => {
+  // Delta answered no_position_for_reduce_only because our fill had not
+  // registered on their side yet; sending anyway just fills the error log
+  const r = rig();
+  const plan = planFor(ceProduct());
+  await r.engine.open(plan);
+  r.ex.forcePosition(CE, 0);                    // exchange has not caught up
+
+  const s = await r.engine.poll(plan.tradeId);
+  const resting = (await r.ex.getOpenOrders(CE)).filter((o) => o.reduceOnly);
+  assert.equal(resting.length, 0, 'nothing reduce-only was sent into thin air');
+  assert.equal(s?.protection.stopLoss, null);
 });
 
 // ------------------------------------------------------------ 33 exit failure

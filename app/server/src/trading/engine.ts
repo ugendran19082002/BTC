@@ -100,6 +100,10 @@ export type OpenResult =
   | { ok: true; state: TradeState }
   | { ok: false; state: TradeState; precheck: PrecheckResult };
 
+/** How long to wait before trying protection again after a refusal. */
+const PROTECT_RETRY_MS = 2_000;
+const PROTECT_RETRY_MAX_MS = 60_000;
+
 const ROLE_CODE: Record<OrderRole | 'exit', string> = {
   entry: 'E', take_profit: 'T', stop_loss: 'S', exit: 'X',
 };
@@ -123,6 +127,8 @@ export class TradeEngine {
   private readonly limits: RiskLimits;
   /** Set while a trade is being resolved after a timeout. Nothing may be sent. */
   private entryDeadline = new Map<string, number>();
+  /** Earliest time protection may be attempted again, per trade. */
+  private protectAfter = new Map<string, number>();
 
   constructor(private readonly d: EngineDeps) {
     this.limits = d.limits ?? DEFAULT_LIMITS;
@@ -202,7 +208,7 @@ export class TradeEngine {
       state: initialTrade({
         tradeId: plan.tradeId, symbol: plan.symbol, productId: product?.productId ?? 0,
         optionSide: plan.optionSide, requestedSize: size, at,
-        wantsProtection: plan.stopPrice !== null || plan.takeProfitPrice !== null,
+        wantsProtection: plan.stopPrice !== null,
       }),
     };
 
@@ -347,12 +353,7 @@ export class TradeEngine {
     // An exit printed: the other side has to go before it can re-open us.
     if (rec.state.exitWinner) rec = await this.cancelSiblings(rec);
 
-    if (
-      rec.state.wantsProtection &&
-      rec.state.position !== 0 &&
-      rec.state.phase !== 'exit_pending' &&
-      !rec.state.protection.stopLoss
-    ) {
+    if (rec.state.position !== 0 && rec.state.phase !== 'exit_pending' && missingProtection(rec)) {
       rec = await this.protect(rec);
     }
 
@@ -408,6 +409,27 @@ export class TradeEngine {
     if (size === 0) return rec;
     // Nothing to place, and nothing wrong with that.
     if (rec.plan.takeProfitPrice === null && rec.plan.stopPrice === null) return rec;
+
+    // A refusal is not worth repeating every second. Delta answered
+    // `no_position_for_reduce_only` because it had not registered the fill yet,
+    // and hammering it does not make it register faster -- it just fills the
+    // error log and burns the rate limit.
+    const notBefore = this.protectAfter.get(rec.state.tradeId);
+    if (notBefore !== undefined && this.now() < notBefore) return rec;
+
+    // Reduce-only orders need a position the exchange agrees exists. Our own
+    // fill arrives first, so asking before it has settled is what produced that
+    // refusal in the first place.
+    const held = await this.exchange.getPositions()
+      .then((ps) => ps.find((p) => p.symbol === rec.plan.symbol)?.size ?? 0)
+      .catch(() => null);
+    if (held === null) return rec;
+    if (held === 0) {
+      // Either the fill has not landed on their side yet, or we are not
+      // actually short. Reconcile decides which; do not send anything now.
+      this.protectAfter.set(rec.state.tradeId, this.now() + PROTECT_RETRY_MS);
+      return rec;
+    }
     const product = await this.exchange.getProduct(rec.plan.symbol).catch(() => null);
     const tick = product?.tickSize ?? 0.1;
     // Versioned by every attempt, not just the failures: a resize must not reuse
@@ -440,8 +462,15 @@ export class TradeEngine {
         });
         sl = cid;
       }
+      this.protectAfter.delete(rec.state.tradeId);
       return this.commit(rec, { t: 'protection_placed', takeProfit: tp, stopLoss: sl, at: this.now() });
     } catch (e) {
+      // Back off, doubling, so a venue that keeps saying no is asked less often.
+      const tries = rec.events.filter((x) => x.t === 'protection_failed').length;
+      this.protectAfter.set(
+        rec.state.tradeId,
+        this.now() + Math.min(PROTECT_RETRY_MAX_MS, PROTECT_RETRY_MS * 2 ** tries),
+      );
       rec = this.commit(rec, { t: 'protection_failed', reason: (e as Error).message, at: this.now() });
       return rec;
     }
@@ -608,6 +637,24 @@ export function worstCaseLoss(i: {
     spot: i.spot, premium: i.price, leverage: i.leverage, contractValue: i.contractValue,
   });
   return room === null ? Infinity : Math.max(0, premiumUsd(room, i.size, i.contractValue));
+}
+
+/**
+ * Is anything the plan asked for still not on the book?
+ *
+ * Asking `!protection.stopLoss` instead was a loop: a trade with a target and
+ * no stop can never have a stopLoss, so every poll decided protection was
+ * missing, placed a fresh target, and cancelled the one from a second earlier.
+ * The question is not "is there a stop" but "is there everything that was
+ * asked for".
+ */
+export function missingProtection(rec: TradeRecord): boolean {
+  const wantsStop = rec.plan.stopPrice !== null;
+  const wantsTarget = rec.plan.takeProfitPrice !== null;
+  return (
+    (wantsStop && !rec.state.protection.stopLoss) ||
+    (wantsTarget && !rec.state.protection.takeProfit)
+  );
 }
 
 /**

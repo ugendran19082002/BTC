@@ -145,13 +145,12 @@ export function applyEvent(prev: TradeState, e: TradeEvent): TradeState {
       };
 
     case 'protection_failed':
-      // Contracts are live and nothing is behind them. Only an alarm if a stop
-      // was asked for -- a trade that chose to run naked is not malfunctioning.
-      return {
-        ...s,
-        phase: s.position === 0 ? 'flat' : 'unprotected',
-        alarm: s.position === 0 || !s.wantsProtection ? null : `POSITION UNPROTECTED: ${e.reason}`,
-      };
+      // Only an alarm when a stop was asked for. A trade that chose to run
+      // without one is not malfunctioning, and a target that failed to go on
+      // leaves nothing extra at risk -- the note records it either way.
+      if (s.position === 0) return { ...s, phase: 'flat', alarm: null };
+      if (!s.wantsProtection) return { ...s, note: `could not place the target: ${e.reason}` };
+      return { ...s, phase: 'unprotected', alarm: `POSITION UNPROTECTED: ${e.reason}` };
 
     case 'exit_submitted':
       return { ...s, phase: s.position === 0 ? s.phase : 'exit_pending' };

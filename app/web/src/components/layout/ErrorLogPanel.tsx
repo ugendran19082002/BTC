@@ -7,6 +7,7 @@ import { usePoll } from '@/hooks/usePoll';
 import { Card, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Checkbox } from '@/components/ui/checkbox';
 import { ago, stamp } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -70,23 +71,22 @@ export function ErrorLogPanel() {
           className="flex"
         >
           <ToggleGroupItem value="all">
-            all{data?.summary.unresolved ? ` · ${data.summary.unresolved}` : ''}
+            all
+            <Count n={data?.summary.unresolved} />
           </ToggleGroupItem>
           {(['server', 'browser', 'exchange', 'trading'] as const).map((s) => (
             <ToggleGroupItem key={s} value={s}>
-              {s}{data?.summary.bySource[s] ? ` · ${data.summary.bySource[s]}` : ''}
+              {s}
+              <Count n={data?.summary.bySource[s]} />
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
-        <label className="ml-auto flex cursor-pointer items-center gap-1.5 text-[11.5px] text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={resolved}
-            onChange={(e) => setResolved(e.target.checked)}
-            className="cursor-pointer"
-          />
-          show read
-        </label>
+        <Checkbox
+          className="ml-auto"
+          checked={resolved}
+          onChange={(e) => setResolved(e.target.checked)}
+          label="show read"
+        />
       </div>
 
       {rows.length === 0 ? (
@@ -188,6 +188,16 @@ function ErrorRowView({ row, onResolved }: { row: ErrorRow; onResolved: () => vo
         </div>
       </Collapsible.Content>
     </Collapsible.Root>
+  );
+}
+
+/** The number beside a filter, kept out of the word so it cannot wrap into it. */
+function Count({ n }: { n?: number }) {
+  if (!n) return null;
+  return (
+    <span className="rounded-full bg-background px-1.5 text-[10.5px] font-semibold tabular-nums text-muted-foreground">
+      {n}
+    </span>
   );
 }
 

@@ -125,8 +125,17 @@ function WorkingRow({ trade, onChanged }: { trade: Trade; onChanged?: () => void
 
 function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => void }) {
   const [closing, setClosing] = useState(false);
-  const naked = trade.phase === 'unprotected' || !trade.protection.stopLoss;
   const held = Math.abs(trade.position);
+
+  /**
+   * A stop was asked for and is not there.
+   *
+   * Not the same as "there is no stop". A trade that deliberately runs without
+   * one is a decision, and painting it red every time turns the colour into
+   * noise -- which is exactly what makes a real alarm get ignored.
+   */
+  const wantedStop = trade.plan?.stopPrice != null;
+  const naked = Boolean(trade.alarm) || (wantedStop && !trade.protection.stopLoss);
 
   return (
     <div
@@ -157,7 +166,7 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
               naked ? 'text-[var(--down)]' : 'text-muted-foreground',
             )}
           >
-            {PHASE_LABEL[trade.phase]}
+            {naked ? PHASE_LABEL.unprotected : trade.phase === 'unprotected' ? 'on' : PHASE_LABEL[trade.phase]}
           </span>
         </div>
       </div>
@@ -172,7 +181,12 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
           </span>
           <span>
             stop{' '}
-            <span className={cn('tabular-nums', naked ? 'text-[var(--down)]' : 'text-foreground')}>
+            <span
+              className={cn(
+                'tabular-nums',
+                naked ? 'text-[var(--down)]' : trade.protection.stopLoss ? 'text-foreground' : 'text-[var(--dim)]',
+              )}
+            >
               {trade.protection.stopLoss ? price(trade.plan?.stopPrice) : 'none'}
             </span>
           </span>

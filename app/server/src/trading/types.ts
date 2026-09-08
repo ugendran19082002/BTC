@@ -150,12 +150,13 @@ export type TradeState = {
   entryOrderId: string | null;
   protection: ProtectionOrders;
   /**
-   * Whether this trade ever asked for a stop.
+   * Whether this trade asked for a **stop**.
    *
-   * The difference between "no stop because it failed" and "no stop because you
-   * turned it off" is the difference between an alarm and a decision, and the
-   * desk must not confuse them: crying wolf on a deliberate choice is how a real
-   * alarm gets ignored.
+   * Specifically a stop, not protection in general. A target that fails to go
+   * on is a nuisance; a stop that fails to go on is contracts at risk with
+   * nothing behind them, and only the second is an alarm. Conflating them
+   * reported "POSITION UNPROTECTED" for a trade that had deliberately chosen to
+   * run without a stop, which is how a real alarm gets ignored.
    */
   wantsProtection: boolean;
   /** Set once an exit is winning, so the loser can be cancelled exactly once. */
