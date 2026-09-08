@@ -60,6 +60,12 @@ export type Trade = {
     /** What Delta reports. Kept for comparison; not what the screen shows. */
     exchangePnl?: number | null;
   };
+  /**
+   * The protective orders actually resting on the exchange.
+   *
+   * Not the plan. The plan is what was asked for; this is what will fill.
+   */
+  onBook?: { target: number | null; stop: number | null };
 };
 
 export type Quote = {

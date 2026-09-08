@@ -6,7 +6,7 @@ import {
   clampLeverage, fundsRequiredPerContract, liquidationPrice, maxLotsAt, premiumUsd, unrealisedPnlUsd,
 } from '../../trading/margin.js';
 import { crossesSpread, worstCaseLoss, type TradeRecord } from '../../trading/engine.js';
-import type { ExchangePosition, Quote } from '../../trading/types.js';
+import type { ExchangeOrder, ExchangePosition, Quote } from '../../trading/types.js';
 import { midOf } from '../../trading/money.js';
 import {
   ORDER_STATUSES, istDayEnd, istDayStart, istToday, orderOutcomeOf, orderStatusOf,
@@ -59,6 +59,8 @@ const view = (
   /** The book for this symbol, when the position row does not carry a price. */
   quote: Quote | null = null,
   spot: number | null = null,
+  /** What is actually resting for this symbol, which the plan may not match. */
+  resting: ExchangeOrder[] = [],
 ) => {
   // The exchange's mark is the authority on the *price*. The money is worked
   // out here, because Delta's own unrealized_pnl came back positive on a
@@ -115,6 +117,18 @@ const view = (
       /** What Delta says, kept for comparison. Not what the screen shows. */
       exchangePnl: live?.unrealisedPnl ?? null,
     },
+    /**
+     * The protective orders that are actually resting, read off the exchange.
+     *
+     * Not the plan. The plan is what was asked for and the book is what will
+     * fill, and a screen that says "on the book now" while reading the plan is
+     * simply wrong when the two differ -- which is exactly the case worth
+     * showing.
+     */
+    onBook: {
+      target: resting.find((o) => o.reduceOnly && o.type === 'limit')?.limitPrice ?? null,
+      stop: resting.find((o) => o.reduceOnly && o.type === 'stop_market')?.stopPrice ?? null,
+    },
   };
 };
 
@@ -152,18 +166,21 @@ export function registerTradeRoutes(app: FastifyInstance) {
     ]);
     const trades = svc.openTrades();
     // Both cached at the server for under a second, so this costs nothing per poll.
-    const [product, quotes] = await Promise.all([
+    const symbols = [...new Set(trades.map((t) => t.state.symbol))];
+    const [product, quotes, books] = await Promise.all([
       svc.product(trades[0]?.state.symbol ?? '').catch(() => null),
-      Promise.all(
-        [...new Set(trades.map((t) => t.state.symbol))].map(
-          async (sym) => [sym, await svc.quoteForDisplay(sym).catch(() => null)] as const,
-        ),
-      ),
+      Promise.all(symbols.map(async (s) => [s, await svc.quoteForDisplay(s).catch(() => null)] as const)),
+      Promise.all(symbols.map(async (s) => [s, await svc.openOrdersForDisplay(s).catch(() => [])] as const)),
     ]);
     const bySymbol = new Map(quotes);
+    const restingBy = new Map(books);
     const contractValue = product?.contractValue ?? 0.001;
     const open = trades.map((r) =>
-      view(r, positions, contractValue, bySymbol.get(r.state.symbol) ?? null, svc.spot));
+      view(
+        r, positions, contractValue,
+        bySymbol.get(r.state.symbol) ?? null, svc.spot,
+        restingBy.get(r.state.symbol) ?? [],
+      ));
     return {
       mode: svc.mode,
       /** True only when a real order would reach the real exchange. */
@@ -305,8 +322,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
         limitPrice: p.limitPrice,
         takeProfitPct: p.takeProfitPct,
         stopLossPct: p.stopLossPct,
-        marketFallback: p.convertToMarketAfterSec > 0,
-        timeoutMs: p.convertToMarketAfterSec * 1_000,
+        chaseSeconds: p.convertToMarketAfterSec,
       });
       if (!res.ok) {
         reply.code(422);

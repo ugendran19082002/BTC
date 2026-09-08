@@ -41,7 +41,22 @@ export type TicketSeed = {
   lots?: number;
 };
 
-type PriceMode = 'market' | 'bid' | 'ask' | 'custom';
+/**
+ * Three ways to price an entry. There used to be four.
+ *
+ * `market` is gone, and deliberately. A market sell is immediate and has no
+ * floor: case 07 in the server suite walks one through three levels --
+ * 40 at 99.80, 40 at 99.50, 20 at 99.10 -- for an average of 99.54 against a
+ * touch of 99.80, a quarter of a point given away on a book that was showing
+ * a better price.
+ *
+ * A limit at the bid is just as immediate and cannot do that. A limit price is
+ * a floor for a seller: you get the bid or better, never worse, and if the size
+ * is not there the remainder rests instead of eating the next level down. It
+ * does everything a market order does for this desk, with a floor, so the
+ * market order has no case left to make.
+ */
+type PriceMode = 'now' | 'ask' | 'custom';
 
 /** A ceiling to stop a stray keystroke, not a risk limit. The gates do that. */
 const MAX_LOTS = 100_000;
@@ -104,7 +119,7 @@ export function OrderTicket({
    */
   const [convertOn, setConvertOn] = usePersisted('entry:convertOn2', true);
   const [convertSec, setConvertSec] = usePersisted('entry:convertSec', 30);
-  const [mode, setMode] = useState<PriceMode>('market');
+  const [mode, setMode] = useState<PriceMode>('now');
   const [custom, setCustom] = useState('');
   const [preview, setPreview] = useState<Preview | null>(null);
   const [checking, setChecking] = useState(false);
@@ -146,9 +161,9 @@ export function OrderTicket({
     const start = Math.max(1, seed.lots ?? 1);
     setLots(start);
     setLotsText(String(start));
-    // The offer, not the market. Selling at the bid gives away the spread on
-    // every trade; on a $16 option that spread is a tenth of the premium.
-    setMode(seed.ask !== null ? 'ask' : 'market');
+    // The offer, not the bid: selling at the bid gives away the spread on every
+    // trade, and with the timed cross below there is no day it costs you.
+    setMode(seed.ask !== null ? 'ask' : 'now');
     setCustom('');
     setResult(null);
     setFailed(null);
@@ -162,7 +177,7 @@ export function OrderTicket({
    * above it waits. Only a waiting order has anything to convert.
    */
   const rests = useMemo(() => {
-    if (mode === 'market' || mode === 'bid') return false;
+    if (mode === 'now') return false;
     if (!book.bid) return true;
     const p = mode === 'ask' ? book.ask : Number(custom);
     return p !== null && Number.isFinite(p) && p > book.bid;
@@ -171,8 +186,9 @@ export function OrderTicket({
   const limitPrice = useMemo(() => {
     if (!seed) return null;
     switch (mode) {
-      case 'market': return null;                       // take the book
-      case 'bid': return book.bid;
+      // "Now" is a limit AT the bid, not a market order: marketable, so it
+      // fills at once, but with a floor at the price you can see.
+      case 'now': return book.bid;
       case 'ask': return book.ask;
       case 'custom': {
         const n = Number(custom);
@@ -298,9 +314,8 @@ export function OrderTicket({
                 <ToggleGroupItem value="custom">set</ToggleGroupItem>
               </ToggleGroup>
               <p className="m-0 mt-1.5 text-[11.5px] leading-snug text-muted-foreground">
-                {mode === 'market' && 'Sells straight into the bid. Fills now, earns least.'}
-                {mode === 'bid' && `Rests at ${price(book.bid)}. Fills as soon as anyone takes it.`}
-                {mode === 'ask' && `Rests at ${price(book.ask)}. Earns most, may not fill at all.`}
+                {mode === 'now' && `Takes the ${price(book.bid)} bid immediately. Never fills below it — a limit is a floor, so there is no slippage.`}
+                {mode === 'ask' && `Offers at ${price(book.ask)}. Earns the spread if someone takes it.`}
                 {mode === 'custom' && 'Your own price. Rounded to the tick before it is sent.'}
               </p>
               {mode === 'custom' && (
@@ -606,7 +621,7 @@ function BookStrip({ bid, mark, ask, mode, onPick }: {
   const cell = 'flex flex-1 appearance-none flex-col items-center gap-0.5 border-0 bg-transparent py-2 font-[inherit]';
   return (
     <div className="flex overflow-hidden rounded-lg border border-border bg-muted">
-      <button className={cn(cell, mode === 'bid' && 'bg-background')} onClick={() => onPick('bid')}>
+      <button className={cn(cell, mode === 'now' && 'bg-background')} onClick={() => onPick('now')}>
         <span className="text-[10px] uppercase tracking-[0.6px] text-muted-foreground">bid</span>
         <span className="text-[15px] font-semibold tabular-nums text-[var(--down)]">{price(bid)}</span>
       </button>

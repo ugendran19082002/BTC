@@ -42,7 +42,44 @@ export type EntryPlan = {
   timeoutMs: number;
   /** Cross the spread after the timeout, once the gates are re-checked. */
   marketFallback: boolean;
+  /**
+   * Walk the price toward the bid until it fills.
+   *
+   * The standard answer for an illiquid options book, and this one is: offering
+   * at the ask and waiting is all-or-nothing, and on a 12% spread the offer
+   * often just sits there. Stepping concedes a little at a time -- so a market
+   * maker who will meet you halfway does, and you keep half the spread instead
+   * of none of it.
+   *
+   * The last step is the bid, which is marketable, so a chase always ends in a
+   * fill. It replaces the cruder "wait, then cross" rather than sitting beside
+   * it, and it moves the order with an edit rather than a cancel and replace,
+   * so the order never leaves the book.
+   */
+  chase: { steps: number; everyMs: number } | null;
 };
+
+/**
+ * Where a chased order should be priced right now.
+ *
+ * Straight-line from where it started to the current bid, one step per
+ * interval, and never below the bid -- offering under the best bid gives away
+ * money that was already on the table. Derived from the clock rather than from
+ * a counter, so a restart resumes the walk instead of starting it again.
+ */
+export function chasePrice(i: {
+  startedAt: number;
+  now: number;
+  from: number;
+  bid: number;
+  steps: number;
+  everyMs: number;
+}): number {
+  if (!(i.steps > 0) || !(i.everyMs > 0) || i.bid >= i.from) return i.bid;
+  const step = Math.min(i.steps, Math.floor((i.now - i.startedAt) / i.everyMs));
+  if (step <= 0) return i.from;
+  return i.from - ((i.from - i.bid) * step) / i.steps;
+}
 
 export type TradePlan = {
   tradeId: string;
@@ -404,6 +441,31 @@ export class TradeEngine {
       if (!cid) continue;
       const o = await this.exchange.getOrderByClientId(cid).catch(() => null);
       if (o) rec = this.absorb(rec, o, role);
+    }
+
+    // A resting entry that is being walked toward the bid.
+    if (
+      entry && (entry.status === 'open' || entry.status === 'partial') &&
+      rec.plan.entry.chase && entry.limitPrice !== null
+    ) {
+      const startedAt = rec.events.find((e) => e.t === 'entry_submitted')?.at ?? this.now();
+      const quote = await this.exchange.getQuote(rec.plan.symbol).catch(() => null);
+      const product = await this.exchange.getProduct(rec.plan.symbol).catch(() => null);
+      if (quote?.bid != null) {
+        const from = rec.plan.entry.limitPrice ?? entry.limitPrice;
+        const want = priceFor('sell', chasePrice({
+          startedAt, now: this.now(), from, bid: quote.bid,
+          steps: rec.plan.entry.chase.steps, everyMs: rec.plan.entry.chase.everyMs,
+        }), product?.tickSize ?? 0.1);
+        if (want < entry.limitPrice) {
+          // Moved, not replaced: the order never leaves the book, so there is
+          // no moment where the entry is neither working nor filled.
+          const moved = await this.exchange
+            .editOrder(entry, { limitPrice: want })
+            .catch((e) => { this.note('chase', entry, e); return null; });
+          if (moved) rec = this.absorb(rec, moved, 'entry');
+        }
+      }
     }
 
     // Entry timed out and is still resting: cancel what is left.

@@ -236,7 +236,7 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
           <span>
             target{' '}
             <span className="tabular-nums text-foreground">
-              {trade.plan?.takeProfitPrice != null ? price(trade.plan.takeProfitPrice) : 'none'}
+              {trade.onBook?.target != null ? price(trade.onBook.target) : 'none'}
             </span>
           </span>
           <span>
@@ -247,7 +247,7 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
                 naked ? 'text-[var(--down)]' : trade.protection.stopLoss ? 'text-foreground' : 'text-[var(--dim)]',
               )}
             >
-              {trade.protection.stopLoss ? price(trade.plan?.stopPrice) : 'none'}
+              {trade.onBook?.stop != null ? price(trade.onBook.stop) : 'none'}
             </span>
           </span>
           {/* With no stop this is the real exit, so it is named rather than implied. */}

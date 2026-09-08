@@ -9,7 +9,7 @@ import { clampLeverage } from './margin.js';
 import { isDone } from './machine.js';
 import { noteError } from '../observability/errors.js';
 import type { ExchangePort } from './exchange/port.js';
-import type { ExchangePosition, TradeState } from './types.js';
+import type { ExchangeOrder, ExchangePosition, TradeState } from './types.js';
 
 /**
  * The one live trading service.
@@ -43,6 +43,14 @@ const QUOTE_TTL_MS = 800;
  * is visible rather than implied.
  */
 const DEFAULT_LEVERAGE = 200;
+/**
+ * Four concessions rather than one.
+ *
+ * Enough that a maker willing to meet you part of the way gets the chance, few
+ * enough that the whole walk is over inside the window and each step is a
+ * visible move rather than a rounding error on a tick.
+ */
+const CHASE_STEPS = 4;
 /**
  * The exits, as percentages of the premium.
  *
@@ -199,6 +207,11 @@ export class TradingService {
     lots: number;
     /** 1 to 200. Sets the margin, and how close the close-out sits. */
     leverage?: number;
+    /**
+     * Seconds over which to walk the price from the offer to the bid.
+     * Zero leaves the order where it was put, to fill or not.
+     */
+    chaseSeconds?: number;
     /** Absent means take what the book offers. */
     limitPrice?: number;
     /** 0 to 0.99. Zero means no target. */
@@ -222,14 +235,17 @@ export class TradingService {
       lots: input.lots,
       leverage: clampLeverage(input.leverage ?? DEFAULT_LEVERAGE),
       entry: price === undefined
-        ? { type: 'market', timeoutMs: 0, marketFallback: false }
+        ? { type: 'market', timeoutMs: 0, marketFallback: false, chase: null }
         : {
             type: 'limit', limitPrice: price,
-            // A limit rests until it fills, unless the caller asked to cross
-            // after a wait. Cancelling a resting offer on a timer guarantees it
-            // never fills.
-            timeoutMs: input.marketFallback ? input.timeoutMs ?? 5_000 : 0,
-            marketFallback: input.marketFallback ?? false,
+            // A limit rests until it fills. A chase is what ends it: the last
+            // step is the bid, which is marketable, so the walk always finishes
+            // in a fill and no timer is needed to force one.
+            timeoutMs: 0,
+            marketFallback: false,
+            chase: input.chaseSeconds && input.chaseSeconds > 0
+              ? { steps: CHASE_STEPS, everyMs: Math.round((input.chaseSeconds * 1_000) / CHASE_STEPS) }
+              : null,
           },
       takeProfitPrice:
         input.takeProfitPrice !== undefined
@@ -353,6 +369,23 @@ export class TradingService {
     this.quoteCache.set(symbol, { quote, at: now });
     if (this.quoteCache.size > 50) this.quoteCache.clear();
     return quote;
+  }
+
+  /**
+   * The orders resting for a symbol, cached like the rest.
+   *
+   * The screen needs these because the plan and the book can disagree, and
+   * when they do the book is the one that will fill.
+   */
+  private ordersCache = new Map<string, { rows: ExchangeOrder[]; at: number }>();
+
+  async openOrdersForDisplay(symbol: string, now = Date.now()): Promise<ExchangeOrder[]> {
+    const hit = this.ordersCache.get(symbol);
+    if (hit && now - hit.at < QUOTE_TTL_MS) return hit.rows;
+    const rows = await this.exchange.getOpenOrders(symbol).catch(() => hit?.rows ?? []);
+    this.ordersCache.set(symbol, { rows, at: now });
+    if (this.ordersCache.size > 50) this.ordersCache.clear();
+    return rows;
   }
 
   quote(symbol: string) { return this.exchange.getQuote(symbol); }

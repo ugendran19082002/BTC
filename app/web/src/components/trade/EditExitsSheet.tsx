@@ -68,8 +68,13 @@ export function EditExitsSheet({ trade, open, onOpenChange, onSaved }: {
 
   if (!trade) return null;
 
-  const liveTarget = trade.plan?.takeProfitPrice ?? null;
-  const liveStop = trade.protection.stopLoss ? trade.plan?.stopPrice ?? null : null;
+  // Read off the exchange, not off the plan. A panel headed "on the book now"
+  // that reads the plan is simply wrong in the one case worth showing: when the
+  // two disagree.
+  const liveTarget = trade.onBook?.target ?? null;
+  const liveStop = trade.onBook?.stop ?? null;
+  const asked = trade.plan?.takeProfitPrice ?? null;
+  const drifted = asked !== null && liveTarget !== null && Math.abs(asked - liveTarget) > 0.05;
 
   const save = async () => {
     setBusy(true);
@@ -128,9 +133,15 @@ export function EditExitsSheet({ trade, open, onOpenChange, onSaved }: {
           </div>
         </dl>
 
+        {drifted && (
+          <p className="m-0 mt-2 text-[11.5px] leading-snug text-[var(--warn)]">
+            The desk asked for {price(asked)} and the book holds {price(liveTarget)}. The book is
+            what will fill; moving them again will bring the two together.
+          </p>
+        )}
         <p className="m-0 mt-2 text-[11.5px] leading-snug text-muted-foreground">
-          The old levels come off the book before the new ones go on, so there is never a moment
-          with two live.
+          The order is moved in place rather than cancelled and replaced, so it never leaves the
+          book.
         </p>
         {failed && <p className="m-0 mt-2 text-[12px] text-[var(--down)]">{failed}</p>}
 
