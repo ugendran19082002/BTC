@@ -2,8 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { stopPriceFor, targetPriceFor, tradingService } from '../../trading/service.js';
 import { lotsToContracts } from '../../trading/money.js';
 import { DEFAULT_LIMITS, precheck } from '../../trading/precheck.js';
-import { clampLeverage, fundsRequiredPerContract, liquidationPrice, maxLotsAt } from '../../trading/margin.js';
-import { worstCaseLoss, type TradeRecord } from '../../trading/engine.js';
+import { clampLeverage, fundsRequiredPerContract, liquidationPrice, maxLotsAt, premiumUsd } from '../../trading/margin.js';
+import { crossesSpread, worstCaseLoss, type TradeRecord } from '../../trading/engine.js';
 
 /**
  * The order desk.
@@ -139,7 +139,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
       const totalShort = positions.reduce((n, x) => n + (x.size < 0 ? -x.size : 0), 0);
       const stop = p.stopPrice ?? (price !== null ? stopPriceFor(price, p.stopLossPct) : null);
       const target = p.takeProfitPrice ?? (price !== null ? targetPriceFor(price, p.takeProfitPct) : null);
-      const credit = (price ?? 0) * size;
+      const credit = premiumUsd(price ?? 0, size, product?.contractValue);
       const worstCase = worstCaseLoss({
         stopPrice: stop, price, size, credit, spot: svc.spot,
         leverage: p.leverage, contractValue: product?.contractValue,
@@ -155,6 +155,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
         intent: {
           side: 'sell', size, price, reduceOnly: false,
           leverage: p.leverage, stopPrice: stop,
+          crossing: crossesSpread('sell', p.limitPrice === undefined ? 'market' : 'limit', p.limitPrice ?? null, quote),
           expect: { underlying: 'BTC', optionSide: p.side, strike: p.strike, expiryTs: p.expiryTs },
         },
         spot,
@@ -175,12 +176,16 @@ export function registerTradeRoutes(app: FastifyInstance) {
         failures: gates.ok ? [] : gates.failures,
         quote, product,
         size,
+        contractValue: product?.contractValue ?? 0.001,
         creditUsd: credit,
         worstCaseLossUsd: Number.isFinite(worstCase) ? worstCase : null,
         stopPrice: stop,
         takeProfitPrice: target,
         /** What you keep if the target fills. */
-        targetProfitUsd: target !== null && price !== null ? (price - target) * size : null,
+        targetProfitUsd:
+          target !== null && price !== null
+            ? premiumUsd(price - target, size, product?.contractValue)
+            : null,
         leverage: p.leverage,
         spot,
         marginUsd: margin ? fundsRequiredPerContract(margin) * size : null,

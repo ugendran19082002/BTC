@@ -38,6 +38,20 @@
 export const CONTRACT_BTC = 0.001;
 
 /**
+ * Turn a quoted option price into the dollars that actually change hands.
+ *
+ * Delta quotes an option in USD *per BTC of underlying*, and a contract is
+ * 0.001 BTC. So a call shown at 19.00 pays 1.9 cents a contract, not $19 --
+ * a factor of a thousand, and the direction that flatters you.
+ *
+ * The check that settles it: at 200x the margin on one contract is
+ * spot x 0.001 / 200, which is the $0.39 Delta's own ticket shows. The 0.001 is
+ * in the margin, so it is in the premium too.
+ */
+export const premiumUsd = (quoted: number, contracts: number, contractValue = CONTRACT_BTC) =>
+  quoted * contracts * contractValue;
+
+/**
  * Delta holds maintenance margin at roughly half of initial for short options.
  * The gap between the two is the entire cushion the position has: initial is
  * what is taken, maintenance is where it is closed.

@@ -137,10 +137,10 @@ function ErrorRowView({ row, onResolved }: { row: ErrorRow; onResolved: () => vo
       >
         <ChevronRight className={cn('mt-[3px] h-3.5 w-3.5 flex-none text-muted-foreground transition-transform', open && 'rotate-90')} />
         <Icon className={cn('mt-[2px] h-3.5 w-3.5 flex-none', SOURCE_TONE[row.source])} />
-        <span className="min-w-0 flex-1">
+        <span className="min-w-0 flex-1 overflow-hidden">
           <span className="block break-words text-[12.5px] leading-snug text-foreground">{row.message}</span>
           <span className="mt-0.5 block text-[11px] text-muted-foreground">
-            {row.where && <span className="font-mono">{row.where}</span>}
+            {row.where && <span className="break-all font-mono">{row.where}</span>}
             {row.where && ' · '}
             {ago(row.lastSeen)}
             {row.count > 1 && <> · <b className="text-[var(--warn)]">{row.count}×</b></>}
@@ -204,7 +204,7 @@ function Block({ title, children }: { title: string; children: string }) {
   return (
     <div className="mt-1.5">
       <p className="m-0 mb-1 text-[10px] uppercase tracking-[0.6px] text-muted-foreground">{title}</p>
-      <pre className="m-0 max-h-56 overflow-auto rounded-md bg-background p-2 text-[11px] leading-relaxed text-foreground">
+      <pre className="m-0 max-h-56 overflow-auto whitespace-pre-wrap break-all rounded-md bg-background p-2 text-[11px] leading-relaxed text-foreground">
         {children}
       </pre>
     </div>

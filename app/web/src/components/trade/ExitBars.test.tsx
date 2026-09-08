@@ -11,6 +11,8 @@ import { ExitBars } from '@/components/trade/ExitBars';
 const base = {
   entry: 10,
   size: 5,
+  // one BTC per contract keeps these sums readable; the conversion has its own test
+  contractValue: 1,
   targetPct: 0,
   stopPct: 0,
   targetOn: false,
@@ -96,6 +98,15 @@ describe('dragging', () => {
     render(<ExitBars {...base} targetOn stopOn />);
     expect(screen.getByRole('slider', { name: 'target percent' })).toBeInTheDocument();
     expect(screen.getByRole('slider', { name: 'stop percent' })).toBeInTheDocument();
+  });
+});
+
+describe('a quoted price is dollars per BTC', () => {
+  it('turns a 0.001 BTC contract into the money that changes hands', () => {
+    // sold at 10, target 80% -> buys back at 2, five contracts of 0.001 BTC
+    render(<ExitBars {...base} contractValue={0.001} targetOn targetPct={0.8} />);
+    expect(screen.getByText('2.00')).toBeInTheDocument();
+    expect(screen.getByText('$0.04')).toBeInTheDocument();
   });
 });
 

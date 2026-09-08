@@ -672,6 +672,7 @@ export default function App() {
         open={ticketOpen}
         onOpenChange={setTicketOpen}
         onPlaced={() => void refreshTrade()}
+        balanceUsd={trade?.balanceUsd ?? null}
       />
     </div>
   );

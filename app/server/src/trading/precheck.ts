@@ -78,6 +78,14 @@ export type PrecheckInput = {
     reduceOnly: boolean;
     /** 1 to 200. Sets the margin, and with it the liquidation distance. */
     leverage: number;
+    /**
+     * Whether this order pays the spread.
+     *
+     * A market sell, or a limit at or below the bid, crosses and pays it. A
+     * limit resting above the bid does not -- it *is* the offer, and a wide
+     * book is the reason to rest rather than a reason not to trade.
+     */
+    crossing: boolean;
     /** Where the stop buys back, if there is one. */
     stopPrice?: number | null;
   };
@@ -155,12 +163,22 @@ export function precheck(input: PrecheckInput): PrecheckResult {
     const spread = spreadPct(quote.bid, quote.ask);
     if (spread === null) {
       add('NO_QUOTE', 'Book is one-sided.');
-    } else if (spread > limits.maxSpreadPct) {
-      add('SPREAD_TOO_WIDE', `Spread is ${(spread * 100).toFixed(1)}%, limit is ${(limits.maxSpreadPct * 100).toFixed(0)}%.`);
+    } else if (intent.crossing && spread > limits.maxSpreadPct) {
+      // Only when it crosses. A daily BTC option quoted 17 bid / 19 offered is
+      // an 11% spread and perfectly normal; refusing to *rest* at the offer
+      // there refuses the trade for the exact reason you wanted to rest.
+      add(
+        'SPREAD_TOO_WIDE',
+        `Spread is ${(spread * 100).toFixed(1)}%, limit is ${(limits.maxSpreadPct * 100).toFixed(0)}% for an order that crosses it.`,
+      );
     }
-    const top = intent.side === 'sell' ? quote.bidSize : quote.askSize;
-    if (top !== null && top < intent.size * limits.minBookCoverage) {
-      add('THIN_BOOK', `Only ${top} on the ${intent.side === 'sell' ? 'bid' : 'ask'} against ${intent.size} wanted.`);
+    // Depth only matters for an order that has to be filled now. A resting one
+    // is waiting for someone to arrive, and nobody is there yet by definition.
+    if (intent.crossing) {
+      const top = intent.side === 'sell' ? quote.bidSize : quote.askSize;
+      if (top !== null && top < intent.size * limits.minBookCoverage) {
+        add('THIN_BOOK', `Only ${top} on the ${intent.side === 'sell' ? 'bid' : 'ask'} against ${intent.size} wanted.`);
+      }
     }
   }
 

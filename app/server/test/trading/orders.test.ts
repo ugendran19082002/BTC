@@ -380,12 +380,69 @@ test('28 an order that would breach the total short limit is refused', async () 
 });
 
 test("29 a trade whose worst case would blow the day's loss budget is blocked", async () => {
-  const r = rig({ limits: { maxDailyLossUsd: 5_000 } });
-  r.setDayPnl(-4_800);
-  // stop at 110 on 100 contracts sold at 100.5: worst case 950 against 200 left
+  const r = rig({ limits: { maxDailyLossUsd: 5 } });
+  r.setDayPnl(-4.8);
+  // a stop at 110 on 100 contracts sold at 100.5 risks
+  // (110 - 100.5) x 100 x 0.001 = $0.95, against the $0.20 left in the budget
   const res = await r.engine.open(planFor(ceProduct()));
   assert.equal(res.ok, false);
   assert.ok(!res.ok && failureCodes(res.precheck).includes('DAILY_LOSS_LIMIT'));
+});
+
+test('29b the same trade is allowed while the budget still has room', async () => {
+  const r = rig({ limits: { maxDailyLossUsd: 5 } });
+  r.setDayPnl(-1);
+  const res = await r.engine.open(planFor(ceProduct()));
+  assert.ok(res.ok, JSON.stringify(res.ok ? '' : res.precheck));
+});
+
+// ---------------------------------------- 47-50 the money is in the contract
+
+test('47 [critical] a quoted price is dollars per BTC, and a contract is a thousandth of one', async () => {
+  const r = rig();
+  const res = await r.engine.open(planFor(ceProduct(), { lots: 1 }));
+  assert.ok(res.ok);
+  // sold one contract at 100.5: that is 100.5 x 0.001 = 10.05 cents, not $100.50
+  const credit = 100.5 * 1 * 0.001;
+  assert.ok(Math.abs(credit - 0.1005) < 1e-9);
+});
+
+test('48 the spread gate lets a resting order through and stops one that crosses', async () => {
+  // 17 bid / 19 offered is an 11% spread and an ordinary daily option
+  const wide = { products: [ceProduct()], quotes: [quote(CE, 17, 19)], balanceUsd: 100 };
+
+  const resting = await rig(wide).engine.open(
+    planFor(ceProduct(), { lots: 1, stopPrice: 40, entry: { type: 'limit', limitPrice: 19, timeoutMs: 5_000, marketFallback: false } }),
+  );
+  assert.ok(resting.ok, `resting at the offer should be allowed: ${JSON.stringify(resting.ok ? '' : resting.precheck)}`);
+
+  const crossing = await rig(wide).engine.open(
+    planFor(ceProduct(), { lots: 1, stopPrice: 40, entry: { type: 'market', timeoutMs: 5_000, marketFallback: false } }),
+  );
+  assert.equal(crossing.ok, false);
+  assert.ok(!crossing.ok && failureCodes(crossing.precheck).includes('SPREAD_TOO_WIDE'));
+});
+
+test('49 a limit at the bid is crossing, because it fills immediately', async () => {
+  const r = rig({ quotes: [quote(CE, 17, 19)], balanceUsd: 100 });
+  const res = await r.engine.open(
+    planFor(ceProduct(), { lots: 1, stopPrice: 40, entry: { type: 'limit', limitPrice: 17, timeoutMs: 5_000, marketFallback: false } }),
+  );
+  assert.equal(res.ok, false);
+  assert.ok(!res.ok && failureCodes(res.precheck).includes('SPREAD_TOO_WIDE'));
+});
+
+test('50 depth is only demanded of an order that has to fill now', async () => {
+  const thin = { quotes: [quote(CE, 100, 101, { bidSize: 1 })], balanceUsd: 1_000 };
+  const resting = await rig(thin).engine.open(
+    planFor(ceProduct(), { lots: 50, stopPrice: 130, entry: { type: 'limit', limitPrice: 101, timeoutMs: 5_000, marketFallback: false } }),
+  );
+  assert.ok(resting.ok, 'resting is waiting for someone to arrive; nobody is there yet by definition');
+
+  const crossing = await rig(thin).engine.open(
+    planFor(ceProduct(), { lots: 50, stopPrice: 130, entry: { type: 'market', timeoutMs: 5_000, marketFallback: false } }),
+  );
+  assert.ok(!crossing.ok && failureCodes(crossing.precheck).includes('THIN_BOOK'));
 });
 
 // ------------------------------------------------------ 41-46 leverage

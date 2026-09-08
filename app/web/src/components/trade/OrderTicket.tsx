@@ -52,7 +52,7 @@ const LEVERAGE_STEPS = [1, 2, 3, 5, 10, 15, 20, 25, 50, 75, 100, 150, 200];
 const LOUD_LEVERAGE = 100;
 
 export function OrderTicket({
-  seed, open, onOpenChange, maxLots: maxLotsProp, onPlaced, defaultLeverage = 200,
+  seed, open, onOpenChange, maxLots: maxLotsProp, onPlaced, defaultLeverage = 200, balanceUsd = null,
 }: {
   seed: TicketSeed | null;
   open: boolean;
@@ -60,6 +60,8 @@ export function OrderTicket({
   maxLots?: number;
   onPlaced?: (r: PlaceResult) => void;
   defaultLeverage?: number;
+  /** Shown beside the size, so "1 lot" has a reason next to it. */
+  balanceUsd?: number | null;
 }) {
   const [lots, setLots] = useState(1);
   const [leverage, setLeverage] = usePersisted('order:leverage', defaultLeverage);
@@ -147,7 +149,10 @@ export function OrderTicket({
   if (!seed) return null;
 
   const working = limitPrice ?? preview?.quote?.bid ?? seed.bid;
-  const credit = preview?.creditUsd ?? (working !== null ? working * lots : null);
+  // A quoted price is dollars per BTC and a contract is 0.001 of one, so the
+  // fallback has to carry the contract size or it reads a thousand times high.
+  const credit =
+    preview?.creditUsd ?? (working !== null ? working * lots * (preview?.contractValue ?? 0.001) : null);
   const blocked = preview !== null && !preview.ok;
   const canSend = !!preview?.ok && !placing && !checking;
   // A cap of zero is not a cap, it is a missing answer -- and clamping to it
@@ -231,7 +236,8 @@ export function OrderTicket({
                   <Plus className="h-4 w-4" />
                 </Stepper>
               </div>
-              <div className="mt-1.5 flex gap-1.5">
+              {/* only worth showing when there is more than one choice to make */}
+              <div className={cn('mt-1.5 flex gap-1.5', capKnown && cap! <= 1 && 'hidden')}>
                 {[1, 5, 10, 25, ...(capKnown ? [cap!] : [])]
                   .filter((n, i, a) => n >= 1 && a.indexOf(n) === i && n <= maxLots)
                   .map((n) => (
@@ -250,7 +256,8 @@ export function OrderTicket({
               </div>
               {capKnown && (
                 <p className="m-0 mt-1 text-[11px] text-muted-foreground">
-                  {cap} lot{cap === 1 ? '' : 's'} is all the balance covers at {leverage}x.
+                  {balanceUsd !== null && <>{usd(balanceUsd)} available — </>}
+                  {cap} lot{cap === 1 ? '' : 's'} at {leverage}x.
                 </p>
               )}
             </div>
@@ -278,6 +285,7 @@ export function OrderTicket({
             <ExitBars
               entry={working}
               size={preview?.size ?? lots}
+              contractValue={preview?.contractValue ?? 0.001}
               targetOn={targetOn}
               stopOn={stopOn}
               onTargetOn={setTargetOn}
@@ -309,7 +317,6 @@ export function OrderTicket({
                 value={preview?.worstCaseLossUsd != null ? signedUsd(-preview.worstCaseLossUsd) : '—'}
                 tone="down"
               />
-              <Line label="contracts" value={preview ? String(preview.size) : String(lots)} />
             </dl>
 
             {blocked && (

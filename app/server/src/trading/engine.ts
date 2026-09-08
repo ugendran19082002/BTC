@@ -4,7 +4,7 @@ import type {
 import { applyEvent, initialTrade, isDone, protectionSize } from './machine.js';
 import { priceFor, lotsToContracts, stopPriceFor } from './money.js';
 import { DEFAULT_LIMITS, precheck, type PrecheckResult, type RiskLimits } from './precheck.js';
-import { clampLeverage, liquidationRoom } from './margin.js';
+import { clampLeverage, liquidationRoom, premiumUsd } from './margin.js';
 import { ExchangeUnavailable, OrderRejected, SubmitTimeout, type ExchangePort } from './exchange/port.js';
 
 /**
@@ -136,7 +136,7 @@ export class TradeEngine {
     // trade risks is set by leverage -- more leverage, tighter close-out, less
     // to lose. That is the one thing high leverage is good for, and the gate
     // should reflect it rather than refusing every trade without a stop.
-    const credit = (price ?? 0) * size;
+    const credit = premiumUsd(price ?? 0, size, product?.contractValue);
     const worstCase = worstCaseLoss({
       stopPrice: plan.stopPrice, price, size, credit, spot,
       leverage: clampLeverage(plan.leverage), contractValue: product?.contractValue,
@@ -147,6 +147,7 @@ export class TradeEngine {
       intent: {
         side: 'sell', size, expect: plan.expect, price, reduceOnly: false,
         leverage: clampLeverage(plan.leverage), stopPrice: plan.stopPrice,
+        crossing: crossesSpread('sell', plan.entry.type, plan.entry.limitPrice ?? null, quote),
       },
       spot,
       product,
@@ -542,12 +543,34 @@ export function worstCaseLoss(i: {
   leverage: number;
   contractValue?: number;
 }): number {
-  if (i.stopPrice !== null) return Math.max(0, i.stopPrice * i.size - i.credit);
+  // Every term is a quoted price, so every term goes through premiumUsd.
+  if (i.stopPrice !== null) {
+    return Math.max(0, premiumUsd(i.stopPrice, i.size, i.contractValue) - i.credit);
+  }
   if (i.spot === null || i.price === null) return Infinity;
   const room = liquidationRoom({
     spot: i.spot, premium: i.price, leverage: i.leverage, contractValue: i.contractValue,
   });
-  return room === null ? Infinity : Math.max(0, room * i.size);
+  return room === null ? Infinity : Math.max(0, premiumUsd(room, i.size, i.contractValue));
+}
+
+/**
+ * Does this order pay the spread?
+ *
+ * A market order always does. A limit only does when it is already marketable:
+ * a sell at or below the bid gets taken immediately, a sell above it rests.
+ */
+export function crossesSpread(
+  side: 'buy' | 'sell',
+  type: 'limit' | 'market',
+  limitPrice: number | null,
+  quote: { bid: number | null; ask: number | null } | null,
+): boolean {
+  if (type === 'market') return true;
+  if (limitPrice === null || !quote) return true;   // unknown: assume the worse
+  return side === 'sell'
+    ? quote.bid !== null && limitPrice <= quote.bid
+    : quote.ask !== null && limitPrice >= quote.ask;
 }
 
 function avgSeenNotional(state: TradeState, orderId: string): number {

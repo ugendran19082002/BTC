@@ -131,6 +131,8 @@ export type Preview = {
   quote: Quote | null;
   product: ProductSpec | null;
   size: number;
+  /** BTC per contract. A quoted price times this is the money. */
+  contractValue: number;
   creditUsd: number;
   worstCaseLossUsd: number | null;
   stopPrice: number | null;

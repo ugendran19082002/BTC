@@ -30,6 +30,11 @@ export type ExitBarsProps = {
   entry: number | null;
   /** Contracts, for turning a price difference into money. */
   size: number;
+  /**
+   * BTC per contract. A quoted price is dollars per BTC, so the money is
+   * price x contracts x this -- leaving it out reads a thousand times high.
+   */
+  contractValue?: number;
   targetPct: number;
   stopPct: number;
   onTargetPct: (v: number) => void;
@@ -45,13 +50,13 @@ const STOP_MAX = 3;
 
 export function ExitBars({
   entry, size, targetPct, stopPct, onTargetPct, onStopPct, liquidationPrice,
-  targetOn, stopOn, onTargetOn, onStopOn,
+  targetOn, stopOn, onTargetOn, onStopOn, contractValue = 0.001,
 }: ExitBarsProps) {
   const targetPrice = entry !== null && targetOn && targetPct > 0 ? entry * (1 - targetPct) : null;
   const stopPrice = entry !== null && stopOn && stopPct > 0 ? entry * (1 + stopPct) : null;
 
-  const keep = entry !== null && targetPrice !== null ? (entry - targetPrice) * size : null;
-  const lose = entry !== null && stopPrice !== null ? (stopPrice - entry) * size : null;
+  const keep = entry !== null && targetPrice !== null ? (entry - targetPrice) * size * contractValue : null;
+  const lose = entry !== null && stopPrice !== null ? (stopPrice - entry) * size * contractValue : null;
 
   // A stop the exchange will reach first is not a stop, and the bar should say
   // so while your thumb is still on it rather than after the order is refused.

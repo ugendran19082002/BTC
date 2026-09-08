@@ -37,7 +37,8 @@ const ok = (over: Partial<Preview> = {}): Preview => ({
     expiryTs: seed.expiryTs, tickSize: 0.1, lotSize: 1, contractValue: 0.001, state: 'live',
   },
   size: 1,
-  creditUsd: 9,
+  contractValue: 0.001,
+  creditUsd: 0.009,
   worstCaseLossUsd: 13.5,
   stopPrice: 22.5,
   takeProfitPrice: 4.5,
@@ -158,7 +159,7 @@ describe('size', () => {
   it('says how many lots the balance actually covers', async () => {
     previewOrder.mockResolvedValue(ok({ maxLots: 7 }));
     show();
-    await waitFor(() => expect(screen.getByText(/7 lots is all the balance covers/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/7 lots at 200x/)).toBeInTheDocument());
   });
 
   it('clamps a typed size to the cap instead of trusting it', () => {
@@ -191,8 +192,8 @@ describe('the gates', () => {
 
   it('places the order and reports the fill once the gates pass', async () => {
     show();
-    await waitFor(() => expect(screen.getByRole('button', { name: /Sell · \$9\.00/ })).toBeEnabled());
-    fireEvent.click(screen.getByRole('button', { name: /Sell · \$9\.00/ }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /Sell · \$0\.01/ })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: /Sell · \$0\.01/ }));
     await waitFor(() => expect(screen.getByText('Sold 1 at 9.00')).toBeInTheDocument());
     expect(placeOrder).toHaveBeenCalledTimes(1);
   });
