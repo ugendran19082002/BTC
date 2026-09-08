@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { TRADE_DB } from '../paths.js';
 import type { TradeRecord, TradeStore } from './engine.js';
+import { recompute } from './machine.js';
 import type { TradeEvent, TradeState } from './types.js';
 
 /**
@@ -122,12 +123,21 @@ export class SqliteTradeStore implements TradeStore {
     return rows.map((r) => JSON.parse(r.event) as TradeEvent);
   }
 
-  /** Realised P&L booked today, in USD. Feeds the daily loss gate. */
+  /**
+   * Realised P&L booked today, in USD. Feeds the daily loss gate.
+   *
+   * Recomputed from the fills rather than summed from the stored field, for the
+   * same reason hydrate does: a row written under a wrong calculation would
+   * otherwise keep feeding the gate a wrong number.
+   */
   realisedSince(fromMs: number): number {
     const rows = this.db
       .prepare('SELECT state FROM trades WHERE updated_at >= ?')
       .all(fromMs) as { state: string }[];
-    return rows.reduce((n, r) => n + ((JSON.parse(r.state) as TradeState).realisedPnl ?? 0), 0);
+    return rows.reduce(
+      (n, r) => n + (recompute(JSON.parse(r.state) as TradeState).realisedPnl ?? 0),
+      0,
+    );
   }
 
   private query(sql: string, ...params: unknown[]): TradeRecord[] {
@@ -137,8 +147,10 @@ export class SqliteTradeStore implements TradeStore {
   }
 
   private hydrate(tradeId: string, row: { plan: string; state: string }): TradeRecord {
+    // The stored figures are a cache of the fills. Recomputing on the way out
+    // means a corrected calculation fixes history rather than only the future.
     return {
-      state: JSON.parse(row.state) as TradeRecord['state'],
+      state: recompute(JSON.parse(row.state) as TradeRecord['state']),
       plan: JSON.parse(row.plan) as TradeRecord['plan'],
       events: this.events(tradeId),
     };

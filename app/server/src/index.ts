@@ -2,7 +2,7 @@ import { buildApp } from './http/app.js';
 import { config } from './config.js';
 import { authFromEnv } from './http/session.js';
 import { loadDays } from './backtest/backtest.js';
-import { hasCredentials } from './http/routes/account.routes.js';
+import { credsFromEnv } from './delta/signed.js';
 import { tradingService } from './trading/service.js';
 
 /**
@@ -19,7 +19,7 @@ await app.listen({ port: config.port, host: '0.0.0.0' });
 const auth = authFromEnv();
 app.log.info(`chain snapshots loaded: ${loadDays().length}`);
 app.log.info(
-  hasCredentials()
+  credsFromEnv() !== null
     ? 'Delta credentials present'
     : 'no Delta credentials -- account and order endpoints are off, market data unaffected',
 );

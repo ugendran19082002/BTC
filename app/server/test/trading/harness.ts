@@ -1,6 +1,6 @@
 import { PaperExchange } from '../../src/trading/exchange/paper.js';
 import { MemoryTradeStore, TradeEngine, type TradePlan } from '../../src/trading/engine.js';
-import { DEFAULT_LIMITS, type RiskLimits } from '../../src/trading/precheck.js';
+import { DEFAULT_LIMITS, dailyLossLimitFor, type RiskLimits } from '../../src/trading/precheck.js';
 import type { ProductSpec, Quote } from '../../src/trading/types.js';
 
 /**
@@ -96,7 +96,14 @@ export function rig(opts: {
     exchange: ex,
     store,
     now: () => clock,
-    limits: { ...DEFAULT_LIMITS, ...opts.limits },
+    // The harness mirrors the service: the daily loss budget is set from the
+    // balance, so a test that does not care about that gate does not trip it,
+    // and one that does sets it explicitly.
+    limits: {
+      ...DEFAULT_LIMITS,
+      maxDailyLossUsd: dailyLossLimitFor(opts.balanceUsd ?? 100_000),
+      ...opts.limits,
+    },
     tradingEnabled: opts.tradingEnabled !== false,
     feedHealthy: () => feed,
     dayPnlUsd: () => pnl,

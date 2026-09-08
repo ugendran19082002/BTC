@@ -4,7 +4,7 @@ import { TradeEngine, type TradePlan, type TradeRecord } from './engine.js';
 import { SqliteTradeStore } from './store.js';
 import { DeltaExchange } from './exchange/delta.js';
 import { PaperExchange } from './exchange/paper.js';
-import { DEFAULT_LIMITS, type RiskLimits } from './precheck.js';
+import { DEFAULT_LIMITS, dailyLossLimitFor, type RiskLimits } from './precheck.js';
 import { clampLeverage } from './margin.js';
 import { isDone } from './machine.js';
 import type { ExchangePort } from './exchange/port.js';
@@ -79,9 +79,13 @@ export class TradingService {
   private stepping = false;
   /** Last BTC spot seen, for the margin and liquidation model. */
   private lastSpot: number | null = null;
+  /** Last balance seen, so the daily-loss limit can be set from it. */
+  private lastBalance: number | null = null;
   readonly alarms: { tradeId: string; message: string; at: number }[] = [];
 
   constructor(limits: Partial<RiskLimits> = {}) {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const self = this;
     const creds = credsFromEnv();
     this.live = creds ? new DeltaExchange(creds) : null;
     this.paperExchange = new PaperExchange({ balanceUsd: 1_000 });
@@ -100,7 +104,11 @@ export class TradingService {
       }),
       store: this.store,
       now: () => Date.now(),
-      limits: { ...DEFAULT_LIMITS, ...limits },
+      // Re-read on every gate check, so the limit follows the account rather
+      // than whatever it was when the process started.
+      limits: { ...DEFAULT_LIMITS, ...limits, get maxDailyLossUsd() {
+        return limits.maxDailyLossUsd ?? dailyLossLimitFor(self.lastBalance);
+      } },
       tradingEnabled: true,
       feedHealthy: () => this.feedOk,
       dayPnlUsd: () => this.store.realisedSince(startOfDayIst()),
@@ -323,7 +331,14 @@ export class TradingService {
   get spot() { return this.lastSpot; }
   product(symbol: string) { return this.exchange.getProduct(symbol); }
   positions() { return this.exchange.getPositions(); }
-  balance() { return this.exchange.getBalanceUsd(); }
+  async balance() {
+    const usd = await this.exchange.getBalanceUsd();
+    this.lastBalance = usd;
+    return usd;
+  }
+
+  /** What the desk will let today lose, given what is in the account. */
+  get dailyLossLimitUsd() { return dailyLossLimitFor(this.lastBalance); }
 
   list(limit = 50): TradeRecord[] { return this.store.recent(limit); }
   openTrades(): TradeRecord[] { return this.store.open().filter((r) => !isDone(r.state)); }

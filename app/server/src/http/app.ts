@@ -4,7 +4,6 @@ import { config } from '../config.js';
 import { authFromEnv, COOKIE, readCookie, tokenValid } from './session.js';
 import { registerSessionRoutes } from './routes/session.routes.js';
 import { registerDeskRoutes } from './routes/desk.routes.js';
-import { registerAccountRoutes } from './routes/account.routes.js';
 import { registerBacktestRoutes } from './routes/backtest.routes.js';
 import { registerTradeRoutes } from './routes/trade.routes.js';
 import { registerErrorRoutes } from './routes/errors.routes.js';
@@ -72,7 +71,6 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   registerSessionRoutes(app, auth);
   registerDeskRoutes(app);
-  registerAccountRoutes(app);
   registerBacktestRoutes(app);
   registerTradeRoutes(app);
   registerErrorRoutes(app);

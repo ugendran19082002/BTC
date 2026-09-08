@@ -12,6 +12,18 @@ import type { MarketRead } from '../market/moves.js';
  */
 
 export const LOT_BTC = 0.001;
+/**
+ * Margin for one lot, at the leverage this desk defaults to.
+ *
+ * Kept as a constant here because the backtest needs one number for 733 days
+ * of history, and the spot on each of those days is not what it is now. It is
+ * derived from the real model rather than guessed: spot / 200 x 0.001, at a
+ * spot of around $100,000.
+ *
+ * The live desk does not use this. Anything sizing a real order goes through
+ * trading/margin.ts, which knows today's spot and today's leverage -- a flat
+ * number there would be a 160x assumption dressed as a constant.
+ */
 export const MARGIN_PER_LOT_USD = 0.5;
 export const USDINR = 85;
 
@@ -281,6 +293,7 @@ export function bias(snap: Snapshot, scored: ScoredLeg[]): Bias {
 }
 
 /** test.md sizing model: lots are capped by margin, not by conviction. */
+/** Lots the backtest can carry. For a live order use trading/margin.ts. */
 export function maxLots(availableUsd: number): number {
   return Math.floor(availableUsd / MARGIN_PER_LOT_USD);
 }

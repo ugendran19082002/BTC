@@ -195,6 +195,29 @@ export function applyEvent(prev: TradeState, e: TradeEvent): TradeState {
 export const replay = (init: TradeState, events: TradeEvent[]): TradeState =>
   events.reduce(applyEvent, init);
 
+/**
+ * Rebuild the derived figures from the fills.
+ *
+ * The fills are the record; the position, the averages and the realised P&L are
+ * a cache of them. When the arithmetic behind that cache is corrected -- as it
+ * was when the contract size was found missing from realised P&L -- rows
+ * written under the old rule keep the old answer forever unless something
+ * recomputes them. This does, on the way out of the store, so history is right
+ * the moment the code is.
+ */
+export function recompute(s: TradeState): TradeState {
+  const entry = averageOf(s.fills, (f) => f.role === 'entry');
+  const exit = averageOf(s.fills, (f) => isExit(f.role));
+  return {
+    ...s,
+    entrySize: entry.size,
+    entryAvgPrice: entry.avg,
+    exitSize: exit.size,
+    exitAvgPrice: exit.avg,
+    realisedPnl: realised(entry.avg, exit.avg, exit.size, s.contractValue ?? 0.001),
+  };
+}
+
 /** How many contracts a stop or a target must cover right now. Never the request. */
 export const protectionSize = (s: TradeState): number => Math.abs(s.position);
 

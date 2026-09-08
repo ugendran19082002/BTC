@@ -142,7 +142,8 @@ export function registerTradeRoutes(app: FastifyInstance) {
       alarms: svc.alarms,
       /** Booked today, in USD. The daily-loss gate reads this; now so can you. */
       realisedTodayUsd: svc.store.realisedSince(startOfDayIst()),
-      limits: DEFAULT_LIMITS,
+      // The limit in force, which is set from the balance rather than fixed.
+      limits: { ...DEFAULT_LIMITS, maxDailyLossUsd: svc.dailyLossLimitUsd },
     };
   });
 
@@ -218,7 +219,8 @@ export function registerTradeRoutes(app: FastifyInstance) {
         totalShortContracts: totalShort,
         dayPnlUsd: svc.store.realisedSince(Date.now() - 86_400_000),
         worstCaseLossUsd: worstCase,
-        limits: DEFAULT_LIMITS,
+        // The limit in force, which is set from the balance rather than fixed.
+      limits: { ...DEFAULT_LIMITS, maxDailyLossUsd: svc.dailyLossLimitUsd },
       });
 
       return {

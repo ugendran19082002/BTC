@@ -36,7 +36,15 @@ export type RiskLimits = {
   minBookCoverage: number;
   /** Total short contracts allowed across the book. */
   maxShortContracts: number;
-  /** Stop the day once losses reach this, in USD. */
+  /**
+   * Stop the day once losses reach this, in USD.
+   *
+   * A number, not a percentage, because it is compared against a worst case in
+   * dollars. But it has to be *set* from the balance: five thousand dollars on
+   * an account holding fifty-nine cents is not a risk limit, it is decoration,
+   * and a gate that can never fire is worse than no gate because it reads as
+   * protection. See dailyLossLimitFor().
+   */
   maxDailyLossUsd: number;
   /** Do not sell an option for less than this. */
   minPremiumUsd: number;
@@ -53,12 +61,22 @@ export type RiskLimits = {
   maxLeverage: number;
 };
 
+/**
+ * Half the account, or a dollar, whichever is more.
+ *
+ * Half is a judgement: enough room that an ordinary losing day does not stop
+ * you, tight enough that a bad one does. The floor exists so a nearly empty
+ * account still has a limit rather than an unreachable one.
+ */
+export const dailyLossLimitFor = (balanceUsd: number | null): number =>
+  Math.max(1, (balanceUsd ?? 0) * 0.5);
+
 export const DEFAULT_LIMITS: RiskLimits = {
   maxQuoteAgeMs: 3_000,
   maxSpreadPct: 0.04,
   minBookCoverage: 0.5,
   maxShortContracts: 500,
-  maxDailyLossUsd: 5_000,
+  maxDailyLossUsd: 25,
   minPremiumUsd: 5,
   allowPyramiding: false,
   maxLeverage: 200,

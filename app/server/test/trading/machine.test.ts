@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  applyEvent, initialTrade, isDone, mustReconcile, needsProtection, protectionSize, replay,
+  applyEvent, initialTrade, isDone, mustReconcile, needsProtection, protectionSize, recompute, replay,
 } from '../../src/trading/machine.js';
 import type { TradeEvent, TradeState } from '../../src/trading/types.js';
 
@@ -156,3 +156,30 @@ test('replaying the journal rebuilds the same trade, which is what a restart doe
   assert.equal(a.phase, 'flat');
   assert.equal(a.entryAvgPrice, (60 * 100.5 + 40 * 99.5) / 100);
 });
+
+  test('recompute rebuilds the derived figures from the fills', () => {
+    const s = replay(start(), [fill(2, 19), fill(2, 16, 'take_profit')]);
+    // a row written by the old code, with the thousand-fold P&L still in it
+    const stale = { ...s, realisedPnl: 6, entryAvgPrice: null, exitSize: 0 };
+    const fixed = recompute(stale);
+    assert.ok(Math.abs(fixed.realisedPnl - 0.006) < 1e-9, `got ${fixed.realisedPnl}`);
+    assert.equal(fixed.entryAvgPrice, 19, 'the averages come back too');
+    assert.equal(fixed.exitSize, 2);
+  });
+
+  test('recompute is idempotent, so reading twice does not drift', () => {
+    const s = replay(start(), [fill(2, 19), fill(2, 16, 'take_profit')]);
+    assert.deepEqual(recompute(recompute(s)), recompute(s));
+  });
+
+  test('a trade with no fills recomputes to nothing rather than to NaN', () => {
+    const fixed = recompute(start());
+    assert.equal(fixed.realisedPnl, 0);
+    assert.equal(fixed.entryAvgPrice, null);
+  });
+
+  test('an older row with no contract size falls back to Delta’s 0.001', () => {
+    const s = replay(start(), [fill(1, 19), fill(1, 16, 'take_profit')]);
+    const legacy = { ...s, contractValue: undefined as unknown as number };
+    assert.ok(Math.abs(recompute(legacy).realisedPnl - 0.003) < 1e-9);
+  });
