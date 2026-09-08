@@ -30,8 +30,34 @@ export function usd(n: number | null | undefined, dash = '—'): string {
 export const signedUsd = (n: number | null | undefined) =>
   n === null || n === undefined || !Number.isFinite(n) ? '—' : `${n >= 0 ? '+' : '−'}${usd(Math.abs(n))}`;
 
-export const inr = (n: number | null | undefined) =>
-  n === null || n === undefined || !Number.isFinite(n) ? '—' : `₹${Math.round(n).toLocaleString('en-IN')}`;
+/**
+ * Rupees. Paise below a hundred, whole rupees above it.
+ *
+ * Rounding ₹1.37 to "₹1" is the same mistake as writing $0.0066 as "$0.01" --
+ * on an account this size the paise are most of the number.
+ */
+export function inr(n: number | null | undefined, dash = '—'): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return dash;
+  const abs = Math.abs(n);
+  if (abs >= 100 || abs === 0) return `₹${Math.round(n).toLocaleString('en-IN')}`;
+  return `₹${n.toFixed(2)}`;
+}
+
+/** Signed rupees, where the sign is the point. */
+export const signedInr = (n: number | null | undefined) =>
+  n === null || n === undefined || !Number.isFinite(n) ? '—' : `${n >= 0 ? '+' : '−'}${inr(Math.abs(n))}`;
+
+/**
+ * The rate the desk converts at.
+ *
+ * A constant rather than a live rate on purpose: every figure on this desk and
+ * in the 733-day record is converted at one number, and a rate that drifted
+ * would make yesterday's report disagree with itself.
+ */
+export const USDINR = 85;
+
+export const usdToInr = (n: number | null | undefined) =>
+  n === null || n === undefined || !Number.isFinite(n) ? null : n * USDINR;
 
 export const pct = (fraction: number | null | undefined, places = 1) =>
   fraction === null || fraction === undefined || !Number.isFinite(fraction)

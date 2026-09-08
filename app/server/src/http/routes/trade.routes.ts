@@ -2,9 +2,17 @@ import type { FastifyInstance } from 'fastify';
 import { stopPriceFor, targetPriceFor, tradingService } from '../../trading/service.js';
 import { lotsToContracts } from '../../trading/money.js';
 import { DEFAULT_LIMITS, precheck } from '../../trading/precheck.js';
-import { clampLeverage, fundsRequiredPerContract, liquidationPrice, maxLotsAt, premiumUsd } from '../../trading/margin.js';
+import {
+  clampLeverage, fundsRequiredPerContract, liquidationPrice, maxLotsAt, premiumUsd, unrealisedPnlUsd,
+} from '../../trading/margin.js';
 import { crossesSpread, worstCaseLoss, type TradeRecord } from '../../trading/engine.js';
 import type { ExchangePosition } from '../../trading/types.js';
+
+/** 05:30 IST is when the daily contract opens, so that is where the day starts. */
+function startOfDayIst(now = Date.now()): number {
+  const IST = 5.5 * 3600_000;
+  return Math.floor((now + IST) / 86_400_000) * 86_400_000 - IST;
+}
 
 /**
  * The order desk.
@@ -40,13 +48,20 @@ const pct = (v: unknown, max: number) => {
   return Number.isFinite(n) && n > 0 ? Math.min(max, n) : 0;
 };
 
-const view = (r: TradeRecord, positions: ExchangePosition[] = []) => {
-  // The exchange's own mark-to-market, matched by symbol. Computing a second
-  // one here would give a number that disagrees with the Delta screen at the
-  // exact moment somebody is checking both.
+const view = (r: TradeRecord, positions: ExchangePosition[] = [], contractValue = 0.001) => {
+  // The exchange's mark is the authority on the *price*. The money is worked
+  // out here, because Delta's own unrealized_pnl came back positive on a
+  // position that was down, and a figure nobody can check is worse than one
+  // anybody can.
   const live = positions.find((p) => p.symbol === r.state.symbol) ?? null;
   const entry = r.state.entryAvgPrice;
   const mark = live?.markPrice ?? null;
+  const pnl = unrealisedPnlUsd({
+    entryPrice: entry,
+    markPrice: mark,
+    size: live?.size ?? r.state.position,
+    contractValue,
+  });
   return {
     ...r.state,
     plan: {
@@ -58,10 +73,16 @@ const view = (r: TradeRecord, positions: ExchangePosition[] = []) => {
     },
     live: {
       markPrice: mark,
-      unrealisedPnl: live?.unrealisedPnl ?? null,
-      /** As a share of the credit taken in: 0.35 means a third of it is banked. */
+      unrealisedPnl: pnl,
+      /**
+       * As a share of the credit taken in: 0.35 means a third of it is banked.
+       * The same subtraction as the P&L, so the two can never disagree about
+       * which way the trade is going -- which is how this bug was spotted.
+       */
       decayed: entry !== null && entry > 0 && mark !== null ? (entry - mark) / entry : null,
       liquidationPrice: live?.liquidationPrice ?? null,
+      /** What Delta says, kept for comparison. Not what the screen shows. */
+      exchangePnl: live?.unrealisedPnl ?? null,
     },
   };
 };
@@ -98,6 +119,11 @@ export function registerTradeRoutes(app: FastifyInstance) {
       svc.balance().catch(() => null),
       svc.positions().catch(() => []),
     ]);
+    const trades = svc.openTrades();
+    // Cached after the first call, so this costs nothing per poll.
+    const contractValue =
+      (await svc.product(trades[0]?.state.symbol ?? '').catch(() => null))?.contractValue ?? 0.001;
+    const open = trades.map((r) => view(r, positions, contractValue));
     return {
       mode: svc.mode,
       /** True only when a real order would reach the real exchange. */
@@ -110,10 +136,12 @@ export function registerTradeRoutes(app: FastifyInstance) {
         : svc.canGoLive ? null : 'No Delta credentials configured on the server.',
       balanceUsd: balance,
       positions,
-      open: svc.openTrades().map((r) => view(r, positions)),
+      open,
       /** Every open position added up, so the tab can say it in one number. */
-      unrealisedPnlUsd: positions.reduce((n, p) => n + (p.unrealisedPnl ?? 0), 0),
+      unrealisedPnlUsd: open.reduce((n, t) => n + (t.live.unrealisedPnl ?? 0), 0),
       alarms: svc.alarms,
+      /** Booked today, in USD. The daily-loss gate reads this; now so can you. */
+      realisedTodayUsd: svc.store.realisedSince(startOfDayIst()),
       limits: DEFAULT_LIMITS,
     };
   });

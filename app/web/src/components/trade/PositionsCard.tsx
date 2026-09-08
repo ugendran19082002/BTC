@@ -6,7 +6,9 @@ import { Card, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CloseAllButton } from '@/components/trade/CloseAllButton';
-import { ago, contractLabel, pct, price, signedUsd, size as fmtSize } from '@/lib/format';
+import {
+  ago, contractLabel, pct, price, signedInr, signedUsd, size as fmtSize, usdToInr,
+} from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 /**
@@ -132,8 +134,8 @@ function WorkingRow({ trade, onChanged }: { trade: Trade; onChanged?: () => void
 const pnlTone = (n: number | null | undefined): 'up' | 'down' | undefined =>
   n === null || n === undefined || n === 0 ? undefined : n > 0 ? 'up' : 'down';
 
-function Figure({ label, value, tone, hint }: {
-  label: string; value: string; tone?: 'up' | 'down'; hint?: string;
+function Figure({ label, value, second, tone, hint }: {
+  label: string; value: string; second?: string; tone?: 'up' | 'down'; hint?: string;
 }) {
   return (
     <div className="min-w-0" title={hint}>
@@ -148,6 +150,9 @@ function Figure({ label, value, tone, hint }: {
       >
         {value}
       </div>
+      {second && second !== '—' && (
+        <div className="truncate text-[11px] tabular-nums text-muted-foreground">{second}</div>
+      )}
     </div>
   );
 }
@@ -210,6 +215,9 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
         <Figure
           label="profit"
           value={signedUsd(trade.live?.unrealisedPnl)}
+          // The account is Indian; the exchange quotes in dollars. Both, so
+          // neither has to be converted in your head.
+          second={signedInr(usdToInr(trade.live?.unrealisedPnl))}
           tone={pnlTone(trade.live?.unrealisedPnl)}
         />
         <Figure

@@ -52,6 +52,35 @@ export const premiumUsd = (quoted: number, contracts: number, contractValue = CO
   quoted * contracts * contractValue;
 
 /**
+ * What a short option is up or down right now, in USD.
+ *
+ * You sold it for `entry` and it is worth `mark`; the difference, over the
+ * contracts held, is the money. A short gains when the option gets *cheaper*,
+ * so the subtraction is that way round and not the other.
+ *
+ * This is arithmetic rather than a field read off the exchange, and
+ * deliberately. Delta's `unrealized_pnl` reported +0.022 on a position that was
+ * down $0.0016 -- wrong sign and wrong size, against a convention this desk
+ * cannot verify. A number nobody can check is worse than one anybody can:
+ * everything here comes from the fill price, the mark and the contract size,
+ * and it is tested against the decay percentage shown beside it, which must
+ * always agree with it about which way the trade is going.
+ */
+export function unrealisedPnlUsd(i: {
+  /** The price the position was opened at. */
+  entryPrice: number | null;
+  /** What it is worth now, by the exchange's mark. */
+  markPrice: number | null;
+  /** Contracts held. Sign is ignored: a short is assumed. */
+  size: number;
+  contractValue?: number;
+}): number | null {
+  const { entryPrice, markPrice, size, contractValue = CONTRACT_BTC } = i;
+  if (entryPrice === null || markPrice === null || !Number.isFinite(size) || size === 0) return null;
+  return (entryPrice - markPrice) * Math.abs(size) * contractValue;
+}
+
+/**
  * Delta holds maintenance margin at roughly half of initial for short options.
  * The gap between the two is the entire cushion the position has: initial is
  * what is taken, maintenance is where it is closed.

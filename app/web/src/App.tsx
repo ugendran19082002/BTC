@@ -8,10 +8,11 @@ import type { ChainResponse, ExpiryOption } from '@/types/desk';
 import { ChainTable, type ChainSellIntent } from '@/components/chain/ChainTable';
 import { OrderTicket, type TicketSeed } from '@/components/trade/OrderTicket';
 import { PositionsCard } from '@/components/trade/PositionsCard';
+import { AccountCard } from '@/components/trade/AccountCard';
 import { AlarmBanner } from '@/components/trade/ModeBanner';
 import { ModeSwitch } from '@/components/trade/ModeSwitch';
 import { getTradeStatus } from '@/api/trade';
-import { signedUsd } from '@/lib/format';
+import { signedInr, signedUsd, usdToInr } from '@/lib/format';
 import { getErrors } from '@/api/errors';
 import { ErrorLogPanel } from '@/components/layout/ErrorLogPanel';
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
@@ -30,7 +31,6 @@ import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { Stat, StatDivider } from '@/components/ui/stat';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { AccountSection } from '@/components/desk/AccountSection';
 import { Metric, Formula, Field } from '@/components/research/Explain';
 
 type Tab = 'desk' | 'trade' | 'backtest' | 'errors';
@@ -225,7 +225,10 @@ export default function App() {
           {trade && trade.open.length > 0 && <span className="pip">{trade.open.length}</span>}
           {/* The running total, on the tab, so it is readable without opening it. */}
           {trade?.unrealisedPnlUsd ? (
-            <span className={`pnl ${trade.unrealisedPnlUsd > 0 ? 'up' : 'down'}`}>
+            <span
+              className={`pnl ${trade.unrealisedPnlUsd > 0 ? 'up' : 'down'}`}
+              title={`${signedInr(usdToInr(trade.unrealisedPnlUsd))} at ₹85 to the dollar`}
+            >
               {signedUsd(trade.unrealisedPnlUsd)}
             </span>
           ) : null}
@@ -607,7 +610,6 @@ export default function App() {
                   )}
                   {data.market && <MoveSection market={data.market} snap={snap} />}
                   <BiasSection bias={data.bias} />
-                  <AccountSection usdinr={data.usdinr} />
                 </CollapsibleCard>
 
                 <RecommendPanel rec={data.recommendation} market={data.market} minPremium={minPremium} usdinr={data.usdinr} />
@@ -656,9 +658,14 @@ export default function App() {
         </>
       ) : tab === 'trade' ? (
         <div className="lead-row" style={{ gridTemplateColumns: 'minmax(0, 1fr)' }}>
-          <ErrorBoundary where="Positions">
-            <PositionsCard trades={trade?.open ?? []} onChanged={() => void refreshTrade()} />
-          </ErrorBoundary>
+          <div className="flex flex-col gap-3">
+            <ErrorBoundary where="Your account">
+              <AccountCard status={trade} />
+            </ErrorBoundary>
+            <ErrorBoundary where="Positions">
+              <PositionsCard trades={trade?.open ?? []} onChanged={() => void refreshTrade()} />
+            </ErrorBoundary>
+          </div>
         </div>
       ) : tab === 'errors' ? (
         <div className="lead-row" style={{ gridTemplateColumns: 'minmax(0, 1fr)' }}>

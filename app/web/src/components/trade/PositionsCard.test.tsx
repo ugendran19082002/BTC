@@ -121,6 +121,16 @@ describe('what it is worth right now', () => {
     expect(screen.getByText('−$0.350').className).toContain('--down');
   });
 
+  it('shows a loss as a loss when the option has got dearer', () => {
+    // sold at 10.50, marked at 12.00: a short is down, and the card said "up"
+    render(<PositionsCard trades={[trade({
+      live: { markPrice: 12, unrealisedPnl: -0.15, decayed: -0.1428, liquidationPrice: 215.6 },
+    })]} />);
+    const profit = screen.getByText('−$0.150');
+    expect(profit.className).toContain('--down');
+    expect(screen.getByText('-14%').className).toContain('--down');
+  });
+
   it('names the close-out, which is the real exit when there is no stop', () => {
     render(<PositionsCard trades={[live]} />);
     expect(screen.getByText('215.60')).toBeInTheDocument();

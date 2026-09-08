@@ -57,6 +57,8 @@ export type Trade = {
     /** Share of the credit already decayed away. 0.35 means a third is banked. */
     decayed: number | null;
     liquidationPrice: number | null;
+    /** What Delta reports. Kept for comparison; not what the screen shows. */
+    exchangePnl?: number | null;
   };
 };
 
@@ -105,6 +107,8 @@ export type TradeStatus = {
   balanceUsd: number | null;
   /** Every open position added up. */
   unrealisedPnlUsd?: number;
+  /** Booked since 05:30 IST, in USD. */
+  realisedTodayUsd?: number;
   positions: ExchangePosition[];
   open: Trade[];
   alarms: { tradeId: string; message: string; at: number }[];

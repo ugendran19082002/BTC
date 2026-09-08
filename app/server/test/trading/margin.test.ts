@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   CONTRACT_BTC, LEVERAGE_STEPS, MAX_LEVERAGE, clampLeverage, feePerContract,
   fundsRequiredPerContract, initialMarginPerContract, liquidationMultiple,
-  liquidationPrice, liquidationRoom, maxLotsAt,
+  liquidationPrice, liquidationRoom, maxLotsAt, unrealisedPnlUsd,
 } from '../../src/trading/margin.js';
 
 /**
@@ -129,4 +129,60 @@ test('a lot larger than one contract scales the requirement with it', () => {
 
 test('the contract size is the one Delta lists', () => {
   assert.equal(CONTRACT_BTC, 0.001);
+});
+
+/**
+ * Profit and loss on a short option.
+ *
+ * The bug these exist for: a position sold at 19.00 and marked at 20.61 showed
+ * "+$0.022 profit" beside "−8% decayed". Both cannot be true. The option had
+ * got dearer, so a short was down $0.0016, and the figure came from Delta's
+ * `unrealized_pnl` -- wrong sign and wrong size against a convention this desk
+ * cannot verify. It is arithmetic now, and the last test here is the invariant
+ * that would have caught it on the day it was written.
+ */
+
+test('a short loses when the option gets dearer', () => {
+  const pnl = unrealisedPnlUsd({ entryPrice: 19, markPrice: 20.61, size: -1 })!;
+  assert.ok(pnl < 0, `sold at 19, now 20.61, and this says ${pnl}`);
+  assert.ok(Math.abs(pnl - -0.00161) < 1e-9, `got ${pnl}`);
+});
+
+test('and gains when it gets cheaper', () => {
+  const pnl = unrealisedPnlUsd({ entryPrice: 19, markPrice: 6.5, size: -1 })!;
+  assert.ok(Math.abs(pnl - 0.0125) < 1e-9, `got ${pnl}`);
+});
+
+test('the size scales it, and its sign does not', () => {
+  const short = unrealisedPnlUsd({ entryPrice: 19, markPrice: 6.5, size: -10 })!;
+  const same = unrealisedPnlUsd({ entryPrice: 19, markPrice: 6.5, size: 10 })!;
+  assert.equal(short, same, 'a short is assumed; the sign of the size is not a second opinion');
+  assert.ok(Math.abs(short - 0.125) < 1e-9);
+});
+
+test('an option that has expired worthless pays the whole credit', () => {
+  const pnl = unrealisedPnlUsd({ entryPrice: 19, markPrice: 0, size: -1 })!;
+  assert.ok(Math.abs(pnl - 0.019) < 1e-9, 'exactly what was taken in');
+});
+
+test('nothing is claimed before there is a price to claim it from', () => {
+  assert.equal(unrealisedPnlUsd({ entryPrice: null, markPrice: 6.5, size: -1 }), null);
+  assert.equal(unrealisedPnlUsd({ entryPrice: 19, markPrice: null, size: -1 }), null);
+  assert.equal(unrealisedPnlUsd({ entryPrice: 19, markPrice: 6.5, size: 0 }), null);
+});
+
+test('[critical] profit and decay never disagree about which way the trade is going', () => {
+  // the exact check that was missing. Whatever the prices, the money and the
+  // percentage beside it must point the same way.
+  for (const entry of [0.5, 19, 506, 4000]) {
+    for (const mark of [0, 0.1, 6.5, 19, 20.61, 900, 5000]) {
+      const pnl = unrealisedPnlUsd({ entryPrice: entry, markPrice: mark, size: -3 })!;
+      const decayed = (entry - mark) / entry;
+      assert.equal(
+        Math.sign(pnl),
+        Math.sign(decayed),
+        `sold ${entry}, marked ${mark}: pnl ${pnl} against decay ${decayed}`,
+      );
+    }
+  }
 });
