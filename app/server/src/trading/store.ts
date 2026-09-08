@@ -62,6 +62,11 @@ export class SqliteTradeStore implements TradeStore {
          VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(trade_id) DO UPDATE SET
            phase = excluded.phase, position = excluded.position,
+           -- The plan changes: a stop moved, a target moved, an entry that fell
+           -- back. Leaving it out of the update meant it was written once on
+           -- insert and never again, so every later change was lost on the next
+           -- read -- the exits moved on the exchange and reverted on the screen.
+           plan = excluded.plan,
            state = excluded.state, updated_at = excluded.updated_at`,
       )
       .run(

@@ -57,8 +57,11 @@ export function EditExitsSheet({ trade, open, onOpenChange, onSaved }: {
     if (seededFor.current === trade.tradeId) return;
     seededFor.current = trade.tradeId;
 
-    const tp = trade.plan?.takeProfitPrice ?? null;
-    const sl = trade.plan?.stopPrice ?? null;
+    // The book first, the plan only as a fallback. The bar is a picture of the
+    // levels that are live, so it has to start from the ones that are live --
+    // seeding it from the plan showed −94% beside a book holding 25.10.
+    const tp = trade.onBook?.target ?? trade.plan?.takeProfitPrice ?? null;
+    const sl = trade.onBook?.stop ?? trade.plan?.stopPrice ?? null;
     setTargetOn(tp !== null);
     setStopOn(sl !== null);
     if (tp !== null) setTargetPct(clampPct(1 - tp / entry, 0.99));

@@ -72,6 +72,16 @@ describe('opening it', () => {
     expect(screen.getByText('on the book now · target').nextSibling).toHaveTextContent('20.80');
     expect(screen.getByText(/asked for 1.90 and the book holds 20.80/)).toBeInTheDocument();
   });
+
+  it('[critical] the bar shows the book, not the plan, when they differ', () => {
+    // −94% beside a book holding 25.10 is the bar describing something that is
+    // not there. 1 - 25.10/30.90 is 19%.
+    render(<EditExitsSheet trade={trade({ onBook: { target: 25.1, stop: null } })} open onOpenChange={() => {}} />);
+    expect(screen.getByText('−19%')).toBeInTheDocument();
+    expect(screen.queryByText('−94%')).toBeNull();
+    // the price sits in its own <b>, so match the value rather than the sentence
+    expect(screen.getAllByText('25.10').length).toBeGreaterThan(0);
+  });
 });
 
 describe('[critical] the poll must not undo your drag', () => {

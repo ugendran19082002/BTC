@@ -573,3 +573,29 @@ plainly when the two have drifted apart.
 The general rule, since it has now been broken twice: **anything labelled as
 what the exchange is doing must be read from the exchange.** The plan is what
 was asked for.
+
+## The bug behind "SL and TGT update not working"
+
+It was one line of SQL. `SqliteTradeStore.save` upserted with
+
+    ON CONFLICT(trade_id) DO UPDATE SET
+      phase = ..., position = ..., state = ..., updated_at = ...
+
+and no `plan`. So the plan was written once, on insert, and never again. Every
+later change to it was lost on the next read.
+
+That is why the reports were so confusing. The exchange was doing the right
+thing throughout — `protect()` worked from the in-memory plan and moved the
+order correctly, which is why Delta's book went 23.60 → 20.80 → 25.10 exactly
+as asked. The desk then re-read the row, got the original 1.90 back, and every
+screen that trusted the plan showed a level that had not existed for an hour.
+
+Three separate symptoms, one cause: the exits "not updating", the bar seeded at
+−94% beside a book holding 25.10, and the panel headed "on the book now"
+disagreeing with Delta.
+
+Four store tests now cover it, the first being a plan changed and read back.
+The wider lesson is the one already written above and now demonstrated: a
+screen that says what the exchange is doing must read it from the exchange. Had
+the panel done that from the start, the DB bug would have been visible in
+minutes rather than across an evening.
