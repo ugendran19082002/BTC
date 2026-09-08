@@ -27,6 +27,20 @@ describe('usd', () => {
     expect(usd(33)).toBe('$33.00');
     expect(usd(1234.56)).toBe('$1,235');
   });
+
+  it('goes to three places under a dollar, where the cents are the whole number', () => {
+    // a contract is a thousandth of a BTC, so these sums really are this small:
+    // writing $0.0066 as "$0.01" rounds away two thirds of it
+    expect(usd(0.0066)).toBe('$0.007');
+    expect(usd(0.04)).toBe('$0.040');
+    expect(usd(-0.019)).toBe('$-0.019');
+  });
+
+  it('treats a dollar and zero as ordinary money', () => {
+    expect(usd(1)).toBe('$1.00');
+    expect(usd(0)).toBe('$0.00');
+  });
+
   it('has nothing to say about a missing number', () => {
     expect(usd(null)).toBe('—');
   });

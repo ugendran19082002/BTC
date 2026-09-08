@@ -106,7 +106,7 @@ describe('a quoted price is dollars per BTC', () => {
     // sold at 10, target 80% -> buys back at 2, five contracts of 0.001 BTC
     render(<ExitBars {...base} contractValue={0.001} targetOn targetPct={0.8} />);
     expect(screen.getByText('2.00')).toBeInTheDocument();
-    expect(screen.getByText('$0.04')).toBeInTheDocument();
+    expect(screen.getByText('$0.040')).toBeInTheDocument();
   });
 });
 
