@@ -180,6 +180,9 @@ export default function App() {
 
   const snap = data?.snapshot;
   snapRef.current = snap ?? null;
+  // How far spot has come since this contract opened, which is what every
+  // strike on the board is measured from.
+  const contractMove = data?.market?.moves.find((m) => m.label === 'this contract so far') ?? null;
 
   if (signedIn === null) return <div className="spinner">…</div>;
   if (!signedIn) return <LoginPage onSignedIn={() => setSignedIn(true)} />;
@@ -207,7 +210,14 @@ export default function App() {
           </button>
         </div>
         <div className="top-row top-row-2">
-          {snap && <LivePrice spot={snap.spot} live={snap.live} />}
+          {snap && (
+          <LivePrice
+            spot={snap.spot}
+            live={snap.live}
+            sinceOpenUsd={contractMove?.changeUsd ?? null}
+            sinceOpenPct={contractMove?.changePct ?? null}
+          />
+        )}
           <ModeSwitch status={trade} onChanged={() => void refreshTrade()} />
         </div>
       </header>

@@ -1,14 +1,28 @@
 import { useEffect, useRef, useState } from 'react';
 
 /**
- * Spot, ticking.
+ * Spot, ticking, and how far it has come.
  *
  * A number that changes every five seconds without saying so looks like a
- * number that is stuck. This colours each change for a moment -- green up, red
- * down -- and shows how far it has come since the page was opened, which is the
- * question you are actually asking when you glance at it.
+ * number that is stuck, so each change is coloured for a moment -- green up,
+ * red down.
+ *
+ * The move beside it is measured from when the contract opened, not from when
+ * the page was opened. Page-open is an accident of when you happened to reload;
+ * contract-open is the thing every other number on this desk is measured
+ * against -- the strike distance, the expected move, the 733-day record. If the
+ * contract's own figure has not arrived yet it falls back to the session, and
+ * says which one it is showing either way.
  */
-export function LivePrice({ spot, live }: { spot: number; live: boolean }) {
+export function LivePrice({
+  spot, live, sinceOpenUsd, sinceOpenPct,
+}: {
+  spot: number;
+  live: boolean;
+  /** Dollars moved since the contract opened at 05:30 IST. */
+  sinceOpenUsd?: number | null;
+  sinceOpenPct?: number | null;
+}) {
   const [dir, setDir] = useState<'up' | 'down' | null>(null);
   const prev = useRef(spot);
   const opened = useRef(spot);
@@ -22,15 +36,27 @@ export function LivePrice({ spot, live }: { spot: number; live: boolean }) {
     return () => clearTimeout(t);
   }, [spot]);
 
-  const since = spot - opened.current;
+  const fromContract = sinceOpenUsd !== null && sinceOpenUsd !== undefined;
+  const move = fromContract ? sinceOpenUsd : spot - opened.current;
+  const show = Math.abs(move) >= 1;
 
   return (
     <span className={`liveprice${dir ? ' flash-' + dir : ''}`}>
       <i className={live ? 'dot on' : 'dot'} aria-hidden />
       <b>{spot.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</b>
-      {Math.abs(since) >= 1 && (
-        <span className={since >= 0 ? 'up' : 'down'}>
-          {since >= 0 ? '+' : '−'}${Math.abs(since).toFixed(0)}
+      {show && (
+        <span
+          className={move >= 0 ? 'up' : 'down'}
+          title={
+            fromContract
+              ? 'Since this contract opened at 05:30 IST — the point every strike is measured from.'
+              : 'Since you opened the page. The contract figure has not arrived yet.'
+          }
+        >
+          {move >= 0 ? '+' : '−'}${Math.abs(move).toFixed(0)}
+          {fromContract && sinceOpenPct != null && (
+            <span className="pts">{sinceOpenPct >= 0 ? '+' : '−'}{Math.abs(sinceOpenPct * 100).toFixed(2)}%</span>
+          )}
         </span>
       )}
     </span>
