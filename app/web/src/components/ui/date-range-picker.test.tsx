@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { DateRangePicker, describeRange, istToday } from '@/components/ui/date-range-picker';
 
@@ -10,6 +10,15 @@ import { DateRangePicker, describeRange, istToday } from '@/components/ui/date-r
  */
 
 const TODAY = '2026-09-08';
+
+/**
+ * The component reads the clock to work out what "today" means, so the clock is
+ * pinned. Without this the suite passed until midnight IST and then started
+ * failing on its own, which is a test that reports the time rather than the
+ * code.
+ */
+beforeEach(() => vi.setSystemTime(Date.UTC(2026, 8, 8, 15, 30)));   // 21:00 IST
+afterEach(() => vi.useRealTimers());
 
 describe('istToday', () => {
   it('is the evening’s date in Chennai, not the UTC one', () => {

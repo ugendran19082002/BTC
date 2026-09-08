@@ -1,6 +1,6 @@
 import { Slider } from '@/components/ui/slider';
 import { Checkbox } from '@/components/ui/checkbox';
-import { price as fmtPrice, usd } from '@/lib/format';
+import { price as fmtPrice, inr, usd, usdToInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 /**
@@ -93,7 +93,10 @@ export function ExitBars({
             ) : (
               <>
                 buys back at <b className="tabular-nums text-foreground">{fmtPrice(targetPrice)}</b>
-                {keep !== null && <> · you keep <b className="tabular-nums text-[var(--up)]">{usd(keep)}</b></>}
+                {keep !== null && (
+                  <> · you keep <b className="tabular-nums text-[var(--up)]">{inr(usdToInr(keep))}</b>
+                    <span className="text-[var(--dim)]"> {usd(keep)}</span></>
+                )}
               </>
             )
           }
@@ -136,7 +139,10 @@ export function ExitBars({
             ) : (
               <>
                 buys back at <b className="tabular-nums text-foreground">{fmtPrice(stopPrice)}</b>
-                {lose !== null && <> · you lose <b className="tabular-nums text-[var(--down)]">{usd(lose)}</b></>}
+                {lose !== null && (
+                  <> · you lose <b className="tabular-nums text-[var(--down)]">{inr(usdToInr(lose))}</b>
+                    <span className="text-[var(--dim)]"> {usd(lose)}</span></>
+                )}
               </>
             )
           }

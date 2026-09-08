@@ -13,7 +13,7 @@ import { ExitBars } from '@/components/trade/ExitBars';
 import { Checkbox } from '@/components/ui/checkbox';
 import { usePersisted } from '@/hooks/usePersisted';
 import { usePoll } from '@/hooks/usePoll';
-import { countdown, price, signedUsd, strike, usd } from '@/lib/format';
+import { countdown, inr, price, signedInr, signedUsd, strike, usd, usdToInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 /**
@@ -475,16 +475,18 @@ export function OrderTicket({
             <Separator className="my-3" />
 
             <dl className="m-0 grid gap-1.5">
-              <Line label="you get" value={usd(credit)} strong tone="up" />
+              <Line label="you get" value={inr(usdToInr(credit))} second={usd(credit)} strong tone="up" />
               <Line
                 label="margin needed"
-                value={usd(preview?.marginUsd)}
+                value={inr(usdToInr(preview?.marginUsd))}
+                second={usd(preview?.marginUsd)}
                 hint={`Delta calls this "Funds req." It is held while the position is open and given back when it closes.`}
                 tone={short ? 'down' : undefined}
               />
               <Line
                 label="available margin"
-                value={usd(balanceUsd)}
+                value={inr(usdToInr(balanceUsd))}
+                second={usd(balanceUsd)}
                 hint={`What is free in the account right now. Delta calls this "Available Margin".`}
                 tone={short ? 'down' : undefined}
               />
@@ -496,7 +498,8 @@ export function OrderTicket({
               />
               <Line
                 label={stopOn && stopPct > 0 ? 'worst case' : 'worst case, no stop'}
-                value={preview?.worstCaseLossUsd != null ? signedUsd(-preview.worstCaseLossUsd) : '—'}
+                value={preview?.worstCaseLossUsd != null ? signedInr(usdToInr(-preview.worstCaseLossUsd)) : '—'}
+                second={preview?.worstCaseLossUsd != null ? signedUsd(-preview.worstCaseLossUsd) : undefined}
                 tone="down"
                 hint={
                   stopOn && stopPct > 0
@@ -546,7 +549,7 @@ export function OrderTicket({
                 )}
               >
                 {placing || checking ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                {placing ? 'sending' : blocked ? 'cannot sell' : `Sell · ${usd(credit)}`}
+                {placing ? 'sending' : blocked ? 'cannot sell' : `Sell · ${inr(usdToInr(credit))}`}
               </button>
             </SheetFooter>
           </>
@@ -636,8 +639,8 @@ function BookStrip({ bid, mark, ask, mode, onPick }: {
   );
 }
 
-function Line({ label, value, strong, tone, hint }: {
-  label: string; value: string; strong?: boolean; tone?: 'up' | 'down'; hint?: string;
+function Line({ label, value, second, strong, tone, hint }: {
+  label: string; value: string; second?: string; strong?: boolean; tone?: 'up' | 'down'; hint?: string;
 }) {
   return (
     <div className="flex items-baseline justify-between gap-3">
@@ -647,15 +650,21 @@ function Line({ label, value, strong, tone, hint }: {
       >
         {label}
       </dt>
-      <dd
-        className={cn(
-          'm-0 tabular-nums',
-          strong ? 'text-[16px] font-semibold text-foreground' : 'text-[13px] text-foreground',
-          tone === 'down' && 'text-[var(--down)]',
-          tone === 'up' && 'text-[var(--up)]',
+      {/* Rupees lead: the account is Indian. The exchange quotes in dollars, so
+          they stay beside rather than going away. */}
+      <dd className="m-0 flex items-baseline gap-2 tabular-nums">
+        <span
+          className={cn(
+            strong ? 'text-[16px] font-semibold text-foreground' : 'text-[13px] text-foreground',
+            tone === 'down' && 'text-[var(--down)]',
+            tone === 'up' && 'text-[var(--up)]',
+          )}
+        >
+          {value}
+        </span>
+        {second && second !== '—' && (
+          <span className="text-[11.5px] text-muted-foreground">{second}</span>
         )}
-      >
-        {value}
       </dd>
     </div>
   );

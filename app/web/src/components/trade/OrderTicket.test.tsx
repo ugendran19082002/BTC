@@ -362,8 +362,8 @@ describe('the gates', () => {
 
   it('places the order and reports the fill once the gates pass', async () => {
     show();
-    await waitFor(() => expect(screen.getByRole('button', { name: /Sell · \$0\.009/ })).toBeEnabled());
-    fireEvent.click(screen.getByRole('button', { name: /Sell · \$0\.009/ }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /Sell · ₹0\.76/ })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: /Sell · ₹0\.76/ }));
     await waitFor(() => expect(screen.getByText('Sold 1 at 9.00')).toBeInTheDocument());
     expect(screen.getByText(/You are short 1 contract\./)).toBeInTheDocument();
     expect(placeOrder).toHaveBeenCalledTimes(1);
