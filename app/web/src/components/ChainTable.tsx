@@ -123,15 +123,21 @@ export function ChainTable({
     const b = box.current, r = atmRow.current;
     if (!b || !r) return;
     b.scrollTop = Math.max(0, r.offsetTop - b.clientHeight / 2 + r.clientHeight / 2);
-  }, [snap.atm, snap.expiry]);
+    // The strike sits in the middle of the table, calls to its left and puts to
+    // its right. On a phone the table is wider than the screen, and opening at
+    // either edge shows one side of the board with the strike off-screen -- so
+    // centre it, and both bids are a short swipe away.
+    b.scrollLeft = Math.max(0, (b.scrollWidth - b.clientWidth) / 2);
+  }, [snap.atm, snap.expiry, density]);
 
   return (
+    <>
+    <Coverage snap={snap} />
     <div
       className={`scroll chain chain-${density}`}
       style={{ maxHeight: height }}
       ref={box}
     >
-      <Coverage snap={snap} />
       <table>
         <thead>
           <tr>
@@ -197,7 +203,8 @@ export function ChainTable({
           })}
         </tbody>
       </table>
-      <div className="note" style={{ padding: '8px 12px', margin: 0 }}>
+    </div>
+      <div className="note" style={{ padding: '8px 12px', margin: '0 0 12px' }}>
         <b className="up">Bid</b> is what you receive when you <b>sell</b>.
         {' '}<b className="down">Ask</b> is what you pay when you <b>buy</b> — the hedge leg.
         {' '}Mark is Delta's fair value: use it to judge, never as your fill.
@@ -209,11 +216,11 @@ export function ChainTable({
         change these odds.
       </div>
       {!hasBook && (
-        <div className="note" style={{ padding: '8px 12px', margin: 0 }}>
+        <div className="note" style={{ padding: '8px 12px', margin: '0 0 12px' }}>
           No order book on a historical snapshot — bid and ask are live-only, so the
           mark stands in as the sell estimate here.
         </div>
       )}
-    </div>
+    </>
   );
 }

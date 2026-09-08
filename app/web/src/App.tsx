@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getAccount, getChain, getExpiries, getHealth, getMe, logout, NotSignedIn } from './api';
+import * as Collapsible from '@radix-ui/react-collapsible';
+import { ChevronDown } from 'lucide-react';
+import { getChain, getExpiries, getHealth, getMe, logout, NotSignedIn } from './api';
 import type { ChainResponse, ExpiryOption } from './types';
 import { ChainTable } from './components/ChainTable';
 import { MoveSection } from './components/MoveSection';
@@ -11,6 +13,7 @@ import { RecommendPanel } from './components/RecommendPanel';
 import { DateTimePicker, istToEpoch, type IstMoment } from './components/DateTimePicker';
 import { usePersisted } from './hooks/usePersisted';
 import { LoginPage } from './components/LoginPage';
+import { LivePrice } from './components/LivePrice';
 import { Select, SelectItem } from './components/ui/select';
 import { CardLead } from './components/ui/card';
 import { CollapsibleCard } from './components/ui/collapsible-card';
@@ -60,6 +63,7 @@ export default function App() {
   // Off by default on a desktop: the extra columns are why the table is worth
   // looking at. On a phone the media query hides them regardless.
   const [density, setDensity] = usePersisted<'default' | 'all'>('chain:density', 'default');
+  const [settingsOpen, setSettingsOpen] = usePersisted<boolean>('open:settings', true);
   const [minPremium, setMinPremium] = usePersisted('minPremium', 15);
   const [mode, setMode] = usePersisted<'premium' | 'safety'>('mode', 'premium');
   const [safetyBar, setSafetyBar] = usePersisted('safetyBar', 98);
@@ -73,7 +77,6 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [days, setDays] = useState<number | null>(null);
-  const [accountLinked, setAccountLinked] = useState<boolean | null>(null);
   // null while we are still asking the server whether a login is required
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const seq = useRef(0);
@@ -110,9 +113,6 @@ export default function App() {
   }, []);
 
   useEffect(() => { getHealth().then((h) => setDays(h.days)).catch(() => setDays(null)); }, []);
-  useEffect(() => {
-    getAccount().then((a) => setAccountLinked(a.configured)).catch(() => setAccountLinked(null));
-  }, []);
   /**
    * The list of expiries, re-read on a timer rather than once at load.
    *
@@ -154,10 +154,10 @@ export default function App() {
     <div className="app">
       <header className="top">
         <h1>BTC Options Desk</h1>
+        {snap && <LivePrice spot={snap.spot} live={snap.live} />}
         <span className="sub">
-          Delta Exchange India · prices are public, no key needed
+          Delta Exchange India · prices are public
           {days !== null && <> · {days} days of history</>}
-          {accountLinked === true && <> · account linked, read-only</>}
         </span>
         <button
           className="ghost"
@@ -176,6 +176,25 @@ export default function App() {
 
       {tab === 'desk' ? (
         <>
+          {/*
+            The settings fold like everything else. Eight controls above the
+            answer is a lot of screen on a phone, and most days none of them
+            change -- but folded away they must still be readable, or you cannot
+            tell what the numbers below were computed from. Hence the summary.
+          */}
+          <Collapsible.Root open={settingsOpen} onOpenChange={setSettingsOpen} className="bar-wrap">
+            <Collapsible.Trigger className="bar-toggle">
+              <ChevronDown className={`h-3 w-3 flex-none transition-transform ${settingsOpen ? '' : '-rotate-90'}`} />
+              <span>settings</span>
+              {!settingsOpen && (
+                <span className="bar-summary">
+                  {live ? 'live' : 'past'} · {mode === 'safety' ? `safest ≥ ${safetyBar}%` : 'most premium'}
+                  {' · '}≥ ${minPremium} · {lots} lots · {width} each side
+                  {hedgeGap > 0 && ` · hedge ${hedgeGap}`}
+                </span>
+              )}
+            </Collapsible.Trigger>
+            <Collapsible.Content>
           <div className="bar">
             <div className="field">
               <label>when</label>
@@ -408,6 +427,8 @@ export default function App() {
               )}
             </div>
           </div>
+            </Collapsible.Content>
+          </Collapsible.Root>
 
           {err && <div className="err">{err}</div>}
           {busy && !data && <div className="spinner">loading chain…</div>}

@@ -433,3 +433,51 @@ td.sellcell {
   -webkit-appearance: none; margin: 0;
 }
 .chain-density { display: inline-block; min-width: 210px; }
+
+/* Fill the box when the columns are narrow, and be exactly as wide as the
+   columns when they are not. `width: 100%` alone stretched a narrow table over
+   a wide box; `max-content` alone left the box unfilled on a desktop. */
+.chain table { min-width: 100%; width: max-content; }
+
+/* ── the settings, folded ─────────────────────────────────────────────────── */
+.bar-wrap { margin-bottom: 16px; }
+.bar-wrap .bar { margin-bottom: 0; }
+.bar-toggle {
+  appearance: none; border: 0; background: transparent; cursor: pointer;
+  display: flex; align-items: center; gap: 6px; padding: 0 0 6px;
+  font: inherit; font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.8px; color: var(--muted);
+}
+.bar-toggle:hover { color: var(--text); }
+.bar-summary {
+  text-transform: none; letter-spacing: 0; font-weight: 400;
+  font-family: ui-monospace, Menlo, Consolas, monospace; color: var(--dim);
+}
+@media (max-width: 760px) { .bar-summary { display: none; } }
+
+/* ── spot, ticking ────────────────────────────────────────────────────────── */
+.liveprice {
+  display: inline-flex; align-items: baseline; gap: 7px;
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 15px;
+  padding: 2px 9px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--panel);
+  transition: background 220ms ease, border-color 220ms ease;
+}
+.liveprice b { font-weight: 600; }
+.liveprice > span { font-size: 11.5px; }
+.liveprice .dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--dim);
+  align-self: center; flex: none;
+}
+.liveprice .dot.on { background: var(--up); animation: pulse 2.4s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+/* A number that changes silently every five seconds looks like one that is
+   stuck. The tint says a new price arrived; the colour says which way. */
+.liveprice.flash-up   { background: #4ec97a22; border-color: #4ec97a66; }
+.liveprice.flash-down { background: #ff6a6322; border-color: #ff6a6366; }
+
+@media (prefers-reduced-motion: reduce) {
+  .liveprice .dot.on { animation: none; }
+  .liveprice { transition: none; }
+}
