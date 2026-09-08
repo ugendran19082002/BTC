@@ -32,6 +32,7 @@ const trade = (over: Partial<Trade> = {}): Trade => ({
     stopPrice: null,
     leverage: 200,
   },
+  onBook: { target: 1.9, stop: null },
   ...over,
 });
 
@@ -58,10 +59,18 @@ describe('opening it', () => {
   it('does not claim a stop is on when only the plan has one', () => {
     // the plan wanted one and it never went on: the book is what counts
     render(<EditExitsSheet
-      trade={trade({ plan: { ...trade().plan!, stopPrice: 80 }, protection: { takeProfit: 'tp', stopLoss: null } })}
+      trade={trade({ plan: { ...trade().plan!, stopPrice: 80 }, onBook: { target: 1.9, stop: null } })}
       open onOpenChange={() => {}}
     />);
     expect(screen.getByText('on the book now · stop').nextSibling).toHaveTextContent('none');
+  });
+
+  it('says so when the desk and the book disagree', () => {
+    // the case that made this panel worth having: the plan said 1.90 while
+    // Delta's book held 20.80
+    render(<EditExitsSheet trade={trade({ onBook: { target: 20.8, stop: null } })} open onOpenChange={() => {}} />);
+    expect(screen.getByText('on the book now · target').nextSibling).toHaveTextContent('20.80');
+    expect(screen.getByText(/asked for 1.90 and the book holds 20.80/)).toBeInTheDocument();
   });
 });
 

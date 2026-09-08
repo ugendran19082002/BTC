@@ -35,6 +35,7 @@ const trade = (over: Partial<Trade> = {}): Trade => ({
   alarm: null,
   updatedAt: Date.now(),
   plan: { lots: 100, entry: { type: 'limit', timeoutMs: 5000, marketFallback: false }, takeProfitPrice: 0.5, stopPrice: 26 },
+  onBook: { target: 0.5, stop: 26 },
   ...over,
 });
 
@@ -145,7 +146,10 @@ describe('what it is worth right now', () => {
 });
 
 describe('a position with no stop behind it', () => {
-  const naked = trade({ phase: 'unprotected', protection: { takeProfit: null, stopLoss: null }, alarm: 'POSITION UNPROTECTED: API down' });
+  const naked = trade({
+    phase: 'unprotected', protection: { takeProfit: null, stopLoss: null },
+    onBook: { target: null, stop: null }, alarm: 'POSITION UNPROTECTED: API down',
+  });
 
   it('says NO STOP in words rather than leaving a blank', () => {
     render(<PositionsCard trades={[naked]} />);
@@ -156,7 +160,9 @@ describe('a position with no stop behind it', () => {
 
   it('is still detected when the phase looks fine but the stop is gone', () => {
     // the phase can lag a reconcile by one poll; the missing stop cannot
-    render(<PositionsCard trades={[trade({ protection: { takeProfit: 'tp', stopLoss: null } })]} />);
+    render(<PositionsCard trades={[trade({
+      protection: { takeProfit: 'tp', stopLoss: null }, onBook: { target: 0.5, stop: null },
+    })]} />);
     expect(screen.getByText('none')).toBeInTheDocument();
     expect(screen.getByText('NO STOP')).toBeInTheDocument();
   });
@@ -167,6 +173,7 @@ describe('a position with no stop behind it', () => {
     render(<PositionsCard trades={[trade({
       protection: { takeProfit: 'tp', stopLoss: null },
       plan: { lots: 1, entry: { type: 'limit', timeoutMs: 0, marketFallback: false }, takeProfitPrice: 1.1, stopPrice: null },
+      onBook: { target: 1.1, stop: null },
     })]} />);
     expect(screen.getByText('none')).toBeInTheDocument();
     expect(screen.queryByText('NO STOP')).toBeNull();
