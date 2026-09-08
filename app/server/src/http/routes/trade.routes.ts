@@ -6,7 +6,8 @@ import {
   clampLeverage, fundsRequiredPerContract, liquidationPrice, maxLotsAt, premiumUsd, unrealisedPnlUsd,
 } from '../../trading/margin.js';
 import { crossesSpread, worstCaseLoss, type TradeRecord } from '../../trading/engine.js';
-import type { ExchangePosition } from '../../trading/types.js';
+import type { ExchangePosition, Quote } from '../../trading/types.js';
+import { midOf } from '../../trading/money.js';
 import {
   ORDER_STATUSES, istDayEnd, istDayStart, istToday, orderOutcomeOf, orderStatusOf,
 } from '../../trading/status.js';
@@ -51,14 +52,30 @@ const pct = (v: unknown, max: number) => {
   return Number.isFinite(n) && n > 0 ? Math.min(max, n) : 0;
 };
 
-const view = (r: TradeRecord, positions: ExchangePosition[] = [], contractValue = 0.001) => {
+const view = (
+  r: TradeRecord,
+  positions: ExchangePosition[] = [],
+  contractValue = 0.001,
+  /** The book for this symbol, when the position row does not carry a price. */
+  quote: Quote | null = null,
+  spot: number | null = null,
+) => {
   // The exchange's mark is the authority on the *price*. The money is worked
   // out here, because Delta's own unrealized_pnl came back positive on a
   // position that was down, and a figure nobody can check is worse than one
   // anybody can.
   const live = positions.find((p) => p.symbol === r.state.symbol) ?? null;
   const entry = r.state.entryAvgPrice;
-  const mark = live?.markPrice ?? null;
+  /**
+   * The exchange's mark if the position row carries one, otherwise the book's.
+   *
+   * Delta's margined-positions rows do not always include a mark, and when they
+   * did not every live figure on the card read as a dash -- no price, no
+   * profit, no decay -- which looks like the desk is broken rather than like
+   * one field being absent. The quote is already fetched and cached for the
+   * ticket, so there is a second source to hand.
+   */
+  const mark = live?.markPrice ?? quote?.mark ?? midOf(quote?.bid ?? null, quote?.ask ?? null);
   const pnl = unrealisedPnlUsd({
     entryPrice: entry,
     markPrice: mark,
@@ -83,7 +100,18 @@ const view = (r: TradeRecord, positions: ExchangePosition[] = [], contractValue 
        * which way the trade is going -- which is how this bug was spotted.
        */
       decayed: entry !== null && entry > 0 && mark !== null ? (entry - mark) / entry : null,
-      liquidationPrice: live?.liquidationPrice ?? null,
+      /**
+       * Delta's close-out price when it gives one, otherwise this desk's own
+       * estimate. The estimate is the same model the ticket showed before the
+       * trade, so the number does not vanish the moment the position exists.
+       */
+      liquidationPrice:
+        live?.liquidationPrice
+        ?? (spot !== null && entry !== null
+          ? liquidationPrice({
+              spot, premium: entry, leverage: r.plan.leverage, contractValue,
+            })
+          : null),
       /** What Delta says, kept for comparison. Not what the screen shows. */
       exchangePnl: live?.unrealisedPnl ?? null,
     },
@@ -123,10 +151,19 @@ export function registerTradeRoutes(app: FastifyInstance) {
       svc.positionsForDisplay().catch(() => []),
     ]);
     const trades = svc.openTrades();
-    // Cached after the first call, so this costs nothing per poll.
-    const contractValue =
-      (await svc.product(trades[0]?.state.symbol ?? '').catch(() => null))?.contractValue ?? 0.001;
-    const open = trades.map((r) => view(r, positions, contractValue));
+    // Both cached at the server for under a second, so this costs nothing per poll.
+    const [product, quotes] = await Promise.all([
+      svc.product(trades[0]?.state.symbol ?? '').catch(() => null),
+      Promise.all(
+        [...new Set(trades.map((t) => t.state.symbol))].map(
+          async (sym) => [sym, await svc.quoteForDisplay(sym).catch(() => null)] as const,
+        ),
+      ),
+    ]);
+    const bySymbol = new Map(quotes);
+    const contractValue = product?.contractValue ?? 0.001;
+    const open = trades.map((r) =>
+      view(r, positions, contractValue, bySymbol.get(r.state.symbol) ?? null, svc.spot));
     return {
       mode: svc.mode,
       /** True only when a real order would reach the real exchange. */
