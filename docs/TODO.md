@@ -383,3 +383,27 @@ know a position exists. Once one does, the first question changes to "how is
 the one I have doing", and that answer is one tab away. A line at the top of
 Live — what is on, what it is worth — would close the loop without duplicating
 the Positions tab.
+
+## Polling, and where it should stop
+
+Three clocks now, chosen by what each answers and what it costs:
+
+| What | Every | Why |
+|---|---|---|
+| `/api/spot` | 1s | one number, cached 800ms at the server |
+| `/api/trade/status` | 1s | mark and P&L on open positions, positions cached 800ms |
+| `/api/chain` | 5s | the whole board, thirty strikes both sides |
+| `/api/errors` | 30s | a count for the tab badge |
+
+The caches mean the poll rate and the exchange call rate are not the same
+number: ten open tabs are still one call a second. The engine deliberately does
+not read those caches — protection and reconciliation ask the exchange directly,
+because they decide whether contracts exist and must not act on a figure from a
+moment ago.
+
+Where this should go next is a websocket. Delta publishes one, and polling a
+price a thousand times an hour to learn it changed twice is the wrong shape.
+The reason it has not been done: the poll loop is what every one of the 199
+server tests drives, and a socket is a second code path into the same state
+machine. It should be added as a *source* that feeds the same `poll()` rather
+than as a parallel way to mutate a trade.
