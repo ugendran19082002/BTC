@@ -103,6 +103,21 @@ export class SqliteTradeStore implements TradeStore {
     return this.query('SELECT trade_id, plan, state FROM trades ORDER BY updated_at DESC LIMIT ?', limit);
   }
 
+  /**
+   * Every trade touched inside a window, newest first.
+   *
+   * Filtered on `updated_at` rather than on when it was opened, because a trade
+   * opened last night and closed this morning is one you did today -- and it is
+   * the closing that a day's list is about.
+   */
+  between(fromMs: number, toMs: number, limit = 500): TradeRecord[] {
+    return this.query(
+      'SELECT trade_id, plan, state FROM trades WHERE updated_at >= ? AND updated_at < ? ' +
+        'ORDER BY updated_at DESC LIMIT ?',
+      fromMs, toMs, limit,
+    );
+  }
+
   /** Desk settings that must outlive a restart. Currently just the mode. */
   getSetting(key: string): string | null {
     const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as

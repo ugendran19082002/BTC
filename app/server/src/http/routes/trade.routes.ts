@@ -7,6 +7,9 @@ import {
 } from '../../trading/margin.js';
 import { crossesSpread, worstCaseLoss, type TradeRecord } from '../../trading/engine.js';
 import type { ExchangePosition } from '../../trading/types.js';
+import {
+  ORDER_STATUSES, istDayEnd, istDayStart, istToday, orderOutcomeOf, orderStatusOf,
+} from '../../trading/status.js';
 
 /** 05:30 IST is when the daily contract opens, so that is where the day starts. */
 function startOfDayIst(now = Date.now()): number {
@@ -321,9 +324,39 @@ export function registerTradeRoutes(app: FastifyInstance) {
     return { ok: true, trade: rec.state };
   });
 
+  /**
+   * The order book, looking backwards.
+   *
+   * `from` and `to` are IST calendar dates and both default to today, which is
+   * the window somebody opening this screen almost always wants. `status`
+   * filters to one of the four; absent means all of them.
+   */
   app.get('/api/trade/history', async (req) => {
-    const limit = Math.min(200, Number((req.query as { limit?: string }).limit ?? 50));
-    return { trades: svc.list(limit).map((r) => view(r)) };
+    const q = req.query as { from?: string; to?: string; status?: string; limit?: string };
+    const from = istDayStart(q.from ?? istToday()) ?? istDayStart(istToday())!;
+    const to = istDayEnd(q.to ?? q.from ?? istToday()) ?? istDayEnd(istToday())!;
+    const wanted = ORDER_STATUSES.find((x) => x === q.status) ?? null;
+    const limit = Math.min(1_000, Number(q.limit ?? 500));
+
+    const rows = svc.store
+      .between(Math.min(from, to), Math.max(from + 86_400_000, to), limit)
+      .map((r) => ({
+        ...view(r),
+        status: orderStatusOf(r.state, r.events),
+        outcome: orderOutcomeOf(r.state, r.events),
+        openedAt: r.events[0]?.at ?? r.state.updatedAt,
+      }))
+      .filter((r) => !wanted || r.status === wanted);
+
+    return {
+      from: q.from ?? istToday(),
+      to: q.to ?? q.from ?? istToday(),
+      counts: rows.reduce<Record<string, number>>(
+        (acc, r) => ({ ...acc, [r.status]: (acc[r.status] ?? 0) + 1 }),
+        {},
+      ),
+      trades: rows,
+    };
   });
 
   app.get('/api/trade/:tradeId', async (req, reply) => {
