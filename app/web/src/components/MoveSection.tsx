@@ -84,6 +84,108 @@ export function MoveSection({ market, snap }: { market: MarketRead; snap: Snapsh
         that morning. A strike one expected move away is not one day's travel away —
         BTC covers that distance often.
       </Note>
+
+      <ExpectedTable snap={snap} />
+    </>
+  );
+}
+
+/**
+ * The same table, forwards.
+ *
+ * Above is what BTC did; this is what today's option prices say it can do over
+ * the stretch you are about to hold. Same shape on purpose -- the two are only
+ * worth anything read against each other, and a reader should be able to run an
+ * eye down one column and across.
+ *
+ * Direction is deliberately absent, and it is not an omission to be fixed
+ * later. Across 105,119 windows the chance of finishing higher never sat more
+ * than 0.6 points from a coin flip at any horizon, and filtering by trend or by
+ * the last bar moved it by under a point. How far it can travel is knowable;
+ * which way is not. So every row is +/-.
+ */
+function ExpectedTable({ snap }: { snap: SnapshotMeta }) {
+  const iv = snap.atmIv;
+  if (iv === null) return null;
+
+  const HOURS_IN_YEAR = 365 * 24;
+  // spot x volatility x sqrt(time) -- volatility is quoted per year, so it is
+  // scaled down to the window in question
+  const move = (hours: number) => snap.spot * iv * Math.sqrt(hours / HOURS_IN_YEAR);
+
+  const left = snap.hoursToExpiry;
+  type Row = { label: string; hours: number; last?: boolean };
+  const rows: Row[] = ([
+    { label: 'next 5m', hours: 5 / 60 },
+    { label: 'next 15m', hours: 0.25 },
+    { label: 'next 1h', hours: 1 },
+    { label: 'next 2h', hours: 2 },
+    { label: 'next 4h', hours: 4 },
+    { label: 'next 6h', hours: 6 },
+    { label: 'next 12h', hours: 12 },
+  ] as Row[])
+    // a window longer than the contract has left is not a window you can hold
+    .filter((r) => r.hours < left)
+    .concat([{ label: 'to settlement', hours: left, last: true }]);
+
+  return (
+    <>
+      <StatDivider />
+      <div
+        className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-[0.8px] text-muted-foreground"
+        title={`spot x volatility x sqrt(hours / 8760) -- ${snap.spot.toFixed(0)} x ${(iv * 100).toFixed(1)}% at today's at-the-money volatility`}
+      >
+        how far it could move from here
+      </div>
+
+      <div className="-mx-1 overflow-x-auto">
+        <table className="w-full text-[11.8px]">
+          <thead>
+            <tr className="text-[10px] uppercase tracking-wide text-[var(--dim)]">
+              <th className="px-1 py-1 text-left font-normal">window</th>
+              <th className="px-1 py-1 text-right font-normal">could move</th>
+              <th className="px-1 py-1 text-right font-normal">%</th>
+              <th className="px-1 py-1 text-right font-normal">2 times in 3</th>
+            </tr>
+          </thead>
+          <tbody className="font-mono">
+            {rows.map((r) => {
+              const m = move(r.hours);
+              return (
+                <tr
+                  key={r.label}
+                  className={`border-b border-[#ffffff08]${r.last ? ' bg-[#6cb2ff10]' : ''}`}
+                >
+                  <td className={`px-1 py-[3px] text-left font-sans ${r.last ? 'text-foreground' : 'text-muted-foreground'}`}>
+                    {r.label}
+                    {r.last && <span className="text-[var(--dim)]"> · {r.hours.toFixed(1)}h</span>}
+                  </td>
+                  <td className="px-1 py-[3px] text-right">±${m.toFixed(m < 100 ? 1 : 0)}</td>
+                  <td className="px-1 py-[3px] text-right text-[var(--dim)]">
+                    ±{((m / snap.spot) * 100).toFixed(2)}%
+                  </td>
+                  <td className="px-1 py-[3px] text-right text-[var(--dim)]">
+                    {(snap.spot - m).toFixed(0)} – {(snap.spot + m).toFixed(0)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <Note>
+        Plus <i>or</i> minus — never one or the other. Direction over these windows
+        was measured and is a coin flip: across 105,119 windows the chance of
+        finishing higher never moved further than 0.6 points from even, at any
+        horizon, and filtering by trend changed it by under a point.
+      </Note>
+      <Note tone="dim">
+        These are one standard deviation: BTC stays inside about two times in three,
+        and steps outside the third. Double the figure for the 19-in-20 range. The
+        table above is the check on this one — every day that broke the strategy
+        travelled further than the market had priced that morning.
+      </Note>
     </>
   );
 }

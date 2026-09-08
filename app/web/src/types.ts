@@ -214,7 +214,7 @@ export type Bias = {
   label: string;
   pcr: number | null;
   ivSkew: number | null;
-  components: { name: string; value: number; weight: number; note: string }[];
+  components: { name: string; value: number; weight: number; note: string; means: string }[];
 };
 
 export type Check = { ok: boolean; severity: 'block' | 'warn' | 'info'; text: string };
@@ -222,7 +222,7 @@ export type Check = { ok: boolean; severity: 'block' | 'warn' | 'info'; text: st
 export type Verdict = {
   action: 'ENTER' | 'WAIT' | 'STAND_ASIDE';
   headline: string;
-  detail: string;
+  detail: string | null;
   checks: Check[];
   orders: string[];
   nextWindow: string | null;

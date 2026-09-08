@@ -35,7 +35,7 @@ export function VerdictPanel({
             <span className="verdict-word">{verdict.headline}</span>
             {verdict.nextWindow && <span className="verdict-next">{verdict.nextWindow}</span>}
           </div>
-          <p className="verdict-detail">{verdict.detail}</p>
+          {verdict.detail && <p className="verdict-detail">{verdict.detail}</p>}
         </div>
 
         <ul className="checks">

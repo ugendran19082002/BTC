@@ -178,7 +178,16 @@ export type Bias = {
   label: string;
   pcr: number | null;
   ivSkew: number | null;
-  components: { name: string; value: number; weight: number; note: string }[];
+  components: {
+    /** what to call it on screen -- plain words, not the trading-desk shorthand */
+    name: string;
+    value: number;
+    weight: number;
+    /** the number itself */
+    note: string;
+    /** what a reader is meant to take from it, and which way it points */
+    means: string;
+  }[];
 };
 
 /**
@@ -216,27 +225,57 @@ export function bias(snap: Snapshot, scored: ScoredLeg[]): Bias {
   // A high put/call OI ratio is crowded downside positioning -> mildly bullish.
   if (pcr !== null) {
     const v = Math.max(-1, Math.min(1, (pcr - 1) / 1.5));
-    components.push({ name: 'Put/Call OI', value: v, weight: 0.3, note: `PCR ${pcr.toFixed(2)}` });
+    components.push({
+      name: 'how many puts are held, against calls',
+      value: v,
+      weight: 0.3,
+      note: `${pcr.toFixed(2)} puts per call`,
+      means:
+        pcr > 1
+          ? 'More puts than calls are open. Counted as mildly positive: the people who wanted downside protection have already bought it, so there is less left to sell into.'
+          : 'More calls than puts are open. Counted as mildly negative for the same reason in reverse -- the crowd is positioned for upside.',
+    });
   }
   if (ivSkew !== null) {
     const v = Math.max(-1, Math.min(1, -ivSkew / 0.1));
     components.push({
-      name: 'IV skew (25d)',
+      name: 'which side costs more to insure',
       value: v,
       weight: 0.4,
-      note: `put IV ${(ivSkew * 100).toFixed(1)}pt ${ivSkew >= 0 ? 'over' : 'under'} call`,
+      note:
+        ivSkew >= 0
+          ? `downside, by ${(ivSkew * 100).toFixed(1)} points`
+          : `upside, by ${(-ivSkew * 100).toFixed(1)} points`,
+      means:
+        ivSkew >= 0
+          ? 'Puts are priced richer than calls the same distance away, so the market is paying up for protection against a fall. Counted as negative.'
+          : 'Calls are priced richer than puts the same distance away, so the fear is of missing a rise rather than of a fall. Counted as positive.',
     });
   }
   if (ceVol + peVol > 0) {
     const v = (ceVol - peVol) / (ceVol + peVol);
-    components.push({ name: 'Volume tilt', value: v, weight: 0.3, note: `CE ${Math.round(ceVol)} / PE ${Math.round(peVol)}` });
+    components.push({
+      name: 'which side is trading more today',
+      value: v,
+      weight: 0.3,
+      note: `${Math.round(ceVol).toLocaleString()} calls · ${Math.round(peVol).toLocaleString()} puts`,
+      means:
+        v >= 0
+          ? 'More calls than puts have changed hands today. Counted as positive, though volume says who is active rather than who is right.'
+          : 'More puts than calls have changed hands today. Counted as negative, though volume says who is active rather than who is right.',
+    });
   }
 
   const wsum = components.reduce((a, c) => a + c.weight, 0) || 1;
   const score = components.reduce((a, c) => a + c.value * c.weight, 0) / wsum;
+  // Plain words. "No clear tilt" was accurate and told a reader nothing about
+  // what it was a tilt of, or what to do about it.
   const label =
-    score > 0.4 ? 'bullish' : score > 0.15 ? 'mildly bullish'
-    : score < -0.4 ? 'bearish' : score < -0.15 ? 'mildly bearish' : 'no clear tilt';
+    score > 0.4 ? 'leaning up'
+    : score > 0.15 ? 'leaning up, slightly'
+    : score < -0.4 ? 'leaning down'
+    : score < -0.15 ? 'leaning down, slightly'
+    : 'not leaning either way';
 
   return { score, label, pcr, ivSkew, components };
 }

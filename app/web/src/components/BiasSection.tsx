@@ -19,7 +19,7 @@ export function BiasSection({ bias }: { bias: Bias }) {
     <>
       <StatDivider />
       <SectionTitle hint="Over 12 hours this barely predicts anything. Background, never the reason to trade.">
-        which way it leans · background only
+        which way the option board leans · background only
       </SectionTitle>
 
       <CardLead tone={tone}>{bias.label}</CardLead>
@@ -36,8 +36,25 @@ export function BiasSection({ bias }: { bias: Bias }) {
       </div>
 
       <div className="mt-2.5">
+        {/*
+          Hover gives the sentence, not the jargon. "IV skew (25d): put IV 1.1pt
+          over call" is exact and tells a reader who does not already know it
+          precisely nothing -- so the row says which side costs more to insure,
+          and the hint says what that is counted as and why.
+        */}
         {bias.components.map((c) => (
-          <Stat key={c.name} label={c.name} value={c.note} tone="dim" />
+          <Stat
+            key={c.name}
+            label={
+              <>
+                {c.name}
+                <span className="ml-1 text-[var(--dim)]">· {Math.round(c.weight * 100)}%</span>
+              </>
+            }
+            value={c.note}
+            tone="dim"
+            hint={c.means}
+          />
         ))}
       </div>
     </>
