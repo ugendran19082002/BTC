@@ -3,6 +3,9 @@ import { render, screen } from '@testing-library/react';
 import { AccountCard } from '@/components/trade/AccountCard';
 import type { TradeStatus } from '@/types/trade';
 
+/** A <dd> has no role, so getByLabelText cannot reach it. Query it directly. */
+const budgetLine = (c: HTMLElement) => c.querySelector('[aria-label="loss budget left"]');
+
 const status = (over: Partial<TradeStatus> = {}): TradeStatus => ({
   mode: 'live', live: true, canGoLive: true, switchBlockedBy: null,
   balanceUsd: 0.59, unrealisedPnlUsd: -0.0016, realisedTodayUsd: 0,
@@ -42,28 +45,26 @@ describe('the money, in both currencies', () => {
 
 describe("the day's loss budget", () => {
   it('is whole while nothing has been lost', () => {
-    render(<AccountCard status={status()} />);
-    expect(screen.getByText('$5.00')).toBeInTheDocument();
-    expect(screen.getByText(/of \$5.00 left/)).toBeInTheDocument();
+    const { container } = render(<AccountCard status={status()} />);
+    expect(budgetLine(container)).toHaveTextContent('$5.00 of $5.00 left');
   });
 
   it('counts down as losses are booked, and says what happens at the end', () => {
-    render(<AccountCard status={status({ realisedTodayUsd: -4 })} />);
-    expect(screen.getByText('$1.00')).toBeInTheDocument();
+    const { container } = render(<AccountCard status={status({ realisedTodayUsd: -4 })} />);
+    expect(budgetLine(container)).toHaveTextContent('$1.00 of $5.00 left');
     expect(screen.getByText(/80% used/)).toBeInTheDocument();
     expect(screen.getByText(/New trades stop when it runs out/)).toBeInTheDocument();
   });
 
   it('does not go negative when the day has gone past the limit', () => {
-    render(<AccountCard status={status({ realisedTodayUsd: -9 })} />);
-    // the whole line, since the amount and "of $5.00 left" are separate nodes
-    expect(screen.getByText(/of \$5.00 left/).parentElement).toHaveTextContent('$0.00 of $5.00 left');
+    const { container } = render(<AccountCard status={status({ realisedTodayUsd: -9 })} />);
+    expect(budgetLine(container)).toHaveTextContent('$0.00 of $5.00 left');
     expect(screen.getByText(/100% used/)).toBeInTheDocument();
   });
 
   it('a profitable day does not eat the budget', () => {
-    render(<AccountCard status={status({ realisedTodayUsd: 3 })} />);
-    expect(screen.getByText(/of \$5.00 left/)).toBeInTheDocument();
+    const { container } = render(<AccountCard status={status({ realisedTodayUsd: 3 })} />);
+    expect(budgetLine(container)).toHaveTextContent('$5.00 of $5.00 left');
     expect(screen.queryByText(/used/)).toBeNull();
   });
 });

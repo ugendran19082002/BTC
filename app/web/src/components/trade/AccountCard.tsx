@@ -76,8 +76,11 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
         <div>
           <div className="flex items-baseline justify-between gap-3">
             <dt className="m-0 text-[12.5px] text-muted-foreground">today&rsquo;s loss budget</dt>
-            <dd className="m-0 text-[13px] tabular-nums text-foreground">
-              {usd(leftOfBudget)} <span className="text-[var(--dim)]">of {usd(budget)} left</span>
+            <dd className="m-0 text-[13px] tabular-nums text-foreground" aria-label="loss budget left">
+              {/* A real space, not a margin: a margin is not read aloud, and
+                  "$5.00of $5.00 left" is what a screen reader would say. */}
+              <span>{usd(leftOfBudget)}</span>{' '}
+              <span className="text-[var(--dim)]">of {usd(budget)} left</span>
             </dd>
           </div>
           {/* The gate that stops new trades. Worth seeing before it fires. */}
