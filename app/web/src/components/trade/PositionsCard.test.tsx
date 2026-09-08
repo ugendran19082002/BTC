@@ -154,7 +154,7 @@ describe('a position with no stop behind it', () => {
   it('says NO STOP in words rather than leaving a blank', () => {
     render(<PositionsCard trades={[naked]} />);
     expect(screen.getByText('NO STOP')).toBeInTheDocument();
-    expect(screen.getByText('none')).toBeInTheDocument();
+    expect(screen.getByText('stop').textContent).toContain('none');
     expect(screen.getByText('POSITION UNPROTECTED: API down')).toBeInTheDocument();
   });
 
@@ -163,7 +163,7 @@ describe('a position with no stop behind it', () => {
     render(<PositionsCard trades={[trade({
       protection: { takeProfit: 'tp', stopLoss: null }, onBook: { target: 0.5, stop: null },
     })]} />);
-    expect(screen.getByText('none')).toBeInTheDocument();
+    expect(screen.getByText('stop').textContent).toContain('none');
     expect(screen.getByText('NO STOP')).toBeInTheDocument();
   });
 
@@ -175,7 +175,7 @@ describe('a position with no stop behind it', () => {
       plan: { lots: 1, entry: { type: 'limit', timeoutMs: 0, marketFallback: false }, takeProfitPrice: 1.1, stopPrice: null },
       onBook: { target: 1.1, stop: null },
     })]} />);
-    expect(screen.getByText('none')).toBeInTheDocument();
+    expect(screen.getByText('stop').textContent).toContain('none');
     expect(screen.queryByText('NO STOP')).toBeNull();
     expect(screen.getByText('on')).toBeInTheDocument();
   });
