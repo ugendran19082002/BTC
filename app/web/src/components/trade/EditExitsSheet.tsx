@@ -44,9 +44,16 @@ export function EditExitsSheet({ trade, open, onOpenChange, onSaved }: {
    * form is seeded for this open, nothing reseeds it until it closes.
    */
   const seededFor = useRef<string | null>(null);
+
+  // Closing clears the mark. As a cleanup rather than a branch, so React runs
+  // it on unmount too and there is no path where the ref is left set.
   useEffect(() => {
-    if (!open) { seededFor.current = null; return; }
-    if (!trade || entry === null || entry <= 0) return;
+    if (!open) return;
+    return () => { seededFor.current = null; };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !trade || entry === null || entry <= 0) return;
     if (seededFor.current === trade.tradeId) return;
     seededFor.current = trade.tradeId;
 

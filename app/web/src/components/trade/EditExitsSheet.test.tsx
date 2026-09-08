@@ -104,8 +104,12 @@ describe('[critical] the poll must not undo your drag', () => {
     for (let i = 0; i < 10; i++) fireEvent.keyDown(slider, { key: 'ArrowLeft' });
     expect(screen.getByText(/−\d+%/).textContent).not.toBe('−94%');
 
+    // two commits, because that is what closing and reopening actually is --
+    // batching them into one would test a thing the browser never does
     await act(async () => {
       rerender(<EditExitsSheet trade={trade()} open={false} onOpenChange={() => {}} />);
+    });
+    await act(async () => {
       rerender(<EditExitsSheet trade={trade()} open onOpenChange={() => {}} />);
     });
     expect(screen.getByText('−94%')).toBeInTheDocument();
