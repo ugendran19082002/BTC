@@ -71,6 +71,8 @@ type DeltaPosition = {
   size: number;
   entry_price?: string | null;
   unrealized_pnl?: string | null;
+  mark_price?: string | null;
+  liquidation_price?: string | null;
 };
 
 const num = (v: string | number | null | undefined): number | null => {
@@ -267,7 +269,11 @@ export class DeltaExchange implements ExchangePort {
         productId: p.product_id,
         size: p.size,
         entryPrice: num(p.entry_price ?? null),
+        // Delta's own figures. Recomputing them locally would give a second
+        // answer that disagrees with the exchange screen at the worst moment.
         unrealisedPnl: num(p.unrealized_pnl ?? null),
+        markPrice: num(p.mark_price ?? null),
+        liquidationPrice: num(p.liquidation_price ?? null),
       }));
   }
 

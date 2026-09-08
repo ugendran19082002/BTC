@@ -4,6 +4,7 @@ import { lotsToContracts } from '../../trading/money.js';
 import { DEFAULT_LIMITS, precheck } from '../../trading/precheck.js';
 import { clampLeverage, fundsRequiredPerContract, liquidationPrice, maxLotsAt, premiumUsd } from '../../trading/margin.js';
 import { crossesSpread, worstCaseLoss, type TradeRecord } from '../../trading/engine.js';
+import type { ExchangePosition } from '../../trading/types.js';
 
 /**
  * The order desk.
@@ -39,15 +40,31 @@ const pct = (v: unknown, max: number) => {
   return Number.isFinite(n) && n > 0 ? Math.min(max, n) : 0;
 };
 
-const view = (r: TradeRecord) => ({
-  ...r.state,
-  plan: {
-    lots: r.plan.lots,
-    entry: r.plan.entry,
-    takeProfitPrice: r.plan.takeProfitPrice,
-    stopPrice: r.plan.stopPrice,
-  },
-});
+const view = (r: TradeRecord, positions: ExchangePosition[] = []) => {
+  // The exchange's own mark-to-market, matched by symbol. Computing a second
+  // one here would give a number that disagrees with the Delta screen at the
+  // exact moment somebody is checking both.
+  const live = positions.find((p) => p.symbol === r.state.symbol) ?? null;
+  const entry = r.state.entryAvgPrice;
+  const mark = live?.markPrice ?? null;
+  return {
+    ...r.state,
+    plan: {
+      lots: r.plan.lots,
+      entry: r.plan.entry,
+      takeProfitPrice: r.plan.takeProfitPrice,
+      stopPrice: r.plan.stopPrice,
+      leverage: r.plan.leverage,
+    },
+    live: {
+      markPrice: mark,
+      unrealisedPnl: live?.unrealisedPnl ?? null,
+      /** As a share of the credit taken in: 0.35 means a third of it is banked. */
+      decayed: entry !== null && entry > 0 && mark !== null ? (entry - mark) / entry : null,
+      liquidationPrice: live?.liquidationPrice ?? null,
+    },
+  };
+};
 
 function parse(body: PlaceBody) {
   const symbol = String(body.symbol ?? '').trim();
@@ -93,7 +110,9 @@ export function registerTradeRoutes(app: FastifyInstance) {
         : svc.canGoLive ? null : 'No Delta credentials configured on the server.',
       balanceUsd: balance,
       positions,
-      open: svc.openTrades().map(view),
+      open: svc.openTrades().map((r) => view(r, positions)),
+      /** Every open position added up, so the tab can say it in one number. */
+      unrealisedPnlUsd: positions.reduce((n, p) => n + (p.unrealisedPnl ?? 0), 0),
       alarms: svc.alarms,
       limits: DEFAULT_LIMITS,
     };
@@ -274,7 +293,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
 
   app.get('/api/trade/history', async (req) => {
     const limit = Math.min(200, Number((req.query as { limit?: string }).limit ?? 50));
-    return { trades: svc.list(limit).map(view) };
+    return { trades: svc.list(limit).map((r) => view(r)) };
   });
 
   app.get('/api/trade/:tradeId', async (req, reply) => {

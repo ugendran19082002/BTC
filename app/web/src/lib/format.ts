@@ -11,11 +11,20 @@
 export const price = (n: number | null | undefined, dash = '—') =>
   n === null || n === undefined || !Number.isFinite(n) ? dash : n.toFixed(2);
 
-/** Dollars, for money you keep or lose. */
-export const usd = (n: number | null | undefined, dash = '—') =>
-  n === null || n === undefined || !Number.isFinite(n)
-    ? dash
-    : `$${Math.abs(n) >= 1000 ? Math.round(n).toLocaleString() : n.toFixed(2)}`;
+/**
+ * Dollars, for money you keep or lose.
+ *
+ * Three places under a dollar, because a contract is a thousandth of a BTC and
+ * these sums are genuinely small: writing $0.0066 as "$0.01" rounds away two
+ * thirds of it. Two places from a dollar up, none from a thousand.
+ */
+export function usd(n: number | null | undefined, dash = '—'): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return dash;
+  const abs = Math.abs(n);
+  if (abs >= 1000) return `$${Math.round(n).toLocaleString()}`;
+  if (abs >= 1 || abs === 0) return `$${n.toFixed(2)}`;
+  return `$${n.toFixed(3)}`;
+}
 
 /** Signed dollars, where the sign is the point. */
 export const signedUsd = (n: number | null | undefined) =>

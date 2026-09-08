@@ -70,7 +70,12 @@ export type ExchangePosition = {
   /** Negative is short. Zero means flat; the row may not exist at all. */
   size: number;
   entryPrice: number | null;
+  /** The exchange's own mark-to-market. Its number, not a second opinion. */
   unrealisedPnl: number | null;
+  /** What the option is worth right now, by the exchange's mark. */
+  markPrice: number | null;
+  /** Where the exchange would close the position out. */
+  liquidationPrice: number | null;
 };
 
 export type ProductSpec = {

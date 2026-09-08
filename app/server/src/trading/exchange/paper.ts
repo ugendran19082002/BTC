@@ -57,7 +57,12 @@ export class PaperExchange implements ExchangePort {
   forcePosition(symbol: string, size: number, entryPrice: number | null = null) {
     const p = this.products.get(symbol);
     if (size === 0) this.positions.delete(symbol);
-    else this.positions.set(symbol, { symbol, productId: p?.productId ?? 0, size, entryPrice, unrealisedPnl: null });
+    else {
+      this.positions.set(symbol, {
+        symbol, productId: p?.productId ?? 0, size, entryPrice,
+        unrealisedPnl: null, markPrice: null, liquidationPrice: null,
+      });
+    }
     return this;
   }
 
@@ -199,6 +204,8 @@ export class PaperExchange implements ExchangePort {
         size: next,
         entryPrice: held?.entryPrice ?? price,
         unrealisedPnl: null,
+        markPrice: null,
+        liquidationPrice: null,
       });
     }
   }
@@ -250,7 +257,18 @@ export class PaperExchange implements ExchangePort {
 
   async getPositions(): Promise<ExchangePosition[]> {
     this.guard();
-    return [...this.positions.values()].map((p) => ({ ...p }));
+    return [...this.positions.values()].map((p) => {
+      const mark = this.quotes.get(p.symbol)?.mark ?? null;
+      const cv = this.products.get(p.symbol)?.contractValue ?? 0.001;
+      return {
+        ...p,
+        markPrice: mark,
+        // a short gains as the option gets cheaper
+        unrealisedPnl:
+          mark !== null && p.entryPrice !== null ? (p.entryPrice - mark) * -p.size * cv : null,
+        liquidationPrice: p.liquidationPrice ?? null,
+      };
+    });
   }
 
   async setLeverage(productId: number, leverage: number): Promise<void> {
