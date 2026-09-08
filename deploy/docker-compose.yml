@@ -23,6 +23,7 @@ services:
       # The order journal outlives the container: it is how a restart knows a
       # position exists before it has spoken to the exchange.
       TRADE_DB: /srv/data/trades.db
+      ERROR_DB: /srv/data/errors.db
     volumes:
       - data:/srv/data
     # No host port. The browser reaches the API through the web container over

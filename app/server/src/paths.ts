@@ -23,8 +23,19 @@ function repoRoot(): string {
 
 export const ROOT = repoRoot();
 export const CHAIN_DB = process.env.CHAIN_DB ?? join(ROOT, 'chain.db');
+
+/**
+ * Where databases go when nothing says otherwise.
+ *
+ * In a container the repository root is read-only and the writable volume is
+ * wherever CHAIN_DB points, so that directory is the better default than the
+ * root the module happens to sit under. Getting this wrong does not degrade
+ * gracefully -- sqlite refuses to open the file and the process does not start.
+ */
+const DATA_DIR = process.env.CHAIN_DB ? dirname(process.env.CHAIN_DB) : ROOT;
+
 /** Where the trade journal is written. Separate file: market data is disposable,
  * an order history is not. */
-export const TRADE_DB = process.env.TRADE_DB ?? join(ROOT, 'trades.db');
+export const TRADE_DB = process.env.TRADE_DB ?? join(DATA_DIR, 'trades.db');
 /** Failures from the server, the browser and the exchange, in time order. */
-export const ERROR_DB = process.env.ERROR_DB ?? join(ROOT, 'errors.db');
+export const ERROR_DB = process.env.ERROR_DB ?? join(DATA_DIR, 'errors.db');
