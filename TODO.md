@@ -1,7 +1,7 @@
 # TODO
 
 Live: https://delta.thannigo.in
-Updated 6 Sep 2026
+Updated 8 Sep 2026
 
 ---
 
@@ -158,22 +158,16 @@ Do not put these back without new evidence. Each looked promising and failed.
 
 ---
 
-### The "How far it could move" card
+### The chain shows every strike Delta has — which is fewer than you ask for
 
-Per horizon — 5m, 15m, 1h, 2h, 3h, 4h, 6h, 12h and whatever is left on the
-contract — it shows what BTC actually did over a year of windows, next to what
-today's option prices imply over the same stretch:
+"Strikes each side" is set to 30, and the table comes back with about a dozen
+each way. That is not a truncated fetch. Delta opens a daily contract over a
+narrow band around the money and adds strikes only as BTC travels toward the
+edge. On 9 Sep it listed 24 calls and 23 puts in total, 76,800 to 82,800, with
+spot at 79,200 — so 30 each side gets you everything there is.
 
-| Column | Means |
-|---|---|
-| usually | half of past windows moved less than this |
-| 2 times in 3 | it stayed inside this about 68% of the time |
-| 19 times in 20 | it stayed inside this about 95% of the time |
-| worst seen | the single biggest move in the sample. Size against this one. |
-| market says | what implied volatility is pricing over the same stretch |
-| up | measured direction — a coin flip, and shown to prove it |
-
-Refresh the numbers with `python3 measure_horizons.py 365`.
+The table now says so in a line above it whenever the window came back short,
+rather than silently showing less than the setting reads.
 
 ### Other things that are worked out, not typed in
 
@@ -186,6 +180,16 @@ Refresh the numbers with `python3 measure_horizons.py 365`.
   signal strength was tested and was worse in 2024 and 2026.
 - **The two sides always add up to your total.** They used to be able to sum to
   eight lots for a seven-lot decision.
+
+### Layout, 8 Sep 2026
+
+**Live** and **What to sell** now sit above the chain — the two things you read
+first are the two things you see first, without scrolling past twenty strikes.
+**Where the money sits** moved down beside the other reference cards.
+
+The **How far it could move** card was removed on request. The measurement
+behind it stands and `measure_horizons.py` still refreshes it; nothing else
+depended on it.
 
 ## THINGS WORTH DOING NEXT
 

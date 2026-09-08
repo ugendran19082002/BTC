@@ -4,6 +4,7 @@ import { directionalLean, MIN_LOTS_PER_SIDE, MAX_LOTS_PER_SIDE, SKEW_THRESHOLD_P
 import { summarize, type TradeDay } from '../src/backtest.js';
 import { maxLots } from '../src/score.js';
 import type { MarketRead, TimeframeRead } from '../src/market.js';
+import { coverageOf, type Leg } from '../src/chain.js';
 
 function marketWith(return24h: number, ema9: number, ema21: number): MarketRead {
   const daily: TimeframeRead = {
@@ -256,3 +257,36 @@ test('one address being locked out does not lock out another', () => {
   assert.ok(l.blocked('a'));
   assert.ok(!l.blocked('b'));
 });
+
+/**
+ * Delta lists a daily contract over a narrow band around the money and widens
+ * it only as BTC travels toward the edge. Asking for 30 strikes each side and
+ * getting 12 is that limit, not a broken fetch -- the chain has to say so, or
+ * the table silently shows less than the setting and reads as a bug.
+ */
+{
+  const leg = (strike: number, cp: 'C' | 'P') => ({ strike, cp }) as unknown as Leg;
+
+  test('coverage reports what the exchange listed, not what was asked for', () => {
+    const legs = [76800, 79000, 79200, 79400, 82800].flatMap((k) => [leg(k, 'C'), leg(k, 'P')]);
+    const c = coverageOf(legs, 79200, 30);
+    assert.equal(c.above, 2, 'a call and a put on one strike are one strike');
+    assert.equal(c.below, 2);
+    assert.equal(c.lowest, 76800);
+    assert.equal(c.highest, 82800);
+    assert.ok(c.truncated, '30 each side was asked for and 2 came back');
+  });
+
+  test('coverage is not flagged when the window was filled', () => {
+    const legs = [79000, 79200, 79400].map((k) => leg(k, 'C'));
+    assert.equal(coverageOf(legs, 79200, 1).truncated, false);
+    assert.equal(coverageOf(legs, 79200, 2).truncated, true, 'one side short is short');
+  });
+
+  test('an empty chain does not pretend to cover anything', () => {
+    const c = coverageOf([], 79200, 10);
+    assert.equal(c.highest, null);
+    assert.equal(c.lowest, null);
+    assert.ok(c.truncated);
+  });
+}

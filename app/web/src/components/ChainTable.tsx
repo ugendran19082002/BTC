@@ -44,6 +44,28 @@ function Age({ min }: { min: number | null }) {
 }
 
 /**
+ * What the exchange actually listed, against what was asked for.
+ *
+ * Delta lists a daily contract over a narrow band around the money -- around a
+ * dozen strikes each way -- and widens it only as BTC travels. Asking for 30
+ * each side and getting 12 is that limit, not a truncated fetch, but with
+ * nothing said the table just looks short of the setting and reads as a bug.
+ */
+function Coverage({ snap }: { snap: SnapshotMeta }) {
+  const c = snap.coverage;
+  if (!c || !c.truncated) return null;
+  return (
+    <div className="note" style={{ padding: '8px 12px', margin: 0 }}>
+      Delta lists <b>{c.above} strikes above</b> and <b>{c.below} below</b> the money
+      for this expiry{c.lowest !== null && c.highest !== null && <> ({c.lowest.toLocaleString()}–{c.highest.toLocaleString()})</>},
+      {' '}so asking for {c.requested} each side gets everything there is. The exchange
+      opens a daily contract over a narrow band and adds strikes as BTC moves toward
+      them — nothing is missing from the fetch.
+    </div>
+  );
+}
+
+/**
  * Laid out the way the exchange lays it out — calls left, puts right, strike in
  * the middle — with bid and ask shown separately from the mark.
  *
@@ -63,6 +85,7 @@ export function ChainTable({ legs, snap }: { legs: Leg[]; snap: SnapshotMeta }) 
 
   return (
     <div className="scroll" style={{ maxHeight: height }}>
+      <Coverage snap={snap} />
       <table>
         <thead>
           <tr>

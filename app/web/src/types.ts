@@ -186,6 +186,16 @@ export type SnapshotMeta = {
   atmIv: number | null;
   expectedMove: number | null;
   expectedMoveAtEntry: number | null;
+  coverage: Coverage;
+};
+
+export type Coverage = {
+  requested: number;
+  above: number;
+  below: number;
+  highest: number | null;
+  lowest: number | null;
+  truncated: boolean;
 };
 
 export type Pick = {

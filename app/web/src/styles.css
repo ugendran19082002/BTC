@@ -85,7 +85,9 @@ button.ghost {
   align-items: start;
 }
 @media (min-width: 900px) {
-  .lead-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr) minmax(0, 1fr); }
+  /* two cards: the contract you are looking at, and what to sell on it. A
+     third column here left a hole once the structure card moved down. */
+  .lead-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); }
 }
 
 .wide-row { margin-bottom: 12px; }

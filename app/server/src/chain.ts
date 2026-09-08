@@ -101,7 +101,30 @@ export type Snapshot = {
   expectedMove: number | null;
   /** the same figure over the 12 hours the trade would actually span */
   expectedMoveAtEntry: number | null;
+  /** what the chain really covers, against what was asked for */
+  coverage: Coverage;
   legs: Leg[];
+};
+
+/**
+ * How much of the requested window the exchange actually listed.
+ *
+ * Asking for 30 strikes each side and getting 12 is not a fault in the fetch:
+ * Delta lists a daily contract over a narrow band around the money and widens
+ * it only as the day moves. Without this the table silently shows less than the
+ * setting says, which reads as a bug.
+ */
+export type Coverage = {
+  /** strikes each side that were asked for */
+  requested: number;
+  /** distinct strikes listed above the money, and below */
+  above: number;
+  below: number;
+  /** the furthest strike listed either way */
+  highest: number | null;
+  lowest: number | null;
+  /** true when the exchange listed fewer than asked on at least one side */
+  truncated: boolean;
 };
 
 const num = (v: string | number | null | undefined): number | null => {
@@ -151,7 +174,26 @@ function moneyness(cp: 'C' | 'P', off: number): Leg['moneyness'] {
   return off < 0 ? 'OTM' : 'ITM';
 }
 
-function finish(snap: Omit<Snapshot, 'atmIv' | 'expectedMove' | 'expectedMoveAtEntry'>): Snapshot {
+/** Counted over distinct strikes: a call and a put on the same strike are one. */
+export function coverageOf(legs: Leg[], atm: number, requested: number): Coverage {
+  const strikes = [...new Set(legs.map((l) => l.strike))].sort((a, b) => a - b);
+  const above = strikes.filter((k) => k > atm).length;
+  const below = strikes.filter((k) => k < atm).length;
+  return {
+    requested,
+    above,
+    below,
+    highest: strikes.length ? strikes[strikes.length - 1]! : null,
+    lowest: strikes.length ? strikes[0]! : null,
+    truncated: above < requested || below < requested,
+  };
+}
+
+function finish(
+  snap: Omit<Snapshot, 'atmIv' | 'expectedMove' | 'expectedMoveAtEntry' | 'coverage'>,
+  requested: number,
+): Snapshot {
+  const coverage = coverageOf(snap.legs, snap.atm, requested);
   const atmLegs = snap.legs.filter((l) => l.off === 0 && l.iv !== null);
   const atmIv = atmLegs.length
     ? atmLegs.reduce((a, l) => a + l.iv!, 0) / atmLegs.length
@@ -159,6 +201,7 @@ function finish(snap: Omit<Snapshot, 'atmIv' | 'expectedMove' | 'expectedMoveAtE
   const TWELVE_HOURS_IN_YEARS = 12 / (365 * 24);
   return {
     ...snap,
+    coverage,
     atmIv,
     expectedMove: atmIv === null ? null : expectedMove(snap.spot, atmIv, snap.tte),
     // What the move would be over the 12 hours the trade actually spans, if
@@ -301,7 +344,7 @@ export async function liveChain(width = 25, wantExpiry?: string): Promise<Snapsh
     spot,
     atm,
     legs,
-  });
+  }, width);
 }
 
 /**
@@ -400,5 +443,5 @@ export async function historicalChain(
     spot,
     atm,
     legs,
-  });
+  }, width);
 }

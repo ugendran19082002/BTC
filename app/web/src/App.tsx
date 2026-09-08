@@ -7,7 +7,6 @@ import { BacktestPanel } from './components/BacktestPanel';
 import { FloorPanel } from './components/FloorPanel';
 import { VerdictPanel } from './components/VerdictPanel';
 import { RecommendPanel } from './components/RecommendPanel';
-import { MovePanel } from './components/MovePanel';
 import { StructurePanel } from './components/StructurePanel';
 import { ForecastPanel } from './components/ForecastPanel';
 import { DateTimePicker, istToEpoch, type IstMoment } from './components/DateTimePicker';
@@ -333,11 +332,19 @@ export default function App() {
             <Field
               label="strikes each side"
               help={
-                <p>
-                  How much of the chain to fetch and display, counted in strikes above
-                  and below the money. Display only — it does not change the trade,
-                  though too small a window can hide the strike you want.
-                </p>
+                <>
+                  <p>
+                    How much of the chain to fetch and display, counted in strikes above
+                    and below the money. Display only — it does not change the trade,
+                    though too small a window can hide the strike you want.
+                  </p>
+                  <p>
+                    Raising it past what Delta lists adds nothing. A daily contract opens
+                    with roughly a dozen strikes each way and gains more only as BTC
+                    travels toward the edge, so 30 here often returns 12. The table says
+                    so when that happens.
+                  </p>
+                </>
               }
             >
               <input type="number" value={width} onChange={(e) => setWidth(Number(e.target.value))} />
@@ -364,22 +371,6 @@ export default function App() {
 
           {data && snap && (
             <>
-              <ChainTable legs={data.legs} snap={snap} />
-              <div className="note">
-                Age is minutes since a real trade printed. Delta's candle feed
-                forward-fills quiet minutes, so a traded price with a large age is a
-                carry-forward, not a quote you can hit — the mark is the honest number
-                there. Historical rows have no order book, so bid and ask are blank and
-                the mark is used as the sell estimate.
-              </div>
-
-              <VerdictPanel
-                verdict={data.verdict}
-                picks={data.picks}
-                lots={lots}
-                usdinr={data.usdinr}
-              />
-
               <div className="lead-row">
                 <Card>
                   <CardTitle
@@ -489,8 +480,23 @@ export default function App() {
                 </Card>
 
                 <RecommendPanel rec={data.recommendation} market={data.market} minPremium={minPremium} usdinr={data.usdinr} />
-                <StructurePanel structure={data.structure} snap={snap} />
               </div>
+              <ChainTable legs={data.legs} snap={snap} />
+              <div className="note">
+                Age is minutes since a real trade printed. Delta's candle feed
+                forward-fills quiet minutes, so a traded price with a large age is a
+                carry-forward, not a quote you can hit — the mark is the honest number
+                there. Historical rows have no order book, so bid and ask are blank and
+                the mark is used as the sell estimate.
+              </div>
+
+              <VerdictPanel
+                verdict={data.verdict}
+                picks={data.picks}
+                lots={lots}
+                usdinr={data.usdinr}
+              />
+
 
               {data.forecast && (
                 <div className="wide-row">
@@ -499,7 +505,7 @@ export default function App() {
               )}
 
               <div className="masonry">
-                {data.market && <MovePanel market={data.market} snap={snap} />}
+                <StructurePanel structure={data.structure} snap={snap} />
                 <BiasPanel bias={data.bias} snap={snap} />
                 <AccountPanel usdinr={data.usdinr} />
               </div>
