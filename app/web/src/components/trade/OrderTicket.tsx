@@ -118,10 +118,18 @@ export function OrderTicket({
     mark: fresh?.quote?.mark ?? seed?.mark ?? null,
   };
 
-  // A fresh contract is a fresh ticket. Carrying the last one's size over is
-  // how you sell ten lots of something you meant to sell one of.
+  /**
+   * Every opening is a fresh ticket.
+   *
+   * Keyed on `open` as well as the contract, because keying on the contract
+   * alone left the last order's result on screen when the sheet was opened
+   * again -- tapping the same strike twice never changed the symbol, so nothing
+   * reset, and you were looking at "Sold 1 at 33.00" over a ticket you had not
+   * placed. Carrying the last one's size over is the same class of mistake:
+   * it is how you sell ten lots of something you meant to sell one of.
+   */
   useEffect(() => {
-    if (!seed) return;
+    if (!seed || !open) return;
     const start = Math.max(1, seed.lots ?? 1);
     setLots(start);
     setLotsText(String(start));
@@ -132,7 +140,7 @@ export function OrderTicket({
     setResult(null);
     setFailed(null);
     setPreview(null);
-  }, [seed?.symbol]);
+  }, [seed?.symbol, open]);
 
   /**
    * Does this order sit on the book, or is it taken at once?

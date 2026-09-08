@@ -338,6 +338,29 @@ describe('paper mode', () => {
   });
 });
 
+describe('reopening the ticket', () => {
+  it('does not show the last order’s result over a new one', async () => {
+    // tapping the same strike twice never changed the symbol, so nothing reset
+    const { rerender } = render(<OrderTicket seed={seed} open onOpenChange={() => {}} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /Sell/ })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: /Sell/ }));
+    await waitFor(() => expect(screen.getByText(/Sold 1 at 9.00/)).toBeInTheDocument());
+
+    rerender(<OrderTicket seed={seed} open={false} onOpenChange={() => {}} />);
+    rerender(<OrderTicket seed={seed} open onOpenChange={() => {}} />);
+    expect(screen.queryByText(/Sold 1 at 9.00/)).toBeNull();
+    expect(screen.getByRole('radio', { name: 'ask' })).toBeInTheDocument();
+  });
+
+  it('starts from one lot again, whatever the last one was', async () => {
+    const { rerender } = render(<OrderTicket seed={seed} open onOpenChange={() => {}} />);
+    fireEvent.change(screen.getByLabelText('lots'), { target: { value: '9' } });
+    rerender(<OrderTicket seed={seed} open={false} onOpenChange={() => {}} />);
+    rerender(<OrderTicket seed={seed} open onOpenChange={() => {}} />);
+    expect((screen.getByLabelText('lots') as HTMLInputElement).value).toBe('1');
+  });
+});
+
 describe('a new contract', () => {
   it('resets the size, so the last strike’s ten lots do not carry over', () => {
     const { rerender } = render(<OrderTicket seed={seed} open onOpenChange={() => {}} />);

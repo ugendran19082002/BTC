@@ -103,13 +103,15 @@ header.top h1 {
 header.top .sub { color: var(--muted); font-size: 12px; min-width: 0; }
 header.top .top-out { margin-left: auto; flex: none; }
 
-/* Above a phone the two rows are one, with the price beside the title. */
+/* Above a phone the two rows are one line, and the reading order is the source
+   order: title, then price, then everything else. Reordering with `order` put
+   the price to the left of the name of the thing it belongs to. */
 @media (min-width: 720px) {
-  header.top { flex-direction: row; align-items: center; flex-wrap: wrap; }
+  header.top { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 12px; }
   header.top .top-row { flex: 0 1 auto; }
-  header.top .top-row:first-child { flex: 1 1 auto; order: 1; }
-  header.top .top-row-2 { order: 0; }
-  header.top .top-out { margin-left: auto; }
+  header.top .top-row:first-child { flex: 1 1 auto; }
+  /* the title row keeps its own right-aligned sign-out on one line */
+  header.top .top-out { margin-left: auto; order: 2; }
 }
 
 @media (max-width: 719px) {
