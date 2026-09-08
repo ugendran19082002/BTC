@@ -310,10 +310,26 @@ test('21 a quote five seconds old is not a quote', async () => {
 // ------------------------------------------------------ 22 & 23 book quality
 
 test('22 a spread nobody would cross blocks the entry', async () => {
-  const r = rig({ quotes: [quote(CE, 100, 105)] });
-  const res = await r.engine.open(planFor(ceProduct(), { entry: { type: 'limit', limitPrice: 100, timeoutMs: 5_000, marketFallback: false } }));
+  // measured on a real expiry: median 4.3%, 75th 9.5%, 90th 22%. A book at
+  // 100 / 125 is 22% and is in the tail; 100 / 105 is 4.9% and is ordinary.
+  const r = rig({ quotes: [quote(CE, 100, 125)] });
+  const res = await r.engine.open(planFor(ceProduct(), {
+    stopPrice: 140,
+    entry: { type: 'limit', limitPrice: 100, timeoutMs: 0, marketFallback: false, chase: null },
+  }));
   assert.equal(res.ok, false);
   assert.ok(!res.ok && failureCodes(res.precheck).includes('SPREAD_TOO_WIDE'));
+});
+
+test('22b an ordinary spread for this instrument is not blocked', async () => {
+  // a 4% limit blocked half the board, which is a gate that refuses the market
+  // rather than a bad price
+  const r = rig({ quotes: [quote(CE, 100, 105)] });
+  const res = await r.engine.open(planFor(ceProduct(), {
+    stopPrice: 130,
+    entry: { type: 'limit', limitPrice: 100, timeoutMs: 0, marketFallback: false, chase: null },
+  }));
+  assert.ok(res.ok, JSON.stringify(res.ok ? '' : res.precheck));
 });
 
 test('23 ten on the bid is not a market for a hundred', async () => {
@@ -409,11 +425,11 @@ test('47 [critical] a quoted price is dollars per BTC, and a contract is a thous
 });
 
 test('48 the spread gate lets a resting order through and stops one that crosses', async () => {
-  // 17 bid / 19 offered is an 11% spread and an ordinary daily option
-  const wide = { products: [ceProduct()], quotes: [quote(CE, 17, 19)], balanceUsd: 100 };
+  // 17 bid / 25 offered is 38% -- deep in the tail even for this instrument
+  const wide = { products: [ceProduct()], quotes: [quote(CE, 17, 25)], balanceUsd: 100 };
 
   const resting = await rig(wide).engine.open(
-    planFor(ceProduct(), { lots: 1, stopPrice: 40, entry: { type: 'limit', limitPrice: 19, timeoutMs: 5_000, marketFallback: false } }),
+    planFor(ceProduct(), { lots: 1, stopPrice: 40, entry: { type: 'limit', limitPrice: 25, timeoutMs: 0, marketFallback: false, chase: null } }),
   );
   assert.ok(resting.ok, `resting at the offer should be allowed: ${JSON.stringify(resting.ok ? '' : resting.precheck)}`);
 
@@ -425,9 +441,9 @@ test('48 the spread gate lets a resting order through and stops one that crosses
 });
 
 test('49 a limit at the bid is crossing, because it fills immediately', async () => {
-  const r = rig({ quotes: [quote(CE, 17, 19)], balanceUsd: 100 });
+  const r = rig({ quotes: [quote(CE, 17, 25)], balanceUsd: 100 });
   const res = await r.engine.open(
-    planFor(ceProduct(), { lots: 1, stopPrice: 40, entry: { type: 'limit', limitPrice: 17, timeoutMs: 5_000, marketFallback: false } }),
+    planFor(ceProduct(), { lots: 1, stopPrice: 40, entry: { type: 'limit', limitPrice: 17, timeoutMs: 0, marketFallback: false, chase: null } }),
   );
   assert.equal(res.ok, false);
   assert.ok(!res.ok && failureCodes(res.precheck).includes('SPREAD_TOO_WIDE'));

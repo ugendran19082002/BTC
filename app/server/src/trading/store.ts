@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { TRADE_DB } from '../paths.js';
 import type { TradeRecord, TradeStore } from './engine.js';
+import { appliedMigrations, migrate, type Migration } from '../db/migrate.js';
 import { recompute } from './machine.js';
 import type { TradeEvent, TradeState } from './types.js';
 
@@ -16,32 +17,50 @@ import type { TradeEvent, TradeState } from './types.js';
  * before it talks to the exchange at all.
  */
 
-const SCHEMA = `
-CREATE TABLE IF NOT EXISTS trades (
-  trade_id   TEXT PRIMARY KEY,
-  symbol     TEXT NOT NULL,
-  phase      TEXT NOT NULL,
-  position   INTEGER NOT NULL,
-  plan       TEXT NOT NULL,
-  state      TEXT NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS trade_events (
-  id       INTEGER PRIMARY KEY AUTOINCREMENT,
-  trade_id TEXT NOT NULL,
-  seq      INTEGER NOT NULL,
-  at       INTEGER NOT NULL,
-  kind     TEXT NOT NULL,
-  event    TEXT NOT NULL,
-  UNIQUE (trade_id, seq)
-);
-CREATE INDEX IF NOT EXISTS trade_events_by_trade ON trade_events (trade_id, seq);
-CREATE INDEX IF NOT EXISTS trades_by_phase ON trades (phase);
-CREATE TABLE IF NOT EXISTS settings (
-  key   TEXT PRIMARY KEY,
-  value TEXT NOT NULL
-);
-`;
+/**
+ * The journal's schema, as migrations.
+ *
+ * 001 is the shape the table had when it shipped. Anything that changes it
+ * afterwards is a new entry -- never an edit to this one, which has already run
+ * on every database that exists.
+ */
+const MIGRATIONS: Migration[] = [
+  {
+    id: '001-trades',
+    up: `
+      CREATE TABLE IF NOT EXISTS trades (
+        trade_id   TEXT PRIMARY KEY,
+        symbol     TEXT NOT NULL,
+        phase      TEXT NOT NULL,
+        position   INTEGER NOT NULL,
+        plan       TEXT NOT NULL,
+        state      TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS trade_events (
+        id       INTEGER PRIMARY KEY AUTOINCREMENT,
+        trade_id TEXT NOT NULL,
+        seq      INTEGER NOT NULL,
+        at       INTEGER NOT NULL,
+        kind     TEXT NOT NULL,
+        event    TEXT NOT NULL,
+        UNIQUE (trade_id, seq)
+      );
+      CREATE INDEX IF NOT EXISTS trade_events_by_trade ON trade_events (trade_id, seq);
+      CREATE INDEX IF NOT EXISTS trades_by_phase ON trades (phase);
+      CREATE TABLE IF NOT EXISTS settings (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+    `,
+  },
+  {
+    // The orders screen filters on when a trade last changed, and did it with
+    // a scan.
+    id: '002-trades-by-updated-at',
+    up: 'CREATE INDEX IF NOT EXISTS trades_by_updated_at ON trades (updated_at DESC);',
+  },
+];
 
 const OPEN_PHASES = "('precheck','entry_pending','entry_unknown','position_open','unprotected','protected','exit_pending')";
 
@@ -51,8 +70,11 @@ export class SqliteTradeStore implements TradeStore {
   constructor(path = TRADE_DB) {
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA journal_mode = WAL');
-    this.db.exec(SCHEMA);
+    migrate(this.db, MIGRATIONS);
   }
+
+  /** What this database has had applied. For the health endpoint. */
+  migrations() { return appliedMigrations(this.db); }
 
   save(rec: TradeRecord): void {
     const { state } = rec;

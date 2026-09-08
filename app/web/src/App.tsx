@@ -672,6 +672,7 @@ export default function App() {
                 sides={data.recommendation.ok ? data.recommendation.sides : []}
                 density={density}
                 onSell={openTicket}
+                maxSpreadPct={trade?.limits.maxSpreadPct}
               />
               </ErrorBoundary>
               <div className="note">

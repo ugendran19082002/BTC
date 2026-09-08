@@ -28,9 +28,18 @@ export type PrecheckResult = { ok: true } | { ok: false; failures: Failure[] };
 export type RiskLimits = {
   /** A quote older than this is not a quote. */
   maxQuoteAgeMs: number;
-  /** Widest bid/ask, as a fraction of the mid, we will trade into. A book of
-   * 100 bid / 105 offered is 4.9% by this measure and is already too wide to
-   * sell into: the mid is a fiction and the bid is where you actually fill. */
+  /**
+   * Widest bid/ask, as a fraction of the mid, that an order may cross.
+   *
+   * Measured rather than guessed. Across 136 two-sided quotes on one daily
+   * expiry: median 4.3%, 75th percentile 9.5%, 90th 22%, worst 62%. A 4% limit
+   * — an equity-options intuition — blocked half the board, including strikes
+   * whose spread was entirely ordinary for this instrument.
+   *
+   * 15% blocks the 16% of quotes that are genuinely wide and lets the working
+   * range through. It only ever applies to an order that crosses; resting at
+   * the offer is unaffected, because a wide book is the reason to rest.
+   */
   maxSpreadPct: number;
   /** Top-of-book size must cover at least this share of ours. */
   minBookCoverage: number;
@@ -73,7 +82,7 @@ export const dailyLossLimitFor = (balanceUsd: number | null): number =>
 
 export const DEFAULT_LIMITS: RiskLimits = {
   maxQuoteAgeMs: 3_000,
-  maxSpreadPct: 0.04,
+  maxSpreadPct: 0.15,
   minBookCoverage: 0.5,
   maxShortContracts: 500,
   maxDailyLossUsd: 25,

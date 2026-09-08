@@ -38,6 +38,9 @@ export function registerDeskRoutes(app: FastifyInstance) {
       days: days.length,
       first: days[0]?.date ?? null,
       last: days[days.length - 1]?.date ?? null,
+      // Which schema the journal is on. A container that started against an
+      // older database should be visible from outside rather than by symptom.
+      schema: tradingService().store.migrations().map((m) => m.id),
       now: new Date().toISOString(),
     };
   });

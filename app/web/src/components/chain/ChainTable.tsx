@@ -54,17 +54,20 @@ function Zero({ leg, sold = false }: { leg: Leg | undefined; sold?: boolean }) {
  * extra step, and on a phone the two cells are four millimetres apart anyway.
  */
 function PriceCell({
-  value, className, onSell, decimals = 2,
+  value, className, onSell, decimals = 2, title,
 }: {
   value: number | null | undefined;
   className: string;
   onSell?: () => void;
   decimals?: number;
+  title?: string;
 }) {
   const text = n(value ?? null, decimals);
-  if (!onSell || value === null || value === undefined) return <td className={className}>{text}</td>;
+  if (!onSell || value === null || value === undefined) {
+    return <td className={className} title={title}>{text}</td>;
+  }
   return (
-    <td className={`${className} tappable`}>
+    <td className={`${className} tappable`} title={title}>
       <button type="button" onClick={onSell} aria-label={`sell at ${text}`}>{text}</button>
     </td>
   );
@@ -114,6 +117,7 @@ export function ChainTable({
   sides = [],
   density = 'default',
   onSell,
+  maxSpreadPct,
 }: {
   legs: Leg[];
   snap: SnapshotMeta;
@@ -127,6 +131,14 @@ export function ChainTable({
   sides?: SideRecommendation[];
   /** Tapping a price asks for a ticket. Absent means the board is read-only. */
   onSell?: (intent: ChainSellIntent) => void;
+  /**
+   * The widest spread an order may cross, as a fraction of the mid.
+   *
+   * Strikes past it are marked, because a board of two dozen prices does not
+   * say which of them you can actually take -- and finding out by having the
+   * ticket refuse you is a slow way to read a chain.
+   */
+  maxSpreadPct?: number;
   /**
    * 'default' is the odds either side of the strike, the raw model behind them,
    * and the ask. 'all' adds the bid, the mark, open interest, volume, age,
@@ -144,6 +156,19 @@ export function ChainTable({
   // them, and the ask -- plus the seven reference ones when they are showing
   const perSide = density === 'all' ? 10 : 3;
   const at = (k: number, cp: 'C' | 'P') => legs.find((l) => l.strike === k && l.cp === cp);
+
+  /**
+   * Can this one be taken at the bid right now?
+   *
+   * `null` when there is no two-sided quote to judge from -- which is not the
+   * same as "no", and is drawn differently.
+   */
+  const takeable = (leg: Leg | undefined): boolean | null => {
+    if (maxSpreadPct === undefined || !leg || leg.bid == null || leg.ask == null) return null;
+    const mid = (leg.bid + leg.ask) / 2;
+    if (!(mid > 0) || leg.ask <= leg.bid) return null;
+    return (leg.ask - leg.bid) / mid <= maxSpreadPct;
+  };
   const sell = (leg: Leg | undefined, cp: 'C' | 'P', k: number) =>
     onSell && leg
       ? () => onSell({ cp, strike: k, bid: leg.bid ?? null, ask: leg.ask ?? null, mark: leg.mark ?? null })
@@ -234,7 +259,12 @@ export function ChainTable({
                 <td className="dim">{c?.pOtm != null ? (c.pOtm * 100).toFixed(0) + '%' : '·'}</td>
                 <PriceCell className="askcol" value={c?.ask} onSell={sell(c, 'C', k)} />
                 <td className="aux">{n(c?.mark ?? null)}</td>
-                <PriceCell className={`bidcol aux${sellC ? ' sellcell' : ''}`} value={c?.bid} onSell={sell(c, 'C', k)} />
+                <PriceCell
+                  className={`bidcol aux${sellC ? ' sellcell' : ''}${takeable(c) === false ? ' wide' : ''}`}
+                  value={c?.bid}
+                  onSell={sell(c, 'C', k)}
+                  title={takeable(c) === false ? 'Too wide to cross — rest at the offer instead' : undefined}
+                />
 
                 <td className="mono strikecell">
                   {k}
@@ -243,7 +273,12 @@ export function ChainTable({
                   {sellP && <span className="tag ok">SELL PE</span>}
                 </td>
 
-                <PriceCell className={`bidcol aux${sellP ? ' sellcell' : ''}`} value={p?.bid} onSell={sell(p, 'P', k)} />
+                <PriceCell
+                  className={`bidcol aux${sellP ? ' sellcell' : ''}${takeable(p) === false ? ' wide' : ''}`}
+                  value={p?.bid}
+                  onSell={sell(p, 'P', k)}
+                  title={takeable(p) === false ? 'Too wide to cross — rest at the offer instead' : undefined}
+                />
                 <td className="aux">{n(p?.mark ?? null)}</td>
                 <PriceCell className="askcol" value={p?.ask} onSell={sell(p, 'P', k)} />
                 <td className="dim">{p?.pOtm != null ? (p.pOtm * 100).toFixed(0) + '%' : '·'}</td>
@@ -261,6 +296,10 @@ export function ChainTable({
     </div>
       <div className="note" style={{ padding: '8px 12px', margin: '0 0 12px' }}>
         {onSell && <><b>Tap a price</b> to open a ticket for that strike.{' '}</>}
+        {maxSpreadPct !== undefined && (
+          <>A <b className="warnbid">struck-through bid</b> is one the spread is too wide to
+          cross — rest at the offer on those instead.{' '}</>
+        )}
         <b className="up">Bid</b> is what you receive when you <b>sell</b>.
         {' '}<b className="down">Ask</b> is what you pay when you <b>buy</b> — the hedge leg.
         {' '}Mark is Delta's fair value: use it to judge, never as your fill.

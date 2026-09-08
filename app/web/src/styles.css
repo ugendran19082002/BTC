@@ -661,3 +661,12 @@ td.sellcell {
 input[type='number'] { -moz-appearance: textfield; appearance: textfield; }
 input[type='number']::-webkit-outer-spin-button,
 input[type='number']::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+
+/* A bid you cannot take.
+   Struck through rather than hidden: the price is real and worth reading, it
+   just is not one you can cross to. The board is two dozen prices and none of
+   them said which. */
+.chain td.bidcol.wide, .chain td.bidcol.wide button { color: var(--dim); text-decoration: line-through; }
+.chain td.bidcol.wide button:hover { color: #0b0e11; text-decoration: none; }
+.note .warnbid { color: var(--dim); text-decoration: line-through; }
