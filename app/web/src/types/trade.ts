@@ -117,8 +117,10 @@ export type OrderDraft = {
   leverage: number;
   /** null means take the book at market. */
   limitPrice: number | null;
-  takeProfitPrice?: number | null;
-  stopPrice?: number | null;
+  /** 0 to 0.99. Zero means no target. */
+  takeProfitPct?: number;
+  /** 0 upwards. Zero means no stop. */
+  stopLossPct?: number;
   marketFallback?: boolean;
 };
 
@@ -132,6 +134,9 @@ export type Preview = {
   creditUsd: number;
   worstCaseLossUsd: number | null;
   stopPrice: number | null;
+  takeProfitPrice: number | null;
+  /** What you keep if the target fills. */
+  targetProfitUsd: number | null;
   leverage: number;
   spot: number | null;
   /** Margin the exchange will hold for the whole position, in USD. */

@@ -1,9 +1,9 @@
 import type { FastifyInstance } from 'fastify';
-import { tradingService } from '../../trading/service.js';
+import { stopPriceFor, targetPriceFor, tradingService } from '../../trading/service.js';
 import { lotsToContracts } from '../../trading/money.js';
 import { DEFAULT_LIMITS, precheck } from '../../trading/precheck.js';
 import { clampLeverage, fundsRequiredPerContract, liquidationPrice, maxLotsAt } from '../../trading/margin.js';
-import type { TradeRecord } from '../../trading/engine.js';
+import { worstCaseLoss, type TradeRecord } from '../../trading/engine.js';
 
 /**
  * The order desk.
@@ -26,6 +26,15 @@ type PlaceBody = {
   stopPrice?: number | null;
   marketFallback?: boolean;
   leverage?: number;
+  /** 0 to 0.99. Zero means no target. */
+  takeProfitPct?: number;
+  /** 0 upwards. Zero means no stop. */
+  stopLossPct?: number;
+};
+
+const pct = (v: unknown, max: number) => {
+  const n = Number(v ?? 0);
+  return Number.isFinite(n) && n > 0 ? Math.min(max, n) : 0;
 };
 
 const view = (r: TradeRecord) => ({
@@ -52,7 +61,9 @@ function parse(body: PlaceBody) {
     takeProfitPrice: body.takeProfitPrice ?? null,
     stopPrice: body.stopPrice ?? null,
     marketFallback: body.marketFallback ?? false,
-    leverage: clampLeverage(Number(body.leverage ?? 10)),
+    leverage: clampLeverage(Number(body.leverage ?? 200)),
+    takeProfitPct: pct(body.takeProfitPct, 0.99),
+    stopLossPct: pct(body.stopLossPct, 20),
   };
 }
 
@@ -126,9 +137,13 @@ export function registerTradeRoutes(app: FastifyInstance) {
       const price = p.limitPrice ?? quote?.bid ?? null;
       const held = positions.find((x) => x.symbol === p.symbol)?.size ?? 0;
       const totalShort = positions.reduce((n, x) => n + (x.size < 0 ? -x.size : 0), 0);
-      const stop = p.stopPrice ?? (price !== null ? price * 2.5 : null);
+      const stop = p.stopPrice ?? (price !== null ? stopPriceFor(price, p.stopLossPct) : null);
+      const target = p.takeProfitPrice ?? (price !== null ? targetPriceFor(price, p.takeProfitPct) : null);
       const credit = (price ?? 0) * size;
-      const worstCase = stop !== null ? Math.max(0, stop * size - credit) : Infinity;
+      const worstCase = worstCaseLoss({
+        stopPrice: stop, price, size, credit, spot: svc.spot,
+        leverage: p.leverage, contractValue: product?.contractValue,
+      });
 
       const spot = svc.spot;
       const margin = spot !== null && price !== null
@@ -163,6 +178,9 @@ export function registerTradeRoutes(app: FastifyInstance) {
         creditUsd: credit,
         worstCaseLossUsd: Number.isFinite(worstCase) ? worstCase : null,
         stopPrice: stop,
+        takeProfitPrice: target,
+        /** What you keep if the target fills. */
+        targetProfitUsd: target !== null && price !== null ? (price - target) * size : null,
         leverage: p.leverage,
         spot,
         marginUsd: margin ? fundsRequiredPerContract(margin) * size : null,
@@ -187,8 +205,8 @@ export function registerTradeRoutes(app: FastifyInstance) {
         expiryTs: p.expiryTs,
         lots: p.lots,
         limitPrice: p.limitPrice,
-        takeProfitPrice: p.takeProfitPrice,
-        stopPrice: p.stopPrice,
+        takeProfitPct: p.takeProfitPct,
+        stopLossPct: p.stopLossPct,
         marketFallback: p.marketFallback,
       });
       if (!res.ok) {

@@ -23,17 +23,40 @@ import type { TradeState } from './types.js';
 
 const POLL_MS = 1_000;
 /**
- * Ten, not two hundred.
+ * Two hundred, matching Delta's own app.
  *
- * Delta will let a short option run at 200x, where the margin behind a lot is
- * half a percent of spot and the close-out sits a short move above where you
- * sold. The desk's default is the leverage a bad afternoon survives; anything
- * higher is a decision, made on the ticket, with the close-out price on screen.
+ * This is the leverage the account already trades at, so the desk defaults to
+ * it rather than quietly disagreeing with the exchange screen beside it. It
+ * cuts both ways and the ticket says so:
+ *
+ *   - the margin behind a lot is half a percent of spot, so a small balance can
+ *     open a position, and the close-out sits close above where you sold;
+ *   - but because the close-out is close, the loss before it arrives is small.
+ *     At 200x a naked short risks the room to the close-out and no more, which
+ *     is a fraction of what the same trade risks at 10x.
+ *
+ * The ticket shows the close-out price on the bar as you drag, so the tightness
+ * is visible rather than implied.
  */
-const DEFAULT_LEVERAGE = 10;
-/** A sold option with no stop is an unbounded loss, so one is always derived. */
-const STOP_MULTIPLE = 2.5;
-const TARGET_FRACTION = 0.05;
+const DEFAULT_LEVERAGE = 200;
+/**
+ * The exits, as percentages of the premium.
+ *
+ * A short option is sold for a credit and bought back for less, so the two
+ * exits are read off the entry price in opposite directions:
+ *
+ *   target  -- the option has decayed by this much.  price = entry x (1 - pct)
+ *   stop    -- the option has run against you by this much. price = entry x (1 + pct)
+ *
+ * Zero means off. Neither is derived behind your back: a trade that runs
+ * without a stop says so on the ticket, in the position row, and in the
+ * journal, and it is a decision rather than a malfunction.
+ */
+export const targetPriceFor = (entry: number, pct: number): number | null =>
+  pct > 0 ? round1(entry * (1 - Math.min(0.99, pct))) : null;
+
+export const stopPriceFor = (entry: number, pct: number): number | null =>
+  pct > 0 ? round1(entry * (1 + pct)) : null;
 
 export type DeskMode = 'live' | 'paper';
 
@@ -157,12 +180,20 @@ export class TradingService {
     leverage?: number;
     /** Absent means take what the book offers. */
     limitPrice?: number;
+    /** 0 to 0.99. Zero means no target. */
+    takeProfitPct?: number;
+    /** 0 upwards. Zero means no stop. */
+    stopLossPct?: number;
+    /** Overrides the percentage, when a caller wants an exact price. */
     takeProfitPrice?: number | null;
     stopPrice?: number | null;
     timeoutMs?: number;
     marketFallback?: boolean;
   }) {
     const price = input.limitPrice;
+    // A market entry has no price yet, so a percentage cannot be turned into
+    // one; the exits are placed from the actual fill on the first poll instead.
+    const basis = price ?? null;
     const plan: TradePlan = {
       tradeId: `${input.symbol}-${Date.now()}`,
       symbol: input.symbol,
@@ -176,9 +207,14 @@ export class TradingService {
             timeoutMs: input.timeoutMs ?? 5_000,
             marketFallback: input.marketFallback ?? false,
           },
-      // If the caller does not set a stop, one is derived rather than left off.
-      takeProfitPrice: input.takeProfitPrice ?? (price !== undefined ? round1(price * TARGET_FRACTION) : null),
-      stopPrice: input.stopPrice ?? (price !== undefined ? round1(price * STOP_MULTIPLE) : null),
+      takeProfitPrice:
+        input.takeProfitPrice !== undefined
+          ? input.takeProfitPrice
+          : basis !== null ? targetPriceFor(basis, input.takeProfitPct ?? 0) : null,
+      stopPrice:
+        input.stopPrice !== undefined
+          ? input.stopPrice
+          : basis !== null ? stopPriceFor(basis, input.stopLossPct ?? 0) : null,
       expect: {
         underlying: 'BTC',
         optionSide: input.optionSide,

@@ -4,7 +4,7 @@ import type {
 import { applyEvent, initialTrade, isDone, protectionSize } from './machine.js';
 import { priceFor, lotsToContracts, stopPriceFor } from './money.js';
 import { DEFAULT_LIMITS, precheck, type PrecheckResult, type RiskLimits } from './precheck.js';
-import { clampLeverage } from './margin.js';
+import { clampLeverage, liquidationRoom } from './margin.js';
 import { ExchangeUnavailable, OrderRejected, SubmitTimeout, type ExchangePort } from './exchange/port.js';
 
 /**
@@ -130,8 +130,17 @@ export class TradeEngine {
     const price = plan.entry.type === 'limit' ? plan.entry.limitPrice ?? null : quote?.bid ?? null;
 
     // Worst case is the buy-back at the stop, less the credit taken in.
+    //
+    // With no stop it is not unbounded: the exchange closes the position out at
+    // its own price, and that is the real cap. Which means the loss a naked
+    // trade risks is set by leverage -- more leverage, tighter close-out, less
+    // to lose. That is the one thing high leverage is good for, and the gate
+    // should reflect it rather than refusing every trade without a stop.
     const credit = (price ?? 0) * size;
-    const worstCase = plan.stopPrice !== null ? Math.max(0, plan.stopPrice * size - credit) : Infinity;
+    const worstCase = worstCaseLoss({
+      stopPrice: plan.stopPrice, price, size, credit, spot,
+      leverage: clampLeverage(plan.leverage), contractValue: product?.contractValue,
+    });
 
     return precheck({
       now: this.now(),
@@ -165,6 +174,7 @@ export class TradeEngine {
       state: initialTrade({
         tradeId: plan.tradeId, symbol: plan.symbol, productId: product?.productId ?? 0,
         optionSide: plan.optionSide, requestedSize: size, at,
+        wantsProtection: plan.stopPrice !== null || plan.takeProfitPrice !== null,
       }),
     };
 
@@ -306,7 +316,12 @@ export class TradeEngine {
     // An exit printed: the other side has to go before it can re-open us.
     if (rec.state.exitWinner) rec = await this.cancelSiblings(rec);
 
-    if (rec.state.position !== 0 && rec.state.phase !== 'exit_pending' && !rec.state.protection.stopLoss) {
+    if (
+      rec.state.wantsProtection &&
+      rec.state.position !== 0 &&
+      rec.state.phase !== 'exit_pending' &&
+      !rec.state.protection.stopLoss
+    ) {
       rec = await this.protect(rec);
     }
 
@@ -360,6 +375,8 @@ export class TradeEngine {
     let rec = recIn;
     const size = protectionSize(rec.state);
     if (size === 0) return rec;
+    // Nothing to place, and nothing wrong with that.
+    if (rec.plan.takeProfitPrice === null && rec.plan.stopPrice === null) return rec;
     const product = await this.exchange.getProduct(rec.plan.symbol).catch(() => null);
     const tick = product?.tickSize ?? 0.1;
     // Versioned by every attempt, not just the failures: a resize must not reuse
@@ -507,6 +524,30 @@ export class TradeEngine {
     }
     return out;
   }
+}
+
+/**
+ * The most this trade can lose, in USD.
+ *
+ * With a stop: the buy-back at the stop, less the credit. Without one: the
+ * distance to the exchange's close-out, which is where the position ends
+ * whether you like it or not. `null` when neither can be worked out.
+ */
+export function worstCaseLoss(i: {
+  stopPrice: number | null;
+  price: number | null;
+  size: number;
+  credit: number;
+  spot: number | null;
+  leverage: number;
+  contractValue?: number;
+}): number {
+  if (i.stopPrice !== null) return Math.max(0, i.stopPrice * i.size - i.credit);
+  if (i.spot === null || i.price === null) return Infinity;
+  const room = liquidationRoom({
+    spot: i.spot, premium: i.price, leverage: i.leverage, contractValue: i.contractValue,
+  });
+  return room === null ? Infinity : Math.max(0, room * i.size);
 }
 
 function avgSeenNotional(state: TradeState, orderId: string): number {

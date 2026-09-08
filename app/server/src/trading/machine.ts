@@ -22,6 +22,8 @@ export function initialTrade(args: {
   optionSide: OptionSide;
   requestedSize: number;
   at: number;
+  /** False when the trade deliberately runs without a stop. */
+  wantsProtection?: boolean;
 }): TradeState {
   return {
     tradeId: args.tradeId,
@@ -37,6 +39,7 @@ export function initialTrade(args: {
     exitAvgPrice: null,
     entryOrderId: null,
     protection: { takeProfit: null, stopLoss: null },
+    wantsProtection: args.wantsProtection ?? true,
     exitWinner: null,
     realisedPnl: 0,
     fills: [],
@@ -142,11 +145,12 @@ export function applyEvent(prev: TradeState, e: TradeEvent): TradeState {
       };
 
     case 'protection_failed':
-      // Contracts are live and nothing is behind them.
+      // Contracts are live and nothing is behind them. Only an alarm if a stop
+      // was asked for -- a trade that chose to run naked is not malfunctioning.
       return {
         ...s,
         phase: s.position === 0 ? 'flat' : 'unprotected',
-        alarm: s.position === 0 ? null : `POSITION UNPROTECTED: ${e.reason}`,
+        alarm: s.position === 0 || !s.wantsProtection ? null : `POSITION UNPROTECTED: ${e.reason}`,
       };
 
     case 'exit_submitted':
@@ -162,10 +166,11 @@ export function applyEvent(prev: TradeState, e: TradeEvent): TradeState {
     case 'reconciled': {
       // The exchange's number, not ours.
       const position = e.position;
+      const covered = Boolean(s.protection.takeProfit || s.protection.stopLoss);
       const phase: TradePhase =
         position === 0
           ? s.entrySize > 0 ? 'flat' : 'aborted'
-          : s.protection.takeProfit || s.protection.stopLoss ? 'protected' : 'unprotected';
+          : covered || !s.wantsProtection ? 'protected' : 'unprotected';
       return {
         ...s,
         position,
@@ -186,9 +191,9 @@ export const replay = (init: TradeState, events: TradeEvent[]): TradeState =>
 /** How many contracts a stop or a target must cover right now. Never the request. */
 export const protectionSize = (s: TradeState): number => Math.abs(s.position);
 
-/** A trade needs a stop behind it and has none. */
+/** A trade asked for a stop, holds contracts, and has no stop. */
 export const needsProtection = (s: TradeState): boolean =>
-  s.position !== 0 && !s.protection.stopLoss;
+  s.wantsProtection && s.position !== 0 && !s.protection.stopLoss;
 
 /** True while the engine must not send anything until it has read the exchange. */
 export const mustReconcile = (s: TradeState): boolean => s.phase === 'entry_unknown';

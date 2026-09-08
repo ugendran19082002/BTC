@@ -9,6 +9,8 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Select, SelectItem } from '@/components/ui/select';
+import { ExitBars } from '@/components/trade/ExitBars';
+import { usePersisted } from '@/hooks/usePersisted';
 import { countdown, price, signedUsd, strike, usd } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -43,14 +45,14 @@ type PriceMode = 'market' | 'bid' | 'ask' | 'custom';
 const LEVERAGE_STEPS = [1, 2, 3, 5, 10, 15, 20, 25, 50, 75, 100, 150, 200];
 
 /**
- * Above this, the option only has to move a fraction before the exchange closes
- * the position. It is still allowed -- Delta allows 200x -- but it stops being
- * the quiet default and starts being a thing the ticket argues with.
+ * Above this the close-out is close enough that the note beside the bar stops
+ * being informational and starts being a warning. It is not a block: 200x is
+ * the default and what the exchange app itself uses.
  */
-const LOUD_LEVERAGE = 25;
+const LOUD_LEVERAGE = 100;
 
 export function OrderTicket({
-  seed, open, onOpenChange, maxLots: maxLotsProp, onPlaced, defaultLeverage = 10,
+  seed, open, onOpenChange, maxLots: maxLotsProp, onPlaced, defaultLeverage = 200,
 }: {
   seed: TicketSeed | null;
   open: boolean;
@@ -60,7 +62,11 @@ export function OrderTicket({
   defaultLeverage?: number;
 }) {
   const [lots, setLots] = useState(1);
-  const [leverage, setLeverage] = useState(defaultLeverage);
+  const [leverage, setLeverage] = usePersisted('order:leverage', defaultLeverage);
+  // The exits are a habit, not a per-trade decision, so they carry over between
+  // tickets. Zero -- off -- is the default until you move them once.
+  const [targetPct, setTargetPct] = usePersisted('exit:targetPct', 0);
+  const [stopPct, setStopPct] = usePersisted('exit:stopPct', 0);
   const [mode, setMode] = useState<PriceMode>('market');
   const [custom, setCustom] = useState('');
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -74,13 +80,12 @@ export function OrderTicket({
   useEffect(() => {
     if (!seed) return;
     setLots(Math.max(1, seed.lots ?? 1));
-    setLeverage(defaultLeverage);
     setMode('market');
     setCustom('');
     setResult(null);
     setFailed(null);
     setPreview(null);
-  }, [seed?.symbol, defaultLeverage]);
+  }, [seed?.symbol]);
 
   const limitPrice = useMemo(() => {
     if (!seed) return null;
@@ -99,8 +104,9 @@ export function OrderTicket({
     () => seed && {
       symbol: seed.symbol, side: seed.side, strike: seed.strike,
       expiryTs: seed.expiryTs, lots, limitPrice, leverage,
+      takeProfitPct: targetPct, stopLossPct: stopPct,
     },
-    [seed, lots, limitPrice, leverage],
+    [seed, lots, limitPrice, leverage, targetPct, stopPct],
   );
 
   // Debounced, because typing a price should not be a request per keystroke.
@@ -249,6 +255,18 @@ export function OrderTicket({
 
             <Separator className="my-3.5" />
 
+            <ExitBars
+              entry={working}
+              size={preview?.size ?? lots}
+              targetPct={targetPct}
+              stopPct={stopPct}
+              onTargetPct={setTargetPct}
+              onStopPct={setStopPct}
+              liquidationPrice={preview?.liquidationPrice ?? null}
+            />
+
+            <Separator className="my-3" />
+
             <dl className="m-0 grid gap-1.5">
               <Line label="you receive" value={usd(credit)} strong />
               <Line label="margin held" value={usd(preview?.marginUsd)} />
@@ -257,8 +275,11 @@ export function OrderTicket({
                 value={price(preview?.liquidationPrice)}
                 tone={room !== null && room < 2 ? 'down' : undefined}
               />
-              <Line label="stop buys back at" value={price(preview?.stopPrice)} />
-              <Line label="if it goes wrong" value={preview?.worstCaseLossUsd != null ? signedUsd(-preview.worstCaseLossUsd) : '—'} tone="down" />
+              <Line
+                label={stopPct > 0 ? 'most you can lose' : 'most you can lose, with no stop'}
+                value={preview?.worstCaseLossUsd != null ? signedUsd(-preview.worstCaseLossUsd) : '—'}
+                tone="down"
+              />
               <Line label="contracts" value={preview ? String(preview.size) : String(lots)} />
             </dl>
 

@@ -147,6 +147,15 @@ export type TradeState = {
   exitAvgPrice: number | null;
   entryOrderId: string | null;
   protection: ProtectionOrders;
+  /**
+   * Whether this trade ever asked for a stop.
+   *
+   * The difference between "no stop because it failed" and "no stop because you
+   * turned it off" is the difference between an alarm and a decision, and the
+   * desk must not confuse them: crying wolf on a deliberate choice is how a real
+   * alarm gets ignored.
+   */
+  wantsProtection: boolean;
   /** Set once an exit is winning, so the loser can be cancelled exactly once. */
   exitWinner: OrderRole | 'manual' | null;
   realisedPnl: number;
