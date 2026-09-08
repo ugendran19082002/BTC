@@ -1,7 +1,7 @@
-import type { Snapshot } from './chain.js';
+import type { Snapshot } from '../market/chain.js';
 import type { ScoredLeg } from './score.js';
 import { LOT_BTC, USDINR } from './score.js';
-import type { MarketRead } from './market.js';
+import type { MarketRead } from '../market/moves.js';
 
 
 /**

@@ -200,7 +200,7 @@ first are the two things you see first, without scrolling past twenty strikes.
 
 The **How far it could move** card — the per-horizon table of what BTC did over
 a year of windows — was removed on request. The measurement behind it stands
-and `measure_horizons.py` still refreshes it; `/api/chain` still returns it.
+and `research/measure_horizons.py` still refreshes it; `/api/chain` still returns it.
 Nothing else depended on it.
 
 **How far it has moved** (the last 5m/15m/1h/24h, and the biggest day this

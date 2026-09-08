@@ -1,6 +1,6 @@
 import { candles, liveTickers, spotAt, pool, type Ticker } from './delta.js';
-import { greeks, impliedVol, expectedMove } from './bs.js';
-import { strikeProbabilities, type StrikeProbabilities } from './probability.js';
+import { greeks, impliedVol, expectedMove } from '../domain/bs.js';
+import { strikeProbabilities, type StrikeProbabilities } from '../domain/probability.js';
 
 /**
  * Fallback spacing when the listed strikes cannot be read.

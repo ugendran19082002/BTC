@@ -11,7 +11,7 @@ cd "$ROOT"
 TODAY="$(date -u +%F)"
 YESTERDAY="$(date -u -d yesterday +%F)"
 
-python3 harvest_chain.py "$YESTERDAY" "$TODAY"
+python3 harvester/harvest_chain.py "$YESTERDAY" "$TODAY"
 
 SNAP="$(mktemp -t chain-XXXXXX.db)"
 trap 'rm -f "$SNAP"' EXIT

@@ -1,4 +1,4 @@
-import type { Snapshot, Leg } from './chain.js';
+import type { Snapshot, Leg } from '../market/chain.js';
 
 /**
  * What the option board itself is saying: where open interest and gamma sit,

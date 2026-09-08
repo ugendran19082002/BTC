@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { directionalLean, MIN_LOTS_PER_SIDE, MAX_LOTS_PER_SIDE, SKEW_THRESHOLD_PCT } from '../src/recommend.js';
-import { summarize, type TradeDay } from '../src/backtest.js';
-import { maxLots } from '../src/score.js';
-import type { MarketRead, TimeframeRead } from '../src/market.js';
-import { coverageOf, type Leg } from '../src/chain.js';
+import { directionalLean, MIN_LOTS_PER_SIDE, MAX_LOTS_PER_SIDE, SKEW_THRESHOLD_PCT } from '../src/domain/recommend.js';
+import { summarize, type TradeDay } from '../src/backtest/backtest.js';
+import { maxLots } from '../src/domain/score.js';
+import type { MarketRead, TimeframeRead } from '../src/market/moves.js';
+import { coverageOf, type Leg } from '../src/market/chain.js';
 
 function marketWith(return24h: number, ema9: number, ema21: number): MarketRead {
   const daily: TimeframeRead = {
@@ -100,7 +100,7 @@ test('sizing floors rather than rounds, so margin is never overcommitted', () =>
   assert.equal(maxLots(0.4), 0);
 });
 
-import { allocateLots } from '../src/recommend.js';
+import { allocateLots } from '../src/domain/recommend.js';
 
 test('the two sides always add up to exactly the lots you asked for', () => {
   for (const total of [1, 2, 3, 5, 7, 10, 13, 20, 100]) {
@@ -130,7 +130,7 @@ test('tiny books do not break the floor rule', () => {
   assert.deepEqual(allocateLots(0, 0.5, 0.5), { ce: 0, pe: 0 });
 });
 
-import { detectStrikeStep } from '../src/chain.js';
+import { detectStrikeStep } from '../src/market/chain.js';
 
 test('the strike spacing is read from the chain, not assumed', () => {
   const two = [79_600, 79_800, 80_000, 80_200, 80_400, 80_600];
@@ -173,7 +173,7 @@ test('the split is a clean percentage, not a floating point artefact', () => {
 import {
   hashPassword, verifyPassword, issueToken, tokenValid, readCookie, LoginLimiter,
   type AuthConfig,
-} from '../src/session.js';
+} from '../src/http/session.js';
 
 const cfg: AuthConfig = {
   enabled: true, username: 'someone', passwordHash: '', secret: 'test-secret', ttl: 3600,

@@ -1,4 +1,4 @@
-# harvested option-chain cache - regenerate with harvest.py / harvest_chain.py
+# harvested option-chain cache - regenerate with research/harvest.py / harvester/harvest_chain.py
 cache/
 chain/
 btc_daily.json
@@ -21,3 +21,11 @@ chain.db-wal
 chain.db-shm
 .playwright-mcp/
 desk.png
+
+# runtime artefacts
+refresh.log
+*.log
+tsconfig.tsbuildinfo
+trades.db
+trades.db-wal
+trades.db-shm

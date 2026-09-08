@@ -1,8 +1,7 @@
 import { existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
-import { LOT_BTC, USDINR } from './score.js';
+import { CHAIN_DB } from '../paths.js';
+import { LOT_BTC, USDINR } from '../domain/score.js';
 
 /**
  * Backtest over the harvested chain snapshots in chain.db.
@@ -12,8 +11,7 @@ import { LOT_BTC, USDINR } from './score.js';
  * of the exit-quote noise that plagued the earlier reproduction.
  */
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-export const DB_PATH = process.env.CHAIN_DB ?? join(HERE, '..', '..', '..', 'chain.db');
+export const DB_PATH = CHAIN_DB;
 
 export type RawLeg = {
   cp: 'C' | 'P';

@@ -3,7 +3,7 @@
 # and holds no credentials -- it reads public market data only.
 FROM python:3.12-alpine
 WORKDIR /srv
-COPY harvest_chain.py store.py ./
+COPY harvester/harvest_chain.py harvester/store.py ./
 ENV CHAIN_DB=/srv/data/chain.db
 RUN adduser -D -u 1000 harvester && mkdir -p /srv/data && chown harvester /srv/data
 USER harvester

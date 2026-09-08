@@ -1,0 +1,484 @@
+import type {
+  ExchangeOrder, OptionSide, OrderRole, PlaceOrderRequest, ProductSpec, TradeEvent, TradeState,
+} from './types.js';
+import { applyEvent, initialTrade, isDone, protectionSize } from './machine.js';
+import { priceFor, lotsToContracts, stopPriceFor } from './money.js';
+import { DEFAULT_LIMITS, precheck, type PrecheckResult, type RiskLimits } from './precheck.js';
+import { ExchangeUnavailable, OrderRejected, SubmitTimeout, type ExchangePort } from './exchange/port.js';
+
+/**
+ * The thing that actually trades.
+ *
+ * It owns no clock and starts no timers. Time arrives as `now()` and work
+ * happens when `poll` is called, which means a test can put a trade through a
+ * partial fill, a timeout, a gap through the stop and a restart without waiting
+ * for a single millisecond -- and production gets exactly the same code path.
+ *
+ * Three habits run through every method:
+ *   - a client order id is derived from the trade, so a retry after a timeout
+ *     can never create a second order;
+ *   - after anything unexpected, the exchange is read before anything is sent;
+ *   - an exit is always `reduceOnly`, always the opposite side, and always
+ *     sized from the position we actually hold.
+ */
+
+export type EntryPlan = {
+  type: 'limit' | 'market';
+  /** For a limit: the price to work. Rounded to the tick before it is sent. */
+  limitPrice?: number;
+  /** How long a resting entry gets before it is cancelled. */
+  timeoutMs: number;
+  /** Cross the spread after the timeout, once the gates are re-checked. */
+  marketFallback: boolean;
+};
+
+export type TradePlan = {
+  tradeId: string;
+  symbol: string;
+  optionSide: OptionSide;
+  lots: number;
+  entry: EntryPlan;
+  /** Buy-back price that books the win. `null` means no target. */
+  takeProfitPrice: number | null;
+  /** Buy-back trigger that caps the loss. `null` means no stop -- and the
+   * engine will say so, loudly, rather than pretending the trade is protected. */
+  stopPrice: number | null;
+  expect: { underlying: string; optionSide: OptionSide; strike: number; expiryTs: number };
+};
+
+export type TradeRecord = { state: TradeState; plan: TradePlan; events: TradeEvent[] };
+
+export interface TradeStore {
+  save(rec: TradeRecord): void;
+  get(tradeId: string): TradeRecord | null;
+  all(): TradeRecord[];
+  open(): TradeRecord[];
+}
+
+export class MemoryTradeStore implements TradeStore {
+  private rows = new Map<string, TradeRecord>();
+  save(rec: TradeRecord) { this.rows.set(rec.state.tradeId, rec); }
+  get(id: string) { return this.rows.get(id) ?? null; }
+  all() { return [...this.rows.values()]; }
+  open() { return this.all().filter((r) => !isDone(r.state)); }
+}
+
+export type EngineDeps = {
+  exchange: ExchangePort;
+  store: TradeStore;
+  now: () => number;
+  limits?: RiskLimits;
+  /** Master switch. Off means every open is refused before it is built. */
+  tradingEnabled?: boolean;
+  /** False while the price feed is down or resyncing. */
+  feedHealthy?: () => boolean;
+  /** Today's realised P&L, in USD. */
+  dayPnlUsd?: () => number;
+  onAlarm?: (trade: TradeState, message: string) => void;
+};
+
+export type OpenResult =
+  | { ok: true; state: TradeState }
+  | { ok: false; state: TradeState; precheck: PrecheckResult };
+
+const clientId = (tradeId: string, role: OrderRole | 'exit', n = 0) =>
+  n > 0 ? `${tradeId}:${role}:${n}` : `${tradeId}:${role}`;
+
+export class TradeEngine {
+  private readonly limits: RiskLimits;
+  /** Set while a trade is being resolved after a timeout. Nothing may be sent. */
+  private entryDeadline = new Map<string, number>();
+
+  constructor(private readonly d: EngineDeps) {
+    this.limits = d.limits ?? DEFAULT_LIMITS;
+  }
+
+  private get exchange() { return this.d.exchange; }
+  private now() { return this.d.now(); }
+  private feedHealthy() { return this.d.feedHealthy ? this.d.feedHealthy() : true; }
+  private dayPnl() { return this.d.dayPnlUsd ? this.d.dayPnlUsd() : 0; }
+
+  private commit(rec: TradeRecord, ...events: TradeEvent[]): TradeRecord {
+    let state = rec.state;
+    for (const e of events) { state = applyEvent(state, e); rec.events.push(e); }
+    const before = rec.state.alarm;
+    rec.state = state;
+    this.d.store.save(rec);
+    if (state.alarm && state.alarm !== before) this.d.onAlarm?.(state, state.alarm);
+    return rec;
+  }
+
+  // ------------------------------------------------------------ prechecks
+  async runPrecheck(plan: TradePlan, product: ProductSpec | null): Promise<PrecheckResult> {
+    const [quote, balance, positions] = await Promise.all([
+      this.exchange.getQuote(plan.symbol).catch(() => null),
+      this.exchange.getBalanceUsd().catch(() => 0),
+      this.exchange.getPositions().catch(() => []),
+    ]);
+    const size = product ? lotsToContracts(plan.lots, product.lotSize) : plan.lots;
+    const held = positions.find((p) => p.symbol === plan.symbol)?.size ?? 0;
+    const totalShort = positions.reduce((n, p) => n + (p.size < 0 ? -p.size : 0), 0);
+    const price = plan.entry.type === 'limit' ? plan.entry.limitPrice ?? null : quote?.bid ?? null;
+
+    // Worst case is the buy-back at the stop, less the credit taken in.
+    const credit = (price ?? 0) * size;
+    const worstCase = plan.stopPrice !== null ? Math.max(0, plan.stopPrice * size - credit) : Infinity;
+
+    return precheck({
+      now: this.now(),
+      intent: { side: 'sell', size, expect: plan.expect, price, reduceOnly: false },
+      product,
+      quote,
+      feedHealthy: this.feedHealthy(),
+      tradingEnabled: this.d.tradingEnabled !== false,
+      account: { availableUsd: balance },
+      existingPosition: held,
+      totalShortContracts: totalShort,
+      dayPnlUsd: this.dayPnl(),
+      worstCaseLossUsd: worstCase,
+      limits: this.limits,
+    });
+  }
+
+  // ----------------------------------------------------------------- open
+  async open(plan: TradePlan): Promise<OpenResult> {
+    const at = this.now();
+    const product = await this.exchange.getProduct(plan.symbol).catch(() => null);
+    const size = product ? lotsToContracts(plan.lots, product.lotSize) : plan.lots;
+
+    let rec: TradeRecord = {
+      plan,
+      events: [],
+      state: initialTrade({
+        tradeId: plan.tradeId, symbol: plan.symbol, productId: product?.productId ?? 0,
+        optionSide: plan.optionSide, requestedSize: size, at,
+      }),
+    };
+
+    // A trade id is used once. Re-running the same signal is not a second trade.
+    const prior = this.d.store.get(plan.tradeId);
+    if (prior) return { ok: true, state: prior.state };
+    this.d.store.save(rec);
+
+    const gate = await this.runPrecheck(plan, product);
+    if (!gate.ok) {
+      const why = gate.failures.map((x) => x.message).join(' ');
+      rec = this.commit(rec, { t: 'precheck_failed', reason: why, at: this.now() });
+      return { ok: false, state: rec.state, precheck: gate };
+    }
+
+    const tick = product?.tickSize ?? 0.1;
+    const req: PlaceOrderRequest = {
+      clientOrderId: clientId(plan.tradeId, 'entry'),
+      symbol: plan.symbol,
+      productId: product?.productId ?? 0,
+      side: 'sell',
+      type: plan.entry.type,
+      size,
+      limitPrice: plan.entry.type === 'limit' && plan.entry.limitPrice !== undefined
+        ? priceFor('sell', plan.entry.limitPrice, tick)
+        : undefined,
+      role: 'entry',
+    };
+
+    try {
+      const ack = await this.exchange.placeOrder(req);
+      rec = this.commit(rec, { t: 'entry_submitted', clientOrderId: req.clientOrderId, size, at: this.now() });
+      this.entryDeadline.set(plan.tradeId, this.now() + plan.entry.timeoutMs);
+      rec = this.absorb(rec, ack, 'entry');
+      return { ok: true, state: rec.state };
+    } catch (e) {
+      if (e instanceof SubmitTimeout) {
+        // We do not know whether it landed. Do not send another one.
+        rec = this.commit(rec, { t: 'entry_submit_unknown', at: this.now() });
+        return { ok: true, state: rec.state };
+      }
+      if (e instanceof OrderRejected) {
+        rec = this.commit(rec, { t: 'entry_rejected', reason: e.reason, at: this.now() });
+        return { ok: false, state: rec.state, precheck: { ok: false, failures: [{ code: 'NOT_TRADABLE', message: e.reason }] } };
+      }
+      if (e instanceof ExchangeUnavailable) {
+        rec = this.commit(rec, { t: 'entry_submit_unknown', at: this.now() });
+        return { ok: true, state: rec.state };
+      }
+      throw e;
+    }
+  }
+
+  /** Turn an exchange order snapshot into whatever fills we have not seen yet. */
+  private absorb(rec: TradeRecord, order: ExchangeOrder, role: OrderRole): TradeRecord {
+    const seen = rec.state.fills
+      .filter((f) => f.orderId === order.orderId)
+      .reduce((n, f) => n + f.size, 0);
+    const fresh = order.filledSize - seen;
+    if (fresh > 0 && order.averageFillPrice !== null) {
+      // The exchange reports an average; the increment is priced so that the
+      // running average lands on it exactly, which is what a weighted average
+      // over several levels has to do.
+      const price = seen > 0
+        ? (order.averageFillPrice * order.filledSize - avgSeenNotional(rec.state, order.orderId)) / fresh
+        : order.averageFillPrice;
+      rec = this.commit(rec, {
+        t: 'fill', role, side: order.side, size: fresh, price,
+        orderId: order.orderId, at: this.now(),
+      });
+    }
+    if (order.status === 'rejected') {
+      rec = this.commit(rec, { t: 'entry_rejected', reason: order.reason ?? 'rejected', at: this.now() });
+    }
+    return rec;
+  }
+
+  // ----------------------------------------------------------------- poll
+  /**
+   * One step of the loop. Reads the exchange, applies what changed, and does
+   * the next thing the trade needs: cancel a stale entry, put protection on,
+   * cancel the losing side of an OCO.
+   */
+  async poll(tradeId: string): Promise<TradeState | null> {
+    const rec0 = this.d.store.get(tradeId);
+    if (!rec0 || isDone(rec0.state)) return rec0?.state ?? null;
+    let rec = rec0;
+
+    // A submit we never got an answer for is resolved by reading, never writing.
+    if (rec.state.phase === 'entry_unknown') return (await this.reconcile(tradeId))?.state ?? null;
+
+    const entryId = clientId(tradeId, 'entry');
+    const entry = await this.exchange.getOrderByClientId(entryId).catch(() => null);
+    if (entry) rec = this.absorb(rec, entry, 'entry');
+
+    for (const [role, cid] of [
+      ['take_profit', rec.state.protection.takeProfit],
+      ['stop_loss', rec.state.protection.stopLoss],
+    ] as const) {
+      if (!cid) continue;
+      const o = await this.exchange.getOrderByClientId(cid).catch(() => null);
+      if (o) rec = this.absorb(rec, o, role);
+    }
+
+    // Entry timed out and is still resting: cancel what is left.
+    const deadline = this.entryDeadline.get(tradeId);
+    if (entry && (entry.status === 'open' || entry.status === 'partial') && deadline !== undefined && this.now() >= deadline) {
+      rec = this.commit(rec, { t: 'entry_timeout', at: this.now() });
+      await this.exchange.cancelOrder(entry.orderId).catch(() => {});
+      this.entryDeadline.delete(tradeId);
+      const after = await this.exchange.getOrderByClientId(entryId).catch(() => null);
+      if (after) rec = this.absorb(rec, after, 'entry');
+      rec = this.commit(rec, { t: 'entry_cancelled', remaining: entry.size - (after?.filledSize ?? entry.filledSize), at: this.now() });
+
+      if (rec.state.position === 0 && rec.plan.entry.marketFallback) {
+        return (await this.marketFallback(tradeId)).state;
+      }
+    }
+
+    // An exit printed: the other side has to go before it can re-open us.
+    if (rec.state.exitWinner) rec = await this.cancelSiblings(rec);
+
+    if (rec.state.position !== 0 && rec.state.phase !== 'exit_pending' && !rec.state.protection.stopLoss) {
+      rec = await this.protect(rec);
+    }
+
+    if (rec.state.position === 0 && rec.state.entrySize > 0 && rec.state.phase !== 'flat') {
+      rec = await this.cancelSiblings(rec, true);
+      rec = this.commit(rec, { t: 'reconciled', position: 0, at: this.now(), note: 'closed' });
+    }
+
+    return rec.state;
+  }
+
+  /** Cross the spread, but only after the gates say the market is still sane. */
+  private async marketFallback(tradeId: string): Promise<TradeRecord> {
+    let rec = this.d.store.get(tradeId)!;
+    const product = await this.exchange.getProduct(rec.plan.symbol).catch(() => null);
+    const gate = await this.runPrecheck(rec.plan, product);
+    if (!gate.ok) {
+      return this.commit(rec, {
+        t: 'aborted',
+        reason: `market fallback refused: ${gate.failures.map((x) => x.message).join(' ')}`,
+        at: this.now(),
+      });
+    }
+    const size = product ? lotsToContracts(rec.plan.lots, product.lotSize) : rec.plan.lots;
+    try {
+      const ack = await this.exchange.placeOrder({
+        clientOrderId: clientId(tradeId, 'entry', 2),
+        symbol: rec.plan.symbol,
+        productId: product?.productId ?? 0,
+        side: 'sell', type: 'market', size, role: 'entry',
+      });
+      rec = this.absorb(rec, ack, 'entry');
+      if (rec.state.position !== 0) rec = await this.protect(rec);
+    } catch (e) {
+      if (e instanceof SubmitTimeout || e instanceof ExchangeUnavailable) {
+        rec = this.commit(rec, { t: 'entry_submit_unknown', at: this.now() });
+      } else if (e instanceof OrderRejected) {
+        rec = this.commit(rec, { t: 'entry_rejected', reason: e.message, at: this.now() });
+      } else throw e;
+    }
+    return rec;
+  }
+
+  // ----------------------------------------------------------- protection
+  /**
+   * Put a target and a stop behind the position, sized from what we actually
+   * hold. If either cannot be placed the trade is marked unprotected -- it is
+   * never quietly left naked.
+   */
+  async protect(recIn: TradeRecord): Promise<TradeRecord> {
+    let rec = recIn;
+    const size = protectionSize(rec.state);
+    if (size === 0) return rec;
+    const product = await this.exchange.getProduct(rec.plan.symbol).catch(() => null);
+    const tick = product?.tickSize ?? 0.1;
+    // Versioned by every attempt, not just the failures: a resize must not reuse
+    // the client id of the order it is replacing, or idempotency hands back the
+    // old one at the old size and the position sits behind a stop that is too big.
+    const attempt = rec.events.filter((e) => e.t === 'protection_placed' || e.t === 'protection_failed').length;
+
+    let tp: string | null = null;
+    let sl: string | null = null;
+    try {
+      if (rec.plan.takeProfitPrice !== null) {
+        const cid = clientId(rec.state.tradeId, 'take_profit', attempt);
+        await this.replaceIfResized(rec.state.protection.takeProfit, cid, size);
+        await this.exchange.placeOrder({
+          clientOrderId: cid, symbol: rec.plan.symbol, productId: product?.productId ?? 0,
+          side: 'buy', type: 'limit', size,
+          limitPrice: priceFor('buy', rec.plan.takeProfitPrice, tick),
+          reduceOnly: true, role: 'take_profit',
+        });
+        tp = cid;
+      }
+      if (rec.plan.stopPrice !== null) {
+        const cid = clientId(rec.state.tradeId, 'stop_loss', attempt);
+        await this.replaceIfResized(rec.state.protection.stopLoss, cid, size);
+        await this.exchange.placeOrder({
+          clientOrderId: cid, symbol: rec.plan.symbol, productId: product?.productId ?? 0,
+          side: 'buy', type: 'stop_market', size,
+          stopPrice: stopPriceFor('buy', rec.plan.stopPrice, tick),
+          reduceOnly: true, role: 'stop_loss',
+        });
+        sl = cid;
+      }
+      return this.commit(rec, { t: 'protection_placed', takeProfit: tp, stopLoss: sl, at: this.now() });
+    } catch (e) {
+      rec = this.commit(rec, { t: 'protection_failed', reason: (e as Error).message, at: this.now() });
+      return rec;
+    }
+  }
+
+  private async replaceIfResized(oldCid: string | null, newCid: string, _size: number) {
+    if (!oldCid || oldCid === newCid) return;
+    const old = await this.exchange.getOrderByClientId(oldCid).catch(() => null);
+    if (old && (old.status === 'open' || old.status === 'partial')) {
+      await this.exchange.cancelOrder(old.orderId).catch(() => {});
+    }
+  }
+
+  /** One exit won. Take the other one off the book. */
+  private async cancelSiblings(recIn: TradeRecord, all = false): Promise<TradeRecord> {
+    let rec = recIn;
+    const winner = rec.state.exitWinner;
+    for (const [role, cid] of [
+      ['take_profit', rec.state.protection.takeProfit],
+      ['stop_loss', rec.state.protection.stopLoss],
+    ] as const) {
+      if (!cid) continue;
+      if (!all && role === winner) continue;
+      const o = await this.exchange.getOrderByClientId(cid).catch(() => null);
+      if (o && (o.status === 'open' || o.status === 'partial')) {
+        await this.exchange.cancelOrder(o.orderId).catch(() => {});
+      }
+      rec = this.commit(rec, { t: 'sibling_cancelled', role, at: this.now() });
+    }
+    return rec;
+  }
+
+  // ------------------------------------------------------------ exits
+  /** Close whatever is left, right now, at the market. Always reduce-only. */
+  async closeNow(tradeId: string, reason = 'manual exit'): Promise<TradeState | null> {
+    let rec = this.d.store.get(tradeId);
+    if (!rec) return null;
+    // Size from the exchange, not from memory: someone may have closed part of
+    // it by hand while we were not looking.
+    rec = await this.syncPosition(rec);
+    const size = protectionSize(rec.state);
+    if (size === 0) return rec.state;
+
+    await this.cancelSiblings(rec, true);
+    const n = rec.events.filter((e) => e.t === 'exit_submitted').length + 1;
+    const cid = clientId(tradeId, 'exit', n);
+    const product = await this.exchange.getProduct(rec.plan.symbol).catch(() => null);
+    rec = this.commit(rec, { t: 'exit_submitted', role: 'manual', clientOrderId: cid, at: this.now() });
+    try {
+      const ack = await this.exchange.placeOrder({
+        clientOrderId: cid, symbol: rec.plan.symbol, productId: product?.productId ?? 0,
+        side: 'buy', type: 'market', size, reduceOnly: true, role: 'exit',
+      });
+      rec = this.absorb(rec, ack, 'exit');
+    } catch (e) {
+      rec = this.commit(rec, { t: 'protection_failed', reason: `${reason} failed: ${(e as Error).message}`, at: this.now() });
+    }
+    return rec.state;
+  }
+
+  // ------------------------------------------------------- reconciliation
+  /** Read the exchange and believe it. */
+  async reconcile(tradeId: string): Promise<TradeRecord | null> {
+    let rec = this.d.store.get(tradeId);
+    if (!rec) return null;
+
+    const entryId = clientId(tradeId, 'entry');
+    const entry = await this.exchange.getOrderByClientId(entryId).catch(() => null);
+    if (entry) {
+      rec = this.absorb(rec, entry, 'entry');
+      if (rec.state.phase === 'entry_unknown') {
+        rec = this.commit(rec, { t: 'entry_submitted', clientOrderId: entryId, size: entry.size, at: this.now() });
+        rec = this.absorb(rec, entry, 'entry');
+      }
+    }
+    rec = await this.syncPosition(rec);
+    if (!entry && rec.state.entrySize === 0 && rec.state.phase === 'entry_unknown') {
+      // It never landed. Nothing is at risk and nothing was double-sent.
+      rec = this.commit(rec, { t: 'aborted', reason: 'entry never reached the exchange', at: this.now() });
+    }
+    return rec;
+  }
+
+  private async syncPosition(recIn: TradeRecord): Promise<TradeRecord> {
+    let rec = recIn;
+    const positions = await this.exchange.getPositions().catch(() => null);
+    if (positions === null) return rec;
+    const held = positions.find((p) => p.symbol === rec.plan.symbol)?.size ?? 0;
+    if (held !== rec.state.position) {
+      rec = this.commit(rec, {
+        t: 'reconciled', position: held, at: this.now(),
+        note: `exchange says ${held}, we had ${rec.state.position}`,
+      });
+      // The position moved under us; anything resting is now the wrong size.
+      if (held !== 0) rec = await this.protect(rec);
+      else rec = await this.cancelSiblings(rec, true);
+    }
+    return rec;
+  }
+
+  /**
+   * Startup. Read balance, positions and open orders, then rebuild every trade
+   * that was live when the process died. Nothing is re-sent; the point is to
+   * pick the existing orders back up, not to trade again.
+   */
+  async recover(): Promise<TradeState[]> {
+    const out: TradeState[] = [];
+    for (const rec of this.d.store.open()) {
+      const synced = await this.reconcile(rec.state.tradeId);
+      if (synced) out.push(synced.state);
+    }
+    return out;
+  }
+}
+
+function avgSeenNotional(state: TradeState, orderId: string): number {
+  return state.fills
+    .filter((f) => f.orderId === orderId)
+    .reduce((n, f) => n + f.size * f.price, 0);
+}

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pExpireWorthless, pTouch, pReachNearZero, d1d2 } from '../src/probability.js';
-import { greeks, impliedVol, cdf, expectedMove } from '../src/bs.js';
+import { pExpireWorthless, pTouch, pReachNearZero, d1d2 } from '../src/domain/probability.js';
+import { greeks, impliedVol, cdf, expectedMove } from '../src/domain/bs.js';
 
 const S = 80_000;
 const T = 12 / (365 * 24); // the twelve-hour horizon the desk trades
@@ -131,7 +131,7 @@ test('d2 sits below d1 by exactly one volatility unit', () => {
   close(d1 - d2, V * Math.sqrt(T), 1e-12, 'separation');
 });
 
-import { zeroChance } from '../src/calibration.js';
+import { zeroChance } from '../src/domain/calibration.js';
 
 test('every strike gets its own adjusted probability, not a bucket average', () => {
   // Two strikes inside the same five-point bucket must not come back identical:

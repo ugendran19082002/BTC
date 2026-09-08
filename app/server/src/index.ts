@@ -1,17 +1,17 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
-import { liveChain, historicalChain, liveExpiries, type Snapshot } from './chain.js';
-import { scoreLegs, pickSells, bias, verdict, maxLots, MARGIN_PER_LOT_USD, USDINR } from './score.js';
-import { run, floorSweep, loadDays, reloadDays, DEFAULTS, type Params } from './backtest.js';
-import { loadCalibration, reloadCalibration } from './calibration.js';
-import { readMarket } from './market.js';
-import { recommend, type PickMode } from './recommend.js';
-import { optionStructure } from './structure.js';
-import { forecast, reloadHorizons } from './forecast.js';
+import { liveChain, historicalChain, liveExpiries, type Snapshot } from './market/chain.js';
+import { scoreLegs, pickSells, bias, verdict, maxLots, MARGIN_PER_LOT_USD, USDINR } from './domain/score.js';
+import { run, floorSweep, loadDays, reloadDays, DEFAULTS, type Params } from './backtest/backtest.js';
+import { loadCalibration, reloadCalibration } from './domain/calibration.js';
+import { readMarket } from './market/moves.js';
+import { recommend, type PickMode } from './domain/recommend.js';
+import { optionStructure } from './domain/structure.js';
+import { forecast, reloadHorizons } from './domain/forecast.js';
 import {
   authFromEnv, COOKIE, issueToken, tokenValid, readCookie, verifyPassword, LoginLimiter,
-} from './session.js';
-import { credsFromEnv, getBalances, getPositions, NotConfigured } from './auth.js';
+} from './http/session.js';
+import { credsFromEnv, getBalances, getPositions, NotConfigured } from './account/account.js';
 
 // Read once at startup so a later log line cannot pick the secret out of env.
 const creds = credsFromEnv();

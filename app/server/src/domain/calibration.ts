@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
-import { DB_PATH } from './backtest.js';
+import { DB_PATH } from '../backtest/backtest.js';
 
 /**
  * What the model says, against what actually happened.

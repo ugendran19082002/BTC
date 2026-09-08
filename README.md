@@ -25,19 +25,19 @@ multiplied by 85, i.e. in INR.
 
 | File | Purpose |
 |---|---|
-| `harvest.py` | Pulls 1-minute option candles per expiry day (+ volume, MARK price, Open Interest) into `cache/` |
-| `features.py` | Daily BTCUSD technical features: RSI, MACD, ADX, ATR, EMA, Bollinger width, realised vol. Every value is computed from the **prior** daily close, so it is known at the 05:30 entry — no lookahead. |
-| `analyze.py` | The R&D engine: 19 strike-selection rules, 4 exit rules, ~28 regime filters, position sizing, cross-period stability test |
-| `backtest.py` | Simple standalone backtest of the baseline rule |
+| `research/harvest.py` | Pulls 1-minute option candles per expiry day (+ volume, MARK price, Open Interest) into `cache/` |
+| `research/features.py` | Daily BTCUSD technical features: RSI, MACD, ADX, ATR, EMA, Bollinger width, realised vol. Every value is computed from the **prior** daily close, so it is known at the 05:30 entry — no lookahead. |
+| `research/analyze.py` | The R&D engine: 19 strike-selection rules, 4 exit rules, ~28 regime filters, position sizing, cross-period stability test |
+| `research/backtest.py` | Simple standalone backtest of the baseline rule |
 | `RND-REPORT.txt` | Generated report. Sections are appended as they finish. |
-| `test.md` | Margin / position-sizing model (funds, margin per lot, max lots) |
+| `docs/test.md` | Margin / position-sizing model (funds, margin per lot, max lots) |
 
 ## Usage
 
 ```bash
-python3 harvest.py 2024-09-04 2026-09-03     # fetch data into cache/
-python3 analyze.py > RND-REPORT.txt          # run the full study
-python3 backtest.py 2025-01-01 2025-12-31 "2025 run"
+python3 research/harvest.py 2024-09-04 2026-09-03     # fetch data into cache/
+python3 research/analyze.py > research/RND-REPORT.txt          # run the full study
+python3 research/backtest.py 2025-01-01 2025-12-31 "2025 run"
 ```
 
 ## What the data actually supports

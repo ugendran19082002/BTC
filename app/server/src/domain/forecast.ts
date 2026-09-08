@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
-import { DB_PATH } from './backtest.js';
-import type { Snapshot } from './chain.js';
+import { DB_PATH } from '../backtest/backtest.js';
+import type { Snapshot } from '../market/chain.js';
 
 /**
  * How far BTC could move over the next few hours, and which way.
