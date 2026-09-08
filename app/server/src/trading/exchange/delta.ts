@@ -123,6 +123,47 @@ const swallowRefusal = (e: unknown): DeltaOrder[] => {
   throw e;
 };
 
+/**
+ * The exact JSON Delta is sent for an order.
+ *
+ * Pulled out of the request so it can be checked against the documented shape
+ * without a network, because the first live order came back `bad_schema` three
+ * times and there was nothing to inspect.
+ *
+ * It follows Delta's own documented example field for field, and deliberately
+ * sends `product_id` alone: the docs call `product_symbol` "an alternative to
+ * product_id", which reads as a one-of, and sending both is exactly the kind of
+ * thing a schema rejects.
+ */
+export function orderBody(req: PlaceOrderRequest): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    product_id: req.productId,
+    size: req.size,
+    side: req.side,
+    order_type: req.type === 'limit' ? 'limit_order' : 'market_order',
+    time_in_force: 'gtc',
+    // A boolean, not the string "true". The string is what an older reading of
+    // the docs suggests, and it is what bad_schema comes back for.
+    reduce_only: req.reduceOnly === true,
+    client_order_id: req.clientOrderId,
+  };
+
+  // Prices go as strings so full precision survives the wire.
+  if (req.type === 'limit' && req.limitPrice !== undefined) {
+    body.limit_price = String(req.limitPrice);
+  }
+  if (req.type === 'stop_market' && req.stopPrice !== undefined) {
+    body.order_type = 'market_order';
+    body.stop_order_type = 'stop_loss_order';
+    body.stop_price = String(req.stopPrice);
+    // Options are thin, so the last trade can be minutes old and the spot is a
+    // different instrument's price. The mark is what Delta itself values the
+    // position at, so it is what the stop should watch.
+    body.stop_trigger_method = 'mark_price';
+  }
+  return body;
+}
+
 const OPTION_SIDE = (contractType: string) =>
   contractType.startsWith('call') ? ('CE' as const) : ('PE' as const);
 
@@ -151,29 +192,7 @@ export class DeltaExchange implements ExchangePort {
   }
 
   async placeOrder(req: PlaceOrderRequest): Promise<ExchangeOrder> {
-    const body: Record<string, unknown> = {
-      product_id: req.productId,
-      // Delta lists both, and sends bad_schema when only the id is present.
-      product_symbol: req.symbol,
-      size: req.size,
-      side: req.side,
-      client_order_id: req.clientOrderId,
-      order_type: req.type === 'limit' ? 'limit_order' : 'market_order',
-      time_in_force: 'gtc',
-    };
-    if (req.type === 'limit' && req.limitPrice !== undefined) body.limit_price = String(req.limitPrice);
-    if (req.type === 'stop_market' && req.stopPrice !== undefined) {
-      body.stop_order_type = 'stop_loss_order';
-      body.stop_price = String(req.stopPrice);
-      body.order_type = 'market_order';
-      // Options are thin, so the last trade can be minutes old and the spot can
-      // be a different instrument's price. The mark is the one Delta itself
-      // uses to value the position, so it is the one the stop should watch.
-      body.stop_trigger_method = 'mark_price';
-    }
-    // A boolean, not the string "true". The string is what the older docs show
-    // and it is what bad_schema comes back for.
-    if (req.reduceOnly) body.reduce_only = true;
+    const body = orderBody(req);
 
     try {
       const o = await signed<DeltaOrder>(this.creds, { method: 'POST', path: '/v2/orders', body, timeoutMs: 10_000 });
