@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { run, floorSweep, type Params } from '../../backtest/backtest.js';
+import { run, type Params } from '../../backtest/backtest.js';
 
 export function registerBacktestRoutes(app: FastifyInstance) {
   app.post('/api/backtest', async (req, reply) => {
@@ -35,13 +35,4 @@ export function registerBacktestRoutes(app: FastifyInstance) {
     };
   });
 
-  /**
-   * "How much premium should I insist on?" answered from the data rather than
-   * from a rule of thumb.
-   */
-  app.post('/api/floors', async (req) => {
-    const body = (req.body ?? {}) as Partial<Params> & { floors?: number[] };
-    const { floors = [0, 5, 10, 15, 20, 25, 30, 40, 50, 75, 100], ...params } = body;
-    return { rows: floorSweep(floors, params) };
-  });
 }

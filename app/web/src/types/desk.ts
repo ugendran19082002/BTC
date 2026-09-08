@@ -317,8 +317,6 @@ export type ByYearResponse = {
   years: (Summary & { year: string })[];
 };
 
-export type FloorRow = { floor: number; summary: Summary; medianOtmPct: number | null };
-export type FloorResponse = { rows: FloorRow[] };
 
 export type AccountResponse = {
   configured: boolean;

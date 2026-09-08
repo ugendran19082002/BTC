@@ -18,7 +18,6 @@ import { usePoll } from '@/hooks/usePoll';
 import { MoveSection } from '@/components/desk/MoveSection';
 import { BiasSection } from '@/components/desk/BiasSection';
 import { BacktestPanel } from '@/components/research/BacktestPanel';
-import { FloorPanel } from '@/components/research/FloorPanel';
 import { VerdictPanel } from '@/components/desk/VerdictPanel';
 import { RecommendPanel } from '@/components/desk/RecommendPanel';
 import { DateTimePicker, istToEpoch, type IstMoment } from '@/components/research/DateTimePicker';
@@ -34,7 +33,7 @@ import { Button } from '@/components/ui/button';
 import { AccountSection } from '@/components/desk/AccountSection';
 import { Metric, Formula, Field } from '@/components/research/Explain';
 
-type Tab = 'desk' | 'trade' | 'backtest' | 'floors' | 'errors';
+type Tab = 'desk' | 'trade' | 'backtest' | 'errors';
 
 const REFRESH_SECONDS = 5;
 // The expiry list changes once a day, at settlement. A minute is often enough
@@ -217,7 +216,6 @@ export default function App() {
           {trade && trade.open.length > 0 && <span className="pip">{trade.open.length}</span>}
         </button>
         <button className={tab === 'backtest' ? 'on' : ''} onClick={() => setTab('backtest')}>Backtest</button>
-        <button className={tab === 'floors' ? 'on' : ''} onClick={() => setTab('floors')}>How much premium?</button>
         <button className={tab === 'errors' ? 'on' : ''} onClick={() => setTab('errors')}>
           Errors
           {errors && errors.summary.unresolved > 0 && (
@@ -665,7 +663,7 @@ export default function App() {
       ) : tab === 'backtest' ? (
         <BacktestPanel usdinr={data?.usdinr ?? 85} />
       ) : (
-        <FloorPanel usdinr={data?.usdinr ?? 85} />
+        <div />
       )}
       <OrderTicket
         seed={ticket}
