@@ -560,10 +560,10 @@ export default function App() {
                     value={density}
                     onValueChange={(v) => setDensity(v as 'default' | 'all')}
                   >
-                    <SelectItem value="default" hint="the odds and the prices — what settles the trade">
+                    <SelectItem value="default" hint="the odds either side of the strike, and the ask">
                       columns · default
                     </SelectItem>
-                    <SelectItem value="all" hint="adds OI, volume, age, delta and IV both sides">
+                    <SelectItem value="all" hint="adds the bid, mark, OI, volume, age, delta and IV">
                       columns · everything
                     </SelectItem>
                   </Select>

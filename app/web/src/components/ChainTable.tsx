@@ -91,12 +91,14 @@ export function ChainTable({
    */
   sides?: SideRecommendation[];
   /**
-   * 'default' shows what settles the trade: the odds either side of the strike,
-   * the bid you would receive and the ask a hedge would cost. 'all' adds the
-   * mark, open interest, volume, age, delta and implied volatility -- figures
-   * that describe a strike rather than decide it. The mark in particular is
-   * Delta's fair value and never a price you can trade at, so it belongs with
-   * the reference columns rather than beside the two you can act on.
+   * 'default' is the odds either side of the strike, the raw model behind them,
+   * and the ask. 'all' adds the bid, the mark, open interest, volume, age,
+   * delta and implied volatility.
+   *
+   * The bid is what a seller actually receives, so it is not a detail -- but
+   * the price of the leg the desk picked is stated on the recommendation card
+   * either way, and reading the whole board is a different job from reading one
+   * strike. Switch to 'all' before pricing a strike the desk did not pick.
    */
   density?: 'default' | 'all';
 }) {
@@ -106,9 +108,9 @@ export function ChainTable({
   // what the setting says. The page scrolls; the table does not need to as well.
   // The header row stays stuck to the top so the columns remain readable.
   const height = `${strikes.length * 22 + 96}px`;
-  // visible columns each side of the strike: the four that settle the trade,
-  // plus the six reference ones when they are showing
-  const perSide = density === 'all' ? 10 : 4;
+  // visible columns each side of the strike: the odds, the raw model behind
+  // them, and the ask -- plus the seven reference ones when they are showing
+  const perSide = density === 'all' ? 10 : 3;
   const at = (k: number, cp: 'C' | 'P') => legs.find((l) => l.strike === k && l.cp === cp);
   const hasBook = legs.some((l) => l.bid !== null || l.ask !== null);
 
@@ -159,9 +161,11 @@ export function ChainTable({
             <th className="aux">OI</th><th className="aux">Vol</th><th className="aux">Age</th>
             <th className="aux">Δ</th><th className="aux">IV</th>
             <th className="zerocol">→ 0</th><th>model</th>
-            <th className="askcol">Ask</th><th className="aux">Mark</th><th className="bidcol">Bid</th>
+            <th className="askcol">Ask</th><th className="aux">Mark</th>
+            <th className="bidcol aux">Bid</th>
             <th></th>
-            <th className="bidcol">Bid</th><th className="aux">Mark</th><th className="askcol">Ask</th>
+            <th className="bidcol aux">Bid</th><th className="aux">Mark</th>
+            <th className="askcol">Ask</th>
             <th>model</th><th className="zerocol">→ 0</th>
             <th className="aux">IV</th><th className="aux">Δ</th>
             <th className="aux">Age</th><th className="aux">Vol</th><th className="aux">OI</th>
@@ -189,7 +193,7 @@ export function ChainTable({
                 <td className="dim">{c?.pOtm != null ? (c.pOtm * 100).toFixed(0) + '%' : '·'}</td>
                 <td className="askcol">{n(c?.ask ?? null)}</td>
                 <td className="aux">{n(c?.mark ?? null)}</td>
-                <td className={`bidcol${sellC ? ' sellcell' : ''}`}>{n(c?.bid ?? null)}</td>
+                <td className={`bidcol aux${sellC ? ' sellcell' : ''}`}>{n(c?.bid ?? null)}</td>
 
                 <td className="mono strikecell">
                   {k}
@@ -198,7 +202,7 @@ export function ChainTable({
                   {sellP && <span className="tag ok">SELL PE</span>}
                 </td>
 
-                <td className={`bidcol${sellP ? ' sellcell' : ''}`}>{n(p?.bid ?? null)}</td>
+                <td className={`bidcol aux${sellP ? ' sellcell' : ''}`}>{n(p?.bid ?? null)}</td>
                 <td className="aux">{n(p?.mark ?? null)}</td>
                 <td className="askcol">{n(p?.ask ?? null)}</td>
                 <td className="dim">{p?.pOtm != null ? (p.pOtm * 100).toFixed(0) + '%' : '·'}</td>
