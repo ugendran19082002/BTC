@@ -24,6 +24,7 @@ import type { ExchangePosition, TradeState } from './types.js';
 const POLL_MS = 1_000;
 /** Long enough that a one-second poll is one call; short enough to feel live. */
 const POSITIONS_TTL_MS = 800;
+const QUOTE_TTL_MS = 800;
 /**
  * Two hundred, matching Delta's own app.
  *
@@ -298,6 +299,24 @@ export class TradingService {
     const rows = await this.exchange.getPositions().catch(() => this.positionsCache?.rows ?? []);
     this.positionsCache = { rows, at: now };
     return rows;
+  }
+
+  /**
+   * A quote for the screen, cached for under a second.
+   *
+   * The order ticket polls this while it is open so the book in front of you is
+   * the book you are trading against. Same reasoning as the positions cache:
+   * one call a second however many tabs are watching.
+   */
+  private quoteCache = new Map<string, { quote: Awaited<ReturnType<ExchangePort['getQuote']>>; at: number }>();
+
+  async quoteForDisplay(symbol: string, now = Date.now()) {
+    const hit = this.quoteCache.get(symbol);
+    if (hit && now - hit.at < QUOTE_TTL_MS) return hit.quote;
+    const quote = await this.exchange.getQuote(symbol).catch(() => hit?.quote ?? null);
+    this.quoteCache.set(symbol, { quote, at: now });
+    if (this.quoteCache.size > 50) this.quoteCache.clear();
+    return quote;
   }
 
   quote(symbol: string) { return this.exchange.getQuote(symbol); }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Loader2, Minus, Plus, Zap } from 'lucide-react';
-import { placeOrder, previewOrder } from '@/api/trade';
+import { getTradeQuote, placeOrder, previewOrder } from '@/api/trade';
 import type { OrderDraft, PlaceResult, Preview } from '@/types/trade';
 import { Sheet, SheetContent, SheetFooter } from '@/components/ui/sheet';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
@@ -12,6 +12,7 @@ import { Select, SelectItem } from '@/components/ui/select';
 import { ExitBars } from '@/components/trade/ExitBars';
 import { Checkbox } from '@/components/ui/checkbox';
 import { usePersisted } from '@/hooks/usePersisted';
+import { usePoll } from '@/hooks/usePoll';
 import { countdown, price, signedUsd, strike, usd } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -98,6 +99,25 @@ export function OrderTicket({
   const [result, setResult] = useState<PlaceResult | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
 
+  /**
+   * The book, live, while the ticket is open.
+   *
+   * The seed is whatever the chain last fetched, which can be five seconds old
+   * by the time you have tapped it -- and a ticket that shows a price you can
+   * no longer get is worse than one that shows none. Polled at a second, and
+   * the server caches it for just under that.
+   */
+  const { data: fresh } = usePoll(
+    () => getTradeQuote(seed!.symbol),
+    1_000,
+    { enabled: open && !!seed && !result, deps: [seed?.symbol] },
+  );
+  const book = {
+    bid: fresh?.quote?.bid ?? seed?.bid ?? null,
+    ask: fresh?.quote?.ask ?? seed?.ask ?? null,
+    mark: fresh?.quote?.mark ?? seed?.mark ?? null,
+  };
+
   // A fresh contract is a fresh ticket. Carrying the last one's size over is
   // how you sell ten lots of something you meant to sell one of.
   useEffect(() => {
@@ -122,23 +142,23 @@ export function OrderTicket({
    */
   const rests = useMemo(() => {
     if (mode === 'market' || mode === 'bid') return false;
-    if (!seed?.bid) return true;
-    const p = mode === 'ask' ? seed.ask : Number(custom);
-    return p !== null && Number.isFinite(p) && p > seed.bid;
-  }, [mode, custom, seed?.bid, seed?.ask]);
+    if (!book.bid) return true;
+    const p = mode === 'ask' ? book.ask : Number(custom);
+    return p !== null && Number.isFinite(p) && p > book.bid;
+  }, [mode, custom, book.bid, book.ask]);
 
   const limitPrice = useMemo(() => {
     if (!seed) return null;
     switch (mode) {
       case 'market': return null;                       // take the book
-      case 'bid': return seed.bid;
-      case 'ask': return seed.ask;
+      case 'bid': return book.bid;
+      case 'ask': return book.ask;
       case 'custom': {
         const n = Number(custom);
         return Number.isFinite(n) && n > 0 ? n : null;
       }
     }
-  }, [mode, custom, seed?.bid, seed?.ask]);
+  }, [mode, custom, book.bid, book.ask]);
 
   const draft: OrderDraft | null = useMemo(
     () => seed && {
@@ -182,7 +202,7 @@ export function OrderTicket({
 
   if (!seed) return null;
 
-  const working = limitPrice ?? preview?.quote?.bid ?? seed.bid;
+  const working = limitPrice ?? book.bid;
   // A quoted price is dollars per BTC and a contract is 0.001 of one, so the
   // fallback has to carry the contract size or it reads a thousand times high.
   const credit =
@@ -238,7 +258,7 @@ export function OrderTicket({
           />
         ) : (
           <>
-            <BookStrip bid={seed.bid} mark={seed.mark} ask={seed.ask} mode={mode} onPick={setMode} />
+            <BookStrip bid={book.bid} mark={book.mark} ask={book.ask} mode={mode} onPick={setMode} />
 
             <div className="mt-3.5">
               <Label>price</Label>
@@ -255,8 +275,8 @@ export function OrderTicket({
               </ToggleGroup>
               <p className="m-0 mt-1.5 text-[11.5px] leading-snug text-muted-foreground">
                 {mode === 'market' && 'Sells straight into the bid. Fills now, earns least.'}
-                {mode === 'bid' && `Rests at ${price(seed.bid)}. Fills as soon as anyone takes it.`}
-                {mode === 'ask' && `Rests at ${price(seed.ask)}. Earns most, may not fill at all.`}
+                {mode === 'bid' && `Rests at ${price(book.bid)}. Fills as soon as anyone takes it.`}
+                {mode === 'ask' && `Rests at ${price(book.ask)}. Earns most, may not fill at all.`}
                 {mode === 'custom' && 'Your own price. Rounded to the tick before it is sent.'}
               </p>
               {mode === 'custom' && (
@@ -265,7 +285,7 @@ export function OrderTicket({
                   type="number"
                   inputMode="decimal"
                   step="0.1"
-                  placeholder={price(seed.mark)}
+                  placeholder={price(book.mark)}
                   value={custom}
                   onChange={(e) => setCustom(e.target.value)}
                   aria-label="limit price"

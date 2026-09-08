@@ -38,7 +38,10 @@ export function LivePrice({
 
   const fromContract = sinceOpenUsd !== null && sinceOpenUsd !== undefined;
   const move = fromContract ? sinceOpenUsd : spot - opened.current;
-  const show = Math.abs(move) >= 1;
+  // Always shown once it is measured against the contract. Hiding a move under a
+  // dollar made the figure vanish for the first minutes of every contract, which
+  // reads as broken rather than as "nothing has happened yet".
+  const show = fromContract || Math.abs(move) >= 1;
 
   return (
     <span className={`liveprice${dir ? ' flash-' + dir : ''}`}>
@@ -53,7 +56,7 @@ export function LivePrice({
               : 'Since you opened the page. The contract figure has not arrived yet.'
           }
         >
-          {move >= 0 ? '+' : '−'}${Math.abs(move).toFixed(0)}
+          {move >= 0 ? '+' : '−'}{Math.abs(move).toFixed(0)} pts
           {fromContract && sinceOpenPct != null && (
             <span className="pts">{sinceOpenPct >= 0 ? '+' : '−'}{Math.abs(sinceOpenPct * 100).toFixed(2)}%</span>
           )}

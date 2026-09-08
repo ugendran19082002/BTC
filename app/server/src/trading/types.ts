@@ -143,6 +143,14 @@ export type TradeState = {
   symbol: string;
   productId: number;
   optionSide: OptionSide;
+  /**
+   * BTC per contract, carried on the trade.
+   *
+   * The machine needs it to turn a price difference into money, and it has to
+   * be the value from the day the trade was opened rather than whatever the
+   * product says now -- a journal that reprices history is not a journal.
+   */
+  contractValue: number;
   phase: TradePhase;
   /** Signed contracts we believe we hold. Short is negative. */
   position: number;

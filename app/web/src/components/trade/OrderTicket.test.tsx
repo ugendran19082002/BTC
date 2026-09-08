@@ -12,9 +12,11 @@ import type { Preview } from '@/types/trade';
 
 const previewOrder = vi.fn();
 const placeOrder = vi.fn();
+const getTradeQuote = vi.fn();
 vi.mock('@/api/trade', () => ({
   previewOrder: (...a: unknown[]) => previewOrder(...a),
   placeOrder: (...a: unknown[]) => placeOrder(...a),
+  getTradeQuote: (...a: unknown[]) => getTradeQuote(...a),
 }));
 
 const seed: TicketSeed = {
@@ -60,6 +62,8 @@ beforeEach(() => {
   localStorage.clear();
   vi.clearAllMocks();
   previewOrder.mockResolvedValue(ok());
+  // no fresher book than the seed unless a test says so
+  getTradeQuote.mockResolvedValue({ quote: null, product: null });
   placeOrder.mockResolvedValue({ mode: 'paper', ok: true, trade: { position: -1, entryAvgPrice: 9 } });
 });
 
@@ -95,6 +99,41 @@ describe('the ticket opens ready to trade', () => {
     expect(screen.getByText('9.00')).toBeInTheDocument();
     expect(screen.getByText('10.00')).toBeInTheDocument();
     expect(screen.getByText('11.00')).toBeInTheDocument();
+  });
+});
+
+describe('the book while the ticket is open', () => {
+  it('follows the exchange rather than the price you tapped', async () => {
+    // the seed is whatever the chain last fetched, and that can be five seconds
+    // old by the time you have tapped it
+    getTradeQuote.mockResolvedValue({
+      quote: { symbol: seed.symbol, bid: 32, ask: 34, bidSize: 100, askSize: 100, mark: 33.74, ts: Date.now() },
+      product: null,
+    });
+    show();
+    await waitFor(() => expect(screen.getByText('34.00')).toBeInTheDocument());
+    expect(screen.getByText('32.00')).toBeInTheDocument();
+    expect(screen.getByText('33.74')).toBeInTheDocument();
+  });
+
+  it('prices the order at the book it is showing, not the one it opened with', async () => {
+    getTradeQuote.mockResolvedValue({
+      quote: { symbol: seed.symbol, bid: 32, ask: 34, bidSize: 100, askSize: 100, mark: 33.74, ts: Date.now() },
+      product: null,
+    });
+    show();
+    await waitFor(() =>
+      expect(previewOrder.mock.calls.at(-1)![0]).toMatchObject({ limitPrice: 34 }),
+    );
+  });
+
+  it('falls back to the tapped price when the exchange has not answered', async () => {
+    show();
+    expect(screen.getByText('11.00')).toBeInTheDocument();
+    // the preview is debounced, so wait for it rather than for the text
+    await waitFor(() =>
+      expect(previewOrder.mock.calls.at(-1)![0]).toMatchObject({ limitPrice: 11 }),
+    );
   });
 });
 

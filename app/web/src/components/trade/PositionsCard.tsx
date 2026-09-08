@@ -214,10 +214,11 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
         <Figure label="now" value={price(trade.live?.markPrice)} />
         <Figure
           label="profit"
-          value={signedUsd(trade.live?.unrealisedPnl)}
-          // The account is Indian; the exchange quotes in dollars. Both, so
-          // neither has to be converted in your head.
-          second={signedInr(usdToInr(trade.live?.unrealisedPnl))}
+          // Rupees lead: the account is Indian and that is the number that means
+          // something. The exchange quotes in dollars, so they stay underneath
+          // rather than going away.
+          value={signedInr(usdToInr(trade.live?.unrealisedPnl))}
+          second={signedUsd(trade.live?.unrealisedPnl)}
           tone={pnlTone(trade.live?.unrealisedPnl)}
         />
         <Figure

@@ -23,12 +23,17 @@ export function usd(n: number | null | undefined, dash = '—'): string {
   const abs = Math.abs(n);
   if (abs >= 1000) return `$${Math.round(n).toLocaleString()}`;
   if (abs >= 1 || abs === 0) return `$${n.toFixed(2)}`;
+  // Something real but smaller than the smallest place shown. "$0.000" reads as
+  // exactly nothing, which is a different claim from "less than a tenth of a cent".
+  if (abs < 0.0005) return `${n < 0 ? '−' : ''}<$0.001`;
   return `$${n.toFixed(3)}`;
 }
 
 /** Signed dollars, where the sign is the point. */
 export const signedUsd = (n: number | null | undefined) =>
-  n === null || n === undefined || !Number.isFinite(n) ? '—' : `${n >= 0 ? '+' : '−'}${usd(Math.abs(n))}`;
+  n === null || n === undefined || !Number.isFinite(n)
+    ? '—'
+    : `${n >= 0 ? '+' : '−'}${usd(Math.abs(n))}`;
 
 /**
  * Rupees. Paise below a hundred, whole rupees above it.
@@ -40,6 +45,7 @@ export function inr(n: number | null | undefined, dash = '—'): string {
   if (n === null || n === undefined || !Number.isFinite(n)) return dash;
   const abs = Math.abs(n);
   if (abs >= 100 || abs === 0) return `₹${Math.round(n).toLocaleString('en-IN')}`;
+  if (abs < 0.005) return `${n < 0 ? '−' : ''}<₹0.01`;
   return `₹${n.toFixed(2)}`;
 }
 

@@ -24,12 +24,15 @@ export function initialTrade(args: {
   at: number;
   /** False when the trade deliberately runs without a stop. */
   wantsProtection?: boolean;
+  /** BTC per contract. Delta's daily options are 0.001. */
+  contractValue?: number;
 }): TradeState {
   return {
     tradeId: args.tradeId,
     symbol: args.symbol,
     productId: args.productId,
     optionSide: args.optionSide,
+    contractValue: args.contractValue ?? 0.001,
     phase: 'precheck',
     position: 0,
     requestedSize: args.requestedSize,
@@ -67,9 +70,14 @@ function averageOf(fills: Fill[], want: (f: Fill) => boolean): { size: number; a
  * Short options only: we sell to open and buy to close, so profit is
  * (what we took in) - (what we paid to get out), over the size actually closed.
  */
-function realised(entryAvg: number | null, exitAvg: number | null, closed: number): number {
+function realised(
+  entryAvg: number | null,
+  exitAvg: number | null,
+  closed: number,
+  contractValue: number,
+): number {
   if (entryAvg === null || exitAvg === null || closed <= 0) return 0;
-  return (entryAvg - exitAvg) * closed;
+  return (entryAvg - exitAvg) * closed * contractValue;
 }
 
 export function applyEvent(prev: TradeState, e: TradeEvent): TradeState {
@@ -105,7 +113,7 @@ export function applyEvent(prev: TradeState, e: TradeEvent): TradeState {
       // short position: everything sold, less everything bought back.
       // Written this way round so a fully closed trade is 0 and never -0.
       s.position = exit.size - entry.size;
-      s.realisedPnl = realised(s.entryAvgPrice, s.exitAvgPrice, exit.size);
+      s.realisedPnl = realised(s.entryAvgPrice, s.exitAvgPrice, exit.size, s.contractValue);
 
       if (isExit(e.role)) {
         // The first exit to actually print is the winner; the other one is now

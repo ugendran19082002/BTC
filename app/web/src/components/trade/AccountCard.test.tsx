@@ -18,23 +18,22 @@ const status = (over: Partial<TradeStatus> = {}): TradeStatus => ({
 });
 
 describe('the money, in both currencies', () => {
-  it('shows what is free in dollars and rupees', () => {
+  it('leads with rupees and keeps the dollars beside them', () => {
     render(<AccountCard status={status()} />);
-    // three places under a dollar: on this account the tenths of a cent matter
-    expect(screen.getByText('$0.590')).toBeInTheDocument();
+    // the account is Indian; the exchange quotes in dollars
     expect(screen.getByText('₹50.15')).toBeInTheDocument();
+    expect(screen.getByText('$0.590')).toBeInTheDocument();
   });
 
   it('shows a loss as a loss, in both', () => {
     render(<AccountCard status={status()} />);
-    const dollars = screen.getByText('−$0.002');
-    expect(dollars.className).toContain('--down');
-    expect(screen.getByText('−₹0.14')).toBeInTheDocument();
+    expect(screen.getByText('−₹0.14').className).toContain('--down');
+    expect(screen.getByText('−$0.002')).toBeInTheDocument();
   });
 
   it('shows a gain in green', () => {
     render(<AccountCard status={status({ unrealisedPnlUsd: 0.4 })} />);
-    expect(screen.getByText('+$0.400').className).toContain('--up');
+    expect(screen.getByText('+₹34.00').className).toContain('--up');
   });
 
   it('says nothing at all before the server has answered', () => {
@@ -46,26 +45,26 @@ describe('the money, in both currencies', () => {
 describe("the day's loss budget", () => {
   it('is whole while nothing has been lost', () => {
     const { container } = render(<AccountCard status={status()} />);
-    expect(budgetLine(container)).toHaveTextContent('$5.00 of $5.00 left');
+    expect(budgetLine(container)).toHaveTextContent('₹425 of ₹425 left');
   });
 
   it('counts down as losses are booked, and says what happens at the end', () => {
     const { container } = render(<AccountCard status={status({ realisedTodayUsd: -4 })} />);
-    expect(budgetLine(container)).toHaveTextContent('$1.00 of $5.00 left');
+    expect(budgetLine(container)).toHaveTextContent('₹85.00 of ₹425 left');
     expect(screen.getByText(/80% used/)).toBeInTheDocument();
     expect(screen.getByText(/New trades stop when it runs out/)).toBeInTheDocument();
   });
 
   it('does not go negative when the day has gone past the limit', () => {
     const { container } = render(<AccountCard status={status({ realisedTodayUsd: -9 })} />);
-    expect(budgetLine(container)).toHaveTextContent('$0.00 of $5.00 left');
+    expect(budgetLine(container)).toHaveTextContent('₹0 of ₹425 left');
     // past the limit the percentage stops being the point: the gate is shut
     expect(screen.getByText(/Budget spent\. New trades are blocked/)).toBeInTheDocument();
   });
 
   it('a profitable day does not eat the budget', () => {
     const { container } = render(<AccountCard status={status({ realisedTodayUsd: 3 })} />);
-    expect(budgetLine(container)).toHaveTextContent('$5.00 of $5.00 left');
+    expect(budgetLine(container)).toHaveTextContent('₹425 of ₹425 left');
     expect(screen.queryByText(/used/)).toBeNull();
   });
 });

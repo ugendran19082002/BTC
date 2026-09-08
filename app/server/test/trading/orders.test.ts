@@ -189,7 +189,7 @@ test('12 the target fills, the position closes and the profit is the difference'
   const s = await r.engine.poll(plan.tradeId);
   assert.equal(s?.position, 0);
   assert.equal(s?.phase, 'flat');
-  assert.equal(s?.realisedPnl, (100.5 - 90) * 100);
+  assert.equal(s?.realisedPnl, (100.5 - 90) * 100 * 0.001);
 });
 
 test('13 a target that is approached but never traded stays open, and the position stays on', async () => {
@@ -229,7 +229,7 @@ test('15 a gap through the stop books the price that actually filled, not the tr
   const s = await r.engine.poll(plan.tradeId);
   assert.equal(s?.position, 0);
   assert.equal(s?.exitAvgPrice, 115.5, 'the fill, not the 110 trigger');
-  assert.equal(s?.realisedPnl, (100.5 - 115.5) * 100, 'a real loss, honestly counted');
+  assert.equal(s?.realisedPnl, (100.5 - 115.5) * 100 * 0.001, 'a real loss, honestly counted');
 });
 
 test('16 a stop that only partly fills leaves the rest short and keeps working', async () => {

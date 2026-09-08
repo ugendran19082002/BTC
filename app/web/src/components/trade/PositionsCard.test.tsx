@@ -107,18 +107,19 @@ describe('what it is worth right now', () => {
   it('shows the mark, the profit and how much has decayed', () => {
     render(<PositionsCard trades={[live]} />);
     expect(screen.getByText('6.50')).toBeInTheDocument();
-    expect(screen.getByText('+$0.400')).toBeInTheDocument();
+    expect(screen.getByText('+₹34.00')).toBeInTheDocument();   // rupees lead
+    expect(screen.getByText('+$0.400')).toBeInTheDocument();   // dollars beside
     expect(screen.getByText('38%')).toBeInTheDocument();
   });
 
   it('colours a loss red and a gain green, and leaves nothing neutral', () => {
     const { rerender } = render(<PositionsCard trades={[live]} />);
-    expect(screen.getByText('+$0.400').className).toContain('--up');
+    expect(screen.getByText('+₹34.00').className).toContain('--up');
 
     rerender(<PositionsCard trades={[trade({
       live: { markPrice: 14, unrealisedPnl: -0.35, decayed: -0.333, liquidationPrice: 215.6 },
     })]} />);
-    expect(screen.getByText('−$0.350').className).toContain('--down');
+    expect(screen.getByText('−₹29.75').className).toContain('--down');
   });
 
   it('shows a loss as a loss when the option has got dearer', () => {
@@ -126,8 +127,7 @@ describe('what it is worth right now', () => {
     render(<PositionsCard trades={[trade({
       live: { markPrice: 12, unrealisedPnl: -0.15, decayed: -0.1428, liquidationPrice: 215.6 },
     })]} />);
-    const profit = screen.getByText('−$0.150');
-    expect(profit.className).toContain('--down');
+    expect(screen.getByText('−₹12.75').className).toContain('--down');
     expect(screen.getByText('-14%').className).toContain('--down');
   });
 

@@ -46,7 +46,8 @@ test('a closed trade is flat at exactly zero, never at minus zero', () => {
   const s = replay(start(), [fill(100, 100.5), fill(100, 90, 'take_profit')]);
   assert.equal(Object.is(s.position, 0), true, 'a -0 position reads as a bug in every comparison');
   assert.equal(s.phase, 'flat');
-  assert.equal(s.realisedPnl, (100.5 - 90) * 100);
+  // through the contract size: a price is quoted per BTC, a contract is 0.001
+  assert.equal(s.realisedPnl, (100.5 - 90) * 100 * 0.001);
 });
 
 test('a half-filled exit leaves the rest on and does not report flat', () => {
@@ -123,6 +124,23 @@ test('cancelling the rest of a partly filled entry keeps the part that filled', 
   assert.equal(s.position, -40);
   assert.equal(s.phase, 'position_open');
   assert.match(s.note ?? '', /filled 40 of 100/);
+});
+
+test('[critical] booked profit is in dollars, through the contract size', () => {
+  // "booked today +$3.00" on a trade that made a third of a cent: the machine
+  // multiplied the price difference by the contracts and stopped there
+  const s = replay(start(), [fill(1, 19), fill(1, 16, 'take_profit')]);
+  assert.ok(Math.abs(s.realisedPnl - 0.003) < 1e-9, `got ${s.realisedPnl}`);
+  assert.ok(s.realisedPnl < 0.01, 'a one-lot scalp cannot make three dollars');
+});
+
+test('a contract size other than the default is honoured', () => {
+  const whole = initialTrade({
+    tradeId: 't2', symbol: 'X', productId: 1, optionSide: 'CE',
+    requestedSize: 1, at: AT, contractValue: 1,
+  });
+  const s = replay(whole, [fill(1, 19), fill(1, 16, 'take_profit')]);
+  assert.equal(s.realisedPnl, 3, 'one whole BTC a contract really would be three dollars');
 });
 
 test('replaying the journal rebuilds the same trade, which is what a restart does', () => {

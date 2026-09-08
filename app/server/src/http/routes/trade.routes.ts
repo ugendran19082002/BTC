@@ -168,7 +168,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
     const symbol = String((req.query as { symbol?: string }).symbol ?? '');
     if (!symbol) { reply.code(400); return { error: 'symbol is required' }; }
     const [quote, product] = await Promise.all([
-      svc.quote(symbol).catch(() => null),
+      svc.quoteForDisplay(symbol).catch(() => null),
       svc.product(symbol).catch(() => null),
     ]);
     return { quote, product };

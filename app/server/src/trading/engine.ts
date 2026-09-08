@@ -209,6 +209,7 @@ export class TradeEngine {
         tradeId: plan.tradeId, symbol: plan.symbol, productId: product?.productId ?? 0,
         optionSide: plan.optionSide, requestedSize: size, at,
         wantsProtection: plan.stopPrice !== null,
+        contractValue: product?.contractValue,
       }),
     };
 

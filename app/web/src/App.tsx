@@ -254,9 +254,9 @@ export default function App() {
           {trade?.unrealisedPnlUsd ? (
             <span
               className={`pnl ${trade.unrealisedPnlUsd > 0 ? 'up' : 'down'}`}
-              title={`${signedInr(usdToInr(trade.unrealisedPnlUsd))} at ₹85 to the dollar`}
+              title={`${signedUsd(trade.unrealisedPnlUsd)} at ₹85 to the dollar`}
             >
-              {signedUsd(trade.unrealisedPnlUsd)}
+              {signedInr(usdToInr(trade.unrealisedPnlUsd))}
             </span>
           ) : null}
         </button>
