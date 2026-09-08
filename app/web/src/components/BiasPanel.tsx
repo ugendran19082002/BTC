@@ -1,5 +1,6 @@
 import type { Bias } from '../types';
-import { Card, CardTitle, CardLead, Note } from './ui/card';
+import { CardLead, Note } from './ui/card';
+import { CollapsibleCard } from './ui/collapsible-card';
 import { Stat } from './ui/stat';
 
 /** Which way the option board is leaning right now. */
@@ -8,8 +9,7 @@ export function BiasPanel({ bias }: { bias: Bias }) {
   const tone = bias.score > 0.15 ? 'up' : bias.score < -0.15 ? 'down' : 'plain';
 
   return (
-    <Card>
-      <CardTitle>Which way it leans</CardTitle>
+    <CollapsibleCard id="bias" title="Which way it leans">
       <CardLead tone={tone}>{bias.label}</CardLead>
 
       <div className="relative mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
@@ -33,6 +33,6 @@ export function BiasPanel({ bias }: { bias: Bias }) {
         Over 12 hours this barely predicts anything. It is background, never the
         reason to trade.
       </Note>
-    </Card>
+    </CollapsibleCard>
   );
 }

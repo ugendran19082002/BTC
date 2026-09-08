@@ -12,8 +12,9 @@ import { StructurePanel } from './components/StructurePanel';
 import { DateTimePicker, istToEpoch, type IstMoment } from './components/DateTimePicker';
 import { usePersisted } from './hooks/usePersisted';
 import { LoginPage } from './components/LoginPage';
-import { Select } from './components/ui/select';
-import { Card, CardTitle, CardLead } from './components/ui/card';
+import { Select, SelectItem } from './components/ui/select';
+import { CardLead } from './components/ui/card';
+import { CollapsibleCard } from './components/ui/collapsible-card';
 import { Stat, StatDivider } from './components/ui/stat';
 import { Badge } from './components/ui/badge';
 import { Button } from './components/ui/button';
@@ -23,6 +24,9 @@ import { Metric, Formula, Field } from './components/Explain';
 type Tab = 'desk' | 'backtest' | 'floors';
 
 const REFRESH_SECONDS = 5;
+// The expiry list changes once a day, at settlement. A minute is often enough
+// to catch that without asking the server for a list that rarely moves.
+const EXPIRY_RECHECK_SECONDS = 60;
 
 const IST_FMT = new Intl.DateTimeFormat('en-IN', {
   timeZone: 'Asia/Kolkata',
@@ -107,19 +111,31 @@ export default function App() {
   useEffect(() => {
     getAccount().then((a) => setAccountLinked(a.configured)).catch(() => setAccountLinked(null));
   }, []);
-  useEffect(() => {
+  /**
+   * The list of expiries, re-read on a timer rather than once at load.
+   *
+   * The server already drops a contract the moment it settles. Reading that
+   * list only on mount meant a page left open overnight still offered a
+   * contract that had expired hours earlier, and a remembered pin on it
+   * outlived the thing it pointed at. A pin is for looking at another expiry
+   * now, not forever: when the contract it names is gone, so is the pin, and
+   * the selection falls back to the one the next 05:30 entry would sell.
+   */
+  const loadExpiries = useCallback(() => {
     getExpiries()
       .then((r) => {
         setExpiries(r.expiries);
         const fallback = r.expiries.find((e) => e.isNextEntry)?.expiry ?? '';
-        setExpiry((cur) => {
-          // Keep a remembered choice only if that contract is still listed.
-          if (cur && r.expiries.some((e) => e.expiry === cur)) return cur;
-          return fallback;
-        });
+        setExpiry((cur) => (cur && r.expiries.some((e) => e.expiry === cur) ? cur : fallback));
       })
       .catch(() => setExpiries([]));
   }, [setExpiry]);
+
+  useEffect(() => {
+    loadExpiries();
+    const id = setInterval(loadExpiries, EXPIRY_RECHECK_SECONDS * 1000);
+    return () => clearInterval(id);
+  }, [loadExpiries]);
 
   useEffect(() => {
     if (!autoRefresh || !live) return;
@@ -161,36 +177,53 @@ export default function App() {
           <div className="bar">
             <div className="field">
               <label>when</label>
-              <Select value={live ? 'live' : 'past'} onChange={(e) => setLive(e.target.value === 'live')}>
-                <option value="live">live now</option>
-                <option value="past">a past moment</option>
+              <Select
+                ariaLabel="when"
+                value={live ? 'live' : 'past'}
+                onValueChange={(v) => setLive(v === 'live')}
+              >
+                <SelectItem value="live">live now</SelectItem>
+                <SelectItem value="past">a past moment</SelectItem>
               </Select>
             </div>
 
             {!live && (
-              <div className="field">
+              <div className="field wide">
                 <label>date &amp; time (IST)</label>
                 <DateTimePicker value={when} onChange={setWhen} maxDate={new Date()} />
               </div>
             )}
 
-            <div className="field">
+            <div className="field wide">
               <label>expiry</label>
-              <Select value={expiry} onChange={(e) => setExpiry(e.target.value)} className="min-w-[260px]">
-                {expiries.length === 0 && <option value="">loading…</option>}
+              {/*
+                The row label is the date and how long is left -- nothing else.
+                What kind of contract it is used to ride along on the same line
+                and made every row too long to read on a phone; it is a hint
+                under the label now, and the one you would actually sell is
+                marked with a star rather than described.
+              */}
+              <Select ariaLabel="expiry" value={expiry} onValueChange={setExpiry}>
+                {expiries.length === 0 && <SelectItem value="" disabled>loading…</SelectItem>}
                 {expiries.map((e) => (
-                  <option key={e.expiry} value={e.expiry}>
+                  <SelectItem
+                    key={e.expiry}
+                    value={e.expiry}
+                    hint={
+                      e.isNextEntry
+                        ? 'the one you would sell'
+                        : e.isDaily
+                          ? 'today’s, mostly spent'
+                          : 'not measured'
+                    }
+                  >
+                    {e.isNextEntry && '★ '}
                     {istLabel(e.expiryTs)}
                     {' · '}
                     {e.hoursAway < 48
                       ? `in ${e.hoursAway.toFixed(0)}h`
                       : `in ${(e.hoursAway / 24).toFixed(0)} days`}
-                    {e.isNextEntry
-                      ? ' ★ the one you would sell'
-                      : e.isDaily
-                        ? ' · today’s, mostly spent'
-                        : ' · not measured'}
-                  </option>
+                  </SelectItem>
                 ))}
               </Select>
               {expiries.length > 0 && !expiries.find((e) => e.expiry === expiry)?.isNextEntry && (
@@ -227,9 +260,17 @@ export default function App() {
                 </>
               }
             >
-              <Select value={mode} onChange={(e) => setMode(e.target.value as 'premium' | 'safety')}>
-                <option value="premium">most premium</option>
-                <option value="safety">safest</option>
+              <Select
+                ariaLabel="pick the strike by"
+                value={mode}
+                onValueChange={(v) => setMode(v as 'premium' | 'safety')}
+              >
+                <SelectItem value="premium" hint="furthest strike still paying your floor">
+                  most premium
+                </SelectItem>
+                <SelectItem value="safety" hint="richest strike clearing your floor and the safety bar">
+                  safest
+                </SelectItem>
               </Select>
             </Field>
 
@@ -372,16 +413,15 @@ export default function App() {
           {data && snap && (
             <>
               <div className="lead-row">
-                <Card>
-                  <CardTitle
-                    right={
-                      snap.isNextEntry
-                        ? <Badge tone="ok">next entry</Badge>
-                        : <Badge tone="warn">not the tested contract</Badge>
-                    }
-                  >
-                    {snap.live ? 'Live' : 'Snapshot'}
-                  </CardTitle>
+                <CollapsibleCard
+                  id="live"
+                  title={snap.live ? 'Live' : 'Snapshot'}
+                  right={
+                    snap.isNextEntry
+                      ? <Badge tone="ok">next entry</Badge>
+                      : <Badge tone="warn">not the tested contract</Badge>
+                  }
+                >
 
                   <CardLead>{snap.spot.toFixed(1)}</CardLead>
 
@@ -477,7 +517,7 @@ export default function App() {
                       </p>
                     </Metric>
                   )}
-                </Card>
+                </CollapsibleCard>
 
                 <RecommendPanel rec={data.recommendation} market={data.market} minPremium={minPremium} usdinr={data.usdinr} />
               </div>

@@ -1,5 +1,6 @@
 import type { MarketRead, Recommendation } from '../types';
-import { Card, CardTitle, Note } from './ui/card';
+import { Note } from './ui/card';
+import { CollapsibleCard } from './ui/collapsible-card';
 import { Stat, StatDivider } from './ui/stat';
 import { Badge } from './ui/badge';
 
@@ -33,14 +34,13 @@ export function RecommendPanel({
 }) {
   if (!rec.ok) {
     return (
-      <Card>
-        <CardTitle>What to sell</CardTitle>
+      <CollapsibleCard id="sell" title="What to sell">
         <p className="m-0 text-[13.5px] text-foreground">{rec.why}</p>
         <Note>
           Sitting out is a decision too. The days with nothing cheap on the board
           were often the days that moved.
         </Note>
-      </Card>
+      </CollapsibleCard>
     );
   }
 
@@ -62,18 +62,17 @@ export function RecommendPanel({
     .join('\n\n');
 
   return (
-    <Card>
-      <CardTitle
-        right={
-          <Badge tone="neutral">
-            {rec.mode === 'safety'
-              ? `≥ $${minPremium} and ≥ ${(rec.safetyBar * 100).toFixed(1)}% safe`
-              : `premium ≥ $${minPremium}`}
-          </Badge>
-        }
-      >
-        What to sell
-      </CardTitle>
+    <CollapsibleCard
+      id="sell"
+      title="What to sell"
+      right={
+        <Badge tone="neutral">
+          {rec.mode === 'safety'
+            ? `≥ $${minPremium} and ≥ ${(rec.safetyBar * 100).toFixed(1)}% safe`
+            : `premium ≥ $${minPremium}`}
+        </Badge>
+      }
+    >
 
       {rec.sides.length === 1 && (
         <Note tone="warn">
@@ -229,6 +228,6 @@ export function RecommendPanel({
         />
       )}
 
-    </Card>
+    </CollapsibleCard>
   );
 }

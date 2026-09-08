@@ -1,5 +1,6 @@
 import type { OptionStructure } from '../types';
-import { Card, CardTitle, Note } from './ui/card';
+import { Note } from './ui/card';
+import { CollapsibleCard } from './ui/collapsible-card';
 import { Stat, StatDivider } from './ui/stat';
 
 const n0 = (v: number | null | undefined) =>
@@ -19,8 +20,7 @@ export function StructurePanel({
   const cheapOptions = st.volPremiumPts !== null && st.volPremiumPts < 0;
 
   return (
-    <Card>
-      <CardTitle>Where the money sits</CardTitle>
+    <CollapsibleCard id="structure" title="Where the money sits">
 
       <Stat
         label="puts vs calls, open positions"
@@ -88,6 +88,6 @@ export function StructurePanel({
           seller wants to be on.
         </Note>
       )}
-    </Card>
+    </CollapsibleCard>
   );
 }

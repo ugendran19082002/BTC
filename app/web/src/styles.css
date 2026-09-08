@@ -82,12 +82,14 @@ button.ghost {
 .lead-row {
   display: grid; gap: 12px; margin-bottom: 12px;
   grid-template-columns: minmax(0, 1fr);
-  align-items: start;
+  /* both cards stand to the same height: side by side, one short card next to a
+     tall one reads as unfinished rather than as two halves of one row */
+  align-items: stretch;
 }
 @media (min-width: 900px) {
   /* two cards: the contract you are looking at, and what to sell on it. A
      third column here left a hole once the structure card moved down. */
-  .lead-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); }
+  .lead-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .wide-row { margin-bottom: 12px; }
@@ -351,7 +353,13 @@ table.probs td.left { color: var(--muted); }
   .tabs button { white-space: nowrap; padding: 6px 10px; font-size: 12.5px; }
 
   .bar { padding: 10px; gap: 8px; }
-  .field { flex: 1 1 132px; min-width: 0; }
+  /* Two controls to a row, not one. A single column turned eight settings into
+     a screen of scrolling before the chain came into view; paired, they fit
+     above the fold and the eye reads them as a group of settings rather than a
+     list of questions. `.field.wide` opts a control out when its value is a
+     sentence -- the expiry, the date picker. */
+  .field { flex: 1 1 calc(50% - 4px); min-width: 0; }
+  .field.wide { flex: 1 1 100%; }
   .field input, .field select { width: 100%; min-width: 0; }
   .field-explain { max-width: none; }
   .actions { flex: 1 1 100%; }
@@ -374,6 +382,7 @@ table.probs td.left { color: var(--muted); }
 }
 
 @media (max-width: 420px) {
-  .field { flex: 1 1 100%; }
+  /* still two to a row -- the labels are short and the values are numbers */
+  .field { flex: 1 1 calc(50% - 4px); }
   .big { font-size: 19px; }
 }

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { AccountResponse } from '../types';
 import { getAccount } from '../api';
-import { Card, CardTitle, CardLead, Note } from './ui/card';
+import { CardLead, Note } from './ui/card';
+import { CollapsibleCard } from './ui/collapsible-card';
 import { Stat, StatDivider } from './ui/stat';
 
 /**
@@ -21,8 +22,7 @@ export function AccountPanel({ usdinr }: { usdinr: number }) {
 
   if (!data.configured) {
     return (
-      <Card>
-        <CardTitle>Your account</CardTitle>
+      <CollapsibleCard id="account" title="Your account">
         <p className="m-0 text-[13px] text-muted-foreground">Not connected.</p>
         <Note>
           Everything else here works without a key. To see your balance and open
@@ -38,20 +38,19 @@ export function AccountPanel({ usdinr }: { usdinr: number }) {
           Do not reuse a key that has been in a chat or a screenshot. Treat that one
           as public and make a fresh one.
         </Note>
-      </Card>
+      </CollapsibleCard>
     );
   }
 
   if (data.error) {
     return (
-      <Card>
-        <CardTitle>Your account</CardTitle>
+      <CollapsibleCard id="account" title="Your account">
         <p className="m-0 text-[13px] text-[var(--down)]">{data.error}</p>
         <Note>
           The key is set but Delta rejected it. Usually it has been revoked, or this
           server's IP is not on the key's allowed list.
         </Note>
-      </Card>
+      </CollapsibleCard>
     );
   }
 
@@ -61,8 +60,7 @@ export function AccountPanel({ usdinr }: { usdinr: number }) {
   const shown = usd > 0 && usd < 0.01 ? usd.toFixed(5) : usd.toFixed(2);
 
   return (
-    <Card>
-      <CardTitle>Your account</CardTitle>
+    <CollapsibleCard id="account" title="Your account">
       <CardLead tone={lots > 0 ? 'plain' : 'warn'}>${shown}</CardLead>
       <Stat
         label="in rupees"
@@ -93,6 +91,6 @@ export function AccountPanel({ usdinr }: { usdinr: number }) {
         </Note>
       )}
       <Note tone="dim">Read-only. This desk cannot place or cancel an order.</Note>
-    </Card>
+    </CollapsibleCard>
   );
 }

@@ -1,5 +1,6 @@
 import type { MarketRead, SnapshotMeta } from '../types';
-import { Card, CardTitle, Note } from './ui/card';
+import { Note } from './ui/card';
+import { CollapsibleCard } from './ui/collapsible-card';
 import { Stat, StatDivider } from './ui/stat';
 
 const money = (v: number | null) =>
@@ -12,8 +13,7 @@ export function MovePanel({ market, snap }: { market: MarketRead; snap: Snapshot
   const ratio = em && em > 0 && last24?.rangeUsd ? last24.rangeUsd / em : null;
 
   return (
-    <Card>
-      <CardTitle>How far it has moved</CardTitle>
+    <CollapsibleCard id="moved" title="How far it has moved">
 
       <div className="-mx-1 overflow-x-auto">
         <table className="w-full text-[11.8px]">
@@ -65,6 +65,6 @@ export function MovePanel({ market, snap }: { market: MarketRead; snap: Snapshot
         that morning. A strike one expected move away is not one day's travel away —
         BTC covers that distance often.
       </Note>
-    </Card>
+    </CollapsibleCard>
   );
 }
