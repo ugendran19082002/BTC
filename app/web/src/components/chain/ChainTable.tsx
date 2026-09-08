@@ -1,5 +1,14 @@
 import { useEffect, useRef } from 'react';
-import type { Leg, SideRecommendation, SnapshotMeta } from '../types';
+import type { Leg, SideRecommendation, SnapshotMeta } from '@/types/desk';
+
+/** What a tap on a price hands back: enough to open a ticket, nothing more. */
+export type ChainSellIntent = {
+  cp: 'C' | 'P';
+  strike: number;
+  bid: number | null;
+  ask: number | null;
+  mark: number | null;
+};
 
 const n = (v: number | null | undefined, d = 2) =>
   v === null || v === undefined ? '·' : v.toFixed(d);
@@ -32,6 +41,31 @@ function Zero({ leg, sold = false }: { leg: Leg | undefined; sold?: boolean }) {
     <td className={`zerocol ${cls}${sold ? ' sellcell' : ''}`} title={title}>
       {(p * 100).toFixed(1)}%
       {z.outsideTable && <span className="dim">*</span>}
+    </td>
+  );
+}
+
+/**
+ * A price that opens the ticket.
+ *
+ * Selling is what this desk does, so a tap anywhere on a strike's prices means
+ * "sell this one" and the ticket decides bid or offer. Making the ask the only
+ * live target would put the fastest route to a fill -- the bid -- behind an
+ * extra step, and on a phone the two cells are four millimetres apart anyway.
+ */
+function PriceCell({
+  value, className, onSell, decimals = 2,
+}: {
+  value: number | null | undefined;
+  className: string;
+  onSell?: () => void;
+  decimals?: number;
+}) {
+  const text = n(value ?? null, decimals);
+  if (!onSell || value === null || value === undefined) return <td className={className}>{text}</td>;
+  return (
+    <td className={`${className} tappable`}>
+      <button type="button" onClick={onSell} aria-label={`sell at ${text}`}>{text}</button>
     </td>
   );
 }
@@ -79,6 +113,7 @@ export function ChainTable({
   snap,
   sides = [],
   density = 'default',
+  onSell,
 }: {
   legs: Leg[];
   snap: SnapshotMeta;
@@ -90,6 +125,8 @@ export function ChainTable({
    * beside it said there was nothing safe enough to sell.
    */
   sides?: SideRecommendation[];
+  /** Tapping a price asks for a ticket. Absent means the board is read-only. */
+  onSell?: (intent: ChainSellIntent) => void;
   /**
    * 'default' is the odds either side of the strike, the raw model behind them,
    * and the ask. 'all' adds the bid, the mark, open interest, volume, age,
@@ -112,6 +149,10 @@ export function ChainTable({
   // them, and the ask -- plus the seven reference ones when they are showing
   const perSide = density === 'all' ? 10 : 3;
   const at = (k: number, cp: 'C' | 'P') => legs.find((l) => l.strike === k && l.cp === cp);
+  const sell = (leg: Leg | undefined, cp: 'C' | 'P', k: number) =>
+    onSell && leg
+      ? () => onSell({ cp, strike: k, bid: leg.bid ?? null, ask: leg.ask ?? null, mark: leg.mark ?? null })
+      : undefined;
   const hasBook = legs.some((l) => l.bid !== null || l.ask !== null);
 
   // The recommendation names a strike; the chain is where that strike lives.
@@ -191,9 +232,9 @@ export function ChainTable({
                 <td className="dim aux">{c?.iv != null ? (c.iv * 100).toFixed(1) : '·'}</td>
                 <Zero leg={c} sold={sellC} />
                 <td className="dim">{c?.pOtm != null ? (c.pOtm * 100).toFixed(0) + '%' : '·'}</td>
-                <td className="askcol">{n(c?.ask ?? null)}</td>
+                <PriceCell className="askcol" value={c?.ask} onSell={sell(c, 'C', k)} />
                 <td className="aux">{n(c?.mark ?? null)}</td>
-                <td className={`bidcol aux${sellC ? ' sellcell' : ''}`}>{n(c?.bid ?? null)}</td>
+                <PriceCell className={`bidcol aux${sellC ? ' sellcell' : ''}`} value={c?.bid} onSell={sell(c, 'C', k)} />
 
                 <td className="mono strikecell">
                   {k}
@@ -202,9 +243,9 @@ export function ChainTable({
                   {sellP && <span className="tag ok">SELL PE</span>}
                 </td>
 
-                <td className={`bidcol aux${sellP ? ' sellcell' : ''}`}>{n(p?.bid ?? null)}</td>
+                <PriceCell className={`bidcol aux${sellP ? ' sellcell' : ''}`} value={p?.bid} onSell={sell(p, 'P', k)} />
                 <td className="aux">{n(p?.mark ?? null)}</td>
-                <td className="askcol">{n(p?.ask ?? null)}</td>
+                <PriceCell className="askcol" value={p?.ask} onSell={sell(p, 'P', k)} />
                 <td className="dim">{p?.pOtm != null ? (p.pOtm * 100).toFixed(0) + '%' : '·'}</td>
                 <Zero leg={p} sold={sellP} />
                 <td className="dim aux">{p?.iv != null ? (p.iv * 100).toFixed(1) : '·'}</td>
@@ -219,6 +260,7 @@ export function ChainTable({
       </table>
     </div>
       <div className="note" style={{ padding: '8px 12px', margin: '0 0 12px' }}>
+        {onSell && <><b>Tap a price</b> to open a ticket for that strike.{' '}</>}
         <b className="up">Bid</b> is what you receive when you <b>sell</b>.
         {' '}<b className="down">Ask</b> is what you pay when you <b>buy</b> — the hedge leg.
         {' '}Mark is Delta's fair value: use it to judge, never as your fill.

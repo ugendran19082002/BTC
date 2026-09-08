@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import type { AccountResponse } from '../types';
-import { getAccount } from '../api';
-import { CardLead, Note } from './ui/card';
-import { Stat, StatDivider } from './ui/stat';
-import { SectionTitle } from './ui/section';
+import type { AccountResponse } from '@/types/desk';
+import { getAccount } from '@/api/account';
+import { CardLead, Note } from '@/components/ui/card';
+import { Stat, StatDivider } from '@/components/ui/stat';
+import { SectionTitle } from '@/components/ui/section';
 
 /**
  * Balance and open positions, only when a key is set.

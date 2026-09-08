@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { runFloors } from '../api';
-import type { FloorRow } from '../types';
+import { runFloors } from '@/api/backtest';
+import type { FloorRow } from '@/types/desk';
 
 const money = (v: number) => (v >= 0 ? '+' : '−') + '$' + Math.abs(v).toFixed(2);
 

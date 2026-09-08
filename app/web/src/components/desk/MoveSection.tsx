@@ -1,7 +1,7 @@
-import type { MarketRead, SnapshotMeta } from '../types';
-import { Note } from './ui/card';
-import { Stat, StatDivider } from './ui/stat';
-import { SectionTitle } from './ui/section';
+import type { MarketRead, SnapshotMeta } from '@/types/desk';
+import { Note } from '@/components/ui/card';
+import { Stat, StatDivider } from '@/components/ui/stat';
+import { SectionTitle } from '@/components/ui/section';
 
 const money = (v: number | null) =>
   v === null ? '—' : (v >= 0 ? '+' : '−') + '$' + Math.abs(v).toFixed(0);

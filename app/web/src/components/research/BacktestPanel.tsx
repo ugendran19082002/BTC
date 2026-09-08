@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { runBacktest, runByYear } from '../api';
-import type { BacktestResponse, ByYearResponse, Params } from '../types';
+import { runBacktest, runByYear } from '@/api/backtest';
+import type { BacktestResponse, ByYearResponse, Params } from '@/types/desk';
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 

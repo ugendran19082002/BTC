@@ -1,29 +1,36 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Collapsible from '@radix-ui/react-collapsible';
 import { ChevronDown } from 'lucide-react';
-import { getChain, getExpiries, getHealth, getMe, logout, NotSignedIn } from './api';
-import type { ChainResponse, ExpiryOption } from './types';
-import { ChainTable } from './components/ChainTable';
-import { MoveSection } from './components/MoveSection';
-import { BiasSection } from './components/BiasSection';
-import { BacktestPanel } from './components/BacktestPanel';
-import { FloorPanel } from './components/FloorPanel';
-import { VerdictPanel } from './components/VerdictPanel';
-import { RecommendPanel } from './components/RecommendPanel';
-import { DateTimePicker, istToEpoch, type IstMoment } from './components/DateTimePicker';
-import { usePersisted } from './hooks/usePersisted';
-import { LoginPage } from './components/LoginPage';
-import { LivePrice } from './components/LivePrice';
-import { Select, SelectItem } from './components/ui/select';
-import { CardLead } from './components/ui/card';
-import { CollapsibleCard } from './components/ui/collapsible-card';
-import { Stat, StatDivider } from './components/ui/stat';
-import { Badge } from './components/ui/badge';
-import { Button } from './components/ui/button';
-import { AccountSection } from './components/AccountSection';
-import { Metric, Formula, Field } from './components/Explain';
+import { NotSignedIn } from '@/api/client';
+import { getChain, getExpiries, getHealth } from '@/api/desk';
+import { getMe, logout } from '@/api/session';
+import type { ChainResponse, ExpiryOption } from '@/types/desk';
+import { ChainTable, type ChainSellIntent } from '@/components/chain/ChainTable';
+import { OrderTicket, type TicketSeed } from '@/components/trade/OrderTicket';
+import { PositionsCard } from '@/components/trade/PositionsCard';
+import { AlarmBanner, ModeBanner } from '@/components/trade/ModeBanner';
+import { getTradeStatus } from '@/api/trade';
+import { usePoll } from '@/hooks/usePoll';
+import { MoveSection } from '@/components/desk/MoveSection';
+import { BiasSection } from '@/components/desk/BiasSection';
+import { BacktestPanel } from '@/components/research/BacktestPanel';
+import { FloorPanel } from '@/components/research/FloorPanel';
+import { VerdictPanel } from '@/components/desk/VerdictPanel';
+import { RecommendPanel } from '@/components/desk/RecommendPanel';
+import { DateTimePicker, istToEpoch, type IstMoment } from '@/components/research/DateTimePicker';
+import { usePersisted } from '@/hooks/usePersisted';
+import { LoginPage } from '@/components/desk/LoginPage';
+import { LivePrice } from '@/components/desk/LivePrice';
+import { Select, SelectItem } from '@/components/ui/select';
+import { CardLead } from '@/components/ui/card';
+import { CollapsibleCard } from '@/components/ui/collapsible-card';
+import { Stat, StatDivider } from '@/components/ui/stat';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { AccountSection } from '@/components/desk/AccountSection';
+import { Metric, Formula, Field } from '@/components/research/Explain';
 
-type Tab = 'desk' | 'backtest' | 'floors';
+type Tab = 'desk' | 'trade' | 'backtest' | 'floors';
 
 const REFRESH_SECONDS = 5;
 // The expiry list changes once a day, at settlement. A minute is often enough
@@ -53,6 +60,10 @@ function defaultPast(): IstMoment {
 
 export default function App() {
   const [tab, setTab] = usePersisted<Tab>('tab', 'desk');
+  // A ticket is a seed plus an open flag rather than one nullable value: the
+  // sheet has to animate closed with its contents still on screen.
+  const [ticket, setTicket] = useState<TicketSeed | null>(null);
+  const [ticketOpen, setTicketOpen] = useState(false);
   const [live, setLive] = usePersisted('live', true);
   const [when, setWhen] = useState<IstMoment>(defaultPast);
   // Remembered, but only honoured while that expiry is still listed -- a saved
@@ -74,6 +85,7 @@ export default function App() {
   const [autoRefresh, setAutoRefresh] = usePersisted('autoRefresh', true);
 
   const [data, setData] = useState<ChainResponse | null>(null);
+  const snapRef = useRef<ChainResponse['snapshot'] | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [days, setDays] = useState<number | null>(null);
@@ -145,7 +157,24 @@ export default function App() {
     return () => clearInterval(id);
   }, [autoRefresh, live, load]);
 
+  // Positions and the alarm are polled on their own clock: they must keep
+  // moving even while a chain fetch is in flight or has failed.
+  const { data: trade, refresh: refreshTrade } = usePoll(getTradeStatus, 3_000, { enabled: signedIn === true });
+
+  const openTicket = useCallback((i: ChainSellIntent) => {
+    if (!snapRef.current) return;
+    setTicket({
+      symbol: `${i.cp}-BTC-${i.strike}-${snapRef.current.expiry}`,
+      side: i.cp === 'C' ? 'CE' : 'PE',
+      strike: i.strike,
+      expiryTs: snapRef.current.expiryTs,
+      bid: i.bid, ask: i.ask, mark: i.mark,
+    });
+    setTicketOpen(true);
+  }, []);
+
   const snap = data?.snapshot;
+  snapRef.current = snap ?? null;
 
   if (signedIn === null) return <div className="spinner">…</div>;
   if (!signedIn) return <LoginPage onSignedIn={() => setSignedIn(true)} />;
@@ -155,6 +184,7 @@ export default function App() {
       <header className="top">
         <h1>BTC Options Desk</h1>
         {snap && <LivePrice spot={snap.spot} live={snap.live} />}
+        <ModeBanner status={trade} />
         <span className="sub">
           Delta Exchange India · prices are public
           {days !== null && <> · {days} days of history</>}
@@ -168,8 +198,18 @@ export default function App() {
         </button>
       </header>
 
+      {trade && trade.open.some((t) => t.alarm) && (
+        <div style={{ margin: '0 0 10px' }}>
+          <AlarmBanner status={trade} />
+        </div>
+      )}
+
       <div className="tabs">
         <button className={tab === 'desk' ? 'on' : ''} onClick={() => setTab('desk')}>Should I enter?</button>
+        <button className={tab === 'trade' ? 'on' : ''} onClick={() => setTab('trade')}>
+          Positions
+          {trade && trade.open.length > 0 && <span className="pip">{trade.open.length}</span>}
+        </button>
         <button className={tab === 'backtest' ? 'on' : ''} onClick={() => setTab('backtest')}>Backtest</button>
         <button className={tab === 'floors' ? 'on' : ''} onClick={() => setTab('floors')}>How much premium?</button>
       </div>
@@ -569,7 +609,13 @@ export default function App() {
                   </Select>
                 </span>
               </div>
-              <ChainTable legs={data.legs} snap={snap} sides={data.recommendation.ok ? data.recommendation.sides : []} density={density} />
+              <ChainTable
+                legs={data.legs}
+                snap={snap}
+                sides={data.recommendation.ok ? data.recommendation.sides : []}
+                density={density}
+                onSell={openTicket}
+              />
               <div className="note">
                 Age is minutes since a real trade printed. Delta's candle feed
                 forward-fills quiet minutes, so a traded price with a large age is a
@@ -590,11 +636,21 @@ export default function App() {
             </>
           )}
         </>
+      ) : tab === 'trade' ? (
+        <div className="lead-row" style={{ gridTemplateColumns: 'minmax(0, 1fr)' }}>
+          <PositionsCard trades={trade?.open ?? []} onChanged={() => void refreshTrade()} />
+        </div>
       ) : tab === 'backtest' ? (
         <BacktestPanel usdinr={data?.usdinr ?? 85} />
       ) : (
         <FloorPanel usdinr={data?.usdinr ?? 85} />
       )}
+      <OrderTicket
+        seed={ticket}
+        open={ticketOpen}
+        onOpenChange={setTicketOpen}
+        onPlaced={() => void refreshTrade()}
+      />
     </div>
   );
 }

@@ -1,8 +1,8 @@
 import * as React from 'react';
 import * as Collapsible from '@radix-ui/react-collapsible';
 import { ChevronDown } from 'lucide-react';
-import { cn } from '../../lib/utils';
-import { usePersisted } from '../../hooks/usePersisted';
+import { cn } from '@/lib/utils';
+import { usePersisted } from '@/hooks/usePersisted';
 
 /**
  * A card whose body folds away, remembered per card.

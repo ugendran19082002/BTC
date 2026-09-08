@@ -1,8 +1,8 @@
-import type { MarketRead, Recommendation } from '../types';
-import { Note } from './ui/card';
-import { CollapsibleCard } from './ui/collapsible-card';
-import { Stat, StatDivider } from './ui/stat';
-import { Badge } from './ui/badge';
+import type { MarketRead, Recommendation } from '@/types/desk';
+import { Note } from '@/components/ui/card';
+import { CollapsibleCard } from '@/components/ui/collapsible-card';
+import { Stat, StatDivider } from '@/components/ui/stat';
+import { Badge } from '@/components/ui/badge';
 
 const pct = (v: number | null | undefined, d = 1) =>
   v === null || v === undefined ? '—' : (v * 100).toFixed(d) + '%';

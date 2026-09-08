@@ -12,7 +12,9 @@
     "types": ["node"],
     "noEmit": true,
     "verbatimModuleSyntax": true,
-    "allowImportingTsExtensions": true
+    "allowImportingTsExtensions": true,
+    "baseUrl": ".",
+    "paths": { "@/*": ["src/*"] }
   },
   "include": ["src", "vite.config.ts"]
 }

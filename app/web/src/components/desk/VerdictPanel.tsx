@@ -1,4 +1,4 @@
-import type { Pick, Verdict } from '../types';
+import type { Pick, Verdict } from '@/types/desk';
 
 /**
  * The answer to the only question the desk is really asked: enter now, or not?

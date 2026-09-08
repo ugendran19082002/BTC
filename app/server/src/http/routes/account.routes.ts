@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { credsFromEnv, getBalances, getPositions, NotConfigured } from '../../account/account.js';
+import { credsFromEnv, getBalances, getPositions, NotConfigured } from '../../delta/account.js';
 import { maxLots, USDINR } from '../../domain/score.js';
 
 // Read once at startup so a later log line cannot pick the secret out of env.

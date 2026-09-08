@@ -1,7 +1,7 @@
 import * as React from 'react';
 import * as RS from '@radix-ui/react-select';
 import { Check, ChevronDown } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { cn } from '@/lib/utils';
 
 /**
  * A listbox, not a native <select>.

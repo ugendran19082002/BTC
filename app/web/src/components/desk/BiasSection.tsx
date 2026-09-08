@@ -1,7 +1,7 @@
-import type { Bias } from '../types';
-import { CardLead } from './ui/card';
-import { Stat, StatDivider } from './ui/stat';
-import { SectionTitle } from './ui/section';
+import type { Bias } from '@/types/desk';
+import { CardLead } from '@/components/ui/card';
+import { Stat, StatDivider } from '@/components/ui/stat';
+import { SectionTitle } from '@/components/ui/section';
 
 /**
  * Which way the option board is leaning right now.

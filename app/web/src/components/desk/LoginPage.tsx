@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
-import { login } from '../api';
-import { Button } from './ui/button';
-import { Card, CardTitle, Note } from './ui/card';
+import { login } from '@/api/session';
+import { Button } from '@/components/ui/button';
+import { Card, CardTitle, Note } from '@/components/ui/card';
 
 /**
  * The gate in front of the desk.
