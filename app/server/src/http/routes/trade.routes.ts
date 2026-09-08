@@ -117,7 +117,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
   app.get('/api/trade/status', async () => {
     const [balance, positions] = await Promise.all([
       svc.balance().catch(() => null),
-      svc.positions().catch(() => []),
+      svc.positionsForDisplay().catch(() => []),
     ]);
     const trades = svc.openTrades();
     // Cached after the first call, so this costs nothing per poll.

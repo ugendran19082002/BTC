@@ -101,6 +101,27 @@ const TICKER_TTL_MS = 15_000;
 let tickerCache: { at: number; data: Ticker[] } | null = null;
 let tickerInflight: Promise<Ticker[]> | null = null;
 
+/**
+ * Spot, on its own, cheaply.
+ *
+ * The chain is a big response and is fetched every five seconds for that
+ * reason. The price at the top of the screen is one number and should feel
+ * live, so it gets its own endpoint and its own cache -- short enough that a
+ * one-second poll reads a fresh figure, long enough that ten browser tabs
+ * cannot turn into ten calls a second at the exchange.
+ */
+let spotCache: { value: number; at: number } | null = null;
+const SPOT_TTL_MS = 800;
+
+export async function liveSpot(now = Date.now()): Promise<number | null> {
+  if (spotCache && now - spotCache.at < SPOT_TTL_MS) return spotCache.value;
+  const t = await req<{ spot_price?: string; mark_price?: string }>('/tickers/BTCUSD', 2).catch(() => null);
+  const value = Number(t?.spot_price ?? t?.mark_price ?? Number.NaN);
+  if (!Number.isFinite(value) || value <= 0) return spotCache?.value ?? null;
+  spotCache = { value, at: now };
+  return value;
+}
+
 export async function liveTickers(): Promise<Ticker[]> {
   if (tickerCache && Date.now() - tickerCache.at < TICKER_TTL_MS) return tickerCache.data;
   // collapse concurrent callers onto one upstream request

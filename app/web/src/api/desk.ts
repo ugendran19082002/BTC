@@ -35,3 +35,6 @@ export function getExpiries() {
 export function getHealth() {
   return json<{ ok: boolean; days: number; now: string }>('/api/health');
 }
+
+/** Just the price. Tiny, so it can be polled every second. */
+export const getSpot = () => json<{ spot: number; at: number }>('/api/spot');

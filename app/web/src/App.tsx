@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Collapsible from '@radix-ui/react-collapsible';
 import { ChevronDown } from 'lucide-react';
 import { NotSignedIn } from '@/api/client';
-import { getChain, getExpiries, getHealth } from '@/api/desk';
+import { getChain, getExpiries, getHealth, getSpot } from '@/api/desk';
 import { getMe, logout } from '@/api/session';
 import type { ChainResponse, ExpiryOption } from '@/types/desk';
 import { ChainTable, type ChainSellIntent } from '@/components/chain/ChainTable';
@@ -162,9 +162,15 @@ export default function App() {
 
   // Positions and the alarm are polled on their own clock: they must keep
   // moving even while a chain fetch is in flight or has failed.
-  const { data: trade, refresh: refreshTrade } = usePoll(getTradeStatus, 3_000, { enabled: signedIn === true });
+  // Once a second, like the price: the mark and the profit on an open position
+  // are as live as the spot above them. The server caches the exchange call for
+  // just under a second so this stays one request per second whatever is open.
+  const { data: trade, refresh: refreshTrade } = usePoll(getTradeStatus, 1_000, { enabled: signedIn === true });
   // Only the count, on a slow clock: the list itself is fetched by the panel.
   const { data: errors } = usePoll(() => getErrors({ limit: 1 }), 30_000, { enabled: signedIn === true });
+  // The price on its own, once a second. The chain is a hundred times the
+  // payload for the same figure, which is why it stays on its five-second clock.
+  const { data: tick } = usePoll(getSpot, 1_000, { enabled: signedIn === true });
 
   const openTicket = useCallback((i: ChainSellIntent) => {
     if (!snapRef.current) return;
@@ -182,7 +188,18 @@ export default function App() {
   snapRef.current = snap ?? null;
   // How far spot has come since this contract opened, which is what every
   // strike on the board is measured from.
+  //
+  // The chain's own figure is up to five seconds old, so the opening price is
+  // recovered from it and the move is recomputed against the ticking price.
+  // Otherwise the number beside a price that moves every second would itself
+  // only move every fifth.
   const contractMove = data?.market?.moves.find((m) => m.label === 'this contract so far') ?? null;
+  const openedAt =
+    snap && contractMove?.changeUsd != null ? snap.spot - contractMove.changeUsd : null;
+  const liveSpot = tick?.spot ?? snap?.spot ?? null;
+  const sinceOpenUsd = openedAt !== null && liveSpot !== null ? liveSpot - openedAt : null;
+  const sinceOpenPct =
+    sinceOpenUsd !== null && openedAt ? sinceOpenUsd / openedAt : null;
 
   if (signedIn === null) return <div className="spinner">…</div>;
   if (!signedIn) return <LoginPage onSignedIn={() => setSignedIn(true)} />;
@@ -212,10 +229,10 @@ export default function App() {
         <div className="top-row top-row-2">
           {snap && (
           <LivePrice
-            spot={snap.spot}
+            spot={tick?.spot ?? snap.spot}
             live={snap.live}
-            sinceOpenUsd={contractMove?.changeUsd ?? null}
-            sinceOpenPct={contractMove?.changePct ?? null}
+            sinceOpenUsd={sinceOpenUsd}
+            sinceOpenPct={sinceOpenPct}
           />
         )}
           <ModeSwitch status={trade} onChanged={() => void refreshTrade()} />

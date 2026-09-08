@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { liveChain, historicalChain, liveExpiries, type Snapshot } from '../../market/chain.js';
 import { readMarket } from '../../market/moves.js';
+import { liveSpot } from '../../market/delta.js';
 import { scoreLegs, pickSells, bias, verdict, maxLots, MARGIN_PER_LOT_USD, USDINR } from '../../domain/score.js';
 import { recommend, type PickMode } from '../../domain/recommend.js';
 import { optionStructure } from '../../domain/structure.js';
@@ -39,6 +40,23 @@ export function registerDeskRoutes(app: FastifyInstance) {
       last: days[days.length - 1]?.date ?? null,
       now: new Date().toISOString(),
     };
+  });
+
+  /**
+   * Just the price.
+   *
+   * Deliberately tiny and deliberately separate from /api/chain: the board is
+   * expensive and refreshes every five seconds, while the number at the top of
+   * the screen should tick. Polling the chain faster to move one figure would
+   * be a hundred times the payload for the same answer.
+   */
+  app.get('/api/spot', async (_req, reply) => {
+    const spot = await liveSpot().catch(() => null);
+    if (spot === null) { reply.code(503); return { error: 'no price' }; }
+    // Remembered here too, so the margin model has a fresh figure even when
+    // nobody has loaded the chain recently.
+    tradingService().noteSpot(spot);
+    return { spot, at: Date.now() };
   });
 
   app.get('/api/expiries', async (_req, reply) => {

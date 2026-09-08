@@ -8,7 +8,7 @@ import { DEFAULT_LIMITS, type RiskLimits } from './precheck.js';
 import { clampLeverage } from './margin.js';
 import { isDone } from './machine.js';
 import type { ExchangePort } from './exchange/port.js';
-import type { TradeState } from './types.js';
+import type { ExchangePosition, TradeState } from './types.js';
 
 /**
  * The one live trading service.
@@ -22,6 +22,8 @@ import type { TradeState } from './types.js';
  */
 
 const POLL_MS = 1_000;
+/** Long enough that a one-second poll is one call; short enough to feel live. */
+const POSITIONS_TTL_MS = 800;
 /**
  * Two hundred, matching Delta's own app.
  *
@@ -276,6 +278,27 @@ export class TradingService {
   reconcile(tradeId: string) { return this.engine.reconcile(tradeId); }
   /** Remembered on the way past, so the margin model has a spot to work from. */
   noteSpot(spot: number | null) { if (spot && spot > 0) this.lastSpot = spot; }
+
+  /**
+   * Positions for the screen, cached for under a second.
+   *
+   * The desk polls this once a second so the mark and the P&L tick; without a
+   * cache that is one call per second per open tab, and Delta counts them.
+   *
+   * Deliberately *not* used by the engine. Protection and reconciliation ask
+   * `exchange.getPositions()` directly, because those decide whether contracts
+   * exist and must never read a figure from a moment ago.
+   */
+  private positionsCache: { rows: ExchangePosition[]; at: number } | null = null;
+
+  async positionsForDisplay(now = Date.now()): Promise<ExchangePosition[]> {
+    if (this.positionsCache && now - this.positionsCache.at < POSITIONS_TTL_MS) {
+      return this.positionsCache.rows;
+    }
+    const rows = await this.exchange.getPositions().catch(() => this.positionsCache?.rows ?? []);
+    this.positionsCache = { rows, at: now };
+    return rows;
+  }
 
   quote(symbol: string) { return this.exchange.getQuote(symbol); }
   get spot() { return this.lastSpot; }
