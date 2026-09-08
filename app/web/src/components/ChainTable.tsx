@@ -91,9 +91,12 @@ export function ChainTable({
    */
   sides?: SideRecommendation[];
   /**
-   * 'default' shows the columns that settle the trade -- the odds either side
-   * of the strike, and the prices. 'all' adds open interest, volume, age, delta
-   * and implied volatility, which describe the strike rather than decide it.
+   * 'default' shows what settles the trade: the odds either side of the strike,
+   * the bid you would receive and the ask a hedge would cost. 'all' adds the
+   * mark, open interest, volume, age, delta and implied volatility -- figures
+   * that describe a strike rather than decide it. The mark in particular is
+   * Delta's fair value and never a price you can trade at, so it belongs with
+   * the reference columns rather than beside the two you can act on.
    */
   density?: 'default' | 'all';
 }) {
@@ -140,9 +143,9 @@ export function ChainTable({
             <th className="aux">OI</th><th className="aux">Vol</th><th className="aux">Age</th>
             <th className="aux">Δ</th><th className="aux">IV</th>
             <th className="zerocol">→ 0</th><th>model</th>
-            <th className="askcol">Ask</th><th>Mark</th><th className="bidcol">Bid</th>
+            <th className="askcol">Ask</th><th className="aux">Mark</th><th className="bidcol">Bid</th>
             <th></th>
-            <th className="bidcol">Bid</th><th>Mark</th><th className="askcol">Ask</th>
+            <th className="bidcol">Bid</th><th className="aux">Mark</th><th className="askcol">Ask</th>
             <th>model</th><th className="zerocol">→ 0</th>
             <th className="aux">IV</th><th className="aux">Δ</th>
             <th className="aux">Age</th><th className="aux">Vol</th><th className="aux">OI</th>
@@ -169,7 +172,7 @@ export function ChainTable({
                 <Zero leg={c} sold={sellC} />
                 <td className="dim">{c?.pOtm != null ? (c.pOtm * 100).toFixed(0) + '%' : '·'}</td>
                 <td className="askcol">{n(c?.ask ?? null)}</td>
-                <td>{n(c?.mark ?? null)}</td>
+                <td className="aux">{n(c?.mark ?? null)}</td>
                 <td className={`bidcol${sellC ? ' sellcell' : ''}`}>{n(c?.bid ?? null)}</td>
 
                 <td className="mono strikecell">
@@ -180,7 +183,7 @@ export function ChainTable({
                 </td>
 
                 <td className={`bidcol${sellP ? ' sellcell' : ''}`}>{n(p?.bid ?? null)}</td>
-                <td>{n(p?.mark ?? null)}</td>
+                <td className="aux">{n(p?.mark ?? null)}</td>
                 <td className="askcol">{n(p?.ask ?? null)}</td>
                 <td className="dim">{p?.pOtm != null ? (p.pOtm * 100).toFixed(0) + '%' : '·'}</td>
                 <Zero leg={p} sold={sellP} />

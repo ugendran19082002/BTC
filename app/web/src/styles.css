@@ -115,17 +115,6 @@ button.ghost {
 
 .wide-row { margin-bottom: 12px; }
 
-/* The reference row under the trade: four cards of equal width that all stand
-   to the height of the tallest. CSS columns were doing the opposite -- ragged
-   heights, and whichever column happened to hold two cards looked like a
-   different kind of thing from the ones holding one. */
-.refs {
-  display: grid; gap: 12px; margin-bottom: 12px;
-  grid-template-columns: minmax(0, 1fr);
-  align-items: stretch;
-}
-@media (min-width: 760px)  { .refs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (min-width: 1240px) { .refs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 .grid { display: grid; gap: 12px; }
 /* auto-fill rather than auto-fit so a wide screen keeps its column rhythm
