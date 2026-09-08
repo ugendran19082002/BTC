@@ -531,3 +531,45 @@ offer actually fills within thirty seconds.** If it is above 90% the wait could
 be longer; if it is very low the wait is just a delayed market order. The
 journal records every entry with its timestamps, so `/api/trade/history` already
 holds the data to answer it.
+
+## Getting filled on a wide book
+
+The offer sat unfilled for thirty seconds on a real order, which is the
+question this section exists to answer. What the research says, and it is
+consistent across sources:
+
+- **Never send a market order for an option.** Case 07 in the server suite is
+  the demonstration: a market sell for 100 walked three levels — 40 at 99.80,
+  40 at 99.50, 20 at 99.10 — for an average of 99.54 against a touch of 99.80.
+  A quarter of a point given away on a book that was showing a better price. A
+  limit at the bid is just as immediate and cannot do it, because a limit price
+  is a floor for a seller. The market button is gone; "now" is a limit at the
+  bid.
+- **Step the price toward the bid rather than choosing once.** Offering at the
+  ask and waiting is all-or-nothing, and on a 12% spread it often just sits.
+  Conceding a little at a time gives a maker who will meet you halfway the
+  chance to, and you keep part of the spread instead of none of it.
+
+So the entry is a chase: start at the offer and walk to the bid in four steps
+over the window, moving the order with `PUT /v2/orders` so it never leaves the
+book. The last step is the bid, which is marketable, so a chase always ends in
+a fill — the older "wait, then cross" is gone, since it was the same idea with
+one step and a gap in the middle.
+
+Still to measure, and the journal already holds the data: **where in the walk
+fills actually happen.** If most land on the first step the walk is too fast
+and is giving away spread; if most land on the last it is too slow and is only
+a delayed market order. Four steps over thirty seconds is a starting guess, not
+a measured number.
+
+## Prices on screen must come from the book
+
+The exits panel was headed "on the book now" and read the plan. They agree
+until they do not, and the case where they differ is the only one worth showing
+— a plan saying 1.90 while Delta's book held 20.80. Both the panel and the
+position row read the exchange's resting orders now, and the panel says so
+plainly when the two have drifted apart.
+
+The general rule, since it has now been broken twice: **anything labelled as
+what the exchange is doing must be read from the exchange.** The plan is what
+was asked for.
