@@ -141,20 +141,23 @@ export function ChainTable({
   maxSpreadPct?: number;
   /**
    * 'default' is the odds either side of the strike, the raw model behind them,
-   * and the ask. 'all' adds the bid, the mark, open interest, volume, age,
+   * the offer and the bid. 'all' adds the mark, open interest, volume, age,
    * delta and implied volatility.
    *
-   * The bid is what a seller actually receives, so it is not a detail -- but
-   * the price of the leg the desk picked is stated on the recommendation card
-   * either way, and reading the whole board is a different job from reading one
-   * strike. Switch to 'all' before pricing a strike the desk did not pick.
+   * The bid is what a seller actually receives, and the board marks the ones
+   * whose spread is too wide to cross -- which makes it the column you act on
+   * rather than a reference figure, so it is in the default set.
    */
   density?: 'default' | 'all';
 }) {
   const strikes = [...new Set(legs.map((l) => l.strike))].sort((a, b) => a - b);
   // visible columns each side of the strike: the odds, the raw model behind
   // them, and the ask -- plus the seven reference ones when they are showing
-  const perSide = density === 'all' ? 10 : 3;
+  // The odds either side of the strike, the raw model behind them, the offer,
+  // and the bid. The bid is back in the default set: it is what a seller
+  // actually receives, and now that the board marks which ones are too wide to
+  // cross, it is the column you act on rather than a reference figure.
+  const perSide = density === 'all' ? 10 : 4;
   const at = (k: number, cp: 'C' | 'P') => legs.find((l) => l.strike === k && l.cp === cp);
 
   /**
@@ -228,9 +231,9 @@ export function ChainTable({
             <th className="aux">Δ</th><th className="aux">IV</th>
             <th className="zerocol">→ 0</th><th>model</th>
             <th className="askcol">Ask</th><th className="aux">Mark</th>
-            <th className="bidcol aux">Bid</th>
+            <th className="bidcol">Bid</th>
             <th></th>
-            <th className="bidcol aux">Bid</th><th className="aux">Mark</th>
+            <th className="bidcol">Bid</th><th className="aux">Mark</th>
             <th className="askcol">Ask</th>
             <th>model</th><th className="zerocol">→ 0</th>
             <th className="aux">IV</th><th className="aux">Δ</th>
@@ -260,7 +263,7 @@ export function ChainTable({
                 <PriceCell className="askcol" value={c?.ask} onSell={sell(c, 'C', k)} />
                 <td className="aux">{n(c?.mark ?? null)}</td>
                 <PriceCell
-                  className={`bidcol aux${sellC ? ' sellcell' : ''}${takeable(c) === false ? ' wide' : ''}`}
+                  className={`bidcol${sellC ? ' sellcell' : ''}${takeable(c) === false ? ' wide' : ''}`}
                   value={c?.bid}
                   onSell={sell(c, 'C', k)}
                   title={takeable(c) === false ? 'Too wide to cross — rest at the offer instead' : undefined}
@@ -274,7 +277,7 @@ export function ChainTable({
                 </td>
 
                 <PriceCell
-                  className={`bidcol aux${sellP ? ' sellcell' : ''}${takeable(p) === false ? ' wide' : ''}`}
+                  className={`bidcol${sellP ? ' sellcell' : ''}${takeable(p) === false ? ' wide' : ''}`}
                   value={p?.bid}
                   onSell={sell(p, 'P', k)}
                   title={takeable(p) === false ? 'Too wide to cross — rest at the offer instead' : undefined}
