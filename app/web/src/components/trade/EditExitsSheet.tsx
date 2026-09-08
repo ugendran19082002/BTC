@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { updateExits } from '@/api/trade';
 import type { Trade } from '@/types/trade';
@@ -17,6 +17,9 @@ import { contractLabel, price } from '@/lib/format';
  * default, so opening this shows where the levels actually are instead of
  * where a fresh ticket would have put them.
  */
+/** Keeps a reverse-computed percentage inside what the bar can show. */
+const clampPct = (n: number, max: number) => Math.min(max, Math.max(0, n));
+
 export function EditExitsSheet({ trade, open, onOpenChange, onSaved }: {
   trade: Trade | null;
   open: boolean;
@@ -31,19 +34,35 @@ export function EditExitsSheet({ trade, open, onOpenChange, onSaved }: {
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
 
-  // Where the levels are now, turned back into the percentages the bars speak.
+  /**
+   * Seed the bars from the levels that are live, exactly once per opening.
+   *
+   * The trade object is replaced every second by the poll, so an effect that
+   * depends on anything inside it re-runs while you are dragging and puts the
+   * slider back where it started. Seeding is keyed on the opening itself, and a
+   * ref makes that literal rather than a hope about dependency arrays: once the
+   * form is seeded for this open, nothing reseeds it until it closes.
+   */
+  const seededFor = useRef<string | null>(null);
   useEffect(() => {
-    if (!open || !trade || entry === null || entry <= 0) return;
+    if (!open) { seededFor.current = null; return; }
+    if (!trade || entry === null || entry <= 0) return;
+    if (seededFor.current === trade.tradeId) return;
+    seededFor.current = trade.tradeId;
+
     const tp = trade.plan?.takeProfitPrice ?? null;
     const sl = trade.plan?.stopPrice ?? null;
     setTargetOn(tp !== null);
-    setStopOn(sl !== null && trade.protection.stopLoss !== null);
-    if (tp !== null) setTargetPct(Math.min(0.99, Math.max(0, 1 - tp / entry)));
-    if (sl !== null) setStopPct(Math.max(0, sl / entry - 1));
+    setStopOn(sl !== null);
+    if (tp !== null) setTargetPct(clampPct(1 - tp / entry, 0.99));
+    if (sl !== null) setStopPct(clampPct(sl / entry - 1, 3));
     setFailed(null);
-  }, [open, trade?.tradeId, entry]);
+  }, [open, trade, entry]);
 
   if (!trade) return null;
+
+  const liveTarget = trade.plan?.takeProfitPrice ?? null;
+  const liveStop = trade.protection.stopLoss ? trade.plan?.stopPrice ?? null : null;
 
   const save = async () => {
     setBusy(true);
@@ -82,9 +101,29 @@ export function EditExitsSheet({ trade, open, onOpenChange, onSaved }: {
           liquidationPrice={trade.live?.liquidationPrice ?? null}
         />
 
+        {/*
+          What is on the book right now, in the exchange's own prices. Without
+          it there is no way to tell whether a change landed -- the bars show
+          what you have asked for, which is not the same question.
+        */}
+        <dl className="m-0 mt-3 grid gap-1 rounded-lg bg-muted px-2.5 py-2 text-[12px]">
+          <div className="flex justify-between gap-3">
+            <dt className="m-0 text-muted-foreground">on the book now · target</dt>
+            <dd className="m-0 tabular-nums text-foreground">
+              {liveTarget !== null ? price(liveTarget) : 'none'}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-3">
+            <dt className="m-0 text-muted-foreground">on the book now · stop</dt>
+            <dd className="m-0 tabular-nums text-foreground">
+              {liveStop !== null ? price(liveStop) : 'none'}
+            </dd>
+          </div>
+        </dl>
+
         <p className="m-0 mt-2 text-[11.5px] leading-snug text-muted-foreground">
-          The levels on the book are replaced: the old ones come off first, so there is never a
-          moment with two live.
+          The old levels come off the book before the new ones go on, so there is never a moment
+          with two live.
         </p>
         {failed && <p className="m-0 mt-2 text-[12px] text-[var(--down)]">{failed}</p>}
 
