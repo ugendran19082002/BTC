@@ -2,13 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { getAccount, getChain, getExpiries, getHealth, getMe, logout, NotSignedIn } from './api';
 import type { ChainResponse, ExpiryOption } from './types';
 import { ChainTable } from './components/ChainTable';
+import { MovePanel } from './components/MovePanel';
 import { BiasPanel } from './components/BiasPanel';
 import { BacktestPanel } from './components/BacktestPanel';
 import { FloorPanel } from './components/FloorPanel';
 import { VerdictPanel } from './components/VerdictPanel';
 import { RecommendPanel } from './components/RecommendPanel';
 import { StructurePanel } from './components/StructurePanel';
-import { ForecastPanel } from './components/ForecastPanel';
 import { DateTimePicker, istToEpoch, type IstMoment } from './components/DateTimePicker';
 import { usePersisted } from './hooks/usePersisted';
 import { LoginPage } from './components/LoginPage';
@@ -498,13 +498,8 @@ export default function App() {
               />
 
 
-              {data.forecast && (
-                <div className="wide-row">
-                  <ForecastPanel forecast={data.forecast} sides={data.recommendation.sides} />
-                </div>
-              )}
-
               <div className="masonry">
+                {data.market && <MovePanel market={data.market} snap={snap} />}
                 <StructurePanel structure={data.structure} snap={snap} />
                 <BiasPanel bias={data.bias} snap={snap} />
                 <AccountPanel usdinr={data.usdinr} />

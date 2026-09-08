@@ -187,9 +187,14 @@ rather than silently showing less than the setting reads.
 first are the two things you see first, without scrolling past twenty strikes.
 **Where the money sits** moved down beside the other reference cards.
 
-The **How far it could move** card was removed on request. The measurement
-behind it stands and `measure_horizons.py` still refreshes it; nothing else
-depended on it.
+The **How far it could move** card — the per-horizon table of what BTC did over
+a year of windows — was removed on request. The measurement behind it stands
+and `measure_horizons.py` still refreshes it; `/api/chain` still returns it.
+Nothing else depended on it.
+
+**How far it has moved** (the last 5m/15m/1h/24h, and the biggest day this
+month) is a different card and is still there, in the reference row below the
+chain. It was taken out by mistake for one deploy and put straight back.
 
 ## THINGS WORTH DOING NEXT
 
