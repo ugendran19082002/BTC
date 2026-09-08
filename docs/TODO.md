@@ -247,3 +247,23 @@ chain. It was taken out by mistake for one deploy and put straight back.
 - I never log into your AlgoTest account.
 - Nothing in this code can place an order. There is no code path for it.
 - Nothing goes into the recommendation unless it worked in all three years.
+
+## Use Delta's bracket endpoint for protection
+
+`POST /v2/orders/bracket` attaches a stop and a target to an existing position
+and runs the one-cancels-other *on the exchange*. That is strictly better than
+what the desk does now, which is two independent reduce-only orders plus a poll
+loop that cancels the loser.
+
+It is not wired up yet, and deliberately so. The two-order path is covered by
+cases 17, 18, 32 and 36, and the catastrophic outcome — both exits printing and
+flipping a short into a long — is already prevented by reduce_only being
+enforced at fill time. Swapping in an untested path on a live-money route to
+gain a smaller improvement is the wrong trade.
+
+To do it properly:
+  - teach PaperExchange bracket semantics (its fill-time reduce_only check
+    already gives OCO for free, so this is mostly bookkeeping);
+  - decide how to track the orders Delta creates, since the bracket response
+    returns them rather than accepting our client_order_id;
+  - port cases 17, 18, 32 and 36 onto the new path before switching.

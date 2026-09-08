@@ -525,3 +525,16 @@ td.sellcell {
   }
   .tabs button.on { background: var(--panel-2); color: var(--accent); }
 }
+
+
+/* The order ticket on a phone.
+   The sheet is already bottom-anchored and scrolls internally; these are the
+   two things that break anyway on a small screen. */
+@media (max-width: 420px) {
+  /* four price modes across a 320px screen need the padding back */
+  .app { padding-left: 12px; padding-right: 12px; }
+}
+
+/* A slider inside a scrolling sheet must claim the horizontal drag, or the
+   sheet swipes away under your thumb while you are trying to set a stop. */
+[data-radix-slider-root] { touch-action: none; }

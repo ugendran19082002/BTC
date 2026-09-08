@@ -54,19 +54,39 @@ const show = (props: Partial<React.ComponentProps<typeof OrderTicket>> = {}) =>
   render(<OrderTicket seed={seed} open onOpenChange={() => {}} {...props} />);
 
 beforeEach(() => {
+  // usePersisted writes to localStorage, so one test's tick box would otherwise
+  // arrive already ticked in the next
+  localStorage.clear();
   vi.clearAllMocks();
   previewOrder.mockResolvedValue(ok());
   placeOrder.mockResolvedValue({ mode: 'paper', ok: true, trade: { position: -1, entryAvgPrice: 9 } });
 });
 
 describe('the ticket opens ready to trade', () => {
-  it('names the contract and defaults to the market', async () => {
+  it('names the contract and opens on the offer, not the bid', async () => {
     show();
     expect(screen.getByText('Sell 80,000 CE')).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: 'market' })).toHaveAttribute('data-state', 'on');
+    // selling at the bid gives away the spread on every single trade
+    expect(screen.getByRole('radio', { name: 'ask' })).toHaveAttribute('data-state', 'on');
     await waitFor(() => expect(previewOrder).toHaveBeenCalled());
-    // market means "take what the book gives", which is a null limit price
-    expect(previewOrder.mock.calls.at(-1)![0]).toMatchObject({ limitPrice: null, lots: 1 });
+    expect(previewOrder.mock.calls.at(-1)![0]).toMatchObject({ limitPrice: 11, lots: 1 });
+  });
+
+  it('falls back to the market when the contract has no offer', async () => {
+    render(<OrderTicket seed={{ ...seed, symbol: 'C-BTC-1', ask: null }} open onOpenChange={() => {}} />);
+    expect(screen.getByRole('radio', { name: 'market' })).toHaveAttribute('data-state', 'on');
+    await waitFor(() =>
+      expect(previewOrder.mock.calls.at(-1)![0]).toMatchObject({ limitPrice: null }),
+    );
+  });
+
+  it('opens with both exits off', async () => {
+    show();
+    expect(screen.getByRole('checkbox', { name: /take profit/i })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /stop loss/i })).not.toBeChecked();
+    await waitFor(() =>
+      expect(previewOrder.mock.calls.at(-1)![0]).toMatchObject({ takeProfitPct: 0, stopLossPct: 0 }),
+    );
   });
 
   it('shows the whole book, so a price is one tap away', () => {
@@ -123,6 +143,22 @@ describe('size', () => {
     const lots = screen.getByLabelText('lots') as HTMLInputElement;
     for (let i = 0; i < 6; i++) fireEvent.click(screen.getByLabelText('one more lot'));
     expect(lots.value).toBe('3');
+  });
+
+  it('still increases when the server could not work out a cap', async () => {
+    // a balance the server could not read came back as maxLots 0, and clamping
+    // to it pinned the size at zero and made the plus button do nothing
+    previewOrder.mockResolvedValue(ok({ maxLots: 0 }));
+    show();
+    await waitFor(() => expect(previewOrder).toHaveBeenCalled());
+    fireEvent.click(screen.getByLabelText('one more lot'));
+    expect((screen.getByLabelText('lots') as HTMLInputElement).value).toBe('2');
+  });
+
+  it('says how many lots the balance actually covers', async () => {
+    previewOrder.mockResolvedValue(ok({ maxLots: 7 }));
+    show();
+    await waitFor(() => expect(screen.getByText(/7 lots is all the balance covers/)).toBeInTheDocument());
   });
 
   it('clamps a typed size to the cap instead of trusting it', () => {

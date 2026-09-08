@@ -13,7 +13,12 @@ import type {
 export interface ExchangePort {
   /** May reject, may fill immediately, may time out. All three are normal. */
   placeOrder(req: PlaceOrderRequest): Promise<ExchangeOrder>;
-  cancelOrder(orderId: string): Promise<void>;
+  /**
+   * Delta wants the product alongside the order id, so the whole order is
+   * passed rather than just its id -- looking the product up from a cache was
+   * a bug waiting to happen, and was one.
+   */
+  cancelOrder(order: Pick<ExchangeOrder, 'orderId' | 'productId'>): Promise<void>;
   /** `null` when the exchange has never heard of it -- which, after a timeout,
    * is the answer that says the order never landed. */
   getOrderByClientId(clientOrderId: string): Promise<ExchangeOrder | null>;

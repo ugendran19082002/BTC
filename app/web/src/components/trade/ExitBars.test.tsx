@@ -13,19 +13,21 @@ const base = {
   size: 5,
   targetPct: 0,
   stopPct: 0,
+  targetOn: false,
+  stopOn: false,
   onTargetPct: vi.fn(),
   onStopPct: vi.fn(),
+  onTargetOn: vi.fn(),
+  onStopOn: vi.fn(),
 };
 
 describe('off by default', () => {
-  it('says off rather than 0%, on both bars', () => {
+  it('shows two unticked boxes and no bars at all', () => {
     render(<ExitBars {...base} />);
-    expect(screen.getAllByText('off')).toHaveLength(2);
-  });
-
-  it('explains what no target means rather than leaving it blank', () => {
-    render(<ExitBars {...base} />);
-    expect(screen.getByText(/Runs to settlement/)).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /take profit/i })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /stop loss/i })).not.toBeChecked();
+    // an unticked box takes one line, not four
+    expect(screen.queryByRole('slider')).toBeNull();
   });
 
   it('names the close-out as the real exit when there is no stop', () => {
@@ -33,11 +35,24 @@ describe('off by default', () => {
     expect(screen.getByText(/close-out/)).toBeInTheDocument();
     expect(screen.getByText('196.50')).toBeInTheDocument();
   });
+
+  it('ticking a box asks for it to be turned on', () => {
+    const onStopOn = vi.fn();
+    render(<ExitBars {...base} onStopOn={onStopOn} />);
+    fireEvent.click(screen.getByRole('checkbox', { name: /stop loss/i }));
+    expect(onStopOn).toHaveBeenCalledWith(true);
+  });
+
+  it('a percentage set earlier does not apply while the box is unticked', () => {
+    render(<ExitBars {...base} targetPct={0.8} stopPct={1.5} />);
+    expect(screen.queryByText('2.00')).toBeNull();
+    expect(screen.queryByText('25.00')).toBeNull();
+  });
 });
 
 describe('the target', () => {
   it('shows the buy-back price and the money kept', () => {
-    render(<ExitBars {...base} targetPct={0.8} />);
+    render(<ExitBars {...base} targetOn targetPct={0.8} />);
     expect(screen.getByText('−80%')).toBeInTheDocument();
     // sold at 10, bought back at 2, five contracts
     expect(screen.getByText('2.00')).toBeInTheDocument();
@@ -47,7 +62,7 @@ describe('the target', () => {
 
 describe('the stop', () => {
   it('shows the buy-back price and the money lost', () => {
-    render(<ExitBars {...base} stopPct={1.5} />);
+    render(<ExitBars {...base} stopOn stopPct={1.5} />);
     expect(screen.getByText('+150%')).toBeInTheDocument();
     // sold at 10, stopped at 25, five contracts
     expect(screen.getByText('25.00')).toBeInTheDocument();
@@ -55,13 +70,13 @@ describe('the stop', () => {
   });
 
   it('warns while your thumb is still on it if the stop is past the close-out', () => {
-    render(<ExitBars {...base} stopPct={2} liquidationPrice={25} />);
+    render(<ExitBars {...base} stopOn stopPct={2} liquidationPrice={25} />);
     expect(screen.getByText(/would never fire/)).toBeInTheDocument();
     expect(screen.getByText(/past the 25.00 close-out/)).toBeInTheDocument();
   });
 
   it('does not warn when the stop sits safely inside the close-out', () => {
-    render(<ExitBars {...base} stopPct={0.5} liquidationPrice={196} />);
+    render(<ExitBars {...base} stopOn stopPct={0.5} liquidationPrice={196} />);
     expect(screen.queryByText(/would never fire/)).toBeNull();
   });
 });
@@ -69,7 +84,7 @@ describe('the stop', () => {
 describe('dragging', () => {
   it('reports the new percentage', () => {
     const onStopPct = vi.fn();
-    render(<ExitBars {...base} onStopPct={onStopPct} />);
+    render(<ExitBars {...base} stopOn onStopPct={onStopPct} />);
     const stop = screen.getByRole('slider', { name: 'stop percent' });
     stop.focus();
     fireEvent.keyDown(stop, { key: 'ArrowRight' });
@@ -78,7 +93,7 @@ describe('dragging', () => {
   });
 
   it('is reachable by keyboard, not only by thumb', () => {
-    render(<ExitBars {...base} />);
+    render(<ExitBars {...base} targetOn stopOn />);
     expect(screen.getByRole('slider', { name: 'target percent' })).toBeInTheDocument();
     expect(screen.getByRole('slider', { name: 'stop percent' })).toBeInTheDocument();
   });
@@ -86,7 +101,7 @@ describe('dragging', () => {
 
 describe('before a quote arrives', () => {
   it('shows no price rather than a made-up one', () => {
-    render(<ExitBars {...base} entry={null} targetPct={0.5} stopPct={0.5} />);
+    render(<ExitBars {...base} targetOn stopOn entry={null} targetPct={0.5} stopPct={0.5} />);
     expect(screen.getAllByText('—').length).toBeGreaterThan(0);
   });
 });

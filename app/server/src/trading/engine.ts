@@ -302,7 +302,7 @@ export class TradeEngine {
     const deadline = this.entryDeadline.get(tradeId);
     if (entry && (entry.status === 'open' || entry.status === 'partial') && deadline !== undefined && this.now() >= deadline) {
       rec = this.commit(rec, { t: 'entry_timeout', at: this.now() });
-      await this.exchange.cancelOrder(entry.orderId).catch(() => {});
+      await this.exchange.cancelOrder(entry).catch(() => {});
       this.entryDeadline.delete(tradeId);
       const after = await this.exchange.getOrderByClientId(entryId).catch(() => null);
       if (after) rec = this.absorb(rec, after, 'entry');
@@ -420,7 +420,7 @@ export class TradeEngine {
     if (!oldCid || oldCid === newCid) return;
     const old = await this.exchange.getOrderByClientId(oldCid).catch(() => null);
     if (old && (old.status === 'open' || old.status === 'partial')) {
-      await this.exchange.cancelOrder(old.orderId).catch(() => {});
+      await this.exchange.cancelOrder(old).catch(() => {});
     }
   }
 
@@ -436,7 +436,7 @@ export class TradeEngine {
       if (!all && role === winner) continue;
       const o = await this.exchange.getOrderByClientId(cid).catch(() => null);
       if (o && (o.status === 'open' || o.status === 'partial')) {
-        await this.exchange.cancelOrder(o.orderId).catch(() => {});
+        await this.exchange.cancelOrder(o).catch(() => {});
       }
       rec = this.commit(rec, { t: 'sibling_cancelled', role, at: this.now() });
     }

@@ -45,6 +45,8 @@ export type ExchangeOrder = {
   orderId: string;
   clientOrderId: string | null;
   symbol: string;
+  /** Needed to cancel it: Delta wants the product alongside the order id. */
+  productId: number;
   side: OrderSide;
   type: OrderType;
   size: number;

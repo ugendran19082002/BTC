@@ -100,6 +100,7 @@ export class PaperExchange implements ExchangePort {
       orderId: nextId(),
       clientOrderId: req.clientOrderId,
       symbol: req.symbol,
+      productId: req.productId,
       side: req.side,
       type: req.type,
       size: req.size,
@@ -225,7 +226,7 @@ export class PaperExchange implements ExchangePort {
     return this;
   }
 
-  async cancelOrder(orderId: string): Promise<void> {
+  async cancelOrder({ orderId }: { orderId: string }): Promise<void> {
     this.guard();
     const o = this.orders.get(orderId);
     if (!o) return;

@@ -65,8 +65,12 @@ export function OrderTicket({
   const [leverage, setLeverage] = usePersisted('order:leverage', defaultLeverage);
   // The exits are a habit, not a per-trade decision, so they carry over between
   // tickets. Zero -- off -- is the default until you move them once.
-  const [targetPct, setTargetPct] = usePersisted('exit:targetPct', 0);
-  const [stopPct, setStopPct] = usePersisted('exit:stopPct', 0);
+  // Both off until you tick them, and the choice carries between tickets: the
+  // exits are a habit rather than a per-trade decision.
+  const [targetOn, setTargetOn] = usePersisted('exit:targetOn', false);
+  const [stopOn, setStopOn] = usePersisted('exit:stopOn', false);
+  const [targetPct, setTargetPct] = usePersisted('exit:targetPct', 0.8);
+  const [stopPct, setStopPct] = usePersisted('exit:stopPct', 1.5);
   const [mode, setMode] = useState<PriceMode>('market');
   const [custom, setCustom] = useState('');
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -80,7 +84,9 @@ export function OrderTicket({
   useEffect(() => {
     if (!seed) return;
     setLots(Math.max(1, seed.lots ?? 1));
-    setMode('market');
+    // The offer, not the market. Selling at the bid gives away the spread on
+    // every trade; on a $16 option that spread is a tenth of the premium.
+    setMode(seed.ask !== null ? 'ask' : 'market');
     setCustom('');
     setResult(null);
     setFailed(null);
@@ -104,9 +110,10 @@ export function OrderTicket({
     () => seed && {
       symbol: seed.symbol, side: seed.side, strike: seed.strike,
       expiryTs: seed.expiryTs, lots, limitPrice, leverage,
-      takeProfitPct: targetPct, stopLossPct: stopPct,
+      takeProfitPct: targetOn ? targetPct : 0,
+      stopLossPct: stopOn ? stopPct : 0,
     },
-    [seed, lots, limitPrice, leverage, targetPct, stopPct],
+    [seed, lots, limitPrice, leverage, targetPct, stopPct, targetOn, stopOn],
   );
 
   // Debounced, because typing a price should not be a request per keystroke.
@@ -143,7 +150,13 @@ export function OrderTicket({
   const credit = preview?.creditUsd ?? (working !== null ? working * lots : null);
   const blocked = preview !== null && !preview.ok;
   const canSend = !!preview?.ok && !placing && !checking;
-  const maxLots = maxLotsProp ?? preview?.maxLots ?? 999;
+  // A cap of zero is not a cap, it is a missing answer -- and clamping to it
+  // pinned the size at zero and made the plus button do nothing. An unknown
+  // balance must not decide the size; the server refuses the order anyway if
+  // there is really no margin, and it says so in words.
+  const cap = maxLotsProp ?? preview?.maxLots ?? null;
+  const maxLots = cap !== null && cap > 0 ? cap : Number.MAX_SAFE_INTEGER;
+  const capKnown = cap !== null && cap > 0;
   // How far the option can rise before the exchange closes the position, as a
   // multiple of what it was sold for. This is the number leverage actually moves.
   const room =
@@ -219,7 +232,9 @@ export function OrderTicket({
                 </Stepper>
               </div>
               <div className="mt-1.5 flex gap-1.5">
-                {[1, 5, 10, maxLots].filter((n, i, a) => n >= 1 && a.indexOf(n) === i && n <= maxLots).map((n) => (
+                {[1, 5, 10, 25, ...(capKnown ? [cap!] : [])]
+                  .filter((n, i, a) => n >= 1 && a.indexOf(n) === i && n <= maxLots)
+                  .map((n) => (
                   <button
                     key={n}
                     onClick={() => setLots(n)}
@@ -229,10 +244,15 @@ export function OrderTicket({
                       lots === n && 'border-[var(--accent)] text-foreground',
                     )}
                   >
-                    {n === maxLots && maxLots > 10 ? 'max' : n}
+                    {capKnown && n === cap ? 'max' : n}
                   </button>
                 ))}
               </div>
+              {capKnown && (
+                <p className="m-0 mt-1 text-[11px] text-muted-foreground">
+                  {cap} lot{cap === 1 ? '' : 's'} is all the balance covers at {leverage}x.
+                </p>
+              )}
             </div>
 
             <div className="mt-3.5">
@@ -258,6 +278,10 @@ export function OrderTicket({
             <ExitBars
               entry={working}
               size={preview?.size ?? lots}
+              targetOn={targetOn}
+              stopOn={stopOn}
+              onTargetOn={setTargetOn}
+              onStopOn={setStopOn}
               targetPct={targetPct}
               stopPct={stopPct}
               onTargetPct={setTargetPct}
@@ -269,14 +293,19 @@ export function OrderTicket({
 
             <dl className="m-0 grid gap-1.5">
               <Line label="you receive" value={usd(credit)} strong />
-              <Line label="margin held" value={usd(preview?.marginUsd)} />
+              <Line
+                label={`margin held at ${leverage}x`}
+                value={usd(preview?.marginUsd)}
+                hint="Delta calls this Funds req. It is locked while the position is open and returned when it closes."
+              />
               <Line
                 label="closed out if it reaches"
                 value={price(preview?.liquidationPrice)}
                 tone={room !== null && room < 2 ? 'down' : undefined}
+                hint="Where the exchange buys the position back whether you want it to or not. Lower leverage moves this further away."
               />
               <Line
-                label={stopPct > 0 ? 'most you can lose' : 'most you can lose, with no stop'}
+                label={stopOn && stopPct > 0 ? 'most you can lose' : 'most you can lose, with no stop'}
                 value={preview?.worstCaseLossUsd != null ? signedUsd(-preview.worstCaseLossUsd) : '—'}
                 tone="down"
               />
@@ -400,12 +429,17 @@ function BookStrip({ bid, mark, ask, mode, onPick }: {
   );
 }
 
-function Line({ label, value, strong, tone }: {
-  label: string; value: string; strong?: boolean; tone?: 'up' | 'down';
+function Line({ label, value, strong, tone, hint }: {
+  label: string; value: string; strong?: boolean; tone?: 'up' | 'down'; hint?: string;
 }) {
   return (
     <div className="flex items-baseline justify-between gap-3">
-      <dt className="m-0 text-[12.5px] text-muted-foreground">{label}</dt>
+      <dt
+        className={cn('m-0 text-[12.5px] text-muted-foreground', hint && 'cursor-help underline decoration-dotted underline-offset-2')}
+        title={hint}
+      >
+        {label}
+      </dt>
       <dd
         className={cn(
           'm-0 tabular-nums',

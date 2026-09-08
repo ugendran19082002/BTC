@@ -21,6 +21,7 @@ import { noteError } from '../../observability/errors.js';
 type DeltaOrder = {
   id: number;
   client_order_id?: string | null;
+  product_id: number;
   product_symbol: string;
   side: 'buy' | 'sell';
   order_type: string;
@@ -46,6 +47,10 @@ type DeltaProduct = {
   tick_size?: string | null;
   contract_unit_currency?: string | null;
   contract_value?: string | null;
+  initial_margin?: string | null;
+  maintenance_margin?: string | null;
+  taker_commission_rate?: string | null;
+  maker_commission_rate?: string | null;
   underlying_asset?: { symbol?: string } | null;
   state?: string;
   trading_status?: string;
@@ -96,6 +101,7 @@ function toOrder(o: DeltaOrder): ExchangeOrder {
     orderId: String(o.id),
     clientOrderId: o.client_order_id ?? null,
     symbol: o.product_symbol,
+    productId: o.product_id,
     side: o.side,
     type: o.stop_order_type ? 'stop_market' : o.order_type === 'market_order' ? 'market' : 'limit',
     size: o.size,
@@ -110,6 +116,12 @@ function toOrder(o: DeltaOrder): ExchangeOrder {
     reason: o.meta_data?.reason,
   };
 }
+
+/** A refusal to a read is an empty answer; an outage is not, and still throws. */
+const swallowRefusal = (e: unknown): DeltaOrder[] => {
+  if (e instanceof DeltaRefused) return [];
+  throw e;
+};
 
 const OPTION_SIDE = (contractType: string) =>
   contractType.startsWith('call') ? ('CE' as const) : ('PE' as const);
@@ -151,6 +163,10 @@ export class DeltaExchange implements ExchangePort {
       body.stop_order_type = 'stop_loss_order';
       body.stop_price = String(req.stopPrice);
       body.order_type = 'market_order';
+      // Options are thin, so the last trade can be minutes old and the spot can
+      // be a different instrument's price. The mark is the one Delta itself
+      // uses to value the position, so it is the one the stop should watch.
+      body.stop_trigger_method = 'mark_price';
     }
     if (req.reduceOnly) body.reduce_only = 'true';
 
@@ -173,12 +189,11 @@ export class DeltaExchange implements ExchangePort {
     }
   }
 
-  async cancelOrder(orderId: string): Promise<void> {
-    const known = [...this.products.values()];
+  async cancelOrder(order: { orderId: string; productId: number }): Promise<void> {
     await this.call({
       method: 'DELETE',
       path: '/v2/orders',
-      body: { id: Number(orderId), product_id: known[0]?.productId ?? 0 },
+      body: { id: Number(order.orderId), product_id: order.productId },
     }).catch((e) => {
       // An order that is already gone is the state we wanted.
       if (e instanceof DeltaRefused) return;
@@ -186,17 +201,29 @@ export class DeltaExchange implements ExchangePort {
     });
   }
 
+  /**
+   * Find one order by the id we gave it.
+   *
+   * Two endpoints, because Delta splits them: /v2/orders only carries live
+   * orders and only accepts states of "open" and "pending", while anything
+   * filled or cancelled has already moved to /v2/orders/history. Asking the
+   * first for a closed order returns nothing, which would read as "the order
+   * never existed" -- the single most dangerous wrong answer this method can
+   * give, since it is what the engine consults after a submit times out.
+   */
   async getOrderByClientId(clientOrderId: string): Promise<ExchangeOrder | null> {
-    const rows = await this.call<DeltaOrder[]>({
-      method: 'GET',
-      path: '/v2/orders',
-      query: `?client_order_id=${encodeURIComponent(clientOrderId)}&states=open,pending,closed,cancelled`,
-    }).catch((e) => {
-      if (e instanceof DeltaRefused) return [] as DeltaOrder[];
-      throw e;
-    });
-    const hit = rows.find((r) => r.client_order_id === clientOrderId);
-    return hit ? toOrder(hit) : null;
+    const cid = encodeURIComponent(clientOrderId);
+    const live = await this.call<DeltaOrder[]>({
+      method: 'GET', path: '/v2/orders', query: `?client_order_id=${cid}&states=open,pending`,
+    }).catch(swallowRefusal);
+    const hit = live.find((r) => r.client_order_id === clientOrderId);
+    if (hit) return toOrder(hit);
+
+    const past = await this.call<DeltaOrder[]>({
+      method: 'GET', path: '/v2/orders/history', query: `?client_order_id=${cid}&page_size=20`,
+    }).catch(swallowRefusal);
+    const old = past.find((r) => r.client_order_id === clientOrderId);
+    return old ? toOrder(old) : null;
   }
 
   async getOpenOrders(symbol?: string): Promise<ExchangeOrder[]> {
