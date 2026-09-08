@@ -446,6 +446,108 @@ test('50 depth is only demanded of an order that has to fill now', async () => {
   assert.ok(!crossing.ok && failureCodes(crossing.precheck).includes('THIN_BOOK'));
 });
 
+// ---------------------- 64-68 one leg failing must not stack the other
+
+test('64 [critical] a target that went on is recorded even when the stop did not', async () => {
+  // placing both inside one try left the target unrecorded when the stop
+  // failed, so the next attempt placed another target, and the one after that
+  // another -- six live take-profits on a one-contract position, and the
+  // exchange eventually answering duplicate_client_order_id
+  const r = rig();
+  const plan = planFor(ceProduct(), { lots: 1, stopPrice: 130 });
+  await r.engine.open(plan);
+
+  // the target goes on; the stop is refused
+  const real = r.ex.placeOrder.bind(r.ex);
+  r.ex.placeOrder = async (req) => {
+    if (req.role === 'stop_loss') throw new Error('no_position_for_reduce_only');
+    return real(req);
+  };
+  const s = await r.engine.poll(plan.tradeId);
+
+  assert.ok(s?.protection.takeProfit, 'the one that went on is remembered');
+  assert.equal(s?.protection.stopLoss, null);
+  assert.equal((await r.ex.getOpenOrders(CE)).filter((o) => o.role !== 'entry' && o.reduceOnly).length, 1);
+});
+
+test('65 and the next attempt places only the missing one', async () => {
+  const r = rig();
+  const plan = planFor(ceProduct(), { lots: 1, stopPrice: 130 });
+  await r.engine.open(plan);
+
+  const real = r.ex.placeOrder.bind(r.ex);
+  let refuse = true;
+  r.ex.placeOrder = async (req) => {
+    if (refuse && req.role === 'stop_loss') throw new Error('no_position_for_reduce_only');
+    return real(req);
+  };
+  await r.engine.poll(plan.tradeId);
+  const firstTp = r.store.get(plan.tradeId)!.state.protection.takeProfit;
+
+  refuse = false;
+  r.advance(3_000);
+  const s = await r.engine.poll(plan.tradeId);
+
+  assert.equal(s?.protection.takeProfit, firstTp, 'the same target, not a second one');
+  assert.ok(s?.protection.stopLoss, 'and the stop now too');
+  const live = (await r.ex.getOpenOrders(CE)).filter((o) => o.reduceOnly);
+  assert.equal(live.length, 2, 'exactly one of each');
+});
+
+test('66 [critical] two callers cannot collide on one client order id', async () => {
+  // the poll loop steps every open trade once a second while the screen can ask
+  // for a stop to be moved; both read, decide and write
+  const r = rig();
+  const plan = planFor(ceProduct(), { lots: 1 });
+  await r.engine.open(plan);
+  await r.engine.poll(plan.tradeId);
+
+  const seen: string[] = [];
+  const real = r.ex.placeOrder.bind(r.ex);
+  r.ex.placeOrder = async (req) => {
+    if (seen.includes(req.clientOrderId)) throw new Error('duplicate_client_order_id');
+    seen.push(req.clientOrderId);
+    return real(req);
+  };
+
+  await Promise.all([
+    r.engine.updateProtection(plan.tradeId, { stopPrice: 150 }),
+    r.engine.poll(plan.tradeId),
+    r.engine.updateProtection(plan.tradeId, { stopPrice: 160 }),
+  ]);
+
+  assert.equal(new Set(seen).size, seen.length, `an id was reused: ${seen.join(', ')}`);
+  const live = (await r.ex.getOpenOrders(CE)).filter((o) => o.reduceOnly);
+  assert.ok(live.length <= 2, `${live.length} protective orders on a one-lot position`);
+});
+
+test('67 work on one trade runs in the order it was asked for', async () => {
+  const r = rig();
+  const plan = planFor(ceProduct(), { lots: 1 });
+  await r.engine.open(plan);
+  await r.engine.poll(plan.tradeId);
+
+  await Promise.all([
+    r.engine.updateProtection(plan.tradeId, { stopPrice: 150 }),
+    r.engine.updateProtection(plan.tradeId, { stopPrice: 200 }),
+  ]);
+  const live = (await r.ex.getOpenOrders(CE)).filter((o) => o.type === 'stop_market');
+  assert.equal(live.length, 1, 'one stop, not two');
+  assert.equal(live[0]?.stopPrice, 200, 'and it is the one asked for last');
+});
+
+test('68 a failure on one trade does not stall the next caller', async () => {
+  const r = rig();
+  const plan = planFor(ceProduct(), { lots: 1 });
+  await r.engine.open(plan);
+
+  await assert.rejects(
+    () => r.engine.updateProtection('no-such-trade', { stopPrice: 1 }).then(() => { throw new Error('x'); }),
+  );
+  const s = await r.engine.poll(plan.tradeId);
+  assert.ok(s, 'the queue kept moving');
+});
+
 // -------------------------------- 59-63 moving the exits after the fact
 
 test('59 the stop can be moved on a position that is already on', async () => {

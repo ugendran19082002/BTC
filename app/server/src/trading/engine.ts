@@ -129,9 +129,37 @@ export class TradeEngine {
   private entryDeadline = new Map<string, number>();
   /** Earliest time protection may be attempted again, per trade. */
   private protectAfter = new Map<string, number>();
+  /** One operation at a time per trade. See `withTrade`. */
+  private queue = new Map<string, Promise<unknown>>();
 
   constructor(private readonly d: EngineDeps) {
     this.limits = d.limits ?? DEFAULT_LIMITS;
+  }
+
+  /**
+   * Serialise everything that touches one trade.
+   *
+   * The poll loop steps every open trade once a second while the screen can ask
+   * for a stop to be moved, a position closed or an order pulled -- and all of
+   * those read the trade, decide, and write. Two of them overlapping is not a
+   * theoretical race: it put two placements on the same client order id and
+   * Delta answered `duplicate_client_order_id`, which reached the user as "the
+   * update did not work".
+   *
+   * A promise chain per trade, rather than a lock, because the work is already
+   * asynchronous and ordering is the only thing that has to be guaranteed. A
+   * failure does not poison the chain: the next caller runs regardless.
+   *
+   * Only public entry points take it. The internals -- protect, absorb,
+   * cancelSiblings -- assume they are already inside one, so a nested call
+   * cannot deadlock against itself.
+   */
+  private withTrade<T>(tradeId: string, fn: () => Promise<T>): Promise<T> {
+    const previous = this.queue.get(tradeId) ?? Promise.resolve();
+    const next = previous.then(fn, fn);
+    // Swallowed only for the chain's own bookkeeping; the caller still sees it.
+    this.queue.set(tradeId, next.then(() => {}, () => {}));
+    return next;
   }
 
   private get exchange() { return this.d.exchange; }
@@ -315,13 +343,41 @@ export class TradeEngine {
    * the next thing the trade needs: cancel a stale entry, put protection on,
    * cancel the losing side of an OCO.
    */
-  async poll(tradeId: string): Promise<TradeState | null> {
+  /** One step of the loop. Queued, so it cannot overlap a screen action. */
+  poll(tradeId: string): Promise<TradeState | null> {
+    return this.withTrade(tradeId, () => this.pollInner(tradeId));
+  }
+
+  /** Take a working entry off the book and end the trade. */
+  cancelEntry(tradeId: string): Promise<TradeState | null> {
+    return this.withTrade(tradeId, () => this.cancelEntryInner(tradeId));
+  }
+
+  /** Move the stop or the target on a position that is already on. */
+  updateProtection(
+    tradeId: string,
+    next: { takeProfitPrice?: number | null; stopPrice?: number | null },
+  ): Promise<TradeState | null> {
+    return this.withTrade(tradeId, () => this.updateProtectionInner(tradeId, next));
+  }
+
+  /** Close whatever is left, right now, at the market. */
+  closeNow(tradeId: string, reason = 'manual exit'): Promise<TradeState | null> {
+    return this.withTrade(tradeId, () => this.closeNowInner(tradeId, reason));
+  }
+
+  /** Read the exchange and believe it. */
+  reconcile(tradeId: string): Promise<TradeRecord | null> {
+    return this.withTrade(tradeId, () => this.reconcileInner(tradeId));
+  }
+
+  private async pollInner(tradeId: string): Promise<TradeState | null> {
     const rec0 = this.d.store.get(tradeId);
     if (!rec0 || isDone(rec0.state)) return rec0?.state ?? null;
     let rec = rec0;
 
     // A submit we never got an answer for is resolved by reading, never writing.
-    if (rec.state.phase === 'entry_unknown') return (await this.reconcile(tradeId))?.state ?? null;
+    if (rec.state.phase === 'entry_unknown') return (await this.reconcileInner(tradeId))?.state ?? null;
 
     const entryId = clientId(tradeId, 'entry');
     const entry = await this.exchange.getOrderByClientId(entryId).catch(() => null);
@@ -438,12 +494,22 @@ export class TradeEngine {
     // old one at the old size and the position sits behind a stop that is too big.
     const attempt = rec.events.filter((e) => e.t === 'protection_placed' || e.t === 'protection_failed').length;
 
-    let tp: string | null = null;
-    let sl: string | null = null;
-    try {
-      if (rec.plan.takeProfitPrice !== null) {
-        const cid = clientId(rec.state.tradeId, 'take_profit', attempt);
-        await this.replaceIfResized(rec.state.protection.takeProfit, cid, size);
+    /**
+     * Each leg on its own, and each success recorded.
+     *
+     * Placing both inside one try meant a target that went on and a stop that
+     * did not left the target unrecorded -- so the next attempt placed another
+     * target, and the one after that another. Six live take-profits on a
+     * one-contract position, and the exchange eventually answering
+     * `duplicate_client_order_id`.
+     */
+    let tp = rec.state.protection.takeProfit;
+    let sl = rec.state.protection.stopLoss;
+    let failure: string | null = null;
+
+    if (rec.plan.takeProfitPrice !== null && !tp) {
+      const cid = clientId(rec.state.tradeId, 'take_profit', attempt);
+      try {
         await this.exchange.placeOrder({
           clientOrderId: cid, symbol: rec.plan.symbol, productId: product?.productId ?? 0,
           side: 'buy', type: 'limit', size,
@@ -451,10 +517,14 @@ export class TradeEngine {
           reduceOnly: true, role: 'take_profit',
         });
         tp = cid;
+      } catch (e) {
+        failure = (e as Error).message;
       }
-      if (rec.plan.stopPrice !== null) {
-        const cid = clientId(rec.state.tradeId, 'stop_loss', attempt);
-        await this.replaceIfResized(rec.state.protection.stopLoss, cid, size);
+    }
+
+    if (rec.plan.stopPrice !== null && !sl) {
+      const cid = clientId(rec.state.tradeId, 'stop_loss', attempt);
+      try {
         await this.exchange.placeOrder({
           clientOrderId: cid, symbol: rec.plan.symbol, productId: product?.productId ?? 0,
           side: 'buy', type: 'stop_market', size,
@@ -462,19 +532,28 @@ export class TradeEngine {
           reduceOnly: true, role: 'stop_loss',
         });
         sl = cid;
+      } catch (e) {
+        failure ??= (e as Error).message;
       }
+    }
+
+    // Whatever went on is recorded, even when the other leg did not.
+    if (tp !== rec.state.protection.takeProfit || sl !== rec.state.protection.stopLoss) {
+      rec = this.commit(rec, { t: 'protection_placed', takeProfit: tp, stopLoss: sl, at: this.now() });
+    }
+
+    if (failure === null) {
       this.protectAfter.delete(rec.state.tradeId);
-      return this.commit(rec, { t: 'protection_placed', takeProfit: tp, stopLoss: sl, at: this.now() });
-    } catch (e) {
-      // Back off, doubling, so a venue that keeps saying no is asked less often.
-      const tries = rec.events.filter((x) => x.t === 'protection_failed').length;
-      this.protectAfter.set(
-        rec.state.tradeId,
-        this.now() + Math.min(PROTECT_RETRY_MAX_MS, PROTECT_RETRY_MS * 2 ** tries),
-      );
-      rec = this.commit(rec, { t: 'protection_failed', reason: (e as Error).message, at: this.now() });
       return rec;
     }
+
+    // Back off, doubling, so a venue that keeps saying no is asked less often.
+    const tries = rec.events.filter((x) => x.t === 'protection_failed').length;
+    this.protectAfter.set(
+      rec.state.tradeId,
+      this.now() + Math.min(PROTECT_RETRY_MAX_MS, PROTECT_RETRY_MS * 2 ** tries),
+    );
+    return this.commit(rec, { t: 'protection_failed', reason: failure, at: this.now() });
   }
 
   private async replaceIfResized(oldCid: string | null, newCid: string, _size: number) {
@@ -510,7 +589,7 @@ export class TradeEngine {
    * Only ever the entry, and only while nothing has filled: once there are
    * contracts, the way out is `closeNow`, which buys them back.
    */
-  async cancelEntry(tradeId: string): Promise<TradeState | null> {
+  private async cancelEntryInner(tradeId: string): Promise<TradeState | null> {
     let rec = this.d.store.get(tradeId);
     if (!rec) return null;
     if (rec.state.position !== 0) return rec.state;
@@ -543,7 +622,7 @@ export class TradeEngine {
    * stops asking for a stop it no longer wants rather than raising an alarm
    * about it.
    */
-  async updateProtection(
+  private async updateProtectionInner(
     tradeId: string,
     next: { takeProfitPrice?: number | null; stopPrice?: number | null },
   ): Promise<TradeState | null> {
@@ -569,7 +648,7 @@ export class TradeEngine {
 
   // ------------------------------------------------------------ exits
   /** Close whatever is left, right now, at the market. Always reduce-only. */
-  async closeNow(tradeId: string, reason = 'manual exit'): Promise<TradeState | null> {
+  private async closeNowInner(tradeId: string, reason = 'manual exit'): Promise<TradeState | null> {
     let rec = this.d.store.get(tradeId);
     if (!rec) return null;
     // Size from the exchange, not from memory: someone may have closed part of
@@ -597,7 +676,7 @@ export class TradeEngine {
 
   // ------------------------------------------------------- reconciliation
   /** Read the exchange and believe it. */
-  async reconcile(tradeId: string): Promise<TradeRecord | null> {
+  private async reconcileInner(tradeId: string): Promise<TradeRecord | null> {
     let rec = this.d.store.get(tradeId);
     if (!rec) return null;
 
@@ -628,9 +707,11 @@ export class TradeEngine {
         t: 'reconciled', position: held, at: this.now(),
         note: `exchange says ${held}, we had ${rec.state.position}`,
       });
-      // The position moved under us; anything resting is now the wrong size.
+      // The position moved under us, so anything resting is the wrong size.
+      // Off the book first: protect() only places a leg that is missing, which
+      // is what stops it stacking duplicates, so a resize has to make it missing.
+      rec = await this.cancelSiblings(rec, true);
       if (held !== 0) rec = await this.protect(rec);
-      else rec = await this.cancelSiblings(rec, true);
     }
     return rec;
   }
@@ -643,7 +724,7 @@ export class TradeEngine {
   async recover(): Promise<TradeState[]> {
     const out: TradeState[] = [];
     for (const rec of this.d.store.open()) {
-      const synced = await this.reconcile(rec.state.tradeId);
+      const synced = await this.reconcileInner(rec.state.tradeId);
       if (synced) out.push(synced.state);
     }
     return out;
