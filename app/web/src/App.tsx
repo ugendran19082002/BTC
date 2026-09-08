@@ -60,7 +60,7 @@ export default function App() {
   const [width, setWidth] = usePersisted('width', 20);
   // Off by default on a desktop: the extra columns are why the table is worth
   // looking at. On a phone the media query hides them regardless.
-  const [compactChain, setCompactChain] = usePersisted('chain:compact', false);
+  const [density, setDensity] = usePersisted<'default' | 'all'>('chain:density', 'default');
   const [minPremium, setMinPremium] = usePersisted('minPremium', 15);
   const [mode, setMode] = usePersisted<'premium' | 'safety'>('mode', 'premium');
   const [safetyBar, setSafetyBar] = usePersisted('safetyBar', 98);
@@ -526,17 +526,27 @@ export default function App() {
               </div>
               <div className="chain-bar">
                 <span className="dim">
-                  {data.legs.length} legs · {snap.step} apart · marked where the desk would sell
+                  {data.legs.length} legs · {snap.step} apart
+                  {data.recommendation.ok && data.recommendation.sides.length > 0
+                    ? ' · marked where the desk would sell'
+                    : ' · nothing marked — nothing qualifies today'}
                 </span>
-                <button
-                  className={compactChain ? 'pinned' : 'pinned off'}
-                  onClick={() => setCompactChain((v) => !v)}
-                  title="hide the columns that inform rather than decide"
-                >
-                  {compactChain ? 'compact — on' : 'compact — off'}
-                </button>
+                <span className="chain-density">
+                  <Select
+                    ariaLabel="chain columns"
+                    value={density}
+                    onValueChange={(v) => setDensity(v as 'default' | 'all')}
+                  >
+                    <SelectItem value="default" hint="the odds and the prices — what settles the trade">
+                      columns · default
+                    </SelectItem>
+                    <SelectItem value="all" hint="adds OI, volume, age, delta and IV both sides">
+                      columns · everything
+                    </SelectItem>
+                  </Select>
+                </span>
               </div>
-              <ChainTable legs={data.legs} snap={snap} picks={data.picks} compact={compactChain} />
+              <ChainTable legs={data.legs} snap={snap} sides={data.recommendation.ok ? data.recommendation.sides : []} density={density} />
               <div className="note">
                 Age is minutes since a real trade printed. Delta's candle feed
                 forward-fills quiet minutes, so a traded price with a large age is a

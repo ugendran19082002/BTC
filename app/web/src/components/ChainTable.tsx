@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import type { Leg, Pick, SnapshotMeta } from '../types';
+import type { Leg, SideRecommendation, SnapshotMeta } from '../types';
 
 const n = (v: number | null | undefined, d = 2) =>
   v === null || v === undefined ? '·' : v.toFixed(d);
@@ -77,15 +77,25 @@ function Coverage({ snap }: { snap: SnapshotMeta }) {
 export function ChainTable({
   legs,
   snap,
-  picks = [],
-  compact = false,
+  sides = [],
+  density = 'default',
 }: {
   legs: Leg[];
   snap: SnapshotMeta;
-  /** the strikes the desk chose, marked on the board they came from */
-  picks?: Pick[];
-  /** drop the columns that inform rather than decide */
-  compact?: boolean;
+  /**
+   * The strikes the desk is actually recommending, marked on the board they
+   * came from. This is `recommendation.sides`, not `picks`: picks is the best
+   * leg by premium alone and is populated even on a day when nothing clears the
+   * safety bar, so marking from it put SELL tags on the chain while the card
+   * beside it said there was nothing safe enough to sell.
+   */
+  sides?: SideRecommendation[];
+  /**
+   * 'default' shows the columns that settle the trade -- the odds either side
+   * of the strike, and the prices. 'all' adds open interest, volume, age, delta
+   * and implied volatility, which describe the strike rather than decide it.
+   */
+  density?: 'default' | 'all';
 }) {
   const strikes = [...new Set(legs.map((l) => l.strike))].sort((a, b) => a - b);
   // Show every strike you asked for. Capping this at a fraction of the viewport
@@ -100,7 +110,7 @@ export function ChainTable({
   // Without this the two never meet on screen and you are left matching a
   // number in a card against a number in a column of twenty-four.
   const sold: Partial<Record<'C' | 'P', number>> = {};
-  for (const p of picks) sold[p.side === 'CE' ? 'C' : 'P'] = p.leg.strike;
+  for (const s of sides) sold[s.side === 'CE' ? 'C' : 'P'] = s.leg.strike;
 
   // Open on the money. The interesting strikes are around spot, and a table
   // that opens at its lowest strike makes you scroll to find where you are.
@@ -114,7 +124,7 @@ export function ChainTable({
 
   return (
     <div
-      className={`scroll chain${compact ? ' chain-compact' : ''}`}
+      className={`scroll chain chain-${density}`}
       style={{ maxHeight: height }}
       ref={box}
     >
@@ -127,17 +137,15 @@ export function ChainTable({
             <th colSpan={10} className="left pe">PUTS</th>
           </tr>
           <tr>
-            <th>OI</th><th className="aux">Vol</th><th className="aux">Age</th>
+            <th className="aux">OI</th><th className="aux">Vol</th><th className="aux">Age</th>
             <th className="aux">Δ</th><th className="aux">IV</th>
-            <th className="zerocol">→ 0</th><th className="aux">model</th>
-            <th className="askcol aux">Ask</th><th className="aux">Mark</th>
-            <th className="bidcol">Bid</th>
+            <th className="zerocol">→ 0</th><th>model</th>
+            <th className="askcol">Ask</th><th>Mark</th><th className="bidcol">Bid</th>
             <th></th>
-            <th className="bidcol">Bid</th><th className="aux">Mark</th>
-            <th className="askcol aux">Ask</th>
-            <th className="aux">model</th><th className="zerocol">→ 0</th>
+            <th className="bidcol">Bid</th><th>Mark</th><th className="askcol">Ask</th>
+            <th>model</th><th className="zerocol">→ 0</th>
             <th className="aux">IV</th><th className="aux">Δ</th>
-            <th className="aux">Age</th><th className="aux">Vol</th><th>OI</th>
+            <th className="aux">Age</th><th className="aux">Vol</th><th className="aux">OI</th>
           </tr>
         </thead>
         <tbody>
@@ -153,15 +161,15 @@ export function ChainTable({
                 ref={isAtm ? atmRow : undefined}
                 className={[isAtm ? 'atm' : '', sellC || sellP ? 'sold' : ''].filter(Boolean).join(' ') || undefined}
               >
-                <td className="dim">{num(c?.oi ?? null)}</td>
+                <td className="dim aux">{num(c?.oi ?? null)}</td>
                 <td className="dim aux">{num(c?.volume ?? null)}</td>
                 <td className="aux"><Age min={c?.ageMin ?? null} /></td>
                 <td className="aux">{n(c?.delta ?? null, 3)}</td>
                 <td className="dim aux">{c?.iv != null ? (c.iv * 100).toFixed(1) : '·'}</td>
                 <Zero leg={c} sold={sellC} />
-                <td className="dim aux">{c?.pOtm != null ? (c.pOtm * 100).toFixed(0) + '%' : '·'}</td>
-                <td className="askcol aux">{n(c?.ask ?? null)}</td>
-                <td className="aux">{n(c?.mark ?? null)}</td>
+                <td className="dim">{c?.pOtm != null ? (c.pOtm * 100).toFixed(0) + '%' : '·'}</td>
+                <td className="askcol">{n(c?.ask ?? null)}</td>
+                <td>{n(c?.mark ?? null)}</td>
                 <td className={`bidcol${sellC ? ' sellcell' : ''}`}>{n(c?.bid ?? null)}</td>
 
                 <td className="mono strikecell">
@@ -172,15 +180,15 @@ export function ChainTable({
                 </td>
 
                 <td className={`bidcol${sellP ? ' sellcell' : ''}`}>{n(p?.bid ?? null)}</td>
-                <td className="aux">{n(p?.mark ?? null)}</td>
-                <td className="askcol aux">{n(p?.ask ?? null)}</td>
-                <td className="dim aux">{p?.pOtm != null ? (p.pOtm * 100).toFixed(0) + '%' : '·'}</td>
+                <td>{n(p?.mark ?? null)}</td>
+                <td className="askcol">{n(p?.ask ?? null)}</td>
+                <td className="dim">{p?.pOtm != null ? (p.pOtm * 100).toFixed(0) + '%' : '·'}</td>
                 <Zero leg={p} sold={sellP} />
                 <td className="dim aux">{p?.iv != null ? (p.iv * 100).toFixed(1) : '·'}</td>
                 <td className="aux">{n(p?.delta ?? null, 3)}</td>
                 <td className="aux"><Age min={p?.ageMin ?? null} /></td>
                 <td className="dim aux">{num(p?.volume ?? null)}</td>
-                <td className="dim">{num(p?.oi ?? null)}</td>
+                <td className="dim aux">{num(p?.oi ?? null)}</td>
               </tr>
             );
           })}

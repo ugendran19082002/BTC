@@ -420,10 +420,13 @@ td.sellcell {
 /* Columns that inform rather than decide. Hidden on a phone, and on any screen
    when compact is on, so the seven columns that settle the trade fit without
    sideways scrolling: open interest, the odds, the bid, and the strike. */
-.chain-compact .aux { display: none; }
-@media (max-width: 760px) {
-  .chain .aux { display: none; }
-}
+/* The default view is the eleven columns that settle the trade: the odds either
+   side of the strike, and the prices. Open interest, volume, age, delta and
+   implied volatility describe a strike rather than decide it, so they are one
+   choice away rather than always on screen. Honoured on every width -- the
+   table already scrolls sideways, and a setting the phone quietly overrides is
+   worse than a wide table. */
+.chain-default .aux { display: none; }
 
 .chain-bar {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -440,3 +443,4 @@ td.sellcell {
 .field input[type="number"]::-webkit-inner-spin-button {
   -webkit-appearance: none; margin: 0;
 }
+.chain-density { display: inline-block; min-width: 210px; }

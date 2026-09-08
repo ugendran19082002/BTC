@@ -139,7 +139,12 @@ app.get('/api/chain', async (req, reply) => {
     const picks = pickSells(snap, scored, minPremium, hedgeGap);
     // Market context is best-effort: a throttled candle feed must not take the
     // chain down with it, it only costs the split its tested skew.
-    const market = snap.live ? await readMarket().catch(() => null) : null;
+    // A daily contract opens 12 hours before it settles, so what is left tells
+    // you how much of its life has already run.
+    const elapsedHours = Math.max(0, 12 - snap.hoursToExpiry);
+    const market = snap.live
+      ? await readMarket(elapsedHours > 0 ? elapsedHours : undefined).catch(() => null)
+      : null;
     return {
       snapshot: { ...snap, legs: undefined },
       legs: scored,

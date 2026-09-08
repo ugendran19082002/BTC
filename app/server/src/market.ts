@@ -152,7 +152,14 @@ function moveOver(bars: Candle[], count: number, hours: number, label: string): 
   };
 }
 
-export async function readMarket(): Promise<MarketRead> {
+/**
+ * @param sinceHours  hours elapsed inside the contract you are looking at, if
+ *   any. The fixed windows answer "how has BTC been behaving"; this one answers
+ *   "how much of that behaviour has already happened inside the trade I am
+ *   considering", which is the number that says whether a strike is still as
+ *   far away as it looked at entry.
+ */
+export async function readMarket(sinceHours?: number): Promise<MarketRead> {
   const now = Math.floor(Date.now() / 1000);
   const wanted: Timeframe[] = ['5m', '15m', '1h', '4h', '1d'];
 
@@ -197,6 +204,20 @@ export async function readMarket(): Promise<MarketRead> {
     moveOver(h1, 12, 12, 'last 12h'),
     moveOver(h1, 24, 24, 'last 24h'),
   ];
+
+  // 5-minute bars while the contract is young enough for them to reach back to
+  // its start (12h is 144 of them), hourly after that.
+  if (sinceHours !== undefined && sinceHours > 0.08) {
+    const use5m = sinceHours <= 12 && m5.length >= Math.round(sinceHours * 12);
+    moves.push(
+      moveOver(
+        use5m ? m5 : h1,
+        Math.max(1, Math.round(sinceHours * (use5m ? 12 : 1))),
+        sinceHours,
+        'this contract so far',
+      ),
+    );
+  }
 
   // the biggest single day of the last month, as a reference for how wrong the
   // expected move can be

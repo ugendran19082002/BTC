@@ -26,9 +26,17 @@ export function MovePanel({ market, snap }: { market: MarketRead; snap: Snapshot
             </tr>
           </thead>
           <tbody className="font-mono">
-            {market.moves.map((m) => (
-              <tr key={m.label} className="border-b border-[#ffffff08]">
-                <td className="px-1 py-[3px] text-left font-sans text-muted-foreground">{m.label}</td>
+            {market.moves.map((m) => {
+              // How much of this contract's own life has already been spent
+              // moving. The fixed windows describe BTC; this row describes the
+              // trade in front of you, so it gets to stand out.
+              const inContract = m.label === 'this contract so far';
+              return (
+              <tr key={m.label} className={`border-b border-[#ffffff08]${inContract ? ' bg-[#6cb2ff10]' : ''}`}>
+                <td className={`px-1 py-[3px] text-left font-sans ${inContract ? 'text-foreground' : 'text-muted-foreground'}`}>
+                  {m.label}
+                  {inContract && <span className="text-[var(--dim)]"> · {m.hours.toFixed(1)}h in</span>}
+                </td>
                 <td className={`px-1 py-[3px] text-right ${(m.changeUsd ?? 0) >= 0 ? 'text-[var(--up)]' : 'text-[var(--down)]'}`}>
                   {money(m.changeUsd)}
                 </td>
@@ -39,7 +47,8 @@ export function MovePanel({ market, snap }: { market: MarketRead; snap: Snapshot
                   {m.rangeUsd === null ? '—' : `$${m.rangeUsd.toFixed(0)}`}
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
