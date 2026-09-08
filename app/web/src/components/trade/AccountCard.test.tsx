@@ -59,7 +59,8 @@ describe("the day's loss budget", () => {
   it('does not go negative when the day has gone past the limit', () => {
     const { container } = render(<AccountCard status={status({ realisedTodayUsd: -9 })} />);
     expect(budgetLine(container)).toHaveTextContent('$0.00 of $5.00 left');
-    expect(screen.getByText(/100% used/)).toBeInTheDocument();
+    // past the limit the percentage stops being the point: the gate is shut
+    expect(screen.getByText(/Budget spent\. New trades are blocked/)).toBeInTheDocument();
   });
 
   it('a profitable day does not eat the budget', () => {

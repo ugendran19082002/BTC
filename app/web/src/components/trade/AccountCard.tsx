@@ -90,11 +90,17 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
               style={{ width: `${Math.min(100, budgetUsed * 100)}%` }}
             />
           </div>
-          {budgetUsed > 0 && (
+          {budgetUsed >= 1 ? (
+            // Past the limit, the percentage stops being the point: what matters
+            // is that the gate is shut.
+            <p className="m-0 mt-1 text-[11px] font-medium text-[var(--down)]">
+              Budget spent. New trades are blocked until tomorrow.
+            </p>
+          ) : budgetUsed > 0 ? (
             <p className="m-0 mt-1 text-[11px] text-muted-foreground">
               {pct(budgetUsed, 0)} used. New trades stop when it runs out.
             </p>
-          )}
+          ) : null}
         </div>
       </dl>
 
