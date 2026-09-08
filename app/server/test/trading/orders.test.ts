@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { rig, ceProduct, peProduct, planFor, quote, T0 } from './harness.js';
 import { failureCodes, precheck, DEFAULT_LIMITS } from '../../src/trading/precheck.js';
 import { protectionSize } from '../../src/trading/machine.js';
+import { clientId } from '../../src/trading/engine.js';
 
 /**
  * The live-order test matrix.
@@ -341,7 +342,7 @@ test('25 a price off the tick is rounded to one the exchange accepts', async () 
   const r = rig();
   const plan = planFor(ceProduct(), { entry: { type: 'limit', limitPrice: 100.07, timeoutMs: 5_000, marketFallback: false } });
   await r.engine.open(plan);
-  const o = await r.ex.getOrderByClientId(`${plan.tradeId}:entry`);
+  const o = await r.ex.getOrderByClientId(clientId(plan.tradeId, 'entry'));
   assert.equal(o?.limitPrice, 100.1, 'a seller rounds up, never down into a worse price');
 });
 
@@ -443,6 +444,33 @@ test('50 depth is only demanded of an order that has to fill now', async () => {
     planFor(ceProduct(), { lots: 50, stopPrice: 130, entry: { type: 'market', timeoutMs: 5_000, marketFallback: false } }),
   );
   assert.ok(!crossing.ok && failureCodes(crossing.precheck).includes('THIN_BOOK'));
+});
+
+// -------------------------------------- 51-53 the id the exchange sees
+
+test('51 the client order id is short and alphanumeric, because Delta rejects anything else', () => {
+  // the first live order came back bad_schema on
+  // "C-BTC-82000-090926-1757349123456:entry" -- too long, and a colon
+  const id = clientId('C-BTC-82000-090926-1757349123456', 'entry');
+  assert.match(id, /^[A-Za-z0-9]+$/, `"${id}" must be letters and digits only`);
+  assert.ok(id.length <= 24, `"${id}" is ${id.length} characters`);
+});
+
+test('52 the same trade and role always produce the same id, which is what makes a retry safe', () => {
+  const t = 'C-BTC-82000-090926-1757349123456';
+  assert.equal(clientId(t, 'entry'), clientId(t, 'entry'));
+  // and the roles never collide with each other
+  const ids = new Set([
+    clientId(t, 'entry'), clientId(t, 'take_profit'),
+    clientId(t, 'stop_loss'), clientId(t, 'exit'),
+  ]);
+  assert.equal(ids.size, 4);
+});
+
+test('53 two trades on the same contract get different ids', () => {
+  const a = clientId('C-BTC-82000-090926-1757349123456', 'entry');
+  const b = clientId('C-BTC-82000-090926-1757349123999', 'entry');
+  assert.notEqual(a, b, 'the tail is kept precisely because that is where the timestamp is');
 });
 
 // ------------------------------------------------------ 41-46 leverage

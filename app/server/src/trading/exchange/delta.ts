@@ -153,10 +153,13 @@ export class DeltaExchange implements ExchangePort {
   async placeOrder(req: PlaceOrderRequest): Promise<ExchangeOrder> {
     const body: Record<string, unknown> = {
       product_id: req.productId,
+      // Delta lists both, and sends bad_schema when only the id is present.
+      product_symbol: req.symbol,
       size: req.size,
       side: req.side,
       client_order_id: req.clientOrderId,
       order_type: req.type === 'limit' ? 'limit_order' : 'market_order',
+      time_in_force: 'gtc',
     };
     if (req.type === 'limit' && req.limitPrice !== undefined) body.limit_price = String(req.limitPrice);
     if (req.type === 'stop_market' && req.stopPrice !== undefined) {
@@ -168,7 +171,9 @@ export class DeltaExchange implements ExchangePort {
       // uses to value the position, so it is the one the stop should watch.
       body.stop_trigger_method = 'mark_price';
     }
-    if (req.reduceOnly) body.reduce_only = 'true';
+    // A boolean, not the string "true". The string is what the older docs show
+    // and it is what bad_schema comes back for.
+    if (req.reduceOnly) body.reduce_only = true;
 
     try {
       const o = await signed<DeltaOrder>(this.creds, { method: 'POST', path: '/v2/orders', body, timeoutMs: 10_000 });
@@ -180,11 +185,13 @@ export class DeltaExchange implements ExchangePort {
         code: e instanceof DeltaRefused ? e.code : (e as Error).name,
         stack: (e as Error).stack ?? null,
         where: 'POST /v2/orders',
-        context: { clientOrderId: req.clientOrderId, symbol: req.symbol, side: req.side, size: req.size, type: req.type },
+        // The whole body, so a schema refusal can be read against what was sent.
+        // It carries no credential: the signing headers never reach here.
+        context: { sent: body, detail: e instanceof DeltaRefused ? e.detail : null },
       });
       // The distinction the rest of the engine is built on.
       if (e instanceof RequestTimedOut) throw new SubmitTimeout(req.clientOrderId);
-      if (e instanceof DeltaRefused) throw new OrderRejected(`${e.code}`);
+      if (e instanceof DeltaRefused) throw new OrderRejected(e.message);
       throw e;
     }
   }

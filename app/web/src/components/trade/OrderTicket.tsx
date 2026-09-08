@@ -195,6 +195,9 @@ export function OrderTicket({
     preview?.liquidationPrice != null && working
       ? preview.liquidationPrice / working
       : null;
+  /** Not enough free margin for the size asked for. Both lines go red together. */
+  const short =
+    preview?.marginUsd != null && balanceUsd !== null && preview.marginUsd > balanceUsd;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -285,7 +288,7 @@ export function OrderTicket({
                       lots === n && 'border-[var(--accent)] text-foreground',
                     )}
                   >
-                    {capKnown && n === cap ? 'max' : n}
+                    {capKnown && n === cap ? `${n} max` : n}
                   </button>
                 ))}
               </div>
@@ -336,22 +339,34 @@ export function OrderTicket({
             <Separator className="my-3" />
 
             <dl className="m-0 grid gap-1.5">
-              <Line label="you receive" value={usd(credit)} strong />
+              <Line label="you get" value={usd(credit)} strong tone="up" />
               <Line
-                label={`margin held at ${leverage}x`}
+                label="margin needed"
                 value={usd(preview?.marginUsd)}
-                hint="Delta calls this Funds req. It is locked while the position is open and returned when it closes."
+                hint={`Delta calls this "Funds req." It is held while the position is open and given back when it closes.`}
+                tone={short ? 'down' : undefined}
               />
               <Line
-                label="closed out if it reaches"
+                label="available margin"
+                value={usd(balanceUsd)}
+                hint={`What is free in the account right now. Delta calls this "Available Margin".`}
+                tone={short ? 'down' : undefined}
+              />
+              <Line
+                label="they close you at"
                 value={price(preview?.liquidationPrice)}
                 tone={room !== null && room < 2 ? 'down' : undefined}
-                hint="Where the exchange buys the position back whether you want it to or not. Lower leverage moves this further away."
+                hint="The price at which the exchange buys your position back, whether you want it to or not. Lower leverage moves this further away."
               />
               <Line
-                label={stopOn && stopPct > 0 ? 'most you can lose' : 'most you can lose, with no stop'}
+                label={stopOn && stopPct > 0 ? 'worst case' : 'worst case, no stop'}
                 value={preview?.worstCaseLossUsd != null ? signedUsd(-preview.worstCaseLossUsd) : '—'}
                 tone="down"
+                hint={
+                  stopOn && stopPct > 0
+                    ? 'What the stop costs you if it fires.'
+                    : 'With no stop, the position ends where the exchange closes it. That is the cap.'
+                }
               />
             </dl>
 

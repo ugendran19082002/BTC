@@ -38,10 +38,38 @@ export class RequestTimedOut extends Error {
 
 /** Delta answered and said no, with a reason. Nothing was created. */
 export class DeltaRefused extends Error {
-  constructor(readonly status: number, readonly code: string, message: string) {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+    /** Delta's own detail: which field it disliked, and why. */
+    readonly detail: string | null = null,
+  ) {
     super(message);
     this.name = 'DeltaRefused';
   }
+}
+
+/**
+ * Turn Delta's error context into one readable line.
+ *
+ * A bare "bad_schema" is almost useless -- it says the request was wrong
+ * without saying which part. The context names the field, and a field name is
+ * not a secret: it is something we sent. Values are dropped anyway, because a
+ * rejected auth attempt can echo request material back.
+ */
+function describe(context: unknown): string | null {
+  if (!context || typeof context !== 'object') return null;
+  const c = context as Record<string, unknown>;
+  const fields = c.error_fields ?? c.fields ?? c.schema_errors ?? null;
+  if (Array.isArray(fields) && fields.length) {
+    return fields
+      .map((f) => (typeof f === 'string' ? f : (f as { field?: string })?.field ?? null))
+      .filter(Boolean)
+      .join(', ') || null;
+  }
+  if (typeof fields === 'object' && fields !== null) return Object.keys(fields).join(', ') || null;
+  return null;
 }
 
 /** Delta signs method + timestamp + path + query + body with HMAC-SHA256. */
@@ -91,9 +119,15 @@ export async function signed<T>(creds: Creds | null, req: SignedRequest): Promis
 
   if (!res.ok || !parsed || parsed.success === false) {
     const code = parsed?.error?.code ?? `http_${res.status}`;
-    // Deliberately narrow: an auth error body can echo request material back,
-    // and the code is the part a caller can actually branch on.
-    throw new DeltaRefused(res.status, code, `Delta refused the request (${code}).`);
+    const detail = describe(parsed?.error?.context);
+    // The code is what a caller branches on; the field names are what a person
+    // needs to fix it. Values are still left out.
+    throw new DeltaRefused(
+      res.status,
+      code,
+      detail ? `Delta refused the request (${code}: ${detail}).` : `Delta refused the request (${code}).`,
+      detail,
+    );
   }
   return parsed.result as T;
 }

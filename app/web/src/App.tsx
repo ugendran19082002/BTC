@@ -210,7 +210,7 @@ export default function App() {
       )}
 
       <div className="tabs">
-        <button className={tab === 'desk' ? 'on' : ''} onClick={() => setTab('desk')}>Should I enter?</button>
+        <button className={tab === 'desk' ? 'on' : ''} onClick={() => setTab('desk')}>Live</button>
         <button className={tab === 'trade' ? 'on' : ''} onClick={() => setTab('trade')}>
           Positions
           {trade && trade.open.length > 0 && <span className="pip">{trade.open.length}</span>}

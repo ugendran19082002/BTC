@@ -89,8 +89,24 @@ export type OpenResult =
   | { ok: true; state: TradeState }
   | { ok: false; state: TradeState; precheck: PrecheckResult };
 
-const clientId = (tradeId: string, role: OrderRole | 'exit', n = 0) =>
-  n > 0 ? `${tradeId}:${role}:${n}` : `${tradeId}:${role}`;
+const ROLE_CODE: Record<OrderRole | 'exit', string> = {
+  entry: 'E', take_profit: 'T', stop_loss: 'S', exit: 'X',
+};
+
+/**
+ * The id we give an order, in a shape the exchange will take.
+ *
+ * Delta rejected `C-BTC-82000-090926-1757349123456:entry` as bad_schema: too
+ * long, and punctuation it does not allow. So the id is stripped to letters and
+ * digits and cut to the tail, which is where the timestamp lives and therefore
+ * where the uniqueness is.
+ *
+ * It stays a pure function of the trade and the role, and that is the part that
+ * matters: the same trade asking for the same order twice produces the same id,
+ * which is what makes a retry after a timeout safe.
+ */
+export const clientId = (tradeId: string, role: OrderRole | 'exit', n = 0): string =>
+  `${tradeId.replace(/[^A-Za-z0-9]/g, '').slice(-18)}${ROLE_CODE[role]}${n}`;
 
 export class TradeEngine {
   private readonly limits: RiskLimits;
