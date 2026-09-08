@@ -446,6 +446,99 @@ test('50 depth is only demanded of an order that has to fill now', async () => {
   assert.ok(!crossing.ok && failureCodes(crossing.precheck).includes('THIN_BOOK'));
 });
 
+// ------------------- 69-74 the book is the authority, not our memory
+
+test('69 [critical] a cancel that does not take stops the replacement being sent', async () => {
+  // Delta refused a cancel, the refusal was swallowed, the replacement went on
+  // beside the order it was meant to replace, and the exchange -- which will
+  // not hold two reduce-only orders totalling more than the position --
+  // cancelled one of them. The screen said 1.80 while the book had 26.40.
+  const r = rig();
+  const plan = planFor(ceProduct(), { lots: 1, stopPrice: null, takeProfitPrice: 90 });
+  await r.engine.open(plan);
+  await r.engine.poll(plan.tradeId);
+  assert.equal((await r.ex.getOpenOrders(CE)).filter((o) => o.reduceOnly).length, 1);
+
+  r.ex.cancelOrder = async () => {};             // the venue says yes and does nothing
+
+  const s = await r.engine.updateProtection(plan.tradeId, { takeProfitPrice: 50 });
+  const live = (await r.ex.getOpenOrders(CE)).filter((o) => o.reduceOnly);
+  assert.equal(live.length, 1, 'one order, not two: nothing was stacked on top');
+  assert.equal(live[0]?.limitPrice, 90, 'and it is still the old one');
+  assert.match(s?.note ?? '', /could not cancel/);
+});
+
+test('70 an order already at the right price is kept rather than replaced', async () => {
+  const r = rig();
+  const plan = planFor(ceProduct(), { lots: 1, stopPrice: null, takeProfitPrice: 90 });
+  await r.engine.open(plan);
+  const first = await r.engine.poll(plan.tradeId);
+  const id = first!.protection.takeProfit;
+
+  for (let i = 0; i < 3; i++) { r.advance(1_000); await r.engine.poll(plan.tradeId); }
+
+  const after = r.store.get(plan.tradeId)!.state;
+  assert.equal(after.protection.takeProfit, id, 'the same order throughout');
+  assert.equal((await r.ex.getOpenOrders(CE)).filter((o) => o.reduceOnly).length, 1);
+});
+
+test('71 a level moved on the plan is moved on the book', async () => {
+  const r = rig();
+  const plan = planFor(ceProduct(), { lots: 1, stopPrice: null, takeProfitPrice: 90 });
+  await r.engine.open(plan);
+  await r.engine.poll(plan.tradeId);
+
+  await r.engine.updateProtection(plan.tradeId, { takeProfitPrice: 50 });
+  const live = (await r.ex.getOpenOrders(CE)).filter((o) => o.reduceOnly);
+  assert.equal(live.length, 1, 'still one');
+  assert.equal(live[0]?.limitPrice, 50, 'at the new level');
+});
+
+test('72 turning both exits off empties the book', async () => {
+  const r = rig();
+  const plan = planFor(ceProduct(), { lots: 1 });
+  await r.engine.open(plan);
+  await r.engine.poll(plan.tradeId);
+  assert.equal((await r.ex.getOpenOrders(CE)).filter((o) => o.reduceOnly).length, 2);
+
+  const s = await r.engine.updateProtection(plan.tradeId, { takeProfitPrice: null, stopPrice: null });
+  assert.equal((await r.ex.getOpenOrders(CE)).filter((o) => o.reduceOnly).length, 0);
+  assert.equal(s?.protection.takeProfit, null);
+  assert.equal(s?.protection.stopLoss, null);
+});
+
+test('73 an order the desk has forgotten is adopted, not duplicated', async () => {
+  // a restart, or a state written before a fix: the book has protection the
+  // journal does not know about
+  const r = rig();
+  const plan = planFor(ceProduct(), { lots: 1, stopPrice: null, takeProfitPrice: 90 });
+  await r.engine.open(plan);
+  await r.engine.poll(plan.tradeId);
+
+  const rec = r.store.get(plan.tradeId)!;
+  rec.state = { ...rec.state, protection: { takeProfit: null, stopLoss: null } };
+  r.store.save(rec);
+
+  r.advance(3_000);
+  const s = await r.engine.poll(plan.tradeId);
+  assert.ok(s?.protection.takeProfit, 'it found the one already there');
+  assert.equal((await r.ex.getOpenOrders(CE)).filter((o) => o.reduceOnly).length, 1, 'and did not add another');
+});
+
+test('74 a resized position replaces the protection rather than adding to it', async () => {
+  const r = rig();
+  const plan = planFor(ceProduct(), { lots: 10 });
+  await r.engine.open(plan);
+  await r.engine.poll(plan.tradeId);
+
+  r.ex.forcePosition(CE, -4);                    // four bought back by hand
+  await r.engine.reconcile(plan.tradeId);
+
+  const live = (await r.ex.getOpenOrders(CE)).filter((o) => o.reduceOnly);
+  assert.equal(live.length, 2, 'one target and one stop, not four orders');
+  assert.deepEqual(live.map((o) => o.size), [4, 4]);
+});
+
 // ---------------------- 64-68 one leg failing must not stack the other
 
 test('64 [critical] a target that went on is recorded even when the stop did not', async () => {

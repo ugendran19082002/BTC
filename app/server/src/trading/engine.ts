@@ -460,84 +460,117 @@ export class TradeEngine {
    * hold. If either cannot be placed the trade is marked unprotected -- it is
    * never quietly left naked.
    */
+  /**
+   * Make the book match the plan.
+   *
+   * Written as a reconciler rather than as "place what I do not remember
+   * placing", because the desk's memory and the exchange's book had drifted:
+   * a cancel was refused, the refusal was swallowed, a replacement went on
+   * beside the order it was meant to replace, and Delta -- which will not hold
+   * two reduce-only orders totalling more than the position -- cancelled one of
+   * them. The screen said the target was at 1.80 while the book had 26.40.
+   *
+   * So the book is read first and it is the authority. Each leg is then one of
+   * four cases: right already, wrong price, present but unwanted, or missing.
+   * A cancel is verified before its replacement is sent, because an unverified
+   * cancel is exactly how two live orders happen.
+   */
   async protect(recIn: TradeRecord): Promise<TradeRecord> {
     let rec = recIn;
     const size = protectionSize(rec.state);
     if (size === 0) return rec;
-    // Nothing to place, and nothing wrong with that.
-    if (rec.plan.takeProfitPrice === null && rec.plan.stopPrice === null) return rec;
+    if (rec.plan.takeProfitPrice === null && rec.plan.stopPrice === null) {
+      // Nothing wanted. Anything still resting is left over and has to go.
+      return this.clearProtection(rec);
+    }
 
     // A refusal is not worth repeating every second. Delta answered
     // `no_position_for_reduce_only` because it had not registered the fill yet,
-    // and hammering it does not make it register faster -- it just fills the
-    // error log and burns the rate limit.
+    // and hammering it does not make it register faster.
     const notBefore = this.protectAfter.get(rec.state.tradeId);
     if (notBefore !== undefined && this.now() < notBefore) return rec;
 
-    // Reduce-only orders need a position the exchange agrees exists. Our own
-    // fill arrives first, so asking before it has settled is what produced that
-    // refusal in the first place.
+    // Reduce-only orders need a position the exchange agrees exists.
     const held = await this.exchange.getPositions()
       .then((ps) => ps.find((p) => p.symbol === rec.plan.symbol)?.size ?? 0)
       .catch(() => null);
     if (held === null) return rec;
     if (held === 0) {
-      // Either the fill has not landed on their side yet, or we are not
-      // actually short. Reconcile decides which; do not send anything now.
       this.protectAfter.set(rec.state.tradeId, this.now() + PROTECT_RETRY_MS);
       return rec;
     }
+
     const product = await this.exchange.getProduct(rec.plan.symbol).catch(() => null);
     const tick = product?.tickSize ?? 0.1;
-    // Versioned by every attempt, not just the failures: a resize must not reuse
-    // the client id of the order it is replacing, or idempotency hands back the
-    // old one at the old size and the position sits behind a stop that is too big.
-    const attempt = rec.events.filter((e) => e.t === 'protection_placed' || e.t === 'protection_failed').length;
+    const attempt = rec.events.filter(
+      (e) => e.t === 'protection_placed' || e.t === 'protection_failed',
+    ).length;
 
-    /**
-     * Each leg on its own, and each success recorded.
-     *
-     * Placing both inside one try meant a target that went on and a stop that
-     * did not left the target unrecorded -- so the next attempt placed another
-     * target, and the one after that another. Six live take-profits on a
-     * one-contract position, and the exchange eventually answering
-     * `duplicate_client_order_id`.
-     */
-    let tp = rec.state.protection.takeProfit;
-    let sl = rec.state.protection.stopLoss;
+    const book = await this.exchange.getOpenOrders(rec.plan.symbol).catch(() => null);
+    if (book === null) return rec;
+    const resting = book.filter((o) => o.reduceOnly && (o.status === 'open' || o.status === 'partial'));
+
     let failure: string | null = null;
+    const settle = async (
+      role: 'take_profit' | 'stop_loss',
+      wanted: number | null,
+      match: (o: ExchangeOrder) => boolean,
+      priceOf: (o: ExchangeOrder) => number | null,
+      place: (cid: string, price: number) => Promise<void>,
+    ): Promise<string | null> => {
+      const live = resting.filter(match);
+      const target = wanted === null
+        ? null
+        : (role === 'stop_loss' ? stopPriceFor('buy', wanted, tick) : priceFor('buy', wanted, tick));
 
-    if (rec.plan.takeProfitPrice !== null && !tp) {
-      const cid = clientId(rec.state.tradeId, 'take_profit', attempt);
-      try {
-        await this.exchange.placeOrder({
-          clientOrderId: cid, symbol: rec.plan.symbol, productId: product?.productId ?? 0,
-          side: 'buy', type: 'limit', size,
-          limitPrice: priceFor('buy', rec.plan.takeProfitPrice, tick),
-          reduceOnly: true, role: 'take_profit',
-        });
-        tp = cid;
-      } catch (e) {
-        failure = (e as Error).message;
+      // Right already, and the right size: keep it, and remember which it is.
+      const keep = target === null
+        ? undefined
+        : live.find((o) => priceOf(o) === target && o.size === size);
+
+      for (const o of live) {
+        if (o === keep) continue;
+        const gone = await this.cancelAndVerify(o);
+        // A cancel that did not take means the book still holds it. Sending a
+        // replacement now is what over-commits the position.
+        if (!gone) { failure ??= `could not cancel the ${role.replace('_', ' ')} already on the book`; }
       }
-    }
+      if (failure !== null) return keep?.clientOrderId ?? null;
+      if (keep) return keep.clientOrderId;
+      if (target === null) return null;
 
-    if (rec.plan.stopPrice !== null && !sl) {
-      const cid = clientId(rec.state.tradeId, 'stop_loss', attempt);
+      const cid = clientId(rec.state.tradeId, role, attempt);
       try {
-        await this.exchange.placeOrder({
-          clientOrderId: cid, symbol: rec.plan.symbol, productId: product?.productId ?? 0,
-          side: 'buy', type: 'stop_market', size,
-          stopPrice: stopPriceFor('buy', rec.plan.stopPrice, tick),
-          reduceOnly: true, role: 'stop_loss',
-        });
-        sl = cid;
+        await place(cid, target);
+        return cid;
       } catch (e) {
         failure ??= (e as Error).message;
+        return null;
       }
-    }
+    };
 
-    // Whatever went on is recorded, even when the other leg did not.
+    const tp = await settle(
+      'take_profit',
+      rec.plan.takeProfitPrice,
+      (o) => o.type === 'limit',
+      (o) => o.limitPrice,
+      (cid, price) => this.exchange.placeOrder({
+        clientOrderId: cid, symbol: rec.plan.symbol, productId: product?.productId ?? 0,
+        side: 'buy', type: 'limit', size, limitPrice: price, reduceOnly: true, role: 'take_profit',
+      }).then(() => {}),
+    );
+
+    const sl = await settle(
+      'stop_loss',
+      rec.plan.stopPrice,
+      (o) => o.type === 'stop_market',
+      (o) => o.stopPrice,
+      (cid, price) => this.exchange.placeOrder({
+        clientOrderId: cid, symbol: rec.plan.symbol, productId: product?.productId ?? 0,
+        side: 'buy', type: 'stop_market', size, stopPrice: price, reduceOnly: true, role: 'stop_loss',
+      }).then(() => {}),
+    );
+
     if (tp !== rec.state.protection.takeProfit || sl !== rec.state.protection.stopLoss) {
       rec = this.commit(rec, { t: 'protection_placed', takeProfit: tp, stopLoss: sl, at: this.now() });
     }
@@ -547,13 +580,38 @@ export class TradeEngine {
       return rec;
     }
 
-    // Back off, doubling, so a venue that keeps saying no is asked less often.
     const tries = rec.events.filter((x) => x.t === 'protection_failed').length;
     this.protectAfter.set(
       rec.state.tradeId,
       this.now() + Math.min(PROTECT_RETRY_MAX_MS, PROTECT_RETRY_MS * 2 ** tries),
     );
     return this.commit(rec, { t: 'protection_failed', reason: failure, at: this.now() });
+  }
+
+  /**
+   * Cancel, then look again.
+   *
+   * `cancelOrder` reports nothing useful: a venue that refuses the cancel and a
+   * venue that honours it both return quietly. The only way to know is to read
+   * the order back.
+   */
+  private async cancelAndVerify(order: ExchangeOrder): Promise<boolean> {
+    await this.exchange.cancelOrder(order).catch(() => {});
+    if (!order.clientOrderId) return true;
+    const after = await this.exchange.getOrderByClientId(order.clientOrderId).catch(() => null);
+    if (after === null) return true;                       // gone from the book
+    return after.status !== 'open' && after.status !== 'partial';
+  }
+
+  /** Take every protective order off the book, verifying each one. */
+  private async clearProtection(recIn: TradeRecord): Promise<TradeRecord> {
+    let rec = recIn;
+    const book = await this.exchange.getOpenOrders(rec.plan.symbol).catch(() => []);
+    for (const o of book.filter((x) => x.reduceOnly)) await this.cancelAndVerify(o);
+    if (rec.state.protection.takeProfit || rec.state.protection.stopLoss) {
+      rec = this.commit(rec, { t: 'protection_placed', takeProfit: null, stopLoss: null, at: this.now() });
+    }
+    return rec;
   }
 
   private async replaceIfResized(oldCid: string | null, newCid: string, _size: number) {
@@ -637,10 +695,11 @@ export class TradeEngine {
     };
     rec.state = { ...rec.state, wantsProtection: rec.plan.stopPrice !== null };
 
-    // Off the book first, so the old levels cannot fill while the new ones go on.
-    rec = await this.cancelSiblings(rec, true);
     // An explicit change is not a retry, so the backoff does not apply to it.
     this.protectAfter.delete(tradeId);
+    // protect() reconciles the book against the plan, so changing the plan and
+    // asking it to run is the whole operation: it cancels what no longer
+    // belongs, verifies that the cancel took, and places what is missing.
     rec = await this.protect(rec);
     this.d.store.save(rec);
     return rec.state;
@@ -708,10 +767,9 @@ export class TradeEngine {
         note: `exchange says ${held}, we had ${rec.state.position}`,
       });
       // The position moved under us, so anything resting is the wrong size.
-      // Off the book first: protect() only places a leg that is missing, which
-      // is what stops it stacking duplicates, so a resize has to make it missing.
-      rec = await this.cancelSiblings(rec, true);
+      // protect() compares size as well as price, so it replaces them itself.
       if (held !== 0) rec = await this.protect(rec);
+      else rec = await this.clearProtection(rec);
     }
     return rec;
   }
