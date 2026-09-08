@@ -354,3 +354,32 @@ A position with no stop exits at the exchange's close-out, and that price is on
 the ticket before the trade but nowhere afterwards. The position row shows
 "stop none", which is true and not useful: the row should name the price the
 exchange will act at, because that is the real exit.
+
+## Profit and loss
+
+What is there now: the exchange's own mark, unrealised P&L, and how much of the
+credit has decayed, on each position row, plus a running total on the Positions
+tab. Delta's figures are used rather than a second calculation here, so the
+desk and the exchange screen cannot disagree while somebody is checking both.
+
+What is missing:
+
+- **The day's realised total.** `store.realisedSince()` computes it and the
+  daily-loss gate reads it, but nothing shows it. A desk that will stop you
+  trading at a loss limit should say how close you are to it.
+- **A record of closed trades.** `/api/trade/history` returns them and nothing
+  renders it. Every trade this desk has ever placed is in the journal with its
+  full event list; there is no screen for it.
+- **P&L in rupees.** Every figure is in dollars. The account is Indian and the
+  backtest reports both, so the position card should too.
+- **Cost of getting out.** Unrealised P&L is marked at the mid. Closing pays the
+  spread, and on an 11% book that is most of a small profit. The number that
+  matters is what you would keep after closing, not what you are up on paper.
+
+## Where the Live tab stops
+
+The Live tab answers "should I sell, and what" and stops there. It does not
+know a position exists. Once one does, the first question changes to "how is
+the one I have doing", and that answer is one tab away. A line at the top of
+Live — what is on, what it is worth — would close the loop without duplicating
+the Positions tab.
