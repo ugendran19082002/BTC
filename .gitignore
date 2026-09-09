@@ -34,3 +34,4 @@ trades.db-shm
 # regenerable (research/move_timetable.py rebuilds both). The report is kept.
 research/cache-5m.json
 research/move-5min.csv
+research/cache-overnight.json
