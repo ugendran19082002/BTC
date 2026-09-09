@@ -286,10 +286,32 @@ export class DeltaExchange implements ExchangePort {
     return old ? toOrder(old) : null;
   }
 
+  /**
+   * The orders resting for one symbol.
+   *
+   * **Delta ignores `product_symbol` on this endpoint when `states` is set.**
+   * Asking for one contract's orders returns the whole account's, and on
+   * 10 September 2026 that put a 76,800 PE's take-profit on an 80,800 CE row:
+   * two positions, one order between them, and both screens reading 25.60.
+   *
+   * Display was the least of it. `protect()` reconciles against this list, so
+   * it saw the PE's order, decided the CE was already protected and never
+   * placed anything -- a live short with nothing behind it and a shield icon
+   * saying otherwise. `clearProtection()` reads the same list, so closing one
+   * position could have cancelled the other's target.
+   *
+   * The filter is kept in the query anyway -- if Delta ever honours it the
+   * payload is smaller -- but the answer is filtered here regardless, because
+   * a venue's filter is a request, not a guarantee.
+   *
+   * `PaperExchange` filters correctly, which is exactly why no test caught
+   * this. See rule 2 in ARCHITECTURE.md.
+   */
   async getOpenOrders(symbol?: string): Promise<ExchangeOrder[]> {
     const q = symbol ? `?states=open,pending&product_symbol=${encodeURIComponent(symbol)}` : '?states=open,pending';
     const rows = await this.call<DeltaOrder[]>({ method: 'GET', path: '/v2/orders', query: q });
-    return rows.map(toOrder);
+    const orders = rows.map(toOrder);
+    return symbol === undefined ? orders : orders.filter((o) => o.symbol === symbol);
   }
 
   async getPositions(): Promise<ExchangePosition[]> {
