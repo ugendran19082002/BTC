@@ -129,13 +129,13 @@ def main():
         # richest strike at or below the cap
         return max(ok, key=lambda r: r['mark']) if ok else None
 
-    def run(mode, gate, doubling):
+    def run(mode, gate, doubling, floor=15.0):
         vals, lots_sold, prem, otm, zeros, legs_sold = [], 0, [], [], 0, 0
         onesided = 0
         for d in dates:
             chosen = {}
             for cp in ('C', 'P'):
-                r = pick(d, cp, mode)
+                r = pick(d, cp, mode, floor)
                 if r and (not gate or r['p'] >= GATE):
                     chosen[cp] = r
             if len(chosen) == 1:
@@ -239,6 +239,61 @@ def main():
         worst = r['worst'] * f * USDINR
         w(f'  {name:<20} {r["total"]/len(dates)*f*USDINR:>+12,.0f} {worst:>+14,.0f} '
           f'{abs(worst)/EQUITY_INR*100:>11.0f}%')
+    w('')
+    # ------------------------------------------------------- the cap sweep
+    w('=' * 88)
+    w('DOUBLE AT EVERY CAP FROM <= $15 TO <= $25')
+    w('=' * 88)
+    w('  Same gate, same doubling, same exit. Only the cap moves. A higher cap')
+    w('  admits a richer strike, which is a nearer strike, which is more risk --')
+    w('  so the total and the damage rise together and the question is where they')
+    w('  cross.')
+    w('')
+    w(f'  {"CAP":>5} {"LEGS":>5} {"LOTS":>5} {"1-SIDED":>8} {"PREM":>7} {"OTM":>6} '
+      f'{"EXP 0":>7} {"TOTAL Rs":>10} {"WIN%":>6} {"PF":>6} {"WORST":>8} {"MDD":>7} {"EQ-RISK":>9}')
+    w('  ' + '-' * 96)
+    caps = list(range(15, 26))
+    sweep = {}
+    for cap in caps:
+        r = run('atMost', True, True, cap)
+        sweep[cap] = r
+    ref = sweep[15]['mdd']
+    for cap in caps:
+        r = sweep[cap]
+        eq = (ref / r['mdd'] * r['total'] * USDINR) if r['mdd'] > 0 else 0
+        w(f'  {"$"+str(cap):>5} {r["legs"]:>5} {r["lots"]:>5} {r["onesided"]:>8} '
+          f'${r["prem"]:>6.2f} {r["otm"]:>5.2f}% {r["acc"]:>6.2f}% {r["total"]*USDINR:>+10,.0f} '
+          f'{r["win"]:>5.1f}% {r["pf"]:>6.2f} {r["worst"]*USDINR:>+8,.0f} {r["mdd"]*USDINR:>7,.0f} '
+          f'{eq:>+9,.0f}')
+    w('')
+    w('  EQ-RISK scales each cap to the <= $15 drawdown, so the last column is')
+    w('  what each would return for the same worst stretch.')
+    w('')
+    best_total = max(caps, key=lambda c: sweep[c]['total'])
+    best_pf = max(caps, key=lambda c: sweep[c]['pf'])
+    best_eq = max(caps, key=lambda c: (ref / sweep[c]['mdd'] * sweep[c]['total']) if sweep[c]['mdd'] > 0 else 0)
+    w(f'  most money        <= ${best_total}   Rs {sweep[best_total]["total"]*USDINR:+,.0f}')
+    w(f'  best edge         <= ${best_pf}   PF {sweep[best_pf]["pf"]:.2f}')
+    w(f'  best at equal risk <= ${best_eq}   Rs '
+      f'{ref / sweep[best_eq]["mdd"] * sweep[best_eq]["total"] * USDINR:+,.0f}')
+    w('')
+    w('  OUT OF SAMPLE, each cap scored on both halves')
+    w(f'  {"CAP":>5} {"1st half Rs":>12} {"2nd half Rs":>12} {"PF 1st":>8} {"PF 2nd":>8} {"holds?":>8}')
+    half2 = len(dates) // 2
+    for cap in caps:
+        a, b = stats(sweep[cap]['vals'][:half2]), stats(sweep[cap]['vals'][half2:])
+        ok = 'yes' if a['total'] > 0 and b['total'] > 0 else 'NO'
+        w(f'  {"$"+str(cap):>5} {a["total"]*USDINR:>+12,.0f} {b["total"]*USDINR:>+12,.0f} '
+          f'{a["pf"]:>8.2f} {b["pf"]:>8.2f} {ok:>8}')
+    w('')
+    w('  ON YOUR ACCOUNT, worst day at 137 lots against Rs 39,700 of equity')
+    w(f'  {"CAP":>5} {"per day Rs":>12} {"worst day Rs":>14} {"% of equity":>12}')
+    f137 = 137 / CONTRACTS
+    for cap in caps:
+        r = sweep[cap]
+        wd = r['worst'] * f137 * USDINR
+        w(f'  {"$"+str(cap):>5} {r["total"]/len(dates)*f137*USDINR:>+12,.0f} {wd:>+14,.0f} '
+          f'{abs(wd)/EQUITY_INR*100:>11.0f}%')
     w('')
     w('=' * 88)
 
