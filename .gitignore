@@ -29,3 +29,8 @@ tsconfig.tsbuildinfo
 trades.db
 trades.db-wal
 trades.db-shm
+
+# move timetable: the raw 5-minute bar cache and the per-bar CSV are large and
+# regenerable (research/move_timetable.py rebuilds both). The report is kept.
+research/cache-5m.json
+research/move-5min.csv
