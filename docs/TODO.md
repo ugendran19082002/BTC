@@ -599,3 +599,50 @@ The wider lesson is the one already written above and now demonstrated: a
 screen that says what the exchange is doing must read it from the exchange. Had
 the panel done that from the start, the DB bug would have been visible in
 minutes rather than across an evening.
+
+
+## A target that never fired
+
+Reported: a short at 2.70 with a target at 1.10, marked at 1.00, still open.
+Then marked at 0.94, still open.
+
+The target was a plain resting **limit buy** at 1.10. A limit buy fills when
+somebody *offers* at or below it — and on a decayed option the book is
+something like 0.50 bid / 1.50 offered, so the mark fell straight through 1.10
+while the offer never came near it. The order was doing exactly what a limit
+order does. It was the wrong instrument for the job.
+
+The stop was already right: a `stop_loss_order` triggered on the mark. The
+target is now its mirror, a `stop_order_type: take_profit_order` on the same
+trigger, so the two legs are the same kind of thing pointing opposite ways —
+one fires when the price runs against the position, the other when it runs its
+way. Both round towards firing rather than towards a better price, because a
+target that misses by a tick is a target that does not exist.
+
+The cost is that a trigger buys at the market when it fires, so it pays the
+offer rather than waiting for one. On a residual worth a tenth of a cent that
+is the right trade: getting out is the entire point of a target.
+
+Five tests, the first being the reported case exactly — the mark through the
+level while the offer stays well above it.
+
+## What the premium floor means
+
+"Premium 4 is under the 5 floor" was a true sentence that explained nothing.
+
+The floor is in the exchange's quoted units: a price of 5 is 5 USD per BTC,
+which on a 0.001 BTC contract is half a cent. The number looks small because
+the unit is small.
+
+Why it exists: the margin at risk does not shrink when the option is cheaper.
+The same close-out distance, the same worst case, less credit for taking it.
+The 733-day sweep put numbers on it — over the same days, selecting the same
+way, a $0 floor returned $72 and a $15 floor returned $173.
+
+The message now says that rather than quoting two numbers: *"This one pays 4.00
+and the desk will not sell below 5.00 — the same margin is at risk either way,
+so a cheaper option is the same risk for less pay."*
+
+Still worth settling: the trading gate floors at 5 and the chain's own setting
+defaults to 15, which is the researched figure. Two numbers for one idea, and
+the sweep says the higher one is right.
