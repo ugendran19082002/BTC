@@ -141,6 +141,14 @@ export type OpenResult =
 
 /** How long to wait before trying protection again after a refusal. */
 const PROTECT_RETRY_MS = 2_000;
+/**
+ * How old a quote may be before the desk refuses to act on it.
+ *
+ * Everything below closes a position on the strength of one number. A mark from
+ * a minute ago is not evidence about now, and acting on it would exit a trade
+ * because the feed stalled rather than because the price moved.
+ */
+const MARK_STALE_MS = 15_000;
 const PROTECT_RETRY_MAX_MS = 60_000;
 
 const ROLE_CODE: Record<OrderRole | 'exit', string> = {
@@ -490,6 +498,13 @@ export class TradeEngine {
       rec = await this.protect(rec);
     }
 
+    // The levels are judged here rather than at the exchange. This runs after
+    // protection so a level reached on the very first poll still exits, even
+    // before the resting target has landed.
+    if (rec.state.position !== 0 && rec.state.phase !== 'exit_pending') {
+      rec = await this.takeProfitIfReached(rec);
+    }
+
     if (rec.state.position === 0 && rec.state.entrySize > 0 && rec.state.phase !== 'flat') {
       rec = await this.cancelSiblings(rec, true);
       rec = this.commit(rec, { t: 'reconciled', position: 0, at: this.now(), note: 'closed' });
@@ -592,12 +607,13 @@ export class TradeEngine {
       wanted: number | null,
       match: (o: ExchangeOrder) => boolean,
       priceOf: (o: ExchangeOrder) => number | null,
+      field: 'limitPrice' | 'stopPrice',
       place: (cid: string, price: number) => Promise<void>,
     ): Promise<string | null> => {
       const live = resting.filter(match);
-      // Both legs are triggers now, and both round towards firing rather than
-      // towards a better price: a target that misses by a tick is a target that
-      // does not exist.
+      // Both legs round towards firing rather than towards a better price: a
+      // level that misses by a tick is a level that does not exist. One tick of
+      // slippage is cheaper than an exit that never happens.
       const target = wanted === null ? null : stopPriceFor(role === 'stop_loss' ? 'buy' : 'sell', wanted, tick);
 
       // Right already, and the right size: keep it, and remember which it is.
@@ -619,7 +635,7 @@ export class TradeEngine {
       if (!keep && target !== null && live.length === 1) {
         const only = live[0]!;
         try {
-          await this.exchange.editOrder(only, { stopPrice: target, size });
+          await this.exchange.editOrder(only, { [field]: target, size });
           return only.clientOrderId ?? clientId(rec.state.tradeId, role, attempt);
         } catch (e) {
           // Some venues refuse an edit that a cancel-and-replace would allow.
@@ -650,23 +666,48 @@ export class TradeEngine {
       }
     };
 
+    /*
+     * The target rests on the book as a plain reduce-only limit buy.
+     *
+     * It was briefly a `take_profit_order` trigger, on the reasoning that a
+     * resting bid only fills when somebody offers at it, so a decayed option
+     * could fall straight through the level untouched. That reasoning was
+     * right; the implementation was not. Delta fired the trigger the instant it
+     * landed -- a short sold at 7.00 with a target at 0.50 bought itself back at
+     * 7.00 less than four seconds later, twice, for a real loss. The trigger
+     * direction for a *buy* is not what the docs led me to read into it.
+     *
+     * So the exchange is no longer asked to decide when the target is reached.
+     * A resting limit buy has one property that matters here and cannot be got
+     * wrong: it fills at its price or better, never worse. It cannot cost money
+     * by firing early, and the case it misses -- the mark falling through with
+     * no offer -- is covered by `takeProfitIfReached`, which watches the mark
+     * here rather than at the exchange.
+     */
     const tp = await settle(
       'take_profit',
       rec.plan.takeProfitPrice,
-      (o) => o.type === 'take_profit_market',
-      (o) => o.stopPrice,
+      (o) => o.type === 'limit',
+      (o) => o.limitPrice,
+      'limitPrice',
       (cid, price) => this.exchange.placeOrder({
         clientOrderId: cid, symbol: rec.plan.symbol, productId: product?.productId ?? 0,
-        side: 'buy', type: 'take_profit_market', size, stopPrice: price,
+        side: 'buy', type: 'limit', size, limitPrice: price,
         reduceOnly: true, role: 'take_profit',
       }).then(() => {}),
     );
 
+    /*
+     * The stop stays a trigger at the exchange, because its whole value is that
+     * it works when this process does not. `takeProfitIfReached` watches the
+     * level too, so an outage is covered from both ends.
+     */
     const sl = await settle(
       'stop_loss',
       rec.plan.stopPrice,
       (o) => o.type === 'stop_market',
       (o) => o.stopPrice,
+      'stopPrice',
       (cid, price) => this.exchange.placeOrder({
         clientOrderId: cid, symbol: rec.plan.symbol, productId: product?.productId ?? 0,
         side: 'buy', type: 'stop_market', size, stopPrice: price, reduceOnly: true, role: 'stop_loss',
@@ -805,6 +846,50 @@ export class TradeEngine {
     rec = await this.protect(rec);
     this.d.store.save(rec);
     return rec.state;
+  }
+
+  /**
+   * The desk's own eye on the exit levels.
+   *
+   * Two things forced this. A resting limit target only fills when somebody
+   * offers at it, so on a thin book the mark can fall straight through the
+   * level and leave the trade open -- which is what happened, and what the
+   * whole `take_profit_order` detour was meant to fix. And that detour taught
+   * the more useful lesson: handing the decision to the exchange means trusting
+   * a trigger direction that turned out to be inverted, and paying for it in
+   * real money before anybody noticed.
+   *
+   * So the level is judged here, where both directions are written down in
+   * plain arithmetic and pinned by tests. Every position this desk holds is
+   * short, so the target is reached when the mark *falls* to it and the stop
+   * when the mark *rises* to it. The resting limit and the exchange stop are
+   * kept as well: they may fill first and at a better price, and the stop is
+   * the only protection that survives this process dying.
+   */
+  private async takeProfitIfReached(rec: TradeRecord): Promise<TradeRecord> {
+    const { takeProfitPrice: target, stopPrice: stop } = rec.plan;
+    if (target === null && stop === null) return rec;
+
+    const quote = await this.exchange.getQuote(rec.plan.symbol).catch(() => null);
+    const mark = quote?.mark ?? null;
+    // A missing, stale, or nonsensical mark is not a reason to do anything.
+    if (mark === null || !Number.isFinite(mark) || mark <= 0) return rec;
+    if (quote !== null && this.now() - quote.ts > MARK_STALE_MS) return rec;
+
+    const hit =
+      target !== null && mark <= target ? ('target' as const)
+      : stop !== null && mark >= stop ? ('stop' as const)
+      : null;
+    if (hit === null) return rec;
+
+    // Closing at the market gives up the spread, and that is the trade being
+    // made: the level was reached, and an exit that happens beats a better
+    // price that might not.
+    const state = await this.closeNowInner(
+      rec.state.tradeId,
+      `${hit} reached at ${mark}`,
+    );
+    return this.d.store.get(rec.state.tradeId) ?? (state ? rec : rec);
   }
 
   // ------------------------------------------------------------ exits

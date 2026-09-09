@@ -11,6 +11,7 @@ import { midOf } from '../../trading/money.js';
 import {
   ORDER_STATUSES, istDayEnd, istDayStart, istToday, orderOutcomeOf, orderStatusOf,
 } from '../../trading/status.js';
+import { refuse } from '../refuse.js';
 
 /** 05:30 IST is when the daily contract opens, so that is where the day starts. */
 function startOfDayIst(now = Date.now()): number {
@@ -126,8 +127,9 @@ const view = (
      * showing.
      */
     onBook: {
-      // Both legs are triggers, so both carry their level in stopPrice.
-      target: resting.find((o) => o.reduceOnly && o.type === 'take_profit_market')?.stopPrice ?? null,
+      // The target rests as a limit and carries its level in limitPrice; the
+      // stop is a trigger and carries its level in stopPrice.
+      target: resting.find((o) => o.reduceOnly && o.type === 'limit')?.limitPrice ?? null,
       stop: resting.find((o) => o.reduceOnly && o.type === 'stop_market')?.stopPrice ?? null,
     },
   };
@@ -219,8 +221,9 @@ export function registerTradeRoutes(app: FastifyInstance) {
       return { error: "mode must be 'live' or 'paper'" };
     }
     const res = svc.setMode(mode);
-    if (!res.ok) reply.code(409);
-    return res;
+    // Refusing to flip with a position open is the guard doing its job, not a
+    // fault: it is answered plainly and stays out of the error log.
+    return res.ok ? res : refuse(reply, 409, res);
   });
 
   app.get('/api/trade/quote', async (req, reply) => {
@@ -326,13 +329,14 @@ export function registerTradeRoutes(app: FastifyInstance) {
         chaseSeconds: p.convertToMarketAfterSec,
       });
       if (!res.ok) {
-        reply.code(422);
-        return {
+        // A gate turned the order down. That is the desk working as designed --
+        // the screen shows the reason, and the error log never hears about it.
+        return refuse(reply, 422, {
           mode: svc.mode,
           ok: false,
           failures: res.precheck.ok ? [] : res.precheck.failures,
           trade: res.state,
-        };
+        });
       }
       return { mode: svc.mode, ok: true, trade: res.state };
     } catch (e) {

@@ -19,6 +19,13 @@ export type OrderSide = 'buy' | 'sell';
  * happened: a position marked at 1.00 against a target of 1.10, still open.
  */
 export type OrderType = 'limit' | 'market' | 'stop_market' | 'take_profit_market';
+/*
+ * Nothing places a `take_profit_market` any more -- Delta fired them the moment
+ * they landed, which cost real money, so the target rests as a plain limit and
+ * the level is watched by the engine instead. The type stays because orders
+ * placed before that are still readable: a leg this desk cannot recognise on
+ * the way back is a leg the reconciler cannot cancel.
+ */
 
 /** What the exchange says about one order. Local belief never overrides this. */
 export type OrderStatus =

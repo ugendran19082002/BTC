@@ -487,16 +487,75 @@ test('75 [critical] the mark reaching the target closes the position', async () 
   assert.equal(s?.phase, 'flat');
 });
 
-test('76 a target is a trigger, not a resting bid', async () => {
+test('76 the target rests as a limit, which can only ever fill at its price or better', async () => {
   const r = rig();
   const plan = planFor(ceProduct(), { lots: 1, stopPrice: null, takeProfitPrice: 90 });
   await r.engine.open(plan);
   await r.engine.poll(plan.tradeId);
 
   const [tp] = (await r.ex.getOpenOrders(CE)).filter((o) => o.reduceOnly);
-  assert.equal(tp?.type, 'take_profit_market');
-  assert.equal(tp?.stopPrice, 90, 'the level is a trigger');
-  assert.equal(tp?.limitPrice, null, 'not a price somebody has to meet');
+  assert.equal(tp?.type, 'limit', 'a limit, not a trigger the exchange decides when to fire');
+  assert.equal(tp?.limitPrice, 90);
+  assert.equal(tp?.side, 'buy');
+  assert.equal(tp?.reduceOnly, true);
+});
+
+/*
+ * 80 is the one that cost money.
+ *
+ * The target was briefly a `take_profit_order` trigger, and Delta fired it the
+ * instant it landed: a short sold at 7.00 with its target at 0.50 bought itself
+ * back at 7.00 less than four seconds later, twice, at a loss. The direction of
+ * a *buy* trigger is not what I read the docs to mean, and the paper exchange
+ * had been written to my reading of them -- so the suite agreed with the bug
+ * and 75 to 79 all passed while real orders lost money.
+ *
+ * The lesson is the one already written into docs/TODO.md, arriving from a new
+ * direction: anything the exchange decides has to be *observed* at the exchange,
+ * not asserted against a simulator built from the same assumption as the code.
+ * What is left here is the property that does not depend on whose semantics are
+ * right -- an exit may never print worse than the level that asked for it.
+ */
+test('80 [critical] a target far below the mark never closes at the mark', async () => {
+  const r = rig({ quotes: [quote(CE, 6.9, 7.1, { mark: 7 })] });
+  const plan = planFor(ceProduct(), {
+    lots: 1, stopPrice: null, takeProfitPrice: 0.5,
+    entry: { type: 'limit', limitPrice: 6.9, timeoutMs: 0, marketFallback: false, chase: null },
+  });
+  await r.engine.open(plan);
+  await r.engine.poll(plan.tradeId);
+  assert.equal(r.store.get(plan.tradeId)!.state.position, -1);
+
+  // several polls at an unchanged mark: the level is nowhere near being reached
+  for (let i = 0; i < 3; i += 1) {
+    r.ex.tick(quote(CE, 6.9, 7.1, { mark: 7, ts: r.now() }));
+    await r.engine.poll(plan.tradeId);
+  }
+
+  const st = r.store.get(plan.tradeId)!.state;
+  assert.equal(st.position, -1, 'still short: 7.00 is nowhere near the 0.50 target');
+  const exits = st.fills.filter((f) => f.side === 'buy');
+  assert.deepEqual(exits, [], 'and nothing bought it back at the price it was sold at');
+});
+
+test('80b whatever closes the trade, it never prints worse than the level asked for', async () => {
+  // The property that holds no matter which side decides the level was reached.
+  const r = rig({ quotes: [quote(CE, 26, 28, { mark: 27 })] });
+  const plan = planFor(ceProduct(), {
+    lots: 1, stopPrice: null, takeProfitPrice: 11,
+    entry: { type: 'limit', limitPrice: 26, timeoutMs: 0, marketFallback: false, chase: null },
+  });
+  await r.engine.open(plan);
+  await r.engine.poll(plan.tradeId);
+
+  r.ex.tick(quote(CE, 5, 12, { mark: 10, ts: r.now() }));
+  await r.engine.poll(plan.tradeId);
+
+  const st = r.store.get(plan.tradeId)!.state;
+  const entry = st.fills.find((f) => f.side === 'sell')!;
+  for (const exit of st.fills.filter((f) => f.side === 'buy')) {
+    assert.ok(exit.price < entry.price, `bought back at ${exit.price} against a sale at ${entry.price}`);
+  }
 });
 
 test('77 it does not fire while the mark is still above the target', async () => {
@@ -559,7 +618,7 @@ test('69 [critical] when an edit is refused, a cancel that does not take stops t
   const s = await r.engine.updateProtection(plan.tradeId, { takeProfitPrice: 50 });
   const live = (await r.ex.getOpenOrders(CE)).filter((o) => o.reduceOnly);
   assert.equal(live.length, 1, 'one order, not two: nothing was stacked on top');
-  assert.equal(live[0]?.stopPrice, 90, 'and it is still the old one');
+  assert.equal(live[0]?.limitPrice, 90, 'and it is still the old one');
   assert.match(s?.note ?? '', /could not cancel/);
 });
 
@@ -606,7 +665,7 @@ test('71 a level moved on the plan is moved on the book', async () => {
   await r.engine.updateProtection(plan.tradeId, { takeProfitPrice: 50 });
   const live = (await r.ex.getOpenOrders(CE)).filter((o) => o.reduceOnly);
   assert.equal(live.length, 1, 'still one');
-  assert.equal(live[0]?.stopPrice, 50, 'at the new level');
+  assert.equal(live[0]?.limitPrice, 50, 'at the new level');
 });
 
 test('72 turning both exits off empties the book', async () => {

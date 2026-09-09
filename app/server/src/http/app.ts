@@ -8,6 +8,7 @@ import { registerBacktestRoutes } from './routes/backtest.routes.js';
 import { registerTradeRoutes } from './routes/trade.routes.js';
 import { registerErrorRoutes } from './routes/errors.routes.js';
 import { noteError } from '../observability/errors.js';
+import { wasRefusal, worthLogging } from './refuse.js';
 
 /** Open without a session: the health probe, and login itself. */
 const PUBLIC_ROUTES = new Set(['/api/health', '/api/login', '/api/me']);
@@ -57,8 +58,11 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   // A route that answers 4xx or 5xx without throwing is still a failure worth
   // seeing -- most of this API reports its problems in the body, not by throwing.
+  // Except when the "no" was the point: a gate turning an order down, or the
+  // mode switch holding the line, is the desk working. Those are marked by
+  // `refuse` and stay out, or every blocked order becomes an error to triage.
   app.addHook('onResponse', async (req, reply) => {
-    if (reply.statusCode < 400 || reply.statusCode === 401 || reply.statusCode === 404) return;
+    if (!worthLogging(reply.statusCode, wasRefusal(reply))) return;
     noteError({
       source: 'server',
       level: reply.statusCode >= 500 ? 'error' : 'warn',

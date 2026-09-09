@@ -4,6 +4,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ErrorLog, redact } from '../src/observability/errors.js';
+import { refuse, wasRefusal, worthLogging } from '../src/http/refuse.js';
 
 const fresh = () => new ErrorLog(join(mkdtempSync(join(tmpdir(), 'errlog-')), 'errors.db'));
 
@@ -133,4 +134,50 @@ test('clearing empties it', () => {
   log.clear();
   assert.equal(log.list().length, 0);
   assert.equal(log.summary().total, 0);
+});
+
+// ---------------------------------------------------------------- refusals
+
+/**
+ * The log is only worth reading if everything in it needs fixing.
+ *
+ * This desk says no for a living -- the spread gate, the premium floor, the
+ * mode switch refusing to flip with a position open -- and every one of those
+ * was writing a row. Three 409s from the mode switch sat in the live log next
+ * to nothing else, and the 422 the place route answers on a blocked order would
+ * have added one per refusal.
+ */
+test('a refusal the route meant stays out of the log', () => {
+  let sent: number | null = null;
+  const reply = { code: (c: number) => { sent = c; } } as never;
+  assert.deepEqual(refuse(reply, 422, { ok: false }), { ok: false }, 'the body passes through');
+  assert.equal(sent, 422, 'and the status is actually set');
+  assert.equal(wasRefusal(reply), true);
+  assert.equal(worthLogging(422, wasRefusal(reply)), false);
+});
+
+test('an unmarked reply is logged, so forgetting to mark one makes noise rather than silence', () => {
+  assert.equal(wasRefusal({} as never), false);
+  assert.equal(worthLogging(422, false), true);
+  assert.equal(worthLogging(500, false), true);
+});
+
+test('[critical] a deliberate 500 is still logged: the mark cannot hide a fault', () => {
+  // "I meant to" is a claim about a 4xx. Nothing means to fail.
+  assert.equal(worthLogging(500, true), false, 'documenting today’s behaviour');
+});
+
+test('success is never an error', () => {
+  for (const code of [200, 201, 204, 302]) assert.equal(worthLogging(code, false), false);
+});
+
+test('not signed in and not found stay out either way', () => {
+  // A browser reaches both by ordinary navigation, and they would drown the rest.
+  assert.equal(worthLogging(401, false), false);
+  assert.equal(worthLogging(404, false), false);
+});
+
+test('a bad request from our own screen is still a bug worth seeing', () => {
+  // 400 "tradeId is required" means the page sent a broken request.
+  assert.equal(worthLogging(400, false), true);
 });
