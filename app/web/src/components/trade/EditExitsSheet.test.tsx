@@ -161,3 +161,68 @@ describe('saving', () => {
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });
 });
+
+/**
+ * The price you are setting the exit against.
+ *
+ * Dragging a target without being able to see where the mark is, is guesswork
+ * — and the case that matters is a target set at or above the mark, which
+ * closes the position the moment it is moved. That is not hypothetical: a
+ * target that fired on placement bought a short back at the price it had just
+ * been sold at, twice, on 9 September.
+ */
+describe('the live figures', () => {
+  const withLive = (over: Partial<NonNullable<Trade['live']>> = {}) => ({
+    ...trade(),
+    entryAvgPrice: 19,
+    onBook: { target: 16.3, stop: null },
+    plan: { ...trade().plan!, takeProfitPrice: 16.3, stopPrice: null },
+    live: {
+      markPrice: 17.5, unrealisedPnl: 0.0015, decayed: 0.08, liquidationPrice: 216.76,
+      ...over,
+    },
+  }) as Trade;
+
+  it('shows the mark, so the level is set against something', () => {
+    render(<EditExitsSheet trade={withLive()} open onOpenChange={() => {}} />);
+    expect(screen.getByText('now')).toBeInTheDocument();
+    expect(screen.getByText('17.50')).toBeInTheDocument();
+  });
+
+  it('shows the profit in rupees with the dollars underneath', () => {
+    render(<EditExitsSheet trade={withLive({ unrealisedPnl: 2 })} open onOpenChange={() => {}} />);
+    expect(screen.getByText('+₹170')).toBeInTheDocument();
+    expect(screen.getByText('+$2.00')).toBeInTheDocument();
+  });
+
+  it('colours a loss as a loss', () => {
+    render(<EditExitsSheet trade={withLive({ unrealisedPnl: -2 })} open onOpenChange={() => {}} />);
+    expect(screen.getByText('−₹170').className).toContain('--down');
+  });
+
+  it('says how far the mark still has to fall', () => {
+    // seeded from the book at 16.30 against a mark of 17.50
+    render(<EditExitsSheet trade={withLive()} open onOpenChange={() => {}} />);
+    expect(screen.getByText('to target')).toBeInTheDocument();
+    expect(screen.getByText('1.20')).toBeInTheDocument();
+  });
+
+  it('[critical] warns when the target is already at or above the mark', () => {
+    // the mark has fallen past the target: moving it closes the position now
+    render(<EditExitsSheet trade={withLive({ markPrice: 15 })} open onOpenChange={() => {}} />);
+    expect(screen.getByText('reached')).toBeInTheDocument();
+    expect(screen.getByText(/fills as soon as it is set/)).toBeInTheDocument();
+  });
+
+  it('says nothing about a distance when the target is switched off', () => {
+    const off = { ...withLive(), onBook: { target: null, stop: null } } as Trade;
+    off.plan = { ...off.plan!, takeProfitPrice: null };
+    render(<EditExitsSheet trade={off} open onOpenChange={() => {}} />);
+    expect(screen.queryByText(/fills as soon as it is set/)).toBeNull();
+  });
+
+  it('has nothing to claim when the exchange has not sent a mark', () => {
+    render(<EditExitsSheet trade={withLive({ markPrice: null })} open onOpenChange={() => {}} />);
+    expect(screen.queryByText(/fills as soon as it is set/)).toBeNull();
+  });
+});

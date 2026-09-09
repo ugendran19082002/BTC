@@ -148,7 +148,9 @@ spinners removed — they are one pixel from the field on a trading screen),
 | `api/trade.ts` | 90 | The trading calls. |
 | `lib/report-error.ts` | 83 | Sends a browser failure to the server. Never throws, never reports its own failure, folds repeats locally. |
 | `hooks/usePoll.ts` | 58 | Call something on a timer and keep the last good answer. A screen that goes empty for a second is worse than one that says it is stale. |
+| `lib/exit-checks.ts` | 92 | Whether a stop and a target make sense against the mark *right now*. Shared by the sheet and the ticket so they cannot tell the same story two different ways. |
 | `lib/csv.ts` | 52 | A CSV that opens cleanly in Excel: RFC quoting, BOM, CRLF. |
+| `ui/figure.tsx` | 39 | A label, a number, and the same number in the other currency. Shared by the positions card and the exits sheet — a mark that reads differently in two places is a reason to distrust both. |
 | `layout/ErrorBoundary.tsx` | 51 | A component that throws takes its part of the screen down, not the desk. |
 | `hooks/usePersisted.ts` | 41 | State that survives a reload; every access wrapped, because a private window throws. |
 | `api/desk.ts` (40), `types/errors.ts` (28), `api/session.ts` (21), `api/errors.ts` (17), `main.tsx` (17), `api/backtest.ts` (11), `lib/utils.ts` (7) | | Small and self-evident. |
@@ -173,7 +175,7 @@ spinners removed — they are one pixel from the field on a trading screen),
 | `trading/store.test.ts` | 88 | Written after the `plan`-column bug: the first test is a plan changed and read back. |
 | `trading/money.test.ts` | 67 | Tick rounding, in the direction that never costs you. |
 
-## `app/web/src` tests — 12 files, 198 tests
+## `app/web/src` tests — 14 files, 217 tests
 
 `OrderTicket.test.tsx` (432), `PositionsCard.test.tsx` (347),
 `EditExitsSheet.test.tsx` (163), `format.test.ts` (150),

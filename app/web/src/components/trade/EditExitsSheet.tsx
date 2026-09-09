@@ -6,6 +6,7 @@ import { Sheet, SheetContent, SheetFooter } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { ExitBars } from '@/components/trade/ExitBars';
 import { Figure } from '@/components/ui/figure';
+import { checkExits } from '@/lib/exit-checks';
 import {
   contractLabel, price, signedInr, signedUsd, usdToInr,
 } from '@/lib/format';
@@ -95,15 +96,16 @@ export function EditExitsSheet({ trade, open, onOpenChange, onSaved }: {
   const toTarget = mark !== null && wantedTarget !== null ? mark - wantedTarget : null;
 
   /*
-   * A target at or above the mark closes the position the moment it is moved.
+   * The levels being set, checked against the price right now.
    *
-   * Not hypothetical: a target that fired on placement is exactly what bought a
-   * short back at the price it had just been sold at, twice, earlier today. The
-   * order is a limit buy so it can only fill at this level or better -- but
-   * "immediately, at roughly the mark" is rarely what somebody dragging a bar
-   * means, so it is worth saying out loud before the button is pressed.
+   * The shared rule rather than one written here, so the ticket and this sheet
+   * cannot end up telling the same story two different ways. Nothing it finds
+   * blocks the button: the desk closing a position at a level you asked it to
+   * close at is the system working, and somebody may well mean it. It is said
+   * before the button rather than discovered after it.
    */
-  const firesAtOnce = toTarget !== null && toTarget <= 0;
+  const wantedStop = stopOn && entry !== null ? entry * (1 + stopPct) : null;
+  const problems = checkExits({ mark, entry, targetPrice: wantedTarget, stopPrice: wantedStop });
 
   const save = async () => {
     setBusy(true);
@@ -187,13 +189,14 @@ export function EditExitsSheet({ trade, open, onOpenChange, onSaved }: {
           </div>
         </dl>
 
-        {firesAtOnce && (
-          <p className="m-0 mt-2 text-[11.5px] leading-snug text-[var(--warn)]">
-            The mark is already {price(mark)}, so a target at {price(wantedTarget)} fills as soon
-            as it is moved. It is a limit buy and cannot pay more than {price(wantedTarget)} — it
-            simply closes the position now rather than later.
+        {problems.map((p) => (
+          <p
+            key={`${p.leg}-${p.kind}`}
+            className="m-0 mt-2 text-[11.5px] leading-snug text-[var(--warn)]"
+          >
+            {p.message}
           </p>
-        )}
+        ))}
 
         {drifted && (
           <p className="m-0 mt-2 text-[11.5px] leading-snug text-[var(--warn)]">
