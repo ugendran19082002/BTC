@@ -1,0 +1,108 @@
+======================================================================================
+R&D: PREMIUM FLOORS, ENTRY TIMES, AND SKIPPING THE LOSING DAYS
+======================================================================================
+10 contracts per leg, CE + PE, 5% slippage, held to settlement
+
+======================================================================================
+1.  PREMIUM FLOOR SWEEP      [MEASURED -- real quotes, real settlements]
+======================================================================================
+   FLOOR  DAYS    OTM   TOTAL Rs    /DAY   WIN%     PF  WORST Rs   MDD Rs
+  --------------------------------------------------------------------------
+      $8   398  3.15%     +2,272   +5.71  99.0%   2.60      -723      723
+     $11   438  2.95%     +3,813   +8.71  98.9%   3.01      -721      721
+     $13   455  2.87%     +4,659  +10.24  98.2%   2.96      -721      721
+     $15   476  2.77%     +6,028  +12.66  97.9%   3.39      -721      721
+     $18   498  2.65%     +7,216  +14.49  97.2%   2.91    -1,048    1,066
+     $20   512  2.57%     +7,849  +15.33  97.1%   2.65    -1,045    1,248
+     $22   526  2.48%     +9,153  +17.40  97.0%   2.77    -1,043    1,227
+     $25   548  2.39%     +9,297  +16.97  95.1%   2.20    -1,041    1,336
+     $30   570  2.24%    +10,908  +19.14  93.9%   2.06    -1,036    1,484
+
+  A higher floor means a richer premium and a strike closer to spot. The
+  premium rises steadily; so does the worst day. Where the two cross is
+  the only thing this table is for.
+
+======================================================================================
+2.  ENTRY TIME               [PART MODELLED -- see the header]
+======================================================================================
+    TIME  DAYS   TOTAL Rs    /DAY   WIN%     PF  WORST Rs   MDD Rs
+  ------------------------------------------------------------------
+  05:00   734     +4,663   +6.35  96.9%   1.50    -1,263    2,177
+  05:15   734     +4,189   +5.71  97.1%   1.43    -1,264    2,213
+  05:30   734     +4,918   +6.70  97.1%   1.55    -1,223    3,047  <- the desk
+  05:45   734     +4,443   +6.05  97.1%   1.46    -1,392    2,576
+  05:55   734     +4,633   +6.31  96.6%   1.51    -1,097    2,813
+  06:00   734     +4,139   +5.64  97.1%   1.43    -1,378    3,858
+
+  These are one model applied six times, so compare them with each other,
+  not with section 1. An hour either side of 05:30 changes little: the
+  contract has 12 hours to run and one of them is not the difference.
+
+======================================================================================
+3.  THE LOSING DAYS          [MEASURED]
+======================================================================================
+  10 losing days out of 476  (2.1%)
+  they cost Rs -2,521; the winners made Rs +8,549
+
+  WHAT A LOSING DAY LOOKED LIKE AT 05:30, against all days
+  FEATURE                      losing days    all days       
+  at-the-money IV                   30.74%      34.95%  -4.21
+  premium on offer                  10.71$      11.63$  -0.92
+  strike distance                    1.90%       2.58%  -0.69
+  yesterday's move                   0.66%       0.52%  +0.14
+
+  and what actually happened that day, which was NOT knowable at 05:30:
+  BTC move to settlement             2.25%       0.52%  +1.73
+
+  The losing days are the days BTC moved. Nothing on the first list
+  separates them at 05:30 by anything like the margin the last one does.
+
+======================================================================================
+4.  CAN THE LOSING DAYS BE SKIPPED?   [MEASURED]
+======================================================================================
+  Each filter stands the desk aside on the days it flags. A filter earns
+  its place only if what it saves exceeds what it gives up.
+
+  FILTER                          SKIP  LOSS SAVED  PROFIT LOST    NET Rs  NEW TOTAL
+  --------------------------------------------------------------------------------
+  skip when yesterday moved >2.0%    45        +913         +768      +146     +6,174
+  skip when yesterday moved >4.0%     4          +0          +68       -68     +5,961
+  skip when IV > 55%                 5          +0          +99       -99     +5,929
+  skip when yesterday moved >3.0%    11          +0         +205      -205     +5,824
+  skip Mondays                      26         +81         +451      -370     +5,658
+  skip when premium > $14           25          +0         +578      -578     +5,450
+  skip when strike closer than 2.0%   150      +1,713       +2,675      -962     +5,067
+  skip Fridays                      92          +0       +1,427    -1,427     +4,601
+  skip when premium > $13           98          +0       +2,152    -2,152     +3,876
+  skip when strike closer than 2.5%   224      +1,719       +4,061    -2,342     +3,687
+  skip when premium > $12          189         +70       +3,967    -3,897     +2,131
+
+  doing nothing at all:                                                  +6,028
+
+  Best: skip when yesterday moved >2.0% -- but read the caveat below before using it.
+
+  THE CAVEAT THAT MATTERS: these thresholds were chosen by looking at the
+  same 733 days they are scored on. That is how a filter is found and it is
+  not how one is proved. A rule fitted to the days it is tested on will
+  always look better than it will behave. Section 5 splits the record.
+
+======================================================================================
+5.  DOES ANY OF IT HOLD UP OUT OF SAMPLE?
+======================================================================================
+  first half  2024-09-04 to 2025-10-09   (238 days)
+  second half 2025-10-10 to 2026-09-07   (238 days)
+
+  FILTER                          1st half net  2nd half net   holds?
+  --------------------------------------------------------------------
+  skip when yesterday moved >2.0%          +105           +40      yes
+  skip when yesterday moved >4.0%           -51           -17       NO
+  skip when IV > 55%                       -20           -80       NO
+  skip when yesterday moved >3.0%          -111           -94       NO
+  skip Mondays                            -134          -236       NO
+  skip when premium > $14                 -139          -439       NO
+
+  A filter that helps in one half and hurts in the other has found a
+  feature of those particular days, not of the strategy. The README says
+  the same thing about the R&D engine: results flip between regimes, and
+  only what survives both halves is worth carrying.
+======================================================================================
