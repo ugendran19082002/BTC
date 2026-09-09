@@ -95,10 +95,10 @@ describe('the mode', () => {
 describe('the short cap, visible before it refuses', () => {
   // The gate lives in the order ticket, so until this row existed the only way
   // to learn the limit was to be turned down by it mid-ticket.
-  const position = (size: number) => ({
-    symbol: 'P-BTC-76800-090926', size, entryPrice: 32, markPrice: 29.92,
-    unrealisedPnlUsd: 0.854, liquidationPrice: null,
-  }) as TradeStatus['positions'][number];
+  const position = (size: number): TradeStatus['positions'][number] => ({
+    symbol: 'P-BTC-76800-090926', productId: 1, size, entryPrice: 32,
+    markPrice: 29.92, unrealisedPnl: 0.854, liquidationPrice: null,
+  });
 
   it('says how much of the cap is used', async () => {
     render(<AccountCard status={status({ positions: [position(-410)] })} />);
