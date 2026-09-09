@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { AccountCard } from '@/components/trade/AccountCard';
 import type { TradeStatus } from '@/types/trade';
 
@@ -89,5 +89,46 @@ describe('the mode', () => {
     expect(screen.getByText('real money')).toBeInTheDocument();
     rerender(<AccountCard status={status({ mode: 'paper', live: false })} />);
     expect(screen.getByText('paper')).toBeInTheDocument();
+  });
+});
+
+describe('the short cap, visible before it refuses', () => {
+  // The gate lives in the order ticket, so until this row existed the only way
+  // to learn the limit was to be turned down by it mid-ticket.
+  const position = (size: number) => ({
+    symbol: 'P-BTC-76800-090926', size, entryPrice: 32, markPrice: 29.92,
+    unrealisedPnlUsd: 0.854, liquidationPrice: null,
+  }) as TradeStatus['positions'][number];
+
+  it('says how much of the cap is used', async () => {
+    render(<AccountCard status={status({ positions: [position(-410)] })} />);
+    const line = document.querySelector('[aria-label="short cap"]');
+    expect(line?.textContent).toContain('410');
+    expect(line?.textContent).toContain('of 500 contracts');
+  });
+
+  it('counts a short towards the cap by its size, not its sign', async () => {
+    // The cap is on contracts short; a negative position is 410 of them, not −410.
+    render(<AccountCard status={status({ positions: [position(-410)] })} />);
+    expect(document.querySelector('[aria-label="short cap"]')?.textContent).not.toContain('-410');
+  });
+
+  it('offers the change control seeded with the limit in force', async () => {
+    render(<AccountCard status={status({ positions: [position(-410)] })} />);
+    fireEvent.click(screen.getByText('change'));
+    expect((screen.getByLabelText('most contracts short') as HTMLInputElement).value).toBe('500');
+  });
+
+  it('refuses a cap that is not a whole number of contracts, without asking the server', async () => {
+    render(<AccountCard status={status()} />);
+    fireEvent.click(screen.getByText('change'));
+    fireEvent.change(screen.getByLabelText('most contracts short'), { target: { value: '2.5' } });
+    fireEvent.click(screen.getByText('save'));
+    expect(await screen.findByText(/whole number of contracts/)).toBeInTheDocument();
+  });
+
+  it('shows nothing open as zero used rather than as an empty row', async () => {
+    render(<AccountCard status={status()} />);
+    expect(document.querySelector('[aria-label="short cap"]')?.textContent).toContain('0');
   });
 });
