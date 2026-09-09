@@ -8,7 +8,8 @@ import { optionStructure } from '../../domain/structure.js';
 import { forecast, reloadHorizons } from '../../domain/forecast.js';
 import { loadCalibration, reloadCalibration } from '../../domain/calibration.js';
 import { loadDays, reloadDays, DEFAULTS } from '../../backtest/backtest.js';
-import { tradingService } from '../../trading/service.js';
+import { tradingService, SHORT_CAP_KEY } from '../../trading/service.js';
+import { refuse } from '../refuse.js';
 
 /** Resolve the `at` query param: "now" (or absent) means live. */
 function resolveAt(at: string | undefined): number | null {
@@ -158,6 +159,15 @@ export function registerDeskRoutes(app: FastifyInstance) {
   };
 
   /**
+   * Settings holding a number rather than one of a fixed set.
+   *
+   * Listed separately because an allow-list cannot express "any whole number up
+   * to whatever the margin covers today", and that ceiling is the whole point:
+   * the browser may ask the desk to risk less, never more.
+   */
+  const NUMERIC_SETTINGS = [SHORT_CAP_KEY];
+
+  /**
    * Desk settings that survive a restart.
    *
    * GET returns every key the desk knows about. POST accepts one key/value
@@ -167,10 +177,21 @@ export function registerDeskRoutes(app: FastifyInstance) {
   app.get('/api/settings', async () => {
     const svc = tradingService();
     const out: Record<string, string | null> = {};
-    for (const key of Object.keys(ALLOWED_SETTINGS)) {
+    for (const key of [...Object.keys(ALLOWED_SETTINGS), ...NUMERIC_SETTINGS]) {
       out[key] = svc.store.getSetting(key);
     }
-    return { settings: out };
+    return {
+      settings: out,
+      /**
+       * What the short cap is allowed to be, so the screen can show the room
+       * rather than letting someone type a number the server will refuse.
+       */
+      shortCap: {
+        inForce: svc.maxShortContracts,
+        ceiling: svc.shortCeilingContracts,
+        chosen: svc.shortCapSetting,
+      },
+    };
   });
 
   app.post('/api/settings', async (req, reply) => {
@@ -179,6 +200,25 @@ export function registerDeskRoutes(app: FastifyInstance) {
       reply.code(400);
       return { error: 'key and value are required' };
     }
+
+    // The short cap is a number with a ceiling rather than one of a fixed set,
+    // and the ceiling moves with the balance, so the service owns the decision.
+    if (key === SHORT_CAP_KEY) {
+      const svc = tradingService();
+      const n = Number(value);
+      if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1) {
+        reply.code(400);
+        return { error: 'the short cap must be a whole number of contracts, at least 1' };
+      }
+      const res = svc.setShortCap(n);
+      // Holding the line against too large a cap is the desk working, not a
+      // fault, so it is marked and stays out of the error log.
+      if (!res.ok) return refuse(reply, 422, { error: res.reason });
+      return { ok: true, key, value: String(res.cap), shortCap: {
+        inForce: res.cap, ceiling: svc.shortCeilingContracts, chosen: svc.shortCapSetting,
+      } };
+    }
+
     const allowed = ALLOWED_SETTINGS[key];
     if (!allowed) {
       reply.code(400);

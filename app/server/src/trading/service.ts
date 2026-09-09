@@ -4,8 +4,10 @@ import { TradeEngine, type TradePlan, type TradeRecord } from './engine.js';
 import { SqliteTradeStore } from './store.js';
 import { DeltaExchange } from './exchange/delta.js';
 import { PaperExchange } from './exchange/paper.js';
-import { DEFAULT_LIMITS, dailyLossLimitFor, type RiskLimits } from './precheck.js';
-import { clampLeverage } from './margin.js';
+import {
+  DEFAULT_LIMITS, dailyLossLimitFor, maxShortContractsFor, type RiskLimits,
+} from './precheck.js';
+import { clampLeverage, fundsRequiredPerContract } from './margin.js';
 import { isDone } from './machine.js';
 import { noteError } from '../observability/errors.js';
 import type { ExchangePort } from './exchange/port.js';
@@ -43,6 +45,9 @@ const QUOTE_TTL_MS = 800;
  * is visible rather than implied.
  */
 const DEFAULT_LEVERAGE = 200;
+
+/** Where the chosen short cap is kept, so it outlives a restart. */
+export const SHORT_CAP_KEY = 'max_short_contracts';
 /**
  * Four concessions rather than one.
  *
@@ -90,6 +95,14 @@ export class TradingService {
   private lastSpot: number | null = null;
   /** Last balance seen, so the daily-loss limit can be set from it. */
   private lastBalance: number | null = null;
+  /**
+   * Contracts short across the book at the last look.
+   *
+   * Only ever used to work out how many *more* the margin could carry. The
+   * gates count the real position from `getPositions()`; this is a display-side
+   * figure and must never be mistaken for one.
+   */
+  private lastShortContracts = 0;
   readonly alarms: { tradeId: string; message: string; at: number }[] = [];
 
   constructor(limits: Partial<RiskLimits> = {}) {
@@ -117,6 +130,11 @@ export class TradingService {
       // than whatever it was when the process started.
       limits: { ...DEFAULT_LIMITS, ...limits, get maxDailyLossUsd() {
         return limits.maxDailyLossUsd ?? dailyLossLimitFor(self.lastBalance);
+      }, get maxShortContracts() {
+        // Same reasoning as the loss limit: read at the moment the gate runs,
+        // so changing the setting takes effect on the next order rather than
+        // on the next restart.
+        return limits.maxShortContracts ?? self.maxShortContracts;
       } },
       tradingEnabled: true,
       feedHealthy: () => this.feedOk,
@@ -350,6 +368,7 @@ export class TradingService {
     }
     const rows = await this.exchange.getPositions().catch(() => this.positionsCache?.rows ?? []);
     this.positionsCache = { rows, at: now };
+    this.lastShortContracts = rows.reduce((n, x) => n + (x.size < 0 ? -x.size : 0), 0);
     return rows;
   }
 
@@ -400,6 +419,62 @@ export class TradingService {
 
   /** What the desk will let today lose, given what is in the account. */
   get dailyLossLimitUsd() { return dailyLossLimitFor(this.lastBalance); }
+
+  /**
+   * Contracts this account's margin could carry short, all in.
+   *
+   * What is already short counts towards it: the margin behind those contracts
+   * is committed, not spent, so the ceiling is what is free plus what is
+   * standing. Priced at the desk's own default leverage, which is the most it
+   * will ever send without being told otherwise.
+   *
+   * `null` until a spot and a balance have both been seen -- a ceiling guessed
+   * from nothing is exactly the decoration this is meant to avoid.
+   */
+  get shortCeilingContracts(): number | null {
+    if (this.lastSpot === null || this.lastBalance === null) return null;
+    // Premium 0: the fee is a fraction of it, and this is a capacity figure
+    // rather than the cost of one particular option.
+    const per = fundsRequiredPerContract({
+      spot: this.lastSpot, premium: 0, leverage: DEFAULT_LEVERAGE,
+    });
+    if (!(per > 0)) return null;
+    return Math.floor(this.lastBalance / per) + this.lastShortContracts;
+  }
+
+  /** The cap the desk has been asked to hold itself to, if any. */
+  get shortCapSetting(): number | null {
+    const raw = this.store.getSetting(SHORT_CAP_KEY);
+    if (raw === null) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : null;
+  }
+
+  /** The cap actually in force: the setting, never above what margin allows. */
+  get maxShortContracts(): number {
+    return maxShortContractsFor(this.shortCeilingContracts, this.shortCapSetting);
+  }
+
+  /**
+   * Change the cap. The server decides, the browser only asks.
+   *
+   * Returns the reason when it will not, so the screen can say why rather than
+   * showing a number that quietly did not take.
+   */
+  setShortCap(contracts: number): { ok: true; cap: number } | { ok: false; reason: string } {
+    if (!Number.isFinite(contracts) || contracts < 1 || Math.floor(contracts) !== contracts) {
+      return { ok: false, reason: 'The cap must be a whole number of contracts, at least 1.' };
+    }
+    const ceiling = this.shortCeilingContracts;
+    if (ceiling !== null && contracts > ceiling) {
+      return {
+        ok: false,
+        reason: `Margin covers ${ceiling} contracts at ${DEFAULT_LEVERAGE}x. A cap above that could never stop anything.`,
+      };
+    }
+    this.store.setSetting(SHORT_CAP_KEY, String(contracts));
+    return { ok: true, cap: this.maxShortContracts };
+  }
 
   list(limit = 50): TradeRecord[] { return this.store.recent(limit); }
   openTrades(): TradeRecord[] { return this.store.open().filter((r) => !isDone(r.state)); }

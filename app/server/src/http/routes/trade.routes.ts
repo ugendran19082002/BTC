@@ -203,7 +203,11 @@ export function registerTradeRoutes(app: FastifyInstance) {
       /** Booked today, in USD. The daily-loss gate reads this; now so can you. */
       realisedTodayUsd: svc.store.realisedSince(startOfDayIst()),
       // The limit in force, which is set from the balance rather than fixed.
-      limits: { ...DEFAULT_LIMITS, maxDailyLossUsd: svc.dailyLossLimitUsd },
+      limits: {
+        ...DEFAULT_LIMITS,
+        maxDailyLossUsd: svc.dailyLossLimitUsd,
+        maxShortContracts: svc.maxShortContracts,
+      },
     };
   });
 
@@ -281,7 +285,11 @@ export function registerTradeRoutes(app: FastifyInstance) {
         dayPnlUsd: svc.store.realisedSince(Date.now() - 86_400_000),
         worstCaseLossUsd: worstCase,
         // The limit in force, which is set from the balance rather than fixed.
-      limits: { ...DEFAULT_LIMITS, maxDailyLossUsd: svc.dailyLossLimitUsd },
+      limits: {
+        ...DEFAULT_LIMITS,
+        maxDailyLossUsd: svc.dailyLossLimitUsd,
+        maxShortContracts: svc.maxShortContracts,
+      },
       });
 
       return {
@@ -306,7 +314,22 @@ export function registerTradeRoutes(app: FastifyInstance) {
         // The price this option has to reach before the exchange closes the
         // position out. At 200x it is close; that is the whole point of showing it.
         liquidationPrice: margin ? liquidationPrice(margin) : null,
-        maxLots: margin ? maxLotsAt(balance, margin, product?.lotSize ?? 1) : null,
+        /*
+         * The largest size that would actually be allowed through -- margin
+         * *and* the short cap, not margin alone.
+         *
+         * The ticket's "max" button and the "N lots at 200x" line both read
+         * this. Sized on margin only, it offered 775 lots while 90 was all the
+         * cap had room for, so `max` filled the box with a number MAX_POSITION
+         * was certain to refuse. A screen that suggests a size the server will
+         * turn down is the screen disagreeing with the book again.
+         */
+        maxLots: margin
+          ? Math.max(0, Math.min(
+              maxLotsAt(balance, margin, product?.lotSize ?? 1),
+              Math.floor((svc.maxShortContracts - totalShort) / (product?.lotSize ?? 1)),
+            ))
+          : null,
       };
     } catch (e) {
       reply.code(400);

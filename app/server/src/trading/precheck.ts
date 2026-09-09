@@ -103,6 +103,32 @@ export const DEFAULT_LIMITS: RiskLimits = {
   maxLeverage: 200,
 };
 
+/**
+ * The most contracts the desk may be short across the whole book.
+ *
+ * Two numbers meet here. The *ceiling* is what the account's margin can
+ * actually carry; the *choice* is what the desk has been told to allow. The
+ * choice may lower the ceiling and can never raise it, for the same reason
+ * `maxDailyLossUsd` is set from the balance: a cap larger than the margin
+ * behind it cannot ever fire, and a gate that cannot fire is worse than no
+ * gate, because it reads as protection.
+ *
+ * So the browser is allowed to ask for less risk and never for more. With no
+ * ceiling known yet -- no spot, or no balance read -- the fixed default stands
+ * rather than an unbounded one.
+ */
+export function maxShortContractsFor(
+  marginCeiling: number | null,
+  chosen: number | null,
+): number {
+  const ceiling =
+    marginCeiling !== null && Number.isFinite(marginCeiling) && marginCeiling > 0
+      ? Math.floor(marginCeiling)
+      : DEFAULT_LIMITS.maxShortContracts;
+  if (chosen === null || !Number.isFinite(chosen) || chosen <= 0) return ceiling;
+  return Math.max(1, Math.min(Math.floor(chosen), ceiling));
+}
+
 export type PrecheckInput = {
   now: number;
   intent: {
