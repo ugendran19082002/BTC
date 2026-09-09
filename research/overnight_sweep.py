@@ -19,11 +19,45 @@ Two exit modes, because "23:30 to 05:00" can mean either:
   HOLD     close at the target if it is reached, otherwise ride to the 17:30
            settlement. This is what the earlier tests did.
 
-MODELLED, not measured. There are no option quotes at 23:30 IST anywhere in
-this data -- chain.db records 05:30 and settlement only -- so these are
-Black-Scholes on the real five-minute spot path, at the vol the market charges.
-The strike selection was checked against 1,541 real legs: it places them 2.10%
-out of the money against a real median of 2.20%.
+READ THIS BEFORE BELIEVING ANY NUMBER BELOW
+---------------------------------------------------------------------------
+These are modelled, not measured. There are no option quotes at 23:30 IST
+anywhere in this data -- chain.db records 05:30 and settlement only -- so the
+entry price, the exit price and everything between them come out of
+Black-Scholes on the real five-minute spot path.
+
+That makes every total here a function of one number nobody has measured: the
+implied vol at 23:30. And the results are not mildly sensitive to it, they are
+governed by it. Selling a $10 option at 23:30 and buying it back at 05:00, with
+no slippage at all, over 973 days:
+
+    IV used    strike sits    net per leg    total
+     36.8%         3.54%        -7.5567     Rs -12,500
+     40.0%         3.89%        -4.6892     Rs  -7,756
+     42.4%         4.15%        -2.9653     Rs  -4,905
+     45.0%         4.45%        -1.5640     Rs  -2,587
+     48.0%         4.78%        -0.2200     Rs    -364
+
+The vol decides the strike, and the strike decides everything. At 36.8% -- the
+figure solved from one real Delta ticket, and the figure the sweep below uses --
+the model puts the strike 3.54% out and loses Rs 12,500 before a single cost is
+charged. At 48% it puts the same $10 of premium 4.78% out and is a coin flip.
+
+BTC actually realised **42.4%** over the 23:30-05:00 window and 41.0% over the
+day window, against the 36.8% used here. So the sweep sells options too cheap
+into a market that moves more than it was told, which is a guaranteed loser and
+has nothing to do with the hour or the premium cap. Fat tails push the
+break-even higher still: lognormal underprices the wings, which is why the
+table above only reaches zero near 48%.
+
+**So the sweep below cannot show that the overnight trade loses money. It shows
+that a mispriced short option loses money, which was never in doubt.** The
+question stays open until real 23:30 quotes exist -- one snapshot added to
+harvester/harvest_chain.py, and a few months of waiting.
+
+The 05:30 results elsewhere in this directory are unaffected: those read real
+entry marks, real settle values and real decay paths out of chain.db, and never
+touch this model.
 
   python3 research/overnight_sweep.py
 """
@@ -199,6 +233,29 @@ def main():
     print(f'    worst day Rs {worst*USDINR:+,.0f}   max drawdown Rs {mdd*USDINR:,.0f}   PF {pf:.2f}')
     print('\n  For scale: the 05:30 $15 day trade at a 95% target makes Rs +15,225')
     print('  over the same days, measured rather than modelled.')
+
+    print('\n' + '=' * 92)
+    print('WHY EVERY ROW IS NEGATIVE  -- read this before using any of it')
+    print('=' * 92)
+    print(f'  This model priced every option at {IV*100:.1f}% implied vol, solved from one real')
+    print('  Delta ticket. Over the same days BTC actually realised 42.4% between')
+    print('  23:30 and 05:00, and 41.0% across the day window.')
+    print()
+    print('  Selling at 36.8% into a market that moves at 42.4% loses money by')
+    print('  construction. With zero slippage and no exit rule at all, the $10')
+    print('  overnight leg still loses Rs 12,500 -- which is more than any row above.')
+    print('  The vol assumption, not the hour and not the premium cap, is doing the work:')
+    print()
+    print('     IV 36.8% -> strike 3.54% out -> Rs -12,500')
+    print('     IV 42.4% -> strike 4.15% out -> Rs  -4,905')
+    print('     IV 48.0% -> strike 4.78% out -> Rs    -364')
+    print()
+    print('  So this sweep does NOT show the overnight trade is unprofitable. It shows')
+    print('  an underpriced short option is unprofitable. The real market quotes these')
+    print('  wings on a smile, well above ATM vol, and this flat-IV model does not.')
+    print()
+    print('  To settle it properly, harvest a 23:30 IST snapshot in harvest_chain.py')
+    print('  and measure it the way the 05:30 leg is measured.')
 
 
 if __name__ == '__main__':
