@@ -62,6 +62,17 @@ function defaultPast(): IstMoment {
   return { date: d.toISOString().slice(0, 10), time: '05:30' };
 }
 
+function loadCachedExpiries(): ExpiryOption[] {
+  try {
+    const raw = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('btc_expiries') : null;
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 export default function App() {
   const [tab, setTab] = usePersisted<Tab>('tab', 'desk');
   // A ticket is a seed plus an open flag rather than one nullable value: the
@@ -73,7 +84,9 @@ export default function App() {
   // Remembered, but only honoured while that expiry is still listed -- a saved
   // contract that has since settled must not pin the desk to a dead chain.
   const [expiry, setExpiry, forgetExpiry] = usePersisted<string>('expiry', '');
-  const [expiries, setExpiries] = useState<ExpiryOption[]>([]);
+  const [expiries, setExpiries] = useState<ExpiryOption[]>(loadCachedExpiries);
+  const defaultExpiry = expiries.find((e) => e.isDefault)?.expiry ?? expiries[0]?.expiry ?? '';
+  const activeExpiry = (expiry && expiries.some((e) => e.expiry === expiry)) ? expiry : defaultExpiry;
   const [width, setWidth] = usePersisted('width', 20);
   // Off by default on a desktop: the extra columns are why the table is worth
   // looking at. On a phone the media query hides them regardless.
@@ -143,8 +156,9 @@ export default function App() {
     getExpiries()
       .then((r) => {
         setExpiries(r.expiries);
-        const fallback = r.expiries.find((e) => e.isDefault)?.expiry ?? r.expiries[0]?.expiry ?? '';
-        setExpiry((cur) => (cur && r.expiries.some((e) => e.expiry === cur) ? cur : fallback));
+        try { sessionStorage.setItem('btc_expiries', JSON.stringify(r.expiries)); } catch {}
+        // If a pinned contract is no longer in the list (settled/expired), release the pin
+        setExpiry((cur) => (cur && !r.expiries.some((e) => e.expiry === cur) ? '' : cur));
       })
       .catch(() => setExpiries([]));
   }, [setExpiry]);
@@ -321,7 +335,7 @@ export default function App() {
                 under the label now, and the one you would actually sell is
                 marked with a star rather than described.
               */}
-              <Select ariaLabel="expiry" value={expiry} onValueChange={setExpiry}>
+              <Select ariaLabel="expiry" value={activeExpiry} onValueChange={setExpiry}>
                 {expiries.length === 0 && <SelectItem value="" disabled>loading…</SelectItem>}
                 {expiries.map((e) => (
                   <SelectItem
@@ -346,7 +360,7 @@ export default function App() {
                   </SelectItem>
                 ))}
               </Select>
-              {expiries.length > 0 && !expiries.find((e) => e.expiry === expiry)?.isDefault && (
+              {expiries.length > 0 && Boolean(expiry && expiry !== defaultExpiry) && (
                 <button className="pinned" onClick={forgetExpiry} title="back to the default">
                   pinned — reset
                 </button>

@@ -152,6 +152,32 @@ function moveOver(bars: Candle[], count: number, hours: number, label: string): 
   };
 }
 
+const SERIES_TTL_MS = 20_000;
+let seriesCache: { at: number; data: [Timeframe, Candle[]][] } | null = null;
+let seriesInflight: Promise<[Timeframe, Candle[]][]> | null = null;
+
+async function fetchSeriesFresh(): Promise<[Timeframe, Candle[]][]> {
+  if (seriesInflight) return seriesInflight;
+  seriesInflight = (async () => {
+    try {
+      const now = Math.floor(Date.now() / 1000);
+      const wanted: Timeframe[] = ['5m', '15m', '1h', '4h', '1d'];
+      const data = await Promise.all(
+        wanted.map(async (tf) => {
+          const span = MINUTES[tf] * 60 * 220;
+          const bars = await candles('BTCUSD', now - span, now, tf).catch(() => []);
+          return [tf, bars] as [Timeframe, Candle[]];
+        }),
+      );
+      seriesCache = { at: Date.now(), data };
+      return data;
+    } finally {
+      seriesInflight = null;
+    }
+  })();
+  return seriesInflight;
+}
+
 /**
  * @param sinceHours  hours elapsed inside the contract you are looking at, if
  *   any. The fixed windows answer "how has BTC been behaving"; this one answers
@@ -160,17 +186,21 @@ function moveOver(bars: Candle[], count: number, hours: number, label: string): 
  *   far away as it looked at entry.
  */
 export async function readMarket(sinceHours?: number): Promise<MarketRead> {
-  const now = Math.floor(Date.now() / 1000);
-  const wanted: Timeframe[] = ['5m', '15m', '1h', '4h', '1d'];
-
-  const series = await Promise.all(
-    wanted.map(async (tf) => {
-      // 200 bars of each, which is enough for a 50-period EMA with room to settle
-      const span = MINUTES[tf] * 60 * 220;
-      const bars = await candles('BTCUSD', now - span, now, tf).catch(() => []);
-      return [tf, bars] as const;
-    }),
-  );
+  let series: [Timeframe, Candle[]][];
+  if (seriesCache) {
+    if (Date.now() - seriesCache.at >= SERIES_TTL_MS) {
+      void fetchSeriesFresh().catch(() => {});
+    }
+    series = seriesCache.data;
+  } else {
+    try {
+      series = await fetchSeriesFresh();
+    } catch (e) {
+      const cached = seriesCache as { at: number; data: [Timeframe, Candle[]][] } | null;
+      if (cached) series = cached.data;
+      else throw e;
+    }
+  }
 
   const timeframes = series
     .map(([tf, bars]) => readOne(tf, bars))

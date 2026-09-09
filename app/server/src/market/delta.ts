@@ -100,6 +100,46 @@ export async function spotAt(ts: number): Promise<number | null> {
 const TICKER_TTL_MS = 15_000;
 let tickerCache: { at: number; data: Ticker[] } | null = null;
 let tickerInflight: Promise<Ticker[]> | null = null;
+let tickerPollerId: NodeJS.Timeout | null = null;
+
+async function fetchTickersFresh(): Promise<Ticker[]> {
+  if (tickerInflight) return tickerInflight;
+  tickerInflight = (async () => {
+    try {
+      const r = await req<Ticker[]>('/tickers?contract_types=call_options,put_options');
+      const data = (r ?? []).filter((t) => t.underlying_asset_symbol === 'BTC');
+      if (data.length > 0) {
+        tickerCache = { at: Date.now(), data };
+      }
+      return data;
+    } finally {
+      tickerInflight = null;
+    }
+  })();
+  return tickerInflight;
+}
+
+/**
+ * Start periodic background polling for Delta tickers.
+ * This keeps `tickerCache` perpetually hot so client requests never wait on upstream network latency.
+ */
+export function startTickerPoller(intervalMs = 8_000) {
+  if (tickerPollerId) return;
+  void fetchTickersFresh().catch(() => {});
+  tickerPollerId = setInterval(() => {
+    void fetchTickersFresh().catch(() => {});
+  }, intervalMs);
+  if (typeof tickerPollerId === 'object' && 'unref' in tickerPollerId) {
+    tickerPollerId.unref();
+  }
+}
+
+export function stopTickerPoller() {
+  if (tickerPollerId) {
+    clearInterval(tickerPollerId);
+    tickerPollerId = null;
+  }
+}
 
 /**
  * Spot, on its own, cheaply.
@@ -123,25 +163,20 @@ export async function liveSpot(now = Date.now()): Promise<number | null> {
 }
 
 export async function liveTickers(): Promise<Ticker[]> {
-  if (tickerCache && Date.now() - tickerCache.at < TICKER_TTL_MS) return tickerCache.data;
-  // collapse concurrent callers onto one upstream request
-  if (!tickerInflight) {
-    tickerInflight = (async () => {
-      try {
-        const r = await req<Ticker[]>('/tickers?contract_types=call_options,put_options');
-        const data = (r ?? []).filter((t) => t.underlying_asset_symbol === 'BTC');
-        tickerCache = { at: Date.now(), data };
-        return data;
-      } finally {
-        tickerInflight = null;
-      }
-    })();
+  // Stale-while-revalidate: if we have cached tickers, return them immediately (0ms).
+  // If the cache is older than TTL, refresh in background without stalling the caller.
+  if (tickerCache) {
+    if (Date.now() - tickerCache.at >= TICKER_TTL_MS) {
+      void fetchTickersFresh().catch(() => {});
+    }
+    return tickerCache.data;
   }
+  // Cold start (first boot only): await the in-flight request
   try {
-    return await tickerInflight;
+    return await fetchTickersFresh();
   } catch (e) {
-    // a stale board beats no board when the feed is briefly throttling us
-    if (tickerCache) return tickerCache.data;
+    const cached = tickerCache as { at: number; data: Ticker[] } | null;
+    if (cached) return cached.data;
     throw e;
   }
 }
