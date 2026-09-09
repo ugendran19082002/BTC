@@ -9,6 +9,7 @@ import { forecast, reloadHorizons } from '../../domain/forecast.js';
 import { loadCalibration, reloadCalibration } from '../../domain/calibration.js';
 import { loadDays, reloadDays, DEFAULTS } from '../../backtest/backtest.js';
 import { tradingService, SHORT_CAP_KEY } from '../../trading/service.js';
+import { strategyStore } from './strategy.routes.js';
 import { refuse } from '../refuse.js';
 
 /** Resolve the `at` query param: "now" (or absent) means live. */
@@ -42,6 +43,9 @@ export function registerDeskRoutes(app: FastifyInstance) {
       // Which schema the journal is on. A container that started against an
       // older database should be visible from outside rather than by symptom.
       schema: tradingService().store.migrations().map((m) => m.id),
+      // Both stores share one ledger, but only asking the trade store hid a
+      // deploy whose strategy tables had never been created.
+      strategies: strategyStore().all().length,
       now: new Date().toISOString(),
     };
   });

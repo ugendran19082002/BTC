@@ -4,6 +4,7 @@ import { authFromEnv } from './http/session.js';
 import { loadDays } from './backtest/backtest.js';
 import { credsFromEnv } from './delta/signed.js';
 import { tradingService } from './trading/service.js';
+import { strategyStore } from './http/routes/strategy.routes.js';
 import { liveTickers, startTickerPoller } from './market/delta.js';
 import { liveChain } from './market/chain.js';
 import { readMarket } from './market/moves.js';
@@ -26,6 +27,20 @@ app.log.info(
     ? 'Delta credentials present'
     : 'no Delta credentials -- account and order endpoints are off, market data unaffected',
 );
+/*
+ * Migrate the strategy tables on the way up, not on the first request.
+ *
+ * They were lazy at first, behind the route that reads them -- and the route is
+ * behind the session gate, so an unauthenticated probe got a 401, the store was
+ * never constructed, and a deploy came up reporting healthy with the tables
+ * missing. DB-INVENTORY.md already says why this is the wrong shape: a
+ * half-migrated database should stop the boot, and a migration that only runs
+ * when somebody logs in cannot.
+ */
+app.log.info(`strategy schema: ${strategyStore().applied.length
+  ? strategyStore().applied.join(', ') + ' applied'
+  : 'already up to date'}`);
+
 const desk = tradingService();
 app.log.info(
   desk.mode === 'live'
