@@ -59,7 +59,7 @@ placing an order and hearing back; the journal is what makes that survivable.
 |---|---|---|
 | `trade_id` | TEXT PK | `{CP}-BTC-{strike}-{expiry}-{ms}`, e.g. `C-BTC-79600-090926-1788948302789`. Also the seed for every client order id on the trade. |
 | `symbol` | TEXT | The Delta contract symbol. |
-| `phase` | TEXT | Where the trade is in its machinery: `entry_pending`, `entry_unknown`, `open`, `exit_pending`, `flat`, `aborted`. Not the same as the four order statuses the Orders screen shows — `status.ts` maps between them. |
+| `phase` | TEXT | Where the trade is in its machinery: `precheck`, `entry_pending`, `entry_unknown`, `position_open`, `unprotected`, `protected`, `exit_pending`, `flat`, `aborted`. The first seven are what `OPEN_PHASES` in `store.ts` counts as still live. Not the same as the four order statuses the Orders screen shows — `status.ts` maps between them. |
 | `position` | INTEGER | Contracts held, negative for a short. **Counted from fills, never assumed.** Written as `exit.size - entry.size` so a closed trade is `0` and never `-0`. |
 | `plan` | TEXT (JSON) | What was asked for: lots, leverage, entry type and limit, chase settings, `takeProfitPrice`, `stopPrice`, and the `expect` block the precheck matches the contract against. |
 | `state` | TEXT (JSON) | The reduced state: fills, protection client ids, phase, realised P&L, `contractValue`, `wantsProtection`. |
@@ -98,6 +98,26 @@ fixed for trades that had already closed.
 | `value` | TEXT | The value. |
 
 Seeded by `003-default-settings`.
+
+Keys the desk reads:
+
+| Key | Value | What it does |
+|---|---|---|
+| `expiry_default` | `first` \| `next_entry` | Which contract the board opens on. |
+| `mode` | `live` \| `paper` | Which book the desk is trading. Written by the mode switch, so a mode chosen in the browser outlives a restart. |
+| `max_short_contracts` | a whole number | The most contracts the desk may be short across every strike at once. |
+
+`max_short_contracts` is the one setting with a **ceiling**. `/api/settings`
+takes it, but `TradingService.setShortCap` decides: the cap may be lowered
+freely and can never be raised above what the account's margin could carry at
+200x. The reasoning is the same as `maxDailyLossUsd`'s — a cap larger than the
+margin behind it can never fire, and a gate that cannot fire is worse than no
+gate, because it reads as protection. A request above the ceiling comes back
+`422` through `refuse()`, so holding the line does not fill the error log.
+
+Absent, the cap falls back to `DEFAULT_LIMITS.maxShortContracts`. It is read at
+the moment each gate runs, so a change takes effect on the next order rather
+than at the next restart.
 
 ### `migrations`
 

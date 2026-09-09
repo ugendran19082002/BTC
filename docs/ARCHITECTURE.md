@@ -204,7 +204,7 @@ The engine never reads a display cache.
 
 ## Testing
 
-267 server tests (`node:test` via tsx), 233 browser tests (vitest +
+279 server tests (`node:test` via tsx), 238 browser tests (vitest +
 @testing-library). Run `npm test` in `app/server` and `npx vitest run` in
 `app/web`; `npm run typecheck` in both.
 

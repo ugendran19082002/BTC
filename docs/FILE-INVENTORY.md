@@ -158,7 +158,7 @@ spinners removed — they are one pixel from the field on a trading screen),
 
 ---
 
-## `app/server/test` — 12 files, 3,110 lines, 267 tests
+## `app/server/test` — 13 files, 3,235 lines, 279 tests
 
 | File | Lines | What it covers |
 |---|---:|---|
@@ -174,9 +174,10 @@ spinners removed — they are one pixel from the field on a trading screen),
 | `migrate.test.ts` | 117 | Runs once, rolls back on failure, survives a reopen. |
 | `trading/status.test.ts` | 109 | Order status and IST day boundaries. |
 | `trading/store.test.ts` | 88 | Written after the `plan`-column bug: the first test is a plan changed and read back. |
+| `trading/short-cap.test.ts` | 132 | The total-short cap. Reproduces the live refusal (410 short, 410 more, limit 500) and pins the rule that a setting may lower the cap and can never raise it above what margin covers. |
 | `trading/money.test.ts` | 67 | Tick rounding, in the direction that never costs you. |
 
-## `app/web/src` tests — 16 files, 233 tests
+## `app/web/src` tests — 16 files, 238 tests
 
 `OrderTicket.test.tsx` (432), `PositionsCard.test.tsx` (347),
 `EditExitsSheet.test.tsx` (163), `format.test.ts` (150),

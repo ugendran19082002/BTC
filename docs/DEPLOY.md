@@ -73,9 +73,20 @@ leave the host nginx in charge and give the other sites vhosts there instead.
 
 ## Access
 
-The desk is on the open internet. It shows position sizing, and would show open
-positions if the account panel were ever enabled. To require a password,
-uncomment the two `auth_basic` lines in `deploy/nginx.conf` and create the file:
+The desk is on the open internet, and the API gates itself: `http/session.ts`
+holds a scrypt password hash and an HMAC-signed session cookie, and `app.ts`
+turns away anything under `/api/` that does not carry a valid one. Only
+`/api/health`, `/api/login` and `/api/me` are public.
+
+It is on **only when all three of `DESK_USER`, `DESK_PASSWORD_HASH` and
+`DESK_SESSION_SECRET` are set** — a half-configured login is worse than none,
+because it looks protected. Generate the hash with `app/server/hash-password.mjs`.
+With any of the three missing, every route is open; check `/api/me` rather than
+assuming.
+
+An nginx-level password is still available as a second door in front of the
+static bundle: uncomment the two `auth_basic` lines in `deploy/nginx.conf` and
+create the file:
 
 ```bash
 sudo htpasswd -c /etc/nginx/.htpasswd-delta <username>
