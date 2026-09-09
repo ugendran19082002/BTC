@@ -473,6 +473,19 @@ table.probs td.left { color: var(--muted); }
    The recommendation names a strike. This is the row it names. Without the
    mark you are matching a number in a card against a column of twenty-four. */
 tr.sold td { background: #6cb2ff10; }
+
+/* A strike you actually hold, which is a different statement from one the desk
+   suggests -- so it gets its own colour and a left edge rather than a second
+   shade of the same blue. Drawn under `sold` in the file so that a strike which
+   is both reads as held: what you have done outweighs what was suggested. */
+tr.holding td { background: #d2992212; }
+tr.holding td:first-child { box-shadow: inset 2px 0 0 var(--warn); }
+.tag.held {
+  color: var(--warn); border-color: #d2992255; background: #d2992218;
+  font-variant-numeric: tabular-nums;
+}
+.tag.held.up { color: var(--up); border-color: #3fb95055; background: #3fb95015; }
+.tag.held.down { color: var(--down); border-color: #f8514955; background: #f8514915; }
 td.sellcell {
   background: #6cb2ff26; font-weight: 600;
   box-shadow: inset 0 0 0 1px #6cb2ff55;

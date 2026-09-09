@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { Leg, SideRecommendation, SnapshotMeta } from '@/types/desk';
+import { heldKey, type HeldLeg } from '@/lib/held';
+import { signedInr, usdToInr } from '@/lib/format';
 
 /** What a tap on a price hands back: enough to open a ticket, nothing more. */
 export type ChainSellIntent = {
@@ -104,6 +106,32 @@ function Coverage({ snap }: { snap: SnapshotMeta }) {
 }
 
 /**
+ * A strike you are already short, said on the strike itself.
+ *
+ * The board and the positions card were two readings of the same account with
+ * nothing joining them: a strike could be open in one and anonymous in the
+ * other, and connecting them meant matching a number in a card against a column
+ * of two dozen. The chip is that join, and it carries the P&L because "am I
+ * short this one" and "how is it doing" are the same glance.
+ *
+ * Rupees only, and rounded: this is a mark in a crowded row, not the account.
+ * The full figure with its dollars lives on the positions card.
+ */
+function HeldChip({ held }: { held: HeldLeg }) {
+  const pnl = held.pnlUsd;
+  const tone = pnl === null || pnl === 0 ? '' : pnl > 0 ? ' up' : ' down';
+  return (
+    <span
+      className={`tag held${tone}`}
+      title={`Short ${held.size} of this strike. The unrealised figure is the exchange's own.`}
+    >
+      {held.cp === 'C' ? 'CE' : 'PE'} {held.size}
+      {pnl !== null && <> · {signedInr(usdToInr(pnl))}</>}
+    </span>
+  );
+}
+
+/**
  * Laid out the way the exchange lays it out — calls left, puts right, strike in
  * the middle — with bid and ask shown separately from the mark.
  *
@@ -118,6 +146,7 @@ export function ChainTable({
   density = 'default',
   onSell,
   maxSpreadPct,
+  held,
 }: {
   legs: Leg[];
   snap: SnapshotMeta;
@@ -149,6 +178,12 @@ export function ChainTable({
    * rather than a reference figure, so it is in the default set.
    */
   density?: 'default' | 'all';
+  /**
+   * The strikes currently held, keyed by `heldKey`. Absent on a historical
+   * snapshot and on the read-only board, where "you are short this" would be a
+   * claim about the wrong day.
+   */
+  held?: Map<string, HeldLeg>;
 }) {
   const strikes = [...new Set(legs.map((l) => l.strike))].sort((a, b) => a - b);
   // visible columns each side of the strike: the odds, the raw model behind
@@ -247,11 +282,20 @@ export function ChainTable({
             const sellC = sold.C === k;
             const sellP = sold.P === k;
             const isAtm = k === snap.atm;
+            const heldC = held?.get(heldKey('C', k));
+            const heldP = held?.get(heldKey('P', k));
             return (
               <tr
                 key={k}
                 ref={isAtm ? atmRow : undefined}
-                className={[isAtm ? 'atm' : '', sellC || sellP ? 'sold' : ''].filter(Boolean).join(' ') || undefined}
+                className={[
+                  isAtm ? 'atm' : '',
+                  sellC || sellP ? 'sold' : '',
+                  // Separate from `sold`: one is what the desk suggests, the
+                  // other is what you have actually done, and the row must not
+                  // let them look like the same statement.
+                  heldC || heldP ? 'holding' : '',
+                ].filter(Boolean).join(' ') || undefined}
               >
                 <td className="dim aux">{num(c?.oi ?? null)}</td>
                 <td className="dim aux">{num(c?.volume ?? null)}</td>
@@ -272,8 +316,10 @@ export function ChainTable({
                 <td className="mono strikecell">
                   {k}
                   {isAtm && <span className="tag">ATM</span>}
-                  {sellC && <span className="tag ok">SELL CE</span>}
-                  {sellP && <span className="tag ok">SELL PE</span>}
+                  {heldC && <HeldChip held={heldC} />}
+                  {heldP && <HeldChip held={heldP} />}
+                  {sellC && !heldC && <span className="tag ok">SELL CE</span>}
+                  {sellP && !heldP && <span className="tag ok">SELL PE</span>}
                 </td>
 
                 <PriceCell
@@ -303,6 +349,8 @@ export function ChainTable({
           <>A <b className="warnbid">struck-through bid</b> is one the spread is too wide to
           cross — rest at the offer on those instead.{' '}</>
         )}
+        A strike you are <b>already short</b> is marked on its own row with the size and
+        what it is worth right now.{' '}
         <b className="up">Bid</b> is what you receive when you <b>sell</b>.
         {' '}<b className="down">Ask</b> is what you pay when you <b>buy</b> — the hedge leg.
         {' '}Mark is Delta's fair value: use it to judge, never as your fill.

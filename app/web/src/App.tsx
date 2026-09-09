@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Collapsible from '@radix-ui/react-collapsible';
 import { ChevronDown } from 'lucide-react';
 import { NotSignedIn } from '@/api/client';
@@ -14,6 +14,7 @@ import { AlarmBanner } from '@/components/trade/ModeBanner';
 import { ModeSwitch } from '@/components/trade/ModeSwitch';
 import { getTradeStatus } from '@/api/trade';
 import { signedInr, signedUsd, usdToInr } from '@/lib/format';
+import { heldLegs } from '@/lib/held';
 import { getErrors } from '@/api/errors';
 import { ErrorLogPanel } from '@/components/layout/ErrorLogPanel';
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
@@ -201,6 +202,11 @@ export default function App() {
 
   const snap = data?.snapshot;
   snapRef.current = snap ?? null;
+
+  // The strikes on the board that are already on. Recomputed each second with
+  // the status poll -- it is a map of at most a handful of entries, and the
+  // P&L in it has to tick or it is a stale number wearing a live one's clothes.
+  const held = useMemo(() => heldLegs(trade?.open), [trade?.open]);
   // How far spot has come since this contract opened, which is what every
   // strike on the board is measured from.
   //
@@ -689,6 +695,9 @@ export default function App() {
                 density={density}
                 onSell={openTicket}
                 maxSpreadPct={trade?.limits.maxSpreadPct}
+                // Only on a live board. On a historical snapshot "you are short
+                // this" would be a claim about the wrong day.
+                held={snap.live ? held : undefined}
               />
               </ErrorBoundary>
               <div className="note">
