@@ -104,3 +104,48 @@ test('an unknown symbol gets nothing rather than everything', async () => {
   const { ex } = leakyExchange([row(PE, 1, '25.6'), row(CE, 2, '2.3')]);
   assert.deepEqual(await ex.getOpenOrders('C-BTC-99999-100926'), []);
 });
+
+/* ------------------------------------------------------------------------ */
+
+import { clientId, missingProtection, ownsClientId } from '../../src/trading/engine.js';
+
+/**
+ * The second half of the same incident.
+ *
+ * Adopting the PE's order was the first mistake. The one that made it permanent
+ * was `missingProtection` asking only whether *an* id was recorded, not whether
+ * it was one of this trade's. With the foreign id sitting in state the trade
+ * read as protected, `protect()` was never called again, and the CE stayed
+ * naked for as long as it stayed open.
+ */
+const CE_TRADE = 'C-BTC-80800-100926-1788979887592';
+const PE_TRADE = 'P-BTC-76800-100926-1788977273296';
+
+const rec = (tradeId: string, protection: { takeProfit?: string | null; stopLoss?: string | null }) =>
+  ({
+    plan: { takeProfitPrice: 2.3, stopPrice: null },
+    state: { tradeId, protection: { takeProfit: null, stopLoss: null, ...protection } },
+  }) as unknown as Parameters<typeof missingProtection>[0];
+
+test('an id this trade issued is recognised as its own', () => {
+  assert.ok(ownsClientId(CE_TRADE, clientId(CE_TRADE, 'take_profit', 0)));
+});
+
+test('[critical] the id from the incident is not this trade\'s', () => {
+  // 009261788977273296T0 -- the PE's seed, recorded against the CE.
+  assert.equal(ownsClientId(CE_TRADE, clientId(PE_TRADE, 'take_profit', 0)), false);
+});
+
+test('[critical] a foreign protection id reads as missing, so protect() runs again', () => {
+  const adopted = rec(CE_TRADE, { takeProfit: clientId(PE_TRADE, 'take_profit', 0) });
+  assert.equal(missingProtection(adopted), true, 'this is what makes the desk repair itself');
+});
+
+test('the trade\'s own id still reads as protected, so nothing thrashes', () => {
+  const proper = rec(CE_TRADE, { takeProfit: clientId(CE_TRADE, 'take_profit', 0) });
+  assert.equal(missingProtection(proper), false);
+});
+
+test('no id at all is still missing', () => {
+  assert.equal(missingProtection(rec(CE_TRADE, { takeProfit: null })), true);
+});

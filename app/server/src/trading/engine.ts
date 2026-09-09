@@ -1034,12 +1034,39 @@ export function worstCaseLoss(i: {
  * The question is not "is there a stop" but "is there everything that was
  * asked for".
  */
+/**
+ * Is this client order id one this trade could have issued?
+ *
+ * Every id this desk sends is `clientId(tradeId, role, n)`, which begins with
+ * the trade's own seed, so the question is answerable without asking anybody.
+ */
+export const ownsClientId = (tradeId: string, clientOrderId: string | null): boolean =>
+  clientOrderId !== null && clientOrderId.startsWith(seedOf(tradeId));
+
+const seedOf = (tradeId: string) => tradeId.replace(/[^A-Za-z0-9]/g, '').slice(-18);
+
+/**
+ * Does this trade still need protection put on?
+ *
+ * It is not enough that *an* id is recorded: it has to be one of **this
+ * trade's** ids. On 10 September 2026 a CE recorded `009261788977273296T0` as
+ * its take-profit, and that seed belongs to the PE trade beside it -- Delta had
+ * ignored the symbol filter, `protect()` was handed the PE's resting order and
+ * adopted it. The position was live with nothing behind it, and because an id
+ * was present this function said the trade was protected, so nothing ever
+ * re-ran and it stayed that way.
+ *
+ * Checking ownership rather than mere presence makes the desk repair itself:
+ * a foreign id reads as missing, the next poll calls `protect()`, and the
+ * reconciler places what is actually needed.
+ */
 export function missingProtection(rec: TradeRecord): boolean {
   const wantsStop = rec.plan.stopPrice !== null;
   const wantsTarget = rec.plan.takeProfitPrice !== null;
+  const { tradeId } = rec.state;
   return (
-    (wantsStop && !rec.state.protection.stopLoss) ||
-    (wantsTarget && !rec.state.protection.takeProfit)
+    (wantsStop && !ownsClientId(tradeId, rec.state.protection.stopLoss ?? null)) ||
+    (wantsTarget && !ownsClientId(tradeId, rec.state.protection.takeProfit ?? null))
   );
 }
 
