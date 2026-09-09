@@ -1,7 +1,7 @@
 ==========================================================================================
 THE DECISION:  LOWEST RISK  vs  MAXIMUM PARTICIPATION
 ==========================================================================================
-Baseline 05:30 IST, richest strike at or below $15, buy back at 95% decay.
+Baseline 05:30 IST, furthest strike that still pays at least $15, buy back at 95% decay.
 10 contracts per leg, 5% slippage, 733 days, all measured.
 
 WHY THIS USES A MODEL LINE AND NOT AN OBSERVED-RATE LINE

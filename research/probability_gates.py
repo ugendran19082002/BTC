@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Gating the baseline on how likely the leg is to expire worthless.
 
-The strategy as it stands: 05:30 IST, sell the richest strike at or below $15,
+The strategy as it stands: 05:30 IST, sell the furthest strike that still pays at least $15,
 buy back at 95% decay, otherwise let it settle. This asks whether refusing the
 legs that are not safe enough makes it better.
 
@@ -114,7 +114,7 @@ def main():
     w('=' * 88)
     w('PROBABILITY GATES ON THE BASELINE')
     w('=' * 88)
-    w('Baseline: 05:30 IST, richest strike at or below $15, buy back at 95% decay.')
+    w('Baseline: 05:30 IST, furthest strike that still pays at least $15, buy back at 95% decay.')
     w(f'{CONTRACTS} contracts per leg, {SLIP*100:.0f}% slippage. All figures measured from chain.db.')
     w('')
     w('=' * 88)

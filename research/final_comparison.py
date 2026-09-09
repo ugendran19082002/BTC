@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The locked strategy against the baseline it replaces.
 
-  BASELINE   05:30 IST, short CE + short PE, richest strike at or below $15,
+  BASELINE   05:30 IST, short CE + short PE, furthest strike that still pays at least $15,
              buy back at 95% decay, otherwise settlement. Every day, both legs.
 
   LOCKED     the same, with one addition: each leg is sold only if the model
@@ -138,7 +138,7 @@ def main():
     w('=' * 84)
     w('  ENTRY        05:30 IST')
     w('  STRATEGY     short CE + short PE, daily expiry')
-    w('  FLOOR        richest strike at or below $15')
+    w('  FLOOR        furthest strike that still pays at least $15')
     w('  PROB GATE    pExpireWorthless >= 95%, applied per leg   <- the only change')
     w('  TP           95% premium decay, else settlement')
     w('  CALIBRATION  monitoring only, never in the live path')

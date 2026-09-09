@@ -8,7 +8,7 @@ vol, no modelled quote -- the disclaimers that follow the overnight studies
 around do not apply to any number in this file.
 
   Entry   05:30 IST, when the daily contract opens
-  Legs    sell 1 CE + 1 PE, the richest strike at or below $15
+  Legs    sell 1 CE + 1 PE, the furthest strike that still pays at least $15
   Exit    the 17:30 settlement, or a buy-back once the mark has decayed by a
           set fraction, whichever comes first
   Costs   5% slippage on the entry credit, and again on a buy-back. Settlement

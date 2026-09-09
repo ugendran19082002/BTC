@@ -3,7 +3,7 @@ FINAL:  LOCKED SETTINGS  vs  BASELINE
 ====================================================================================
   ENTRY        05:30 IST
   STRATEGY     short CE + short PE, daily expiry
-  FLOOR        richest strike at or below $15
+  FLOOR        furthest strike that still pays at least $15
   PROB GATE    pExpireWorthless >= 95%, applied per leg   <- the only change
   TP           95% premium decay, else settlement
   CALIBRATION  monitoring only, never in the live path

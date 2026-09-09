@@ -1,0 +1,67 @@
+======================================================================================
+SKIP THE LEG, OR STEP FURTHER OUT?
+======================================================================================
+  735 days, 2024-09-04 to 2026-09-08.  10 contracts per leg,
+  5% slippage, held to settlement so all three are like-for-like.
+
+  BASELINE   richest strike at or below $15 (the cap rule). No gate.
+  SKIP       the same strike, sold only if it is 95%+ to expire worthless.
+  STEP OUT   the richest strike that is BOTH at or below $15 AND 95%+ safe.
+
+                             BASELINE         SKIP     STEP OUT
+  --------------------------------------------------------------
+  legs sold                     1,149        1,111        1,149
+  days with a trade               673          668          673
+  avg premium sold             $11.51       $11.45       $11.34
+  avg distance out              2.97%        3.03%        2.99%
+  actual expired at 0          99.04%       99.10%       99.13%
+  TOTAL Rs                     +7,972       +7,709       +7,959
+  win rate                      98.5%        98.7%        98.7%
+  profit factor                  4.16         4.21         4.32
+  losing days                      10            9            9
+  worst day Rs                   -721         -721         -721
+  max drawdown Rs                 721          721          721
+
+======================================================================================
+WHAT STEPPING OUT COSTS
+======================================================================================
+  the $15 strike was already safe enough    1111 legs   96.7%
+  stepped to a further strike                 38 legs    3.3%
+  no strike on the board qualified             0 legs    0.0%
+
+  when it stepped, it gave up $5.00 of premium on average
+  (4.92 median), which is the price of the extra distance
+
+======================================================================================
+OUT OF SAMPLE
+======================================================================================
+                1st half Rs  2nd half Rs   PF 1st   PF 2nd
+  baseline           +3,261       +4,712     3.06     6.04
+  skip               +3,185       +4,524     3.01     6.57
+  stepout            +3,232       +4,727     3.04     6.82
+
+======================================================================================
+AT EQUAL RISK
+======================================================================================
+                 SIZE x     TOTAL Rs   vs BASE
+  baseline        1.00x       +7,972       +0%
+  skip            1.00x       +7,709       -3%
+  stepout         1.00x       +7,959       -0%
+
+======================================================================================
+AND WAITING?
+======================================================================================
+  P(expire worthless) climbs on its own as the day runs out -- d2 carries
+  a 1/sqrt(T), so the same strike that reads 92% at 05:30 will read 95% a
+  few hours later provided spot has not moved against it. So yes: a leg
+  refused at 05:30 can be taken later, and the day need never be skipped.
+
+  What it costs is the premium, which decays over exactly those hours, and
+  the two do not move at the same rate. It is a real strategy and it is
+  NOT measurable here: the harvester captures the chain once, at 05:30, so
+  there is no later board to re-select a strike from. Adding a second
+  snapshot to harvest_chain.py is what would settle it.
+
+  STEP OUT needs no such wait. It takes the extra distance immediately, at
+  05:30, out of the same board -- which is why it is the one measured here.
+======================================================================================

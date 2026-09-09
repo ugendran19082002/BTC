@@ -131,7 +131,7 @@ def main():
     w('=' * 90)
     w('THE DECISION:  LOWEST RISK  vs  MAXIMUM PARTICIPATION')
     w('=' * 90)
-    w('Baseline 05:30 IST, richest strike at or below $15, buy back at 95% decay.')
+    w('Baseline 05:30 IST, furthest strike that still pays at least $15, buy back at 95% decay.')
     w(f'{CONTRACTS} contracts per leg, {SLIP*100:.0f}% slippage, {len(dates)} days, all measured.')
     w('')
     w('WHY THIS USES A MODEL LINE AND NOT AN OBSERVED-RATE LINE')

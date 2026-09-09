@@ -1,0 +1,72 @@
+====================================================================================
+ONE-SIDED DAYS:  DOUBLE THE LEG THAT QUALIFIED?
+====================================================================================
+  733 days, 2024-09-04 to 2026-09-06.  Base size 10 contracts.
+  both legs qualify 367 days, one leg 261 days, neither 105 days.
+  So the doubling only touches 261 days (36% of the record).
+
+                                LOCKED        DOUBLE      ALWAYS 2
+  ----------------------------------------------------------------
+  lots sold                        995         1,256         1,990
+  TOTAL Rs                      +9,834       +13,332       +19,668
+  win rate                       98.6%         98.6%         98.6%
+  profit factor                   3.15          3.72          3.15
+  losing days                        9             9             9
+  worst day Rs                  -1,242        -1,242        -2,484
+  max drawdown Rs                1,242         1,242         2,484
+
+====================================================================================
+IS IT THE PLACEMENT, OR JUST THE SIZE?
+====================================================================================
+                                vs LOCKED   lots vs LOCKED
+  DOUBLE                           1.356x           1.262x
+  ALWAYS 2                         2.000x           2.000x
+
+  Return per lot, DOUBLE against LOCKED: 1.074x
+  Above 1.00 means the extra lots did better than the average lot -- the
+  one-sided leg was a better bet. Below 1.00 means they did worse and the
+  gain is only the extra size, which could have been had by simply
+  trading larger every day.
+
+====================================================================================
+WHAT A ONE-SIDED DAY IS WORTH, PER LOT
+====================================================================================
+  legs on one-sided days       261 legs   avg Rs  +13.40   win  99.2%   worst Rs     -311   PF 11.73
+  legs on two-sided days       734 legs   avg Rs   +8.63   win  98.9%   worst Rs   -1,259   PF  2.46
+
+  This is the number the whole idea rests on. If a leg sold on a one-sided
+  day is worth less per lot than one sold alongside a partner, then putting
+  more size on it is putting more size on the worse trade.
+
+====================================================================================
+OUT OF SAMPLE
+====================================================================================
+                1st half Rs  2nd half Rs   PF 1st   PF 2nd
+  locked             +5,032       +4,802     2.83     3.63
+  double             +6,821       +6,512     3.22     4.57
+  always2           +10,063       +9,604     2.83     3.63
+
+====================================================================================
+AT EQUAL RISK
+====================================================================================
+  Sized so each carries the same drawdown as LOCKED.
+                 SIZE x     TOTAL Rs   vs LOCKED
+  locked          1.00x       +9,834         +0%
+  double          1.00x      +13,332        +36%
+  always2         0.50x       +9,834         +0%
+
+====================================================================================
+ON YOUR ACCOUNT
+====================================================================================
+  Equity Rs 39,700. Worst day at each base size:
+    BASE  LOCKED /day  DOUBLE /day  LOCKED worst  DOUBLE worst
+      50          +67          +91        -6,209        -6,209
+     100         +134         +182       -12,418       -12,418
+     137         +184         +249       -17,013       -17,013
+     200         +268         +364       -24,837       -24,837
+
+  Note the margin: DOUBLE needs twice the margin on a one-sided day, which
+  is the day the desk had decided the board was not offering a fair price
+  on one side. Whether that is the day to be twice as large is a judgement
+  the numbers above inform but do not make.
+====================================================================================
