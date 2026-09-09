@@ -1,0 +1,104 @@
+====================================================================================
+FINAL:  LOCKED SETTINGS  vs  BASELINE
+====================================================================================
+  ENTRY        05:30 IST
+  STRATEGY     short CE + short PE, daily expiry
+  FLOOR        richest strike at or below $15
+  PROB GATE    pExpireWorthless >= 95%, applied per leg   <- the only change
+  TP           95% premium decay, else settlement
+  CALIBRATION  monitoring only, never in the live path
+
+  733 days, 2024-09-04 to 2026-09-06. 10 contracts per leg, 5% slippage. All measured.
+
+====================================================================================
+HEAD TO HEAD
+====================================================================================
+                                   BASELINE         LOCKED         CHANGE
+  ----------------------------------------------------------------------
+  legs sold                           1,466            995    -32%  worse
+  days with a trade                     733            628    -14%  worse
+  actual expired at 0                97.27%         98.69%               
+
+  TOTAL Rs                          +15,225         +9,834    -35%  worse
+  per calendar day Rs                +20.77         +13.42    -35%  worse
+  per trading day Rs                 +20.77         +15.66    -25%  worse
+
+  win rate                            96.3%          98.6%    +2%  better
+  profit factor                        2.09           3.15   +51%  better
+  losing days                            27              9   -67%  better
+
+  worst day Rs                       -1,526         -1,242   +19%  better
+  max drawdown Rs                     1,943          1,242   -36%  better
+  average loss Rs                      -519           -509    +2%  better
+  average win Rs                     +41.41         +23.28    -44%  worse
+
+====================================================================================
+WHAT THE GATE DOES TO A WEEK
+====================================================================================
+  both legs qualify    367 days    50.1%
+  one leg only         261 days    35.6%
+  neither, stand by    105 days    14.3%
+
+  the call qualifies on 519 days (71%), the put on 476 (65%)
+  So this is not a day filter. Most days still trade -- often one-sided,
+  which is the gate declining the leg the market was not paying enough for.
+
+====================================================================================
+THE TAIL, WHICH IS WHAT THE GATE IS FOR
+====================================================================================
+                           BASELINE       LOCKED
+  worst 1 days               -1,526       -1,242
+  worst 3 days               -4,259       -2,943
+  worst 5 days               -6,473       -3,674
+  worst 10 days             -10,118       -4,577
+
+  days worse than -500            9            3
+  days worse than -1000            6            2
+
+====================================================================================
+OUT OF SAMPLE
+====================================================================================
+                             1st half     2nd half   PF 1st   PF 2nd
+  baseline                     +8,205       +7,020     2.06     2.13
+  locked                       +5,032       +4,802     2.83     3.63
+
+  The gate needs no history to apply, so nothing above has seen the days
+  it judges. Both halves positive for both, and the gate improves the
+  profit factor in each.
+
+====================================================================================
+BY YEAR
+====================================================================================
+  YEAR       BASELINE Rs    LOCKED Rs   BASE worst   LOCK worst
+  2024            +1,414         +193       -1,048       -1,048
+  2025            +8,394       +5,620       -1,492       -1,242
+  2026            +5,417       +4,021       -1,526           +0
+
+====================================================================================
+AT EQUAL RISK, AND ON YOUR ACCOUNT
+====================================================================================
+  Sized so both carry the baseline's Rs 1,943 drawdown, the gate
+  runs 1.56x larger and returns Rs +15,384 against Rs +15,225.
+
+  Equity taken as Rs 39,700. Contracts per leg, and what one bad day costs:
+   CONTRACTS   BASE /day   LOCK /day   BASE worst   LOCK worst  % of equity
+          50        +104         +67       -7,628       -6,209          16%
+         100        +208        +134      -15,255      -12,418          31%
+         137        +285        +184      -20,900      -17,013          43%
+         200        +415        +268      -30,511      -24,837          63%
+         410        +852        +550      -62,547      -50,916         128%
+
+====================================================================================
+THE HONEST SUMMARY
+====================================================================================
+  The gate gives up Rs 5,391 of profit -- 35% of it -- and buys:
+    profit factor      2.09  ->  3.15
+    worst day          Rs -1,526  ->  Rs -1,242
+    max drawdown       Rs 1,943  ->  Rs 1,242
+    losing days        27  ->  9
+
+  At the same size it earns less. At the same risk it earns slightly more.
+  Which of those two sentences matters depends on whether size is set by
+  what the account can hold or by what it can survive -- and on this
+  account, that is the tail.
+====================================================================================
