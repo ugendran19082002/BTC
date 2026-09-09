@@ -114,22 +114,34 @@ def main():
     dates = sorted(d for d in legs if len(legs[d]) == 2)
     half = len(dates) // 2
 
-    def series(gated, days):
-        out, sold, zeros = [], 0, 0
+    def series(mode, days):
+        """mode: 'base' every leg, 'lock' gated, 'double' gated plus a second
+        lot on the survivor when the gate refused its partner."""
+        out, lots, zeros = [], 0, 0
         for d in days:
+            ok = [cp for cp in ('C', 'P') if legs[d][cp]['p'] >= GATE]
             t = 0.0
             for cp in ('C', 'P'):
                 g = legs[d][cp]
-                if not gated or g['p'] >= GATE:
-                    t += g['pnl']
-                    sold += 1
-                    zeros += 1 if g['zero'] else 0
+                if mode == 'base':
+                    n = 1
+                elif cp not in ok:
+                    n = 0
+                elif mode == 'double' and len(ok) == 1:
+                    n = 2
+                else:
+                    n = 1
+                if n:
+                    t += g['pnl'] * n
+                    lots += n
+                    zeros += n if g['zero'] else 0
             out.append(t)
-        return out, sold, zeros
+        return out, lots, zeros
 
-    base_v, base_sold, base_z = series(False, dates)
-    lock_v, lock_sold, lock_z = series(True, dates)
-    B, L2 = stats(base_v), stats(lock_v)
+    base_v, base_sold, base_z = series('base', dates)
+    lock_v, lock_sold, lock_z = series('lock', dates)
+    dbl_v, dbl_sold, dbl_z = series('double', dates)
+    B, L2, D = stats(base_v), stats(lock_v), stats(dbl_v)
 
     R = []
     w = R.append
@@ -139,7 +151,9 @@ def main():
     w('  ENTRY        05:30 IST')
     w('  STRATEGY     short CE + short PE, daily expiry')
     w('  FLOOR        furthest strike that still pays at least $15')
-    w('  PROB GATE    pExpireWorthless >= 95%, applied per leg   <- the only change')
+    w('  PROB GATE    pExpireWorthless >= 95%, applied per leg')
+    w('  ONE-SIDED    DOUBLE column sells two lots of the leg that survived when')
+    w('               the gate refused its partner')
     w('  TP           95% premium decay, else settlement')
     w('  CALIBRATION  monitoring only, never in the live path')
     w('')
@@ -150,37 +164,57 @@ def main():
     w('=' * 84)
     w('HEAD TO HEAD')
     w('=' * 84)
-    w(f'  {"":<26} {"BASELINE":>14} {"LOCKED":>14} {"CHANGE":>14}')
-    w('  ' + '-' * 70)
+    w(f'  {"":<24} {"BASELINE":>12} {"LOCKED":>12} {"DOUBLE":>12} {"DBL vs BASE":>13}')
+    w('  ' + '-' * 76)
 
-    def line(name, b, l, fmt='{:+,.0f}', suffix='', better_high=True):
-        bs_, ls_ = fmt.format(b) + suffix, fmt.format(l) + suffix
+    def line(name, b, l, d, fmt='{:+,.0f}', suffix='', better_high=True):
+        cells = [fmt.format(x) + suffix for x in (b, l, d)]
         if b == 0:
             ch = '--'
         else:
-            pctd = (l - b) / abs(b) * 100
+            pctd = (d - b) / abs(b) * 100
             good = (pctd > 0) == better_high
             ch = f'{pctd:+.0f}%' + ('  better' if good and abs(pctd) > 1 else
-                                    '  worse' if not good and abs(pctd) > 1 else '')
-        w(f'  {name:<26} {bs_:>14} {ls_:>14} {ch:>14}')
+                                    '  worse' if not good and abs(pctd) > 1 else '  same')
+        w(f'  {name:<24} {cells[0]:>12} {cells[1]:>12} {cells[2]:>12} {ch:>13}')
 
-    line('legs sold', base_sold, lock_sold, '{:,.0f}')
-    line('days with a trade', B['days'], L2['days'], '{:,.0f}')
-    w(f'  {"actual expired at 0":<26} {base_z/base_sold*100:>13.2f}% '
-      f'{lock_z/lock_sold*100:>13.2f}% {"":>14}')
+    line('lots sold', base_sold, lock_sold, dbl_sold, '{:,.0f}')
+    line('days with a trade', B['days'], L2['days'], D['days'], '{:,.0f}')
+    w(f'  {"actual expired at 0":<24} {base_z/base_sold*100:>11.2f}% '
+      f'{lock_z/lock_sold*100:>11.2f}% {dbl_z/dbl_sold*100:>11.2f}%')
     w('')
-    line('TOTAL Rs', B['total'] * USDINR, L2['total'] * USDINR)
-    line('per calendar day Rs', B['total'] / len(dates) * USDINR, L2['total'] / len(dates) * USDINR, '{:+,.2f}')
-    line('per trading day Rs', B['total'] / B['days'] * USDINR, L2['total'] / L2['days'] * USDINR, '{:+,.2f}')
+    line('TOTAL Rs', B['total']*USDINR, L2['total']*USDINR, D['total']*USDINR)
+    line('per calendar day Rs', B['total']/len(dates)*USDINR, L2['total']/len(dates)*USDINR,
+         D['total']/len(dates)*USDINR, '{:+,.2f}')
+    line('per trading day Rs', B['total']/B['days']*USDINR, L2['total']/L2['days']*USDINR,
+         D['total']/D['days']*USDINR, '{:+,.2f}')
     w('')
-    line('win rate', B['win'], L2['win'], '{:.1f}', '%')
-    line('profit factor', B['pf'], L2['pf'], '{:.2f}')
-    line('losing days', B['losers'], L2['losers'], '{:,.0f}', '', False)
+    line('win rate', B['win'], L2['win'], D['win'], '{:.1f}', '%')
+    line('profit factor', B['pf'], L2['pf'], D['pf'], '{:.2f}')
+    line('losing days', B['losers'], L2['losers'], D['losers'], '{:,.0f}', '', False)
     w('')
-    line('worst day Rs', B['worst'] * USDINR, L2['worst'] * USDINR)
-    line('max drawdown Rs', B['mdd'] * USDINR, L2['mdd'] * USDINR, '{:,.0f}', '', False)
-    line('average loss Rs', B['avgloss'] * USDINR, L2['avgloss'] * USDINR)
-    line('average win Rs', B['avgwin'] * USDINR, L2['avgwin'] * USDINR, '{:+,.2f}')
+    line('worst day Rs', B['worst']*USDINR, L2['worst']*USDINR, D['worst']*USDINR)
+    line('max drawdown Rs', B['mdd']*USDINR, L2['mdd']*USDINR, D['mdd']*USDINR, '{:,.0f}', '', False)
+    line('average loss Rs', B['avgloss']*USDINR, L2['avgloss']*USDINR, D['avgloss']*USDINR)
+    line('average win Rs', B['avgwin']*USDINR, L2['avgwin']*USDINR, D['avgwin']*USDINR, '{:+,.2f}')
+    w('')
+
+    # ---- where the 32% of refused legs went -----------------------------
+    skipped = base_sold - lock_sold
+    one = sum(1 for d in dates
+              if sum(1 for cp in ('C','P') if legs[d][cp]['p'] >= GATE) == 1)
+    nolegs = sum(1 for d in dates
+                 if not any(legs[d][cp]['p'] >= GATE for cp in ('C','P')))
+    w('=' * 84)
+    w('THE REFUSED LEGS, AND WHICH OF THEM GET REPLACED')
+    w('=' * 84)
+    w(f'  the gate refused {skipped} legs of {base_sold}  ({skipped/base_sold*100:.0f}%)')
+    w(f'    {one} were refused with a partner that qualified -> DOUBLE sells that partner twice')
+    w(f'    {nolegs*2} were refused on {nolegs} days where BOTH sides failed -> nothing to double')
+    w('')
+    w(f'  so DOUBLE recovers {one} of the {skipped} refused lots '
+      f'({one/skipped*100:.0f}%), and it recovers them on the')
+    w('  opposite side -- the side the gate had just judged safe.')
     w('')
 
     w('=' * 84)
@@ -223,7 +257,7 @@ def main():
     w('OUT OF SAMPLE')
     w('=' * 84)
     w(f'  {"":<22} {"1st half":>12} {"2nd half":>12} {"PF 1st":>8} {"PF 2nd":>8}')
-    for name, gated in (('baseline', False), ('locked', True)):
+    for name, gated in (('baseline', 'base'), ('locked', 'lock'), ('double', 'double')):
         a = stats(series(gated, dates[:half])[0])
         b = stats(series(gated, dates[half:])[0])
         w(f'  {name:<22} {a["total"]*USDINR:>+12,.0f} {b["total"]*USDINR:>+12,.0f} '
@@ -249,10 +283,10 @@ def main():
     w('=' * 84)
     w('AT EQUAL RISK, AND ON YOUR ACCOUNT')
     w('=' * 84)
-    scale = B['mdd'] / L2['mdd']
-    w(f'  Sized so both carry the baseline\'s Rs {B["mdd"]*USDINR:,.0f} drawdown, the gate')
-    w(f'  runs {scale:.2f}x larger and returns Rs {L2["total"]*scale*USDINR:+,.0f} '
-      f'against Rs {B["total"]*USDINR:+,.0f}.')
+    scale = B['mdd'] / D['mdd']
+    w(f'  Sized so both carry the baseline\'s Rs {B["mdd"]*USDINR:,.0f} drawdown, DOUBLE')
+    w(f'  runs {scale:.2f}x larger and returns Rs {D["total"]*scale*USDINR:+,.0f} '
+      f'against the baseline\'s Rs {B["total"]*USDINR:+,.0f}.')
     w('')
     w(f'  Equity taken as Rs {EQUITY_INR:,}. Contracts per leg, and what one bad day costs:')
     w(f'  {"CONTRACTS":>10} {"BASE /day":>11} {"LOCK /day":>11} {"BASE worst":>12} {"LOCK worst":>12} {"% of equity":>12}')

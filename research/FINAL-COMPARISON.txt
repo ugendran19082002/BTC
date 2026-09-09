@@ -4,7 +4,9 @@ FINAL:  LOCKED SETTINGS  vs  BASELINE
   ENTRY        05:30 IST
   STRATEGY     short CE + short PE, daily expiry
   FLOOR        furthest strike that still pays at least $15
-  PROB GATE    pExpireWorthless >= 95%, applied per leg   <- the only change
+  PROB GATE    pExpireWorthless >= 95%, applied per leg
+  ONE-SIDED    DOUBLE column sells two lots of the leg that survived when
+               the gate refused its partner
   TP           95% premium decay, else settlement
   CALIBRATION  monitoring only, never in the live path
 
@@ -13,24 +15,34 @@ FINAL:  LOCKED SETTINGS  vs  BASELINE
 ====================================================================================
 HEAD TO HEAD
 ====================================================================================
-                                   BASELINE         LOCKED         CHANGE
-  ----------------------------------------------------------------------
-  legs sold                           1,466            995    -32%  worse
-  days with a trade                     733            628    -14%  worse
-  actual expired at 0                97.27%         98.69%               
+                               BASELINE       LOCKED       DOUBLE   DBL vs BASE
+  ----------------------------------------------------------------------------
+  lots sold                       1,466          995        1,256   -14%  worse
+  days with a trade                 733          628          628   -14%  worse
+  actual expired at 0            97.27%       98.69%       98.73%
 
-  TOTAL Rs                          +15,225         +9,834    -35%  worse
-  per calendar day Rs                +20.77         +13.42    -35%  worse
-  per trading day Rs                 +20.77         +15.66    -25%  worse
+  TOTAL Rs                      +15,225       +9,834      +13,332   -12%  worse
+  per calendar day Rs            +20.77       +13.42       +18.19   -12%  worse
+  per trading day Rs             +20.77       +15.66       +21.23   +2%  better
 
-  win rate                            96.3%          98.6%    +2%  better
-  profit factor                        2.09           3.15   +51%  better
-  losing days                            27              9   -67%  better
+  win rate                        96.3%        98.6%        98.6%   +2%  better
+  profit factor                    2.09         3.15         3.72  +78%  better
+  losing days                        27            9            9  -67%  better
 
-  worst day Rs                       -1,526         -1,242   +19%  better
-  max drawdown Rs                     1,943          1,242   -36%  better
-  average loss Rs                      -519           -509    +2%  better
-  average win Rs                     +41.41         +23.28    -44%  worse
+  worst day Rs                   -1,526       -1,242       -1,242  +19%  better
+  max drawdown Rs                 1,943        1,242        1,242  -36%  better
+  average loss Rs                  -519         -509         -545    -5%  worse
+  average win Rs                 +41.41       +23.28       +29.46   -29%  worse
+
+====================================================================================
+THE REFUSED LEGS, AND WHICH OF THEM GET REPLACED
+====================================================================================
+  the gate refused 471 legs of 1466  (32%)
+    261 were refused with a partner that qualified -> DOUBLE sells that partner twice
+    210 were refused on 105 days where BOTH sides failed -> nothing to double
+
+  so DOUBLE recovers 261 of the 471 refused lots (55%), and it recovers them on the
+  opposite side -- the side the gate had just judged safe.
 
 ====================================================================================
 WHAT THE GATE DOES TO A WEEK
@@ -61,6 +73,7 @@ OUT OF SAMPLE
                              1st half     2nd half   PF 1st   PF 2nd
   baseline                     +8,205       +7,020     2.06     2.13
   locked                       +5,032       +4,802     2.83     3.63
+  double                       +6,821       +6,512     3.22     4.57
 
   The gate needs no history to apply, so nothing above has seen the days
   it judges. Both halves positive for both, and the gate improves the
@@ -77,8 +90,8 @@ BY YEAR
 ====================================================================================
 AT EQUAL RISK, AND ON YOUR ACCOUNT
 ====================================================================================
-  Sized so both carry the baseline's Rs 1,943 drawdown, the gate
-  runs 1.56x larger and returns Rs +15,384 against Rs +15,225.
+  Sized so both carry the baseline's Rs 1,943 drawdown, DOUBLE
+  runs 1.56x larger and returns Rs +20,856 against the baseline's Rs +15,225.
 
   Equity taken as Rs 39,700. Contracts per leg, and what one bad day costs:
    CONTRACTS   BASE /day   LOCK /day   BASE worst   LOCK worst  % of equity
