@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react';
 import type { TradeStatus } from '@/types/trade';
 import { Card, CardTitle } from '@/components/ui/card';
+import { getSettings, setShortCap, type ShortCap } from '@/api/desk';
 import { inr, pct, signedInr, signedUsd, usd, usdToInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -102,6 +104,8 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
             </p>
           ) : null}
         </div>
+
+        <ShortCapLine held={held} inForce={status.limits.maxShortContracts} />
       </dl>
 
       {unrealised !== 0 && (
@@ -110,6 +114,137 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
         </p>
       )}
     </Card>
+  );
+}
+
+/**
+ * The most the desk may be short, and how close it is.
+ *
+ * This gate refuses in the order ticket, several taps away from here, and until
+ * now the only way to find out was to be turned down by it: "would take total
+ * short to 820, limit is 500" arrived after the size was typed, with no way to
+ * see the limit beforehand or to change it.
+ *
+ * The number is editable, but the *server* decides. It refuses a cap above what
+ * the margin could carry, and this shows the answer it gave rather than the
+ * number that was typed -- the same rule the mode switch follows, and for the
+ * same reason: a screen that can raise its own risk limit is one that can do it
+ * by accident.
+ */
+function ShortCapLine({ held, inForce }: { held: number; inForce: number }) {
+  const [cap, setCap] = useState<ShortCap | null>(null);
+  const [draft, setDraft] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [refusal, setRefusal] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    getSettings()
+      .then((r) => { if (live) setCap(r.shortCap); })
+      // The card is still worth showing without it; the cap in force comes from
+      // the status poll either way.
+      .catch(() => {});
+    return () => { live = false; };
+  }, []);
+
+  const limit = cap?.inForce ?? inForce;
+  const ceiling = cap?.ceiling ?? null;
+  const used = limit > 0 ? held / limit : 0;
+
+  const save = async () => {
+    const n = Number(draft);
+    if (!Number.isInteger(n) || n < 1) {
+      setRefusal('A whole number of contracts, at least 1.');
+      return;
+    }
+    setSaving(true);
+    setRefusal(null);
+    try {
+      const r = await setShortCap(n);
+      setCap(r.shortCap);
+      setEditing(false);
+    } catch (e) {
+      setRefusal((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex items-baseline justify-between gap-3">
+        <dt
+          className="m-0 cursor-help text-[12.5px] text-muted-foreground underline decoration-dotted underline-offset-2"
+          title="The most contracts this desk will be short across every strike at once. New sells are refused at this line."
+        >
+          most you may be short
+        </dt>
+        <dd className="m-0 flex items-baseline gap-2 tabular-nums" aria-label="short cap">
+          <span className="text-[13px] text-foreground">
+            {held} <span className="text-[var(--dim)]">of {limit} contracts</span>
+          </span>
+          {!editing && (
+            <button
+              type="button"
+              className="text-[11px] text-muted-foreground underline underline-offset-2"
+              onClick={() => {
+                setDraft(String(limit));
+                setRefusal(null);
+                setEditing(true);
+              }}
+            >
+              change
+            </button>
+          )}
+        </dd>
+      </div>
+
+      <div className="mt-1 h-1 overflow-hidden rounded-full bg-[var(--line)]">
+        <div
+          className={cn('h-full rounded-full', used > 0.75 ? 'bg-[var(--down)]' : 'bg-[var(--warn)]')}
+          style={{ width: `${Math.min(100, used * 100)}%` }}
+        />
+      </div>
+
+      {editing && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+          <input
+            type="number"
+            min={1}
+            step={1}
+            value={draft}
+            aria-label="most contracts short"
+            className="w-24 rounded border border-[var(--line)] bg-transparent px-2 py-1 text-[13px] tabular-nums text-foreground"
+            onChange={(e) => setDraft(e.target.value)}
+          />
+          <button
+            type="button"
+            disabled={saving}
+            className="rounded border border-[var(--line)] px-2 py-1 text-[12px] text-foreground disabled:opacity-50"
+            onClick={save}
+          >
+            {saving ? 'saving…' : 'save'}
+          </button>
+          <button
+            type="button"
+            className="text-[11px] text-muted-foreground underline underline-offset-2"
+            onClick={() => { setEditing(false); setRefusal(null); }}
+          >
+            cancel
+          </button>
+          {ceiling !== null && (
+            <span className="text-[11px] text-[var(--dim)]">
+              margin covers {ceiling} at 200x
+            </span>
+          )}
+        </div>
+      )}
+
+      {refusal && (
+        <p className="m-0 mt-1 text-[11px] font-medium text-[var(--down)]">{refusal}</p>
+      )}
+    </div>
   );
 }
 

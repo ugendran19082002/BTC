@@ -1,5 +1,5 @@
 import type { ChainResponse, ExpiryOption } from '@/types/desk';
-import { json } from '@/api/client';
+import { json, post } from '@/api/client';
 
 export function getChain(
   at: string,
@@ -38,3 +38,26 @@ export function getHealth() {
 
 /** Just the price. Tiny, so it can be polled every second. */
 export const getSpot = () => json<{ spot: number; at: number }>('/api/spot');
+
+/**
+ * The total-short cap: what is in force, what the margin would allow, and what
+ * the desk was asked to hold itself to.
+ *
+ * `ceiling` is null until the server has seen both a spot and a balance.
+ */
+export type ShortCap = { inForce: number; ceiling: number | null; chosen: number | null };
+
+export const getSettings = () =>
+  json<{ settings: Record<string, string | null>; shortCap: ShortCap }>('/api/settings');
+
+/**
+ * Ask the desk to hold itself to a smaller total short.
+ *
+ * The server decides -- it refuses anything above what the margin covers -- so
+ * the answer, not the request, is what the screen shows afterwards.
+ */
+export const setShortCap = (contracts: number) =>
+  post<{ ok: true; key: string; value: string; shortCap: ShortCap }>('/api/settings', {
+    key: 'max_short_contracts',
+    value: String(contracts),
+  });
