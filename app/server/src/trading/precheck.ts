@@ -121,12 +121,16 @@ export function maxShortContractsFor(
   marginCeiling: number | null,
   chosen: number | null,
 ): number {
-  const ceiling =
-    marginCeiling !== null && Number.isFinite(marginCeiling) && marginCeiling > 0
-      ? Math.floor(marginCeiling)
-      : DEFAULT_LIMITS.maxShortContracts;
-  if (chosen === null || !Number.isFinite(chosen) || chosen <= 0) return ceiling;
-  return Math.max(1, Math.min(Math.floor(chosen), ceiling));
+  const floored =
+    marginCeiling !== null && Number.isFinite(marginCeiling) ? Math.floor(marginCeiling) : 0;
+  // A ceiling that floors below one contract -- an account too small to carry
+  // even one, or no reading yet -- falls back to the fixed default. Taking it
+  // literally would mean a cap of zero, which refuses every order on the desk:
+  // a far worse failure than the one this is guarding against.
+  const ceiling = floored >= 1 ? floored : DEFAULT_LIMITS.maxShortContracts;
+  const want = chosen !== null && Number.isFinite(chosen) ? Math.floor(chosen) : 0;
+  if (want < 1) return ceiling;
+  return Math.min(want, ceiling);
 }
 
 export type PrecheckInput = {

@@ -59,9 +59,16 @@ test('fractional numbers are floored, never rounded up', () => {
   assert.equal(maxShortContractsFor(900, 500.9), 500);
 });
 
-test('the cap never falls below one contract', () => {
+test('a sub-contract choice is ignored rather than halting the desk', () => {
   assert.equal(maxShortContractsFor(900, 0.4), 900);
-  assert.equal(maxShortContractsFor(0.5, 1), DEFAULT_LIMITS.maxShortContracts);
+});
+
+test('[critical] a ceiling below one contract never becomes a cap of zero', () => {
+  // floor(0.5) is 0, and a cap of 0 refuses every order on the desk -- a worse
+  // failure than the one the cap exists to prevent.
+  assert.equal(maxShortContractsFor(0.5, null), DEFAULT_LIMITS.maxShortContracts);
+  // An explicit choice of 1 is still honoured: asking to risk less is allowed.
+  assert.equal(maxShortContractsFor(0.5, 1), 1);
 });
 
 /**
