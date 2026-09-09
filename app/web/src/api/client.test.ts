@@ -78,7 +78,8 @@ describe('where a failure says it happened', () => {
 
     const report = reported.mock.calls[0]![0] as { where: string; context: { url: string } };
     expect(report.where).toBe('/api/chain');
-    expect(report.context.url).toBe(url, 'the parameters are kept, as context');
+    // the parameters are kept, as context on the row rather than as its identity
+    expect(report.context.url).toBe(url);
   });
 
   it('pathOf leaves a bare path alone', () => {
