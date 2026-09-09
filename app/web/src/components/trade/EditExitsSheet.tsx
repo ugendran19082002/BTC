@@ -5,7 +5,10 @@ import type { Trade } from '@/types/trade';
 import { Sheet, SheetContent, SheetFooter } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { ExitBars } from '@/components/trade/ExitBars';
-import { contractLabel, price } from '@/lib/format';
+import { Figure } from '@/components/ui/figure';
+import {
+  contractLabel, price, signedInr, signedUsd, usdToInr,
+} from '@/lib/format';
 
 /**
  * Change the stop and the target on a position that is already on.
@@ -79,6 +82,29 @@ export function EditExitsSheet({ trade, open, onOpenChange, onSaved }: {
   const asked = trade.plan?.takeProfitPrice ?? null;
   const drifted = asked !== null && liveTarget !== null && Math.abs(asked - liveTarget) > 0.05;
 
+  const mark = trade.live?.markPrice ?? null;
+  const pnl = trade.live?.unrealisedPnl ?? null;
+
+  /*
+   * Where the mark is relative to the target being set.
+   *
+   * This is a short, so the target is below and the mark has to *fall* to reach
+   * it. A positive number is how much further it has to go.
+   */
+  const wantedTarget = targetOn && entry !== null ? entry * (1 - targetPct) : null;
+  const toTarget = mark !== null && wantedTarget !== null ? mark - wantedTarget : null;
+
+  /*
+   * A target at or above the mark closes the position the moment it is moved.
+   *
+   * Not hypothetical: a target that fired on placement is exactly what bought a
+   * short back at the price it had just been sold at, twice, earlier today. The
+   * order is a limit buy so it can only fill at this level or better -- but
+   * "immediately, at roughly the mark" is rarely what somebody dragging a bar
+   * means, so it is worth saying out loud before the button is pressed.
+   */
+  const firesAtOnce = toTarget !== null && toTarget <= 0;
+
   const save = async () => {
     setBusy(true);
     try {
@@ -101,6 +127,31 @@ export function EditExitsSheet({ trade, open, onOpenChange, onSaved }: {
         title={`Exits for ${contractLabel(trade.symbol)}`}
         description={`short ${Math.abs(trade.position)} at ${price(entry)}`}
       >
+        {/*
+          Where the position actually is, in the exchange's own numbers and in
+          the same three words the positions card uses. Setting an exit without
+          being able to see the price it is being set against is guesswork, and
+          the trade object is refreshed by the poll, so these tick.
+        */}
+        <div className="mb-3 grid grid-cols-3 gap-2 rounded-lg bg-muted px-2.5 py-2">
+          <Figure label="now" value={price(mark)} />
+          <Figure
+            label="profit"
+            value={signedInr(usdToInr(pnl))}
+            second={signedUsd(pnl)}
+            tone={pnl == null || pnl === 0 ? undefined : pnl > 0 ? 'up' : 'down'}
+          />
+          <Figure
+            label="to target"
+            // Points still to fall, as a plain number -- a signed one invites the
+            // reader to work out which direction is good, and the answer differs
+            // for a short.
+            value={toTarget === null ? '—' : toTarget > 0 ? toTarget.toFixed(2) : 'reached'}
+            tone={toTarget !== null && toTarget <= 0 ? 'up' : undefined}
+            hint="How far the mark still has to fall before the target is reached."
+          />
+        </div>
+
         <ExitBars
           entry={entry}
           size={Math.abs(trade.position)}
@@ -135,6 +186,14 @@ export function EditExitsSheet({ trade, open, onOpenChange, onSaved }: {
             </dd>
           </div>
         </dl>
+
+        {firesAtOnce && (
+          <p className="m-0 mt-2 text-[11.5px] leading-snug text-[var(--warn)]">
+            The mark is already {price(mark)}, so a target at {price(wantedTarget)} fills as soon
+            as it is moved. It is a limit buy and cannot pay more than {price(wantedTarget)} — it
+            simply closes the position now rather than later.
+          </p>
+        )}
 
         {drifted && (
           <p className="m-0 mt-2 text-[11.5px] leading-snug text-[var(--warn)]">

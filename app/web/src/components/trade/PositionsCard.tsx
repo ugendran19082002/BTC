@@ -11,6 +11,7 @@ import {
   ago, contractLabel, pct, price, signedInr, signedUsd, size as fmtSize, usdToInr,
 } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { Figure } from '@/components/ui/figure';
 
 /**
  * What is on right now.
@@ -135,28 +136,6 @@ function WorkingRow({ trade, onChanged }: { trade: Trade; onChanged?: () => void
 const pnlTone = (n: number | null | undefined): 'up' | 'down' | undefined =>
   n === null || n === undefined || n === 0 ? undefined : n > 0 ? 'up' : 'down';
 
-function Figure({ label, value, second, tone, hint }: {
-  label: string; value: string; second?: string; tone?: 'up' | 'down'; hint?: string;
-}) {
-  return (
-    <div className="min-w-0" title={hint}>
-      <div className={cn('text-[10px] uppercase tracking-[0.6px] text-muted-foreground', hint && 'cursor-help')}>
-        {label}
-      </div>
-      <div
-        className={cn(
-          'truncate text-[14px] font-semibold tabular-nums',
-          tone === 'up' ? 'text-[var(--up)]' : tone === 'down' ? 'text-[var(--down)]' : 'text-foreground',
-        )}
-      >
-        {value}
-      </div>
-      {second && second !== '—' && (
-        <div className="truncate text-[11px] tabular-nums text-muted-foreground">{second}</div>
-      )}
-    </div>
-  );
-}
 
 function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => void }) {
   const [closing, setClosing] = useState(false);
