@@ -121,8 +121,20 @@ export function registerDeskRoutes(app: FastifyInstance) {
         usdinr: USDINR,
       };
     } catch (e) {
+      const msg = (e as Error).message;
+      // A stale expiry from the browser is not a bug — it happens whenever the
+      // page was left open past settlement. Mark it deliberate so it stays out
+      // of the error log, and answer 404 so the browser knows to refresh.
+      if (msg.includes('no live contracts for expiry')) {
+        return refuse(reply, 404, { error: msg });
+      }
+      // The upstream exchange being unreachable is not a client mistake.
+      if (msg.includes('ticker feed empty') || msg.includes('delta request failed')) {
+        reply.code(502);
+        return { error: msg };
+      }
       reply.code(400);
-      return { error: (e as Error).message };
+      return { error: msg };
     }
   });
 

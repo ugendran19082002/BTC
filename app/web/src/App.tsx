@@ -145,7 +145,7 @@ export default function App() {
     }
   }, [live, when, width, minPremium, hedgeGap, lots, expiry, requireHedge, mode, safetyBar]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { if (signedIn === true) void load(); }, [signedIn, load]);
   useEffect(() => {
     getMe()
       .then((m) => setSignedIn(!m.required || m.signedIn))
@@ -171,20 +171,30 @@ export default function App() {
         // If a pinned contract is no longer in the list (settled/expired), release the pin
         setExpiry((cur) => (cur && !r.expiries.some((e) => e.expiry === cur) ? '' : cur));
       })
-      .catch(() => setExpiries([]));
+      .catch((e) => {
+        if (e instanceof NotSignedIn) {
+          // Session gone — stop all polling and clear the cached expiry list so a
+          // stale code cannot be sent to /api/chain on reload.
+          setSignedIn(false);
+          try { sessionStorage.removeItem('btc_expiries'); } catch {}
+        } else {
+          setExpiries([]);
+        }
+      });
   }, [setExpiry]);
 
   useEffect(() => {
+    if (signedIn !== true) return;
     loadExpiries();
     const id = setInterval(loadExpiries, EXPIRY_RECHECK_SECONDS * 1000);
     return () => clearInterval(id);
-  }, [loadExpiries]);
+  }, [signedIn, loadExpiries]);
 
   useEffect(() => {
-    if (!autoRefresh || !live) return;
+    if (!autoRefresh || !live || signedIn !== true) return;
     const id = setInterval(() => { void load(); }, REFRESH_SECONDS * 1000);
     return () => clearInterval(id);
-  }, [autoRefresh, live, load]);
+  }, [autoRefresh, live, signedIn, load]);
 
   // Positions and the alarm are polled on their own clock: they must keep
   // moving even while a chain fetch is in flight or has failed.
