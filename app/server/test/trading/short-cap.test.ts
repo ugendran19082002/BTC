@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_LIMITS, maxShortContractsFor, precheck } from '../../src/trading/precheck.js';
+import {
+  DEFAULT_LIMITS, maxShortContractsFor, precheck, type PrecheckInput,
+} from '../../src/trading/precheck.js';
 
 /**
  * The total-short cap, made settable from the screen.
@@ -62,13 +64,20 @@ test('the cap never falls below one contract', () => {
   assert.equal(maxShortContractsFor(0.5, 1), DEFAULT_LIMITS.maxShortContracts);
 });
 
-/** The gate itself, driven by the cap the service works out. */
-const gateInput = (totalShort: number, size: number, cap: number) => ({
-  now: 1_700_000_000_000,
+/**
+ * The gate itself, on the board from the incident: 80,800 CE, bid 25 / ask 28,
+ * spot 78,607.8, $305.59 free. Resting at the offer, so the spread and depth
+ * gates do not apply -- the cap is the only thing under test.
+ */
+const NOW = 1_700_000_000_000;
+const EXPIRY_TS = Math.floor(NOW / 1000) + 63_000;
+
+const gateInput = (totalShort: number, size: number, cap: number): PrecheckInput => ({
+  now: NOW,
   intent: {
-    side: 'sell' as const,
+    side: 'sell',
     size,
-    expect: { underlying: 'BTC', optionSide: 'CE' as const, strike: 80_800, expiryTs: 1_700_050_000_000 },
+    expect: { underlying: 'BTC', optionSide: 'CE', strike: 80_800, expiryTs: EXPIRY_TS },
     price: 26,
     reduceOnly: false,
     leverage: 200,
@@ -77,11 +86,14 @@ const gateInput = (totalShort: number, size: number, cap: number) => ({
   },
   spot: 78_607.8,
   product: {
-    symbol: 'C-BTC-80800-090926', productId: 1, underlying: 'BTC', optionSide: 'CE' as const,
-    strike: 80_800, expiryTs: 1_700_050_000_000, tickSize: 0.1, lotSize: 1,
-    contractValue: 0.001, tradable: true,
+    symbol: 'C-BTC-80800-090926', productId: 1, underlying: 'BTC', optionSide: 'CE',
+    strike: 80_800, expiryTs: EXPIRY_TS, tickSize: 0.1, lotSize: 1,
+    contractValue: 0.001, state: 'live',
   },
-  quote: { symbol: 'C-BTC-80800-090926', bid: 25, ask: 28, mark: 26.19, at: 1_700_000_000_000 },
+  quote: {
+    symbol: 'C-BTC-80800-090926', bid: 25, ask: 28,
+    bidSize: 5_000, askSize: 5_000, mark: 26.19, at: NOW,
+  },
   feedHealthy: true,
   tradingEnabled: true,
   account: { availableUsd: 305.59 },
