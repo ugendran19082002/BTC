@@ -106,7 +106,7 @@ and a stop both printing would otherwise turn a short into a long.
 ### 4. The engine owns no clock
 
 Time arrives as `now()`, work arrives as `poll()`. Nothing in `engine.ts` starts
-a timer. That is why 80 cases including races, disconnects and restart recovery
+a timer. That is why 81 cases including races, disconnects and restart recovery
 can run in under a second, deterministically.
 
 Concurrency is handled by one per-trade promise-chain mutex:
@@ -204,11 +204,11 @@ The engine never reads a display cache.
 
 ## Testing
 
-265 server tests (`node:test` via tsx), 182 browser tests (vitest +
+267 server tests (`node:test` via tsx), 198 browser tests (vitest +
 @testing-library). Run `npm test` in `app/server` and `npx vitest run` in
 `app/web`; `npm run typecheck` in both.
 
-The server suite is an 80-case matrix covering normal entry, partial fill,
+The server suite is an 81-case matrix covering normal entry, partial fill,
 timeout, reject, network timeout, duplicate prevention, TP/SL, race conditions,
 disconnects, restart recovery and reduce-only protection. Nearly every case
 names the incident that produced it. `payload.test.ts` pins the exact JSON body

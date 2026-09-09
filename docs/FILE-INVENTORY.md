@@ -155,11 +155,11 @@ spinners removed — they are one pixel from the field on a trading screen),
 
 ---
 
-## `app/server/test` — 12 files, 3,045 lines, 265 tests
+## `app/server/test` — 12 files, 3,110 lines, 267 tests
 
 | File | Lines | What it covers |
 |---|---:|---|
-| `trading/orders.test.ts` | 1,269 | The 80-case matrix: entry, partial fill, timeout, reject, network failure, duplicate prevention, TP/SL, races, disconnects, restart recovery, reduce-only protection. Cases 75–80b are the take-profit story. |
+| `trading/orders.test.ts` | 1,388 | The 80-case matrix: entry, partial fill, timeout, reject, network failure, duplicate prevention, TP/SL, races, disconnects, restart recovery, reduce-only protection. Cases 75–80b are the take-profit story. |
 | `engine.test.ts` | 292 | Engine internals — chase, client ids, serialisation. |
 | `trading/margin.test.ts` | 188 | Margin against the real Delta ticket. |
 | `trading/machine.test.ts` | 185 | The reducer, case by case. |
@@ -173,11 +173,11 @@ spinners removed — they are one pixel from the field on a trading screen),
 | `trading/store.test.ts` | 88 | Written after the `plan`-column bug: the first test is a plan changed and read back. |
 | `trading/money.test.ts` | 67 | Tick rounding, in the direction that never costs you. |
 
-## `app/web/src` tests — 11 files, 182 tests
+## `app/web/src` tests — 12 files, 198 tests
 
 `OrderTicket.test.tsx` (432), `PositionsCard.test.tsx` (347),
 `EditExitsSheet.test.tsx` (163), `format.test.ts` (150),
-`ChainTable.test.tsx` (139), `client.test.ts` (131),
+`OrdersPanel.test.tsx` (168), `ChainTable.test.tsx` (139), `client.test.ts` (131),
 `ExitBars.test.tsx` (118), `usePoll.test.ts` (114),
 `AccountCard.test.tsx` (93), `date-range-picker.test.tsx` (91),
 `csv.test.ts` (69).

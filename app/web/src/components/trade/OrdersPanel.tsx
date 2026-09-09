@@ -9,7 +9,9 @@ import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { DateRangePicker, istToday } from '@/components/ui/date-range-picker';
 import { downloadCsv, toCsv } from '@/lib/csv';
-import { contractLabel, price, signedInr, signedUsd, stamp, usdToInr } from '@/lib/format';
+import {
+  contractLabel, duration, price, signedInr, signedUsd, stamp, usdToInr,
+} from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 /**
@@ -25,6 +27,50 @@ import { cn } from '@/lib/utils';
  * refused the first, somebody took back the second, and only one of those is
  * worth investigating.
  */
+
+/**
+ * Why a trade ended.
+ *
+ * The single most useful fact about a closed trade and the one the screen did
+ * not say: a target that filled, a stop that fired and a position squared off
+ * by hand all read as "completed", and they mean entirely different things
+ * about the day you are having.
+ *
+ * Taken from the role on the fill that closed it rather than from the plan,
+ * for the usual reason -- the plan is what was asked for.
+ */
+function exitReason(order: OrderRecord): string | null {
+  if (order.status !== 'completed' || order.position !== 0) return null;
+  const closing = [...order.fills].reverse().find((f) => f.side === 'buy');
+  switch (closing?.role) {
+    case 'take_profit': return 'target';
+    case 'stop_loss': return 'stop';
+    case 'exit': return 'closed by hand';
+    default: return null;
+  }
+}
+
+const REASON_TONE: Record<string, string> = {
+  target: 'text-[var(--up)]',
+  stop: 'text-[var(--down)]',
+  'closed by hand': 'text-muted-foreground',
+};
+
+/**
+ * The day, in one line.
+ *
+ * The first question anyone opening this screen has is "how did I do", and the
+ * only way to answer it was to read ten rows and add them up. Counted from the
+ * rows on screen so it can never disagree with them, and hidden when nothing
+ * has settled yet -- a win rate over zero trades is not a number.
+ */
+function summarise(rows: OrderRecord[]) {
+  const settled = rows.filter((r) => r.status === 'completed' && r.position === 0);
+  const net = settled.reduce((a, r) => a + r.realisedPnl, 0);
+  const won = settled.filter((r) => r.realisedPnl > 0).length;
+  const lost = settled.filter((r) => r.realisedPnl < 0).length;
+  return { settled: settled.length, net, won, lost };
+}
 
 const TONE: Record<OrderStatus, string> = {
   completed: 'text-[var(--up)]',
@@ -82,6 +128,8 @@ export function OrdersPanel() {
         ))}
       </ToggleGroup>
 
+      <RangeSummary rows={rows} />
+
       {rows.length === 0 ? (
         <p className="m-0 py-4 text-center text-[13px] text-muted-foreground">
           {loading ? 'looking…'
@@ -98,9 +146,49 @@ export function OrdersPanel() {
   );
 }
 
+function RangeSummary({ rows }: { rows: OrderRecord[] }) {
+  const { settled, net, won, lost } = summarise(rows);
+  if (settled === 0) return null;
+
+  return (
+    <div
+      // named, because "net −₹170" reads identically to a single losing trade
+      // in the list below it -- to a screen reader, and to a test
+      aria-label="totals for the range"
+      className="mb-2.5 flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-lg border border-border bg-muted px-2.5 py-2"
+    >
+      <span className="flex items-baseline gap-1.5">
+        <span className="text-[11px] uppercase tracking-[0.5px] text-muted-foreground">net</span>
+        <span
+          className={cn(
+            'text-[15px] font-semibold tabular-nums',
+            net > 0 ? 'text-[var(--up)]' : net < 0 ? 'text-[var(--down)]' : 'text-foreground',
+          )}
+        >
+          {signedInr(usdToInr(net))}
+        </span>
+        <span className="text-[11px] tabular-nums text-[var(--dim)]">{signedUsd(net)}</span>
+      </span>
+
+      <span className="text-[11.5px] tabular-nums text-muted-foreground">
+        <span className="text-[var(--up)]">{won} won</span>
+        {' · '}
+        <span className="text-[var(--down)]">{lost} lost</span>
+        {settled > 0 && <> · {Math.round((won / settled) * 100)}%</>}
+      </span>
+
+      <span className="text-[11.5px] tabular-nums text-[var(--dim)]">
+        {settled} settled{rows.length !== settled && <> of {rows.length}</>}
+      </span>
+    </div>
+  );
+}
+
 function OrderRow({ order }: { order: OrderRecord }) {
   const [open, setOpen] = useState(false);
   const pnl = order.realisedPnl;
+  const reason = exitReason(order);
+  const held = order.position === 0 ? order.updatedAt - order.openedAt : null;
 
   return (
     <Collapsible.Root open={open} onOpenChange={setOpen} className="rounded-lg border border-border bg-muted">
@@ -112,6 +200,9 @@ function OrderRow({ order }: { order: OrderRecord }) {
             <span className={cn('text-[11px] font-medium uppercase tracking-[0.5px]', TONE[order.status])}>
               {order.status}
             </span>
+            {reason && (
+              <span className={cn('text-[11px] font-medium', REASON_TONE[reason])}>{reason}</span>
+            )}
           </span>
           <span className="mt-0.5 block text-[11.5px] text-muted-foreground">{order.outcome}</span>
         </span>
@@ -128,15 +219,14 @@ function OrderRow({ order }: { order: OrderRecord }) {
       <Collapsible.Content>
         <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-1 border-t border-border px-2.5 py-2 text-[11.5px] sm:grid-cols-3">
           <Field label="opened" value={stamp(order.openedAt)} />
-          <Field label="last change" value={stamp(order.updatedAt)} />
-          <Field label="lots asked" value={String(order.plan?.lots ?? order.requestedSize)} />
-          <Field label="contracts filled" value={String(order.entrySize)} />
+          <Field label="closed" value={order.position === 0 ? stamp(order.updatedAt) : '—'} />
+          <Field label="held for" value={duration(held)} />
           <Field label="sold at" value={price(order.entryAvgPrice)} />
           <Field label="bought back at" value={price(order.exitAvgPrice)} />
-          <Field label="target" value={price(order.plan?.takeProfitPrice) } />
+          <Field label="contracts" value={contractsLine(order)} />
+          <Field label="target" value={price(order.plan?.takeProfitPrice)} />
           <Field label="stop" value={price(order.plan?.stopPrice)} />
           <Field label="leverage" value={order.plan?.leverage ? `${order.plan.leverage}x` : '—'} />
-          <Field label="profit" value={`${signedInr(usdToInr(pnl))} · ${signedUsd(pnl)}`} />
         </dl>
         {order.note && (
           <p className="m-0 border-t border-border px-2.5 py-2 text-[11.5px] text-muted-foreground">
@@ -146,6 +236,20 @@ function OrderRow({ order }: { order: OrderRecord }) {
       </Collapsible.Content>
     </Collapsible.Root>
   );
+}
+
+/**
+ * Contracts, said once.
+ *
+ * "lots asked 1" above "contracts filled 1" was two rows to say one thing. The
+ * two only differ on a partial fill, and that is exactly when it is worth
+ * spelling out -- so it is one field that grows a second half when it has to.
+ */
+function contractsLine(order: OrderRecord): string {
+  const asked = order.plan?.lots ?? order.requestedSize;
+  return order.entrySize === asked
+    ? String(order.entrySize)
+    : `${order.entrySize} of ${asked} asked`;
 }
 
 function Field({ label, value }: { label: string; value: string }) {
@@ -170,8 +274,12 @@ const CSV_COLUMNS = [
   { header: 'side', value: (r: OrderRecord) => r.optionSide },
   { header: 'status', value: (r: OrderRecord) => r.status },
   { header: 'outcome', value: (r: OrderRecord) => r.outcome },
+  { header: 'why it ended', value: (r: OrderRecord) => exitReason(r) },
   { header: 'opened (IST)', value: (r: OrderRecord) => stamp(r.openedAt) },
   { header: 'last change (IST)', value: (r: OrderRecord) => stamp(r.updatedAt) },
+  // seconds rather than "3m 28s": a sheet can add up the one and not the other
+  { header: 'held (seconds)', value: (r: OrderRecord) =>
+      r.position === 0 ? Math.round((r.updatedAt - r.openedAt) / 1000) : null },
   { header: 'lots asked', value: (r: OrderRecord) => r.plan?.lots ?? r.requestedSize },
   { header: 'contracts filled', value: (r: OrderRecord) => r.entrySize },
   { header: 'sold at', value: (r: OrderRecord) => r.entryAvgPrice },

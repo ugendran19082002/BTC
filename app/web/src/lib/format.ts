@@ -114,6 +114,24 @@ export function ago(ms: number, now = Date.now()): string {
   return `${Math.floor(d / 3_600_000)}h ago`;
 }
 
+/**
+ * How long something lasted: "42s", "3m 28s", "1h 04m".
+ *
+ * Different from `countdown` and `ago` on purpose -- this one is a span between
+ * two known moments rather than a distance from now, and it is read next to
+ * other numbers in a row, so it stays short and never says "ago".
+ */
+export function duration(ms: number | null | undefined, dash = '—'): string {
+  if (ms === null || ms === undefined || !Number.isFinite(ms) || ms < 0) return dash;
+  const total = Math.round(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m`;
+  if (m > 0) return `${m}m ${String(s).padStart(2, '0')}s`;
+  return `${s}s`;
+}
+
 /** The direction a number should be coloured, or none. */
 export const tone = (n: number | null | undefined): 'up' | 'down' | 'flat' =>
   n === null || n === undefined || n === 0 ? 'flat' : n > 0 ? 'up' : 'down';

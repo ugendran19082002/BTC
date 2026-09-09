@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ago, clock, contractLabel, countdown, inr, pct, price, signedUsd, size, stamp, strike, tone, usd,
+  ago, clock, contractLabel, countdown, duration, inr, pct, price, signedUsd, size, stamp,
+  strike, tone, usd,
 } from '@/lib/format';
 
 describe('price', () => {
@@ -146,5 +147,33 @@ describe('contractLabel', () => {
   });
   it('falls back to the symbol rather than printing NaN', () => {
     expect(contractLabel('nonsense')).toBe('nonsense');
+  });
+});
+
+describe('duration', () => {
+  it('says seconds on their own under a minute', () => {
+    expect(duration(42_000)).toBe('42s');
+    expect(duration(1_000)).toBe('1s');
+  });
+
+  it('pads the smaller unit so a column of them lines up', () => {
+    expect(duration(208_000)).toBe('3m 28s');
+    expect(duration(65_000)).toBe('1m 05s');
+    expect(duration(3_840_000)).toBe('1h 04m');
+  });
+
+  it('drops seconds past an hour, where they stop meaning anything', () => {
+    expect(duration(7_200_000)).toBe('2h 00m');
+  });
+
+  it('rounds rather than truncating, so 1.6s is not 1s', () => {
+    expect(duration(1_600)).toBe('2s');
+  });
+
+  it('has nothing to say about a missing or impossible span', () => {
+    expect(duration(null)).toBe('—');
+    expect(duration(undefined)).toBe('—');
+    expect(duration(-5_000)).toBe('—');
+    expect(duration(Number.NaN)).toBe('—');
   });
 });
