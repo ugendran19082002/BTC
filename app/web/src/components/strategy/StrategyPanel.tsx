@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { deleteStrategy, getStrategies, setScheduler, setStrategyEnabled } from '@/api/strategy';
-import { DAY_NAMES, type Strategy, type StrategyStatus } from '@/types/strategy';
+import type { Strategy, StrategyStatus } from '@/types/strategy';
 import { Card, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { StrategyForm } from '@/components/strategy/StrategyForm';
 import { usePoll } from '@/hooks/usePoll';
 import { clock, stamp } from '@/lib/format';
+import { describeDays, describePremium } from '@/lib/strategy-preview';
 import { cn } from '@/lib/utils';
 
 /**
@@ -24,7 +25,7 @@ function summarise(s: Strategy): string {
   const c = s.config;
   const parts = [
     c.legs === 'both' ? 'CE + PE' : c.legs,
-    `${c.premium.mode === 'atLeast' ? '≥' : '≤'} $${c.premium.usd}`,
+    describePremium(c).split(' — ')[0]!,
     `${c.lots} lot${c.lots === 1 ? '' : 's'}`,
     `${c.entryTime}→${c.exitTime}`,
     c.entryPrice === 'offer'
@@ -157,9 +158,7 @@ export function StrategyPanel() {
                 {summarise(s)}
               </p>
               <p className="m-0 mt-0.5 text-[11.5px] text-[var(--dim)]">
-                {s.config.weekdays.length === 7
-                  ? 'every day'
-                  : s.config.weekdays.map((d) => DAY_NAMES[d]).join(' ')}
+                {describeDays(s.config.weekdays)}
                 {' · '}
                 {/* The server's own words for why it is not entering this second. */}
                 {s.status}
@@ -202,6 +201,8 @@ export function StrategyPanel() {
         open={formOpen}
         onOpenChange={setFormOpen}
         onSaved={refresh}
+        balanceUsd={data.balanceUsd}
+        spot={data.spot}
       />
     </div>
   );

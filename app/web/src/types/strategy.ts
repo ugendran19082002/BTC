@@ -50,6 +50,9 @@ export type StrategyStatus = {
   today: string;
   schedulerOn: boolean;
   mode: 'live' | 'paper';
+  /** For pricing a size in the editor while it is being typed. */
+  balanceUsd: number | null;
+  spot: number | null;
   strategies: Strategy[];
   runs: StrategyRun[];
 };

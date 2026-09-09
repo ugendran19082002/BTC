@@ -420,6 +420,9 @@ export class TradingService {
   /** What the desk will let today lose, given what is in the account. */
   get dailyLossLimitUsd() { return dailyLossLimitFor(this.lastBalance); }
 
+  /** The last balance seen, for screens that price a size before it is sent. */
+  get lastBalanceUsd(): number | null { return this.lastBalance; }
+
   /**
    * Contracts this account's margin could carry short, all in.
    *

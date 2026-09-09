@@ -65,6 +65,14 @@ export function registerStrategyRoutes(app: FastifyInstance) {
        */
       schedulerOn: svc.store.getSetting('scheduler_enabled') === '1',
       mode: svc.mode,
+      /*
+       * The account, so the editor can price a size while it is being typed.
+       * Sent with the strategies rather than fetched separately: a form that
+       * has to wait on a second request shows "—" where the warning goes, and
+       * the warning is the reason the number is there.
+       */
+      balanceUsd: svc.lastBalanceUsd,
+      spot: svc.spot,
       strategies: s.all().map((x) => {
         const last = s.lastRunDate(x.id);
         const due = entryDue(x, now, last);
