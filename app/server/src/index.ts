@@ -4,6 +4,7 @@ import { authFromEnv } from './http/session.js';
 import { loadDays } from './backtest/backtest.js';
 import { credsFromEnv } from './delta/signed.js';
 import { tradingService } from './trading/service.js';
+import { liveTickers } from './market/delta.js';
 
 /**
  * Start the desk.
@@ -38,3 +39,11 @@ app.log.info(
     ? `login required, user "${auth.username}", sessions last ${auth.ttl / 3600}h`
     : 'login NOT required -- set DESK_USER, DESK_PASSWORD_HASH and DESK_SESSION_SECRET to require one',
 );
+
+// Pre-warm the ticker cache so the very first page load does not stall on
+// a cold Delta API call.  Fire-and-forget: a failure here just means the
+// first request will fetch on demand as before.
+liveTickers()
+  .then((t) => app.log.info(`ticker cache warmed: ${t.length} BTC contracts`))
+  .catch((e) => app.log.warn(`ticker warm-up failed (first request will retry): ${(e as Error).message}`));
+
