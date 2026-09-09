@@ -7,6 +7,7 @@ import { registerDeskRoutes } from './routes/desk.routes.js';
 import { registerBacktestRoutes } from './routes/backtest.routes.js';
 import { registerTradeRoutes } from './routes/trade.routes.js';
 import { registerErrorRoutes } from './routes/errors.routes.js';
+import { registerStrategyRoutes } from './routes/strategy.routes.js';
 import { noteError } from '../observability/errors.js';
 import { wasRefusal, worthLogging } from './refuse.js';
 
@@ -78,6 +79,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   registerBacktestRoutes(app);
   registerTradeRoutes(app);
   registerErrorRoutes(app);
+  registerStrategyRoutes(app);
 
   return app;
 }

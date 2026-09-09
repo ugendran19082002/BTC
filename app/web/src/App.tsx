@@ -21,7 +21,7 @@ import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
 import { usePoll } from '@/hooks/usePoll';
 import { MoveSection } from '@/components/desk/MoveSection';
 import { BiasSection } from '@/components/desk/BiasSection';
-import { BacktestPanel } from '@/components/research/BacktestPanel';
+import { StrategyPanel } from '@/components/strategy/StrategyPanel';
 import { RecommendPanel } from '@/components/desk/RecommendPanel';
 import { DateTimePicker, istToEpoch, type IstMoment } from '@/components/research/DateTimePicker';
 import { usePersisted } from '@/hooks/usePersisted';
@@ -35,7 +35,16 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Metric, Formula, Field } from '@/components/research/Explain';
 
-type Tab = 'desk' | 'trade' | 'orders' | 'backtest' | 'errors';
+type Tab = 'desk' | 'trade' | 'orders' | 'strategy' | 'errors';
+
+/**
+ * A tab remembered from a previous visit may no longer exist -- the backtest
+ * panel was removed once the research moved to `research/`. Falling through to
+ * the last branch would land such a reader somewhere they did not choose, so a
+ * tab this build does not have becomes the one everybody starts on.
+ */
+const TABS: readonly Tab[] = ['desk', 'trade', 'orders', 'strategy', 'errors'];
+const asTab = (v: string): Tab => (TABS as readonly string[]).includes(v) ? (v as Tab) : 'desk';
 
 const REFRESH_SECONDS = 5;
 // The expiry list changes once a day, at settlement. A minute is often enough
@@ -75,7 +84,8 @@ function loadCachedExpiries(): ExpiryOption[] {
 }
 
 export default function App() {
-  const [tab, setTab] = usePersisted<Tab>('tab', 'desk');
+  const [storedTab, setTab] = usePersisted<Tab>('tab', 'desk');
+  const tab = asTab(storedTab);
   // A ticket is a seed plus an open flag rather than one nullable value: the
   // sheet has to animate closed with its contents still on screen.
   const [ticket, setTicket] = useState<TicketSeed | null>(null);
@@ -282,7 +292,7 @@ export default function App() {
           ) : null}
         </button>
         <button className={tab === 'orders' ? 'on' : ''} onClick={() => setTab('orders')}>Orders</button>
-        <button className={tab === 'backtest' ? 'on' : ''} onClick={() => setTab('backtest')}>Backtest</button>
+        <button className={tab === 'strategy' ? 'on' : ''} onClick={() => setTab('strategy')}>Strategy</button>
         <button className={tab === 'errors' ? 'on' : ''} onClick={() => setTab('errors')}>
           Errors
           {errors && errors.summary.unresolved > 0 && (
@@ -728,14 +738,14 @@ export default function App() {
             <OrdersPanel />
           </ErrorBoundary>
         </div>
-      ) : tab === 'errors' ? (
+      ) : tab === 'strategy' ? (
+        <StrategyPanel />
+      ) : (
         <div className="lead-row" style={{ gridTemplateColumns: 'minmax(0, 1fr)' }}>
           <ErrorBoundary where="Error log">
             <ErrorLogPanel />
           </ErrorBoundary>
         </div>
-      ) : (
-        <BacktestPanel usdinr={data?.usdinr ?? 85} />
       )}
       <OrderTicket
         seed={ticket}
