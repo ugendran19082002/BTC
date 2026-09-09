@@ -1267,3 +1267,56 @@ test('40 [safeguard] a reduce-only exit can shrink a short but can never open a 
   assert.equal(ok.filledSize, 40);
   assert.equal((await r.ex.getPositions()).length, 0, 'flat, never long');
 });
+
+// -------------------- 81 how long a position stands with nothing behind it
+
+/**
+ * Measured on a live trade: the entry printed at 10:16:48.218 and the target
+ * reached the book at 10:16:50.032. That 1.81-second gap was almost entirely
+ * round trips to Delta made one after another -- the position sat naked for it,
+ * and it is the delay that got reported from the screen as "quick exit
+ * aakala".
+ *
+ * The reads do not depend on each other, so the property worth pinning is that
+ * they overlap. Counting how many are in flight at once is deterministic, which
+ * a wall-clock assertion would not be.
+ */
+test('81 the reads behind protection happen together, not one at a time', async () => {
+  const r = rig();
+  const plan = planFor(ceProduct(), { lots: 1, takeProfitPrice: 50, stopPrice: 130 });
+
+  let inFlight = 0;
+  let peak = 0;
+  const watch = <A extends unknown[], R>(fn: (...a: A) => Promise<R>) => async (...a: A) => {
+    inFlight += 1;
+    peak = Math.max(peak, inFlight);
+    try { return await fn(...a); } finally { inFlight -= 1; }
+  };
+  r.ex.getPositions = watch(r.ex.getPositions.bind(r.ex));
+  r.ex.getOpenOrders = watch(r.ex.getOpenOrders.bind(r.ex));
+  r.ex.getProduct = watch(r.ex.getProduct.bind(r.ex));
+
+  await r.engine.open(plan);
+  await r.engine.poll(plan.tradeId);
+
+  assert.ok(peak > 1, `the reads were still serial (peak concurrency ${peak})`);
+  // and the outcome is unchanged: both legs on the book
+  assert.equal((await r.ex.getOpenOrders(CE)).filter((o) => o.reduceOnly).length, 2);
+});
+
+test('81b a position the exchange has not registered yet still backs off rather than retrying hard', async () => {
+  // The parallel reads mean two of them are wasted in this case. That is the
+  // trade, and the backoff is what keeps it from being expensive: seventy
+  // `no_position_for_reduce_only` refusals in a loop is what it replaced.
+  const r = rig();
+  const plan = planFor(ceProduct(), { lots: 1, takeProfitPrice: 50 });
+  await r.engine.open(plan);
+  r.ex.getPositions = async () => [];          // Delta has not caught up
+
+  await r.engine.poll(plan.tradeId);
+  let calls = 0;
+  r.ex.getPositions = async () => { calls += 1; return []; };
+  await r.engine.poll(plan.tradeId);
+
+  assert.equal(calls, 0, 'the next poll waited rather than asking again immediately');
+});

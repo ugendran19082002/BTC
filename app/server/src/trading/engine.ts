@@ -438,18 +438,23 @@ export class TradeEngine {
     // A submit we never got an answer for is resolved by reading, never writing.
     if (rec.state.phase === 'entry_unknown') return (await this.reconcileInner(tradeId))?.state ?? null;
 
+    // The entry and both exit legs are three independent lookups. Read one
+    // after another they added a round trip each to every poll; the results are
+    // still absorbed in a fixed order, so the state they produce is unchanged.
     const entryId = clientId(tradeId, 'entry');
-    const entry = await this.exchange.getOrderByClientId(entryId).catch(() => null);
-    if (entry) rec = this.absorb(rec, entry, 'entry');
-
-    for (const [role, cid] of [
+    const legs = [
+      ['entry', entryId],
       ['take_profit', rec.state.protection.takeProfit],
       ['stop_loss', rec.state.protection.stopLoss],
-    ] as const) {
-      if (!cid) continue;
-      const o = await this.exchange.getOrderByClientId(cid).catch(() => null);
+    ] as const;
+    const found = await Promise.all(
+      legs.map(([, cid]) => (cid ? this.exchange.getOrderByClientId(cid).catch(() => null) : null)),
+    );
+    for (const [i, [role]] of legs.entries()) {
+      const o = found[i];
       if (o) rec = this.absorb(rec, o, role);
     }
+    const entry = found[0];
 
     // A resting entry that is being walked toward the bid.
     if (
@@ -581,23 +586,40 @@ export class TradeEngine {
     const notBefore = this.protectAfter.get(rec.state.tradeId);
     if (notBefore !== undefined && this.now() < notBefore) return rec;
 
+    /*
+     * Three reads, none of which depends on the other two, so they go together.
+     *
+     * Run one after another they were most of the gap between a fill printing
+     * and the exits reaching the book -- measured at 1.81 seconds on a live
+     * trade, which is a long time to hold a position with nothing behind it.
+     * Each is a round trip to Delta and the latency is almost all of the cost.
+     *
+     * When the position turns out not to be registered yet the other two reads
+     * are wasted, which is the trade being made: two reads at weight 3 against
+     * a limit of 20,000 per five minutes, in exchange for a shorter window
+     * where the position is naked.
+     */
+    const [heldRaw, product, book] = await Promise.all([
+      this.exchange.getPositions()
+        .then((ps) => ps.find((p) => p.symbol === rec.plan.symbol)?.size ?? 0)
+        .catch(() => null),
+      this.exchange.getProduct(rec.plan.symbol).catch(() => null),
+      this.exchange.getOpenOrders(rec.plan.symbol).catch(() => null),
+    ]);
+
     // Reduce-only orders need a position the exchange agrees exists.
-    const held = await this.exchange.getPositions()
-      .then((ps) => ps.find((p) => p.symbol === rec.plan.symbol)?.size ?? 0)
-      .catch(() => null);
+    const held = heldRaw;
     if (held === null) return rec;
     if (held === 0) {
       this.protectAfter.set(rec.state.tradeId, this.now() + PROTECT_RETRY_MS);
       return rec;
     }
 
-    const product = await this.exchange.getProduct(rec.plan.symbol).catch(() => null);
     const tick = product?.tickSize ?? 0.1;
     const attempt = rec.events.filter(
       (e) => e.t === 'protection_placed' || e.t === 'protection_failed',
     ).length;
 
-    const book = await this.exchange.getOpenOrders(rec.plan.symbol).catch(() => null);
     if (book === null) return rec;
     const resting = book.filter((o) => o.reduceOnly && (o.status === 'open' || o.status === 'partial'));
 

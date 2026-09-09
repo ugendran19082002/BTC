@@ -574,6 +574,44 @@ The general rule, since it has now been broken twice: **anything labelled as
 what the exchange is doing must be read from the exchange.** The plan is what
 was asked for.
 
+### The third break, which cost money
+
+A short sold at 7.00 with its target at 0.50 bought itself back at 7.00 less
+than four seconds later. Then again on the next trade, at 6.00 against a sale
+at 5.90. Both at a loss, both within seconds of the entry filling.
+
+The cause was a change made an hour earlier for a real reason: a resting limit
+buy only fills when somebody *offers* at it, so a decayed option's mark can fall
+straight through the target untouched — which is exactly what the 2.70 → 1.10
+trade did. The target was changed to a `take_profit_order` trigger so the
+exchange would fire it on the mark. Delta fires a *buy* trigger in the opposite
+direction to the one the docs read as, so it fired the moment it landed.
+
+What makes this the same rule rather than a new one: **the suite agreed with the
+bug.** Five tests asserted the target fired at the right moment and all five
+passed, because `PaperExchange` had been written to the same reading of the docs
+as the engine. A simulator built from the code's assumption cannot test that
+assumption. It only tests that the code is consistent with itself.
+
+So the corollary, which is the part that was missing:
+
+> A simulator is only evidence about *our* logic. Anything the venue decides —
+> trigger direction, fill semantics, what a field means — is evidence only when
+> observed at the venue, or reduced to a property that holds whichever way the
+> venue works.
+
+The target is a resting limit again, and the level is judged in
+`takeProfitIfReached` where both directions are arithmetic this repo owns and
+can pin. The stop stays a trigger at Delta because it is the only protection
+that survives this process dying — and it is watched here as well, from both
+ends. Case 80 is the reproduction; case 80b is the venue-independent property
+worth keeping: an exit may never print worse than the level that asked for it.
+
+**Still unverified:** whether Delta's *stop* direction is the one assumed. It
+has never been observed misfiring, and a buy stop above the market is the
+conventional case, but the take-profit was conventional too. It wants one
+deliberate live test with one lot before it is trusted further.
+
 ## The bug behind "SL and TGT update not working"
 
 It was one line of SQL. `SqliteTradeStore.save` upserted with
