@@ -236,6 +236,8 @@ export type ExpiryOption = {
   hoursAway: number;
   isDaily: boolean;
   isNextEntry: boolean;
+  /** true for the first listed expiry — the one the desk defaults to */
+  isDefault: boolean;
   contracts: number;
 };
 

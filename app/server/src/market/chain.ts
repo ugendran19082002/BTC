@@ -228,8 +228,10 @@ export type ExpiryOption = {
   hoursAway: number;
   /** the nearest expiry, whatever is left of it */
   isDaily: boolean;
-  /** the contract the next 05:30 IST entry would sell -- what the desk defaults to */
+  /** the contract the next 05:30 IST entry would sell */
   isNextEntry: boolean;
+  /** true for the first listed expiry — the one the desk defaults to */
+  isDefault: boolean;
   contracts: number;
 };
 
@@ -244,7 +246,7 @@ export async function liveExpiries(): Promise<ExpiryOption[]> {
     const code = t.symbol.split('-').pop();
     if (code && /^\d{6}$/.test(code)) counts.set(code, (counts.get(code) ?? 0) + 1);
   }
-  return [...counts.entries()]
+  const sorted = [...counts.entries()]
     .map(([expiry, contracts]) => {
       const ets = expiryTsOf(expiry);
       return {
@@ -254,15 +256,18 @@ export async function liveExpiries(): Promise<ExpiryOption[]> {
         hoursAway: (ets - now) / 3600,
         isDaily: expiry === nearest,
         isNextEntry: expiry === upcoming,
+        isDefault: false,   // set below after sorting
         contracts,
       };
     })
     .filter((e) => e.hoursAway > 0)
     .sort((a, b) => a.expiryTs - b.expiryTs);
+  if (sorted.length) sorted[0]!.isDefault = true;
+  return sorted;
 }
 
 /**
- * Live chain, by default for the nearest daily expiry.
+ * Live chain, by default for the nearest (first listed) expiry.
  *
  * `wantExpiry` selects a different one. The Greeks follow automatically because
  * time to expiry is derived from the code, but nothing measured in the backtest
@@ -273,8 +278,9 @@ export async function liveChain(width = 25, wantExpiry?: string): Promise<Snapsh
   if (!tickers.length) throw new Error('ticker feed empty');
   const ts = Math.floor(Date.now() / 1000);
   const upcoming = nextEntry(ts);
-  const expiry = wantExpiry ?? upcoming.expiry;
-  const expiryTs = wantExpiry ? expiryTsOf(wantExpiry) : upcoming.expiryTs;
+  const nearest = nextExpiry(ts);
+  const expiry = wantExpiry ?? nearest.expiry;
+  const expiryTs = wantExpiry ? expiryTsOf(wantExpiry) : nearest.expiryTs;
   const day = tickers.filter((t) => t.symbol.endsWith('-' + expiry));
   if (!day.length) throw new Error(`no live contracts for expiry ${expiry}`);
 

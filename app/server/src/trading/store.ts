@@ -60,6 +60,13 @@ const MIGRATIONS: Migration[] = [
     id: '002-trades-by-updated-at',
     up: 'CREATE INDEX IF NOT EXISTS trades_by_updated_at ON trades (updated_at DESC);',
   },
+  {
+    // The desk defaults to the first listed expiry (nearest active contract)
+    // rather than the next-entry contract.  Persisted so the choice survives
+    // a restart and can be changed through /api/settings.
+    id: '003-default-settings',
+    up: `INSERT OR IGNORE INTO settings (key, value) VALUES ('expiry_default', 'first');`,
+  },
 ];
 
 const OPEN_PHASES = "('precheck','entry_pending','entry_unknown','position_open','unprotected','protected','exit_pending')";

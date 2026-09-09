@@ -151,4 +151,44 @@ export function registerDeskRoutes(app: FastifyInstance) {
     calibrationBuckets: reloadCalibration(),
     horizons: reloadHorizons(),
   }));
+
+  /** Allowed setting keys and their valid values. */
+  const ALLOWED_SETTINGS: Record<string, string[]> = {
+    expiry_default: ['first', 'next_entry'],
+  };
+
+  /**
+   * Desk settings that survive a restart.
+   *
+   * GET returns every key the desk knows about. POST accepts one key/value
+   * pair and validates it against the allow-list so the database never holds
+   * a value nobody wrote the code to read.
+   */
+  app.get('/api/settings', async () => {
+    const svc = tradingService();
+    const out: Record<string, string | null> = {};
+    for (const key of Object.keys(ALLOWED_SETTINGS)) {
+      out[key] = svc.store.getSetting(key);
+    }
+    return { settings: out };
+  });
+
+  app.post('/api/settings', async (req, reply) => {
+    const { key, value } = (req.body ?? {}) as { key?: string; value?: string };
+    if (!key || typeof value !== 'string') {
+      reply.code(400);
+      return { error: 'key and value are required' };
+    }
+    const allowed = ALLOWED_SETTINGS[key];
+    if (!allowed) {
+      reply.code(400);
+      return { error: `unknown setting "${key}"` };
+    }
+    if (!allowed.includes(value)) {
+      reply.code(400);
+      return { error: `invalid value "${value}" for setting "${key}"; allowed: ${allowed.join(', ')}` };
+    }
+    tradingService().store.setSetting(key, value);
+    return { ok: true, key, value };
+  });
 }

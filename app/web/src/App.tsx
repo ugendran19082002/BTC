@@ -137,13 +137,13 @@ export default function App() {
    * contract that had expired hours earlier, and a remembered pin on it
    * outlived the thing it pointed at. A pin is for looking at another expiry
    * now, not forever: when the contract it names is gone, so is the pin, and
-   * the selection falls back to the one the next 05:30 entry would sell.
+   * the selection falls back to the first listed expiry (the default).
    */
   const loadExpiries = useCallback(() => {
     getExpiries()
       .then((r) => {
         setExpiries(r.expiries);
-        const fallback = r.expiries.find((e) => e.isNextEntry)?.expiry ?? '';
+        const fallback = r.expiries.find((e) => e.isDefault)?.expiry ?? r.expiries[0]?.expiry ?? '';
         setExpiry((cur) => (cur && r.expiries.some((e) => e.expiry === cur) ? cur : fallback));
       })
       .catch(() => setExpiries([]));
@@ -328,14 +328,16 @@ export default function App() {
                     key={e.expiry}
                     value={e.expiry}
                     hint={
-                      e.isNextEntry
-                        ? 'the one you would sell'
-                        : e.isDaily
-                          ? 'today’s, mostly spent'
-                          : 'not measured'
+                      e.isDefault
+                        ? 'default — today’s active expiry'
+                        : e.isNextEntry
+                          ? 'the one you would sell at 05:30'
+                          : e.isDaily
+                            ? 'today’s daily contract'
+                            : 'not measured'
                     }
                   >
-                    {e.isNextEntry && '★ '}
+                    {e.isDefault && '★ '}
                     {istLabel(e.expiryTs)}
                     {' · '}
                     {e.hoursAway < 48
@@ -344,7 +346,7 @@ export default function App() {
                   </SelectItem>
                 ))}
               </Select>
-              {expiries.length > 0 && !expiries.find((e) => e.expiry === expiry)?.isNextEntry && (
+              {expiries.length > 0 && !expiries.find((e) => e.expiry === expiry)?.isDefault && (
                 <button className="pinned" onClick={forgetExpiry} title="back to the default">
                   pinned — reset
                 </button>
@@ -537,8 +539,8 @@ export default function App() {
                   id="live"
                   title={snap.live ? 'Live' : 'Snapshot'}
                   right={
-                    snap.isNextEntry
-                      ? <Badge tone="ok">next entry</Badge>
+                    (snap.isNextEntry || snap.isDaily)
+                      ? <Badge tone="ok">{snap.isNextEntry ? 'next entry' : 'today’s daily'}</Badge>
                       : <Badge tone="warn">not the tested contract</Badge>
                   }
                 >

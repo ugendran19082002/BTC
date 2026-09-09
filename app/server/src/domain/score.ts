@@ -381,9 +381,12 @@ export function verdict(
   });
 
   // 1b. Which contract. Everything measured is a ~12 hour, same-session trade.
-  //     The contract the NEXT entry sells is the right one to be looking at,
-  //     even hours before the window opens.
-  if (!snap.isNextEntry) {
+  //     The daily contract (today's, first in the list) is the default. It may
+  //     have less than 12h left, which is worth a warning but not a block: the
+  //     user chose to look at it, and the remaining hours are shown clearly.
+  //     A longer-dated contract is still blocked because nothing backtested
+  //     applies to it at all.
+  if (!snap.isNextEntry && !snap.isDaily) {
     checks.push({
       ok: false,
       severity: 'block',
@@ -394,6 +397,14 @@ export function verdict(
           : `It is ${(snap.hoursToExpiry / 24).toFixed(1)} days out. `) +
         'Nothing measured applies to it — every number here came from ~12 hour trades. ' +
         'Look at it if you want; the desk cannot tell you whether to trade it.',
+    });
+  } else if (snap.isDaily && !snap.isNextEntry) {
+    checks.push({
+      ok: true,
+      severity: 'warn',
+      text:
+        `Today's daily contract — ${snap.hoursToExpiry.toFixed(1)}h to settlement. ` +
+        'Less time to expiry than the ~12h the backtest measured, so the numbers are approximate.',
     });
   }
 
