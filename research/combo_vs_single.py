@@ -182,21 +182,27 @@ def show(name, series, dates, note):
 
 def main():
     day95, hit95 = real_day(0.05)
+    on25, h25, ov25 = overnight(0.75)   # 25% decay: out fast, small win
     on50, h50, ov50 = overnight(0.5)
     on90, h90, ov90 = overnight(0.1)
 
-    dates = sorted(set(day95) & set(on50) & set(on90))
+    dates = sorted(set(day95) & set(on25) & set(on50) & set(on90))
     print('=' * 78)
     print('STACKED vs OVERNIGHT vs DAY-ONLY')
     print('=' * 78)
     print(f'  common days       {len(dates):,}  ({dates[0]} to {dates[-1]})')
     print(f'  {CONTRACTS} contracts per leg, CE + PE, {SLIP*100:.0f}% slippage')
     print(f'  95% target reached on {hit95*100:.1f}% of real 05:30 legs')
-    print(f'  50% target reached on {h50*100:.1f}% of modelled overnight legs')
-    print(f'  overnight leg still open at 05:30 on {ov50*100:.1f}% of days (S1 margin overlap)')
+    print(f'  25% target reached on {h25*100:.1f}% of modelled overnight legs'
+          f'   (still open at 05:30 on {ov25*100:.1f}% of days)')
+    print(f'  50% target reached on {h50*100:.1f}% of modelled overnight legs'
+          f'   (still open at 05:30 on {ov50*100:.1f}% of days)')
 
+    s0 = {d: on25[d] + day95[d] for d in dates}
     s1 = {d: on50[d] + day95[d] for d in dates}
     r = {}
+    r['S0'] = show('S0  STACKED    23:30 $30 @25%  +  05:30 $15 @95%   [PART MODELLED]',
+                   s0, dates, 'out of the overnight fastest, for the smallest win')
     r['S1'] = show('S1  STACKED    23:30 $30 @50%  +  05:30 $15 @95%   [PART MODELLED]',
                    s1, dates, 'two trades a day; only the second is measured')
     r['S2'] = show('S2  OVERNIGHT  23:30 $30 @90%, else hold to 17:30   [MODELLED]',
@@ -210,12 +216,14 @@ def main():
     for k, (t, a, m) in sorted(r.items(), key=lambda x: -x[1][0]):
         print(f'  {k}   ${t:+9.2f}   Rs {t*USDINR:+9,.0f}   per day Rs {a*USDINR:+7.2f}   maxDD Rs {m*USDINR:8,.0f}')
 
-    print('\n  What the overnight leg contributes to S1:')
+    print('\n  THE OVERNIGHT LEG ON ITS OWN  (what stacking actually adds)')
     onlyd = sum(day95[d] for d in dates)
-    onlyn = sum(on50[d] for d in dates)
-    print(f'    05:30 day trade alone   ${onlyd:+.2f}   Rs {onlyd*USDINR:+,.0f}')
-    print(f'    23:30 overnight alone   ${onlyn:+.2f}   Rs {onlyn*USDINR:+,.0f}')
-    print(f'    stacking them changes the total by Rs {onlyn*USDINR:+,.0f}')
+    print(f'    05:30 day trade alone       ${onlyd:+8.2f}   Rs {onlyd*USDINR:+9,.0f}')
+    for label, series in (('@25%', on25), ('@50%', on50), ('@90%', on90)):
+        s = sum(series[d] for d in dates)
+        w = sum(1 for d in dates if series[d] > 0) / len(dates) * 100
+        print(f'    23:30 overnight {label}       ${s:+8.2f}   Rs {s*USDINR:+9,.0f}'
+              f'   win {w:.1f}%')
 
 
 if __name__ == '__main__':
