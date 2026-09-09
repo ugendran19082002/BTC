@@ -1,0 +1,121 @@
+==========================================================================================
+THE DECISION:  LOWEST RISK  vs  MAXIMUM PARTICIPATION
+==========================================================================================
+Baseline 05:30 IST, richest strike at or below $15, buy back at 95% decay.
+10 contracts per leg, 5% slippage, 733 days, all measured.
+
+WHY THIS USES A MODEL LINE AND NOT AN OBSERVED-RATE LINE
+  "observed rate >= 99%" judges a bucket, and near the top a bucket of 200
+  legs flips from 99.0% to 98.5% on one bad leg, taking every leg in it out
+  of the strategy. That is why it selected 275 legs calibrated one way and
+  7 the other. Model probability is per leg and moves smoothly, and the
+  calibration says legs scored 97%+ settled at zero 99.3%+ of the time --
+  so a 97% model line is the stable way to ask for 99% real safety.
+
+==========================================================================================
+BOTH LEGS
+==========================================================================================
+  GATE              SOLD  DAYS  ACTUAL 0%   TOTAL Rs    /DAY   WIN%     PF    WORST     MDD
+  ------------------------------------------------------------------------------------
+  no gate           1466   733     97.27%    +15,225  +20.77  96.3%   2.09   -1,526   1,943
+  model >= 94%      1174   678     98.13%    +10,295  +14.04  97.8%   2.41   -1,242   1,676
+  model >= 95%       995   628     98.69%     +9,834  +13.42  98.6%   3.15   -1,242   1,242
+  model >= 96%       697   490     99.14%     +7,949  +10.84  99.2%   5.10   -1,048   1,156
+  model >= 97%       275   232     98.55%     +3,161   +4.31  99.1%   5.90     -333     333
+  model >= 97.5%     115    99     99.13%     +1,585   +2.16 100.0%    inf       +0       0
+  model >= 98%        30    27    100.00%       +383   +0.52 100.0%    inf       +0       0
+
+==========================================================================================
+CALL ONLY
+==========================================================================================
+  GATE              SOLD  DAYS  ACTUAL 0%   TOTAL Rs    /DAY   WIN%     PF    WORST     MDD
+  ------------------------------------------------------------------------------------
+  no gate            733   733     97.27%     +7,539  +10.28  98.0%   2.25   -1,539   1,825
+  model >= 94%       600   600     98.17%     +5,220   +7.12  98.5%   2.42   -1,060   2,160
+  model >= 95%       519   519     98.84%     +5,317   +7.25  98.8%   3.52   -1,060   1,515
+  model >= 96%       375   375     99.20%     +3,587   +4.89  99.2%   3.15   -1,060   1,335
+  model >= 97%       160   160     99.38%     +1,887   +2.57  99.4%   6.66     -333     333
+  model >= 97.5%      69    69    100.00%       +966   +1.32 100.0%    inf       +0       0
+  model >= 98%        21    21    100.00%       +268   +0.37 100.0%    inf       +0       0
+
+==========================================================================================
+PUT ONLY
+==========================================================================================
+  GATE              SOLD  DAYS  ACTUAL 0%   TOTAL Rs    /DAY   WIN%     PF    WORST     MDD
+  ------------------------------------------------------------------------------------
+  no gate            733   733     97.27%     +7,686  +10.49  98.0%   1.91   -1,513   2,355
+  model >= 94%       574   574     98.08%     +5,075   +6.92  98.8%   2.34   -1,259   1,259
+  model >= 95%       476   476     98.53%     +4,516   +6.16  99.2%   2.76   -1,259   1,259
+  model >= 96%       322   322     99.07%     +4,361   +5.95  99.7%  15.01     -311     311
+  model >= 97%       115   115     97.39%     +1,274   +1.74  99.1%   5.09     -311     311
+  model >= 97.5%      46    46     97.83%       +620   +0.85 100.0%    inf       +0       0
+  model >= 98%         9     9    100.00%       +115   +0.16 100.0%    inf       +0       0
+
+==========================================================================================
+OUT OF SAMPLE -- the same lines, each half scored on its own
+==========================================================================================
+  A model line needs no calibration to apply, so nothing here has seen the
+  days it judges. This is the test the bucket gate failed.
+
+  GATE             LEGS     1st half   2nd half  1st PF  2nd PF  holds?
+  ------------------------------------------------------------------------
+  no gate          both       +8,205     +7,020    2.06    2.13     yes
+  no gate          CE         +4,168     +3,371    2.19    2.32     yes
+  no gate          PE         +4,037     +3,649    1.88    1.95     yes
+
+  model >= 94%     both       +5,131     +5,164    2.21    2.69     yes
+  model >= 94%     CE         +1,887     +3,333    1.65    5.32     yes
+  model >= 94%     PE         +3,244     +1,831    3.30    1.77     yes
+
+  model >= 95%     both       +5,032     +4,802    2.83    3.63     yes
+  model >= 95%     CE         +2,116     +3,202    2.16   12.57     yes
+  model >= 95%     PE         +2,916     +1,600    3.99    2.00     yes
+
+  model >= 96%     both       +3,547     +4,401    3.12   17.84     yes
+  model >= 96%     CE         +1,329     +2,258    1.95    9.20     yes
+  model >= 96%     PE         +2,218     +2,143    8.13     inf     yes
+
+  model >= 97%     both       +1,664     +1,497    3.58     inf     yes
+  model >= 97%     CE           +955       +932    3.86     inf     yes
+  model >= 97%     PE           +709       +565    3.28     inf     yes
+
+  model >= 97.5%   both         +968       +617     inf     inf     yes
+  model >= 97.5%   CE           +558       +408     inf     inf     yes
+  model >= 97.5%   PE           +411       +209     inf     inf     yes
+
+  model >= 98%     both         +296        +88     inf     inf     yes
+  model >= 98%     CE           +193        +75     inf     inf     yes
+  model >= 98%     PE           +103        +13     inf     inf     yes
+
+==========================================================================================
+AT EQUAL RISK -- each line sized so its drawdown matches the baseline
+==========================================================================================
+  baseline drawdown Rs 1,943, total Rs +15,225
+
+  GATE             LEGS    SIZE x    TOTAL Rs   vs BASE   WORST Rs
+  ------------------------------------------------------------------
+  no gate          both     1.00x     +15,225       +0%     -1,526
+  no gate          CE       1.06x      +8,024      -47%     -1,639
+  no gate          PE       0.82x      +6,340      -58%     -1,248
+
+  model >= 94%     both     1.16x     +11,933      -22%     -1,439
+  model >= 94%     CE       0.90x      +4,694      -69%       -953
+  model >= 94%     PE       1.54x      +7,830      -49%     -1,943
+
+  model >= 95%     both     1.56x     +15,384       +1%     -1,943
+  model >= 95%     CE       1.28x      +6,820      -55%     -1,360
+  model >= 95%     PE       1.54x      +6,968      -54%     -1,943
+
+  model >= 96%     both     1.68x     +13,356      -12%     -1,761
+  model >= 96%     CE       1.46x      +5,220      -66%     -1,543
+  model >= 96%     PE       6.24x     +27,225      +79%     -1,943
+
+  model >= 97%     both     5.83x     +18,421      +21%     -1,943
+  model >= 97%     CE       5.83x     +10,995      -28%     -1,943
+  model >= 97%     PE       6.24x      +7,955      -48%     -1,943
+
+
+
+  Sizing up a gated strategy assumes the record repeats. It is the same
+  assumption every table here makes; it is a comparison, not a promise.
+==========================================================================================
