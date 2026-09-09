@@ -8,7 +8,17 @@
 
 export type OptionSide = 'CE' | 'PE';
 export type OrderSide = 'buy' | 'sell';
-export type OrderType = 'limit' | 'market' | 'stop_market';
+/**
+ * `stop_market` and `take_profit_market` are both triggered orders: they sit
+ * dormant until the mark reaches a level, then buy at the market.
+ *
+ * A target used to be a plain resting `limit` buy, and that is a different
+ * thing entirely. A limit buy at 1.10 fills only when somebody *offers* at or
+ * below 1.10 -- so on a book of 0.50 bid / 1.50 offered it sits there while the
+ * mark falls straight through 1.10 and keeps going. Which is exactly what
+ * happened: a position marked at 1.00 against a target of 1.10, still open.
+ */
+export type OrderType = 'limit' | 'market' | 'stop_market' | 'take_profit_market';
 
 /** What the exchange says about one order. Local belief never overrides this. */
 export type OrderStatus =

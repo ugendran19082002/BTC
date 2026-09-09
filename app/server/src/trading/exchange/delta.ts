@@ -105,7 +105,9 @@ function toOrder(o: DeltaOrder): ExchangeOrder {
     symbol: o.product_symbol,
     productId: o.product_id,
     side: o.side,
-    type: o.stop_order_type ? 'stop_market' : o.order_type === 'market_order' ? 'market' : 'limit',
+    type: o.stop_order_type === 'take_profit_order' ? 'take_profit_market'
+      : o.stop_order_type ? 'stop_market'
+      : o.order_type === 'market_order' ? 'market' : 'limit',
     size: o.size,
     filledSize: o.size - unfilled,
     averageFillPrice: num(o.average_fill_price ?? null),

@@ -595,9 +595,10 @@ export class TradeEngine {
       place: (cid: string, price: number) => Promise<void>,
     ): Promise<string | null> => {
       const live = resting.filter(match);
-      const target = wanted === null
-        ? null
-        : (role === 'stop_loss' ? stopPriceFor('buy', wanted, tick) : priceFor('buy', wanted, tick));
+      // Both legs are triggers now, and both round towards firing rather than
+      // towards a better price: a target that misses by a tick is a target that
+      // does not exist.
+      const target = wanted === null ? null : stopPriceFor(role === 'stop_loss' ? 'buy' : 'sell', wanted, tick);
 
       // Right already, and the right size: keep it, and remember which it is.
       const keep = target === null
@@ -618,10 +619,7 @@ export class TradeEngine {
       if (!keep && target !== null && live.length === 1) {
         const only = live[0]!;
         try {
-          await this.exchange.editOrder(only, {
-            ...(role === 'stop_loss' ? { stopPrice: target } : { limitPrice: target }),
-            size,
-          });
+          await this.exchange.editOrder(only, { stopPrice: target, size });
           return only.clientOrderId ?? clientId(rec.state.tradeId, role, attempt);
         } catch (e) {
           // Some venues refuse an edit that a cancel-and-replace would allow.
@@ -655,11 +653,12 @@ export class TradeEngine {
     const tp = await settle(
       'take_profit',
       rec.plan.takeProfitPrice,
-      (o) => o.type === 'limit',
-      (o) => o.limitPrice,
+      (o) => o.type === 'take_profit_market',
+      (o) => o.stopPrice,
       (cid, price) => this.exchange.placeOrder({
         clientOrderId: cid, symbol: rec.plan.symbol, productId: product?.productId ?? 0,
-        side: 'buy', type: 'limit', size, limitPrice: price, reduceOnly: true, role: 'take_profit',
+        side: 'buy', type: 'take_profit_market', size, stopPrice: price,
+        reduceOnly: true, role: 'take_profit',
       }).then(() => {}),
     );
 

@@ -126,7 +126,8 @@ const view = (
      * showing.
      */
     onBook: {
-      target: resting.find((o) => o.reduceOnly && o.type === 'limit')?.limitPrice ?? null,
+      // Both legs are triggers, so both carry their level in stopPrice.
+      target: resting.find((o) => o.reduceOnly && o.type === 'take_profit_market')?.stopPrice ?? null,
       stop: resting.find((o) => o.reduceOnly && o.type === 'stop_market')?.stopPrice ?? null,
     },
   };

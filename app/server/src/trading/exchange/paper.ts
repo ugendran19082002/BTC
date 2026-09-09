@@ -223,10 +223,17 @@ export class PaperExchange implements ExchangePort {
       if (o.symbol !== q.symbol) continue;
       if (o.status !== 'open' && o.status !== 'partial') continue;
       if (o.type === 'limit') this.matchLimit(o);
-      if (o.type === 'stop_market' && o.stopPrice !== null) {
+      if ((o.type === 'stop_market' || o.type === 'take_profit_market') && o.stopPrice !== null) {
         const last = q.mark ?? q.ask ?? q.bid;
-        const triggered = o.side === 'buy' ? last !== null && last >= o.stopPrice
-                                           : last !== null && last <= o.stopPrice;
+        if (last === null) continue;
+        /*
+         * A stop fires when the price runs against the position; a take-profit
+         * when it runs in its favour. For a short -- which buys to close --
+         * that is above the level for the stop and below it for the target.
+         */
+        const triggered = o.type === 'stop_market'
+          ? (o.side === 'buy' ? last >= o.stopPrice : last <= o.stopPrice)
+          : (o.side === 'buy' ? last <= o.stopPrice : last >= o.stopPrice);
         if (triggered) this.fillMarket(o);
       }
     }

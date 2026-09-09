@@ -55,7 +55,19 @@ export type RiskLimits = {
    * protection. See dailyLossLimitFor().
    */
   maxDailyLossUsd: number;
-  /** Do not sell an option for less than this. */
+  /**
+   * The least an option may be sold for, in the exchange's quoted units.
+   *
+   * A floor rather than a preference. Selling a very cheap option puts the same
+   * margin at risk for less credit -- the loss if it goes wrong is unchanged
+   * and the pay for taking it is smaller. The 733-day sweep is unambiguous:
+   * over the same days, a $0 floor returned $72 and a $15 floor returned $173,
+   * from the same strikes selected the same way.
+   *
+   * Quoted units, not dollars-in-hand: a price of 5 is 5 USD per BTC, which on
+   * a 0.001 BTC contract is half a cent. The number is small because the unit
+   * is, and the refusal says so.
+   */
   minPremiumUsd: number;
   /** Off by default: a second short on the same contract is normally a bug. */
   allowPyramiding: boolean;
@@ -244,7 +256,12 @@ export function precheck(input: PrecheckInput): PrecheckResult {
   // --- opening trades only ----------------------------------------------
   if (!intent.reduceOnly) {
     if (intent.price !== null && intent.price < limits.minPremiumUsd) {
-      add('PREMIUM_TOO_LOW', `Premium ${intent.price} is under the ${limits.minPremiumUsd} floor.`);
+      add(
+        'PREMIUM_TOO_LOW',
+        `This one pays ${intent.price.toFixed(2)} and the desk will not sell below ` +
+          `${limits.minPremiumUsd.toFixed(2)} — the same margin is at risk either way, ` +
+          `so a cheaper option is the same risk for less pay.`,
+      );
     }
     if (input.existingPosition !== 0 && !limits.allowPyramiding) {
       add('DUPLICATE_POSITION', `Already holding ${input.existingPosition} on this contract.`);
