@@ -1,0 +1,68 @@
+========================================================================================
+DOUBLE:  PREMIUM >= $15  vs  PREMIUM <= $15
+========================================================================================
+  735 days, 2024-09-04 to 2026-09-08.  10 contracts per lot,
+  5% slippage, 95% gate per leg, doubling on, HELD TO SETTLEMENT.
+
+  >= $15   furthest strike still paying $15   -- richer premium, nearer strike
+  <= $15   richest strike at or below $15     -- cheaper premium, further strike
+
+                                  >= $15        <= $15     DIFFERENCE
+  --------------------------------------------------------------------
+  legs sold                        1,002         1,111               
+  lots sold                        1,260         1,336            +6%
+  days traded                        630           668               
+  one-sided days                     258           225               
+  avg premium sold                $19.40        $11.45               
+  avg distance out                 3.08%         3.03%               
+  actual expired at 0             98.70%        99.10%               
+  TOTAL Rs                       +14,275        +9,881           -31%
+  win rate                         98.3%         98.7%               
+  profit factor                     3.79          5.12           +35%
+  losing days                         11             9               
+  worst day Rs                    -1,241          -721           +42%
+  max drawdown Rs                  1,241           721           -42%
+
+========================================================================================
+THE SAME TWO RULES WITH NO GATE AND NO DOUBLING
+========================================================================================
+  So the premium rule can be judged on its own, before the gate is added.
+
+                                  >= $15        <= $15
+  legs sold                        1,470         1,149
+  lots sold                        1,470         1,149
+  days traded                        735           673
+  one-sided days                       0           197
+  avg premium sold                $27.51        $11.51
+  avg distance out                 2.73%         2.97%
+  actual expired at 0             97.28%        99.04%
+  TOTAL Rs                       +14,806        +7,972
+  win rate                         95.8%         98.5%
+  profit factor                     1.94          4.16
+  losing days                         31            10
+  worst day Rs                    -1,525          -721
+  max drawdown Rs                  2,078           721
+
+========================================================================================
+OUT OF SAMPLE
+========================================================================================
+                        1st half Rs  2nd half Rs   PF 1st   PF 2nd
+  >= $15 double              +7,280       +6,995     3.23     4.79
+  <= $15 double              +4,278       +5,603     3.70     7.90
+
+========================================================================================
+AT EQUAL RISK
+========================================================================================
+                         SIZE x     TOTAL Rs    WORST Rs
+  >= $15 double           1.00x      +14,275      -1,241
+  <= $15 double           1.72x      +17,017      -1,241
+
+========================================================================================
+ON YOUR ACCOUNT, AT THE SIZE CURRENTLY SAVED (450 lots)
+========================================================================================
+  equity about Rs 39,700
+                         per day Rs   worst day Rs  % of equity
+  >= $15 double                +874        -55,838         141%
+  <= $15 double                +605        -32,423          82%
+
+========================================================================================
