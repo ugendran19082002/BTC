@@ -135,7 +135,12 @@ test('found flat on the exchange without an exit fill is announced, and says the
 });
 
 test('a reconcile that changes nothing, or confirms a close already announced, is silent', () => {
-  assert.equal(last([submitted(), fill('entry', 100, 100.5), { t: 'reconciled', position: -100, at: AT }]), null);
+  // Protected, as a real position with a stop is -- an unprotected one is a problem alert, tested separately.
+  assert.equal(last([
+    submitted(), fill('entry', 100, 100.5),
+    { t: 'protection_placed', takeProfit: 'tp', stopLoss: 'sl', size: 100, at: AT },
+    { t: 'reconciled', position: -100, at: AT },
+  ]), null);
   assert.equal(last([
     submitted(), fill('entry', 100, 100.5), fill('take_profit', 100, 90), { t: 'reconciled', position: 0, at: AT },
   ]), null);

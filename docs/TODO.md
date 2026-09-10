@@ -288,6 +288,35 @@ error log, never to the order path.
 
 ---
 
+## Important alerts and a 60-minute entry window — 10 Sep 2026
+
+**Grace time is 60 minutes** (was 30). An entry at 05:29 can still go on until
+06:29:59 if the desk was restarting or Delta's feed was slow. Later than that
+is still refused.
+
+**Telegram now also sends the problems somebody has to act on:**
+
+- 🚨 **Order rejected** by Delta, with Delta's reason.
+- ⚠️ **Order status unknown** — Delta did not answer; the desk checks the
+  account before sending anything again.
+- 🚨 **Exit failed** — a close did not go through; says how much is still open.
+- 🚨 **No stop-loss** — a stop was asked for and could not be placed. Once per
+  alarm, not once per retry.
+- 🚨 **Auto-trade failed** — the scheduler could place no leg, with each reason.
+- ⚠️ **Auto-trade partly placed** — one leg on, one refused.
+- ℹ️ **Stood aside today** — the rules said no; the reason is included, so a
+  quiet phone is never a mystery.
+- 🚨 **Entry missed** — the window closed and nothing was tried at all.
+
+A gate refusing an order you placed by hand is not sent: the screen already
+told you.
+
+**Still to decide:** a refusal at the first check still spends the day (the
+runner's comment says it retries; the code does not). Retrying until the window
+closes means more trading days, but later entries than the ones tested.
+
+---
+
 ## A target must never cross the spread — 10 Sep 2026
 
 **What happened.** Both strategy legs today — sold at 15 and 12, target 1.00 —
@@ -380,7 +409,7 @@ holding through the afternoon.
 - [ ] **The chain on a phone** still scrolls sideways. A card for the two strikes
       the desk would sell, above the full table, would answer most visits.
 - [ ] **Strategy status text** comes from the server in developer wording
-      ("too late -- 05:30 passed more than 30 minutes ago").
+      ("too late -- 05:30 passed more than 60 minutes ago").
 - [ ] **The Delta trade-history CSV is committed** (`34383e4`). It holds order ids
       and fills, not keys — but take it out of git before the repo is shared.
 

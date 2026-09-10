@@ -11,10 +11,10 @@ import { USDINR } from '../domain/score.js';
  * network, no environment -- so every message this desk can send is pinned by a
  * test, the same way the order body sent to Delta is.
  *
- * Only what actually printed is announced. A submitted order, a stop placed, a
- * gate saying no: none of those move money, and a channel that buzzes for them
- * is a channel that gets muted -- which is exactly when the alert that matters,
- * a stop-loss fill, goes unread.
+ * Fills are announced, and so are the few problems somebody has to act on. A
+ * submitted order, a stop placed, a gate saying no to a tapped order: none of
+ * those need a phone to buzz, and a channel that buzzes for them is a channel
+ * that gets muted -- which is exactly when the alert that matters goes unread.
  */
 
 export type Alert = {
@@ -53,8 +53,60 @@ export function alertFor(
   if (event.t === 'reconciled' && before.position !== 0 && after.position === 0) {
     return { key: exitKey(after), text: reconciledText(after, plan, ctx) };
   }
+  return problemAlertFor(event, before, after, plan, ctx);
+}
+
+/**
+ * What went wrong with real consequences, and nothing else.
+ *
+ * Delta refused an order; the desk does not know whether an order exists; an
+ * exit did not go through; a position is open with no stop behind it. A gate
+ * refusing a hand-placed order is not here -- the screen already said so, to
+ * the person who tapped. A scheduled one is reported by the run's own alert.
+ */
+function problemAlertFor(
+  event: TradeEvent,
+  before: TradeState,
+  after: TradeState,
+  plan: TradePlan,
+  ctx: AlertContext,
+): Alert | null {
+  const key = `${after.tradeId}:problem`;
+  const held = Math.abs(after.position);
+  const side = after.position < 0 ? 'short' : 'long';
+
+  if (event.t === 'entry_rejected') {
+    return { key, text: problemText(ctx, '🚨', `ORDER REJECTED · ${contract(plan)}`, [
+      `Delta refused the order: <i>${escape(event.reason)}</i>`,
+      held > 0 ? `${qty(held)} had already filled — that part is still open.` : 'Nothing was sold.',
+    ], event.at, plan) };
+  }
+  if (event.t === 'entry_submit_unknown') {
+    return { key, text: problemText(ctx, '⚠️', `ORDER STATUS UNKNOWN · ${contract(plan)}`, [
+      'Delta did not answer when the order was sent.',
+      'The desk reads the account back before doing anything else, so no second order is sent.',
+    ], event.at, plan) };
+  }
+  // An exit was asked for and did not go: the position is still there.
+  if (event.t === 'protection_failed' && before.phase === 'exit_pending' && held > 0) {
+    return { key, text: problemText(ctx, '🚨', `EXIT FAILED · ${contract(plan)}`, [
+      `Could not close: <i>${escape(event.reason)}</i>`,
+      `Still ${side} <b>${qty(held)}</b>. Tap Close now again, or close it on Delta.`,
+    ], event.at, plan) };
+  }
+  // Newly unprotected. Once per alarm, not once per retry: the protection loop
+  // tries again every few seconds, and the phone only needs telling once.
+  if (after.alarm && after.alarm !== before.alarm && held > 0) {
+    return { key, text: problemText(ctx, '🚨', `NO STOP-LOSS · ${contract(plan)}`, [
+      `<i>${escape(after.alarm)}</i>`,
+      `${side === 'short' ? 'Short' : 'Long'} <b>${qty(held)}</b> with nothing protecting it. The desk keeps retrying — check Delta now.`,
+    ], event.at, plan) };
+  }
   return null;
 }
+
+const problemText = (ctx: AlertContext, icon: string, title: string, body: string[], at: number, plan: TradePlan) =>
+  lines(headline(ctx, icon, title), '', ...body, footer(at, plan, ctx));
 
 const entryKey = (s: TradeState) => `${s.tradeId}:entry`;
 const exitKey = (s: TradeState) => `${s.tradeId}:exit`;
@@ -263,6 +315,66 @@ function signedMoney(usdAmount: number, boldRupees: boolean): string {
   const s = sign(rupees(usdAmount));
   const r = `${s}${inr(usdAmount)}`;
   return `${boldRupees ? `<b>${r}</b>` : r} (${s}${usd(usdAmount)})`;
+}
+
+// ---------------------------------------------------------- auto-trading
+
+export type RunOutcome = {
+  strategy: string;
+  status: 'placed' | 'failed' | 'refused' | 'skipped';
+  /** The run's own words: which legs, or why none. */
+  detail: string;
+  /** Legs that could not be placed, each with its reason. */
+  failedLegs: string[];
+  at: number;
+};
+
+/**
+ * What an automatic run did, when it needs saying.
+ *
+ * A run that placed everything is announced by its fills, so it sends nothing
+ * here. One that failed, went on one-sided, or stood aside is told -- the last
+ * because a silent phone cannot tell "stood aside" from "was not running".
+ */
+export function runAlertFor(r: RunOutcome, ctx: AlertContext): Alert | null {
+  const key = `run:${r.strategy}:${istDateKey(r.at)}`;
+  const foot = `🕒 ${istTime(r.at)} IST · auto-trading · ${ctx.mode === 'live' ? 'LIVE' : 'PAPER'}`;
+  const legs = r.failedLegs.map((f) => `• ${escape(f)}`);
+  if (r.status === 'failed') {
+    return { key, text: lines(
+      headline(ctx, '🚨', `AUTO-TRADE FAILED · ${escape(r.strategy)}`), '',
+      'No order could be placed, so nothing was sold today.', ...legs, '', foot,
+    ) };
+  }
+  if (r.status === 'placed' && legs.length > 0) {
+    return { key, text: lines(
+      headline(ctx, '⚠️', `AUTO-TRADE PARTLY PLACED · ${escape(r.strategy)}`), '',
+      'Some legs went on and some did not:', ...legs, 'The legs that went on are kept.', '', foot,
+    ) };
+  }
+  if (r.status === 'refused' || r.status === 'skipped') {
+    return { key, text: lines(
+      headline(ctx, 'ℹ️', `STOOD ASIDE TODAY · ${escape(r.strategy)}`), '',
+      escape(r.detail), 'No order was placed.', '', foot,
+    ) };
+  }
+  return null;
+}
+
+/** The entry window closed with nothing tried: the desk or the price feed was down the whole time. */
+export function missedEntryAlert(
+  strategy: string, entryTime: string, graceMin: number, at: number, ctx: AlertContext,
+): Alert {
+  return {
+    key: `missed:${strategy}:${istDateKey(at)}`,
+    text: lines(
+      headline(ctx, '🚨', `ENTRY MISSED · ${escape(strategy)}`), '',
+      `Nothing was entered between ${escape(entryTime)} and ${graceMin} minutes after it.`,
+      'The desk could not read a live board in that time — it was not running, or Delta’s price feed was down. No order was placed today.',
+      '',
+      `🕒 ${istTime(at)} IST · auto-trading · ${ctx.mode === 'live' ? 'LIVE' : 'PAPER'}`,
+    ),
+  };
 }
 
 // -------------------------------------------------------------- formatting

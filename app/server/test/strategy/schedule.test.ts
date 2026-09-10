@@ -29,6 +29,7 @@ const THU_0530 = ist('2026-09-10T05:30:00');
 const THU_0500 = ist('2026-09-10T05:00:00');
 const THU_0545 = ist('2026-09-10T05:45:00');
 const THU_0615 = ist('2026-09-10T06:15:00');
+const THU_0645 = ist('2026-09-10T06:45:00');
 const THU_1800 = ist('2026-09-10T18:00:00');
 
 test('IST helpers agree with the clock the desk runs on', () => {
@@ -55,8 +56,14 @@ test('a late start inside the grace window still trades', () => {
   assert.deepEqual(entryDue(strat(), THU_0545, null), { due: true });
 });
 
+test('a start 45 minutes late still trades, now the window is an hour', () => {
+  // raised from 30 to 60 minutes on 10 September 2026
+  assert.equal(GRACE_MIN, 60);
+  assert.deepEqual(entryDue(strat(), THU_0615, null), { due: true });
+});
+
 test('too late is refused rather than entered as a different trade', () => {
-  const r = entryDue(strat(), THU_0615, null);
+  const r = entryDue(strat(), THU_0645, null);
   assert.equal(r.due, false);
   assert.match(!r.due ? r.because : '', /too late/);
 });

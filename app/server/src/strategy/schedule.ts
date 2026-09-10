@@ -45,8 +45,12 @@ export type DueVerdict =
  * contract has twelve hours to run and four minutes is nothing. One that comes
  * up at 09:00 should not, because the strategy measured on the record entered
  * at 05:30 and a five-hour-late entry is a different trade wearing its name.
+ *
+ * Sixty minutes, raised from thirty on 10 September 2026: a restart or a slow
+ * price feed around the entry minute should not cost the day. Anything later
+ * than that is still refused.
  */
-export const GRACE_MIN = 30;
+export const GRACE_MIN = 60;
 
 /**
  * Should this strategy enter right now?

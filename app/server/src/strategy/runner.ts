@@ -3,9 +3,10 @@ import { scoreLegs } from '../domain/score.js';
 import { tradingService } from '../trading/service.js';
 import { noteError } from '../observability/errors.js';
 import { StrategyStore } from './store.js';
-import { entryDue, exitDue, istDate } from './schedule.js';
+import { GRACE_MIN, entryDue, exitDue, istDate, istMinutes } from './schedule.js';
 import { describeSelection, selectLegs, type Candidate } from './select.js';
-import type { Strategy } from './types.js';
+import { minutesOf, type Strategy } from './types.js';
+import { missedEntryAlert, runAlertFor, type Alert, type AlertContext } from '../notify/messages.js';
 
 /**
  * The loop that turns a due strategy into orders.
@@ -33,10 +34,12 @@ import type { Strategy } from './types.js';
  *                      position running into settlement, which is the one
  *                      outcome the exit exists to prevent.
  *
- *   A refusal.         Retry on the next tick while the grace window is open,
- *                      because a refusal at 05:30:02 is usually the exchange
- *                      not having registered something yet. Once the window
- *                      shuts the day is spent.
+ *   A refusal.         The day is spent on the first answer. If the rules turn
+ *                      the board down, or no leg can be placed, the run is
+ *                      recorded and Telegram is told why. Only a board that
+ *                      cannot be read at all is retried, every tick, until the
+ *                      grace window closes -- and if it closes with nothing
+ *                      tried, that is an alert too.
  *
  * The day is claimed BEFORE any order is sent. A claim that is never followed
  * by a fill loses a day; an order sent before the claim can be sent twice.
@@ -48,6 +51,8 @@ const TICK_MS = 20_000;
 export class StrategyRunner {
   private timer: NodeJS.Timeout | null = null;
   private ticking = false;
+  /** Strategy and day pairs already told about a missed entry, so it is said once. */
+  private readonly missedAlerted = new Set<string>();
 
   constructor(
     private readonly store: StrategyStore,
@@ -82,6 +87,38 @@ export class StrategyRunner {
     } finally {
       this.ticking = false;
     }
+  }
+
+  /** Tell the phone, if Telegram is set up. Never allowed to stop a run. */
+  private alert(make: (ctx: AlertContext) => Alert | null): void {
+    try {
+      const svc = tradingService();
+      const a = make({ mode: svc.mode });
+      if (a) svc.notifier?.notify(a);
+    } catch (e) {
+      noteError({
+        source: 'trading',
+        level: 'warn',
+        message: `telegram alert not sent: ${(e as Error).message}`,
+        where: 'strategy/runner',
+        context: {},
+      });
+    }
+  }
+
+  /**
+   * The entry window closed and nothing was tried. Said once a day per
+   * strategy, and only while that day is still running: after the exit time
+   * there is nothing left to act on.
+   */
+  private warnIfMissed(s: Strategy, because: string, now: number, day: string): void {
+    if (!because.startsWith('too late')) return;
+    if (this.store.lastRunDate(s.id) === day) return;
+    if (istMinutes(now) >= minutesOf(s.config.exitTime)) return;
+    const key = `${s.id}:${day}`;
+    if (this.missedAlerted.has(key)) return;
+    this.missedAlerted.add(key);
+    this.alert((ctx) => missedEntryAlert(s.name, s.config.entryTime, GRACE_MIN, now, ctx));
   }
 
   private note(s: Strategy, what: string, e: unknown): void {
@@ -122,7 +159,10 @@ export class StrategyRunner {
     const now = this.now();
     const day = istDate(now);
     const due = entryDue(s, now, this.store.lastRunDate(s.id));
-    if (!due.due) return;
+    if (!due.due) {
+      this.warnIfMissed(s, due.because, now, day);
+      return;
+    }
 
     // The board first, because a day that cannot be traded should not be spent.
     const snap = await liveChain().catch(() => null);
@@ -174,14 +214,17 @@ export class StrategyRunner {
 
     const detail = [describeSelection(sel), ...(failed.length ? [`failed: ${failed.join('; ')}`] : [])]
       .join(' | ').slice(0, 500);
-    this.store.finish(s.id, day,
-      placed.length ? 'placed' : 'failed',
-      detail);
+    const status = placed.length ? 'placed' : 'failed';
+    this.store.finish(s.id, day, status, detail);
+    // Failed, or on one side only: somebody should know before the day moves on.
+    this.alert((ctx) => runAlertFor({ strategy: s.name, status, detail, failedLegs: failed, at: now }, ctx));
   }
 
   private claimAndFinish(s: Strategy, day: string, status: 'refused' | 'skipped', detail: string): void {
-    if (!this.store.claim(s.id, day, this.now())) return;
+    const at = this.now();
+    if (!this.store.claim(s.id, day, at)) return;
     this.store.finish(s.id, day, status, detail);
+    this.alert((ctx) => runAlertFor({ strategy: s.name, status, detail, failedLegs: [], at }, ctx));
   }
 }
 
