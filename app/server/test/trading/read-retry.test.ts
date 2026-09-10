@@ -1,7 +1,16 @@
 import { afterEach, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DeltaExchange } from '../../src/trading/exchange/delta.js';
-import { DeltaRefused } from '../../src/delta/signed.js';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+// These failures are logged, and the log's file is fixed when paths.ts is first
+// imported -- so point it somewhere disposable before anything imports it, or
+// the fake outages below land in the desk's own errors.db.
+process.env.ERROR_DB = join(mkdtempSync(join(tmpdir(), 'read-retry-')), 'errors.db');
+const { DeltaExchange } = await import('../../src/trading/exchange/delta.js');
+const { DeltaRefused } = await import('../../src/delta/signed.js');
+type DeltaExchange = InstanceType<typeof DeltaExchange>;
 
 /**
  * A read that Delta's own server fails is asked once more, quietly.
