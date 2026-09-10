@@ -80,12 +80,12 @@ describe('the summary line', () => {
       order({ status: 'pending', position: -1, realisedPnl: 0 }),
       order({ status: 'rejected', realisedPnl: 0, position: 0 }),
     ]);
-    await waitFor(() => expect(screen.getByText(/1 settled of 3/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/1 of 3 closed/)).toBeInTheDocument());
   });
 
   it('says nothing at all when nothing has settled', async () => {
     show([order({ status: 'pending', position: -1 })]);
-    await waitFor(() => expect(screen.getByText(/short|pending|working/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/78,600/)).toBeInTheDocument());
     expect(screen.queryByText(/won/)).toBeNull();
   });
 
@@ -97,10 +97,25 @@ describe('the summary line', () => {
   });
 });
 
+describe('charges', () => {
+  it('nets Delta charges out of the total, and says gross and charges beside it', async () => {
+    show([order({
+      realisedPnl: 1,
+      netRealisedUsd: 0.97,
+      charges: { entryUsd: 0.02, exitUsd: 0.01, paidUsd: 0.03, toCloseUsd: 0 },
+    })]);
+    const totals = await screen.findByLabelText('totals for the range');
+    // 0.97 x 85 = 82.45, not the 85.00 it made before charges
+    expect(within(totals).getByText('+₹82.45').className).toContain('--up');
+    expect(within(totals).getByText('Gross +₹85.00')).toBeInTheDocument();
+    expect(within(totals).getByText('Charges −₹2.55')).toBeInTheDocument();
+  });
+});
+
 describe('why a trade ended', () => {
   it('says the target filled when the target filled', async () => {
     show([order()]);
-    expect(await screen.findByText('target')).toBeInTheDocument();
+    expect(await screen.findByText('target hit')).toBeInTheDocument();
   });
 
   it('tells a stop apart from a target', async () => {
@@ -111,7 +126,7 @@ describe('why a trade ended', () => {
         { orderId: '2', role: 'stop_loss', side: 'buy', size: 1, price: 22, ts: OPENED + 60_000 },
       ],
     })]);
-    expect(await screen.findByText('stop')).toBeInTheDocument();
+    expect(await screen.findByText('stop hit')).toBeInTheDocument();
   });
 
   it('and both from a position squared off by hand', async () => {
@@ -121,13 +136,13 @@ describe('why a trade ended', () => {
         { orderId: '2', role: 'exit', side: 'buy', size: 1, price: 14, ts: OPENED + 60_000 },
       ],
     })]);
-    expect(await screen.findByText('closed by hand')).toBeInTheDocument();
+    expect(await screen.findByText('closed manually')).toBeInTheDocument();
   });
 
   it('claims nothing about a trade that never closed', async () => {
     show([order({ status: 'pending', position: -1, exitAvgPrice: null, fills: [] })]);
     await waitFor(() => expect(screen.getByText(/78,600/)).toBeInTheDocument());
-    expect(screen.queryByText('target')).toBeNull();
+    expect(screen.queryByText('target hit')).toBeNull();
   });
 });
 
@@ -146,21 +161,21 @@ describe('the detail', () => {
   it('says how long it was held, which was not on the screen before', async () => {
     show([order()]);
     await openFirstRow();
-    await waitFor(() => expect(screen.getByText('held for')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Held for')).toBeInTheDocument());
     expect(screen.getByText('3m 28s')).toBeInTheDocument();
   });
 
   it('says contracts once when nothing was left behind', async () => {
     show([order()]);
     await openFirstRow();
-    await waitFor(() => expect(screen.getByText('contracts')).toBeInTheDocument());
-    const line = screen.getByText('contracts').closest('div')!;
+    await waitFor(() => expect(screen.getByText('Contracts')).toBeInTheDocument());
+    const line = screen.getByText('Contracts').closest('div')!;
     expect(within(line).getByText('1')).toBeInTheDocument();
   });
 
   it('spells out a partial fill, because that is when the difference matters', async () => {
     show([order({ entrySize: 3, plan: { ...order().plan!, lots: 10 } })]);
     await openFirstRow();
-    await waitFor(() => expect(screen.getByText('3 of 10 asked')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('3 of 10 filled')).toBeInTheDocument());
   });
 });

@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { AccountCard } from '@/components/trade/AccountCard';
 import type { TradeStatus } from '@/types/trade';
 
 /** A <dd> has no role, so getByLabelText cannot reach it. Query it directly. */
 const budgetLine = (c: HTMLElement) => c.querySelector('[aria-label="loss budget left"]');
+/** One labelled row, so a figure that also appears in "Net today" is not found twice. */
+const row = (label: string) => within(screen.getByText(label).closest('div')!);
 
 const status = (over: Partial<TradeStatus> = {}): TradeStatus => ({
   mode: 'live', live: true, canGoLive: true, switchBlockedBy: null,
@@ -27,13 +29,22 @@ describe('the money, in both currencies', () => {
 
   it('shows a loss as a loss, in both', () => {
     render(<AccountCard status={status()} />);
-    expect(screen.getByText('−₹0.14').className).toContain('--down');
-    expect(screen.getByText('−$0.002')).toBeInTheDocument();
+    expect(row('Open P&L').getByText('−₹0.14').className).toContain('--down');
+    expect(row('Open P&L').getByText('−$0.002')).toBeInTheDocument();
   });
 
   it('shows a gain in green', () => {
     render(<AccountCard status={status({ unrealisedPnlUsd: 0.4 })} />);
-    expect(screen.getByText('+₹34.00').className).toContain('--up');
+    expect(row('Open P&L').getByText('+₹34.00').className).toContain('--up');
+  });
+
+  it('nets the day after charges', () => {
+    render(<AccountCard status={status({
+      unrealisedPnlUsd: 0,
+      today: { realisedUsd: 4.25, unrealisedUsd: 0, chargesUsd: 0.25, netUsd: 4 },
+    })} />);
+    expect(row('Charges today').getByText('−₹21.25').className).toContain('--down');
+    expect(row('Net today').getByText('+₹340').className).toContain('--up');
   });
 
   it('says nothing at all before the server has answered', () => {
@@ -52,14 +63,14 @@ describe("the day's loss budget", () => {
     const { container } = render(<AccountCard status={status({ realisedTodayUsd: -4 })} />);
     expect(budgetLine(container)).toHaveTextContent('₹85.00 of ₹425 left');
     expect(screen.getByText(/80% used/)).toBeInTheDocument();
-    expect(screen.getByText(/New trades stop when it runs out/)).toBeInTheDocument();
+    expect(screen.getByText(/New trades stop at 100%/)).toBeInTheDocument();
   });
 
   it('does not go negative when the day has gone past the limit', () => {
     const { container } = render(<AccountCard status={status({ realisedTodayUsd: -9 })} />);
     expect(budgetLine(container)).toHaveTextContent('₹0 of ₹425 left');
     // past the limit the percentage stops being the point: the gate is shut
-    expect(screen.getByText(/Budget spent\. New trades are blocked/)).toBeInTheDocument();
+    expect(screen.getByText(/Limit reached\. New trades are blocked/)).toBeInTheDocument();
   });
 
   it('a profitable day does not eat the budget', () => {
@@ -72,7 +83,7 @@ describe("the day's loss budget", () => {
 describe('what is held', () => {
   it('says nothing is open when nothing is', () => {
     render(<AccountCard status={status()} />);
-    expect(screen.getByText('nothing open')).toBeInTheDocument();
+    expect(screen.getByText('none')).toBeInTheDocument();
   });
 
   it('counts the contracts that are', () => {
@@ -86,9 +97,9 @@ describe('what is held', () => {
 describe('the mode', () => {
   it('says which book this is', () => {
     const { rerender } = render(<AccountCard status={status()} />);
-    expect(screen.getByText('real money')).toBeInTheDocument();
+    expect(screen.getByText('LIVE')).toBeInTheDocument();
     rerender(<AccountCard status={status({ mode: 'paper', live: false })} />);
-    expect(screen.getByText('paper')).toBeInTheDocument();
+    expect(screen.getByText('PAPER')).toBeInTheDocument();
   });
 });
 
@@ -115,15 +126,15 @@ describe('the short cap, visible before it refuses', () => {
 
   it('offers the change control seeded with the limit in force', async () => {
     render(<AccountCard status={status({ positions: [position(-410)] })} />);
-    fireEvent.click(screen.getByText('change'));
+    fireEvent.click(screen.getByText('Edit'));
     expect((screen.getByLabelText('most contracts short') as HTMLInputElement).value).toBe('500');
   });
 
   it('refuses a cap that is not a whole number of contracts, without asking the server', async () => {
     render(<AccountCard status={status()} />);
-    fireEvent.click(screen.getByText('change'));
+    fireEvent.click(screen.getByText('Edit'));
     fireEvent.change(screen.getByLabelText('most contracts short'), { target: { value: '2.5' } });
-    fireEvent.click(screen.getByText('save'));
+    fireEvent.click(screen.getByText('Save'));
     expect(await screen.findByText(/whole number of contracts/)).toBeInTheDocument();
   });
 

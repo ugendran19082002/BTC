@@ -60,15 +60,15 @@ const working = (over: Partial<Trade> = {}): Trade => trade({
 describe('an order that has not traded', () => {
   it('is not called a position, and does not say "short 0"', () => {
     render(<PositionsCard trades={[working()]} />);
-    expect(screen.getByText('Waiting on the book')).toBeInTheDocument();
+    expect(screen.getByText('Orders waiting')).toBeInTheDocument();
     expect(screen.queryByText('Open positions')).toBeNull();
     expect(screen.queryByText(/short 0/)).toBeNull();
   });
 
-  it('says what is being offered and that nothing has traded', () => {
+  it('says what is being offered and that nothing has filled', () => {
     render(<PositionsCard trades={[working()]} />);
-    expect(screen.getByText(/offering 2 at 27.00 — nothing traded yet/)).toBeInTheDocument();
-    expect(screen.getByText('on the book')).toBeInTheDocument();
+    expect(screen.getByText(/Selling 2 lots @ 27.00 · not filled yet/)).toBeInTheDocument();
+    expect(screen.getByText('waiting')).toBeInTheDocument();
   });
 
   it('can be pulled off the book', async () => {
@@ -86,7 +86,7 @@ describe('an order that has not traded', () => {
 
   it('sits in its own list alongside a real position', () => {
     render(<PositionsCard trades={[working(), trade({ tradeId: 't2' })]} />);
-    expect(screen.getByText('Waiting on the book')).toBeInTheDocument();
+    expect(screen.getByText('Orders waiting')).toBeInTheDocument();
     expect(screen.getByText('Open positions')).toBeInTheDocument();
   });
 });
@@ -95,7 +95,7 @@ describe('a protected position', () => {
   it('names the contract, the size and where the stop is', () => {
     render(<PositionsCard trades={[trade()]} />);
     expect(screen.getByText('80,000 CE')).toBeInTheDocument();
-    expect(screen.getByText(/short 100 at 10.50/)).toBeInTheDocument();
+    expect(screen.getByText(/Sold 100 @ 10.50/)).toBeInTheDocument();
     expect(screen.getByText('26.00')).toBeInTheDocument();
   });
 });
@@ -105,7 +105,7 @@ describe('what it is worth right now', () => {
     live: { markPrice: 6.5, unrealisedPnl: 0.4, decayed: 0.381, liquidationPrice: 215.6 },
   });
 
-  it('shows the mark, the profit and how much has decayed', () => {
+  it('shows the price now, the P&L and how much premium is earned', () => {
     render(<PositionsCard trades={[live]} />);
     expect(screen.getByText('6.50')).toBeInTheDocument();
     expect(screen.getByText('+₹34.00')).toBeInTheDocument();   // rupees lead
@@ -137,6 +137,15 @@ describe('what it is worth right now', () => {
     expect(screen.getByText('215.60')).toBeInTheDocument();
   });
 
+  it('shows what closing now would leave, after charges in and out, and the charges themselves', () => {
+    render(<PositionsCard trades={[trade({
+      live: { markPrice: 6.5, unrealisedPnl: 0.4, decayed: 0.381, liquidationPrice: 215.6, netIfClosedUsd: 0.25 },
+      charges: { entryUsd: 0.1, exitUsd: 0, paidUsd: 0.1, toCloseUsd: 0.05 },
+    })]} />);
+    expect(screen.getByText('+₹21.25').className).toContain('--up');
+    expect(screen.getByText('Charges ₹8.50 paid · ₹4.25 to close')).toBeInTheDocument();
+  });
+
   it('shows a dash rather than a zero before the exchange has answered', () => {
     render(<PositionsCard trades={[trade()]} />);
     // "$0.00 profit" would be a claim; there is simply no number yet
@@ -154,7 +163,7 @@ describe('a position with no stop behind it', () => {
   it('says NO STOP in words rather than leaving a blank', () => {
     render(<PositionsCard trades={[naked]} />);
     expect(screen.getByText('NO STOP')).toBeInTheDocument();
-    expect(screen.getByText('stop').textContent).toContain('none');
+    expect(screen.getByText('Stop').textContent).toContain('none');
     expect(screen.getByText('POSITION UNPROTECTED: API down')).toBeInTheDocument();
   });
 
@@ -163,7 +172,7 @@ describe('a position with no stop behind it', () => {
     render(<PositionsCard trades={[trade({
       protection: { takeProfit: 'tp', stopLoss: null }, onBook: { target: 0.5, stop: null },
     })]} />);
-    expect(screen.getByText('stop').textContent).toContain('none');
+    expect(screen.getByText('Stop').textContent).toContain('none');
     expect(screen.getByText('NO STOP')).toBeInTheDocument();
   });
 
@@ -175,14 +184,14 @@ describe('a position with no stop behind it', () => {
       plan: { lots: 1, entry: { type: 'limit', timeoutMs: 0, marketFallback: false }, takeProfitPrice: 1.1, stopPrice: null },
       onBook: { target: 1.1, stop: null },
     })]} />);
-    expect(screen.getByText('stop').textContent).toContain('none');
+    expect(screen.getByText('Stop').textContent).toContain('none');
     expect(screen.queryByText('NO STOP')).toBeNull();
-    expect(screen.getByText('on')).toBeInTheDocument();
+    expect(screen.getByText('open')).toBeInTheDocument();
   });
 
   it('interrupts the page from the banner, naming the contract', () => {
     render(<AlarmBanner status={{ open: [naked] } as TradeStatus} />);
-    expect(screen.getByText('A position has no stop behind it')).toBeInTheDocument();
+    expect(screen.getByText('A position has no stop-loss')).toBeInTheDocument();
     expect(screen.getByText(/C-BTC-80000-080926/)).toBeInTheDocument();
   });
 
@@ -203,14 +212,14 @@ describe('closing out', () => {
 
   it('shows nothing at all for a trade that is already finished', () => {
     render(<PositionsCard trades={[trade({ position: 0, phase: 'flat' })]} />);
-    expect(screen.getByText('Nothing on.')).toBeInTheDocument();
+    expect(screen.getByText('No open positions.')).toBeInTheDocument();
   });
 });
 
 describe('an empty desk', () => {
   it('says so rather than showing an empty box', () => {
     render(<PositionsCard trades={[]} />);
-    expect(screen.getByText('Nothing on.')).toBeInTheDocument();
+    expect(screen.getByText('No open positions.')).toBeInTheDocument();
   });
 });
 
@@ -227,11 +236,11 @@ describe('the mode switch', () => {
 
   beforeEach(() => setTradeMode.mockResolvedValue({ ok: true, mode: 'live' }));
 
-  it('calls paper paper, and real money real money', () => {
+  it('calls paper Paper, and live Live', () => {
     const { rerender } = render(<ModeSwitch status={status()} />);
-    expect(screen.getByText('paper')).toBeInTheDocument();
+    expect(screen.getByText('Paper')).toBeInTheDocument();
     rerender(<ModeSwitch status={status({ mode: 'live', live: true })} />);
-    expect(screen.getByText('live · real money')).toBeInTheDocument();
+    expect(screen.getByText('Live')).toBeInTheDocument();
   });
 
   it('shows nothing before the server has answered, rather than guessing paper', () => {
@@ -244,7 +253,7 @@ describe('the mode switch', () => {
   it('will not go live on one tap', async () => {
     render(<ModeSwitch status={status()} />);
     fireEvent.click(screen.getByRole('button', { name: /paper/i }));
-    await waitFor(() => expect(screen.getByText('Trade for real?')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Switch to live trading?')).toBeInTheDocument());
     expect(setTradeMode).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: /go live/i }));
@@ -256,7 +265,7 @@ describe('the mode switch', () => {
     render(<ModeSwitch status={status({ mode: 'live', live: true })} />);
     fireEvent.click(screen.getByRole('button', { name: /live/i }));
     await waitFor(() => expect(setTradeMode).toHaveBeenCalledWith('paper'));
-    expect(screen.queryByText('Trade for real?')).toBeNull();
+    expect(screen.queryByText('Switch to live trading?')).toBeNull();
   });
 
   it('refuses to switch while a position is open, and says why', async () => {

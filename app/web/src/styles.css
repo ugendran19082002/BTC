@@ -683,3 +683,59 @@ input[type='number']::-webkit-inner-spin-button { -webkit-appearance: none; marg
 .chain td.bidcol.wide, .chain td.bidcol.wide button { color: var(--dim); text-decoration: line-through; }
 .chain td.bidcol.wide button:hover { color: #0b0e11; text-decoration: none; }
 .note .warnbid { color: var(--dim); text-decoration: line-through; }
+
+
+/* ── header, pinned ─────────────────────────────────────────────────────────
+   The price and today's P&L stay on screen however far down the page you are,
+   so nothing has to be scrolled back up to for the two numbers that matter. */
+header.top {
+  position: sticky; top: 0; z-index: 30;
+  background: color-mix(in srgb, var(--bg) 94%, transparent);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  margin: -16px -18px 14px; padding: 10px 18px;
+}
+header.top .top-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; flex: none; }
+header.top .top-row-2 { justify-content: space-between; }
+@media (min-width: 720px) {
+  header.top .top-row-2 { justify-content: flex-start; gap: 10px; }
+}
+@media (max-width: 760px) {
+  header.top { margin: -12px -12px 10px; padding: 8px 12px; }
+}
+
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: 8px; flex: none;
+  color: var(--muted); border: 1px solid var(--line); background: var(--panel);
+}
+.icon-btn:hover { color: var(--text); }
+
+/* Today's P&L. A tap target, so it is sized for a thumb. */
+.today-pnl {
+  display: inline-flex; align-items: baseline; gap: 7px;
+  min-height: 34px; padding: 4px 11px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--panel);
+  font-variant-numeric: tabular-nums; flex: none;
+}
+.today-pnl .label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--dim); align-self: center; }
+.today-pnl .value { font-size: 15px; font-weight: 650; color: var(--text); }
+.today-pnl .value.up { color: var(--up); }
+.today-pnl .value.down { color: var(--down); }
+
+/* ── tabs with icons ────────────────────────────────────────────────────────
+   On a phone they are the bottom bar: icon over the word, a pip in the corner. */
+.tabs button { display: inline-flex; align-items: center; gap: 6px; position: relative; }
+.tabs button svg { width: 15px; height: 15px; flex: none; }
+@media (max-width: 760px) {
+  .tabs button { flex-direction: column; gap: 2px; padding: 6px 2px; font-size: 10.5px; }
+  .tabs button svg { width: 19px; height: 19px; }
+  .tabs button .pip { position: absolute; top: 2px; left: calc(50% + 6px); margin: 0; }
+}
+
+/* ── phones: less padding, less scrolling ─────────────────────────────────── */
+@media (max-width: 760px) {
+  .lead-row { gap: 10px; margin-bottom: 10px; }
+  .card { padding: 12px; }
+  .bar-wrap { margin-bottom: 10px; }
+  .note { font-size: 11px; }
+}

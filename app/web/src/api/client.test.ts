@@ -121,11 +121,29 @@ describe('what is a failure at all', () => {
     expect(reported).toHaveBeenCalledTimes(1);
   });
 
-  it('a reply that will not parse is named for what it is', async () => {
+  it('a reply cut off half way is named for what it is, and counted like a dropped connection', async () => {
     fetchMock.mockResolvedValue(
       { ok: true, status: 200, json: async () => { throw new SyntaxError('bad json'); } } as never,
     );
+    // once is a phone losing signal mid-reply, not a server fault
+    await expect(json('/api/spot')).rejects.toThrow(/cut short/);
+    expect(reported).not.toHaveBeenCalled();
+    // three in a row is an outage, and is written down
+    await expect(json('/api/spot')).rejects.toThrow(/cut short/);
     await expect(json('/api/spot')).rejects.toThrow(/cut short/);
     expect(reported).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failure while the page is hidden says nothing about the server, and is not counted', async () => {
+    const hidden = Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState');
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+    try {
+      fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
+      for (let i = 0; i < 5; i++) await expect(json('/api/chain')).rejects.toThrow();
+      expect(reported).not.toHaveBeenCalled();
+    } finally {
+      delete (document as { visibilityState?: unknown }).visibilityState;
+      if (hidden) Object.defineProperty(Document.prototype, 'visibilityState', hidden);
+    }
   });
 });

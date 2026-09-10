@@ -11,7 +11,7 @@ export function AlarmBanner({ status, onDismiss }: { status: TradeStatus | null;
       <AlertTriangle className="mt-[2px] h-4 w-4 flex-none text-[var(--down)]" />
       <div className="min-w-0 flex-1">
         <p className="m-0 text-[13px] font-semibold text-[var(--down)]">
-          {naked.length === 1 ? 'A position has no stop behind it' : `${naked.length} positions have no stop behind them`}
+          {naked.length === 1 ? 'A position has no stop-loss' : `${naked.length} positions have no stop-loss`}
         </p>
         {naked.map((t) => (
           <p key={t.tradeId} className="m-0 mt-0.5 text-[11.5px] text-muted-foreground">
@@ -24,7 +24,7 @@ export function AlarmBanner({ status, onDismiss }: { status: TradeStatus | null;
           onClick={onDismiss}
           className="appearance-none border-0 bg-transparent p-0 font-[inherit] text-[11.5px] text-muted-foreground hover:text-foreground"
         >
-          hide
+          Hide
         </button>
       )}
     </div>

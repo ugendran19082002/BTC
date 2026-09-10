@@ -4,6 +4,7 @@ import { setTradeMode } from '@/api/trade';
 import type { TradeStatus } from '@/types/trade';
 import { Sheet, SheetContent, SheetFooter } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
+import { KV } from '@/components/ui/kv';
 import { cn } from '@/lib/utils';
 
 /**
@@ -71,29 +72,28 @@ export function ModeSwitch({ status, onChanged }: { status: TradeStatus | null; 
           : live ? <Radio className="dot h-3 w-3" />
           : status.canGoLive ? <FlaskConical className="h-3 w-3" />
           : <Lock className="h-3 w-3" />}
-        {live ? 'live · real money' : 'paper'}
+        {live ? 'Live' : 'Paper'}
       </button>
 
       <Sheet open={confirming} onOpenChange={(v) => { setConfirming(v); if (!v) setRefused(null); }}>
         <SheetContent
-          title="Trade for real?"
-          description="Orders will reach Delta Exchange and spend real margin."
+          title="Switch to live trading?"
+          description="Orders will go to Delta Exchange and use real money."
         >
           <div className="rounded-lg border border-[var(--down)]/40 bg-[var(--down)]/10 p-3">
             <p className="m-0 flex items-start gap-2 text-[13px] leading-snug text-[var(--down)]">
               <AlertTriangle className="mt-[2px] h-4 w-4 flex-none" />
               <span>
-                From the moment you confirm, every order this desk sends is a real one. A sold
-                option can lose more than the margin behind it.
+                After you confirm, every order is real. A sold option can lose more than its margin.
               </span>
             </p>
           </div>
 
           <dl className="m-0 mt-3 grid gap-1.5">
-            <Row label="account balance" value={status.balanceUsd === null ? '—' : `$${status.balanceUsd.toFixed(2)}`} />
-            <Row label="open positions" value={String(status.open.length)} />
-            <Row label="most this desk will lose today" value={`$${status.limits.maxDailyLossUsd.toLocaleString()}`} />
-            <Row label="most leverage it will use" value={`${status.limits.maxLeverage}x`} />
+            <KV label="Balance">{status.balanceUsd === null ? '—' : `$${status.balanceUsd.toFixed(2)}`}</KV>
+            <KV label="Open positions">{String(status.open.length)}</KV>
+            <KV label="Daily loss limit">{`$${status.limits.maxDailyLossUsd.toLocaleString()}`}</KV>
+            <KV label="Max leverage">{`${status.limits.maxLeverage}x`}</KV>
           </dl>
 
           {blocked && (
@@ -103,7 +103,7 @@ export function ModeSwitch({ status, onChanged }: { status: TradeStatus | null; 
 
           <SheetFooter>
             <Button variant="outline" className="h-11 flex-none px-4" onClick={() => setConfirming(false)}>
-              stay on paper
+              Stay on paper
             </Button>
             <button
               onClick={() => void apply('live')}
@@ -116,20 +116,11 @@ export function ModeSwitch({ status, onChanged }: { status: TradeStatus | null; 
               )}
             >
               {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-              go live
+              Go live
             </button>
           </SheetFooter>
         </SheetContent>
       </Sheet>
     </>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-baseline justify-between gap-3">
-      <dt className="m-0 text-[12.5px] text-muted-foreground">{label}</dt>
-      <dd className="m-0 tabular-nums text-[13px] text-foreground">{value}</dd>
-    </div>
   );
 }

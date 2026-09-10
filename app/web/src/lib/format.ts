@@ -132,6 +132,10 @@ export function duration(ms: number | null | undefined, dash = '—'): string {
   return `${s}s`;
 }
 
+/** Green for a gain, red for a loss, nothing for zero or no number yet. */
+export const pnlTone = (n: number | null | undefined): 'up' | 'down' | undefined =>
+  n === null || n === undefined || !Number.isFinite(n) || n === 0 ? undefined : n > 0 ? 'up' : 'down';
+
 /** The direction a number should be coloured, or none. */
 export const tone = (n: number | null | undefined): 'up' | 'down' | 'flat' =>
   n === null || n === undefined || n === 0 ? 'flat' : n > 0 ? 'up' : 'down';
