@@ -18,17 +18,21 @@ export class NotSignedIn extends Error {
 export const pathOf = (url: string): string => url.split('?')[0] ?? url;
 
 /**
- * How many times in a row a request has to fail before it counts as broken.
+ * When a run of failures on one endpoint counts as broken: at least three in a
+ * row, AND failing for at least a minute.
  *
  * A single failed fetch is not evidence of a fault. A phone changing cell does
- * it, and so does a deploy: the four `Failed to fetch` rows in the live log
- * were the poll running while the container restarted, which is the desk
- * working exactly as intended. Waiting for a third consecutive failure is still
- * only a few seconds at a one-second poll, so a real outage is recorded while a
- * blip is not.
+ * it, and so does a deploy. Counting alone was not enough either: on 10
+ * September a laptop's connection dropped for fourteen seconds -- the web
+ * server logged that browser abandoning three requests at the same instant --
+ * the five-second chain poll failed three times in a row, and a row landed in
+ * the log while another user was served normally throughout. A real outage
+ * outlasts a hotspot reconnecting, and it is still recorded: the report goes
+ * out as soon as the connection is back.
  */
 const FAILURES_BEFORE_REPORTING = 3;
-const consecutive = new Map<string, number>();
+const OUTAGE_MS = 60_000;
+const consecutive = new Map<string, { runs: number; since: number }>();
 
 /** For tests, and for a page that has just been shown to be reachable again. */
 export const forgetNetworkFailures = (): void => consecutive.clear();
@@ -54,15 +58,18 @@ const TIMEOUT_MS = 60_000;
 
 function networkFailure(path: string, url: string, message: string): void {
   if (!pageCanReachNetwork()) return;
-  const runs = (consecutive.get(path) ?? 0) + 1;
-  consecutive.set(path, runs);
-  if (runs >= FAILURES_BEFORE_REPORTING) {
+  const now = Date.now();
+  const prev = consecutive.get(path);
+  const streak = { runs: (prev?.runs ?? 0) + 1, since: prev?.since ?? now };
+  consecutive.set(path, streak);
+  const failingMs = now - streak.since;
+  if (streak.runs >= FAILURES_BEFORE_REPORTING && failingMs >= OUTAGE_MS) {
     reportError({
       message: `network: ${message}`,
       where: path,
       code: 'network',
       level: 'warn',
-      context: { url, consecutiveFailures: runs },
+      context: { url, consecutiveFailures: streak.runs, failingForSeconds: Math.round(failingMs / 1000) },
     });
   }
 }

@@ -11,6 +11,14 @@ const READ_ATTEMPTS = 2;
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
+ * A failed read worth one more try: no answer at all, or Delta's own server
+ * failing (HTTP 500 and up). A 4xx is Delta saying no on purpose, and asking
+ * again gets the same answer.
+ */
+const retryableRead = (e: unknown): boolean =>
+  e instanceof RequestTimedOut || (e instanceof DeltaRefused && e.status >= 500);
+
+/**
  * The real account.
  *
  * The only file in the project that can move money. It implements exactly the
@@ -183,11 +191,13 @@ export class DeltaExchange implements ExchangePort {
 
   private async call<T>(reqIn: Parameters<typeof signed>[1]): Promise<T> {
     /*
-     * A read that times out is safe to ask again: it changes nothing. So a GET
-     * gets a shorter timeout and one quiet retry, which turns Delta's occasional
-     * slow second into no error at all -- both RequestTimedOut rows in the live
-     * log on 10 September were single reads (/v2/orders, /v2/positions/margined).
-     * Two tries at 8s still answer sooner than one at the old 20s.
+     * A read that fails for Delta's reasons is safe to ask again: it changes
+     * nothing. So a GET gets a shorter timeout and one quiet retry, for no
+     * answer at all and for Delta's own server errors alike. Both kinds reached
+     * the live log on 10 September as single, self-healing reads: two timeouts
+     * (/v2/orders, /v2/positions/margined) and an internal_server_error on
+     * /v2/orders/history that the next poll a second later did not see. Two
+     * tries at 8s still answer sooner than one at the old 20s.
      *
      * Writes are never retried here. Silence on a write means "unknown", and
      * the only correct response is to read the account back, never to resend.
@@ -198,12 +208,15 @@ export class DeltaExchange implements ExchangePort {
       try {
         return await signed<T>(this.creds, req);
       } catch (e) {
-        if (isRead && attempt < READ_ATTEMPTS && e instanceof RequestTimedOut) {
+        if (isRead && attempt < READ_ATTEMPTS && retryableRead(e)) {
           await pause(300);
           continue;
         }
         noteError({
           source: 'exchange',
+          // A read that failed on Delta's side twice is still Delta's trouble,
+          // and the poll asks again within a second: worth seeing, not an alarm.
+          level: isRead && retryableRead(e) ? 'warn' : 'error',
           message: (e as Error).message,
           code: e instanceof DeltaRefused ? e.code : (e as Error).name,
           stack: (e as Error).stack ?? null,

@@ -7,7 +7,8 @@ import { forgetNetworkFailures, json, NotSignedIn, pathOf } from '@/api/client';
  * The log is only useful if everything in it needs fixing. The live log had
  * four `Failed to fetch` rows in it, all of them the poll running while the
  * container restarted under a deploy -- the desk working correctly, recorded as
- * a fault, next to the one row that mattered.
+ * a fault, next to the one row that mattered. On 10 September another came from
+ * a laptop whose connection dropped for fourteen seconds.
  */
 
 vi.mock('@/lib/report-error', () => ({ reportError: vi.fn() }));
@@ -17,16 +18,33 @@ const reported = reportError as unknown as ReturnType<typeof vi.fn>;
 const fetchMock = vi.fn();
 
 beforeEach(() => {
+  // Only the clock is faked, so the fetch promises still settle on their own.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-09-10T16:22:21Z'));
   vi.stubGlobal('fetch', fetchMock);
   fetchMock.mockReset();
   reported.mockReset();
   forgetNetworkFailures();
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
+
+/** Move the clock on. */
+const later = (ms: number) => vi.setSystemTime(Date.now() + ms);
 
 const ok = (body: unknown) =>
   ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
 const fails = () => fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
+
+/** Fail `times` in a row, spread evenly across `spanMs`. */
+async function failInARow(url: string, times: number, spanMs: number) {
+  for (let i = 0; i < times; i += 1) {
+    if (i > 0) later(spanMs / (times - 1));
+    await expect(json(url)).rejects.toThrow();
+  }
+}
 
 describe('a network failure', () => {
   it('is not reported the first time — that is a blip, not a fault', async () => {
@@ -35,35 +53,55 @@ describe('a network failure', () => {
     expect(reported).not.toHaveBeenCalled();
   });
 
-  it('is reported once it keeps happening', async () => {
+  it('[critical] three quick failures from a connection that dropped for 14 seconds are not reported', async () => {
+    // exactly the 10 September row: the chain poll, five seconds apart, a
+    // laptop's Wi-Fi reconnecting
     fails();
-    for (let i = 0; i < 3; i += 1) await expect(json('/api/spot')).rejects.toThrow();
+    await failInARow('/api/chain', 3, 14_000);
+    expect(reported).not.toHaveBeenCalled();
+  });
+
+  it('is reported once it has kept failing for a minute, with how long', async () => {
+    fails();
+    await failInARow('/api/spot', 3, 61_000);
     expect(reported).toHaveBeenCalledTimes(1);
     expect(reported.mock.calls[0]![0]).toMatchObject({
       code: 'network', where: '/api/spot', level: 'warn',
+      context: { consecutiveFailures: 3, failingForSeconds: 61 },
     });
   });
 
-  it('[critical] a reply of any kind resets the count, so a restart is forgotten', async () => {
+  it('a minute of failing is not enough on its own -- it has to be three in a row as well', async () => {
     fails();
     await expect(json('/api/spot')).rejects.toThrow();
+    later(90_000);
+    await expect(json('/api/spot')).rejects.toThrow();
+    expect(reported).not.toHaveBeenCalled();
+  });
+
+  it('[critical] a reply of any kind resets the run, so a restart is forgotten', async () => {
+    fails();
+    await expect(json('/api/spot')).rejects.toThrow();
+    later(40_000);
     await expect(json('/api/spot')).rejects.toThrow();
 
     fetchMock.mockResolvedValueOnce(ok({ spot: 1 }));
     await json('/api/spot');
 
-    // two more failures is two, not four
+    // the minute starts again from the next failure, not from the first one
     fails();
-    await expect(json('/api/spot')).rejects.toThrow();
-    await expect(json('/api/spot')).rejects.toThrow();
+    later(1_000);
+    await failInARow('/api/spot', 3, 30_000);
     expect(reported).not.toHaveBeenCalled();
   });
 
   it('counts each endpoint separately', async () => {
     fails();
-    for (const url of ['/api/spot', '/api/expiries', '/api/spot']) {
-      await expect(json(url)).rejects.toThrow();
-    }
+    await expect(json('/api/spot')).rejects.toThrow();
+    later(40_000);
+    await expect(json('/api/expiries')).rejects.toThrow();
+    later(40_000);
+    await expect(json('/api/spot')).rejects.toThrow();
     // /api/spot failed twice and /api/expiries once: neither has reached three
     expect(reported).not.toHaveBeenCalled();
   });
@@ -74,7 +112,7 @@ describe('where a failure says it happened', () => {
     // the chain is polled with eight parameters, which made a row per combination
     fails();
     const url = '/api/chain?at=now&width=20&minPremium=15&expiry=100926';
-    for (let i = 0; i < 3; i += 1) await expect(json(url)).rejects.toThrow();
+    await failInARow(url, 3, 61_000);
 
     const report = reported.mock.calls[0]![0] as { where: string; context: { url: string } };
     expect(report.where).toBe('/api/chain');
@@ -89,10 +127,11 @@ describe('where a failure says it happened', () => {
 
   it('so three parameter sets fold into one row rather than three', async () => {
     fails();
-    for (const q of ['width=10', 'width=20', 'width=30']) {
+    for (const [i, q] of ['width=10', 'width=20', 'width=30'].entries()) {
+      if (i > 0) later(31_000);
       await expect(json(`/api/chain?${q}`)).rejects.toThrow();
     }
-    // three failures of one endpoint, so one report — not one each
+    // three failures of one endpoint over a minute, so one report — not one each
     expect(reported).toHaveBeenCalledTimes(1);
   });
 });
@@ -113,7 +152,7 @@ describe('what is a failure at all', () => {
     expect(reported).not.toHaveBeenCalled();
   });
 
-  it('a 5xx is a fault and is recorded', async () => {
+  it('a 5xx is a fault and is recorded at once -- the server answered, so the connection is not the problem', async () => {
     fetchMock.mockResolvedValue(
       { ok: false, status: 500, json: async () => ({ error: 'boom' }) } as never,
     );
@@ -128,8 +167,10 @@ describe('what is a failure at all', () => {
     // once is a phone losing signal mid-reply, not a server fault
     await expect(json('/api/spot')).rejects.toThrow(/cut short/);
     expect(reported).not.toHaveBeenCalled();
-    // three in a row is an outage, and is written down
+    // still cut short a minute later, three in a row: an outage, and written down
+    later(30_000);
     await expect(json('/api/spot')).rejects.toThrow(/cut short/);
+    later(31_000);
     await expect(json('/api/spot')).rejects.toThrow(/cut short/);
     expect(reported).toHaveBeenCalledTimes(1);
   });
@@ -139,7 +180,7 @@ describe('what is a failure at all', () => {
     Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
     try {
       fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
-      for (let i = 0; i < 5; i++) await expect(json('/api/chain')).rejects.toThrow();
+      await failInARow('/api/chain', 5, 120_000);
       expect(reported).not.toHaveBeenCalled();
     } finally {
       delete (document as { visibilityState?: unknown }).visibilityState;
