@@ -180,23 +180,43 @@ export function StrategyPanel() {
       {data.runs.length > 0 && (
         <Card>
           <CardTitle>Recent runs</CardTitle>
-          <div className="grid gap-1">
-            {data.runs.slice(0, 12).map((r) => (
-              <div key={r.id} className="flex items-baseline justify-between gap-3 text-[12px]">
-                <span className="text-muted-foreground">
-                  {r.runDate} · {r.strategyId}
-                </span>
-                <span className="flex items-baseline gap-2">
-                  <span className={cn('tabular-nums',
-                    r.status === 'placed' ? 'text-[var(--up)]'
-                      : r.status === 'failed' ? 'text-[var(--down)]' : 'text-[var(--dim)]')}
-                  >
-                    {r.status}
-                  </span>
-                  <span className="text-[var(--dim)]">{clock(r.at)}</span>
-                </span>
-              </div>
-            ))}
+          {/*
+            What each day actually did, in the server's own words.
+            This panel showed only "placed" and a time, which answers the least
+            interesting question about a day. The row already carried the legs,
+            the sizes and the prices -- or the reason nothing was sold -- and it
+            was simply not being printed.
+          */}
+          <div className="grid gap-2">
+            {data.runs.slice(0, 15).map((r) => {
+              const name = data.strategies.find((s) => s.id === r.strategyId)?.name ?? r.strategyId;
+              const tone = r.status === 'placed' ? 'up'
+                : r.status === 'failed' ? 'down' : 'dim';
+              return (
+                <div key={r.id} className="rounded-lg border border-[var(--line)] px-2.5 py-2">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="flex items-baseline gap-2">
+                      <span className="text-[12.5px] font-medium text-foreground">{name}</span>
+                      <span className="text-[11.5px] text-muted-foreground">{r.runDate}</span>
+                    </span>
+                    <span className="flex items-baseline gap-2">
+                      <span className={cn('text-[11.5px] font-medium',
+                        tone === 'up' ? 'text-[var(--up)]'
+                          : tone === 'down' ? 'text-[var(--down)]' : 'text-[var(--dim)]')}>
+                        {r.status === 'placed' ? 'traded'
+                          : r.status === 'refused' ? 'stood aside'
+                            : r.status === 'failed' ? 'failed' : 'skipped'}
+                      </span>
+                      <span className="text-[11.5px] tabular-nums text-[var(--dim)]">{clock(r.at)}</span>
+                    </span>
+                  </div>
+                  {/* The legs and prices, or the reason there were none. */}
+                  <p className="m-0 mt-1 text-[11.5px] leading-snug text-muted-foreground">
+                    {r.detail}
+                  </p>
+                </div>
+              );
+            })}
           </div>
         </Card>
       )}

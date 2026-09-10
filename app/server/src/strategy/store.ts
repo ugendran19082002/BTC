@@ -160,6 +160,20 @@ export class StrategyStore {
     ).run(status, detail.slice(0, 500), Date.now(), strategyId, runDate);
   }
 
+  /** One strategy's row for one day, when there is one. */
+  runFor(strategyId: string, runDate: string): StrategyRun | null {
+    const r = this.db.prepare(
+      'SELECT * FROM strategy_runs WHERE strategy_id = ? AND run_date = ?',
+    ).get(strategyId, runDate) as {
+      id: number; strategy_id: string; run_date: string;
+      status: StrategyRun['status']; detail: string; at: number;
+    } | undefined;
+    return r ? {
+      id: r.id, strategyId: r.strategy_id, runDate: r.run_date,
+      status: r.status, detail: r.detail, at: r.at,
+    } : null;
+  }
+
   runs(limit = 60): StrategyRun[] {
     return (this.db.prepare(
       'SELECT * FROM strategy_runs ORDER BY at DESC LIMIT ?',

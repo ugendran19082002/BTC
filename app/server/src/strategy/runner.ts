@@ -103,8 +103,18 @@ export class StrategyRunner {
       await svc.close(t.state.tradeId);
     }
     if (open.length) {
-      this.store.finish(s.id, istDate(this.now()), 'placed',
-        `closed ${open.length} leg${open.length === 1 ? '' : 's'} at ${s.config.exitTime}`);
+      /*
+       * Add to the day's record rather than replace it.
+       *
+       * `finish` overwrites, and the row already holds what was sold this
+       * morning. Writing "closed 2 legs" over it would leave a journal that
+       * cannot answer the first question anybody asks about a day -- what did
+       * it put on -- while claiming to be the audit trail.
+       */
+      const day = istDate(this.now());
+      const prior = this.store.runFor(s.id, day)?.detail ?? '';
+      const closed = `closed ${open.length} leg${open.length === 1 ? '' : 's'} at ${s.config.exitTime}`;
+      this.store.finish(s.id, day, 'placed', prior ? `${prior} | ${closed}` : closed);
     }
   }
 
