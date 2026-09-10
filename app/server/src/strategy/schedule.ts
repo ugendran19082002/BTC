@@ -53,6 +53,17 @@ export type DueVerdict =
 export const GRACE_MIN = 60;
 
 /**
+ * When today's entry window closes, in epoch ms: the entry minute plus
+ * GRACE_MIN, inclusive of that last minute. An entry still resting then is
+ * cancelled rather than left on the book into the day.
+ */
+export function entryWindowEnd(s: Strategy, nowMs: number): number {
+  const shifted = nowMs + IST_OFFSET_MIN * 60_000;
+  const istMidnight = Math.floor(shifted / 86_400_000) * 86_400_000 - IST_OFFSET_MIN * 60_000;
+  return istMidnight + (minutesOf(s.config.entryTime) + GRACE_MIN + 1) * 60_000;
+}
+
+/**
  * Should this strategy enter right now?
  *
  * @param lastRunDate the IST day it last ran, from the journal, or null

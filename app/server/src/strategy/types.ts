@@ -73,6 +73,16 @@ export type StrategyConfig = {
    */
   crossAfterSec: number;
   /**
+   * Sell into the bid only while the spread is at most this, as a fraction of
+   * the mid (0.15 = 15%, the same line the order gate uses).
+   *
+   * While the spread is wider, the entry waits at the mid instead of walking
+   * to the bid, and if it is still unfilled when the entry window closes the
+   * rest is cancelled. Only applies to `offer` with a cross-after above zero.
+   * Older saved strategies without it read the default.
+   */
+  maxCrossSpreadPct: number;
+  /**
    * Buy back once the mark has fallen this far, as a fraction of the credit.
    * 0.95 is the 95% decay target. Zero means hold to settlement.
    */
@@ -130,6 +140,7 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   entryPrice: 'offer',
   entryLimit: null,
   crossAfterSec: 5,
+  maxCrossSpreadPct: 0.15,
   takeProfitPct: 0.95,
   stopLossPct: 0,
   lots: 10,
@@ -177,6 +188,10 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
   }
   if (!Number.isInteger(c.crossAfterSec) || (c.crossAfterSec ?? -1) < 0 || (c.crossAfterSec ?? 0) > 600) {
     bad.push('Cross-after must be a whole number of seconds from 0 to 600.');
+  }
+  if (c.maxCrossSpreadPct !== undefined
+      && (!(typeof c.maxCrossSpreadPct === 'number') || !(c.maxCrossSpreadPct > 0) || c.maxCrossSpreadPct > 1)) {
+    bad.push('The spread limit for selling at the bid must be between 1% and 100%.');
   }
   if (c.legs !== 'CE' && c.legs !== 'PE' && c.legs !== 'both') bad.push('Legs must be CE, PE or both.');
   if (c.probGate !== null && c.probGate !== undefined

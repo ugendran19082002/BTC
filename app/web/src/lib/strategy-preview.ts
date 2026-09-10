@@ -37,7 +37,7 @@ export function describeEntry(c: StrategyConfig): string {
   if (c.entryPrice === 'now') return 'crosses immediately at the market';
   if (c.entryPrice === 'set') return `rests at ${c.entryLimit ?? '—'}`;
   return c.crossAfterSec > 0
-    ? `rests at the offer, crosses after ${c.crossAfterSec}s`
+    ? `rests at the offer, crosses after ${c.crossAfterSec}s if the spread is at most ${Math.round((c.maxCrossSpreadPct ?? 0.15) * 100)}%`
     : 'rests at the offer until it fills';
 }
 

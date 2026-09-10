@@ -29,7 +29,7 @@ function summarise(s: Strategy): string {
     `${c.lots} lot${c.lots === 1 ? '' : 's'}`,
     `${c.entryTime}→${c.exitTime}`,
     c.entryPrice === 'offer'
-      ? `sell at offer${c.crossAfterSec ? `, market after ${c.crossAfterSec}s` : ', wait'}`
+      ? `sell at offer${c.crossAfterSec ? `, bid after ${c.crossAfterSec}s if spread ≤ ${Math.round((c.maxCrossSpreadPct ?? 0.15) * 100)}%` : ', wait'}`
       : `sell at ${c.entryPrice}`,
     c.takeProfitPct > 0 ? `target ${Math.round(c.takeProfitPct * 100)}%` : 'hold to expiry',
   ];

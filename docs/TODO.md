@@ -288,6 +288,28 @@ error log, never to the order path.
 
 ---
 
+## Scheduled entries wait for a tight spread — 10 Sep 2026
+
+**Before:** "sell at offer, market after 5s" rested at the offer and, after 5
+seconds, sold at the bid whatever the spread — on a 37 / 44 book that sold at 37
+and gave three and a half points away.
+
+**Now (option B):** the order still rests at the offer at once. The walk toward
+the bid continues only while the spread is at most the strategy's limit (15% by
+default). While it is wider, the order waits at the mid. When the spread
+narrows, it sells at the bid. If it is still unfilled when the 60-minute entry
+window closes, what is left is cancelled and Telegram says ℹ️ NOT FILLED.
+Orders placed by hand from the ticket are unchanged.
+
+**To do:**
+
+- [ ] **Measure it.** Record the spread and the wait at each scheduled fill, and
+      compare against the old "bid after 5s" fills.
+- [ ] **"Sell now" strategies** still refuse outright on a wide spread (the gate)
+      and spend the day. They could wait the same way.
+
+---
+
 ## Important alerts and a 60-minute entry window — 10 Sep 2026
 
 **Grace time is 60 minutes** (was 30). An entry at 05:29 can still go on until

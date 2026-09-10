@@ -56,7 +56,17 @@ export type EntryPlan = {
    * it, and it moves the order with an edit rather than a cancel and replace,
    * so the order never leaves the book.
    */
-  chase: { steps: number; everyMs: number } | null;
+  chase: {
+    steps: number;
+    everyMs: number;
+    /**
+     * Sell into the bid only while the spread is at most this, as a fraction of
+     * the mid (0.15 = 15%). While it is wider the walk stops at the mid and
+     * waits. Null or absent walks all the way to the bid, as the order ticket's
+     * "sell at bid after N sec" always has.
+     */
+    maxCrossSpreadPct?: number | null;
+  } | null;
 };
 
 /**
@@ -79,6 +89,27 @@ export function chasePrice(i: {
   const step = Math.min(i.steps, Math.floor((i.now - i.startedAt) / i.everyMs));
   if (step <= 0) return i.from;
   return i.from - ((i.from - i.bid) * step) / i.steps;
+}
+
+/**
+ * The lowest price a chase may walk to right now, or null when the bid itself
+ * is allowed.
+ *
+ * With no limit set, the bid is always allowed. With one, a book wider than the
+ * limit holds the walk at the middle of the spread: it still concedes half the
+ * spread to a buyer who will meet it there, but never sells into a bid that far
+ * under the offer -- 37 bid / 44 offered is a 17% spread, and selling at 37 gives
+ * three and a half points away on the spot. A book with no offer cannot be
+ * measured, so the walk holds where it is. The moment the spread narrows, the
+ * walk carries on to the bid.
+ */
+export function chaseFloor(bid: number, ask: number | null, maxSpreadPct: number | null): number | null {
+  if (maxSpreadPct === null) return null;
+  if (ask === null) return Number.POSITIVE_INFINITY;
+  if (!(ask > bid)) return null;
+  const mid = (bid + ask) / 2;
+  if (!(mid > 0)) return null;
+  return (ask - bid) / mid <= maxSpreadPct ? null : mid;
 }
 
 export type TradePlan = {
@@ -500,10 +531,17 @@ export class TradeEngine {
       const product = await this.exchange.getProduct(rec.plan.symbol).catch(() => null);
       if (quote?.bid != null) {
         const from = rec.plan.entry.limitPrice ?? entry.limitPrice;
-        const want = priceFor('sell', chasePrice({
+        const tick = product?.tickSize ?? 0.1;
+        let want = priceFor('sell', chasePrice({
           startedAt, now: this.now(), from, bid: quote.bid,
           steps: rec.plan.entry.chase.steps, everyMs: rec.plan.entry.chase.everyMs,
-        }), product?.tickSize ?? 0.1);
+        }), tick);
+        // Not into a wide bid when the plan says so: hold at the mid until the
+        // spread narrows. See `chaseFloor`.
+        const floor = chaseFloor(quote.bid, quote.ask, rec.plan.entry.chase.maxCrossSpreadPct ?? null);
+        if (floor !== null) {
+          want = Math.max(want, Number.isFinite(floor) ? priceFor('sell', floor, tick) : entry.limitPrice);
+        }
         if (want < entry.limitPrice) {
           // Moved, not replaced: the order never leaves the book, so there is
           // no moment where the entry is neither working nor filled.

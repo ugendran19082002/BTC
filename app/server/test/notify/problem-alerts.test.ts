@@ -29,6 +29,18 @@ const submitted: TradeEvent = { t: 'entry_submitted', clientOrderId: 'c', size: 
 const sold: TradeEvent = { t: 'fill', role: 'entry', side: 'sell', size: 1, price: 7.4, orderId: 'o1', at: AT };
 const failedProtection = (reason: string): TradeEvent => ({ t: 'protection_failed', reason, at: AT });
 
+test('a strategy entry cancelled unfilled at the close of its window is said, with the likely reason', () => {
+  const plan = planFor(ceProduct(), { tradeId: 't1', strategyId: 's1' });
+  const out = alerts([submitted, { t: 'entry_timeout', at: AT }, { t: 'entry_cancelled', remaining: 1, at: AT }], { plan });
+  assert.equal(out[1], null, 'the timeout itself says nothing');
+  assert.match(out[2]!.text, /ℹ️ <b>NOT FILLED · BTC 80,000 CE<\/b>/);
+  assert.match(out[2]!.text, /spread stayed too wide/);
+});
+
+test('a hand-placed order cancelled unfilled stays quiet -- the person cancelled it', () => {
+  assert.equal(alerts([submitted, { t: 'entry_cancelled', remaining: 1, at: AT }]).at(-1), null);
+});
+
 test('Delta refusing an order is an alert, with Delta’s reason', () => {
   const [, a] = alerts([submitted, { t: 'entry_rejected', reason: 'insufficient_margin & more', at: AT }]);
   assert.ok(a);

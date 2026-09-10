@@ -75,6 +75,15 @@ function problemAlertFor(
   const held = Math.abs(after.position);
   const side = after.position < 0 ? 'short' : 'long';
 
+  // A scheduled entry that ran out of window. A hand-placed one was cancelled
+  // by the person who placed it, and needs no message.
+  if (event.t === 'entry_cancelled' && after.entrySize === 0 && plan.strategyId) {
+    return { key, text: problemText(ctx, 'ℹ️', `NOT FILLED · ${contract(plan)}`, [
+      'The entry window closed before the order filled, so it was cancelled. Nothing was sold.',
+      'Usually the spread stayed too wide to sell at the bid.',
+    ], event.at, plan) };
+  }
+
   if (event.t === 'entry_rejected') {
     return { key, text: problemText(ctx, '🚨', `ORDER REJECTED · ${contract(plan)}`, [
       `Delta refused the order: <i>${escape(event.reason)}</i>`,

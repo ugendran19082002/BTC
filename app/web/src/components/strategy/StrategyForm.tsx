@@ -280,6 +280,16 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
             </span>
           </Field>
         )}
+        {c.entryPrice === 'offer' && c.crossAfterSec > 0 && (
+          <Field
+            label="Only sell at bid if spread ≤"
+            hint="If the gap between bid and ask is wider than this, the order waits at the middle price instead of selling at the bid. Still unfilled when the entry window closes? It is cancelled and Telegram tells you."
+          >
+            <Input value={String(Math.round((c.maxCrossSpreadPct ?? 0.15) * 100))} aria-label="max spread to sell at bid pct" className="w-20"
+                   onChange={(e) => set('maxCrossSpreadPct', Math.min(100, Math.max(1, num(e.target.value, 15))) / 100)} />
+            <span className="text-[11.5px] text-muted-foreground">%</span>
+          </Field>
+        )}
 
         <div className="mt-2 border-t border-[var(--line)] pt-2 text-[11px] uppercase tracking-wide text-[var(--dim)]">
           Exit

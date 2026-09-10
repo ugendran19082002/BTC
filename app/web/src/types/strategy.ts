@@ -12,6 +12,8 @@ export type StrategyConfig = {
   entryLimit: number | null;
   /** Seconds to wait at the offer before crossing. Zero rests until filled. */
   crossAfterSec: number;
+  /** Sell at the bid only while the spread is at most this (0.15 = 15%). Older strategies may lack it. */
+  maxCrossSpreadPct?: number;
   takeProfitPct: number;
   stopLossPct: number;
   lots: number;
@@ -66,6 +68,7 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   entryPrice: 'offer',
   entryLimit: null,
   crossAfterSec: 5,
+  maxCrossSpreadPct: 0.15,
   takeProfitPct: 0.95,
   stopLossPct: 0,
   lots: 10,

@@ -3,7 +3,7 @@ import { scoreLegs } from '../domain/score.js';
 import { tradingService } from '../trading/service.js';
 import { noteError } from '../observability/errors.js';
 import { StrategyStore } from './store.js';
-import { GRACE_MIN, entryDue, exitDue, istDate, istMinutes } from './schedule.js';
+import { GRACE_MIN, entryDue, entryWindowEnd, exitDue, istDate, istMinutes } from './schedule.js';
 import { describeSelection, selectLegs, type Candidate } from './select.js';
 import { minutesOf, type Strategy } from './types.js';
 import { missedEntryAlert, runAlertFor, type Alert, type AlertContext } from '../notify/messages.js';
@@ -203,6 +203,7 @@ export class StrategyRunner {
           expiryTs: snap.expiryTs,
           lots: leg.lots,
           ask: leg.ask,
+          cancelAfterMs: Math.max(1_000, entryWindowEnd(s, now) - now),
         });
         placed.push(res);
       } catch (e) {
@@ -234,19 +235,22 @@ async function svcPlace(
   o: {
     symbol: string; optionSide: 'CE' | 'PE'; strike: number; expiryTs: number;
     lots: number; ask: number | null;
+    /** How long an order may rest before what is left is cancelled: to the close of the entry window. */
+    cancelAfterMs: number;
   },
 ): Promise<string> {
   const c = s.config;
-  const { ask, ...order } = o;
+  const { ask, cancelAfterMs, ...order } = o;
   /*
    * The three price modes, mapped onto the ticket's own arguments so a
    * scheduled order behaves exactly like a tapped one.
    *
    *   now    no limit at all -- place() reads that as a market order.
-   *   offer  rest at the ask and walk to the bid over `crossAfterSec`, which is
-   *          exactly what the ticket's "cross after N sec" does. The last step
-   *          is the bid, so the walk always ends in a fill rather than leaving
-   *          half an order resting. Zero seconds rests until it fills.
+   *   offer  rest at the ask and walk toward the bid over `crossAfterSec`. The
+   *          last step is the bid only while the spread is within
+   *          `maxCrossSpreadPct`; while it is wider the order waits at the mid,
+   *          and whatever is still unfilled when the entry window closes is
+   *          cancelled. Zero seconds rests until it fills.
    *   set    the price named in the config, resting.
    */
   const limitPrice = c.entryPrice === 'now'
@@ -262,6 +266,10 @@ async function svcPlace(
     strategyId: s.id,
     limitPrice,
     chaseSeconds: c.entryPrice === 'offer' ? c.crossAfterSec : 0,
+    // Wait for a tight spread before selling into the bid, and give up at the
+    // close of the entry window rather than resting into the day.
+    maxCrossSpreadPct: c.entryPrice === 'offer' ? (c.maxCrossSpreadPct ?? 0.15) : null,
+    timeoutMs: c.entryPrice === 'offer' && c.crossAfterSec > 0 ? cancelAfterMs : undefined,
     takeProfitPct: c.takeProfitPct,
     stopLossPct: c.stopLossPct,
   });

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  GRACE_MIN, entryDue, exitDue, istDate, istMinutes, istWeekday, lotsPerLeg, nextEntryAt,
+  GRACE_MIN, entryDue, entryWindowEnd, exitDue, istDate, istMinutes, istWeekday, lotsPerLeg, nextEntryAt,
 } from '../../src/strategy/schedule.js';
 import { DEFAULT_CONFIG, type Strategy } from '../../src/strategy/types.js';
 
@@ -72,6 +72,14 @@ test('the grace window is exactly GRACE_MIN, inclusive', () => {
   const edge = THU_0530 + GRACE_MIN * 60_000;
   assert.equal(entryDue(strat(), edge, null).due, true);
   assert.equal(entryDue(strat(), edge + 60_000, null).due, false);
+});
+
+test('the entry window for 05:29 closes at 06:30:00, the same minute entryDue stops', () => {
+  const s = strat({ config: { ...DEFAULT_CONFIG, entryTime: '05:29' } });
+  const end = entryWindowEnd(s, THU_0530);
+  assert.equal(end, ist('2026-09-10T06:30:00'));
+  assert.equal(entryDue(s, end - 1, null).due, true, 'the last millisecond of 06:29 is still inside');
+  assert.equal(entryDue(s, end, null).due, false, '06:30:00 is not');
 });
 
 test('[critical] a day that has run does not run again', () => {
