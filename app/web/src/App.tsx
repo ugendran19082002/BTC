@@ -541,10 +541,6 @@ export default function App() {
                   held={snap.live ? held : undefined}
                 />
               </ErrorBoundary>
-              <div className="note">
-                Tap a price to sell. Age is minutes since the last real trade — a large age means an old price, so trust the mark.
-                Past dates have no bid or ask; the mark is used.
-              </div>
             </>
           )}
         </>

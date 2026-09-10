@@ -37,8 +37,8 @@ function Zero({ leg, sold = false }: { leg: Leg | undefined; sold?: boolean }) {
   if (z === null || p === null) return <td className="zerocol dim">—</td>;
   const cls = p >= 0.97 ? 'up' : p >= 0.9 ? 'warn' : 'down';
   const title = z.outsideTable
-    ? 'Past the range the history covers, so the nearest correction was used'
-    : `${z.sample?.toLocaleString() ?? 0} strikes like this settled; the maths alone said ${(z.model * 100).toFixed(1)}%`;
+    ? 'Beyond the tested range — the nearest estimate is used'
+    : `${z.sample?.toLocaleString() ?? 0} similar strikes settled; the maths alone says ${(z.model * 100).toFixed(1)}%`;
   return (
     <td className={`zerocol ${cls}${sold ? ' sellcell' : ''}`} title={title}>
       {(p * 100).toFixed(1)}%
@@ -96,11 +96,9 @@ function Coverage({ snap }: { snap: SnapshotMeta }) {
   if (!c || !c.truncated) return null;
   return (
     <div className="note" style={{ padding: '8px 12px', margin: 0 }}>
-      Delta lists <b>{c.above} strikes above</b> and <b>{c.below} below</b> the money
-      for this expiry{c.lowest !== null && c.highest !== null && <> ({c.lowest.toLocaleString()}–{c.highest.toLocaleString()})</>},
-      {' '}so asking for {c.requested} each side gets everything there is. The exchange
-      opens a daily contract over a narrow band and adds strikes as BTC moves toward
-      them — nothing is missing from the fetch.
+      Delta lists {c.above} strikes above and {c.below} below the price
+      {c.lowest !== null && c.highest !== null && <> ({c.lowest.toLocaleString()}–{c.highest.toLocaleString()})</>}.
+      {' '}That is all there is for this expiry.
     </div>
   );
 }
@@ -123,7 +121,7 @@ function HeldChip({ held }: { held: HeldLeg }) {
   return (
     <span
       className={`tag held${tone}`}
-      title={`Short ${held.size} of this strike. The unrealised figure is the exchange's own.`}
+      title={`You are short ${held.size} of this strike. P&L at Delta's price.`}
     >
       {held.cp === 'C' ? 'CE' : 'PE'} {held.size}
       {pnl !== null && <> · {signedInr(usdToInr(pnl))}</>}
@@ -264,13 +262,13 @@ export function ChainTable({
           <tr>
             <th className="aux">OI</th><th className="aux">Vol</th><th className="aux">Age</th>
             <th className="aux">Δ</th><th className="aux">IV</th>
-            <th className="zerocol">→ 0</th><th>model</th>
+            <th className="zerocol">→ 0</th><th>Model</th>
             <th className="askcol">Ask</th><th className="aux">Mark</th>
             <th className="bidcol">Bid</th>
             <th></th>
             <th className="bidcol">Bid</th><th className="aux">Mark</th>
             <th className="askcol">Ask</th>
-            <th>model</th><th className="zerocol">→ 0</th>
+            <th>Model</th><th className="zerocol">→ 0</th>
             <th className="aux">IV</th><th className="aux">Δ</th>
             <th className="aux">Age</th><th className="aux">Vol</th><th className="aux">OI</th>
           </tr>
@@ -310,7 +308,7 @@ export function ChainTable({
                   className={`bidcol${sellC ? ' sellcell' : ''}${takeable(c) === false ? ' wide' : ''}`}
                   value={c?.bid}
                   onSell={sell(c, 'C', k)}
-                  title={takeable(c) === false ? 'Too wide to cross — rest at the offer instead' : undefined}
+                  title={takeable(c) === false ? 'Spread too wide — sell at the ask instead' : undefined}
                 />
 
                 <td className="mono strikecell">
@@ -326,7 +324,7 @@ export function ChainTable({
                   className={`bidcol${sellP ? ' sellcell' : ''}${takeable(p) === false ? ' wide' : ''}`}
                   value={p?.bid}
                   onSell={sell(p, 'P', k)}
-                  title={takeable(p) === false ? 'Too wide to cross — rest at the offer instead' : undefined}
+                  title={takeable(p) === false ? 'Spread too wide — sell at the ask instead' : undefined}
                 />
                 <td className="aux">{n(p?.mark ?? null)}</td>
                 <PriceCell className="askcol" value={p?.ask} onSell={sell(p, 'P', k)} />
@@ -344,27 +342,17 @@ export function ChainTable({
       </table>
     </div>
       <div className="note" style={{ padding: '8px 12px', margin: '0 0 12px' }}>
-        {onSell && <><b>Tap a price</b> to open a ticket for that strike.{' '}</>}
+        {onSell && <><b>Tap a price</b> to sell that strike.{' '}</>}
         {maxSpreadPct !== undefined && (
-          <>A <b className="warnbid">struck-through bid</b> is one the spread is too wide to
-          cross — rest at the offer on those instead.{' '}</>
+          <>A <b className="warnbid">crossed-out bid</b> has too wide a spread — sell at the ask instead.{' '}</>
         )}
-        A strike you are <b>already short</b> is marked on its own row with the size and
-        what it is worth right now.{' '}
-        <b className="up">Bid</b> is what you receive when you <b>sell</b>.
-        {' '}<b className="down">Ask</b> is what you pay when you <b>buy</b> — the hedge leg.
-        {' '}Mark is Delta's fair value: use it to judge, never as your fill.
-        {' '}<b className="up">→ 0</b> is the chance this strike expires worthless — the
-        maths, corrected by what really happened to 27,371 strikes like it over 733
-        days. <b>model</b> is the raw maths before that correction. A <b>*</b> means
-        the history does not reach that far, so the nearest correction was used.
-        Open interest and volume tell you whether you can get filled; they do not
-        change these odds.
+        <b className="up">Bid</b> = what you get when you sell.
+        {' '}<b className="up">→ 0</b> = chance it expires worthless, from 733 days of real results.
+        {' '}<b>Model</b> = the maths alone. <b>*</b> = beyond the tested range.
       </div>
       {!hasBook && (
         <div className="note" style={{ padding: '8px 12px', margin: '0 0 12px' }}>
-          No order book on a historical snapshot — bid and ask are live-only, so the
-          mark stands in as the sell estimate here.
+          Past date: no bid or ask, so the mark is used as the sell price.
         </div>
       )}
     </>
