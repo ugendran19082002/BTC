@@ -70,7 +70,7 @@ export function ExitBars({
         onChange={(e) => onTargetOn(e.target.checked)}
         label={
           <span className="flex items-baseline gap-1.5">
-            <span>take profit</span>
+            <span>Take profit</span>
             {targetOn && targetPct > 0 && (
               <span className="text-[12px] font-semibold tabular-nums text-[var(--up)]">
                 −{Math.round(targetPct * 100)}%
@@ -89,10 +89,10 @@ export function ExitBars({
           onChange={onTargetPct}
           detail={
             targetPct === 0 ? (
-              <>Drag to choose how much of the premium you wait to keep.</>
+              <>Drag to set how much of the premium to keep.</>
             ) : (
               <>
-                buys back at <b className="tabular-nums text-foreground">{fmtPrice(targetPrice)}</b>
+                Buys back at <b className="tabular-nums text-foreground">{fmtPrice(targetPrice)}</b>
                 {keep !== null && (
                   <> · you keep <b className="tabular-nums text-[var(--up)]">{inr(usdToInr(keep))}</b>
                     <span className="text-[var(--dim)]"> {usd(keep)}</span></>
@@ -108,7 +108,7 @@ export function ExitBars({
         onChange={(e) => onStopOn(e.target.checked)}
         label={
           <span className="flex items-baseline gap-1.5">
-            <span>stop loss</span>
+            <span>Stop loss</span>
             {stopOn && stopPct > 0 && (
               <span className="text-[12px] font-semibold tabular-nums text-[var(--down)]">
                 +{Math.round(stopPct * 100)}%
@@ -128,17 +128,17 @@ export function ExitBars({
           warn={stopPastCloseOut}
           detail={
             stopPct === 0 ? (
-              <>Drag to choose how far against you it may go.</>
+              <>Drag to set how far it may go against you.</>
             ) : stopPastCloseOut ? (
               <>
                 <b className="text-[var(--down)]">
-                  {fmtPrice(stopPrice)} is past the {fmtPrice(liquidationPrice)} close-out
+                  {fmtPrice(stopPrice)} is past the {fmtPrice(liquidationPrice)} liquidation
                 </b>{' '}
-                — it would never fire. Drag it lower, or use less leverage.
+                — Delta closes you first, so it would never fire. Drag it lower or use less leverage.
               </>
             ) : (
               <>
-                buys back at <b className="tabular-nums text-foreground">{fmtPrice(stopPrice)}</b>
+                Buys back at <b className="tabular-nums text-foreground">{fmtPrice(stopPrice)}</b>
                 {lose !== null && (
                   <> · you lose <b className="tabular-nums text-[var(--down)]">{inr(usdToInr(lose))}</b>
                     <span className="text-[var(--dim)]"> {usd(lose)}</span></>
@@ -151,11 +151,11 @@ export function ExitBars({
         <p className="m-0 pl-[26px] text-[11.5px] leading-snug text-muted-foreground">
           {liquidationPrice != null ? (
             <>
-              No stop — the position ends at the exchange&rsquo;s close-out,{' '}
+              No stop — Delta liquidates the position at{' '}
               <b className="tabular-nums text-[var(--down)]">{fmtPrice(liquidationPrice)}</b>.
             </>
           ) : (
-            <>No stop — the position runs until the exchange closes it.</>
+            <>No stop — the position runs until Delta liquidates it.</>
           )}
         </p>
       )}

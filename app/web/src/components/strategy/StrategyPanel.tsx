@@ -29,13 +29,13 @@ function summarise(s: Strategy): string {
     `${c.lots} lot${c.lots === 1 ? '' : 's'}`,
     `${c.entryTime}→${c.exitTime}`,
     c.entryPrice === 'offer'
-      ? `offer${c.crossAfterSec ? `, cross ${c.crossAfterSec}s` : ', rest'}`
-      : c.entryPrice,
-    c.takeProfitPct > 0 ? `TP ${Math.round(c.takeProfitPct * 100)}%` : 'hold to settle',
+      ? `sell at offer${c.crossAfterSec ? `, market after ${c.crossAfterSec}s` : ', wait'}`
+      : `sell at ${c.entryPrice}`,
+    c.takeProfitPct > 0 ? `target ${Math.round(c.takeProfitPct * 100)}%` : 'hold to expiry',
   ];
-  if (c.stopLossPct > 0) parts.push(`SL ${Math.round(c.stopLossPct * 100)}%`);
-  if (c.probGate !== null) parts.push(`gate ${Math.round(c.probGate * 1000) / 10}%`);
-  if (c.doubleWhenOneSided) parts.push('double survivor');
+  if (c.stopLossPct > 0) parts.push(`stop ${Math.round(c.stopLossPct * 100)}%`);
+  if (c.probGate !== null) parts.push(`min safety ${Math.round(c.probGate * 1000) / 10}%`);
+  if (c.doubleWhenOneSided) parts.push('double if one side');
   return parts.join(' · ');
 }
 
@@ -45,6 +45,8 @@ export function StrategyPanel() {
   const [formOpen, setFormOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
+  // Deleting needs a second tap: a strategy is an evening's work, and a phone invites mis-taps.
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   const act = async (key: string, fn: () => Promise<unknown>) => {
     setBusy(key);
@@ -67,15 +69,15 @@ export function StrategyPanel() {
       <Card>
         <CardTitle
           right={
-            <span className={cn('text-[11px]', data.mode === 'live' ? 'text-[var(--down)]' : 'text-muted-foreground')}>
-              {data.mode === 'live' ? 'real money' : 'paper'}
+            <span className={cn('text-[11px] font-semibold', data.mode === 'live' ? 'text-[var(--down)]' : 'text-[var(--warn)]')}>
+              {data.mode === 'live' ? 'LIVE' : 'PAPER'}
             </span>
           }
         >
-          Scheduler
+          Auto-trading
         </CardTitle>
 
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="m-0 text-[13px] text-foreground">
               {/*
@@ -85,28 +87,29 @@ export function StrategyPanel() {
                 offered no explanation.
               */}
               {data.runnerInstalled === false
-                ? 'The scheduler is not installed on this server — nothing will run whatever this says.'
+                ? 'Not installed on this server — nothing will run.'
                 : data.schedulerOn
-                  ? `On. ${armed} strateg${armed === 1 ? 'y' : 'ies'} may place orders without being asked.`
-                  : 'Off. Nothing runs on a schedule.'}
+                  ? `On — ${armed} strateg${armed === 1 ? 'y' : 'ies'} will place orders automatically.`
+                  : 'Off — nothing runs automatically.'}
             </p>
             <p className="m-0 mt-0.5 text-[11.5px] text-muted-foreground">
-              Today is {data.today} IST. A strategy enters at most once a day, whatever happens in between.
+              Today is {data.today} IST. Each strategy enters at most once a day.
             </p>
           </div>
           <Button
             variant={data.schedulerOn ? 'outline' : 'default'}
+            className="h-9"
             disabled={busy === 'sched'}
             onClick={() => void act('sched', () => setScheduler(!data.schedulerOn))}
           >
             {busy === 'sched' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            {data.schedulerOn ? 'turn off' : 'turn on'}
+            {data.schedulerOn ? 'Turn off' : 'Turn on'}
           </Button>
         </div>
 
         {data.schedulerOn && data.mode === 'live' && (
           <p className="m-0 mt-2 text-[11.5px] font-medium text-[var(--warn)]">
-            The desk will send real orders on this schedule. Nothing else will ask first.
+            Live mode: the desk will place real orders on this schedule without asking.
           </p>
         )}
         {failed && <p className="m-0 mt-2 text-[12px] text-[var(--down)]">{failed}</p>}
@@ -116,7 +119,7 @@ export function StrategyPanel() {
         <CardTitle
           right={
             <Button size="sm" variant="ghost" onClick={() => { setEditing(null); setFormOpen(true); }}>
-              <Plus className="h-3 w-3" /> new
+              <Plus className="h-3 w-3" /> New
             </Button>
           }
         >
@@ -134,30 +137,42 @@ export function StrategyPanel() {
                 <div className="flex items-baseline gap-2">
                   <span className="text-[13.5px] font-semibold text-foreground">{s.name}</span>
                   <span className={cn('text-[11px]', s.enabled ? 'text-[var(--up)]' : 'text-[var(--dim)]')}>
-                    {s.enabled ? 'armed' : 'off'}
+                    {s.enabled ? 'on' : 'off'}
                   </span>
                   {s.ranToday && <span className="text-[11px] text-muted-foreground">ran today</span>}
                 </div>
                 <div className="flex flex-none gap-1.5">
                   <Button
                     size="sm"
+                    className="h-8"
                     variant={s.enabled ? 'outline' : 'default'}
                     disabled={busy === s.id}
                     onClick={() => void act(s.id, () => setStrategyEnabled(s.id, !s.enabled))}
                   >
                     {busy === s.id && <Loader2 className="h-3 w-3 animate-spin" />}
-                    {s.enabled ? 'disarm' : 'arm'}
+                    {s.enabled ? 'Disable' : 'Enable'}
                   </Button>
-                  <Button size="sm" variant="ghost"
+                  <Button size="sm" variant="ghost" className="h-8"
                           onClick={() => { setEditing(s); setFormOpen(true); }}>
-                    <Pencil className="h-3 w-3" /> edit
+                    <Pencil className="h-3 w-3" /> Edit
                   </Button>
                   <Button
                     size="sm" variant="ghost"
+                    className={cn('h-8', confirmDelete === s.id && 'text-[var(--down)]')}
+                    aria-label={confirmDelete === s.id ? 'Confirm delete' : `Delete ${s.name}`}
                     disabled={busy === `del-${s.id}`}
-                    onClick={() => void act(`del-${s.id}`, () => deleteStrategy(s.id))}
+                    onClick={() => {
+                      if (confirmDelete !== s.id) {
+                        setConfirmDelete(s.id);
+                        setTimeout(() => setConfirmDelete((cur) => (cur === s.id ? null : cur)), 4_000);
+                        return;
+                      }
+                      setConfirmDelete(null);
+                      void act(`del-${s.id}`, () => deleteStrategy(s.id));
+                    }}
                   >
                     <Trash2 className="h-3 w-3" />
+                    {confirmDelete === s.id && 'Tap again to delete'}
                   </Button>
                 </div>
               </div>

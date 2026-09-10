@@ -23,16 +23,16 @@ export function MoveSection({ market, snap }: { market: MarketRead; snap: Snapsh
   return (
     <>
       <StatDivider />
-      <SectionTitle>how far it has already moved</SectionTitle>
+      <SectionTitle>How far BTC has moved</SectionTitle>
 
       <div className="-mx-1 overflow-x-auto">
         <table className="w-full text-[11.8px]">
           <thead>
             <tr className="text-[10px] uppercase tracking-wide text-[var(--dim)]">
-              <th className="px-1 py-1 text-left font-normal">when</th>
-              <th className="px-1 py-1 text-right font-normal">moved</th>
+              <th className="px-1 py-1 text-left font-normal">Period</th>
+              <th className="px-1 py-1 text-right font-normal">Change</th>
               <th className="px-1 py-1 text-right font-normal">%</th>
-              <th className="px-1 py-1 text-right font-normal">swing</th>
+              <th className="px-1 py-1 text-right font-normal">Range</th>
             </tr>
           </thead>
           <tbody className="font-mono">
@@ -65,7 +65,7 @@ export function MoveSection({ market, snap }: { market: MarketRead; snap: Snapsh
 
       <StatDivider />
       <Stat
-        label="wildest day this month"
+        label="Biggest day this month"
         value={
           market.max24hRangeUsd === null
             ? '—'
@@ -73,10 +73,10 @@ export function MoveSection({ market, snap }: { market: MarketRead; snap: Snapsh
         }
       />
       <Stat
-        label="yesterday, against what today is priced at"
+        label="Yesterday's range ÷ today's expected move"
         value={ratio === null ? '—' : `${ratio.toFixed(2)}×`}
         tone={ratio === null ? 'plain' : ratio > 2 ? 'warn' : 'up'}
-        hint="Over 733 days the day before moved 1.72x what the market was pricing that morning. A strike one expected move away is not one day's travel away."
+        hint="On average BTC moved 1.72× the expected move. A strike one expected move away is not a full day's move away."
       />
 
       <MoveLadder snap={snap} />
@@ -110,23 +110,23 @@ function MoveLadder({ snap }: { snap: SnapshotMeta }) {
   ] as Row[])
     // a window longer than the contract has left is not one you can hold
     .filter((r) => r.hours < left)
-    .concat([{ label: 'by close', hours: left, last: true }]);
+    .concat([{ label: 'By expiry', hours: left, last: true }]);
 
   const widest = move(rows[rows.length - 1]!.hours) || 1;
 
   return (
     <>
       <StatDivider />
-      <SectionTitle hint="spot x volatility x sqrt(hours / 8760), at today's at-the-money volatility. One standard deviation: BTC stays inside about two times in three. Double it for the 19-in-20 range.">
-        how far it can go from here
+      <SectionTitle hint="spot × volatility × √(hours ÷ 8760), at today's volatility. BTC stays inside about 2 times in 3; double it for 19 in 20.">
+        How far it can move from here
       </SectionTitle>
 
       <div className="mb-1 flex items-baseline justify-between text-[10px] uppercase tracking-wide text-[var(--dim)]">
-        <span>lower</span>
+        <span>Lower</span>
         <span className="font-mono normal-case tracking-normal text-muted-foreground">
-          now {snap.spot.toFixed(0)}
+          Now {snap.spot.toFixed(0)}
         </span>
-        <span>higher</span>
+        <span>Higher</span>
       </div>
 
       {rows.map((r) => {
@@ -158,11 +158,11 @@ function MoveLadder({ snap }: { snap: SnapshotMeta }) {
 
       <div className="mt-1 flex justify-between font-mono text-[11px] text-[var(--dim)]">
         <span>{(snap.spot - widest).toFixed(0)}</span>
-        <span className="text-muted-foreground">2 times in 3, by close</span>
+        <span className="text-muted-foreground">2 in 3 chance inside</span>
         <span>{(snap.spot + widest).toFixed(0)}</span>
       </div>
 
-      <Note>Which way is not shown because it cannot be known. Only how far.</Note>
+      <Note>Direction can't be predicted — only distance.</Note>
     </>
   );
 }

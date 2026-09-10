@@ -34,7 +34,7 @@ describe('off by default', () => {
 
   it('names the close-out as the real exit when there is no stop', () => {
     render(<ExitBars {...base} liquidationPrice={196.5} />);
-    expect(screen.getByText(/close-out/)).toBeInTheDocument();
+    expect(screen.getByText(/liquidates/)).toBeInTheDocument();
     expect(screen.getByText('196.50')).toBeInTheDocument();
   });
 
@@ -74,7 +74,7 @@ describe('the stop', () => {
   it('warns while your thumb is still on it if the stop is past the close-out', () => {
     render(<ExitBars {...base} stopOn stopPct={2} liquidationPrice={25} />);
     expect(screen.getByText(/would never fire/)).toBeInTheDocument();
-    expect(screen.getByText(/past the 25.00 close-out/)).toBeInTheDocument();
+    expect(screen.getByText(/past the 25.00 liquidation/)).toBeInTheDocument();
   });
 
   it('does not warn when the stop sits safely inside the close-out', () => {

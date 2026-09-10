@@ -45,19 +45,19 @@ export function CloseAllButton({ trades, onChanged }: { trades: Trade[]; onChang
       <Button
         size="sm"
         variant="outline"
-        className="border-[var(--down)]/50 text-[var(--down)] hover:bg-[var(--down-bg)]"
+        className="h-9 border-[var(--down)]/50 px-3 text-[var(--down)] hover:bg-[var(--down-bg)]"
         onClick={() => { setResult(null); setOpen(true); }}
       >
-        close everything
+        Close all
       </Button>
 
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent
-          title="Close everything?"
+          title="Close all positions and orders?"
           description={
             [
               held.length && `${held.length} position${held.length === 1 ? '' : 's'}`,
-              working.length && `${working.length} working order${working.length === 1 ? '' : 's'}`,
+              working.length && `${working.length} order${working.length === 1 ? '' : 's'}`,
             ].filter(Boolean).join(' and ') || undefined
           }
         >
@@ -69,7 +69,7 @@ export function CloseAllButton({ trades, onChanged }: { trades: Trade[]; onChang
                 <p className="m-0 flex items-start gap-2 text-[13px] leading-snug text-[var(--down)]">
                   <AlertTriangle className="mt-[2px] h-4 w-4 flex-none" />
                   <span>
-                    Positions are bought back at the market, so you pay the spread on every one.
+                    Positions are bought back at market price, so you pay the spread on each.
                     This cannot be undone.
                   </span>
                 </p>
@@ -80,7 +80,7 @@ export function CloseAllButton({ trades, onChanged }: { trades: Trade[]; onChang
                   <Row
                     key={t.tradeId}
                     name={contractLabel(t.symbol)}
-                    what={`short ${fmtSize(t.position)} at ${price(t.entryAvgPrice)}`}
+                    what={`Sold ${fmtSize(t.position)} @ ${price(t.entryAvgPrice)}`}
                     action="buy back"
                   />
                 ))}
@@ -90,8 +90,8 @@ export function CloseAllButton({ trades, onChanged }: { trades: Trade[]; onChang
                     name={contractLabel(t.symbol)}
                     what={
                       t.plan?.entry.limitPrice != null
-                        ? `offering ${fmtSize(t.plan.lots)} at ${price(t.plan.entry.limitPrice)}`
-                        : 'working'
+                        ? `Selling ${fmtSize(t.plan.lots)} lots @ ${price(t.plan.entry.limitPrice)}`
+                        : 'Not filled yet'
                     }
                     action="cancel"
                   />
@@ -100,7 +100,7 @@ export function CloseAllButton({ trades, onChanged }: { trades: Trade[]; onChang
 
               <SheetFooter>
                 <Button variant="outline" className="h-11 flex-none px-4" onClick={() => setOpen(false)}>
-                  keep them
+                  Keep them
                 </Button>
                 <button
                   onClick={() => void run()}
@@ -113,7 +113,7 @@ export function CloseAllButton({ trades, onChanged }: { trades: Trade[]; onChang
                   )}
                 >
                   {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-                  close everything
+                  Yes, close all
                 </button>
               </SheetFooter>
             </>
@@ -150,7 +150,7 @@ function Report({ result, onDone }: {
         )}
       >
         <p className={cn('m-0 text-[15px] font-semibold', result.ok ? 'text-[var(--up)]' : 'text-[var(--warn)]')}>
-          {result.ok ? 'All clear' : 'Some are still on'}
+          {result.ok ? 'All closed' : 'Some are still open'}
         </p>
         <p className="m-0 mt-1 text-[12.5px] text-muted-foreground">
           {result.closed.length > 0 && <>{result.closed.length} bought back. </>}
@@ -170,12 +170,12 @@ function Report({ result, onDone }: {
       )}
       {!result.ok && (
         <p className="m-0 mt-2 text-[12px] text-muted-foreground">
-          Close what is left by hand, or on Delta directly.
+          Close the rest manually, here or on Delta.
         </p>
       )}
 
       <SheetFooter>
-        <Button variant="outline" className="h-10 flex-1" onClick={onDone}>done</Button>
+        <Button variant="outline" className="h-11 flex-1" onClick={onDone}>Done</Button>
       </SheetFooter>
     </div>
   );

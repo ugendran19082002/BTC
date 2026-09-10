@@ -739,3 +739,10 @@ header.top .top-row-2 { justify-content: space-between; }
   .bar-wrap { margin-bottom: 10px; }
   .note { font-size: 11px; }
 }
+
+/* Phones: 16px text in form fields, or iOS zooms the page in on every tap into
+   a field and leaves it zoomed. The "?" help buttons get a thumb-sized target. */
+@media (max-width: 760px) {
+  input, select, textarea, .field input, .field select { font-size: 16px; }
+  .explain-toggle { width: 22px; height: 22px; font-size: 11px; }
+}

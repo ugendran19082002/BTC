@@ -31,8 +31,9 @@ export function Metric({
               type="button"
               className="explain-toggle"
               aria-expanded={open}
+              aria-label={`About ${label}`}
               onClick={() => setOpen((v) => !v)}
-              title={open ? 'hide the working' : `how ${label} is worked out`}
+              title={open ? 'Hide details' : `How ${label} is worked out`}
             >
               ?
             </button>
@@ -76,8 +77,9 @@ export function Field({
             type="button"
             className="explain-toggle"
             aria-expanded={open}
+            aria-label={`About ${label}`}
             onClick={() => setOpen((v) => !v)}
-            title={open ? 'hide' : `what ${label} means`}
+            title={open ? 'Hide' : `What ${label} means`}
           >
             ?
           </button>

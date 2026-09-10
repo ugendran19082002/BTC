@@ -8,6 +8,7 @@ import { Card, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Checkbox } from '@/components/ui/checkbox';
+import { KV } from '@/components/ui/kv';
 import { ago, stamp } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -26,6 +27,33 @@ const ICON: Record<ErrorSource, typeof Server> = {
   exchange: Landmark,
   trading: Activity,
 };
+
+const SOURCE_LABEL: Record<ErrorSource, string> = {
+  server: 'Server',
+  browser: 'Browser',
+  exchange: 'Delta',
+  trading: 'Trading',
+};
+
+/**
+ * What a known error means, in one plain sentence -- so the log answers "do I
+ * need to do anything" before anyone opens a stack trace.
+ */
+function meaningOf(row: ErrorRow): string | null {
+  if (row.code === 'network') {
+    return 'The connection between this device and the desk dropped. Usually weak signal or a restart; only a concern if it keeps happening.';
+  }
+  if (row.code === 'RequestTimedOut') {
+    return 'Delta did not answer in time. Reads are retried once automatically; nothing is ever sent twice.';
+  }
+  if (row.code === 'RateLimited') return 'Delta asked the desk to slow down. It waits, then tries again.';
+  if (row.code === 'NotConfigured') return 'No Delta API key is set on the server, so account data is off.';
+  if (row.source === 'exchange' && /refused/i.test(row.message)) {
+    return 'Delta rejected the request. The message says which field it did not accept.';
+  }
+  if (row.code && /^5\d\d$/.test(row.code)) return 'The desk server hit a problem answering. The stack trace below shows where.';
+  return null;
+}
 
 const SOURCE_TONE: Record<ErrorSource, string> = {
   server: 'text-[var(--accent)]',
@@ -57,7 +85,7 @@ export function ErrorLogPanel() {
                   variant="ghost"
                   onClick={() => { void resolveAllErrors().then(() => refresh()); }}
                 >
-                  mark all read
+                  Mark all read
                 </Button>
               )}
               <Button
@@ -67,7 +95,7 @@ export function ErrorLogPanel() {
                 onClick={() => { void deleteAllErrors().then(() => refresh()); }}
               >
                 <Trash2 className="h-3 w-3" />
-                clear
+                Clear all
               </Button>
             </span>
           ) : null
@@ -84,12 +112,12 @@ export function ErrorLogPanel() {
           className="flex"
         >
           <ToggleGroupItem value="all">
-            all
+            All
             <Count n={data?.summary.unresolved} />
           </ToggleGroupItem>
           {(['server', 'browser', 'exchange', 'trading'] as const).map((s) => (
             <ToggleGroupItem key={s} value={s}>
-              {s}
+              {SOURCE_LABEL[s]}
               <Count n={data?.summary.bySource[s]} />
             </ToggleGroupItem>
           ))}
@@ -98,13 +126,13 @@ export function ErrorLogPanel() {
           className="ml-auto"
           checked={resolved}
           onChange={(e) => setResolved(e.target.checked)}
-          label="show read"
+          label="Show read"
         />
       </div>
 
       {rows.length === 0 ? (
         <p className="m-0 py-4 text-center text-[13px] text-muted-foreground">
-          Nothing has failed{source === 'all' ? '' : ` in ${source}`}.
+          No errors{source === 'all' ? '' : ` from ${SOURCE_LABEL[source]}`}. All good.
         </p>
       ) : (
         <div className="flex flex-col gap-1.5">
@@ -145,7 +173,7 @@ function ErrorRowView({ row, onResolved }: { row: ErrorRow; onResolved: () => vo
       <Collapsible.Trigger
         className={cn(
           'flex w-full appearance-none items-start gap-2 border-0 bg-transparent',
-          'p-2.5 text-left font-[inherit]',
+          'p-3 text-left font-[inherit]',
         )}
       >
         <ChevronRight className={cn('mt-[3px] h-3.5 w-3.5 flex-none text-muted-foreground transition-transform', open && 'rotate-90')} />
@@ -159,25 +187,29 @@ function ErrorRowView({ row, onResolved }: { row: ErrorRow; onResolved: () => vo
             {row.count > 1 && <> · <b className="text-[var(--warn)]">{row.count}×</b></>}
             {row.code && <> · {row.code}</>}
           </span>
+          {meaningOf(row) && (
+            <span className="mt-1 block text-[11.5px] leading-snug text-muted-foreground">{meaningOf(row)}</span>
+          )}
         </span>
       </Collapsible.Trigger>
 
       <Collapsible.Content>
-        <div className="border-t border-border px-2.5 py-2">
-          <dl className="m-0 mb-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
-            <Field label="first seen" value={stamp(row.firstSeen)} />
-            <Field label="last seen" value={stamp(row.lastSeen)} />
+        <div className="border-t border-border px-3 py-2">
+          <dl className="m-0 mb-2 grid gap-1">
+            <KV label="First seen">{stamp(row.firstSeen)}</KV>
+            <KV label="Last seen">{stamp(row.lastSeen)}</KV>
           </dl>
 
           {row.context && (
-            <Block title="context">{JSON.stringify(row.context, null, 2)}</Block>
+            <Block title="Details">{JSON.stringify(row.context, null, 2)}</Block>
           )}
-          {row.stack && <Block title="stack">{row.stack}</Block>}
+          {row.stack && <Block title="Stack trace">{row.stack}</Block>}
 
           <div className="mt-2 flex gap-2">
             <Button
               size="sm"
               variant="outline"
+              className="h-9"
               onClick={() => {
                 void navigator.clipboard?.writeText(asText).then(() => {
                   setCopied(true);
@@ -186,25 +218,26 @@ function ErrorRowView({ row, onResolved }: { row: ErrorRow; onResolved: () => vo
               }}
             >
               {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-              {copied ? 'copied' : 'copy'}
+              {copied ? 'Copied' : 'Copy'}
             </Button>
             {!row.resolved && (
               <Button
                 size="sm"
                 variant="ghost"
+                className="h-9"
                 onClick={() => { void resolveError(row.id).then(onResolved); }}
               >
-                mark read
+                Mark read
               </Button>
             )}
             <Button
               size="sm"
               variant="ghost"
-              className="ml-auto text-[var(--down)] hover:bg-[var(--down-bg)]"
+              className="ml-auto h-9 text-[var(--down)] hover:bg-[var(--down-bg)]"
               onClick={() => { void deleteError(row.id).then(onResolved); }}
             >
               <Trash2 className="h-3 w-3" />
-              delete
+              Delete
             </Button>
           </div>
         </div>
@@ -220,15 +253,6 @@ function Count({ n }: { n?: number }) {
     <span className="rounded-full bg-background px-1.5 text-[10.5px] font-semibold tabular-nums text-muted-foreground">
       {n}
     </span>
-  );
-}
-
-function Field({ label, value }: { label: string; value: string }) {
-  return (
-    <>
-      <dt className="m-0 text-muted-foreground">{label}</dt>
-      <dd className="m-0 tabular-nums text-foreground">{value}</dd>
-    </>
   );
 }
 

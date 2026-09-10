@@ -44,8 +44,8 @@ beforeEach(() => {
 describe('opening it', () => {
   it('shows the level that is actually on the book', () => {
     render(<EditExitsSheet trade={trade()} open onOpenChange={() => {}} />);
-    expect(screen.getByText('on the book now · target').nextSibling).toHaveTextContent('1.90');
-    expect(screen.getByText('on the book now · stop').nextSibling).toHaveTextContent('none');
+    expect(screen.getByText('On Delta now · target').nextSibling).toHaveTextContent('1.90');
+    expect(screen.getByText('On Delta now · stop').nextSibling).toHaveTextContent('none');
   });
 
   it('seeds the bar from that level, not from a default', () => {
@@ -62,15 +62,15 @@ describe('opening it', () => {
       trade={trade({ plan: { ...trade().plan!, stopPrice: 80 }, onBook: { target: 1.9, stop: null } })}
       open onOpenChange={() => {}}
     />);
-    expect(screen.getByText('on the book now · stop').nextSibling).toHaveTextContent('none');
+    expect(screen.getByText('On Delta now · stop').nextSibling).toHaveTextContent('none');
   });
 
   it('says so when the desk and the book disagree', () => {
     // the case that made this panel worth having: the plan said 1.90 while
     // Delta's book held 20.80
     render(<EditExitsSheet trade={trade({ onBook: { target: 20.8, stop: null } })} open onOpenChange={() => {}} />);
-    expect(screen.getByText('on the book now · target').nextSibling).toHaveTextContent('20.80');
-    expect(screen.getByText(/asked for 1.90 and the book holds 20.80/)).toBeInTheDocument();
+    expect(screen.getByText('On Delta now · target').nextSibling).toHaveTextContent('20.80');
+    expect(screen.getByText(/asked for 1.90 but Delta holds 20.80/)).toBeInTheDocument();
   });
 
   it('[critical] the bar shows the book, not the plan, when they differ', () => {
@@ -109,7 +109,7 @@ describe('[critical] the poll must not undo your drag', () => {
     slider.focus();
     fireEvent.keyDown(slider, { key: 'ArrowLeft' });
 
-    fireEvent.click(screen.getByRole('button', { name: /move them/i }));
+    fireEvent.click(screen.getByRole('button', { name: /save exits/i }));
     await waitFor(() => expect(updateExits).toHaveBeenCalled());
     const [, pct] = updateExits.mock.calls[0]!;
     expect(pct.takeProfitPct).toBeLessThan(0.94);
@@ -139,7 +139,7 @@ describe('saving', () => {
   it('turns a bar that is off into a zero, which means off', async () => {
     render(<EditExitsSheet trade={trade()} open onOpenChange={() => {}} />);
     fireEvent.click(screen.getByRole('checkbox', { name: /take profit/i }));
-    fireEvent.click(screen.getByRole('button', { name: /move them/i }));
+    fireEvent.click(screen.getByRole('button', { name: /save exits/i }));
     await waitFor(() => expect(updateExits).toHaveBeenCalledWith('t1', { takeProfitPct: 0, stopLossPct: 0 }));
   });
 
@@ -147,7 +147,7 @@ describe('saving', () => {
     const onOpenChange = vi.fn();
     const onSaved = vi.fn();
     render(<EditExitsSheet trade={trade()} open onOpenChange={onOpenChange} onSaved={onSaved} />);
-    fireEvent.click(screen.getByRole('button', { name: /move them/i }));
+    fireEvent.click(screen.getByRole('button', { name: /save exits/i }));
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
@@ -156,7 +156,7 @@ describe('saving', () => {
     updateExits.mockRejectedValue(new Error('no such trade'));
     const onOpenChange = vi.fn();
     render(<EditExitsSheet trade={trade()} open onOpenChange={onOpenChange} />);
-    fireEvent.click(screen.getByRole('button', { name: /move them/i }));
+    fireEvent.click(screen.getByRole('button', { name: /save exits/i }));
     await waitFor(() => expect(screen.getByText('no such trade')).toBeInTheDocument());
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });
@@ -185,7 +185,7 @@ describe('the live figures', () => {
 
   it('shows the mark, so the level is set against something', () => {
     render(<EditExitsSheet trade={withLive()} open onOpenChange={() => {}} />);
-    expect(screen.getByText('now')).toBeInTheDocument();
+    expect(screen.getByText('Price now')).toBeInTheDocument();
     expect(screen.getByText('17.50')).toBeInTheDocument();
   });
 
@@ -203,7 +203,7 @@ describe('the live figures', () => {
   it('says how far the mark still has to fall', () => {
     // seeded from the book at 16.30 against a mark of 17.50
     render(<EditExitsSheet trade={withLive()} open onOpenChange={() => {}} />);
-    expect(screen.getByText('to target')).toBeInTheDocument();
+    expect(screen.getByText('To target')).toBeInTheDocument();
     expect(screen.getByText('1.20')).toBeInTheDocument();
   });
 

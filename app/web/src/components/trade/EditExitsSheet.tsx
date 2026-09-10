@@ -126,8 +126,8 @@ export function EditExitsSheet({ trade, open, onOpenChange, onSaved }: {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
-        title={`Exits for ${contractLabel(trade.symbol)}`}
-        description={`short ${Math.abs(trade.position)} at ${price(entry)}`}
+        title={`Edit exits · ${contractLabel(trade.symbol)}`}
+        description={`Sold ${Math.abs(trade.position)} @ ${price(entry)}`}
       >
         {/*
           Where the position actually is, in the exchange's own numbers and in
@@ -136,21 +136,21 @@ export function EditExitsSheet({ trade, open, onOpenChange, onSaved }: {
           the trade object is refreshed by the poll, so these tick.
         */}
         <div className="mb-3 grid grid-cols-3 gap-2 rounded-lg bg-muted px-2.5 py-2">
-          <Figure label="now" value={price(mark)} />
+          <Figure label="Price now" value={price(mark)} />
           <Figure
-            label="profit"
+            label="P&L"
             value={signedInr(usdToInr(pnl))}
             second={signedUsd(pnl)}
             tone={pnl == null || pnl === 0 ? undefined : pnl > 0 ? 'up' : 'down'}
           />
           <Figure
-            label="to target"
+            label="To target"
             // Points still to fall, as a plain number -- a signed one invites the
             // reader to work out which direction is good, and the answer differs
             // for a short.
             value={toTarget === null ? '—' : toTarget > 0 ? toTarget.toFixed(2) : 'reached'}
             tone={toTarget !== null && toTarget <= 0 ? 'up' : undefined}
-            hint="How far the mark still has to fall before the target is reached."
+            hint="How far the price still has to fall to reach the target."
           />
         </div>
 
@@ -176,13 +176,13 @@ export function EditExitsSheet({ trade, open, onOpenChange, onSaved }: {
         */}
         <dl className="m-0 mt-3 grid gap-1 rounded-lg bg-muted px-2.5 py-2 text-[12px]">
           <div className="flex justify-between gap-3">
-            <dt className="m-0 text-muted-foreground">on the book now · target</dt>
+            <dt className="m-0 text-muted-foreground">On Delta now · target</dt>
             <dd className="m-0 tabular-nums text-foreground">
               {liveTarget !== null ? price(liveTarget) : 'none'}
             </dd>
           </div>
           <div className="flex justify-between gap-3">
-            <dt className="m-0 text-muted-foreground">on the book now · stop</dt>
+            <dt className="m-0 text-muted-foreground">On Delta now · stop</dt>
             <dd className="m-0 tabular-nums text-foreground">
               {liveStop !== null ? price(liveStop) : 'none'}
             </dd>
@@ -200,23 +200,22 @@ export function EditExitsSheet({ trade, open, onOpenChange, onSaved }: {
 
         {drifted && (
           <p className="m-0 mt-2 text-[11.5px] leading-snug text-[var(--warn)]">
-            The desk asked for {price(asked)} and the book holds {price(liveTarget)}. The book is
-            what will fill; moving them again will bring the two together.
+            You asked for {price(asked)} but Delta holds {price(liveTarget)}. Delta's order is what
+            will fill — save again to bring them together.
           </p>
         )}
         <p className="m-0 mt-2 text-[11.5px] leading-snug text-muted-foreground">
-          The order is moved in place rather than cancelled and replaced, so it never leaves the
-          book.
+          Orders are edited in place, so the position is never left without them.
         </p>
         {failed && <p className="m-0 mt-2 text-[12px] text-[var(--down)]">{failed}</p>}
 
         <SheetFooter>
           <Button variant="outline" className="h-11 flex-none px-4" onClick={() => onOpenChange(false)}>
-            cancel
+            Cancel
           </Button>
           <Button className="h-11 flex-1" disabled={busy} onClick={() => void save()}>
             {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-            move them
+            Save exits
           </Button>
         </SheetFooter>
       </SheetContent>

@@ -36,10 +36,8 @@ export function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
   return (
     <div className="mx-auto flex min-h-[70vh] w-full max-w-[380px] flex-col justify-center px-4">
       <div className="mb-5">
-        <h1 className="m-0 text-[19px] font-semibold tracking-[-0.2px]">BTC Options Desk</h1>
-        <p className="mt-1 mb-0 text-[12px] text-muted-foreground">
-          Delta Exchange India · sign in to continue
-        </p>
+        <h1 className="m-0 text-[20px] font-semibold tracking-[-0.2px]">BTC Desk</h1>
+        <p className="mt-1 mb-0 text-[13px] text-muted-foreground">Delta Exchange India</p>
       </div>
 
       <Card>
@@ -47,11 +45,9 @@ export function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
 
         <form onSubmit={submit} className="flex flex-col gap-3">
           <label className="flex flex-col gap-1.5">
-            <span className="text-[10.5px] uppercase tracking-[0.6px] text-[var(--dim)]">
-              username
-            </span>
+            <span className="text-[12px] text-muted-foreground">Username</span>
             <input
-              className="h-9 rounded-md border border-border bg-[var(--bg)] px-2.5 font-mono text-[13px] text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              className="h-11 rounded-md border border-border bg-[var(--bg)] px-3 text-[16px] text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               autoComplete="username"
@@ -64,12 +60,10 @@ export function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
           </label>
 
           <label className="flex flex-col gap-1.5">
-            <span className="text-[10.5px] uppercase tracking-[0.6px] text-[var(--dim)]">
-              password
-            </span>
+            <span className="text-[12px] text-muted-foreground">Password</span>
             <input
               type="password"
-              className="h-9 rounded-md border border-border bg-[var(--bg)] px-2.5 font-mono text-[13px] text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              className="h-11 rounded-md border border-border bg-[var(--bg)] px-3 text-[16px] text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password"
@@ -83,14 +77,13 @@ export function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
             </div>
           )}
 
-          <Button type="submit" disabled={busy} className="mt-1 h-9">
-            {busy ? 'checking…' : 'Sign in'}
+          <Button type="submit" disabled={busy} className="mt-1 h-11 text-[15px]">
+            {busy ? 'Signing in…' : 'Sign in'
           </Button>
         </form>
 
         <Note tone="dim">
-          Eight wrong attempts locks this address out for ten minutes. The session
-          lasts a day, then asks again.
+          After 8 wrong tries, sign-in is blocked for 10 minutes. You stay signed in for a day.
         </Note>
       </Card>
     </div>

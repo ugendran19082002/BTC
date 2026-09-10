@@ -18,8 +18,8 @@ export function BiasSection({ bias }: { bias: Bias }) {
   return (
     <>
       <StatDivider />
-      <SectionTitle hint="Over 12 hours this barely predicts anything. Background, never the reason to trade.">
-        which way the option board leans · background only
+      <SectionTitle hint="Over 12 hours this barely predicts anything. For information only, never a reason to trade.">
+        Market lean · for info only
       </SectionTitle>
 
       <CardLead tone={tone}>{bias.label}</CardLead>
