@@ -35,7 +35,7 @@ export function RecommendPanel({
     return (
       <CollapsibleCard id="sell" title="What to sell">
         <p className="m-0 text-[13.5px] text-foreground">{rec.why}</p>
-        <Note>Skipping is a choice too — quiet boards often came before big moves.</Note>
+        <Note>Not trading is a valid choice — quiet days often come before big moves.</Note>
       </CollapsibleCard>
     );
   }
@@ -68,7 +68,7 @@ export function RecommendPanel({
     >
       {rec.sides.length === 1 && (
         <Note tone="warn">
-          Only {rec.sides[0]!.side} qualifies today, so all lots go there. This is normal in Safest mode.
+          Only {rec.sides[0]!.side} qualifies today, so all lots go there. Normal in Safest mode.
         </Note>
       )}
 
@@ -112,7 +112,7 @@ export function RecommendPanel({
               {s.leg.zero && !s.leg.zero.comparableHorizon && (
                 <>
                   <br />
-                  <span className="text-[var(--warn)]">Tested on 12-hour trades; this one runs longer, so use it as a guide</span>
+                  <span className="text-[var(--warn)]">Tested on 12-hour trades; this one runs longer — treat as a guide</span>
                 </>
               )}
             </span>
@@ -120,20 +120,20 @@ export function RecommendPanel({
 
           <StatDivider />
           {s.askPrice !== null && s.askPrice !== s.price && (
-            <Stat label="Fills now at" value={s.price.toFixed(2)} tone="dim" hint="The bid. All figures below use it." />
+            <Stat label="Sells now at (bid)" value={s.price.toFixed(2)} tone="dim" hint="The bid. All figures below use it." />
           )}
-          <Stat label="Ends out of the money" value={pct(s.pExpireWorthless, 2)} tone={tone(s.pExpireWorthless)} hint="The maths model (N(d2)), not delta." />
+          <Stat label="Expires worthless (model)" value={pct(s.pExpireWorthless, 2)} tone={tone(s.pExpireWorthless)} hint="The maths model alone, before real results correct it." />
           <Stat
-            label="Touches the strike on the way"
+            label="Touches strike before expiry"
             value={pct(s.pTouch, 1)}
             tone={s.pTouch !== null && s.pTouch > 0.2 ? 'warn' : 'plain'}
             hint="It can touch and come back. Still a win if it ends out of the money."
           />
-          <Stat label="Premium near zero early" value={pct(s.pNearZero, 1)} hint="Simulated. A chance to close early and keep most of the premium." />
-          <Stat label="Distance from price" value={`${s.leg.distancePct >= 0 ? '+' : ''}${s.leg.distancePct.toFixed(2)}%`} tone="dim" />
+          <Stat label="Chance to close early" value={pct(s.pNearZero, 1)} hint="Simulated: the premium drops near zero before expiry, so you could close early and keep most of it." />
+          <Stat label="Distance from BTC price" value={`${s.leg.distancePct >= 0 ? '+' : ''}${s.leg.distancePct.toFixed(2)}%`} tone="dim" />
           <Stat label="Break-even" value={s.breakeven.toFixed(0)} tone="dim" />
           <Stat
-            label="Max loss here"
+            label="Max loss on this leg"
             value={s.maxLoss === null ? 'No limit' : money(s.maxLoss, usdinr)}
             tone={s.maxLoss === null ? 'down' : 'warn'}
           />

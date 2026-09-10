@@ -285,7 +285,7 @@ export function OrderTicket({
         title={`Sell ${strike(seed.strike)} ${seed.side}`}
         description={
           preview?.product
-            ? `${countdown(preview.product.expiryTs * 1000)} · ${preview.mode === 'live' ? 'real money' : 'paper'}`
+            ? `${countdown(preview.product.expiryTs * 1000)} · ${preview.mode === 'live' ? 'LIVE' : 'PAPER'}`
             : undefined
         }
       >
@@ -301,21 +301,21 @@ export function OrderTicket({
             <BookStrip bid={book.bid} mark={book.mark} ask={book.ask} mode={mode} onPick={setMode} />
 
             <div className="mt-3.5">
-              <Label>price</Label>
+              <Label>Price</Label>
               <ToggleGroup
                 type="single"
                 value={mode}
                 onValueChange={(v) => v && setMode(v as PriceMode)}
                 className="mt-1 flex w-full"
               >
-                <ToggleGroupItem value="now">now</ToggleGroupItem>
-                <ToggleGroupItem value="ask">offer</ToggleGroupItem>
-                <ToggleGroupItem value="custom">set</ToggleGroupItem>
+                <ToggleGroupItem value="now">Bid</ToggleGroupItem>
+                <ToggleGroupItem value="ask">Offer</ToggleGroupItem>
+                <ToggleGroupItem value="custom">My price</ToggleGroupItem>
               </ToggleGroup>
               <p className="m-0 mt-1.5 text-[11.5px] leading-snug text-muted-foreground">
-                {mode === 'now' && `Takes the ${price(book.bid)} bid immediately. Never fills below it — a limit is a floor, so there is no slippage.`}
-                {mode === 'ask' && `Offers at ${price(book.ask)}. Earns the spread if someone takes it.`}
-                {mode === 'custom' && 'Your own price. Rounded to the tick before it is sent.'}
+                {mode === 'now' && `Sells at the ${price(book.bid)} bid right away. Never below it, so no slippage.`}
+                {mode === 'ask' && `Offers at ${price(book.ask)}. A better price if someone takes it.`}
+                {mode === 'custom' && 'Your own price, rounded to the tick.'}
               </p>
               {mode === 'custom' && (
                 <Input
@@ -337,7 +337,7 @@ export function OrderTicket({
                     onChange={(e) => setConvertOn(e.target.checked)}
                     label={
                       <span className="flex flex-wrap items-center gap-1.5">
-                        <span>if it has not filled, cross after</span>
+                        <span>If not filled, sell at bid after</span>
                         <input
                           type="text"
                           inputMode="numeric"
@@ -362,18 +362,18 @@ export function OrderTicket({
                   <p className="m-0 pl-[26px] text-[11.5px] leading-snug text-muted-foreground">
                     {convertOn
                       ? <>
-                          Waits {convertSec}s at {price(limitPrice)} for someone to take it — worth
-                          about {spreadGain === null ? 'more' : `${Math.round(spreadGain * 100)}%`} extra —
-                          then takes the bid, which is what the record was measured at.
+                          Waits {convertSec}s at {price(limitPrice)} — about{' '}
+                          {spreadGain === null ? 'more' : `${Math.round(spreadGain * 100)}%`} more premium if someone takes it —
+                          then sells at the bid.
                         </>
-                      : 'Off: the order waits for as long as it takes, and may never fill.'}
+                      : 'Off: the order waits until someone takes it, and may never fill.'}
                   </p>
                 </div>
               )}
             </div>
 
             <div className="mt-3.5">
-              <Label>lots</Label>
+              <Label>Lots</Label>
               <div className="mt-1 flex items-center gap-2">
                 <Stepper onClick={() => step(-1)} disabled={lots <= 1} label="one fewer lot">
                   <Minus className="h-4 w-4" />
@@ -424,7 +424,7 @@ export function OrderTicket({
                       lots === cap && 'border-[var(--accent)] text-foreground',
                     )}
                   >
-                    max
+                    Max
                   </button>
                 )}
               </div>
@@ -438,14 +438,14 @@ export function OrderTicket({
             </div>
 
             <div className="mt-3.5">
-              <Label>leverage</Label>
+              <Label>Leverage</Label>
               <div className="mt-1">
                 <Select ariaLabel="leverage" value={String(leverage)} onValueChange={(v) => setLeverage(Number(v))}>
                   {LEVERAGE_STEPS.map((n) => (
                     <SelectItem
                       key={n}
                       value={String(n)}
-                      hint={n >= LOUD_LEVERAGE ? 'little room before the close-out' : undefined}
+                      hint={n >= LOUD_LEVERAGE ? 'close to liquidation' : undefined}
                     >
                       {n}x
                     </SelectItem>
@@ -475,36 +475,44 @@ export function OrderTicket({
             <Separator className="my-3" />
 
             <dl className="m-0 grid gap-1.5">
-              <Line label="you get" value={inr(usdToInr(credit))} second={usd(credit)} strong tone="up" />
+              <Line label="You get" value={inr(usdToInr(credit))} second={usd(credit)} strong tone="up" />
+              {preview?.entryChargesUsd != null && (
+                <Line
+                  label="Delta charges to open"
+                  value={inr(usdToInr(preview.entryChargesUsd))}
+                  second={usd(preview.entryChargesUsd)}
+                  hint="Delta's fee plus 18% GST on this order. Closing costs about the same again."
+                />
+              )}
               <Line
-                label="margin needed"
+                label="Margin needed"
                 value={inr(usdToInr(preview?.marginUsd))}
                 second={usd(preview?.marginUsd)}
                 hint={`Delta calls this "Funds req." It is held while the position is open and given back when it closes.`}
                 tone={short ? 'down' : undefined}
               />
               <Line
-                label="available margin"
+                label="Available"
                 value={inr(usdToInr(balanceUsd))}
                 second={usd(balanceUsd)}
                 hint={`What is free in the account right now. Delta calls this "Available Margin".`}
                 tone={short ? 'down' : undefined}
               />
               <Line
-                label="they close you at"
+                label="Liquidation price"
                 value={price(preview?.liquidationPrice)}
                 tone={room !== null && room < 2 ? 'down' : undefined}
-                hint="The price at which the exchange buys your position back, whether you want it to or not. Lower leverage moves this further away."
+                hint="Delta buys your position back at this price, whether you want it or not. Lower leverage moves it further away."
               />
               <Line
-                label={stopOn && stopPct > 0 ? 'worst case' : 'worst case, no stop'}
+                label={stopOn && stopPct > 0 ? 'Worst case' : 'Worst case (no stop)'}
                 value={preview?.worstCaseLossUsd != null ? signedInr(usdToInr(-preview.worstCaseLossUsd)) : '—'}
                 second={preview?.worstCaseLossUsd != null ? signedUsd(-preview.worstCaseLossUsd) : undefined}
                 tone="down"
                 hint={
                   stopOn && stopPct > 0
                     ? 'What the stop costs you if it fires.'
-                    : 'With no stop, the position ends where the exchange closes it. That is the cap.'
+                    : 'With no stop, liquidation is where it ends. That is the cap.'
                 }
               />
             </dl>
@@ -536,7 +544,7 @@ export function OrderTicket({
 
             <SheetFooter>
               <Button variant="outline" className="h-11 flex-none px-4" onClick={() => onOpenChange(false)}>
-                cancel
+                Cancel
               </Button>
               <button
                 onClick={() => void submit()}
@@ -549,7 +557,7 @@ export function OrderTicket({
                 )}
               >
                 {placing || checking ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                {placing ? 'sending' : blocked ? 'cannot sell' : `Sell · ${inr(usdToInr(credit))}`}
+                {placing ? 'Sending…' : blocked ? 'Can’t sell' : `Sell · ${inr(usdToInr(credit))}`}
               </button>
             </SheetFooter>
           </>
@@ -580,14 +588,14 @@ function LeverageNote({ leverage, room, liquidation }: {
       {loud && <Zap className="mt-[2px] h-3.5 w-3.5 flex-none" />}
       <span>
         {liquidation === null || room === null ? (
-          <>Sets the margin held, and how far this can move before it is closed out.</>
+          <>Sets the margin held, and how far the price can move before liquidation.</>
         ) : (
           <>
-            Closed out at <b className="tabular-nums">{price(liquidation)}</b> — a{' '}
+            Liquidated at <b className="tabular-nums">{price(liquidation)}</b> — a{' '}
             <b>{((room - 1) * 100).toFixed(0)}%</b> move.{' '}
             {loud
               ? 'Lower leverage holds more margin and gives the trade more room.'
-              : 'You lose the same either way; leverage only moves this line.'}
+              : 'Your loss is the same either way; leverage only moves this price.'}
           </>
         )}
       </span>
@@ -624,15 +632,15 @@ function BookStrip({ bid, mark, ask, mode, onPick }: {
   return (
     <div className="flex overflow-hidden rounded-lg border border-border bg-muted">
       <button className={cn(cell, mode === 'now' && 'bg-background')} onClick={() => onPick('now')}>
-        <span className="text-[10px] uppercase tracking-[0.6px] text-muted-foreground">bid</span>
+        <span className="text-[10px] uppercase tracking-[0.6px] text-muted-foreground">Bid</span>
         <span className="text-[15px] font-semibold tabular-nums text-[var(--down)]">{price(bid)}</span>
       </button>
       <div className={cn(cell, 'pointer-events-none')}>
-        <span className="text-[10px] uppercase tracking-[0.6px] text-muted-foreground">mark</span>
+        <span className="text-[10px] uppercase tracking-[0.6px] text-muted-foreground">Mark</span>
         <span className="text-[15px] font-semibold tabular-nums text-foreground">{price(mark)}</span>
       </div>
       <button className={cn(cell, mode === 'ask' && 'bg-background')} onClick={() => onPick('ask')}>
-        <span className="text-[10px] uppercase tracking-[0.6px] text-muted-foreground">ask</span>
+        <span className="text-[10px] uppercase tracking-[0.6px] text-muted-foreground">Ask</span>
         <span className="text-[15px] font-semibold tabular-nums text-[var(--up)]">{price(ask)}</span>
       </button>
     </div>
@@ -706,7 +714,7 @@ function Placed({ result, onDone, working, lots }: {
           )}
         >
           {filled ? `Sold ${Math.abs(t.position)} at ${price(t.entryAvgPrice)}`
-            : resting ? 'Waiting on the book'
+            : resting ? 'Order placed — waiting to fill'
             : 'Nothing was sent'}
         </p>
 
@@ -714,8 +722,8 @@ function Placed({ result, onDone, working, lots }: {
           {filled && <>You are short {Math.abs(t.position)} contract{Math.abs(t.position) === 1 ? '' : 's'}.</>}
           {resting && (
             <>
-              {lots} lot{lots === 1 ? '' : 's'} offered at {price(working)}. Nothing has traded
-              yet — it fills when someone takes it, and you are not short until then.
+              {lots} lot{lots === 1 ? '' : 's'} offered at {price(working)}. Not filled yet — you are
+              not short until someone takes it.
             </>
           )}
           {!ok && <>No position was opened and no margin was used.</>}
@@ -733,18 +741,18 @@ function Placed({ result, onDone, working, lots }: {
 
       {ok && (
         <p className="m-0 mt-2.5 text-[12px] text-muted-foreground">
-          {resting ? 'It will appear under Positions the moment it fills.' : 'Watch it under Positions.'}
+          {resting ? 'It shows under Positions once it fills.' : 'See it under Positions.'}
         </p>
       )}
       {result.mode === 'paper' && (
         <p className="m-0 mt-1.5 text-[12px] text-[var(--warn)]">
-          Paper. Nothing reached the exchange.
+          Paper trade — nothing reached Delta.
         </p>
       )}
 
       <SheetFooter>
         {/* An acknowledgement, not an action. The loud button was the Sell one. */}
-        <Button variant="outline" className="h-10 flex-1" onClick={onDone}>done</Button>
+        <Button variant="outline" className="h-11 flex-1" onClick={onDone}>Done</Button>
       </SheetFooter>
     </div>
   );

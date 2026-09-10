@@ -169,6 +169,8 @@ export type Preview = {
   /** BTC per contract. A quoted price times this is the money. */
   contractValue: number;
   creditUsd: number;
+  /** Delta's fee + 18% GST to open this order. */
+  entryChargesUsd?: number | null;
   worstCaseLossUsd: number | null;
   stopPrice: number | null;
   takeProfitPrice: number | null;

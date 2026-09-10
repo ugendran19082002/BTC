@@ -31,11 +31,14 @@ export function usd(n: number | null | undefined, dash = '—'): string {
   return `$${n.toFixed(3)}`;
 }
 
+/** + for a gain, − for a loss, and nothing for zero: "+$0.00" reads as a gain that is not there. */
+const signOf = (n: number) => (n > 0 ? '+' : n < 0 ? '−' : '');
+
 /** Signed dollars, where the sign is the point. */
 export const signedUsd = (n: number | null | undefined) =>
   n === null || n === undefined || !Number.isFinite(n)
     ? '—'
-    : `${n >= 0 ? '+' : '−'}${usd(Math.abs(n))}`;
+    : `${signOf(n)}${usd(Math.abs(n))}`;
 
 /**
  * Rupees. Paise below a hundred, whole rupees above it.
@@ -53,7 +56,7 @@ export function inr(n: number | null | undefined, dash = '—'): string {
 
 /** Signed rupees, where the sign is the point. */
 export const signedInr = (n: number | null | undefined) =>
-  n === null || n === undefined || !Number.isFinite(n) ? '—' : `${n >= 0 ? '+' : '−'}${inr(Math.abs(n))}`;
+  n === null || n === undefined || !Number.isFinite(n) ? '—' : `${signOf(n)}${inr(Math.abs(n))}`;
 
 /**
  * The rate the desk converts at.

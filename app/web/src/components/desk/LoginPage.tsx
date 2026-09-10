@@ -78,7 +78,7 @@ export function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
           )}
 
           <Button type="submit" disabled={busy} className="mt-1 h-11 text-[15px]">
-            {busy ? 'Signing in…' : 'Sign in'
+            {busy ? 'Signing in…' : 'Sign in'}
           </Button>
         </form>
 

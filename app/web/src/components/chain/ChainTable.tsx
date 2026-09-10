@@ -96,9 +96,8 @@ function Coverage({ snap }: { snap: SnapshotMeta }) {
   if (!c || !c.truncated) return null;
   return (
     <div className="note" style={{ padding: '8px 12px', margin: 0 }}>
-      Delta lists {c.above} strikes above and {c.below} below the price
+      Delta lists only {c.above} strikes above and {c.below} below the price for this expiry
       {c.lowest !== null && c.highest !== null && <> ({c.lowest.toLocaleString()}–{c.highest.toLocaleString()})</>}.
-      {' '}That is all there is for this expiry.
     </div>
   );
 }
@@ -221,17 +220,26 @@ export function ChainTable({
   // that opens at its lowest strike makes you scroll to find where you are.
   const box = useRef<HTMLDivElement>(null);
   const atmRow = useRef<HTMLTableRowElement>(null);
+  const shownFor = useRef<string | null>(null);
   useEffect(() => {
     const b = box.current, r = atmRow.current;
     if (!b || !r) return;
-    // The board no longer scrolls vertically, so the money is brought into view
-    // by moving the page rather than the box.
-    r.scrollIntoView({ block: 'center' });
     // The strike sits in the middle of the table, calls to its left and puts to
     // its right. On a phone the table is wider than the screen, and opening at
     // either edge shows one side of the board with the strike off-screen -- so
     // centre it, and both bids are a short swipe away.
     b.scrollLeft = Math.max(0, (b.scrollWidth - b.clientWidth) / 2);
+    /*
+     * Down the page only when you changed the expiry or the columns.
+     *
+     * Scrolling on first load dropped a phone straight into the middle of the
+     * chain, past the settings and the card that says what to sell -- and doing
+     * it whenever the at-the-money strike moved yanked the page away from
+     * whatever you were reading every time BTC crossed a strike.
+     */
+    const key = `${snap.expiry}|${density}`;
+    if (shownFor.current !== null && shownFor.current !== key) r.scrollIntoView?.({ block: 'center' });
+    shownFor.current = key;
   }, [snap.atm, snap.expiry, density]);
 
   return (

@@ -141,7 +141,7 @@ export function StrategyPanel() {
                   </span>
                   {s.ranToday && <span className="text-[11px] text-muted-foreground">ran today</span>}
                 </div>
-                <div className="flex flex-none gap-1.5">
+                <div className="flex w-full flex-none gap-1.5 sm:w-auto">
                   <Button
                     size="sm"
                     className="h-8"

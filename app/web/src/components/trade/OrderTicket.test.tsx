@@ -72,7 +72,7 @@ describe('the ticket opens ready to trade', () => {
     show();
     expect(screen.getByText('Sell 80,000 CE')).toBeInTheDocument();
     // selling at the bid gives away the spread on every single trade
-    expect(screen.getByRole('radio', { name: 'offer' })).toHaveAttribute('data-state', 'on');
+    expect(screen.getByRole('radio', { name: 'Offer' })).toHaveAttribute('data-state', 'on');
     await waitFor(() => expect(previewOrder).toHaveBeenCalled());
     expect(previewOrder.mock.calls.at(-1)![0]).toMatchObject({ limitPrice: 11, lots: 1 });
   });
@@ -80,7 +80,7 @@ describe('the ticket opens ready to trade', () => {
   it('falls back to taking the bid when the contract has no offer', async () => {
     getTradeQuote.mockResolvedValue({ quote: null, product: null });
     render(<OrderTicket seed={{ ...seed, symbol: 'C-BTC-1', ask: null }} open onOpenChange={() => {}} />);
-    expect(screen.getByRole('radio', { name: 'now' })).toHaveAttribute('data-state', 'on');
+    expect(screen.getByRole('radio', { name: 'Bid' })).toHaveAttribute('data-state', 'on');
     // a limit AT the bid, not a market order: immediate, but with a floor
     await waitFor(() =>
       expect(previewOrder.mock.calls.at(-1)![0]).toMatchObject({ limitPrice: 9 }),
@@ -94,6 +94,14 @@ describe('the ticket opens ready to trade', () => {
     await waitFor(() =>
       expect(previewOrder.mock.calls.at(-1)![0]).toMatchObject({ takeProfitPct: 0, stopLossPct: 0 }),
     );
+  });
+
+  it('shows Delta charges to open, fee and GST, before the button', async () => {
+    previewOrder.mockResolvedValue(ok({ entryChargesUsd: 0.02 }));
+    show();
+    // 0.02 x 85 = 1.70
+    await waitFor(() => expect(screen.getByText('Delta charges to open')).toBeInTheDocument());
+    expect(screen.getByText('₹1.70')).toBeInTheDocument();
   });
 
   it('shows the whole book, so a price is one tap away', () => {
@@ -142,7 +150,7 @@ describe('the book while the ticket is open', () => {
 describe('choosing a price', () => {
   it('sends the offer when the offer is chosen', async () => {
     show();
-    fireEvent.click(screen.getByRole('radio', { name: 'offer' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Offer' }));
     expect(screen.getByText(/Offers at 11.00/)).toBeInTheDocument();
     await waitFor(() =>
       expect(previewOrder.mock.calls.at(-1)![0]).toMatchObject({ limitPrice: 11 }),
@@ -153,8 +161,8 @@ describe('choosing a price', () => {
     // case 07 walks a market sell through three levels for a quarter-point of
     // slippage; a limit at the bid is just as immediate and has a floor
     show();
-    fireEvent.click(screen.getByRole('radio', { name: 'now' }));
-    expect(screen.getByText(/a limit is a floor, so there is no slippage/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('radio', { name: 'Bid' }));
+    expect(screen.getByText(/Never below it, so no slippage/)).toBeInTheDocument();
     await waitFor(() =>
       expect(previewOrder.mock.calls.at(-1)![0]).toMatchObject({ limitPrice: 9 }),
     );
@@ -167,7 +175,7 @@ describe('choosing a price', () => {
 
   it('treats an unparseable custom price as no price rather than as zero', async () => {
     show();
-    fireEvent.click(screen.getByRole('radio', { name: 'set' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'My price' }));
     fireEvent.change(screen.getByLabelText('limit price'), { target: { value: 'abc' } });
     await waitFor(() =>
       expect(previewOrder.mock.calls.at(-1)![0]).toMatchObject({ limitPrice: null }),
@@ -180,7 +188,7 @@ describe('converting to market', () => {
     // resting earns ~12% on a 6-13% wide book and Delta charges the same to
     // make or take; crossing after a wait means there is no day it is worse
     show();                                    // opens on the offer, which rests
-    expect(screen.getByRole('checkbox', { name: /cross after/i })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /sell at bid after/i })).toBeChecked();
     await waitFor(() =>
       expect(previewOrder.mock.calls.at(-1)![0]).toMatchObject({ convertToMarketAfterSec: 30 }),
     );
@@ -188,7 +196,7 @@ describe('converting to market', () => {
 
   it('can be turned off, and then says the order may never fill', async () => {
     show();
-    fireEvent.click(screen.getByRole('checkbox', { name: /cross after/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /sell at bid after/i }));
     expect(screen.getByText(/may never fill/i)).toBeInTheDocument();
     await waitFor(() =>
       expect(previewOrder.mock.calls.at(-1)![0]).toMatchObject({ convertToMarketAfterSec: 0 }),
@@ -197,15 +205,15 @@ describe('converting to market', () => {
 
   it('is not offered on an order that is taken immediately', () => {
     show();
-    fireEvent.click(screen.getByRole('radio', { name: 'now' }));
-    expect(screen.queryByRole('checkbox', { name: /cross after/i })).toBeNull();
+    fireEvent.click(screen.getByRole('radio', { name: 'Bid' }));
+    expect(screen.queryByRole('checkbox', { name: /sell at bid after/i })).toBeNull();
   });
 
   it('says what the wait is worth on this book', async () => {
     show();
     // bid 9, ask 11: resting is worth 22% more premium than taking the bid
-    await waitFor(() => expect(screen.getByText(/worth about 22% extra/i)).toBeInTheDocument());
-    expect(screen.getByText(/then takes the bid/i)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText(/about 22% more premium/i)).toBeInTheDocument());
+    expect(screen.getByText(/then sells at the bid/i)).toBeInTheDocument();
   });
 
   it('takes a different wait', async () => {
@@ -218,9 +226,9 @@ describe('converting to market', () => {
 
   it('treats a price set below the bid as crossing, so nothing to convert', () => {
     show();
-    fireEvent.click(screen.getByRole('radio', { name: 'set' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'My price' }));
     fireEvent.change(screen.getByLabelText('limit price'), { target: { value: '5' } });
-    expect(screen.queryByRole('checkbox', { name: /cross after/i })).toBeNull();
+    expect(screen.queryByRole('checkbox', { name: /sell at bid after/i })).toBeNull();
   });
 });
 
@@ -332,7 +340,7 @@ describe('the gates', () => {
     );
     show();
     await waitFor(() => expect(screen.getByText('Spread is 18.0%, limit is 4%.')).toBeInTheDocument());
-    const button = screen.getByRole('button', { name: /cannot sell/i });
+    const button = screen.getByRole('button', { name: /can.t sell/i });
     expect(button).toBeDisabled();
     fireEvent.click(button);
     expect(placeOrder).not.toHaveBeenCalled();
@@ -388,7 +396,7 @@ describe('paper mode', () => {
     show();
     await waitFor(() => expect(screen.getByRole('button', { name: /Sell/ })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: /Sell/ }));
-    await waitFor(() => expect(screen.getByText(/Nothing reached the exchange/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/nothing reached Delta/)).toBeInTheDocument());
   });
 });
 
@@ -403,7 +411,7 @@ describe('reopening the ticket', () => {
     rerender(<OrderTicket seed={seed} open={false} onOpenChange={() => {}} />);
     rerender(<OrderTicket seed={seed} open onOpenChange={() => {}} />);
     expect(screen.queryByText(/Sold 1 at 9.00/)).toBeNull();
-    expect(screen.getByRole('radio', { name: 'offer' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Offer' })).toBeInTheDocument();
   });
 
   it('starts from one lot again, whatever the last one was', async () => {

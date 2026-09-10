@@ -58,7 +58,8 @@ describe('signedUsd', () => {
   it('leads with the sign, because the sign is the point', () => {
     expect(signedUsd(33)).toBe('+$33.00');
     expect(signedUsd(-49)).toBe('−$49.00');
-    expect(signedUsd(0)).toBe('+$0.00');
+    // no sign on nothing: "+$0.00" reads as a gain that is not there
+    expect(signedUsd(0)).toBe('$0.00');
   });
   it('uses a real minus sign, not a hyphen', () => {
     expect(signedUsd(-1)).toContain('−');

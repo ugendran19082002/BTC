@@ -325,6 +325,10 @@ export function registerTradeRoutes(app: FastifyInstance) {
         size,
         contractValue: product?.contractValue ?? 0.001,
         creditUsd: credit,
+        /** Delta's fee + 18% GST to open this, by the statement's own formula. Closing costs about the same again. */
+        entryChargesUsd: price !== null
+          ? fillChargesUsd({ price, contracts: size, contractValue: product?.contractValue ?? 0.001, spot }).totalUsd
+          : null,
         worstCaseLossUsd: Number.isFinite(worstCase) ? worstCase : null,
         stopPrice: stop,
         takeProfitPrice: target,

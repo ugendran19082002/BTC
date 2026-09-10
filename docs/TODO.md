@@ -288,6 +288,57 @@ error log, never to the order path.
 
 ---
 
+## Phone screens, charges, speed and deploys — 10 Sep 2026
+
+**Done:**
+
+- **Today's P&L in the header**, always visible: booked + open − Delta charges
+  since 05:30 IST. Tap it for the breakdown.
+- **Charges everywhere money is shown.** Positions ("If closed now", charges
+  paid and to close), Orders (net P&L after charges, gross and charges beside
+  it, CSV columns), Account ("Charges today", "Net today"), the order ticket
+  ("Delta charges to open") and the Telegram day summary. One formula,
+  `trading/charges.ts`, matching the Delta statement to the last digit.
+- **Simple English** on every screen, a bottom tab bar with icons, 44px-ish tap
+  targets, and 16px form fields so iPhones do not zoom in on every tap.
+- **Speed.** Positions, Orders, Strategy, Errors and the order ticket load on
+  first open; libraries are split into cached chunks; source maps are no longer
+  served. Polling stops while the page is hidden. Delta reads get an 8s timeout
+  and one retry. SQLite waits for a lock instead of failing. Container limits
+  raised for a server that runs only this desk.
+- **Error log causes.** A phone going to sleep, losing signal, or a reply cut
+  off mid-way no longer counts as a server error unless it keeps happening. The
+  log now says in one sentence what each known error means.
+- **deploy.sh.** Rollback fixed — it had never worked (wrong container name, a
+  label that did not exist). `latest` now follows each build; uncommitted code
+  gets a `-dirty` tag. After a healthy deploy it removes old btc-desk image tags
+  (keeping the running one, the previous one and the newest 3), dangling
+  layers, and build cache older than 3 days. `--no-prune` skips that. It never
+  runs `docker image prune -a`, which would delete the rollback image and every
+  other project's images.
+
+**To do:**
+
+- [ ] **Deploy.** The desk is LIVE; deploy with nothing open, then check the
+      header P&L, a position's charges line, and the api log.
+- [ ] **Mark the 6 old error rows read** after deploying. Their causes are fixed;
+      the rows are history.
+- [ ] **Old images.** 88 tags each of btc-desk-api and btc-desk-web (~14 GB with
+      build cache) are removed by the first deploy's cleanup. The banknifty and
+      house images (~3 GB) are not touched — remove them by hand if those
+      stacks are gone for good.
+- [ ] **Remote deploys** (`--host`) do not prune on the remote host.
+- [ ] **The order ticket is still long on a phone.** Fold leverage and the exit
+      bars under "More options" once the defaults are trusted.
+- [ ] **The chain on a phone** still scrolls sideways. A card for the two strikes
+      the desk would sell, above the full table, would answer most visits.
+- [ ] **Strategy status text** comes from the server in developer wording
+      ("too late -- 05:30 passed more than 30 minutes ago").
+- [ ] **The Delta trade-history CSV is committed** (`34383e4`). It holds order ids
+      and fills, not keys — but take it out of git before the repo is shared.
+
+---
+
 ## HOW THE CODE IS KEPT HONEST
 
 - **39 tests**, run automatically before every deploy. `npm test` in

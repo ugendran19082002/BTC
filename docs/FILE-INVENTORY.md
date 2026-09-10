@@ -40,6 +40,7 @@ here exists because something specific went wrong once.
 | `margin.ts` | 199 | What leverage actually does to a sold option — calibrated against a real Delta ticket, not against the docs. Also liquidation price and unrealised P&L. |
 | `status.ts` | 80 | What a trade looks like in a list of orders: completed / pending / rejected / cancelled, and the IST day boundaries the Orders screen filters on. |
 | `money.ts` | 55 | Prices and sizes the exchange will actually accept. Everything in whole ticks; a seller rounds up and a buyer rounds down, so rounding never quietly moves against you. |
+| `charges.ts` | 58 | Delta's charges on an options fill: `min(0.01% × notional, 3.5% × premium)` plus 18% GST. Checked against the account's own trade-history export — all 72 fills match "Fees paid" to the last digit. Used by positions, orders, the header P&L, the ticket and Telegram. |
 
 ### Domain (`domain/`) — what to sell and how likely it is to work
 
@@ -122,6 +123,7 @@ here exists because something specific went wrong once.
 | `desk/LoginPage.tsx` | 98 | The gate. Says as little as possible when it fails. |
 | `research/Explain.tsx` | 90 | A labelled number that can show its own arithmetic. |
 | `desk/LivePrice.tsx` | 74 | Spot, ticking, and how far it has come since the contract opened. |
+| `desk/TodayPnl.tsx` | 55 | Today's net P&L in the header — booked + open − charges since 05:30 IST. Tap for the breakdown. |
 | `desk/BiasSection.tsx` | 62 | Which way the option board is leaning. |
 | `research/DateTimePicker.tsx` | 118 | A date and time always read as India time, because the strategy is defined in IST. |
 
@@ -155,10 +157,12 @@ spinners removed — they are one pixel from the field on a trading screen),
 | `api/trade.ts` | 90 | The trading calls. |
 | `lib/report-error.ts` | 83 | Sends a browser failure to the server. Never throws, never reports its own failure, folds repeats locally. |
 | `hooks/usePoll.ts` | 58 | Call something on a timer and keep the last good answer. A screen that goes empty for a second is worse than one that says it is stale. |
+| `hooks/usePageVisible.ts` | 14 | False while the tab is hidden or the phone is locked. Polls stop then, so a pocketed phone stops spending battery and filling the error log. |
 | `lib/held.ts` | 64 | The strikes you are currently short, keyed the way the board looks them up — what joins the chain to the positions card. |
 | `lib/exit-checks.ts` | 92 | Whether a stop and a target make sense against the mark *right now*. Shared by the sheet and the ticket so they cannot tell the same story two different ways. |
 | `lib/csv.ts` | 52 | A CSV that opens cleanly in Excel: RFC quoting, BOM, CRLF. |
 | `ui/figure.tsx` | 39 | A label, a number, and the same number in the other currency. Shared by the positions card and the exits sheet — a mark that reads differently in two places is a reason to distrust both. |
+| `components/ui/money.tsx`, `kv.tsx` | 69 | Money written one way everywhere (₹ first, $ small, signed and coloured when it is a P&L), and a label/value row. Replace four copies of the same row that had drifted apart. |
 | `layout/ErrorBoundary.tsx` | 51 | A component that throws takes its part of the screen down, not the desk. |
 | `hooks/usePersisted.ts` | 41 | State that survives a reload; every access wrapped, because a private window throws. |
 | `api/desk.ts` (40), `types/errors.ts` (28), `api/session.ts` (21), `api/errors.ts` (17), `main.tsx` (17), `api/backtest.ts` (11), `lib/utils.ts` (7) | | Small and self-evident. |

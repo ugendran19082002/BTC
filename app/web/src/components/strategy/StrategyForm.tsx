@@ -123,7 +123,7 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         title={editing ? `Edit ${editing.name}` : 'New strategy'}
-        description="Times are IST. Nothing runs until the strategy and the scheduler are both on."
+        description="Times are IST. Nothing runs until this strategy and auto-trading are both on."
       >
         {/*
           The whole rule as a sentence, updating as it is edited. Reading a
@@ -134,24 +134,24 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
           {describeStrategy(c)}
         </p>
 
-        <Field label="name">
+        <Field label="Name">
           <Input value={name} aria-label="strategy name" className="w-48"
                  onChange={(e) => setName(e.target.value)} placeholder="Double one-sided" />
         </Field>
 
         <div className="mt-2 border-t border-[var(--line)] pt-2 text-[11px] uppercase tracking-wide text-[var(--dim)]">
-          when
+          When
         </div>
-        <Field label="entry" hint="IST. The daily contract opens at 05:30.">
+        <Field label="Entry time" hint="IST. The daily contract opens at 05:30.">
           <Input value={c.entryTime} aria-label="entry time" className="w-20"
                  onChange={(e) => set('entryTime', e.target.value)} />
         </Field>
-        <Field label="exit" hint="IST. Settlement is 17:30, so 17:29 is the last minute that trades.">
+        <Field label="Exit time" hint="IST. Expiry is 17:30, so 17:29 is the last minute to trade.">
           <Input value={c.exitTime} aria-label="exit time" className="w-20"
                  onChange={(e) => set('exitTime', e.target.value)} />
         </Field>
 
-        <Field label="days it may run" stack>
+        <Field label="Days" stack>
           <div className="flex flex-wrap gap-1">
             {DAY_NAMES.map((d, i) => {
               const on = c.weekdays.includes(i);
@@ -175,7 +175,7 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
             })}
           </div>
           <div className="mt-1 flex gap-2 text-[11px]">
-            {([['every day', [0, 1, 2, 3, 4, 5, 6]], ['weekdays', WEEKDAYS], ['weekends', WEEKEND]] as const)
+            {([['Every day', [0, 1, 2, 3, 4, 5, 6]], ['Weekdays', WEEKDAYS], ['Weekends', WEEKEND]] as const)
               .map(([label, days]) => (
                 <button key={label} type="button"
                         className="text-muted-foreground underline underline-offset-2"
@@ -187,14 +187,14 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
         </Field>
 
         <div className="mt-2 border-t border-[var(--line)] pt-2 text-[11px] uppercase tracking-wide text-[var(--dim)]">
-          what to sell
+          What to sell
         </div>
-        <Field label="legs" stack>
+        <Field label="Legs" stack>
           <Pick wide value={c.legs} onChange={(v) => set('legs', v)}
                 options={[
-                  { v: 'both', label: 'Call and put', note: 'a strangle — the measured strategy' },
-                  { v: 'CE', label: 'Call only', note: 'a bet BTC does not rise' },
-                  { v: 'PE', label: 'Put only', note: 'a bet BTC does not fall' },
+                  { v: 'both', label: 'Call and put', note: 'both sides — the tested strategy' },
+                  { v: 'CE', label: 'Call only', note: 'profits if BTC does not rise much' },
+                  { v: 'PE', label: 'Put only', note: 'profits if BTC does not fall much' },
                 ]} />
         </Field>
 
@@ -202,28 +202,28 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
           The setting that caused the trouble. Both halves spelled out: which
           strike each rule takes, and which way that moves the risk.
         */}
-        <Field label="premium rule" stack>
+        <Field label="Premium rule" stack>
           <Pick wide value={c.premium.mode} onChange={(v) => set('premium', { ...c.premium, mode: v })}
                 options={[
                   {
                     v: 'atLeast',
                     label: `At least $${c.premium.usd}`,
-                    note: 'furthest strike still paying it — richer, nearer, more risk',
+                    note: 'furthest strike that still pays this — more premium, more risk',
                   },
                   {
                     v: 'atMost',
                     label: `At most $${c.premium.usd}`,
-                    note: 'richest strike under it — cheaper, further, less risk',
+                    note: 'best strike paying up to this — less premium, less risk',
                   },
                 ]} />
           <div className="mt-1 flex items-center gap-1.5">
-            <span className="text-[11.5px] text-muted-foreground">dollars</span>
+            <span className="text-[11.5px] text-muted-foreground">$ per BTC</span>
             <Input value={String(c.premium.usd)} aria-label="premium usd" className="w-20"
                    onChange={(e) => set('premium', { ...c.premium, usd: num(e.target.value, 15) })} />
           </div>
         </Field>
 
-        <Field label="lots per leg" hint="Contracts per leg. One contract is 0.001 BTC.">
+        <Field label="Lots per leg" hint="1 lot = 1 contract = 0.001 BTC.">
           <Input value={String(c.lots)} aria-label="lots" className="w-24"
                  onChange={(e) => set('lots', Math.floor(num(e.target.value, 1)))} />
         </Field>
@@ -231,20 +231,20 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
         {/* What that size actually means, before it is saved. */}
         <div className="rounded-lg bg-muted px-2.5 py-2 text-[11.5px] leading-relaxed">
           <div className="flex justify-between gap-3">
-            <span className="text-muted-foreground">most contracts at once</span>
+            <span className="text-muted-foreground">Max contracts at once</span>
             <span className="tabular-nums text-foreground">{sizing.maxContracts}</span>
           </div>
           <div className="flex justify-between gap-3">
-            <span className="text-muted-foreground">margin that needs</span>
+            <span className="text-muted-foreground">Margin needed</span>
             <span className="tabular-nums text-foreground">
-              {spot ? `${inr(sizing.marginInr)} · ${usd(sizing.marginUsd)}` : '— no spot yet'}
+              {spot ? `${inr(sizing.marginInr)} · ${usd(sizing.marginUsd)}` : '— waiting for price'}
             </span>
           </div>
           {sizing.shareOfAccount !== null && (
             <div className="flex justify-between gap-3">
               <span className="text-muted-foreground"
                     title="Measured against free margin. Money already behind an open position cannot fund a new one.">
-                of your free margin
+                Share of free margin
               </span>
               <span className={cn('tabular-nums',
                 sizing.shareOfAccount > 0.5 ? 'text-[var(--down)]' : 'text-foreground')}>
@@ -255,41 +255,41 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
         </div>
 
         <div className="mt-2 border-t border-[var(--line)] pt-2 text-[11px] uppercase tracking-wide text-[var(--dim)]">
-          how it gets in
+          Entry
         </div>
-        <Field label="price" stack>
+        <Field label="Price" stack>
           <Pick wide value={c.entryPrice} onChange={(v) => set('entryPrice', v)}
                 options={[
-                  { v: 'offer', label: 'Rest at the offer', note: 'earns the spread if somebody takes it' },
-                  { v: 'now', label: 'Cross now', note: 'certain fill, pays the spread' },
-                  { v: 'set', label: 'A price I name', note: 'rests there until it fills' },
+                  { v: 'offer', label: 'Sell at the offer', note: 'better price if someone takes it' },
+                  { v: 'now', label: 'Sell now at the bid', note: 'fills at once, lower price' },
+                  { v: 'set', label: 'My own price', note: 'waits there until it fills' },
                 ]} />
         </Field>
         {c.entryPrice === 'set' && (
-          <Field label="limit price">
+          <Field label="Limit price">
             <Input value={String(c.entryLimit ?? '')} aria-label="entry limit" className="w-24"
                    onChange={(e) => set('entryLimit', num(e.target.value, 0))} />
           </Field>
         )}
         {c.entryPrice === 'offer' && (
-          <Field label="cross after" hint="Wait this long at the offer, then take the bid. Zero rests until it fills.">
+          <Field label="Sell at bid after" hint="Wait this long at the offer, then take the bid. 0 waits until it fills.">
             <Input value={String(c.crossAfterSec)} aria-label="cross after seconds" className="w-20"
                    onChange={(e) => set('crossAfterSec', Math.floor(num(e.target.value, 5)))} />
             <span className="text-[11.5px] text-muted-foreground">
-              {c.crossAfterSec > 0 ? 'sec' : 'sec — rests until filled'}
+              {c.crossAfterSec > 0 ? 'sec' : 'sec — waits until filled'}
             </span>
           </Field>
         )}
 
         <div className="mt-2 border-t border-[var(--line)] pt-2 text-[11px] uppercase tracking-wide text-[var(--dim)]">
-          how it gets out
+          Exit
         </div>
-        <Field label="take profit" hint="Buy back once the premium has decayed this far. 0 holds to settlement.">
+        <Field label="Take profit" hint="Buy back once this much of the premium has decayed. 0 holds to expiry.">
           <Input value={String(Math.round(c.takeProfitPct * 100))} aria-label="take profit pct" className="w-20"
                  onChange={(e) => set('takeProfitPct', num(e.target.value, 95) / 100)} />
-          <span className="text-[11.5px] text-muted-foreground">% decay</span>
+          <span className="text-[11.5px] text-muted-foreground">% earned</span>
         </Field>
-        <Field label="stop loss" hint="Buy back if the premium rises this far above entry. 0 means no stop.">
+        <Field label="Stop loss" hint="Buy back if the premium rises this much above the entry price. 0 means no stop.">
           <Input value={String(Math.round(c.stopLossPct * 100))} aria-label="stop loss pct" className="w-20"
                  onChange={(e) => set('stopLossPct', num(e.target.value, 0) / 100)} />
           <span className="text-[11.5px] text-muted-foreground">
@@ -298,30 +298,30 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
         </Field>
 
         <div className="mt-2 border-t border-[var(--line)] pt-2 text-[11px] uppercase tracking-wide text-[var(--dim)]">
-          the gate
+          Safety filter
         </div>
-        <Field label="skip a leg that is not safe enough" stack>
+        <Field label="Skip a leg that is not safe enough" stack>
           <Pick wide value={c.probGate === null ? 'off' : 'on'}
                 onChange={(v) => set('probGate', v === 'on' ? 0.95 : null)}
                 options={[
-                  { v: 'on', label: 'On', note: 'refuse a leg below the bar to expire worthless' },
-                  { v: 'off', label: 'Off', note: 'sell both legs whatever the board says' },
+                  { v: 'on', label: 'On', note: 'skip a leg below your safety %' },
+                  { v: 'off', label: 'Off', note: 'always sell both legs' },
                 ]} />
           {c.probGate !== null && (
             <div className="mt-1 flex items-center gap-1.5">
-              <span className="text-[11.5px] text-muted-foreground">bar</span>
+              <span className="text-[11.5px] text-muted-foreground">Safety</span>
               <Input value={String(Math.round(c.probGate * 1000) / 10)} aria-label="prob gate pct" className="w-20"
                      onChange={(e) => set('probGate', num(e.target.value, 95) / 100)} />
               <span className="text-[11.5px] text-muted-foreground">% to expire worthless</span>
             </div>
           )}
         </Field>
-        <Field label="double the surviving leg" stack>
+        <Field label="Double the other leg" stack>
           <Pick wide value={c.doubleWhenOneSided ? 'on' : 'off'}
                 onChange={(v) => set('doubleWhenOneSided', v === 'on')}
                 options={[
-                  { v: 'on', label: 'On', note: 'when the gate refuses one leg, sell two lots of the other' },
-                  { v: 'off', label: 'Off', note: 'one lot per leg, always' },
+                  { v: 'on', label: 'On', note: 'if one leg is skipped, sell double on the other' },
+                  { v: 'off', label: 'Off', note: 'same lots on each leg, always' },
                 ]} />
         </Field>
 
@@ -334,16 +334,16 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
         ))}
 
         <p className="m-0 mt-3 text-[11.5px] leading-snug text-muted-foreground">
-          Saving does not arm it. A new strategy is always saved switched off.
+          New strategies are saved switched off. Turn it on from the list when you are ready.
         </p>
 
         <SheetFooter>
           <Button variant="outline" className="h-11 flex-none px-4" onClick={() => onOpenChange(false)}>
-            cancel
+            Cancel
           </Button>
           <Button className="h-11 flex-1" disabled={busy || !name.trim()} onClick={() => void save()}>
             {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-            save
+            Save
           </Button>
         </SheetFooter>
       </SheetContent>
