@@ -462,13 +462,17 @@ test('50 depth is only demanded of an order that has to fill now', async () => {
   assert.ok(!crossing.ok && failureCodes(crossing.precheck).includes('THIN_BOOK'));
 });
 
-// -------------------- 75-79 a target must fire when the mark reaches it
+// -------------------- 75-79 a target is a price, not a signal to cross the spread
 
-test('75 [critical] the mark reaching the target closes the position', async () => {
-  // The bug: a short at 2.70 with a target at 1.10, marked at 1.00 and still
-  // open. The target was a resting limit buy, which fills only when somebody
-  // *offers* at or below it -- so on a book of 0.50 bid / 1.50 offered the mark
-  // fell straight through the level and nothing happened.
+/*
+ * 75 used to assert the opposite: that the mark reaching the target closed the
+ * position at the market. On 10 September that is exactly what cost money -- a
+ * short at 15 with its target at 1.00, the mark at 1.00 and the offer at 2.00:
+ * the desk cancelled the resting buy at 1.00 and bought 425 back at 2.00, on
+ * two legs. A target is the price you are willing to pay. It rests, and fills
+ * when the offer comes down to it, at that price or better.
+ */
+test('75 [critical] the mark falling through the target does not buy back at the offer', async () => {
   const r = rig({ quotes: [quote(CE, 26, 28, { mark: 27 })] });
   const plan = planFor(ceProduct(), {
     lots: 1, stopPrice: null, takeProfitPrice: 11,
@@ -483,8 +487,53 @@ test('75 [critical] the mark reaching the target closes the position', async () 
   r.ex.tick(quote(CE, 5, 15, { mark: 10, ts: r.now() }));
   const s = await r.engine.poll(plan.tradeId);
 
-  assert.equal(s?.position, 0, 'the mark passed 11, so the position is closed');
+  assert.equal(s?.position, -1, 'still short: nobody is selling at 11');
+  assert.deepEqual(s?.fills.filter((f) => f.side === 'buy'), [], 'and nothing was bought at the 15 offer');
+  const [tp] = (await r.ex.getOpenOrders(CE)).filter((o) => o.reduceOnly);
+  assert.equal(tp?.limitPrice, 11, 'the target is still resting at its own price');
+});
+
+test('75b [critical] when the offer comes down to the target, it exits at the target', async () => {
+  const r = rig({ quotes: [quote(CE, 26, 28, { mark: 27 })] });
+  const plan = planFor(ceProduct(), {
+    lots: 1, stopPrice: null, takeProfitPrice: 11,
+    entry: { type: 'limit', limitPrice: 26, timeoutMs: 0, marketFallback: false, chase: null },
+  });
+  await r.engine.open(plan);
+  await r.engine.poll(plan.tradeId);
+
+  r.ex.tick(quote(CE, 5, 15, { mark: 10, ts: r.now() }));
+  await r.engine.poll(plan.tradeId);
+  // somebody finally offers at the target
+  r.ex.tick(quote(CE, 9, 11, { mark: 10, ts: r.now() }));
+  const s = await r.engine.poll(plan.tradeId);
+
+  assert.equal(s?.position, 0, 'closed');
   assert.equal(s?.phase, 'flat');
+  const exits = s!.fills.filter((f) => f.side === 'buy');
+  assert.equal(exits.length, 1);
+  assert.equal(exits[0]!.price, 11, 'at the target -- not the mark, and not a worse offer');
+  assert.equal(exits[0]!.role, 'take_profit', 'and recorded as the target, not as a manual close');
+});
+
+test('75c the 10 September trade: target 1.00, mark 1.00, offer 2.00 -- it waits, then exits at 1.00', async () => {
+  const r = rig({ quotes: [quote(CE, 26, 28, { mark: 27 })] });
+  const plan = planFor(ceProduct(), {
+    lots: 1, stopPrice: null, takeProfitPrice: 1,
+    entry: { type: 'limit', limitPrice: 26, timeoutMs: 0, marketFallback: false, chase: null },
+  });
+  await r.engine.open(plan);
+  await r.engine.poll(plan.tradeId);
+
+  r.ex.tick(quote(CE, 0.5, 2, { mark: 1, ts: r.now() }));
+  const waiting = await r.engine.poll(plan.tradeId);
+  assert.equal(waiting?.position, -1, 'the mark is at the target, but nobody is selling at 1.00');
+  assert.deepEqual(waiting?.fills.filter((f) => f.side === 'buy'), [], 'so nothing is bought at 2.00');
+
+  r.ex.tick(quote(CE, 0.5, 1, { mark: 0.8, ts: r.now() }));
+  const done = await r.engine.poll(plan.tradeId);
+  assert.equal(done?.position, 0);
+  assert.equal(done!.fills.find((f) => f.side === 'buy')!.price, 1, 'bought back at 1.00, the price asked for');
 });
 
 test('76 the target rests as a limit, which can only ever fill at its price or better', async () => {
@@ -538,8 +587,9 @@ test('80 [critical] a target far below the mark never closes at the mark', async
   assert.deepEqual(exits, [], 'and nothing bought it back at the price it was sold at');
 });
 
-test('80b whatever closes the trade, it never prints worse than the level asked for', async () => {
-  // The property that holds no matter which side decides the level was reached.
+test('80b [critical] a target never buys back above its own price', async () => {
+  // The property the 10 September exits broke, held across a run of books: the
+  // mark through the level with the offer above it, then the offer coming down.
   const r = rig({ quotes: [quote(CE, 26, 28, { mark: 27 })] });
   const plan = planFor(ceProduct(), {
     lots: 1, stopPrice: null, takeProfitPrice: 11,
@@ -548,13 +598,16 @@ test('80b whatever closes the trade, it never prints worse than the level asked 
   await r.engine.open(plan);
   await r.engine.poll(plan.tradeId);
 
-  r.ex.tick(quote(CE, 5, 12, { mark: 10, ts: r.now() }));
-  await r.engine.poll(plan.tradeId);
+  for (const [bid, ask, mark] of [[5, 12, 10], [5, 14, 9], [9, 10.5, 10]] as const) {
+    r.ex.tick(quote(CE, bid, ask, { mark, ts: r.now() }));
+    await r.engine.poll(plan.tradeId);
+  }
 
   const st = r.store.get(plan.tradeId)!.state;
-  const entry = st.fills.find((f) => f.side === 'sell')!;
-  for (const exit of st.fills.filter((f) => f.side === 'buy')) {
-    assert.ok(exit.price < entry.price, `bought back at ${exit.price} against a sale at ${entry.price}`);
+  const exits = st.fills.filter((f) => f.side === 'buy');
+  assert.ok(exits.length > 0, 'the offer did come down to the target in the end');
+  for (const exit of exits) {
+    assert.ok(exit.price <= 11, `bought back at ${exit.price} against a target of 11`);
   }
 });
 

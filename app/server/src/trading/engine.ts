@@ -537,11 +537,11 @@ export class TradeEngine {
       rec = await this.protect(rec);
     }
 
-    // The levels are judged here rather than at the exchange. This runs after
-    // protection so a level reached on the very first poll still exits, even
-    // before the resting target has landed.
+    // The stop is judged here as well as at the exchange. This runs after
+    // protection, so a stop reached on the very first poll still exits. The
+    // target is not judged here at all -- see `stopIfReached` for why.
     if (rec.state.position !== 0 && rec.state.phase !== 'exit_pending') {
-      rec = await this.takeProfitIfReached(rec);
+      rec = await this.stopIfReached(rec);
     }
 
     if (rec.state.position === 0 && rec.state.entrySize > 0 && rec.state.phase !== 'flat') {
@@ -736,9 +736,13 @@ export class TradeEngine {
      * So the exchange is no longer asked to decide when the target is reached.
      * A resting limit buy has one property that matters here and cannot be got
      * wrong: it fills at its price or better, never worse. It cannot cost money
-     * by firing early, and the case it misses -- the mark falling through with
-     * no offer -- is covered by `takeProfitIfReached`, which watches the mark
-     * here rather than at the exchange.
+     * by firing early.
+     *
+     * The case it misses -- the mark falling through with no offer at the level
+     * -- is left missed, on purpose. For a while the desk covered it by watching
+     * the mark and buying back at the market, and on 10 September that paid a
+     * 2.00 offer against a 1.00 target on two legs. A target is the price you
+     * will pay; if nobody sells there, the position stays on.
      */
     const tp = await settle(
       'take_profit',
@@ -755,8 +759,8 @@ export class TradeEngine {
 
     /*
      * The stop stays a trigger at the exchange, because its whole value is that
-     * it works when this process does not. `takeProfitIfReached` watches the
-     * level too, so an outage is covered from both ends.
+     * it works when this process does not. `stopIfReached` watches the level
+     * too, so an outage is covered from both ends.
      */
     const sl = await settle(
       'stop_loss',
@@ -913,47 +917,41 @@ export class TradeEngine {
   }
 
   /**
-   * The desk's own eye on the exit levels.
+   * The desk's own eye on the stop.
    *
-   * Two things forced this. A resting limit target only fills when somebody
-   * offers at it, so on a thin book the mark can fall straight through the
-   * level and leave the trade open -- which is what happened, and what the
-   * whole `take_profit_order` detour was meant to fix. And that detour taught
-   * the more useful lesson: handing the decision to the exchange means trusting
-   * a trigger direction that turned out to be inverted, and paying for it in
-   * real money before anybody noticed.
+   * Judged on the mark, and closed at the market, because a stop has to get
+   * out: a price running away is exactly when waiting for a better fill costs
+   * most. Every position this desk holds is short, so the stop is reached when
+   * the mark *rises* to it. The exchange stop stays on the book as well, since
+   * it is the only protection that survives this process dying.
    *
-   * So the level is judged here, where both directions are written down in
-   * plain arithmetic and pinned by tests. Every position this desk holds is
-   * short, so the target is reached when the mark *falls* to it and the stop
-   * when the mark *rises* to it. The resting limit and the exchange stop are
-   * kept as well: they may fill first and at a better price, and the stop is
-   * the only protection that survives this process dying.
+   * The target is deliberately not judged here any more. It used to be -- on
+   * the mark, closing at the market -- and on 10 September that cancelled a
+   * resting buy at 1.00 and bought 425 back at the 2.00 offer, on two legs:
+   * the mark had reached 1.00 while nobody was selling there. Earlier the same
+   * day it gave a 32 short's whole profit away the same way.
+   *
+   * A target is the price you are willing to pay, so it is a resting
+   * reduce-only limit and nothing else. It fills when the offer comes down to
+   * it, at that price or better, and it never crosses the spread. If the offer
+   * never comes down, the position stays on until it expires or you close it
+   * -- that is what a target is.
    */
-  private async takeProfitIfReached(rec: TradeRecord): Promise<TradeRecord> {
-    const { takeProfitPrice: target, stopPrice: stop } = rec.plan;
-    if (target === null && stop === null) return rec;
+  private async stopIfReached(rec: TradeRecord): Promise<TradeRecord> {
+    const stop = rec.plan.stopPrice;
+    if (stop === null) return rec;
 
     const quote = await this.exchange.getQuote(rec.plan.symbol).catch(() => null);
     const mark = quote?.mark ?? null;
     // A missing, stale, or nonsensical mark is not a reason to do anything.
     if (mark === null || !Number.isFinite(mark) || mark <= 0) return rec;
     if (quote !== null && this.now() - quote.ts > MARK_STALE_MS) return rec;
+    if (mark < stop) return rec;
 
-    const hit =
-      target !== null && mark <= target ? ('target' as const)
-      : stop !== null && mark >= stop ? ('stop' as const)
-      : null;
-    if (hit === null) return rec;
-
-    // Closing at the market gives up the spread, and that is the trade being
-    // made: the level was reached, and an exit that happens beats a better
-    // price that might not.
-    const state = await this.closeNowInner(
-      rec.state.tradeId,
-      `${hit} reached at ${mark}`,
-    );
-    return this.d.store.get(rec.state.tradeId) ?? (state ? rec : rec);
+    // Closing at the market gives up the spread, and for a stop that is the
+    // trade being made: an exit that happens beats a better price that might not.
+    await this.closeNowInner(rec.state.tradeId, `stop reached at ${mark}`);
+    return this.d.store.get(rec.state.tradeId) ?? rec;
   }
 
   // ------------------------------------------------------------ exits

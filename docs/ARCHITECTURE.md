@@ -87,8 +87,10 @@ only proves the code agrees with itself.
 
 So: the target rests as a plain reduce-only limit buy, which has the one
 property that cannot be got wrong — **it fills at its price or better, never
-worse** — and the level is judged in `takeProfitIfReached`, in arithmetic this
-repo owns and pins. The stop stays a trigger at Delta *as well*, because it is
+worse** — and it is never replaced by a market buy when the mark touches the level —
+that crossed the spread on 10 September and bought back at 2.00 against a
+1.00 target. The stop is judged in `stopIfReached`, in arithmetic this repo
+owns and pins. The stop stays a trigger at Delta *as well*, because it is
 the only protection that survives this process dying, and it is watched from
 here too. Case 80 is the reproduction; case 80b is the venue-independent
 property: an exit may never print worse than the level that asked for it.
@@ -133,6 +135,34 @@ error row. `http/refuse.ts` lets a route mark a 4xx it *meant*, and
 Unmarked responses are still logged, so forgetting to mark one makes the log
 noisier rather than blinder. See `DB-INVENTORY.md` for the table.
 
+### 6. A target is a price; a stop is an exit
+
+The two exits are different kinds of order on purpose, and each matches what
+the order type is documented to do:
+
+- **Target → resting reduce-only limit buy.** A buy limit "can only be executed
+  at the limit price or lower", and "may never be executed". Both halves are
+  the point: it cannot pay more than the target, and if nobody sells there the
+  position stays on. The desk never replaces it with a market buy when the mark
+  touches the level — that paid a 2.00 offer against a 1.00 target on two legs
+  on 10 September.
+- **Stop → trigger on the mark, executed at the market.** "When the stop price
+  is reached, a stop order becomes a market order", so it may fill "not
+  necessarily at or near the stop price, particularly ... into a fast-moving
+  market". That is accepted: a stop's job is to get out, and a stop-limit that
+  "does not get filled if the security's price never reaches the specified
+  limit price" is the wrong failure for a short option in a spike. The desk's
+  `stopIfReached` watches the same level, so a stop still fires if either side
+  is down.
+- **Entries and manual closes: limit, never market, where a price floor or
+  ceiling protects the fill.** A market order in a fast or thin market may be
+  "quite different from the last price quoted"; Delta capped today's market
+  buys at 157.4 against a 2.00 fill.
+
+Sources: [Delta Exchange API](https://docs.delta.exchange/) (order types,
+`stop_trigger_method`, bracket fields), [SEC — stop orders](https://www.sec.gov/answers/stopord.htm),
+[Order (exchange)](https://en.wikipedia.org/wiki/Order_(exchange)).
+
 ---
 
 ## The lifecycle of one trade
@@ -156,8 +186,7 @@ noisier rather than blinder. See `DB-INVENTORY.md` for the table.
    seventy `no_position_for_reduce_only` refusals in a loop), `protect()`
    reconciles the target and stop against the book.
 6. **Exit.** Whichever comes first: the resting target fills; the exchange stop
-   triggers; `takeProfitIfReached` sees the mark reach a level and closes at
-   market; or the person hits close. Whichever wins, the other leg is cancelled
+   triggers; `stopIfReached` sees the mark reach the stop and closes at market; or the person hits close. Whichever wins, the other leg is cancelled
    before it can re-open the position.
 7. **Journal.** Every step is an appended event. `hydrate()` replays them through
    `recompute()`, so a fix to the arithmetic repairs closed trades too.

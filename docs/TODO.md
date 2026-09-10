@@ -288,6 +288,53 @@ error log, never to the order path.
 
 ---
 
+## A target must never cross the spread — 10 Sep 2026
+
+**What happened.** Both strategy legs today — sold at 15 and 12, target 1.00 —
+were bought back at **2.00**. The mark reached 1.00 while the offer sat at
+2.00; the desk's own watch cancelled the resting buy at 1.00 and sent a market
+buy, which paid the offer. $0.425 a leg above the target, $0.85 (≈ ₹72) in all.
+Earlier the same day it did the same to two hand-placed trades: a 24 short
+exited at 21 against a 19.70 target, and a 32 short at 32 against 28.20 — the
+whole profit.
+
+**Fixed.** The watch now judges only the stop (on the mark, at the market,
+because a stop has to get out). The target is only the resting reduce-only limit
+buy: it fills when the offer comes down to it, at the target or better, and is
+never cancelled for a market buy. Cases 75, 75b, 75c and 80b pin it.
+
+**Trade-off, said out loud.** If the offer never comes down to the target, the
+position stays on until expiry or until you close it. For an option that
+expires worthless that costs nothing — no settlement fee — but it does mean
+holding through the afternoon.
+
+**Rolling it out without breaking what works:**
+
+1. Nothing else changes: entries, the stop-loss (exchange trigger + desk
+   watch, both at market), protection sizing and the strategy runner are as they
+   were on the day that worked. Only the target's market buy is gone.
+2. Deploy **with nothing open** — `./deploy/deploy.sh` rolls back on a failed
+   health check, and the rollback now actually works.
+3. Run **one day in paper** with the strategy, then switch back to live.
+4. On the first live day, check on Delta that the target sits as a limit buy at
+   its price, and that Orders says "target hit" when it fills.
+5. If it has to be undone: `TAG=<previous tag> docker compose -f
+   deploy/docker-compose.yml up -d` — the previous image is always kept.
+
+**To do:**
+
+- [ ] **Deploy** this — the live desk still has the old watch.
+- [ ] **Stop-watch exits are still recorded as "manual".** A stop reached by the
+      desk's own watch closes through `closeNowInner`, so Orders says "closed
+      manually" and Telegram "closed at market". Record them as the stop.
+- [ ] **A stop exit is still a market buy.** Use a limit a few ticks above the ask
+      and retry, so a thin book cannot fill it far above the offer (Delta's own
+      cap on today's market buys was 157.4 against a 2.00 fill).
+- [ ] **Show the offer beside the target on Positions**, so it is visible how far
+      the offer — not the mark — still has to fall.
+
+---
+
 ## Phone screens, charges, speed and deploys — 10 Sep 2026
 
 **Done:**
@@ -709,9 +756,11 @@ So the corollary, which is the part that was missing:
 > observed at the venue, or reduced to a property that holds whichever way the
 > venue works.
 
-The target is a resting limit again, and the level is judged in
-`takeProfitIfReached` where both directions are arithmetic this repo owns and
-can pin. The stop stays a trigger at Delta because it is the only protection
+The target is a resting limit again. (For a while the level was also judged
+in `takeProfitIfReached`, closing at the market when the mark reached it; on
+10 September that bought back at a 2.00 offer against a 1.00 target, so the
+target is now only the resting limit — see "A target must never cross the
+spread".) The stop stays a trigger at Delta because it is the only protection
 that survives this process dying — and it is watched here as well, from both
 ends. Case 80 is the reproduction; case 80b is the venue-independent property
 worth keeping: an exit may never print worse than the level that asked for it.
