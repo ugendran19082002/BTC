@@ -12,13 +12,18 @@ loops back over SSH to localhost, which works but is pointless — use the plain
 form.
 
 ```
-browser ──443──> host nginx 1.18 ──> 127.0.0.1:8099 ──> btc-desk-web  (nginx:1.27-alpine, static build)
-                                                              └──────> btc-desk-api  (Fastify, no host port)
-                                                                              └────> /srv/data/chain.db  (volume)
+browser ──443──> banknifty-proxy-1 ──> host.docker.internal:8099 ──> btc-desk-web  (nginx:1.27-alpine, static build)
+                 (nginx 1.27-alpine)                                        └──────> btc-desk-api  (Fastify, no host port)
+                                                                                            └────> /srv/data/chain.db  (volume)
 ```
 
-Certificate: Let's Encrypt for `delta.thannigo.in`, auto-renewing, installed by
-certbot. Site config: `/etc/nginx/sites-available/delta.thannigo.in`, a copy of
+Ports 80 and 443 are owned by `banknifty-proxy-1`, the edge proxy of the
+`banknifty` compose project in `/home/agent/trade`. The **host** nginx is
+installed but inactive; nothing is served from `/etc/nginx/sites-available/`.
+
+Certificate: Let's Encrypt for `delta.thannigo.in`, auto-renewing through the
+shared certbot webroot at `/home/agent/trade/proxy/certbot-webroot`. Site
+config: `/home/agent/trade/infra/nginx/delta.conf.template`, a copy of
 `deploy/nginx.conf`.
 
 ## Deploy a change
@@ -30,11 +35,21 @@ certbot. Site config: `/etc/nginx/sites-available/delta.thannigo.in`, a copy of
 Then, if the nginx site config changed:
 
 ```bash
-sudo install -m 644 deploy/nginx.conf /etc/nginx/sites-available/delta.thannigo.in
-sudo nginx -t && sudo systemctl reload nginx
+install -m 644 deploy/nginx.conf /home/agent/trade/infra/nginx/delta.conf.template
+docker exec banknifty-proxy-1 sh -c 'envsubst "$NGINX_ENVSUBST_FILTER" \
+    < /etc/nginx/templates/delta.conf.template > /etc/nginx/conf.d/delta.conf'
+docker exec banknifty-proxy-1 nginx -t
+docker exec banknifty-proxy-1 nginx -s reload
 ```
 
 `nginx -t` before the reload is not optional.
+
+The template directory is the only durable home for a vhost here. It is
+bind-mounted read-only from `./infra/nginx`, so it survives a container
+recreate; a file written straight into the container with `docker exec` lives
+only in the writable layer and is erased by the next `up -d`. The
+`tailscale.thannigo.in` vhost was installed that way and has since been
+removed.
 
 ## Keeping the data fresh
 
@@ -57,19 +72,37 @@ fronting `thannigo.in`, `tailscale.thannigo.in` and `house.api.thannigo.in`, and
 took all three offline. To free a port, stop the specific service:
 `docker stop <container>` or `systemctl stop nginx` — never a pattern kill.
 
-**The host nginx is 1.18, not 1.27.** The `http2 on;` directive arrived in 1.25;
-on 1.18 it is an unknown directive and the whole config fails to load. This file
-set uses `listen 443 ssl http2;`, which both versions accept.
+**The vhost was installed where nothing reads it.** `deploy/nginx.conf` used to
+target `/etc/nginx/sites-available/delta.thannigo.in` — the host nginx, which is
+inactive. The certificate for `delta.thannigo.in` existed and was valid the whole
+time, but no server block referenced it, so requests fell through to whichever
+443 block nginx parsed first (`compute.conf`, alphabetically) and were answered
+with `tailscale.thannigo.in`'s certificate: `ERR_CERT_COMMON_NAME_INVALID`.
+
+Two guards now exist. The vhost lives in the proxy's template directory, and
+`00-default-server.conf.template` declares an explicit `default_server` that
+answers unmatched names with `444` on :80 and `ssl_reject_handshake on` on :443.
+An unconfigured name now fails at the handshake instead of quietly borrowing a
+valid certificate for the wrong domain.
+
+**nginx version matters for `http2`.** The host nginx is 1.18, where the
+`http2 on;` directive (added in 1.25) fails to load; the proxy that actually
+serves this is 1.27, where `listen ... http2` is deprecated instead. Now that
+the file targets the proxy, it uses `http2 on;`.
 
 ## Other stacks on this host
 
-`banknifty` (in `/home/agent/trade`), `house` and `house-dev` are **stopped**,
-at your request. Restarting `banknifty` will fail or conflict while the host
-nginx holds 80 and 443 — that proxy publishes those ports. If you bring it back,
-pick one owner for those ports: either stop the host nginx and add a
-`delta.conf.template` vhost to `/home/agent/trade/infra/nginx/` (follow
-`house.conf.template`, and attach `btc-desk-web` to the `edge` network), or
-leave the host nginx in charge and give the other sites vhosts there instead.
+The port question is settled: `banknifty-proxy-1` owns 80 and 443, the host
+nginx stays inactive, and every public name on this box gets a vhost in
+`/home/agent/trade/infra/nginx/`. That is the route `delta.conf.template` now
+takes.
+
+The *application* containers of the other stacks — `banknifty-web`,
+`banknifty-api`, `house-api`, `house-web` and their databases — are **stopped**.
+Only the proxy runs. That is why `thannigo.in` answers 502 and
+`house.api.thannigo.in` answers 503: their vhosts resolve and serve the correct
+certificates, but there is no upstream behind them. Start those stacks to bring
+the names back; it does not affect `delta.thannigo.in`.
 
 ## Access
 
@@ -89,8 +122,10 @@ static bundle: uncomment the two `auth_basic` lines in `deploy/nginx.conf` and
 create the file:
 
 ```bash
-sudo htpasswd -c /etc/nginx/.htpasswd-delta <username>
-sudo nginx -t && sudo systemctl reload nginx
+htpasswd -c /home/agent/trade/proxy/.htpasswd-delta <username>
+# mount it into the proxy next to the existing .htpasswd, then:
+docker exec banknifty-proxy-1 nginx -t
+docker exec banknifty-proxy-1 nginx -s reload
 ```
 
 ## Credentials
