@@ -10,6 +10,8 @@ import {
 import { clampLeverage, fundsRequiredPerContract } from './margin.js';
 import { isDone } from './machine.js';
 import { noteError } from '../observability/errors.js';
+import { alertFor, bookWentFlat, daySummaryFor } from '../notify/messages.js';
+import { TelegramNotifier } from '../notify/telegram.js';
 import type { ExchangePort } from './exchange/port.js';
 import type { ExchangeOrder, ExchangePosition, TradeState } from './types.js';
 
@@ -104,10 +106,18 @@ export class TradingService {
    */
   private lastShortContracts = 0;
   readonly alarms: { tradeId: string; message: string; at: number }[] = [];
+  /** Phone alerts when an entry or an exit fills. Null unless TG_TOKEN and TG_CHAT_ID are both set. */
+  readonly notifier: TelegramNotifier | null;
 
   constructor(limits: Partial<RiskLimits> = {}) {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;
+    this.notifier = config.telegram
+      ? new TelegramNotifier({
+          ...config.telegram,
+          onError: (message, context) => noteError({ source: 'server', level: 'warn', message, where: 'telegram', context }),
+        })
+      : null;
     const creds = credsFromEnv();
     this.live = creds ? new DeltaExchange(creds) : null;
     this.paperExchange = new PaperExchange({ balanceUsd: 1_000 });
@@ -153,7 +163,30 @@ export class TradingService {
         this.alarms.unshift({ tradeId: t.tradeId, message, at: Date.now() });
         this.alarms.length = Math.min(this.alarms.length, 50);
       },
+      // The mode is read at the moment of the fill, not captured, so a paper
+      // fill can never reach the phone dressed as a live one.
+      onEvent: (event, before, after, plan) => {
+        if (!this.notifier) return;
+        const alert = alertFor(event, before, after, plan, { mode: this.currentMode });
+        if (alert) this.notifier.notify(alert);
+        // Only a closing event can end the day, so only then is the book read.
+        // The journal is already written, so the store sees this trade closed.
+        if (before.position !== 0 && after.position === 0) {
+          const open = this.openTrades();
+          if (bookWentFlat(before, after, open.map((r) => r.state))) this.announceDay(open.length);
+        }
+      },
     });
+  }
+
+  /** One message for the whole day, sent when nothing is held any more. */
+  private announceDay(workingOrders: number): void {
+    const now = Date.now();
+    const dayStart = startOfDayIst(now);
+    const summary = daySummaryFor(this.store.between(dayStart, now + 1), {
+      mode: this.currentMode, dayStart, at: now, spot: this.lastSpot, workingOrders,
+    });
+    if (summary) this.notifier?.notify(summary);
   }
 
   get mode(): DeskMode { return this.currentMode; }

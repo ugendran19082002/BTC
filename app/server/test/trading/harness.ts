@@ -1,7 +1,7 @@
 import { PaperExchange } from '../../src/trading/exchange/paper.js';
-import { MemoryTradeStore, TradeEngine, type TradePlan } from '../../src/trading/engine.js';
+import { MemoryTradeStore, TradeEngine, type EngineDeps, type TradePlan } from '../../src/trading/engine.js';
 import { DEFAULT_LIMITS, dailyLossLimitFor, type RiskLimits } from '../../src/trading/precheck.js';
-import type { ProductSpec, Quote } from '../../src/trading/types.js';
+import type { ProductSpec, Quote, TradeEvent, TradeState } from '../../src/trading/types.js';
 
 /**
  * One BTC daily option contract and an exchange that will do whatever a test
@@ -71,6 +71,8 @@ export type Rig = {
   setDayPnl(usd: number): void;
   setSpot(usd: number | null): void;
   alarms: { tradeId: string; message: string }[];
+  /** Everything `onEvent` was told, in order. */
+  events: { event: TradeEvent; before: TradeState; after: TradeState }[];
 };
 
 export function rig(opts: {
@@ -80,6 +82,8 @@ export function rig(opts: {
   limits?: Partial<RiskLimits>;
   tradingEnabled?: boolean;
   spot?: number | null;
+  /** Called after the rig has recorded the event -- including when it throws. */
+  onEvent?: EngineDeps['onEvent'];
 } = {}): Rig {
   const ex = new PaperExchange({ balanceUsd: opts.balanceUsd ?? 100_000 });
   for (const p of opts.products ?? [ceProduct()]) ex.addProduct(p);
@@ -90,6 +94,7 @@ export function rig(opts: {
   let pnl = 0;
   let spot: number | null = opts.spot === undefined ? SPOT : opts.spot;
   const alarms: Rig['alarms'] = [];
+  const events: Rig['events'] = [];
   const store = new MemoryTradeStore();
 
   const engine = new TradeEngine({
@@ -109,10 +114,14 @@ export function rig(opts: {
     dayPnlUsd: () => pnl,
     spot: () => spot,
     onAlarm: (t, message) => alarms.push({ tradeId: t.tradeId, message }),
+    onEvent: (event, before, after, plan) => {
+      events.push({ event, before, after });
+      opts.onEvent?.(event, before, after, plan);
+    },
   });
 
   return {
-    ex, store, engine, alarms,
+    ex, store, engine, alarms, events,
     advance: (ms) => { clock += ms; },
     now: () => clock,
     setFeed: (h) => { feed = h; },

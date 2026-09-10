@@ -29,6 +29,21 @@ export type Config = {
   liveTradingDefault: boolean;
   /** True when the environment explicitly forbids live trading. */
   paperLocked: boolean;
+  /**
+   * Where fill alerts go. Null unless both halves are set, and then nothing is
+   * sent and nothing complains: an alert is a convenience, never a gate.
+   *
+   * The token is a password for the bot -- whoever holds it can post as it. It
+   * is read here once and handed only to the notifier, which never logs it or
+   * the URL it travels in.
+   */
+  telegram: { token: string; chatId: string } | null;
+};
+
+const telegramFromEnv = (): Config['telegram'] => {
+  const token = process.env.TG_TOKEN?.trim();
+  const chatId = process.env.TG_CHAT_ID?.trim();
+  return token && chatId ? { token, chatId } : null;
 };
 
 export const config: Config = {
@@ -36,5 +51,6 @@ export const config: Config = {
   logLevel: process.env.LOG_LEVEL ?? 'info',
   liveTradingDefault: !isOff(process.env.DELTA_LIVE_TRADING),
   paperLocked: isOff(process.env.DELTA_LIVE_TRADING),
+  telegram: telegramFromEnv(),
 };
 

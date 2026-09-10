@@ -202,6 +202,39 @@ The engine never reads a display cache.
 
 ---
 
+## Alerts
+
+A Telegram message when an entry fills, when an exit fills, when a position is
+found closed on Delta without an exit fill, and one summary for the day when the
+last position closes. Off unless `TG_TOKEN` and `TG_CHAT_ID` are both set.
+
+```
+engine.commit ──save──► trades.db
+      │
+      └─► onEvent(event, before, after, plan)   ◄── after the save, inside a try
+                │
+       service.ts ── notify/messages.ts  (pure: event → message, or nothing)
+                │
+          notify/telegram.ts  ── held 4 s per trade and leg ──► Telegram
+```
+
+Three rules, same spirit as the five above:
+
+- **An alert can never touch a trade.** `onEvent` runs after the journal is
+  written, a throwing listener is caught and logged, and `notify` returns before
+  anything reaches the network. Telegram being down costs an alert, not an order.
+- **Replay is silent.** Only `commit` calls the listener. `hydrate()` rebuilds
+  state without it, so a restart does not announce yesterday's fills again.
+- **Only what printed.** Submitted orders, protection placed and refusals send
+  nothing. A channel that buzzes for those is muted, and then the stop-loss
+  alert goes unread.
+
+The day summary's charges use `feePerContract` — the ticket's own model — on
+both sides of every trade, and say *est.*: the model has no GST, and Delta's
+statement is the authority. See `TODO.md`.
+
+---
+
 ## Testing
 
 279 server tests (`node:test` via tsx), 238 browser tests (vitest +

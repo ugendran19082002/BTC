@@ -86,6 +86,13 @@ here exists because something specific went wrong once.
 | `paths.ts` | 41 | Where the data lives, resolved once by walking up to a repo marker. |
 | `config.ts` | 40 | Every environment variable this process reads, in one place. |
 
+### Notifications (`notify/`)
+
+| File | Lines | What it is for |
+|---|---:|---|
+| `messages.ts` | 323 | What a fill, and a finished day, look like on a phone. Pure: an event and the trade either side of it go in, a message or nothing comes out. Entry, exit and found-closed alerts, and the day summary with gross P&L, estimated charges and net. Only what actually printed is announced. |
+| `telegram.ts` | 166 | Delivery, and nothing more. Never throws into the engine, holds a burst of fills for one trade into one message, retries rate limits and network failures, falls back to plain text when markup is refused, and keeps the bot token out of every error it reports. |
+
 ---
 
 ## `app/web/src` — the screen
@@ -176,6 +183,10 @@ spinners removed — they are one pixel from the field on a trading screen),
 | `trading/store.test.ts` | 88 | Written after the `plan`-column bug: the first test is a plan changed and read back. |
 | `trading/short-cap.test.ts` | 132 | The total-short cap. Reproduces the live refusal (410 short, 410 more, limit 500) and pins the rule that a setting may lower the cap and can never raise it above what margin covers. |
 | `trading/money.test.ts` | 67 | Tick rounding, in the direction that never costs you. |
+| `notify/messages.test.ts` | 151 | Every fill alert: sizes, averages, ₹ and $, partial and cancelled entries, PAPER on the first line, nothing for what did not print, and every `&` escaped. |
+| `notify/day-summary.test.ts` | 116 | The day summary adds up — premium, gross, charges, net — and the day ends on the last leg, not the first. |
+| `notify/telegram.test.ts` | 112 | Coalescing, order, 429 and network retries, the plain-text fallback, and the token never reaching a report. |
+| `trading/on-event.test.ts` | 26 | The engine hands every journal event to its listener, and a listener that throws cannot stop a trade being written. |
 
 ## `app/web/src` tests — 16 files, 238 tests
 

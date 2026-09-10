@@ -139,6 +139,14 @@ export type EngineDeps = {
   /** BTC spot, for the margin and liquidation model. */
   spot?: () => number | null;
   onAlarm?: (trade: TradeState, message: string) => void;
+  /**
+   * Every journal event as it is written, with the trade either side of it.
+   *
+   * For telling a person what happened -- a phone alert when something fills.
+   * Called only from `commit`, never from replay, so a restart that rebuilds
+   * the trades from the journal does not announce yesterday's fills again.
+   */
+  onEvent?: (event: TradeEvent, before: TradeState, after: TradeState, plan: TradePlan) => void;
   /** A failure the engine carried on past. Best-effort, but not silent. */
   onSwallowed?: (what: string, order: { orderId: string; symbol?: string }, error: Error) => void;
 };
@@ -236,11 +244,29 @@ export class TradeEngine {
 
   private commit(rec: TradeRecord, ...events: TradeEvent[]): TradeRecord {
     let state = rec.state;
-    for (const e of events) { state = applyEvent(state, e); rec.events.push(e); }
+    const steps: [TradeEvent, TradeState, TradeState][] = [];
+    for (const e of events) {
+      const prev = state;
+      state = applyEvent(state, e);
+      rec.events.push(e);
+      steps.push([e, prev, state]);
+    }
     const before = rec.state.alarm;
     rec.state = state;
     this.d.store.save(rec);
     if (state.alarm && state.alarm !== before) this.d.onAlarm?.(state, state.alarm);
+    // Only after the save. The journal is the record; nothing that merely
+    // reports on it may stand between an event and the disk, and a listener
+    // that throws is its own bug -- it does not get to become the trade's.
+    if (this.d.onEvent) {
+      for (const [e, prev, next] of steps) {
+        try {
+          this.d.onEvent(e, prev, next, rec.plan);
+        } catch (err) {
+          this.note('event listener', { orderId: rec.state.tradeId, symbol: rec.state.symbol }, err);
+        }
+      }
+    }
     return rec;
   }
 

@@ -65,6 +65,12 @@ app.log.info(
     : 'login NOT required -- set DESK_USER, DESK_PASSWORD_HASH and DESK_SESSION_SECRET to require one',
 );
 
+app.log.info(
+  config.telegram
+    ? 'telegram fill alerts on'
+    : 'telegram fill alerts off -- set TG_TOKEN and TG_CHAT_ID to enable',
+);
+
 // Start background ticker poller and pre-warm caches so the first page load
 // is served instantly from memory with zero cold-start delay.
 startTickerPoller(8_000);

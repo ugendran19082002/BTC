@@ -1,7 +1,7 @@
 # TODO
 
 Live: https://delta.thannigo.in
-Updated 8 Sep 2026
+Updated 10 Sep 2026
 
 ---
 
@@ -40,6 +40,12 @@ runs Tailscale: change the web port in `deploy/docker-compose.yml` from
 Only you can log in and download it. AlgoTest says that day made money, my
 version says it lost money, and until we know why, every number in this project
 is a *guess* about your real results, not a measurement of them.
+
+**4. Revoke the Telegram bot token.**
+The token in `app/server/.env` (`TG_TOKEN`) was pasted into chat, so treat it
+as public like the key above: anyone holding it can post as your bot. In
+Telegram, open @BotFather, send `/revoke`, pick the bot, put the new token in
+`app/server/.env`, and run `./deploy/deploy.sh`. The chat id is not a secret.
 
 ---
 
@@ -227,6 +233,55 @@ chain. It was taken out by mistake for one deploy and put straight back.
   which is exactly what noise looks like before you get more data.
   So the desk forecasts **distance, not direction**, and the "up" column stays
   on the page at ~50% to make the case against adding one later.
+
+---
+
+## Telegram alerts — 10 Sep 2026
+
+**What it does.** With `TG_TOKEN` and `TG_CHAT_ID` set in `app/server/.env`,
+the desk sends a Telegram message when:
+
+- **an entry fills** — the contract, how many filled out of how many asked, the
+  average price, the premium in ₹ and $, and the target and stop (or a warning
+  that there is no stop);
+- **an exit fills** — target hit, stop-loss hit, or closed at market, with the
+  P&L booked and whether the position is flat yet;
+- **a position turns up closed on Delta** with no exit fill from the desk — a
+  stop that fired while the desk was down;
+- **the last open position closes** — one summary for the day, with the date:
+  trades, how many won and lost, premium collected, gross P&L, charges, net
+  P&L, how much of the premium was kept, and one line per trade.
+
+A fill that arrives in pieces is held for four seconds and sent as one message.
+A paper fill says PAPER on its first line. Orders that did not fill send
+nothing. If Telegram is down the desk keeps trading; the failure goes to the
+error log, never to the order path.
+
+**To do:**
+
+- [ ] **Revoke the bot token and set a new one.** See item 4 at the top.
+- [ ] **Deploy it.** The running desk does not have this code yet. Run
+      `./deploy/deploy.sh` when nothing is open, then check the api log says
+      `telegram fill alerts on`.
+- [ ] **Watch one live day end to end.** The morning entry, the evening exits
+      and the day summary should each arrive once, in that order. The tests
+      prove the arithmetic; only a live day proves the timing.
+- [ ] **Use Delta's real charges.** The summary's charges come from the desk's
+      fee model — 3.5% of premium on each side, capped by 0.01% of notional —
+      and say *est.* for that reason. The model has no 18% GST on fees, and
+      Delta's India statement does charge it. Read the actual `commission` on
+      each fill from `/v2/fills` and show that instead.
+- [ ] **Settlement at expiry.** A position held into the 17:30 settlement closes
+      without a fill, so its P&L shows as unknown. Read the settlement price and
+      count it.
+- [ ] **Alert on `POSITION UNPROTECTED`.** That alarm still only reaches the
+      screen, and it is the one that most needs to reach a phone.
+- [ ] **Keep the mode on each trade.** The summary labels the whole day with
+      the mode at the moment it is sent. A day that switched between paper and
+      live would be labelled by whichever came last.
+- [ ] **Daily summary when nothing traded.** No trades means no message, so a
+      silent phone cannot tell "stood aside" from "the desk was down". A short
+      message at the end of each day would settle that.
 
 ---
 
