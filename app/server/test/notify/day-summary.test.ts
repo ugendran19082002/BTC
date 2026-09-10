@@ -45,10 +45,11 @@ test('the summary adds the day up: premium, gross, charges, and net', () => {
   assert.match(a.text, /Premium collected: <b>₹1,279<\/b> \(\$15\.05\)/);
   // 1.05 - 1.00 = $0.05, at 85 = 4.25
   assert.match(a.text, /Gross P&amp;L: <b>\+₹4\.25<\/b> \(\+\$0\.05\)/);
-  // 3.5% of premium on both sides of both trades: 0.35175 + 0.315 + 0.175 + 0.21 = $1.05175
-  assert.match(a.text, /Charges \(est\.\): -₹89 \(-\$1\.05\)/);
+  // 3.5% of premium on both sides of both trades, plus 18% GST:
+  // (0.35175 + 0.315 + 0.175 + 0.21) x 1.18 = $1.241065, at 85 = 105.49
+  assert.match(a.text, /Charges \(est\.\): -₹105 \(-\$1\.24\)/);
   // and that turns a small win into a loss, which is the reason the line exists
-  assert.match(a.text, /🔴 <b>Net P&amp;L: -₹85 \(-\$1\.00\)<\/b>/);
+  assert.match(a.text, /🔴 <b>Net P&amp;L: -₹101 \(-\$1\.19\)<\/b>/);
   assert.match(a.text, /17:29 IST · charges are estimates/);
 });
 

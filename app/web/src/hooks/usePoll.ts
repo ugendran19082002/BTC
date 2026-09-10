@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { usePageVisible } from '@/hooks/usePageVisible';
 
 /**
  * Call something on a timer and keep the last good answer.
  *
- * Two things it does that a bare `setInterval` does not: a slow response never
- * stacks a second call on top of the first, and a failed poll leaves the last
- * good data on screen with an error beside it rather than blanking the page.
- * A trading screen that goes empty for a second is worse than one that says
- * "as of eight seconds ago".
+ * Three things it does that a bare `setInterval` does not: a slow response never
+ * stacks a second call on top of the first; a failed poll leaves the last good
+ * data on screen with an error beside it rather than blanking the page; and it
+ * stops while the page is hidden. A phone in a pocket polling once a second
+ * spends battery and server time on a screen nobody sees, and every request the
+ * phone kills on the way to sleep used to land in the error log as a failure.
+ * It asks again the moment the page is back.
  */
 export function usePoll<T>(
   fetcher: () => Promise<T>,
@@ -15,6 +18,7 @@ export function usePoll<T>(
   opts: { enabled?: boolean; deps?: unknown[] } = {},
 ) {
   const { enabled = true } = opts;
+  const visible = usePageVisible();
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const [loading, setLoading] = useState(false);
@@ -44,7 +48,7 @@ export function usePoll<T>(
 
   useEffect(() => {
     alive.current = true;
-    if (!enabled) return;
+    if (!enabled || !visible) return;
     void refresh();
     const id = setInterval(() => { void refresh(); }, intervalMs);
     return () => {
@@ -52,7 +56,7 @@ export function usePoll<T>(
       clearInterval(id);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, intervalMs, refresh, ...(opts.deps ?? [])]);
+  }, [enabled, visible, intervalMs, refresh, ...(opts.deps ?? [])]);
 
   return { data, error, loading, updatedAt, refresh };
 }

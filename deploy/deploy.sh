@@ -5,6 +5,7 @@
 #   ./deploy/deploy.sh                 build and run locally
 #   ./deploy/deploy.sh --check         validate only, change nothing
 #   ./deploy/deploy.sh --host user@ip  build locally, ship, run there
+#   ./deploy/deploy.sh --no-prune      deploy, but keep every old image
 #
 # The script refuses to build if a credential is reachable from the build
 # context, and rolls back to the previous images if the new ones fail their
@@ -15,6 +16,16 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE="docker compose -f ${ROOT}/deploy/docker-compose.yml"
 TAG="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || date -u +%Y%m%d%H%M)"
+# An image tagged with a commit must contain exactly that commit. Uncommitted
+# changes get a tag of their own, so a rollback can never land on code that is
+# not in git under the name it claims.
+if [[ -n "$(git -C "$ROOT" status --porcelain 2>/dev/null)" ]]; then
+  TAG="${TAG}-dirty-$(date -u +%H%M%S)"
+fi
+# How many recent releases of each image to keep, besides the running one and
+# the one it replaced.
+KEEP_IMAGES="${KEEP_IMAGES:-3}"
+PRUNE=1
 WEB_PORT="${WEB_PORT:-8099}"
 REMOTE=""
 CHECK_ONLY=0
@@ -23,13 +34,40 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --check) CHECK_ONLY=1; shift ;;
     --host)  REMOTE="${2:?--host needs user@host}"; shift 2 ;;
-    -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
+    --no-prune) PRUNE=0; shift ;;
+    -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
 
 say()  { printf '\033[36m==>\033[0m %s\n' "$*"; }
 fail() { printf '\033[31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
+
+# Old images, removed the safe way.
+#
+# Not `docker image prune -a`. That deletes every image no container is using,
+# which includes the previous release -- the one a failed deploy rolls back to --
+# and every image of every other project on the host. Instead, per repository:
+# keep the running tag, the tag it replaced, and the newest KEEP_IMAGES; remove
+# the rest. Then dangling layers, and build cache older than three days, which is
+# most of the space and none of the build speed.
+prune_images() {
+  local repo tag keep removed=0
+  for repo in btc-desk-api btc-desk-web; do
+    keep="$(docker images "$repo" --format '{{.CreatedAt}}|{{.Tag}}' \
+      | sort -r | cut -d'|' -f2 | grep -vx 'latest' | head -n "$KEEP_IMAGES" || true)"
+    while IFS= read -r tag; do
+      [[ -z "$tag" || "$tag" == "latest" || "$tag" == "$TAG" || "$tag" == "${PREV:-}" ]] && continue
+      grep -qx -- "$tag" <<<"$keep" && continue
+      # rmi without -f refuses an image a container still uses, which is the point
+      if docker rmi "${repo}:${tag}" >/dev/null 2>&1; then removed=$((removed + 1)); fi
+    done < <(docker images "$repo" --format '{{.Tag}}')
+  done
+  docker image prune -f >/dev/null 2>&1 || true
+  docker builder prune -f --filter 'until=72h' >/dev/null 2>&1 || true
+  say "removed ${removed} old image tags; kept ${TAG}, ${PREV:-no previous}, and the newest ${KEEP_IMAGES} of each"
+  say "docker disk now: $(docker system df --format '{{.Type}}={{.Size}}' | tr '\n' ' ')"
+}
 
 # ---------------------------------------------------------------- preflight
 
@@ -73,6 +111,9 @@ fi
 
 say "building images at tag ${TAG}"
 TAG="$TAG" WEB_PORT="$WEB_PORT" $COMPOSE build
+# `latest` follows the newest build, so a bare `docker compose up` can never
+# start code from days ago -- which is what `latest` pointed at before this.
+for repo in btc-desk-api btc-desk-web; do docker tag "${repo}:${TAG}" "${repo}:latest"; done
 
 # ---------------------------------------------------------------- ship
 
@@ -92,7 +133,18 @@ fi
 
 # ---------------------------------------------------------------- run locally
 
-PREV="$(docker inspect -f '{{ index .Config.Labels "tag" }}' btc-desk-api 2>/dev/null || true)"
+# The tag the running API was started from: what a failed deploy rolls back to.
+#
+# Read from the running container's image. The old lookup asked a container
+# named `btc-desk-api` for a `tag` label; compose names it btc-desk-api-1 and
+# sets no such label, so PREV was always empty and rollback had never run once.
+PREV=""
+PREV_ID="$($COMPOSE ps -q api 2>/dev/null || true)"
+if [[ -n "$PREV_ID" ]]; then
+  PREV="$(docker inspect -f '{{.Config.Image}}' "$PREV_ID" 2>/dev/null | sed -n 's/^btc-desk-api://p' || true)"
+fi
+[[ "$PREV" == "$TAG" ]] && PREV=""
+say "running now: ${PREV:-nothing}"
 
 say "starting"
 TAG="$TAG" WEB_PORT="$WEB_PORT" $COMPOSE up -d
@@ -103,6 +155,7 @@ for i in $(seq 1 30); do
     say "healthy after ${i}s"
     curl -fsS "http://127.0.0.1:${WEB_PORT}/api/health"; echo
     say "front end: http://127.0.0.1:${WEB_PORT}/"
+    if [[ $PRUNE -eq 1 ]]; then prune_images; fi
     exit 0
   fi
   sleep 1

@@ -6,6 +6,7 @@ import {
   clampLeverage, fundsRequiredPerContract, liquidationPrice, maxLotsAt, premiumUsd, unrealisedPnlUsd,
 } from '../../trading/margin.js';
 import { crossesSpread, worstCaseLoss, type TradeRecord } from '../../trading/engine.js';
+import { fillChargesUsd, tradeCharges } from '../../trading/charges.js';
 import type { ExchangeOrder, ExchangePosition, Quote } from '../../trading/types.js';
 import { midOf } from '../../trading/money.js';
 import {
@@ -85,8 +86,17 @@ const view = (
     size: live?.size ?? r.state.position,
     contractValue,
   });
+  // Delta's charges on every fill so far, and what closing the rest at the mark
+  // would add. Same formula as the statement; see trading/charges.ts.
+  const charges = tradeCharges(r.state, { spot });
+  const toCloseUsd = mark !== null && r.state.position !== 0
+    ? fillChargesUsd({ price: mark, contracts: r.state.position, contractValue, spot }).totalUsd
+    : 0;
   return {
     ...r.state,
+    charges: { entryUsd: charges.entryUsd, exitUsd: charges.exitUsd, paidUsd: charges.totalUsd, toCloseUsd },
+    /** Booked P&L after every charge paid so far. For a closed trade, what it really made. */
+    netRealisedUsd: r.state.realisedPnl - charges.totalUsd,
     plan: {
       lots: r.plan.lots,
       entry: r.plan.entry,
@@ -117,6 +127,8 @@ const view = (
           : null),
       /** What Delta says, kept for comparison. Not what the screen shows. */
       exchangePnl: live?.unrealisedPnl ?? null,
+      /** What closing everything now would leave you with, after every charge in and out. */
+      netIfClosedUsd: pnl === null ? null : r.state.realisedPnl + pnl - charges.totalUsd - toCloseUsd,
     },
     /**
      * The protective orders that are actually resting, read off the exchange.
@@ -202,6 +214,19 @@ export function registerTradeRoutes(app: FastifyInstance) {
       alarms: svc.alarms,
       /** Booked today, in USD. The daily-loss gate reads this; now so can you. */
       realisedTodayUsd: svc.store.realisedSince(startOfDayIst()),
+      /**
+       * The day so far, in one place, for the header: booked, still open, and
+       * Delta's charges on every fill since 05:30 IST. `netUsd` is the number
+       * that matters -- what the day has actually made if it closed right now.
+       */
+      today: (() => {
+        const dayStart = startOfDayIst();
+        const realisedUsd = svc.store.realisedSince(dayStart);
+        const unrealisedUsd = open.reduce((n, t) => n + (t.live.unrealisedPnl ?? 0), 0);
+        const chargesUsd = svc.store.between(dayStart, Date.now() + 1)
+          .reduce((n, rec) => n + tradeCharges(rec.state, { spot: svc.spot, since: dayStart }).totalUsd, 0);
+        return { realisedUsd, unrealisedUsd, chargesUsd, netUsd: realisedUsd + unrealisedUsd - chargesUsd };
+      })(),
       // The limit in force, which is set from the balance rather than fixed.
       limits: {
         ...DEFAULT_LIMITS,
@@ -434,7 +459,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
     const rows = svc.store
       .between(Math.min(from, to), Math.max(from + 86_400_000, to), limit)
       .map((r) => ({
-        ...view(r),
+        ...view(r, [], r.state.contractValue, null, svc.spot),
         status: orderStatusOf(r.state, r.events),
         outcome: orderOutcomeOf(r.state, r.events),
         openedAt: r.events[0]?.at ?? r.state.updatedAt,

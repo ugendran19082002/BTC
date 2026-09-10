@@ -24,6 +24,9 @@ services:
       # position exists before it has spoken to the exchange.
       TRADE_DB: /srv/data/trades.db
       ERROR_DB: /srv/data/errors.db
+      # Room for the heap to grow before V8 starts collecting hard. The desk
+      # rests near 100 MB; this is headroom, not a need.
+      NODE_OPTIONS: --max-old-space-size=1536
     volumes:
       - data:/srv/data
     # No host port. The browser reaches the API through the web container over
@@ -39,11 +42,15 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    # Ceilings, not reservations. This host (4 cores, 8 GB) runs only the desk
+    # and its edge proxy, so the API may use most of it when it needs to -- a
+    # cold chain fan-out or a burst of polls -- without being throttled at one
+    # core. The old 1 CPU / 512 MB was sized for a shared box.
     deploy:
       resources:
         limits:
-          cpus: "1.0"
-          memory: 512M
+          cpus: "3.0"
+          memory: 2G
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
@@ -64,8 +71,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.5"
-          memory: 128M
+          cpus: "1.0"
+          memory: 256M
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }

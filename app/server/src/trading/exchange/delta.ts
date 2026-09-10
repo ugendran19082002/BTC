@@ -5,6 +5,11 @@ import type {
 import { ExchangeUnavailable, OrderRejected, SubmitTimeout, type ExchangePort } from './port.js';
 import { noteError } from '../../observability/errors.js';
 
+/** A read's timeout, and how many times it is tried. See `call`. */
+const READ_TIMEOUT_MS = 8_000;
+const READ_ATTEMPTS = 2;
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 /**
  * The real account.
  *
@@ -176,25 +181,43 @@ export class DeltaExchange implements ExchangePort {
 
   constructor(private readonly creds: Creds | null) {}
 
-  private async call<T>(req: Parameters<typeof signed>[1]): Promise<T> {
-    try {
-      return await signed<T>(this.creds, req);
-    } catch (e) {
-      noteError({
-        source: 'exchange',
-        message: (e as Error).message,
-        code: e instanceof DeltaRefused ? e.code : (e as Error).name,
-        stack: (e as Error).stack ?? null,
-        where: `${req.method} ${req.path}`,
-        // the body can carry a size and a price, both of which help; the
-        // signing headers never reach here, and redact() catches the rest
-        context: { body: req.body ?? null },
-      });
-      // Being asked to wait is not an outage, but for anything that takes risk
-      // it has to behave like one: hold off rather than push through.
-      if (e instanceof RateLimited) throw new ExchangeUnavailable(e.message);
-      if (e instanceof RequestTimedOut) throw new ExchangeUnavailable(e.message);
-      throw e;
+  private async call<T>(reqIn: Parameters<typeof signed>[1]): Promise<T> {
+    /*
+     * A read that times out is safe to ask again: it changes nothing. So a GET
+     * gets a shorter timeout and one quiet retry, which turns Delta's occasional
+     * slow second into no error at all -- both RequestTimedOut rows in the live
+     * log on 10 September were single reads (/v2/orders, /v2/positions/margined).
+     * Two tries at 8s still answer sooner than one at the old 20s.
+     *
+     * Writes are never retried here. Silence on a write means "unknown", and
+     * the only correct response is to read the account back, never to resend.
+     */
+    const isRead = reqIn.method === 'GET';
+    const req = isRead && reqIn.timeoutMs === undefined ? { ...reqIn, timeoutMs: READ_TIMEOUT_MS } : reqIn;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await signed<T>(this.creds, req);
+      } catch (e) {
+        if (isRead && attempt < READ_ATTEMPTS && e instanceof RequestTimedOut) {
+          await pause(300);
+          continue;
+        }
+        noteError({
+          source: 'exchange',
+          message: (e as Error).message,
+          code: e instanceof DeltaRefused ? e.code : (e as Error).name,
+          stack: (e as Error).stack ?? null,
+          where: `${req.method} ${req.path}`,
+          // the body can carry a size and a price, both of which help; the
+          // signing headers never reach here, and redact() catches the rest
+          context: { body: req.body ?? null, attempts: attempt },
+        });
+        // Being asked to wait is not an outage, but for anything that takes risk
+        // it has to behave like one: hold off rather than push through.
+        if (e instanceof RateLimited) throw new ExchangeUnavailable(e.message);
+        if (e instanceof RequestTimedOut) throw new ExchangeUnavailable(e.message);
+        throw e;
+      }
     }
   }
 

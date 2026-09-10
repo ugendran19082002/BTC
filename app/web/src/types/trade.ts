@@ -59,7 +59,13 @@ export type Trade = {
     liquidationPrice: number | null;
     /** What Delta reports. Kept for comparison; not what the screen shows. */
     exchangePnl?: number | null;
+    /** What closing everything now would leave, after every charge in and out. */
+    netIfClosedUsd?: number | null;
   };
+  /** Delta's fee + 18% GST, per fill, by the statement's own formula. */
+  charges?: { entryUsd: number; exitUsd: number; paidUsd: number; toCloseUsd: number };
+  /** Booked P&L after the charges paid so far. */
+  netRealisedUsd?: number;
   /**
    * The protective orders actually resting on the exchange.
    *
@@ -115,6 +121,8 @@ export type TradeStatus = {
   unrealisedPnlUsd?: number;
   /** Booked since 05:30 IST, in USD. */
   realisedTodayUsd?: number;
+  /** The day so far, since 05:30 IST: booked, still open, Delta's charges, and the net of all three. */
+  today?: { realisedUsd: number; unrealisedUsd: number; chargesUsd: number; netUsd: number };
   positions: ExchangePosition[];
   open: Trade[];
   alarms: { tradeId: string; message: string; at: number }[];

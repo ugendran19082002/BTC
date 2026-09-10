@@ -34,6 +34,40 @@ const consecutive = new Map<string, number>();
 export const forgetNetworkFailures = (): void => consecutive.clear();
 
 /**
+ * Whether a failed request right now says anything about the server.
+ *
+ * A phone that locks, switches apps or drops signal kills the requests in
+ * flight, and the browser reports each as "Failed to fetch" -- or, when it cut
+ * a reply off half way, as a body that will not parse. That was nearly every
+ * row in the live error log on 10 September, and none of them were the desk.
+ */
+const pageCanReachNetwork = (): boolean =>
+  (typeof document === 'undefined' || document.visibilityState !== 'hidden')
+  && (typeof navigator === 'undefined' || navigator.onLine !== false);
+
+/**
+ * A request that hangs has to fail eventually, or the poll waiting on it never
+ * runs again and the screen freezes on its last good answer. Generous, because
+ * a cold historical chain legitimately takes a while.
+ */
+const TIMEOUT_MS = 60_000;
+
+function networkFailure(path: string, url: string, message: string): void {
+  if (!pageCanReachNetwork()) return;
+  const runs = (consecutive.get(path) ?? 0) + 1;
+  consecutive.set(path, runs);
+  if (runs >= FAILURES_BEFORE_REPORTING) {
+    reportError({
+      message: `network: ${message}`,
+      where: path,
+      code: 'network',
+      level: 'warn',
+      context: { url, consecutiveFailures: runs },
+    });
+  }
+}
+
+/**
  * One place that knows how to talk to the API.
  *
  * A 401 becomes NotSignedIn rather than a generic failure, because the screen
@@ -45,32 +79,24 @@ export async function json<T>(url: string, init?: RequestInit): Promise<T> {
   const path = pathOf(url);
   let res: Response;
   try {
-    res = await fetch(url, { credentials: 'same-origin', ...init });
+    const timeout = !init?.signal && typeof AbortSignal.timeout === 'function'
+      ? AbortSignal.timeout(TIMEOUT_MS)
+      : undefined;
+    res = await fetch(url, { credentials: 'same-origin', ...(timeout ? { signal: timeout } : {}), ...init });
   } catch (e) {
     // The network itself failed. Once is a blip -- a phone changing cell, or
     // this very server restarting under a deploy -- and recording it teaches
     // whoever reads the log to ignore the log. Repeatedly is an outage, and
     // that is invisible unless it is written down.
-    const runs = (consecutive.get(path) ?? 0) + 1;
-    consecutive.set(path, runs);
-    if (runs >= FAILURES_BEFORE_REPORTING) {
-      reportError({
-        message: `network: ${(e as Error).message}`,
-        where: path,
-        code: 'network',
-        level: 'warn',
-        context: { url, consecutiveFailures: runs },
-      });
-    }
+    networkFailure(path, url, (e as Error).message);
     throw e;
   }
-  // It answered, whatever it answered: the connection is not the problem.
-  consecutive.delete(path);
   // Not signed in is a state, not a failure, and it must not fill the log.
-  if (res.status === 401) throw new NotSignedIn();
+  if (res.status === 401) { consecutive.delete(path); throw new NotSignedIn(); }
 
-  // A 200 whose body will not parse is a truncated response, not an error the
-  // server chose to send. Saying "HTTP 200" hid that; naming it does not.
+  // A 200 whose body will not parse is a reply cut off in transit -- the same
+  // dropped connection as a failed fetch, one step later -- so it is counted the
+  // same way rather than reported the first time. Anything else is the server's.
   let body: unknown;
   try {
     body = await res.json();
@@ -78,9 +104,12 @@ export async function json<T>(url: string, init?: RequestInit): Promise<T> {
     const message = res.ok
       ? `reply cut short — ${res.status} with no readable body`
       : `HTTP ${res.status}`;
-    reportError({ message, where: path, code: String(res.status), context: { url } });
+    if (res.ok) networkFailure(path, url, message);
+    else reportError({ message, where: path, code: String(res.status), context: { url } });
     throw new Error(message);
   }
+  // A whole reply arrived: the connection is not the problem.
+  consecutive.delete(path);
 
   const err = (body as { error?: string } | null)?.error;
   if (!res.ok || err) {

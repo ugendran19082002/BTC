@@ -1,5 +1,6 @@
 import type { TradePlan, TradeRecord } from '../trading/engine.js';
-import { feePerContract, premiumUsd } from '../trading/margin.js';
+import { premiumUsd } from '../trading/margin.js';
+import { tradeCharges } from '../trading/charges.js';
 import type { OrderRole, OrderSide, TradeEvent, TradeState } from '../trading/types.js';
 import { USDINR } from '../domain/score.js';
 
@@ -87,8 +88,8 @@ export const bookWentFlat = (before: TradeState, after: TradeState, open: TradeS
 /**
  * The whole day in one message, once the last position has closed.
  *
- * Charges are the desk's own calibrated fee model, the one the order ticket
- * prices with, applied to both sides of every trade -- and said to be an
+ * Charges are Delta's fee plus 18% GST on every fill, by the formula that
+ * reproduces the account statement to the last digit -- and still labelled an
  * estimate, because the exchange's statement is the only authority on what was
  * actually charged.
  */
@@ -157,17 +158,8 @@ function tradeLine(x: { rec: TradeRecord; known: boolean; gross: number }): stri
 
 const openedAt = (s: TradeState) => s.fills.find((f) => f.role === 'entry')?.ts ?? s.updatedAt;
 
-/** Fees on both sides, at the average price of each -- the fee is linear in price where the cap binds. */
-function feesUsd(s: TradeState, plan: TradePlan, spot: number | null): number {
-  const side = (quoted: number | null, contracts: number) => (quoted === null || contracts === 0 ? 0
-    : feePerContract({
-      spot: spot ?? Number.POSITIVE_INFINITY,
-      premium: quoted,
-      leverage: plan.leverage,
-      contractValue: s.contractValue,
-    }) * contracts);
-  return side(s.entryAvgPrice, s.entrySize) + side(s.exitAvgPrice, s.exitSize);
-}
+/** Delta's fee and GST on every fill -- the same formula as the statement. */
+const feesUsd = (s: TradeState, _plan: TradePlan, spot: number | null): number => tradeCharges(s, { spot }).totalUsd;
 
 // -------------------------------------------------------------- the fills
 

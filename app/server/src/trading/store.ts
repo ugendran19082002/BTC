@@ -77,6 +77,11 @@ export class SqliteTradeStore implements TradeStore {
   constructor(path = TRADE_DB) {
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA journal_mode = WAL');
+    // Two connections share this file -- the trade journal and the strategy
+    // store -- so a write can meet the other's lock. Wait for it briefly rather
+    // than fail with SQLITE_BUSY. Sync stays at SQLite's default FULL: this is
+    // an order journal, and the last committed fill must survive a power cut.
+    this.db.exec('PRAGMA busy_timeout = 5000; PRAGMA temp_store = MEMORY; PRAGMA cache_size = -16000;');
     migrate(this.db, MIGRATIONS);
   }
 

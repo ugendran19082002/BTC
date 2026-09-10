@@ -266,11 +266,14 @@ error log, never to the order path.
 - [ ] **Watch one live day end to end.** The morning entry, the evening exits
       and the day summary should each arrive once, in that order. The tests
       prove the arithmetic; only a live day proves the timing.
-- [ ] **Use Delta's real charges.** The summary's charges come from the desk's
-      fee model — 3.5% of premium on each side, capped by 0.01% of notional —
-      and say *est.* for that reason. The model has no 18% GST on fees, and
-      Delta's India statement does charge it. Read the actual `commission` on
-      each fill from `/v2/fills` and show that instead.
+- [x] **Charges include GST.** `trading/charges.ts` is `min(0.01% × notional,
+      3.5% × premium) × 1.18`, checked against the account's own trade-history
+      export: all 72 fills on 10 Sep match Delta's "Fees paid" to the last digit.
+- [ ] **Read the exact fee per fill from Delta.** The formula matches, but the
+      account's fee rate is 0.009% on the statement against 0.01% in the docs.
+      It never matters while the 3.5% cap is the smaller half — true of every
+      fill so far — but `/v2/fills` carries the real commission and would end
+      the question.
 - [ ] **Settlement at expiry.** A position held into the 17:30 settlement closes
       without a fill, so its P&L shows as unknown. Read the settlement price and
       count it.
