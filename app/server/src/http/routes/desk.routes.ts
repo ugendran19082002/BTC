@@ -192,6 +192,23 @@ export function registerDeskRoutes(app: FastifyInstance) {
    */
   app.get('/api/settings', async () => {
     const svc = tradingService();
+    /*
+     * Read the account before quoting a ceiling from it.
+     *
+     * The ceiling is "what margin can carry", which is what is free plus what
+     * is already committed to open shorts. Both figures are remembered from the
+     * last time something asked the exchange, and this route asked for neither
+     * -- so a card that loaded just after a restart was told the desk was flat
+     * and quoted a cap of 332 while 425 contracts were short. A cap below the
+     * position it is capping is not a number anybody can act on.
+     *
+     * Both calls are cached for well under a second, so this costs nothing on
+     * a screen that polls.
+     */
+    await Promise.all([
+      svc.positionsForDisplay().catch(() => []),
+      svc.balance().catch(() => 0),
+    ]);
     const out: Record<string, string | null> = {};
     for (const key of [...Object.keys(ALLOWED_SETTINGS), ...NUMERIC_SETTINGS]) {
       out[key] = svc.store.getSetting(key);
