@@ -148,7 +148,13 @@ export function applyEvent(prev: TradeState, e: TradeEvent): TradeState {
       return {
         ...s,
         phase: s.position === 0 ? 'flat' : 'protected',
-        protection: { takeProfit: e.takeProfit, stopLoss: e.stopLoss },
+        protection: {
+          takeProfit: e.takeProfit,
+          stopLoss: e.stopLoss,
+          // Falls back to the position at the moment it was placed, so a record
+          // written before this field existed still reads sensibly.
+          size: e.size ?? Math.abs(s.position),
+        },
         alarm: null,
       };
 

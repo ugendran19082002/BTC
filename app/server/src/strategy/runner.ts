@@ -190,8 +190,10 @@ async function svcPlace(
    * scheduled order behaves exactly like a tapped one.
    *
    *   now    no limit at all -- place() reads that as a market order.
-   *   offer  rest at the ask, and cross once the wait is up. Zero seconds
-   *          means rest until it fills, which place() expresses as no timeout.
+   *   offer  rest at the ask and walk to the bid over `crossAfterSec`, which is
+   *          exactly what the ticket's "cross after N sec" does. The last step
+   *          is the bid, so the walk always ends in a fill rather than leaving
+   *          half an order resting. Zero seconds rests until it fills.
    *   set    the price named in the config, resting.
    */
   const limitPrice = c.entryPrice === 'now'
@@ -206,8 +208,7 @@ async function svcPlace(
     ...order,
     strategyId: s.id,
     limitPrice,
-    timeoutMs: c.entryPrice === 'offer' ? c.crossAfterSec * 1000 : 0,
-    marketFallback: c.entryPrice === 'offer' && c.crossAfterSec > 0,
+    chaseSeconds: c.entryPrice === 'offer' ? c.crossAfterSec : 0,
     takeProfitPct: c.takeProfitPct,
     stopLossPct: c.stopLossPct,
   });

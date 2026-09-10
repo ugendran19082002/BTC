@@ -744,8 +744,14 @@ export class TradeEngine {
       }).then(() => {}),
     );
 
-    if (tp !== rec.state.protection.takeProfit || sl !== rec.state.protection.stopLoss) {
-      rec = this.commit(rec, { t: 'protection_placed', takeProfit: tp, stopLoss: sl, at: this.now() });
+    // Size is part of the identity of a protective order, not a detail of it:
+    // the same ids covering a different number of contracts is a change.
+    if (tp !== rec.state.protection.takeProfit
+        || sl !== rec.state.protection.stopLoss
+        || rec.state.protection.size !== size) {
+      rec = this.commit(rec, {
+        t: 'protection_placed', takeProfit: tp, stopLoss: sl, size, at: this.now(),
+      });
     }
 
     if (failure === null) {
@@ -782,7 +788,9 @@ export class TradeEngine {
     const book = await this.exchange.getOpenOrders(rec.plan.symbol).catch(() => []);
     for (const o of book.filter((x) => x.reduceOnly)) await this.cancelAndVerify(o);
     if (rec.state.protection.takeProfit || rec.state.protection.stopLoss) {
-      rec = this.commit(rec, { t: 'protection_placed', takeProfit: null, stopLoss: null, at: this.now() });
+      rec = this.commit(rec, {
+        t: 'protection_placed', takeProfit: null, stopLoss: null, size: 0, at: this.now(),
+      });
     }
     return rec;
   }
@@ -1071,10 +1079,27 @@ const seedOf = (tradeId: string) => tradeId.replace(/[^A-Za-z0-9]/g, '').slice(-
 export function missingProtection(rec: TradeRecord): boolean {
   const wantsStop = rec.plan.stopPrice !== null;
   const wantsTarget = rec.plan.takeProfitPrice !== null;
-  const { tradeId } = rec.state;
+  const { tradeId, protection } = rec.state;
+  const want = protectionSize(rec.state);
+
+  /*
+   * An order that covers less than the position is as good as absent for the
+   * part it does not cover.
+   *
+   * On 10 September 2026 a 425-contract entry filled in pieces. Protection went
+   * on after the first 26, and because an id was present and belonged to the
+   * trade, this function said "protected" every second afterwards -- so protect()
+   * was never called again and 399 contracts ran with no exit on the book.
+   *
+   * `size` is undefined on records written before it was tracked; those are
+   * treated as covering whatever the position was then, which is the reading
+   * that makes them re-check rather than be trusted.
+   */
+  const undersized = (protection.size ?? 0) < want;
+
   return (
-    (wantsStop && !ownsClientId(tradeId, rec.state.protection.stopLoss ?? null)) ||
-    (wantsTarget && !ownsClientId(tradeId, rec.state.protection.takeProfit ?? null))
+    (wantsStop && (!ownsClientId(tradeId, protection.stopLoss ?? null) || undersized)) ||
+    (wantsTarget && (!ownsClientId(tradeId, protection.takeProfit ?? null) || undersized))
   );
 }
 

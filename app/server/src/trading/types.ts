@@ -153,6 +153,15 @@ export type TradePhase =
 export type ProtectionOrders = {
   takeProfit: string | null;   // clientOrderId
   stopLoss: string | null;
+  /**
+   * Contracts the resting protection actually covers.
+   *
+   * Without this, a target placed while 26 contracts were filled still read as
+   * "protected" once the entry finished at 425, and nothing ever resized it --
+   * 399 contracts on the book with no exit behind them. An id proves an order
+   * exists; only the size proves it covers the position.
+   */
+  size?: number;
 };
 
 export type TradeState = {
@@ -208,7 +217,14 @@ export type TradeEvent =
   | { t: 'fill'; role: OrderRole; side: OrderSide; size: number; price: number; orderId: string; at: number }
   | { t: 'entry_timeout'; at: number }
   | { t: 'entry_cancelled'; remaining: number; at: number }
-  | { t: 'protection_placed'; takeProfit: string | null; stopLoss: string | null; at: number }
+  | {
+      t: 'protection_placed';
+      takeProfit: string | null;
+      stopLoss: string | null;
+      /** Contracts it covers, so a later fill can be seen to have outgrown it. */
+      size?: number;
+      at: number;
+    }
   | { t: 'protection_failed'; reason: string; at: number }
   | { t: 'exit_submitted'; role: OrderRole | 'manual'; clientOrderId: string; at: number }
   | { t: 'sibling_cancelled'; role: OrderRole; at: number }

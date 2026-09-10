@@ -259,11 +259,24 @@ export class TradingService {
         ? { type: 'market', timeoutMs: 0, marketFallback: false, chase: null }
         : {
             type: 'limit', limitPrice: price,
-            // A limit rests until it fills. A chase is what ends it: the last
-            // step is the bid, which is marketable, so the walk always finishes
-            // in a fill and no timer is needed to force one.
-            timeoutMs: 0,
-            marketFallback: false,
+            /*
+             * A limit rests until something ends it, and a chase is the better
+             * ending: the last step is the bid, which is marketable, so the walk
+             * always finishes in a fill without a timer forcing one.
+             *
+             * The timeout is honoured when a caller asks for one and no chase is
+             * set. These two were hardcoded to 0/false while the signature went
+             * on accepting them, so the scheduler's "cross after 5 seconds"
+             * reached this function and was thrown away -- an entry rested at the
+             * offer all morning, half filled, and nothing crossed. A parameter
+             * that is accepted and ignored is worse than one that is absent.
+             */
+            timeoutMs: input.chaseSeconds && input.chaseSeconds > 0
+              ? 0
+              : Math.max(0, Math.round(input.timeoutMs ?? 0)),
+            marketFallback: input.chaseSeconds && input.chaseSeconds > 0
+              ? false
+              : (input.marketFallback ?? false),
             chase: input.chaseSeconds && input.chaseSeconds > 0
               ? { steps: CHASE_STEPS, everyMs: Math.round((input.chaseSeconds * 1_000) / CHASE_STEPS) }
               : null,
