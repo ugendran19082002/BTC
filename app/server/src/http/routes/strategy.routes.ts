@@ -31,6 +31,7 @@ function cleanConfig(raw: unknown): StrategyConfig {
     entryPrice: c.entryPrice === 'now' || c.entryPrice === 'set' ? c.entryPrice : 'offer',
     entryLimit: c.entryLimit === null || c.entryLimit === undefined ? null : Number(c.entryLimit),
     crossAfterSec: Math.floor(Number(c.crossAfterSec ?? DEFAULT_CONFIG.crossAfterSec)),
+    maxCrossSpreadPct: Number(c.maxCrossSpreadPct ?? DEFAULT_CONFIG.maxCrossSpreadPct),
     takeProfitPct: Number(c.takeProfitPct ?? DEFAULT_CONFIG.takeProfitPct),
     stopLossPct: Number(c.stopLossPct ?? DEFAULT_CONFIG.stopLossPct),
     lots: Math.floor(Number(c.lots ?? DEFAULT_CONFIG.lots)),
