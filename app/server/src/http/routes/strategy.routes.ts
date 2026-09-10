@@ -64,6 +64,15 @@ export function registerStrategyRoutes(app: FastifyInstance) {
        * should not need a deploy.
        */
       schedulerOn: svc.store.getSetting('scheduler_enabled') === '1',
+      /**
+       * Whether the loop that places the orders is actually installed.
+       *
+       * It was not, for a day, while the switch above said "on" and the card
+       * read "may place orders without being asked". Nothing ran, nothing was
+       * logged, and the screen gave no hint why. A switch that claims an effect
+       * it cannot have is worse than no switch, so the screen now reads this.
+       */
+      runnerInstalled: true,
       mode: svc.mode,
       /*
        * The account, so the editor can price a size while it is being typed.

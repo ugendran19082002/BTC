@@ -220,6 +220,8 @@ export class TradingService {
   async place(input: {
     symbol: string;
     optionSide: 'CE' | 'PE';
+    /** Set when a saved strategy placed this, so its exit can find it again. */
+    strategyId?: string;
     strike: number;
     expiryTs: number;
     lots: number;
@@ -249,6 +251,7 @@ export class TradingService {
     const plan: TradePlan = {
       tradeId: `${input.symbol}-${Date.now()}`,
       symbol: input.symbol,
+      strategyId: input.strategyId,
       optionSide: input.optionSide,
       lots: input.lots,
       leverage: clampLeverage(input.leverage ?? DEFAULT_LEVERAGE),

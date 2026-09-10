@@ -242,7 +242,10 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
           </div>
           {sizing.shareOfAccount !== null && (
             <div className="flex justify-between gap-3">
-              <span className="text-muted-foreground">of what is free</span>
+              <span className="text-muted-foreground"
+                    title="Measured against free margin. Money already behind an open position cannot fund a new one.">
+                of your free margin
+              </span>
               <span className={cn('tabular-nums',
                 sizing.shareOfAccount > 0.5 ? 'text-[var(--down)]' : 'text-foreground')}>
                 {Math.round(sizing.shareOfAccount * 100)}%

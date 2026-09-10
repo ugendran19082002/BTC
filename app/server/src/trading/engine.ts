@@ -84,6 +84,14 @@ export function chasePrice(i: {
 export type TradePlan = {
   tradeId: string;
   symbol: string;
+  /**
+   * The saved strategy that opened this trade, when one did.
+   *
+   * Absent for anything placed by hand from the ticket. The scheduler needs it
+   * to find its own positions at the exit time without closing a trade somebody
+   * opened themselves.
+   */
+  strategyId?: string;
   optionSide: OptionSide;
   lots: number;
   entry: EntryPlan;

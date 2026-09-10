@@ -78,9 +78,17 @@ export function StrategyPanel() {
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="m-0 text-[13px] text-foreground">
-              {data.schedulerOn
-                ? `On. ${armed} strateg${armed === 1 ? 'y' : 'ies'} may place orders without being asked.`
-                : 'Off. Nothing runs on a schedule.'}
+              {/*
+                Never claim an effect the server cannot have. This card read
+                "may place orders" for a day while no runner existed, so a
+                switch was turned on, nothing happened at 05:30, and the screen
+                offered no explanation.
+              */}
+              {data.runnerInstalled === false
+                ? 'The scheduler is not installed on this server — nothing will run whatever this says.'
+                : data.schedulerOn
+                  ? `On. ${armed} strateg${armed === 1 ? 'y' : 'ies'} may place orders without being asked.`
+                  : 'Off. Nothing runs on a schedule.'}
             </p>
             <p className="m-0 mt-0.5 text-[11.5px] text-muted-foreground">
               Today is {data.today} IST. A strategy enters at most once a day, whatever happens in between.

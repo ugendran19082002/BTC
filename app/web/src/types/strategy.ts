@@ -49,6 +49,8 @@ export type StrategyRun = {
 export type StrategyStatus = {
   today: string;
   schedulerOn: boolean;
+  /** Whether the loop that actually places the orders is installed. */
+  runnerInstalled?: boolean;
   mode: 'live' | 'paper';
   /** For pricing a size in the editor while it is being typed. */
   balanceUsd: number | null;

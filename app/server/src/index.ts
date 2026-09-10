@@ -5,6 +5,7 @@ import { loadDays } from './backtest/backtest.js';
 import { credsFromEnv } from './delta/signed.js';
 import { tradingService } from './trading/service.js';
 import { strategyStore } from './http/routes/strategy.routes.js';
+import { StrategyRunner } from './strategy/runner.js';
 import { liveTickers, startTickerPoller } from './market/delta.js';
 import { liveChain } from './market/chain.js';
 import { readMarket } from './market/moves.js';
@@ -40,6 +41,13 @@ app.log.info(
 app.log.info(`strategy schema: ${strategyStore().applied.length
   ? strategyStore().applied.join(', ') + ' applied'
   : 'already up to date'}`);
+
+/*
+ * The scheduler loop. Inert until `scheduler_enabled` is set, which is a
+ * deliberate act with its own button, so starting it here costs nothing.
+ */
+const runner = new StrategyRunner(strategyStore());
+runner.start();
 
 const desk = tradingService();
 app.log.info(
