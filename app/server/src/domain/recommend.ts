@@ -1,7 +1,24 @@
 import type { Snapshot } from '../market/chain.js';
 import type { ScoredLeg } from './score.js';
-import { LOT_BTC, USDINR } from './score.js';
+import { LOT_BTC, MARGIN_PER_LOT_USD, USDINR } from './score.js';
 import type { MarketRead } from '../market/moves.js';
+import { fillChargesUsd } from '../trading/charges.js';
+import { fundsRequiredPerContract } from '../trading/margin.js';
+
+/**
+ * The leverage the desk sells at: the order ticket's default, and the one the
+ * margin model was pinned to against a real Delta ticket (see margin.ts).
+ */
+export const DESK_LEVERAGE = 200;
+
+/**
+ * Delta's "Funds req." for one short lot: spot / leverage x contract value, plus
+ * the fee. With no spot to work from, the backtest's flat figure.
+ */
+const marginPerShortLot = (spot: number, premium: number): number =>
+  spot > 0
+    ? fundsRequiredPerContract({ spot, premium, leverage: DESK_LEVERAGE, contractValue: LOT_BTC })
+    : MARGIN_PER_LOT_USD;
 
 
 /**
@@ -133,8 +150,22 @@ export type Recommendation = {
   splitReason: string;
   totalCreditUsd: number;
   totalCreditInr: number;
-  /** the chance BOTH legs expire worthless, if they were independent */
+  /**
+   * Delta's charges to open every leg, GST included. An option that expires
+   * worthless settles at zero and is charged nothing more.
+   */
+  chargesUsd: number;
+  chargesInr: number;
+  /** The premium less those charges: what is kept if every leg expires worthless. */
+  netCreditUsd: number;
+  netCreditInr: number;
+  /**
+   * The chance BOTH legs expire worthless. A call above spot and a put below it
+   * cannot both finish in the money, so this is one minus the two chances of
+   * losing -- not their product, which would count a day that cannot happen.
+   */
   bothZeroChance: number | null;
+  /** Delta's "Funds req." at today's spot and DESK_LEVERAGE, plus any hedge paid for. */
   marginUsd: number;
   totalMaxLossUsd: number | null;
   rewardToRisk: number | null;
@@ -398,7 +429,33 @@ export function recommend(
   // single leg means something is wrong rather than something is selective.
   const oneSidedIsFine = mode === 'safety' && picks.length === 1;
 
+  // What the picks cost to put on. Margin was a flat $0.50 a lot -- the
+  // backtest's figure for a $100k spot -- which at a $77k spot put it 30% high
+  // and every return on margin 30% low. Charges were left out altogether, so
+  // the premium and the expected profit were both a little better than real.
+  const totalCredit = picks.reduce((a, p) => a + p.creditUsd, 0);
+  const spotOrNull = snap.spot > 0 ? snap.spot : null;
+  let chargesUsd = 0;
+  let pickedMarginUsd = 0;
+  for (const p of picks) {
+    chargesUsd += fillChargesUsd({ price: p.price, contracts: p.lots, contractValue: LOT_BTC, spot: spotOrNull }).totalUsd;
+    pickedMarginUsd += marginPerShortLot(snap.spot, p.price) * p.lots;
+    if (p.hedge) {
+      // a bought hedge is paid for in full, and charged like any other fill
+      chargesUsd += fillChargesUsd({ price: p.hedge.price, contracts: p.lots, contractValue: LOT_BTC, spot: spotOrNull }).totalUsd;
+      pickedMarginUsd += p.hedge.price * p.lots * LOT_BTC;
+    }
+  }
+  const costs = {
+    chargesUsd,
+    chargesInr: chargesUsd * USDINR,
+    netCreditUsd: totalCredit - chargesUsd,
+    netCreditInr: (totalCredit - chargesUsd) * USDINR,
+  };
+
   if (picks.length < 2 && !oneSidedIsFine) {
+    // nothing is placed, so the margin shown is what the lots asked for would take
+    const askedMarginUsd = totalLots * marginPerShortLot(snap.spot, 0);
     return {
       ok: false,
       hedgeMissing,
@@ -413,16 +470,17 @@ export function recommend(
       sides: picks,
       split: { ce, pe },
       splitReason,
-      totalCreditUsd: picks.reduce((a, p) => a + p.creditUsd, 0),
-      totalCreditInr: picks.reduce((a, p) => a + p.creditInr, 0),
+      totalCreditUsd: totalCredit,
+      totalCreditInr: totalCredit * USDINR,
+      ...costs,
       bothZeroChance: null,
-      marginUsd: totalLots * 0.5,
+      marginUsd: askedMarginUsd,
       totalMaxLossUsd: null,
       rewardToRisk: null,
       expectedProfitUsd: null,
       expectedProfitInr: null,
       returnOnMarginPct: null,
-      marginInr: totalLots * 0.5 * USDINR,
+      marginInr: askedMarginUsd * USDINR,
       usdinr: USDINR,
       mode,
       safetyBar,
@@ -474,11 +532,14 @@ export function recommend(
     const perBtc = p.price - (p.hedge?.price ?? 0) - (shortPayout - longPayout);
     expectedProfitUsd += perBtc * p.lots * LOT_BTC;
   }
+  // Charges are paid whatever happens, so they come off the average too.
+  if (expectedProfitUsd !== null) expectedProfitUsd -= chargesUsd;
+
   const anyUnbounded = picks.some((p) => p.maxLoss === null);
+  // the worst case includes what it cost to get in
   const totalMaxLossUsd = anyUnbounded
     ? null
-    : picks.reduce((a, p) => a + (p.maxLoss ?? 0), 0);
-  const totalCredit = picks.reduce((a, p) => a + p.creditUsd, 0);
+    : picks.reduce((a, p) => a + (p.maxLoss ?? 0), 0) + chargesUsd;
   return {
     ok: true,
     hedgeMissing,
@@ -486,20 +547,21 @@ export function recommend(
     sides: picks,
     split: { ce, pe },
     splitReason,
-    totalCreditUsd: picks.reduce((a, p) => a + p.creditUsd, 0),
-    totalCreditInr: picks.reduce((a, p) => a + p.creditInr, 0),
-    bothZeroChance: zs.length === 2 ? zs[0]! * zs[1]! : null,
-    marginUsd: totalLots * 0.5,
+    totalCreditUsd: totalCredit,
+    totalCreditInr: totalCredit * USDINR,
+    ...costs,
+    bothZeroChance: zs.length === 2 ? Math.max(0, zs[0]! + zs[1]! - 1) : null,
+    marginUsd: pickedMarginUsd,
     totalMaxLossUsd,
     rewardToRisk:
-      totalMaxLossUsd && totalMaxLossUsd > 0 ? totalCredit / totalMaxLossUsd : null,
+      totalMaxLossUsd && totalMaxLossUsd > 0 ? costs.netCreditUsd / totalMaxLossUsd : null,
     expectedProfitUsd,
     expectedProfitInr: expectedProfitUsd === null ? null : expectedProfitUsd * USDINR,
     returnOnMarginPct:
-      expectedProfitUsd === null || totalLots <= 0
+      expectedProfitUsd === null || pickedMarginUsd <= 0
         ? null
-        : (expectedProfitUsd / (totalLots * 0.5)) * 100,
-    marginInr: totalLots * 0.5 * USDINR,
+        : (expectedProfitUsd / pickedMarginUsd) * 100,
+    marginInr: pickedMarginUsd * USDINR,
     usdinr: USDINR,
     mode,
     safetyBar,

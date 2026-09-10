@@ -41,6 +41,9 @@ export function RecommendPanel({
   }
 
   const naked = rec.totalMaxLossUsd === null;
+  const oneSide = rec.sides.length === 1;
+  // one leg has no "both": its own chance is the one that matters
+  const bothChance = oneSide ? rec.sides[0]!.zeroChance : rec.bothZeroChance;
   // The reasoning behind the split, as a tooltip on the line it explains.
   const whySplit = [
     rec.splitReason,
@@ -151,8 +154,24 @@ export function RecommendPanel({
         }
         hint={whySplit}
       />
-      <Stat label="Premium if both expire worthless" value={`${inr(rec.totalCreditInr)} · ${usd(rec.totalCreditUsd)}`} tone="up" />
-      <Stat label="Chance both expire worthless" value={pct(rec.bothZeroChance, 1)} tone={tone(rec.bothZeroChance)} />
+      <Stat label="Premium collected" value={money(rec.totalCreditUsd, usdinr)} tone="plain" hint="What buyers pay you, at the bid." />
+      <Stat
+        label="Delta charges to open"
+        value={`− ${money(rec.chargesUsd, usdinr)}`}
+        tone="dim"
+        hint="Fee = the smaller of 0.01% of BTC value or 3.5% of premium, plus 18% GST. Nothing more is charged if it expires worthless."
+      />
+      <Stat
+        label={oneSide ? 'You keep if it expires worthless' : 'You keep if both expire worthless'}
+        value={money(rec.netCreditUsd, usdinr)}
+        tone="up"
+      />
+      <Stat
+        label={oneSide ? 'Chance it expires worthless' : 'Chance both expire worthless'}
+        value={pct(bothChance, 1)}
+        tone={tone(bothChance)}
+        hint={oneSide ? undefined : 'A call and a put cannot both lose on the same day, so this is 100% minus each side’s chance of losing.'}
+      />
       <Stat
         label="Max loss"
         value={naked ? 'No limit (no hedge)' : money(rec.totalMaxLossUsd!, usdinr)}
@@ -165,14 +184,19 @@ export function RecommendPanel({
           tone={rec.rewardToRisk !== null && rec.rewardToRisk < 0.05 ? 'warn' : 'plain'}
         />
       )}
-      <Stat label="Margin used" value={`${inr(rec.marginInr)} · ${usd(rec.marginUsd)}`} tone="dim" />
+      <Stat
+        label="Margin used"
+        value={money(rec.marginUsd, usdinr)}
+        tone="dim"
+        hint="Delta’s “Funds req.” at 200x: BTC price ÷ 200 × 0.001 per lot, plus the fee. Held while open, given back when closed."
+      />
       {rec.expectedProfitUsd !== null ? (
         <>
           <Stat
             label="Expected profit"
             value={`${signedInr(rec.expectedProfitInr)} · ${signedUsd(rec.expectedProfitUsd)}`}
             tone={rec.expectedProfitUsd >= 0 ? 'up' : 'down'}
-            hint="Premium × chance it works, minus the loss × chance it does not."
+            hint="The average result: premium, minus what losing days cost on average in 733 days of real results, minus Delta charges."
           />
           <Stat
             label="Return on margin"

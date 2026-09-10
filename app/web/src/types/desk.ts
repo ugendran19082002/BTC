@@ -109,6 +109,12 @@ export type Recommendation = {
   splitReason: string;
   totalCreditUsd: number;
   totalCreditInr: number;
+  /** Delta's charges to open, GST included. */
+  chargesUsd: number;
+  chargesInr: number;
+  /** Premium less charges: what is kept if every leg expires worthless. */
+  netCreditUsd: number;
+  netCreditInr: number;
   bothZeroChance: number | null;
   marginUsd: number;
   totalMaxLossUsd: number | null;
