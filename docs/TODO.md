@@ -589,7 +589,8 @@ must be settable on screen.
   5 minutes, whatever has not filled is cancelled.
 - Guards:
   - only a target fill from the last 2 minutes;
-  - not within 30 minutes of the exit time;
+  - not after the strategy's "latest time to add" (set on screen, between entry
+    and exit; half an hour before exit by default);
   - the other leg must still be open (not closed, not closing);
   - one add at a time, and none while that leg's entry is still working;
   - a leg that was itself added to never adds back;
@@ -640,6 +641,93 @@ must be settable on screen.
 - [ ] **A market exit that fills in part** (the item above) matters more once
       positions can be 850: the rest of a Close now or stop watch exit would be
       left short.
+
+---
+
+## Times on a clock, a shorter strategy form, and swipe to confirm — 11 Sep 2026
+
+Asked for:
+- every time chosen on a clock with AM/PM;
+- exit must come after entry;
+- a latest time for the add, between entry and exit;
+- a strategy form that does not scroll forever on a phone;
+- Close now, Close all and selling from the chain to need a confirmation with
+  the order and live P&L, and a swipe instead of a tap.
+
+**Done (not deployed yet):**
+
+- **Clock time picker** (`components/ui/time-picker.tsx`):
+  - pick the hour on a dial, then the minute, then AM or PM;
+  - ±1 minute buttons (5:29 is not on a five-minute dial), presets, and a text
+    box that takes "5:29 pm", "1729" and "0530";
+  - times outside the allowed range are greyed out and cannot be set;
+  - used for entry, exit, the latest time to add, and the research date-time
+    picker.
+- **Times are still stored and sent as 24-hour "HH:MM" IST**, and shown as
+  12-hour everywhere a strategy time is read: the form, the sentence, the
+  strategy list, the "waiting for 5:30 AM IST" status and the Telegram
+  missed-entry alert.
+- **Validation, the same on screen and on the server:**
+  - exit must be later than entry;
+  - an entry before 5:30 PM cannot exit at or after the 5:30 PM settlement (an
+    evening entry holds tomorrow's contract and may exit later that evening);
+  - the latest time to add must fall strictly between entry and exit;
+  - every message says the times as they are read, e.g. "Exit (6:00 AM) must be
+    later in the day than entry (9:00 AM)."
+- **Latest time to add** (`addToOpposite.addUntil`) replaces the fixed "not in
+  the last 30 minutes". The default is 30 minutes before the strategy's own
+  exit. Migration `007-add-until` writes it into saved strategies that have the
+  add on but no time; reading an older row fills the same default.
+- **Strategy form:**
+  - four tabs: When · Sell · Entry & exit · Extras;
+  - on/off settings are switches, choices are one-line segmented controls, and
+    short number fields sit two to a row;
+  - the rule sentence folds to two lines;
+  - a problem is written under its field, its tab gets a red dot, and Save
+    reads "Fix 2 to save" and jumps to the tab;
+  - quick fixes: "Set exit to 5:29 PM" and "Use 4:59 PM".
+  - Checked in a browser at 390px wide: When, Sell and Entry & exit fit without
+    scrolling; Extras scrolls a little with the add switched on.
+- **Swipe to confirm** (`components/ui/swipe-confirm.tsx`):
+  - drag the thumb all the way right, and a tap or a part-way drag does nothing;
+  - it springs back and shows "Sending…" / "Closing…" while the action runs;
+  - it cannot fire twice, Enter confirms from a keyboard, and it respects
+    reduced motion;
+  - used on the chain order ticket ("Swipe to sell · ₹0.76"), Close now and
+    Close all.
+- **Close now** no longer closes on the first tap. It opens a sheet with:
+  - the position (short 222, 425 sold, 203 bought back) and sold-at price;
+  - price now, open P&L, booked so far and charges;
+  - what is cancelled with it (target, stop, a working add);
+  - a large live "If closed now" figure that refreshes with every poll.
+- **Close all** shows each position's live P&L and "If closed", plus the total
+  "If all closed now". The total is only shown when every position has a price.
+- Tests: server 563 (new `test/strategy/times.test.ts`), web 353 (new time,
+  rules, time picker, swipe and Close all tests; form, positions and ticket
+  tests rewritten for the tabs and the swipe).
+
+**To do:**
+
+- [ ] **Deploy** with nothing open, then open a strategy on the phone and check
+      each tab and the clock.
+- [ ] **The swipe has no touch-only alternative for a screen reader.** Keyboard
+      Enter works, but VoiceOver or TalkBack users on a phone cannot drag. Add a
+      "double-tap and hold" or a two-step button for assistive tech without
+      weakening the guard against a stray touch.
+- [ ] **Cancel order on a waiting order is still one tap.** It spends nothing
+      and cannot open a position, so it was left alone. Decide whether it should
+      ask too.
+- [ ] **"If closed now" is priced at the mark** (the older item above). The
+      Close now sheet makes that number the headline, so pricing it at the ask
+      matters more now.
+- [ ] **The order ticket swipe was not checked in a browser** (it needs a live
+      chain to open). It is covered by tests. Look at it on the phone after
+      deploying.
+- [ ] **Other screens still write fixed times in 24-hour prose** ("since 05:30
+      IST" on the Live screen, the account card, and Today's P&L). They are
+      labels, not choices, but for consistency say "5:30 AM".
+- [ ] **Edit exits** (moving a target or stop on a live position) saves on a
+      tap. Consider the same confirmation.
 
 ---
 

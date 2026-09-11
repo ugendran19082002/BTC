@@ -319,15 +319,15 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
               )}
               {c.entryPrice === 'offer' && (
                 <div className="mt-3 grid grid-cols-2 gap-2">
-                  <Stack label="Sell at bid after" error={err('crossAfterSec')}
-                         hint={c.crossAfterSec > 0 ? 'seconds' : '0 waits until filled'}>
+                  <Stack label="Bid after" error={err('crossAfterSec')}
+                         hint={c.crossAfterSec > 0 ? 'then sells at the bid' : '0 waits until filled'}>
                     <Affix after="sec">
                       <Input value={String(c.crossAfterSec)} aria-label="cross after seconds" inputMode="numeric" className="pr-9"
                              onChange={(e) => set('crossAfterSec', Math.floor(num(e.target.value, 0)))} />
                     </Affix>
                   </Stack>
                   {c.crossAfterSec > 0 && (
-                    <Stack label="Only if spread ≤" error={err('maxCrossSpreadPct')} hint="wider: waits at the mid">
+                    <Stack label="Max spread" error={err('maxCrossSpreadPct')} hint="wider than this waits at the mid">
                       <Affix after="%">
                         <Input value={String(Math.round((c.maxCrossSpreadPct ?? 0.15) * 100))} aria-label="max spread to sell at bid pct"
                                inputMode="numeric" className="pr-7"
@@ -400,13 +400,13 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
               {c.addToOpposite && (
                 <>
                   <div className="grid grid-cols-2 gap-2">
-                    <Stack label="Only if its bid ≥" error={err('addMinPrice')} hint="never sold below this">
+                    <Stack label="Min bid" error={err('addMinPrice')} hint="only adds at or above; never sells below">
                       <Affix before="$">
                         <Input value={String(c.addToOpposite.minPriceUsd)} aria-label="add minimum price" inputMode="decimal" className="pl-5"
                                onChange={(e) => setAdd({ minPriceUsd: num(e.target.value, 0) })} />
                       </Affix>
                     </Stack>
-                    <Stack label="Not once it reaches" error={err('addMultiple')} hint="× its first sale price">
+                    <Stack label="Max rise" error={err('addMultiple')} hint="not once it is this × its first sale">
                       <Affix after="×">
                         <Input value={String(c.addToOpposite.maxMultiple)} aria-label="add maximum multiple" inputMode="decimal" className="pr-7"
                                onChange={(e) => setAdd({ maxMultiple: num(e.target.value, 0) })} />
@@ -486,11 +486,10 @@ function Stack({ label, hint, error, className, children }: {
 }) {
   return (
     <div className={cn('min-w-0', className)}>
-      <div className="mb-1 flex items-baseline justify-between gap-2">
-        <span className="text-[12px] text-muted-foreground">{label}</span>
-        {hint && <span className="truncate text-[10.5px] text-[var(--dim)]">{hint}</span>}
-      </div>
+      <div className="mb-1 truncate text-[12px] text-muted-foreground">{label}</div>
       {children}
+      {/* under the field, where it can wrap -- beside a label on a phone it was cut off */}
+      {hint && !error && <div className="mt-0.5 text-[10.5px] leading-snug text-[var(--dim)]">{hint}</div>}
       <FieldError text={error ?? null} />
     </div>
   );
@@ -521,7 +520,7 @@ function QuickFix({ onClick, children }: { onClick: () => void; children: React.
 /** A unit inside the field, so "$" and "%" do not need a row of their own. */
 function Affix({ before, after, children }: { before?: string; after?: string; children: React.ReactNode }) {
   return (
-    <div className="relative">
+    <div className="relative h-9 self-start">
       {before && <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[12px] text-muted-foreground">{before}</span>}
       {children}
       {after && <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[12px] text-muted-foreground">{after}</span>}

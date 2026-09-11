@@ -13,14 +13,14 @@ test that proves each.
 CE target buys back N  →  PE bid ≥ $3  and  PE mark < 2 × PE sale  →  sell N more PE
 ```
 
-The same with CE and PE swapped. $3 and 2× are set in the strategy form. The N
-contracts are appended to the PE trade itself: one position, one blended
+The same with CE and PE swapped. $3, 2× and the latest time to add are set in
+the strategy form. The N contracts are appended to the PE trade itself: one position, one blended
 average, and the PE's same target price and stop, resized to cover all of it.
 
 | Check | Result |
 |---|---|
-| Server tests | **545 / 545** pass · typecheck clean |
-| Web tests | **295 / 295** pass · typecheck clean |
+| Server tests | **563 / 563** pass · typecheck clean |
+| Web tests | **353 / 353** pass · typecheck clean |
 | Live Delta prices, paper orders | **6 / 6** |
 | Status | **Off** — not deployed · setting off on every strategy |
 
@@ -58,7 +58,7 @@ decision.
 | ⛔ No add | A stop or a manual close bought back — not a target | CE stop fills 425 → nothing · CE closed by hand → nothing | `add.test` "a stop or a manual close is not a target" |
 | ⛔ No add | The leg that was added to hits its own target — no ping-pong | PE (425 + 425 added) target buys back 850 → "the PE was itself added to today, so it does not add back" | `add.test` "no ping-pong" · `adder.test` "does not add back to the CE" |
 | ⛔ No add | The target fill is more than 2 minutes old | desk restarted after the fill → "too long ago to add" — never sells into a market that has moved on | `add.test` "a target filled more than two minutes ago is not acted on" |
-| ⛔ No add | Within 30 minutes of the strategy's exit time | exit 17:29 · target at 16:59 → adds · at 17:00 → no | `add.test` "not within 30 minutes of the exit time" |
+| ⛔ No add | After the strategy's latest time to add (set on screen, between entry and exit; 4:59 PM by default for a 5:29 PM exit) | latest 4:59 PM · target at 4:59 PM → adds · at 5:00 PM → no · latest set to 12:00 PM → 12:01 PM no | `add.test` "not after the latest time to add" · "the latest time to add is the setting" |
 | ⛔ No add | The other leg has no target, or its bid is already at the target | PE target 4.00, bid 3.50 → "already at its 4.00 target" — the add would be bought straight back | `add.test` "no price to exit an add at" · "a bid already at the target" |
 | ⛔ No add | The other "leg" is yesterday's contract | PE on a different expiry → not paired · "no PE leg today" | `add.test` "yesterday's leg on another expiry" |
 | 🚫 Refused | A desk gate says no — short limit, margin, feed down, spread, depth, daily loss | short limit 500, add would make 850 → "ADD REFUSED" · nothing sent · PE unchanged | `add-to-position.test` "the gates still apply" · `adder.test` "the gates refusing the add" |
@@ -204,13 +204,13 @@ Still short 425, unchanged.
 
 ```bash
 cd app/server
-npm test                                              # all 545
-npx tsx --test test/strategy/add.test.ts              # the rules, 25
+npm test                                              # all 563
+npx tsx --test test/strategy/add.test.ts              # the rules, 27
 npx tsx --test test/trading/add-to-position.test.ts   # after the add, 16
 npx tsx --test test/strategy/adder.test.ts            # end to end on paper, 11
 
 cd ../web
-npx vitest run                                        # all 295
+npx vitest run                                        # all 353
 ```
 
 Test names above are shortened; each is quoted from its file. Full notes:
