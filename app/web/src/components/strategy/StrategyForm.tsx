@@ -1,86 +1,51 @@
-import { useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { ChevronDown, Loader2 } from 'lucide-react';
 import { saveStrategy } from '@/api/strategy';
 import { DAY_NAMES, DEFAULT_ADD_TO_OPPOSITE, DEFAULT_CONFIG, type Strategy, type StrategyConfig } from '@/types/strategy';
 import { Sheet, SheetContent, SheetFooter } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
+import { TimePicker } from '@/components/ui/time-picker';
 import { addExamples, describeStrategy, sizingOf } from '@/lib/strategy-preview';
+import { problemFor, strategyProblems, type FormField, type FormTab, type Problem } from '@/lib/strategy-rules';
+import { SETTLEMENT, defaultAddUntil, hhmmOf, isHhmm, minutesOf, spanLabel, time12 } from '@/lib/time';
 import { inr, usd } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 /**
- * Everything a strategy is, on one screen, in words rather than symbols.
+ * Everything a strategy is, in words rather than symbols -- in four short tabs.
  *
- * The first version put the premium rule behind a "≥ / ≤" pair, and the two
- * are opposites: one takes the furthest strike still paying the number, the
- * other the richest strike under it. One click apart, a third of the return and
- * nearly half the drawdown between them, and nothing on screen saying so. It
- * got picked by accident, which is the clearest argument there is for spelling
- * a setting out.
+ * It used to be one column of every setting, each choice a pair of tall cards
+ * with a sentence on each, and on a phone that was a long scroll to reach Save
+ * past settings that had nothing to do with the one being changed. Now:
  *
- * So: every choice that changes what gets sold says what it does, the days say
- * which ones they are, and the panel at the top reads the whole rule back as a
- * sentence while it is being edited. Nothing here decides anything -- the server
- * validates and answers, and what it answers is what gets shown.
+ *   When     entry and exit on a clock, and the days
+ *   Sell     which legs, which strike, how many lots, and what that ties up
+ *   Trade    how the entry is priced and where it exits
+ *   Extras   the safety filter, doubling, and adding to the other leg
+ *
+ * A tab with something wrong in it carries a red dot, the problem is written
+ * under the field that has it, and Save says how much is left and takes you
+ * there. The server still validates and answers; what it says is shown too.
+ * The rule read back as a sentence stays at the top, folded to two lines.
  */
-function Field({ label, hint, children, stack }: {
-  label: string; hint?: string; children: React.ReactNode; stack?: boolean;
-}) {
-  return (
-    <div className={cn('py-2', stack ? '' : 'flex items-center justify-between gap-3')}>
-      <label
-        className={cn('block text-[12.5px] text-muted-foreground',
-          hint && 'cursor-help underline decoration-dotted underline-offset-2',
-          stack && 'mb-1.5')}
-        title={hint}
-      >
-        {label}
-      </label>
-      <div className={cn('flex items-center gap-1.5', stack ? 'flex-wrap' : 'flex-none')}>
-        {children}
-      </div>
-    </div>
-  );
-}
 
-/** Buttons that say what they mean, with room for a line of explanation. */
-function Pick<T extends string>({ value, options, onChange, wide }: {
-  value: T;
-  options: { v: T; label: string; note?: string }[];
-  onChange: (v: T) => void;
-  wide?: boolean;
-}) {
-  return (
-    <div className={cn('grid gap-1', wide ? 'w-full' : 'grid-flow-col')}>
-      {options.map((o) => (
-        <button
-          key={o.v}
-          type="button"
-          onClick={() => onChange(o.v)}
-          aria-pressed={value === o.v}
-          className={cn(
-            'rounded-md border px-2.5 py-1.5 text-left',
-            value === o.v
-              ? 'border-[var(--warn)] bg-muted text-foreground'
-              : 'border-[var(--line)] text-muted-foreground',
-          )}
-        >
-          <span className="block text-[12.5px] font-medium">{o.label}</span>
-          {o.note && <span className="block text-[11px] leading-snug text-[var(--dim)]">{o.note}</span>}
-        </button>
-      ))}
-    </div>
-  );
-}
+const TABS: { id: FormTab; label: string }[] = [
+  { id: 'when', label: 'When' },
+  { id: 'sell', label: 'Sell' },
+  { id: 'trade', label: 'Entry & exit' },
+  { id: 'extras', label: 'Extras' },
+];
 
 const num = (v: string, fallback: number) => {
   const n = Number(v);
-  return Number.isFinite(n) ? n : fallback;
+  return v.trim() !== '' && Number.isFinite(n) ? n : fallback;
 };
 
 const WEEKDAYS = [1, 2, 3, 4, 5];
 const WEEKEND = [0, 6];
+const LAST_MINUTE = hhmmOf(minutesOf(SETTLEMENT) - 1);
 
 export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd, spot }: {
   editing: Strategy | null;
@@ -92,317 +57,526 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
 }) {
   const [name, setName] = useState(editing?.name ?? '');
   const [c, setC] = useState<StrategyConfig>(editing?.config ?? DEFAULT_CONFIG);
+  const [tab, setTab] = useState<FormTab>('when');
   const [busy, setBusy] = useState(false);
-  const [problems, setProblems] = useState<string[]>([]);
+  const [refused, setRefused] = useState<string[]>([]);
+  const [readAll, setReadAll] = useState(false);
 
   const set = <K extends keyof StrategyConfig>(k: K, v: StrategyConfig[K]) =>
     setC((p) => ({ ...p, [k]: v }));
+  const setAdd = (patch: Partial<NonNullable<StrategyConfig['addToOpposite']>>) =>
+    setC((p) => (p.addToOpposite ? { ...p, addToOpposite: { ...p.addToOpposite, ...patch } } : p));
+
+  const problems = useMemo(() => strategyProblems(c, name), [c, name]);
+  const tabHasProblem = (t: FormTab) => problems.some((p) => p.tab === t);
+  const sizing = sizingOf(c, balanceUsd ?? null, spot ?? null);
+  // Doubling and "no days" are problems now, said under their own fields.
+  const warnings = sizing.warnings.filter((w) => !/Doubling|No days/.test(w));
 
   const toggleDay = (d: number) =>
-    set('weekdays', c.weekdays.includes(d)
-      ? c.weekdays.filter((x) => x !== d)
-      : [...c.weekdays, d].sort());
-
-  const sizing = sizingOf(c, balanceUsd ?? null, spot ?? null);
+    set('weekdays', c.weekdays.includes(d) ? c.weekdays.filter((x) => x !== d) : [...c.weekdays, d].sort());
 
   const save = async () => {
+    if (problems.length) { setTab(problems[0]!.tab); return; }
     setBusy(true);
-    setProblems([]);
+    setRefused([]);
     try {
       await saveStrategy({ id: editing?.id, name: name.trim(), config: c });
       onSaved();
       onOpenChange(false);
     } catch (e) {
-      setProblems((e as Error).message.split(/(?<=\.)\s+/).filter(Boolean));
+      setRefused((e as Error).message.split(/(?<=\.)\s+/).filter(Boolean));
     } finally {
       setBusy(false);
     }
   };
+
+  const err = (f: FormField) => problemFor(problems, f);
+  const entryPlusOne = isHhmm(c.entryTime) ? hhmmOf(minutesOf(c.entryTime) + 1) : null;
+  const daytime = isHhmm(c.entryTime) && minutesOf(c.entryTime) < minutesOf(SETTLEMENT);
+  const exitMinusOne = isHhmm(c.exitTime) ? hhmmOf(minutesOf(c.exitTime) - 1) : null;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         title={editing ? `Edit ${editing.name}` : 'New strategy'}
         description="Times are IST. Nothing runs until this strategy and auto-trading are both on."
+        className="sm:w-[480px]"
       >
-        {/*
-          The whole rule as a sentence, updating as it is edited. Reading a
-          config back in prose is how a wrong setting gets noticed before it is
-          saved rather than after it has traded.
-        */}
-        <p className="m-0 mb-3 rounded-lg bg-muted px-2.5 py-2 text-[12px] leading-relaxed text-foreground">
-          {describeStrategy(c)}
-        </p>
-
-        <Field label="Name">
-          <Input value={name} aria-label="strategy name" className="w-48"
-                 onChange={(e) => setName(e.target.value)} placeholder="Double one-sided" />
-        </Field>
-
-        <div className="mt-2 border-t border-[var(--line)] pt-2 text-[11px] uppercase tracking-wide text-[var(--dim)]">
-          When
-        </div>
-        <Field label="Entry time" hint="IST. The daily contract opens at 05:30.">
-          <Input value={c.entryTime} aria-label="entry time" className="w-20"
-                 onChange={(e) => set('entryTime', e.target.value)} />
-        </Field>
-        <Field label="Exit time" hint="IST. Expiry is 17:30, so 17:29 is the last minute to trade.">
-          <Input value={c.exitTime} aria-label="exit time" className="w-20"
-                 onChange={(e) => set('exitTime', e.target.value)} />
-        </Field>
-
-        <Field label="Days" stack>
-          <div className="flex flex-wrap gap-1">
-            {DAY_NAMES.map((d, i) => {
-              const on = c.weekdays.includes(i);
-              return (
-                <button
-                  key={d}
-                  type="button"
-                  aria-label={d}
-                  aria-pressed={on}
-                  onClick={() => toggleDay(i)}
-                  className={cn('h-8 w-11 rounded-md border text-[11.5px] font-medium',
-                    on
-                      // Filled, not merely outlined: seven buttons that differ
-                      // only by border colour read as seven identical buttons.
-                      ? 'border-[var(--warn)] bg-[var(--warn)] text-black'
-                      : 'border-[var(--line)] bg-transparent text-[var(--dim)]')}
-                >
-                  {d}
-                </button>
-              );
-            })}
-          </div>
-          <div className="mt-1 flex gap-2 text-[11px]">
-            {([['Every day', [0, 1, 2, 3, 4, 5, 6]], ['Weekdays', WEEKDAYS], ['Weekends', WEEKEND]] as const)
-              .map(([label, days]) => (
-                <button key={label} type="button"
-                        className="text-muted-foreground underline underline-offset-2"
-                        onClick={() => set('weekdays', [...days])}>
-                  {label}
-                </button>
-              ))}
-          </div>
-        </Field>
-
-        <div className="mt-2 border-t border-[var(--line)] pt-2 text-[11px] uppercase tracking-wide text-[var(--dim)]">
-          What to sell
-        </div>
-        <Field label="Legs" stack>
-          <Pick wide value={c.legs} onChange={(v) => set('legs', v)}
-                options={[
-                  { v: 'both', label: 'Call and put', note: 'both sides — the tested strategy' },
-                  { v: 'CE', label: 'Call only', note: 'profits if BTC does not rise much' },
-                  { v: 'PE', label: 'Put only', note: 'profits if BTC does not fall much' },
-                ]} />
-        </Field>
+        <label className="block">
+          <span className="sr-only">Name</span>
+          <Input value={name} aria-label="strategy name" placeholder="Name, e.g. Double one-sided"
+                 aria-invalid={Boolean(err('name')) || undefined}
+                 onChange={(e) => setName(e.target.value)} />
+        </label>
 
         {/*
-          The setting that caused the trouble. Both halves spelled out: which
-          strike each rule takes, and which way that moves the risk.
+          The rule read back as a sentence: how a wrong setting gets noticed
+          before it is saved. Two lines unless asked for more, so it does not
+          push the settings off a phone screen.
         */}
-        <Field label="Premium rule" stack>
-          <Pick wide value={c.premium.mode} onChange={(v) => set('premium', { ...c.premium, mode: v })}
-                options={[
-                  {
-                    v: 'atLeast',
-                    label: `At least $${c.premium.usd}`,
-                    note: 'furthest strike that still pays this — more premium, more risk',
-                  },
-                  {
-                    v: 'atMost',
-                    label: `At most $${c.premium.usd}`,
-                    note: 'best strike paying up to this — less premium, less risk',
-                  },
-                ]} />
-          <div className="mt-1 flex items-center gap-1.5">
-            <span className="text-[11.5px] text-muted-foreground">$ per BTC</span>
-            <Input value={String(c.premium.usd)} aria-label="premium usd" className="w-20"
-                   onChange={(e) => set('premium', { ...c.premium, usd: num(e.target.value, 15) })} />
-          </div>
-        </Field>
-
-        <Field label="Lots per leg" hint="1 lot = 1 contract = 0.001 BTC.">
-          <Input value={String(c.lots)} aria-label="lots" className="w-24"
-                 onChange={(e) => set('lots', Math.floor(num(e.target.value, 1)))} />
-        </Field>
-
-        {/* What that size actually means, before it is saved. */}
-        <div className="rounded-lg bg-muted px-2.5 py-2 text-[11.5px] leading-relaxed">
-          <div className="flex justify-between gap-3">
-            <span className="text-muted-foreground">Max contracts at once</span>
-            <span className="tabular-nums text-foreground">{sizing.maxContracts}</span>
-          </div>
-          <div className="flex justify-between gap-3">
-            <span className="text-muted-foreground">Margin needed</span>
-            <span className="tabular-nums text-foreground">
-              {spot ? `${inr(sizing.marginInr)} · ${usd(sizing.marginUsd)}` : '— waiting for price'}
-            </span>
-          </div>
-          {sizing.shareOfAccount !== null && (
-            <div className="flex justify-between gap-3">
-              <span className="text-muted-foreground"
-                    title="Measured against free margin. Money already behind an open position cannot fund a new one.">
-                Share of free margin
-              </span>
-              <span className={cn('tabular-nums',
-                sizing.shareOfAccount > 0.5 ? 'text-[var(--down)]' : 'text-foreground')}>
-                {Math.round(sizing.shareOfAccount * 100)}%
-              </span>
-            </div>
-          )}
-        </div>
-
-        <div className="mt-2 border-t border-[var(--line)] pt-2 text-[11px] uppercase tracking-wide text-[var(--dim)]">
-          Entry
-        </div>
-        <Field label="Price" stack>
-          <Pick wide value={c.entryPrice} onChange={(v) => set('entryPrice', v)}
-                options={[
-                  { v: 'offer', label: 'Sell at the offer', note: 'better price if someone takes it' },
-                  { v: 'now', label: 'Sell now at the bid', note: 'fills at once, lower price' },
-                  { v: 'set', label: 'My own price', note: 'waits there until it fills' },
-                ]} />
-        </Field>
-        {c.entryPrice === 'set' && (
-          <Field label="Limit price">
-            <Input value={String(c.entryLimit ?? '')} aria-label="entry limit" className="w-24"
-                   onChange={(e) => set('entryLimit', num(e.target.value, 0))} />
-          </Field>
-        )}
-        {c.entryPrice === 'offer' && (
-          <Field label="Sell at bid after" hint="Wait this long at the offer, then take the bid. 0 waits until it fills.">
-            <Input value={String(c.crossAfterSec)} aria-label="cross after seconds" className="w-20"
-                   onChange={(e) => set('crossAfterSec', Math.floor(num(e.target.value, 5)))} />
-            <span className="text-[11.5px] text-muted-foreground">
-              {c.crossAfterSec > 0 ? 'sec' : 'sec — waits until filled'}
-            </span>
-          </Field>
-        )}
-        {c.entryPrice === 'offer' && c.crossAfterSec > 0 && (
-          <Field
-            label="Only sell at bid if spread ≤"
-            hint="If the gap between bid and ask is wider than this, the order waits at the middle price instead of selling at the bid. Still unfilled when the entry window closes? It is cancelled and Telegram tells you."
-          >
-            <Input value={String(Math.round((c.maxCrossSpreadPct ?? 0.15) * 100))} aria-label="max spread to sell at bid pct" className="w-20"
-                   onChange={(e) => set('maxCrossSpreadPct', Math.min(100, Math.max(1, num(e.target.value, 15))) / 100)} />
-            <span className="text-[11.5px] text-muted-foreground">%</span>
-          </Field>
-        )}
-
-        <div className="mt-2 border-t border-[var(--line)] pt-2 text-[11px] uppercase tracking-wide text-[var(--dim)]">
-          Exit
-        </div>
-        <Field label="Take profit" hint="Buy back once this much of the premium has decayed. 0 holds to expiry.">
-          <Input value={String(Math.round(c.takeProfitPct * 100))} aria-label="take profit pct" className="w-20"
-                 onChange={(e) => set('takeProfitPct', num(e.target.value, 95) / 100)} />
-          <span className="text-[11.5px] text-muted-foreground">% earned</span>
-        </Field>
-        <Field label="Stop loss" hint="Buy back if the premium rises this much above the entry price. 0 means no stop.">
-          <Input value={String(Math.round(c.stopLossPct * 100))} aria-label="stop loss pct" className="w-20"
-                 onChange={(e) => set('stopLossPct', num(e.target.value, 0) / 100)} />
-          <span className="text-[11.5px] text-muted-foreground">
-            {c.stopLossPct > 0 ? '%' : '% — no stop'}
+        <button
+          type="button"
+          onClick={() => setReadAll((v) => !v)}
+          aria-expanded={readAll}
+          className="m-0 mt-2 flex w-full appearance-none items-start gap-1.5 rounded-lg border-0 bg-muted px-2.5 py-2 text-left font-[inherit]"
+        >
+          <span className={cn('min-w-0 flex-1 text-[12px] leading-relaxed text-foreground', !readAll && 'line-clamp-2')}>
+            {describeStrategy(c)}
           </span>
-        </Field>
+          <ChevronDown className={cn('mt-0.5 h-3.5 w-3.5 flex-none text-muted-foreground transition-transform', readAll && 'rotate-180')} />
+        </button>
 
-        <div className="mt-2 border-t border-[var(--line)] pt-2 text-[11px] uppercase tracking-wide text-[var(--dim)]">
-          Safety filter
+        {/* The tabs stay in reach while a tab scrolls. */}
+        <div
+          role="tablist"
+          aria-label="strategy settings"
+          className="sticky top-0 z-10 -mx-4 mt-2 flex gap-1 border-b border-border bg-background px-4 pb-2 pt-1"
+          onKeyDown={(e) => {
+            if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+            const i = TABS.findIndex((t) => t.id === tab);
+            const next = TABS[(i + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length]!;
+            setTab(next.id);
+            document.getElementById(`tab-${next.id}`)?.focus();
+          }}
+        >
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              id={`tab-${t.id}`}
+              type="button"
+              role="tab"
+              aria-selected={tab === t.id}
+              aria-controls={`panel-${t.id}`}
+              tabIndex={tab === t.id ? 0 : -1}
+              onClick={() => setTab(t.id)}
+              className={cn(
+                'relative m-0 h-9 flex-1 appearance-none whitespace-nowrap rounded-md border-0 px-1 font-[inherit] text-[12.5px] font-medium',
+                tab === t.id ? 'bg-muted text-foreground' : 'bg-transparent text-muted-foreground',
+              )}
+            >
+              {t.label}
+              {tabHasProblem(t.id) && (
+                <span aria-label="has a problem" className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-[var(--down)]" />
+              )}
+            </button>
+          ))}
         </div>
-        <Field label="Skip a leg that is not safe enough" stack>
-          <Pick wide value={c.probGate === null ? 'off' : 'on'}
-                onChange={(v) => set('probGate', v === 'on' ? 0.95 : null)}
-                options={[
-                  { v: 'on', label: 'On', note: 'skip a leg below your safety %' },
-                  { v: 'off', label: 'Off', note: 'always sell both legs' },
-                ]} />
-          {c.probGate !== null && (
-            <div className="mt-1 flex items-center gap-1.5">
-              <span className="text-[11.5px] text-muted-foreground">Safety</span>
-              <Input value={String(Math.round(c.probGate * 1000) / 10)} aria-label="prob gate pct" className="w-20"
-                     onChange={(e) => set('probGate', num(e.target.value, 95) / 100)} />
-              <span className="text-[11.5px] text-muted-foreground">% to expire worthless</span>
-            </div>
-          )}
-        </Field>
-        <Field label="Double the other leg" stack>
-          <Pick wide value={c.doubleWhenOneSided ? 'on' : 'off'}
-                onChange={(v) => set('doubleWhenOneSided', v === 'on')}
-                options={[
-                  { v: 'on', label: 'On', note: 'if one leg is skipped, sell double on the other' },
-                  { v: 'off', label: 'Off', note: 'same lots on each leg, always' },
-                ]} />
-        </Field>
 
-        <div className="mt-2 border-t border-[var(--line)] pt-2 text-[11px] uppercase tracking-wide text-[var(--dim)]">
-          After a target
-        </div>
-        <Field label="Add to the other leg" stack>
-          <Pick wide value={c.addToOpposite ? 'on' : 'off'}
-                onChange={(v) => set('addToOpposite', v === 'on' ? (c.addToOpposite ?? DEFAULT_ADD_TO_OPPOSITE) : null)}
-                options={[
-                  { v: 'on', label: 'On', note: 'CE target buys back 425 → sell 425 more PE, while the PE still pays enough' },
-                  { v: 'off', label: 'Off', note: 'a target closes its leg and nothing else happens' },
-                ]} />
-        </Field>
-        {c.addToOpposite && (
-          <>
-            <Field label="Only if its bid is at least"
-                   hint="The bid, because it is the least a sell there can get. The add is never sold below this, even if the bid falls while it works.">
-              <span className="text-[11.5px] text-muted-foreground">$</span>
-              <Input value={String(c.addToOpposite.minPriceUsd)} aria-label="add minimum price" className="w-20" inputMode="decimal"
-                     onChange={(e) => set('addToOpposite', { ...c.addToOpposite!, minPriceUsd: num(e.target.value, 0) })} />
-            </Field>
-            <Field label="And not once it has risen to"
-                   hint="Measured against what the other leg was first sold at. 2 means a leg sold at 15 is not added to at 30 or more: that leg is losing money.">
-              <Input value={String(c.addToOpposite.maxMultiple)} aria-label="add maximum multiple" className="w-20" inputMode="decimal"
-                     onChange={(e) => set('addToOpposite', { ...c.addToOpposite!, maxMultiple: num(e.target.value, 0) })} />
-              <span className="text-[11.5px] text-muted-foreground">× its sale price</span>
-            </Field>
-            {/*
-              The rule tried on real-looking numbers, redrawn as the two inputs
-              change: the fastest way to see that "$3" and "2x" mean what was meant.
-            */}
-            <div aria-label="add examples" className="rounded-lg bg-muted px-2.5 py-2 text-[11.5px] leading-relaxed">
-              <p className="m-0 mb-1 text-muted-foreground">CE target buys back 425; PE was sold at $15. PE bid now:</p>
-              {addExamples(c.addToOpposite).map((x) => (
-                <div key={x.bid} className="flex justify-between gap-3">
-                  <span className="tabular-nums text-foreground">${x.bid.toFixed(2)}</span>
-                  <span className={x.adds ? 'text-[var(--up)]' : 'text-[var(--dim)]'}>
-                    {x.adds ? `adds — ${x.why}` : `no — ${x.why}`}
-                  </span>
-                </div>
-              ))}
-              <p className="m-0 mt-1 text-[var(--dim)]">
-                Added to the PE itself: the PE's own target and stop cover all of it. Not on a one-sided day, not in the last 30 minutes, and never twice for the same contracts.
+        <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} className="pt-2">
+          {tab === 'when' && (
+            <>
+              <div className="grid grid-cols-2 gap-2">
+                <Stack label="Entry time" error={err('entryTime')}>
+                  <TimePicker
+                    label="Entry time"
+                    value={c.entryTime}
+                    onChange={(v) => set('entryTime', v)}
+                    invalid={Boolean(err('entryTime'))}
+                    presets={[{ label: '5:30 AM · contract opens', value: '05:30' }]}
+                    className="w-full"
+                  />
+                </Stack>
+                <Stack label="Exit time" error={err('exitTime')}>
+                  <TimePicker
+                    label="Exit time"
+                    value={c.exitTime}
+                    onChange={(v) => set('exitTime', v)}
+                    min={entryPlusOne}
+                    max={daytime ? LAST_MINUTE : null}
+                    invalid={Boolean(err('exitTime'))}
+                    presets={daytime ? [{ label: '5:29 PM · last minute', value: LAST_MINUTE }] : []}
+                    className="w-full"
+                  />
+                </Stack>
+              </div>
+              {err('exitTime') && daytime && entryPlusOne && minutesOf(entryPlusOne) <= minutesOf(LAST_MINUTE) && (
+                <QuickFix onClick={() => set('exitTime', LAST_MINUTE)}>Set exit to 5:29 PM</QuickFix>
+              )}
+              <p className="m-0 mt-1.5 text-[11.5px] leading-snug text-muted-foreground">
+                {!err('exitTime') && spanLabel(c.entryTime, c.exitTime)
+                  ? `Runs ${spanLabel(c.entryTime, c.exitTime)}. `
+                  : ''}
+                {daytime
+                  ? 'The contract settles at 5:30 PM, so 5:29 PM is the last exit.'
+                  : 'An evening entry holds tomorrow’s contract.'}
               </p>
-            </div>
-          </>
-        )}
 
-        {/* Live objections, before the button rather than after it. */}
-        {sizing.warnings.map((wn) => (
-          <p key={wn} className="m-0 mt-2 text-[11.5px] leading-snug text-[var(--warn)]">{wn}</p>
-        ))}
-        {problems.map((p) => (
-          <p key={p} className="m-0 mt-2 text-[11.5px] leading-snug text-[var(--down)]">{p}</p>
-        ))}
+              <Stack label="Days" error={err('weekdays')} className="mt-3">
+                <div className="grid grid-cols-7 gap-1">
+                  {DAY_NAMES.map((d, i) => {
+                    const on = c.weekdays.includes(i);
+                    return (
+                      <button
+                        key={d}
+                        type="button"
+                        aria-label={d}
+                        aria-pressed={on}
+                        onClick={() => toggleDay(i)}
+                        className={cn('m-0 h-10 appearance-none rounded-md border border-solid font-[inherit] text-[12px] font-medium',
+                          on ? 'border-[var(--warn)] bg-[var(--warn)] text-black' : 'border-[var(--line)] bg-transparent text-[var(--dim)]')}
+                      >
+                        {d}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="mt-1.5 flex gap-3 text-[12px]">
+                  {([['Every day', [0, 1, 2, 3, 4, 5, 6]], ['Weekdays', WEEKDAYS], ['Weekends', WEEKEND]] as const).map(([label, days]) => (
+                    <button key={label} type="button" onClick={() => set('weekdays', [...days])}
+                            className="m-0 appearance-none border-0 bg-transparent p-0 font-[inherit] text-muted-foreground underline underline-offset-2">
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </Stack>
+            </>
+          )}
 
-        <p className="m-0 mt-3 text-[11.5px] leading-snug text-muted-foreground">
-          New strategies are saved switched off. Turn it on from the list when you are ready.
-        </p>
+          {tab === 'sell' && (
+            <>
+              <Stack label="Legs">
+                <Segmented
+                  label="legs"
+                  value={c.legs}
+                  onChange={(v) => set('legs', v)}
+                  options={[
+                    { v: 'both', label: 'CE + PE', note: 'Both sides — the tested strategy.' },
+                    { v: 'CE', label: 'CE only', note: 'Profits if BTC does not rise much.' },
+                    { v: 'PE', label: 'PE only', note: 'Profits if BTC does not fall much.' },
+                  ]}
+                />
+              </Stack>
 
-        <SheetFooter>
-          <Button variant="outline" className="h-11 flex-none px-4" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button className="h-11 flex-1" disabled={busy || !name.trim()} onClick={() => void save()}>
-            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-            Save
-          </Button>
+              <Stack label="Premium rule" error={err('premium')} className="mt-3">
+                <div className="flex items-stretch gap-2">
+                  <Segmented
+                    label="premium rule"
+                    value={c.premium.mode}
+                    onChange={(v) => set('premium', { ...c.premium, mode: v })}
+                    className="flex-1"
+                    options={[
+                      { v: 'atLeast', label: 'At least', note: 'Furthest strike still paying this — more premium, more risk.' },
+                      { v: 'atMost', label: 'At most', note: 'Best strike paying up to this — less premium, less risk.' },
+                    ]}
+                  />
+                  <Affix before="$">
+                    <Input value={String(c.premium.usd)} aria-label="premium usd" inputMode="decimal" className="w-20 pl-5"
+                           onChange={(e) => set('premium', { ...c.premium, usd: num(e.target.value, 0) })} />
+                  </Affix>
+                </div>
+              </Stack>
+
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <Stack label="Lots per leg" error={err('lots')} hint="1 lot = 0.001 BTC">
+                  <Input value={String(c.lots)} aria-label="lots" inputMode="numeric"
+                         onChange={(e) => set('lots', Math.floor(num(e.target.value, 0)))} />
+                </Stack>
+                <div className="rounded-lg bg-muted px-2.5 py-2 text-[11.5px] leading-relaxed">
+                  <div className="flex justify-between gap-2">
+                    <span className="text-muted-foreground">Max at once</span>
+                    <span className="tabular-nums text-foreground">{sizing.maxContracts}</span>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <span className="text-muted-foreground">Margin</span>
+                    <span className="tabular-nums text-foreground">{spot ? inr(sizing.marginInr) : '—'}</span>
+                  </div>
+                  {sizing.shareOfAccount !== null && (
+                    <div className="flex justify-between gap-2">
+                      <span className="text-muted-foreground" title="Measured against free margin.">Of free</span>
+                      <span className={cn('tabular-nums', sizing.shareOfAccount > 0.5 ? 'text-[var(--down)]' : 'text-foreground')}>
+                        {Math.round(sizing.shareOfAccount * 100)}%
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+              {spot ? <p className="m-0 mt-1 text-right text-[11px] text-[var(--dim)]">{usd(sizing.marginUsd)} at 200x</p> : null}
+              <Warnings items={warnings.filter((w) => /margin|account|funded/i.test(w))} />
+            </>
+          )}
+
+          {tab === 'trade' && (
+            <>
+              <Stack label="Entry price">
+                <Segmented
+                  label="entry price"
+                  value={c.entryPrice}
+                  onChange={(v) => set('entryPrice', v)}
+                  options={[
+                    { v: 'offer', label: 'Offer', note: 'Rests at the offer — a better price if someone takes it.' },
+                    { v: 'now', label: 'Bid now', note: 'Sells at the bid at once — fills, at a lower price.' },
+                    { v: 'set', label: 'My price', note: 'Waits at your price until it fills.' },
+                  ]}
+                />
+              </Stack>
+
+              {c.entryPrice === 'set' && (
+                <Stack label="Limit price" error={err('entryLimit')} className="mt-3">
+                  <Input value={String(c.entryLimit ?? '')} aria-label="entry limit" inputMode="decimal" className="w-32"
+                         onChange={(e) => set('entryLimit', num(e.target.value, 0))} />
+                </Stack>
+              )}
+              {c.entryPrice === 'offer' && (
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <Stack label="Sell at bid after" error={err('crossAfterSec')}
+                         hint={c.crossAfterSec > 0 ? 'seconds' : '0 waits until filled'}>
+                    <Affix after="sec">
+                      <Input value={String(c.crossAfterSec)} aria-label="cross after seconds" inputMode="numeric" className="pr-9"
+                             onChange={(e) => set('crossAfterSec', Math.floor(num(e.target.value, 0)))} />
+                    </Affix>
+                  </Stack>
+                  {c.crossAfterSec > 0 && (
+                    <Stack label="Only if spread ≤" error={err('maxCrossSpreadPct')} hint="wider: waits at the mid">
+                      <Affix after="%">
+                        <Input value={String(Math.round((c.maxCrossSpreadPct ?? 0.15) * 100))} aria-label="max spread to sell at bid pct"
+                               inputMode="numeric" className="pr-7"
+                               onChange={(e) => set('maxCrossSpreadPct', Math.min(100, Math.max(1, num(e.target.value, 15))) / 100)} />
+                      </Affix>
+                    </Stack>
+                  )}
+                </div>
+              )}
+
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <Stack label="Take profit" error={err('takeProfitPct')} hint={c.takeProfitPct > 0 ? 'of the premium earned' : '0 holds to expiry'}>
+                  <Affix after="%">
+                    <Input value={String(Math.round(c.takeProfitPct * 100))} aria-label="take profit pct" inputMode="numeric" className="pr-7"
+                           onChange={(e) => set('takeProfitPct', num(e.target.value, 0) / 100)} />
+                  </Affix>
+                </Stack>
+                <Stack label="Stop loss" error={err('stopLossPct')} hint={c.stopLossPct > 0 ? 'above the entry price' : '0 means no stop'}>
+                  <Affix after="%">
+                    <Input value={String(Math.round(c.stopLossPct * 100))} aria-label="stop loss pct" inputMode="numeric" className="pr-7"
+                           onChange={(e) => set('stopLossPct', num(e.target.value, 0) / 100)} />
+                  </Affix>
+                </Stack>
+              </div>
+              <Warnings items={warnings.filter((w) => /target and no stop/.test(w))} />
+            </>
+          )}
+
+          {tab === 'extras' && (
+            <>
+              <Switch
+                label="Skip a leg that is not safe enough"
+                description={c.probGate !== null ? 'A leg below your safety % is not sold.' : 'Off — both legs are always sold.'}
+                checked={c.probGate !== null}
+                onCheckedChange={(on) => set('probGate', on ? 0.95 : null)}
+              />
+              {c.probGate !== null && (
+                <Stack label="Safety" error={err('probGate')} hint="chance to expire worthless" className="mb-1 w-40">
+                  <Affix after="%">
+                    <Input value={String(Math.round(c.probGate * 1000) / 10)} aria-label="prob gate pct" inputMode="decimal" className="pr-7"
+                           onChange={(e) => set('probGate', num(e.target.value, 0) / 100)} />
+                  </Affix>
+                </Stack>
+              )}
+
+              <div className="border-t border-border">
+                <Switch
+                  label="Double the other leg"
+                  description={c.doubleWhenOneSided ? 'If one leg is skipped, sell double on the other.' : 'Off — the same lots on each leg, always.'}
+                  checked={c.doubleWhenOneSided}
+                  onCheckedChange={(on) => set('doubleWhenOneSided', on)}
+                />
+                <FieldError text={err('doubleWhenOneSided')} />
+              </div>
+
+              <div className="border-t border-border">
+                <Switch
+                  label="Add to the other leg after a target"
+                  description={c.addToOpposite
+                    ? 'CE target buys back 425 → sell 425 more PE, while the PE still pays enough.'
+                    : 'Off — a target closes its leg and nothing else happens.'}
+                  checked={Boolean(c.addToOpposite)}
+                  onCheckedChange={(on) => set('addToOpposite', on
+                    ? (c.addToOpposite ?? { ...DEFAULT_ADD_TO_OPPOSITE, addUntil: defaultAddUntil(c.exitTime) })
+                    : null)}
+                />
+                <FieldError text={err('add')} />
+              </div>
+
+              {c.addToOpposite && (
+                <>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Stack label="Only if its bid ≥" error={err('addMinPrice')} hint="never sold below this">
+                      <Affix before="$">
+                        <Input value={String(c.addToOpposite.minPriceUsd)} aria-label="add minimum price" inputMode="decimal" className="pl-5"
+                               onChange={(e) => setAdd({ minPriceUsd: num(e.target.value, 0) })} />
+                      </Affix>
+                    </Stack>
+                    <Stack label="Not once it reaches" error={err('addMultiple')} hint="× its first sale price">
+                      <Affix after="×">
+                        <Input value={String(c.addToOpposite.maxMultiple)} aria-label="add maximum multiple" inputMode="decimal" className="pr-7"
+                               onChange={(e) => setAdd({ maxMultiple: num(e.target.value, 0) })} />
+                      </Affix>
+                    </Stack>
+                  </div>
+
+                  <Stack label="Latest time to add" error={err('addUntil')} className="mt-2"
+                         hint={`between ${time12(c.entryTime)} and ${time12(c.exitTime)}`}>
+                    <TimePicker
+                      label="Latest time to add"
+                      value={c.addToOpposite.addUntil}
+                      onChange={(v) => setAdd({ addUntil: v })}
+                      min={entryPlusOne}
+                      max={exitMinusOne}
+                      invalid={Boolean(err('addUntil'))}
+                      presets={isHhmm(c.exitTime) ? [{ label: '30 min before exit', value: defaultAddUntil(c.exitTime) }] : []}
+                      className="w-full"
+                    />
+                  </Stack>
+                  {err('addUntil') && isHhmm(c.exitTime) && (
+                    <QuickFix onClick={() => setAdd({ addUntil: defaultAddUntil(c.exitTime) })}>
+                      Use {time12(defaultAddUntil(c.exitTime))} (30 min before exit)
+                    </QuickFix>
+                  )}
+
+                  <details className="mt-2 rounded-lg bg-muted px-2.5 py-2 text-[11.5px] leading-relaxed">
+                    <summary className="cursor-pointer text-muted-foreground">Try it on prices</summary>
+                    <div aria-label="add examples" className="mt-1">
+                      <p className="m-0 mb-1 text-muted-foreground">CE target buys back 425; PE was sold at $15. PE bid now:</p>
+                      {addExamples(c.addToOpposite).map((x) => (
+                        <div key={x.bid} className="flex justify-between gap-3">
+                          <span className="tabular-nums text-foreground">${x.bid.toFixed(2)}</span>
+                          <span className={x.adds ? 'text-[var(--up)]' : 'text-[var(--dim)]'}>
+                            {x.adds ? `adds — ${x.why}` : `no — ${x.why}`}
+                          </span>
+                        </div>
+                      ))}
+                      <p className="m-0 mt-1 text-[var(--dim)]">
+                        Added to the PE itself: its own target and stop cover all of it. Not on a one-sided day,
+                        not after {time12(c.addToOpposite.addUntil)}, and never twice for the same contracts.
+                      </p>
+                    </div>
+                  </details>
+                </>
+              )}
+            </>
+          )}
+        </div>
+
+        <SheetFooter className="flex-col gap-2">
+          {refused.map((p) => (
+            <p key={p} className="m-0 text-[11.5px] leading-snug text-[var(--down)]">{p}</p>
+          ))}
+          {problems.length > 0 && <LeftToFix problems={problems} onGo={setTab} />}
+          <div className="flex gap-2">
+            <Button variant="outline" className="h-11 flex-none px-4" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button className="h-11 flex-1" disabled={busy} aria-disabled={problems.length > 0 || undefined} onClick={() => void save()}>
+              {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+              {problems.length ? `Fix ${problems.length} to save` : 'Save'}
+            </Button>
+          </div>
+          {!editing && problems.length === 0 && (
+            <p className="m-0 text-center text-[11px] text-[var(--dim)]">Saved switched off. Turn it on from the list.</p>
+          )}
         </SheetFooter>
       </SheetContent>
     </Sheet>
+  );
+}
+
+/** A label over its control, with the control's problem under it. */
+function Stack({ label, hint, error, className, children }: {
+  label: string; hint?: string; error?: string | null; className?: string; children: React.ReactNode;
+}) {
+  return (
+    <div className={cn('min-w-0', className)}>
+      <div className="mb-1 flex items-baseline justify-between gap-2">
+        <span className="text-[12px] text-muted-foreground">{label}</span>
+        {hint && <span className="truncate text-[10.5px] text-[var(--dim)]">{hint}</span>}
+      </div>
+      {children}
+      <FieldError text={error ?? null} />
+    </div>
+  );
+}
+
+function FieldError({ text }: { text: string | null }) {
+  if (!text) return null;
+  return <p role="alert" className="m-0 mt-1 text-[11.5px] leading-snug text-[var(--down)]">{text}</p>;
+}
+
+function Warnings({ items }: { items: string[] }) {
+  return (
+    <>
+      {items.map((w) => <p key={w} className="m-0 mt-2 text-[11.5px] leading-snug text-[var(--warn)]">{w}</p>)}
+    </>
+  );
+}
+
+function QuickFix({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button type="button" onClick={onClick}
+            className="m-0 mt-1 appearance-none border-0 bg-transparent p-0 font-[inherit] text-[12px] text-[var(--accent)] underline underline-offset-2">
+      {children}
+    </button>
+  );
+}
+
+/** A unit inside the field, so "$" and "%" do not need a row of their own. */
+function Affix({ before, after, children }: { before?: string; after?: string; children: React.ReactNode }) {
+  return (
+    <div className="relative">
+      {before && <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[12px] text-muted-foreground">{before}</span>}
+      {children}
+      {after && <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[12px] text-muted-foreground">{after}</span>}
+    </div>
+  );
+}
+
+/** Two or three choices on one line; only the chosen one's sentence is shown. */
+function Segmented<T extends string>({ label, value, options, onChange, className }: {
+  label: string;
+  value: T;
+  options: { v: T; label: string; note: string }[];
+  onChange: (v: T) => void;
+  className?: string;
+}) {
+  const chosen = options.find((o) => o.v === value);
+  return (
+    <div className={cn('min-w-0', className)}>
+      <div role="radiogroup" aria-label={label} className="flex gap-0.5 rounded-lg bg-muted p-0.5">
+        {options.map((o) => (
+          <button
+            key={o.v}
+            type="button"
+            role="radio"
+            aria-checked={value === o.v}
+            onClick={() => onChange(o.v)}
+            className={cn(
+              'm-0 h-9 flex-1 appearance-none whitespace-nowrap rounded-md border-0 px-2 font-[inherit] text-[12.5px] font-medium',
+              value === o.v ? 'bg-background text-foreground shadow-sm' : 'bg-transparent text-muted-foreground',
+            )}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+      {chosen && <p className="m-0 mt-1 text-[11.5px] leading-snug text-muted-foreground">{chosen.note}</p>}
+    </div>
+  );
+}
+
+/** What stops the save, and a way to each tab that has some of it. */
+function LeftToFix({ problems, onGo }: { problems: Problem[]; onGo: (t: FormTab) => void }) {
+  const tabs = TABS.filter((t) => problems.some((p) => p.tab === t.id));
+  return (
+    <p className="m-0 text-[12px] leading-snug text-[var(--down)]" aria-live="polite">
+      {problems.length === 1 ? '1 thing to fix' : `${problems.length} things to fix`} on{' '}
+      {tabs.map((t, i) => (
+        <span key={t.id}>
+          {i > 0 && ', '}
+          <button type="button" onClick={() => onGo(t.id)}
+                  className="m-0 appearance-none border-0 bg-transparent p-0 font-[inherit] text-[12px] text-[var(--down)] underline underline-offset-2">
+            {t.label}
+          </button>
+        </span>
+      ))}
+    </p>
   );
 }
