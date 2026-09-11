@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { useState } from 'react';
 import { TimePicker } from '@/components/ui/time-picker';
@@ -121,5 +121,53 @@ describe('the allowed range', () => {
     open();
     fireEvent.change(screen.getByRole('textbox', { name: 'type the exit time' }), { target: { value: '6 pm' } });
     expect(screen.getByText('Outside 5:31 AM to 5:29 PM')).toBeInTheDocument();
+  });
+});
+
+/*
+ * On the live desk, 11 September, a 360x800 phone: the popover opened above
+ * the exit field with too little room, and its top went under the address bar.
+ */
+describe('on a phone', () => {
+  const realMatchMedia = window.matchMedia;
+  afterEach(() => { window.matchMedia = realMatchMedia; });
+  const phone = () => {
+    window.matchMedia = ((query: string) => ({
+      matches: query.includes('max-width: 639px'), media: query, onchange: null,
+      addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {}, dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+  };
+
+  it('[critical] opens as a sheet from the bottom, not a popover', () => {
+    phone();
+    render(<Harness initial="17:29" />);
+    open();
+    const sheet = screen.getByRole('dialog', { name: 'Exit time picker' });
+    expect(sheet.className).toContain('bottom-0');
+    expect(sheet.className).toContain('inset-x-0');
+    expect(sheet.className).toContain('max-h-[92dvh]');
+  });
+
+  it('[critical] picks and sets the same way in the sheet', () => {
+    phone();
+    const onChange = vi.fn();
+    render(<Harness initial="05:30" onChange={onChange} />);
+    open();
+    expect(screen.getByRole('dialog', { name: 'Exit time picker' })).toBeInTheDocument();
+    fireEvent.click(dial().getByRole('button', { name: "4 o'clock" }));
+    fireEvent.click(dial().getByRole('button', { name: '55 minutes' }));
+    fireEvent.click(screen.getByRole('button', { name: 'one minute later' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'PM' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Set 4:56 PM' }));
+    expect(onChange).toHaveBeenCalledWith('16:56');
+    expect(screen.queryByRole('dialog', { name: 'Exit time picker' })).toBeNull();
+  });
+
+  it('a wide screen still gets the popover, held to the room it has', () => {
+    render(<Harness />);
+    open();
+    const pop = screen.getByRole('dialog', { name: 'Exit time picker' });
+    expect(pop.className).not.toContain('bottom-0');
+    expect(pop.getAttribute('style') ?? '').toContain('--radix-popover-content-available-height');
   });
 });

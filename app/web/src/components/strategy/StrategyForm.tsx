@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { ChevronDown, Loader2 } from 'lucide-react';
 import { saveStrategy } from '@/api/strategy';
 import { DAY_NAMES, DEFAULT_ADD_TO_OPPOSITE, DEFAULT_CONFIG, type Strategy, type StrategyConfig } from '@/types/strategy';
@@ -61,6 +61,10 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
   const [busy, setBusy] = useState(false);
   const [refused, setRefused] = useState<string[]>([]);
   const [readAll, setReadAll] = useState(false);
+  // An empty name on a form just opened is not a mistake yet. It is said once
+  // the name has been touched, or Save has been pressed.
+  const [nameTouched, setNameTouched] = useState(false);
+  const nameInput = useRef<HTMLInputElement>(null);
 
   const set = <K extends keyof StrategyConfig>(k: K, v: StrategyConfig[K]) =>
     setC((p) => ({ ...p, [k]: v }));
@@ -68,7 +72,15 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
     setC((p) => (p.addToOpposite ? { ...p, addToOpposite: { ...p.addToOpposite, ...patch } } : p));
 
   const problems = useMemo(() => strategyProblems(c, name), [c, name]);
-  const tabHasProblem = (t: FormTab) => problems.some((p) => p.tab === t);
+  /*
+   * The name box sits above the tabs, so its problem belongs to no tab. It used
+   * to count for When: a new strategy opened with a red dot on When and "1 thing
+   * to fix on When", and nothing on When was wrong.
+   */
+  const nameProblem = problemFor(problems, 'name');
+  const tabProblems = problems.filter((p) => p.field !== 'name');
+  const tabHasProblem = (t: FormTab) => tabProblems.some((p) => p.tab === t);
+  const shownCount = tabProblems.length + (nameTouched && nameProblem ? 1 : 0);
   const sizing = sizingOf(c, balanceUsd ?? null, spot ?? null);
   // Doubling and "no days" are problems now, said under their own fields.
   const warnings = sizing.warnings.filter((w) => !/Doubling|No days/.test(w));
@@ -77,7 +89,12 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
     set('weekdays', c.weekdays.includes(d) ? c.weekdays.filter((x) => x !== d) : [...c.weekdays, d].sort());
 
   const save = async () => {
-    if (problems.length) { setTab(problems[0]!.tab); return; }
+    if (problems.length) {
+      setNameTouched(true);
+      if (tabProblems.length) setTab(tabProblems[0]!.tab);
+      else nameInput.current?.focus();
+      return;
+    }
     setBusy(true);
     setRefused([]);
     try {
@@ -105,10 +122,13 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
       >
         <label className="block">
           <span className="sr-only">Name</span>
-          <Input value={name} aria-label="strategy name" placeholder="Name, e.g. Double one-sided"
-                 aria-invalid={Boolean(err('name')) || undefined}
-                 onChange={(e) => setName(e.target.value)} />
+          <Input ref={nameInput} value={name} aria-label="strategy name" placeholder="Name, e.g. Double one-sided"
+                 aria-invalid={(nameTouched && Boolean(nameProblem)) || undefined}
+                 className={cn(nameTouched && nameProblem && 'border-[var(--down)]')}
+                 onBlur={() => setNameTouched(true)}
+                 onChange={(e) => { setName(e.target.value); setNameTouched(true); }} />
         </label>
+        <FieldError text={nameTouched ? nameProblem : null} />
 
         {/*
           The rule read back as a sentence: how a wrong setting gets noticed
@@ -461,14 +481,21 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
           {refused.map((p) => (
             <p key={p} className="m-0 text-[11.5px] leading-snug text-[var(--down)]">{p}</p>
           ))}
-          {problems.length > 0 && <LeftToFix problems={problems} onGo={setTab} />}
+          {(tabProblems.length > 0 || (nameTouched && nameProblem)) && (
+            <LeftToFix
+              problems={tabProblems}
+              needsName={nameTouched && Boolean(nameProblem)}
+              onName={() => nameInput.current?.focus()}
+              onGo={setTab}
+            />
+          )}
           <div className="flex gap-2">
             <Button variant="outline" className="h-11 flex-none px-4" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
             <Button className="h-11 flex-1" disabled={busy} aria-disabled={problems.length > 0 || undefined} onClick={() => void save()}>
               {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-              {problems.length ? `Fix ${problems.length} to save` : 'Save'}
+              {shownCount ? `Fix ${shownCount} to save` : 'Save'}
             </Button>
           </div>
           {!editing && problems.length === 0 && (
@@ -561,17 +588,24 @@ function Segmented<T extends string>({ label, value, options, onChange, classNam
   );
 }
 
-/** What stops the save, and a way to each tab that has some of it. */
-function LeftToFix({ problems, onGo }: { problems: Problem[]; onGo: (t: FormTab) => void }) {
+/** What stops the save, and a way to each thing: the name box, and each tab with a problem. */
+function LeftToFix({ problems, needsName, onName, onGo }: {
+  problems: Problem[]; needsName: boolean; onName: () => void; onGo: (t: FormTab) => void;
+}) {
   const tabs = TABS.filter((t) => problems.some((p) => p.tab === t.id));
+  const count = problems.length + (needsName ? 1 : 0);
+  const link = 'm-0 appearance-none border-0 bg-transparent p-0 font-[inherit] text-[12px] text-[var(--down)] underline underline-offset-2';
   return (
     <p className="m-0 text-[12px] leading-snug text-[var(--down)]" aria-live="polite">
-      {problems.length === 1 ? '1 thing to fix' : `${problems.length} things to fix`} on{' '}
+      {count === 1 ? '1 thing to fix' : `${count} things to fix`}:{' '}
+      {needsName && (
+        <button type="button" onClick={onName} className={link}>Name</button>
+      )}
+      {needsName && tabs.length > 0 && ', '}
       {tabs.map((t, i) => (
         <span key={t.id}>
           {i > 0 && ', '}
-          <button type="button" onClick={() => onGo(t.id)}
-                  className="m-0 appearance-none border-0 bg-transparent p-0 font-[inherit] text-[12px] text-[var(--down)] underline underline-offset-2">
+          <button type="button" onClick={() => onGo(t.id)} className={link}>
             {t.label}
           </button>
         </span>

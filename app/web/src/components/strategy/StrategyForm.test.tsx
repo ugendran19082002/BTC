@@ -119,16 +119,36 @@ describe('times on a clock', () => {
 
   it('Save takes you to the tab with the problem', () => {
     show(editing({ lots: 0 }));
-    expect(screen.getByText(/1 thing to fix on/)).toBeInTheDocument();
+    expect(screen.getByText(/1 thing to fix:/)).toBeInTheDocument();
     fireEvent.click(saveButton());
     expect(screen.getByRole('tab', { name: /Sell/ })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('alert')).toHaveTextContent('Lots must be a whole number, at least 1.');
   });
 
-  it('a new strategy needs a name before it saves', () => {
+  /*
+   * On the live desk, 11 September: a new strategy opened with a red dot on When
+   * and "1 thing to fix on When" -- the empty name, which is not on When and had
+   * no message beside it.
+   */
+  it('[critical] a new form does not open complaining, and no tab is marked for the name', () => {
     show(null);
-    expect(saveButton()).toHaveTextContent('Fix 1 to save');
+    expect(saveButton()).toHaveTextContent('Save');
+    expect(screen.queryByLabelText('has a problem')).toBeNull();
+    expect(screen.queryByText(/thing to fix/)).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('[critical] Save without a name says so under the name box, and saves nothing', () => {
+    show(null);
+    fireEvent.click(saveButton());
+    expect(saveStrategy).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert')).toHaveTextContent('Give the strategy a name.');
+    expect(screen.getByText(/1 thing to fix:/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Name' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('has a problem')).toBeNull();
+    expect(screen.getByLabelText('strategy name')).toHaveFocus();
     fireEvent.change(screen.getByLabelText('strategy name'), { target: { value: 'Morning' } });
+    expect(screen.queryByRole('alert')).toBeNull();
     expect(saveButton()).toHaveTextContent('Save');
   });
 });
