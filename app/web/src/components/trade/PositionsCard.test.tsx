@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { PositionsCard } from '@/components/trade/PositionsCard';
+import { swipe } from '@/test/swipe';
 import { AlarmBanner } from '@/components/trade/ModeBanner';
 import { ModeSwitch } from '@/components/trade/ModeSwitch';
 import type { Trade, TradeStatus } from '@/types/trade';
@@ -236,12 +237,62 @@ describe('a position with no stop behind it', () => {
 });
 
 describe('closing out', () => {
-  it('sends the trade id and refreshes', async () => {
-    const onChanged = vi.fn();
-    render(<PositionsCard trades={[trade()]} onChanged={onChanged} />);
+  /*
+   * Close now used to buy the position back on the first tap. Now the tap asks,
+   * with the position and its live figures, and closing takes a swipe.
+   */
+  const half = trade({
+    symbol: 'P-BTC-74000-110926', optionSide: 'PE', position: -222, entrySize: 425, entryAvgPrice: 12,
+    exitSize: 203, exitAvgPrice: 0.7, realisedPnl: 2.2939,
+    protection: { takeProfit: 'tp', stopLoss: null },
+    onBook: { target: 0.7, stop: null },
+    live: { markPrice: 1.46, unrealisedPnl: 2.34, decayed: 0.88, liquidationPrice: null, netIfClosedUsd: 4.4 },
+    charges: { entryUsd: 0.2, exitUsd: 0.01, paidUsd: 0.21, toCloseUsd: 0.02 },
+  });
+
+  it('[critical] tapping Close now sends nothing: it asks first', () => {
+    render(<PositionsCard trades={[half]} />);
     fireEvent.click(screen.getByRole('button', { name: /close now/i }));
+    expect(closeTrade).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: 'Close 74,000 PE?' })).toBeInTheDocument();
+  });
+
+  it('[critical] the question shows the order and what closing leaves, live', () => {
+    const { rerender } = render(<PositionsCard trades={[half]} />);
+    fireEvent.click(screen.getByRole('button', { name: /close now/i }));
+    const dialog = within(screen.getByRole('dialog'));
+    expect(dialog.getByText('Buys back 222 at the market price.')).toBeInTheDocument();
+    const details = within(dialog.getByLabelText('position details'));
+    expect(details.getByText('425 sold · 203 bought back')).toBeInTheDocument();
+    expect(details.getByText('12.00')).toBeInTheDocument();
+    expect(details.getByText('1.46')).toBeInTheDocument();
+    expect(details.getByText('+₹199')).toBeInTheDocument();       // open P&L, 2.34 x 85
+    expect(details.getByText('+₹195')).toBeInTheDocument();       // booked
+    expect(within(dialog.getByLabelText('if closed now')).getByText('+₹374')).toBeInTheDocument();
+    // the next poll moves the price: the open question follows it
+    rerender(<PositionsCard trades={[{ ...half, live: { ...half.live!, markPrice: 2.1, unrealisedPnl: 2.2, netIfClosedUsd: 4.2 } }]} />);
+    expect(within(screen.getByLabelText('if closed now')).getByText('+₹357')).toBeInTheDocument();
+    expect(within(screen.getByLabelText('position details')).getByText('2.10')).toBeInTheDocument();
+  });
+
+  it('[critical] a part-way swipe does not close; a full one does, then refreshes', async () => {
+    const onChanged = vi.fn();
+    render(<PositionsCard trades={[half]} onChanged={onChanged} />);
+    fireEvent.click(screen.getByRole('button', { name: /close now/i }));
+    const control = screen.getByRole('slider', { name: /Swipe to close 222/ });
+    swipe(control, 0.5);
+    expect(closeTrade).not.toHaveBeenCalled();
+    swipe(control, 1);
     await waitFor(() => expect(closeTrade).toHaveBeenCalledWith('t1'));
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
+
+  it('Keep it closes the question and nothing else', () => {
+    render(<PositionsCard trades={[half]} />);
+    fireEvent.click(screen.getByRole('button', { name: /close now/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Keep it' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(closeTrade).not.toHaveBeenCalled();
   });
 
   it('shows nothing at all for a trade that is already finished', () => {
@@ -367,10 +418,10 @@ describe('closing everything', () => {
     expect(screen.getByText(/cannot be undone/)).toBeInTheDocument();
   });
 
-  it('runs on the second tap and reports what went through', async () => {
+  it('runs on a full swipe, not a tap, and reports what went through', async () => {
     render(<PositionsCard trades={[trade()]} />);
     fireEvent.click(screen.getByRole('button', { name: /close all/i }));
-    fireEvent.click(await screen.findByRole('button', { name: /^yes, close all$/i }));
+    swipe(await screen.findByRole('slider', { name: /Swipe to close all/ }));
     await waitFor(() => expect(closeAllTrades).toHaveBeenCalled());
     await waitFor(() => expect(screen.getByText('All closed')).toBeInTheDocument());
   });
@@ -382,7 +433,7 @@ describe('closing everything', () => {
     });
     render(<PositionsCard trades={[trade()]} />);
     fireEvent.click(screen.getByRole('button', { name: /close all/i }));
-    fireEvent.click(await screen.findByRole('button', { name: /^yes, close all$/i }));
+    swipe(await screen.findByRole('slider', { name: /Swipe to close all/ }));
     await waitFor(() => expect(screen.getByText('Some are still open')).toBeInTheDocument());
     expect(screen.getByText(/t2 — still holding -2/)).toBeInTheDocument();
     expect(screen.getByText(/Close the rest manually/)).toBeInTheDocument();

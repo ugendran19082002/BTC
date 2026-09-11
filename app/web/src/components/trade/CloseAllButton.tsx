@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { AlertTriangle, Loader2 } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import { closeAllTrades } from '@/api/trade';
 import type { Trade } from '@/types/trade';
 import { Sheet, SheetContent, SheetFooter } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
-import { contractLabel, price, size as fmtSize } from '@/lib/format';
+import { SwipeToConfirm } from '@/components/ui/swipe-confirm';
+import { contractLabel, pnlTone, price, signedInr, signedUsd, size as fmtSize, usdToInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 /**
@@ -14,6 +15,11 @@ import { cn } from '@/lib/utils';
  * it does not act on the first tap. The confirmation lists every position and
  * every working order by name, because "close all" is only safe if you can see
  * what "all" is before you agree to it.
+ *
+ * Each position shows what it is worth right now and what closing it leaves,
+ * with the total at the top, all refreshed by the same poll that draws the
+ * cards -- so the decision is made on the numbers of this second. Agreeing
+ * takes a swipe across the whole track, never a tap.
  *
  * It reports per trade rather than pass/fail. A partial result is the common
  * one -- a venue refuses one buy-back and takes the rest -- and hiding that
@@ -26,6 +32,11 @@ export function CloseAllButton({ trades, onChanged }: { trades: Trade[]; onChang
 
   const held = trades.filter((t) => t.position !== 0);
   const working = trades.filter((t) => t.position === 0 && !['flat', 'aborted'].includes(t.phase));
+  // Only a total of every position, or none: a sum missing one is a wrong number.
+  const nets = held.map((t) => t.live?.netIfClosedUsd);
+  const total = nets.length > 0 && nets.every((n) => n !== null && n !== undefined)
+    ? (nets as number[]).reduce((a, b) => a + b, 0)
+    : null;
   if (held.length + working.length === 0) return null;
 
   const run = async () => {
@@ -75,13 +86,35 @@ export function CloseAllButton({ trades, onChanged }: { trades: Trade[]; onChang
                 </p>
               </div>
 
+              {held.length > 0 && (
+                <section aria-label="if everything closes now" className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-muted px-3 py-2.5">
+                  <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.6px] text-muted-foreground">
+                    If all closed now
+                    <span className="inline-flex items-center gap-1 normal-case tracking-normal text-[var(--dim)]">
+                      <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-[var(--up)] motion-safe:animate-pulse" />
+                      live
+                    </span>
+                  </span>
+                  <span className="text-right">
+                    <span className={cn('block text-[20px] font-semibold tabular-nums leading-tight', toneClass(total))}>
+                      {signedInr(usdToInr(total))}
+                    </span>
+                    <span className="block text-[11px] tabular-nums text-muted-foreground">
+                      {total === null ? 'waiting for every price' : `${signedUsd(total)} after charges`}
+                    </span>
+                  </span>
+                </section>
+              )}
+
               <ul className="m-0 mt-3 flex list-none flex-col gap-1.5 p-0">
                 {held.map((t) => (
                   <Row
                     key={t.tradeId}
                     name={contractLabel(t.symbol)}
-                    what={`Sold ${fmtSize(t.position)} @ ${price(t.entryAvgPrice)}`}
+                    what={`${t.position < 0 ? 'Short' : 'Long'} ${fmtSize(t.position)} @ ${price(t.entryAvgPrice)} · now ${price(t.live?.markPrice)}`}
                     action="buy back"
+                    pnl={t.live?.unrealisedPnl}
+                    ifClosed={t.live?.netIfClosedUsd}
                   />
                 ))}
                 {working.map((t) => (
@@ -98,23 +131,17 @@ export function CloseAllButton({ trades, onChanged }: { trades: Trade[]; onChang
                 ))}
               </ul>
 
-              <SheetFooter>
-                <Button variant="outline" className="h-11 flex-none px-4" onClick={() => setOpen(false)}>
+              <SheetFooter className="items-center">
+                <Button variant="outline" className="h-14 flex-none px-4" onClick={() => setOpen(false)}>
                   Keep them
                 </Button>
-                <button
-                  onClick={() => void run()}
+                <SwipeToConfirm
+                  className="min-w-0 flex-1"
+                  label={`Swipe to close all ${held.length + working.length}`}
+                  busyLabel="Closing…"
                   disabled={busy}
-                  className={cn(
-                    'flex h-11 flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg',
-                    'appearance-none border-0 font-[inherit] text-[14px] font-semibold',
-                    'bg-[var(--down)] text-white transition-opacity hover:opacity-90',
-                    'disabled:cursor-not-allowed disabled:opacity-40',
-                  )}
-                >
-                  {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-                  Yes, close all
-                </button>
+                  onConfirm={run}
+                />
               </SheetFooter>
             </>
           )}
@@ -124,14 +151,28 @@ export function CloseAllButton({ trades, onChanged }: { trades: Trade[]; onChang
   );
 }
 
-function Row({ name, what, action }: { name: string; what: string; action: string }) {
+const toneClass = (n: number | null | undefined) =>
+  pnlTone(n) === 'up' ? 'text-[var(--up)]' : pnlTone(n) === 'down' ? 'text-[var(--down)]' : 'text-foreground';
+
+function Row({ name, what, action, pnl, ifClosed }: {
+  name: string; what: string; action: string;
+  /** Present for a position: its P&L now, and what closing it leaves after charges. */
+  pnl?: number | null; ifClosed?: number | null;
+}) {
+  const position = pnl !== undefined || ifClosed !== undefined;
   return (
-    <li className="flex items-baseline justify-between gap-3 rounded-md bg-muted px-2.5 py-1.5">
-      <span className="min-w-0">
+    <li className="rounded-md bg-muted px-2.5 py-2">
+      <div className="flex items-baseline justify-between gap-3">
         <span className="text-[13px] font-medium text-foreground">{name}</span>
-        <span className="ml-1.5 text-[11.5px] text-muted-foreground">{what}</span>
-      </span>
-      <span className="flex-none text-[11px] uppercase tracking-[0.5px] text-[var(--down)]">{action}</span>
+        <span className="flex-none text-[11px] uppercase tracking-[0.5px] text-[var(--down)]">{action}</span>
+      </div>
+      <div className="mt-0.5 text-[11.5px] text-muted-foreground">{what}</div>
+      {position && (
+        <div className="mt-1 flex justify-between gap-3 text-[12px] tabular-nums">
+          <span>P&amp;L <span className={toneClass(pnl)}>{signedInr(usdToInr(pnl))}</span></span>
+          <span>If closed <span className={cn('font-semibold', toneClass(ifClosed))}>{signedInr(usdToInr(ifClosed))}</span></span>
+        </div>
+      )}
     </li>
   );
 }
