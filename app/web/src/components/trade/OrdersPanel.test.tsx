@@ -110,6 +110,60 @@ describe('charges', () => {
     expect(within(totals).getByText('Gross +₹85.00')).toBeInTheDocument();
     expect(within(totals).getByText('Charges −₹2.55')).toBeInTheDocument();
   });
+
+  it('counts only closed trades\' charges, so gross minus charges is the net beside it', async () => {
+    show([
+      order({
+        realisedPnl: 1,
+        netRealisedUsd: 0.97,
+        charges: { entryUsd: 0.02, exitUsd: 0.01, paidUsd: 0.03, toCloseUsd: 0 },
+      }),
+      order({
+        status: 'pending', position: -425, realisedPnl: 0, netRealisedUsd: -0.19,
+        charges: { entryUsd: 0.19, exitUsd: 0, paidUsd: 0.19, toCloseUsd: 0.1 },
+      }),
+    ]);
+    const totals = await screen.findByLabelText('totals for the range');
+    expect(within(totals).getByText('Charges −₹2.55')).toBeInTheDocument();
+  });
+});
+
+/**
+ * A position still open, as the Orders screen showed it on 11 September: two
+ * short 425s each reading −₹16.41 / −₹17.90 in red. Those were the charges paid
+ * to get in -- booked P&L zero, minus charges -- on positions that were winning.
+ */
+describe('a trade that is still open', () => {
+  const openTrade = (over: Partial<OrderRecord> = {}) => order({
+    status: 'pending', position: -425, phase: 'protected', exitSize: 0, exitAvgPrice: null,
+    realisedPnl: 0, netRealisedUsd: -0.19,
+    charges: { entryUsd: 0.19, exitUsd: 0, paidUsd: 0.19, toCloseUsd: 0.1 },
+    live: { markPrice: 9, unrealisedPnl: 0.49, decayed: 0.4, liquidationPrice: null, netIfClosedUsd: 0.2 },
+    fills: [{ orderId: '1', role: 'entry', side: 'sell', size: 425, price: 15, ts: OPENED }],
+    ...over,
+  });
+
+  it('[critical] shows what closing now would leave, not its charges as a loss', async () => {
+    show([openTrade()]);
+    // 0.20 x 85
+    const figure = await screen.findByText('+₹17.00');
+    expect(figure.className).toContain('--up');
+    expect(screen.getByText('if closed now')).toBeInTheDocument();
+    // −0.19 x 85: the charges, which is what the row used to call its P&L
+    expect(screen.queryByText('−₹16.15')).toBeNull();
+  });
+
+  it('[critical] before a price arrives, says the charges plainly and never in the losing colour', async () => {
+    show([openTrade({ live: { markPrice: null, unrealisedPnl: null, decayed: null, liquidationPrice: null, netIfClosedUsd: null } })]);
+    const line = await screen.findByText('charges ₹16.15');
+    expect(line.className).not.toContain('--down');
+    expect(screen.queryByText('−₹16.15')).toBeNull();
+  });
+
+  it('a losing open trade is still shown as losing', async () => {
+    show([openTrade({ live: { markPrice: 30, unrealisedPnl: -6, decayed: -1, liquidationPrice: null, netIfClosedUsd: -6.3 } })]);
+    expect((await screen.findByText('−₹536')).className).toContain('--down');
+  });
 });
 
 describe('why a trade ended', () => {

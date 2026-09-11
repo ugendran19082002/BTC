@@ -460,10 +460,32 @@ export function registerTradeRoutes(app: FastifyInstance) {
     const wanted = ORDER_STATUSES.find((x) => x === q.status) ?? null;
     const limit = Math.min(1_000, Number(q.limit ?? 500));
 
-    const rows = svc.store
-      .between(Math.min(from, to), Math.max(from + 86_400_000, to), limit)
+    const records = svc.store.between(Math.min(from, to), Math.max(from + 86_400_000, to), limit);
+
+    /*
+     * Prices for the trades still open, so their row can say what closing now
+     * would leave -- the same figure the Positions card shows.
+     *
+     * Without them an open row had nothing to show but the charges paid to get
+     * in, which came out as "booked P&L" of minus the charges: a red −₹16.41 on
+     * a position that was in profit. Only the open symbols are asked about, and
+     * both reads are the cached ones the status poll already makes, so a month
+     * of closed trades costs nothing extra.
+     */
+    const openSymbols = [...new Set(records.filter((r) => r.state.position !== 0).map((r) => r.state.symbol))];
+    const [positions, quotes] = openSymbols.length === 0
+      ? [[] as ExchangePosition[], [] as (readonly [string, Quote | null])[]]
+      : await Promise.all([
+          svc.positionsForDisplay().catch((): ExchangePosition[] => []),
+          Promise.all(openSymbols.map(async (s) => [s, await svc.quoteForDisplay(s).catch(() => null)] as const)),
+        ]);
+    const quoteFor = new Map(quotes);
+
+    const rows = records
       .map((r) => ({
-        ...view(r, [], r.state.contractValue, null, svc.spot),
+        ...(r.state.position !== 0
+          ? view(r, positions, r.state.contractValue, quoteFor.get(r.state.symbol) ?? null, svc.spot)
+          : view(r, [], r.state.contractValue, null, svc.spot)),
         status: orderStatusOf(r.state, r.events),
         outcome: orderOutcomeOf(r.state, r.events),
         openedAt: r.events[0]?.at ?? r.state.updatedAt,

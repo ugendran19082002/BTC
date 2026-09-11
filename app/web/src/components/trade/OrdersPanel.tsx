@@ -11,7 +11,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { DateRangePicker, istToday } from '@/components/ui/date-range-picker';
 import { downloadCsv, toCsv } from '@/lib/csv';
 import {
-  contractLabel, duration, pnlTone, price, signedInr, signedUsd, stamp, usdToInr,
+  contractLabel, duration, inr, pnlTone, price, signedInr, signedUsd, stamp, usdToInr,
 } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -59,14 +59,21 @@ const REASON_TONE: Record<string, string> = {
 
 const netOf = (r: OrderRecord) => r.netRealisedUsd ?? r.realisedPnl;
 const chargesOf = (r: OrderRecord) => r.charges?.paidUsd ?? 0;
+const toneClass = (n: number) =>
+  n > 0 ? 'text-[var(--up)]' : n < 0 ? 'text-[var(--down)]' : 'text-foreground';
 
-/** The range in one block, counted from the rows on screen so it cannot disagree with them. */
+/**
+ * The range in one block, counted from the rows on screen so it cannot disagree with them.
+ *
+ * Charges are the settled trades' only, so Gross − Charges is the Net beside
+ * it. An open trade's entry charges belong to a result that does not exist yet.
+ */
 function summarise(rows: OrderRecord[]) {
   const settled = rows.filter((r) => r.status === 'completed' && r.position === 0);
   return {
     settled: settled.length,
     gross: settled.reduce((a, r) => a + r.realisedPnl, 0),
-    charges: rows.reduce((a, r) => a + chargesOf(r), 0),
+    charges: settled.reduce((a, r) => a + chargesOf(r), 0),
     net: settled.reduce((a, r) => a + netOf(r), 0),
     won: settled.filter((r) => netOf(r) > 0).length,
     lost: settled.filter((r) => netOf(r) < 0).length,
@@ -183,6 +190,14 @@ function OrderRow({ order }: { order: OrderRecord }) {
   const net = netOf(order);
   const reason = exitReason(order);
   const held = order.position === 0 ? order.updatedAt - order.openedAt : null;
+  /*
+   * A position still open has no result yet. Its booked P&L is zero, so "net"
+   * is just minus the charges to get in -- which read as a red loss on a trade
+   * that was winning. What it shows instead is what closing now would leave,
+   * the Positions card's own figure.
+   */
+  const stillOpen = order.position !== 0;
+  const ifClosed = stillOpen ? order.live?.netIfClosedUsd ?? null : null;
 
   return (
     <Collapsible.Root open={open} onOpenChange={setOpen} className="rounded-lg border border-border bg-muted">
@@ -199,8 +214,23 @@ function OrderRow({ order }: { order: OrderRecord }) {
           <span className="mt-0.5 block text-[11.5px] text-muted-foreground">{order.outcome}</span>
         </span>
         <span className="flex-none text-right">
-          {net !== 0 && (
-            <span className={cn('block text-[13px] font-semibold tabular-nums', net > 0 ? 'text-[var(--up)]' : 'text-[var(--down)]')}>
+          {stillOpen ? (
+            ifClosed !== null ? (
+              <span
+                className={cn('block text-[13px] font-semibold tabular-nums', toneClass(ifClosed))}
+                title="What you keep if you close now, after Delta's charges in and out."
+              >
+                {signedInr(usdToInr(ifClosed))}
+                <span className="ml-1 text-[10.5px] font-normal text-[var(--dim)]">if closed now</span>
+              </span>
+            ) : chargesOf(order) > 0 && (
+              // no price yet: say what has been paid, plainly, rather than calling it a loss
+              <span className="block text-[12px] tabular-nums text-muted-foreground">
+                charges {inr(usdToInr(chargesOf(order)))}
+              </span>
+            )
+          ) : net !== 0 && (
+            <span className={cn('block text-[13px] font-semibold tabular-nums', toneClass(net))}>
               {signedInr(usdToInr(net))}
             </span>
           )}
@@ -219,11 +249,29 @@ function OrderRow({ order }: { order: OrderRecord }) {
           <KV label="Target">{price(order.plan?.takeProfitPrice)}</KV>
           <KV label="Stop">{price(order.plan?.stopPrice)}</KV>
           <KV label="Leverage">{order.plan?.leverage ? `${order.plan.leverage}x` : '—'}</KV>
-          <KV label="Gross P&L">{signedInr(usdToInr(order.realisedPnl))}</KV>
-          <KV label="Charges" hint="Delta's fee plus 18% GST on this trade's fills.">
-            {order.charges ? signedInr(usdToInr(-order.charges.paidUsd)) : '—'}
-          </KV>
-          <KV label="Net P&L">{signedInr(usdToInr(net))}</KV>
+          {stillOpen ? (
+            <>
+              <KV label="Price now">{price(order.live?.markPrice)}</KV>
+              <KV label="P&L now">{signedInr(usdToInr(order.live?.unrealisedPnl))}</KV>
+              <KV label="Charges paid" hint="Delta's fee plus 18% GST on the fills so far.">
+                {order.charges ? inr(usdToInr(order.charges.paidUsd)) : '—'}
+              </KV>
+              <KV label="Charges to close" hint="About what closing at today's price would add.">
+                {order.charges ? inr(usdToInr(order.charges.toCloseUsd)) : '—'}
+              </KV>
+              <KV label="If closed now" hint="What you keep if you close now, after Delta's charges in and out.">
+                {signedInr(usdToInr(ifClosed))}
+              </KV>
+            </>
+          ) : (
+            <>
+              <KV label="Gross P&L">{signedInr(usdToInr(order.realisedPnl))}</KV>
+              <KV label="Charges" hint="Delta's fee plus 18% GST on this trade's fills.">
+                {order.charges ? signedInr(usdToInr(-order.charges.paidUsd)) : '—'}
+              </KV>
+              <KV label="Net P&L">{signedInr(usdToInr(net))}</KV>
+            </>
+          )}
         </dl>
         {order.note && (
           <p className="m-0 border-t border-border px-3 py-2 text-[11.5px] text-muted-foreground">{order.note}</p>
