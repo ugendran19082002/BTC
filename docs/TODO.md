@@ -565,6 +565,84 @@ neither piece.
 
 ---
 
+## Add to the other leg when a target fills — 11 Sep 2026
+
+Asked for: when the CE target buys back 425 (or however many), and the PE still
+pays $3 or more, sell that many more PE. The same the other way round. Not when
+the PE has doubled from its sale, and not on a one-sided (doubled) day. The $3
+must be settable on screen.
+
+**How it works (not deployed yet):**
+
+- A new strategy setting, "Add to the other leg", is off on every existing
+  strategy. When on, the minimum bid ($3) and the "not once it has risen to"
+  multiple (2×) are set in the form. The form reads both back in the sentence
+  and on example prices as they are typed.
+- The contracts are **appended to the other leg's own trade**, not sold as a
+  second trade. Delta nets one contract into one position, so two trades on the
+  same contract would each read the other's contracts as their own, and cancel
+  each other's target. One trade keeps one position and a blended average, with
+  its **same target price and stop**, resized to the new size.
+- The sell uses the strategy's entry logic: rest at the offer, then walk to the
+  bid while the spread is within its limit, otherwise wait at the mid. It is
+  **never sold below the minimum**, even if the bid falls while it walks. After
+  5 minutes, whatever has not filled is cancelled.
+- Guards:
+  - only a target fill from the last 2 minutes;
+  - not within 30 minutes of the exit time;
+  - the other leg must still be open (not closed, not closing);
+  - one add at a time, and none while that leg's entry is still working;
+  - a leg that was itself added to never adds back;
+  - "doubled" is measured against the leg's first sale price.
+- Every gate still applies (short limit, margin, spread, depth, feed, daily
+  loss), except that holding the contract is allowed, and the desk's $5 premium
+  floor gives way to the add's own minimum.
+- Close now, the stop watch and the exit time all take a working add off the
+  book first, so nothing sells after a close.
+- Each decision is written to a new `strategy_adds` table **before** any order
+  is sent, skips included, each with its reason. The nudge on a target fill and
+  the 20-second tick both look, but the same contracts are only ever decided
+  once, across restarts too.
+- Telegram:
+  - "➕ ADDED · Sold 425 more @ 7.0 · Because the CE target bought back 425 ·
+    Now short 850 @ 11.0 avg";
+  - "ℹ️ NOT ADDED" with the reason;
+  - "⚠️ ADD REFUSED" or "🚨 ADD FAILED".
+- Screens:
+  - the Strategy screen lists every add decision;
+  - Positions shows "Sold 850 @ 11.00 avg · 425 added", or "Adding 425 @ 7.50
+    (never below 3.00)" while an add works;
+  - Orders shows "850 (425 at entry + 425 added)", with "Added" rows in the fill
+    log.
+- Tests:
+  - `test/strategy/add.test.ts` (25) covers the rules;
+  - `test/trading/add-to-position.test.ts` (16) covers the engine;
+  - `test/strategy/adder.test.ts` (11) runs end to end on paper;
+  - store (+6) and message (+5) tests;
+  - web form, panel, positions and orders tests.
+- A live-price paper run passed 6 of 6: real Delta India quotes, paper orders,
+  with each skip checked for the right reason.
+
+**To do:**
+
+- [ ] **Deploy with nothing open**, then turn the setting on in one strategy.
+      It is off everywhere until someone does.
+- [ ] **One 1-lot live add, with the user watching, before 425.** The paper
+      exchange fills a resting sell in full once the bid reaches it. Delta fills
+      only what the bid size allows, and the add's 5-minute window is what ends a
+      thin fill. Check the fill, the resized target and stop, and the Telegram
+      message against Delta's own screen.
+- [ ] **On a wide book the add waits at the mid and may not fill.** In the first
+      live run the PE was 11 bid / 13 offered (16.7% spread). The add stopped at
+      12 and was still resting 45 seconds later. That is the entry spread rule
+      doing its job, but a day with wide spreads will add less than the rule's
+      numbers suggest.
+- [ ] **A market exit that fills in part** (the item above) matters more once
+      positions can be 850: the rest of a Close now or stop watch exit would be
+      left short.
+
+---
+
 ## HOW THE CODE IS KEPT HONEST
 
 - **39 tests**, run automatically before every deploy. `npm test` in
