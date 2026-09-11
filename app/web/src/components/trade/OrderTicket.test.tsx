@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { OrderTicket, type TicketSeed } from '@/components/trade/OrderTicket';
+import { swipe } from '@/test/swipe';
 import type { Preview } from '@/types/trade';
 
 /**
  * What the ticket must never do:
- *   - offer a live Sell button when the server said the trade is blocked
+ *   - offer a live sell control when the server said the trade is blocked
+ *   - sell on a tap: it has to be swiped all the way
  *   - carry the last contract's size onto the next one
  *   - price at the offer while claiming to be at the market
  */
@@ -340,9 +342,11 @@ describe('the gates', () => {
     );
     show();
     await waitFor(() => expect(screen.getByText('Spread is 18.0%, limit is 4%.')).toBeInTheDocument());
-    const button = screen.getByRole('button', { name: /can.t sell/i });
-    expect(button).toBeDisabled();
-    fireEvent.click(button);
+    const control = screen.getByRole('slider', { name: /Swipe to sell/ });
+    expect(control).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByText('Can’t sell')).toBeInTheDocument();
+    swipe(control);
+    fireEvent.keyDown(control, { key: 'Enter' });
     expect(placeOrder).not.toHaveBeenCalled();
   });
 
@@ -364,14 +368,24 @@ describe('the gates', () => {
   it('sends nothing while the gates are still being checked', () => {
     previewOrder.mockReturnValue(new Promise(() => {}));   // never settles
     show();
-    fireEvent.click(screen.getByRole('button', { name: /sell/i }));
+    swipe(screen.getByRole('slider', { name: /sell/i }));
+    fireEvent.keyDown(screen.getByRole('slider', { name: /sell/i }), { key: 'Enter' });
+    expect(placeOrder).not.toHaveBeenCalled();
+  });
+
+  it('[critical] a tap on the sell control places nothing: it has to be swiped', async () => {
+    show();
+    const slider = await screen.findByRole('slider', { name: /Swipe to sell/ });
+    await waitFor(() => expect(slider).not.toHaveAttribute('aria-disabled'));
+    fireEvent.click(slider);
+    swipe(slider, 0.6);
     expect(placeOrder).not.toHaveBeenCalled();
   });
 
   it('places the order and reports the fill once the gates pass', async () => {
     show();
-    await waitFor(() => expect(screen.getByRole('button', { name: /Sell · ₹0\.76/ })).toBeEnabled());
-    fireEvent.click(screen.getByRole('button', { name: /Sell · ₹0\.76/ }));
+    await waitFor(() => expect(screen.getByRole('slider', { name: /Swipe to sell · ₹0\.76/ })).not.toHaveAttribute('aria-disabled'));
+    swipe(screen.getByRole('slider', { name: /Swipe to sell · ₹0\.76/ }));
     await waitFor(() => expect(screen.getByText('Sold 1 at 9.00')).toBeInTheDocument());
     expect(screen.getByText(/You are short 1 contract\./)).toBeInTheDocument();
     expect(placeOrder).toHaveBeenCalledTimes(1);
@@ -384,8 +398,8 @@ describe('the gates', () => {
       trade: { position: 0 },
     });
     show();
-    await waitFor(() => expect(screen.getByRole('button', { name: /Sell/ })).toBeEnabled());
-    fireEvent.click(screen.getByRole('button', { name: /Sell/ }));
+    await waitFor(() => expect(screen.getByRole('slider', { name: /Swipe to sell/ })).not.toHaveAttribute('aria-disabled'));
+    swipe(screen.getByRole('slider', { name: /Swipe to sell/ }));
     await waitFor(() => expect(screen.getByText('Nothing was sent')).toBeInTheDocument());
     expect(screen.getByText('Needs $300, have $120.')).toBeInTheDocument();
   });
@@ -394,8 +408,8 @@ describe('the gates', () => {
 describe('paper mode', () => {
   it('says so after the order, so a paper fill is never mistaken for a real one', async () => {
     show();
-    await waitFor(() => expect(screen.getByRole('button', { name: /Sell/ })).toBeEnabled());
-    fireEvent.click(screen.getByRole('button', { name: /Sell/ }));
+    await waitFor(() => expect(screen.getByRole('slider', { name: /Swipe to sell/ })).not.toHaveAttribute('aria-disabled'));
+    swipe(screen.getByRole('slider', { name: /Swipe to sell/ }));
     await waitFor(() => expect(screen.getByText(/nothing reached Delta/)).toBeInTheDocument());
   });
 });
@@ -404,8 +418,8 @@ describe('reopening the ticket', () => {
   it('does not show the last order’s result over a new one', async () => {
     // tapping the same strike twice never changed the symbol, so nothing reset
     const { rerender } = render(<OrderTicket seed={seed} open onOpenChange={() => {}} />);
-    await waitFor(() => expect(screen.getByRole('button', { name: /Sell/ })).toBeEnabled());
-    fireEvent.click(screen.getByRole('button', { name: /Sell/ }));
+    await waitFor(() => expect(screen.getByRole('slider', { name: /Swipe to sell/ })).not.toHaveAttribute('aria-disabled'));
+    swipe(screen.getByRole('slider', { name: /Swipe to sell/ }));
     await waitFor(() => expect(screen.getByText(/Sold 1 at 9.00/)).toBeInTheDocument());
 
     rerender(<OrderTicket seed={seed} open={false} onOpenChange={() => {}} />);

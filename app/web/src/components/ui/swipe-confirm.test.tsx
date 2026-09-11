@@ -1,22 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { SwipeToConfirm } from '@/components/ui/swipe-confirm';
+import { swipe } from '@/test/swipe';
 
 /**
  * A swipe, not a tap. What has to hold: a tap never confirms, a part-way drag
  * never confirms, a drag to the end confirms exactly once, and Enter works for
  * a keyboard.
  */
-
-export function swipe(slider: HTMLElement, to = 1, width = 320) {
-  // jsdom has no layout: give the track a width so the thumb has somewhere to go
-  const trackEl = slider.parentElement!;
-  trackEl.getBoundingClientRect = () => ({ width, height: 56, top: 0, left: 0, right: width, bottom: 56, x: 0, y: 0, toJSON: () => ({}) });
-  const travel = width - 48 - 8;
-  fireEvent.pointerDown(slider, { clientX: 0, pointerId: 1 });
-  fireEvent.pointerMove(slider, { clientX: travel * to, pointerId: 1 });
-  fireEvent.pointerUp(slider, { clientX: travel * to, pointerId: 1 });
-}
 
 const slider = () => screen.getByRole('slider');
 

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Loader2, Minus, Plus, Zap } from 'lucide-react';
+import { AlertTriangle, Minus, Plus, Zap } from 'lucide-react';
 import { getTradeQuote, placeOrder, previewOrder } from '@/api/trade';
 import type { OrderDraft, PlaceResult, Preview } from '@/types/trade';
+import { SwipeToConfirm } from '@/components/ui/swipe-confirm';
 import { Sheet, SheetContent, SheetFooter } from '@/components/ui/sheet';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Input } from '@/components/ui/input';
@@ -524,7 +525,7 @@ export function OrderTicket({
               which is the same as not saying anything.
             */}
             {(blocked || failed) && (
-              <div className="sticky bottom-[60px] z-10 -mx-4 mt-3 border-t border-[var(--down)]/30 bg-[var(--down-bg)] px-4 py-2.5">
+              <div className="sticky bottom-[76px] z-10 -mx-4 mt-3 border-t border-[var(--down)]/30 bg-[var(--down-bg)] px-4 py-2.5">
                 <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
                   {preview?.failures.map((f) => (
                     <li key={f.code} className="flex gap-1.5 text-[12px] leading-snug text-[var(--down)]">
@@ -542,23 +543,23 @@ export function OrderTicket({
               </div>
             )}
 
-            <SheetFooter>
-              <Button variant="outline" className="h-11 flex-none px-4" onClick={() => onOpenChange(false)}>
+            <SheetFooter className="items-center">
+              <Button variant="outline" className="h-14 flex-none px-4" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
-              <button
-                onClick={() => void submit()}
+              {/*
+                A swipe, not a tap: selling from the chain spends real money,
+                and a button under the thumb fires on the touch made while
+                scrolling the ticket or putting the phone down.
+              */}
+              <SwipeToConfirm
+                className="min-w-0 flex-1"
+                label={`Swipe to sell · ${inr(usdToInr(credit))}`}
+                busyLabel="Sending…"
                 disabled={!canSend}
-                className={cn(
-                  'flex h-11 flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg',
-                  'appearance-none border-0 font-[inherit] text-[14px] font-semibold',
-                  'bg-[var(--down)] text-white transition-opacity hover:opacity-90',
-                  'disabled:cursor-not-allowed disabled:opacity-40',
-                )}
-              >
-                {placing || checking ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                {placing ? 'Sending…' : blocked ? 'Can’t sell' : `Sell · ${inr(usdToInr(credit))}`}
-              </button>
+                disabledLabel={blocked ? 'Can’t sell' : checking ? 'Checking…' : 'Can’t sell yet'}
+                onConfirm={submit}
+              />
             </SheetFooter>
           </>
         )}
