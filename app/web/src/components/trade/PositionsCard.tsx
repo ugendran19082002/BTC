@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CloseAllButton } from '@/components/trade/CloseAllButton';
 import { EditExitsSheet } from '@/components/trade/EditExitsSheet';
+import { ClosePositionSheet } from '@/components/trade/ClosePositionSheet';
 import {
   ago, contractLabel, inr, pct, pnlTone, price, signedInr, signedUsd, size as fmtSize, usdToInr,
 } from '@/lib/format';
@@ -260,21 +261,23 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
           <Pencil className="h-3.5 w-3.5" />
           Edit exits
         </Button>
+        {/* Opens the confirmation; nothing is sent from the card itself. */}
         <Button
           variant="outline"
-          className="h-9"
-          disabled={closing}
-          onClick={() => {
-            setClosing(true);
-            void closeTrade(trade.tradeId).finally(() => { setClosing(false); onChanged?.(); });
-          }}
+          className="h-9 text-[var(--down)]"
+          onClick={() => setClosing(true)}
         >
-          {closing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           Close now
         </Button>
       </div>
 
       <EditExitsSheet trade={trade} open={editing} onOpenChange={setEditing} onSaved={onChanged} />
+      <ClosePositionSheet
+        trade={trade}
+        open={closing}
+        onOpenChange={setClosing}
+        onClose={() => closeTrade(trade.tradeId).finally(() => onChanged?.())}
+      />
     </div>
   );
 }
