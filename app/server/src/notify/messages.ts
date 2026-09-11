@@ -253,23 +253,34 @@ function exitText(
   plan: TradePlan,
   ctx: AlertContext,
 ): string {
-  const [icon, title] = role === 'take_profit' ? ['✅', 'TARGET HIT']
-    : role === 'stop_loss' ? ['🛑', 'STOP-LOSS HIT']
+  /*
+   * A target that fills in pieces can send more than one message, when the
+   * pieces are further apart than the hold. On 11 September "TARGET HIT ·
+   * Bought back 200" at 09:08 was followed by "TARGET HIT · Bought back 203" at
+   * 09:09 -- which read as 403 bought back, when it was 3 more.
+   * Every figure here is the total so far, so a part-filled exit says so: how
+   * many of how many, booked so far, and what is still resting.
+   */
+  const part = s.position !== 0;
+  const [icon, title] = role === 'take_profit' ? (part ? ['🎯', 'TARGET PART-FILLED'] : ['✅', 'TARGET HIT'])
+    : role === 'stop_loss' ? ['🛑', part ? 'STOP-LOSS PART-FILLED' : 'STOP-LOSS HIT']
       // Deliberately not "closed by strategy" or "closed by you": the desk's
-      // own target watch closes at market too, and a title that guesses the
+      // own stop watch closes at market too, and a title that guesses the
       // reason is a title that is sometimes wrong.
       : ['⏹', 'CLOSED AT MARKET'];
+  const held = `${s.position < 0 ? 'short' : 'long'} <b>${qty(Math.abs(s.position))}</b>`;
 
   return lines(
     headline(ctx, icon, `${title} · ${contract(plan)}`),
     expiry(plan),
     '',
-    `${side === 'buy' ? 'Bought back' : 'Sold back'} <b>${qty(s.exitSize)}</b> @ <b>${price(s.exitAvgPrice ?? 0)}</b>`
-      + `  (entry ${price(s.entryAvgPrice ?? 0)})`,
-    pnlLine(s.realisedPnl),
-    s.position === 0
-      ? '✔️ Position is <b>flat</b>'
-      : `⏳ Still ${s.position < 0 ? 'short' : 'long'} <b>${qty(Math.abs(s.position))}</b> — exit working`,
+    `${side === 'buy' ? 'Bought back' : 'Sold back'} <b>${qty(s.exitSize)}</b>${part ? ` of ${qty(s.entrySize)}` : ''}`
+      + ` @ <b>${price(s.exitAvgPrice ?? 0)}</b>  (entry ${price(s.entryAvgPrice ?? 0)})`,
+    part ? `${pnlIcon(s.realisedPnl)} Booked so far: ${signedMoney(s.realisedPnl, true)}` : pnlLine(s.realisedPnl),
+    !part ? '✔️ Position is <b>flat</b>'
+      : role === 'take_profit' && plan.takeProfitPrice !== null
+        ? `⏳ Still ${held} — target resting at ${price(plan.takeProfitPrice)}`
+        : `⏳ Still ${held} — exit working`,
     footer(s.updatedAt, plan, ctx),
   );
 }

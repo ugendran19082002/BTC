@@ -47,11 +47,12 @@ test('a target covering the whole position is protected', () => {
   assert.equal(missingProtection(rec), false);
 });
 
-test('covering more than the position is not a gap', () => {
-  // A partial exit leaves the target larger than what is left. protect() will
-  // trim it, but nothing is unprotected in the meantime.
+test('covering more than the position is resized to what is left', () => {
+  // A partial exit leaves the stop larger than what is left. This used to read
+  // as protected, so protect() never ran and nothing trimmed it -- and Delta
+  // does not promise to keep a reduce-only order bigger than the position.
   const rec = recordFor(-200, { takeProfit: clientId(TRADE, 'take_profit', 0), size: 425 });
-  assert.equal(missingProtection(rec), false);
+  assert.equal(missingProtection(rec), true);
 });
 
 test('[critical] a record written before size was tracked re-checks rather than being trusted', () => {

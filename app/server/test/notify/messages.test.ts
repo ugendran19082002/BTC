@@ -89,6 +89,36 @@ test('a stop-loss fill is announced as a loss, with the minus sign on both curre
   assert.match(a.text, /🔴 P&amp;L: <b>-₹81<\/b> \(-\$0\.95\)/);
 });
 
+/*
+ * 11 September 2026: 425 sold at 12.0, target 0.70, no stop. 200 bought back at
+ * 09:08, 3 more at 09:09 -- two messages, both titled "TARGET HIT", the second
+ * saying "Bought back 203". It was the total, and it read like 203 more.
+ */
+test('[critical] a target that fills in pieces says how many of how many, and that it is still resting', () => {
+  const plan = planFor(ceProduct(), { takeProfitPrice: 0.7, stopPrice: null });
+  const [, , first, second] = alerts(
+    [submitted(425), fill('entry', 425, 12), fill('take_profit', 200, 0.7), fill('take_profit', 3, 0.7)],
+    plan,
+  );
+  assert.match(first!.text, /🎯 <b>TARGET PART-FILLED · BTC 80,000 CE<\/b>/);
+  assert.match(first!.text, /Bought back <b>200<\/b> of 425 @ <b>0\.7<\/b>/);
+  assert.match(second!.text, /Bought back <b>203<\/b> of 425 @ <b>0\.7<\/b>/, 'the total so far, said as a total');
+  // (12 - 0.7) x 203 x 0.001 = $2.2939, at 85 = 194.98 -- the +₹195 of the real alert
+  assert.match(second!.text, /Booked so far: <b>\+₹195<\/b> \(\+\$2\.29\)/);
+  assert.match(second!.text, /Still short <b>222<\/b> — target resting at 0\.7/);
+  assert.doesNotMatch(second!.text, /TARGET HIT/, 'not hit: 222 are still short');
+  assert.equal(first!.key, second!.key, 'and one key, so pieces close together are one message');
+});
+
+test('the piece that closes the position is the target hit', () => {
+  const plan = planFor(ceProduct(), { takeProfitPrice: 0.7, stopPrice: null });
+  const a = last([submitted(425), fill('entry', 425, 12), fill('take_profit', 203, 0.7), fill('take_profit', 222, 0.7)], plan);
+  assert.match(a!.text, /✅ <b>TARGET HIT/);
+  assert.match(a!.text, /Bought back <b>425<\/b> @ <b>0\.7<\/b>/);
+  assert.doesNotMatch(a!.text, / of 425/);
+  assert.match(a!.text, /Position is <b>flat<\/b>/);
+});
+
 test('a partial close says how much is still on', () => {
   const a = last([submitted(), fill('entry', 100, 100.5), fill('exit', 40, 95)]);
   assert.ok(a);

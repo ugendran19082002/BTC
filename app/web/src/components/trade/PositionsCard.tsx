@@ -154,7 +154,15 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
         <div className="min-w-0">
           <ContractName trade={trade} />
           <p className="m-0 mt-0.5 text-[12px] text-muted-foreground">
-            Sold {fmtSize(held)} @ {price(trade.entryAvgPrice)} · {ago(trade.updatedAt)}
+            {/*
+              What was sold, not what is left: "Sold 222" on a trade that sold
+              425 and bought 203 back at the target reads as a smaller trade.
+            */}
+            Sold {fmtSize(trade.exitSize > 0 ? trade.entrySize : held)} @ {price(trade.entryAvgPrice)}
+            {trade.exitSize > 0 && (
+              <> · {fmtSize(trade.exitSize)} bought back @ {price(trade.exitAvgPrice)} · <span className="text-foreground">{fmtSize(held)} left</span></>
+            )}
+            {' · '}{ago(trade.updatedAt)}
           </p>
         </div>
         <span className="flex flex-none items-center gap-1">
@@ -175,7 +183,9 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
       <div className="mt-2 grid grid-cols-3 gap-2 rounded-md bg-background px-2.5 py-2">
         <Figure label="Price now" value={price(trade.live?.markPrice)} />
         <Figure
-          label="P&L"
+          // Once part is bought back this is the open part only; "Booked" below
+          // is the rest, and If closed now is the two together after charges.
+          label={trade.exitSize > 0 ? 'Open P&L' : 'P&L'}
           value={signedInr(usdToInr(trade.live?.unrealisedPnl))}
           second={signedUsd(trade.live?.unrealisedPnl)}
           tone={pnlTone(trade.live?.unrealisedPnl)}

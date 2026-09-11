@@ -711,9 +711,11 @@ export class TradeEngine {
       const target = wanted === null ? null : stopPriceFor(role === 'stop_loss' ? 'buy' : 'sell', wanted, tick);
 
       // Right already, and the right size: keep it, and remember which it is.
+      // The size that counts is what is still resting. A target that has bought
+      // back 203 of 425 is covering the 222 left, and that is correct.
       const keep = target === null
         ? undefined
-        : live.find((o) => priceOf(o) === target && o.size === size);
+        : live.find((o) => priceOf(o) === target && o.size - o.filledSize === size);
 
       /*
        * One order is on the book at the wrong level, and one is wanted: move it
@@ -726,7 +728,13 @@ export class TradeEngine {
        * produced "reduce only orders cancelled" and a book that disagreed with
        * the screen.
        */
-      if (!keep && target !== null && live.length === 1) {
+      /*
+       * Only an order with nothing filled yet. Delta's `size` on an edit is the
+       * order's total, filled part included, so asking a half-filled 425 for 222
+       * would leave 19 resting -- not 222. Cancelling leaves the filled part
+       * alone, so a half-filled order goes the long way below.
+       */
+      if (!keep && target !== null && live.length === 1 && live[0]!.filledSize === 0) {
         const only = live[0]!;
         try {
           await this.exchange.editOrder(only, { [field]: target, size });
@@ -1156,12 +1164,16 @@ export function missingProtection(rec: TradeRecord): boolean {
    * `size` is undefined on records written before it was tracked; those are
    * treated as covering whatever the position was then, which is the reading
    * that makes them re-check rather than be trusted.
+   *
+   * More than the position is wrong too. When a target buys back part of it,
+   * the stop placed for all 425 is left covering the 222 still short, and Delta
+   * does not promise to keep a reduce-only order bigger than the position.
    */
-  const undersized = (protection.size ?? 0) < want;
+  const wrongSize = (protection.size ?? 0) !== want;
 
   return (
-    (wantsStop && (!ownsClientId(tradeId, protection.stopLoss ?? null) || undersized)) ||
-    (wantsTarget && (!ownsClientId(tradeId, protection.takeProfit ?? null) || undersized))
+    (wantsStop && (!ownsClientId(tradeId, protection.stopLoss ?? null) || wrongSize)) ||
+    (wantsTarget && (!ownsClientId(tradeId, protection.takeProfit ?? null) || wrongSize))
   );
 }
 

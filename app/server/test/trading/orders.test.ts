@@ -232,7 +232,7 @@ test('15 a gap through the stop books the price that actually filled, not the tr
   assert.equal(s?.realisedPnl, (100.5 - 115.5) * 100 * 0.001, 'a real loss, honestly counted');
 });
 
-test('16 a stop that only partly fills leaves the rest short and keeps working', async () => {
+test('16 a stop that only partly fills leaves the rest short, and the desk keeps getting out', async () => {
   const r = rig();
   const plan = planFor(ceProduct());
   await r.engine.open(plan);
@@ -240,7 +240,11 @@ test('16 a stop that only partly fills leaves the rest short and keeps working',
   r.ex.configure({ slippageLadder: [{ price: 111, size: 40 }] });
   r.ex.tick(quote(CE, 110.5, 111, { mark: 111 }));
   const s = await r.engine.poll(plan.tradeId);
-  assert.equal(s?.position, -60, 'still 60 short — the exit is not done');
+  // 40 by the exchange stop; then, with the mark still above the stop, 40 more
+  // by the desk's own stop watch closing the rest at market. It used to stop at
+  // 60 short: a partial stop fill put the trade in exit_pending, where the desk
+  // stops watching the stop.
+  assert.equal(s?.position, -20, 'still short — the exit is not done');
   assert.notEqual(s?.phase, 'flat');
 });
 

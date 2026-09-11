@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { OrdersPanel } from '@/components/trade/OrdersPanel';
 import type { OrderRecord } from '@/types/trade';
 
@@ -163,6 +163,37 @@ describe('a trade that is still open', () => {
   it('a losing open trade is still shown as losing', async () => {
     show([openTrade({ live: { markPrice: 30, unrealisedPnl: -6, decayed: -1, liquidationPrice: null, netIfClosedUsd: -6.3 } })]);
     expect((await screen.findByText('−₹536')).className).toContain('--down');
+  });
+
+  /*
+   * 11 September, 09:08 and 09:09: the 74,000 PE's target at 0.70 bought back
+   * 200, then 3 more, and 222 stayed short. Telegram said so twice; the Orders
+   * row showed neither piece. One trade stays one row -- with its pieces in it.
+   */
+  it('[critical] a trade the target has partly bought back is one row, with every piece in it', async () => {
+    const T = Date.UTC(2026, 8, 11, 3, 38, 0);
+    show([openTrade({
+      symbol: 'P-BTC-74000-110926', entrySize: 425, entryAvgPrice: 12, position: -222,
+      exitSize: 203, exitAvgPrice: 0.7, realisedPnl: 2.2939,
+      outcome: 'sold 425, bought back 203 at 0.70, short 222',
+      fills: [
+        { orderId: '1', role: 'entry', side: 'sell', size: 425, price: 12, ts: T - 13_000_000 },
+        { orderId: '2', role: 'take_profit', side: 'buy', size: 200, price: 0.7, ts: T },
+        { orderId: '2', role: 'take_profit', side: 'buy', size: 3, price: 0.7, ts: T + 60_000 },
+      ],
+    })]);
+    const rows = await screen.findAllByText(/74,000/);
+    expect(rows).toHaveLength(1);
+    expect(screen.getByText('sold 425, bought back 203 at 0.70, short 222')).toBeInTheDocument();
+
+    fireEvent.click(rows[0]!);
+    expect(await screen.findByText('203 of 425')).toBeInTheDocument();
+    // (12 − 0.70) × 203 × 0.001 = $2.29, at 85
+    expect(screen.getByText('+₹195')).toBeInTheDocument();
+    const log = within(screen.getByRole('list', { name: 'fills' }));
+    expect(log.getByText('Sold 425 @ 12.00')).toBeInTheDocument();
+    expect(log.getByText('Target 200 @ 0.70')).toBeInTheDocument();
+    expect(log.getByText('Target 3 @ 0.70')).toBeInTheDocument();
   });
 });
 

@@ -79,6 +79,8 @@ test('a half-exited trade is still pending, and says what is left', () => {
   const s = replay(start(), events);
   assert.equal(orderStatusOf(s, events), 'pending', 'four bought back, six still short');
   assert.match(orderOutcomeOf(s, events), /short 6/);
+  // one trade is one row: the piece already bought back is on it, not missing from it
+  assert.equal(orderOutcomeOf(s, events), 'sold 10, bought back 4 at 16.00, short 6');
 });
 
 // ------------------------------------------------------------- date windows

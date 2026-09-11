@@ -53,14 +53,32 @@ test('a closed trade is flat at exactly zero, never at minus zero', () => {
 test('a half-filled exit leaves the rest on and does not report flat', () => {
   const s = replay(start(), [fill(100, 100.5), fill(40, 111, 'stop_loss')]);
   assert.equal(s.position, -60);
-  assert.equal(s.phase, 'exit_pending');
+  assert.notEqual(s.phase, 'flat');
   assert.equal(isDone(s), false);
 });
 
-test('the first exit to print is the winner, and it stays the winner', () => {
+test('[critical] a target or stop that fills in part is still working, not a finished exit', () => {
+  // 11 September: a 425 target bought back 203 and 222 stayed short. Calling
+  // that "exit_pending" took the stop off the 222 and stopped watching it.
+  const s = replay(start(), [fill(100, 100.5), fill(40, 90, 'take_profit')]);
+  assert.equal(s.phase, 'position_open', 'the phase it had before the piece filled');
+  assert.equal(s.exitWinner, null, 'nothing has won while contracts are still short');
+  assert.equal(s.realisedPnl, (100.5 - 90) * 40 * 0.001, 'the part bought back is booked');
+});
+
+test('a market exit that fills in part is still closing', () => {
+  const s = replay(start(), [fill(100, 100.5), fill(40, 101, 'exit')]);
+  assert.equal(s.phase, 'exit_pending');
+  assert.equal(s.exitWinner, 'manual');
+});
+
+test('the exit that closes the position is the one recorded as the exit', () => {
+  // half at the target, the rest stopped out: what ended the trade was the stop,
+  // which is also what the Orders screen reads off the last fill
   const s = replay(start(), [fill(100, 100.5), fill(50, 90, 'take_profit'), fill(50, 111, 'stop_loss')]);
-  assert.equal(s.exitWinner, 'take_profit');
+  assert.equal(s.exitWinner, 'stop_loss');
   assert.equal(s.position, 0);
+  assert.equal(s.phase, 'flat');
 });
 
 test('a submit with no answer refuses to move until the exchange is read', () => {

@@ -100,6 +100,40 @@ describe('a protected position', () => {
   });
 });
 
+/*
+ * 11 September: 425 sold at 12.00, 203 bought back at the 0.70 target, 222 left.
+ * The card said "Sold 222 @ 12.00", which reads as a smaller trade, not a
+ * bigger one half-closed.
+ */
+describe('a position the target has partly bought back', () => {
+  const half = trade({
+    symbol: 'P-BTC-74000-110926', optionSide: 'PE', position: -222, requestedSize: 425,
+    entrySize: 425, entryAvgPrice: 12, exitSize: 203, exitAvgPrice: 0.7, realisedPnl: 2.2939,
+    protection: { takeProfit: 'tp', stopLoss: null },
+    plan: { lots: 425, entry: { type: 'limit', timeoutMs: 0, marketFallback: false }, takeProfitPrice: 0.7, stopPrice: null },
+    onBook: { target: 0.7, stop: null },
+    live: { markPrice: 1.46, unrealisedPnl: 2.34, decayed: 0.88, liquidationPrice: null, netIfClosedUsd: 4.4 },
+  });
+
+  it('says what was sold, what was bought back and what is left', () => {
+    render(<PositionsCard trades={[half]} />);
+    expect(screen.getByText(/Sold 425 @ 12.00 · 203 bought back @ 0.70/)).toBeInTheDocument();
+    expect(screen.getByText('222 left')).toBeInTheDocument();
+    expect(screen.queryByText(/Sold 222/)).toBeNull();
+  });
+
+  it('calls the live figure the open part, beside what is booked', () => {
+    render(<PositionsCard trades={[half]} />);
+    expect(screen.getByText('Open P&L')).toBeInTheDocument();
+    expect(screen.getByText(/Booked \+₹195/)).toBeInTheDocument();
+  });
+
+  it('still shows the target resting for the rest', () => {
+    render(<PositionsCard trades={[half]} />);
+    expect(screen.getByText('0.70', { selector: 'span' })).toBeInTheDocument();
+  });
+});
+
 describe('what it is worth right now', () => {
   const live = trade({
     live: { markPrice: 6.5, unrealisedPnl: 0.4, decayed: 0.381, liquidationPrice: 215.6 },

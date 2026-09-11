@@ -251,6 +251,14 @@ function OrderRow({ order }: { order: OrderRecord }) {
           <KV label="Leverage">{order.plan?.leverage ? `${order.plan.leverage}x` : '—'}</KV>
           {stillOpen ? (
             <>
+              {order.exitSize > 0 && (
+                <>
+                  <KV label="Bought back so far">{`${order.exitSize} of ${order.entrySize}`}</KV>
+                  <KV label="Booked so far" hint="The part already bought back, before charges.">
+                    {signedInr(usdToInr(order.realisedPnl))}
+                  </KV>
+                </>
+              )}
               <KV label="Price now">{price(order.live?.markPrice)}</KV>
               <KV label="P&L now">{signedInr(usdToInr(order.live?.unrealisedPnl))}</KV>
               <KV label="Charges paid" hint="Delta's fee plus 18% GST on the fills so far.">
@@ -273,11 +281,46 @@ function OrderRow({ order }: { order: OrderRecord }) {
             </>
           )}
         </dl>
+        <FillLog fills={order.fills} />
         {order.note && (
           <p className="m-0 border-t border-border px-3 py-2 text-[11.5px] text-muted-foreground">{order.note}</p>
         )}
       </Collapsible.Content>
     </Collapsible.Root>
+  );
+}
+
+const FILL_LABEL: Record<string, string> = {
+  entry: 'Sold',
+  take_profit: 'Target',
+  stop_loss: 'Stop',
+  exit: 'Closed',
+};
+
+/**
+ * Every piece, in order.
+ *
+ * One order is one row, however many pieces it traded in: a 425 target that
+ * buys back 200 and then 3 is one trade with two exit fills, not two orders.
+ * This is where the pieces are, so nothing about the trade is missing from it.
+ */
+function FillLog({ fills }: { fills: OrderRecord['fills'] }) {
+  if (fills.length === 0) return null;
+  const sorted = [...fills].sort((a, b) => a.ts - b.ts);
+  return (
+    <div className="border-t border-border px-3 py-2">
+      <p className="m-0 mb-1 text-[10px] uppercase tracking-[0.6px] text-muted-foreground">Fills · {fills.length}</p>
+      <ul aria-label="fills" className="m-0 grid list-none gap-0.5 p-0 text-[11.5px] tabular-nums">
+        {sorted.map((f, i) => (
+          <li key={`${f.orderId}-${f.ts}-${i}`} className="flex justify-between gap-3">
+            <span className="text-muted-foreground">{stamp(f.ts)}</span>
+            <span className={cn(f.side === 'buy' ? 'text-foreground' : 'text-muted-foreground')}>
+              {FILL_LABEL[f.role] ?? f.role} {f.size} @ {price(f.price)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

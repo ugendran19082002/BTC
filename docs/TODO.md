@@ -499,6 +499,72 @@ holding through the afternoon.
 
 ---
 
+## A target that fills in pieces — 11 Sep 2026
+
+At 09:08 IST the 74,000 PE (425 sold at 12.00, target 0.70, no stop) bought back
+200 at the target, and 3 more at 09:09. 222 stayed short with the target still
+resting. Telegram sent two "TARGET HIT" messages and the Orders row showed
+neither piece.
+
+**What was wrong:**
+
+- **The engine treated the first piece as the whole exit.** It named the target
+  the winner, cancelled the stop as its "sibling", and put the trade in
+  `exit_pending`, where the desk neither re-protects nor watches the stop. This
+  trade had no stop, so nothing was lost. With a stop, the 222 left would have
+  had none, and nothing would have said so.
+- **Telegram's second message was the total, not 3 more.** "Bought back 203"
+  under "TARGET HIT" read like 403 bought back.
+- **Positions said "Sold 222 @ 12.00"** for a trade that sold 425, and the Orders
+  row said only "short 222".
+
+**Done (not deployed yet):**
+
+- A target or stop that fills in part leaves the trade as it was. The other
+  leg stays on the book, resized to what is still short, and the desk keeps
+  watching the stop. Only the exit that makes the position flat is the winner.
+  A market exit in pieces is still `exit_pending`, as before.
+- **The target itself is unchanged:** a resting reduce-only limit that fills
+  when the ask comes down to it, at its own price. A half-filled target is kept
+  as it is. It is never edited, because Delta's edit `size` is the order's total
+  including the filled part, so asking a half-filled 425 for 222 could leave 19
+  resting. If it no longer matches the position (a hand close), it is cancelled
+  and placed again for the right size.
+- Protection bigger than the position now counts as the wrong size, so the stop
+  is trimmed to what is left.
+- Telegram: "🎯 TARGET PART-FILLED · Bought back 203 of 425 · Booked so far ·
+  Still short 222 — target resting at 0.70". "TARGET HIT" only when flat.
+- Positions: "Sold 425 @ 12.00 · 203 bought back @ 0.70 · 222 left", with
+  "Open P&L" beside "Booked".
+- Orders: still one row per trade. It now shows "sold 425, bought back 203 at
+  0.70, short 222", "Bought back so far" and "Booked so far" in the detail, and a
+  list of every fill.
+- Tests: `test/trading/partial-target.test.ts` covers the stop staying, the
+  target resting unedited, the stop watch still firing, and fills only at the
+  target price once the ask reaches it. Telegram, status, Positions and Orders
+  tests cover the rest.
+
+**To do:**
+
+- [ ] **Deploy with nothing open.** A trade already in `exit_pending` from a
+      partial target before the deploy stays there. Only new fills get the new
+      handling.
+- [ ] **A market exit that fills in part is left there.** "Close now" and the
+      stop watch cancel both legs and then send a market order. If that order
+      fills only part, the trade sits in `exit_pending` with nothing resting:
+      Delta does not rest a market order, and the poll never looks the exit
+      order up again. Re-send for what is left, or put the stop back, on the
+      next poll. It is an engine change: tests first.
+- [ ] **Check Delta's edit `size` meaning on one small live order.** The engine
+      no longer edits a part-filled order, so either reading is safe today. The
+      comment in `protect()` should state what Delta actually does.
+- [ ] **The stop watch now acts on a stop that fired only in part.** Test 16:
+      40 filled by the exchange stop, then the desk closes the rest at market
+      while the mark is above the stop. That is what the stop watch is for, but
+      it is new behaviour for a partial stop: watch the first real one.
+
+---
+
 ## HOW THE CODE IS KEPT HONEST
 
 - **39 tests**, run automatically before every deploy. `npm test` in

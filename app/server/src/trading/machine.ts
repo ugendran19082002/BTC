@@ -116,11 +116,32 @@ export function applyEvent(prev: TradeState, e: TradeEvent): TradeState {
       s.realisedPnl = realised(s.entryAvgPrice, s.exitAvgPrice, exit.size, s.contractValue);
 
       if (isExit(e.role)) {
-        // The first exit to actually print is the winner; the other one is now
-        // a live order that could re-open the position, so it has to go.
-        if (s.exitWinner === null) s.exitWinner = e.role === 'exit' ? 'manual' : e.role;
-        s.phase = s.position === 0 ? 'flat' : 'exit_pending';
-        if (s.position === 0) s.alarm = null;
+        if (s.position === 0) {
+          // The exit that closes the position is the winner; the other leg is
+          // now a live order with nothing to protect, so it has to go.
+          if (s.exitWinner === null) s.exitWinner = e.role === 'exit' ? 'manual' : e.role;
+          s.phase = 'flat';
+          s.alarm = null;
+          return s;
+        }
+        /*
+         * Part of the position bought back, part still short.
+         *
+         * A target or stop that fills in pieces is still working: its order
+         * rests on for the rest. It used to win on its first piece, which took
+         * the stop off as its "sibling" and put the trade in exit_pending --
+         * where the desk neither re-protects nor watches the stop. On 11
+         * September a 425 target filled 203 and left 222 short; with a stop,
+         * those 222 would have had none. The trade stays as it was, and the
+         * engine resizes the other leg to what is left.
+         *
+         * A market exit in pieces is different: siblings were cancelled before
+         * it was sent, and it is still closing.
+         */
+        if (e.role === 'exit') {
+          if (s.exitWinner === null) s.exitWinner = 'manual';
+          s.phase = 'exit_pending';
+        }
         return s;
       }
 

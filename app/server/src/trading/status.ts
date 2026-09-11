@@ -46,7 +46,12 @@ export function orderOutcomeOf(state: TradeState, events: TradeEvent[] = []): st
         ? `sold ${state.entrySize}, bought back at ${state.exitAvgPrice?.toFixed(2) ?? '—'}`
         : `sold ${state.entrySize}, ${Math.abs(state.position)} still open`;
     case 'pending':
-      return state.position === 0 ? 'working on the book' : `short ${Math.abs(state.position)}`;
+      if (state.position === 0) return 'working on the book';
+      // One trade is one row, however many pieces it exits in -- so the row says
+      // what has already been bought back, not only what is left.
+      return state.exitSize > 0
+        ? `sold ${state.entrySize}, bought back ${state.exitSize} at ${state.exitAvgPrice?.toFixed(2) ?? '—'}, short ${Math.abs(state.position)}`
+        : `short ${Math.abs(state.position)}`;
     case 'rejected':
     case 'cancelled':
       return state.note ?? status;

@@ -124,7 +124,8 @@ const PE_TRADE = 'P-BTC-76800-100926-1788977273296';
 const rec = (tradeId: string, protection: { takeProfit?: string | null; stopLoss?: string | null }) =>
   ({
     plan: { takeProfitPrice: 2.3, stopPrice: null },
-    state: { tradeId, protection: { takeProfit: null, stopLoss: null, ...protection } },
+    // 425 short with protection for 425, so ownership is the only thing in question
+    state: { tradeId, position: -425, protection: { takeProfit: null, stopLoss: null, size: 425, ...protection } },
   }) as unknown as Parameters<typeof missingProtection>[0];
 
 test('an id this trade issued is recognised as its own', () => {
