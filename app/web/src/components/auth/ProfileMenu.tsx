@@ -92,7 +92,8 @@ export function ProfileMenu({ username, onSignedOut }: { username: string | null
           </Section>
 
           <Section title="Recent activity" icon={<History className="h-4 w-4" />}>
-            <ul aria-label="recent activity" className="m-0 grid list-none gap-1 p-0 text-[12px]">
+            {/* Its own scroll, so twenty events do not make the sheet a page long. */}
+            <ul aria-label="recent activity" className="m-0 grid max-h-56 list-none gap-1 overflow-y-auto overscroll-contain p-0 pr-1 text-[12px]">
               {(account?.events ?? []).map((e) => (
                 <li key={e.id} className="flex justify-between gap-3">
                   <span className={cn(BAD.has(e.kind) ? 'text-[var(--warn)]' : 'text-foreground')}>{EVENT_TEXT[e.kind] ?? e.kind}</span>
@@ -100,6 +101,9 @@ export function ProfileMenu({ username, onSignedOut }: { username: string | null
                 </li>
               ))}
             </ul>
+            {(account?.events.length ?? 0) >= 20 && (
+              <p className="m-0 mt-1 text-[11px] text-[var(--dim)]">The 20 most recent. Older ones are kept on the server for six months.</p>
+            )}
           </Section>
 
           <Button
@@ -138,7 +142,7 @@ function Devices({ account, onChanged }: { account: Account | null; onChanged: (
   const others = account.sessions.filter((s) => !s.current).length;
   return (
     <div>
-      <ul aria-label="devices" className="m-0 grid list-none gap-1.5 p-0">
+      <ul aria-label="devices" className="m-0 grid max-h-56 list-none gap-1.5 overflow-y-auto overscroll-contain p-0 pr-1">
         {account.sessions.map((s) => (
           <li key={s.id} className="rounded-md bg-muted px-2.5 py-2 text-[12.5px]">
             <div className="flex justify-between gap-2">

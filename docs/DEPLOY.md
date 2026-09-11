@@ -106,16 +106,35 @@ the names back; it does not affect `delta.thannigo.in`.
 
 ## Access
 
-The desk is on the open internet, and the API gates itself: `http/session.ts`
-holds a scrypt password hash and an HMAC-signed session cookie, and `app.ts`
-turns away anything under `/api/` that does not carry a valid one. Only
-`/api/health`, `/api/login` and `/api/me` are public.
+The desk is on the open internet, and the API gates itself. Signing in takes
+**two steps, both required**:
 
-It is on **only when all three of `DESK_USER`, `DESK_PASSWORD_HASH` and
-`DESK_SESSION_SECRET` are set** — a half-configured login is worse than none,
-because it looks protected. Generate the hash with `app/server/hash-password.mjs`.
-With any of the three missing, every route is open; check `/api/me` rather than
-assuming.
+1. username and password (scrypt hash, in `auth.db`);
+2. the 6-digit code from Google Authenticator (or any TOTP app).
+
+At the first sign-in the second step is set up: a QR code to scan, one code to
+verify, and ten recovery codes shown once. A session lasts **24 hours** and is a
+row in `auth.db` — so logging out ends it, and changing the password ends every
+other one. The gate in `app.ts` decides on the route Fastify matched (never on
+the text of the URL) and refuses anything that is not fully signed in. Only
+`/api/health` and `/api/me` are public; `/api/login` and the code step carry
+their own stage.
+
+`DESK_USER` and `DESK_PASSWORD_HASH` seed the first user; `DESK_SESSION_SECRET`
+seals the authenticator secret and must be a real random value. **With any of
+them missing the API answers 503 to everything else** — it fails closed, and the
+trading engine keeps running behind it. Check `/api/me`.
+
+Repairs, on the server (they are not on the web, on purpose):
+
+```bash
+cd app/server && npm run auth -- status          # who, 2FA on?, sessions
+npm run auth -- set-password                     # forgotten password
+npm run auth -- reset-2fa                        # lost phone
+npm run auth -- sign-out-all
+# in the container:
+docker compose exec api node app/server/dist/auth/cli.js status
+```
 
 An nginx-level password is still available as a second door in front of the
 static bundle: uncomment the two `auth_basic` lines in `deploy/nginx.conf` and

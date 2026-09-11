@@ -743,6 +743,62 @@ Asked for:
 
 ---
 
+## Security audit, two-step sign-in and sessions — 11 Sep 2026
+
+Full audit in `docs/SECURITY-AUDIT.md`. **No trading logic was touched.**
+
+**Fixed (not deployed yet):**
+
+- 🔴 **Sign-in bypass.** The gate tested the text of the URL, and the router
+  decodes it first: `/%61pi/strategies` reached every route with no session,
+  including order placing. The gate now decides on the route Fastify matched.
+- 🔴 **CORS answered every origin with credentials allowed.** Removed.
+- 🔴 **The sign-in limiter could be walked past** by forging `X-Forwarded-For`.
+  Only the proxies' own private ranges are trusted now, and sign-in is limited
+  per account as well as per address.
+- 🟠 **Two-step sign-in (Google Authenticator) is now required**, with QR setup
+  at the first sign-in and ten single-use recovery codes.
+- 🟠 **Sessions are rows in `auth.db`** (only the token's hash is stored), last
+  24 hours, and can actually be ended: logging out, changing the password
+  (ends every other one), or "sign out other devices".
+- 🟠 **The page could be framed.** nginx does not inherit `add_header` into a
+  location that has one, so the HTML went out with no `X-Frame-Options`. The
+  headers are repeated per location, and CSP and Permissions-Policy added.
+- 🟠 **CSRF:** a change now needs an `Origin`/`Referer` naming this host.
+- 🟠 **Fail closed:** with sign-in unconfigured the API answers 503 instead of
+  opening; the trading engine keeps running behind it.
+- 🟡 **Change the password from the profile screen** (current password + a code),
+  rate limits on sign-in only, sign-in refusals kept out of the error log,
+  `hash-password.mjs` import fixed, `npm run auth` for repairs on the server.
+
+**To do:**
+
+- [ ] **Deploy, then sign in on the phone.** The first sign-in asks for the QR
+      scan; **save the ten recovery codes** before closing the page. `.env`
+      needs `DESK_SESSION_SECRET` set (32 random bytes: `openssl rand -base64 32`).
+      If it is changed, 2FA must be set up again (`npm run auth -- reset-2fa`).
+- [ ] **Publish the web port to loopback or the docker gateway only**
+      (`127.0.0.1:8099:80` or a firewall rule), so nothing reaches the app
+      except through the TLS edge. Needs care: the edge reaches it over
+      `host.docker.internal`.
+- [ ] **Rotate the Delta API key, the desk password and the Telegram token** —
+      all three were pasted into chat at some point. The desk password can now
+      be changed from the profile screen.
+- [ ] **`/api/health` shows migration ids and counts** without sign-in. Narrow
+      it to `{ok, days}` and move the rest behind the gate.
+- [ ] **The swipe-to-confirm control has no touch-only path for screen readers**
+      (from the earlier UI work) — still open.
+- [ ] **HSTS `includeSubDomains`/`preload`** only once every `thannigo.in`
+      subdomain is HTTPS.
+
+**Next (asked for, not started):** performance and latency — web, server and
+database — and using the machine's cores and memory. Note the engine itself
+must stay one process: two copies would place the same order twice. The work
+is in the heavy non-trading paths (chain fan-out, scoring, backtests), caching,
+SQLite pragmas and indexes, and the browser bundle.
+
+---
+
 ## HOW THE CODE IS KEPT HONEST
 
 - **39 tests**, run automatically before every deploy. `npm test` in

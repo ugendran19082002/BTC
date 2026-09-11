@@ -235,6 +235,19 @@ describe('the profile menu', () => {
     await waitFor(() => expect(api.signOutOthers).toHaveBeenCalled());
   });
 
+  it('[critical] a long activity list scrolls inside the sheet instead of stretching it', async () => {
+    const many = Array.from({ length: 20 }, (_, i) => ({ id: i + 1, at: Date.now() - i * 60_000, kind: i % 2 ? 'signin' : 'password_wrong', ip: '1.2.3.4', detail: null }));
+    api.getAccount.mockResolvedValue({ ...account, events: many });
+    render(<ProfileMenu username="ugendran" onSignedOut={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Account' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Recent activity' }));
+    const list = screen.getByRole('list', { name: 'recent activity' });
+    expect(within(list).getAllByRole('listitem')).toHaveLength(20);
+    expect(list.className).toContain('overflow-y-auto');
+    expect(list.className).toContain('max-h-56');
+    expect(screen.getByText(/The 20 most recent/)).toBeInTheDocument();
+  });
+
   it('shows recent activity, with the worrying kinds marked', async () => {
     api.getAccount.mockResolvedValue(account);
     render(<ProfileMenu username="ugendran" onSignedOut={() => {}} />);
