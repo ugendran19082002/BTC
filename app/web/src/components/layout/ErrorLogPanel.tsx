@@ -48,6 +48,12 @@ function meaningOf(row: ErrorRow): string | null {
   }
   if (row.code === 'RateLimited') return 'Delta asked the desk to slow down. It waits, then tries again.';
   if (row.code === 'NotConfigured') return 'No Delta API key is set on the server, so account data is off.';
+  if (row.code === 'UnreadableReply' || row.code === 'http_200') {
+    return 'Delta answered, but the reply arrived broken or cut off. Reads are asked again once automatically; nothing is ever sent twice.';
+  }
+  if (row.source === 'exchange' && (row.code === 'internal_server_error' || /^http_5\d\d$/.test(row.code ?? ''))) {
+    return 'Delta’s own server had a problem. Reads are asked again once automatically; only a concern if it keeps happening.';
+  }
   if (row.source === 'exchange' && /refused/i.test(row.message)) {
     return 'Delta rejected the request. The message says which field it did not accept.';
   }

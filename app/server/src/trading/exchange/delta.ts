@@ -1,4 +1,4 @@
-import { DeltaRefused, RateLimited, RequestTimedOut, signed, type Creds } from '../../delta/signed.js';
+import { DeltaRefused, RateLimited, RequestTimedOut, signed, UnreadableReply, type Creds } from '../../delta/signed.js';
 import type {
   ExchangeOrder, ExchangePosition, OrderStatus, PlaceOrderRequest, ProductSpec, Quote,
 } from '../types.js';
@@ -11,12 +11,16 @@ const READ_ATTEMPTS = 2;
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * A failed read worth one more try: no answer at all, or Delta's own server
- * failing (HTTP 500 and up). A 4xx is Delta saying no on purpose, and asking
- * again gets the same answer.
+ * A failure that is Delta's trouble rather than Delta's answer: no reply at
+ * all, a reply that could not be read, or Delta's own server failing (HTTP 500
+ * and up). A 4xx is Delta saying no on purpose, and asking again gets the same.
  */
-const retryableRead = (e: unknown): boolean =>
-  e instanceof RequestTimedOut || (e instanceof DeltaRefused && e.status >= 500);
+const deltaTrouble = (e: unknown): boolean =>
+  e instanceof RequestTimedOut || e instanceof UnreadableReply
+  || (e instanceof DeltaRefused && e.status >= 500);
+
+/** Delta's trouble on a read is worth one more try. */
+const retryableRead = deltaTrouble;
 
 /**
  * The real account.
@@ -134,7 +138,14 @@ function toOrder(o: DeltaOrder): ExchangeOrder {
   };
 }
 
-/** A refusal to a read is an empty answer; an outage is not, and still throws. */
+/**
+ * A refusal to a read is an empty answer; an outage is not, and still throws.
+ *
+ * Only a deliberate refusal reaches here as DeltaRefused: call() turns Delta's
+ * own 5xx into ExchangeUnavailable. Before it did, the internal_server_error on
+ * /v2/orders/history at 21:35 on 10 September was swallowed here as "no such
+ * order" -- the one wrong answer an order lookup must never give.
+ */
 const swallowRefusal = (e: unknown): DeltaOrder[] => {
   if (e instanceof DeltaRefused) return [];
   throw e;
@@ -228,7 +239,10 @@ export class DeltaExchange implements ExchangePort {
         // Being asked to wait is not an outage, but for anything that takes risk
         // it has to behave like one: hold off rather than push through.
         if (e instanceof RateLimited) throw new ExchangeUnavailable(e.message);
-        if (e instanceof RequestTimedOut) throw new ExchangeUnavailable(e.message);
+        // Delta's trouble is an outage, never an answer. A 5xx left as a refusal
+        // read as "no such order" to a lookup and "already gone" to a cancel --
+        // both of them wrong, and both of them the dangerous way.
+        if (deltaTrouble(e)) throw new ExchangeUnavailable((e as Error).message);
         throw e;
       }
     }
@@ -253,7 +267,9 @@ export class DeltaExchange implements ExchangePort {
       });
       // The distinction the rest of the engine is built on.
       if (e instanceof RateLimited) throw new ExchangeUnavailable(e.message);
-      if (e instanceof RequestTimedOut) throw new SubmitTimeout(req.clientOrderId);
+      // No answer, an unreadable one, or Delta's server failing mid-request: the
+      // order may exist. Only a deliberate refusal means it certainly does not.
+      if (deltaTrouble(e)) throw new SubmitTimeout(req.clientOrderId);
       if (e instanceof DeltaRefused) throw new OrderRejected(e.message);
       throw e;
     }
@@ -265,7 +281,9 @@ export class DeltaExchange implements ExchangePort {
       path: '/v2/orders',
       body: { id: Number(order.orderId), product_id: order.productId },
     }).catch((e) => {
-      // An order that is already gone is the state we wanted.
+      // An order that is already gone is the state we wanted. Only a deliberate
+      // refusal says that: Delta's own failure arrives as ExchangeUnavailable
+      // from call(), and is thrown so the caller goes and checks.
       if (e instanceof DeltaRefused) return;
       throw e;
     });
@@ -301,7 +319,7 @@ export class DeltaExchange implements ExchangePort {
         method: 'PUT', path: '/v2/orders', body, timeoutMs: 10_000,
       }));
     } catch (e) {
-      if (e instanceof RequestTimedOut) throw new ExchangeUnavailable(e.message);
+      if (deltaTrouble(e)) throw new ExchangeUnavailable((e as Error).message);
       if (e instanceof DeltaRefused) throw new OrderRejected(e.message);
       throw e;
     }
@@ -392,12 +410,19 @@ export class DeltaExchange implements ExchangePort {
 
   /** Product metadata does not change during a session, so it is fetched once. */
   async getProduct(symbol: string): Promise<ProductSpec | null> {
+    // No symbol is not a lookup. `/v2/products/` with nothing after it is Delta's
+    // whole product list -- 3.7 MB, 1,136 products -- and the status poll asked
+    // for exactly that whenever nothing was open, then cached it as a product
+    // with no name. The one time the download came back unreadable, it was the
+    // "refused (http_200)" row in the error log.
+    if (!symbol) return null;
     const cached = this.products.get(symbol);
     if (cached) return cached;
     const p = await this.call<DeltaProduct>({
       method: 'GET', path: `/v2/products/${encodeURIComponent(symbol)}`,
     }).catch(() => null);
-    if (!p) return null;
+    // anything but one product is not this product, and must not be cached as it
+    if (!p || Array.isArray(p) || typeof p.symbol !== 'string') return null;
 
     const spec: ProductSpec = {
       symbol: p.symbol,

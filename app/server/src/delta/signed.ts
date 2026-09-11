@@ -64,6 +64,22 @@ export class DeltaRefused extends Error {
 }
 
 /**
+ * Delta answered with a success status, and the answer could not be read: a
+ * body that is not JSON, or one cut off on the way.
+ *
+ * Not a refusal. On 10 September a 3.7 MB product list arrived as HTTP 200 and
+ * would not parse, and the log called it "Delta refused the request (http_200)",
+ * which sends whoever reads it looking for a field Delta disliked. For a read it
+ * is worth asking again; for a write it means what silence means: unknown.
+ */
+export class UnreadableReply extends Error {
+  constructor(readonly path: string, readonly status: number) {
+    super(`Delta's reply to ${path} could not be read (HTTP ${status}).`);
+    this.name = 'UnreadableReply';
+  }
+}
+
+/**
  * Turn Delta's error context into one readable line.
  *
  * A bare "bad_schema" is almost useless -- it says the request was wrong
@@ -137,6 +153,9 @@ export async function signed<T>(creds: Creds | null, req: SignedRequest): Promis
   const parsed = (await res.json().catch(() => null)) as
     | { success?: boolean; result?: T; error?: { code?: string; context?: unknown } }
     | null;
+
+  // A success status whose body will not parse is not Delta saying no.
+  if (res.ok && !parsed) throw new UnreadableReply(path, res.status);
 
   if (!res.ok || !parsed || parsed.success === false) {
     const code = parsed?.error?.code ?? `http_${res.status}`;

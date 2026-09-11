@@ -437,6 +437,68 @@ holding through the afternoon.
 
 ---
 
+## Delta errors from the night of 10 Sep — 11 Sep 2026
+
+**Done (not deployed yet):**
+
+- **"Delta refused the request (http_200)" on `GET /v2/products/`** was not a
+  refusal. With nothing open, the status poll asked for the product called `''`
+  — which is Delta's whole product list, 3.7 MB and 1,136 products — and cached
+  it as a product with no name. At 22:30, just after a restart, that download
+  arrived unreadable. The poll no longer looks up a product at all (each trade
+  carries its own contract value), `getProduct('')` returns nothing without a
+  call, and a reply that is not one product is never cached.
+- **A 200 whose body will not parse is its own error, `UnreadableReply`.** A read
+  asks again once; after that, and for any write, it means "unknown", like a
+  timeout.
+- **Delta's own server errors (5xx) are an outage, never an answer.** A 500 used
+  to count as a refusal: a cancel took it as "already gone", an order lookup as
+  "no such order", and placing an order as "rejected" — each the dangerous way
+  round. Now a cancel or a lookup throws, and a 500 while placing an order is
+  "unknown", so the engine reads the account back instead of assuming nothing
+  was placed.
+- **The Errors screen** says what `http_200` / `UnreadableReply` and Delta 5xx
+  rows mean, instead of "the message says which field it did not accept".
+- Also waiting for the same deploy: "What to sell" figures (Delta's real margin,
+  charges, the both-worthless chance), open trades on the Orders screen showing
+  "if closed now" instead of their charges in red, Delta 5xx reads retried once,
+  and browser connection drops logged only after a full minute.
+
+**To do:**
+
+- [ ] **Deploy** with nothing open, then check an open trade's Orders row, the
+      "What to sell" margin line, and the api log.
+- [ ] **Mark the `http_200`, `internal_server_error` and `Failed to fetch` rows
+      read** after deploying. Their causes are fixed; the rows are history.
+- [ ] **Inside the engine a failed lookup still reads as "not there".** Every
+      `getOrderByClientId(...).catch(() => null)` in `engine.ts` turns an outage
+      into "no such order", and three places act on it:
+      - `cancelAndVerify` returns "gone", so `protect()` can place a replacement
+        while the old order still rests — two exits for one position;
+      - `cancelEntryInner` records the entry as cancelled without cancelling it;
+      - `reconcileInner` can mark an `entry_unknown` trade "never reached the
+        exchange" while its order is resting.
+      Tell "could not ask" apart from "asked, and nothing is there" (for example
+      `undefined` against `null`), and in each case try again on the next poll
+      instead of concluding. It is an engine change: add the cases to the server
+      suite first.
+- [ ] **"If closed now" is priced at the mark.** Buying back pays the ask, which
+      on a wide book is well above the mark, so the figure can look better than a
+      real close would be. Price it at the ask, or show both.
+- [ ] **A strike with a 100% history adds no expected loss** in "What to sell"
+      (the 74,000 PE on 10 Sep). Floor the chance of losing by the sample size —
+      roughly 3 ÷ sample when no loss was ever seen.
+- [ ] **The stop exit is a plain market order.** On a thin book a limit a few
+      ticks above the ask fills almost as surely and cannot print at a silly price.
+- [ ] **"Lots" means two things.** On the Live screen it is the total, split
+      between CE and PE; in a strategy it is per leg. Rename one of them.
+- [ ] **Rotate the Delta API key and the desk password**, which were exposed
+      earlier, at the same time as revoking the Telegram token (item 4 at the top).
+- [ ] **Server housekeeping:** two certbot renewal timers are installed (keep one),
+      and the old tailscale certificate files are still on disk.
+
+---
+
 ## HOW THE CODE IS KEPT HONEST
 
 - **39 tests**, run automatically before every deploy. `npm test` in

@@ -182,17 +182,18 @@ export function registerTradeRoutes(app: FastifyInstance) {
     const trades = svc.openTrades();
     // Both cached at the server for under a second, so this costs nothing per poll.
     const symbols = [...new Set(trades.map((t) => t.state.symbol))];
-    const [product, quotes, books] = await Promise.all([
-      svc.product(trades[0]?.state.symbol ?? '').catch(() => null),
+    // Each trade carries its own contract value, so there is no product to look
+    // up. There used to be -- the first open trade's, or with nothing open, the
+    // product called '' -- which downloaded Delta's entire product list.
+    const [quotes, books] = await Promise.all([
       Promise.all(symbols.map(async (s) => [s, await svc.quoteForDisplay(s).catch(() => null)] as const)),
       Promise.all(symbols.map(async (s) => [s, await svc.openOrdersForDisplay(s).catch(() => [])] as const)),
     ]);
     const bySymbol = new Map(quotes);
     const restingBy = new Map(books);
-    const contractValue = product?.contractValue ?? 0.001;
     const open = trades.map((r) =>
       view(
-        r, positions, contractValue,
+        r, positions, r.state.contractValue,
         bySymbol.get(r.state.symbol) ?? null, svc.spot,
         restingBy.get(r.state.symbol) ?? [],
       ));
