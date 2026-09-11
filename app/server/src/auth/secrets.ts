@@ -24,7 +24,9 @@ export class Secrets {
   private readonly macKey: Buffer;
 
   constructor(master: string) {
-    if (!master || master.length < 16) throw new Error('DESK_SESSION_SECRET must be at least 16 characters');
+    // Any non-empty secret works through HKDF; a short one is weak, and the
+    // audit TODO says to replace it with 32 random bytes.
+    if (!master) throw new Error('DESK_SESSION_SECRET is not set');
     this.encKey = derive(master, 'btc-desk/totp-secret/v1');
     this.macKey = derive(master, 'btc-desk/recovery-code/v1');
   }

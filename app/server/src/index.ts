@@ -1,6 +1,6 @@
 import { buildApp } from './http/app.js';
 import { config } from './config.js';
-import { authFromEnv } from './http/session.js';
+import { authFromEnv } from './auth/service.js';
 import { loadDays } from './backtest/backtest.js';
 import { credsFromEnv } from './delta/signed.js';
 import { tradingService } from './trading/service.js';
@@ -18,10 +18,13 @@ import { readMarket } from './market/moves.js';
  * order path in trading/.
  */
 
-const app = await buildApp();
+// One sign-in service for the process: the gate and the routes share its database handle.
+const auth = authFromEnv({
+  onAlert: (text) => tradingService().notifier?.notify({ key: `security:${Date.now()}`, text }),
+});
+const app = await buildApp({ auth });
 await app.listen({ port: config.port, host: '0.0.0.0' });
 
-const auth = authFromEnv();
 app.log.info(`chain snapshots loaded: ${loadDays().length}`);
 app.log.info(
   credsFromEnv() !== null
@@ -60,9 +63,10 @@ app.log.info(
         : 'paper trading -- no credentials, so live is not available',
 );
 app.log.info(
-  auth.enabled
-    ? `login required, user "${auth.username}", sessions last ${auth.ttl / 3600}h`
-    : 'login NOT required -- set DESK_USER, DESK_PASSWORD_HASH and DESK_SESSION_SECRET to require one',
+  auth.configured
+    ? `sign-in required: password and authenticator code, user "${auth.username}", sessions last 24h`
+    : 'sign-in NOT set up -- the API refuses everything but /api/health and /api/me until DESK_USER, '
+      + 'DESK_PASSWORD_HASH and DESK_SESSION_SECRET are set (or `npm run auth -- create` has run)',
 );
 
 app.log.info(

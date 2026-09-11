@@ -1,15 +1,12 @@
-import { createHmac, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 
 /**
  * Password login for a desk that sits on the open internet.
  *
  * The password itself is never stored, sent back, or written to a log — only a
- * scrypt hash of it, in the environment. Sessions are a signed token in an
- * httpOnly cookie rather than anything held in memory, so a restart does not
- * log you out and there is no session table to leak.
- *
- * Deliberately small. A desk with one user does not need accounts, roles or a
- * password reset flow, and every one of those is another thing to get wrong.
+ * scrypt hash of it, in auth.db (seeded once from the environment). Sessions
+ * and the two-step sign-in live in src/auth/; this file keeps the hashing and
+ * the cookie, which both halves share.
  */
 
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
@@ -38,93 +35,22 @@ export function verifyPassword(password: string, stored: string): boolean {
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
-export type AuthConfig = {
-  enabled: boolean;
-  username: string;
-  passwordHash: string;
-  secret: string;
-  /** how long a login lasts, in seconds */
-  ttl: number;
-};
-
-export function authFromEnv(): AuthConfig {
-  const username = process.env.DESK_USER?.trim() ?? '';
-  const passwordHash = process.env.DESK_PASSWORD_HASH?.trim() ?? '';
-  const secret = process.env.DESK_SESSION_SECRET?.trim() ?? '';
-  return {
-    // all three or none: a half-configured login is worse than no login,
-    // because it looks protected
-    enabled: Boolean(username && passwordHash && secret),
-    username,
-    passwordHash,
-    secret,
-    ttl: Number(process.env.DESK_SESSION_HOURS ?? 24) * 3600,
-  };
-}
-
-export const COOKIE = 'desk_session';
-
-/** `<expiry>.<signature>` — no secrets inside, nothing to decode. */
-export function issueToken(cfg: AuthConfig, now = Date.now()): string {
-  const expires = Math.floor(now / 1000) + cfg.ttl;
-  const sig = createHmac('sha256', cfg.secret).update(String(expires)).digest('hex');
-  return `${expires}.${sig}`;
-}
-
-export function tokenValid(cfg: AuthConfig, token: string | undefined, now = Date.now()): boolean {
-  if (!token) return false;
-  const [expiresRaw, sig] = token.split('.');
-  if (!expiresRaw || !sig) return false;
-  const expires = Number(expiresRaw);
-  if (!Number.isFinite(expires) || expires * 1000 < now) return false;
-  const want = createHmac('sha256', cfg.secret).update(expiresRaw).digest('hex');
-  const a = Buffer.from(sig);
-  const b = Buffer.from(want);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
+/** `__Host-`: the browser refuses it unless Secure, Path=/ and no Domain -- so no subdomain can set or overwrite it. */
+export const COOKIE = '__Host-desk_session';
 
 export function readCookie(header: string | undefined, name: string): string | undefined {
   if (!header) return undefined;
   for (const part of header.split(';')) {
     const eq = part.indexOf('=');
     if (eq < 0) continue;
-    if (part.slice(0, eq).trim() === name) return decodeURIComponent(part.slice(eq + 1).trim());
+    if (part.slice(0, eq).trim() === name) {
+      try { return decodeURIComponent(part.slice(eq + 1).trim()); } catch { return undefined; }
+    }
   }
   return undefined;
 }
 
-/**
- * Slow down guessing without keeping a table of everyone who ever tried.
- *
- * One counter per address, cleared on success and forgotten after the window.
- * Enough to make an online guessing run useless; not a replacement for a
- * password worth having.
- */
-export class LoginLimiter {
-  private hits = new Map<string, { count: number; until: number }>();
-
-  constructor(
-    private readonly max = 8,
-    private readonly windowMs = 10 * 60_000,
-  ) {}
-
-  blocked(key: string, now = Date.now()): boolean {
-    const e = this.hits.get(key);
-    if (!e) return false;
-    if (e.until < now) {
-      this.hits.delete(key);
-      return false;
-    }
-    return e.count >= this.max;
-  }
-
-  fail(key: string, now = Date.now()): void {
-    const e = this.hits.get(key);
-    if (!e || e.until < now) this.hits.set(key, { count: 1, until: now + this.windowMs });
-    else e.count += 1;
-  }
-
-  succeed(key: string): void {
-    this.hits.delete(key);
-  }
+/** The session cookie: HttpOnly, Secure, SameSite=Strict, and gone when the session is. */
+export function sessionCookie(token: string, maxAgeSeconds: number): string {
+  return `${COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${Math.max(0, Math.floor(maxAgeSeconds))}`;
 }

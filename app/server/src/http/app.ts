@@ -1,7 +1,10 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { config } from '../config.js';
-import { authFromEnv, COOKIE, readCookie, tokenValid } from './session.js';
-import { registerSessionRoutes } from './routes/session.routes.js';
+import { COOKIE, readCookie } from './session.js';
+import { registerSessionRoutes, type AuthLevel } from './routes/session.routes.js';
+import { authFromEnv, type AuthService } from '../auth/service.js';
+import { AuthStore } from '../auth/store.js';
+import { tradingService } from '../trading/service.js';
 import { registerDeskRoutes } from './routes/desk.routes.js';
 import { registerBacktestRoutes } from './routes/backtest.routes.js';
 import { registerTradeRoutes } from './routes/trade.routes.js';
@@ -10,12 +13,17 @@ import { registerStrategyRoutes } from './routes/strategy.routes.js';
 import { noteError } from '../observability/errors.js';
 import { wasRefusal, worthLogging } from './refuse.js';
 
+/** Open without a session: the health probe. Sign-in routes say so on their own route. */
+const PUBLIC_ROUTES = new Set(['/api/health']);
+
 /**
- * Open without a session: the health probe, and login itself.
- *
- * Route PATTERNS as registered, not request paths. See the gate below.
+ * Addresses of the proxies in front: the web container, and the edge proxy it
+ * sits behind, all on private docker networks. Only these may say who the
+ * client is through X-Forwarded-For. `trustProxy: true` trusted every hop, so
+ * the left-most -- client-written -- value became `req.ip`, and a sign-in
+ * limiter keyed on it could be walked past by writing a new address each time.
  */
-const PUBLIC_ROUTES = new Set(['/api/health', '/api/login', '/api/me']);
+const TRUSTED_PROXIES = ['127.0.0.1', '::1', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', 'fc00::/7'];
 
 /**
  * Where a request that changes something may come from.
@@ -46,12 +54,10 @@ const refererOrigin = (ref: string | undefined): string | undefined => {
 
 const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
-export async function buildApp(): Promise<FastifyInstance> {
+export async function buildApp(o: { auth?: AuthService; now?: () => number } = {}): Promise<FastifyInstance> {
   const app = Fastify({
     logger: { level: config.logLevel },
-    // the proxy in front terminates TLS; trust it for the client address so the
-    // login limiter counts real callers rather than the proxy
-    trustProxy: true,
+    trustProxy: TRUSTED_PROXIES,
   });
 
   /*
@@ -61,7 +67,13 @@ export async function buildApp(): Promise<FastifyInstance> {
    * and read the reply wherever SameSite let the cookie through.
    */
 
-  const auth = authFromEnv();
+  const now = o.now ?? Date.now;
+  const auth = o.auth ?? authFromEnv({
+    store: new AuthStore(),
+    now,
+    // security events reach the phone the way fills do
+    onAlert: (text) => tradingService().notifier?.notify({ key: `security:${now()}`, text }),
+  });
   const allowedOrigins = (process.env.DESK_ALLOWED_ORIGINS ?? '')
     .split(',').map((o) => o.trim()).filter(Boolean);
 
@@ -74,8 +86,10 @@ export async function buildApp(): Promise<FastifyInstance> {
    * skipped the gate, and was routed to /api/trade/status anyway. Every route,
    * placing orders included, answered without a session.
    *
-   * Fail closed: every matched route needs a session unless it is on the public
-   * list. A request that matches nothing gets Fastify's 404, which carries no data.
+   * Fail closed: every matched route needs a fully signed-in session -- password
+   * and authenticator code -- unless it says otherwise (`config.auth`). A request
+   * that matches nothing gets Fastify's 404, which carries no data. With sign-in
+   * not set up on the server, nothing but the public routes answers.
    */
   app.addHook('onRequest', async (req, reply) => {
     const route = req.routeOptions.url;
@@ -84,10 +98,18 @@ export async function buildApp(): Promise<FastifyInstance> {
       reply.code(403);
       return reply.send({ error: 'cross-origin request refused' });
     }
-    if (!auth.enabled || PUBLIC_ROUTES.has(route)) return;
-    if (tokenValid(auth, readCookie(req.headers.cookie, COOKIE))) return;
+    const level: AuthLevel = PUBLIC_ROUTES.has(route)
+      ? 'public'
+      : ((req.routeOptions.config as { auth?: AuthLevel } | undefined)?.auth ?? 'full');
+    if (level === 'public') return;
+    if (!auth.configured) {
+      reply.code(503);
+      return reply.send({ error: 'Sign-in is not set up on this server.' });
+    }
+    const s = auth.session(readCookie(req.headers.cookie, COOKIE));
+    if (s && s.stage === level) return;
     reply.code(401);
-    return reply.send({ error: 'not signed in' });
+    return reply.send({ error: 'not signed in', stage: s?.stage ?? 'none' });
   });
 
   // Anything a route throws lands in the log before Fastify turns it into a 500.
@@ -124,7 +146,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     });
   });
 
-  registerSessionRoutes(app, auth);
+  registerSessionRoutes(app, auth, now);
   registerDeskRoutes(app);
   registerBacktestRoutes(app);
   registerTradeRoutes(app);

@@ -18,19 +18,22 @@ process.env.TRADE_DB = join(dir, 'trades.db');
 process.env.ERROR_DB = join(dir, 'errors.db');
 process.env.CHAIN_DB = join(dir, 'chain.db');
 process.env.DELTA_LIVE_TRADING = '0';
-process.env.DESK_USER = 'desk';
-process.env.DESK_SESSION_SECRET = 'test-secret';
-
-const { hashPassword, issueToken, authFromEnv, COOKIE } = await import('../../src/http/session.js');
-process.env.DESK_PASSWORD_HASH = hashPassword('correct horse');
+const { hashPassword, COOKIE } = await import('../../src/http/session.js');
 const { buildApp } = await import('../../src/http/app.js');
+const { AuthService } = await import('../../src/auth/service.js');
+const { AuthStore } = await import('../../src/auth/store.js');
+const { Secrets } = await import('../../src/auth/secrets.js');
 
 type App = Awaited<ReturnType<typeof buildApp>>;
 let app: App;
-before(async () => { app = await buildApp(); });
+const store = new AuthStore(join(dir, 'auth.db'));
+store.seedUser('desk', hashPassword('correct horse battery'), Date.now());
+// a fully signed-in session, written as sign-in would write it
+store.createSession({ token: 'full-session-token', stage: 'full', now: Date.now(), ttlMs: 3_600_000, ip: null, userAgent: null });
+before(async () => { app = await buildApp({ auth: new AuthService({ store, secrets: new Secrets('test-secret'), now: Date.now }) }); });
 after(async () => { await app.close(); });
 
-const session = () => `${COOKIE}=${encodeURIComponent(issueToken(authFromEnv()))}`;
+const session = () => `${COOKIE}=${encodeURIComponent('full-session-token')}`;
 
 test('[critical] a protected route refuses without a session', async () => {
   const r = await app.inject({ method: 'GET', url: '/api/strategies' });

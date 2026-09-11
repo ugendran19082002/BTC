@@ -1,9 +1,11 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Collapsible from '@radix-ui/react-collapsible';
-import { Activity, AlertTriangle, Bot, Briefcase, ChevronDown, ListOrdered, LogOut } from 'lucide-react';
+import { Activity, AlertTriangle, Bot, Briefcase, ChevronDown, ListOrdered } from 'lucide-react';
 import { NotSignedIn } from '@/api/client';
 import { getChain, getExpiries, getHealth, getSpot } from '@/api/desk';
-import { getMe, logout } from '@/api/session';
+import { getMe, type Stage } from '@/api/session';
+import { ProfileMenu } from '@/components/auth/ProfileMenu';
+import { TwoStepSetup } from '@/components/auth/TwoStepSetup';
 import type { ChainResponse, ExpiryOption } from '@/types/desk';
 import { ChainTable, type ChainSellIntent } from '@/components/chain/ChainTable';
 import type { TicketSeed } from '@/components/trade/OrderTicket';
@@ -120,7 +122,25 @@ export default function App() {
   const [err, setErr] = useState<string | null>(null);
   const [days, setDays] = useState<number | null>(null);
   // null while we are still asking the server whether a login is required
-  const [signedIn, setSignedIn] = useState<boolean | null>(null);
+  const [signedIn, setSignedInState] = useState<boolean | null>(null);
+  /** Where this browser is in signing in: password, code, first-time setup, or in. */
+  const [stage, setStage] = useState<Stage>('none');
+  const [username, setUsername] = useState<string | null>(null);
+  const refreshMe = useCallback(() => {
+    getMe()
+      .then((m) => {
+        const st: Stage = m.stage ?? (m.signedIn ? 'full' : 'none');
+        setStage(st);
+        setUsername(m.username);
+        setSignedInState(st === 'full');
+      })
+      .catch(() => { setStage('none'); setSignedInState(false); });
+  }, []);
+  // Any "not signed in" from a poll re-asks where sign-in stands, rather than guessing.
+  const setSignedIn = useCallback((v: boolean) => {
+    if (v) refreshMe();
+    else { setSignedInState(false); refreshMe(); }
+  }, [refreshMe]);
   const seq = useRef(0);
 
   const load = useCallback(async () => {
@@ -148,11 +168,8 @@ export default function App() {
   }, [live, when, width, minPremium, hedgeGap, lots, expiry, requireHedge, mode, safetyBar]);
 
   useEffect(() => { if (signedIn === true) void load(); }, [signedIn, load]);
-  useEffect(() => {
-    getMe()
-      .then((m) => setSignedIn(!m.required || m.signedIn))
-      .catch(() => setSignedIn(true)); // an older server without login: let it through
-  }, []);
+  // No way through on an error any more: an unanswered /api/me is not signed in.
+  useEffect(() => { refreshMe(); }, [refreshMe]);
 
   useEffect(() => { getHealth().then((h) => setDays(h.days)).catch(() => setDays(null)); }, []);
 
@@ -225,7 +242,16 @@ export default function App() {
   const sinceOpenPct = sinceOpenUsd !== null && openedAt ? sinceOpenUsd / openedAt : null;
 
   if (signedIn === null) return <Loading />;
-  if (!signedIn) return <LoginPage onSignedIn={() => setSignedIn(true)} />;
+  if (stage === 'setup') return <TwoStepSetup onDone={() => setSignedIn(true)} onRestart={() => setSignedIn(false)} />;
+  if (!signedIn) {
+    return (
+      <LoginPage
+        startAtCode={stage === 'totp'}
+        onSignedIn={() => setSignedIn(true)}
+        onNeedsSetup={() => setStage('setup')}
+      />
+    );
+  }
 
   return (
     <div className="app">
@@ -237,15 +263,7 @@ export default function App() {
           </span>
           <div className="top-actions">
             <ModeSwitch status={trade} onChanged={() => void refreshTrade()} />
-            <button
-              type="button"
-              className="icon-btn"
-              aria-label="Sign out"
-              title="Sign out"
-              onClick={() => { void logout().then(() => setSignedIn(false)); }}
-            >
-              <LogOut className="h-4 w-4" />
-            </button>
+            <ProfileMenu username={username} onSignedOut={() => setSignedIn(false)} />
           </div>
         </div>
         <div className="top-row top-row-2">

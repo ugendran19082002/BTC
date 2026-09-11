@@ -24,6 +24,8 @@ services:
       # position exists before it has spoken to the exchange.
       TRADE_DB: /srv/data/trades.db
       ERROR_DB: /srv/data/errors.db
+      # The sign-in: password hash, sealed authenticator secret, sessions, security log.
+      AUTH_DB: /srv/data/auth.db
       # Room for the heap to grow before V8 starts collecting hard. The desk
       # rests near 100 MB; this is headroom, not a need.
       NODE_OPTIONS: --max-old-space-size=1536
