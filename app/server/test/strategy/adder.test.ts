@@ -24,7 +24,7 @@ const PE = 'P-BTC-77000-080926';
 
 const strategy = (over: Partial<Strategy> = {}, cfg: Partial<Strategy['config']> = {}): Strategy => ({
   id: 's', name: 'CE+PE add', enabled: true, createdAt: 0, updatedAt: 0,
-  config: { ...DEFAULT_CONFIG, addToOpposite: { minPriceUsd: 3, maxMultiple: 2 }, ...cfg },
+  config: { ...DEFAULT_CONFIG, addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59' }, ...cfg },
   ...over,
 });
 

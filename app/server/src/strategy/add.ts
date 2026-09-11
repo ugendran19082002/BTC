@@ -1,6 +1,6 @@
 import type { TradeRecord } from '../trading/engine.js';
 import type { OptionSide } from '../trading/types.js';
-import { minutesOf, type StrategyConfig } from './types.js';
+import { defaultAddUntil, isHhmm, minutesOf, time12, type StrategyConfig } from './types.js';
 
 /**
  * Add to the other leg when a target buys contracts back.
@@ -22,8 +22,9 @@ import { minutesOf, type StrategyConfig } from './types.js';
  *      was itself added to today does not add back: no ping-pong.
  *   2. The fill is fresh. Deciding hours later, after a restart, would sell into
  *      a market that is not the one the rule was about.
- *   3. Not in the last half hour before the strategy's exit time, where an add
- *      pays to get in and again to be closed minutes later.
+ *   3. Not after the strategy's latest-add time (half an hour before its exit
+ *      by default), where an add pays to get in and again to be closed minutes
+ *      later.
  *   4. There is another leg today. A one-sided day -- the doubled CE 850 -- has
  *      none, so nothing is added.
  *   5. That leg is still simply open: not closed (adding would re-open a leg
@@ -45,8 +46,6 @@ import { minutesOf, type StrategyConfig } from './types.js';
 
 /** A target fill older than this is not acted on. */
 export const ADD_FRESH_MS = 2 * 60_000;
-/** No add inside this many minutes of the strategy's exit time. */
-export const ADD_CUTOFF_MIN = 30;
 /** An add rests this long; whatever has not filled by then is cancelled. */
 export const ADD_WINDOW_MS = 5 * 60_000;
 
@@ -164,9 +163,9 @@ export function decideAdds(input: {
       continue;
     }
     // Rule 3.
-    const left = minutesOf(input.config.exitTime) - input.nowIstMinutes;
-    if (left < ADD_CUTOFF_MIN) {
-      out.push(skip(`${said} — within ${ADD_CUTOFF_MIN} min of the ${input.config.exitTime} exit, not adding`));
+    const until = isHhmm(rule.addUntil) ? rule.addUntil : defaultAddUntil(input.config.exitTime);
+    if (input.nowIstMinutes > minutesOf(until)) {
+      out.push(skip(`${said} — after the ${time12(until)} latest time to add, not adding`));
       continue;
     }
     // Rule 4.

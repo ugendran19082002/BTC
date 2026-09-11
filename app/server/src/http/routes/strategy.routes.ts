@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { refuse } from '../refuse.js';
 import { StrategyStore } from '../../strategy/store.js';
 import { entryDue, istDate, nextEntryAt } from '../../strategy/schedule.js';
-import { DEFAULT_CONFIG, validateConfig, type StrategyConfig } from '../../strategy/types.js';
+import { DEFAULT_CONFIG, defaultAddUntil, validateConfig, type StrategyConfig } from '../../strategy/types.js';
 import { tradingService } from '../../trading/service.js';
 
 /**
@@ -21,9 +21,10 @@ export const strategyStore = (): StrategyStore => (store ??= new StrategyStore()
 /** Only the keys we know how to read, so a stray field cannot reach the row. */
 function cleanConfig(raw: unknown): StrategyConfig {
   const c = (raw ?? {}) as Partial<StrategyConfig>;
+  const exitTime = String(c.exitTime ?? DEFAULT_CONFIG.exitTime);
   return {
     entryTime: String(c.entryTime ?? DEFAULT_CONFIG.entryTime),
-    exitTime: String(c.exitTime ?? DEFAULT_CONFIG.exitTime),
+    exitTime,
     premium: {
       mode: c.premium?.mode === 'atMost' ? 'atMost' : 'atLeast',
       usd: Number(c.premium?.usd ?? DEFAULT_CONFIG.premium.usd),
@@ -43,6 +44,8 @@ function cleanConfig(raw: unknown): StrategyConfig {
       : {
           minPriceUsd: Number(c.addToOpposite.minPriceUsd),
           maxMultiple: Number(c.addToOpposite.maxMultiple),
+          // Absent from a client that predates it: half an hour before the exit.
+          addUntil: c.addToOpposite.addUntil === undefined ? defaultAddUntil(exitTime) : String(c.addToOpposite.addUntil),
         },
     weekdays: Array.isArray(c.weekdays)
       ? [...new Set(c.weekdays.map((d) => Math.floor(Number(d))))].sort()

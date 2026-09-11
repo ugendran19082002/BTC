@@ -136,9 +136,31 @@ export type AddToOpposite = {
    * money, and adding to it is adding to the loss.
    */
   maxMultiple: number;
+  /**
+   * The latest IST time an add may be made, "HH:MM". Must fall between the
+   * entry and exit times.
+   *
+   * An add late in the day pays to get in and again to be closed minutes later
+   * at the exit, for premium that has almost nothing left to decay. The default
+   * is half an hour before the exit.
+   */
+  addUntil: string;
 };
 
-export const DEFAULT_ADD_TO_OPPOSITE: AddToOpposite = { minPriceUsd: 3, maxMultiple: 2 };
+/** A 24-hour "HH:MM". Defined before anything below uses it at load. */
+const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
+const DEFAULT_EXIT = '17:29';
+
+/** How long before the exit the default latest-add time sits. */
+export const DEFAULT_ADD_CUTOFF_MIN = 30;
+
+/** Half an hour before the exit -- or a minute before, on a strategy shorter than that. */
+export function defaultAddUntil(exitTime: string): string {
+  const exit = HHMM.test(exitTime) ? minutesOf(exitTime) : minutesOf(DEFAULT_EXIT);
+  return hhmmOf(exit - DEFAULT_ADD_CUTOFF_MIN > 0 ? exit - DEFAULT_ADD_CUTOFF_MIN : Math.max(0, exit - 1));
+}
+
+export const DEFAULT_ADD_TO_OPPOSITE: AddToOpposite = { minPriceUsd: 3, maxMultiple: 2, addUntil: defaultAddUntil(DEFAULT_EXIT) };
 
 export type Strategy = {
   id: string;
@@ -180,7 +202,18 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   weekdays: [0, 1, 2, 3, 4, 5, 6],
 };
 
-const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
+/** True for a 24-hour "HH:MM", the one form times are stored and sent in. */
+export const isHhmm = (v: unknown): v is string => typeof v === 'string' && HHMM.test(v);
+
+/**
+ * The daily contract settles at 17:30 IST.
+ *
+ * A strategy that enters before it holds today's contract, so its exit has to
+ * come before it too: an exit at 18:00 closes a position Delta already settled.
+ * One that enters at or after it holds tomorrow's contract and can exit any time
+ * later the same evening.
+ */
+export const SETTLEMENT = '17:30';
 
 /**
  * Check a config before it is stored, and say what is wrong in words.
@@ -191,11 +224,20 @@ const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
  */
 export function validateConfig(c: Partial<StrategyConfig>): string[] {
   const bad: string[] = [];
-  if (!c.entryTime || !HHMM.test(c.entryTime)) bad.push('Entry time must be HH:MM in IST.');
-  if (!c.exitTime || !HHMM.test(c.exitTime)) bad.push('Exit time must be HH:MM in IST.');
-  if (c.entryTime && c.exitTime && HHMM.test(c.entryTime) && HHMM.test(c.exitTime)
-      && minutesOf(c.exitTime) <= minutesOf(c.entryTime)) {
-    bad.push('Exit must be later in the day than entry.');
+  const entryOk = isHhmm(c.entryTime);
+  const exitOk = isHhmm(c.exitTime);
+  if (!entryOk) bad.push('Entry time must be a time of day, like 5:30 AM.');
+  if (!exitOk) bad.push('Exit time must be a time of day, like 5:29 PM.');
+  if (entryOk && exitOk) {
+    const entry = minutesOf(c.entryTime!);
+    const exit = minutesOf(c.exitTime!);
+    const settle = minutesOf(SETTLEMENT);
+    if (exit <= entry) {
+      bad.push(`Exit (${time12(c.exitTime!)}) must be later in the day than entry (${time12(c.entryTime!)}).`);
+    } else if (entry < settle && exit >= settle) {
+      bad.push(`Exit (${time12(c.exitTime!)}) is at or after the 5:30 PM settlement, so a position entered at `
+        + `${time12(c.entryTime!)} is already settled by then. Pick 5:29 PM or earlier.`);
+    }
   }
   const p = c.premium;
   if (!p || (p.mode !== 'atLeast' && p.mode !== 'atMost')) {
@@ -248,6 +290,15 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
     if (!(typeof add.maxMultiple === 'number') || !(add.maxMultiple > 0) || add.maxMultiple > 20) {
       bad.push('The "not once it has risen to" limit must be between 0 and 20 times the sale price.');
     }
+    if (!isHhmm(add.addUntil)) {
+      bad.push('The latest time to add must be a time of day, like 4:59 PM.');
+    } else if (entryOk && exitOk) {
+      const until = minutesOf(add.addUntil);
+      if (until <= minutesOf(c.entryTime!) || until >= minutesOf(c.exitTime!)) {
+        bad.push(`The latest time to add (${time12(add.addUntil)}) must be after entry (${time12(c.entryTime!)}) `
+          + `and before exit (${time12(c.exitTime!)}).`);
+      }
+    }
     if (c.legs !== 'both') bad.push('Adding to the other leg needs both legs selected.');
     if (!((c.takeProfitPct ?? 0) > 0)) bad.push('Adding to the other leg needs a target -- it runs when a target fills.');
   }
@@ -255,7 +306,25 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
 }
 
 /** "05:30" -> 330. Times are IST throughout; the desk never uses another one. */
-export const minutesOf = (hhmm: string): number => {
+export function minutesOf(hhmm: string): number {
   const [h, m] = hhmm.split(':');
   return Number(h) * 60 + Number(m);
-};
+}
+
+/** 330 -> "05:30". */
+export function hhmmOf(minutes: number): string {
+  const m = ((Math.round(minutes) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+
+/**
+ * "17:29" -> "5:29 PM", for anything a person reads.
+ *
+ * Stored and sent as 24-hour, because "5:30" alone is two different moments;
+ * shown as 12-hour with AM or PM, because that is how the time is read.
+ */
+export function time12(hhmm: string): string {
+  if (!HHMM.test(hhmm)) return hhmm;
+  const [h, m] = hhmm.split(':').map(Number) as [number, number];
+  return `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+}

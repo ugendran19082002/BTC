@@ -12,7 +12,7 @@
  * passed in, read from the journal, and compared here.
  */
 import type { Strategy } from './types.js';
-import { minutesOf } from './types.js';
+import { minutesOf, time12 } from './types.js';
 
 /** IST is UTC+5:30 and has no daylight saving, so the offset is a constant. */
 const IST_OFFSET_MIN = 330;
@@ -86,9 +86,9 @@ export function entryDue(
 
   const now = istMinutes(nowMs);
   const start = minutesOf(s.config.entryTime);
-  if (now < start) return { due: false, because: `waiting for ${s.config.entryTime} IST` };
+  if (now < start) return { due: false, because: `waiting for ${time12(s.config.entryTime)} IST` };
   if (now > start + GRACE_MIN) {
-    return { due: false, because: `too late -- ${s.config.entryTime} passed more than ${GRACE_MIN} minutes ago` };
+    return { due: false, because: `too late -- ${time12(s.config.entryTime)} passed more than ${GRACE_MIN} minutes ago` };
   }
   // Entering after the exit time would open a position the same pass wants to
   // close. Cheap to check, and it catches a misconfigured pair.
@@ -110,7 +110,7 @@ export function exitDue(s: Strategy, nowMs: number, hasOpenPosition: boolean): D
   if (!hasOpenPosition) return { due: false, because: 'nothing open' };
   const now = istMinutes(nowMs);
   if (now < minutesOf(s.config.exitTime)) {
-    return { due: false, because: `holding until ${s.config.exitTime} IST` };
+    return { due: false, because: `holding until ${time12(s.config.exitTime)} IST` };
   }
   return { due: true };
 }

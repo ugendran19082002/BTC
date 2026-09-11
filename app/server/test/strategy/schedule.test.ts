@@ -48,7 +48,7 @@ test('due exactly on time', () => {
 test('not due before its time', () => {
   const r = entryDue(strat(), THU_0500, null);
   assert.equal(r.due, false);
-  assert.match(!r.due ? r.because : '', /waiting for 05:30/);
+  assert.match(!r.due ? r.because : '', /waiting for 5:30 AM IST/, 'said as it is read, with AM or PM');
 });
 
 test('a late start inside the grace window still trades', () => {

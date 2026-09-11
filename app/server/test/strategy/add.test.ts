@@ -4,7 +4,7 @@ import { applyEvent, initialTrade } from '../../src/trading/machine.js';
 import type { TradePlan, TradeRecord } from '../../src/trading/engine.js';
 import type { TradeEvent } from '../../src/trading/types.js';
 import {
-  ADD_CUTOFF_MIN, ADD_FRESH_MS, decideAdds, type AddDecision, type AddQuote,
+  ADD_FRESH_MS, decideAdds, type AddDecision, type AddQuote,
 } from '../../src/strategy/add.js';
 import { DEFAULT_CONFIG, type StrategyConfig } from '../../src/strategy/types.js';
 
@@ -70,7 +70,7 @@ const PE_SYMBOL = 'P-BTC-74000-110926';
 const CE_SYMBOL = 'C-BTC-79600-110926';
 
 const on = (over: Partial<StrategyConfig['addToOpposite'] & object> = {}): StrategyConfig => ({
-  ...DEFAULT_CONFIG, addToOpposite: { minPriceUsd: 3, maxMultiple: 2, ...over },
+  ...DEFAULT_CONFIG, addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59', ...over },
 });
 
 function decide(
@@ -212,11 +212,28 @@ test('[critical] a target filled more than two minutes ago is not acted on -- af
   assert.match(d.detail, /too long ago/);
 });
 
-test(`not within ${ADD_CUTOFF_MIN} minutes of the exit time`, () => {
+test('[critical] not after the latest time to add: 4:59 PM still adds, 5:00 PM does not', () => {
   const trades = [leg({ side: 'CE', target: [[425, T]] }), leg({ side: 'PE' })];
-  const exit = 17 * 60 + 29;
-  assert.equal(only(decide(trades, { [PE_SYMBOL]: q(7, 7.5, 7.2) }, { istMinutes: exit - ADD_CUTOFF_MIN + 1 })).act, 'skip');
-  assert.equal(only(decide(trades, { [PE_SYMBOL]: q(7, 7.5, 7.2) }, { istMinutes: exit - ADD_CUTOFF_MIN })).act, 'add');
+  const quotes = { [PE_SYMBOL]: q(7, 7.5, 7.2) };
+  assert.equal(only(decide(trades, quotes, { istMinutes: 16 * 60 + 59 })).act, 'add', 'the whole of the last minute counts');
+  const late = only(decide(trades, quotes, { istMinutes: 17 * 60 }));
+  assert.equal(late.act, 'skip');
+  assert.match(late.detail, /after the 4:59 PM latest time to add/);
+});
+
+test('[critical] the latest time to add is the setting: at 12:00 PM, 12:01 PM is too late', () => {
+  const trades = [leg({ side: 'CE', target: [[425, T]] }), leg({ side: 'PE' })];
+  const quotes = { [PE_SYMBOL]: q(7, 7.5, 7.2) };
+  const cfg = on({ addUntil: '12:00' });
+  assert.equal(only(decide(trades, quotes, { config: cfg, istMinutes: 12 * 60 })).act, 'add');
+  assert.match(only(decide(trades, quotes, { config: cfg, istMinutes: 12 * 60 + 1 })).detail, /after the 12:00 PM/);
+});
+
+test('a strategy saved before the setting existed stops adding half an hour before its exit, as it always did', () => {
+  const trades = [leg({ side: 'CE', target: [[425, T]] }), leg({ side: 'PE' })];
+  const old = { ...DEFAULT_CONFIG, exitTime: '15:00', addToOpposite: { minPriceUsd: 3, maxMultiple: 2 } } as unknown as StrategyConfig;
+  assert.equal(only(decide(trades, { [PE_SYMBOL]: q(7, 7.5, 7.2) }, { config: old, istMinutes: 14 * 60 + 30 })).act, 'add');
+  assert.equal(only(decide(trades, { [PE_SYMBOL]: q(7, 7.5, 7.2) }, { config: old, istMinutes: 14 * 60 + 31 })).act, 'skip');
 });
 
 test('no price for the other leg yet: it waits, and records nothing', () => {

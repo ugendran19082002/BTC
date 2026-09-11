@@ -5,7 +5,7 @@ import { noteError } from '../observability/errors.js';
 import { StrategyStore } from './store.js';
 import { GRACE_MIN, entryDue, entryWindowEnd, exitDue, istDate, istMinutes } from './schedule.js';
 import { describeSelection, selectLegs, type Candidate } from './select.js';
-import { minutesOf, type Strategy } from './types.js';
+import { minutesOf, time12, type Strategy } from './types.js';
 import { addAlertFor, missedEntryAlert, runAlertFor, type Alert, type AlertContext } from '../notify/messages.js';
 import { StrategyAdder, type AddOrder, type PlaceResult } from './adder.js';
 
@@ -158,7 +158,7 @@ export class StrategyRunner {
     const key = `${s.id}:${day}`;
     if (this.missedAlerted.has(key)) return;
     this.missedAlerted.add(key);
-    this.alert((ctx) => missedEntryAlert(s.name, s.config.entryTime, GRACE_MIN, now, ctx));
+    this.alert((ctx) => missedEntryAlert(s.name, time12(s.config.entryTime), GRACE_MIN, now, ctx));
   }
 
   private note(s: Strategy, what: string, e: unknown): void {
@@ -190,7 +190,7 @@ export class StrategyRunner {
        */
       const day = istDate(this.now());
       const prior = this.store.runFor(s.id, day)?.detail ?? '';
-      const closed = `closed ${open.length} leg${open.length === 1 ? '' : 's'} at ${s.config.exitTime}`;
+      const closed = `closed ${open.length} leg${open.length === 1 ? '' : 's'} at ${time12(s.config.exitTime)}`;
       this.store.finish(s.id, day, 'placed', prior ? `${prior} | ${closed}` : closed);
     }
   }

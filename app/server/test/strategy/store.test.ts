@@ -212,14 +212,14 @@ test('an add is finished with its outcome and the trade it went onto', () => {
 
 test('the add setting saves and reads back, and a strategy saved before it existed reads as off', () => {
   const s = fresh();
-  s.save({ id: 'add', name: 'Add', enabled: false, config: { ...DEFAULT_CONFIG, addToOpposite: { minPriceUsd: 3, maxMultiple: 2 } } });
-  assert.deepEqual(s.get('add')!.config.addToOpposite, { minPriceUsd: 3, maxMultiple: 2 });
+  s.save({ id: 'add', name: 'Add', enabled: false, config: { ...DEFAULT_CONFIG, addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '12:15' } } });
+  assert.deepEqual(s.get('add')!.config.addToOpposite, { minPriceUsd: 3, maxMultiple: 2, addUntil: '12:15' });
   assert.equal(s.get('double')!.config.addToOpposite, null, 'seeded before the setting existed');
 });
 
 test('the add setting is checked before it is saved', () => {
   const add = (over: object, cfg: object = {}) =>
-    validateConfig({ ...DEFAULT_CONFIG, ...cfg, addToOpposite: { minPriceUsd: 3, maxMultiple: 2, ...over } });
+    validateConfig({ ...DEFAULT_CONFIG, ...cfg, addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59', ...over } });
   assert.deepEqual(add({}), []);
   assert.ok(add({ minPriceUsd: 0 }).some((p) => /minimum price/.test(p)));
   assert.ok(add({ maxMultiple: 0 }).some((p) => /between 0 and 20/.test(p)));

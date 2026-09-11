@@ -14,7 +14,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { TRADE_DB } from '../paths.js';
 import { migrate, type Migration } from '../db/migrate.js';
-import { DEFAULT_CONFIG, type Strategy, type StrategyConfig, type StrategyRun } from './types.js';
+import { DEFAULT_CONFIG, defaultAddUntil, type Strategy, type StrategyConfig, type StrategyRun } from './types.js';
 
 const MIGRATIONS: Migration[] = [
   {
@@ -100,7 +100,31 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS strategy_adds_by_time ON strategy_adds (at DESC);
     `,
   },
+  {
+    /*
+     * The latest time an add may be made, written into every saved strategy
+     * that has the add switched on but was saved before the setting existed:
+     * half an hour before its own exit, which is the rule it ran under until now.
+     * A strategy with the add off is left alone; turning it on fills the time in.
+     */
+    id: '007-add-until',
+    up: (db) => {
+      const rows = db.prepare('SELECT id, config FROM strategies').all() as { id: string; config: string }[];
+      const update = db.prepare('UPDATE strategies SET config = ? WHERE id = ?');
+      for (const r of rows) {
+        const cfg = withAddUntil(JSON.parse(r.config) as StrategyConfig);
+        if (JSON.stringify(cfg) !== r.config) update.run(JSON.stringify(cfg), r.id);
+      }
+    },
+  },
 ];
+
+/** A stored config with the add on but no latest-add time gets its default. */
+function withAddUntil(cfg: StrategyConfig): StrategyConfig {
+  const add = cfg.addToOpposite;
+  if (!add || typeof add.addUntil === 'string') return cfg;
+  return { ...cfg, addToOpposite: { ...add, addUntil: defaultAddUntil(cfg.exitTime ?? DEFAULT_CONFIG.exitTime) } };
+}
 
 export type AddStatus = 'placing' | 'placed' | 'skipped' | 'refused' | 'failed';
 
@@ -155,7 +179,7 @@ export class StrategyStore {
     enabled: r.enabled === 1,
     // A config written by an older version may lack a field this one reads;
     // the defaults fill it rather than the screen showing undefined.
-    config: { ...DEFAULT_CONFIG, ...(JSON.parse(r.config) as StrategyConfig) },
+    config: withAddUntil({ ...DEFAULT_CONFIG, ...(JSON.parse(r.config) as StrategyConfig) }),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   });
