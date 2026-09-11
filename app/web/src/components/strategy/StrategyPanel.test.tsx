@@ -15,7 +15,7 @@ const status = (adds: StrategyStatus['adds']): StrategyStatus => ({
   strategies: [{
     id: 's', name: 'CE+PE add', enabled: true, createdAt: 0, updatedAt: 0, lastRunDate: '2026-09-11', ranToday: true,
     nextEntryAt: null, status: 'already ran today',
-    config: { ...DEFAULT_CONFIG, addToOpposite: { minPriceUsd: 3, maxMultiple: 2 } },
+    config: { ...DEFAULT_CONFIG, addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59' } },
   }],
   runs: [],
   adds,

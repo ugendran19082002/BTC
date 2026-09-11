@@ -82,12 +82,12 @@ describe('the exit', () => {
 describe('the whole rule, read back as a sentence', () => {
   it('covers the settings somebody would check before arming it', () => {
     const s = describeStrategy(cfg());
-    expect(s).toContain('05:30');
+    expect(s).toContain('At 5:30 AM IST');
     expect(s).toContain('every day');
     expect(s).toContain('a call and a put');
     expect(s).toContain('at least $15');
     expect(s).toContain('10 lots');
-    expect(s).toContain('17:29');
+    expect(s).toContain('closes at 5:29 PM');
     expect(s).toContain('95%');
   });
 
@@ -174,11 +174,16 @@ describe('what the size actually costs', () => {
 
 describe('adding to the other leg, read back with its own numbers', () => {
   const add = (minPriceUsd: number, maxMultiple: number, over: Partial<StrategyConfig> = {}) =>
-    cfg({ addToOpposite: { minPriceUsd, maxMultiple }, ...over });
+    cfg({ addToOpposite: { minPriceUsd, maxMultiple, addUntil: '16:59' }, ...over });
 
   it('says the minimum and the multiple that were typed, not fixed ones', () => {
     expect(describeAdd(add(3, 2))).toMatch(/bid is \$3 or more and it is under 2x what it was sold for/);
     expect(describeAdd(add(4.5, 1.5))).toMatch(/bid is \$4\.5 or more and it is under 1\.5x/);
+  });
+
+  it('says the latest time to add, as it is read', () => {
+    expect(describeAdd(add(3, 2))).toMatch(/not after 4:59 PM\.$/);
+    expect(describeAdd(cfg({ addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '12:00' } }))).toMatch(/not after 12:00 PM/);
   });
 
   it('is part of the whole sentence when on, and absent when off or one-legged', () => {
@@ -188,13 +193,13 @@ describe('adding to the other leg, read back with its own numbers', () => {
   });
 
   it('tries the rule on prices: 7 and exactly 3 add, 2 does not, 30 (double 15) does not', () => {
-    expect(addExamples({ minPriceUsd: 3, maxMultiple: 2 }).map((x) => [x.bid, x.adds])).toEqual([
+    expect(addExamples({ minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59' }).map((x) => [x.bid, x.adds])).toEqual([
       [7, true], [3, true], [2, false], [30, false],
     ]);
   });
 
   it('redraws when the numbers change: at $5 and 1.5x, 7 still adds, 4 does not, 22.50 does not', () => {
-    const rows = addExamples({ minPriceUsd: 5, maxMultiple: 1.5 });
+    const rows = addExamples({ minPriceUsd: 5, maxMultiple: 1.5, addUntil: '16:59' });
     expect(rows.map((x) => [x.bid, x.adds])).toEqual([[7, true], [5, true], [4, false], [22.5, false]]);
     expect(rows[2]!.why).toBe('below $5');
   });
