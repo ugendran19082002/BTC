@@ -1,5 +1,4 @@
-import Fastify, { type FastifyInstance } from 'fastify';
-import cors from '@fastify/cors';
+import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { config } from '../config.js';
 import { authFromEnv, COOKIE, readCookie, tokenValid } from './session.js';
 import { registerSessionRoutes } from './routes/session.routes.js';
@@ -11,8 +10,41 @@ import { registerStrategyRoutes } from './routes/strategy.routes.js';
 import { noteError } from '../observability/errors.js';
 import { wasRefusal, worthLogging } from './refuse.js';
 
-/** Open without a session: the health probe, and login itself. */
+/**
+ * Open without a session: the health probe, and login itself.
+ *
+ * Route PATTERNS as registered, not request paths. See the gate below.
+ */
 const PUBLIC_ROUTES = new Set(['/api/health', '/api/login', '/api/me']);
+
+/**
+ * Where a request that changes something may come from.
+ *
+ * The session cookie is SameSite=Strict, which keeps other sites out -- but not
+ * other sites on the same registrable domain: anything under thannigo.in is
+ * "same-site" and gets the cookie. So a state-changing request must also carry
+ * an Origin (or, failing that, a Referer) naming this host. A request with
+ * neither is not from a browser page, and still needs the cookie.
+ */
+export function originAllowed(req: FastifyRequest, extra: string[] = []): boolean {
+  const from = req.headers.origin ?? refererOrigin(req.headers.referer);
+  if (!from) return true;
+  let host: string;
+  try { host = new URL(from).host; } catch { return false; }
+  const own = [req.headers['x-forwarded-host'], req.headers.host]
+    .flatMap((h) => (Array.isArray(h) ? h : [h]))
+    .filter((h): h is string => typeof h === 'string' && h.length > 0)
+    .map((h) => h.split(',')[0]!.trim());
+  if (own.includes(host)) return true;
+  return extra.some((o) => { try { return new URL(o).host === host; } catch { return false; } });
+}
+
+const refererOrigin = (ref: string | undefined): string | undefined => {
+  if (!ref) return undefined;
+  try { return new URL(ref).origin; } catch { return 'invalid:'; }
+};
+
+const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -22,19 +54,37 @@ export async function buildApp(): Promise<FastifyInstance> {
     trustProxy: true,
   });
 
-  // Credentials must be allowed through for the session cookie, which means the
-  // origin cannot be a wildcard.
-  await app.register(cors, {
-    origin: (_origin, cb) => cb(null, true),
-    credentials: true,
-  });
+  /*
+   * No CORS. The page and the API share one origin through the proxy, so a
+   * cross-origin browser call has no legitimate caller. It used to answer every
+   * origin with credentials allowed -- any page could ask with the desk's cookie
+   * and read the reply wherever SameSite let the cookie through.
+   */
 
   const auth = authFromEnv();
+  const allowedOrigins = (process.env.DESK_ALLOWED_ORIGINS ?? '')
+    .split(',').map((o) => o.trim()).filter(Boolean);
 
+  /*
+   * The gate.
+   *
+   * Decided on the route Fastify actually matched, never on the text of the
+   * URL. It used to test `req.url.startsWith('/api/')`, and the router decodes
+   * percent-escapes before matching: `/%61pi/trade/status` failed the text test,
+   * skipped the gate, and was routed to /api/trade/status anyway. Every route,
+   * placing orders included, answered without a session.
+   *
+   * Fail closed: every matched route needs a session unless it is on the public
+   * list. A request that matches nothing gets Fastify's 404, which carries no data.
+   */
   app.addHook('onRequest', async (req, reply) => {
-    if (!auth.enabled) return;
-    const path = req.url.split('?')[0] ?? '';
-    if (!path.startsWith('/api/') || PUBLIC_ROUTES.has(path)) return;
+    const route = req.routeOptions.url;
+    if (route === undefined) return;
+    if (UNSAFE.has(req.method) && !originAllowed(req, allowedOrigins)) {
+      reply.code(403);
+      return reply.send({ error: 'cross-origin request refused' });
+    }
+    if (!auth.enabled || PUBLIC_ROUTES.has(route)) return;
     if (tokenValid(auth, readCookie(req.headers.cookie, COOKIE))) return;
     reply.code(401);
     return reply.send({ error: 'not signed in' });

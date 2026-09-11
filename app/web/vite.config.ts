@@ -11,7 +11,9 @@ export default defineConfig({
   server: {
     port: 5173,
     // the API lives on the Fastify process; proxying keeps the browser on one origin
-    proxy: { '/api': { target: process.env.API_URL ?? 'http://localhost:8787', changeOrigin: true } },
+    // changeOrigin off: the API refuses a change whose Origin is not its Host, and
+    // rewriting Host to the target would make every local POST look foreign.
+    proxy: { '/api': { target: process.env.API_URL ?? 'http://localhost:8787', changeOrigin: false } },
   },
   build: {
     outDir: 'dist',

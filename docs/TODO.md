@@ -708,6 +708,18 @@ Asked for:
 
 **To do:**
 
+- [x] **Found on the live desk after the first deploy, and fixed (not deployed
+      yet):**
+      - on a 360×800 phone the time picker opened as a popover above the exit
+        field and its top (the label and AM) went under the address bar. On a
+        phone it now opens as a bottom sheet with room for the whole clock; a
+        wide screen keeps the popover, capped to the space available.
+      - a new strategy opened with a red dot on When and "1 thing to fix on
+        When", and nothing on When was wrong: it was the empty name, which sits
+        above the tabs. The name's problem is now written under the name box,
+        only once it is touched or Save is pressed, and it marks no tab.
+      - Save carried `aria-disabled` while pressing it is how the problems are
+        shown. Removed.
 - [ ] **Deploy** with nothing open, then open a strategy on the phone and check
       each tab and the clock.
 - [ ] **The swipe has no touch-only alternative for a screen reader.** Keyboard
