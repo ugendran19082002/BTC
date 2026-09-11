@@ -493,7 +493,7 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
             <Button variant="outline" className="h-11 flex-none px-4" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button className="h-11 flex-1" disabled={busy} aria-disabled={problems.length > 0 || undefined} onClick={() => void save()}>
+            <Button className="h-11 flex-1" disabled={busy} onClick={() => void save()}>
               {busy && <Loader2 className="h-4 w-4 animate-spin" />}
               {shownCount ? `Fix ${shownCount} to save` : 'Save'}
             </Button>
