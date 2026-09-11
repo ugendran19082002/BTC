@@ -1,4 +1,4 @@
-import type { StrategyConfig } from '@/types/strategy';
+import type { AddToOpposite, StrategyConfig } from '@/types/strategy';
 
 /**
  * What a strategy will actually do, in words and in money.
@@ -62,8 +62,40 @@ export function describeStrategy(c: StrategyConfig): string {
   return `At ${c.entryTime} IST on ${describeDays(c.weekdays)}, sells ${legs} `
     + `paying ${describePremium(c)}, ${c.lots} lot${c.lots === 1 ? '' : 's'} each. `
     + `It ${describeEntry(c)}, then ${describeExit(c)} or closes at ${c.exitTime}. `
-    + `It ${gate}${dbl}.`;
+    + `It ${gate}${dbl}.`
+    + (describeAdd(c) ? ` ${describeAdd(c)}` : '');
 }
+
+/**
+ * The add to the other leg, as one sentence with its own numbers in it -- so
+ * "$3" and "2x" are read back while they are being typed, not found out later.
+ */
+export function describeAdd(c: StrategyConfig): string | null {
+  const a = c.addToOpposite;
+  if (!a || c.legs !== 'both') return null;
+  const min = `$${fmtNum(a.minPriceUsd)}`;
+  return `When one leg's target buys contracts back, it sells that many more of the other leg `
+    + `while its bid is ${min} or more and it is under ${fmtNum(a.maxMultiple)}x what it was sold for, `
+    + `appended to that leg with the same target and stop. Not on a one-sided day, `
+    + `and not in the last 30 minutes before ${c.exitTime}.`;
+}
+
+/**
+ * The rule tried on a few prices, so the numbers can be checked by eye.
+ * `sold` is what the other leg was sold at; each row is its bid now.
+ */
+export function addExamples(a: AddToOpposite, sold = 15, bought = 425): { bid: number; adds: boolean; why: string }[] {
+  const cap = sold * a.maxMultiple;
+  return [7, a.minPriceUsd, Math.max(0.05, a.minPriceUsd - 1), cap]
+    .filter((bid, i, all) => all.indexOf(bid) === i)
+    .map((bid) => {
+      if (bid < a.minPriceUsd) return { bid, adds: false, why: `below $${fmtNum(a.minPriceUsd)}` };
+      if (bid >= cap) return { bid, adds: false, why: `${fmtNum(a.maxMultiple)}x its $${fmtNum(sold)} sale or more` };
+      return { bid, adds: true, why: `sells ${bought} more` };
+    });
+}
+
+const fmtNum = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/0+$/, '').replace(/\.$/, ''));
 
 export type Sizing = {
   /** Contracts on the book at once, in the worst case this config allows. */

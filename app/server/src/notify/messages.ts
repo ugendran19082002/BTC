@@ -1,7 +1,7 @@
 import type { TradePlan, TradeRecord } from '../trading/engine.js';
 import { premiumUsd } from '../trading/margin.js';
 import { tradeCharges } from '../trading/charges.js';
-import type { OrderRole, OrderSide, TradeEvent, TradeState } from '../trading/types.js';
+import type { AddWorking, OrderRole, OrderSide, TradeEvent, TradeState } from '../trading/types.js';
 import { USDINR } from '../domain/score.js';
 
 /**
@@ -38,6 +38,17 @@ export function alertFor(
   plan: TradePlan,
   ctx: AlertContext,
 ): Alert | null {
+  // More of the same contract, appended to an open position: its own message,
+  // so the morning's entry alert is not rewritten into something it was not.
+  const add = event.t === 'fill' && event.role === 'entry' ? (after.adding ?? null)
+    : event.t === 'add_done' ? (before.adding ?? null)
+      : null;
+  if (add) {
+    if (event.t === 'add_done' && addFilledSince(after, add) === 0) {
+      return { key: addKey(after, add), text: addNotFilledText(add, event.reason, event.at, after, plan, ctx) };
+    }
+    return { key: addKey(after, add), text: addText(add, after, plan, ctx, event.t === 'add_done' ? event.reason : null) };
+  }
   if (event.t === 'fill') {
     return event.role === 'entry'
       ? { key: entryKey(after), text: entryText(event, after, plan, ctx) }
@@ -118,6 +129,55 @@ const problemText = (ctx: AlertContext, icon: string, title: string, body: strin
   lines(headline(ctx, icon, title), '', ...body, footer(at, plan, ctx));
 
 const entryKey = (s: TradeState) => `${s.tradeId}:entry`;
+const addKey = (s: TradeState, add: AddWorking) => `${s.tradeId}:add:${add.clientOrderId}`;
+
+/** The add's own fills: every entry contract past the ones sold before it. */
+function addFilledSince(s: TradeState, add: AddWorking): { size: number; avg: number; pieces: number } | 0 {
+  let skip = add.entrySizeBefore;
+  let size = 0;
+  let notional = 0;
+  let pieces = 0;
+  for (const f of s.fills) {
+    if (f.role !== 'entry') continue;
+    const past = Math.max(0, f.size - skip);
+    skip = Math.max(0, skip - f.size);
+    if (past === 0) continue;
+    size += past;
+    notional += past * f.price;
+    pieces += 1;
+  }
+  return size === 0 ? 0 : { size, avg: notional / size, pieces };
+}
+
+function addText(add: AddWorking, s: TradeState, plan: TradePlan, ctx: AlertContext, doneReason: string | null): string {
+  const got = addFilledSince(s, add);
+  const size = got === 0 ? 0 : got.size;
+  const avg = got === 0 ? null : got.avg;
+  const credit = premiumUsd(avg ?? 0, size, s.contractValue);
+  return lines(
+    headline(ctx, '➕', `ADDED · ${contract(plan)}`),
+    expiry(plan),
+    '',
+    `Sold <b>${qty(size)}</b> more of ${qty(add.size)} @ <b>${price(avg ?? add.limitPrice)}</b>${got !== 0 && got.pieces > 1 ? ' avg' : ''}`,
+    size >= add.size ? null
+      : doneReason === null ? '⏳ The rest of the add is still working'
+        : `✖️ The other ${qty(add.size - size)} were not sold (${escape(doneReason)})`,
+    `Premium collected: <b>${inr(credit)}</b> (${usd(credit)})`,
+    `Because the ${add.source.optionSide} target bought back ${qty(add.source.boughtBack)}`,
+    '',
+    `Now short <b>${qty(Math.abs(s.position))}</b> @ <b>${price(s.entryAvgPrice ?? 0)}</b> avg — target and stop cover all of it`,
+    exits(plan),
+    footer(s.updatedAt, plan, ctx),
+  );
+}
+
+function addNotFilledText(add: AddWorking, reason: string, at: number, s: TradeState, plan: TradePlan, ctx: AlertContext): string {
+  return problemText(ctx, 'ℹ️', `ADD NOT FILLED · ${contract(plan)}`, [
+    `Tried to sell ${qty(add.size)} more at ${price(add.limitPrice)} or better (never under ${price(add.floorPrice)}), because the ${add.source.optionSide} target bought back ${qty(add.source.boughtBack)}.`,
+    `Nothing was sold: <i>${escape(reason)}</i>.`,
+    `Still short ${qty(Math.abs(s.position))}, unchanged.`,
+  ], at, plan);
+}
 const exitKey = (s: TradeState) => `${s.tradeId}:exit`;
 
 // -------------------------------------------------------------- the day
@@ -379,6 +439,37 @@ export function runAlertFor(r: RunOutcome, ctx: AlertContext): Alert | null {
     ) };
   }
   return null;
+}
+
+export type AddOutcome = {
+  strategy: string;
+  sourceTradeId: string;
+  /** 'placed' is announced by its own fill, so only the other three reach here. */
+  status: 'skipped' | 'refused' | 'failed';
+  /** The decision in words: what was bought back and why nothing was sold. */
+  detail: string;
+  at: number;
+};
+
+/**
+ * An add to the other leg that did not happen.
+ *
+ * A skip is not a problem -- the rule said no -- but it is said, once per
+ * target piece, because "the CE target hit and the PE was not added to" is
+ * the question the phone gets asked, and silence cannot answer it. A refusal
+ * or a failure is a problem, and says so.
+ */
+export function addAlertFor(r: AddOutcome, ctx: AlertContext): Alert {
+  const foot = `🕒 ${istTime(r.at)} IST · auto-trading · ${ctx.mode === 'live' ? 'LIVE' : 'PAPER'}`;
+  const [icon, title, after] = r.status === 'skipped'
+    ? ['ℹ️', 'NOT ADDED', 'Nothing was sold.']
+    : r.status === 'refused'
+      ? ['⚠️', 'ADD REFUSED', 'The checks turned the add down, so nothing was sold. The positions already open are unchanged.']
+      : ['🚨', 'ADD FAILED', 'The add could not be sent. The positions already open are unchanged.'];
+  return {
+    key: `add:${r.sourceTradeId}`,
+    text: lines(headline(ctx, icon, `${title} · ${escape(r.strategy)}`), '', escape(r.detail), after, '', foot),
+  };
 }
 
 /** The entry window closed with nothing tried: the desk or the price feed was down the whole time. */

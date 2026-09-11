@@ -42,6 +42,16 @@ export type Trade = {
   note: string | null;
   /** Set when contracts are live with no stop behind them. */
   alarm: string | null;
+  /** Contracts added to the position after its entry. Absent from older records. */
+  addedSize?: number;
+  /** A sell working to add to the position, when there is one. */
+  adding?: {
+    size: number;
+    limitPrice: number;
+    floorPrice: number;
+    deadline: number;
+    source: { tradeId: string; optionSide: OptionSide; boughtBack: number };
+  } | null;
   updatedAt: number;
   plan?: {
     lots: number;

@@ -158,12 +158,22 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
               What was sold, not what is left: "Sold 222" on a trade that sold
               425 and bought 203 back at the target reads as a smaller trade.
             */}
-            Sold {fmtSize(trade.exitSize > 0 ? trade.entrySize : held)} @ {price(trade.entryAvgPrice)}
+            Sold {fmtSize(trade.exitSize > 0 || (trade.addedSize ?? 0) > 0 ? trade.entrySize : held)} @ {price(trade.entryAvgPrice)}
+            {(trade.entrySize > 0 && (trade.addedSize ?? 0) > 0) && (
+              // The average already includes the add; say how much of it was added.
+              <> avg · <span className="text-foreground">{fmtSize(trade.addedSize!)} added</span></>
+            )}
             {trade.exitSize > 0 && (
               <> · {fmtSize(trade.exitSize)} bought back @ {price(trade.exitAvgPrice)} · <span className="text-foreground">{fmtSize(held)} left</span></>
             )}
             {' · '}{ago(trade.updatedAt)}
           </p>
+          {trade.adding && (
+            <p className="m-0 mt-0.5 text-[12px] text-[var(--warn)]">
+              Adding {fmtSize(trade.adding.size)} @ {price(trade.adding.limitPrice)} (never below {price(trade.adding.floorPrice)})
+              {' — '}the {trade.adding.source.optionSide} target bought back {fmtSize(trade.adding.source.boughtBack)}
+            </p>
+          )}
         </div>
         <span className="flex flex-none items-center gap-1">
           {naked

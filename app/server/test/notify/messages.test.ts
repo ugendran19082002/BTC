@@ -184,3 +184,66 @@ test('every & in every message is an entity, because Telegram refuses the whole 
   assert.ok(all.length >= 4);
   for (const a of all) assert.doesNotMatch(a.text, /&(?!amp;|lt;|gt;|quot;)/, a.text);
 });
+
+// ------------------------------------------------- adding to the other leg
+
+import { addAlertFor } from '../../src/notify/messages.js';
+import type { AddWorking } from '../../src/trading/types.js';
+
+const working = (over: Partial<AddWorking> = {}): AddWorking => ({
+  clientOrderId: 'add-1', size: 425, limitPrice: 7.5, submittedAt: AT, deadline: AT + 300_000,
+  chase: null, floorPrice: 3, unknown: false, entrySizeBefore: 425,
+  source: { tradeId: 'CE-1', optionSide: 'CE', boughtBack: 425 }, ...over,
+});
+
+test('[critical] an add says how many more were sold, why, and what the whole position is now', () => {
+  const plan = planFor(ceProduct(), { takeProfitPrice: 0.7, stopPrice: null });
+  const [, , , added] = alerts([
+    submitted(425), fill('entry', 425, 15),
+    { t: 'add_submitted', add: working(), at: AT },
+    { ...fill('entry', 425, 7), orderId: 'o-add' },
+  ], plan);
+  assert.ok(added);
+  assert.equal(added.key, 't1:add:add-1', 'its own message, not a rewrite of the morning entry');
+  assert.match(added.text, /➕ <b>ADDED · BTC 80,000 CE<\/b>/);
+  assert.match(added.text, /Sold <b>425<\/b> more of 425 @ <b>7\.0<\/b>/);
+  assert.match(added.text, /Because the CE target bought back 425/);
+  assert.match(added.text, /Now short <b>850<\/b> @ <b>11\.0<\/b> avg/);
+  assert.match(added.text, /🎯 Target 0\.7/);
+});
+
+test('an add cut off at its window says how many were not sold', () => {
+  const plan = planFor(ceProduct(), { takeProfitPrice: 0.7, stopPrice: null });
+  const out = alerts([
+    submitted(425), fill('entry', 425, 15),
+    { t: 'add_submitted', add: working(), at: AT },
+    { ...fill('entry', 100, 7), orderId: 'o-add' },
+    { t: 'add_done', filled: 100, reason: 'its window closed', at: AT },
+  ], plan);
+  assert.match(out.at(-1)!.text, /Sold <b>100<\/b> more of 425/);
+  assert.match(out.at(-1)!.text, /The other 325 were not sold \(its window closed\)/);
+});
+
+test('an add that sold nothing says so, and that the position is unchanged', () => {
+  const plan = planFor(ceProduct(), { takeProfitPrice: 0.7, stopPrice: null });
+  const out = alerts([
+    submitted(425), fill('entry', 425, 15),
+    { t: 'add_submitted', add: working(), at: AT },
+    { t: 'add_done', filled: 0, reason: 'its window closed', at: AT },
+  ], plan);
+  assert.match(out.at(-1)!.text, /ADD NOT FILLED/);
+  assert.match(out.at(-1)!.text, /never under 3\.0/);
+  assert.match(out.at(-1)!.text, /Still short 425, unchanged/);
+});
+
+test('an add turned down before it was sent is not announced by the engine -- the adder says it once', () => {
+  const out = alerts([submitted(425), fill('entry', 425, 15), { t: 'add_done', filled: 0, reason: 'refused: feed down', at: AT }]);
+  assert.equal(out.at(-1), null);
+});
+
+test('the adder\'s messages: skipped, refused, failed', () => {
+  const base = { strategy: 'CE+PE add', sourceTradeId: 'CE-1', detail: 'CE target bought back 425 — PE bid 2.00 is below $3.00', at: AT };
+  assert.match(addAlertFor({ ...base, status: 'skipped' }, { mode: 'live' }).text, /ℹ️ <b>NOT ADDED · CE\+PE add<\/b>[\s\S]*below \$3\.00[\s\S]*Nothing was sold/);
+  assert.match(addAlertFor({ ...base, status: 'refused' }, { mode: 'live' }).text, /⚠️ <b>ADD REFUSED/);
+  assert.match(addAlertFor({ ...base, status: 'failed' }, { mode: 'paper' }).text, /🧪 <b>PAPER<\/b> · 🚨 <b>ADD FAILED/);
+});

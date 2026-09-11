@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { saveStrategy } from '@/api/strategy';
-import { DAY_NAMES, DEFAULT_CONFIG, type Strategy, type StrategyConfig } from '@/types/strategy';
+import { DAY_NAMES, DEFAULT_ADD_TO_OPPOSITE, DEFAULT_CONFIG, type Strategy, type StrategyConfig } from '@/types/strategy';
 import { Sheet, SheetContent, SheetFooter } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { describeStrategy, sizingOf } from '@/lib/strategy-preview';
+import { addExamples, describeStrategy, sizingOf } from '@/lib/strategy-preview';
 import { inr, usd } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -334,6 +334,52 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                   { v: 'off', label: 'Off', note: 'same lots on each leg, always' },
                 ]} />
         </Field>
+
+        <div className="mt-2 border-t border-[var(--line)] pt-2 text-[11px] uppercase tracking-wide text-[var(--dim)]">
+          After a target
+        </div>
+        <Field label="Add to the other leg" stack>
+          <Pick wide value={c.addToOpposite ? 'on' : 'off'}
+                onChange={(v) => set('addToOpposite', v === 'on' ? (c.addToOpposite ?? DEFAULT_ADD_TO_OPPOSITE) : null)}
+                options={[
+                  { v: 'on', label: 'On', note: 'CE target buys back 425 → sell 425 more PE, while the PE still pays enough' },
+                  { v: 'off', label: 'Off', note: 'a target closes its leg and nothing else happens' },
+                ]} />
+        </Field>
+        {c.addToOpposite && (
+          <>
+            <Field label="Only if its bid is at least"
+                   hint="The bid, because it is the least a sell there can get. The add is never sold below this, even if the bid falls while it works.">
+              <span className="text-[11.5px] text-muted-foreground">$</span>
+              <Input value={String(c.addToOpposite.minPriceUsd)} aria-label="add minimum price" className="w-20" inputMode="decimal"
+                     onChange={(e) => set('addToOpposite', { ...c.addToOpposite!, minPriceUsd: num(e.target.value, 0) })} />
+            </Field>
+            <Field label="And not once it has risen to"
+                   hint="Measured against what the other leg was first sold at. 2 means a leg sold at 15 is not added to at 30 or more: that leg is losing money.">
+              <Input value={String(c.addToOpposite.maxMultiple)} aria-label="add maximum multiple" className="w-20" inputMode="decimal"
+                     onChange={(e) => set('addToOpposite', { ...c.addToOpposite!, maxMultiple: num(e.target.value, 0) })} />
+              <span className="text-[11.5px] text-muted-foreground">× its sale price</span>
+            </Field>
+            {/*
+              The rule tried on real-looking numbers, redrawn as the two inputs
+              change: the fastest way to see that "$3" and "2x" mean what was meant.
+            */}
+            <div aria-label="add examples" className="rounded-lg bg-muted px-2.5 py-2 text-[11.5px] leading-relaxed">
+              <p className="m-0 mb-1 text-muted-foreground">CE target buys back 425; PE was sold at $15. PE bid now:</p>
+              {addExamples(c.addToOpposite).map((x) => (
+                <div key={x.bid} className="flex justify-between gap-3">
+                  <span className="tabular-nums text-foreground">${x.bid.toFixed(2)}</span>
+                  <span className={x.adds ? 'text-[var(--up)]' : 'text-[var(--dim)]'}>
+                    {x.adds ? `adds — ${x.why}` : `no — ${x.why}`}
+                  </span>
+                </div>
+              ))}
+              <p className="m-0 mt-1 text-[var(--dim)]">
+                Added to the PE itself: the PE's own target and stop cover all of it. Not on a one-sided day, not in the last 30 minutes, and never twice for the same contracts.
+              </p>
+            </div>
+          </>
+        )}
 
         {/* Live objections, before the button rather than after it. */}
         {sizing.warnings.map((wn) => (

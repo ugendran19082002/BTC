@@ -107,9 +107,38 @@ export type StrategyConfig = {
    * sold beside a partner. Only meaningful with `legs: 'both'` and a gate on.
    */
   doubleWhenOneSided: boolean;
+  /**
+   * When one leg's target buys contracts back, sell as many more of the other
+   * leg -- while that leg is still paying enough, and has not run away. `null`
+   * is off, and every strategy saved before this existed reads as off.
+   *
+   * Sold 425 CE and 425 PE at 15; the CE target buys 425 back at 1 while the
+   * PE is at 7: sell 425 more PE at 7, with the PE's own target and stop. The
+   * premium the CE has finished earning goes back to work on the PE.
+   *
+   * Only on a day with both legs. A one-sided day -- the doubled CE 850 -- has
+   * no other leg to add to, so nothing happens.
+   */
+  addToOpposite: AddToOpposite | null;
   /** Days it may run. 0 = Sunday … 6 = Saturday. Empty means never. */
   weekdays: number[];
 };
+
+export type AddToOpposite = {
+  /**
+   * The other leg's bid must be at least this, in dollars. The bid, because it
+   * is the least a sell there can get: a mark of 7 over a bid of 2 is not 7.
+   */
+  minPriceUsd: number;
+  /**
+   * ...and its mark below this multiple of what it was sold for. 2 means not
+   * once it has doubled: a leg that has gone from 15 to 30 is a leg losing
+   * money, and adding to it is adding to the loss.
+   */
+  maxMultiple: number;
+};
+
+export const DEFAULT_ADD_TO_OPPOSITE: AddToOpposite = { minPriceUsd: 3, maxMultiple: 2 };
 
 export type Strategy = {
   id: string;
@@ -147,6 +176,7 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   legs: 'both',
   probGate: 0.95,
   doubleWhenOneSided: true,
+  addToOpposite: null,
   weekdays: [0, 1, 2, 3, 4, 5, 6],
 };
 
@@ -209,6 +239,17 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
   }
   if (c.doubleWhenOneSided && (c.probGate === null || c.probGate === undefined)) {
     bad.push('Doubling the surviving leg needs the probability gate on -- without it no leg is ever refused.');
+  }
+  const add = c.addToOpposite;
+  if (add !== null && add !== undefined) {
+    if (!(typeof add.minPriceUsd === 'number') || !(add.minPriceUsd > 0) || add.minPriceUsd > 10_000) {
+      bad.push('Adding to the other leg needs a minimum price above $0.');
+    }
+    if (!(typeof add.maxMultiple === 'number') || !(add.maxMultiple > 0) || add.maxMultiple > 20) {
+      bad.push('The "not once it has risen to" limit must be between 0 and 20 times the sale price.');
+    }
+    if (c.legs !== 'both') bad.push('Adding to the other leg needs both legs selected.');
+    if (!((c.takeProfitPct ?? 0) > 0)) bad.push('Adding to the other leg needs a target -- it runs when a target fills.');
   }
   return bad;
 }

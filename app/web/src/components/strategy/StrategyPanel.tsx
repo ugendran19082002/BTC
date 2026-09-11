@@ -36,6 +36,7 @@ function summarise(s: Strategy): string {
   if (c.stopLossPct > 0) parts.push(`stop ${Math.round(c.stopLossPct * 100)}%`);
   if (c.probGate !== null) parts.push(`min safety ${Math.round(c.probGate * 1000) / 10}%`);
   if (c.doubleWhenOneSided) parts.push('double if one side');
+  if (c.addToOpposite) parts.push(`add to other leg if bid ≥ $${c.addToOpposite.minPriceUsd}, under ${c.addToOpposite.maxMultiple}x`);
   return parts.join(' · ');
 }
 
@@ -229,6 +230,46 @@ export function StrategyPanel() {
                   <p className="m-0 mt-1 text-[11.5px] leading-snug text-muted-foreground">
                     {r.detail}
                   </p>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
+      {(data.adds?.length ?? 0) > 0 && (
+        <Card>
+          <CardTitle>Adds to the other leg</CardTitle>
+          {/*
+            Every time a target bought contracts back on a strategy that adds,
+            and what was decided -- including the times nothing was added, with
+            the reason, because that is the one a person checks.
+          */}
+          <div className="grid gap-2" aria-label="adds">
+            {data.adds!.slice(0, 15).map((a) => {
+              const name = data.strategies.find((s) => s.id === a.strategyId)?.name ?? a.strategyId;
+              const label = a.status === 'placed' ? 'added'
+                : a.status === 'placing' ? 'sending'
+                  : a.status === 'skipped' ? 'not added'
+                    : a.status;
+              const tone = a.status === 'placed' ? 'text-[var(--up)]'
+                : a.status === 'refused' || a.status === 'failed' ? 'text-[var(--down)]'
+                  : 'text-[var(--dim)]';
+              return (
+                <div key={a.id} className="rounded-lg border border-[var(--line)] px-2.5 py-2">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="flex items-baseline gap-2">
+                      <span className="text-[12.5px] font-medium text-foreground">{name}</span>
+                      <span className="text-[11.5px] text-muted-foreground">
+                        {a.sourceSide} target · {a.contracts}
+                      </span>
+                    </span>
+                    <span className="flex items-baseline gap-2">
+                      <span className={cn('text-[11.5px] font-medium', tone)}>{label}</span>
+                      <span className="text-[11.5px] tabular-nums text-[var(--dim)]">{clock(a.at)}</span>
+                    </span>
+                  </div>
+                  <p className="m-0 mt-1 text-[11.5px] leading-snug text-muted-foreground">{a.detail}</p>
                 </div>
               );
             })}

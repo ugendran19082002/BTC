@@ -197,6 +197,33 @@ describe('a trade that is still open', () => {
   });
 });
 
+/*
+ * 425 PE sold at 15 in the morning; the CE target bought back 425 at 09:08, and
+ * 425 more PE were sold at 7 onto the same trade. One row, with the add in it.
+ */
+describe('a trade that was added to', () => {
+  it('[critical] is still one row, and its fill log tells the entry from the add', async () => {
+    const T = Date.UTC(2026, 8, 11, 3, 38, 0);
+    show([order({
+      symbol: 'P-BTC-74000-110926', status: 'pending', phase: 'protected', position: -850,
+      requestedSize: 425, entrySize: 850, entryAvgPrice: 11, addedSize: 425, exitSize: 0, exitAvgPrice: null,
+      realisedPnl: 0, outcome: 'short 850',
+      plan: { lots: 425, entry: { type: 'limit', timeoutMs: 0, marketFallback: false }, takeProfitPrice: 0.7, stopPrice: null, leverage: 200 },
+      fills: [
+        { orderId: '1', role: 'entry', side: 'sell', size: 425, price: 15, ts: T - 13_000_000 },
+        { orderId: '9', role: 'entry', side: 'sell', size: 425, price: 7, ts: T + 5_000 },
+      ],
+    })]);
+    const rows = await screen.findAllByText(/74,000/);
+    expect(rows).toHaveLength(1);
+    fireEvent.click(rows[0]!);
+    expect(await screen.findByText('850 (425 at entry + 425 added)')).toBeInTheDocument();
+    const log = within(screen.getByRole('list', { name: 'fills' }));
+    expect(log.getByText('Sold 425 @ 15.00')).toBeInTheDocument();
+    expect(log.getByText('Added 425 @ 7.00')).toBeInTheDocument();
+  });
+});
+
 describe('why a trade ended', () => {
   it('says the target filled when the target filled', async () => {
     show([order()]);

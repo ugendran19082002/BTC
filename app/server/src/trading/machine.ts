@@ -48,6 +48,8 @@ export function initialTrade(args: {
     fills: [],
     note: null,
     alarm: null,
+    adding: null,
+    addedSize: 0,
     updatedAt: args.at,
   };
 }
@@ -145,7 +147,9 @@ export function applyEvent(prev: TradeState, e: TradeEvent): TradeState {
         return s;
       }
 
-      // an entry fill
+      // an entry fill. While an add is working, the entry itself is finished --
+      // an add is refused until it is -- so every entry fill now is the add's.
+      if (s.adding) s.addedSize = (s.addedSize ?? 0) + e.size;
       if (s.phase === 'entry_pending' || s.phase === 'entry_unknown' || s.phase === 'precheck') {
         s.phase = 'position_open';
       }
@@ -213,6 +217,16 @@ export function applyEvent(prev: TradeState, e: TradeEvent): TradeState {
         note: e.note ?? s.note,
       };
     }
+
+    case 'add_submitted':
+      return { ...s, adding: e.add };
+
+    case 'add_done':
+      return {
+        ...s,
+        adding: null,
+        note: e.filled > 0 ? `added ${e.filled}: ${e.reason}` : `add not filled: ${e.reason}`,
+      };
 
     case 'aborted':
       return { ...s, phase: 'aborted', note: e.reason };

@@ -171,3 +171,59 @@ test('no days at all is refused, because it can never run', () => {
   assert.ok(validateConfig({ ...DEFAULT_CONFIG, weekdays: [] })
     .some((m) => /at least one day/.test(m)));
 });
+
+// ------------------------------------------------ adding to the other leg
+
+const addRow = (s: StrategyStore, boughtBack: number, status: 'placing' | 'skipped' = 'placing') => s.recordAdd({
+  strategyId: 's', runDate: '2026-09-11', sourceTradeId: 'CE-1', sourceSide: 'CE',
+  symbol: 'P-BTC-74000-110926', boughtBack, status, detail: 'CE target bought back', at: 1,
+});
+
+test('[critical] the same bought-back contracts get one decision, however many times they are written', () => {
+  const s = fresh();
+  const first = addRow(s, 425);
+  assert.equal(first?.contracts, 425);
+  assert.equal(addRow(s, 425), null, 'a second write for the same 425 is refused by the journal itself');
+  assert.equal(s.addedFor('CE-1'), 425);
+});
+
+test('[critical] a later piece gets a row for only what is new', () => {
+  const s = fresh();
+  addRow(s, 200);
+  assert.equal(addRow(s, 203)?.contracts, 3);
+  assert.equal(s.addedFor('CE-1'), 203);
+});
+
+test('[critical] the journal outlives a restart: a new store on the same file still knows', () => {
+  const dir = join(mkdtempSync(join(tmpdir(), 'strat-')), 'trades.db');
+  addRow(new StrategyStore(dir), 425);
+  assert.equal(new StrategyStore(dir).addedFor('CE-1'), 425);
+  assert.equal(addRow(new StrategyStore(dir), 425), null);
+});
+
+test('an add is finished with its outcome and the trade it went onto', () => {
+  const s = fresh();
+  const row = addRow(s, 425)!;
+  s.finishAdd(row.id, 'placed', 'added 425', 'PE-1');
+  const [got] = s.adds();
+  assert.equal(got?.status, 'placed');
+  assert.equal(got?.addedToTradeId, 'PE-1');
+});
+
+test('the add setting saves and reads back, and a strategy saved before it existed reads as off', () => {
+  const s = fresh();
+  s.save({ id: 'add', name: 'Add', enabled: false, config: { ...DEFAULT_CONFIG, addToOpposite: { minPriceUsd: 3, maxMultiple: 2 } } });
+  assert.deepEqual(s.get('add')!.config.addToOpposite, { minPriceUsd: 3, maxMultiple: 2 });
+  assert.equal(s.get('double')!.config.addToOpposite, null, 'seeded before the setting existed');
+});
+
+test('the add setting is checked before it is saved', () => {
+  const add = (over: object, cfg: object = {}) =>
+    validateConfig({ ...DEFAULT_CONFIG, ...cfg, addToOpposite: { minPriceUsd: 3, maxMultiple: 2, ...over } });
+  assert.deepEqual(add({}), []);
+  assert.ok(add({ minPriceUsd: 0 }).some((p) => /minimum price/.test(p)));
+  assert.ok(add({ maxMultiple: 0 }).some((p) => /between 0 and 20/.test(p)));
+  assert.ok(add({}, { legs: 'CE', doubleWhenOneSided: false }).some((p) => /needs both legs/.test(p)));
+  assert.ok(add({}, { takeProfitPct: 0 }).some((p) => /needs a target/.test(p)));
+  assert.deepEqual(validateConfig({ ...DEFAULT_CONFIG, addToOpposite: null }), []);
+});

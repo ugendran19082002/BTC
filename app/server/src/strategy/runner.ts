@@ -6,7 +6,8 @@ import { StrategyStore } from './store.js';
 import { GRACE_MIN, entryDue, entryWindowEnd, exitDue, istDate, istMinutes } from './schedule.js';
 import { describeSelection, selectLegs, type Candidate } from './select.js';
 import { minutesOf, type Strategy } from './types.js';
-import { missedEntryAlert, runAlertFor, type Alert, type AlertContext } from '../notify/messages.js';
+import { addAlertFor, missedEntryAlert, runAlertFor, type Alert, type AlertContext } from '../notify/messages.js';
+import { StrategyAdder, type AddOrder, type PlaceResult } from './adder.js';
 
 /**
  * The loop that turns a due strategy into orders.
@@ -53,16 +54,52 @@ export class StrategyRunner {
   private ticking = false;
   /** Strategy and day pairs already told about a missed entry, so it is said once. */
   private readonly missedAlerted = new Set<string>();
+  private readonly adder: StrategyAdder;
+  /** One pass over the adds at a time; a nudge during a pass asks for one more. */
+  private adding: Promise<void> | null = null;
+  private addAgain = false;
 
   constructor(
     private readonly store: StrategyStore,
     private readonly now: () => number = Date.now,
-  ) {}
+  ) {
+    this.adder = new StrategyAdder({
+      store,
+      tradesToday: (id) => tradingService().tradesTodayFor(id, this.now()),
+      quote: (symbol) => tradingService().quoteForDisplay(symbol),
+      place: (o) => placeAdd(o),
+      alert: (make) => this.alert(make),
+      addAlert: addAlertFor,
+      now: this.now,
+    });
+  }
 
   start(): void {
     this.timer ??= setInterval(() => { void this.tick(); }, TICK_MS);
     // Unref so the loop never holds the process open on its own.
     this.timer?.unref?.();
+    // A target fill is acted on within a moment, not at the next 20-second tick:
+    // the other leg's price is the whole rule, and it moves.
+    tradingService().onTargetFill(() => { void this.considerAdds(); });
+  }
+
+  /** Look at every strategy's targets for something to add to the other leg. */
+  considerAdds(): Promise<void> {
+    if (this.adding) { this.addAgain = true; return this.adding; }
+    this.adding = (async () => {
+      try {
+        do {
+          this.addAgain = false;
+          if (!this.armed()) return;
+          for (const s of this.store.all()) {
+            await this.adder.consider(s).catch((e) => this.note(s, 'add', e));
+          }
+        } while (this.addAgain);
+      } finally {
+        this.adding = null;
+      }
+    })();
+    return this.adding;
   }
 
   stop(): void {
@@ -84,6 +121,9 @@ export class StrategyRunner {
         await this.considerExit(s).catch((e) => this.note(s, 'exit', e));
         await this.considerEntry(s).catch((e) => this.note(s, 'entry', e));
       }
+      // Also on the tick, for a fill the nudge missed -- one found by a restart's
+      // reconcile, say. The journal makes a second look harmless.
+      await this.considerAdds();
     } finally {
       this.ticking = false;
     }
@@ -275,6 +315,13 @@ async function svcPlace(
   });
   if (!res.ok) throw new Error(res.precheck ? failureText(res.precheck) : 'refused');
   return `${o.optionSide} ${o.strike} x${o.lots}`;
+}
+
+/** Append to the other leg's trade, through the engine and its gates. */
+export async function placeAdd(o: AddOrder): Promise<PlaceResult> {
+  const { tradeId, ...req } = o;
+  const res = await tradingService().addToPosition(tradeId, req);
+  return res.ok ? { ok: true } : { ok: false, reason: res.reason };
 }
 
 function failureText(p: { ok: boolean; failures?: { message: string }[] }): string {

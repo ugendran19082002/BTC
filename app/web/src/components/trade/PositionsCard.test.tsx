@@ -388,3 +388,31 @@ describe('closing everything', () => {
     expect(screen.getByText(/Close the rest manually/)).toBeInTheDocument();
   });
 });
+
+/*
+ * The CE target bought back 425, so 425 more PE were sold at 7 and appended to
+ * the PE sold at 15 that morning: one position of 850 at an 11.00 average.
+ */
+describe('a position that was added to', () => {
+  const added = trade({
+    symbol: 'P-BTC-74000-110926', optionSide: 'PE', position: -850, requestedSize: 425,
+    entrySize: 850, entryAvgPrice: 11, addedSize: 425,
+    protection: { takeProfit: 'tp', stopLoss: null },
+    plan: { lots: 425, entry: { type: 'limit', timeoutMs: 0, marketFallback: false }, takeProfitPrice: 0.7, stopPrice: null },
+    onBook: { target: 0.7, stop: null },
+  });
+
+  it('says the whole size at its average, and how much of it was added', () => {
+    render(<PositionsCard trades={[added]} />);
+    expect(screen.getByText(/Sold 850 @ 11.00 avg/)).toBeInTheDocument();
+    expect(screen.getByText('425 added')).toBeInTheDocument();
+  });
+
+  it('says an add is working, at what price, never below what, and why', () => {
+    render(<PositionsCard trades={[trade({
+      ...added, position: -425, entrySize: 425, entryAvgPrice: 15, addedSize: 0,
+      adding: { size: 425, limitPrice: 7.5, floorPrice: 3, deadline: Date.now() + 300_000, source: { tradeId: 'CE-1', optionSide: 'CE', boughtBack: 425 } },
+    })]} />);
+    expect(screen.getByText(/Adding 425 @ 7.50 \(never below 3.00\) — the CE target bought back 425/)).toBeInTheDocument();
+  });
+});

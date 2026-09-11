@@ -281,7 +281,7 @@ function OrderRow({ order }: { order: OrderRecord }) {
             </>
           )}
         </dl>
-        <FillLog fills={order.fills} />
+        <FillLog fills={order.fills} addedSize={order.addedSize ?? 0} />
         {order.note && (
           <p className="m-0 border-t border-border px-3 py-2 text-[11.5px] text-muted-foreground">{order.note}</p>
         )}
@@ -304,9 +304,18 @@ const FILL_LABEL: Record<string, string> = {
  * buys back 200 and then 3 is one trade with two exit fills, not two orders.
  * This is where the pieces are, so nothing about the trade is missing from it.
  */
-function FillLog({ fills }: { fills: OrderRecord['fills'] }) {
+function FillLog({ fills, addedSize = 0 }: { fills: OrderRecord['fills']; addedSize?: number }) {
   if (fills.length === 0) return null;
   const sorted = [...fills].sort((a, b) => a.ts - b.ts);
+  // Sells past the entry's own size were added later, when the other leg's
+  // target bought back: the same contract, appended to this trade.
+  const entryTotal = sorted.filter((f) => f.role === 'entry').reduce((n, f) => n + f.size, 0);
+  let sold = 0;
+  const labelOf = (f: OrderRecord['fills'][number]) => {
+    if (f.role !== 'entry') return FILL_LABEL[f.role] ?? f.role;
+    sold += f.size;
+    return sold > entryTotal - addedSize ? 'Added' : 'Sold';
+  };
   return (
     <div className="border-t border-border px-3 py-2">
       <p className="m-0 mb-1 text-[10px] uppercase tracking-[0.6px] text-muted-foreground">Fills · {fills.length}</p>
@@ -315,7 +324,7 @@ function FillLog({ fills }: { fills: OrderRecord['fills'] }) {
           <li key={`${f.orderId}-${f.ts}-${i}`} className="flex justify-between gap-3">
             <span className="text-muted-foreground">{stamp(f.ts)}</span>
             <span className={cn(f.side === 'buy' ? 'text-foreground' : 'text-muted-foreground')}>
-              {FILL_LABEL[f.role] ?? f.role} {f.size} @ {price(f.price)}
+              {labelOf(f)} {f.size} @ {price(f.price)}
             </span>
           </li>
         ))}
@@ -327,6 +336,9 @@ function FillLog({ fills }: { fills: OrderRecord['fills'] }) {
 /** Contracts, said once -- and with what was asked for only when the two differ. */
 function contractsLine(order: OrderRecord): string {
   const asked = order.plan?.lots ?? order.requestedSize;
+  const added = order.addedSize ?? 0;
+  // An add is more of the same contract sold later, not an over-filled entry.
+  if (added > 0) return `${order.entrySize} (${order.entrySize - added} at entry + ${added} added)`;
   return order.entrySize === asked ? String(order.entrySize) : `${order.entrySize} of ${asked} filled`;
 }
 

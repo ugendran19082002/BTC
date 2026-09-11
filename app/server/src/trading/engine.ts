@@ -1,6 +1,7 @@
 import type {
-  ExchangeOrder, OptionSide, OrderRole, PlaceOrderRequest, ProductSpec, TradeEvent, TradeState,
+  AddWorking, ExchangeOrder, OptionSide, OrderRole, PlaceOrderRequest, ProductSpec, TradeEvent, TradeState,
 } from './types.js';
+import { CHASE_STEPS } from './order-plan.js';
 import { applyEvent, initialTrade, isDone, protectionSize } from './machine.js';
 import { priceFor, lotsToContracts, stopPriceFor } from './money.js';
 import { DEFAULT_LIMITS, precheck, type PrecheckResult, type RiskLimits } from './precheck.js';
@@ -186,6 +187,27 @@ export type OpenResult =
   | { ok: true; state: TradeState }
   | { ok: false; state: TradeState; precheck: PrecheckResult };
 
+/** More of the same contract, sold under an open trade. */
+export type AddRequest = {
+  /** Contracts. */
+  size: number;
+  /** Where the sell starts: the offer, usually. Never below `floorPrice`. */
+  limitPrice: number;
+  /** Walk toward the bid over this many seconds, like an entry. Zero rests. */
+  chaseSeconds: number;
+  /** Sell into the bid only while the spread is at most this; wider, it waits at the mid. */
+  maxCrossSpreadPct: number | null;
+  /** Never sold below this. */
+  floorPrice: number;
+  /** Whatever has not filled after this long is cancelled. */
+  timeoutMs: number;
+  source: AddWorking['source'];
+};
+
+export type AddResult =
+  | { ok: true; state: TradeState }
+  | { ok: false; reason: string; precheck?: PrecheckResult };
+
 /** How long to wait before trying protection again after a refusal. */
 const PROTECT_RETRY_MS = 2_000;
 /**
@@ -302,7 +324,12 @@ export class TradeEngine {
   }
 
   // ------------------------------------------------------------ prechecks
-  async runPrecheck(plan: TradePlan, product: ProductSpec | null): Promise<PrecheckResult> {
+  async runPrecheck(
+    plan: TradePlan,
+    product: ProductSpec | null,
+    /** An add: holding the contract already is the point, and it has its own premium floor. */
+    add?: { addingToOwn: true; minPremiumUsd: number },
+  ): Promise<PrecheckResult> {
     const [quote, balance, positions, spot] = await Promise.all([
       this.exchange.getQuote(plan.symbol).catch(() => null),
       this.exchange.getBalanceUsd().catch(() => 0),
@@ -340,11 +367,11 @@ export class TradeEngine {
       feedHealthy: this.feedHealthy(),
       tradingEnabled: this.d.tradingEnabled !== false,
       account: { availableUsd: balance },
-      existingPosition: held,
+      existingPosition: add ? 0 : held,
       totalShortContracts: totalShort,
       dayPnlUsd: this.dayPnl(),
       worstCaseLossUsd: worstCase,
-      limits: this.limits,
+      limits: add ? { ...this.limits, minPremiumUsd: add.minPremiumUsd } : this.limits,
     });
   }
 
@@ -495,6 +522,11 @@ export class TradeEngine {
     return this.withTrade(tradeId, () => this.reconcileInner(tradeId));
   }
 
+  /** Sell more of the contract this trade already holds. See `addInner`. */
+  addToPosition(tradeId: string, req: AddRequest): Promise<AddResult> {
+    return this.withTrade(tradeId, () => this.addInner(tradeId, req));
+  }
+
   private async pollInner(tradeId: string): Promise<TradeState | null> {
     const rec0 = this.d.store.get(tradeId);
     if (!rec0 || isDone(rec0.state)) return rec0?.state ?? null;
@@ -520,6 +552,9 @@ export class TradeEngine {
       if (o) rec = this.absorb(rec, o, role);
     }
     const entry = found[0];
+
+    // More of the same contract, working to add to the position.
+    if (rec.state.adding) rec = await this.stepAdd(rec);
 
     // A resting entry that is being walked toward the bid.
     if (
@@ -1007,6 +1042,10 @@ export class TradeEngine {
     if (!rec) return null;
     // Size from the exchange, not from memory: someone may have closed part of
     // it by hand while we were not looking.
+    // An add still working would sell again after the close and re-open the
+    // position. It comes off first, and what it filled is counted before the
+    // size of the close is read.
+    if (rec.state.adding) rec = await this.endAdd(rec, 'closing the position');
     rec = await this.syncPosition(rec);
     const size = protectionSize(rec.state);
     if (size === 0) return rec.state;
@@ -1026,6 +1065,175 @@ export class TradeEngine {
       rec = this.commit(rec, { t: 'protection_failed', reason: `${reason} failed: ${(e as Error).message}`, at: this.now() });
     }
     return rec.state;
+  }
+
+  // ------------------------------------------------------------- adds
+  /**
+   * Sell more of the contract this trade already holds.
+   *
+   * Under the same trade, not as a second one. Delta nets a contract into one
+   * position, so two trades on it would each read the other's contracts as
+   * their own, and each trade's protection would find -- and cancel -- the
+   * other's target. One trade keeps one position, one average price, one
+   * target and one stop, and `protect()` resizes the last two to the new size.
+   *
+   * Refused while the trade is not simply open: still entering, closing, flat,
+   * or already adding. It passes the same gates as any entry -- quote, spread
+   * when it crosses, depth, margin, short limit, daily loss, feed -- except
+   * that holding this contract already is the point, and the desk's premium
+   * floor gives way to the add's own minimum, which the strategy set.
+   */
+  private async addInner(tradeId: string, req: AddRequest): Promise<AddResult> {
+    let rec = this.d.store.get(tradeId);
+    if (!rec) return { ok: false, reason: 'no such trade' };
+    const s = rec.state;
+    if (s.adding) return { ok: false, reason: 'an add is already working on this position' };
+    if (s.position >= 0) return { ok: false, reason: 'nothing short to add to' };
+    if (s.phase !== 'protected' && s.phase !== 'position_open' && s.phase !== 'unprotected') {
+      return { ok: false, reason: `the position is ${s.phase.replace('_', ' ')}` };
+    }
+    if (!(req.size > 0) || !Number.isInteger(req.size)) return { ok: false, reason: 'size must be a whole number above zero' };
+
+    // The entry must be finished: two sells working on one trade cannot be
+    // told apart by their fills.
+    const entry = await this.exchange.getOrderByClientId(clientId(tradeId, 'entry')).catch(() => undefined);
+    if (entry === undefined) return { ok: false, reason: 'could not read the entry order back' };
+    if (entry && (entry.status === 'open' || entry.status === 'partial')) {
+      return { ok: false, reason: 'the entry is still working' };
+    }
+
+    const product = await this.exchange.getProduct(rec.plan.symbol).catch(() => null);
+    const gate = await this.runPrecheck(
+      { ...rec.plan, lots: req.size, entry: { type: 'limit', limitPrice: req.limitPrice, timeoutMs: 0, marketFallback: false, chase: null } },
+      product,
+      { addingToOwn: true, minPremiumUsd: Math.min(this.limits.minPremiumUsd, req.floorPrice) },
+    );
+    if (!gate.ok) {
+      const why = gate.failures.map((x) => x.message).join(' ');
+      this.commit(rec, { t: 'add_done', filled: 0, reason: `refused: ${why}`, at: this.now() });
+      return { ok: false, reason: why, precheck: gate };
+    }
+
+    const n = rec.events.filter((e) => e.t === 'add_submitted').length;
+    const tick = product?.tickSize ?? 0.1;
+    const add: AddWorking = {
+      clientOrderId: clientId(tradeId, 'entry', 100 + n),
+      size: req.size,
+      limitPrice: priceFor('sell', Math.max(req.limitPrice, req.floorPrice), tick),
+      submittedAt: this.now(),
+      deadline: this.now() + req.timeoutMs,
+      chase: req.chaseSeconds > 0
+        ? { steps: CHASE_STEPS, everyMs: Math.round((req.chaseSeconds * 1_000) / CHASE_STEPS), maxCrossSpreadPct: req.maxCrossSpreadPct }
+        : null,
+      floorPrice: req.floorPrice,
+      unknown: false,
+      entrySizeBefore: s.entrySize,
+      source: req.source,
+    };
+
+    try {
+      const ack = await this.exchange.placeOrder({
+        clientOrderId: add.clientOrderId, symbol: rec.plan.symbol, productId: product?.productId ?? rec.state.productId,
+        side: 'sell', type: 'limit', size: add.size, limitPrice: add.limitPrice, role: 'entry',
+      });
+      rec = this.commit(rec, { t: 'add_submitted', add, at: this.now() });
+      rec = this.absorbAdd(rec, ack);
+      if (ack.status === 'filled' || ack.status === 'cancelled' || ack.status === 'rejected') {
+        rec = this.commit(rec, { t: 'add_done', filled: this.addFilled(rec, add), reason: ack.status, at: this.now() });
+      }
+    } catch (e) {
+      if (e instanceof SubmitTimeout || e instanceof ExchangeUnavailable) {
+        // Not known whether it landed. It is looked for on every poll and never
+        // sent again; the window ends the wait.
+        rec = this.commit(rec, { t: 'add_submitted', add: { ...add, unknown: true }, at: this.now() });
+        return { ok: true, state: rec.state };
+      }
+      if (e instanceof OrderRejected) {
+        rec = this.commit(rec, { t: 'add_done', filled: 0, reason: `rejected: ${e.reason}`, at: this.now() });
+        return { ok: false, reason: e.reason };
+      }
+      throw e;
+    }
+    // Contracts that filled on the spot need their target and stop resized now,
+    // not on the next poll.
+    if (rec.state.position !== 0 && missingProtection(rec)) rec = await this.protect(rec);
+    return { ok: true, state: rec.state };
+  }
+
+  /** One poll's worth of an add: count its fills, walk its price, end it when it is over. */
+  private async stepAdd(recIn: TradeRecord): Promise<TradeRecord> {
+    let rec = recIn;
+    const add = rec.state.adding!;
+    const order = await this.exchange.getOrderByClientId(add.clientOrderId).catch(() => undefined);
+    // Could not ask: try again next poll rather than conclude anything.
+    if (order === undefined) return rec;
+
+    if (order === null) {
+      // Not on the exchange. After a submit with no answer that may only mean
+      // not yet visible, so it is given the window before it is called gone.
+      if (add.unknown && this.now() < add.deadline) return rec;
+      return this.commit(rec, { t: 'add_done', filled: this.addFilled(rec, add), reason: 'the order never reached the exchange', at: this.now() });
+    }
+
+    rec = this.absorbAdd(rec, order);
+    if (order.status !== 'open' && order.status !== 'partial') {
+      return this.commit(rec, { t: 'add_done', filled: this.addFilled(rec, add), reason: order.status, at: this.now() });
+    }
+    if (this.now() >= add.deadline) return this.endAdd(rec, 'its window closed');
+
+    if (add.chase && order.limitPrice !== null) {
+      const quote = await this.exchange.getQuote(rec.plan.symbol).catch(() => null);
+      const product = await this.exchange.getProduct(rec.plan.symbol).catch(() => null);
+      if (quote?.bid != null) {
+        const tick = product?.tickSize ?? 0.1;
+        let want = priceFor('sell', chasePrice({
+          startedAt: add.submittedAt, now: this.now(), from: add.limitPrice, bid: quote.bid,
+          steps: add.chase.steps, everyMs: add.chase.everyMs,
+        }), tick);
+        const spread = chaseFloor(quote.bid, quote.ask, add.chase.maxCrossSpreadPct);
+        if (spread !== null) want = Math.max(want, Number.isFinite(spread) ? priceFor('sell', spread, tick) : order.limitPrice);
+        // The add's own minimum: never sold under it, whatever the bid does.
+        want = Math.max(want, priceFor('sell', add.floorPrice, tick));
+        if (want < order.limitPrice) {
+          const moved = await this.exchange.editOrder(order, { limitPrice: want })
+            .catch((e) => { this.note('add chase', order, e); return null; });
+          if (moved) rec = this.absorbAdd(rec, moved);
+        }
+      }
+    }
+    return rec;
+  }
+
+  /** Take a working add off the book, count what it filled, and close it out. */
+  private async endAdd(recIn: TradeRecord, reason: string): Promise<TradeRecord> {
+    let rec = recIn;
+    const add = rec.state.adding;
+    if (!add) return rec;
+    const order = await this.exchange.getOrderByClientId(add.clientOrderId).catch(() => undefined);
+    if (order) {
+      if (order.status === 'open' || order.status === 'partial') {
+        await this.exchange.cancelOrder(order).catch((e) => this.note('cancel add', order, e));
+      }
+      const after = await this.exchange.getOrderByClientId(add.clientOrderId).catch(() => undefined);
+      rec = this.absorbAdd(rec, after ?? order);
+      if (after && (after.status === 'open' || after.status === 'partial')) {
+        // Still on the book. Keep it tracked -- the next poll tries again --
+        // rather than forget an order that can still sell.
+        return rec;
+      }
+    } else if (order === undefined) {
+      return rec;
+    }
+    return this.commit(rec, { t: 'add_done', filled: this.addFilled(rec, add), reason, at: this.now() });
+  }
+
+  /** Fills of an add are entry fills; a rejected add is not a rejected trade. */
+  private absorbAdd(rec: TradeRecord, order: ExchangeOrder): TradeRecord {
+    return this.absorb(rec, { ...order, status: order.status === 'rejected' ? 'cancelled' : order.status }, 'entry');
+  }
+
+  private addFilled(rec: TradeRecord, add: AddWorking): number {
+    return Math.max(0, rec.state.entrySize - add.entrySizeBefore);
   }
 
   // ------------------------------------------------------- reconciliation

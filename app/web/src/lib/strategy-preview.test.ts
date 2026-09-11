@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  describeDays, describeEntry, describeExit, describePremium, describeStrategy, sizingOf,
+  addExamples, describeAdd, describeDays, describeEntry, describeExit, describePremium, describeStrategy, sizingOf,
 } from '@/lib/strategy-preview';
 import { DEFAULT_CONFIG, type StrategyConfig } from '@/types/strategy';
 
@@ -169,5 +169,33 @@ describe('what the size actually costs', () => {
 
   it('a sensible config raises nothing', () => {
     expect(sizingOf(cfg({ lots: 10 }), 300, SPOT).warnings).toEqual([]);
+  });
+});
+
+describe('adding to the other leg, read back with its own numbers', () => {
+  const add = (minPriceUsd: number, maxMultiple: number, over: Partial<StrategyConfig> = {}) =>
+    cfg({ addToOpposite: { minPriceUsd, maxMultiple }, ...over });
+
+  it('says the minimum and the multiple that were typed, not fixed ones', () => {
+    expect(describeAdd(add(3, 2))).toMatch(/bid is \$3 or more and it is under 2x what it was sold for/);
+    expect(describeAdd(add(4.5, 1.5))).toMatch(/bid is \$4\.5 or more and it is under 1\.5x/);
+  });
+
+  it('is part of the whole sentence when on, and absent when off or one-legged', () => {
+    expect(describeStrategy(add(3, 2))).toMatch(/sells that many more of the other leg/);
+    expect(describeAdd(cfg())).toBeNull();
+    expect(describeAdd(add(3, 2, { legs: 'CE' }))).toBeNull();
+  });
+
+  it('tries the rule on prices: 7 and exactly 3 add, 2 does not, 30 (double 15) does not', () => {
+    expect(addExamples({ minPriceUsd: 3, maxMultiple: 2 }).map((x) => [x.bid, x.adds])).toEqual([
+      [7, true], [3, true], [2, false], [30, false],
+    ]);
+  });
+
+  it('redraws when the numbers change: at $5 and 1.5x, 7 still adds, 4 does not, 22.50 does not', () => {
+    const rows = addExamples({ minPriceUsd: 5, maxMultiple: 1.5 });
+    expect(rows.map((x) => [x.bid, x.adds])).toEqual([[7, true], [5, true], [4, false], [22.5, false]]);
+    expect(rows[2]!.why).toBe('below $5');
   });
 });

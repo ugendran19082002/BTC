@@ -206,7 +206,45 @@ export type TradeState = {
   note: string | null;
   /** Raised when a position is live with no protection behind it. */
   alarm: string | null;
+  /**
+   * A sell working to add to this position, when there is one.
+   *
+   * Only ever one at a time, and never while the entry itself is still working.
+   * Absent on records written before adds existed, which reads as none.
+   */
+  adding?: AddWorking | null;
+  /** Contracts added to the position after its entry, across every add. Absent reads as 0. */
+  addedSize?: number;
   updatedAt: number;
+};
+
+/**
+ * One add to an open position: more of the same contract, sold under the same
+ * trade, so the position, its average price, its target and its stop stay one
+ * thing -- as they are on Delta, which nets a contract into one position.
+ */
+export type AddWorking = {
+  clientOrderId: string;
+  /** Contracts asked for. */
+  size: number;
+  /** Where the sell started. */
+  limitPrice: number;
+  submittedAt: number;
+  /** Epoch ms. Whatever has not filled by then is cancelled. */
+  deadline: number;
+  /** Walked toward the bid like an entry, never below `floorPrice`. Null rests where it started. */
+  chase: { steps: number; everyMs: number; maxCrossSpreadPct: number | null } | null;
+  floorPrice: number;
+  /** True when the submit got no answer: the order is looked for, never sent again. */
+  unknown: boolean;
+  /**
+   * Contracts the entry had sold before this add. Entry fills past this many
+   * are the add's -- the entry is finished before an add may start, so nothing
+   * else can be selling.
+   */
+  entrySizeBefore: number;
+  /** What caused it: the other leg's target, and how much it bought back. */
+  source: { tradeId: string; optionSide: OptionSide; boughtBack: number };
 };
 
 export type TradeEvent =
@@ -230,4 +268,8 @@ export type TradeEvent =
   | { t: 'sibling_cancelled'; role: OrderRole; at: number }
   /** The exchange's own answer. It always wins over what we thought. */
   | { t: 'reconciled'; position: number; at: number; note?: string }
+  /** More of the same contract was sent, to add to the position. */
+  | { t: 'add_submitted'; add: AddWorking; at: number }
+  /** The add is over: filled, cut off at its window, refused, or never found. */
+  | { t: 'add_done'; filled: number; reason: string; at: number }
   | { t: 'aborted'; reason: string; at: number };

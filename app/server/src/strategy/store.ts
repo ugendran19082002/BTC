@@ -69,7 +69,67 @@ const MIGRATIONS: Migration[] = [
       });
     },
   },
+  {
+    /*
+     * Every decision to add to the other leg, including the ones that did not.
+     *
+     * One row per piece of a target that was looked at: `contracts` is how many
+     * bought-back contracts the row decided about. Their sum per source trade
+     * is what has been dealt with, so a target that fills 200 and then 3 is two
+     * rows, and a restart re-reads the sum instead of adding the 200 again.
+     *
+     * Written before the order goes out, like a day's claim: a row with no
+     * order behind it loses an add; an order with no row can be sent twice.
+     */
+    id: '006-strategy-adds',
+    up: `
+      CREATE TABLE IF NOT EXISTS strategy_adds (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        strategy_id     TEXT    NOT NULL,
+        run_date        TEXT    NOT NULL,
+        source_trade_id TEXT    NOT NULL,
+        source_side     TEXT    NOT NULL,
+        symbol          TEXT,
+        contracts       INTEGER NOT NULL,
+        status          TEXT    NOT NULL,
+        detail          TEXT    NOT NULL,
+        added_to_trade_id TEXT,
+        at              INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS strategy_adds_by_source ON strategy_adds (source_trade_id);
+      CREATE INDEX IF NOT EXISTS strategy_adds_by_time ON strategy_adds (at DESC);
+    `,
+  },
 ];
+
+export type AddStatus = 'placing' | 'placed' | 'skipped' | 'refused' | 'failed';
+
+export type StrategyAdd = {
+  id: number;
+  strategyId: string;
+  runDate: string;
+  sourceTradeId: string;
+  sourceSide: 'CE' | 'PE';
+  /** The contract that was, or would have been, sold. Null when there was no other leg. */
+  symbol: string | null;
+  contracts: number;
+  status: AddStatus;
+  detail: string;
+  /** The other leg's trade the contracts were appended to. */
+  addedToTradeId: string | null;
+  at: number;
+};
+
+type AddRow = {
+  id: number; strategy_id: string; run_date: string; source_trade_id: string; source_side: 'CE' | 'PE';
+  symbol: string | null; contracts: number; status: AddStatus; detail: string; added_to_trade_id: string | null; at: number;
+};
+
+const addFrom = (r: AddRow): StrategyAdd => ({
+  id: r.id, strategyId: r.strategy_id, runDate: r.run_date, sourceTradeId: r.source_trade_id,
+  sourceSide: r.source_side, symbol: r.symbol, contracts: r.contracts, status: r.status,
+  detail: r.detail, addedToTradeId: r.added_to_trade_id, at: r.at,
+});
 
 export class StrategyStore {
   private readonly db: DatabaseSync;
@@ -177,6 +237,60 @@ export class StrategyStore {
       id: r.id, strategyId: r.strategy_id, runDate: r.run_date,
       status: r.status, detail: r.detail, at: r.at,
     } : null;
+  }
+
+  /** How many of this trade's bought-back contracts have already been decided about. */
+  addedFor(sourceTradeId: string): number {
+    const r = this.db.prepare(
+      'SELECT COALESCE(SUM(contracts), 0) AS n FROM strategy_adds WHERE source_trade_id = ?',
+    ).get(sourceTradeId) as { n: number };
+    return Number(r.n);
+  }
+
+  /**
+   * Write the decision down, before acting on it.
+   *
+   * Checked and written in one transaction against the contracts already dealt
+   * with, so two callers deciding about the same piece cannot both get a row:
+   * the second finds the sum already covers it and gets null.
+   */
+  recordAdd(a: {
+    strategyId: string; runDate: string; sourceTradeId: string; sourceSide: 'CE' | 'PE';
+    symbol: string | null; boughtBack: number; status: AddStatus; detail: string; at?: number;
+  }): StrategyAdd | null {
+    const at = a.at ?? Date.now();
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const done = this.addedFor(a.sourceTradeId);
+      const contracts = a.boughtBack - done;
+      if (contracts <= 0) { this.db.exec('ROLLBACK'); return null; }
+      const res = this.db.prepare(
+        `INSERT INTO strategy_adds
+           (strategy_id, run_date, source_trade_id, source_side, symbol, contracts, status, detail, added_to_trade_id, at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+      ).run(a.strategyId, a.runDate, a.sourceTradeId, a.sourceSide, a.symbol, contracts, a.status, a.detail.slice(0, 500), at);
+      this.db.exec('COMMIT');
+      return this.add(Number(res.lastInsertRowid));
+    } catch (e) {
+      this.db.exec('ROLLBACK');
+      throw e;
+    }
+  }
+
+  /** Say how an add that was being placed actually went. */
+  finishAdd(id: number, status: AddStatus, detail: string, addedToTradeId: string | null = null): void {
+    this.db.prepare('UPDATE strategy_adds SET status = ?, detail = ?, added_to_trade_id = ? WHERE id = ?')
+      .run(status, detail.slice(0, 500), addedToTradeId, id);
+  }
+
+  add(id: number): StrategyAdd | null {
+    const r = this.db.prepare('SELECT * FROM strategy_adds WHERE id = ?').get(id) as AddRow | undefined;
+    return r ? addFrom(r) : null;
+  }
+
+  adds(limit = 60): StrategyAdd[] {
+    return (this.db.prepare('SELECT * FROM strategy_adds ORDER BY at DESC, id DESC LIMIT ?').all(limit) as AddRow[])
+      .map(addFrom);
   }
 
   runs(limit = 60): StrategyRun[] {

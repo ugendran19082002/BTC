@@ -38,6 +38,12 @@ function cleanConfig(raw: unknown): StrategyConfig {
     legs: c.legs === 'CE' || c.legs === 'PE' ? c.legs : 'both',
     probGate: c.probGate === null || c.probGate === undefined ? null : Number(c.probGate),
     doubleWhenOneSided: Boolean(c.doubleWhenOneSided),
+    addToOpposite: c.addToOpposite === null || c.addToOpposite === undefined || typeof c.addToOpposite !== 'object'
+      ? null
+      : {
+          minPriceUsd: Number(c.addToOpposite.minPriceUsd),
+          maxMultiple: Number(c.addToOpposite.maxMultiple),
+        },
     weekdays: Array.isArray(c.weekdays)
       ? [...new Set(c.weekdays.map((d) => Math.floor(Number(d))))].sort()
       : [...DEFAULT_CONFIG.weekdays],
@@ -96,6 +102,8 @@ export function registerStrategyRoutes(app: FastifyInstance) {
         };
       }),
       runs: s.runs(40),
+      /** Every decision to add to the other leg -- the skips too, with their reason. */
+      adds: s.adds(40),
     };
   });
 

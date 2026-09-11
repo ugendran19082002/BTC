@@ -21,8 +21,33 @@ export type StrategyConfig = {
   /** null means the gate is off. */
   probGate: number | null;
   doubleWhenOneSided: boolean;
+  /**
+   * When one leg's target buys contracts back, sell as many more of the other
+   * leg -- while its bid is at least `minPriceUsd` and its price is under
+   * `maxMultiple` times what it was sold for. null is off; older strategies lack it.
+   */
+  addToOpposite?: AddToOpposite | null;
   /** 0 = Sunday … 6 = Saturday. */
   weekdays: number[];
+};
+
+export type AddToOpposite = { minPriceUsd: number; maxMultiple: number };
+
+export const DEFAULT_ADD_TO_OPPOSITE: AddToOpposite = { minPriceUsd: 3, maxMultiple: 2 };
+
+/** One decision to add to the other leg -- the skips too, with their reason. */
+export type StrategyAdd = {
+  id: number;
+  strategyId: string;
+  runDate: string;
+  sourceTradeId: string;
+  sourceSide: 'CE' | 'PE';
+  symbol: string | null;
+  contracts: number;
+  status: 'placing' | 'placed' | 'skipped' | 'refused' | 'failed';
+  detail: string;
+  addedToTradeId: string | null;
+  at: number;
 };
 
 export type Strategy = {
@@ -59,6 +84,8 @@ export type StrategyStatus = {
   spot: number | null;
   strategies: Strategy[];
   runs: StrategyRun[];
+  /** Every decision to add to the other leg. Absent from an older server. */
+  adds?: StrategyAdd[];
 };
 
 export const DEFAULT_CONFIG: StrategyConfig = {
@@ -75,6 +102,7 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   legs: 'both',
   probGate: 0.95,
   doubleWhenOneSided: true,
+  addToOpposite: null,
   weekdays: [0, 1, 2, 3, 4, 5, 6],
 };
 

@@ -1,13 +1,16 @@
 import { config } from '../config.js';
 import { credsFromEnv } from '../delta/signed.js';
-import { TradeEngine, type TradePlan, type TradeRecord } from './engine.js';
+import { TradeEngine, type AddRequest, type TradePlan, type TradeRecord } from './engine.js';
 import { SqliteTradeStore } from './store.js';
 import { DeltaExchange } from './exchange/delta.js';
 import { PaperExchange } from './exchange/paper.js';
 import {
   DEFAULT_LIMITS, dailyLossLimitFor, maxShortContractsFor, type RiskLimits,
 } from './precheck.js';
-import { clampLeverage, fundsRequiredPerContract } from './margin.js';
+import { fundsRequiredPerContract } from './margin.js';
+import { DEFAULT_LEVERAGE, orderPlan, stopPriceFor, targetPriceFor, type PlaceInput } from './order-plan.js';
+
+export { stopPriceFor, targetPriceFor } from './order-plan.js';
 import { isDone } from './machine.js';
 import { noteError } from '../observability/errors.js';
 import { alertFor, bookWentFlat, daySummaryFor } from '../notify/messages.js';
@@ -30,53 +33,8 @@ const POLL_MS = 1_000;
 /** Long enough that a one-second poll is one call; short enough to feel live. */
 const POSITIONS_TTL_MS = 800;
 const QUOTE_TTL_MS = 800;
-/**
- * Two hundred, matching Delta's own app.
- *
- * This is the leverage the account already trades at, so the desk defaults to
- * it rather than quietly disagreeing with the exchange screen beside it. It
- * cuts both ways and the ticket says so:
- *
- *   - the margin behind a lot is half a percent of spot, so a small balance can
- *     open a position, and the close-out sits close above where you sold;
- *   - but because the close-out is close, the loss before it arrives is small.
- *     At 200x a naked short risks the room to the close-out and no more, which
- *     is a fraction of what the same trade risks at 10x.
- *
- * The ticket shows the close-out price on the bar as you drag, so the tightness
- * is visible rather than implied.
- */
-const DEFAULT_LEVERAGE = 200;
-
 /** Where the chosen short cap is kept, so it outlives a restart. */
 export const SHORT_CAP_KEY = 'max_short_contracts';
-/**
- * Four concessions rather than one.
- *
- * Enough that a maker willing to meet you part of the way gets the chance, few
- * enough that the whole walk is over inside the window and each step is a
- * visible move rather than a rounding error on a tick.
- */
-const CHASE_STEPS = 4;
-/**
- * The exits, as percentages of the premium.
- *
- * A short option is sold for a credit and bought back for less, so the two
- * exits are read off the entry price in opposite directions:
- *
- *   target  -- the option has decayed by this much.  price = entry x (1 - pct)
- *   stop    -- the option has run against you by this much. price = entry x (1 + pct)
- *
- * Zero means off. Neither is derived behind your back: a trade that runs
- * without a stop says so on the ticket, in the position row, and in the
- * journal, and it is a decision rather than a malfunction.
- */
-export const targetPriceFor = (entry: number, pct: number): number | null =>
-  pct > 0 ? round1(entry * (1 - Math.min(0.99, pct))) : null;
-
-export const stopPriceFor = (entry: number, pct: number): number | null =>
-  pct > 0 ? round1(entry * (1 + pct)) : null;
-
 export type DeskMode = 'live' | 'paper';
 
 export type ModeSwitch =
@@ -166,6 +124,12 @@ export class TradingService {
       // The mode is read at the moment of the fill, not captured, so a paper
       // fill can never reach the phone dressed as a live one.
       onEvent: (event, before, after, plan) => {
+        // A target that bought something back may be a reason to add to the
+        // other leg. Told after the commit has returned, never inside it: an
+        // add is an order of its own and must not run under this trade's lock.
+        if (event.t === 'fill' && event.role === 'take_profit' && plan.strategyId) {
+          for (const listener of this.targetFillListeners) setTimeout(() => listener(plan), 0);
+        }
         if (!this.notifier) return;
         const alert = alertFor(event, before, after, plan, { mode: this.currentMode });
         if (alert) this.notifier.notify(alert);
@@ -177,6 +141,18 @@ export class TradingService {
         }
       },
     });
+  }
+
+  private readonly targetFillListeners: ((plan: TradePlan) => void)[] = [];
+
+  /** Be told, soon after, whenever a strategy trade's target fills. */
+  onTargetFill(listener: (plan: TradePlan) => void): void {
+    this.targetFillListeners.push(listener);
+  }
+
+  /** One strategy's trades touched since the start of the IST day. */
+  tradesTodayFor(strategyId: string, now = Date.now()): TradeRecord[] {
+    return this.store.between(startOfDayIst(now), now + 1).filter((r) => r.plan.strategyId === strategyId);
   }
 
   /** One message for the whole day, sent when nothing is held any more. */
@@ -250,94 +226,13 @@ export class TradingService {
   }
 
   // ------------------------------------------------------------------ api
-  async place(input: {
-    symbol: string;
-    optionSide: 'CE' | 'PE';
-    /** Set when a saved strategy placed this, so its exit can find it again. */
-    strategyId?: string;
-    strike: number;
-    expiryTs: number;
-    lots: number;
-    /** 1 to 200. Sets the margin, and how close the close-out sits. */
-    leverage?: number;
-    /**
-     * Seconds over which to walk the price from the offer to the bid.
-     * Zero leaves the order where it was put, to fill or not.
-     */
-    chaseSeconds?: number;
-    /** Absent means take what the book offers. */
-    limitPrice?: number;
-    /** 0 to 0.99. Zero means no target. */
-    takeProfitPct?: number;
-    /** 0 upwards. Zero means no stop. */
-    stopLossPct?: number;
-    /** Overrides the percentage, when a caller wants an exact price. */
-    takeProfitPrice?: number | null;
-    stopPrice?: number | null;
-    timeoutMs?: number;
-    marketFallback?: boolean;
-    /** Sell into the bid only while the spread is at most this. Null walks to the bid regardless. */
-    maxCrossSpreadPct?: number | null;
-  }) {
-    const price = input.limitPrice;
-    // A market entry has no price yet, so a percentage cannot be turned into
-    // one; the exits are placed from the actual fill on the first poll instead.
-    const basis = price ?? null;
-    const plan: TradePlan = {
-      tradeId: `${input.symbol}-${Date.now()}`,
-      symbol: input.symbol,
-      strategyId: input.strategyId,
-      optionSide: input.optionSide,
-      lots: input.lots,
-      leverage: clampLeverage(input.leverage ?? DEFAULT_LEVERAGE),
-      entry: price === undefined
-        ? { type: 'market', timeoutMs: 0, marketFallback: false, chase: null }
-        : {
-            type: 'limit', limitPrice: price,
-            /*
-             * A limit rests until something ends it, and a chase is the better
-             * ending: the last step is the bid, which is marketable, so the walk
-             * always finishes in a fill without a timer forcing one.
-             *
-             * The timeout is honoured whenever a caller asks for one; with a
-             * chase it only ever cancels what is left. These two were hardcoded to 0/false while the signature went
-             * on accepting them, so the scheduler's "cross after 5 seconds"
-             * reached this function and was thrown away -- an entry rested at the
-             * offer all morning, half filled, and nothing crossed. A parameter
-             * that is accepted and ignored is worse than one that is absent.
-             */
-            // The scheduler uses it to end an entry at the close of its window.
-            timeoutMs: Math.max(0, Math.round(input.timeoutMs ?? 0)),
-            marketFallback: input.chaseSeconds && input.chaseSeconds > 0
-              ? false
-              : (input.marketFallback ?? false),
-            chase: input.chaseSeconds && input.chaseSeconds > 0
-              ? {
-                  steps: CHASE_STEPS,
-                  everyMs: Math.round((input.chaseSeconds * 1_000) / CHASE_STEPS),
-                  maxCrossSpreadPct: input.maxCrossSpreadPct ?? null,
-                }
-              : null,
-          },
-      takeProfitPrice:
-        input.takeProfitPrice !== undefined
-          ? input.takeProfitPrice
-          : basis !== null ? targetPriceFor(basis, input.takeProfitPct ?? 0) : null,
-      stopPrice:
-        input.stopPrice !== undefined
-          ? input.stopPrice
-          : basis !== null ? stopPriceFor(basis, input.stopLossPct ?? 0) : null,
-      expect: {
-        underlying: 'BTC',
-        optionSide: input.optionSide,
-        strike: input.strike,
-        expiryTs: input.expiryTs,
-      },
-    };
-    return this.engine.open(plan);
+  async place(input: PlaceInput) {
+    return this.engine.open(orderPlan(input, `${input.symbol}-${Date.now()}`));
   }
 
   close(tradeId: string) { return this.engine.closeNow(tradeId); }
+  /** Sell more of what an open trade holds, under the same trade. */
+  addToPosition(tradeId: string, req: AddRequest) { return this.engine.addToPosition(tradeId, req); }
   cancel(tradeId: string) { return this.engine.cancelEntry(tradeId); }
 
   /**
@@ -542,7 +437,6 @@ export class TradingService {
   }
 }
 
-const round1 = (n: number) => Math.round(n * 10) / 10;
 
 /** 05:30 IST is when the daily contract opens, so that is where the day starts. */
 function startOfDayIst(now = Date.now()): number {
