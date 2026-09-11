@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { AuthService, Failure, Issued } from '../../auth/service.js';
 import { COOKIE, readCookie, sessionCookie } from '../session.js';
+import { refuse } from '../refuse.js';
 
 /**
  * Sign-in, two-step setup, and the account page.
@@ -23,8 +24,12 @@ function setSession(reply: FastifyReply, issued: Issued, now: number) {
   reply.header('Set-Cookie', sessionCookie(issued.token, (issued.expiresAt - now) / 1000));
 }
 
+/**
+ * A sign-in answer of "no" is the sign-in working, not a fault: marked deliberate so
+ * a stranger guessing passwords or codes cannot fill the error log with it.
+ */
 function failed(reply: FastifyReply, f: Failure) {
-  reply.code(f.status);
+  refuse(reply, f.status, null);
   if (f.restart) reply.header('Set-Cookie', sessionCookie('', 0));
   return { error: f.error, ...(f.problems ? { problems: f.problems } : {}), ...(f.restart ? { restart: true } : {}) };
 }

@@ -11,7 +11,7 @@ import { registerTradeRoutes } from './routes/trade.routes.js';
 import { registerErrorRoutes } from './routes/errors.routes.js';
 import { registerStrategyRoutes } from './routes/strategy.routes.js';
 import { noteError } from '../observability/errors.js';
-import { wasRefusal, worthLogging } from './refuse.js';
+import { refuse, wasRefusal, worthLogging } from './refuse.js';
 
 /** Open without a session: the health probe. Sign-in routes say so on their own route. */
 const PUBLIC_ROUTES = new Set(['/api/health']);
@@ -95,16 +95,14 @@ export async function buildApp(o: { auth?: AuthService; now?: () => number } = {
     const route = req.routeOptions.url;
     if (route === undefined) return;
     if (UNSAFE.has(req.method) && !originAllowed(req, allowedOrigins)) {
-      reply.code(403);
-      return reply.send({ error: 'cross-origin request refused' });
+      return reply.send(refuse(reply, 403, { error: 'cross-origin request refused' }));
     }
     const level: AuthLevel = PUBLIC_ROUTES.has(route)
       ? 'public'
       : ((req.routeOptions.config as { auth?: AuthLevel } | undefined)?.auth ?? 'full');
     if (level === 'public') return;
     if (!auth.configured) {
-      reply.code(503);
-      return reply.send({ error: 'Sign-in is not set up on this server.' });
+      return reply.send(refuse(reply, 503, { error: 'Sign-in is not set up on this server.' }));
     }
     const s = auth.session(readCookie(req.headers.cookie, COOKIE));
     if (s && s.stage === level) return;
