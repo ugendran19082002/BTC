@@ -1,4 +1,5 @@
 import type { AddToOpposite, StrategyConfig } from '@/types/strategy';
+import { defaultAddUntil, time12 } from '@/lib/time';
 
 /**
  * What a strategy will actually do, in words and in money.
@@ -59,9 +60,9 @@ export function describeStrategy(c: StrategyConfig): string {
   const dbl = c.doubleWhenOneSided && c.probGate !== null && c.legs === 'both'
     ? ', and doubles the one that survives alone'
     : '';
-  return `At ${c.entryTime} IST on ${describeDays(c.weekdays)}, sells ${legs} `
+  return `At ${time12(c.entryTime)} IST on ${describeDays(c.weekdays)}, sells ${legs} `
     + `paying ${describePremium(c)}, ${c.lots} lot${c.lots === 1 ? '' : 's'} each. `
-    + `It ${describeEntry(c)}, then ${describeExit(c)} or closes at ${c.exitTime}. `
+    + `It ${describeEntry(c)}, then ${describeExit(c)} or closes at ${time12(c.exitTime)}. `
     + `It ${gate}${dbl}.`
     + (describeAdd(c) ? ` ${describeAdd(c)}` : '');
 }
@@ -77,7 +78,7 @@ export function describeAdd(c: StrategyConfig): string | null {
   return `When one leg's target buys contracts back, it sells that many more of the other leg `
     + `while its bid is ${min} or more and it is under ${fmtNum(a.maxMultiple)}x what it was sold for, `
     + `appended to that leg with the same target and stop. Not on a one-sided day, `
-    + `and not in the last 30 minutes before ${c.exitTime}.`;
+    + `and not after ${time12(a.addUntil ?? defaultAddUntil(c.exitTime))}.`;
 }
 
 /**

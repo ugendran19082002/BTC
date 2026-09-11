@@ -8,6 +8,7 @@ import { StrategyForm } from '@/components/strategy/StrategyForm';
 import { usePoll } from '@/hooks/usePoll';
 import { clock, stamp } from '@/lib/format';
 import { describeDays, describePremium } from '@/lib/strategy-preview';
+import { defaultAddUntil, time12 } from '@/lib/time';
 import { cn } from '@/lib/utils';
 
 /**
@@ -27,7 +28,7 @@ function summarise(s: Strategy): string {
     c.legs === 'both' ? 'CE + PE' : c.legs,
     describePremium(c).split(' — ')[0]!,
     `${c.lots} lot${c.lots === 1 ? '' : 's'}`,
-    `${c.entryTime}→${c.exitTime}`,
+    `${time12(c.entryTime)} → ${time12(c.exitTime)}`,
     c.entryPrice === 'offer'
       ? `sell at offer${c.crossAfterSec ? `, bid after ${c.crossAfterSec}s if spread ≤ ${Math.round((c.maxCrossSpreadPct ?? 0.15) * 100)}%` : ', wait'}`
       : `sell at ${c.entryPrice}`,
@@ -36,7 +37,9 @@ function summarise(s: Strategy): string {
   if (c.stopLossPct > 0) parts.push(`stop ${Math.round(c.stopLossPct * 100)}%`);
   if (c.probGate !== null) parts.push(`min safety ${Math.round(c.probGate * 1000) / 10}%`);
   if (c.doubleWhenOneSided) parts.push('double if one side');
-  if (c.addToOpposite) parts.push(`add to other leg if bid ≥ $${c.addToOpposite.minPriceUsd}, under ${c.addToOpposite.maxMultiple}x`);
+  if (c.addToOpposite) {
+    parts.push(`add to other leg if bid ≥ $${c.addToOpposite.minPriceUsd}, under ${c.addToOpposite.maxMultiple}x, until ${time12(c.addToOpposite.addUntil ?? defaultAddUntil(c.exitTime))}`);
+  }
   return parts.join(' · ');
 }
 

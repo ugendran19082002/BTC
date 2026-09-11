@@ -5,7 +5,9 @@ export type LegConfig = 'CE' | 'PE' | 'both';
 export type EntryPrice = 'now' | 'offer' | 'set';
 
 export type StrategyConfig = {
+  /** IST, 24-hour "HH:MM". Shown as 12-hour with AM or PM. */
   entryTime: string;
+  /** IST, 24-hour "HH:MM", later than entry and before the 17:30 settlement for a daytime entry. */
   exitTime: string;
   premium: { mode: PremiumMode; usd: number };
   entryPrice: EntryPrice;
@@ -31,9 +33,15 @@ export type StrategyConfig = {
   weekdays: number[];
 };
 
-export type AddToOpposite = { minPriceUsd: number; maxMultiple: number };
+export type AddToOpposite = {
+  minPriceUsd: number;
+  maxMultiple: number;
+  /** The latest IST time an add may be made, 24-hour "HH:MM", between entry and exit. */
+  addUntil: string;
+};
 
-export const DEFAULT_ADD_TO_OPPOSITE: AddToOpposite = { minPriceUsd: 3, maxMultiple: 2 };
+/** Half an hour before the default 5:29 PM exit. Turning the add on uses the strategy's own exit. */
+export const DEFAULT_ADD_TO_OPPOSITE: AddToOpposite = { minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59' };
 
 /** One decision to add to the other leg -- the skips too, with their reason. */
 export type StrategyAdd = {
