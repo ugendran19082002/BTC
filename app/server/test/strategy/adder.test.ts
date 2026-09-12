@@ -22,9 +22,21 @@ import { DEFAULT_CONFIG, type Strategy } from '../../src/strategy/types.js';
 const CE = 'C-BTC-80000-080926';
 const PE = 'P-BTC-77000-080926';
 
+/*
+ * The rig's clock (harness T0) reads 03:43 IST, so the strategy these use
+ * enters at 02:00 -- the day is under way when the target fills, which is the
+ * situation every test here is about. The latest-add cutoff is measured
+ * forward from the entry, so a window that did not contain the clock would
+ * make every one of these "after the latest time to add".
+ */
 const strategy = (over: Partial<Strategy> = {}, cfg: Partial<Strategy['config']> = {}): Strategy => ({
   id: 's', name: 'CE+PE add', enabled: true, createdAt: 0, updatedAt: 0,
-  config: { ...DEFAULT_CONFIG, addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59' }, ...cfg },
+  config: {
+    ...DEFAULT_CONFIG,
+    entryTime: '02:00',
+    addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59' },
+    ...cfg,
+  },
   ...over,
 });
 

@@ -152,9 +152,12 @@ test('every objection is returned at once, not one at a time', () => {
   assert.ok(bad.length >= 3, 'a form that reveals objections one by one is one people abandon');
 });
 
-test('an exit before its entry is refused', () => {
+test('an exit the contract does not live to see is refused', () => {
+  // 5:00 PM to 5:30 AM: the contract entered at 5:00 PM expires half an hour
+  // later, so there is nothing left to close the next morning. An overnight
+  // window is allowed (see times.test.ts) -- one that outlives its contract is not.
   const bad = validateConfig({ ...DEFAULT_CONFIG, entryTime: '17:00', exitTime: '05:30' });
-  assert.ok(bad.some((m) => /later in the day/.test(m)));
+  assert.ok(bad.some((m) => /5:30 PM settlement/.test(m)), bad.join(' | '));
 });
 
 test('doubling without the gate is explained rather than silently ignored', () => {
