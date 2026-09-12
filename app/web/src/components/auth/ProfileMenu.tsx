@@ -8,6 +8,7 @@ import { ChangePasswordForm } from '@/components/auth/ChangePasswordForm';
 import { CodeInput } from '@/components/auth/CodeInput';
 import { RecoveryCodes } from '@/components/auth/TwoStepSetup';
 import { ago, stamp } from '@/lib/format';
+import { usePersisted } from '@/hooks/usePersisted';
 import { cn } from '@/lib/utils';
 
 /**
@@ -78,20 +79,20 @@ export function ProfileMenu({ username, onSignedOut }: { username: string | null
             </span>
           </div>
 
-          <Section title="Change password" icon={<KeyRound className="h-4 w-4" />} defaultOpen>
+          <Section id="password" title="Change password" icon={<KeyRound className="h-4 w-4" />} defaultOpen>
             <ChangePasswordForm username={name} onChanged={() => load()} />
             {account && <p className="m-0 mt-2 text-[11.5px] text-[var(--dim)]">Last changed {stamp(account.passwordChangedAt)}.</p>}
           </Section>
 
-          <Section title={`Devices signed in${account ? ` · ${account.sessions.length}` : ''}`} icon={<MonitorSmartphone className="h-4 w-4" />}>
+          <Section id="devices" title={`Devices signed in${account ? ` · ${account.sessions.length}` : ''}`} icon={<MonitorSmartphone className="h-4 w-4" />}>
             <Devices account={account} onChanged={load} />
           </Section>
 
-          <Section title={`Recovery codes${account ? ` · ${account.recoveryCodesLeft} left` : ''}`} icon={<KeyRound className="h-4 w-4" />}>
+          <Section id="codes" title={`Recovery codes${account ? ` · ${account.recoveryCodesLeft} left` : ''}`} icon={<KeyRound className="h-4 w-4" />}>
             <NewCodes onDone={load} />
           </Section>
 
-          <Section title="Recent activity" icon={<History className="h-4 w-4" />}>
+          <Section id="activity" title="Recent activity" icon={<History className="h-4 w-4" />}>
             {/* Its own scroll, so twenty events do not make the sheet a page long. */}
             <ul aria-label="recent activity" className="m-0 grid max-h-56 list-none gap-1 overflow-y-auto overscroll-contain p-0 pr-1 text-[12px]">
               {(account?.events ?? []).map((e) => (
@@ -119,10 +120,18 @@ export function ProfileMenu({ username, onSignedOut }: { username: string | null
   );
 }
 
-function Section({ title, icon, children, defaultOpen = false }: {
-  title: string; icon: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean;
+/**
+ * One folding section of the account sheet, remembered per section.
+ *
+ * The same treatment the desk cards get: opening the sheet to change a password
+ * and finding the four sections back the way they shipped, every time, is the
+ * page refusing to learn something it already knows. `id` is the stored key, so
+ * the title can be reworded without forgetting the choice.
+ */
+function Section({ id, title, icon, children, defaultOpen = false }: {
+  id: string; title: string; icon: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [open, setOpen] = usePersisted<boolean>(`open:account:${id}`, defaultOpen);
   return (
     <Collapsible.Root open={open} onOpenChange={setOpen} className="border-t border-border py-1">
       <Collapsible.Trigger className="m-0 flex h-11 w-full appearance-none items-center gap-2 border-0 bg-transparent p-0 text-left font-[inherit] text-[13.5px] font-medium text-foreground">

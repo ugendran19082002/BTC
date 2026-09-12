@@ -917,6 +917,118 @@ gives the same answers inside one day.
 
 ---
 
+## "The SL is not updating" — 12 Sep 2026
+
+Reported from the live desk with a 76,000 PE on: **Target 0.60 · Stop none**,
+and inside Edit exits, **"On Delta now · stop: none"** — while the same card
+showed a green shield reading **PROTECTED**.
+
+**What was actually wrong — three separate faults, stacked.**
+
+1. **Delta never accepted the stop.** It went out as a *market* order with a
+   trigger, and Delta refuses those on a contract with no order book
+   (`unsupported`). Same fault as the section above; the fix is written and
+   tested but **not deployed** — the running image (`7cfaef5-dirty`) does not
+   contain it. Checked, not assumed: `stopFillLimit` is absent from the
+   container.
+2. **The desk filed a refused stop as placed.** The live record held
+   `protection.stopLoss = "…S7"` — the eighth attempt — with `alarm: null` and
+   phase `protected`. `missingProtection()` only asks whether *an id this trade
+   owns* is recorded and whether the size matches; it never re-reads the book.
+   So once an id was recorded, `protect()` was never called again and the
+   position stayed naked. `absorb()` reads fills and rejections and ignores a
+   protective order that came back **cancelled** — and Delta does cancel a
+   reduce-only order it considers over-committed.
+3. **The screen trusted that record.** `naked` was computed from
+   `protection.stopLoss`, so the shield went green off the desk's own memory
+   while `onBook.stop`, read from Delta, said none — the two contradicting each
+   other an inch apart on the same card.
+
+**Fixed (not deployed yet):**
+
+- **A protective leg the exchange says is no longer resting is cleared** on the
+  next poll, so `missingProtection` reads it as missing and `protect()` puts it
+  back. It uses the lookups the poll already does, so it costs no extra call.
+  Only on a definite answer and only when nothing filled: `getOrderByClientId`
+  catches to null and cannot tell "no such order" from "could not ask", and
+  treating an outage as "gone" would replace live protection for nothing.
+- **The card reads the book, not the record.** `onBook` is now `null` when the
+  book could not be read, which is a different fact from an empty book — a
+  dropped poll must not raise an alarm. Unknown falls back to the record; a
+  definite "no stop" with a stop wanted is red.
+- **`onBook.stop` recognises a stop limit.** It matched `stop_market` only, so
+  the moment the stop-limit fix deployed, every position would have read
+  "Stop none" over a perfectly good stop. Caught before deploying, not after.
+
+**To do:**
+
+- [ ] **Deploy — this is the urgent one.** Until then every stop is still sent
+      as a market order and can be refused. There is a position open right now,
+      so weigh deploying with it on against leaving it without an exchange stop;
+      the desk-side stop watch is the only thing behind it either way.
+- [ ] **`reconciled` counts a target alone as "covered"** (machine.ts): with a
+      stop wanted and only the target on the book, the phase still reads
+      `protected`. Narrow `covered` to the stop when `wantsProtection`.
+- [ ] **Alert on `POSITION UNPROTECTED`** — still screen-only, and this is the
+      case that most needs a phone. (Already listed above; this incident is the
+      argument for doing it.)
+- [ ] **The error log was empty** when this was investigated, though the Errors
+      screen had shown the six refusals earlier. Find out what cleared it — an
+      audit trail that loses the incident is not one.
+
+---
+
+## Strike by position, and a friendlier market lean — 12 Sep 2026
+
+**A second way to pick the strike.** Until now a strategy chose its strike by
+premium — "at least $15" or "at most $15". It can now choose by **position**
+instead: ATM, OTM 1..n, ITM 1..n. Whatever that strike pays, that is the one
+sold.
+
+- Counted over **the strikes Delta has actually listed** on that side, nearest
+  the money first — not over the strike grid. Delta lists $200 apart near the
+  money and $400 further out, so counting in grid steps would name contracts
+  that do not exist.
+- In the money is allowed under this rule and never under the premium rule. It
+  is a different trade: it starts with intrinsic value against it, and the
+  safety filter refuses it on almost any day it is on. The form says so.
+- The safety gate, the lot doubling and every order gate are unchanged and
+  still apply afterwards.
+- Saved strategies read as `premium`, which is what they were doing. No
+  migration: the store already fills defaults on read.
+- Tests: 9 new in `test/strategy/select.test.ts` (each side's counting, ITM,
+  a gapped board, the premium numbers being ignored, the refusal wording, and
+  the gate still having its say). Server 638.
+
+**Market lean, as an indicator.** It was three rows of "name · 40%" against
+"downside, by 0.1 points" — a table of evidence with the reader left to do the
+arithmetic. Now each input is a needle on the same Down-to-Up scale as the
+headline, with the direction in words beside it; the exact figure stays, one
+size down. It still says *for info only* in the title, because none of it held
+up as a trading rule across all three years.
+
+**How far BTC has moved** now covers **1m, 5m, 15m, 1h, 6h, 12h, 24h**. The
+1-minute series is fetched for this table only — `agreement` and `regime` are
+counted over five timeframes and adding a sixth would quietly change a number
+on the screen that nobody asked to change.
+
+**Collapse and expand are remembered** in the account sheet, the way the desk
+cards already were (`usePersisted`, one key per section).
+
+**To do:**
+
+- [ ] **Deploy**, then check the moves table on the phone — seven rows is taller
+      than four, and it sits under the contract card.
+- [ ] **"By strike" has never been run live.** Try it on one lot at OTM 1 with
+      the safety filter off before trusting it on a real day.
+- [ ] **Nothing measured applies to a strike chosen by position.** The 733-day
+      record is entirely premium-selected. The form should say that where the
+      rule is chosen, not only here.
+- [ ] **The 1-minute row can read as noise** — a single bar is often $0 and 0.00%.
+      Worth showing a dash rather than a zero when nothing traded in it.
+
+---
+
 ## HOW THE CODE IS KEPT HONEST
 
 - **39 tests**, run automatically before every deploy. `npm test` in
