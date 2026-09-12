@@ -70,19 +70,46 @@ export function parseTyped(text: string): string | null {
   return hhmmOf(hour * 60 + minute);
 }
 
-/** Inclusive: is this time within [min, max]? Either end may be absent. */
+/**
+ * Minutes forward from one time of day to another, round midnight if it has to.
+ * Zero when they are the same time. The server's strategy/types.ts has the same
+ * one, and every rule about a strategy's day is measured with it.
+ */
+export function minutesForward(fromMinute: number, toMinute: number): number {
+  return (((toMinute - fromMinute) % 1440) + 1440) % 1440;
+}
+
+/** Minutes from an entry to the settlement that ends the contract it holds. */
+export function minutesToSettlement(entryMinute: number): number {
+  return minutesForward(entryMinute, minutesOf(SETTLEMENT)) || 1440;
+}
+
+/** True when a window runs past midnight: 11:30 PM to 5:30 AM. */
+export function wrapsMidnight(from: string, to: string): boolean {
+  return isHhmm(from) && isHhmm(to) && minutesOf(to) < minutesOf(from);
+}
+
+/**
+ * Inclusive: is this time within [min, max]? Either end may be absent.
+ *
+ * A range whose end is earlier than its start runs past midnight -- 11:31 PM to
+ * 5:29 AM -- and holds everything from the start to midnight and on to the end.
+ */
 export function inRange(hhmm: string, min?: string | null, max?: string | null): boolean {
   const v = minutesOf(hhmm);
-  if (min && isHhmm(min) && v < minutesOf(min)) return false;
-  if (max && isHhmm(max) && v > minutesOf(max)) return false;
+  const lo = min && isHhmm(min) ? minutesOf(min) : null;
+  const hi = max && isHhmm(max) ? minutesOf(max) : null;
+  if (lo !== null && hi !== null && hi < lo) return v >= lo || v <= hi;
+  if (lo !== null && v < lo) return false;
+  if (hi !== null && v > hi) return false;
   return true;
 }
 
-/** "11 h 59 min", "45 min" -- from one time of day to a later one. */
+/** "11 h 59 min", "45 min" -- from one time of day forward to another. */
 export function spanLabel(from: string, to: string): string {
   if (!isHhmm(from) || !isHhmm(to)) return '';
-  const d = minutesOf(to) - minutesOf(from);
-  if (d <= 0) return '';
+  const d = minutesForward(minutesOf(from), minutesOf(to));
+  if (d === 0) return '';
   const h = Math.floor(d / 60);
   const m = d % 60;
   return h === 0 ? `${m} min` : m === 0 ? `${h} h` : `${h} h ${m} min`;

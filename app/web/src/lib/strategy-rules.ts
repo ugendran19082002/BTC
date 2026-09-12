@@ -1,5 +1,5 @@
 import type { StrategyConfig } from '@/types/strategy';
-import { SETTLEMENT, isHhmm, minutesOf, time12 } from '@/lib/time';
+import { isHhmm, minutesForward, minutesOf, minutesToSettlement, time12 } from '@/lib/time';
 
 /**
  * What is wrong with a strategy before it is saved, and where on the form.
@@ -38,13 +38,15 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
   if (!entryOk) say('entryTime', 'Entry time must be a time of day, like 5:30 AM.');
   if (!exitOk) say('exitTime', 'Exit time must be a time of day, like 5:29 PM.');
   if (entryOk && exitOk) {
+    // Measured forward from the entry, so an exit earlier on the clock means
+    // the next morning. What bounds the window is the settlement.
     const entry = minutesOf(c.entryTime);
-    const exit = minutesOf(c.exitTime);
-    if (exit <= entry) {
-      say('exitTime', `Exit (${time12(c.exitTime)}) must be later in the day than entry (${time12(c.entryTime)}).`);
-    } else if (entry < minutesOf(SETTLEMENT) && exit >= minutesOf(SETTLEMENT)) {
-      say('exitTime', `Exit (${time12(c.exitTime)}) is at or after the 5:30 PM settlement, so a position entered at `
-        + `${time12(c.entryTime)} is already settled by then. Pick 5:29 PM or earlier.`);
+    const span = minutesForward(entry, minutesOf(c.exitTime));
+    if (span === 0) {
+      say('exitTime', `Exit (${time12(c.exitTime)}) cannot be the same time as entry.`);
+    } else if (span >= minutesToSettlement(entry)) {
+      say('exitTime', `Exit (${time12(c.exitTime)}) comes after the 5:30 PM settlement that ends the contract `
+        + `entered at ${time12(c.entryTime)}. The last exit is 5:29 PM.`);
     }
   }
   if (!Array.isArray(c.weekdays) || c.weekdays.length === 0) say('weekdays', 'Pick at least one day, or the strategy can never run.');
@@ -77,8 +79,9 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
     if (!isHhmm(add.addUntil)) {
       say('addUntil', 'The latest time to add must be a time of day, like 4:59 PM.');
     } else if (entryOk && exitOk) {
-      const until = minutesOf(add.addUntil);
-      if (until <= minutesOf(c.entryTime) || until >= minutesOf(c.exitTime)) {
+      const entry = minutesOf(c.entryTime);
+      const until = minutesForward(entry, minutesOf(add.addUntil));
+      if (until === 0 || until >= minutesForward(entry, minutesOf(c.exitTime))) {
         say('addUntil', `The latest time to add (${time12(add.addUntil)}) must be after entry (${time12(c.entryTime)}) `
           + `and before exit (${time12(c.exitTime)}).`);
       }

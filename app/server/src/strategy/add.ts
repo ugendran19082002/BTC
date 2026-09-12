@@ -1,6 +1,6 @@
 import type { TradeRecord } from '../trading/engine.js';
 import type { OptionSide } from '../trading/types.js';
-import { defaultAddUntil, isHhmm, minutesOf, time12, type StrategyConfig } from './types.js';
+import { defaultAddUntil, isHhmm, minutesForward, minutesOf, time12, type StrategyConfig } from './types.js';
 
 /**
  * Add to the other leg when a target buys contracts back.
@@ -164,7 +164,10 @@ export function decideAdds(input: {
     }
     // Rule 3.
     const until = isHhmm(rule.addUntil) ? rule.addUntil : defaultAddUntil(input.config.exitTime);
-    if (input.nowIstMinutes > minutesOf(until)) {
+    // Both measured forward from the entry, so the cutoff sits inside an
+    // overnight window the same way it sits inside a daytime one.
+    const entry = minutesOf(input.config.entryTime);
+    if (minutesForward(entry, input.nowIstMinutes) > minutesForward(entry, minutesOf(until))) {
       out.push(skip(`${said} — after the ${time12(until)} latest time to add, not adding`));
       continue;
     }

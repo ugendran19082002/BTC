@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  defaultAddUntil, fromParts, hhmmOf, inRange, isHhmm, minutesOf, parseTyped, partsOf, spanLabel, time12,
+  defaultAddUntil, fromParts, hhmmOf, inRange, isHhmm, minutesOf, parseTyped, partsOf, spanLabel, time12, wrapsMidnight,
 } from '@/lib/time';
 
 /**
@@ -65,11 +65,28 @@ describe('ranges and spans', () => {
     expect(inRange('23:00', '05:31', null)).toBe(true);
   });
 
-  it('says how long a strategy runs', () => {
+  it('[critical] a range that ends before it starts runs past midnight', () => {
+    // The exit picker for an 11:30 PM entry: 11:31 PM through to 5:29 PM.
+    expect(inRange('23:45', '23:31', '17:29')).toBe(true);
+    expect(inRange('05:30', '23:31', '17:29')).toBe(true);
+    expect(inRange('17:29', '23:31', '17:29')).toBe(true);
+    expect(inRange('17:30', '23:31', '17:29')).toBe(false);
+    expect(inRange('23:30', '23:31', '17:29')).toBe(false);
+  });
+
+  it('says how long a strategy runs, round midnight if it has to', () => {
     expect(spanLabel('05:30', '17:29')).toBe('11 h 59 min');
     expect(spanLabel('09:00', '09:45')).toBe('45 min');
     expect(spanLabel('09:00', '11:00')).toBe('2 h');
-    expect(spanLabel('11:00', '09:00')).toBe('');
+    expect(spanLabel('23:30', '05:30')).toBe('6 h');
+    expect(spanLabel('11:00', '09:00')).toBe('22 h');
+    expect(spanLabel('09:00', '09:00')).toBe('');   // no window at all
+  });
+
+  it('knows which windows cross midnight', () => {
+    expect(wrapsMidnight('23:30', '05:30')).toBe(true);
+    expect(wrapsMidnight('05:30', '17:29')).toBe(false);
+    expect(wrapsMidnight('09:00', '09:00')).toBe(false);
   });
 
   it('defaults the latest time to add to half an hour before the exit', () => {

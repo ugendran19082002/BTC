@@ -56,24 +56,59 @@ test('the default times are valid', () => {
   assert.deepEqual(validateConfig(cfg()), []);
 });
 
-test('[critical] exit must come after entry, and the message says both times as they are read', () => {
+test('[critical] a window that runs past the settlement is refused, in the times as they are read', () => {
+  // 9:00 AM to 6:00 AM is twenty-one hours the long way round, and the contract
+  // it holds expires at 5:30 PM on the way. What bounds a window is settlement,
+  // not the clock: see the overnight cases below.
   const bad = validateConfig(cfg({ entryTime: '09:00', exitTime: '06:00' }));
-  assert.ok(bad.includes('Exit (6:00 AM) must be later in the day than entry (9:00 AM).'), bad.join(' | '));
+  assert.ok(
+    bad.includes('Exit (6:00 AM) comes after the 5:30 PM settlement that ends the contract entered at 9:00 AM. The last exit is 5:29 PM.'),
+    bad.join(' | '),
+  );
 });
 
-test('an exit at the same minute as the entry is not after it', () => {
-  assert.ok(validateConfig(cfg({ entryTime: '09:00', exitTime: '09:00' })).some((p) => /later in the day/.test(p)));
+test('an exit at the same minute as the entry is no window at all', () => {
+  assert.ok(validateConfig(cfg({ entryTime: '09:00', exitTime: '09:00' })).some((p) => /cannot be the same time as entry/.test(p)));
 });
 
 test('[critical] a daytime entry cannot exit at or after the 5:30 PM settlement', () => {
   const at = validateConfig(cfg({ entryTime: '05:30', exitTime: '17:30' }));
   assert.ok(at.some((p) => /5:30 PM settlement/.test(p)), at.join(' | '));
-  assert.ok(validateConfig(cfg({ entryTime: '05:30', exitTime: '18:00' })).some((p) => /Pick 5:29 PM or earlier/.test(p)));
+  assert.ok(validateConfig(cfg({ entryTime: '05:30', exitTime: '18:00' })).some((p) => /The last exit is 5:29 PM/.test(p)));
   assert.deepEqual(validateConfig(cfg({ entryTime: '05:30', exitTime: '17:29' })), [], '5:29 PM is the last minute');
 });
 
 test('an evening entry holds tomorrow\'s contract, so it may exit later the same evening', () => {
   assert.deepEqual(validateConfig(cfg({ entryTime: '18:00', exitTime: '23:30' })), []);
+});
+
+/*
+ * Overnight windows, asked for on 12 September 2026: a strategy entered at
+ * 11:30 PM and exiting at 5:30 AM would not save, because "later in the day"
+ * read the clock rather than the strategy's own window.
+ */
+
+test('[critical] an exit earlier on the clock than the entry means the next morning, and saves', () => {
+  assert.deepEqual(validateConfig(cfg({ entryTime: '23:30', exitTime: '05:30' })), []);
+});
+
+test('[critical] an overnight window still has to end before the settlement that ends its contract', () => {
+  // 11:30 PM to 5:29 PM is nearly eighteen hours and just inside; a minute more
+  // is a position Delta has already settled.
+  assert.deepEqual(validateConfig(cfg({ entryTime: '23:30', exitTime: '17:29' })), []);
+  assert.ok(validateConfig(cfg({ entryTime: '23:30', exitTime: '17:30' })).some((p) => /5:30 PM settlement/.test(p)));
+});
+
+test('the latest time to add sits inside an overnight window too', () => {
+  const night = { entryTime: '23:30', exitTime: '05:30' };
+  assert.deepEqual(validateConfig(withAdd('05:00', night)), [], 'half an hour before the exit, after midnight');
+  assert.deepEqual(validateConfig(withAdd('23:45', night)), [], 'a quarter of an hour after the entry, before midnight');
+  for (const outside of ['23:30', '05:30', '12:00']) {
+    assert.ok(
+      validateConfig(withAdd(outside, night)).some((p) => /must be after entry \(11:30 PM\) and before exit \(5:30 AM\)/.test(p)),
+      outside,
+    );
+  }
 });
 
 test('a time that is not a time is refused in words, with an example', () => {

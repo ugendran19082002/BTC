@@ -9,7 +9,7 @@ import { Switch } from '@/components/ui/switch';
 import { TimePicker } from '@/components/ui/time-picker';
 import { addExamples, describeStrategy, sizingOf } from '@/lib/strategy-preview';
 import { problemFor, strategyProblems, type FormField, type FormTab, type Problem } from '@/lib/strategy-rules';
-import { SETTLEMENT, defaultAddUntil, hhmmOf, isHhmm, minutesOf, spanLabel, time12 } from '@/lib/time';
+import { SETTLEMENT, defaultAddUntil, hhmmOf, isHhmm, minutesOf, spanLabel, time12, wrapsMidnight } from '@/lib/time';
 import { inr, usd } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -112,6 +112,12 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
   const entryPlusOne = isHhmm(c.entryTime) ? hhmmOf(minutesOf(c.entryTime) + 1) : null;
   const daytime = isHhmm(c.entryTime) && minutesOf(c.entryTime) < minutesOf(SETTLEMENT);
   const exitMinusOne = isHhmm(c.exitTime) ? hhmmOf(minutesOf(c.exitTime) - 1) : null;
+  // An exit earlier on the clock than the entry: 11:30 PM to 5:30 AM.
+  const overnight = wrapsMidnight(c.entryTime, c.exitTime);
+  // Offered whenever 5:29 PM would actually settle the objection, rather than
+  // only on a daytime entry -- an overnight window can be fixed by it too.
+  const lastMinuteFixes = Boolean(err('exitTime'))
+    && !strategyProblems({ ...c, exitTime: LAST_MINUTE }, name).some((p) => p.field === 'exitTime');
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -203,23 +209,25 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                     value={c.exitTime}
                     onChange={(v) => set('exitTime', v)}
                     min={entryPlusOne}
-                    max={daytime ? LAST_MINUTE : null}
+                    max={LAST_MINUTE}
                     invalid={Boolean(err('exitTime'))}
-                    presets={daytime ? [{ label: '5:29 PM · last minute', value: LAST_MINUTE }] : []}
+                    presets={[{ label: '5:29 PM · last minute', value: LAST_MINUTE }]}
                     className="w-full"
                   />
                 </Stack>
               </div>
-              {err('exitTime') && daytime && entryPlusOne && minutesOf(entryPlusOne) <= minutesOf(LAST_MINUTE) && (
+              {lastMinuteFixes && (
                 <QuickFix onClick={() => set('exitTime', LAST_MINUTE)}>Set exit to 5:29 PM</QuickFix>
               )}
               <p className="m-0 mt-1.5 text-[11.5px] leading-snug text-muted-foreground">
                 {!err('exitTime') && spanLabel(c.entryTime, c.exitTime)
-                  ? `Runs ${spanLabel(c.entryTime, c.exitTime)}. `
+                  ? `Runs ${spanLabel(c.entryTime, c.exitTime)}${overnight ? ', into the next morning' : ''}. `
                   : ''}
-                {daytime
-                  ? 'The contract settles at 5:30 PM, so 5:29 PM is the last exit.'
-                  : 'An evening entry holds tomorrow’s contract.'}
+                {overnight
+                  ? 'An exit earlier on the clock than the entry means the next day.'
+                  : daytime
+                    ? 'The contract settles at 5:30 PM, so 5:29 PM is the last exit.'
+                    : 'An evening entry holds tomorrow’s contract.'}
               </p>
 
               <Stack label="Days" error={err('weekdays')} className="mt-3">

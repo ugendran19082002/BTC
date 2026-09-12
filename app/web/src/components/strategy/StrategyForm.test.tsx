@@ -101,9 +101,19 @@ describe('times on a clock', () => {
     expect(screen.getByText('Allowed: 9:01 AM to 5:29 PM')).toBeInTheDocument();
   });
 
-  it('[critical] an exit before the entry is written under the exit, marks the tab, and stops the save', () => {
+  it('[critical] an overnight window saves, and says it runs into the next morning', async () => {
+    show(editing({ entryTime: '23:30', exitTime: '05:30' }));
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByText(/Runs 6 h, into the next morning/)).toBeInTheDocument();
+    fireEvent.click(saveButton());
+    await vi.waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    expect(saveStrategy.mock.calls[0]![0].config).toMatchObject({ entryTime: '23:30', exitTime: '05:30' });
+  });
+
+  it('[critical] a window that would run past the settlement is written under the exit, marks the tab, and stops the save', () => {
     show(editing({ entryTime: '10:00', exitTime: '09:00' }));
-    expect(screen.getByRole('alert')).toHaveTextContent('Exit (9:00 AM) must be later in the day than entry (10:00 AM).');
+    expect(screen.getByRole('alert'))
+      .toHaveTextContent('Exit (9:00 AM) comes after the 5:30 PM settlement that ends the contract entered at 10:00 AM. The last exit is 5:29 PM.');
     expect(within(screen.getByRole('tab', { name: /When/ })).getByLabelText('has a problem')).toBeInTheDocument();
     expect(saveButton()).toHaveTextContent('Fix 1 to save');
     fireEvent.click(saveButton());

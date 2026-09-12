@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  GRACE_MIN, entryDue, entryWindowEnd, exitDue, istDate, istMinutes, istWeekday, lotsPerLeg, nextEntryAt,
+  GRACE_MIN, entryDue, entrySlotDate, entryWindowEnd, exitDue, istDate, istMinutes, istWeekday, lotsPerLeg, nextEntryAt,
 } from '../../src/strategy/schedule.js';
 import { DEFAULT_CONFIG, type Strategy } from '../../src/strategy/types.js';
 
@@ -113,11 +113,60 @@ test('a day it was not asked to trade is skipped', () => {
   assert.match(!r.due ? r.because : '', /not one of its days/);
 });
 
-test('an entry after its own exit time is refused', () => {
-  const s = strat({ config: { ...DEFAULT_CONFIG, entryTime: '18:00', exitTime: '17:29' } });
-  const r = entryDue(s, THU_1800, null);
+test('an entry that is already past its own exit is refused', () => {
+  // A fifteen-minute window entered half an hour late: the exit it was going to
+  // use has gone by. Only reachable on a window shorter than the grace period.
+  const s = strat({ config: { ...DEFAULT_CONFIG, entryTime: '05:30', exitTime: '05:45' } });
+  const r = entryDue(s, ist('2026-09-10T06:00:00'), null);
   assert.equal(r.due, false);
   assert.match(!r.due ? r.because : '', /past its own exit/);
+});
+
+/* ----------------------------------------------------------- overnight ---- */
+
+/*
+ * Entry 11:30 PM, exit 5:30 AM -- created by hand on the live desk, 12
+ * September. Every check here used to read the clock instead of the strategy's
+ * own window, and each one got a different half of it wrong: the entry looked
+ * like it was past its exit, and the exit looked overdue five minutes after the
+ * position opened.
+ */
+const night = () => strat({ config: { ...DEFAULT_CONFIG, entryTime: '23:30', exitTime: '05:30' } });
+const FRI_2330 = ist('2026-09-11T23:30:00');
+const SAT_0010 = ist('2026-09-12T00:10:00');
+const SAT_0530 = ist('2026-09-12T05:30:00');
+
+test('[critical] an overnight strategy enters at its entry time', () => {
+  assert.deepEqual(entryDue(night(), FRI_2330, null), { due: true });
+});
+
+test('[critical] its slot stays on the day it began, past midnight', () => {
+  assert.equal(entrySlotDate(night(), SAT_0010), '2026-09-11');
+  assert.deepEqual(entryDue(night(), SAT_0010, null), { due: true }, 'forty minutes late, on the far side of midnight');
+  const r = entryDue(night(), SAT_0010, '2026-09-11');
+  assert.equal(r.due, false);
+  assert.match(!r.due ? r.because : '', /already ran on 2026-09-11/, 'the day it ran is the day it began');
+});
+
+test('[critical] a Friday-only overnight slot is judged on Friday, though it runs into Saturday', () => {
+  const s = strat({ config: { ...DEFAULT_CONFIG, entryTime: '23:30', exitTime: '05:30', weekdays: [5] } });
+  assert.equal(entryDue(s, FRI_2330, null).due, true);
+  assert.equal(entryDue(s, SAT_0010, null).due, true, 'still Friday\'s slot at ten past midnight');
+});
+
+test('[critical] it does not close the position five minutes after opening it', () => {
+  assert.equal(exitDue(night(), FRI_2330 + 5 * 60_000, true).due, false);
+  assert.equal(exitDue(night(), SAT_0010, true).due, false);
+});
+
+test('[critical] it closes at 5:30 the next morning, and not a minute before', () => {
+  assert.equal(exitDue(night(), SAT_0530 - 60_000, true).due, false);
+  assert.equal(exitDue(night(), SAT_0530, true).due, true);
+});
+
+test('the entry window closes an hour and a minute in, on whichever date that lands', () => {
+  assert.equal(entryWindowEnd(night(), SAT_0010), ist('2026-09-12T00:31:00'));
+  assert.equal(entryDue(night(), ist('2026-09-12T00:31:00'), null).due, false);
 });
 
 /* ---------------------------------------------------------------- exits --- */

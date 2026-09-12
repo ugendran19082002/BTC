@@ -12,7 +12,7 @@
  * passed in, read from the journal, and compared here.
  */
 import type { Strategy } from './types.js';
-import { minutesOf, time12 } from './types.js';
+import { minutesForward, minutesOf, time12 } from './types.js';
 
 /** IST is UTC+5:30 and has no daylight saving, so the offset is a constant. */
 const IST_OFFSET_MIN = 330;
@@ -53,14 +53,42 @@ export type DueVerdict =
 export const GRACE_MIN = 60;
 
 /**
- * When today's entry window closes, in epoch ms: the entry minute plus
- * GRACE_MIN, inclusive of that last minute. An entry still resting then is
- * cancelled rather than left on the book into the day.
+ * The moment this strategy's entry time last came round, at or before `nowMs`.
+ *
+ * The anchor for everything below. A strategy is not really scheduled against
+ * the calendar day but against its own entry: one that enters at 11:30 PM and
+ * exits at 5:30 AM spends its life across two dates, and asking "what day is
+ * it" gives the wrong answer for half of it. Asking "when did this strategy
+ * last begin" gives the right one on both sides of midnight.
+ */
+export function entrySlotAt(s: Strategy, nowMs: number): number {
+  const since = minutesForward(minutesOf(s.config.entryTime), istMinutes(nowMs));
+  return Math.floor(nowMs / 60_000) * 60_000 - since * 60_000;
+}
+
+/**
+ * The IST day the current entry slot belongs to -- the day the journal records
+ * it under, and the day the once-a-day guard is about.
+ *
+ * For an entry taken at 00:10 on a 11:30 PM strategy, that is yesterday. Using
+ * today's date instead would spend a day that has not run yet.
+ */
+export function entrySlotDate(s: Strategy, nowMs: number): string {
+  return istDate(entrySlotAt(s, nowMs));
+}
+
+/** How long this strategy holds, in minutes: entry to exit, round midnight if need be. */
+function holdMinutes(s: Strategy): number {
+  return minutesForward(minutesOf(s.config.entryTime), minutesOf(s.config.exitTime)) || 1440;
+}
+
+/**
+ * When this entry window closes, in epoch ms: the entry minute plus GRACE_MIN,
+ * inclusive of that last minute. An entry still resting then is cancelled
+ * rather than left on the book into the day.
  */
 export function entryWindowEnd(s: Strategy, nowMs: number): number {
-  const shifted = nowMs + IST_OFFSET_MIN * 60_000;
-  const istMidnight = Math.floor(shifted / 86_400_000) * 86_400_000 - IST_OFFSET_MIN * 60_000;
-  return istMidnight + (minutesOf(s.config.entryTime) + GRACE_MIN + 1) * 60_000;
+  return entrySlotAt(s, nowMs) + (GRACE_MIN + 1) * 60_000;
 }
 
 /**
@@ -75,26 +103,39 @@ export function entryDue(
 ): DueVerdict {
   if (!s.enabled) return { due: false, because: 'strategy is off' };
 
-  const today = istDate(nowMs);
+  const start = minutesOf(s.config.entryTime);
+  // How long ago this strategy's entry time came round, and the slot it opened.
+  const since = minutesForward(start, istMinutes(nowMs));
+  const slotMs = entrySlotAt(s, nowMs);
+  const slotDay = istDate(slotMs);
+
   // The first thing checked, because it is the one that must never be got
   // wrong: whatever else is true, a day that has run does not run again.
-  if (lastRunDate === today) return { due: false, because: `already ran today (${today})` };
+  if (lastRunDate === slotDay) {
+    return {
+      due: false,
+      because: slotDay === istDate(nowMs) ? `already ran today (${slotDay})` : `already ran on ${slotDay}`,
+    };
+  }
 
-  if (!s.config.weekdays.includes(istWeekday(nowMs))) {
+  // The weekday of the slot, not of the moment: an 11:30 PM Friday strategy
+  // reaching 00:10 on Saturday is still running Friday's slot.
+  if (!s.config.weekdays.includes(istWeekday(slotMs))) {
     return { due: false, because: 'not one of its days' };
   }
 
-  const now = istMinutes(nowMs);
-  const start = minutesOf(s.config.entryTime);
-  if (now < start) return { due: false, because: `waiting for ${time12(s.config.entryTime)} IST` };
-  if (now > start + GRACE_MIN) {
-    return { due: false, because: `too late -- ${time12(s.config.entryTime)} passed more than ${GRACE_MIN} minutes ago` };
+  const hold = holdMinutes(s);
+  if (since > GRACE_MIN) {
+    // Inside the slot's own window it is late for this one; past it, the next
+    // one is simply not here yet.
+    return since < hold
+      ? { due: false, because: `too late -- ${time12(s.config.entryTime)} passed more than ${GRACE_MIN} minutes ago` }
+      : { due: false, because: `waiting for ${time12(s.config.entryTime)} IST` };
   }
-  // Entering after the exit time would open a position the same pass wants to
-  // close. Cheap to check, and it catches a misconfigured pair.
-  if (now >= minutesOf(s.config.exitTime)) {
-    return { due: false, because: 'past its own exit time' };
-  }
+  // Entering after the exit would open a position the same pass wants to close.
+  // Only reachable on a window shorter than the grace period, which is a
+  // misconfigured pair rather than a real strategy -- but it is cheap to catch.
+  if (since >= hold) return { due: false, because: 'past its own exit time' };
   return { due: true };
 }
 
@@ -108,11 +149,22 @@ export function entryDue(
  */
 export function exitDue(s: Strategy, nowMs: number, hasOpenPosition: boolean): DueVerdict {
   if (!hasOpenPosition) return { due: false, because: 'nothing open' };
-  const now = istMinutes(nowMs);
-  if (now < minutesOf(s.config.exitTime)) {
+  if (nowMs < exitMomentAt(s, nowMs)) {
     return { due: false, because: `holding until ${time12(s.config.exitTime)} IST` };
   }
   return { due: true };
+}
+
+/**
+ * The moment the exit is due for whatever the last entry slot opened.
+ *
+ * Measured from the entry rather than read off the clock, which is what lets an
+ * overnight strategy hold: at 11:35 PM a 5:30 AM exit has not passed, it is six
+ * hours away. Reading the clock alone would close the position five minutes
+ * after opening it.
+ */
+export function exitMomentAt(s: Strategy, nowMs: number): number {
+  return entrySlotAt(s, nowMs) + holdMinutes(s) * 60_000;
 }
 
 /**
@@ -129,7 +181,8 @@ export function nextEntryAt(s: Strategy, nowMs: number, lastRunDate: string | nu
     const day = istDate(probe);
     if (day === istDate(nowMs)) {
       if (lastRunDate === day) continue;          // today is spent
-      if (istMinutes(nowMs) > start + GRACE_MIN) continue;
+      // Today's entry has been and gone, and its grace window with it.
+      if (istMinutes(nowMs) >= start && minutesForward(start, istMinutes(nowMs)) > GRACE_MIN) continue;
     }
     // midnight IST of that day, in epoch ms, plus the entry minute
     const midnightUtc = Date.parse(`${day}T00:00:00Z`) - IST_OFFSET_MIN * 60_000;

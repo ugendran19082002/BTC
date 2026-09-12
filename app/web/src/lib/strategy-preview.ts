@@ -1,5 +1,5 @@
 import type { AddToOpposite, StrategyConfig } from '@/types/strategy';
-import { defaultAddUntil, time12 } from '@/lib/time';
+import { defaultAddUntil, time12, wrapsMidnight } from '@/lib/time';
 
 /**
  * What a strategy will actually do, in words and in money.
@@ -62,7 +62,8 @@ export function describeStrategy(c: StrategyConfig): string {
     : '';
   return `At ${time12(c.entryTime)} IST on ${describeDays(c.weekdays)}, sells ${legs} `
     + `paying ${describePremium(c)}, ${c.lots} lot${c.lots === 1 ? '' : 's'} each. `
-    + `It ${describeEntry(c)}, then ${describeExit(c)} or closes at ${time12(c.exitTime)}. `
+    + `It ${describeEntry(c)}, then ${describeExit(c)} or closes at ${time12(c.exitTime)}`
+    + `${wrapsMidnight(c.entryTime, c.exitTime) ? ' the next day' : ''}. `
     + `It ${gate}${dbl}.`
     + (describeAdd(c) ? ` ${describeAdd(c)}` : '');
 }

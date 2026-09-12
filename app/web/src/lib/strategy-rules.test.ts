@@ -17,9 +17,24 @@ describe('entry and exit', () => {
     expect(strategyProblems(cfg(), 'S')).toEqual([]);
   });
 
-  it('[critical] exit must come after entry, said in AM and PM, on the When tab', () => {
+  it('[critical] a window running past the settlement is caught, in AM and PM, on the When tab', () => {
     const [p] = strategyProblems(cfg({ entryTime: '09:00', exitTime: '06:00' }), 'S');
-    expect(p).toEqual({ field: 'exitTime', tab: 'when', message: 'Exit (6:00 AM) must be later in the day than entry (9:00 AM).' });
+    expect(p).toEqual({
+      field: 'exitTime',
+      tab: 'when',
+      message: 'Exit (6:00 AM) comes after the 5:30 PM settlement that ends the contract entered at 9:00 AM. The last exit is 5:29 PM.',
+    });
+  });
+
+  it('[critical] an overnight window is allowed: 11:30 PM to 5:30 AM', () => {
+    expect(messages(cfg({ entryTime: '23:30', exitTime: '05:30' }))).toEqual([]);
+    expect(messages(add('05:00', { entryTime: '23:30', exitTime: '05:30' }))).toEqual([]);
+    expect(messages(add('12:00', { entryTime: '23:30', exitTime: '05:30' })).join())
+      .toMatch(/must be after entry \(11:30 PM\) and before exit \(5:30 AM\)/);
+  });
+
+  it('an exit at the same minute as the entry is no window at all', () => {
+    expect(messages(cfg({ entryTime: '09:00', exitTime: '09:00' })).join()).toMatch(/cannot be the same time as entry/);
   });
 
   it('[critical] a daytime entry cannot exit at or after the 5:30 PM settlement', () => {

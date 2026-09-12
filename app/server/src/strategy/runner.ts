@@ -3,9 +3,9 @@ import { scoreLegs } from '../domain/score.js';
 import { tradingService } from '../trading/service.js';
 import { noteError } from '../observability/errors.js';
 import { StrategyStore } from './store.js';
-import { GRACE_MIN, entryDue, entryWindowEnd, exitDue, istDate, istMinutes } from './schedule.js';
+import { GRACE_MIN, entryDue, entrySlotDate, entryWindowEnd, exitDue } from './schedule.js';
 import { describeSelection, selectLegs, type Candidate } from './select.js';
-import { minutesOf, time12, type Strategy } from './types.js';
+import { time12, type Strategy } from './types.js';
 import { addAlertFor, missedEntryAlert, runAlertFor, type Alert, type AlertContext } from '../notify/messages.js';
 import { StrategyAdder, type AddOrder, type PlaceResult } from './adder.js';
 
@@ -152,9 +152,10 @@ export class StrategyRunner {
    * there is nothing left to act on.
    */
   private warnIfMissed(s: Strategy, because: string, now: number, day: string): void {
+    // "too late" is only said while the slot's own window is still running --
+    // after that the reason is "waiting" -- so there is nothing more to check.
     if (!because.startsWith('too late')) return;
     if (this.store.lastRunDate(s.id) === day) return;
-    if (istMinutes(now) >= minutesOf(s.config.exitTime)) return;
     const key = `${s.id}:${day}`;
     if (this.missedAlerted.has(key)) return;
     this.missedAlerted.add(key);
@@ -188,7 +189,10 @@ export class StrategyRunner {
        * cannot answer the first question anybody asks about a day -- what did
        * it put on -- while claiming to be the audit trail.
        */
-      const day = istDate(this.now());
+      // The day the entry belongs to, not today's date: an overnight strategy
+      // exits on the following morning, and writing that morning's row would
+      // both lose this record and spend a day that has not run.
+      const day = entrySlotDate(s, this.now());
       const prior = this.store.runFor(s.id, day)?.detail ?? '';
       const closed = `closed ${open.length} leg${open.length === 1 ? '' : 's'} at ${time12(s.config.exitTime)}`;
       this.store.finish(s.id, day, 'placed', prior ? `${prior} | ${closed}` : closed);
@@ -197,7 +201,7 @@ export class StrategyRunner {
 
   private async considerEntry(s: Strategy): Promise<void> {
     const now = this.now();
-    const day = istDate(now);
+    const day = entrySlotDate(s, now);
     const due = entryDue(s, now, this.store.lastRunDate(s.id));
     if (!due.due) {
       this.warnIfMissed(s, due.because, now, day);

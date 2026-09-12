@@ -379,7 +379,13 @@ function polar(deg: number, r: number) {
 }
 
 function rangeText(min?: string | null, max?: string | null): string {
-  if (min && max) return `${time12(min)} to ${time12(max)}`;
+  // A range that ends earlier than it starts runs past midnight, and saying so
+  // is the difference between "5:29 PM" reading as impossible and as tomorrow.
+  if (min && max) {
+    return isHhmm(min) && isHhmm(max) && minutesOf(max) < minutesOf(min)
+      ? `${time12(min)} to ${time12(max)} the next day`
+      : `${time12(min)} to ${time12(max)}`;
+  }
   if (min) return `${time12(min)} or later`;
   if (max) return `${time12(max)} or earlier`;
   return 'any time';

@@ -229,6 +229,17 @@ test('[critical] the latest time to add is the setting: at 12:00 PM, 12:01 PM is
   assert.match(only(decide(trades, quotes, { config: cfg, istMinutes: 12 * 60 + 1 })).detail, /after the 12:00 PM/);
 });
 
+test('[critical] an overnight cutoff is read forward from the entry, not off the clock', () => {
+  const trades = [leg({ side: 'CE', target: [[425, T]] }), leg({ side: 'PE' })];
+  const quotes = { [PE_SYMBOL]: q(7, 7.5, 7.2) };
+  // enters 11:30 PM, exits 5:30 AM, stops adding at 5:00 AM
+  const config = { ...on({ addUntil: '05:00' }), entryTime: '23:30', exitTime: '05:30' };
+  assert.equal(only(decide(trades, quotes, { config, istMinutes: 23 * 60 + 45 })).act, 'add', 'before midnight');
+  assert.equal(only(decide(trades, quotes, { config, istMinutes: 2 * 60 })).act, 'add', 'after it');
+  assert.equal(only(decide(trades, quotes, { config, istMinutes: 5 * 60 })).act, 'add', 'the whole of the last minute');
+  assert.match(only(decide(trades, quotes, { config, istMinutes: 5 * 60 + 1 })).detail, /after the 5:00 AM/);
+});
+
 test('a strategy saved before the setting existed stops adding half an hour before its exit, as it always did', () => {
   const trades = [leg({ side: 'CE', target: [[425, T]] }), leg({ side: 'PE' })];
   const old = { ...DEFAULT_CONFIG, exitTime: '15:00', addToOpposite: { minPriceUsd: 3, maxMultiple: 2 } } as unknown as StrategyConfig;

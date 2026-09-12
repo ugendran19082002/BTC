@@ -45,6 +45,10 @@ export type StrategyConfig = {
    *
    * 17:29 rather than 17:30: settlement is at 17:30, and an order sent at the
    * settlement is an order sent into an expired contract.
+   *
+   * May be earlier on the clock than `entryTime`, which means the next morning:
+   * enter 11:30 PM, exit 5:30 AM. The window is always read forwards from the
+   * entry, and it has to end before the settlement that ends the contract.
    */
   exitTime: string;
   /** How much premium a leg must pay, and which way to read it. */
@@ -210,8 +214,8 @@ export const isHhmm = (v: unknown): v is string => typeof v === 'string' && HHMM
  *
  * A strategy that enters before it holds today's contract, so its exit has to
  * come before it too: an exit at 18:00 closes a position Delta already settled.
- * One that enters at or after it holds tomorrow's contract and can exit any time
- * later the same evening.
+ * One that enters at or after it holds tomorrow's contract, so it may run
+ * through the night to any time before the next day's 17:30.
  */
 export const SETTLEMENT = '17:30';
 
@@ -229,14 +233,19 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
   if (!entryOk) bad.push('Entry time must be a time of day, like 5:30 AM.');
   if (!exitOk) bad.push('Exit time must be a time of day, like 5:29 PM.');
   if (entryOk && exitOk) {
+    /*
+     * Measured forward from the entry, not against the clock, so that an exit
+     * earlier in the day than the entry means "tomorrow morning" rather than
+     * "impossible". What actually bounds the window is the settlement: whatever
+     * was sold has to be bought back before the contract expires.
+     */
     const entry = minutesOf(c.entryTime!);
-    const exit = minutesOf(c.exitTime!);
-    const settle = minutesOf(SETTLEMENT);
-    if (exit <= entry) {
-      bad.push(`Exit (${time12(c.exitTime!)}) must be later in the day than entry (${time12(c.entryTime!)}).`);
-    } else if (entry < settle && exit >= settle) {
-      bad.push(`Exit (${time12(c.exitTime!)}) is at or after the 5:30 PM settlement, so a position entered at `
-        + `${time12(c.entryTime!)} is already settled by then. Pick 5:29 PM or earlier.`);
+    const span = minutesForward(entry, minutesOf(c.exitTime!));
+    if (span === 0) {
+      bad.push(`Exit (${time12(c.exitTime!)}) cannot be the same time as entry.`);
+    } else if (span >= minutesToSettlement(entry)) {
+      bad.push(`Exit (${time12(c.exitTime!)}) comes after the 5:30 PM settlement that ends the contract `
+        + `entered at ${time12(c.entryTime!)}. The last exit is 5:29 PM.`);
     }
   }
   const p = c.premium;
@@ -293,8 +302,11 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
     if (!isHhmm(add.addUntil)) {
       bad.push('The latest time to add must be a time of day, like 4:59 PM.');
     } else if (entryOk && exitOk) {
-      const until = minutesOf(add.addUntil);
-      if (until <= minutesOf(c.entryTime!) || until >= minutesOf(c.exitTime!)) {
+      // Also measured forward from the entry, so it lands inside an overnight
+      // window the same way it lands inside a daytime one.
+      const entry = minutesOf(c.entryTime!);
+      const toUntil = minutesForward(entry, minutesOf(add.addUntil));
+      if (toUntil === 0 || toUntil >= minutesForward(entry, minutesOf(c.exitTime!))) {
         bad.push(`The latest time to add (${time12(add.addUntil)}) must be after entry (${time12(c.entryTime!)}) `
           + `and before exit (${time12(c.exitTime!)}).`);
       }
@@ -309,6 +321,29 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
 export function minutesOf(hhmm: string): number {
   const [h, m] = hhmm.split(':');
   return Number(h) * 60 + Number(m);
+}
+
+/**
+ * Minutes forward from one time of day to another, round midnight if it has to.
+ * Zero when they are the same time.
+ *
+ * Every rule about a strategy's day is measured this way, from the entry
+ * onwards, so that a window running past midnight -- enter 11:30 PM, exit
+ * 5:30 AM -- is the same arithmetic as one inside a single day rather than a
+ * special case some checks remember and others forget.
+ */
+export function minutesForward(fromMinute: number, toMinute: number): number {
+  return (((toMinute - fromMinute) % 1440) + 1440) % 1440;
+}
+
+/**
+ * Minutes from an entry to the settlement that ends the contract it holds.
+ *
+ * An entry exactly at 17:30 is selling the next day's contract, so its
+ * settlement is a full day away rather than zero minutes away.
+ */
+export function minutesToSettlement(entryMinute: number): number {
+  return minutesForward(entryMinute, minutesOf(SETTLEMENT)) || 1440;
 }
 
 /** 330 -> "05:30". */
