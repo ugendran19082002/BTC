@@ -9,8 +9,19 @@ import { candles, type Candle } from './delta.js';
  * cannot quietly become a trading rule.
  */
 
-export type Timeframe = '5m' | '15m' | '1h' | '4h' | '1d';
-const MINUTES: Record<Timeframe, number> = { '5m': 5, '15m': 15, '1h': 60, '4h': 240, '1d': 1440 };
+export type Timeframe = '1m' | '5m' | '15m' | '1h' | '4h' | '1d';
+const MINUTES: Record<Timeframe, number> = { '1m': 1, '5m': 5, '15m': 15, '1h': 60, '4h': 240, '1d': 1440 };
+
+/**
+ * The timeframes the trend read is built from -- five, and deliberately not
+ * every series fetched.
+ *
+ * `agreement` counts how many of these agree and `regime` is read off that
+ * count, both of which are on the screen. Letting a newly fetched series join
+ * the list would quietly change a number nobody asked to change. The 1-minute
+ * bars are fetched for the moves table alone.
+ */
+const TREND_TIMEFRAMES: readonly Timeframe[] = ['5m', '15m', '1h', '4h', '1d'];
 
 function ema(values: number[], period: number): number | null {
   if (values.length < period) return null;
@@ -161,7 +172,7 @@ async function fetchSeriesFresh(): Promise<[Timeframe, Candle[]][]> {
   seriesInflight = (async () => {
     try {
       const now = Math.floor(Date.now() / 1000);
-      const wanted: Timeframe[] = ['5m', '15m', '1h', '4h', '1d'];
+      const wanted: Timeframe[] = ['1m', '5m', '15m', '1h', '4h', '1d'];
       const data = await Promise.all(
         wanted.map(async (tf) => {
           const span = MINUTES[tf] * 60 * 220;
@@ -203,6 +214,9 @@ export async function readMarket(sinceHours?: number): Promise<MarketRead> {
   }
 
   const timeframes = series
+    // The 1-minute series is for the moves table; it is not one of the five the
+    // agreement and the regime are counted over. See TREND_TIMEFRAMES.
+    .filter(([tf]) => TREND_TIMEFRAMES.includes(tf))
     .map(([tf, bars]) => readOne(tf, bars))
     .filter((r): r is TimeframeRead => r !== null);
 
@@ -226,11 +240,23 @@ export async function readMarket(sinceHours?: number): Promise<MarketRead> {
     realisedVol = Math.sqrt(varr * 365) * 100;
   }
 
+  const m1 = series.find(([tf]) => tf === '1m')?.[1] ?? [];
   const m5 = series.find(([tf]) => tf === '5m')?.[1] ?? [];
   const h1 = series.find(([tf]) => tf === '1h')?.[1] ?? [];
+  /*
+   * Shortest window first, so the table reads as one zoom outward.
+   *
+   * Each is taken from the coarsest series that still covers it in whole bars
+   * -- a quarter of an hour is three 5-minute bars, six hours is six hourly
+   * ones -- because a window cut out of finer bars than it needs is the same
+   * number at more cost.
+   */
   const moves: Move[] = [
+    moveOver(m1, 1, 1 / 60, 'last 1m'),
     moveOver(m5, 1, 5 / 60, 'last 5m'),
+    moveOver(m5, 3, 0.25, 'last 15m'),
     moveOver(m5, 12, 1, 'last 1h'),
+    moveOver(h1, 6, 6, 'last 6h'),
     moveOver(h1, 12, 12, 'last 12h'),
     moveOver(h1, 24, 24, 'last 24h'),
   ];
