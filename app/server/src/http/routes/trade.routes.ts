@@ -61,8 +61,14 @@ const view = (
   /** The book for this symbol, when the position row does not carry a price. */
   quote: Quote | null = null,
   spot: number | null = null,
-  /** What is actually resting for this symbol, which the plan may not match. */
-  resting: ExchangeOrder[] = [],
+  /**
+   * What is actually resting for this symbol, which the plan may not match.
+   *
+   * `null` means the book could not be read. That is not the same fact as an
+   * empty book, and reporting it as "no stop" would raise an alarm about a
+   * dropped request. See `onBook`.
+   */
+  resting: ExchangeOrder[] | null = null,
 ) => {
   // The exchange's mark is the authority on the *price*. The money is worked
   // out here, because Delta's own unrealized_pnl came back positive on a
@@ -138,7 +144,7 @@ const view = (
      * simply wrong when the two differ -- which is exactly the case worth
      * showing.
      */
-    onBook: {
+    onBook: resting === null ? null : {
       // The target rests as a limit and carries its level in limitPrice; the
       // stop is a trigger and carries its level in stopPrice.
       target: resting.find((o) => o.reduceOnly && o.type === 'limit')?.limitPrice ?? null,
@@ -190,7 +196,9 @@ export function registerTradeRoutes(app: FastifyInstance) {
     // product called '' -- which downloaded Delta's entire product list.
     const [quotes, books] = await Promise.all([
       Promise.all(symbols.map(async (s) => [s, await svc.quoteForDisplay(s).catch(() => null)] as const)),
-      Promise.all(symbols.map(async (s) => [s, await svc.openOrdersForDisplay(s).catch(() => [])] as const)),
+      // null, not [], when the book cannot be read: "Delta says there is no
+      // stop" and "Delta did not answer" must not arrive as the same fact.
+      Promise.all(symbols.map(async (s) => [s, await svc.openOrdersForDisplay(s).catch(() => null)] as const)),
     ]);
     const bySymbol = new Map(quotes);
     const restingBy = new Map(books);
@@ -198,7 +206,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
       view(
         r, positions, r.state.contractValue,
         bySymbol.get(r.state.symbol) ?? null, svc.spot,
-        restingBy.get(r.state.symbol) ?? [],
+        restingBy.get(r.state.symbol) ?? null,
       ));
     return {
       mode: svc.mode,

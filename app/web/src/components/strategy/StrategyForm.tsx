@@ -1,7 +1,10 @@
 import { useMemo, useRef, useState } from 'react';
 import { ChevronDown, Loader2 } from 'lucide-react';
 import { saveStrategy } from '@/api/strategy';
-import { DAY_NAMES, DEFAULT_ADD_TO_OPPOSITE, DEFAULT_CONFIG, type Strategy, type StrategyConfig } from '@/types/strategy';
+import {
+  DAY_NAMES, DEFAULT_ADD_TO_OPPOSITE, DEFAULT_CONFIG, MAX_STRIKE_STEP, strikeLabel,
+  type Strategy, type StrategyConfig,
+} from '@/types/strategy';
 import { Sheet, SheetContent, SheetFooter } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -276,24 +279,55 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                 />
               </Stack>
 
-              <Stack label="Premium rule" error={err('premium')} className="mt-3">
-                <div className="flex items-stretch gap-2">
-                  <Segmented
-                    label="premium rule"
-                    value={c.premium.mode}
-                    onChange={(v) => set('premium', { ...c.premium, mode: v })}
-                    className="flex-1"
-                    options={[
-                      { v: 'atLeast', label: 'At least', note: 'Furthest strike still paying this — more premium, more risk.' },
-                      { v: 'atMost', label: 'At most', note: 'Best strike paying up to this — less premium, less risk.' },
-                    ]}
-                  />
-                  <Affix before="$">
-                    <Input value={String(c.premium.usd)} aria-label="premium usd" inputMode="decimal" className="w-20 pl-5"
-                           onChange={(e) => set('premium', { ...c.premium, usd: num(e.target.value, 0) })} />
-                  </Affix>
-                </div>
+              <Stack label="How to pick the strike" className="mt-3">
+                <Segmented
+                  label="strike rule"
+                  value={c.strikeRule}
+                  onChange={(v) => set('strikeRule', v)}
+                  options={[
+                    { v: 'premium', label: 'By premium', note: 'Whichever strike pays what you ask — the tested rule.' },
+                    { v: 'strict', label: 'By strike', note: 'The strike you name — ATM, OTM 1, ITM 2 — whatever it pays.' },
+                  ]}
+                />
               </Stack>
+
+              {c.strikeRule === 'premium' ? (
+                <Stack label="Premium rule" error={err('premium')} className="mt-3">
+                  <div className="flex items-stretch gap-2">
+                    <Segmented
+                      label="premium rule"
+                      value={c.premium.mode}
+                      onChange={(v) => set('premium', { ...c.premium, mode: v })}
+                      className="flex-1"
+                      options={[
+                        { v: 'atLeast', label: 'At least', note: 'Furthest strike still paying this — more premium, more risk.' },
+                        { v: 'atMost', label: 'At most', note: 'Best strike paying up to this — less premium, less risk.' },
+                      ]}
+                    />
+                    <Affix before="$">
+                      <Input value={String(c.premium.usd)} aria-label="premium usd" inputMode="decimal" className="w-20 pl-5"
+                             onChange={(e) => set('premium', { ...c.premium, usd: num(e.target.value, 0) })} />
+                    </Affix>
+                  </div>
+                </Stack>
+              ) : (
+                <Stack
+                  label="Which strike"
+                  error={err('strikeStep')}
+                  className="mt-3"
+                  hint="counted over the strikes Delta has listed, out from the money"
+                >
+                  <StrikeStepper value={c.strikeStep} onChange={(v) => set('strikeStep', v)} />
+                  {c.strikeStep <= 0 && (
+                    <p className="m-0 mt-1.5 text-[11.5px] leading-snug text-[var(--warn)]">
+                      {c.strikeStep < 0
+                        ? 'In the money — it starts with intrinsic value against it'
+                        : 'At the money — the richest premium and the most risk'}
+                      {c.probGate !== null && ', and the safety filter will refuse it on almost every day'}.
+                    </p>
+                  )}
+                </Stack>
+              )}
 
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <Stack label="Lots per leg" error={err('lots')} hint="1 lot = 0.001 BTC">
@@ -512,6 +546,34 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
         </SheetFooter>
       </SheetContent>
     </Sheet>
+  );
+}
+
+/**
+ * ATM, OTM 1..n, ITM 1..n — one strike at a time, with the name read back.
+ *
+ * A stepper rather than a number box: the useful range is small, the sign
+ * carries the meaning, and "-2" typed into a box is not something anybody
+ * should have to translate into "two strikes in the money".
+ */
+function StrikeStepper({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const go = (by: number) => onChange(Math.max(-MAX_STRIKE_STEP, Math.min(MAX_STRIKE_STEP, value + by)));
+  const btn = 'm-0 h-11 w-12 flex-none appearance-none rounded-md border border-solid border-border bg-muted '
+    + 'font-[inherit] text-[18px] text-foreground disabled:opacity-35';
+  return (
+    <div className="flex items-center gap-2">
+      <button type="button" aria-label="one strike nearer the money" className={btn}
+              disabled={value <= -MAX_STRIKE_STEP} onClick={() => go(-1)}>−</button>
+      <div
+        role="status"
+        aria-label="which strike"
+        className="flex h-11 flex-1 items-center justify-center rounded-md border border-solid border-border bg-muted text-[15px] font-semibold text-foreground"
+      >
+        {strikeLabel(value)}
+      </div>
+      <button type="button" aria-label="one strike further out" className={btn}
+              disabled={value >= MAX_STRIKE_STEP} onClick={() => go(1)}>+</button>
+    </div>
   );
 }
 

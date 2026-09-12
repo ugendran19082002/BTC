@@ -550,6 +550,27 @@ export class TradeEngine {
     for (const [i, [role]] of legs.entries()) {
       const o = found[i];
       if (o) rec = this.absorb(rec, o, role);
+      /*
+       * A protective leg the exchange says is no longer resting.
+       *
+       * The id stays in the record until something takes it out, and
+       * `missingProtection` reads the record -- so a stop Delta accepted and
+       * later cancelled (it does not promise to keep a reduce-only order it
+       * considers over-committed) left the trade reading "protected" for ever,
+       * with nothing behind the position. On 12 September that was 850
+       * contracts short with a green shield on the screen.
+       *
+       * Clearing the id is all this does. The next few lines call `protect()`,
+       * which reads the book and puts back whatever is actually missing.
+       *
+       * Only on a definite answer, and only if nothing filled: the lookup
+       * catches to null, which cannot tell "no such order" from "could not
+       * ask", and a partly filled order is the reconciler's business.
+       */
+      if (o && (role === 'take_profit' || role === 'stop_loss')
+          && o.status !== 'open' && o.status !== 'partial' && o.filledSize === 0) {
+        rec = this.commit(rec, { t: 'sibling_cancelled', role, at: this.now() });
+      }
     }
     const entry = found[0];
 

@@ -81,7 +81,7 @@ export type Trade = {
    *
    * Not the plan. The plan is what was asked for; this is what will fill.
    */
-  onBook?: { target: number | null; stop: number | null };
+  onBook?: { target: number | null; stop: number | null } | null;
 };
 
 export type Quote = {

@@ -144,8 +144,20 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
    * turns the colour into noise -- which is how a real alarm gets ignored.
    */
   const wantedStop = trade.plan?.stopPrice != null;
-  const naked = Boolean(trade.alarm) || (wantedStop && !trade.protection.stopLoss);
-  const status = naked ? STATUS.unprotected : trade.protection.stopLoss ? STATUS[trade.phase] === 'NO STOP' ? 'protected' : STATUS[trade.phase] : 'open';
+  /*
+   * Whether there is a stop is a question about the exchange, so it is answered
+   * from the exchange.
+   *
+   * Reading the desk's own record instead put a green shield over 850 short
+   * contracts on 12 September: Delta had cancelled the stop, the id stayed in
+   * the record, and the same card said "PROTECTED" and "Stop none" an inch
+   * apart. `onBook` is null only when the book could not be read -- unknown is
+   * not the same as absent, and a dropped poll must not raise an alarm -- so
+   * that case falls back to the record.
+   */
+  const stopOnBook = trade.onBook ? trade.onBook.stop != null : trade.protection.stopLoss != null;
+  const naked = Boolean(trade.alarm) || (wantedStop && !stopOnBook);
+  const status = naked ? STATUS.unprotected : stopOnBook ? STATUS[trade.phase] === 'NO STOP' ? 'protected' : STATUS[trade.phase] : 'open';
   const net = trade.live?.netIfClosedUsd;
   const charges = trade.charges;
 
