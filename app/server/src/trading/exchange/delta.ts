@@ -1,4 +1,5 @@
 import { DeltaRefused, RateLimited, RequestTimedOut, signed, UnreadableReply, type Creds } from '../../delta/signed.js';
+import { stopFillLimit } from '../money.js';
 import type {
   ExchangeOrder, ExchangePosition, OrderStatus, PlaceOrderRequest, ProductSpec, Quote,
 } from '../types.js';
@@ -123,7 +124,7 @@ function toOrder(o: DeltaOrder): ExchangeOrder {
     productId: o.product_id,
     side: o.side,
     type: o.stop_order_type === 'take_profit_order' ? 'take_profit_market'
-      : o.stop_order_type ? 'stop_market'
+      : o.stop_order_type ? (o.order_type === 'limit_order' ? 'stop_limit' : 'stop_market')
       : o.order_type === 'market_order' ? 'market' : 'limit',
     size: o.size,
     filledSize: o.size - unfilled,
@@ -180,14 +181,22 @@ export function orderBody(req: PlaceOrderRequest): Record<string, unknown> {
   if (req.type === 'limit' && req.limitPrice !== undefined) {
     body.limit_price = String(req.limitPrice);
   }
-  if (req.type === 'stop_market' && req.stopPrice !== undefined) {
-    body.order_type = 'market_order';
+  if ((req.type === 'stop_market' || req.type === 'stop_limit') && req.stopPrice !== undefined) {
     body.stop_order_type = 'stop_loss_order';
     body.stop_price = String(req.stopPrice);
     // Options are thin, so the last trade can be minutes old and the spot is a
     // different instrument's price. The mark is what Delta itself values the
     // position at, so it is what the stop should watch.
     body.stop_trigger_method = 'mark_price';
+    if (req.type === 'stop_limit' && req.limitPrice !== undefined) {
+      // A limit, priced through the trigger. Delta validates a market order for
+      // price impact when it is placed and refuses it as `unsupported` when the
+      // option has no orderbook -- which is when a stop is needed most.
+      body.order_type = 'limit_order';
+      body.limit_price = String(req.limitPrice);
+    } else {
+      body.order_type = 'market_order';
+    }
   }
   return body;
 }
@@ -248,7 +257,43 @@ export class DeltaExchange implements ExchangePort {
     }
   }
 
+  /**
+   * Delta codes that mean "this market order cannot be priced right now".
+   *
+   * `unsupported` is Delta's own wording for a market order it could not
+   * validate for price impact because the orderbook was not available;
+   * `no_liquidity_for_market_order` is the same situation with a book that is
+   * merely empty. Neither is a fault in the request.
+   */
+  private static readonly UNPRICEABLE = new Set(['unsupported', 'no_liquidity_for_market_order']);
+
   async placeOrder(req: PlaceOrderRequest): Promise<ExchangeOrder> {
+    try {
+      return await this.send(req);
+    } catch (e) {
+      /*
+       * Getting out matters more than the price. A reduce-only market order
+       * Delta cannot price is retried once as a limit through the touch: it
+       * cannot open a position, the refusal proves the first one does not
+       * exist, and the same client order id means a duplicate is impossible.
+       */
+      const code = e instanceof OrderRejected ? e.reason : '';
+      const unpriceable = e instanceof OrderRejected
+        && [...DeltaExchange.UNPRICEABLE].some((c) => code.includes(c));
+      if (!unpriceable || req.type !== 'market' || req.reduceOnly !== true) throw e;
+
+      const [quote, product] = await Promise.all([
+        this.getQuote(req.symbol).catch(() => null),
+        this.getProduct(req.symbol).catch(() => null),
+      ]);
+      const touch = req.side === 'buy' ? quote?.ask ?? quote?.mark : quote?.bid ?? quote?.mark;
+      if (touch == null || !(touch > 0)) throw e;
+      const tick = product?.tickSize ?? 0.1;
+      return await this.send({ ...req, type: 'limit', limitPrice: stopFillLimit(req.side, touch, tick) });
+    }
+  }
+
+  private async send(req: PlaceOrderRequest): Promise<ExchangeOrder> {
     const body = orderBody(req);
 
     try {

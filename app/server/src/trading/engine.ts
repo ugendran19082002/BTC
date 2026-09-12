@@ -3,7 +3,7 @@ import type {
 } from './types.js';
 import { CHASE_STEPS } from './order-plan.js';
 import { applyEvent, initialTrade, isDone, protectionSize } from './machine.js';
-import { priceFor, lotsToContracts, stopPriceFor } from './money.js';
+import { priceFor, lotsToContracts, stopFillLimit, stopPriceFor } from './money.js';
 import { DEFAULT_LIMITS, precheck, type PrecheckResult, type RiskLimits } from './precheck.js';
 import { clampLeverage, liquidationRoom, premiumUsd } from './margin.js';
 import { ExchangeUnavailable, OrderRejected, SubmitTimeout, type ExchangePort } from './exchange/port.js';
@@ -772,7 +772,15 @@ export class TradeEngine {
       if (!keep && target !== null && live.length === 1 && live[0]!.filledSize === 0) {
         const only = live[0]!;
         try {
-          await this.exchange.editOrder(only, { [field]: target, size });
+          await this.exchange.editOrder(only, {
+            [field]: target,
+            size,
+            // A stop limit's price travels with its trigger; left behind, the
+            // two describe different stops.
+            ...(field === 'stopPrice' && only.type === 'stop_limit'
+              ? { limitPrice: stopFillLimit('buy', target, tick) }
+              : {}),
+          });
           return only.clientOrderId ?? clientId(rec.state.tradeId, role, attempt);
         } catch (e) {
           // Some venues refuse an edit that a cancel-and-replace would allow.
@@ -846,12 +854,15 @@ export class TradeEngine {
     const sl = await settle(
       'stop_loss',
       rec.plan.stopPrice,
-      (o) => o.type === 'stop_market',
+      // Either shape counts as the stop leg: a stop market placed before
+      // 12 September is still a stop, and must be recognised to be replaced.
+      (o) => o.type === 'stop_market' || o.type === 'stop_limit',
       (o) => o.stopPrice,
       'stopPrice',
       (cid, price) => this.exchange.placeOrder({
         clientOrderId: cid, symbol: rec.plan.symbol, productId: product?.productId ?? 0,
-        side: 'buy', type: 'stop_market', size, stopPrice: price, reduceOnly: true, role: 'stop_loss',
+        side: 'buy', type: 'stop_limit', size, stopPrice: price,
+        limitPrice: stopFillLimit('buy', price, tick), reduceOnly: true, role: 'stop_loss',
       }).then(() => {}),
     );
 

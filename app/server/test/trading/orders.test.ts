@@ -855,7 +855,7 @@ test('67 work on one trade runs in the order it was asked for', async () => {
     r.engine.updateProtection(plan.tradeId, { stopPrice: 150 }),
     r.engine.updateProtection(plan.tradeId, { stopPrice: 200 }),
   ]);
-  const live = (await r.ex.getOpenOrders(CE)).filter((o) => o.type === 'stop_market');
+  const live = (await r.ex.getOpenOrders(CE)).filter((o) => o.type === 'stop_limit' || o.type === 'stop_market');
   assert.equal(live.length, 1, 'one stop, not two');
   assert.equal(live[0]?.stopPrice, 200, 'and it is the one asked for last');
 });

@@ -43,7 +43,7 @@ async function halfTakenByTarget(stopPrice: number | null = 60) {
 test('[critical] a target that fills in part does not take the stop off the rest', async () => {
   const { s, book } = await halfTakenByTarget();
   assert.equal(s.position, -60, '40 bought back, 60 still short');
-  const stop = book.find((o) => o.type === 'stop_market');
+  const stop = book.find((o) => o.type === 'stop_limit');
   assert.ok(stop, 'the stop is still on the book');
   assert.equal(stop.size - stop.filledSize, 60, 'sized to what is still short, not to the 100 it was placed for');
   assert.equal(stop.stopPrice, 60);

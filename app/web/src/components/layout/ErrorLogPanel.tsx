@@ -54,6 +54,11 @@ function meaningOf(row: ErrorRow): string | null {
   if (row.source === 'exchange' && (row.code === 'internal_server_error' || /^http_5\d\d$/.test(row.code ?? ''))) {
     return 'Delta’s own server had a problem. Reads are asked again once automatically; only a concern if it keeps happening.';
   }
+  if (row.code === 'unsupported' || row.code === 'no_liquidity_for_market_order') {
+    return 'That contract had no order book at that moment, so Delta could not accept an order priced "at the market". '
+      + 'Stops go on as limit orders through their trigger, and a close falls back to a limit through the touch, so this '
+      + 'should now be rare — the desk also watches the stop itself and closes if the price reaches it.';
+  }
   if (row.source === 'exchange' && /refused/i.test(row.message)) {
     return 'Delta rejected the request. The message says which field it did not accept.';
   }

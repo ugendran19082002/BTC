@@ -18,7 +18,17 @@ export type OrderSide = 'buy' | 'sell';
  * mark falls straight through 1.10 and keeps going. Which is exactly what
  * happened: a position marked at 1.00 against a target of 1.10, still open.
  */
-export type OrderType = 'limit' | 'market' | 'stop_market' | 'take_profit_market';
+export type OrderType = 'limit' | 'market' | 'stop_market' | 'stop_limit' | 'take_profit_market';
+/*
+ * `stop_limit` is what the desk actually places for a stop now. `stop_market`
+ * stays readable: orders placed before 12 September 2026 are still on the book,
+ * and a leg the reconciler cannot recognise is a leg it cannot cancel.
+ *
+ * The change was forced by Delta. A stop market order is validated for price
+ * impact when it is *placed*, and an option with no orderbook has nothing to
+ * validate against -- so Delta answered `unsupported` and the position had no
+ * stop on the exchange at all. A limit order is accepted with no book.
+ */
 /*
  * Nothing places a `take_profit_market` any more -- Delta fired them the moment
  * they landed, which cost real money, so the target rests as a plain limit and
@@ -49,9 +59,9 @@ export type PlaceOrderRequest = {
   type: OrderType;
   /** Contracts, not lots. Whole numbers only. */
   size: number;
-  /** Required for `limit`; ignored otherwise. Already rounded to the tick. */
+  /** Required for `limit` and `stop_limit`; ignored otherwise. Already rounded to the tick. */
   limitPrice?: number;
-  /** Required for `stop_market`. */
+  /** Required for `stop_market` and `stop_limit`: the level that arms it. */
   stopPrice?: number;
   /** An exit must never be able to open a position on the other side. */
   reduceOnly?: boolean;

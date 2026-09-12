@@ -38,6 +38,32 @@ export const priceFor = (side: 'buy' | 'sell', price: number, tick: number) =>
 export const stopPriceFor = (side: 'buy' | 'sell', price: number, tick: number) =>
   roundToTick(price, tick, side === 'buy' ? 'up' : 'down');
 
+/**
+ * The limit price a protective stop carries, through its own trigger.
+ *
+ * A stop used to go to Delta as a market order, and on 12 September 2026 Delta
+ * refused six of them with `unsupported`: "Market order couldn't be validated
+ * for price impact as orderbook data isn't available." An option with an empty
+ * book cannot take a market order at all, which is exactly the moment a stop
+ * matters. A limit order needs no book to be accepted.
+ *
+ * So the stop is a limit priced well through its trigger: far enough that it
+ * still fills like a stop, near enough that it is not a blank cheque. Half
+ * again for a buy-back, and never less than five ticks away, because on a
+ * penny option a percentage is nothing.
+ *
+ * What it costs: a limit can be jumped in a violent gap. The desk's own stop
+ * watch closes at the market in that case, so the two cover each other.
+ */
+export const STOP_LIMIT_SLACK = 0.5;
+export const STOP_LIMIT_MIN_TICKS = 5;
+
+export function stopFillLimit(side: 'buy' | 'sell', trigger: number, tick: number): number {
+  const slack = Math.max(trigger * STOP_LIMIT_SLACK, tick * STOP_LIMIT_MIN_TICKS);
+  const through = side === 'buy' ? trigger + slack : Math.max(tick, trigger - slack);
+  return stopPriceFor(side, through, tick);
+}
+
 export const lotsToContracts = (lots: number, lotSize: number) => Math.floor(lots) * lotSize;
 
 export const isWholeLots = (contracts: number, lotSize: number) =>

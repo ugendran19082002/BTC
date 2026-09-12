@@ -120,8 +120,11 @@ export class PaperExchange implements ExchangePort {
     };
     this.orders.set(order.orderId, order);
     this.byClientId.set(req.clientOrderId, order.orderId);
+    // A triggered order waits for the level, even though a stop limit carries a
+    // limit price: matching it on arrival would fire every stop the moment it
+    // was placed.
     if (req.type === 'market') this.fillMarket(order);
-    else this.matchLimit(order);
+    else if (req.type === 'limit') this.matchLimit(order);
     return order;
   }
 
@@ -181,7 +184,36 @@ export class PaperExchange implements ExchangePort {
     const cap = this.cfg.partialFillSize;
     const take = cap !== undefined ? Math.min(want, Math.max(0, cap - o.filledSize)) : want;
     if (take <= 0) return;
-    this.applyFill(o, take, o.limitPrice);
+
+    const ladder = this.cfg.slippageLadder;
+    if (ladder && ladder.length) {
+      /*
+       * A limit walks the book like anything else, and stops at its own price:
+       * it takes the levels it can afford and leaves the rest resting. This is
+       * what makes a stop limit different from a stop market -- the market one
+       * eats every level, the limit one stops.
+       */
+      let left = take;
+      for (const level of ladder) {
+        if (left <= 0) break;
+        const affordable = o.side === 'buy' ? level.price <= o.limitPrice : level.price >= o.limitPrice;
+        if (!affordable) break;
+        const got = Math.min(left, level.size);
+        this.applyFill(o, got, level.price);
+        left -= got;
+      }
+    } else {
+      /*
+       * At the touch, not at the limit. A buy limit at 165 against a 115.50
+       * offer pays 115.50 -- filling it at its own price would invent slippage
+       * that never happened and teach the P&L a number the venue never charged.
+       */
+      const touch = o.side === 'buy' ? q.ask : q.bid;
+      const price = touch === null || touch === undefined
+        ? o.limitPrice
+        : (o.side === 'buy' ? Math.min(o.limitPrice, touch) : Math.max(o.limitPrice, touch));
+      this.applyFill(o, take, price);
+    }
     this.settle(o, o.filledSize >= o.size ? 'filled' : 'partial');
   }
 
@@ -223,7 +255,7 @@ export class PaperExchange implements ExchangePort {
       if (o.symbol !== q.symbol) continue;
       if (o.status !== 'open' && o.status !== 'partial') continue;
       if (o.type === 'limit') this.matchLimit(o);
-      if ((o.type === 'stop_market' || o.type === 'take_profit_market') && o.stopPrice !== null) {
+      if ((o.type === 'stop_market' || o.type === 'stop_limit' || o.type === 'take_profit_market') && o.stopPrice !== null) {
         const last = q.mark ?? q.ask ?? q.bid;
         if (last === null) continue;
         /*
@@ -231,10 +263,12 @@ export class PaperExchange implements ExchangePort {
          * when it runs in its favour. For a short -- which buys to close --
          * that is above the level for the stop and below it for the target.
          */
-        const triggered = o.type === 'stop_market'
-          ? (o.side === 'buy' ? last >= o.stopPrice : last <= o.stopPrice)
-          : (o.side === 'buy' ? last <= o.stopPrice : last >= o.stopPrice);
-        if (triggered) this.fillMarket(o);
+        const triggered = o.type === 'take_profit_market'
+          ? (o.side === 'buy' ? last <= o.stopPrice : last >= o.stopPrice)
+          : (o.side === 'buy' ? last >= o.stopPrice : last <= o.stopPrice);
+        // A stop limit becomes a limit order at its own price, so it can miss a
+        // gap the way the real one can. A stop market takes whatever is there.
+        if (triggered) { if (o.type === 'stop_limit') this.matchLimit(o); else this.fillMarket(o); }
       }
     }
     return this;
