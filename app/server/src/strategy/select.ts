@@ -19,7 +19,7 @@
  */
 import type { StrategyConfig } from './types.js';
 import { lotsPerLeg } from './schedule.js';
-import type { Strategy } from './types.js';
+import { strikeLabel, type Strategy } from './types.js';
 
 /** Only the parts of a scored leg this decision needs. */
 export type Candidate = {
@@ -52,19 +52,45 @@ export type Selection = {
 const SIDE = { CE: 'C', PE: 'P' } as const;
 
 /**
- * Pick one side's strike under a premium rule.
+ * The nth strike from the money on one side, counted over what is listed.
  *
- * Out of the money only. A short that starts in the money is not this strategy
- * -- it is a directional bet with a worse payoff than the underlying.
+ * Counted over the strikes that are actually there rather than over the strike
+ * grid, because Delta lists $200 apart near the money and $400 further out: the
+ * fifth listed strike out and the fifth grid step out are different contracts,
+ * and only one of them can be sold.
+ *
+ * Outward means up the board for a call and down it for a put, so both sides
+ * read the same way: [most ITM ... ITM 1, ATM, OTM 1 ... furthest OTM].
+ */
+export function pickByPosition(
+  priced: readonly Candidate[],
+  cp: 'C' | 'P',
+  step: number,
+): Candidate | null {
+  const outward = [...priced].sort((a, b) => (cp === 'C' ? a.strike - b.strike : b.strike - a.strike));
+  if (step === 0) return outward.find((l) => l.moneyness === 'ATM') ?? null;
+  if (step > 0) return outward.filter((l) => l.moneyness === 'OTM')[step - 1] ?? null;
+  // Counting inward from the money, so the nearest in-the-money strike is ITM 1.
+  return outward.filter((l) => l.moneyness === 'ITM').reverse()[-step - 1] ?? null;
+}
+
+/**
+ * Pick one side's strike, under whichever rule the strategy uses.
+ *
+ * Under a premium rule: out of the money only. A short that starts in the money
+ * is not that strategy -- it is a directional bet with a worse payoff than the
+ * underlying. A strict rule may name an in-the-money strike, because naming the
+ * strike is the whole point of it; the safety gate still has its say afterwards.
  */
 export function pickStrike(
   candidates: readonly Candidate[],
   cp: 'C' | 'P',
   cfg: StrategyConfig,
 ): Candidate | null {
-  const otm = candidates.filter(
-    (l) => l.cp === cp && l.moneyness === 'OTM' && (l.sellPrice ?? 0) > 0,
-  );
+  const priced = candidates.filter((l) => l.cp === cp && (l.sellPrice ?? 0) > 0);
+  if (cfg.strikeRule === 'strict') return pickByPosition(priced, cp, cfg.strikeStep ?? 0);
+
+  const otm = priced.filter((l) => l.moneyness === 'OTM');
   if (otm.length === 0) return null;
 
   if (cfg.premium.mode === 'atLeast') {
@@ -97,7 +123,9 @@ export function selectLegs(s: Strategy, candidates: readonly Candidate[]): Selec
     const chosen = pickStrike(candidates, SIDE[leg], cfg);
     if (!chosen) {
       refusals.push(
-        `${leg}: nothing out of the money ${cfg.premium.mode === 'atLeast' ? 'paying' : 'at or below'} $${cfg.premium.usd}`,
+        cfg.strikeRule === 'strict'
+          ? `${leg}: no ${strikeLabel(cfg.strikeStep)} strike listed with a price`
+          : `${leg}: nothing out of the money ${cfg.premium.mode === 'atLeast' ? 'paying' : 'at or below'} $${cfg.premium.usd}`,
       );
       continue;
     }

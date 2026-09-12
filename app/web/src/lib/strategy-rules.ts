@@ -1,4 +1,4 @@
-import type { StrategyConfig } from '@/types/strategy';
+import { MAX_STRIKE_STEP, type StrategyConfig } from '@/types/strategy';
 import { isHhmm, minutesForward, minutesOf, minutesToSettlement, time12 } from '@/lib/time';
 
 /**
@@ -14,7 +14,7 @@ export type FormTab = 'when' | 'sell' | 'trade' | 'extras';
 
 export type FormField =
   | 'name' | 'entryTime' | 'exitTime' | 'weekdays'
-  | 'legs' | 'premium' | 'lots'
+  | 'legs' | 'strikeRule' | 'strikeStep' | 'premium' | 'lots'
   | 'entryLimit' | 'crossAfterSec' | 'maxCrossSpreadPct' | 'takeProfitPct' | 'stopLossPct'
   | 'probGate' | 'doubleWhenOneSided' | 'addMinPrice' | 'addMultiple' | 'addUntil' | 'add';
 
@@ -22,7 +22,7 @@ export type Problem = { field: FormField; tab: FormTab; message: string };
 
 const TAB: Record<FormField, FormTab> = {
   name: 'when', entryTime: 'when', exitTime: 'when', weekdays: 'when',
-  legs: 'sell', premium: 'sell', lots: 'sell',
+  legs: 'sell', strikeRule: 'sell', strikeStep: 'sell', premium: 'sell', lots: 'sell',
   entryLimit: 'trade', crossAfterSec: 'trade', maxCrossSpreadPct: 'trade', takeProfitPct: 'trade', stopLossPct: 'trade',
   probGate: 'extras', doubleWhenOneSided: 'extras', addMinPrice: 'extras', addMultiple: 'extras', addUntil: 'extras', add: 'extras',
 };
@@ -51,6 +51,9 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
   }
   if (!Array.isArray(c.weekdays) || c.weekdays.length === 0) say('weekdays', 'Pick at least one day, or the strategy can never run.');
 
+  if (c.strikeRule === 'strict' && (!Number.isInteger(c.strikeStep) || Math.abs(c.strikeStep) > MAX_STRIKE_STEP)) {
+    say('strikeStep', `Pick a strike between ITM ${MAX_STRIKE_STEP} and OTM ${MAX_STRIKE_STEP}, or at the money.`);
+  }
   if (!(c.premium.usd > 0) || c.premium.usd > 10_000) say('premium', 'Premium must be a positive number of dollars.');
   if (!Number.isInteger(c.lots) || c.lots < 1) say('lots', 'Lots must be a whole number, at least 1.');
 

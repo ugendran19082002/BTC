@@ -75,6 +75,70 @@ test('nothing under the cap returns nothing', () => {
   assert.equal(pickStrike(BOARD, 'C', cfg({ premium: { mode: 'atMost', usd: 1 } })), null);
 });
 
+/* ---------------------------------------------------- by strike, not price --- */
+
+/*
+ * The second rule, asked for on 12 September: name the strike instead of the
+ * price. ATM, OTM 1..n, ITM 1..n -- and whatever it pays, that is the one sold.
+ */
+const byStrike = (strikeStep: number, over: Partial<StrategyConfig> = {}) =>
+  cfg({ strikeRule: 'strict', strikeStep, ...over });
+
+test('[critical] "by strike" takes the strike named, counting out from the money', () => {
+  assert.equal(pickStrike(BOARD, 'C', byStrike(0))?.strike, 78_600, 'ATM');
+  assert.equal(pickStrike(BOARD, 'C', byStrike(1))?.strike, 79_000, 'OTM 1');
+  assert.equal(pickStrike(BOARD, 'C', byStrike(3))?.strike, 79_800, 'OTM 3');
+});
+
+test('[critical] a put counts outward downwards, so its OTM 1 is below the money', () => {
+  assert.equal(pickStrike(BOARD, 'P', byStrike(0))?.strike, 78_600);
+  assert.equal(pickStrike(BOARD, 'P', byStrike(1))?.strike, 78_200);
+  assert.equal(pickStrike(BOARD, 'P', byStrike(4))?.strike, 77_000);
+});
+
+test('[critical] ITM 1 is the nearest strike in the money -- refused by the premium rule, allowed by this one', () => {
+  const board = [...BOARD, leg('C', 78_200, 500, 0.30, 'ITM'), leg('C', 77_800, 900, 0.15, 'ITM')];
+  assert.equal(pickStrike(board, 'C', byStrike(-1))?.strike, 78_200);
+  assert.equal(pickStrike(board, 'C', byStrike(-2))?.strike, 77_800);
+  // the same board, under the premium rule, still never sells one
+  assert.equal(pickStrike(board, 'C', cfg({ premium: { mode: 'atLeast', usd: 15 } }))?.strike, 79_800);
+});
+
+test('[critical] it counts the strikes Delta listed, not grid steps', () => {
+  // Delta lists $200 apart near the money and $400 out, and does not list every
+  // step: with 79,400 missing, OTM 2 is the next one that exists.
+  const gappy = BOARD.filter((l) => l.strike !== 79_400);
+  assert.equal(pickStrike(gappy, 'C', byStrike(2))?.strike, 79_800);
+});
+
+test('a strike that is not on the board is refused, never substituted', () => {
+  assert.equal(pickStrike(BOARD, 'C', byStrike(9)), null, 'only six calls are listed out');
+  assert.equal(pickStrike(BOARD, 'C', byStrike(-1)), null, 'nothing in the money on this board');
+});
+
+test('a strike with no price does not take the slot', () => {
+  const board = [leg('C', 79_000, null, 0.80), leg('C', 79_400, 30, 0.90)];
+  assert.equal(pickStrike(board, 'C', byStrike(1))?.strike, 79_400);
+});
+
+test('[critical] the premium numbers are not read at all under a strict rule', () => {
+  // $999 refuses every strike on this board under the premium rule.
+  assert.equal(pickStrike(BOARD, 'C', byStrike(1, { premium: { mode: 'atLeast', usd: 999 } }))?.strike, 79_000);
+});
+
+test('the refusal names the strike that was asked for', () => {
+  const sel = selectLegs(strat({ strikeRule: 'strict', strikeStep: 9 }), BOARD);
+  assert.equal(sel.legs.length, 0);
+  assert.match(sel.refusals.join(' '), /CE: no OTM 9 strike listed with a price/);
+});
+
+test('[critical] the safety gate still has its say over a strike picked by position', () => {
+  // OTM 1 is 79,000 at 80% and 78,200 at 81%: both below the 95% bar.
+  const sel = selectLegs(strat({ strikeRule: 'strict', strikeStep: 1, doubleWhenOneSided: false }), BOARD);
+  assert.equal(sel.legs.length, 0);
+  assert.match(sel.refusals.join(' '), /79000 is 80\.0%/);
+});
+
 /* ------------------------------------------------------------- the gate --- */
 
 test('both legs clearing the gate are both sold, one lot each', () => {

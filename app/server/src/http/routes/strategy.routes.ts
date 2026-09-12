@@ -25,6 +25,10 @@ function cleanConfig(raw: unknown): StrategyConfig {
   return {
     entryTime: String(c.entryTime ?? DEFAULT_CONFIG.entryTime),
     exitTime,
+    // A client that predates the strike rule sends neither field, and means
+    // premium -- which is what it has been doing all along.
+    strikeRule: c.strikeRule === 'strict' ? 'strict' : 'premium',
+    strikeStep: Math.trunc(Number(c.strikeStep ?? DEFAULT_CONFIG.strikeStep)) || 0,
     premium: {
       mode: c.premium?.mode === 'atMost' ? 'atMost' : 'atLeast',
       usd: Number(c.premium?.usd ?? DEFAULT_CONFIG.premium.usd),

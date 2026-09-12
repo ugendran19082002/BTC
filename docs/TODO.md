@@ -1,7 +1,7 @@
 # TODO
 
 Live: https://delta.thannigo.in
-Updated 10 Sep 2026
+Updated 12 Sep 2026
 
 ---
 
@@ -796,6 +796,124 @@ database — and using the machine's cores and memory. Note the engine itself
 must stay one process: two copies would place the same order twice. The work
 is in the heavy non-trading paths (chain fan-out, scoring, backtests), caching,
 SQLite pragmas and indexes, and the browser bundle.
+
+---
+
+## The stop Delta refused six times — 12 Sep 2026
+
+**What happened.** Between 06:09 and 06:10 the desk tried six times to place the
+stop on a 850-lot short and Delta refused every one:
+
+    unsupported — POST /v2/orders
+    {"product_id": 151997, "size": 850, "side": "buy", "order_type": "market_order",
+     "stop_order_type": "stop_loss_order", "stop_price": "10.5", "reduce_only": true}
+
+**What `unsupported` means.** Delta's own wording: *"Market order couldn't be
+validated for price impact as orderbook data isn't available."* The stop went
+out as a **market** order with a trigger, and Delta will not accept a market
+order for a contract with no order book — which is exactly the state a far
+out-of-the-money option is in for most of the day. So the position ran with **no
+stop at the exchange**, and only the desk's own watch behind it.
+
+**Fixed (not deployed yet).**
+
+- The stop is now a **stop-limit**: the same trigger, plus a limit priced
+  *through* it (50% past the trigger, or five ticks, whichever is further). Delta
+  validates that with no book at all. A trigger at 10.50 goes out with a limit at
+  15.80; at 45, a limit at 67.50. Moving the stop moves both prices together.
+- Any **reduce-only market order** Delta cannot price (`unsupported` or
+  `no_liquidity_for_market_order`) is retried **once** as an aggressive limit
+  through the touch, under the same client order id, so it cannot double up. An
+  **entry is never retried** that way — only getting out is worth any price.
+- The desk-side stop watch is unchanged and still the backstop.
+- The Errors screen explains `unsupported` in one line.
+- Tests: `test/trading/stop-orders.test.ts` (12) — the body Delta gets, where the
+  limit sits, a penny option's five-tick floor, resting until the trigger,
+  filling at the offer rather than at its own limit, a gap leaving it resting,
+  the engine placing and moving it, and the three retry cases.
+
+**Trade-off, said out loud.** A stop-limit can gap past its limit and stay
+resting where a market order would have filled at any price. That is what the
+desk's own stop watch is for, and it closes at the market when the mark goes
+through the level.
+
+**To do:**
+
+- [ ] **Deploy with nothing open.** This is the urgent one: until it is
+      deployed, every stop is still going out as a market order.
+- [ ] **Watch the first live stop go on** and check on Delta that it shows as a
+      stop-limit with both prices.
+- [ ] **The 50% slack is a starting number, not a measured one.** Once a few
+      stops have fired, check what they actually filled at against the trigger.
+
+---
+
+## Overnight strategies, and Delta's market hours — 12 Sep 2026
+
+**Asked for:** a strategy entered at 11:30 PM with its exit at 5:30 AM would not
+save — "exit must be later in the day than entry" refused it.
+
+**Delta India's hours, checked rather than assumed** ([user
+guide](https://guides.delta.exchange/delta-exchange-india-user-guide/derivatives-guide/options-guide),
+[support](https://www.delta.exchange/support/solutions/articles/80001177914-when-do-the-contracts-expire-)):
+
+- **All options expire at 5:30 PM IST.** Settlement is a 30-minute TWAP of the
+  index.
+- **The next day's D1/D2 chain is launched at that same 5:30 PM**, followed by a
+  5-minute auction for price discovery.
+- Trading is otherwise continuous — there is no session close overnight.
+
+So an 11:30 PM entry sells a contract that was listed at 5:30 PM that evening
+and expires at 5:30 PM the next day. A 5:30 AM exit is well inside its life, and
+the real bound is not the clock but **the first 5:30 PM after the entry**.
+
+**Done (not deployed yet).** One rule replaces both of the old ones, on the
+server and in the form, in the same words: every time is measured **forwards
+from the entry**, round midnight if it has to be, and the window must end before
+the settlement that ends the contract it holds.
+
+- 11:30 PM → 5:30 AM saves. So does 6:00 PM → 5:29 PM the next day.
+- 9:00 AM → 6:00 AM does not: that is 21 hours and the contract expires at
+  5:30 PM on the way. It now says so — *"Exit (6:00 AM) comes after the 5:30 PM
+  settlement that ends the contract entered at 9:00 AM. The last exit is
+  5:29 PM."* — instead of the old "must be later in the day".
+- 5:00 PM → 5:30 AM still refused: that contract dies half an hour after entry.
+- **The scheduler is anchored to the entry, not to the calendar day.** A slot
+  keeps the date it began on, so an entry taken at 00:10 is still the previous
+  day's 11:30 PM slot: it is judged on that day's weekday, the once-a-day guard
+  is about that day, and the journal row is written under it. Writing it under
+  the new date would have both lost the record and spent a day that had not run.
+- **The exit no longer reads the clock.** It used to ask "is it past 5:30 AM",
+  which at 11:35 PM is true — an overnight position would have been closed five
+  minutes after it opened. It now asks whether the exit is due for the position
+  this entry opened.
+- **The latest time to add** is measured the same way, so 11:45 PM and 2:00 AM
+  are both inside a 11:30 PM → 5:30 AM window.
+- **The form:** the exit picker's allowed range wraps past midnight ("11:31 PM
+  to 5:29 PM the next day"), the window length reads "Runs 6 h, into the next
+  morning", and the sentence says "closes at 5:30 AM the next day".
+
+Every existing daytime strategy behaves exactly as before — the same arithmetic
+gives the same answers inside one day.
+
+- Tests: server 629 (overnight entry, the slot surviving midnight, a Friday-only
+  slot judged on Friday, not closing five minutes after opening, closing at 5:30
+  the next morning, the window end, the add cutoff, and the settlement bound);
+  web 381 (wrapping ranges, spans, the rules and the form).
+
+**To do:**
+
+- [ ] **Deploy with nothing open**, then create the 11:30 PM strategy and check
+      the form saves it and the list shows the right next entry.
+- [ ] **Watch one overnight run end to end.** The tests prove the arithmetic;
+      only a live night proves the timing across midnight.
+- [ ] **An entry between 5:30 PM and 5:35 PM lands in the launch auction.**
+      Delta runs a 5-minute auction when the new chain lists. Nothing stops a
+      strategy entering then, and the book in an auction is not a normal book.
+      Worth refusing, or at least warning, once it has been seen.
+- [ ] **A weekday means the day the slot began.** An 11:30 PM Friday strategy
+      runs into Saturday, which is correct, but "Saturday" in the day picker
+      still means a slot that *begins* on Saturday. Say so on the form.
 
 ---
 

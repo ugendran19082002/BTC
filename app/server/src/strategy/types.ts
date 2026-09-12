@@ -22,6 +22,28 @@ export type PremiumMode =
    */
   | 'atMost';
 
+/**
+ * How the strike is chosen at all.
+ *
+ * Two different questions, and the desk should not pretend they are one:
+ * `premium` asks *what does it pay* and takes whichever strike answers; `strict`
+ * asks *where does it sit* and takes that one whatever it pays.
+ */
+export type StrikeRule =
+  /** By premium, at least or at most. The rule the 733-day record was measured on. */
+  | 'premium'
+  /** By position on the board: ATM, OTM 1..n, ITM 1..n. */
+  | 'strict';
+
+/** How far from the money a strict rule may reach, either way. */
+export const MAX_STRIKE_STEP = 20;
+
+/** 0 -> "ATM", 2 -> "OTM 2", -1 -> "ITM 1". */
+export function strikeLabel(step: number): string {
+  if (!Number.isFinite(step) || step === 0) return 'ATM';
+  return step > 0 ? `OTM ${step}` : `ITM ${-step}`;
+}
+
 export type LegConfig = 'CE' | 'PE' | 'both';
 
 /**
@@ -51,7 +73,30 @@ export type StrategyConfig = {
    * entry, and it has to end before the settlement that ends the contract.
    */
   exitTime: string;
-  /** How much premium a leg must pay, and which way to read it. */
+  /**
+   * How the strike is chosen: by what it pays (`premium`), or by where it sits
+   * on the board (`strict`). A strategy saved before this existed reads as
+   * `premium`, which is what it was doing.
+   */
+  strikeRule: StrikeRule;
+  /**
+   * Which strike, counted from the money, when `strikeRule` is `strict`.
+   *
+   *    0   at the money
+   *   +n   the nth strike out of the money -- OTM 1, OTM 2, ...
+   *   -n   the nth strike in the money     -- ITM 1, ITM 2, ...
+   *
+   * Counted over the strikes Delta has actually **listed** on that side,
+   * nearest the money first. Not over the strike grid: Delta lists $200 apart
+   * near the money and $400 further out, so counting in grid steps would name
+   * strikes that do not exist.
+   *
+   * Selling in the money is allowed here because it was asked for, and it is a
+   * different trade -- it starts with intrinsic value against it, and the
+   * safety gate will refuse it on almost any day it is switched on.
+   */
+  strikeStep: number;
+  /** How much premium a leg must pay, and which way to read it. Read when `strikeRule` is `premium`. */
   premium: { mode: PremiumMode; usd: number };
   /**
    * How the entry is priced.
@@ -191,6 +236,8 @@ export type StrategyRun = {
 export const DEFAULT_CONFIG: StrategyConfig = {
   entryTime: '05:30',
   exitTime: '17:29',
+  strikeRule: 'premium',
+  strikeStep: 0,
   premium: { mode: 'atLeast', usd: 15 },
   entryPrice: 'offer',
   entryLimit: null,
@@ -247,6 +294,13 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
       bad.push(`Exit (${time12(c.exitTime!)}) comes after the 5:30 PM settlement that ends the contract `
         + `entered at ${time12(c.entryTime!)}. The last exit is 5:29 PM.`);
     }
+  }
+  if (c.strikeRule !== undefined && c.strikeRule !== 'premium' && c.strikeRule !== 'strict') {
+    bad.push('The strike rule must be "premium" or "strict".');
+  }
+  if (c.strikeRule === 'strict'
+      && (!Number.isInteger(c.strikeStep) || Math.abs(c.strikeStep ?? Infinity) > MAX_STRIKE_STEP)) {
+    bad.push(`Pick a strike between ITM ${MAX_STRIKE_STEP} and OTM ${MAX_STRIKE_STEP}, or at the money.`);
   }
   const p = c.premium;
   if (!p || (p.mode !== 'atLeast' && p.mode !== 'atMost')) {

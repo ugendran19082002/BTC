@@ -4,11 +4,30 @@ export type PremiumMode = 'atLeast' | 'atMost';
 export type LegConfig = 'CE' | 'PE' | 'both';
 export type EntryPrice = 'now' | 'offer' | 'set';
 
+/** How the strike is chosen: by what it pays, or by where it sits. */
+export type StrikeRule = 'premium' | 'strict';
+
+/** How far from the money a strict rule may reach, either way. */
+export const MAX_STRIKE_STEP = 20;
+
+/** 0 -> "ATM", 2 -> "OTM 2", -1 -> "ITM 1". */
+export function strikeLabel(step: number): string {
+  if (!Number.isFinite(step) || step === 0) return 'ATM';
+  return step > 0 ? `OTM ${step}` : `ITM ${-step}`;
+}
+
 export type StrategyConfig = {
   /** IST, 24-hour "HH:MM". Shown as 12-hour with AM or PM. */
   entryTime: string;
   /** IST, 24-hour "HH:MM", later than entry and before the 17:30 settlement for a daytime entry. */
   exitTime: string;
+  /** How the strike is chosen. Strategies saved before this read as 'premium'. */
+  strikeRule: StrikeRule;
+  /**
+   * Which strike, counted from the money, when `strikeRule` is 'strict'.
+   * 0 = ATM, +n = OTM n, -n = ITM n, over the strikes actually listed.
+   */
+  strikeStep: number;
   premium: { mode: PremiumMode; usd: number };
   entryPrice: EntryPrice;
   entryLimit: number | null;
@@ -99,6 +118,8 @@ export type StrategyStatus = {
 export const DEFAULT_CONFIG: StrategyConfig = {
   entryTime: '05:30',
   exitTime: '17:29',
+  strikeRule: 'premium',
+  strikeStep: 0,
   premium: { mode: 'atLeast', usd: 15 },
   entryPrice: 'offer',
   entryLimit: null,

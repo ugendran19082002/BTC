@@ -1,4 +1,4 @@
-import type { AddToOpposite, StrategyConfig } from '@/types/strategy';
+import { strikeLabel, type AddToOpposite, type StrategyConfig } from '@/types/strategy';
 import { defaultAddUntil, time12, wrapsMidnight } from '@/lib/time';
 
 /**
@@ -34,6 +34,18 @@ export function describePremium(c: StrategyConfig): string {
     : `at most $${c.premium.usd} — takes the richest strike under it`;
 }
 
+/**
+ * How the strike is chosen, whichever way that is.
+ *
+ * The two rules answer different questions -- what does it pay, against where
+ * does it sit -- so the sentence has to say which question was asked.
+ */
+export function describeStrike(c: StrategyConfig): string {
+  return c.strikeRule === 'strict'
+    ? `at ${strikeLabel(c.strikeStep)}, whatever it pays`
+    : `paying ${describePremium(c)}`;
+}
+
 export function describeEntry(c: StrategyConfig): string {
   if (c.entryPrice === 'now') return 'crosses immediately at the market';
   if (c.entryPrice === 'set') return `rests at ${c.entryLimit ?? '—'}`;
@@ -61,7 +73,7 @@ export function describeStrategy(c: StrategyConfig): string {
     ? ', and doubles the one that survives alone'
     : '';
   return `At ${time12(c.entryTime)} IST on ${describeDays(c.weekdays)}, sells ${legs} `
-    + `paying ${describePremium(c)}, ${c.lots} lot${c.lots === 1 ? '' : 's'} each. `
+    + `${describeStrike(c)}, ${c.lots} lot${c.lots === 1 ? '' : 's'} each. `
     + `It ${describeEntry(c)}, then ${describeExit(c)} or closes at ${time12(c.exitTime)}`
     + `${wrapsMidnight(c.entryTime, c.exitTime) ? ' the next day' : ''}. `
     + `It ${gate}${dbl}.`
