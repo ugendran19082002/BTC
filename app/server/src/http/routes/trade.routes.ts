@@ -142,7 +142,10 @@ const view = (
       // The target rests as a limit and carries its level in limitPrice; the
       // stop is a trigger and carries its level in stopPrice.
       target: resting.find((o) => o.reduceOnly && o.type === 'limit')?.limitPrice ?? null,
-      stop: resting.find((o) => o.reduceOnly && o.type === 'stop_market')?.stopPrice ?? null,
+      // Either shape is the stop: a stop limit is what the desk places since
+      // 12 September, a stop market is what it placed before. Matching only the
+      // old shape would report "no stop" over a stop that is right there.
+      stop: resting.find((o) => o.reduceOnly && (o.type === 'stop_limit' || o.type === 'stop_market'))?.stopPrice ?? null,
     },
   };
 };
