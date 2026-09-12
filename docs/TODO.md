@@ -1013,7 +1013,11 @@ counted over five timeframes and adding a sixth would quietly change a number
 on the screen that nobody asked to change.
 
 **Collapse and expand are remembered** in the account sheet, the way the desk
-cards already were (`usePersisted`, one key per section).
+cards already were (`usePersisted`, one key per section). Everything else that
+folds already remembered: the desk cards, the settings bar, the tab, the chain
+width. The one place deliberately left alone is an **error row's** detail —
+keying that by error id would write a localStorage entry per transient failure
+and re-open last week's rows on every visit.
 
 **To do:**
 

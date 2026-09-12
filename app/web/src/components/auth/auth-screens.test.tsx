@@ -18,7 +18,12 @@ const { ProfileMenu } = await import('@/components/auth/ProfileMenu');
  * first-time setup; and changing the password from the profile.
  */
 
-beforeEach(() => { vi.clearAllMocks(); });
+/*
+ * The account sheet remembers which of its sections were left open, in
+ * localStorage. Without clearing it one test's click decides where the next one
+ * starts, and a click meant to open a section closes it instead.
+ */
+beforeEach(() => { vi.clearAllMocks(); localStorage.clear(); });
 
 const type = (label: string | RegExp, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
 
@@ -256,6 +261,23 @@ describe('the profile menu', () => {
     const list = within(screen.getByRole('list', { name: 'recent activity' }));
     expect(list.getByText('Signed in')).toBeInTheDocument();
     expect(list.getByText('Wrong authenticator code').className).toContain('--warn');
+  });
+
+  it('[critical] remembers which sections were left open', async () => {
+    // Opening the sheet to change a password and finding all four sections back
+    // the way they shipped, every time, is the page refusing to learn something
+    // it already knows.
+    api.getAccount.mockResolvedValue(account);
+    const first = render(<ProfileMenu username="ugendran" onSignedOut={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Account' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Recent activity' }));
+    expect(screen.getByRole('button', { name: 'Recent activity' })).toHaveAttribute('aria-expanded', 'true');
+    first.unmount();
+
+    render(<ProfileMenu username="ugendran" onSignedOut={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Account' }));
+    expect(await screen.findByRole('button', { name: 'Recent activity' }))
+      .toHaveAttribute('aria-expanded', 'true');
   });
 
   it('[critical] sign out ends the session on the server and leaves the desk', async () => {
