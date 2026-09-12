@@ -224,7 +224,7 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
               )}
               <p className="m-0 mt-1.5 text-[11.5px] leading-snug text-muted-foreground">
                 {!err('exitTime') && spanLabel(c.entryTime, c.exitTime)
-                  ? `Runs ${spanLabel(c.entryTime, c.exitTime)}${overnight ? ', into the next morning' : ''}. `
+                  ? `Runs ${spanLabel(c.entryTime, c.exitTime)}${overnight ? ', into the next day' : ''}. `
                   : ''}
                 {overnight
                   ? 'An exit earlier on the clock than the entry means the next day.'
@@ -233,7 +233,17 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                     : 'An evening entry holds tomorrow’s contract.'}
               </p>
 
-              <Stack label="Days" error={err('weekdays')} className="mt-3">
+              {/*
+                Which day a tick means is not obvious once a strategy runs past
+                midnight: a Saturday 11:30 PM entry finishes on Sunday, and the
+                Sunday box has nothing to do with it. Say which end is meant.
+              */}
+              <Stack
+                label="Days"
+                error={err('weekdays')}
+                className="mt-3"
+                hint={overnight ? 'The day the entry starts — this one finishes the next day.' : undefined}
+              >
                 <div className="grid grid-cols-7 gap-1">
                   {DAY_NAMES.map((d, i) => {
                     const on = c.weekdays.includes(i);

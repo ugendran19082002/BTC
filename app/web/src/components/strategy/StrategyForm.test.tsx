@@ -104,7 +104,9 @@ describe('times on a clock', () => {
   it('[critical] an overnight window saves, and says it runs into the next morning', async () => {
     show(editing({ entryTime: '23:30', exitTime: '05:30' }));
     expect(screen.queryByRole('alert')).toBeNull();
-    expect(screen.getByText(/Runs 6 h, into the next morning/)).toBeInTheDocument();
+    expect(screen.getByText(/Runs 6 h, into the next day/)).toBeInTheDocument();
+    // The day picker is about the entry, which is the half people get wrong.
+    expect(screen.getByText(/The day the entry starts/)).toBeInTheDocument();
     fireEvent.click(saveButton());
     await vi.waitFor(() => expect(saveStrategy).toHaveBeenCalled());
     expect(saveStrategy.mock.calls[0]![0].config).toMatchObject({ entryTime: '23:30', exitTime: '05:30' });
