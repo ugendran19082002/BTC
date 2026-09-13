@@ -1188,3 +1188,57 @@ td.score-weak { color: var(--down); }
 td.liq-low { color: var(--down); }
 td.liq-high { color: var(--up); }
 td.liq-normal, td.liq-none { color: var(--dim); }
+
+/* ── Choosing columns ───────────────────────────────────────────────────────
+   It was two presets, and neither was what anyone wanted: "key" hid open
+   interest, "all" put twenty-seven columns on a phone. Each row says what the
+   column is *for* — a list of fifteen abbreviations is not a list anyone can
+   choose from. */
+.colpick { width: min(330px, calc(100vw - 32px)); padding: 0; }
+.colpick-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--line);
+  font-size: 10.5px; letter-spacing: 0.6px; text-transform: uppercase; color: var(--dim);
+}
+.colpick-reset {
+  appearance: none; border: 0; background: none; padding: 0;
+  font: inherit; font-size: 11px; text-transform: none; letter-spacing: 0;
+  color: var(--accent); cursor: pointer;
+}
+.colpick-reset:hover { text-decoration: underline; }
+
+.colpick-list {
+  list-style: none; margin: 0; padding: 5px;
+  max-height: min(420px, 60vh); overflow-y: auto;
+}
+.colpick-row {
+  display: flex; align-items: flex-start; gap: 9px; width: 100%;
+  appearance: none; border: 0; background: none; text-align: left;
+  padding: 7px 8px; border-radius: 6px;
+  font: inherit; color: var(--muted); cursor: pointer;
+}
+.colpick-row:hover { background: var(--panel-2); color: var(--text); }
+.colpick-row:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.colpick-row.on { color: var(--text); }
+.colpick-row.fixed { cursor: default; opacity: 0.75; }
+.colpick-row.fixed:hover { background: none; }
+
+.colpick-box {
+  flex: none; width: 15px; height: 15px; margin-top: 1px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--line); border-radius: 4px; color: #041a11;
+}
+.colpick-row.on .colpick-box { background: var(--up); border-color: var(--up); }
+
+.colpick-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.colpick-label { display: flex; align-items: baseline; gap: 7px; font-size: 12.5px; font-weight: 500; }
+.colpick-short {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 10px; color: var(--dim);
+}
+.colpick-why { font-size: 11px; line-height: 1.35; color: var(--dim); }
+
+/* Score in the candidates table, same bar as the board. */
+.evtable td.sc { text-align: right; white-space: nowrap; }
+.evtable td.sc .scorebar { width: 22px; }

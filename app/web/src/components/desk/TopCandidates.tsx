@@ -65,6 +65,7 @@ export function TopCandidates({
                 <th className="r">Prob</th>
                 <th className="r">Out</th>
                 <th className="r">Premium</th>
+                <th className="r">Score</th>
                 <th className="r">EV</th>
                 {onSell && <th aria-label="action" />}
               </tr>
@@ -100,6 +101,16 @@ export function TopCandidates({
                     <td className="r">{zero === null ? '—' : `${(zero * 100).toFixed(1)}%`}</td>
                     <td className="r dim">{dist === null ? '—' : `${dist.toFixed(1)}%`}</td>
                     <td className="r">{l.sellPrice === null ? '—' : l.sellPrice.toFixed(2)}</td>
+                    <td className={`sc score-${
+                      (l.ev.score ?? 0) >= 80 ? 'strong'
+                        : (l.ev.score ?? 0) >= 65 ? 'good'
+                          : (l.ev.score ?? 0) >= 50 ? 'mid' : 'weak'
+                    }`}>
+                      <span className="scorebar" aria-hidden>
+                        <i style={{ width: `${l.ev.score ?? 0}%` }} />
+                      </span>
+                      <b>{l.ev.score ?? '—'}</b>
+                    </td>
                     <td className={`r ev ${l.ev.evUsd! >= 0 ? 'up' : 'down'}`}>
                       {signedUsd(l.ev.evUsd)}
                     </td>
@@ -121,7 +132,8 @@ export function TopCandidates({
       <Note>
         <b>EV</b> is the credit less the average payout of strikes like this one, after
         Delta’s charges, at the lots the board is set to. <b>Prob</b> is the chance it expires
-        worthless, <b>Out</b> how far the strike sits from the price. A strike marked{' '}
+        worthless, <b>Out</b> how far the strike sits from the price, and <b>Score</b> how the
+        strike ranks against the rest of this board. A strike marked{' '}
         <b>thin</b> passes every rule about the bet and fails one about the fill — usually that
         almost none of its open interest traded today, which is ordinary this far out. Tap a
         strike for the full list. This is arithmetic on one strike, not a rule tested across
