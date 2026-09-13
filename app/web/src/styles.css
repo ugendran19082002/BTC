@@ -965,47 +965,59 @@ td.evcol.down { color: var(--down); }
 .ev-sell:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
 
 /* ── Market insights ───────────────────────────────────────────────────────
-   Four equal tiles. The first version spanned two of them across the full
-   width, which left the row beside each one empty and read as unfinished --
-   `auto-fit` fills whatever the width allows instead: four across on a desk,
-   two on a tablet, one on a phone, and never a tile alone against a gap. */
+   Ten figures, each an icon, a label, a number and the line it rests on.
+   `auto-fit` fills whatever the width allows — five across on a desk, three on
+   a tablet, two on a phone — so a tile is never left alone against a gap. */
 .insight-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(212px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(184px, 1fr));
   gap: 8px;
   margin-bottom: 4px;
 }
 .insight {
+  display: flex; align-items: center; gap: 9px;
   min-width: 0;
-  padding: 10px 11px;
+  padding: 9px 10px;
   border: 1px solid var(--line);
   border-left-width: 3px;
   border-radius: 7px;
   background: var(--panel-2);
 }
+.insight-body { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
 .insight-label {
-  font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase;
-  color: var(--dim); margin-bottom: 3px;
+  font-size: 9.5px; letter-spacing: 0.5px; text-transform: uppercase;
+  color: var(--dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .insight-value {
-  font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums;
+  font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums;
   color: var(--text); line-height: 1.25;
-  overflow-wrap: anywhere;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.insight-foot { margin-top: 2px; font-size: 11px; line-height: 1.35; color: var(--muted); }
+.insight-foot {
+  font-size: 10.5px; line-height: 1.35; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 
+/* The stripe says which tile this is at a glance; the value carries the same
+   colour so the two never argue. `-v` is the value's own tone, which is not
+   always the tile's -- a green spot tile can sit above a red move. */
 .insight-up { border-left-color: var(--up); }
-.insight-up .insight-value { color: var(--up); }
 .insight-down { border-left-color: var(--down); }
-.insight-down .insight-value { color: var(--down); }
 .insight-warn { border-left-color: var(--warn); }
-.insight-warn .insight-value { color: var(--warn); }
 .insight-info { border-left-color: #58a6ff; }
-.insight-info .insight-value { color: #79b8ff; }
 .insight-plain { border-left-color: var(--line); }
 
+.insight-up-v { color: var(--up); }
+.insight-down-v { color: var(--down); }
+.insight-warn-v { color: var(--warn); }
+.insight-info-v { color: #79b8ff; }
+
 @media (max-width: 420px) {
-  .insight-value { font-size: 15px; }
+  .insight-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .insight { padding: 8px; gap: 7px; }
+  .insight .bs-icon { width: 24px; height: 24px; border-radius: 6px; }
+  .insight-value { font-size: 13px; }
 }
 
 /* ── The bar under the chart's pointer ─────────────────────────────────────── */
@@ -1052,26 +1064,6 @@ tr.atm td.strikecell .strikebtn { color: #fff; }
   .chain-bar > .dim { flex-basis: 100%; }
   .chain-density { min-width: 150px; }
 }
-
-/* ── What the board says, beside where price is against it ──────────────────
-   Stacked, these were two full-width blocks with a scroll between them — and a
-   band means nothing until you can see how close price is to its edges. Side by
-   side they are one glance. The insights column is narrow on purpose: its four
-   tiles stack into it, and the chart gets the width, which is what a chart
-   needs. */
-.board-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
-  margin-bottom: 12px;
-  align-items: start;
-}
-@media (min-width: 1040px) {
-  .board-row { grid-template-columns: minmax(280px, 24%) minmax(0, 1fr); }
-}
-/* Both children fill their column rather than shrinking to their content. */
-.board-row > * { min-width: 0; margin-bottom: 0; }
-.board-row .price-chart { height: 100%; }
 
 @media (max-width: 520px) {
   /* Sell is a second action on a crowded row; the strike and the number are

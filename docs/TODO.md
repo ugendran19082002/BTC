@@ -293,6 +293,16 @@ forecast — it is one tile now), the Age column, and every settings control but
 time and expiry. The values behind the removed controls still drive the chain
 request at whatever was last chosen.
 
+**The layout.** Market insights and the chart share one row — the band means
+nothing until you can see how close price is to its edges, and stacked they were
+two full-width blocks with a scroll between them. The insights column is narrow
+on purpose; its four tiles stack into it and the chart gets the width.
+
+The chart was also letterboxed for a while: `width: 100%` with a `max-height`
+makes a browser fit the viewBox to the *height* and centre it, so the candles
+sat in a column down the middle of a wide card with blank space either side.
+Height follows width from the viewBox's own ratio now.
+
 **The chart's scale is price's, not the walls'.** The first version stretched
 the axis to reach both walls so nothing was ever clipped. On a real board that
 meant a 74,400–80,000 axis for a day that traded 76,000–78,000, and every candle

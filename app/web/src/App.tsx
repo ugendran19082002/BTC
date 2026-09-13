@@ -23,7 +23,6 @@ import { DateTimePicker, istToEpoch, type IstMoment } from '@/components/researc
 import { usePersisted } from '@/hooks/usePersisted';
 import { LoginPage } from '@/components/desk/LoginPage';
 import { LivePrice } from '@/components/desk/LivePrice';
-import { BoardStrip } from '@/components/desk/BoardStrip';
 import { MarketInsights } from '@/components/desk/MarketInsights';
 import { TopCandidates } from '@/components/desk/TopCandidates';
 import { PriceChart, CHART_TFS, type ChartTf } from '@/components/desk/PriceChart';
@@ -471,40 +470,36 @@ export default function App() {
           {data && snap && (
             <>
               {/*
-                The five numbers a decision starts from, before any card is
-                opened. Reading them used to mean opening three.
+                Ten figures in one card, running the full width. It was a
+                six-figure strip above a four-figure card for a while, and the
+                strip repeated four of them — the same number twice on one
+                screen is how two figures eventually disagree.
               */}
-              <BoardStrip snap={snap} structure={data.structure} market={data.market} />
-
-              {/*
-                One row: what the board is saying on the left, where BTC is
-                against it on the right. They are read together — a band means
-                nothing until you can see how close price is to its edges — and
-                stacked they were two full-width blocks with a scroll between.
-              */}
-              <div className="board-row">
-                <MarketInsights structure={data.structure} bias={data.bias} snap={snap} />
-              {/*
-                  Above the cards: where BTC is against the two walls is the first
-                  thing read after the strip, and it is what makes those two
-                  numbers mean anything.
-                */}
-                <ErrorBoundary where="Price chart">
-                  <PriceChart
-                    bars={candles?.bars ?? []}
-                    support={data.structure.peOiWall?.strike ?? null}
-                    resistance={data.structure.ceOiWall?.strike ?? null}
-                    spot={snap.spot}
-                    tf={chartTf}
-                    onTf={setChartTf}
-                    loading={candlesBusy}
-                    error={candles?.error}
-                  />
-                </ErrorBoundary>
+              <div className="wide-row">
+                <MarketInsights
+                  structure={data.structure}
+                  bias={data.bias}
+                  snap={snap}
+                  market={data.market}
+                />
               </div>
 
-
-
+              {/*
+                Under the card: where BTC is against the two walls is what makes
+                those two numbers mean anything.
+              */}
+              <ErrorBoundary where="Price chart">
+                <PriceChart
+                  bars={candles?.bars ?? []}
+                  support={data.structure.peOiWall?.strike ?? null}
+                  resistance={data.structure.ceOiWall?.strike ?? null}
+                  spot={snap.spot}
+                  tf={chartTf}
+                  onTf={setChartTf}
+                  loading={candlesBusy}
+                  error={candles?.error}
+                />
+              </ErrorBoundary>
 
               <div className="lead-row">
                 <CollapsibleCard

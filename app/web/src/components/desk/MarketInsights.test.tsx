@@ -1,18 +1,27 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MarketInsights } from '@/components/desk/MarketInsights';
-import type { Bias, OptionStructure, SnapshotMeta } from '@/types/desk';
+import type { Bias, MarketRead, OptionStructure, SnapshotMeta } from '@/types/desk';
 
 /**
- * The card carries what the summary strip above it does not.
+ * Ten figures in one card.
  *
- * The first version repeated support, resistance, the put/call ratio and max
- * pain — all four already on the strip — so the same figure appeared twice on
- * one screen. The test below pins the absence, because a duplicate is the kind
- * of thing that gets added back by someone being helpful.
+ * It was a six-figure strip above a four-figure card for a while, and the strip
+ * repeated support, resistance, the put/call ratio and max pain out of the card
+ * below it — the same number twice on one screen, which is how two figures
+ * eventually disagree. They are one card now, and the test that used to pin the
+ * *absence* of those four pins their presence instead.
+ *
+ * An absent figure has to read as absent — a dash — never as a zero. "Max pain
+ * 0" and "support 0" are numbers somebody would act on.
  */
 
-const snap = { spot: 77_172, hoursToExpiry: 20.25 } as unknown as SnapshotMeta;
+const snap = {
+  spot: 77_172, expiry: '120926', hoursToExpiry: 20.25, atmIv: 0.298,
+  expectedMove: 650, live: true, atm: 77_200,
+} as unknown as SnapshotMeta;
+
+const market = { return24h: 0.37 } as unknown as MarketRead;
 
 const structure = {
   oiRange: { low: 74_400, high: 80_000, widthUsd: 5_600, widthPct: 7.26 },
@@ -29,12 +38,17 @@ const bias = {
   components: [{}, {}, {}],
 } as unknown as Bias;
 
-const card = (over: Partial<OptionStructure> = {}) =>
+const card = (
+  over: Partial<OptionStructure> = {},
+  snapOver: Partial<SnapshotMeta> = {},
+  mkt: MarketRead | null = market,
+) =>
   render(
     <MarketInsights
       structure={{ ...structure, ...over } as OptionStructure}
       bias={bias}
-      snap={snap}
+      snap={{ ...snap, ...snapOver } as SnapshotMeta}
+      market={mkt}
     />,
   );
 
@@ -49,42 +63,91 @@ describe('market insights', () => {
     expect(screen.getByText('+4.2 pts')).toBeInTheDocument();
   });
 
-  it('[critical] repeats nothing that is already on the strip above it', () => {
+  it('carries the six figures the strip used to, so nothing is read twice', () => {
     card();
-    for (const duplicated of ['77,600', '0.86', 'Max pain', 'Support zone', 'Resistance zone']) {
-      expect(screen.queryByText(duplicated)).not.toBeInTheDocument();
-    }
+    expect(screen.getByText('77,172 USD')).toBeInTheDocument();   // spot
+    expect(screen.getByText('29.8%')).toBeInTheDocument();        // implied volatility
+    expect(screen.getByText('0.86')).toBeInTheDocument();         // puts per call
+    expect(screen.getByText('74,400')).toBeInTheDocument();       // support
+    expect(screen.getByText('80,000')).toBeInTheDocument();       // resistance
+    expect(screen.getByText('77,600')).toBeInTheDocument();       // max pain
+  });
+
+  it('says how far the day has moved, in dollars as well as percent', () => {
+    card();
+    expect(screen.getByText(/^\+\d{3} \(\+0\.37%\)$/)).toBeInTheDocument();
+  });
+
+  it('marks a fall as a fall', () => {
+    card({}, {}, { return24h: -1.4 } as MarketRead);
+    expect(screen.getByText(/^−1,0?\d\d \(-1\.40%\)$/)).toBeInTheDocument();
+  });
+
+  it('reads more calls open as a lean, rather than leaving a bare ratio', () => {
+    card();
+    expect(screen.getByText('Bearish')).toBeInTheDocument();
+  });
+
+  it('reads more puts open the other way', () => {
+    card({ pcrOi: 1.4 });
+    expect(screen.getByText('Bullish')).toBeInTheDocument();
+  });
+
+  it('says how heavy each wall is, not only where it is', () => {
+    card();
+    expect(screen.getByText('425.6K open')).toBeInTheDocument();
+    expect(screen.getByText('59.0K open')).toBeInTheDocument();
+  });
+
+  it('says where max pain sits relative to price, which is the part that means anything', () => {
+    card();
+    expect(screen.getByText('above spot')).toBeInTheDocument();
+  });
+
+  it('says the price is a snapshot when the board is not live', () => {
+    card({}, { live: false });
+    expect(screen.getByText('BTC at snapshot')).toBeInTheDocument();
+  });
+
+  it('[critical] shows a dash where there is no figure, never a zero', () => {
+    card(
+      { pcrOi: null, maxPain: null, ceOiWall: null, peOiWall: null, oiRange: null, volPremiumPts: null },
+      { atmIv: null, expectedMove: null },
+      null,
+    );
+    // implied volatility, puts per call, support, resistance, max pain,
+    // the range, its width and the volatility premium
+    expect(screen.getAllByText('—')).toHaveLength(8);
+    expect(screen.queryByText('0.00')).not.toBeInTheDocument();
   });
 
   it('says where BTC sits against the band, which is the part that means anything', () => {
     card();
-    expect(screen.getByText(/BTC is inside it/)).toBeInTheDocument();
+    expect(screen.getByText('BTC is inside it')).toBeInTheDocument();
   });
 
   it('says so when BTC has left the band', () => {
     card({ oiRange: { low: 70_000, high: 72_000, widthUsd: 2_000, widthPct: 2.6 } });
-    expect(screen.getByText(/BTC is above it/)).toBeInTheDocument();
+    expect(screen.getByText('BTC is above it')).toBeInTheDocument();
   });
 
   it('[critical] reads a volatility premium as the seller’s case, and a discount against it', () => {
     card();
-    expect(screen.getByText(/priced richer than BTC has actually moved/)).toBeInTheDocument();
+    expect(screen.getByText('richer than BTC has moved')).toBeInTheDocument();
 
     localStorage.clear();
     card({ volPremiumPts: -5.9 });
     expect(screen.getByText('-5.9 pts')).toBeInTheDocument();
-    expect(screen.getByText(/the seller is being underpaid/)).toBeInTheDocument();
+    expect(screen.getByText('cheaper than BTC has moved')).toBeInTheDocument();
   });
 
-  it('shows a dash, not a zero, where there is nothing to read', () => {
-    card({ oiRange: null, volPremiumPts: null });
-    expect(screen.getAllByText('—')).toHaveLength(3);
+  it('says why the range is missing rather than only dashing it', () => {
+    card({ oiRange: null });
     expect(screen.getByText('no open interest to read')).toBeInTheDocument();
   });
 
   it('says on its face that nothing here is traded on', () => {
     card();
     expect(screen.getByText('For information')).toBeInTheDocument();
-    expect(screen.getByText(/none held up in all three/)).toBeInTheDocument();
   });
 });
