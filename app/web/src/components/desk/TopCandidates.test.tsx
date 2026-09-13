@@ -10,6 +10,9 @@ import type { Leg, SideRecommendation } from '@/types/desk';
  * rather than left for a reader to spot by comparing two numbers.
  */
 
+/** The body rows, in the order they are drawn. */
+const rows = () => screen.getAllByRole('row').slice(1);
+
 const leg = (
   strike: number,
   signal: Leg['ev']['signal'],
@@ -45,47 +48,45 @@ const side = (strike: number): SideRecommendation =>
 describe('best expected value', () => {
   it('ranks the richest first', () => {
     render(<TopCandidates legs={legs} sides={[]} spot={77_172} />);
-    const rows = screen.getAllByRole('listitem');
-    expect(within(rows[0]!).getByText(/80,000/)).toBeInTheDocument();
-    expect(within(rows[1]!).getByText(/79,400/)).toBeInTheDocument();
+    const r = rows();
+    expect(within(r[0]!).getByText('80,000')).toBeInTheDocument();
+    expect(within(r[1]!).getByText('79,400')).toBeInTheDocument();
   });
 
   it('[critical] leaves out a strike the server refused, however large its number', () => {
     render(<TopCandidates legs={legs} sides={[]} spot={77_172} />);
-    expect(screen.queryByText(/82,000/)).not.toBeInTheDocument();
-    expect(screen.getAllByRole('listitem')).toHaveLength(2);
+    expect(screen.queryByText('82,000')).not.toBeInTheDocument();
+    expect(rows()).toHaveLength(2);
   });
 
   it('[critical] keeps a thin strike and marks it, rather than showing an empty card', () => {
-    const thin = withThin(81_000, 12);
-    render(<TopCandidates legs={[...legs, thin]} sides={[]} spot={77_172} />);
-    const rows = screen.getAllByRole('listitem');
-    expect(rows).toHaveLength(3);
+    render(<TopCandidates legs={[...legs, withThin(81_000, 12)]} sides={[]} spot={77_172} />);
+    const r = rows();
+    expect(r).toHaveLength(3);
     // the clear ones rank above it whatever the numbers say
-    expect(within(rows.at(-1)!).getByText(/81,000/)).toBeInTheDocument();
-    expect(within(rows.at(-1)!).getByText('thin')).toBeInTheDocument();
+    expect(within(r.at(-1)!).getByText('81,000')).toBeInTheDocument();
+    expect(within(r.at(-1)!).getByText('thin')).toBeInTheDocument();
   });
 
   it('[critical] marks the strike the tested engine actually picked', () => {
     render(<TopCandidates legs={legs} sides={[side(79_400)]} spot={77_172} />);
-    const picked = screen.getByText(/79,400/).closest('button')!;
-    expect(within(picked).getByText('desk’s pick')).toBeInTheDocument();
+    const pickedRow = screen.getByText('79,400').closest('tr')!;
+    expect(within(pickedRow).getByText('pick')).toBeInTheDocument();
 
     // and the one at the top of this list is *not* the desk's pick, which is
     // the case the card exists to make visible
-    const top = screen.getAllByRole('listitem')[0]!;
-    expect(within(top).queryByText('desk’s pick')).not.toBeInTheDocument();
+    expect(within(rows()[0]!).queryByText('pick')).not.toBeInTheDocument();
   });
 
   it('says which of the two to follow when they disagree', () => {
     render(<TopCandidates legs={legs} sides={[side(79_400)]} spot={77_172} />);
-    expect(screen.getByText(/“What to sell” is the one that was measured/)).toBeInTheDocument();
+    expect(screen.getByText(/“What to sell” is the one that was\s+measured/)).toBeInTheDocument();
   });
 
   it('opens a ticket from a row', () => {
     const onSell = vi.fn();
     render(<TopCandidates legs={legs} sides={[]} spot={77_172} onSell={onSell} />);
-    within(screen.getAllByRole('listitem')[0]!).getByRole('button', { name: 'Sell' }).click();
+    within(rows()[0]!).getByRole('button', { name: 'Sell' }).click();
     expect(onSell).toHaveBeenCalledWith(expect.objectContaining({ strike: 80_000 }));
   });
 
@@ -103,12 +104,12 @@ describe('best expected value', () => {
 
   it('explains what thin means, since most real candidates are', () => {
     render(<TopCandidates legs={[...legs, withThin(81_000, 12)]} sides={[]} spot={77_172} />);
-    expect(screen.getByText(/fails one that is about the fill/)).toBeInTheDocument();
+    expect(screen.getByText(/fails one about the fill/)).toBeInTheDocument();
   });
 
   it('says so plainly when nothing qualifies, rather than showing an empty list', () => {
     render(<TopCandidates legs={[leg(82_000, 'avoid', 99)]} sides={[]} spot={77_172} />);
-    expect(screen.getByText(/No strike clears every eligibility rule/)).toBeInTheDocument();
-    expect(screen.queryAllByRole('listitem')).toHaveLength(0);
+    expect(screen.getByText(/No strike clears the rules right now/)).toBeInTheDocument();
+    expect(screen.queryAllByRole('row')).toHaveLength(0);
   });
 });
