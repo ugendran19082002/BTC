@@ -890,9 +890,10 @@ td.evcol.down { color: var(--down); }
 .price-chart-title { font-size: 12.5px; font-weight: 600; min-width: 0; }
 .price-chart-svg {
   display: block; width: 100%; height: auto;
-  /* Tall enough to read a wick on a phone, capped so it never eats the fold on
-     a laptop. */
-  max-height: 320px;
+  /* No height cap. `width: 100%` with `max-height` makes the browser fit the
+     viewBox to the *height* and centre it, so on a wide card the candles sat in
+     a column down the middle with blank space either side. Height follows width
+     from the viewBox's own ratio instead, and the drawing always fills the box. */
 }
 .price-chart-empty {
   height: 140px; display: flex; align-items: center; justify-content: center;
@@ -907,43 +908,52 @@ td.evcol.down { color: var(--down); }
 
 @media (max-width: 560px) {
   .price-chart { padding: 10px 8px 10px; }
-  .price-chart-svg { max-height: 240px; }
   /* The third line is a caveat, not a key. It has its own line under the two
      that are. */
   .price-chart-key .dim { flex-basis: 100%; }
 }
 
-/* ── Best expected value ───────────────────────────────────────────────────── */
-.ev-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.ev-row {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto auto;
-  grid-template-areas: 'rank strike value sell' 'rank meta value sell';
-  align-items: center;
-  gap: 0 8px;
-  padding: 8px 0;
-  border-top: 1px solid var(--line-soft);
+/* ── Best expected value ───────────────────────────────────────────────────
+   A table, because it is read down a column: five expected values compared
+   against each other, not five rows read one at a time. */
+.evtable-wrap { margin: 0 0 4px; }
+.evtable { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.evtable th {
+  position: static;
+  padding: 0 10px 6px 0;
+  font-size: 10px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase;
+  color: var(--dim); text-align: left; background: none;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
 }
-.ev-row:first-child { border-top: 0; }
-.ev-rank { grid-area: rank; font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
-.ev-strike {
-  grid-area: strike; justify-self: start;
+.evtable td {
+  padding: 7px 10px 7px 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--text);
+}
+.evtable tr:last-child td { border-bottom: 0; }
+.evtable th:last-child, .evtable td:last-child { padding-right: 0; }
+.evtable .r { text-align: right; }
+.evtable .rank { color: var(--dim); width: 1%; }
+.evtable td.dim { color: var(--dim); }
+.evtable td.ce { color: var(--ce); font-weight: 600; }
+.evtable td.pe { color: var(--pe); font-weight: 600; }
+.evtable td.ev { font-weight: 600; }
+.evtable td.ev.up { color: var(--up); }
+.evtable td.ev.down { color: var(--down); }
+.evtable tr.picked td { background: #fcd53510; }
+
+.evtable td.k { font-weight: 600; color: var(--accent); }
+.evtable td.k button {
   appearance: none; border: 0; background: none; padding: 0;
-  color: var(--text); font: inherit; font-size: 13px; font-weight: 600;
-  cursor: pointer; text-align: left;
-  display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  font: inherit; font-weight: 600; color: var(--accent); cursor: pointer;
 }
-.ev-strike:hover { color: var(--accent); }
-.ev-strike:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 3px; }
-.ev-strike .ce { color: var(--ce); }
-.ev-strike .pe { color: var(--pe); }
-.ev-meta { grid-area: meta; font-size: 11.5px; color: var(--muted); min-width: 0; }
-.ev-value {
-  grid-area: value; text-align: right; display: flex; flex-direction: column;
-  font-variant-numeric: tabular-nums; line-height: 1.3;
-}
-.ev-value b { font-size: 13px; }
-.ev-value small { font-size: 10.5px; color: var(--dim); }
+.evtable td.k button:hover { text-decoration: underline; }
+.evtable td.k button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 3px; }
+.evtable td.k .tag { margin-left: 5px; }
+
 .ev-sell {
   grid-area: sell;
   appearance: none; font: inherit; font-size: 11.5px; font-weight: 600;
@@ -1056,4 +1066,32 @@ tr.atm td.strikecell .strikebtn { color: #fff; }
   .chain-bar { flex-wrap: wrap; gap: 8px; }
   .chain-bar > .dim { flex-basis: 100%; }
   .chain-density { min-width: 150px; }
+}
+
+/* ── What the board says, beside where price is against it ──────────────────
+   Stacked, these were two full-width blocks with a scroll between them — and a
+   band means nothing until you can see how close price is to its edges. Side by
+   side they are one glance. The insights column is narrow on purpose: its four
+   tiles stack into it, and the chart gets the width, which is what a chart
+   needs. */
+.board-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  margin-bottom: 12px;
+  align-items: start;
+}
+@media (min-width: 1040px) {
+  .board-row { grid-template-columns: minmax(280px, 24%) minmax(0, 1fr); }
+}
+/* Both children fill their column rather than shrinking to their content. */
+.board-row > * { min-width: 0; margin-bottom: 0; }
+.board-row .price-chart { height: 100%; }
+
+@media (max-width: 520px) {
+  /* Sell is a second action on a crowded row; the strike and the number are
+     what the card is for, so the button loses its padding before they lose
+     their columns. */
+  .evtable { font-size: 12px; }
+  .evtable .ev-sell { padding: 0 8px; min-height: 26px; font-size: 11px; }
 }

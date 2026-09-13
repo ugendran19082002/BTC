@@ -476,29 +476,35 @@ export default function App() {
               */}
               <BoardStrip snap={snap} structure={data.structure} market={data.market} />
 
-              {/* Directly under the strip: it reads as its second line, and
-                  carries only what the strip does not already say. */}
-              <div className="wide-row">
+              {/*
+                One row: what the board is saying on the left, where BTC is
+                against it on the right. They are read together — a band means
+                nothing until you can see how close price is to its edges — and
+                stacked they were two full-width blocks with a scroll between.
+              */}
+              <div className="board-row">
                 <MarketInsights structure={data.structure} bias={data.bias} snap={snap} />
+              {/*
+                  Above the cards: where BTC is against the two walls is the first
+                  thing read after the strip, and it is what makes those two
+                  numbers mean anything.
+                */}
+                <ErrorBoundary where="Price chart">
+                  <PriceChart
+                    bars={candles?.bars ?? []}
+                    support={data.structure.peOiWall?.strike ?? null}
+                    resistance={data.structure.ceOiWall?.strike ?? null}
+                    spot={snap.spot}
+                    tf={chartTf}
+                    onTf={setChartTf}
+                    loading={candlesBusy}
+                    error={candles?.error}
+                  />
+                </ErrorBoundary>
               </div>
 
-              {/*
-                Above the cards: where BTC is against the two walls is the first
-                thing read after the strip, and it is what makes those two
-                numbers mean anything.
-              */}
-              <ErrorBoundary where="Price chart">
-                <PriceChart
-                  bars={candles?.bars ?? []}
-                  support={data.structure.peOiWall?.strike ?? null}
-                  resistance={data.structure.ceOiWall?.strike ?? null}
-                  spot={snap.spot}
-                  tf={chartTf}
-                  onTf={setChartTf}
-                  loading={candlesBusy}
-                  error={candles?.error}
-                />
-              </ErrorBoundary>
+
+
 
               <div className="lead-row">
                 <CollapsibleCard
