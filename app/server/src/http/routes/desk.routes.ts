@@ -107,7 +107,10 @@ export function registerDeskRoutes(app: FastifyInstance) {
 
       return {
         snapshot: { ...snap, legs: undefined },
-        legs: attachEv(scored, { spot: snap.spot, lots, minPremium }),
+        legs: attachEv(scored, {
+          spot: snap.spot, lots, minPremium,
+          atmIv: snap.atmIv, expectedMove: snap.expectedMove,
+        }),
         bias: bias(snap, scored),
         picks,
         market,

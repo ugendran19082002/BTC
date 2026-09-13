@@ -217,7 +217,11 @@ test('[critical] a thin strike is ranked, below the clear ones -- dropping them 
   const ranked = topByEv(attachEv(book, opts));
   assert.deepEqual(ranked.map((l) => l.ev.signal), ['sell', 'watch']);
   assert.deepEqual(ranked.map((l) => l.strike), [79_600, 80_000],
-    'the clear strike ranks first even though the thin one pays more');
+    'the clear strike ranks first even though the thin one pays more and scores higher');
+  assert.equal(ranked[1]!.ev.tier, 'watch',
+    'a soft rule failing caps the tier, so a score cannot promote past it');
+  assert.ok((ranked[1]!.ev.score ?? 0) > (ranked[0]!.ev.score ?? 0),
+    'and it really does score higher -- the cap is what holds the order');
 });
 
 test('every strike on the board carries its own arithmetic', () => {
@@ -273,4 +277,97 @@ test('a range is only reported when the walls are the right way round', () => {
     leg({ cp: 'C', strike: 74_000, bid: 5, mark: 5, zero: 0.99, model: 0.97, oi: 9_000 }),
   ];
   assert.equal(optionStructure(snap(SPOT, book), null).oiRange, null);
+});
+
+// ---------------------------------------------------------------------------
+
+test('the score is a rank against the board, not an absolute', () => {
+  const book = [
+    leg({ cp: 'C', strike: 80_000, bid: 18, ask: 19, mark: 15, zero: 0.99, model: 0.97, oi: 400_000, volume: 40_000 }),
+    leg({ cp: 'C', strike: 79_600, bid: 18, ask: 19, mark: 15, zero: 0.99, model: 0.97, oi: 400, volume: 40 }),
+  ];
+  const [heavy, thin] = attachEv(book, opts);
+  assert.ok(heavy!.ev.score! > thin!.ev.score!, 'open interest and volume are scored against the heaviest strike listed');
+  for (const l of [heavy, thin]) {
+    assert.ok(l!.ev.score! >= 0 && l!.ev.score! <= 100, `0-100, got ${l!.ev.score}`);
+  }
+});
+
+test('a strike with no price has no score and no tier above avoid', () => {
+  const l = leg({ cp: 'C', strike: 80_000, bid: 18, mark: 15, zero: 0.99, model: 0.97 });
+  const bare = { ...l, sellPrice: null, sellPrice2: undefined } as unknown as typeof l;
+  const e = legEv({ ...bare, sellPrice: null } as typeof l, opts);
+  assert.equal(e.score, null);
+  assert.equal(e.tier, 'avoid');
+});
+
+test('[critical] a hard rule failing is avoid however well the strike scores', () => {
+  // deep out, heavy, richly paid -- and the average payout still exceeds the credit
+  const bad = leg({
+    cp: 'C', strike: 90_000, bid: 40, ask: 41, mark: 40, zero: 0.90, model: 0.99,
+    oi: 500_000, volume: 90_000,
+  });
+  const e = legEv(bad, opts, { maxOi: 500_000, maxVolume: 90_000, atmIv: 0.3, expectedMove: 900 });
+  assert.equal(e.tier, 'avoid');
+  assert.ok(e.checks.some((c) => c.severity === 'block' && !c.ok));
+});
+
+test('a strike that clears everything is named by its score', () => {
+  const good = leg({
+    cp: 'C', strike: 82_000, bid: 40, ask: 41, mark: 12, zero: 0.995, model: 0.97,
+    oi: 100_000, volume: 20_000,
+  });
+  const e = legEv(good, opts, { maxOi: 100_000, maxVolume: 20_000, atmIv: 0.3, expectedMove: 900 });
+  assert.ok(e.checks.every((c) => c.ok), 'nothing outstanding');
+  assert.ok(['strong', 'candidate', 'watch'].includes(e.tier), `named, got ${e.tier}`);
+});
+
+test('[critical] the breakdown adds back up to the expected value on screen', () => {
+  const l = leg({ cp: 'C', strike: 79_600, bid: 18, ask: 19, mark: 15, zero: 0.99, model: 0.97 });
+  const e = legEv(l, opts);
+  const b = e.breakdown!;
+
+  assert.ok(Math.abs(b.pWin + b.pLoss - 1) < 1e-12, 'the two chances are the whole of it');
+  assert.equal(b.premiumPerBtc, 18);
+  assert.equal(b.feesUsd, e.chargesUsd);
+  assert.equal(b.evUsd, e.evUsd);
+
+  // the average payout is the cost of a breach weighted by how often one happens
+  assert.ok(
+    Math.abs(b.expectedLossPerBtc * b.pLoss - e.payoutPerBtc!) < 1e-9,
+    'expected loss x chance of losing is the payout the EV was worked out from',
+  );
+  // and the whole thing is the formula it claims to be
+  assert.ok(
+    Math.abs((b.premiumPerBtc - b.expectedLossPerBtc * b.pLoss) * 5 * LOT - b.feesUsd - b.evUsd!) < 1e-12,
+    'premium less the expected loss, times lots, less fees',
+  );
+});
+
+test('a strike that cannot breach has no breach to cost anything', () => {
+  const certain = leg({ cp: 'P', strike: 60_000, bid: 12, ask: 13, mark: 9, zero: 1, model: 0.98 });
+  const b = legEv(certain, opts).breakdown!;
+  assert.equal(b.pLoss, 0);
+  assert.equal(b.expectedLossPerBtc, 0);
+});
+
+test('the credit is reported against the margin it ties up', () => {
+  const l = leg({ cp: 'C', strike: 79_600, bid: 18, ask: 19, mark: 15, zero: 0.99, model: 0.97 });
+  const e = legEv(l, opts, { maxOi: 1, maxVolume: 1, atmIv: 0.3, expectedMove: 900 });
+  assert.ok(e.premiumYieldPct! > 0, 'a yield, not a bare number of dollars');
+  assert.ok(Math.abs(e.premiumPerExpectedMove! - 18 / 900) < 1e-12);
+});
+
+test('there is no yield to report without an expected move to report it against', () => {
+  const l = leg({ cp: 'C', strike: 79_600, bid: 18, ask: 19, mark: 15, zero: 0.99, model: 0.97 });
+  assert.equal(legEv(l, opts).premiumPerExpectedMove, null);
+});
+
+test('how busy a strike is, banded rather than left as a ratio', () => {
+  const band = (oi: number, volume: number) =>
+    legEv(leg({ cp: 'C', strike: 79_600, bid: 18, mark: 15, zero: 0.99, model: 0.97, oi, volume }), opts).liquidity;
+
+  assert.equal(band(100_000, 1_000), 'low');      // 1%
+  assert.equal(band(100_000, 10_000), 'normal');  // 10%
+  assert.equal(band(100_000, 20_000), 'high');    // 20%
 });

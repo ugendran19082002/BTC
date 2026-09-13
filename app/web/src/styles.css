@@ -173,9 +173,13 @@ button.ghost {
 .lead-row {
   display: grid; gap: 12px; margin-bottom: 12px;
   grid-template-columns: minmax(0, 1fr);
-  /* both cards stand to the same height: side by side, one short card next to a
-     tall one reads as unfinished rather than as two halves of one row */
-  align-items: stretch;
+  /* Each card is its own height.
+     They used to stretch to match, which read as two halves of one row while
+     they were a similar size. They are not any more -- the Market card runs to
+     five hundred pixels and the candidates card to two -- and stretching the
+     short one just draws its border around three hundred pixels of nothing,
+     which is worse than a ragged bottom edge. */
+  align-items: start;
 }
 @media (min-width: 900px) {
   /* two cards: the contract you are looking at, and what to sell on it. A
@@ -798,9 +802,15 @@ td.sigcol button { cursor: pointer; }
    cell is what grows, not the type. */
 td.sigcol { padding-top: 0; padding-bottom: 0; }
 td.sigcol button { min-height: 26px; }
-td.sig-sell button, td.sig-sell span { color: var(--up); border-color: #0ecb8166; background: #0ecb811f; }
+/* Four tiers. Strong is filled, candidate outlined in the same green: the two
+   are both worth selling and the fill is the only thing separating them, which
+   keeps a board of greens readable. */
+td.sig-strong button, td.sig-strong span { color: #041a11; border-color: var(--up); background: var(--up); }
+td.sig-candidate button, td.sig-candidate span { color: var(--up); border-color: #0ecb8166; background: #0ecb811f; }
 td.sig-watch button, td.sig-watch span { color: var(--warn); border-color: #f0b90b66; background: #f0b90b1f; }
 td.sig-avoid button, td.sig-avoid span { color: var(--down); border-color: #f6465d55; background: #f6465d17; }
+/* the old three-name set, for anything still rendering it */
+td.sig-sell button, td.sig-sell span { color: var(--up); border-color: #0ecb8166; background: #0ecb811f; }
 td.sigcol button:hover { filter: brightness(1.35); }
 td.sigcol button:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
 
@@ -1155,3 +1165,26 @@ tr.atm td.strikecell .strikebtn { color: #fff; }
   }
 }
 .move-col { min-width: 0; }
+
+/* ── Score, and how busy a strike is ────────────────────────────────────────
+   A number and a bar: the number is the comparison, the bar is the glance. It
+   ranks a strike against the rest of *this* board, so a column of forties means
+   the strikes are alike, not that the board is bad. */
+th.scorecol, td.scorecol { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+td.scorecol b { font-weight: 600; font-size: 11.5px; }
+.scorebar {
+  display: inline-block; vertical-align: middle;
+  width: 26px; height: 4px; margin-right: 6px;
+  border-radius: 2px; background: var(--line); overflow: hidden;
+}
+.scorebar i { display: block; height: 100%; background: currentColor; }
+td.score-strong { color: var(--up); }
+td.score-good { color: #7fd4a4; }
+td.score-mid { color: var(--warn); }
+td.score-weak { color: var(--down); }
+
+/* Traded today against what is open. Only the ends are coloured: "normal" is
+   most of the board and colouring it would say something about nothing. */
+td.liq-low { color: var(--down); }
+td.liq-high { color: var(--up); }
+td.liq-normal, td.liq-none { color: var(--dim); }

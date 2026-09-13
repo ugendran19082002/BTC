@@ -27,6 +27,27 @@ export type LegEv = {
   maxProfitUsd: number | null;
   /** null means unbounded — a naked short has no worst case. */
   maxLossUsd: number | null;
+  /** Traded today over open interest, banded: under 5%, 5–15%, over 15%. */
+  liquidity: 'low' | 'normal' | 'high' | null;
+  /** The credit as a share of the margin it ties up, and of the expected move. */
+  premiumYieldPct: number | null;
+  premiumPerExpectedMove: number | null;
+  /** 0–100, ranking this strike against the rest of its board. */
+  score: number | null;
+  /**
+   * The score's name. Floored by the rules in both directions: a hard rule
+   * failing is `avoid` whatever the score, a soft one caps it at `watch`.
+   */
+  tier: 'strong' | 'candidate' | 'watch' | 'avoid';
+  /** Where the expected value came from, for a reader who wants to argue. */
+  breakdown: {
+    pWin: number;
+    premiumPerBtc: number;
+    pLoss: number;
+    expectedLossPerBtc: number;
+    feesUsd: number;
+    evUsd: number;
+  } | null;
   checks: Check[];
   signal: 'sell' | 'watch' | 'avoid';
 };
