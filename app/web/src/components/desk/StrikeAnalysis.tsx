@@ -9,7 +9,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import {
   price, signedUsd, signedInr, usd, usdToInr, strike as fmtStrike,
 } from '@/lib/format';
-import { SIGNAL_LABEL, SIGNAL_TONE, otmPct } from '@/lib/ev-view';
+import { TIER_LABEL, TIER_TONE, otmPct } from '@/lib/ev-view';
 import { cn } from '@/lib/utils';
 
 const dash = (v: number | null | undefined, f: (n: number) => string) =>
@@ -88,13 +88,18 @@ export function StrikeAnalysis({
         )}
 
         <div className="flex flex-wrap items-center gap-2">
-          <Badge tone={SIGNAL_TONE[ev.signal]}>{SIGNAL_LABEL[ev.signal]}</Badge>
-          <span className="text-[12px] text-muted-foreground">
-            {ev.signal === 'sell'
-              ? 'Every eligibility rule is clear.'
+          <Badge tone={TIER_TONE[ev.tier]}>{TIER_LABEL[ev.tier]}</Badge>
+          {ev.score !== null && (
+            <span className="text-[12px] tabular-nums text-muted-foreground">
+              score <b className="text-foreground">{ev.score}</b>/100 against this board
+            </span>
+          )}
+          <span className="basis-full text-[12px] text-muted-foreground">
+            {ev.tier === 'avoid'
+              ? 'A rule that matters is failing — see below.'
               : ev.signal === 'watch'
                 ? 'Nothing hard is failing, but read the warnings.'
-                : 'A rule that matters is failing — see below.'}
+                : 'Every eligibility rule is clear.'}
           </span>
         </div>
 
@@ -163,6 +168,18 @@ export function StrikeAnalysis({
             <KV label="Average payout at settlement" hint="Per BTC, weighted by how often strikes like this really breached.">
               {dash(ev.payoutPerBtc, (n) => `$${n.toFixed(2)}`)}
             </KV>
+            <KV
+              label="Credit against the margin"
+              hint="What the credit is worth as a return on the margin Delta ties up for it."
+            >
+              {dash(ev.premiumYieldPct, (n) => `${n.toFixed(2)}%`)}
+            </KV>
+            <KV
+              label="Credit against the expected move"
+              hint="The premium in units of how far BTC is priced to travel by expiry. Under 1 is being paid less than the move it is exposed to."
+            >
+              {dash(ev.premiumPerExpectedMove, (n) => `${n.toFixed(3)}×`)}
+            </KV>
             <KV label="Break even">{dash(ev.breakeven, (n) => fmtStrike(Math.round(n)))}</KV>
             <KV label="Most it can make" hint="The credit, after charges. A short option has no more upside than that.">
               {usd(ev.maxProfitUsd)}
@@ -175,6 +192,44 @@ export function StrikeAnalysis({
             <KV label="Charges to open">{usd(ev.chargesUsd)}</KV>
           </dl>
         </div>
+
+        {ev.breakdown && (
+          <div className="mt-4 border-t border-border pt-3">
+            <div className="mb-2 text-[10.5px] font-semibold uppercase tracking-[0.8px] text-muted-foreground">
+              How that expected value was reached
+            </div>
+            {/*
+              The board shows the answer; this is what a reader needs to argue
+              with it. The last line is the same arithmetic written out, so the
+              figure above can be checked rather than taken.
+            */}
+            <dl className="flex flex-col gap-1.5">
+              <KV label="Chance it expires worthless">
+                <span className="up">{(ev.breakdown.pWin * 100).toFixed(1)}%</span>
+              </KV>
+              <KV label="Credit if it does" hint="Per BTC. You receive the bid.">
+                <span className="up">${ev.breakdown.premiumPerBtc.toFixed(2)}</span>
+              </KV>
+              <KV label="Chance it breaches">
+                <span className="down">{(ev.breakdown.pLoss * 100).toFixed(1)}%</span>
+              </KV>
+              <KV
+                label="Average cost if it does"
+                hint="Per BTC, given a breach happens — not the worst case, which is unbounded."
+              >
+                <span className="down">${ev.breakdown.expectedLossPerBtc.toFixed(2)}</span>
+              </KV>
+              <KV label="Delta’s charges">{usd(ev.breakdown.feesUsd)}</KV>
+            </dl>
+            <p className="m-0 mt-2.5 font-mono text-[11px] leading-relaxed text-muted-foreground">
+              ({(ev.breakdown.pWin * 100).toFixed(1)}% × ${ev.breakdown.premiumPerBtc.toFixed(2)})
+              − ({(ev.breakdown.pLoss * 100).toFixed(1)}% × ${ev.breakdown.expectedLossPerBtc.toFixed(2)})
+              {' '}× lots × 0.001 − {usd(ev.breakdown.feesUsd)}
+              {' = '}
+              <b className={ev.breakdown.evUsd >= 0 ? 'up' : 'down'}>{signedUsd(ev.breakdown.evUsd)}</b>
+            </p>
+          </div>
+        )}
 
         <div className="mt-4 border-t border-border pt-3">
           <div className="mb-2 text-[10.5px] font-semibold uppercase tracking-[0.8px] text-muted-foreground">

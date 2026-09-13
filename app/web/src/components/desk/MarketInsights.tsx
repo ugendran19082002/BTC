@@ -1,7 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
 import {
   TrendingUp, TrendingDown, Activity, Scale, ArrowDownToLine, ArrowUpToLine,
-  Crosshair, ArrowLeftRight, Ruler, Percent,
+  Crosshair, ArrowLeftRight, Ruler, Percent, Move, ShieldAlert,
 } from 'lucide-react';
 import type { MarketRead, OptionStructure, SnapshotMeta } from '@/types/desk';
 import { CollapsibleCard } from '@/components/ui/collapsible-card';
@@ -186,9 +186,42 @@ export function MarketInsights({
         />
 
         <Tile
-          icon={ArrowLeftRight}
-          label="Expected range"
+          icon={Move}
+          label="Expected move"
           tone="info"
+          value={snap.expectedMove === null ? '—' : `±$${Math.round(snap.expectedMove).toLocaleString()}`}
+          foot={
+            snap.expectedMove === null
+              ? 'no implied volatility to read'
+              : `${fmtStrike(Math.round(snap.spot - snap.expectedMove))} – ${fmtStrike(Math.round(snap.spot + snap.expectedMove))}`
+          }
+          hint="spot × volatility × √(hours ÷ 8760). BTC settles inside this about 2 times in 3 — a strike inside it is not safe."
+        />
+
+        <Tile
+          icon={ShieldAlert}
+          label="If BTC moves 2%"
+          tone="warn"
+          value={`${fmtStrike(Math.round(snap.spot * 0.98))} – ${fmtStrike(Math.round(snap.spot * 1.02))}`}
+          foot={
+            r === null
+              ? 'no walls to measure against'
+              : snap.spot * 1.02 >= r.high
+                ? 'up 2% clears the call wall'
+                : snap.spot * 0.98 <= r.low
+                  ? 'down 2% clears the put wall'
+                  : 'both stay inside the walls'
+          }
+          footTone={
+            r !== null && (snap.spot * 1.02 >= r.high || snap.spot * 0.98 <= r.low) ? 'down' : 'plain'
+          }
+          hint="Two percent is roughly what a losing day moved: winning days averaged 0.63%, losing days 2.25%."
+        />
+
+        <Tile
+          icon={ArrowLeftRight}
+          label="Open-interest range"
+          tone="plain"
           value={r === null ? '—' : `${fmtStrike(r.low)} – ${fmtStrike(r.high)}`}
           foot={
             r === null

@@ -45,6 +45,7 @@ export function PriceChart({
   support,
   resistance,
   spot,
+  expectedMove = null,
   tf,
   onTf,
   loading = false,
@@ -56,6 +57,8 @@ export function PriceChart({
   /** Heaviest call strike. */
   resistance: number | null;
   spot: number;
+  /** ± this much by settlement, shaded behind the candles. */
+  expectedMove?: number | null;
   tf: ChartTf;
   onTf: (tf: ChartTf) => void;
   loading?: boolean;
@@ -239,6 +242,31 @@ export function PriceChart({
               </text>
             </g>
           ))}
+
+          {/*
+            What the options are pricing, behind what BTC has done. Drawn first
+            so the candles sit on top of it: it is the backdrop the bars are
+            read against, not a mark of its own.
+          */}
+          {expectedMove !== null && expectedMove > 0 && (
+            <g>
+              <rect
+                x={PAD.left}
+                y={Math.max(PAD.top, view.y(spot + expectedMove))}
+                width={W - PAD.right - PAD.left}
+                height={Math.max(
+                  0,
+                  Math.min(PAD.top + view.priceH, view.y(spot - expectedMove))
+                    - Math.max(PAD.top, view.y(spot + expectedMove)),
+                )}
+                fill="var(--accent)"
+                opacity="0.055"
+              />
+              <text x={PAD.left + 4} y={PAD.top + view.priceH - 4} fontSize="9.5" fill="var(--dim)">
+                shaded: ±${Math.round(expectedMove).toLocaleString()} expected by expiry
+              </text>
+            </g>
+          )}
 
           {/* volume, under its own baseline */}
           <line
