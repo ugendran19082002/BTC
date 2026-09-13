@@ -44,7 +44,9 @@ broke and why — which is worth reading before changing anything in `trading/`.
 
 Two processes in production: `btc-desk-api` (Fastify) and `btc-desk-web`
 (nginx serving the built bundle and proxying `/api`). One volume, `/srv/data`,
-holding the three databases.
+holding the four databases — `chain.db`, `trades.db`, `errors.db` and
+`market.db`, the last being open interest and at-the-money volatility in
+five-minute buckets so a *change* in either is readable at all.
 
 ---
 
@@ -266,7 +268,7 @@ statement is the authority. See `TODO.md`.
 
 ## Testing
 
-668 server tests (`node:test` via tsx), 468 browser tests (vitest +
+695 server tests (`node:test` via tsx), 485 browser tests (vitest +
 @testing-library). Run `npm test` in `app/server` and `npx vitest run` in
 `app/web`; `npm run typecheck` in both.
 

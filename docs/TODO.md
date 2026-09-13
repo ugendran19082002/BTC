@@ -1,7 +1,7 @@
 # TODO
 
 Live: https://delta.thannigo.in
-Updated 13 Sep 2026
+Updated 14 Sep 2026
 
 ---
 
@@ -233,6 +233,90 @@ chain. It was taken out by mistake for one deploy and put straight back.
   which is exactly what noise looks like before you get more data.
   So the desk forecasts **distance, not direction**, and the "up" column stays
   on the page at ~50% to make the case against adding one later.
+
+---
+
+## Open interest over time, and whether something is happening — 14 Sep 2026
+
+Delta's ticker carries open interest and nothing else — no previous value, no
+delta — so a change is only readable if the desk remembers. It does now.
+
+**`market.db`, a fourth database.** Market data is disposable and an order
+history is not, which is why `trades.db` is its own file; the same argument puts
+this one somewhere else again. `chain.db` would have been the natural home
+except that it is read-only at runtime — `refresh.sh` replaces it wholesale with
+a SQLite backup, and anything written into it is thrown away by the next
+harvest. One row per strike per five-minute bucket, two days kept, pruned as it
+writes. `test/env.ts` points it at a temp directory like the other three, and
+`env.test.ts` fails if any of the four resolves inside the repository.
+
+**The throttle asks the file, not a variable.** It began as a Map of the last
+bucket written per expiry, which is a second copy of something the database
+already knows — and the two come apart the moment a deploy or `refresh.sh`
+replaces a file under a running process. One indexed lookup per poll is nothing
+beside the write it is avoiding.
+
+**A young desk answers over what it has.** The comparison takes the newest
+bucket at or before the window asked for, and falls back to the oldest bucket
+there is. Without the fallback the column is blank for a full hour after every
+restart, which is most of the times anyone is watching it. `overMinutes` is what
+keeps that honest — a window nobody can see the length of is one they read as
+the window they asked for.
+
+And the rule that runs through all of it: **absent is not zero.** Before the
+first bucket there is no change to report, and the board prints a dash. "No
+change" and "not running long enough to know" are different facts, and +0 on a
+desk that started a minute ago is a lie about both.
+
+### Whether something is happening right now
+
+`domain/shock.ts`: five readings of the present tape under `SHOCK_WEIGHTS` —
+how far BTC moved against how far it was *priced* to move (30), how busy the
+tape is against its own 20-bar median (25), whether volatility is repricing
+(20), whether open interest is turning over (15), how one-sided the board is
+(10). A 0-100 score, a band, a direction, and the reasons in words.
+
+Three things worth keeping:
+
+- **The expected move is scaled to the window.** Comparing a five-minute move
+  against a twelve-hour expectation is how a violent tape reads as calm.
+- **A reading it cannot take scores as nothing, not as calm.** A desk one minute
+  old has no volatility history and no open-interest history, and counting those
+  absences as zeros reports a quiet market on the strength of not knowing —
+  which is the one failure that would get somebody short into a move. When not
+  one reading can be taken the score is null and the card draws nothing.
+- **Direction is its own question.** The same violence scores the same whichever
+  way it points; folding the two together hides which one the number answers.
+  And it is pressure now, not a forecast: over 105,119 five-minute windows the
+  chance BTC finishes higher never moved further than 0.6 points from a coin
+  flip.
+
+The median rather than the mean for volume, because one violent minute drags a
+mean up enough that the next violent minute no longer looks unusual — the
+opposite of what a spike detector is for. The newest bar is excluded from its
+own median, and it is still forming, so a spike in progress is understated
+rather than overstated.
+
+Nothing on the trading side reads any of it, and the card says so.
+
+### The screen
+
+The card is one line on an ordinary board. A warning that takes the same room
+whether or not there is anything to warn about is one nobody reads by the end of
+the week.
+
+Both strategy logs became one table. They were fifteen bordered blocks each,
+every one carrying a name, a time, an outcome and a sentence — thirty of those
+is a page you scroll rather than read, when what a person is doing is scanning
+one column for the day that went wrong. It is a real table on a desk and a stack
+on a phone, not an `overflow-x` scroller: the chain is genuinely wide and every
+column of it is a number compared downward, where this is four fields of which
+one is a sentence, and a sentence in a ninety-pixel column is unreadable at any
+width.
+
+The strategy summary is clamped to two lines with the whole of it on hover. It
+is every setting a strategy has in one sentence and runs to four lines on a
+phone; Edit shows all of it anyway.
 
 ---
 

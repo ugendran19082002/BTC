@@ -10,13 +10,33 @@ Row counts were read from the live desk on 9 September 2026.
 | `chain.db` | the harvester, offline | 6 | Two years of settled option chains. The evidence every number in `domain/` rests on. Read-only at runtime. |
 | `trades.db` | the trading engine | 4 | The trade journal. What makes a restart safe. |
 | `errors.db` | everything | 2 | Every failure, from all three tiers, in one place. |
+| `market.db` | the chain route, every 5 minutes | 2 | What open interest and at-the-money volatility *were*, so a change in either is readable. Delta's ticker carries only the current figure. Disposable. |
 
-In the container all three live in `/srv/data/`. Locally, `paths.ts` walks up to
+### `market.db` — what the board looked like a while ago
+
+One table, `oi_snapshots`: `(at, expiry, cp, strike)` primary key, carrying `oi`,
+`spot` and `atm_iv`. Five-minute buckets, forty-eight hours kept, pruned as it
+writes. `002-atm-iv` added the volatility column — a second migration rather
+than an edit to `001`, which had already run, and nullable because the rows
+written before it have no value and inventing one would put a made-up volatility
+into the history a shock is measured against.
+
+Its own file for the reason `trades.db` is its own file, in reverse: this is
+market data and entirely disposable. `chain.db` would be the natural home except
+that it is read-only at runtime — `refresh.sh` replaces it wholesale with a
+SQLite backup, and anything written into it is thrown away by the next harvest.
+
+Delete it and the board loses its change columns until the next bucket. Nothing
+else notices.
+
+---
+
+In the container all four live in `/srv/data/`. Locally, `paths.ts` walks up to
 find the repo root; `DATA_DIR` is derived from `CHAIN_DB` when it is set, so a
 container never resolves the other two to a read-only path — which it did once,
 and the deploy came up unhealthy.
 
-All three are opened `PRAGMA journal_mode = WAL`.
+All four are opened `PRAGMA journal_mode = WAL`.
 
 ---
 

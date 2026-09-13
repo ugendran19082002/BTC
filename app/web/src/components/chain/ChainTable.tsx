@@ -136,7 +136,16 @@ function Cell({
       const d = leg?.oiChange;
       // Absent, not zero: before the first bucket there is nothing to compare
       // against, and a dash says that where a 0 would claim it had not moved.
-      if (!d) return <td className="dim aux">·</td>;
+      if (!d) {
+        return (
+          <td
+            className="dim aux"
+            title="No earlier reading yet — the desk records open interest every five minutes, so this fills in once it has two."
+          >
+            ·
+          </td>
+        );
+      }
       const sign = d.change > 0 ? '+' : d.change < 0 ? '−' : '';
       return (
         <td

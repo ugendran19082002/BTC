@@ -10,6 +10,7 @@ import { clock, stamp } from '@/lib/format';
 import { describeDays, describePremium } from '@/lib/strategy-preview';
 import { defaultAddUntil, time12 } from '@/lib/time';
 import { cn } from '@/lib/utils';
+import { LogTable } from '@/components/strategy/LogTable';
 
 /**
  * The strategies, what is armed, and when each one next runs.
@@ -181,7 +182,16 @@ export function StrategyPanel() {
                 </div>
               </div>
 
-              <p className="m-0 mt-1 text-[11.5px] leading-snug text-muted-foreground">
+              {/*
+                Two lines, and the whole thing on hover.
+                The summary is every setting a strategy has in one sentence --
+                legs, floor, lots, window, entry rule, target, safety, doubling,
+                adds -- which runs to four lines on a phone. Three strategies of
+                that is a screen you scroll past to reach the runs. Edit shows
+                all of it anyway.
+              */}
+              <p className="clamp-2 m-0 mt-1 text-[11.5px] leading-snug text-muted-foreground"
+                 title={summarise(s)}>
                 {summarise(s)}
               </p>
               <p className="m-0 mt-0.5 text-[11.5px] text-[var(--dim)]">
@@ -200,43 +210,26 @@ export function StrategyPanel() {
         <Card>
           <CardTitle>Recent runs</CardTitle>
           {/*
-            What each day actually did, in the server's own words.
-            This panel showed only "placed" and a time, which answers the least
-            interesting question about a day. The row already carried the legs,
-            the sizes and the prices -- or the reason nothing was sold -- and it
-            was simply not being printed.
+            What each day actually did, in the server's own words. This showed
+            only "placed" and a time, which answers the least interesting
+            question about a day -- the row already carried the legs, the sizes
+            and the prices, or the reason nothing was sold, and it was simply
+            not being printed.
           */}
-          <div className="grid gap-2">
-            {data.runs.slice(0, 15).map((r) => {
-              const name = data.strategies.find((s) => s.id === r.strategyId)?.name ?? r.strategyId;
-              const tone = r.status === 'placed' ? 'up'
-                : r.status === 'failed' ? 'down' : 'dim';
-              return (
-                <div key={r.id} className="rounded-lg border border-[var(--line)] px-2.5 py-2">
-                  <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <span className="flex items-baseline gap-2">
-                      <span className="text-[12.5px] font-medium text-foreground">{name}</span>
-                      <span className="text-[11.5px] text-muted-foreground">{r.runDate}</span>
-                    </span>
-                    <span className="flex items-baseline gap-2">
-                      <span className={cn('text-[11.5px] font-medium',
-                        tone === 'up' ? 'text-[var(--up)]'
-                          : tone === 'down' ? 'text-[var(--down)]' : 'text-[var(--dim)]')}>
-                        {r.status === 'placed' ? 'traded'
-                          : r.status === 'refused' ? 'stood aside'
-                            : r.status === 'failed' ? 'failed' : 'skipped'}
-                      </span>
-                      <span className="text-[11.5px] tabular-nums text-[var(--dim)]">{clock(r.at)}</span>
-                    </span>
-                  </div>
-                  {/* The legs and prices, or the reason there were none. */}
-                  <p className="m-0 mt-1 text-[11.5px] leading-snug text-muted-foreground">
-                    {r.detail}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
+          <LogTable
+            label="recent runs"
+            rows={data.runs.slice(0, 15).map((r) => ({
+              id: r.id,
+              at: `${r.runDate} ${clock(r.at)}`,
+              who: data.strategies.find((s) => s.id === r.strategyId)?.name ?? r.strategyId,
+              outcome: r.status === 'placed' ? 'traded'
+                : r.status === 'refused' ? 'stood aside'
+                  : r.status === 'failed' ? 'failed' : 'skipped',
+              tone: r.status === 'placed' ? 'ok' as const
+                : r.status === 'failed' ? 'bad' as const : 'quiet' as const,
+              detail: r.detail,
+            }))}
+          />
         </Card>
       )}
 
@@ -248,35 +241,22 @@ export function StrategyPanel() {
             and what was decided -- including the times nothing was added, with
             the reason, because that is the one a person checks.
           */}
-          <div className="grid gap-2" aria-label="adds">
-            {data.adds!.slice(0, 15).map((a) => {
-              const name = data.strategies.find((s) => s.id === a.strategyId)?.name ?? a.strategyId;
-              const label = a.status === 'placed' ? 'added'
+          <LogTable
+            label="adds"
+            extraHead="From"
+            rows={data.adds!.slice(0, 15).map((a) => ({
+              id: a.id,
+              at: clock(a.at),
+              who: data.strategies.find((s) => s.id === a.strategyId)?.name ?? a.strategyId,
+              extra: `${a.sourceSide} × ${a.contracts}`,
+              outcome: a.status === 'placed' ? 'added'
                 : a.status === 'placing' ? 'sending'
-                  : a.status === 'skipped' ? 'not added'
-                    : a.status;
-              const tone = a.status === 'placed' ? 'text-[var(--up)]'
-                : a.status === 'refused' || a.status === 'failed' ? 'text-[var(--down)]'
-                  : 'text-[var(--dim)]';
-              return (
-                <div key={a.id} className="rounded-lg border border-[var(--line)] px-2.5 py-2">
-                  <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <span className="flex items-baseline gap-2">
-                      <span className="text-[12.5px] font-medium text-foreground">{name}</span>
-                      <span className="text-[11.5px] text-muted-foreground">
-                        {a.sourceSide} target · {a.contracts}
-                      </span>
-                    </span>
-                    <span className="flex items-baseline gap-2">
-                      <span className={cn('text-[11.5px] font-medium', tone)}>{label}</span>
-                      <span className="text-[11.5px] tabular-nums text-[var(--dim)]">{clock(a.at)}</span>
-                    </span>
-                  </div>
-                  <p className="m-0 mt-1 text-[11.5px] leading-snug text-muted-foreground">{a.detail}</p>
-                </div>
-              );
-            })}
-          </div>
+                  : a.status === 'skipped' ? 'not added' : a.status,
+              tone: a.status === 'placed' ? 'ok' as const
+                : a.status === 'refused' || a.status === 'failed' ? 'bad' as const : 'quiet' as const,
+              detail: a.detail,
+            }))}
+          />
         </Card>
       )}
 

@@ -1313,3 +1313,59 @@ td.liq-normal, td.liq-none { color: var(--dim); }
   .shock-dir { margin-left: 0; flex-basis: 100%; }
   .shock-parts { gap: 3px 12px; }
 }
+
+/* ── What the desk did, as a log ────────────────────────────────────────────
+   Both logs on the strategy screen were fifteen bordered blocks each, every one
+   carrying a name, a time, an outcome and a sentence. Thirty of those is a page
+   you scroll rather than read, and what a person is doing is scanning one
+   column for the day that went wrong. */
+.logtable { width: 100%; border-collapse: collapse; font-size: 12px; }
+.logtable th {
+  position: static; background: none;
+  padding: 0 12px 6px 0;
+  text-align: left; white-space: nowrap;
+  font-size: 10px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase;
+  color: var(--dim);
+  border-bottom: 1px solid var(--line);
+}
+.logtable td {
+  padding: 8px 12px 8px 0;
+  border-bottom: 1px solid var(--line-soft);
+  vertical-align: baseline;
+  color: var(--muted);
+}
+.logtable tr:last-child td { border-bottom: 0; }
+.logtable th:last-child, .logtable td:last-child { padding-right: 0; }
+.logtable .when { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--dim); }
+.logtable .who { white-space: nowrap; color: var(--text); font-weight: 500; }
+.logtable .extra { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.logtable .outcome { white-space: nowrap; font-weight: 500; }
+/* The sentence takes whatever is left; it is the part worth reading. */
+.logtable td.detail { width: 100%; line-height: 1.4; }
+
+@media (max-width: 700px) {
+  /* A sentence in a ninety-pixel column is unreadable at any width, so the row
+     becomes a block rather than the table becoming a sideways scroller. */
+  .logtable, .logtable tbody, .logtable tr, .logtable td { display: block; width: auto; }
+  .logtable thead { display: none; }
+  .logtable tr {
+    padding: 9px 0;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .logtable tr:last-child { border-bottom: 0; }
+  .logtable td { padding: 0; border: 0; }
+
+  /* who, when and outcome read as one line; the sentence gets its own. */
+  .logtable td.who { display: inline; font-size: 12.5px; }
+  .logtable td.when::before, .logtable td.extra::before, .logtable td.outcome::before { content: ' · '; color: var(--line); }
+  .logtable td.when, .logtable td.extra, .logtable td.outcome { display: inline; }
+  .logtable td.detail { margin-top: 3px; color: var(--muted); }
+}
+
+/* Two lines, then an ellipsis. The full text is on the element's title. */
+.clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
