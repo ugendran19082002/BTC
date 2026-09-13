@@ -96,7 +96,7 @@ function Ev({ leg, sold = false }: { leg: Leg | undefined; sold?: boolean }) {
 
 /** Which heading gets which colour. The reference set is dimmed; prices are not. */
 const HEAD_CLASS: Record<ColumnKey, string> = {
-  oi: 'aux', volume: 'aux', volumeToOi: 'aux', delta: 'aux', iv: 'aux',
+  oi: 'aux', volume: 'aux', oiChange: 'aux', volumeToOi: 'aux', delta: 'aux', iv: 'aux',
   otm: 'aux', breakeven: 'aux', mark: 'aux',
   score: 'scorecol', signal: 'sigcol', ev: 'evcol', zero: 'zerocol',
   model: '', ask: 'askcol', bid: 'bidcol',
@@ -132,6 +132,21 @@ function Cell({
       return <td className="dim aux">{num(leg?.oi ?? null)}</td>;
     case 'volume':
       return <td className="dim aux">{num(leg?.volume ?? null)}</td>;
+    case 'oiChange': {
+      const d = leg?.oiChange;
+      // Absent, not zero: before the first bucket there is nothing to compare
+      // against, and a dash says that where a 0 would claim it had not moved.
+      if (!d) return <td className="dim aux">·</td>;
+      const sign = d.change > 0 ? '+' : d.change < 0 ? '−' : '';
+      return (
+        <td
+          className={`aux ${d.change > 0 ? 'up' : d.change < 0 ? 'down' : 'dim'}`}
+          title={`Over the last ${d.overMinutes} minutes.`}
+        >
+          {sign}{num(Math.abs(d.change))}
+        </td>
+      );
+    }
     case 'volumeToOi':
       return (
         <td className={`aux liq-${leg?.ev?.liquidity ?? 'none'}`}>

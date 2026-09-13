@@ -236,6 +236,68 @@ chain. It was taken out by mistake for one deploy and put straight back.
 
 ---
 
+## A sell score, and columns you choose — 13 Sep 2026
+
+The board answered "how likely" and then "what is it worth". It still could not
+answer "which of these twenty". On a real chain most of the far half clears
+every rule, so the Signal column read the same word twenty times down the page.
+
+**A 0-100 score**, in `domain/ev.ts` under `SCORE_WEIGHTS`: distance 25, the
+corrected probability 20, open interest 15, volume 10, implied volatility 10,
+the premium 10, expected value 10. Open interest and volume are scored against
+the *heaviest strike currently listed*, not against a constant — 425,600 is
+heavy on one expiry and ordinary on another, and on a linear scale the heaviest
+strike flattens every other to zero, so both are logged.
+
+It ranks; it does not recommend. A board where everything scores 40 is a board
+whose strikes are alike, not one to stand aside from, and none of these weights
+has been near the cross-period screen the premium floor and the RSI gate went
+through.
+
+**The rules floor the tier in both directions.** A hard rule failing is `avoid`
+whatever the score — otherwise an 84 quietly overrules a gate. A *soft* rule
+failing caps the strike at `watch`: without that cap a thin strike paying twice
+as much scores its way above one that clears everything, and the card recommends
+the strike you cannot get out of. The score orders strikes inside a tier; it
+never promotes across one. `ev.test.ts` pins both directions, including that the
+capped strike really does score higher — the cap is what holds the order.
+
+**An EV breakdown**, because a number nobody can check is a number nobody should
+act on. The strike sheet now shows the chance it expires worthless, the credit,
+the chance it breaches, the average cost *given* a breach, the charges, and then
+the same arithmetic written out to the answer above it. The expected loss is the
+payout model divided by the chance it is conditioned on, which is the one figure
+there that is not read straight off the book.
+
+Also on the strike: the credit as a return on the margin it ties up, and in
+units of the expected move. A premium under one expected move is being paid less
+than the distance it is exposed to.
+
+**Columns are chosen one at a time.** The two presets were "key", which hid open
+interest, and "all", which put twenty-seven columns on a phone; neither was what
+anyone wanted. Every column is now a row in a picker that says what the column
+is *for* rather than repeating its abbreviation. The bid cannot be turned off —
+it is what a seller receives.
+
+The span is derived from the same list that draws the cells, so the bug the old
+comment warned about is now impossible to write: a hand-kept `perSide` that
+over-claimed reserved width for columns that were not there and pushed the calls
+bid off the left edge of a phone.
+
+**Expected move** is on the card and shaded behind the candles, and a scenario
+tile says what a 2% move does to the walls — two percent being roughly what a
+losing day moved, against 0.63% on a winning one.
+
+### Not done, and why
+
+**Open-interest change.** Delta's ticker carries current open interest and
+nothing else — no previous value, no delta. Reading it means the desk
+remembering open interest over time: a table, a periodic write, a retention
+rule. That is a storage decision rather than a calculation, so it is not guessed
+at here. The OI-and-price interpretation table waits on it.
+
+---
+
 ## Expected value on the board, and a strip above it — 13 Sep 2026
 
 The screen showed how *likely* a strike was to expire worthless and never what

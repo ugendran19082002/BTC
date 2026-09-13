@@ -117,6 +117,21 @@ export type Move = {
   rangePct: number | null;
 };
 
+/**
+ * How busy the tape is now against how busy it usually is.
+ *
+ * The median rather than the mean of the last twenty bars: one violent minute
+ * drags a mean up enough that the next violent minute no longer looks unusual,
+ * which is the opposite of what a spike detector is for.
+ */
+export type VolumePulse = {
+  tf: Timeframe;
+  current: number;
+  median: number;
+  /** current ÷ median. 1 is an ordinary bar. */
+  spike: number | null;
+};
+
 export type MarketRead = {
   spot: number;
   /** the 24-hour return that decides the lot split; this one is tested */
@@ -138,7 +153,31 @@ export type MarketRead = {
   /** the largest 24-hour range in the last 30 days */
   max24hRangeUsd: number | null;
   max24hRangePct: number | null;
+  /** how busy the last 5m and 15m bars are against their own recent median */
+  volume: VolumePulse[];
 };
+
+/**
+ * The newest bar's volume against the median of the twenty before it.
+ *
+ * The newest bar is excluded from the median: comparing a bar against a window
+ * that contains it pulls the answer toward 1 exactly when the bar is unusual.
+ * The last bar is also still forming, so `current` is a partial count and the
+ * ratio understates a spike in progress rather than overstating it — the safer
+ * way round for something that says "something is happening".
+ */
+function volumePulse(tf: Timeframe, bars: Candle[]): VolumePulse | null {
+  if (bars.length < 6) return null;
+  const current = bars[bars.length - 1]!.volume;
+  const window = bars.slice(-21, -1).map((b) => b.volume).filter((v) => Number.isFinite(v));
+  if (!window.length) return null;
+  const sorted = [...window].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const median = sorted.length % 2
+    ? sorted[mid]!
+    : (sorted[mid - 1]! + sorted[mid]!) / 2;
+  return { tf, current, median, spike: median > 0 ? current / median : null };
+}
 
 /** Close-to-close change and high-low range over the last `bars` bars. */
 function moveOver(bars: Candle[], count: number, hours: number, label: string): Move {
@@ -294,8 +333,13 @@ export async function readMarket(sinceHours?: number): Promise<MarketRead> {
     : timeframes.every((t) => t.trend === 0) ? 'quiet'
     : 'mixed';
 
+  // The same series the moves above were read from: no second fetch.
+  const volume = (['5m', '15m'] as const)
+    .map((tf) => volumePulse(tf, series.find(([t]) => t === tf)?.[1] ?? []))
+    .filter((v): v is VolumePulse => v !== null);
+
   return {
     spot, return24h, dailyRsiPrior, timeframes, agreement, regime, realisedVol,
-    moves, max24hRangeUsd, max24hRangePct,
+    moves, max24hRangeUsd, max24hRangePct, volume,
   };
 }

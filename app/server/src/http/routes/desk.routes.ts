@@ -12,6 +12,8 @@ import { tradingService, SHORT_CAP_KEY } from '../../trading/service.js';
 import { strategyStore } from './strategy.routes.js';
 import { refuse } from '../refuse.js';
 import { attachEv } from '../../domain/ev.js';
+import { noteOpenInterest, openInterestChange, ivChange, type OiChange } from '../../market/oi-history.js';
+import { suddenMove } from '../../domain/shock.js';
 
 /** Resolve the `at` query param: "now" (or absent) means live. */
 function resolveAt(at: string | undefined): number | null {
@@ -103,18 +105,43 @@ export function registerDeskRoutes(app: FastifyInstance) {
       // The margin model needs a spot, and the chain is where one arrives.
       if (snap.live) tradingService().noteSpot(snap.spot);
 
+      /*
+       * Open interest, remembered so a change can be read at all -- Delta's
+       * ticker carries the current figure and no previous one.
+       *
+       * Live boards only. A historical snapshot reading today's buckets would
+       * report a change that happened after the moment being looked at, and
+       * writing into them would file a past board's open interest under now.
+       */
+      let oiChanges = new Map<string, OiChange>();
+      let iv: ReturnType<typeof ivChange> = null;
+      if (snap.live) {
+        noteOpenInterest({ ...snap, atmIv: snap.atmIv }, scored);
+        oiChanges = openInterestChange(snap, scored, 1);
+        iv = ivChange({ expiry: snap.expiry, ts: snap.ts, atmIv: snap.atmIv }, 15);
+      }
+
       const recommendation = recommend(snap, scored, market, minPremium, lots, hedgeGap, mode, safetyBar);
+      const structure = optionStructure(snap, market?.realisedVol ?? null);
 
       return {
         snapshot: { ...snap, legs: undefined },
         legs: attachEv(scored, {
           spot: snap.spot, lots, minPremium,
           atmIv: snap.atmIv, expectedMove: snap.expectedMove,
-        }),
+        }).map((l) => ({ ...l, oiChange: oiChanges.get(`${l.cp}${l.strike}`) ?? null })),
         bias: bias(snap, scored),
         picks,
         market,
-        structure: optionStructure(snap, market?.realisedVol ?? null),
+        structure,
+        shock: suddenMove({
+          spot: snap.spot,
+          atmIv: snap.atmIv,
+          market,
+          structure,
+          oiChanges,
+          iv: iv && { changePct: iv.changePct, overMinutes: iv.overMinutes },
+        }),
         forecast: forecast(snap),
         recommendation,
         requireHedge,

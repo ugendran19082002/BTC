@@ -52,8 +52,26 @@ export type LegEv = {
   signal: 'sell' | 'watch' | 'avoid';
 };
 
+/**
+ * What open interest has done since roughly an hour ago.
+ *
+ * Absent — not zero — until the desk has a bucket to compare against. Delta's
+ * ticker carries the current figure and no previous one, so this only exists
+ * because the desk remembers; "no change" and "not running long enough to know"
+ * are different facts and the board must not print one as the other.
+ */
+export type OiChange = {
+  change: number;
+  changePct: number | null;
+  /** How far back the comparison actually reached. */
+  overMinutes: number;
+  /** What BTC did over the same window, so the two are read together. */
+  spotChangePct: number | null;
+};
+
 export type Leg = {
   ev: LegEv;
+  oiChange: OiChange | null;
   cp: 'C' | 'P';
   strike: number;
   off: number;

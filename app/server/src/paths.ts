@@ -45,3 +45,14 @@ export const ERROR_DB = process.env.ERROR_DB ?? join(DATA_DIR, 'errors.db');
  * without carrying the credentials with it.
  */
 export const AUTH_DB = process.env.AUTH_DB ?? join(DATA_DIR, 'auth.db');
+/**
+ * What the option board looked like a while ago: open interest per strike, in
+ * five-minute buckets, so a change can be read at all.
+ *
+ * Its own file for the reason `trades.db` is its own file, in reverse: this is
+ * market data and entirely disposable. `chain.db` would be the natural home
+ * except that it is read-only at runtime — `refresh.sh` replaces it wholesale
+ * with a SQLite backup, and anything written into it is thrown away by the next
+ * harvest.
+ */
+export const MARKET_DB = process.env.MARKET_DB ?? join(DATA_DIR, 'market.db');

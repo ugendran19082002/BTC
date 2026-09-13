@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ERROR_DB, TRADE_DB, AUTH_DB } from '../src/paths.js';
+import { ERROR_DB, TRADE_DB, AUTH_DB, MARKET_DB } from '../src/paths.js';
 
 /**
  * The suite must not write into the desk's own databases.
@@ -19,7 +19,7 @@ import { ERROR_DB, TRADE_DB, AUTH_DB } from '../src/paths.js';
 
 const repo = new URL('../../../', import.meta.url).pathname.replace(/\/$/, '');
 
-for (const [name, path] of [['ERROR_DB', ERROR_DB], ['TRADE_DB', TRADE_DB], ['AUTH_DB', AUTH_DB]] as const) {
+for (const [name, path] of [['ERROR_DB', ERROR_DB], ['TRADE_DB', TRADE_DB], ['AUTH_DB', AUTH_DB], ['MARKET_DB', MARKET_DB]] as const) {
   test(`[critical] ${name} points outside the repository while testing`, () => {
     assert.ok(
       !path.startsWith(repo),

@@ -169,7 +169,7 @@ spinners removed — they are one pixel from the field on a trading screen),
 
 ---
 
-## `app/server/test` — 16 files, 3,700 lines, 659 tests
+## `app/server/test` — 16 files, 3,700 lines, 668 tests
 
 | File | Lines | What it covers |
 |---|---:|---|
@@ -192,7 +192,7 @@ spinners removed — they are one pixel from the field on a trading screen),
 | `notify/telegram.test.ts` | 112 | Coalescing, order, 429 and network retries, the plain-text fallback, and the token never reaching a report. |
 | `trading/on-event.test.ts` | 26 | The engine hands every journal event to its listener, and a listener that throws cannot stop a trade being written. |
 
-## `app/web/src` tests — 21 files, 457 tests
+## `app/web/src` tests — 23 files, 468 tests
 
 `OrderTicket.test.tsx` (432), `PositionsCard.test.tsx` (347),
 `EditExitsSheet.test.tsx` (163), `format.test.ts` (150),

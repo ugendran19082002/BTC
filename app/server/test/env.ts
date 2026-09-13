@@ -23,3 +23,4 @@ const dir = mkdtempSync(join(tmpdir(), 'btc-desk-test-'));
 process.env.ERROR_DB ??= join(dir, 'errors.db');
 process.env.TRADE_DB ??= join(dir, 'trades.db');
 process.env.AUTH_DB ??= join(dir, 'auth.db');
+process.env.MARKET_DB ??= join(dir, 'market.db');
