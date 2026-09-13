@@ -1135,3 +1135,23 @@ tr.atm td.strikecell .strikebtn { color: #fff; }
   .bar .actions { margin-left: 0; width: 100%; }
   .bar .actions > * { flex: 1 1 0; }
 }
+
+/* ── What BTC did, beside what it can still do ──────────────────────────────
+   Two readings of the same question, and only worth comparing side by side.
+   Stacked, the second table sat below the fold on a laptop and the comparison
+   cost a scroll. One column on a phone, where two would be four half-width
+   number columns. */
+.move-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+@media (min-width: 900px) {
+  .move-split { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
+  /* A hairline between them rather than a divider above each. */
+  .move-split .move-col + .move-col {
+    padding-left: 22px; margin-left: -22px;
+    border-left: 1px solid var(--line-soft);
+  }
+}
+.move-col { min-width: 0; }

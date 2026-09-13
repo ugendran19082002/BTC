@@ -101,11 +101,33 @@ export function PriceChart({
     return { lo, hi, y, x, step, bodyW, ticks, timeTicks, volY, volTop, volH, priceH };
   }, [bars, spot]);
 
+  /**
+   * Where a level is drawn: on the axis if the scale reaches it, pinned inside
+   * the price area's edge if it does not.
+   *
+   * Well inside, not on the edge. At 7px the bottom pin, the volume baseline
+   * and the lowest gridline label all landed within a few pixels of each other
+   * and drew over one another.
+   */
+  const levelY = (value: number): number | null => {
+    if (!view) return null;
+    if (value >= view.lo && value <= view.hi) return view.y(value);
+    return value > view.hi ? PAD.top + 11 : PAD.top + view.priceH - 11;
+  };
+
+  /** Every level's tag position, so a price label never draws under one. */
+  const pinned = view
+    ? [support, resistance, spot]
+        .filter((v): v is number => v !== null)
+        .map(levelY)
+        .filter((v): v is number => v !== null)
+    : [];
+
   /** A level inside the scale is a line; one outside is pinned to the edge. */
   const level = (value: number, colour: string, label: string) => {
     if (!view) return null;
     const inside = value >= view.lo && value <= view.hi;
-    const yPos = inside ? view.y(value) : value > view.hi ? PAD.top + 7 : PAD.top + view.priceH - 7;
+    const yPos = levelY(value)!;
     const away = ((value - spot) / spot) * 100;
     const text = inside ? label : `${value > view.hi ? '▲' : '▼'} ${label}`;
     return (
@@ -123,7 +145,13 @@ export function PriceChart({
           {text}
         </text>
         {!inside && (
-          <text x={PAD.left + 4} y={yPos - 5} fontSize="10" fill={colour} opacity="0.85">
+          <text
+            x={PAD.left + 4}
+            y={value > view.hi ? yPos + 15 : yPos - 7}
+            fontSize="10"
+            fill={colour}
+            opacity="0.85"
+          >
             {label} · {Math.abs(away).toFixed(1)}% away, off the scale
           </text>
         )}
@@ -198,7 +226,15 @@ export function PriceChart({
                 x1={PAD.left} x2={W - PAD.right} y1={view.y(p)} y2={view.y(p)}
                 stroke="var(--line-soft)" strokeWidth="1"
               />
-              <text x={W - PAD.right + 6} y={view.y(p) + 4} fontSize="10.5" fill="var(--dim)">
+              <text
+                x={W - PAD.right + 6}
+                y={view.y(p) + 4}
+                fontSize="10.5"
+                fill="var(--dim)"
+                /* The level tags own the right-hand gutter; a price label under
+                   one is unreadable, so it gives way rather than overlapping. */
+                opacity={pinned.some((q) => Math.abs(q - view.y(p)) < 11) ? 0 : 1}
+              >
                 {fmtStrike(Math.round(p))}
               </text>
             </g>

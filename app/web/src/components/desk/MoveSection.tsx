@@ -23,6 +23,13 @@ export function MoveSection({ market, snap }: { market: MarketRead; snap: Snapsh
   return (
     <>
       <StatDivider />
+      {/*
+        Side by side: what BTC did is only worth reading against what it can
+        still do. Stacked, the second table was below the fold on a laptop and
+        the comparison took a scroll.
+      */}
+      <div className="move-split">
+        <div className="move-col">
       <SectionTitle>How far BTC has moved</SectionTitle>
 
       <div className="-mx-1 overflow-x-auto">
@@ -79,7 +86,11 @@ export function MoveSection({ market, snap }: { market: MarketRead; snap: Snapsh
         hint="On average BTC moved 1.72× the expected move. A strike one expected move away is not a full day's move away."
       />
 
-      <MoveLadder snap={snap} />
+        </div>
+        <div className="move-col">
+          <MoveLadder snap={snap} />
+        </div>
+      </div>
     </>
   );
 }
@@ -116,7 +127,6 @@ function MoveLadder({ snap }: { snap: SnapshotMeta }) {
 
   return (
     <>
-      <StatDivider />
       <SectionTitle hint="spot × volatility × √(hours ÷ 8760), at today's volatility. BTC stays inside about 2 times in 3; double it for 19 in 20.">
         How far it can move from here
       </SectionTitle>

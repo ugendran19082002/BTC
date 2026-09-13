@@ -57,6 +57,30 @@ describe('the price chart', () => {
     expect(screen.getByText(/60,000 · .*% away, off the scale/)).toBeInTheDocument();
   });
 
+  it('[critical] a pinned wall clears the volume baseline and the axis labels', () => {
+    // At 7px of inset the bottom pin, the volume baseline and the lowest price
+    // label all landed within a few pixels of each other and drew over one
+    // another. Nothing in the right-hand gutter may overlap a level tag.
+    const { container } = render(
+      <PriceChart bars={bars(20)} support={60_000} resistance={95_000} spot={77_172} tf="1h" onTf={noop} />,
+    );
+    const svg = container.querySelector('svg')!;
+    const tags = [...svg.querySelectorAll('rect[rx="3"]')].map((r) => Number(r.getAttribute('y')));
+    // the axis price labels only: a tag's own text sits in the same gutter and
+    // is centred, which is how it is told apart from a label
+    const labels = [...svg.querySelectorAll('text')]
+      .filter((t) => Number(t.getAttribute('x')) > 700
+        && t.getAttribute('text-anchor') !== 'middle'
+        && Number(t.getAttribute('opacity') ?? 1) > 0)
+      .map((t) => Number(t.getAttribute('y')));
+
+    for (const tagY of tags) {
+      for (const labelY of labels) {
+        expect(Math.abs(labelY - (tagY + 8))).toBeGreaterThanOrEqual(11);
+      }
+    }
+  });
+
   it('a wall inside the range is drawn on the axis, with no caveat', () => {
     render(
       <PriceChart bars={bars(10, 77_000)} support={76_960} resistance={77_120} spot={77_040} tf="1h" onTf={noop} />,
