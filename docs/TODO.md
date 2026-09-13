@@ -293,6 +293,19 @@ forecast — it is one tile now), the Age column, and every settings control but
 time and expiry. The values behind the removed controls still drive the chain
 request at whatever was last chosen.
 
+**One card, not a strip and a card.** The summary strip and the insights card
+ran for an afternoon as two blocks, and the strip repeated support, resistance,
+the put/call ratio and max pain straight out of the card below it — the same
+number twice on one screen, which is how two figures eventually disagree. Nine
+tiles in one card now, each with an icon, because ten identical grey tiles is a
+wall.
+
+The market lean is gone from the screen entirely. It was three needle bars and
+five lines of prose in the Market card, then one tile, and now nothing: a
+weighted read of three signals that were each tested and rejected is a number
+with no use for it. `/api/chain` still returns `bias`, and `BiasSection` was
+deleted rather than left as dead code.
+
 **The layout.** Market insights and the chart share one row — the band means
 nothing until you can see how close price is to its edges, and stacked they were
 two full-width blocks with a scroll between them. The insights column is narrow

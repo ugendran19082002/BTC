@@ -1,9 +1,9 @@
 import type { LucideIcon } from 'lucide-react';
 import {
   TrendingUp, TrendingDown, Activity, Scale, ArrowDownToLine, ArrowUpToLine,
-  Crosshair, ArrowLeftRight, Ruler, Compass, Percent,
+  Crosshair, ArrowLeftRight, Ruler, Percent,
 } from 'lucide-react';
-import type { Bias, MarketRead, OptionStructure, SnapshotMeta } from '@/types/desk';
+import type { MarketRead, OptionStructure, SnapshotMeta } from '@/types/desk';
 import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { Badge } from '@/components/ui/badge';
 import { strike as fmtStrike } from '@/lib/format';
@@ -64,18 +64,18 @@ function Tile({
  * these figures, and the day one of them is to decide something it goes through
  * the cross-period screen first.
  *
- * The lean is one tile. It used to be three needle bars and five lines of prose
- * inside the Market card — the longest block on the screen, for the one number
- * on it that is explicitly not a forecast.
+ * The market lean is not here at all. It was three needle bars and five lines of
+ * prose inside the Market card, then one tile, and now nothing: it is a weighted
+ * read of three signals that were each tested and rejected, so the tile was a
+ * number with no use for it. `/api/chain` still returns `bias` for anyone who
+ * wants it back.
  */
 export function MarketInsights({
   structure,
-  bias,
   snap,
   market,
 }: {
   structure: OptionStructure;
-  bias: Bias;
   snap: SnapshotMeta;
   market: MarketRead | null;
 }) {
@@ -206,19 +206,6 @@ export function MarketInsights({
           label="Range width"
           value={r === null ? '—' : `$${fmtStrike(Math.round(r.widthUsd))}`}
           foot={r === null ? undefined : `${r.widthPct.toFixed(2)}% of spot`}
-        />
-
-        <Tile
-          icon={Compass}
-          label="Market lean"
-          tone={bias.score > 0.15 ? 'up' : bias.score < -0.15 ? 'down' : 'plain'}
-          value={bias.label}
-          foot={
-            bias.components.length
-              ? `from ${bias.components.length} signals · none traded on`
-              : undefined
-          }
-          hint="Read from puts against calls, which side costs more to insure, and which is trading more today."
         />
 
         <Tile

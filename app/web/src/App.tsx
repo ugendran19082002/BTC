@@ -470,24 +470,17 @@ export default function App() {
           {data && snap && (
             <>
               {/*
-                Ten figures in one card, running the full width. It was a
-                six-figure strip above a four-figure card for a while, and the
-                strip repeated four of them — the same number twice on one
-                screen is how two figures eventually disagree.
+                One row: what the board is saying on the left, where BTC is
+                against it on the right. They are read together — a wall means
+                nothing until you can see how close price is to it — and stacked
+                they were two full-width blocks with a scroll between them.
               */}
-              <div className="wide-row">
+              <div className="board-row">
                 <MarketInsights
                   structure={data.structure}
-                  bias={data.bias}
                   snap={snap}
                   market={data.market}
                 />
-              </div>
-
-              {/*
-                Under the card: where BTC is against the two walls is what makes
-                those two numbers mean anything.
-              */}
               <ErrorBoundary where="Price chart">
                 <PriceChart
                   bars={candles?.bars ?? []}
@@ -500,6 +493,7 @@ export default function App() {
                   error={candles?.error}
                 />
               </ErrorBoundary>
+              </div>
 
               <div className="lead-row">
                 <CollapsibleCard

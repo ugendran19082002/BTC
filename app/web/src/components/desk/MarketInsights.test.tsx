@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MarketInsights } from '@/components/desk/MarketInsights';
-import type { Bias, MarketRead, OptionStructure, SnapshotMeta } from '@/types/desk';
+import type { MarketRead, OptionStructure, SnapshotMeta } from '@/types/desk';
 
 /**
  * Ten figures in one card.
@@ -32,12 +32,6 @@ const structure = {
   peOiWall: { strike: 74_400, value: 59_000 },
 } as unknown as OptionStructure;
 
-const bias = {
-  score: 0.05,
-  label: 'not leaning either way',
-  components: [{}, {}, {}],
-} as unknown as Bias;
-
 const card = (
   over: Partial<OptionStructure> = {},
   snapOver: Partial<SnapshotMeta> = {},
@@ -46,7 +40,6 @@ const card = (
   render(
     <MarketInsights
       structure={{ ...structure, ...over } as OptionStructure}
-      bias={bias}
       snap={{ ...snap, ...snapOver } as SnapshotMeta}
       market={mkt}
     />,
@@ -55,12 +48,20 @@ const card = (
 beforeEach(() => localStorage.clear());
 
 describe('market insights', () => {
-  it('shows the band, its width, the lean and how options are priced', () => {
+  it('shows the band, its width and how options are priced', () => {
     card();
     expect(screen.getByText('74,400 – 80,000')).toBeInTheDocument();
     expect(screen.getByText('$5,600')).toBeInTheDocument();
-    expect(screen.getByText('not leaning either way')).toBeInTheDocument();
     expect(screen.getByText('+4.2 pts')).toBeInTheDocument();
+  });
+
+  it('[critical] does not carry a market lean', () => {
+    // Three signals that were each tested and rejected, weighted into one
+    // number with no use for it. /api/chain still returns `bias` if it is ever
+    // wanted back.
+    card();
+    expect(screen.queryByText(/leaning/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Market lean')).not.toBeInTheDocument();
   });
 
   it('carries the six figures the strip used to, so nothing is read twice', () => {
@@ -118,6 +119,7 @@ describe('market insights', () => {
     // implied volatility, puts per call, support, resistance, max pain,
     // the range, its width and the volatility premium
     expect(screen.getAllByText('—')).toHaveLength(8);
+    expect(screen.queryByText('0')).not.toBeInTheDocument();
     expect(screen.queryByText('0.00')).not.toBeInTheDocument();
   });
 

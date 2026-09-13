@@ -943,25 +943,28 @@ td.evcol.down { color: var(--down); }
 .evtable td.ev { font-weight: 600; }
 .evtable td.ev.up { color: var(--up); }
 .evtable td.ev.down { color: var(--down); }
-.evtable tr.picked td { background: #fcd53510; }
+.evtable tr.picked td { background: #fcd5350d; box-shadow: inset 2px 0 0 var(--accent); }
 
-.evtable td.k { font-weight: 600; color: var(--accent); }
+/* The strike reads like a strike on the board: plain text, weight, and the
+   accent kept for the hover -- an amber number in every row was the loudest
+   thing on a screen whose loudest thing should be the expected value. */
+.evtable td.k { font-weight: 600; color: var(--text); }
 .evtable td.k button {
   appearance: none; border: 0; background: none; padding: 0;
-  font: inherit; font-weight: 600; color: var(--accent); cursor: pointer;
+  font: inherit; font-weight: 600; color: var(--text); cursor: pointer;
 }
-.evtable td.k button:hover { text-decoration: underline; }
+.evtable td.k button:hover { color: var(--accent); }
 .evtable td.k button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 3px; }
 .evtable td.k .tag { margin-left: 5px; }
 
 .ev-sell {
-  grid-area: sell;
   appearance: none; font: inherit; font-size: 11.5px; font-weight: 600;
-  min-height: 30px; padding: 0 11px;
-  border: 1px solid var(--line); border-radius: 6px;
-  background: var(--panel-2); color: var(--text); cursor: pointer;
+  min-height: 28px; padding: 0 10px;
+  border: 1px solid transparent; border-radius: 6px;
+  background: #0ecb8114; color: var(--up); cursor: pointer;
+  white-space: nowrap;
 }
-.ev-sell:hover { background: var(--accent); color: #0b0e11; border-color: var(--accent); }
+.ev-sell:hover { background: #0ecb8126; border-color: #0ecb8155; }
 .ev-sell:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
 
 /* ── Market insights ───────────────────────────────────────────────────────
@@ -1071,4 +1074,41 @@ tr.atm td.strikecell .strikebtn { color: #fff; }
      their columns. */
   .evtable { font-size: 12px; }
   .evtable .ev-sell { padding: 0 8px; min-height: 26px; font-size: 11px; }
+}
+
+/* ── What the board says, beside where price is against it ──────────────────
+   Stacked, these were two full-width blocks with a scroll between them — and a
+   wall means nothing until you can see how close price is to it. Side by side
+   they are one glance. The insights column is narrow on purpose: its nine tiles
+   pack two-up into it, which comes out at about the chart's height, and the
+   chart gets the width, which is what a chart needs. */
+.board-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  margin-bottom: 12px;
+  align-items: start;
+}
+@media (min-width: 1060px) {
+  .board-row { grid-template-columns: minmax(300px, 32%) minmax(0, 1fr); }
+  /* Two-up inside a third of the page, rather than auto-fit's one. */
+  .board-row .insight-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.board-row > * { min-width: 0; margin-bottom: 0; }
+
+/* ── Settings ───────────────────────────────────────────────────────────────
+   It carried eight controls and now carries two, so a flex row that packed
+   everything left left most of the bar empty. The actions take the far end and
+   the fields keep their natural width; on a phone everything goes full width,
+   where a 84px-wide select next to a 90px one is two half-empty columns. */
+.bar .actions { margin-left: auto; }
+.bar .field.wide { flex: 0 1 320px; min-width: 0; }
+.bar .field.wide > * { min-width: 0; }
+
+@media (max-width: 700px) {
+  .bar { gap: 10px; padding: 11px 12px; }
+  .bar .field, .bar .field.wide { flex: 1 1 100%; }
+  .bar .field select, .bar .field input { width: 100%; }
+  .bar .actions { margin-left: 0; width: 100%; }
+  .bar .actions > * { flex: 1 1 0; }
 }
