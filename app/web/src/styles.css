@@ -964,23 +964,8 @@ td.evcol.down { color: var(--down); }
 .ev-sell:hover { background: var(--accent); color: #0b0e11; border-color: var(--accent); }
 .ev-sell:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
 
-@media (max-width: 420px) {
-  /* The rupee figure under the dollar one and a Sell button will not all fit
-     beside a strike on a 360px screen. The button drops to its own row rather
-     than squeezing the number it is about. */
-  .ev-row {
-    grid-template-columns: 18px minmax(0, 1fr) auto;
-    grid-template-areas: 'rank strike value' 'rank meta value' '. sell sell';
-    gap: 0 8px;
-  }
-  .ev-sell { justify-self: stretch; margin-top: 7px; }
-}
-
 /* ── Market insights ───────────────────────────────────────────────────────
-   Tiles rather than rows. "Is BTC anywhere near the strikes people hold" is a
-   glance, and a glance wants the two walls side by side, not eleven
-   label-and-number lines to read down. */
-/* Four equal tiles. The first version spanned two of them across the full
+   Four equal tiles. The first version spanned two of them across the full
    width, which left the row beside each one empty and read as unfinished --
    `auto-fit` fills whatever the width allows instead: four across on a desk,
    two on a tablet, one on a phone, and never a tile alone against a gap. */
