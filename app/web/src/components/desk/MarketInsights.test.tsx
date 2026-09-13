@@ -116,9 +116,9 @@ describe('market insights', () => {
       { atmIv: null, expectedMove: null },
       null,
     );
-    // implied volatility, puts per call, support, resistance, max pain,
-    // the range, its width and the volatility premium
-    expect(screen.getAllByText('—')).toHaveLength(8);
+    // implied volatility, the expected move, puts per call, support,
+    // resistance, max pain, the range, its width and the volatility premium
+    expect(screen.getAllByText('—')).toHaveLength(9);
     expect(screen.queryByText('0')).not.toBeInTheDocument();
     expect(screen.queryByText('0.00')).not.toBeInTheDocument();
   });

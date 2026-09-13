@@ -9,16 +9,23 @@ import type { Leg } from '@/types/desk';
  * headed "best to sell" because its number happened to be large.
  */
 
+/** `tier` follows the signal unless a test says otherwise: it is what ranks. */
 const leg = (
   strike: number,
   signal: Leg['ev']['signal'],
   evUsd: number | null,
   checks: Leg['ev']['checks'] = [],
+  over: Partial<Leg['ev']> = {},
 ): Leg =>
   ({
     cp: 'C',
     strike,
-    ev: { evUsd, signal, checks, evPerBtc: evUsd, volumeToOi: 0.2 },
+    ev: {
+      evUsd, signal, checks, evPerBtc: evUsd, volumeToOi: 0.2,
+      tier: signal === 'sell' ? 'candidate' : signal,
+      score: 70,
+      ...over,
+    },
   }) as unknown as Leg;
 
 describe('ranking by expected value', () => {

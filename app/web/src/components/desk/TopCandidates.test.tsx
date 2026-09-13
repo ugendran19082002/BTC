@@ -24,7 +24,10 @@ const leg = (
     strike,
     sellPrice: 18,
     zero: { adjusted: 0.99, model: 0.97, sample: 900, outsideTable: false },
-    ev: { evUsd, evPerBtc: evUsd, signal, checks: [], volumeToOi: 0.2 },
+    ev: {
+      evUsd, evPerBtc: evUsd, signal, checks: [], volumeToOi: 0.2,
+      tier: signal === 'sell' ? 'candidate' : signal, score: 70,
+    },
     ...over,
   }) as unknown as Leg;
 
@@ -37,7 +40,7 @@ const legs = [
 const withThin = (strike: number, evUsd: number) =>
   leg(strike, 'watch', evUsd, {
     ev: {
-      evUsd, evPerBtc: evUsd, signal: 'watch', volumeToOi: 0.0017,
+      evUsd, evPerBtc: evUsd, signal: 'watch', volumeToOi: 0.0017, tier: 'watch', score: 88,
       checks: [{ ok: false, severity: 'warn', text: 'Traded only 0.2% of its open interest today.' }],
     },
   } as unknown as Partial<Leg>);
