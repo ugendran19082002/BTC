@@ -1,4 +1,4 @@
-import type { ChainResponse, ExpiryOption } from '@/types/desk';
+import type { CandlesResponse, ChainResponse, ExpiryOption } from '@/types/desk';
 import { json, post } from '@/api/client';
 
 export function getChain(
@@ -61,3 +61,13 @@ export const setShortCap = (contracts: number) =>
     key: 'max_short_contracts',
     value: String(contracts),
   });
+
+/**
+ * BTC bars for the chart under the board.
+ *
+ * The span is the server's to choose per resolution — a chart meant to put the
+ * open-interest walls against recent price does not need a year of 1m bars, and
+ * a caller free to ask for one is a caller who can hang the page.
+ */
+export const getCandles = (tf: '5m' | '15m' | '1h' | '4h' | '1d') =>
+  json<CandlesResponse>(`/api/candles?tf=${tf}`);

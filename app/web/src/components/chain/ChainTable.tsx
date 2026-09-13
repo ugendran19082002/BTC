@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
 import type { Leg, SideRecommendation, SnapshotMeta } from '@/types/desk';
 import { heldKey, type HeldLeg } from '@/lib/held';
-import { signedInr, usdToInr } from '@/lib/format';
+import { signedInr, signedUsd, usdToInr } from '@/lib/format';
+import { SIGNAL_LABEL, signalReason } from '@/lib/ev-view';
 
 /** What a tap on a price hands back: enough to open a ticket, nothing more. */
 export type ChainSellIntent = {
@@ -48,6 +49,67 @@ function Zero({ leg, sold = false }: { leg: Leg | undefined; sold?: boolean }) {
 }
 
 /**
+ * What this strike is worth on average, for the lots set above the board.
+ *
+ * It sits beside the odds on purpose. A 99% strike paying $2 and a 94% strike
+ * paying $40 look one way in the odds column and the other way here, and the
+ * whole reason this column exists is that the probability alone calls the first
+ * one better. See domain/ev.ts.
+ */
+function Ev({ leg, sold = false }: { leg: Leg | undefined; sold?: boolean }) {
+  const v = leg?.ev?.evUsd ?? null;
+  if (v == null) return <td className="evcol dim">—</td>;
+  // `== null` on purpose: a leg may arrive with the field absent rather than
+  // null -- an older server, or a past snapshot -- and `=== null` let an
+  // undefined through into toFixed and took the whole board down with it.
+  const per = leg?.ev?.evPerBtc;
+  return (
+    <td
+      className={`evcol ${v >= 0 ? 'up' : 'down'}${sold ? ' sellcell' : ''}`}
+      title={
+        per == null
+          ? undefined
+          : 'Credit less the average payout of strikes like this one, after charges.' +
+            ` $${per.toFixed(2)} per BTC.`
+      }
+    >
+      {signedUsd(v)}
+    </td>
+  );
+}
+
+/**
+ * Sell, watch or avoid — and, on a tap, which rule it is failing.
+ *
+ * A coloured cell with no reason behind it is a cell nobody can argue with, so
+ * the whole eligibility list is one tap away rather than a tooltip a phone
+ * cannot show.
+ */
+function SignalCell({
+  leg, sold = false, onInspect,
+}: {
+  leg: Leg | undefined;
+  sold?: boolean;
+  onInspect?: () => void;
+}) {
+  if (!leg?.ev) return <td className="sigcol dim">—</td>;
+  const s = leg.ev.signal;
+  const label = SIGNAL_LABEL[s];
+  const why = signalReason(leg);
+  return (
+    <td className={`sigcol sig-${s}${sold ? ' sellcell' : ''}`} title={why}>
+      {onInspect ? (
+        <button type="button" onClick={onInspect} aria-label={`${label} — why? ${why}`}>
+          {label}
+        </button>
+      ) : (
+        <span>{label}</span>
+      )}
+    </td>
+  );
+}
+
+/**
  * A price that opens the ticket.
  *
  * Selling is what this desk does, so a tap anywhere on a strike's prices means
@@ -73,14 +135,6 @@ function PriceCell({
       <button type="button" onClick={onSell} aria-label={`sell at ${text}`}>{text}</button>
     </td>
   );
-}
-
-/** A traded price nobody has hit in a while is not a price you can sell at. */
-function Age({ min }: { min: number | null }) {
-  if (min === null) return <span className="dim">—</span>;
-  if (min === 0) return <span className="up">live</span>;
-  if (min <= 15) return <span className="muted">{min}m</span>;
-  return <span className="warn">{min}m</span>;
 }
 
 /**
@@ -142,8 +196,11 @@ export function ChainTable({
   sides = [],
   density = 'default',
   onSell,
+  onInspect,
   maxSpreadPct,
   held,
+  view = 'both',
+  eligibleOnly = false,
 }: {
   legs: Leg[];
   snap: SnapshotMeta;
@@ -157,6 +214,14 @@ export function ChainTable({
   sides?: SideRecommendation[];
   /** Tapping a price asks for a ticket. Absent means the board is read-only. */
   onSell?: (intent: ChainSellIntent) => void;
+  /**
+   * Tapping a Signal cell asks for the whole picture on that strike.
+   *
+   * The board has room for six columns on a phone and the eligibility list is
+   * nine rules long, so the reason a strike says Avoid cannot live in the cell.
+   * A tooltip is not an answer either -- a phone has no hover.
+   */
+  onInspect?: (cp: 'C' | 'P', strike: number) => void;
   /**
    * The widest spread an order may cross, as a fraction of the mid.
    *
@@ -176,21 +241,52 @@ export function ChainTable({
    */
   density?: 'default' | 'all';
   /**
+   * Which half of the board to show.
+   *
+   * Both sides at once is 27 columns, and on a phone that is a board you swipe
+   * rather than read. A seller is usually working one side at a time.
+   */
+  view?: 'calls' | 'puts' | 'both';
+  /**
+   * Hide the strikes the arithmetic refuses outright.
+   *
+   * Only `avoid` is hidden, never `watch`: at this distance almost every real
+   * candidate is warned about for liquidity, and hiding those would empty the
+   * board. The count of what was hidden is shown, because a filter that silently
+   * removes rows is how someone concludes a strike does not exist.
+   */
+  eligibleOnly?: boolean;
+  /**
    * The strikes currently held, keyed by `heldKey`. Absent on a historical
    * snapshot and on the read-only board, where "you are short this" would be a
    * claim about the wrong day.
    */
   held?: Map<string, HeldLeg>;
 }) {
-  const strikes = [...new Set(legs.map((l) => l.strike))].sort((a, b) => a - b);
+  const at = (k: number, cp: 'C' | 'P') => legs.find((l) => l.strike === k && l.cp === cp);
+  const showCalls = view !== 'puts';
+  const showPuts = view !== 'calls';
+
+  const allStrikes = [...new Set(legs.map((l) => l.strike))].sort((a, b) => a - b);
+  const keeps = (k: number) => {
+    if (!eligibleOnly) return true;
+    const sides = [showCalls ? at(k, 'C') : undefined, showPuts ? at(k, 'P') : undefined];
+    return sides.some((l) => l?.ev && l.ev.signal !== 'avoid');
+  };
+  const strikes = allStrikes.filter(keeps);
+  const hidden = allStrikes.length - strikes.length;
   // visible columns each side of the strike: the odds, the raw model behind
   // them, and the ask -- plus the seven reference ones when they are showing
   // The odds either side of the strike, the raw model behind them, the offer,
   // and the bid. The bid is back in the default set: it is what a seller
   // actually receives, and now that the board marks which ones are too wide to
   // cross, it is the column you act on rather than a reference figure.
-  const perSide = density === 'all' ? 10 : 4;
-  const at = (k: number, cp: 'C' | 'P') => legs.find((l) => l.strike === k && l.cp === cp);
+  // Must match what is actually rendered. Signal and EV are always on -- they
+  // are the two columns the decision is read from -- so the default set is six
+  // and the full set thirteen. A colSpan that over-claims reserves width for
+  // columns that are not there, which is how the calls bid got pushed off the
+  // left edge of a phone once.
+  const perSide = density === 'all' ? 12 : 6;
 
   /**
    * Can this one be taken at the bid right now?
@@ -208,6 +304,8 @@ export function ChainTable({
     onSell && leg
       ? () => onSell({ cp, strike: k, bid: leg.bid ?? null, ask: leg.ask ?? null, mark: leg.mark ?? null })
       : undefined;
+  const inspect = (leg: Leg | undefined, cp: 'C' | 'P', k: number) =>
+    onInspect && leg ? () => onInspect(cp, k) : undefined;
   const hasBook = legs.some((l) => l.bid !== null || l.ask !== null);
 
   // The recommendation names a strike; the chain is where that strike lives.
@@ -245,6 +343,13 @@ export function ChainTable({
   return (
     <>
     <Coverage snap={snap} />
+    {hidden > 0 && (
+      <div className="note" style={{ padding: '8px 12px', margin: 0 }}>
+        {hidden} {hidden === 1 ? 'strike is' : 'strikes are'} hidden — the arithmetic refuses
+        {' '}{hidden === 1 ? 'it' : 'them'} outright. Turn off <b>Eligible only</b> to see the
+        whole board.
+      </div>
+    )}
     {/*
       Full height, always. A board of two dozen strikes inside its own scroller
       means the page scrolls and then the table scrolls, and you lose your place
@@ -263,22 +368,32 @@ export function ChainTable({
               strip down the right of the box, and the calls bid pushed off the
               left edge on a phone.
             */}
-            <th colSpan={perSide} className="left ce">CALLS</th>
+            {showCalls && <th colSpan={perSide} className="left ce">CALLS</th>}
             <th>STRIKE</th>
-            <th colSpan={perSide} className="left pe">PUTS</th>
+            {showPuts && <th colSpan={perSide} className="left pe">PUTS</th>}
           </tr>
           <tr>
-            <th className="aux">OI</th><th className="aux">Vol</th><th className="aux">Age</th>
-            <th className="aux">Δ</th><th className="aux">IV</th>
-            <th className="zerocol">→ 0</th><th>Model</th>
-            <th className="askcol">Ask</th><th className="aux">Mark</th>
-            <th className="bidcol">Bid</th>
+            {showCalls && (
+              <>
+                <th className="aux">OI</th><th className="aux">Vol</th><th className="aux">V/OI</th>
+                <th className="aux">Δ</th><th className="aux">IV</th>
+                <th className="sigcol">Signal</th><th className="evcol">EV</th>
+                <th className="zerocol">→ 0</th><th>Model</th>
+                <th className="askcol">Ask</th><th className="aux">Mark</th>
+                <th className="bidcol">Bid</th>
+              </>
+            )}
             <th></th>
-            <th className="bidcol">Bid</th><th className="aux">Mark</th>
-            <th className="askcol">Ask</th>
-            <th>Model</th><th className="zerocol">→ 0</th>
-            <th className="aux">IV</th><th className="aux">Δ</th>
-            <th className="aux">Age</th><th className="aux">Vol</th><th className="aux">OI</th>
+            {showPuts && (
+              <>
+                <th className="bidcol">Bid</th><th className="aux">Mark</th>
+                <th className="askcol">Ask</th>
+                <th>Model</th><th className="zerocol">→ 0</th>
+                <th className="evcol">EV</th><th className="sigcol">Signal</th>
+                <th className="aux">IV</th><th className="aux">Δ</th>
+                <th className="aux">V/OI</th><th className="aux">Vol</th><th className="aux">OI</th>
+              </>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -303,24 +418,41 @@ export function ChainTable({
                   heldC || heldP ? 'holding' : '',
                 ].filter(Boolean).join(' ') || undefined}
               >
-                <td className="dim aux">{num(c?.oi ?? null)}</td>
-                <td className="dim aux">{num(c?.volume ?? null)}</td>
-                <td className="aux"><Age min={c?.ageMin ?? null} /></td>
-                <td className="aux">{n(c?.delta ?? null, 3)}</td>
-                <td className="dim aux">{c?.iv != null ? (c.iv * 100).toFixed(1) : '·'}</td>
-                <Zero leg={c} sold={sellC} />
-                <td className="dim">{c?.pOtm != null ? (c.pOtm * 100).toFixed(0) + '%' : '·'}</td>
-                <PriceCell className="askcol" value={c?.ask} onSell={sell(c, 'C', k)} />
-                <td className="aux">{n(c?.mark ?? null)}</td>
-                <PriceCell
-                  className={`bidcol${sellC ? ' sellcell' : ''}${takeable(c) === false ? ' wide' : ''}`}
-                  value={c?.bid}
-                  onSell={sell(c, 'C', k)}
-                  title={takeable(c) === false ? 'Spread too wide — sell at the ask instead' : undefined}
-                />
+                {showCalls && (
+                  <>
+                    <td className="dim aux">{num(c?.oi ?? null)}</td>
+                    <td className="dim aux">{num(c?.volume ?? null)}</td>
+                    <td className="dim aux">{c?.ev?.volumeToOi != null ? (c.ev.volumeToOi * 100).toFixed(1) + '%' : '·'}</td>
+                    <td className="aux">{n(c?.delta ?? null, 3)}</td>
+                    <td className="dim aux">{c?.iv != null ? (c.iv * 100).toFixed(1) : '·'}</td>
+                    <SignalCell leg={c} sold={sellC} onInspect={inspect(c, 'C', k)} />
+                    <Ev leg={c} sold={sellC} />
+                    <Zero leg={c} sold={sellC} />
+                    <td className="dim">{c?.pOtm != null ? (c.pOtm * 100).toFixed(0) + '%' : '·'}</td>
+                    <PriceCell className="askcol" value={c?.ask} onSell={sell(c, 'C', k)} />
+                    <td className="aux">{n(c?.mark ?? null)}</td>
+                    <PriceCell
+                      className={`bidcol${sellC ? ' sellcell' : ''}${takeable(c) === false ? ' wide' : ''}`}
+                      value={c?.bid}
+                      onSell={sell(c, 'C', k)}
+                      title={takeable(c) === false ? 'Spread too wide — sell at the ask instead' : undefined}
+                    />
+                  </>
+                )}
 
                 <td className="mono strikecell">
-                  {k}
+                  {onInspect
+                    ? (
+                      <button
+                        type="button"
+                        className="strikebtn"
+                        onClick={() => onInspect(c ? 'C' : 'P', k)}
+                        aria-label={`what is at strike ${k}`}
+                      >
+                        {k}
+                      </button>
+                    )
+                    : k}
                   {isAtm && <span className="tag">ATM</span>}
                   {heldC && <HeldChip held={heldC} />}
                   {heldP && <HeldChip held={heldP} />}
@@ -328,21 +460,27 @@ export function ChainTable({
                   {sellP && !heldP && <span className="tag ok">SELL PE</span>}
                 </td>
 
-                <PriceCell
-                  className={`bidcol${sellP ? ' sellcell' : ''}${takeable(p) === false ? ' wide' : ''}`}
-                  value={p?.bid}
-                  onSell={sell(p, 'P', k)}
-                  title={takeable(p) === false ? 'Spread too wide — sell at the ask instead' : undefined}
-                />
-                <td className="aux">{n(p?.mark ?? null)}</td>
-                <PriceCell className="askcol" value={p?.ask} onSell={sell(p, 'P', k)} />
-                <td className="dim">{p?.pOtm != null ? (p.pOtm * 100).toFixed(0) + '%' : '·'}</td>
-                <Zero leg={p} sold={sellP} />
-                <td className="dim aux">{p?.iv != null ? (p.iv * 100).toFixed(1) : '·'}</td>
-                <td className="aux">{n(p?.delta ?? null, 3)}</td>
-                <td className="aux"><Age min={p?.ageMin ?? null} /></td>
-                <td className="dim aux">{num(p?.volume ?? null)}</td>
-                <td className="dim aux">{num(p?.oi ?? null)}</td>
+                {showPuts && (
+                  <>
+                    <PriceCell
+                      className={`bidcol${sellP ? ' sellcell' : ''}${takeable(p) === false ? ' wide' : ''}`}
+                      value={p?.bid}
+                      onSell={sell(p, 'P', k)}
+                      title={takeable(p) === false ? 'Spread too wide — sell at the ask instead' : undefined}
+                    />
+                    <td className="aux">{n(p?.mark ?? null)}</td>
+                    <PriceCell className="askcol" value={p?.ask} onSell={sell(p, 'P', k)} />
+                    <td className="dim">{p?.pOtm != null ? (p.pOtm * 100).toFixed(0) + '%' : '·'}</td>
+                    <Zero leg={p} sold={sellP} />
+                    <Ev leg={p} sold={sellP} />
+                    <SignalCell leg={p} sold={sellP} onInspect={inspect(p, 'P', k)} />
+                    <td className="dim aux">{p?.iv != null ? (p.iv * 100).toFixed(1) : '·'}</td>
+                    <td className="aux">{n(p?.delta ?? null, 3)}</td>
+                    <td className="dim aux">{p?.ev?.volumeToOi != null ? (p.ev.volumeToOi * 100).toFixed(1) + '%' : '·'}</td>
+                    <td className="dim aux">{num(p?.volume ?? null)}</td>
+                    <td className="dim aux">{num(p?.oi ?? null)}</td>
+                  </>
+                )}
               </tr>
             );
           })}
@@ -357,6 +495,11 @@ export function ChainTable({
         <b className="up">Bid</b> = what you get when you sell.
         {' '}<b className="up">→ 0</b> = chance it expires worthless, from 733 days of real results.
         {' '}<b>Model</b> = the maths alone. <b>*</b> = beyond the tested range.
+        {' '}<b>EV</b> = that credit less the average payout, after charges — a 99% strike paying
+        $2 can still be negative.
+        {onInspect && <> <b>Tap a strike</b> for everything known about it — both sides, the money and every rule it passes or fails.</>}
+        {' '}Signal and EV are for information: neither has been tested across 2024, 2025 and
+        2026, and nothing on the trading side reads them.
       </div>
       {!hasBook && (
         <div className="note" style={{ padding: '8px 12px', margin: '0 0 12px' }}>

@@ -1,7 +1,7 @@
 # TODO
 
 Live: https://delta.thannigo.in
-Updated 12 Sep 2026
+Updated 13 Sep 2026
 
 ---
 
@@ -233,6 +233,99 @@ chain. It was taken out by mistake for one deploy and put straight back.
   which is exactly what noise looks like before you get more data.
   So the desk forecasts **distance, not direction**, and the "up" column stays
   on the page at ~50% to make the case against adding one later.
+
+---
+
+## Expected value on the board, and a strip above it — 13 Sep 2026
+
+The screen showed how *likely* a strike was to expire worthless and never what
+it was *worth*. Those are different questions and the probability column alone
+answers the wrong one: a 99% strike paying $2 and a 94% strike paying $40 read
+one way in the odds column and the other way once the average payout comes off.
+
+**Expected value, per strike.** `domain/ev.ts` now prices every leg on the
+board. The payout model is not a new one — it was lifted out of `recommend.ts`,
+which now calls it, so the number on a strike and the number on the card above
+it are one piece of arithmetic. `ev.test.ts` pins them to each other: the two
+recommended legs' expected values must sum to exactly what the card reports.
+Two EV models on one screen would sooner or later disagree about the same
+option, and that is a screen nobody can act on.
+
+The model is the one with provenance: `mark × (1 − real) / (1 − model)`, scaled
+by how often strikes like this one actually breached. Two wrong versions
+preceded it and the comment naming them moved to `ev.ts` with the code.
+Averaging the payoff over the measured distribution of 12-hour moves — the
+obvious thing to reach for — overstated the payout threefold, because that
+distribution is unconditional.
+
+**A Signal column, and what it is not.** Sell / Watch / Avoid, from nine
+eligibility rules: distance, probability, expected value, the premium floor,
+delta, liquidity, spread and staleness. It is marked *for information* wherever
+it appears and no gate reads it. The premium floor and the RSI gate survived
+2024, 2025 and 2026 separately; an EV rule has never been through that screen,
+and the day it quietly starts refusing orders is the day this desk is trading
+something it has not measured.
+
+**Liquidity had to be a warning, not a refusal.** The first version blocked on
+volume under 10% of open interest, which is the rule as it is usually written.
+At the distance this strategy sells, a daily option routinely trades a fraction
+of a percent — the strike the tested engine picked on 12 September traded 0.17%
+of its open interest — so almost every genuine candidate failed it, the whole
+far half of the board read unsellable, and "Best expected value" was empty and
+saying "nothing qualifies". It now ranks warned-about strikes below clear ones
+and marks them `thin`. "These qualify, and here is what is thin about them" is
+a different statement from "nothing qualifies", and only one of them is true.
+
+**Max pain and the open-interest band** are in `structure.ts` beside the walls
+that were already there. Description, like everything else on that card.
+
+**The screen.** A six-figure strip above everything — spot, implied volatility,
+puts per call, both walls, max pain — because reading those six meant opening
+three cards and scrolling past twenty strikes. A price chart under it with the
+two walls drawn across it, 5m to 1D, volume and a crosshair. The strike itself
+now opens a sheet with both its legs, the money, and every rule it passes or
+fails; the board has room for six columns on a phone and the rule list is nine
+long, and a phone has no hover to put a tooltip behind.
+
+Three things came *off* the screen: the market-lean block (three needle bars and
+five lines of prose for the one number on the card that is explicitly not a
+forecast — it is one tile now), the Age column, and every settings control but
+time and expiry. The values behind the removed controls still drive the chain
+request at whatever was last chosen.
+
+**The chart's scale is price's, not the walls'.** The first version stretched
+the axis to reach both walls so nothing was ever clipped. On a real board that
+meant a 74,400–80,000 axis for a day that traded 76,000–78,000, and every candle
+collapsed into a band a few pixels tall — legible about the walls, useless about
+price. A wall outside the scale is pinned to the edge now, with an arrow and how
+far away it is.
+
+### A TDZ bug that reached the live desk
+
+`Cannot access 'm' before initialization`, three times, in the Chain boundary at
+16:16 IST. Mine: a `const at` lookup in `ChainTable` ended up declared *after*
+the filter that used it. The suite caught it within the hour and it is fixed,
+but it was built and deployed first — the error log is how it was found at all,
+which is the argument for the error log.
+
+### The suite was writing to the desk's error log
+
+Two rows on the live desk, 72 folded occurrences between them:
+`insufficient_margin` and `unsupported` on `POST /v2/orders`. Neither was real.
+`client_order_id: "abc123E0"` is a fixture and the stack ends in `node:assert` —
+`npm test` filed three more exchange refusals into the real `errors.db` on every
+run. Four test files set `ERROR_DB` to a temp path themselves; every other file
+that made the exchange refuse an order wrote to the desk's own database.
+
+`test/env.ts` is preloaded with `--import` now, before any test module is
+evaluated, and sets all three paths to a fresh temp directory. `env.test.ts`
+asserts none of them resolve inside the repository, because this is exactly the
+kind of thing that comes back. The two junk rows are still in the local log and
+can be deleted from the Errors tab.
+
+The cost was never tidiness. The error log is the one place a real failure is
+supposed to be findable, and a suite filing three fake refusals per run is how a
+real one gets scrolled past.
 
 ---
 

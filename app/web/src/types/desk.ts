@@ -8,7 +8,31 @@ export type ZeroChance = {
   outsideTable: boolean;
 };
 
+/**
+ * What one strike is worth on average, and whether it clears the eligibility
+ * rules. Computed server-side in `domain/ev.ts` from the same payout model the
+ * recommendation uses, so the board and the card can never disagree.
+ *
+ * `signal` is description, not instruction: the EV rule behind it has never
+ * been tested across 2024, 2025 and 2026 the way the premium floor and the RSI
+ * gate were, and no gate reads it. The screen says so wherever it appears.
+ */
+export type LegEv = {
+  payoutPerBtc: number | null;
+  evPerBtc: number | null;
+  evUsd: number | null;
+  chargesUsd: number;
+  volumeToOi: number | null;
+  breakeven: number | null;
+  maxProfitUsd: number | null;
+  /** null means unbounded — a naked short has no worst case. */
+  maxLossUsd: number | null;
+  checks: Check[];
+  signal: 'sell' | 'watch' | 'avoid';
+};
+
 export type Leg = {
+  ev: LegEv;
   cp: 'C' | 'P';
   strike: number;
   off: number;
@@ -161,7 +185,12 @@ export type Forecast = {
 
 export type Wall = { strike: number; value: number } | null;
 
+export type MaxPain = { strike: number; payoutUsd: number } | null;
+export type OiRange = { low: number; high: number; widthUsd: number; widthPct: number } | null;
+
 export type OptionStructure = {
+  maxPain: MaxPain;
+  oiRange: OiRange;
   ceOi: number;
   peOi: number;
   ceVolume: number;
@@ -325,4 +354,19 @@ export type ByYearResponse = {
   years: (Summary & { year: string })[];
 };
 
+export type Candle = {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+};
 
+export type CandlesResponse = {
+  tf: string;
+  resolution: string;
+  bars: Candle[];
+  /** Present when the feed refused; the board still works without the chart. */
+  error?: string;
+};

@@ -25,7 +25,7 @@ broke and why — which is worth reading before changing anything in `trading/`.
      │                    trading/exchange/paper.ts  (the simulator)
      ▼                           ▼
   domain/            ◄──   trading/engine.ts   ──►  trading/store.ts  ──►  trades.db
-  score, recommend,        (no clock, no timers)
+  score, recommend, ev,    (no clock, no timers)
   probability,                    │
   calibration,                    ▼
   forecast, bs         trading/service.ts   ── paper/live switch, server-authoritative
@@ -266,9 +266,15 @@ statement is the authority. See `TODO.md`.
 
 ## Testing
 
-279 server tests (`node:test` via tsx), 238 browser tests (vitest +
+659 server tests (`node:test` via tsx), 457 browser tests (vitest +
 @testing-library). Run `npm test` in `app/server` and `npx vitest run` in
 `app/web`; `npm run typecheck` in both.
+
+Every database the suite touches goes to a temp directory: `test/env.ts` is
+preloaded with `--import` and `env.test.ts` asserts none of the three paths
+resolve inside the repository. Before it existed the suite filed three exchange
+refusals into the desk's real `errors.db` on every run, and two rows with 72
+occurrences between them sat in the live log looking like real order failures.
 
 The server suite is an 81-case matrix covering normal entry, partial fill,
 timeout, reject, network timeout, duplicate prevention, TP/SL, race conditions,
@@ -312,3 +318,8 @@ In `TODO.md`, and the ones that matter most:
 - Reconciling against `/v2/orders/history` as well as the open book.
 - The two premium floors are still different numbers: 5 in the trading gate, 15
   as the chain default.
+- The board's expected value and its Sell/Watch/Avoid signal are description,
+  like `structure.ts`: no gate reads them and they have never been through the
+  cross-period screen the premium floor and the RSI gate went through. If one
+  of them is ever to decide anything, it gets measured on 2024, 2025 and 2026
+  separately first.

@@ -1,4 +1,5 @@
 import type { Snapshot, Leg } from '../market/chain.js';
+import { LOT_BTC } from './score.js';
 
 /**
  * What the option board itself is saying: where open interest and gamma sit,
@@ -12,6 +13,19 @@ import type { Snapshot, Leg } from '../market/chain.js';
  */
 
 export type Wall = { strike: number; value: number } | null;
+
+/** The strike where the open options are worth least to the people holding them. */
+export type MaxPain = { strike: number; payoutUsd: number } | null;
+
+/**
+ * The band between the heaviest put strike and the heaviest call strike.
+ *
+ * It is where open interest sits, which is not the same fact as where BTC will
+ * finish, and the screen says so. Kept because the two walls are the levels
+ * traders actually watch, and reading them off a table of two dozen strikes is
+ * work the page can do instead.
+ */
+export type OiRange = { low: number; high: number; widthUsd: number; widthPct: number } | null;
 
 export type OptionStructure = {
   ceOi: number;
@@ -30,6 +44,10 @@ export type OptionStructure = {
   ivSkewPts: number | null;
   /** implied minus realised, in percentage points; positive means options are rich */
   volPremiumPts: number | null;
+  /** the strike that would leave option holders with the smallest payout */
+  maxPain: MaxPain;
+  /** heaviest put strike up to heaviest call strike */
+  oiRange: OiRange;
   /** one, two and three standard deviations by settlement */
   ranges: { sigma: number; low: number; high: number }[];
 };
@@ -50,6 +68,48 @@ function heaviest(legs: Leg[], pick: (l: Leg) => number | null): Wall {
     if (best === null || v > best.value) best = { strike: l.strike, value: v };
   }
   return best;
+}
+
+/**
+ * Max pain: the settlement price at which the open options pay out least.
+ *
+ * Every listed strike is tried as a settlement price and the intrinsic value of
+ * every other strike is totalled against it, weighted by open interest. The
+ * smallest total wins.
+ *
+ * It is widely read as a magnet and this desk does not treat it as one -- it is
+ * a summary of where the open contracts sit, and it moves whenever the open
+ * interest does. Nothing reads it but the screen.
+ */
+function maxPainStrike(legs: Leg[]): MaxPain {
+  const strikes = [...new Set(legs.map((l) => l.strike))].sort((a, b) => a - b);
+  const priced = legs.filter((l) => l.oi !== null && Number.isFinite(l.oi));
+  if (strikes.length < 2 || !priced.length) return null;
+
+  let best: MaxPain = null;
+  for (const settle of strikes) {
+    let payoutUsd = 0;
+    for (const l of priced) {
+      const intrinsic = l.cp === 'C'
+        ? Math.max(0, settle - l.strike)
+        : Math.max(0, l.strike - settle);
+      payoutUsd += l.oi! * intrinsic * LOT_BTC;
+    }
+    if (best === null || payoutUsd < best.payoutUsd) best = { strike: settle, payoutUsd };
+  }
+  return best;
+}
+
+/** The band between the two walls, when they are the right way round. */
+function oiRangeOf(peWall: Wall, ceWall: Wall, spot: number): OiRange {
+  if (!peWall || !ceWall || peWall.strike >= ceWall.strike) return null;
+  const widthUsd = ceWall.strike - peWall.strike;
+  return {
+    low: peWall.strike,
+    high: ceWall.strike,
+    widthUsd,
+    widthPct: spot > 0 ? (widthUsd / spot) * 100 : 0,
+  };
 }
 
 export function optionStructure(
@@ -91,6 +151,9 @@ export function optionStructure(
         high: snap.spot + em * sigma,
       }));
 
+  const ceOiWall = heaviest(ce, (l) => l.oi);
+  const peOiWall = heaviest(pe, (l) => l.oi);
+
   return {
     ceOi,
     peOi,
@@ -98,9 +161,11 @@ export function optionStructure(
     peVolume,
     pcrOi: ceOi > 0 ? peOi / ceOi : null,
     pcrVolume: ceVolume > 0 ? peVolume / ceVolume : null,
-    ceOiWall: heaviest(ce, (l) => l.oi),
-    peOiWall: heaviest(pe, (l) => l.oi),
+    ceOiWall,
+    peOiWall,
     gammaWall,
+    maxPain: maxPainStrike(snap.legs),
+    oiRange: oiRangeOf(peOiWall, ceOiWall, snap.spot),
     atmIv: snap.atmIv,
     ivSkewPts,
     volPremiumPts:

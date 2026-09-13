@@ -161,6 +161,13 @@ unresolved failure is never dropped to make room for a newer one.
 
 Two properties this table is built around:
 
+- **Nothing but the desk writes to it.** The test suite used to: four test files
+  pointed `ERROR_DB` at a temp path and every other file that made the exchange
+  refuse an order filed that refusal here. Two rows with 72 folded occurrences
+  between them — `insufficient_margin` and `unsupported` on `POST /v2/orders` —
+  turned out to be fixtures with a `node:assert` stack. `test/env.ts` is
+  preloaded before any test module now, and `env.test.ts` fails if any of the
+  three database paths resolve inside the repository.
 - **`record()` never throws.** A logger that can fail takes down the thing it
   was logging.
 - **Credentials never reach it.** `redact()` walks the context and replaces any

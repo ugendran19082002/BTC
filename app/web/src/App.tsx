@@ -2,11 +2,11 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import * as Collapsible from '@radix-ui/react-collapsible';
 import { Activity, AlertTriangle, Bot, Briefcase, ChevronDown, ListOrdered } from 'lucide-react';
 import { NotSignedIn } from '@/api/client';
-import { getChain, getExpiries, getHealth, getSpot } from '@/api/desk';
+import { getCandles, getChain, getExpiries, getHealth, getSpot } from '@/api/desk';
 import { getMe, type Stage } from '@/api/session';
 import { ProfileMenu } from '@/components/auth/ProfileMenu';
 import { TwoStepSetup } from '@/components/auth/TwoStepSetup';
-import type { ChainResponse, ExpiryOption } from '@/types/desk';
+import type { ChainResponse, ExpiryOption, Leg } from '@/types/desk';
 import { ChainTable, type ChainSellIntent } from '@/components/chain/ChainTable';
 import type { TicketSeed } from '@/components/trade/OrderTicket';
 import { AlarmBanner } from '@/components/trade/ModeBanner';
@@ -18,20 +18,25 @@ import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
 import { usePoll } from '@/hooks/usePoll';
 import { usePageVisible } from '@/hooks/usePageVisible';
 import { MoveSection } from '@/components/desk/MoveSection';
-import { BiasSection } from '@/components/desk/BiasSection';
-import { RecommendPanel } from '@/components/desk/RecommendPanel';
 import { TodayPnl } from '@/components/desk/TodayPnl';
 import { DateTimePicker, istToEpoch, type IstMoment } from '@/components/research/DateTimePicker';
 import { usePersisted } from '@/hooks/usePersisted';
 import { LoginPage } from '@/components/desk/LoginPage';
 import { LivePrice } from '@/components/desk/LivePrice';
+import { BoardStrip } from '@/components/desk/BoardStrip';
+import { MarketInsights } from '@/components/desk/MarketInsights';
+import { TopCandidates } from '@/components/desk/TopCandidates';
+import { PriceChart, CHART_TFS, type ChartTf } from '@/components/desk/PriceChart';
 import { Select, SelectItem } from '@/components/ui/select';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Download } from 'lucide-react';
+import { toCsv, downloadCsv } from '@/lib/csv';
 import { CardLead } from '@/components/ui/card';
 import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { Stat, StatDivider } from '@/components/ui/stat';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Metric, Formula, Field } from '@/components/research/Explain';
+import { Metric, Formula } from '@/components/research/Explain';
 
 /*
  * Everything off the Live screen is loaded when it is first opened. The Live
@@ -40,6 +45,7 @@ import { Metric, Formula, Field } from '@/components/research/Explain';
  * demand and are cached from then on.
  */
 const OrderTicket = lazy(() => import('@/components/trade/OrderTicket').then((m) => ({ default: m.OrderTicket })));
+const StrikeAnalysis = lazy(() => import('@/components/desk/StrikeAnalysis').then((m) => ({ default: m.StrikeAnalysis })));
 const PositionsCard = lazy(() => import('@/components/trade/PositionsCard').then((m) => ({ default: m.PositionsCard })));
 const AccountCard = lazy(() => import('@/components/trade/AccountCard').then((m) => ({ default: m.AccountCard })));
 const OrdersPanel = lazy(() => import('@/components/trade/OrdersPanel').then((m) => ({ default: m.OrdersPanel })));
@@ -103,15 +109,31 @@ export default function App() {
   const [expiries, setExpiries] = useState<ExpiryOption[]>(loadCachedExpiries);
   const defaultExpiry = expiries.find((e) => e.isDefault)?.expiry ?? expiries[0]?.expiry ?? '';
   const activeExpiry = (expiry && expiries.some((e) => e.expiry === expiry)) ? expiry : defaultExpiry;
-  const [width, setWidth] = usePersisted('width', 20);
+  const [width] = usePersisted('width', 20);
   const [density, setDensity] = usePersisted<'default' | 'all'>('chain:density', 'default');
+  const [chainView, setChainView] = usePersisted<'calls' | 'puts' | 'both'>('chain:view', 'both');
+  const [eligibleOnly, setEligibleOnly] = usePersisted('chain:eligible', false);
+  /*
+   * Strike choice, safety %, premium floor, lots, hedge gap and board width no
+   * longer have controls: the settings bar is time and expiry, which is what
+   * actually gets changed. The values stay -- the chain request and the
+   * expected-value figures are still worked out from them -- at whatever was
+   * last chosen, or the tested defaults on a fresh browser.
+   */
+  const [storedTf, setChartTf] = usePersisted<ChartTf>('chart:tf', '1h');
+  // A timeframe remembered from an older build may no longer be offered.
+  const chartTf = CHART_TFS.includes(storedTf) ? storedTf : '1h';
+  // A strike is a leg plus an open flag, the same shape as the ticket: the sheet
+  // animates closed with its contents still on screen.
+  const [inspecting, setInspecting] = useState<{ cp: 'C' | 'P'; strike: number } | null>(null);
+  const [inspectOpen, setInspectOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = usePersisted<boolean>('open:settings', WIDE);
-  const [minPremium, setMinPremium] = usePersisted('minPremium', 15);
-  const [mode, setMode] = usePersisted<'premium' | 'safety'>('mode', 'premium');
-  const [safetyBar, setSafetyBar] = usePersisted('safetyBar', 98);
-  const [hedgeGap, setHedgeGap] = usePersisted('hedgeGap', 0);
-  const [requireHedge, setRequireHedge] = usePersisted('requireHedge', false);
-  const [lots, setLots] = usePersisted('lots', 10);
+  const [minPremium] = usePersisted('minPremium', 15);
+  const [mode] = usePersisted<'premium' | 'safety'>('mode', 'premium');
+  const [safetyBar] = usePersisted('safetyBar', 98);
+  const [hedgeGap] = usePersisted('hedgeGap', 0);
+  const [requireHedge] = usePersisted('requireHedge', false);
+  const [lots] = usePersisted('lots', 10);
   // On by default: a live chain that silently goes stale is worse than no chain.
   const [autoRefresh, setAutoRefresh] = usePersisted('autoRefresh', true);
   const visible = usePageVisible();
@@ -216,6 +238,16 @@ export default function App() {
   const { data: trade, refresh: refreshTrade } = usePoll(getTradeStatus, 1_000, { enabled: signedIn === true });
   const { data: errors } = usePoll(() => getErrors({ limit: 1 }), 30_000, { enabled: signedIn === true });
   const { data: tick } = usePoll(getSpot, 1_000, { enabled: signedIn === true });
+  /*
+   * Bars move far more slowly than the book, and the chart is context rather
+   * than a price to act on -- so a minute, not the board's five seconds. Only
+   * while the Live screen is the one being looked at.
+   */
+  const { data: candles, loading: candlesBusy } = usePoll(
+    () => getCandles(chartTf),
+    60_000,
+    { enabled: signedIn === true && tab === 'desk', deps: [chartTf] },
+  );
 
   const openTicket = useCallback((i: ChainSellIntent) => {
     if (!snapRef.current) return;
@@ -227,6 +259,50 @@ export default function App() {
       bid: i.bid, ask: i.ask, mark: i.mark,
     });
     setTicketOpen(true);
+  }, []);
+
+  /** A whole leg, rather than the four fields a tap on a price hands back. */
+  const sellLeg = useCallback((l: Leg) => {
+    openTicket({ cp: l.cp, strike: l.strike, bid: l.bid, ask: l.ask, mark: l.mark });
+  }, [openTicket]);
+
+  /**
+   * The board as a spreadsheet.
+   *
+   * Unformatted numbers, no currency symbols: the point of the download is to
+   * do arithmetic on it, and the formatting belongs on the screen. Both sides
+   * always, whatever the view is set to — a file that silently held half the
+   * board would be the kind of thing nobody notices until they have built a
+   * model on it.
+   */
+  const exportChain = useCallback(() => {
+    if (!data || !snapRef.current) return;
+    const csv = toCsv(data.legs, [
+      { header: 'side', value: (l) => (l.cp === 'C' ? 'CE' : 'PE') },
+      { header: 'strike', value: (l) => l.strike },
+      { header: 'moneyness', value: (l) => l.moneyness },
+      { header: 'otm_pct', value: (l) => l.distancePct?.toFixed(4) },
+      { header: 'bid', value: (l) => l.bid },
+      { header: 'ask', value: (l) => l.ask },
+      { header: 'mark', value: (l) => l.mark },
+      { header: 'oi', value: (l) => l.oi },
+      { header: 'volume', value: (l) => l.volume },
+      { header: 'volume_to_oi', value: (l) => l.ev?.volumeToOi?.toFixed(6) },
+      { header: 'delta', value: (l) => l.delta },
+      { header: 'iv', value: (l) => l.iv },
+      { header: 'expire_worthless_adjusted', value: (l) => l.zero?.adjusted },
+      { header: 'expire_worthless_model', value: (l) => l.pOtm },
+      { header: 'expected_value_usd', value: (l) => l.ev?.evUsd?.toFixed(6) },
+      { header: 'expected_payout_per_btc', value: (l) => l.ev?.payoutPerBtc?.toFixed(6) },
+      { header: 'breakeven', value: (l) => l.ev?.breakeven },
+      { header: 'signal', value: (l) => l.ev?.signal },
+    ]);
+    downloadCsv(`btc-chain-${snapRef.current.expiry}.csv`, csv);
+  }, [data]);
+
+  const inspectLeg = useCallback((cp: 'C' | 'P', strike: number) => {
+    setInspecting({ cp, strike });
+    setInspectOpen(true);
   }, []);
 
   const snap = data?.snapshot;
@@ -317,9 +393,8 @@ export default function App() {
               <span>Settings</span>
               {!settingsOpen && (
                 <span className="bar-summary">
-                  {live ? 'live' : 'past'} · {mode === 'safety' ? `safest ≥ ${safetyBar}%` : 'most premium'}
-                  {' · '}≥ ${minPremium} · {lots} lots · {width} strikes
-                  {hedgeGap > 0 && ` · hedge ${hedgeGap}`}
+                  {live ? 'live' : 'past'}
+                  {activeExpiry && <> · {activeExpiry}</>}
                 </span>
               )}
             </Collapsible.Trigger>
@@ -372,68 +447,6 @@ export default function App() {
               )}
             </div>
 
-            <Field
-              label="Strike choice"
-              help={
-                <>
-                  <p><b>Most premium:</b> the furthest strike that still pays your minimum. Tested on 733 days: profit factor 3.08, worst day −$7.08.</p>
-                  <p><b>Safest:</b> the best-paying strike that also meets your safety %. At $15 and 98%: profit factor 9.67, worst day −$3.66.</p>
-                  <p>More safety means less premium, but a smaller worst day.</p>
-                </>
-              }
-            >
-              <Select ariaLabel="pick the strike by" value={mode} onValueChange={(v) => setMode(v as 'premium' | 'safety')}>
-                <SelectItem value="premium" hint="Furthest strike that pays your minimum">Most premium</SelectItem>
-                <SelectItem value="safety" hint="Meets your minimum and your safety %">Safest</SelectItem>
-              </Select>
-            </Field>
-
-            {mode === 'safety' && (
-              <Field
-                label="Safety %"
-                help={<p>The lowest chance of expiring worthless you will accept. 98% worked in all three years; 99% failed in 2024.</p>}
-              >
-                <input type="number" inputMode="decimal" step="0.1" min="50" max="99.9" value={safetyBar} onChange={(e) => setSafetyBar(Number(e.target.value))} />
-              </Field>
-            )}
-
-            <Field
-              label="Min premium $"
-              help={<p>The least you want paid per BTC. Higher means strikes closer to the price and more risk. $15 won on 95.8% of days.</p>}
-            >
-              <input type="number" inputMode="decimal" value={minPremium} onChange={(e) => setMinPremium(Number(e.target.value))} />
-            </Field>
-
-            <Field
-              label="Lots"
-              help={<p>1 lot = 0.001 BTC, about $0.50 of margin. Split evenly between CE and PE: in 733 days the two sides never lost on the same day.</p>}
-            >
-              <input type="number" inputMode="numeric" value={lots} onChange={(e) => setLots(Number(e.target.value))} />
-            </Field>
-
-            <Field
-              label="Hedge gap"
-              help={<p>How many strikes further out to buy protection. 0 means no hedge, which is what was tested — a hedge is often not listed, or costs almost as much as the premium.</p>}
-            >
-              <input type="number" inputMode="numeric" value={hedgeGap} onChange={(e) => setHedgeGap(Number(e.target.value))} />
-              {hedgeGap > 0 && (
-                <button
-                  className={requireHedge ? 'pinned' : 'pinned off'}
-                  onClick={() => setRequireHedge((v) => !v)}
-                  title="Refuse the trade when no hedge is listed"
-                >
-                  {requireHedge ? 'Hedge required' : 'No hedge allowed'}
-                </button>
-              )}
-            </Field>
-
-            <Field
-              label="Strikes each side"
-              help={<p>How many strikes to show above and below the price. Display only — it does not change the trade.</p>}
-            >
-              <input type="number" inputMode="numeric" value={width} onChange={(e) => setWidth(Number(e.target.value))} />
-            </Field>
-
             <div className="actions">
               <Button onClick={() => void load()} disabled={busy}>
                 {busy ? 'Loading…' : 'Refresh'}
@@ -457,6 +470,36 @@ export default function App() {
 
           {data && snap && (
             <>
+              {/*
+                The five numbers a decision starts from, before any card is
+                opened. Reading them used to mean opening three.
+              */}
+              <BoardStrip snap={snap} structure={data.structure} market={data.market} />
+
+              {/* Directly under the strip: it reads as its second line, and
+                  carries only what the strip does not already say. */}
+              <div className="wide-row">
+                <MarketInsights structure={data.structure} bias={data.bias} snap={snap} />
+              </div>
+
+              {/*
+                Above the cards: where BTC is against the two walls is the first
+                thing read after the strip, and it is what makes those two
+                numbers mean anything.
+              */}
+              <ErrorBoundary where="Price chart">
+                <PriceChart
+                  bars={candles?.bars ?? []}
+                  support={data.structure.peOiWall?.strike ?? null}
+                  resistance={data.structure.ceOiWall?.strike ?? null}
+                  spot={snap.spot}
+                  tf={chartTf}
+                  onTf={setChartTf}
+                  loading={candlesBusy}
+                  error={candles?.error}
+                />
+              </ErrorBoundary>
+
               <div className="lead-row">
                 <CollapsibleCard
                   id="live"
@@ -528,11 +571,17 @@ export default function App() {
                     </Metric>
                   )}
                   {data.market && <MoveSection market={data.market} snap={snap} />}
-                  <BiasSection bias={data.bias} />
                 </CollapsibleCard>
 
-                <RecommendPanel rec={data.recommendation} market={data.market} minPremium={minPremium} usdinr={data.usdinr} />
+                <TopCandidates
+                  legs={data.legs}
+                  sides={data.recommendation.ok ? data.recommendation.sides : []}
+                  spot={snap.spot}
+                  onSell={snap.live ? sellLeg : undefined}
+                  onInspect={(l) => inspectLeg(l.cp, l.strike)}
+                />
               </div>
+
               <div className="chain-bar">
                 <span className="dim">
                   {data.legs.length} strikes · {snap.step} apart
@@ -540,6 +589,32 @@ export default function App() {
                     ? ' · highlighted = desk’s pick'
                     : ' · nothing qualifies today'}
                 </span>
+
+                <ToggleGroup
+                  type="single"
+                  value={chainView}
+                  onValueChange={(v) => v && setChainView(v as 'calls' | 'puts' | 'both')}
+                  aria-label="which side of the board"
+                >
+                  <ToggleGroupItem value="calls">Calls</ToggleGroupItem>
+                  <ToggleGroupItem value="puts">Puts</ToggleGroupItem>
+                  <ToggleGroupItem value="both">Both</ToggleGroupItem>
+                </ToggleGroup>
+
+                <button
+                  type="button"
+                  className={`chain-chip${eligibleOnly ? ' on' : ''}`}
+                  onClick={() => setEligibleOnly((v) => !v)}
+                  aria-pressed={eligibleOnly}
+                  title="Hide the strikes the arithmetic refuses outright. Warned-about strikes stay."
+                >
+                  Eligible only
+                </button>
+
+                <button type="button" className="chain-chip" onClick={exportChain} title="Download the whole board as CSV">
+                  <Download size={13} aria-hidden /> Export
+                </button>
+
                 <span className="chain-density">
                   <Select ariaLabel="chain columns" value={density} onValueChange={(v) => setDensity(v as 'default' | 'all')}>
                     <SelectItem value="default" hint="Odds and prices">Columns: key</SelectItem>
@@ -554,6 +629,9 @@ export default function App() {
                   sides={data.recommendation.ok ? data.recommendation.sides : []}
                   density={density}
                   onSell={openTicket}
+                  onInspect={inspectLeg}
+                  view={chainView}
+                  eligibleOnly={eligibleOnly}
                   maxSpreadPct={trade?.limits.maxSpreadPct}
                   // Only on a live board: "you hold this" on a past snapshot would be about the wrong day.
                   held={snap.live ? held : undefined}
@@ -583,6 +661,20 @@ export default function App() {
         </ErrorBoundary>
       )}
       </Suspense>
+
+      {inspecting && snap && (
+        <Suspense fallback={null}>
+          <StrikeAnalysis
+            legs={data?.legs ?? []}
+            strike={inspecting.strike}
+            side={inspecting.cp}
+            snap={snap}
+            open={inspectOpen}
+            onOpenChange={setInspectOpen}
+            onSell={snap.live ? sellLeg : undefined}
+          />
+        </Suspense>
+      )}
 
       {ticket && (
         <Suspense fallback={null}>

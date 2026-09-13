@@ -1,6 +1,7 @@
 import type { Snapshot } from '../market/chain.js';
 import type { ScoredLeg } from './score.js';
 import { LOT_BTC, MARGIN_PER_LOT_USD, USDINR } from './score.js';
+import { expectedPayoutPerBtc } from './ev.js';
 import type { MarketRead } from '../market/moves.js';
 import { fillChargesUsd } from '../trading/charges.js';
 import { fundsRequiredPerContract } from '../trading/margin.js';
@@ -492,41 +493,33 @@ export function recommend(
 
   // Expected value per leg.
   //
-  // The model's own expected payout is simply the option's price -- that is what
-  // a fair price means -- so pricing against the model says every trade is worth
-  // minus the slippage, which is true and useless. The edge lives in the gap
-  // between how often the model expects a breach and how often one happened, so
-  // the payout is scaled by exactly that ratio.
-  //
-  // Two wrong versions preceded this one. Treating a breach as always costing
-  // the maximum made every hedged spread look negative. Averaging the payoff
-  // over the measured distribution of 12-hour moves was worse: that distribution
-  // is unconditional, and applying it to a strike chosen for a calm day's
-  // volatility overstated the payout threefold. Checked against 1,466 real legs,
-  // this version puts the average payout at $15.44 against an actual $14.33.
+  // The payout model, and the long note on the two wrong versions that preceded
+  // it, live in domain/ev.ts -- so this figure and the board's per-strike
+  // expected value are one piece of arithmetic rather than two that can drift
+  // apart. `ev.test.ts` pins them to each other.
   let expectedProfitUsd: number | null = 0;
   for (const p of picks) {
     if (expectedProfitUsd === null) break;
-    const model = p.pExpireWorthless;
-    const real = p.zeroChance ?? model;
-    const mark = p.leg.mark;
-    if (model === null || real === null || mark === null || model >= 1) {
+    const shortPayout = expectedPayoutPerBtc({
+      mark: p.leg.mark,
+      model: p.pExpireWorthless,
+      real: p.zeroChance,
+    });
+    if (shortPayout === null) {
       expectedProfitUsd = null;
       break;
     }
-    const scale = (1 - real) / (1 - model);
-    const shortPayout = mark * scale;
 
     let longPayout = 0;
     if (p.hedge) {
       const h = scored.find(
         (l) => l.cp === (p.side === 'CE' ? 'C' : 'P') && l.strike === p.hedge!.strike,
       );
-      const hModel = h?.probs.expireWorthless ?? null;
-      const hReal = h?.zero?.adjusted ?? hModel;
-      if (h?.mark != null && hModel !== null && hReal !== null && hModel < 1) {
-        longPayout = h.mark * ((1 - hReal) / (1 - hModel));
-      }
+      longPayout = expectedPayoutPerBtc({
+        mark: h?.mark ?? null,
+        model: h?.probs.expireWorthless ?? null,
+        real: h?.zero?.adjusted ?? null,
+      }) ?? 0;
     }
 
     const perBtc = p.price - (p.hedge?.price ?? 0) - (shortPayout - longPayout);

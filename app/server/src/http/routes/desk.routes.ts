@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { liveChain, historicalChain, liveExpiries, type Snapshot } from '../../market/chain.js';
 import { readMarket } from '../../market/moves.js';
-import { liveSpot } from '../../market/delta.js';
+import { liveSpot, candles } from '../../market/delta.js';
 import { scoreLegs, pickSells, bias, verdict, maxLots, MARGIN_PER_LOT_USD, USDINR } from '../../domain/score.js';
 import { recommend, type PickMode } from '../../domain/recommend.js';
 import { optionStructure } from '../../domain/structure.js';
@@ -11,6 +11,7 @@ import { loadDays, reloadDays, DEFAULTS } from '../../backtest/backtest.js';
 import { tradingService, SHORT_CAP_KEY } from '../../trading/service.js';
 import { strategyStore } from './strategy.routes.js';
 import { refuse } from '../refuse.js';
+import { attachEv } from '../../domain/ev.js';
 
 /** Resolve the `at` query param: "now" (or absent) means live. */
 function resolveAt(at: string | undefined): number | null {
@@ -106,7 +107,7 @@ export function registerDeskRoutes(app: FastifyInstance) {
 
       return {
         snapshot: { ...snap, legs: undefined },
-        legs: scored,
+        legs: attachEv(scored, { spot: snap.spot, lots, minPremium }),
         bias: bias(snap, scored),
         picks,
         market,
@@ -135,6 +136,39 @@ export function registerDeskRoutes(app: FastifyInstance) {
       }
       reply.code(400);
       return { error: msg };
+    }
+  });
+
+  /**
+   * BTC bars for the chart under the board, at the three resolutions the screen
+   * offers. Public data, same feed the chain and the multi-timeframe read use.
+   *
+   * The span is fixed per resolution rather than taken from the query: the
+   * chart is there to put the open-interest walls against recent price, and a
+   * caller free to ask for a year of 1m bars is a caller who can hang the page.
+   */
+  app.get('/api/candles', async (req, reply) => {
+    const q = req.query as { tf?: string };
+    // Roughly 100-160 bars each, which is what fits the width legibly. A
+    // caller free to ask for a year of 1m bars is a caller who can hang the
+    // page, so the span belongs to the resolution rather than to the query.
+    const spans: Record<string, { resolution: string; hours: number }> = {
+      '5m': { resolution: '5m', hours: 12 },
+      '15m': { resolution: '15m', hours: 36 },
+      '1h': { resolution: '1h', hours: 24 * 6 },
+      '4h': { resolution: '4h', hours: 24 * 21 },
+      '1d': { resolution: '1d', hours: 24 * 150 },
+    };
+    const tf = spans[q.tf ?? '1h'] ? (q.tf ?? '1h') : '1h';
+    const span = spans[tf]!;
+    const now = Math.floor(Date.now() / 1000);
+    try {
+      const bars = await candles('BTCUSD', now - span.hours * 3600, now, span.resolution);
+      return { tf, resolution: span.resolution, bars };
+    } catch (e) {
+      // The chart is decoration around a board that still works without it.
+      reply.code(502);
+      return { error: (e as Error).message, tf, resolution: span.resolution, bars: [] };
     }
   });
 
