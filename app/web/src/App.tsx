@@ -27,6 +27,8 @@ import { MarketInsights } from '@/components/desk/MarketInsights';
 import { TopCandidates } from '@/components/desk/TopCandidates';
 import { PriceChart, CHART_TFS, type ChartTf } from '@/components/desk/PriceChart';
 import { Select, SelectItem } from '@/components/ui/select';
+import { ColumnPicker } from '@/components/chain/ColumnPicker';
+import { normalise, type ColumnState } from '@/components/chain/columns';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Download } from 'lucide-react';
 import { toCsv, downloadCsv } from '@/lib/csv';
@@ -109,7 +111,9 @@ export default function App() {
   const defaultExpiry = expiries.find((e) => e.isDefault)?.expiry ?? expiries[0]?.expiry ?? '';
   const activeExpiry = (expiry && expiries.some((e) => e.expiry === expiry)) ? expiry : defaultExpiry;
   const [width] = usePersisted('width', 20);
-  const [density, setDensity] = usePersisted<'default' | 'all'>('chain:density', 'default');
+  const [storedCols, setCols] = usePersisted<Partial<ColumnState> | null>('chain:columns', null);
+  // A choice stored by an older build may not name every column this one has.
+  const chainColumns = normalise(storedCols);
   const [chainView, setChainView] = usePersisted<'calls' | 'puts' | 'both'>('chain:view', 'both');
   const [eligibleOnly, setEligibleOnly] = usePersisted('chain:eligible', false);
   /*
@@ -621,19 +625,14 @@ export default function App() {
                   <Download size={13} aria-hidden /> Export
                 </button>
 
-                <span className="chain-density">
-                  <Select ariaLabel="chain columns" value={density} onValueChange={(v) => setDensity(v as 'default' | 'all')}>
-                    <SelectItem value="default" hint="Odds and prices">Columns: key</SelectItem>
-                    <SelectItem value="all" hint="Adds bid, mark, OI, volume, age, delta and IV">Columns: all</SelectItem>
-                  </Select>
-                </span>
+                <ColumnPicker value={chainColumns} onChange={setCols} />
               </div>
               <ErrorBoundary where="Chain">
                 <ChainTable
                   legs={data.legs}
                   snap={snap}
                   sides={data.recommendation.ok ? data.recommendation.sides : []}
-                  density={density}
+                  columns={chainColumns}
                   onSell={openTicket}
                   onInspect={inspectLeg}
                   view={chainView}

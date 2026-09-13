@@ -3,6 +3,9 @@ import type { Leg, SideRecommendation, SnapshotMeta } from '@/types/desk';
 import { heldKey, type HeldLeg } from '@/lib/held';
 import { signedInr, signedUsd, usdToInr } from '@/lib/format';
 import { TIER_LABEL, signalReason, otmPct } from '@/lib/ev-view';
+import {
+  CHAIN_COLUMNS, DEFAULT_COLUMNS, type ColumnKey, type ColumnState,
+} from '@/components/chain/columns';
 
 /**
  * Why a strike carries the pick mark.
@@ -89,6 +92,90 @@ function Ev({ leg, sold = false }: { leg: Leg | undefined; sold?: boolean }) {
       {signedUsd(v)}
     </td>
   );
+}
+
+/** Which heading gets which colour. The reference set is dimmed; prices are not. */
+const HEAD_CLASS: Record<ColumnKey, string> = {
+  oi: 'aux', volume: 'aux', volumeToOi: 'aux', delta: 'aux', iv: 'aux',
+  otm: 'aux', breakeven: 'aux', mark: 'aux',
+  score: 'scorecol', signal: 'sigcol', ev: 'evcol', zero: 'zerocol',
+  model: '', ask: 'askcol', bid: 'bidcol',
+};
+
+/**
+ * Everything a cell needs that is the same for the whole board.
+ *
+ * Passed as one object rather than eleven props: `Cell` is called fifteen times
+ * a row and thirty times a strike, and a long argument list is how one of them
+ * gets the wrong `sold` flag.
+ */
+type CellCtx = {
+  snap: SnapshotMeta;
+  sell: (leg: Leg | undefined, cp: 'C' | 'P', k: number) => (() => void) | undefined;
+  inspect: (leg: Leg | undefined, cp: 'C' | 'P', k: number) => (() => void) | undefined;
+  takeable: (leg: Leg | undefined) => boolean | null;
+};
+
+/** One column of one leg. The order of the cells is the caller's business. */
+function Cell({
+  col, leg, cp, strike, sold, ctx,
+}: {
+  col: ColumnKey;
+  leg: Leg | undefined;
+  cp: 'C' | 'P';
+  strike: number;
+  sold: boolean;
+  ctx: CellCtx;
+}) {
+  switch (col) {
+    case 'oi':
+      return <td className="dim aux">{num(leg?.oi ?? null)}</td>;
+    case 'volume':
+      return <td className="dim aux">{num(leg?.volume ?? null)}</td>;
+    case 'volumeToOi':
+      return (
+        <td className={`aux liq-${leg?.ev?.liquidity ?? 'none'}`}>
+          {leg?.ev?.volumeToOi != null ? `${(leg.ev.volumeToOi * 100).toFixed(1)}%` : '·'}
+        </td>
+      );
+    case 'delta':
+      return <td className="aux">{n(leg?.delta ?? null, 3)}</td>;
+    case 'iv':
+      return <td className="dim aux">{leg?.iv != null ? (leg.iv * 100).toFixed(1) : '·'}</td>;
+    case 'otm': {
+      const d = leg ? otmPct(leg.strike, ctx.snap.spot) : null;
+      return <td className="dim aux">{d === null ? '·' : `${d.toFixed(1)}%`}</td>;
+    }
+    case 'breakeven':
+      return (
+        <td className="dim aux">
+          {leg?.ev?.breakeven == null ? '·' : Math.round(leg.ev.breakeven).toLocaleString()}
+        </td>
+      );
+    case 'score':
+      return <Score leg={leg} sold={sold} />;
+    case 'signal':
+      return <SignalCell leg={leg} sold={sold} onInspect={ctx.inspect(leg, cp, strike)} />;
+    case 'ev':
+      return <Ev leg={leg} sold={sold} />;
+    case 'zero':
+      return <Zero leg={leg} sold={sold} />;
+    case 'model':
+      return <td className="dim">{leg?.pOtm != null ? `${(leg.pOtm * 100).toFixed(0)}%` : '·'}</td>;
+    case 'ask':
+      return <PriceCell className="askcol" value={leg?.ask} onSell={ctx.sell(leg, cp, strike)} />;
+    case 'mark':
+      return <td className="aux">{n(leg?.mark ?? null)}</td>;
+    case 'bid':
+      return (
+        <PriceCell
+          className={`bidcol${sold ? ' sellcell' : ''}${ctx.takeable(leg) === false ? ' wide' : ''}`}
+          value={leg?.bid}
+          onSell={ctx.sell(leg, cp, strike)}
+          title={ctx.takeable(leg) === false ? 'Spread too wide — sell at the ask instead' : undefined}
+        />
+      );
+  }
 }
 
 /**
@@ -230,7 +317,7 @@ export function ChainTable({
   legs,
   snap,
   sides = [],
-  density = 'default',
+  columns = DEFAULT_COLUMNS,
   onSell,
   onInspect,
   maxSpreadPct,
@@ -267,15 +354,14 @@ export function ChainTable({
    */
   maxSpreadPct?: number;
   /**
-   * 'default' is the odds either side of the strike, the raw model behind them,
-   * the offer and the bid. 'all' adds the mark, open interest, volume, age,
-   * delta and implied volatility.
+   * Which columns to draw, and in what number.
    *
-   * The bid is what a seller actually receives, and the board marks the ones
-   * whose spread is too wide to cross -- which makes it the column you act on
-   * rather than a reference figure, so it is in the default set.
+   * The count of the header groups comes from the same list that draws the
+   * cells, so the two cannot disagree -- which they did, as two presets and a
+   * hand-written `perSide`, and a span that over-claimed reserved width for
+   * columns that were not there and pushed the calls bid off a phone's edge.
    */
-  density?: 'default' | 'all';
+  columns?: ColumnState;
   /**
    * Which half of the board to show.
    *
@@ -317,12 +403,10 @@ export function ChainTable({
   // and the bid. The bid is back in the default set: it is what a seller
   // actually receives, and now that the board marks which ones are too wide to
   // cross, it is the column you act on rather than a reference figure.
-  // Must match what is actually rendered. Signal and EV are always on -- they
-  // are the two columns the decision is read from -- so the default set is seven
-  // and the full set fifteen. A colSpan that over-claims reserves width for
-  // columns that are not there, which is how the calls bid got pushed off the
-  // left edge of a phone once.
-  const perSide = density === 'all' ? 15 : 7;
+  // Derived, never written down: the span is the length of the list that draws
+  // the cells.
+  const shownCols = CHAIN_COLUMNS.filter((c) => columns[c.key]);
+  const perSide = shownCols.length;
 
   /**
    * Can this one be taken at the bid right now?
@@ -340,16 +424,9 @@ export function ChainTable({
     onSell && leg
       ? () => onSell({ cp, strike: k, bid: leg.bid ?? null, ask: leg.ask ?? null, mark: leg.mark ?? null })
       : undefined;
-  /** How far this strike sits from the price, and where the short stops paying. */
-  const out = (leg: Leg | undefined) => {
-    const d = leg ? otmPct(leg.strike, snap.spot) : null;
-    return d === null ? '·' : `${d.toFixed(1)}%`;
-  };
-  const be = (leg: Leg | undefined) =>
-    leg?.ev?.breakeven == null ? '·' : Math.round(leg.ev.breakeven).toLocaleString();
-
   const inspect = (leg: Leg | undefined, cp: 'C' | 'P', k: number) =>
     onInspect && leg ? () => onInspect(cp, k) : undefined;
+  const ctx: CellCtx = { snap, sell, inspect, takeable };
   const hasBook = legs.some((l) => l.bid !== null || l.ask !== null);
 
   // The recommendation names a strike; the chain is where that strike lives.
@@ -372,17 +449,17 @@ export function ChainTable({
     // centre it, and both bids are a short swipe away.
     b.scrollLeft = Math.max(0, (b.scrollWidth - b.clientWidth) / 2);
     /*
-     * Down the page only when you changed the expiry or the columns.
+     * Down the page only when you changed the expiry or the column set.
      *
      * Scrolling on first load dropped a phone straight into the middle of the
      * chain, past the settings and the card that says what to sell -- and doing
      * it whenever the at-the-money strike moved yanked the page away from
      * whatever you were reading every time BTC crossed a strike.
      */
-    const key = `${snap.expiry}|${density}`;
+    const key = snap.expiry;
     if (shownFor.current !== null && shownFor.current !== key) r.scrollIntoView?.({ block: 'center' });
     shownFor.current = key;
-  }, [snap.atm, snap.expiry, density]);
+  }, [snap.atm, snap.expiry, perSide]);
 
   return (
     <>
@@ -401,7 +478,7 @@ export function ChainTable({
       still scrolls sideways, because on a phone the board is wider than the
       screen and nothing can be done about that.
     */}
-    <div className={`scroll chain chain-${density}`} ref={box}>
+    <div className="scroll chain" ref={box}>
       <table>
         <thead>
           <tr>
@@ -417,37 +494,19 @@ export function ChainTable({
             {showPuts && <th colSpan={perSide} className="left pe">PUTS</th>}
           </tr>
           <tr>
-            {showCalls && (
-              <>
-                <th className="aux">OI</th><th className="aux">Vol</th><th className="aux">V/OI</th>
-                <th className="aux">Δ</th><th className="aux">IV</th>
-                <th className="aux">OTM</th><th className="aux">B/E</th>
-                <th className="scorecol">Score</th>
-                <th className="sigcol">Signal</th><th className="evcol">EV</th>
-                <th className="zerocol">→ 0</th><th>Model</th>
-                <th className="askcol">Ask</th><th className="aux">Mark</th>
-                <th className="bidcol">Bid</th>
-              </>
-            )}
-            <th></th>
-            {showPuts && (
-              <>
-                <th className="bidcol">Bid</th><th className="aux">Mark</th>
-                <th className="askcol">Ask</th>
-                <th>Model</th><th className="zerocol">→ 0</th>
-                <th className="evcol">EV</th><th className="sigcol">Signal</th>
-                <th className="scorecol">Score</th>
-                <th className="aux">B/E</th><th className="aux">OTM</th>
-                <th className="aux">IV</th><th className="aux">Δ</th>
-                <th className="aux">V/OI</th><th className="aux">Vol</th><th className="aux">OI</th>
-              </>
-            )}
+            {showCalls && shownCols.map((c) => (
+              <th key={c.key} className={HEAD_CLASS[c.key]} title={c.why}>{c.short}</th>
+            ))}
+            <th />
+            {showPuts && [...shownCols].reverse().map((c) => (
+              <th key={c.key} className={HEAD_CLASS[c.key]} title={c.why}>{c.short}</th>
+            ))}
           </tr>
         </thead>
         <tbody>
           {strikes.map((k) => {
-            const c = at(k, 'C');
-            const p = at(k, 'P');
+            const cc = at(k, 'C');
+            const pp = at(k, 'P');
             const sellC = sold.C === k;
             const sellP = sold.P === k;
             const isAtm = k === snap.atm;
@@ -466,40 +525,16 @@ export function ChainTable({
                   heldC || heldP ? 'holding' : '',
                 ].filter(Boolean).join(' ') || undefined}
               >
-                {showCalls && (
-                  <>
-                    <td className="dim aux">{num(c?.oi ?? null)}</td>
-                    <td className="dim aux">{num(c?.volume ?? null)}</td>
-                    <td className={`aux liq-${c?.ev?.liquidity ?? 'none'}`}>
-                      {c?.ev?.volumeToOi != null ? (c.ev.volumeToOi * 100).toFixed(1) + '%' : '·'}
-                    </td>
-                    <td className="aux">{n(c?.delta ?? null, 3)}</td>
-                    <td className="dim aux">{c?.iv != null ? (c.iv * 100).toFixed(1) : '·'}</td>
-                    <td className="dim aux">{out(c)}</td>
-                    <td className="dim aux">{be(c)}</td>
-                    <Score leg={c} sold={sellC} />
-                    <SignalCell leg={c} sold={sellC} onInspect={inspect(c, 'C', k)} />
-                    <Ev leg={c} sold={sellC} />
-                    <Zero leg={c} sold={sellC} />
-                    <td className="dim">{c?.pOtm != null ? (c.pOtm * 100).toFixed(0) + '%' : '·'}</td>
-                    <PriceCell className="askcol" value={c?.ask} onSell={sell(c, 'C', k)} />
-                    <td className="aux">{n(c?.mark ?? null)}</td>
-                    <PriceCell
-                      className={`bidcol${sellC ? ' sellcell' : ''}${takeable(c) === false ? ' wide' : ''}`}
-                      value={c?.bid}
-                      onSell={sell(c, 'C', k)}
-                      title={takeable(c) === false ? 'Spread too wide — sell at the ask instead' : undefined}
-                    />
-                  </>
-                )}
-
+                {showCalls && shownCols.map((c) => (
+                  <Cell key={c.key} col={c.key} leg={cc} cp="C" strike={k} sold={sellC} ctx={ctx} />
+                ))}
                 <td className="mono strikecell">
                   {onInspect
                     ? (
                       <button
                         type="button"
                         className="strikebtn"
-                        onClick={() => onInspect(c ? 'C' : 'P', k)}
+                        onClick={() => onInspect(cc ? 'C' : 'P', k)}
                         aria-label={`what is at strike ${k}`}
                       >
                         {k}
@@ -525,32 +560,9 @@ export function ChainTable({
                   )}
                 </td>
 
-                {showPuts && (
-                  <>
-                    <PriceCell
-                      className={`bidcol${sellP ? ' sellcell' : ''}${takeable(p) === false ? ' wide' : ''}`}
-                      value={p?.bid}
-                      onSell={sell(p, 'P', k)}
-                      title={takeable(p) === false ? 'Spread too wide — sell at the ask instead' : undefined}
-                    />
-                    <td className="aux">{n(p?.mark ?? null)}</td>
-                    <PriceCell className="askcol" value={p?.ask} onSell={sell(p, 'P', k)} />
-                    <td className="dim">{p?.pOtm != null ? (p.pOtm * 100).toFixed(0) + '%' : '·'}</td>
-                    <Zero leg={p} sold={sellP} />
-                    <Ev leg={p} sold={sellP} />
-                    <SignalCell leg={p} sold={sellP} onInspect={inspect(p, 'P', k)} />
-                    <Score leg={p} sold={sellP} />
-                    <td className="dim aux">{be(p)}</td>
-                    <td className="dim aux">{out(p)}</td>
-                    <td className="dim aux">{p?.iv != null ? (p.iv * 100).toFixed(1) : '·'}</td>
-                    <td className="aux">{n(p?.delta ?? null, 3)}</td>
-                    <td className={`aux liq-${p?.ev?.liquidity ?? 'none'}`}>
-                      {p?.ev?.volumeToOi != null ? (p.ev.volumeToOi * 100).toFixed(1) + '%' : '·'}
-                    </td>
-                    <td className="dim aux">{num(p?.volume ?? null)}</td>
-                    <td className="dim aux">{num(p?.oi ?? null)}</td>
-                  </>
-                )}
+                {showPuts && [...shownCols].reverse().map((c) => (
+                  <Cell key={c.key} col={c.key} leg={pp} cp="P" strike={k} sold={sellP} ctx={ctx} />
+                ))}
               </tr>
             );
           })}
