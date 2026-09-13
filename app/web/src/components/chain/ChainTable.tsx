@@ -4,6 +4,19 @@ import { heldKey, type HeldLeg } from '@/lib/held';
 import { signedInr, signedUsd, usdToInr } from '@/lib/format';
 import { SIGNAL_LABEL, signalReason } from '@/lib/ev-view';
 
+/**
+ * Why a strike carries the pick mark.
+ *
+ * The settings that decide it -- the premium floor, the strike rule, the safety
+ * bar -- came off the screen when the settings bar was cut to time and expiry.
+ * They still decide, at whatever was last chosen, so the mark has to say so
+ * somewhere or it is an assertion with no visible basis.
+ */
+const PICK_WHY =
+  'The desk’s pick for this side, from the premium floor, the strike rule and '
+  + 'the safety bar. Those are no longer controls on screen; they run at '
+  + 'whatever was last set. See “What to sell”.';
+
 /** What a tap on a price hands back: enough to open a ticket, nothing more. */
 export type ChainSellIntent = {
   cp: 'C' | 'P';
@@ -456,8 +469,20 @@ export function ChainTable({
                   {isAtm && <span className="tag">ATM</span>}
                   {heldC && <HeldChip held={heldC} />}
                   {heldP && <HeldChip held={heldP} />}
-                  {sellC && !heldC && <span className="tag ok">SELL CE</span>}
-                  {sellP && !heldP && <span className="tag ok">SELL PE</span>}
+                  {/*
+                    Quiet, and it says what it rests on. The premium floor, the
+                    strike rule and the safety bar are no longer controls on
+                    screen, so a loud "SELL CE" asserts a recommendation whose
+                    inputs a reader cannot see. The mark stays -- the pick has to
+                    be findable on the board it came from -- but it is a mark,
+                    not a headline.
+                  */}
+                  {sellC && !heldC && (
+                    <span className="tag pick" title={PICK_WHY}>CE</span>
+                  )}
+                  {sellP && !heldP && (
+                    <span className="tag pick" title={PICK_WHY}>PE</span>
+                  )}
                 </td>
 
                 {showPuts && (
@@ -498,6 +523,8 @@ export function ChainTable({
         {' '}<b>EV</b> = that credit less the average payout, after charges — a 99% strike paying
         $2 can still be negative.
         {onInspect && <> <b>Tap a strike</b> for everything known about it — both sides, the money and every rule it passes or fails.</>}
+        {' '}A <b className="up">CE</b> or <b className="up">PE</b> mark beside a strike is the
+        desk’s pick for that side.
         {' '}Signal and EV are for information: neither has been tested across 2024, 2025 and
         2026, and nothing on the trading side reads them.
       </div>

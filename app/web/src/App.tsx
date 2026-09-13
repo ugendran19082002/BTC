@@ -385,116 +385,127 @@ export default function App() {
       <Suspense fallback={<Loading />}>
       {tab === 'desk' ? (
         <>
-          {/* Folded, the summary still says what the numbers below were worked out from. */}
-          <Collapsible.Root open={settingsOpen} onOpenChange={setSettingsOpen} className="bar-wrap">
-            <Collapsible.Trigger className="bar-toggle">
+          {/*
+            One row: the settings and what the board is saying on the left,
+            where BTC is against it on the right. They are read together — a
+            wall means nothing until you can see how close price is to it.
+
+            The settings live in that column rather than in a bar of their
+            own: cut to time and expiry they were a strip of two controls
+            across the whole page, and the column beside a chart was short
+            by exactly their height. They stay outside the data guard, so a
+            chain that 404s can still have its expiry changed.
+          */}
+          <div className="board-row">
+            <div className="board-left">
+              {/* Folded, the summary still says what the numbers below were worked out from. */}
+              <Collapsible.Root open={settingsOpen} onOpenChange={setSettingsOpen} className="bar-wrap">
+              <Collapsible.Trigger className="bar-toggle">
               <ChevronDown className={`h-3 w-3 flex-none transition-transform ${settingsOpen ? '' : '-rotate-90'}`} />
               <span>Settings</span>
               {!settingsOpen && (
-                <span className="bar-summary">
-                  {live ? 'live' : 'past'}
-                  {activeExpiry && <> · {activeExpiry}</>}
-                </span>
+              <span className="bar-summary">
+              {live ? 'live' : 'past'}
+              {activeExpiry && <> · {activeExpiry}</>}
+              </span>
               )}
-            </Collapsible.Trigger>
-            <Collapsible.Content>
-          <div className="bar">
-            <div className="field">
+              </Collapsible.Trigger>
+              <Collapsible.Content>
+              <div className="bar">
+              <div className="field">
               <label>Time</label>
               <Select ariaLabel="when" value={live ? 'live' : 'past'} onValueChange={(v) => setLive(v === 'live')}>
-                <SelectItem value="live">Live now</SelectItem>
-                <SelectItem value="past">Past date</SelectItem>
+              <SelectItem value="live">Live now</SelectItem>
+              <SelectItem value="past">Past date</SelectItem>
               </Select>
-            </div>
-
-            {!live && (
-              <div className="field wide">
-                <label>Date &amp; time (IST)</label>
-                <DateTimePicker value={when} onChange={setWhen} maxDate={new Date()} />
               </div>
-            )}
 
-            <div className="field wide">
+              {!live && (
+              <div className="field wide">
+              <label>Date &amp; time (IST)</label>
+              <DateTimePicker value={when} onChange={setWhen} maxDate={new Date()} />
+              </div>
+              )}
+
+              <div className="field wide">
               <label>Expiry</label>
               <Select ariaLabel="expiry" value={activeExpiry} onValueChange={setExpiry}>
-                {expiries.length === 0 && <SelectItem value="" disabled>Loading…</SelectItem>}
-                {expiries.map((e) => (
-                  <SelectItem
-                    key={e.expiry}
-                    value={e.expiry}
-                    hint={
-                      e.isDefault
-                        ? 'Default — today’s contract'
-                        : e.isNextEntry
-                          ? 'The one you would sell at 05:30'
-                          : e.isDaily
-                            ? 'Today’s daily contract'
-                            : 'Not tested'
-                    }
-                  >
-                    {e.isDefault && '★ '}
-                    {istLabel(e.expiryTs)}
-                    {' · '}
-                    {e.hoursAway < 48 ? `in ${e.hoursAway.toFixed(0)}h` : `in ${(e.hoursAway / 24).toFixed(0)} days`}
-                  </SelectItem>
-                ))}
+              {expiries.length === 0 && <SelectItem value="" disabled>Loading…</SelectItem>}
+              {expiries.map((e) => (
+              <SelectItem
+              key={e.expiry}
+              value={e.expiry}
+              hint={
+              e.isDefault
+              ? 'Default — today’s contract'
+              : e.isNextEntry
+              ? 'The one you would sell at 05:30'
+              : e.isDaily
+              ? 'Today’s daily contract'
+              : 'Not tested'
+              }
+              >
+              {e.isDefault && '★ '}
+              {istLabel(e.expiryTs)}
+              {' · '}
+              {e.hoursAway < 48 ? `in ${e.hoursAway.toFixed(0)}h` : `in ${(e.hoursAway / 24).toFixed(0)} days`}
+              </SelectItem>
+              ))}
               </Select>
               {expiries.length > 0 && Boolean(expiry && expiry !== defaultExpiry) && (
-                <button className="pinned" onClick={forgetExpiry} title="Back to the default expiry">
-                  Reset to default
-                </button>
+              <button className="pinned" onClick={forgetExpiry} title="Back to the default expiry">
+              Reset to default
+              </button>
+              )}
+              </div>
+
+              <div className="actions">
+              <Button onClick={() => void load()} disabled={busy}>
+              {busy ? 'Loading…' : 'Refresh'}
+              </Button>
+              {live && (
+              <Button
+              variant={autoRefresh ? 'default' : 'outline'}
+              onClick={() => setAutoRefresh((v) => !v)}
+              title={`Reload the live chain every ${REFRESH_SECONDS} seconds`}
+              >
+              {autoRefresh ? 'Auto-refresh on' : 'Auto-refresh off'}
+              </Button>
+              )}
+              </div>
+              </div>
+              </Collapsible.Content>
+              </Collapsible.Root>
+              {data && snap && (
+                <MarketInsights
+                structure={data.structure}
+                snap={snap}
+                market={data.market}
+                />
               )}
             </div>
 
-            <div className="actions">
-              <Button onClick={() => void load()} disabled={busy}>
-                {busy ? 'Loading…' : 'Refresh'}
-              </Button>
-              {live && (
-                <Button
-                  variant={autoRefresh ? 'default' : 'outline'}
-                  onClick={() => setAutoRefresh((v) => !v)}
-                  title={`Reload the live chain every ${REFRESH_SECONDS} seconds`}
-                >
-                  {autoRefresh ? 'Auto-refresh on' : 'Auto-refresh off'}
-                </Button>
-              )}
-            </div>
+            {data && snap && (
+              <ErrorBoundary where="Price chart">
+              <PriceChart
+              bars={candles?.bars ?? []}
+              support={data.structure.peOiWall?.strike ?? null}
+              resistance={data.structure.ceOiWall?.strike ?? null}
+              spot={snap.spot}
+              tf={chartTf}
+              onTf={setChartTf}
+              loading={candlesBusy}
+              error={candles?.error}
+              />
+              </ErrorBoundary>
+            )}
           </div>
-            </Collapsible.Content>
-          </Collapsible.Root>
 
           {err && <div className="err">{err}</div>}
           {busy && !data && <Loading />}
 
           {data && snap && (
             <>
-              {/*
-                One row: what the board is saying on the left, where BTC is
-                against it on the right. They are read together — a wall means
-                nothing until you can see how close price is to it — and stacked
-                they were two full-width blocks with a scroll between them.
-              */}
-              <div className="board-row">
-                <MarketInsights
-                  structure={data.structure}
-                  snap={snap}
-                  market={data.market}
-                />
-              <ErrorBoundary where="Price chart">
-                <PriceChart
-                  bars={candles?.bars ?? []}
-                  support={data.structure.peOiWall?.strike ?? null}
-                  resistance={data.structure.ceOiWall?.strike ?? null}
-                  spot={snap.spot}
-                  tf={chartTf}
-                  onTf={setChartTf}
-                  loading={candlesBusy}
-                  error={candles?.error}
-                />
-              </ErrorBoundary>
-              </div>
-
               <div className="lead-row">
                 <CollapsibleCard
                   id="live"

@@ -259,6 +259,13 @@ tr.atm td:first-child, tr.atm td:last-child { font-weight: 600; }
 .tag.danger { color: var(--down); border-color: #f8514955; background: #f8514915; }
 .tag.ok { color: var(--up); border-color: #3fb95055; background: #3fb95015; }
 .tag.warn { color: var(--warn); border-color: #d2992255; background: #d2992215; }
+/* The desk's pick: an outline, not a fill. It marks a strike on a board of two
+   dozen; it is not the headline, and the settings it rests on are no longer on
+   screen to argue with. */
+.tag.pick {
+  color: var(--up); border-color: #0ecb8166; background: none;
+  font-size: 9.5px; padding: 0 5px; font-weight: 600; cursor: help;
+}
 
 .meter { height: 6px; border-radius: 3px; background: var(--panel-2); position: relative; overflow: hidden; }
 .meter i { position: absolute; top: 0; bottom: 0; background: var(--accent); }
@@ -1095,6 +1102,22 @@ tr.atm td.strikecell .strikebtn { color: #fff; }
   .board-row .insight-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 .board-row > * { min-width: 0; margin-bottom: 0; }
+
+/* Settings above the insights, stacked into the left column. Cut to time and
+   expiry, the settings bar was two controls across the whole page and the
+   column beside the chart was short by exactly their height. */
+.board-left { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.board-left .bar-wrap { margin-bottom: 0; }
+.board-left .bar { flex-wrap: wrap; }
+.board-left .bar .field, .board-left .bar .field.wide { flex: 1 1 100%; }
+.board-left .bar .field select, .board-left .bar .field input { width: 100%; }
+.board-left .bar .actions { margin-left: 0; width: 100%; }
+.board-left .bar .actions > * { flex: 1 1 0; }
+
+/* An odd tile last in a two-up grid sat alone against a gap. */
+@media (min-width: 1060px) {
+  .board-row .insight-grid > :last-child:nth-child(odd) { grid-column: 1 / -1; }
+}
 
 /* ── Settings ───────────────────────────────────────────────────────────────
    It carried eight controls and now carries two, so a flex row that packed
