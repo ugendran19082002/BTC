@@ -24,6 +24,7 @@ import { usePersisted } from '@/hooks/usePersisted';
 import { LoginPage } from '@/components/desk/LoginPage';
 import { LivePrice } from '@/components/desk/LivePrice';
 import { MarketInsights } from '@/components/desk/MarketInsights';
+import { SuddenMove } from '@/components/desk/SuddenMove';
 import { TopCandidates } from '@/components/desk/TopCandidates';
 import { PriceChart, CHART_TFS, type ChartTf } from '@/components/desk/PriceChart';
 import { Select, SelectItem } from '@/components/ui/select';
@@ -400,6 +401,14 @@ export default function App() {
             by exactly their height. They stay outside the data guard, so a
             chain that 404s can still have its expiry changed.
           */}
+          {/*
+            Above everything, because it is the one thing on the screen about
+            right now rather than about the contract. Quiet on an ordinary
+            board — a warning that takes the same room whether or not there is
+            anything to warn about is one nobody reads by the end of the week.
+          */}
+          {data?.shock && <SuddenMove shock={data.shock} />}
+
           <div className="board-row">
             <div className="board-left">
               {/* Folded, the summary still says what the numbers below were worked out from. */}

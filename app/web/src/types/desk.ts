@@ -125,6 +125,14 @@ export type Move = {
   rangePct: number | null;
 };
 
+export type VolumePulse = {
+  tf: string;
+  current: number;
+  median: number;
+  /** current ÷ median. 1 is an ordinary bar. */
+  spike: number | null;
+};
+
 export type MarketRead = {
   spot: number;
   return24h: number | null;
@@ -136,6 +144,24 @@ export type MarketRead = {
   moves: Move[];
   max24hRangeUsd: number | null;
   max24hRangePct: number | null;
+  volume: VolumePulse[];
+};
+
+/**
+ * Whether something is happening right now.
+ *
+ * `score` is null when not one of the five readings could be taken — which is
+ * different from a quiet tape, and the card draws nothing rather than reporting
+ * calm it cannot see. A part with a null `note` is one the desk has no history
+ * for yet; it contributes nothing rather than contributing zero.
+ */
+export type SuddenMove = {
+  score: number | null;
+  band: 'normal' | 'watch' | 'high' | 'sudden';
+  parts: { name: string; value: number; weight: number; note: string | null }[];
+  reasons: string[];
+  direction: number | null;
+  directionLabel: string;
 };
 
 export type Hedge = { strike: number; price: number; gapStrikes: number; widthUsd: number };
@@ -322,6 +348,7 @@ export type ChainResponse = {
   picks: Pick[];
   market: MarketRead | null;
   structure: OptionStructure;
+  shock: SuddenMove;
   forecast: Forecast | null;
   recommendation: Recommendation;
   requireHedge: boolean;
