@@ -85,6 +85,23 @@ export function ClosePositionSheet({ trade, open, onOpenChange, onClose }: {
           </KV>
           <KV label={added > 0 ? 'Sold at (avg)' : 'Sold at'}>{price(trade.entryAvgPrice)}</KV>
           <KV label="Price now">{price(live?.markPrice)}</KV>
+          {/*
+            The price this actually pays.
+            Closing a short is a buy, so it crosses to the ask — the mark is
+            the one price nobody transacts at, and this sheet exists to put
+            everything on the table before the swipe.
+          */}
+          {live?.ask != null && (
+            <KV
+              label="Buys back at"
+              hint="Closing a short is a buy, so it crosses to the ask. The mark is not what this pays."
+            >
+              <span className="text-[var(--down)]">{price(live.ask)}</span>
+              {live.bid != null && (
+                <span className="text-muted-foreground"> · bid {price(live.bid)}</span>
+              )}
+            </KV>
+          )}
           <KV label={trade.exitSize > 0 ? 'Open P&L' : 'P&L'}>
             <span className={tone(live?.unrealisedPnl)}>{signedInr(usdToInr(live?.unrealisedPnl))}</span>
           </KV>

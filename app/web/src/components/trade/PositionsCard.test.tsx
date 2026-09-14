@@ -467,3 +467,39 @@ describe('a position that was added to', () => {
     expect(screen.getByText(/Adding 425 @ 7.50 \(never below 3.00\) — the CE target bought back 425/)).toBeInTheDocument();
   });
 });
+
+/**
+ * The book, on a card that used to show only the mark.
+ *
+ * "Price now" was the mark, which is the one price nobody transacts at.
+ * Closing a short is a buy, so the ask is what leaving costs — the same reason
+ * the board shows a seller the bid — and the gap between the two is the cost of
+ * leaving, which on a thin far strike is most of the decision.
+ */
+describe('the book on an open position', () => {
+  const withBook = (bid: number | null, ask: number | null) =>
+    trade({ live: { markPrice: 10.95, bid, ask, unrealisedPnl: -0.617, decayed: null, liquidationPrice: null } } as Partial<Trade>);
+
+  it('shows both sides under the mark', () => {
+    render(<PositionsCard trades={[withBook(10.5, 11.4)]} onChanged={() => {}} />);
+    expect(screen.getByText('bid 10.50 · ask 11.40')).toBeInTheDocument();
+  });
+
+  it('says how wide the book is, because that is paid on the way out', () => {
+    render(<PositionsCard trades={[withBook(10.5, 11.4)]} onChanged={() => {}} />);
+    expect(screen.getByText('8.2%')).toBeInTheDocument();
+  });
+
+  it('[critical] marks a spread wide enough to matter', () => {
+    render(<PositionsCard trades={[withBook(9, 12)]} onChanged={() => {}} />);
+    expect(screen.getByText('28.6%')).toHaveClass('text-[var(--warn)]');
+  });
+
+  it('[critical] one side alone is not a book, and is not drawn as one', () => {
+    render(<PositionsCard trades={[withBook(10.5, null)]} onChanged={() => {}} />);
+    expect(screen.queryByText(/bid 10\.50/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Spread/)).not.toBeInTheDocument();
+    // the mark is still there; it is the book that is absent
+    expect(screen.getByText('10.95')).toBeInTheDocument();
+  });
+});
