@@ -66,8 +66,12 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    # WEB_BIND=127.0.0.1 when a reverse proxy on this host is the only thing
+    # that should reach it: a port Docker publishes on 0.0.0.0 is open to the
+    # internet whatever ufw says, because Docker writes its own iptables rules
+    # ahead of ufw's.
     ports:
-      - "${WEB_PORT:-8099}:80"
+      - "${WEB_BIND:-0.0.0.0}:${WEB_PORT:-8099}:80"
     security_opt:
       - no-new-privileges:true
     deploy:

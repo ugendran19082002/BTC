@@ -2177,3 +2177,30 @@ axis.
   authenticator code, so the headless check could not sign in. Worth one
   glance at the tools row at 360px.
 
+## A second server
+
+*14 September 2026*
+
+Asked for: an md to copy the project to another server with `git pull`.
+[NEW-SERVER.md](NEW-SERVER.md) is that -- machine, Docker, Node 24, deploy
+key, `.env`, which databases to copy and how (a SQLite backup for `chain.db`,
+the API stopped first for `trades.db`/`auth.db`), deploy, refresh, cron,
+HTTPS with Caddy, first sign-in, checklist.
+
+The part that is not a command: **never two live desks on one Delta account.**
+Each desk is a whole engine, and two of them would both sell the morning
+strategy and reconcile each other's orders away. The guide opens with that
+decision and the `.env` for each answer.
+
+One small change alongside it: `WEB_BIND` in `docker-compose.yml` and
+`deploy.sh`, so a host with its own reverse proxy can publish the web port on
+`127.0.0.1` -- a port Docker publishes on `0.0.0.0` is open to the internet
+whatever ufw says, because Docker's iptables rules run ahead of ufw's. The
+default is unchanged, so this host deploys as before.
+
+- [ ] The current host's cron runs `refresh.sh` at `40 12` under
+  `CRON_TZ=Asia/Kolkata` -- 12:40 IST, *before* the 17:30 settlement. The
+  guide says 12:40 UTC (18:10 IST). Worth checking which the harvester
+  actually wants; if the current line is harvesting a day that has not
+  settled, "today" in the record may be a partial day until the next run.
+

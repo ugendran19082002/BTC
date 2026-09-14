@@ -38,3 +38,4 @@ errors.db-shm
 research/cache-5m.json
 research/move-5min.csv
 research/cache-overnight.json
+data-export/

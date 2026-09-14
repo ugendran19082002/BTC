@@ -27,6 +27,9 @@ fi
 KEEP_IMAGES="${KEEP_IMAGES:-3}"
 PRUNE=1
 WEB_PORT="${WEB_PORT:-8099}"
+# The address the web port is published on. 0.0.0.0 reaches the internet;
+# 127.0.0.1 only a proxy on this host. See docs/NEW-SERVER.md.
+WEB_BIND="${WEB_BIND:-0.0.0.0}"
 REMOTE=""
 CHECK_ONLY=0
 
@@ -166,7 +169,7 @@ fi
 # ---------------------------------------------------------------- build
 
 say "building images at tag ${TAG}"
-TAG="$TAG" WEB_PORT="$WEB_PORT" $COMPOSE build
+TAG="$TAG" WEB_PORT="$WEB_PORT" WEB_BIND="$WEB_BIND" $COMPOSE build
 # `latest` follows the newest build, so a bare `docker compose up` can never
 # start code from days ago -- which is what `latest` pointed at before this.
 for repo in btc-desk-api btc-desk-web; do docker tag "${repo}:${TAG}" "${repo}:latest"; done
@@ -181,7 +184,7 @@ if [[ -n "$REMOTE" ]]; then
   ssh "$REMOTE" 'mkdir -p ~/btc-desk/deploy'
   scp "$ROOT/deploy/docker-compose.yml" "$REMOTE:~/btc-desk/deploy/"
   say "starting on ${REMOTE}"
-  ssh "$REMOTE" "cd ~/btc-desk && TAG=${TAG} WEB_PORT=${WEB_PORT} \
+  ssh "$REMOTE" "cd ~/btc-desk && TAG=${TAG} WEB_PORT=${WEB_PORT} WEB_BIND=${WEB_BIND} \
     docker compose -f deploy/docker-compose.yml up -d --no-build"
   say "deployed. Point your reverse proxy at port ${WEB_PORT} on that host."
   exit 0
@@ -203,7 +206,7 @@ fi
 say "running now: ${PREV:-nothing}"
 
 say "starting"
-TAG="$TAG" WEB_PORT="$WEB_PORT" $COMPOSE up -d
+TAG="$TAG" WEB_PORT="$WEB_PORT" WEB_BIND="$WEB_BIND" $COMPOSE up -d
 
 say "waiting for health"
 for i in $(seq 1 30); do
@@ -221,6 +224,6 @@ printf '\033[31m==>\033[0m health check failed; last 40 log lines:\n' >&2
 $COMPOSE logs --tail 40 >&2
 if [[ -n "$PREV" ]]; then
   say "rolling back to ${PREV}"
-  TAG="$PREV" WEB_PORT="$WEB_PORT" $COMPOSE up -d
+  TAG="$PREV" WEB_PORT="$WEB_PORT" WEB_BIND="$WEB_BIND" $COMPOSE up -d
 fi
 fail "deployment did not come up healthy"
