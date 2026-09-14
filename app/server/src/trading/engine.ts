@@ -1253,7 +1253,9 @@ export class TradeEngine {
         clientOrderId: add.clientOrderId, symbol: rec.plan.symbol, productId: product?.productId ?? rec.state.productId,
         side: 'sell', type: 'limit', size: add.size, limitPrice: add.limitPrice, role: 'entry',
       });
-      rec = this.commit(rec, { t: 'add_submitted', add, at: this.now() });
+      // The id the venue gave it goes into the record with the add itself, so
+      // a lookup by our id that comes back empty is not the last word.
+      rec = this.commit(rec, { t: 'add_submitted', add: { ...add, orderId: ack.orderId }, at: this.now() });
       rec = this.absorbAdd(rec, ack);
       if (ack.status === 'filled' || ack.status === 'cancelled' || ack.status === 'rejected') {
         rec = this.commit(rec, { t: 'add_done', filled: this.addFilled(rec, add), reason: ack.status, at: this.now() });
@@ -1281,15 +1283,32 @@ export class TradeEngine {
   private async stepAdd(recIn: TradeRecord): Promise<TradeRecord> {
     let rec = recIn;
     const add = rec.state.adding!;
-    const order = await this.exchange.getOrderByClientId(add.clientOrderId).catch(() => undefined);
+    const order = await this.findAdd(add);
     // Could not ask: try again next poll rather than conclude anything.
     if (order === undefined) return rec;
 
     if (order === null) {
-      // Not on the exchange. After a submit with no answer that may only mean
-      // not yet visible, so it is given the window before it is called gone.
-      if (add.unknown && this.now() < add.deadline) return rec;
-      return this.commit(rec, { t: 'add_done', filled: this.addFilled(rec, add), reason: 'the order never reached the exchange', at: this.now() });
+      // Not found. Given the window before anything is concluded: after a
+      // submit with no answer it may not be visible yet, and after one *with*
+      // an answer a filtered lookup can simply be wrong for a while.
+      if (this.now() < add.deadline) return rec;
+      if (add.unknown) {
+        return this.commit(rec, { t: 'add_done', filled: this.addFilled(rec, add), reason: 'the order never reached the exchange', at: this.now() });
+      }
+      /*
+       * Acknowledged, and still not found by the end of its window. That is not
+       * an order that never landed -- the venue numbered it -- it is an order
+       * the desk has lost sight of, and the position is the only truth left:
+       * read it back from the exchange, let protect() cover whatever is there,
+       * and say so. Writing "never reached the exchange" here is what left 100
+       * filled contracts untracked and uncovered on 14 Sep 2026.
+       */
+      rec = await this.syncPosition(rec);
+      return this.commit(rec, {
+        t: 'add_done', filled: this.addFilled(rec, add),
+        reason: 'acknowledged but never found again; the position was read back from the exchange',
+        at: this.now(),
+      });
     }
 
     rec = this.absorbAdd(rec, order);
@@ -1319,7 +1338,7 @@ export class TradeEngine {
             // took five seconds. Read it again now: the fill goes on the record
             // this poll, the add is closed out, and protection is resized here
             // rather than twenty seconds from now.
-            const gone = await this.exchange.getOrderByClientId(add.clientOrderId).catch(() => undefined);
+            const gone = await this.findAdd(add);
             if (gone) {
               rec = this.absorbAdd(rec, gone);
               if (gone.status !== 'open' && gone.status !== 'partial') {
@@ -1335,17 +1354,34 @@ export class TradeEngine {
     return rec;
   }
 
+  /**
+   * The add's order: by our id first, then by the exchange's.
+   *
+   * `undefined` when neither could be asked; `null` only when both answered
+   * and neither had it. The second lookup is what makes "not found" mean
+   * something: a client-id filter can miss, a numbered order cannot.
+   */
+  private async findAdd(add: AddWorking): Promise<ExchangeOrder | null | undefined> {
+    const byOurs = await this.exchange.getOrderByClientId(add.clientOrderId).catch(() => undefined);
+    if (byOurs) return byOurs;
+    if (!add.orderId) return byOurs;
+    const byTheirs = await this.exchange.getOrderById(add.orderId).catch(() => undefined);
+    if (byTheirs) return byTheirs;
+    // Both asked and both empty is null; either unasked is undefined.
+    return byOurs === null && byTheirs === null ? null : undefined;
+  }
+
   /** Take a working add off the book, count what it filled, and close it out. */
   private async endAdd(recIn: TradeRecord, reason: string): Promise<TradeRecord> {
     let rec = recIn;
     const add = rec.state.adding;
     if (!add) return rec;
-    const order = await this.exchange.getOrderByClientId(add.clientOrderId).catch(() => undefined);
+    const order = await this.findAdd(add);
     if (order) {
       if (order.status === 'open' || order.status === 'partial') {
         await this.exchange.cancelOrder(order).catch((e) => this.note('cancel add', order, e));
       }
-      const after = await this.exchange.getOrderByClientId(add.clientOrderId).catch(() => undefined);
+      const after = await this.findAdd(add);
       rec = this.absorbAdd(rec, after ?? order);
       if (after && (after.status === 'open' || after.status === 'partial')) {
         // Still on the book. Keep it tracked -- the next poll tries again --

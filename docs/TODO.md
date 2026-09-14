@@ -240,6 +240,41 @@ chain. It was taken out by mistake for one deploy and put straight back.
 
 ---
 
+## Add lots by hand — 14 Sep 2026
+
+The position card gained **Add lots** beside Edit exits, for selling more of a
+contract already held. It goes through the same engine path the strategy's
+adds take — `addToPosition`, the same `add_submitted` / `add_done` journal, the
+same single position with one average and one target and stop resized to
+cover all of it — so a hand add and a strategy add are one thing to reason
+about. `AddSource` gained `{ manual: true }`; records written before it carry
+the old shape and read as it. No schema change: adds live in `trade_events`.
+
+**Two steps, like the ticket.** `POST /api/trade/add/preview` runs every gate —
+margin, the short cap, the daily loss, the spread, the feed — and prices the
+add in money: the credit, Delta's charges to open, the margin the exchange
+will hold, and the average the position moves to. `POST /api/trade/add` runs
+the same gates again and sends. `engine.previewAdd` and `addInner` share
+`addEligibility`, so the sheet can never offer a size the engine then refuses
+on a check the sheet did not know about. Both answer 422 with the reasons.
+
+**A typed price is the floor.** An add "at 9.50" is never sold under 9.50.
+Blank, it starts at the ask and may walk to the bid over five seconds, not
+past it. The input parser is its own pure module (`http/add-body.ts`) with
+every objection returned at once; the money gates are the engine's, run once
+on the preview and again on the add, never re-implemented in the route.
+
+Sending takes a swipe, as anything that creates risk does here. The card
+offers the button only on a short that is open and not already adding.
+
+Tested: the parser's bounds and the floor rule; the preview's figures and that
+it refuses on the short cap exactly as the add does; a hand add landing under
+the same trade marked as by hand; the alert wording; the sheet sending the
+previewed body and only on a full swipe, keeping the swipe dead while the
+gates say no, and staying open with the reason when the send is refused.
+
+---
+
 ## "add chase failed" over a trade that went right — 14 Sep 2026
 
 07:37 IST, in the error log: *add chase failed: Delta refused the request

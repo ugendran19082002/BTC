@@ -317,6 +317,21 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
         )}
       </div>
 
+      {/*
+        The exchange holds more than this record sold. A reconcile read the
+        position back from Delta -- an add the desk lost sight of, say -- and
+        the position, the P&L and the exits all follow the exchange's number;
+        the "Sold" line above can only say what the record saw. Said in words,
+        because a card that quietly disagrees with the book is the bug this
+        desk keeps finding.
+      */}
+      {held > trade.entrySize - trade.exitSize && (
+        <p className="m-0 mt-2 text-[12px] text-[var(--warn)]">
+          Delta holds {fmtSize(held)} — {fmtSize(held - (trade.entrySize - trade.exitSize))} more than
+          this record sold. The position was read back from the exchange; exits cover all of it.
+        </p>
+      )}
+
       {trade.alarm && <p className="m-0 mt-2 text-[12px] font-medium text-[var(--down)]">{trade.alarm}</p>}
 
       {/*

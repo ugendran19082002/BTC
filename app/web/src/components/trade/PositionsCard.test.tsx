@@ -546,3 +546,18 @@ describe('adding lots from the card', () => {
     expect(addToPosition).not.toHaveBeenCalled();
   });
 });
+
+
+describe('when the exchange holds more than the record sold', () => {
+  it('[critical] says so, with the difference, rather than showing a smaller trade', () => {
+    // 14 Sep 2026: Delta held 1,500 CE, the record had sold 1,400. The card
+    // read "Sold 1,400" over a 1,500 position and nothing said why.
+    render(<PositionsCard trades={[trade({ position: -1500, entrySize: 1400, addedSize: 750 })]} onChanged={() => {}} />);
+    expect(screen.getByText(/Delta holds 1,500 — 100 more than this record sold/)).toBeInTheDocument();
+  });
+
+  it('says nothing when the two agree', () => {
+    render(<PositionsCard trades={[trade()]} onChanged={() => {}} />);
+    expect(screen.queryByText(/more than this record sold/)).not.toBeInTheDocument();
+  });
+});

@@ -235,6 +235,13 @@ export type TradeState = {
  */
 export type AddWorking = {
   clientOrderId: string;
+  /**
+   * The id the exchange gave it in the acknowledgement, when there was one.
+   * The lookup of last resort: an order the venue has numbered is an order the
+   * venue has, whatever a filtered query says. Absent on an add whose submit
+   * got no answer, and on records written before it was kept.
+   */
+  orderId?: string;
   /** Contracts asked for. */
   size: number;
   /** Where the sell started. */

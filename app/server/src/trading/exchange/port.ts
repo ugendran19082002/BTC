@@ -35,6 +35,12 @@ export interface ExchangePort {
   /** `null` when the exchange has never heard of it -- which, after a timeout,
    * is the answer that says the order never landed. */
   getOrderByClientId(clientOrderId: string): Promise<ExchangeOrder | null>;
+  /**
+   * By the exchange's own id, from the acknowledgement. The lookup that cannot
+   * be foiled by a client-id filter: once the venue has said "order 1535451705",
+   * that number finds it open or closed.
+   */
+  getOrderById(orderId: string): Promise<ExchangeOrder | null>;
   getOpenOrders(symbol?: string): Promise<ExchangeOrder[]>;
   getPositions(): Promise<ExchangePosition[]>;
   getBalanceUsd(): Promise<number>;

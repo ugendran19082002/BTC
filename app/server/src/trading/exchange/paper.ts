@@ -301,6 +301,12 @@ export class PaperExchange implements ExchangePort {
     return { ...o };
   }
 
+  async getOrderById(orderId: string): Promise<ExchangeOrder | null> {
+    this.guard();
+    const o = this.orders.get(orderId);
+    return o ? { ...o } : null;
+  }
+
   async getOrderByClientId(clientOrderId: string): Promise<ExchangeOrder | null> {
     this.guard();
     const id = this.byClientId.get(clientOrderId);

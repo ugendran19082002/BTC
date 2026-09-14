@@ -187,3 +187,39 @@ test('every other refusal of an edit is still a rejection', async () => {
     OrderRejected,
   );
 });
+
+/**
+ * A refused lookup is unknown, not "no such order".
+ *
+ * 14 Sep 2026, 08:15 IST: an add of 100 was acknowledged, the next lookup was
+ * refused, the refusal was read as an empty list and the empty list as "never
+ * reached the exchange". It had, and it filled, and the desk stopped tracking
+ * it. The person added again; Delta held 100 more than the desk with no target
+ * behind them.
+ */
+test('[critical] a refused lookup throws rather than reading as "no such order"', async () => {
+  answers({ status: 401, body: { success: false, error: { code: 'ip_not_whitelisted_for_api_key' } } });
+  await assert.rejects(
+    new DeltaExchange(creds).getOrderByClientId('409261789344005840E101'),
+    (e: unknown) => e instanceof ExchangeUnavailable && /ip_not_whitelisted/.test((e as Error).message),
+  );
+});
+
+test('an order the venue numbered is found by that number, open or closed', async () => {
+  const seen = answers({ status: 200, body: { success: true, result: {
+    id: 1535451705, client_order_id: '409261789344005840E102', product_id: 1, product_symbol: 'C-BTC-78800-140926',
+    side: 'sell', order_type: 'limit_order', size: 100, unfilled_size: 0, limit_price: '25', state: 'closed',
+    average_fill_price: '25', reduce_only: false, created_at: '2026-09-14T02:46:58Z', updated_at: '2026-09-14T02:47:15Z',
+  } } });
+  const o = await new DeltaExchange(creds).getOrderById('1535451705');
+  assert.equal(o?.orderId, '1535451705');
+  assert.equal(o?.filledSize, 100);
+  assert.match(seen[0]!, /\/v2\/orders\/1535451705$/);
+});
+
+test('only a 404 on the id lookup means the venue never issued it', async () => {
+  answers({ status: 404, body: { success: false, error: { code: 'not_found' } } });
+  assert.equal(await new DeltaExchange(creds).getOrderById('1'), null);
+  answers({ status: 500, body: { success: false, error: { code: 'internal_server_error' } } });
+  await assert.rejects(new DeltaExchange(creds).getOrderById('1'), ExchangeUnavailable);
+});

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { rig, peProduct, planFor, quote, type Rig } from './harness.js';
 import { TradeEngine, type AddRequest } from '../../src/trading/engine.js';
+import { SubmitTimeout } from '../../src/trading/exchange/port.js';
 
 /**
  * Appending to an open position: more of the same contract, under the same trade.
@@ -341,4 +342,71 @@ test('[critical] an add by hand lands under the same trade, marked as by hand', 
   assert.equal(r.store.all().length, 1, 'still one trade');
   const sub = r.store.get('PE-1')!.events.find((e) => e.t === 'add_submitted');
   assert.deepEqual(sub && 'add' in sub ? sub.add.source : null, { manual: true });
+});
+
+
+/**
+ * An add the venue acknowledged is an add the venue has.
+ *
+ * The desk lost one on 14 Sep 2026: acknowledged, then a lookup by our id
+ * came back empty, and "empty" was written up as "never reached the exchange"
+ * while 100 contracts filled untracked. Two things stop that now: the
+ * exchange's own id from the acknowledgement is a second way to find it, and
+ * an acknowledged add that still cannot be found is reconciled against the
+ * position, never declared unsent.
+ */
+test('[critical] an add our id cannot find is found by the id the venue gave it', async () => {
+  const { r } = await shortPE();
+  const res = await r.engine.addToPosition('PE-1', addOf({ source: { manual: true } }));
+  assert.equal(res.ok, true, res.ok ? '' : res.reason);
+  const sub = r.store.get('PE-1')!.events.find((e) => e.t === 'add_submitted');
+  assert.ok(sub && 'add' in sub && sub.add.orderId, 'the acknowledgement\'s id is kept with the add');
+
+  // the client-id filter goes blind, as a filtered query can
+  r.ex.getOrderByClientId = async () => null;
+
+  const s = await walk(r, 6_000);
+  assert.equal(s.position, -850, 'still tracked, still filled, still one position');
+  assert.equal(s.adding, null);
+  const done = r.store.get('PE-1')!.events.find((e) => e.t === 'add_done');
+  assert.equal(done && 'reason' in done ? done.reason : null, 'filled');
+});
+
+test('[critical] an acknowledged add that is never found again is read back from the position, not written off', async () => {
+  const { r } = await shortPE();
+  await r.engine.addToPosition('PE-1', addOf({ source: { manual: true }, timeoutMs: 10_000 }));
+  // the venue fills it, and every lookup goes blind
+  r.ex.tick(quote(PE, 7.5, 8, { mark: 7.7, ts: r.now() }));
+  r.ex.getOrderByClientId = async () => null;
+  r.ex.getOrderById = async () => null;
+
+  // inside the window: nothing concluded
+  r.advance(5_000);
+  let s = (await r.engine.poll('PE-1'))!;
+  assert.ok(s.adding, 'still tracked while the window is open');
+
+  // past it: the position is the truth
+  r.advance(6_000);
+  s = (await r.engine.poll('PE-1'))!;
+  assert.equal(s.adding, null);
+  assert.equal(s.position, -850, 'what the exchange holds');
+  const done = r.store.get('PE-1')!.events.find((e) => e.t === 'add_done');
+  assert.match(done && 'reason' in done ? done.reason : '', /read back from the exchange/);
+  assert.doesNotMatch(done && 'reason' in done ? done.reason : '', /never reached/);
+  assert.deepEqual((await book(r)).filter((o) => o.reduceOnly).map((o) => o.left), [850, 850],
+    'and the target and stop cover all of it');
+});
+
+test('a submit with no answer that is never found is still the one case that never landed', async () => {
+  const { r } = await shortPE();
+  const place = r.ex.placeOrder.bind(r.ex);
+  r.ex.placeOrder = async (q) => { await place(q); throw new SubmitTimeout(q.clientOrderId); };
+  r.ex.getOrderByClientId = async () => null;
+  const res = await r.engine.addToPosition('PE-1', addOf({ timeoutMs: 10_000 }));
+  assert.equal(res.ok, true);
+  r.advance(11_000);
+  const s = (await r.engine.poll('PE-1'))!;
+  assert.equal(s.adding, null);
+  const done = r.store.get('PE-1')!.events.find((e) => e.t === 'add_done');
+  assert.match(done && 'reason' in done ? done.reason : '', /never reached the exchange/);
 });

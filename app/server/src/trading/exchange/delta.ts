@@ -147,8 +147,20 @@ function toOrder(o: DeltaOrder): ExchangeOrder {
  * /v2/orders/history at 21:35 on 10 September was swallowed here as "no such
  * order" -- the one wrong answer an order lookup must never give.
  */
-const swallowRefusal = (e: unknown): DeltaOrder[] => {
-  if (e instanceof DeltaRefused) return [];
+/*
+ * A refused read is not an empty one.
+ *
+ * This used to turn any 4xx on a lookup into `[]`, and `[]` into "no such
+ * order". On 14 Sep 2026 at 08:15 IST an add of 100 contracts was acknowledged
+ * by Delta, the next lookup was refused, the desk wrote "the order never
+ * reached the exchange" and stopped tracking it -- while it filled. The person
+ * added again; Delta held 200 more than the desk did, 100 of them with no
+ * target behind them. A lookup that fails is unknown, and unknown means look
+ * again, never "gone". So it throws, and the engine's callers -- which already
+ * treat a throw as "could not ask" -- ask again next poll.
+ */
+const refusedRead = (e: unknown): never => {
+  if (e instanceof DeltaRefused) throw new ExchangeUnavailable(`lookup refused: ${e.message}`);
   throw e;
 };
 
@@ -378,17 +390,35 @@ export class DeltaExchange implements ExchangePort {
     }
   }
 
+  /**
+   * By the id Delta itself assigned in the acknowledgement. `GET /v2/orders/{id}`
+   * -- documented as "Get Order by id" -- answers for open and closed orders
+   * alike, so an acknowledged order can always be found this way whatever the
+   * client-id filters do.
+   */
+  async getOrderById(orderId: string): Promise<ExchangeOrder | null> {
+    const row = await this.call<DeltaOrder | null>({
+      method: 'GET', path: `/v2/orders/${encodeURIComponent(orderId)}`,
+    }).catch((e: unknown) => {
+      // Delta answers 404 for an id it has never issued; that is the one
+      // refusal that does mean "no such order".
+      if (e instanceof DeltaRefused && e.status === 404) return null;
+      return refusedRead(e);
+    });
+    return row ? toOrder(row) : null;
+  }
+
   async getOrderByClientId(clientOrderId: string): Promise<ExchangeOrder | null> {
     const cid = encodeURIComponent(clientOrderId);
     const live = await this.call<DeltaOrder[]>({
       method: 'GET', path: '/v2/orders', query: `?client_order_id=${cid}&states=open,pending`,
-    }).catch(swallowRefusal);
+    }).catch(refusedRead);
     const hit = live.find((r) => r.client_order_id === clientOrderId);
     if (hit) return toOrder(hit);
 
     const past = await this.call<DeltaOrder[]>({
       method: 'GET', path: '/v2/orders/history', query: `?client_order_id=${cid}&page_size=20`,
-    }).catch(swallowRefusal);
+    }).catch(refusedRead);
     const old = past.find((r) => r.client_order_id === clientOrderId);
     return old ? toOrder(old) : null;
   }
