@@ -41,6 +41,21 @@ describe('the add journal on the strategy screen', () => {
     expect(list.getByText('added')).toBeInTheDocument();
   });
 
+  it('[critical] dates every add, not just the clock time', async () => {
+    /*
+     * "13:54" alone reads as today's. The journal keeps a week of them, so an
+     * add from Friday and one from ten minutes ago were indistinguishable —
+     * and the runs log next to it has carried its run date all along, which is
+     * what made the missing one look like a formatting quirk rather than a
+     * gap.
+     */
+    getStrategies.mockResolvedValue(status([row({ id: 1 })]));
+    render(<StrategyPanel />);
+    const list = within(await screen.findByLabelText('adds'));
+    expect(list.getByText(/11 Sep/)).toBeInTheDocument();
+    expect(list.getByText(/09:08/)).toBeInTheDocument();
+  });
+
   it('summarises the setting on the strategy row with its own numbers', async () => {
     getStrategies.mockResolvedValue(status([]));
     render(<StrategyPanel />);

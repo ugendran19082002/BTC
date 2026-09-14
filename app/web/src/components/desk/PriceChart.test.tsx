@@ -41,7 +41,7 @@ const armedChart = (props: Partial<Parameters<typeof PriceChart>[0]> = {}) => {
     />,
   );
   fireEvent.click(screen.getByRole('button', { name: /Zoom off/ }));
-  const svg = r.container.querySelector('svg')!;
+  const svg = r.container.querySelector('.price-chart-svg')!;
   svg.getBoundingClientRect = () => ({
     left: 0, top: 0, right: 780, bottom: 360, width: 780, height: 360, x: 0, y: 0,
     toJSON: () => ({}),
@@ -317,7 +317,7 @@ describe('arming zoom', () => {
         tf="5m" onTf={noop}
       />,
     );
-    const svg = container.querySelector('svg')!;
+    const svg = container.querySelector('.price-chart-svg')!;
     svg.getBoundingClientRect = () => ({
       left: 0, top: 0, right: 780, bottom: 360, width: 780, height: 360, x: 0, y: 0,
       toJSON: () => ({}),
@@ -388,8 +388,10 @@ describe('the plot itself', () => {
     // the wheel over the price axis, which is the right-hand gutter
     for (let i = 0; i < 60; i++) fireEvent.wheel(svg, { deltaY: 100, clientX: 750 });
 
-    expect(screen.queryByText(/off the scale/)).not.toBeInTheDocument();
-    expect(screen.getByText('74,400')).toBeInTheDocument();
-    expect(screen.getByText('80,000')).toBeInTheDocument();
+    expect(screen.queryAllByText(/off the scale/)).toHaveLength(0);
+    // both walls are now on the axis — and the axis itself reaches them, which
+    // is why each number can appear more than once
+    expect(screen.getAllByText('74,400').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('80,000').length).toBeGreaterThan(0);
   });
 });
