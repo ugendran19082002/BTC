@@ -10,11 +10,15 @@ const closeTrade = vi.fn();
 const cancelTrade = vi.fn();
 const closeAllTrades = vi.fn();
 const setTradeMode = vi.fn();
+const previewAdd = vi.fn();
+const addToPosition = vi.fn();
 vi.mock('@/api/trade', () => ({
   closeTrade: (...a: unknown[]) => closeTrade(...a),
   cancelTrade: (...a: unknown[]) => cancelTrade(...a),
   closeAllTrades: (...a: unknown[]) => closeAllTrades(...a),
   setTradeMode: (...a: unknown[]) => setTradeMode(...a),
+  previewAdd: (...a: unknown[]) => previewAdd(...a),
+  addToPosition: (...a: unknown[]) => addToPosition(...a),
 }));
 
 const trade = (over: Partial<Trade> = {}): Trade => ({
@@ -501,5 +505,44 @@ describe('the book on an open position', () => {
     expect(screen.queryByText(/Spread/)).not.toBeInTheDocument();
     // the mark is still there; it is the book that is absent
     expect(screen.getByText('10.95')).toBeInTheDocument();
+  });
+});
+
+
+/**
+ * Adding by hand.
+ *
+ * The button offers only what the engine will take: a short that is open and
+ * not already adding. It opens a sheet and sends nothing itself.
+ */
+describe('adding lots from the card', () => {
+  it('offers Add lots on an open short', () => {
+    render(<PositionsCard trades={[trade()]} onChanged={() => {}} />);
+    expect(screen.getByRole('button', { name: /Add lots/ })).toBeEnabled();
+  });
+
+  it('[critical] does not offer it while an add is already working', () => {
+    render(<PositionsCard trades={[trade({
+      adding: { size: 50, limitPrice: 9.9, floorPrice: 9, deadline: Date.now() + 60_000, source: { manual: true } },
+    })]} onChanged={() => {}} />);
+    expect(screen.getByRole('button', { name: /Add lots/ })).toBeDisabled();
+    expect(screen.getByText(/added by hand/)).toBeInTheDocument();
+  });
+
+  it('does not offer it on an order that has not filled', () => {
+    render(<PositionsCard trades={[working()]} onChanged={() => {}} />);
+    expect(screen.queryByRole('button', { name: /Add lots/ })).not.toBeInTheDocument();
+  });
+
+  it('does not offer it while the position is closing', () => {
+    render(<PositionsCard trades={[trade({ phase: 'exit_pending' })]} onChanged={() => {}} />);
+    expect(screen.getByRole('button', { name: /Add lots/ })).toBeDisabled();
+  });
+
+  it('opens the sheet, and sends nothing from the card itself', () => {
+    render(<PositionsCard trades={[trade()]} onChanged={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: /Add lots/ }));
+    expect(screen.getByText(/Add lots · /)).toBeInTheDocument();
+    expect(addToPosition).not.toHaveBeenCalled();
   });
 });
