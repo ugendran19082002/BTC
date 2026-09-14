@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Clock, Loader2, Pencil, ShieldAlert, ShieldCheck, X } from 'lucide-react';
+import { Clock, Loader2, Pencil, Plus, ShieldAlert, ShieldCheck, X } from 'lucide-react';
 import { cancelTrade, closeTrade } from '@/api/trade';
 import type { Trade } from '@/types/trade';
 import { Card, CardTitle } from '@/components/ui/card';
@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CloseAllButton } from '@/components/trade/CloseAllButton';
 import { EditExitsSheet } from '@/components/trade/EditExitsSheet';
+import { AddLotsSheet } from '@/components/trade/AddLotsSheet';
 import { ClosePositionSheet } from '@/components/trade/ClosePositionSheet';
 import {
   ago, contractLabel, inr, pct, pnlTone, price, signedInr, signedUsd, size as fmtSize, usdToInr,
@@ -136,7 +137,13 @@ function WorkingRow({ trade, onChanged }: { trade: Trade; onChanged?: () => void
 function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => void }) {
   const [closing, setClosing] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [adding, setAdding] = useState(false);
   const held = Math.abs(trade.position);
+  // An add can only go on a short that is open and not already adding. The
+  // sheet would refuse too; the button simply does not offer what the engine
+  // will not take.
+  const canAdd = trade.position < 0 && !trade.adding
+    && (trade.phase === 'protected' || trade.phase === 'position_open' || trade.phase === 'unprotected');
 
   /*
    * A stop was asked for and is not there. Not the same as "no stop": a trade
@@ -200,7 +207,10 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
           {trade.adding && (
             <p className="m-0 mt-0.5 text-[12px] text-[var(--warn)]">
               Adding {fmtSize(trade.adding.size)} @ {price(trade.adding.limitPrice)} (never below {price(trade.adding.floorPrice)})
-              {' — '}the {trade.adding.source.optionSide} target bought back {fmtSize(trade.adding.source.boughtBack)}
+              {' — '}
+              {'manual' in trade.adding.source
+                ? 'added by hand'
+                : `the ${trade.adding.source.optionSide} target bought back ${fmtSize(trade.adding.source.boughtBack)}`}
             </p>
           )}
         </div>
@@ -309,21 +319,36 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
 
       {trade.alarm && <p className="m-0 mt-2 text-[12px] font-medium text-[var(--down)]">{trade.alarm}</p>}
 
-      <div className="mt-2.5 grid grid-cols-2 gap-2">
+      {/*
+        Three actions, each opening a sheet: nothing is sent from the card
+        itself. Adding and editing sit together because both change the
+        position; closing sits apart and in red because it ends it.
+      */}
+      <div className="mt-2.5 grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <Button
+          variant="outline"
+          className="h-9"
+          disabled={!canAdd}
+          title={canAdd ? undefined : trade.adding ? 'An add is already working' : 'Nothing open to add to'}
+          onClick={() => setAdding(true)}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Add lots
+        </Button>
         <Button variant="outline" className="h-9" onClick={() => setEditing(true)}>
           <Pencil className="h-3.5 w-3.5" />
           Edit exits
         </Button>
-        {/* Opens the confirmation; nothing is sent from the card itself. */}
         <Button
           variant="outline"
-          className="h-9 text-[var(--down)]"
+          className="col-span-2 h-9 text-[var(--down)] sm:col-span-1"
           onClick={() => setClosing(true)}
         >
           Close now
         </Button>
       </div>
 
+      <AddLotsSheet trade={trade} open={adding} onOpenChange={setAdding} onAdded={onChanged} />
       <EditExitsSheet trade={trade} open={editing} onOpenChange={setEditing} onSaved={onChanged} />
       <ClosePositionSheet
         trade={trade}
