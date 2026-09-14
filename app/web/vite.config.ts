@@ -37,6 +37,21 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    /*
+     * The default pool, deliberately.
+     *
+     * Thirty-one files each build their own jsdom, which is a quarter of the
+     * run — and vitest says so on every run. Both ways out are worse:
+     * `pool: 'vmThreads'` reuses one per worker but runs files in `node:vm`
+     * contexts, where `instanceof` across realms stops working and 24 of 31
+     * files fail on jest-dom's matchers; `isolate: false` shares the
+     * environment across files, and this app has module-level state — the
+     * network-failure counter, localStorage — so the suite would leak between
+     * files and fail in ways nobody can reproduce.
+     *
+     * Five seconds is not worth either. Left as it is, with the reason written
+     * down so the next person does not spend an afternoon rediscovering it.
+     */
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.test.{ts,tsx}'],

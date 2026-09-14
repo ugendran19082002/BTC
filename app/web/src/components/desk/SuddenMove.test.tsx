@@ -137,7 +137,8 @@ describe('sudden move analytics', () => {
 
   it('[critical] the odds say which horizon they were counted over', () => {
     panel();
-    const odds = screen.getByText(/How often a move like this followed/).closest('.smr-odds')!;
+    const odds = screen.getByText(/How often a move like this followed/)
+      .closest('.smr-odds') as HTMLElement;
     expect(within(odds).getByText('28%')).toBeInTheDocument();
     expect(within(odds).getByText('46%')).toBeInTheDocument();
     expect(screen.getByText(/over the next 4 hours, measured/)).toBeInTheDocument();
