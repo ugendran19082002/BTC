@@ -1,4 +1,4 @@
-import type { MarketRead, SnapshotMeta } from '@/types/desk';
+import { TODAY_MOVE, type MarketRead, type SnapshotMeta } from '@/types/desk';
 import { Note } from '@/components/ui/card';
 import { Stat, StatDivider } from '@/components/ui/stat';
 import { SectionTitle } from '@/components/ui/section';
@@ -44,10 +44,10 @@ export function MoveSection({ market, snap }: { market: MarketRead; snap: Snapsh
           </thead>
           <tbody className="font-mono">
             {market.moves.map((m) => {
-              // How much of this contract's own life has already been spent
-              // moving. The fixed windows describe BTC; this row describes the
-              // trade in front of you, so it gets to stand out.
-              const inContract = m.label === 'this contract so far';
+              // How far the day has come since 05:30, the moment the morning
+              // entry was sold from. The fixed windows describe BTC; this row
+              // describes the trade in front of you, so it gets to stand out.
+              const inContract = m.label === TODAY_MOVE;
               return (
               <tr key={m.label} className={`border-b border-[#ffffff08]${inContract ? ' bg-[#6cb2ff10]' : ''}`}>
                 <td className={`px-1 py-[3px] text-left font-sans ${inContract ? 'text-foreground' : 'text-muted-foreground'}`}>

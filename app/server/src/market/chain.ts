@@ -151,6 +151,22 @@ export const ENTRY_HOUR_UTC = 0;
 const ENTRY_WINDOW_MINUTES = 30;
 
 /**
+ * Hours since the desk's day began -- 05:30 IST today, the moment every
+ * "today" figure on the desk is measured from: the P&L, the charges, the
+ * contract the morning entry sold.
+ *
+ * Not "hours into the front contract". By evening the front contract is
+ * tomorrow's, which has not opened, and a move measured inside it is nothing
+ * -- so the header fell back to "since you opened the page", a baseline that
+ * meant nothing next to the day's P&L beside it.
+ */
+export function hoursSinceDeskOpen(ts: number): number {
+  const d = new Date(ts * 1000);
+  const todayEntry = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), ENTRY_HOUR_UTC) / 1000;
+  return (ts - todayEntry) / 3600;
+}
+
+/**
  * The contract you would actually sell next, and when.
  *
  * Not the same as the nearest expiry. By late afternoon the day's contract has

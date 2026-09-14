@@ -24,6 +24,9 @@ import { usePersisted } from '@/hooks/usePersisted';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { LoginPage } from '@/components/desk/LoginPage';
 import { LivePrice } from '@/components/desk/LivePrice';
+import { TODAY_MOVE } from '@/types/desk';
+import { tabTitle } from '@/lib/tab-title';
+import { pnlTone, signedInr, usdToInr } from '@/lib/format';
 import { MarketInsights } from '@/components/desk/MarketInsights';
 import { SuddenMove } from '@/components/desk/SuddenMove';
 import { TopCandidates } from '@/components/desk/TopCandidates';
@@ -328,13 +331,20 @@ export default function App() {
   snapRef.current = snap ?? null;
 
   const held = useMemo(() => heldLegs(trade?.open), [trade?.open]);
-  // The chain's move is up to five seconds old; recover the opening price from
+  // The chain's move is up to five seconds old; recover the 05:30 price from
   // it and measure the ticking price against that, so the move ticks too.
-  const contractMove = data?.market?.moves.find((m) => m.label === 'this contract so far') ?? null;
-  const openedAt = snap && contractMove?.changeUsd != null ? snap.spot - contractMove.changeUsd : null;
+  const dayMove = data?.market?.moves.find((m) => m.label === TODAY_MOVE) ?? null;
+  const openedAt = snap && dayMove?.changeUsd != null ? snap.spot - dayMove.changeUsd : null;
   const liveSpot = tick?.spot ?? snap?.spot ?? null;
   const sinceOpenUsd = openedAt !== null && liveSpot !== null ? liveSpot - openedAt : null;
   const sinceOpenPct = sinceOpenUsd !== null && openedAt ? sinceOpenUsd / openedAt : null;
+
+  // The tab says what the header says, for a glance from another tab.
+  const todayNetUsd = trade ? (trade.today?.netUsd ?? (trade.realisedTodayUsd ?? 0) + (trade.unrealisedPnlUsd ?? 0)) : null;
+  const todayInr = todayNetUsd === null ? null : pnlTone(todayNetUsd) ? signedInr(usdToInr(todayNetUsd)) : '₹0';
+  useEffect(() => {
+    document.title = tabTitle({ signedIn: signedIn === true, spot: liveSpot, dayMoveUsd: sinceOpenUsd, todayInr });
+  }, [signedIn, liveSpot, sinceOpenUsd, todayInr]);
 
   if (signedIn === null) return <Loading />;
   if (stage === 'setup') return <TwoStepSetup onDone={() => setSignedIn(true)} onRestart={() => setSignedIn(false)} />;

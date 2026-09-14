@@ -205,6 +205,9 @@ function moveOver(bars: Candle[], count: number, hours: number, label: string): 
   };
 }
 
+/** The label of the day's row, shared with the web so the header can find it. */
+export const TODAY_MOVE = 'today, since 05:30';
+
 const SERIES_TTL_MS = 20_000;
 let seriesCache: { at: number; data: [Timeframe, Candle[]][] } | null = null;
 let seriesInflight: Promise<[Timeframe, Candle[]][]> | null = null;
@@ -232,10 +235,10 @@ async function fetchSeriesFresh(): Promise<[Timeframe, Candle[]][]> {
 }
 
 /**
- * @param sinceHours  hours elapsed inside the contract you are looking at, if
- *   any. The fixed windows answer "how has BTC been behaving"; this one answers
- *   "how much of that behaviour has already happened inside the trade I am
- *   considering", which is the number that says whether a strike is still as
+ * @param sinceHours  hours since the desk's day began at 05:30 IST, if known.
+ *   The fixed windows answer "how has BTC been behaving"; this one answers
+ *   "how far has it come today", against the same baseline as the day's P&L
+ *   and the morning entry -- the number that says whether a strike is still as
  *   far away as it looked at entry.
  */
 export async function readMarket(sinceHours?: number): Promise<MarketRead> {
@@ -303,8 +306,8 @@ export async function readMarket(sinceHours?: number): Promise<MarketRead> {
     moveOver(h1, 24, 24, 'last 24h'),
   ];
 
-  // 5-minute bars while the contract is young enough for them to reach back to
-  // its start (12h is 144 of them), hourly after that.
+  // 5-minute bars while the day is young enough for them to reach back to
+  // 05:30 (12h is 144 of them), hourly after that.
   if (sinceHours !== undefined && sinceHours > 0.08) {
     const use5m = sinceHours <= 12 && m5.length >= Math.round(sinceHours * 12);
     moves.push(
@@ -312,7 +315,7 @@ export async function readMarket(sinceHours?: number): Promise<MarketRead> {
         use5m ? m5 : h1,
         Math.max(1, Math.round(sinceHours * (use5m ? 12 : 1))),
         sinceHours,
-        'this contract so far',
+        TODAY_MOVE,
       ),
     );
   }

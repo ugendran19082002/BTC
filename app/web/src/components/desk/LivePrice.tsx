@@ -7,12 +7,13 @@ import { useEffect, useRef, useState } from 'react';
  * number that is stuck, so each change is coloured for a moment -- green up,
  * red down.
  *
- * The move beside it is measured from when the contract opened, not from when
- * the page was opened. Page-open is an accident of when you happened to reload;
- * contract-open is the thing every other number on this desk is measured
- * against -- the strike distance, the expected move, the 733-day record. If the
- * contract's own figure has not arrived yet it falls back to the session, and
- * says which one it is showing either way.
+ * The move beside it is measured from 05:30 IST, when the desk's day and the
+ * morning contract began, not from when the page was opened. Page-open is an
+ * accident of when you happened to reload; 05:30 is the thing every other
+ * number on this desk is measured against -- the day's P&L next to it, the
+ * strike distance, the expected move, the 733-day record. If the day's figure
+ * has not arrived yet it falls back to the session, and says which one it is
+ * showing either way.
  */
 export function LivePrice({
   spot, live, sinceOpenUsd, sinceOpenPct,

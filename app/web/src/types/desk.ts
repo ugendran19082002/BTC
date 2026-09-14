@@ -116,8 +116,16 @@ export type TimeframeRead = {
   label: string;
 };
 
+/**
+ * The label of the day's move -- since 05:30 IST, like every other "today" --
+ * which the header and the moves table both pick out of the list. The same
+ * string the server writes in `market/moves.ts`.
+ */
+export const TODAY_MOVE = 'today, since 05:30';
+
 export type Move = {
   hours: number;
+  /** A fixed window ("last 1h"), or `TODAY_MOVE`. */
   label: string;
   changeUsd: number | null;
   changePct: number | null;

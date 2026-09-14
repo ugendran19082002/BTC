@@ -1,4 +1,4 @@
-import type { Snapshot } from './chain.js';
+import { hoursSinceDeskOpen, type Snapshot } from './chain.js';
 import { readMarket, type MarketRead } from './moves.js';
 import { openInterestChange, ivChange, type OiChange, type OiSnapshotLeg } from './oi-history.js';
 import { optionStructure, type OptionStructure } from '../domain/structure.js';
@@ -48,10 +48,9 @@ export async function shockNow(
   legs: readonly OiSnapshotLeg[],
   window: ShockWindow = SHOCK_GATE_WINDOW,
 ): Promise<SuddenMove> {
-  // The same span the chain route asks for: what has happened since this
-  // contract opened, rather than a fixed day of history.
-  const elapsedHours = Math.max(0, 12 - snap.hoursToExpiry);
-  const market = await readMarket(elapsedHours > 0 ? elapsedHours : undefined).catch(() => null);
+  // The same span the chain route asks for: what has happened since the desk's
+  // day began at 05:30 IST, rather than a fixed day of history.
+  const market = await readMarket(hoursSinceDeskOpen(snap.ts)).catch(() => null);
   const iv = ivChange({ expiry: snap.expiry, ts: snap.ts, atmIv: snap.atmIv }, 15);
 
   return shockFrom({

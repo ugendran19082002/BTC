@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { liveChain, historicalChain, liveExpiries, type Snapshot } from '../../market/chain.js';
+import { liveChain, historicalChain, liveExpiries, hoursSinceDeskOpen, type Snapshot } from '../../market/chain.js';
 import { readMarket } from '../../market/moves.js';
 import { liveSpot, candles } from '../../market/delta.js';
 import { scoreLegs, pickSells, bias, verdict, maxLots, MARGIN_PER_LOT_USD, USDINR } from '../../domain/score.js';
@@ -96,11 +96,9 @@ export function registerDeskRoutes(app: FastifyInstance) {
 
       // Market context is best-effort: a throttled candle feed must not take the
       // chain down with it, it only costs the split its tested skew.
-      // A daily contract opens 12 hours before it settles, so what is left tells
-      // you how much of its life has already run.
-      const elapsedHours = Math.max(0, 12 - snap.hoursToExpiry);
+      // The day's move is measured from 05:30 IST, like every other "today".
       const market = snap.live
-        ? await readMarket(elapsedHours > 0 ? elapsedHours : undefined).catch(() => null)
+        ? await readMarket(hoursSinceDeskOpen(snap.ts)).catch(() => null)
         : null;
 
       // The margin model needs a spot, and the chain is where one arrives.
