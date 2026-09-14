@@ -423,6 +423,28 @@ test('[critical] reconcile recovers a fill the record is missing, with its price
     'nothing left to reconcile by number: the fills explained all of it');
 });
 
+test('[critical] reconcile recovers the fill even when the position was already set right by number', async () => {
+  // The live case after the first fix: an earlier reconcile had written
+  // `position: -850` from the exchange's number, so exchange and record agreed
+  // -- and the record still explained only 425 of it.
+  const { r } = await shortPE();
+  await r.engine.addToPosition('PE-1', addOf({ source: { manual: true } }));
+  r.ex.tick(quote(PE, 7.5, 8, { mark: 7.7, ts: r.now() }));
+  const rec = r.store.get('PE-1')!;
+  rec.events.push(
+    { t: 'add_done', filled: 0, reason: 'the order never reached the exchange', at: r.now() },
+    { t: 'reconciled', position: -850, at: r.now(), note: 'exchange says -850, we had -425' },
+  );
+  rec.state = { ...rec.state, adding: null, position: -850 };
+  r.store.save(rec);
+  assert.equal(r.store.get('PE-1')!.state.entrySize, 425, 'the gap: 850 held, 425 sold');
+
+  const fixed = (await r.engine.reconcile('PE-1'))!.state;
+  assert.equal(fixed.entrySize, 850);
+  assert.equal(fixed.entryAvgPrice, 11.25);
+  assert.equal(fixed.position, -850, 'and the position is still what the exchange holds');
+});
+
 test('reconcile leaves a record alone that already carries every fill', async () => {
   const { r } = await shortPE();
   const before = r.store.get('PE-1')!.events.length;

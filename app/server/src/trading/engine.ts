@@ -1431,6 +1431,17 @@ export class TradeEngine {
         rec = this.absorb(rec, entry, 'entry');
       }
     }
+    /*
+     * Every reconcile reads the fills, not only one that finds the position
+     * off. The first build of this compared the exchange's position with ours
+     * and looked no further when they agreed -- and on 14 Sep 2026 they did
+     * agree, because an earlier reconcile had already set ours to -1,500 by
+     * number, leaving a record whose fills explained 1,400 of it. The fills
+     * are the record; the position is a summary of them, and a summary that
+     * matches is not evidence the record is whole. Reconcile is a startup or
+     * a button, never the poll, so one history read here costs nothing.
+     */
+    rec = await this.recoverFills(rec);
     rec = await this.syncPosition(rec);
     if (!entry && rec.state.entrySize === 0 && rec.state.phase === 'entry_unknown') {
       // It never landed. Nothing is at risk and nothing was double-sent.
@@ -1472,6 +1483,8 @@ export class TradeEngine {
     if (held !== rec.state.position) {
       // The fills first: a position that can be explained by orders the desk
       // sent is a record with a gap, and the gap is filled with the fills.
+      // (Reconcile has already done this; the lost-add path arrives here
+      // without it.)
       rec = await this.recoverFills(rec);
     }
     if (held !== rec.state.position) {
