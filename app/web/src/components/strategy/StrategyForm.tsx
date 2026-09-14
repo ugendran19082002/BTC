@@ -297,9 +297,23 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                   options={[
                     { v: 'premium', label: 'By premium', note: 'Whichever strike pays what you ask — the tested rule.' },
                     { v: 'strict', label: 'By strike', note: 'The strike you name — ATM, OTM 1, ITM 2 — whatever it pays.' },
+                    {
+                      v: 'oiWall',
+                      label: 'By open interest',
+                      note: 'The heaviest strike out of the money — the wall. Untested: open interest was measured as a trading rule and did not hold up across 2024, 2025 and 2026.',
+                    },
                   ]}
                 />
               </Stack>
+
+              {c.strikeRule === 'oiWall' && (
+                <p className="m-0 mt-2 text-[11.5px] leading-snug text-[var(--warn)]">
+                  This one is a claim, not a record: that the strike carrying the most open
+                  interest is a better one to sell. The desk shows the walls because traders
+                  watch them, and every attempt to <i>trade</i> them failed the cross-period
+                  screen. The premium rule is the one with 733 days behind it.
+                </p>
+              )}
 
               {c.strikeRule === 'premium' ? (
                 <Stack label="Premium rule" error={err('premium')} className="mt-3">

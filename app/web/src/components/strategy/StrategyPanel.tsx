@@ -218,7 +218,7 @@ export function StrategyPanel() {
           */}
           <LogTable
             label="recent runs"
-            rows={data.runs.slice(0, 15).map((r) => ({
+            rows={data.runs.map((r) => ({
               id: r.id,
               at: `${r.runDate} ${clock(r.at)}`,
               who: data.strategies.find((s) => s.id === r.strategyId)?.name ?? r.strategyId,
@@ -244,7 +244,7 @@ export function StrategyPanel() {
           <LogTable
             label="adds"
             extraHead="From"
-            rows={data.adds!.slice(0, 15).map((a) => ({
+            rows={data.adds!.map((a) => ({
               id: a.id,
               at: clock(a.at),
               who: data.strategies.find((s) => s.id === a.strategyId)?.name ?? a.strategyId,

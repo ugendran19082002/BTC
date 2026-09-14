@@ -253,10 +253,18 @@ export function PriceChart({
     setHover(i >= 0 && i < geom.shown.length ? i : null);
   };
 
-  const onWheel = (e: React.WheelEvent<SVGSVGElement>) => {
+  /*
+   * Held in a ref and attached natively, because React's `onWheel` lands in a
+   * passive listener and `preventDefault` inside one does nothing: the page
+   * scrolled, and with ctrl held the whole browser zoomed, while the chart
+   * zoomed underneath it. A chart that moves the page it is on is unusable.
+   */
+  const wheelRef = useRef<(e: WheelEvent) => void>(() => {});
+  wheelRef.current = (e: WheelEvent) => {
     if (!win || !bars.length) return;
     const at = vx(e.clientX);
     if (at === null) return;
+    e.preventDefault();
 
     // Over the price axis, or with shift held: the price scale stretches.
     if (at > W - PAD.right || e.shiftKey) {
@@ -268,6 +276,16 @@ export function PriceChart({
     const anchor = clamp((at - PAD.left) / (W - PAD.left - PAD.right), 0, 1);
     setView(zoomHorizontally(win, bars.length, { anchor, out: e.deltaY > 0 }));
   };
+
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const on = (e: WheelEvent) => wheelRef.current(e);
+    el.addEventListener('wheel', on, { passive: false });
+    return () => el.removeEventListener('wheel', on);
+    // Re-bound whenever the element appears or goes: the chart unmounts behind
+    // the fold and on a feed error, and a listener on a detached node is a leak.
+  }, [open, error, bars.length === 0]);
 
   const onDown = (e: React.PointerEvent<SVGSVGElement>) => {
     if (!win) return;
@@ -345,7 +363,6 @@ export function PriceChart({
           onPointerDown={onDown}
           onPointerUp={endDrag}
           onPointerLeave={(e) => { endDrag(e); setHover(null); }}
-          onWheel={onWheel}
           onDoubleClick={() => setView(null)}
           aria-label={`BTC ${tf} candles, ${geom.shown.length} of ${bars.length} bars shown, with open-interest walls at ${support ?? '—'} and ${resistance ?? '—'}`}
         >

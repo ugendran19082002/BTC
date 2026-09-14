@@ -33,7 +33,23 @@ export type StrikeRule =
   /** By premium, at least or at most. The rule the 733-day record was measured on. */
   | 'premium'
   /** By position on the board: ATM, OTM 1..n, ITM 1..n. */
-  | 'strict';
+  | 'strict'
+  /**
+   * At the open-interest wall: the heaviest put strike for a PE, the heaviest
+   * call strike for a CE, out of the money only.
+   *
+   * **Untested, and differently untested from the other two.** The premium rule
+   * carries a 733-day record. `strict` carries none but is only a way of naming
+   * a strike a person already chose. This one is a *claim* -- that the strike
+   * carrying the most open interest is a better one to sell -- and open
+   * interest is the thing `feature_screen.py` tested as a trading rule and
+   * rejected: it did not hold up across 2024, 2025 and 2026 together.
+   *
+   * It is here because it was asked for and because the desk shows the walls
+   * anyway, so selling at one is a thing a person will want to try. The
+   * strategy form says what it rests on.
+   */
+  | 'oiWall';
 
 /** How far from the money a strict rule may reach, either way. */
 export const MAX_STRIKE_STEP = 20;
@@ -295,7 +311,8 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
         + `entered at ${time12(c.entryTime!)}. The last exit is 5:29 PM.`);
     }
   }
-  if (c.strikeRule !== undefined && c.strikeRule !== 'premium' && c.strikeRule !== 'strict') {
+  if (c.strikeRule !== undefined
+      && c.strikeRule !== 'premium' && c.strikeRule !== 'strict' && c.strikeRule !== 'oiWall') {
     bad.push('The strike rule must be "premium" or "strict".');
   }
   if (c.strikeRule === 'strict'

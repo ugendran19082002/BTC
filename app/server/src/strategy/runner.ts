@@ -222,7 +222,7 @@ export class StrategyRunner {
     const scored = scoreLegs(snap);
     const candidates: Candidate[] = scored.map((l) => ({
       cp: l.cp, strike: l.strike, sellPrice: l.sellPrice, pOtm: l.pOtm,
-      moneyness: l.moneyness, ask: l.ask,
+      moneyness: l.moneyness, ask: l.ask, oi: l.oi,
     }));
     const sel = selectLegs(s, candidates);
     if (sel.legs.length === 0) {

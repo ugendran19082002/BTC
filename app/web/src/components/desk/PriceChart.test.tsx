@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { PriceChart, zoomHorizontally, zoomVertically } from '@/components/desk/PriceChart';
 import type { Candle } from '@/types/desk';
 

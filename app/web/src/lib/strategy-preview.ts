@@ -37,13 +37,13 @@ export function describePremium(c: StrategyConfig): string {
 /**
  * How the strike is chosen, whichever way that is.
  *
- * The two rules answer different questions -- what does it pay, against where
- * does it sit -- so the sentence has to say which question was asked.
+ * The rules answer different questions -- what does it pay, where does it sit,
+ * where is the open interest -- so the sentence has to say which was asked.
  */
 export function describeStrike(c: StrategyConfig): string {
-  return c.strikeRule === 'strict'
-    ? `at ${strikeLabel(c.strikeStep)}, whatever it pays`
-    : `paying ${describePremium(c)}`;
+  if (c.strikeRule === 'strict') return `at ${strikeLabel(c.strikeStep)}, whatever it pays`;
+  if (c.strikeRule === 'oiWall') return 'at the open-interest wall, whatever it pays';
+  return `paying ${describePremium(c)}`;
 }
 
 export function describeEntry(c: StrategyConfig): string {

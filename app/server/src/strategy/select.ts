@@ -32,6 +32,8 @@ export type Candidate = {
   moneyness: 'ITM' | 'ATM' | 'OTM';
   /** Top of the offer, for an entry that rests rather than crosses. */
   ask?: number | null;
+  /** Contracts open at this strike. Read only by the open-interest rule. */
+  oi?: number | null;
 };
 
 export type Chosen = {
@@ -93,6 +95,20 @@ export function pickStrike(
   const otm = priced.filter((l) => l.moneyness === 'OTM');
   if (otm.length === 0) return null;
 
+  /*
+   * The wall: the strike on this side with the most open interest.
+   *
+   * Out of the money only, like the premium rule -- a wall in the money is a
+   * different trade, not a heavier version of this one. Strikes with no open
+   * interest to read are not "zero open interest", they are unreadable, so they
+   * are left out rather than ranked last.
+   */
+  if (cfg.strikeRule === 'oiWall') {
+    const readable = otm.filter((l) => l.oi !== null && l.oi !== undefined && Number.isFinite(l.oi));
+    if (readable.length === 0) return null;
+    return readable.reduce((a, b) => (b.oi! > a.oi! ? b : a));
+  }
+
   if (cfg.premium.mode === 'atLeast') {
     const paying = otm.filter((l) => l.sellPrice! >= cfg.premium.usd);
     if (paying.length === 0) return null;
@@ -125,7 +141,9 @@ export function selectLegs(s: Strategy, candidates: readonly Candidate[]): Selec
       refusals.push(
         cfg.strikeRule === 'strict'
           ? `${leg}: no ${strikeLabel(cfg.strikeStep)} strike listed with a price`
-          : `${leg}: nothing out of the money ${cfg.premium.mode === 'atLeast' ? 'paying' : 'at or below'} $${cfg.premium.usd}`,
+          : cfg.strikeRule === 'oiWall'
+            ? `${leg}: no out-of-the-money strike with open interest to read`
+            : `${leg}: nothing out of the money ${cfg.premium.mode === 'atLeast' ? 'paying' : 'at or below'} $${cfg.premium.usd}`,
       );
       continue;
     }

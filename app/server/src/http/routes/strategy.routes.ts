@@ -27,7 +27,9 @@ function cleanConfig(raw: unknown): StrategyConfig {
     exitTime,
     // A client that predates the strike rule sends neither field, and means
     // premium -- which is what it has been doing all along.
-    strikeRule: c.strikeRule === 'strict' ? 'strict' : 'premium',
+    strikeRule: c.strikeRule === 'strict' ? 'strict'
+      : c.strikeRule === 'oiWall' ? 'oiWall'
+        : 'premium',
     strikeStep: Math.trunc(Number(c.strikeStep ?? DEFAULT_CONFIG.strikeStep)) || 0,
     premium: {
       mode: c.premium?.mode === 'atMost' ? 'atMost' : 'atLeast',

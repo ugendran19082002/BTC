@@ -5,7 +5,20 @@ export type LegConfig = 'CE' | 'PE' | 'both';
 export type EntryPrice = 'now' | 'offer' | 'set';
 
 /** How the strike is chosen: by what it pays, or by where it sits. */
-export type StrikeRule = 'premium' | 'strict';
+export type StrikeRule =
+  | 'premium'
+  | 'strict'
+  /**
+   * At the open-interest wall — the heaviest put strike for a PE, the heaviest
+   * call strike for a CE, out of the money only.
+   *
+   * Differently untested from the other two: the premium rule carries a
+   * 733-day record, `strict` carries none but is only a way of naming a strike
+   * a person already chose, and this one is a claim — that the heaviest strike
+   * is a better one to sell. Open interest is the thing `feature_screen.py`
+   * tested as a trading rule and rejected. The form says so.
+   */
+  | 'oiWall';
 
 /** How far from the money a strict rule may reach, either way. */
 export const MAX_STRIKE_STEP = 20;

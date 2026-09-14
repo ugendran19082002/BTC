@@ -231,3 +231,79 @@ test('selling nothing still says why', () => {
   const sel = selectLegs(strat({ premium: { mode: 'atLeast', usd: 999 } }), BOARD);
   assert.match(describeSelection(sel), /nothing out of the money paying \$999/);
 });
+
+/**
+ * The open-interest wall.
+ *
+ * Differently untested from the other two rules, and the code says so: the
+ * premium rule carries a 733-day record, `strict` carries none but is only a
+ * way of naming a strike a person already chose, and this one is a *claim* --
+ * that the strike carrying the most open interest is a better one to sell.
+ * Open interest is the thing `feature_screen.py` tested and rejected.
+ *
+ * So what is pinned here is that it does what it says, refuses cleanly when it
+ * cannot, and never quietly reaches into the money.
+ */
+const wall = (over: Partial<StrategyConfig> = {}): StrategyConfig =>
+  ({ ...DEFAULT_CONFIG, strikeRule: 'oiWall', ...over }) as StrategyConfig;
+
+const withOi = (cp: 'C' | 'P', strike: number, sellPrice: number, oi: number | null, moneyness: 'ITM' | 'ATM' | 'OTM' = 'OTM') =>
+  ({ cp, strike, sellPrice, pOtm: 0.98, moneyness, ask: sellPrice + 1, oi }) as Candidate;
+
+test('[critical] takes the heaviest strike on that side', () => {
+  const board = [
+    withOi('C', 79_000, 20, 12_000),
+    withOi('C', 80_000, 12, 425_000),
+    withOi('C', 81_000, 6, 40_000),
+  ];
+  assert.equal(pickStrike(board, 'C', wall())?.strike, 80_000);
+});
+
+test('each side gets its own wall', () => {
+  const board = [
+    withOi('C', 80_000, 12, 425_000),
+    withOi('P', 74_400, 14, 59_000),
+    withOi('P', 73_000, 5, 9_000),
+  ];
+  assert.equal(pickStrike(board, 'C', wall())?.strike, 80_000);
+  assert.equal(pickStrike(board, 'P', wall())?.strike, 74_400);
+});
+
+test('[critical] never reaches into the money, however heavy the wall', () => {
+  // a short that starts in the money is a directional bet, not this strategy
+  const board = [
+    withOi('C', 70_000, 900, 9_000_000, 'ITM'),
+    withOi('C', 80_000, 12, 1_000),
+  ];
+  assert.equal(pickStrike(board, 'C', wall())?.strike, 80_000);
+});
+
+test('[critical] a strike with no open interest to read is left out, not ranked last', () => {
+  // absent is not zero: an unreadable strike must not win by default when
+  // every other one is unreadable too
+  const board = [withOi('C', 80_000, 12, null), withOi('C', 81_000, 6, null)];
+  assert.equal(pickStrike(board, 'C', wall()), null);
+});
+
+test('a readable strike beats an unreadable one', () => {
+  const board = [withOi('C', 80_000, 12, null), withOi('C', 81_000, 6, 500)];
+  assert.equal(pickStrike(board, 'C', wall())?.strike, 81_000);
+});
+
+test('an unpriced strike is no more sellable under this rule than any other', () => {
+  const board = [
+    { cp: 'C' as const, strike: 80_000, sellPrice: null, pOtm: 0.98, moneyness: 'OTM' as const, oi: 9_000_000 },
+    withOi('C', 81_000, 6, 500),
+  ];
+  assert.equal(pickStrike(board as Candidate[], 'C', wall())?.strike, 81_000);
+});
+
+test('the refusal says what was missing, not just that there was nothing', () => {
+  const s = { id: 'x', name: 'wall', enabled: true, config: wall({ legs: 'both' }) } as unknown as Strategy;
+  const out = selectLegs(s, [withOi('C', 80_000, 12, null)]);
+  assert.equal(out.legs.length, 0);
+  assert.ok(
+    out.refusals.some((r) => r.includes('open interest to read')),
+    out.refusals.join(' | '),
+  );
+});

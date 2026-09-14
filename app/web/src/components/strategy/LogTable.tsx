@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export type LogTone = 'ok' | 'bad' | 'quiet';
@@ -41,17 +43,38 @@ export function LogTable({
   rows,
   label,
   extraHead,
+  pageSize = 5,
 }: {
+  /** Newest first — the order the server returns them in. */
   rows: readonly LogRow[];
   /** What the table is, for a screen reader. */
   label: string;
   /** Heading for the optional middle column, when the rows carry one. */
   extraHead?: string;
+  /**
+   * How many rows a page holds.
+   *
+   * Five, because the question this log answers is almost always "what did it
+   * do *today*" — and fifteen rows of it, twice on one screen, was a page you
+   * scrolled past to reach anything else. The rest is a click away rather than
+   * gone.
+   */
+  pageSize?: number;
 }) {
+  const [page, setPage] = useState(0);
+  const pages = Math.max(1, Math.ceil(rows.length / pageSize));
+
+  // A shorter log than the page you were on — a strategy deleted, a filter
+  // changed — must not leave you looking at nothing.
+  useEffect(() => { setPage((p) => Math.min(p, pages - 1)); }, [pages]);
+
   if (!rows.length) return null;
   const hasExtra = rows.some((r) => r.extra);
+  const from = page * pageSize;
+  const shown = rows.slice(from, from + pageSize);
 
   return (
+    <>
     <table className="logtable" aria-label={label}>
       <thead>
         <tr>
@@ -63,7 +86,7 @@ export function LogTable({
         </tr>
       </thead>
       <tbody>
-        {rows.map((r) => (
+        {shown.map((r) => (
           <tr key={r.id}>
             <td className="when" data-label="When">{r.at}</td>
             <td className="who" data-label="Strategy">{r.who}</td>
@@ -74,5 +97,31 @@ export function LogTable({
         ))}
       </tbody>
     </table>
+    {pages > 1 && (
+      <div className="logpage">
+        <span>
+          {from + 1}–{Math.min(from + pageSize, rows.length)} of {rows.length}
+        </span>
+        <span className="logpage-buttons">
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            disabled={page === 0}
+            aria-label="newer"
+          >
+            <ChevronLeft size={13} aria-hidden /> Newer
+          </button>
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.min(pages - 1, p + 1))}
+            disabled={page >= pages - 1}
+            aria-label="older"
+          >
+            Older <ChevronRight size={13} aria-hidden />
+          </button>
+        </span>
+      </div>
+    )}
+    </>
   );
 }
