@@ -9,6 +9,8 @@ import type { DayRow } from '@/types/report';
 
 export type Month = { key: string; label: string; weeks: (string | null)[][] };
 
+const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+
 const pad = (n: number) => String(n).padStart(2, '0');
 
 /** `YYYY-MM-DD` for a UTC date -- the strings are day names, not moments. */
@@ -43,7 +45,9 @@ export function monthsOf(from: string, to: string): Month[] {
     if (week.length) weeks.push([...week, ...Array<string | null>(7 - week.length).fill(null)]);
     out.push({
       key: `${y}-${pad(mo + 1)}`,
-      label: first.toLocaleDateString('en-GB', { month: 'short', year: '2-digit', timeZone: 'UTC' }).toUpperCase(),
+      // Our own three letters: a locale gives "Sept", and a heading that is
+      // sometimes four letters wide breaks the row of months.
+      label: `${MONTHS[mo]} ${String(y).slice(2)}`,
       weeks,
     });
   }

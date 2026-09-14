@@ -72,7 +72,7 @@ describe('the calendar', () => {
     await screen.findByLabelText('totals');
     fireEvent.click(screen.getByRole('switch', { name: /Include charges/ }));
     // 14 Sep: +0.30 before charges, −0.30 after -- the square flips colour
-    expect(screen.getByRole('gridcell', { name: /2026-09-14: \+₹26/ })).toHaveClass('up');
+    expect(screen.getByRole('gridcell', { name: /2026-09-14: \+₹25\.50/ })).toHaveClass('up');
     const totals = within(screen.getByLabelText('totals'));
     expect(totals.getByText('Gross').nextSibling).toHaveTextContent('−₹485');
   });
