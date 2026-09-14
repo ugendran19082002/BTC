@@ -418,7 +418,14 @@ export default function App() {
             board — a warning that takes the same room whether or not there is
             anything to warn about is one nobody reads by the end of the week.
           */}
-          {data?.shock && <SuddenMove shock={data.shock} />}
+          {data?.shock && snap && (
+            <SuddenMove
+              shock={data.shock}
+              snap={snap}
+              structure={data.structure}
+              market={data.market}
+            />
+          )}
 
           <div className="board-row">
             <div className="board-left">

@@ -58,6 +58,14 @@ function Zero({ leg, sold = false }: { leg: Leg | undefined; sold?: boolean }) {
     : `${z.sample?.toLocaleString() ?? 0} similar strikes settled; the maths alone says ${(z.model * 100).toFixed(1)}%`;
   return (
     <td className={`zerocol ${cls}${sold ? ' sellcell' : ''}`} title={title}>
+      {/*
+        A bar behind the figure, so the whole column reads at a glance.
+        This is the one question a seller is actually asking of every strike --
+        does it go to zero by expiry -- and a column of two dozen percentages
+        has to be read one at a time. The bar is the same device as the score's,
+        and the number stays: the bar is for scanning, the number for deciding.
+      */}
+      <span className="zerobar" aria-hidden><i style={{ width: `${Math.max(0, Math.min(100, p * 100))}%` }} /></span>
       {(p * 100).toFixed(1)}%
       {z.outsideTable && <span className="dim">*</span>}
     </td>

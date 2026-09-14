@@ -347,9 +347,22 @@ which is the only column that should.
 
 ### The screen
 
-The card is one line on an ordinary board. A warning that takes the same room
-whether or not there is anything to warn about is one nobody reads by the end of
-the week.
+Four readings and a direction, always: the risk out of 100, the move against
+what it was priced for, the volume against its own median, whether volatility is
+repricing, and which way the pressure points. The score alone is a number nobody
+can check — the readings are what it is made of, so it can be argued with rather
+than taken, and each carries the thing it is measured *against* because "3.2×"
+means nothing without "the 20-bar median" beside it.
+
+The *reasons* appear only once something is raised. A quiet tape should be one
+glance, not a paragraph saying nothing is wrong.
+
+### The chance it goes to zero, drawn as well as written
+
+A bar behind the `→ 0` figure, the same device as the score's. It is the one
+question a seller asks of every strike on the board, and a column of two dozen
+percentages has to be read one at a time. The number stays: the bar is for
+scanning, the number for deciding.
 
 Both strategy logs became one table. They were fifteen bordered blocks each,
 every one carrying a name, a time, an outcome and a sentence — thirty of those

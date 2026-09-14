@@ -1,6 +1,7 @@
 import type { MarketRead } from '../market/moves.js';
 import type { OiChange } from '../market/oi-history.js';
 import type { OptionStructure } from './structure.js';
+import { loadHorizons } from './forecast.js';
 
 /**
  * Whether something is happening right now.
@@ -48,6 +49,49 @@ export type ShockBand = 'normal' | 'watch' | 'high' | 'sudden';
 
 export const SHOCK_AT = { watch: 30, high: 50, sudden: 70 } as const;
 
+/**
+ * How often BTC has actually moved more than `thresholdPct` over a window.
+ *
+ * Counted off the 101 measured percentiles of the signed return in
+ * `chain.db`'s `horizons` table — 105,120 five-minute windows over a year — so
+ * this is a frequency that happened, not a lognormal that was assumed. The
+ * repo's own note on that table says as much: an option's expected payout is
+ * worked out against what BTC did rather than against a distribution.
+ *
+ * The nearest measured horizon is used and reported, rather than a horizon
+ * scaled to whatever was asked for. A number quietly √t-scaled from five
+ * minutes to four hours is a number nobody can check against the table.
+ */
+export type MoveOdds = {
+  /** The horizon actually read, in minutes. */
+  overMinutes: number;
+  thresholdPct: number;
+  /** Share of windows that rose more than the threshold. */
+  up: number;
+  down: number;
+  either: number;
+};
+
+export function moveOdds(minutes: number, thresholdPct = 1): MoveOdds | null {
+  const rows = loadHorizons().filter((r) => r.quantiles.length > 1);
+  if (!rows.length) return null;
+
+  const row = rows.reduce((a, b) =>
+    Math.abs(b.minutes - minutes) < Math.abs(a.minutes - minutes) ? b : a);
+
+  const n = row.quantiles.length;
+  const up = row.quantiles.filter((q) => q > thresholdPct).length / n;
+  const down = row.quantiles.filter((q) => q < -thresholdPct).length / n;
+  return {
+    overMinutes: row.minutes,
+    thresholdPct,
+    up,
+    down,
+    // A window is one or the other, never both, so the two simply add.
+    either: up + down,
+  };
+}
+
 export type ShockPart = {
   name: string;
   /** 0-1, before its weight. */
@@ -55,6 +99,14 @@ export type ShockPart = {
   weight: number;
   /** The figure itself, in the units it is read in. Null when unreadable. */
   note: string | null;
+  /**
+   * The headline figure and the two numbers behind it.
+   *
+   * A ratio on its own says nothing: "3.2x" needs "12.4k against a 3.8k median"
+   * beside it or a reader cannot tell a busy strike from a quiet coin. Null
+   * wherever the reading could not be taken at all.
+   */
+  detail?: { headline: string; now: string; before: string } | null;
 };
 
 export type SuddenMove = {
@@ -70,9 +122,27 @@ export type SuddenMove = {
    */
   direction: number | null;
   directionLabel: string;
+  /**
+   * What the direction is made of, each −1..+1 and named.
+   *
+   * One number saying "downside 68%" is a number nobody can check. These are
+   * the readings behind it, and a reader who disagrees with one can see which.
+   */
+  directionParts: { name: string; value: number }[];
+  /**
+   * How often BTC has moved more than a percent over the next few hours,
+   * counted off the measured percentiles rather than assumed.
+   */
+  odds: MoveOdds | null;
 };
 
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
+
+/** 12,400 reads as 12.4k. A seven-digit count in a tile is a wall of digits. */
+const compact = (n: number): string =>
+  n >= 1e6 ? `${(n / 1e6).toFixed(2)}M`
+    : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k`
+      : n.toFixed(0);
 
 /**
  * The expected move over a window shorter than expiry.
@@ -94,7 +164,7 @@ export function suddenMove(i: {
   structure: OptionStructure;
   /** Per-strike open-interest changes, if the desk has any history yet. */
   oiChanges: Map<string, OiChange>;
-  iv: { changePct: number; overMinutes: number } | null;
+  iv: { changePct: number; overMinutes: number; from: number; to: number } | null;
 }): SuddenMove {
   const parts: ShockPart[] = [];
   const reasons: string[] = [];
@@ -110,6 +180,11 @@ export function suddenMove(i: {
       value: clamp01((moveRatio - 0.5) / 1.0),
       weight: SHOCK_WEIGHTS.moveShock,
       note: `${moveRatio.toFixed(2)}× the 5-minute expected move`,
+      detail: {
+        headline: `${moveRatio.toFixed(1)}×`,
+        now: `5m range: ${((m5.rangeUsd / i.spot) * 100).toFixed(2)}%`,
+        before: `Expected (5m): ${((em5 / i.spot) * 100).toFixed(2)}%`,
+      },
     });
     if (moveRatio >= 1) reasons.push(`5m range is ${moveRatio.toFixed(1)}× what it was priced for`);
   } else {
@@ -124,6 +199,11 @@ export function suddenMove(i: {
       value: clamp01((pulse.spike - 1) / 2),
       weight: SHOCK_WEIGHTS.volumeSpike,
       note: `${pulse.spike.toFixed(1)}× the 20-bar median`,
+      detail: {
+        headline: `${pulse.spike.toFixed(1)}×`,
+        now: `Current: ${compact(pulse.current)}`,
+        before: `20-bar median: ${compact(pulse.median)}`,
+      },
     });
     if (pulse.spike >= 2) reasons.push(`5m volume is ${pulse.spike.toFixed(1)}× its median`);
   } else {
@@ -138,6 +218,11 @@ export function suddenMove(i: {
       value: clamp01(up / 8),
       weight: SHOCK_WEIGHTS.ivShock,
       note: `${i.iv.changePct >= 0 ? '+' : ''}${i.iv.changePct.toFixed(1)}% over ${i.iv.overMinutes}m`,
+      detail: {
+        headline: `${i.iv.changePct >= 0 ? '+' : ''}${i.iv.changePct.toFixed(1)}%`,
+        now: `IV now: ${(i.iv.to * 100).toFixed(1)}%`,
+        before: `${i.iv.overMinutes}m ago: ${(i.iv.from * 100).toFixed(1)}%`,
+      },
     });
     if (i.iv.changePct >= 3) {
       reasons.push(`implied volatility is up ${i.iv.changePct.toFixed(1)}% in ${i.iv.overMinutes} minutes`);
@@ -158,6 +243,11 @@ export function suddenMove(i: {
       value: clamp01(share / 10),
       weight: SHOCK_WEIGHTS.oiChange,
       note: `${share.toFixed(1)}% of what is open changed in ${over}m`,
+      detail: {
+        headline: `${share.toFixed(1)}%`,
+        now: `Turned over: ${compact(opened)}`,
+        before: `Open: ${compact(base)}`,
+      },
     });
     if (share >= 5) reasons.push(`${share.toFixed(1)}% of open interest turned over in ${over} minutes`);
   } else {
@@ -175,6 +265,11 @@ export function suddenMove(i: {
       value: clamp01(lopsided / Math.log(3)),
       weight: SHOCK_WEIGHTS.imbalance,
       note: `${pcr.toFixed(2)} puts per call`,
+      detail: {
+        headline: pcr.toFixed(2),
+        now: `PE OI: ${compact(i.structure.peOi)}`,
+        before: `CE OI: ${compact(i.structure.ceOi)}`,
+      },
     });
     if (lopsided >= Math.log(2)) {
       reasons.push(`positioning is lopsided at ${pcr.toFixed(2)} puts per call`);
@@ -205,15 +300,32 @@ export function suddenMove(i: {
    * against the shock score: "something is happening" and "which way" are
    * different questions and blending them hides which one the number answers.
    */
-  const dirParts: number[] = [];
-  if (m5?.changePct != null) dirParts.push(clamp01(Math.abs(m5.changePct) / 0.5) * Math.sign(m5.changePct));
-  if (i.market) dirParts.push(i.market.agreement / 5);
+  const directionParts: { name: string; value: number }[] = [];
+  if (m5?.changePct != null) {
+    directionParts.push({
+      name: 'Price momentum',
+      value: clamp01(Math.abs(m5.changePct) / 0.5) * Math.sign(m5.changePct),
+    });
+  }
+  if (i.market) {
+    directionParts.push({ name: 'Timeframes agreeing', value: i.market.agreement / 5 });
+  }
   const ceV = i.structure.ceVolume;
   const peV = i.structure.peVolume;
-  if (ceV + peV > 0) dirParts.push((ceV - peV) / (ceV + peV));
+  if (ceV + peV > 0) {
+    directionParts.push({ name: 'Call against put activity', value: (ceV - peV) / (ceV + peV) });
+  }
+  if (i.structure.pcrOi !== null && i.structure.pcrOi > 0) {
+    // Crowded downside already hedged reads mildly positive -- the same sense
+    // `domain/score.ts` gives it, kept so the two never disagree on screen.
+    directionParts.push({
+      name: 'How the two sides are positioned',
+      value: Math.max(-1, Math.min(1, (i.structure.pcrOi - 1) / 1.5)),
+    });
+  }
 
-  const direction = dirParts.length
-    ? Math.max(-1, Math.min(1, dirParts.reduce((a, v) => a + v, 0) / dirParts.length))
+  const direction = directionParts.length
+    ? Math.max(-1, Math.min(1, directionParts.reduce((a, p) => a + p.value, 0) / directionParts.length))
     : null;
 
   const directionLabel =
@@ -222,5 +334,10 @@ export function suddenMove(i: {
         : direction < -0.3 ? 'downside pressure'
           : 'no clear side';
 
-  return { score, band, parts, reasons, direction, directionLabel };
+  return {
+    score, band, parts, reasons, direction, directionLabel, directionParts,
+    // Four hours: long enough that a sudden move has somewhere to go, short
+    // enough to still be about today's contract.
+    odds: moveOdds(4 * 60, 1),
+  };
 }

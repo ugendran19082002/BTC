@@ -145,6 +145,9 @@ export type MarketRead = {
   max24hRangeUsd: number | null;
   max24hRangePct: number | null;
   volume: VolumePulse[];
+  /** The high and low of the last 24 hours, from the hourly bars. */
+  high24h: number | null;
+  low24h: number | null;
 };
 
 /**
@@ -158,10 +161,33 @@ export type MarketRead = {
 export type SuddenMove = {
   score: number | null;
   band: 'normal' | 'watch' | 'high' | 'sudden';
-  parts: { name: string; value: number; weight: number; note: string | null }[];
+  parts: {
+    name: string;
+    value: number;
+    weight: number;
+    note: string | null;
+    /**
+     * The headline and the two numbers behind it. A ratio on its own says how
+     * unusual something is and nothing about whether it is worth anything.
+     */
+    detail?: { headline: string; now: string; before: string } | null;
+  }[];
   reasons: string[];
   direction: number | null;
   directionLabel: string;
+  /** What the direction is made of, each −1..+1 and named. */
+  directionParts: { name: string; value: number }[];
+  /**
+   * How often BTC has actually moved more than a percent over the next few
+   * hours — counted off the measured percentiles, not assumed.
+   */
+  odds: {
+    overMinutes: number;
+    thresholdPct: number;
+    up: number;
+    down: number;
+    either: number;
+  } | null;
 };
 
 export type Hedge = { strike: number; price: number; gapStrikes: number; widthUsd: number };

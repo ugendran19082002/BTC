@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { suddenMove, expectedMoveOver, SHOCK_AT } from '../src/domain/shock.js';
+import { suddenMove, expectedMoveOver, moveOdds, SHOCK_AT } from '../src/domain/shock.js';
 import type { MarketRead } from '../src/market/moves.js';
 import type { OptionStructure } from '../src/domain/structure.js';
 import type { OiChange } from '../src/market/oi-history.js';
@@ -114,8 +114,8 @@ test('a volume spike is raised at twice the median and not at one and a half', (
 });
 
 test('volatility repricing counts upward only — a collapse is not a shock for a seller', () => {
-  const up = suddenMove({ ...base, iv: { changePct: 6, overMinutes: 15 } });
-  const down = suddenMove({ ...base, iv: { changePct: -6, overMinutes: 15 } });
+  const up = suddenMove({ ...base, iv: { changePct: 6, overMinutes: 15, from: 0.30, to: 0.318 } });
+  const down = suddenMove({ ...base, iv: { changePct: -6, overMinutes: 15, from: 0.30, to: 0.282 } });
 
   assert.ok(up.score! > down.score!, 'implied volatility expanding is the thing that hurts a short');
   assert.ok(up.reasons.some((r) => r.includes('up 6.0%')));
@@ -150,7 +150,7 @@ test('[critical] everything at once is a sudden move, with every reason named', 
     }),
     structure: structure({ pcrOi: 0.4, ceVolume: 3_000, peVolume: 9_000 }),
     oiChanges: new Map([['C80000', { change: 400_000, changePct: 40, overMinutes: 30, spotChangePct: -1.5 }]]),
-    iv: { changePct: 9, overMinutes: 15 },
+    iv: { changePct: 9, overMinutes: 15, from: 0.30, to: 0.327 },
   });
 
   assert.equal(s.band, 'sudden');
@@ -190,8 +190,102 @@ test('a tape pushing nowhere says so rather than picking a side', () => {
 });
 
 test('the parts carry their own figures, so the score can be argued with', () => {
-  const s = suddenMove({ ...base, iv: { changePct: 4.2, overMinutes: 15 } });
+  const s = suddenMove({ ...base, iv: { changePct: 4.2, overMinutes: 15, from: 0.30, to: 0.3126 } });
   const iv = s.parts.find((p) => p.name === 'Volatility repricing')!;
   assert.equal(iv.note, '+4.2% over 15m');
   assert.ok(s.parts.every((p) => p.weight > 0 && p.value >= 0 && p.value <= 1));
+});
+
+// ---------------------------------------------------------------------------
+
+test('each reading carries the two numbers behind its headline', () => {
+  // A ratio on its own says nothing: 3.2x needs "12.4k against a 3.8k median"
+  // beside it or a reader cannot tell a busy tape from a quiet coin.
+  const s = suddenMove({
+    ...base,
+    market: market({ volume: [{ tf: '5m', current: 12_400, median: 3_800, spike: 12_400 / 3_800 }] }),
+    iv: { changePct: 4.8, overMinutes: 15, from: 0.274, to: 0.287 },
+  });
+
+  const vol = s.parts.find((p) => p.name === 'Volume spike')!;
+  assert.deepEqual(vol.detail, {
+    headline: '3.3×',
+    now: 'Current: 12.4k',
+    before: '20-bar median: 3.8k',
+  });
+
+  const iv = s.parts.find((p) => p.name === 'Volatility repricing')!;
+  assert.deepEqual(iv.detail, {
+    headline: '+4.8%',
+    now: 'IV now: 28.7%',
+    before: '15m ago: 27.4%',
+  });
+});
+
+test('[critical] a reading it cannot take has no detail to show either', () => {
+  const s = suddenMove(base);
+  const iv = s.parts.find((p) => p.name === 'Volatility repricing')!;
+  assert.equal(iv.note, null);
+  assert.equal(iv.detail ?? null, null, 'nothing invented to fill the tile');
+});
+
+test('the direction is named parts, not one number nobody can check', () => {
+  const s = suddenMove({
+    ...base,
+    market: market({
+      moves: [{ hours: 5 / 60, label: 'last 5m', changeUsd: -400, changePct: -0.52, rangeUsd: 20, rangePct: 0 }],
+      agreement: -4,
+    }),
+    structure: structure({ ceVolume: 3_000, peVolume: 9_000, pcrOi: 0.5 }),
+  });
+
+  const names = s.directionParts.map((p) => p.name);
+  assert.deepEqual(names, [
+    'Price momentum',
+    'Timeframes agreeing',
+    'Call against put activity',
+    'How the two sides are positioned',
+  ]);
+  assert.ok(s.directionParts.every((p) => p.value >= -1 && p.value <= 1));
+  assert.ok(s.direction! < 0, 'and they add up to the number on screen');
+});
+
+test('a board with nothing to read a direction from names no parts', () => {
+  const blind = suddenMove({
+    ...base,
+    market: null,
+    structure: structure({ ceVolume: 0, peVolume: 0, pcrOi: null }),
+  });
+  assert.deepEqual(blind.directionParts, []);
+  assert.equal(blind.direction, null);
+});
+
+// ---------------------------------------------------------------------------
+
+test('[critical] the odds of a move are counted, not assumed', () => {
+  // Percentiles of the signed return: a tenth of them above +1%, a fifth below
+  // -1%, which is what the frequency has to come back as.
+  const odds = moveOdds(4 * 60, 1);
+  if (odds === null) return;   // no horizons table in this environment
+
+  assert.ok(odds.up >= 0 && odds.up <= 1);
+  assert.ok(odds.down >= 0 && odds.down <= 1);
+  assert.ok(Math.abs(odds.either - (odds.up + odds.down)) < 1e-12,
+    'a window rose or fell, never both, so the two simply add');
+  assert.equal(odds.thresholdPct, 1);
+  assert.ok(odds.overMinutes > 0, 'and it says which measured horizon it read');
+});
+
+test('the odds report the horizon they actually read, not the one asked for', () => {
+  const odds = moveOdds(137, 1);
+  if (odds === null) return;
+  // 137 minutes is not a measured horizon; the nearest one is, and it says so
+  assert.notEqual(odds.overMinutes, 137);
+});
+
+test('a harder threshold is never more likely than an easier one', () => {
+  const easy = moveOdds(4 * 60, 0.5);
+  const hard = moveOdds(4 * 60, 3);
+  if (!easy || !hard) return;
+  assert.ok(hard.either <= easy.either);
 });

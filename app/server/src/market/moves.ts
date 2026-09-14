@@ -155,6 +155,9 @@ export type MarketRead = {
   max24hRangePct: number | null;
   /** how busy the last 5m and 15m bars are against their own recent median */
   volume: VolumePulse[];
+  /** the high and low of the last 24 hours, from the hourly bars */
+  high24h: number | null;
+  low24h: number | null;
 };
 
 /**
@@ -338,8 +341,13 @@ export async function readMarket(sinceHours?: number): Promise<MarketRead> {
     .map((tf) => volumePulse(tf, series.find(([t]) => t === tf)?.[1] ?? []))
     .filter((v): v is VolumePulse => v !== null);
 
+  // The last day's extremes, off the hourly series the moves already use.
+  const day = (series.find(([t]) => t === '1h')?.[1] ?? []).slice(-24);
+  const high24h = day.length ? Math.max(...day.map((b) => b.high)) : null;
+  const low24h = day.length ? Math.min(...day.map((b) => b.low)) : null;
+
   return {
     spot, return24h, dailyRsiPrior, timeframes, agreement, regime, realisedVol,
-    moves, max24hRangeUsd, max24hRangePct, volume,
+    moves, max24hRangeUsd, max24hRangePct, volume, high24h, low24h,
   };
 }

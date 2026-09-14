@@ -140,7 +140,10 @@ export function registerDeskRoutes(app: FastifyInstance) {
           market,
           structure,
           oiChanges,
-          iv: iv && { changePct: iv.changePct, overMinutes: iv.overMinutes },
+          iv: iv && {
+            changePct: iv.changePct, overMinutes: iv.overMinutes,
+            from: iv.from, to: iv.to,
+          },
         }),
         forecast: forecast(snap),
         recommendation,
