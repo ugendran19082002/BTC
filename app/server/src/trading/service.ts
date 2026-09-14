@@ -233,6 +233,10 @@ export class TradingService {
   close(tradeId: string) { return this.engine.closeNow(tradeId); }
   /** Sell more of what an open trade holds, under the same trade. */
   addToPosition(tradeId: string, req: AddRequest) { return this.engine.addToPosition(tradeId, req); }
+  /** What that add would do and whether the gates would take it. Sends nothing. */
+  previewAdd(tradeId: string, req: Pick<AddRequest, 'size' | 'limitPrice' | 'floorPrice'>) {
+    return this.engine.previewAdd(tradeId, req);
+  }
   cancel(tradeId: string) { return this.engine.cancelEntry(tradeId); }
 
   /**

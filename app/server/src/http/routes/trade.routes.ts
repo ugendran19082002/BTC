@@ -13,6 +13,7 @@ import {
   ORDER_STATUSES, istDayEnd, istDayStart, istToday, orderOutcomeOf, orderStatusOf,
 } from '../../trading/status.js';
 import { refuse } from '../refuse.js';
+import { parseAddBody, toAddRequest, type AddBody } from '../add-body.js';
 
 /** 05:30 IST is when the daily contract opens, so that is where the day starts. */
 function startOfDayIst(now = Date.now()): number {
@@ -437,6 +438,52 @@ export function registerTradeRoutes(app: FastifyInstance) {
   app.post('/api/trade/close-all', async () => {
     const result = await svc.closeAll();
     return { ok: result.failed.length === 0, ...result };
+  });
+
+  /*
+   * Add to a position by hand.
+   *
+   * Two steps, like the ticket: a preview that runs every gate and prices the
+   * add in money, then the add itself, which runs them again. The start price
+   * is the offer unless one was typed, and the floor is whatever was typed --
+   * a person's add is never sold under the number they gave it. The same
+   * engine path the strategy's adds take, so a hand add and a strategy add
+   * leave the same journal and the same position.
+   */
+  const startOf = async (p: { limitPrice: number | null }, symbol: string) => {
+    if (p.limitPrice !== null) return { start: p.limitPrice, floor: p.limitPrice };
+    const q = await svc.quote(symbol).catch(() => null);
+    if (q?.ask == null || q.bid == null) return null;
+    return { start: q.ask, floor: q.bid };
+  };
+
+  app.post('/api/trade/add/preview', async (req, reply) => {
+    const parsed = parseAddBody((req.body ?? {}) as AddBody);
+    if (!parsed.ok) return refuse(reply, 422, { error: parsed.problems.join(' '), problems: parsed.problems });
+    const rec = svc.store.get(parsed.add.tradeId);
+    if (!rec) { reply.code(404); return { error: 'no such trade' }; }
+    const at = await startOf(parsed.add, rec.plan.symbol);
+    if (!at) return refuse(reply, 422, { error: 'No quote to start from — the book is empty or the feed is down.' });
+    const preview = await svc.previewAdd(parsed.add.tradeId, { size: parsed.add.lots, limitPrice: at.start, floorPrice: at.floor });
+    return { mode: svc.mode, startPrice: at.start, floorPrice: at.floor, ...preview };
+  });
+
+  app.post('/api/trade/add', async (req, reply) => {
+    const parsed = parseAddBody((req.body ?? {}) as AddBody);
+    if (!parsed.ok) return refuse(reply, 422, { error: parsed.problems.join(' '), problems: parsed.problems });
+    const rec = svc.store.get(parsed.add.tradeId);
+    if (!rec) { reply.code(404); return { error: 'no such trade' }; }
+    const at = await startOf(parsed.add, rec.plan.symbol);
+    if (!at) return refuse(reply, 422, { error: 'No quote to start from — the book is empty or the feed is down.' });
+    const res = await svc.addToPosition(
+      parsed.add.tradeId,
+      toAddRequest(parsed.add, at.start, rec.plan.entry.chase?.maxCrossSpreadPct ?? DEFAULT_LIMITS.maxSpreadPct),
+    );
+    if (!res.ok) {
+      // A gate said no. The desk working as designed: the sheet shows why.
+      return refuse(reply, 422, { mode: svc.mode, ok: false, error: res.reason, failures: res.precheck && !res.precheck.ok ? res.precheck.failures : [] });
+    }
+    return { mode: svc.mode, ok: true, trade: res.state };
   });
 
   /** Move the stop or the target on a position that is already open. */

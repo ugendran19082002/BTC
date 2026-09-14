@@ -1,7 +1,7 @@
 import type { TradePlan, TradeRecord } from '../trading/engine.js';
 import { premiumUsd } from '../trading/margin.js';
 import { tradeCharges } from '../trading/charges.js';
-import type { AddWorking, OrderRole, OrderSide, TradeEvent, TradeState } from '../trading/types.js';
+import { isManualAdd, type AddWorking, type OrderRole, type OrderSide, type TradeEvent, type TradeState } from '../trading/types.js';
 import { USDINR } from '../domain/score.js';
 
 /**
@@ -163,7 +163,9 @@ function addText(add: AddWorking, s: TradeState, plan: TradePlan, ctx: AlertCont
       : doneReason === null ? '⏳ The rest of the add is still working'
         : `✖️ The other ${qty(add.size - size)} were not sold (${escape(doneReason)})`,
     `Premium collected: <b>${inr(credit)}</b> (${usd(credit)})`,
-    `Because the ${add.source.optionSide} target bought back ${qty(add.source.boughtBack)}`,
+    isManualAdd(add.source)
+      ? 'Added by hand from the desk'
+      : `Because the ${add.source.optionSide} target bought back ${qty(add.source.boughtBack)}`,
     '',
     `Now short <b>${qty(Math.abs(s.position))}</b> @ <b>${price(s.entryAvgPrice ?? 0)}</b> avg — target and stop cover all of it`,
     exits(plan),
@@ -173,7 +175,10 @@ function addText(add: AddWorking, s: TradeState, plan: TradePlan, ctx: AlertCont
 
 function addNotFilledText(add: AddWorking, reason: string, at: number, s: TradeState, plan: TradePlan, ctx: AlertContext): string {
   return problemText(ctx, 'ℹ️', `ADD NOT FILLED · ${contract(plan)}`, [
-    `Tried to sell ${qty(add.size)} more at ${price(add.limitPrice)} or better (never under ${price(add.floorPrice)}), because the ${add.source.optionSide} target bought back ${qty(add.source.boughtBack)}.`,
+    `Tried to sell ${qty(add.size)} more at ${price(add.limitPrice)} or better (never under ${price(add.floorPrice)}), `
+      + (isManualAdd(add.source)
+        ? 'asked for by hand from the desk.'
+        : `because the ${add.source.optionSide} target bought back ${qty(add.source.boughtBack)}.`),
     `Nothing was sold: <i>${escape(reason)}</i>.`,
     `Still short ${qty(Math.abs(s.position))}, unchanged.`,
   ], at, plan);

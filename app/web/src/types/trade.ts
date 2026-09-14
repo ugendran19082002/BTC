@@ -50,7 +50,8 @@ export type Trade = {
     limitPrice: number;
     floorPrice: number;
     deadline: number;
-    source: { tradeId: string; optionSide: OptionSide; boughtBack: number };
+    /** The other leg's target, or a person at the desk. */
+    source: { tradeId: string; optionSide: OptionSide; boughtBack: number } | { manual: true };
   } | null;
   updatedAt: number;
   plan?: {
@@ -204,6 +205,34 @@ export type Preview = {
   liquidationPrice: number | null;
   /** Lots the balance could carry at this leverage. */
   maxLots: number | null;
+};
+
+/** What adding to a position would do, priced, with every gate's answer. */
+export type AddPreview = {
+  mode: 'live' | 'paper';
+  ok: boolean;
+  /** Why not, in words. With no failures it is the trade itself that cannot take an add. */
+  reason: string | null;
+  failures: PrecheckFailure[];
+  /** Where the sell starts, and the lowest it may walk to. */
+  startPrice: number;
+  floorPrice: number;
+  quote?: Quote | null;
+  size?: number;
+  newSize?: number;
+  newAvgPrice?: number;
+  creditUsd?: number;
+  entryChargesUsd?: number;
+  marginUsd?: number | null;
+};
+
+export type AddDraft = {
+  tradeId: string;
+  lots: number;
+  /** null starts at the offer. A typed price is also the floor. */
+  limitPrice: number | null;
+  chaseSeconds?: number;
+  timeoutMin?: number;
 };
 
 export type PlaceResult =

@@ -288,3 +288,57 @@ test('a chase step refused for any other reason is still reported', async () => 
   assert.equal(r.swallowed.length, 1);
   assert.equal(r.swallowed[0]!.what, 'add chase');
 });
+
+
+/**
+ * An add by hand, and what the desk shows before sending it.
+ *
+ * The preview runs the same eligibility and the same gates the add itself
+ * runs, so the sheet can only offer a size the engine will take -- and it
+ * prices the add in money, because a size that reads fine in lots is the one
+ * that ties up the account.
+ */
+test('[critical] the preview prices the add: new size, new average, credit, charges, margin', async () => {
+  const { r } = await shortPE();
+  const p = await r.engine.previewAdd('PE-1', { size: 425, limitPrice: 7.5, floorPrice: 7 });
+  assert.equal(p.ok, true, p.reason ?? '');
+  assert.equal(p.newSize, 850);
+  assert.equal(p.newAvgPrice, 11.25, '(15 x 425 + 7.5 x 425) / 850');
+  assert.ok(p.creditUsd! > 0);
+  assert.ok(p.entryChargesUsd! > 0, 'Delta charges to open, from the statement\'s own formula');
+  assert.ok(p.marginUsd! > 0, 'what the exchange will hold for the extra contracts');
+  assert.deepEqual(p.failures, []);
+});
+
+test('[critical] the preview refuses on the same gates the add would', async () => {
+  // The short cap: 5,000 allowed, 425 held, so 5,000 more is over it. The
+  // sheet must say so before the button, not after.
+  const { r } = await shortPE();
+  const p = await r.engine.previewAdd('PE-1', { size: 5_000, limitPrice: 7.5, floorPrice: 7 });
+  assert.equal(p.ok, false);
+  assert.ok(p.failures.some((f) => f.code === 'MAX_POSITION'), p.failures.map((f) => f.code).join(','));
+  // and the add itself says the same
+  const res = await r.engine.addToPosition('PE-1', addOf({ size: 5_000 }));
+  assert.equal(res.ok, false);
+});
+
+test('the preview and the add agree on what cannot be added to at all', async () => {
+  const { r } = await shortPE();
+  assert.match((await r.engine.previewAdd('nope', { size: 1, limitPrice: 7.5, floorPrice: 7 })).reason!, /no such trade/);
+  assert.match((await r.engine.previewAdd('PE-1', { size: 0, limitPrice: 7.5, floorPrice: 7 })).reason!, /whole number/);
+  await r.engine.addToPosition('PE-1', addOf());
+  const busy = await r.engine.previewAdd('PE-1', { size: 1, limitPrice: 7.5, floorPrice: 7 });
+  assert.match(busy.reason!, /already working/);
+  assert.deepEqual(busy.failures, [], 'ineligible is not a gate failure');
+});
+
+test('[critical] an add by hand lands under the same trade, marked as by hand', async () => {
+  const { r } = await shortPE();
+  const res = await r.engine.addToPosition('PE-1', addOf({ source: { manual: true } }));
+  assert.equal(res.ok, true, res.ok ? '' : res.reason);
+  const s = await walk(r, 6_000);
+  assert.equal(s.position, -850);
+  assert.equal(r.store.all().length, 1, 'still one trade');
+  const sub = r.store.get('PE-1')!.events.find((e) => e.t === 'add_submitted');
+  assert.deepEqual(sub && 'add' in sub ? sub.add.source : null, { manual: true });
+});

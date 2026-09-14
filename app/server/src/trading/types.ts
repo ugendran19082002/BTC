@@ -253,9 +253,24 @@ export type AddWorking = {
    * else can be selling.
    */
   entrySizeBefore: number;
-  /** What caused it: the other leg's target, and how much it bought back. */
-  source: { tradeId: string; optionSide: OptionSide; boughtBack: number };
+  /** What caused it: the other leg's target, or a person at the desk. */
+  source: AddSource;
 };
+
+/**
+ * Where an add came from.
+ *
+ * The strategy adds when the other leg's target buys contracts back, and says
+ * which leg and how many; a person adds from the position card and needs no
+ * reason. Records written before the second kind existed carry the first shape
+ * and read as it -- nothing in them changes.
+ */
+export type AddSource =
+  | { tradeId: string; optionSide: OptionSide; boughtBack: number }
+  | { manual: true };
+
+/** True for an add a person asked for, as opposed to one the strategy made. */
+export const isManualAdd = (s: AddSource): s is { manual: true } => 'manual' in s;
 
 export type TradeEvent =
   | { t: 'precheck_failed'; reason: string; at: number }

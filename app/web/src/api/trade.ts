@@ -1,6 +1,6 @@
 import { json, post } from '@/api/client';
 import type {
-  OrderDraft, OrderHistory, PlaceResult, Preview, Quote, ProductSpec, Trade, TradeStatus,
+  AddDraft, AddPreview, OrderDraft, OrderHistory, PlaceResult, PrecheckFailure, Preview, Quote, ProductSpec, Trade, TradeStatus,
 } from '@/types/trade';
 
 /**
@@ -49,6 +49,32 @@ export async function setTradeMode(mode: 'live' | 'paper') {
     | { ok: true; mode: 'live' | 'paper' }
     | { ok: false; mode: 'live' | 'paper'; reason: string };
 }
+
+/**
+ * Adding to a position, in the same two steps as the ticket: the preview and
+ * the add send the same body to the same gates. Both answer 422 with reasons
+ * rather than failing, so the reasons are read, not thrown away.
+ */
+const refusable = async <T,>(path: string, body: unknown): Promise<T> => {
+  const res = await fetch(path, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const out = (await res.json()) as T & { error?: string };
+  if (!res.ok && res.status !== 422) throw new Error(out.error ?? `HTTP ${res.status}`);
+  return out;
+};
+
+export const previewAdd = (draft: AddDraft) => refusable<AddPreview>('/api/trade/add/preview', draft);
+
+/** The second call in the app that can create risk. */
+export const addToPosition = (draft: AddDraft) =>
+  refusable<
+    | { mode: 'live' | 'paper'; ok: true; trade: Trade }
+    | { mode: 'live' | 'paper'; ok: false; error: string; failures: PrecheckFailure[] }
+  >('/api/trade/add', draft);
 
 export const closeTrade = (tradeId: string) => post<{ ok: true; trade: Trade }>('/api/trade/close', { tradeId });
 

@@ -1,11 +1,12 @@
 import type {
-  AddWorking, ExchangeOrder, OptionSide, OrderRole, PlaceOrderRequest, ProductSpec, TradeEvent, TradeState,
+  AddWorking, ExchangeOrder, OptionSide, OrderRole, PlaceOrderRequest, ProductSpec, Quote, TradeEvent, TradeState,
 } from './types.js';
 import { CHASE_STEPS } from './order-plan.js';
 import { applyEvent, initialTrade, isDone, protectionSize } from './machine.js';
 import { priceFor, lotsToContracts, stopFillLimit, stopPriceFor } from './money.js';
-import { DEFAULT_LIMITS, precheck, type PrecheckResult, type RiskLimits } from './precheck.js';
-import { clampLeverage, liquidationRoom, premiumUsd } from './margin.js';
+import { DEFAULT_LIMITS, precheck, type Failure, type PrecheckResult, type RiskLimits } from './precheck.js';
+import { clampLeverage, fundsRequiredPerContract, liquidationRoom, premiumUsd } from './margin.js';
+import { fillChargesUsd } from './charges.js';
 import { ExchangeUnavailable, OrderGone, OrderRejected, SubmitTimeout, type ExchangePort } from './exchange/port.js';
 
 /**
@@ -207,6 +208,36 @@ export type AddRequest = {
 export type AddResult =
   | { ok: true; state: TradeState }
   | { ok: false; reason: string; precheck?: PrecheckResult };
+
+/** What an add would do. `ok: false` with no failures is an ineligible trade, not a gate. */
+export type AddPreview = {
+  ok: boolean;
+  reason: string | null;
+  failures: Failure[];
+  quote?: Quote | null;
+  size?: number;
+  newSize?: number;
+  newAvgPrice?: number;
+  creditUsd?: number;
+  entryChargesUsd?: number;
+  marginUsd?: number | null;
+};
+
+/**
+ * Whether this trade can take an add at all, in words, or null when it can.
+ *
+ * One place, read by the preview and by the add itself, so the sheet can never
+ * offer what the engine then refuses on a check the sheet did not know about.
+ */
+export function addEligibility(s: TradeState, size: number): string | null {
+  if (s.adding) return 'an add is already working on this position';
+  if (s.position >= 0) return 'nothing short to add to';
+  if (s.phase !== 'protected' && s.phase !== 'position_open' && s.phase !== 'unprotected') {
+    return `the position is ${s.phase.replace('_', ' ')}`;
+  }
+  if (!(size > 0) || !Number.isInteger(size)) return 'size must be a whole number above zero';
+  return null;
+}
 
 /** How long to wait before trying protection again after a refusal. */
 const PROTECT_RETRY_MS = 2_000;
@@ -520,6 +551,56 @@ export class TradeEngine {
   /** Read the exchange and believe it. */
   reconcile(tradeId: string): Promise<TradeRecord | null> {
     return this.withTrade(tradeId, () => this.reconcileInner(tradeId));
+  }
+
+  /**
+   * What an add would do, and whether the gates would let it -- nothing sent.
+   *
+   * The same eligibility and the same precheck `addInner` runs, so the sheet
+   * that offers "add 100 lots" can only ever show a size the desk will take.
+   * Sized in money as well as contracts: the new average, the credit, the
+   * charges to open, and the margin the exchange will hold, because a size
+   * that reads fine in lots is the one that ties up the account.
+   */
+  async previewAdd(tradeId: string, req: Pick<AddRequest, 'size' | 'limitPrice' | 'floorPrice'>): Promise<AddPreview> {
+    const rec = this.d.store.get(tradeId);
+    if (!rec) return { ok: false, reason: 'no such trade', failures: [] };
+    const s = rec.state;
+    const why = addEligibility(s, req.size);
+    if (why) return { ok: false, reason: why, failures: [] };
+
+    const [product, quote] = await Promise.all([
+      this.exchange.getProduct(rec.plan.symbol).catch(() => null),
+      this.exchange.getQuote(rec.plan.symbol).catch(() => null),
+    ]);
+    const gate = await this.runPrecheck(
+      { ...rec.plan, lots: req.size, entry: { type: 'limit', limitPrice: req.limitPrice, timeoutMs: 0, marketFallback: false, chase: null } },
+      product,
+      { addingToOwn: true, minPremiumUsd: Math.min(this.limits.minPremiumUsd, req.floorPrice) },
+    );
+
+    const contractValue = product?.contractValue ?? s.contractValue ?? 0.001;
+    const held = Math.abs(s.position);
+    const avg = s.entryAvgPrice ?? req.limitPrice;
+    const newSize = held + req.size;
+    const spot = this.d.spot ? this.d.spot() : null;
+    const credit = premiumUsd(req.limitPrice, req.size, contractValue);
+    const margin = spot !== null
+      ? fundsRequiredPerContract({ spot, premium: req.limitPrice, leverage: clampLeverage(rec.plan.leverage), contractValue }) * req.size
+      : null;
+    return {
+      ok: gate.ok,
+      reason: gate.ok ? null : gate.failures.map((f) => f.message).join(' '),
+      failures: gate.ok ? [] : gate.failures,
+      quote,
+      size: req.size,
+      newSize,
+      /** Weighted by contracts, as Delta nets a contract into one position. */
+      newAvgPrice: (avg * held + req.limitPrice * req.size) / newSize,
+      creditUsd: credit,
+      entryChargesUsd: fillChargesUsd({ price: req.limitPrice, contracts: req.size, contractValue, spot }).totalUsd,
+      marginUsd: margin,
+    };
   }
 
   /** Sell more of the contract this trade already holds. See `addInner`. */
@@ -1127,12 +1208,8 @@ export class TradeEngine {
     let rec = this.d.store.get(tradeId);
     if (!rec) return { ok: false, reason: 'no such trade' };
     const s = rec.state;
-    if (s.adding) return { ok: false, reason: 'an add is already working on this position' };
-    if (s.position >= 0) return { ok: false, reason: 'nothing short to add to' };
-    if (s.phase !== 'protected' && s.phase !== 'position_open' && s.phase !== 'unprotected') {
-      return { ok: false, reason: `the position is ${s.phase.replace('_', ' ')}` };
-    }
-    if (!(req.size > 0) || !Number.isInteger(req.size)) return { ok: false, reason: 'size must be a whole number above zero' };
+    const why = addEligibility(s, req.size);
+    if (why) return { ok: false, reason: why };
 
     // The entry must be finished: two sells working on one trade cannot be
     // told apart by their fills.

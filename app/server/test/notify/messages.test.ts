@@ -212,6 +212,18 @@ test('[critical] an add says how many more were sold, why, and what the whole po
   assert.match(added.text, /🎯 Target 0\.7/);
 });
 
+test('an add by hand says so, instead of inventing a target that bought something back', () => {
+  const plan = planFor(ceProduct(), { takeProfitPrice: 0.7, stopPrice: null });
+  const [, , , added] = alerts([
+    submitted(425), fill('entry', 425, 15),
+    { t: 'add_submitted', add: working({ source: { manual: true } }), at: AT },
+    { ...fill('entry', 425, 7), orderId: 'o-add' },
+  ], plan);
+  assert.ok(added);
+  assert.match(added.text, /Added by hand from the desk/);
+  assert.doesNotMatch(added.text, /target bought back/);
+});
+
 test('an add cut off at its window says how many were not sold', () => {
   const plan = planFor(ceProduct(), { takeProfitPrice: 0.7, stopPrice: null });
   const out = alerts([
