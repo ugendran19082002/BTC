@@ -416,6 +416,15 @@ export class DeltaExchange implements ExchangePort {
     const hit = live.find((r) => r.client_order_id === clientOrderId);
     if (hit) return toOrder(hit);
 
+    /*
+     * Delta ignores `client_order_id` here -- asked for one order on 14 Sep
+     * 2026 it returned the account's newest five, whichever id was asked for.
+     * The filter stays in the query in case that changes; the answer is
+     * searched regardless, and only the newest twenty can be found this way.
+     * That is one reason `getOrderById` exists: a filled order leaves
+     * /v2/orders at once and can take a moment to appear here, and in that
+     * moment this method answers "nowhere".
+     */
     const past = await this.call<DeltaOrder[]>({
       method: 'GET', path: '/v2/orders/history', query: `?client_order_id=${cid}&page_size=20`,
     }).catch(refusedRead);

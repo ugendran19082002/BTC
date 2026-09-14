@@ -54,7 +54,7 @@ export function initialTrade(args: {
   };
 }
 
-const isExit = (role: OrderRole) => role !== 'entry';
+export const isExit = (role: OrderRole) => role !== 'entry';
 
 /** Size-weighted, over the fills that actually happened. */
 function averageOf(fills: Fill[], want: (f: Fill) => boolean): { size: number; avg: number | null } {

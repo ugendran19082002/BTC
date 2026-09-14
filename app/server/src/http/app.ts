@@ -10,6 +10,7 @@ import { registerBacktestRoutes } from './routes/backtest.routes.js';
 import { registerTradeRoutes } from './routes/trade.routes.js';
 import { registerErrorRoutes } from './routes/errors.routes.js';
 import { registerStrategyRoutes } from './routes/strategy.routes.js';
+import { registerReportRoutes } from './routes/report.routes.js';
 import { noteError } from '../observability/errors.js';
 import { refuse, wasRefusal, worthLogging } from './refuse.js';
 
@@ -150,6 +151,7 @@ export async function buildApp(o: { auth?: AuthService; now?: () => number } = {
   registerTradeRoutes(app);
   registerErrorRoutes(app);
   registerStrategyRoutes(app);
+  registerReportRoutes(app);
 
   return app;
 }

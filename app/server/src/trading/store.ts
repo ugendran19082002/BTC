@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { TRADE_DB } from '../paths.js';
 import type { TradeRecord, TradeStore } from './engine.js';
+import type { MtmSample } from './pnl-history.js';
 import { appliedMigrations, migrate, type Migration } from '../db/migrate.js';
 import { recompute } from './machine.js';
 import type { TradeEvent, TradeState } from './types.js';
@@ -67,7 +68,34 @@ const MIGRATIONS: Migration[] = [
     id: '003-default-settings',
     up: `INSERT OR IGNORE INTO settings (key, value) VALUES ('expiry_default', 'first');`,
   },
+  {
+    /*
+     * The day's P&L, once a minute, so the day can be drawn as a line.
+     *
+     * 008, not 004: the strategy store shares this file and its ledger, and
+     * 004-007 are its. One ledger per database, so one sequence.
+     *
+     * In the journal's file rather than in market.db because it is about
+     * money that was made and lost, and a deploy that replaced a market file
+     * should not take a month of P&L lines with it. Pruned at ninety days.
+     */
+    id: '008-mtm-samples',
+    up: `
+      CREATE TABLE IF NOT EXISTS mtm_samples (
+        at         INTEGER PRIMARY KEY,
+        day        TEXT    NOT NULL,
+        realised   REAL    NOT NULL,
+        unrealised REAL    NOT NULL,
+        charges    REAL    NOT NULL,
+        net        REAL    NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS mtm_samples_by_day ON mtm_samples (day, at);
+    `,
+  },
 ];
+
+/** How long a day's line is kept. */
+export const MTM_KEEP_DAYS = 90;
 
 const OPEN_PHASES = "('precheck','entry_pending','entry_unknown','position_open','unprotected','protected','exit_pending')";
 
@@ -192,6 +220,36 @@ export class SqliteTradeStore implements TradeStore {
       (n, r) => n + (recompute(JSON.parse(r.state) as TradeState).realisedPnl ?? 0),
       0,
     );
+  }
+
+  /** One reading of the day. Ignored if a reading already sits at that millisecond. */
+  sampleMtm(m: MtmSample): void {
+    this.db.prepare(
+      `INSERT OR IGNORE INTO mtm_samples (at, day, realised, unrealised, charges, net)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(m.at, m.day, m.realisedUsd, m.unrealisedUsd, m.chargesUsd, m.netUsd);
+  }
+
+  /** The day's line, oldest first. */
+  mtmSamples(day: string): MtmSample[] {
+    const rows = this.db.prepare(
+      'SELECT at, day, realised, unrealised, charges, net FROM mtm_samples WHERE day = ? ORDER BY at',
+    ).all(day) as { at: number; day: string; realised: number; unrealised: number; charges: number; net: number }[];
+    return rows.map((r) => ({
+      at: r.at, day: r.day, realisedUsd: r.realised, unrealisedUsd: r.unrealised, chargesUsd: r.charges, netUsd: r.net,
+    }));
+  }
+
+  /** The days that have a line at all, newest first. */
+  mtmDays(limit = 120): string[] {
+    return (this.db.prepare('SELECT DISTINCT day FROM mtm_samples ORDER BY day DESC LIMIT ?').all(limit) as { day: string }[])
+      .map((r) => r.day);
+  }
+
+  /** Drop lines older than `keepDays`. Returns how many readings went. */
+  pruneMtm(nowMs: number, keepDays = MTM_KEEP_DAYS): number {
+    const r = this.db.prepare('DELETE FROM mtm_samples WHERE at < ?').run(nowMs - keepDays * 86_400_000);
+    return Number(r.changes);
   }
 
   private query(sql: string, ...params: unknown[]): TradeRecord[] {

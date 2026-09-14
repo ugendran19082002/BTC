@@ -12,6 +12,11 @@ import { DEFAULT_LEVERAGE, orderPlan, stopPriceFor, targetPriceFor, type PlaceIn
 
 export { stopPriceFor, targetPriceFor } from './order-plan.js';
 import { isDone } from './machine.js';
+import { tradeCharges } from './charges.js';
+import { unrealisedPnlUsd } from './margin.js';
+import { midOf } from './money.js';
+import { istDate } from '../strategy/schedule.js';
+import type { MtmSample } from './pnl-history.js';
 import { noteError } from '../observability/errors.js';
 import { alertFor, bookWentFlat, daySummaryFor } from '../notify/messages.js';
 import { TelegramNotifier } from '../notify/telegram.js';
@@ -30,6 +35,8 @@ import type { ExchangeOrder, ExchangePosition, TradeState } from './types.js';
  */
 
 const POLL_MS = 1_000;
+/** How often the day's P&L is written down. A minute draws a day in 720 points. */
+const MTM_SAMPLE_MS = 60_000;
 /** Long enough that a one-second poll is one call; short enough to feel live. */
 const POSITIONS_TTL_MS = 800;
 const QUOTE_TTL_MS = 800;
@@ -205,10 +212,66 @@ export class TradingService {
     const recovered = await this.engine.recover().catch(() => []);
     this.timer ??= setInterval(() => { void this.step(); }, POLL_MS);
     this.timer.unref?.();
+    this.mtmTimer ??= setInterval(() => { void this.sampleMtm(); }, MTM_SAMPLE_MS);
+    this.mtmTimer.unref?.();
+    this.store.pruneMtm(Date.now());
     return recovered;
   }
 
-  stop() { if (this.timer) { clearInterval(this.timer); this.timer = null; } }
+  stop() {
+    if (this.timer) { clearInterval(this.timer); this.timer = null; }
+    if (this.mtmTimer) { clearInterval(this.mtmTimer); this.mtmTimer = null; }
+  }
+
+  private mtmTimer: NodeJS.Timeout | null = null;
+
+  /**
+   * The day so far, in one place: booked, still open, and Delta's charges on
+   * every fill since the day began. `netUsd` is what the day has actually made
+   * if it closed right now.
+   *
+   * One computation, read by the status route for the header and written down
+   * by the sampler for the line -- so the number on the header and the last
+   * point on the graph can never be two different numbers.
+   */
+  async todayFigures(now = Date.now()): Promise<Omit<MtmSample, 'at' | 'day'>> {
+    const dayStart = startOfDayIst(now);
+    const realisedUsd = this.store.realisedSince(dayStart);
+    const positions = await this.positionsForDisplay(now);
+    let unrealisedUsd = 0;
+    for (const rec of this.openTrades()) {
+      const live = positions.find((p) => p.symbol === rec.state.symbol) ?? null;
+      const quote = await this.quoteForDisplay(rec.state.symbol, now);
+      const mark = live?.markPrice ?? quote?.mark ?? midOf(quote?.bid ?? null, quote?.ask ?? null);
+      unrealisedUsd += unrealisedPnlUsd({
+        entryPrice: rec.state.entryAvgPrice, markPrice: mark,
+        size: live?.size ?? rec.state.position, contractValue: rec.state.contractValue,
+      }) ?? 0;
+    }
+    const chargesUsd = this.store.between(dayStart, now + 1)
+      .reduce((n, rec) => n + tradeCharges(rec.state, { spot: this.lastSpot, since: dayStart }).totalUsd, 0);
+    return { realisedUsd, unrealisedUsd, chargesUsd, netUsd: realisedUsd + unrealisedUsd - chargesUsd };
+  }
+
+  /**
+   * Write the day down, once a minute.
+   *
+   * Only while there is something to say: a position open, or a day that has
+   * booked or paid something. A flat desk on a quiet Sunday writes nothing,
+   * and its line has no points rather than a thousand zeros.
+   */
+  async sampleMtm(now = Date.now()): Promise<void> {
+    try {
+      const f = await this.todayFigures(now);
+      if (this.openTrades().length === 0 && f.realisedUsd === 0 && f.chargesUsd === 0) return;
+      this.store.sampleMtm({ at: now, day: istDate(now), ...f });
+    } catch (e) {
+      noteError({
+        source: 'trading', level: 'warn', where: 'service/sampleMtm',
+        message: `mtm sample not written: ${(e as Error).message}`, context: {},
+      });
+    }
+  }
 
   private async step() {
     if (this.stepping) return;          // a slow exchange must not stack polls

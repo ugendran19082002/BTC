@@ -243,14 +243,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
        * Delta's charges on every fill since 05:30 IST. `netUsd` is the number
        * that matters -- what the day has actually made if it closed right now.
        */
-      today: (() => {
-        const dayStart = startOfDayIst();
-        const realisedUsd = svc.store.realisedSince(dayStart);
-        const unrealisedUsd = open.reduce((n, t) => n + (t.live.unrealisedPnl ?? 0), 0);
-        const chargesUsd = svc.store.between(dayStart, Date.now() + 1)
-          .reduce((n, rec) => n + tradeCharges(rec.state, { spot: svc.spot, since: dayStart }).totalUsd, 0);
-        return { realisedUsd, unrealisedUsd, chargesUsd, netUsd: realisedUsd + unrealisedUsd - chargesUsd };
-      })(),
+      today: await svc.todayFigures(),
       // The limit in force, which is set from the balance rather than fixed.
       limits: {
         ...DEFAULT_LIMITS,

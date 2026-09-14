@@ -79,6 +79,17 @@ the second, so `getOrderByClientId` asks both — asking the first alone reads a
 filled order as "never existed", the most dangerous wrong answer after a submit
 that timed out. (`exchange/delta.ts`, `read-retry.test.ts`)
 
+**`/v2/orders/history` ignores `client_order_id`.** Verified 14 Sep 2026: two
+queries for two different ids returned the same newest five rows. The desk
+searches the page it gets back, so only the newest twenty are findable that
+way — and a just-filled order can be in neither list for a moment. Hence:
+
+- `GET /v2/orders/{id}` — "Get Order by id", by Delta's own number from the
+  acknowledgement. Answers open or closed. `getOrderById`; the add keeps the
+  id from its ack and is looked up this way when the client-id lookup is empty.
+- A refused read (`ip_not_whitelisted_for_api_key`, any 4xx) is **unknown**,
+  never "no such order": `getOrderByClientId` throws and the engine asks again.
+
 ### Rate limits
 
 20,000 units per fixed 5-minute window, per user id for signed requests, per
