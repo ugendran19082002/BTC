@@ -113,7 +113,7 @@ The desk is on the open internet, and the API gates itself. Signing in takes
 2. the 6-digit code from Google Authenticator (or any TOTP app).
 
 At the first sign-in the second step is set up: a QR code to scan, one code to
-verify, and ten recovery codes shown once. A session lasts **24 hours** and is a
+verify, and ten recovery codes shown once. A session lasts **a week** and is a
 row in `auth.db` — so logging out ends it, and changing the password ends every
 other one. The gate in `app.ts` decides on the route Fastify matched (never on
 the text of the URL) and refuses anything that is not fully signed in. Only

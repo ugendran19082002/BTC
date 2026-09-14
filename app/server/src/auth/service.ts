@@ -18,15 +18,21 @@ import { newSecret, otpauthUrl, verifyTotp } from './totp.js';
  * token rather than upgrading the old one, so a token seen before the code was
  * entered is worthless after it.
  *
- * A signed-in session lasts 24 hours from sign-in, then asks again. Logging out
- * ends it on the server, changing the password ends every other one.
+ * A signed-in session lasts a week from sign-in, then asks again. A week, not a
+ * day: the desk is one person's, on their own phone, behind a password AND an
+ * authenticator code, and a sign-in every morning taught nobody anything except
+ * to keep the code app open. What a session length is really for -- a lost
+ * phone -- is covered better by the account page, where every device is listed
+ * and can be signed out. Logging out ends it on the server, changing the
+ * password ends every other one.
  *
  * Rate limits are on sign-in only -- the trading API is untouched. They count
  * per address AND per account, because the address can be faked through
  * X-Forwarded-For when the proxy chain lets it through, and the account cannot.
  */
 
-export const SESSION_MS = 24 * 60 * 60_000;
+export const SESSION_DAYS = 7;
+export const SESSION_MS = SESSION_DAYS * 24 * 60 * 60_000;
 export const CODE_STAGE_MS = 5 * 60_000;
 export const SETUP_STAGE_MS = 15 * 60_000;
 

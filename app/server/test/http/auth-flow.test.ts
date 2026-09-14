@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 
 /**
  * Signing in, end to end, through the real routes and the real gate.
@@ -10,8 +11,8 @@ import { join } from 'node:path';
  *   password ─► (first time) setup: QR ─► code ─► recovery codes ─► desk
  *   password ─► code ─► desk
  *
- * Plus the things around it that matter as much: 24-hour sessions, logging out
- * for real, changing the password, and how many guesses anyone gets.
+ * Plus the things around it that matter as much: week-long sessions, logging
+ * out for real, changing the password, and how many guesses anyone gets.
  */
 
 const dir = mkdtempSync(join(tmpdir(), 'auth-flow-'));
@@ -34,12 +35,14 @@ type App = Awaited<ReturnType<typeof buildApp>>;
 let app: App;
 let clock: number;
 let store: InstanceType<typeof AuthStore>;
+let dbPath: string;
 let alerts: string[];
 
 async function fresh() {
   clock = T0;
   alerts = [];
-  store = new AuthStore(join(mkdtempSync(join(dir, 'db-')), 'auth.db'));
+  dbPath = join(mkdtempSync(join(dir, 'db-')), 'auth.db');
+  store = new AuthStore(dbPath);
   store.seedUser('ugendran', hashPassword(PASSWORD), clock);
   const auth = new AuthService({ store, secrets: new Secrets('test-master-secret'), now: () => clock, onAlert: (t) => alerts.push(t) });
   app = await buildApp({ auth, now: () => clock });
@@ -206,7 +209,7 @@ test('the code step itself runs out after five minutes', async () => {
 
 // ---------------------------------------------------------------- sessions
 
-test('[critical] the session cookie: __Host-, HttpOnly, Secure, SameSite=Strict, 24 hours', async () => {
+test('[critical] the session cookie: __Host-, HttpOnly, Secure, SameSite=Strict, a week', async () => {
   const { secret } = await firstSignIn();
   const { response } = await signIn(secret);
   const c = cookieFrom(response);
@@ -215,17 +218,76 @@ test('[critical] the session cookie: __Host-, HttpOnly, Secure, SameSite=Strict,
   assert.match(c, /; HttpOnly/);
   assert.match(c, /; Secure/);
   assert.match(c, /; SameSite=Strict/);
-  assert.match(c, /; Max-Age=86400$/);
+  assert.match(c, /; Max-Age=604800$/);
   assert.doesNotMatch(c, /Domain=/);
 });
 
-test('[critical] a session lasts 24 hours from sign-in, then asks again', async () => {
+test('[critical] a session lasts a week from sign-in, then asks again', async () => {
+  assert.equal(SESSION_MS, 7 * 86_400_000, 'the constant everything else is measured against');
   const { secret } = await firstSignIn();
   const { token } = await signIn(secret);
   tick(SESSION_MS - 60_000);
   assert.equal((await desk(token)).statusCode, 200, 'a minute before');
   tick(60_001);
   assert.equal((await desk(token)).statusCode, 401, 'just after');
+});
+
+test('a week is counted from sign-in, not from the last visit: using the desk does not stretch it', async () => {
+  const { secret } = await firstSignIn();
+  const { token } = await signIn(secret);
+  for (let day = 1; day <= 7; day++) {
+    tick(86_400_000 - 1);
+    assert.equal((await desk(token)).statusCode, 200, `a moment before the end of day ${day}`);
+    tick(1);
+  }
+  assert.equal((await desk(token)).statusCode, 401, 'seven full days after sign-in, however often it was used');
+});
+
+test('the account page says when this sign-in ends, a week out', async () => {
+  const { secret } = await firstSignIn();
+  const signedInAt = clock + 31_000;
+  const { token } = await signIn(secret);
+  const r = await app.inject({ method: 'GET', url: '/api/security', headers: jar(token) });
+  assert.equal(r.statusCode, 200);
+  const body = r.json() as { sessionExpiresAt: number; sessions: { current: boolean; expiresAt: number }[] };
+  assert.equal(body.sessionExpiresAt, signedInAt + SESSION_MS);
+  assert.equal(body.sessions.find((x) => x.current)!.expiresAt, signedInAt + SESSION_MS);
+});
+
+/** Every session row, live or not -- the store has no reader for ended ones, and the product needs none. */
+const sessionRows = () => {
+  const db = new DatabaseSync(dbPath, { readOnly: true });
+  try {
+    return db.prepare("SELECT revoked_at, expires_at FROM auth_sessions WHERE stage = 'full'").all() as { revoked_at: number | null; expires_at: number }[];
+  } finally { db.close(); }
+};
+
+test('an ended session is kept a week after it ENDED, then pruned -- not a week after sign-in', async () => {
+  const { secret, token: phone } = await firstSignIn();
+  const { token: laptop } = await signIn(secret);
+  const account = (t: string) => app.inject({ method: 'GET', url: '/api/security', headers: jar(t) });
+  // the laptop signs out on day 6; that row must outlive the phone's whole session
+  tick(6 * 86_400_000);
+  await app.inject({ method: 'POST', url: '/api/logout', headers: jar(laptop) });
+  const revokedAt = clock;
+  tick(86_400_000 - 60_000);
+  await account(phone);
+  assert.equal(sessionRows().length, 2, 'day 7: both rows still there, the revoked one included');
+  // the phone's own session ends; a fresh sign-in keeps the store's prune running
+  tick(120_000);
+  const { token: tablet } = await signIn(secret);
+  await account(tablet);
+  assert.equal(sessionRows().filter((r) => r.revoked_at !== null).length, 1, 'six days after logging out, the row is kept');
+  assert.equal(sessionRows().length, 3, 'and the expired phone session too, for now');
+  tick(revokedAt + 7 * 86_400_000 - clock + 1);
+  await account(tablet);
+  const rows = sessionRows();
+  assert.equal(rows.filter((r) => r.revoked_at !== null).length, 0, 'a week after logging out, gone');
+  assert.equal(rows.filter((r) => r.expires_at < clock).length, 1, 'the phone expired later than the laptop logged out, so it stays a little longer');
+  const phoneExpired = T0 + SESSION_MS;
+  tick(phoneExpired + 7 * 86_400_000 + 1 - clock);
+  await account(tablet);
+  assert.equal(sessionRows().filter((r) => r.expires_at < clock).length, 0, 'and a week after the phone expired, it goes too');
 });
 
 test('[critical] logging out ends the session on the server, not just in the browser', async () => {

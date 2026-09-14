@@ -144,7 +144,7 @@ until it expired. Changing the password (then: editing `.env`) ended nothing.
 stored. Logging out ends the session on the server. Changing the password ends
 **every other** session. The account page lists the devices signed in — what
 they are, their address, when they were last active — with one button to sign
-the others out. Sessions last **24 hours** from sign-in; the cookie is
+the others out. Sessions last **a week** from sign-in (was 24 hours until 14 Sep 2026 — see TODO.md, "A week signed in"); the cookie is
 `__Host-desk_session`, `HttpOnly`, `Secure`, `SameSite=Strict`.
 
 ---

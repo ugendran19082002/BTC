@@ -108,13 +108,18 @@ export function countdown(untilMs: number, now = Date.now()): string {
   return `${h}h ${m}m left`;
 }
 
-/** "just now", "8s ago", "3m ago" — for a feed that is meant to be moving. */
+/**
+ * "just now", "8s ago", "3m ago", "5h ago", "3d ago" — for a feed that is
+ * meant to be moving. Days exist because a sign-in lasts a week, and "143h
+ * ago" is a sum, not a time.
+ */
 export function ago(ms: number, now = Date.now()): string {
   const d = Math.max(0, now - ms);
   if (d < 2_000) return 'just now';
   if (d < 60_000) return `${Math.floor(d / 1000)}s ago`;
   if (d < 3_600_000) return `${Math.floor(d / 60_000)}m ago`;
-  return `${Math.floor(d / 3_600_000)}h ago`;
+  if (d < 86_400_000) return `${Math.floor(d / 3_600_000)}h ago`;
+  return `${Math.floor(d / 86_400_000)}d ago`;
 }
 
 /**

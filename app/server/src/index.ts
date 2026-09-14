@@ -64,7 +64,7 @@ app.log.info(
 );
 app.log.info(
   auth.configured
-    ? `sign-in required: password and authenticator code, user "${auth.username}", sessions last 24h`
+    ? `sign-in required: password and authenticator code, user "${auth.username}", sessions last a week`
     : 'sign-in NOT set up -- the API refuses everything but /api/health and /api/me until DESK_USER, '
       + 'DESK_PASSWORD_HASH and DESK_SESSION_SECRET are set (or `npm run auth -- create` has run)',
 );

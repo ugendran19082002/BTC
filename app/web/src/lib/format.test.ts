@@ -115,6 +115,8 @@ describe('ago', () => {
     expect(ago(now - 8_000, now)).toBe('8s ago');
     expect(ago(now - 3 * 60_000, now)).toBe('3m ago');
     expect(ago(now - 2 * 3600_000, now)).toBe('2h ago');
+    expect(ago(now - 23 * 3600_000, now)).toBe('23h ago');
+    expect(ago(now - 6 * 86_400_000 - 3600_000, now)).toBe('6d ago');
   });
   it('never reports the future as a negative age', () => {
     expect(ago(now + 5_000, now)).toBe('just now');

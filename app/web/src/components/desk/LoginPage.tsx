@@ -116,7 +116,7 @@ export function LoginPage({ onSignedIn, onNeedsSetup, startAtCode = false }: {
             </form>
             <Note tone="dim">
               Next you will be asked for the 6-digit code from your authenticator app. Too many wrong tries block sign-in
-              for up to 15 minutes. You stay signed in for 24 hours.
+              for up to 15 minutes. You stay signed in for a week on this device.
             </Note>
           </>
         ) : (

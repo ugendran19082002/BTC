@@ -30,7 +30,7 @@ cd ../.. && ./deploy/deploy.sh
 
 The password itself is never stored — only a scrypt hash of it, in `.env`,
 which is git-ignored and not in any image. Sessions are a signed cookie that
-lasts a day; eight wrong attempts locks that address out for ten minutes.
+lasts a week; eight wrong attempts locks that address out for ten minutes.
 
 If you would rather it were not on the public internet at all, this machine
 runs Tailscale: change the web port in `deploy/docker-compose.yml` from
@@ -1328,8 +1328,8 @@ Full audit in `docs/SECURITY-AUDIT.md`. **No trading logic was touched.**
 - 🟠 **Two-step sign-in (Google Authenticator) is now required**, with QR setup
   at the first sign-in and ten single-use recovery codes.
 - 🟠 **Sessions are rows in `auth.db`** (only the token's hash is stored), last
-  24 hours, and can actually be ended: logging out, changing the password
-  (ends every other one), or "sign out other devices".
+  a week (24 hours until 14 Sep 2026), and can actually be ended: logging out,
+  changing the password (ends every other one), or "sign out other devices".
 - 🟠 **The page could be framed.** nginx does not inherit `add_header` into a
   location that has one, so the HTML went out with no `X-Frame-Options`. The
   headers are repeated per location, and CSP and Permissions-Policy added.
@@ -2058,3 +2058,48 @@ so a cheaper option is the same risk for less pay."*
 Still worth settling: the trading gate floors at 5 and the chain's own setting
 defaults to 15, which is the researched figure. Two numbers for one idea, and
 the sweep says the higher one is right.
+
+## A week signed in
+
+*14 September 2026*
+
+A session lasted 24 hours from sign-in. On a desk one person opens every
+morning on their own phone, that was a password and an authenticator code every
+day, and the code app taught nobody anything after the first week except to
+keep it open. **A session now lasts seven days from sign-in**, still counted
+from sign-in and not from the last visit — using the desk does not stretch it,
+so a phone left signed in still asks again on a known day.
+
+What a short session was really guarding against — a lost phone — is guarded
+better by the account page: every device is listed with its address, when it
+signed in, when it was last active and now **when its sign-in ends**, and one
+button signs the others out. Changing the password still ends every other
+session on the spot.
+
+**What changed, and where.**
+
+- `SESSION_MS` in `auth/service.ts` is `7 × 24 h`; the cookie's `Max-Age`
+  follows it (604800). The code and setup steps are still 5 and 15 minutes.
+- **DB:** no schema change. Each session row already carries its own
+  `expires_at`, so the length is a property of the sign-in, not of the table.
+  The sign-in you hold at the moment of deploy keeps the day it was issued with
+  (its cookie in the browser has the old `Max-Age` too); the next sign-in gets
+  the week. Nothing is extended behind anyone's back.
+- **Pruning** counted "a week after sign-in", which with a week-long session
+  would have deleted a row the moment it expired. It now counts a week after
+  the session *ended* — expired or signed out — so "which devices were signed
+  in" can still be answered for a while afterwards.
+- **UI:** the sign-in page says a week; the device list shows `ends 21 Sep,
+  09:30`; and `ago()` has a days tier, because "143h ago" is a sum, not a time.
+- Docs: DEPLOY.md and SECURITY-AUDIT.md say a week.
+
+**Tests** (auth-flow, 28 passing): the cookie carries `Max-Age=604800`; a
+session answers a minute before the week is up and refuses just after; daily
+use for seven days does not stretch it; the account page reports the end a
+week out; an ended row survives six days after logging out and is gone after
+seven, while a row that expired later stays a little longer.
+
+- [ ] If a week ever feels long, the right next step is not a shorter session
+  but a **fresh-code requirement on the actions that matter** (going live,
+  changing limits) — the password change already works that way.
+

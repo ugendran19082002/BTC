@@ -223,10 +223,17 @@ export class AuthStore {
     }));
   }
 
-  /** Old rows go: ended sessions after a week, security events after 180 days. */
+  /**
+   * Old rows go: a session a week after it ENDED (expired or revoked), security
+   * events after 180 days. Counted from the ending, not from sign-in -- a
+   * week-long session counted from sign-in would be deleted the moment it
+   * expired, and the row is kept a while so a "which devices were signed in"
+   * question can still be answered after the fact.
+   */
   prune(now: number): void {
-    this.db.prepare('DELETE FROM auth_sessions WHERE (revoked_at IS NOT NULL OR expires_at < ?) AND created_at < ?')
-      .run(now, now - 7 * 86_400_000);
+    const weekAgo = now - 7 * 86_400_000;
+    this.db.prepare('DELETE FROM auth_sessions WHERE expires_at < ? OR (revoked_at IS NOT NULL AND revoked_at < ?)')
+      .run(weekAgo, weekAgo);
     this.db.prepare('DELETE FROM auth_limits WHERE window_until < ?').run(now);
     this.db.prepare('DELETE FROM auth_events WHERE at < ?').run(now - 180 * 86_400_000);
   }

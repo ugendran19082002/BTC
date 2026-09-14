@@ -236,6 +236,7 @@ describe('the profile menu', () => {
     const devices = within(screen.getByRole('list', { name: 'devices' }));
     expect(devices.getByText('this device')).toBeInTheDocument();
     expect(devices.getByText('Mac · Safari')).toBeInTheDocument();
+    expect(devices.getAllByText(/^ends /)).toHaveLength(2);
     fireEvent.click(screen.getByRole('button', { name: 'Sign out the other 1 device' }));
     await waitFor(() => expect(api.signOutOthers).toHaveBeenCalled());
   });

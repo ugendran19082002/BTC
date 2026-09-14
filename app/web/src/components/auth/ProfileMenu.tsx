@@ -161,6 +161,9 @@ function Devices({ account, onChanged }: { account: Account | null; onChanged: (
             <div className="text-[11.5px] text-muted-foreground">
               {s.ip ?? 'unknown address'} · signed in {ago(s.createdAt)} · active {ago(s.lastSeenAt)}
             </div>
+            <div className="text-[11.5px] text-muted-foreground">
+              ends {stamp(s.expiresAt)}
+            </div>
           </li>
         ))}
       </ul>
