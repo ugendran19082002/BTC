@@ -269,8 +269,17 @@ Three changes, each closing a different hole:
   exchange, let `protect()` cover what is there, and say what happened. Only a
   submit that got *no answer* can still end as "never reached the exchange".
 
-The position card now says, in words, when Delta holds more than the record
-sold, with a **Re-read from Delta** button beside it (`POST /api/trade/reconcile`,
+**And the fills come back, not just the number.** A reconcile that found the
+exchange holding more than the record used to write a bare `reconciled`
+event: position 1,500, "Sold 1,400" still on the card, no price for the
+difference. It now reads the contract's order history first
+(`getOrderHistory`), and every filled order carrying this trade's own client-id
+stem — `roleOfClientId` — is absorbed as the fill it was. `absorb` adds only
+what it has not seen for that order, so the ones already on the record add
+nothing, and a position the fills explain needs no `reconciled` event at all.
+The card then reads "Sold 1,500 @ 11.82", which is Delta's figure. The
+position card says, in words, when Delta holds more than the record sold,
+with a **Re-read from Delta** button beside it (`POST /api/trade/reconcile`,
 which existed and had no button). Startup reconcile does the same on deploy.
 
 For the record, Delta's own fills on C-BTC-78800 that day: 650 @ 10.00,
