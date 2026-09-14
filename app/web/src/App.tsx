@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Collapsible from '@radix-ui/react-collapsible';
-import { Activity, AlertTriangle, Bot, Briefcase, ChevronDown, ListOrdered } from 'lucide-react';
+import { Activity, AlertTriangle, BarChart3, Bot, Briefcase, ChevronDown, ListOrdered } from 'lucide-react';
 import { NotSignedIn } from '@/api/client';
 import { getCandles, getChain, getExpiries, getHealth, getSpot } from '@/api/desk';
 import { getMe, type Stage } from '@/api/session';
@@ -53,12 +53,13 @@ const PositionsCard = lazy(() => import('@/components/trade/PositionsCard').then
 const AccountCard = lazy(() => import('@/components/trade/AccountCard').then((m) => ({ default: m.AccountCard })));
 const OrdersPanel = lazy(() => import('@/components/trade/OrdersPanel').then((m) => ({ default: m.OrdersPanel })));
 const StrategyPanel = lazy(() => import('@/components/strategy/StrategyPanel').then((m) => ({ default: m.StrategyPanel })));
+const ReportPanel = lazy(() => import('@/components/report/ReportPanel').then((m) => ({ default: m.ReportPanel })));
 const ErrorLogPanel = lazy(() => import('@/components/layout/ErrorLogPanel').then((m) => ({ default: m.ErrorLogPanel })));
 
-type Tab = 'desk' | 'trade' | 'orders' | 'strategy' | 'errors';
+type Tab = 'desk' | 'trade' | 'orders' | 'strategy' | 'pnl' | 'errors';
 
 /** A tab remembered from an older build may no longer exist; it falls back to Live. */
-const TABS: readonly Tab[] = ['desk', 'trade', 'orders', 'strategy', 'errors'];
+const TABS: readonly Tab[] = ['desk', 'trade', 'orders', 'strategy', 'pnl', 'errors'];
 const asTab = (v: string): Tab => (TABS as readonly string[]).includes(v) ? (v as Tab) : 'desk';
 
 const REFRESH_SECONDS = 5;
@@ -393,6 +394,9 @@ export default function App() {
         <button className={tab === 'strategy' ? 'on' : ''} onClick={() => setTab('strategy')}>
           <Bot aria-hidden /> <span>Strategy</span>
         </button>
+        <button className={tab === 'pnl' ? 'on' : ''} onClick={() => setTab('pnl')}>
+          <BarChart3 aria-hidden /> <span>P&L</span>
+        </button>
         <button className={tab === 'errors' ? 'on' : ''} onClick={() => setTab('errors')}>
           <AlertTriangle aria-hidden /> <span>Errors</span>
           {errors && errors.summary.unresolved > 0 && (
@@ -694,6 +698,10 @@ export default function App() {
         </ErrorBoundary>
       ) : tab === 'strategy' ? (
         <StrategyPanel />
+      ) : tab === 'pnl' ? (
+        <ErrorBoundary where="Profit and loss">
+          <ReportPanel />
+        </ErrorBoundary>
       ) : (
         <ErrorBoundary where="Error log">
           <ErrorLogPanel />

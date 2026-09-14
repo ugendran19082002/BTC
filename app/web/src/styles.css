@@ -1601,3 +1601,73 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 .logpage button:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
 /* The price axis stretches the scale, so it says so under the pointer. */
 .price-axis-grip { cursor: ns-resize; }
+
+/* ── Profit and loss ──────────────────────────────────────────────────────── */
+.report-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; }
+.report-controls .field span { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--dim); }
+.report-controls input[type="date"] { color-scheme: dark; }
+.report-quick { display: flex; gap: 6px; }
+.report-charges { margin-left: auto; min-width: 220px; }
+
+.report-totals {
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px;
+  margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: var(--panel-2);
+}
+.report-total { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.report-total-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--dim); }
+.report-total-value { font-size: 15px; font-variant-numeric: tabular-nums; color: var(--text); }
+.report-total-value.big { font-size: 20px; }
+.report-total-value.up { color: var(--up); }
+.report-total-value.down { color: var(--down); }
+.report-total-sub { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.report-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; margin-top: 14px; }
+.report-sub { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--dim); margin-bottom: 6px; }
+.pnl-svg { display: block; width: 100%; height: auto; }
+.pnl-empty { display: flex; align-items: center; justify-content: center; min-height: 120px; color: var(--dim); font-size: 12.5px; text-align: center; padding: 0 12px; }
+
+/* The calendar: months side by side, each seven squares wide. */
+.pnl-cal { display: flex; gap: 14px; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+.pnl-month { flex: none; }
+.pnl-month-label { font-size: 11px; font-weight: 600; letter-spacing: 0.6px; color: var(--muted); text-align: center; margin-bottom: 6px; }
+.pnl-dow, .pnl-week { display: grid; grid-template-columns: repeat(7, 22px); gap: 3px; }
+.pnl-dow span { font-size: 9.5px; color: var(--dim); text-align: center; }
+.pnl-day {
+  appearance: none; border: 1px solid transparent; padding: 0; width: 22px; height: 22px; border-radius: 4px;
+  background: var(--panel-2); color: transparent; font: inherit; font-size: 9px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.pnl-day.empty { background: transparent; cursor: default; }
+.pnl-day.flat { background: var(--panel-2); }
+.pnl-day.up.l1 { background: #0ecb8140; } .pnl-day.up.l2 { background: #0ecb8180; } .pnl-day.up.l3 { background: #0ecb81; }
+.pnl-day.down.l1 { background: #f6465d40; } .pnl-day.down.l2 { background: #f6465d80; } .pnl-day.down.l3 { background: #f6465d; }
+.pnl-day:not(.empty):hover, .pnl-day.selected { border-color: var(--text); color: var(--text); }
+.pnl-day.l3 { color: #0b0e11; }
+.pnl-day.l3:hover, .pnl-day.l3.selected { color: #0b0e11; }
+.pnl-day:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+.pnl-key { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; font-size: 11px; color: var(--muted); }
+.pnl-key span { display: inline-flex; align-items: center; gap: 5px; }
+.pnl-key i.pnl-day { width: 12px; height: 12px; border-radius: 3px; cursor: default; }
+
+/* The day's line. */
+.mtm-figures { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 8px; }
+.mtm-fig { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.mtm-fig-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--dim); }
+.mtm-fig-value { font-size: 15px; font-variant-numeric: tabular-nums; color: var(--text); }
+.mtm-fig-value.big { font-size: 22px; }
+.mtm-fig-value.up { color: var(--up); }
+.mtm-fig-value.down { color: var(--down); }
+.mtm-fig-sub { font-size: 11px; color: var(--muted); }
+.report-day {
+  background: var(--bg); border: 1px solid var(--line); color: var(--text);
+  border-radius: 6px; padding: 4px 8px; font-size: 12px; font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+
+@media (max-width: 760px) {
+  .report-charges { margin-left: 0; min-width: 0; flex: 1 1 100%; }
+  .report-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .report-total:first-child { grid-column: 1 / -1; }
+  .report-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .mtm-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mtm-fig:first-child { grid-column: 1 / -1; }
+}
