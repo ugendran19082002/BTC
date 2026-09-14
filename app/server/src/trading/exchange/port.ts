@@ -41,6 +41,13 @@ export interface ExchangePort {
    * that number finds it open or closed.
    */
   getOrderById(orderId: string): Promise<ExchangeOrder | null>;
+  /**
+   * Orders on one contract that have finished -- filled or cancelled -- newest
+   * first, up to `limit`. What a reconcile reads to find fills the desk missed:
+   * a numbered, filled order the record does not carry is a fill the record
+   * is short of.
+   */
+  getOrderHistory(symbol: string, limit?: number): Promise<ExchangeOrder[]>;
   getOpenOrders(symbol?: string): Promise<ExchangeOrder[]>;
   getPositions(): Promise<ExchangePosition[]>;
   getBalanceUsd(): Promise<number>;

@@ -313,6 +313,15 @@ export class PaperExchange implements ExchangePort {
     return id ? { ...this.orders.get(id)! } : null;
   }
 
+  async getOrderHistory(symbol: string, limit = 50): Promise<ExchangeOrder[]> {
+    this.guard();
+    return [...this.orders.values()]
+      .filter((o) => o.symbol === symbol && o.status !== 'open' && o.status !== 'partial')
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, limit)
+      .map((o) => ({ ...o }));
+  }
+
   async getOpenOrders(symbol?: string): Promise<ExchangeOrder[]> {
     this.guard();
     return [...this.orders.values()]

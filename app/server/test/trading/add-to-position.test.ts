@@ -385,16 +385,49 @@ test('[critical] an acknowledged add that is never found again is read back from
   let s = (await r.engine.poll('PE-1'))!;
   assert.ok(s.adding, 'still tracked while the window is open');
 
-  // past it: the position is the truth
+  // past it: the exchange is the truth, and its order history has the fill
   r.advance(6_000);
   s = (await r.engine.poll('PE-1'))!;
   assert.equal(s.adding, null);
   assert.equal(s.position, -850, 'what the exchange holds');
+  assert.equal(s.entrySize, 850, 'as a fill on the record, not a bare number');
+  assert.equal(s.entryAvgPrice, 11.25, '(15 x 425 + 7.5 x 425) / 850 -- the price came back with it');
   const done = r.store.get('PE-1')!.events.find((e) => e.t === 'add_done');
+  assert.equal(done && 'filled' in done ? done.filled : null, 425, 'and the add is credited with what it sold');
   assert.match(done && 'reason' in done ? done.reason : '', /read back from the exchange/);
   assert.doesNotMatch(done && 'reason' in done ? done.reason : '', /never reached/);
   assert.deepEqual((await book(r)).filter((o) => o.reduceOnly).map((o) => o.left), [850, 850],
     'and the target and stop cover all of it');
+});
+
+test('[critical] reconcile recovers a fill the record is missing, with its price', async () => {
+  // The live case: the exchange holds 100 more than the record sold, and the
+  // order that sold them is in the history under our own client id.
+  const { r } = await shortPE();
+  await r.engine.addToPosition('PE-1', addOf({ source: { manual: true } }));
+  r.ex.tick(quote(PE, 7.5, 8, { mark: 7.7, ts: r.now() }));   // fills the add on the venue
+
+  // the desk's record, as it was left: the add written off, position 425
+  const rec = r.store.get('PE-1')!;
+  rec.events.push({ t: 'add_done', filled: 0, reason: 'the order never reached the exchange', at: r.now() });
+  rec.state = { ...rec.state, adding: null };
+  r.store.save(rec);
+  assert.equal(r.store.get('PE-1')!.state.entrySize, 425);
+
+  const fixed = (await r.engine.reconcile('PE-1'))!.state;
+  assert.equal(fixed.position, -850);
+  assert.equal(fixed.entrySize, 850, 'the missing fill is on the record');
+  assert.equal(fixed.entryAvgPrice, 11.25, 'at the price it filled at');
+  assert.equal(fixed.fills.filter((f) => f.role === 'entry').length, 2);
+  assert.ok(!r.store.get('PE-1')!.events.some((e) => e.t === 'reconciled'),
+    'nothing left to reconcile by number: the fills explained all of it');
+});
+
+test('reconcile leaves a record alone that already carries every fill', async () => {
+  const { r } = await shortPE();
+  const before = r.store.get('PE-1')!.events.length;
+  await r.engine.reconcile('PE-1');
+  assert.equal(r.store.get('PE-1')!.events.length, before, 'absorb adds nothing it has seen');
 });
 
 test('a submit with no answer that is never found is still the one case that never landed', async () => {

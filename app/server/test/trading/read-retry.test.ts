@@ -223,3 +223,15 @@ test('only a 404 on the id lookup means the venue never issued it', async () => 
   answers({ status: 500, body: { success: false, error: { code: 'internal_server_error' } } });
   await assert.rejects(new DeltaExchange(creds).getOrderById('1'), ExchangeUnavailable);
 });
+
+test('the contract\'s order history is filtered here, whatever the venue does with the filter', async () => {
+  const row = (id: number, sym: string) => ({
+    id, client_order_id: `c${id}`, product_id: 1, product_symbol: sym, side: 'sell', order_type: 'limit_order',
+    size: 10, unfilled_size: 0, limit_price: '25', state: 'closed', average_fill_price: '25', reduce_only: false,
+    created_at: '2026-09-14T02:46:58Z', updated_at: '2026-09-14T02:47:15Z',
+  });
+  const seen = answers({ status: 200, body: { success: true, result: [row(1, 'C-BTC-78800-140926'), row(2, 'P-BTC-75200-140926')] } });
+  const got = await new DeltaExchange(creds).getOrderHistory('C-BTC-78800-140926', 50);
+  assert.deepEqual(got.map((o) => o.orderId), ['1'], 'the other contract\'s order is dropped');
+  assert.match(seen[0]!, /product_symbols=C-BTC-78800-140926/);
+});

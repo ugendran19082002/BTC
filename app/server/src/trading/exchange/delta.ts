@@ -408,6 +408,17 @@ export class DeltaExchange implements ExchangePort {
     return row ? toOrder(row) : null;
   }
 
+  async getOrderHistory(symbol: string, limit = 50): Promise<ExchangeOrder[]> {
+    // Filtered here as well as in the query: this endpoint has ignored one
+    // filter already (see getOrderByClientId), and a venue's filter is a
+    // request, not a guarantee.
+    const rows = await this.call<DeltaOrder[]>({
+      method: 'GET', path: '/v2/orders/history',
+      query: `?product_symbols=${encodeURIComponent(symbol)}&page_size=${Math.max(1, Math.min(200, limit))}`,
+    }).catch(refusedRead);
+    return rows.map(toOrder).filter((o) => o.symbol === symbol);
+  }
+
   async getOrderByClientId(clientOrderId: string): Promise<ExchangeOrder | null> {
     const cid = encodeURIComponent(clientOrderId);
     const live = await this.call<DeltaOrder[]>({

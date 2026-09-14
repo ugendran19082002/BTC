@@ -268,7 +268,20 @@ const ROLE_CODE: Record<OrderRole | 'exit', string> = {
  * which is what makes a retry after a timeout safe.
  */
 export const clientId = (tradeId: string, role: OrderRole | 'exit', n = 0): string =>
-  `${tradeId.replace(/[^A-Za-z0-9]/g, '').slice(-18)}${ROLE_CODE[role]}${n}`;
+  `${clientStem(tradeId)}${ROLE_CODE[role]}${n}`;
+
+/** The part of every client id that names the trade. */
+export const clientStem = (tradeId: string): string => tradeId.replace(/[^A-Za-z0-9]/g, '').slice(-18);
+
+/** Which of ours an exchange order is, read back off its client id -- or null if it is not ours. */
+export function roleOfClientId(clientOrderId: string | null, stem: string): OrderRole | null {
+  if (!clientOrderId || !stem || !clientOrderId.startsWith(stem)) return null;
+  const code = clientOrderId.charAt(stem.length);
+  const role = (Object.keys(ROLE_CODE) as (OrderRole | 'exit')[]).find((r) => ROLE_CODE[r] === code);
+  // The rest must be the counter: a stem that happens to prefix another
+  // trade's id would carry that trade's stem characters here, not digits.
+  return role && /^\d+$/.test(clientOrderId.slice(stem.length + 1)) ? role : null;
+}
 
 export class TradeEngine {
   private readonly limits: RiskLimits;
@@ -1426,11 +1439,41 @@ export class TradeEngine {
     return rec;
   }
 
+  /**
+   * The fills this trade's orders had that the record does not.
+   *
+   * Every order the desk sends carries the trade's own stem in its client id,
+   * so the contract's order history can be read back and any filled order
+   * with our stem absorbed -- `absorb` only adds what it has not seen for that
+   * order, so the ones already on the record add nothing. This is how a lost
+   * add (14 Sep 2026: 100 @ 23, acknowledged, filled, and written off) comes
+   * back as the fill it was, with its price, rather than as a bare position
+   * the record cannot explain: the card then reads "Sold 1,500 @ 11.82",
+   * which is what Delta says, instead of "Sold 1,400" over a position of 1,500.
+   */
+  private async recoverFills(recIn: TradeRecord): Promise<TradeRecord> {
+    let rec = recIn;
+    const stem = clientStem(rec.state.tradeId);
+    const history = await this.exchange.getOrderHistory(rec.plan.symbol, 50).catch(() => null);
+    if (!history) return rec;
+    for (const o of history) {
+      const role = roleOfClientId(o.clientOrderId, stem);
+      if (role === null || o.filledSize <= 0) continue;
+      rec = this.absorb(rec, o, role);
+    }
+    return rec;
+  }
+
   private async syncPosition(recIn: TradeRecord): Promise<TradeRecord> {
     let rec = recIn;
     const positions = await this.exchange.getPositions().catch(() => null);
     if (positions === null) return rec;
     const held = positions.find((p) => p.symbol === rec.plan.symbol)?.size ?? 0;
+    if (held !== rec.state.position) {
+      // The fills first: a position that can be explained by orders the desk
+      // sent is a record with a gap, and the gap is filled with the fills.
+      rec = await this.recoverFills(rec);
+    }
     if (held !== rec.state.position) {
       rec = this.commit(rec, {
         t: 'reconciled', position: held, at: this.now(),

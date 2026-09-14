@@ -1,3 +1,4 @@
+import { clientId, clientStem, roleOfClientId } from '../../src/trading/engine.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { rig, ceProduct, peProduct, planFor, quote, T0 } from './harness.js';
@@ -1376,4 +1377,23 @@ test('81b a position the exchange has not registered yet still backs off rather 
   await r.engine.poll(plan.tradeId);
 
   assert.equal(calls, 0, 'the next poll waited rather than asking again immediately');
+});
+
+
+// ------------------------------------------------ whose order is this
+
+test('[critical] an order is ours if its client id carries the trade\'s stem and a role code', () => {
+  const stem = clientStem('C-BTC-78800-140926-1789344005840');
+  assert.equal(roleOfClientId(clientId('C-BTC-78800-140926-1789344005840', 'entry', 101), stem), 'entry');
+  assert.equal(roleOfClientId(clientId('C-BTC-78800-140926-1789344005840', 'take_profit'), stem), 'take_profit');
+  assert.equal(roleOfClientId(clientId('C-BTC-78800-140926-1789344005840', 'exit', 1), stem), 'exit');
+  assert.equal(roleOfClientId('409261789344005840E101', stem), 'entry', 'the live id from 14 Sep');
+});
+
+test('another trade\'s order is never ours, however similar its id', () => {
+  const stem = clientStem('C-BTC-78800-140926-1789344005840');
+  assert.equal(roleOfClientId(clientId('C-BTC-78800-140926-1789344008971', 'entry'), stem), null, 'a different trade on the same contract');
+  assert.equal(roleOfClientId(null, stem), null, 'an order with no client id is not ours');
+  assert.equal(roleOfClientId(`${stem}Q1`, stem), null, 'a code we never issue');
+  assert.equal(roleOfClientId(`${stem}Ex`, stem), null, 'a counter that is not a number');
 });
