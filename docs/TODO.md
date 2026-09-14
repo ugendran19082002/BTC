@@ -240,6 +240,57 @@ chain. It was taken out by mistake for one deploy and put straight back.
 
 ---
 
+## Two score bars on a strategy — 14 Sep 2026
+
+A strategy can now be held back by either of the two numbers the live screen
+already shows, and each is off until it is switched on.
+
+**The sudden-move limit waits.** `maxShockScore`, 1-100: the desk enters only
+while `domain/shock.ts`'s five-minute reading is at or under the bar. Above it
+the strategy is **held, not refused** — nothing is claimed, the next tick looks
+again, and if the entry window closes still above the bar the missed-entry
+alert says nothing was tried. "Enter when it is calm" is what was asked for,
+and a gate that burned the whole day on one noisy five minutes would be a
+different rule. The five-minute window is the one the live screen shows by
+default, so the number a person sees is the number the gate uses.
+
+**The sell-score bar refuses.** `minSellScore`, 1-100: a leg the strike rule
+picks but the board's own sell score will not have is stood down for the day,
+exactly as the probability gate stands one down — the strike is what it is, and
+asking again in twenty seconds gets the same answer. The score comes from
+`attachEv`, the same arithmetic the board draws, because a bar checked against
+a privately recomputed number is a bar nobody can check.
+
+**An unread risk is not a calm one.** Both refuse what they cannot read: a desk
+one minute old has no volatility history and no open-interest history, so it
+can take no reading at all, and treating that as calm would open the gate
+widest exactly when it knows least. Absent is not zero, here as everywhere.
+
+**No migration.** The config is JSON in a TEXT column and `hydrate` merges
+`DEFAULT_CONFIG` over what it reads, so every strategy saved before today comes
+back with both bars `null` — off, which is what they have been doing. A
+migration writing a number into them would be a migration that changed what
+saved strategies do.
+
+**The screen stopped saying "due now" while the desk waited.** `schedule.ts`
+answers from the clock alone, so a held strategy read "due now" minute after
+minute with nothing happening. `strategy/holds.ts` keeps the reason in memory —
+a hold is true of this minute and nothing else, and a restart is allowed to
+forget it — and `statusOf` puts it where the screen already prints the clock's
+answer. A hold outranks "due now" and never outranks "already ran today".
+
+Where each part lives, and why: the two decisions are pure and tested by hand
+(`strategy/gate.ts`, and the bar inside `selectLegs`); the runner only reads the
+tape and calls them, which is the same split `select.ts` and `schedule.ts`
+already keep. The reading itself is shaped in one place, `market/shock-now.ts`,
+so the gate and the live screen cannot drift onto two different numbers.
+
+Both are **untested as trading rules**, and differently untested from the
+probability gate beside them: that one carries a 733-day record and neither of
+these carries any. The form says so.
+
+---
+
 ## A control that did nothing, and a chart that took the page — 14 Sep 2026
 
 Four things reported from the live screen, all of them the same kind of fault:
