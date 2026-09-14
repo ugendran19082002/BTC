@@ -412,6 +412,17 @@ export function ChainTable({
   const at = (k: number, cp: 'C' | 'P') => legs.find((l) => l.strike === k && l.cp === cp);
   const showCalls = view !== 'puts';
   const showPuts = view !== 'calls';
+  /*
+   * One side, and the strike leads.
+   *
+   * A board showing both sides puts the strike in the middle, which is how an
+   * option chain is laid out everywhere and is right on a desk. On a phone it
+   * is the wrong shape twice over: the row is 27 columns wide, and the one
+   * column you need to keep your place — the strike — sits in the middle,
+   * where nothing can pin it. Showing one side moves it to the front, where it
+   * can stay put while the rest slides under it.
+   */
+  const oneSided = showCalls !== showPuts;
 
   const allStrikes = [...new Set(legs.map((l) => l.strike))].sort((a, b) => a - b);
   const keeps = (k: number) => {
@@ -459,19 +470,26 @@ export function ChainTable({
   const sold: Partial<Record<'C' | 'P', number>> = {};
   for (const s of sides) sold[s.side === 'CE' ? 'C' : 'P'] = s.leg.strike;
 
+  const picked = showCalls ? sold.C : sold.P;
+  const opensAt = (picked !== undefined && strikes.includes(picked) ? picked : null)
+    ?? (sold.C ?? sold.P ?? snap.atm);
+
   // Open on the money. The interesting strikes are around spot, and a table
   // that opens at its lowest strike makes you scroll to find where you are.
   const box = useRef<HTMLDivElement>(null);
-  const atmRow = useRef<HTMLTableRowElement>(null);
+  const openAt = useRef<HTMLTableRowElement>(null);
   const shownFor = useRef<string | null>(null);
   useEffect(() => {
-    const b = box.current, r = atmRow.current;
+    const b = box.current, r = openAt.current;
     if (!b || !r) return;
-    // The strike sits in the middle of the table, calls to its left and puts to
-    // its right. On a phone the table is wider than the screen, and opening at
-    // either edge shows one side of the board with the strike off-screen -- so
-    // centre it, and both bids are a short swipe away.
-    b.scrollLeft = Math.max(0, (b.scrollWidth - b.clientWidth) / 2);
+    /*
+     * Both sides: the strike is in the middle, so centre the box -- opening at
+     * either edge shows one side with the strike off-screen.
+     *
+     * One side: the strike leads and is pinned there, so the box opens at the
+     * left, where the columns nearest the strike are the ones being read.
+     */
+    b.scrollLeft = oneSided ? 0 : Math.max(0, (b.scrollWidth - b.clientWidth) / 2);
     /*
      * Down the page only when you changed the expiry or the column set.
      *
@@ -483,7 +501,7 @@ export function ChainTable({
     const key = snap.expiry;
     if (shownFor.current !== null && shownFor.current !== key) r.scrollIntoView?.({ block: 'center' });
     shownFor.current = key;
-  }, [snap.atm, snap.expiry, perSide]);
+  }, [snap.atm, snap.expiry, perSide, opensAt, oneSided]);
 
   return (
     <>
@@ -502,7 +520,7 @@ export function ChainTable({
       still scrolls sideways, because on a phone the board is wider than the
       screen and nothing can be done about that.
     */}
-    <div className="scroll chain" ref={box}>
+    <div className={`scroll chain${oneSided ? ' chain-one' : ''}`} ref={box}>
       <table>
         <thead>
           <tr>
@@ -513,18 +531,40 @@ export function ChainTable({
               strip down the right of the box, and the calls bid pushed off the
               left edge on a phone.
             */}
-            {showCalls && <th colSpan={perSide} className="left ce">CALLS</th>}
-            <th>STRIKE</th>
-            {showPuts && <th colSpan={perSide} className="left pe">PUTS</th>}
+            {oneSided ? (
+              <>
+                <th className="strikehead" />
+                <th colSpan={perSide} className={`left ${showCalls ? 'ce' : 'pe'}`}>
+                  {showCalls ? 'CALLS' : 'PUTS'}
+                </th>
+              </>
+            ) : (
+              <>
+                <th colSpan={perSide} className="left ce">CALLS</th>
+                <th>STRIKE</th>
+                <th colSpan={perSide} className="left pe">PUTS</th>
+              </>
+            )}
           </tr>
           <tr>
-            {showCalls && shownCols.map((c) => (
-              <th key={c.key} className={HEAD_CLASS[c.key]} title={c.why}>{c.short}</th>
-            ))}
-            <th />
-            {showPuts && [...shownCols].reverse().map((c) => (
-              <th key={c.key} className={HEAD_CLASS[c.key]} title={c.why}>{c.short}</th>
-            ))}
+            {oneSided ? (
+              <>
+                <th className="strikehead">Strike</th>
+                {shownCols.map((c) => (
+                  <th key={c.key} className={HEAD_CLASS[c.key]} title={c.why}>{c.short}</th>
+                ))}
+              </>
+            ) : (
+              <>
+                {shownCols.map((c) => (
+                  <th key={c.key} className={HEAD_CLASS[c.key]} title={c.why}>{c.short}</th>
+                ))}
+                <th />
+                {[...shownCols].reverse().map((c) => (
+                  <th key={c.key} className={HEAD_CLASS[c.key]} title={c.why}>{c.short}</th>
+                ))}
+              </>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -534,12 +574,16 @@ export function ChainTable({
             const sellC = sold.C === k;
             const sellP = sold.P === k;
             const isAtm = k === snap.atm;
+            // The board opens on what the desk picked, and on the money only
+            // when it picked nothing: sixty-five strikes exist and the ten
+            // around the pick are the ones being decided between.
+            const isOpener = k === opensAt;
             const heldC = held?.get(heldKey('C', k));
             const heldP = held?.get(heldKey('P', k));
             return (
               <tr
                 key={k}
-                ref={isAtm ? atmRow : undefined}
+                ref={isOpener ? openAt : undefined}
                 className={[
                   isAtm ? 'atm' : '',
                   sellC || sellP ? 'sold' : '',
@@ -549,44 +593,94 @@ export function ChainTable({
                   heldC || heldP ? 'holding' : '',
                 ].filter(Boolean).join(' ') || undefined}
               >
-                {showCalls && shownCols.map((c) => (
-                  <Cell key={c.key} col={c.key} leg={cc} cp="C" strike={k} sold={sellC} ctx={ctx} />
-                ))}
+                {oneSided ? (
+                  <>
                 <td className="mono strikecell">
-                  {onInspect
-                    ? (
-                      <button
-                        type="button"
-                        className="strikebtn"
-                        onClick={() => onInspect(cc ? 'C' : 'P', k)}
-                        aria-label={`what is at strike ${k}`}
-                      >
-                        {k}
-                      </button>
-                    )
-                    : k}
-                  {isAtm && <span className="tag">ATM</span>}
-                  {heldC && <HeldChip held={heldC} />}
-                  {heldP && <HeldChip held={heldP} />}
-                  {/*
-                    Quiet, and it says what it rests on. The premium floor, the
-                    strike rule and the safety bar are no longer controls on
-                    screen, so a loud "SELL CE" asserts a recommendation whose
-                    inputs a reader cannot see. The mark stays -- the pick has to
-                    be findable on the board it came from -- but it is a mark,
-                    not a headline.
-                  */}
-                  {sellC && !heldC && (
-                    <span className="tag pick" title={PICK_WHY}>CE</span>
-                  )}
-                  {sellP && !heldP && (
-                    <span className="tag pick" title={PICK_WHY}>PE</span>
-                  )}
-                </td>
+                      {onInspect
+                        ? (
+                          <button
+                            type="button"
+                            className="strikebtn"
+                            onClick={() => onInspect(cc ? 'C' : 'P', k)}
+                            aria-label={`what is at strike ${k}`}
+                          >
+                            {k}
+                          </button>
+                        )
+                        : k}
+                      {isAtm && <span className="tag">ATM</span>}
+                      {heldC && <HeldChip held={heldC} />}
+                      {heldP && <HeldChip held={heldP} />}
+                      {/*
+                        Quiet, and it says what it rests on. The premium floor, the
+                        strike rule and the safety bar are no longer controls on
+                        screen, so a loud "SELL CE" asserts a recommendation whose
+                        inputs a reader cannot see. The mark stays -- the pick has to
+                        be findable on the board it came from -- but it is a mark,
+                        not a headline.
+                      */}
+                      {sellC && !heldC && (
+                        <span className="tag pick" title={PICK_WHY}>CE</span>
+                      )}
+                      {sellP && !heldP && (
+                        <span className="tag pick" title={PICK_WHY}>PE</span>
+                      )}
+                    </td>
 
-                {showPuts && [...shownCols].reverse().map((c) => (
-                  <Cell key={c.key} col={c.key} leg={pp} cp="P" strike={k} sold={sellP} ctx={ctx} />
-                ))}
+                    {shownCols.map((c) => (
+                      <Cell
+                        key={c.key} col={c.key}
+                        leg={showCalls ? cc : pp}
+                        cp={showCalls ? 'C' : 'P'}
+                        strike={k}
+                        sold={showCalls ? sellC : sellP}
+                        ctx={ctx}
+                      />
+                    ))}
+                  </>
+                ) : (
+                  <>
+                    {shownCols.map((c) => (
+                      <Cell key={c.key} col={c.key} leg={cc} cp="C" strike={k} sold={sellC} ctx={ctx} />
+                    ))}
+                <td className="mono strikecell">
+                      {onInspect
+                        ? (
+                          <button
+                            type="button"
+                            className="strikebtn"
+                            onClick={() => onInspect(cc ? 'C' : 'P', k)}
+                            aria-label={`what is at strike ${k}`}
+                          >
+                            {k}
+                          </button>
+                        )
+                        : k}
+                      {isAtm && <span className="tag">ATM</span>}
+                      {heldC && <HeldChip held={heldC} />}
+                      {heldP && <HeldChip held={heldP} />}
+                      {/*
+                        Quiet, and it says what it rests on. The premium floor, the
+                        strike rule and the safety bar are no longer controls on
+                        screen, so a loud "SELL CE" asserts a recommendation whose
+                        inputs a reader cannot see. The mark stays -- the pick has to
+                        be findable on the board it came from -- but it is a mark,
+                        not a headline.
+                      */}
+                      {sellC && !heldC && (
+                        <span className="tag pick" title={PICK_WHY}>CE</span>
+                      )}
+                      {sellP && !heldP && (
+                        <span className="tag pick" title={PICK_WHY}>PE</span>
+                      )}
+                    </td>
+
+                    {[...shownCols].reverse().map((c) => (
+                      <Cell key={c.key} col={c.key} leg={pp} cp="P" strike={k} sold={sellP} ctx={ctx} />
+                    ))}
+                  </>
+                )}
+
               </tr>
             );
           })}

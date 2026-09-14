@@ -55,10 +55,10 @@ export function LogTable({
     <table className="logtable" aria-label={label}>
       <thead>
         <tr>
-          <th>When</th>
-          <th>Strategy</th>
-          {hasExtra && <th>{extraHead ?? ''}</th>}
-          <th>Outcome</th>
+          <th className="when">When</th>
+          <th className="who">Strategy</th>
+          {hasExtra && <th className="extra">{extraHead ?? ''}</th>}
+          <th className="outcome">Outcome</th>
           <th className="detail">What happened</th>
         </tr>
       </thead>

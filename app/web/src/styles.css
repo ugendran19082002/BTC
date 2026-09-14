@@ -1319,7 +1319,14 @@ td.liq-normal, td.liq-none { color: var(--dim); }
    carrying a name, a time, an outcome and a sentence. Thirty of those is a page
    you scroll rather than read, and what a person is doing is scanning one
    column for the day that went wrong. */
-.logtable { width: 100%; border-collapse: collapse; font-size: 12px; }
+/*
+   `fixed`, and every column but the sentence given a width.
+   On `auto` the browser sizes each column to its content, so the sentence --
+   which is a whole sentence -- pushed the table wider than the card and ran off
+   the right edge of the screen. Fixed layout hands the remainder to the
+   sentence and lets it wrap, which is the only column that should.
+*/
+.logtable { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 12px; }
 .logtable th {
   position: static; background: none;
   padding: 0 12px 6px 0;
@@ -1336,17 +1343,31 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 }
 .logtable tr:last-child td { border-bottom: 0; }
 .logtable th:last-child, .logtable td:last-child { padding-right: 0; }
-.logtable .when { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--dim); }
-.logtable .who { white-space: nowrap; color: var(--text); font-weight: 500; }
-.logtable .extra { white-space: nowrap; font-variant-numeric: tabular-nums; }
-.logtable .outcome { white-space: nowrap; font-weight: 500; }
-/* The sentence takes whatever is left; it is the part worth reading. */
-.logtable td.detail { width: 100%; line-height: 1.4; }
+/* The four narrow columns are sized; anything too long for one is clipped with
+   an ellipsis rather than widening the table. */
+.logtable .when, .logtable .who, .logtable .extra, .logtable .outcome {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.logtable .when { width: 9.5rem; font-variant-numeric: tabular-nums; color: var(--dim); }
+.logtable .who { width: 10rem; color: var(--text); font-weight: 500; }
+.logtable .extra { width: 6.5rem; font-variant-numeric: tabular-nums; }
+.logtable .outcome { width: 7rem; font-weight: 500; }
+/* The sentence takes whatever is left, and is the only column that wraps. */
+.logtable td.detail {
+  width: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
 
 @media (max-width: 700px) {
   /* A sentence in a ninety-pixel column is unreadable at any width, so the row
      becomes a block rather than the table becoming a sideways scroller. */
   .logtable, .logtable tbody, .logtable tr, .logtable td { display: block; width: auto; }
+  /* Stacked, nothing is a column any more, so nothing is clipped either. */
+  .logtable .when, .logtable .who, .logtable .extra, .logtable .outcome {
+    overflow: visible; text-overflow: clip; white-space: normal;
+  }
   .logtable thead { display: none; }
   .logtable tr {
     padding: 9px 0;
@@ -1368,4 +1389,33 @@ td.liq-normal, td.liq-none { color: var(--dim); }
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* ── One side, with the strike pinned ───────────────────────────────────────
+   Both sides is 27 columns with the strike in the middle, which is right on a
+   desk and the wrong shape twice over on a phone: too wide to read, and the one
+   column you keep your place with sits where nothing can pin it. Showing one
+   side moves the strike to the front, where it stays while the rest slides
+   under it. */
+.chain th.strikehead,
+.chain-one td.strikecell,
+.chain-one th.strikehead {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: var(--panel-2);
+}
+/* The header cell is sticky in both directions, so it outranks its own row. */
+.chain-one thead th.strikehead { z-index: 4; }
+.chain-one td.strikecell {
+  /* A hairline that says the column is pinned rather than merely first. */
+  box-shadow: 1px 0 0 var(--line);
+}
+.chain-one tr.atm td.strikecell { background: #1c3350; }
+.chain-one tr.sold td.strikecell,
+.chain-one tr.holding td.strikecell { background: var(--panel-2); }
+
+@media (min-width: 761px) {
+  /* On a desk both sides fit, so nothing needs pinning. */
+  .chain-one td.strikecell, .chain-one th.strikehead { position: static; box-shadow: none; }
 }

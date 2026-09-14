@@ -21,6 +21,7 @@ import { MoveSection } from '@/components/desk/MoveSection';
 import { TodayPnl } from '@/components/desk/TodayPnl';
 import { DateTimePicker, istToEpoch, type IstMoment } from '@/components/research/DateTimePicker';
 import { usePersisted } from '@/hooks/usePersisted';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { LoginPage } from '@/components/desk/LoginPage';
 import { LivePrice } from '@/components/desk/LivePrice';
 import { MarketInsights } from '@/components/desk/MarketInsights';
@@ -115,7 +116,17 @@ export default function App() {
   const [storedCols, setCols] = usePersisted<Partial<ColumnState> | null>('chain:columns', null);
   // A choice stored by an older build may not name every column this one has.
   const chainColumns = normalise(storedCols);
-  const [chainView, setChainView] = usePersisted<'calls' | 'puts' | 'both'>('chain:view', 'both');
+  const [storedView, setChainView] = usePersisted<'calls' | 'puts' | 'both'>('chain:view', 'both');
+  const narrow = useMediaQuery('(max-width: 760px)');
+  /*
+   * One side on a phone, whichever side was last chosen.
+   *
+   * Both sides is 27 columns, and the strike — the one column you keep your
+   * place with — then sits in the middle where nothing can pin it. The stored
+   * choice is untouched, so a phone does not quietly rewrite what a desk opens
+   * on; this only narrows what is *shown* while the screen is narrow.
+   */
+  const chainView = narrow && storedView === 'both' ? 'calls' : storedView;
   const [eligibleOnly, setEligibleOnly] = usePersisted('chain:eligible', false);
   /*
    * Strike choice, safety %, premium floor, lots, hedge gap and board width no
@@ -617,7 +628,9 @@ export default function App() {
                 >
                   <ToggleGroupItem value="calls">Calls</ToggleGroupItem>
                   <ToggleGroupItem value="puts">Puts</ToggleGroupItem>
-                  <ToggleGroupItem value="both">Both</ToggleGroupItem>
+                  <ToggleGroupItem value="both" disabled={narrow} title={narrow ? 'Both sides is 27 columns — too wide for this screen' : undefined}>
+                    Both
+                  </ToggleGroupItem>
                 </ToggleGroup>
 
                 <button
