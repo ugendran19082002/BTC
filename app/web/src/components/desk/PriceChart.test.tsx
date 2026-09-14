@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { PriceChart, zoomHorizontally, zoomVertically } from '@/components/desk/PriceChart';
+import { PriceChart, pinchZoom, stretchByDrag, zoomByButton, zoomHorizontally, zoomVertically } from '@/components/desk/PriceChart';
 import type { Candle } from '@/types/desk';
 
 /**
@@ -211,10 +211,12 @@ describe('zoom and pan', () => {
       />,
     );
 
-  it('opens fitted to the whole series', () => {
+  it('opens fitted to the whole series, with nothing to fit and nothing further out', () => {
     chart();
     expect(screen.getByText('200 of 200 bars')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Fit/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Fit/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'zoom out' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'zoom in' })).toBeEnabled();
   });
 
   /*
@@ -284,7 +286,7 @@ describe('zoom and pan', () => {
 
   it('says how to work it, rather than leaving it to be discovered', () => {
     armedChart();
-    expect(screen.getByText(/scroll to zoom · drag to pan/)).toBeInTheDocument();
+    expect(screen.getByText(/scroll or pinch to zoom · drag to pan/)).toBeInTheDocument();
   });
 
   it('the price scale may be pulled out far enough to reach the walls', () => {
@@ -376,6 +378,179 @@ describe('arming zoom', () => {
       <PriceChart bars={bars(20)} support={74_400} resistance={80_000} spot={77_172} tf="5m" onTf={noop} />,
     );
     expect(screen.getByText(/zoom is off, so the page scrolls over the chart/)).toBeInTheDocument();
+  });
+});
+
+/**
+ * Zoom that needs no wheel, no arming and no discovery: two buttons that are
+ * always there, and on a phone a pinch, a drag on the axis and a double-tap.
+ */
+describe('zoom without a wheel', () => {
+  const fitted = { from: 0, count: 200, yZoom: 1 };
+  const plain = (props: Partial<Parameters<typeof PriceChart>[0]> = {}) => {
+    const r = render(
+      <PriceChart
+        bars={bars(200)} support={74_400} resistance={80_000} spot={77_172}
+        tf="5m" onTf={noop} {...props}
+      />,
+    );
+    const svg = r.container.querySelector('.price-chart-svg')!;
+    svg.getBoundingClientRect = () => ({
+      left: 0, top: 0, right: 780, bottom: 360, width: 780, height: 360, x: 0, y: 0,
+      toJSON: () => ({}),
+    }) as DOMRect;
+    return { ...r, svg };
+  };
+  const shownBars = () => Number(/(\d+) of 200 bars/.exec(screen.getByText(/of 200 bars/).textContent!)![1]);
+
+  it('[critical] the + and − buttons work with zoom off, and never move the page', () => {
+    plain();
+    expect(screen.getByRole('button', { name: /Zoom off/ })).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(screen.getByRole('button', { name: 'zoom in' }));
+    const after = shownBars();
+    expect(after).toBeLessThan(200);
+    expect(screen.getByRole('button', { name: 'zoom out' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'zoom out' }));
+    expect(shownBars()).toBeGreaterThan(after);
+    fireEvent.click(screen.getByRole('button', { name: /Fit/ }));
+    expect(shownBars()).toBe(200);
+  });
+
+  it('[critical] + zooms about the newest bar, so the newest bar stays on screen', () => {
+    const v = zoomByButton(fitted, 200, false);
+    expect(v.from + v.count).toBe(200);
+    expect(v.count).toBeLessThan(200);
+    // panned back into history, it zooms about the middle instead
+    const back = { from: 40, count: 100, yZoom: 1 };
+    const w = zoomByButton(back, 200, false);
+    expect(w.from + w.count).toBeLessThan(200);
+    expect(w.from).toBeGreaterThan(40);
+  });
+
+  it('the buttons stop at both ends', () => {
+    plain();
+    const zoomIn = screen.getByRole('button', { name: 'zoom in' });
+    for (let i = 0; i < 40 && !(zoomIn as HTMLButtonElement).disabled; i++) fireEvent.click(zoomIn);
+    expect(shownBars()).toBe(12);
+    expect(zoomIn).toBeDisabled();
+  });
+
+  it('[critical] a pinch: fingers apart shows fewer bars, together shows more, and returning returns the window', () => {
+    const inward = pinchZoom(fitted, 200, { anchor: 0.5, ratio: 0.5 });
+    expect(inward.count).toBe(100);
+    expect(inward.from).toBe(50);
+    const outward = pinchZoom({ from: 50, count: 100, yZoom: 1 }, 200, { anchor: 0.5, ratio: 2 });
+    expect(outward).toEqual(fitted);
+    expect(pinchZoom(fitted, 200, { anchor: 0.5, ratio: 1 })).toEqual(fitted);
+    // never past the ends, never below a readable count
+    expect(pinchZoom(fitted, 200, { anchor: 0.5, ratio: 0.001 }).count).toBe(12);
+    expect(pinchZoom(fitted, 200, { anchor: 0.5, ratio: 50 })).toEqual(fitted);
+  });
+
+  it('[critical] two fingers on an armed chart pinch it, through the DOM', () => {
+    const { svg } = plain();
+    fireEvent.click(screen.getByRole('button', { name: /Zoom off/ }));
+    fireEvent.pointerDown(svg, { pointerId: 1, pointerType: 'touch', clientX: 300, clientY: 150 });
+    fireEvent.pointerDown(svg, { pointerId: 2, pointerType: 'touch', clientX: 400, clientY: 150 });
+    fireEvent.pointerMove(svg, { pointerId: 2, pointerType: 'touch', clientX: 500, clientY: 150 });
+    // 100 apart to 200 apart: half the bars
+    expect(shownBars()).toBe(100);
+    fireEvent.pointerUp(svg, { pointerId: 2, pointerType: 'touch', clientX: 500, clientY: 150 });
+    fireEvent.pointerUp(svg, { pointerId: 1, pointerType: 'touch', clientX: 300, clientY: 150 });
+    // the finger left behind does not drag the window somewhere new on its way out
+    expect(shownBars()).toBe(100);
+  });
+
+  it('one finger on an armed chart pans it, and does not scroll the page', () => {
+    const { svg } = plain();
+    fireEvent.click(screen.getByRole('button', { name: /Zoom off/ }));
+    expect(svg).toHaveClass('armed');
+    fireEvent.click(screen.getByRole('button', { name: 'zoom in' }));
+    fireEvent.click(screen.getByRole('button', { name: 'zoom in' }));
+    const count = shownBars();
+    fireEvent.pointerDown(svg, { pointerId: 1, pointerType: 'touch', clientX: 300, clientY: 150 });
+    fireEvent.pointerMove(svg, { pointerId: 1, pointerType: 'touch', clientX: 500, clientY: 150 });
+    fireEvent.pointerUp(svg, { pointerId: 1, pointerType: 'touch', clientX: 500, clientY: 150 });
+    // dragged right: the window walked back into history, the same width
+    expect(shownBars()).toBe(count);
+    expect(screen.getByRole('button', { name: /Fit/ })).toBeEnabled();
+  });
+
+  it('[critical] a drag on the price axis stretches the scale: down is out, up is in', () => {
+    expect(stretchByDrag(fitted, 150).yZoom).toBeCloseTo(Math.exp(-1), 5);
+    expect(stretchByDrag(fitted, -150).yZoom).toBeCloseTo(Math.exp(1), 5);
+    expect(stretchByDrag(fitted, 0)).toEqual(fitted);
+    expect(stretchByDrag(fitted, 10_000, 0.05).yZoom).toBe(0.05);
+    expect(stretchByDrag(fitted, -10_000).yZoom).toBe(8);
+    // measured from the drag's start, so a drag back to where it began undoes itself
+    expect(stretchByDrag(stretchByDrag(fitted, 80), -80).yZoom).not.toBe(1);
+    expect(stretchByDrag(fitted, 80 - 80)).toEqual(fitted);
+  });
+
+  it('dragging the axis on an armed chart brings a wall onto the scale', () => {
+    const { svg } = plain({ bars: bars(40) });
+    fireEvent.click(screen.getByRole('button', { name: /Zoom off/ }));
+    expect(screen.getAllByText(/off the scale/).length).toBeGreaterThan(0);
+    // the axis is the right-hand 74px; a long drag down pulls the scale right out
+    fireEvent.pointerDown(svg, { pointerId: 1, pointerType: 'mouse', clientX: 750, clientY: 40 });
+    fireEvent.pointerMove(svg, { pointerId: 1, pointerType: 'mouse', clientX: 750, clientY: 340 });
+    fireEvent.pointerUp(svg, { pointerId: 1, pointerType: 'mouse', clientX: 750, clientY: 340 });
+    expect(screen.queryAllByText(/off the scale/)).toHaveLength(0);
+  });
+
+  it('two quick taps put the chart back, since a phone has no double-click', () => {
+    const { svg } = plain();
+    fireEvent.click(screen.getByRole('button', { name: /Zoom off/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'zoom in' }));
+    expect(shownBars()).toBeLessThan(200);
+    for (const _ of [1, 2]) {
+      fireEvent.pointerDown(svg, { pointerId: 1, pointerType: 'touch', clientX: 300, clientY: 150 });
+      fireEvent.pointerUp(svg, { pointerId: 1, pointerType: 'touch', clientX: 300, clientY: 150 });
+    }
+    expect(shownBars()).toBe(200);
+  });
+
+  it('with zoom off a finger is left to the page: no pan, no pinch', () => {
+    const { svg } = plain();
+    expect(svg).not.toHaveClass('armed');
+    fireEvent.pointerDown(svg, { pointerId: 1, pointerType: 'touch', clientX: 300, clientY: 150 });
+    fireEvent.pointerDown(svg, { pointerId: 2, pointerType: 'touch', clientX: 400, clientY: 150 });
+    fireEvent.pointerMove(svg, { pointerId: 2, pointerType: 'touch', clientX: 600, clientY: 150 });
+    expect(shownBars()).toBe(200);
+  });
+});
+
+/**
+ * Drawn at the size it is shown. A 780-unit canvas squeezed into a phone made
+ * every label a smudge; the canvas now takes the card's width.
+ */
+describe('on a narrow screen', () => {
+  it('[critical] draws the canvas at the card width, so text stays text-sized', () => {
+    const seen: ((entries: unknown[]) => void)[] = [];
+    const RO = vi.fn(function (this: unknown, cb: (entries: unknown[]) => void) {
+      seen.push(cb);
+      return { observe: vi.fn(), unobserve: vi.fn(), disconnect: vi.fn() };
+    });
+    vi.stubGlobal('ResizeObserver', RO);
+    const wide = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth');
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 360 });
+    try {
+      const { container } = render(
+        <PriceChart bars={bars(40)} support={74_400} resistance={80_000} spot={77_172} tf="5m" onTf={noop} />,
+      );
+      // 360 wide card, 12px padding each side: a 336-wide canvas -- never the fixed 780
+      const svg = container.querySelector('.price-chart-svg')!;
+      const [, , w, h] = svg.getAttribute('viewBox')!.split(' ').map(Number);
+      expect(w).toBe(336);
+      expect(h).toBe(250);
+      // and the newest bar still stops short of the axis
+      const last = [...container.querySelectorAll('.candle-body')].at(-1)!;
+      const right = Number(last.getAttribute('x')) + Number(last.getAttribute('width'));
+      expect(336 - 74 - right).toBeGreaterThanOrEqual(20);
+    } finally {
+      if (wide) Object.defineProperty(HTMLElement.prototype, 'clientWidth', wide);
+      vi.unstubAllGlobals();
+    }
   });
 });
 

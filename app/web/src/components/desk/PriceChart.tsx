@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as Collapsible from '@radix-ui/react-collapsible';
-import { ChevronDown, Maximize2, Move, Lock } from 'lucide-react';
+import { ChevronDown, Maximize2, Minus, Move, Lock, Plus } from 'lucide-react';
 import { usePersisted } from '@/hooks/usePersisted';
 import type { Candle } from '@/types/desk';
 import { strike as fmtStrike } from '@/lib/format';
@@ -10,9 +10,25 @@ export type ChartTf = '1m' | '5m' | '15m' | '1h' | '4h' | '1d';
 
 export const CHART_TFS: readonly ChartTf[] = ['1m', '5m', '15m', '1h', '4h', '1d'];
 
-const W = 780;
-const H = 360;
+/**
+ * The canvas is drawn at the size it is shown.
+ *
+ * It used to be a fixed 780x360 viewBox scaled to fit, which on a 360-pixel
+ * phone shrank every label to under five pixels and every wick to a hair --
+ * responsive in the sense of fitting, unreadable in every other. The width now
+ * follows the card and the height follows the width, so text is drawn at text
+ * size on every screen. `DEFAULT_W` is what a chart that has not been measured
+ * yet (and every test) draws at.
+ */
+const DEFAULT_W = 780;
+const MIN_W = 320;
+const sizeFor = (width: number) => {
+  const W = Math.max(MIN_W, Math.round(width) || DEFAULT_W);
+  return { W, H: clamp(Math.round(W * 0.46), 250, 360) };
+};
 const PAD = { top: 10, right: 74, bottom: 26, left: 8 };
+/** The card's own side padding, which the canvas sits inside of. Matches `.price-chart`. */
+const CARD_PAD = 12;
 /**
  * Empty plot kept to the right of the newest bar.
  *
@@ -74,6 +90,46 @@ export const zoomVertically = (win: View, out: boolean, floor = 0.4): View =>
   ({ ...win, yZoom: clamp(win.yZoom * (out ? 0.9 : 1.1), Math.min(floor, 0.4), 8) });
 
 /**
+ * The window after the + or − button.
+ *
+ * Anchored on the newest bar while the newest bar is on screen -- that is the
+ * bar somebody pressing + wants a closer look at -- and on the middle of the
+ * window once it has been panned back into history, where "newest on screen"
+ * is nothing in particular.
+ */
+export function zoomByButton(win: View, total: number, out: boolean): View {
+  const atLatest = win.from + win.count >= total;
+  return zoomHorizontally(win, total, { anchor: atLatest ? 1 : 0.5, out });
+}
+
+/**
+ * The window under a pinch: the bars between two fingers stay between them.
+ *
+ * `anchor` is where the pinch began, as a fraction of the plot; `ratio` is the
+ * fingers' starting distance over their distance now, so spreading them (ratio
+ * under 1) shows fewer bars. Measured from the pinch's start rather than step
+ * by step, so a gesture that returns to where it began returns the window too.
+ */
+export function pinchZoom(start: View, total: number, o: { anchor: number; ratio: number }): View {
+  const floor = Math.min(MIN_BARS, total);
+  const count = clamp(Math.round(start.count * o.ratio), floor, total);
+  const keep = start.from + o.anchor * start.count;
+  return {
+    count,
+    yZoom: start.yZoom,
+    from: clamp(Math.round(keep - o.anchor * count), 0, Math.max(0, total - count)),
+  };
+}
+
+/**
+ * The price scale under a drag on the axis: down stretches it out, up pulls it
+ * in, the way every charting tool's axis works. `dy` is in canvas pixels from
+ * where the drag began; 150 of them double or halve the scale.
+ */
+export const stretchByDrag = (start: View, dy: number, floor = 0.4): View =>
+  ({ ...start, yZoom: clamp(start.yZoom * Math.exp(-dy / 150), Math.min(floor, 0.4), 8) });
+
+/**
  * Recent BTC, with the two open-interest walls drawn against it.
  *
  * The walls are the reason this chart is here. `structure.ts` has always known
@@ -91,10 +147,13 @@ export const zoomVertically = (win: View, out: boolean, floor = 0.4): View =>
  *
  * ## Zoom
  *
- * Horizontally: the wheel over the plot zooms about the cursor, a drag pans,
- * and on a phone one finger pans. Vertically: the wheel over the price axis, or
- * shift and the wheel anywhere, stretches the price scale about the middle of
- * what is showing. Double-click, or Fit, puts both back.
+ * The + and − buttons always work, and need nothing turned on: they zoom about
+ * the newest bar, which is the one thing everyone wants a closer look at. The
+ * gestures need zoom armed, because they fight the page otherwise: the wheel
+ * over the plot zooms about the cursor, a drag pans, a pinch zooms about the
+ * fingers, and a drag on the price axis (or shift and the wheel, or the wheel
+ * over the axis) stretches the price scale. Double-click or double-tap, or
+ * Fit, puts everything back.
  *
  * The vertical default is to fit whatever is on screen, which is what every
  * charting tool does and the only default that keeps a quiet hour readable
@@ -128,12 +187,36 @@ export function PriceChart({
   error?: string;
 }) {
   const svgRef = useRef<SVGSVGElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(DEFAULT_W);
+  const { W, H } = sizeFor(width);
   const [hover, setHover] = useState<number | null>(null);
   const [open, setOpen] = usePersisted('open:price-chart', true);
 
   /** Null means "all of it, fitted" — where a fresh load and a reset sit. */
   const [view, setView] = useState<View | null>(null);
   const drag = useRef<{ x: number; from: number } | null>(null);
+  /** A drag on the price axis, stretching the scale. */
+  const axisDrag = useRef<{ y: number; start: View } | null>(null);
+  /** Every finger on the plot, so two of them can be read as a pinch. */
+  const fingers = useRef(new Map<number, { x: number; y: number }>());
+  const pinch = useRef<{ dist: number; anchor: number; start: View } | null>(null);
+  const lastTap = useRef(0);
+
+  // Draw at the size shown. The observer is a no-op under jsdom, so tests draw
+  // at the default and the geometry they pin stays put.
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    const measure = () => {
+      const w = el.clientWidth - 2 * CARD_PAD;
+      if (w > 0) setWidth(w);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   /*
    * Zoom and pan are off until they are asked for.
@@ -236,7 +319,7 @@ export function PriceChart({
     return {
       shown, lo, hi, y, x, step, bodyW, ticks, timeTicks, volY, volTop, volH, priceH, yFloor,
     };
-  }, [win, spot, support, resistance]);
+  }, [win, spot, support, resistance, W, H]);
 
   /**
    * Where a level is drawn: on the axis if the scale reaches it, pinned inside
@@ -293,22 +376,44 @@ export function PriceChart({
     );
   };
 
-  /** Viewport x for a client x, so zoom happens about the pointer. */
-  const vx = (clientX: number): number | null => {
+  /** Canvas coordinates for a client point, so zoom happens about the pointer. */
+  const vpoint = (clientX: number, clientY: number): { x: number; y: number } | null => {
     const el = svgRef.current;
     if (!el) return null;
     const box = el.getBoundingClientRect();
     if (!box.width) return null;
-    return ((clientX - box.left) / box.width) * W;
+    return { x: ((clientX - box.left) / box.width) * W, y: ((clientY - box.top) / box.width) * W };
   };
+  const vx = (clientX: number): number | null => vpoint(clientX, 0)?.x ?? null;
+  const plotW = W - PAD.left - PAD.right - RIGHT_GAP;
+  const anchorAt = (x: number) => clamp((x - PAD.left) / plotW, 0, 1);
+  const current = (): View | null => (win ? { from: win.from, count: win.count, yZoom: win.yZoom } : null);
 
   const onMove = (e: React.PointerEvent<SVGSVGElement>) => {
     if (!geom || !win) return;
-    const at = vx(e.clientX);
+    const at = vpoint(e.clientX, e.clientY);
     if (at === null) return;
 
+    if (fingers.current.has(e.pointerId)) fingers.current.set(e.pointerId, at);
+    if (pinch.current && fingers.current.size >= 2) {
+      const [a, b] = [...fingers.current.values()];
+      const dist = Math.hypot(a!.x - b!.x, a!.y - b!.y);
+      if (dist > 0) {
+        setView(pinchZoom(pinch.current.start, bars.length, {
+          anchor: pinch.current.anchor,
+          ratio: pinch.current.dist / dist,
+        }));
+      }
+      return;
+    }
+
+    if (axisDrag.current) {
+      setView(stretchByDrag(axisDrag.current.start, at.y - axisDrag.current.y, geom.yFloor));
+      return;
+    }
+
     if (drag.current) {
-      const moved = Math.round((drag.current.x - at) / geom.step);
+      const moved = Math.round((drag.current.x - at.x) / geom.step);
       setView({
         count: win.count,
         yZoom: win.yZoom,
@@ -317,7 +422,7 @@ export function PriceChart({
       return;
     }
 
-    const i = Math.round((at - PAD.left - geom.step / 2) / geom.step);
+    const i = Math.round((at.x - PAD.left - geom.step / 2) / geom.step);
     setHover(i >= 0 && i < geom.shown.length ? i : null);
   };
 
@@ -342,8 +447,7 @@ export function PriceChart({
     }
 
     // Otherwise the window narrows or widens about whatever is under the cursor.
-    const anchor = clamp((at - PAD.left) / (W - PAD.left - PAD.right - RIGHT_GAP), 0, 1);
-    setView(zoomHorizontally(win, bars.length, { anchor, out: e.deltaY > 0 }));
+    setView(zoomHorizontally(win, bars.length, { anchor: anchorAt(at), out: e.deltaY > 0 }));
   };
 
   useEffect(() => {
@@ -358,15 +462,55 @@ export function PriceChart({
 
   const onDown = (e: React.PointerEvent<SVGSVGElement>) => {
     if (!zoomOn || !win) return;
-    const at = vx(e.clientX);
-    if (at === null || at > W - PAD.right) return;
-    drag.current = { x: at, from: win.from };
+    const at = vpoint(e.clientX, e.clientY);
+    const start = current();
+    if (at === null || !start) return;
     svgRef.current?.setPointerCapture?.(e.pointerId);
+
+    if (e.pointerType === 'touch') {
+      fingers.current.set(e.pointerId, at);
+      if (fingers.current.size === 2) {
+        // A second finger turns a pan into a pinch, anchored between them.
+        const [a, b] = [...fingers.current.values()];
+        drag.current = null;
+        axisDrag.current = null;
+        pinch.current = {
+          dist: Math.max(1, Math.hypot(a!.x - b!.x, a!.y - b!.y)),
+          anchor: anchorAt((a!.x + b!.x) / 2),
+          start,
+        };
+        return;
+      }
+    }
+
+    if (at.x > W - PAD.right) {
+      axisDrag.current = { y: at.y, start };
+      return;
+    }
+    drag.current = { x: at.x, from: win.from };
   };
 
   const endDrag = (e: React.PointerEvent<SVGSVGElement>) => {
-    drag.current = null;
     svgRef.current?.releasePointerCapture?.(e.pointerId);
+    const wasPinch = pinch.current !== null;
+    fingers.current.delete(e.pointerId);
+    if (fingers.current.size < 2) pinch.current = null;
+    // A lifted finger ends every gesture: the one left behind starts afresh
+    // on its next move rather than jumping the window to where it now is.
+    drag.current = null;
+    axisDrag.current = null;
+
+    // Two quick taps put the chart back, since a phone has no double-click.
+    if (e.pointerType === 'touch' && !wasPinch && fingers.current.size === 0 && zoomOn) {
+      const now = Date.now();
+      if (now - lastTap.current < 350) { setView(null); lastTap.current = 0; }
+      else lastTap.current = now;
+    }
+  };
+
+  const zoomButton = (out: boolean) => {
+    const start = current();
+    if (start) setView(zoomByButton(start, bars.length, out));
   };
 
   const shown = hover !== null && geom ? geom.shown[hover] : geom?.shown.at(-1);
@@ -374,7 +518,7 @@ export function PriceChart({
   const zoomed = view !== null;
 
   return (
-    <Collapsible.Root open={open} onOpenChange={setOpen} className="price-chart">
+    <Collapsible.Root ref={cardRef} open={open} onOpenChange={setOpen} className="price-chart">
       <div className="price-chart-head">
         <Collapsible.Trigger className="price-chart-title" aria-label="price chart">
           <ChevronDown className={`smr-chev${open ? '' : ' shut'}`} size={13} aria-hidden />
@@ -384,24 +528,41 @@ export function PriceChart({
           )}
         </Collapsible.Trigger>
 
-        <button
-          type="button"
-          className={`chain-chip${zoomOn ? ' on' : ''}`}
-          aria-pressed={zoomOn}
-          title={zoomOn
-            ? 'Zoom and pan are on: the wheel zooms and a drag pans. Turn off to scroll the page over the chart.'
-            : 'Zoom and pan are off, so the page scrolls over the chart. Turn on to zoom.'}
-          onClick={() => setZoomOn(!zoomOn)}
-        >
-          {zoomOn ? <Move size={12} aria-hidden /> : <Lock size={12} aria-hidden />}
-          {zoomOn ? 'Zoom on' : 'Zoom off'}
-        </button>
-
-        {zoomed && (
-          <button type="button" className="chain-chip" onClick={() => setView(null)}>
+        <div className="price-chart-tools" role="group" aria-label="zoom">
+          <button
+            type="button"
+            className={`chain-chip${zoomOn ? ' on' : ''}`}
+            aria-pressed={zoomOn}
+            title={zoomOn
+              ? 'Zoom and pan are on: scroll or pinch to zoom, drag to pan. Turn off to scroll the page over the chart.'
+              : 'Zoom and pan are off, so the page scrolls over the chart. Turn on to scroll, drag and pinch the chart. The + and − work either way.'}
+            onClick={() => setZoomOn(!zoomOn)}
+          >
+            {zoomOn ? <Move size={12} aria-hidden /> : <Lock size={12} aria-hidden />}
+            {zoomOn ? 'Zoom on' : 'Zoom off'}
+          </button>
+          <button
+            type="button" className="chain-chip" aria-label="zoom out" title="Zoom out: more bars"
+            disabled={!win || win.count >= bars.length}
+            onClick={() => zoomButton(true)}
+          >
+            <Minus size={13} aria-hidden />
+          </button>
+          <button
+            type="button" className="chain-chip" aria-label="zoom in" title="Zoom in: fewer bars, about the newest"
+            disabled={!win || win.count <= Math.min(MIN_BARS, bars.length)}
+            onClick={() => zoomButton(false)}
+          >
+            <Plus size={13} aria-hidden />
+          </button>
+          <button
+            type="button" className="chain-chip" disabled={!zoomed}
+            title="Show the whole series again, at the fitted scale"
+            onClick={() => setView(null)}
+          >
             <Maximize2 size={12} aria-hidden /> Fit
           </button>
-        )}
+        </div>
 
         <ToggleGroup
           type="single"
@@ -444,6 +605,7 @@ export function PriceChart({
           onPointerMove={onMove}
           onPointerDown={onDown}
           onPointerUp={endDrag}
+          onPointerCancel={endDrag}
           onPointerLeave={(e) => { endDrag(e); setHover(null); }}
           onDoubleClick={() => zoomOn && setView(null)}
           aria-label={`BTC ${tf} candles, ${geom.shown.length} of ${bars.length} bars shown, with open-interest walls at ${support ?? '—'} and ${resistance ?? '—'}`}
@@ -583,8 +745,8 @@ export function PriceChart({
         <span><i style={{ background: 'var(--down)' }} /> resistance · heaviest call strike</span>
         <span className="dim">
           {zoomOn
-            ? 'scroll to zoom · drag to pan · shift-scroll or the price axis for the price scale, out far enough and the walls come onto it · double-click to fit'
-            : 'zoom is off, so the page scrolls over the chart — turn it on to zoom and pan'}
+            ? 'scroll or pinch to zoom · drag to pan · drag or scroll the price axis to stretch it, out far enough and the walls come onto it · double-click or double-tap to fit'
+            : 'zoom is off, so the page scrolls over the chart — + and − still zoom about the newest bar; turn it on to scroll, drag and pinch the chart'}
         </span>
         <span className="dim">where open interest sits, not where BTC will settle · times IST</span>
       </div>

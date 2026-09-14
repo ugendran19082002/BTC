@@ -1572,6 +1572,20 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 .price-chart-svg.armed:active { cursor: grabbing; }
 .price-chart-head { gap: 8px; }
 .price-chart-head .chain-chip { min-height: 26px; padding: 0 9px; font-size: 11px; }
+.price-chart-head .chain-chip:disabled { opacity: 0.4; cursor: default; }
+.price-chart-tools { display: inline-flex; gap: 5px; align-items: center; }
+.price-chart-tools .chain-chip[aria-label] { padding: 0 7px; }
+/* A finger is not a pointer: on a touch screen the chips grow to something it
+   can hit, and the tools take a row of their own under the title rather than
+   wrapping wherever they happen to run out of width. */
+@media (pointer: coarse) {
+  .price-chart-head .chain-chip { min-height: 32px; padding: 0 11px; }
+  .price-chart-tools .chain-chip[aria-label] { min-width: 36px; justify-content: center; }
+}
+@media (max-width: 560px) {
+  .price-chart-tools { order: 3; flex-basis: 100%; justify-content: space-between; }
+  .price-chart-tools .chain-chip { flex: 1 1 0; justify-content: center; }
+}
 /* Two 5m/15m/1h/4h toggles sit on this screen -- the chart's timeframe and the
    window the readings are taken over -- and they are different controls. The
    label is what stops them reading as the same one. */
