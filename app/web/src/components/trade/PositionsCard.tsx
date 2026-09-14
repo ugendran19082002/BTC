@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Clock, Loader2, Pencil, Plus, ShieldAlert, ShieldCheck, X } from 'lucide-react';
-import { cancelTrade, closeTrade } from '@/api/trade';
+import { cancelTrade, closeTrade, reconcileTrade } from '@/api/trade';
 import type { Trade } from '@/types/trade';
 import { Card, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -138,6 +138,7 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
   const [closing, setClosing] = useState(false);
   const [editing, setEditing] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const held = Math.abs(trade.position);
   // An add can only go on a short that is open and not already adding. The
   // sheet would refuse too; the button simply does not offer what the engine
@@ -326,9 +327,22 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
         desk keeps finding.
       */}
       {held > trade.entrySize - trade.exitSize && (
-        <p className="m-0 mt-2 text-[12px] text-[var(--warn)]">
-          Delta holds {fmtSize(held)} — {fmtSize(held - (trade.entrySize - trade.exitSize))} more than
-          this record sold. The position was read back from the exchange; exits cover all of it.
+        <p className="m-0 mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-[var(--warn)]">
+          <span>
+            Delta holds {fmtSize(held)} — {fmtSize(held - (trade.entrySize - trade.exitSize))} more than
+            this record sold. The position was read back from the exchange; exits cover all of it.
+          </span>
+          <button
+            type="button"
+            className="chain-chip"
+            disabled={syncing}
+            onClick={() => {
+              setSyncing(true);
+              void reconcileTrade(trade.tradeId).finally(() => { setSyncing(false); onChanged?.(); });
+            }}
+          >
+            {syncing ? 'Reading…' : 'Re-read from Delta'}
+          </button>
         </p>
       )}
 

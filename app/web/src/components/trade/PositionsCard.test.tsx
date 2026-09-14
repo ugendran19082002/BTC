@@ -12,6 +12,7 @@ const closeAllTrades = vi.fn();
 const setTradeMode = vi.fn();
 const previewAdd = vi.fn();
 const addToPosition = vi.fn();
+const reconcileTrade = vi.fn();
 vi.mock('@/api/trade', () => ({
   closeTrade: (...a: unknown[]) => closeTrade(...a),
   cancelTrade: (...a: unknown[]) => cancelTrade(...a),
@@ -19,6 +20,7 @@ vi.mock('@/api/trade', () => ({
   setTradeMode: (...a: unknown[]) => setTradeMode(...a),
   previewAdd: (...a: unknown[]) => previewAdd(...a),
   addToPosition: (...a: unknown[]) => addToPosition(...a),
+  reconcileTrade: (...a: unknown[]) => reconcileTrade(...a),
 }));
 
 const trade = (over: Partial<Trade> = {}): Trade => ({
@@ -554,6 +556,15 @@ describe('when the exchange holds more than the record sold', () => {
     // read "Sold 1,400" over a 1,500 position and nothing said why.
     render(<PositionsCard trades={[trade({ position: -1500, entrySize: 1400, addedSize: 750 })]} onChanged={() => {}} />);
     expect(screen.getByText(/Delta holds 1,500 — 100 more than this record sold/)).toBeInTheDocument();
+  });
+
+  it('offers to re-read the position from Delta, and refreshes after', async () => {
+    reconcileTrade.mockResolvedValue({ ok: true });
+    const onChanged = vi.fn();
+    render(<PositionsCard trades={[trade({ position: -1500, entrySize: 1400 })]} onChanged={onChanged} />);
+    fireEvent.click(screen.getByRole('button', { name: /Re-read from Delta/ }));
+    await waitFor(() => expect(reconcileTrade).toHaveBeenCalledWith('t1'));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
 
   it('says nothing when the two agree', () => {

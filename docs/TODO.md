@@ -240,6 +240,65 @@ chain. It was taken out by mistake for one deploy and put straight back.
 
 ---
 
+## A P&L screen, and an add the desk lost sight of — 14 Sep 2026
+
+**The add that went missing.** 08:15 IST: an add of 100 was acknowledged by
+Delta (order 1535448471), the next lookup found it nowhere, the desk wrote
+"the order never reached the exchange" and stopped tracking it — while it
+filled at 23. The person added again. Delta then held 1,500 CE against a
+record of 1,400, and the account card's 1,510 (Delta's number) disagreed with
+the position card's 1,400 (ours). Read from Delta's own API afterwards: both
+adds filled, and the resting target was already 1,500, so nothing was
+uncovered — but the record was wrong and would have stayed wrong.
+
+Why the lookup lied: **`/v2/orders/history` ignores `client_order_id`** —
+verified, two ids returned the same newest five — and a just-filled order
+leaves `/v2/orders` at once but can take a moment to appear in history. In
+that moment "nowhere" was the answer, and "nowhere" was read as "never sent".
+Three changes, each closing a different hole:
+
+- `getOrderById` — `GET /v2/orders/{id}`, by the number Delta gave the order
+  in its acknowledgement. The add keeps that id (`AddWorking.orderId`), and
+  `findAdd` asks by it whenever the client-id lookup is empty. A numbered order
+  cannot be missed by a filter.
+- A refused read is **unknown**, not absent. `getOrderByClientId` used to turn
+  any 4xx into `[]`; it now throws, and the engine's "could not ask" path asks
+  again next poll.
+- An acknowledged add is never written off. Not found inside its window: keep
+  looking. Not found by the end of it: read the position back from the
+  exchange, let `protect()` cover what is there, and say what happened. Only a
+  submit that got *no answer* can still end as "never reached the exchange".
+
+The position card now says, in words, when Delta holds more than the record
+sold, with a **Re-read from Delta** button beside it (`POST /api/trade/reconcile`,
+which existed and had no button). Startup reconcile does the same on deploy.
+
+For the record, Delta's own fills on C-BTC-78800 that day: 650 @ 10.00,
+650 @ 9.90, 100 @ 23.00, 100 @ 25.00 — 1,500, at an average of 11.82, which is
+the figure Delta's position row carried. The account card's 1,510 was Delta's
+number and was right; the position card's 1,400 was ours and was not.
+
+**The P&L screen.** A sixth tab. Three views of the one journal:
+
+- *The calendar* — every day in the range as a square, green or red, four
+  shades against the biggest day. Realised P&L is booked on the IST day of the
+  **exit fill** that booked it, one term per buy-back off the trade's final
+  entry average, so the days add up to the trades and a Friday-night short
+  closed on Monday is Monday's money. Charges land on the day of their fill.
+- *The running total* — the cumulative line, with the charges toggle
+  recomputing every square and every total together.
+- *The day, minute by minute* — the same "net today" figure as the header
+  (`todayFigures()`, one computation for both), written to `mtm_samples` in
+  trades.db once a minute while something is on; the line, the low and high
+  with their times, and the worst fall from a high — which is not the minimum,
+  and the test says why. Kept ninety days. Migration `008` — the strategy
+  store shares the ledger, so the sequence continues from its 007.
+
+CSV of the days, a date range with quick picks, IST throughout. Phone: months
+scroll sideways at seven squares wide, the figures fold to two columns.
+
+---
+
 ## Add lots by hand — 14 Sep 2026
 
 The position card gained **Add lots** beside Edit exits, for selling more of a
