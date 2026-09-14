@@ -477,8 +477,10 @@ describe('zoom without a wheel', () => {
   });
 
   it('[critical] a drag on the price axis stretches the scale: down is out, up is in', () => {
-    expect(stretchByDrag(fitted, 150).yZoom).toBeCloseTo(Math.exp(-1), 5);
-    expect(stretchByDrag(fitted, -150).yZoom).toBeCloseTo(Math.exp(1), 5);
+    expect(stretchByDrag(fitted, 100, 0.02).yZoom).toBeCloseTo(Math.exp(-1), 5);
+    expect(stretchByDrag(fitted, -100).yZoom).toBeCloseTo(Math.exp(1), 5);
+    // and no further out than this chart's own floor
+    expect(stretchByDrag(fitted, 100).yZoom).toBe(0.4);
     expect(stretchByDrag(fitted, 0)).toEqual(fitted);
     expect(stretchByDrag(fitted, 10_000, 0.05).yZoom).toBe(0.05);
     expect(stretchByDrag(fitted, -10_000).yZoom).toBe(8);

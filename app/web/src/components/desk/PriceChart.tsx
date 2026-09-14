@@ -124,10 +124,11 @@ export function pinchZoom(start: View, total: number, o: { anchor: number; ratio
 /**
  * The price scale under a drag on the axis: down stretches it out, up pulls it
  * in, the way every charting tool's axis works. `dy` is in canvas pixels from
- * where the drag began; 150 of them double or halve the scale.
+ * where the drag began; a hundred of them is one e-fold, so the height of a
+ * phone's plot pulls the scale out far enough to reach the walls.
  */
 export const stretchByDrag = (start: View, dy: number, floor = 0.4): View =>
-  ({ ...start, yZoom: clamp(start.yZoom * Math.exp(-dy / 150), Math.min(floor, 0.4), 8) });
+  ({ ...start, yZoom: clamp(start.yZoom * Math.exp(-dy / 100), Math.min(floor, 0.4), 8) });
 
 /**
  * Recent BTC, with the two open-interest walls drawn against it.
