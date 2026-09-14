@@ -63,6 +63,16 @@ export type Trade = {
   /** The exchange's own figures, not a second opinion computed here. */
   live?: {
     markPrice: number | null;
+    /**
+     * The book, both sides.
+     *
+     * Closing a short is a *buy*, so the ask is what leaving costs — the same
+     * reason the board shows a seller the bid. The gap between the two is the
+     * cost of leaving, and on a thin far strike that gap is most of the
+     * decision.
+     */
+    bid?: number | null;
+    ask?: number | null;
     unrealisedPnl: number | null;
     /** Share of the credit already decayed away. 0.35 means a third is banked. */
     decayed: number | null;

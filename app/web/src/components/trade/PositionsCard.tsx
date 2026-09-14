@@ -159,6 +159,22 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
   const naked = Boolean(trade.alarm) || (wantedStop && !stopOnBook);
   const status = naked ? STATUS.unprotected : stopOnBook ? STATUS[trade.phase] === 'NO STOP' ? 'protected' : STATUS[trade.phase] : 'open';
   const net = trade.live?.netIfClosedUsd;
+
+  /*
+   * The book under the mark, and how wide it is.
+   *
+   * Only when both sides are quoted: one side alone is not a spread, and
+   * printing "bid 10.50 · ask —" reads as a book that is half missing rather
+   * than as a quote the desk could not take.
+   */
+  const bid = trade.live?.bid ?? null;
+  const ask = trade.live?.ask ?? null;
+  const spreadPct = bid !== null && ask !== null && bid + ask > 0
+    ? ((ask - bid) / ((ask + bid) / 2)) * 100
+    : null;
+  const book = bid !== null && ask !== null
+    ? `bid ${price(bid)} · ask ${price(ask)}`
+    : undefined;
   const charges = trade.charges;
 
   return (
@@ -204,7 +220,24 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
       </div>
 
       <div className="mt-2 grid grid-cols-3 gap-2 rounded-md bg-background px-2.5 py-2">
-        <Figure label="Price now" value={price(trade.live?.markPrice)} />
+        {/*
+          The mark, with the book under it.
+          "Price now" on its own was the mark, which is the one price nobody
+          transacts at. Closing a short is a buy, so the ask is what leaving
+          actually costs — the same reason the board shows a seller the bid —
+          and the gap between the two is the cost of leaving, which on a thin
+          far strike is most of the decision.
+        */}
+        <Figure
+          label="Price now"
+          value={price(trade.live?.markPrice)}
+          second={book}
+          hint={
+            book
+              ? 'The mark, with the book under it. Closing a short buys at the ask.'
+              : 'The exchange’s mark. No two-sided quote to read right now.'
+          }
+        />
         <Figure
           // Once part is bought back this is the open part only; "Booked" below
           // is the rest, and If closed now is the two together after charges.
@@ -223,6 +256,14 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
       </div>
 
       <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11.5px] text-muted-foreground">
+        {spreadPct !== null && (
+          <span title="What it costs to cross the book. A wide spread is paid on the way out, whatever the mark says.">
+            Spread{' '}
+            <span className={cn('tabular-nums', spreadPct > 10 ? 'text-[var(--warn)]' : 'text-foreground')}>
+              {spreadPct.toFixed(1)}%
+            </span>
+          </span>
+        )}
         <span>
           Target{' '}
           <span className="tabular-nums text-foreground">

@@ -299,6 +299,36 @@ rather than overstated.
 
 Nothing on the trading side reads any of it, and the card says so.
 
+### The board on a phone
+
+Both sides is twenty-seven columns with the strike in the middle. That is how
+an option chain is laid out everywhere and it is right on a desk; on a phone it
+is the wrong shape twice over — too wide to read, and the one column you keep
+your place with sits where nothing can pin it.
+
+So on a narrow screen the board shows one side and the strike leads, pinned to
+the left while the rest slides under it. The *stored* choice is untouched: a
+phone does not quietly rewrite what a desk opens on, it only narrows what is
+shown while the screen is narrow, and "Both" is disabled there rather than
+silently absent.
+
+It also opens on **what the desk picked** rather than on the money. Sixty-five
+strikes exist and the ten around the pick are the ones being decided between;
+the money can be nowhere near them.
+
+The header span and the cells come from one list, so the one failure that
+shape-shifting invites — a span claiming more columns than are drawn, which
+reserves width for nothing and pushes the bid off the edge — is asserted for
+all three views rather than hoped for.
+
+### A sentence that would not wrap
+
+The run log ran off the right of the card. A table on `auto` layout sizes each
+column to its content, and one of those columns is a whole sentence, so the
+table grew wider than the thing holding it. `fixed`, with a width on each of
+the four narrow columns, hands the remainder to the sentence and lets it wrap —
+which is the only column that should.
+
 ### The screen
 
 The card is one line on an ordinary board. A warning that takes the same room

@@ -112,6 +112,17 @@ const view = (
     },
     live: {
       markPrice: mark,
+      /*
+       * The book, both sides.
+       *
+       * The card showed the mark and called it "price now", which is the one
+       * price nobody transacts at. Closing a short is a *buy*, so the ask is
+       * what it costs -- the same reason the board shows a seller the bid.
+       * Both are here because the gap between them is the cost of leaving,
+       * and on a thin far strike that gap is most of the decision.
+       */
+      bid: quote?.bid ?? null,
+      ask: quote?.ask ?? null,
       unrealisedPnl: pnl,
       /**
        * As a share of the credit taken in: 0.35 means a third of it is banked.
