@@ -125,51 +125,43 @@ Three databases live in the Docker volume `btc-desk_data` at `/srv/data`:
 | `auth.db` | password, sealed authenticator secret, sessions, security log | fresh | copy it, or set up 2FA again |
 | `errors.db`, `market.db` | error log, market cache | fresh | fresh |
 
-### `chain.db` — copy it, do not re-harvest
+### Two commands
 
-Re-harvesting two years from Delta takes hours and hits their rate limits;
-the file is 4 MB. On the **old** server:
+On the **old** server — the desk keeps running, the copies are consistent
+(SQLite's backup API, never a `cp` of a WAL-mode file):
 
 ```bash
 cd ~/test-delta
-python3 - <<'PY'
-import sqlite3
-src = sqlite3.connect('chain.db'); dst = sqlite3.connect('/tmp/chain-copy.db')
-with dst: src.backup(dst)          # a consistent copy, never a half-written WAL
-print(dst.execute('SELECT COUNT(*) FROM days').fetchone()[0], 'days')
-PY
-scp /tmp/chain-copy.db newserver:~/test-delta/chain.db
+./deploy/export-data.sh            # chain.db + trades.db + auth.db  -> data-export/btc-desk-data-<stamp>.tar.gz
+./deploy/export-data.sh --chain    # chain.db only: all a paper copy needs
+scp data-export/btc-desk-data-*.tar.gz newserver:/tmp/
 ```
 
-On the new server it sits at the repository root as `chain.db`; the
-`refresh.sh` step below hands it to the container.
-
-### `trades.db` and `auth.db` — only when moving house
-
-These are SQLite files in WAL mode and must not be copied while the API is
-writing them. On the old server, **stop the API first** (this also ends its
-trading — the point of a move):
+On the **new** server, after the first `./deploy/deploy.sh` in §5 has created
+the volume:
 
 ```bash
-cd ~/test-delta && docker compose -f deploy/docker-compose.yml stop api
-docker cp btc-desk-api-1:/srv/data/trades.db /tmp/trades.db
-docker cp btc-desk-api-1:/srv/data/auth.db   /tmp/auth.db
-scp /tmp/trades.db /tmp/auth.db newserver:/tmp/
+cd ~/test-delta
+./deploy/import-data.sh /tmp/btc-desk-data-<stamp>.tar.gz
 ```
 
-On the new server, after the first deploy in §5 has created the volume:
+It stops the API, puts the files in the volume (replacing any with the same
+name, journals removed, owned by the API's user), places `chain.db` at the
+repository root for `refresh.sh`, starts the API and waits for `/api/health`.
 
-```bash
-docker compose -f deploy/docker-compose.yml stop api
-docker run --rm -v btc-desk_data:/srv/data -v /tmp:/in alpine \
-  sh -c 'cp /in/trades.db /in/auth.db /srv/data/ && chown 1000:1000 /srv/data/*.db && rm -f /srv/data/*.db-wal /srv/data/*.db-shm'
-docker compose -f deploy/docker-compose.yml start api
-```
+Two things the scripts will not do for you:
 
-`auth.db` only opens with the **same `DESK_SESSION_SECRET`** as the old
-server — the authenticator secret is sealed with it. With a new secret the
-sessions and the seal are gone: run `npm run auth -- reset-2fa` and scan a
-new QR at the next sign-in.
+- **`.env` is not in the tarball** — it holds the exchange key and the
+  session secret. Carry it by hand, and read §3 before reusing any key.
+- **`auth.db` opens only under the same `DESK_SESSION_SECRET`** it was sealed
+  with. Same secret in the new `.env`: the password, the authenticator and the
+  recovery codes all carry over. New secret: `cd app/server && npm run auth --
+  reset-2fa`, then scan a new QR at the next sign-in.
+
+For a move, stop the old desk's *trading* before exporting its journal
+(`docker compose -f deploy/docker-compose.yml stop api` on the old server) —
+otherwise it goes on placing orders against positions the new server now
+thinks are its own.
 
 ## 5. Deploy
 

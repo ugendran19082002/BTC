@@ -2192,6 +2192,18 @@ Each desk is a whole engine, and two of them would both sell the morning
 strategy and reconcile each other's orders away. The guide opens with that
 decision and the `.env` for each answer.
 
+"How do I give the DB to that server?" -- two scripts, so it is not five
+steps with a WAL trap in the middle. `deploy/export-data.sh` snapshots
+`chain.db`, `trades.db` and `auth.db` out of the Docker volume with SQLite's
+backup API (through a throwaway `python:3-alpine`, because the volume's
+directory is root-only on the host and the API's filesystem is read-only)
+into one tarball, desk still running; `deploy/import-data.sh <tarball>` on
+the other side stops the API, swaps the files in with their journals removed
+and the right owner, seeds `chain.db` at the repo root for `refresh.sh`,
+starts the API and waits for health. Tried here: export from the live volume
+(735 days, 58 trades), import into a scratch volume, every file opens.
+`.env` is deliberately not in the tarball.
+
 One small change alongside it: `WEB_BIND` in `docker-compose.yml` and
 `deploy.sh`, so a host with its own reverse proxy can publish the web port on
 `127.0.0.1` -- a port Docker publishes on `0.0.0.0` is open to the internet
