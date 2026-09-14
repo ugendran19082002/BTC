@@ -73,6 +73,8 @@ export type Rig = {
   alarms: { tradeId: string; message: string }[];
   /** Everything `onEvent` was told, in order. */
   events: { event: TradeEvent; before: TradeState; after: TradeState }[];
+  /** Every failure the engine noted and carried on past -- what reaches the error log. */
+  swallowed: { what: string; message: string }[];
 };
 
 export function rig(opts: {
@@ -95,6 +97,7 @@ export function rig(opts: {
   let spot: number | null = opts.spot === undefined ? SPOT : opts.spot;
   const alarms: Rig['alarms'] = [];
   const events: Rig['events'] = [];
+  const swallowed: Rig['swallowed'] = [];
   const store = new MemoryTradeStore();
 
   const engine = new TradeEngine({
@@ -114,6 +117,7 @@ export function rig(opts: {
     dayPnlUsd: () => pnl,
     spot: () => spot,
     onAlarm: (t, message) => alarms.push({ tradeId: t.tradeId, message }),
+    onSwallowed: (what, _order, error) => swallowed.push({ what, message: error.message }),
     onEvent: (event, before, after, plan) => {
       events.push({ event, before, after });
       opts.onEvent?.(event, before, after, plan);
@@ -121,7 +125,7 @@ export function rig(opts: {
   });
 
   return {
-    ex, store, engine, alarms, events,
+    ex, store, engine, alarms, events, swallowed,
     advance: (ms) => { clock += ms; },
     now: () => clock,
     setFeed: (h) => { feed = h; },

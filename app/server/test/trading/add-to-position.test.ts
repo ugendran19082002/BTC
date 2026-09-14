@@ -233,3 +233,58 @@ test('nothing to add to once the position is flat', async () => {
   const res = await r.engine.addToPosition('PE-1', addOf());
   assert.equal(res.ok, false);
 });
+
+
+/**
+ * The add fills between the poll that read it open and the chase step that
+ * tried to move it.
+ *
+ * 14 Sep 2026, 07:37: 650 contracts at 9.90, filled five seconds after they
+ * were sent. The chase's first step landed on an order that was no longer on
+ * the book, Delta said open_order_not_found, and the desk logged it as "add
+ * chase failed" -- a red line in the error log over a trade that had done
+ * exactly what it was sent to do. The next poll found the fill and closed the
+ * add out correctly; only the reporting was wrong, and the fill was on the
+ * record a poll later than it needed to be.
+ */
+test('[critical] an add that fills under the chase is recorded, not reported', async () => {
+  const { r } = await shortPE();
+  const res = await r.engine.addToPosition('PE-1', addOf());
+  assert.equal(res.ok, true, res.ok ? '' : res.reason);
+
+  // Between the read and the edit the bid reaches the order and it fills; the
+  // edit then meets the exact answer the real venue gives.
+  const edit = r.ex.editOrder.bind(r.ex);
+  const edits: { size?: number; limitPrice?: number }[] = [];
+  r.ex.editOrder = async (o, c) => {
+    edits.push(c);
+    // Only the chase step is raced. The protection edits that follow the fill
+    // carry a size, and they are the proof the fill was absorbed this poll.
+    if (c.size === undefined) r.ex.tick(quote(PE, 7.5, 8, { mark: 7.7, ts: r.now() }));
+    return edit(o, c);   // throws OrderGone on the filled add: the paper venue mirrors Delta
+  };
+
+  r.advance(1_250);
+  r.ex.tick(quote(PE, 7, 7.5, { mark: 7.2, ts: r.now() }));
+  const s = (await r.engine.poll('PE-1'))!;
+
+  assert.equal(edits.filter((c) => c.size === undefined).length, 1, 'the chase did try to move it');
+  assert.deepEqual(r.swallowed, [], 'nothing reaches the error log: the order did what it was sent to do');
+  assert.equal(s.position, -850, 'the fill is on the record this poll, not next');
+  assert.equal(s.adding, null, 'and the add is closed out');
+  assert.deepEqual(edits.filter((c) => c.size !== undefined).map((c) => c.size), [850, 850],
+    'and the target and stop were resized in the same poll, not twenty seconds later');
+  const done = r.store.get('PE-1')!.events.find((e) => e.t === 'add_done');
+  assert.equal(done && 'reason' in done ? done.reason : null, 'filled');
+});
+
+test('a chase step refused for any other reason is still reported', async () => {
+  const { r } = await shortPE();
+  await r.engine.addToPosition('PE-1', addOf());
+  r.ex.editOrder = async () => { throw new Error('edit not allowed'); };
+  r.advance(1_250);
+  r.ex.tick(quote(PE, 7, 7.5, { mark: 7.2, ts: r.now() }));
+  await r.engine.poll('PE-1');
+  assert.equal(r.swallowed.length, 1);
+  assert.equal(r.swallowed[0]!.what, 'add chase');
+});

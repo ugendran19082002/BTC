@@ -340,21 +340,35 @@ describe('arming zoom', () => {
     expect(screen.getByRole('button', { name: /Fit/ })).toBeInTheDocument();
   });
 
-  it('[critical] off, on again, and it still zooms', () => {
+  it('[critical] turning zoom off keeps the view where it was', () => {
+    // The reason to turn it off is to stop the wheel moving the chart -- not
+    // to have the chart moved. The range that was pulled into stays.
     const { svg } = armedChart();
     fireEvent.wheel(svg, { deltaY: -100, clientX: 390 });
-    expect(screen.queryByText('200 of 200 bars')).not.toBeInTheDocument();
+    fireEvent.wheel(svg, { deltaY: -100, clientX: 390 });
+    const shown = screen.getByText(/of 200 bars/).textContent;
+    expect(shown).not.toBe('200 of 200 bars');
 
-    // off: the whole series comes back rather than leaving a window nobody can
-    // pan out of
     fireEvent.click(screen.getByRole('button', { name: /Zoom on/ }));
-    expect(screen.getByText('200 of 200 bars')).toBeInTheDocument();
+    expect(screen.getByText(/of 200 bars/).textContent).toBe(shown);
+    // the wheel is the page's again, and the view still does not move
     expect(fireEvent.wheel(svg, { deltaY: -100, clientX: 390 })).toBe(true);
+    expect(screen.getByText(/of 200 bars/).textContent).toBe(shown);
+    // Fit is still there for whoever wants the whole series back
+    expect(screen.getByRole('button', { name: /Fit/ })).toBeInTheDocument();
+  });
 
-    // and on again
+  it('[critical] off, on again, and it zooms on from where it was', () => {
+    const { svg } = armedChart();
+    fireEvent.wheel(svg, { deltaY: -100, clientX: 390 });
+    const shown = screen.getByText(/of 200 bars/).textContent;
+
+    fireEvent.click(screen.getByRole('button', { name: /Zoom on/ }));
     fireEvent.click(screen.getByRole('button', { name: /Zoom off/ }));
+    expect(screen.getByText(/of 200 bars/).textContent).toBe(shown);
+
     expect(fireEvent.wheel(svg, { deltaY: -100, clientX: 390 })).toBe(false);
-    expect(screen.queryByText('200 of 200 bars')).not.toBeInTheDocument();
+    expect(screen.getByText(/of 200 bars/).textContent).not.toBe(shown);
   });
 
   it('says which state it is in, rather than leaving it to be guessed', () => {

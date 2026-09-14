@@ -145,6 +145,13 @@ export function PriceChart({
    * picture and the page behaves like a page; on, it takes the pointer and says
    * so. The choice is remembered, because somebody who wants it wants it every
    * time.
+   *
+   * Turning it off keeps the view exactly where it was. The first version
+   * snapped back to the whole series, on the theory that a window nobody can
+   * pan out of is a trap -- but the reason to turn zoom off is to *stop* the
+   * wheel moving the chart, which is the opposite of wanting it moved. The
+   * range somebody pulled into is the picture they want left alone; Fit is
+   * there when they want the whole series back.
    */
   const [zoomOn, setZoomOn] = usePersisted('zoom:price-chart', false);
 
@@ -384,12 +391,7 @@ export function PriceChart({
           title={zoomOn
             ? 'Zoom and pan are on: the wheel zooms and a drag pans. Turn off to scroll the page over the chart.'
             : 'Zoom and pan are off, so the page scrolls over the chart. Turn on to zoom.'}
-          onClick={() => {
-            // Turning it off returns the whole series: a window you cannot pan
-            // out of is a trap, and "off" should mean one predictable picture.
-            if (zoomOn) setView(null);
-            setZoomOn(!zoomOn);
-          }}
+          onClick={() => setZoomOn(!zoomOn)}
         >
           {zoomOn ? <Move size={12} aria-hidden /> : <Lock size={12} aria-hidden />}
           {zoomOn ? 'Zoom on' : 'Zoom off'}

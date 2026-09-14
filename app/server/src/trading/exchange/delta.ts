@@ -3,7 +3,7 @@ import { stopFillLimit } from '../money.js';
 import type {
   ExchangeOrder, ExchangePosition, OrderStatus, PlaceOrderRequest, ProductSpec, Quote,
 } from '../types.js';
-import { ExchangeUnavailable, OrderRejected, SubmitTimeout, type ExchangePort } from './port.js';
+import { ExchangeUnavailable, OrderGone, OrderRejected, SubmitTimeout, type ExchangePort } from './port.js';
 import { noteError } from '../../observability/errors.js';
 
 /** A read's timeout, and how many times it is tried. See `call`. */
@@ -204,6 +204,9 @@ export function orderBody(req: PlaceOrderRequest): Record<string, unknown> {
 const OPTION_SIDE = (contractType: string) =>
   contractType.startsWith('call') ? ('CE' as const) : ('PE' as const);
 
+/** The edit refusals that mean the order left the book, from Delta's own table. */
+const GONE_CODES = new Set(['open_order_not_found', 'order_already_filled']);
+
 export class DeltaExchange implements ExchangePort {
   private products = new Map<string, ProductSpec>();
 
@@ -365,6 +368,11 @@ export class DeltaExchange implements ExchangePort {
       }));
     } catch (e) {
       if (deltaTrouble(e)) throw new ExchangeUnavailable((e as Error).message);
+      // Filled or cancelled since it was last read: the caller reads it again.
+      // Delta's edit-order error table names both -- "couldn't be found among
+      // open orders; it may already be filled or cancelled", and "has already
+      // been completely filled and can no longer be edited".
+      if (e instanceof DeltaRefused && GONE_CODES.has(e.code)) throw new OrderGone(order.orderId);
       if (e instanceof DeltaRefused) throw new OrderRejected(e.message);
       throw e;
     }

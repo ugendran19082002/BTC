@@ -10,7 +10,7 @@ import { join } from 'node:path';
 process.env.ERROR_DB = join(mkdtempSync(join(tmpdir(), 'read-retry-')), 'errors.db');
 const { DeltaExchange } = await import('../../src/trading/exchange/delta.js');
 const { DeltaRefused } = await import('../../src/delta/signed.js');
-const { ExchangeUnavailable } = await import('../../src/trading/exchange/port.js');
+const { ExchangeUnavailable, OrderGone, OrderRejected } = await import('../../src/trading/exchange/port.js');
 type DeltaExchange = InstanceType<typeof DeltaExchange>;
 
 /**
@@ -154,4 +154,36 @@ test('an order Delta refuses on purpose is still rejected', async () => {
 test('a reply that is a list of products is not cached as one product', async () => {
   answers({ status: 200, body: { success: true, result: [{ symbol: 'C-BTC-79800-110926' }] } });
   assert.equal(await new DeltaExchange(creds).getProduct('C-BTC-79800-110926'), null);
+});
+
+/**
+ * The one refusal on an edit that is not a refusal.
+ *
+ * 14 Sep 2026, 07:37: an add of 650 contracts filled at 9.90 five seconds after
+ * it was sent, the chase's first step tried to walk an order that was no longer
+ * there, and the log said "add chase failed: Delta refused the request
+ * (open_order_not_found)" about a trade that had gone exactly right.
+ */
+test('[critical] an edit refused because the order has gone is OrderGone, not a rejection', async () => {
+  answers({ status: 400, body: { success: false, error: { code: 'open_order_not_found' } } });
+  await assert.rejects(
+    new DeltaExchange(creds).editOrder({ orderId: '1535388639', productId: 1 }, { limitPrice: 9.5 }),
+    (e: unknown) => e instanceof OrderGone && (e as { orderId: string }).orderId === '1535388639',
+  );
+});
+
+test('so is "already filled", the other name Delta gives the same fact', async () => {
+  answers({ status: 400, body: { success: false, error: { code: 'order_already_filled' } } });
+  await assert.rejects(
+    new DeltaExchange(creds).editOrder({ orderId: '2', productId: 1 }, { limitPrice: 9.5 }),
+    OrderGone,
+  );
+});
+
+test('every other refusal of an edit is still a rejection', async () => {
+  answers({ status: 400, body: { success: false, error: { code: 'invalid_limit_price' } } });
+  await assert.rejects(
+    new DeltaExchange(creds).editOrder({ orderId: '1', productId: 1 }, { limitPrice: 9.5 }),
+    OrderRejected,
+  );
 });

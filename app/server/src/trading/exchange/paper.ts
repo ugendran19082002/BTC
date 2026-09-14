@@ -1,7 +1,7 @@
 import type {
   ExchangeOrder, ExchangePosition, OrderStatus, PlaceOrderRequest, ProductSpec, Quote,
 } from '../types.js';
-import { ExchangeUnavailable, OrderRejected, SubmitTimeout, type ExchangePort } from './port.js';
+import { ExchangeUnavailable, OrderGone, OrderRejected, SubmitTimeout, type ExchangePort } from './port.js';
 
 /**
  * An exchange you can lie to.
@@ -290,7 +290,8 @@ export class PaperExchange implements ExchangePort {
     this.guard();
     const o = this.orders.get(order.orderId);
     if (!o) throw new OrderRejected('no such order');
-    if (o.status !== 'open' && o.status !== 'partial') throw new OrderRejected('order is not live');
+    // The same answer the real venue gives for an order that has already gone.
+    if (o.status !== 'open' && o.status !== 'partial') throw new OrderGone(order.orderId);
     if (changes.size !== undefined) o.size = changes.size;
     if (changes.limitPrice !== undefined) o.limitPrice = changes.limitPrice;
     if (changes.stopPrice !== undefined) o.stopPrice = changes.stopPrice;

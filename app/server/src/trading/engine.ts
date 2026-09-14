@@ -6,7 +6,7 @@ import { applyEvent, initialTrade, isDone, protectionSize } from './machine.js';
 import { priceFor, lotsToContracts, stopFillLimit, stopPriceFor } from './money.js';
 import { DEFAULT_LIMITS, precheck, type PrecheckResult, type RiskLimits } from './precheck.js';
 import { clampLeverage, liquidationRoom, premiumUsd } from './margin.js';
-import { ExchangeUnavailable, OrderRejected, SubmitTimeout, type ExchangePort } from './exchange/port.js';
+import { ExchangeUnavailable, OrderGone, OrderRejected, SubmitTimeout, type ExchangePort } from './exchange/port.js';
 
 /**
  * The thing that actually trades.
@@ -603,8 +603,16 @@ export class TradeEngine {
           // no moment where the entry is neither working nor filled.
           const moved = await this.exchange
             .editOrder(entry, { limitPrice: want })
-            .catch((e) => { this.note('chase', entry, e); return null; });
-          if (moved) rec = this.absorb(rec, moved, 'entry');
+            .catch((e) => (e instanceof OrderGone ? e : (this.note('chase', entry, e), null)));
+          if (moved instanceof OrderGone) {
+            // Filled or cancelled since the read a moment ago. That is the
+            // order doing what it was sent to do, not a fault: read it again
+            // now, so the fill is on the record this poll rather than next.
+            const gone = await this.exchange.getOrderByClientId(entryId).catch(() => null);
+            if (gone) rec = this.absorb(rec, gone, 'entry');
+          } else if (moved) {
+            rec = this.absorb(rec, moved, 'entry');
+          }
         }
       }
     }
@@ -1228,8 +1236,22 @@ export class TradeEngine {
         want = Math.max(want, priceFor('sell', add.floorPrice, tick));
         if (want < order.limitPrice) {
           const moved = await this.exchange.editOrder(order, { limitPrice: want })
-            .catch((e) => { this.note('add chase', order, e); return null; });
-          if (moved) rec = this.absorbAdd(rec, moved);
+            .catch((e) => (e instanceof OrderGone ? e : (this.note('add chase', order, e), null)));
+          if (moved instanceof OrderGone) {
+            // The add filled between the read and the edit -- the 650 of 14 Sep
+            // took five seconds. Read it again now: the fill goes on the record
+            // this poll, the add is closed out, and protection is resized here
+            // rather than twenty seconds from now.
+            const gone = await this.exchange.getOrderByClientId(add.clientOrderId).catch(() => undefined);
+            if (gone) {
+              rec = this.absorbAdd(rec, gone);
+              if (gone.status !== 'open' && gone.status !== 'partial') {
+                return this.commit(rec, { t: 'add_done', filled: this.addFilled(rec, add), reason: gone.status, at: this.now() });
+              }
+            }
+          } else if (moved) {
+            rec = this.absorbAdd(rec, moved);
+          }
         }
       }
     }

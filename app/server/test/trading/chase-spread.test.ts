@@ -101,3 +101,35 @@ test('the strategy setting defaults to 15%, refuses nonsense, and accepts an old
   const { maxCrossSpreadPct: _dropped, ...older } = DEFAULT_CONFIG;
   assert.deepEqual(validateConfig(older), [], 'a strategy saved before this setting existed still validates');
 });
+
+/**
+ * The entry fills between the poll that read it open and the step that tried
+ * to move it -- the same race the add hit on 14 Sep 2026, on the entry's own
+ * chase. The order did what it was sent to do; nothing may reach the error log,
+ * and the fill goes on the record this poll rather than next.
+ */
+test('[critical] an entry that fills under the chase is recorded, not reported', async () => {
+  const r = rig({ quotes: [quote(CE, 39, 42, { mark: 40.5 })] });
+  const plan = chased();
+  await r.engine.open(plan);
+  await r.engine.poll(plan.tradeId);
+  assert.ok(await restingEntry(r), 'resting at 44');
+
+  const edit = r.ex.editOrder.bind(r.ex);
+  let chaseSteps = 0;
+  r.ex.editOrder = async (o, c) => {
+    chaseSteps++;
+    // a buyer takes the 44 before the edit lands
+    r.ex.tick(quote(CE, 44, 45, { mark: 44.5, ts: r.now() }));
+    return edit(o, c);   // OrderGone from the paper venue, as from Delta
+  };
+
+  r.advance(1_000);
+  r.ex.tick(quote(CE, 39, 42, { mark: 40.5, ts: r.now() }));
+  const st = (await r.engine.poll(plan.tradeId))!;
+
+  assert.equal(chaseSteps, 1);
+  assert.deepEqual(r.swallowed, [], 'the fill is not a failure');
+  assert.equal(st.position, -1, 'on the record in the same poll');
+  assert.equal(st.fills[0]!.price, 44, 'at the price it was resting at');
+});

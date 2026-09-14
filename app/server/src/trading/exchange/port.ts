@@ -64,6 +64,25 @@ export class OrderRejected extends Error {
   }
 }
 
+/**
+ * Thrown by an edit when the order is no longer on the book: it filled or was
+ * cancelled between our read and our write.
+ *
+ * Not a fault. A resting order being walked toward the bid is an order that is
+ * *meant* to fill, and the poll that read it open and the edit that found it
+ * gone are a few seconds apart on a real venue. The 650-contract add of 14 Sep
+ * filled at 9.90 five seconds after it was sent, the chase's first step landed
+ * on the filled order, and the desk logged "add chase failed: Delta refused
+ * the request (open_order_not_found)" over a trade that had gone exactly right.
+ * The caller's move is to read the order again, not to report anything.
+ */
+export class OrderGone extends Error {
+  constructor(readonly orderId: string) {
+    super(`Order ${orderId} is no longer on the book.`);
+    this.name = 'OrderGone';
+  }
+}
+
 /** Thrown when the venue is unreachable. No new risk may be taken. */
 export class ExchangeUnavailable extends Error {
   constructor(message = 'Exchange is unreachable.') {

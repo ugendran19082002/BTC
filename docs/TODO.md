@@ -240,6 +240,40 @@ chain. It was taken out by mistake for one deploy and put straight back.
 
 ---
 
+## "add chase failed" over a trade that went right — 14 Sep 2026
+
+07:37 IST, in the error log: *add chase failed: Delta refused the request
+(open_order_not_found)*, order 1535388639, C-BTC-78800-140926. The journal for
+the same minute: the add of 650 contracts at 9.90 was submitted at 07:37:43
+and filled, all 650, at 07:37:48. The chase's first step — 1.25 s in — tried to
+walk an order that had already gone, Delta said so, and the desk logged it as
+a failure. The next poll found the fill and closed the add out correctly. The
+outcome was right; the reporting was wrong, and the fill was on the record a
+poll later than it needed to be.
+
+Delta's own edit-order table names the fact twice — `open_order_not_found`
+("may already be filled or cancelled") and `order_already_filled` — and
+neither is a refusal of anything. `exchange/port.ts` gained `OrderGone`,
+`exchange/delta.ts` maps both codes to it, and the paper venue throws the same
+for an order that is not live, so the tests run against the answer the real
+venue gives. In both chase loops the engine now reads the order again on
+`OrderGone` instead of noting an error: the fill goes on the record in the
+same poll, the add is closed out, and the target and stop are resized there
+rather than twenty seconds later. Every other edit refusal is still reported.
+
+Tested: the adapter maps both codes and nothing else; an add that fills under
+the chase leaves the error log empty, lands at −850 in that poll and resizes
+protection to 850 in the same poll; the entry chase does the same; a chase
+refused for any other reason is still reported. The rig now records what the
+engine swallows, so "nothing reached the error log" is an assertion.
+
+`docs/DELTA-API-NOTES.md` is new: what the desk relies on from the API docs,
+verified today, each with where the dependency lives — the error tables, what
+a refused cancel means, why orders are read back from two endpoints, and the
+rate-limit weights.
+
+---
+
 ## Two score bars on a strategy — 14 Sep 2026
 
 A strategy can now be held back by either of the two numbers the live screen
@@ -329,8 +363,10 @@ page dead wherever the pointer happens to rest — and `touch-action: none` mean
 a drag over the plot on a phone scrolled nothing at all and the page felt stuck.
 Zoom and pan are now armed by a toggle in the header, off by default and
 remembered: off, the chart is a picture and the page behaves like a page;
-armed, it takes the pointer and says so in the key. Turning it off returns the
-whole series, because a window nobody can pan out of is a trap.
+armed, it takes the pointer and says so in the key. Turning it off keeps the
+view exactly where it was — the first version snapped back to the whole series,
+and the reason to turn zoom off is to *stop* the chart moving, not to have it
+moved. Fit is there for the whole series.
 
 **Every add in the journal now carries its date.** A bare "13:54" reads as
 today's, and the journal keeps a week of them. The runs log beside it has
