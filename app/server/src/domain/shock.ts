@@ -80,6 +80,18 @@ export type MoveOdds = {
   inside: number;
   /** `up + down`, kept because it is the number a seller asks for. */
   either: number;
+  /**
+   * Half of all windows moved less than this, either way, in percent.
+   *
+   * Here because a fixed threshold cannot separate short horizons: one percent
+   * is so far into the tail of five minutes *and* of fifteen that both read
+   * 1% / 1% / 98% and the window control looks broken. It is not — a 1% move
+   * in either is genuinely rare — but the figure that actually distinguishes
+   * them is how far the window typically travels, and that is this.
+   */
+  typicalPct: number;
+  /** Nineteen windows in twenty stayed inside this, in percent. */
+  outerPct: number;
 };
 
 export function moveOdds(minutes: number, thresholdPct = 1): MoveOdds | null {
@@ -92,11 +104,19 @@ export function moveOdds(minutes: number, thresholdPct = 1): MoveOdds | null {
   const n = row.quantiles.length;
   const up = row.quantiles.filter((q) => q > thresholdPct).length / n;
   const down = row.quantiles.filter((q) => q < -thresholdPct).length / n;
+
+  // The same 101 measured windows read as sizes rather than as sides: sort them
+  // by how far they moved and take the middle one and the 95th.
+  const size = row.quantiles.map(Math.abs).sort((a, b) => a - b);
+  const at = (p: number) => size[Math.round((p / 100) * (size.length - 1))] ?? 0;
+
   return {
     overMinutes: row.minutes,
     thresholdPct,
     up,
     down,
+    typicalPct: at(50),
+    outerPct: at(95),
     // Every window is exactly one of the three, so they add to one.
     inside: Math.max(0, 1 - up - down),
     // A window rose or fell, never both, so these two simply add.
@@ -385,9 +405,19 @@ export function suddenMove(i: {
 
   return {
     score, band, parts, reasons, direction, directionLabel, directionParts,
-    // Four hours: long enough that a sudden move has somewhere to go, short
-    // enough to still be about today's contract.
-    odds: moveOdds(4 * 60, 1),
+    /*
+     * Over the window the readings were taken over, not over a fixed four
+     * hours.
+     *
+     * It was pinned at 240 minutes while everything above it moved with the
+     * control, so the panel showed 9% / 10% / 81% whichever window was chosen
+     * and the one block a person is most likely to read as a forecast was the
+     * one block the control did not reach. "Something is happening over five
+     * minutes" and "how often did the next four hours move" are not the same
+     * question, and answering the second under the first's heading is worse
+     * than not answering at all.
+     */
+    odds: moveOdds(win, 1),
     window: win,
   };
 }

@@ -180,8 +180,9 @@ export type SuddenMove = {
   /** The window every reading above was taken over, in minutes. */
   window: number;
   /**
-   * How often BTC has actually moved more than a percent over the next few
-   * hours — counted off the measured percentiles, not assumed.
+   * How often BTC has actually moved more than a percent over the next window
+   * of the length chosen above — counted off the measured percentiles, not
+   * assumed.
    */
   odds: {
     overMinutes: number;
@@ -192,6 +193,10 @@ export type SuddenMove = {
     inside: number;
     /** `up + down`, kept because it is the number a seller asks for. */
     either: number;
+    /** Half of all windows moved less than this, either way, in percent. */
+    typicalPct: number;
+    /** Nineteen in twenty stayed inside this, in percent. */
+    outerPct: number;
   } | null;
 };
 
