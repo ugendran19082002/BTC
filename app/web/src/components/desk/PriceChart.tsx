@@ -27,8 +27,6 @@ const sizeFor = (width: number) => {
   return { W, H: clamp(Math.round(W * 0.46), 250, 360) };
 };
 const PAD = { top: 10, right: 74, bottom: 26, left: 8 };
-/** The card's own side padding, which the canvas sits inside of. Matches `.price-chart`. */
-const CARD_PAD = 12;
 /**
  * Empty plot kept to the right of the newest bar.
  *
@@ -210,7 +208,9 @@ export function PriceChart({
     const el = cardRef.current;
     if (!el) return;
     const measure = () => {
-      const w = el.clientWidth - 2 * CARD_PAD;
+      // The card's own side padding, which changes at phone width.
+      const cs = getComputedStyle(el);
+      const w = el.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
       if (w > 0) setWidth(w);
     };
     measure();

@@ -2103,3 +2103,77 @@ seven, while a row that expired later stays a little longer.
   but a **fresh-code requirement on the actions that matter** (going live,
   changing limits) — the password change already works that way.
 
+## The account's total, the day's move, and the tab
+
+*14 September 2026*
+
+Three small things asked for from the screen, each with a reason.
+
+**Total.** The account card led with Available and Used, and the sum -- what
+the account is worth altogether, Delta's "Wallet Balance" -- had to be added in
+the head. It is now the first row, in bold. The used part is an estimate from
+each trade's leverage (Delta reports free margin, not used), so the total
+carries the same caveat and shows a dash rather than a wrong number when the
+estimate cannot be made. Three tests.
+
+**"+88 pts this session".** The header's move was measured inside the front
+contract, and by evening the front contract is *tomorrow's* -- not open yet, so
+the figure vanished and the header fell back to "since you opened the page",
+a baseline that meant nothing next to the day's P&L beside it. The move is now
+measured from **05:30 IST today** all day, the same moment as every other
+"today" on the desk: `hoursSinceDeskOpen` in `chain.ts`, the row labelled
+`today, since 05:30` (`TODAY_MOVE`, one string shared by server and web), and
+the sudden-move reading uses the same span. Two tests on the clock arithmetic,
+including 19:33 IST reading 14.05 hours in.
+
+**The tab.** `78,397 +88 · +₹4,354 · BTC Desk` -- price, day move, day P&L --
+so a glance at the tab from another one answers the question. The move goes in
+only once it is the day's, the P&L only once the server has answered, and a
+signed-out page says nothing but the name. `lib/tab-title.ts`, four tests.
+
+## Zoom you can find, on a phone you can read
+
+*14 September 2026*
+
+"Zoom is not user friendly, and on a phone it is not responsive." Both true.
+
+**Not friendly:** the only way in was the wheel, and the wheel only worked after
+a chip called *Zoom off* had been found and turned on. Now **+ and − are always
+in the header and always work**, armed or not -- they zoom about the newest
+bar, which is the one bar anyone pressing + wants closer (and about the middle
+once the window has been panned into history, where "newest on screen" is
+nothing in particular). *Fit* is always there too, greyed out when there is
+nothing to fit. The chip still governs the *gestures*, because those fight the
+page: on, the wheel zooms, a drag pans, a **pinch zooms about the fingers**, a
+**drag on the price axis stretches the scale** (down is out, up is in, a
+hundred pixels an e-fold -- the height of a phone's plot reaches the walls),
+and a **double-tap** puts it back where a phone has no double-click. A lifted
+finger ends every gesture, so the finger left behind after a pinch does not
+drag the window somewhere new on its way out.
+
+**Not responsive:** the canvas was a fixed 780×360 viewBox scaled to fit,
+which on a 360-pixel phone drew every label at under five pixels and every
+wick as a hair -- responsive in the sense of fitting, unreadable in every
+other. **The canvas is now drawn at the width it is shown** (a `ResizeObserver`
+on the card, padding taken off) and the height follows the width, so text is
+text-sized on every screen. Under jsdom the observer is a stub and the chart
+draws at the old 780, so every geometry test still pins what it pinned.
+
+Also: the tools take a row of their own under the title on a phone instead of
+wrapping wherever the width ran out, and on a touch screen every chip grows to
+32px with the +/− at least 36 wide.
+
+**Tests** (PriceChart, 43): the buttons work with zoom off and stop at both
+ends; + keeps the newest bar on screen; a pinch halves the bars when the
+fingers double their distance and returns the window when they return; two
+fingers on an armed chart pinch it through the DOM and the finger left behind
+moves nothing; one finger pans and does not scroll the page; the axis drag's
+arithmetic and, through the DOM, that a drag down brings a wall onto the
+scale; two taps fit; with zoom off a finger is left to the page; and a
+360-wide card draws a 360-wide canvas with the newest bar still clear of the
+axis.
+
+- [ ] Not looked at on a real phone yet -- the desk needs a password and an
+  authenticator code, so the headless check could not sign in. Worth one
+  glance at the tools row at 360px.
+
