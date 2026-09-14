@@ -299,6 +299,22 @@ rather than overstated.
 
 Nothing on the trading side reads any of it, and the card says so.
 
+### "Price now" was the one price nobody transacts at
+
+The positions card showed the mark and called it the price. Closing a short is
+a *buy*, so what leaving costs is the **ask** — the mirror of the rule the board
+already follows for a seller, which is that you receive the bid and reading the
+mark as your fill is how a profitable backtest turns into an account that is
+not.
+
+Both sides are on the card now, under the mark, with the spread beside the
+other costs of leaving and marked when it is wide enough to matter. The close
+sheet says "buys back at" outright, because that sheet exists to put everything
+on the table before the swipe.
+
+One side alone is not a book and is not drawn as one: "bid 10.50 · ask —" reads
+as a quote that is half missing rather than as one the desk could not take.
+
 ### The board on a phone
 
 Both sides is twenty-seven columns with the strike in the middle. That is how
