@@ -1510,3 +1510,57 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 }
 .zerobar i { display: block; height: 100%; background: currentColor; }
 @media (max-width: 760px) { .zerobar { width: 16px; margin-right: 4px; } }
+/* The outcome a seller is actually hoping for. */
+.smr-odd.flat b { color: var(--up); }
+
+/* Last updated, and the window every reading is taken over. */
+.smr-updated {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-left: auto; color: var(--dim);
+}
+.smr-updated > span { display: flex; flex-direction: column; line-height: 1.2; }
+.smr-updated small { font-size: 9.5px; letter-spacing: 0.4px; text-transform: uppercase; }
+.smr-updated b { font-size: 11.5px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* The live chip sits with the title, not with the clock. */
+.smr-live { margin-left: 0; }
+
+.smr-windows { display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--panel-2); }
+.smr-windows button {
+  appearance: none; border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: 11.5px; font-weight: 500;
+  padding: 3px 11px; border-radius: 6px; color: var(--muted);
+}
+.smr-windows button:hover { color: var(--text); }
+.smr-windows button.on { background: var(--accent); color: #0b0e11; font-weight: 600; }
+.smr-windows button:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+
+@media (max-width: 640px) {
+  .smr-top { row-gap: 8px; }
+  .smr-updated { margin-left: auto; }
+  .smr-windows { flex-basis: 100%; justify-content: space-between; }
+  .smr-windows button { flex: 1 1 0; text-align: center; }
+}
+
+/* Folded, the panel still carries the alarm: score, band and direction. */
+.smr-title {
+  appearance: none; border: 0; background: none; padding: 0; cursor: pointer;
+  font: inherit; text-align: left;
+}
+.smr-chev { transition: transform 0.15s; flex: none; color: var(--dim); }
+.smr-chev.shut { transform: rotate(-90deg); }
+.smr-folded { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.smr-folded b { font-size: 14px; font-weight: 700; }
+.smr-folded.smr-up b { color: var(--up); }
+.smr-folded.smr-warn b { color: var(--warn); }
+.smr-folded.smr-bad b { color: var(--down); }
+.smr-folded-dir.smr-up { color: var(--up); }
+.smr-folded-dir.smr-down { color: var(--down); }
+@media (prefers-reduced-motion: reduce) { .smr-chev { transition: none; } }
+.price-chart-title {
+  appearance: none; border: 0; background: none; padding: 0; cursor: pointer;
+  font: inherit; font-size: 12.5px; font-weight: 600; color: var(--text);
+  display: inline-flex; align-items: center; gap: 6px; text-align: left; min-width: 0;
+}
+.price-chart-title:focus-visible, .smr-title:focus-visible {
+  outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 4px;
+}

@@ -1,7 +1,9 @@
+import * as Collapsible from '@radix-ui/react-collapsible';
 import type { LucideIcon } from 'lucide-react';
 import {
-  Zap, Activity, BarChart3, Waves, TrendingUp, TrendingDown, Minus, Info,
+  Zap, Activity, BarChart3, Waves, TrendingUp, TrendingDown, Minus, Info, Clock, ChevronDown,
 } from 'lucide-react';
+import { usePersisted } from '@/hooks/usePersisted';
 import type { MarketRead, OptionStructure, SnapshotMeta, SuddenMove as Shock } from '@/types/desk';
 import { strike as fmtStrike } from '@/lib/format';
 
@@ -126,18 +128,42 @@ const part = (shock: Shock, name: string) => shock.parts.find((p) => p.name === 
  * forecast: over those same windows the chance BTC finishes higher never moved
  * further than 0.6 points from a coin flip at any horizon out to twelve hours.
  */
+const WINDOW_LABEL: Record<number, string> = { 5: '5m', 15: '15m', 60: '1h', 240: '4h' };
+
+const IST = new Intl.DateTimeFormat('en-IN', {
+  timeZone: 'Asia/Kolkata',
+  hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true,
+});
+
 export function SuddenMove({
-  shock,
+  shocks,
+  window,
+  onWindow,
   snap,
   structure,
   market,
 }: {
-  shock: Shock;
+  /** One reading per window; the server computes all four. */
+  shocks: Shock[];
+  window: number;
+  onWindow: (minutes: number) => void;
   snap: SnapshotMeta;
   structure: OptionStructure;
   market: MarketRead | null;
 }) {
-  if (shock.score === null) return null;
+  /*
+   * Foldable, but never silent.
+   *
+   * The panel is the largest thing on the screen and most days it says nothing
+   * is happening, so it has to be possible to put away. What it must not do is
+   * take the alarm with it: folded, the header still carries the score, the
+   * band and the direction, and only the workings go. A warning you can hide
+   * entirely is a warning that is hidden on the day it matters.
+   */
+  const [open, setOpen] = usePersisted('open:sudden-move', true);
+
+  const shock = shocks.find((s) => s.window === window) ?? shocks[0];
+  if (!shock || shock.score === null) return null;
 
   const band = BAND[shock.band];
   const riskTone: Tone = shock.band === 'sudden' || shock.band === 'high' ? 'bad'
@@ -154,18 +180,66 @@ export function SuddenMove({
   const pct = (v: number) => `${Math.round(v * 100)}%`;
 
   return (
-    <section className={`smr smr-band-${shock.band}`} aria-label="sudden move analytics">
+    <Collapsible.Root
+      open={open}
+      onOpenChange={setOpen}
+      className={`smr smr-band-${shock.band}`}
+      aria-label="sudden move analytics"
+    >
       <header className="smr-top">
-        <span className="smr-title">
+        <Collapsible.Trigger className="smr-title" aria-label="sudden move analytics">
+          <ChevronDown className={`smr-chev${open ? '' : ' shut'}`} size={13} aria-hidden />
           <Zap size={16} aria-hidden />
           Sudden move analytics
-        </span>
+        </Collapsible.Trigger>
+
+        {/* Folded, this is the whole of it: the alarm never goes away. */}
+        {!open && (
+          <span className={`smr-folded smr-${riskTone}`}>
+            <b>{shock.score}</b>/100 · {band.label}
+            <span className={`smr-folded-dir smr-${dirTone}`}>
+              · {flat ? 'no clear side'
+                : `${shock.direction! > 0 ? 'upside' : 'downside'} ${Math.round(Math.abs(shock.direction!) * 100)}%`}
+            </span>
+          </span>
+        )}
         <span className="smr-sub">
           Reads price, volume, volatility and the option board for an abnormal move
         </span>
         <span className="smr-live">{snap.live ? 'Live' : 'Snapshot'}</span>
+
+        <span className="smr-updated">
+          <Clock size={12} aria-hidden />
+          <span>
+            <small>Last updated</small>
+            <b>{IST.format(snap.ts * 1000)} IST</b>
+          </span>
+        </span>
+
+        {/*
+          A real control, not a decoration: every reading below is taken over
+          the window chosen here. Five minutes says whether something is
+          happening now; four hours says whether the session has been unusual,
+          and they are different questions. The server computes all four, so
+          switching costs nothing and asks the server for nothing.
+        */}
+        <div className="smr-windows" role="radiogroup" aria-label="reading window">
+          {shocks.map((s) => (
+            <button
+              key={s.window}
+              type="button"
+              role="radio"
+              aria-checked={s.window === shock.window}
+              className={s.window === shock.window ? 'on' : undefined}
+              onClick={() => onWindow(s.window)}
+            >
+              {WINDOW_LABEL[s.window] ?? `${s.window}m`}
+            </button>
+          ))}
+        </div>
       </header>
 
+      <Collapsible.Content>
       <div className="smr-cards">
         <div className={`smr-card smr-risk smr-${riskTone}`}>
           <div className="smr-card-head">
@@ -301,6 +375,13 @@ export function SuddenMove({
                 <Info size={11} aria-hidden />
               </span>
             </span>
+            {/*
+              Three outcomes that are the whole of it, so they add to a hundred.
+              It was up, down and "either side", which is up plus down again —
+              three boxes reading as a breakdown that does not add up, with the
+              one that matters most to a seller (the windows that went nowhere)
+              left off entirely.
+            */}
             <div className="smr-odds-grid">
               <span className="smr-odd up">
                 <small>Up more than {shock.odds.thresholdPct}%</small>
@@ -310,15 +391,16 @@ export function SuddenMove({
                 <small>Down more than {shock.odds.thresholdPct}%</small>
                 <b>{pct(shock.odds.down)}</b>
               </span>
-              <span className="smr-odd">
-                <small>Either side</small>
-                <b>{pct(shock.odds.either)}</b>
+              <span className="smr-odd flat">
+                <small>Stayed within {shock.odds.thresholdPct}%</small>
+                <b>{pct(shock.odds.inside)}</b>
               </span>
             </div>
             <span className="smr-odds-foot">
               over the next {shock.odds.overMinutes >= 60
                 ? `${Math.round(shock.odds.overMinutes / 60)} hours`
-                : `${shock.odds.overMinutes} minutes`}, measured
+                : `${shock.odds.overMinutes} minutes`}, measured ·{' '}
+              <b>{pct(shock.odds.either)}</b> moved either way
             </span>
           </div>
         )}
@@ -329,6 +411,7 @@ export function SuddenMove({
         has been measured across 2024, 2025 and 2026 the way the premium floor and the RSI gate
         were.
       </p>
-    </section>
+      </Collapsible.Content>
+    </Collapsible.Root>
   );
 }

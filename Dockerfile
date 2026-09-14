@@ -5,7 +5,10 @@ FROM node:24.12-alpine AS server-build
 WORKDIR /build/server
 # copy manifests first so a source-only change reuses the install layer
 COPY app/server/package.json app/server/package-lock.json ./
-RUN npm ci
+# A cache mount, so a lockfile change re-resolves but does not re-download every
+# tarball. The layer cache already covers "nothing changed"; this covers the far
+# commoner "one dependency moved".
+RUN --mount=type=cache,target=/root/.npm,sharing=locked npm ci
 COPY app/server/tsconfig.json ./
 COPY app/server/src ./src
 RUN npm run build
@@ -14,15 +17,12 @@ RUN npm run build
 FROM node:24.12-alpine AS server-deps
 WORKDIR /build/server
 COPY app/server/package.json app/server/package-lock.json ./
-RUN npm ci --omit=dev
+RUN --mount=type=cache,target=/root/.npm,sharing=locked npm ci --omit=dev
 
-# ---------- build the front end ----------
-FROM node:24.12-alpine AS web-build
-WORKDIR /build/web
-COPY app/web/package.json app/web/package-lock.json ./
-RUN npm ci
-COPY app/web/ ./
-RUN npm run build
+# The front end is built by Dockerfile.web, which is what the web image uses.
+# A `web-build` stage lived here too and nothing ever copied out of it -- BuildKit
+# skips an unreferenced stage, so it cost nothing at build time and cost every
+# reader of this file a minute working out where its output went.
 
 # ---------- runtime ----------
 FROM node:24.12-alpine AS runtime

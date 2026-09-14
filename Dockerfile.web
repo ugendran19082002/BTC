@@ -3,7 +3,9 @@
 FROM node:24.12-alpine AS build
 WORKDIR /build
 COPY app/web/package.json app/web/package-lock.json ./
-RUN npm ci
+# See Dockerfile: the layer cache covers "nothing changed", this covers "one
+# dependency moved".
+RUN --mount=type=cache,target=/root/.npm,sharing=locked npm ci
 COPY app/web/ ./
 RUN npm run build
 

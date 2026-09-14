@@ -13,7 +13,7 @@ import { strategyStore } from './strategy.routes.js';
 import { refuse } from '../refuse.js';
 import { attachEv } from '../../domain/ev.js';
 import { noteOpenInterest, openInterestChange, ivChange, type OiChange } from '../../market/oi-history.js';
-import { suddenMove } from '../../domain/shock.js';
+import { suddenMove, SHOCK_WINDOWS } from '../../domain/shock.js';
 
 /** Resolve the `at` query param: "now" (or absent) means live. */
 function resolveAt(at: string | undefined): number | null {
@@ -134,7 +134,16 @@ export function registerDeskRoutes(app: FastifyInstance) {
         picks,
         market,
         structure,
-        shock: suddenMove({
+        /*
+         * Every window, not one.
+         *
+         * Five minutes says whether something is happening *now*; four hours
+         * says whether the session has been unusual, and they are different
+         * questions. The readings are arithmetic over series already fetched,
+         * so computing all four costs nothing measurable and lets the screen
+         * switch between them without going back to the server.
+         */
+        shocks: SHOCK_WINDOWS.map((window) => suddenMove({
           spot: snap.spot,
           atmIv: snap.atmIv,
           market,
@@ -144,7 +153,8 @@ export function registerDeskRoutes(app: FastifyInstance) {
             changePct: iv.changePct, overMinutes: iv.overMinutes,
             from: iv.from, to: iv.to,
           },
-        }),
+          window,
+        })),
         forecast: forecast(snap),
         recommendation,
         requireHedge,

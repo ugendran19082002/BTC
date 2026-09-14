@@ -69,6 +69,16 @@ export type MoveOdds = {
   /** Share of windows that rose more than the threshold. */
   up: number;
   down: number;
+  /**
+   * Share that stayed inside it — the outcome the other two leave out.
+   *
+   * Without this the three figures on screen are 9%, 10% and 19%, which a
+   * reader looking at three boxes takes for a breakdown and finds does not add
+   * up. `up + down + inside` is the whole of it, and 81% of windows going
+   * nowhere is the most important of the three for somebody selling premium.
+   */
+  inside: number;
+  /** `up + down`, kept because it is the number a seller asks for. */
   either: number;
 };
 
@@ -87,7 +97,9 @@ export function moveOdds(minutes: number, thresholdPct = 1): MoveOdds | null {
     thresholdPct,
     up,
     down,
-    // A window is one or the other, never both, so the two simply add.
+    // Every window is exactly one of the three, so they add to one.
+    inside: Math.max(0, 1 - up - down),
+    // A window rose or fell, never both, so these two simply add.
     either: up + down,
   };
 }
@@ -129,6 +141,8 @@ export type SuddenMove = {
    * the readings behind it, and a reader who disagrees with one can see which.
    */
   directionParts: { name: string; value: number }[];
+  /** The window every reading above was taken over. */
+  window: number;
   /**
    * How often BTC has moved more than a percent over the next few hours,
    * counted off the measured percentiles rather than assumed.
@@ -157,6 +171,15 @@ export function expectedMoveOver(spot: number, atmIv: number | null, hours: numb
   return spot * atmIv * Math.sqrt(hours / 8760);
 }
 
+/** The windows the screen offers, in minutes. */
+export const SHOCK_WINDOWS = [5, 15, 60, 240] as const;
+export type ShockWindow = (typeof SHOCK_WINDOWS)[number];
+
+/** How each window is written, on screen and in the readings' own sentences. */
+export const WINDOW_LABEL: Record<ShockWindow, string> = {
+  5: '5m', 15: '15m', 60: '1h', 240: '4h',
+};
+
 export function suddenMove(i: {
   spot: number;
   atmIv: number | null;
@@ -165,13 +188,26 @@ export function suddenMove(i: {
   /** Per-strike open-interest changes, if the desk has any history yet. */
   oiChanges: Map<string, OiChange>;
   iv: { changePct: number; overMinutes: number; from: number; to: number } | null;
+  /**
+   * The window every reading is taken over. Five minutes says whether something
+   * is happening *now*; four hours says whether the session has been unusual,
+   * and they are genuinely different questions — a toggle that did not change
+   * the readings would be a control that lies about what it does.
+   */
+  window?: ShockWindow;
 }): SuddenMove {
+  const win = i.window ?? 5;
+  const label = WINDOW_LABEL[win];
   const parts: ShockPart[] = [];
   const reasons: string[] = [];
 
   // ── 1. how far it moved, against how far it was priced to ────────────────
-  const m5 = i.market?.moves.find((m) => m.hours <= 0.1) ?? null;
-  const em5 = expectedMoveOver(i.spot, i.atmIv, 5 / 60);
+  const wantHours = win / 60;
+  const m5 = i.market?.moves.length
+    ? i.market.moves.reduce((a, b) =>
+        Math.abs(b.hours - wantHours) < Math.abs(a.hours - wantHours) ? b : a)
+    : null;
+  const em5 = expectedMoveOver(i.spot, i.atmIv, m5?.hours ?? wantHours);
   let moveRatio: number | null = null;
   if (m5?.rangeUsd != null && em5 !== null && em5 > 0) {
     moveRatio = m5.rangeUsd / em5;
@@ -179,20 +215,20 @@ export function suddenMove(i: {
       name: 'Move against expected',
       value: clamp01((moveRatio - 0.5) / 1.0),
       weight: SHOCK_WEIGHTS.moveShock,
-      note: `${moveRatio.toFixed(2)}× the 5-minute expected move`,
+      note: `${moveRatio.toFixed(2)}× the ${label} expected move`,
       detail: {
         headline: `${moveRatio.toFixed(1)}×`,
-        now: `5m range: ${((m5.rangeUsd / i.spot) * 100).toFixed(2)}%`,
-        before: `Expected (5m): ${((em5 / i.spot) * 100).toFixed(2)}%`,
+        now: `${label} range: ${((m5.rangeUsd / i.spot) * 100).toFixed(2)}%`,
+        before: `Expected (${label}): ${((em5 / i.spot) * 100).toFixed(2)}%`,
       },
     });
-    if (moveRatio >= 1) reasons.push(`5m range is ${moveRatio.toFixed(1)}× what it was priced for`);
+    if (moveRatio >= 1) reasons.push(`${label} range is ${moveRatio.toFixed(1)}× what it was priced for`);
   } else {
     parts.push({ name: 'Move against expected', value: 0, weight: SHOCK_WEIGHTS.moveShock, note: null });
   }
 
   // ── 2. how busy, against its own median ──────────────────────────────────
-  const pulse = i.market?.volume.find((v) => v.tf === '5m') ?? null;
+  const pulse = i.market?.volume.find((v) => v.tf === label) ?? null;
   if (pulse?.spike != null) {
     parts.push({
       name: 'Volume spike',
@@ -205,7 +241,7 @@ export function suddenMove(i: {
         before: `20-bar median: ${compact(pulse.median)}`,
       },
     });
-    if (pulse.spike >= 2) reasons.push(`5m volume is ${pulse.spike.toFixed(1)}× its median`);
+    if (pulse.spike >= 2) reasons.push(`${label} volume is ${pulse.spike.toFixed(1)}× its median`);
   } else {
     parts.push({ name: 'Volume spike', value: 0, weight: SHOCK_WEIGHTS.volumeSpike, note: null });
   }
@@ -339,5 +375,6 @@ export function suddenMove(i: {
     // Four hours: long enough that a sudden move has somewhere to go, short
     // enough to still be about today's contract.
     odds: moveOdds(4 * 60, 1),
+    window: win,
   };
 }

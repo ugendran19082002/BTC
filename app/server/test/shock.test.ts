@@ -272,6 +272,8 @@ test('[critical] the odds of a move are counted, not assumed', () => {
   assert.ok(odds.down >= 0 && odds.down <= 1);
   assert.ok(Math.abs(odds.either - (odds.up + odds.down)) < 1e-12,
     'a window rose or fell, never both, so the two simply add');
+  assert.ok(Math.abs(odds.up + odds.down + odds.inside - 1) < 1e-12,
+    'every window is exactly one of the three, so the three add to one');
   assert.equal(odds.thresholdPct, 1);
   assert.ok(odds.overMinutes > 0, 'and it says which measured horizon it read');
 });
@@ -281,6 +283,17 @@ test('the odds report the horizon they actually read, not the one asked for', ()
   if (odds === null) return;
   // 137 minutes is not a measured horizon; the nearest one is, and it says so
   assert.notEqual(odds.overMinutes, 137);
+});
+
+test('[critical] the three outcomes are the whole of it', () => {
+  // Three boxes on screen read as a breakdown. 9% up and 10% down with nothing
+  // else shown is a breakdown that does not add up, and the 81% it leaves out
+  // -- the windows that went nowhere -- is the one that matters most to
+  // somebody selling premium.
+  const odds = moveOdds(4 * 60, 1);
+  if (odds === null) return;
+  assert.ok(odds.inside > 0, 'the windows that went nowhere are counted too');
+  assert.ok(Math.abs(odds.up + odds.down + odds.inside - 1) < 1e-12);
 });
 
 test('a harder threshold is never more likely than an easier one', () => {

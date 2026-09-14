@@ -135,6 +135,9 @@ export default function App() {
    * expected-value figures are still worked out from them -- at whatever was
    * last chosen, or the tested defaults on a fresh browser.
    */
+  /* Which window every sudden-move reading is taken over. The server computes
+     all four, so this switches without asking it for anything. */
+  const [shockWindow, setShockWindow] = usePersisted('shock:window', 5);
   const [storedTf, setChartTf] = usePersisted<ChartTf>('chart:tf', '1h');
   // A timeframe remembered from an older build may no longer be offered.
   const chartTf = CHART_TFS.includes(storedTf) ? storedTf : '1h';
@@ -418,14 +421,16 @@ export default function App() {
             board — a warning that takes the same room whether or not there is
             anything to warn about is one nobody reads by the end of the week.
           */}
-          {data?.shock && snap && (
+          {data?.shocks?.length && snap ? (
             <SuddenMove
-              shock={data.shock}
+              shocks={data.shocks}
+              window={shockWindow}
+              onWindow={setShockWindow}
               snap={snap}
               structure={data.structure}
               market={data.market}
             />
-          )}
+          ) : null}
 
           <div className="board-row">
             <div className="board-left">

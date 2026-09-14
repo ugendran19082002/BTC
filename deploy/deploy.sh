@@ -89,18 +89,74 @@ say "checking tooling"
 command -v docker >/dev/null || fail "docker is not installed"
 docker compose version >/dev/null 2>&1 || fail "docker compose v2 is required"
 
-say "running the test suite"
-( cd "$ROOT/app/server" && npm ci && npm test ) || fail "server tests failed"
-( cd "$ROOT/app/web"    && npm ci && npm test ) || fail "web tests failed"
+# Install only when the dependencies actually changed.
+#
+# `npm ci` deletes node_modules and reinstalls from the lockfile, which is the
+# right thing when the lockfile has moved and pure waste when it has not -- and
+# it ran twice on every deploy, whatever had changed. The stamp is the hash of
+# the two files that decide what gets installed, so any dependency change still
+# forces the full clean install; only a source-only deploy skips it.
+ensure_deps() {
+  local dir="$1" name="$2" stamp want
+  stamp="$dir/node_modules/.deploy-stamp"
+  want="$(cat "$dir/package.json" "$dir/package-lock.json" | sha256sum | cut -d' ' -f1)"
+
+  if [[ -d "$dir/node_modules" && -f "$stamp" && "$(cat "$stamp")" == "$want" ]]; then
+    say "$name dependencies unchanged; skipping install"
+    return 0
+  fi
+
+  say "installing $name dependencies"
+  ( cd "$dir" && npm ci ) || return 1
+  printf '%s' "$want" > "$stamp"
+}
+
+ensure_deps "$ROOT/app/server" server || fail "server install failed"
+ensure_deps "$ROOT/app/web"    web    || fail "web install failed"
+
+# Both suites and both type-checks at once.
+#
+# Four cores, and the two suites peak around 170 MB and 430 MB, so they fit
+# side by side with room to spare. Serially this was the tests of one project
+# waiting on the tests of another that shares nothing with it.
+#
+# Output is captured per job and printed only for whichever fails, so a passing
+# deploy stays readable and a failing one still shows everything.
+run_jobs() {
+  local -n jobs=$1
+  local pids=() names=() logs=() rc=0 i
+  for i in "${!jobs[@]}"; do
+    local log; log="$(mktemp)"
+    bash -c "${jobs[$i]}" >"$log" 2>&1 &
+    pids+=("$!"); names+=("$i"); logs+=("$log")
+  done
+  for i in "${!pids[@]}"; do
+    if ! wait "${pids[$i]}"; then
+      printf '\n----- %s -----\n' "${names[$i]}" >&2
+      cat "${logs[$i]}" >&2
+      rc=1
+    fi
+    rm -f "${logs[$i]}"
+  done
+  return $rc
+}
+
+say "running both test suites"
+declare -A TEST_JOBS=(
+  ["server tests"]="cd '$ROOT/app/server' && npm test"
+  ["web tests"]="cd '$ROOT/app/web' && npm test"
+)
+run_jobs TEST_JOBS || fail "tests failed"
 
 say "type-checking before we build"
 # Call the local binary rather than going through npx: npx will happily decide a
 # package is missing and offer to fetch it, which turns a dependency problem into
 # a confusing prompt in the middle of a deploy.
-( cd "$ROOT/app/server" && ./node_modules/.bin/tsc -p tsconfig.json --noEmit ) \
-  || fail "server type-check failed"
-( cd "$ROOT/app/web"    && ./node_modules/.bin/tsc -b --noEmit ) \
-  || fail "web type-check failed"
+declare -A TYPE_JOBS=(
+  ["server type-check"]="cd '$ROOT/app/server' && ./node_modules/.bin/tsc -p tsconfig.json --noEmit"
+  ["web type-check"]="cd '$ROOT/app/web' && ./node_modules/.bin/tsc -b --noEmit"
+)
+run_jobs TYPE_JOBS || fail "type-check failed"
 
 if [[ $CHECK_ONLY -eq 1 ]]; then
   say "check only; nothing was built or started"

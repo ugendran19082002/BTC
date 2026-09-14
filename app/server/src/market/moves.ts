@@ -337,7 +337,7 @@ export async function readMarket(sinceHours?: number): Promise<MarketRead> {
     : 'mixed';
 
   // The same series the moves above were read from: no second fetch.
-  const volume = (['5m', '15m'] as const)
+  const volume = (['5m', '15m', '1h', '4h'] as const)
     .map((tf) => volumePulse(tf, series.find(([t]) => t === tf)?.[1] ?? []))
     .filter((v): v is VolumePulse => v !== null);
 

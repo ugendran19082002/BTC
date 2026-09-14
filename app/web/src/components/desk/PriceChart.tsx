@@ -1,4 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
+import * as Collapsible from '@radix-ui/react-collapsible';
+import { ChevronDown } from 'lucide-react';
+import { usePersisted } from '@/hooks/usePersisted';
 import type { Candle } from '@/types/desk';
 import { strike as fmtStrike } from '@/lib/format';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
@@ -66,6 +69,9 @@ export function PriceChart({
 }) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [hover, setHover] = useState<number | null>(null);
+  // Three hundred pixels of chart on a phone is most of the screen, and some
+  // days nobody wants it. Folded, the title still says where the walls are.
+  const [open, setOpen] = usePersisted('open:price-chart', true);
 
   const view = useMemo(() => {
     if (!bars.length) return null;
@@ -175,14 +181,15 @@ export function PriceChart({
   const shownUp = shown ? shown.close >= shown.open : true;
 
   return (
-    <div className="price-chart">
+    <Collapsible.Root open={open} onOpenChange={setOpen} className="price-chart">
       <div className="price-chart-head">
-        <span className="price-chart-title">
+        <Collapsible.Trigger className="price-chart-title" aria-label="price chart">
+          <ChevronDown className={`smr-chev${open ? '' : ' shut'}`} size={13} aria-hidden />
           BTC · {tf === '1d' ? 'daily' : tf}
           {support !== null && resistance !== null && (
             <span className="dim"> · walls {fmtStrike(support)}–{fmtStrike(resistance)}</span>
           )}
-        </span>
+        </Collapsible.Trigger>
         <ToggleGroup
           type="single"
           value={tf}
@@ -195,6 +202,7 @@ export function PriceChart({
         </ToggleGroup>
       </div>
 
+      <Collapsible.Content>
       {/* The bar under the pointer, or the last one — always saying which. */}
       {shown && !error && (
         <div className="price-chart-ohlc">
@@ -347,6 +355,7 @@ export function PriceChart({
         <span><i style={{ background: 'var(--down)' }} /> resistance · heaviest call strike</span>
         <span className="dim">where open interest sits, not where BTC will settle · times IST</span>
       </div>
-    </div>
+      </Collapsible.Content>
+    </Collapsible.Root>
   );
 }

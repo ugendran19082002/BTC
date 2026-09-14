@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import { SuddenMove } from '@/components/desk/SuddenMove';
 import type {
@@ -18,6 +18,7 @@ import type {
  */
 
 const snap = {
+  ts: 1_789_000_000,
   spot: 76_841, atmIv: 0.287, expectedMove: 832, live: true,
   expiry: '140926', hoursToExpiry: 20,
 } as unknown as SnapshotMeta;
@@ -54,17 +55,26 @@ const shock = (over: Partial<Shock> = {}): Shock => ({
   direction: 0,
   directionLabel: 'no clear side',
   directionParts: [],
-  odds: { overMinutes: 240, thresholdPct: 1, up: 0.28, down: 0.46, either: 0.74 },
+  odds: { overMinutes: 240, thresholdPct: 1, up: 0.09, down: 0.10, inside: 0.81, either: 0.19 },
+  window: 5,
   ...over,
 });
 
-const panel = (over: Partial<Shock> = {}) =>
-  render(<SuddenMove shock={shock(over)} snap={snap} structure={structure} market={market} />);
+const panel = (over: Partial<Shock> = {}, onWindow = () => {}) =>
+  render(
+    <SuddenMove
+      shocks={[shock(over)]} window={5} onWindow={onWindow}
+      snap={snap} structure={structure} market={market}
+    />,
+  );
 
 describe('sudden move analytics', () => {
   it('[critical] draws nothing at all when it could not take a single reading', () => {
     const { container } = render(
-      <SuddenMove shock={shock({ score: null })} snap={snap} structure={structure} market={market} />,
+      <SuddenMove
+        shocks={[shock({ score: null })]} window={5} onWindow={() => {}}
+        snap={snap} structure={structure} market={market}
+      />,
     );
     expect(container).toBeEmptyDOMElement();
   });
@@ -139,9 +149,23 @@ describe('sudden move analytics', () => {
     panel();
     const odds = screen.getByText(/How often a move like this followed/)
       .closest('.smr-odds') as HTMLElement;
-    expect(within(odds).getByText('28%')).toBeInTheDocument();
-    expect(within(odds).getByText('46%')).toBeInTheDocument();
+    expect(within(odds).getByText('9%')).toBeInTheDocument();
+    expect(within(odds).getByText('10%')).toBeInTheDocument();
+    expect(within(odds).getByText('81%')).toBeInTheDocument();
     expect(screen.getByText(/over the next 4 hours, measured/)).toBeInTheDocument();
+  });
+
+  it('[critical] the three outcomes on screen add to a hundred', () => {
+    // Three boxes read as a breakdown. Up and down and "either side" is up plus
+    // down again, which does not add up and leaves out the outcome a seller is
+    // actually hoping for.
+    panel();
+    const odds = screen.getByText(/How often a move like this followed/)
+      .closest('.smr-odds') as HTMLElement;
+    const shown = [...odds.querySelectorAll('.smr-odd b')]
+      .map((b) => Number(b.textContent!.replace('%', '')));
+    expect(shown).toHaveLength(3);
+    expect(shown.reduce((a, v) => a + v, 0)).toBe(100);
   });
 
   it('leaves the odds out entirely when there is no table to count from', () => {
@@ -150,12 +174,85 @@ describe('sudden move analytics', () => {
   });
 
   it('shows a dash where the market itself is unreadable', () => {
-    render(<SuddenMove shock={shock()} snap={snap} structure={structure} market={null} />);
+    render(
+      <SuddenMove
+        shocks={[shock()]} window={5} onWindow={() => {}}
+        snap={snap} structure={structure} market={null}
+      />,
+    );
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2);
   });
 
   it('says on its face that nothing trades on it', () => {
     panel();
     expect(screen.getByText(/Nothing on the trading side reads any of this/)).toBeInTheDocument();
+  });
+});
+
+/**
+ * The window control.
+ *
+ * Five minutes says whether something is happening *now*; four hours says
+ * whether the session has been unusual. They are different questions, so the
+ * control has to actually change the readings — a toggle that redraws the same
+ * numbers is a control that lies about what it does.
+ */
+describe('choosing the window', () => {
+  const at = (window: number, headline: string): Shock => ({
+    ...shock(),
+    window,
+    parts: [{
+      name: 'Move against expected', value: 0.1, weight: 0.3, note: `${headline} whatever`,
+      detail: { headline, now: `${window}m range: 1.00%`, before: `Expected (${window}m): 0.50%` },
+    }],
+  });
+
+  const both = [at(5, '0.4×'), at(240, '2.1×')];
+
+  it('[critical] shows the reading for the window it is on', () => {
+    const { unmount } = render(
+      <SuddenMove shocks={both} window={5} onWindow={() => {}} snap={snap} structure={structure} market={market} />,
+    );
+    expect(screen.getByText('0.4×')).toBeInTheDocument();
+    expect(screen.getByText('5m range: 1.00%')).toBeInTheDocument();
+    unmount();
+
+    render(
+      <SuddenMove shocks={both} window={240} onWindow={() => {}} snap={snap} structure={structure} market={market} />,
+    );
+    expect(screen.getByText('2.1×')).toBeInTheDocument();
+    expect(screen.getByText('240m range: 1.00%')).toBeInTheDocument();
+  });
+
+  it('offers every window the server computed, and marks the one showing', () => {
+    render(
+      <SuddenMove shocks={both} window={240} onWindow={() => {}} snap={snap} structure={structure} market={market} />,
+    );
+    expect(screen.getByRole('radio', { name: '5m' })).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByRole('radio', { name: '4h' })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('asks for a window rather than fetching one', () => {
+    const onWindow = vi.fn();
+    render(
+      <SuddenMove shocks={both} window={5} onWindow={onWindow} snap={snap} structure={structure} market={market} />,
+    );
+    screen.getByRole('radio', { name: '4h' }).click();
+    expect(onWindow).toHaveBeenCalledWith(240);
+  });
+
+  it('falls back to the first reading when the stored window is not offered', () => {
+    render(
+      <SuddenMove shocks={both} window={999} onWindow={() => {}} snap={snap} structure={structure} market={market} />,
+    );
+    expect(screen.getByText('0.4×')).toBeInTheDocument();
+  });
+
+  it('says when it last read the board', () => {
+    render(
+      <SuddenMove shocks={both} window={5} onWindow={() => {}} snap={snap} structure={structure} market={market} />,
+    );
+    expect(screen.getByText('Last updated')).toBeInTheDocument();
+    expect(screen.getByText(/IST$/)).toBeInTheDocument();
   });
 });

@@ -28,8 +28,9 @@ describe('the price chart', () => {
       <PriceChart bars={bars(12)} support={74_400} resistance={80_000} spot={77_172} tf="1h" onTf={noop} />,
     );
     // 12 candle bodies + 12 volume bars + three level tags
-    expect(container.querySelectorAll('rect')).toHaveLength(12 + 12 + 3);
-    expect(container.querySelectorAll('line').length).toBeGreaterThanOrEqual(12);
+    const svg = container.querySelector('.price-chart-svg')!;
+    expect(svg.querySelectorAll('rect')).toHaveLength(12 + 12 + 3);
+    expect(svg.querySelectorAll('line').length).toBeGreaterThanOrEqual(12);
   });
 
   it('[critical] nothing is drawn outside the canvas, wherever the walls sit', () => {
@@ -37,7 +38,7 @@ describe('the price chart', () => {
     const { container } = render(
       <PriceChart bars={bars(10)} support={60_000} resistance={95_000} spot={77_172} tf="1h" onTf={noop} />,
     );
-    const svg = container.querySelector('svg')!;
+    const svg = container.querySelector('.price-chart-svg')!;
     const [, , , heightAttr] = svg.getAttribute('viewBox')!.split(' ').map(Number);
     const ys = [...svg.querySelectorAll('line')].flatMap((l) =>
       [l.getAttribute('y1'), l.getAttribute('y2')].map(Number),
@@ -120,7 +121,7 @@ describe('the price chart', () => {
     const { container } = render(
       <PriceChart bars={bars(8)} support={null} resistance={null} spot={77_172} tf="1h" onTf={noop} />,
     );
-    expect(container.querySelector('svg')).toBeInTheDocument();
+    expect(container.querySelector('.price-chart-svg')).toBeInTheDocument();
     expect(screen.queryByText(/walls at/)).not.toBeInTheDocument();
   });
 
@@ -142,7 +143,8 @@ describe('the price chart', () => {
     );
     expect(screen.getByText(/price feed did not answer/)).toBeInTheDocument();
     expect(screen.getByText(/Everything below still reads/)).toBeInTheDocument();
-    expect(container.querySelector('svg')).not.toBeInTheDocument();
+    // the chart itself, not the fold chevron, which is an svg of its own
+    expect(container.querySelector('.price-chart-svg')).not.toBeInTheDocument();
   });
 
   it('says it is loading rather than showing nothing', () => {

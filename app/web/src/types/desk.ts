@@ -177,6 +177,8 @@ export type SuddenMove = {
   directionLabel: string;
   /** What the direction is made of, each −1..+1 and named. */
   directionParts: { name: string; value: number }[];
+  /** The window every reading above was taken over, in minutes. */
+  window: number;
   /**
    * How often BTC has actually moved more than a percent over the next few
    * hours — counted off the measured percentiles, not assumed.
@@ -186,6 +188,9 @@ export type SuddenMove = {
     thresholdPct: number;
     up: number;
     down: number;
+    /** Stayed inside the threshold — the outcome the other two leave out. */
+    inside: number;
+    /** `up + down`, kept because it is the number a seller asks for. */
     either: number;
   } | null;
 };
@@ -374,7 +379,8 @@ export type ChainResponse = {
   picks: Pick[];
   market: MarketRead | null;
   structure: OptionStructure;
-  shock: SuddenMove;
+  /** One per window: 5m, 15m, 1h, 4h. The screen picks; the server computes all four. */
+  shocks: SuddenMove[];
   forecast: Forecast | null;
   recommendation: Recommendation;
   requireHedge: boolean;
