@@ -19,12 +19,43 @@ const status = (over: Partial<TradeStatus> = {}): TradeStatus => ({
   ...over,
 });
 
+describe('the total', () => {
+  /** One short at 200x: spot 78,000, so the margin held is 78000/200 x 0.001 x size. */
+  const short = (size: number) => ({
+    id: 'C-BTC-78800', symbol: 'C-BTC-78800-140926', position: -size, entryAvgPrice: 10,
+    plan: { leverage: 200 }, live: { liquidationPrice: 10 + 78_000 * 0.5 / 200 },
+  }) as unknown as TradeStatus['open'][number];
+
+  it('[critical] is available plus what the positions hold, in both currencies, above the parts', () => {
+    render(<AccountCard status={status({ balanceUsd: 100.62, open: [short(1500)] })} />);
+    // 78000 / 200 x 0.001 x 1500 = 585 held; 100.62 + 585 = 685.62
+    expect(row('Used for positions').getByText('$585.00')).toBeInTheDocument();
+    expect(row('Total').getByText('$685.62')).toBeInTheDocument();
+    expect(row('Total').getByText('₹58,278')).toBeInTheDocument();
+    const labels = screen.getAllByRole('term').map((t) => t.textContent);
+    expect(labels.indexOf('Total')).toBeLessThan(labels.findIndex((l) => l?.startsWith('Available')));
+  });
+
+  it('equals available when nothing is open', () => {
+    render(<AccountCard status={status({ balanceUsd: 100.62 })} />);
+    expect(row('Total').getByText('$100.62')).toBeInTheDocument();
+  });
+
+  it('shows a dash, not a wrong number, when the held part cannot be worked out', () => {
+    const noLiq = { ...short(10), live: { liquidationPrice: null } } as unknown as TradeStatus['open'][number];
+    render(<AccountCard status={status({ balanceUsd: 100.62, open: [noLiq] })} />);
+    expect(row('Total').getAllByText('—')).toHaveLength(2);
+    expect(row('Used for positions').getAllByText('—')).toHaveLength(2);
+    expect(row('Available').getByText('$100.62')).toBeInTheDocument();
+  });
+});
+
 describe('the money, in both currencies', () => {
   it('leads with rupees and keeps the dollars beside them', () => {
     render(<AccountCard status={status()} />);
     // the account is Indian; the exchange quotes in dollars
-    expect(screen.getByText('₹50.15')).toBeInTheDocument();
-    expect(screen.getByText('$0.590')).toBeInTheDocument();
+    expect(row('Available').getByText('₹50.15')).toBeInTheDocument();
+    expect(row('Available').getByText('$0.590')).toBeInTheDocument();
   });
 
   it('shows a loss as a loss, in both', () => {

@@ -8,8 +8,9 @@ import { inr, pct, usdToInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 /**
- * The money, in plain words: what is free, what is in use, how today is going
- * after charges, and how much of today's loss limit is left.
+ * The money, in plain words: what there is altogether, what is free, what is
+ * in use, how today is going after charges, and how much of today's loss limit
+ * is left.
  */
 export function AccountCard({ status }: { status: TradeStatus | null }) {
   if (!status) return null;
@@ -18,6 +19,10 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
   const booked = status.realisedTodayUsd ?? 0;
   const today = status.today ?? { realisedUsd: booked, unrealisedUsd: unrealised, chargesUsd: 0, netUsd: booked + unrealised };
   const held = status.positions.reduce((n, p) => n + Math.abs(p.size), 0);
+  const heldMargin = heldMarginOf(status);
+  // Available is Delta's figure; the used part is an estimate, so the sum is
+  // only as good as the estimate -- and unknown when the estimate is.
+  const total = heldMargin === null || status.balanceUsd === null ? null : status.balanceUsd + heldMargin;
 
   const limit = status.limits.maxDailyLossUsd;
   const lost = Math.max(0, -booked);
@@ -37,6 +42,12 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
       </CardTitle>
 
       <dl className="m-0 grid gap-2">
+        <KV
+          label={<span className="font-semibold text-foreground">Total</span>}
+          hint={'Available plus what open positions hold. Delta calls this "Wallet Balance". The held part is estimated, so Delta\'s screen is the authority.'}
+        >
+          <Money value={total} strong />
+        </KV>
         <KV label="Available" hint='Money not tied up in a position. Delta calls this "Available Margin".'>
           <Money value={status.balanceUsd} />
         </KV>
@@ -44,7 +55,7 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
           label={<>Used for positions <span className="ml-1 text-[11px] text-[var(--dim)]">{held > 0 ? `${held} contract${held === 1 ? '' : 's'}` : 'none'}</span></>}
           hint="Margin locked while positions are open. It comes back when they close. Estimated."
         >
-          <Money value={heldMarginOf(status)} />
+          <Money value={heldMargin} />
         </KV>
 
         <div className="my-0.5 h-px bg-border" />
