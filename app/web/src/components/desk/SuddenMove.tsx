@@ -223,6 +223,7 @@ export function SuddenMove({
           and they are different questions. The server computes all four, so
           switching costs nothing and asks the server for nothing.
         */}
+        <span className="smr-windows-label">Readings over</span>
         <div className="smr-windows" role="radiogroup" aria-label="reading window">
           {shocks.map((s) => (
             <button

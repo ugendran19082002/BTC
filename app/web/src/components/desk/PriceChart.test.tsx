@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import { PriceChart } from '@/components/desk/PriceChart';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { PriceChart, zoomHorizontally, zoomVertically } from '@/components/desk/PriceChart';
 import type { Candle } from '@/types/desk';
 
 /**
@@ -160,5 +160,101 @@ describe('the price chart', () => {
     );
     expect(screen.getByText(/heaviest put strike/)).toBeInTheDocument();
     expect(screen.getByText(/not where BTC will settle/)).toBeInTheDocument();
+  });
+});
+
+/**
+ * Zoom and pan.
+ *
+ * The chart carries a day of 5-minute bars, and a chart you cannot pull into is
+ * a chart that hides the hour that mattered. What must not happen is a zoom
+ * that quietly drops bars off the count it reports, or a pan that walks past
+ * the ends of the series.
+ */
+describe('zoom and pan', () => {
+  const many = bars(200);
+
+  const chart = (props: Partial<Parameters<typeof PriceChart>[0]> = {}) =>
+    render(
+      <PriceChart
+        bars={many} support={74_400} resistance={80_000} spot={77_172}
+        tf="5m" onTf={noop} {...props}
+      />,
+    );
+
+  it('opens fitted to the whole series', () => {
+    chart();
+    expect(screen.getByText('200 of 200 bars')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Fit/ })).not.toBeInTheDocument();
+  });
+
+  /*
+   * The arithmetic, not the gesture.
+   *
+   * jsdom gives every element a zero-width bounding box, so a wheel dispatched
+   * at a test never resolves to a position on the plot and the interaction
+   * cannot be driven through the DOM at all. The maths is the part that can be
+   * wrong, so it is the part that is pinned.
+   */
+  const fitted = { from: 0, count: 200, yZoom: 1 };
+
+  it('[critical] zooming in shows fewer bars, about the pointer', () => {
+    const inAtMiddle = zoomHorizontally(fitted, 200, { anchor: 0.5, out: false });
+    expect(inAtMiddle.count).toBeLessThan(200);
+    // what was under the middle is still under the middle
+    const before = fitted.from + 0.5 * fitted.count;
+    const after = inAtMiddle.from + 0.5 * inAtMiddle.count;
+    expect(Math.abs(before - after)).toBeLessThanOrEqual(1);
+  });
+
+  it('[critical] never zooms out past the whole series', () => {
+    let v = fitted;
+    for (let i = 0; i < 30; i++) v = zoomHorizontally(v, 200, { anchor: 0.5, out: true });
+    expect(v.count).toBe(200);
+    expect(v.from).toBe(0);
+  });
+
+  it('[critical] never zooms in past a readable number of bars', () => {
+    let v = fitted;
+    for (let i = 0; i < 80; i++) v = zoomHorizontally(v, 200, { anchor: 0.5, out: false });
+    expect(v.count).toBeGreaterThanOrEqual(12);
+  });
+
+  it('never walks the window past either end', () => {
+    const atLeft = zoomHorizontally(fitted, 200, { anchor: 0, out: false });
+    expect(atLeft.from).toBeGreaterThanOrEqual(0);
+    const atRight = zoomHorizontally(fitted, 200, { anchor: 1, out: false });
+    expect(atRight.from + atRight.count).toBeLessThanOrEqual(200);
+  });
+
+  it('a series shorter than the floor is still shown whole', () => {
+    const tiny = zoomHorizontally({ from: 0, count: 5, yZoom: 1 }, 5, { anchor: 0.5, out: false });
+    expect(tiny.count).toBe(5);
+  });
+
+  it('the price scale stretches and contracts, within bounds', () => {
+    let v = fitted;
+    for (let i = 0; i < 40; i++) v = zoomVertically(v, false);
+    expect(v.yZoom).toBeLessThanOrEqual(8);
+    for (let i = 0; i < 80; i++) v = zoomVertically(v, true);
+    expect(v.yZoom).toBeGreaterThanOrEqual(0.4);
+  });
+
+  it('stretching the price scale leaves the window alone', () => {
+    const v = zoomVertically({ from: 40, count: 60, yZoom: 1 }, false);
+    expect(v.from).toBe(40);
+    expect(v.count).toBe(60);
+  });
+
+  it('offers every timeframe, 1m through 1D', () => {
+    chart();
+    for (const t of ['1m', '5m', '15m', '1h', '4h', '1D']) {
+      expect(screen.getByRole('radio', { name: t })).toBeInTheDocument();
+    }
+  });
+
+  it('says how to work it, rather than leaving it to be discovered', () => {
+    chart();
+    expect(screen.getByText(/scroll to zoom · drag to pan/)).toBeInTheDocument();
   });
 });

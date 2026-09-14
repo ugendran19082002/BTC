@@ -138,9 +138,9 @@ export default function App() {
   /* Which window every sudden-move reading is taken over. The server computes
      all four, so this switches without asking it for anything. */
   const [shockWindow, setShockWindow] = usePersisted('shock:window', 5);
-  const [storedTf, setChartTf] = usePersisted<ChartTf>('chart:tf', '1h');
+  const [storedTf, setChartTf] = usePersisted<ChartTf>('chart:tf', '5m');
   // A timeframe remembered from an older build may no longer be offered.
-  const chartTf = CHART_TFS.includes(storedTf) ? storedTf : '1h';
+  const chartTf = CHART_TFS.includes(storedTf) ? storedTf : '5m';
   // A strike is a leg plus an open flag, the same shape as the ticket: the sheet
   // animates closed with its contents still on screen.
   const [inspecting, setInspecting] = useState<{ cp: 'C' | 'P'; strike: number } | null>(null);

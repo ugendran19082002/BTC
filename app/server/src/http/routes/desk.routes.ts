@@ -196,13 +196,16 @@ export function registerDeskRoutes(app: FastifyInstance) {
     // caller free to ask for a year of 1m bars is a caller who can hang the
     // page, so the span belongs to the resolution rather than to the query.
     const spans: Record<string, { resolution: string; hours: number }> = {
-      '5m': { resolution: '5m', hours: 12 },
-      '15m': { resolution: '15m', hours: 36 },
-      '1h': { resolution: '1h', hours: 24 * 6 },
-      '4h': { resolution: '4h', hours: 24 * 21 },
+      // Enough bars to zoom *out* into, not just enough to fill the width:
+      // a chart you cannot pull back from is a chart that hides the context.
+      '1m': { resolution: '1m', hours: 8 },
+      '5m': { resolution: '5m', hours: 36 },
+      '15m': { resolution: '15m', hours: 96 },
+      '1h': { resolution: '1h', hours: 24 * 14 },
+      '4h': { resolution: '4h', hours: 24 * 60 },
       '1d': { resolution: '1d', hours: 24 * 150 },
     };
-    const tf = spans[q.tf ?? '1h'] ? (q.tf ?? '1h') : '1h';
+    const tf = spans[q.tf ?? '5m'] ? (q.tf ?? '5m') : '5m';
     const span = spans[tf]!;
     const now = Math.floor(Date.now() / 1000);
     try {
