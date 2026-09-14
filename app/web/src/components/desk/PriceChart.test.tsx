@@ -27,9 +27,11 @@ describe('the price chart', () => {
     const { container } = render(
       <PriceChart bars={bars(12)} support={74_400} resistance={80_000} spot={77_172} tf="1h" onTf={noop} />,
     );
-    // 12 candle bodies + 12 volume bars + three level tags
+    // Counted by what they are, not by how many rects the drawing happens to
+    // hold: a level tag or an axis grip should not break a test about candles.
     const svg = container.querySelector('.price-chart-svg')!;
-    expect(svg.querySelectorAll('rect')).toHaveLength(12 + 12 + 3);
+    expect(svg.querySelectorAll('.candle-body')).toHaveLength(12);
+    expect(svg.querySelectorAll('.vol-bar')).toHaveLength(12);
     expect(svg.querySelectorAll('line').length).toBeGreaterThanOrEqual(12);
   });
 

@@ -306,16 +306,32 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                 />
               </Stack>
 
+              {/*
+                The wall asks for nothing.
+                It is picked from the board at the moment the strategy runs --
+                whatever spot is then, whichever strike carries the most open
+                interest out from it -- so there is no strike to name and no
+                premium to ask for. The form showed the strike stepper here,
+                because it was written as premium-or-strict and the wall fell
+                into the second branch.
+              */}
               {c.strikeRule === 'oiWall' && (
-                <p className="m-0 mt-2 text-[11.5px] leading-snug text-[var(--warn)]">
-                  This one is a claim, not a record: that the strike carrying the most open
-                  interest is a better one to sell. The desk shows the walls because traders
-                  watch them, and every attempt to <i>trade</i> them failed the cross-period
-                  screen. The premium rule is the one with 733 days behind it.
-                </p>
+                <div className="mt-3">
+                  <p className="m-0 text-[11.5px] leading-snug text-muted-foreground">
+                    Picked when the strategy runs, from wherever BTC is then: the call leg
+                    takes the heaviest call strike above the price, the put leg the heaviest
+                    put strike below it. Nothing to set.
+                  </p>
+                  <p className="m-0 mt-2 text-[11.5px] leading-snug text-[var(--warn)]">
+                    This one is a claim, not a record: that the strike carrying the most open
+                    interest is a better one to sell. The desk shows the walls because traders
+                    watch them, and every attempt to <i>trade</i> them failed the cross-period
+                    screen. The premium rule is the one with 733 days behind it.
+                  </p>
+                </div>
               )}
 
-              {c.strikeRule === 'premium' ? (
+              {c.strikeRule === 'oiWall' ? null : c.strikeRule === 'premium' ? (
                 <Stack label="Premium rule" error={err('premium')} className="mt-3">
                   <div className="flex items-stretch gap-2">
                     <Segmented

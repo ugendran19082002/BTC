@@ -338,9 +338,22 @@ export function suddenMove(i: {
    */
   const directionParts: { name: string; value: number }[] = [];
   if (m5?.changePct != null) {
+    /*
+     * Against what the window was priced to move, not against a flat half a
+     * percent.
+     *
+     * A fixed bar cannot work across windows: five minutes of BTC is a few
+     * hundredths of a percent on an ordinary day, so dividing by 0.5 gave 0.06
+     * and the screen read 0% every time -- the reading was dead at the window
+     * it is looked at most. Four hours of the same tape would have read 80%.
+     * Scaled by the expected move, a full-sized move in *either* window reads
+     * the same, which is the only way one control can drive both.
+     */
+    const emPct = em5 !== null && i.spot > 0 ? (em5 / i.spot) * 100 : null;
+    const scale = emPct !== null && emPct > 0 ? emPct : 0.5;
     directionParts.push({
       name: 'Price momentum',
-      value: clamp01(Math.abs(m5.changePct) / 0.5) * Math.sign(m5.changePct),
+      value: clamp01(Math.abs(m5.changePct) / scale) * Math.sign(m5.changePct),
     });
   }
   if (i.market) {

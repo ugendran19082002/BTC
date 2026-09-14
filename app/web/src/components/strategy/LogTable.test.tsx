@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { LogTable, type LogRow } from '@/components/strategy/LogTable';
 
 /**
@@ -95,5 +95,70 @@ describe('the run log', () => {
   it('names itself for a screen reader', () => {
     render(<LogTable rows={[row()]} label="adds" />);
     expect(screen.getByRole('table', { name: 'adds' })).toBeInTheDocument();
+  });
+});
+
+/**
+ * Five rows, and the rest a click away.
+ *
+ * The log answers "what did it do today" almost every time it is read, and
+ * fifteen rows of it twice on one screen was a page you scrolled past to reach
+ * anything else. What must not happen is a page control that loses rows, or
+ * one that leaves you looking at nothing when the log gets shorter.
+ */
+describe('paging the log', () => {
+  const many = (n: number): LogRow[] =>
+    Array.from({ length: n }, (_, i) => row({ id: i, who: `Run ${i + 1}` }));
+
+  it('shows five and says how many there are', () => {
+    render(<LogTable rows={many(12)} label="recent runs" />);
+    expect(screen.getAllByRole('row')).toHaveLength(6);      // header + five
+    expect(screen.getByText('1–5 of 12')).toBeInTheDocument();
+  });
+
+  it('[critical] keeps the newest first — the order it was handed', () => {
+    render(<LogTable rows={many(12)} label="recent runs" />);
+    expect(screen.getByText('Run 1')).toBeInTheDocument();
+    expect(screen.queryByText('Run 6')).not.toBeInTheDocument();
+  });
+
+  it('walks back through the older rows', () => {
+    render(<LogTable rows={many(12)} label="recent runs" />);
+    fireEvent.click(screen.getByRole('button', { name: 'older' }));
+    expect(screen.getByText('6–10 of 12')).toBeInTheDocument();
+    expect(screen.getByText('Run 6')).toBeInTheDocument();
+  });
+
+  it('stops at both ends rather than running off them', () => {
+    render(<LogTable rows={many(12)} label="recent runs" />);
+    expect(screen.getByRole('button', { name: 'newer' })).toBeDisabled();
+
+    const older = screen.getByRole('button', { name: 'older' });
+    fireEvent.click(older);
+    fireEvent.click(older);
+    expect(screen.getByText('11–12 of 12')).toBeInTheDocument();
+    expect(older).toBeDisabled();
+  });
+
+  it('offers no page control at all when everything fits', () => {
+    render(<LogTable rows={many(4)} label="recent runs" />);
+    expect(screen.queryByRole('button', { name: 'older' })).not.toBeInTheDocument();
+  });
+
+  it('[critical] a shorter log does not leave you looking at nothing', () => {
+    const { rerender } = render(<LogTable rows={many(12)} label="recent runs" />);
+    fireEvent.click(screen.getByRole('button', { name: 'older' }));
+    fireEvent.click(screen.getByRole('button', { name: 'older' }));
+    expect(screen.getByText('11–12 of 12')).toBeInTheDocument();
+
+    // the log shrinks — a strategy deleted, a filter changed
+    rerender(<LogTable rows={many(6)} label="recent runs" />);
+    expect(screen.getAllByRole('row').length).toBeGreaterThan(1);
+    expect(screen.getByText('6–6 of 6')).toBeInTheDocument();
+  });
+
+  it('takes a different page size when asked', () => {
+    render(<LogTable rows={many(12)} label="recent runs" pageSize={10} />);
+    expect(screen.getByText('1–10 of 12')).toBeInTheDocument();
   });
 });

@@ -302,3 +302,40 @@ test('a harder threshold is never more likely than an easier one', () => {
   if (!easy || !hard) return;
   assert.ok(hard.either <= easy.either);
 });
+
+test('[critical] price momentum is scaled to the window, not to a flat bar', () => {
+  // Five minutes of BTC is a few hundredths of a percent on an ordinary day.
+  // Against a fixed half-percent bar that reads 0% every time, which is the
+  // window this is looked at most -- the reading was dead where it mattered.
+  const em5 = expectedMoveOver(SPOT, IV, 5 / 60)!;
+  const emPct = (em5 / SPOT) * 100;
+
+  const at = (changePct: number) => suddenMove({
+    ...base,
+    market: market({
+      moves: [{ hours: 5 / 60, label: '5m', changeUsd: 0, changePct, rangeUsd: 0, rangePct: 0 }],
+      agreement: 0,
+    }),
+    structure: structure({ ceVolume: 0, peVolume: 0, pcrOi: null }),
+    window: 5,
+  }).directionParts.find((p) => p.name === 'Price momentum')!.value;
+
+  // a move the size of what the window was priced for reads as full
+  assert.ok(Math.abs(at(emPct) - 1) < 1e-9, `got ${at(emPct)}`);
+  assert.ok(Math.abs(at(-emPct) + 1) < 1e-9);
+  // half of it reads as half, rather than rounding to nothing
+  assert.ok(Math.abs(at(emPct / 2) - 0.5) < 1e-9, `got ${at(emPct / 2)}`);
+  assert.ok(at(emPct / 10) > 0.05, 'a tenth of a priced move is still a reading');
+});
+
+test('a window with no volatility to price it falls back to a fixed bar', () => {
+  const v = suddenMove({
+    ...base,
+    atmIv: null,
+    market: market({
+      moves: [{ hours: 5 / 60, label: '5m', changeUsd: 0, changePct: 0.5, rangeUsd: 0, rangePct: 0 }],
+    }),
+    window: 5,
+  }).directionParts.find((p) => p.name === 'Price momentum')!.value;
+  assert.ok(Math.abs(v - 1) < 1e-9, 'half a percent is a full reading with nothing better to scale by');
+});

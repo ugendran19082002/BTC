@@ -157,10 +157,22 @@ export function PriceChart({
     const volTop = PAD.top + priceH + GAP;
     const volY = (v: number) => volTop + volH - (v / maxVol) * volH;
 
-    const ticks: number[] = [];
-    const rough = (hi - lo) / 4;
+    /*
+     * The price axis gets finer as you zoom, not just shorter.
+     *
+     * Four lines over the whole day and four lines over ten minutes read the
+     * same, which is the opposite of what zooming in is for: the reason to pull
+     * into a range is to see levels inside it. The target is a line every ~46
+     * pixels, so a taller plot and a narrower range both buy detail, and the
+     * ladder carries halves and quarters so a $40 range lands on $10s rather
+     * than being rounded up to $50s.
+     */
+    const want = clamp(Math.round(priceH / 46), 4, 9);
+    const rough = (hi - lo) / want;
     const mag = Math.pow(10, Math.floor(Math.log10(rough)));
-    const stepPrice = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((sp) => sp >= rough) ?? rough;
+    const stepPrice =
+      [1, 1.25, 2, 2.5, 4, 5, 10].map((m) => m * mag).find((sp) => sp >= rough) ?? rough;
+    const ticks: number[] = [];
     for (let p = Math.ceil(lo / stepPrice) * stepPrice; p <= hi; p += stepPrice) ticks.push(p);
 
     const timeTicks = [0, Math.floor(shown.length / 3), Math.floor((shown.length * 2) / 3), shown.length - 1]
@@ -366,6 +378,17 @@ export function PriceChart({
           onDoubleClick={() => setView(null)}
           aria-label={`BTC ${tf} candles, ${geom.shown.length} of ${bars.length} bars shown, with open-interest walls at ${support ?? '—'} and ${resistance ?? '—'}`}
         >
+          {/*
+            The price axis is a control -- the wheel over it stretches the
+            scale -- so it gets a target of its own and a cursor that says so.
+            Behind the gridlines, so it never eats a click meant for a candle.
+          */}
+          <rect
+            x={W - PAD.right} y={PAD.top}
+            width={PAD.right} height={geom.priceH}
+            fill="transparent" className="price-axis-grip"
+          />
+
           {geom.ticks.map((p) => (
             <g key={p}>
               <line
@@ -423,6 +446,7 @@ export function PriceChart({
               height={Math.max(0.5, geom.volTop + geom.volH - geom.volY(b.volume))}
               fill={b.close >= b.open ? 'var(--up)' : 'var(--down)'}
               opacity="0.32"
+              className="vol-bar"
             />
           ))}
 
@@ -444,6 +468,7 @@ export function PriceChart({
                   height={Math.max(1, bottom - top)}
                   fill={colour}
                   rx={geom.bodyW > 5 ? 1 : 0}
+                  className="candle-body"
                 />
               </g>
             );

@@ -1597,3 +1597,5 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 .logpage button:hover:not(:disabled) { color: var(--text); border-color: var(--dim); }
 .logpage button:disabled { opacity: 0.4; cursor: default; }
 .logpage button:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+/* The price axis stretches the scale, so it says so under the pointer. */
+.price-axis-grip { cursor: ns-resize; }
