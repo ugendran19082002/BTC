@@ -139,7 +139,7 @@ describe('sending', () => {
   it('[critical] a tap sends nothing: it has to be swiped', async () => {
     show();
     typeLots('100');
-    await waitFor(() => expect(slider()).toHaveAttribute('aria-disabled', 'false'));
+    await waitFor(() => expect(slider()).not.toHaveAttribute('aria-disabled'));
     fireEvent.click(slider());
     expect(addToPosition).not.toHaveBeenCalled();
   });
@@ -147,7 +147,7 @@ describe('sending', () => {
   it('[critical] a full swipe sends the previewed body, once, and closes', async () => {
     const { onAdded, onOpenChange } = show();
     typeLots('100');
-    await waitFor(() => expect(slider()).toHaveAttribute('aria-disabled', 'false'));
+    await waitFor(() => expect(slider()).not.toHaveAttribute('aria-disabled'));
     swipe(slider());
     await waitFor(() => expect(addToPosition).toHaveBeenCalledTimes(1));
     expect(addToPosition).toHaveBeenCalledWith({ tradeId: 't1', lots: 100, limitPrice: null });
@@ -162,7 +162,7 @@ describe('sending', () => {
     });
     const { onAdded, onOpenChange } = show();
     typeLots('100');
-    await waitFor(() => expect(slider()).toHaveAttribute('aria-disabled', 'false'));
+    await waitFor(() => expect(slider()).not.toHaveAttribute('aria-disabled'));
     swipe(slider());
     await screen.findByText('The day is already down $50, at its limit.');
     expect(onAdded).not.toHaveBeenCalled();
