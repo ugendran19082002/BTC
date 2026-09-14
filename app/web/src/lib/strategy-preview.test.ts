@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  addExamples, describeAdd, describeDays, describeEntry, describeExit, describePremium, describeStrategy, sizingOf,
+  addExamples, describeAdd, describeDays, describeEntry, describeExit, describePremium, describeScores,
+  describeStrategy, sizingOf,
 } from '@/lib/strategy-preview';
 import { DEFAULT_CONFIG, type StrategyConfig } from '@/types/strategy';
 
@@ -103,6 +104,23 @@ describe('the whole rule, read back as a sentence', () => {
     expect(describeStrategy(cfg({ probGate: null, doubleWhenOneSided: true })))
       .not.toContain('doubles');
     expect(describeStrategy(cfg({ doubleWhenOneSided: true }))).toContain('doubles');
+  });
+
+  it('[critical] says which bar waits and which stands the day down', () => {
+    // They are one switch apart on the form and they behave differently at the
+    // moment they stop something, which is the moment it matters.
+    const s = describeStrategy(cfg({ minSellScore: 70, maxShockScore: 25 }));
+    expect(s).toContain('skips a strike scoring under 70/100');
+    expect(s).toContain('waits while sudden-move risk is above 25/100');
+  });
+
+  it('says nothing at all about a bar that is off', () => {
+    expect(describeScores(cfg({ minSellScore: null, maxShockScore: null }))).toBeNull();
+    expect(describeScores(cfg({ minSellScore: 70, maxShockScore: null })))
+      .toBe('It skips a strike scoring under 70/100.');
+    expect(describeScores(cfg({ minSellScore: null, maxShockScore: 25 })))
+      .toBe('It waits while sudden-move risk is above 25/100.');
+    expect(describeStrategy(cfg())).not.toContain('sudden-move');
   });
 
   it('uses the singular for one lot', () => {

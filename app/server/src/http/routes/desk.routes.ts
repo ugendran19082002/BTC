@@ -13,7 +13,8 @@ import { strategyStore } from './strategy.routes.js';
 import { refuse } from '../refuse.js';
 import { attachEv } from '../../domain/ev.js';
 import { noteOpenInterest, openInterestChange, ivChange, type OiChange } from '../../market/oi-history.js';
-import { suddenMove, SHOCK_WINDOWS } from '../../domain/shock.js';
+import { SHOCK_WINDOWS } from '../../domain/shock.js';
+import { shockFrom } from '../../market/shock-now.js';
 
 /** Resolve the `at` query param: "now" (or absent) means live. */
 function resolveAt(at: string | undefined): number | null {
@@ -143,9 +144,8 @@ export function registerDeskRoutes(app: FastifyInstance) {
          * so computing all four costs nothing measurable and lets the screen
          * switch between them without going back to the server.
          */
-        shocks: SHOCK_WINDOWS.map((window) => suddenMove({
-          spot: snap.spot,
-          atmIv: snap.atmIv,
+        shocks: SHOCK_WINDOWS.map((window) => shockFrom({
+          snap,
           market,
           structure,
           oiChanges,

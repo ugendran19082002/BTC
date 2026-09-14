@@ -475,6 +475,67 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                 </Stack>
               )}
 
+              {/*
+                Two bars read off the same screen the person is looking at: the
+                strike's own sell score, and the sudden-move risk. Each does
+                nothing until it is switched on, and switching it on is what
+                puts the number on the form -- an input for a rule that is not
+                running is a setting that looks live and is not.
+              */}
+              <div className="border-t border-border">
+                <Switch
+                  label="Skip a strike that scores too low"
+                  description={c.minSellScore != null
+                    ? `Only sells a strike scoring ${c.minSellScore}/100 or better. Below it the leg is stood down for the day.`
+                    : 'Off — whatever the rule picks is sold, whatever it scores.'}
+                  checked={c.minSellScore != null}
+                  onCheckedChange={(on) => set('minSellScore', on ? 65 : null)}
+                />
+                {c.minSellScore != null && (
+                  <Stack
+                    label="Sell score at least"
+                    error={err('minSellScore')}
+                    hint="the board's own 0-100 score · 80 strong, 65 candidate, 50 watch"
+                    className="mb-1 w-44"
+                  >
+                    <Affix after="/100">
+                      <Input
+                        value={String(c.minSellScore)} aria-label="minimum sell score"
+                        inputMode="numeric" className="pr-12"
+                        onChange={(e) => set('minSellScore', Math.trunc(num(e.target.value, 0)))}
+                      />
+                    </Affix>
+                  </Stack>
+                )}
+              </div>
+
+              <div className="border-t border-border">
+                <Switch
+                  label="Wait while a sudden move is under way"
+                  description={c.maxShockScore != null
+                    ? `Enters only while sudden-move risk is ${c.maxShockScore}/100 or less. Above it the desk waits and looks again, until the entry window closes.`
+                    : 'Off — it enters at its time whatever the tape is doing.'}
+                  checked={c.maxShockScore != null}
+                  onCheckedChange={(on) => set('maxShockScore', on ? 25 : null)}
+                />
+                {c.maxShockScore != null && (
+                  <Stack
+                    label="Sudden-move risk at most"
+                    error={err('maxShockScore')}
+                    hint="the live screen's 5-minute reading · 30 watch, 50 high, 70 sudden"
+                    className="mb-1 w-44"
+                  >
+                    <Affix after="/100">
+                      <Input
+                        value={String(c.maxShockScore)} aria-label="maximum sudden move score"
+                        inputMode="numeric" className="pr-12"
+                        onChange={(e) => set('maxShockScore', Math.trunc(num(e.target.value, 0)))}
+                      />
+                    </Affix>
+                  </Stack>
+                )}
+              </div>
+
               <div className="border-t border-border">
                 <Switch
                   label="Double the other leg"

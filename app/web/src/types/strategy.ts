@@ -56,6 +56,21 @@ export type StrategyConfig = {
   probGate: number | null;
   doubleWhenOneSided: boolean;
   /**
+   * Sell a leg only if its strike scores at least this out of 100 — the board's
+   * own sell score. null is off; older strategies lack it.
+   *
+   * Refuses the day, like the probability gate: the strike is what it is.
+   */
+  minSellScore?: number | null;
+  /**
+   * Enter only while the sudden-move risk score is at most this, out of 100.
+   * null is off; older strategies lack it.
+   *
+   * Waits rather than refusing — the next tick looks again, until the entry
+   * window closes.
+   */
+  maxShockScore?: number | null;
+  /**
    * When one leg's target buys contracts back, sell as many more of the other
    * leg -- while its bid is at least `minPriceUsd` and its price is under
    * `maxMultiple` times what it was sold for. null is off; older strategies lack it.
@@ -144,6 +159,8 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   legs: 'both',
   probGate: 0.95,
   doubleWhenOneSided: true,
+  minSellScore: null,
+  maxShockScore: null,
   addToOpposite: null,
   weekdays: [0, 1, 2, 3, 4, 5, 6],
 };

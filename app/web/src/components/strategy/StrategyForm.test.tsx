@@ -165,6 +165,89 @@ describe('times on a clock', () => {
   });
 });
 
+/**
+ * Two bars, each off until it is switched on.
+ *
+ * They are different rules and the difference matters at the moment they stop
+ * something: the sell-score bar stands the day down, the sudden-move limit
+ * waits and looks again. Nothing about either appears on the form until it is
+ * armed -- a number on a form for a rule that is not running is a setting that
+ * looks live and is not.
+ */
+describe('the two score bars', () => {
+  it('[critical] both start off, with no number to fill in', () => {
+    show();
+    tab('Extras');
+    expect(screen.getByRole('switch', { name: /scores too low/ })).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByRole('switch', { name: /sudden move/ })).toHaveAttribute('aria-checked', 'false');
+    expect(screen.queryByLabelText('minimum sell score')).toBeNull();
+    expect(screen.queryByLabelText('maximum sudden move score')).toBeNull();
+  });
+
+  it('[critical] switching one on reveals its number, and leaves the other alone', () => {
+    show();
+    tab('Extras');
+    fireEvent.click(screen.getByRole('switch', { name: /scores too low/ }));
+    expect(screen.getByLabelText('minimum sell score')).toHaveValue('65');
+    expect(screen.queryByLabelText('maximum sudden move score')).toBeNull();
+
+    fireEvent.click(screen.getByRole('switch', { name: /sudden move/ }));
+    expect(screen.getByLabelText('maximum sudden move score')).toHaveValue('25');
+  });
+
+  it('[critical] saves the numbers that were chosen', async () => {
+    show();
+    tab('Extras');
+    fireEvent.click(screen.getByRole('switch', { name: /scores too low/ }));
+    fireEvent.click(screen.getByRole('switch', { name: /sudden move/ }));
+    fireEvent.change(screen.getByLabelText('minimum sell score'), { target: { value: '70' } });
+    fireEvent.change(screen.getByLabelText('maximum sudden move score'), { target: { value: '25' } });
+    fireEvent.click(saveButton());
+    await vi.waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    const cfg = saveStrategy.mock.calls[0]![0].config;
+    expect(cfg.minSellScore).toBe(70);
+    expect(cfg.maxShockScore).toBe(25);
+  });
+
+  it('[critical] switching one off saves it as off, not as zero', async () => {
+    // Zero would be the strictest possible bar rather than no bar at all: a
+    // sell-score bar of 0 refuses nothing, but a risk limit of 0 holds every
+    // day there is.
+    show(editing({ minSellScore: 70, maxShockScore: 25 }));
+    tab('Extras');
+    fireEvent.click(screen.getByRole('switch', { name: /scores too low/ }));
+    fireEvent.click(screen.getByRole('switch', { name: /sudden move/ }));
+    fireEvent.click(saveButton());
+    await vi.waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    const cfg = saveStrategy.mock.calls[0]![0].config;
+    expect(cfg.minSellScore).toBeNull();
+    expect(cfg.maxShockScore).toBeNull();
+  });
+
+  it('an editing strategy opens with its own numbers, already on', () => {
+    show(editing({ minSellScore: 80, maxShockScore: 40 }));
+    tab('Extras');
+    expect(screen.getByRole('switch', { name: /scores too low/ })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByLabelText('minimum sell score')).toHaveValue('80');
+    expect(screen.getByLabelText('maximum sudden move score')).toHaveValue('40');
+  });
+
+  it('a bar outside 1-100 is caught before the save, under its own field', () => {
+    show(editing({ minSellScore: 65 }));
+    tab('Extras');
+    fireEvent.change(screen.getByLabelText('minimum sell score'), { target: { value: '150' } });
+    expect(screen.getByRole('alert')).toHaveTextContent('The sell-score bar must be a whole number from 1 to 100, or off.');
+    expect(saveButton()).toHaveTextContent(/^Fix 1 to save$/);
+  });
+
+  it('says which one waits and which one stands the day down', () => {
+    show(editing({ minSellScore: 65, maxShockScore: 25 }));
+    tab('Extras');
+    expect(screen.getByText(/stood down for the day/)).toBeInTheDocument();
+    expect(screen.getByText(/waits and looks again/)).toBeInTheDocument();
+  });
+});
+
 describe('adding to the other leg', () => {
   it('is off by default, with nothing to fill in', () => {
     show();

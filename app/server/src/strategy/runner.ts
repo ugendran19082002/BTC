@@ -1,10 +1,14 @@
 import { liveChain } from '../market/chain.js';
 import { scoreLegs } from '../domain/score.js';
+import { attachEv } from '../domain/ev.js';
 import { tradingService } from '../trading/service.js';
 import { noteError } from '../observability/errors.js';
 import { StrategyStore } from './store.js';
 import { GRACE_MIN, entryDue, entrySlotDate, entryWindowEnd, exitDue } from './schedule.js';
 import { describeSelection, selectLegs, type Candidate } from './select.js';
+import { shockGate } from './gate.js';
+import { clearHold, noteHold } from './holds.js';
+import { shockNow } from '../market/shock-now.js';
 import { time12, type Strategy } from './types.js';
 import { addAlertFor, missedEntryAlert, runAlertFor, type Alert, type AlertContext } from '../notify/messages.js';
 import { StrategyAdder, type AddOrder, type PlaceResult } from './adder.js';
@@ -220,9 +224,43 @@ export class StrategyRunner {
     }
 
     const scored = scoreLegs(snap);
-    const candidates: Candidate[] = scored.map((l) => ({
+
+    /*
+     * Calm enough to sell into?
+     *
+     * Before the strike is chosen, because the answer is about the tape and not
+     * about any particular leg -- and before the claim, because a hold is not a
+     * refusal: the day stays open and the next tick asks again, until the entry
+     * window closes and the missed-entry alert says nothing was tried. The
+     * reason is kept where the screen can read it, so a strategy waiting out a
+     * violent five minutes says so instead of reading "due now" and doing
+     * nothing.
+     */
+    if (s.config.maxShockScore !== null) {
+      const reading = await shockNow(snap, scored).catch(() => null);
+      const gate = shockGate(s.config.maxShockScore, reading);
+      if (!gate.pass) {
+        noteHold(s.id, day, gate.reason, now);
+        return;
+      }
+    }
+    clearHold(s.id);
+
+    /*
+     * The same arithmetic the board shows, so a strategy's sell-score bar is
+     * checked against the number a person can see against that strike -- one
+     * computed here from its own weights would be a bar nobody could check.
+     */
+    const candidates: Candidate[] = attachEv(scored, {
+      spot: snap.spot,
+      lots: s.config.lots,
+      minPremium: s.config.premium.usd,
+      atmIv: snap.atmIv,
+      expectedMove: snap.expectedMove,
+    }).map((l) => ({
       cp: l.cp, strike: l.strike, sellPrice: l.sellPrice, pOtm: l.pOtm,
       moneyness: l.moneyness, ask: l.ask, oi: l.oi,
+      sellScore: l.ev.score, tier: l.ev.tier,
     }));
     const sel = selectLegs(s, candidates);
     if (sel.legs.length === 0) {

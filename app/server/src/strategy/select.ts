@@ -17,6 +17,7 @@
  * Rs -1,241, atMost Rs +9,881 at Rs -721. Neither is the right answer in
  * general, which is why it is a setting.
  */
+import type { Tier } from '../domain/ev.js';
 import type { StrategyConfig } from './types.js';
 import { lotsPerLeg } from './schedule.js';
 import { strikeLabel, type Strategy } from './types.js';
@@ -34,6 +35,10 @@ export type Candidate = {
   ask?: number | null;
   /** Contracts open at this strike. Read only by the open-interest rule. */
   oi?: number | null;
+  /** `domain/ev.ts`'s 0-100 sell score. Read only by the sell-score bar. */
+  sellScore?: number | null;
+  /** What the score is called once hard rules have had their say. */
+  tier?: Tier | null;
 };
 
 export type Chosen = {
@@ -157,6 +162,28 @@ export function selectLegs(s: Strategy, candidates: readonly Candidate[]): Selec
       if (chosen.pOtm < cfg.probGate) {
         refusals.push(
           `${leg}: ${chosen.strike} is ${(chosen.pOtm * 100).toFixed(1)}% to expire worthless, below the ${(cfg.probGate * 100).toFixed(1)}% bar`,
+        );
+        continue;
+      }
+    }
+    /*
+     * The sell-score bar, after the probability gate and for the same reasons.
+     *
+     * Refused rather than held: the strike is what it is, and asking again in
+     * twenty seconds gets the same answer. A strike with no score is refused
+     * too -- an unscored strike is an unpriced one, and a bar that passes
+     * whatever it cannot read is not a bar.
+     */
+    if (cfg.minSellScore !== null && cfg.minSellScore !== undefined) {
+      const score = chosen.sellScore;
+      if (score === null || score === undefined) {
+        refusals.push(`${leg}: ${chosen.strike} has no sell score to check against the bar`);
+        continue;
+      }
+      if (score < cfg.minSellScore) {
+        refusals.push(
+          `${leg}: ${chosen.strike} scores ${Math.round(score)}/100`
+          + `${chosen.tier ? ` (${chosen.tier})` : ''}, below the ${cfg.minSellScore} bar`,
         );
         continue;
       }

@@ -173,6 +173,48 @@ export type StrategyConfig = {
    */
   doubleWhenOneSided: boolean;
   /**
+   * Sell a leg only if its strike scores at least this out of 100. `null` is
+   * off, and every strategy saved before this existed reads as off.
+   *
+   * `domain/ev.ts`'s sell score — distance, probability, open interest, volume,
+   * implied volatility, premium and expected value under `SCORE_WEIGHTS` — the
+   * number the board shows against each strike. A leg the rule picks but the
+   * score will not have is refused the way the probability gate refuses one,
+   * and for the same reason: the strike is what it is, and looking again in
+   * twenty seconds will not change it. That makes this a gate, not a hold.
+   *
+   * **It ranks a board against itself.** A day where every strike scores 40 is
+   * not a day to stand aside from; it is a quiet board where 40 is the best
+   * there is. A bar set high enough will refuse those days, which may be what
+   * is wanted — but it is a different statement from "this strike is bad".
+   *
+   * Untested as a trading rule, like [maxShockScore] and unlike [probGate].
+   */
+  minSellScore: number | null;
+  /**
+   * Enter only while the sudden-move risk score is at most this, 1-100.
+   * `null` is off, and every strategy saved before this existed reads as off.
+   *
+   * The score is `domain/shock.ts`'s five readings of the present tape over the
+   * five-minute window — the same number, over the same window, that the live
+   * screen shows by default, so what a person sees is what the gate uses.
+   *
+   * **It waits; it does not spend the day.** Above the limit the strategy is
+   * held rather than refused, and the next tick looks again, until its entry
+   * window closes and the missed-entry alert says so. "Enter when it is calm"
+   * is what was asked for, and a gate that burned the day on the first noisy
+   * five minutes would be a different rule entirely.
+   *
+   * **Untested as a trading rule**, and differently untested from the
+   * probability gate beside it: that one carries a 733-day record, this one
+   * carries none. None of the five weights behind the score has been through
+   * the cross-period screen the premium floor and the RSI gate went through.
+   * It is here because waiting out a violent five minutes before selling
+   * premium is a thing a person will reasonably want, and the form says what
+   * it rests on.
+   */
+  maxShockScore: number | null;
+  /**
    * When one leg's target buys contracts back, sell as many more of the other
    * leg -- while that leg is still paying enough, and has not run away. `null`
    * is off, and every strategy saved before this existed reads as off.
@@ -265,6 +307,8 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   legs: 'both',
   probGate: 0.95,
   doubleWhenOneSided: true,
+  minSellScore: null,
+  maxShockScore: null,
   addToOpposite: null,
   weekdays: [0, 1, 2, 3, 4, 5, 6],
 };
@@ -349,6 +393,14 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
   if (c.probGate !== null && c.probGate !== undefined
       && (!(c.probGate > 0) || c.probGate >= 1)) {
     bad.push('The probability gate must be between 0 and 1, or off.');
+  }
+  if (c.minSellScore !== null && c.minSellScore !== undefined
+      && (!Number.isInteger(c.minSellScore) || c.minSellScore < 1 || c.minSellScore > 100)) {
+    bad.push('The sell-score bar must be a whole number from 1 to 100, or off.');
+  }
+  if (c.maxShockScore !== null && c.maxShockScore !== undefined
+      && (!Number.isInteger(c.maxShockScore) || c.maxShockScore < 1 || c.maxShockScore > 100)) {
+    bad.push('The sudden-move risk limit must be a whole number from 1 to 100, or off.');
   }
   if (!Array.isArray(c.weekdays) || c.weekdays.some((d) => !Number.isInteger(d) || d < 0 || d > 6)) {
     bad.push('Days must be whole numbers from 0 (Sunday) to 6 (Saturday).');

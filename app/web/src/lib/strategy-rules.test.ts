@@ -72,6 +72,40 @@ describe('the latest time to add', () => {
   });
 });
 
+describe('the two score bars', () => {
+  const messages = (c: Parameters<typeof strategyProblems>[0]) =>
+    strategyProblems(c, 'S').map((p) => p.message);
+
+  it('are not checked at all while they are off', () => {
+    expect(messages(cfg({ minSellScore: null, maxShockScore: null }))).toEqual([]);
+  });
+
+  it('[critical] take a whole number from 1 to 100 and nothing else', () => {
+    expect(messages(cfg({ minSellScore: 65, maxShockScore: 25 }))).toEqual([]);
+    expect(messages(cfg({ minSellScore: 1 }))).toEqual([]);
+    expect(messages(cfg({ maxShockScore: 100 }))).toEqual([]);
+    expect(messages(cfg({ minSellScore: 0 }))[0]).toMatch(/sell-score bar/);
+    expect(messages(cfg({ minSellScore: 101 }))[0]).toMatch(/sell-score bar/);
+    expect(messages(cfg({ minSellScore: 65.5 }))[0]).toMatch(/whole number/);
+    expect(messages(cfg({ maxShockScore: 0 }))[0]).toMatch(/sudden-move risk limit/);
+  });
+
+  it('say it in the same words the server would', () => {
+    // The server is the authority and answers a save it will not take; these
+    // run as the form is edited, and two spellings of one rule is how a form
+    // ends up arguing with the API.
+    expect(messages(cfg({ maxShockScore: 200 })))
+      .toEqual(['The sudden-move risk limit must be a whole number from 1 to 100, or off.']);
+  });
+
+  it('land on the Extras tab, where their switches are', () => {
+    const ps = strategyProblems(cfg({ minSellScore: 0, maxShockScore: 0 }), 'S');
+    expect(ps.map((p) => [p.field, p.tab])).toEqual([
+      ['minSellScore', 'extras'], ['maxShockScore', 'extras'],
+    ]);
+  });
+});
+
 describe('the other settings land on their tabs', () => {
   it('puts each problem where its field is', () => {
     const ps = strategyProblems(cfg({ lots: 0, stopLossPct: 25, weekdays: [], doubleWhenOneSided: true, probGate: null }), 'S');

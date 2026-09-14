@@ -1,7 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { refuse } from '../refuse.js';
 import { StrategyStore } from '../../strategy/store.js';
-import { entryDue, istDate, nextEntryAt } from '../../strategy/schedule.js';
+import { entryDue, entrySlotDate, istDate, nextEntryAt } from '../../strategy/schedule.js';
+import { holdFor, statusOf } from '../../strategy/holds.js';
 import { DEFAULT_CONFIG, defaultAddUntil, validateConfig, type StrategyConfig } from '../../strategy/types.js';
 import { tradingService } from '../../trading/service.js';
 
@@ -45,6 +46,14 @@ function cleanConfig(raw: unknown): StrategyConfig {
     legs: c.legs === 'CE' || c.legs === 'PE' ? c.legs : 'both',
     probGate: c.probGate === null || c.probGate === undefined ? null : Number(c.probGate),
     doubleWhenOneSided: Boolean(c.doubleWhenOneSided),
+    minSellScore: c.minSellScore === null || c.minSellScore === undefined
+      ? null
+      : Math.trunc(Number(c.minSellScore)),
+    // Absent from a client that predates the gate, and from every strategy
+    // saved before it existed: off, which is what they have been doing.
+    maxShockScore: c.maxShockScore === null || c.maxShockScore === undefined
+      ? null
+      : Math.trunc(Number(c.maxShockScore)),
     addToOpposite: c.addToOpposite === null || c.addToOpposite === undefined || typeof c.addToOpposite !== 'object'
       ? null
       : {
@@ -106,8 +115,14 @@ export function registerStrategyRoutes(app: FastifyInstance) {
           lastRunDate: last,
           ranToday: last === today,
           nextEntryAt: nextEntryAt(x, now, last),
-          /** Why it is not entering this second. The screen shows this verbatim. */
-          status: due.due ? 'due now' : due.because,
+          /**
+           * Why it is not entering this second. The screen shows this verbatim.
+           *
+           * A hold outranks "due now": the clock says it is time and the desk
+           * has decided to wait, which is exactly the case the screen was
+           * silent about before.
+           */
+          status: statusOf(due, holdFor(x.id, entrySlotDate(x, now))),
         };
       }),
       runs: s.runs(40),

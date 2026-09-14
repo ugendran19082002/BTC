@@ -14,6 +14,10 @@ const leg = (
   moneyness: Candidate['moneyness'] = 'OTM',
 ): Candidate => ({ cp, strike, sellPrice, pOtm, moneyness });
 
+/** The same leg, carrying the board's own sell score. */
+const scored = (c: Candidate, sellScore: number | null, tier?: Candidate['tier']): Candidate =>
+  ({ ...c, sellScore, tier });
+
 /** A board around spot 78,600: calls above, puts below, cheaper further out. */
 const BOARD: Candidate[] = [
   leg('C', 78_600, 300, 0.50, 'ATM'),
@@ -306,4 +310,63 @@ test('the refusal says what was missing, not just that there was nothing', () =>
     out.refusals.some((r) => r.includes('open interest to read')),
     out.refusals.join(' | '),
   );
+});
+
+
+/**
+ * The sell-score bar.
+ *
+ * The same shape as the probability gate beside it, and refusing for the same
+ * reason: the strike is what it is, and looking again in twenty seconds will
+ * not change its score. What must not happen is a bar that passes a strike it
+ * could not score -- a bar that only stops what it can read is not a bar.
+ */
+const SCORED: Candidate[] = BOARD.map((l) =>
+  scored(l, l.cp === 'C' ? 72 : 48, l.cp === 'C' ? 'candidate' : 'watch'));
+
+test('[critical] off, the bar reads nothing and refuses nothing', () => {
+  const sel = selectLegs(
+    strat({ premium: { mode: 'atLeast', usd: 15 }, probGate: null, minSellScore: null }),
+    BOARD.map((l) => scored(l, null)),
+  );
+  assert.equal(sel.legs.length, 2, 'an unscored board sells both legs while the bar is off');
+});
+
+test('[critical] a strike under the bar is refused, with its own number', () => {
+  const sel = selectLegs(
+    strat({ premium: { mode: 'atLeast', usd: 15 }, probGate: null, minSellScore: 65 }),
+    SCORED,
+  );
+  assert.deepEqual(sel.legs.map((l) => l.cp), ['C'], 'the call scores 72, the put 48');
+  assert.equal(sel.refusals.length, 1);
+  assert.match(sel.refusals[0]!, /PE: \d+ scores 48\/100 \(watch\), below the 65 bar/);
+});
+
+test('[critical] a strike with no score is refused, not waved through', () => {
+  const sel = selectLegs(
+    strat({ premium: { mode: 'atLeast', usd: 15 }, probGate: null, minSellScore: 65 }),
+    BOARD.map((l) => scored(l, null)),
+  );
+  assert.equal(sel.legs.length, 0);
+  assert.match(sel.refusals[0]!, /no sell score to check against the bar/);
+});
+
+test('at the bar passes -- "65 or better" includes 65', () => {
+  const at = (score: number) => selectLegs(
+    strat({ legs: 'CE', premium: { mode: 'atLeast', usd: 15 }, probGate: null, minSellScore: 65, doubleWhenOneSided: false }),
+    BOARD.map((l) => scored(l, score)),
+  ).legs.length;
+  assert.equal(at(65), 1);
+  assert.equal(at(64), 0);
+});
+
+test('the probability gate still has the first word', () => {
+  // Both would refuse; the reason printed is the one that was reached first,
+  // so a leg is never reported as low-scoring when it never got past safety.
+  const sel = selectLegs(
+    strat({ legs: 'CE', premium: { mode: 'atLeast', usd: 15 }, probGate: 0.999, minSellScore: 65, doubleWhenOneSided: false }),
+    BOARD.map((l) => scored(l, 10)),
+  );
+  assert.equal(sel.legs.length, 0);
+  assert.match(sel.refusals[0]!, /to expire worthless/);
 });

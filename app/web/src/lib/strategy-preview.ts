@@ -77,7 +77,28 @@ export function describeStrategy(c: StrategyConfig): string {
     + `It ${describeEntry(c)}, then ${describeExit(c)} or closes at ${time12(c.exitTime)}`
     + `${wrapsMidnight(c.entryTime, c.exitTime) ? ' the next day' : ''}. `
     + `It ${gate}${dbl}.`
+    + (describeScores(c) ? ` ${describeScores(c)}` : '')
     + (describeAdd(c) ? ` ${describeAdd(c)}` : '');
+}
+
+/**
+ * The two score bars, in the same sentence as each other because they are read
+ * as a pair and behave differently: one waits, the other stands the day down.
+ *
+ * Written out rather than left to the switches, so the difference is read while
+ * the numbers are being chosen rather than discovered from a journal line a
+ * week later.
+ */
+export function describeScores(c: StrategyConfig): string | null {
+  const parts: string[] = [];
+  if (c.minSellScore !== null && c.minSellScore !== undefined) {
+    parts.push(`skips a strike scoring under ${c.minSellScore}/100`);
+  }
+  if (c.maxShockScore !== null && c.maxShockScore !== undefined) {
+    parts.push(`waits while sudden-move risk is above ${c.maxShockScore}/100`);
+  }
+  if (!parts.length) return null;
+  return `It ${parts.join(', and ')}.`;
 }
 
 /**

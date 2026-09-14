@@ -160,6 +160,41 @@ test('an exit the contract does not live to see is refused', () => {
   assert.ok(bad.some((m) => /5:30 PM settlement/.test(m)), bad.join(' | '));
 });
 
+test('[critical] both score bars are whole numbers out of a hundred, or off', () => {
+  const ok = (over: Record<string, unknown>) => validateConfig({ ...DEFAULT_CONFIG, ...over });
+  assert.deepEqual(ok({ minSellScore: null, maxShockScore: null }), []);
+  assert.deepEqual(ok({ minSellScore: 65, maxShockScore: 25 }), []);
+  assert.deepEqual(ok({ minSellScore: 1, maxShockScore: 100 }), [], 'both ends are usable');
+
+  assert.ok(ok({ minSellScore: 0 }).some((m) => /sell-score bar/.test(m)));
+  assert.ok(ok({ minSellScore: 101 }).some((m) => /sell-score bar/.test(m)));
+  assert.ok(ok({ minSellScore: 65.5 }).some((m) => /sell-score bar/.test(m)),
+    'the score is a whole number, so a bar of 65.5 is a bar nobody can read back');
+  assert.ok(ok({ maxShockScore: 0 }).some((m) => /sudden-move risk limit/.test(m)));
+  assert.ok(ok({ maxShockScore: 101 }).some((m) => /sudden-move risk limit/.test(m)));
+});
+
+test('[critical] a strategy saved before the score bars reads as off, not as zero', () => {
+  // A zero bar would refuse every strike; a zero risk limit would hold every
+  // day. The hydrate merge decides this, and it decides it for every strategy
+  // already in the file.
+  const s = fresh();
+  const before = s.all().find((x) => x.id === 'double')!;
+  assert.equal(before.config.minSellScore, null);
+  assert.equal(before.config.maxShockScore, null);
+});
+
+test('the score bars survive a save and come back as they went in', () => {
+  const s = fresh();
+  s.save({
+    id: 'gated', name: 'Gated', enabled: false,
+    config: { ...DEFAULT_CONFIG, minSellScore: 70, maxShockScore: 25 },
+  });
+  const back = s.get('gated')!;
+  assert.equal(back.config.minSellScore, 70);
+  assert.equal(back.config.maxShockScore, 25);
+});
+
 test('doubling without the gate is explained rather than silently ignored', () => {
   const bad = validateConfig({ ...DEFAULT_CONFIG, probGate: null, doubleWhenOneSided: true });
   assert.ok(bad.some((m) => /probability gate/.test(m)));

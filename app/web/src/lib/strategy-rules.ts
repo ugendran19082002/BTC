@@ -16,7 +16,8 @@ export type FormField =
   | 'name' | 'entryTime' | 'exitTime' | 'weekdays'
   | 'legs' | 'strikeRule' | 'strikeStep' | 'premium' | 'lots'
   | 'entryLimit' | 'crossAfterSec' | 'maxCrossSpreadPct' | 'takeProfitPct' | 'stopLossPct'
-  | 'probGate' | 'doubleWhenOneSided' | 'addMinPrice' | 'addMultiple' | 'addUntil' | 'add';
+  | 'probGate' | 'doubleWhenOneSided' | 'minSellScore' | 'maxShockScore'
+  | 'addMinPrice' | 'addMultiple' | 'addUntil' | 'add';
 
 export type Problem = { field: FormField; tab: FormTab; message: string };
 
@@ -24,7 +25,8 @@ const TAB: Record<FormField, FormTab> = {
   name: 'when', entryTime: 'when', exitTime: 'when', weekdays: 'when',
   legs: 'sell', strikeRule: 'sell', strikeStep: 'sell', premium: 'sell', lots: 'sell',
   entryLimit: 'trade', crossAfterSec: 'trade', maxCrossSpreadPct: 'trade', takeProfitPct: 'trade', stopLossPct: 'trade',
-  probGate: 'extras', doubleWhenOneSided: 'extras', addMinPrice: 'extras', addMultiple: 'extras', addUntil: 'extras', add: 'extras',
+  probGate: 'extras', doubleWhenOneSided: 'extras', minSellScore: 'extras', maxShockScore: 'extras',
+  addMinPrice: 'extras', addMultiple: 'extras', addUntil: 'extras', add: 'extras',
 };
 
 export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
@@ -71,6 +73,14 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
   if (c.doubleWhenOneSided && c.legs !== 'both') say('doubleWhenOneSided', 'Doubling the surviving leg needs both legs selected.');
   if (c.doubleWhenOneSided && c.probGate === null) {
     say('doubleWhenOneSided', 'Doubling the surviving leg needs the probability gate on -- without it no leg is ever refused.');
+  }
+
+  const whole = (v: number) => Number.isInteger(v) && v >= 1 && v <= 100;
+  if (c.minSellScore !== null && c.minSellScore !== undefined && !whole(c.minSellScore)) {
+    say('minSellScore', 'The sell-score bar must be a whole number from 1 to 100, or off.');
+  }
+  if (c.maxShockScore !== null && c.maxShockScore !== undefined && !whole(c.maxShockScore)) {
+    say('maxShockScore', 'The sudden-move risk limit must be a whole number from 1 to 100, or off.');
   }
 
   const add = c.addToOpposite;

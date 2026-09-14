@@ -215,6 +215,10 @@ chain. It was taken out by mistake for one deploy and put straight back.
 
 ## THINGS WORTH DOING NEXT
 
+- **A second sweep of the live screen on a real phone.** The panels are all
+  responsive and tested at 400px, but every one of the faults above was found
+  by somebody *looking* at the screen, not by a test — the readings were right
+  and the controls were lying about them.
 - **Exit rule.** Closing when the option has lost 95% of its value beat holding
   to expiry — ₹15,225 vs ₹14,638 — and the target was hit on 97.5% of days,
   usually about 8 hours in. The desk only handles entries so far.
@@ -233,6 +237,60 @@ chain. It was taken out by mistake for one deploy and put straight back.
   which is exactly what noise looks like before you get more data.
   So the desk forecasts **distance, not direction**, and the "up" column stays
   on the page at ~50% to make the case against adding one later.
+
+---
+
+## A control that did nothing, and a chart that took the page — 14 Sep 2026
+
+Four things reported from the live screen, all of them the same kind of fault:
+a control that says it does something and does not.
+
+**The odds block ignored the window.** "How often a move like this followed" was
+counted over a fixed four hours while every other reading on the panel moved
+with the 5m/15m/1h/4h control above it — so the one block a person is most
+likely to read as a forecast was the one block the control did not reach. It
+now counts over the window that was chosen. `moveOdds(win, 1)`.
+
+At the short end a one-percent move is deep in the tail of five minutes *and*
+of fifteen, so those two windows come back 1% / 1% / 98% alike. That is true,
+and it still looks like a broken control, so the odds now also carry what the
+window itself travels: the median measured move and the 95th, off the same 101
+percentiles. Five minutes typically moves ±0.06% and fifteen ±0.10%, and
+nineteen in twenty stay inside ±0.30% and ±0.52% — which is the figure that
+actually separates them.
+
+**The newest bar was drawn against the price axis.** The one bar the eye goes to
+first had no room around it and its own price tag sat on top of it. A 26-unit
+gutter now sits between the last candle and the axis; gridlines and level lines
+still run the full width, so nothing is shortened but the bars.
+
+**The walls could not be reached by zooming out.** The vertical zoom floor was a
+flat 0.4, which widens a quiet hour's 600-dollar range to 1,500 — nowhere near
+a wall six thousand dollars away, so both levels stayed pinned to the edges
+reading "off the scale" however hard the scale was pulled. The floor is now
+whatever brings the furthest wall inside with a little air around it, and never
+tighter than it was. Zooming the price scale out is the one thing zooming out
+is *for* on this chart, and it now does it.
+
+**The chart took the wheel whether or not it was wanted.** It sits in the middle
+of a long scrolling page, so a wheel that always zooms is a wheel that stops the
+page dead wherever the pointer happens to rest — and `touch-action: none` meant
+a drag over the plot on a phone scrolled nothing at all and the page felt stuck.
+Zoom and pan are now armed by a toggle in the header, off by default and
+remembered: off, the chart is a picture and the page behaves like a page;
+armed, it takes the pointer and says so in the key. Turning it off returns the
+whole series, because a window nobody can pan out of is a trap.
+
+**Every add in the journal now carries its date.** A bare "13:54" reads as
+today's, and the journal keeps a week of them. The runs log beside it has
+carried its run date all along, which is what made the gap look like a
+formatting quirk rather than a missing fact.
+
+Tested: the odds move with the window and the two short horizons are separated
+by size, not by threshold; the wheel is left to the page until armed and
+cancelled once it is; off-then-on still zooms; the last candle clears the axis;
+and sixty notches on the price axis puts both walls on the scale with no "off
+the scale" caveat left.
 
 ---
 
