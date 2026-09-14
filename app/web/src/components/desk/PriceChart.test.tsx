@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { PriceChart, zoomHorizontally, zoomVertically } from '@/components/desk/PriceChart';
 import type { Candle } from '@/types/desk';
 
@@ -21,6 +21,33 @@ const bars = (n: number, base = 77_000): Candle[] =>
   }));
 
 const noop = () => {};
+
+// Whether zoom is armed is remembered, so one test's click would otherwise be
+// the next test's starting state.
+beforeEach(() => { try { localStorage.clear(); } catch { /* no storage */ } });
+
+/**
+ * A rendered chart with the wheel armed and a real bounding box.
+ *
+ * jsdom gives every element a zero-width box, and the chart refuses to resolve
+ * a pointer position inside one — so without this the gesture cannot be driven
+ * through the DOM at all and only the arithmetic can be tested.
+ */
+const armedChart = (props: Partial<Parameters<typeof PriceChart>[0]> = {}) => {
+  const r = render(
+    <PriceChart
+      bars={bars(200)} support={74_400} resistance={80_000} spot={77_172}
+      tf="5m" onTf={noop} {...props}
+    />,
+  );
+  fireEvent.click(screen.getByRole('button', { name: /Zoom off/ }));
+  const svg = r.container.querySelector('svg')!;
+  svg.getBoundingClientRect = () => ({
+    left: 0, top: 0, right: 780, bottom: 360, width: 780, height: 360, x: 0, y: 0,
+    toJSON: () => ({}),
+  }) as DOMRect;
+  return { ...r, svg };
+};
 
 describe('the price chart', () => {
   it('draws a body, a wick and a volume bar for every bar', () => {
@@ -256,7 +283,113 @@ describe('zoom and pan', () => {
   });
 
   it('says how to work it, rather than leaving it to be discovered', () => {
-    chart();
+    armedChart();
     expect(screen.getByText(/scroll to zoom · drag to pan/)).toBeInTheDocument();
+  });
+
+  it('the price scale may be pulled out far enough to reach the walls', () => {
+    // The floor was a flat 0.4, which widens a quiet hour's range by two and a
+    // half times — nowhere near a wall six thousand dollars away.
+    let v = fitted;
+    for (let i = 0; i < 80; i++) v = zoomVertically(v, true, 0.05);
+    expect(v.yZoom).toBeCloseTo(0.05, 4);
+  });
+
+  it('a floor above the old limit never tightens it', () => {
+    let v = fitted;
+    for (let i = 0; i < 80; i++) v = zoomVertically(v, true, 0.9);
+    expect(v.yZoom).toBeCloseTo(0.4, 4);
+  });
+});
+
+/**
+ * Zoom is a mode, and the chart says which one it is in.
+ *
+ * The chart sits in the middle of a long scrolling page. A wheel that always
+ * zooms is a wheel that stops the page dead wherever the pointer happens to
+ * rest, and on a phone the plot swallowed a scroll entirely.
+ */
+describe('arming zoom', () => {
+  it('[critical] leaves the wheel to the page until it is armed', () => {
+    const { container } = render(
+      <PriceChart
+        bars={bars(200)} support={74_400} resistance={80_000} spot={77_172}
+        tf="5m" onTf={noop}
+      />,
+    );
+    const svg = container.querySelector('svg')!;
+    svg.getBoundingClientRect = () => ({
+      left: 0, top: 0, right: 780, bottom: 360, width: 780, height: 360, x: 0, y: 0,
+      toJSON: () => ({}),
+    }) as DOMRect;
+
+    expect(screen.getByRole('button', { name: /Zoom off/ })).toHaveAttribute('aria-pressed', 'false');
+    expect(svg).not.toHaveClass('armed');
+
+    // not cancelled: the page keeps the gesture
+    expect(fireEvent.wheel(svg, { deltaY: -100, clientX: 390 })).toBe(true);
+    expect(screen.getByText('200 of 200 bars')).toBeInTheDocument();
+  });
+
+  it('[critical] takes the wheel, and zooms, once it is armed', () => {
+    const { svg } = armedChart();
+    expect(svg).toHaveClass('armed');
+    // cancelled: the chart owns the gesture and the page does not move
+    expect(fireEvent.wheel(svg, { deltaY: -100, clientX: 390 })).toBe(false);
+    expect(screen.queryByText('200 of 200 bars')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Fit/ })).toBeInTheDocument();
+  });
+
+  it('[critical] off, on again, and it still zooms', () => {
+    const { svg } = armedChart();
+    fireEvent.wheel(svg, { deltaY: -100, clientX: 390 });
+    expect(screen.queryByText('200 of 200 bars')).not.toBeInTheDocument();
+
+    // off: the whole series comes back rather than leaving a window nobody can
+    // pan out of
+    fireEvent.click(screen.getByRole('button', { name: /Zoom on/ }));
+    expect(screen.getByText('200 of 200 bars')).toBeInTheDocument();
+    expect(fireEvent.wheel(svg, { deltaY: -100, clientX: 390 })).toBe(true);
+
+    // and on again
+    fireEvent.click(screen.getByRole('button', { name: /Zoom off/ }));
+    expect(fireEvent.wheel(svg, { deltaY: -100, clientX: 390 })).toBe(false);
+    expect(screen.queryByText('200 of 200 bars')).not.toBeInTheDocument();
+  });
+
+  it('says which state it is in, rather than leaving it to be guessed', () => {
+    render(
+      <PriceChart bars={bars(20)} support={74_400} resistance={80_000} spot={77_172} tf="5m" onTf={noop} />,
+    );
+    expect(screen.getByText(/zoom is off, so the page scrolls over the chart/)).toBeInTheDocument();
+  });
+});
+
+/**
+ * Room around the newest bar, and walls you can actually reach.
+ */
+describe('the plot itself', () => {
+  it('[critical] leaves room between the newest bar and the price axis', () => {
+    // Drawn hard against the axis, the one bar the eye goes to first is the one
+    // bar with no room around it, and its own price tag sits on top of it.
+    const { container } = render(
+      <PriceChart bars={bars(40)} support={74_400} resistance={80_000} spot={77_172} tf="5m" onTf={noop} />,
+    );
+    const last = [...container.querySelectorAll('.candle-body')].at(-1)!;
+    const right = Number(last.getAttribute('x')) + Number(last.getAttribute('width'));
+    // 780 wide, a 74-wide price axis: the bars must stop well short of it
+    expect(706 - right).toBeGreaterThanOrEqual(20);
+  });
+
+  it('[critical] zooming the price scale out brings the walls onto it', () => {
+    const { svg } = armedChart({ bars: bars(40) });
+    expect(screen.getAllByText(/off the scale/).length).toBeGreaterThan(0);
+
+    // the wheel over the price axis, which is the right-hand gutter
+    for (let i = 0; i < 60; i++) fireEvent.wheel(svg, { deltaY: 100, clientX: 750 });
+
+    expect(screen.queryByText(/off the scale/)).not.toBeInTheDocument();
+    expect(screen.getByText('74,400')).toBeInTheDocument();
+    expect(screen.getByText('80,000')).toBeInTheDocument();
   });
 });

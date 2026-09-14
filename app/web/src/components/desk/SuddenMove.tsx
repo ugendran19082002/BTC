@@ -130,6 +130,13 @@ const part = (shock: Shock, name: string) => shock.parts.find((p) => p.name === 
  */
 const WINDOW_LABEL: Record<number, string> = { 5: '5m', 15: '15m', 60: '1h', 240: '4h' };
 
+/** "5 minutes", "1 hour", "4 hours" — never "1 hours". */
+export const horizonWords = (minutes: number): string => {
+  if (minutes < 60) return `${minutes} minutes`;
+  const h = Math.round(minutes / 60);
+  return h === 1 ? '1 hour' : `${h} hours`;
+};
+
 const IST = new Intl.DateTimeFormat('en-IN', {
   timeZone: 'Asia/Kolkata',
   hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true,
@@ -397,11 +404,18 @@ export function SuddenMove({
                 <b>{pct(shock.odds.inside)}</b>
               </span>
             </div>
+            {/*
+              The horizon is the window chosen above, so the three figures move
+              with the control like everything else on the panel. At the short
+              end a one-percent move is rare in five minutes and rare in
+              fifteen, so those two read alike — true, and the reason the sizes
+              are here beside them: they are what actually separates the two.
+            */}
             <span className="smr-odds-foot">
-              over the next {shock.odds.overMinutes >= 60
-                ? `${Math.round(shock.odds.overMinutes / 60)} hours`
-                : `${shock.odds.overMinutes} minutes`}, measured ·{' '}
-              <b>{pct(shock.odds.either)}</b> moved either way
+              over the next {horizonWords(shock.odds.overMinutes)}, measured ·{' '}
+              <b>{pct(shock.odds.either)}</b> moved either way · half stayed inside{' '}
+              <b>±{shock.odds.typicalPct.toFixed(2)}%</b>, nineteen in twenty inside{' '}
+              <b>±{shock.odds.outerPct.toFixed(2)}%</b>
             </span>
           </div>
         )}

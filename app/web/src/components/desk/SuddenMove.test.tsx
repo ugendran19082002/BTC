@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
-import { SuddenMove } from '@/components/desk/SuddenMove';
+import { SuddenMove, horizonWords } from '@/components/desk/SuddenMove';
 import type {
   MarketRead, OptionStructure, SnapshotMeta, SuddenMove as Shock,
 } from '@/types/desk';
@@ -55,7 +55,11 @@ const shock = (over: Partial<Shock> = {}): Shock => ({
   direction: 0,
   directionLabel: 'no clear side',
   directionParts: [],
-  odds: { overMinutes: 240, thresholdPct: 1, up: 0.09, down: 0.10, inside: 0.81, either: 0.19 },
+  odds: {
+    overMinutes: 240, thresholdPct: 1,
+    up: 0.09, down: 0.10, inside: 0.81, either: 0.19,
+    typicalPct: 0.63, outerPct: 1.40,
+  },
   window: 5,
   ...over,
 });
@@ -153,6 +157,56 @@ describe('sudden move analytics', () => {
     expect(within(odds).getByText('10%')).toBeInTheDocument();
     expect(within(odds).getByText('81%')).toBeInTheDocument();
     expect(screen.getByText(/over the next 4 hours, measured/)).toBeInTheDocument();
+  });
+
+  it('[critical] the odds follow the window control like everything else', () => {
+    /*
+     * They did not. The horizon was pinned at four hours while every reading
+     * above it moved with the toggle, so the one block a person is most likely
+     * to read as a forecast answered a question nobody had asked.
+     */
+    const five = shock({
+      window: 5,
+      odds: {
+        overMinutes: 5, thresholdPct: 1,
+        up: 0.01, down: 0.01, inside: 0.98, either: 0.02,
+        typicalPct: 0.07, outerPct: 0.20,
+      },
+    });
+    const four = shock({ window: 240 });
+
+    const { rerender } = render(
+      <SuddenMove
+        shocks={[five, four]} window={5} onWindow={() => {}}
+        snap={snap} structure={structure} market={market}
+      />,
+    );
+    expect(screen.getByText(/over the next 5 minutes, measured/)).toBeInTheDocument();
+    expect(screen.getByText('98%')).toBeInTheDocument();
+
+    rerender(
+      <SuddenMove
+        shocks={[five, four]} window={240} onWindow={() => {}}
+        snap={snap} structure={structure} market={market}
+      />,
+    );
+    expect(screen.getByText(/over the next 4 hours, measured/)).toBeInTheDocument();
+    expect(screen.getByText('81%')).toBeInTheDocument();
+  });
+
+  it('says how far the window itself typically travels', () => {
+    // One percent is deep in the tail of five minutes and of fifteen, so those
+    // two windows read alike on the threshold. The sizes are what separate
+    // them, and without them the control looks broken at the short end.
+    panel();
+    expect(screen.getByText('±0.63%')).toBeInTheDocument();
+    expect(screen.getByText('±1.40%')).toBeInTheDocument();
+  });
+
+  it('never writes "1 hours"', () => {
+    expect(horizonWords(5)).toBe('5 minutes');
+    expect(horizonWords(60)).toBe('1 hour');
+    expect(horizonWords(240)).toBe('4 hours');
   });
 
   it('[critical] the three outcomes on screen add to a hundred', () => {

@@ -246,7 +246,11 @@ export function StrategyPanel() {
             extraHead="From"
             rows={data.adds!.map((a) => ({
               id: a.id,
-              at: clock(a.at),
+              // Date and time, not the clock alone: the runs log beside it
+              // carries its own run date, so a bare "13:54" here reads as
+              // today's and an add from Friday is indistinguishable from one
+              // from ten minutes ago.
+              at: stamp(a.at),
               who: data.strategies.find((s) => s.id === a.strategyId)?.name ?? a.strategyId,
               extra: `${a.sourceSide} × ${a.contracts}`,
               outcome: a.status === 'placed' ? 'added'

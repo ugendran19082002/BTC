@@ -296,6 +296,41 @@ test('[critical] the three outcomes are the whole of it', () => {
   assert.ok(Math.abs(odds.up + odds.down + odds.inside - 1) < 1e-12);
 });
 
+test('[critical] the odds are counted over the window the readings were taken over', () => {
+  // They were pinned at four hours while everything else on the panel moved
+  // with the window control, so the one block most likely to be read as a
+  // forecast answered a question nobody had asked.
+  const at = (window: 5 | 15 | 60 | 240) => suddenMove({ ...base, window }).odds;
+  const five = at(5);
+  const four = at(240);
+  if (!five || !four) return;   // no horizons table in this environment
+
+  assert.equal(five.overMinutes, 5);
+  assert.equal(four.overMinutes, 240);
+  assert.ok(four.either > five.either,
+    'four hours has far more room to move a percent than five minutes does');
+});
+
+test('the window sizes separate two horizons a fixed threshold cannot', () => {
+  // One percent is deep in the tail of five minutes and of fifteen, so both
+  // read alike on the threshold -- true, and the reason the typical and outer
+  // sizes are reported beside it.
+  const five = moveOdds(5, 1);
+  const fifteen = moveOdds(15, 1);
+  if (!five || !fifteen) return;
+  assert.ok(fifteen.typicalPct > five.typicalPct);
+  assert.ok(fifteen.outerPct > five.outerPct);
+});
+
+test('the reported sizes are the measured ones, in order', () => {
+  const odds = moveOdds(4 * 60, 1);
+  if (odds === null) return;
+  assert.ok(odds.typicalPct >= 0);
+  assert.ok(odds.outerPct >= odds.typicalPct,
+    'nineteen in twenty cannot be inside less than half of them are');
+  assert.ok(odds.outerPct < 100);
+});
+
 test('a harder threshold is never more likely than an easier one', () => {
   const easy = moveOdds(4 * 60, 0.5);
   const hard = moveOdds(4 * 60, 3);

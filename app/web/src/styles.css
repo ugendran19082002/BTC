@@ -1564,10 +1564,12 @@ td.liq-normal, td.liq-none { color: var(--dim); }
   outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 4px;
 }
 
-/* The chart takes the pointer: drag pans, wheel zooms, so the page must not
-   scroll out from under a two-finger gesture on the plot itself. */
-.price-chart-svg { cursor: crosshair; touch-action: none; user-select: none; }
-.price-chart-svg:active { cursor: grabbing; }
+/* The chart takes the pointer only while zoom is armed: `touch-action: none`
+   on an unarmed chart meant a drag over the plot scrolled nothing at all, and
+   the middle of a long page felt stuck on a phone. */
+.price-chart-svg { cursor: crosshair; user-select: none; touch-action: pan-y; }
+.price-chart-svg.armed { touch-action: none; }
+.price-chart-svg.armed:active { cursor: grabbing; }
 .price-chart-head { gap: 8px; }
 .price-chart-head .chain-chip { min-height: 26px; padding: 0 9px; font-size: 11px; }
 /* Two 5m/15m/1h/4h toggles sit on this screen -- the chart's timeframe and the

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as Collapsible from '@radix-ui/react-collapsible';
-import { ChevronDown, Maximize2 } from 'lucide-react';
+import { ChevronDown, Maximize2, Move, Lock } from 'lucide-react';
 import { usePersisted } from '@/hooks/usePersisted';
 import type { Candle } from '@/types/desk';
 import { strike as fmtStrike } from '@/lib/format';
@@ -13,6 +13,15 @@ export const CHART_TFS: readonly ChartTf[] = ['1m', '5m', '15m', '1h', '4h', '1d
 const W = 780;
 const H = 360;
 const PAD = { top: 10, right: 74, bottom: 26, left: 8 };
+/**
+ * Empty plot kept to the right of the newest bar.
+ *
+ * Without it the last candle is drawn hard against the price axis and its own
+ * price tag, which is where the eye goes first and the one bar that most wants
+ * room around it. Every charting tool leaves this gap; levels and gridlines
+ * still run the full width into the axis, so nothing is shortened but the bars.
+ */
+const RIGHT_GAP = 26;
 /** The bottom fifth is volume. Price gets the rest. */
 const VOL_SHARE = 0.2;
 const GAP = 8;
@@ -54,9 +63,15 @@ export function zoomHorizontally(
   };
 }
 
-/** The price scale after one notch. Clamped so it can always be read back. */
-export const zoomVertically = (win: View, out: boolean): View =>
-  ({ ...win, yZoom: clamp(win.yZoom * (out ? 0.9 : 1.1), 0.4, 8) });
+/**
+ * The price scale after one notch.
+ *
+ * `floor` is how far out this particular chart may be pulled — far enough to
+ * bring its walls onto the scale, which on a quiet hour is a long way past the
+ * 0.4 that used to be hard-coded here.
+ */
+export const zoomVertically = (win: View, out: boolean, floor = 0.4): View =>
+  ({ ...win, yZoom: clamp(win.yZoom * (out ? 0.9 : 1.1), Math.min(floor, 0.4), 8) });
 
 /**
  * Recent BTC, with the two open-interest walls drawn against it.
@@ -120,6 +135,19 @@ export function PriceChart({
   const [view, setView] = useState<View | null>(null);
   const drag = useRef<{ x: number; from: number } | null>(null);
 
+  /*
+   * Zoom and pan are off until they are asked for.
+   *
+   * The chart is in the middle of a long scrolling page, so a wheel that always
+   * zooms is a wheel that stops the page dead wherever the pointer happens to
+   * be resting -- and on a phone, `touch-action: none` meant a drag over the
+   * plot scrolled nothing at all and the page felt stuck. Off, the chart is a
+   * picture and the page behaves like a page; on, it takes the pointer and says
+   * so. The choice is remembered, because somebody who wants it wants it every
+   * time.
+   */
+  const [zoomOn, setZoomOn] = usePersisted('zoom:price-chart', false);
+
   // A new timeframe is a new series; a window into the old one would land you
   // somewhere arbitrary in it.
   useEffect(() => { setView(null); }, [tf]);
@@ -139,11 +167,30 @@ export function PriceChart({
     const lo0 = Math.min(...shown.map((b) => b.low), spot);
     const hi0 = Math.max(...shown.map((b) => b.high), spot);
     const mid = (lo0 + hi0) / 2;
-    const half = (((hi0 - lo0) / 2) || 1) * 1.08 / win.yZoom;
+    const fitHalf = (((hi0 - lo0) / 2) || 1) * 1.08;
+    const half = fitHalf / win.yZoom;
     const lo = mid - half;
     const hi = mid + half;
 
-    const plotW = W - PAD.left - PAD.right;
+    /*
+     * How far out the price scale may be pulled: far enough to reach the walls.
+     *
+     * The floor was a flat 0.4, which widens a quiet hour's 600-dollar range to
+     * 1,500 — nowhere near a wall six thousand dollars away. So the two levels
+     * stayed pinned to the edges reading "off the scale" however hard you
+     * zoomed out, and the one thing zooming out is *for* on this chart could
+     * not be done. The limit is now whatever it takes to bring the furthest
+     * wall inside with a little air around it, and never tighter than before.
+     */
+    const reach = Math.max(
+      fitHalf,
+      ...[support, resistance]
+        .filter((v): v is number => v !== null)
+        .map((v) => Math.abs(v - mid)),
+    );
+    const yFloor = clamp(fitHalf / (reach * 1.12), 0.02, 0.4);
+
+    const plotW = W - PAD.left - PAD.right - RIGHT_GAP;
     const plotH = H - PAD.top - PAD.bottom;
     const volH = plotH * VOL_SHARE;
     const priceH = plotH - volH - GAP;
@@ -179,8 +226,10 @@ export function PriceChart({
       .filter((i, n, a) => i >= 0 && a.indexOf(i) === n)
       .map((i) => ({ i, bar: shown[i]! }));
 
-    return { shown, lo, hi, y, x, step, bodyW, ticks, timeTicks, volY, volTop, volH, priceH };
-  }, [win, spot]);
+    return {
+      shown, lo, hi, y, x, step, bodyW, ticks, timeTicks, volY, volTop, volH, priceH, yFloor,
+    };
+  }, [win, spot, support, resistance]);
 
   /**
    * Where a level is drawn: on the axis if the scale reaches it, pinned inside
@@ -273,19 +322,20 @@ export function PriceChart({
    */
   const wheelRef = useRef<(e: WheelEvent) => void>(() => {});
   wheelRef.current = (e: WheelEvent) => {
-    if (!win || !bars.length) return;
+    // Not armed: no preventDefault, so the wheel belongs to the page.
+    if (!zoomOn || !win || !bars.length) return;
     const at = vx(e.clientX);
     if (at === null) return;
     e.preventDefault();
 
     // Over the price axis, or with shift held: the price scale stretches.
     if (at > W - PAD.right || e.shiftKey) {
-      setView(zoomVertically(win, e.deltaY > 0));
+      setView(zoomVertically(win, e.deltaY > 0, geom?.yFloor));
       return;
     }
 
     // Otherwise the window narrows or widens about whatever is under the cursor.
-    const anchor = clamp((at - PAD.left) / (W - PAD.left - PAD.right), 0, 1);
+    const anchor = clamp((at - PAD.left) / (W - PAD.left - PAD.right - RIGHT_GAP), 0, 1);
     setView(zoomHorizontally(win, bars.length, { anchor, out: e.deltaY > 0 }));
   };
 
@@ -297,10 +347,10 @@ export function PriceChart({
     return () => el.removeEventListener('wheel', on);
     // Re-bound whenever the element appears or goes: the chart unmounts behind
     // the fold and on a feed error, and a listener on a detached node is a leak.
-  }, [open, error, bars.length === 0]);
+  }, [open, error, bars.length === 0, zoomOn]);
 
   const onDown = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (!win) return;
+    if (!zoomOn || !win) return;
     const at = vx(e.clientX);
     if (at === null || at > W - PAD.right) return;
     drag.current = { x: at, from: win.from };
@@ -326,6 +376,24 @@ export function PriceChart({
             <span className="dim"> · walls {fmtStrike(support)}–{fmtStrike(resistance)}</span>
           )}
         </Collapsible.Trigger>
+
+        <button
+          type="button"
+          className={`chain-chip${zoomOn ? ' on' : ''}`}
+          aria-pressed={zoomOn}
+          title={zoomOn
+            ? 'Zoom and pan are on: the wheel zooms and a drag pans. Turn off to scroll the page over the chart.'
+            : 'Zoom and pan are off, so the page scrolls over the chart. Turn on to zoom.'}
+          onClick={() => {
+            // Turning it off returns the whole series: a window you cannot pan
+            // out of is a trap, and "off" should mean one predictable picture.
+            if (zoomOn) setView(null);
+            setZoomOn(!zoomOn);
+          }}
+        >
+          {zoomOn ? <Move size={12} aria-hidden /> : <Lock size={12} aria-hidden />}
+          {zoomOn ? 'Zoom on' : 'Zoom off'}
+        </button>
 
         {zoomed && (
           <button type="button" className="chain-chip" onClick={() => setView(null)}>
@@ -369,13 +437,13 @@ export function PriceChart({
         <svg
           ref={svgRef}
           viewBox={`0 0 ${W} ${H}`}
-          className="price-chart-svg"
+          className={`price-chart-svg${zoomOn ? ' armed' : ''}`}
           role="img"
           onPointerMove={onMove}
           onPointerDown={onDown}
           onPointerUp={endDrag}
           onPointerLeave={(e) => { endDrag(e); setHover(null); }}
-          onDoubleClick={() => setView(null)}
+          onDoubleClick={() => zoomOn && setView(null)}
           aria-label={`BTC ${tf} candles, ${geom.shown.length} of ${bars.length} bars shown, with open-interest walls at ${support ?? '—'} and ${resistance ?? '—'}`}
         >
           {/*
@@ -512,8 +580,9 @@ export function PriceChart({
         <span><i style={{ background: 'var(--up)' }} /> support · heaviest put strike</span>
         <span><i style={{ background: 'var(--down)' }} /> resistance · heaviest call strike</span>
         <span className="dim">
-          scroll to zoom · drag to pan · shift-scroll or the price axis for the price scale ·
-          double-click to fit
+          {zoomOn
+            ? 'scroll to zoom · drag to pan · shift-scroll or the price axis for the price scale, out far enough and the walls come onto it · double-click to fit'
+            : 'zoom is off, so the page scrolls over the chart — turn it on to zoom and pan'}
         </span>
         <span className="dim">where open interest sits, not where BTC will settle · times IST</span>
       </div>
