@@ -13,6 +13,7 @@ const setTradeMode = vi.fn();
 const previewAdd = vi.fn();
 const addToPosition = vi.fn();
 const reconcileTrade = vi.fn();
+const previewClose = vi.fn();
 vi.mock('@/api/trade', () => ({
   closeTrade: (...a: unknown[]) => closeTrade(...a),
   cancelTrade: (...a: unknown[]) => cancelTrade(...a),
@@ -21,6 +22,7 @@ vi.mock('@/api/trade', () => ({
   previewAdd: (...a: unknown[]) => previewAdd(...a),
   addToPosition: (...a: unknown[]) => addToPosition(...a),
   reconcileTrade: (...a: unknown[]) => reconcileTrade(...a),
+  previewClose: (...a: unknown[]) => previewClose(...a),
 }));
 
 const trade = (over: Partial<Trade> = {}): Trade => ({
@@ -256,6 +258,13 @@ describe('closing out', () => {
     charges: { entryUsd: 0.2, exitUsd: 0.01, paidUsd: 0.21, toCloseUsd: 0.02 },
   });
 
+  /** What the server answers for `lots` of the 222 held. */
+  const previewOf = (lots: number, netUsd = 1.1) => ({
+    ok: true, reason: null, held: 222, lots, remaining: 222 - lots, closesAll: lots >= 222,
+    buysBackAt: 1.5, atMark: false, bookedUsd: netUsd + 0.02, chargesUsd: 0.02, netUsd,
+  });
+  beforeEach(() => { previewClose.mockResolvedValue(previewOf(222)); });
+
   it('[critical] tapping Close now sends nothing: it asks first', () => {
     render(<PositionsCard trades={[half]} />);
     fireEvent.click(screen.getByRole('button', { name: /close now/i }));
@@ -289,8 +298,92 @@ describe('closing out', () => {
     swipe(control, 0.5);
     expect(closeTrade).not.toHaveBeenCalled();
     swipe(control, 1);
-    await waitFor(() => expect(closeTrade).toHaveBeenCalledWith('t1'));
+    // no size: the desk closes what is actually there, not what this screen saw
+    await waitFor(() => expect(closeTrade).toHaveBeenCalledWith('t1', undefined));
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
+
+  /*
+   * How much of it.
+   *
+   * The box opens on the whole position, so the old one-swipe close costs
+   * nothing. A smaller number closes that many and leaves the rest -- which is
+   * a different trade in every respect that matters, so the sheet has to say
+   * so and the money has to follow the number.
+   */
+  const openSheet = (t = half) => {
+    render(<PositionsCard trades={[t]} />);
+    fireEvent.click(screen.getByRole('button', { name: /close now/i }));
+    return screen.getByLabelText('lots to close') as HTMLInputElement;
+  };
+
+  it('[critical] opens on the whole position, so closing everything is still one swipe', () => {
+    expect(openSheet().value).toBe('222');
+    expect(screen.getByText('Buys back 222 at the market price.')).toBeInTheDocument();
+    expect(screen.getByRole('slider', { name: 'Swipe to close 222' })).toBeInTheDocument();
+  });
+
+  it('[critical] a smaller size closes that many and says what is left behind', async () => {
+    const box = openSheet();
+    fireEvent.change(box, { target: { value: '50' } });
+    expect(screen.getByText(/Buys back 50 of 222 at the market price\. 172 stays short\./)).toBeInTheDocument();
+    expect(within(screen.getByLabelText('position details')).getByText('172')).toBeInTheDocument();
+    swipe(screen.getByRole('slider', { name: 'Swipe to close 50' }), 1);
+    await waitFor(() => expect(closeTrade).toHaveBeenCalledWith('t1', 50));
+  });
+
+  it('Half fills in half of what is held, and All puts it back', () => {
+    const box = openSheet();
+    fireEvent.click(screen.getByRole('button', { name: 'Half' }));
+    expect(box.value).toBe('111');
+    fireEvent.click(screen.getByRole('button', { name: 'All' }));
+    expect(box.value).toBe('222');
+  });
+
+  it('[critical] the money follows the size, from the server rather than the card', async () => {
+    previewClose.mockResolvedValue(previewOf(50, 1.1));
+    const box = openSheet();
+    // all of it: the card's own "if closed now" figure, 4.4 x 85
+    expect(within(screen.getByLabelText('if closed now')).getByText('+₹374')).toBeInTheDocument();
+    fireEvent.change(box, { target: { value: '50' } });
+    await waitFor(() => expect(previewClose).toHaveBeenCalledWith('t1', 50));
+    const panel = within(await screen.findByLabelText('if closed now'));
+    expect(await panel.findByText('+₹93.50')).toBeInTheDocument();   // 1.1 x 85
+    expect(screen.getByText(/Closing 50 books/)).toBeInTheDocument();
+  });
+
+  it('[critical] refuses more than is held, and a size that is not a whole number', () => {
+    const box = openSheet();
+    fireEvent.change(box, { target: { value: '223' } });
+    expect(screen.getByText('Only 222 held.')).toBeInTheDocument();
+    expect(screen.getByRole('slider', { name: /Check the lots/ })).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.change(box, { target: { value: '2.5' } });
+    expect(screen.getByText('A whole number of lots, at least 1.')).toBeInTheDocument();
+    fireEvent.change(box, { target: { value: '0' } });
+    expect(screen.getByText('A whole number of lots, at least 1.')).toBeInTheDocument();
+    expect(closeTrade).not.toHaveBeenCalled();
+  });
+
+  it('an emptied box means the whole position again, not nothing', () => {
+    const box = openSheet();
+    fireEvent.change(box, { target: { value: '' } });
+    expect(screen.getByRole('slider', { name: 'Swipe to close 222' })).not.toHaveAttribute('aria-disabled');
+  });
+
+  it('says the resting orders are replaced rather than cancelled when part is left', () => {
+    const box = openSheet();
+    expect(within(screen.getByLabelText('position details')).getByText('· cancelled')).toBeInTheDocument();
+    fireEvent.change(box, { target: { value: '50' } });
+    expect(within(screen.getByLabelText('position details')).getByText('· replaced')).toBeInTheDocument();
+    expect(screen.getByText(/172 stays short, and its target and stop are put back over it/)).toBeInTheDocument();
+  });
+
+  it('a fill landing while the sheet is open does not overwrite a size being typed', () => {
+    const { rerender } = render(<PositionsCard trades={[half]} />);
+    fireEvent.click(screen.getByRole('button', { name: /close now/i }));
+    fireEvent.change(screen.getByLabelText('lots to close'), { target: { value: '50' } });
+    rerender(<PositionsCard trades={[{ ...half, position: -200 }]} />);
+    expect((screen.getByLabelText('lots to close') as HTMLInputElement).value).toBe('50');
   });
 
   it('Keep it closes the question and nothing else', () => {
