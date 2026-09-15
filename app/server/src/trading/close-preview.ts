@@ -81,8 +81,10 @@ export function closePreview(i: {
   const s = i.state;
   const held = Math.abs(s.position);
   // A size that has not been typed yet is the whole position, not zero: the
-  // sheet opens on "close all" and the preview must agree with it.
-  const lots = i.size === undefined ? held : Math.trunc(i.size);
+  // sheet opens on "close all" and the preview must agree with it. Taken as
+  // given rather than rounded -- "2.5 lots" is a mistake to report, not one to
+  // quietly turn into 2 and price.
+  const lots = i.size === undefined ? held : i.size;
   const reason = closeEligibility(s, lots, held);
 
   const ask = i.quote?.ask ?? null;
