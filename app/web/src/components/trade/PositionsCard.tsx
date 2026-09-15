@@ -383,7 +383,7 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
         trade={trade}
         open={closing}
         onOpenChange={setClosing}
-        onClose={() => closeTrade(trade.tradeId).finally(() => onChanged?.())}
+        onClose={(lots) => closeTrade(trade.tradeId, lots).finally(() => onChanged?.())}
       />
     </div>
   );
