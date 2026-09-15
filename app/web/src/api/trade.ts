@@ -1,6 +1,6 @@
 import { json, post } from '@/api/client';
 import type {
-  AddDraft, AddPreview, OrderDraft, OrderHistory, PlaceResult, PrecheckFailure, Preview, Quote, ProductSpec, Trade, TradeStatus,
+  AddDraft, AddPreview, ClosePreview, OrderDraft, OrderHistory, PlaceResult, PrecheckFailure, Preview, Quote, ProductSpec, Trade, TradeStatus,
 } from '@/types/trade';
 
 /**
@@ -76,7 +76,16 @@ export const addToPosition = (draft: AddDraft) =>
     | { mode: 'live' | 'paper'; ok: false; error: string; failures: PrecheckFailure[] }
   >('/api/trade/add', draft);
 
-export const closeTrade = (tradeId: string) => post<{ ok: true; trade: Trade }>('/api/trade/close', { tradeId });
+/**
+ * Buy back at the market. `lots` left out means the whole position -- what
+ * this call has always meant, and what the sheet opens on.
+ */
+export const closeTrade = (tradeId: string, lots?: number) =>
+  post<{ ok: true; trade: Trade }>('/api/trade/close', lots === undefined ? { tradeId } : { tradeId, lots });
+
+/** What closing that many would book. Nothing is sent. */
+export const previewClose = (tradeId: string, lots?: number) =>
+  post<ClosePreview>('/api/trade/close/preview', lots === undefined ? { tradeId } : { tradeId, lots });
 
 /** Pull a working order off the book. Refused once anything has filled. */
 export const cancelTrade = (tradeId: string) =>

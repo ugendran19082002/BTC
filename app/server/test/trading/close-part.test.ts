@@ -147,10 +147,14 @@ test('[critical] a size larger than the position buys back only what is there, a
   const sold = s!.fills.filter((f) => f.side === 'sell' && f.role !== 'entry');
   assert.equal(sold.length, 0, 'nothing was sold to make up the difference');
   assert.equal((await r.ex.getPositions()).length, 0, 'the exchange is flat');
-  // Our own fills say -40 until the exchange is believed again, which the poll does.
-  const after = await r.engine.poll(id);
-  assert.equal(after?.position, 0);
-  assert.equal(after?.phase, 'flat');
+  // Our own fills still say -40: a hundred sold, sixty bought back. Only the
+  // exchange knows about the forty that left by another door, and reading it
+  // back -- the startup reconcile, or "Re-read from Delta" on the card -- is
+  // what settles it. Same as a close with no size at all in this state.
+  assert.equal(s?.position, -40);
+  const after = (await r.engine.reconcile(id))!.state;
+  assert.equal(after.position, 0);
+  assert.equal(after.phase, 'flat');
 });
 
 test('a close of a position that has already gone does nothing at all', async () => {

@@ -327,10 +327,11 @@ function exitText(
    * many of how many, booked so far, and what is still resting.
    */
   const part = s.position !== 0;
-  // A close asked for by size has done its job the moment it fills: the rest
-  // of the position is meant to be there, and `closing` is cleared when it is.
-  // Only a close that is still working says "exit working" underneath.
-  const partOnPurpose = part && role === 'exit' && !s.closing;
+  // A close asked for by size has done its job the moment it fills: the rest of
+  // the position is meant to be there, and the trade goes back to holding it.
+  // A close that is still working sits in `exit_pending`, and only that one
+  // says "exit working" underneath.
+  const partOnPurpose = part && role === 'exit' && s.phase !== 'exit_pending';
   const [icon, title] = role === 'take_profit' ? (part ? ['🎯', 'TARGET PART-FILLED'] : ['✅', 'TARGET HIT'])
     : role === 'stop_loss' ? ['🛑', part ? 'STOP-LOSS PART-FILLED' : 'STOP-LOSS HIT']
       // Deliberately not "closed by strategy" or "closed by you": the desk's

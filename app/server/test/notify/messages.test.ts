@@ -126,6 +126,21 @@ test('a partial close says how much is still on', () => {
   assert.match(a.text, /Still short <b>60<\/b> — exit working/);
 });
 
+test('[critical] a close of part of a position says the rest stays on, not that an exit is working', () => {
+  // The difference matters: "exit working" says the position is on its way
+  // out, and after a close by size it is not -- it is protected again.
+  const a = last([
+    submitted(),
+    fill('entry', 100, 100.5),
+    { t: 'exit_submitted', role: 'manual', clientOrderId: 'x1', at: AT, closing: { clientOrderId: 'x1', size: 40, heldBefore: 100, all: false, submittedAt: AT } },
+    fill('exit', 40, 95),
+  ]);
+  assert.ok(a);
+  assert.match(a.text, /PART CLOSED AT MARKET/);
+  assert.match(a.text, /Still short <b>60<\/b> — the rest stays on/);
+  assert.doesNotMatch(a.text, /exit working/);
+});
+
 test('a trade running without a stop says so in the entry alert', () => {
   const a = last([submitted(), fill('entry', 100, 100.5)], planFor(ceProduct(), { stopPrice: null }));
   assert.match(a!.text, /No stop-loss/);

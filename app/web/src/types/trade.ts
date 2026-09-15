@@ -208,6 +208,29 @@ export type Preview = {
 };
 
 /** What adding to a position would do, priced, with every gate's answer. */
+/**
+ * What closing this many contracts would book, from the server's own
+ * arithmetic. Mirrors `trading/close-preview.ts`.
+ *
+ * The figures are about *this close*, not the trade: what it books, what
+ * leaving costs, and the two netted. What was banked before and paid before
+ * stays out of them -- the card's own "if closed now" answers that.
+ */
+export type ClosePreview = {
+  ok: boolean;
+  reason: string | null;
+  held: number;
+  lots: number;
+  remaining: number;
+  closesAll: boolean;
+  buysBackAt: number | null;
+  /** True when the price shown is the mark, because the book had no offer. */
+  atMark: boolean;
+  bookedUsd: number | null;
+  chargesUsd: number | null;
+  netUsd: number | null;
+};
+
 export type AddPreview = {
   mode: 'live' | 'paper';
   ok: boolean;
