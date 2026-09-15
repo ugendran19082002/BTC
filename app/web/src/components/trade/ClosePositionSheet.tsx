@@ -125,7 +125,7 @@ export function ClosePositionSheet({ trade, open, onOpenChange, onClose }: {
         title={`Close ${contractLabel(trade.symbol)}?`}
         description={
           closesAll
-            ? `Buys back all ${fmtSize(held)} at the market price.`
+            ? `Buys back ${fmtSize(held)} at the market price.`
             : valid
               ? `Buys back ${fmtSize(lots)} of ${fmtSize(held)} at the market price. ${fmtSize(held - lots)} stays short.`
               : `Buys back up to ${fmtSize(held)} at the market price.`

@@ -320,7 +320,7 @@ describe('closing out', () => {
   it('[critical] opens on the whole position, so closing everything is still one swipe', () => {
     expect(openSheet().value).toBe('222');
     expect(screen.getByText('Buys back 222 at the market price.')).toBeInTheDocument();
-    expect(screen.getByRole('slider', { name: 'Swipe to close 222' })).toBeInTheDocument();
+    expect(screen.getByRole('slider', { name: /Swipe to close 222/ })).toBeInTheDocument();
   });
 
   it('[critical] a smaller size closes that many and says what is left behind', async () => {
@@ -328,7 +328,7 @@ describe('closing out', () => {
     fireEvent.change(box, { target: { value: '50' } });
     expect(screen.getByText(/Buys back 50 of 222 at the market price\. 172 stays short\./)).toBeInTheDocument();
     expect(within(screen.getByLabelText('position details')).getByText('172')).toBeInTheDocument();
-    swipe(screen.getByRole('slider', { name: 'Swipe to close 50' }), 1);
+    swipe(screen.getByRole('slider', { name: /Swipe to close 50/ }), 1);
     await waitFor(() => expect(closeTrade).toHaveBeenCalledWith('t1', 50));
   });
 
@@ -367,7 +367,7 @@ describe('closing out', () => {
   it('an emptied box means the whole position again, not nothing', () => {
     const box = openSheet();
     fireEvent.change(box, { target: { value: '' } });
-    expect(screen.getByRole('slider', { name: 'Swipe to close 222' })).not.toHaveAttribute('aria-disabled');
+    expect(screen.getByRole('slider', { name: /Swipe to close 222/ })).not.toHaveAttribute('aria-disabled');
   });
 
   it('says the resting orders are replaced rather than cancelled when part is left', () => {
