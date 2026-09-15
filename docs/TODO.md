@@ -2216,3 +2216,63 @@ default is unchanged, so this host deploys as before.
   actually wants; if the current line is harvesting a day that has not
   settled, "today" in the record may be a partial day until the next run.
 
+## Closing some of it
+
+*15 September 2026*
+
+"Close now" bought back the whole position, every time. The only way to take
+half off was Delta's own screen -- which leaves the desk's record and the
+exchange disagreeing until something reconciles them, the same gap that lost a
+100-lot fill on 14 September.
+
+**The sheet now asks how many, and opens on the whole position.** So the old
+behaviour is the default and costs nothing -- open, swipe, done -- and a
+smaller number is one tap (*Half*) or one keystroke away. Everything on the
+sheet moves with that number: the title line, what is left behind, and the
+money.
+
+**What happens underneath a close of part of a position.** Both legs of
+protection come off, the size is bought back reduce-only at the market, and
+the next poll puts a target and a stop back over what is left, sized to it.
+Leaving the stop resting and resizing it afterwards would have been fewer
+orders and a worse idea: a stop for 1,500 and a reduce-only buy for 500 are
+two orders closing one position, and Delta will fill both. The cancel-close-
+re-protect path is the one the desk already trusts after every add.
+
+**The state machine had to be told the difference.** An exit fill that leaves
+a position behind used to mean one thing: a close that filled half way, still
+working, `exit_pending` -- where the desk deliberately does not re-protect. A
+close asked for *by size* is the opposite: it has done its job, and the rest
+is a position again. So `exit_submitted` now carries what the close asked for
+(`size`, `heldBefore`, `all`), the state carries it while it works, and the
+moment enough is bought back the trade goes to `position_open` with
+`exitWinner` left null -- nothing raced, so there is no loser to cancel.
+
+- **DB:** no migration. The journal is JSON: an `exit_submitted` written before
+  this carries no `closing` and replays as "all of it", which is what those
+  closes were. `position_open` was already an open phase.
+- **Overshooting is impossible.** A size larger than what is held closes what
+  is held -- the position is re-read from the exchange a moment before sending
+  -- and nothing is ever sold to make up a difference. The sheet refuses more
+  than it shows; the engine refuses it again against the live number.
+- **The money is the server's.** `trading/close-preview.ts` prices *this close*
+  -- what it books, Delta's charges to buy those contracts back, the two netted
+  -- at the ask, because closing a short is a buy. Not the trade's history: "this
+  close books ₹4,300" is the question someone closing 500 of 1,500 is asking.
+- **Telegram** says `PART CLOSED AT MARKET … the rest stays on, with its target
+  and stop put back over it`, rather than "exit working", which would have said
+  the position was on its way out when it is not.
+
+**Tests.** 25 new server tests (`test/trading/close-part.test.ts`): a close with
+no size behaves exactly as it always did; a size buys back exactly that many
+and leaves the rest short; what is left gets protection sized to it; cancels
+come before the close is sent; the part is booked and the rest stays open;
+closing the rest goes flat; one contract at a time; a size bigger than the
+position; a position that has already gone; zero, fractions, and an exchange
+that refuses; the journal carries the size and replays to the same place. Plus
+the preview's arithmetic and the body parser. Web: 9 new tests on the sheet --
+opens on the whole position, a smaller size sends that size, Half and All, the
+money following the number from the server, both refusals, an emptied box
+meaning everything again, "replaced" rather than "cancelled" when part is left,
+and a fill landing mid-typing not overwriting what is being typed.
+
