@@ -14,6 +14,7 @@ import {
 } from '../../trading/status.js';
 import { refuse } from '../refuse.js';
 import { parseAddBody, toAddRequest, type AddBody } from '../add-body.js';
+import { parseCloseBody, type CloseBody } from '../close-body.js';
 
 /** 05:30 IST is when the daily contract opens, so that is where the day starts. */
 function startOfDayIst(now = Date.now()): number {
@@ -414,12 +415,29 @@ export function registerTradeRoutes(app: FastifyInstance) {
     }
   });
 
+  /*
+   * Close a position, all of it or part of it.
+   *
+   * `lots` left out means everything -- what this route has always meant, and
+   * what the sheet opens on. A size buys back that many at the market and
+   * leaves the rest a position: protection comes off for the close and the
+   * next poll puts a target and a stop back over what is left.
+   */
   app.post('/api/trade/close', async (req, reply) => {
-    const { tradeId } = (req.body ?? {}) as { tradeId?: string };
-    if (!tradeId) { reply.code(400); return { error: 'tradeId is required' }; }
-    const state = await svc.close(tradeId);
+    const parsed = parseCloseBody((req.body ?? {}) as CloseBody);
+    if (!parsed.ok) { reply.code(400); return { error: parsed.problems.join(' '), problems: parsed.problems }; }
+    const state = await svc.close(parsed.close.tradeId, parsed.close.lots ?? undefined);
     if (!state) { reply.code(404); return { error: 'no such trade' }; }
     return { ok: true, trade: state };
+  });
+
+  /** What closing that many would book, in money. Nothing is sent. */
+  app.post('/api/trade/close/preview', async (req, reply) => {
+    const parsed = parseCloseBody((req.body ?? {}) as CloseBody);
+    if (!parsed.ok) { reply.code(400); return { error: parsed.problems.join(' '), problems: parsed.problems }; }
+    const preview = await svc.previewClose(parsed.close.tradeId, parsed.close.lots ?? undefined);
+    if (!preview) { reply.code(404); return { error: 'no such trade' }; }
+    return preview;
   });
 
   /**

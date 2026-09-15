@@ -174,6 +174,29 @@ export type ProtectionOrders = {
   size?: number;
 };
 
+/**
+ * A buy-back working against this position, when there is one.
+ *
+ * Kept because "how much of it is being closed" cannot be read from the
+ * position alone. A close for the whole position ends the trade; a close for
+ * part of it leaves a position that still wants a target and a stop, and the
+ * two have to be told apart the moment the fill lands rather than guessed at
+ * from the numbers afterwards.
+ *
+ * Absent on records written before closing part of a position was possible,
+ * which reads as "the whole of it" -- what those closes were.
+ */
+export type ExitWorking = {
+  clientOrderId: string;
+  /** Contracts asked for. */
+  size: number;
+  /** Contracts held when it was sent, so "enough bought back" is answerable. */
+  heldBefore: number;
+  /** False when this close deliberately leaves part of the position on. */
+  all: boolean;
+  submittedAt: number;
+};
+
 export type TradeState = {
   tradeId: string;
   symbol: string;
@@ -225,6 +248,14 @@ export type TradeState = {
   adding?: AddWorking | null;
   /** Contracts added to the position after its entry, across every add. Absent reads as 0. */
   addedSize?: number;
+  /**
+   * A buy-back working against this position, when there is one.
+   *
+   * Cleared the moment it has bought back what it asked for. While it is set
+   * the desk does not re-protect, because a resting stop plus a reduce-only
+   * buy for the same contracts is two orders closing one position.
+   */
+  closing?: ExitWorking | null;
   updatedAt: number;
 };
 
@@ -296,7 +327,18 @@ export type TradeEvent =
       at: number;
     }
   | { t: 'protection_failed'; reason: string; at: number }
-  | { t: 'exit_submitted'; role: OrderRole | 'manual'; clientOrderId: string; at: number }
+  | {
+      t: 'exit_submitted';
+      role: OrderRole | 'manual';
+      clientOrderId: string;
+      /**
+       * What this close is buying back, when it is a close the desk sent.
+       * Absent on protection legs, and on events written before part of a
+       * position could be closed -- both of which mean the whole position.
+       */
+      closing?: ExitWorking;
+      at: number;
+    }
   | { t: 'sibling_cancelled'; role: OrderRole; at: number }
   /** The exchange's own answer. It always wins over what we thought. */
   | { t: 'reconciled'; position: number; at: number; note?: string }

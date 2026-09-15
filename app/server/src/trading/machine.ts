@@ -119,6 +119,7 @@ export function applyEvent(prev: TradeState, e: TradeEvent): TradeState {
 
       if (isExit(e.role)) {
         if (s.position === 0) {
+          s.closing = null;
           // The exit that closes the position is the winner; the other leg is
           // now a live order with nothing to protect, so it has to go.
           if (s.exitWinner === null) s.exitWinner = e.role === 'exit' ? 'manual' : e.role;
@@ -141,6 +142,23 @@ export function applyEvent(prev: TradeState, e: TradeEvent): TradeState {
          * it was sent, and it is still closing.
          */
         if (e.role === 'exit') {
+          const closing = s.closing ?? null;
+          /*
+           * A close asked for by size, and it has bought back what it asked
+           * for: this is not a close that failed halfway, it is the close
+           * doing exactly what it was sent to do.
+           *
+           * The position that is left is a position again -- so the trade goes
+           * back to `position_open`, which is what "held, with no protection
+           * on it yet" means here, and the next poll puts a target and a stop
+           * back over what is left. `exitWinner` stays null on purpose: it
+           * exists to cancel the losing leg of a race, and nothing raced.
+           */
+          if (closing && !closing.all && closing.heldBefore - Math.abs(s.position) >= closing.size) {
+            s.closing = null;
+            s.phase = 'position_open';
+            return s;
+          }
           if (s.exitWinner === null) s.exitWinner = 'manual';
           s.phase = 'exit_pending';
         }
@@ -192,7 +210,13 @@ export function applyEvent(prev: TradeState, e: TradeEvent): TradeState {
       return { ...s, phase: 'unprotected', alarm: `POSITION UNPROTECTED: ${e.reason}` };
 
     case 'exit_submitted':
-      return { ...s, phase: s.position === 0 ? s.phase : 'exit_pending' };
+      return {
+        ...s,
+        // Only a close the desk sent carries this; a protection leg filling is
+        // not "a close working", it is the plan happening.
+        closing: e.closing ?? s.closing ?? null,
+        phase: s.position === 0 ? s.phase : 'exit_pending',
+      };
 
     case 'sibling_cancelled': {
       const protection = { ...s.protection };
@@ -213,6 +237,9 @@ export function applyEvent(prev: TradeState, e: TradeEvent): TradeState {
         ...s,
         position,
         phase,
+        // The exchange's number is the whole truth about what is held, so
+        // whatever the desk thought was still buying back is over.
+        closing: null,
         alarm: phase === 'unprotected' ? 'POSITION UNPROTECTED: no live stop after reconcile' : null,
         note: e.note ?? s.note,
       };

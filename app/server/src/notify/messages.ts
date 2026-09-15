@@ -327,12 +327,16 @@ function exitText(
    * many of how many, booked so far, and what is still resting.
    */
   const part = s.position !== 0;
+  // A close asked for by size has done its job the moment it fills: the rest
+  // of the position is meant to be there, and `closing` is cleared when it is.
+  // Only a close that is still working says "exit working" underneath.
+  const partOnPurpose = part && role === 'exit' && !s.closing;
   const [icon, title] = role === 'take_profit' ? (part ? ['🎯', 'TARGET PART-FILLED'] : ['✅', 'TARGET HIT'])
     : role === 'stop_loss' ? ['🛑', part ? 'STOP-LOSS PART-FILLED' : 'STOP-LOSS HIT']
       // Deliberately not "closed by strategy" or "closed by you": the desk's
       // own stop watch closes at market too, and a title that guesses the
       // reason is a title that is sometimes wrong.
-      : ['⏹', 'CLOSED AT MARKET'];
+      : ['⏹', partOnPurpose ? 'PART CLOSED AT MARKET' : 'CLOSED AT MARKET'];
   const held = `${s.position < 0 ? 'short' : 'long'} <b>${qty(Math.abs(s.position))}</b>`;
 
   return lines(
@@ -343,9 +347,10 @@ function exitText(
       + ` @ <b>${price(s.exitAvgPrice ?? 0)}</b>  (entry ${price(s.entryAvgPrice ?? 0)})`,
     part ? `${pnlIcon(s.realisedPnl)} Booked so far: ${signedMoney(s.realisedPnl, true)}` : pnlLine(s.realisedPnl),
     !part ? '✔️ Position is <b>flat</b>'
-      : role === 'take_profit' && plan.takeProfitPrice !== null
-        ? `⏳ Still ${held} — target resting at ${price(plan.takeProfitPrice)}`
-        : `⏳ Still ${held} — exit working`,
+      : partOnPurpose ? `📉 Still ${held} — the rest stays on, with its target and stop put back over it`
+        : role === 'take_profit' && plan.takeProfitPrice !== null
+          ? `⏳ Still ${held} — target resting at ${price(plan.takeProfitPrice)}`
+          : `⏳ Still ${held} — exit working`,
     footer(s.updatedAt, plan, ctx),
   );
 }

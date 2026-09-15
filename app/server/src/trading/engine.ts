@@ -7,6 +7,7 @@ import { priceFor, lotsToContracts, stopFillLimit, stopPriceFor } from './money.
 import { DEFAULT_LIMITS, precheck, type Failure, type PrecheckResult, type RiskLimits } from './precheck.js';
 import { clampLeverage, fundsRequiredPerContract, liquidationRoom, premiumUsd } from './margin.js';
 import { fillChargesUsd } from './charges.js';
+import { closeEligibility, closePreview, type ClosePreview } from './close-preview.js';
 import { ExchangeUnavailable, OrderGone, OrderRejected, SubmitTimeout, type ExchangePort } from './exchange/port.js';
 
 /**
@@ -556,9 +557,35 @@ export class TradeEngine {
     return this.withTrade(tradeId, () => this.updateProtectionInner(tradeId, next));
   }
 
-  /** Close whatever is left, right now, at the market. */
-  closeNow(tradeId: string, reason = 'manual exit'): Promise<TradeState | null> {
-    return this.withTrade(tradeId, () => this.closeNowInner(tradeId, reason));
+  /**
+   * Buy back at the market, right now: all of it, or the `size` asked for.
+   *
+   * A size closes part of the position and leaves the rest a position --
+   * protection comes off for the close and the next poll puts it back over
+   * what is left. Without one, the whole thing goes, which is what every
+   * caller inside the desk means (a stop reached, squaring off the book).
+   */
+  closeNow(tradeId: string, reason = 'manual exit', size?: number): Promise<TradeState | null> {
+    return this.withTrade(tradeId, () => this.closeNowInner(tradeId, reason, size));
+  }
+
+  /**
+   * What closing this many contracts would book, and whether it is allowed.
+   *
+   * Nothing is sent. The money is worked out where the charge formula lives,
+   * so the sheet that offers "close 500 of 1,500" shows the same arithmetic
+   * the statement will.
+   */
+  async previewClose(tradeId: string, size?: number): Promise<ClosePreview | null> {
+    const rec = this.d.store.get(tradeId);
+    if (!rec) return null;
+    const quote = await this.exchange.getQuote(rec.plan.symbol).catch(() => null);
+    return closePreview({
+      state: rec.state,
+      size,
+      quote,
+      spot: this.d.spot ? this.d.spot() : null,
+    });
   }
 
   /** Read the exchange and believe it. */
@@ -1170,8 +1197,18 @@ export class TradeEngine {
   }
 
   // ------------------------------------------------------------ exits
-  /** Close whatever is left, right now, at the market. Always reduce-only. */
-  private async closeNowInner(tradeId: string, reason = 'manual exit'): Promise<TradeState | null> {
+  /**
+   * Close at the market, reduce-only. All of it, or `want` contracts of it.
+   *
+   * Both legs of protection come off first either way. For a close of part of
+   * the position that looks wasteful -- the stop could have been left and
+   * resized -- but a resting stop for 1,500 plus a reduce-only buy for 500 is
+   * two orders racing to close one position, and the exchange will happily
+   * fill both. Off, close, and the next poll puts a target and a stop back
+   * over what is left; that path is the one the desk already trusts after
+   * every add.
+   */
+  private async closeNowInner(tradeId: string, reason = 'manual exit', want?: number): Promise<TradeState | null> {
     let rec = this.d.store.get(tradeId);
     if (!rec) return null;
     // Size from the exchange, not from memory: someone may have closed part of
@@ -1181,14 +1218,34 @@ export class TradeEngine {
     // size of the close is read.
     if (rec.state.adding) rec = await this.endAdd(rec, 'closing the position');
     rec = await this.syncPosition(rec);
-    const size = protectionSize(rec.state);
-    if (size === 0) return rec.state;
+    const held = protectionSize(rec.state);
+    if (held === 0) return rec.state;
+
+    // A size is checked against what is held *now*, not against what was held
+    // when the sheet was opened. More than that closes everything rather than
+    // being refused: asking to close 1,500 of a position that is now 1,400
+    // means "all of it" by any reading.
+    const size = want === undefined ? held : Math.min(Math.trunc(want), held);
+    if (size < 1) {
+      return this.commit(rec, {
+        t: 'protection_failed',
+        reason: `${reason} refused: ${closeEligibility(rec.state, Math.trunc(want ?? 0), held) ?? 'nothing to close'}`,
+        at: this.now(),
+      }).state;
+    }
+    const all = size >= held;
 
     await this.cancelSiblings(rec, true);
     const n = rec.events.filter((e) => e.t === 'exit_submitted').length + 1;
     const cid = clientId(tradeId, 'exit', n);
     const product = await this.exchange.getProduct(rec.plan.symbol).catch(() => null);
-    rec = this.commit(rec, { t: 'exit_submitted', role: 'manual', clientOrderId: cid, at: this.now() });
+    rec = this.commit(rec, {
+      t: 'exit_submitted',
+      role: 'manual',
+      clientOrderId: cid,
+      closing: { clientOrderId: cid, size, heldBefore: held, all, submittedAt: this.now() },
+      at: this.now(),
+    });
     try {
       const ack = await this.exchange.placeOrder({
         clientOrderId: cid, symbol: rec.plan.symbol, productId: product?.productId ?? 0,

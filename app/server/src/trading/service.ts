@@ -293,7 +293,10 @@ export class TradingService {
     return this.engine.open(orderPlan(input, `${input.symbol}-${Date.now()}`));
   }
 
-  close(tradeId: string) { return this.engine.closeNow(tradeId); }
+  /** Buy back at the market: `lots` of it, or all of it when none is given. */
+  close(tradeId: string, lots?: number) { return this.engine.closeNow(tradeId, 'manual exit', lots); }
+  /** What closing that many would book. Sends nothing. */
+  previewClose(tradeId: string, lots?: number) { return this.engine.previewClose(tradeId, lots); }
   /** Sell more of what an open trade holds, under the same trade. */
   addToPosition(tradeId: string, req: AddRequest) { return this.engine.addToPosition(tradeId, req); }
   /** What that add would do and whether the gates would take it. Sends nothing. */
