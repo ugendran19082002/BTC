@@ -356,7 +356,8 @@ describe('closing out', () => {
     const box = openSheet();
     fireEvent.change(box, { target: { value: '223' } });
     expect(screen.getByText('Only 222 held.')).toBeInTheDocument();
-    expect(screen.getByRole('slider', { name: /Check the lots/ })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('slider', { name: /Swipe to close/ })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByText('Check the lots')).toBeInTheDocument();
     fireEvent.change(box, { target: { value: '2.5' } });
     expect(screen.getByText('A whole number of lots, at least 1.')).toBeInTheDocument();
     fireEvent.change(box, { target: { value: '0' } });
