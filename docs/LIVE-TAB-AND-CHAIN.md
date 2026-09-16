@@ -82,6 +82,12 @@ Touches the strike  P = N((−b+μT)/σ√T) + e^(2μb/σ²)·N((−b−μT)/σ�
 Reaches near zero   simulated: GBM paths, repriced each step, hit when price ≤ $0.10
 ```
 
+The simulation (2,000 paths × 24 repricings per strike) is the one expensive
+thing on the board — about 350ms for a 74-strike expiry — so it is worked out
+**once per ticker fetch** and shared by every read of that batch (the chain
+route, the strategy tick, the best-pick watcher). The same board never runs
+it twice. Same numbers; the server is not held up by them.
+
 **Worked through, on the board that prompted it.** Spot 75,820, PE short at
 74,400, twelve hours to settle, 30% vol:
 

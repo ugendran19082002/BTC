@@ -2849,3 +2849,47 @@ mark-to-market pass.
 `/api/trade/status` timing line — it should read in milliseconds, not
 hundreds. The image on the server as this was written (`7246ac8-dirty`)
 predates it.
+
+## Where the lag actually was
+
+*17 September 2026*
+
+With the status off the request path (above) the deployed log read
+`/api/trade/status` 1.6ms, `/api/spot` 6ms — and the screen still stuttered.
+Timed stage by stage inside the container, `/api/chain` at 377ms was **not
+the network**: the tickers were cached, and 350ms of it was
+`pReachNearZero` — 2,000 paths × 24 Black-Scholes repricings for every
+strike worth selling — run again on every chain request, every strategy tick
+and every best-pick check. Node has one thread. Every one-second poll that
+landed during those 350ms waited behind it (`/api/spot` max 726ms in the same
+log, against a 1ms median), and the screen felt it.
+
+Two changes, neither touching a formula:
+
+- **Server** — the simulated probabilities are kept **per ticker batch**
+  (`probsByBatch`, a `WeakMap` keyed on the cached ticker array, so it dies
+  with the batch). Spot, strike and volatility cannot change between two
+  reads of one batch; the seconds of expiry that do change are below what
+  the simulation can resolve. Same arithmetic, once per fetch instead of once
+  per request. One test: two reads of one batch hand back the same
+  probability objects, and the display window does not change them.
+- **Web** — `App` renders once a second for the price and position polls,
+  and every card under it rendered with it: seventy rows of chain, nine
+  horizon cards, the chart, rebuilt each second to show a five-second-old
+  board. The board's cards are now `memo`'d (`Board`, `OutlookRow`,
+  `BestPick`, `Shock`, `Chart`) and every prop they take is stable between
+  chain loads — `sides` and the column preferences memoised, `held` keyed on
+  its content so a position list that says the same thing is the same prop,
+  one empty `NO_BARS`, one `reload` callback. A card redraws when the board
+  changes, not when the clock does.
+
+Checked and left alone: the databases are small (the largest 4MB), on WAL
+with a 5s busy timeout; the open-interest write is one indexed lookup then a
+write every five minutes per expiry; the horizon reads are under 5ms. The
+DB side was never the problem.
+
+**The best-pick card, shorter.** Eleven figures in one column stood the
+card at twice the height of the Market card beside it on a desk. From 600px
+the figures sit in two columns; "chosen on" and "behind it" are one line;
+the footnote is two sentences. Same figures, same words — half the height.
+The CSS for the removed price-alert list went with it.
