@@ -2406,5 +2406,43 @@ at the mark and a target at the mark give the same number. Priced after every
 charge, and absent rather than zero when there is no price, no position or no
 entry average to work from.
 
-- [ ] **Chain table: move the columns, and remember where they were put.**
-  Still not started — see the note under *The wall the strategy could not see*.
+## Moving the columns
+
+*16 September 2026*
+
+Which column sits next to the strike is the one real layout decision on the
+board — it is the column the eye lands on — and it was fixed in a source file.
+The picker could turn a column off; it could not move it.
+
+Now it can, three ways, all ending in the same pure `moveColumn`: **drag a
+row**, **press the arrows** beside it, or **hold it with the keyboard** (Space,
+then ↑/↓). Drag alone would have been the obvious build and the wrong one: it
+does not work from a keyboard, and on a touch screen a drag inside a scrolling
+list fights the scroll — so the arrows are what a thumb uses, and they grow on
+a coarse pointer.
+
+The order is the calls side read outward; the puts side is the mirror of it, as
+it always was. Header and cells both come from one list (`columnsInOrder`), so
+they cannot draw one column under another's heading, and the existing test that
+the group header's `colSpan` equals the cells in a row now runs over a
+rearranged board too.
+
+**Remembered in `localStorage`** (`btc-desk:chain:column-order`), beside the
+on/off choices — not `sessionStorage`: a board somebody arranged is a
+preference, and having to arrange it again in every new tab is the same as not
+saving it. Reset puts both back.
+
+The stored order is normalised before anything is drawn from it: unknown keys
+dropped, repeats kept once, and **any column this build has that the stored
+order does not is appended in its declared place**. That last rule is the one
+that matters — without it, the release that adds a column makes it invisible to
+everyone who has ever touched this panel.
+
+**Tests** (24 on the picker, 6 on the table): the list draws in the order given;
+the arrows move one row and hand back the whole order; the ends are disabled; a
+drag from one row to another rearranges; a drop on itself moves nothing; Space
+then ↑ moves without a mouse and the arrows do nothing until the row is held;
+the handle says where the row sits; Reset restores arrangement and choices; with
+no handler the panel is the chooser it always was. On the board: the order is
+honoured, the puts side stays the mirror, the cells move with their headings, a
+hidden column takes its place with it, and the spans still match.
