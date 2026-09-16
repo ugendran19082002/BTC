@@ -1855,8 +1855,18 @@ td.liq-normal, td.liq-none { color: var(--dim); }
   font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--dim);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.ol-mid { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
-.ol-band { font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ol-spot { font-size: 12.5px; color: var(--muted); }
+.ol-spot b { font-size: 16px; color: var(--text); font-variant-numeric: tabular-nums; }
+/* The band is the headline on each card now -- the price it is around is said
+   once, above the row. */
+.ol-mid { font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
+.ol-priced {
+  display: flex; flex-direction: column; gap: 1px; margin-top: 2px;
+  font-size: 11px; font-variant-numeric: tabular-nums; color: var(--muted);
+}
+.ol-priced.rich { color: var(--up); }
+.ol-priced.cheap { color: var(--down); }
+.ol-priced-word { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.4px; opacity: 0.8; }
 .ol-arrow {
   display: inline-flex; align-items: center; gap: 3px; margin: 4px 0 5px;
   font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--muted);
@@ -1890,9 +1900,9 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 }
 .ol-maths span { font-size: 11px; line-height: 1.45; color: var(--dim); }
 
-/* The settlement card is the one that matters, so it takes the space left at
-   the end of the row rather than sitting as a tenth of it. */
-.ol-card.expiry { grid-column: span 2; background: color-mix(in srgb, var(--accent) 6%, var(--panel-2)); }
+/* The settlement card is marked, not widened: spanning two columns orphaned it
+   onto a row of its own the moment ten cards did not fit across. */
+.ol-card.expiry { background: color-mix(in srgb, var(--accent) 6%, var(--panel-2)); }
 
 @media (max-width: 900px) {
   .ol-grid { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; }
@@ -1902,8 +1912,7 @@ td.liq-normal, td.liq-none { color: var(--dim); }
      price and the range both wrap and the card stops being readable. */
   .ol-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
   .ol-card { padding: 7px 8px; }
-  .ol-mid { font-size: 14px; }
-  .ol-band { font-size: 10px; }
+  .ol-mid { font-size: 12px; }
 }
 
 /* ── Fill alerts ────────────────────────────────────────────────────────────

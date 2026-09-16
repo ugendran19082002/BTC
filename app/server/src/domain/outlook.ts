@@ -89,6 +89,20 @@ export type OutlookRow = {
   above: number | null;
   /** Measured share of windows that closed higher. Always near a half. */
   pUp: number | null;
+  /**
+   * The implied band over the measured one: what the market charges for this
+   * horizon, against what the horizon usually delivers.
+   *
+   * **The one figure on the card that actually varies.** Below/inside/above
+   * barely move across the row -- both bands scale with √t, so their ratio is
+   * near-constant by construction, and nine cards reading "16 / 69 / 15" say
+   * nothing. This does move: measured on 16 September it was 1.00 out to two
+   * hours and 0.88 at twelve, which is the market charging *less* than history
+   * delivers at the long end. For a seller that is the whole question.
+   */
+  richness: number | null;
+  /** `rich` over 1.05, `cheap` under 0.95, `fair` between. */
+  priced: 'rich' | 'fair' | 'cheap' | null;
   /** This timeframe's own reading, −1…+1. Null where the desk has no bars for it. */
   score: number | null;
   lean: 'bullish' | 'bearish' | 'flat' | null;
@@ -219,10 +233,16 @@ export function outlook(i: {
       ? { score: null, why: 'no bars at this horizon — the band is measured, the direction is not read' }
       : timeframeScore(tfOf(tf));
 
+    const richness = implied === null || m === null || !(m.moveP68 > 0)
+      ? null
+      : impliedPct! / m.moveP68;
+
     return {
       label,
       minutes,
       spot,
+      richness,
+      priced: richness === null ? null : richness > 1.05 ? 'rich' : richness < 0.95 ? 'cheap' : 'fair',
       impliedUsd: implied,
       low: implied === null ? null : spot - implied,
       high: implied === null ? null : spot + implied,

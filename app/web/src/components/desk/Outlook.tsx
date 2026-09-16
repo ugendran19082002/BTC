@@ -51,6 +51,18 @@ export function Outlook({ outlook }: { outlook: OutlookData }) {
       </CardTitle>
 
       <div className="ol-summary">
+        {/*
+          Spot, once.
+          It was on every card -- ten identical numbers, because the measured
+          drift over these horizons is nil and there is no honest projection to
+          put in its place. Nine repetitions of the same price read as a broken
+          panel; said once, with each card carrying only its own band, the row
+          says what it actually knows.
+        */}
+        <span className="ol-spot">
+          <b>{fmtStrike(Math.round(outlook.rows[0]?.spot ?? 0))}</b>
+          <span className="dim"> now · each card is the band around it</span>
+        </span>
         <span className="ol-consensus">
           {consensus === null ? (
             <span className="dim">No timeframe could be read</span>
@@ -132,11 +144,30 @@ function Horizon({ row }: { row: OutlookRow }) {
     <div className={cn('ol-card', row.isExpiry && 'expiry')} aria-label={row.label}>
       <div className="ol-label">{row.label}</div>
 
-      <div className="ol-mid">{row.high === null ? '—' : fmtStrike(Math.round(row.spot))}</div>
-      <div className="ol-band">
+      {/*
+        The band, and then the one number that moves across the row.
+
+        Below/inside/above are near-constant by construction: the implied band
+        and the measured one both scale with √t, so their ratio hardly changes
+        and nine cards reading "16 / 69 / 15" say nothing. What does change is
+        the two bands against each other -- 1.00 at five minutes and 0.88 at
+        twelve hours on 16 September, which is the market charging *less* than
+        history delivers at the long end. For a seller that is the question.
+      */}
+      <div className="ol-mid">
         {row.low === null || row.high === null
-          ? 'no volatility to price it'
+          ? <span className="dim">no band</span>
           : `${fmtStrike(Math.round(row.low))} – ${fmtStrike(Math.round(row.high))}`}
+      </div>
+      <div className={cn('ol-priced', row.priced)}>
+        {row.richness === null
+          ? <span className="dim">nothing to compare</span>
+          : <>
+            {row.richness.toFixed(2)}× history
+            <span className="ol-priced-word">
+              {row.priced === 'rich' ? 'market pays more' : row.priced === 'cheap' ? 'market pays less' : 'fairly priced'}
+            </span>
+          </>}
       </div>
 
       {/*

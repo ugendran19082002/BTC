@@ -20,6 +20,7 @@ const row = (over: Partial<OutlookRow> = {}): OutlookRow => ({
   measuredLow: 75_580, measuredHigh: 76_060,
   below: 0.16, inside: 0.70, above: 0.14,
   pUp: 0.5004,
+  richness: 1.01, priced: 'fair',
   score: 0.42, lean: 'bullish',
   why: 'EMAs rising, RSI 66, higher highs, ADX 28',
   isExpiry: false,
@@ -42,11 +43,30 @@ const data = (over: Partial<OutlookData> = {}): OutlookData => ({
 });
 
 describe('what the next few hours could do', () => {
-  it('[critical] a card per horizon, each with the band the market is charging for', () => {
+  it('[critical] the price is said once, and each card carries only its band', () => {
+    // It was on every card: ten identical numbers, because the measured drift
+    // over these horizons is nil. Nine repetitions read as a broken panel.
     render(<Outlook outlook={data()} />);
-    const one = within(screen.getByLabelText('1h'));
-    expect(one.getByText('75,820')).toBeInTheDocument();
-    expect(one.getByText('75,490 – 76,150')).toBeInTheDocument();
+    expect(screen.getAllByText('75,820')).toHaveLength(1);
+    expect(screen.getByText(/each card is the band around it/)).toBeInTheDocument();
+    expect(within(screen.getByLabelText('1h')).getByText('75,490 – 76,150')).toBeInTheDocument();
+  });
+
+  it('[critical] each card leads with the one figure that varies across the row', () => {
+    // Below/inside/above barely move: both bands scale with root-t, so their
+    // ratio is near-constant by construction. This does move.
+    render(<Outlook outlook={data({
+      rows: [
+        row({ label: '5m', richness: 1.00, priced: 'fair' }),
+        row({ label: '12h', richness: 0.88, priced: 'cheap' }),
+        row({ label: '24h', richness: 1.20, priced: 'rich' }),
+      ],
+    })} />);
+    expect(within(screen.getByLabelText('5m')).getByText(/1\.00× history/)).toBeInTheDocument();
+    const cheap = within(screen.getByLabelText('12h'));
+    expect(cheap.getByText(/0\.88× history/)).toBeInTheDocument();
+    expect(cheap.getByText('market pays less')).toBeInTheDocument();
+    expect(within(screen.getByLabelText('24h')).getByText('market pays more')).toBeInTheDocument();
   });
 
   it('[critical] the three figures are Below, Inside and Above the band — not a direction', () => {
@@ -73,8 +93,9 @@ describe('what the next few hours could do', () => {
   });
 
   it('a band the market cannot price says so instead of showing a number', () => {
-    render(<Outlook outlook={data({ rows: [row({ impliedUsd: null, low: null, high: null, below: null, inside: null, above: null })] })} />);
-    expect(screen.getByText('no volatility to price it')).toBeInTheDocument();
+    render(<Outlook outlook={data({ rows: [row({ impliedUsd: null, low: null, high: null, below: null, inside: null, above: null, richness: null, priced: null })] })} />);
+    expect(screen.getByText('no band')).toBeInTheDocument();
+    expect(screen.getByText('nothing to compare')).toBeInTheDocument();
     expect(within(screen.getByLabelText('1h')).getByText('Inside').nextSibling).toHaveTextContent('—');
   });
 

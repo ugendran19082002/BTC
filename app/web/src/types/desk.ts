@@ -493,6 +493,14 @@ export type OutlookRow = {
   above: number | null;
   /** Measured share of windows that closed higher. Always near a half. */
   pUp: number | null;
+  /**
+   * Implied band ÷ measured band — what the market charges for this horizon
+   * against what the horizon usually delivers. The one figure on the card that
+   * varies across the row; below/inside/above barely move, because both bands
+   * scale with √t.
+   */
+  richness: number | null;
+  priced: 'rich' | 'fair' | 'cheap' | null;
   /** This timeframe's own reading, −1…+1. Null where the desk fetches no bars for it. */
   score: number | null;
   lean: 'bullish' | 'bearish' | 'flat' | null;
