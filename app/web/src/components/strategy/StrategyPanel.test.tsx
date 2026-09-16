@@ -10,12 +10,12 @@ vi.mock('@/api/strategy', () => ({
 }));
 
 /** The journal of adds: what was added, and -- the one people check -- why something was not. */
-const status = (adds: StrategyStatus['adds']): StrategyStatus => ({
+const status = (adds: StrategyStatus['adds'], config: Partial<StrategyStatus['strategies'][number]['config']> = {}): StrategyStatus => ({
   today: '2026-09-11', schedulerOn: true, runnerInstalled: true, mode: 'live', balanceUsd: 228, spot: 77_000,
   strategies: [{
     id: 's', name: 'CE+PE add', enabled: true, createdAt: 0, updatedAt: 0, lastRunDate: '2026-09-11', ranToday: true,
     nextEntryAt: null, status: 'already ran today',
-    config: { ...DEFAULT_CONFIG, addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59' } },
+    config: { ...DEFAULT_CONFIG, addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59' }, ...config },
   }],
   runs: [],
   adds,
@@ -61,5 +61,30 @@ describe('the add journal on the strategy screen', () => {
     render(<StrategyPanel />);
     expect(await screen.findByText(/add to other leg if bid ≥ \$3, under 2x/)).toBeInTheDocument();
     expect(screen.queryByLabelText('adds')).toBeNull();
+  });
+
+  it('[critical] the row names the rule that picks the strike, not always the premium one', async () => {
+    /*
+     * A strategy selling at the open-interest wall described itself as
+     * "at least $15" on the list -- the premium rule, read out loud whatever
+     * `strikeRule` said. The one line somebody checks a strategy by was
+     * describing a rule it was not running.
+     */
+    getStrategies.mockResolvedValue(status([], { strikeRule: 'oiWall' }));
+    render(<StrategyPanel />);
+    expect(await screen.findByText(/at the open-interest wall/)).toBeInTheDocument();
+    expect(screen.queryByText(/at least \$15/)).toBeNull();
+  });
+
+  it('a premium strategy still reads as its premium rule', async () => {
+    getStrategies.mockResolvedValue(status([], { strikeRule: 'premium' }));
+    render(<StrategyPanel />);
+    expect(await screen.findByText(/at least \$15/)).toBeInTheDocument();
+  });
+
+  it('says doubling covers a refusal, not only a skipped leg', async () => {
+    getStrategies.mockResolvedValue(status([], { doubleWhenOneSided: true }));
+    render(<StrategyPanel />);
+    expect(await screen.findByText(/double if one side is refused/)).toBeInTheDocument();
   });
 });

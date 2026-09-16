@@ -2276,3 +2276,65 @@ money following the number from the server, both refusals, an emptied box
 meaning everything again, "replaced" rather than "cancelled" when part is left,
 and a fill landing mid-typing not overwriting what is being typed.
 
+## The wall the strategy could not see
+
+*16 September 2026*
+
+`TESTING OI` ran at 05:40 and sold `CE 80000 x10 @ 1, PE 74400 x10 @ 54`, and
+the desk's own Market Insights card said the walls were **81,600** and
+**73,600**. Two screens, one board, two answers.
+
+**Neither was wrong about what it could see.** `liveChain(width)` keeps `width`
+strike steps either side of the money and throws the rest away. The strategy
+runner took the default, 25 — at $200 steps around 75,805 that is a board
+running 70,800 to 80,800. The call wall sat at **81,600 with 394,748 open**,
+past the edge, so the rule picked the heaviest strike inside the window and
+that was 80,000. The desk card was drawn from a chain fetched at whatever width
+the browser's own setting asked for, which is why the two disagreed, and why
+the disagreement moved when the table width was changed.
+
+`width` is a **display** setting: how many rows the chain table should show.
+Where open interest sits is a fact about the expiry. Anything that decides
+something now reads the whole board (`WHOLE_BOARD`); the chain route still
+trims `legs` to the requested width on the way out, so the table is unchanged
+and the walls, max pain, PCR and the strategy all read every listed strike.
+
+**Doubling is global now.** The second half of the same morning: the desk
+refused `CE 80000` — *"pays 2.00 and the desk will not sell below 5.00"* — and
+the put went on alone at ten lots. `doubleWhenOneSided` existed for exactly
+that day and did nothing, because it required the probability gate: it was
+measured on the gate's refusals (+36% on the record for no more drawdown) and
+written as if the gate were the only thing that could refuse a leg. It is not.
+No strike the rule can take, a sell score under the bar, or the trading gate
+turning the order down for premium, spread or margin all leave the same
+one-sided day.
+
+So the setting now means what its label says — *if one leg does not go, sell
+double on the one that does* — whatever refused it, and it no longer needs the
+gate on. Which required one more change: the desk is asked about **both** legs
+before either order is sent (`previewOpen`, the same gate `open` runs, nothing
+sent), because a refusal that arrives after the first order is on the book
+arrives too late to size the second. Only when doubling is on and both legs
+were selected; otherwise the run sends exactly what it always sent.
+
+Also: the strategy list row read `CE + PE · at least $15 · …` for a strategy
+selling at the wall — `summarise()` called `describePremium` whatever
+`strikeRule` said. The one line a strategy is checked by was describing a rule
+it was not running.
+
+**Tests.** `test/strategy/oi-wall-board.test.ts` rebuilds that morning's board
+with Delta's own open interest: the 25-step window hides the call wall and
+picks 80,000; the whole board picks 81,600 and 73,600; the put side was inside
+the window all along, so a fix that only looked at the side that failed would
+have looked right. Then the doubling decision, pure: the desk refusing either
+leg doubles the other, doubling off leaves it at its own size and still reports
+the refusal, both taken are left alone, both refused sells nothing, and a
+one-legged strategy is never doubled by a refusal it never had. Server 817,
+web 614.
+
+- [ ] **Chain table: move the columns, and remember where they were put.**
+  Drag a column header to reorder, saved per browser (the chain already keeps
+  its other preferences in `localStorage` under `btc-desk:`). Worth doing with
+  the same rule as the zoom toggle: the arrangement somebody chose is the one
+  they get back, and a reset puts the tested order back. Not started.
+
