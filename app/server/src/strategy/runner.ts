@@ -1,11 +1,11 @@
-import { liveChain } from '../market/chain.js';
+import { liveChain, WHOLE_BOARD } from '../market/chain.js';
 import { scoreLegs } from '../domain/score.js';
 import { attachEv } from '../domain/ev.js';
 import { tradingService } from '../trading/service.js';
 import { noteError } from '../observability/errors.js';
 import { StrategyStore } from './store.js';
 import { GRACE_MIN, entryDue, entrySlotDate, entryWindowEnd, exitDue } from './schedule.js';
-import { describeSelection, selectLegs, type Candidate } from './select.js';
+import { afterDeskCheck, describeSelection, selectLegs, type Candidate } from './select.js';
 import { shockGate } from './gate.js';
 import { clearHold, noteHold } from './holds.js';
 import { shockNow } from '../market/shock-now.js';
@@ -212,8 +212,14 @@ export class StrategyRunner {
       return;
     }
 
-    // The board first, because a day that cannot be traded should not be spent.
-    const snap = await liveChain().catch(() => null);
+    /*
+     * The board first, because a day that cannot be traded should not be spent.
+     *
+     * The WHOLE board: the default window is a display setting for the chain
+     * table, and a rule that picks the heaviest strike cannot be shown two
+     * dozen of them. See `WHOLE_BOARD`.
+     */
+    const snap = await liveChain(WHOLE_BOARD).catch(() => null);
     if (!snap || !snap.live) {
       // No claim: the feed may come back inside the window.
       return;
@@ -268,26 +274,54 @@ export class StrategyRunner {
       return;
     }
 
+    /*
+     * Ask the desk about every leg before sending any of it.
+     *
+     * Only because of doubling. The size of the surviving leg depends on
+     * whether the other one goes, and asked after the first order is on the
+     * book the answer arrives too late to size anything. The gate is the same
+     * one `place` runs a moment later -- a dry run, nothing sent -- so a leg
+     * that passes here all but always passes there, and one that fails here
+     * would have failed there with the same words.
+     *
+     * Only worth the two extra reads when doubling is on and both legs were
+     * selected; otherwise the sizes cannot change and the run goes straight to
+     * the orders it always sent.
+     */
+    const legOf = (leg: typeof sel.legs[number]) => ({
+      symbol: `${leg.cp}-BTC-${leg.strike}-${snap.expiry}`,
+      optionSide: (leg.cp === 'C' ? 'CE' : 'PE') as 'CE' | 'PE',
+      strike: leg.strike,
+      expiryTs: snap.expiryTs,
+      lots: leg.lots,
+      ask: leg.ask,
+      cancelAfterMs: Math.max(1_000, entryWindowEnd(s, now) - now),
+    });
+
+    let legs = sel.legs;
+    const turnedDown: string[] = [];
+    if (s.config.doubleWhenOneSided && s.config.legs === 'both' && legs.length === 2) {
+      const asked = await Promise.all(legs.map(async (leg) => ({
+        leg,
+        // A dry run that itself fails to run is not a refusal: let the order
+        // answer that question, the way it did before any of this existed.
+        refusedBy: await svcWouldPlace(s, legOf(leg)).catch(() => null),
+      })));
+      const after = afterDeskCheck(s, asked);
+      legs = after.legs;
+      turnedDown.push(...after.refusals);
+    }
+
     // Claim before a single order goes out. Whoever loses the race does nothing.
     if (!this.store.claim(s.id, day, now)) return;
 
     const placed: string[] = [];
-    const failed: string[] = [];
-    for (const leg of sel.legs) {
+    const failed = [...turnedDown];
+    for (const leg of legs) {
       // The same shape the chain table hands the ticket, so a scheduled order
       // and a tapped one address the identical contract.
-      const symbol = `${leg.cp}-BTC-${leg.strike}-${snap.expiry}`;
       try {
-        const res = await svcPlace(s, {
-          symbol,
-          optionSide: leg.cp === 'C' ? 'CE' : 'PE',
-          strike: leg.strike,
-          expiryTs: snap.expiryTs,
-          lots: leg.lots,
-          ask: leg.ask,
-          cancelAfterMs: Math.max(1_000, entryWindowEnd(s, now) - now),
-        });
-        placed.push(res);
+        placed.push(await svcPlace(s, legOf(leg)));
       } catch (e) {
         // One leg refused does not undo the other. The gates were happy with
         // what did go on, and unwinding it pays the spread twice.
@@ -295,8 +329,10 @@ export class StrategyRunner {
       }
     }
 
-    const detail = [describeSelection(sel), ...(failed.length ? [`failed: ${failed.join('; ')}`] : [])]
-      .join(' | ').slice(0, 500);
+    const detail = [
+      describeSelection({ ...sel, legs }),
+      ...(failed.length ? [`failed: ${failed.join('; ')}`] : []),
+    ].join(' | ').slice(0, 500);
     const status = placed.length ? 'placed' : 'failed';
     this.store.finish(s.id, day, status, detail);
     // Failed, or on one side only: somebody should know before the day moves on.
@@ -311,6 +347,17 @@ export class StrategyRunner {
   }
 }
 
+/**
+ * Why the desk would turn this leg down, or null if it would take it.
+ *
+ * The same arguments `svcPlace` sends, through the same gate, with no order
+ * behind them.
+ */
+async function svcWouldPlace(s: Strategy, o: Parameters<typeof svcPlace>[1]): Promise<string | null> {
+  const gate = await tradingService().wouldPlace(placeArgs(s, o));
+  return gate.ok ? null : failureText(gate);
+}
+
 /** Place one leg through the same service the order ticket uses. */
 async function svcPlace(
   s: Strategy,
@@ -321,6 +368,13 @@ async function svcPlace(
     cancelAfterMs: number;
   },
 ): Promise<string> {
+  const res = await tradingService().place(placeArgs(s, o));
+  if (!res.ok) throw new Error(res.precheck ? failureText(res.precheck) : 'refused');
+  return `${o.optionSide} ${o.strike} x${o.lots}`;
+}
+
+/** The order, exactly as both the dry run and the real thing send it. */
+function placeArgs(s: Strategy, o: Parameters<typeof svcPlace>[1]) {
   const c = s.config;
   const { ask, cancelAfterMs, ...order } = o;
   /*
@@ -343,7 +397,7 @@ async function svcPlace(
   if (c.entryPrice === 'offer' && limitPrice === undefined) {
     throw new Error('no offer to rest at');
   }
-  const res = await tradingService().place({
+  return {
     ...order,
     strategyId: s.id,
     limitPrice,
@@ -354,9 +408,7 @@ async function svcPlace(
     timeoutMs: c.entryPrice === 'offer' && c.crossAfterSec > 0 ? cancelAfterMs : undefined,
     takeProfitPct: c.takeProfitPct,
     stopLossPct: c.stopLossPct,
-  });
-  if (!res.ok) throw new Error(res.precheck ? failureText(res.precheck) : 'refused');
-  return `${o.optionSide} ${o.strike} x${o.lots}`;
+  };
 }
 
 /** Append to the other leg's trade, through the engine and its gates. */

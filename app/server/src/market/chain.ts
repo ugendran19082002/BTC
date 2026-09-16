@@ -289,6 +289,33 @@ export async function liveExpiries(): Promise<ExpiryOption[]> {
  * time to expiry is derived from the code, but nothing measured in the backtest
  * carries over to a longer-dated contract -- that is a different trade.
  */
+/**
+ * Every strike Delta lists for the expiry, not a window around the money.
+ *
+ * `width` counts strike steps either side of the money and exists so the chain
+ * *table* is readable: two dozen rows, not ninety. It is a display setting, and
+ * anything that makes a decision needs the whole board -- most of all the
+ * open-interest rule, whose entire job is to find the heaviest strike. On 16
+ * September the call wall sat at 81,600 with 395k open while the board ran to
+ * 80,800, so the rule picked 80,000 and the desk's own card showed 81,600. The
+ * strategy and the screen disagreed about a fact neither of them was wrong
+ * about; they were reading different boards.
+ *
+ * 1,000 steps is "all of it" -- Delta lists under a hundred strikes a day.
+ */
+export const WHOLE_BOARD = 1_000;
+
+/**
+ * Whether a strike is inside the board of `width` steps around the money.
+ *
+ * Pulled out so the window can be reasoned about on its own: it is the line
+ * between "what the table shows" and "what exists", and getting it wrong is
+ * invisible -- the board simply stops, and whatever was beyond it reads as
+ * absent rather than as unread.
+ */
+export const withinWindow = (strike: number, atm: number, step: number, width: number): boolean =>
+  Math.abs(Math.round((strike - atm) / step)) <= width;
+
 export async function liveChain(width = 25, wantExpiry?: string): Promise<Snapshot> {
   const tickers = await liveTickers();
   if (!tickers.length) throw new Error('ticker feed empty');
@@ -311,7 +338,7 @@ export async function liveChain(width = 25, wantExpiry?: string): Promise<Snapsh
     const strike = num(t.strike_price);
     if (strike === null) continue;
     const off = Math.round((strike - atm) / step);
-    if (Math.abs(off) > width) continue;
+    if (!withinWindow(strike, atm, step, width)) continue;
     const cp: 'C' | 'P' = t.contract_type === 'call_options' ? 'C' : 'P';
     const bid = num(t.quotes?.best_bid ?? null);
     const ask = num(t.quotes?.best_ask ?? null);

@@ -165,11 +165,14 @@ export type StrategyConfig = {
    */
   probGate: number | null;
   /**
-   * When the gate refuses one leg, sell two lots of the one that survived.
+   * When one leg is refused, sell two lots of the one that survived.
    *
    * Worth +36% on the record for no more drawdown, because a leg that passes
-   * alone is the safer trade -- profit factor 11.73 against 2.46 for a leg
-   * sold beside a partner. Only meaningful with `legs: 'both'` and a gate on.
+   * alone is the safer trade -- profit factor 11.73 against 2.46 for a leg sold
+   * beside a partner. Measured on the probability gate's refusals, and applied
+   * to every refusal: no strike the rule can take, a score under the bar, or
+   * the desk turning the order down for premium, spread or margin. A one-sided
+   * day is a one-sided day whichever rule made it one. Needs `legs: 'both'`.
    */
   doubleWhenOneSided: boolean;
   /**
@@ -410,9 +413,6 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
   // Not an error, but the combination does nothing and saying so beats silence.
   if (c.doubleWhenOneSided && c.legs !== 'both') {
     bad.push('Doubling the surviving leg needs both legs selected.');
-  }
-  if (c.doubleWhenOneSided && (c.probGate === null || c.probGate === undefined)) {
-    bad.push('Doubling the surviving leg needs the probability gate on -- without it no leg is ever refused.');
   }
   const add = c.addToOpposite;
   if (add !== null && add !== undefined) {

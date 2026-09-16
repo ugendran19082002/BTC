@@ -421,6 +421,19 @@ export class TradeEngine {
   }
 
   // ----------------------------------------------------------------- open
+  /**
+   * Would this order go? The same gate `open` runs, and nothing is sent.
+   *
+   * For the caller that has two legs and a rule about the second one depending
+   * on the first: asking afterwards means the first order is already on the
+   * book. Not a promise -- the price can move between the question and the
+   * order -- but the answer is the gate's own, not a second copy of it.
+   */
+  async previewOpen(plan: TradePlan): Promise<PrecheckResult> {
+    const product = await this.exchange.getProduct(plan.symbol).catch(() => null);
+    return this.runPrecheck(plan, product);
+  }
+
   async open(plan: TradePlan): Promise<OpenResult> {
     const at = this.now();
     const product = await this.exchange.getProduct(plan.symbol).catch(() => null);

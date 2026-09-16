@@ -39,6 +39,8 @@ export function describePremium(c: StrategyConfig): string {
  *
  * The rules answer different questions -- what does it pay, where does it sit,
  * where is the open interest -- so the sentence has to say which was asked.
+ * Read the whole board: the wall is the heaviest strike Delta lists for the
+ * expiry, not the heaviest one the chain table happens to be showing.
  */
 export function describeStrike(c: StrategyConfig): string {
   if (c.strikeRule === 'strict') return `at ${strikeLabel(c.strikeStep)}, whatever it pays`;
@@ -69,8 +71,10 @@ export function describeStrategy(c: StrategyConfig): string {
   const gate = c.probGate === null
     ? 'no probability gate'
     : `skips a leg below ${Math.round(c.probGate * 1000) / 10}% to expire worthless`;
-  const dbl = c.doubleWhenOneSided && c.probGate !== null && c.legs === 'both'
-    ? ', and doubles the one that survives alone'
+  // Whatever refused the other leg: the gate, the score bar, no strike the
+  // rule can take, or the desk turning the order down for premium or spread.
+  const dbl = c.doubleWhenOneSided && c.legs === 'both'
+    ? ', and doubles the one that goes when the other is refused for any reason'
     : '';
   return `At ${time12(c.entryTime)} IST on ${describeDays(c.weekdays)}, sells ${legs} `
     + `${describeStrike(c)}, ${c.lots} lot${c.lots === 1 ? '' : 's'} each. `
@@ -162,7 +166,7 @@ export function sizingOf(
   usdInr = 85,
 ): Sizing {
   const legsOn = c.legs === 'both' ? 2 : 1;
-  const doubling = c.doubleWhenOneSided && c.probGate !== null && c.legs === 'both';
+  const doubling = c.doubleWhenOneSided && c.legs === 'both';
   // Both legs at one lot, or one leg at two: the same number of contracts.
   // What changes is that doubling can also reach two legs on separate days, so
   // the peak is the larger of the two shapes.
@@ -176,9 +180,6 @@ export function sizingOf(
     warnings.push(`Needs about $${marginUsd.toFixed(0)} of margin against $${balanceUsd!.toFixed(0)} free — this cannot be funded.`);
   } else if (share !== null && share > 0.5) {
     warnings.push(`Would tie up ${Math.round(share * 100)}% of the account on a single day.`);
-  }
-  if (c.probGate === null && c.doubleWhenOneSided) {
-    warnings.push('Doubling does nothing without the probability gate — no leg is ever refused.');
   }
   if (c.legs !== 'both' && c.doubleWhenOneSided) {
     warnings.push('Doubling needs both legs; a single-leg strategy never has a survivor.');

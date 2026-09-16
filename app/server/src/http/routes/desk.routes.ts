@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { liveChain, historicalChain, liveExpiries, hoursSinceDeskOpen, type Snapshot } from '../../market/chain.js';
+import { liveChain, historicalChain, liveExpiries, hoursSinceDeskOpen, WHOLE_BOARD, type Snapshot } from '../../market/chain.js';
 import { readMarket } from '../../market/moves.js';
 import { liveSpot, candles } from '../../market/delta.js';
 import { scoreLegs, pickSells, bias, verdict, maxLots, MARGIN_PER_LOT_USD, USDINR } from '../../domain/score.js';
@@ -83,8 +83,19 @@ export function registerDeskRoutes(app: FastifyInstance) {
   app.get('/api/chain', async (req, reply) => {
     const q = req.query as ChainQuery;
     try {
+      /*
+       * The whole board is read; `width` only decides how much of it is sent.
+       *
+       * The two are different questions. How many rows the chain table should
+       * show is a preference; where the open interest sits is a fact about the
+       * expiry, and answering it from a window meant the desk's own
+       * open-interest wall moved when somebody changed the table size -- and
+       * disagreed with the strategy, which read a window of its own. Everything
+       * computed below sees every listed strike; only `legs` is trimmed.
+       */
       const width = Number(q.width ?? 12);
-      const snap = await snapshotFor(q.at, Number.isFinite(width) ? width : 12, q.expiry || undefined);
+      const shown = Number.isFinite(width) ? Math.max(1, width) : 12;
+      const snap = await snapshotFor(q.at, WHOLE_BOARD, q.expiry || undefined);
       const scored = scoreLegs(snap);
       const minPremium = Number(q.minPremium ?? 15);
       const hedgeGap = Number(q.hedgeGap ?? 3);
@@ -128,7 +139,9 @@ export function registerDeskRoutes(app: FastifyInstance) {
         legs: attachEv(scored, {
           spot: snap.spot, lots, minPremium,
           atmIv: snap.atmIv, expectedMove: snap.expectedMove,
-        }).map((l) => ({ ...l, oiChange: oiChanges.get(`${l.cp}${l.strike}`) ?? null })),
+        })
+          .filter((l) => Math.abs(l.off) <= shown)
+          .map((l) => ({ ...l, oiChange: oiChanges.get(`${l.cp}${l.strike}`) ?? null })),
         bias: bias(snap, scored),
         picks,
         market,

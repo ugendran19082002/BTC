@@ -207,6 +207,43 @@ export function selectLegs(s: Strategy, candidates: readonly Candidate[]): Selec
   };
 }
 
+/**
+ * What the desk said about each selected leg, before anything was sent.
+ *
+ * `refusedBy` is the trading gate's own words -- the premium floor, the spread,
+ * the margin -- or null when it would take the order.
+ */
+export type Verdict = { leg: Chosen; refusedBy: string | null };
+
+/**
+ * The legs to actually send, once the desk has had its say on all of them.
+ *
+ * This exists because doubling and the desk's own gate used to be blind to
+ * each other. The gate refuses a leg when the order is sent, one leg at a
+ * time, and by then the other leg is already on the book at single size --
+ * so a strategy set to double on a one-sided day sold one lot on the only
+ * side that went. On 16 September the open-interest rule picked the 80,000
+ * call, the desk refused it at $1 against its $5 floor, and the put went on
+ * alone at ten lots instead of twenty.
+ *
+ * So the legs are asked about first and sized afterwards. A refusal here is
+ * exactly a refusal in `selectLegs`: one side is not being sold today, and the
+ * setting says what that means for the other one.
+ */
+export function afterDeskCheck(s: Strategy, asked: readonly Verdict[]): Selection {
+  const survivors = asked.filter((a) => a.refusedBy === null).map((a) => a.leg);
+  const refusals = asked
+    .filter((a) => a.refusedBy !== null)
+    .map((a) => `${a.leg.cp === 'C' ? 'CE' : 'PE'} ${a.leg.strike}: ${a.refusedBy}`);
+
+  const sides = survivors.map((l) => (l.cp === 'C' ? 'CE' : 'PE') as 'CE' | 'PE');
+  const lots = lotsPerLeg(s, sides);
+  return {
+    legs: survivors.map((l, i) => ({ ...l, lots: lots[sides[i]!] })),
+    refusals,
+  };
+}
+
 /** A one-line account of what a run did, for the journal and the screen. */
 export function describeSelection(sel: Selection): string {
   const sold = sel.legs.map((l) => `${l.cp === 'C' ? 'CE' : 'PE'} ${l.strike} x${l.lots} @ ${l.price}`);

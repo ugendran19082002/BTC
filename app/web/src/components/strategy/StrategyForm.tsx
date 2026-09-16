@@ -539,7 +539,9 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
               <div className="border-t border-border">
                 <Switch
                   label="Double the other leg"
-                  description={c.doubleWhenOneSided ? 'If one leg is skipped, sell double on the other.' : 'Off — the same lots on each leg, always.'}
+                  description={c.doubleWhenOneSided
+                    ? 'If one leg does not go — no strike, a gate, a score, or the desk refusing the order — sell double on the one that does.'
+                    : 'Off — the same lots on each leg, and a one-sided day sells half the usual size.'}
                   checked={c.doubleWhenOneSided}
                   onCheckedChange={(on) => set('doubleWhenOneSided', on)}
                 />

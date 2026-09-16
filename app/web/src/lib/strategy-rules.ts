@@ -71,9 +71,6 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
 
   if (c.probGate !== null && (!(c.probGate > 0) || c.probGate >= 1)) say('probGate', 'The probability gate must be between 0 and 1, or off.');
   if (c.doubleWhenOneSided && c.legs !== 'both') say('doubleWhenOneSided', 'Doubling the surviving leg needs both legs selected.');
-  if (c.doubleWhenOneSided && c.probGate === null) {
-    say('doubleWhenOneSided', 'Doubling the surviving leg needs the probability gate on -- without it no leg is ever refused.');
-  }
 
   const whole = (v: number) => Number.isInteger(v) && v >= 1 && v <= 100;
   if (c.minSellScore !== null && c.minSellScore !== undefined && !whole(c.minSellScore)) {

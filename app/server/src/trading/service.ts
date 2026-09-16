@@ -293,6 +293,11 @@ export class TradingService {
     return this.engine.open(orderPlan(input, `${input.symbol}-${Date.now()}`));
   }
 
+  /** Whether that order would be taken, without sending it. */
+  async wouldPlace(input: PlaceInput) {
+    return this.engine.previewOpen(orderPlan(input, `preview-${input.symbol}-${Date.now()}`));
+  }
+
   /** Buy back at the market: `lots` of it, or all of it when none is given. */
   close(tradeId: string, lots?: number) { return this.engine.closeNow(tradeId, 'manual exit', lots); }
   /** What closing that many would book. Sends nothing. */

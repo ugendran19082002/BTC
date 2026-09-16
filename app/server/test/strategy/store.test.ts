@@ -195,9 +195,9 @@ test('the score bars survive a save and come back as they went in', () => {
   assert.equal(back.config.maxShockScore, 25);
 });
 
-test('doubling without the gate is explained rather than silently ignored', () => {
-  const bad = validateConfig({ ...DEFAULT_CONFIG, probGate: null, doubleWhenOneSided: true });
-  assert.ok(bad.some((m) => /probability gate/.test(m)));
+test('[critical] doubling without the gate is fine: it covers every refusal now', () => {
+  const ok = validateConfig({ ...DEFAULT_CONFIG, probGate: null, doubleWhenOneSided: true });
+  assert.deepEqual(ok, [], `no objection expected: ${ok.join(' ')}`);
 });
 
 test('doubling on a single-leg strategy is explained', () => {

@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { StrategyForm } from '@/components/strategy/StrategyForm';
 import { usePoll } from '@/hooks/usePoll';
 import { clock, stamp } from '@/lib/format';
-import { describeDays, describePremium } from '@/lib/strategy-preview';
+import { describeDays, describeStrike } from '@/lib/strategy-preview';
 import { defaultAddUntil, time12 } from '@/lib/time';
 import { cn } from '@/lib/utils';
 import { LogTable } from '@/components/strategy/LogTable';
@@ -27,7 +27,10 @@ function summarise(s: Strategy): string {
   const c = s.config;
   const parts = [
     c.legs === 'both' ? 'CE + PE' : c.legs,
-    describePremium(c).split(' — ')[0]!,
+    // The rule that picks the strike, whichever one it is. It used to read the
+    // premium rule out loud whatever `strikeRule` said, so a strategy selling
+    // at the open-interest wall described itself as "at least $15".
+    describeStrike(c).split(' — ')[0]!,
     `${c.lots} lot${c.lots === 1 ? '' : 's'}`,
     `${time12(c.entryTime)} → ${time12(c.exitTime)}`,
     c.entryPrice === 'offer'
@@ -37,7 +40,7 @@ function summarise(s: Strategy): string {
   ];
   if (c.stopLossPct > 0) parts.push(`stop ${Math.round(c.stopLossPct * 100)}%`);
   if (c.probGate !== null) parts.push(`min safety ${Math.round(c.probGate * 1000) / 10}%`);
-  if (c.doubleWhenOneSided) parts.push('double if one side');
+  if (c.doubleWhenOneSided) parts.push('double if one side is refused');
   if (c.addToOpposite) {
     parts.push(`add to other leg if bid ≥ $${c.addToOpposite.minPriceUsd}, under ${c.addToOpposite.maxMultiple}x, until ${time12(c.addToOpposite.addUntil ?? defaultAddUntil(c.exitTime))}`);
   }
