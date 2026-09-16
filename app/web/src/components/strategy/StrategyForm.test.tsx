@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { StrategyForm } from '@/components/strategy/StrategyForm';
 import { DEFAULT_CONFIG, type Strategy } from '@/types/strategy';
 
@@ -326,5 +326,56 @@ describe('adding to the other leg', () => {
     show();
     fireEvent.click(saveButton());
     expect(await screen.findByText('Something the server checks that the form does not.')).toBeInTheDocument();
+  });
+});
+
+/**
+ * How late is too late.
+ *
+ * It was one constant for the whole desk — sixty minutes — and invisible, so a
+ * strategy that quietly did not run at 07:00 looked broken rather than late.
+ */
+describe('the late-entry window', () => {
+  it('[critical] shows sixty minutes by default, and says what it means', () => {
+    show();
+    const box = screen.getByLabelText('late entry window') as HTMLInputElement;
+    expect(box.value).toBe('60');
+    expect(screen.getByText(/Up to 60 minutes after 5:30 AM the desk still takes the entry/)).toBeInTheDocument();
+    expect(screen.getByText(/After that the day is skipped and you are told/)).toBeInTheDocument();
+  });
+
+  it('[critical] a strategy that was saved with its own window opens on that one', () => {
+    show(editing({ graceMin: 15 }));
+    expect((screen.getByLabelText('late entry window') as HTMLInputElement).value).toBe('15');
+    expect(screen.getByText(/Up to 15 minutes after/)).toBeInTheDocument();
+  });
+
+  it('[critical] the window is sent with the strategy', async () => {
+    show();
+    fireEvent.change(screen.getByLabelText('late entry window'), { target: { value: '20' } });
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    expect(saveStrategy.mock.calls[0]![0].config.graceMin).toBe(20);
+  });
+
+  it('the chips are the windows anyone actually picks', () => {
+    show();
+    const box = screen.getByLabelText('late entry window') as HTMLInputElement;
+    fireEvent.click(screen.getByRole('button', { name: '5m' }));
+    expect(box.value).toBe('5');
+    expect(screen.getByRole('button', { name: '5m' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: '1h' }));
+    expect(box.value).toBe('60');
+  });
+
+  it('[critical] nothing, or more than four hours, is refused before it can be saved', async () => {
+    show();
+    for (const bad of ['0', '241']) {
+      fireEvent.change(screen.getByLabelText('late entry window'), { target: { value: bad } });
+      expect(screen.getByText(/whole number of minutes from 1 to 240/)).toBeInTheDocument();
+      expect(saveButton()).toHaveTextContent(/Fix \d+ to save/);
+    }
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(saveStrategy).not.toHaveBeenCalled());
   });
 });
