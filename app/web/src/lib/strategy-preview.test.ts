@@ -101,9 +101,15 @@ describe('the whole rule, read back as a sentence', () => {
     // On a single-leg strategy there is never a survivor to double.
     expect(describeStrategy(cfg({ legs: 'CE', doubleWhenOneSided: true })))
       .not.toContain('doubles');
-    expect(describeStrategy(cfg({ probGate: null, doubleWhenOneSided: true })))
-      .not.toContain('doubles');
     expect(describeStrategy(cfg({ doubleWhenOneSided: true }))).toContain('doubles');
+  });
+
+  it('[critical] doubling no longer reads as a probability-gate feature', () => {
+    // It covers every refusal now -- a gate, a score, no strike the rule can
+    // take, or the desk turning the order down -- so it says so with the gate
+    // off, where it used to say nothing at all.
+    const s = describeStrategy(cfg({ probGate: null, doubleWhenOneSided: true }));
+    expect(s).toContain('doubles the one that goes when the other is refused for any reason');
   });
 
   it('[critical] says which bar waits and which stands the day down', () => {
@@ -170,10 +176,16 @@ describe('what the size actually costs', () => {
   });
 
   it('flags the settings that quietly do nothing', () => {
-    expect(sizingOf(cfg({ probGate: null, doubleWhenOneSided: true }), 300, SPOT)
-      .warnings.join(' ')).toMatch(/without the probability gate/);
     expect(sizingOf(cfg({ legs: 'PE', doubleWhenOneSided: true }), 300, SPOT)
       .warnings.join(' ')).toMatch(/needs both legs/);
+  });
+
+  it('[critical] sizes a doubling day at twice the lots even with no probability gate', () => {
+    // The margin has to be there on the day one leg is refused, and the gate is
+    // no longer the only thing that refuses one.
+    const s = sizingOf(cfg({ probGate: null, doubleWhenOneSided: true, lots: 10 }), 300, SPOT);
+    expect(s.maxContracts).toBe(20);
+    expect(s.warnings.join(' ')).not.toMatch(/probability gate/);
   });
 
   it('flags a trade with neither a target nor a stop', () => {

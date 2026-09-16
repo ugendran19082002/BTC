@@ -107,8 +107,14 @@ describe('the two score bars', () => {
 });
 
 describe('the other settings land on their tabs', () => {
+  it('[critical] doubling with the probability gate off is allowed: it covers every refusal', () => {
+    // It used to be refused as a contradiction. Now a leg the open-interest
+    // rule cannot sell, or one the desk turns down, is a one-sided day too.
+    expect(strategyProblems(cfg({ doubleWhenOneSided: true, probGate: null }), 'S')).toEqual([]);
+  });
+
   it('puts each problem where its field is', () => {
-    const ps = strategyProblems(cfg({ lots: 0, stopLossPct: 25, weekdays: [], doubleWhenOneSided: true, probGate: null }), 'S');
+    const ps = strategyProblems(cfg({ lots: 0, stopLossPct: 25, weekdays: [], doubleWhenOneSided: true, legs: 'CE' }), 'S');
     expect(ps.map((p) => [p.field, p.tab])).toEqual([
       ['weekdays', 'when'], ['lots', 'sell'], ['stopLossPct', 'trade'], ['doubleWhenOneSided', 'extras'],
     ]);
