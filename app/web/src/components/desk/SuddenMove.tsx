@@ -4,6 +4,7 @@ import {
   Zap, Activity, BarChart3, Waves, TrendingUp, TrendingDown, Minus, Info, Clock, ChevronDown,
 } from 'lucide-react';
 import { usePersisted } from '@/hooks/usePersisted';
+import { MarketInsights } from '@/components/desk/MarketInsights';
 import type { MarketRead, OptionStructure, SnapshotMeta, SuddenMove as Shock } from '@/types/desk';
 import { strike as fmtStrike } from '@/lib/format';
 
@@ -16,11 +17,6 @@ const BAND = {
 
 type Tone = 'plain' | 'warn' | 'bad' | 'up' | 'down';
 
-const compact = (n: number | null | undefined): string =>
-  n === null || n === undefined ? '—'
-    : n >= 1e6 ? `${(n / 1e6).toFixed(2)}M`
-      : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k`
-        : n.toFixed(0);
 
 /**
  * The risk out of a hundred, drawn as an arc.
@@ -340,9 +336,19 @@ export function SuddenMove({
       )}
 
       <div className="smr-strip">
+        {/*
+          The board's own numbers, once.
+
+          This strip and the Market Insights card said the same things -- the
+          spot, the implied volatility, the expected move, puts per call --
+          each in its own words, a screen apart. The insight tiles now live
+          here as this card's data, and the four they duplicate are shown once:
+          spot, IV and the expected move in the reading above, the rest as
+          tiles. Sixteen figures became ten.
+        */}
         <div className="smr-data">
           <span className="smr-strip-title">Key market data</span>
-          <div className="smr-data-grid">
+          <div className="smr-data-grid smr-data-grid--lead">
             <Datum
               label="BTC spot"
               value={fmtStrike(Math.round(snap.spot))}
@@ -362,14 +368,8 @@ export function SuddenMove({
               foot={snap.expectedMove === null ? undefined
                 : `${fmtStrike(Math.round(snap.spot - snap.expectedMove))}–${fmtStrike(Math.round(snap.spot + snap.expectedMove))}`}
             />
-            <Datum
-              label="Puts per call"
-              value={structure.pcrOi === null ? '—' : structure.pcrOi.toFixed(2)}
-              tone="warn"
-            />
-            <Datum label="CE open" value={compact(structure.ceOi)} />
-            <Datum label="PE open" value={compact(structure.peOi)} />
           </div>
+          <MarketInsights structure={structure} snap={snap} market={market} embedded />
         </div>
 
         {shock.odds && (

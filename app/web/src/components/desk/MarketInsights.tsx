@@ -74,12 +74,27 @@ export function MarketInsights({
   structure,
   snap,
   market,
+  embedded = false,
 }: {
   structure: OptionStructure;
   snap: SnapshotMeta;
   market: MarketRead | null;
+  /**
+   * Inside another card, as its data strip, rather than a card of its own.
+   *
+   * On 16 September the Live screen said the spot four times, the implied
+   * volatility three times and the expected move three times, and this card
+   * was one of each. Folded into the sudden-move card it becomes that card's
+   * "key market data" -- and the tiles that card already carries in its own
+   * reading (spot, IV, the expected move) are left out here, so the same fact
+   * is on the screen once.
+   */
+  embedded?: boolean;
 }) {
-  const r = structure.oiRange;
+  // `?? null`: a structure from an older server, or a test's partial one, may
+  // lack the field altogether, and absent has to read as "no range" rather
+  // than as an object with no edges.
+  const r = structure.oiRange ?? null;
   const pcr = structure.pcrOi;
   const change = market?.return24h ?? null;
   const inBand = r !== null && snap.spot >= r.low && snap.spot <= r.high;
@@ -100,15 +115,9 @@ export function MarketInsights({
    */
   const crowd = pcr === null ? null : pcr > 1.1 ? 'Bullish' : pcr < 0.9 ? 'Bearish' : 'Neutral';
 
-  return (
-    <CollapsibleCard
-      id="structure"
-      title="Market insights"
-      defaultOpen
-      right={<Badge tone="neutral">For information</Badge>}
-    >
+  const tiles = (
       <div className="insight-grid">
-        <Tile
+        {!embedded && <Tile
           icon={up ? TrendingUp : TrendingDown}
           label={snap.live ? 'BTC spot' : 'BTC at snapshot'}
           value={`${fmtStrike(Math.round(snap.spot))} USD`}
@@ -119,9 +128,9 @@ export function MarketInsights({
               : `${up ? '+' : '−'}${fmtStrike(Math.round(Math.abs(changeUsd)))} (${up ? '+' : ''}${change.toFixed(2)}%)`
           }
           footTone={change === null ? 'plain' : up ? 'up' : 'down'}
-        />
+        />}
 
-        <Tile
+        {!embedded && <Tile
           icon={Activity}
           label="Implied volatility"
           value={snap.atmIv === null ? '—' : `${(snap.atmIv * 100).toFixed(1)}%`}
@@ -131,7 +140,7 @@ export function MarketInsights({
               : `±$${snap.expectedMove.toFixed(0)} by expiry`
           }
           hint="At the money, annualised. The expected move underneath is what it means for today."
-        />
+        />}
 
         <Tile
           icon={Scale}
@@ -185,7 +194,7 @@ export function MarketInsights({
           hint="Where the open options would pay out least at settlement. Widely read as a magnet; this desk does not treat it as one."
         />
 
-        <Tile
+        {!embedded && <Tile
           icon={Move}
           label="Expected move"
           tone="info"
@@ -196,7 +205,7 @@ export function MarketInsights({
               : `${fmtStrike(Math.round(snap.spot - snap.expectedMove))} – ${fmtStrike(Math.round(snap.spot + snap.expectedMove))}`
           }
           hint="spot × volatility × √(hours ÷ 8760). BTC settles inside this about 2 times in 3 — a strike inside it is not safe."
-        />
+        />}
 
         <Tile
           icon={ShieldAlert}
@@ -260,6 +269,17 @@ export function MarketInsights({
           hint="Implied minus realised volatility, in percentage points. Positive is the seller's case."
         />
       </div>
+  );
+
+  if (embedded) return tiles;
+  return (
+    <CollapsibleCard
+      id="structure"
+      title="Market insights"
+      defaultOpen
+      right={<Badge tone="neutral">For information</Badge>}
+    >
+      {tiles}
     </CollapsibleCard>
   );
 }

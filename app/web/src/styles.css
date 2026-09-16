@@ -1959,3 +1959,15 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 }
 .bt-alert-list li button:hover { color: var(--down); background: var(--panel-2); }
 
+/* The verdict at the head of the horizon row: the sentence the row is the
+   working for. Compact, with the seven inputs and five gates behind a toggle. */
+.side-verdict.embedded { margin: 0 0 10px; padding: 0 0 10px; border-bottom: 1px solid var(--line-soft); }
+.sv-toggle {
+  appearance: none; border: 0; background: none; padding: 0; margin-left: 8px;
+  font: inherit; font-size: 11.5px; color: var(--accent); cursor: pointer;
+}
+.sv-toggle:hover { text-decoration: underline; }
+/* The insight tiles inside the sudden-move strip: a row of their own under
+   the five lead figures. */
+.smr-data .insight-grid { margin-top: 8px; }
+

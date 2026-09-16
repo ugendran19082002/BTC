@@ -24,7 +24,12 @@ const snap = {
 } as unknown as SnapshotMeta;
 
 const structure = {
-  pcrOi: 0.44, ceOi: 2_250_000, peOi: 1_000_000, ceVolume: 5_000, peVolume: 3_800,
+  pcrOi: 0.44, pcrVolume: 0.76, ceOi: 2_250_000, peOi: 1_000_000, ceVolume: 5_000, peVolume: 3_800,
+  ceOiWall: { strike: 81_600, value: 394_748 }, peOiWall: { strike: 73_600, value: 174_089 },
+  gammaWall: null, atmIv: 0.30, ivSkewPts: null, volPremiumPts: 2.1,
+  maxPain: { strike: 76_000, payoutUsd: 1_000 },
+  oiRange: { low: 73_600, high: 81_600, widthUsd: 8_000, widthPct: 10.55 },
+  ranges: [],
 } as unknown as OptionStructure;
 
 const market = { return24h: -0.03, high24h: 78_431, low24h: 76_102 } as unknown as MarketRead;
@@ -146,7 +151,19 @@ describe('sudden move analytics', () => {
     expect(screen.getByText('76,102')).toBeInTheDocument();
     expect(screen.getByText('28.7%')).toBeInTheDocument();
     expect(screen.getByText('0.44')).toBeInTheDocument();
-    expect(screen.getByText('2.25M')).toBeInTheDocument();
+    // The open-interest walls come from the insight tiles that now live in
+    // this strip -- one place for the board's numbers, not two.
+    expect(screen.getByText('73,600')).toBeInTheDocument();
+    expect(screen.getByText('81,600')).toBeInTheDocument();
+  });
+
+  it('[critical] says spot, volatility and the expected move once, not once per section', () => {
+    // The insight tiles used to repeat the three figures this strip already
+    // leads with. Folded in, each appears exactly once.
+    panel();
+    expect(screen.getAllByText('76,841')).toHaveLength(1);
+    expect(screen.getAllByText('28.7%')).toHaveLength(1);
+    expect(screen.queryByText(/BTC spot/i)?.textContent ?? '').not.toMatch(/USD/);
   });
 
   it('[critical] the odds say which horizon they were counted over', () => {

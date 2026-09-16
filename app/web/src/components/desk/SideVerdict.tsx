@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Check, Minus, X, TrendingUp, TrendingDown, PauseCircle } from 'lucide-react';
 import type { Containment, DirectionVerdict } from '@/types/desk';
 import { Card, CardTitle } from '@/components/ui/card';
@@ -32,19 +33,23 @@ const signed = (v: number | null, places = 2) =>
  * nothing to read is never a pass — the same rule the sudden-move gate follows,
  * because an unread risk is not a small one.
  */
-export function SideVerdict({ direction, containment }: {
+export function SideVerdict({ direction, containment, embedded = false }: {
   direction: DirectionVerdict;
   containment: Containment | null;
+  /**
+   * At the head of the horizon row rather than a card of its own. The two
+   * read the same indicators and said it twice a screen apart; here the
+   * verdict is the sentence the row below is the working for.
+   */
+  embedded?: boolean;
 }) {
   const { score, side, confirmed } = direction;
   const tone = side === null ? 'wait' : side === 'bullish' ? 'up' : 'down';
   const Icon = side === null ? PauseCircle : side === 'bullish' ? TrendingUp : TrendingDown;
+  const [showWorking, setShowWorking] = useState(false);
 
-  return (
-    <Card className="side-verdict">
-      <CardTitle right={<span className="dim">{direction.passed}/5 gates</span>}>
-        Today’s side
-      </CardTitle>
+  const body = (
+    <>
 
       <div className="sv-head">
         <span
@@ -63,8 +68,16 @@ export function SideVerdict({ direction, containment }: {
           {signed(score)}
         </span>
       </div>
-      <p className="sv-summary">{direction.summary}</p>
+      <p className="sv-summary">
+        {direction.summary}
+        {embedded && (
+          <button type="button" className="sv-toggle" onClick={() => setShowWorking((v) => !v)} aria-expanded={showWorking}>
+            {showWorking ? 'hide the working' : `${direction.passed}/5 gates · show the working`}
+          </button>
+        )}
+      </p>
 
+      {(!embedded || showWorking) && <>
       {/*
         The inputs, each as its own reading. A weighted number nobody can take
         apart is a number nobody should act on.
@@ -133,6 +146,17 @@ export function SideVerdict({ direction, containment }: {
         not fetch them, and a number that looks like order flow and is not would be worse than
         the gap.
       </p>
+      </>}
+    </>
+  );
+
+  if (embedded) return <div className="side-verdict embedded" aria-label="today’s side">{body}</div>;
+  return (
+    <Card className="side-verdict">
+      <CardTitle right={<span className="dim">{direction.passed}/5 gates</span>}>
+        Today’s side
+      </CardTitle>
+      {body}
     </Card>
   );
 }

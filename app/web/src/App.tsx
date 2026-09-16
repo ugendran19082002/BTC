@@ -28,8 +28,6 @@ import { LivePrice } from '@/components/desk/LivePrice';
 import { TODAY_MOVE } from '@/types/desk';
 import { tabTitle } from '@/lib/tab-title';
 import { pnlTone, signedInr, usdToInr } from '@/lib/format';
-import { MarketInsights } from '@/components/desk/MarketInsights';
-import { SideVerdict } from '@/components/desk/SideVerdict';
 import { Outlook } from '@/components/desk/Outlook';
 import { SuddenMove } from '@/components/desk/SuddenMove';
 import { BestTrade } from '@/components/desk/BestTrade';
@@ -534,9 +532,6 @@ export default function App() {
               </div>
               </Collapsible.Content>
               </Collapsible.Root>
-              {data && snap && (
-                <SideVerdict direction={data.direction} containment={data.containment} />
-              )}
 
             </div>
 
@@ -567,13 +562,6 @@ export default function App() {
                 </ErrorBoundary>
               )}
 
-              {data && snap && (
-                <MarketInsights
-                  structure={data.structure}
-                  snap={snap}
-                  market={data.market}
-                />
-              )}
             </div>
           </div>
 
@@ -584,9 +572,15 @@ export default function App() {
             width: squeezed into the side column each card lost its range to an
             ellipsis, which is the one number on it that cannot be guessed.
           */}
+          {/*
+            One card about direction, not two. "Today's side" and this row
+            read the same EMAs, RSI, structure and VWAP and said it twice a
+            screen apart; the verdict and its gates now sit at the head of the
+            row they are drawn from.
+          */}
           {data && snap && (
             <div className="wide-row">
-              <Outlook outlook={data.outlook} />
+              <Outlook outlook={data.outlook} direction={data.direction} containment={data.containment} />
             </div>
           )}
 

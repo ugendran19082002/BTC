@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ArrowDownRight, ArrowUpRight, MoveRight, Sigma } from 'lucide-react';
-import type { Outlook as OutlookData, OutlookRow } from '@/types/desk';
+import type { Containment, DirectionVerdict, Outlook as OutlookData, OutlookRow } from '@/types/desk';
+import { SideVerdict } from '@/components/desk/SideVerdict';
 import { Card, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { strike as fmtStrike } from '@/lib/format';
@@ -34,7 +35,12 @@ import { cn } from '@/lib/utils';
  * RSI, VWAP and swing structure point, −1…+1. Only the timeframes the desk
  * fetches bars for can have one; the rest say so and keep their bands.
  */
-export function Outlook({ outlook }: { outlook: OutlookData }) {
+export function Outlook({ outlook, direction, containment }: {
+  outlook: OutlookData;
+  /** The verdict drawn from the same indicators, at the head of the row. */
+  direction?: DirectionVerdict;
+  containment?: Containment | null;
+}) {
   const [showMaths, setShowMaths] = useState(false);
   const { consensus } = outlook;
 
@@ -49,6 +55,10 @@ export function Outlook({ outlook }: { outlook: OutlookData }) {
       >
         What the next few hours could do
       </CardTitle>
+
+      {direction && (
+        <SideVerdict direction={direction} containment={containment ?? null} embedded />
+      )}
 
       <div className="ol-summary">
         {/*
