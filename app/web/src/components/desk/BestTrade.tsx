@@ -185,7 +185,8 @@ export function BestTrade({ best, legs, onSell, onSettingsChanged }: {
             {best.agreesWithEngine
               ? 'The tested rule picked this strike too. '
               : 'The tested rule picked differently — follow the tested rule. '}
-            Nothing is sent from here; the order form runs every check again.
+            This ranking has not been checked against past years. Nothing is sent from here;
+            the order form runs every check again.
           </p>
         </>
       )}
