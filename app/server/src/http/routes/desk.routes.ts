@@ -3,7 +3,7 @@ import { liveChain, historicalChain, liveExpiries, hoursSinceDeskOpen, WHOLE_BOA
 import { readMarket } from '../../market/moves.js';
 import { liveSpot, candles } from '../../market/delta.js';
 import { scoreLegs, pickSells, bias, verdict, maxLots, MARGIN_PER_LOT_USD, USDINR } from '../../domain/score.js';
-import { recommend, type PickMode } from '../../domain/recommend.js';
+import { findHedge, recommend, type PickMode } from '../../domain/recommend.js';
 import { optionStructure } from '../../domain/structure.js';
 import { forecast, reloadHorizons } from '../../domain/forecast.js';
 import { loadCalibration, reloadCalibration } from '../../domain/calibration.js';
@@ -13,6 +13,7 @@ import { strategyStore } from './strategy.routes.js';
 import { refuse } from '../refuse.js';
 import { emBuffer, verdict as sideVerdict } from '../../domain/direction.js';
 import { DEFAULT_LIMITS } from '../../trading/precheck.js';
+import { bestTrade } from '../../domain/best-trade.js';
 import { pBetween } from '../../domain/probability.js';
 import { attachEv } from '../../domain/ev.js';
 import { noteOpenInterest, openInterestChange, ivChange, type OiChange } from '../../market/oi-history.js';
@@ -174,6 +175,27 @@ export function registerDeskRoutes(app: FastifyInstance) {
        * from the two one-sided probabilities; this is it stated as the corridor
        * itself, with the expected move beside it for scale.
        */
+      /*
+       * One trade, named, with the six numbers it was chosen on.
+       *
+       * Ranked on arithmetic that has never been through the cross-period
+       * screen -- the card says so -- and hedged the same way the engine
+       * hedges, by counting listed strikes.
+       */
+      const best = bestTrade({
+        legs: attachEv(scored, {
+          spot: snap.spot, lots, minPremium,
+          atmIv: snap.atmIv, expectedMove: snap.expectedMove,
+        }),
+        snap,
+        lots,
+        enginePicks: recommendation.sides.map((x) => ({ side: x.side, strike: x.leg.strike })),
+        hedgeFor: (leg) => {
+          const h = findHedge(scored, leg.cp === 'C' ? 'CE' : 'PE', leg.strike, hedgeGap);
+          return h === null ? null : { strike: h.strike, askUsd: h.price, widthUsd: h.widthUsd };
+        },
+      });
+
       const containment = shorts.ce !== null && shorts.pe !== null && snap.atmIv !== null
         ? {
             low: shorts.pe,
@@ -219,6 +241,7 @@ export function registerDeskRoutes(app: FastifyInstance) {
         forecast: forecast(snap),
         direction,
         containment,
+        best,
         recommendation,
         requireHedge,
         verdict: verdict(snap, picks, minPremium, lots, market, {

@@ -30,7 +30,7 @@ import { pnlTone, signedInr, usdToInr } from '@/lib/format';
 import { MarketInsights } from '@/components/desk/MarketInsights';
 import { SideVerdict } from '@/components/desk/SideVerdict';
 import { SuddenMove } from '@/components/desk/SuddenMove';
-import { TopCandidates } from '@/components/desk/TopCandidates';
+import { BestTrade } from '@/components/desk/BestTrade';
 import { PriceChart, CHART_TFS, type ChartTf } from '@/components/desk/PriceChart';
 import { Select, SelectItem } from '@/components/ui/select';
 import { ColumnPicker } from '@/components/chain/ColumnPicker';
@@ -652,12 +652,10 @@ export default function App() {
                   {data.market && <MoveSection market={data.market} snap={snap} />}
                 </CollapsibleCard>
 
-                <TopCandidates
+                <BestTrade
+                  best={data.best}
                   legs={data.legs}
-                  sides={data.recommendation.ok ? data.recommendation.sides : []}
-                  spot={snap.spot}
                   onSell={snap.live ? sellLeg : undefined}
-                  onInspect={(l) => inspectLeg(l.cp, l.strike)}
                 />
               </div>
 

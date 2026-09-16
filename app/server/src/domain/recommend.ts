@@ -258,21 +258,43 @@ export function allocateLots(
  * `step` comes from the chain rather than a constant, so a gap of 3 means three
  * actual strikes even when Delta changes its spacing.
  */
-function findHedge(
+/**
+ * The strike to buy back, `gap` **listed strikes** further out.
+ *
+ * Counted over what the exchange actually lists, not in multiples of the
+ * detected step. Delta lists $200 apart near the money and $400 further out, so
+ * "three strikes out" from 74,400 and "74,400 − 3 × 200" are different
+ * contracts as soon as the grid widens -- and the second one is often not
+ * listed at all, which read as "no hedge available" on a board that had one.
+ *
+ * Walks inward from the gap asked for: three out if it exists, else two, else
+ * one. A nearer hedge is a narrower spread and a smaller loss, so taking one is
+ * always better than taking none.
+ */
+export function findHedge(
   scored: ScoredLeg[],
   side: Side,
   shortStrike: number,
   gap: number,
-  step: number,
+  _step?: number,
 ): Hedge | null {
   if (gap <= 0) return null;
   const cp = side === 'CE' ? 'C' : 'P';
-  for (let g = gap; g > 0; g--) {
-    const k = side === 'CE' ? shortStrike + g * step : shortStrike - g * step;
-    const leg = scored.find((l) => l.cp === cp && l.strike === k);
+  // Listed strikes on this side of the short, ordered outward from it.
+  const outward = scored
+    .filter((l) => l.cp === cp && (side === 'CE' ? l.strike > shortStrike : l.strike < shortStrike))
+    .sort((a, b) => (side === 'CE' ? a.strike - b.strike : b.strike - a.strike));
+
+  for (let g = Math.min(gap, outward.length); g > 0; g--) {
+    const leg = outward[g - 1];
     const cost = leg?.ask ?? leg?.mark ?? null;
     if (leg && cost !== null) {
-      return { strike: k, price: cost, gapStrikes: g, widthUsd: Math.abs(k - shortStrike) };
+      return {
+        strike: leg.strike,
+        price: cost,
+        gapStrikes: g,
+        widthUsd: Math.abs(leg.strike - shortStrike),
+      };
     }
   }
   return null;

@@ -1802,3 +1802,19 @@ td.liq-normal, td.liq-none { color: var(--dim); }
   .sv-head { flex-wrap: wrap; }
 }
 
+/* ── The one trade ──────────────────────────────────────────────────────────
+   It replaced a table ranked on expected value alone, which could not say what
+   the trade costs when it goes wrong. The order line is the headline; every
+   number under it is one the pick was made on. */
+.besttrade .bt-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  flex-wrap: wrap;
+}
+.bt-order {
+  font-size: 17px; font-weight: 700; letter-spacing: -0.2px;
+  font-variant-numeric: tabular-nums;
+}
+.bt-order.ce { color: var(--up); }
+.bt-order.pe { color: var(--down); }
+.bt-rank { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
+

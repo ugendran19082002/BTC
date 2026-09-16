@@ -428,6 +428,43 @@ export type Containment = {
   highBuffer: number | null;
 };
 
+/**
+ * One trade, named, with the numbers it was chosen on. Mirrors
+ * `domain/best-trade.ts`.
+ *
+ * Ranked on credit-against-risk, the settlement odds, distance in expected
+ * moves and liquidity. Touch is carried and deliberately not ranked on: a touch
+ * is a drawdown, not a loss.
+ */
+export type BestTradeLeg = {
+  cp: 'C' | 'P';
+  side: 'CE' | 'PE';
+  strike: number;
+  premiumUsd: number;
+  expiryOtm: number | null;
+  touch: number | null;
+  nearZero: number | null;
+  emBuffer: number | null;
+  delta: number | null;
+  liquidity: number;
+  creditUsd: number;
+  /** Null when nothing caps it: a naked short has no worst case. */
+  maxLossUsd: number | null;
+  creditRisk: number | null;
+  hedge: { strike: number; askUsd: number; widthUsd: number } | null;
+  rank: number;
+  reasons: string[];
+};
+
+export type BestTrade = {
+  pick: BestTradeLeg | null;
+  runnersUp: BestTradeLeg[];
+  eligible: number;
+  why: string | null;
+  /** True when the tested engine picked the same strike. */
+  agreesWithEngine: boolean;
+};
+
 export type ChainResponse = {
   snapshot: SnapshotMeta;
   legs: Leg[];
@@ -440,6 +477,7 @@ export type ChainResponse = {
   forecast: Forecast | null;
   direction: DirectionVerdict;
   containment: Containment | null;
+  best: BestTrade;
   recommendation: Recommendation;
   requireHedge: boolean;
   verdict: Verdict;
