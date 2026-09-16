@@ -333,14 +333,23 @@ from the record, over **the window you are looking at** — not a fixed day.
 
 Things that would change a decision and are **not** implemented:
 
-- [ ] **Stress scenarios** per proposed trade: P&L and margin at BTC ±1/2/3%
-  and IV ±5 points. Max loss alone says what happens at the end, not what
-  happens on the way.
-- [ ] **Credit / risk ratio** as a ranking column: `net credit ÷ max loss`, and
-  premium efficiency `net credit ÷ distance to strike in expected moves`. The
-  board ranks by score and EV; neither says what the premium costs in risk.
-- [ ] **Touch probability and near-zero as their own columns.** Both are
-  computed (§2) and only the expiry probability is on the board.
+**Closed since this was written** (16 September):
+
+- [x] **Touch and near-zero as their own columns**, and the five-figure row in
+  the strike sheet (§2).
+- [x] **Credit ÷ risk and a liquidity score** — in the best-trade pick (§7c).
+- [x] **The hedge counts listed strikes**, not dollar steps.
+- [x] **The horizon strip** (§7b): implied band, measured band, and where the
+  measured distribution falls around the implied one.
+
+Still open:
+
+- [ ] **Stress scenarios in money**: BTC ±1/2/3% and IV ±5 points, with the
+  margin at each. The strike sheet prices one expected move; that is one point
+  on the curve, not the curve.
+- [ ] **Credit ÷ risk as a board column**, not only on the best-trade card.
+- [ ] **Premium efficiency** — `net credit ÷ distance in expected moves` — as a
+  ranking figure of its own.
 - [ ] **CVD and funding/basis** — needs per-trade aggressor data and the
   perpetual feed; neither is fetched.
 - [ ] **Hedge availability in the gates before the strike is chosen**, so a
@@ -353,6 +362,7 @@ Things that would change a decision and are **not** implemented:
 
 ---
 
-*Files: `market/chain.ts`, `market/moves.ts`, `domain/{bs,probability,calibration,ev,score,structure,recommend,direction,forecast,shock}.ts`,
+*Files: `market/chain.ts`, `market/moves.ts`,
+`domain/{bs,probability,calibration,ev,score,structure,recommend,direction,outlook,best-trade,forecast,shock}.ts`,
 `trading/charges.ts`. Every one of them has a header comment saying why it is
 the way it is; this document is the map, those are the territory.*
