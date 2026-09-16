@@ -44,6 +44,13 @@ export type Trade = {
   alarm: string | null;
   /** Contracts added to the position after its entry. Absent from older records. */
   addedSize?: number;
+  /**
+   * What the resting exits would leave, all in: booked, plus what buying back
+   * at that level books, less every charge. Null when the book could not be
+   * read or there is no such order; the same arithmetic as `netIfClosedUsd`
+   * with the target or the stop in place of the mark.
+   */
+  ifExits?: { target: number | null; stop: number | null } | null;
   /** A sell working to add to the position, when there is one. */
   adding?: {
     size: number;

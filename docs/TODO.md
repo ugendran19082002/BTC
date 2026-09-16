@@ -2392,6 +2392,19 @@ it is the other way. The same figure as *If closed now*, deliberately: this is
 where the charges are, so this is where the number that has already had them
 taken off belongs.
 
+**The resting exits say what they are worth.** The card said `Target 0.80` and
+left the arithmetic to the reader: 0.80 against an average of 13.00 over 1,400
+contracts, less what Delta takes. The ticket has always shown that number while
+the bar is being dragged — *"buys back at 0.80 · you keep ₹1,452"* — and
+stopped showing it the moment the order was resting, which is when it is worth
+most. Now: `Target 0.80 → keep ₹1,447`, `Stop 26.00 → lose ₹1,564`.
+
+All three figures on the card — *if closed now*, the target, the stop — are one
+arithmetic (`netIfClosedAt`, in `close-preview.ts`) under three prices, so they
+cannot tell different stories about the same position; a test pins that closing
+at the mark and a target at the mark give the same number. Priced after every
+charge, and absent rather than zero when there is no price, no position or no
+entry average to work from.
+
 - [ ] **Chain table: move the columns, and remember where they were put.**
   Still not started — see the note under *The wall the strategy could not see*.
-

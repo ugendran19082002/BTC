@@ -71,6 +71,34 @@ export type ClosePreview = {
   netUsd: number | null;
 };
 
+/**
+ * What the position is worth if it is closed at `price`, all in.
+ *
+ * Everything the trade has already booked and already paid, plus what buying
+ * the rest back at that price books, less the charges on that fill. The same
+ * arithmetic behind "If closed now" -- with the mark in it -- so a target's
+ * outcome and a close-now outcome are the same number differently priced, and
+ * the screen can put them side by side without them disagreeing.
+ *
+ * Null when there is nothing to work it out from: no entry price, no position,
+ * or no price to close at. A missing number is not a zero.
+ */
+export function netIfClosedAt(i: {
+  state: TradeState;
+  /** The price the buy-back would happen at: the mark, a resting target, a stop. */
+  price: number | null | undefined;
+  spot: number | null;
+  /** Charges already paid on this trade, from `tradeCharges`. */
+  paidUsd: number;
+}): number | null {
+  const s = i.state;
+  const size = Math.abs(s.position);
+  if (i.price === null || i.price === undefined || size === 0 || s.entryAvgPrice === null) return null;
+  const books = (s.entryAvgPrice - i.price) * size * s.contractValue;
+  const toClose = fillChargesUsd({ price: i.price, contracts: size, contractValue: s.contractValue, spot: i.spot }).totalUsd;
+  return s.realisedPnl + books - i.paidUsd - toClose;
+}
+
 export function closePreview(i: {
   state: TradeState;
   /** Undefined means the whole position, which is what the sheet opens on. */

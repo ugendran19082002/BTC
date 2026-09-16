@@ -246,6 +246,50 @@ describe('a position with no stop behind it', () => {
   });
 });
 
+describe('what the resting exits are worth', () => {
+  /*
+   * "Target 0.80" left the arithmetic to the reader: 0.80 against an average of
+   * 13.00 over 1,400 contracts, less what Delta takes. The ticket shows this
+   * while the bar is being dragged and stopped showing it the moment the order
+   * was resting -- which is when it is worth most.
+   */
+  const resting = (over: Partial<Trade> = {}) => trade({
+    onBook: { target: 0.8, stop: 26 },
+    protection: { takeProfit: 'tp', stopLoss: 'sl' },
+    ifExits: { target: 17.02, stop: -18.4 },
+    ...over,
+  });
+
+  it('[critical] says what the target keeps and what the stop loses', () => {
+    render(<PositionsCard trades={[resting()]} />);
+    const target = screen.getByText(/^Target/).closest('span')!;
+    expect(target).toHaveTextContent('Target 0.80 → keep ₹1,447');
+    expect(within(target).getByText(/keep ₹1,447/).className).toContain('--up');
+    const stop = screen.getByText(/^Stop/).closest('span')!;
+    expect(stop).toHaveTextContent('Stop 26.00 → lose ₹1,564');
+    expect(within(stop).getByText(/lose ₹1,564/).className).toContain('--down');
+  });
+
+  it('a target that would still be a loss says lose, not keep', () => {
+    render(<PositionsCard trades={[resting({ ifExits: { target: -2, stop: -18.4 } })]} />);
+    expect(screen.getByText(/^Target/).closest('span')).toHaveTextContent('→ lose ₹170');
+  });
+
+  it('says nothing about money for an exit that is not on the book', () => {
+    render(<PositionsCard trades={[resting({ onBook: { target: 0.8, stop: null } })]} />);
+    expect(screen.getByText(/^Stop/).closest('span')).toHaveTextContent('Stop none');
+    expect(screen.getByText(/^Stop/).closest('span')).not.toHaveTextContent('lose');
+  });
+
+  it('[critical] shows the price alone when the money cannot be worked out', () => {
+    // No entry average yet, or a book that could not be read: a number that
+    // cannot be computed is left out rather than shown as zero.
+    render(<PositionsCard trades={[resting({ ifExits: { target: null, stop: null } })]} />);
+    expect(screen.getByText(/^Target/).closest('span')).toHaveTextContent('Target 0.80');
+    expect(screen.getByText(/^Target/).closest('span')).not.toHaveTextContent('keep');
+  });
+});
+
 describe('the charges line', () => {
   /*
    * "₹8.43 paid · ₹7.88 to close" is two numbers going out and nothing coming

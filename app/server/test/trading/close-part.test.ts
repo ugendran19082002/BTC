@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { rig, ceProduct, planFor, quote, SPOT, type Rig } from './harness.js';
-import { closeEligibility, closePreview } from '../../src/trading/close-preview.js';
+import { closeEligibility, closePreview, netIfClosedAt } from '../../src/trading/close-preview.js';
 import { parseCloseBody } from '../../src/http/close-body.js';
 import type { Quote, TradeState } from '../../src/trading/types.js';
 
@@ -315,4 +315,47 @@ test('the body parser takes a number or the text of one, and objects to anything
     assert.equal(r.ok, false, `${JSON.stringify(bad)} should be refused`);
   }
   assert.equal(parseCloseBody({ lots: 40 }).ok, false, 'a close needs a trade');
+});
+
+// ------------------------------------------- what the resting exits are worth
+
+test('[critical] a target is priced the same way as closing now, at its own price', () => {
+  // 1,400 sold at 13.00, target 0.80: (13 - 0.8) x 1400 x 0.001 = 17.08 booked,
+  // less what Delta takes to buy them back at 0.80.
+  const s = stateFor({ position: -1_400, entrySize: 1_400, entryAvgPrice: 13, contractValue: 0.001 });
+  const net = netIfClosedAt({ state: s, price: 0.8, spot: SPOT, paidUsd: 0 });
+  assert.ok(net !== null);
+  assert.ok(net! > 17 && net! < 17.08, `gross 17.08, less charges: ${net}`);
+});
+
+test('a stop is the same arithmetic, and comes out negative', () => {
+  const s = stateFor({ position: -1_400, entrySize: 1_400, entryAvgPrice: 13, contractValue: 0.001 });
+  const net = netIfClosedAt({ state: s, price: 26, spot: SPOT, paidUsd: 0 });
+  assert.ok(net! < -18, `(13 - 26) x 1400 x 0.001 = -18.2, and the charges make it worse: ${net}`);
+});
+
+test('what is already booked and already paid is in the number', () => {
+  const s = stateFor({ position: -100, entryAvgPrice: 10, realisedPnl: 5, contractValue: 0.001 });
+  const clean = netIfClosedAt({ state: s, price: 1, spot: SPOT, paidUsd: 0 })!;
+  const charged = netIfClosedAt({ state: s, price: 1, spot: SPOT, paidUsd: 2 })!;
+  assert.ok(Math.abs(clean - charged - 2) < 1e-9, 'charges paid come straight off');
+  assert.ok(clean > 5, 'and what is booked is in it');
+});
+
+test('[critical] no price, no position or no entry is a dash rather than a zero', () => {
+  const s = stateFor({ position: -100, entryAvgPrice: 10 });
+  assert.equal(netIfClosedAt({ state: s, price: null, spot: SPOT, paidUsd: 0 }), null);
+  assert.equal(netIfClosedAt({ state: s, price: undefined, spot: SPOT, paidUsd: 0 }), null);
+  assert.equal(netIfClosedAt({ state: stateFor({ position: 0 }), price: 1, spot: SPOT, paidUsd: 0 }), null);
+  assert.equal(netIfClosedAt({ state: stateFor({ entryAvgPrice: null }), price: 1, spot: SPOT, paidUsd: 0 }), null);
+});
+
+test('[critical] closing now and a target at the mark are the same number', () => {
+  // The two figures on the card are one arithmetic under two prices, so they
+  // can never tell different stories about the same position.
+  const s = stateFor({ position: -1_400, entryAvgPrice: 13, realisedPnl: 1.2, contractValue: 0.001 });
+  const viaPreview = closePreview({ state: s, quote: q(5.9, 6.06, 6.06), spot: SPOT });
+  const viaExit = netIfClosedAt({ state: s, price: 6.06, spot: SPOT, paidUsd: 0 })!;
+  assert.ok(Math.abs((viaPreview.netUsd! + s.realisedPnl) - viaExit) < 1e-9,
+    `${viaPreview.netUsd} + ${s.realisedPnl} vs ${viaExit}`);
 });

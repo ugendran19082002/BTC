@@ -300,13 +300,27 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
             </span>
           </span>
         )}
-        <span>
+        {/*
+          The exits, and what each of them is worth.
+          "Target 0.80" left the arithmetic to the reader: 0.80 against an
+          average of 13.00 over 1,400 contracts, less what Delta takes. The
+          ticket shows this number while the bar is being dragged and stopped
+          showing it the moment the order was resting, which is when it is
+          worth most. Priced like "If closed now", with the target in place of
+          the mark.
+        */}
+        <span title="The resting target, and what the trade keeps if it fills — after every charge.">
           Target{' '}
           <span className="tabular-nums text-foreground">
             {trade.onBook?.target != null ? price(trade.onBook.target) : 'none'}
           </span>
+          {trade.onBook?.target != null && trade.ifExits?.target != null && (
+            <> → <span className={cn('tabular-nums', trade.ifExits.target >= 0 ? 'text-[var(--up)]' : 'text-[var(--down)]')}>
+              {trade.ifExits.target >= 0 ? 'keep ' : 'lose '}{inr(Math.abs(usdToInr(trade.ifExits.target) ?? 0))}
+            </span></>
+          )}
         </span>
-        <span>
+        <span title="The resting stop, and what the trade is left with if it fires — after every charge.">
           Stop{' '}
           <span
             className={cn(
@@ -316,6 +330,11 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
           >
             {trade.onBook?.stop != null ? price(trade.onBook.stop) : 'none'}
           </span>
+          {trade.onBook?.stop != null && trade.ifExits?.stop != null && (
+            <> → <span className={cn('tabular-nums', trade.ifExits.stop >= 0 ? 'text-[var(--up)]' : 'text-[var(--down)]')}>
+              {trade.ifExits.stop >= 0 ? 'keep ' : 'lose '}{inr(Math.abs(usdToInr(trade.ifExits.stop) ?? 0))}
+            </span></>
+          )}
         </span>
         {trade.live?.liquidationPrice != null && (
           <span title="Delta closes the position at this price, stop or no stop.">

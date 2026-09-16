@@ -7,6 +7,7 @@ import {
 } from '../../trading/margin.js';
 import { crossesSpread, worstCaseLoss, type TradeRecord } from '../../trading/engine.js';
 import { fillChargesUsd, tradeCharges } from '../../trading/charges.js';
+import { netIfClosedAt } from '../../trading/close-preview.js';
 import type { ExchangeOrder, ExchangePosition, Quote } from '../../trading/types.js';
 import { midOf } from '../../trading/money.js';
 import {
@@ -157,6 +158,33 @@ const view = (
      * simply wrong when the two differ -- which is exactly the case worth
      * showing.
      */
+    /**
+     * What the resting exits would leave, in money.
+     *
+     * The card said "Target 0.80" and left the arithmetic to the reader --
+     * 0.80 against an average of 13.00 over 1,400 contracts, less what Delta
+     * takes. The ticket has always shown this while the bar is being dragged
+     * ("buys back at 0.80 · you keep ₹1,452"); once the order is resting the
+     * same number stopped being shown, which is the moment it is worth most.
+     *
+     * Priced the same way as "If closed now", with the target or the stop in
+     * place of the mark, so the three numbers on the card are one arithmetic
+     * under three prices and cannot disagree.
+     */
+    ifExits: resting === null ? null : {
+      target: netIfClosedAt({
+        state: r.state,
+        price: resting.find((o) => o.reduceOnly && o.type === 'limit')?.limitPrice ?? null,
+        spot,
+        paidUsd: charges.totalUsd,
+      }),
+      stop: netIfClosedAt({
+        state: r.state,
+        price: resting.find((o) => o.reduceOnly && (o.type === 'stop_limit' || o.type === 'stop_market'))?.stopPrice ?? null,
+        spot,
+        paidUsd: charges.totalUsd,
+      }),
+    },
     onBook: resting === null ? null : {
       // The target rests as a limit and carries its level in limitPrice; the
       // stop is a trigger and carries its level in stopPrice.
