@@ -23,8 +23,8 @@ import { TelegramNotifier } from '../notify/telegram.js';
 import { bestTradeText } from '../notify/best-trade-alert.js';
 import { bestTradeNow } from '../domain/best-trade-now.js';
 import { BEST_TRADE_MIN_PREMIUM_USD } from '../domain/best-trade.js';
-import { hoursSinceDeskOpen, liveChain, WHOLE_BOARD } from '../market/chain.js';
-import { readMarket } from '../market/moves.js';
+import { hoursSinceDeskOpen, liveChain, WHOLE_BOARD, type Snapshot } from '../market/chain.js';
+import { readMarket, type MarketRead } from '../market/moves.js';
 import type { ExchangePort } from './exchange/port.js';
 import type { ExchangeOrder, ExchangePosition, TradeState } from './types.js';
 
@@ -305,11 +305,15 @@ export class TradingService {
     this.store.setSetting('best_trade_min_premium', String(usd));
   }
 
-  async watchBestTrade(now = Date.now()): Promise<'off' | 'unchanged' | 'sent' | 'no board'> {
+  async watchBestTrade(
+    now = Date.now(),
+    /** The board to read, for tests; the live one otherwise. */
+    board?: { snap: Snapshot; market: MarketRead | null },
+  ): Promise<'off' | 'unchanged' | 'sent' | 'no board'> {
     if (!this.bestTradeAlertOn) return 'off';
-    const snap = await liveChain(WHOLE_BOARD).catch(() => null);
+    const snap = board?.snap ?? await liveChain(WHOLE_BOARD).catch(() => null);
     if (!snap || !snap.live) return 'no board';
-    const market = await readMarket(hoursSinceDeskOpen(snap.ts)).catch(() => null);
+    const market = board ? board.market : await readMarket(hoursSinceDeskOpen(snap.ts)).catch(() => null);
     const best = bestTradeNow({
       snap, market, lots: 10, hedgeGap: 3, minPremiumUsd: this.bestTradeMinPremiumUsd,
     });
