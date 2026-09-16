@@ -7,27 +7,13 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { TimePicker } from '@/components/ui/time-picker';
 import { time12 } from '@/lib/time';
 
+import { type IstMoment } from '@/lib/ist-moment';
+
 /**
- * A date and time, always read as India time.
- *
- * The strategy is defined in IST -- entry 05:30, settlement 17:30 -- so the
- * picker works in IST regardless of where the browser is. Anything else makes
- * "05:30" mean different moments to different viewers, which is the one thing
- * this control must never do.
+ * A date and time, always read as India time -- see `lib/ist-moment.ts` for
+ * why. The picker works in IST regardless of where the browser is.
  */
-export type IstMoment = { date: string; time: string };
-
-/** Epoch seconds for an IST wall-clock moment. */
-export function istToEpoch({ date, time }: IstMoment): number {
-  const [y, m, d] = date.split('-').map(Number);
-  const [hh, mm] = time.split(':').map(Number);
-  return Math.floor(Date.UTC(y!, m! - 1, d!, hh!, mm!) / 1000) - 5.5 * 3600;
-}
-
-export function nowIst(): IstMoment {
-  const d = new Date(Date.now() + 5.5 * 3600 * 1000);
-  return { date: d.toISOString().slice(0, 10), time: d.toISOString().slice(11, 16) };
-}
+export { istToEpoch, nowIst, type IstMoment } from '@/lib/ist-moment';
 
 const ENTRY = '05:30';
 const SETTLE = '17:29';

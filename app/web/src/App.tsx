@@ -21,7 +21,7 @@ import { usePageVisible } from '@/hooks/usePageVisible';
 import { useStream } from '@/hooks/useStream';
 import { MoveSection } from '@/components/desk/MoveSection';
 import { TodayPnl } from '@/components/desk/TodayPnl';
-import { DateTimePicker, istToEpoch, type IstMoment } from '@/components/research/DateTimePicker';
+import { istToEpoch, type IstMoment } from '@/lib/ist-moment';
 import { usePersisted } from '@/hooks/usePersisted';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { LoginPage } from '@/components/desk/LoginPage';
@@ -60,6 +60,9 @@ const OrdersPanel = lazy(() => import('@/components/trade/OrdersPanel').then((m)
 const StrategyPanel = lazy(() => import('@/components/strategy/StrategyPanel').then((m) => ({ default: m.StrategyPanel })));
 const ReportPanel = lazy(() => import('@/components/report/ReportPanel').then((m) => ({ default: m.ReportPanel })));
 const ErrorLogPanel = lazy(() => import('@/components/layout/ErrorLogPanel').then((m) => ({ default: m.ErrorLogPanel })));
+// The calendar library is a sixth of the first download and is needed only
+// once somebody chooses a past date.
+const DateTimePicker = lazy(() => import('@/components/research/DateTimePicker').then((m) => ({ default: m.DateTimePicker })));
 
 /*
  * The board's cards redraw only when the board changes.
@@ -531,7 +534,9 @@ export default function App() {
               {!live && (
               <div className="field wide">
               <label>Date &amp; time (IST)</label>
-              <DateTimePicker value={when} onChange={setWhen} maxDate={new Date()} />
+              <Suspense fallback={<span className="dim">Loading…</span>}>
+                <DateTimePicker value={when} onChange={setWhen} maxDate={new Date()} />
+              </Suspense>
               </div>
               )}
 
