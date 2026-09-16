@@ -154,6 +154,12 @@ export type TradeStatus = {
   positions: ExchangePosition[];
   open: Trade[];
   alarms: { tradeId: string; message: string; at: number }[];
+  /**
+   * Fill alerts. `configured` is whether Telegram is set up on the server at
+   * all — a deployment question — and `on` is whether messages are wanted right
+   * now. Absent on a server that predates the switch, which reads as on.
+   */
+  alerts?: { configured: boolean; on: boolean };
   limits: {
     maxLeverage: number;
     maxQuoteAgeMs: number;

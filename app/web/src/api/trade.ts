@@ -96,6 +96,15 @@ export const previewClose = (tradeId: string, lots?: number) =>
 export const cancelAdd = (tradeId: string) =>
   post<{ ok: true; trade: Trade }>('/api/trade/add/cancel', { tradeId });
 
+/**
+ * Fill alerts on or off.
+ *
+ * Nothing about the trading engine changes: positions still open, protect and
+ * close exactly as before. Only the messages stop.
+ */
+export const setAlerts = (on: boolean) =>
+  post<{ ok: true; alerts: { configured: boolean; on: boolean } }>('/api/trade/alerts', { on });
+
 /** Pull a working order off the book. Refused once anything has filled. */
 export const cancelTrade = (tradeId: string) =>
   post<{ ok: true; trade: Trade }>('/api/trade/cancel', { tradeId });

@@ -11,6 +11,7 @@ import { ChainTable, type ChainSellIntent } from '@/components/chain/ChainTable'
 import type { TicketSeed } from '@/components/trade/OrderTicket';
 import { AlarmBanner } from '@/components/trade/ModeBanner';
 import { ModeSwitch } from '@/components/trade/ModeSwitch';
+import { AlertSwitch } from '@/components/trade/AlertSwitch';
 import { getTradeStatus } from '@/api/trade';
 import { heldLegs } from '@/lib/held';
 import { getErrors } from '@/api/errors';
@@ -373,6 +374,7 @@ export default function App() {
             Delta Exchange India{days !== null && <> · {days} days tested</>}
           </span>
           <div className="top-actions">
+            <AlertSwitch status={trade} onChanged={() => void refreshTrade()} />
             <ModeSwitch status={trade} onChanged={() => void refreshTrade()} />
             <ProfileMenu username={username} onSignedOut={() => setSignedIn(false)} />
           </div>
@@ -565,8 +567,6 @@ export default function App() {
                 </ErrorBoundary>
               )}
 
-              {data && snap && <Outlook outlook={data.outlook} />}
-
               {data && snap && (
                 <MarketInsights
                   structure={data.structure}
@@ -576,6 +576,19 @@ export default function App() {
               )}
             </div>
           </div>
+
+          {/*
+            Its own row, across the page.
+
+            Nine horizons and a settlement card do not belong in a third of the
+            width: squeezed into the side column each card lost its range to an
+            ellipsis, which is the one number on it that cannot be guessed.
+          */}
+          {data && snap && (
+            <div className="wide-row">
+              <Outlook outlook={data.outlook} />
+            </div>
+          )}
 
           {err && <div className="err">{err}</div>}
           {busy && !data && <Loading />}
