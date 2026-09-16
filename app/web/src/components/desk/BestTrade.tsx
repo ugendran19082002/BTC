@@ -98,7 +98,12 @@ export function BestTrade({ best, legs, onSell, onSettingsChanged }: {
             <span className="bt-rank" aria-label="rank">{p.rank}<span className="dim">/100</span></span>
           </div>
 
-          <dl className="m-0 mt-3 grid gap-1.5" aria-label="the pick">
+          {/*
+            Two columns on a desk, one on a phone. Eleven figures in one column
+            ran the card to twice the height of the Market card beside it, and
+            the pair are meant to be read as one row.
+          */}
+          <dl className="bt-figures" aria-label="the pick">
             <KV label="You’d be paid" hint="The bid — what a seller actually receives per contract. Every measured figure on this desk is built on the bid, not the mid or the mark.">
               <b>{price(p.premiumUsd)}</b>
             </KV>
@@ -120,7 +125,7 @@ export function BestTrade({ best, legs, onSell, onSettingsChanged }: {
               {p.delta === null ? '—' : p.delta.toFixed(3)}
             </KV>
 
-            <div className="my-0.5 h-px bg-border" />
+            <div className="bt-figures-break" />
 
             <KV label="You collect" hint="For the lots on the settings bar, after Delta’s charges to open.">
               {usd(p.creditUsd)}
@@ -152,19 +157,17 @@ export function BestTrade({ best, legs, onSell, onSettingsChanged }: {
 
           <p className="m-0 mt-2 text-[11.5px] leading-snug text-muted-foreground">
             Chosen on: {p.reasons.join(' · ')}.
+            {best.runnersUp.length > 0 && (
+              <span className="text-[var(--dim)]">
+                {' '}Behind it: {best.runnersUp.map((r) => `${r.side} ${fmtStrike(r.strike)} (${r.rank})`).join(', ')}.
+              </span>
+            )}
           </p>
 
-          {best.runnersUp.length > 0 && (
-            <p className="m-0 mt-1 text-[11px] leading-snug text-[var(--dim)]">
-              Behind it:{' '}
-              {best.runnersUp.map((r) => `${r.side} ${fmtStrike(r.strike)} (${r.rank})`).join(', ')}.
-            </p>
-          )}
-
           {/*
-            The doorbell for this strike, under the numbers and above the
-            ticket: "tell me when it pays 5". Its own switch, nothing to do
-            with the header's fill alerts, and off until a level is typed.
+            "Tell me when the pick changes" and the premium floor, under the
+            numbers and above the ticket. Their own switch, nothing to do with
+            the header's fill alerts.
           */}
           <BestTradeSettings onChanged={onSettingsChanged} />
 
@@ -180,10 +183,9 @@ export function BestTrade({ best, legs, onSell, onSettingsChanged }: {
 
           <p className="m-0 mt-2 text-[10.5px] leading-snug text-[var(--dim)]">
             {best.agreesWithEngine
-              ? 'The tested rule picked this strike too.'
-              : 'The tested rule picked differently — where they disagree, follow the tested rule: '}
-            this ranking has not been checked against past years. Nothing is sent from here;
-            the order form runs every check again.
+              ? 'The tested rule picked this strike too. '
+              : 'The tested rule picked differently — follow the tested rule. '}
+            Nothing is sent from here; the order form runs every check again.
           </p>
         </>
       )}

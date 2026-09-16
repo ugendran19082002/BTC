@@ -1817,6 +1817,14 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 .bt-order.ce { color: var(--up); }
 .bt-order.pe { color: var(--down); }
 .bt-rank { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
+/* The figures: one column on a phone, two side by side from tablet width, so
+   the card stands about as tall as the Market card it shares a row with. */
+.bt-figures { display: grid; gap: 6px; margin: 12px 0 0; }
+.bt-figures-break { height: 1px; background: var(--line-soft); margin: 2px 0; }
+@media (min-width: 600px) {
+  .bt-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 18px; }
+  .bt-figures-break { grid-column: 1 / -1; }
+}
 
 /* ── What the next few hours could do ───────────────────────────────────────
    One card per horizon: the band the option market is charging for, where a
@@ -1939,25 +1947,11 @@ td.liq-normal, td.liq-none { color: var(--dim); }
   .alertswitch { padding: 0 7px; }
 }
 
-/* The doorbell on the best-trade card: "tell me when it pays 5". */
-.bt-alert { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
-.bt-alert-row { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
+/* The floor field on the best-pick card. */
 .bt-alert-field { display: flex; flex: 1 1 160px; flex-direction: column; gap: 4px; min-width: 0; }
 .bt-alert-field > span { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--dim); }
 .bt-alert-note { margin: 6px 0 0; font-size: 11px; line-height: 1.4; color: var(--dim); }
 .bt-alert-note .warn, .bt-alert-note.warn { color: var(--warn); }
-.bt-alert-list { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }
-.bt-alert-list li {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums;
-}
-.bt-alert-list li.live { color: var(--text); }
-.bt-alert-list li.fired { color: var(--up); }
-.bt-alert-list li button {
-  appearance: none; border: 0; background: none; padding: 2px; margin-left: auto;
-  display: inline-flex; color: var(--dim); cursor: pointer; border-radius: 4px;
-}
-.bt-alert-list li button:hover { color: var(--down); background: var(--panel-2); }
 
 /* The verdict at the head of the horizon row: the sentence the row is the
    working for. Compact, with the seven inputs and five gates behind a toggle. */
