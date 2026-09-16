@@ -2446,3 +2446,114 @@ the handle says where the row sits; Reset restores arrangement and choices; with
 no handler the panel is the chooser it always was. On the board: the order is
 honoured, the puts side stays the mirror, the cells move with their headings, a
 hidden column takes its place with it, and the spans still match.
+
+## Is there a side today?
+
+*16 September 2026*
+
+The desk showed five windows — 24h +0.25%, 12h −0.13%, 6h −0.15%, 1h −0.16%,
+15m +0.27% — and left the adding-up to somebody at half past five in the
+morning. Five facts are not a decision.
+
+**`domain/direction.ts`** does the adding up: seven inputs across five
+timeframes, each normalised to −1…+1, weighted, and damped by the strongest
+ADX on the board, because agreement in a market going nowhere is agreement
+about noise. Past ±0.45 it names a side. Then five gates — direction,
+timeframe hierarchy, strikes clear of the expected move, option structure,
+execution and hedge — four of which must pass before a side is *confirmed*. A
+gate with nothing to read is never a pass, the same rule the sudden-move gate
+follows.
+
+**It decides nothing.** The lots are still split by the tested 2% / 70-30 rule,
+which has 733 days behind it. This is the reading done before trusting that
+split, and the first test written was the one that matters: **the 16 September
+board returns no side.**
+
+Three new indicators feed it, computed per timeframe in `moves.ts`: Wilder's
+**ADX(14)**, session **VWAP** and the distance to it, **RSI slope** (the level
+says where momentum is, the slope says which way it is going), and **fractal
+swing structure** (higher highs *and* higher lows). Cumulative delta and
+funding are deliberately absent — the desk fetches neither the aggressor side
+of trades nor the perpetual, and a number that looks like order flow and is not
+would be worse than the gap.
+
+Also landed from the same research:
+
+- **EM× on the board** — `|K − S| ÷ expected move`. "1,400 away" is a long way
+  on a quiet day and inside the noise on a violent one; "1.88 expected moves"
+  is the same statement on every day. Under 1.0 is marked.
+- **Containment** — `P(low < S_T < high) = N(d₂ low) − N(d₂ high)`, the number a
+  two-sided seller is actually betting on. Not the two one-sided probabilities
+  multiplied: they are two views of one distribution.
+- Confirmed by test that **T is real remaining time** everywhere, and that
+  touch and near-zero probabilities already exist in `probability.ts` (they are
+  computed per strike; only the expiry one is on the board so far).
+
+**19 tests** on the score, the gates and the corridor; 10 on the card.
+
+## A late-entry window per strategy
+
+*16 September 2026*
+
+`GRACE_MIN = 60` was one constant for the whole desk, and invisible — a
+strategy that quietly did not run at 07:00 looked broken rather than late. How
+long "still fine" lasts belongs to the strategy: an hour into a twelve-hour
+contract is nothing, ten minutes into a signal is everything.
+
+`config.graceMin`, default 60, on the **When** tab with `5m / 15m / 1h / 4h`
+chips and a sentence that reads back the number: *"Up to 60 minutes after 5:30
+AM the desk still takes the entry."* Validated 1–240 both sides. **No
+migration:** the config is JSON, and a strategy saved before the setting existed
+reads as the old constant.
+
+## What the Live tab actually computes
+
+*16 September 2026*
+
+[LIVE-TAB-AND-CHAIN.md](LIVE-TAB-AND-CHAIN.md) — every figure on the Live tab
+and the chain, with its formula, inputs, thresholds and what the record says
+about it. Written to be read beside the screen so a number that looks wrong can
+be traced without opening the code, and ending with the research list: what is
+measured and trusted, what is shown and deliberately not wired into anything,
+and the gaps.
+
+**The gaps it names**, all still open:
+
+- [ ] **Stress scenarios** per proposed trade: P&L and margin at BTC ±1/2/3%
+  and IV ±5 points. Max loss says what happens at the end, not on the way.
+- [ ] **Credit ÷ risk** and **premium ÷ distance** as ranking columns. The
+  board ranks by score and EV; neither says what the premium costs in risk.
+- [ ] **Touch and near-zero as their own columns.** Both are already computed
+  per strike; only the expiry probability is drawn.
+- [ ] **Calibration outside 8–16 hours to expiry**, so a next-day expiry is
+  scored rather than caveated.
+- [ ] **Hedge availability in the gates before the strike is chosen.**
+- [ ] **The direction score's weights have never been backtested.** Written
+  down in one place so they can be measured; until they are, the card decides
+  nothing.
+
+## Room on the Live tab
+
+*16 September 2026*
+
+The two-column board split at 1,060px into 32% — 339 pixels — and the settings
+bar, the side verdict and the insight tiles all lived in the narrow one. Once
+the verdict card arrived, that column ran several hundred pixels past the
+chart and left a hole beside it the height of a screen: a two-column layout
+where one column simply stops.
+
+- The split now waits for **1,180px**, the narrow column has a **360px floor**,
+  and it widens to 400 past 1,500 rather than staying a fixed third of an
+  ever-wider page.
+- **Market Insights moved under the chart**, into the wide column. It fills the
+  hole, and the tiles get to be a real grid instead of two squeezed columns.
+- The column picker is 380px wide (it now carries handles and arrows), the add
+  and close sheets wrap their chip rows, and the verdict card stacks its bars
+  under the labels below 380px.
+
+- [ ] **Not verified by eye.** The desk needs a password and an authenticator
+  code, so a headless browser cannot reach it here — only the sign-in screen
+  could be rendered, which has no horizontal overflow at 360–1920px. Worth one
+  look at **390, 768, 1180 and 1440** to confirm the hole is gone and nothing
+  new is cramped.
+
