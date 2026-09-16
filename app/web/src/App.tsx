@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Collapsible from '@radix-ui/react-collapsible';
 import { Activity, AlertTriangle, BarChart3, Bot, Briefcase, ChevronDown, ListOrdered } from 'lucide-react';
 import { NotSignedIn } from '@/api/client';
@@ -13,7 +13,7 @@ import { AlarmBanner } from '@/components/trade/ModeBanner';
 import { ModeSwitch } from '@/components/trade/ModeSwitch';
 import { AlertSwitch } from '@/components/trade/AlertSwitch';
 import { getTradeStatus } from '@/api/trade';
-import { heldLegs } from '@/lib/held';
+import { heldLegs, type HeldLeg } from '@/lib/held';
 import { getErrors } from '@/api/errors';
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
 import { usePoll } from '@/hooks/usePoll';
@@ -59,6 +59,25 @@ const OrdersPanel = lazy(() => import('@/components/trade/OrdersPanel').then((m)
 const StrategyPanel = lazy(() => import('@/components/strategy/StrategyPanel').then((m) => ({ default: m.StrategyPanel })));
 const ReportPanel = lazy(() => import('@/components/report/ReportPanel').then((m) => ({ default: m.ReportPanel })));
 const ErrorLogPanel = lazy(() => import('@/components/layout/ErrorLogPanel').then((m) => ({ default: m.ErrorLogPanel })));
+
+/*
+ * The board's cards redraw only when the board changes.
+ *
+ * This component holds the one-second price and position polls, so it renders
+ * once a second -- and without these every child rendered with it: seventy
+ * rows of chain, nine horizon cards, the chart, all rebuilt to show the same
+ * five-second-old board. On a phone that was the lag. Each of these takes its
+ * data from the chain response and callbacks that do not change between
+ * loads, so the same props mean the same screen and React can skip them.
+ * The rest of the props are kept stable below (`sides`, `held`, `reload`).
+ */
+const Board = memo(ChainTable);
+const OutlookRow = memo(Outlook);
+const BestPick = memo(BestTrade);
+const Shock = memo(SuddenMove);
+const Chart = memo(PriceChart);
+/** One empty list, so "no bars yet" is the same prop every render. */
+const NO_BARS: never[] = [];
 
 type Tab = 'desk' | 'trade' | 'orders' | 'strategy' | 'pnl' | 'errors';
 
@@ -123,8 +142,9 @@ export default function App() {
   // about this person's board, so both live as long as the browser does.
   const [storedOrder, setOrder] = usePersisted<ColumnKey[] | null>('chain:column-order', null);
   // A choice stored by an older build may not name every column this one has.
-  const chainColumns = normalise(storedCols);
-  const chainOrder = normaliseOrder(storedOrder);
+  // Memoised so the board sees the same columns until they are actually changed.
+  const chainColumns = useMemo(() => normalise(storedCols), [storedCols]);
+  const chainOrder = useMemo(() => normaliseOrder(storedOrder), [storedOrder]);
   const [storedView, setChainView] = usePersisted<'calls' | 'puts' | 'both'>('chain:view', 'both');
   const narrow = useMediaQuery('(max-width: 760px)');
   /*
@@ -335,7 +355,15 @@ export default function App() {
   const snap = data?.snapshot;
   snapRef.current = snap ?? null;
 
-  const held = useMemo(() => heldLegs(trade?.open), [trade?.open]);
+  // The positions arrive every second as a new list; the board only needs to
+  // hear about them when a held strike, its size or its P&L actually changes.
+  const heldKey = useMemo(() => JSON.stringify([...heldLegs(trade?.open)]), [trade?.open]);
+  const held = useMemo(() => new Map(JSON.parse(heldKey) as [string, HeldLeg][]), [heldKey]);
+  const sides = useMemo(
+    () => (data?.recommendation.ok ? data.recommendation.sides : []),
+    [data?.recommendation],
+  );
+  const reload = useCallback(() => { void load(); }, [load]);
   // The chain's move is up to five seconds old; recover the 05:30 price from
   // it and measure the ticking price against that, so the move ticks too.
   const dayMove = data?.market?.moves.find((m) => m.label === TODAY_MOVE) ?? null;
@@ -442,7 +470,7 @@ export default function App() {
             anything to warn about is one nobody reads by the end of the week.
           */}
           {data?.shocks?.length && snap ? (
-            <SuddenMove
+            <Shock
               shocks={data.shocks}
               window={shockWindow}
               onWindow={setShockWindow}
@@ -549,8 +577,8 @@ export default function App() {
             <div className="board-right">
               {data && snap && (
                 <ErrorBoundary where="Price chart">
-                  <PriceChart
-                    bars={candles?.bars ?? []}
+                  <Chart
+                    bars={candles?.bars ?? NO_BARS}
                     support={data.structure.peOiWall?.strike ?? null}
                     resistance={data.structure.ceOiWall?.strike ?? null}
                     spot={snap.spot}
@@ -580,7 +608,7 @@ export default function App() {
           */}
           {data && snap && (
             <div className="wide-row">
-              <Outlook outlook={data.outlook} direction={data.direction} containment={data.containment} />
+              <OutlookRow outlook={data.outlook} direction={data.direction} containment={data.containment} />
             </div>
           )}
 
@@ -639,11 +667,11 @@ export default function App() {
                   {data.market && <MoveSection market={data.market} snap={snap} />}
                 </CollapsibleCard>
 
-                <BestTrade
+                <BestPick
                   best={data.best}
                   legs={data.legs}
                   onSell={snap.live ? sellLeg : undefined}
-                  onSettingsChanged={() => void load()}
+                  onSettingsChanged={reload}
                 />
               </div>
 
@@ -690,10 +718,10 @@ export default function App() {
                 />
               </div>
               <ErrorBoundary where="Chain">
-                <ChainTable
+                <Board
                   legs={data.legs}
                   snap={snap}
-                  sides={data.recommendation.ok ? data.recommendation.sides : []}
+                  sides={sides}
                   columns={chainColumns}
                   columnOrder={chainOrder}
                   onSell={openTicket}

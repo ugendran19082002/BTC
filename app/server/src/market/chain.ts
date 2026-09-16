@@ -334,6 +334,34 @@ export const WHOLE_BOARD = 1_000;
 export const withinWindow = (strike: number, atm: number, step: number, width: number): boolean =>
   Math.abs(Math.round((strike - atm) / step)) <= width;
 
+/**
+ * The simulated probabilities, worked out once per ticker batch.
+ *
+ * `pReachNearZero` walks 2,000 paths through 24 Black-Scholes repricings for
+ * every strike worth selling -- about 350ms of arithmetic on a 74-strike
+ * board, on the one thread the server has. It was being done again on every
+ * chain request, every strategy tick and every best-pick check, and each run
+ * held every other request (the one-second status and price polls included)
+ * behind it. That was the lag: not the network, the event loop.
+ *
+ * The inputs cannot change between two reads of the same ticker batch -- the
+ * spot, the strike and the volatility are the batch -- so the answer is kept
+ * on the batch and dies with it. Time to expiry moves by the seconds between
+ * two reads, which the simulation cannot resolve and its own seed already
+ * rounds away. Same arithmetic, once.
+ */
+const probsByBatch = new WeakMap<Ticker[], Map<string, StrikeProbabilities>>();
+
+function probsFor(batch: Ticker[], t: Ticker, compute: () => StrikeProbabilities): StrikeProbabilities {
+  let byLeg = probsByBatch.get(batch);
+  if (!byLeg) { byLeg = new Map(); probsByBatch.set(batch, byLeg); }
+  const hit = byLeg.get(t.symbol);
+  if (hit) return hit;
+  const p = compute();
+  byLeg.set(t.symbol, p);
+  return p;
+}
+
 export async function liveChain(width = 25, wantExpiry?: string): Promise<Snapshot> {
   const tickers = await liveTickers();
   if (!tickers.length) throw new Error('ticker feed empty');
@@ -389,7 +417,7 @@ export async function liveChain(width = 25, wantExpiry?: string): Promise<Snapsh
       oi,
       volume: t.volume ?? null,
       ageMin: null,
-      probs: strikeProbabilities(cp, spot, strike, tte, iv, worthSimulating),
+      probs: probsFor(tickers, t, () => strikeProbabilities(cp, spot, strike, tte, iv, worthSimulating)),
       // Filled in by `finish` once the board's expected move is known.
       emBuffer: null,
       distancePct: ((strike - spot) / spot) * 100,
