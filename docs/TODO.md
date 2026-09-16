@@ -2893,3 +2893,65 @@ card at twice the height of the Market card beside it on a desk. From 600px
 the figures sit in two columns; "chosen on" and "behind it" are one line;
 the footnote is two sentences. Same figures, same words — half the height.
 The CSS for the removed price-alert list went with it.
+
+## Pushed, not polled
+
+*17 September 2026*
+
+Two feeds, each replaced by the thing that tells you when something changed.
+
+**Delta → server: the ticker socket.** The board was a REST download every
+eight seconds — every option ticker, whether or not anything had changed,
+on average four seconds old. Delta publishes the same tickers on a public
+socket (`wss://socket.india.delta.exchange`, channel `v2/ticker`) the moment
+they change. `market/delta-socket.ts` subscribes, drops everything that is
+not a BTC option before parsing it (a substring check; Delta sends ~250
+tickers a second across every product), folds the rest into a map, and hands
+the map on as a batch at most once a second and only if something changed.
+That batch lands in exactly the place the REST poll wrote — `tickerCache`,
+and the price — so `liveChain`, the strategy tick and the best-pick watcher
+cannot tell the two apart. The REST poll stays as the cold start (the full
+list is the truth about which contracts exist; the socket only ever hears
+about ones that change) and the fallback: it runs only while the socket has
+been silent for 20 seconds. A silent open socket is dropped and remade. No
+key, no authentication — the desk's credentials never go near this socket
+and it can place nothing. `/api/health` carries `feed.source`.
+
+**The simulation, off the request path.** A board that moves once a second
+would have re-run the near-zero simulation once a second, and the per-batch
+cache from the morning would have been worth nothing. It is now kept per
+contract with the inputs it was worked out from (spot to $25, volatility to
+half a point, expiry to five minutes — all below the simulation's own ±1%
+noise). A read whose inputs moved gets the kept figure *now* and queues the
+fresh one, computed one contract per turn of the event loop between
+requests. No request pays for the simulation twice; only the first sight of a
+contract pays at all. The closed-form figures are still worked out fresh
+every time. Five tests, including the one that matters: moved inputs hand
+back the kept figure at once and the fresh one after.
+
+**Server → page: `/api/stream`.** Server-Sent Events rather than a
+WebSocket, on purpose. Everything on this desk flows one way — the server
+tells, the page acts through ordinary POSTs that carry the session and the
+origin check — so a two-way socket would be a second door needing its own
+authentication and cross-origin rules. An EventSource is a GET with a cookie:
+the gate in `app.ts` covers it unchanged, the browser reconnects on its own,
+and it passes through nginx as HTTP (`X-Accel-Buffering: no`, plus an
+explicit `/api/stream` location in the web container's config). One tick a
+second, but a tick writes only what differs from the last one written
+(`StreamHub.publish`); a tab that connects late gets the current picture at
+once; a keep-alive event every 15 seconds. Timers run only while someone is
+listening.
+
+On the page, `useStream` earns `live` from frames and loses it to silence or
+a browser error, and the one-second polls run only while it is not live — so
+the screen never depends on the push to move. Where a poll and a frame both
+answer, the newer wins: a poll run after a button press must not be
+overwritten by a frame from a second earlier. The dot beside the price says
+which way updates are arriving.
+
+**First download, smaller.** The calendar library (17 KB gzipped, a sixth of
+the first load) was in the entry bundle for a picker that appears only when
+somebody chooses a past date. The IST helpers it shared a file with moved to
+`lib/ist-moment.ts`; the picker is lazy.
+
+Server 930 tests, web 711. Databases untouched: nothing here is stored.

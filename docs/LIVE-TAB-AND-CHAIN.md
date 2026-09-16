@@ -43,6 +43,18 @@ entry would take.
 > the chain *table* shows. Walls, max pain, PCR and every strategy decision see
 > every listed strike — see TODO.md, *The wall the strategy could not see*.
 
+**How the board arrives.** Delta's public ticker socket (`v2/ticker`,
+`delta-socket.ts`) delivers every BTC option ticker the moment it changes;
+the server folds them into a batch at most once a second, and that batch is
+what `liveChain` reads. The REST download (`/tickers`) is the cold start and
+the fallback — it runs only while the socket has been silent for 20 seconds.
+`/api/health` says which one is the feed right now.
+
+**How it reaches the page.** `/api/stream` (Server-Sent Events) pushes the
+status, the price and "the board changed" as they change; the one-second
+polls run only while the stream is not live. The chain itself is still
+fetched every five seconds — its parameters are the tab's own.
+
 ---
 
 ## 2. Per-strike columns
