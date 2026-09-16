@@ -20,6 +20,8 @@ import type { MtmSample } from './pnl-history.js';
 import { noteError } from '../observability/errors.js';
 import { alertFor, bookWentFlat, daySummaryFor } from '../notify/messages.js';
 import { TelegramNotifier } from '../notify/telegram.js';
+import { alertText, judge } from '../notify/premium-alerts.js';
+import { liveTickers } from '../market/delta.js';
 import type { ExchangePort } from './exchange/port.js';
 import type { ExchangeOrder, ExchangePosition, TradeState } from './types.js';
 
@@ -37,9 +39,13 @@ import type { ExchangeOrder, ExchangePosition, TradeState } from './types.js';
 const POLL_MS = 1_000;
 /** How often the day's P&L is written down. A minute draws a day in 720 points. */
 const MTM_SAMPLE_MS = 60_000;
+const ALERT_CHECK_MS = 20_000;
 /** Long enough that a one-second poll is one call; short enough to feel live. */
 const POSITIONS_TTL_MS = 800;
 const QUOTE_TTL_MS = 800;
+const BALANCE_TTL_MS = 2_000;
+/** How long one status answer serves every poll that arrives after it. */
+export const STATUS_TTL_MS = 900;
 /** Where the chosen short cap is kept, so it outlives a restart. */
 export const SHORT_CAP_KEY = 'max_short_contracts';
 export type DeskMode = 'live' | 'paper';
@@ -235,6 +241,10 @@ export class TradingService {
     this.timer.unref?.();
     this.mtmTimer ??= setInterval(() => { void this.sampleMtm(); }, MTM_SAMPLE_MS);
     this.mtmTimer.unref?.();
+    // Premium alerts ride the ticker cache, which is refreshed every eight
+    // seconds; checking every twenty is often enough for a doorbell.
+    this.alertTimer ??= setInterval(() => { void this.checkPremiumAlerts(); }, ALERT_CHECK_MS);
+    this.alertTimer.unref?.();
     this.store.pruneMtm(Date.now());
     return recovered;
   }
@@ -242,9 +252,39 @@ export class TradingService {
   stop() {
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
     if (this.mtmTimer) { clearInterval(this.mtmTimer); this.mtmTimer = null; }
+    if (this.alertTimer) { clearInterval(this.alertTimer); this.alertTimer = null; }
   }
 
   private mtmTimer: NodeJS.Timeout | null = null;
+  private alertTimer: NodeJS.Timeout | null = null;
+
+  /**
+   * "Tell me when this strike pays 5."
+   *
+   * Every live alert against the current bid. Marked fired in the journal
+   * *before* the message goes, so a restart between the two cannot send it
+   * twice -- a doorbell rung twice is a siren. Honours the alerts switch: an
+   * alert set while messages are silenced still fires on the record and is
+   * simply not sent, which the list shows.
+   */
+  async checkPremiumAlerts(now = Date.now()): Promise<number> {
+    const live = this.store.livePremiumAlerts();
+    if (!live.length) return 0;
+    const tickers = await liveTickers().catch(() => []);
+    const bids = new Map(tickers.map((t) => [t.symbol, Number(t.quotes?.best_bid ?? NaN)] as const));
+    let fired = 0;
+    for (const a of live) {
+      const raw = bids.get(a.symbol);
+      const v = judge(a, { bid: raw === undefined || !Number.isFinite(raw) ? null : raw, nowTs: Math.floor(now / 1000) });
+      if (!v.fire) continue;
+      if (!this.store.firePremiumAlert(a.id, now, v.bid)) continue;
+      fired++;
+      if (this.notifier && this.alertsOn) {
+        this.notifier.notify({ key: `premium:${a.id}`, text: alertText(a, v.bid, this.currentMode) });
+      }
+    }
+    return fired;
+  }
 
   /**
    * The day so far, in one place: booked, still open, and Delta's charges on
@@ -462,6 +502,54 @@ export class TradingService {
     const usd = await this.exchange.getBalanceUsd();
     this.lastBalance = usd;
     return usd;
+  }
+
+  /**
+   * The balance for the screen, cached like the positions.
+   *
+   * `balance()` above is what the gates read and stays a real read. This one
+   * feeds the account card, which is polled once a second -- and on 16
+   * September that poll was taking a second to answer, because every request
+   * asked Delta for the balance again. Two seconds of staleness on a number
+   * that moves with fills is nothing; a screen that lags its own poll is not.
+   */
+  private balanceCache: { usd: number; at: number } | null = null;
+
+  async balanceForDisplay(now = Date.now()): Promise<number> {
+    if (this.balanceCache && now - this.balanceCache.at < BALANCE_TTL_MS) return this.balanceCache.usd;
+    const usd = await this.balance();
+    this.balanceCache = { usd, at: now };
+    return usd;
+  }
+
+  /**
+   * One computation of something expensive at a time, shared by everyone who
+   * asks while it runs, and kept for `ttlMs` after.
+   *
+   * The status route fans out to Delta -- balance, positions, a quote and the
+   * book per open symbol -- and is polled once a second by every open tab. The
+   * per-read caches under it were 800ms, so a request that took a second to
+   * answer missed every one of them, and two tabs meant two fan-outs. Measured
+   * before this: 355 status calls in fifteen minutes averaging 994ms, which is
+   * a poll saturating its own server. With this, the second caller inside a
+   * second gets the first caller's answer, and the fan-out happens at most once
+   * a second however many are watching.
+   */
+  private coalesced = new Map<string, { at: number; value: unknown; inflight: Promise<unknown> | null }>();
+
+  async coalesce<T>(key: string, ttlMs: number, compute: () => Promise<T>, now = Date.now()): Promise<T> {
+    const hit = this.coalesced.get(key);
+    if (hit?.inflight) return hit.inflight as Promise<T>;
+    if (hit && now - hit.at < ttlMs) return hit.value as T;
+    // Aged from when the read *started*, not when it returned: a slow answer is
+    // already old by the time it arrives, and dating it later would let a
+    // second-old figure serve a further second.
+    const inflight = compute().then(
+      (value) => { this.coalesced.set(key, { at: now, value, inflight: null }); return value; },
+      (e) => { this.coalesced.set(key, { at: hit?.at ?? 0, value: hit?.value, inflight: null }); throw e; },
+    );
+    this.coalesced.set(key, { at: hit?.at ?? 0, value: hit?.value, inflight });
+    return inflight;
   }
 
   /** What the desk will let today lose, given what is in the account. */

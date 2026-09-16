@@ -3,6 +3,14 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { BestTrade } from '@/components/desk/BestTrade';
 import type { BestTrade as BestTradeData, Leg } from '@/types/desk';
 
+const getPremiumAlerts = vi.fn();
+vi.mock('@/api/trade', () => ({
+  getPremiumAlerts: (...a: unknown[]) => getPremiumAlerts(...a),
+  addPremiumAlert: vi.fn(),
+  deletePremiumAlert: vi.fn(),
+}));
+getPremiumAlerts.mockResolvedValue({ alerts: [], telegram: { configured: true, on: true } });
+
 /**
  * One trade, named.
  *
@@ -42,13 +50,13 @@ const legs = [{ cp: 'P', strike: 75_400, bid: 11.92 } as unknown as Leg];
 
 describe('the best trade card', () => {
   it('[critical] names one order, in the words it would be placed in', () => {
-    render(<BestTrade best={data()} legs={legs} />);
+    render(<BestTrade best={data()} legs={legs} expiry="160926" />);
     expect(screen.getByText('SELL PE 75,400')).toBeInTheDocument();
     expect(screen.getByLabelText('rank')).toHaveTextContent('81/100');
   });
 
   it('[critical] shows the six numbers it was chosen on', () => {
-    render(<BestTrade best={data()} legs={legs} />);
+    render(<BestTrade best={data()} legs={legs} expiry="160926" />);
     const dl = within(screen.getByLabelText('the pick'));
     expect(dl.getByText('Premium (bid)').nextSibling).toHaveTextContent('11.92');
     expect(dl.getByText('Expiry OTM').nextSibling).toHaveTextContent('95.8%');
@@ -61,7 +69,7 @@ describe('the best trade card', () => {
   });
 
   it('[critical] a loss with a hedge is a number, and says which hedge caps it', () => {
-    render(<BestTrade best={data()} legs={legs} />);
+    render(<BestTrade best={data()} legs={legs} expiry="160926" />);
     const row = within(screen.getByLabelText('the pick')).getByText('Max loss (with hedge)').parentElement!;
     expect(row).toHaveTextContent('$188');
     expect(row).toHaveTextContent('buying 75,000 at 6.20');
@@ -73,6 +81,7 @@ describe('the best trade card', () => {
       <BestTrade
         best={data({ pick: pick({ maxLossUsd: null, creditRisk: null, hedge: null }) })}
         legs={legs}
+      expiry="160926"
       />,
     );
     expect(screen.getByText(/uncapped — no hedge/)).toBeInTheDocument();
@@ -82,47 +91,47 @@ describe('the best trade card', () => {
 
   it('[critical] only a pick that clears and the engine agrees with is "Recommended"', () => {
     // Three different states, and the word belongs to one of them.
-    const { rerender } = render(<BestTrade best={data()} legs={legs} />);
+    const { rerender } = render(<BestTrade best={data()} legs={legs} expiry="160926" />);
     expect(screen.getByText('Recommended')).toBeInTheDocument();
-    rerender(<BestTrade best={data({ bestOfNone: true, why: 'No strike clears the hard rules today.' })} legs={legs} />);
+    rerender(<BestTrade best={data({ bestOfNone: true, why: 'No strike clears the hard rules today.' })} legs={legs} expiry="160926" />);
     expect(screen.queryByText('Recommended')).toBeNull();
     expect(screen.getByText('Nothing clears')).toBeInTheDocument();
   });
 
   it('[critical] says whether the tested engine picked the same strike', () => {
-    const { rerender } = render(<BestTrade best={data()} legs={legs} />);
+    const { rerender } = render(<BestTrade best={data()} legs={legs} expiry="160926" />);
     expect(screen.getByText('Recommended')).toBeInTheDocument();
-    rerender(<BestTrade best={data({ agreesWithEngine: false })} legs={legs} />);
+    rerender(<BestTrade best={data({ agreesWithEngine: false })} legs={legs} expiry="160926" />);
     expect(screen.getByText('Engine differs')).toBeInTheDocument();
     expect(screen.getByText(/follow the engine/)).toBeInTheDocument();
   });
 
   it('[critical] says on its face that this ranking is not the tested one', () => {
-    render(<BestTrade best={data()} legs={legs} />);
+    render(<BestTrade best={data()} legs={legs} expiry="160926" />);
     expect(screen.getByText(/never been through the cross-period screen/)).toBeInTheDocument();
   });
 
   it('[critical] touch is shown, and said to be no part of the ranking', () => {
-    render(<BestTrade best={data()} legs={legs} />);
+    render(<BestTrade best={data()} legs={legs} expiry="160926" />);
     const touch = within(screen.getByLabelText('the pick')).getByText('Touch');
     expect(touch.getAttribute('title') ?? touch.parentElement?.textContent).toBeTruthy();
     expect(screen.getByTitle(/never ranked on — touching is not losing/)).toBeInTheDocument();
   });
 
   it('names the two behind it, so "why not that one" is answerable', () => {
-    render(<BestTrade best={data()} legs={legs} />);
+    render(<BestTrade best={data()} legs={legs} expiry="160926" />);
     expect(screen.getByText(/Behind it: PE 75,200 \(74\), PE 75,000 \(70\)/)).toBeInTheDocument();
   });
 
   it('[critical] hands the leg to the ticket rather than placing anything', () => {
     const onSell = vi.fn();
-    render(<BestTrade best={data()} legs={legs} onSell={onSell} />);
+    render(<BestTrade best={data()} legs={legs} expiry="160926" onSell={onSell} />);
     fireEvent.click(screen.getByRole('button', { name: /Take it to the ticket/ }));
     expect(onSell).toHaveBeenCalledWith(legs[0]);
   });
 
   it('offers no ticket on a board that cannot be traded', () => {
-    render(<BestTrade best={data()} legs={legs} />);
+    render(<BestTrade best={data()} legs={legs} expiry="160926" />);
     expect(screen.queryByRole('button', { name: /ticket/ })).toBeNull();
   });
 
@@ -131,6 +140,7 @@ describe('the best trade card', () => {
       <BestTrade
         best={data({ pick: null, runnersUp: [], eligible: 0, why: 'Nothing on this board can be sold: no strike has a bid.' })}
         legs={legs}
+      expiry="160926"
       />,
     );
     expect(screen.getByText(/no strike has a bid/)).toBeInTheDocument();
@@ -149,25 +159,28 @@ describe('the best trade card', () => {
           pick: pick({ failing: ['Traded 2% of its open interest today, under the 10% bar.', 'Last traded 41 minutes ago.'] }),
         })}
         legs={legs}
+      expiry="160926"
       />,
     );
     expect(screen.getByText('Nothing clears')).toBeInTheDocument();
     expect(screen.getByText(/came closest/)).toBeInTheDocument();
-    const failing = within(screen.getByLabelText('what it is failing'));
+    // the failures sit inside the warning, where "below" points -- not under the figures
+    const banner = screen.getByText(/came closest/).parentElement!;
+    const failing = within(within(banner).getByLabelText('what it is failing'));
     expect(failing.getByText(/under the 10% bar/)).toBeInTheDocument();
     expect(failing.getByText(/Last traded 41 minutes ago/)).toBeInTheDocument();
     expect(screen.getByText('SELL PE 75,400')).toBeInTheDocument();
   });
 
   it('an eligible pick shows no failures', () => {
-    render(<BestTrade best={data()} legs={legs} />);
+    render(<BestTrade best={data()} legs={legs} expiry="160926" />);
     expect(screen.queryByLabelText('what it is failing')).toBeNull();
   });
 
   it('a call pick is green and a put pick is red, as on the board above', () => {
-    const { rerender } = render(<BestTrade best={data()} legs={legs} />);
+    const { rerender } = render(<BestTrade best={data()} legs={legs} expiry="160926" />);
     expect(screen.getByText('SELL PE 75,400').className).toContain('pe');
-    rerender(<BestTrade best={data({ pick: pick({ cp: 'C', side: 'CE', strike: 78_000 }) })} legs={legs} />);
+    rerender(<BestTrade best={data({ pick: pick({ cp: 'C', side: 'CE', strike: 78_000 }) })} legs={legs} expiry="160926" />);
     expect(screen.getByText('SELL CE 78,000').className).toContain('ce');
   });
 });

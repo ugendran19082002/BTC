@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { stopPriceFor, targetPriceFor, tradingService } from '../../trading/service.js';
+import { STATUS_TTL_MS, stopPriceFor, targetPriceFor, tradingService } from '../../trading/service.js';
 import { lotsToContracts } from '../../trading/money.js';
 import { DEFAULT_LIMITS, precheck } from '../../trading/precheck.js';
 import {
@@ -14,6 +14,7 @@ import {
   ORDER_STATUSES, istDayEnd, istDayStart, istToday, orderOutcomeOf, orderStatusOf,
 } from '../../trading/status.js';
 import { refuse } from '../refuse.js';
+import { expiryTsOf } from '../../market/chain.js';
 import { parseAddBody, toAddRequest, type AddBody } from '../add-body.js';
 import { parseCloseBody, type CloseBody } from '../close-body.js';
 
@@ -224,9 +225,17 @@ export function registerTradeRoutes(app: FastifyInstance) {
   // Recovery runs once, at startup, before anything can be placed.
   void svc.start();
 
-  app.get('/api/trade/status', async () => {
+  /*
+   * Computed at most once per STATUS_TTL_MS however many tabs poll it, and
+   * every poll that arrives while it is being computed waits for that answer
+   * rather than starting another. See `coalesce` in the service for the
+   * numbers that made this necessary.
+   */
+  app.get('/api/trade/status', async () => svc.coalesce('status', STATUS_TTL_MS, () => statusNow()));
+
+  async function statusNow() {
     const [balance, positions] = await Promise.all([
-      svc.balance().catch(() => null),
+      svc.balanceForDisplay().catch(() => null),
       svc.positionsForDisplay().catch(() => []),
     ]);
     const trades = svc.openTrades();
@@ -287,7 +296,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
         maxShortContracts: svc.maxShortContracts,
       },
     };
-  });
+  }
 
   /**
    * Throw the switch between the real exchange and the simulator.
@@ -555,6 +564,38 @@ export function registerTradeRoutes(app: FastifyInstance) {
    * journal, so a silence chosen on a quiet afternoon survives the next deploy.
    * Nothing about the trading engine changes either way.
    */
+  /*
+   * "Tell me when this strike pays 5."
+   *
+   * One-shot alerts on a contract's bid, set from the best-trade card. The
+   * expiry comes from the symbol, so an alert cannot outlive the contract it
+   * names. Listed with the fired ones from the last day, because "did it ever
+   * go off" is the question asked of a doorbell.
+   */
+  app.get('/api/trade/premium-alerts', async () => ({
+    alerts: svc.store.recentPremiumAlerts(Date.now() - 86_400_000),
+    telegram: { configured: svc.notifier !== null, on: svc.alertsOn },
+  }));
+
+  app.post('/api/trade/premium-alerts', async (req, reply) => {
+    const b = (req.body ?? {}) as { symbol?: unknown; threshold?: unknown };
+    const symbol = typeof b.symbol === 'string' ? b.symbol.trim() : '';
+    const threshold = Number(b.threshold);
+    if (!/^[CP]-BTC-\d+-\d{6}$/.test(symbol)) { reply.code(400); return { error: 'symbol must be a BTC option, like C-BTC-80000-160926' }; }
+    if (!Number.isFinite(threshold) || !(threshold > 0)) { reply.code(400); return { error: 'threshold must be a price above zero' }; }
+    const expiryTs = expiryTsOf(symbol.split('-')[3]!);
+    if (expiryTs * 1000 <= Date.now()) { reply.code(400); return { error: 'that contract has already settled' }; }
+    const alert = svc.store.addPremiumAlert({ symbol, threshold, expiryTs, now: Date.now() });
+    return { ok: true, alert };
+  });
+
+  app.delete('/api/trade/premium-alerts/:id', async (req, reply) => {
+    const id = Number((req.params as { id?: string }).id);
+    if (!Number.isInteger(id)) { reply.code(400); return { error: 'id must be a number' }; }
+    if (!svc.store.deletePremiumAlert(id)) { reply.code(404); return { error: 'no such alert' }; }
+    return { ok: true };
+  });
+
   app.post('/api/trade/alerts', async (req, reply) => {
     const b = (req.body ?? {}) as { on?: unknown };
     if (typeof b.on !== 'boolean') { reply.code(400); return { error: 'on must be true or false' }; }

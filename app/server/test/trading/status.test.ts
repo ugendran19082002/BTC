@@ -109,3 +109,48 @@ test("today in IST is the evening's date, not yesterday's", () => {
   // 01:00 IST on the 9th is 19:30 UTC on the 8th -- still the 9th in Chennai
   assert.equal(istToday(Date.UTC(2026, 8, 8, 19, 30)), '2026-09-09');
 });
+
+/**
+ * One fan-out per second, however many tabs are watching.
+ *
+ * Measured on 16 September before this existed: 355 status calls in fifteen
+ * minutes averaging 994ms — a one-second poll saturating its own server,
+ * because the reads under it were cached for 800ms and a request that took a
+ * second missed every cache. The fix is not a longer cache; it is that callers
+ * inside the window share one computation.
+ */
+test('[critical] callers inside the window share one computation, and one answer', async () => {
+  const { TradingService } = await import('../../src/trading/service.js');
+  const svc = new TradingService();
+  let runs = 0;
+  const slow = () => new Promise<number>((r) => setTimeout(() => r(++runs), 30));
+  const [a, b, c] = await Promise.all([
+    svc.coalesce('k', 1_000, slow),
+    svc.coalesce('k', 1_000, slow),
+    svc.coalesce('k', 1_000, slow),
+  ]);
+  assert.equal(runs, 1, 'three callers, one fan-out');
+  assert.deepEqual([a, b, c], [1, 1, 1]);
+  // inside the window: still the same answer, no new work
+  assert.equal(await svc.coalesce('k', 1_000, slow), 1);
+  assert.equal(runs, 1);
+});
+
+test('after the window a fresh computation runs, and a failure does not poison the cache', async () => {
+  const { TradingService } = await import('../../src/trading/service.js');
+  const svc = new TradingService();
+  let runs = 0;
+  const t0 = 1_000_000;
+  assert.equal(await svc.coalesce('k', 500, async () => ++runs, t0), 1);
+  assert.equal(await svc.coalesce('k', 500, async () => ++runs, t0 + 600), 2, 'past the window');
+  await assert.rejects(svc.coalesce('k', 500, async () => { throw new Error('delta down'); }, t0 + 1_300));
+  // the last good answer is still served inside its own window, and a retry works
+  assert.equal(await svc.coalesce('k', 500, async () => ++runs, t0 + 1_400), 3);
+});
+
+test('different keys do not share', async () => {
+  const { TradingService } = await import('../../src/trading/service.js');
+  const svc = new TradingService();
+  assert.equal(await svc.coalesce('a', 1_000, async () => 'A'), 'A');
+  assert.equal(await svc.coalesce('b', 1_000, async () => 'B'), 'B');
+});

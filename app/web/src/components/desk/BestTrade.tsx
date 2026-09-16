@@ -3,6 +3,7 @@ import { Card, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { KV } from '@/components/ui/kv';
+import { PremiumAlert } from '@/components/desk/PremiumAlert';
 import { price, strike as fmtStrike, usd } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -30,10 +31,15 @@ import { cn } from '@/lib/utils';
  * The button hands the leg to the order ticket. Nothing is sent from here; the
  * ticket runs every gate again.
  */
-export function BestTrade({ best, legs, onSell }: {
+/** The contract's symbol, the way Delta names it: C-BTC-80000-160926. */
+const legSymbol = (leg: Leg, expiry: string) => `${leg.cp}-BTC-${leg.strike}-${expiry}`;
+
+export function BestTrade({ best, legs, expiry, onSell }: {
   best: BestTradeData;
   /** The board, so the ticket gets the real leg rather than a copy of the card. */
   legs: Leg[];
+  /** The expiry code the board is for, e.g. 160926 -- the alert needs the full symbol. */
+  expiry: string;
   onSell?: (leg: Leg) => void;
 }) {
   const p = best.pick;
@@ -69,9 +75,20 @@ export function BestTrade({ best, legs, onSell }: {
             that this is not a recommendation.
           */}
           {best.bestOfNone && (
-            <p className="m-0 mb-2 rounded-md border border-solid border-[var(--warn)]/40 bg-[var(--warn-bg,transparent)] px-2.5 py-2 text-[12px] leading-snug text-[var(--warn)]">
-              {best.why}
-            </p>
+            <div className="m-0 mb-2 rounded-md border border-solid border-[var(--warn)]/40 bg-[var(--warn-bg,transparent)] px-2.5 py-2 text-[12px] leading-snug text-[var(--warn)]">
+              <p className="m-0">{best.why}</p>
+              {/*
+                The failures, here, where the sentence says "below" -- not ten
+                rows further down under the figures. What a strike is failing is
+                the reason it is not a recommendation, and that has to be read
+                before the numbers make it look like one.
+              */}
+              {p.failing.length > 0 && (
+                <ul aria-label="what it is failing" className="m-0 mt-1.5 list-none p-0 text-[11.5px] leading-snug text-[var(--down)]">
+                  {p.failing.map((f) => <li key={f}>{f}</li>)}
+                </ul>
+              )}
+            </div>
           )}
 
           <div className="bt-head">
@@ -133,12 +150,6 @@ export function BestTrade({ best, legs, onSell }: {
             </KV>
           </dl>
 
-          {p.failing.length > 0 && (
-            <ul aria-label="what it is failing" className="m-0 mt-2 list-none p-0 text-[11.5px] leading-snug text-[var(--down)]">
-              {p.failing.map((f) => <li key={f}>{f}</li>)}
-            </ul>
-          )}
-
           <p className="m-0 mt-2 text-[11.5px] leading-snug text-muted-foreground">
             Chosen on: {p.reasons.join(' · ')}.
           </p>
@@ -148,6 +159,19 @@ export function BestTrade({ best, legs, onSell }: {
               Behind it:{' '}
               {best.runnersUp.map((r) => `${r.side} ${fmtStrike(r.strike)} (${r.rank})`).join(', ')}.
             </p>
+          )}
+
+          {/*
+            The doorbell for this strike, under the numbers and above the
+            ticket: "tell me when it pays 5". Its own switch, nothing to do
+            with the header's fill alerts, and off until a level is typed.
+          */}
+          {leg && (
+            <PremiumAlert
+              symbol={legSymbol(leg, expiry)}
+              bidNow={leg.bid ?? null}
+              defaultThreshold={5}
+            />
           )}
 
           {onSell && leg && (
