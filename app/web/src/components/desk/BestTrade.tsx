@@ -45,10 +45,11 @@ export function BestTrade({ best, legs, onSell }: {
     <Card className="besttrade">
       <CardTitle
         right={
-          p === null ? <Badge tone="neutral">nothing clears</Badge>
-            : best.agreesWithEngine
-              ? <Badge tone="ok">Engine agrees</Badge>
-              : <Badge tone="warn">Engine differs</Badge>
+          p === null ? <Badge tone="neutral">nothing to sell</Badge>
+            : best.bestOfNone ? <Badge tone="warn">Nothing clears</Badge>
+              : best.agreesWithEngine
+                ? <Badge tone="ok">Engine agrees</Badge>
+                : <Badge tone="warn">Engine differs</Badge>
         }
       >
         Best trade · this expiry
@@ -58,6 +59,19 @@ export function BestTrade({ best, legs, onSell }: {
         <p className="m-0 text-[12.5px] text-muted-foreground">{best.why}</p>
       ) : (
         <>
+          {/*
+            The morning nothing clears.
+            An empty card cannot say which strike came closest or what it was
+            failing, and on that morning those are the only two things worth
+            knowing. So the board is ranked anyway and the card says plainly
+            that this is not a recommendation.
+          */}
+          {best.bestOfNone && (
+            <p className="m-0 mb-2 rounded-md border border-solid border-[var(--warn)]/40 bg-[var(--warn-bg,transparent)] px-2.5 py-2 text-[12px] leading-snug text-[var(--warn)]">
+              {best.why}
+            </p>
+          )}
+
           <div className="bt-head">
             <span className={cn('bt-order', p.side === 'CE' ? 'ce' : 'pe')}>
               SELL {p.side} {fmtStrike(p.strike)}
@@ -116,6 +130,12 @@ export function BestTrade({ best, legs, onSell }: {
               </span>
             </KV>
           </dl>
+
+          {p.failing.length > 0 && (
+            <ul aria-label="what it is failing" className="m-0 mt-2 list-none p-0 text-[11.5px] leading-snug text-[var(--down)]">
+              {p.failing.map((f) => <li key={f}>{f}</li>)}
+            </ul>
+          )}
 
           <p className="m-0 mt-2 text-[11.5px] leading-snug text-muted-foreground">
             Chosen on: {p.reasons.join(' · ')}.

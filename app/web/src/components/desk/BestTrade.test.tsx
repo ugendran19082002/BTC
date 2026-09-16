@@ -24,6 +24,7 @@ const pick = (over: Partial<NonNullable<BestTradeData['pick']>> = {}): NonNullab
   hedge: { strike: 75_000, askUsd: 6.2, widthUsd: 400 },
   rank: 81,
   reasons: ['pays 46% of what it can lose', '95.8% to expire worthless', '1.54× the expected move away', 'liquidity 78/100'],
+  failing: [],
   ...over,
 });
 
@@ -33,6 +34,7 @@ const data = (over: Partial<BestTradeData> = {}): BestTradeData => ({
   eligible: 6,
   why: null,
   agreesWithEngine: true,
+  bestOfNone: false,
   ...over,
 });
 
@@ -115,16 +117,42 @@ describe('the best trade card', () => {
     expect(screen.queryByRole('button', { name: /ticket/ })).toBeNull();
   });
 
-  it('[critical] nothing eligible is an answer, with the reason', () => {
+  it('[critical] a board with nothing to sell says so, and shows no pick', () => {
     render(
       <BestTrade
-        best={data({ pick: null, runnersUp: [], eligible: 0, why: 'No strike on this board clears the hard rules. The Signal column says which rule each one is failing.' })}
+        best={data({ pick: null, runnersUp: [], eligible: 0, why: 'Nothing on this board can be sold: no strike has a bid.' })}
         legs={legs}
       />,
     );
-    expect(screen.getByText(/No strike on this board clears the hard rules/)).toBeInTheDocument();
-    expect(screen.getByText('nothing clears')).toBeInTheDocument();
+    expect(screen.getByText(/no strike has a bid/)).toBeInTheDocument();
+    expect(screen.getByText('nothing to sell')).toBeInTheDocument();
     expect(screen.queryByLabelText('the pick')).toBeNull();
+  });
+
+  it('[critical] a morning when nothing clears names the closest and what it fails', () => {
+    // An empty card cannot say which strike came nearest or why it was refused.
+    render(
+      <BestTrade
+        best={data({
+          bestOfNone: true,
+          eligible: 0,
+          why: 'No strike clears the hard rules today. This is the one that came closest — what it is failing is below.',
+          pick: pick({ failing: ['Traded 2% of its open interest today, under the 10% bar.', 'Last traded 41 minutes ago.'] }),
+        })}
+        legs={legs}
+      />,
+    );
+    expect(screen.getByText('Nothing clears')).toBeInTheDocument();
+    expect(screen.getByText(/came closest/)).toBeInTheDocument();
+    const failing = within(screen.getByLabelText('what it is failing'));
+    expect(failing.getByText(/under the 10% bar/)).toBeInTheDocument();
+    expect(failing.getByText(/Last traded 41 minutes ago/)).toBeInTheDocument();
+    expect(screen.getByText('SELL PE 75,400')).toBeInTheDocument();
+  });
+
+  it('an eligible pick shows no failures', () => {
+    render(<BestTrade best={data()} legs={legs} />);
+    expect(screen.queryByLabelText('what it is failing')).toBeNull();
   });
 
   it('a call pick is green and a put pick is red, as on the board above', () => {

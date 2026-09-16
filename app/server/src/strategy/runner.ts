@@ -133,10 +133,15 @@ export class StrategyRunner {
     }
   }
 
-  /** Tell the phone, if Telegram is set up. Never allowed to stop a run. */
+  /**
+   * Tell the phone, if Telegram is set up and alerts are switched on. Never
+   * allowed to stop a run: a message that cannot be sent is not a reason to
+   * stop trading, and a message somebody silenced is not a reason either.
+   */
   private alert(make: (ctx: AlertContext) => Alert | null): void {
     try {
       const svc = tradingService();
+      if (!svc.alertsOn) return;
       const a = make({ mode: svc.mode });
       if (a) svc.notifier?.notify(a);
     } catch (e) {

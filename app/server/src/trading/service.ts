@@ -74,6 +74,27 @@ export class TradingService {
   /** Phone alerts when an entry or an exit fills. Null unless TG_TOKEN and TG_CHAT_ID are both set. */
   readonly notifier: TelegramNotifier | null;
 
+  /**
+   * Whether fill alerts actually go out.
+   *
+   * Separate from whether Telegram is *configured*, and deliberately so: a bot
+   * token in `.env` says messages can be sent, and this says somebody wants
+   * them right now. Turning them off on a quiet afternoon should not mean
+   * editing a file and restarting the desk -- and an alert you have silenced
+   * for a reason is not an alert you want back at the next deploy, so the
+   * choice is remembered in the journal rather than in memory.
+   *
+   * It silences the desk's own messages only. The trading engine is untouched:
+   * positions still open, protect and close exactly as before.
+   */
+  get alertsOn(): boolean {
+    return this.store.getSetting('alerts_enabled') !== '0';
+  }
+
+  setAlertsOn(on: boolean): void {
+    this.store.setSetting('alerts_enabled', on ? '1' : '0');
+  }
+
   constructor(limits: Partial<RiskLimits> = {}) {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;
@@ -137,7 +158,7 @@ export class TradingService {
         if (event.t === 'fill' && event.role === 'take_profit' && plan.strategyId) {
           for (const listener of this.targetFillListeners) setTimeout(() => listener(plan), 0);
         }
-        if (!this.notifier) return;
+        if (!this.notifier || !this.alertsOn) return;
         const alert = alertFor(event, before, after, plan, { mode: this.currentMode });
         if (alert) this.notifier.notify(alert);
         // Only a closing event can end the day, so only then is the book read.
@@ -169,7 +190,7 @@ export class TradingService {
     const summary = daySummaryFor(this.store.between(dayStart, now + 1), {
       mode: this.currentMode, dayStart, at: now, spot: this.lastSpot, workingOrders,
     });
-    if (summary) this.notifier?.notify(summary);
+    if (summary && this.alertsOn) this.notifier?.notify(summary);
   }
 
   get mode(): DeskMode { return this.currentMode; }

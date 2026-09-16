@@ -454,6 +454,8 @@ export type BestTradeLeg = {
   hedge: { strike: number; askUsd: number; widthUsd: number } | null;
   rank: number;
   reasons: string[];
+  /** Hard rules this strike is failing. Empty on an eligible one. */
+  failing: string[];
 };
 
 export type BestTrade = {
@@ -463,6 +465,8 @@ export type BestTrade = {
   why: string | null;
   /** True when the tested engine picked the same strike. */
   agreesWithEngine: boolean;
+  /** True when nothing cleared the hard rules and this is the closest. */
+  bestOfNone: boolean;
 };
 
 /**

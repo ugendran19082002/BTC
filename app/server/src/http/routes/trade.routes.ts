@@ -265,6 +265,13 @@ export function registerTradeRoutes(app: FastifyInstance) {
       /** Every open position added up, so the tab can say it in one number. */
       unrealisedPnlUsd: open.reduce((n, t) => n + (t.live.unrealisedPnl ?? 0), 0),
       alarms: svc.alarms,
+      /**
+       * Fill alerts: whether Telegram is set up at all, and whether messages
+       * are switched on right now. Two different facts -- the first is a
+       * deployment question, the second is a preference, and a screen that
+       * conflates them offers a switch that does nothing.
+       */
+      alerts: { configured: svc.notifier !== null, on: svc.alertsOn },
       /** Booked today, in USD. The daily-loss gate reads this; now so can you. */
       realisedTodayUsd: svc.store.realisedSince(startOfDayIst()),
       /**
@@ -538,6 +545,21 @@ export function registerTradeRoutes(app: FastifyInstance) {
     const state = await svc.cancelAdd(tradeId);
     if (!state) { reply.code(404); return { error: 'no such trade' }; }
     return { ok: true, trade: state };
+  });
+
+  /**
+   * Fill alerts on or off.
+   *
+   * Separate from whether Telegram is configured: a token in `.env` says
+   * messages *can* go out, this says somebody wants them now. Remembered in the
+   * journal, so a silence chosen on a quiet afternoon survives the next deploy.
+   * Nothing about the trading engine changes either way.
+   */
+  app.post('/api/trade/alerts', async (req, reply) => {
+    const b = (req.body ?? {}) as { on?: unknown };
+    if (typeof b.on !== 'boolean') { reply.code(400); return { error: 'on must be true or false' }; }
+    svc.setAlertsOn(b.on);
+    return { ok: true, alerts: { configured: svc.notifier !== null, on: svc.alertsOn } };
   });
 
   /** Move the stop or the target on a position that is already open. */

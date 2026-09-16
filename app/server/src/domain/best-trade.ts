@@ -24,9 +24,13 @@ import { LOT_BTC } from './score.js';
  *
  * ## How the ranking works
  *
- * Eligibility first, and it is absolute: a strike failing a hard rule is not
- * ranked at all, however well it scores. `ev.ts` already decides that -- a
- * `tier` of `avoid` means a rule that matters is failing.
+ * Eligibility first: a strike failing a hard rule never outranks one that
+ * clears them, however well it scores. `ev.ts` decides that -- a `tier` of
+ * `avoid` means a rule that matters is failing.
+ *
+ * On a morning when **nothing** clears, the board is ranked anyway and the card
+ * says so. An empty card cannot tell you which strike came closest or what it
+ * was failing, and those are the two things worth knowing on that morning.
  *
  * Then four parts, each 0..1, weighted. They are stated here rather than buried
  * because the only honest thing to say about the weights is that they are a
@@ -85,10 +89,12 @@ export type BestTradeLeg = {
   rank: number;
   /** Why this one, in the order the parts were weighed. */
   reasons: string[];
+  /** Hard rules this strike is failing. Empty on an eligible one. */
+  failing: string[];
 };
 
 export type BestTrade = {
-  /** Null when nothing on the board is eligible -- which is an answer. */
+  /** Null only when there is no board at all. */
   pick: BestTradeLeg | null;
   /** The next two, so "why not that one" is answerable without re-reading the board. */
   runnersUp: BestTradeLeg[];
@@ -98,6 +104,11 @@ export type BestTrade = {
   why: string | null;
   /** True when this is also what the tested engine picked. */
   agreesWithEngine: boolean;
+  /**
+   * True when nothing cleared the hard rules and the pick is the best of a bad
+   * board. The card says so loudly; it is not a recommendation.
+   */
+  bestOfNone: boolean;
 };
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -177,9 +188,22 @@ export function bestTrade(i: {
   enginePicks?: readonly { side: 'CE' | 'PE'; strike: number }[];
   hedgeFor?: (leg: EvLeg) => { strike: number; askUsd: number; widthUsd: number } | null;
 }): BestTrade {
-  const eligible = i.legs.filter((l) => l.ev.tier !== 'avoid' && (l.sellPrice ?? 0) > 0);
+  const sellable = i.legs.filter((l) => (l.sellPrice ?? 0) > 0);
+  const eligible = sellable.filter((l) => l.ev.tier !== 'avoid');
+  /*
+   * When nothing clears, rank what there is anyway -- and say so.
+   *
+   * The hard rules are strict on purpose: 3% out of the money, 95% calibrated,
+   * delta under 0.05, a tenth of the open interest traded today, a spread
+   * inside 10%, a print in the last half hour. On a quiet morning no strike
+   * clears all six, and an empty card teaches nothing -- it cannot say which
+   * strike came closest or what it was failing. So the board is ranked either
+   * way, and a pick that failed something carries the failures with it.
+   */
+  const bestOfNone = eligible.length === 0 && sellable.length > 0;
+  const pool = eligible.length > 0 ? eligible : sellable;
 
-  const built = eligible.map((leg): BestTradeLeg => {
+  const built = pool.map((leg): BestTradeLeg => {
     const premium = leg.sellPrice!;
     const creditUsd = premium * i.lots * LOT_BTC - (leg.ev.chargesUsd ?? 0);
     const hedge = i.hedgeFor?.(leg) ?? null;
@@ -199,6 +223,9 @@ export function bestTrade(i: {
     reasons.push(`liquidity ${liquidity}/100`);
 
     return {
+      failing: leg.ev.checks
+        .filter((c) => c.severity === 'block' && !c.ok)
+        .map((c) => c.text),
       cp: leg.cp,
       side: leg.cp === 'C' ? 'CE' : 'PE',
       strike: leg.strike,
@@ -227,10 +254,13 @@ export function bestTrade(i: {
   return {
     pick,
     runnersUp: built.slice(1, 3),
-    eligible: built.length,
+    eligible: eligible.length,
     why: pick === null
-      ? 'No strike on this board clears the hard rules. The Signal column says which rule each one is failing.'
-      : null,
+      ? 'Nothing on this board can be sold: no strike has a bid.'
+      : bestOfNone
+        ? 'No strike clears the hard rules today. This is the one that came closest — what it is failing is below.'
+        : null,
     agreesWithEngine: agrees,
+    bestOfNone,
   };
 }

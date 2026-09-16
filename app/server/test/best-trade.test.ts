@@ -45,18 +45,54 @@ test('[critical] a strike failing a hard rule is never picked, however well it r
   });
   assert.equal(out.pick?.strike, 74_800);
   assert.equal(out.eligible, 1);
+  assert.equal(out.bestOfNone, false, 'one strike cleared, so nothing falls back');
 });
 
 test('[critical] an empty board is an answer, not a crash', () => {
   const out = bestTrade({ legs: [], snap, lots: 10 });
   assert.equal(out.pick, null);
   assert.equal(out.eligible, 0);
-  assert.match(out.why!, /No strike on this board clears the hard rules/);
+  assert.match(out.why!, /Nothing on this board can be sold/);
 });
 
-test('a strike with no bid cannot be sold, so it is not ranked', () => {
+test('[critical] a morning when nothing clears still names the closest, and what it fails', () => {
+  // An empty card cannot say which strike came nearest or why it was refused,
+  // and those are the only two things worth knowing on that morning.
+  const failing = {
+    tier: 'avoid', chargesUsd: 0.01, evUsd: -0.2, score: 44,
+    checks: [
+      { ok: false, severity: 'block', text: 'Traded 2% of its open interest today, under the 10% bar.' },
+      { ok: false, severity: 'block', text: 'Last traded 41 minutes ago.' },
+      { ok: true, severity: 'block', text: '3.4% out of the money, past the 3% bar.' },
+      { ok: false, severity: 'warn', text: 'A warning, which is not a refusal.' },
+    ],
+  } as unknown as EvLeg['ev'];
+  const out = bestTrade({
+    legs: [leg({ cp: 'P', strike: 75_400, ev: failing }), leg({ cp: 'P', strike: 75_000, ev: failing })],
+    snap,
+    lots: 10,
+  });
+  assert.equal(out.bestOfNone, true);
+  assert.equal(out.eligible, 0, 'and it is honest that nothing was eligible');
+  assert.ok(out.pick !== null);
+  assert.deepEqual(out.pick!.failing, [
+    'Traded 2% of its open interest today, under the 10% bar.',
+    'Last traded 41 minutes ago.',
+  ], 'the blocks it failed, and not the warnings or the ones it passed');
+  assert.match(out.why!, /came closest/);
+});
+
+test('an eligible board never falls back, and carries no failures', () => {
+  const out = bestTrade({ legs: [leg({ cp: 'P', strike: 75_400 })], snap, lots: 10 });
+  assert.equal(out.bestOfNone, false);
+  assert.equal(out.eligible, 1);
+  assert.deepEqual(out.pick!.failing, []);
+});
+
+test('a strike with no bid cannot be sold, so it is not ranked at all', () => {
   const out = bestTrade({ legs: [leg({ cp: 'P', strike: 75_400, sellPrice: null, bid: null })], snap, lots: 10 });
   assert.equal(out.pick, null);
+  assert.match(out.why!, /no strike has a bid/);
 });
 
 // ---------------------------------------------------------------- the money
