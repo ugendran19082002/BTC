@@ -465,6 +465,50 @@ export type BestTrade = {
   agreesWithEngine: boolean;
 };
 
+/**
+ * Where BTC could be at each horizon. Mirrors `domain/outlook.ts`.
+ *
+ * Prediction only — the options risk (touch, expiry, near-zero) and the trade's
+ * eligibility are separate answers from separate files.
+ */
+export type OutlookRow = {
+  label: string;
+  minutes: number;
+  spot: number;
+  /** spot × IV × √(t/365d): the option market's price of this horizon. */
+  impliedUsd: number | null;
+  low: number | null;
+  high: number | null;
+  measured68Pct: number | null;
+  measured95Pct: number | null;
+  measuredLow: number | null;
+  measuredHigh: number | null;
+  /** How the measured distribution falls around the implied band. */
+  below: number | null;
+  inside: number | null;
+  above: number | null;
+  /** Measured share of windows that closed higher. Always near a half. */
+  pUp: number | null;
+  /** This timeframe's own reading, −1…+1. Null where the desk fetches no bars for it. */
+  score: number | null;
+  lean: 'bullish' | 'bearish' | 'flat' | null;
+  why: string;
+  isExpiry: boolean;
+};
+
+export type Outlook = {
+  rows: OutlookRow[];
+  consensus: number | null;
+  bullish: number;
+  bearish: number;
+  flat: number;
+  scored: number;
+  agreement: string;
+  /** How far the measured direction ever gets from a coin flip, in points. */
+  directionEdgePts: number | null;
+  sampleWindows: number | null;
+};
+
 export type ChainResponse = {
   snapshot: SnapshotMeta;
   legs: Leg[];
@@ -478,6 +522,7 @@ export type ChainResponse = {
   direction: DirectionVerdict;
   containment: Containment | null;
   best: BestTrade;
+  outlook: Outlook;
   recommendation: Recommendation;
   requireHedge: boolean;
   verdict: Verdict;

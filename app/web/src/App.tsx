@@ -29,6 +29,7 @@ import { tabTitle } from '@/lib/tab-title';
 import { pnlTone, signedInr, usdToInr } from '@/lib/format';
 import { MarketInsights } from '@/components/desk/MarketInsights';
 import { SideVerdict } from '@/components/desk/SideVerdict';
+import { Outlook } from '@/components/desk/Outlook';
 import { SuddenMove } from '@/components/desk/SuddenMove';
 import { BestTrade } from '@/components/desk/BestTrade';
 import { PriceChart, CHART_TFS, type ChartTf } from '@/components/desk/PriceChart';
@@ -563,6 +564,8 @@ export default function App() {
                   />
                 </ErrorBoundary>
               )}
+
+              {data && snap && <Outlook outlook={data.outlook} />}
 
               {data && snap && (
                 <MarketInsights

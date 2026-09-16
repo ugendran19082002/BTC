@@ -1818,3 +1818,67 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 .bt-order.pe { color: var(--down); }
 .bt-rank { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
 
+/* ── What the next few hours could do ───────────────────────────────────────
+   One card per horizon: the band the option market is charging for, where a
+   year of BTC fell around it, and that timeframe's own reading. The three
+   figures are Below / Inside / Above the band -- never a direction, because
+   the measured direction is a coin flip at every horizon. */
+.outlook { margin-bottom: 12px; }
+.ol-summary {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; flex-wrap: wrap; margin-bottom: 10px; font-size: 12.5px;
+}
+.ol-consensus b { font-size: 15px; font-variant-numeric: tabular-nums; }
+
+.ol-grid {
+  display: grid; gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+}
+.ol-card {
+  border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2);
+  padding: 8px 9px; min-width: 0;
+}
+.ol-card.expiry { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.ol-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ol-mid { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
+.ol-band { font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ol-arrow {
+  display: inline-flex; align-items: center; gap: 3px; margin: 4px 0 5px;
+  font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--muted);
+}
+.ol-arrow.up { color: var(--up); }
+.ol-arrow.down { color: var(--down); }
+
+.ol-odds { margin: 0; display: grid; gap: 2px; }
+.ol-odds > div { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+.ol-odds dt { font-size: 10.5px; color: var(--dim); }
+.ol-odds dd { margin: 0; font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--muted); }
+.ol-odds dd.up { color: var(--up); }
+.ol-odds dd.down { color: var(--down); }
+.ol-measured { margin-top: 5px; font-size: 10px; color: var(--dim); font-variant-numeric: tabular-nums; }
+
+.ol-maths {
+  display: grid; gap: 8px; margin-bottom: 10px;
+  padding: 10px 11px; border-radius: 8px; background: var(--panel-2);
+}
+.ol-maths-row { display: grid; grid-template-columns: 20px 1fr; gap: 8px; }
+.ol-maths-n {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent);
+  font-size: 11px; font-weight: 600;
+}
+.ol-maths-title { font-size: 12px; font-weight: 600; color: var(--text); }
+.ol-maths code {
+  display: block; margin: 2px 0; font-size: 11px; color: var(--accent);
+  font-family: ui-monospace, Menlo, Consolas, monospace; overflow-x: auto;
+}
+.ol-maths span { font-size: 11px; line-height: 1.45; color: var(--dim); }
+
+@media (max-width: 560px) {
+  .ol-grid { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; }
+}
+

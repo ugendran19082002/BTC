@@ -14,6 +14,7 @@ import { refuse } from '../refuse.js';
 import { emBuffer, verdict as sideVerdict } from '../../domain/direction.js';
 import { DEFAULT_LIMITS } from '../../trading/precheck.js';
 import { bestTrade } from '../../domain/best-trade.js';
+import { outlook } from '../../domain/outlook.js';
 import { pBetween } from '../../domain/probability.js';
 import { attachEv } from '../../domain/ev.js';
 import { noteOpenInterest, openInterestChange, ivChange, type OiChange } from '../../market/oi-history.js';
@@ -242,6 +243,15 @@ export function registerDeskRoutes(app: FastifyInstance) {
         direction,
         containment,
         best,
+        /*
+         * Where BTC could be at each horizon: the implied band, the measured
+         * one, and how often the measured distribution finished inside the
+         * implied. Prediction only -- the options risk and the trade's
+         * eligibility are separate answers from separate files, and mixing
+         * them into one number is how "the market looks bullish" becomes
+         * "sell this put".
+         */
+        outlook: outlook({ snap, market }),
         recommendation,
         requireHedge,
         verdict: verdict(snap, picks, minPremium, lots, market, {
