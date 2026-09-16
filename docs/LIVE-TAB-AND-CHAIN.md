@@ -293,7 +293,38 @@ below = F(−EM%)      above = 1 − F(+EM%)      inside = 1 − below − above
 ```
 
 `inside` above 68% means the market is charging for more move than it usually
-gets. That is the seller's whole business, stated per horizon instead of felt.
+gets.
+
+**But those three barely move across the row**, and that is not a bug in the
+reading — it is arithmetic. Both bands scale with `√t`, so their ratio is
+near-constant by construction. Measured on 16 September: 68.1% inside at five
+minutes, 68.5% at an hour, 63.3% at twelve. Nine cards reading *16 / 69 / 15*
+tell you nothing.
+
+So each card **leads with the two bands against each other**:
+
+```
+richness = implied% ÷ measured 68%        rich > 1.05 · fair · cheap < 0.95
+```
+
+That does move, and it is the seller's question stated per horizon. The same
+morning:
+
+| horizon | implied | history | ratio |
+|---|---|---|---|
+| 5m | 0.093% | 0.092% | 1.00 |
+| 1h | 0.321% | 0.316% | 1.01 |
+| 4h | 0.641% | 0.649% | 0.99 |
+| 12h | 1.110% | 1.257% | **0.88** |
+| 24h | 1.570% | 1.778% | **0.88** |
+
+Fairly priced out to four hours, and paying noticeably *less* than history
+delivers at the long end.
+
+**Spot is written once, above the row**, not on every card: the measured drift
+over these horizons is nil, so a per-horizon "projected price" would be the same
+number ten times — and ten identical numbers read as a broken panel rather than
+as an honest one.
 
 **The arrow is a score, not a forecast** — that timeframe's own indicators:
 

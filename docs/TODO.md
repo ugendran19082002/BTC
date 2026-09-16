@@ -2687,3 +2687,47 @@ Eight tests, including that a server predating the switch reads as configured-of
 rather than as broken, and that a refusal says *Try again* rather than pretending
 it worked.
 
+## The row that said the same thing nine times
+
+*16 September 2026*
+
+Checked against the drawing it came from, and two things did not match — both
+mine, both real:
+
+**Ten identical prices.** Every card showed spot: 75,803, nine times over. The
+drawing shows a projected price per horizon, and there is no honest one to put
+there — the measured drift over these horizons is nil, so any projection is spot
+with extra steps. Fixed the other way: **spot is written once above the row**,
+and each card carries only its own band. The panel now says what it knows
+instead of repeating what it does not.
+
+**Below / Inside / Above said the same thing on every card** — 16 / 69 / 15, nine
+times. Not a rendering fault: both the implied band and the measured one scale
+with `√t`, so their ratio is near-constant *by construction*. Measured: 68.1%
+inside at five minutes, 68.5% at an hour, 63.3% at twelve. Three figures that
+cannot vary are three figures nobody should read.
+
+What does vary is the two bands against each other, and it is also the only
+question a seller is asking:
+
+| horizon | implied | history | ratio |
+|---|---|---|---|
+| 5m | 0.093% | 0.092% | 1.00 |
+| 1h | 0.321% | 0.316% | 1.01 |
+| 4h | 0.641% | 0.649% | 0.99 |
+| 12h | 1.110% | 1.257% | **0.88** |
+| 24h | 1.570% | 1.778% | **0.88** |
+
+So each card now **leads with `0.88× history · market pays less`**, and the
+three shares stay underneath as the working. Fairly priced out to four hours,
+paying noticeably less than history delivers at the long end — which is a
+statement about today's board, and the sort of thing the row exists to make
+visible.
+
+Also: the settlement card no longer spans two columns (it orphaned itself onto
+its own row the moment ten cards did not fit across), and the best-trade badge
+reads **Recommended** only when the pick clears every hard rule *and* the tested
+engine picked it too — the one combination on that card that deserves the word.
+
+Three new server tests on the ratio, two on the card.
+
