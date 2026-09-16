@@ -2762,15 +2762,35 @@ share. Not a longer cache — a shared one.
 
 *17 September 2026*
 
-**"Tell me when this pays 5."** On the best-pick card: type a price, get one
-Telegram message when a seller can actually get it. Its own thing — nothing to
-do with the header's phone-alerts switch, which governs fill messages and
-stays on by default. Three rules, each for a reason: it watches the **bid**
-(what a seller receives, not the mark); it rings **once** (the row is marked
-fired in the journal *before* the message goes, so a restart between the two
-cannot send it twice); and it is **dead at settlement**, so it cannot sit in
-the list forever. Migration `009-premium-alerts`; checked every twenty seconds
-against the ticker cache. Eleven server tests, seven on the control.
+**"Tell me when the best pick changes."** On the best-pick card, a switch —
+not a price to type. The first version asked for a price and rang when a
+strike paid it; that was the wrong question, and it was taken out the same
+day. What the card knows is *which strike is the pick*, and that is the thing
+worth a message: once, when it becomes a different strike, never while it
+stays the same one. `watchBestTrade` reads the whole board once a minute,
+works the pick out **the same way the card does** (`bestTradeNow`, one
+function for both, so the phone and the screen cannot name different
+strikes), and compares it with the last one announced in the journal
+(`best_trade_last`). Off by default; switching it on announces the current
+pick rather than waiting for a change; the header's phone-alerts switch still
+silences it. The message is the whole card — the reader has not seen these
+numbers.
+
+**Only strikes paying $5 or more.** A floor on the pick itself, default $5,
+adjustable on the card and remembered on the server (`best_trade_min_premium`,
+0 < floor ≤ 1000). A $1.50 strike with a 99.5% chance of expiring worthless
+used to win the ranking on settlement alone; it is not a trade anybody
+places. The floor is an eligibility rule like the others — a strike under it
+is shown with the reason, and the fallback ranking still names the nearest
+miss when nothing clears. The engine's own $15 floor is untouched; this is
+the card's, and the card decides nothing.
+
+Migration `009-premium-alerts` stays in the ledger with a note that nothing
+reads the table: a migration that ran is a fact, and un-running it is how
+two servers end up disagreeing about what 010 is. Eleven server tests on the
+watcher (silence on the same pick, a pick that goes away and comes back, the
+floor deciding, phone-alerts-off remembering without sending) and seven on
+the control.
 
 **Each fact once.** The Live tab said the spot four times, the implied
 volatility three times, the expected move three times, and direction twice.
@@ -2794,3 +2814,38 @@ more than usual* for "rich". The technical term is still there, in the hover
 hint, so nothing is untraceable — but the label is the sentence a person
 would say.
 
+
+## Delta off the request path
+
+*17 September 2026*
+
+Coalescing the status route (above) made two tabs one fan-out; it did not
+make the fan-out fast. The deployed image still showed **`/api/trade/status`
+averaging 853ms**, because every poll that missed the 900ms window waited on
+Delta for the balance, the positions and the books. The one-second poll was
+always going to miss it.
+
+So the server now refreshes the status **on its own clock**, and a request
+reads the last answer at once:
+
+- `provideStatus(compute)` — the route hands the service its status function
+  once at startup; `refreshStatus()` runs it every second in the background
+  (`STATUS_REFRESH_MS`), never overlapping.
+- `status()` — returns the last answer if it is under four seconds old
+  (`STATUS_STALE_MS`); an older one, or none yet, is recomputed on the request
+  so a stalled refresher cannot serve the morning's balance all afternoon.
+- The per-read caches under it (positions, quotes) went from 800ms to 1500ms
+  — they are now refreshed by one caller on one clock, so a longer window
+  costs nothing in staleness.
+- `/api/spot` reads the ticker cache the desk already keeps warm instead of
+  asking Delta again.
+
+Tests: a request lands in under 15ms from memory; a stale answer is not
+served; with nothing computed yet the first request computes and says so if
+it cannot. Timers are cleared in `stop()`, with the best-pick watcher and the
+mark-to-market pass.
+
+**To check after the next deploy**: `docker logs btc-desk-api-1` for the
+`/api/trade/status` timing line — it should read in milliseconds, not
+hundreds. The image on the server as this was written (`7246ac8-dirty`)
+predates it.

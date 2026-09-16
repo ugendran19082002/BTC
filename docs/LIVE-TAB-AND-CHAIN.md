@@ -374,9 +374,26 @@ not dollar steps — Delta lists $200 apart near the money and $400 further out,
 so "three strikes out" and "3 × 200" are different contracts as soon as the grid
 widens, and the second is often not listed at all.
 
+**Only strikes paying $5 or more** (`BEST_TRADE_MIN_PREMIUM_USD`, adjustable on
+the card, remembered on the server). An eligibility rule like the others: a
+strike under the floor is shown with that reason and never outranks one above
+it. Without it a $1.50 strike with a 99.5% settlement chance wins on safety
+alone, and that is not a trade anybody places. This floor is the card's; the
+engine keeps its own.
+
 On a morning when nothing clears, the board is ranked anyway and the card says
 so, with the rules the closest strike is failing. An empty card cannot say which
 came nearest, or why.
+
+**"Tell me when the pick changes."** A switch on the card, off by default.
+`watchBestTrade` (service) reads the whole board once a minute and works the
+pick out with the same `bestTradeNow` the route uses, so the phone and the
+screen cannot disagree. One Telegram message when the pick becomes a
+*different* strike (or appears where there was none); silence while it stays
+the same; nothing when it goes away. The last announced pick is in the journal
+(`best_trade_last`), so a restart does not repeat it. Switching it on announces
+the current pick. The header's phone-alerts switch silences it like every other
+message.
 
 ---
 
