@@ -1105,10 +1105,23 @@ tr.atm td.strikecell .strikebtn { color: #fff; }
   margin-bottom: 12px;
   align-items: start;
 }
-@media (min-width: 1060px) {
-  .board-row { grid-template-columns: minmax(300px, 32%) minmax(0, 1fr); }
+/*
+ * Two columns, and only once the narrow one has room to be read.
+ *
+ * It split at 1,060 into 32%, which is 339 pixels -- and the settings bar, the
+ * side verdict and the insight tiles all live in it. At that width every one of
+ * them was a column of squeezed two-up tiles beside a chart with space to
+ * spare. The split now waits for 1,180, the narrow column has a 360-pixel floor
+ * so it can never be squeezed below what its tiles need, and it grows a little
+ * on a wide screen rather than staying a fixed third of an ever-wider page.
+ */
+@media (min-width: 1180px) {
+  .board-row { grid-template-columns: minmax(360px, 34%) minmax(0, 1fr); }
   /* Two-up inside a third of the page, rather than auto-fit's one. */
   .board-row .insight-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1500px) {
+  .board-row { grid-template-columns: minmax(400px, 30%) minmax(0, 1fr); }
 }
 .board-row > * { min-width: 0; margin-bottom: 0; }
 
@@ -1193,7 +1206,9 @@ td.liq-normal, td.liq-none { color: var(--dim); }
    interest, "all" put twenty-seven columns on a phone. Each row says what the
    column is *for* — a list of fifteen abbreviations is not a list anyone can
    choose from. */
-.colpick { width: min(330px, calc(100vw - 32px)); padding: 0; }
+/* Wider than it was: the rows now carry a drag handle and two arrows as well
+   as the tick and the sentence, and 330 left the sentence two words a line. */
+.colpick { width: min(380px, calc(100vw - 24px)); padding: 0; }
 .colpick-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 12px 8px;
@@ -1778,5 +1793,14 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 
 @media (max-width: 560px) {
   .sv-inputs li { grid-template-columns: 84px 1fr 42px; }
+}
+/* On the narrowest phones the label, the bar and the number cannot share a
+   line without the label being cut in half. The bar goes under them instead --
+   it is the part that survives being smaller. */
+@media (max-width: 380px) {
+  .sv-inputs li { grid-template-columns: 1fr auto; }
+  .sv-bar { grid-column: 1 / -1; order: 3; }
+  .sv-why { order: 4; }
+  .sv-head { flex-wrap: wrap; }
 }
 

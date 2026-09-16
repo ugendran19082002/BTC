@@ -162,7 +162,8 @@ export function AddLotsSheet({ trade, open, onOpenChange, onAdded }: {
             : 'Starts at the ask and walks toward the bid over five seconds, never past it.'}
         </p>
 
-        <div className="mt-3 flex items-end gap-2">
+        {/* Wraps: on a narrow sheet the box and four chips do not share a line. */}
+        <div className="mt-3 flex flex-wrap items-end gap-2">
           <label className="flex flex-1 flex-col gap-1 text-[11px] uppercase tracking-[0.6px] text-muted-foreground">
             Works for · minutes
             <Input

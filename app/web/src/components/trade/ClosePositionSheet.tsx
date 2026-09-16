@@ -133,7 +133,8 @@ export function ClosePositionSheet({ trade, open, onOpenChange, onClose }: {
       >
         {/* How much of it. Everything below moves with this number. */}
         <section aria-label="how much to close" className="rounded-lg bg-muted px-3 py-2.5">
-          <div className="flex items-end gap-2">
+          {/* Wraps rather than squeezing the box: Half and All can take a line. */}
+          <div className="flex flex-wrap items-end gap-2">
             <label className="flex flex-1 flex-col gap-1 text-[11px] uppercase tracking-[0.6px] text-muted-foreground">
               Lots to close
               <Input
