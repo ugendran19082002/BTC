@@ -4,7 +4,8 @@ import { heldKey, type HeldLeg } from '@/lib/held';
 import { signedInr, signedUsd, usdToInr } from '@/lib/format';
 import { TIER_LABEL, signalReason, otmPct } from '@/lib/ev-view';
 import {
-  CHAIN_COLUMNS, DEFAULT_COLUMNS, type ColumnKey, type ColumnState,
+  DEFAULT_COLUMNS, DEFAULT_ORDER, columnsInOrder,
+  type ColumnKey, type ColumnOrder, type ColumnState,
 } from '@/components/chain/columns';
 
 /**
@@ -350,6 +351,7 @@ export function ChainTable({
   snap,
   sides = [],
   columns = DEFAULT_COLUMNS,
+  columnOrder = DEFAULT_ORDER,
   onSell,
   onInspect,
   maxSpreadPct,
@@ -394,6 +396,11 @@ export function ChainTable({
    * columns that were not there and pushed the calls bid off a phone's edge.
    */
   columns?: ColumnState;
+  /**
+   * The order to draw them in, calls outward; the puts side is this reversed.
+   * Left out, the order `columns.ts` declares.
+   */
+  columnOrder?: ColumnOrder;
   /**
    * Which half of the board to show.
    *
@@ -448,7 +455,7 @@ export function ChainTable({
   // cross, it is the column you act on rather than a reference figure.
   // Derived, never written down: the span is the length of the list that draws
   // the cells.
-  const shownCols = CHAIN_COLUMNS.filter((c) => columns[c.key]);
+  const shownCols = columnsInOrder(columnOrder).filter((c) => columns[c.key]);
   const perSide = shownCols.length;
 
   /**

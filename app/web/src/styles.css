@@ -1238,6 +1238,39 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 }
 .colpick-why { font-size: 11px; line-height: 1.35; color: var(--dim); }
 
+/* The order of the columns is the order of these rows: a handle to drag by,
+   and arrows for a keyboard and for a thumb, because a drag inside a
+   scrolling list on a phone fights the scroll. */
+.colpick-hint {
+  margin: 0; padding: 7px 12px 0;
+  font-size: 11px; line-height: 1.35; color: var(--dim);
+}
+.colpick-item { display: flex; align-items: flex-start; gap: 2px; border-radius: 6px; }
+.colpick-item .colpick-row { flex: 1 1 auto; min-width: 0; }
+.colpick-item.held { outline: 2px solid var(--accent); outline-offset: -2px; }
+.colpick-grip {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; align-self: stretch; color: var(--dim);
+  cursor: grab; border-radius: 6px;
+}
+.colpick-grip:active { cursor: grabbing; }
+.colpick-grip:hover { color: var(--text); background: var(--panel-2); }
+.colpick-grip:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.colpick-moves { flex: none; display: flex; flex-direction: column; gap: 1px; padding-top: 4px; }
+.colpick-moves button {
+  appearance: none; border: 0; background: none; padding: 1px 3px;
+  display: inline-flex; color: var(--dim); cursor: pointer; border-radius: 4px;
+}
+.colpick-moves button:hover:not(:disabled) { color: var(--text); background: var(--panel-2); }
+.colpick-moves button:disabled { opacity: 0.3; cursor: default; }
+.colpick-moves button:focus-visible { outline: 2px solid var(--ring); outline-offset: -1px; }
+/* A finger needs a bigger target than a pointer, and the arrows are the way
+   the order is changed on a phone. */
+@media (pointer: coarse) {
+  .colpick-moves button { padding: 5px 6px; }
+  .colpick-grip { width: 26px; }
+}
+
 /* Score in the candidates table, same bar as the board. */
 .evtable td.sc { text-align: right; white-space: nowrap; }
 .evtable td.sc .scorebar { width: 22px; }

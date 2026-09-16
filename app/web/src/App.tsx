@@ -33,7 +33,7 @@ import { TopCandidates } from '@/components/desk/TopCandidates';
 import { PriceChart, CHART_TFS, type ChartTf } from '@/components/desk/PriceChart';
 import { Select, SelectItem } from '@/components/ui/select';
 import { ColumnPicker } from '@/components/chain/ColumnPicker';
-import { normalise, type ColumnState } from '@/components/chain/columns';
+import { normalise, normaliseOrder, type ColumnKey, type ColumnState } from '@/components/chain/columns';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Download } from 'lucide-react';
 import { toCsv, downloadCsv } from '@/lib/csv';
@@ -118,8 +118,12 @@ export default function App() {
   const activeExpiry = (expiry && expiries.some((e) => e.expiry === expiry)) ? expiry : defaultExpiry;
   const [width] = usePersisted('width', 20);
   const [storedCols, setCols] = usePersisted<Partial<ColumnState> | null>('chain:columns', null);
+  // Where each column sits, kept beside which ones show. Both are preferences
+  // about this person's board, so both live as long as the browser does.
+  const [storedOrder, setOrder] = usePersisted<ColumnKey[] | null>('chain:column-order', null);
   // A choice stored by an older build may not name every column this one has.
   const chainColumns = normalise(storedCols);
+  const chainOrder = normaliseOrder(storedOrder);
   const [storedView, setChainView] = usePersisted<'calls' | 'puts' | 'both'>('chain:view', 'both');
   const narrow = useMediaQuery('(max-width: 760px)');
   /*
@@ -673,7 +677,12 @@ export default function App() {
                   <Download size={13} aria-hidden /> Export
                 </button>
 
-                <ColumnPicker value={chainColumns} onChange={setCols} />
+                <ColumnPicker
+                  value={chainColumns}
+                  onChange={setCols}
+                  order={chainOrder}
+                  onOrderChange={setOrder}
+                />
               </div>
               <ErrorBoundary where="Chain">
                 <ChainTable
@@ -681,6 +690,7 @@ export default function App() {
                   snap={snap}
                   sides={data.recommendation.ok ? data.recommendation.sides : []}
                   columns={chainColumns}
+                  columnOrder={chainOrder}
                   onSell={openTicket}
                   onInspect={inspectLeg}
                   view={chainView}
