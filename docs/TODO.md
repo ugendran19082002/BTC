@@ -2731,3 +2731,66 @@ engine picked it too — the one combination on that card that deserves the word
 
 Three new server tests on the ratio, two on the card.
 
+## The screen that was polling itself to a standstill
+
+*17 September 2026*
+
+"UI is slow, something is looping." It was not a loop. Fifteen minutes of the
+API log: **`/api/trade/status` — 355 calls, averaging 994ms, worst 3.3s** —
+polled once a second by every open tab. Each call fanned out to Delta for the
+balance (uncached), the positions, and a quote and the book per open symbol,
+behind per-read caches of 800ms. A request that took a second to answer missed
+every cache, and two tabs meant two fan-outs. The poll was saturating its own
+server, and the screen was always waiting on the last answer.
+
+Two changes, both in `service.ts`:
+
+- **`coalesce(key, ttl, compute)`** — one computation at a time, shared by
+  everyone who asks while it runs, kept for the TTL after. The status route
+  is now computed at most once per 900ms however many tabs poll, and a poll
+  arriving mid-computation waits for that answer rather than starting another.
+  Aged from when the read *started*, not when it returned: a slow answer is
+  already old by the time it arrives.
+- **`balanceForDisplay()`** — the balance cached two seconds for the account
+  card. `balance()` stays a real read for the gates.
+
+Three tests: three callers share one computation and one answer; a fresh one
+runs past the window and a failure does not poison the cache; keys do not
+share. Not a longer cache — a shared one.
+
+## A reminder on the best pick, and one place for each fact
+
+*17 September 2026*
+
+**"Tell me when this pays 5."** On the best-pick card: type a price, get one
+Telegram message when a seller can actually get it. Its own thing — nothing to
+do with the header's phone-alerts switch, which governs fill messages and
+stays on by default. Three rules, each for a reason: it watches the **bid**
+(what a seller receives, not the mark); it rings **once** (the row is marked
+fired in the journal *before* the message goes, so a restart between the two
+cannot send it twice); and it is **dead at settlement**, so it cannot sit in
+the list forever. Migration `009-premium-alerts`; checked every twenty seconds
+against the ticker cache. Eleven server tests, seven on the control.
+
+**Each fact once.** The Live tab said the spot four times, the implied
+volatility three times, the expected move three times, and direction twice.
+Now:
+
+- *Which way is the market leaning?* sits at the head of the horizon row it is
+  drawn from, with its seven inputs and five checks behind a toggle. One card
+  about direction, not two.
+- *Market insights* folded into the sudden-move card as its "key market data",
+  minus the three tiles that card already leads with.
+- The *Market* card lost its volatility and expected-move blocks; their
+  working moved into the hover on the numbers up top. What stays is what is
+  about this contract and nowhere else.
+
+**Plain English**, on every card that arrived this week: *Chance you keep it
+all* for "Expiry OTM", *Chance price gets there first* for "Touch", *Most you
+can lose (with the safety leg)* for "Max loss (with hedge)", *How easy to
+trade* for "Liquidity", *Ends lower / in range / higher* for "Below / Inside /
+Above", *Leaning up / No clear lean* for "Bullish / No side", *options cost
+more than usual* for "rich". The technical term is still there, in the hover
+hint, so nothing is untraceable — but the label is the sentence a person
+would say.
+
