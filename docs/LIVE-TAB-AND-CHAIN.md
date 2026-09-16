@@ -82,9 +82,39 @@ Touches the strike  P = N((−b+μT)/σ√T) + e^(2μb/σ²)·N((−b−μT)/σ�
 Reaches near zero   simulated: GBM paths, repriced each step, hit when price ≤ $0.10
 ```
 
-*Expires OTM 96%* and *touch 28%* are both true of the same put. The first is
-the settlement; the second is the intraday drawdown you have to sit through.
-Touch is always the larger number.
+**Worked through, on the board that prompted it.** Spot 75,820, PE short at
+74,400, twelve hours to settle, 30% vol:
+
+```
+Expires worthless   96.9%   ← where it finishes
+Touch               24%     ← whether it reaches 74,400 at any point on the way
+Near-zero           91%     ← whether the premium collapses, so the target fills
+```
+
+These are not 4% and 24% chances of losing. A path like
+
+```
+75,820 → 75,100 → 74,400 (touch) → 74,900 → 75,600 (settles)
+```
+
+touches **and** expires worthless. Touch is the drawdown and the margin
+pressure to sit through, not a second way to lose — which is why the desk
+draws it, marks it when it is high, and **never refuses a strike for it**.
+
+Two strikes can settle almost identically and live very differently:
+
+| | Expiry OTM | Touch | Read as |
+|---|---|---|---|
+| A | 97% | 12% | quiet |
+| B | 98% | 31% | the same ending, a harder middle |
+
+What touch does **not** say: when it happens (five minutes in or ten hours in),
+or how deep it goes. And it is a model estimate — wrong volatility, wrong
+touch.
+
+Where it is useful: beside the others, never alone. `Expiry OTM · Touch ·
+Near-zero · EM× · what one expected move costs` is one row in the strike sheet
+for exactly that reason.
 
 ---
 

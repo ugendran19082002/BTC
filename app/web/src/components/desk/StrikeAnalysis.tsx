@@ -4,6 +4,7 @@ import type { Leg, SnapshotMeta } from '@/types/desk';
 import { Sheet, SheetContent, SheetFooter } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { KV } from '@/components/ui/kv';
+import { Figure } from '@/components/ui/figure';
 import { Badge } from '@/components/ui/badge';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import {
@@ -64,6 +65,25 @@ export function StrikeAnalysis({
   const dist = otmPct(leg.strike, snap.spot);
   const mid = leg.bid !== null && leg.ask !== null ? (leg.bid + leg.ask) / 2 : leg.mark;
   const zero = leg.zero?.adjusted ?? null;
+  const touch = leg.probs?.touch ?? null;
+  /*
+   * What a move of exactly one expected move costs, per contract.
+   *
+   * The stress test in miniature, and the one number here that is money rather
+   * than a probability: BTC travels one expected move straight at this strike
+   * and settles there. Zero when such a move does not reach the strike, which
+   * is the answer for anything past 1.0 EM away -- and saying "nothing" is the
+   * point of showing it beside a buffer of 1.88.
+   */
+  const atOneMove = (() => {
+    const em = snap.expectedMove;
+    if (em === null || !(em > 0)) return null;
+    const settleAt = leg.cp === 'C' ? snap.spot + em : snap.spot - em;
+    const intrinsic = leg.cp === 'C'
+      ? Math.max(0, settleAt - leg.strike)
+      : Math.max(0, leg.strike - settleAt);
+    return intrinsic * 0.001;
+  })();
 
   const blocks = ev.checks.filter((c) => c.severity === 'block');
   const warns = ev.checks.filter((c) => c.severity === 'warn');
@@ -102,6 +122,64 @@ export function StrikeAnalysis({
                 : 'Every eligibility rule is clear.'}
           </span>
         </div>
+
+        {/*
+          The five questions, together, because they are different questions
+          and reading them apart is how a strike looks safe.
+
+            Expiry OTM   does it finish beyond the strike?
+            Touch        does it reach the strike at any point on the way?
+            Near-zero    does the premium collapse, so the target fills?
+            EM×          how far away is it, in units of today's expected move?
+            At ±1 EM     what a move of exactly that size costs, per contract
+
+          A put can be 96.9% to expire worthless and still be touched one day in
+          four. That is not a 4% chance of losing and a 24% chance of losing --
+          it is one number about the settlement and another about the drawdown
+          on the way to it, and a short position is lived through the second
+          one. Touching is not losing: a day that touches and comes back settles
+          worthless like any other, which is why nothing here is coloured as a
+          failure and why no gate refuses a strike for it.
+        */}
+        <section aria-label="path and settlement" className="mt-4 rounded-lg bg-muted px-3 py-2.5">
+          <div className="grid grid-cols-3 gap-x-3 gap-y-2.5 sm:grid-cols-5">
+            <Figure
+              label="Expiry OTM"
+              value={dash(zero, (n) => `${(n * 100).toFixed(1)}%`)}
+              tone={zero === null ? undefined : zero >= 0.97 ? 'up' : zero >= 0.9 ? 'warn' : 'down'}
+              hint="Where it finishes: the chance this option expires worthless, corrected by 733 settlements."
+            />
+            <Figure
+              label="Touch"
+              value={dash(touch, (n) => `${(n * 100).toFixed(0)}%`)}
+              tone={touch === null ? undefined : touch >= 0.5 ? 'down' : touch >= 0.25 ? 'warn' : undefined}
+              hint="What it feels like on the way: the chance BTC reaches this strike at least once before settlement. Touching is not losing."
+            />
+            <Figure
+              label="Near-zero"
+              value={dash(leg.probs?.nearZero ?? null, (n) => `${(n * 100).toFixed(0)}%`)}
+              hint="The chance this option's own price falls to about ten cents before settlement — the target filling. Simulated; blank where it is not worth simulating."
+            />
+            <Figure
+              label="EM×"
+              value={dash(leg.emBuffer, (n) => `${n.toFixed(2)}×`)}
+              tone={leg.emBuffer === null ? undefined : leg.emBuffer < 1 ? 'down' : leg.emBuffer >= 2 ? 'up' : undefined}
+              hint="How far the strike is in expected moves. Under 1.0, today's expected move reaches it."
+            />
+            <Figure
+              label="At ±1 EM"
+              value={atOneMove === null ? '—' : atOneMove === 0 ? 'nothing' : `−${usd(atOneMove)}`}
+              second="per contract"
+              tone={atOneMove === null || atOneMove === 0 ? undefined : 'down'}
+              hint="What a move of exactly one expected move, straight at this strike, costs per contract at settlement. Zero means such a move does not reach it."
+            />
+          </div>
+          <p className="m-0 mt-2 text-[11px] leading-snug text-[var(--dim)]">
+            These answer different questions. A strike can be {zero === null ? 'almost certain' : `${(zero * 100).toFixed(1)}%`} to
+            expire worthless and still be touched {touch === null ? 'often' : `${(touch * 100).toFixed(0)}% of the time`} on the
+            way — that is the drawdown to sit through, not a second chance of losing. Nothing here refuses a strike on its own.
+          </p>
+        </section>
 
         <dl className="mt-4 flex flex-col gap-1.5">
           <KV label="BTC now">{fmtStrike(Math.round(snap.spot))}</KV>

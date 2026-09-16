@@ -107,6 +107,7 @@ function Ev({ leg, sold = false }: { leg: Leg | undefined; sold?: boolean }) {
 const HEAD_CLASS: Record<ColumnKey, string> = {
   oi: 'aux', volume: 'aux', oiChange: 'aux', volumeToOi: 'aux', delta: 'aux', iv: 'aux',
   otm: 'aux', emBuffer: 'aux', breakeven: 'aux', mark: 'aux',
+  touch: 'aux', nearZero: 'aux',
   score: 'scorecol', signal: 'sigcol', ev: 'evcol', zero: 'zerocol',
   model: '', ask: 'askcol', bid: 'bidcol',
 };
@@ -212,6 +213,35 @@ function Cell({
       return <Zero leg={leg} sold={sold} />;
     case 'model':
       return <td className="dim">{leg?.pOtm != null ? `${(leg.pOtm * 100).toFixed(0)}%` : '·'}</td>;
+    case 'touch': {
+      /*
+       * Reaching the strike at any point, which is a different question from
+       * finishing beyond it -- and the one a short position is actually lived
+       * through. Marked when it is high, never coloured as a failure: a touch
+       * is not a loss, and a day that touches and comes back settles worthless
+       * like any other.
+       */
+      const t = leg?.probs?.touch ?? null;
+      return (
+        <td
+          className={`aux ${t === null ? 'dim' : t >= 0.5 ? 'down' : t >= 0.25 ? 'warn' : ''}`}
+          title={t === null ? undefined : 'How often BTC reaches this strike before settlement. Touching it is not losing on it.'}
+        >
+          {t === null ? '·' : `${(t * 100).toFixed(0)}%`}
+        </td>
+      );
+    }
+    case 'nearZero': {
+      const z = leg?.probs?.nearZero ?? null;
+      return (
+        <td
+          className={`aux ${z === null ? 'dim' : z >= 0.8 ? 'up' : ''}`}
+          title={z === null ? 'Not simulated: too far out, or already worth almost nothing.' : 'How often this option’s own price falls to about ten cents before settlement.'}
+        >
+          {z === null ? '·' : `${(z * 100).toFixed(0)}%`}
+        </td>
+      );
+    }
     case 'ask':
       return <PriceCell className="askcol" value={leg?.ask} onSell={ctx.sell(leg, cp, strike)} />;
     case 'mark':

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { StrikeAnalysis } from '@/components/desk/StrikeAnalysis';
 import type { Leg, SnapshotMeta } from '@/types/desk';
 
@@ -13,7 +13,9 @@ import type { Leg, SnapshotMeta } from '@/types/desk';
  * the eligibility list is nine rules long, and a phone has no hover.
  */
 
-const snap = { spot: 77_172, expiry: '120926', hoursToExpiry: 20.25 } as unknown as SnapshotMeta;
+const snap = {
+  spot: 77_172, expiry: '120926', hoursToExpiry: 20.25, expectedMove: 756,
+} as unknown as SnapshotMeta;
 
 const mk = (cp: 'C' | 'P', over: Partial<Leg['ev']> = {}): Leg =>
   ({
@@ -29,6 +31,8 @@ const mk = (cp: 'C' | 'P', over: Partial<Leg['ev']> = {}): Leg =>
     ageMin: 4,
     pOtm: 0.98,
     zero: { adjusted: 0.99, model: 0.98, sample: 900, outsideTable: false },
+    probs: { expireWorthless: 0.98, touch: 0.24, nearZero: 0.91 },
+    emBuffer: 3.74,
     ev: {
       payoutPerBtc: 3.2,
       evPerBtc: 14.8,
@@ -125,5 +129,61 @@ describe('the strike sheet', () => {
       />,
     );
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+/**
+ * The five questions, together.
+ *
+ * Reading them apart is how a strike looks safe: 96.9% to expire worthless and
+ * touched one day in four are both true of the same put, and a short position
+ * is lived through the second one. What must never happen here is the two being
+ * added up into one sense of risk, or a touch being drawn as a failure.
+ */
+describe('path and settlement', () => {
+  const row = () => screen.getByLabelText('path and settlement');
+
+  it('[critical] shows where it finishes and what it does on the way, as different numbers', () => {
+    sheet([mk('C')]);
+    const r = within(row());
+    expect(r.getByText('Expiry OTM').nextSibling).toHaveTextContent('99.0%');
+    expect(r.getByText('Touch').nextSibling).toHaveTextContent('24%');
+    expect(r.getByText('Near-zero').nextSibling).toHaveTextContent('91%');
+    expect(r.getByText('EM×').nextSibling).toHaveTextContent('3.74×');
+  });
+
+  it('[critical] a touch is never drawn as a failure', () => {
+    // A day that touches and comes back settles worthless like any other, so a
+    // moderate touch is marked and a high one warned — neither is red-as-wrong.
+    sheet([mk('C')]);
+    expect(within(row()).getByText('24%').className).not.toContain('--down');
+    expect(screen.getByText(/that is the drawdown to sit through, not a second chance of losing/)).toBeInTheDocument();
+  });
+
+  it('[critical] says in words that neither number refuses the strike', () => {
+    sheet([mk('C')]);
+    expect(screen.getByText(/Nothing here refuses a strike on its own/)).toBeInTheDocument();
+  });
+
+  it('[critical] a move of one expected move that cannot reach the strike costs nothing', () => {
+    // 77,172 + 756 = 77,928, nowhere near the 80,000 call.
+    sheet([mk('C')]);
+    expect(within(row()).getByText('At ±1 EM').nextSibling).toHaveTextContent('nothing');
+  });
+
+  it('[critical] a move that does reach it is priced, per contract', () => {
+    // A put at 80,000 with spot 77,172: one expected move down settles at
+    // 76,416, which is 3,584 in the money — $3.58 a contract.
+    sheet([mk('P')], 'P');
+    expect(within(row()).getByText('At ±1 EM').nextSibling).toHaveTextContent('$3.58');
+  });
+
+  it('shows a dash rather than a number where the board has none', () => {
+    const bare = { ...mk('C'), probs: { expireWorthless: null, touch: null, nearZero: null }, emBuffer: null } as Leg;
+    sheet([bare]);
+    const r = within(row());
+    expect(r.getByText('Touch').nextSibling).toHaveTextContent('—');
+    expect(r.getByText('Near-zero').nextSibling).toHaveTextContent('—');
+    expect(r.getByText('EM×').nextSibling).toHaveTextContent('—');
   });
 });

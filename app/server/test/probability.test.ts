@@ -168,3 +168,73 @@ test('a longer horizon is flagged, because the table was built on 12-hour trades
   assert.equal(zeroChance(0.95, 12)?.comparableHorizon, true);
   assert.equal(zeroChance(0.95, 24)?.comparableHorizon, false);
 });
+
+/**
+ * The closed form itself, pinned against the formula it claims to be.
+ *
+ * First passage of a driftless log-price to a barrier:
+ *
+ *   b = ln(K/S)      mu = -sigma^2 / 2      sig = sigma * sqrt(T)
+ *   P = N((-b + mu*T)/sig) + exp(2*mu*b / sigma^2) * N((-b - mu*T)/sig)
+ *
+ * Written out here rather than referenced, because a formula the code is the
+ * only statement of is a formula nobody can check the code against. Below the
+ * money the same expression is used on the mirrored barrier.
+ */
+test('[critical] touch matches the barrier-hitting formula, term for term', () => {
+  const s = 75_820;
+  const t = 12 / (365 * 24);
+  const v = 0.30;
+  const byHand = (k: number) => {
+    const b = Math.log(k / s);
+    const mu = -0.5 * v * v;
+    const sig = v * Math.sqrt(t);
+    const above = b > 0;
+    const a = above ? b : -b;
+    const nu = above ? mu : -mu;
+    const N = (x: number) => 0.5 * (1 + erf(x / Math.SQRT2));
+    return N((-a + nu * t) / sig) + Math.exp((2 * nu * a) / (v * v)) * N((-a - nu * t) / sig);
+  };
+  for (const k of [74_400, 74_800, 76_800, 78_000]) {
+    assert.ok(Math.abs(pTouch(s, k, t, v)! - byHand(k)) < 1e-9, `${k}: ${pTouch(s, k, t, v)} vs ${byHand(k)}`);
+  }
+});
+
+/** Abramowitz-Stegun 7.1.26, good to 1.5e-7 -- enough to check a formula by. */
+function erf(x: number): number {
+  const sign = x < 0 ? -1 : 1;
+  const z = Math.abs(x);
+  const tt = 1 / (1 + 0.3275911 * z);
+  const y = 1 - (((((1.061405429 * tt - 1.453152027) * tt) + 1.421413741) * tt - 0.284496736) * tt + 0.254829592) * tt * Math.exp(-z * z);
+  return sign * y;
+}
+
+test('[critical] the 16 September put: worthless at expiry is one question, touched is another', () => {
+  // Spot 75,820, PE 74,400, 12 hours, 30% vol -- the example the desk was read
+  // against. The two numbers are far apart, and that gap is the whole point of
+  // showing both: a strike almost certain to expire worthless is still reached
+  // often enough to sit through a drawdown.
+  const s = 75_820;
+  const k = 74_400;
+  const t = 12 / (365 * 24);
+  const v = 0.30;
+  const settle = pExpireWorthless('P', s, k, t, v)!;
+  const touch = pTouch(s, k, t, v)!;
+  assert.ok(settle > 0.9, `expire worthless ${settle}`);
+  assert.ok(touch > (1 - settle) * 1.5, `touch ${touch} should be well above the ${1 - settle} chance of finishing there`);
+  assert.ok(touch < settle, 'and still the smaller of the two, on a strike this far out');
+});
+
+test('at the money it is certain to be touched, and far out it is not', () => {
+  const t = 12 / (365 * 24);
+  assert.ok(pTouch(75_820, 75_820, t, 0.3)! > 0.999, 'the barrier is where price already is');
+  assert.ok(pTouch(75_820, 120_000, t, 0.3)! < 0.001);
+});
+
+test('touch rises with time and with volatility, never falls', () => {
+  const s = 75_820;
+  const k = 74_400;
+  const hour = 1 / (365 * 24);
+  assert.ok(pTouch(s, k, hour, 0.3)! < pTouch(s, k, 12 * hour, 0.3)!);
+  assert.ok(pTouch(s, k, 12 * hour, 0.2)! < pTouch(s, k, 12 * hour, 0.5)!);
+});

@@ -2523,8 +2523,8 @@ and the gaps.
   and IV ±5 points. Max loss says what happens at the end, not on the way.
 - [ ] **Credit ÷ risk** and **premium ÷ distance** as ranking columns. The
   board ranks by score and EV; neither says what the premium costs in risk.
-- [ ] **Touch and near-zero as their own columns.** Both are already computed
-  per strike; only the expiry probability is drawn.
+- [x] **Touch and near-zero as their own columns.** Done 16 Sep — see *Where it
+  finishes, and what it does on the way*.
 - [ ] **Calibration outside 8–16 hours to expiry**, so a next-day expiry is
   scored rather than caveated.
 - [ ] **Hedge availability in the gates before the strike is chosen.**
@@ -2556,4 +2556,47 @@ where one column simply stops.
   could be rendered, which has no horizontal overflow at 360–1920px. Worth one
   look at **390, 768, 1180 and 1440** to confirm the hole is gone and nothing
   new is cramped.
+
+## Where it finishes, and what it does on the way
+
+*16 September 2026*
+
+`P(expires worthless)` and `P(touches the strike)` are different questions, and
+the board only drew the first. On the 16 September put — spot 75,820, short at
+74,400, twelve hours, 30% vol — they are **96.9%** and **24%**, and reading only
+the first makes the trade look quieter than it is lived.
+
+They are not two chances of losing. A path of 75,820 → 74,400 → 75,600 touches
+**and** settles worthless; touch is the drawdown and the margin pressure to sit
+through. So the desk draws it, marks it when it is high (25% amber, 50% red),
+and **refuses nothing for it** — no gate reads it, and the sheet says so in
+words.
+
+- **Two new columns**: `Touch` (on by default — every other probability on the
+  board is about where the day ends, and this is the only one about the middle)
+  and `≈0`, the near-zero simulation (off by default: it is null for anything
+  far out or already worth pennies, and a column of dots earns nothing).
+- **One row in the strike sheet**: `Expiry OTM · Touch · Near-zero · EM× · At
+  ±1 EM`, which is the arrangement asked for. The fifth is the stress test in
+  miniature and the only one in money: BTC travels exactly one expected move
+  straight at this strike and settles there — *nothing* for a strike a move
+  cannot reach, `$3.58 a contract` for one it can.
+
+**The formula is now pinned by a test**, not just documented:
+
+```
+b = ln(K/S)   mu = -sigma^2/2   sig = sigma*sqrt(T)
+P = N((-b + mu*T)/sig) + exp(2*mu*b/sigma^2) * N((-b - mu*T)/sig)
+```
+
+`probability.test.ts` recomputes it by hand with its own error function and
+requires agreement to 1e-9 at four strikes, plus the properties that hold
+whatever the implementation: certain at the money, nothing far out, rising with
+time and with volatility, and never below the chance of finishing beyond the
+strike. The worked example above is a test too.
+
+[LIVE-TAB-AND-CHAIN.md](LIVE-TAB-AND-CHAIN.md) §2 carries the same worked
+example, the path that touches and still settles worthless, the A/B comparison
+(97%/12% against 98%/31%), and what touch does *not* say: when it happens, how
+deep it goes, or anything at all if the volatility estimate is wrong.
 
