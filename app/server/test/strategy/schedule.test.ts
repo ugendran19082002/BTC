@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  GRACE_MIN, entryDue, entrySlotDate, entryWindowEnd, exitDue, istDate, istMinutes, istWeekday, lotsPerLeg, nextEntryAt,
+  GRACE_MIN, entryDue, entrySlotDate, entryWindowEnd, exitDue, graceOf, istDate, istMinutes, istWeekday, lotsPerLeg, nextEntryAt,
 } from '../../src/strategy/schedule.js';
 import { DEFAULT_CONFIG, type Strategy } from '../../src/strategy/types.js';
 
@@ -260,4 +260,45 @@ test('doubling switched off leaves one lot', () => {
 
 test('no leg qualifying sells nothing', () => {
   assert.deepEqual(lotsPerLeg(strat(), []), { CE: 0, PE: 0 });
+});
+
+/**
+ * How late is too late, per strategy.
+ *
+ * It was one constant for the desk: sixty minutes, raised from thirty when a
+ * restart cost a day. But how long "still fine" lasts belongs to the strategy —
+ * an hour into a twelve-hour contract is nothing, ten minutes into a signal is
+ * everything — so each one carries its own, and a config written before the
+ * setting existed reads as the old constant.
+ */
+test('[critical] a strategy with a short window is late sooner', () => {
+  const tight = strat({ config: { ...DEFAULT_CONFIG, graceMin: 10 } });
+  // nine minutes after 05:30 is still fine, eleven is not
+  assert.equal(entryDue(tight, THU_0530 + 9 * 60_000, null).due, true);
+  const late = entryDue(tight, THU_0530 + 11 * 60_000, null);
+  assert.equal(late.due, false);
+  assert.match(late.because, /passed more than 10 minutes ago/);
+});
+
+test('[critical] the default window is the old constant, and an absent one reads as it', () => {
+  assert.equal(GRACE_MIN, 60);
+  assert.equal(DEFAULT_CONFIG.graceMin, GRACE_MIN);
+  const old = strat({ config: { ...DEFAULT_CONFIG, graceMin: undefined as unknown as number } });
+  assert.equal(graceOf(old), GRACE_MIN, 'a strategy saved before the setting existed');
+  assert.equal(entryDue(old, THU_0530 + 59 * 60_000, null).due, true);
+  assert.equal(entryDue(old, THU_0530 + 61 * 60_000, null).due, false);
+});
+
+test('a longer window keeps the day open longer, and the entry window ends with it', () => {
+  const loose = strat({ config: { ...DEFAULT_CONFIG, graceMin: 120 } });
+  assert.equal(entryDue(loose, THU_0530 + 90 * 60_000, null).due, true);
+  assert.equal(entryWindowEnd(loose, THU_0530) - THU_0530, 121 * 60_000);
+  const tight = strat({ config: { ...DEFAULT_CONFIG, graceMin: 10 } });
+  assert.equal(entryWindowEnd(tight, THU_0530) - THU_0530, 11 * 60_000);
+});
+
+test('the next entry skips today once this strategy’s own window has closed', () => {
+  const tight = strat({ config: { ...DEFAULT_CONFIG, graceMin: 5 } });
+  const at = nextEntryAt(tight, THU_0530 + 30 * 60_000, null);
+  assert.ok(at !== null && at > THU_0530 + 30 * 60_000, 'not today’s slot any more');
 });

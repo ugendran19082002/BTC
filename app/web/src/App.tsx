@@ -28,6 +28,7 @@ import { TODAY_MOVE } from '@/types/desk';
 import { tabTitle } from '@/lib/tab-title';
 import { pnlTone, signedInr, usdToInr } from '@/lib/format';
 import { MarketInsights } from '@/components/desk/MarketInsights';
+import { SideVerdict } from '@/components/desk/SideVerdict';
 import { SuddenMove } from '@/components/desk/SuddenMove';
 import { TopCandidates } from '@/components/desk/TopCandidates';
 import { PriceChart, CHART_TFS, type ChartTf } from '@/components/desk/PriceChart';
@@ -530,6 +531,10 @@ export default function App() {
               </div>
               </Collapsible.Content>
               </Collapsible.Root>
+              {data && snap && (
+                <SideVerdict direction={data.direction} containment={data.containment} />
+              )}
+
               {data && snap && (
                 <MarketInsights
                 structure={data.structure}

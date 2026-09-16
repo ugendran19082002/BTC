@@ -11,6 +11,9 @@ import { loadDays, reloadDays, DEFAULTS } from '../../backtest/backtest.js';
 import { tradingService, SHORT_CAP_KEY } from '../../trading/service.js';
 import { strategyStore } from './strategy.routes.js';
 import { refuse } from '../refuse.js';
+import { emBuffer, verdict as sideVerdict } from '../../domain/direction.js';
+import { DEFAULT_LIMITS } from '../../trading/precheck.js';
+import { pBetween } from '../../domain/probability.js';
 import { attachEv } from '../../domain/ev.js';
 import { noteOpenInterest, openInterestChange, ivChange, type OiChange } from '../../market/oi-history.js';
 import { SHOCK_WINDOWS } from '../../domain/shock.js';
@@ -134,6 +137,53 @@ export function registerDeskRoutes(app: FastifyInstance) {
       const recommendation = recommend(snap, scored, market, minPremium, lots, hedgeGap, mode, safetyBar);
       const structure = optionStructure(snap, market?.realisedVol ?? null);
 
+      /*
+       * Is there a side today, and would the desk's own gates take it?
+       *
+       * Description, not instruction: what the lots actually do is still
+       * `recommendation.split`, which carries the 733-day record. This is the
+       * reading a person does before trusting it -- and the answer on most days
+       * is "no side", which is the point. See `domain/direction.ts`.
+       */
+      const shorts = {
+        ce: recommendation.sides.find((x) => x.side === 'CE')?.leg.strike ?? null,
+        pe: recommendation.sides.find((x) => x.side === 'PE')?.leg.strike ?? null,
+      };
+      const spreads = recommendation.sides
+        .map((x) => {
+          const leg = x.leg;
+          const mid = leg.bid != null && leg.ask != null ? (leg.bid + leg.ask) / 2 : null;
+          return mid && mid > 0 && leg.ask != null && leg.bid != null ? (leg.ask - leg.bid) / mid : null;
+        })
+        .filter((v): v is number => v !== null);
+      const direction = sideVerdict({
+        market,
+        snap,
+        shorts,
+        execution: {
+          worstSpreadPct: spreads.length ? Math.max(...spreads) : null,
+          quoteAgeMs: null,
+          hedged: recommendation.hedgeMissing ? false : null,
+        },
+        maxSpreadPct: DEFAULT_LIMITS.maxSpreadPct,
+      });
+
+      /*
+       * The corridor: the chance BTC finishes between the two strikes the desk
+       * would sell. `recommendation.bothZeroChance` is the same fact reached
+       * from the two one-sided probabilities; this is it stated as the corridor
+       * itself, with the expected move beside it for scale.
+       */
+      const containment = shorts.ce !== null && shorts.pe !== null && snap.atmIv !== null
+        ? {
+            low: shorts.pe,
+            high: shorts.ce,
+            probability: pBetween(snap.spot, shorts.pe, shorts.ce, snap.tte, snap.atmIv),
+            lowBuffer: emBuffer(snap.spot, shorts.pe, snap.expectedMove),
+            highBuffer: emBuffer(snap.spot, shorts.ce, snap.expectedMove),
+          }
+        : null;
+
       return {
         snapshot: { ...snap, legs: undefined },
         legs: attachEv(scored, {
@@ -167,6 +217,8 @@ export function registerDeskRoutes(app: FastifyInstance) {
           window,
         })),
         forecast: forecast(snap),
+        direction,
+        containment,
         recommendation,
         requireHedge,
         verdict: verdict(snap, picks, minPremium, lots, market, {

@@ -4,7 +4,7 @@ import { attachEv } from '../domain/ev.js';
 import { tradingService } from '../trading/service.js';
 import { noteError } from '../observability/errors.js';
 import { StrategyStore } from './store.js';
-import { GRACE_MIN, entryDue, entrySlotDate, entryWindowEnd, exitDue } from './schedule.js';
+import { entryDue, entrySlotDate, entryWindowEnd, exitDue, graceOf } from './schedule.js';
 import { afterDeskCheck, describeSelection, selectLegs, type Candidate } from './select.js';
 import { shockGate } from './gate.js';
 import { clearHold, noteHold } from './holds.js';
@@ -163,7 +163,7 @@ export class StrategyRunner {
     const key = `${s.id}:${day}`;
     if (this.missedAlerted.has(key)) return;
     this.missedAlerted.add(key);
-    this.alert((ctx) => missedEntryAlert(s.name, time12(s.config.entryTime), GRACE_MIN, now, ctx));
+    this.alert((ctx) => missedEntryAlert(s.name, time12(s.config.entryTime), graceOf(s), now, ctx));
   }
 
   private note(s: Strategy, what: string, e: unknown): void {

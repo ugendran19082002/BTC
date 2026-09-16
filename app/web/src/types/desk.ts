@@ -90,6 +90,12 @@ export type Leg = {
   volume: number | null;
   ageMin: number | null;
   probs: { expireWorthless: number | null; touch: number | null; nearZero: number | null };
+  /**
+   * How far this strike sits from spot in expected moves. 1.0 means today's
+   * expected move reaches it exactly — the same statement on a quiet day and a
+   * violent one, which "$1,400 away" is not.
+   */
+  emBuffer: number | null;
   distancePct: number;
   intrinsic: number;
   extrinsic: number | null;
@@ -385,6 +391,43 @@ export type ExpiryOption = {
   contracts: number;
 };
 
+/**
+ * Whether the tape says a side today, and whether the desk's gates would take
+ * it. Mirrors `domain/direction.ts`.
+ *
+ * Description, not instruction: the lots are still split by the tested 70/30
+ * rule in the recommendation. This is the reading beside it, and on most days
+ * it says no side, which is the point of having it.
+ */
+export type DirectionInput = { key: string; label: string; value: number | null; why: string };
+export type DirectionGate = {
+  key: 'direction' | 'timeframes' | 'expectedMove' | 'structure' | 'execution';
+  label: string;
+  /** Null when there was nothing to read, which is never a pass. */
+  pass: boolean | null;
+  why: string;
+};
+export type DirectionVerdict = {
+  score: number | null;
+  side: 'bullish' | 'bearish' | null;
+  inputs: DirectionInput[];
+  gates: DirectionGate[];
+  passed: number;
+  readable: number;
+  confirmed: boolean;
+  summary: string;
+};
+
+/** The chance BTC finishes between the two strikes the desk would sell. */
+export type Containment = {
+  low: number;
+  high: number;
+  probability: number | null;
+  /** Each short's distance from spot, in expected moves. */
+  lowBuffer: number | null;
+  highBuffer: number | null;
+};
+
 export type ChainResponse = {
   snapshot: SnapshotMeta;
   legs: Leg[];
@@ -395,6 +438,8 @@ export type ChainResponse = {
   /** One per window: 5m, 15m, 1h, 4h. The screen picks; the server computes all four. */
   shocks: SuddenMove[];
   forecast: Forecast | null;
+  direction: DirectionVerdict;
+  containment: Containment | null;
   recommendation: Recommendation;
   requireHedge: boolean;
   verdict: Verdict;

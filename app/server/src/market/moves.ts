@@ -70,12 +70,122 @@ export type TimeframeRead = {
   ema21: number | null;
   ema50: number | null;
   rsi14: number | null;
+  /** RSI now less RSI one bar ago: which way momentum is moving, not where it is. */
+  rsiSlope: number | null;
+  /** Wilder's ADX(14): how strong the trend is, whichever way it points. */
+  adx14: number | null;
+  /** Volume-weighted average price over the bars read. */
+  vwap: number | null;
+  /** Price against VWAP, as a percentage of VWAP. */
+  vwapDistPct: number | null;
+  /** Swing structure: +1 higher highs and higher lows, -1 the mirror, 0 neither. */
+  structure: -1 | 0 | 1;
   /** average true range as a percentage of price */
   atrPct: number | null;
   /** -1 falling, 0 flat, +1 rising, from the EMA stack */
   trend: -1 | 0 | 1;
   label: string;
 };
+
+/**
+ * Wilder's ADX: how *strong* a trend is, saying nothing about its direction.
+ *
+ * Here to keep the direction score honest. Two timeframes pointing the same way
+ * in a market going nowhere is agreement about noise, and the score should read
+ * it as less than the same agreement in a market that is actually moving.
+ */
+function adx(bars: Candle[], period = 14): number | null {
+  if (bars.length < period * 2 + 1) return null;
+  const tr: number[] = [];
+  const plus: number[] = [];
+  const minus: number[] = [];
+  for (let i = 1; i < bars.length; i++) {
+    const b = bars[i]!;
+    const p = bars[i - 1]!;
+    const up = b.high - p.high;
+    const down = p.low - b.low;
+    plus.push(up > down && up > 0 ? up : 0);
+    minus.push(down > up && down > 0 ? down : 0);
+    tr.push(Math.max(b.high - b.low, Math.abs(b.high - p.close), Math.abs(b.low - p.close)));
+  }
+  // Wilder smoothing, then DX, then the average of the DXs.
+  const smooth = (xs: number[]): number[] => {
+    const out: number[] = [];
+    let run = xs.slice(0, period).reduce((a, b) => a + b, 0);
+    out.push(run);
+    for (let i = period; i < xs.length; i++) {
+      run = run - run / period + xs[i]!;
+      out.push(run);
+    }
+    return out;
+  };
+  const trS = smooth(tr);
+  const pS = smooth(plus);
+  const mS = smooth(minus);
+  const dx: number[] = [];
+  for (let i = 0; i < trS.length; i++) {
+    const t = trS[i]!;
+    if (!(t > 0)) continue;
+    const pdi = (pS[i]! / t) * 100;
+    const mdi = (mS[i]! / t) * 100;
+    const sum = pdi + mdi;
+    if (!(sum > 0)) continue;
+    dx.push((Math.abs(pdi - mdi) / sum) * 100);
+  }
+  if (dx.length < period) return null;
+  return dx.slice(-period).reduce((a, b) => a + b, 0) / period;
+}
+
+/**
+ * Volume-weighted average price over the bars given, and where price sits
+ * against it.
+ *
+ * The number intraday desks actually argue about: above VWAP the buyers have
+ * been paying up, below it the sellers have. Typical price per bar (H+L+C)/3,
+ * weighted by that bar's volume, which is the standard definition and the one
+ * every other screen will agree with.
+ */
+function vwapOf(bars: Candle[]): number | null {
+  let pv = 0;
+  let v = 0;
+  for (const b of bars) {
+    const typical = (b.high + b.low + b.close) / 3;
+    if (!(b.volume > 0) || !(typical > 0)) continue;
+    pv += typical * b.volume;
+    v += b.volume;
+  }
+  return v > 0 ? pv / v : null;
+}
+
+/**
+ * Market structure over the recent swings: higher highs and higher lows, or
+ * lower highs and lower lows.
+ *
+ * A fractal swing is a bar whose high is the highest of the two either side of
+ * it (and the mirror for a low) -- the smallest definition that is not a line
+ * drawn by eye. +1 when the last two swing highs and the last two swing lows
+ * are both rising, -1 when both are falling, 0 otherwise, which includes every
+ * range and every break that has not been confirmed by the other side.
+ */
+function structureOf(bars: Candle[]): -1 | 0 | 1 {
+  const highs: number[] = [];
+  const lows: number[] = [];
+  for (let i = 2; i < bars.length - 2; i++) {
+    const b = bars[i]!;
+    if (b.high > bars[i - 1]!.high && b.high > bars[i - 2]!.high
+      && b.high > bars[i + 1]!.high && b.high > bars[i + 2]!.high) highs.push(b.high);
+    if (b.low < bars[i - 1]!.low && b.low < bars[i - 2]!.low
+      && b.low < bars[i + 1]!.low && b.low < bars[i + 2]!.low) lows.push(b.low);
+  }
+  if (highs.length < 2 || lows.length < 2) return 0;
+  const hh = highs.at(-1)! > highs.at(-2)!;
+  const hl = lows.at(-1)! > lows.at(-2)!;
+  const lh = highs.at(-1)! < highs.at(-2)!;
+  const ll = lows.at(-1)! < lows.at(-2)!;
+  if (hh && hl) return 1;
+  if (lh && ll) return -1;
+  return 0;
+}
 
 function readOne(tf: Timeframe, bars: Candle[]): TimeframeRead | null {
   if (bars.length < 25) return null;
@@ -91,6 +201,11 @@ function readOne(tf: Timeframe, bars: Candle[]): TimeframeRead | null {
     trend = up ? 1 : down ? -1 : 0;
   }
   const a = atr(bars);
+  const r = rsi(closes);
+  // The same RSI one bar ago: the level says where momentum is, the change
+  // says which way it is going, and a direction score wants the second one.
+  const rPrior = closes.length > 1 ? rsi(closes.slice(0, -1)) : null;
+  const vwap = vwapOf(bars);
   return {
     tf,
     bars: bars.length,
@@ -98,7 +213,12 @@ function readOne(tf: Timeframe, bars: Candle[]): TimeframeRead | null {
     ema9: e9,
     ema21: e21,
     ema50: e50,
-    rsi14: rsi(closes),
+    rsi14: r,
+    rsiSlope: r === null || rPrior === null ? null : r - rPrior,
+    adx14: adx(bars),
+    vwap,
+    vwapDistPct: vwap === null || !(vwap > 0) ? null : ((close - vwap) / vwap) * 100,
+    structure: structureOf(bars),
     atrPct: a === null ? null : (a / close) * 100,
     trend,
     label: trend === 1 ? 'rising' : trend === -1 ? 'falling' : 'flat',

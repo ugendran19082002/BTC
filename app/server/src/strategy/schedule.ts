@@ -49,8 +49,23 @@ export type DueVerdict =
  * Sixty minutes, raised from thirty on 10 September 2026: a restart or a slow
  * price feed around the entry minute should not cost the day. Anything later
  * than that is still refused.
+ *
+ * The default, not the rule: each strategy carries its own `graceMin`, because
+ * how late is too late is a property of the strategy rather than of the desk.
+ * One entering at 05:30 into a twelve-hour contract can afford an hour; one
+ * entering on a signal cannot afford ten minutes. A config written before the
+ * setting existed reads as this number.
  */
 export const GRACE_MIN = 60;
+/** Bounds for the per-strategy window. A day-long grace is not a grace. */
+export const GRACE_MIN_MIN = 1;
+export const GRACE_MIN_MAX = 240;
+
+/** This strategy's own grace window, in minutes. */
+export const graceOf = (s: Strategy): number => {
+  const v = s.config.graceMin;
+  return typeof v === 'number' && Number.isFinite(v) ? v : GRACE_MIN;
+};
 
 /**
  * The moment this strategy's entry time last came round, at or before `nowMs`.
@@ -88,7 +103,7 @@ function holdMinutes(s: Strategy): number {
  * rather than left on the book into the day.
  */
 export function entryWindowEnd(s: Strategy, nowMs: number): number {
-  return entrySlotAt(s, nowMs) + (GRACE_MIN + 1) * 60_000;
+  return entrySlotAt(s, nowMs) + (graceOf(s) + 1) * 60_000;
 }
 
 /**
@@ -125,11 +140,12 @@ export function entryDue(
   }
 
   const hold = holdMinutes(s);
-  if (since > GRACE_MIN) {
+  const grace = graceOf(s);
+  if (since > grace) {
     // Inside the slot's own window it is late for this one; past it, the next
     // one is simply not here yet.
     return since < hold
-      ? { due: false, because: `too late -- ${time12(s.config.entryTime)} passed more than ${GRACE_MIN} minutes ago` }
+      ? { due: false, because: `too late -- ${time12(s.config.entryTime)} passed more than ${grace} minutes ago` }
       : { due: false, because: `waiting for ${time12(s.config.entryTime)} IST` };
   }
   // Entering after the exit would open a position the same pass wants to close.
@@ -182,12 +198,12 @@ export function nextEntryAt(s: Strategy, nowMs: number, lastRunDate: string | nu
     if (day === istDate(nowMs)) {
       if (lastRunDate === day) continue;          // today is spent
       // Today's entry has been and gone, and its grace window with it.
-      if (istMinutes(nowMs) >= start && minutesForward(start, istMinutes(nowMs)) > GRACE_MIN) continue;
+      if (istMinutes(nowMs) >= start && minutesForward(start, istMinutes(nowMs)) > graceOf(s)) continue;
     }
     // midnight IST of that day, in epoch ms, plus the entry minute
     const midnightUtc = Date.parse(`${day}T00:00:00Z`) - IST_OFFSET_MIN * 60_000;
     const at = midnightUtc + start * 60_000;
-    if (at >= nowMs - GRACE_MIN * 60_000) return at;
+    if (at >= nowMs - graceOf(s) * 60_000) return at;
   }
   return null;
 }

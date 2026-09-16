@@ -69,6 +69,16 @@ export type Leg = {
    * See probability.ts -- delta is none of them.
    */
   probs: StrikeProbabilities;
+  /**
+   * How far this strike sits from spot, measured in expected moves.
+   *
+   * 1.0 means today's expected move reaches it exactly. The point of it is that
+   * "$1,400 away" means nothing on its own -- it is a long way on a quiet day
+   * and inside the noise on a violent one -- while "1.88 expected moves away"
+   * is the same statement on every day. Null before the board has an
+   * at-the-money volatility to work an expected move from.
+   */
+  emBuffer: number | null;
   /** how far the strike sits from spot, as a percentage */
   distancePct: number;
   /** what the option is worth if nothing moves, and what is time value */
@@ -215,11 +225,19 @@ function finish(
     ? atmLegs.reduce((a, l) => a + l.iv!, 0) / atmLegs.length
     : null;
   const TWELVE_HOURS_IN_YEARS = 12 / (365 * 24);
+  // The expected move is only known once the at-the-money volatility is, which
+  // is after every leg is built -- so each leg's distance in expected moves is
+  // filled in here rather than where the leg is made.
+  const em = atmIv === null ? null : expectedMove(snap.spot, atmIv, snap.tte);
+  const legs = em === null || !(em > 0)
+    ? snap.legs
+    : snap.legs.map((l) => ({ ...l, emBuffer: Math.abs(l.strike - snap.spot) / em }));
   return {
     ...snap,
+    legs,
     coverage,
     atmIv,
-    expectedMove: atmIv === null ? null : expectedMove(snap.spot, atmIv, snap.tte),
+    expectedMove: em,
     // What the move would be over the 12 hours the trade actually spans, if
     // today's at-the-money volatility still held. Shown when you are looking
     // ahead at a contract you have not entered yet, because the move over the
@@ -372,6 +390,8 @@ export async function liveChain(width = 25, wantExpiry?: string): Promise<Snapsh
       volume: t.volume ?? null,
       ageMin: null,
       probs: strikeProbabilities(cp, spot, strike, tte, iv, worthSimulating),
+      // Filled in by `finish` once the board's expected move is known.
+      emBuffer: null,
       distancePct: ((strike - spot) / spot) * 100,
       intrinsic,
       extrinsic: mark === null ? null : Math.max(0, mark - intrinsic),
@@ -467,6 +487,8 @@ export async function historicalChain(
       volume: tr.reduce((a, c) => a + (c.volume ?? 0), 0),
       ageMin: last ? Math.round((minute - last.time) / 60) : null,
       probs: strikeProbabilities(cp, spot, strike, tte, iv, worthSimulating),
+      // Filled in by `finish` once the board's expected move is known.
+      emBuffer: null,
       distancePct: ((strike - spot) / spot) * 100,
       intrinsic,
       extrinsic: mark === null ? null : Math.max(0, mark - intrinsic),

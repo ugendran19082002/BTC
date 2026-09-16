@@ -44,6 +44,9 @@ function cleanConfig(raw: unknown): StrategyConfig {
     stopLossPct: Number(c.stopLossPct ?? DEFAULT_CONFIG.stopLossPct),
     lots: Math.floor(Number(c.lots ?? DEFAULT_CONFIG.lots)),
     legs: c.legs === 'CE' || c.legs === 'PE' ? c.legs : 'both',
+    // A client that predates the setting sends nothing and means the old
+    // constant, which is what DEFAULT_CONFIG carries.
+    graceMin: Math.trunc(Number(c.graceMin ?? DEFAULT_CONFIG.graceMin)) || DEFAULT_CONFIG.graceMin,
     probGate: c.probGate === null || c.probGate === undefined ? null : Number(c.probGate),
     doubleWhenOneSided: Boolean(c.doubleWhenOneSided),
     minSellScore: c.minSellScore === null || c.minSellScore === undefined

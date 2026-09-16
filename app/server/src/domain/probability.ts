@@ -127,6 +127,28 @@ export function pReachNearZero(
   return hit / paths;
 }
 
+/**
+ * Probability the spot finishes between two strikes -- the containment number.
+ *
+ * For a desk that sells a call and a put on the same day, this is the single
+ * question the whole trade turns on: does BTC finish inside the corridor. It is
+ * not the two one-sided probabilities multiplied -- those are not independent,
+ * they are two views of one distribution -- it is the distance between them:
+ * P(S_T > low) - P(S_T > high), each of which is N(d2) at that strike.
+ */
+export function pBetween(
+  s: number,
+  low: number,
+  high: number,
+  t: number,
+  v: number,
+): number | null {
+  if (!(t > 0) || !(v > 0) || !(s > 0) || !(low > 0) || !(high > 0)) return null;
+  if (high <= low) return 0;
+  const above = (k: number) => cdf(d1d2(s, k, t, v).d2);
+  return Math.min(1, Math.max(0, above(low) - above(high)));
+}
+
 export type StrikeProbabilities = {
   /** lands out of the money at settlement */
   expireWorthless: number | null;

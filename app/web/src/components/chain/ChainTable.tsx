@@ -106,7 +106,7 @@ function Ev({ leg, sold = false }: { leg: Leg | undefined; sold?: boolean }) {
 /** Which heading gets which colour. The reference set is dimmed; prices are not. */
 const HEAD_CLASS: Record<ColumnKey, string> = {
   oi: 'aux', volume: 'aux', oiChange: 'aux', volumeToOi: 'aux', delta: 'aux', iv: 'aux',
-  otm: 'aux', breakeven: 'aux', mark: 'aux',
+  otm: 'aux', emBuffer: 'aux', breakeven: 'aux', mark: 'aux',
   score: 'scorecol', signal: 'sigcol', ev: 'evcol', zero: 'zerocol',
   model: '', ask: 'askcol', bid: 'bidcol',
 };
@@ -178,6 +178,23 @@ function Cell({
     case 'otm': {
       const d = leg ? otmPct(leg.strike, ctx.snap.spot) : null;
       return <td className="dim aux">{d === null ? '·' : `${d.toFixed(1)}%`}</td>;
+    }
+    case 'emBuffer': {
+      /*
+       * Distance in expected moves, which is distance that means the same
+       * thing on every day. Under 1 the expected move reaches the strike, so
+       * it is marked: that is the line between a strike that is far away and
+       * one that only looks far away in dollars.
+       */
+      const b = leg?.emBuffer ?? null;
+      return (
+        <td
+          className={`aux ${b === null ? 'dim' : b < 1 ? 'down' : b >= 2 ? 'up' : ''}`}
+          title={b === null ? undefined : `${b.toFixed(2)} expected moves from spot.`}
+        >
+          {b === null ? '·' : `${b.toFixed(2)}×`}
+        </td>
+      );
     }
     case 'breakeven':
       return (

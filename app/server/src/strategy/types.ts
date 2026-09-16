@@ -163,6 +163,17 @@ export type StrategyConfig = {
    * 0.95 is the measured line: legs scoring 95%+ settled at zero 98.85% of the
    * time across the record, and the gate holds in both halves of it.
    */
+  /**
+   * How late an entry may still be taken, in minutes after its time.
+   *
+   * A desk that was down at 05:30 and comes up at 05:34 should still trade; one
+   * that comes up at 09:00 should not, because the record was measured entering
+   * at 05:30 and a five-hour-late entry is a different trade wearing its name.
+   * How long "still fine" lasts is the strategy's own business: an hour into a
+   * twelve-hour contract is nothing, ten minutes into a signal is everything.
+   * Absent on strategies written before this existed, which read as 60.
+   */
+  graceMin: number;
   probGate: number | null;
   /**
    * When one leg is refused, sell two lots of the one that survived.
@@ -309,6 +320,7 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   lots: 10,
   legs: 'both',
   probGate: 0.95,
+  graceMin: 60,
   doubleWhenOneSided: true,
   minSellScore: null,
   maxShockScore: null,
@@ -404,6 +416,10 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
   if (c.maxShockScore !== null && c.maxShockScore !== undefined
       && (!Number.isInteger(c.maxShockScore) || c.maxShockScore < 1 || c.maxShockScore > 100)) {
     bad.push('The sudden-move risk limit must be a whole number from 1 to 100, or off.');
+  }
+  if (c.graceMin !== undefined
+    && (!Number.isInteger(c.graceMin) || c.graceMin < 1 || c.graceMin > 240)) {
+    bad.push('The late-entry window must be a whole number of minutes from 1 to 240.');
   }
   if (!Array.isArray(c.weekdays) || c.weekdays.some((d) => !Number.isInteger(d) || d < 0 || d > 6)) {
     bad.push('Days must be whole numbers from 0 (Sunday) to 6 (Saturday).');
