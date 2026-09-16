@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ReportPanel } from '@/components/report/ReportPanel';
 import type { DaysReport, MtmReport } from '@/types/report';
+// The same helpers the panel uses: the suite runs on whatever today is.
+import { daysAgoIst, todayIst } from '@/lib/report';
 
 const getDays = vi.fn();
 const getMtm = vi.fn();
@@ -90,13 +92,46 @@ describe('the calendar', () => {
     expect(link.getAttribute('href')).toMatch(/^\/api\/report\/days\.csv\?from=\d{4}-\d{2}-\d{2}&to=\d{4}-\d{2}-\d{2}$/);
   });
 
-  it('refuses a range that ends before it starts, and asks nothing', async () => {
+  it('refuses a range that ends before it starts, and asks nothing', () => {
+    /*
+     * Unreachable through the control now -- the picker hands over both ends
+     * at once and never a reversed pair -- but the dates are remembered in the
+     * browser, and a value left there by an older build is exactly the kind of
+     * thing that reaches a fetch as `from=2027&to=2026`.
+     */
+    localStorage.setItem('btc-desk:report:from', JSON.stringify('2027-01-01'));
+    localStorage.setItem('btc-desk:report:to', JSON.stringify('2026-09-14'));
+    render(<ReportPanel />);
+    expect(screen.getByText(/must not be after the end date/)).toBeInTheDocument();
+    expect(getDays).not.toHaveBeenCalled();
+  });
+
+  /*
+   * The range is one control, the same one the orders screen uses.
+   *
+   * Two `<input type="date">` boxes rendered differently in every browser and
+   * asked for a range as two questions that could contradict each other while
+   * it was being answered.
+   */
+  it('[critical] the range is chosen in one picker, and a choice reloads the report', async () => {
+    render(<ReportPanel />);
+    await screen.findByLabelText('totals');
+    expect(screen.queryByLabelText('from date')).toBeNull();
+    getDays.mockClear();
+    // the trigger says what the range is, which is also how it is found
+    fireEvent.click(screen.getByRole('button', { name: /last 90 days|\d+ \w+/i }));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'yesterday' }));
+    await waitFor(() => expect(getDays).toHaveBeenCalledWith(daysAgoIst(1), daysAgoIst(1)));
+  });
+
+  it('[critical] a quick range sets both ends and says which one is showing', async () => {
     render(<ReportPanel />);
     await screen.findByLabelText('totals');
     getDays.mockClear();
-    fireEvent.change(screen.getByLabelText('from date'), { target: { value: '2027-01-01' } });
-    expect(screen.getByText(/must not be after the end date/)).toBeInTheDocument();
-    expect(getDays).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '7d' }));
+    await waitFor(() => expect(getDays).toHaveBeenCalledWith(daysAgoIst(7), todayIst()));
+    expect(screen.getByRole('button', { name: '7d' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: '30d' })).toHaveAttribute('aria-pressed', 'false');
   });
 });
 

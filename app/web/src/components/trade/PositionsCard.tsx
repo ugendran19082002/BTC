@@ -337,8 +337,27 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
           </span>
         )}
         {charges && charges.paidUsd > 0 && (
-          <span className="tabular-nums" title="Delta's fee plus 18% GST.">
+          /*
+           * The charges, and what is left after them.
+           *
+           * The line used to end on a cost with no consequence: "₹63.89 paid ·
+           * ₹29.77 to close" is two numbers going out and nothing coming back,
+           * and the answer to the question it raises -- so what do I actually
+           * keep? -- sat in a panel above it with a different label. It is the
+           * same figure as "If closed now", deliberately: this is where the
+           * charges are, so this is where the number that has already had them
+           * taken off belongs.
+           */
+          <span className="tabular-nums" title="Delta's fee plus 18% GST, on the fills so far and on closing the rest at the mark.">
             Charges {inr(usdToInr(charges.paidUsd))} paid · {inr(usdToInr(charges.toCloseUsd))} to close
+            {net !== null && net !== undefined && (
+              <>
+                {' · close now → '}
+                <span className={cn(pnlTone(net) === 'down' ? 'text-[var(--down)]' : 'text-[var(--up)]')}>
+                  {pnlTone(net) === 'down' ? 'lose ' : 'keep '}{inr(Math.abs(usdToInr(net) ?? 0))}
+                </span>
+              </>
+            )}
           </span>
         )}
       </div>

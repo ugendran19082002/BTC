@@ -5,6 +5,7 @@ import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import { Card, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
+import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { PnlCalendar } from '@/components/report/PnlCalendar';
 import { CumulativeChart } from '@/components/report/CumulativeChart';
 import { MtmChart } from '@/components/report/MtmChart';
@@ -63,18 +64,29 @@ export function ReportPanel() {
           Profit and loss
         </CardTitle>
 
+        {/*
+          One control for the range, the same one the orders screen uses.
+          Two `<input type="date">` boxes showed a different thing in every
+          browser -- a picker in Chrome, a wheel on a phone, a bare text box in
+          Firefox on Linux -- and asked for a range as two separate questions
+          that could contradict each other while it was being answered. The
+          picker takes both ends at once, keeps its own presets, and never hands
+          over half a range.
+        */}
         <div className="report-controls">
-          <label className="field">
-            <span>From</span>
-            <input type="date" value={from} max={to} aria-label="from date" onChange={(e) => setFrom(e.target.value)} />
-          </label>
-          <label className="field">
-            <span>To</span>
-            <input type="date" value={to} min={from} max={todayIst()} aria-label="to date" onChange={(e) => setTo(e.target.value)} />
-          </label>
+          <DateRangePicker
+            value={{ from, to }}
+            onChange={(r) => { setFrom(r.from); setTo(r.to); }}
+          />
           <div className="report-quick" role="group" aria-label="quick ranges">
             {[['7d', 7], ['30d', 30], ['90d', 90], ['1y', 365]].map(([l, n]) => (
-              <button key={l} type="button" className="chain-chip" onClick={() => { setFrom(daysAgoIst(n as number)); setTo(todayIst()); }}>
+              <button
+                key={l}
+                type="button"
+                className={`chain-chip${from === daysAgoIst(n as number) && to === todayIst() ? ' on' : ''}`}
+                aria-pressed={from === daysAgoIst(n as number) && to === todayIst()}
+                onClick={() => { setFrom(daysAgoIst(n as number)); setTo(todayIst()); }}
+              >
                 {l}
               </button>
             ))}

@@ -188,7 +188,7 @@ describe('what it is worth right now', () => {
       charges: { entryUsd: 0.1, exitUsd: 0, paidUsd: 0.1, toCloseUsd: 0.05 },
     })]} />);
     expect(screen.getByText('+₹21.25').className).toContain('--up');
-    expect(screen.getByText('Charges ₹8.50 paid · ₹4.25 to close')).toBeInTheDocument();
+    expect(screen.getByText(/Charges/)).toHaveTextContent('Charges ₹8.50 paid · ₹4.25 to close');
   });
 
   it('shows a dash rather than a zero before the exchange has answered', () => {
@@ -243,6 +243,42 @@ describe('a position with no stop behind it', () => {
   it('says nothing at all when every position is covered', () => {
     const { container } = render(<AlarmBanner status={{ open: [trade()] } as TradeStatus} />);
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe('the charges line', () => {
+  /*
+   * "₹8.43 paid · ₹7.88 to close" is two numbers going out and nothing coming
+   * back. The answer to the question that raises -- so what do I keep? -- was
+   * in a panel above it under a different name.
+   */
+  const withCharges = (over: Partial<Trade> = {}) => trade({
+    charges: { entryUsd: 0.1, exitUsd: 0, paidUsd: 0.1, toCloseUsd: 0.09 },
+    live: { markPrice: 11.23, unrealisedPnl: 0.155, decayed: 0.06, liquidationPrice: 201.33, netIfClosedUsd: 8.62 },
+    ...over,
+  });
+
+  it('[critical] says what closing now would leave, beside the charges that come off it', () => {
+    render(<PositionsCard trades={[withCharges()]} />);
+    const line = screen.getByText(/Charges/);
+    expect(line).toHaveTextContent('₹8.50 paid · ₹7.65 to close · close now → keep ₹733');
+    expect(within(line).getByText(/keep ₹733/).className).toContain('--up');
+  });
+
+  it('[critical] a position under water says lose, not keep', () => {
+    render(<PositionsCard trades={[withCharges({
+      live: { markPrice: 14, unrealisedPnl: -0.3, decayed: -0.1, liquidationPrice: 201.33, netIfClosedUsd: -0.4 },
+    })]} />);
+    const line = screen.getByText(/Charges/);
+    expect(line).toHaveTextContent('close now → lose ₹34.00');
+    expect(within(line).getByText(/lose ₹34\.00/).className).toContain('--down');
+  });
+
+  it('says nothing about closing when there is no price to close at', () => {
+    render(<PositionsCard trades={[withCharges({
+      live: { markPrice: null, unrealisedPnl: null, decayed: null, liquidationPrice: null, netIfClosedUsd: null },
+    })]} />);
+    expect(screen.getByText(/Charges/)).not.toHaveTextContent('close now');
   });
 });
 
