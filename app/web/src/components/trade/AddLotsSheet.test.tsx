@@ -89,7 +89,7 @@ describe('the preview', () => {
   it('[critical] sends the body the add will send, and prices it in money', async () => {
     show();
     typeLots('100');
-    await waitFor(() => expect(previewAdd).toHaveBeenCalledWith({ tradeId: 't1', lots: 100, limitPrice: null }));
+    await waitFor(() => expect(previewAdd).toHaveBeenCalledWith({ tradeId: 't1', lots: 100, limitPrice: null, timeoutMin: 60 }));
     const dl = within(screen.getByLabelText('what this add does'));
     await waitFor(() => expect(dl.getByText('Starts at').nextSibling).toHaveTextContent('28.00'));
     expect(dl.getByText('Position after').nextSibling).toHaveTextContent('1,400 @ 11.24 avg');
@@ -102,8 +102,55 @@ describe('the preview', () => {
     show();
     typeLots('100');
     fireEvent.change(screen.getByLabelText('add price'), { target: { value: '27.5' } });
-    await waitFor(() => expect(previewAdd).toHaveBeenLastCalledWith({ tradeId: 't1', lots: 100, limitPrice: 27.5 }));
+    await waitFor(() => expect(previewAdd).toHaveBeenLastCalledWith({ tradeId: 't1', lots: 100, limitPrice: 27.5, timeoutMin: 60 }));
     expect(screen.getByText(/Never sold under 27\.50/)).toBeInTheDocument();
+  });
+
+  /*
+   * How long the add works for.
+   *
+   * The window is the whole point of an add by hand: "sell more of this if the
+   * price comes to me". It used to be five minutes, unasked and unshown, which
+   * is long enough for the chase and nothing else.
+   */
+  it('[critical] defaults to an hour, and says what happens when it runs out', async () => {
+    show();
+    expect((screen.getByLabelText('how long the add works for') as HTMLInputElement).value).toBe('60');
+    expect(screen.getByText(/Rests until it fills or 1h passes, then whatever is left is cancelled/)).toBeInTheDocument();
+    expect(screen.getByText(/stopped from the position card/)).toBeInTheDocument();
+  });
+
+  it('[critical] the window is sent with the add', async () => {
+    show();
+    typeLots('100');
+    fireEvent.change(screen.getByLabelText('how long the add works for'), { target: { value: '15' } });
+    await waitFor(() => expect(previewAdd).toHaveBeenLastCalledWith({ tradeId: 't1', lots: 100, limitPrice: null, timeoutMin: 15 }));
+    swipe(slider());
+    await waitFor(() => expect(addToPosition).toHaveBeenCalledWith({ tradeId: 't1', lots: 100, limitPrice: null, timeoutMin: 15 }));
+  });
+
+  it('the chips fill in the windows anyone actually picks', async () => {
+    show();
+    const box = screen.getByLabelText('how long the add works for') as HTMLInputElement;
+    fireEvent.click(screen.getByRole('button', { name: '15m' }));
+    expect(box.value).toBe('15');
+    fireEvent.click(screen.getByRole('button', { name: '4h' }));
+    expect(box.value).toBe('240');
+    expect(screen.getByText(/or 4h passes/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '1h' }));
+    expect(box.value).toBe('60');
+  });
+
+  it('[critical] refuses a window past four hours, or none at all, and sends nothing', async () => {
+    show();
+    typeLots('100');
+    for (const bad of ['241', '0', '']) {
+      fireEvent.change(screen.getByLabelText('how long the add works for'), { target: { value: bad } });
+      expect(screen.getByText(/A window of more than 0 and at most 240 minutes/)).toBeInTheDocument();
+      expect(slider()).toHaveAttribute('aria-disabled', 'true');
+    }
+    swipe(slider());
+    expect(addToPosition).not.toHaveBeenCalled();
   });
 
   it('asks nothing for a size that is not a size', async () => {
@@ -150,7 +197,7 @@ describe('sending', () => {
     await waitFor(() => expect(slider()).not.toHaveAttribute('aria-disabled'));
     swipe(slider());
     await waitFor(() => expect(addToPosition).toHaveBeenCalledTimes(1));
-    expect(addToPosition).toHaveBeenCalledWith({ tradeId: 't1', lots: 100, limitPrice: null });
+    expect(addToPosition).toHaveBeenCalledWith({ tradeId: 't1', lots: 100, limitPrice: null, timeoutMin: 60 });
     await waitFor(() => expect(onAdded).toHaveBeenCalled());
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });

@@ -9,6 +9,7 @@ import { Figure } from '@/components/ui/figure';
 import { KV } from '@/components/ui/kv';
 import { SwipeToConfirm } from '@/components/ui/swipe-confirm';
 import { contractLabel, inr, price, size as fmtSize, usd, usdToInr } from '@/lib/format';
+import { cn } from '@/lib/utils';
 
 /**
  * Sell more of a contract that is already held.
@@ -33,6 +34,17 @@ const num = (s: string, fallback: number) => {
   return Number.isFinite(n) ? n : fallback;
 };
 
+/** The server's own default and ceiling, in `http/add-body.ts`. */
+export const ADD_WINDOW_DEFAULT_MIN = 60;
+export const ADD_WINDOW_MAX_MIN = 240;
+const ADD_WINDOWS = [['15m', 15], ['1h', 60], ['4h', 240]] as const;
+
+/** "1h", "4h", "15 minutes" -- the way the number was picked. */
+export function describeWindow(minutes: number): string {
+  if (minutes % 60 === 0 && minutes >= 60) return `${minutes / 60}h`;
+  return `${minutes} minute${minutes === 1 ? '' : 's'}`;
+}
+
 export function AddLotsSheet({ trade, open, onOpenChange, onAdded }: {
   trade: Trade;
   open: boolean;
@@ -42,6 +54,17 @@ export function AddLotsSheet({ trade, open, onOpenChange, onAdded }: {
   const held = Math.abs(trade.position);
   const [lots, setLots] = useState('');
   const [priceText, setPriceText] = useState('');
+  /*
+   * How long the add may work before whatever is unfilled is cancelled.
+   *
+   * An hour by default. The window is the whole point of an add by hand --
+   * "sell more of this if the price comes to me" -- and five minutes answered
+   * a question nobody asked: either it fills in the first seconds of the
+   * chase, or it needs long enough for the market to come back. The chips are
+   * the windows anyone actually picks; the box takes any number of minutes up
+   * to four hours, and the add can be stopped from the card at any point.
+   */
+  const [windowMin, setWindowMin] = useState(String(ADD_WINDOW_DEFAULT_MIN));
   const [preview, setPreview] = useState<AddPreview | null>(null);
   const [checking, setChecking] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
@@ -52,17 +75,21 @@ export function AddLotsSheet({ trade, open, onOpenChange, onAdded }: {
     if (!open) return;
     setLots('');
     setPriceText('');
+    setWindowMin(String(ADD_WINDOW_DEFAULT_MIN));
     setPreview(null);
     setFailed(null);
   }, [open]);
 
   const lotsN = Math.trunc(num(lots, 0));
   const limit = priceText.trim() === '' ? null : num(priceText, -1);
+  const minutes = num(windowMin, NaN);
+  const windowOk = Number.isFinite(minutes) && minutes > 0 && minutes <= ADD_WINDOW_MAX_MIN;
   const draft = useMemo<AddDraft | null>(() => {
     if (!(lotsN >= 1)) return null;
     if (limit !== null && !(limit > 0)) return null;
-    return { tradeId: trade.tradeId, lots: lotsN, limitPrice: limit };
-  }, [trade.tradeId, lotsN, limit]);
+    if (!windowOk) return null;
+    return { tradeId: trade.tradeId, lots: lotsN, limitPrice: limit, timeoutMin: minutes };
+  }, [trade.tradeId, lotsN, limit, windowOk, minutes]);
 
   // Debounced, as on the ticket: typing a size is not a request per keystroke.
   useEffect(() => {
@@ -135,6 +162,38 @@ export function AddLotsSheet({ trade, open, onOpenChange, onAdded }: {
             : 'Starts at the ask and walks toward the bid over five seconds, never past it.'}
         </p>
 
+        <div className="mt-3 flex items-end gap-2">
+          <label className="flex flex-1 flex-col gap-1 text-[11px] uppercase tracking-[0.6px] text-muted-foreground">
+            Works for · minutes
+            <Input
+              aria-label="how long the add works for"
+              inputMode="numeric"
+              value={windowMin}
+              onChange={(e) => setWindowMin(e.target.value)}
+            />
+          </label>
+          <div className="flex flex-wrap gap-1.5 pb-0.5">
+            {ADD_WINDOWS.map(([label, n]) => (
+              <Button
+                key={label}
+                type="button"
+                variant="outline"
+                aria-pressed={windowOk && minutes === n}
+                className={cn('h-10 px-3 text-[12px]', windowOk && minutes === n && 'border-foreground text-foreground')}
+                onClick={() => setWindowMin(String(n))}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+        </div>
+        <p className="m-0 mt-1.5 text-[11.5px] leading-snug text-muted-foreground">
+          {windowOk
+            ? `Rests until it fills or ${describeWindow(minutes)} passes, then whatever is left is cancelled. `
+              + 'It can be stopped from the position card before that.'
+            : <span className="text-[var(--down)]">A window of more than 0 and at most {ADD_WINDOW_MAX_MIN} minutes.</span>}
+        </p>
+
         {/*
           Priced in money, from the server's own arithmetic. "425 lots" reads
           fine; "$1,820 of margin against a $228 account" is the number the
@@ -185,7 +244,7 @@ export function AddLotsSheet({ trade, open, onOpenChange, onAdded }: {
             tone="up"
             label={draft ? `Swipe to add ${fmtSize(lotsN)}` : 'Swipe to add'}
             busyLabel="Sending…"
-            disabledLabel={checking ? 'Checking…' : blocked ? "Can't add" : 'Enter lots'}
+            disabledLabel={checking ? 'Checking…' : blocked ? "Can't add" : !windowOk ? 'Check the window' : 'Enter lots'}
             disabled={!canSend}
             onConfirm={send}
           />

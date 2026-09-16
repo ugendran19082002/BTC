@@ -309,6 +309,8 @@ export class TradingService {
     return this.engine.previewAdd(tradeId, req);
   }
   cancel(tradeId: string) { return this.engine.cancelEntry(tradeId); }
+  /** Stop a working add now, keeping whatever it has already sold. */
+  cancelAdd(tradeId: string) { return this.engine.cancelAdd(tradeId); }
 
   /**
    * Move the exits on an open position.

@@ -110,6 +110,66 @@ test('[critical] an add that does not fill in its window is cancelled, and the p
   assert.match(s.note ?? '', /add not filled: its window closed/);
 });
 
+/*
+ * Stopping an add by hand.
+ *
+ * The window runs to an hour now, and a person who has changed their mind
+ * about an hour-long order should not have to wait out the hour or close the
+ * whole position to be rid of it. It is the same path the window's own expiry
+ * takes, so both leave the same record.
+ */
+test('[critical] an add can be stopped by hand, and what it already sold stays', async () => {
+  const { r } = await shortPE();
+  r.ex.configure({ partialFillSize: 100 });
+  await r.engine.addToPosition('PE-1', addOf({ timeoutMs: 60 * 60_000 }));
+  // long enough for the chase to reach the bid and sell the hundred on offer
+  await walk(r, 7_500);
+  const s = (await r.engine.cancelAdd('PE-1'))!;
+  assert.equal(s.adding, null, 'nothing is working any more');
+  assert.equal(s.addedSize, 100, 'the hundred it did sell are part of the position');
+  assert.equal(s.position, -525);
+  assert.deepEqual((await book(r)).filter((o) => o.side === 'sell'), [], 'no sell left on the book');
+  assert.match(s.note ?? '', /stopped by hand/);
+});
+
+test('[critical] stopping an add leaves the target and stop covering what is actually held', async () => {
+  const { r } = await shortPE();
+  r.ex.configure({ partialFillSize: 100 });
+  await r.engine.addToPosition('PE-1', addOf({ timeoutMs: 60 * 60_000 }));
+  await walk(r, 7_500);
+  await r.engine.cancelAdd('PE-1');
+  const s = (await r.engine.poll('PE-1'))!;
+  assert.equal(s.position, -525);
+  assert.deepEqual((await book(r)).map((o) => o.left).sort(), [525, 525]);
+});
+
+test('stopping an add that never sold anything leaves the position exactly as it was', async () => {
+  const { r } = await shortPE();
+  await r.engine.addToPosition('PE-1', addOf({ timeoutMs: 60 * 60_000 }));
+  const s = (await r.engine.cancelAdd('PE-1'))!;
+  assert.equal(s.adding, null);
+  assert.equal(s.position, -425);
+  assert.equal(s.addedSize ?? 0, 0);
+});
+
+test('stopping when nothing is adding is not an error, and changes nothing', async () => {
+  const { r } = await shortPE();
+  const before = r.store.get('PE-1')!.state;
+  const s = (await r.engine.cancelAdd('PE-1'))!;
+  assert.equal(s.position, before.position);
+  assert.equal(s.adding ?? null, null);
+  assert.equal(await r.engine.cancelAdd('no-such-trade'), null);
+});
+
+test('a stopped add does not come back on the next poll', async () => {
+  const { r } = await shortPE();
+  await r.engine.addToPosition('PE-1', addOf({ timeoutMs: 60 * 60_000 }));
+  await r.engine.cancelAdd('PE-1');
+  const s = await walk(r, 5_000);
+  assert.equal(s.adding, null);
+  assert.deepEqual((await book(r)).filter((o) => o.side === 'sell'), []);
+});
+
 test('an add that half fills keeps what filled, and the target and stop cover exactly that', async () => {
   const { r } = await shortPE();
   r.ex.configure({ partialFillSize: 100 });

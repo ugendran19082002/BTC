@@ -562,6 +562,23 @@ export class TradeEngine {
     return this.withTrade(tradeId, () => this.cancelEntryInner(tradeId));
   }
 
+  /**
+   * Take a working add off the book by hand, before its window closes.
+   *
+   * The same path the window's own expiry takes -- cancel, count what it
+   * filled, close the add out -- so a person stopping an add and the clock
+   * stopping one leave the same record. Whatever has already filled stays: it
+   * is part of the position, and an add half-filled is not an add undone.
+   */
+  cancelAdd(tradeId: string, reason = 'stopped by hand'): Promise<TradeState | null> {
+    return this.withTrade(tradeId, async () => {
+      const rec = this.d.store.get(tradeId);
+      if (!rec) return null;
+      if (!rec.state.adding) return rec.state;
+      return (await this.endAdd(rec, reason)).state;
+    });
+  }
+
   /** Move the stop or the target on a position that is already on. */
   updateProtection(
     tradeId: string,

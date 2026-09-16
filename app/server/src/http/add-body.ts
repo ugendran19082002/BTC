@@ -33,7 +33,16 @@ export type ParsedAdd = {
   timeoutMs: number;
 };
 
-export const ADD_DEFAULTS = { chaseSeconds: 5, timeoutMin: 5, maxTimeoutMin: 240, maxChaseSec: 600 } as const;
+/**
+ * `timeoutMin` is how long the add may work before whatever is unfilled is
+ * cancelled. An hour, because that is what the window is for: an add by hand
+ * is "sell more of this if the price comes to me", and a five-minute window
+ * answers a question nobody asked -- either it fills in the first seconds of
+ * the chase or it needs long enough for the market to come back. Four hours is
+ * the ceiling; the strategy's own adds carry their own windows and do not read
+ * this.
+ */
+export const ADD_DEFAULTS = { chaseSeconds: 5, timeoutMin: 60, maxTimeoutMin: 240, maxChaseSec: 600 } as const;
 
 const num = (v: unknown): number | null => {
   if (v === null || v === undefined || v === '') return null;

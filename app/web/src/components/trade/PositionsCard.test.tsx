@@ -14,6 +14,7 @@ const previewAdd = vi.fn();
 const addToPosition = vi.fn();
 const reconcileTrade = vi.fn();
 const previewClose = vi.fn();
+const cancelAdd = vi.fn();
 vi.mock('@/api/trade', () => ({
   closeTrade: (...a: unknown[]) => closeTrade(...a),
   cancelTrade: (...a: unknown[]) => cancelTrade(...a),
@@ -23,6 +24,7 @@ vi.mock('@/api/trade', () => ({
   addToPosition: (...a: unknown[]) => addToPosition(...a),
   reconcileTrade: (...a: unknown[]) => reconcileTrade(...a),
   previewClose: (...a: unknown[]) => previewClose(...a),
+  cancelAdd: (...a: unknown[]) => cancelAdd(...a),
 }));
 
 const trade = (over: Partial<Trade> = {}): Trade => ({
@@ -241,6 +243,60 @@ describe('a position with no stop behind it', () => {
   it('says nothing at all when every position is covered', () => {
     const { container } = render(<AlarmBanner status={{ open: [trade()] } as TradeStatus} />);
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe('a working add', () => {
+  /*
+   * An add can now work for up to four hours, so "an add is working" with no
+   * clock beside it stops meaning anything ten minutes in -- and the only way
+   * to stop one was to wait for its window to close.
+   */
+  const working = (over: Partial<NonNullable<Trade['adding']>> = {}) => trade({
+    adding: {
+      size: 100, limitPrice: 28, floorPrice: 27,
+      deadline: Date.now() + 42 * 60_000,
+      source: { manual: true },
+      ...over,
+    },
+  });
+
+  it('[critical] says how long the add has left', () => {
+    render(<PositionsCard trades={[working()]} />);
+    expect(screen.getByText(/Adding 100 @ 28\.00/)).toHaveTextContent('41m');
+  });
+
+  it('[critical] Stop add stops it, and tells the desk to refresh', async () => {
+    const onChanged = vi.fn();
+    cancelAdd.mockResolvedValue({ ok: true });
+    render(<PositionsCard trades={[working()]} onChanged={onChanged} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Stop add' }));
+    await waitFor(() => expect(cancelAdd).toHaveBeenCalledWith('t1'));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
+
+  it('cannot be pressed twice into the same add', async () => {
+    let release: (v: unknown) => void = () => {};
+    cancelAdd.mockReturnValue(new Promise((r) => { release = r; }));
+    render(<PositionsCard trades={[working()]} />);
+    const stop = screen.getByRole('button', { name: 'Stop add' });
+    fireEvent.click(stop);
+    expect(screen.getByRole('button', { name: 'Stopping…' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Stopping…' }));
+    expect(cancelAdd).toHaveBeenCalledTimes(1);
+    release({ ok: true });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Stop add' })).toBeEnabled());
+  });
+
+  it('a strategy add says which target sent it, and can be stopped too', () => {
+    render(<PositionsCard trades={[working({ source: { tradeId: 'CE-1', optionSide: 'CE', boughtBack: 425 } })]} />);
+    expect(screen.getByText(/the CE target bought back 425/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Stop add' })).toBeInTheDocument();
+  });
+
+  it('nothing to stop when nothing is adding', () => {
+    render(<PositionsCard trades={[trade()]} />);
+    expect(screen.queryByRole('button', { name: 'Stop add' })).toBeNull();
   });
 });
 

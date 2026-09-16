@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Clock, Loader2, Pencil, Plus, ShieldAlert, ShieldCheck, X } from 'lucide-react';
-import { cancelTrade, closeTrade, reconcileTrade } from '@/api/trade';
+import { cancelAdd, cancelTrade, closeTrade, reconcileTrade } from '@/api/trade';
 import type { Trade } from '@/types/trade';
 import { Card, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -10,7 +10,7 @@ import { EditExitsSheet } from '@/components/trade/EditExitsSheet';
 import { AddLotsSheet } from '@/components/trade/AddLotsSheet';
 import { ClosePositionSheet } from '@/components/trade/ClosePositionSheet';
 import {
-  ago, contractLabel, inr, pct, pnlTone, price, signedInr, signedUsd, size as fmtSize, usdToInr,
+  ago, contractLabel, countdown, inr, pct, pnlTone, price, signedInr, signedUsd, size as fmtSize, usdToInr,
 } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Figure } from '@/components/ui/figure';
@@ -138,6 +138,8 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
   const [closing, setClosing] = useState(false);
   const [editing, setEditing] = useState(false);
   const [adding, setAdding] = useState(false);
+  /** A stop in flight, so the button cannot be pressed twice into the same add. */
+  const [stopping, setStopping] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const held = Math.abs(trade.position);
   // An add can only go on a short that is open and not already adding. The
@@ -206,12 +208,35 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
             {' · '}{ago(trade.updatedAt)}
           </p>
           {trade.adding && (
-            <p className="m-0 mt-0.5 text-[12px] text-[var(--warn)]">
-              Adding {fmtSize(trade.adding.size)} @ {price(trade.adding.limitPrice)} (never below {price(trade.adding.floorPrice)})
-              {' — '}
-              {'manual' in trade.adding.source
-                ? 'added by hand'
-                : `the ${trade.adding.source.optionSide} target bought back ${fmtSize(trade.adding.source.boughtBack)}`}
+            /*
+             * A working add is a sell that has not happened yet, and the two
+             * things anybody wants to know about one are how long it has left
+             * and how to stop it. The window is up to four hours now, so "an
+             * add is working" without a clock beside it is a line that stops
+             * meaning anything about ten minutes in.
+             */
+            <p className="m-0 mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12px] text-[var(--warn)]">
+              <span>
+                Adding {fmtSize(trade.adding.size)} @ {price(trade.adding.limitPrice)} (never below {price(trade.adding.floorPrice)})
+                {' — '}
+                {'manual' in trade.adding.source
+                  ? 'added by hand'
+                  : `the ${trade.adding.source.optionSide} target bought back ${fmtSize(trade.adding.source.boughtBack)}`}
+                {' · '}{countdown(trade.adding.deadline)}
+              </span>
+              <button
+                type="button"
+                className="m-0 h-6 cursor-pointer appearance-none rounded-md border border-solid border-[var(--warn)]/50 bg-transparent px-2 font-[inherit] text-[11px] text-[var(--warn)] disabled:opacity-50"
+                disabled={stopping}
+                onClick={() => {
+                  setStopping(true);
+                  void cancelAdd(trade.tradeId)
+                    .catch(() => {})
+                    .finally(() => { setStopping(false); onChanged?.(); });
+                }}
+              >
+                {stopping ? 'Stopping…' : 'Stop add'}
+              </button>
             </p>
           )}
         </div>

@@ -87,6 +87,15 @@ export const closeTrade = (tradeId: string, lots?: number) =>
 export const previewClose = (tradeId: string, lots?: number) =>
   post<ClosePreview>('/api/trade/close/preview', lots === undefined ? { tradeId } : { tradeId, lots });
 
+/**
+ * Stop a working add now, keeping whatever it has already sold.
+ *
+ * The same path its own window takes when it closes, so a person stopping an
+ * add and the clock stopping one leave the same record.
+ */
+export const cancelAdd = (tradeId: string) =>
+  post<{ ok: true; trade: Trade }>('/api/trade/add/cancel', { tradeId });
+
 /** Pull a working order off the book. Refused once anything has filled. */
 export const cancelTrade = (tradeId: string) =>
   post<{ ok: true; trade: Trade }>('/api/trade/cancel', { tradeId });

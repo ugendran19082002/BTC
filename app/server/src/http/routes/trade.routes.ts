@@ -497,6 +497,21 @@ export function registerTradeRoutes(app: FastifyInstance) {
     return { mode: svc.mode, ok: true, trade: res.state };
   });
 
+  /**
+   * Stop a working add now.
+   *
+   * Idempotent on purpose: an add that has just filled or just timed out is
+   * not an error to have asked about, and the answer is the same either way --
+   * the trade as it now stands, with nothing adding to it.
+   */
+  app.post('/api/trade/add/cancel', async (req, reply) => {
+    const { tradeId } = (req.body ?? {}) as { tradeId?: string };
+    if (!tradeId) { reply.code(400); return { error: 'tradeId is required' }; }
+    const state = await svc.cancelAdd(tradeId);
+    if (!state) { reply.code(404); return { error: 'no such trade' }; }
+    return { ok: true, trade: state };
+  });
+
   /** Move the stop or the target on a position that is already open. */
   app.post('/api/trade/protection', async (req, reply) => {
     const b = (req.body ?? {}) as { tradeId?: string; takeProfitPct?: number; stopLossPct?: number };

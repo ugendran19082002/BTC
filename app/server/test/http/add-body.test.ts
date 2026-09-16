@@ -29,6 +29,15 @@ test('the least that is needed: a trade and a whole number of lots', () => {
   assert.equal(a.timeoutMs, ADD_DEFAULTS.timeoutMin * 60_000);
 });
 
+test('[critical] an add works for an hour unless it is told otherwise', () => {
+  // Five minutes was the old default, unasked and unshown on the sheet: long
+  // enough for the chase and nothing else, when the whole point of an add by
+  // hand is "sell more of this if the price comes back to me".
+  assert.equal(ADD_DEFAULTS.timeoutMin, 60);
+  assert.equal(ok({ tradeId: 't1', lots: 100 }).timeoutMs, 3_600_000);
+  assert.equal(ok({ tradeId: 't1', lots: 100, timeoutMin: 15 }).timeoutMs, 900_000, 'and a shorter one is still allowed');
+});
+
 test('[critical] every objection at once, not one per round trip', () => {
   const p = bad({ tradeId: '', lots: 0, limitPrice: -1, chaseSeconds: 999, timeoutMin: 0 });
   assert.equal(p.length, 5, p.join(' | '));
