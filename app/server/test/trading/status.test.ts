@@ -154,3 +154,43 @@ test('different keys do not share', async () => {
   assert.equal(await svc.coalesce('a', 1_000, async () => 'A'), 'A');
   assert.equal(await svc.coalesce('b', 1_000, async () => 'B'), 'B');
 });
+
+/**
+ * Delta off the request path.
+ *
+ * Coalescing stopped two tabs doing two fan-outs; it did not stop the fan-out
+ * being on the request path, and every poll still waited ~850ms for Delta. The
+ * server now refreshes the status on its own clock and a request reads the
+ * last answer at once.
+ */
+test('[critical] a request reads the last background answer without waiting', async () => {
+  const { TradingService } = await import('../../src/trading/service.js');
+  const svc = new TradingService();
+  let runs = 0;
+  svc.provideStatus(async () => { await new Promise((r) => setTimeout(r, 40)); return { n: ++runs }; });
+  await new Promise((r) => setTimeout(r, 60));          // the first background refresh lands
+  const t0 = Date.now();
+  const got = await svc.status<{ n: number }>();
+  assert.ok(Date.now() - t0 < 15, 'served from memory, not from a fan-out');
+  assert.equal(got.n, 1);
+  svc.stop();
+});
+
+test('a stale answer is not served: the request waits for a fresh one', async () => {
+  const { TradingService } = await import('../../src/trading/service.js');
+  const svc = new TradingService();
+  let runs = 0;
+  svc.provideStatus(async () => ({ n: ++runs }));
+  await new Promise((r) => setTimeout(r, 20));
+  const late = Date.now() + 10_000;                      // pretend ten seconds have passed
+  const got = await svc.status<{ n: number }>(late);
+  assert.equal(got.n, 2, 'recomputed, because the last one was too old');
+  svc.stop();
+});
+
+test('with nothing computed yet the first request computes, and says so if it cannot', async () => {
+  const { TradingService } = await import('../../src/trading/service.js');
+  const svc = new TradingService();
+  await assert.rejects(svc.status(), /status not provided/);
+  svc.stop();
+});

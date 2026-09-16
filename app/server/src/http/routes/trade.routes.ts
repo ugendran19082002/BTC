@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { STATUS_TTL_MS, stopPriceFor, targetPriceFor, tradingService } from '../../trading/service.js';
+import { stopPriceFor, targetPriceFor, tradingService } from '../../trading/service.js';
 import { lotsToContracts } from '../../trading/money.js';
 import { DEFAULT_LIMITS, precheck } from '../../trading/precheck.js';
 import {
@@ -14,7 +14,6 @@ import {
   ORDER_STATUSES, istDayEnd, istDayStart, istToday, orderOutcomeOf, orderStatusOf,
 } from '../../trading/status.js';
 import { refuse } from '../refuse.js';
-import { expiryTsOf } from '../../market/chain.js';
 import { parseAddBody, toAddRequest, type AddBody } from '../add-body.js';
 import { parseCloseBody, type CloseBody } from '../close-body.js';
 
@@ -231,7 +230,8 @@ export function registerTradeRoutes(app: FastifyInstance) {
    * rather than starting another. See `coalesce` in the service for the
    * numbers that made this necessary.
    */
-  app.get('/api/trade/status', async () => svc.coalesce('status', STATUS_TTL_MS, () => statusNow()));
+  svc.provideStatus(statusNow);
+  app.get('/api/trade/status', async () => svc.status());
 
   async function statusNow() {
     const [balance, positions] = await Promise.all([
@@ -564,36 +564,29 @@ export function registerTradeRoutes(app: FastifyInstance) {
    * journal, so a silence chosen on a quiet afternoon survives the next deploy.
    * Nothing about the trading engine changes either way.
    */
-  /*
-   * "Tell me when this strike pays 5."
-   *
-   * One-shot alerts on a contract's bid, set from the best-trade card. The
-   * expiry comes from the symbol, so an alert cannot outlive the contract it
-   * names. Listed with the fired ones from the last day, because "did it ever
-   * go off" is the question asked of a doorbell.
+  /**
+   * The best-pick card's own settings: whether the phone hears when the pick
+   * changes, and the premium floor the pool is cut at. Both remembered in the
+   * journal, so they survive a deploy and are the same on every phone.
    */
-  app.get('/api/trade/premium-alerts', async () => ({
-    alerts: svc.store.recentPremiumAlerts(Date.now() - 86_400_000),
+  app.get('/api/trade/best-trade/settings', async () => ({
+    alertOn: svc.bestTradeAlertOn,
+    minPremiumUsd: svc.bestTradeMinPremiumUsd,
     telegram: { configured: svc.notifier !== null, on: svc.alertsOn },
   }));
 
-  app.post('/api/trade/premium-alerts', async (req, reply) => {
-    const b = (req.body ?? {}) as { symbol?: unknown; threshold?: unknown };
-    const symbol = typeof b.symbol === 'string' ? b.symbol.trim() : '';
-    const threshold = Number(b.threshold);
-    if (!/^[CP]-BTC-\d+-\d{6}$/.test(symbol)) { reply.code(400); return { error: 'symbol must be a BTC option, like C-BTC-80000-160926' }; }
-    if (!Number.isFinite(threshold) || !(threshold > 0)) { reply.code(400); return { error: 'threshold must be a price above zero' }; }
-    const expiryTs = expiryTsOf(symbol.split('-')[3]!);
-    if (expiryTs * 1000 <= Date.now()) { reply.code(400); return { error: 'that contract has already settled' }; }
-    const alert = svc.store.addPremiumAlert({ symbol, threshold, expiryTs, now: Date.now() });
-    return { ok: true, alert };
-  });
-
-  app.delete('/api/trade/premium-alerts/:id', async (req, reply) => {
-    const id = Number((req.params as { id?: string }).id);
-    if (!Number.isInteger(id)) { reply.code(400); return { error: 'id must be a number' }; }
-    if (!svc.store.deletePremiumAlert(id)) { reply.code(404); return { error: 'no such alert' }; }
-    return { ok: true };
+  app.post('/api/trade/best-trade/settings', async (req, reply) => {
+    const b = (req.body ?? {}) as { alertOn?: unknown; minPremiumUsd?: unknown };
+    if (b.alertOn !== undefined) {
+      if (typeof b.alertOn !== 'boolean') { reply.code(400); return { error: 'alertOn must be true or false' }; }
+      svc.setBestTradeAlertOn(b.alertOn);
+    }
+    if (b.minPremiumUsd !== undefined) {
+      const v = Number(b.minPremiumUsd);
+      if (!Number.isFinite(v) || !(v > 0) || v > 1_000) { reply.code(400); return { error: 'minPremiumUsd must be a price above zero' }; }
+      svc.setBestTradeMinPremiumUsd(v);
+    }
+    return { ok: true, alertOn: svc.bestTradeAlertOn, minPremiumUsd: svc.bestTradeMinPremiumUsd };
   });
 
   app.post('/api/trade/alerts', async (req, reply) => {

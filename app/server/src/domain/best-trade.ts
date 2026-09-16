@@ -109,6 +109,8 @@ export type BestTrade = {
    * board. The card says so loudly; it is not a recommendation.
    */
   bestOfNone: boolean;
+  /** The premium floor the pool was cut at. */
+  minPremiumUsd: number;
 };
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -180,15 +182,26 @@ export function rankOf(p: {
  * none. Without it the pick is a naked short and says so: no cap, no
  * credit-to-risk number.
  */
+/** Below this bid a strike is not considered at all. The desk's own premium floor. */
+export const BEST_TRADE_MIN_PREMIUM_USD = 5;
+
 export function bestTrade(i: {
   legs: readonly EvLeg[];
   snap: Pick<Snapshot, 'spot' | 'expectedMove'>;
   lots: number;
+  /**
+   * Strikes paying less than this are not candidates, however safe. On 17
+   * September the card kept naming a 73,600 put paying $2.60 -- almost certain
+   * to expire worthless, and not worth selling: the margin at risk does not
+   * shrink because the option is cheaper. Same floor as the trading gate.
+   */
+  minPremiumUsd?: number;
   /** The strikes the tested engine picked, for the agreement flag. */
   enginePicks?: readonly { side: 'CE' | 'PE'; strike: number }[];
   hedgeFor?: (leg: EvLeg) => { strike: number; askUsd: number; widthUsd: number } | null;
 }): BestTrade {
-  const sellable = i.legs.filter((l) => (l.sellPrice ?? 0) > 0);
+  const floor = i.minPremiumUsd ?? BEST_TRADE_MIN_PREMIUM_USD;
+  const sellable = i.legs.filter((l) => (l.sellPrice ?? 0) > 0 && l.sellPrice! >= floor);
   const eligible = sellable.filter((l) => l.ev.tier !== 'avoid');
   /*
    * When nothing clears, rank what there is anyway -- and say so.
@@ -256,11 +269,12 @@ export function bestTrade(i: {
     runnersUp: built.slice(1, 3),
     eligible: eligible.length,
     why: pick === null
-      ? 'Nothing on this board can be sold: no strike has a bid.'
+      ? `Nothing on this board pays $${floor} or more, so there is nothing worth selling.`
       : bestOfNone
         ? 'No strike clears the hard rules today. This is the one that came closest — what it is failing is below.'
         : null,
     agreesWithEngine: agrees,
     bestOfNone,
+    minPremiumUsd: floor,
   };
 }

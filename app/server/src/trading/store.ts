@@ -94,12 +94,14 @@ const MIGRATIONS: Migration[] = [
   },
   {
     /*
-     * "Tell me when this strike pays 5." A one-shot premium alert on a
-     * contract: set from the best-trade card, checked against the live bid on
-     * every strategy tick, sent once over Telegram, then kept as a record of
-     * having fired. Rows outlive the contract they name so the journal can say
-     * an alert was set and what became of it; the checker skips anything
-     * already fired or past its expiry.
+     * A table nothing reads any more.
+     *
+     * It held "tell me when this strike pays 5" alerts for one afternoon on
+     * 16-17 September, before the ask turned out to be "tell me when the best
+     * pick changes" -- which needs no table, only a setting. The migration
+     * stays on the ledger because it has already run on the live desk and a
+     * ledger that loses an entry cannot be told apart from one that never ran
+     * it. The table is empty and harmless.
      */
     id: '009-premium-alerts',
     up: `
@@ -117,18 +119,6 @@ const MIGRATIONS: Migration[] = [
   },
 ];
 
-export type PremiumAlert = {
-  id: number;
-  /** The contract, e.g. C-BTC-80000-160926. */
-  symbol: string;
-  /** Fires when the bid reaches this, in dollars per BTC. */
-  threshold: number;
-  /** Epoch seconds. Past this the alert is dead whatever the bid does. */
-  expiryTs: number;
-  createdAt: number;
-  firedAt: number | null;
-  firedBid: number | null;
-};
 
 /** How long a day's line is kept. */
 export const MTM_KEEP_DAYS = 90;
@@ -288,42 +278,6 @@ export class SqliteTradeStore implements TradeStore {
     return Number(r.changes);
   }
 
-  // ------------------------------------------------------- premium alerts
-
-  addPremiumAlert(a: { symbol: string; threshold: number; expiryTs: number; now: number }): PremiumAlert {
-    const r = this.db.prepare(
-      'INSERT INTO premium_alerts (symbol, threshold, expiry_ts, created_at) VALUES (?, ?, ?, ?)',
-    ).run(a.symbol, a.threshold, a.expiryTs, a.now);
-    return this.premiumAlert(Number(r.lastInsertRowid))!;
-  }
-
-  premiumAlert(id: number): PremiumAlert | null {
-    const r = this.db.prepare('SELECT * FROM premium_alerts WHERE id = ?').get(id) as Record<string, unknown> | undefined;
-    return r ? rowToAlert(r) : null;
-  }
-
-  /** Alerts that have not fired, newest first. Includes expired ones; the checker decides. */
-  livePremiumAlerts(): PremiumAlert[] {
-    return (this.db.prepare('SELECT * FROM premium_alerts WHERE fired_at IS NULL ORDER BY created_at DESC').all() as Record<string, unknown>[])
-      .map(rowToAlert);
-  }
-
-  /** Everything set in the last while, fired or not, newest first. */
-  recentPremiumAlerts(sinceMs: number): PremiumAlert[] {
-    return (this.db.prepare('SELECT * FROM premium_alerts WHERE created_at >= ? ORDER BY created_at DESC').all(sinceMs) as Record<string, unknown>[])
-      .map(rowToAlert);
-  }
-
-  /** Mark it fired. Returns false if it already had -- the guard against sending twice. */
-  firePremiumAlert(id: number, at: number, bid: number): boolean {
-    const r = this.db.prepare('UPDATE premium_alerts SET fired_at = ?, fired_bid = ? WHERE id = ? AND fired_at IS NULL').run(at, bid, id);
-    return Number(r.changes) === 1;
-  }
-
-  deletePremiumAlert(id: number): boolean {
-    return Number(this.db.prepare('DELETE FROM premium_alerts WHERE id = ?').run(id).changes) === 1;
-  }
-
   private query(sql: string, ...params: unknown[]): TradeRecord[] {
     const rows = this.db.prepare(sql).all(...(params as never[])) as
       { trade_id: string; plan: string; state: string }[];
@@ -340,16 +294,3 @@ export class SqliteTradeStore implements TradeStore {
     };
   }
 }
-
-function rowToAlert(r: Record<string, unknown>): PremiumAlert {
-  return {
-    id: Number(r.id),
-    symbol: String(r.symbol),
-    threshold: Number(r.threshold),
-    expiryTs: Number(r.expiry_ts),
-    createdAt: Number(r.created_at),
-    firedAt: r.fired_at === null || r.fired_at === undefined ? null : Number(r.fired_at),
-    firedBid: r.fired_bid === null || r.fired_bid === undefined ? null : Number(r.fired_bid),
-  };
-}
-

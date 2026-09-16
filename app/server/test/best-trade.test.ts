@@ -52,7 +52,21 @@ test('[critical] an empty board is an answer, not a crash', () => {
   const out = bestTrade({ legs: [], snap, lots: 10 });
   assert.equal(out.pick, null);
   assert.equal(out.eligible, 0);
-  assert.match(out.why!, /Nothing on this board can be sold/);
+  assert.match(out.why!, /Nothing on this board pays \$5 or more/);
+});
+
+test('[critical] a strike paying under the floor is not a candidate, however safe', () => {
+  // The 73,600 put on 17 September: 100% to expire worthless, paying $2.60.
+  // Almost certain to keep it all, and not worth selling -- the margin at risk
+  // does not shrink because the option is cheaper.
+  const cheapAndSafe = leg({ cp: 'P', strike: 73_600, sellPrice: 2.6, bid: 2.6, emBuffer: 3.67 });
+  const paying = leg({ cp: 'P', strike: 74_400, sellPrice: 5.5, bid: 5.5, emBuffer: 2.41 });
+  const out = bestTrade({ legs: [cheapAndSafe, paying], snap, lots: 10 });
+  assert.equal(out.pick!.strike, 74_400);
+  assert.equal(out.minPremiumUsd, 5, 'the desk’s own floor by default');
+  assert.ok(!out.runnersUp.some((r) => r.strike === 73_600), 'and it is not even a runner-up');
+  const lowered = bestTrade({ legs: [cheapAndSafe, paying], snap, lots: 10, minPremiumUsd: 2 });
+  assert.equal(lowered.runnersUp.length, 1, 'a lower floor lets it back in');
 });
 
 test('[critical] a morning when nothing clears still names the closest, and what it fails', () => {
@@ -92,7 +106,7 @@ test('an eligible board never falls back, and carries no failures', () => {
 test('a strike with no bid cannot be sold, so it is not ranked at all', () => {
   const out = bestTrade({ legs: [leg({ cp: 'P', strike: 75_400, sellPrice: null, bid: null })], snap, lots: 10 });
   assert.equal(out.pick, null);
-  assert.match(out.why!, /no strike has a bid/);
+  assert.match(out.why!, /nothing worth selling/);
 });
 
 // ---------------------------------------------------------------- the money

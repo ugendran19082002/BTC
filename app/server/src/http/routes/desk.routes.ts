@@ -3,7 +3,7 @@ import { liveChain, historicalChain, liveExpiries, hoursSinceDeskOpen, WHOLE_BOA
 import { readMarket } from '../../market/moves.js';
 import { liveSpot, candles } from '../../market/delta.js';
 import { scoreLegs, pickSells, bias, verdict, maxLots, MARGIN_PER_LOT_USD, USDINR } from '../../domain/score.js';
-import { findHedge, recommend, type PickMode } from '../../domain/recommend.js';
+import { recommend, type PickMode } from '../../domain/recommend.js';
 import { optionStructure } from '../../domain/structure.js';
 import { forecast, reloadHorizons } from '../../domain/forecast.js';
 import { loadCalibration, reloadCalibration } from '../../domain/calibration.js';
@@ -13,7 +13,7 @@ import { strategyStore } from './strategy.routes.js';
 import { refuse } from '../refuse.js';
 import { emBuffer, verdict as sideVerdict } from '../../domain/direction.js';
 import { DEFAULT_LIMITS } from '../../trading/precheck.js';
-import { bestTrade } from '../../domain/best-trade.js';
+import { bestTradeNow } from '../../domain/best-trade-now.js';
 import { outlook } from '../../domain/outlook.js';
 import { pBetween } from '../../domain/probability.js';
 import { attachEv } from '../../domain/ev.js';
@@ -183,18 +183,11 @@ export function registerDeskRoutes(app: FastifyInstance) {
        * screen -- the card says so -- and hedged the same way the engine
        * hedges, by counting listed strikes.
        */
-      const best = bestTrade({
-        legs: attachEv(scored, {
-          spot: snap.spot, lots, minPremium,
-          atmIv: snap.atmIv, expectedMove: snap.expectedMove,
-        }),
-        snap,
-        lots,
-        enginePicks: recommendation.sides.map((x) => ({ side: x.side, strike: x.leg.strike })),
-        hedgeFor: (leg) => {
-          const h = findHedge(scored, leg.cp === 'C' ? 'CE' : 'PE', leg.strike, hedgeGap);
-          return h === null ? null : { strike: h.strike, askUsd: h.price, widthUsd: h.widthUsd };
-        },
+      // The same function the watcher uses, so the phone and the screen can
+      // never name different strikes for the same board. The premium floor is
+      // the card's own setting, not the chain's.
+      const best = bestTradeNow({
+        snap, market, lots, hedgeGap, minPremiumUsd: tradingService().bestTradeMinPremiumUsd,
       });
 
       const containment = shorts.ce !== null && shorts.pe !== null && snap.atmIv !== null

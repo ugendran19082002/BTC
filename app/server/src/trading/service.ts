@@ -20,8 +20,11 @@ import type { MtmSample } from './pnl-history.js';
 import { noteError } from '../observability/errors.js';
 import { alertFor, bookWentFlat, daySummaryFor } from '../notify/messages.js';
 import { TelegramNotifier } from '../notify/telegram.js';
-import { alertText, judge } from '../notify/premium-alerts.js';
-import { liveTickers } from '../market/delta.js';
+import { bestTradeText } from '../notify/best-trade-alert.js';
+import { bestTradeNow } from '../domain/best-trade-now.js';
+import { BEST_TRADE_MIN_PREMIUM_USD } from '../domain/best-trade.js';
+import { hoursSinceDeskOpen, liveChain, WHOLE_BOARD } from '../market/chain.js';
+import { readMarket } from '../market/moves.js';
 import type { ExchangePort } from './exchange/port.js';
 import type { ExchangeOrder, ExchangePosition, TradeState } from './types.js';
 
@@ -39,13 +42,22 @@ import type { ExchangeOrder, ExchangePosition, TradeState } from './types.js';
 const POLL_MS = 1_000;
 /** How often the day's P&L is written down. A minute draws a day in 720 points. */
 const MTM_SAMPLE_MS = 60_000;
-const ALERT_CHECK_MS = 20_000;
+const BEST_TRADE_WATCH_MS = 60_000;
 /** Long enough that a one-second poll is one call; short enough to feel live. */
-const POSITIONS_TTL_MS = 800;
-const QUOTE_TTL_MS = 800;
-const BALANCE_TTL_MS = 2_000;
+/*
+ * The display caches, sized for a status that is refreshed in the background
+ * once a second: everything a single refresh reads is reused within it, and
+ * nothing is older than two seconds when the screen reads it.
+ */
+const POSITIONS_TTL_MS = 1_500;
+const QUOTE_TTL_MS = 1_500;
+const BALANCE_TTL_MS = 2_500;
 /** How long one status answer serves every poll that arrives after it. */
 export const STATUS_TTL_MS = 900;
+/** How often the status is refreshed in the background, whether or not anyone asks. */
+const STATUS_REFRESH_MS = 1_000;
+/** A background answer older than this is not served; the request waits for a fresh one. */
+const STATUS_STALE_MS = 4_000;
 /** Where the chosen short cap is kept, so it outlives a restart. */
 export const SHORT_CAP_KEY = 'max_short_contracts';
 export type DeskMode = 'live' | 'paper';
@@ -241,9 +253,9 @@ export class TradingService {
     this.timer.unref?.();
     this.mtmTimer ??= setInterval(() => { void this.sampleMtm(); }, MTM_SAMPLE_MS);
     this.mtmTimer.unref?.();
-    // Premium alerts ride the ticker cache, which is refreshed every eight
-    // seconds; checking every twenty is often enough for a doorbell.
-    this.alertTimer ??= setInterval(() => { void this.checkPremiumAlerts(); }, ALERT_CHECK_MS);
+    // The best-pick watcher reads the whole board once a minute, which is the
+    // cadence the pick actually changes at; the chain it reads is the cached one.
+    this.alertTimer ??= setInterval(() => { void this.watchBestTrade(); }, BEST_TRADE_WATCH_MS);
     this.alertTimer.unref?.();
     this.store.pruneMtm(Date.now());
     return recovered;
@@ -253,37 +265,63 @@ export class TradingService {
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
     if (this.mtmTimer) { clearInterval(this.mtmTimer); this.mtmTimer = null; }
     if (this.alertTimer) { clearInterval(this.alertTimer); this.alertTimer = null; }
+    if (this.statusTimer) { clearInterval(this.statusTimer); this.statusTimer = null; }
   }
 
   private mtmTimer: NodeJS.Timeout | null = null;
   private alertTimer: NodeJS.Timeout | null = null;
 
   /**
-   * "Tell me when this strike pays 5."
+   * "Tell me when the best pick changes."
    *
-   * Every live alert against the current bid. Marked fired in the journal
-   * *before* the message goes, so a restart between the two cannot send it
-   * twice -- a doorbell rung twice is a siren. Honours the alerts switch: an
-   * alert set while messages are silenced still fires on the record and is
-   * simply not sent, which the list shows.
+   * A switch on the best-pick card. Once a minute the whole board is read, the
+   * pick worked out the same way the card works it out (`bestTradeNow`), and
+   * if it names a different strike from the last one announced -- or names
+   * one where there was none -- the phone hears. Not every minute, and not
+   * when the same strike is still the pick: a message that repeats what the
+   * last message said is one that teaches you to ignore the next.
+   *
+   * Remembered in the journal (`best_trade_alert`, `best_trade_min_premium`,
+   * `best_trade_last`) so the switch and the last announcement survive a
+   * deploy. Honours the phone-alerts switch like every other message.
    */
-  async checkPremiumAlerts(now = Date.now()): Promise<number> {
-    const live = this.store.livePremiumAlerts();
-    if (!live.length) return 0;
-    const tickers = await liveTickers().catch(() => []);
-    const bids = new Map(tickers.map((t) => [t.symbol, Number(t.quotes?.best_bid ?? NaN)] as const));
-    let fired = 0;
-    for (const a of live) {
-      const raw = bids.get(a.symbol);
-      const v = judge(a, { bid: raw === undefined || !Number.isFinite(raw) ? null : raw, nowTs: Math.floor(now / 1000) });
-      if (!v.fire) continue;
-      if (!this.store.firePremiumAlert(a.id, now, v.bid)) continue;
-      fired++;
-      if (this.notifier && this.alertsOn) {
-        this.notifier.notify({ key: `premium:${a.id}`, text: alertText(a, v.bid, this.currentMode) });
-      }
+  get bestTradeAlertOn(): boolean {
+    return this.store.getSetting('best_trade_alert') === '1';
+  }
+
+  setBestTradeAlertOn(on: boolean): void {
+    this.store.setSetting('best_trade_alert', on ? '1' : '0');
+    // A fresh switch-on announces the current pick rather than waiting for a
+    // change; forgetting the last one is what makes that happen.
+    if (on) this.store.setSetting('best_trade_last', '');
+  }
+
+  get bestTradeMinPremiumUsd(): number {
+    const v = Number(this.store.getSetting('best_trade_min_premium'));
+    return Number.isFinite(v) && v > 0 ? v : BEST_TRADE_MIN_PREMIUM_USD;
+  }
+
+  setBestTradeMinPremiumUsd(usd: number): void {
+    this.store.setSetting('best_trade_min_premium', String(usd));
+  }
+
+  async watchBestTrade(now = Date.now()): Promise<'off' | 'unchanged' | 'sent' | 'no board'> {
+    if (!this.bestTradeAlertOn) return 'off';
+    const snap = await liveChain(WHOLE_BOARD).catch(() => null);
+    if (!snap || !snap.live) return 'no board';
+    const market = await readMarket(hoursSinceDeskOpen(snap.ts)).catch(() => null);
+    const best = bestTradeNow({
+      snap, market, lots: 10, hedgeGap: 3, minPremiumUsd: this.bestTradeMinPremiumUsd,
+    });
+    const key = best.pick && !best.bestOfNone ? `${best.pick.side}-${best.pick.strike}-${snap.expiry}` : '';
+    const last = this.store.getSetting('best_trade_last') ?? '';
+    if (key === last) return 'unchanged';
+    this.store.setSetting('best_trade_last', key);
+    if (!key) return 'unchanged';   // it went away; nothing to say until something comes back
+    if (this.notifier && this.alertsOn) {
+      this.notifier.notify({ key: 'best-trade', text: bestTradeText(best, snap.expiry, this.currentMode, now) });
     }
-    return fired;
+    return 'sent';
   }
 
   /**
@@ -536,6 +574,52 @@ export class TradingService {
    * a second however many are watching.
    */
   private coalesced = new Map<string, { at: number; value: unknown; inflight: Promise<unknown> | null }>();
+
+  /**
+   * The status, refreshed in the background and read instantly.
+   *
+   * `coalesce` stopped two tabs doing two fan-outs. It did not stop the
+   * fan-out being on the request path: with reads cached under a second and a
+   * poll every second, every poll still waited ~850ms for Delta, and the
+   * screen was always a request behind. Measured on the deployed build:
+   * 139 calls in ten minutes, averaging 853ms, worst 3.6s.
+   *
+   * So the server now refreshes the status itself, once a second, whether or
+   * not anyone is looking -- the same stale-while-revalidate the ticker cache
+   * has used since the start -- and a request returns the last answer at
+   * once. It waits only when there is no answer yet, or the last one is over
+   * four seconds old, which is a Delta outage rather than a poll.
+   */
+  private statusLast: { at: number; value: unknown } | null = null;
+  private statusCompute: (() => Promise<unknown>) | null = null;
+  private statusTimer: NodeJS.Timeout | null = null;
+
+  /** The route registers how the status is computed; the service keeps it fresh. */
+  provideStatus(compute: () => Promise<unknown>): void {
+    this.statusCompute = compute;
+    this.statusTimer ??= setInterval(() => { void this.refreshStatus(); }, STATUS_REFRESH_MS);
+    this.statusTimer.unref?.();
+    void this.refreshStatus();
+  }
+
+  private async refreshStatus(now = Date.now()): Promise<void> {
+    if (!this.statusCompute) return;
+    try {
+      const value = await this.coalesce('status', STATUS_TTL_MS, this.statusCompute, now);
+      this.statusLast = { at: now, value };
+    } catch {
+      // A refresh that fails leaves the last good answer in place; the route's
+      // staleness rule decides whether that is still worth serving.
+    }
+  }
+
+  async status<T>(now = Date.now()): Promise<T> {
+    if (this.statusLast && now - this.statusLast.at < STATUS_STALE_MS) return this.statusLast.value as T;
+    if (!this.statusCompute) throw new Error('status not provided');
+    const value = await this.coalesce('status', STATUS_TTL_MS, this.statusCompute, now);
+    this.statusLast = { at: now, value };
+    return value as T;
+  }
 
   async coalesce<T>(key: string, ttlMs: number, compute: () => Promise<T>, now = Date.now()): Promise<T> {
     const hit = this.coalesced.get(key);

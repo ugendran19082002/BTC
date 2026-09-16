@@ -155,6 +155,16 @@ const SPOT_TTL_MS = 800;
 
 export async function liveSpot(now = Date.now()): Promise<number | null> {
   if (spotCache && now - spotCache.at < SPOT_TTL_MS) return spotCache.value;
+  // The ticker poller already holds every BTC option's spot_price, refreshed
+  // every eight seconds in the background. A request inside that window costs
+  // nothing; only a cold cache goes to Delta for the price.
+  const fromTickers = tickerCache && now - tickerCache.at < 8_500
+    ? Number(tickerCache.data[0]?.spot_price ?? NaN)
+    : NaN;
+  if (Number.isFinite(fromTickers) && fromTickers > 0) {
+    spotCache = { value: fromTickers, at: now };
+    return fromTickers;
+  }
   const t = await req<{ spot_price?: string; mark_price?: string }>('/tickers/BTCUSD', 2).catch(() => null);
   const value = Number(t?.spot_price ?? t?.mark_price ?? Number.NaN);
   if (!Number.isFinite(value) || value <= 0) return spotCache?.value ?? null;
