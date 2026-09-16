@@ -535,29 +535,43 @@ export default function App() {
                 <SideVerdict direction={data.direction} containment={data.containment} />
               )}
 
+            </div>
+
+            {/*
+              The right-hand column: the chart, and the board's own numbers
+              under it.
+
+              Market Insights used to sit in the left column, under the side
+              verdict. Once the verdict card arrived that column ran several
+              hundred pixels past the chart and left a hole beside it the height
+              of a screen -- a two-column layout where one column simply stops.
+              The insights also read better here: they are a two-up grid of
+              tiles that was being squeezed into a third of the page.
+            */}
+            <div className="board-right">
+              {data && snap && (
+                <ErrorBoundary where="Price chart">
+                  <PriceChart
+                    bars={candles?.bars ?? []}
+                    support={data.structure.peOiWall?.strike ?? null}
+                    resistance={data.structure.ceOiWall?.strike ?? null}
+                    spot={snap.spot}
+                    tf={chartTf}
+                    onTf={setChartTf}
+                    loading={candlesBusy}
+                    error={candles?.error}
+                  />
+                </ErrorBoundary>
+              )}
+
               {data && snap && (
                 <MarketInsights
-                structure={data.structure}
-                snap={snap}
-                market={data.market}
+                  structure={data.structure}
+                  snap={snap}
+                  market={data.market}
                 />
               )}
             </div>
-
-            {data && snap && (
-              <ErrorBoundary where="Price chart">
-              <PriceChart
-              bars={candles?.bars ?? []}
-              support={data.structure.peOiWall?.strike ?? null}
-              resistance={data.structure.ceOiWall?.strike ?? null}
-              spot={snap.spot}
-              tf={chartTf}
-              onTf={setChartTf}
-              loading={candlesBusy}
-              error={candles?.error}
-              />
-              </ErrorBoundary>
-            )}
           </div>
 
           {err && <div className="err">{err}</div>}

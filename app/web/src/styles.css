@@ -1117,8 +1117,6 @@ tr.atm td.strikecell .strikebtn { color: #fff; }
  */
 @media (min-width: 1180px) {
   .board-row { grid-template-columns: minmax(360px, 34%) minmax(0, 1fr); }
-  /* Two-up inside a third of the page, rather than auto-fit's one. */
-  .board-row .insight-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (min-width: 1500px) {
   .board-row { grid-template-columns: minmax(400px, 30%) minmax(0, 1fr); }
@@ -1128,7 +1126,8 @@ tr.atm td.strikecell .strikebtn { color: #fff; }
 /* Settings above the insights, stacked into the left column. Cut to time and
    expiry, the settings bar was two controls across the whole page and the
    column beside the chart was short by exactly their height. */
-.board-left { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.board-left, .board-right { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
 .board-left .bar-wrap { margin-bottom: 0; }
 .board-left .bar { flex-wrap: wrap; }
 .board-left .bar .field, .board-left .bar .field.wide { flex: 1 1 100%; }
@@ -1136,10 +1135,9 @@ tr.atm td.strikecell .strikebtn { color: #fff; }
 .board-left .bar .actions { margin-left: 0; width: 100%; }
 .board-left .bar .actions > * { flex: 1 1 0; }
 
-/* An odd tile last in a two-up grid sat alone against a gap. */
-@media (min-width: 1060px) {
-  .board-row .insight-grid > :last-child:nth-child(odd) { grid-column: 1 / -1; }
-}
+/* A last tile alone on its row spans the rest of it rather than sitting
+   against a gap. `auto-fit` decides how many fit; this only tidies the end. */
+.insight-grid > :last-child:nth-child(odd) { grid-column: auto; }
 
 /* ── Settings ───────────────────────────────────────────────────────────────
    It carried eight controls and now carries two, so a flex row that packed
