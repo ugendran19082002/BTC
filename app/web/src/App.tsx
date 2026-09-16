@@ -18,6 +18,7 @@ import { getErrors } from '@/api/errors';
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
 import { usePoll } from '@/hooks/usePoll';
 import { usePageVisible } from '@/hooks/usePageVisible';
+import { useStream } from '@/hooks/useStream';
 import { MoveSection } from '@/components/desk/MoveSection';
 import { TodayPnl } from '@/components/desk/TodayPnl';
 import { DateTimePicker, istToEpoch, type IstMoment } from '@/components/research/DateTimePicker';
@@ -80,6 +81,13 @@ const Chart = memo(PriceChart);
 const NO_BARS: never[] = [];
 
 type Tab = 'desk' | 'trade' | 'orders' | 'strategy' | 'pnl' | 'errors';
+
+/** Of two answers to the same question, the one that arrived last; either may be missing. */
+function newer<T>(a: T | null, aAt: number | null, b: T | null, bAt: number | null): T | null {
+  if (a === null || aAt === null) return b;
+  if (b === null || bAt === null) return a;
+  return bAt > aAt ? b : a;
+}
 
 /** A tab remembered from an older build may no longer exist; it falls back to Live. */
 const TABS: readonly Tab[] = ['desk', 'trade', 'orders', 'strategy', 'pnl', 'errors'];
@@ -279,12 +287,27 @@ export default function App() {
     return () => clearInterval(id);
   }, [autoRefresh, live, signedIn, visible, load]);
 
-  // Positions and the price tick once a second on their own clock, so they keep
-  // moving even while a chain fetch is slow or failing. The server caches the
-  // exchange calls for just under a second, so this stays cheap.
-  const { data: trade, refresh: refreshTrade } = usePoll(getTradeStatus, 1_000, { enabled: signedIn === true });
+  /*
+   * Positions and the price, pushed.
+   *
+   * One stream carries the status and the price the moment either changes.
+   * The one-second polls are still here and run only while the stream is not
+   * live -- a proxy that buffers, a browser that will not reconnect, a server
+   * from before the stream -- so the screen never depends on the push to
+   * move. Where both have an answer the newer one wins: a poll run right
+   * after a button press must not be overwritten by a frame from a second
+   * earlier.
+   */
+  const stream = useStream(signedIn === true);
+  const polls = signedIn === true && !stream.live;
+  const { data: polledTrade, updatedAt: polledTradeAt, refresh: refreshTrade } = usePoll(getTradeStatus, 1_000, { enabled: polls });
   const { data: errors } = usePoll(() => getErrors({ limit: 1 }), 30_000, { enabled: signedIn === true });
-  const { data: tick } = usePoll(getSpot, 1_000, { enabled: signedIn === true });
+  const { data: polledTick, updatedAt: polledTickAt } = usePoll(getSpot, 1_000, { enabled: polls });
+  const trade = newer(stream.status, stream.statusAt, polledTrade, polledTradeAt);
+  const tick = useMemo(() => {
+    const spot = newer(stream.spot, stream.spotAt, polledTick?.spot ?? null, polledTickAt);
+    return spot === null ? null : { spot };
+  }, [stream.spot, stream.spotAt, polledTick?.spot, polledTickAt]);
   /*
    * Bars move far more slowly than the book, and the chart is context rather
    * than a price to act on -- so a minute, not the board's five seconds. Only
