@@ -2600,3 +2600,90 @@ example, the path that touches and still settles worthless, the A/B comparison
 (97%/12% against 98%/31%), and what touch does *not* say: when it happens, how
 deep it goes, or anything at all if the volatility estimate is wrong.
 
+## One trade, and where the next few hours could go
+
+*16 September 2026*
+
+Two cards, from the research notes, and one line that decides how both are
+written:
+
+> Prediction, options risk and trade eligibility are three questions. Keeping
+> them apart is the architecture; mixing them into one score is how "the market
+> looks bullish" becomes "sell this put".
+
+**Best trade · this expiry** replaces *Best expected value*, which ranked on one
+number and could not say what the trade costs when it goes wrong. It names one
+order — `SELL PE 75,400` — with the premium, the settlement odds, touch,
+near-zero, EM×, delta, credit, max loss with the hedge that caps it, credit ÷
+risk, and a liquidity score. Ranked 0.35 credit-against-risk, 0.30 settlement
+odds, 0.20 distance, 0.15 liquidity, all declared in `BEST_TRADE_WEIGHTS`.
+
+- **Touch does not vote.** It is on the card and out of the ranking: a touch is
+  a drawdown, not a loss, and ranking on it would refuse the strike that pays
+  for exactly the risk a seller is in business to take. A test pins that two
+  strikes differing only in touch rank identically.
+- **Max loss needs a hedge to be a number.** Without one the card says
+  *uncapped* rather than printing something, and credit ÷ risk is a dash.
+- **The hedge now counts listed strikes**, not dollar steps — Delta lists $200
+  apart near the money and $400 further out, so "three out" and "3 × 200" are
+  different contracts as soon as the grid widens, and the second is often not
+  listed. That was a real bug: it read as "no hedge available" on boards that
+  had one.
+- **The morning nothing clears**: the hard rules are strict (3% OTM, 95%
+  calibrated, delta under 0.05, a tenth of open interest traded, spread inside
+  10%, a print in the last half hour) and on a quiet board nothing passes all
+  six. Rather than an empty card, the board is ranked anyway, the badge says
+  *Nothing clears*, and the pick carries the rules it is failing.
+
+**What the next few hours could do** — its own row across the page, a card per
+horizon: 5m, 15m, 30m, 1h, 2h, 4h, 6h, 12h, 24h and settlement. Each carries the
+band the option market is charging for (`spot × IV × √(t/365d)`), what BTC
+actually did over that horizon in 105,119 measured windows, and **Below / Inside
+/ Above** that band from the measured distribution. *Inside* above 68% is the
+market paying for more move than it usually gets, which is the seller's whole
+business said per horizon.
+
+**There is no "DOWN 52%" on it, and there will not be.** The desk measured
+direction over those windows: 49.4% up at five minutes, 50.6% at twelve hours,
+never outside 48–52% at any horizon. The arrow is a *score* from that
+timeframe's EMAs, RSI, structure and VWAP, labelled as one, and only for the
+horizons the desk fetches bars for — 30m, 2h, 6h and 12h say *not read* rather
+than drawing a flat arrow that looks considered. The formulas are one tap away
+on the card itself.
+
+**Tests**: 18 on the pick (eligibility absolute, touch not voting, the money
+from the real hedge, the fallback and its failures, the liquidity parts), 17 on
+the horizons (the band is √t, implied against measured, nothing invented where
+there are no bars, the consensus renormalised), 14 and 11 on the two cards.
+
+[LIVE-TAB-AND-CHAIN.md](LIVE-TAB-AND-CHAIN.md) has both as §7b and §7c, with
+the weights and the formulas.
+
+## Alerts, with a switch
+
+*16 September 2026*
+
+Fill alerts were on whenever `TG_TOKEN` was set and off otherwise, and changing
+that meant editing `.env` and restarting the desk. Now there is a switch in the
+header beside the mode switch.
+
+Two facts kept apart, deliberately: whether Telegram is **configured** (a token
+on the server — a deployment question) and whether messages are **wanted right
+now** (a preference). With no token there is no switch, only a greyed bell
+saying which variables to set: a control that cannot do anything is worse than
+no control.
+
+- Remembered in the journal (`alerts_enabled`), not in the browser — a silence
+  chosen on a quiet afternoon survives a deploy and is not undone by opening
+  the desk on another phone.
+- **It silences messages, not the desk.** The engine never reads it: positions
+  open, protect and close exactly as before. The title says so in as many
+  words, because a bell in a trading header looks like it might turn off
+  something that matters.
+- Both paths honour it — fill alerts from the trading service and the
+  strategy runner's own run alerts.
+
+Eight tests, including that a server predating the switch reads as configured-off
+rather than as broken, and that a refusal says *Try again* rather than pretending
+it worked.
+

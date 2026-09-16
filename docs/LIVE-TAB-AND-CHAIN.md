@@ -270,6 +270,85 @@ that looks like order flow and is not would be worse than the gap.
 
 ---
 
+## 7b. What the next few hours could do — the horizon strip
+
+`domain/outlook.ts`. Nine horizons plus the one that matters, each a card in a
+row across the page.
+
+**The band** is the option market's own price of that horizon:
+
+```
+EM(t) = spot × IV × √(t ÷ 365d)        band = spot ∓ EM(t)
+```
+
+Beside it, what BTC actually did over the same horizon across 105,119 measured
+windows. A horizon the measured table has no row for (30m, 2h, 6h, 24h) is
+stretched from the nearest by `√t`.
+
+**The three figures are Below / Inside / Above that band** — read off the
+measured distribution's 101 percentiles, not off a view:
+
+```
+below = F(−EM%)      above = 1 − F(+EM%)      inside = 1 − below − above
+```
+
+`inside` above 68% means the market is charging for more move than it usually
+gets. That is the seller's whole business, stated per horizon instead of felt.
+
+**The arrow is a score, not a forecast** — that timeframe's own indicators:
+
+```
+score = 0.5·EMA stack + 0.2·RSI (level and slope) + 0.2·structure + 0.1·VWAP
+```
+
+−1…+1, renormalised over whatever can be read, and **only for horizons the desk
+fetches bars for** — 5m, 15m, 1h, 4h, 1d. The rest carry their bands and say
+*not read*. Consensus is `Σ wₜ·scoreₜ ÷ Σ wₜ`, weights 5m 5% · 15m 10% · 30m
+10% · 1h 15% · 2h 10% · 4h 15% · 6h 10% · 12h 15% · 24h 10%.
+
+> **There is no "DOWN 52%" anywhere, and there will not be.** The desk measured
+> direction over those 105,119 windows: the chance BTC finishes higher is 49.4%
+> at five minutes and 50.6% at twelve hours, and never leaves 48–52% at any
+> horizon. Conditioning on the trend or the last bar moves it by under a point.
+> A card printing a directional probability would be printing an invention, so
+> this one prints the measurement on its face instead.
+
+---
+
+## 7c. The best trade — one pick, for this expiry
+
+`domain/best-trade.ts`. Eligibility first — a strike failing a hard rule never
+outranks one that clears them — then four parts:
+
+| Weight | Part | Full marks at |
+|---|---|---|
+| 0.35 | credit ÷ max loss | 0.50 |
+| 0.30 | calibrated chance it expires worthless | 99% |
+| 0.20 | distance in expected moves | 2.0× |
+| 0.15 | liquidity | 100 |
+
+**Liquidity, 0–100**: spread 40% (2% full marks, 20% nothing), turnover against
+open interest 25% (a tenth changing hands is busy), depth 20% (50,000
+contracts), freshness 15% (a print inside five minutes). Any one alone is
+misleading — a tight quote on a strike nobody has traded is a quote, not a
+market.
+
+**Touch does not vote.** Shown, and kept out of the ranking: ranking on it would
+refuse the strike that pays for exactly the risk a seller is in business to
+take.
+
+**Max loss** needs a hedge to be a number at all; without one the card says
+*uncapped* rather than printing something. The hedge counts **listed strikes**,
+not dollar steps — Delta lists $200 apart near the money and $400 further out,
+so "three strikes out" and "3 × 200" are different contracts as soon as the grid
+widens, and the second is often not listed at all.
+
+On a morning when nothing clears, the board is ranked anyway and the card says
+so, with the rules the closest strike is failing. An empty card cannot say which
+came nearest, or why.
+
+---
+
 ## 8. The recommendation — the part with a record
 
 `recommend.ts`. This is the tested rule, and the only thing on the desk allowed
