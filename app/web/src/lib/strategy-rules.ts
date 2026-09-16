@@ -13,7 +13,7 @@ import { isHhmm, minutesForward, minutesOf, minutesToSettlement, time12 } from '
 export type FormTab = 'when' | 'sell' | 'trade' | 'extras';
 
 export type FormField =
-  | 'name' | 'entryTime' | 'exitTime' | 'weekdays'
+  | 'name' | 'entryTime' | 'exitTime' | 'weekdays' | 'graceMin'
   | 'legs' | 'strikeRule' | 'strikeStep' | 'premium' | 'lots'
   | 'entryLimit' | 'crossAfterSec' | 'maxCrossSpreadPct' | 'takeProfitPct' | 'stopLossPct'
   | 'probGate' | 'doubleWhenOneSided' | 'minSellScore' | 'maxShockScore'
@@ -22,7 +22,7 @@ export type FormField =
 export type Problem = { field: FormField; tab: FormTab; message: string };
 
 const TAB: Record<FormField, FormTab> = {
-  name: 'when', entryTime: 'when', exitTime: 'when', weekdays: 'when',
+  name: 'when', entryTime: 'when', exitTime: 'when', weekdays: 'when', graceMin: 'when',
   legs: 'sell', strikeRule: 'sell', strikeStep: 'sell', premium: 'sell', lots: 'sell',
   entryLimit: 'trade', crossAfterSec: 'trade', maxCrossSpreadPct: 'trade', takeProfitPct: 'trade', stopLossPct: 'trade',
   probGate: 'extras', doubleWhenOneSided: 'extras', minSellScore: 'extras', maxShockScore: 'extras',
@@ -69,6 +69,9 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
   if (!(c.takeProfitPct >= 0) || c.takeProfitPct > 0.99) say('takeProfitPct', 'Take profit must be between 0 and 99% of the credit.');
   if (!(c.stopLossPct >= 0) || c.stopLossPct > 20) say('stopLossPct', 'Stop loss must be between 0 and 2000% of the credit.');
 
+  if (!Number.isInteger(c.graceMin) || c.graceMin < 1 || c.graceMin > 240) {
+    say('graceMin', 'The late-entry window must be a whole number of minutes from 1 to 240.');
+  }
   if (c.probGate !== null && (!(c.probGate > 0) || c.probGate >= 1)) say('probGate', 'The probability gate must be between 0 and 1, or off.');
   if (c.doubleWhenOneSided && c.legs !== 'both') say('doubleWhenOneSided', 'Doubling the surviving leg needs both legs selected.');
 

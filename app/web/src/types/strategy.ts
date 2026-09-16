@@ -53,6 +53,16 @@ export type StrategyConfig = {
   lots: number;
   legs: LegConfig;
   /** null means the gate is off. */
+  /**
+   * How late an entry may still be taken, in minutes after its time.
+   *
+   * A desk that was down at 05:30 and comes up at 05:34 should still trade; one
+   * that comes up at 09:00 should not. How long "still fine" lasts belongs to
+   * the strategy: an hour into a twelve-hour contract is nothing, ten minutes
+   * into a signal is everything. Absent on strategies saved before this
+   * existed, which read as 60.
+   */
+  graceMin: number;
   probGate: number | null;
   doubleWhenOneSided: boolean;
   /**
@@ -157,6 +167,7 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   stopLossPct: 0,
   lots: 10,
   legs: 'both',
+  graceMin: 60,
   probGate: 0.95,
   doubleWhenOneSided: true,
   minSellScore: null,

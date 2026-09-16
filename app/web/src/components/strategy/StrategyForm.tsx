@@ -271,6 +271,52 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                   ))}
                 </div>
               </Stack>
+
+              {/*
+                How late is too late.
+                It was one constant for the whole desk -- sixty minutes, raised
+                from thirty when a restart cost a day -- and invisible, so a
+                strategy that quietly did not run at 07:00 looked broken rather
+                than late. It belongs to the strategy: an hour into a
+                twelve-hour contract is nothing, ten minutes into a signal is
+                everything.
+              */}
+              <Stack
+                label="Still enter if late by"
+                error={err('graceMin')}
+                className="mt-3"
+                hint={`Up to ${c.graceMin} minute${c.graceMin === 1 ? '' : 's'} after ${time12(c.entryTime)} the desk still takes the entry — a restart or a slow feed should not cost the day. After that the day is skipped and you are told.`}
+              >
+                <div className="flex items-end gap-2">
+                  <Affix after="min">
+                    <Input
+                      aria-label="late entry window"
+                      inputMode="numeric"
+                      className="pr-10"
+                      value={String(c.graceMin)}
+                      onChange={(e) => set('graceMin', Math.trunc(num(e.target.value, 0)))}
+                    />
+                  </Affix>
+                  <div className="flex flex-wrap gap-1.5">
+                    {([['5m', 5], ['15m', 15], ['1h', 60], ['4h', 240]] as const).map(([label, n]) => (
+                      <button
+                        key={label}
+                        type="button"
+                        aria-pressed={c.graceMin === n}
+                        className={cn(
+                          'h-9 rounded-md border border-solid px-2.5 text-[12px]',
+                          c.graceMin === n
+                            ? 'border-foreground bg-muted text-foreground'
+                            : 'border-border bg-transparent text-muted-foreground',
+                        )}
+                        onClick={() => set('graceMin', n)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </Stack>
             </>
           )}
 
