@@ -642,8 +642,8 @@ export default function App() {
                 <BestTrade
                   best={data.best}
                   legs={data.legs}
-                  expiry={snap.expiry}
                   onSell={snap.live ? sellLeg : undefined}
+                  onSettingsChanged={() => void load()}
                 />
               </div>
 

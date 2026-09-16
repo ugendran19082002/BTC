@@ -1,6 +1,6 @@
 import { json, post } from '@/api/client';
 import type {
-  AddDraft, AddPreview, ClosePreview, OrderDraft, OrderHistory, PlaceResult, PrecheckFailure, PremiumAlert, Preview, Quote, ProductSpec, Trade, TradeStatus,
+  AddDraft, AddPreview, ClosePreview, OrderDraft, OrderHistory, PlaceResult, PrecheckFailure, Preview, Quote, ProductSpec, Trade, TradeStatus,
 } from '@/types/trade';
 
 /**
@@ -105,16 +105,11 @@ export const cancelAdd = (tradeId: string) =>
 export const setAlerts = (on: boolean) =>
   post<{ ok: true; alerts: { configured: boolean; on: boolean } }>('/api/trade/alerts', { on });
 
-/** The premium alerts set in the last day, fired or not, and whether Telegram will carry them. */
-export const getPremiumAlerts = () =>
-  json<{ alerts: PremiumAlert[]; telegram: { configured: boolean; on: boolean } }>('/api/trade/premium-alerts');
-
-/** "Tell me when this strike's bid reaches `threshold`." Fires once, over Telegram. */
-export const addPremiumAlert = (symbol: string, threshold: number) =>
-  post<{ ok: true; alert: PremiumAlert }>('/api/trade/premium-alerts', { symbol, threshold });
-
-export const deletePremiumAlert = (id: number) =>
-  json<{ ok: true }>(`/api/trade/premium-alerts/${id}`, { method: 'DELETE' });
+/** The best-pick card's own settings: the phone switch and the premium floor. */
+export type BestTradeSettings = { alertOn: boolean; minPremiumUsd: number; telegram: { configured: boolean; on: boolean } };
+export const getBestTradeSettings = () => json<BestTradeSettings>('/api/trade/best-trade/settings');
+export const setBestTradeSettings = (patch: { alertOn?: boolean; minPremiumUsd?: number }) =>
+  post<{ ok: true; alertOn: boolean; minPremiumUsd: number }>('/api/trade/best-trade/settings', patch);
 
 /** Pull a working order off the book. Refused once anything has filled. */
 export const cancelTrade = (tradeId: string) =>

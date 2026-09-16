@@ -1971,3 +1971,12 @@ td.liq-normal, td.liq-none { color: var(--dim); }
    the five lead figures. */
 .smr-data .insight-grid { margin-top: 8px; }
 
+/* The best-pick card's own two controls: the phone switch and the floor. */
+.bt-settings { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
+.bt-settings-state {
+  display: inline-flex; align-items: center; gap: 5px; margin-top: 4px;
+  font-size: 11px; color: var(--up);
+}
+.bt-settings-floor { display: flex; align-items: flex-end; gap: 8px; margin-top: 10px; }
+.bt-settings-floor .bt-alert-field { flex: 1 1 200px; }
+

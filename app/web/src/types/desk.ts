@@ -467,6 +467,8 @@ export type BestTrade = {
   agreesWithEngine: boolean;
   /** True when nothing cleared the hard rules and this is the closest. */
   bestOfNone: boolean;
+  /** The premium floor the pool was cut at: strikes paying less were not considered. */
+  minPremiumUsd: number;
 };
 
 /**

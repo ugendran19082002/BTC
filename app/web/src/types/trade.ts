@@ -291,18 +291,3 @@ export type OrderHistory = {
   counts: Partial<Record<OrderStatus, number>>;
   trades: OrderRecord[];
 };
-
-/**
- * "Tell me when this strike pays 5." A one-shot alert on a contract's bid,
- * set from the best-trade card. Mirrors `trading/store.ts`.
- */
-export type PremiumAlert = {
-  id: number;
-  symbol: string;
-  threshold: number;
-  expiryTs: number;
-  createdAt: number;
-  firedAt: number | null;
-  firedBid: number | null;
-};
-

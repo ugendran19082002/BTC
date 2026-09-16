@@ -3,7 +3,7 @@ import { Card, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { KV } from '@/components/ui/kv';
-import { PremiumAlert } from '@/components/desk/PremiumAlert';
+import { BestTradeSettings } from '@/components/desk/BestTradeSettings';
 import { price, strike as fmtStrike, usd } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -31,16 +31,13 @@ import { cn } from '@/lib/utils';
  * The button hands the leg to the order ticket. Nothing is sent from here; the
  * ticket runs every gate again.
  */
-/** The contract's symbol, the way Delta names it: C-BTC-80000-160926. */
-const legSymbol = (leg: Leg, expiry: string) => `${leg.cp}-BTC-${leg.strike}-${expiry}`;
-
-export function BestTrade({ best, legs, expiry, onSell }: {
+export function BestTrade({ best, legs, onSell, onSettingsChanged }: {
   best: BestTradeData;
   /** The board, so the ticket gets the real leg rather than a copy of the card. */
   legs: Leg[];
-  /** The expiry code the board is for, e.g. 160926 -- the alert needs the full symbol. */
-  expiry: string;
   onSell?: (leg: Leg) => void;
+  /** The floor changed on the server: the board should be asked again. */
+  onSettingsChanged?: () => void;
 }) {
   const p = best.pick;
   const leg = p ? legs.find((l) => l.cp === p.cp && l.strike === p.strike) ?? null : null;
@@ -64,7 +61,10 @@ export function BestTrade({ best, legs, expiry, onSell }: {
       </CardTitle>
 
       {p === null ? (
-        <p className="m-0 text-[12.5px] text-muted-foreground">{best.why}</p>
+        <>
+          <p className="m-0 text-[12.5px] text-muted-foreground">{best.why}</p>
+          <BestTradeSettings onChanged={onSettingsChanged} />
+        </>
       ) : (
         <>
           {/*
@@ -166,13 +166,7 @@ export function BestTrade({ best, legs, expiry, onSell }: {
             ticket: "tell me when it pays 5". Its own switch, nothing to do
             with the header's fill alerts, and off until a level is typed.
           */}
-          {leg && (
-            <PremiumAlert
-              symbol={legSymbol(leg, expiry)}
-              bidNow={leg.bid ?? null}
-              defaultThreshold={5}
-            />
-          )}
+          <BestTradeSettings onChanged={onSettingsChanged} />
 
           {onSell && leg && (
             <Button
