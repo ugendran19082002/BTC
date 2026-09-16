@@ -161,19 +161,19 @@ export function inputsOf(market: MarketRead | null): Input[] {
   const stackWords = (t: TimeframeRead | undefined) => {
     const v = stackScore(t);
     if (v === null) return 'no EMAs to read';
-    return v > 0 ? 'EMA stack rising' : v < 0 ? 'EMA stack falling' : 'EMAs crossed';
+    return v > 0 ? 'averages pointing up' : v < 0 ? 'averages pointing down' : 'averages crossed, no direction';
   };
 
   return [
     {
       key: 'return24h',
-      label: '24-hour return',
+      label: 'Last 24 hours',
       value: r24 === null ? null : clamp(r24 / RETURN_SCALE_PCT),
       why: r24 === null ? 'no 24-hour return' : `${pct(r24)} against the ${RETURN_SCALE_PCT}% mark`,
     },
-    { key: 'daily', label: 'Daily trend', value: stackScore(day), why: stackWords(day) },
-    { key: 'fourHour', label: '4-hour trend', value: stackScore(four), why: stackWords(four) },
-    { key: 'oneHour', label: '1-hour trend', value: stackScore(hour), why: stackWords(hour) },
+    { key: 'daily', label: 'Daily chart', value: stackScore(day), why: stackWords(day) },
+    { key: 'fourHour', label: '4-hour chart', value: stackScore(four), why: stackWords(four) },
+    { key: 'oneHour', label: '1-hour chart', value: stackScore(hour), why: stackWords(hour) },
     {
       key: 'momentum',
       label: 'Momentum',
@@ -184,7 +184,7 @@ export function inputsOf(market: MarketRead | null): Input[] {
     },
     {
       key: 'structure',
-      label: 'Structure',
+      label: 'Highs and lows',
       value: hour ? hour.structure : null,
       why: !hour ? 'no hourly bars'
         : hour.structure === 1 ? 'higher highs and higher lows on the hour'
@@ -193,7 +193,7 @@ export function inputsOf(market: MarketRead | null): Input[] {
     },
     {
       key: 'vwap',
-      label: 'Against VWAP',
+      label: 'Against the day’s average price',
       value: vwapScore(hour),
       why: hour?.vwapDistPct == null ? 'no VWAP to read' : `${pct(hour.vwapDistPct)} from the hourly VWAP`,
     },
@@ -289,7 +289,7 @@ export function verdict(i: {
 
   gates.push({
     key: 'direction',
-    label: 'Market direction',
+    label: 'Is there a clear direction?',
     pass: score === null ? null : Math.abs(score) >= SIDE_BAR,
     why: score === null
       ? 'nothing to read the tape from'
@@ -299,7 +299,7 @@ export function verdict(i: {
 
   gates.push({
     key: 'timeframes',
-    label: 'Timeframes agree',
+    label: 'Do the short and long charts agree?',
     pass: mtf.score === null ? null : mtf.agreeing >= Math.max(3, mtf.of - 1) && (side === null || Math.sign(mtf.score) === (side === 'bullish' ? 1 : -1)),
     why: mtf.score === null ? 'no timeframes to read' : `${mtf.agreeing} of ${mtf.of} — ${mtf.words}`,
   });
@@ -315,7 +315,7 @@ export function verdict(i: {
     : null;
   gates.push({
     key: 'expectedMove',
-    label: 'Strikes clear the expected move',
+    label: 'Are the strikes far enough away?',
     pass: worstBuffer === null ? null : worstBuffer >= minBuffer,
     why: worstBuffer === null
       ? 'no expected move, or no strike chosen yet'
@@ -329,7 +329,7 @@ export function verdict(i: {
     : null;
   gates.push({
     key: 'structure',
-    label: 'Option structure',
+    label: 'Is the price between the two strikes?',
     pass: containment === null ? null : containment.low < spot! && containment.high > spot!,
     why: containment === null
       ? 'no pair of strikes to judge'
@@ -340,7 +340,7 @@ export function verdict(i: {
   const spreadOk = ex?.worstSpreadPct == null ? null : ex.worstSpreadPct <= maxSpread;
   gates.push({
     key: 'execution',
-    label: 'Execution and hedge',
+    label: 'Can it be traded at a fair price, with a safety leg?',
     pass: spreadOk === null ? null : spreadOk && ex!.hedged !== false,
     why: ex?.worstSpreadPct == null
       ? 'no book to read'
@@ -361,9 +361,9 @@ export function verdict(i: {
     readable,
     confirmed,
     summary: confirmed
-      ? `${side === 'bullish' ? 'Bullish' : 'Bearish'} side confirmed — ${passed} of 5 gates`
+      ? `${side === 'bullish' ? 'Leaning up' : 'Leaning down'}, and the checks agree — ${passed} of 5 passed`
       : side === null
-        ? `No side: the tape has not said${score === null ? '' : ` (${score >= 0 ? '+' : ''}${score.toFixed(2)})`}`
-        : `${side === 'bullish' ? 'Bullish' : 'Bearish'} lean, not confirmed — ${passed} of 5 gates`,
+        ? `No clear lean either way${score === null ? '' : ` (${score >= 0 ? '+' : ''}${score.toFixed(2)})`}`
+        : `${side === 'bullish' ? 'Leaning up' : 'Leaning down'}, but not enough checks agree — ${passed} of 5 passed`,
   };
 }

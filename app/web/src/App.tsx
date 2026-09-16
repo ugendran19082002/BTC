@@ -618,38 +618,15 @@ export default function App() {
                     <Stat label="ATM strike" value={snap.atm.toLocaleString()} />
                   </div>
 
-                  <Metric
-                    label="Implied volatility"
-                    value={snap.atmIv !== null ? (snap.atmIv * 100).toFixed(1) + '%' : '—'}
-                  >
-                    <p>How much movement the market is pricing in, per year. Same-day options show a lower number than monthly ones.</p>
-                  </Metric>
-
-                  <Metric
-                    label="Expected move by expiry"
-                    value={snap.expectedMove !== null ? '±$' + snap.expectedMove.toFixed(0) : '—'}
-                  >
-                    <Formula>
-                      spot × volatility × √(hours ÷ 8760)
-                      {snap.atmIv !== null && (
-                        <>
-                          <br />
-                          {snap.spot.toFixed(0)} × {(snap.atmIv * 100).toFixed(1)}% × √({snap.hoursToExpiry.toFixed(2)} ÷ 8760)
-                          <br />= ±${snap.expectedMove?.toFixed(0)}
-                        </>
-                      )}
-                    </Formula>
-                    <p>About a 2-in-3 chance BTC settles inside this range. A strike inside it is not safe.</p>
-                    <p className="dim">In 733 days, every losing day moved further than this.</p>
-                  </Metric>
-
-                  <Metric
-                    label="Expected move %"
-                    value={snap.expectedMove !== null ? ((snap.expectedMove / snap.spot) * 100).toFixed(2) + '%' : '—'}
-                  >
-                    <p>For comparison: winning days moved 0.63% on average, losing days 2.25%.</p>
-                  </Metric>
-
+                  {/*
+                    Volatility and the expected move used to be here as well as
+                    in the sudden-move card at the top of the screen -- the same
+                    two numbers, twice, a screen apart. They are said once now,
+                    up there, with this card's working moved into their hints.
+                    What stays here is what is about this contract and nowhere
+                    else: when it settles, the strike at the money, and the
+                    twelve-hour move an entry would actually face.
+                  */}
                   {snap.expectedMoveAtEntry !== null && snap.hoursToExpiry > 14 && (
                     <Metric label="Expected move over 12h" value={'±$' + snap.expectedMoveAtEntry.toFixed(0)}>
                       <p>You enter at 05:30 and it settles at 17:30 — about 12 hours. Judge strikes against this one.</p>

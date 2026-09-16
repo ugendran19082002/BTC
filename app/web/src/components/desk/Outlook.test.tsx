@@ -48,7 +48,7 @@ describe('what the next few hours could do', () => {
     // over these horizons is nil. Nine repetitions read as a broken panel.
     render(<Outlook outlook={data()} />);
     expect(screen.getAllByText('75,820')).toHaveLength(1);
-    expect(screen.getByText(/each card is the band around it/)).toBeInTheDocument();
+    expect(screen.getByText(/each card shows how far it could move from here/)).toBeInTheDocument();
     expect(within(screen.getByLabelText('1h')).getByText('75,490 – 76,150')).toBeInTheDocument();
   });
 
@@ -62,19 +62,19 @@ describe('what the next few hours could do', () => {
         row({ label: '24h', richness: 1.20, priced: 'rich' }),
       ],
     })} />);
-    expect(within(screen.getByLabelText('5m')).getByText(/1\.00× history/)).toBeInTheDocument();
+    expect(within(screen.getByLabelText('5m')).getByText(/1\.00× the usual move/)).toBeInTheDocument();
     const cheap = within(screen.getByLabelText('12h'));
-    expect(cheap.getByText(/0\.88× history/)).toBeInTheDocument();
-    expect(cheap.getByText('market pays less')).toBeInTheDocument();
-    expect(within(screen.getByLabelText('24h')).getByText('market pays more')).toBeInTheDocument();
+    expect(cheap.getByText(/0\.88× the usual move/)).toBeInTheDocument();
+    expect(cheap.getByText('options cost less than usual')).toBeInTheDocument();
+    expect(within(screen.getByLabelText('24h')).getByText('options cost more than usual')).toBeInTheDocument();
   });
 
   it('[critical] the three figures are Below, Inside and Above the band — not a direction', () => {
     render(<Outlook outlook={data()} />);
     const one = within(screen.getByLabelText('1h'));
-    expect(one.getByText('Below').nextSibling).toHaveTextContent('16%');
-    expect(one.getByText('Inside').nextSibling).toHaveTextContent('70%');
-    expect(one.getByText('Above').nextSibling).toHaveTextContent('14%');
+    expect(one.getByText('Ends lower').nextSibling).toHaveTextContent('16%');
+    expect(one.getByText('Ends in range').nextSibling).toHaveTextContent('70%');
+    expect(one.getByText('Ends higher').nextSibling).toHaveTextContent('14%');
     // the words a directional forecast would use appear nowhere
     expect(screen.queryByText(/^Down$/)).toBeNull();
     expect(screen.queryByText(/^Up$/)).toBeNull();
@@ -82,21 +82,21 @@ describe('what the next few hours could do', () => {
 
   it('[critical] says on its face that the measured direction is a coin flip', () => {
     render(<Outlook outlook={data()} />);
-    expect(screen.getByText(/within 0\.6 points of a coin flip/)).toBeInTheDocument();
+    expect(screen.getByText(/coin toss \(within 0\.6 points of 50\/50\)/)).toBeInTheDocument();
   });
 
-  it('[critical] a horizon with no bars says "not read" rather than drawing a flat arrow', () => {
+  it('[critical] a horizon with no bars says so rather than drawing a flat arrow', () => {
     render(<Outlook outlook={data()} />);
     const half = within(screen.getByLabelText('30m'));
-    expect(half.getByText('not read')).toBeInTheDocument();
+    expect(half.getByText('no chart for this')).toBeInTheDocument();
     expect(half.getByText('75,490 – 76,150')).toBeInTheDocument();
   });
 
   it('a band the market cannot price says so instead of showing a number', () => {
     render(<Outlook outlook={data({ rows: [row({ impliedUsd: null, low: null, high: null, below: null, inside: null, above: null, richness: null, priced: null })] })} />);
-    expect(screen.getByText('no band')).toBeInTheDocument();
+    expect(screen.getByText('can’t price it')).toBeInTheDocument();
     expect(screen.getByText('nothing to compare')).toBeInTheDocument();
-    expect(within(screen.getByLabelText('1h')).getByText('Inside').nextSibling).toHaveTextContent('—');
+    expect(within(screen.getByLabelText('1h')).getByText('Ends in range').nextSibling).toHaveTextContent('—');
   });
 
   it('[critical] a band that contains more than two thirds of history is marked', () => {

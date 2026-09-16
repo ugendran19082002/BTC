@@ -53,7 +53,7 @@ export function Outlook({ outlook, direction, containment }: {
           </button>
         }
       >
-        What the next few hours could do
+        How far could BTC move, and when
       </CardTitle>
 
       {direction && (
@@ -71,7 +71,7 @@ export function Outlook({ outlook, direction, containment }: {
         */}
         <span className="ol-spot">
           <b>{fmtStrike(Math.round(outlook.rows[0]?.spot ?? 0))}</b>
-          <span className="dim"> now · each card is the band around it</span>
+          <span className="dim"> now · each card shows how far it could move from here</span>
         </span>
         <span className="ol-consensus">
           {consensus === null ? (
@@ -81,13 +81,13 @@ export function Outlook({ outlook, direction, containment }: {
               <b className={cn(consensus > 0.3 ? 'up' : consensus < -0.3 ? 'down' : undefined)}>
                 {consensus >= 0 ? '+' : '−'}{Math.abs(consensus).toFixed(2)}
               </b>
-              <span className="dim"> weighted across the timeframes with bars · {outlook.agreement}</span>
+              <span className="dim"> overall lean from the charts we have · {outlook.agreement}</span>
             </>
           )}
         </span>
         {outlook.directionEdgePts !== null && (
           <Badge tone="neutral">
-            direction measured: within {outlook.directionEdgePts.toFixed(1)} points of a coin flip
+            Up or down? History says it is a coin toss (within {outlook.directionEdgePts.toFixed(1)} points of 50/50)
           </Badge>
         )}
       </div>
@@ -166,16 +166,16 @@ function Horizon({ row }: { row: OutlookRow }) {
       */}
       <div className="ol-mid">
         {row.low === null || row.high === null
-          ? <span className="dim">no band</span>
+          ? <span className="dim">can’t price it</span>
           : `${fmtStrike(Math.round(row.low))} – ${fmtStrike(Math.round(row.high))}`}
       </div>
       <div className={cn('ol-priced', row.priced)}>
         {row.richness === null
           ? <span className="dim">nothing to compare</span>
           : <>
-            {row.richness.toFixed(2)}× history
+            {row.richness.toFixed(2)}× the usual move
             <span className="ol-priced-word">
-              {row.priced === 'rich' ? 'market pays more' : row.priced === 'cheap' ? 'market pays less' : 'fairly priced'}
+              {row.priced === 'rich' ? 'options cost more than usual' : row.priced === 'cheap' ? 'options cost less than usual' : 'options cost about the usual'}
             </span>
           </>}
       </div>
@@ -187,7 +187,7 @@ function Horizon({ row }: { row: OutlookRow }) {
       */}
       <div className={cn('ol-arrow', tone)} title={row.why}>
         {row.score === null
-          ? <span className="dim">not read</span>
+          ? <span className="dim">no chart for this</span>
           : <><Arrow className="h-3.5 w-3.5" aria-hidden />{row.score >= 0 ? '+' : '−'}{Math.abs(row.score).toFixed(2)}</>}
       </div>
 
@@ -196,24 +196,24 @@ function Horizon({ row }: { row: OutlookRow }) {
         middle row is the one a seller reads: how often a year of BTC finished
         inside what the market is charging for.
       */}
-      <dl className="ol-odds">
+      <dl className="ol-odds" aria-label="where BTC usually ends up, against this range">
         <div>
-          <dt>Below</dt>
+          <dt>Ends lower</dt>
           <dd className="down">{pct(row.below)}</dd>
         </div>
         <div>
-          <dt>Inside</dt>
+          <dt>Ends in range</dt>
           <dd className={cn(row.inside !== null && row.inside >= 0.68 && 'up')}>{pct(row.inside)}</dd>
         </div>
         <div>
-          <dt>Above</dt>
+          <dt>Ends higher</dt>
           <dd className="up">{pct(row.above)}</dd>
         </div>
       </dl>
 
       {row.measured68Pct !== null && (
         <div className="ol-measured" title="What BTC actually did over this horizon, two thirds of the time.">
-          history ±{row.measured68Pct.toFixed(2)}%
+          usually moves ±{row.measured68Pct.toFixed(2)}%
         </div>
       )}
     </div>

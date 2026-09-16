@@ -133,7 +133,7 @@ test('[critical] the 16 September board returns no side', () => {
   const v = verdict({ market: mixed, snap: null });
   assert.equal(v.side, null, `score ${v.score}`);
   assert.equal(v.confirmed, false);
-  assert.match(v.summary, /No side/);
+  assert.match(v.summary, /No clear lean/);
 });
 
 test('[critical] everything pointing one way, in a market that is moving, names that side', () => {
@@ -150,7 +150,7 @@ test('[critical] a side is named but not confirmed until four of five gates pass
   const v = verdict({ market: oneWay(1, 3), snap: null });
   assert.equal(v.side, 'bullish');
   assert.equal(v.confirmed, false, 'a score alone is not a confirmation');
-  assert.match(v.summary, /not confirmed/);
+  assert.match(v.summary, /not enough checks agree/);
 
   const full = verdict({
     market: oneWay(1, 3),

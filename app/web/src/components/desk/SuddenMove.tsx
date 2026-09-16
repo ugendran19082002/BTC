@@ -85,11 +85,11 @@ function Reading({
 }
 
 /** One figure in the market-data strip. */
-function Datum({ label, value, foot, tone }: {
-  label: string; value: string; foot?: string; tone?: Tone;
+function Datum({ label, value, foot, tone, hint }: {
+  label: string; value: string; foot?: string; tone?: Tone; hint?: string;
 }) {
   return (
-    <div className="smr-datum">
+    <div className="smr-datum" title={hint}>
       <span className="smr-datum-label">{label}</span>
       <span className={`smr-datum-value smr-${tone ?? 'plain'}`}>{value}</span>
       {foot && <span className="smr-datum-foot">{foot}</span>}
@@ -359,14 +359,18 @@ export function SuddenMove({
             <Datum label="24h high" value={market?.high24h == null ? '—' : fmtStrike(Math.round(market.high24h))} />
             <Datum label="24h low" value={market?.low24h == null ? '—' : fmtStrike(Math.round(market.low24h))} />
             <Datum
-              label="IV (ATM)"
+              label="How jumpy options say BTC is"
               value={snap.atmIv === null ? '—' : `${(snap.atmIv * 100).toFixed(1)}%`}
+              hint="Implied volatility, at the money, per year. How much movement the option market is charging for. Same-day options show a lower number than monthly ones."
             />
             <Datum
-              label="Expected move"
+              label="How far it could move by settlement"
               value={snap.expectedMove === null ? '—' : `±$${fmtStrike(Math.round(snap.expectedMove))}`}
               foot={snap.expectedMove === null ? undefined
                 : `${fmtStrike(Math.round(snap.spot - snap.expectedMove))}–${fmtStrike(Math.round(snap.spot + snap.expectedMove))}`}
+              hint={`The expected move: spot × volatility × √(hours ÷ 8760)${snap.atmIv !== null && snap.expectedMove !== null
+                ? ` = ${snap.spot.toFixed(0)} × ${(snap.atmIv * 100).toFixed(1)}% × √(${snap.hoursToExpiry.toFixed(2)} ÷ 8760) = ±$${snap.expectedMove.toFixed(0)}`
+                : ''}. About a 2-in-3 chance BTC settles inside this range. In 733 days, every losing day moved further than this.`}
             />
           </div>
           <MarketInsights structure={structure} snap={snap} market={market} embedded />

@@ -31,7 +31,7 @@ const verdict = (over: Partial<DirectionVerdict> = {}): DirectionVerdict => ({
   passed: 2,
   readable: 4,
   confirmed: false,
-  summary: 'No side: the tape has not said (+0.12)',
+  summary: 'No clear lean either way (+0.12)',
   ...over,
 });
 
@@ -42,8 +42,8 @@ const corridor: Containment = {
 describe('today’s side', () => {
   it('[critical] a mixed board says no side, and says so plainly', () => {
     render(<SideVerdict direction={verdict()} containment={null} />);
-    expect(screen.getByText('No side')).toBeInTheDocument();
-    expect(screen.getByText(/the tape has not said/)).toBeInTheDocument();
+    expect(screen.getByText('No clear lean')).toBeInTheDocument();
+    expect(screen.getByText(/No clear lean either way/)).toBeInTheDocument();
     expect(screen.getByLabelText('direction score')).toHaveTextContent('+0.12');
     expect(screen.getByText('2/5 gates')).toBeInTheDocument();
   });
@@ -51,18 +51,18 @@ describe('today’s side', () => {
   it('[critical] a confirmed side is marked as confirmed, not merely named', () => {
     render(
       <SideVerdict
-        direction={verdict({ score: 0.72, side: 'bullish', confirmed: true, passed: 5, summary: 'Bullish side confirmed — 5 of 5 gates' })}
+        direction={verdict({ score: 0.72, side: 'bullish', confirmed: true, passed: 5, summary: 'Leaning up, and the checks agree — 5 of 5 passed' })}
         containment={null}
       />,
     );
-    const badge = screen.getByText('Bullish').closest('span')!;
+    const badge = screen.getByText('Leaning up').closest('span')!;
     expect(badge.className).toContain('up');
     expect(within(badge).getByText('confirmed')).toBeInTheDocument();
   });
 
   it('a bearish side is coloured as a fall', () => {
     render(<SideVerdict direction={verdict({ score: -0.6, side: 'bearish' })} containment={null} />);
-    expect(screen.getByText('Bearish').closest('span')!.className).toContain('down');
+    expect(screen.getByText('Leaning down').closest('span')!.className).toContain('down');
   });
 
   it('[critical] every input is shown with its own reading, so the score can be argued with', () => {
@@ -83,7 +83,7 @@ describe('today’s side', () => {
 
   it('[critical] a gate with nothing to read says so, and is not shown as passed', () => {
     render(<SideVerdict direction={verdict()} containment={null} />);
-    const gates = within(screen.getByLabelText('gates'));
+    const gates = within(screen.getByLabelText('checks'));
     const unread = gates.getByText('Option structure').closest('li')!;
     expect(unread.className).not.toContain('ok');
     expect(unread.className).not.toContain('no');

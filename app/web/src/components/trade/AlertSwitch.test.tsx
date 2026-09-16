@@ -37,7 +37,7 @@ describe('the alert switch', () => {
     render(<AlertSwitch status={status({ configured: true, on: false })} />);
     const button = screen.getByRole('button', { name: /Fill alerts are off/ });
     expect(button).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByText('Alerts off')).toBeInTheDocument();
+    expect(screen.getByText('Phone alerts off')).toBeInTheDocument();
     fireEvent.click(button);
     await waitFor(() => expect(setAlerts).toHaveBeenCalledWith(true));
   });

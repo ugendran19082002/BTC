@@ -146,10 +146,10 @@ describe('path and settlement', () => {
   it('[critical] shows where it finishes and what it does on the way, as different numbers', () => {
     sheet([mk('C')]);
     const r = within(row());
-    expect(r.getByText('Expiry OTM').nextSibling).toHaveTextContent('99.0%');
-    expect(r.getByText('Touch').nextSibling).toHaveTextContent('24%');
-    expect(r.getByText('Near-zero').nextSibling).toHaveTextContent('91%');
-    expect(r.getByText('EM×').nextSibling).toHaveTextContent('3.74×');
+    expect(r.getByText('Ends worthless').nextSibling).toHaveTextContent('99.0%');
+    expect(r.getByText('Price gets there').nextSibling).toHaveTextContent('24%');
+    expect(r.getByText('Collapses early').nextSibling).toHaveTextContent('91%');
+    expect(r.getByText('Usual moves away').nextSibling).toHaveTextContent('3.74×');
   });
 
   it('[critical] a touch is never drawn as a failure', () => {
@@ -168,22 +168,22 @@ describe('path and settlement', () => {
   it('[critical] a move of one expected move that cannot reach the strike costs nothing', () => {
     // 77,172 + 756 = 77,928, nowhere near the 80,000 call.
     sheet([mk('C')]);
-    expect(within(row()).getByText('At ±1 EM').nextSibling).toHaveTextContent('nothing');
+    expect(within(row()).getByText('If BTC moves one usual move').nextSibling).toHaveTextContent('nothing');
   });
 
   it('[critical] a move that does reach it is priced, per contract', () => {
     // A put at 80,000 with spot 77,172: one expected move down settles at
     // 76,416, which is 3,584 in the money — $3.58 a contract.
     sheet([mk('P')], 'P');
-    expect(within(row()).getByText('At ±1 EM').nextSibling).toHaveTextContent('$3.58');
+    expect(within(row()).getByText('If BTC moves one usual move').nextSibling).toHaveTextContent('$3.58');
   });
 
   it('shows a dash rather than a number where the board has none', () => {
     const bare = { ...mk('C'), probs: { expireWorthless: null, touch: null, nearZero: null }, emBuffer: null } as Leg;
     sheet([bare]);
     const r = within(row());
-    expect(r.getByText('Touch').nextSibling).toHaveTextContent('—');
-    expect(r.getByText('Near-zero').nextSibling).toHaveTextContent('—');
-    expect(r.getByText('EM×').nextSibling).toHaveTextContent('—');
+    expect(r.getByText('Price gets there').nextSibling).toHaveTextContent('—');
+    expect(r.getByText('Collapses early').nextSibling).toHaveTextContent('—');
+    expect(r.getByText('Usual moves away').nextSibling).toHaveTextContent('—');
   });
 });

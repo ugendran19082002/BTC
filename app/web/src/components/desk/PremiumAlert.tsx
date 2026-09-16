@@ -67,7 +67,7 @@ export function PremiumAlert({ symbol, bidNow, defaultThreshold = 5 }: {
     <section aria-label="premium alert" className="bt-alert">
       <div className="bt-alert-row">
         <label className="bt-alert-field">
-          <span>Tell me when the bid reaches</span>
+          <span>Tell me when this pays</span>
           <Input
             aria-label="alert when the bid reaches"
             inputMode="decimal"
@@ -84,7 +84,7 @@ export function PremiumAlert({ symbol, bidNow, defaultThreshold = 5 }: {
           title={alreadyThere ? `The bid is already ${price(bidNow)} — that level is here now.` : undefined}
         >
           {busy ? <Loader2 size={13} className="animate-spin" aria-hidden /> : <Bell size={13} aria-hidden />}
-          Set alert
+          Set reminder
         </Button>
       </div>
 
@@ -97,7 +97,7 @@ export function PremiumAlert({ symbol, bidNow, defaultThreshold = 5 }: {
               ? <span className="warn">No Telegram bot on this server — the alert will fire on the record but nothing will be sent.</span>
               : telegram && !telegram.on
                 ? <span className="warn">Alerts are switched off in the header: this will fire on the record and not be sent.</span>
-                : <>On the bid, once. The desk keeps trading either way.</>}
+                : <>You’ll get one message when a seller can get this price. The desk keeps trading either way.</>}
       </p>
       {failed && <p className="bt-alert-note warn" role="alert">{failed}</p>}
 
@@ -106,7 +106,7 @@ export function PremiumAlert({ symbol, bidNow, defaultThreshold = 5 }: {
           {live.map((a) => (
             <li key={a.id} className="live">
               <Bell size={12} aria-hidden />
-              <span>waiting for <b>{price(a.threshold)}</b>{bidNow !== null && <span className="dim"> · bid {price(bidNow)}</span>}</span>
+              <span>waiting for <b>{price(a.threshold)}</b>{bidNow !== null && <span className="dim"> · now {price(bidNow)}</span>}</span>
               <button
                 type="button"
                 aria-label={`Remove the alert at ${price(a.threshold)}`}
@@ -120,7 +120,7 @@ export function PremiumAlert({ symbol, bidNow, defaultThreshold = 5 }: {
             <li key={a.id} className={cn('fired')}>
               <BellRing size={12} aria-hidden />
               <span>
-                rang at <b>{price(a.firedBid)}</b> · {clock(a.firedAt)}
+                sent at <b>{price(a.firedBid)}</b> · {clock(a.firedAt)}
                 <span className="dim"> · asked for {price(a.threshold)}</span>
               </span>
             </li>

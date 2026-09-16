@@ -58,22 +58,22 @@ describe('the best trade card', () => {
   it('[critical] shows the six numbers it was chosen on', () => {
     render(<BestTrade best={data()} legs={legs} expiry="160926" />);
     const dl = within(screen.getByLabelText('the pick'));
-    expect(dl.getByText('Premium (bid)').nextSibling).toHaveTextContent('11.92');
-    expect(dl.getByText('Expiry OTM').nextSibling).toHaveTextContent('95.8%');
-    expect(dl.getByText('Touch').nextSibling).toHaveTextContent('24%');
-    expect(dl.getByText('Near-zero').nextSibling).toHaveTextContent('91%');
-    expect(dl.getByText('EM×').nextSibling).toHaveTextContent('1.54×');
-    expect(dl.getByText('Delta').nextSibling).toHaveTextContent('-0.070');
-    expect(dl.getByText('Credit / risk').nextSibling).toHaveTextContent('0.46');
-    expect(dl.getByText('Liquidity').nextSibling).toHaveTextContent('78/100');
+    expect(dl.getByText('You’d be paid').nextSibling).toHaveTextContent('11.92');
+    expect(dl.getByText('Chance you keep it all').nextSibling).toHaveTextContent('95.8%');
+    expect(dl.getByText('Chance price gets there first').nextSibling).toHaveTextContent('24%');
+    expect(dl.getByText('Chance it collapses early').nextSibling).toHaveTextContent('91%');
+    expect(dl.getByText('How far away, in usual moves').nextSibling).toHaveTextContent('1.54×');
+    expect(dl.getByText('Sensitivity to BTC').nextSibling).toHaveTextContent('-0.070');
+    expect(dl.getByText('Paid ÷ most you can lose').nextSibling).toHaveTextContent('0.46');
+    expect(dl.getByText('How easy to trade').nextSibling).toHaveTextContent('78/100');
   });
 
   it('[critical] a loss with a hedge is a number, and says which hedge caps it', () => {
     render(<BestTrade best={data()} legs={legs} expiry="160926" />);
-    const row = within(screen.getByLabelText('the pick')).getByText('Max loss (with hedge)').parentElement!;
+    const row = within(screen.getByLabelText('the pick')).getByText('Most you can lose (with the safety leg)').parentElement!;
     expect(row).toHaveTextContent('$188');
-    expect(row).toHaveTextContent('buying 75,000 at 6.20');
-    expect(row).toHaveTextContent('$400 wide');
+    expect(row).toHaveTextContent('safety leg: buy 75,000 at 6.20');
+    expect(row).toHaveTextContent('$400 apart');
   });
 
   it('[critical] a naked short says uncapped rather than printing a number', () => {
@@ -84,8 +84,8 @@ describe('the best trade card', () => {
       expiry="160926"
       />,
     );
-    expect(screen.getByText(/uncapped — no hedge/)).toBeInTheDocument();
-    expect(within(screen.getByLabelText('the pick')).getByText('Credit / risk').nextSibling)
+    expect(screen.getByText(/no limit — no safety leg/)).toBeInTheDocument();
+    expect(within(screen.getByLabelText('the pick')).getByText('Paid ÷ most you can lose').nextSibling)
       .toHaveTextContent('—');
   });
 
@@ -95,27 +95,27 @@ describe('the best trade card', () => {
     expect(screen.getByText('Recommended')).toBeInTheDocument();
     rerender(<BestTrade best={data({ bestOfNone: true, why: 'No strike clears the hard rules today.' })} legs={legs} expiry="160926" />);
     expect(screen.queryByText('Recommended')).toBeNull();
-    expect(screen.getByText('Nothing clears')).toBeInTheDocument();
+    expect(screen.getByText('None pass the checks')).toBeInTheDocument();
   });
 
   it('[critical] says whether the tested engine picked the same strike', () => {
     const { rerender } = render(<BestTrade best={data()} legs={legs} expiry="160926" />);
     expect(screen.getByText('Recommended')).toBeInTheDocument();
     rerender(<BestTrade best={data({ agreesWithEngine: false })} legs={legs} expiry="160926" />);
-    expect(screen.getByText('Engine differs')).toBeInTheDocument();
-    expect(screen.getByText(/follow the engine/)).toBeInTheDocument();
+    expect(screen.getByText('The tested rule picks differently')).toBeInTheDocument();
+    expect(screen.getByText(/follow the tested rule/)).toBeInTheDocument();
   });
 
   it('[critical] says on its face that this ranking is not the tested one', () => {
     render(<BestTrade best={data()} legs={legs} expiry="160926" />);
-    expect(screen.getByText(/never been through the cross-period screen/)).toBeInTheDocument();
+    expect(screen.getByText(/not been checked against past years/)).toBeInTheDocument();
   });
 
   it('[critical] touch is shown, and said to be no part of the ranking', () => {
     render(<BestTrade best={data()} legs={legs} expiry="160926" />);
-    const touch = within(screen.getByLabelText('the pick')).getByText('Touch');
+    const touch = within(screen.getByLabelText('the pick')).getByText('Chance price gets there first');
     expect(touch.getAttribute('title') ?? touch.parentElement?.textContent).toBeTruthy();
-    expect(screen.getByTitle(/never ranked on — touching is not losing/)).toBeInTheDocument();
+    expect(screen.getByTitle(/never ranked on: touching is not losing/)).toBeInTheDocument();
   });
 
   it('names the two behind it, so "why not that one" is answerable', () => {
@@ -126,13 +126,13 @@ describe('the best trade card', () => {
   it('[critical] hands the leg to the ticket rather than placing anything', () => {
     const onSell = vi.fn();
     render(<BestTrade best={data()} legs={legs} expiry="160926" onSell={onSell} />);
-    fireEvent.click(screen.getByRole('button', { name: /Take it to the ticket/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Open the order form with this/ }));
     expect(onSell).toHaveBeenCalledWith(legs[0]);
   });
 
   it('offers no ticket on a board that cannot be traded', () => {
     render(<BestTrade best={data()} legs={legs} expiry="160926" />);
-    expect(screen.queryByRole('button', { name: /ticket/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /order form/ })).toBeNull();
   });
 
   it('[critical] a board with nothing to sell says so, and shows no pick', () => {
@@ -162,7 +162,7 @@ describe('the best trade card', () => {
       expiry="160926"
       />,
     );
-    expect(screen.getByText('Nothing clears')).toBeInTheDocument();
+    expect(screen.getByText('None pass the checks')).toBeInTheDocument();
     expect(screen.getByText(/came closest/)).toBeInTheDocument();
     // the failures sit inside the warning, where "below" points -- not under the figures
     const banner = screen.getByText(/came closest/).parentElement!;

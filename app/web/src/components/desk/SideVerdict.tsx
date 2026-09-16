@@ -61,7 +61,7 @@ export function SideVerdict({ direction, containment, embedded = false }: {
           )}
         >
           <Icon className="h-4 w-4 flex-none" aria-hidden />
-          {side === null ? 'No side' : side === 'bullish' ? 'Bullish' : 'Bearish'}
+          {side === null ? 'No clear lean' : side === 'bullish' ? 'Leaning up' : 'Leaning down'}
           {confirmed && <span className="sv-tick">confirmed</span>}
         </span>
         <span className="sv-score" aria-label="direction score">
@@ -72,7 +72,7 @@ export function SideVerdict({ direction, containment, embedded = false }: {
         {direction.summary}
         {embedded && (
           <button type="button" className="sv-toggle" onClick={() => setShowWorking((v) => !v)} aria-expanded={showWorking}>
-            {showWorking ? 'hide the working' : `${direction.passed}/5 gates · show the working`}
+            {showWorking ? 'hide the working' : `${direction.passed} of 5 checks passed · show the working`}
           </button>
         )}
       </p>
@@ -103,7 +103,7 @@ export function SideVerdict({ direction, containment, embedded = false }: {
         ))}
       </ul>
 
-      <ul className="sv-gates" aria-label="gates">
+      <ul className="sv-gates" aria-label="checks">
         {direction.gates.map((g) => (
           <li key={g.key} className={cn(g.pass === true && 'ok', g.pass === false && 'no')}>
             <span className="sv-gate-mark" aria-hidden>
@@ -154,7 +154,7 @@ export function SideVerdict({ direction, containment, embedded = false }: {
   return (
     <Card className="side-verdict">
       <CardTitle right={<span className="dim">{direction.passed}/5 gates</span>}>
-        Today’s side
+        Which way is the market leaning?
       </CardTitle>
       {body}
     </Card>

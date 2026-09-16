@@ -144,30 +144,30 @@ export function StrikeAnalysis({
         <section aria-label="path and settlement" className="mt-4 rounded-lg bg-muted px-3 py-2.5">
           <div className="grid grid-cols-3 gap-x-3 gap-y-2.5 sm:grid-cols-5">
             <Figure
-              label="Expiry OTM"
+              label="Ends worthless"
               value={dash(zero, (n) => `${(n * 100).toFixed(1)}%`)}
               tone={zero === null ? undefined : zero >= 0.97 ? 'up' : zero >= 0.9 ? 'warn' : 'down'}
               hint="Where it finishes: the chance this option expires worthless, corrected by 733 settlements."
             />
             <Figure
-              label="Touch"
+              label="Price gets there"
               value={dash(touch, (n) => `${(n * 100).toFixed(0)}%`)}
               tone={touch === null ? undefined : touch >= 0.5 ? 'down' : touch >= 0.25 ? 'warn' : undefined}
               hint="What it feels like on the way: the chance BTC reaches this strike at least once before settlement. Touching is not losing."
             />
             <Figure
-              label="Near-zero"
+              label="Collapses early"
               value={dash(leg.probs?.nearZero ?? null, (n) => `${(n * 100).toFixed(0)}%`)}
               hint="The chance this option's own price falls to about ten cents before settlement — the target filling. Simulated; blank where it is not worth simulating."
             />
             <Figure
-              label="EM×"
+              label="Usual moves away"
               value={dash(leg.emBuffer, (n) => `${n.toFixed(2)}×`)}
               tone={leg.emBuffer === null ? undefined : leg.emBuffer < 1 ? 'down' : leg.emBuffer >= 2 ? 'up' : undefined}
               hint="How far the strike is in expected moves. Under 1.0, today's expected move reaches it."
             />
             <Figure
-              label="At ±1 EM"
+              label="If BTC moves one usual move"
               value={atOneMove === null ? '—' : atOneMove === 0 ? 'nothing' : `−${usd(atOneMove)}`}
               second="per contract"
               tone={atOneMove === null || atOneMove === 0 ? undefined : 'down'}

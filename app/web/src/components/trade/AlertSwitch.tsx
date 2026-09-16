@@ -72,7 +72,7 @@ export function AlertSwitch({ status, onChanged }: {
         : on ? <Bell size={13} aria-hidden />
           : <BellOff size={13} aria-hidden />}
       <span className="alertswitch-label">
-        {failed ? 'Try again' : on ? 'Alerts on' : 'Alerts off'}
+        {failed ? 'Try again' : on ? 'Phone alerts on' : 'Phone alerts off'}
       </span>
     </button>
   );

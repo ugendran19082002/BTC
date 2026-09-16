@@ -52,15 +52,15 @@ export function BestTrade({ best, legs, expiry, onSell }: {
       <CardTitle
         right={
           p === null ? <Badge tone="neutral">nothing to sell</Badge>
-            : best.bestOfNone ? <Badge tone="warn">Nothing clears</Badge>
+            : best.bestOfNone ? <Badge tone="warn">None pass the checks</Badge>
               : best.agreesWithEngine
                 // Clears every hard rule and the tested engine picked it too:
                 // the only combination on this card that deserves the word.
                 ? <Badge tone="ok">Recommended</Badge>
-                : <Badge tone="warn">Engine differs</Badge>
+                : <Badge tone="warn">The tested rule picks differently</Badge>
         }
       >
-        Best trade · this expiry
+        Best pick for today’s contract
       </CardTitle>
 
       {p === null ? (
@@ -99,51 +99,51 @@ export function BestTrade({ best, legs, expiry, onSell }: {
           </div>
 
           <dl className="m-0 mt-3 grid gap-1.5" aria-label="the pick">
-            <KV label="Premium (bid)" hint="What a seller receives. Every measured figure on this desk is built on the bid.">
+            <KV label="You’d be paid" hint="The bid — what a seller actually receives per contract. Every measured figure on this desk is built on the bid, not the mid or the mark.">
               <b>{price(p.premiumUsd)}</b>
             </KV>
-            <KV label="Expiry OTM" hint="Where it finishes: the chance it expires worthless, corrected by 733 settlements.">
+            <KV label="Chance you keep it all" hint="The chance this option expires worthless, so the whole premium stays with you. Corrected by what really happened to strikes like it over 733 settlements.">
               <span className={cn(p.expiryOtm !== null && p.expiryOtm >= 0.95 ? 'up' : 'warn')}>
                 {pctOf(p.expiryOtm)}
               </span>
             </KV>
-            <KV label="Touch" hint="What it feels like on the way: the chance BTC reaches the strike at least once. Shown, never ranked on — touching is not losing.">
+            <KV label="Chance price gets there first" hint="The chance BTC reaches the strike at some point before settlement — the drawdown on the way, not a loss. Shown, never ranked on: touching is not losing.">
               <span className={cn(p.touch !== null && p.touch >= 0.5 && 'down')}>{pctOf(p.touch, 0)}</span>
             </KV>
-            <KV label="Near-zero" hint="The chance the premium itself collapses to about ten cents before settlement — the target filling.">
+            <KV label="Chance it collapses early" hint="The chance this option’s own price falls to about ten cents before settlement — the target filling early.">
               {pctOf(p.nearZero, 0)}
             </KV>
-            <KV label="EM×" hint="How far the strike is, in expected moves. Under 1.0 today's expected move reaches it.">
+            <KV label="How far away, in usual moves" hint="Distance to the strike in units of today’s expected move. Under 1.0 an ordinary day reaches it.">
               {p.emBuffer === null ? '—' : `${p.emBuffer.toFixed(2)}×`}
             </KV>
-            <KV label="Delta" hint="How much the premium moves per dollar of BTC.">
+            <KV label="Sensitivity to BTC" hint="Delta: how much the premium moves per dollar of BTC.">
               {p.delta === null ? '—' : p.delta.toFixed(3)}
             </KV>
 
             <div className="my-0.5 h-px bg-border" />
 
-            <KV label="Credit" hint="For the lots on the settings bar, after Delta's charges to open.">
+            <KV label="You collect" hint="For the lots on the settings bar, after Delta’s charges to open.">
               {usd(p.creditUsd)}
             </KV>
             <KV
-              label={p.hedge ? 'Max loss (with hedge)' : 'Max loss'}
+              label={p.hedge ? 'Most you can lose (with the safety leg)' : 'Most you can lose'}
               hint={p.hedge
                 ? 'The spread’s own worst case: the width, less what is kept.'
                 : 'Nothing caps a naked short. Buy a hedge and this becomes a number.'}
             >
               {p.maxLossUsd === null
-                ? <span className="down">uncapped — no hedge</span>
+                ? <span className="down">no limit — no safety leg</span>
                 : <span className="down">{usd(p.maxLossUsd)}</span>}
               {p.hedge && (
                 <span className="block text-[11px] text-muted-foreground">
-                  buying {fmtStrike(p.hedge.strike)} at {price(p.hedge.askUsd)} · ${p.hedge.widthUsd.toLocaleString('en-IN')} wide
+                  safety leg: buy {fmtStrike(p.hedge.strike)} at {price(p.hedge.askUsd)} · ${p.hedge.widthUsd.toLocaleString('en-IN')} apart
                 </span>
               )}
             </KV>
-            <KV label="Credit / risk" hint="What the trade is paid as a share of what it can lose. Needs a hedge to be a number at all.">
+            <KV label="Paid ÷ most you can lose" hint="What the trade collects as a share of the most it can lose. Needs a safety leg to be a number at all.">
               {p.creditRisk === null ? '—' : <b>{p.creditRisk.toFixed(2)}</b>}
             </KV>
-            <KV label="Liquidity" hint="Spread, turnover against open interest, depth and how fresh the last print is.">
+            <KV label="How easy to trade" hint="Liquidity, 0–100: the gap between buy and sell prices, how much traded today, how many contracts are open, and how fresh the last trade is.">
               <span className={cn(p.liquidity >= 70 ? 'up' : p.liquidity >= 40 ? 'warn' : 'down')}>
                 {p.liquidity}<span className="dim">/100</span>
               </span>
@@ -180,16 +180,16 @@ export function BestTrade({ best, legs, expiry, onSell }: {
               className="mt-3 h-10 w-full"
               onClick={() => onSell(leg)}
             >
-              Take it to the ticket
+              Open the order form with this
             </Button>
           )}
 
           <p className="m-0 mt-2 text-[10.5px] leading-snug text-[var(--dim)]">
             {best.agreesWithEngine
-              ? 'The tested engine picked this strike too.'
-              : 'The tested engine picked differently — where they disagree, follow the engine: '}
-            This ranking has never been through the cross-period screen. Nothing is sent from
-            here; the ticket runs every gate again.
+              ? 'The tested rule picked this strike too.'
+              : 'The tested rule picked differently — where they disagree, follow the tested rule: '}
+            this ranking has not been checked against past years. Nothing is sent from here;
+            the order form runs every check again.
           </p>
         </>
       )}

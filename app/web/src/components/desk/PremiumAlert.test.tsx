@@ -32,23 +32,23 @@ describe('the premium alert', () => {
   it('[critical] opens on the premium floor and sets an alert on the bid, once', async () => {
     render(<PremiumAlert symbol={SYMBOL} bidNow={2.6} />);
     expect((screen.getByLabelText('alert when the bid reaches') as HTMLInputElement).value).toBe('5');
-    expect(screen.getByText(/On the bid, once\. The desk keeps trading either way/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Set alert/ }));
+    expect(screen.getByText(/one message when a seller can get this price/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Set reminder/ }));
     await waitFor(() => expect(addPremiumAlert).toHaveBeenCalledWith(SYMBOL, 5));
   });
 
   it('[critical] refuses a level the bid is already past, and says to pick a higher one', () => {
     render(<PremiumAlert symbol={SYMBOL} bidNow={7.8} />);
-    expect(screen.getByRole('button', { name: /Set alert/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Set reminder/ })).toBeDisabled();
     expect(screen.getByText(/The bid is already 7\.80/)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('alert when the bid reaches'), { target: { value: '9' } });
-    expect(screen.getByRole('button', { name: /Set alert/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Set reminder/ })).toBeEnabled();
   });
 
   it('refuses nothing, or a price of nothing', () => {
     render(<PremiumAlert symbol={SYMBOL} bidNow={2.6} />);
     fireEvent.change(screen.getByLabelText('alert when the bid reaches'), { target: { value: '0' } });
-    expect(screen.getByRole('button', { name: /Set alert/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Set reminder/ })).toBeDisabled();
     expect(screen.getByText('A price above zero.')).toBeInTheDocument();
   });
 
@@ -73,8 +73,8 @@ describe('the premium alert', () => {
     render(<PremiumAlert symbol={SYMBOL} bidNow={2.6} />);
     const list = within(await screen.findByLabelText('alerts on this strike'));
     expect(list.getByText(/waiting for/)).toHaveTextContent('5.00');
-    expect(list.getByText(/rang at/)).toHaveTextContent('4.20');
-    expect(list.getByText(/rang at/)).toHaveTextContent('09:10');
+    expect(list.getByText(/sent at/)).toHaveTextContent('4.20');
+    expect(list.getByText(/sent at/)).toHaveTextContent('09:10');
     expect(list.queryByText(/9\.00/)).toBeNull();
   });
 
@@ -91,7 +91,7 @@ describe('the premium alert', () => {
   it('a refusal from the desk is shown', async () => {
     addPremiumAlert.mockRejectedValue(new Error('that contract has already settled'));
     render(<PremiumAlert symbol={SYMBOL} bidNow={2.6} />);
-    fireEvent.click(screen.getByRole('button', { name: /Set alert/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Set reminder/ }));
     expect(await screen.findByRole('alert')).toHaveTextContent('that contract has already settled');
   });
 });
