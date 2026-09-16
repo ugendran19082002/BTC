@@ -2338,3 +2338,60 @@ web 614.
   the same rule as the zoom toggle: the arrangement somebody chose is the one
   they get back, and a reset puts the tested order back. Not started.
 
+## An add that waits an hour, and can be stopped
+
+*16 September 2026*
+
+An add by hand worked for **five minutes** — a default nobody chose and the
+sheet never showed. Five minutes is long enough for the chase and nothing
+else, and the whole point of adding by hand is *sell more of this if the price
+comes back to me*, which is a question about the next hour, not the next
+three hundred seconds.
+
+- **An hour by default**, set on the sheet: a box in minutes with `15m / 1h /
+  4h` beside it, four hours the ceiling the server already enforced. The line
+  under it says what happens when it runs out, in the words of the number that
+  was picked: *"Rests until it fills or 1h passes, then whatever is left is
+  cancelled."*
+- **Stop add**, on the position card, beside a countdown. An hour-long order
+  with no clock next to it stops meaning anything ten minutes in, and the only
+  way to be rid of one was to wait it out or close the whole position. It runs
+  the same path the window's own expiry runs — cancel, count what filled, close
+  the add out — so a person stopping an add and the clock stopping one leave
+  the same record. Whatever already filled stays: an add half filled is part of
+  the position, not an add undone.
+- `POST /api/trade/add/cancel`, idempotent: an add that has just filled or just
+  timed out is not an error to have asked about.
+
+Tests: the hour is the default and a shorter window still goes; the window is
+sent with the add and with the preview; the chips fill it in; past four hours,
+zero and empty are all refused and send nothing. On the engine: a stopped add
+keeps what it sold, the target and stop end up covering what is actually held,
+stopping one that sold nothing changes nothing, stopping when nothing is adding
+is not an error, and a stopped add does not come back on the next poll.
+
+## Three small things on the screens
+
+*16 September 2026*
+
+**The P&L range is one control.** Two `<input type="date">` boxes, which render
+as a picker in Chrome, a wheel on a phone and a bare text box in Firefox on
+Linux — and ask for a range as two questions that can contradict each other
+while they are being answered. It is the `DateRangePicker` the orders screen
+already uses: both ends at once, its own presets, and it never hands over half
+a range. The `7d / 30d / 90d / 1y` chips stay, and now light up when the range
+showing is theirs. The reversed-range guard stays too — unreachable through the
+control, but the dates are remembered in the browser and an old value there is
+exactly how `from=2027&to=2026` reaches a fetch.
+
+**The charges line says what is left.** *"₹63.89 paid · ₹29.77 to close"* was
+two numbers going out and nothing coming back; the answer to the question it
+raises — so what do I actually keep? — was in a panel above it under a
+different name. The line now ends *"· close now → keep ₹733"*, or *lose* when
+it is the other way. The same figure as *If closed now*, deliberately: this is
+where the charges are, so this is where the number that has already had them
+taken off belongs.
+
+- [ ] **Chain table: move the columns, and remember where they were put.**
+  Still not started — see the note under *The wall the strategy could not see*.
+
