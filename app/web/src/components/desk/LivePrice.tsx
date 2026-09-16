@@ -16,10 +16,12 @@ import { useEffect, useRef, useState } from 'react';
  * showing either way.
  */
 export function LivePrice({
-  spot, live, sinceOpenUsd, sinceOpenPct,
+  spot, live, sinceOpenUsd, sinceOpenPct, feed,
 }: {
   spot: number;
   live: boolean;
+  /** How updates are reaching this page: pushed as they happen, or asked for every second. */
+  feed?: 'pushed' | 'polling';
   /** Dollars moved since the contract opened at 05:30 IST. */
   sinceOpenUsd?: number | null;
   sinceOpenPct?: number | null;
@@ -46,7 +48,14 @@ export function LivePrice({
 
   return (
     <span className={`liveprice${dir ? ' flash-' + dir : ''}`}>
-      <i className={live ? 'dot on' : 'dot'} aria-hidden />
+      <i
+        className={live ? 'dot on' : 'dot'}
+        role="img"
+        aria-label={!live ? 'a past board' : feed === 'polling' ? 'live, updated every second' : 'live, updated as it happens'}
+        title={!live ? 'A past board: nothing here is moving.'
+          : feed === 'polling' ? 'Live. Updates are fetched every second — the push connection is not available right now.'
+            : 'Live. Updates arrive the moment they change.'}
+      />
       <b>{spot.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</b>
       {show && (
         <span

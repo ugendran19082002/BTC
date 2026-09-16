@@ -435,6 +435,7 @@ export default function App() {
               live={snap.live}
               sinceOpenUsd={sinceOpenUsd}
               sinceOpenPct={sinceOpenPct}
+              feed={stream.live ? 'pushed' : 'polling'}
             />
           )}
           <TodayPnl status={trade} />

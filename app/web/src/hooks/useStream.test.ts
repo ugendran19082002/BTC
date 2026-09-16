@@ -85,7 +85,7 @@ describe('useStream', () => {
     rerender({ on: true });
     expect(sources.length).toBe(1);
     rerender({ on: false });
-    expect(sources[0].closed).toBe(true);
+    expect(sources[0]!.closed).toBe(true);
   });
 
   it('a frame that is not JSON is ignored rather than crashing the page', () => {
