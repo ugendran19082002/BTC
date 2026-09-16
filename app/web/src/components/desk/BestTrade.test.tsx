@@ -80,9 +80,18 @@ describe('the best trade card', () => {
       .toHaveTextContent('—');
   });
 
+  it('[critical] only a pick that clears and the engine agrees with is "Recommended"', () => {
+    // Three different states, and the word belongs to one of them.
+    const { rerender } = render(<BestTrade best={data()} legs={legs} />);
+    expect(screen.getByText('Recommended')).toBeInTheDocument();
+    rerender(<BestTrade best={data({ bestOfNone: true, why: 'No strike clears the hard rules today.' })} legs={legs} />);
+    expect(screen.queryByText('Recommended')).toBeNull();
+    expect(screen.getByText('Nothing clears')).toBeInTheDocument();
+  });
+
   it('[critical] says whether the tested engine picked the same strike', () => {
     const { rerender } = render(<BestTrade best={data()} legs={legs} />);
-    expect(screen.getByText('Engine agrees')).toBeInTheDocument();
+    expect(screen.getByText('Recommended')).toBeInTheDocument();
     rerender(<BestTrade best={data({ agreesWithEngine: false })} legs={legs} />);
     expect(screen.getByText('Engine differs')).toBeInTheDocument();
     expect(screen.getByText(/follow the engine/)).toBeInTheDocument();

@@ -48,7 +48,9 @@ export function BestTrade({ best, legs, onSell }: {
           p === null ? <Badge tone="neutral">nothing to sell</Badge>
             : best.bestOfNone ? <Badge tone="warn">Nothing clears</Badge>
               : best.agreesWithEngine
-                ? <Badge tone="ok">Engine agrees</Badge>
+                // Clears every hard rule and the tested engine picked it too:
+                // the only combination on this card that deserves the word.
+                ? <Badge tone="ok">Recommended</Badge>
                 : <Badge tone="warn">Engine differs</Badge>
         }
       >

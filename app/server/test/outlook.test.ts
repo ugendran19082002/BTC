@@ -231,3 +231,39 @@ test('no measured table at all still gives the implied bands', () => {
   assert.equal(o.sampleWindows, null);
   assert.ok(row.score !== null, 'and the tape can still be read');
 });
+
+/**
+ * The figure that actually varies across the row.
+ *
+ * Below/inside/above are near-constant by construction — the implied band and
+ * the measured one both scale with √t, so their ratio hardly moves. Measured on
+ * 16 September: 68.1% inside at five minutes and 63.3% at twelve hours, which
+ * is not a row of nine informative numbers. The two bands against each other
+ * *are* informative: 1.00 at five minutes, 0.88 at twelve hours.
+ */
+test('[critical] implied against measured is what moves, and it is carried', () => {
+  const o = run();
+  const five = o.rows.find((r) => r.label === '5m')!;
+  const twelve = o.rows.find((r) => r.label === '12h')!;
+  // Both are the implied band over the measured 68% band.
+  assert.ok(Math.abs(five.richness! - five.impliedUsd! / 75_820 * 100 / five.measured68Pct!) < 1e-9);
+  assert.ok(five.richness! > twelve.richness!, `${five.richness} should exceed ${twelve.richness}`);
+  // and the near-constancy of the three shares is the reason it is needed
+  assert.ok(Math.abs(five.inside! - twelve.inside!) < 0.1, 'the shares barely move');
+});
+
+test('rich, fair and cheap are named at the thresholds', () => {
+  const at = (iv: number) => outlook({ snap: { ...snap, atmIv: iv }, market: market([]), horizons: HORIZONS })
+    .rows.find((r) => r.label === '1h')!;
+  assert.equal(at(0.3).priced, 'fair', 'the implied band matching history is fair');
+  assert.equal(at(0.9).priced, 'rich');
+  assert.equal(at(0.1).priced, 'cheap');
+});
+
+test('nothing to compare against is not a ratio', () => {
+  const noIv = outlook({ snap: { ...snap, atmIv: null }, market: market([]), horizons: HORIZONS });
+  assert.equal(noIv.rows[0]!.richness, null);
+  assert.equal(noIv.rows[0]!.priced, null);
+  const noHistory = outlook({ snap, market: market([]), horizons: [] });
+  assert.equal(noHistory.rows[0]!.richness, null);
+});
