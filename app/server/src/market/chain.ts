@@ -1,6 +1,6 @@
 import { candles, liveTickers, spotAt, pool, type Ticker } from './delta.js';
 import { greeks, impliedVol, expectedMove } from '../domain/bs.js';
-import { strikeProbabilities, type StrikeProbabilities } from '../domain/probability.js';
+import { pReachNearZero, strikeProbabilities, type StrikeProbabilities } from '../domain/probability.js';
 
 /**
  * Fallback spacing when the listed strikes cannot be read.
@@ -335,31 +335,66 @@ export const withinWindow = (strike: number, atm: number, step: number, width: n
   Math.abs(Math.round((strike - atm) / step)) <= width;
 
 /**
- * The simulated probabilities, worked out once per ticker batch.
+ * The simulation, off the request path.
  *
  * `pReachNearZero` walks 2,000 paths through 24 Black-Scholes repricings for
  * every strike worth selling -- about 350ms of arithmetic on a 74-strike
- * board, on the one thread the server has. It was being done again on every
+ * board, on the one thread the server has. It used to run again on every
  * chain request, every strategy tick and every best-pick check, and each run
  * held every other request (the one-second status and price polls included)
  * behind it. That was the lag: not the network, the event loop.
  *
- * The inputs cannot change between two reads of the same ticker batch -- the
- * spot, the strike and the volatility are the batch -- so the answer is kept
- * on the batch and dies with it. Time to expiry moves by the seconds between
- * two reads, which the simulation cannot resolve and its own seed already
- * rounds away. Same arithmetic, once.
+ * Now the answer is kept per contract, with the inputs it was worked out
+ * from. A read whose inputs match hands the kept answer back. A read whose
+ * inputs have moved -- spot by $25, volatility by half a point, expiry by
+ * five minutes, buckets the simulation's own ±1% noise cannot resolve --
+ * still hands the kept answer back **and queues the fresh one**, computed one
+ * contract per turn of the event loop so nothing waits behind it. The board
+ * carries a near-zero figure at most a second or two old; the request that
+ * read it never paid for it. Only the first sight of a contract (boot, a new
+ * expiry) computes on the spot, because there is nothing older to show.
+ *
+ * The closed-form figures (expires worthless, touch) are microseconds and
+ * are worked out fresh every time: nothing here is stale that need not be.
  */
-const probsByBatch = new WeakMap<Ticker[], Map<string, StrikeProbabilities>>();
+type Kept = { key: string; nearZero: number | null };
+const keptNearZero = new Map<string, Kept>();
+const pending = new Map<string, { key: string; compute: () => number | null }>();
+let draining = false;
 
-function probsFor(batch: Ticker[], t: Ticker, compute: () => StrikeProbabilities): StrikeProbabilities {
-  let byLeg = probsByBatch.get(batch);
-  if (!byLeg) { byLeg = new Map(); probsByBatch.set(batch, byLeg); }
-  const hit = byLeg.get(t.symbol);
-  if (hit) return hit;
-  const p = compute();
-  byLeg.set(t.symbol, p);
-  return p;
+export const bucketKey = (spot: number, tte: number, iv: number) =>
+  `${Math.round(spot / 25)}|${Math.round(iv * 200)}|${Math.floor(tte * 365 * 24 * 12)}`;
+
+function drain(): void {
+  const next = pending.entries().next();
+  if (next.done) { draining = false; return; }
+  const [symbol, job] = next.value;
+  pending.delete(symbol);
+  keptNearZero.set(symbol, { key: job.key, nearZero: job.compute() });
+  setImmediate(drain);
+}
+
+export function nearZeroFor(symbol: string, key: string, compute: () => number | null): number | null {
+  const kept = keptNearZero.get(symbol);
+  if (kept?.key === key) return kept.nearZero;
+  if (!kept) {
+    // First sight: nothing older to show, so this one is paid for now.
+    const nearZero = compute();
+    keptNearZero.set(symbol, { key, nearZero });
+    return nearZero;
+  }
+  pending.set(symbol, { key, compute });
+  if (!draining) { draining = true; setImmediate(drain); }
+  return kept.nearZero;
+}
+
+/** How many contracts are waiting for a fresh simulation; for tests and /api/health. */
+export const simulationBacklog = (): number => pending.size;
+
+/** Forget everything kept. For tests. */
+export function resetSimulationCache(): void {
+  keptNearZero.clear();
+  pending.clear();
 }
 
 export async function liveChain(width = 25, wantExpiry?: string): Promise<Snapshot> {
@@ -417,7 +452,12 @@ export async function liveChain(width = 25, wantExpiry?: string): Promise<Snapsh
       oi,
       volume: t.volume ?? null,
       ageMin: null,
-      probs: probsFor(tickers, t, () => strikeProbabilities(cp, spot, strike, tte, iv, worthSimulating)),
+      probs: {
+        ...strikeProbabilities(cp, spot, strike, tte, iv, false),
+        nearZero: worthSimulating && iv !== null
+          ? nearZeroFor(t.symbol, bucketKey(spot, tte, iv), () => pReachNearZero(cp, spot, strike, tte, iv))
+          : null,
+      },
       // Filled in by `finish` once the board's expected move is known.
       emBuffer: null,
       distancePct: ((strike - spot) / spot) * 100,

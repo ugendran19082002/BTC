@@ -6,6 +6,8 @@
  * of this process means a leak here cannot move money.
  */
 
+import { TickerSocket, type FeedHealth } from './delta-socket.js';
+
 const BASE = 'https://api.india.delta.exchange/v2';
 
 export type Candle = { time: number; open: number; high: number; low: number; close: number; volume: number };
@@ -101,6 +103,9 @@ const TICKER_TTL_MS = 15_000;
 let tickerCache: { at: number; data: Ticker[] } | null = null;
 let tickerInflight: Promise<Ticker[]> | null = null;
 let tickerPollerId: NodeJS.Timeout | null = null;
+/** The socket feed, once started. Null in tests and tools that never start it. */
+let tickerSocket: TickerSocket | null = null;
+let spotCache: { value: number; at: number } | null = null;
 
 async function fetchTickersFresh(): Promise<Ticker[]> {
   if (tickerInflight) return tickerInflight;
@@ -110,6 +115,9 @@ async function fetchTickersFresh(): Promise<Ticker[]> {
       const data = (r ?? []).filter((t) => t.underlying_asset_symbol === 'BTC');
       if (data.length > 0) {
         tickerCache = { at: Date.now(), data };
+        // The full list is the truth about which contracts exist; the socket
+        // carries on from it.
+        tickerSocket?.seed(data);
       }
       return data;
     } finally {
@@ -120,13 +128,18 @@ async function fetchTickersFresh(): Promise<Ticker[]> {
 }
 
 /**
- * Start periodic background polling for Delta tickers.
- * This keeps `tickerCache` perpetually hot so client requests never wait on upstream network latency.
+ * The REST poll: the cold start, and the fallback.
+ *
+ * While the socket is delivering, this does nothing -- a board that arrives
+ * the moment it changes does not need a copy downloaded every eight seconds.
+ * The moment the socket goes quiet (`fresh()` false) the poll is back to
+ * being the feed, with no gap longer than its own interval.
  */
 export function startTickerPoller(intervalMs = 8_000) {
   if (tickerPollerId) return;
   void fetchTickersFresh().catch(() => {});
   tickerPollerId = setInterval(() => {
+    if (tickerSocket?.fresh()) return;
     void fetchTickersFresh().catch(() => {});
   }, intervalMs);
   if (typeof tickerPollerId === 'object' && 'unref' in tickerPollerId) {
@@ -139,7 +152,38 @@ export function stopTickerPoller() {
     clearInterval(tickerPollerId);
     tickerPollerId = null;
   }
+  tickerSocket?.stop();
+  tickerSocket = null;
 }
+
+/**
+ * The socket feed. Every batch it hands over becomes the ticker cache, and
+ * its freshest spot becomes the price -- the same two places the REST poll
+ * writes, so nothing downstream can tell the two apart. See `delta-socket.ts`.
+ */
+export function startTickerSocket(log?: (line: string) => void): TickerSocket {
+  if (tickerSocket) return tickerSocket;
+  tickerSocket = new TickerSocket({
+    log,
+    onBatch: (data, at, spot) => {
+      if (!data.length) return;
+      tickerCache = { at, data };
+      if (spot !== null) spotCache = { value: spot, at };
+    },
+  });
+  tickerSocket.start();
+  return tickerSocket;
+}
+
+/** Where the board is coming from, for /api/health and the screen. */
+export function tickerFeedHealth(): FeedHealth & { batchAt: number | null } {
+  const h = tickerSocket?.health() ?? { source: 'none' as const, connected: false, lastMessageAt: null, symbols: 0, reconnects: 0 };
+  if (h.source === 'none' && tickerCache) h.source = 'rest';
+  return { ...h, batchAt: tickerCache?.at ?? null };
+}
+
+/** When the current batch arrived: a client can tell "the board changed" from it. */
+export const tickerBatchAt = (): number | null => tickerCache?.at ?? null;
 
 /**
  * Spot, on its own, cheaply.
@@ -150,7 +194,6 @@ export function stopTickerPoller() {
  * one-second poll reads a fresh figure, long enough that ten browser tabs
  * cannot turn into ten calls a second at the exchange.
  */
-let spotCache: { value: number; at: number } | null = null;
 const SPOT_TTL_MS = 800;
 
 export async function liveSpot(now = Date.now()): Promise<number | null> {

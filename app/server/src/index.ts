@@ -6,7 +6,7 @@ import { credsFromEnv } from './delta/signed.js';
 import { tradingService } from './trading/service.js';
 import { strategyStore } from './http/routes/strategy.routes.js';
 import { StrategyRunner } from './strategy/runner.js';
-import { liveTickers, startTickerPoller } from './market/delta.js';
+import { liveTickers, startTickerPoller, startTickerSocket } from './market/delta.js';
 import { liveChain } from './market/chain.js';
 import { readMarket } from './market/moves.js';
 
@@ -75,9 +75,11 @@ app.log.info(
     : 'telegram fill alerts off -- set TG_TOKEN and TG_CHAT_ID to enable',
 );
 
-// Start background ticker poller and pre-warm caches so the first page load
-// is served instantly from memory with zero cold-start delay.
+// The board: the socket delivers it the moment it changes, the REST poll is
+// the cold start and the fallback. Both warmed here so the first page load is
+// served from memory.
 startTickerPoller(8_000);
+startTickerSocket((line) => app.log.info(line));
 liveTickers()
   .then((t) => {
     app.log.info(`ticker cache warmed: ${t.length} BTC contracts`);

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
-import { liveChain, historicalChain, liveExpiries, hoursSinceDeskOpen, WHOLE_BOARD, type Snapshot } from '../../market/chain.js';
+import { liveChain, historicalChain, liveExpiries, hoursSinceDeskOpen, simulationBacklog, WHOLE_BOARD, type Snapshot } from '../../market/chain.js';
 import { readMarket } from '../../market/moves.js';
-import { liveSpot, candles } from '../../market/delta.js';
+import { liveSpot, candles, tickerFeedHealth } from '../../market/delta.js';
 import { scoreLegs, pickSells, bias, verdict, maxLots, MARGIN_PER_LOT_USD, USDINR } from '../../domain/score.js';
 import { recommend, type PickMode } from '../../domain/recommend.js';
 import { optionStructure } from '../../domain/structure.js';
@@ -55,6 +55,11 @@ export function registerDeskRoutes(app: FastifyInstance) {
       // Both stores share one ledger, but only asking the trade store hid a
       // deploy whose strategy tables had never been created.
       strategies: strategyStore().all().length,
+      // Where the board is coming from, and whether the simulation is keeping
+      // up. A feed that has fallen back to polling should be visible from
+      // outside rather than by a board that is eight seconds old.
+      feed: tickerFeedHealth(),
+      simulationBacklog: simulationBacklog(),
       now: new Date().toISOString(),
     };
   });
