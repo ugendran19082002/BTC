@@ -51,6 +51,14 @@ test('the frame is the SSE wire format, one line of JSON', () => {
   assert.equal(sseFrame('spot', { spot: 1 }), 'event: spot\ndata: {"spot":1}\n\n');
 });
 
+test('the keep-alive is an event the page can hear, not a comment only the proxy sees', () => {
+  const got: string[] = [];
+  const hub = new StreamHub();
+  hub.add({ write: (c) => got.push(c) });
+  hub.ping(5);
+  assert.deepEqual(got, ['event: ping\ndata: {"at":5}\n\n']);
+});
+
 /** The route, end to end: the gate applies, and a signed-in tab gets frames. */
 const dir = mkdtempSync(join(tmpdir(), 'stream-'));
 process.env.TRADE_DB = join(dir, 'trades.db');

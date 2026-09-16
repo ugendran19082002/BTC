@@ -48,9 +48,13 @@ export class StreamHub {
     return true;
   }
 
-  /** A keep-alive comment: the proxy's read timeout and the phone's radio both count silence. */
-  ping(): void {
-    for (const sink of this.sinks) this.write(sink, ': ping\n\n');
+  /**
+   * A keep-alive, as an event rather than a comment: the proxy's read timeout
+   * counts silence, and so does the browser's watchdog -- and a comment reaches
+   * the proxy but never the page's listeners.
+   */
+  ping(now = Date.now()): void {
+    for (const sink of this.sinks) this.write(sink, sseFrame('ping', { at: now }));
   }
 
   private write(sink: Sink, chunk: string): void {

@@ -20,7 +20,8 @@ import type { TradeStatus } from '@/types/trade';
  *   press must not be overwritten by a pushed frame from a second earlier,
  *   so the caller can pick the newer of the two.
  */
-export const QUIET_MS = 10_000;
+/** The server pings every 15s; missing two and a half of them is silence. */
+export const QUIET_MS = 40_000;
 
 export type StreamState = {
   status: TradeStatus | null;
@@ -60,6 +61,7 @@ export function useStream(enabled: boolean, factory: EventSourceFactory = defaul
       setState((s) => (s.live ? s : { ...s, live: true }));
     };
     es.addEventListener('open', heard);
+    es.addEventListener('ping', heard);
     es.addEventListener('status', (ev) => {
       heard();
       try {
