@@ -2132,6 +2132,138 @@ best pick, or placed by hand.
 
 ---
 
+## Dynamic one-sided rebalance — 18 Sep 2026
+
+Asked for: sell both sides, and when one side rises 30% while the other falls
+20%, buy back 30 lots of the fallen side and sell 30 more of the risen one;
+then 40/30, then 50/40, "…n"; a cutoff at 13:30 and the hard exit at 17:29;
+confirmation over consecutive readings; and every number set on the screen.
+
+**Where the design differs from the ask, and why:**
+
+- **The base is the actual fill per side, not the typed $15.** A CE filled at
+  14.60 against a typed 15.00 fires 2.7% early at every stage, for ever. The
+  typed number is the fallback where a leg has no fill.
+- **Buy first, then sell.** If the buy-back fails the desk must end up *flatter*.
+  Selling first and failing to buy is the one order that leaves more risk on
+  than anybody asked for, so it is never used.
+- **The direction locks at stage 1** (a setting). Without it a whipsaw buys the
+  CE back at stage 1 and the PE back at stage 2: both spreads paid, one-sided in
+  both directions inside a day.
+- **One stage per evaluation, never skipping.** A gap past stage 3's thresholds
+  fires stage 1 now and stage 2 on the next confirmed reading.
+- **Partial last step** (a setting): 100 lots and 30 a step leaves 10, and 10 is
+  what the last stage uses.
+- **It adds to the losing side**, 100/100 → 70/130 → 40/160 → 10/190, so the cap
+  per side, the spread gate and the stale-quote gate are part of the rule.
+
+**Done (not deployed yet, and off by default):**
+
+- `strategy/rebalance.ts` — the decision, pure: thresholds from the rule, the
+  risen side found rather than assumed, the cutoff measured forward from entry
+  (so an overnight 13:30 is the one after entry), the cap, the partial step, and
+  a spread gate. 18 tests, including both boundaries (+29.93% / −19.93% does
+  nothing; exactly +30 / −20 fires).
+- `strategy/rebalancer.ts` — the acting half: N consecutive readings of the same
+  stage and side, the stage written to `strategy_rebalances` **before** any
+  order, `UNIQUE (strategy_id, run_date, stage)` so a restart or a second tick
+  can never fire it twice, buy-back then sell, and a refusal recorded with its
+  reason. 10 tests.
+- Config, validation and routes: the rule lives in the strategy's own config
+  (`rebalance`, null is off), is checked on both sides, and the last stage's
+  fall is refused when it would need a price to drop more than 100%.
+- **Every number is a setting.** `DEFAULT_REBALANCE` and `REBALANCE_LIMITS` are
+  what the desk starts with, stored in `settings` and edited on the new
+  **Settings** screen; the only numbers left in the source are
+  `REBALANCE_CEILINGS`, which no setting may pass and which each box prints.
+- The strategy form shows the stages as they are typed: each stage's percentages,
+  what they mean in money from the sale price, and what the position becomes
+  (100/100 → 70/130 → …).
+
+**To do:**
+
+- [ ] **Paper-trade a full contract before arming it live.** The rule is tested;
+      the day it describes has not been traded.
+- [ ] **The rebalance has no shock gate.** The entry has one; this only inherits
+      the engine's prechecks.
+- [ ] **Show the live stage on the strategy card** — stage 2 of 3, and what the
+      next one needs, the way the design drawing does.
+- [ ] **A stage that is skipped counts as done.** That is deliberate (it stops a
+      loop), but it means one wide spread at the wrong moment costs a stage.
+      Consider retrying a skip a fixed number of times.
+
+---
+
+## "I set 5 seconds and it still has not filled" — 18 Sep 2026
+
+An add rested at 20.00 with the bid at 19.00 for an hour, with "if not filled,
+sell at bid after 5 sec" switched on.
+
+**Nothing was broken.** A typed price is also the add's floor — "sell 200 at
+20.00" means never under 20.00 — so the walk toward the bid had nowhere to go.
+The switch asked for a crossing the price forbade.
+
+**Done:**
+
+- The add preview returns the book (`bid`, `ask`) and `canWalk`, so the sheet
+  says it **before** the order is sent: "Nothing to walk to: 20.00 is also the
+  floor, and the bid is 19.00. Leave the price blank, or set it under the ask,
+  for it to cross." With room it says the range instead: "Walks 20.00 → 19.00
+  over 5 seconds."
+- The position card says the same on a working add that cannot cross.
+- Real walks pinned on the paper exchange: room to walk fills at the bid; a
+  floor at the start price rests until the window closes; a bid that lifts to
+  the ask fills at the ask without crossing at all.
+
+---
+
+## "Resistance 89,000" — 18 Sep 2026
+
+The BTC summary called 89,000 resistance with BTC at 76,723 and ten hours left:
+16% away, about eleven expected moves.
+
+**Why:** the wall was "the strike with the largest call open interest anywhere
+on the chain", and the board fetches a wide range of strikes. On Delta the far
+round numbers carry real open interest from cheap lottery calls, so 89,000 beat
+every strike near the money. There was no distance test at all.
+
+**Done:** `ceOiWallNear` / `peOiWallNear` — the heaviest wall **within reach**,
+default two expected moves, a call only above spot and a put only below it. The
+summary and the chart draw those; where there is none they say "none near" and
+name the far one rather than reaching out for something to draw. The whole-board
+pair is still reported, and every wall now carries how far it sits in percent
+and in expected moves.
+
+**To do:**
+
+- [ ] **Make the reach a desk setting** on the Settings screen — it is a
+      parameter of `optionStructure` today, defaulted to 2.
+- [ ] **The sudden-move panel still prints the far pair** as "OI walls". Decide
+      whether that panel wants the near pair too.
+
+---
+
+## A Settings screen — 18 Sep 2026
+
+Asked for: all the numbers dynamic, and settings in a menu of their own.
+
+**Done:** a **Settings** tab. The automatic best-pick trade's limits (most lots,
+the target range, the stop ceiling, the longest walk, trades per contract) and
+the rebalance defaults and limits are read from the server and written back —
+they were constants in the source, which meant a deploy to change a ceiling.
+Each box prints the hard ceiling it cannot pass. Nothing on the screen places an
+order: the switches that do are where the orders are.
+
+**To do:**
+
+- [ ] **Move the rest of the desk's numbers here**: the premium floor, the alert
+      repeat, the short cap and the daily loss limit are still on their own
+      cards.
+- [ ] **Say who changed a limit and when.** These are settings that widen what
+      an automatic order may do; the journal should carry them.
+
+---
+
 ## Found while doing the above — 17 Sep 2026
 
 - [ ] **The chain harvester is not scheduled.** No cron or systemd unit runs it;
