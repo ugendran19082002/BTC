@@ -149,11 +149,11 @@ export default function App() {
    * Every strike Delta lists, or the twenty each side the table usually shows.
    *
    * The walls and the summary read the whole board, so a card can name a strike
-   * -- "89,000 holds 455k" on 18 September -- that the table never draws. A
-   * strike named on the screen has to be findable on the screen; this is the
-   * switch that makes it so.
+   * -- "89,000 holds 455k" on 18 September -- that the table never drew. Every
+   * strike is the default now, because a strike named on the screen has to be
+   * findable on the screen; the narrower view is the option, not the rule.
    */
-  const [allStrikes, setAllStrikes] = usePersisted('chain:all', false);
+  const [allStrikes, setAllStrikes] = usePersisted('chain:all', true);
   const shownWidth = allStrikes ? 500 : width;
   const [storedCols, setCols] = usePersisted<Partial<ColumnState> | null>('chain:columns', null);
   // Where each column sits, kept beside which ones show. Both are preferences

@@ -2293,6 +2293,25 @@ asked about.
 
 ---
 
+## "89,000 holds 455k — why is it not in the chain?" — 18 Sep 2026
+
+Because the table shows twenty strikes each side of spot (a saved preference)
+while the walls and the summary read every strike Delta lists. A strike named on
+a card was not findable on the screen.
+
+**Done:** every strike Delta lists is the table's default now; "show 20 each
+side" under the board is the narrower option, remembered; the summary's note on
+a far wall says where to look. The walls,
+the picks and every computed figure were already reading the whole board — only
+the rows drawn were trimmed, and still are by default.
+
+**To do:**
+
+- [ ] **Jump to the strike** from the card: clicking "89,000 holds 455k" should
+      switch the table to all strikes and scroll to that row.
+
+---
+
 ## "Resistance 89,000" — 18 Sep 2026
 
 The BTC summary called 89,000 resistance with BTC at 76,723 and ten hours left:
