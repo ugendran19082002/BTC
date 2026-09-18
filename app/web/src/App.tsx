@@ -145,6 +145,16 @@ export default function App() {
   const defaultExpiry = expiries.find((e) => e.isDefault)?.expiry ?? expiries[0]?.expiry ?? '';
   const activeExpiry = (expiry && expiries.some((e) => e.expiry === expiry)) ? expiry : defaultExpiry;
   const [width] = usePersisted('width', 20);
+  /*
+   * Every strike Delta lists, or the twenty each side the table usually shows.
+   *
+   * The walls and the summary read the whole board, so a card can name a strike
+   * -- "89,000 holds 455k" on 18 September -- that the table never draws. A
+   * strike named on the screen has to be findable on the screen; this is the
+   * switch that makes it so.
+   */
+  const [allStrikes, setAllStrikes] = usePersisted('chain:all', false);
+  const shownWidth = allStrikes ? 500 : width;
   const [storedCols, setCols] = usePersisted<Partial<ColumnState> | null>('chain:columns', null);
   // Where each column sits, kept beside which ones show. Both are preferences
   // about this person's board, so both live as long as the browser does.
@@ -225,7 +235,7 @@ export default function App() {
     setErr(null);
     try {
       const at = live ? 'now' : new Date(istToEpoch(when) * 1000).toISOString();
-      const r = await getChain(at, width, minPremium, hedgeGap, lots, expiry || undefined, requireHedge, mode, safetyBar / 100);
+      const r = await getChain(at, shownWidth, minPremium, hedgeGap, lots, expiry || undefined, requireHedge, mode, safetyBar / 100);
       // a slow earlier request must not overwrite a newer one
       if (my === seq.current) setData(r);
     } catch (e) {
@@ -241,7 +251,7 @@ export default function App() {
     } finally {
       if (my === seq.current) setBusy(false);
     }
-  }, [live, when, width, minPremium, hedgeGap, lots, expiry, requireHedge, mode, safetyBar]);
+  }, [live, when, shownWidth, minPremium, hedgeGap, lots, expiry, requireHedge, mode, safetyBar]);
 
   useEffect(() => { if (signedIn === true) void load(); }, [signedIn, load]);
   // No way through on an error any more: an unanswered /api/me is not signed in.
@@ -704,6 +714,17 @@ export default function App() {
                   {data.recommendation.ok && data.recommendation.sides.length > 0
                     ? ' · highlighted = desk’s pick'
                     : ' · nothing qualifies today'}
+                  {' · '}
+                  <button
+                    type="button"
+                    className="chain-link"
+                    aria-pressed={allStrikes}
+                    onClick={() => setAllStrikes(!allStrikes)}
+                  >
+                    {allStrikes
+                      ? `showing every strike Delta lists · show ${width} each side`
+                      : `show all ${snap.coverage.above + snap.coverage.below + 1} strikes`}
+                  </button>
                 </span>
 
                 <ToggleGroup

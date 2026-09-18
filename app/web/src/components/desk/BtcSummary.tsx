@@ -161,7 +161,8 @@ function Level({ label, wall, far, away, tone }: {
             {' '}{oiWords(wall.value)}
             {heavierOutside && (
               <span
-                title={`${fmtStrike(heavierOutside.strike)} holds ${oiWords(heavierOutside.value)} — outside the band, so it is not drawn as a level.`}
+                title={`${fmtStrike(heavierOutside.strike)} holds ${oiWords(heavierOutside.value)} — outside the band, so it is not drawn as a level. `
+                  + 'If it is not in the table, use "show all strikes" under the board.'}
               >
                 {' · '}{fmtStrike(heavierOutside.strike)} holds {oiWords(heavierOutside.value)}
               </span>
@@ -169,7 +170,7 @@ function Level({ label, wall, far, away, tone }: {
           </small>
         </dd>
       ) : (
-        <dd className="dim" title={far ? `The heaviest is ${fmtStrike(far.strike)}, ${pct(far.strike)} away — too far to trade against.` : undefined}>
+        <dd className="dim" title={far ? `The heaviest is ${fmtStrike(far.strike)}, ${pct(far.strike)} away — too far to trade against. If it is not in the table, use "show all strikes" under the board.` : undefined}>
           none near
           {far && <small> (heaviest {fmtStrike(far.strike)}, {pct(far.strike)})</small>}
         </dd>

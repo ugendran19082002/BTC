@@ -2278,6 +2278,21 @@ screen) rather than a number in the source.
 
 ---
 
+## The board row on the sudden-move panel — 18 Sep 2026
+
+"OI walls 71,000 – 89,000" was still the whole-board pair on this panel after
+the summary had moved to the walls within reach, and the board numbers were a
+total with one percentage.
+
+**Done:** the panel draws the near pair, with each wall's open interest ("PE
+110k · CE 120k open") and the whole-board pair as the note under it. Options
+volume and open interest each show **CE and PE separately**, and the put/call
+ratio is named as what it is — "PCR (volume) 0.76 · more calls traded", "PCR
+(OI) 0.69 · more calls open" — rather than "0.69 puts per call", which had to be
+asked about.
+
+---
+
 ## "Resistance 89,000" — 18 Sep 2026
 
 The BTC summary called 89,000 resistance with BTC at 76,723 and ten hours left:

@@ -2516,3 +2516,8 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 .settings-note { font-size: 11px; color: var(--dim); }
 .settings-note.warn { color: var(--warn); }
 .btc-summary-oi { display: block; margin-top: 1px; font-size: 10.5px; color: var(--dim); font-weight: 400; }
+.chain-link {
+  appearance: none; border: 0; background: none; padding: 0; margin: 0;
+  font: inherit; color: var(--accent); cursor: pointer;
+}
+.chain-link:hover { text-decoration: underline; }
