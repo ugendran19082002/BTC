@@ -53,8 +53,14 @@ function board(width: number): Candidate[] {
   return out;
 }
 
+/*
+ * A floor the fixture's far strikes clear. Since 18 September the rule also
+ * refuses a wall that pays under the premium floor and one outside the level
+ * band -- neither is what this file is about, which is the window the rule is
+ * allowed to see. The fixture carries no distance, so the band does not apply.
+ */
 const wall = (over: Partial<StrategyConfig> = {}): StrategyConfig =>
-  ({ ...DEFAULT_CONFIG, strikeRule: 'oiWall', probGate: null, ...over }) as StrategyConfig;
+  ({ ...DEFAULT_CONFIG, strikeRule: 'oiWall', probGate: null, premium: { mode: 'atLeast', usd: 5 }, ...over }) as StrategyConfig;
 
 test('[critical] the 16 September board: the default window hides the call wall', () => {
   const windowed = board(25);
