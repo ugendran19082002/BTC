@@ -106,10 +106,16 @@ export const setAlerts = (on: boolean) =>
   post<{ ok: true; alerts: { configured: boolean; on: boolean } }>('/api/trade/alerts', { on });
 
 /** The best-pick card's own settings: the phone switch and the premium floor. */
-export type BestTradeSettings = { alertOn: boolean; minPremiumUsd: number; telegram: { configured: boolean; on: boolean } };
+export type BestTradeSettings = {
+  alertOn: boolean;
+  minPremiumUsd: number;
+  /** Times one strike may be sent per contract (5:31 PM to 5:30 PM next day). Absent from an older server. */
+  repeat?: number;
+  telegram: { configured: boolean; on: boolean };
+};
 export const getBestTradeSettings = () => json<BestTradeSettings>('/api/trade/best-trade/settings');
-export const setBestTradeSettings = (patch: { alertOn?: boolean; minPremiumUsd?: number }) =>
-  post<{ ok: true; alertOn: boolean; minPremiumUsd: number }>('/api/trade/best-trade/settings', patch);
+export const setBestTradeSettings = (patch: { alertOn?: boolean; minPremiumUsd?: number; repeat?: number }) =>
+  post<{ ok: true; alertOn: boolean; minPremiumUsd: number; repeat?: number }>('/api/trade/best-trade/settings', patch);
 
 /** Pull a working order off the book. Refused once anything has filled. */
 export const cancelTrade = (tradeId: string) =>

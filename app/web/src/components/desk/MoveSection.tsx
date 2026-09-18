@@ -1,97 +1,94 @@
 import { TODAY_MOVE, type MarketRead, type SnapshotMeta } from '@/types/desk';
 import { Note } from '@/components/ui/card';
+import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { Stat, StatDivider } from '@/components/ui/stat';
-import { SectionTitle } from '@/components/ui/section';
+import { cn } from '@/lib/utils';
 
+const grouped = (v: number) => Math.round(v).toLocaleString('en-US');
 const money = (v: number | null) =>
-  v === null ? '—' : (v >= 0 ? '+' : '−') + '$' + Math.abs(v).toFixed(0);
+  v === null ? '—' : (v >= 0 ? '+' : '−') + '$' + grouped(Math.abs(v));
 
 /**
- * What BTC has actually done, under what the market says it will do.
+ * What BTC has actually done, beside what the market says it can still do.
  *
- * A section rather than a card of its own: it used to sit in the reference row
- * repeating the expected move that the contract card two feet away had already
- * given, and the two only mean anything read together -- ±$650 priced against
- * $1,772 travelled yesterday is the whole point, and it was split across the
- * page. So it lives under the contract it describes.
+ * Two cards under the Market card. They were a section inside it, which made
+ * the contract card the tallest thing on the screen and put the two tables in
+ * half its width; as cards of their own they sit side by side where the column
+ * is wide, stack where it is not, and each folds on its own. The pairing is the
+ * point -- ±$650 priced against $1,772 travelled yesterday -- so they stay next
+ * to each other, and next to the contract they describe.
  */
-export function MoveSection({ market, snap }: { market: MarketRead; snap: SnapshotMeta }) {
+export function MoveSection({ market, snap, defaultOpen = true }: {
+  market: MarketRead;
+  snap: SnapshotMeta;
+  /** Open on a desk, folded on a phone -- the same rule as the Market card. */
+  defaultOpen?: boolean;
+}) {
   const last24 = market.moves.find((m) => m.hours === 24);
   const em = snap.expectedMove;
   const ratio = em && em > 0 && last24?.rangeUsd ? last24.rangeUsd / em : null;
 
   return (
-    <>
-      <StatDivider />
-      {/*
-        Side by side: what BTC did is only worth reading against what it can
-        still do. Stacked, the second table was below the fold on a laptop and
-        the comparison took a scroll.
-      */}
-      <div className="move-split">
-        <div className="move-col">
-      <SectionTitle>How far BTC has moved</SectionTitle>
-
-      <div className="-mx-1 overflow-x-auto">
-        <table className="w-full text-[11.8px]">
-          <thead>
-            <tr className="text-[10px] uppercase tracking-wide text-[var(--dim)]">
-              <th className="px-1 py-1 text-left font-normal">Period</th>
-              <th className="px-1 py-1 text-right font-normal">Change</th>
-              <th className="px-1 py-1 text-right font-normal">%</th>
-              <th className="px-1 py-1 text-right font-normal">Range</th>
-            </tr>
-          </thead>
-          <tbody className="font-mono">
-            {market.moves.map((m) => {
-              // How far the day has come since 05:30, the moment the morning
-              // entry was sold from. The fixed windows describe BTC; this row
-              // describes the trade in front of you, so it gets to stand out.
-              const inContract = m.label === TODAY_MOVE;
-              return (
-              <tr key={m.label} className={`border-b border-[#ffffff08]${inContract ? ' bg-[#6cb2ff10]' : ''}`}>
-                <td className={`px-1 py-[3px] text-left font-sans ${inContract ? 'text-foreground' : 'text-muted-foreground'}`}>
-                  {m.label}
-                  {inContract && <span className="text-[var(--dim)]"> · {m.hours.toFixed(1)}h in</span>}
-                </td>
-                <td className={`px-1 py-[3px] text-right ${(m.changeUsd ?? 0) >= 0 ? 'text-[var(--up)]' : 'text-[var(--down)]'}`}>
-                  {money(m.changeUsd)}
-                </td>
-                <td className={`px-1 py-[3px] text-right ${(m.changePct ?? 0) >= 0 ? 'text-[var(--up)]' : 'text-[var(--down)]'}`}>
-                  {m.changePct === null ? '—' : `${m.changePct >= 0 ? '+' : ''}${m.changePct.toFixed(2)}%`}
-                </td>
-                <td className="px-1 py-[3px] text-right">
-                  {m.rangeUsd === null ? '—' : `$${m.rangeUsd.toFixed(0)}`}
-                </td>
+    <div className="move-cards">
+      <CollapsibleCard id="moved" title="How far BTC has moved" defaultOpen={defaultOpen} className="move-card">
+        <div className="-mx-1 overflow-x-auto">
+          <table className="move-table" aria-label="how far BTC has moved">
+            <thead>
+              <tr>
+                <th>Period</th>
+                <th>Change</th>
+                <th>%</th>
+                <th>Range</th>
               </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      <StatDivider />
-      <Stat
-        label="Biggest day this month"
-        value={
-          market.max24hRangeUsd === null
-            ? '—'
-            : `$${market.max24hRangeUsd.toFixed(0)} · ${market.max24hRangePct?.toFixed(2)}%`
-        }
-      />
-      <Stat
-        label="Yesterday's range ÷ today's expected move"
-        value={ratio === null ? '—' : `${ratio.toFixed(2)}×`}
-        tone={ratio === null ? 'plain' : ratio > 2 ? 'warn' : 'up'}
-        hint="On average BTC moved 1.72× the expected move. A strike one expected move away is not a full day's move away."
-      />
-
+            </thead>
+            <tbody>
+              {market.moves.map((m) => {
+                // How far the day has come since 05:30, the moment the morning
+                // entry was sold from. The fixed windows describe BTC; this row
+                // describes the trade in front of you, so it gets to stand out.
+                const inContract = m.label === TODAY_MOVE;
+                const tone = (m.changeUsd ?? 0) >= 0 ? 'up' : 'down';
+                return (
+                  <tr key={m.label} className={cn(inContract && 'today')}>
+                    <td>
+                      {m.label}
+                      {inContract && <span className="dim"> · {m.hours.toFixed(1)}h in</span>}
+                    </td>
+                    <td className={tone}>{money(m.changeUsd)}</td>
+                    <td className={cn((m.changePct ?? 0) >= 0 ? 'up' : 'down')}>
+                      {m.changePct === null ? '—' : `${m.changePct >= 0 ? '+' : '−'}${Math.abs(m.changePct).toFixed(2)}%`}
+                    </td>
+                    <td>{m.rangeUsd === null ? '—' : `$${grouped(m.rangeUsd)}`}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-        <div className="move-col">
-          <MoveLadder snap={snap} />
-        </div>
-      </div>
-    </>
+
+        <StatDivider />
+        <Stat
+          label="Biggest day this month"
+          value={
+            market.max24hRangeUsd === null
+              ? '—'
+              : `$${grouped(market.max24hRangeUsd)} · ${market.max24hRangePct?.toFixed(2)}%`
+          }
+        />
+        <Stat
+          label="Yesterday's range ÷ today's expected move"
+          value={ratio === null ? '—' : `${ratio.toFixed(2)}×`}
+          tone={ratio === null ? 'plain' : ratio > 2 ? 'warn' : 'up'}
+          hint="On average BTC moved 1.72× the expected move. A strike one expected move away is not a full day's move away."
+        />
+      </CollapsibleCard>
+
+      {snap.atmIv !== null && (
+        <CollapsibleCard id="can-move" title="How far it can move from here" defaultOpen={defaultOpen} className="move-card">
+          <MoveLadder snap={snap} iv={snap.atmIv} />
+        </CollapsibleCard>
+      )}
+    </div>
   );
 }
 
@@ -105,10 +102,7 @@ export function MoveSection({ market, snap }: { market: MarketRead; snap: Snapsh
  * these windows is a coin flip -- so the picture is symmetrical, which is the
  * honest shape.
  */
-function MoveLadder({ snap }: { snap: SnapshotMeta }) {
-  const iv = snap.atmIv;
-  if (iv === null) return null;
-
+function MoveLadder({ snap, iv }: { snap: SnapshotMeta; iv: number }) {
   const HOURS_IN_YEAR = 365 * 24;
   const move = (hours: number) => snap.spot * iv * Math.sqrt(hours / HOURS_IN_YEAR);
 
@@ -126,16 +120,14 @@ function MoveLadder({ snap }: { snap: SnapshotMeta }) {
   const widest = move(rows[rows.length - 1]!.hours) || 1;
 
   return (
-    <>
-      <SectionTitle hint="spot × volatility × √(hours ÷ 8760), at today's volatility. BTC stays inside about 2 times in 3; double it for 19 in 20.">
-        How far it can move from here
-      </SectionTitle>
-
-      <div className="mb-1 flex items-baseline justify-between text-[10px] uppercase tracking-wide text-[var(--dim)]">
+    <div
+      className="move-ladder"
+      aria-label="how far it can move from here"
+      title="spot × volatility × √(hours ÷ 8760), at today's volatility. BTC stays inside about 2 times in 3; double it for 19 in 20."
+    >
+      <div className="move-ladder-scale">
         <span>Lower</span>
-        <span className="font-mono normal-case tracking-normal text-muted-foreground">
-          Now {snap.spot.toFixed(0)}
-        </span>
+        <span className="move-ladder-now">Now <b>{grouped(snap.spot)}</b></span>
         <span>Higher</span>
       </div>
 
@@ -143,37 +135,27 @@ function MoveLadder({ snap }: { snap: SnapshotMeta }) {
         const m = move(r.hours);
         const w = Math.max(4, (m / widest) * 100);
         return (
-          <div key={r.label} className="flex items-center gap-2 py-[3px]">
-            <span className={`w-[52px] flex-none text-[11.5px] ${r.last ? 'text-foreground' : 'text-muted-foreground'}`}>
-              {r.label}
+          <div key={r.label} className={cn('move-ladder-row', r.last && 'last')}>
+            <span className="move-ladder-label">{r.label}</span>
+            <span className="move-ladder-track">
+              <i className="move-ladder-bar" style={{ left: `${50 - w / 2}%`, width: `${w}%` }} />
+              <i className="move-ladder-spot" />
             </span>
-            <span className="relative h-3.5 min-w-0 flex-1 rounded bg-[var(--panel-2)]">
-              <i
-                className="absolute inset-y-0 rounded"
-                style={{
-                  left: `${50 - w / 2}%`,
-                  width: `${w}%`,
-                  background: r.last ? '#6cb2ff55' : '#6cb2ff2e',
-                }}
-              />
-              <i className="absolute inset-y-0 left-1/2 w-px bg-[var(--muted)]" />
-            </span>
-            <span className="w-[92px] flex-none text-right font-mono text-[11.5px]">
-              ±${m.toFixed(0)}
-              <span className="ml-1 text-[var(--dim)]">{((m / snap.spot) * 100).toFixed(2)}%</span>
+            <span className="move-ladder-value">
+              ±${grouped(m)}
+              <span className="dim">{((m / snap.spot) * 100).toFixed(2)}%</span>
             </span>
           </div>
         );
       })}
 
-      <div className="mt-1 flex justify-between font-mono text-[11px] text-[var(--dim)]">
-        <span>{(snap.spot - widest).toFixed(0)}</span>
-        <span className="text-muted-foreground">2 in 3 chance inside</span>
-        <span>{(snap.spot + widest).toFixed(0)}</span>
+      <div className="move-ladder-ends">
+        <span>{grouped(snap.spot - widest)}</span>
+        <span className="move-ladder-inside">2 in 3 chance inside</span>
+        <span>{grouped(snap.spot + widest)}</span>
       </div>
 
       <Note>Direction can't be predicted — only distance.</Note>
-    </>
+    </div>
   );
 }
-

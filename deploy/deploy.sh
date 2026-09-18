@@ -56,7 +56,7 @@ fail() { printf '\033[31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 # most of the space and none of the build speed.
 prune_images() {
   local repo tag keep removed=0
-  for repo in btc-desk-api btc-desk-web; do
+  for repo in btc-desk-api btc-desk-web btc-desk-analytics; do
     keep="$(docker images "$repo" --format '{{.CreatedAt}}|{{.Tag}}' \
       | sort -r | cut -d'|' -f2 | grep -vx 'latest' | head -n "$KEEP_IMAGES" || true)"
     while IFS= read -r tag; do
@@ -117,6 +117,27 @@ ensure_deps() {
 ensure_deps "$ROOT/app/server" server || fail "server install failed"
 ensure_deps "$ROOT/app/web"    web    || fail "web install failed"
 
+# The analytics service's test environment, rebuilt only when its requirements
+# change -- the same stamp idea as `ensure_deps`. uv when it is installed (fast,
+# and needs no system pip), the standard venv otherwise.
+ensure_py_deps() {
+  local dir="$ROOT/analytics" stamp want
+  stamp="$dir/.venv/.deploy-stamp"
+  want="$(cat "$dir/requirements.txt" "$dir/requirements-dev.txt" | sha256sum | cut -d' ' -f1)"
+  if [[ -x "$dir/.venv/bin/python" && -f "$stamp" && "$(cat "$stamp")" == "$want" ]]; then
+    say "analytics dependencies unchanged; skipping install"
+    return 0
+  fi
+  say "installing analytics dependencies"
+  if command -v uv >/dev/null; then
+    uv venv "$dir/.venv" >/dev/null && uv pip install --python "$dir/.venv/bin/python" -r "$dir/requirements-dev.txt" >/dev/null || return 1
+  else
+    python3 -m venv "$dir/.venv" && "$dir/.venv/bin/python" -m pip install -q -r "$dir/requirements-dev.txt" || return 1
+  fi
+  printf '%s' "$want" > "$stamp"
+}
+ensure_py_deps || fail "analytics install failed"
+
 # Both suites and both type-checks at once.
 #
 # Four cores, and the two suites peak around 170 MB and 430 MB, so they fit
@@ -148,6 +169,7 @@ say "running both test suites"
 declare -A TEST_JOBS=(
   ["server tests"]="cd '$ROOT/app/server' && npm test"
   ["web tests"]="cd '$ROOT/app/web' && npm test"
+  ["analytics tests"]="cd '$ROOT/analytics' && .venv/bin/python -m pytest -q"
 )
 run_jobs TEST_JOBS || fail "tests failed"
 
@@ -172,13 +194,13 @@ say "building images at tag ${TAG}"
 TAG="$TAG" WEB_PORT="$WEB_PORT" WEB_BIND="$WEB_BIND" $COMPOSE build
 # `latest` follows the newest build, so a bare `docker compose up` can never
 # start code from days ago -- which is what `latest` pointed at before this.
-for repo in btc-desk-api btc-desk-web; do docker tag "${repo}:${TAG}" "${repo}:latest"; done
+for repo in btc-desk-api btc-desk-web btc-desk-analytics; do docker tag "${repo}:${TAG}" "${repo}:latest"; done
 
 # ---------------------------------------------------------------- ship
 
 if [[ -n "$REMOTE" ]]; then
   say "shipping images to ${REMOTE}"
-  docker save "btc-desk-api:${TAG}" "btc-desk-web:${TAG}" | gzip | \
+  docker save "btc-desk-api:${TAG}" "btc-desk-web:${TAG}" "btc-desk-analytics:${TAG}" | gzip | \
     ssh "$REMOTE" 'gunzip | docker load'
   say "shipping compose files"
   ssh "$REMOTE" 'mkdir -p ~/btc-desk/deploy'
@@ -214,6 +236,12 @@ for i in $(seq 1 30); do
     say "healthy after ${i}s"
     curl -fsS "http://127.0.0.1:${WEB_PORT}/api/health"; echo
     say "front end: http://127.0.0.1:${WEB_PORT}/"
+    # Reported, never required: the desk is healthy without it.
+    if $COMPOSE exec -T analytics python -c "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8800/health', timeout=4).status == 200 else 1)" >/dev/null 2>&1; then
+      say "analytics: healthy"
+    else
+      say "analytics: not answering yet -- the cards show the desk's own figures until it does"
+    fi
     if [[ $PRUNE -eq 1 ]]; then prune_images; fi
     exit 0
   fi
@@ -224,6 +252,8 @@ printf '\033[31m==>\033[0m health check failed; last 40 log lines:\n' >&2
 $COMPOSE logs --tail 40 >&2
 if [[ -n "$PREV" ]]; then
   say "rolling back to ${PREV}"
-  TAG="$PREV" WEB_PORT="$WEB_PORT" WEB_BIND="$WEB_BIND" $COMPOSE up -d
+  # api and web only: the desk runs without analytics, and a first deploy of it
+  # has no previous analytics image to roll back to.
+  TAG="$PREV" WEB_PORT="$WEB_PORT" WEB_BIND="$WEB_BIND" $COMPOSE up -d api web
 fi
 fail "deployment did not come up healthy"

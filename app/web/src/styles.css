@@ -195,7 +195,7 @@ button.ghost {
    instead of stretching two cards across the whole width, and dense packing so
    the two-column recommendation card does not leave a hole beside it */
 .cols-3 {
-  grid-template-columns: repeat(auto-fill, minmax(272px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(272px, 100%), 1fr));
   grid-auto-flow: dense;
   align-items: start;
 }
@@ -990,7 +990,7 @@ td.evcol.down { color: var(--down); }
    a tablet, two on a phone — so a tile is never left alone against a gap. */
 .insight-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(184px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(184px, 100%), 1fr));
   gap: 8px;
   margin-bottom: 4px;
 }
@@ -1156,26 +1156,6 @@ tr.atm td.strikecell .strikebtn { color: #fff; }
   .bar .actions > * { flex: 1 1 0; }
 }
 
-/* ── What BTC did, beside what it can still do ──────────────────────────────
-   Two readings of the same question, and only worth comparing side by side.
-   Stacked, the second table sat below the fold on a laptop and the comparison
-   cost a scroll. One column on a phone, where two would be four half-width
-   number columns. */
-.move-split {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 14px;
-}
-@media (min-width: 900px) {
-  .move-split { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
-  /* A hairline between them rather than a divider above each. */
-  .move-split .move-col + .move-col {
-    padding-left: 22px; margin-left: -22px;
-    border-left: 1px solid var(--line-soft);
-  }
-}
-.move-col { min-width: 0; }
-
 /* ── Score, and how busy a strike is ────────────────────────────────────────
    A number and a bar: the number is the comparison, the bar is the glance. It
    ranks a strike against the rest of *this* board, so a column of forties means
@@ -1288,6 +1268,145 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 .evtable td.sc { text-align: right; white-space: nowrap; }
 .evtable td.sc .scorebar { width: 22px; }
 
+/* ── Sudden move analytics, laid out after the 17 Sep design ─────────────────
+   Header with the window, expiry and risk; the answer (risk ring, measured
+   odds); why (pricing, readings, trend, factors); where price sits. */
+.smx {
+  border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin-bottom: 12px; padding: 12px 14px;
+}
+.smx-band-watch { border-color: color-mix(in srgb, var(--warn) 40%, var(--line)); }
+.smx-band-high, .smx-band-sudden { border-color: color-mix(in srgb, var(--down) 45%, var(--line)); }
+.smx-up { color: var(--up); } .smx-down, .smx-bad { color: var(--down); } .smx-warn { color: var(--warn); } .smx-plain { color: var(--muted); }
+
+.smx-head { display: flex; align-items: center; justify-content: space-between; gap: 10px 16px; flex-wrap: wrap; margin-bottom: 12px; }
+.smx-head-left, .smx-head-right { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; min-width: 0; }
+.smx-window {
+  position: relative; display: inline-flex; align-items: center; gap: 8px; padding: 5px 10px;
+  border-radius: 9px; background: var(--panel-2); color: var(--muted);
+}
+.smx-window select {
+  appearance: none; border: 0; background: transparent; color: var(--text); cursor: pointer;
+  font: inherit; font-size: 16px; font-weight: 700; letter-spacing: 0.3px; padding-right: 20px;
+}
+.smx-window select option { background: var(--panel); color: var(--text); }
+.smx-window-chev { position: absolute; right: 9px; pointer-events: none; }
+.smx-divider { width: 1px; height: 22px; background: var(--line); }
+.smx-expires { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.smx-badge {
+  font-size: 12px; font-weight: 600; padding: 3px 11px; border-radius: 999px; white-space: nowrap;
+  border: 1px solid currentColor; background: color-mix(in srgb, currentColor 10%, transparent);
+}
+.smx-folded { font-size: 12px; color: var(--muted); } .smx-folded b { font-size: 14px; }
+.smx-updated { display: flex; flex-direction: column; line-height: 1.25; text-align: right; }
+.smx-updated small { font-size: 10.5px; color: var(--dim); } .smx-updated b { font-size: 12px; font-weight: 500; color: var(--muted); }
+.smx-live { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text); }
+.smx-live i { width: 11px; height: 11px; border-radius: 999px; background: var(--warn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 25%, transparent); }
+.smx-live.off i { background: var(--dim); box-shadow: none; }
+.smx-fold {
+  appearance: none; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer;
+  display: inline-flex; align-items: center; gap: 2px; padding: 4px 7px; border-radius: 8px; font: inherit;
+}
+.smx-fold-chev { transition: transform 0.15s; } .smx-fold-chev.shut { transform: rotate(-90deg); }
+
+.smx-card { border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); padding: 11px 13px; min-width: 0; }
+.smx-title, .smx-hero h3 {
+  display: flex; align-items: center; gap: 6px; margin: 0 0 8px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.6px; text-transform: uppercase; color: var(--muted);
+}
+.smx-hint { display: inline-flex; color: var(--dim); cursor: help; }
+.smx-foot { margin: 8px 0 0; font-size: 11px; line-height: 1.45; color: var(--dim); }
+.smx-foot b { color: var(--muted); font-weight: 600; }
+.smx-empty { margin: 0; font-size: 12px; color: var(--dim); }
+.smx-line { margin: 3px 0 0; font-size: 12.5px; color: var(--muted); } .smx-line b { color: var(--text); }
+
+.smx-row1 { display: grid; gap: 10px; }
+.smx-row2 { display: grid; gap: 10px; margin-top: 10px; grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr)); }
+.smx-row3 { display: grid; gap: 10px; margin-top: 10px; }
+@media (min-width: 980px) {
+  .smx-row1 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .smx-row3 { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); }
+}
+
+.smx-hero { display: flex; gap: 16px; align-items: flex-start; }
+.smx-hero-bad { border-color: color-mix(in srgb, var(--down) 45%, var(--line)); background: color-mix(in srgb, var(--down) 6%, var(--panel-2)); }
+.smx-hero-warn { border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); background: color-mix(in srgb, var(--warn) 6%, var(--panel-2)); }
+.smx-ring { width: 104px; height: 104px; flex: none; }
+.smx-hero-body { min-width: 0; flex: 1; }
+.smx-hero h3 { font-size: 15px; letter-spacing: 0; text-transform: none; color: var(--text); margin-bottom: 2px; }
+.smx-hero-note { margin: 0 0 6px; font-size: 12px; color: var(--muted); }
+.smx-hero-line { margin: 2px 0 0; font-size: 14px; color: var(--text); } .smx-hero-line b { font-weight: 700; }
+.smx-context { margin: 8px 0 0; padding-top: 8px; border-top: 1px solid var(--line); }
+.smx-reasons { margin: 6px 0 0; }
+
+.smx-probbar { display: flex; gap: 2px; height: 14px; border-radius: 999px; overflow: hidden; margin: 4px 0 10px; }
+.smx-probbar i { display: block; min-width: 4px; }
+.smx-probbar i.down { background: var(--down); } .smx-probbar i.flat { background: color-mix(in srgb, var(--text) 30%, transparent); } .smx-probbar i.up { background: var(--up); }
+.smx-probcols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.smx-probcols > div { display: flex; flex-direction: column; gap: 1px; padding: 0 10px; border-left: 1px solid var(--line); min-width: 0; }
+.smx-probcols > div:first-child { border-left: 0; padding-left: 0; }
+.smx-probcols > div:last-child { text-align: right; align-items: flex-end; }
+.smx-probcols b { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.smx-probcols .down b { color: var(--down); } .smx-probcols .flat b { color: var(--text); } .smx-probcols .up b { color: var(--up); }
+.smx-probcols span { font-size: 12.5px; color: var(--text); } .smx-probcols small { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.smx-bigline { display: flex; align-items: center; gap: 9px; margin-bottom: 2px; }
+.smx-bigline > b { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); }
+.smx-pill { font-size: 10.5px; font-weight: 700; letter-spacing: 0.5px; padding: 2px 8px; border-radius: 6px; color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.smx-pill.rich { color: var(--up); background: color-mix(in srgb, var(--up) 14%, transparent); }
+.smx-pill.cheap { color: var(--down); background: color-mix(in srgb, var(--down) 14%, transparent); }
+.smx-arrow { display: inline-flex; padding: 5px; border-radius: 999px; background: color-mix(in srgb, currentColor 14%, transparent); }
+
+.smx-reading + .smx-reading { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+.smx-reading-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.smx-reading-head span:first-child { font-size: 12px; color: var(--muted); }
+.smx-reading-head b { font-size: 17px; color: var(--text); font-variant-numeric: tabular-nums; }
+.smx-reading.warn .smx-reading-head b { color: var(--warn); }
+.smx-chip { font-size: 10.5px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.smx-reading.warn .smx-chip { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 50%, transparent); }
+.smx-reading-rows { display: flex; flex-direction: column; font-size: 11px; color: var(--dim); }
+
+.smx-factors { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.smx-factors li { display: grid; grid-template-columns: minmax(0, 1fr) 70px 44px; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text); }
+.smx-factors b { text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; }
+.smx-fbar { height: 5px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.smx-fbar i { display: block; height: 100%; } .smx-fbar i.up { background: var(--up); } .smx-fbar i.down { background: var(--down); }
+
+.smx-rline { position: relative; height: 46px; margin: 38px 10px 4px; }
+.smx-rline i { position: absolute; font-style: normal; }
+.smx-rline .axis { left: 0; right: 0; top: 50%; height: 2px; transform: translateY(-50%); background: var(--line); }
+.smx-rline .usual { top: 15px; bottom: 15px; border-radius: 5px; background: color-mix(in srgb, #58a6ff 32%, transparent); }
+.smx-rline .implied { top: 6px; bottom: 6px; border-radius: 7px; border: 1.5px dashed color-mix(in srgb, var(--warn) 80%, transparent); }
+.smx-rline .dot { top: 50%; width: 13px; height: 13px; border-radius: 999px; transform: translate(-50%, -50%); z-index: 2; }
+.smx-rline .dot.down { background: var(--down); } .smx-rline .dot.up { background: var(--up); }
+.smx-rline .spot { top: 50%; width: 13px; height: 13px; border-radius: 999px; transform: translate(-50%, -50%); background: #b9c4ff; border: 2px solid var(--panel-2); z-index: 3; }
+.smx-rline .spot span {
+  position: absolute; bottom: calc(100% + 16px); left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap;
+}
+.smx-rline .spot small { font-size: 11px; font-weight: 500; color: var(--muted); }
+.smx-rlabels { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: start; }
+.smx-rlabels .lo, .smx-rlabels .hi { display: flex; flex-direction: column; font-variant-numeric: tabular-nums; }
+.smx-rlabels .hi { align-items: flex-end; }
+.smx-rlabels b { font-size: 13.5px; color: var(--text); } .smx-rlabels small { font-size: 11px; color: var(--muted); }
+.smx-rlabels .mid { display: flex; flex-direction: column; align-items: center; font-size: 12px; color: var(--muted); text-align: center; }
+.smx-rlabels .mid b { margin-top: 2px; font-size: 13px; }
+
+.smx-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; align-content: center; }
+.smx-stat { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.smx-stat-label { font-size: 12px; color: var(--muted); }
+.smx-stat-value { font-size: 19px; font-weight: 700; line-height: 1.2; color: var(--text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.smx-stat-foot { font-size: 11px; color: var(--dim); }
+.smx-note { margin: 10px 0 0; font-size: 11px; color: var(--dim); }
+
+@media (max-width: 560px) {
+  .smx { padding: 10px; }
+  .smx-updated { display: none; }
+  .smx-hero { flex-direction: column; align-items: center; text-align: center; }
+  .smx-probcols b { font-size: 18px; }
+  .smx-probcols > div { padding: 0 6px; }
+}
+
 /* ── Sudden move analytics ──────────────────────────────────────────────────
    Five readings, the market behind them, and how often a move like this has
    actually followed. Every card carries the two numbers under its headline: a
@@ -1320,9 +1439,10 @@ td.liq-normal, td.liq-none { color: var(--dim); }
   color: var(--up); border: 1px solid #0ecb8155; border-radius: 999px; padding: 1px 8px;
 }
 
+.smr-lower .smr-data-grid { grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); }
 .smr-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr));
   gap: 9px;
 }
 .smr-card {
@@ -1428,10 +1548,88 @@ td.liq-normal, td.liq-none { color: var(--dim); }
   font-size: 10.5px; line-height: 1.45; color: var(--dim);
 }
 
+/* ── Sudden move, redrawn 17 Sep: the answer first, the evidence beside it ──
+   The score and the measured odds sit side by side, the readings in one row,
+   and the levels people watch on a single price line instead of five tiles. */
+.smr-verdict { display: grid; gap: 9px; margin-bottom: 9px; align-items: start; }
+@media (min-width: 900px) { .smr-verdict { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.smr-verdict .smr-risk { display: flex; flex-direction: column; gap: 8px; }
+.smr-context { margin: 0; font-size: 12px; line-height: 1.45; color: var(--muted); }
+.smr-context b { color: var(--up); font-weight: 600; }
+.smr-verdict .smr-reasons { margin: 0; }
+
+.smr-odds {
+  border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); padding: 10px 11px;
+}
+.smr-odds-bar {
+  display: flex; gap: 2px; height: 10px; margin: 9px 0; border-radius: 999px; overflow: hidden;
+}
+.smr-odds-bar i { display: block; min-width: 3px; }
+.smr-odds-bar i.down { background: var(--down); }
+.smr-odds-bar i.flat { background: color-mix(in srgb, var(--text) 28%, transparent); }
+.smr-odds-bar i.up { background: var(--up); }
+
+.smr-push-card { display: flex; flex-direction: column; gap: 6px; }
+.smr-push-value { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.smr-push-value b { font-size: 15px; font-weight: 600; }
+.smr-push-value.smr-up { color: var(--up); }
+.smr-push-value.smr-down { color: var(--down); }
+.smr-push { display: flex; align-items: center; gap: 6px; }
+.smr-push-end { flex: none; font-size: 9.5px; letter-spacing: 0.4px; text-transform: uppercase; color: var(--dim); }
+.smr-push-track { position: relative; flex: 1; height: 6px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.smr-push-track i { position: absolute; top: 0; bottom: 0; }
+.smr-push-track i.mid { left: 50%; width: 1px; background: var(--muted); z-index: 1; }
+.smr-push-track i.fill.up { background: var(--up); }
+.smr-push-track i.fill.down { background: var(--down); }
+.smr-push-note { font-size: 10px; color: var(--dim); }
+
+.smr-lower {
+  display: grid; gap: 14px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line);
+}
+@media (min-width: 900px) { .smr-lower { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); } }
+
+/* One price line. Spans are bands, dots are levels, the white tick is now. */
+.smr-map-track { position: relative; height: 34px; margin: 20px 8px 4px; }
+.smr-map-track i { position: absolute; font-style: normal; }
+.smr-map-axis { left: 0; right: 0; top: 50%; height: 2px; transform: translateY(-50%); background: var(--line); }
+.smr-map-day { top: 50%; height: 2px; transform: translateY(-50%); background: var(--muted); opacity: 0.6; }
+.smr-map-em { top: 9px; bottom: 9px; border-radius: 4px; background: color-mix(in srgb, #58a6ff 24%, transparent); }
+.smr-map-two { top: 3px; bottom: 3px; border-radius: 6px; border: 1px dashed color-mix(in srgb, var(--warn) 75%, transparent); }
+.smr-map-dot {
+  top: 50%; width: 11px; height: 11px; border-radius: 999px; transform: translate(-50%, -50%);
+  border: 2px solid var(--panel); z-index: 2;
+}
+.smr-map-dot.sup { background: var(--up); }
+.smr-map-dot.res { background: var(--down); }
+.smr-map-dot.pain { background: #c9a2ff; border-radius: 2px; transform: translate(-50%, -50%) rotate(45deg); }
+.smr-map-now { top: -3px; bottom: -3px; width: 2px; border-radius: 1px; background: var(--text); transform: translateX(-50%); z-index: 3; }
+.smr-map-now span {
+  position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 2px;
+  font-size: 10px; font-weight: 600; color: var(--text); white-space: nowrap;
+}
+.smr-map-legend {
+  list-style: none; margin: 10px 0 0; padding: 0;
+  display: grid; gap: 7px 22px; grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.smr-map-legend li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 7px; min-width: 0; font-size: 11.5px; color: var(--muted); }
+.smr-map-legend b { margin-left: auto; font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; }
+.smr-map-legend small { flex-basis: 100%; padding-left: 17px; font-size: 10px; color: var(--dim); }
+.smr-map-legend small.warn { color: var(--warn); }
+.smr-map-legend .key { flex: none; display: inline-block; width: 10px; height: 10px; align-self: center; }
+.smr-map-legend .key.dot { border-radius: 999px; }
+.smr-map-legend .key.dot.sup { background: var(--up); }
+.smr-map-legend .key.dot.res { background: var(--down); }
+.smr-map-legend .key.dot.pain { background: #c9a2ff; border-radius: 2px; transform: rotate(45deg) scale(0.85); }
+.smr-map-legend .key.band.em { border-radius: 3px; background: color-mix(in srgb, #58a6ff 40%, transparent); }
+.smr-map-legend .key.band.two { border-radius: 3px; border: 1px dashed var(--warn); }
+.smr-map-legend .key.band.day { height: 2px; background: var(--muted); }
+
 @media (max-width: 560px) {
   .smr { padding: 11px 10px; }
+  .smr-map-legend { grid-template-columns: minmax(0, 1fr); }
+  .smr-map-track { margin-left: 4px; margin-right: 4px; }
   .smr-sub { display: none; }
-  .smr-cards { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 7px; }
+  .smr-cards { grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: 7px; }
   .smr-card-value b { font-size: 17px; }
   .smr-data-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .smr-odds-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
@@ -1865,30 +2063,84 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 }
 .ol-spot { font-size: 12.5px; color: var(--muted); }
 .ol-spot b { font-size: 16px; color: var(--text); font-variant-numeric: tabular-nums; }
-/* The band is the headline on each card now -- the price it is around is said
-   once, above the row. */
-.ol-mid { font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
-.ol-priced {
-  display: flex; flex-direction: column; gap: 1px; margin-top: 2px;
-  font-size: 11px; font-variant-numeric: tabular-nums; color: var(--muted);
-}
-.ol-priced.rich { color: var(--up); }
-.ol-priced.cheap { color: var(--down); }
-.ol-priced-word { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.4px; opacity: 0.8; }
+/* Label and the chart's lean on one line, the way a gauge carries its name. */
+.ol-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 18px; }
 .ol-arrow {
-  display: inline-flex; align-items: center; gap: 3px; margin: 4px 0 5px;
-  font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--muted);
+  display: inline-flex; align-items: center; gap: 2px; flex: none;
+  font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--muted);
 }
 .ol-arrow.up { color: var(--up); }
 .ol-arrow.down { color: var(--down); }
+.ol-arrow.none { font-weight: 400; font-size: 10px; color: var(--dim); }
 
-.ol-odds { margin: 0; display: grid; gap: 2px; }
-.ol-odds > div { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+/* How far, as the headline: the one number the section title asks for. */
+.ol-move {
+  margin-top: 5px; font-size: 18px; font-weight: 700; line-height: 1.15;
+  font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap;
+}
+.ol-move .dim { font-size: 12px; font-weight: 500; }
+.ol-mid {
+  margin-top: 1px; font-size: 11px; font-variant-numeric: tabular-nums; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* Cheap or rich for this horizon: a chip, with the sentence on hover. */
+.ol-chip {
+  display: inline-flex; align-items: center; margin-top: 6px; padding: 1px 7px;
+  border: 1px solid var(--line); border-radius: 999px;
+  font-size: 10.5px; font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap;
+}
+.ol-chip.rich {
+  color: var(--up); border-color: color-mix(in srgb, var(--up) 40%, transparent);
+  background: color-mix(in srgb, var(--up) 10%, transparent);
+}
+.ol-chip.cheap {
+  color: var(--down); border-color: color-mix(in srgb, var(--down) 40%, transparent);
+  background: color-mix(in srgb, var(--down) 10%, transparent);
+}
+
+/* Below / in range / above, with the largest lit like a gauge's reading. */
+.ol-odds { margin: 8px 0 0; display: grid; gap: 2px; }
+.ol-odds > div {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 6px;
+  padding: 2px 6px; border-radius: 5px;
+}
+.ol-odds > div.top { background: color-mix(in srgb, var(--text) 8%, transparent); }
+.ol-odds > div.top.up { background: color-mix(in srgb, var(--up) 14%, transparent); }
+.ol-odds > div.top.down { background: color-mix(in srgb, var(--down) 14%, transparent); }
 .ol-odds dt { font-size: 10.5px; color: var(--dim); }
-.ol-odds dd { margin: 0; font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--muted); }
+.ol-odds > div.top dt { color: var(--text); }
+.ol-odds dd { margin: 0; font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--muted); }
 .ol-odds dd.up { color: var(--up); }
 .ol-odds dd.down { color: var(--down); }
-.ol-measured { margin-top: 5px; font-size: 10px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.ol-measured { margin-top: 6px; font-size: 10px; color: var(--dim); font-variant-numeric: tabular-nums; }
+
+/* The measured card, in the reference's shape: price, range, arrow, and the
+   three outcomes with the largest lit in its own colour. */
+.ol-mc-price {
+  margin-top: 5px; font-size: 18px; font-weight: 700; line-height: 1.15;
+  font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap;
+}
+.ol-mc-arrow { display: inline-flex; flex: none; color: var(--muted); }
+.ol-mc-arrow.up { color: var(--up); }
+.ol-mc-arrow.down { color: var(--down); }
+.ol-mc-odds > div.down dt, .ol-mc-odds > div.down dd { color: var(--down); }
+.ol-mc-odds > div.up dt, .ol-mc-odds > div.up dd { color: var(--up); }
+.ol-mc-odds > div.side dd { color: var(--text); }
+.ol-mc-odds > div.top.down { background: color-mix(in srgb, var(--down) 16%, transparent); }
+.ol-mc-odds > div.top.up { background: color-mix(in srgb, var(--up) 16%, transparent); }
+.ol-mc-odds > div.top.side { background: color-mix(in srgb, var(--text) 10%, transparent); }
+.ol-mc-why {
+  margin-top: 6px; font-size: 10px; line-height: 1.35; color: var(--dim);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.ol-maths-group {
+  font-size: 10.5px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; color: var(--muted);
+}
+
+/* One line saying how to read a card, above the row. */
+.ol-howto { margin: 0 0 8px; font-size: 11px; line-height: 1.5; color: var(--dim); }
+.ol-howto b { color: var(--muted); font-weight: 600; }
 
 .ol-maths {
   display: grid; gap: 8px; margin-bottom: 10px;
@@ -1920,7 +2172,7 @@ td.liq-normal, td.liq-none { color: var(--dim); }
      price and the range both wrap and the card stops being readable. */
   .ol-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
   .ol-card { padding: 7px 8px; }
-  .ol-mid { font-size: 12px; }
+  .ol-move { font-size: 16px; }
 }
 
 /* ── Fill alerts ────────────────────────────────────────────────────────────
@@ -1971,6 +2223,234 @@ td.liq-normal, td.liq-none { color: var(--dim); }
   display: inline-flex; align-items: center; gap: 5px; margin-top: 4px;
   font-size: 11px; color: var(--up);
 }
-.bt-settings-floor { display: flex; align-items: flex-end; gap: 8px; margin-top: 10px; }
-.bt-settings-floor .bt-alert-field { flex: 1 1 200px; }
+/* The floor and "same strike, at most N×" side by side, each under its own
+   label; the stepper because the range is 1 to 10 and a number box invites 0
+   and 250. */
+.bt-controls { display: flex; align-items: flex-end; gap: 10px 12px; flex-wrap: wrap; margin-top: 12px; }
+.bt-controls .bt-alert-field { flex: 1 1 200px; }
+.bt-controls .bt-repeat { flex: 0 0 auto; }
+.bt-controls .bt-busy { align-self: center; }
+.bt-stepper {
+  display: inline-flex; align-items: center; flex: none;
+  border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel-2);
+}
+.bt-stepper button {
+  appearance: none; border: 0; margin: 0; background: transparent; color: var(--text);
+  font: inherit; font-size: 17px; width: 40px; height: 34px; cursor: pointer;
+}
+.bt-stepper button:hover:not(:disabled) { background: color-mix(in srgb, var(--text) 8%, transparent); }
+.bt-stepper button:disabled { opacity: 0.35; cursor: not-allowed; }
+.bt-stepper b {
+  min-width: 42px; text-align: center; font-size: 14px; font-variant-numeric: tabular-nums;
+  border-left: 1px solid var(--line); border-right: 1px solid var(--line); line-height: 34px;
+}
 
+/* In its own card the controls need no hairline above them. */
+.bt-alerts .bt-settings { margin-top: 0; padding-top: 0; border-top: 0; }
+
+/* ── The settings bar, the chart row and the BTC summary (17 Sep) ───────────
+   Mode and expiry in one bar across the top; the chart wide with BTC at a
+   glance beside it; stacked on a phone. */
+.deskbar {
+  display: flex; align-items: flex-end; gap: 12px 18px; flex-wrap: wrap;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  padding: 12px 16px; margin-bottom: 12px;
+}
+.deskbar .field { display: flex; flex-direction: column; gap: 4px; min-width: 150px; }
+.deskbar .field.wide { flex: 0 1 400px; min-width: 0; }
+.deskbar .field > label { font-size: 12px; color: var(--muted); text-transform: none; letter-spacing: 0; }
+.deskbar .actions { margin-left: auto; display: flex; gap: 10px; }
+.deskbar .actions button { min-height: 40px; gap: 8px; }
+.deskbar-brand { display: flex; align-items: center; gap: 10px; padding-right: 18px; border-right: 1px solid var(--line); align-self: center; }
+.deskbar-brand b { display: block; font-size: 18px; line-height: 1.1; color: var(--text); }
+.deskbar-brand small { font-size: 11.5px; color: var(--muted); }
+.btc-logo {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 42px; height: 42px; border-radius: 999px; background: #f7931a; color: #fff;
+  font-size: 24px; font-weight: 700; line-height: 1;
+}
+.btc-logo.sm { width: 20px; height: 20px; font-size: 12px; }
+
+.chart-row { display: grid; gap: 12px; margin-bottom: 12px; align-items: stretch; }
+@media (min-width: 1100px) { .chart-row { grid-template-columns: minmax(0, 1fr) 300px; } }
+.chart-row > * { min-width: 0; margin-bottom: 0; }
+
+.btc-summary {
+  display: flex; flex-direction: column; gap: 12px;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 14px 16px;
+}
+.btc-summary-title { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; color: var(--muted); }
+.btc-summary-block { display: flex; flex-direction: column; gap: 3px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.btc-summary-label { font-size: 12px; color: var(--muted); }
+.btc-summary-spot { font-size: 30px; font-weight: 700; line-height: 1.1; color: var(--text); font-variant-numeric: tabular-nums; }
+.btc-summary-change { font-size: 13.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.btc-summary-change.up { color: var(--up); } .btc-summary-change.down { color: var(--down); }
+.btc-summary-change small { font-weight: 400; color: var(--muted); }
+.btc-summary-rows { margin: 0; display: grid; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.btc-summary-rows > div { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.btc-summary-rows dt { font-size: 12.5px; color: var(--muted); }
+.btc-summary-rows dd { margin: 0; text-align: right; font-size: 13px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+.btc-summary-rows dd small { display: block; font-weight: 400; font-size: 11.5px; color: var(--muted); }
+.btc-summary-rows dd.up { color: var(--up); } .btc-summary-rows dd.down { color: var(--down); }
+.btc-summary-rows dd.up small, .btc-summary-rows dd.down small { display: inline; color: inherit; }
+.btc-summary-status { font-size: 16px; }
+.btc-summary-hold { font-size: 12.5px; color: var(--muted); }
+.btc-summary-note {
+  display: flex; gap: 8px; margin: auto 0 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px;
+  font-size: 11.5px; line-height: 1.45; color: var(--muted);
+}
+.btc-summary-note svg { flex: none; margin-top: 2px; }
+
+/* The chart's header: title and the bar's figures, then the controls. */
+.price-chart-headline { display: flex; align-items: baseline; gap: 6px 16px; flex-wrap: wrap; min-width: 0; }
+.price-chart-title { font-size: 16px !important; font-weight: 700; }
+.price-chart-dot { color: var(--muted); margin: 0 2px; }
+.price-chart-headline .price-chart-ohlc { margin: 0; }
+.price-chart-change { font-variant-numeric: tabular-nums; }
+.price-chart-change.up { color: var(--up); } .price-chart-change.down { color: var(--down); }
+.price-chart-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+.price-chart-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; flex-basis: 100%; font-size: 12px; color: var(--muted); }
+.price-chart-legend b { color: var(--text); font-variant-numeric: tabular-nums; }
+.price-chart-legend .dot { width: 9px; height: 9px; border-radius: 999px; }
+.price-chart:fullscreen { background: var(--bg); padding: 16px 20px; overflow: auto; }
+@media (max-width: 700px) {
+  .deskbar { padding: 10px 12px; gap: 10px; }
+  .deskbar-brand { border-right: 0; padding-right: 0; flex-basis: 100%; }
+  .deskbar .field, .deskbar .field.wide { flex: 1 1 100%; }
+  .deskbar .actions { margin-left: 0; width: 100%; }
+  .deskbar .actions > * { flex: 1 1 0; }
+  .price-chart-controls { margin-left: 0; }
+}
+
+
+/* ── The Live screen, in the reference layout (17 Sep) ───────────────────────
+   The outlook header carries its answer in a box; the Market card leads with
+   BTC and its day; the moves are two cards of their own; the pick and its
+   alerts are two cards stacked beside them. */
+.live-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+.ol-header { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.ol-bolt { display: inline-flex; flex: none; margin-top: 2px; color: var(--accent); }
+.ol-heading { flex: 1 1 240px; min-width: 0; }
+.ol-title { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; color: var(--text); }
+.ol-sub { margin: 3px 0 0; font-size: 12.5px; color: var(--muted); }
+.ol-header-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-left: auto; }
+.ol-lean {
+  display: flex; align-items: center; gap: 18px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); padding: 8px 14px;
+}
+.ol-lean-words { display: flex; flex-direction: column; gap: 2px; }
+.ol-lean-label { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--text); cursor: help; }
+.ol-lean-label svg { color: var(--dim); }
+.ol-lean-words small { font-size: 12px; color: var(--muted); }
+.ol-lean-words small.up, .ol-lean-score.up { color: var(--up); }
+.ol-lean-words small.down, .ol-lean-score.down { color: var(--down); }
+.ol-lean-score {
+  font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px; padding: 2px 10px;
+}
+
+/* The verdict line under the header reads as one line: pill, sentence, toggle. */
+.side-verdict.embedded {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px;
+}
+.side-verdict.embedded .sv-summary { margin: 0; flex: 1 1 260px; }
+.side-verdict.embedded > ul,
+.side-verdict.embedded > .sv-corridor,
+.side-verdict.embedded > .sv-foot { flex: 1 1 100%; }
+
+/* Measured cards at reading size. */
+.ol-mcard { padding: 10px 11px; }
+.ol-mcard .ol-label { font-size: 11px; font-weight: 600; color: var(--muted); }
+.ol-mcard .ol-mc-price { font-size: 20px; }
+.ol-mcard .ol-mid { font-size: 12px; }
+.ol-mcard .ol-odds { margin-top: 10px; gap: 3px; }
+.ol-mcard .ol-odds > div { padding: 4px 7px; }
+.ol-mcard .ol-odds dt { font-size: 11.5px; }
+.ol-mcard .ol-odds dd { font-size: 12.5px; }
+.ol-mcard .ol-mc-why { font-size: 10.5px; margin-top: 8px; }
+.ol-grid { grid-template-columns: repeat(auto-fit, minmax(134px, 1fr)); }
+@media (max-width: 560px) { .ol-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Market: BTC and its day on the left, the contract's facts on the right. */
+.mkt-head { display: grid; gap: 14px 24px; grid-template-columns: minmax(0, 1fr); align-items: center; }
+@media (min-width: 560px) { .mkt-head { grid-template-columns: auto minmax(0, 1fr); } }
+.mkt-price { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.btc-logo.lg { width: 58px; height: 58px; font-size: 32px; }
+.mkt-pair { font-size: 14px; color: var(--muted); }
+.mkt-pair b { color: var(--text); }
+.mkt-spot { font-size: 30px; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; color: var(--text); }
+.mkt-change { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.mkt-change.up { color: var(--up); }
+.mkt-change.down { color: var(--down); }
+.mkt-change small { font-size: 12px; font-weight: 400; color: var(--muted); }
+.mkt-facts { min-width: 0; }
+.mkt-facts > div > span:last-child { font-family: inherit; font-variant-numeric: tabular-nums; }
+
+/* The moves: two cards, side by side when each gets 300px. */
+.move-cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); align-items: start; }
+.move-card { min-width: 0; }
+.move-table { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.move-table th {
+  position: static; background: transparent; font-family: inherit;
+  padding: 4px 6px; font-size: 10.5px; font-weight: 400; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--dim); text-align: right; border-bottom: 1px solid var(--line);
+}
+.move-table th:first-child, .move-table td:first-child { text-align: left; }
+.move-table td { padding: 5px 6px; text-align: right; color: var(--text); border-bottom: 1px solid var(--line-soft); white-space: nowrap; font-family: inherit; }
+.move-table tbody tr:hover { background: transparent; }
+.move-table td:first-child { color: var(--muted); }
+.move-table td.up { color: var(--up); }
+.move-table td.down { color: var(--down); }
+.move-table tr.today td { background: color-mix(in srgb, #6cb2ff 14%, transparent); font-weight: 600; }
+.move-table tr.today td:first-child { color: var(--text); border-radius: 6px 0 0 6px; white-space: normal; }
+.move-table tr.today td:last-child { border-radius: 0 6px 6px 0; }
+.move-table .dim { font-weight: 400; color: var(--dim); }
+
+.move-ladder { display: flex; flex-direction: column; gap: 4px; }
+.move-ladder-scale {
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: baseline; margin-bottom: 4px;
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--dim);
+}
+.move-ladder-scale > span:last-child { text-align: right; }
+.move-ladder-now { text-transform: none; letter-spacing: 0; font-size: 12px; color: var(--muted); }
+.move-ladder-now b { color: var(--text); font-variant-numeric: tabular-nums; }
+.move-ladder-row { display: grid; grid-template-columns: 70px minmax(0, 1fr) 108px; align-items: center; gap: 10px; padding: 5px 0; }
+.move-ladder-label { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.move-ladder-row.last .move-ladder-label { color: var(--text); font-weight: 600; }
+.move-ladder-track { position: relative; height: 16px; border-radius: 4px; background: var(--panel-2); }
+.move-ladder-bar {
+  position: absolute; top: 0; bottom: 0; border-radius: 4px;
+  background: color-mix(in srgb, #6cb2ff 38%, transparent);
+}
+.move-ladder-row.last .move-ladder-bar { background: color-mix(in srgb, #6cb2ff 62%, transparent); }
+.move-ladder-spot { position: absolute; top: -3px; bottom: -3px; left: 50%; width: 1px; background: var(--text); opacity: 0.7; }
+.move-ladder-value { text-align: right; font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; }
+.move-ladder-value .dim { margin-left: 5px; font-weight: 400; color: var(--dim); }
+.move-ladder-ends {
+  display: grid; grid-template-columns: 1fr auto 1fr; margin-top: 4px;
+  font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--dim);
+}
+.move-ladder-ends > span:last-child { text-align: right; }
+.move-ladder-inside { color: var(--muted); }
+
+/* The pick, at reading size. */
+.besttrade .bt-order { font-size: 22px; }
+.besttrade .bt-rank { font-size: 18px; }
+.ol-mc-band { margin-top: 6px; font-size: 10.5px; font-variant-numeric: tabular-nums; color: var(--muted); }
+
+/* The outlook folds from its own chevron; folded, the header and the lean box stay. */
+.ol-fold {
+  appearance: none; border: 0; background: transparent; padding: 0; margin: 0 -4px 0 -6px;
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 32px; height: 32px; border-radius: 6px; color: var(--dim); cursor: pointer;
+}
+.ol-fold:hover { color: var(--text); background: color-mix(in srgb, var(--text) 6%, transparent); }
+.ol-fold svg { transition: transform 0.15s; }
+.ol-header.folded { margin-bottom: 0; }
+.btc-summary-toggle {
+  appearance: none; border: 0; background: transparent; padding: 0; margin: 0; font: inherit; color: inherit;
+  display: flex; align-items: center; gap: 6px; min-height: 32px; width: 100%; text-align: left; cursor: pointer;
+}
+.btc-summary-chevron { flex: none; color: var(--dim); transition: transform 0.15s; }
+.btc-summary-folded { margin-left: auto; font-size: 15px; font-variant-numeric: tabular-nums; color: var(--text); }

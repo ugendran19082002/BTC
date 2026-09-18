@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as Collapsible from '@radix-ui/react-collapsible';
-import { ChevronDown, Maximize2, Minus, Move, Lock, Plus } from 'lucide-react';
+import { ChevronDown, Expand, Maximize2, Minimize, Minus, Move, Lock, Plus } from 'lucide-react';
 import { usePersisted } from '@/hooks/usePersisted';
 import type { Candle } from '@/types/desk';
 import { strike as fmtStrike } from '@/lib/format';
@@ -22,9 +22,12 @@ export const CHART_TFS: readonly ChartTf[] = ['1m', '5m', '15m', '1h', '4h', '1d
  */
 const DEFAULT_W = 780;
 const MIN_W = 320;
-const sizeFor = (width: number) => {
+const sizeFor = (width: number, tallest = 360) => {
   const W = Math.max(MIN_W, Math.round(width) || DEFAULT_W);
-  return { W, H: clamp(Math.round(W * 0.46), 250, 360) };
+  // A wide card beside the summary gets a taller plot, so the chart fills the row
+  // rather than leaving a gap under it; the default width keeps the usual cap.
+  const cap = W >= 900 ? Math.max(tallest, 440) : tallest;
+  return { W, H: clamp(Math.round(W * 0.46), 250, cap) };
 };
 const PAD = { top: 10, right: 74, bottom: 26, left: 8 };
 /**
@@ -188,7 +191,22 @@ export function PriceChart({
   const svgRef = useRef<SVGSVGElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(DEFAULT_W);
-  const { W, H } = sizeFor(width);
+  /*
+   * Full screen is the card itself, so the header, the tools and the legend come
+   * with it. In it the canvas may use the height of the screen; out of it the
+   * usual cap keeps the chart from pushing the page down.
+   */
+  const [full, setFull] = useState(false);
+  useEffect(() => {
+    const on = () => setFull(document.fullscreenElement === cardRef.current && cardRef.current !== null);
+    document.addEventListener('fullscreenchange', on);
+    return () => document.removeEventListener('fullscreenchange', on);
+  }, []);
+  const toggleFull = () => {
+    if (document.fullscreenElement) void document.exitFullscreen?.();
+    else void cardRef.current?.requestFullscreen?.();
+  };
+  const { W, H } = sizeFor(width, full ? Math.max(360, (globalThis.innerHeight || 800) - 170) : 360);
   const [hover, setHover] = useState<number | null>(null);
   const [open, setOpen] = usePersisted('open:price-chart', true);
 
@@ -344,7 +362,7 @@ export function PriceChart({
         .filter((v): v is number => v !== null)
     : [];
 
-  const level = (value: number, colour: string, label: string) => {
+  const level = (value: number, colour: string, label: string, isWall = false) => {
     if (!geom) return null;
     const inside = value >= geom.lo && value <= geom.hi;
     const yPos = levelY(value)!;
@@ -371,6 +389,11 @@ export function PriceChart({
             fontSize="10" fill={colour} opacity="0.85"
           >
             {label} · {Math.abs(away).toFixed(1)}% away, off the scale
+          </text>
+        )}
+        {inside && isWall && (
+          <text x={PAD.left + 4} y={yPos - 5} fontSize="10.5" fontWeight="600" fill={colour}>
+            {label} ({away >= 0 ? '+' : '−'}{Math.abs(away).toFixed(1)}% away)
           </text>
         )}
       </g>
@@ -516,80 +539,98 @@ export function PriceChart({
 
   const shown = hover !== null && geom ? geom.shown[hover] : geom?.shown.at(-1);
   const shownUp = shown ? shown.close >= shown.open : true;
+  // The bar's move from the one before it: what the "−102 (−0.13%)" in the header says.
+  const shownAt = hover ?? (geom ? geom.shown.length - 1 : -1);
+  const previous = geom && shownAt > 0 ? geom.shown[shownAt - 1] : undefined;
+  const change = shown && previous ? shown.close - previous.close : null;
+  const changePct = change !== null && previous ? (change / previous.close) * 100 : null;
   const zoomed = view !== null;
 
   return (
     <Collapsible.Root ref={cardRef} open={open} onOpenChange={setOpen} className="price-chart">
       <div className="price-chart-head">
-        <Collapsible.Trigger className="price-chart-title" aria-label="price chart">
-          <ChevronDown className={`smr-chev${open ? '' : ' shut'}`} size={13} aria-hidden />
-          BTC · {tf === '1d' ? 'daily' : tf}
-          {support !== null && resistance !== null && (
-            <span className="dim"> · walls {fmtStrike(support)}–{fmtStrike(resistance)}</span>
-          )}
-        </Collapsible.Trigger>
+        <div className="price-chart-headline">
+          <Collapsible.Trigger className="price-chart-title" aria-label="price chart">
+            <ChevronDown className={`smr-chev${open ? '' : ' shut'}`} size={13} aria-hidden />
+            BTC <span className="price-chart-dot" aria-hidden>•</span> {tf === '1d' ? '1D' : tf}
+          </Collapsible.Trigger>
 
-        <div className="price-chart-tools" role="group" aria-label="zoom">
-          <button
-            type="button"
-            className={`chain-chip${zoomOn ? ' on' : ''}`}
-            aria-pressed={zoomOn}
-            title={zoomOn
-              ? 'Zoom and pan are on: scroll or pinch to zoom, drag to pan. Turn off to scroll the page over the chart.'
-              : 'Zoom and pan are off, so the page scrolls over the chart. Turn on to scroll, drag and pinch the chart. The + and − work either way.'}
-            onClick={() => setZoomOn(!zoomOn)}
-          >
-            {zoomOn ? <Move size={12} aria-hidden /> : <Lock size={12} aria-hidden />}
-            {zoomOn ? 'Zoom on' : 'Zoom off'}
-          </button>
-          <button
-            type="button" className="chain-chip" aria-label="zoom out" title="Zoom out: more bars"
-            disabled={!win || win.count >= bars.length}
-            onClick={() => zoomButton(true)}
-          >
-            <Minus size={13} aria-hidden />
-          </button>
-          <button
-            type="button" className="chain-chip" aria-label="zoom in" title="Zoom in: fewer bars, about the newest"
-            disabled={!win || win.count <= Math.min(MIN_BARS, bars.length)}
-            onClick={() => zoomButton(false)}
-          >
-            <Plus size={13} aria-hidden />
-          </button>
-          <button
-            type="button" className="chain-chip" disabled={!zoomed}
-            title="Show the whole series again, at the fitted scale"
-            onClick={() => setView(null)}
-          >
-            <Maximize2 size={12} aria-hidden /> Fit
-          </button>
+          {/* The bar under the pointer, or the last one — always saying which. */}
+          {open && shown && !error && (
+            <div className="price-chart-ohlc">
+              <span className="dim">{hover === null ? 'last' : IST_FULL.format(shown.time * 1000)}</span>
+              <span>O <b>{fmtStrike(Math.round(shown.open))}</b></span>
+              <span>H <b>{fmtStrike(Math.round(shown.high))}</b></span>
+              <span>L <b>{fmtStrike(Math.round(shown.low))}</b></span>
+              <span>C <b className={shownUp ? 'up' : 'down'}>{fmtStrike(Math.round(shown.close))}</b></span>
+              {change !== null && (
+                <b className={`price-chart-change ${change >= 0 ? 'up' : 'down'}`}>
+                  {change >= 0 ? '+' : '−'}{fmtStrike(Math.round(Math.abs(change)))} ({change >= 0 ? '+' : '−'}{Math.abs(changePct!).toFixed(2)}%)
+                </b>
+              )}
+              {win && <span className="dim">{win.count} of {bars.length} bars</span>}
+            </div>
+          )}
         </div>
 
-        <ToggleGroup
-          type="single"
-          value={tf}
-          onValueChange={(v) => v && onTf(v as ChartTf)}
-          aria-label="chart timeframe"
-        >
-          {CHART_TFS.map((t) => (
-            <ToggleGroupItem key={t} value={t}>{t === '1d' ? '1D' : t}</ToggleGroupItem>
-          ))}
-        </ToggleGroup>
+        <div className="price-chart-controls">
+          <ToggleGroup
+            type="single"
+            value={tf}
+            onValueChange={(v) => v && onTf(v as ChartTf)}
+            aria-label="chart timeframe"
+          >
+            {CHART_TFS.map((t) => (
+              <ToggleGroupItem key={t} value={t}>{t === '1d' ? '1D' : t}</ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+
+          <div className="price-chart-tools" role="group" aria-label="zoom">
+            <button
+              type="button"
+              className={`chain-chip${zoomOn ? ' on' : ''}`}
+              aria-pressed={zoomOn}
+              aria-label={zoomOn ? 'Zoom on' : 'Zoom off'}
+              title={zoomOn
+                ? 'Zoom and pan are on: scroll or pinch to zoom, drag to pan. Turn off to scroll the page over the chart.'
+                : 'Zoom and pan are off, so the page scrolls over the chart. Turn on to scroll, drag and pinch the chart. The + and − work either way.'}
+              onClick={() => setZoomOn(!zoomOn)}
+            >
+              {zoomOn ? <Move size={13} aria-hidden /> : <Lock size={13} aria-hidden />}
+            </button>
+            <button
+              type="button" className="chain-chip" aria-label="zoom out" title="Zoom out: more bars"
+              disabled={!win || win.count >= bars.length}
+              onClick={() => zoomButton(true)}
+            >
+              <Minus size={13} aria-hidden />
+            </button>
+            <button
+              type="button" className="chain-chip" aria-label="zoom in" title="Zoom in: fewer bars, about the newest"
+              disabled={!win || win.count <= Math.min(MIN_BARS, bars.length)}
+              onClick={() => zoomButton(false)}
+            >
+              <Plus size={13} aria-hidden />
+            </button>
+            <button
+              type="button" className="chain-chip" aria-label={full ? 'exit full screen' : 'full screen'}
+              title={full ? 'Exit full screen' : 'Full screen'}
+              onClick={toggleFull}
+            >
+              {full ? <Minimize size={13} aria-hidden /> : <Expand size={13} aria-hidden />}
+            </button>
+            <button
+              type="button" className="chain-chip" disabled={!zoomed}
+              title="Show the whole series again, at the fitted scale"
+              onClick={() => setView(null)}
+            >
+              <Maximize2 size={12} aria-hidden /> Fit
+            </button>
+          </div>
+        </div>
       </div>
 
       <Collapsible.Content>
-      {/* The bar under the pointer, or the last one — always saying which. */}
-      {shown && !error && (
-        <div className="price-chart-ohlc">
-          <span className="dim">{hover === null ? 'last' : IST_FULL.format(shown.time * 1000)}</span>
-          <span>O <b>{fmtStrike(Math.round(shown.open))}</b></span>
-          <span>H <b>{fmtStrike(Math.round(shown.high))}</b></span>
-          <span>L <b>{fmtStrike(Math.round(shown.low))}</b></span>
-          <span>C <b className={shownUp ? 'up' : 'down'}>{fmtStrike(Math.round(shown.close))}</b></span>
-          {win && <span className="dim">{win.count} of {bars.length} bars</span>}
-        </div>
-      )}
-
       {error ? (
         <div className="note" style={{ padding: '10px 12px', margin: 0 }}>
           The price feed did not answer, so the chart is empty. Everything below still reads
@@ -707,8 +748,8 @@ export function PriceChart({
             );
           })}
 
-          {support !== null && level(support, 'var(--up)', fmtStrike(support))}
-          {resistance !== null && level(resistance, 'var(--down)', fmtStrike(resistance))}
+          {support !== null && level(support, 'var(--up)', fmtStrike(support), true)}
+          {resistance !== null && level(resistance, 'var(--down)', fmtStrike(resistance), true)}
           {level(spot, 'var(--accent)', fmtStrike(Math.round(spot)))}
 
           {/* crosshair */}
@@ -742,14 +783,20 @@ export function PriceChart({
       )}
 
       <div className="price-chart-key">
-        <span><i style={{ background: 'var(--up)' }} /> support · heaviest put strike</span>
-        <span><i style={{ background: 'var(--down)' }} /> resistance · heaviest call strike</span>
+        <div className="price-chart-legend">
+          <span><i className="dot" style={{ background: 'var(--accent)' }} /> Spot <b>{fmtStrike(Math.round(spot))}</b></span>
+          {support !== null && <span><i className="dot" style={{ background: 'var(--up)' }} /> Support <b>{fmtStrike(support)}</b></span>}
+          {resistance !== null && <span><i className="dot" style={{ background: 'var(--down)' }} /> Resistance <b>{fmtStrike(resistance)}</b></span>}
+          <span><i className="dot" style={{ background: 'var(--dim)' }} /> Volume</span>
+        </div>
+        <span className="dim">
+          support · heaviest put strike · resistance · heaviest call strike — where open interest sits, not where BTC will settle · times IST
+        </span>
         <span className="dim">
           {zoomOn
             ? 'scroll or pinch to zoom · drag to pan · drag or scroll the price axis to stretch it, out far enough and the walls come onto it · double-click or double-tap to fit'
             : 'zoom is off, so the page scrolls over the chart — + and − still zoom about the newest bar; turn it on to scroll, drag and pinch the chart'}
         </span>
-        <span className="dim">where open interest sits, not where BTC will settle · times IST</span>
       </div>
       </Collapsible.Content>
     </Collapsible.Root>

@@ -51,7 +51,7 @@ const pickOf = (snap: Snapshot) =>
   bestTradeNow({ snap, market: null, lots: 10, hedgeGap: 3, minPremiumUsd: 5 }).pick!;
 const named = (snap: Snapshot) => {
   const p = pickOf(snap);
-  return new RegExp(`SELL ${p.side} ${p.strike.toLocaleString('en-IN')}`);
+  return new RegExp(`Sell ${p.side} ${p.strike.toLocaleString('en-IN')}`);
 };
 
 async function desk() {
@@ -63,6 +63,8 @@ async function desk() {
   svc.setAlertsOn(true);
   svc.setBestTradeAlertOn(false);
   svc.setBestTradeMinPremiumUsd(5);
+  // Settings live in the journal and outlast one service; start every test at the default.
+  svc.setBestTradeRepeat(1);
   return { svc, sent };
 }
 
@@ -87,7 +89,7 @@ test('[critical] the first look announces the pick; the same pick again is silen
   assert.equal(await svc.watchBestTrade(NOW, { snap: CALL_BOARD, market: null }), 'sent');
   assert.equal(sent.length, 1);
   assert.equal(sent[0].key, 'best-trade');
-  assert.match(sent[0].text, /BEST PICK CHANGED/);
+  assert.match(sent[0].text, /New best pick/);
   assert.match(sent[0].text, named(CALL_BOARD));
   assert.equal(await svc.watchBestTrade(NOW + 60_000, { snap: CALL_BOARD, market: null }), 'unchanged');
   assert.equal(await svc.watchBestTrade(NOW + 120_000, { snap: CALL_BOARD, market: null }), 'unchanged');
@@ -105,15 +107,76 @@ test('[critical] a different strike is announced', async () => {
   svc.stop();
 });
 
-test('[critical] a pick that goes away is not announced, and its return is', async () => {
+test('[critical] a pick that goes away is not announced, and its return counts against the cap', async () => {
   const { svc, sent } = await desk();
   svc.setBestTradeAlertOn(true);
   await svc.watchBestTrade(NOW, { snap: CALL_BOARD, market: null });
   const nothing = board(CALL_BOARD.legs.map((l) => ({ ...l, bid: 2, sellPrice: 2, ask: 2.6, mark: 2.3 })));
   assert.equal(await svc.watchBestTrade(NOW + 60_000, { snap: nothing, market: null }), 'unchanged');
   assert.equal(sent.length, 1, 'nothing worth selling is not news worth a message');
-  assert.equal(await svc.watchBestTrade(NOW + 120_000, { snap: CALL_BOARD, market: null }), 'sent',
-    'the same strike coming back after a gap is news again');
+  assert.equal(await svc.watchBestTrade(NOW + 120_000, { snap: CALL_BOARD, market: null }), 'repeat',
+    'at the default of once, the same strike coming back on the same contract is not sent again');
+  assert.equal(sent.length, 1);
+  svc.stop();
+});
+
+/*
+ * The repeat cap, asked for on 17 September: the same strike is announced at
+ * most N times per contract -- from 5:31 PM to 5:30 PM the next day -- and N is
+ * one unless somebody changes it.
+ */
+
+test('[critical] the same strike coming back is not sent again for the same contract', async () => {
+  const { svc, sent } = await desk();
+  svc.setBestTradeAlertOn(true);
+  assert.equal(svc.bestTradeRepeat, 1, 'once per strike per contract, by default');
+  assert.equal(await svc.watchBestTrade(NOW, { snap: CALL_BOARD, market: null }), 'sent');
+  assert.equal(await svc.watchBestTrade(NOW + 60_000, { snap: PUT_BOARD, market: null }), 'sent');
+  assert.equal(await svc.watchBestTrade(NOW + 120_000, { snap: CALL_BOARD, market: null }), 'repeat');
+  assert.equal(sent.length, 2, 'call, put -- and not the call a second time');
+  assert.equal(await svc.watchBestTrade(NOW + 180_000, { snap: CALL_BOARD, market: null }), 'unchanged',
+    'and quiet while it stays the pick');
+  svc.stop();
+});
+
+test('[critical] the cap is a setting: at 2 a strike can come back once more, and no more', async () => {
+  const { svc, sent } = await desk();
+  svc.setBestTradeAlertOn(true);
+  svc.setBestTradeRepeat(2);
+  for (const [i, snap, want] of [
+    [0, CALL_BOARD, 'sent'], [1, PUT_BOARD, 'sent'], [2, CALL_BOARD, 'sent'], [3, PUT_BOARD, 'sent'], [4, CALL_BOARD, 'repeat'],
+  ] as const) {
+    assert.equal(await svc.watchBestTrade(NOW + i * 60_000, { snap, market: null }), want, `look ${i}`);
+  }
+  assert.equal(sent.length, 4);
+  assert.match(sent[0].text, /Alert 1 of 2 for this strike/);
+  assert.match(sent[2].text, /Alert 2 of 2 for this strike/);
+  svc.stop();
+});
+
+test('[critical] a new contract starts the count again -- the 5:31 PM reset', async () => {
+  const { svc, sent } = await desk();
+  svc.setBestTradeAlertOn(true);
+  await svc.watchBestTrade(NOW, { snap: CALL_BOARD, market: null });
+  await svc.watchBestTrade(NOW + 60_000, { snap: PUT_BOARD, market: null });
+  assert.equal(await svc.watchBestTrade(NOW + 120_000, { snap: CALL_BOARD, market: null }), 'repeat');
+  // the next day's contract, listed at 5:30 PM: the same strike is news on it
+  const tomorrow = { ...CALL_BOARD, expiry: '170926' };
+  assert.equal(await svc.watchBestTrade(NOW + 180_000, { snap: tomorrow, market: null }), 'sent');
+  assert.equal(sent.length, 3);
+  svc.stop();
+});
+
+test('the repeat setting is kept between 1 and 10', async () => {
+  const { svc } = await desk();
+  assert.equal(svc.bestTradeRepeat, 1);
+  svc.setBestTradeRepeat(0);
+  assert.equal(svc.bestTradeRepeat, 1);
+  svc.setBestTradeRepeat(25);
+  assert.equal(svc.bestTradeRepeat, 10);
+  svc.setBestTradeRepeat(3);
+  assert.equal(svc.bestTradeRepeat, 3);
+  svc.setBestTradeRepeat(1);
   svc.stop();
 });
 
@@ -125,7 +188,7 @@ test('[critical] the floor decides: a strike paying under it is never the pick t
   assert.equal(sent.length, 0);
   svc.setBestTradeMinPremiumUsd(5);
   assert.equal(await svc.watchBestTrade(NOW + 60_000, { snap: CALL_BOARD, market: null }), 'sent');
-  assert.match(sent[0].text, /Only strikes paying \$5\+/);
+  assert.match(sent[0].text, /Only strikes paying \$5 or more/);
   svc.stop();
 });
 
@@ -170,14 +233,25 @@ test('the settings survive as the desk remembers them', async () => {
   svc.stop();
 });
 
-test('the message carries the whole card, in the card’s words', () => {
+test('[critical] the message is plain English, one fact per line', () => {
   const best = bestTradeNow({ snap: CALL_BOARD, market: null, lots: 10, hedgeGap: 3, minPremiumUsd: 5 });
-  const text = bestTradeText(best, '160926', 'paper', NOW);
-  assert.match(text, /PAPER/);
-  assert.match(text, /11:30 IST/);
-  assert.match(text, new RegExp(`${named(CALL_BOARD).source}<\\/b> · 160926`));
-  assert.match(text, new RegExp(`You'd be paid <b>${pickOf(CALL_BOARD).premiumUsd.toFixed(2)}<\\/b> · rank \\d+/100`));
-  assert.match(text, /Chance you keep it all: \d+\.\d% · price gets there first: \d+%/);
-  assert.match(text, /Most you can lose/);
-  assert.match(text, /Nothing has been placed/);
+  const text = bestTradeText(best, '160926', 'paper', NOW, { n: 1, of: 1 });
+  assert.match(text, /New best pick<\/b> · PAPER · 11:30 AM IST/);
+  assert.match(text, new RegExp(`${named(CALL_BOARD).source}</b> · expires 16 Sep, 5:30 PM`));
+  assert.match(text, new RegExp(`You get: <b>${pickOf(CALL_BOARD).premiumUsd.toFixed(2)}</b>`));
+  assert.match(text, /Chance it expires worthless: \d+\.\d%/);
+  assert.match(text, /Chance the price reaches it first: \d+%/);
+  assert.match(text, /Max loss:/);
+  assert.match(text, /Score: \d+\/100/);
+  assert.match(text, /Only strikes paying \$5 or more\. Nothing was placed\./);
+  assert.match(text, /Alert 1 of 1 for this strike before it expires/);
+  // one fact to a line: none of the old run-together card wording
+  assert.doesNotMatch(text, /rank \d+\/100|Chance you keep it all|gets there first|BEST PICK CHANGED/);
+});
+
+test('an expiry code reads as a date', async () => {
+  const { expiryLabel } = await import('../../src/notify/best-trade-alert.js');
+  assert.equal(expiryLabel('160926'), '16 Sep');
+  assert.equal(expiryLabel('010126'), '1 Jan');
+  assert.equal(expiryLabel('not-a-code'), 'not-a-code');
 });

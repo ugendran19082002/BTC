@@ -267,3 +267,15 @@ test('nothing to compare against is not a ratio', () => {
   const noHistory = outlook({ snap, market: market([]), horizons: [] });
   assert.equal(noHistory.rows[0]!.richness, null);
 });
+
+test('[critical] the score\'s parts add up to the score, and say what each is', () => {
+  const r = timeframeScore(up('1h'));
+  const sum = r.factors.reduce((a, f) => a + f.contribution, 0);
+  assert.ok(Math.abs(sum - r.score!) < 1e-12, `${sum} vs ${r.score}`);
+  assert.deepEqual(r.factors.map((f) => f.label), ['EMA (9/21/50)', 'RSI (14)', 'Swing structure', 'Price vs VWAP']);
+  assert.ok(r.factors.find((f) => f.key === 'ema')!.contribution > 0, 'rising EMAs push up');
+  assert.deepEqual(timeframeScore(undefined).factors, []);
+  // a horizon with no bars carries no parts
+  assert.deepEqual(run([up('1h')]).rows.find((x) => x.label === '30m')!.factors, []);
+});
+

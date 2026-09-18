@@ -1,0 +1,22 @@
+Down / Side / Up at the 17:30 settle, from the 05:30 chain — 735 mornings (2024–2026).
+Side = within ±0.378% (the tercile of |05:30 → 17:30|), so no information reads 33/33/33.
+Kept only if the same way in 2024, 2025, 2026 by 3+ points (30+ mornings a year) and z > 3.
+
+  any          all           n= 735  down 0.317 side 0.335 up 0.348  lean +0.031 z=+1.04  side z=+0.08  [2024:+0.126/0.29 2025:+0.049/0.32 2026:-0.040/0.38]
+== implied_move  (terciles 0.7368 / 1.0430, 734 mornings)
+  implied_move small         n= 244  down 0.258 side 0.512 up 0.230  lean -0.029 z=-0.64  side z=+5.93  [2024:-0.111/0.56 2025:-0.052/0.46 2026:+0.022/0.59]
+  implied_move usual         n= 246  down 0.333 side 0.301 up 0.366  lean +0.033 z=+0.61  side z=-1.08  [2024:+0.114/0.34 2025:+0.142/0.31 2026:-0.200/0.27]
+  implied_move large         n= 244  down 0.361 side 0.193 up 0.447  lean +0.086 z=+1.50  side z=-4.66  [2024:+0.211/0.16 2025:+0.067/0.16 2026:+0.024/0.25] <- SIDE HOLDS
+
+== skew  (terciles -0.0782 / 0.0249, 733 mornings)
+  skew         calls_dearer  n= 244  down 0.295 side 0.418 up 0.287  lean -0.008 z=-0.17  side z=+2.81  [2024:-0.032/0.32 2025:+0.030/0.38 2026:-0.062/0.52]
+  skew         even          n= 245  down 0.335 side 0.302 up 0.363  lean +0.029 z=+0.54  side z=-1.04  [2024:+0.000/0.30 2025:+0.081/0.28 2026:-0.057/0.34]
+  skew         puts_dearer   n= 244  down 0.324 side 0.283 up 0.393  lean +0.070 z=+1.29  side z=-1.67  [2024:+0.333/0.25 2025:+0.031/0.30 2026:-0.020/0.29]
+
+== pcr_volume  (terciles -0.2710 / 0.1026, 731 mornings)
+  pcr_volume   more_calls    n= 243  down 0.288 side 0.325 up 0.387  lean +0.099 z=+1.87  side z=-0.27  [2024:+0.243/0.27 2025:+0.197/0.31 2026:-0.090/0.37]
+  pcr_volume   even          n= 245  down 0.302 side 0.339 up 0.359  lean +0.057 z=+1.10  side z=+0.18  [2024:+0.207/0.24 2025:+0.057/0.34 2026:+0.011/0.37]
+  pcr_volume   more_puts     n= 243  down 0.362 side 0.342 up 0.296  lean -0.066 z=-1.26  side z=+0.27  [2024:+0.000/0.32 2025:-0.097/0.32 2026:-0.061/0.39]
+
+1 of 9 chain readings held up in all three years.
+Not measurable yet (no history): open interest per strike, ΔOI, OI walls, max pain, V/OI, EV, touch, near-zero — recorded every 5 minutes from 17 Sep 2026.

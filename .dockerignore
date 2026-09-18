@@ -20,3 +20,9 @@ cache/
 # reports and scratch
 *.txt
 !requirements*.txt
+
+# the analytics service's local test environment is not image content
+analytics/.venv
+analytics/tests
+**/__pycache__
+**/.pytest_cache

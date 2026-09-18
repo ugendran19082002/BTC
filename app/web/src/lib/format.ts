@@ -155,3 +155,14 @@ export function contractLabel(symbol: string): string {
   const side = symbol.startsWith('P') ? 'PE' : 'CE';
   return Number.isFinite(k) ? `${strike(k)} ${side}` : symbol;
 }
+
+const IST_LABEL = new Intl.DateTimeFormat('en-IN', {
+  timeZone: 'Asia/Kolkata',
+  weekday: 'short', day: 'numeric', month: 'short',
+  hour: '2-digit', minute: '2-digit', hour12: true,
+});
+
+/** "Thu 17 Sept 05:30 pm IST". Always India time, and always says so: the strategy is defined in IST. */
+export function istLabel(epochSeconds: number): string {
+  return IST_LABEL.format(new Date(epochSeconds * 1000)).replace(/,/g, '') + ' IST';
+}

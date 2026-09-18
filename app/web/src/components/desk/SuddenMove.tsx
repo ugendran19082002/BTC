@@ -1,12 +1,35 @@
 import * as Collapsible from '@radix-ui/react-collapsible';
-import type { LucideIcon } from 'lucide-react';
 import {
-  Zap, Activity, BarChart3, Waves, TrendingUp, TrendingDown, Minus, Info, Clock, ChevronDown,
+  ArrowDownRight, ArrowUpRight, ChevronDown, Clock, Info, MoveHorizontal, Zap,
 } from 'lucide-react';
 import { usePersisted } from '@/hooks/usePersisted';
-import { MarketInsights } from '@/components/desk/MarketInsights';
-import type { MarketRead, OptionStructure, SnapshotMeta, SuddenMove as Shock } from '@/types/desk';
+import type {
+  MarketRead, OptionStructure, Outlook, OutlookRow, SnapshotMeta, SuddenMove as Shock,
+} from '@/types/desk';
 import { strike as fmtStrike } from '@/lib/format';
+import { cn } from '@/lib/utils';
+
+/**
+ * Whether something is happening right now, for the window chosen.
+ *
+ * Laid out after the design asked for on 17 September: the answer in the first
+ * row -- the sudden-move risk, and how often BTC actually moved from moments like
+ * this -- then why (pricing against history, what the tape is doing, the chart's
+ * reading and its parts), then where price sits against the levels and the
+ * board's own numbers.
+ *
+ * ## What is kept honest inside that layout
+ *
+ * * **Probability outlook** is *measured*: how often BTC moved more than the
+ *   threshold over the next window, counted from 105,120 windows. Not a forecast,
+ *   and the tooltip says so. The prices under it are spot ± that threshold, the
+ *   same prices the range line below is drawn to.
+ * * **Trend score** is the chart's recent reading, marked "(past)". The desk
+ *   measured direction as a coin toss; the score says where candles have been.
+ * * **Volume and open interest** carry the split between calls and puts, not a
+ *   percentage change: the desk keeps no history to measure a change against.
+ * * **Nothing on the trading side reads any of this**, and the footer says so.
+ */
 
 const BAND = {
   normal: { label: 'Normal', note: 'Nothing unusual on the tape' },
@@ -17,114 +40,9 @@ const BAND = {
 
 type Tone = 'plain' | 'warn' | 'bad' | 'up' | 'down';
 
-
-/**
- * The risk out of a hundred, drawn as an arc.
- *
- * A number on its own has no scale — 72 means nothing until you can see how
- * much of the dial it is. The number stays inside it: the arc is for the
- * glance, the figure for the decision.
- */
-function Gauge({ score, tone }: { score: number; tone: Tone }) {
-  const r = 26;
-  const c = 2 * Math.PI * r;
-  const filled = (Math.max(0, Math.min(100, score)) / 100) * c;
-  return (
-    <svg viewBox="0 0 64 64" className={`smr-gauge smr-${tone}`} role="img" aria-label={`${score} out of 100`}>
-      <circle cx="32" cy="32" r={r} fill="none" stroke="var(--line)" strokeWidth="6" />
-      <circle
-        cx="32" cy="32" r={r}
-        fill="none" stroke="currentColor" strokeWidth="6" strokeLinecap="round"
-        strokeDasharray={`${filled} ${c - filled}`}
-        transform="rotate(-90 32 32)"
-      />
-      <text x="32" y="33" textAnchor="middle" fontSize="17" fontWeight="700" fill="currentColor">
-        {score}
-      </text>
-      <text x="32" y="45" textAnchor="middle" fontSize="8" fill="var(--dim)">/100</text>
-    </svg>
-  );
-}
-
-/**
- * A reading: the headline, the two numbers behind it, and what to call it.
- *
- * The supporting pair is not decoration. "3.2×" is unreadable without "12.4k
- * against a 3.8k median" beside it — a ratio says how unusual something is and
- * says nothing about whether it is worth anything.
- */
-function Reading({
-  icon: Icon, label, headline, now, before, chip, tone = 'plain', hint,
-}: {
-  icon: LucideIcon;
-  label: string;
-  headline: string;
-  now: string;
-  before: string;
-  chip: string | null;
-  tone?: Tone;
-  hint: string;
-}) {
-  return (
-    <div className={`smr-card smr-${tone}`}>
-      <div className="smr-card-head">
-        <span className="smr-card-label">{label}</span>
-        <span className="smr-card-icon" title={hint}><Info size={11} aria-hidden /></span>
-      </div>
-      <div className="smr-card-value">
-        <Icon size={16} aria-hidden />
-        <b>{headline}</b>
-      </div>
-      <div className="smr-card-rows">
-        <span>{now}</span>
-        <span>{before}</span>
-      </div>
-      {chip && <span className="smr-chip">{chip}</span>}
-    </div>
-  );
-}
-
-/** One figure in the market-data strip. */
-function Datum({ label, value, foot, tone, hint }: {
-  label: string; value: string; foot?: string; tone?: Tone; hint?: string;
-}) {
-  return (
-    <div className="smr-datum" title={hint}>
-      <span className="smr-datum-label">{label}</span>
-      <span className={`smr-datum-value smr-${tone ?? 'plain'}`}>{value}</span>
-      {foot && <span className="smr-datum-foot">{foot}</span>}
-    </div>
-  );
-}
-
-const part = (shock: Shock, name: string) => shock.parts.find((p) => p.name === name) ?? null;
-
-/**
- * Whether something is happening right now — five readings, the market behind
- * them, and how often a move like this has actually followed.
- *
- * ## What it is, and what it is not
- *
- * A short-premium desk loses on the days that move, so "is this one of those
- * days" is worth asking even when the answer cannot be acted on mechanically.
- * Every figure here is observable: how far BTC has moved against how far it was
- * *priced* to move, how busy the tape is against its own median, whether
- * volatility is repricing, and which way the pressure points.
- *
- * The probabilities at the bottom are counted off 105,120 measured five-minute
- * windows in `chain.db`, not assumed from a distribution — and the horizon
- * shown is the one actually read.
- *
- * **Nothing on the trading side reads any of it.** None of these weights has
- * been through the cross-period screen the premium floor and the RSI gate went
- * through, and the repo keeps a table of things that looked excellent over one
- * period and reversed over the next.
- *
- * Direction is the weakest reading and is drawn as pressure rather than as a
- * forecast: over those same windows the chance BTC finishes higher never moved
- * further than 0.6 points from a coin flip at any horizon out to twelve hours.
- */
+const WINDOW_WORDS: Record<number, string> = { 5: '5 minutes', 15: '15 minutes', 60: '1 hour', 240: '4 hours' };
 const WINDOW_LABEL: Record<number, string> = { 5: '5m', 15: '15m', 60: '1h', 240: '4h' };
+const CONTRACT_BTC = 0.001;
 
 /** "5 minutes", "1 hour", "4 hours" — never "1 hours". */
 export const horizonWords = (minutes: number): string => {
@@ -134,17 +52,67 @@ export const horizonWords = (minutes: number): string => {
 };
 
 const IST = new Intl.DateTimeFormat('en-IN', {
-  timeZone: 'Asia/Kolkata',
-  hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true,
+  timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true,
 });
 
+const pctOf = (v: number) => `${Math.round(v * 100)}%`;
+const usd = (v: number) => `$${Math.round(v).toLocaleString('en-IN')}`;
+const signed = (v: number, places = 2) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(places)}`;
+
+/** "3h 12m" left on the contract, or "settled". */
+export function expiresIn(hours: number): string {
+  if (!(hours > 0)) return 'settled';
+  const h = Math.floor(hours);
+  const m = Math.round((hours - h) * 60);
+  return h === 0 ? `${m}m` : `${h}h ${String(m).padStart(2, '0')}m`;
+}
+
+/** The chart's reading in words, always marked as the past. */
+export function trendWords(score: number | null): { badge: string; words: string; tone: Tone } {
+  if (score === null) return { badge: 'NO CHART', words: 'No candles at this timeframe', tone: 'plain' };
+  const a = Math.abs(score);
+  const side = score >= 0 ? 'bullish' : 'bearish';
+  const tone: Tone = score >= 0.3 ? 'up' : score <= -0.3 ? 'down' : 'plain';
+  const badge = score >= 0.3 ? 'BULLISH' : score <= -0.3 ? 'BEARISH' : 'NEUTRAL';
+  const words = a < 0.05 ? 'Flat (past)'
+    : a < 0.3 ? `Slightly ${side} (past)`
+      : a < 0.6 ? `${side[0]!.toUpperCase()}${side.slice(1)} (past)`
+        : `Strongly ${side} (past)`;
+  return { badge, words, tone };
+}
+
+function Hint({ text }: { text: string }) {
+  return (
+    <span className="smx-hint" title={text}>
+      <Info size={11} aria-hidden />
+    </span>
+  );
+}
+
+/** The risk out of a hundred, as a ring, with its band inside. */
+function Gauge({ score, band, tone }: { score: number; band: string; tone: Tone }) {
+  const r = 42;
+  const c = 2 * Math.PI * r;
+  const filled = (Math.max(0, Math.min(100, score)) / 100) * c;
+  return (
+    <svg viewBox="0 0 100 100" className={`smx-ring smx-${tone}`} role="img" aria-label={`${score} out of 100`}>
+      <circle cx="50" cy="50" r={r} fill="none" stroke="var(--line)" strokeWidth="6" />
+      <circle
+        cx="50" cy="50" r={r} fill="none" stroke="currentColor" strokeWidth="6" strokeLinecap="round"
+        strokeDasharray={`${filled} ${c - filled}`} transform="rotate(-90 50 50)"
+      />
+      <text x="50" y="50" textAnchor="middle" fontSize="26" fontWeight="700" fill="currentColor">{score}</text>
+      <text x="50" y="66" textAnchor="middle" fontSize="9" fontWeight="600" letterSpacing="0.5" fill="currentColor">
+        {band.toUpperCase()}
+      </text>
+    </svg>
+  );
+}
+
+const part = (shock: Shock, name: string) => shock.parts.find((p) => p.name === name) ?? null;
+
 export function SuddenMove({
-  shocks,
-  window,
-  onWindow,
-  snap,
-  structure,
-  market,
+  shocks, window, onWindow, snap, structure, market, outlook,
 }: {
   /** One reading per window; the server computes all four. */
   shocks: Shock[];
@@ -153,284 +121,383 @@ export function SuddenMove({
   snap: SnapshotMeta;
   structure: OptionStructure;
   market: MarketRead | null;
+  /** The horizon cards' own figures, for pricing against history and the chart's reading. */
+  outlook?: Outlook | null;
 }) {
-  /*
-   * Foldable, but never silent.
-   *
-   * The panel is the largest thing on the screen and most days it says nothing
-   * is happening, so it has to be possible to put away. What it must not do is
-   * take the alarm with it: folded, the header still carries the score, the
-   * band and the direction, and only the workings go. A warning you can hide
-   * entirely is a warning that is hidden on the day it matters.
-   */
+  // Foldable, but never silent: folded, the header still carries the score and the band.
   const [open, setOpen] = usePersisted('open:sudden-move', true);
 
   const shock = shocks.find((s) => s.window === window) ?? shocks[0];
   if (!shock || shock.score === null) return null;
 
   const band = BAND[shock.band];
-  const riskTone: Tone = shock.band === 'sudden' || shock.band === 'high' ? 'bad'
-    : shock.band === 'watch' ? 'warn' : 'up';
-
-  const flat = shock.direction === null || Math.abs(shock.direction) <= 0.3;
-  const Dir = flat ? Minus : shock.direction! > 0 ? TrendingUp : TrendingDown;
-  const dirTone: Tone = flat ? 'plain' : shock.direction! > 0 ? 'up' : 'down';
+  const riskTone: Tone = shock.band === 'sudden' || shock.band === 'high' ? 'bad' : shock.band === 'watch' ? 'warn' : 'up';
+  const label = WINDOW_LABEL[shock.window] ?? `${shock.window}m`;
+  const row: OutlookRow | null = outlook?.rows.find((r) => r.label === label) ?? null;
 
   const move = part(shock, 'Move against expected');
   const volume = part(shock, 'Volume spike');
   const iv = part(shock, 'Volatility repricing');
 
-  const pct = (v: number) => `${Math.round(v * 100)}%`;
+  // Unusual readings, and yet a 1% move has been rare after readings like them: both true, and said.
+  const calmAnyway = shock.band !== 'normal' && shock.odds !== null && shock.odds.inside >= 0.9;
 
   return (
-    <Collapsible.Root
-      open={open}
-      onOpenChange={setOpen}
-      className={`smr smr-band-${shock.band}`}
-      aria-label="sudden move analytics"
-    >
-      <header className="smr-top">
-        <Collapsible.Trigger className="smr-title" aria-label="sudden move analytics">
-          <ChevronDown className={`smr-chev${open ? '' : ' shut'}`} size={13} aria-hidden />
-          <Zap size={16} aria-hidden />
-          Sudden move analytics
-        </Collapsible.Trigger>
-
-        {/* Folded, this is the whole of it: the alarm never goes away. */}
-        {!open && (
-          <span className={`smr-folded smr-${riskTone}`}>
-            <b>{shock.score}</b>/100 · {band.label}
-            <span className={`smr-folded-dir smr-${dirTone}`}>
-              · {flat ? 'no clear side'
-                : `${shock.direction! > 0 ? 'upside' : 'downside'} ${Math.round(Math.abs(shock.direction!) * 100)}%`}
+    <Collapsible.Root open={open} onOpenChange={setOpen} className={`smx smx-band-${shock.band}`} aria-label="sudden move analytics">
+      {/* ── header ─────────────────────────────────────────────────────────── */}
+      <header className="smx-head">
+        <div className="smx-head-left">
+          <label className="smx-window">
+            <Clock size={18} aria-hidden />
+            <span className="sr-only">reading window</span>
+            <select
+              aria-label="reading window"
+              value={shock.window}
+              onChange={(e) => onWindow(Number(e.target.value))}
+            >
+              {shocks.map((s) => (
+                <option key={s.window} value={s.window}>{(WINDOW_WORDS[s.window] ?? `${s.window} minutes`).toUpperCase()}</option>
+              ))}
+            </select>
+            <ChevronDown size={16} aria-hidden className="smx-window-chev" />
+          </label>
+          <span className="smx-divider" aria-hidden />
+          <span className="smx-expires">Expires in {expiresIn(snap.hoursToExpiry)}</span>
+          <span className={cn('smx-badge', `smx-${riskTone}`)}>{band.label}</span>
+          {!open && (
+            <span className={cn('smx-folded', `smx-${riskTone}`)}>
+              <b>{shock.score}</b>/100
             </span>
-          </span>
-        )}
-        <span className="smr-sub">
-          Reads price, volume, volatility and the option board for an abnormal move
-        </span>
-        <span className="smr-live">{snap.live ? 'Live' : 'Snapshot'}</span>
-
-        <span className="smr-updated">
-          <Clock size={12} aria-hidden />
-          <span>
+          )}
+        </div>
+        <div className="smx-head-right">
+          <span className="smx-updated">
             <small>Last updated</small>
             <b>{IST.format(snap.ts * 1000)} IST</b>
           </span>
-        </span>
-
-        {/*
-          A real control, not a decoration: every reading below is taken over
-          the window chosen here. Five minutes says whether something is
-          happening now; four hours says whether the session has been unusual,
-          and they are different questions. The server computes all four, so
-          switching costs nothing and asks the server for nothing.
-        */}
-        <span className="smr-windows-label">Readings over</span>
-        <div className="smr-windows" role="radiogroup" aria-label="reading window">
-          {shocks.map((s) => (
-            <button
-              key={s.window}
-              type="button"
-              role="radio"
-              aria-checked={s.window === shock.window}
-              className={s.window === shock.window ? 'on' : undefined}
-              onClick={() => onWindow(s.window)}
-            >
-              {WINDOW_LABEL[s.window] ?? `${s.window}m`}
-            </button>
-          ))}
+          <span className={cn('smx-live', !snap.live && 'off')}>
+            <i aria-hidden />{snap.live ? 'Live' : 'Snapshot'}
+          </span>
+          <Collapsible.Trigger className="smx-fold" aria-label={open ? 'fold sudden move analytics' : 'open sudden move analytics'}>
+            <Zap size={14} aria-hidden />
+            <ChevronDown size={15} aria-hidden className={cn('smx-fold-chev', !open && 'shut')} />
+          </Collapsible.Trigger>
         </div>
       </header>
 
       <Collapsible.Content>
-      <div className="smr-cards">
-        <div className={`smr-card smr-risk smr-${riskTone}`}>
-          <div className="smr-card-head">
-            <span className="smr-card-label">Sudden-move risk</span>
-          </div>
-          <div className="smr-risk-body">
-            <Gauge score={shock.score} tone={riskTone} />
-            <span className="smr-risk-words">
-              <b>{band.label}</b>
-              <small>{band.note}</small>
-            </span>
-          </div>
-        </div>
+        {/* ── row 1: the answer ──────────────────────────────────────────── */}
+        <div className="smx-row1">
+          <section className={cn('smx-card smx-hero', `smx-hero-${riskTone}`)} aria-label="sudden-move risk">
+            <Gauge score={shock.score} band={band.label} tone={riskTone} />
+            <div className="smx-hero-body">
+              <h3>
+                Sudden-move risk
+                <Hint text="Price, volume, volatility and the option board, against their own recent past. A reading of now, not a forecast." />
+              </h3>
+              <p className="smx-hero-note">{band.note}</p>
+              <p className="smx-hero-line">
+                Price moved <b>{move?.detail?.headline ?? '—'}</b> what it was priced for
+              </p>
+              <p className="smx-hero-line">
+                Volume is <b>{volume?.detail?.headline ?? '—'}</b> its usual
+              </p>
+              {calmAnyway && shock.odds && (
+                <p className="smr-context smx-context">
+                  Busier than usual — but over the next {horizonWords(shock.odds.overMinutes)} a {shock.odds.thresholdPct}% move has
+                  been rare: <b>{Math.round(shock.odds.inside * 100)} in 100</b> stayed inside.
+                </p>
+              )}
+              {shock.reasons.length > 0 && (
+                <ul className="smr-reasons smx-reasons">
+                  {shock.reasons.map((r) => <li key={r}>{r}</li>)}
+                </ul>
+              )}
+            </div>
+          </section>
 
-        <Reading
-          icon={Waves}
-          label="Move against expected"
-          headline={move?.detail?.headline ?? '—'}
-          now={move?.detail?.now ?? 'No 5-minute range to read'}
-          before={move?.detail?.before ?? 'No volatility to price it from'}
-          chip={move?.detail ? (move.value >= 0.5 ? 'Above expected' : 'Within expected') : null}
-          tone={move?.detail && move.value >= 0.5 ? 'warn' : 'plain'}
-          hint="The last five minutes' range against what that window was priced to move: spot × volatility × √(hours ÷ 8760)."
-        />
-
-        <Reading
-          icon={BarChart3}
-          label="Volume spike"
-          headline={volume?.detail?.headline ?? '—'}
-          now={volume?.detail?.now ?? 'No bars to read'}
-          before={volume?.detail?.before ?? 'No median to compare against'}
-          chip={volume?.detail ? (volume.value >= 0.5 ? 'High activity' : 'Ordinary') : null}
-          tone={volume?.detail && volume.value >= 0.5 ? 'warn' : 'plain'}
-          hint="The newest 5-minute bar against the median of the twenty before it. The median, not the mean: one violent bar drags a mean up enough that the next no longer looks unusual."
-        />
-
-        <Reading
-          icon={Activity}
-          label="Volatility shock"
-          headline={iv?.detail?.headline ?? '—'}
-          now={iv?.detail?.now ?? 'No reading yet'}
-          before={iv?.detail?.before ?? 'The desk records one every five minutes'}
-          chip={iv?.detail ? (iv.value >= 0.4 ? 'Expanding' : 'Steady') : null}
-          tone={iv?.detail && iv.value >= 0.4 ? 'warn' : 'plain'}
-          hint="At-the-money implied volatility against what it was fifteen minutes ago. Expanding volatility is what hurts a short."
-        />
-
-        <div className={`smr-card smr-${dirTone}`}>
-          <div className="smr-card-head">
-            <span className="smr-card-label">Direction pressure</span>
-            <span
-              className="smr-card-icon"
-              title="Where the tape is pushing now — not where it settles. Over 105,119 measured windows the chance BTC finishes higher never moved further than 0.6 points from a coin flip."
-            >
-              <Info size={11} aria-hidden />
-            </span>
-          </div>
-          <div className="smr-card-value">
-            <Dir size={16} aria-hidden />
-            <b>
-              {flat ? 'No clear side'
-                : `${shock.direction! > 0 ? 'Upside' : 'Downside'} ${Math.round(Math.abs(shock.direction!) * 100)}%`}
-            </b>
-          </div>
-          {shock.directionParts.length > 0 ? (
-            <ul className="smr-bars">
-              {shock.directionParts.map((p) => (
-                <li key={p.name}>
-                  <span className="smr-bar-label">{p.name}</span>
-                  <span className="smr-bar">
-                    <i
-                      className={p.value >= 0 ? 'up' : 'down'}
-                      style={{ width: `${Math.round(Math.abs(p.value) * 100)}%` }}
-                    />
-                  </span>
-                  <span className="smr-bar-pct">{Math.round(Math.abs(p.value) * 100)}%</span>
-                </li>
-              ))}
-            </ul>
+          {shock.odds ? (
+            <section className="smx-card smx-prob" aria-label="probability outlook">
+              <h3 className="smx-title">
+                Probability outlook
+                <Hint text="How often BTC actually moved more than this over the next window, counted off 105,120 measured windows. A frequency that happened, not a forecast." />
+              </h3>
+              <div
+                className="smx-probbar"
+                role="img"
+                aria-label={`down ${pctOf(shock.odds.down)}, sideways ${pctOf(shock.odds.inside)}, up ${pctOf(shock.odds.up)}`}
+              >
+                <i className="down" style={{ flexGrow: shock.odds.down }} />
+                <i className="flat" style={{ flexGrow: shock.odds.inside }} />
+                <i className="up" style={{ flexGrow: shock.odds.up }} />
+              </div>
+              <div className="smx-probcols">
+                <div className="down">
+                  <b>{pctOf(shock.odds.down)}</b>
+                  <span>Down</span>
+                  <small>&lt; {fmtStrike(Math.round(snap.spot * (1 - shock.odds.thresholdPct / 100)))}</small>
+                </div>
+                <div className="flat">
+                  <b>{pctOf(shock.odds.inside)}</b>
+                  <span>Sideways ±{shock.odds.thresholdPct}%</span>
+                  <small>
+                    {fmtStrike(Math.round(snap.spot * (1 - shock.odds.thresholdPct / 100)))} – {fmtStrike(Math.round(snap.spot * (1 + shock.odds.thresholdPct / 100)))}
+                  </small>
+                </div>
+                <div className="up">
+                  <b>{pctOf(shock.odds.up)}</b>
+                  <span>Up</span>
+                  <small>&gt; {fmtStrike(Math.round(snap.spot * (1 + shock.odds.thresholdPct / 100)))}</small>
+                </div>
+              </div>
+              <p className="smx-foot">
+                {/*
+                  The ±1% line, said out loud. The outlook cards further down
+                  also say Down / Side / Up, over a band a tenth the width, and
+                  read side by side the two looked like a contradiction
+                  (98% here, 33% there) -- the same words over different lines.
+                */}
+                a ±{shock.odds.thresholdPct}% line, not the outlook cards’ narrower band · over the next {horizonWords(shock.odds.overMinutes)}, measured · half moved less than{' '}
+                <b>±{shock.odds.typicalPct.toFixed(2)}%</b>, nineteen in twenty less than <b>±{shock.odds.outerPct.toFixed(2)}%</b>
+              </p>
+            </section>
           ) : (
-            <div className="smr-card-rows"><span>Nothing readable points either way</span></div>
+            <section className="smx-card smx-prob smx-empty">No measured odds for this window.</section>
           )}
         </div>
-      </div>
 
-      {shock.reasons.length > 0 && (
-        <ul className="smr-reasons">
-          {shock.reasons.map((r) => <li key={r}>{r}</li>)}
-        </ul>
-      )}
+        {/* ── row 2: why ─────────────────────────────────────────────────── */}
+        <div className="smx-row2">
+          <PricingCard row={row} spot={snap.spot} label={label} />
 
-      <div className="smr-strip">
-        {/*
-          The board's own numbers, once.
+          <section className="smx-card" aria-label="right now">
+            <h3 className="smx-title">
+              Right now
+              <Hint text="The last window's range against what it was priced to move, and the newest bar's volume against the median of the twenty before it." />
+            </h3>
+            <Reading
+              name="Move vs expected"
+              headline={move?.detail?.headline ?? '—'}
+              now={move?.detail?.now ?? 'No 5-minute range to read'}
+              before={move?.detail?.before ?? 'No volatility to price it from'}
+              chip={move?.detail ? (move.value >= 0.5 ? 'Above expected' : 'Within expected') : null}
+              warn={Boolean(move?.detail && move.value >= 0.5)}
+            />
+            <Reading
+              name="Volume"
+              headline={volume?.detail?.headline ?? '—'}
+              now={volume?.detail?.now ?? 'No bars to read'}
+              before={volume?.detail?.before ?? 'No median to compare against'}
+              chip={volume?.detail ? (volume.value >= 0.5 ? 'High activity' : 'Ordinary') : null}
+              warn={Boolean(volume?.detail && volume.value >= 0.5)}
+            />
+          </section>
 
-          This strip and the Market Insights card said the same things -- the
-          spot, the implied volatility, the expected move, puts per call --
-          each in its own words, a screen apart. The insight tiles now live
-          here as this card's data, and the four they duplicate are shown once:
-          spot, IV and the expected move in the reading above, the rest as
-          tiles. Sixteen figures became ten.
-        */}
-        <div className="smr-data">
-          <span className="smr-strip-title">Key market data</span>
-          <div className="smr-data-grid smr-data-grid--lead">
-            <Datum
-              label="BTC spot"
-              value={fmtStrike(Math.round(snap.spot))}
-              foot={market?.return24h == null ? undefined
-                : `${market.return24h >= 0 ? '+' : ''}${market.return24h.toFixed(2)}% 24h`}
-              tone={market?.return24h == null ? 'plain' : market.return24h >= 0 ? 'up' : 'down'}
-            />
-            <Datum label="24h high" value={market?.high24h == null ? '—' : fmtStrike(Math.round(market.high24h))} />
-            <Datum label="24h low" value={market?.low24h == null ? '—' : fmtStrike(Math.round(market.low24h))} />
-            <Datum
-              label="How jumpy options say BTC is"
-              value={snap.atmIv === null ? '—' : `${(snap.atmIv * 100).toFixed(1)}%`}
-              hint="Implied volatility, at the money, per year. How much movement the option market is charging for. Same-day options show a lower number than monthly ones."
-            />
-            <Datum
-              label="How far it could move by settlement"
-              value={snap.expectedMove === null ? '—' : `±$${fmtStrike(Math.round(snap.expectedMove))}`}
-              foot={snap.expectedMove === null ? undefined
-                : `${fmtStrike(Math.round(snap.spot - snap.expectedMove))}–${fmtStrike(Math.round(snap.spot + snap.expectedMove))}`}
-              hint={`The expected move: spot × volatility × √(hours ÷ 8760)${snap.atmIv !== null && snap.expectedMove !== null
-                ? ` = ${snap.spot.toFixed(0)} × ${(snap.atmIv * 100).toFixed(1)}% × √(${snap.hoursToExpiry.toFixed(2)} ÷ 8760) = ±$${snap.expectedMove.toFixed(0)}`
-                : ''}. About a 2-in-3 chance BTC settles inside this range. In 733 days, every losing day moved further than this.`}
-            />
-          </div>
-          <MarketInsights structure={structure} snap={snap} market={market} embedded />
+          <TrendCard row={row} />
+
+          <FactorsCard row={row} shock={shock} />
         </div>
 
-        {shock.odds && (
-          <div className="smr-odds">
-            <span className="smr-strip-title">
-              How often a move like this followed
-              <span
-                className="smr-card-icon"
-                title="Counted off 105,120 measured five-minute windows in chain.db — a frequency that happened, not a distribution that was assumed."
-              >
-                <Info size={11} aria-hidden />
-              </span>
-            </span>
-            {/*
-              Three outcomes that are the whole of it, so they add to a hundred.
-              It was up, down and "either side", which is up plus down again —
-              three boxes reading as a breakdown that does not add up, with the
-              one that matters most to a seller (the windows that went nowhere)
-              left off entirely.
-            */}
-            <div className="smr-odds-grid">
-              <span className="smr-odd up">
-                <small>Up more than {shock.odds.thresholdPct}%</small>
-                <b>{pct(shock.odds.up)}</b>
-              </span>
-              <span className="smr-odd down">
-                <small>Down more than {shock.odds.thresholdPct}%</small>
-                <b>{pct(shock.odds.down)}</b>
-              </span>
-              <span className="smr-odd flat">
-                <small>Stayed within {shock.odds.thresholdPct}%</small>
-                <b>{pct(shock.odds.inside)}</b>
-              </span>
-            </div>
-            {/*
-              The horizon is the window chosen above, so the three figures move
-              with the control like everything else on the panel. At the short
-              end a one-percent move is rare in five minutes and rare in
-              fifteen, so those two read alike — true, and the reason the sizes
-              are here beside them: they are what actually separates the two.
-            */}
-            <span className="smr-odds-foot">
-              over the next {horizonWords(shock.odds.overMinutes)}, measured ·{' '}
-              <b>{pct(shock.odds.either)}</b> moved either way · half stayed inside{' '}
-              <b>±{shock.odds.typicalPct.toFixed(2)}%</b>, nineteen in twenty inside{' '}
-              <b>±{shock.odds.outerPct.toFixed(2)}%</b>
-            </span>
-          </div>
-        )}
-      </div>
+        {/* ── row 3: where price sits ────────────────────────────────────── */}
+        <div className="smx-row3">
+          <RangeCard snap={snap} row={row} shock={shock} label={label} />
 
-      <p className="smr-note">
-        For information. Nothing on the trading side reads any of this — none of these weights
-        has been measured across 2024, 2025 and 2026 the way the premium floor and the RSI gate
-        were.
-      </p>
+          <section className="smx-card smx-stats" aria-label="board numbers">
+            <Stat
+              label="IV (ATM)"
+              value={snap.atmIv === null ? '—' : `${(snap.atmIv * 100).toFixed(1)}%`}
+              foot={iv?.detail ? `${iv.detail.headline} · ${iv.detail.before}` : 'No reading yet'}
+              sub={iv?.detail ? undefined : 'The desk records one every five minutes'}
+              hint="At-the-money implied volatility, per year. How much movement the option market is charging for."
+            />
+            <Stat
+              label="Options volume"
+              value={`${Math.round(structure.ceVolume + structure.peVolume).toLocaleString('en-IN')}`}
+              foot={structure.ceVolume + structure.peVolume > 0
+                ? `contracts · calls ${pctOf(structure.ceVolume / (structure.ceVolume + structure.peVolume))}`
+                : 'contracts'}
+              hint="Contracts traded on this expiry, as Delta reports it."
+            />
+            <Stat
+              label="Open interest"
+              value={`${((structure.ceOi + structure.peOi) * CONTRACT_BTC).toLocaleString('en-IN', { maximumFractionDigits: 1 })} BTC`}
+              foot={structure.pcrOi === null ? 'no puts or calls open' : `${structure.pcrOi.toFixed(2)} puts per call · ${structure.pcrOi < 0.9 ? 'more calls open' : structure.pcrOi > 1.1 ? 'more puts open' : 'about even'}`}
+              hint="Contracts open on this expiry, at 0.001 BTC each. Positioning, not a forecast."
+            />
+            <Stat
+              label="OI walls"
+              value={structure.peOiWall && structure.ceOiWall
+                ? `${fmtStrike(structure.peOiWall.strike)} – ${fmtStrike(structure.ceOiWall.strike)}`
+                : '—'}
+              foot="support – resistance"
+              hint="The put and call strikes with the most open interest. Where positions sit, not where BTC stops."
+            />
+          </section>
+        </div>
+
+        <p className="smx-note">
+          For information. Nothing on the trading side reads any of this — none of these weights
+          has been measured across 2024, 2025 and 2026 the way the premium floor and the RSI gate
+          were.
+        </p>
       </Collapsible.Content>
     </Collapsible.Root>
+  );
+}
+
+function Reading({ name, headline, now, before, chip, warn }: {
+  name: string; headline: string; now: string; before: string; chip: string | null; warn: boolean;
+}) {
+  return (
+    <div className={cn('smx-reading', warn && 'warn')}>
+      <div className="smx-reading-head">
+        <span>{name}</span>
+        <b>{headline}</b>
+        {chip && <span className="smx-chip">{chip}</span>}
+      </div>
+      <div className="smx-reading-rows"><span>{now}</span><span>{before}</span></div>
+    </div>
+  );
+}
+
+/** Implied against measured, for this window: what the market charges against what BTC usually does. */
+function PricingCard({ row, spot, label }: { row: OutlookRow | null; spot: number; label: string }) {
+  const usual = row?.measured68Pct == null ? null : (spot * row.measured68Pct) / 100;
+  const word = row?.priced === 'rich' ? 'RICH' : row?.priced === 'cheap' ? 'CHEAP' : 'FAIR';
+  const sentence = row?.priced === 'rich'
+    ? 'Options are priced above what BTC usually moves — a seller is paid more than the usual risk.'
+    : row?.priced === 'cheap'
+      ? 'Options are priced below what BTC usually moves — a seller is paid less than the usual risk.'
+      : 'Options are priced fairly for this timeframe.';
+  return (
+    <section className="smx-card" aria-label="pricing vs history">
+      <h3 className="smx-title">
+        Pricing vs history
+        <Hint text="The move options imply (spot × IV × √t) against the move BTC made two times in three over this window, across 105,119 measured windows." />
+      </h3>
+      {row?.richness == null ? (
+        <p className="smx-empty">Nothing to compare for {label}</p>
+      ) : (
+        <>
+          <div className="smx-bigline">
+            <b>{row.richness.toFixed(2)}×</b>
+            <span className={cn('smx-pill', row.priced)}>{word}</span>
+          </div>
+          <p className="smx-line">Options imply <b>±{usd(row.impliedUsd ?? 0)}</b></p>
+          <p className="smx-line">BTC usually moves <b>±{usd(usual ?? 0)}</b> ({row.measured68Pct!.toFixed(2)}%)</p>
+          <p className="smx-foot">{sentence}</p>
+        </>
+      )}
+    </section>
+  );
+}
+
+function TrendCard({ row }: { row: OutlookRow | null }) {
+  const score = row?.score ?? null;
+  const t = trendWords(score);
+  const Arrow = score === null || t.tone === 'plain' ? MoveHorizontal : score > 0 ? ArrowUpRight : ArrowDownRight;
+  return (
+    <section className="smx-card" aria-label="trend score">
+      <h3 className="smx-title">
+        Trend score
+        <Hint text={`Where this timeframe's candles have been heading, −1 to +1${row?.why ? `: ${row.why}` : ''}. The recent past, not a forecast — the desk measured direction as a coin toss.`} />
+      </h3>
+      <div className="smx-bigline">
+        <span className={cn('smx-arrow', `smx-${t.tone}`)}><Arrow size={18} aria-hidden /></span>
+        <b className={`smx-${t.tone}`}>{score === null ? '—' : signed(score)}</b>
+        <span className={cn('smx-pill', t.tone === 'up' ? 'rich' : t.tone === 'down' ? 'cheap' : 'neutral')}>{t.badge}</span>
+      </div>
+      <p className="smx-line">{t.words}</p>
+    </section>
+  );
+}
+
+function FactorsCard({ row, shock }: { row: OutlookRow | null; shock: Shock }) {
+  const factors = row?.factors ?? [];
+  const d = shock.direction;
+  const flat = d === null || Math.abs(d) <= 0.3;
+  return (
+    <section className="smx-card" aria-label="key factors">
+      <h3 className="smx-title">
+        Key factors
+        <Hint text="Each part's share of the trend score, so they add up to it: the EMA stack counts half, RSI and swing structure a fifth each, VWAP a tenth." />
+      </h3>
+      {factors.length === 0 ? (
+        <p className="smx-empty">No chart to break down</p>
+      ) : (
+        <ul className="smx-factors">
+          {factors.map((f) => (
+            <li key={f.key}>
+              <span>{f.label}</span>
+              <span className="smx-fbar" aria-hidden>
+                <i className={f.contribution >= 0 ? 'up' : 'down'} style={{ width: `${Math.min(100, (Math.abs(f.contribution) / 0.5) * 100)}%` }} />
+              </span>
+              <b className={f.contribution >= 0 ? 'smx-up' : 'smx-down'}>{signed(f.contribution)}</b>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p
+        className="smx-foot"
+        title={shock.directionParts.map((p) => `${p.name}: ${signed(p.value)}`).join(' · ') || undefined}
+      >
+        Options flow: {flat ? 'no clear side' : `${d! > 0 ? 'upside' : 'downside'} ${Math.round(Math.abs(d!) * 100)}%`}
+      </p>
+    </section>
+  );
+}
+
+/**
+ * Spot on a line between the two thresholds the probability outlook counted:
+ * the band options imply (dashed) and the band BTC usually moves (filled).
+ */
+function RangeCard({ snap, row, shock, label }: { snap: SnapshotMeta; row: OutlookRow | null; shock: Shock; label: string }) {
+  const t = (shock.odds?.thresholdPct ?? 1) / 100;
+  const spot = snap.spot;
+  const lo = spot * (1 - t);
+  const hi = spot * (1 + t);
+  const implied = row?.impliedUsd ?? snap.expectedMove ?? null;
+  const usual = row?.measured68Pct == null ? null : (spot * row.measured68Pct) / 100;
+  const edgeLo = Math.min(lo, spot - (implied ?? 0), spot - (usual ?? 0));
+  const edgeHi = Math.max(hi, spot + (implied ?? 0), spot + (usual ?? 0));
+  const pad = (edgeHi - edgeLo) * 0.03;
+  const x = (v: number) => `${((v - (edgeLo - pad)) / (edgeHi - edgeLo + 2 * pad)) * 100}%`;
+  const span = (a: number, b: number) => ({ left: x(a), width: `calc(${x(b)} - ${x(a)})` });
+
+  return (
+    <section className="smx-card smx-range" aria-label="price range">
+      <h3 className="smx-title">
+        Price range ({label.toUpperCase()})
+        <Hint text="Dashed: the move options imply for this window. Filled: the move BTC made two times in three. The dots are the thresholds the probability outlook counted." />
+      </h3>
+      <div className="smx-rline" role="img" aria-label={`spot ${fmtStrike(Math.round(spot))} between ${fmtStrike(Math.round(lo))} and ${fmtStrike(Math.round(hi))}`}>
+        <i className="axis" />
+        {usual !== null && <i className="usual" style={span(spot - usual, spot + usual)} />}
+        {implied !== null && <i className="implied" style={span(spot - implied, spot + implied)} />}
+        <i className="dot down" style={{ left: x(lo) }} />
+        <i className="dot up" style={{ left: x(hi) }} />
+        <i className="spot" style={{ left: x(spot) }}>
+          <span><small>Spot</small>{fmtStrike(Math.round(spot))}</span>
+        </i>
+      </div>
+      <div className="smx-rlabels">
+        <span className="lo"><b>{fmtStrike(Math.round(lo))}</b><small>−{(t * 100).toFixed(1)}%</small></span>
+        <span className="mid">
+          {implied !== null && <>← Expected move ±{usd(implied)} →<b>{fmtStrike(Math.round(spot - implied))} – {fmtStrike(Math.round(spot + implied))}</b></>}
+        </span>
+        <span className="hi"><b>{fmtStrike(Math.round(hi))}</b><small>+{(t * 100).toFixed(1)}%</small></span>
+      </div>
+    </section>
+  );
+}
+
+function Stat({ label, value, foot, sub, hint }: { label: string; value: string; foot: string; sub?: string; hint: string }) {
+  return (
+    <div className="smx-stat" title={hint}>
+      <span className="smx-stat-label">{label}</span>
+      <b className="smx-stat-value">{value}</b>
+      <span className="smx-stat-foot">{foot}</span>
+      {sub && <span className="smx-stat-foot">{sub}</span>}
+    </div>
   );
 }

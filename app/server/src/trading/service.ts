@@ -20,7 +20,7 @@ import type { MtmSample } from './pnl-history.js';
 import { noteError } from '../observability/errors.js';
 import { alertFor, bookWentFlat, daySummaryFor } from '../notify/messages.js';
 import { TelegramNotifier } from '../notify/telegram.js';
-import { bestTradeText } from '../notify/best-trade-alert.js';
+import { BEST_TRADE_REPEAT_DEFAULT, BEST_TRADE_REPEAT_MAX, bestTradeText } from '../notify/best-trade-alert.js';
 import { bestTradeNow } from '../domain/best-trade-now.js';
 import { BEST_TRADE_MIN_PREMIUM_USD } from '../domain/best-trade.js';
 import { hoursSinceDeskOpen, liveChain, WHOLE_BOARD, type Snapshot } from '../market/chain.js';
@@ -292,8 +292,12 @@ export class TradingService {
   setBestTradeAlertOn(on: boolean): void {
     this.store.setSetting('best_trade_alert', on ? '1' : '0');
     // A fresh switch-on announces the current pick rather than waiting for a
-    // change; forgetting the last one is what makes that happen.
-    if (on) this.store.setSetting('best_trade_last', '');
+    // change; forgetting the last one -- and what has been sent this contract --
+    // is what makes that happen. Switching on is somebody asking to hear it.
+    if (on) {
+      this.store.setSetting('best_trade_last', '');
+      this.store.setSetting('best_trade_sent', '');
+    }
   }
 
   get bestTradeMinPremiumUsd(): number {
@@ -305,11 +309,29 @@ export class TradingService {
     this.store.setSetting('best_trade_min_premium', String(usd));
   }
 
+  /**
+   * How many times one strike may be announced for one contract.
+   *
+   * A contract is listed at 5:30 PM and expires at 5:30 PM the next day, so this
+   * is "per strike, from 5:31 PM to 5:30 PM tomorrow". One by default: a pick
+   * that goes CE 78,800 → CE 79,000 → CE 78,800 is one piece of news about
+   * 78,800, not two.
+   */
+  get bestTradeRepeat(): number {
+    const v = Number(this.store.getSetting('best_trade_repeat'));
+    return Number.isInteger(v) && v >= 1 && v <= BEST_TRADE_REPEAT_MAX ? v : BEST_TRADE_REPEAT_DEFAULT;
+  }
+
+  setBestTradeRepeat(times: number): void {
+    const v = Math.min(BEST_TRADE_REPEAT_MAX, Math.max(1, Math.round(times)));
+    this.store.setSetting('best_trade_repeat', String(v));
+  }
+
   async watchBestTrade(
     now = Date.now(),
     /** The board to read, for tests; the live one otherwise. */
     board?: { snap: Snapshot; market: MarketRead | null },
-  ): Promise<'off' | 'unchanged' | 'sent' | 'no board'> {
+  ): Promise<'off' | 'unchanged' | 'sent' | 'repeat' | 'no board'> {
     if (!this.bestTradeAlertOn) return 'off';
     const snap = board?.snap ?? await liveChain(WHOLE_BOARD).catch(() => null);
     if (!snap || !snap.live) return 'no board';
@@ -322,10 +344,39 @@ export class TradingService {
     if (key === last) return 'unchanged';
     this.store.setSetting('best_trade_last', key);
     if (!key) return 'unchanged';   // it went away; nothing to say until something comes back
+
+    /*
+     * The cap: how many times this strike has been announced for this
+     * contract. Kept per expiry, so a new contract starts from nothing -- which
+     * is the 5:31 PM reset, without a clock in sight.
+     *
+     * Counted whether or not the phone was listening: turning phone alerts off
+     * is a choice to hear nothing, not a request to be told later.
+     */
+    const sent = this.bestTradeSent(snap.expiry);
+    const n = (sent.counts[key] ?? 0) + 1;
+    if (n > this.bestTradeRepeat) return 'repeat';
+    sent.counts[key] = n;
+    this.store.setSetting('best_trade_sent', JSON.stringify(sent));
+
     if (this.notifier && this.alertsOn) {
-      this.notifier.notify({ key: 'best-trade', text: bestTradeText(best, snap.expiry, this.currentMode, now) });
+      this.notifier.notify({
+        key: 'best-trade',
+        text: bestTradeText(best, snap.expiry, this.currentMode, now, { n, of: this.bestTradeRepeat }),
+      });
     }
     return 'sent';
+  }
+
+  /** What has been announced for this contract, or a clean slate for a new one. */
+  private bestTradeSent(expiry: string): { expiry: string; counts: Record<string, number> } {
+    try {
+      const v = JSON.parse(this.store.getSetting('best_trade_sent') || 'null') as { expiry?: unknown; counts?: unknown } | null;
+      if (v && v.expiry === expiry && v.counts && typeof v.counts === 'object') {
+        return { expiry, counts: v.counts as Record<string, number> };
+      }
+    } catch { /* unreadable is the same as nothing sent */ }
+    return { expiry, counts: {} };
   }
 
   /**

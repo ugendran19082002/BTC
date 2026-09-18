@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Clock, Loader2, Pencil, Plus, ShieldAlert, ShieldCheck, X } from 'lucide-react';
 import { cancelAdd, cancelTrade, closeTrade, reconcileTrade } from '@/api/trade';
 import type { Trade } from '@/types/trade';
-import { Card, CardTitle } from '@/components/ui/card';
+import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CloseAllButton } from '@/components/trade/CloseAllButton';
@@ -44,10 +44,9 @@ export function PositionsCard({ trades, onChanged }: { trades: Trade[]; onChange
 
   if (working.length === 0 && held.length === 0) {
     return (
-      <Card>
-        <CardTitle>Open positions</CardTitle>
+      <CollapsibleCard id="open-positions" title="Open positions">
         <p className="m-0 py-3 text-center text-[13px] text-muted-foreground">No open positions.</p>
-      </Card>
+      </CollapsibleCard>
     );
   }
 
@@ -58,25 +57,27 @@ export function PositionsCard({ trades, onChanged }: { trades: Trade[]; onChange
       </div>
 
       {working.length > 0 && (
-        <Card>
-          <CardTitle right={<span className="text-[11px] text-muted-foreground">{working.length}</span>}>
-            Orders waiting
-          </CardTitle>
+        <CollapsibleCard
+          id="orders-waiting"
+          title="Orders waiting"
+          right={<span className="text-[11px] text-muted-foreground">{working.length}</span>}
+        >
           <div className="flex flex-col gap-2">
             {working.map((t) => <WorkingRow key={t.tradeId} trade={t} onChanged={onChanged} />)}
           </div>
-        </Card>
+        </CollapsibleCard>
       )}
 
       {held.length > 0 && (
-        <Card>
-          <CardTitle right={<span className="text-[11px] text-muted-foreground">{held.length}</span>}>
-            Open positions
-          </CardTitle>
+        <CollapsibleCard
+          id="open-positions"
+          title="Open positions"
+          right={<span className="text-[11px] text-muted-foreground">{held.length}</span>}
+        >
           <div className="flex flex-col gap-2">
             {held.map((t) => <PositionRow key={t.tradeId} trade={t} onChanged={onChanged} />)}
           </div>
-        </Card>
+        </CollapsibleCard>
       )}
     </div>
   );

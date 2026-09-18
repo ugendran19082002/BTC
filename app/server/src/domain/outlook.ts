@@ -2,6 +2,7 @@ import type { MarketRead, TimeframeRead } from '../market/moves.js';
 import type { Snapshot } from '../market/chain.js';
 import { loadHorizons, type HorizonRow } from './forecast.js';
 import { momentumScore, stackScore, vwapScore } from './direction.js';
+import type { MeasuredOutlook, MeasuredRow } from '../analytics/client.js';
 
 /**
  * Where BTC could be at each horizon, and how much of that is knowable.
@@ -105,11 +106,22 @@ export type OutlookRow = {
   priced: 'rich' | 'fair' | 'cheap' | null;
   /** This timeframe's own reading, −1…+1. Null where the desk has no bars for it. */
   score: number | null;
+  /**
+   * What the score is made of: each part's share of it, so they add to `score`.
+   * Empty where there is no score. Display only -- nothing reads it.
+   */
+  factors: ScoreFactor[];
   lean: 'bullish' | 'bearish' | 'flat' | null;
   /** Why the score is what it is, in words. */
   why: string;
   /** True for the row that matches what is left on this contract. */
   isExpiry: boolean;
+  /**
+   * Down / Side / Up as measured for moments like this one, from the analytics
+   * service. Absent when the service did not answer -- the card then shows the
+   * figures above, which Node works out on its own.
+   */
+  measured?: MeasuredRow | null;
 };
 
 export type Outlook = {
@@ -126,7 +138,26 @@ export type Outlook = {
   /** How far the measured direction ever gets from a coin flip, in points. */
   directionEdgePts: number | null;
   sampleWindows: number | null;
+  /** Which measured model answered, and when it was measured. Null when none did. */
+  model?: { name: string; measuredAt: string | null } | null;
 };
+
+/**
+ * Attach the service's measured rows to Node's own, by label.
+ *
+ * Nothing Node computed is changed or removed: the measured row is an extra
+ * field, so a screen that does not know it -- or a service that did not answer
+ * -- still has everything it had before.
+ */
+export function withMeasured(o: Outlook, m: MeasuredOutlook | null): Outlook {
+  if (!m) return { ...o, model: null };
+  const byLabel = new Map(m.rows.map((r) => [r.label, r]));
+  return {
+    ...o,
+    model: { name: m.model, measuredAt: m.measuredAt },
+    rows: o.rows.map((r) => ({ ...r, measured: byLabel.get(r.label) ?? null })),
+  };
+}
 
 const clamp = (v: number, lo = -1, hi = 1) => Math.max(lo, Math.min(hi, v));
 
@@ -183,20 +214,26 @@ export function rowAt(rows: readonly HorizonRow[], minutes: number): HorizonRow 
  * -- trend, momentum, structure, VWAP -- so a 1h card and the 1h input of the
  * side verdict cannot disagree about the 1h.
  */
-export function timeframeScore(t: TimeframeRead | undefined): { score: number | null; why: string } {
-  if (!t) return { score: null, why: 'no bars at this timeframe' };
-  const parts: [number, number][] = [];
+export type ScoreFactor = { key: 'ema' | 'rsi' | 'structure' | 'vwap'; label: string; contribution: number };
+
+export function timeframeScore(t: TimeframeRead | undefined): { score: number | null; why: string; factors: ScoreFactor[] } {
+  if (!t) return { score: null, why: 'no bars at this timeframe', factors: [] };
+  const parts: [number, number, ScoreFactor['key'], string][] = [];
   const stack = stackScore(t);
-  if (stack !== null) parts.push([0.5, stack]);
+  if (stack !== null) parts.push([0.5, stack, 'ema', 'EMA (9/21/50)']);
   const mom = momentumScore(t, undefined);
-  if (mom !== null) parts.push([0.2, mom]);
-  parts.push([0.2, t.structure]);
+  if (mom !== null) parts.push([0.2, mom, 'rsi', 'RSI (14)']);
+  parts.push([0.2, t.structure, 'structure', 'Swing structure']);
   const vwap = vwapScore(t);
-  if (vwap !== null) parts.push([0.1, vwap]);
+  if (vwap !== null) parts.push([0.1, vwap, 'vwap', 'Price vs VWAP']);
 
   const weight = parts.reduce((a, [w]) => a + w, 0);
-  if (weight === 0) return { score: null, why: 'nothing to read at this timeframe' };
-  const score = clamp(parts.reduce((a, [w, v]) => a + w * v, 0) / weight);
+  if (weight === 0) return { score: null, why: 'nothing to read at this timeframe', factors: [] };
+  const raw = parts.reduce((a, [w, v]) => a + w * v, 0) / weight;
+  const score = clamp(raw);
+  // Each part's share of the score. Scaled with the clamp, so the shown parts always add to the shown score.
+  const scale = raw === 0 ? 1 : score / raw;
+  const factors = parts.map(([w, v, key, label]) => ({ key, label, contribution: ((w * v) / weight) * scale }));
 
   const words = [
     stack === null ? null : stack > 0 ? 'EMAs rising' : stack < 0 ? 'EMAs falling' : 'EMAs crossed',
@@ -204,7 +241,7 @@ export function timeframeScore(t: TimeframeRead | undefined): { score: number | 
     t.structure === 1 ? 'higher highs' : t.structure === -1 ? 'lower lows' : null,
     t.adx14 === null ? null : `ADX ${t.adx14.toFixed(0)}`,
   ].filter((x): x is string => x !== null);
-  return { score, why: words.join(', ') || 'nothing decisive' };
+  return { score, why: words.join(', ') || 'nothing decisive', factors };
 }
 
 export function outlook(i: {
@@ -229,8 +266,8 @@ export function outlook(i: {
     const above = aboveShare === null ? null : 1 - aboveShare;
     const inside = below === null || above === null ? null : Math.max(0, 1 - below - above);
 
-    const { score, why } = tf === null
-      ? { score: null, why: 'no bars at this horizon — the band is measured, the direction is not read' }
+    const { score, why, factors } = tf === null
+      ? { score: null, why: 'no bars at this horizon — the band is measured, the direction is not read', factors: [] }
       : timeframeScore(tfOf(tf));
 
     const richness = implied === null || m === null || !(m.moveP68 > 0)
@@ -255,6 +292,7 @@ export function outlook(i: {
       above,
       pUp: m?.pUp ?? null,
       score,
+      factors,
       lean: score === null ? null : score >= LEAN_AT ? 'bullish' : score <= -LEAN_AT ? 'bearish' : 'flat',
       why,
       isExpiry,

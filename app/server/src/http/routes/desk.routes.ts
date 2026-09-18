@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { liveChain, historicalChain, liveExpiries, hoursSinceDeskOpen, simulationBacklog, WHOLE_BOARD, type Snapshot } from '../../market/chain.js';
-import { readMarket } from '../../market/moves.js';
+import { readMarket, seriesForAnalytics } from '../../market/moves.js';
+import { measuredOutlook } from '../../analytics/client.js';
 import { liveSpot, candles, tickerFeedHealth } from '../../market/delta.js';
 import { scoreLegs, pickSells, bias, verdict, maxLots, MARGIN_PER_LOT_USD, USDINR } from '../../domain/score.js';
 import { recommend, type PickMode } from '../../domain/recommend.js';
@@ -14,7 +15,7 @@ import { refuse } from '../refuse.js';
 import { emBuffer, verdict as sideVerdict } from '../../domain/direction.js';
 import { DEFAULT_LIMITS } from '../../trading/precheck.js';
 import { bestTradeNow } from '../../domain/best-trade-now.js';
-import { outlook } from '../../domain/outlook.js';
+import { outlook, withMeasured } from '../../domain/outlook.js';
 import { pBetween } from '../../domain/probability.js';
 import { attachEv } from '../../domain/ev.js';
 import { noteOpenInterest, openInterestChange, ivChange, type OiChange } from '../../market/oi-history.js';
@@ -205,6 +206,21 @@ export function registerDeskRoutes(app: FastifyInstance) {
           }
         : null;
 
+      /*
+       * Down / Side / Up, measured, from the analytics service -- display only.
+       * Node's own outlook is built first and stands on its own; the service's
+       * rows are attached to it when they arrive inside the client's timeout,
+       * and simply absent when they do not.
+       */
+      const ownOutlook = outlook({ snap, market });
+      const settlement = ownOutlook.rows.find((r) => r.isExpiry);
+      const measured = await measuredOutlook({
+        now: Date.now(),
+        spot: snap.spot,
+        series: seriesForAnalytics(),
+        extra: settlement ? [{ label: settlement.label, minutes: settlement.minutes }] : [],
+      });
+
       return {
         snapshot: { ...snap, legs: undefined },
         legs: attachEv(scored, {
@@ -249,7 +265,7 @@ export function registerDeskRoutes(app: FastifyInstance) {
          * them into one number is how "the market looks bullish" becomes
          * "sell this put".
          */
-        outlook: outlook({ snap, market }),
+        outlook: withMeasured(ownOutlook, measured),
         recommendation,
         requireHedge,
         verdict: verdict(snap, picks, minPremium, lots, market, {

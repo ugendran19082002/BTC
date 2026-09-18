@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { TradeStatus } from '@/types/trade';
-import { Card, CardTitle } from '@/components/ui/card';
+import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { KV } from '@/components/ui/kv';
 import { Money } from '@/components/ui/money';
 import { getSettings, setShortCap, type ShortCap } from '@/api/desk';
@@ -30,17 +30,15 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
   const used = limit > 0 ? lost / limit : 0;
 
   return (
-    <Card>
-      <CardTitle
-        right={
-          <span className={cn('text-[11px] font-semibold', status.mode === 'live' ? 'text-[var(--down)]' : 'text-[var(--warn)]')}>
-            {status.mode === 'live' ? 'LIVE' : 'PAPER'}
-          </span>
-        }
-      >
-        Account
-      </CardTitle>
-
+    <CollapsibleCard
+      id="account"
+      title="Account"
+      right={
+        <span className={cn('text-[11px] font-semibold', status.mode === 'live' ? 'text-[var(--down)]' : 'text-[var(--warn)]')}>
+          {status.mode === 'live' ? 'LIVE' : 'PAPER'}
+        </span>
+      }
+    >
       <dl className="m-0 grid gap-2">
         <KV
           label={<span className="font-semibold text-foreground">Total</span>}
@@ -108,7 +106,7 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
       {unrealised !== 0 && (
         <p className="m-0 mt-2.5 text-[11px] text-[var(--dim)]">₹ shown at ₹85 per $1.</p>
       )}
-    </Card>
+    </CollapsibleCard>
   );
 }
 

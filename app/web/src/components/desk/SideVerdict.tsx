@@ -64,9 +64,12 @@ export function SideVerdict({ direction, containment, embedded = false }: {
           {side === null ? 'No clear lean' : side === 'bullish' ? 'Leaning up' : 'Leaning down'}
           {confirmed && <span className="sv-tick">confirmed</span>}
         </span>
-        <span className="sv-score" aria-label="direction score">
-          {signed(score)}
-        </span>
+        {/* Embedded, the score has its own box in the header above. */}
+        {!embedded && (
+          <span className="sv-score" aria-label="direction score">
+            {signed(score)}
+          </span>
+        )}
       </div>
       <p className="sv-summary">
         {direction.summary}

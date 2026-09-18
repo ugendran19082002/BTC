@@ -572,11 +572,13 @@ export function registerTradeRoutes(app: FastifyInstance) {
   app.get('/api/trade/best-trade/settings', async () => ({
     alertOn: svc.bestTradeAlertOn,
     minPremiumUsd: svc.bestTradeMinPremiumUsd,
+    /** Times one strike may be announced per contract (5:31 PM to 5:30 PM next day). */
+    repeat: svc.bestTradeRepeat,
     telegram: { configured: svc.notifier !== null, on: svc.alertsOn },
   }));
 
   app.post('/api/trade/best-trade/settings', async (req, reply) => {
-    const b = (req.body ?? {}) as { alertOn?: unknown; minPremiumUsd?: unknown };
+    const b = (req.body ?? {}) as { alertOn?: unknown; minPremiumUsd?: unknown; repeat?: unknown };
     if (b.alertOn !== undefined) {
       if (typeof b.alertOn !== 'boolean') { reply.code(400); return { error: 'alertOn must be true or false' }; }
       svc.setBestTradeAlertOn(b.alertOn);
@@ -586,7 +588,12 @@ export function registerTradeRoutes(app: FastifyInstance) {
       if (!Number.isFinite(v) || !(v > 0) || v > 1_000) { reply.code(400); return { error: 'minPremiumUsd must be a price above zero' }; }
       svc.setBestTradeMinPremiumUsd(v);
     }
-    return { ok: true, alertOn: svc.bestTradeAlertOn, minPremiumUsd: svc.bestTradeMinPremiumUsd };
+    if (b.repeat !== undefined) {
+      const v = Number(b.repeat);
+      if (!Number.isInteger(v) || v < 1 || v > 10) { reply.code(400); return { error: 'repeat must be a whole number from 1 to 10' }; }
+      svc.setBestTradeRepeat(v);
+    }
+    return { ok: true, alertOn: svc.bestTradeAlertOn, minPremiumUsd: svc.bestTradeMinPremiumUsd, repeat: svc.bestTradeRepeat };
   });
 
   app.post('/api/trade/alerts', async (req, reply) => {

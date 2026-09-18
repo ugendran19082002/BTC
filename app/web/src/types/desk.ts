@@ -505,9 +505,44 @@ export type OutlookRow = {
   priced: 'rich' | 'fair' | 'cheap' | null;
   /** This timeframe's own reading, −1…+1. Null where the desk fetches no bars for it. */
   score: number | null;
+  /** The parts of `score`, each as its share, so they add to it. Absent from an older server. */
+  factors?: { key: 'ema' | 'rsi' | 'structure' | 'vwap'; label: string; contribution: number }[];
   lean: 'bullish' | 'bearish' | 'flat' | null;
   why: string;
   isExpiry: boolean;
+  /**
+   * Down / Side / Up as measured for moments like this one, from the analytics
+   * service. Absent or null when it did not answer: the card then shows the
+   * figures above instead.
+   */
+  measured?: MeasuredRow | null;
+};
+
+/** Mirrors app/server/src/analytics/client.ts. */
+export type MeasuredRow = {
+  label: string;
+  minutes: number;
+  measuredMinutes: number;
+  projected: number;
+  low: number;
+  high: number;
+  pDown: number;
+  pSide: number;
+  pUp: number;
+  sideBandPct: number;
+  sideBandUsd: number;
+  arrow: 'up' | 'down' | 'flat';
+  calm: 'calmer' | 'livelier' | null;
+  windows: number;
+  basis: {
+    feature: string;
+    bucket: string;
+    words: string;
+    windows: number;
+    independent: number;
+    leanHolds: boolean;
+    sideHolds: boolean;
+  } | null;
 };
 
 export type Outlook = {
@@ -521,6 +556,8 @@ export type Outlook = {
   /** How far the measured direction ever gets from a coin flip, in points. */
   directionEdgePts: number | null;
   sampleWindows: number | null;
+  /** The measured model that answered, and when it was measured. Null or absent when none did. */
+  model?: { name: string; measuredAt: string | null } | null;
 };
 
 export type ChainResponse = {

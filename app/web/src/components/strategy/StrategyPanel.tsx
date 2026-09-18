@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { deleteStrategy, getStrategies, setScheduler, setStrategyEnabled } from '@/api/strategy';
 import type { Strategy, StrategyStatus } from '@/types/strategy';
-import { Card, CardTitle } from '@/components/ui/card';
+import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { Button } from '@/components/ui/button';
 import { StrategyForm } from '@/components/strategy/StrategyForm';
 import { usePoll } from '@/hooks/usePoll';
@@ -74,16 +74,15 @@ export function StrategyPanel() {
 
   return (
     <div className="grid gap-3">
-      <Card>
-        <CardTitle
-          right={
-            <span className={cn('text-[11px] font-semibold', data.mode === 'live' ? 'text-[var(--down)]' : 'text-[var(--warn)]')}>
-              {data.mode === 'live' ? 'LIVE' : 'PAPER'}
-            </span>
-          }
-        >
-          Auto-trading
-        </CardTitle>
+      <CollapsibleCard
+        id="auto-trading"
+        title="Auto-trading"
+        right={
+          <span className={cn('text-[11px] font-semibold', data.mode === 'live' ? 'text-[var(--down)]' : 'text-[var(--warn)]')}>
+            {data.mode === 'live' ? 'LIVE' : 'PAPER'}
+          </span>
+        }
+      >
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -121,18 +120,17 @@ export function StrategyPanel() {
           </p>
         )}
         {failed && <p className="m-0 mt-2 text-[12px] text-[var(--down)]">{failed}</p>}
-      </Card>
+      </CollapsibleCard>
 
-      <Card>
-        <CardTitle
-          right={
-            <Button size="sm" variant="ghost" onClick={() => { setEditing(null); setFormOpen(true); }}>
-              <Plus className="h-3 w-3" /> New
-            </Button>
-          }
-        >
-          Strategies
-        </CardTitle>
+      <CollapsibleCard
+        id="strategies"
+        title="Strategies"
+        right={
+          <Button size="sm" variant="ghost" onClick={() => { setEditing(null); setFormOpen(true); }}>
+            <Plus className="h-3 w-3" /> New
+          </Button>
+        }
+      >
 
         <div className="grid gap-2">
           {data.strategies.map((s) => (
@@ -207,11 +205,10 @@ export function StrategyPanel() {
             </div>
           ))}
         </div>
-      </Card>
+      </CollapsibleCard>
 
       {data.runs.length > 0 && (
-        <Card>
-          <CardTitle>Recent runs</CardTitle>
+        <CollapsibleCard id="strategy-runs" title="Recent runs">
           {/*
             What each day actually did, in the server's own words. This showed
             only "placed" and a time, which answers the least interesting
@@ -233,12 +230,11 @@ export function StrategyPanel() {
               detail: r.detail,
             }))}
           />
-        </Card>
+        </CollapsibleCard>
       )}
 
       {(data.adds?.length ?? 0) > 0 && (
-        <Card>
-          <CardTitle>Adds to the other leg</CardTitle>
+        <CollapsibleCard id="strategy-adds" title="Adds to the other leg">
           {/*
             Every time a target bought contracts back on a strategy that adds,
             and what was decided -- including the times nothing was added, with
@@ -264,7 +260,7 @@ export function StrategyPanel() {
               detail: a.detail,
             }))}
           />
-        </Card>
+        </CollapsibleCard>
       )}
 
       <StrategyForm

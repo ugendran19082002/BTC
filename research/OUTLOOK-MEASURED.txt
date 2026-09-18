@@ -1,0 +1,113 @@
+Down / Side / Up, measured over 280,326 five-minute bars (10 Jan 2024 to 10 Sep 2026).
+Side = within the tercile of |move| for that horizon, so no information reads 33/33/33.
+A lean is kept only if it points the same way in 2024, 2025 and 2026 by 3+ points and clears z>3 on non-overlapping windows.
+
+== 5m ==  Side band ±0.035%   windows 280,325
+  any      all         n=280,325  down 0.333 side 0.333 up 0.334  lean +0.001 z=+0.45  side z=+0.00  [2024:+0.005 2025:+0.000 2026:-0.005]
+  ema      falling     n=103,523  down 0.333 side 0.310 up 0.357  lean +0.024 z=+9.30  side z=-15.96  [2024:+0.033 2025:+0.015 2026:+0.025]
+  ema      mixed       n= 63,652  down 0.314 side 0.366 up 0.320  lean +0.005 z=+1.66  side z=+17.39  [2024:+0.009 2025:+0.006 2026:-0.002]
+  ema      rising      n=113,101  down 0.344 side 0.336 up 0.320  lean -0.023 z=-9.59  side z=+2.02  [2024:-0.021 2025:-0.017 2026:-0.036]
+  momentum down        n= 93,345  down 0.347 side 0.280 up 0.373  lean +0.026 z=+9.48  side z=-34.65  [2024:+0.030 2025:+0.020 2026:+0.031]
+  momentum flat        n= 93,441  down 0.279 side 0.445 up 0.276  lean -0.003 z=-1.16  side z=+72.58  [2024:+0.000 2025:-0.002 2026:-0.008] <- SIDE HOLDS
+  momentum up          n= 93,538  down 0.373 side 0.275 up 0.352  lean -0.021 z=-7.69  side z=-37.94  [2024:-0.015 2025:-0.017 2026:-0.038]
+  rsi      neutral     n=254,701  down 0.336 side 0.327 up 0.337  lean +0.001 z=+0.56  side z=-6.63  [2024:+0.005 2025:+0.001 2026:-0.005]
+  rsi      overbought  n= 13,399  down 0.324 side 0.416 up 0.260  lean -0.063 z=-9.60  side z=+20.37  [2024:-0.036 2025:-0.086 2026:-0.103] <- LEAN HOLDS
+  rsi      oversold    n= 12,211  down 0.282 side 0.371 up 0.348  lean +0.066 z=+9.23  side z=+8.75  [2024:+0.057 2025:+0.055 2026:+0.104] <- LEAN HOLDS
+
+== 15m ==  Side band ±0.061%   windows 280,323
+  any      all         n=280,323  down 0.332 side 0.333 up 0.335  lean +0.003 z=+1.06  side z=+0.00  [2024:+0.010 2025:+0.000 2026:-0.004]
+  ema      falling     n=102,851  down 0.333 side 0.315 up 0.352  lean +0.019 z=+4.28  side z=-7.22  [2024:+0.028 2025:+0.008 2026:+0.023]
+  ema      mixed       n= 61,467  down 0.324 side 0.344 up 0.332  lean +0.008 z=+1.46  side z=+3.18  [2024:+0.021 2025:+0.000 2026:+0.003]
+  ema      rising      n=115,857  down 0.336 side 0.343 up 0.321  lean -0.015 z=-3.52  side z=+4.14  [2024:-0.010 2025:-0.006 2026:-0.034]
+  momentum down        n= 93,039  down 0.339 side 0.277 up 0.384  lean +0.046 z=+9.46  side z=-20.94  [2024:+0.060 2025:+0.037 2026:+0.037] <- LEAN HOLDS <- SIDE HOLDS
+  momentum flat        n= 93,442  down 0.281 side 0.438 up 0.281  lean +0.000 z=+0.07  side z=+39.01  [2024:+0.002 2025:+0.003 2026:-0.005] <- SIDE HOLDS
+  momentum up          n= 93,839  down 0.376 side 0.285 up 0.339  lean -0.037 z=-7.76  side z=-18.08  [2024:-0.031 2025:-0.039 2026:-0.043] <- LEAN HOLDS
+  rsi      neutral     n=251,723  down 0.335 side 0.327 up 0.338  lean +0.003 z=+1.22  side z=-4.13  [2024:+0.010 2025:+0.002 2026:-0.003]
+  rsi      overbought  n= 14,991  down 0.315 side 0.410 up 0.275  lean -0.040 z=-3.65  side z=+11.54  [2024:-0.023 2025:-0.038 2026:-0.089]
+  rsi      oversold    n= 13,566  down 0.295 side 0.371 up 0.334  lean +0.038 z=+3.25  side z=+5.38  [2024:+0.048 2025:+0.004 2026:+0.073]
+
+== 30m ==  Side band ±0.086%   windows 280,320
+  any      all         n=280,320  down 0.330 side 0.333 up 0.337  lean +0.006 z=+1.68  side z=+0.00  [2024:+0.014 2025:+0.003 2026:+0.001]
+  ema      falling     n=102,848  down 0.329 side 0.315 up 0.356  lean +0.027 z=+4.25  side z=-5.17  [2024:+0.040 2025:+0.016 2026:+0.026]
+  ema      mixed       n= 61,467  down 0.320 side 0.344 up 0.335  lean +0.015 z=+1.91  side z=+2.37  [2024:+0.026 2025:+0.010 2026:+0.009]
+  ema      rising      n=115,857  down 0.337 side 0.343 up 0.320  lean -0.017 z=-2.85  side z=+2.89  [2024:-0.012 2025:-0.013 2026:-0.029]
+  momentum down        n= 92,545  down 0.337 side 0.275 up 0.388  lean +0.050 z=+7.36  side z=-15.30  [2024:+0.058 2025:+0.048 2026:+0.044] <- LEAN HOLDS <- SIDE HOLDS
+  momentum flat        n= 93,440  down 0.280 side 0.437 up 0.283  lean +0.004 z=+0.60  side z=+27.35  [2024:+0.007 2025:+0.002 2026:+0.001] <- SIDE HOLDS
+  momentum up          n= 94,329  down 0.373 side 0.288 up 0.339  lean -0.034 z=-5.08  side z=-12.08  [2024:-0.022 2025:-0.041 2026:-0.042] <- SIDE HOLDS
+  rsi      neutral     n=251,720  down 0.334 side 0.326 up 0.340  lean +0.006 z=+1.54  side z=-3.00  [2024:+0.014 2025:+0.003 2026:+0.001]
+  rsi      overbought  n= 14,991  down 0.308 side 0.412 up 0.280  lean -0.028 z=-1.80  side z=+8.31  [2024:-0.015 2025:-0.035 2026:-0.054]
+  rsi      oversold    n= 13,566  down 0.290 side 0.373 up 0.337  lean +0.047 z=+2.83  side z=+3.99  [2024:+0.053 2025:+0.034 2026:+0.056]
+
+== 60m ==  Side band ±0.119%   windows 280,314
+  any      all         n=280,314  down 0.328 side 0.333 up 0.338  lean +0.010 z=+1.93  side z=+0.00  [2024:+0.021 2025:+0.010 2026:-0.004]
+  ema      falling     n=102,012  down 0.326 side 0.318 up 0.356  lean +0.030 z=+3.30  side z=-3.01  [2024:+0.033 2025:+0.046 2026:+0.002]
+  ema      mixed       n= 61,007  down 0.317 side 0.350 up 0.333  lean +0.016 z=+1.44  side z=+2.51  [2024:+0.047 2025:+0.001 2026:-0.003]
+  ema      rising      n=116,700  down 0.337 side 0.335 up 0.328  lean -0.010 z=-1.16  side z=+0.29  [2024:-0.000 2025:-0.018 2026:-0.012]
+  momentum down        n= 91,985  down 0.337 side 0.271 up 0.392  lean +0.055 z=+5.63  side z=-11.61  [2024:+0.087 2025:+0.037 2026:+0.036] <- LEAN HOLDS <- SIDE HOLDS
+  momentum flat        n= 93,436  down 0.278 side 0.436 up 0.287  lean +0.009 z=+1.01  side z=+19.13  [2024:+0.017 2025:+0.009 2026:-0.003] <- SIDE HOLDS
+  momentum up          n= 94,881  down 0.369 side 0.293 up 0.338  lean -0.031 z=-3.31  side z=-7.57  [2024:-0.038 2025:-0.015 2026:-0.046]
+  rsi      neutral     n=246,455  down 0.330 side 0.330 up 0.340  lean +0.010 z=+1.70  side z=-1.00  [2024:+0.022 2025:+0.010 2026:-0.008]
+  rsi      overbought  n= 18,336  down 0.322 side 0.377 up 0.301  lean -0.021 z=-1.06  side z=+3.58  [2024:-0.007 2025:-0.034 2026:-0.040]
+  rsi      oversold    n= 15,348  down 0.307 side 0.327 up 0.365  lean +0.058 z=+2.53  side z=-0.47  [2024:+0.045 2025:+0.057 2026:+0.078]
+
+== 120m ==  Side band ±0.168%   windows 280,302
+  any      all         n=280,302  down 0.325 side 0.333 up 0.342  lean +0.016 z=+2.17  side z=+0.00  [2024:+0.032 2025:+0.014 2026:-0.002]
+  ema      falling     n=102,012  down 0.320 side 0.319 up 0.361  lean +0.041 z=+3.27  side z=-1.92  [2024:+0.044 2025:+0.063 2026:+0.008]
+  ema      mixed       n= 60,995  down 0.313 side 0.347 up 0.340  lean +0.027 z=+1.70  side z=+1.48  [2024:+0.070 2025:+0.000 2026:+0.009]
+  ema      rising      n=116,700  down 0.338 side 0.335 up 0.327  lean -0.011 z=-0.95  side z=+0.22  [2024:+0.005 2025:-0.024 2026:-0.018]
+  momentum down        n= 91,135  down 0.332 side 0.277 up 0.391  lean +0.059 z=+4.31  side z=-7.38  [2024:+0.078 2025:+0.041 2026:+0.061] <- LEAN HOLDS <- SIDE HOLDS
+  momentum flat        n= 93,426  down 0.277 side 0.431 up 0.292  lean +0.014 z=+1.17  side z=+12.93  [2024:+0.032 2025:+0.010 2026:-0.004] <- SIDE HOLDS
+  momentum up          n= 95,717  down 0.365 side 0.292 up 0.343  lean -0.022 z=-1.69  side z=-5.60  [2024:-0.011 2025:-0.008 2026:-0.062]
+  rsi      neutral     n=246,443  down 0.327 side 0.330 up 0.343  lean +0.015 z=+1.91  side z=-0.70  [2024:+0.031 2025:+0.015 2026:-0.006]
+  rsi      overbought  n= 18,336  down 0.319 side 0.372 up 0.309  lean -0.010 z=-0.35  side z=+2.29  [2024:+0.021 2025:-0.043 2026:-0.038]
+  rsi      oversold    n= 15,348  down 0.303 side 0.331 up 0.366  lean +0.064 z=+1.96  side z=-0.12  [2024:+0.050 2025:+0.058 2026:+0.090]
+
+== 240m ==  Side band ±0.238%   windows 280,278
+  any      all         n=280,278  down 0.322 side 0.333 up 0.344  lean +0.022 z=+2.04  side z=+0.00  [2024:+0.042 2025:+0.020 2026:-0.004]
+  ema      falling     n=101,232  down 0.328 side 0.308 up 0.365  lean +0.037 z=+2.04  side z=-2.50  [2024:+0.059 2025:+0.044 2026:+0.001]
+  ema      mixed       n= 59,939  down 0.322 side 0.341 up 0.337  lean +0.014 z=+0.62  side z=+0.59  [2024:+0.035 2025:+0.001 2026:+0.006]
+  ema      rising      n=116,736  down 0.324 side 0.339 up 0.338  lean +0.014 z=+0.84  side z=+0.57  [2024:+0.038 2025:+0.005 2026:-0.014]
+  momentum down        n= 90,319  down 0.329 side 0.281 up 0.390  lean +0.062 z=+3.16  side z=-4.81  [2024:+0.096 2025:+0.040 2026:+0.045] <- LEAN HOLDS <- SIDE HOLDS
+  momentum flat        n= 93,424  down 0.279 side 0.422 up 0.299  lean +0.020 z=+1.15  side z=+8.26  [2024:+0.041 2025:+0.005 2026:+0.011] <- SIDE HOLDS
+  momentum up          n= 96,487  down 0.359 side 0.296 up 0.345  lean -0.013 z=-0.72  side z=-3.51  [2024:-0.006 2025:+0.015 2026:-0.068]
+  rsi      neutral     n=244,691  down 0.325 side 0.331 up 0.344  lean +0.020 z=+1.72  side z=-0.38  [2024:+0.039 2025:+0.013 2026:+0.004]
+  rsi      overbought  n= 21,264  down 0.309 side 0.362 up 0.329  lean +0.020 z=+0.52  side z=+1.26  [2024:+0.045 2025:+0.012 2026:-0.046]
+  rsi      oversold    n= 13,632  down 0.317 side 0.300 up 0.382  lean +0.065 z=+1.31  side z=-1.18  [2024:+0.084 2025:+0.175 2026:-0.077]
+
+== 360m ==  Side band ±0.298%   windows 280,254
+  any      all         n=280,254  down 0.322 side 0.333 up 0.345  lean +0.023 z=+1.79  side z=+0.00  [2024:+0.047 2025:+0.018 2026:-0.003]
+  ema      falling     n=101,232  down 0.329 side 0.306 up 0.365  lean +0.037 z=+1.66  side z=-2.16  [2024:+0.052 2025:+0.046 2026:+0.006]
+  ema      mixed       n= 59,915  down 0.321 side 0.341 up 0.338  lean +0.017 z=+0.62  side z=+0.48  [2024:+0.038 2025:-0.002 2026:+0.018]
+  ema      rising      n=116,736  down 0.321 side 0.341 up 0.338  lean +0.016 z=+0.82  side z=+0.62  [2024:+0.054 2025:+0.002 2026:-0.025]
+  momentum down        n= 90,093  down 0.331 side 0.288 up 0.381  lean +0.050 z=+2.09  side z=-3.39  [2024:+0.078 2025:+0.036 2026:+0.032] <- SIDE HOLDS
+  momentum flat        n= 93,405  down 0.281 side 0.413 up 0.306  lean +0.025 z=+1.15  side z=+6.08  [2024:+0.045 2025:+0.011 2026:+0.017] <- SIDE HOLDS
+  momentum up          n= 96,684  down 0.352 side 0.298 up 0.350  lean -0.002 z=-0.11  side z=-2.74  [2024:+0.024 2025:+0.009 2026:-0.060]
+  rsi      neutral     n=244,667  down 0.325 side 0.330 up 0.345  lean +0.019 z=+1.37  side z=-0.39  [2024:+0.042 2025:+0.009 2026:+0.003]
+  rsi      overbought  n= 21,264  down 0.296 side 0.367 up 0.337  lean +0.041 z=+0.89  side z=+1.21  [2024:+0.082 2025:+0.016 2026:-0.043]
+  rsi      oversold    n= 13,632  down 0.312 side 0.305 up 0.384  lean +0.072 z=+1.19  side z=-0.83  [2024:+0.069 2025:+0.199 2026:-0.064]
+
+== 720m ==  Side band ±0.461%   windows 280,182
+  any      all         n=280,182  down 0.320 side 0.333 up 0.347  lean +0.027 z=+1.48  side z=+0.00  [2024:+0.057 2025:+0.018 2026:+0.000]
+  ema      falling     n= 98,496  down 0.340 side 0.284 up 0.376  lean +0.036 z=+1.12  side z=-2.72  [2024:+0.095 2025:+0.018 2026:+0.022]
+  ema      mixed       n= 59,904  down 0.315 side 0.363 up 0.321  lean +0.006 z=+0.15  side z=+1.30  [2024:-0.026 2025:+0.071 2026:-0.027]
+  ema      rising      n=107,507  down 0.325 side 0.332 up 0.343  lean +0.019 z=+0.62  side z=-0.08  [2024:+0.050 2025:-0.009 2026:-0.007]
+  momentum down        n= 89,532  down 0.332 side 0.287 up 0.380  lean +0.048 z=+1.42  side z=-2.44  [2024:+0.095 2025:+0.075 2026:-0.052]
+  momentum flat        n= 93,351  down 0.290 side 0.399 up 0.311  lean +0.021 z=+0.69  side z=+3.56  [2024:+0.012 2025:+0.018 2026:+0.039] <- SIDE HOLDS
+  momentum up          n= 97,155  down 0.337 side 0.311 up 0.352  lean +0.014 z=+0.45  side z=-1.21  [2024:+0.064 2025:-0.037 2026:+0.013]
+  rsi      neutral     n=242,867  down 0.323 side 0.332 up 0.345  lean +0.022 z=+1.12  side z=-0.14  [2024:+0.041 2025:+0.018 2026:+0.004]
+  rsi      overbought  n= 23,904  down 0.293 side 0.319 up 0.388  lean +0.094 z=+1.47  side z=-0.39  [2024:+0.143 2025:+0.005 2026:+0.032]
+  rsi      oversold    n=  9,216  down 0.382 side 0.197 up 0.422  lean +0.040 z=+0.36  side z=-2.32  [2024:+0.407 2025:+0.019 2026:-0.085]
+
+== 1440m ==  Side band ±0.714%   windows 280,038
+  any      all         n=280,038  down 0.321 side 0.333 up 0.346  lean +0.025 z=+0.97  side z=+0.00  [2024:+0.056 2025:+0.021 2026:-0.012]
+  ema      falling     n= 98,496  down 0.340 side 0.284 up 0.376  lean +0.036 z=+0.78  side z=-1.95  [2024:+0.110 2025:+0.014 2026:+0.017]
+  ema      mixed       n= 59,904  down 0.313 side 0.365 up 0.322  lean +0.009 z=+0.17  side z=+0.98  [2024:-0.056 2025:+0.098 2026:-0.019]
+  ema      rising      n=107,363  down 0.327 side 0.338 up 0.335  lean +0.007 z=+0.18  side z=+0.18  [2024:+0.043 2025:-0.009 2026:-0.061]
+  momentum down        n= 89,744  down 0.327 side 0.304 up 0.368  lean +0.041 z=+0.86  side z=-1.08  [2024:+0.113 2025:+0.027 2026:-0.035]
+  momentum flat        n= 93,200  down 0.305 side 0.367 up 0.328  lean +0.023 z=+0.51  side z=+1.27  [2024:+0.002 2025:+0.053 2026:+0.004]
+  momentum up          n= 96,806  down 0.330 side 0.326 up 0.344  lean +0.014 z=+0.30  side z=-0.28  [2024:+0.055 2025:-0.019 2026:-0.004]
+  rsi      neutral     n=242,723  down 0.324 side 0.334 up 0.342  lean +0.017 z=+0.62  side z=+0.06  [2024:+0.035 2025:+0.019 2026:-0.008]
+  rsi      overbought  n= 23,904  down 0.284 side 0.312 up 0.405  lean +0.121 z=+1.33  side z=-0.42  [2024:+0.192 2025:+0.017 2026:-0.003]
+  rsi      oversold    n=  9,216  down 0.378 side 0.180 up 0.443  lean +0.065 z=+0.41  side z=-1.85  [2024:+0.388 2025:+0.083 2026:-0.067]
+
+18 of 81 state readings held up in all three years.

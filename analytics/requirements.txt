@@ -1,0 +1,3 @@
+# pinned: this runs beside a live trading desk, and "latest" is not a version
+fastapi==0.115.14
+uvicorn==0.32.1

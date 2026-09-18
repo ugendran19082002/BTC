@@ -1,6 +1,5 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import * as Collapsible from '@radix-ui/react-collapsible';
-import { Activity, AlertTriangle, BarChart3, Bot, Briefcase, ChevronDown, ListOrdered } from 'lucide-react';
+import { Activity, AlertTriangle, BarChart3, Bot, Briefcase, ListOrdered, RefreshCw } from 'lucide-react';
 import { NotSignedIn } from '@/api/client';
 import { getCandles, getChain, getExpiries, getHealth, getSpot } from '@/api/desk';
 import { getMe, type Stage } from '@/api/session';
@@ -20,6 +19,7 @@ import { usePoll } from '@/hooks/usePoll';
 import { usePageVisible } from '@/hooks/usePageVisible';
 import { useStream } from '@/hooks/useStream';
 import { MoveSection } from '@/components/desk/MoveSection';
+import { MarketHead } from '@/components/desk/MarketHead';
 import { TodayPnl } from '@/components/desk/TodayPnl';
 import { istToEpoch, type IstMoment } from '@/lib/ist-moment';
 import { usePersisted } from '@/hooks/usePersisted';
@@ -28,20 +28,19 @@ import { LoginPage } from '@/components/desk/LoginPage';
 import { LivePrice } from '@/components/desk/LivePrice';
 import { TODAY_MOVE } from '@/types/desk';
 import { tabTitle } from '@/lib/tab-title';
-import { pnlTone, signedInr, usdToInr } from '@/lib/format';
+import { istLabel, pnlTone, signedInr, usdToInr } from '@/lib/format';
 import { Outlook } from '@/components/desk/Outlook';
 import { SuddenMove } from '@/components/desk/SuddenMove';
 import { BestTrade } from '@/components/desk/BestTrade';
 import { PriceChart, CHART_TFS, type ChartTf } from '@/components/desk/PriceChart';
+import { BtcSummary } from '@/components/desk/BtcSummary';
 import { Select, SelectItem } from '@/components/ui/select';
 import { ColumnPicker } from '@/components/chain/ColumnPicker';
 import { normalise, normaliseOrder, type ColumnKey, type ColumnState } from '@/components/chain/columns';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Download } from 'lucide-react';
 import { toCsv, downloadCsv } from '@/lib/csv';
-import { CardLead } from '@/components/ui/card';
 import { CollapsibleCard } from '@/components/ui/collapsible-card';
-import { Stat, StatDivider } from '@/components/ui/stat';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Metric, Formula } from '@/components/research/Explain';
@@ -103,17 +102,6 @@ const EXPIRY_RECHECK_SECONDS = 60;
 /** Wider than a phone. Long cards and the settings start open here, folded on a phone. */
 const WIDE = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
   && window.matchMedia('(min-width: 761px)').matches;
-
-const IST_FMT = new Intl.DateTimeFormat('en-IN', {
-  timeZone: 'Asia/Kolkata',
-  weekday: 'short', day: 'numeric', month: 'short',
-  hour: '2-digit', minute: '2-digit', hour12: true,
-});
-
-/** Always India time, and always says so: the strategy is defined in IST. */
-function istLabel(epochSeconds: number): string {
-  return IST_FMT.format(new Date(epochSeconds * 1000)).replace(/,/g, '') + ' IST';
-}
 
 /** Yesterday at the entry minute — a sensible default for a past date. */
 function defaultPast(): IstMoment {
@@ -185,7 +173,6 @@ export default function App() {
   // animates closed with its contents still on screen.
   const [inspecting, setInspecting] = useState<{ cp: 'C' | 'P'; strike: number } | null>(null);
   const [inspectOpen, setInspectOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = usePersisted<boolean>('open:settings', WIDE);
   const [minPremium] = usePersisted('minPremium', 15);
   const [mode] = usePersisted<'premium' | 'safety'>('mode', 'premium');
   const [safetyBar] = usePersisted('safetyBar', 98);
@@ -480,6 +467,86 @@ export default function App() {
       {tab === 'desk' ? (
         <>
           {/*
+            The settings, as one bar across the top.
+
+            Mode and expiry decide every figure below them, so they sit above
+            all of it rather than in a column beside the chart. Outside the data
+            guard, so a chain that 404s can still have its expiry changed.
+          */}
+          <div className="deskbar">
+            <div className="deskbar-brand">
+              <span className="btc-logo" aria-hidden>₿</span>
+              <span><b>BTC</b><small>Bitcoin / USD</small></span>
+            </div>
+            <div className="field">
+              <label>Mode</label>
+              <Select ariaLabel="when" value={live ? 'live' : 'past'} onValueChange={(v) => setLive(v === 'live')}>
+                <SelectItem value="live">Live now</SelectItem>
+                <SelectItem value="past">Past date</SelectItem>
+              </Select>
+            </div>
+
+            {!live && (
+              <div className="field wide">
+                <label>Date &amp; time (IST)</label>
+                <Suspense fallback={<span className="dim">Loading…</span>}>
+                  <DateTimePicker value={when} onChange={setWhen} maxDate={new Date()} />
+                </Suspense>
+              </div>
+            )}
+
+            <div className="field wide">
+              <label>Expiry</label>
+              <Select ariaLabel="expiry" value={activeExpiry} onValueChange={setExpiry}>
+                {expiries.length === 0 && <SelectItem value="" disabled>Loading…</SelectItem>}
+                {expiries.map((e) => (
+                  <SelectItem
+                    key={e.expiry}
+                    value={e.expiry}
+                    hint={
+                      e.isDefault
+                        ? 'Default — today’s contract'
+                        : e.isNextEntry
+                          ? 'The one you would sell at 05:30'
+                          : e.isDaily
+                            ? 'Today’s daily contract'
+                            : 'Not tested'
+                    }
+                  >
+                    {e.isDefault && '★ '}
+                    {istLabel(e.expiryTs)}
+                    {' · '}
+                    {e.hoursAway < 48 ? `${e.hoursAway.toFixed(0)}h left` : `in ${(e.hoursAway / 24).toFixed(0)} days`}
+                  </SelectItem>
+                ))}
+              </Select>
+              {expiries.length > 0 && Boolean(expiry && expiry !== defaultExpiry) && (
+                <button className="pinned" onClick={forgetExpiry} title="Back to the default expiry">
+                  Reset to default
+                </button>
+              )}
+            </div>
+
+            <div className="actions">
+              <Button variant="outline" onClick={() => void load()} disabled={busy}>
+                <RefreshCw className={busy ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} aria-hidden />
+                {busy ? 'Loading…' : 'Refresh'}
+              </Button>
+              {live && (
+                <Button
+                  variant={autoRefresh ? 'default' : 'outline'}
+                  onClick={() => setAutoRefresh((v) => !v)}
+                  title={`Reload the live chain every ${REFRESH_SECONDS} seconds`}
+                  aria-pressed={autoRefresh}
+                >
+                  <Activity className="h-4 w-4" aria-hidden />
+                  {autoRefresh ? 'Auto-refresh on' : 'Auto-refresh off'}
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/*
             One row: the settings and what the board is saying on the left,
             where BTC is against it on the right. They are read together — a
             wall means nothing until you can see how close price is to it.
@@ -504,123 +571,41 @@ export default function App() {
               snap={snap}
               structure={data.structure}
               market={data.market}
+              outlook={data.outlook}
             />
           ) : null}
 
-          <div className="board-row">
-            <div className="board-left">
-              {/* Folded, the summary still says what the numbers below were worked out from. */}
-              <Collapsible.Root open={settingsOpen} onOpenChange={setSettingsOpen} className="bar-wrap">
-              <Collapsible.Trigger className="bar-toggle">
-              <ChevronDown className={`h-3 w-3 flex-none transition-transform ${settingsOpen ? '' : '-rotate-90'}`} />
-              <span>Settings</span>
-              {!settingsOpen && (
-              <span className="bar-summary">
-              {live ? 'live' : 'past'}
-              {activeExpiry && <> · {activeExpiry}</>}
-              </span>
-              )}
-              </Collapsible.Trigger>
-              <Collapsible.Content>
-              <div className="bar">
-              <div className="field">
-              <label>Time</label>
-              <Select ariaLabel="when" value={live ? 'live' : 'past'} onValueChange={(v) => setLive(v === 'live')}>
-              <SelectItem value="live">Live now</SelectItem>
-              <SelectItem value="past">Past date</SelectItem>
-              </Select>
-              </div>
-
-              {!live && (
-              <div className="field wide">
-              <label>Date &amp; time (IST)</label>
-              <Suspense fallback={<span className="dim">Loading…</span>}>
-                <DateTimePicker value={when} onChange={setWhen} maxDate={new Date()} />
-              </Suspense>
-              </div>
-              )}
-
-              <div className="field wide">
-              <label>Expiry</label>
-              <Select ariaLabel="expiry" value={activeExpiry} onValueChange={setExpiry}>
-              {expiries.length === 0 && <SelectItem value="" disabled>Loading…</SelectItem>}
-              {expiries.map((e) => (
-              <SelectItem
-              key={e.expiry}
-              value={e.expiry}
-              hint={
-              e.isDefault
-              ? 'Default — today’s contract'
-              : e.isNextEntry
-              ? 'The one you would sell at 05:30'
-              : e.isDaily
-              ? 'Today’s daily contract'
-              : 'Not tested'
-              }
-              >
-              {e.isDefault && '★ '}
-              {istLabel(e.expiryTs)}
-              {' · '}
-              {e.hoursAway < 48 ? `in ${e.hoursAway.toFixed(0)}h` : `in ${(e.hoursAway / 24).toFixed(0)} days`}
-              </SelectItem>
-              ))}
-              </Select>
-              {expiries.length > 0 && Boolean(expiry && expiry !== defaultExpiry) && (
-              <button className="pinned" onClick={forgetExpiry} title="Back to the default expiry">
-              Reset to default
-              </button>
-              )}
-              </div>
-
-              <div className="actions">
-              <Button onClick={() => void load()} disabled={busy}>
-              {busy ? 'Loading…' : 'Refresh'}
-              </Button>
-              {live && (
-              <Button
-              variant={autoRefresh ? 'default' : 'outline'}
-              onClick={() => setAutoRefresh((v) => !v)}
-              title={`Reload the live chain every ${REFRESH_SECONDS} seconds`}
-              >
-              {autoRefresh ? 'Auto-refresh on' : 'Auto-refresh off'}
-              </Button>
-              )}
-              </div>
-              </div>
-              </Collapsible.Content>
-              </Collapsible.Root>
-
+          {/*
+            The chart, and BTC at a glance beside it. The walls on the chart
+            and the walls in the summary are the same two numbers, a glance
+            apart rather than a scroll apart.
+          */}
+          {data && snap && (
+            <div className="chart-row">
+              <ErrorBoundary where="Price chart">
+                <Chart
+                  bars={candles?.bars ?? NO_BARS}
+                  support={data.structure.peOiWall?.strike ?? null}
+                  resistance={data.structure.ceOiWall?.strike ?? null}
+                  spot={snap.spot}
+                  tf={chartTf}
+                  onTf={setChartTf}
+                  loading={candlesBusy}
+                  error={candles?.error}
+                />
+              </ErrorBoundary>
+              <ErrorBoundary where="BTC summary">
+                <BtcSummary
+                  snap={snap}
+                  market={data.market}
+                  structure={data.structure}
+                  outlook={data.outlook}
+                  bars={candles?.bars ?? NO_BARS}
+                  tf={chartTf}
+                />
+              </ErrorBoundary>
             </div>
-
-            {/*
-              The right-hand column: the chart, and the board's own numbers
-              under it.
-
-              Market Insights used to sit in the left column, under the side
-              verdict. Once the verdict card arrived that column ran several
-              hundred pixels past the chart and left a hole beside it the height
-              of a screen -- a two-column layout where one column simply stops.
-              The insights also read better here: they are a two-up grid of
-              tiles that was being squeezed into a third of the page.
-            */}
-            <div className="board-right">
-              {data && snap && (
-                <ErrorBoundary where="Price chart">
-                  <Chart
-                    bars={candles?.bars ?? NO_BARS}
-                    support={data.structure.peOiWall?.strike ?? null}
-                    resistance={data.structure.ceOiWall?.strike ?? null}
-                    spot={snap.spot}
-                    tf={chartTf}
-                    onTf={setChartTf}
-                    loading={candlesBusy}
-                    error={candles?.error}
-                  />
-                </ErrorBoundary>
-              )}
-
-            </div>
-          </div>
+          )}
 
           {/*
             Its own row, across the page.
@@ -647,61 +632,56 @@ export default function App() {
           {data && snap && (
             <>
               <div className="lead-row">
-                <CollapsibleCard
-                  id="live"
-                  title={snap.live ? 'Market' : 'Past snapshot'}
-                  defaultOpen={WIDE}
-                  right={
-                    (snap.isNextEntry || snap.isDaily)
-                      ? <Badge tone="ok">{snap.isNextEntry ? 'Next entry' : 'Today’s daily'}</Badge>
-                      : <Badge tone="warn">Not the tested contract</Badge>
-                  }
-                >
-                  <CardLead>{snap.spot.toFixed(1)}</CardLead>
+                {/* Left: the contract and its moves. Right: the pick and its alerts. */}
+                <div className="live-col">
+                  <CollapsibleCard
+                    id="live"
+                    title={snap.live ? 'Market' : 'Past snapshot'}
+                    defaultOpen={WIDE}
+                    right={
+                      (snap.isNextEntry || snap.isDaily)
+                        ? <Badge tone="ok">{snap.isNextEntry ? 'Next entry' : 'Today’s daily'}</Badge>
+                        : <Badge tone="warn">Not the tested contract</Badge>
+                    }
+                  >
+                    <MarketHead snap={snap} market={data.market} />
 
-                  <div className="mt-2">
-                    <Stat label="Settles" value={istLabel(snap.expiryTs)} />
-                    <Stat
-                      label="Contract"
-                      value={`${snap.expiry} · ${
-                        snap.hoursToExpiry < 48
-                          ? `${snap.hoursToExpiry.toFixed(1)}h left`
-                          : `${(snap.hoursToExpiry / 24).toFixed(0)} days left`
-                      }`}
-                      tone="dim"
-                    />
-                    <Stat label="As of" value={istLabel(snap.ts)} tone="dim" />
-                    <StatDivider />
-                    <Stat label="ATM strike" value={snap.atm.toLocaleString()} />
-                  </div>
+                    {/*
+                      Volatility and the expected move used to be here as well as
+                      in the sudden-move card at the top of the screen -- the same
+                      two numbers, twice, a screen apart. They are said once now,
+                      up there, with this card's working moved into their hints.
+                      What stays here is what is about this contract and nowhere
+                      else: when it settles, the strike at the money, and the
+                      twelve-hour move an entry would actually face.
+                    */}
+                    {snap.expectedMoveAtEntry !== null && snap.hoursToExpiry > 14 && (
+                      <Metric label="Expected move over 12h" value={'±$' + snap.expectedMoveAtEntry.toFixed(0)}>
+                        <p>You enter at 05:30 and it settles at 17:30 — about 12 hours. Judge strikes against this one.</p>
+                        <Formula>
+                          {snap.spot.toFixed(0)} × {snap.atmIv !== null ? (snap.atmIv * 100).toFixed(1) : '—'}% × √(12 ÷ 8760)
+                          <br />= ±${snap.expectedMoveAtEntry.toFixed(0)}
+                        </Formula>
+                      </Metric>
+                    )}
+                  </CollapsibleCard>
 
                   {/*
-                    Volatility and the expected move used to be here as well as
-                    in the sudden-move card at the top of the screen -- the same
-                    two numbers, twice, a screen apart. They are said once now,
-                    up there, with this card's working moved into their hints.
-                    What stays here is what is about this contract and nowhere
-                    else: when it settles, the strike at the money, and the
-                    twelve-hour move an entry would actually face.
+                    What BTC has done and what it can still do, as two cards of
+                    their own under the contract rather than inside it -- side by
+                    side where the column is wide enough, stacked where it is not.
                   */}
-                  {snap.expectedMoveAtEntry !== null && snap.hoursToExpiry > 14 && (
-                    <Metric label="Expected move over 12h" value={'±$' + snap.expectedMoveAtEntry.toFixed(0)}>
-                      <p>You enter at 05:30 and it settles at 17:30 — about 12 hours. Judge strikes against this one.</p>
-                      <Formula>
-                        {snap.spot.toFixed(0)} × {snap.atmIv !== null ? (snap.atmIv * 100).toFixed(1) : '—'}% × √(12 ÷ 8760)
-                        <br />= ±${snap.expectedMoveAtEntry.toFixed(0)}
-                      </Formula>
-                    </Metric>
-                  )}
-                  {data.market && <MoveSection market={data.market} snap={snap} />}
-                </CollapsibleCard>
+                  {data.market && <MoveSection market={data.market} snap={snap} defaultOpen={WIDE} />}
+                </div>
 
-                <BestPick
-                  best={data.best}
-                  legs={data.legs}
-                  onSell={snap.live ? sellLeg : undefined}
-                  onSettingsChanged={reload}
-                />
+                <div className="live-col">
+                  <BestPick
+                    best={data.best}
+                    legs={data.legs}
+                    onSell={snap.live ? sellLeg : undefined}
+                    onSettingsChanged={reload}
+                  />
+                </div>
               </div>
 
               <div className="chain-bar">

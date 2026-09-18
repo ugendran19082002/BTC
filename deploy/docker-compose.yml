@@ -29,6 +29,9 @@ services:
       # Room for the heap to grow before V8 starts collecting hard. The desk
       # rests near 100 MB; this is headroom, not a need.
       NODE_OPTIONS: --max-old-space-size=1536
+      # Display-only models. Deliberately not a `depends_on`: the desk trades and
+      # serves its own cards whether or not this answers.
+      ANALYTICS_URL: http://analytics:8800
     volumes:
       - data:/srv/data
     # No host port. The browser reaches the API through the web container over
@@ -53,6 +56,41 @@ services:
         limits:
           cpus: "3.0"
           memory: 2G
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # Display-only models (Python): Down / Side / Up measured, and later the other
+  # analytics the screens read. Nothing on the trading path calls it, and the
+  # API falls back to its own figures when it is away.
+  analytics:
+    build:
+      context: ..
+      dockerfile: Dockerfile.analytics
+    image: btc-desk-analytics:${TAG:-latest}
+    restart: unless-stopped
+    environment:
+      # Its own database, not the shared chain.db: created by the publish step as
+      # uid 1000, so the service and its writer are the same user. See docs/ANALYTICS.md.
+      ANALYTICS_DB: /srv/data/analytics.db
+    volumes:
+      # Opened read-only by the service; the directory stays writable because
+      # SQLite in WAL mode needs it for its shared-memory file.
+      - data:/srv/data
+    expose:
+      - "8800"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }

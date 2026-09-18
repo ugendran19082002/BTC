@@ -361,6 +361,24 @@ async function fetchSeriesFresh(): Promise<[Timeframe, Candle[]][]> {
  *   and the morning entry -- the number that says whether a strike is still as
  *   far away as it looked at entry.
  */
+/**
+ * The bars the analytics service labels "now" from, as compact parallel arrays.
+ *
+ * Straight out of the cache `readMarket` already fills, so asking costs no
+ * request to Delta. Every bar goes, the one still forming included: the service
+ * drops it itself, the same way the history it was measured on never saw one.
+ * Null until the first read has filled the cache.
+ */
+export function seriesForAnalytics(): Partial<Record<'5m' | '15m' | '1h' | '4h' | '1d', { t: number[]; c: number[] }>> | null {
+  if (!seriesCache) return null;
+  const out: Partial<Record<'5m' | '15m' | '1h' | '4h' | '1d', { t: number[]; c: number[] }>> = {};
+  for (const [tf, bars] of seriesCache.data) {
+    if (tf === '1m') continue;
+    out[tf] = { t: bars.map((b) => b.time), c: bars.map((b) => b.close) };
+  }
+  return out;
+}
+
 export async function readMarket(sinceHours?: number): Promise<MarketRead> {
   let series: [Timeframe, Candle[]][];
   if (seriesCache) {

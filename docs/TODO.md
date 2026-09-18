@@ -1602,6 +1602,371 @@ and re-open last week's rows on every visit.
 
 ---
 
+## "How far could BTC move" cards, redrawn like the reference — 17 Sep 2026
+
+Asked for: the horizon cards to look like the reference image — label and
+arrow, one big number, a small range, and a compact odds block with the
+dominant figure highlighted.
+
+**What changed (not deployed yet):**
+
+- **Layout, not numbers.** Each card now reads: horizon and the chart's arrow
+  on one line → **±$ move** as the headline → the range under it → a
+  **cheap / fair / rich · 0.94×** chip → **Below / In range / Above** with the
+  largest lit like a gauge's reading → "usually ±0.09%".
+- The two-line uppercase "OPTIONS COST LESS THAN USUAL" is now the chip; the
+  full sentence is on the chip's hover.
+- "no chart for this" is now a short "no chart" in the arrow's place, still
+  said in words rather than drawn as a flat arrow.
+- On a phone: still two cards to a row, headline a size smaller.
+
+**Deliberately not copied from the reference:** its "Down 52% / Side 38% /
+Up 10%". That is a directional forecast, and the desk measured direction over
+105,119 windows as a coin toss at every horizon (within 0.6 points of 50/50).
+The three figures here stay Below / In range / Above the band the option market
+is pricing — measured, not predicted — and the card's tests pin that no "Up" or
+"Down" label ever appears. The reference's own settlement card uses
+"Below / Within / Above", which is the same honest shape.
+
+**To do:**
+
+- [ ] **Deploy**, then look at it on the phone and on a laptop: ten cards at
+      128px each, the ±$ headline at five figures, and the chip, all on one line.
+- [ ] **The headline is the least surprising number on the card.** ±$ grows
+      with √time, so it rises steadily from 5m to 24h; the chip is the figure
+      that actually varies for a seller. If it reads as noise on the live
+      board, swap them back.
+- [ ] **"In range" is lit on almost every card**, because it is almost always
+      the largest. Consider lighting it only when it clears two thirds (the
+      "market charges more than it gets" line), so the highlight means
+      something when it appears.
+
+---
+
+## Best-pick alerts: plain English, and the same strike once per contract — 17 Sep 2026
+
+Asked for: the Telegram message was not easy to read, and the same strike
+should be sent **once** per contract — from 5:31 PM to 5:30 PM the next day —
+with the count settable on the card, one by default.
+
+**The message.** It read like the card pasted into a chat: "rank 87/100 ·
+Chance you keep it all: 100.0% · price gets there first: 3% · 3.20× the usual
+move away · how easy to trade: 42/100", run together over three lines. Now it
+is one fact per line with a label a person would use:
+
+    🎯 New best pick · 11:30 AM IST
+    Sell CE 78,800 · expires 18 Sep, 5:30 PM
+
+    💰 You get: 6.00
+    ✅ Chance it expires worthless: 100.0%
+    📍 Chance the price reaches it first: 3%
+    📏 Distance: 3.20× a normal move
+    💧 Easy to trade: 42/100
+    ⚠️ Max loss: no limit (no safety leg)
+    ⭐ Score: 87/100
+
+    👍 The tested rule picks this strike too.
+    Only strikes paying $5 or more. Nothing was placed.
+    🔁 Alert 1 of 1 for this strike before it expires.
+
+**The repeat cap.** Before, the desk remembered only the *last* strike sent, so
+a pick that went CE 78,800 → CE 79,000 → CE 78,800 announced 78,800 twice.
+Now each strike is counted per contract, and sent at most N times:
+
+- **N is 1 by default**, set on the card with a − / + stepper (1 to 10), shown
+  once "Tell me when the pick changes" is on. Saved on the server, so it is the
+  same on every phone and survives a deploy.
+- **The window is the contract itself.** A contract lists at 5:30 PM and expires
+  at 5:30 PM the next day, so counting per expiry *is* "5:31 PM to 5:30 PM" —
+  with no clock to get wrong. A new contract starts from zero.
+- Still silent while the same strike stays the pick, as before.
+- Counted even with phone alerts off: turning them off is a choice to hear
+  nothing, not a request to be told later.
+- Switching the alert off and on again starts the count over — switching on is
+  somebody asking to hear the current pick.
+- Tests: 5 new server (the cap, a cap of 2, the new-contract reset, the 1–10
+  bounds, the date label) and the message test rewritten; 4 new web.
+
+**To do:**
+
+- [ ] **Deploy**, then read one real message on the phone's lock screen — the
+      emoji and line breaks are for that, and only a real Telegram shows them.
+- [ ] **A pick sent while phone alerts were off is spent.** Deliberate, but if
+      it surprises anyone, count only messages actually delivered.
+- [ ] **"Score 87/100" has not been checked against past years** (the card says
+      so). The message does not repeat that warning — decide whether it should.
+
+---
+
+## Sudden move analytics, redrawn — 17 Sep 2026
+
+Asked for: the panel to be easier to read, and different.
+
+What was wrong was not the styling but three contradictions on one screen: a red
+**"High risk 58/100"** above **"98% stayed within 1%"**; a big green **"Upside
+33%"** beside a tile reading **"Bearish"**; and support, resistance, max pain,
+the 2% band and the open-interest range spread across five tiles when they are
+points on one price line.
+
+**Done (not deployed yet):**
+
+- **The answer first, the evidence beside it.** The risk gauge sits next to what
+  usually happened next, drawn as one bar (down / stayed within / up). When the
+  score is raised but a 1% move has still been rare, it says so in words:
+  "Busier than usual — but over the next 5 minutes a 1% move has been rare:
+  98 in 100 stayed inside."
+- **Direction as a push, not a forecast** — a small needle either side of a
+  middle line, with its parts, and "A push right now, not a forecast."
+- **Where BTC sits** — one price line with support, resistance, max pain, now,
+  the expected move and the 2% band; labels in a two-column legend so nearby
+  levels cannot overwrite each other.
+- **Key numbers in plain words** — "more calls open" instead of "Bearish".
+- No scoring logic or band label changed. Web tests +7; checked in a browser at
+  desktop width with the live screenshot's numbers.
+
+**To do:**
+
+- [ ] **Deploy** and look at it on the phone with a real board.
+- [ ] `MarketInsights.tsx` is no longer rendered anywhere (its tiles became the
+      price line). Its tests still pass; delete it once the new panel is trusted.
+
+---
+
+## Measured Down / Side / Up, and the analytics service — 17 Sep 2026
+
+Asked for: horizon cards like the reference image (a price, a range, an arrow,
+Down / Side / Up on every card), with the logic and formulas upgraded, and
+analytics split into a Python service.
+
+**The one fact that decided the design.** The desk measured direction over
+105,119 windows as a coin toss at every horizon, and the reference's own formula
+(lognormal, risk-neutral drift) gives ~50/50 by construction. So its "Down 52% /
+Up 10%" cannot come from data. Chosen instead: **the reference's look, with every
+figure measured** — counted from what followed moments like this one.
+
+**Measured** over 280,326 five-minute bars (Jan 2024 – Sep 2026), each state kept
+only if it held in 2024, 2025 **and** 2026 separately (z > 3, non-overlapping):
+18 of 81 readings survived.
+
+- **Calm clusters, strongly.** After a quiet window, Side (stays in range) is
+  ~44% against 33%, 5 minutes to 1 hour; after a move it drops to ~28%. For a
+  seller this is the useful signal.
+- **Direction leans are small and mean-reverting.** After a 15m–4h drop, Up is
+  favoured by 5–6 points; RSI oversold → Up +6.6 at 5m. A trend-following score
+  like the reference's would point the wrong way.
+- **Nothing directional past 6 hours; nothing at all at 24 hours.** Those cards
+  honestly read about even.
+
+**Built (not deployed yet):**
+
+- **`analytics/` — Python FastAPI service.** Measured outlook model; one copy of
+  the RSI / EMA / momentum features shared by the measurement and the live
+  labelling, so they cannot disagree; read-only table loader that reloads when
+  the table is republished; no API docs exposed; input validated.
+- **Node** calls it for display only (1.2 s timeout, 30 s back-off, one log line
+  per outage) and attaches the rows by label. **Node's own outlook is untouched
+  and still shown whenever the service does not answer.** Nothing on the trading
+  path calls it.
+- **Cards** in the reference's shape: projected price, range, arrow (only on a
+  lean that held), Down / Side / Up with only a *held* outcome lit, the reason
+  in words ("BTC fell over the last hour · livelier"), and the expiry card as
+  Below / Within / Above. "How this is worked out" carries the formulas: EM,
+  the lognormal P(up) ≈ 50%, the tercile Side band, the state, the hold rule.
+- **Deploy:** `Dockerfile.analytics` (pinned, uid 1000, read-only, healthcheck),
+  a compose service with no host port, `ANALYTICS_URL` on the API but no
+  `depends_on`; deploy.sh runs its tests, tags/ships/prunes its image, reports
+  its health without requiring it, and rolls back api and web only.
+- Tests: analytics 24, server +8 (client), web +10. Image smoke-tested in an
+  isolated hardened container (health, 28 ms answer, docs hidden, bad input 422).
+  Cards checked in a browser at desktop and phone width on the real model output.
+- Architecture and runbook: `docs/ANALYTICS.md`.
+
+**Plain words on the desk's own cards (17 Sep).** Asked after "fair · 1.00×" and
+"↗ +0.84" each needed explaining: the chip reads **Premium: fair / high / low**, the
+arrow **Chart up · strong / Chart flat / Chart down**, the rows **Falls below / Stays
+in range / Rises above**, "usually" is in dollars, the header says **Charts: 3 of 5
+up, 1 flat · recent trend, not a forecast**, and a one-line legend explains a card.
+The numbers are unchanged and on hover. Web tests +4.
+
+**To do:**
+
+- [ ] **Publish `outlook_states` to the live volume before or right after
+      deploying** — it was measured into the repo's chain.db. Without it the
+      service answers 503 and the cards show Node's own figures. Command in
+      `docs/ANALYTICS.md` (run as uid 1000, not root).
+- [ ] **Deploy**, then check `analytics: healthy` in the deploy output and one
+      real board on the phone.
+- [ ] **Record the option chain every 5 minutes** (PCR, total OI and its change,
+      volume, ATM IV and skew, max-pain distance). The desk has no intraday
+      history of any of them — `oi` keeps ~2 strikes a day — so OI, volume and
+      PCR cannot be measured as inputs yet. After a few months, add them to
+      `measure_outlook.py` under the same three-year hold rule.
+- [ ] **Re-measure monthly.** `research/move-5min.csv` ends 10 Sep 2026; refresh
+      it, re-run the measurement and the parity vectors, publish.
+- [ ] **Joint states.** Each card uses its single most informative held reading;
+      momentum and RSI are correlated and were not measured together. Measure
+      the pairs before combining them.
+- [ ] **Move the next display modules** (`forecast`, `direction`, `recommend`,
+      `calibration`) one at a time, each with a parity test against Node's
+      output before Node's copy is removed. Never a module the trading path
+      imports — see the boundary in `docs/ANALYTICS.md`.
+
+---
+
+## Sudden move analytics, second layout — 17 Sep 2026
+
+Asked for: the panel in the layout of a supplied design (a window dropdown, a
+ring, a probability outlook bar, pricing vs history, trend score, key factors, a
+price range line, IV / volume / open interest).
+
+**Done (not deployed yet):**
+
+- **Header:** window as a dropdown ("1 HOUR"), "Expires in 3h 12m", the risk
+  level as the badge, last updated, Live, fold.
+- **Row 1 — the answer:** the sudden-move risk ring (score and level inside) with
+  the move and volume readings in words, and the "busier than usual — but rare"
+  line when both are true; **Probability outlook** — the *measured* down /
+  sideways / up for the chosen window, with the price at each threshold.
+- **Row 2 — why:** Pricing vs history (1.00× FAIR, options imply ±$241, BTC
+  usually moves ±$244); Right now (move vs expected, volume — each with its two
+  numbers); Trend score, always marked "(past)"; Key factors (EMA / RSI / swing /
+  VWAP — each part's share, adding to the score; options flow as one line).
+- **Row 3 — where price sits:** a range line (spot, the implied band dashed, the
+  usual band filled, the ±1% thresholds the odds counted); IV, options volume,
+  open interest in BTC, the OI walls.
+- **Kept honest inside the design:** the odds are counted, not forecast; the
+  trend is the past; volume and OI show calls/puts splits, not "+12%" — the desk
+  keeps no history to measure a change against.
+- Server: the chart score now returns its parts (display only; the score is
+  unchanged, and a test pins that the parts add up to it). Web tests rewritten
+  (21). Checked in a browser at desktop and phone width.
+
+**To do:**
+
+- [ ] **Deploy** and look at a real board, especially a quiet one and a busy one.
+- [ ] **Record options volume and open interest over time**, so a real "+x% in
+      24h" can be shown instead of the calls/puts split.
+- [ ] **Dead styles:** most of the old `.smr-*` rules in styles.css are unused
+      now (`smr-context` and `smr-reasons` still are). Remove the rest.
+
+---
+
+## Desk bar, price chart and BTC summary — 17 Sep 2026
+
+Asked for: the settings strip and the price chart in the layout of a supplied
+design (BTC mark, Mode / Expiry / Refresh / Auto-refresh on one bar; a chart
+card with OHLC, timeframes, fullscreen and Fit, walls with "% away", a legend;
+a BTC SUMMARY column beside the chart).
+
+**Done (not deployed yet):**
+
+- **Desk bar** (replaces the folding "settings" box): BTC mark, Mode, the past
+  date when a past mode is chosen, Expiry with "Xh left" and reset, Refresh and
+  Auto-refresh as icon buttons (`aria-pressed`). Wraps to a stack on a phone.
+- **Chart header:** "BTC • 5m", the last bar's O / H / L / C and its change
+  against the bar before, "N of M bars"; timeframes; zoom lock, zoom out / in,
+  fullscreen (browser fullscreen API) and Fit.
+- **Walls on the chart:** "Resistance (+1.5% away)" beside the line; the
+  off-scale label is unchanged. **Legend** under the chart with spot, support,
+  resistance and volume values; the existing explanation lines kept.
+- **BTC summary** (new `BtcSummary.tsx`): spot and 24h change, expiry and time
+  left, the expected move for the chart's timeframe (from the outlook rows; 1m
+  from IV), support / resistance with % away, the chart status (always "(past)")
+  and a "holding above / below" line over the last 12 bars, and a note that the
+  walls are open interest, not a settlement forecast.
+- Chart height capped at 440px on wide screens so the summary column does not
+  leave a gap. Nothing on the trading path touched.
+- Tests: BtcSummary 7 new; PriceChart 43 pass; web suite 732 pass; tsc clean.
+  Checked in a browser at desktop and phone width.
+
+**To do:**
+
+- [ ] **Deploy** and look at it with a live chart and a past date.
+- [ ] **Label collision:** when spot sits right under an off-scale wall, the
+      spot badge on the right axis covers the wall's badge. Nudge one of them.
+- [ ] **Summary "holding" line** uses $500 steps; on a very quiet day a $250
+      step would say more.
+
+---
+
+## The Live screen in the reference layout, and every card folds — 17 Sep 2026
+
+Asked for: the Live screen like the supplied image (outlook header with an
+"Overall lean" box, a Market card with the BTC mark and 24h change, the moves
+and the can-move bars as cards, the best pick and its alerts as two cards); then
+"all UI mobile responsive, collapse / expand for everything".
+
+**Done (not deployed yet):**
+
+- **Outlook header:** lightning mark, title and one-line subtitle, "How this is
+  worked out", and an **Overall lean** box (words + signed score, the 0.45 bar
+  and the 4-of-5 rule on hover). The verdict line under it no longer repeats the
+  score, so there is one score on the screen.
+- **"Side" says where it ends**, on every measured card: "Side = ±$76 (0.10%)".
+  Asked on 17 Sep why the 5m card said 33 / 33 / 33 while the sudden-move panel
+  said 1 / 98 / 1: neither is wrong — the card's Side is the middle third of
+  what BTC did (±0.1% at 5m, so 33% each is "no information"), the panel's is
+  ±1%. The panel now says "Sideways ±1%" and "a ±1% line, not the outlook
+  cards' narrower band".
+- **Market card** (`MarketHead.tsx`): BTC mark, BTC / USD, the price grouped
+  with one decimal, the 24h change in $ and % (the same `return24h` as the BTC
+  summary), and Settles / Contract / As of / ATM beside it. `istLabel` moved to
+  `lib/format.ts`.
+- **Moves as two cards** under Market, side by side when each gets 300px:
+  grouped dollars, the desk minus sign, "today since 05:30" highlighted; the
+  ladder in blue with "Now 76,233" and wider value column.
+- **Best pick split in two:** the pick and its figures; then "Alerts for this
+  pick" — switch, the premium floor and "same strike, at most" side by side
+  under their own labels, the order button and the caveat.
+- **Every card folds and remembers it** (localStorage `btc-desk:open:*`):
+  outlook (folded, the header and lean box stay), Market, both move cards, both
+  best-pick cards, BTC summary (folded, spot stays in the title), Account,
+  Orders waiting, Open positions (the count stays in the title), Auto-trading,
+  Strategies, Recent runs, Adds. Already folding: price chart, sudden move,
+  what to sell, market insights, orders, errors, P&L.
+- **`CollapsibleCard`:** the control beside the title is no longer inside the
+  fold button (the Strategies "New" button was a button inside a button); the
+  header wraps rather than truncating the title on a phone; the tap target is
+  32px; `ariaLabel` names the card.
+- **Phones:** every `auto-fit` grid floor is `min(Npx, 100%)`, so no grid can
+  push the page wider than a 320px screen. Checked at 1536, 390 and 320 wide —
+  no sideways scroll.
+- Tests: MarketHead 5, MoveSection 5, collapsible card 4, outlook header /
+  band / fold 5, best-pick split 2, BTC summary fold 1. Web suite 754 pass, tsc
+  clean. Nothing on the trading path touched.
+
+**To do:**
+
+- [ ] **Deploy** and look at the Live screen on a real phone.
+- [ ] **Open positions folded is a risk:** the count shows, but a stop that is
+      not on the book does not. Put "unprotected" in the folded title too, or
+      refuse to remember "folded" while anything is unprotected.
+- [ ] **Screens not checked at 320px with live data:** Positions, Orders,
+      Strategy form, P&L calendar, Errors. The grids are guarded; the tables
+      scroll inside their cards — look at each once on a phone.
+- [ ] **"By expiry · 10.9h"** still truncates in the measured card title on
+      desktop widths; shorten to "Expiry · 10.9h" or let it wrap.
+- [ ] **Old `.ol-howto` / `.ol-summary` Badge** text is long on a phone (three
+      lines). Shorten.
+
+---
+
+## Found while doing the above — 17 Sep 2026
+
+- [ ] **The chain harvester is not scheduled.** No cron or systemd unit runs it;
+      the last day in `chain.db` is 8 Sep 2026. It also cannot run as uid 1000:
+      `chain.db` is owned by 1001 while its -wal / -shm are 1000. Decide the
+      owner, fix it once (never as root), then schedule it. The measured outlook
+      only learns from what is harvested.
+- [ ] **Analytics start-up log noise:** the API can ask the analytics service
+      before uvicorn is up, logging one "fetch failed". Log only after a second
+      failure in a row (the fallback cards already cover the gap).
+- [ ] **Analytics wording fix is not live:** "BTC was quiet over the last {h}"
+      is in the code, not in the running container. Goes out with the next
+      analytics deploy.
+
+---
+
 ## HOW THE CODE IS KEPT HONEST
 
 - **39 tests**, run automatically before every deploy. `npm test` in

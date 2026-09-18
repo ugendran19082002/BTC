@@ -39,3 +39,7 @@ research/cache-5m.json
 research/move-5min.csv
 research/cache-overnight.json
 data-export/
+
+# analytics service
+analytics/.venv/
+.pytest_cache/

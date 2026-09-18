@@ -8,7 +8,7 @@ vi.mock('@/api/trade', () => ({
   getBestTradeSettings: (...a: unknown[]) => getBestTradeSettings(...a),
   setBestTradeSettings: vi.fn(),
 }));
-getBestTradeSettings.mockResolvedValue({ alertOn: false, minPremiumUsd: 5, telegram: { configured: true, on: true } });
+getBestTradeSettings.mockResolvedValue({ alertOn: false, minPremiumUsd: 5, repeat: 1, telegram: { configured: true, on: true } });
 
 /**
  * One trade, named.
@@ -184,3 +184,23 @@ describe('the best trade card', () => {
     expect(screen.getByText('SELL CE 78,000').className).toContain('ce');
   });
 });
+
+describe('the pick and its alerts, as two cards', () => {
+  it('[critical] the alerts, the order button and the caveat sit in a card of their own under the pick', async () => {
+    render(<BestTrade best={data()} legs={legs} onSell={() => {}} />);
+    const alerts = within(screen.getByLabelText('best pick alerts'));
+    expect(await alerts.findByRole('switch', { name: /Tell me when the pick changes/ })).toBeInTheDocument();
+    expect(alerts.getByRole('button', { name: /Open the order form with this/ })).toBeInTheDocument();
+    expect(alerts.getByText(/not been checked against past years/)).toBeInTheDocument();
+    // and the pick's own figures are not in it
+    expect(alerts.queryByLabelText('the pick')).toBeNull();
+  });
+
+  it('with nothing to sell the alerts card keeps the switch and drops the order button', async () => {
+    render(<BestTrade best={data({ pick: null, runnersUp: [], why: 'nothing worth selling' })} legs={legs} onSell={() => {}} />);
+    const alerts = within(screen.getByLabelText('best pick alerts'));
+    expect(await alerts.findByRole('switch')).toBeInTheDocument();
+    expect(alerts.queryByRole('button', { name: /order form/ })).toBeNull();
+  });
+});
+

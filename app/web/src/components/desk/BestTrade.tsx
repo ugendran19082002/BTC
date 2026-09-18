@@ -1,5 +1,5 @@
 import type { BestTrade as BestTradeData, Leg } from '@/types/desk';
-import { Card, CardTitle } from '@/components/ui/card';
+import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { KV } from '@/components/ui/kv';
@@ -44,27 +44,60 @@ export function BestTrade({ best, legs, onSell, onSettingsChanged }: {
   const pctOf = (v: number | null | undefined, places = 1) =>
     v === null || v === undefined ? '—' : `${(v * 100).toFixed(places)}%`;
 
-  return (
-    <Card className="besttrade">
-      <CardTitle
-        right={
-          p === null ? <Badge tone="neutral">nothing to sell</Badge>
-            : best.bestOfNone ? <Badge tone="warn">None pass the checks</Badge>
-              : best.agreesWithEngine
-                // Clears every hard rule and the tested engine picked it too:
-                // the only combination on this card that deserves the word.
-                ? <Badge tone="ok">Recommended</Badge>
-                : <Badge tone="warn">The tested rule picks differently</Badge>
-        }
-      >
-        Best pick for today’s contract
-      </CardTitle>
+  /*
+   * Two cards, one above the other: the pick and its figures, then what to do
+   * about it -- the phone alert, the premium floor and the order form. The
+   * controls used to sit inside the pick under a hairline, which made the card
+   * the tallest on the screen and hid the button below the fold on a laptop.
+   */
+  const alerts = (
+    <CollapsibleCard id="best-pick-alerts" title="Alerts for this pick" className="besttrade bt-alerts" ariaLabel="best pick alerts">
+      {/*
+        "Tell me when the pick changes" and the premium floor, above the
+        ticket. Their own switch, nothing to do with the header's fill alerts.
+      */}
+      <BestTradeSettings onChanged={onSettingsChanged} />
 
+      {p !== null && onSell && leg && (
+        <Button
+          variant="outline"
+          className="mt-3 h-10 w-full"
+          onClick={() => onSell(leg)}
+        >
+          Open the order form with this
+        </Button>
+      )}
+
+      {p !== null && (
+        <p className="m-0 mt-2 text-[10.5px] leading-snug text-[var(--dim)]">
+          {best.agreesWithEngine
+            ? 'The tested rule picked this strike too. '
+            : 'The tested rule picked differently — follow the tested rule. '}
+          This ranking has not been checked against past years. Nothing is sent from here;
+          the order form runs every check again.
+        </p>
+      )}
+    </CollapsibleCard>
+  );
+
+  return (
+    <>
+    <CollapsibleCard
+      id="best-pick"
+      className="besttrade"
+      title="Best pick for today’s contract"
+      right={
+        p === null ? <Badge tone="neutral">nothing to sell</Badge>
+          : best.bestOfNone ? <Badge tone="warn">None pass the checks</Badge>
+            : best.agreesWithEngine
+              // Clears every hard rule and the tested engine picked it too:
+              // the only combination on this card that deserves the word.
+              ? <Badge tone="ok">Recommended</Badge>
+              : <Badge tone="warn">The tested rule picks differently</Badge>
+      }
+    >
       {p === null ? (
-        <>
-          <p className="m-0 text-[12.5px] text-muted-foreground">{best.why}</p>
-          <BestTradeSettings onChanged={onSettingsChanged} />
-        </>
+        <p className="m-0 text-[12.5px] text-muted-foreground">{best.why}</p>
       ) : (
         <>
           {/*
@@ -163,33 +196,10 @@ export function BestTrade({ best, legs, onSell, onSettingsChanged }: {
               </span>
             )}
           </p>
-
-          {/*
-            "Tell me when the pick changes" and the premium floor, under the
-            numbers and above the ticket. Their own switch, nothing to do with
-            the header's fill alerts.
-          */}
-          <BestTradeSettings onChanged={onSettingsChanged} />
-
-          {onSell && leg && (
-            <Button
-              variant="outline"
-              className="mt-3 h-10 w-full"
-              onClick={() => onSell(leg)}
-            >
-              Open the order form with this
-            </Button>
-          )}
-
-          <p className="m-0 mt-2 text-[10.5px] leading-snug text-[var(--dim)]">
-            {best.agreesWithEngine
-              ? 'The tested rule picked this strike too. '
-              : 'The tested rule picked differently — follow the tested rule. '}
-            This ranking has not been checked against past years. Nothing is sent from here;
-            the order form runs every check again.
-          </p>
         </>
       )}
-    </Card>
+    </CollapsibleCard>
+    {alerts}
+    </>
   );
 }
