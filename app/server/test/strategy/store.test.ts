@@ -252,6 +252,8 @@ test('the add setting saves and reads back, and a strategy saved before it exist
   const s = fresh();
   s.save({ id: 'add', name: 'Add', enabled: false, config: { ...DEFAULT_CONFIG, addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '12:15' } } });
   assert.deepEqual(s.get('add')!.config.addToOpposite, { minPriceUsd: 3, maxMultiple: 2, addUntil: '12:15' });
+  s.save({ id: 'add2', name: 'Add', enabled: false, config: { ...DEFAULT_CONFIG, addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '12:15', crossAfterSec: 90 } } });
+  assert.equal(s.get('add2')!.config.addToOpposite!.crossAfterSec, 90, 'the add\'s own seconds survive a save');
   assert.equal(s.get('double')!.config.addToOpposite, null, 'seeded before the setting existed');
 });
 
@@ -263,5 +265,12 @@ test('the add setting is checked before it is saved', () => {
   assert.ok(add({ maxMultiple: 0 }).some((p) => /between 0 and 20/.test(p)));
   assert.ok(add({}, { legs: 'CE', doubleWhenOneSided: false }).some((p) => /needs both legs/.test(p)));
   assert.ok(add({}, { takeProfitPct: 0 }).some((p) => /needs a target/.test(p)));
+  // "If not filled, sell at bid after N seconds", on the add itself
+  assert.deepEqual(add({ crossAfterSec: 0 }), []);
+  assert.deepEqual(add({ crossAfterSec: 600 }), []);
+  assert.deepEqual(add({ crossAfterSec: null }), [], 'cleared means the entry\'s own seconds');
+  assert.ok(add({ crossAfterSec: 601 }).some((p) => /0 to 600/.test(p)));
+  assert.ok(add({ crossAfterSec: -1 }).some((p) => /0 to 600/.test(p)));
+  assert.ok(add({ crossAfterSec: 1.5 }).some((p) => /whole number/.test(p)));
   assert.deepEqual(validateConfig({ ...DEFAULT_CONFIG, addToOpposite: null }), []);
 });

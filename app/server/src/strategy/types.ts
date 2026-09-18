@@ -266,6 +266,19 @@ export type AddToOpposite = {
    * is half an hour before the exit.
    */
   addUntil: string;
+  /**
+   * If the add has not filled, sell at the bid after this many seconds.
+   *
+   * The same control the order ticket and the add-lots sheet carry, and for the
+   * same reason: an add rests at the offer and nobody is watching it at 11 in
+   * the morning. Zero rests at the offer and never crosses -- the add window
+   * ends it either way, and the minimum price is still a floor, so "sell at the
+   * bid" can never mean selling under what the rule asked for.
+   *
+   * Absent on a strategy saved before this existed: the entry's own
+   * `crossAfterSec`, which is what those strategies have been doing.
+   */
+  crossAfterSec?: number | null;
 };
 
 /** A 24-hour "HH:MM". Defined before anything below uses it at load. */
@@ -437,6 +450,10 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
     }
     if (!(typeof add.maxMultiple === 'number') || !(add.maxMultiple > 0) || add.maxMultiple > 20) {
       bad.push('The "not once it has risen to" limit must be between 0 and 20 times the sale price.');
+    }
+    if (add.crossAfterSec !== null && add.crossAfterSec !== undefined
+      && (!Number.isInteger(add.crossAfterSec) || add.crossAfterSec < 0 || add.crossAfterSec > 600)) {
+      bad.push('Seconds before the add sells at the bid must be a whole number from 0 to 600.');
     }
     if (!isHhmm(add.addUntil)) {
       bad.push('The latest time to add must be a time of day, like 4:59 PM.');

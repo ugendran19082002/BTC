@@ -218,3 +218,52 @@ test('[critical] the PE that was added to does not add back to the CE when its o
   assert.match(rows[0]!.detail, /PE was itself added to today/);
   assert.equal(r.store.get('CE-1')!.state.position, 0, 'the CE stays closed');
 });
+
+/*
+ * "If not filled, sell at bid after N seconds", on the add itself.
+ *
+ * The add rests at the other leg's offer and nobody is watching it at 11 in the
+ * morning, so the rule carries the same control the order ticket and the
+ * add-lots sheet do. What matters: the rule's own seconds are used when it has
+ * them, the entry's when it does not (every strategy saved before the control
+ * existed), and the minimum price stays a floor either way -- "sell at the bid"
+ * can never mean selling under what the rule asked for.
+ */
+test('[critical] the add walks for the rule\'s own seconds, not the entry\'s', async () => {
+  let seen: { chaseSeconds?: number; floorPrice?: number } = {};
+  const { adder } = await day({ place: async (o) => { seen = o; return { ok: true }; } });
+  await adder.consider(strategy({}, {
+    crossAfterSec: 5,
+    addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59', crossAfterSec: 90 },
+  }));
+  assert.equal(seen.chaseSeconds, 90);
+  assert.equal(seen.floorPrice, 3, 'the minimum is still the floor: the walk may reach the bid, never pass it');
+});
+
+test('a rule saved before the control keeps doing what it did: the entry\'s seconds', async () => {
+  let seen: { chaseSeconds?: number } = {};
+  const { adder } = await day({ place: async (o) => { seen = o; return { ok: true }; } });
+  await adder.consider(strategy({}, { crossAfterSec: 12 }));  // addToOpposite has no crossAfterSec
+  assert.equal(seen.chaseSeconds, 12);
+});
+
+test('zero seconds rests at the offer and never crosses; the add window still ends it', async () => {
+  let seen: { chaseSeconds?: number; timeoutMs?: number } = {};
+  const { adder } = await day({ place: async (o) => { seen = o; return { ok: true }; } });
+  await adder.consider(strategy({}, {
+    addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59', crossAfterSec: 0 },
+  }));
+  assert.equal(seen.chaseSeconds, 0);
+  assert.equal(seen.timeoutMs, 5 * 60_000);
+});
+
+test('an entry that crosses straight away has nothing to wait for, whatever the rule says', async () => {
+  let seen: { chaseSeconds?: number } = {};
+  const { adder } = await day({ place: async (o) => { seen = o; return { ok: true }; } });
+  await adder.consider(strategy({}, {
+    entryPrice: 'now',
+    addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59', crossAfterSec: 90 },
+  }));
+  assert.equal(seen.chaseSeconds, 0);
+});
+

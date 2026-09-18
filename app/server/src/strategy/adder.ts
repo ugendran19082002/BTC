@@ -110,8 +110,16 @@ export class StrategyAdder {
         limitPrice: crossNow
           ? Math.max(d.quote.bid ?? rule.minPriceUsd, rule.minPriceUsd)
           : Math.max(d.quote.ask ?? d.quote.bid ?? rule.minPriceUsd, rule.minPriceUsd),
-        // Zero rests at the offer, as it does at entry; the window still ends it.
-        chaseSeconds: crossNow ? 0 : c.crossAfterSec,
+        /*
+         * Zero rests at the offer, as it does at entry; the window still ends it.
+         *
+         * The rule's own seconds when it has them -- "if not filled, sell at
+         * the bid after N" is asked of the add, not of the morning's entry --
+         * and the entry's otherwise, which is what strategies saved before the
+         * control existed have always done. A "now" entry crosses immediately
+         * and has nothing to wait for.
+         */
+        chaseSeconds: crossNow ? 0 : (rule.crossAfterSec ?? c.crossAfterSec),
         maxCrossSpreadPct: crossNow ? null : (c.maxCrossSpreadPct ?? 0.15),
         floorPrice: rule.minPriceUsd,
         timeoutMs: ADD_WINDOW_MS,

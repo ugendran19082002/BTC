@@ -64,6 +64,11 @@ function cleanConfig(raw: unknown): StrategyConfig {
           maxMultiple: Number(c.addToOpposite.maxMultiple),
           // Absent from a client that predates it: half an hour before the exit.
           addUntil: c.addToOpposite.addUntil === undefined ? defaultAddUntil(exitTime) : String(c.addToOpposite.addUntil),
+          // Absent, or cleared: the entry's own seconds, which is what every
+          // strategy saved before this did.
+          crossAfterSec: c.addToOpposite.crossAfterSec === undefined || c.addToOpposite.crossAfterSec === null
+            ? null
+            : Math.floor(Number(c.addToOpposite.crossAfterSec)),
         },
     weekdays: Array.isArray(c.weekdays)
       ? [...new Set(c.weekdays.map((d) => Math.floor(Number(d))))].sort()
