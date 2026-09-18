@@ -438,4 +438,53 @@ describe('the late-entry window', () => {
     fireEvent.click(saveButton());
     await waitFor(() => expect(saveStrategy).not.toHaveBeenCalled());
   });
+
+  /*
+   * The rebalance rule's own controls.
+   *
+   * Two things bit on 18 September: the sell had no "if not filled, sell at bid
+   * after" of its own, and a desk default cap of 200 on a strategy that sells
+   * 700 a side blocked every stage before it started.
+   */
+  it('[critical] turning it on picks a cap that fits the lots, not the desk default', () => {
+    show(editing({ lots: 700, rebalance: null }));
+    tab('Extras');
+    fireEvent.click(screen.getByRole('switch', { name: /Rebalance one side into the other/ }));
+    // 700 a side, 30 a stage over 3 stages: it can reach 790
+    expect(screen.getByLabelText('rebalance cap per side')).toHaveValue('790');
+    expect(screen.queryByText(/is under the 700 lots/)).toBeNull();
+  });
+
+  it('a cap under the lots says why nothing could ever run, and what the rule reaches', () => {
+    show(editing({ lots: 700, rebalance: { ...DEFAULT_REBALANCE, maxLotsPerSide: 200 } }));
+    tab('Extras');
+    expect(screen.getByText(/The cap \(200\) is under the 700 lots the strategy opens with, so no stage could ever run/))
+      .toBeInTheDocument();
+    expect(screen.getByText(/This rule reaches 790 lots at most/)).toBeInTheDocument();
+  });
+
+  it('[critical] the sell has its own seconds, and blank keeps the entry\'s', async () => {
+    show(editing({ lots: 100, crossAfterSec: 7, rebalance: { ...DEFAULT_REBALANCE, maxLotsPerSide: 200 } }));
+    tab('Extras');
+    const box = screen.getByLabelText('rebalance cross after seconds');
+    expect(box).toHaveValue('');
+    expect(box).toHaveAttribute('placeholder', '7');
+    expect(screen.getByText(/blank — the entry's 7 sec/)).toBeInTheDocument();
+    fireEvent.change(box, { target: { value: '45' } });
+    fireEvent.click(saveButton());
+    await vi.waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    expect(saveStrategy.mock.calls[0]![0].config.rebalance.crossAfterSec).toBe(45);
+    expect(saveStrategy.mock.calls[0]![0].config.crossAfterSec).toBe(7);
+  });
+
+  it('the stage table says what the cap does, in words', () => {
+    show(editing({ lots: 100, rebalance: { ...DEFAULT_REBALANCE, maxLotsPerSide: 160 } }));
+    tab('Extras');
+    expect(screen.getByText(/neither side passes 160 lots, whatever the premiums do/)).toBeInTheDocument();
+    const stages = within(screen.getByLabelText('rebalance stages'));
+    // 100 + 100, 30 a stage, capped at 160: 130, 160, then the cap holds it
+    expect(stages.getByText('130 / 70')).toBeInTheDocument();
+    expect(stages.getByText('160 / 40')).toBeInTheDocument();
+    expect(stages.getAllByText('160 / 40')).toHaveLength(2);
+  });
 });
