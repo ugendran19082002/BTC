@@ -3,7 +3,7 @@ import { ChevronDown, Loader2 } from 'lucide-react';
 import { saveStrategy, getRebalanceSettings } from '@/api/strategy';
 import {
   DAY_NAMES, DEFAULT_ADD_TO_OPPOSITE, DEFAULT_CONFIG, DEFAULT_REBALANCE, MAX_STRIKE_STEP,
-  stagePositions, stageThresholds, strikeLabel,
+  mostOneSideCanReach, stagePositions, stageThresholds, strikeLabel,
   type RebalanceLimits, type RebalanceRule, type Strategy, type StrategyConfig,
 } from '@/types/strategy';
 import { Sheet, SheetContent, SheetFooter } from '@/components/ui/sheet';
@@ -95,6 +95,7 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
 
   // Blank means "the entry's own seconds": null on the rule, not a zero.
   const addCross = c.addToOpposite?.crossAfterSec ?? null;
+  const rebCross = c.rebalance?.crossAfterSec ?? null;
 
   const problems = useMemo(() => strategyProblems(c, name), [c, name]);
   /*
@@ -731,7 +732,20 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                     : 'Off — both sides are left as they were sold.'}
                   checked={Boolean(c.rebalance?.enabled)}
                   onCheckedChange={(on) => set('rebalance', on
-                    ? { ...(c.rebalance ?? rebalanceDefaults), enabled: true }
+                    ? (() => {
+                        const rule = { ...(c.rebalance ?? rebalanceDefaults), enabled: true };
+                        /*
+                          A cap under the lots the strategy opens with blocks
+                          every stage before it starts -- the desk's default cap
+                          is 200 and this strategy sells 700 a side. Start it at
+                          the most the rule can actually reach, which the person
+                          can then lower on purpose rather than by accident.
+                        */
+                        const reach = mostOneSideCanReach(rule, c.lots);
+                        return rule.maxLotsPerSide !== null && rule.maxLotsPerSide < reach
+                          ? { ...rule, maxLotsPerSide: reach }
+                          : rule;
+                      })()
                     : (c.rebalance ? { ...c.rebalance, enabled: false } : null))}
                 />
                 <FieldError text={err('rebalance')} />
@@ -776,7 +790,13 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                       <Input value={String(c.rebalance.confirmTicks)} aria-label="rebalance confirm ticks" inputMode="numeric"
                              onChange={(e) => setReb({ confirmTicks: Math.floor(num(e.target.value, 1)) })} />
                     </Stack>
-                    <Stack label="Cap each side" error={err('rebalanceCap')} hint="blank is no cap of its own">
+                    <Stack
+                      label="Cap each side"
+                      error={err('rebalanceCap')}
+                      hint={c.rebalance.maxLotsPerSide === null
+                        ? 'no cap: a side may grow as far as the stages take it'
+                        : `neither side may pass ${c.rebalance.maxLotsPerSide} lots — this rule reaches ${mostOneSideCanReach(c.rebalance, c.lots)}`}
+                    >
                       <Input
                         value={c.rebalance.maxLotsPerSide === null ? '' : String(c.rebalance.maxLotsPerSide)}
                         aria-label="rebalance cap per side" inputMode="numeric" placeholder="none"
@@ -784,6 +804,52 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                           maxLotsPerSide: e.target.value.trim() === '' ? null : Math.floor(num(e.target.value, 0)),
                         })}
                       />
+                    </Stack>
+                  </div>
+
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    {/*
+                      The sell rests at the risen side's offer and the buy-back
+                      has already happened, so a sell nobody is watching leaves
+                      the stage half done. Blank keeps the strategy's entry
+                      seconds, which is what a rule saved before this used.
+                    */}
+                    <Stack
+                      label="If not filled, sell at bid after"
+                      error={err('rebalanceCross')}
+                      hint={rebCross === null
+                        ? `blank — the entry's ${c.crossAfterSec} sec`
+                        : rebCross === 0 ? 'rests at the offer; the window ends it' : 'then sells at the bid'}
+                    >
+                      <Affix after="sec">
+                        <Input
+                          value={rebCross === null ? '' : String(rebCross)}
+                          aria-label="rebalance cross after seconds"
+                          inputMode="numeric"
+                          placeholder={String(c.crossAfterSec)}
+                          className="pr-9"
+                          onChange={(e) => setReb({
+                            crossAfterSec: e.target.value.trim() === '' ? null : Math.floor(num(e.target.value, 0)),
+                          })}
+                        />
+                      </Affix>
+                    </Stack>
+                    <Stack label="Widest spread to cross" error={err('rebalanceSpread')}
+                           hint="wider than this waits rather than crossing">
+                      <Affix after="%">
+                        <Input
+                          value={c.rebalance.maxSpreadPct === null ? '' : String(Math.round(c.rebalance.maxSpreadPct * 100))}
+                          aria-label="rebalance max spread percent"
+                          inputMode="numeric"
+                          placeholder="none"
+                          className="pr-7"
+                          onChange={(e) => setReb({
+                            maxSpreadPct: e.target.value.trim() === ''
+                              ? null
+                              : Math.min(100, Math.max(1, num(e.target.value, 15))) / 100,
+                          })}
+                        />
+                      </Affix>
                     </Stack>
                   </div>
 
@@ -856,6 +922,9 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                       Each stage buys back the fallen side and sells the same number again on the risen one, so the
                       position gets more one-sided as it goes. Both conditions must hold in the same reading,
                       {' '}{c.rebalance.confirmTicks} times in a row, and each stage happens once.
+                      {c.rebalance.maxLotsPerSide !== null && (
+                        <> The cap stops it: neither side passes {c.rebalance.maxLotsPerSide} lots, whatever the premiums do.</>
+                      )}
                     </p>
                   </div>
                 </>

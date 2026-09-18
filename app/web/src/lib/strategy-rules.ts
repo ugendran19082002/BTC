@@ -19,7 +19,8 @@ export type FormField =
   | 'probGate' | 'doubleWhenOneSided' | 'minSellScore' | 'maxShockScore'
   | 'addMinPrice' | 'addMultiple' | 'addUntil' | 'addCrossAfterSec' | 'add'
   | 'rebalance' | 'rebalanceLots' | 'rebalanceSteps' | 'rebalanceUp' | 'rebalanceDown'
-  | 'rebalanceIncrement' | 'rebalanceConfirm' | 'rebalanceCap' | 'rebalanceEnd';
+  | 'rebalanceIncrement' | 'rebalanceConfirm' | 'rebalanceCap' | 'rebalanceEnd'
+  | 'rebalanceCross' | 'rebalanceSpread';
 
 export type Problem = { field: FormField; tab: FormTab; message: string };
 
@@ -31,7 +32,7 @@ const TAB: Record<FormField, FormTab> = {
   addMinPrice: 'extras', addMultiple: 'extras', addUntil: 'extras', addCrossAfterSec: 'extras', add: 'extras',
   rebalance: 'extras', rebalanceLots: 'extras', rebalanceSteps: 'extras', rebalanceUp: 'extras',
   rebalanceDown: 'extras', rebalanceIncrement: 'extras', rebalanceConfirm: 'extras',
-  rebalanceCap: 'extras', rebalanceEnd: 'extras',
+  rebalanceCap: 'extras', rebalanceEnd: 'extras', rebalanceCross: 'extras', rebalanceSpread: 'extras',
 };
 
 export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
@@ -135,8 +136,13 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
     if (!Number.isInteger(reb.confirmTicks) || reb.confirmTicks < 1) {
       say('rebalanceConfirm', 'At least one confirming reading.');
     }
+    const cross = reb.crossAfterSec;
+    if (cross !== null && cross !== undefined && (!Number.isInteger(cross) || cross < 0 || cross > 600)) {
+      say('rebalanceCross', 'Seconds before it sells at the bid must be a whole number from 0 to 600.');
+    }
     if (reb.maxLotsPerSide !== null && reb.maxLotsPerSide < c.lots) {
-      say('rebalanceCap', `The cap (${reb.maxLotsPerSide}) is under the ${c.lots} lots the strategy opens with.`);
+      say('rebalanceCap', `The cap (${reb.maxLotsPerSide}) is under the ${c.lots} lots the strategy opens with, `
+        + `so no stage could ever run. This rule reaches ${c.lots + Math.min(c.lots, reb.lotsPerStep * reb.steps)} lots at most.`);
     }
     if (!isHhmm(reb.endTime)) {
       say('rebalanceEnd', 'The latest time to rebalance must be a time of day, like 1:30 PM.');
