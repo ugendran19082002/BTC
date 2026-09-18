@@ -2312,6 +2312,28 @@ the rows drawn were trimmed, and still are by default.
 
 ---
 
+## The strategy's "by open interest" rule picked the wrong wall — 18 Sep 2026
+
+Asked which pair the rule takes, 71,000 – 89,000 or 76,000 – 77,800. It took
+the first: the heaviest open interest anywhere on the board, at strikes paying
+$0.20 and $0.10, and it did not apply the premium floor at all. A strategy on
+this rule would have sold both legs for nothing.
+
+**Done:** the rule looks for its wall inside the desk's level band (the same
+`wall_within_em` the screens use, from Settings), and the strike has to pay at
+least the strategy's premium floor. Nothing in reach that pays is a refusal
+that says so: "no wall within 2 expected moves that pays $15". The form's
+description says the same. The 16 September window test still holds — the rule
+still sees the whole board; it just no longer sells the far end of it.
+
+**To do:**
+
+- [ ] **The rule is still untested as a trade.** Open interest failed the
+      cross-period screen in `feature_screen.py`; the premium rule has 733 days.
+      The form says so, and it should stay said.
+
+---
+
 ## "Resistance 89,000" — 18 Sep 2026
 
 The BTC summary called 89,000 resistance with BTC at 76,723 and ten hours left:
