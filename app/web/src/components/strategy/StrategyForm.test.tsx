@@ -4,7 +4,26 @@ import { StrategyForm } from '@/components/strategy/StrategyForm';
 import { DEFAULT_CONFIG, type Strategy } from '@/types/strategy';
 
 const saveStrategy = vi.fn();
-vi.mock('@/api/strategy', () => ({ saveStrategy: (...a: unknown[]) => saveStrategy(...a) }));
+const rebalanceSettings = {
+  defaults: {
+    enabled: true, lotsPerStep: 30, steps: 3, upStartPct: 30, downStartPct: 20, incrementPct: 10,
+    confirmTicks: 2, endTime: '13:30', lockDirection: true, maxLotsPerSide: 200, allowPartial: true, maxSpreadPct: 0.15,
+  },
+  limits: {
+    maxSteps: 20, maxLotsPerStep: 10_000, maxUpPct: 500, maxDownPct: 99,
+    maxIncrementPct: 500, maxConfirmTicks: 10, maxLotsPerSide: 100_000,
+  },
+  ceilings: {
+    maxSteps: 100, maxLotsPerStep: 100_000, maxUpPct: 10_000, maxDownPct: 99,
+    maxIncrementPct: 10_000, maxConfirmTicks: 60, maxLotsPerSide: 1_000_000,
+  },
+};
+vi.mock('@/api/strategy', () => ({
+  saveStrategy: (...a: unknown[]) => saveStrategy(...a),
+  // The form reads the desk's rebalance defaults and limits rather than holding its own.
+  getRebalanceSettings: () => Promise.resolve(rebalanceSettings),
+  setRebalanceSettings: vi.fn(),
+}));
 
 /**
  * The strategy form, on a phone.
