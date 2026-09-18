@@ -2,7 +2,7 @@ import type { MarketRead, TimeframeRead } from '../market/moves.js';
 import type { Snapshot } from '../market/chain.js';
 import { loadHorizons, type HorizonRow } from './forecast.js';
 import { momentumScore, stackScore, vwapScore } from './direction.js';
-import type { MeasuredOutlook, MeasuredRow } from '../analytics/client.js';
+import type { ChainContext, MeasuredOutlook, MeasuredRow } from '../analytics/client.js';
 
 /**
  * Where BTC could be at each horizon, and how much of that is knowable.
@@ -140,6 +140,12 @@ export type Outlook = {
   sampleWindows: number | null;
   /** Which measured model answered, and when it was measured. Null when none did. */
   model?: { name: string; measuredAt: string | null } | null;
+  /**
+   * The option board now, reading by reading, with whether each held when it
+   * was measured. Display only, and never a probability on a card unless the
+   * service itself used it: an unheld reading is context, not odds.
+   */
+  context?: ChainContext[];
 };
 
 /**
@@ -150,11 +156,12 @@ export type Outlook = {
  * -- still has everything it had before.
  */
 export function withMeasured(o: Outlook, m: MeasuredOutlook | null): Outlook {
-  if (!m) return { ...o, model: null };
+  if (!m) return { ...o, model: null, context: [] };
   const byLabel = new Map(m.rows.map((r) => [r.label, r]));
   return {
     ...o,
     model: { name: m.model, measuredAt: m.measuredAt },
+    context: m.context,
     rows: o.rows.map((r) => ({ ...r, measured: byLabel.get(r.label) ?? null })),
   };
 }

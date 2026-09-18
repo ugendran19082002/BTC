@@ -42,7 +42,47 @@ export type MeasuredRow = {
   } | null;
 };
 
-export type MeasuredOutlook = { model: string; measuredAt: string | null; rows: MeasuredRow[] };
+/**
+ * One chain reading now, and what its measurement allows to be said about it.
+ *
+ * `measured` false means the service has no `chain_states` for that bucket at
+ * all -- nothing was counted, so nothing may be claimed. `leanHolds` /
+ * `sideHolds` are the same three-year test the candle states pass; of the three
+ * readings only a large implied move held anything (livelier), and no chain
+ * reading held a direction.
+ */
+export type ChainContext = {
+  feature: string;
+  value: number | null;
+  bucket: string | null;
+  words: string | null;
+  measured: boolean;
+  leanHolds: boolean;
+  sideHolds: boolean;
+  calm: 'calmer' | 'livelier' | null;
+  pDown: number | null;
+  pSide: number | null;
+  pUp: number | null;
+  windows: number | null;
+};
+
+export type MeasuredOutlook = {
+  model: string;
+  measuredAt: string | null;
+  rows: MeasuredRow[];
+  context: ChainContext[];
+};
+
+/** The raw board, exactly as the measurement defined it. The service does the bucketing. */
+export type ChainBoardInput = {
+  hoursLeft: number;
+  callAtm: number | null;
+  putAtm: number | null;
+  putMarks: (number | null)[];
+  callMarks: (number | null)[];
+  putVolume: number | null;
+  callVolume: number | null;
+};
 
 export type Series = Partial<Record<'5m' | '15m' | '1h' | '4h' | '1d', { t: number[]; c: number[] }>>;
 
@@ -93,8 +133,32 @@ function rowFrom(r: Record<string, unknown>): MeasuredRow | null {
   };
 }
 
+const orNull = (v: unknown): number | null => (num(v) ? v : null);
+
+function contextFrom(c: Record<string, unknown>): ChainContext | null {
+  if (typeof c.feature !== 'string') return null;
+  return {
+    feature: c.feature,
+    value: orNull(c.value),
+    bucket: typeof c.bucket === 'string' ? c.bucket : null,
+    words: typeof c.words === 'string' ? c.words : null,
+    measured: c.measured === true,
+    leanHolds: c.lean_holds === true,
+    sideHolds: c.side_holds === true,
+    calm: c.calm === 'calmer' || c.calm === 'livelier' ? c.calm : null,
+    pDown: orNull(c.p_down),
+    pSide: orNull(c.p_side),
+    pUp: orNull(c.p_up),
+    windows: orNull(c.windows),
+  };
+}
+
 export async function measuredOutlook(
-  input: { now: number; spot: number; series: Series | null; extra: { label: string; minutes: number }[] },
+  input: {
+    now: number; spot: number; series: Series | null; extra: { label: string; minutes: number }[];
+    /** The option board, when there is one. Absent is simply no chain readings. */
+    chain?: ChainBoardInput | null;
+  },
   deps: Deps = { fetch: globalThis.fetch, now: Date.now, url: process.env.ANALYTICS_URL },
 ): Promise<MeasuredOutlook | null> {
   if (!deps.url || !input.series) return null;
@@ -103,13 +167,23 @@ export async function measuredOutlook(
     const res = await deps.fetch(`${deps.url.replace(/\/$/, '')}/v1/outlook`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ now: Math.floor(input.now / 1000), spot: input.spot, series: input.series, extra: input.extra }),
+      body: JSON.stringify({
+        now: Math.floor(input.now / 1000), spot: input.spot, series: input.series, extra: input.extra,
+        chain: input.chain
+          ? {
+              hours_left: input.chain.hoursLeft,
+              call_atm: input.chain.callAtm, put_atm: input.chain.putAtm,
+              put_marks: input.chain.putMarks, call_marks: input.chain.callMarks,
+              put_volume: input.chain.putVolume, call_volume: input.chain.callVolume,
+            }
+          : undefined,
+      }),
       signal: AbortSignal.timeout(ANALYTICS_TIMEOUT_MS),
     });
     // 503 is the service saying it has no measured table yet: not an outage, just nothing to add.
     if (res.status === 503) return null;
     if (!res.ok) throw new Error(`analytics answered ${res.status}`);
-    const body = (await res.json()) as { model?: unknown; measured_at?: unknown; rows?: unknown };
+    const body = (await res.json()) as { model?: unknown; measured_at?: unknown; rows?: unknown; context?: unknown };
     if (!Array.isArray(body.rows)) throw new Error('analytics answered without rows');
     const rows = body.rows.map((r) => rowFrom(r as Record<string, unknown>)).filter((r): r is MeasuredRow => r !== null);
     noted = false;
@@ -117,6 +191,9 @@ export async function measuredOutlook(
       model: typeof body.model === 'string' ? body.model : 'unknown',
       measuredAt: typeof body.measured_at === 'string' ? body.measured_at : null,
       rows,
+      context: Array.isArray(body.context)
+        ? body.context.map((c) => contextFrom(c as Record<string, unknown>)).filter((c): c is ChainContext => c !== null)
+        : [],
     };
   } catch (e) {
     downUntil = deps.now() + ANALYTICS_COOL_OFF_MS;

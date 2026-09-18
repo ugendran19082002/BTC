@@ -69,6 +69,46 @@ const MIGRATIONS: Migration[] = [
       }
     },
   },
+  {
+    /*
+     * The whole board every five minutes, so the chain can one day be measured
+     * the way the candles were.
+     *
+     * chain.db holds one chain a day -- 05:30, twelve hours before settlement --
+     * which is why only the straddle, the skew and put/call volume could be
+     * measured at all. Open interest per strike, its change, the walls and max
+     * pain have no history to be tested against. This is that history, from
+     * 17 September 2026 forward. Kept 400 days: a row is a hundred bytes and
+     * the point of it is the year.
+     */
+    id: '003-chain-features',
+    up: `
+      CREATE TABLE IF NOT EXISTS chain_features (
+        at            INTEGER NOT NULL,
+        expiry        TEXT    NOT NULL,
+        spot          REAL    NOT NULL,
+        hours_left    REAL    NOT NULL,
+        atm_iv        REAL,
+        call_atm      REAL,
+        put_atm       REAL,
+        put_marks     TEXT,
+        call_marks    TEXT,
+        put_volume    REAL,
+        call_volume   REAL,
+        pcr_oi        REAL,
+        pcr_volume    REAL,
+        ce_oi         REAL,
+        pe_oi         REAL,
+        iv_skew_pts   REAL,
+        ce_wall       REAL,
+        pe_wall       REAL,
+        max_pain      REAL,
+        ce_oi_change  REAL,
+        pe_oi_change  REAL,
+        PRIMARY KEY (at, expiry)
+      );
+    `,
+  },
 ];
 
 let db: DatabaseSync | null = null;
@@ -79,6 +119,19 @@ function open(): DatabaseSync {
   db.exec('PRAGMA journal_mode = WAL');
   migrate(db, MIGRATIONS);
   return db;
+}
+
+/**
+ * The market database, migrated, for the other disposable tables that live in
+ * it. `expect` is the migration the caller needs, so a module that forgot to
+ * add one fails here rather than at the first query.
+ */
+export function marketDb(expect?: string): DatabaseSync {
+  const d = open();
+  if (expect && !MIGRATIONS.some((m) => m.id === expect)) {
+    throw new Error(`market.db has no migration ${expect}`);
+  }
+  return d;
 }
 
 /** For tests, and for anything that has just moved the file underneath us. */

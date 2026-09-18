@@ -19,6 +19,7 @@ import { outlook, withMeasured } from '../../domain/outlook.js';
 import { pBetween } from '../../domain/probability.js';
 import { attachEv } from '../../domain/ev.js';
 import { noteOpenInterest, openInterestChange, ivChange, type OiChange } from '../../market/oi-history.js';
+import { chainBoard, noteChainFeatures } from '../../market/chain-features.js';
 import { SHOCK_WINDOWS } from '../../domain/shock.js';
 import { shockFrom } from '../../market/shock-now.js';
 
@@ -214,11 +215,48 @@ export function registerDeskRoutes(app: FastifyInstance) {
        */
       const ownOutlook = outlook({ snap, market });
       const settlement = ownOutlook.rows.find((r) => r.isExpiry);
+
+      /*
+       * The option board, as raw marks and volumes.
+       *
+       * The service buckets it with the functions that labelled 735 mornings of
+       * chain.db, and only a reading that held in all three years may move a
+       * figure -- which, measured on 17 September, is the implied move alone,
+       * and only on the settlement card. The rest is context on the screen.
+       *
+       * Recorded on a live board (never a past one, which would file an old
+       * chain under now), because the readings nobody can measure yet -- open
+       * interest, its change, the walls, max pain -- have no history at all
+       * until this has been running for a year.
+       */
+      const board = chainBoard(snap, scored);
+      if (snap.live) {
+        const ce = scored.filter((l) => l.cp === 'C');
+        const pe = scored.filter((l) => l.cp === 'P');
+        const oiSum = (legs: typeof scored) => legs.reduce((t, l) => t + (l.oi ?? 0), 0);
+        const oiMoved = (legs: typeof scored) => legs.reduce(
+          (t, l) => t + (oiChanges.get(`${l.cp}${l.strike}`)?.change ?? 0), 0,
+        );
+        noteChainFeatures({
+          expiry: snap.expiry, ts: snap.ts, spot: snap.spot, hoursLeft: snap.hoursToExpiry,
+          atmIv: snap.atmIv, board,
+          pcrOi: structure.pcrOi, pcrVolume: structure.pcrVolume,
+          ceOi: oiSum(ce), peOi: oiSum(pe),
+          ivSkewPts: structure.ivSkewPts,
+          ceWall: structure.ceOiWall?.strike ?? null,
+          peWall: structure.peOiWall?.strike ?? null,
+          maxPain: structure.maxPain?.strike ?? null,
+          ceOiChange: oiChanges.size ? oiMoved(ce) : null,
+          peOiChange: oiChanges.size ? oiMoved(pe) : null,
+        });
+      }
+
       const measured = await measuredOutlook({
         now: Date.now(),
         spot: snap.spot,
         series: seriesForAnalytics(),
         extra: settlement ? [{ label: settlement.label, minutes: settlement.minutes }] : [],
+        chain: board,
       });
 
       return {
