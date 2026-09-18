@@ -349,6 +349,7 @@ describe('the market context strip', () => {
   const structure = {
     pcrOi: 0.34, ivSkewPts: 1.2,
     ceOiWall: { strike: 78_400, value: 1 }, peOiWall: { strike: 72_800, value: 1 },
+    ceOiWallNear: { strike: 78_400, value: 1 }, peOiWallNear: { strike: 72_800, value: 1 },
     maxPain: { strike: 76_000, payoutUsd: 1 },
   } as never;
 

@@ -2244,6 +2244,40 @@ The switch asked for a crossing the price forbade.
 
 ---
 
+## The cap works itself out; Settings would not open; the levels, cross-checked — 18 Sep 2026
+
+**The rebalance cap is automatic, and editable.** `capAuto` (on for a new
+rule): the cap is the most the rule can reach — lots plus what can move, bounded
+by the other side, so 100 a side with 30 lots over 5 stages is 200, not 250 —
+and it is recomputed on every save from the lots and stages as they are then.
+"Edit" turns it into a typed number that stays put; "Auto" hands it back. A
+typed cap that is too small says exactly what it does: *"The cap stops it after
+stage 2: stage 3 is refused. Raise it to 190 for all 3."* — counted, not guessed
+— and the stage table marks the capped rows. A cap with no room above the
+opening lots says no stage can run.
+
+**Settings did not open.** A tab lives in four places — the type, the nav, the
+body and the runtime list a click is checked against — and Settings was added to
+three. `tabs.test.ts` now holds every screen to the list.
+
+**The levels, cross-checked against the board** (spot ≈ 76,860): puts within the
+band held 145k at 76,000, 138k at 76,200, 42k at 76,400 — so 76,000 is right;
+calls held 134k at 77,800 and 245k at 78,000, one strike further out and just
+past two expected moves — so 77,800 is right *and* looks wrong. The arithmetic
+was correct; the band chose. Now the card shows the open interest behind each
+level and names the heavier strike outside the band ("78,000 holds 245k"), and
+the band itself is a desk setting (`wall_within_em`, 0.25–20, on the Settings
+screen) rather than a number in the source.
+
+**To do:**
+
+- [ ] **Deploy** — the levels, the cap and the Settings tab are all local.
+- [ ] **Watch whether two expected moves is the right band** for the late
+      afternoon, when the expected move to settlement is small and the band
+      with it. If "none near" shows too often, the setting is there to widen.
+
+---
+
 ## "Resistance 89,000" — 18 Sep 2026
 
 The BTC summary called 89,000 resistance with BTC at 76,723 and ten hours left:

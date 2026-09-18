@@ -22,6 +22,9 @@ const snap = {
 const structure = {
   pcrOi: 0.34, pcrVolume: 0.76, ceOi: 9_000_000, peOi: 3_400_000, ceVolume: 60_000, peVolume: 40_000,
   ceOiWall: { strike: 82_400, value: 318_400 }, peOiWall: { strike: 72_800, value: 278_400 },
+  // the pair the panel draws: within reach of spot
+  ceOiWallNear: { strike: 78_400, value: 120_000 }, peOiWallNear: { strike: 75_000, value: 110_000 },
+  wallWithinEm: 2,
   gammaWall: null, atmIv: 0.28, ivSkewPts: null, volPremiumPts: -4.2,
   maxPain: { strike: 76_000, payoutUsd: 1_000 },
   oiRange: { low: 72_800, high: 82_400, widthUsd: 9_600, widthPct: 12.6 },
@@ -224,10 +227,16 @@ describe('where price sits', () => {
     const card = within(screen.getByLabelText('board numbers'));
     expect(card.getByText('28.1%')).toBeInTheDocument();
     expect(card.getByText('1,00,000')).toBeInTheDocument();
-    expect(card.getByText('contracts · calls 60%')).toBeInTheDocument();
+    // calls and puts each in their own words, and the ratio named as what it is
+    expect(card.getByText('CE 60,000 · PE 40,000 contracts')).toBeInTheDocument();
+    expect(card.getByText(/PCR \(volume\) 0\.76 · more calls traded/)).toBeInTheDocument();
     expect(card.getByText('12,400 BTC')).toBeInTheDocument();      // 12.4M contracts × 0.001
-    expect(card.getByText(/0\.34 puts per call · more calls open/)).toBeInTheDocument();
-    expect(card.getByText('72,800 – 82,400')).toBeInTheDocument();
+    expect(card.getByText('CE 9,000 · PE 3,400 BTC')).toBeInTheDocument();
+    expect(card.getByText(/PCR \(OI\) 0\.34 · more calls open/)).toBeInTheDocument();
+    // the walls within reach, with the whole-board pair as the note under them
+    expect(card.getByText('75,000 – 78,400')).toBeInTheDocument();
+    expect(card.getByText('PE 110k · CE 120k open')).toBeInTheDocument();
+    expect(card.getByText('whole board 72,800 – 82,400')).toBeInTheDocument();
     expect(screen.queryByText(/[+−-]\d+%$/)).toBeNull();
   });
 

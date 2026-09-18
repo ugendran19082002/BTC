@@ -372,8 +372,9 @@ function MarketContext({ context, structure }: { context: ChainContext[]; struct
   if (structure) {
     if (structure.pcrOi !== null) unmeasured.push({ label: 'Put/call open interest', value: structure.pcrOi.toFixed(2) });
     if (structure.ivSkewPts !== null) unmeasured.push({ label: 'IV skew', value: `${structure.ivSkewPts >= 0 ? '+' : '−'}${Math.abs(structure.ivSkewPts).toFixed(1)} pts` });
-    if (structure.ceOiWall && structure.peOiWall) {
-      unmeasured.push({ label: 'OI walls', value: `${fmtStrike(structure.peOiWall.strike)} – ${fmtStrike(structure.ceOiWall.strike)}` });
+    // The walls within reach, as the summary draws them; the whole-board pair is noise here.
+    if (structure.ceOiWallNear && structure.peOiWallNear) {
+      unmeasured.push({ label: 'OI walls', value: `${fmtStrike(structure.peOiWallNear.strike)} – ${fmtStrike(structure.ceOiWallNear.strike)}` });
     }
     if (structure.maxPain) unmeasured.push({ label: 'Max pain', value: fmtStrike(structure.maxPain.strike) });
   }

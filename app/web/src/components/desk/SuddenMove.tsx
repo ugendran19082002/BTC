@@ -310,27 +310,52 @@ export function SuddenMove({
               sub={iv?.detail ? undefined : 'The desk records one every five minutes'}
               hint="At-the-money implied volatility, per year. How much movement the option market is charging for."
             />
+            {/*
+              The board, both sides, every time: the total was there and the
+              split was one percentage. Calls and puts each in their own words,
+              and the put/call ratio named as what it is -- 0.69 read as "puts
+              per call" on 18 September and had to be asked about.
+            */}
             <Stat
               label="Options volume"
               value={`${Math.round(structure.ceVolume + structure.peVolume).toLocaleString('en-IN')}`}
               foot={structure.ceVolume + structure.peVolume > 0
-                ? `contracts · calls ${pctOf(structure.ceVolume / (structure.ceVolume + structure.peVolume))}`
+                ? `CE ${Math.round(structure.ceVolume).toLocaleString('en-IN')} · PE ${Math.round(structure.peVolume).toLocaleString('en-IN')} contracts`
                 : 'contracts'}
-              hint="Contracts traded on this expiry, as Delta reports it."
+              sub={structure.pcrVolume === null
+                ? undefined
+                : `PCR (volume) ${structure.pcrVolume.toFixed(2)} · ${sideWords(structure.pcrVolume, 'traded')}`}
+              hint="Contracts traded on this expiry, as Delta reports it. PCR = puts ÷ calls: under 1 is more calls, over 1 more puts."
             />
             <Stat
               label="Open interest"
               value={`${((structure.ceOi + structure.peOi) * CONTRACT_BTC).toLocaleString('en-IN', { maximumFractionDigits: 1 })} BTC`}
-              foot={structure.pcrOi === null ? 'no puts or calls open' : `${structure.pcrOi.toFixed(2)} puts per call · ${structure.pcrOi < 0.9 ? 'more calls open' : structure.pcrOi > 1.1 ? 'more puts open' : 'about even'}`}
-              hint="Contracts open on this expiry, at 0.001 BTC each. Positioning, not a forecast."
+              foot={`CE ${(structure.ceOi * CONTRACT_BTC).toLocaleString('en-IN', { maximumFractionDigits: 1 })} · PE ${(structure.peOi * CONTRACT_BTC).toLocaleString('en-IN', { maximumFractionDigits: 1 })} BTC`}
+              sub={structure.pcrOi === null
+                ? 'no puts or calls open'
+                : `PCR (OI) ${structure.pcrOi.toFixed(2)} · ${sideWords(structure.pcrOi, 'open')}`}
+              hint="Contracts open on this expiry, at 0.001 BTC each. PCR = put OI ÷ call OI. Positioning, not a forecast."
             />
+            {/*
+              The walls within reach, the same pair the summary and the chart
+              draw. This card printed 71,000 – 89,000 on 18 September: the
+              heaviest open interest on the whole board, and neither one a level
+              anybody could trade against ten hours from settlement.
+            */}
             <Stat
               label="OI walls"
-              value={structure.peOiWall && structure.ceOiWall
-                ? `${fmtStrike(structure.peOiWall.strike)} – ${fmtStrike(structure.ceOiWall.strike)}`
-                : '—'}
-              foot="support – resistance"
-              hint="The put and call strikes with the most open interest. Where positions sit, not where BTC stops."
+              value={structure.peOiWallNear && structure.ceOiWallNear
+                ? `${fmtStrike(structure.peOiWallNear.strike)} – ${fmtStrike(structure.ceOiWallNear.strike)}`
+                : structure.peOiWallNear || structure.ceOiWallNear
+                  ? `${structure.peOiWallNear ? fmtStrike(structure.peOiWallNear.strike) : 'none'} – ${structure.ceOiWallNear ? fmtStrike(structure.ceOiWallNear.strike) : 'none'}`
+                  : 'none near'}
+              foot={structure.peOiWallNear && structure.ceOiWallNear
+                ? `PE ${oiShort(structure.peOiWallNear.value)} · CE ${oiShort(structure.ceOiWallNear.value)} open`
+                : 'support – resistance'}
+              sub={structure.peOiWall && structure.ceOiWall
+                ? `whole board ${fmtStrike(structure.peOiWall.strike)} – ${fmtStrike(structure.ceOiWall.strike)}`
+                : undefined}
+              hint={`The heaviest put and call open interest within ${structure.wallWithinEm ?? 2} expected moves of spot. Where positions sit, not where BTC stops.`}
             />
           </section>
         </div>
@@ -490,6 +515,14 @@ function RangeCard({ snap, row, shock, label }: { snap: SnapshotMeta; row: Outlo
     </section>
   );
 }
+
+/** "more calls open", "more puts traded", "about even": a ratio in the words people use. */
+export function sideWords(pcr: number, verb: 'open' | 'traded'): string {
+  return pcr < 0.9 ? `more calls ${verb}` : pcr > 1.1 ? `more puts ${verb}` : 'about even';
+}
+
+/** Open interest at a strike, short: 145,000 reads as 145k. */
+const oiShort = (v: number): string => (v >= 1_000_000 ? `${(Math.round(v / 100_000) / 10).toFixed(1)}m` : v >= 1_000 ? `${Math.round(v / 1_000)}k` : String(Math.round(v)));
 
 function Stat({ label, value, foot, sub, hint }: { label: string; value: string; foot: string; sub?: string; hint: string }) {
   return (
