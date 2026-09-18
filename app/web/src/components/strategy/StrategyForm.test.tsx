@@ -455,6 +455,56 @@ describe('the late-entry window', () => {
     expect(screen.queryByText(/is under the 700 lots/)).toBeNull();
   });
 
+  it('[critical] the cap follows the numbers while it is automatic', () => {
+    show(editing({ lots: 100, rebalance: { ...DEFAULT_REBALANCE, capAuto: true, maxLotsPerSide: 200 } }));
+    tab('Extras');
+    const cap = screen.getByLabelText('rebalance cap per side');
+    expect(cap).toHaveValue('200');
+    expect(cap).toBeDisabled();
+    // five stages of 30 from 100 a side: it can reach 200 at most, not 250
+    fireEvent.change(screen.getByLabelText('rebalance stages'), { target: { value: '5' } });
+    expect(screen.getByLabelText('rebalance cap per side')).toHaveValue('200');
+    // 60 a stage over 3 stages from 100: still 200, because only 100 can move
+    fireEvent.change(screen.getByLabelText('rebalance lots per stage'), { target: { value: '60' } });
+    expect(screen.getByLabelText('rebalance cap per side')).toHaveValue('200');
+    // a bigger strategy moves it: 700 a side, 30 a stage, 5 stages
+    show(editing({ lots: 700, rebalance: { ...DEFAULT_REBALANCE, capAuto: true, maxLotsPerSide: 200 } }));
+    tab('Extras');
+    expect(screen.getAllByLabelText('rebalance cap per side')[1]).toHaveValue('790');
+  });
+
+  it('[critical] it can be typed by hand, and then it stays where it is put', async () => {
+    show(editing({ lots: 100, rebalance: { ...DEFAULT_REBALANCE, capAuto: true, maxLotsPerSide: 200 } }));
+    tab('Extras');
+    fireEvent.click(screen.getByRole('button', { name: 'set the cap by hand' }));
+    const cap = screen.getByLabelText('rebalance cap per side');
+    expect(cap).toBeEnabled();
+    fireEvent.change(cap, { target: { value: '160' } });
+    // changing the stages no longer moves it
+    fireEvent.change(screen.getByLabelText('rebalance stages'), { target: { value: '5' } });
+    expect(screen.getByLabelText('rebalance cap per side')).toHaveValue('160');
+    fireEvent.click(saveButton());
+    await vi.waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    expect(saveStrategy.mock.calls[0]![0].config.rebalance.maxLotsPerSide).toBe(160);
+    expect(saveStrategy.mock.calls[0]![0].config.rebalance.capAuto).toBe(false);
+  });
+
+  it('[critical] a cap that is too small says which stages it refuses', () => {
+    show(editing({ lots: 100, rebalance: { ...DEFAULT_REBALANCE, capAuto: false, maxLotsPerSide: 160 } }));
+    tab('Extras');
+    expect(screen.getByText(/The cap stops it after stage 2: stage 3 is refused\. Raise it to 200 for all 3\./))
+      .toBeInTheDocument();
+    const stages = within(screen.getByLabelText('rebalance stage table'));
+    expect(stages.getAllByText('capped')).toHaveLength(1);
+  });
+
+  it('[critical] a cap with no room at all says no stage can run', () => {
+    show(editing({ lots: 100, rebalance: { ...DEFAULT_REBALANCE, capAuto: false, maxLotsPerSide: 100 } }));
+    tab('Extras');
+    expect(screen.getByText(/No stage can run: the cap \(100\) leaves no room above the 100 lots each side opens with\./))
+      .toBeInTheDocument();
+  });
+
   it('a cap under the lots says why nothing could ever run, and what the rule reaches', () => {
     show(editing({ lots: 700, rebalance: { ...DEFAULT_REBALANCE, maxLotsPerSide: 200 } }));
     tab('Extras');

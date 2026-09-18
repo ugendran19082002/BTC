@@ -3,7 +3,7 @@ import { ChevronDown, Loader2 } from 'lucide-react';
 import { saveStrategy, getRebalanceSettings } from '@/api/strategy';
 import {
   DAY_NAMES, DEFAULT_ADD_TO_OPPOSITE, DEFAULT_CONFIG, DEFAULT_REBALANCE, MAX_STRIKE_STEP,
-  mostOneSideCanReach, stagePositions, stageThresholds, strikeLabel,
+  capWords, mostOneSideCanReach, stagePositions, stageThresholds, strikeLabel,
   type RebalanceLimits, type RebalanceRule, type Strategy, type StrategyConfig,
 } from '@/types/strategy';
 import { Sheet, SheetContent, SheetFooter } from '@/components/ui/sheet';
@@ -96,6 +96,19 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
   // Blank means "the entry's own seconds": null on the rule, not a zero.
   const addCross = c.addToOpposite?.crossAfterSec ?? null;
   const rebCross = c.rebalance?.crossAfterSec ?? null;
+  /*
+   * The cap the rule can actually reach, and the words for a cap that is under
+   * it. Recomputed on every render, so changing 3 stages to 5 moves an
+   * automatic cap with it rather than quietly refusing the last two.
+   */
+  const autoCap = c.rebalance ? mostOneSideCanReach(c.rebalance, c.lots) : 0;
+  const capBlock = c.rebalance?.enabled ? capWords(c.rebalance, c.lots) : null;
+
+  useEffect(() => {
+    if (!c.rebalance?.enabled || !c.rebalance.capAuto) return;
+    if (c.rebalance.maxLotsPerSide === autoCap) return;
+    setReb({ maxLotsPerSide: autoCap });
+  }, [autoCap, c.rebalance?.enabled, c.rebalance?.capAuto, c.rebalance?.maxLotsPerSide]);
 
   const problems = useMemo(() => strategyProblems(c, name), [c, name]);
   /*
@@ -742,7 +755,7 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                           can then lower on purpose rather than by accident.
                         */
                         const reach = mostOneSideCanReach(rule, c.lots);
-                        return rule.maxLotsPerSide !== null && rule.maxLotsPerSide < reach
+                        return rule.maxLotsPerSide !== null && (rule.capAuto || rule.maxLotsPerSide < reach)
                           ? { ...rule, maxLotsPerSide: reach }
                           : rule;
                       })()
@@ -790,20 +803,47 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                       <Input value={String(c.rebalance.confirmTicks)} aria-label="rebalance confirm ticks" inputMode="numeric"
                              onChange={(e) => setReb({ confirmTicks: Math.floor(num(e.target.value, 1)) })} />
                     </Stack>
+                    {/*
+                      The cap works itself out from the lots, the step and the
+                      stages, and follows them while it is on: a desk default of
+                      200 on a strategy selling 700 a side refused every stage
+                      before it began. Typed by hand it stays where it is put,
+                      and the line under it says which stages that blocks.
+                    */}
                     <Stack
                       label="Cap each side"
                       error={err('rebalanceCap')}
-                      hint={c.rebalance.maxLotsPerSide === null
-                        ? 'no cap: a side may grow as far as the stages take it'
-                        : `neither side may pass ${c.rebalance.maxLotsPerSide} lots — this rule reaches ${mostOneSideCanReach(c.rebalance, c.lots)}`}
+                      hint={c.rebalance.capAuto
+                        ? `worked out: ${autoCap} lots, the most this rule reaches`
+                        : c.rebalance.maxLotsPerSide === null
+                          ? 'no cap: a side grows as far as the stages take it'
+                          : `set by hand — this rule reaches ${autoCap}`}
                     >
-                      <Input
-                        value={c.rebalance.maxLotsPerSide === null ? '' : String(c.rebalance.maxLotsPerSide)}
-                        aria-label="rebalance cap per side" inputMode="numeric" placeholder="none"
-                        onChange={(e) => setReb({
-                          maxLotsPerSide: e.target.value.trim() === '' ? null : Math.floor(num(e.target.value, 0)),
-                        })}
-                      />
+                      <div className="flex items-center gap-1.5">
+                        <Input
+                          value={c.rebalance.capAuto
+                            ? String(autoCap)
+                            : c.rebalance.maxLotsPerSide === null ? '' : String(c.rebalance.maxLotsPerSide)}
+                          aria-label="rebalance cap per side"
+                          inputMode="numeric"
+                          placeholder="none"
+                          disabled={c.rebalance.capAuto}
+                          className={c.rebalance.capAuto ? 'opacity-70' : undefined}
+                          onChange={(e) => setReb({
+                            maxLotsPerSide: e.target.value.trim() === '' ? null : Math.floor(num(e.target.value, 0)),
+                          })}
+                        />
+                        <button
+                          type="button"
+                          aria-label={c.rebalance.capAuto ? 'set the cap by hand' : 'work the cap out again'}
+                          className="h-9 flex-none cursor-pointer rounded-md border border-solid border-border bg-transparent px-2 font-[inherit] text-[11px] text-muted-foreground"
+                          onClick={() => setReb(c.rebalance!.capAuto
+                            ? { capAuto: false, maxLotsPerSide: autoCap }
+                            : { capAuto: true, maxLotsPerSide: autoCap })}
+                        >
+                          {c.rebalance.capAuto ? 'Auto' : 'Edit'}
+                        </button>
+                      </div>
                     </Stack>
                   </div>
 
@@ -891,6 +931,11 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                       <span>Stages, from a sale at ${c.premium.usd}</span>
                       <span>{c.lots} + {c.lots} lots to start</span>
                     </div>
+                    {capBlock && (
+                      <p className="m-0 mb-1.5 text-[11.5px] leading-snug text-[var(--warn)]" role="status">
+                        {capBlock}
+                      </p>
+                    )}
                     <table className="w-full text-[11.5px] tabular-nums">
                       <thead>
                         <tr className="text-[10px] uppercase tracking-wide text-[var(--dim)]">
@@ -912,7 +957,10 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                               <td className="py-1 text-right text-[var(--down)]">
                                 −{t.downPct}% <span className="text-[var(--dim)]">${t.downPrice?.toFixed(2)}</span>
                               </td>
-                              <td className="py-1 text-right text-muted-foreground">{after.up} / {after.down}</td>
+                              <td className={cn('py-1 text-right', after.blocked ? 'text-[var(--warn)]' : 'text-muted-foreground')}>
+                                {after.up} / {after.down}
+                                {after.blocked && <span className="ml-1 text-[10px]">capped</span>}
+                              </td>
                             </tr>
                           );
                         })}
@@ -922,7 +970,7 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                       Each stage buys back the fallen side and sells the same number again on the risen one, so the
                       position gets more one-sided as it goes. Both conditions must hold in the same reading,
                       {' '}{c.rebalance.confirmTicks} times in a row, and each stage happens once.
-                      {c.rebalance.maxLotsPerSide !== null && (
+                      {c.rebalance.maxLotsPerSide !== null && !capBlock && (
                         <> The cap stops it: neither side passes {c.rebalance.maxLotsPerSide} lots, whatever the premiums do.</>
                       )}
                     </p>
