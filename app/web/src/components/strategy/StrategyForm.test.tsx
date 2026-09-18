@@ -453,18 +453,20 @@ describe('the late-entry window', () => {
     // 700 a side, 30 a stage over 3 stages: it can reach 790
     expect(screen.getByLabelText('rebalance cap per side')).toHaveValue('790');
     expect(screen.queryByText(/is under the 700 lots/)).toBeNull();
+    expect(screen.queryByText(/stage \d+ is refused/)).toBeNull();
   });
 
   it('[critical] the cap follows the numbers while it is automatic', () => {
     show(editing({ lots: 100, rebalance: { ...DEFAULT_REBALANCE, capAuto: true, maxLotsPerSide: 200 } }));
     tab('Extras');
     const cap = screen.getByLabelText('rebalance cap per side');
-    expect(cap).toHaveValue('200');
+    // 100 a side, 30 a stage, 3 stages: 90 lots can move, so it reaches 190
+    expect(cap).toHaveValue('190');
     expect(cap).toBeDisabled();
-    // five stages of 30 from 100 a side: it can reach 200 at most, not 250
+    // five stages of 30 is 150 to move, and only 100 are there: 200
     fireEvent.change(screen.getByLabelText('rebalance stages'), { target: { value: '5' } });
     expect(screen.getByLabelText('rebalance cap per side')).toHaveValue('200');
-    // 60 a stage over 3 stages from 100: still 200, because only 100 can move
+    // 60 a stage cannot move more than the 100 that exist either
     fireEvent.change(screen.getByLabelText('rebalance lots per stage'), { target: { value: '60' } });
     expect(screen.getByLabelText('rebalance cap per side')).toHaveValue('200');
     // a bigger strategy moves it: 700 a side, 30 a stage, 5 stages
@@ -492,7 +494,7 @@ describe('the late-entry window', () => {
   it('[critical] a cap that is too small says which stages it refuses', () => {
     show(editing({ lots: 100, rebalance: { ...DEFAULT_REBALANCE, capAuto: false, maxLotsPerSide: 160 } }));
     tab('Extras');
-    expect(screen.getByText(/The cap stops it after stage 2: stage 3 is refused\. Raise it to 200 for all 3\./))
+    expect(screen.getByText(/The cap stops it after stage 2: stage 3 is refused\. Raise it to 190 for all 3\./))
       .toBeInTheDocument();
     const stages = within(screen.getByLabelText('rebalance stage table'));
     expect(stages.getAllByText('capped')).toHaveLength(1);
@@ -506,7 +508,7 @@ describe('the late-entry window', () => {
   });
 
   it('a cap under the lots says why nothing could ever run, and what the rule reaches', () => {
-    show(editing({ lots: 700, rebalance: { ...DEFAULT_REBALANCE, maxLotsPerSide: 200 } }));
+    show(editing({ lots: 700, rebalance: { ...DEFAULT_REBALANCE, capAuto: false, maxLotsPerSide: 200 } }));
     tab('Extras');
     expect(screen.getByText(/The cap \(200\) is under the 700 lots the strategy opens with, so no stage could ever run/))
       .toBeInTheDocument();
@@ -514,7 +516,7 @@ describe('the late-entry window', () => {
   });
 
   it('[critical] the sell has its own seconds, and blank keeps the entry\'s', async () => {
-    show(editing({ lots: 100, crossAfterSec: 7, rebalance: { ...DEFAULT_REBALANCE, maxLotsPerSide: 200 } }));
+    show(editing({ lots: 100, crossAfterSec: 7, rebalance: { ...DEFAULT_REBALANCE, capAuto: false, maxLotsPerSide: 200 } }));
     tab('Extras');
     const box = screen.getByLabelText('rebalance cross after seconds');
     expect(box).toHaveValue('');
@@ -528,9 +530,11 @@ describe('the late-entry window', () => {
   });
 
   it('the stage table says what the cap does, in words', () => {
-    show(editing({ lots: 100, rebalance: { ...DEFAULT_REBALANCE, maxLotsPerSide: 160 } }));
+    show(editing({ lots: 100, rebalance: { ...DEFAULT_REBALANCE, capAuto: false, maxLotsPerSide: 160 } }));
     tab('Extras');
-    expect(screen.getByText(/neither side passes 160 lots, whatever the premiums do/)).toBeInTheDocument();
+    // the cap bites, so the table says which stage it refuses rather than the
+    // plain "neither side passes" line
+    expect(screen.getByText(/stage 3 is refused\. Raise it to/)).toBeInTheDocument();
     const stages = within(screen.getByLabelText('rebalance stage table'));
     // 100 + 100, 30 a stage, capped at 160: 130, 160, then the cap holds it
     expect(stages.getByText('130 / 70')).toBeInTheDocument();
