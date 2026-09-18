@@ -402,7 +402,11 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                   <p className="m-0 text-[11.5px] leading-snug text-muted-foreground">
                     Picked when the strategy runs, from wherever BTC is then: the call leg
                     takes the heaviest call strike above the price, the put leg the heaviest
-                    put strike below it. Nothing to set.
+                    put strike below it — the same walls the Live screen draws as support and
+                    resistance, looked for within the level band set on Settings, and only
+                    where the strike still pays at least ${c.premium.usd}. The heaviest open
+                    interest on the whole board sits at far strikes that pay nothing; those are
+                    levels, not trades, and are never picked.
                   </p>
                   <p className="m-0 mt-2 text-[11.5px] leading-snug text-[var(--warn)]">
                     This one is a claim, not a record: that the strike carrying the most open
