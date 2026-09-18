@@ -71,3 +71,11 @@ export const setShortCap = (contracts: number) =>
  */
 export const getCandles = (tf: '1m' | '5m' | '15m' | '1h' | '4h' | '1d') =>
   json<CandlesResponse>(`/api/candles?tf=${tf}`);
+
+/**
+ * How far a wall may sit and still be drawn as support or resistance, in
+ * expected moves to settlement. A desk setting: 0.25 to 20.
+ */
+export const setWallWithinEm = (em: number) =>
+  post<{ ok: true; key: string; value: string }>('/api/settings', { key: 'wall_within_em', value: String(em) });
+

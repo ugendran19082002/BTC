@@ -10,6 +10,12 @@ vi.mock('@/api/trade', () => ({
   getAutoTrade: (...a: unknown[]) => getAutoTrade(...a),
   setAutoTrade: (...a: unknown[]) => setAutoTrade(...a),
 }));
+const getSettings = vi.fn();
+const setWallWithinEm = vi.fn();
+vi.mock('@/api/desk', () => ({
+  getSettings: (...a: unknown[]) => getSettings(...a),
+  setWallWithinEm: (...a: unknown[]) => setWallWithinEm(...a),
+}));
 vi.mock('@/api/strategy', () => ({
   getRebalanceSettings: (...a: unknown[]) => getRebalanceSettings(...a),
   setRebalanceSettings: (...a: unknown[]) => setRebalanceSettings(...a),
@@ -51,6 +57,8 @@ beforeEach(() => {
   getAutoTrade.mockResolvedValue(autoTrade);
   setAutoTrade.mockResolvedValue({ ok: true, settings: autoTrade.settings });
   getRebalanceSettings.mockResolvedValue(rebalance);
+  getSettings.mockResolvedValue({ settings: { wall_within_em: '2' }, shortCap: { inForce: 1, ceiling: 1, chosen: null } });
+  setWallWithinEm.mockResolvedValue({ ok: true, key: 'wall_within_em', value: '1.5' });
   setRebalanceSettings.mockImplementation(async (p: { defaults?: object; limits?: object }) => ({
     ok: true,
     defaults: { ...rebalance.defaults, ...(p.defaults ?? {}) },
@@ -113,5 +121,17 @@ describe('the settings screen', () => {
     getAutoTrade.mockRejectedValue(new Error('offline'));
     render(<SettingsPanel />);
     expect(await screen.findByText('offline')).toBeInTheDocument();
+  });
+
+  it('[critical] the level band is a setting, and a fraction is allowed', async () => {
+    render(<SettingsPanel />);
+    const box = await screen.findByLabelText('level band in expected moves');
+    expect(box).toHaveValue('2');
+    fireEvent.change(box, { target: { value: '1.5' } });
+    fireEvent.blur(box);
+    await waitFor(() => expect(setWallWithinEm).toHaveBeenCalledWith(1.5));
+    fireEvent.change(box, { target: { value: '0.1' } });
+    fireEvent.blur(box);
+    expect(setWallWithinEm).toHaveBeenCalledTimes(1);
   });
 });

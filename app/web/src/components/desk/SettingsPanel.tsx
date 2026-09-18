@@ -4,6 +4,7 @@ import {
   getAutoTrade, setAutoTrade, type AutoTradeSettings as AutoTrade, type AutoTradeState,
 } from '@/api/trade';
 import { getRebalanceSettings, setRebalanceSettings, type RebalanceSettings } from '@/api/strategy';
+import { getSettings, setWallWithinEm } from '@/api/desk';
 import type { RebalanceLimits, RebalanceRule } from '@/types/strategy';
 import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { Input } from '@/components/ui/input';
@@ -28,6 +29,7 @@ export function SettingsPanel() {
     <div className="grid gap-3">
       <AutoTradeLimitsCard />
       <RebalanceDefaultsCard />
+      <LevelsCard />
       <p className="m-0 px-1 text-[11.5px] leading-relaxed text-[var(--dim)]">
         The switches that actually place orders are where the orders are: the best-pick card on the Live screen,
         and each strategy's own form. This screen sets the range those screens work inside.
@@ -184,6 +186,71 @@ function RebalanceDefaultsCard() {
              onSave={(v) => void save({ limits: { maxIncrementPct: v } })} />
         <Num label="Lots on one side" value={state.limits.maxLotsPerSide} max={state.ceilings.maxLotsPerSide} busy={busy}
              onSave={(v) => void save({ limits: { maxLotsPerSide: v } })} />
+      </div>
+      {failed && <p className="settings-note warn" role="alert">{failed}</p>}
+    </CollapsibleCard>
+  );
+}
+
+/**
+ * Support and resistance: how far a wall may sit and still be drawn.
+ *
+ * "Resistance 89,000" on 18 September was the heaviest call open interest on
+ * the whole board, sixteen percent away. The screens now draw the heaviest
+ * wall within this many expected moves of spot, and name the heavier one
+ * outside it. Two by default; a fraction is allowed, because half an expected
+ * move is a fair band on a quiet afternoon.
+ */
+function LevelsCard() {
+  const [value, setValue] = useState<number | null>(null);
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  useEffect(() => {
+    getSettings()
+      .then((r) => {
+        const raw = Number(r.settings.wall_within_em);
+        const v = Number.isFinite(raw) && raw > 0 ? raw : 2;
+        setValue(v);
+        setText(String(v));
+      })
+      .catch((e: Error) => setFailed(e.message));
+  }, []);
+
+  const n = Number(text);
+  const ok = Number.isFinite(n) && n >= 0.25 && n <= 20;
+  const commit = () => {
+    if (!ok || n === value || busy) return;
+    setBusy(true);
+    setFailed(null);
+    setWallWithinEm(n)
+      .then(() => setValue(n))
+      .catch((e: Error) => setFailed(e.message))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <CollapsibleCard id="settings-levels" title="Support and resistance — how far a wall may sit" ariaLabel="level settings">
+      <p className="settings-lead">
+        The heaviest open interest within this many expected moves of spot is drawn as the level; anything
+        further out is named, not drawn. Two expected moves by default.
+      </p>
+      <div className="settings-grid">
+        <label className="settings-field">
+          <span>Band, in expected moves</span>
+          <Input
+            aria-label="level band in expected moves"
+            inputMode="decimal"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => { if (e.key === 'Enter') commit(); }}
+            className={cn('h-8', !ok && 'border-[var(--down)]')}
+          />
+          <small className={cn(!ok && 'warn')}>{ok ? 'from 0.25 to 20' : '0.25 to 20'}</small>
+          {busy && <Loader2 size={11} className="animate-spin text-muted-foreground" aria-hidden />}
+        </label>
       </div>
       {failed && <p className="settings-note warn" role="alert">{failed}</p>}
     </CollapsibleCard>

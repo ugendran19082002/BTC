@@ -182,7 +182,7 @@ function Level({ label, wall, far, away, tone }: {
 export function oiWords(value: number): string {
   if (!Number.isFinite(value)) return '—';
   const n = Math.abs(value);
-  if (n >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}m`;
+  if (n >= 1_000_000) return `${(Math.round(value / 100_000) / 10).toFixed(1)}m`;
   if (n >= 1_000) return `${Math.round(value / 1_000)}k`;
   return String(Math.round(value));
 }
