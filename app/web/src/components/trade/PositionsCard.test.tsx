@@ -802,3 +802,31 @@ describe('when the exchange holds more than the record sold', () => {
     expect(screen.queryByText(/more than this record sold/)).not.toBeInTheDocument();
   });
 });
+
+/*
+ * "It has not filled yet."
+ *
+ * A typed price is also the add's floor, so an add started at that price can
+ * never walk toward the bid. The card is where somebody looks when it has been
+ * sitting there for an hour, so the card is where it has to be said.
+ */
+describe('an add that cannot walk', () => {
+  const working = (over: Record<string, unknown> = {}) => trade({
+    adding: { size: 200, limitPrice: 20, floorPrice: 20, deadline: Date.now() + 3_600_000, source: { manual: true } },
+    ...over,
+  });
+
+  it('[critical] says the price is its own floor, so it is resting rather than crossing', () => {
+    render(<PositionsCard trades={[working()]} />);
+    expect(screen.getByText(/Resting at 20.00 — it cannot walk toward the bid, because that price is also its floor/))
+      .toBeInTheDocument();
+  });
+
+  it('an add with room to walk says nothing extra', () => {
+    render(<PositionsCard trades={[working({
+      adding: { size: 200, limitPrice: 20, floorPrice: 19, deadline: Date.now() + 3_600_000, source: { manual: true } },
+    })]} />);
+    expect(screen.queryByText(/Resting at/)).toBeNull();
+  });
+});
+

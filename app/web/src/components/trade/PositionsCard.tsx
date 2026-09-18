@@ -227,6 +227,17 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
                   ? 'added by hand'
                   : `the ${trade.adding.source.optionSide} target bought back ${fmtSize(trade.adding.source.boughtBack)}`}
                 {' · '}{countdown(trade.adding.deadline)}
+                {/*
+                  The floor at the price it starts at: the walk has nowhere to
+                  go, so this rests until the window closes however many seconds
+                  were set. Said here because the card is where somebody looks
+                  when "it has not filled yet" is the question.
+                */}
+                {trade.adding.floorPrice >= trade.adding.limitPrice && (
+                  <span className="block text-[11.5px] text-[var(--dim)]">
+                    Resting at {price(trade.adding.limitPrice)} — it cannot walk toward the bid, because that price is also its floor.
+                  </span>
+                )}
               </span>
               <button
                 type="button"

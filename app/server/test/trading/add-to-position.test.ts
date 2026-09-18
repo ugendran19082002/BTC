@@ -525,3 +525,52 @@ test('a submit with no answer that is never found is still the one case that nev
   const done = r.store.get('PE-1')!.events.find((e) => e.t === 'add_done');
   assert.match(done && 'reason' in done ? done.reason : '', /never reached the exchange/);
 });
+
+/*
+ * "I set 'sell at bid after 5 sec' and it still has not filled."
+ *
+ * 18 September: an add rested at 20.00 with the bid at 19.00 for an hour with
+ * the switch on. Nothing was broken — a typed price is also the floor, so the
+ * walk had nowhere to go. These two run the real walk on the paper exchange and
+ * pin both halves: room to walk means it crosses and fills; a floor at the
+ * start price means it rests, and the window is what ends it.
+ */
+test('[critical] with room to walk, the add crosses to the bid within its seconds and fills', async () => {
+  const { r } = await shortPE();
+  // starts at the ask (7.50), may walk to the bid (7.00)
+  const res = await r.engine.addToPosition('PE-1', addOf({ limitPrice: 7.5, floorPrice: 7, chaseSeconds: 5 }));
+  assert.equal(res.ok, true, res.ok ? '' : res.reason);
+  const s = await walk(r, 6_000);
+  assert.equal(s.position, -850, 'the walk reached the bid and the 425 sold');
+  assert.equal(s.adding, null);
+  assert.equal(s.fills.filter((f) => f.role === 'entry' && f.side === 'sell').at(-1)?.price, 7);
+});
+
+test('[critical] a floor at the start price never crosses: it rests until the window ends', async () => {
+  const { r } = await shortPE();
+  // the trap: the price typed on the sheet is both the start and the floor
+  const res = await r.engine.addToPosition('PE-1', addOf({
+    limitPrice: 7.5, floorPrice: 7.5, chaseSeconds: 5, timeoutMs: 10_000,
+  }));
+  assert.equal(res.ok, true, res.ok ? '' : res.reason);
+  // five seconds of walking, with the book unchanged: nothing can fill at 7.50
+  const half = await walk(r, 6_000);
+  assert.equal(half.position, -425, 'still only the original 425');
+  const [resting] = (await book(r)).filter((o) => o.side === 'sell');
+  assert.equal(resting?.limit, 7.5, 'it is still sitting at the price that was typed');
+  // and the window, not the walk, is what ends it
+  const after = await walk(r, 6_000);
+  assert.equal(after.adding, null);
+  assert.equal(after.position, -425);
+  assert.match(after.note ?? '', /add not filled: its window closed/);
+});
+
+test('the walk stops the moment the bid comes to it: no crossing that was not needed', async () => {
+  const { r } = await shortPE();
+  await r.engine.addToPosition('PE-1', addOf({ limitPrice: 7.5, floorPrice: 7, chaseSeconds: 5 }));
+  // the bid lifts to the ask on the first poll: it fills at 7.50, not at 7.00
+  const s = await walk(r, 2_500, 7.5, 7.6);
+  assert.equal(s.position, -850);
+  assert.equal(s.fills.filter((f) => f.role === 'entry' && f.side === 'sell').at(-1)?.price, 7.5);
+});
+
