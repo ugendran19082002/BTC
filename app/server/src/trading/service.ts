@@ -22,8 +22,8 @@ import { alertFor, bookWentFlat, daySummaryFor } from '../notify/messages.js';
 import { TelegramNotifier } from '../notify/telegram.js';
 import { BEST_TRADE_REPEAT_DEFAULT, BEST_TRADE_REPEAT_MAX, bestTradeText } from '../notify/best-trade-alert.js';
 import {
-  AUTO_TRADE_DEFAULTS, cleanAutoTradeSettings, decideAutoTrade,
-  type AutoTradeLedger, type AutoTradeSettings,
+  AUTO_TRADE_DEFAULTS, cleanAutoTradeLimits, cleanAutoTradeSettings, decideAutoTrade,
+  type AutoTradeLedger, type AutoTradeLimits, type AutoTradeSettings,
 } from './auto-trade.js';
 import { bestTradeNow } from '../domain/best-trade-now.js';
 import { BEST_TRADE_MIN_PREMIUM_USD } from '../domain/best-trade.js';
@@ -393,15 +393,40 @@ export class TradingService {
   get autoTrade(): AutoTradeSettings {
     try {
       const raw = JSON.parse(this.store.getSetting('auto_trade') || 'null') as Partial<AutoTradeSettings> | null;
-      return cleanAutoTradeSettings(raw ?? {});
+      return cleanAutoTradeSettings(raw ?? {}, this.autoTradeLimits);
     } catch {
       return { ...AUTO_TRADE_DEFAULTS };
     }
   }
 
   setAutoTrade(patch: Partial<AutoTradeSettings>): AutoTradeSettings {
-    const next = cleanAutoTradeSettings({ ...this.autoTrade, ...patch });
+    const next = cleanAutoTradeSettings({ ...this.autoTrade, ...patch }, this.autoTradeLimits);
     this.store.setSetting('auto_trade', JSON.stringify(next));
+    return next;
+  }
+
+  /**
+   * The ceilings the settings are held to -- themselves settings.
+   *
+   * Editable from the same card, because a number in the source standing
+   * between somebody and a trade they meant to make is not a safety feature.
+   * The hard ceilings behind them are not editable.
+   */
+  get autoTradeLimits(): AutoTradeLimits {
+    try {
+      const raw = JSON.parse(this.store.getSetting('auto_trade_limits') || 'null') as Partial<AutoTradeLimits> | null;
+      return cleanAutoTradeLimits(raw);
+    } catch {
+      return cleanAutoTradeLimits(null);
+    }
+  }
+
+  setAutoTradeLimits(patch: Partial<AutoTradeLimits>): AutoTradeLimits {
+    const next = cleanAutoTradeLimits({ ...this.autoTradeLimits, ...patch });
+    this.store.setSetting('auto_trade_limits', JSON.stringify(next));
+    // A tighter ceiling pulls the settings under it at once, rather than
+    // leaving 50 lots armed under a new limit of 10.
+    this.setAutoTrade({});
     return next;
   }
 
@@ -888,6 +913,9 @@ export class TradingService {
 
   list(limit = 50): TradeRecord[] { return this.store.recent(limit); }
   openTrades(): TradeRecord[] { return this.store.open().filter((r) => !isDone(r.state)); }
+
+  /** One trade as the journal has it, or null. */
+  trade(tradeId: string): TradeRecord | null { return this.store.get(tradeId); }
 
   /** Paper mode only: lets the desk seed the simulated book from live quotes. */
   paper(): PaperExchange | null {

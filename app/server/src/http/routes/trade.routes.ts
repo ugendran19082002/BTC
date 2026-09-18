@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { stopPriceFor, targetPriceFor, tradingService } from '../../trading/service.js';
-import { AUTO_TRADE_DEFAULTS, AUTO_TRADE_LIMITS } from '../../trading/auto-trade.js';
+import { AUTO_TRADE_CEILINGS, AUTO_TRADE_DEFAULTS } from '../../trading/auto-trade.js';
 import { lotsToContracts } from '../../trading/money.js';
 import { DEFAULT_LIMITS, precheck } from '../../trading/precheck.js';
 import {
@@ -516,11 +516,24 @@ export function registerTradeRoutes(app: FastifyInstance) {
    * engine path the strategy's adds take, so a hand add and a strategy add
    * leave the same journal and the same position.
    */
+  /*
+   * Where an add starts, and the lowest it may go.
+   *
+   * A typed price is both: "sell 200 at 20.00" means never under 20.00, so the
+   * walk toward the bid has nowhere to go and the order simply rests. That is
+   * the right behaviour and a genuine trap -- on 18 September an add sat at
+   * 20.00 with the bid at 19.00 for an hour, with "sell at bid after 5 sec"
+   * switched on, because the typed price forbade the crossing the switch asked
+   * for. So the book comes back with it: the screen can say there is nothing to
+   * walk to before the order is sent, rather than after.
+   */
   const startOf = async (p: { limitPrice: number | null }, symbol: string) => {
-    if (p.limitPrice !== null) return { start: p.limitPrice, floor: p.limitPrice };
     const q = await svc.quote(symbol).catch(() => null);
+    if (p.limitPrice !== null) {
+      return { start: p.limitPrice, floor: p.limitPrice, bid: q?.bid ?? null, ask: q?.ask ?? null };
+    }
     if (q?.ask == null || q.bid == null) return null;
-    return { start: q.ask, floor: q.bid };
+    return { start: q.ask, floor: q.bid, bid: q.bid, ask: q.ask };
   };
 
   app.post('/api/trade/add/preview', async (req, reply) => {
@@ -531,7 +544,17 @@ export function registerTradeRoutes(app: FastifyInstance) {
     const at = await startOf(parsed.add, rec.plan.symbol);
     if (!at) return refuse(reply, 422, { error: 'No quote to start from — the book is empty or the feed is down.' });
     const preview = await svc.previewAdd(parsed.add.tradeId, { size: parsed.add.lots, limitPrice: at.start, floorPrice: at.floor });
-    return { mode: svc.mode, startPrice: at.start, floorPrice: at.floor, ...preview };
+    return {
+      mode: svc.mode,
+      startPrice: at.start,
+      floorPrice: at.floor,
+      /** The book as it is, so the sheet can say what the walk will actually do. */
+      bid: at.bid,
+      ask: at.ask,
+      /** False when the floor is at or above the start: the order will rest, not cross. */
+      canWalk: at.floor < at.start,
+      ...preview,
+    };
   });
 
   app.post('/api/trade/add', async (req, reply) => {
@@ -618,7 +641,10 @@ export function registerTradeRoutes(app: FastifyInstance) {
   app.get('/api/trade/auto-trade', async () => ({
     settings: svc.autoTrade,
     defaults: AUTO_TRADE_DEFAULTS,
-    limits: AUTO_TRADE_LIMITS,
+    /** The limits in force, which are themselves settings. */
+    limits: svc.autoTradeLimits,
+    /** What no limit may pass, whoever types it. Not editable. */
+    ceilings: AUTO_TRADE_CEILINGS,
     mode: svc.mode,
     /** What has already been sold automatically for the contract on screen. */
     done: svc.autoTradeLedger(svc.autoTradeExpiry ?? '').entries,
@@ -626,12 +652,34 @@ export function registerTradeRoutes(app: FastifyInstance) {
 
   app.post('/api/trade/auto-trade', async (req, reply) => {
     const b = (req.body ?? {}) as Record<string, unknown>;
+    /*
+     * The limits move first, then the settings are checked against them: a call
+     * that raises the ceiling and the size together must not be judged by the
+     * ceiling it is replacing.
+     */
+    if (b.limits !== undefined) {
+      if (b.limits === null || typeof b.limits !== 'object') {
+        reply.code(400);
+        return { error: 'limits must be an object' };
+      }
+      const asked = b.limits as Record<string, unknown>;
+      for (const [key, hi] of Object.entries(AUTO_TRADE_CEILINGS)) {
+        if (asked[key] === undefined) continue;
+        const v = Number(asked[key]);
+        if (!Number.isInteger(v) || v < 0 || v > hi) {
+          reply.code(400);
+          return { error: `${key} must be a whole number from 0 to ${hi}` };
+        }
+      }
+      svc.setAutoTradeLimits(asked as Parameters<typeof svc.setAutoTradeLimits>[0]);
+    }
+    const limits = svc.autoTradeLimits;
     const numeric: [string, number, number][] = [
-      ['lots', 1, AUTO_TRADE_LIMITS.maxLots],
-      ['targetPct', AUTO_TRADE_LIMITS.minTargetPct, AUTO_TRADE_LIMITS.maxTargetPct],
-      ['stopPct', 0, AUTO_TRADE_LIMITS.maxStopPct],
-      ['chaseSeconds', 0, AUTO_TRADE_LIMITS.maxChaseSec],
-      ['maxPerContract', 1, AUTO_TRADE_LIMITS.maxPerContract],
+      ['lots', 1, limits.maxLots],
+      ['targetPct', limits.minTargetPct, limits.maxTargetPct],
+      ['stopPct', 0, limits.maxStopPct],
+      ['chaseSeconds', 0, limits.maxChaseSec],
+      ['maxPerContract', 1, limits.maxPerContract],
     ];
     for (const [key, lo, hi] of numeric) {
       if (b[key] === undefined) continue;
@@ -645,7 +693,8 @@ export function registerTradeRoutes(app: FastifyInstance) {
       reply.code(400);
       return { error: 'on must be true or false' };
     }
-    return { ok: true, settings: svc.setAutoTrade(b as Parameters<typeof svc.setAutoTrade>[0]) };
+    const { limits: _ignored, ...settings } = b;
+    return { ok: true, settings: svc.setAutoTrade(settings as Parameters<typeof svc.setAutoTrade>[0]), limits };
   });
 
   /** "Consider these strikes again" — clears the note, never a position. */

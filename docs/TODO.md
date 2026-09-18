@@ -2072,6 +2072,66 @@ or "no balance". Both were the same minute and did not repeat.
 
 ---
 
+## Selling the best pick by itself, and who placed what — 18 Sep 2026
+
+Asked for: "auto trade, a config popup, 5 lots by default, sell entry, target
+95%, no duplicates, real-time, full tests, UI + backend + DB"; and separately,
+a label on every position and order saying whether it was a strategy order, the
+best pick, or placed by hand.
+
+**Done (not deployed yet, and off by default):**
+
+- **The decision is pure and tested first** (`trading/auto-trade.ts`). An
+  auto-trader is judged by what it refuses to do, so that is most of the file
+  and most of its 11 tests: off unless armed; **never a "best of none"** (the
+  card marks that one "not a recommendation" — a machine must not read past it);
+  never the same strike twice on one contract; never past the cap (one trade per
+  contract by default); never on top of a position the desk already carries,
+  whoever opened it; and never again after the gates have refused a strike —
+  otherwise Delta is asked the same refused question every minute for eleven
+  hours.
+- **The acting half** runs on the same once-a-minute tick as the best-pick
+  alert, on the same board: the message first, then the order. The decision is
+  **written down before the order goes out**, so a crash costs one missed trade
+  rather than a second copy of one; a refusal is written too, with its reason,
+  and announced once.
+- **The order is the ticket's order.** `place()` with `origin: 'best-pick'` —
+  same engine, same prechecks (margin, short cap, day's loss, spread), same
+  protection. Nothing here can place an order a person could not place by hand.
+- **Defaults:** 5 lots, target 95% (bought back at a twentieth of the sale
+  price), no stop, walk to the bid over 5 seconds, one trade per contract. Every
+  number is clamped on the way in, on both sides.
+- **The popup** on the best-pick card shows the order it would place in words —
+  "Sell CE 78,600 — 5 lots, target 95% (buy back near 0.51), no stop" — says
+  **armed — real orders** in live mode, and lists what it has already sold or
+  been refused on this contract, with "consider them again" as the one way back.
+- **Who placed it:** `plan.origin` (`manual` | `strategy` | `best-pick`), written
+  where it is known and carried into the API, the position cards, the orders
+  rows, the CSV export and the Telegram footer. A record from before the field
+  existed reads as manual, which is what it was.
+- Tests: 11 for the rules, 5 end-to-end through the real service and journal,
+  10 for the popup, 4 for the label. Server 970, web 782.
+
+**To do — before arming it on the live desk:**
+
+- [ ] **Watch it in paper mode for a full contract first.** Arm it, leave it,
+      and read the journal the next morning: one order, the right size, the
+      target where it should be.
+- [ ] **A daily cap, not only a per-contract one.** The cap is per contract;
+      on a day with two expiries listed it could place twice.
+- [ ] **No stop by default is a naked short.** The engine says so loudly and the
+      popup says "no stop", but decide whether an armed auto-trader should be
+      allowed to hold one at all.
+- [ ] **It does not stand aside on a sudden move.** The strategy runner has a
+      shock gate; this has none — it only inherits the prechecks.
+- [ ] **The ledger is one key/value row in the journal.** If auto-trading is
+      kept, give it a table with a row per decision, like `strategy_adds`, so
+      the history outlives the contract.
+- [ ] **Label the P&L screen too** — the rows there still say nothing about who
+      placed the trade.
+
+---
+
 ## Found while doing the above — 17 Sep 2026
 
 - [ ] **The chain harvester is not scheduled.** No cron or systemd unit runs it;

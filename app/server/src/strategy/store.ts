@@ -14,6 +14,10 @@
 import { DatabaseSync } from 'node:sqlite';
 import { TRADE_DB } from '../paths.js';
 import { migrate, type Migration } from '../db/migrate.js';
+import {
+  cleanRebalanceDefaults, cleanRebalanceLimits,
+  type RebalanceLimits, type RebalanceRule,
+} from './rebalance.js';
 import { DEFAULT_CONFIG, defaultAddUntil, type Strategy, type StrategyConfig, type StrategyRun } from './types.js';
 
 const MIGRATIONS: Migration[] = [
@@ -117,6 +121,52 @@ const MIGRATIONS: Migration[] = [
       }
     },
   },
+  {
+    /*
+     * Every rebalance stage, written down before it is acted on.
+     *
+     * `UNIQUE (strategy_id, run_date, stage)` is the rule that a stage can
+     * never fire twice, enforced by the file rather than by a variable: two
+     * ticks, a restart or two callers all meet the same constraint, and the
+     * second one is refused by SQLite rather than by good intentions.
+     */
+    id: '009-strategy-rebalances',
+    up: `
+      CREATE TABLE IF NOT EXISTS strategy_rebalances (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        strategy_id    TEXT    NOT NULL,
+        run_date       TEXT    NOT NULL,
+        stage          INTEGER NOT NULL,
+        up_side        TEXT    NOT NULL,
+        down_side      TEXT    NOT NULL,
+        up_pct         REAL,
+        down_pct       REAL,
+        lots           INTEGER NOT NULL,
+        status         TEXT    NOT NULL,
+        detail         TEXT    NOT NULL,
+        bought_trade_id TEXT,
+        sold_trade_id  TEXT,
+        at             INTEGER NOT NULL,
+        UNIQUE (strategy_id, run_date, stage)
+      );
+      CREATE INDEX IF NOT EXISTS strategy_rebalances_by_time ON strategy_rebalances (at DESC);
+    `,
+  },
+  {
+    /*
+     * Desk-wide settings for the strategy screens, in the `settings` table the
+     * trade journal already keeps in this file. The rebalance defaults and the
+     * limits a rule is held to live here, so "…n stages" is a number somebody
+     * types rather than one written into the source.
+     */
+    id: '008-strategy-settings',
+    up: `
+      CREATE TABLE IF NOT EXISTS settings (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+    `,
+  },
 ];
 
 /** A stored config with the add on but no latest-add time gets its default. */
@@ -183,6 +233,113 @@ export class StrategyStore {
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   });
+
+  /** Stages already done today, and which side was sold at the first of them. */
+  rebalanceState(strategyId: string, runDate: string): { stagesDone: number; lockedUpSide: 'CE' | 'PE' | null } {
+    const rows = this.db.prepare(
+      `SELECT stage, up_side, status FROM strategy_rebalances
+       WHERE strategy_id = ? AND run_date = ? ORDER BY stage`,
+    ).all(strategyId, runDate) as { stage: number; up_side: 'CE' | 'PE'; status: string }[];
+    // A skipped stage counts as done: it was decided about, and deciding again
+    // every minute is the loop this table exists to stop.
+    const stagesDone = rows.length ? Math.max(...rows.map((r) => r.stage)) : 0;
+    const first = rows.find((r) => r.status !== 'skipped');
+    return { stagesDone, lockedUpSide: first?.up_side ?? null };
+  }
+
+  /**
+   * Write the stage down before it is acted on.
+   *
+   * Null means this stage is already recorded -- by the tick before, or by the
+   * process that died between the write and the order. Either way the answer is
+   * the same: do not act.
+   */
+  recordRebalance(r: {
+    strategyId: string; runDate: string; stage: number;
+    upSide: 'CE' | 'PE'; downSide: 'CE' | 'PE'; upPct: number | null; downPct: number | null;
+    lots: number; status: RebalanceStatus; detail: string; at?: number;
+  }): StrategyRebalance | null {
+    try {
+      const res = this.db.prepare(
+        `INSERT INTO strategy_rebalances
+           (strategy_id, run_date, stage, up_side, down_side, up_pct, down_pct, lots, status, detail, at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(r.strategyId, r.runDate, r.stage, r.upSide, r.downSide, r.upPct, r.downPct,
+        r.lots, r.status, r.detail.slice(0, 500), r.at ?? Date.now());
+      return this.rebalance(Number(res.lastInsertRowid));
+    } catch {
+      // The unique constraint: this stage is already written down.
+      return null;
+    }
+  }
+
+  /** How it actually went, once the orders have been answered. */
+  finishRebalance(id: number, status: RebalanceStatus, detail: string, ids?: { bought?: string; sold?: string }): void {
+    this.db.prepare(
+      `UPDATE strategy_rebalances
+       SET status = ?, detail = ?, bought_trade_id = COALESCE(?, bought_trade_id), sold_trade_id = COALESCE(?, sold_trade_id)
+       WHERE id = ?`,
+    ).run(status, detail.slice(0, 500), ids?.bought ?? null, ids?.sold ?? null, id);
+  }
+
+  rebalance(id: number): StrategyRebalance | null {
+    const r = this.db.prepare('SELECT * FROM strategy_rebalances WHERE id = ?').get(id) as never;
+    return r ? hydrateRebalance(r) : null;
+  }
+
+  /** The day's rebalances, newest first, for the screen and the journal. */
+  rebalances(limit = 100): StrategyRebalance[] {
+    return (this.db.prepare('SELECT * FROM strategy_rebalances ORDER BY at DESC LIMIT ?').all(limit) as never[])
+      .map(hydrateRebalance);
+  }
+
+  /** One desk-wide setting. Absent is null, never an invented default. */
+  getSetting(key: string): string | null {
+    const r = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
+    return r?.value ?? null;
+  }
+
+  setSetting(key: string, value: string): void {
+    this.db.prepare(
+      'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+    ).run(key, value);
+  }
+
+  /**
+   * The limits a rebalance rule is held to, and what a new rule starts as.
+   *
+   * Both are settings rather than constants: a desk that always runs five
+   * stages at 40/25 should type that once, and a ceiling in the source is a
+   * number standing between somebody and a trade they meant to make. The hard
+   * ceilings behind them are in `rebalance.ts` and are not editable.
+   */
+  rebalanceLimits(): RebalanceLimits {
+    try {
+      return cleanRebalanceLimits(JSON.parse(this.getSetting('rebalance_limits') || 'null'));
+    } catch {
+      return cleanRebalanceLimits(null);
+    }
+  }
+
+  setRebalanceLimits(patch: Partial<RebalanceLimits>): RebalanceLimits {
+    const next = cleanRebalanceLimits({ ...this.rebalanceLimits(), ...patch });
+    this.setSetting('rebalance_limits', JSON.stringify(next));
+    return next;
+  }
+
+  rebalanceDefaults(): RebalanceRule {
+    try {
+      return cleanRebalanceDefaults(JSON.parse(this.getSetting('rebalance_defaults') || 'null'), this.rebalanceLimits());
+    } catch {
+      return cleanRebalanceDefaults(null, this.rebalanceLimits());
+    }
+  }
+
+  setRebalanceDefaults(patch: Partial<RebalanceRule>): RebalanceRule {
+    const next = cleanRebalanceDefaults({ ...this.rebalanceDefaults(), ...patch }, this.rebalanceLimits());
+    this.setSetting('rebalance_defaults', JSON.stringify(next));
+    return next;
+  }
 
   all(): Strategy[] {
     return (this.db.prepare('SELECT * FROM strategies ORDER BY created_at').all() as never[])
@@ -329,3 +486,36 @@ export class StrategyStore {
     }));
   }
 }
+
+
+export type RebalanceStatus = 'placing' | 'done' | 'partial' | 'failed' | 'skipped';
+
+/** One stage, as it was decided and as it went. */
+export type StrategyRebalance = {
+  id: number;
+  strategyId: string;
+  runDate: string;
+  stage: number;
+  upSide: 'CE' | 'PE';
+  downSide: 'CE' | 'PE';
+  upPct: number | null;
+  downPct: number | null;
+  lots: number;
+  status: RebalanceStatus;
+  detail: string;
+  boughtTradeId: string | null;
+  soldTradeId: string | null;
+  at: number;
+};
+
+const hydrateRebalance = (r: {
+  id: number; strategy_id: string; run_date: string; stage: number;
+  up_side: 'CE' | 'PE'; down_side: 'CE' | 'PE'; up_pct: number | null; down_pct: number | null;
+  lots: number; status: RebalanceStatus; detail: string;
+  bought_trade_id: string | null; sold_trade_id: string | null; at: number;
+}): StrategyRebalance => ({
+  id: r.id, strategyId: r.strategy_id, runDate: r.run_date, stage: r.stage,
+  upSide: r.up_side, downSide: r.down_side, upPct: r.up_pct, downPct: r.down_pct,
+  lots: r.lots, status: r.status, detail: r.detail,
+  boughtTradeId: r.bought_trade_id, soldTradeId: r.sold_trade_id, at: r.at,
+});

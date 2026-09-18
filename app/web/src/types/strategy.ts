@@ -86,9 +86,93 @@ export type StrategyConfig = {
    * `maxMultiple` times what it was sold for. null is off; older strategies lack it.
    */
   addToOpposite?: AddToOpposite | null;
+  /** Null is off, which is what every strategy saved before this had. */
+  rebalance?: RebalanceRule | null;
   /** 0 = Sunday … 6 = Saturday. */
   weekdays: number[];
 };
+
+/**
+ * Dynamic one-sided rebalance: buy back part of the side that fell, sell the
+ * same number again on the side that rose, stage by stage. Every number here is
+ * typed on the screen -- the stages are "…n", not three.
+ */
+export type RebalanceRule = {
+  enabled: boolean;
+  lotsPerStep: number;
+  steps: number;
+  upStartPct: number;
+  downStartPct: number;
+  incrementPct: number;
+  confirmTicks: number;
+  /** Latest IST time a stage may fire, "HH:MM". The exit still runs after it. */
+  endTime: string;
+  lockDirection: boolean;
+  maxLotsPerSide: number | null;
+  allowPartial: boolean;
+  maxSpreadPct: number | null;
+};
+
+export type RebalanceLimits = {
+  maxSteps: number;
+  maxLotsPerStep: number;
+  maxUpPct: number;
+  maxDownPct: number;
+  maxIncrementPct: number;
+  maxConfirmTicks: number;
+  maxLotsPerSide: number;
+};
+
+/** What a rule starts as before the desk's own defaults arrive from the server. */
+export const DEFAULT_REBALANCE: RebalanceRule = {
+  enabled: true,
+  lotsPerStep: 30,
+  steps: 3,
+  upStartPct: 30,
+  downStartPct: 20,
+  incrementPct: 10,
+  confirmTicks: 2,
+  endTime: '13:30',
+  lockDirection: true,
+  maxLotsPerSide: 200,
+  allowPartial: true,
+  maxSpreadPct: 0.15,
+};
+
+/** Stage n's thresholds, and what they mean in money against a sale price. */
+export function stageThresholds(
+  rule: Pick<RebalanceRule, 'steps' | 'upStartPct' | 'downStartPct' | 'incrementPct'>,
+  base: number | null,
+): { stage: number; upPct: number; downPct: number; upPrice: number | null; downPrice: number | null }[] {
+  const out = [];
+  for (let i = 0; i < Math.max(0, Math.min(100, Math.round(rule.steps))); i++) {
+    const upPct = rule.upStartPct + rule.incrementPct * i;
+    const downPct = rule.downStartPct + rule.incrementPct * i;
+    out.push({
+      stage: i + 1,
+      upPct,
+      downPct,
+      upPrice: base === null ? null : Math.round(base * (1 + upPct / 100) * 100) / 100,
+      downPrice: base === null ? null : Math.round(base * (1 - downPct / 100) * 100) / 100,
+    });
+  }
+  return out;
+}
+
+/** What the position becomes after each stage, from the lots it opened with. */
+export function stagePositions(rule: RebalanceRule, lots: number): { stage: number; up: number; down: number }[] {
+  const out = [];
+  let up = lots;
+  let down = lots;
+  for (let i = 0; i < Math.max(0, Math.min(100, Math.round(rule.steps))); i++) {
+    const step = rule.allowPartial ? Math.min(rule.lotsPerStep, down) : (down >= rule.lotsPerStep ? rule.lotsPerStep : 0);
+    const room = rule.maxLotsPerSide === null ? step : Math.max(0, Math.min(step, rule.maxLotsPerSide - up));
+    down -= room;
+    up += room;
+    out.push({ stage: i + 1, up, down });
+  }
+  return out;
+}
 
 export type AddToOpposite = {
   minPriceUsd: number;
@@ -180,6 +264,7 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   minSellScore: null,
   maxShockScore: null,
   addToOpposite: null,
+  rebalance: null,
   weekdays: [0, 1, 2, 3, 4, 5, 6],
 };
 

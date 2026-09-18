@@ -5,6 +5,10 @@ import { entryDue, entrySlotDate, istDate, nextEntryAt } from '../../strategy/sc
 import { holdFor, statusOf } from '../../strategy/holds.js';
 import { DEFAULT_CONFIG, defaultAddUntil, validateConfig, type StrategyConfig } from '../../strategy/types.js';
 import { tradingService } from '../../trading/service.js';
+import {
+  REBALANCE_CEILINGS, cleanRebalance, stageThresholds,
+  type RebalanceLimits, type RebalanceRule,
+} from '../../strategy/rebalance.js';
 
 /**
  * The strategy desk: what is saved, what is armed, and when it next runs.
@@ -57,6 +61,15 @@ function cleanConfig(raw: unknown): StrategyConfig {
     maxShockScore: c.maxShockScore === null || c.maxShockScore === undefined
       ? null
       : Math.trunc(Number(c.maxShockScore)),
+    /*
+     * The rebalance rule, checked against the limits in force rather than a
+     * number in the source: "…n stages" is what somebody typed on the screen.
+     */
+    rebalance: cleanRebalance(
+      c.rebalance as Partial<RebalanceRule> | null,
+      strategyStore().rebalanceLimits(),
+      strategyStore().rebalanceDefaults(),
+    ),
     addToOpposite: c.addToOpposite === null || c.addToOpposite === undefined || typeof c.addToOpposite !== 'object'
       ? null
       : {
@@ -81,7 +94,54 @@ const idFrom = (name: string) =>
   name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)
   || `s${Date.now()}`;
 
+/**
+ * The rebalance defaults and the limits a rule is held to.
+ *
+ * Both are settings, so a desk that runs five stages at 40/25 types it once
+ * and every new rule starts there. `ceilings` is what no limit may pass and is
+ * not editable; the screen shows it as the outer bound of each box.
+ */
 export function registerStrategyRoutes(app: FastifyInstance) {
+  app.get('/api/strategies/rebalance-settings', async () => ({
+    defaults: strategyStore().rebalanceDefaults(),
+    limits: strategyStore().rebalanceLimits(),
+    ceilings: REBALANCE_CEILINGS,
+    /** The stages those defaults make, so the screen can show them without arithmetic. */
+    stages: stageThresholds(strategyStore().rebalanceDefaults(), { up: null, down: null }),
+  }));
+
+  app.post('/api/strategies/rebalance-settings', async (req, reply) => {
+    const b = (req.body ?? {}) as { defaults?: unknown; limits?: unknown };
+    if (b.limits !== undefined) {
+      if (b.limits === null || typeof b.limits !== 'object') {
+        reply.code(400);
+        return { error: 'limits must be an object' };
+      }
+      const asked = b.limits as Record<string, unknown>;
+      for (const [key, hi] of Object.entries(REBALANCE_CEILINGS)) {
+        if (asked[key] === undefined) continue;
+        const v = Number(asked[key]);
+        if (!Number.isInteger(v) || v < 1 || v > hi) {
+          reply.code(400);
+          return { error: `${key} must be a whole number from 1 to ${hi}` };
+        }
+      }
+      strategyStore().setRebalanceLimits(asked as Partial<RebalanceLimits>);
+    }
+    if (b.defaults !== undefined) {
+      if (b.defaults === null || typeof b.defaults !== 'object') {
+        reply.code(400);
+        return { error: 'defaults must be an object' };
+      }
+      strategyStore().setRebalanceDefaults(b.defaults as Partial<RebalanceRule>);
+    }
+    return {
+      ok: true,
+      defaults: strategyStore().rebalanceDefaults(),
+      limits: strategyStore().rebalanceLimits(),
+    };
+  });
+
   const svc = tradingService();
 
   app.get('/api/strategies', async () => {

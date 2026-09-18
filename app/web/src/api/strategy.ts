@@ -1,5 +1,5 @@
 import { json, post } from '@/api/client';
-import type { Strategy, StrategyConfig, StrategyStatus } from '@/types/strategy';
+import type { RebalanceLimits, RebalanceRule, Strategy, StrategyConfig, StrategyStatus } from '@/types/strategy';
 
 export const getStrategies = () => json<StrategyStatus>('/api/strategies');
 
@@ -21,3 +21,19 @@ export const setScheduler = (on: boolean) =>
 export const deleteStrategy = (id: string) =>
   fetch(`/api/strategies/${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' })
     .then((r) => { if (!r.ok) throw new Error('could not delete'); });
+
+/**
+ * The desk's rebalance defaults, and the limits a rule is held to.
+ *
+ * Both are settings rather than numbers in the source: "…n stages" is what
+ * somebody types. `ceilings` is what no limit may pass and is not editable.
+ */
+export type RebalanceSettings = {
+  defaults: RebalanceRule;
+  limits: RebalanceLimits;
+  ceilings: RebalanceLimits;
+};
+
+export const getRebalanceSettings = () => json<RebalanceSettings>('/api/strategies/rebalance-settings');
+export const setRebalanceSettings = (patch: { defaults?: Partial<RebalanceRule>; limits?: Partial<RebalanceLimits> }) =>
+  post<{ ok: true; defaults: RebalanceRule; limits: RebalanceLimits }>('/api/strategies/rebalance-settings', patch);

@@ -1,3 +1,4 @@
+import type { RebalanceRule } from './rebalance.js';
 /**
  * A saved strategy: everything the desk needs to place a day's trade without
  * being asked twice.
@@ -241,6 +242,12 @@ export type StrategyConfig = {
    * no other leg to add to, so nothing happens.
    */
   addToOpposite: AddToOpposite | null;
+  /**
+   * Dynamic one-sided rebalance: buy back part of the side that fell, sell the
+   * same number again on the side that rose, stage by stage. Null is off, which
+   * is what every strategy saved before this had.
+   */
+  rebalance: RebalanceRule | null;
   /** Days it may run. 0 = Sunday … 6 = Saturday. Empty means never. */
   weekdays: number[];
 };
@@ -296,6 +303,8 @@ export function defaultAddUntil(exitTime: string): string {
 
 export const DEFAULT_ADD_TO_OPPOSITE: AddToOpposite = { minPriceUsd: 3, maxMultiple: 2, addUntil: defaultAddUntil(DEFAULT_EXIT) };
 
+export type { RebalanceRule } from './rebalance.js';
+
 export type Strategy = {
   id: string;
   name: string;
@@ -338,6 +347,7 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   minSellScore: null,
   maxShockScore: null,
   addToOpposite: null,
+  rebalance: null,
   weekdays: [0, 1, 2, 3, 4, 5, 6],
 };
 
@@ -469,6 +479,39 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
     }
     if (c.legs !== 'both') bad.push('Adding to the other leg needs both legs selected.');
     if (!((c.takeProfitPct ?? 0) > 0)) bad.push('Adding to the other leg needs a target -- it runs when a target fills.');
+  }
+  const reb = c.rebalance;
+  if (reb && reb.enabled) {
+    if (c.legs !== 'both') bad.push('Rebalancing needs both legs selected — there is nothing to rebalance between.');
+    if (!Number.isInteger(reb.steps) || reb.steps < 1) bad.push('Rebalancing needs at least one stage.');
+    if (!(reb.lotsPerStep > 0)) bad.push('Rebalancing needs a lot size above zero.');
+    if (!(reb.upStartPct > 0)) bad.push('The first up move must be above 0%.');
+    if (!(reb.downStartPct > 0) || reb.downStartPct >= 100) {
+      bad.push('The first down move must be above 0% and under 100% — a premium cannot fall by more than all of itself.');
+    }
+    if (!(reb.incrementPct >= 0)) bad.push('The step between stages cannot be negative.');
+    // The last stage's fall must still be a price: 20% + 10 × 9 is 110% of the premium.
+    const lastDown = reb.downStartPct + reb.incrementPct * (reb.steps - 1);
+    if (lastDown >= 100) {
+      bad.push(`Stage ${reb.steps} would need the price to fall ${lastDown}%, which cannot happen. `
+        + 'Use fewer stages, a smaller step, or a smaller first down move.');
+    }
+    if (!Number.isInteger(reb.confirmTicks) || reb.confirmTicks < 1) {
+      bad.push('Rebalancing needs at least one confirming reading.');
+    }
+    if (!isHhmm(reb.endTime)) {
+      bad.push('The latest time to rebalance must be a time of day, like 1:30 PM.');
+    } else if (entryOk && exitOk) {
+      const entry = minutesOf(c.entryTime!);
+      const toEnd = minutesForward(entry, minutesOf(reb.endTime));
+      if (toEnd === 0 || toEnd >= minutesForward(entry, minutesOf(c.exitTime!))) {
+        bad.push(`The latest time to rebalance (${time12(reb.endTime)}) must be after entry (${time12(c.entryTime!)}) `
+          + `and before exit (${time12(c.exitTime!)}).`);
+      }
+    }
+    if (reb.maxLotsPerSide !== null && (c.lots ?? 0) > reb.maxLotsPerSide) {
+      bad.push(`The cap per side (${reb.maxLotsPerSide}) is under the ${c.lots} lots the strategy opens with.`);
+    }
   }
   return bad;
 }

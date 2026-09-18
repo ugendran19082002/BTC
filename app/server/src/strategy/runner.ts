@@ -12,6 +12,7 @@ import { shockNow } from '../market/shock-now.js';
 import { time12, type Strategy } from './types.js';
 import { addAlertFor, missedEntryAlert, runAlertFor, type Alert, type AlertContext } from '../notify/messages.js';
 import { StrategyAdder, type AddOrder, type PlaceResult } from './adder.js';
+import { StrategyRebalancer } from './rebalancer.js';
 
 /**
  * The loop that turns a due strategy into orders.
@@ -59,6 +60,9 @@ export class StrategyRunner {
   /** Strategy and day pairs already told about a missed entry, so it is said once. */
   private readonly missedAlerted = new Set<string>();
   private readonly adder: StrategyAdder;
+  private readonly rebalancer: StrategyRebalancer;
+  /** One pass over the rebalances at a time, like the adds. */
+  private rebalancing: Promise<void> | null = null;
   /** One pass over the adds at a time; a nudge during a pass asks for one more. */
   private adding: Promise<void> | null = null;
   private addAgain = false;
@@ -76,6 +80,36 @@ export class StrategyRunner {
       addAlert: addAlertFor,
       now: this.now,
     });
+    /*
+     * The dynamic one-sided rebalance, on the same tick.
+     *
+     * It buys back part of the side that fell and sells the same number again
+     * on the side that rose -- through the engine both times, so the gates, the
+     * entry walk and the leg's own target and stop all apply.
+     */
+    this.rebalancer = new StrategyRebalancer({
+      store,
+      tradesToday: (id) => tradingService().tradesTodayFor(id, this.now()),
+      quote: (symbol) => tradingService().quoteForDisplay(symbol),
+      /*
+       * `close` answers with the trade's state, not with ok/no, so the buy-back
+       * is judged the only way that is true: the position is smaller than it
+       * was. Anything else -- no record, nothing bought, an exchange that would
+       * not take it -- means the sell must not follow.
+       */
+      buyBack: async (tradeId, lots) => {
+        const before = Math.abs(tradingService().trade(tradeId)?.state.position ?? 0);
+        const after = await tradingService().close(tradeId, lots);
+        if (!after) return { ok: false, reason: 'no such trade' };
+        const closed = before - Math.abs(after.position);
+        return closed > 0
+          ? { ok: true }
+          : { ok: false, reason: after.note ?? 'nothing was bought back' };
+      },
+      sell: (o) => placeAdd(o),
+      tell: (text) => this.alert(() => ({ key: 'rebalance', text })),
+      now: this.now,
+    });
   }
 
   start(): void {
@@ -85,6 +119,27 @@ export class StrategyRunner {
     // A target fill is acted on within a moment, not at the next 20-second tick:
     // the other leg's price is the whole rule, and it moves.
     tradingService().onTargetFill(() => { void this.considerAdds(); });
+  }
+
+  /**
+   * Look at every strategy for a rebalance stage that is due.
+   *
+   * Every tick rather than on a fill: the trigger is a pair of premiums moving,
+   * which nothing on this desk emits an event for.
+   */
+  considerRebalances(): Promise<void> {
+    if (this.rebalancing) return this.rebalancing;
+    this.rebalancing = (async () => {
+      try {
+        if (!this.armed()) return;
+        for (const s of this.store.all()) {
+          await this.rebalancer.consider(s).catch((e) => this.note(s, 'rebalance', e));
+        }
+      } finally {
+        this.rebalancing = null;
+      }
+    })();
+    return this.rebalancing;
   }
 
   /** Look at every strategy's targets for something to add to the other leg. */
@@ -128,6 +183,8 @@ export class StrategyRunner {
       // Also on the tick, for a fill the nudge missed -- one found by a restart's
       // reconcile, say. The journal makes a second look harmless.
       await this.considerAdds();
+      // And the rebalance, whose trigger is two premiums moving rather than a fill.
+      await this.considerRebalances();
     } finally {
       this.ticking = false;
     }

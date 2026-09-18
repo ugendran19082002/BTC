@@ -1,5 +1,7 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, AlertTriangle, BarChart3, Bot, Briefcase, ListOrdered, RefreshCw } from 'lucide-react';
+import {
+  Activity, AlertTriangle, BarChart3, Bot, Briefcase, ListOrdered, RefreshCw, SlidersHorizontal,
+} from 'lucide-react';
 import { NotSignedIn } from '@/api/client';
 import { getCandles, getChain, getExpiries, getHealth, getSpot } from '@/api/desk';
 import { getMe, type Stage } from '@/api/session';
@@ -57,6 +59,7 @@ const PositionsCard = lazy(() => import('@/components/trade/PositionsCard').then
 const AccountCard = lazy(() => import('@/components/trade/AccountCard').then((m) => ({ default: m.AccountCard })));
 const OrdersPanel = lazy(() => import('@/components/trade/OrdersPanel').then((m) => ({ default: m.OrdersPanel })));
 const StrategyPanel = lazy(() => import('@/components/strategy/StrategyPanel').then((m) => ({ default: m.StrategyPanel })));
+const SettingsPanel = lazy(() => import('@/components/desk/SettingsPanel').then((m) => ({ default: m.SettingsPanel })));
 const ReportPanel = lazy(() => import('@/components/report/ReportPanel').then((m) => ({ default: m.ReportPanel })));
 const ErrorLogPanel = lazy(() => import('@/components/layout/ErrorLogPanel').then((m) => ({ default: m.ErrorLogPanel })));
 // The calendar library is a sixth of the first download and is needed only
@@ -82,7 +85,7 @@ const Chart = memo(PriceChart);
 /** One empty list, so "no bars yet" is the same prop every render. */
 const NO_BARS: never[] = [];
 
-type Tab = 'desk' | 'trade' | 'orders' | 'strategy' | 'pnl' | 'errors';
+type Tab = 'desk' | 'trade' | 'orders' | 'strategy' | 'pnl' | 'errors' | 'settings';
 
 /** Of two answers to the same question, the one that arrived last; either may be missing. */
 function newer<T>(a: T | null, aAt: number | null, b: T | null, bAt: number | null): T | null {
@@ -455,6 +458,9 @@ export default function App() {
         <button className={tab === 'pnl' ? 'on' : ''} onClick={() => setTab('pnl')}>
           <BarChart3 aria-hidden /> <span>P&L</span>
         </button>
+        <button className={tab === 'settings' ? 'on' : ''} onClick={() => setTab('settings')}>
+          <SlidersHorizontal aria-hidden /> <span>Settings</span>
+        </button>
         <button className={tab === 'errors' ? 'on' : ''} onClick={() => setTab('errors')}>
           <AlertTriangle aria-hidden /> <span>Errors</span>
           {errors && errors.summary.unresolved > 0 && (
@@ -763,6 +769,10 @@ export default function App() {
       ) : tab === 'pnl' ? (
         <ErrorBoundary where="Profit and loss">
           <ReportPanel />
+        </ErrorBoundary>
+      ) : tab === 'settings' ? (
+        <ErrorBoundary where="Settings">
+          <SettingsPanel />
         </ErrorBoundary>
       ) : (
         <ErrorBoundary where="Error log">

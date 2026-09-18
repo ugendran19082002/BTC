@@ -62,14 +62,62 @@ export const AUTO_TRADE_DEFAULTS: AutoTradeSettings = {
   maxPerContract: 1,
 };
 
-export const AUTO_TRADE_LIMITS = {
+/**
+ * The limits, which are themselves settings.
+ *
+ * A desk that cannot change its own ceiling ends up with a number in the source
+ * standing between somebody and a trade they meant to make. So these are
+ * editable from the card like everything else -- and behind them sit
+ * `AUTO_TRADE_CEILINGS`, which are not: a mistyped ceiling must not be able to
+ * turn a 5-lot rule into a fifty-thousand-lot one, and a target above 99% is
+ * arithmetic, not a preference.
+ */
+export type AutoTradeLimits = {
+  maxLots: number;
+  minTargetPct: number;
+  maxTargetPct: number;
+  maxStopPct: number;
+  maxChaseSec: number;
+  maxPerContract: number;
+};
+
+export const AUTO_TRADE_LIMITS: AutoTradeLimits = {
   maxLots: 1_000,
   minTargetPct: 1,
   maxTargetPct: 99,
   maxStopPct: 500,
   maxChaseSec: 600,
   maxPerContract: 10,
+};
+
+/** What no setting may pass, whoever types it. */
+export const AUTO_TRADE_CEILINGS = {
+  maxLots: 100_000,
+  /** A target is a share of the premium kept: 100% would be buying back at nothing. */
+  maxTargetPct: 99,
+  maxStopPct: 10_000,
+  /** Ten minutes is the exchange's own patience with a working order. */
+  maxChaseSec: 600,
+  maxPerContract: 100,
 } as const;
+
+/** Limits from a browser, brought inside the ceilings. */
+export function cleanAutoTradeLimits(raw: Partial<AutoTradeLimits> | null | undefined): AutoTradeLimits {
+  const n = (v: unknown, fallback: number) => (Number.isFinite(Number(v)) ? Math.round(Number(v)) : fallback);
+  const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+  const d = AUTO_TRADE_LIMITS;
+  const c = AUTO_TRADE_CEILINGS;
+  const minTargetPct = clamp(n(raw?.minTargetPct, d.minTargetPct), 1, c.maxTargetPct);
+  return {
+    maxLots: clamp(n(raw?.maxLots, d.maxLots), 1, c.maxLots),
+    minTargetPct,
+    // The top of the target range can never sit under its own floor.
+    maxTargetPct: clamp(n(raw?.maxTargetPct, d.maxTargetPct), minTargetPct, c.maxTargetPct),
+    maxStopPct: clamp(n(raw?.maxStopPct, d.maxStopPct), 0, c.maxStopPct),
+    maxChaseSec: clamp(n(raw?.maxChaseSec, d.maxChaseSec), 0, c.maxChaseSec),
+    maxPerContract: clamp(n(raw?.maxPerContract, d.maxPerContract), 1, c.maxPerContract),
+  };
+}
 
 /** What has been traded automatically for one contract, and how it went. */
 export type AutoTradeLedger = {
@@ -152,17 +200,20 @@ export function decideAutoTrade(input: AutoTradeInput): AutoTradeDecision {
   };
 }
 
-/** Settings as stored, with every number brought inside its limits. */
-export function cleanAutoTradeSettings(raw: Partial<AutoTradeSettings>): AutoTradeSettings {
+/** Settings as stored, with every number brought inside the limits in force. */
+export function cleanAutoTradeSettings(
+  raw: Partial<AutoTradeSettings>,
+  limits: AutoTradeLimits = AUTO_TRADE_LIMITS,
+): AutoTradeSettings {
   const n = (v: unknown, fallback: number) => (Number.isFinite(Number(v)) ? Number(v) : fallback);
   const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
   return {
     on: raw.on === true,
-    lots: Math.round(clamp(n(raw.lots, AUTO_TRADE_DEFAULTS.lots), 1, AUTO_TRADE_LIMITS.maxLots)),
+    lots: Math.round(clamp(n(raw.lots, AUTO_TRADE_DEFAULTS.lots), 1, limits.maxLots)),
     targetPct: Math.round(clamp(n(raw.targetPct, AUTO_TRADE_DEFAULTS.targetPct),
-      AUTO_TRADE_LIMITS.minTargetPct, AUTO_TRADE_LIMITS.maxTargetPct)),
-    stopPct: Math.round(clamp(n(raw.stopPct, AUTO_TRADE_DEFAULTS.stopPct), 0, AUTO_TRADE_LIMITS.maxStopPct)),
-    chaseSeconds: Math.round(clamp(n(raw.chaseSeconds, AUTO_TRADE_DEFAULTS.chaseSeconds), 0, AUTO_TRADE_LIMITS.maxChaseSec)),
-    maxPerContract: Math.round(clamp(n(raw.maxPerContract, AUTO_TRADE_DEFAULTS.maxPerContract), 1, AUTO_TRADE_LIMITS.maxPerContract)),
+      limits.minTargetPct, limits.maxTargetPct)),
+    stopPct: Math.round(clamp(n(raw.stopPct, AUTO_TRADE_DEFAULTS.stopPct), 0, limits.maxStopPct)),
+    chaseSeconds: Math.round(clamp(n(raw.chaseSeconds, AUTO_TRADE_DEFAULTS.chaseSeconds), 0, limits.maxChaseSec)),
+    maxPerContract: Math.round(clamp(n(raw.maxPerContract, AUTO_TRADE_DEFAULTS.maxPerContract), 1, limits.maxPerContract)),
   };
 }

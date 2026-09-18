@@ -263,6 +263,11 @@ export type AddPreview = {
   /** Where the sell starts, and the lowest it may walk to. */
   startPrice: number;
   floorPrice: number;
+  /** The book as it is, so the sheet can say what the walk will actually do. */
+  bid?: number | null;
+  ask?: number | null;
+  /** False when the floor is at or above the start: the order rests, it never crosses. */
+  canWalk?: boolean;
   quote?: Quote | null;
   size?: number;
   newSize?: number;

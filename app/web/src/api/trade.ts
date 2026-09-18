@@ -139,14 +139,19 @@ export type AutoTradeState = {
     maxLots: number; minTargetPct: number; maxTargetPct: number;
     maxStopPct: number; maxChaseSec: number; maxPerContract: number;
   };
+  /** What no limit may pass, whoever types it. Not editable. */
+  ceilings: {
+    maxLots: number; maxTargetPct: number; maxStopPct: number; maxChaseSec: number; maxPerContract: number;
+  };
   mode: 'live' | 'paper';
   /** What has already been sold automatically on the contract on screen. */
   done: Record<string, { at: number; status: 'placed' | 'refused'; tradeId?: string; detail?: string }>;
 };
 
 export const getAutoTrade = () => json<AutoTradeState>('/api/trade/auto-trade');
-export const setAutoTrade = (patch: Partial<AutoTradeSettings>) =>
-  post<{ ok: true; settings: AutoTradeSettings }>('/api/trade/auto-trade', patch);
+export const setAutoTrade = (
+  patch: Partial<AutoTradeSettings> & { limits?: Partial<AutoTradeState['limits']> },
+) => post<{ ok: true; settings: AutoTradeSettings }>('/api/trade/auto-trade', patch);
 /** Consider the strikes already sold or refused on this contract again. */
 export const clearAutoTrade = () => post<{ ok: true }>('/api/trade/auto-trade/clear', {});
 

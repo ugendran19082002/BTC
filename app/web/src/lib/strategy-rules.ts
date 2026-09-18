@@ -17,7 +17,9 @@ export type FormField =
   | 'legs' | 'strikeRule' | 'strikeStep' | 'premium' | 'lots'
   | 'entryLimit' | 'crossAfterSec' | 'maxCrossSpreadPct' | 'takeProfitPct' | 'stopLossPct'
   | 'probGate' | 'doubleWhenOneSided' | 'minSellScore' | 'maxShockScore'
-  | 'addMinPrice' | 'addMultiple' | 'addUntil' | 'addCrossAfterSec' | 'add';
+  | 'addMinPrice' | 'addMultiple' | 'addUntil' | 'addCrossAfterSec' | 'add'
+  | 'rebalance' | 'rebalanceLots' | 'rebalanceSteps' | 'rebalanceUp' | 'rebalanceDown'
+  | 'rebalanceIncrement' | 'rebalanceConfirm' | 'rebalanceCap' | 'rebalanceEnd';
 
 export type Problem = { field: FormField; tab: FormTab; message: string };
 
@@ -27,6 +29,9 @@ const TAB: Record<FormField, FormTab> = {
   entryLimit: 'trade', crossAfterSec: 'trade', maxCrossSpreadPct: 'trade', takeProfitPct: 'trade', stopLossPct: 'trade',
   probGate: 'extras', doubleWhenOneSided: 'extras', minSellScore: 'extras', maxShockScore: 'extras',
   addMinPrice: 'extras', addMultiple: 'extras', addUntil: 'extras', addCrossAfterSec: 'extras', add: 'extras',
+  rebalance: 'extras', rebalanceLots: 'extras', rebalanceSteps: 'extras', rebalanceUp: 'extras',
+  rebalanceDown: 'extras', rebalanceIncrement: 'extras', rebalanceConfirm: 'extras',
+  rebalanceCap: 'extras', rebalanceEnd: 'extras',
 };
 
 export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
@@ -105,6 +110,44 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
     }
     if (c.legs !== 'both') say('add', 'Adding to the other leg needs both legs selected.');
     if (!(c.takeProfitPct > 0)) say('add', 'Adding to the other leg needs a target -- it runs when a target fills.');
+  }
+
+  /*
+   * The rebalance, checked in the browser so the form can point at the box
+   * rather than showing a server message after a save. The same checks run
+   * again on the server, which is the one that counts.
+   */
+  const reb = c.rebalance;
+  if (reb && reb.enabled) {
+    if (c.legs !== 'both') say('rebalance', 'Rebalancing needs both legs selected — there is nothing to rebalance between.');
+    if (!Number.isInteger(reb.steps) || reb.steps < 1) say('rebalanceSteps', 'At least one stage.');
+    if (!Number.isInteger(reb.lotsPerStep) || reb.lotsPerStep < 1) say('rebalanceLots', 'Lots must be a whole number above zero.');
+    if (!(reb.upStartPct > 0)) say('rebalanceUp', 'The first up move must be above 0%.');
+    if (!(reb.downStartPct > 0) || reb.downStartPct >= 100) {
+      say('rebalanceDown', 'The first down move must be above 0% and under 100% — a premium cannot fall by more than all of itself.');
+    }
+    if (!(reb.incrementPct >= 0)) say('rebalanceIncrement', 'The step cannot be negative.');
+    const lastDown = reb.downStartPct + reb.incrementPct * (reb.steps - 1);
+    if (reb.steps >= 1 && lastDown >= 100) {
+      say('rebalanceSteps', `Stage ${reb.steps} would need the price to fall ${lastDown}%, which cannot happen. `
+        + 'Use fewer stages, a smaller step, or a smaller first down move.');
+    }
+    if (!Number.isInteger(reb.confirmTicks) || reb.confirmTicks < 1) {
+      say('rebalanceConfirm', 'At least one confirming reading.');
+    }
+    if (reb.maxLotsPerSide !== null && reb.maxLotsPerSide < c.lots) {
+      say('rebalanceCap', `The cap (${reb.maxLotsPerSide}) is under the ${c.lots} lots the strategy opens with.`);
+    }
+    if (!isHhmm(reb.endTime)) {
+      say('rebalanceEnd', 'The latest time to rebalance must be a time of day, like 1:30 PM.');
+    } else if (entryOk && exitOk) {
+      const entry = minutesOf(c.entryTime);
+      const until = minutesForward(entry, minutesOf(reb.endTime));
+      if (until === 0 || until >= minutesForward(entry, minutesOf(c.exitTime))) {
+        say('rebalanceEnd', `The latest time to rebalance (${time12(reb.endTime)}) must be after entry `
+          + `(${time12(c.entryTime)}) and before exit (${time12(c.exitTime)}).`);
+      }
+    }
   }
   return out;
 }

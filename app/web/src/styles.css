@@ -2500,3 +2500,18 @@ td.liq-normal, td.liq-none { color: var(--dim); }
   font: inherit; font-size: 11px; color: var(--accent); cursor: pointer;
 }
 .auto-trade-clear:hover { text-decoration: underline; }
+
+/* The settings screen: every number the desk works to, in one place. */
+.settings-lead { margin: 0 0 10px; font-size: 12px; line-height: 1.5; color: var(--muted); }
+.settings-sub {
+  margin: 12px 0 6px; font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.6px; color: var(--dim);
+}
+.settings-sub:first-of-type { margin-top: 0; }
+.settings-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr)); }
+.settings-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.settings-field > span { font-size: 11.5px; color: var(--muted); }
+.settings-field small { font-size: 10px; color: var(--dim); }
+.settings-field small.warn { color: var(--warn); }
+.settings-note { font-size: 11px; color: var(--dim); }
+.settings-note.warn { color: var(--warn); }

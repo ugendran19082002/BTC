@@ -260,6 +260,39 @@ describe('selling at the bid if it does not fill', () => {
     expect(box).toHaveValue('1');
   });
 
+  /*
+   * 18 September: "sell at bid after 5 sec" was on, the add rested at 20.00
+   * with the bid at 19.00 for an hour, and nothing crossed. The typed price is
+   * also the floor, so it forbade the crossing the switch asked for. The sheet
+   * has to say that before the order is sent.
+   */
+  it('[critical] a price with nothing to walk to says so, in the words of the book', async () => {
+    previewAdd.mockResolvedValue(ok({ startPrice: 20, floorPrice: 20, bid: 19, ask: 20, canWalk: false }));
+    show();
+    fireEvent.change(screen.getByLabelText('lots to add'), { target: { value: '200' } });
+    fireEvent.change(screen.getByLabelText('add price'), { target: { value: '20' } });
+    expect(await screen.findByText(/Nothing to walk to: 20.00 is also the floor, and the bid is 19.00/))
+      .toBeInTheDocument();
+    expect(screen.getByText(/Leave the price blank, or set it under the ask, for it to cross/)).toBeInTheDocument();
+  });
+
+  it('[critical] with room to walk it says the range it will walk', async () => {
+    previewAdd.mockResolvedValue(ok({ startPrice: 20, floorPrice: 19, bid: 19, ask: 20, canWalk: true }));
+    show();
+    fireEvent.change(screen.getByLabelText('lots to add'), { target: { value: '200' } });
+    expect(await screen.findByText(/Walks 20.00 → 19.00 over 5 seconds, and never under 19.00/)).toBeInTheDocument();
+  });
+
+  it('switched off, the walk is not described at all', async () => {
+    previewAdd.mockResolvedValue(ok({ startPrice: 20, floorPrice: 20, bid: 19, ask: 20, canWalk: false }));
+    show();
+    fireEvent.change(screen.getByLabelText('lots to add'), { target: { value: '200' } });
+    await screen.findByText(/Nothing to walk to/);
+    fireEvent.click(screen.getByRole('checkbox', { name: /If not filled, sell at bid after/ }));
+    expect(screen.queryByText(/Nothing to walk to/)).toBeNull();
+    expect(screen.getByText('Left at the ask until it fills or the window ends.')).toBeInTheDocument();
+  });
+
   it('a typed price is still the floor when it crosses', async () => {
     show();
     fireEvent.change(screen.getByLabelText('lots to add'), { target: { value: '100' } });

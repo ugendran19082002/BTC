@@ -1,9 +1,10 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Loader2 } from 'lucide-react';
-import { saveStrategy } from '@/api/strategy';
+import { saveStrategy, getRebalanceSettings } from '@/api/strategy';
 import {
-  DAY_NAMES, DEFAULT_ADD_TO_OPPOSITE, DEFAULT_CONFIG, MAX_STRIKE_STEP, strikeLabel,
-  type Strategy, type StrategyConfig,
+  DAY_NAMES, DEFAULT_ADD_TO_OPPOSITE, DEFAULT_CONFIG, DEFAULT_REBALANCE, MAX_STRIKE_STEP,
+  stagePositions, stageThresholds, strikeLabel,
+  type RebalanceLimits, type RebalanceRule, type Strategy, type StrategyConfig,
 } from '@/types/strategy';
 import { Sheet, SheetContent, SheetFooter } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
@@ -71,6 +72,24 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
 
   const set = <K extends keyof StrategyConfig>(k: K, v: StrategyConfig[K]) =>
     setC((p) => ({ ...p, [k]: v }));
+  /*
+   * The desk's own defaults and limits, not numbers in this file: a desk that
+   * runs five stages at 40/25 types it once, in Settings, and every new rule
+   * starts there. Until they arrive the built-in defaults stand in.
+   */
+  const [rebalanceDefaults, setRebalanceDefaults] = useState<RebalanceRule>(DEFAULT_REBALANCE);
+  const [rebalanceLimits, setRebalanceLimits] = useState<RebalanceLimits>({
+    maxSteps: 20, maxLotsPerStep: 10_000, maxUpPct: 500, maxDownPct: 99,
+    maxIncrementPct: 500, maxConfirmTicks: 10, maxLotsPerSide: 100_000,
+  });
+  useEffect(() => {
+    getRebalanceSettings()
+      .then((r) => { setRebalanceDefaults(r.defaults); setRebalanceLimits(r.limits); })
+      .catch(() => {});
+  }, []);
+
+  const setReb = (patch: Partial<NonNullable<StrategyConfig['rebalance']>>) =>
+    setC((p) => (p.rebalance ? { ...p, rebalance: { ...p.rebalance, ...patch } } : p));
   const setAdd = (patch: Partial<NonNullable<StrategyConfig['addToOpposite']>>) =>
     setC((p) => (p.addToOpposite ? { ...p, addToOpposite: { ...p.addToOpposite, ...patch } } : p));
 
@@ -694,6 +713,151 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                       </p>
                     </div>
                   </details>
+                </>
+              )}
+
+              {/*
+                Dynamic one-sided rebalance.
+                Buy back part of the side that fell, sell the same number again
+                on the side that rose, stage by stage. Every number is typed
+                here -- the stages are "…n", and the table under them shows
+                exactly what each one would mean in money and in lots.
+              */}
+              <div className="mt-4 border-t border-border pt-3">
+                <Switch
+                  label="Rebalance one side into the other"
+                  description={c.rebalance?.enabled
+                    ? `When one side rises ${c.rebalance.upStartPct}% and the other falls ${c.rebalance.downStartPct}%, buy back ${c.rebalance.lotsPerStep} lots of the fallen side and sell ${c.rebalance.lotsPerStep} more of the risen one.`
+                    : 'Off — both sides are left as they were sold.'}
+                  checked={Boolean(c.rebalance?.enabled)}
+                  onCheckedChange={(on) => set('rebalance', on
+                    ? { ...(c.rebalance ?? rebalanceDefaults), enabled: true }
+                    : (c.rebalance ? { ...c.rebalance, enabled: false } : null))}
+                />
+                <FieldError text={err('rebalance')} />
+              </div>
+
+              {c.rebalance?.enabled && (
+                <>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Stack label="Lots each stage" error={err('rebalanceLots')} hint="bought back, and sold again">
+                      <Input value={String(c.rebalance.lotsPerStep)} aria-label="rebalance lots per stage" inputMode="numeric"
+                             onChange={(e) => setReb({ lotsPerStep: Math.floor(num(e.target.value, 0)) })} />
+                    </Stack>
+                    <Stack label="Stages" error={err('rebalanceSteps')} hint={`up to ${rebalanceLimits.maxSteps}`}>
+                      <Input value={String(c.rebalance.steps)} aria-label="rebalance stages" inputMode="numeric"
+                             onChange={(e) => setReb({ steps: Math.floor(num(e.target.value, 0)) })} />
+                    </Stack>
+                  </div>
+
+                  <div className="mt-2 grid grid-cols-3 gap-2">
+                    <Stack label="Up move" error={err('rebalanceUp')} hint="stage 1">
+                      <Affix after="%">
+                        <Input value={String(c.rebalance.upStartPct)} aria-label="rebalance up start percent" inputMode="numeric" className="pr-7"
+                               onChange={(e) => setReb({ upStartPct: Math.floor(num(e.target.value, 0)) })} />
+                      </Affix>
+                    </Stack>
+                    <Stack label="Down move" error={err('rebalanceDown')} hint="stage 1">
+                      <Affix after="%">
+                        <Input value={String(c.rebalance.downStartPct)} aria-label="rebalance down start percent" inputMode="numeric" className="pr-7"
+                               onChange={(e) => setReb({ downStartPct: Math.floor(num(e.target.value, 0)) })} />
+                      </Affix>
+                    </Stack>
+                    <Stack label="Step" error={err('rebalanceIncrement')} hint="added each stage">
+                      <Affix after="%">
+                        <Input value={String(c.rebalance.incrementPct)} aria-label="rebalance increment percent" inputMode="numeric" className="pr-7"
+                               onChange={(e) => setReb({ incrementPct: Math.floor(num(e.target.value, 0)) })} />
+                      </Affix>
+                    </Stack>
+                  </div>
+
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <Stack label="Confirm readings" error={err('rebalanceConfirm')} hint="a single print is a quote, not a move">
+                      <Input value={String(c.rebalance.confirmTicks)} aria-label="rebalance confirm ticks" inputMode="numeric"
+                             onChange={(e) => setReb({ confirmTicks: Math.floor(num(e.target.value, 1)) })} />
+                    </Stack>
+                    <Stack label="Cap each side" error={err('rebalanceCap')} hint="blank is no cap of its own">
+                      <Input
+                        value={c.rebalance.maxLotsPerSide === null ? '' : String(c.rebalance.maxLotsPerSide)}
+                        aria-label="rebalance cap per side" inputMode="numeric" placeholder="none"
+                        onChange={(e) => setReb({
+                          maxLotsPerSide: e.target.value.trim() === '' ? null : Math.floor(num(e.target.value, 0)),
+                        })}
+                      />
+                    </Stack>
+                  </div>
+
+                  <Stack label="Rebalance until" error={err('rebalanceEnd')} className="mt-2"
+                         hint={`between ${time12(c.entryTime)} and ${time12(c.exitTime)}; the exit still runs after it`}>
+                    <TimePicker
+                      label="Rebalance until"
+                      value={c.rebalance.endTime}
+                      onChange={(v) => setReb({ endTime: v })}
+                      min={entryPlusOne}
+                      max={exitMinusOne}
+                      invalid={Boolean(err('rebalanceEnd'))}
+                      className="w-full"
+                    />
+                  </Stack>
+
+                  <label className="mt-2 flex items-center gap-2 text-[12px] text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      aria-label="keep the first stage's direction"
+                      checked={c.rebalance.lockDirection}
+                      onChange={(e) => setReb({ lockDirection: e.target.checked })}
+                    />
+                    Keep the first stage’s direction — a later stage that wants the other side is refused
+                  </label>
+                  <label className="mt-1 flex items-center gap-2 text-[12px] text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      aria-label="use what is left on the last stage"
+                      checked={c.rebalance.allowPartial}
+                      onChange={(e) => setReb({ allowPartial: e.target.checked })}
+                    />
+                    On the last stage, use whatever lots are left rather than nothing
+                  </label>
+
+                  {/* Exactly what each stage means, in percent, in money and in lots. */}
+                  <div className="mt-3 rounded-lg bg-muted px-2.5 py-2" aria-label="rebalance stages">
+                    <div className="mb-1 flex items-baseline justify-between text-[11px] text-muted-foreground">
+                      <span>Stages, from a sale at ${c.premium.usd}</span>
+                      <span>{c.lots} + {c.lots} lots to start</span>
+                    </div>
+                    <table className="w-full text-[11.5px] tabular-nums">
+                      <thead>
+                        <tr className="text-[10px] uppercase tracking-wide text-[var(--dim)]">
+                          <th className="py-0.5 text-left font-normal">Stage</th>
+                          <th className="py-0.5 text-right font-normal">Up side</th>
+                          <th className="py-0.5 text-right font-normal">Down side</th>
+                          <th className="py-0.5 text-right font-normal">After</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {stageThresholds(c.rebalance, c.premium.usd).map((t, i) => {
+                          const after = stagePositions(c.rebalance!, c.lots)[i]!;
+                          return (
+                            <tr key={t.stage} className="border-t border-[#ffffff08]">
+                              <td className="py-1 text-left text-foreground">{t.stage}</td>
+                              <td className="py-1 text-right text-[var(--up)]">
+                                +{t.upPct}% <span className="text-[var(--dim)]">${t.upPrice?.toFixed(2)}</span>
+                              </td>
+                              <td className="py-1 text-right text-[var(--down)]">
+                                −{t.downPct}% <span className="text-[var(--dim)]">${t.downPrice?.toFixed(2)}</span>
+                              </td>
+                              <td className="py-1 text-right text-muted-foreground">{after.up} / {after.down}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                    <p className="m-0 mt-1.5 text-[11px] leading-snug text-[var(--dim)]">
+                      Each stage buys back the fallen side and sells the same number again on the risen one, so the
+                      position gets more one-sided as it goes. Both conditions must hold in the same reading,
+                      {' '}{c.rebalance.confirmTicks} times in a row, and each stage happens once.
+                    </p>
+                  </div>
                 </>
               )}
             </>

@@ -124,6 +124,12 @@ export function AddLotsSheet({ trade, open, onOpenChange, onAdded }: {
     return () => { alive = false; clearTimeout(id); };
   }, [open, draft]);
 
+  /*
+   * The walk with nowhere to go: the floor is at or above the price the order
+   * starts at, so nothing will ever cross however many seconds are set.
+   */
+  const deadWalk = chaseOn && preview !== null && preview.canWalk === false;
+
   const send = async () => {
     if (!draft) return;
     setFailed(null);
@@ -211,11 +217,25 @@ export function AddLotsSheet({ trade, open, onOpenChange, onAdded }: {
               </span>
             }
           />
-          <p className="m-0 pl-[26px] text-[11.5px] leading-snug text-muted-foreground">
-            {chaseOn
-              ? `Walks from the ask to the bid over ${chaseSec} second${chaseSec === 1 ? '' : 's'}`
-                + `${limit !== null && limit > 0 ? `, and never under $${price(limit)}` : ', never past the bid'}.`
-              : 'Left at the ask until it fills or the window ends.'}
+          {/*
+            What the walk will actually do, from the book the server just read.
+            A typed price is also the floor, so "sell at bid after 5 sec" over a
+            price at or above the ask asks for a crossing the price forbids --
+            on 18 September that left an add resting at 20.00 with the bid at
+            19.00 for an hour. It says so here, before the order is sent.
+          */}
+          <p className={cn('m-0 pl-[26px] text-[11.5px] leading-snug', deadWalk ? 'text-[var(--warn)]' : 'text-muted-foreground')}>
+            {!chaseOn
+              ? 'Left at the ask until it fills or the window ends.'
+              : deadWalk
+                ? `Nothing to walk to: ${price(preview!.startPrice)} is also the floor`
+                  + `${preview?.bid != null ? `, and the bid is ${price(preview.bid)}` : ''}. `
+                  + 'Leave the price blank, or set it under the ask, for it to cross.'
+                : preview
+                  ? `Walks ${price(preview.startPrice)} → ${price(preview.floorPrice)} over `
+                    + `${chaseSec} second${chaseSec === 1 ? '' : 's'}, and never under ${price(preview.floorPrice)}.`
+                  : `Walks from the ask toward the bid over ${chaseSec} second${chaseSec === 1 ? '' : 's'}`
+                    + `${limit !== null && limit > 0 ? `, and never under $${price(limit)}` : ', never past the bid'}.`}
           </p>
         </div>
 
