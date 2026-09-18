@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  DEFAULT_REBALANCE, cleanRebalance, decideRebalance, movePct, stageThresholds,
+  DEFAULT_REBALANCE, capFor, cleanRebalance, decideRebalance, movePct, stageThresholds, stagesUnderCap,
   type RebalanceQuote, type RebalanceRule,
 } from '../../src/strategy/rebalance.js';
 import type { TradeRecord } from '../../src/trading/engine.js';
@@ -271,3 +271,38 @@ test('a rule from a browser is brought inside its limits, and off is off', () =>
   assert.equal(cleanRebalance({ maxLotsPerSide: null })!.maxLotsPerSide, null);
   assert.equal(cleanRebalance({ endTime: '09:45' })!.endTime, '09:45');
 });
+
+/*
+ * The cap works itself out.
+ *
+ * A desk default of 200 on a strategy selling 700 a side refused every stage
+ * before it began. The most one side can reach is the lots plus what can move,
+ * and what can move is bounded by the other side: 100 a side with 30 lots over
+ * 5 stages reaches 200, not 250.
+ */
+test('[critical] the automatic cap is the most one side can actually reach', () => {
+  assert.equal(capFor({ lotsPerStep: 30, steps: 3 }, 100), 190);
+  assert.equal(capFor({ lotsPerStep: 30, steps: 5 }, 100), 200, 'only 100 are there to move');
+  assert.equal(capFor({ lotsPerStep: 30, steps: 3 }, 700), 790);
+  assert.equal(capFor({ lotsPerStep: 0, steps: 3 }, 100), 100);
+});
+
+test('[critical] a cap that is too small says which stages it refuses, counted not guessed', () => {
+  const r = rule({ maxLotsPerSide: 160 });
+  assert.deepEqual(stagesUnderCap(r, 100).map((x) => [x.stage, x.up, x.down, x.blocked]), [
+    [1, 130, 70, false],
+    [2, 160, 40, false],
+    [3, 160, 40, true],
+  ]);
+  const none = stagesUnderCap(rule({ maxLotsPerSide: 100 }), 100);
+  assert.ok(none.every((x) => x.blocked), 'no room above the opening lots: nothing runs');
+  const free = stagesUnderCap(rule({ maxLotsPerSide: null }), 100);
+  assert.ok(free.every((x) => !x.blocked));
+});
+
+test('capAuto is kept, and only a real true switches it on', () => {
+  assert.equal(cleanRebalance({ capAuto: true })!.capAuto, true);
+  assert.equal(cleanRebalance({ capAuto: 'yes' as never })!.capAuto, false);
+  assert.equal(cleanRebalance({})!.capAuto, false, 'a rule saved before the switch existed was set by hand');
+});
+
