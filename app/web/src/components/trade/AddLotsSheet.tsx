@@ -5,6 +5,7 @@ import type { AddDraft, AddPreview, Trade } from '@/types/trade';
 import { Sheet, SheetContent, SheetFooter } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Figure } from '@/components/ui/figure';
 import { KV } from '@/components/ui/kv';
 import { SwipeToConfirm } from '@/components/ui/swipe-confirm';
@@ -36,6 +37,9 @@ const num = (s: string, fallback: number) => {
 
 /** The server's own default and ceiling, in `http/add-body.ts`. */
 export const ADD_WINDOW_DEFAULT_MIN = 60;
+/** What the desk has always done with an add by hand: walk to the bid over five seconds. */
+export const ADD_CHASE_DEFAULT_SEC = 5;
+export const ADD_CHASE_MAX_SEC = 600;
 export const ADD_WINDOW_MAX_MIN = 240;
 const ADD_WINDOWS = [['15m', 15], ['1h', 60], ['4h', 240]] as const;
 
@@ -65,6 +69,16 @@ export function AddLotsSheet({ trade, open, onOpenChange, onAdded }: {
    * to four hours, and the add can be stopped from the card at any point.
    */
   const [windowMin, setWindowMin] = useState(String(ADD_WINDOW_DEFAULT_MIN));
+  /*
+   * "If not filled, sell at bid after N seconds" -- the ticket's control, on
+   * the add, because the add does the same thing: it rests at the offer and
+   * nobody is watching it. On by default at five seconds, which is what every
+   * add by hand has done since the sheet existed; switched off it rests at the
+   * offer and never crosses, and the window still ends it. A typed price stays
+   * the floor either way, so crossing can never sell under it.
+   */
+  const [chaseOn, setChaseOn] = useState(true);
+  const [chaseSec, setChaseSec] = useState(ADD_CHASE_DEFAULT_SEC);
   const [preview, setPreview] = useState<AddPreview | null>(null);
   const [checking, setChecking] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
@@ -76,6 +90,8 @@ export function AddLotsSheet({ trade, open, onOpenChange, onAdded }: {
     setLots('');
     setPriceText('');
     setWindowMin(String(ADD_WINDOW_DEFAULT_MIN));
+    setChaseOn(true);
+    setChaseSec(ADD_CHASE_DEFAULT_SEC);
     setPreview(null);
     setFailed(null);
   }, [open]);
@@ -88,8 +104,11 @@ export function AddLotsSheet({ trade, open, onOpenChange, onAdded }: {
     if (!(lotsN >= 1)) return null;
     if (limit !== null && !(limit > 0)) return null;
     if (!windowOk) return null;
-    return { tradeId: trade.tradeId, lots: lotsN, limitPrice: limit, timeoutMin: minutes };
-  }, [trade.tradeId, lotsN, limit, windowOk, minutes]);
+    return {
+      tradeId: trade.tradeId, lots: lotsN, limitPrice: limit, timeoutMin: minutes,
+      chaseSeconds: chaseOn ? chaseSec : 0,
+    };
+  }, [trade.tradeId, lotsN, limit, windowOk, minutes, chaseOn, chaseSec]);
 
   // Debounced, as on the ticket: typing a size is not a request per keystroke.
   useEffect(() => {
@@ -159,8 +178,46 @@ export function AddLotsSheet({ trade, open, onOpenChange, onAdded }: {
         <p className="m-0 mt-1.5 text-[11.5px] leading-snug text-muted-foreground">
           {limit !== null && limit > 0
             ? `Never sold under ${price(limit)} — the price you typed is the floor.`
-            : 'Starts at the ask and walks toward the bid over five seconds, never past it.'}
+            : chaseOn
+              ? `Starts at the ask and walks toward the bid over ${chaseSec} second${chaseSec === 1 ? '' : 's'}, never past it.`
+              : 'Rests at the ask and never crosses — only the window ends it.'}
         </p>
+
+        <div className="mt-2">
+          <Checkbox
+            checked={chaseOn}
+            onChange={(e) => setChaseOn(e.target.checked)}
+            label={
+              <span className="flex flex-wrap items-center gap-1.5">
+                <span>If not filled, sell at bid after</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  aria-label="seconds before selling at the bid"
+                  value={chaseSec}
+                  onClick={(e) => e.preventDefault()}
+                  onChange={(e) => {
+                    const n = Number(e.target.value.replace(/[^0-9]/g, ''));
+                    setChaseSec(Math.max(1, Math.min(ADD_CHASE_MAX_SEC, n || 1)));
+                  }}
+                  disabled={!chaseOn}
+                  className={cn(
+                    'h-6 w-12 rounded border border-border bg-muted px-1 text-center',
+                    'font-[inherit] text-[12px] tabular-nums text-foreground outline-none',
+                    'focus-visible:border-[var(--accent)] disabled:opacity-50',
+                  )}
+                />
+                <span>sec</span>
+              </span>
+            }
+          />
+          <p className="m-0 pl-[26px] text-[11.5px] leading-snug text-muted-foreground">
+            {chaseOn
+              ? `Walks from the ask to the bid over ${chaseSec} second${chaseSec === 1 ? '' : 's'}`
+                + `${limit !== null && limit > 0 ? `, and never under $${price(limit)}` : ', never past the bid'}.`
+              : 'Left at the ask until it fills or the window ends.'}
+          </p>
+        </div>
 
         {/* Wraps: on a narrow sheet the box and four chips do not share a line. */}
         <div className="mt-3 flex flex-wrap items-end gap-2">

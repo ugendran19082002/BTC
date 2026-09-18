@@ -432,6 +432,8 @@ export function registerTradeRoutes(app: FastifyInstance) {
     try {
       const p = parse((req.body ?? {}) as PlaceBody);
       const res = await svc.place({
+        // From the ticket, by a person: the one place that is true.
+        origin: 'manual',
         symbol: p.symbol,
         optionSide: p.side,
         strike: p.strike,

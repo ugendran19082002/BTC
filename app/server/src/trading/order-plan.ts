@@ -1,4 +1,4 @@
-import type { TradePlan } from './engine.js';
+import type { TradePlan, TradeOrigin } from './engine.js';
 import { clampLeverage } from './margin.js';
 
 /**
@@ -59,6 +59,8 @@ export type PlaceInput = {
   optionSide: 'CE' | 'PE';
   /** Set when a saved strategy placed this, so its exit can find it again. */
   strategyId?: string;
+  /** Who asked for it: the ticket, a strategy, or the best-pick auto-trade. */
+  origin?: TradeOrigin;
   strike: number;
   expiryTs: number;
   lots: number;
@@ -93,6 +95,9 @@ export function orderPlan(input: PlaceInput, tradeId: string): TradePlan {
     tradeId,
     symbol: input.symbol,
     strategyId: input.strategyId,
+    // Written down once, where it is known. Absent means manual, which is what
+    // every trade opened before this field existed was.
+    origin: input.origin ?? (input.strategyId ? 'strategy' : 'manual'),
     optionSide: input.optionSide,
     lots: input.lots,
     leverage: clampLeverage(input.leverage ?? DEFAULT_LEVERAGE),

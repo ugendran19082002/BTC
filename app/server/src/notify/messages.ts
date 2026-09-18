@@ -392,8 +392,15 @@ function exits(plan: TradePlan): string {
   return `${target}   ${stop}`;
 }
 
+/** What the footer calls each origin. "best-pick" is a slug; nobody reads slugs. */
+const ORIGIN_WORDS: Record<string, string> = {
+  manual: 'manual',
+  strategy: 'strategy',
+  'best-pick': 'best pick, automatic',
+};
+
 function footer(at: number, plan: TradePlan, ctx: AlertContext): string {
-  const origin = plan.strategyId ? 'strategy' : 'manual';
+  const origin = ORIGIN_WORDS[plan.origin ?? (plan.strategyId ? 'strategy' : 'manual')];
   const mode = ctx.mode === 'live' ? 'LIVE' : 'PAPER — simulated, no real order';
   return `🕒 ${istTime(at)} IST · ${origin} · ${mode}`;
 }

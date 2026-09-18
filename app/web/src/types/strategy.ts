@@ -95,6 +95,13 @@ export type AddToOpposite = {
   maxMultiple: number;
   /** The latest IST time an add may be made, 24-hour "HH:MM", between entry and exit. */
   addUntil: string;
+  /**
+   * If the add has not filled, sell at the bid after this many seconds. Null,
+   * or absent on a strategy saved before the control existed, means the entry's
+   * own seconds -- which is what those strategies have been doing. Zero rests
+   * at the offer and never crosses; the add window still ends it.
+   */
+  crossAfterSec?: number | null;
 };
 
 /** Half an hour before the default 5:29 PM exit. Turning the add on uses the strategy's own exit. */

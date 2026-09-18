@@ -622,7 +622,7 @@ export default function App() {
           */}
           {data && snap && (
             <div className="wide-row">
-              <OutlookRow outlook={data.outlook} direction={data.direction} containment={data.containment} />
+              <OutlookRow outlook={data.outlook} direction={data.direction} containment={data.containment} structure={data.structure} />
             </div>
           )}
 

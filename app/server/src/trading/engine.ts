@@ -115,6 +115,8 @@ export function chaseFloor(bid: number, ask: number | null, maxSpreadPct: number
   return (ask - bid) / mid <= maxSpreadPct ? null : mid;
 }
 
+export type TradeOrigin = 'manual' | 'strategy' | 'best-pick';
+
 export type TradePlan = {
   tradeId: string;
   symbol: string;
@@ -126,6 +128,19 @@ export type TradePlan = {
    * opened themselves.
    */
   strategyId?: string;
+  /**
+   * Who asked for this trade.
+   *
+   * Absent on everything opened before the field existed, which is read as
+   * "manual" where a strategy did not open it -- the same inference the alert
+   * footer has always made, now written down once at the moment it is known
+   * rather than guessed at every screen that shows it.
+   *
+   *   manual     the order ticket
+   *   strategy   a saved strategy, at its entry time (`strategyId` says which)
+   *   best-pick  the best-pick card's auto-trade, when it is armed
+   */
+  origin?: TradeOrigin;
   optionSide: OptionSide;
   lots: number;
   entry: EntryPlan;

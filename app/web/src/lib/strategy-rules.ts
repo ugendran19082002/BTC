@@ -17,7 +17,7 @@ export type FormField =
   | 'legs' | 'strikeRule' | 'strikeStep' | 'premium' | 'lots'
   | 'entryLimit' | 'crossAfterSec' | 'maxCrossSpreadPct' | 'takeProfitPct' | 'stopLossPct'
   | 'probGate' | 'doubleWhenOneSided' | 'minSellScore' | 'maxShockScore'
-  | 'addMinPrice' | 'addMultiple' | 'addUntil' | 'add';
+  | 'addMinPrice' | 'addMultiple' | 'addUntil' | 'addCrossAfterSec' | 'add';
 
 export type Problem = { field: FormField; tab: FormTab; message: string };
 
@@ -26,7 +26,7 @@ const TAB: Record<FormField, FormTab> = {
   legs: 'sell', strikeRule: 'sell', strikeStep: 'sell', premium: 'sell', lots: 'sell',
   entryLimit: 'trade', crossAfterSec: 'trade', maxCrossSpreadPct: 'trade', takeProfitPct: 'trade', stopLossPct: 'trade',
   probGate: 'extras', doubleWhenOneSided: 'extras', minSellScore: 'extras', maxShockScore: 'extras',
-  addMinPrice: 'extras', addMultiple: 'extras', addUntil: 'extras', add: 'extras',
+  addMinPrice: 'extras', addMultiple: 'extras', addUntil: 'extras', addCrossAfterSec: 'extras', add: 'extras',
 };
 
 export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
@@ -88,6 +88,10 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
     if (!(add.minPriceUsd > 0) || add.minPriceUsd > 10_000) say('addMinPrice', 'Adding to the other leg needs a minimum price above $0.');
     if (!(add.maxMultiple > 0) || add.maxMultiple > 20) {
       say('addMultiple', 'The "not once it has risen to" limit must be between 0 and 20 times the sale price.');
+    }
+    const cross = add.crossAfterSec;
+    if (cross !== null && cross !== undefined && (!Number.isInteger(cross) || cross < 0 || cross > 600)) {
+      say('addCrossAfterSec', 'Seconds before the add sells at the bid must be a whole number from 0 to 600.');
     }
     if (!isHhmm(add.addUntil)) {
       say('addUntil', 'The latest time to add must be a time of day, like 4:59 PM.');

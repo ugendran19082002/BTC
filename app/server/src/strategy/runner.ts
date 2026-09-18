@@ -405,6 +405,7 @@ function placeArgs(s: Strategy, o: Parameters<typeof svcPlace>[1]) {
   return {
     ...order,
     strategyId: s.id,
+    origin: 'strategy' as const,
     limitPrice,
     chaseSeconds: c.entryPrice === 'offer' ? c.crossAfterSec : 0,
     // Wait for a tight spread before selling into the bid, and give up at the

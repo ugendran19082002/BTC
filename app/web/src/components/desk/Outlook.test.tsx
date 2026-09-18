@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { Outlook, chartWords } from '@/components/desk/Outlook';
-import type { DirectionVerdict, MeasuredRow, Outlook as OutlookData, OutlookRow } from '@/types/desk';
+import type { ChainContext, DirectionVerdict, MeasuredRow, Outlook as OutlookData, OutlookRow } from '@/types/desk';
 
 /**
  * Where BTC could be, horizon by horizon.
@@ -330,3 +330,59 @@ describe('the header', () => {
     expect(screen.getByLabelText('horizons')).toBeInTheDocument();
   });
 });
+
+/*
+ * The option board, under the cards.
+ *
+ * Asked on 17 September to use OI, volume, ΔOI, IV, skew and PCR in the
+ * prediction. What the strip must never do is let a reading nobody measured —
+ * or one that was measured and did not hold — look like it moved a figure.
+ */
+describe('the market context strip', () => {
+  const ctx = (over: Partial<ChainContext> = {}): ChainContext => ({
+    feature: 'implied_move', value: 1.31, bucket: 'large',
+    words: 'Options price a large move to settlement',
+    measured: true, leanHolds: false, sideHolds: true, calm: 'livelier',
+    pDown: 0.361, pSide: 0.193, pUp: 0.447, windows: 244,
+    ...over,
+  });
+  const structure = {
+    pcrOi: 0.34, ivSkewPts: 1.2,
+    ceOiWall: { strike: 78_400, value: 1 }, peOiWall: { strike: 72_800, value: 1 },
+    maxPain: { strike: 76_000, payoutUsd: 1 },
+  } as never;
+
+  it('[critical] a reading that held says so; one that did not is marked as measured and unheld', () => {
+    render(<Outlook outlook={data({ context: [ctx(), ctx({ feature: 'skew', value: -0.02, bucket: 'even', words: 'Puts and calls are priced evenly', sideHolds: false, calm: null })] })} />);
+    const strip = within(screen.getByLabelText('market context'));
+    const implied = within(strip.getByLabelText('Implied move'));
+    expect(implied.getByText('1.31%')).toBeInTheDocument();
+    expect(implied.getByText('counts — livelier to settlement')).toBeInTheDocument();
+    expect(within(strip.getByLabelText('Skew (puts vs calls)')).getByText('measured · did not hold')).toBeInTheDocument();
+  });
+
+  it('[critical] a reading with no history says so rather than looking like a signal', () => {
+    render(<Outlook outlook={data()} structure={structure} />);
+    const strip = within(screen.getByLabelText('market context'));
+    for (const label of ['Put/call open interest', 'IV skew', 'OI walls', 'Max pain']) {
+      expect(within(strip.getByLabelText(label)).getByText('no history yet')).toBeInTheDocument();
+    }
+    expect(within(strip.getByLabelText('OI walls')).getByText('72,800 – 78,400')).toBeInTheDocument();
+  });
+
+  it('says plainly that only a reading which held may move a figure', () => {
+    render(<Outlook outlook={data({ context: [ctx()] })} />);
+    expect(screen.getByText(/it says how far, never which way/)).toBeInTheDocument();
+  });
+
+  it('put/call volume reads as a ratio, not a logarithm', () => {
+    render(<Outlook outlook={data({ context: [ctx({ feature: 'pcr_volume', value: Math.log(2), bucket: 'more_puts', words: 'More puts than calls are trading', sideHolds: false, calm: null })] })} />);
+    expect(within(screen.getByLabelText('Put/call volume')).getByText('2.00× puts')).toBeInTheDocument();
+  });
+
+  it('a board the service never answered about draws no strip at all', () => {
+    render(<Outlook outlook={data()} />);
+    expect(screen.queryByLabelText('market context')).toBeNull();
+  });
+});
+

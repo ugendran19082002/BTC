@@ -74,6 +74,9 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
   const setAdd = (patch: Partial<NonNullable<StrategyConfig['addToOpposite']>>) =>
     setC((p) => (p.addToOpposite ? { ...p, addToOpposite: { ...p.addToOpposite, ...patch } } : p));
 
+  // Blank means "the entry's own seconds": null on the rule, not a zero.
+  const addCross = c.addToOpposite?.crossAfterSec ?? null;
+
   const problems = useMemo(() => strategyProblems(c, name), [c, name]);
   /*
    * The name box sits above the tabs, so its problem belongs to no tab. It used
@@ -643,6 +646,35 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                       Use {time12(defaultAddUntil(c.exitTime))} (30 min before exit)
                     </QuickFix>
                   )}
+
+                  {/*
+                    The add rests at the other leg's offer with nobody watching
+                    it at 11 in the morning, so it carries the same control the
+                    order ticket and the add-lots sheet do -- its own seconds,
+                    not the morning entry's. Blank keeps the entry's, which is
+                    what every strategy saved before this did.
+                  */}
+                  <Stack
+                    label="If not filled, sell at bid after"
+                    error={err('addCrossAfterSec')}
+                    className="mt-2"
+                    hint={addCross === null
+                      ? `blank — the entry's ${c.crossAfterSec} sec`
+                      : addCross === 0 ? 'rests at the offer; the add window still ends it' : 'then sells at the bid, never under the min bid'}
+                  >
+                    <Affix after="sec">
+                      <Input
+                        value={addCross === null ? '' : String(addCross)}
+                        aria-label="add cross after seconds"
+                        inputMode="numeric"
+                        placeholder={String(c.crossAfterSec)}
+                        className="pr-9"
+                        onChange={(e) => setAdd({
+                          crossAfterSec: e.target.value.trim() === '' ? null : Math.floor(num(e.target.value, 0)),
+                        })}
+                      />
+                    </Affix>
+                  </Stack>
 
                   <details className="mt-2 rounded-lg bg-muted px-2.5 py-2 text-[11.5px] leading-relaxed">
                     <summary className="cursor-pointer text-muted-foreground">Try it on prices</summary>

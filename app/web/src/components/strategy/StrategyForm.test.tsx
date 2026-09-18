@@ -306,6 +306,47 @@ describe('adding to the other leg', () => {
     expect(saveStrategy.mock.calls[0]![0].config.addToOpposite).toEqual({ minPriceUsd: 4.5, maxMultiple: 1.5, addUntil: '12:15' });
   });
 
+  /*
+   * "If not filled, sell at bid after N seconds", on the add.
+   *
+   * The add rests at the other leg's offer at 11 in the morning with nobody
+   * watching it, so it carries its own seconds. Blank keeps the entry's, which
+   * is what every strategy saved before the control existed does.
+   */
+  it('[critical] blank means the entry\'s seconds, and says so', () => {
+    show(editing({ crossAfterSec: 7, addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59' } }));
+    tab('Extras');
+    const box = screen.getByLabelText('add cross after seconds');
+    expect(box).toHaveValue('');
+    expect(box).toHaveAttribute('placeholder', '7');
+    expect(screen.getByText(/blank — the entry's 7 sec/)).toBeInTheDocument();
+  });
+
+  it('[critical] the add\'s own seconds are saved on the rule, not on the entry', async () => {
+    show(editing({ crossAfterSec: 7, addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59' } }));
+    tab('Extras');
+    fireEvent.change(screen.getByLabelText('add cross after seconds'), { target: { value: '90' } });
+    fireEvent.click(saveButton());
+    await vi.waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    const cfg = saveStrategy.mock.calls[0]![0].config;
+    expect(cfg.addToOpposite).toEqual({ minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59', crossAfterSec: 90 });
+    expect(cfg.crossAfterSec).toBe(7);
+  });
+
+  it('zero rests at the offer, and the hint says the window still ends it', () => {
+    show(editing({ addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59', crossAfterSec: 0 } }));
+    tab('Extras');
+    expect(screen.getByLabelText('add cross after seconds')).toHaveValue('0');
+    expect(screen.getByText(/rests at the offer; the add window still ends it/)).toBeInTheDocument();
+  });
+
+  it('more than ten minutes is refused before it can be saved', () => {
+    show(editing({ addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59', crossAfterSec: 601 } }));
+    tab('Extras');
+    expect(screen.getByText(/whole number from 0 to 600/)).toBeInTheDocument();
+    expect(saveButton()).toHaveTextContent(/Fix \d+ to save/);
+  });
+
   it('turning it off saves it as off', async () => {
     show(editing({ addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59' } }));
     tab('Extras');

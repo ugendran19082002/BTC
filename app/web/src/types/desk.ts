@@ -558,6 +558,31 @@ export type Outlook = {
   sampleWindows: number | null;
   /** The measured model that answered, and when it was measured. Null or absent when none did. */
   model?: { name: string; measuredAt: string | null } | null;
+  /** The option board now, reading by reading, with what its measurement allows. */
+  context?: ChainContext[];
+};
+
+/**
+ * One chain reading, and how far it is allowed to speak.
+ *
+ * `measured` false means nothing was ever counted for that bucket, so nothing
+ * may be claimed from it. Measured on 17 September over 735 mornings: of the
+ * implied move, the skew and put/call volume, only a large implied move held
+ * anything (the day is livelier), and no chain reading held a direction.
+ */
+export type ChainContext = {
+  feature: string;
+  value: number | null;
+  bucket: string | null;
+  words: string | null;
+  measured: boolean;
+  leanHolds: boolean;
+  sideHolds: boolean;
+  calm: 'calmer' | 'livelier' | null;
+  pDown: number | null;
+  pSide: number | null;
+  pUp: number | null;
+  windows: number | null;
 };
 
 export type ChainResponse = {

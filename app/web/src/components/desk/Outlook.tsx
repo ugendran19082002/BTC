@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { ArrowDownRight, ArrowUpRight, ChevronDown, Info, MoveHorizontal, MoveRight, Sigma, Zap } from 'lucide-react';
-import type { Containment, DirectionVerdict, MeasuredRow, Outlook as OutlookData, OutlookRow } from '@/types/desk';
+import type {
+  ChainContext, Containment, DirectionVerdict, MeasuredRow, OptionStructure,
+  Outlook as OutlookData, OutlookRow,
+} from '@/types/desk';
 import { SideVerdict } from '@/components/desk/SideVerdict';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -36,11 +39,13 @@ import { usePersisted } from '@/hooks/usePersisted';
  * RSI, VWAP and swing structure point, −1…+1. Only the timeframes the desk
  * fetches bars for can have one; the rest say so and keep their bands.
  */
-export function Outlook({ outlook, direction, containment }: {
+export function Outlook({ outlook, direction, containment, structure }: {
   outlook: OutlookData;
   /** The verdict drawn from the same indicators, at the head of the row. */
   direction?: DirectionVerdict;
   containment?: Containment | null;
+  /** The board, for the readings that have no history to be measured against yet. */
+  structure?: OptionStructure | null;
 }) {
   const [showMaths, setShowMaths] = useState(false);
   // Folded, the header and its lean box stay: the answer without the working.
@@ -202,6 +207,8 @@ export function Outlook({ outlook, direction, containment }: {
       <div className="ol-grid" aria-label="horizons">
         {outlook.rows.map((r) => (r.measured ? <MeasuredHorizon key={r.label} row={r} m={r.measured} /> : <Horizon key={r.label} row={r} />))}
       </div>
+
+      <MarketContext context={outlook.context ?? []} structure={structure ?? null} />
       </>}
     </Card>
   );
@@ -328,6 +335,90 @@ function MeasuredHorizon({ row, m }: { row: OutlookRow; m: MeasuredRow }) {
         {why}
       </div>
     </div>
+  );
+}
+
+const CHAIN_LABEL: Record<string, string> = {
+  implied_move: 'Implied move',
+  skew: 'Skew (puts vs calls)',
+  pcr_volume: 'Put/call volume',
+};
+
+/** The reading in the units it was measured in. */
+export function chainValue(feature: string, value: number | null): string {
+  if (value === null) return '—';
+  if (feature === 'implied_move') return `${value.toFixed(2)}%`;
+  if (feature === 'skew') return `${value >= 0 ? '+' : '−'}${Math.abs(value * 100).toFixed(0)}%`;
+  // a log ratio: 0.69 is twice as many puts as calls
+  return `${Math.exp(value).toFixed(2)}× puts`;
+}
+
+/**
+ * The option board, and how far each reading is allowed to speak.
+ *
+ * Asked on 17 September to use OI, volume, ΔOI, IV, skew and PCR for the
+ * prediction. Three of them had a history to be tested against — chain.db holds
+ * 735 mornings of marks and volume at 05:30 and the settle twelve hours later —
+ * and of those only a large implied move held, and only about *how far*, never
+ * which way. So the board shows here, in full, with what each reading is: a
+ * measured one that held, a measured one that did not, or one nobody can
+ * measure yet because the desk has only been recording it since 17 September.
+ *
+ * The rule the strip exists to keep: a figure on a card above moved only if the
+ * service used a reading that held. Everything else on this line is context.
+ */
+function MarketContext({ context, structure }: { context: ChainContext[]; structure: OptionStructure | null }) {
+  const unmeasured: { label: string; value: string }[] = [];
+  if (structure) {
+    if (structure.pcrOi !== null) unmeasured.push({ label: 'Put/call open interest', value: structure.pcrOi.toFixed(2) });
+    if (structure.ivSkewPts !== null) unmeasured.push({ label: 'IV skew', value: `${structure.ivSkewPts >= 0 ? '+' : '−'}${Math.abs(structure.ivSkewPts).toFixed(1)} pts` });
+    if (structure.ceOiWall && structure.peOiWall) {
+      unmeasured.push({ label: 'OI walls', value: `${fmtStrike(structure.peOiWall.strike)} – ${fmtStrike(structure.ceOiWall.strike)}` });
+    }
+    if (structure.maxPain) unmeasured.push({ label: 'Max pain', value: fmtStrike(structure.maxPain.strike) });
+  }
+  if (!context.length && !unmeasured.length) return null;
+
+  return (
+    <section className="ol-ctx" aria-label="market context">
+      <div className="ol-ctx-title">
+        The option board — and what it is measured to be worth
+      </div>
+      <div className="ol-ctx-row">
+        {context.map((c) => {
+          const held = c.leanHolds || c.sideHolds;
+          return (
+            <div key={c.feature} className={cn('ol-ctx-chip', held && 'held')} aria-label={CHAIN_LABEL[c.feature] ?? c.feature}>
+              <span className="ol-ctx-label">{CHAIN_LABEL[c.feature] ?? c.feature}</span>
+              <b className="ol-ctx-value">{chainValue(c.feature, c.value)}</b>
+              <span className="ol-ctx-words">{c.words ?? 'nothing to read'}</span>
+              <span
+                className={cn('ol-ctx-badge', held && 'ok')}
+                title={c.windows ? `Counted over ${c.windows.toLocaleString('en-IN')} mornings, 2024–2026.` : undefined}
+              >
+                {!c.measured ? 'not measured'
+                  : held ? `counts — ${c.calm === 'calmer' ? 'calmer to settlement' : c.calm === 'livelier' ? 'livelier to settlement' : 'leans'}`
+                    : 'measured · did not hold'}
+              </span>
+            </div>
+          );
+        })}
+        {unmeasured.map((u) => (
+          <div key={u.label} className="ol-ctx-chip" aria-label={u.label}>
+            <span className="ol-ctx-label">{u.label}</span>
+            <b className="ol-ctx-value">{u.value}</b>
+            <span className="ol-ctx-words">shown, not counted</span>
+            <span className="ol-ctx-badge" title="The desk has recorded this every five minutes since 17 September 2026; a year of it can be measured the way the candles were.">
+              no history yet
+            </span>
+          </div>
+        ))}
+      </div>
+      <p className="ol-ctx-foot">
+        Only a reading that held in 2024, 2025 and 2026 moves a figure above — measured over 735 mornings,
+        that is a large implied move, and it says how far, never which way. The rest is the board as it is.
+      </p>
+    </section>
   );
 }
 

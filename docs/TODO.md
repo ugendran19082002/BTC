@@ -1951,6 +1951,127 @@ and the can-move bars as cards, the best pick and its alerts as two cards); then
 
 ---
 
+## The option chain in the prediction, measured — 17 Sep 2026
+
+Asked for: "OI, Vol, ΔOI, V/OI, Δ, IV, OTM, EM×, B/E, Score, Signal, EV, → 0,
+Model, Touch, ≈0, Ask, Mark, Bid and the rest — use them all for a
+multi-timeframe price prediction", with a reference showing per-horizon prices
+and Down / Side / Up.
+
+**The answer the measurement gave.** `research/measure_chain_outlook.py` counts
+735 mornings in chain.db — every strike's mark and eight hours of volume at
+05:30, against the 17:30 settle twelve hours later — the same way the candle
+states were counted, and keeps only what held in 2024, 2025 and 2026 with z > 3:
+
+- **A large implied move held** (`CHAIN-MEASURED.txt`): when the ATM straddle
+  is in the top third, the day finished *outside* the Side band far more often
+  — Side 19%, not 33%, in all three years. It says how far, never which way.
+- **No chain reading held a direction.** Skew and put/call volume both looked
+  like a lean overall (+0.07, −0.07) and neither pointed the same way in all
+  three years. A card printing "Down 52% / Up 10%" from the board would be
+  printing an invention.
+- **Most columns cannot be measured at all yet.** chain.db has no open interest
+  per strike, no ΔOI, no walls, no max pain, no V/OI — its `oi` table is the two
+  strikes the strategy sold. EV, touch, near-zero and the score are figures the
+  desk computes now, with no history of their own either.
+
+**Done (not deployed yet):**
+
+- **Recording, so the rest can be measured in a year** (`market/chain-features.ts`,
+  `market.db` migration `003-chain-features`): one row per five-minute bucket per
+  expiry — marks at the money and 2/3/4 strikes out, out-of-the-money volume,
+  PCR OI and volume, CE/PE open interest, IV skew, both walls, max pain, and the
+  hour's ΔOI each side. Live boards only; kept 400 days; throttled by asking the
+  file, like the OI table beside it.
+- **Shared definitions** (`analytics/app/chain_features.py`): implied move
+  (the straddle, scaled by √t to the 12 hours it was measured on), skew (OTM
+  puts against the calls the same distance out), put/call volume (a log ratio).
+  The research script and the service import the same functions, and Node sends
+  raw marks and volumes — it never buckets, so the two languages cannot drift.
+- **The service** applies a chain reading **only to the settlement card**, which
+  is the horizon it was measured on, and only when it held; it competes with the
+  candle states on the same informativeness rule and carries its own Side band
+  and percentiles. Every answer also returns `context`: each reading now, its
+  bucket and whether it held. `/health` reports `chain_rows`.
+- **The screen**: a strip under the cards — each reading, its value in plain
+  units, what it means, and one of *counts*, *measured · did not hold*, or *no
+  history yet*, with the unmeasurable board figures (PCR OI, IV skew, walls, max
+  pain) shown as context beside them.
+- Tests: analytics 41 (14 new), server 954, web 768. Nothing on the trading path
+  touched.
+
+**To do:**
+
+- [ ] **Deploy, then publish** `chain_states` with the outlook states:
+      `research/measure_chain_outlook.py` then `publish_outlook_states.py`
+      (it copies both tables now). Until then the cards are exactly as they were.
+- [ ] **Measure again in a year**, with `chain_features`: open interest and its
+      change, the walls, max pain, V/OI — at every horizon, not only to
+      settlement. That is the measurement that would let the chain speak on the
+      5m … 24h cards at all.
+- [ ] **Record the desk's own figures too** (EV, touch, near-zero, score,
+      liquidity) in the same table, so "does a high score predict anything"
+      becomes answerable rather than assumed.
+- [ ] **The 05:30 parity gap:** put/call volume is 8 hours in the history and
+      24 hours live. The ratio is close, not identical — either harvest a 24h
+      volume into chain.db or measure the live column once there is a year of it.
+- [ ] **A year needs 30 mornings a bucket**, not the 50 the candle states use.
+      Stated in the script; worth revisiting once 2026 is complete.
+
+---
+
+## "If not filled, sell at bid after N seconds" — on adds too — 17 Sep 2026
+
+Asked for: the order ticket's option on **Add lots** and on the strategy's
+**Add to the other leg**.
+
+**Done (not deployed yet):**
+
+- **Add lots:** the ticket's control, on by default at 5 seconds — which is what
+  every add by hand has done since the sheet existed. Switched off it rests at
+  the ask and never crosses; the window still ends it. A typed price stays the
+  floor either way, so crossing can never sell under it. The sentence under the
+  sheet now says what it will actually do.
+- **The strategy's add** carries its own seconds (`addToOpposite.crossAfterSec`,
+  in the config JSON — no migration). Blank means the entry's own seconds, which
+  is what every strategy saved before this did; zero rests at the offer; the
+  minimum bid is still the floor; an entry priced "now" crosses at once and has
+  nothing to wait for. Checked on save (0–600, whole seconds) on both sides.
+- Tests: 4 new in the adder (the rule's seconds, the fallback, zero, "now"),
+  validation and round-trip in the store, 5 in the add-lots sheet, 4 in the
+  strategy form.
+
+**To do:**
+
+- [ ] **Deploy**, then watch one strategy add fill with its own seconds.
+- [ ] **The preview sentence** in the strategy form's "Try it on prices" does not
+      mention the walk; add it once there is a real add to check it against.
+
+---
+
+## Delta 504s on the status reads — 18 Sep 2026
+
+Two rows at 01:53: `GET /v2/positions/margined` and `GET /v2/wallet/balances`,
+both `http_504`, both `attempts: 2`.
+
+Nothing is broken. A 504 is Delta's gateway timing out — Delta's trouble, not
+Delta's answer — and the desk already treats it that way: the read is asked
+again once automatically, the row is logged at *warn*, and the failure surfaces
+as "unavailable" rather than as an answer, so nothing reads it as "no positions"
+or "no balance". Both were the same minute and did not repeat.
+
+**To do:**
+
+- [ ] **Only if it repeats:** a 5xx that heals on the retry writes a warn row
+      every time. Either fold it into one row with a count (the log already
+      folds by message) or drop the row when the second attempt succeeded — the
+      point of the log is that a real failure is findable.
+- [ ] **The status screen asks Delta twice at once** (positions and balances in
+      one `Promise.all`); a Delta wobble therefore always arrives as two rows.
+      Worth one row saying "Delta was slow" instead.
+
+---
+
 ## Found while doing the above — 17 Sep 2026
 
 - [ ] **The chain harvester is not scheduled.** No cron or systemd unit runs it;

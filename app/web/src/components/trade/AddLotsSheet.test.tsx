@@ -89,7 +89,7 @@ describe('the preview', () => {
   it('[critical] sends the body the add will send, and prices it in money', async () => {
     show();
     typeLots('100');
-    await waitFor(() => expect(previewAdd).toHaveBeenCalledWith({ tradeId: 't1', lots: 100, limitPrice: null, timeoutMin: 60 }));
+    await waitFor(() => expect(previewAdd).toHaveBeenCalledWith({ tradeId: 't1', lots: 100, limitPrice: null, timeoutMin: 60, chaseSeconds: 5 }));
     const dl = within(screen.getByLabelText('what this add does'));
     await waitFor(() => expect(dl.getByText('Starts at').nextSibling).toHaveTextContent('28.00'));
     expect(dl.getByText('Position after').nextSibling).toHaveTextContent('1,400 @ 11.24 avg');
@@ -102,7 +102,7 @@ describe('the preview', () => {
     show();
     typeLots('100');
     fireEvent.change(screen.getByLabelText('add price'), { target: { value: '27.5' } });
-    await waitFor(() => expect(previewAdd).toHaveBeenLastCalledWith({ tradeId: 't1', lots: 100, limitPrice: 27.5, timeoutMin: 60 }));
+    await waitFor(() => expect(previewAdd).toHaveBeenLastCalledWith({ tradeId: 't1', lots: 100, limitPrice: 27.5, timeoutMin: 60, chaseSeconds: 5 }));
     expect(screen.getByText(/Never sold under 27\.50/)).toBeInTheDocument();
   });
 
@@ -124,9 +124,9 @@ describe('the preview', () => {
     show();
     typeLots('100');
     fireEvent.change(screen.getByLabelText('how long the add works for'), { target: { value: '15' } });
-    await waitFor(() => expect(previewAdd).toHaveBeenLastCalledWith({ tradeId: 't1', lots: 100, limitPrice: null, timeoutMin: 15 }));
+    await waitFor(() => expect(previewAdd).toHaveBeenLastCalledWith({ tradeId: 't1', lots: 100, limitPrice: null, timeoutMin: 15, chaseSeconds: 5 }));
     swipe(slider());
-    await waitFor(() => expect(addToPosition).toHaveBeenCalledWith({ tradeId: 't1', lots: 100, limitPrice: null, timeoutMin: 15 }));
+    await waitFor(() => expect(addToPosition).toHaveBeenCalledWith({ tradeId: 't1', lots: 100, limitPrice: null, timeoutMin: 15, chaseSeconds: 5 }));
   });
 
   it('the chips fill in the windows anyone actually picks', async () => {
@@ -197,7 +197,7 @@ describe('sending', () => {
     await waitFor(() => expect(slider()).not.toHaveAttribute('aria-disabled'));
     swipe(slider());
     await waitFor(() => expect(addToPosition).toHaveBeenCalledTimes(1));
-    expect(addToPosition).toHaveBeenCalledWith({ tradeId: 't1', lots: 100, limitPrice: null, timeoutMin: 60 });
+    expect(addToPosition).toHaveBeenCalledWith({ tradeId: 't1', lots: 100, limitPrice: null, timeoutMin: 60, chaseSeconds: 5 });
     await waitFor(() => expect(onAdded).toHaveBeenCalled());
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
@@ -216,3 +216,64 @@ describe('sending', () => {
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });
 });
+
+/*
+ * "If not filled, sell at bid after N seconds".
+ *
+ * The same control the order ticket carries, because an add by hand does the
+ * same thing: it rests at the offer with nobody watching it. On at five
+ * seconds, which is what every add by hand has done; off rests at the ask and
+ * only the window ends it. The typed price stays the floor either way.
+ */
+describe('selling at the bid if it does not fill', () => {
+  it('[critical] is on at five seconds, and the seconds it is set to are sent', async () => {
+    show();
+    fireEvent.change(screen.getByLabelText('lots to add'), { target: { value: '100' } });
+    const box = screen.getByLabelText('seconds before selling at the bid');
+    expect(box).toHaveValue('5');
+    fireEvent.change(box, { target: { value: '45' } });
+    await waitFor(() => expect(previewAdd).toHaveBeenLastCalledWith(
+      { tradeId: 't1', lots: 100, limitPrice: null, timeoutMin: 60, chaseSeconds: 45 },
+    ));
+    expect(screen.getByText(/walks toward the bid over 45 seconds/)).toBeInTheDocument();
+  });
+
+  it('[critical] switched off it rests at the ask: nothing crosses the spread', async () => {
+    show();
+    fireEvent.change(screen.getByLabelText('lots to add'), { target: { value: '100' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: /If not filled, sell at bid after/ }));
+    await waitFor(() => expect(previewAdd).toHaveBeenLastCalledWith(
+      { tradeId: 't1', lots: 100, limitPrice: null, timeoutMin: 60, chaseSeconds: 0 },
+    ));
+    expect(screen.getByText(/Rests at the ask and never crosses/)).toBeInTheDocument();
+    expect(screen.getByLabelText('seconds before selling at the bid')).toBeDisabled();
+  });
+
+  it('keeps the seconds inside 1 and 600, whatever is typed', () => {
+    show();
+    const box = screen.getByLabelText('seconds before selling at the bid');
+    fireEvent.change(box, { target: { value: '0' } });
+    expect(box).toHaveValue('1');
+    fireEvent.change(box, { target: { value: '9000' } });
+    expect(box).toHaveValue('600');
+    fireEvent.change(box, { target: { value: 'abc' } });
+    expect(box).toHaveValue('1');
+  });
+
+  it('a typed price is still the floor when it crosses', async () => {
+    show();
+    fireEvent.change(screen.getByLabelText('lots to add'), { target: { value: '100' } });
+    fireEvent.change(screen.getByLabelText('add price'), { target: { value: '27.5' } });
+    expect(screen.getByText(/never under \$27.50/)).toBeInTheDocument();
+  });
+
+  it('opens fresh: yesterday\'s seconds are not today\'s', () => {
+    const t = trade();
+    const { rerender } = render(<AddLotsSheet trade={t} open onOpenChange={() => {}} onAdded={() => {}} />);
+    fireEvent.change(screen.getByLabelText('seconds before selling at the bid'), { target: { value: '90' } });
+    rerender(<AddLotsSheet trade={t} open={false} onOpenChange={() => {}} onAdded={() => {}} />);
+    rerender(<AddLotsSheet trade={t} open onOpenChange={() => {}} onAdded={() => {}} />);
+    expect(screen.getByLabelText('seconds before selling at the bid')).toHaveValue('5');
+  });
+});
+
