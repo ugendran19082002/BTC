@@ -109,6 +109,8 @@ export type RebalanceRule = {
   endTime: string;
   lockDirection: boolean;
   maxLotsPerSide: number | null;
+  /** Keep the cap at what the rule can reach. A number typed by hand turns it off. */
+  capAuto?: boolean;
   allowPartial: boolean;
   maxSpreadPct: number | null;
   /**
@@ -140,6 +142,7 @@ export const DEFAULT_REBALANCE: RebalanceRule = {
   endTime: '13:30',
   lockDirection: true,
   maxLotsPerSide: 200,
+  capAuto: true,
   allowPartial: true,
   maxSpreadPct: 0.15,
   crossAfterSec: null,
@@ -175,8 +178,16 @@ export function mostOneSideCanReach(rule: Pick<RebalanceRule, 'lotsPerStep' | 's
   return lots + Math.min(lots, Math.max(0, Math.round(rule.lotsPerStep * rule.steps)));
 }
 
-/** What the position becomes after each stage, from the lots it opened with. */
-export function stagePositions(rule: RebalanceRule, lots: number): { stage: number; up: number; down: number }[] {
+/**
+ * What the position becomes after each stage, and whether the cap held it back.
+ *
+ * `blocked` is what the form says out loud: a cap of 160 on 100 + 100 lets
+ * stages 1 and 2 run and refuses stage 3, and a cap under the opening lots
+ * refuses all of them.
+ */
+export function stagePositions(rule: RebalanceRule, lots: number): {
+  stage: number; up: number; down: number; blocked: boolean;
+}[] {
   const out = [];
   let up = lots;
   let down = lots;
@@ -185,9 +196,24 @@ export function stagePositions(rule: RebalanceRule, lots: number): { stage: numb
     const room = rule.maxLotsPerSide === null ? step : Math.max(0, Math.min(step, rule.maxLotsPerSide - up));
     down -= room;
     up += room;
-    out.push({ stage: i + 1, up, down });
+    out.push({ stage: i + 1, up, down, blocked: room < step });
   }
   return out;
+}
+
+/** "stages 1–2 run, stage 3 is refused" — the cap in words, counted not guessed. */
+export function capWords(rule: RebalanceRule, lots: number): string | null {
+  if (rule.maxLotsPerSide === null) return null;
+  const rows = stagePositions(rule, lots);
+  const blocked = rows.filter((r) => r.blocked).map((r) => r.stage);
+  if (!blocked.length) return null;
+  if (blocked.length === rows.length) {
+    return `No stage can run: the cap (${rule.maxLotsPerSide}) leaves no room above the ${lots} lots each side opens with.`;
+  }
+  const ran = rows.length - blocked.length;
+  return `The cap stops it after stage ${ran}: stage${blocked.length === 1 ? '' : 's'} `
+    + `${blocked.join(', ')} ${blocked.length === 1 ? 'is' : 'are'} refused. `
+    + `Raise it to ${mostOneSideCanReach(rule, lots)} for all ${rows.length}.`;
 }
 
 export type AddToOpposite = {

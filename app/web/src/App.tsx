@@ -95,8 +95,14 @@ function newer<T>(a: T | null, aAt: number | null, b: T | null, bAt: number | nu
 }
 
 /** A tab remembered from an older build may no longer exist; it falls back to Live. */
-const TABS: readonly Tab[] = ['desk', 'trade', 'orders', 'strategy', 'pnl', 'errors'];
-const asTab = (v: string): Tab => (TABS as readonly string[]).includes(v) ? (v as Tab) : 'desk';
+/*
+ * Every tab, and the type is not enough: this list is what a click is checked
+ * against at runtime. Settings was added to the type and to the nav but not to
+ * this line on 18 September, so clicking it fell straight back to Live. A tab
+ * that exists in three places and not in the fourth is invisible.
+ */
+export const TABS: readonly Tab[] = ['desk', 'trade', 'orders', 'strategy', 'pnl', 'settings', 'errors'];
+export const asTab = (v: string): Tab => (TABS as readonly string[]).includes(v) ? (v as Tab) : 'desk';
 
 const REFRESH_SECONDS = 5;
 // The expiry list changes once a day, at settlement.

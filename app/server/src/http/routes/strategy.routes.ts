@@ -6,7 +6,7 @@ import { holdFor, statusOf } from '../../strategy/holds.js';
 import { DEFAULT_CONFIG, defaultAddUntil, validateConfig, type StrategyConfig } from '../../strategy/types.js';
 import { tradingService } from '../../trading/service.js';
 import {
-  REBALANCE_CEILINGS, cleanRebalance, stageThresholds,
+  REBALANCE_CEILINGS, capFor, cleanRebalance, stageThresholds,
   type RebalanceLimits, type RebalanceRule,
 } from '../../strategy/rebalance.js';
 
@@ -24,6 +24,12 @@ let store: StrategyStore | null = null;
 export const strategyStore = (): StrategyStore => (store ??= new StrategyStore());
 
 /** Only the keys we know how to read, so a stray field cannot reach the row. */
+/** The cap the rule can actually reach, when the rule is set to work it out. */
+function withAutoCap(rule: RebalanceRule | null, lots: number): RebalanceRule | null {
+  if (!rule || !rule.capAuto || rule.maxLotsPerSide === null) return rule;
+  return { ...rule, maxLotsPerSide: capFor(rule, lots) };
+}
+
 function cleanConfig(raw: unknown): StrategyConfig {
   const c = (raw ?? {}) as Partial<StrategyConfig>;
   const exitTime = String(c.exitTime ?? DEFAULT_CONFIG.exitTime);
@@ -65,11 +71,16 @@ function cleanConfig(raw: unknown): StrategyConfig {
      * The rebalance rule, checked against the limits in force rather than a
      * number in the source: "…n stages" is what somebody typed on the screen.
      */
-    rebalance: cleanRebalance(
+    /*
+     * An automatic cap is recomputed here, on every save, from the lots and the
+     * stages as they are now: changing 3 stages to 5 must not leave a cap that
+     * silently refuses the last two.
+     */
+    rebalance: withAutoCap(cleanRebalance(
       c.rebalance as Partial<RebalanceRule> | null,
       strategyStore().rebalanceLimits(),
       strategyStore().rebalanceDefaults(),
-    ),
+    ), Math.floor(Number(c.lots ?? DEFAULT_CONFIG.lots))),
     addToOpposite: c.addToOpposite === null || c.addToOpposite === undefined || typeof c.addToOpposite !== 'object'
       ? null
       : {

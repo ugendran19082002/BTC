@@ -72,6 +72,17 @@ export type RebalanceRule = {
   lockDirection: boolean;
   /** Never let either side exceed this many lots. Null is no cap of its own. */
   maxLotsPerSide: number | null;
+  /**
+   * Keep the cap at what the rule can actually reach, rather than at a number
+   * somebody typed once.
+   *
+   * The desk's default cap is 200 and a strategy that sells 700 a side was
+   * refused every stage before it started. On `true` the cap follows the lots,
+   * the step and the stages -- `capFor` below -- and is recomputed on every
+   * save, so changing 3 stages to 5 cannot leave a cap that silently blocks the
+   * last two. Set it by hand and this goes false: a typed number is a decision.
+   */
+  capAuto?: boolean;
   /** With fewer lots left than a step, sell what is left rather than nothing. */
   allowPartial: boolean;
   /** Refuse to act when the book on either leg is wider than this (0.15 = 15%). */
@@ -104,6 +115,8 @@ export const DEFAULT_REBALANCE: RebalanceRule = {
   endTime: '13:30',
   lockDirection: true,
   maxLotsPerSide: 200,
+  // A new rule sizes its own cap; a number typed by hand turns this off.
+  capAuto: true,
   allowPartial: true,
   maxSpreadPct: 0.15,
   crossAfterSec: null,
@@ -128,6 +141,38 @@ export type RebalanceLimits = {
   maxConfirmTicks: number;
   maxLotsPerSide: number;
 };
+
+/**
+ * The most one side can ever reach.
+ *
+ * Every stage moves lots from the fallen side to the risen one, and the fallen
+ * side is what runs out: 700 a side with 30 lots over 3 stages reaches 790, and
+ * 100 a side with 30 over 5 reaches 200, not 250, because only 100 were there
+ * to move.
+ */
+export function capFor(rule: Pick<RebalanceRule, 'lotsPerStep' | 'steps'>, lots: number): number {
+  const moved = Math.max(0, Math.round(rule.lotsPerStep * rule.steps));
+  return Math.max(1, Math.round(lots) + Math.min(Math.round(lots), moved));
+}
+
+/**
+ * How many stages can run before the cap stops them, and what the position
+ * looks like at each one. The screen shows this; the words under the field come
+ * from it, so "stage 3 will be refused" is counted rather than guessed.
+ */
+export function stagesUnderCap(rule: RebalanceRule, lots: number): { stage: number; up: number; down: number; blocked: boolean }[] {
+  const out: { stage: number; up: number; down: number; blocked: boolean }[] = [];
+  let up = Math.round(lots);
+  let down = Math.round(lots);
+  for (let i = 0; i < Math.max(0, Math.round(rule.steps)); i++) {
+    const want = rule.allowPartial ? Math.min(rule.lotsPerStep, down) : (down >= rule.lotsPerStep ? rule.lotsPerStep : 0);
+    const room = rule.maxLotsPerSide === null ? want : Math.max(0, Math.min(want, rule.maxLotsPerSide - up));
+    up += room;
+    down -= room;
+    out.push({ stage: i + 1, up, down, blocked: room < want });
+  }
+  return out;
+}
 
 export const REBALANCE_LIMITS: RebalanceLimits = {
   maxSteps: 20,
@@ -426,6 +471,7 @@ export function cleanRebalance(
       ? null
       : Math.round(clamp(n(raw.maxLotsPerSide, d.maxLotsPerSide ?? 200), 1, limits.maxLotsPerSide)),
     allowPartial: raw.allowPartial !== false,
+    capAuto: raw.capAuto === true,
     maxSpreadPct: raw.maxSpreadPct === null || raw.maxSpreadPct === undefined
       ? null
       : clamp(n(raw.maxSpreadPct, d.maxSpreadPct ?? 0.15), 0.01, 1),

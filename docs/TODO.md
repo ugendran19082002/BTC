@@ -2194,6 +2194,33 @@ confirmation over consecutive readings; and every number set on the screen.
 
 ---
 
+## The rebalance sell's own seconds, and what the cap means — 18 Sep 2026
+
+Two things the form was missing when the rule was first used.
+
+**"If not filled, sell at bid after N sec" was not there.** The rebalance sell
+rests at the risen side's offer, and by then the buy-back has already happened —
+a sell nobody is watching leaves the stage half done. The rule now carries its
+own seconds (`rebalance.crossAfterSec`): blank keeps the strategy's entry
+seconds, zero rests at the offer and lets the five-minute window end it. The
+widest spread it may cross is on the form beside it, where it was only a stored
+number before.
+
+**The cap blocked everything, silently.** The desk default is 200 lots a side
+and the strategy sells 700, so every stage was refused before it started — the
+form said the cap was under the lots but not what to do about it. Now:
+
+- Turning the rule on sets the cap to **the most the rule can actually reach** —
+  700 a side with 30 lots over 3 stages reaches 790 — so it fits by default and
+  is lowered on purpose rather than by accident.
+- The field says what it means for these numbers: "neither side may pass 790
+  lots — this rule reaches 790".
+- The stage table says it in words, and shows the cap holding: 100/100 → 130/70
+  → 160/40 → 160/40 under a cap of 160.
+- The error says why nothing could run and what the rule reaches.
+
+---
+
 ## "I set 5 seconds and it still has not filled" — 18 Sep 2026
 
 An add rested at 20.00 with the bid at 19.00 for an hour, with "if not filled,
