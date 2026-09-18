@@ -1,3 +1,4 @@
+import { DEFAULT_WALL_WITHIN_EM } from '../domain/structure.js';
 /**
  * Which legs a strategy sells today, and how many lots each.
  *
@@ -35,6 +36,8 @@ export type Candidate = {
   ask?: number | null;
   /** Contracts open at this strike. Read only by the open-interest rule. */
   oi?: number | null;
+  /** How far the strike sits from spot, in expected moves. Read only by the open-interest rule. */
+  emBuffer?: number | null;
   /** `domain/ev.ts`'s 0-100 sell score. Read only by the sell-score bar. */
   sellScore?: number | null;
   /** What the score is called once hard rules have had their say. */
@@ -93,6 +96,8 @@ export function pickStrike(
   candidates: readonly Candidate[],
   cp: 'C' | 'P',
   cfg: StrategyConfig,
+  /** The desk's level band, for the open-interest rule. Absent takes the default. */
+  opts: { wallWithinEm?: number | null } = {},
 ): Candidate | null {
   const priced = candidates.filter((l) => l.cp === cp && (l.sellPrice ?? 0) > 0);
   if (cfg.strikeRule === 'strict') return pickByPosition(priced, cp, cfg.strikeStep ?? 0);
@@ -108,8 +113,23 @@ export function pickStrike(
    * interest to read are not "zero open interest", they are unreadable, so they
    * are left out rather than ranked last.
    */
+  /*
+   * The wall within reach, and one that still pays.
+   *
+   * Asked on 18 September which pair this takes, 71,000 – 89,000 or 76,000 –
+   * 77,800: it took the first, the heaviest anywhere on the board, and those
+   * strikes paid $0.20 and $0.10. The heaviest open interest on a Delta chain
+   * sits at far round numbers that nobody should sell for nothing. So the wall
+   * is looked for inside the same band the screens draw levels in, and it has
+   * to clear the premium floor like any other strike -- a wall that pays under
+   * the floor is a level, not a trade.
+   */
   if (cfg.strikeRule === 'oiWall') {
-    const readable = otm.filter((l) => l.oi !== null && l.oi !== undefined && Number.isFinite(l.oi));
+    const within = opts.wallWithinEm ?? DEFAULT_WALL_WITHIN_EM;
+    const readable = otm.filter((l) =>
+      l.oi !== null && l.oi !== undefined && Number.isFinite(l.oi)
+      && (l.sellPrice ?? 0) >= cfg.premium.usd
+      && (l.emBuffer === null || l.emBuffer === undefined || l.emBuffer <= within));
     if (readable.length === 0) return null;
     return readable.reduce((a, b) => (b.oi! > a.oi! ? b : a));
   }
@@ -134,20 +154,24 @@ export function pickStrike(
  * "sold nothing today" and "sold nothing today because nothing paid $15" are
  * different facts and only one of them needs looking at.
  */
-export function selectLegs(s: Strategy, candidates: readonly Candidate[]): Selection {
+export function selectLegs(
+  s: Strategy,
+  candidates: readonly Candidate[],
+  opts: { wallWithinEm?: number | null } = {},
+): Selection {
   const cfg = s.config;
   const wanted: ('CE' | 'PE')[] = cfg.legs === 'both' ? ['CE', 'PE'] : [cfg.legs];
   const refusals: string[] = [];
   const picked = new Map<'CE' | 'PE', Candidate>();
 
   for (const leg of wanted) {
-    const chosen = pickStrike(candidates, SIDE[leg], cfg);
+    const chosen = pickStrike(candidates, SIDE[leg], cfg, opts);
     if (!chosen) {
       refusals.push(
         cfg.strikeRule === 'strict'
           ? `${leg}: no ${strikeLabel(cfg.strikeStep)} strike listed with a price`
           : cfg.strikeRule === 'oiWall'
-            ? `${leg}: no out-of-the-money strike with open interest to read`
+            ? `${leg}: no wall within ${opts.wallWithinEm ?? DEFAULT_WALL_WITHIN_EM} expected moves that pays $${cfg.premium.usd}`
             : `${leg}: nothing out of the money ${cfg.premium.mode === 'atLeast' ? 'paying' : 'at or below'} $${cfg.premium.usd}`,
       );
       continue;

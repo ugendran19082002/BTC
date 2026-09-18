@@ -1,6 +1,7 @@
 import { liveChain, WHOLE_BOARD } from '../market/chain.js';
 import { scoreLegs } from '../domain/score.js';
 import { attachEv } from '../domain/ev.js';
+import { wallWithinEm } from '../http/routes/desk.routes.js';
 import { tradingService } from '../trading/service.js';
 import { noteError } from '../observability/errors.js';
 import { StrategyStore } from './store.js';
@@ -327,10 +328,11 @@ export class StrategyRunner {
       expectedMove: snap.expectedMove,
     }).map((l) => ({
       cp: l.cp, strike: l.strike, sellPrice: l.sellPrice, pOtm: l.pOtm,
-      moneyness: l.moneyness, ask: l.ask, oi: l.oi,
+      moneyness: l.moneyness, ask: l.ask, oi: l.oi, emBuffer: l.emBuffer,
       sellScore: l.ev.score, tier: l.ev.tier,
     }));
-    const sel = selectLegs(s, candidates);
+    // The open-interest rule looks for its wall inside the desk's level band.
+    const sel = selectLegs(s, candidates, { wallWithinEm: wallWithinEm() });
     if (sel.legs.length === 0) {
       this.claimAndFinish(s, day, 'refused', describeSelection(sel));
       return;

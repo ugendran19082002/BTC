@@ -248,11 +248,12 @@ test('selling nothing still says why', () => {
  * So what is pinned here is that it does what it says, refuses cleanly when it
  * cannot, and never quietly reaches into the money.
  */
+// A floor under every fixture's price: the rule now refuses a wall that does not pay.
 const wall = (over: Partial<StrategyConfig> = {}): StrategyConfig =>
-  ({ ...DEFAULT_CONFIG, strikeRule: 'oiWall', ...over }) as StrategyConfig;
+  ({ ...DEFAULT_CONFIG, strikeRule: 'oiWall', premium: { mode: 'atLeast', usd: 5 }, ...over }) as StrategyConfig;
 
-const withOi = (cp: 'C' | 'P', strike: number, sellPrice: number, oi: number | null, moneyness: 'ITM' | 'ATM' | 'OTM' = 'OTM') =>
-  ({ cp, strike, sellPrice, pOtm: 0.98, moneyness, ask: sellPrice + 1, oi }) as Candidate;
+const withOi = (cp: 'C' | 'P', strike: number, sellPrice: number, oi: number | null, moneyness: 'ITM' | 'ATM' | 'OTM' = 'OTM', emBuffer: number | null = 1) =>
+  ({ cp, strike, sellPrice, pOtm: 0.98, moneyness, ask: sellPrice + 1, oi, emBuffer }) as Candidate;
 
 test('[critical] takes the heaviest strike on that side', () => {
   const board = [
@@ -307,7 +308,7 @@ test('the refusal says what was missing, not just that there was nothing', () =>
   const out = selectLegs(s, [withOi('C', 80_000, 12, null)]);
   assert.equal(out.legs.length, 0);
   assert.ok(
-    out.refusals.some((r) => r.includes('open interest to read')),
+    out.refusals.some((r) => /no wall within 2 expected moves that pays \$5/.test(r)),
     out.refusals.join(' | '),
   );
 });
@@ -370,3 +371,39 @@ test('the probability gate still has the first word', () => {
   assert.equal(sel.legs.length, 0);
   assert.match(sel.refusals[0]!, /to expire worthless/);
 });
+
+/*
+ * 18 September, asked which pair the rule takes: 71,000 – 89,000 or 76,000 –
+ * 77,800. It took the first -- the heaviest anywhere on the board, paying
+ * $0.20 and $0.10. The wall is looked for inside the desk's level band now,
+ * and it has to clear the premium floor like any other strike.
+ */
+test('[critical] the wall is the heaviest within reach, not the heaviest on the board', () => {
+  const board = [
+    withOi('C', 77_800, 24, 134_000, 'OTM', 1.9),
+    withOi('C', 78_000, 20, 245_000, 'OTM', 2.4),      // heavier, just outside two expected moves
+    withOi('C', 89_000, 0.1, 455_000, 'OTM', 11),      // the heaviest on the board, paying nothing
+  ];
+  assert.equal(pickStrike(board, 'C', wall({ premium: { mode: 'atLeast', usd: 15 } }))?.strike, 77_800);
+  // a wider band lets the next one in
+  assert.equal(pickStrike(board, 'C', wall({ premium: { mode: 'atLeast', usd: 15 } }), { wallWithinEm: 3 })?.strike, 78_000);
+});
+
+test('[critical] a wall that pays under the floor is a level, not a trade', () => {
+  const board = [
+    withOi('C', 78_000, 3, 245_000, 'OTM', 1.5),
+    withOi('C', 77_400, 30, 60_000, 'OTM', 0.8),
+  ];
+  assert.equal(pickStrike(board, 'C', wall({ premium: { mode: 'atLeast', usd: 15 } }))?.strike, 77_400);
+  // nothing in reach pays: stand aside, and say so
+  const s = { id: 's', name: 's', enabled: true, createdAt: 0, updatedAt: 0, config: wall({ legs: 'CE', premium: { mode: 'atLeast', usd: 50 } }) };
+  const sel = selectLegs(s as never, board, { wallWithinEm: 2 });
+  assert.equal(sel.legs.length, 0);
+  assert.match(sel.refusals[0]!, /no wall within 2 expected moves that pays \$50/);
+});
+
+test('a strike with no distance to read is not thrown out by the band', () => {
+  const board = [withOi('C', 80_000, 20, 425_000, 'OTM', null)];
+  assert.equal(pickStrike(board, 'C', wall({ premium: { mode: 'atLeast', usd: 15 } }))?.strike, 80_000);
+});
+
