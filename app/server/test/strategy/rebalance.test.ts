@@ -261,8 +261,13 @@ test('a rule from a browser is brought inside its limits, and off is off', () =>
   assert.deepEqual(wild, {
     enabled: true, lotsPerStep: 10_000, steps: 20, upStartPct: 500, downStartPct: 99,
     incrementPct: 0, confirmTicks: 10, endTime: '13:30', lockDirection: true,
-    maxLotsPerSide: 1, allowPartial: true, maxSpreadPct: 1,
+    maxLotsPerSide: 1, allowPartial: true, maxSpreadPct: 1, crossAfterSec: null,
   });
+  // "if not filled, sell at bid after": blank keeps the strategy's entry seconds
+  assert.equal(cleanRebalance({ crossAfterSec: 45 })!.crossAfterSec, 45);
+  assert.equal(cleanRebalance({ crossAfterSec: 9_999 })!.crossAfterSec, 600);
+  assert.equal(cleanRebalance({ crossAfterSec: 0 })!.crossAfterSec, 0, 'zero rests at the offer');
+  assert.equal(cleanRebalance({})!.crossAfterSec, null);
   assert.equal(cleanRebalance({ maxLotsPerSide: null })!.maxLotsPerSide, null);
   assert.equal(cleanRebalance({ endTime: '09:45' })!.endTime, '09:45');
 });
