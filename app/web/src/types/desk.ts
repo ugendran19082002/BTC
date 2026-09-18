@@ -298,7 +298,8 @@ export type Forecast = {
   directionEdgePts: number;
 };
 
-export type Wall = { strike: number; value: number } | null;
+/** A heaviest-open-interest strike, with how far it sits in percent and in expected moves. */
+export type Wall = { strike: number; value: number; awayPct?: number; emAway?: number | null } | null;
 
 export type MaxPain = { strike: number; payoutUsd: number } | null;
 export type OiRange = { low: number; high: number; widthUsd: number; widthPct: number } | null;
@@ -313,6 +314,11 @@ export type OptionStructure = {
   pcrOi: number | null;
   pcrVolume: number | null;
   ceOiWall: Wall;
+  /** The heaviest wall within reach — what the screens draw. Null when none is near. */
+  ceOiWallNear?: Wall;
+  peOiWallNear?: Wall;
+  /** How far a wall may sit and still count as near, in expected moves. */
+  wallWithinEm?: number;
   peOiWall: Wall;
   gammaWall: Wall;
   atmIv: number | null;

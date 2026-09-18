@@ -591,8 +591,10 @@ export default function App() {
               <ErrorBoundary where="Price chart">
                 <Chart
                   bars={candles?.bars ?? NO_BARS}
-                  support={data.structure.peOiWall?.strike ?? null}
-                  resistance={data.structure.ceOiWall?.strike ?? null}
+                  // The wall within reach, not the heaviest on the board: a strike
+                  // eleven expected moves away is open interest, not a level.
+                  support={data.structure.peOiWallNear?.strike ?? null}
+                  resistance={data.structure.ceOiWallNear?.strike ?? null}
                   spot={snap.spot}
                   tf={chartTf}
                   onTf={setChartTf}

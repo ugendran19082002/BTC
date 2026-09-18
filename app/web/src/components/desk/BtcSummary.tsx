@@ -1,5 +1,5 @@
 import { ChevronDown, Info } from 'lucide-react';
-import type { Candle, MarketRead, OptionStructure, Outlook, SnapshotMeta } from '@/types/desk';
+import type { Candle, MarketRead, OptionStructure, Outlook, SnapshotMeta, Wall } from '@/types/desk';
 import type { ChartTf } from '@/components/desk/PriceChart';
 import { expiresIn, trendWords } from '@/components/desk/SuddenMove';
 import { strike as fmtStrike } from '@/lib/format';
@@ -90,19 +90,17 @@ export function BtcSummary({ snap, market, structure, outlook, bars, tf }: {
         </div>
       </dl>
 
+      {/*
+        The wall within reach, not the heaviest on the board.
+        18 September: this said "Resistance 89,000 (+16.0%)" with BTC at 76,723
+        and ten hours left -- the largest call open interest anywhere on the
+        chain, about eleven expected moves away. Real open interest; not a level
+        anybody can trade against. So the near pair is drawn, and where nothing
+        heavy sits near the money it says that instead of reaching further out.
+      */}
       <dl className="btc-summary-rows">
-        <div>
-          <dt>Support</dt>
-          <dd className="up">
-            {structure.peOiWall ? <>{fmtStrike(structure.peOiWall.strike)} <small>({away(structure.peOiWall.strike) >= 0 ? '+' : '−'}{Math.abs(away(structure.peOiWall.strike)).toFixed(1)}%)</small></> : '—'}
-          </dd>
-        </div>
-        <div>
-          <dt>Resistance</dt>
-          <dd className="down">
-            {structure.ceOiWall ? <>{fmtStrike(structure.ceOiWall.strike)} <small>({away(structure.ceOiWall.strike) >= 0 ? '+' : '−'}{Math.abs(away(structure.ceOiWall.strike)).toFixed(1)}%)</small></> : '—'}
-          </dd>
-        </div>
+        <Level label="Support" wall={structure.peOiWallNear ?? null} far={structure.peOiWall} away={away} tone="up" />
+        <Level label="Resistance" wall={structure.ceOiWallNear ?? null} far={structure.ceOiWall} away={away} tone="down" />
       </dl>
 
       <div className="btc-summary-block">
@@ -120,10 +118,44 @@ export function BtcSummary({ snap, market, structure, outlook, bars, tf }: {
       <p className="btc-summary-note">
         <Info size={13} aria-hidden />
         <span>
-          Support = heaviest put OI · Resistance = heaviest call OI. Levels where open interest sits, not where BTC will settle.
+          Support = heaviest put OI · Resistance = heaviest call OI, within{' '}
+          {structure.wallWithinEm ?? 2} expected move{(structure.wallWithinEm ?? 2) === 1 ? '' : 's'} of spot.
+          Levels where open interest sits, not where BTC will settle.
         </span>
       </p>
       </>}
     </aside>
   );
 }
+
+/**
+ * One level: the near wall, or a plain sentence about the far one.
+ *
+ * A wall eleven expected moves out is not a level, and drawing it anyway is how
+ * a screen ends up saying "resistance 89,000" under a ±0.07% expected move.
+ */
+function Level({ label, wall, far, away, tone }: {
+  label: string;
+  wall: Wall;
+  far: Wall;
+  away: (level: number) => number;
+  tone: 'up' | 'down';
+}) {
+  const pct = (level: number) => `${away(level) >= 0 ? '+' : '−'}${Math.abs(away(level)).toFixed(1)}%`;
+  return (
+    <div>
+      <dt>{label}</dt>
+      {wall ? (
+        <dd className={tone}>
+          {fmtStrike(wall.strike)} <small>({pct(wall.strike)})</small>
+        </dd>
+      ) : (
+        <dd className="dim" title={far ? `The heaviest is ${fmtStrike(far.strike)}, ${pct(far.strike)} away — too far to trade against.` : undefined}>
+          none near
+          {far && <small> (heaviest {fmtStrike(far.strike)}, {pct(far.strike)})</small>}
+        </dd>
+      )}
+    </div>
+  );
+}
+

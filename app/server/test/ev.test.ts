@@ -371,3 +371,56 @@ test('how busy a strike is, banded rather than left as a ratio', () => {
   assert.equal(band(100_000, 10_000), 'normal');  // 10%
   assert.equal(band(100_000, 20_000), 'high');    // 20%
 });
+
+/*
+ * "Resistance 89,000" on a board with BTC at 76,723 and ten hours left.
+ *
+ * The wall was "the strike with the largest call open interest anywhere on the
+ * chain", and on Delta the far round numbers carry real open interest from
+ * cheap lottery calls. 89,000 was about eleven expected moves away: open
+ * interest, not a level. The near pair is what the screens draw now.
+ */
+test('[critical] the wall the screens draw is the heaviest within reach, not the heaviest on the board', () => {
+  const book = [
+    // near the money: the level a seller can actually trade against
+    leg({ cp: 'C', strike: 77_400, bid: 5, mark: 5, zero: 0.99, model: 0.97, oi: 20_000 }),
+    // eleven expected moves away, and the biggest open interest on the chain
+    leg({ cp: 'C', strike: 89_000, bid: 0.2, mark: 0.2, zero: 0.99, model: 0.99, oi: 500_000 }),
+    leg({ cp: 'P', strike: 75_600, bid: 5, mark: 5, zero: 0.99, model: 0.97, oi: 18_000 }),
+    leg({ cp: 'P', strike: 60_000, bid: 0.2, mark: 0.2, zero: 0.99, model: 0.99, oi: 400_000 }),
+  ];
+  const s = optionStructure(snap(SPOT, book), null);
+  assert.equal(s.ceOiWall!.strike, 89_000, 'the heaviest on the board is still reported');
+  assert.equal(s.ceOiWallNear!.strike, 77_400, 'and the one within reach is what the screens draw');
+  assert.equal(s.peOiWallNear!.strike, 75_600);
+  assert.equal(s.wallWithinEm, 2);
+  // it says how far each one is, in percent and in expected moves
+  assert.ok(Math.abs(s.ceOiWall!.emAway! - Math.abs(89_000 - SPOT) / 900) < 1e-9);
+  assert.ok(s.ceOiWallNear!.emAway! <= 2);
+});
+
+test('[critical] with nothing heavy near the money the near wall is absent, not the far one moved in', () => {
+  const book = [
+    leg({ cp: 'C', strike: 89_000, bid: 0.2, mark: 0.2, zero: 0.99, model: 0.99, oi: 500_000 }),
+    leg({ cp: 'P', strike: 60_000, bid: 0.2, mark: 0.2, zero: 0.99, model: 0.99, oi: 400_000 }),
+  ];
+  const s = optionStructure(snap(SPOT, book), null);
+  assert.equal(s.ceOiWallNear, null);
+  assert.equal(s.peOiWallNear, null);
+  assert.equal(s.ceOiWall!.strike, 89_000, 'the board still says where the open interest actually is');
+});
+
+test('how far a wall may sit is a setting, and a call above spot is never support', () => {
+  const book = [
+    leg({ cp: 'C', strike: 79_000, bid: 2, mark: 2, zero: 0.99, model: 0.98, oi: 90_000 }),
+    leg({ cp: 'P', strike: 74_000, bid: 2, mark: 2, zero: 0.99, model: 0.98, oi: 90_000 }),
+  ];
+  // 79,000 is 2.9 expected moves away: outside the default, inside a wider one
+  assert.equal(optionStructure(snap(SPOT, book), null).ceOiWallNear, null);
+  assert.equal(optionStructure(snap(SPOT, book), null, 4).ceOiWallNear!.strike, 79_000);
+  // and a put is only ever looked for below spot, a call only above it
+  const s = optionStructure(snap(SPOT, book), null, 10);
+  assert.ok(s.peOiWallNear!.strike <= SPOT);
+  assert.ok(s.ceOiWallNear!.strike >= SPOT);
+});
+

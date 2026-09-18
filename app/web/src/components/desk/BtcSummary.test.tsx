@@ -7,7 +7,12 @@ import type { Candle, MarketRead, OptionStructure, Outlook, SnapshotMeta } from 
 
 const snap = { spot: 76_230, atmIv: 0.28, expiryTs: 1_789_212_600, hoursToExpiry: 11, live: true } as unknown as SnapshotMeta;
 const market = { return24h: 0.41 } as unknown as MarketRead;
-const structure = { peOiWall: { strike: 72_800, value: 1 }, ceOiWall: { strike: 78_400, value: 1 } } as unknown as OptionStructure;
+const structure = {
+  peOiWall: { strike: 72_800, value: 1 }, ceOiWall: { strike: 78_400, value: 1 },
+  // what the screens draw: the heaviest within reach of spot
+  peOiWallNear: { strike: 72_800, value: 1 }, ceOiWallNear: { strike: 78_400, value: 1 },
+  wallWithinEm: 2,
+} as unknown as OptionStructure;
 const outlook = { rows: [{ label: '5m', impliedUsd: 69, score: 0.45, why: 'EMAs rising' }] } as unknown as Outlook;
 const bar = (low: number): Candle => ({ time: 0, open: low + 50, high: low + 90, low, close: low + 60, volume: 1 });
 const bars = Array.from({ length: 20 }, () => bar(76_100));
@@ -73,5 +78,26 @@ describe('the BTC summary', () => {
     fireEvent.click(screen.getByRole('button', { name: /BTC summary/ }));
     expect(screen.getByText(/not where BTC will settle/)).toBeInTheDocument();
   });
-});
 
+  /*
+   * 18 September: "Resistance 89,000" with BTC at 76,723 — the heaviest call
+   * open interest on the whole chain, about eleven expected moves away. Real
+   * open interest, and not a level. The card draws the near wall, and when
+   * there is none it says so instead of reaching further out.
+   */
+  it('[critical] a wall out of reach is never drawn as a level', () => {
+    show({ structure: {
+      peOiWall: { strike: 60_000, value: 1 }, ceOiWall: { strike: 89_000, value: 1 },
+      peOiWallNear: null, ceOiWallNear: null, wallWithinEm: 2,
+    } as unknown as OptionStructure });
+    expect(screen.queryByText(/89,000 \(/)).toBeNull();
+    expect(screen.getAllByText('none near')).toHaveLength(2);
+    expect(screen.getByText((_, el) => /heaviest 89,000, \+1[0-9]\.[0-9]%/.test(el?.textContent ?? ''), { selector: 'small' }))
+      .toBeInTheDocument();
+  });
+
+  it('says the band the levels are looked for in', () => {
+    show();
+    expect(screen.getByText(/within 2 expected moves of spot/)).toBeInTheDocument();
+  });
+});

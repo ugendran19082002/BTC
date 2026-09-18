@@ -12,7 +12,17 @@ import { LOT_BTC } from './score.js';
  * not so the engine can quietly start trading it.
  */
 
-export type Wall = { strike: number; value: number } | null;
+/**
+ * A strike where open interest is heaviest.
+ *
+ * `emAway` is the distance in expected moves — the only honest scale for
+ * "could BTC get there". On 18 September the summary called 89,000 resistance
+ * with BTC at 76,723 and ten hours left: the largest call open interest on the
+ * board, 16% away, and about eleven expected moves out. That is a lottery
+ * strike, not a level, and a screen that prints it beside a 0.07% expected move
+ * is telling somebody the wrong thing.
+ */
+export type Wall = { strike: number; value: number; awayPct?: number; emAway?: number | null } | null;
 
 /** The strike where the open options are worth least to the people holding them. */
 export type MaxPain = { strike: number; payoutUsd: number } | null;
@@ -37,6 +47,19 @@ export type OptionStructure = {
   /** where open interest is heaviest on each side */
   ceOiWall: Wall;
   peOiWall: Wall;
+  /**
+   * The heaviest wall **within reach** — inside `wallWithinEm` expected moves.
+   *
+   * What the screens draw as support and resistance. The pair above is the
+   * heaviest anywhere on the board, which on a Delta chain is often a far
+   * round-number strike: 89,000 with BTC at 76,723 is real open interest and
+   * not a level. Null when nothing heavy sits near the money, and the screens
+   * say so rather than reaching further out for something to draw.
+   */
+  ceOiWallNear: Wall;
+  peOiWallNear: Wall;
+  /** How far a wall may sit and still count as near, in expected moves. */
+  wallWithinEm: number;
   /** gamma x open interest, summed per strike across both sides */
   gammaWall: Wall;
   atmIv: number | null;
@@ -60,15 +83,36 @@ function nearestDelta(legs: Leg[], target: number): Leg | null {
   );
 }
 
-function heaviest(legs: Leg[], pick: (l: Leg) => number | null): Wall {
+function heaviest(
+  legs: Leg[],
+  pick: (l: Leg) => number | null,
+  /** Spot and the move to settlement, so a wall can say how far away it is. */
+  scale?: { spot: number; expectedMove: number | null },
+  /** Only strikes this many expected moves away or nearer. Absent takes the whole board. */
+  withinEm?: number | null,
+): Wall {
   let best: Wall = null;
   for (const l of legs) {
     const v = pick(l);
     if (v === null || !Number.isFinite(v)) continue;
-    if (best === null || v > best.value) best = { strike: l.strike, value: v };
+    const away = scale && scale.spot > 0 ? ((l.strike - scale.spot) / scale.spot) * 100 : undefined;
+    const em = scale && scale.expectedMove && scale.expectedMove > 0
+      ? Math.abs(l.strike - scale.spot) / scale.expectedMove
+      : null;
+    if (withinEm != null && em != null && em > withinEm) continue;
+    if (best === null || v > best.value) best = { strike: l.strike, value: v, awayPct: away, emAway: em };
   }
   return best;
 }
+
+/**
+ * How far a wall may sit and still be read as a level, in expected moves.
+ *
+ * Two: a strike two expected moves away is reachable on a lively day and is
+ * what a seller is already pricing. Beyond that the open interest is real but
+ * the level is not, and the screens say so rather than drawing it.
+ */
+export const DEFAULT_WALL_WITHIN_EM = 2;
 
 /**
  * Max pain: the settlement price at which the open options pay out least.
@@ -115,6 +159,8 @@ function oiRangeOf(peWall: Wall, ceWall: Wall, spot: number): OiRange {
 export function optionStructure(
   snap: Snapshot,
   realisedVolPct: number | null,
+  /** How far a wall may sit and still be drawn as a level. A desk setting. */
+  wallWithinEm: number | null = DEFAULT_WALL_WITHIN_EM,
 ): OptionStructure {
   const ce = snap.legs.filter((l) => l.cp === 'C');
   const pe = snap.legs.filter((l) => l.cp === 'P');
@@ -151,8 +197,13 @@ export function optionStructure(
         high: snap.spot + em * sigma,
       }));
 
-  const ceOiWall = heaviest(ce, (l) => l.oi);
-  const peOiWall = heaviest(pe, (l) => l.oi);
+  const scale = { spot: snap.spot, expectedMove: snap.expectedMove };
+  const ceOiWall = heaviest(ce, (l) => l.oi, scale);
+  const peOiWall = heaviest(pe, (l) => l.oi, scale);
+  // The pair the screens actually draw: heaviest inside the reachable band.
+  const withinEm = wallWithinEm ?? DEFAULT_WALL_WITHIN_EM;
+  const ceOiWallNear = heaviest(ce.filter((l) => l.strike >= snap.spot), (l) => l.oi, scale, withinEm);
+  const peOiWallNear = heaviest(pe.filter((l) => l.strike <= snap.spot), (l) => l.oi, scale, withinEm);
 
   return {
     ceOi,
@@ -163,6 +214,9 @@ export function optionStructure(
     pcrVolume: ceVolume > 0 ? peVolume / ceVolume : null,
     ceOiWall,
     peOiWall,
+    ceOiWallNear,
+    peOiWallNear,
+    wallWithinEm: withinEm,
     gammaWall,
     maxPain: maxPainStrike(snap.legs),
     oiRange: oiRangeOf(peOiWall, ceOiWall, snap.spot),
