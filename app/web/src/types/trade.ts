@@ -23,6 +23,9 @@ export type Fill = {
   ts: number;
 };
 
+/** Where an order came from. The screens label every position and order with it. */
+export type TradeOrigin = 'manual' | 'strategy' | 'best-pick';
+
 export type Trade = {
   tradeId: string;
   symbol: string;
@@ -63,6 +66,13 @@ export type Trade = {
   updatedAt: number;
   plan?: {
     lots: number;
+    /**
+     * Who asked for this trade. Absent only on a record from before the field
+     * existed, where "manual" is what it always meant.
+     */
+    origin?: TradeOrigin;
+    /** Which saved strategy, when a strategy opened it. */
+    strategyId?: string | null;
     entry: { type: 'limit' | 'market'; limitPrice?: number; timeoutMs: number; marketFallback: boolean };
     takeProfitPrice: number | null;
     stopPrice: number | null;

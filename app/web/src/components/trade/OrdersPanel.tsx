@@ -10,6 +10,7 @@ import { KV } from '@/components/ui/kv';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { DateRangePicker, istToday } from '@/components/ui/date-range-picker';
 import { downloadCsv, toCsv } from '@/lib/csv';
+import { OriginTag } from '@/components/trade/OriginTag';
 import {
   contractLabel, duration, inr, pnlTone, price, signedInr, signedUsd, stamp, usdToInr,
 } from '@/lib/format';
@@ -210,6 +211,8 @@ function OrderRow({ order }: { order: OrderRecord }) {
               {STATUS_LABEL[order.status]}
             </span>
             {reason && <span className={cn('text-[11px] font-medium', REASON_TONE[reason])}>{reason}</span>}
+            {/* Who asked for it: the ticket, a strategy, or the best-pick auto-trade. */}
+            <OriginTag origin={order.plan?.origin} strategyName={order.plan?.strategyId ?? null} />
           </span>
           <span className="mt-0.5 block text-[11.5px] text-muted-foreground">{order.outcome}</span>
         </span>
@@ -346,6 +349,9 @@ function contractsLine(order: OrderRecord): string {
 const CSV_COLUMNS = [
   { header: 'trade id', value: (r: OrderRecord) => r.tradeId },
   { header: 'symbol', value: (r: OrderRecord) => r.symbol },
+  // Who placed it, in the download as well as on the screen.
+  { header: 'placed_by', value: (r: OrderRecord) => r.plan?.origin ?? 'manual' },
+  { header: 'strategy', value: (r: OrderRecord) => r.plan?.strategyId ?? '' },
   { header: 'side', value: (r: OrderRecord) => r.optionSide },
   { header: 'status', value: (r: OrderRecord) => r.status },
   { header: 'outcome', value: (r: OrderRecord) => r.outcome },

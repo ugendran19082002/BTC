@@ -117,6 +117,39 @@ export const getBestTradeSettings = () => json<BestTradeSettings>('/api/trade/be
 export const setBestTradeSettings = (patch: { alertOn?: boolean; minPremiumUsd?: number; repeat?: number }) =>
   post<{ ok: true; alertOn: boolean; minPremiumUsd: number; repeat?: number }>('/api/trade/best-trade/settings', patch);
 
+/**
+ * Selling the best pick by itself.
+ *
+ * Off by default and after every deploy. The server clamps every number again;
+ * what is sent from here is what the popup shows.
+ */
+export type AutoTradeSettings = {
+  on: boolean;
+  lots: number;
+  targetPct: number;
+  stopPct: number;
+  chaseSeconds: number;
+  maxPerContract: number;
+};
+
+export type AutoTradeState = {
+  settings: AutoTradeSettings;
+  defaults: AutoTradeSettings;
+  limits: {
+    maxLots: number; minTargetPct: number; maxTargetPct: number;
+    maxStopPct: number; maxChaseSec: number; maxPerContract: number;
+  };
+  mode: 'live' | 'paper';
+  /** What has already been sold automatically on the contract on screen. */
+  done: Record<string, { at: number; status: 'placed' | 'refused'; tradeId?: string; detail?: string }>;
+};
+
+export const getAutoTrade = () => json<AutoTradeState>('/api/trade/auto-trade');
+export const setAutoTrade = (patch: Partial<AutoTradeSettings>) =>
+  post<{ ok: true; settings: AutoTradeSettings }>('/api/trade/auto-trade', patch);
+/** Consider the strikes already sold or refused on this contract again. */
+export const clearAutoTrade = () => post<{ ok: true }>('/api/trade/auto-trade/clear', {});
+
 /** Pull a working order off the book. Refused once anything has filled. */
 export const cancelTrade = (tradeId: string) =>
   post<{ ok: true; trade: Trade }>('/api/trade/cancel', { tradeId });

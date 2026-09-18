@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { KV } from '@/components/ui/kv';
 import { BestTradeSettings } from '@/components/desk/BestTradeSettings';
+import { AutoTradeSettings } from '@/components/desk/AutoTradeSettings';
 import { price, strike as fmtStrike, usd } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -57,6 +58,13 @@ export function BestTrade({ best, legs, onSell, onSettingsChanged }: {
         ticket. Their own switch, nothing to do with the header's fill alerts.
       */}
       <BestTradeSettings onChanged={onSettingsChanged} />
+
+      {/*
+        And, under the alert, the switch that acts on the pick rather than
+        announcing it. Off by default; everything it refuses to do is in
+        `trading/auto-trade.ts`.
+      */}
+      <AutoTradeSettings pick={p} />
 
       {p !== null && onSell && leg && (
         <Button

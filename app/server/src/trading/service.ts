@@ -21,6 +21,10 @@ import { noteError } from '../observability/errors.js';
 import { alertFor, bookWentFlat, daySummaryFor } from '../notify/messages.js';
 import { TelegramNotifier } from '../notify/telegram.js';
 import { BEST_TRADE_REPEAT_DEFAULT, BEST_TRADE_REPEAT_MAX, bestTradeText } from '../notify/best-trade-alert.js';
+import {
+  AUTO_TRADE_DEFAULTS, cleanAutoTradeSettings, decideAutoTrade,
+  type AutoTradeLedger, type AutoTradeSettings,
+} from './auto-trade.js';
 import { bestTradeNow } from '../domain/best-trade-now.js';
 import { BEST_TRADE_MIN_PREMIUM_USD } from '../domain/best-trade.js';
 import { hoursSinceDeskOpen, liveChain, WHOLE_BOARD, type Snapshot } from '../market/chain.js';
@@ -255,7 +259,11 @@ export class TradingService {
     this.mtmTimer.unref?.();
     // The best-pick watcher reads the whole board once a minute, which is the
     // cadence the pick actually changes at; the chain it reads is the cached one.
-    this.alertTimer ??= setInterval(() => { void this.watchBestTrade(); }, BEST_TRADE_WATCH_MS);
+    this.alertTimer ??= setInterval(() => {
+      // The message first, then the order: the same board, the same minute, and
+      // the phone hears about a pick whether or not the desk is armed to sell it.
+      void this.watchBestTrade().then(() => this.autoTradeBestPick());
+    }, BEST_TRADE_WATCH_MS);
     this.alertTimer.unref?.();
     this.store.pruneMtm(Date.now());
     return recovered;
@@ -366,6 +374,131 @@ export class TradingService {
       });
     }
     return 'sent';
+  }
+
+  /*
+   * Selling the best pick by itself.
+   *
+   * Armed from the card, off by default, and every rule about *not* trading
+   * lives in `auto-trade.ts` where it can be tested without an exchange. This
+   * is the acting half: read the board, ask, write the decision down *before*
+   * placing, then place through the same `place()` the ticket uses -- same
+   * engine, same prechecks, same protection.
+   *
+   * Written first, always. A crash between the order and the note is how a
+   * desk sells the same strike twice, so the note goes down first and a refusal
+   * is kept as well as a fill: a strike the gates turned down is not asked
+   * about again this contract.
+   */
+  get autoTrade(): AutoTradeSettings {
+    try {
+      const raw = JSON.parse(this.store.getSetting('auto_trade') || 'null') as Partial<AutoTradeSettings> | null;
+      return cleanAutoTradeSettings(raw ?? {});
+    } catch {
+      return { ...AUTO_TRADE_DEFAULTS };
+    }
+  }
+
+  setAutoTrade(patch: Partial<AutoTradeSettings>): AutoTradeSettings {
+    const next = cleanAutoTradeSettings({ ...this.autoTrade, ...patch });
+    this.store.setSetting('auto_trade', JSON.stringify(next));
+    return next;
+  }
+
+  /**
+   * The contract the last board read was about, for the screen's "already sold
+   * automatically" list. Absent until a board has been read at all.
+   */
+  get autoTradeExpiry(): string | null {
+    try {
+      const v = JSON.parse(this.store.getSetting('auto_trade_done') || 'null') as { expiry?: unknown } | null;
+      return typeof v?.expiry === 'string' ? v.expiry : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** What has been sold automatically for this contract. */
+  autoTradeLedger(expiry: string): AutoTradeLedger {
+    try {
+      const v = JSON.parse(this.store.getSetting('auto_trade_done') || 'null') as AutoTradeLedger | null;
+      if (v && v.expiry === expiry && v.entries && typeof v.entries === 'object') return v;
+    } catch { /* unreadable is the same as nothing traded */ }
+    return { expiry, entries: {} };
+  }
+
+  /**
+   * Forget what has been sold automatically on this contract.
+   *
+   * The one way back from "already sold" and "refused earlier" without waiting
+   * for 5:31 PM: somebody who has read the refusal and dealt with it can ask
+   * for the strike to be considered again. It clears the note, never a position.
+   */
+  clearAutoTradeLedger(): void {
+    this.store.setSetting('auto_trade_done', '');
+  }
+
+  private writeAutoTrade(ledger: AutoTradeLedger, key: string, entry: AutoTradeLedger['entries'][string]): void {
+    const next: AutoTradeLedger = { expiry: ledger.expiry, entries: { ...ledger.entries, [key]: entry } };
+    this.store.setSetting('auto_trade_done', JSON.stringify(next));
+  }
+
+  async autoTradeBestPick(
+    now = Date.now(),
+    board?: { snap: Snapshot; market: MarketRead | null },
+  ): Promise<{ act: 'skip'; why: string } | { act: 'placed'; tradeId: string } | { act: 'refused'; why: string }> {
+    const settings = this.autoTrade;
+    if (!settings.on) return { act: 'skip', why: 'off' };
+    const snap = board?.snap ?? await liveChain(WHOLE_BOARD).catch(() => null);
+    if (!snap) return { act: 'skip', why: 'no board' };
+    const market = board ? board.market : await readMarket(hoursSinceDeskOpen(snap.ts)).catch(() => null);
+    const best = bestTradeNow({
+      snap, market, lots: settings.lots, hedgeGap: 3, minPremiumUsd: this.bestTradeMinPremiumUsd,
+    });
+    const ledger = this.autoTradeLedger(snap.expiry);
+    const decision = decideAutoTrade({
+      settings,
+      best,
+      snap,
+      // Anything the desk is already carrying or working, whoever opened it.
+      openSymbols: this.store.all().filter((r) => r.state.position !== 0 || r.state.entrySize > 0)
+        .map((r) => r.state.symbol),
+      ledger,
+      symbolFor: (side, strike) => `${side === 'CE' ? 'C' : 'P'}-BTC-${strike}-${snap.expiry}`,
+    });
+    if (decision.act === 'skip') return decision;
+
+    // Written before the order goes out: a crash here costs one missed trade,
+    // never a second copy of one.
+    this.writeAutoTrade(ledger, decision.key, { at: now, status: 'placed' });
+    const res = await this.place({
+      origin: 'best-pick',
+      symbol: decision.symbol,
+      optionSide: decision.side,
+      strike: decision.strike,
+      expiryTs: snap.expiryTs,
+      lots: decision.lots,
+      takeProfitPct: decision.takeProfitPct,
+      stopLossPct: decision.stopLossPct,
+      chaseSeconds: decision.chaseSeconds,
+    }).catch((e: Error) => ({ ok: false as const, reason: e.message }));
+
+    if (!res.ok) {
+      const why = 'precheck' in res && !res.precheck.ok
+        ? res.precheck.failures.map((f) => f.message).join('; ')
+        : ('reason' in res && typeof res.reason === 'string' ? res.reason : 'the desk would not place it');
+      this.writeAutoTrade(ledger, decision.key, { at: now, status: 'refused', detail: why });
+      if (this.notifier && this.alertsOn) {
+        this.notifier.notify({
+          key: 'auto-trade',
+          text: `🤖 Auto-trade did not sell ${decision.side} ${decision.strike.toLocaleString('en-IN')}: ${why}`,
+        });
+      }
+      return { act: 'refused', why };
+    }
+    const tradeId = 'state' in res ? res.state.tradeId : decision.key;
+    this.writeAutoTrade(ledger, decision.key, { at: now, status: 'placed', tradeId });
+    return { act: 'placed', tradeId };
   }
 
   /** What has been announced for this contract, or a clean slate for a new one. */

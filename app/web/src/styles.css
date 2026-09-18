@@ -2470,3 +2470,33 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 .ol-ctx-badge { margin-top: 2px; font-size: 10px; color: var(--dim); cursor: help; }
 .ol-ctx-badge.ok { color: var(--up); }
 .ol-ctx-foot { margin: 8px 0 0; font-size: 10.5px; line-height: 1.45; color: var(--dim); }
+
+/* Who placed it: on every position and every order row. */
+.origin-tag {
+  display: inline-flex; align-items: center; gap: 4px; flex: none;
+  padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--panel-2); font-size: 10.5px; color: var(--muted); white-space: nowrap;
+}
+.origin-tag.strategy { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+.origin-tag.best-pick { color: #6cb2ff; border-color: color-mix(in srgb, #6cb2ff 40%, transparent); }
+
+/* Selling the best pick by itself: the switch, its options and what it has done. */
+.auto-trade { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
+.auto-trade-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+.auto-trade-state { font-size: 11px; color: var(--muted); }
+.auto-trade-state.live { color: var(--down); font-weight: 600; }
+.auto-trade-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.auto-trade-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.auto-trade-field > span { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--dim); }
+.auto-trade-field small { font-size: 10px; }
+.auto-trade-note { margin: 8px 0 0; font-size: 11px; line-height: 1.45; color: var(--muted); }
+.auto-trade-note.dim { color: var(--dim); }
+.auto-trade-note .warn, .auto-trade-note.warn { color: var(--warn); }
+.auto-trade-done { margin-top: 8px; font-size: 11px; line-height: 1.5; color: var(--muted); }
+.auto-trade-done .warn { color: var(--warn); }
+.auto-trade-clear {
+  appearance: none; border: 0; background: none; padding: 0; margin-left: 6px;
+  display: inline-flex; align-items: center; gap: 4px;
+  font: inherit; font-size: 11px; color: var(--accent); cursor: pointer;
+}
+.auto-trade-clear:hover { text-decoration: underline; }

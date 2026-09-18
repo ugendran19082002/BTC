@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { stopPriceFor, targetPriceFor, tradingService } from '../../trading/service.js';
+import { AUTO_TRADE_DEFAULTS, AUTO_TRADE_LIMITS } from '../../trading/auto-trade.js';
 import { lotsToContracts } from '../../trading/money.js';
 import { DEFAULT_LIMITS, precheck } from '../../trading/precheck.js';
 import {
@@ -108,6 +109,14 @@ const view = (
     netRealisedUsd: r.state.realisedPnl - charges.totalUsd,
     plan: {
       lots: r.plan.lots,
+      /*
+       * Who asked for this trade: the ticket, a saved strategy, or the
+       * best-pick card's auto-trade. Read from the plan where it was written;
+       * anything opened before the field existed and without a strategy is what
+       * it always was, a trade somebody placed by hand.
+       */
+      origin: r.plan.origin ?? (r.plan.strategyId ? 'strategy' : 'manual'),
+      strategyId: r.plan.strategyId ?? null,
       entry: r.plan.entry,
       takeProfitPrice: r.plan.takeProfitPrice,
       stopPrice: r.plan.stopPrice,
@@ -596,6 +605,53 @@ export function registerTradeRoutes(app: FastifyInstance) {
       svc.setBestTradeRepeat(v);
     }
     return { ok: true, alertOn: svc.bestTradeAlertOn, minPremiumUsd: svc.bestTradeMinPremiumUsd, repeat: svc.bestTradeRepeat };
+  });
+
+  /*
+   * Selling the best pick by itself.
+   *
+   * Off by default and after every deploy. The numbers are checked here as well
+   * as in the service, because a bad `lots` reaching an armed auto-trader is a
+   * real order: 5 lots and a 95% target are the defaults, and the ceilings are
+   * the same ones the service clamps to.
+   */
+  app.get('/api/trade/auto-trade', async () => ({
+    settings: svc.autoTrade,
+    defaults: AUTO_TRADE_DEFAULTS,
+    limits: AUTO_TRADE_LIMITS,
+    mode: svc.mode,
+    /** What has already been sold automatically for the contract on screen. */
+    done: svc.autoTradeLedger(svc.autoTradeExpiry ?? '').entries,
+  }));
+
+  app.post('/api/trade/auto-trade', async (req, reply) => {
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const numeric: [string, number, number][] = [
+      ['lots', 1, AUTO_TRADE_LIMITS.maxLots],
+      ['targetPct', AUTO_TRADE_LIMITS.minTargetPct, AUTO_TRADE_LIMITS.maxTargetPct],
+      ['stopPct', 0, AUTO_TRADE_LIMITS.maxStopPct],
+      ['chaseSeconds', 0, AUTO_TRADE_LIMITS.maxChaseSec],
+      ['maxPerContract', 1, AUTO_TRADE_LIMITS.maxPerContract],
+    ];
+    for (const [key, lo, hi] of numeric) {
+      if (b[key] === undefined) continue;
+      const v = Number(b[key]);
+      if (!Number.isInteger(v) || v < lo || v > hi) {
+        reply.code(400);
+        return { error: `${key} must be a whole number from ${lo} to ${hi}` };
+      }
+    }
+    if (b.on !== undefined && typeof b.on !== 'boolean') {
+      reply.code(400);
+      return { error: 'on must be true or false' };
+    }
+    return { ok: true, settings: svc.setAutoTrade(b as Parameters<typeof svc.setAutoTrade>[0]) };
+  });
+
+  /** "Consider these strikes again" — clears the note, never a position. */
+  app.post('/api/trade/auto-trade/clear', async () => {
+    svc.clearAutoTradeLedger();
+    return { ok: true, done: {} };
   });
 
   app.post('/api/trade/alerts', async (req, reply) => {

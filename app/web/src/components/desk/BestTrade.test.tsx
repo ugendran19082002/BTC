@@ -4,10 +4,21 @@ import { BestTrade } from '@/components/desk/BestTrade';
 import type { BestTrade as BestTradeData, Leg } from '@/types/desk';
 
 const getBestTradeSettings = vi.fn();
+// The card carries both switches now: the alert and the auto-trade.
+const getAutoTrade = vi.fn();
 vi.mock('@/api/trade', () => ({
   getBestTradeSettings: (...a: unknown[]) => getBestTradeSettings(...a),
   setBestTradeSettings: vi.fn(),
+  getAutoTrade: (...a: unknown[]) => getAutoTrade(...a),
+  setAutoTrade: vi.fn(),
+  clearAutoTrade: vi.fn(),
 }));
+getAutoTrade.mockResolvedValue({
+  settings: { on: false, lots: 5, targetPct: 95, stopPct: 0, chaseSeconds: 5, maxPerContract: 1 },
+  defaults: { on: false, lots: 5, targetPct: 95, stopPct: 0, chaseSeconds: 5, maxPerContract: 1 },
+  limits: { maxLots: 1_000, minTargetPct: 1, maxTargetPct: 99, maxStopPct: 500, maxChaseSec: 600, maxPerContract: 10 },
+  mode: 'paper', done: {},
+});
 getBestTradeSettings.mockResolvedValue({ alertOn: false, minPremiumUsd: 5, repeat: 1, telegram: { configured: true, on: true } });
 
 /**
@@ -199,7 +210,9 @@ describe('the pick and its alerts, as two cards', () => {
   it('with nothing to sell the alerts card keeps the switch and drops the order button', async () => {
     render(<BestTrade best={data({ pick: null, runnersUp: [], why: 'nothing worth selling' })} legs={legs} onSell={() => {}} />);
     const alerts = within(screen.getByLabelText('best pick alerts'));
-    expect(await alerts.findByRole('switch')).toBeInTheDocument();
+    expect(await alerts.findByRole('switch', { name: /Tell me when the pick changes/ })).toBeInTheDocument();
+    // and the auto-trade switch, which is the other half of the card
+    expect(alerts.getByRole('switch', { name: /Sell this pick automatically/ })).toBeInTheDocument();
     expect(alerts.queryByRole('button', { name: /order form/ })).toBeNull();
   });
 });

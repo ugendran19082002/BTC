@@ -255,3 +255,87 @@ test('an expiry code reads as a date', async () => {
   assert.equal(expiryLabel('010126'), '1 Jan');
   assert.equal(expiryLabel('not-a-code'), 'not-a-code');
 });
+
+/*
+ * Selling that pick by itself.
+ *
+ * Through the real service and the real journal, with the exchange left out:
+ * what is pinned here is the writing-down, which is what stops a restart or a
+ * second tick selling the same strike twice. The rules themselves are in
+ * `auto-trade.test.ts`, where they need no desk at all.
+ */
+async function armedDesk(over: Partial<Parameters<TradingServiceType['setAutoTrade']>[0]> = {}) {
+  const d = await desk();
+  d.svc.setAutoTrade({ on: true, lots: 5, targetPct: 95, ...over });
+  // The ledger lives in the journal and outlasts one service: start clean.
+  d.svc.clearAutoTradeLedger();
+  // Every order is answered here; the engine and the exchange have their own tests.
+  const placed: { symbol: string; lots: number; takeProfitPct?: number; origin?: string }[] = [];
+  (d.svc as unknown as { place: (i: Record<string, unknown>) => Promise<unknown> }).place = async (i) => {
+    placed.push(i as never);
+    return { ok: true, state: { tradeId: `t-${placed.length}` } };
+  };
+  return { ...d, placed };
+}
+type TradingServiceType = Awaited<ReturnType<typeof desk>>['svc'];
+
+test('[critical] armed, it sells the pick once — the second look sells nothing', async () => {
+  const { svc, placed } = await armedDesk();
+  const first = await svc.autoTradeBestPick(NOW, { snap: CALL_BOARD, market: null });
+  assert.equal(first.act, 'placed');
+  assert.equal(placed.length, 1);
+  assert.deepEqual(
+    { symbol: placed[0]!.symbol, lots: placed[0]!.lots, target: placed[0]!.takeProfitPct, origin: placed[0]!.origin },
+    { symbol: `C-BTC-${pickOf(CALL_BOARD).strike}-160926`, lots: 5, target: 0.95, origin: 'best-pick' },
+  );
+  const again = await svc.autoTradeBestPick(NOW + 60_000, { snap: CALL_BOARD, market: null });
+  assert.equal(again.act, 'skip');
+  assert.equal(placed.length, 1, 'one automatic trade for one strike on one contract');
+  svc.stop();
+});
+
+test('[critical] switched off it places nothing, however good the pick looks', async () => {
+  const { svc, placed } = await armedDesk();
+  svc.setAutoTrade({ on: false });
+  assert.deepEqual(await svc.autoTradeBestPick(NOW, { snap: CALL_BOARD, market: null }), { act: 'skip', why: 'off' });
+  assert.equal(placed.length, 0);
+  svc.stop();
+});
+
+test('[critical] the cap holds across a different pick on the same contract', async () => {
+  const { svc, placed } = await armedDesk();
+  await svc.autoTradeBestPick(NOW, { snap: CALL_BOARD, market: null });
+  const second = await svc.autoTradeBestPick(NOW + 60_000, { snap: PUT_BOARD, market: null });
+  assert.equal(second.act, 'skip');
+  assert.match(second.why, /already on this contract/);
+  assert.equal(placed.length, 1);
+  svc.stop();
+});
+
+test('[critical] a refusal is written down, said once, and not retried this contract', async () => {
+  const { svc, sent, placed } = await armedDesk();
+  (svc as unknown as { place: () => Promise<unknown> }).place = async () => {
+    placed.push({ symbol: 'x', lots: 0 });
+    return { ok: false, precheck: { ok: false, failures: [{ code: 'margin', message: 'not enough margin' }] }, state: null };
+  };
+  const r = await svc.autoTradeBestPick(NOW, { snap: CALL_BOARD, market: null });
+  assert.equal(r.act, 'refused');
+  assert.match(r.why, /not enough margin/);
+  assert.equal(sent.filter((a) => a.key === 'auto-trade').length, 1);
+  const again = await svc.autoTradeBestPick(NOW + 60_000, { snap: CALL_BOARD, market: null });
+  assert.equal(again.act, 'skip');
+  assert.equal(placed.length, 1, 'Delta is not asked the same refused question every minute');
+  svc.stop();
+});
+
+test('the settings survive the service, and are brought inside their limits', async () => {
+  const { svc } = await armedDesk();
+  assert.deepEqual(svc.setAutoTrade({ lots: 99_999, targetPct: 140 }), {
+    on: true, lots: 1_000, targetPct: 99, stopPct: 0, chaseSeconds: 5, maxPerContract: 1,
+  });
+  const { TradingService } = await import('../../src/trading/service.js');
+  assert.equal(new TradingService().autoTrade.lots, 1_000, 'read back from the journal');
+  svc.setAutoTrade({ on: false, lots: 5, targetPct: 95 });
+  svc.stop();
+});
+

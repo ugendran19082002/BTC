@@ -6,6 +6,7 @@ import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CloseAllButton } from '@/components/trade/CloseAllButton';
+import { OriginTag } from '@/components/trade/OriginTag';
 import { EditExitsSheet } from '@/components/trade/EditExitsSheet';
 import { AddLotsSheet } from '@/components/trade/AddLotsSheet';
 import { ClosePositionSheet } from '@/components/trade/ClosePositionSheet';
@@ -85,9 +86,11 @@ export function PositionsCard({ trades, onChanged }: { trades: Trade[]; onChange
 
 function ContractName({ trade }: { trade: Trade }) {
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex flex-wrap items-center gap-1.5">
       <span className="text-[14px] font-semibold text-foreground">{contractLabel(trade.symbol)}</span>
       <Badge tone={trade.optionSide === 'CE' ? 'ok' : 'warn'}>{trade.optionSide}</Badge>
+      {/* Three things place orders here; which one did is the first question. */}
+      <OriginTag origin={trade.plan?.origin} strategyName={trade.plan?.strategyId ?? null} />
     </div>
   );
 }
