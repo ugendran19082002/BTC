@@ -5,7 +5,7 @@ import { measuredOutlook } from '../../analytics/client.js';
 import { liveSpot, candles, tickerFeedHealth } from '../../market/delta.js';
 import { scoreLegs, pickSells, bias, verdict, maxLots, MARGIN_PER_LOT_USD, USDINR } from '../../domain/score.js';
 import { recommend, type PickMode } from '../../domain/recommend.js';
-import { optionStructure } from '../../domain/structure.js';
+import { DEFAULT_WALL_WITHIN_EM, optionStructure } from '../../domain/structure.js';
 import { forecast, reloadHorizons } from '../../domain/forecast.js';
 import { loadCalibration, reloadCalibration } from '../../domain/calibration.js';
 import { loadDays, reloadDays, DEFAULTS } from '../../backtest/backtest.js';
@@ -42,6 +42,15 @@ type ChainQuery = {
   at?: string; width?: string; minPremium?: string; hedgeGap?: string;
   lots?: string; expiry?: string; requireHedge?: string; mode?: string; safetyBar?: string;
 };
+
+/** Where the level band is remembered. A desk setting, like the short cap. */
+export const WALL_WITHIN_EM_KEY = 'wall_within_em';
+
+/** The band in force: how far a wall may sit and still be a level, in expected moves. */
+export function wallWithinEm(): number {
+  const raw = Number(tradingService().store.getSetting(WALL_WITHIN_EM_KEY));
+  return Number.isFinite(raw) && raw >= 0.25 && raw <= 20 ? raw : DEFAULT_WALL_WITHIN_EM;
+}
 
 export function registerDeskRoutes(app: FastifyInstance) {
   app.get('/api/health', async () => {
@@ -144,7 +153,7 @@ export function registerDeskRoutes(app: FastifyInstance) {
       }
 
       const recommendation = recommend(snap, scored, market, minPremium, lots, hedgeGap, mode, safetyBar);
-      const structure = optionStructure(snap, market?.realisedVol ?? null);
+      const structure = optionStructure(snap, market?.realisedVol ?? null, wallWithinEm());
 
       /*
        * Is there a side today, and would the desk's own gates take it?
@@ -409,7 +418,7 @@ export function registerDeskRoutes(app: FastifyInstance) {
    * to whatever the margin covers today", and that ceiling is the whole point:
    * the browser may ask the desk to risk less, never more.
    */
-  const NUMERIC_SETTINGS = [SHORT_CAP_KEY];
+  const NUMERIC_SETTINGS = [SHORT_CAP_KEY, WALL_WITHIN_EM_KEY];
 
   /**
    * Desk settings that survive a restart.
@@ -464,6 +473,21 @@ export function registerDeskRoutes(app: FastifyInstance) {
 
     // The short cap is a number with a ceiling rather than one of a fixed set,
     // and the ceiling moves with the balance, so the service owns the decision.
+    /*
+     * How far a wall may sit and still be drawn as support or resistance, in
+     * expected moves. A fraction, not a whole number: half an expected move is
+     * a reasonable band on a quiet afternoon.
+     */
+    if (key === WALL_WITHIN_EM_KEY) {
+      const n = Number(value);
+      if (!Number.isFinite(n) || n < 0.25 || n > 20) {
+        reply.code(400);
+        return { error: 'The level band must be between 0.25 and 20 expected moves.' };
+      }
+      tradingService().store.setSetting(WALL_WITHIN_EM_KEY, String(n));
+      return { ok: true, key, value: String(n) };
+    }
+
     if (key === SHORT_CAP_KEY) {
       const svc = tradingService();
       const n = Number(value);

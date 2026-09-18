@@ -142,12 +142,31 @@ function Level({ label, wall, far, away, tone }: {
   tone: 'up' | 'down';
 }) {
   const pct = (level: number) => `${away(level) >= 0 ? '+' : '−'}${Math.abs(away(level)).toFixed(1)}%`;
+  /*
+   * The open interest behind the level, and the bigger one just outside.
+   *
+   * "Support 76,000" is unarguable only with the number under it: on
+   * 18 September 76,000 held 145k and 78,000 held 245k a strike and a half
+   * further out, so the band -- not the arithmetic -- is what chose. Both are
+   * shown, and the bigger one is named, so the choice can be argued with.
+   */
+  const heavierOutside = wall && far && far.strike !== wall.strike && far.value > wall.value * 1.25 ? far : null;
   return (
     <div>
       <dt>{label}</dt>
       {wall ? (
         <dd className={tone}>
           {fmtStrike(wall.strike)} <small>({pct(wall.strike)})</small>
+          <small className="btc-summary-oi" title="Open interest at that strike, in contracts.">
+            {' '}{oiWords(wall.value)}
+            {heavierOutside && (
+              <span
+                title={`${fmtStrike(heavierOutside.strike)} holds ${oiWords(heavierOutside.value)} — outside the band, so it is not drawn as a level.`}
+              >
+                {' · '}{fmtStrike(heavierOutside.strike)} holds {oiWords(heavierOutside.value)}
+              </span>
+            )}
+          </small>
         </dd>
       ) : (
         <dd className="dim" title={far ? `The heaviest is ${fmtStrike(far.strike)}, ${pct(far.strike)} away — too far to trade against.` : undefined}>
@@ -157,5 +176,14 @@ function Level({ label, wall, far, away, tone }: {
       )}
     </div>
   );
+}
+
+/** Open interest, short: 145,000 reads as 145k. */
+export function oiWords(value: number): string {
+  if (!Number.isFinite(value)) return '—';
+  const n = Math.abs(value);
+  if (n >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}m`;
+  if (n >= 1_000) return `${Math.round(value / 1_000)}k`;
+  return String(Math.round(value));
 }
 

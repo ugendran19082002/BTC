@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { BtcSummary, HOLD_BARS, holding } from '@/components/desk/BtcSummary';
+import { BtcSummary, HOLD_BARS, holding, oiWords } from '@/components/desk/BtcSummary';
 import type { Candle, MarketRead, OptionStructure, Outlook, SnapshotMeta } from '@/types/desk';
 
 /** BTC at a glance, beside the chart: what is known, said once, and the past marked as the past. */
@@ -99,5 +99,39 @@ describe('the BTC summary', () => {
   it('says the band the levels are looked for in', () => {
     show();
     expect(screen.getByText(/within 2 expected moves of spot/)).toBeInTheDocument();
+  });
+
+  /*
+   * 18 September: "Support 76,000 (−1.1%) · Resistance 77,800 (+1.2%)" looked
+   * wrong beside a board whose heaviest call open interest was 245k at 78,000.
+   * The arithmetic was right and the band chose — so the card shows the open
+   * interest behind the level, and names the heavier strike just outside it.
+   */
+  it('[critical] the open interest behind each level is on the card', () => {
+    show({ structure: {
+      peOiWall: { strike: 75_000, value: 291_700 }, ceOiWall: { strike: 78_000, value: 245_000 },
+      peOiWallNear: { strike: 76_000, value: 145_000 }, ceOiWallNear: { strike: 77_800, value: 134_200 },
+      wallWithinEm: 2,
+    } as unknown as OptionStructure });
+    expect(screen.getByText('76,000')).toBeInTheDocument();
+    expect(screen.getByText(/145k/)).toBeInTheDocument();
+    // and the heavier one outside the band is named rather than hidden
+    expect(screen.getByText(/78,000 holds 245k/)).toBeInTheDocument();
+    expect(screen.getByText(/75,000 holds 292k/)).toBeInTheDocument();
+  });
+
+  it('a level that is also the heaviest on the board says nothing extra', () => {
+    show({ structure: {
+      peOiWall: { strike: 76_000, value: 145_000 }, ceOiWall: { strike: 77_800, value: 134_200 },
+      peOiWallNear: { strike: 76_000, value: 145_000 }, ceOiWallNear: { strike: 77_800, value: 134_200 },
+      wallWithinEm: 2,
+    } as unknown as OptionStructure });
+    expect(screen.queryByText(/holds/)).toBeNull();
+  });
+
+  it('open interest reads short, and never as a raw six-digit number', () => {
+    expect(oiWords(145_000)).toBe('145k');
+    expect(oiWords(1_450_000)).toBe('1.5m');
+    expect(oiWords(900)).toBe('900');
   });
 });
