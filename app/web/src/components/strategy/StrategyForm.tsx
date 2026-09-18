@@ -886,7 +886,7 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                   </label>
 
                   {/* Exactly what each stage means, in percent, in money and in lots. */}
-                  <div className="mt-3 rounded-lg bg-muted px-2.5 py-2" aria-label="rebalance stages">
+                  <div className="mt-3 rounded-lg bg-muted px-2.5 py-2" aria-label="rebalance stage table">
                     <div className="mb-1 flex items-baseline justify-between text-[11px] text-muted-foreground">
                       <span>Stages, from a sale at ${c.premium.usd}</span>
                       <span>{c.lots} + {c.lots} lots to start</span>

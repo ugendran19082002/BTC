@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { StrategyForm } from '@/components/strategy/StrategyForm';
-import { DEFAULT_CONFIG, type Strategy } from '@/types/strategy';
+import { DEFAULT_CONFIG, DEFAULT_REBALANCE, type Strategy } from '@/types/strategy';
 
 const saveStrategy = vi.fn();
 const rebalanceSettings = {
@@ -481,10 +481,10 @@ describe('the late-entry window', () => {
     show(editing({ lots: 100, rebalance: { ...DEFAULT_REBALANCE, maxLotsPerSide: 160 } }));
     tab('Extras');
     expect(screen.getByText(/neither side passes 160 lots, whatever the premiums do/)).toBeInTheDocument();
-    const stages = within(screen.getByLabelText('rebalance stages'));
+    const stages = within(screen.getByLabelText('rebalance stage table'));
     // 100 + 100, 30 a stage, capped at 160: 130, 160, then the cap holds it
     expect(stages.getByText('130 / 70')).toBeInTheDocument();
-    expect(stages.getByText('160 / 40')).toBeInTheDocument();
+    // stage 2 reaches the cap, and stage 3 can add nothing more
     expect(stages.getAllByText('160 / 40')).toHaveLength(2);
   });
 });
