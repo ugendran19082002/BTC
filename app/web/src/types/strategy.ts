@@ -111,6 +111,11 @@ export type RebalanceRule = {
   maxLotsPerSide: number | null;
   allowPartial: boolean;
   maxSpreadPct: number | null;
+  /**
+   * If the rebalance sell has not filled, sell at the bid after this many
+   * seconds. Null is the strategy's own entry seconds; zero rests at the offer.
+   */
+  crossAfterSec?: number | null;
 };
 
 export type RebalanceLimits = {
@@ -137,6 +142,7 @@ export const DEFAULT_REBALANCE: RebalanceRule = {
   maxLotsPerSide: 200,
   allowPartial: true,
   maxSpreadPct: 0.15,
+  crossAfterSec: null,
 };
 
 /** Stage n's thresholds, and what they mean in money against a sale price. */
@@ -157,6 +163,16 @@ export function stageThresholds(
     });
   }
   return out;
+}
+
+/**
+ * The most one side can ever reach, so the cap can be set to fit rather than
+ * guessed. Each stage moves lots from the fallen side to the risen one, and the
+ * fallen side is what runs out: 700 + 700 with 30 a stage over 3 stages reaches
+ * 790 at most.
+ */
+export function mostOneSideCanReach(rule: Pick<RebalanceRule, 'lotsPerStep' | 'steps'>, lots: number): number {
+  return lots + Math.min(lots, Math.max(0, Math.round(rule.lotsPerStep * rule.steps)));
 }
 
 /** What the position becomes after each stage, from the lots it opened with. */

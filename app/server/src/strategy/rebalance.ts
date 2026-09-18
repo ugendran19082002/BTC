@@ -76,6 +76,17 @@ export type RebalanceRule = {
   allowPartial: boolean;
   /** Refuse to act when the book on either leg is wider than this (0.15 = 15%). */
   maxSpreadPct: number | null;
+  /**
+   * If the sell has not filled, sell at the bid after this many seconds.
+   *
+   * The same control the ticket, the add-lots sheet and the add-to-the-other-leg
+   * rule carry. A rebalance sell rests at the risen side's offer with nobody
+   * watching it, and the stage is only half done until it fills -- the buy-back
+   * has already happened. Null means the strategy's own entry seconds, which is
+   * what a rule saved before this control existed used; zero rests at the offer
+   * and lets the add window end it.
+   */
+  crossAfterSec?: number | null;
 };
 
 /**
@@ -95,6 +106,7 @@ export const DEFAULT_REBALANCE: RebalanceRule = {
   maxLotsPerSide: 200,
   allowPartial: true,
   maxSpreadPct: 0.15,
+  crossAfterSec: null,
 };
 
 /**
@@ -417,6 +429,9 @@ export function cleanRebalance(
     maxSpreadPct: raw.maxSpreadPct === null || raw.maxSpreadPct === undefined
       ? null
       : clamp(n(raw.maxSpreadPct, d.maxSpreadPct ?? 0.15), 0.01, 1),
+    crossAfterSec: raw.crossAfterSec === null || raw.crossAfterSec === undefined
+      ? null
+      : Math.round(clamp(n(raw.crossAfterSec, d.crossAfterSec ?? 5), 0, 600)),
   };
 }
 

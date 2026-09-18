@@ -140,7 +140,12 @@ export class StrategyRebalancer {
       // Rest at the offer and walk to the bid over the strategy's own seconds,
       // exactly as its entry and its adds do.
       limitPrice: decision.up.quote.ask ?? decision.up.quote.bid ?? decision.up.price ?? 0,
-      chaseSeconds: s.config.entryPrice === 'now' ? 0 : s.config.crossAfterSec,
+      /*
+       * The rule's own seconds when it has them, the strategy's entry seconds
+       * otherwise -- which is what every rule saved before the control existed
+       * used. A "now" entry crosses at once and has nothing to wait for.
+       */
+      chaseSeconds: s.config.entryPrice === 'now' ? 0 : (rule.crossAfterSec ?? s.config.crossAfterSec),
       maxCrossSpreadPct: s.config.maxCrossSpreadPct ?? null,
       // Never sold under the bid that was on the screen when the stage fired.
       floorPrice: decision.up.quote.bid ?? decision.up.price ?? 0,

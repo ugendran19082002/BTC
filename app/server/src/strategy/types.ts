@@ -496,6 +496,10 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
       bad.push(`Stage ${reb.steps} would need the price to fall ${lastDown}%, which cannot happen. `
         + 'Use fewer stages, a smaller step, or a smaller first down move.');
     }
+    if (reb.crossAfterSec !== null && reb.crossAfterSec !== undefined
+      && (!Number.isInteger(reb.crossAfterSec) || reb.crossAfterSec < 0 || reb.crossAfterSec > 600)) {
+      bad.push('Seconds before the rebalance sells at the bid must be a whole number from 0 to 600.');
+    }
     if (!Number.isInteger(reb.confirmTicks) || reb.confirmTicks < 1) {
       bad.push('Rebalancing needs at least one confirming reading.');
     }

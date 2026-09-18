@@ -225,3 +225,48 @@ test('the defaults and the limits are settings, not numbers in the source', () =
   store.setRebalanceDefaults({ steps: 3, upStartPct: 30, downStartPct: 20, incrementPct: 10 });
   store.setRebalanceLimits({ maxSteps: 20 });
 });
+
+/*
+ * "If not filled, sell at bid after N seconds", on the rebalance sell.
+ *
+ * The buy-back has already happened when the sell goes out, so a sell that
+ * rests at the offer all afternoon leaves the stage half done. The rule carries
+ * its own seconds, and falls back to the strategy's entry seconds where it has
+ * none -- which is what every rule saved before the control existed used.
+ */
+test('[critical] the rebalance sell walks for the rule\'s own seconds', async () => {
+  const r = rig({ pe: 19.5, ce: 12 });
+  const seen: number[] = [];
+  r.deps.sell = async (o) => { seen.push(o.chaseSeconds); return { ok: true }; };
+  const only = new StrategyRebalancer(r.deps);
+  const s = strategy({
+    crossAfterSec: 7,
+    rebalance: { ...DEFAULT_REBALANCE, enabled: true, confirmTicks: 2, crossAfterSec: 45 },
+  });
+  await only.consider(s);
+  await only.consider(s);
+  assert.deepEqual(seen, [45]);
+});
+
+test('a rule with no seconds of its own uses the strategy\'s entry seconds', async () => {
+  const r = rig({ pe: 19.5, ce: 12 });
+  const seen: number[] = [];
+  r.deps.sell = async (o) => { seen.push(o.chaseSeconds); return { ok: true }; };
+  const only = new StrategyRebalancer(r.deps);
+  const s = strategy({ crossAfterSec: 7 });   // rebalance.crossAfterSec is null
+  await only.consider(s);
+  await only.consider(s);
+  assert.deepEqual(seen, [7]);
+});
+
+test('zero rests at the offer; the add window is what ends it', async () => {
+  const r = rig({ pe: 19.5, ce: 12 });
+  const seen: { chase: number; timeout: number }[] = [];
+  r.deps.sell = async (o) => { seen.push({ chase: o.chaseSeconds, timeout: o.timeoutMs }); return { ok: true }; };
+  const only = new StrategyRebalancer(r.deps);
+  const s = strategy({ rebalance: { ...DEFAULT_REBALANCE, enabled: true, confirmTicks: 2, crossAfterSec: 0 } });
+  await only.consider(s);
+  await only.consider(s);
+  assert.deepEqual(seen, [{ chase: 0, timeout: 5 * 60_000 }]);
+});
+
