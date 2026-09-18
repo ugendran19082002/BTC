@@ -261,7 +261,7 @@ test('a rule from a browser is brought inside its limits, and off is off', () =>
   assert.deepEqual(wild, {
     enabled: true, lotsPerStep: 10_000, steps: 20, upStartPct: 500, downStartPct: 99,
     incrementPct: 0, confirmTicks: 10, endTime: '13:30', lockDirection: true,
-    maxLotsPerSide: 1, allowPartial: true, maxSpreadPct: 1, crossAfterSec: null,
+    maxLotsPerSide: 1, allowPartial: true, maxSpreadPct: 1, crossAfterSec: null, capAuto: false,
   });
   // "if not filled, sell at bid after": blank keeps the strategy's entry seconds
   assert.equal(cleanRebalance({ crossAfterSec: 45 })!.crossAfterSec, 45);
