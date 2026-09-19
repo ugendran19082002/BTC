@@ -26,7 +26,7 @@ const snap = (ts: number, spot = 77_000) => ({ expiry: '140926', spot, ts });
 beforeEach(async () => {
   closeOiHistory();
   await marketSchema();
-  await query('TRUNCATE market.oi_snapshots');
+  await query('TRUNCATE oi_snapshots');
 });
 after(() => closePool());
 
@@ -152,13 +152,13 @@ test('[critical] a board is never taken down by its own bookkeeping', async () =
   // case is that the column reads as absent, which is what it does before the
   // first bucket
   await noteOpenInterest(snap(T0), legs(400_000, 300_000));
-  await query('DROP TABLE market.oi_snapshots');
+  await query('DROP TABLE oi_snapshots');
 
   assert.equal(await noteOpenInterest(snap(T0 + HOUR), legs(410_000, 300_000)), null);
   assert.equal((await openInterestChange(snap(T0 + HOUR), legs(410_000, 300_000), 1)).size, 0);
 
-  // and once it is back (the ledger forgets it, so the migration runs again), so is the memory
-  await query("DELETE FROM public.schema_migrations WHERE id = 'market-001-oi-snapshots'");
+  // and once it is back (the ledger forgets it and its move, so both run again), so is the memory
+  await query("DELETE FROM public.schema_migrations WHERE id IN ('market-001-oi-snapshots', 'market-003-to-public')");
   closeOiHistory();
   await marketSchema();
   assert.notEqual(await noteOpenInterest(snap(T0 + HOUR), legs(410_000, 300_000)), null);

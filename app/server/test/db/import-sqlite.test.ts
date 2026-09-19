@@ -118,9 +118,9 @@ test('[critical] every table lands, and what the stores read back is what the SQ
   assert.deepEqual(rec.events.map((e) => e.t), ['entry_submitted', 'fill']);
   assert.equal(rec.state.tradeId, 'C-BTC-79600-090926-1');
   assert.equal(rec.state.position, 0, 'the stored state carries no fills; the events are the audit trail');
-  assert.deepEqual(await one('SELECT id FROM trading.trade_events WHERE seq = 1'), { id: 9 });
+  assert.deepEqual(await one('SELECT id FROM trade_events WHERE seq = 1'), { id: 9 });
   // and a new event would not collide with an imported id
-  const next = await one<{ n: number }>("SELECT nextval(pg_get_serial_sequence('trading.trade_events', 'id')) AS n");
+  const next = await one<{ n: number }>("SELECT nextval(pg_get_serial_sequence('trade_events', 'id')) AS n");
   assert.ok(next!.n > 9);
 
   // settings, read through the cache the desk reads
@@ -160,8 +160,8 @@ test('[critical] every table lands, and what the stores read back is what the SQ
   assert.equal((await log.list())[0]?.count, 73);
 
   // market history and the analytics tables
-  assert.equal((await one<{ n: number }>('SELECT COUNT(*) AS n FROM market.oi_snapshots'))!.n, 2);
-  assert.deepEqual(await one('SELECT by_year, lean_holds FROM analytics.outlook_states'), { by_year: { 2024: 1 }, lean_holds: true });
+  assert.equal((await one<{ n: number }>('SELECT COUNT(*) AS n FROM oi_snapshots'))!.n, 2);
+  assert.deepEqual(await one('SELECT by_year, lean_holds FROM outlook_states'), { by_year: { 2024: 1 }, lean_holds: true });
 });
 
 test('running it again changes nothing', async () => {
@@ -169,11 +169,11 @@ test('running it again changes nothing', async () => {
   const first = await importSqlite(dir);
   const second = await importSqlite(dir);
   assert.deepEqual(second.map((c) => c.target), first.map((c) => c.target));
-  assert.equal((await one<{ n: number }>('SELECT COUNT(*) AS n FROM trading.trade_events'))!.n, 2);
+  assert.equal((await one<{ n: number }>('SELECT COUNT(*) AS n FROM trade_events'))!.n, 2);
 });
 
 test('a directory with no files is an empty import, not a crash', async () => {
-  await query('TRUNCATE trading.trades CASCADE');
+  await query('TRUNCATE trades CASCADE');
   const counts = await importSqlite(mkdtempSync(join(tmpdir(), 'import-empty-')));
   assert.deepEqual(counts, []);
 });

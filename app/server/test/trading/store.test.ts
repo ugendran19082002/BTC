@@ -21,7 +21,7 @@ import type { TradeRecord } from '../../src/trading/engine.js';
 const fresh = async () => {
   await new SettingsCache().load();
   const store = await PgTradeStore.open();
-  await query('TRUNCATE trading.trades CASCADE');
+  await query('TRUNCATE trades CASCADE');
   return store;
 };
 after(() => closePool());

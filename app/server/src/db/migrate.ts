@@ -112,3 +112,51 @@ export async function hasColumn(client: pg.PoolClient, schema: string, table: st
   );
   return (r.rowCount ?? 0) > 0;
 }
+
+/**
+ * SQL that moves tables into `public` under new names, and drops a schema once
+ * it is empty. Written for a migration, and safe on both kinds of database it
+ * meets: an existing one, where the tables are in their old schemas, and a
+ * fresh one, where the shipped migrations before it have just created them
+ * there. A table already moved (or never created) is skipped.
+ *
+ * The move is catalogue-only -- no row is copied -- so it is instant whatever
+ * the table's size. Indexes, constraints, identity sequences and grants move
+ * with the table.
+ */
+export function moveToPublic(moves: readonly [from: string, to: string][], dropIfEmpty: readonly string[] = []): string {
+  const steps = moves.map(([from, to]) => {
+    const [schema, table] = from.split('.') as [string, string];
+    // Renamed where it is, first -- the table, then every index (constraints
+    // follow their index) and owned sequence that carries the old name as its
+    // prefix -- so `runs_pkey` becomes `strategy_runs_pkey` before it lands in
+    // a schema where a bare `runs_pkey` could already be taken.
+    const rename = table === to ? '' : `
+        ALTER TABLE ${schema}.${quoteIdent(table)} RENAME TO ${to};
+        FOR r IN
+          SELECT c.relname FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+           WHERE i.indrelid = '${schema}.${to}'::regclass AND c.relname LIKE '${table}\\_%'
+          UNION
+          SELECT c.relname FROM pg_depend d JOIN pg_class c ON c.oid = d.objid
+           WHERE c.relkind = 'S' AND d.refobjid = '${schema}.${to}'::regclass AND c.relname LIKE '${table}\\_%'
+        LOOP
+          EXECUTE format('ALTER %s %I.%I RENAME TO %I',
+            CASE WHEN (SELECT relkind FROM pg_class WHERE relname = r.relname AND relnamespace = '${schema}'::regnamespace) = 'S'
+                 THEN 'SEQUENCE' ELSE 'INDEX' END,
+            '${schema}', r.relname, '${to}' || substr(r.relname, ${table.length + 1}));
+        END LOOP;`;
+    return `
+      IF to_regclass('${from}') IS NOT NULL THEN${rename}
+        ALTER TABLE ${schema}.${table === to ? quoteIdent(table) : to} SET SCHEMA public;
+      END IF;`;
+  }).join('');
+  const drops = dropIfEmpty.map((schema) => `
+      IF NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = '${schema}') THEN
+        DROP SCHEMA IF EXISTS ${schema};
+      END IF;`).join('');
+  return `DO $$ DECLARE r record; BEGIN${steps}${drops}
+    END $$;`;
+}
+
+/** `user` is reserved in PostgreSQL; everything else here is a plain name. */
+const quoteIdent = (name: string) => (name === 'user' ? '"user"' : name);

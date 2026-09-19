@@ -139,8 +139,7 @@ OUTLOOK_COLS = ('minutes, feature, bucket, windows, independent, side_band_pct, 
 
 # The tables, as the publish script and the Node import both create them.
 PG_SCHEMA = """
-CREATE SCHEMA IF NOT EXISTS analytics;
-CREATE TABLE IF NOT EXISTS analytics.outlook_states (
+CREATE TABLE IF NOT EXISTS outlook_states (
   minutes INTEGER NOT NULL, feature TEXT NOT NULL, bucket TEXT NOT NULL,
   windows INTEGER, independent INTEGER, side_band_pct DOUBLE PRECISION,
   p_down DOUBLE PRECISION, p_side DOUBLE PRECISION, p_up DOUBLE PRECISION,
@@ -148,7 +147,7 @@ CREATE TABLE IF NOT EXISTS analytics.outlook_states (
   by_year JSONB, lean_holds BOOLEAN, side_holds BOOLEAN, lean_z DOUBLE PRECISION, side_z DOUBLE PRECISION,
   measured_at TEXT, PRIMARY KEY (minutes, feature, bucket)
 );
-CREATE TABLE IF NOT EXISTS analytics.chain_states (
+CREATE TABLE IF NOT EXISTS chain_states (
   minutes INTEGER NOT NULL, feature TEXT NOT NULL, bucket TEXT NOT NULL, lo DOUBLE PRECISION, hi DOUBLE PRECISION,
   windows INTEGER, independent INTEGER, side_band_pct DOUBLE PRECISION,
   p_down DOUBLE PRECISION, p_side DOUBLE PRECISION, p_up DOUBLE PRECISION,
@@ -156,7 +155,7 @@ CREATE TABLE IF NOT EXISTS analytics.chain_states (
   by_year JSONB, lean_holds BOOLEAN, side_holds BOOLEAN, lean_z DOUBLE PRECISION, side_z DOUBLE PRECISION,
   measured_at TEXT, PRIMARY KEY (minutes, feature, bucket)
 );
-CREATE TABLE IF NOT EXISTS analytics.publish_meta (
+CREATE TABLE IF NOT EXISTS analytics_publish_meta (
   id INTEGER PRIMARY KEY CHECK (id = 1), published_at BIGINT NOT NULL
 );
 """
@@ -167,7 +166,7 @@ class PgStates:
     The same two tables, from PostgreSQL.
 
     A file has a modification time to watch; a table does not, so the publish
-    script stamps `analytics.publish_meta.published_at` in the same transaction
+    script stamps `analytics_publish_meta.published_at` in the same transaction
     as the rows, and this re-reads the tables when that stamp changes. The stamp
     itself is checked at most every `ttl` seconds -- one tiny query, not one per
     request -- so a publish is picked up within half a minute, without a restart,
@@ -203,16 +202,16 @@ class PgStates:
             self._checked = now
             try:
                 with self._connect() as con:
-                    stamp = con.execute('SELECT published_at FROM analytics.publish_meta WHERE id = 1').fetchone()
+                    stamp = con.execute('SELECT published_at FROM analytics_publish_meta WHERE id = 1').fetchone()
                     stamp = stamp[0] if stamp else 0
                     if stamp == self._stamp:
                         return
                     rows = {}
-                    for r in con.execute(f'SELECT {OUTLOOK_COLS} FROM analytics.outlook_states'):
+                    for r in con.execute(f'SELECT {OUTLOOK_COLS} FROM outlook_states'):
                         row = StateRow(*r[:12], bool(r[12]), bool(r[13]), r[14] or {}, r[15])
                         rows[(row.minutes, row.feature, row.bucket)] = row
                     chain = {}
-                    for r in con.execute(f'SELECT {OUTLOOK_COLS}, lo, hi FROM analytics.chain_states'):
+                    for r in con.execute(f'SELECT {OUTLOOK_COLS}, lo, hi FROM chain_states'):
                         row = ChainRow(*r[:12], bool(r[12]), bool(r[13]), r[14] or {}, r[15], r[16], r[17])
                         chain[(row.feature, row.bucket)] = row
             except Exception:

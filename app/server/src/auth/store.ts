@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
-import { migrate, type Migration } from '../db/migrate.js';
+import { migrate, moveToPublic, type Migration } from '../db/migrate.js';
 import { one, query, rows, tx } from '../db/pool.js';
 
 /**
  * Everything the login keeps, in the `auth` schema.
  *
- * One desk, one user: `auth.user` holds a single row. Sessions are rows too --
+ * One desk, one user: `auth_user` holds a single row. Sessions are rows too --
  * only the SHA-256 of each token is stored, so the table cannot be replayed if
  * it leaks -- which is what makes logging out, changing the password, and
  * "log out other devices" actually end a session instead of waiting for a
@@ -61,6 +61,20 @@ const MIGRATIONS: Migration[] = [
       );
       CREATE INDEX IF NOT EXISTS auth_events_by_time ON auth.events (at DESC);
     `,
+  },  {
+    /*
+     * Every table in one schema, public, on the owner's request (19 Sep 2026):
+     * one list in a console instead of seven. Names carry their area as a
+     * prefix where a bare name would be ambiguous in one namespace.
+     */
+    id: 'auth-002-to-public',
+    up: moveToPublic([
+      ['auth.user', 'auth_user'],
+      ['auth.sessions', 'auth_sessions'],
+      ['auth.recovery_codes', 'auth_recovery_codes'],
+      ['auth.limits', 'auth_limits'],
+      ['auth.events', 'auth_events'],
+    ], ['auth']),
   },
 ];
 
@@ -112,7 +126,7 @@ export class AuthStore {
   // ------------------------------------------------------------------ user
 
   async user(): Promise<User | null> {
-    const r = await one<Record<string, unknown>>('SELECT * FROM auth.user WHERE id = 1');
+    const r = await one<Record<string, unknown>>('SELECT * FROM auth_user WHERE id = 1');
     if (!r) return null;
     return {
       username: String(r.username),
@@ -129,7 +143,7 @@ export class AuthStore {
   /** The first user, from the environment. Does nothing once one exists. */
   async seedUser(username: string, passwordHash: string, now: number): Promise<boolean> {
     const res = await query(
-      `INSERT INTO auth.user (id, username, password_hash, password_changed_at, created_at, updated_at)
+      `INSERT INTO auth_user (id, username, password_hash, password_changed_at, created_at, updated_at)
        VALUES (1, $1, $2, $3, $4, $5) ON CONFLICT (id) DO NOTHING`,
       [username, passwordHash, now, now, now],
     );
@@ -137,16 +151,16 @@ export class AuthStore {
   }
 
   async setPassword(passwordHash: string, now: number): Promise<void> {
-    await query('UPDATE auth.user SET password_hash = $1, password_changed_at = $2, updated_at = $3 WHERE id = 1', [passwordHash, now, now]);
+    await query('UPDATE auth_user SET password_hash = $1, password_changed_at = $2, updated_at = $3 WHERE id = 1', [passwordHash, now, now]);
   }
 
   async setPendingTotp(sealed: string | null, now: number): Promise<void> {
-    await query('UPDATE auth.user SET totp_pending = $1, totp_pending_at = $2, updated_at = $3 WHERE id = 1', [sealed, sealed ? now : null, now]);
+    await query('UPDATE auth_user SET totp_pending = $1, totp_pending_at = $2, updated_at = $3 WHERE id = 1', [sealed, sealed ? now : null, now]);
   }
 
   async enableTotp(sealed: string, step: number, now: number): Promise<void> {
     await query(
-      `UPDATE auth.user SET totp_secret = $1, totp_enabled_at = $2, totp_last_step = $3,
+      `UPDATE auth_user SET totp_secret = $1, totp_enabled_at = $2, totp_last_step = $3,
          totp_pending = NULL, totp_pending_at = NULL, updated_at = $4 WHERE id = 1`,
       [sealed, now, step, now],
     );
@@ -156,11 +170,11 @@ export class AuthStore {
   async resetTotp(now: number): Promise<void> {
     await tx(async (c) => {
       await c.query(
-        `UPDATE auth.user SET totp_secret = NULL, totp_enabled_at = NULL, totp_last_step = -1,
+        `UPDATE auth_user SET totp_secret = NULL, totp_enabled_at = NULL, totp_last_step = -1,
            totp_pending = NULL, totp_pending_at = NULL, updated_at = $1 WHERE id = 1`,
         [now],
       );
-      await c.query('DELETE FROM auth.recovery_codes');
+      await c.query('DELETE FROM auth_recovery_codes');
     });
   }
 
@@ -170,7 +184,7 @@ export class AuthStore {
    * succeed.
    */
   async useTotpStep(step: number, now: number): Promise<boolean> {
-    const res = await query('UPDATE auth.user SET totp_last_step = $1, updated_at = $2 WHERE id = 1 AND totp_last_step < $1', [step, now]);
+    const res = await query('UPDATE auth_user SET totp_last_step = $1, updated_at = $2 WHERE id = 1 AND totp_last_step < $1', [step, now]);
     return (res.rowCount ?? 0) > 0;
   }
 
@@ -178,7 +192,7 @@ export class AuthStore {
 
   async createSession(s: { token: string; stage: Stage; now: number; ttlMs: number; ip: string | null; userAgent: string | null }): Promise<void> {
     await query(
-      `INSERT INTO auth.sessions (token_hash, stage, created_at, expires_at, last_seen_at, ip, user_agent)
+      `INSERT INTO auth_sessions (token_hash, stage, created_at, expires_at, last_seen_at, ip, user_agent)
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [tokenHash(s.token), s.stage, s.now, s.now + s.ttlMs, s.now, s.ip, s.userAgent?.slice(0, 200) ?? null],
     );
@@ -187,7 +201,7 @@ export class AuthStore {
   /** A live session for this token, or null: unknown, expired, or revoked all read the same. */
   async session(token: string, now: number): Promise<SessionRow | null> {
     const r = await one<Record<string, unknown>>(
-      'SELECT * FROM auth.sessions WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > $2',
+      'SELECT * FROM auth_sessions WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > $2',
       [tokenHash(token), now],
     );
     return r ? sessionOf(r) : null;
@@ -195,32 +209,32 @@ export class AuthStore {
 
   /** Last seen, written at most once a minute: the desk polls every second. */
   async touch(hash: string, now: number): Promise<void> {
-    await query('UPDATE auth.sessions SET last_seen_at = $1 WHERE token_hash = $2 AND last_seen_at < $3', [now, hash, now - 60_000]);
+    await query('UPDATE auth_sessions SET last_seen_at = $1 WHERE token_hash = $2 AND last_seen_at < $3', [now, hash, now - 60_000]);
   }
 
   async bumpAttempts(hash: string): Promise<number> {
     const r = await one<{ attempts: number }>(
-      'UPDATE auth.sessions SET attempts = attempts + 1 WHERE token_hash = $1 RETURNING attempts',
+      'UPDATE auth_sessions SET attempts = attempts + 1 WHERE token_hash = $1 RETURNING attempts',
       [hash],
     );
     return r?.attempts ?? 0;
   }
 
   async revoke(hash: string, now: number): Promise<void> {
-    await query('UPDATE auth.sessions SET revoked_at = $1 WHERE token_hash = $2 AND revoked_at IS NULL', [now, hash]);
+    await query('UPDATE auth_sessions SET revoked_at = $1 WHERE token_hash = $2 AND revoked_at IS NULL', [now, hash]);
   }
 
   /** Every live session but one (or all, with no exception). Returns how many ended. */
   async revokeAll(now: number, except?: string): Promise<number> {
     const res = except
-      ? await query('UPDATE auth.sessions SET revoked_at = $1 WHERE revoked_at IS NULL AND token_hash <> $2', [now, except])
-      : await query('UPDATE auth.sessions SET revoked_at = $1 WHERE revoked_at IS NULL', [now]);
+      ? await query('UPDATE auth_sessions SET revoked_at = $1 WHERE revoked_at IS NULL AND token_hash <> $2', [now, except])
+      : await query('UPDATE auth_sessions SET revoked_at = $1 WHERE revoked_at IS NULL', [now]);
     return res.rowCount ?? 0;
   }
 
   async liveSessions(now: number): Promise<SessionRow[]> {
     return (await rows<Record<string, unknown>>(
-      `SELECT * FROM auth.sessions WHERE revoked_at IS NULL AND expires_at > $1 AND stage = 'full' ORDER BY last_seen_at DESC`,
+      `SELECT * FROM auth_sessions WHERE revoked_at IS NULL AND expires_at > $1 AND stage = 'full' ORDER BY last_seen_at DESC`,
       [now],
     )).map(sessionOf);
   }
@@ -234,45 +248,45 @@ export class AuthStore {
    */
   async prune(now: number): Promise<void> {
     const weekAgo = now - 7 * 86_400_000;
-    await query('DELETE FROM auth.sessions WHERE expires_at < $1 OR (revoked_at IS NOT NULL AND revoked_at < $1)', [weekAgo]);
-    await query('DELETE FROM auth.limits WHERE window_until < $1', [now]);
-    await query('DELETE FROM auth.events WHERE at < $1', [now - 180 * 86_400_000]);
+    await query('DELETE FROM auth_sessions WHERE expires_at < $1 OR (revoked_at IS NOT NULL AND revoked_at < $1)', [weekAgo]);
+    await query('DELETE FROM auth_limits WHERE window_until < $1', [now]);
+    await query('DELETE FROM auth_events WHERE at < $1', [now - 180 * 86_400_000]);
   }
 
   // -------------------------------------------------------- recovery codes
 
   async replaceRecoveryCodes(hashes: string[], now: number): Promise<void> {
     await tx(async (c) => {
-      await c.query('DELETE FROM auth.recovery_codes');
-      for (const h of hashes) await c.query('INSERT INTO auth.recovery_codes (code_hash, created_at) VALUES ($1, $2)', [h, now]);
+      await c.query('DELETE FROM auth_recovery_codes');
+      for (const h of hashes) await c.query('INSERT INTO auth_recovery_codes (code_hash, created_at) VALUES ($1, $2)', [h, now]);
     });
   }
 
   /** Spend a recovery code. True once per code, ever. */
   async useRecoveryCode(hash: string, now: number): Promise<boolean> {
-    const res = await query('UPDATE auth.recovery_codes SET used_at = $1 WHERE code_hash = $2 AND used_at IS NULL', [now, hash]);
+    const res = await query('UPDATE auth_recovery_codes SET used_at = $1 WHERE code_hash = $2 AND used_at IS NULL', [now, hash]);
     return (res.rowCount ?? 0) > 0;
   }
 
   async recoveryCodesLeft(): Promise<number> {
-    return (await one<{ n: number }>('SELECT COUNT(*) AS n FROM auth.recovery_codes WHERE used_at IS NULL'))?.n ?? 0;
+    return (await one<{ n: number }>('SELECT COUNT(*) AS n FROM auth_recovery_codes WHERE used_at IS NULL'))?.n ?? 0;
   }
 
   // ---------------------------------------------------------- rate limits
 
   /** Failures under this key in its current window. */
   async failures(key: string, now: number): Promise<number> {
-    const r = await one<{ count: number; window_until: number }>('SELECT count, window_until FROM auth.limits WHERE key = $1', [key]);
+    const r = await one<{ count: number; window_until: number }>('SELECT count, window_until FROM auth_limits WHERE key = $1', [key]);
     return r && r.window_until > now ? r.count : 0;
   }
 
   /** One more failure; a window that has run out starts again. */
   async fail(key: string, now: number, windowMs: number): Promise<number> {
     await query(
-      `INSERT INTO auth.limits (key, count, window_until) VALUES ($1, 1, $2)
+      `INSERT INTO auth_limits (key, count, window_until) VALUES ($1, 1, $2)
        ON CONFLICT (key) DO UPDATE SET
-         count = CASE WHEN auth.limits.window_until > $3 THEN auth.limits.count + 1 ELSE 1 END,
-         window_until = CASE WHEN auth.limits.window_until > $3 THEN auth.limits.window_until ELSE $2 END`,
+         count = CASE WHEN auth_limits.window_until > $3 THEN auth_limits.count + 1 ELSE 1 END,
+         window_until = CASE WHEN auth_limits.window_until > $3 THEN auth_limits.window_until ELSE $2 END`,
       [key, now + windowMs, now],
     );
     return this.failures(key, now);
@@ -280,21 +294,21 @@ export class AuthStore {
 
   /** When the window under this key runs out. */
   async windowUntil(key: string): Promise<number> {
-    return (await one<{ window_until: number }>('SELECT window_until FROM auth.limits WHERE key = $1', [key]))?.window_until ?? 0;
+    return (await one<{ window_until: number }>('SELECT window_until FROM auth_limits WHERE key = $1', [key]))?.window_until ?? 0;
   }
 
   async clear(key: string): Promise<void> {
-    await query('DELETE FROM auth.limits WHERE key = $1', [key]);
+    await query('DELETE FROM auth_limits WHERE key = $1', [key]);
   }
 
   // --------------------------------------------------------------- events
 
   async event(kind: string, now: number, ip: string | null, detail: string | null = null): Promise<void> {
-    await query('INSERT INTO auth.events (at, kind, ip, detail) VALUES ($1, $2, $3, $4)', [now, kind, ip, detail?.slice(0, 300) ?? null]);
+    await query('INSERT INTO auth_events (at, kind, ip, detail) VALUES ($1, $2, $3, $4)', [now, kind, ip, detail?.slice(0, 300) ?? null]);
   }
 
   async events(limit = 30): Promise<AuthEvent[]> {
-    return (await rows<Record<string, unknown>>('SELECT * FROM auth.events ORDER BY at DESC, id DESC LIMIT $1', [limit]))
+    return (await rows<Record<string, unknown>>('SELECT * FROM auth_events ORDER BY at DESC, id DESC LIMIT $1', [limit]))
       .map((r) => ({ id: Number(r.id), at: Number(r.at), kind: String(r.kind), ip: (r.ip as string | null) ?? null, detail: (r.detail as string | null) ?? null }));
   }
 }

@@ -149,12 +149,12 @@ test('[critical] the table is capped, and an unresolved failure is never dropped
   const log = await fresh();
   // Two thousand old, resolved rows...
   await one(
-    `INSERT INTO errors.log (fingerprint, source, level, message, first_seen, last_seen, resolved)
+    `INSERT INTO errors (fingerprint, source, level, message, first_seen, last_seen, resolved)
      SELECT 'old-' || g, 'server', 'error', 'old ' || g, g, g, TRUE FROM generate_series(1, 2000) g`,
   );
   // ...one unresolved row older than any of them...
   await one(
-    `INSERT INTO errors.log (fingerprint, source, level, message, first_seen, last_seen, resolved)
+    `INSERT INTO errors (fingerprint, source, level, message, first_seen, last_seen, resolved)
      VALUES ('keep', 'trading', 'error', 'still broken', 0, 0, FALSE)`,
   );
   // ...and enough new reports to trigger a prune.

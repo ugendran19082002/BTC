@@ -80,28 +80,28 @@ async function importTrades(dir: string, counts: Count[]): Promise<void> {
   if (!db) { console.log('trades.db: not present, skipped'); return; }
 
   const trades = readAll(db, 'trades');
-  await copy('trading.trades', ['trade_id', 'symbol', 'phase', 'position', 'plan', 'state', 'updated_at'], trades,
+  await copy('trades', ['trade_id', 'symbol', 'phase', 'position', 'plan', 'state', 'updated_at'], trades,
     (r) => [r.trade_id, r.symbol, r.phase, r.position, asJson(r.plan), asJson(r.state), r.updated_at]);
-  counts.push({ table: 'trading.trades', source: trades.length, target: await count('trading.trades') });
+  counts.push({ table: 'trades', source: trades.length, target: await count('trades') });
 
   const events = readAll(db, 'trade_events');
-  await copy('trading.trade_events', ['id', 'trade_id', 'seq', 'at', 'kind', 'event'], events,
+  await copy('trade_events', ['id', 'trade_id', 'seq', 'at', 'kind', 'event'], events,
     (r) => [r.id, r.trade_id, r.seq, r.at, r.kind, asJson(r.event)], 'DO NOTHING', true);
-  await bumpIdentity('trading.trade_events');
-  counts.push({ table: 'trading.trade_events', source: events.length, target: await count('trading.trade_events') });
+  await bumpIdentity('trade_events');
+  counts.push({ table: 'trade_events', source: events.length, target: await count('trade_events') });
 
   const settings = readAll(db, 'settings');
-  await copy('trading.settings', ['key', 'value'], settings, (r) => [r.key, r.value], '(key) DO UPDATE SET value = EXCLUDED.value');
-  counts.push({ table: 'trading.settings', source: settings.length, target: await count('trading.settings') });
+  await copy('settings', ['key', 'value'], settings, (r) => [r.key, r.value], '(key) DO UPDATE SET value = EXCLUDED.value');
+  counts.push({ table: 'settings', source: settings.length, target: await count('settings') });
 
   const mtm = readAll(db, 'mtm_samples');
-  await copy('trading.mtm_samples', ['at', 'day', 'realised', 'unrealised', 'charges', 'net'], mtm,
+  await copy('mtm_samples', ['at', 'day', 'realised', 'unrealised', 'charges', 'net'], mtm,
     (r) => [r.at, r.day, r.realised, r.unrealised, r.charges, r.net]);
-  counts.push({ table: 'trading.mtm_samples', source: mtm.length, target: await count('trading.mtm_samples') });
+  counts.push({ table: 'mtm_samples', source: mtm.length, target: await count('mtm_samples') });
 
   // The strategy tables shared trades.db with the journal.
   const strategies = readAll(db, 'strategies');
-  await copy('strategy.strategies', ['id', 'name', 'enabled', 'config', 'created_at', 'updated_at'], strategies,
+  await copy('strategies', ['id', 'name', 'enabled', 'config', 'created_at', 'updated_at'], strategies,
     (r) => [r.id, r.name, Number(r.enabled) === 1, asJson(r.config), r.created_at, r.updated_at],
     // What the person has since changed on the SQLite desk beats the fresh seed.
     '(id) DO UPDATE SET name = EXCLUDED.name, enabled = EXCLUDED.enabled, config = EXCLUDED.config, updated_at = EXCLUDED.updated_at');
@@ -109,27 +109,27 @@ async function importTrades(dir: string, counts: Count[]): Promise<void> {
   // researched strategies to a fresh database; any the person had deleted
   // must not come back just because the database is new.
   if (hasTable(db, 'strategies')) {
-    await query('DELETE FROM strategy.strategies WHERE NOT (id = ANY($1))', [strategies.map((r) => String(r.id))]);
+    await query('DELETE FROM strategies WHERE NOT (id = ANY($1))', [strategies.map((r) => String(r.id))]);
   }
-  counts.push({ table: 'strategy.strategies', source: strategies.length, target: await count('strategy.strategies') });
+  counts.push({ table: 'strategies', source: strategies.length, target: await count('strategies') });
 
   const runs = readAll(db, 'strategy_runs');
-  await copy('strategy.runs', ['id', 'strategy_id', 'run_date', 'status', 'detail', 'at'], runs,
+  await copy('strategy_runs', ['id', 'strategy_id', 'run_date', 'status', 'detail', 'at'], runs,
     (r) => [r.id, r.strategy_id, r.run_date, r.status, r.detail, r.at], 'DO NOTHING', true);
-  await bumpIdentity('strategy.runs');
-  counts.push({ table: 'strategy.runs', source: runs.length, target: await count('strategy.runs') });
+  await bumpIdentity('strategy_runs');
+  counts.push({ table: 'strategy_runs', source: runs.length, target: await count('strategy_runs') });
 
   const adds = readAll(db, 'strategy_adds');
-  await copy('strategy.adds', ['id', 'strategy_id', 'run_date', 'source_trade_id', 'source_side', 'symbol', 'contracts', 'status', 'detail', 'added_to_trade_id', 'at'], adds,
+  await copy('strategy_adds', ['id', 'strategy_id', 'run_date', 'source_trade_id', 'source_side', 'symbol', 'contracts', 'status', 'detail', 'added_to_trade_id', 'at'], adds,
     (r) => [r.id, r.strategy_id, r.run_date, r.source_trade_id, r.source_side, r.symbol, r.contracts, r.status, r.detail, r.added_to_trade_id, r.at], 'DO NOTHING', true);
-  await bumpIdentity('strategy.adds');
-  counts.push({ table: 'strategy.adds', source: adds.length, target: await count('strategy.adds') });
+  await bumpIdentity('strategy_adds');
+  counts.push({ table: 'strategy_adds', source: adds.length, target: await count('strategy_adds') });
 
   const rebalances = readAll(db, 'strategy_rebalances');
-  await copy('strategy.rebalances', ['id', 'strategy_id', 'run_date', 'stage', 'up_side', 'down_side', 'up_pct', 'down_pct', 'lots', 'status', 'detail', 'bought_trade_id', 'sold_trade_id', 'at'], rebalances,
+  await copy('strategy_rebalances', ['id', 'strategy_id', 'run_date', 'stage', 'up_side', 'down_side', 'up_pct', 'down_pct', 'lots', 'status', 'detail', 'bought_trade_id', 'sold_trade_id', 'at'], rebalances,
     (r) => [r.id, r.strategy_id, r.run_date, r.stage, r.up_side, r.down_side, r.up_pct, r.down_pct, r.lots, r.status, r.detail, r.bought_trade_id, r.sold_trade_id, r.at], 'DO NOTHING', true);
-  await bumpIdentity('strategy.rebalances');
-  counts.push({ table: 'strategy.rebalances', source: rebalances.length, target: await count('strategy.rebalances') });
+  await bumpIdentity('strategy_rebalances');
+  counts.push({ table: 'strategy_rebalances', source: rebalances.length, target: await count('strategy_rebalances') });
 
   // premium_alerts: a table nothing read, empty on the live desk. Not carried.
   db.close();
@@ -140,27 +140,27 @@ async function importAuth(dir: string, counts: Count[]): Promise<void> {
   if (!db) { console.log('auth.db: not present, skipped'); return; }
 
   const user = readAll(db, 'auth_user');
-  await copy('auth.user', ['id', 'username', 'password_hash', 'password_changed_at', 'totp_secret', 'totp_enabled_at', 'totp_last_step', 'totp_pending', 'totp_pending_at', 'created_at', 'updated_at'], user,
+  await copy('auth_user', ['id', 'username', 'password_hash', 'password_changed_at', 'totp_secret', 'totp_enabled_at', 'totp_last_step', 'totp_pending', 'totp_pending_at', 'created_at', 'updated_at'], user,
     (r) => [r.id, r.username, r.password_hash, r.password_changed_at, r.totp_secret, r.totp_enabled_at, r.totp_last_step, r.totp_pending, r.totp_pending_at, r.created_at, r.updated_at]);
-  counts.push({ table: 'auth.user', source: user.length, target: await count('auth.user') });
+  counts.push({ table: 'auth_user', source: user.length, target: await count('auth_user') });
 
   const sessions = readAll(db, 'auth_sessions');
-  await copy('auth.sessions', ['token_hash', 'stage', 'created_at', 'expires_at', 'last_seen_at', 'ip', 'user_agent', 'attempts', 'revoked_at'], sessions,
+  await copy('auth_sessions', ['token_hash', 'stage', 'created_at', 'expires_at', 'last_seen_at', 'ip', 'user_agent', 'attempts', 'revoked_at'], sessions,
     (r) => [r.token_hash, r.stage, r.created_at, r.expires_at, r.last_seen_at, r.ip, r.user_agent, r.attempts, r.revoked_at]);
-  counts.push({ table: 'auth.sessions', source: sessions.length, target: await count('auth.sessions') });
+  counts.push({ table: 'auth_sessions', source: sessions.length, target: await count('auth_sessions') });
 
   const codes = readAll(db, 'auth_recovery_codes');
-  await copy('auth.recovery_codes', ['code_hash', 'created_at', 'used_at'], codes, (r) => [r.code_hash, r.created_at, r.used_at]);
-  counts.push({ table: 'auth.recovery_codes', source: codes.length, target: await count('auth.recovery_codes') });
+  await copy('auth_recovery_codes', ['code_hash', 'created_at', 'used_at'], codes, (r) => [r.code_hash, r.created_at, r.used_at]);
+  counts.push({ table: 'auth_recovery_codes', source: codes.length, target: await count('auth_recovery_codes') });
 
   const limits = readAll(db, 'auth_limits');
-  await copy('auth.limits', ['key', 'count', 'window_until'], limits, (r) => [r.key, r.count, r.window_until]);
-  counts.push({ table: 'auth.limits', source: limits.length, target: await count('auth.limits') });
+  await copy('auth_limits', ['key', 'count', 'window_until'], limits, (r) => [r.key, r.count, r.window_until]);
+  counts.push({ table: 'auth_limits', source: limits.length, target: await count('auth_limits') });
 
   const events = readAll(db, 'auth_events');
-  await copy('auth.events', ['id', 'at', 'kind', 'ip', 'detail'], events, (r) => [r.id, r.at, r.kind, r.ip, r.detail], 'DO NOTHING', true);
-  await bumpIdentity('auth.events');
-  counts.push({ table: 'auth.events', source: events.length, target: await count('auth.events') });
+  await copy('auth_events', ['id', 'at', 'kind', 'ip', 'detail'], events, (r) => [r.id, r.at, r.kind, r.ip, r.detail], 'DO NOTHING', true);
+  await bumpIdentity('auth_events');
+  counts.push({ table: 'auth_events', source: events.length, target: await count('auth_events') });
   db.close();
 }
 
@@ -175,17 +175,17 @@ async function importErrors(dir: string, counts: Count[]): Promise<void> {
   // folds into the imported row rather than starting a second one. Two rows
   // that rebuild to one fingerprint keep the first; the count on the other is
   // lost, which is the price of a fingerprint that never worked.
-  await copy('errors.log', ['id', 'fingerprint', 'source', 'level', 'message', 'code', 'stack', 'where_at', 'context', 'first_seen', 'last_seen', 'count', 'resolved'], errors,
+  await copy('errors', ['id', 'fingerprint', 'source', 'level', 'message', 'code', 'stack', 'where_at', 'context', 'first_seen', 'last_seen', 'count', 'resolved'], errors,
     (r) => [
       r.id,
       fpOf(r),
       r.source, r.level, r.message, r.code, r.stack, r.where_at, asJson(r.context), r.first_seen, r.last_seen, r.count, Number(r.resolved) === 1,
     ],
     'DO NOTHING', true);
-  await bumpIdentity('errors.log');
+  await bumpIdentity('errors');
   const distinct = new Set(errors.map(fpOf)).size;
   if (distinct < errors.length) console.log(`errors.db: ${errors.length - distinct} row(s) folded into another with the same fingerprint`);
-  counts.push({ table: 'errors.log', source: distinct, target: await count('errors.log') });
+  counts.push({ table: 'errors', source: distinct, target: await count('errors') });
   db.close();
 }
 
@@ -193,14 +193,14 @@ async function importMarket(dir: string, counts: Count[]): Promise<void> {
   const db = openRo(join(dir, 'market.db'));
   if (!db) { console.log('market.db: not present, skipped'); return; }
   const oi = readAll(db, 'oi_snapshots');
-  await copy('market.oi_snapshots', ['at', 'expiry', 'cp', 'strike', 'oi', 'spot', 'atm_iv'], oi,
+  await copy('oi_snapshots', ['at', 'expiry', 'cp', 'strike', 'oi', 'spot', 'atm_iv'], oi,
     (r) => [r.at, r.expiry, r.cp, r.strike, r.oi, r.spot, r.atm_iv ?? null]);
-  counts.push({ table: 'market.oi_snapshots', source: oi.length, target: await count('market.oi_snapshots') });
+  counts.push({ table: 'oi_snapshots', source: oi.length, target: await count('oi_snapshots') });
 
   const cf = readAll(db, 'chain_features');
   const cols = ['at', 'expiry', 'spot', 'hours_left', 'atm_iv', 'call_atm', 'put_atm', 'put_marks', 'call_marks', 'put_volume', 'call_volume', 'pcr_oi', 'pcr_volume', 'ce_oi', 'pe_oi', 'iv_skew_pts', 'ce_wall', 'pe_wall', 'max_pain', 'ce_oi_change', 'pe_oi_change'];
-  await copy('market.chain_features', cols, cf, (r) => cols.map((c) => (c === 'put_marks' || c === 'call_marks' ? asJson(r[c]) : r[c] ?? null)));
-  counts.push({ table: 'market.chain_features', source: cf.length, target: await count('market.chain_features') });
+  await copy('chain_features', cols, cf, (r) => cols.map((c) => (c === 'put_marks' || c === 'call_marks' ? asJson(r[c]) : r[c] ?? null)));
+  counts.push({ table: 'chain_features', source: cf.length, target: await count('chain_features') });
   db.close();
 }
 
@@ -209,14 +209,14 @@ async function importAnalytics(dir: string, counts: Count[]): Promise<void> {
   if (!db) { console.log('analytics.db: not present, skipped'); return; }
   await query(ANALYTICS_SCHEMA);
   const outlook = readAll(db, 'outlook_states');
-  await copy('analytics.outlook_states', OUTLOOK_COLS, outlook,
+  await copy('outlook_states', OUTLOOK_COLS, outlook,
     (r) => OUTLOOK_COLS.map((c) => (c === 'by_year' ? asJson(r[c]) : c === 'lean_holds' || c === 'side_holds' ? Number(r[c]) === 1 : r[c] ?? null)));
-  counts.push({ table: 'analytics.outlook_states', source: outlook.length, target: await count('analytics.outlook_states') });
+  counts.push({ table: 'outlook_states', source: outlook.length, target: await count('outlook_states') });
   const chain = readAll(db, 'chain_states');
-  await copy('analytics.chain_states', CHAIN_COLS, chain,
+  await copy('chain_states', CHAIN_COLS, chain,
     (r) => CHAIN_COLS.map((c) => (c === 'by_year' ? asJson(r[c]) : c === 'lean_holds' || c === 'side_holds' ? Number(r[c]) === 1 : r[c] ?? null)));
-  counts.push({ table: 'analytics.chain_states', source: chain.length, target: await count('analytics.chain_states') });
-  if (outlook.length) await one(`INSERT INTO analytics.publish_meta (id, published_at) VALUES (1, $1) ON CONFLICT (id) DO UPDATE SET published_at = EXCLUDED.published_at`, [Date.now()]);
+  counts.push({ table: 'chain_states', source: chain.length, target: await count('chain_states') });
+  if (outlook.length) await one(`INSERT INTO analytics_publish_meta (id, published_at) VALUES (1, $1) ON CONFLICT (id) DO UPDATE SET published_at = EXCLUDED.published_at`, [Date.now()]);
   db.close();
 }
 
@@ -229,8 +229,7 @@ const CHAIN_COLS = ['minutes', 'feature', 'bucket', 'lo', 'hi', ...OUTLOOK_COLS.
  * so an import on a fresh database has somewhere to put the rows.
  */
 export const ANALYTICS_SCHEMA = `
-  CREATE SCHEMA IF NOT EXISTS analytics;
-  CREATE TABLE IF NOT EXISTS analytics.outlook_states (
+  CREATE TABLE IF NOT EXISTS outlook_states (
     minutes INTEGER NOT NULL, feature TEXT NOT NULL, bucket TEXT NOT NULL,
     windows INTEGER, independent INTEGER, side_band_pct DOUBLE PRECISION,
     p_down DOUBLE PRECISION, p_side DOUBLE PRECISION, p_up DOUBLE PRECISION,
@@ -238,7 +237,7 @@ export const ANALYTICS_SCHEMA = `
     by_year JSONB, lean_holds BOOLEAN, side_holds BOOLEAN, lean_z DOUBLE PRECISION, side_z DOUBLE PRECISION,
     measured_at TEXT, PRIMARY KEY (minutes, feature, bucket)
   );
-  CREATE TABLE IF NOT EXISTS analytics.chain_states (
+  CREATE TABLE IF NOT EXISTS chain_states (
     minutes INTEGER NOT NULL, feature TEXT NOT NULL, bucket TEXT NOT NULL, lo DOUBLE PRECISION, hi DOUBLE PRECISION,
     windows INTEGER, independent INTEGER, side_band_pct DOUBLE PRECISION,
     p_down DOUBLE PRECISION, p_side DOUBLE PRECISION, p_up DOUBLE PRECISION,
@@ -246,7 +245,7 @@ export const ANALYTICS_SCHEMA = `
     by_year JSONB, lean_holds BOOLEAN, side_holds BOOLEAN, lean_z DOUBLE PRECISION, side_z DOUBLE PRECISION,
     measured_at TEXT, PRIMARY KEY (minutes, feature, bucket)
   );
-  CREATE TABLE IF NOT EXISTS analytics.publish_meta (
+  CREATE TABLE IF NOT EXISTS analytics_publish_meta (
     id INTEGER PRIMARY KEY CHECK (id = 1), published_at BIGINT NOT NULL
   );
 `;

@@ -42,8 +42,7 @@ SELECT format('GRANT desk TO %I', :'u') \gexec
 SELECT format('GRANT ALL PRIVILEGES ON DATABASE btc_desk TO %I', :'u') \gexec
 -- Whatever it creates belongs to desk, so the application keeps owning its schema.
 SELECT format('ALTER ROLE %I SET role = desk', :'u') \gexec
--- Open on the trading tables, and find every desk table without a schema prefix
--- (Adminer shows one schema at a time; this one is where it starts).
-SELECT format('ALTER ROLE %I SET search_path = trading, strategy, auth, errors, market, analytics, public', :'u') \gexec
+-- Every desk table is in public (since 19 Sep 2026): the default path finds them.
+SELECT format('ALTER ROLE %I RESET search_path', :'u') \gexec
 SQL
 echo "${USER_} ready: full access to btc_desk (member of desk), not a superuser"

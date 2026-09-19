@@ -1,4 +1,4 @@
-import { migrate, type Migration } from './migrate.js';
+import { migrate, moveToPublic, type Migration } from './migrate.js';
 import { query, rows } from './pool.js';
 
 /**
@@ -38,6 +38,14 @@ const MIGRATIONS: Migration[] = [
     // a restart and can be changed through /api/settings.
     id: 'trading-002-default-settings',
     up: `INSERT INTO trading.settings (key, value) VALUES ('expiry_default', 'first') ON CONFLICT (key) DO NOTHING;`,
+  },  {
+    /*
+     * Every table in one schema, public, on the owner's request (19 Sep 2026):
+     * one list in a console instead of seven. Names carry their area as a
+     * prefix where a bare name would be ambiguous in one namespace.
+     */
+    id: 'trading-005-settings-to-public',
+    up: moveToPublic([['trading.settings', 'settings']]),
   },
 ];
 
@@ -50,7 +58,7 @@ export class SettingsCache implements Settings {
   /** Migrate the table and read every row. Call once, before anything reads. */
   async load(): Promise<this> {
     this.applied = await migrate(MIGRATIONS);
-    const all = await rows<{ key: string; value: string }>('SELECT key, value FROM trading.settings');
+    const all = await rows<{ key: string; value: string }>('SELECT key, value FROM settings');
     this.values = new Map(all.map((r) => [r.key, r.value]));
     this.loaded = true;
     return this;
@@ -68,7 +76,7 @@ export class SettingsCache implements Settings {
 
   async set(key: string, value: string): Promise<void> {
     await query(
-      `INSERT INTO trading.settings (key, value) VALUES ($1, $2)
+      `INSERT INTO settings (key, value) VALUES ($1, $2)
        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
       [key, value],
     );

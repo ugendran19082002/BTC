@@ -2,7 +2,7 @@ import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { StrategyStore } from '../../src/strategy/store.js';
 import { MemorySettings } from '../../src/db/settings.js';
-import { closePool, query } from '../../src/db/pool.js';
+import { closePool, query, rows } from '../../src/db/pool.js';
 import { DEFAULT_CONFIG, validateConfig } from '../../src/strategy/types.js';
 
 /**
@@ -10,13 +10,19 @@ import { DEFAULT_CONFIG, validateConfig } from '../../src/strategy/types.js';
  * exactly once. Everything else here is ordinary CRUD; `claim` is the part
  * that decides whether a restart can enter a second position.
  */
-// One database for the file. A fresh store is the schema emptied and the seed
-// migration forgotten, so `open()` seeds the three strategies again as it
-// would on a new desk.
+// One database for the file. A fresh store is the tables emptied and the
+// three seeded strategies put back as a new desk has them.
 await StrategyStore.open(new MemorySettings());
+// The seeded rows, as a new desk has them; every case starts from exactly these.
+const seeded = await rows('SELECT * FROM strategies');
 const fresh = async () => {
-  await query('TRUNCATE strategy.strategies, strategy.runs, strategy.adds, strategy.rebalances');
-  await query("DELETE FROM public.schema_migrations WHERE id = 'strategy-002-seed'");
+  await query('TRUNCATE strategies, strategy_runs, strategy_adds, strategy_rebalances');
+  for (const r of seeded) {
+    await query(
+      'INSERT INTO strategies (id, name, enabled, config, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)',
+      [r.id, r.name, r.enabled, JSON.stringify(r.config), r.created_at, r.updated_at],
+    );
+  }
   return StrategyStore.open(new MemorySettings());
 };
 /** A second process on the same database. */

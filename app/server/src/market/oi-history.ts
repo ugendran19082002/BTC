@@ -1,4 +1,4 @@
-import { migrate, type Migration } from '../db/migrate.js';
+import { migrate, moveToPublic, type Migration } from '../db/migrate.js';
 import { one, query, rows, tx } from '../db/pool.js';
 
 /**
@@ -98,6 +98,17 @@ const MIGRATIONS: Migration[] = [
         PRIMARY KEY (at, expiry)
       );
     `,
+  },  {
+    /*
+     * Every table in one schema, public, on the owner's request (19 Sep 2026):
+     * one list in a console instead of seven. Names carry their area as a
+     * prefix where a bare name would be ambiguous in one namespace.
+     */
+    id: 'market-003-to-public',
+    up: moveToPublic([
+      ['market.oi_snapshots', 'oi_snapshots'],
+      ['market.chain_features', 'chain_features'],
+    ], ['market']),
   },
 ];
 
@@ -151,20 +162,20 @@ export async function noteOpenInterest(
      * disagree once the table is cleared under a running process. One indexed
      * lookup per poll is nothing beside the write it is avoiding.
      */
-    const seen = await one('SELECT 1 FROM market.oi_snapshots WHERE expiry = $1 AND at = $2 LIMIT 1', [snap.expiry, atMs]);
+    const seen = await one('SELECT 1 FROM oi_snapshots WHERE expiry = $1 AND at = $2 LIMIT 1', [snap.expiry, atMs]);
     if (seen) return null;
 
     const iv = snap.atmIv ?? null;
     await tx(async (c) => {
       for (const l of priced) {
         await c.query(
-          `INSERT INTO market.oi_snapshots (at, expiry, cp, strike, oi, spot, atm_iv)
+          `INSERT INTO oi_snapshots (at, expiry, cp, strike, oi, spot, atm_iv)
            VALUES ($1, $2, $3, $4, $5, $6, $7)
            ON CONFLICT (at, expiry, cp, strike) DO UPDATE SET oi = EXCLUDED.oi, spot = EXCLUDED.spot, atm_iv = EXCLUDED.atm_iv`,
           [atMs, snap.expiry, l.cp, l.strike, l.oi!, snap.spot, iv],
         );
       }
-      await c.query('DELETE FROM market.oi_snapshots WHERE at < $1', [atMs - KEEP_MS]);
+      await c.query('DELETE FROM oi_snapshots WHERE at < $1', [atMs - KEEP_MS]);
     });
 
     return atMs;
@@ -221,17 +232,17 @@ export async function openInterestChange(
      */
     const at =
       await one<{ at: number }>(
-        'SELECT at FROM market.oi_snapshots WHERE expiry = $1 AND at <= $2 ORDER BY at DESC LIMIT 1',
+        'SELECT at FROM oi_snapshots WHERE expiry = $1 AND at <= $2 ORDER BY at DESC LIMIT 1',
         [now.expiry, targetMs],
       )
       ?? await one<{ at: number }>(
-        'SELECT at FROM market.oi_snapshots WHERE expiry = $1 AND at < $2 ORDER BY at ASC LIMIT 1',
+        'SELECT at FROM oi_snapshots WHERE expiry = $1 AND at < $2 ORDER BY at ASC LIMIT 1',
         [now.expiry, Math.floor(now.ts * 1000 / BUCKET_MS) * BUCKET_MS],
       );
     if (!at) return out;
 
     const then_ = await rows<{ cp: 'C' | 'P'; strike: number; oi: number; spot: number }>(
-      'SELECT cp, strike, oi, spot FROM market.oi_snapshots WHERE expiry = $1 AND at = $2',
+      'SELECT cp, strike, oi, spot FROM oi_snapshots WHERE expiry = $1 AND at = $2',
       [now.expiry, at.at],
     );
     if (!then_.length) return out;
@@ -302,7 +313,7 @@ export async function ivChange(
     await marketSchema();
     const targetMs = now.ts * 1000 - minutes * 60_000;
     const row = await one<{ at: number; atm_iv: number }>(
-      `SELECT at, atm_iv FROM market.oi_snapshots
+      `SELECT at, atm_iv FROM oi_snapshots
        WHERE expiry = $1 AND at <= $2 AND atm_iv IS NOT NULL
        ORDER BY at DESC LIMIT 1`,
       [now.expiry, targetMs],

@@ -1,6 +1,6 @@
 import type { TradeRecord, TradeStore } from './engine.js';
 import type { MtmSample } from './pnl-history.js';
-import { migrate, type Migration } from '../db/migrate.js';
+import { migrate, moveToPublic, type Migration } from '../db/migrate.js';
 import { query, rows, tx } from '../db/pool.js';
 import { recompute } from './machine.js';
 import type { TradeEvent, TradeState } from './types.js';
@@ -73,6 +73,18 @@ const MIGRATIONS: Migration[] = [
       );
       CREATE INDEX IF NOT EXISTS mtm_samples_by_day ON trading.mtm_samples (day, at);
     `,
+  },  {
+    /*
+     * Every table in one schema, public, on the owner's request (19 Sep 2026):
+     * one list in a console instead of seven. Names carry their area as a
+     * prefix where a bare name would be ambiguous in one namespace.
+     */
+    id: 'trading-006-journal-to-public',
+    up: moveToPublic([
+      ['trading.trades', 'trades'],
+      ['trading.trade_events', 'trade_events'],
+      ['trading.mtm_samples', 'mtm_samples'],
+    ], ['trading']),
   },
 ];
 
@@ -105,7 +117,7 @@ export class PgTradeStore implements TradeStore {
     const { state } = rec;
     await tx(async (c) => {
       await c.query(
-        `INSERT INTO trading.trades (trade_id, symbol, phase, position, plan, state, updated_at)
+        `INSERT INTO trades (trade_id, symbol, phase, position, plan, state, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (trade_id) DO UPDATE SET
            phase = EXCLUDED.phase, position = EXCLUDED.position,
@@ -117,11 +129,11 @@ export class PgTradeStore implements TradeStore {
            state = EXCLUDED.state, updated_at = EXCLUDED.updated_at`,
         [state.tradeId, state.symbol, state.phase, state.position, JSON.stringify(rec.plan), JSON.stringify(state), state.updatedAt],
       );
-      const written = await c.query<{ n: number }>('SELECT COUNT(*) AS n FROM trading.trade_events WHERE trade_id = $1', [state.tradeId]);
+      const written = await c.query<{ n: number }>('SELECT COUNT(*) AS n FROM trade_events WHERE trade_id = $1', [state.tradeId]);
       for (let i = written.rows[0]!.n; i < rec.events.length; i++) {
         const e = rec.events[i]!;
         await c.query(
-          `INSERT INTO trading.trade_events (trade_id, seq, at, kind, event) VALUES ($1, $2, $3, $4, $5)
+          `INSERT INTO trade_events (trade_id, seq, at, kind, event) VALUES ($1, $2, $3, $4, $5)
            ON CONFLICT (trade_id, seq) DO NOTHING`,
           [state.tradeId, i, e.at, e.t, JSON.stringify(e)],
         );
@@ -130,21 +142,21 @@ export class PgTradeStore implements TradeStore {
   }
 
   async get(tradeId: string): Promise<TradeRecord | null> {
-    const found = await this.query('SELECT trade_id, plan, state FROM trading.trades WHERE trade_id = $1', [tradeId]);
+    const found = await this.query('SELECT trade_id, plan, state FROM trades WHERE trade_id = $1', [tradeId]);
     return found[0] ?? null;
   }
 
   all(): Promise<TradeRecord[]> {
-    return this.query('SELECT trade_id, plan, state FROM trading.trades ORDER BY updated_at DESC');
+    return this.query('SELECT trade_id, plan, state FROM trades ORDER BY updated_at DESC');
   }
 
   open(): Promise<TradeRecord[]> {
-    return this.query(`SELECT trade_id, plan, state FROM trading.trades WHERE phase IN ${OPEN_PHASES} ORDER BY updated_at DESC`);
+    return this.query(`SELECT trade_id, plan, state FROM trades WHERE phase IN ${OPEN_PHASES} ORDER BY updated_at DESC`);
   }
 
   /** Newest first, for the screen. */
   recent(limit = 50): Promise<TradeRecord[]> {
-    return this.query('SELECT trade_id, plan, state FROM trading.trades ORDER BY updated_at DESC LIMIT $1', [limit]);
+    return this.query('SELECT trade_id, plan, state FROM trades ORDER BY updated_at DESC LIMIT $1', [limit]);
   }
 
   /**
@@ -156,13 +168,13 @@ export class PgTradeStore implements TradeStore {
    */
   between(fromMs: number, toMs: number, limit = 500): Promise<TradeRecord[]> {
     return this.query(
-      'SELECT trade_id, plan, state FROM trading.trades WHERE updated_at >= $1 AND updated_at < $2 ORDER BY updated_at DESC LIMIT $3',
+      'SELECT trade_id, plan, state FROM trades WHERE updated_at >= $1 AND updated_at < $2 ORDER BY updated_at DESC LIMIT $3',
       [fromMs, toMs, limit],
     );
   }
 
   async events(tradeId: string): Promise<TradeEvent[]> {
-    return (await rows<{ event: TradeEvent }>('SELECT event FROM trading.trade_events WHERE trade_id = $1 ORDER BY seq', [tradeId]))
+    return (await rows<{ event: TradeEvent }>('SELECT event FROM trade_events WHERE trade_id = $1 ORDER BY seq', [tradeId]))
       .map((r) => r.event);
   }
 
@@ -174,14 +186,14 @@ export class PgTradeStore implements TradeStore {
    * otherwise keep feeding the gate a wrong number.
    */
   async realisedSince(fromMs: number): Promise<number> {
-    const found = await rows<{ state: TradeState }>('SELECT state FROM trading.trades WHERE updated_at >= $1', [fromMs]);
+    const found = await rows<{ state: TradeState }>('SELECT state FROM trades WHERE updated_at >= $1', [fromMs]);
     return found.reduce((n, r) => n + (recompute(r.state).realisedPnl ?? 0), 0);
   }
 
   /** One reading of the day. Ignored if a reading already sits at that millisecond. */
   async sampleMtm(m: MtmSample): Promise<void> {
     await query(
-      `INSERT INTO trading.mtm_samples (at, day, realised, unrealised, charges, net)
+      `INSERT INTO mtm_samples (at, day, realised, unrealised, charges, net)
        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (at) DO NOTHING`,
       [m.at, m.day, m.realisedUsd, m.unrealisedUsd, m.chargesUsd, m.netUsd],
     );
@@ -190,7 +202,7 @@ export class PgTradeStore implements TradeStore {
   /** The day's line, oldest first. */
   async mtmSamples(day: string): Promise<MtmSample[]> {
     const found = await rows<{ at: number; day: string; realised: number; unrealised: number; charges: number; net: number }>(
-      'SELECT at, day, realised, unrealised, charges, net FROM trading.mtm_samples WHERE day = $1 ORDER BY at',
+      'SELECT at, day, realised, unrealised, charges, net FROM mtm_samples WHERE day = $1 ORDER BY at',
       [day],
     );
     return found.map((r) => ({
@@ -200,12 +212,12 @@ export class PgTradeStore implements TradeStore {
 
   /** The days that have a line at all, newest first. */
   async mtmDays(limit = 120): Promise<string[]> {
-    return (await rows<{ day: string }>('SELECT DISTINCT day FROM trading.mtm_samples ORDER BY day DESC LIMIT $1', [limit])).map((r) => r.day);
+    return (await rows<{ day: string }>('SELECT DISTINCT day FROM mtm_samples ORDER BY day DESC LIMIT $1', [limit])).map((r) => r.day);
   }
 
   /** Drop lines older than `keepDays`. Returns how many readings went. */
   async pruneMtm(nowMs: number, keepDays = MTM_KEEP_DAYS): Promise<number> {
-    const r = await query('DELETE FROM trading.mtm_samples WHERE at < $1', [nowMs - keepDays * 86_400_000]);
+    const r = await query('DELETE FROM mtm_samples WHERE at < $1', [nowMs - keepDays * 86_400_000]);
     return r.rowCount ?? 0;
   }
 
@@ -214,7 +226,7 @@ export class PgTradeStore implements TradeStore {
     const found = await rows<Row>(sql, params);
     if (!found.length) return [];
     const events = await rows<{ trade_id: string; event: TradeEvent }>(
-      'SELECT trade_id, event FROM trading.trade_events WHERE trade_id = ANY($1) ORDER BY trade_id, seq',
+      'SELECT trade_id, event FROM trade_events WHERE trade_id = ANY($1) ORDER BY trade_id, seq',
       [found.map((r) => r.trade_id)],
     );
     const byTrade = new Map<string, TradeEvent[]>();

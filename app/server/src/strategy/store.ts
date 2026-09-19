@@ -11,7 +11,7 @@
  * which is the safe direction. Marked-and-not-traded loses an opportunity;
  * traded-and-not-marked doubles a position.
  */
-import { migrate, type Migration } from '../db/migrate.js';
+import { migrate, moveToPublic, type Migration } from '../db/migrate.js';
 import { one, query, rows, tx } from '../db/pool.js';
 import { settings as deskSettings, type Settings } from '../db/settings.js';
 import {
@@ -109,6 +109,19 @@ const MIGRATIONS: Migration[] = [
       await seed('locked', 'Locked (95% gate)', false, { ...DEFAULT_CONFIG, probGate: 0.95, doubleWhenOneSided: false });
       await seed('double', 'Double one-sided', true, { ...DEFAULT_CONFIG, probGate: 0.95, doubleWhenOneSided: true });
     },
+  },  {
+    /*
+     * Every table in one schema, public, on the owner's request (19 Sep 2026):
+     * one list in a console instead of seven. Names carry their area as a
+     * prefix where a bare name would be ambiguous in one namespace.
+     */
+    id: 'strategy-003-to-public',
+    up: moveToPublic([
+      ['strategy.strategies', 'strategies'],
+      ['strategy.runs', 'strategy_runs'],
+      ['strategy.adds', 'strategy_adds'],
+      ['strategy.rebalances', 'strategy_rebalances'],
+    ], ['strategy']),
   },
 ];
 
@@ -186,7 +199,7 @@ export class StrategyStore {
   /** Stages already done today, and which side was sold at the first of them. */
   async rebalanceState(strategyId: string, runDate: string): Promise<{ stagesDone: number; lockedUpSide: 'CE' | 'PE' | null }> {
     const found = await rows<{ stage: number; up_side: 'CE' | 'PE'; status: string }>(
-      `SELECT stage, up_side, status FROM strategy.rebalances
+      `SELECT stage, up_side, status FROM strategy_rebalances
        WHERE strategy_id = $1 AND run_date = $2 ORDER BY stage`,
       [strategyId, runDate],
     );
@@ -211,7 +224,7 @@ export class StrategyStore {
   }): Promise<StrategyRebalance | null> {
     // The unique constraint answers: no row back means this stage is already written down.
     const ins = await one<{ id: number }>(
-      `INSERT INTO strategy.rebalances
+      `INSERT INTO strategy_rebalances
          (strategy_id, run_date, stage, up_side, down_side, up_pct, down_pct, lots, status, detail, at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        ON CONFLICT (strategy_id, run_date, stage) DO NOTHING
@@ -225,7 +238,7 @@ export class StrategyStore {
   /** How it actually went, once the orders have been answered. */
   async finishRebalance(id: number, status: RebalanceStatus, detail: string, ids?: { bought?: string; sold?: string }): Promise<void> {
     await query(
-      `UPDATE strategy.rebalances
+      `UPDATE strategy_rebalances
        SET status = $1, detail = $2, bought_trade_id = COALESCE($3, bought_trade_id), sold_trade_id = COALESCE($4, sold_trade_id)
        WHERE id = $5`,
       [status, detail.slice(0, 500), ids?.bought ?? null, ids?.sold ?? null, id],
@@ -233,13 +246,13 @@ export class StrategyStore {
   }
 
   async rebalance(id: number): Promise<StrategyRebalance | null> {
-    const r = await one('SELECT * FROM strategy.rebalances WHERE id = $1', [id]);
+    const r = await one('SELECT * FROM strategy_rebalances WHERE id = $1', [id]);
     return r ? hydrateRebalance(r as never) : null;
   }
 
   /** The day's rebalances, newest first, for the screen and the journal. */
   async rebalances(limit = 100): Promise<StrategyRebalance[]> {
-    return (await rows('SELECT * FROM strategy.rebalances ORDER BY at DESC LIMIT $1', [limit])).map((r) => hydrateRebalance(r as never));
+    return (await rows('SELECT * FROM strategy_rebalances ORDER BY at DESC LIMIT $1', [limit])).map((r) => hydrateRebalance(r as never));
   }
 
   /**
@@ -279,18 +292,18 @@ export class StrategyStore {
   }
 
   async all(): Promise<Strategy[]> {
-    return (await rows<StrategyRow>('SELECT * FROM strategy.strategies ORDER BY created_at, id')).map(this.hydrate);
+    return (await rows<StrategyRow>('SELECT * FROM strategies ORDER BY created_at, id')).map(this.hydrate);
   }
 
   async get(id: string): Promise<Strategy | null> {
-    const r = await one<StrategyRow>('SELECT * FROM strategy.strategies WHERE id = $1', [id]);
+    const r = await one<StrategyRow>('SELECT * FROM strategies WHERE id = $1', [id]);
     return r ? this.hydrate(r) : null;
   }
 
   async save(s: { id: string; name: string; enabled: boolean; config: StrategyConfig }): Promise<Strategy> {
     const now = Date.now();
     await query(
-      `INSERT INTO strategy.strategies (id, name, enabled, config, created_at, updated_at)
+      `INSERT INTO strategies (id, name, enabled, config, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $5)
        ON CONFLICT (id) DO UPDATE SET
          name = EXCLUDED.name, enabled = EXCLUDED.enabled,
@@ -303,18 +316,18 @@ export class StrategyStore {
   async remove(id: string): Promise<void> {
     // The runs stay. A deleted strategy's history is still what happened, and
     // the orders it placed are in the trade journal under their own ids.
-    await query('DELETE FROM strategy.strategies WHERE id = $1', [id]);
+    await query('DELETE FROM strategies WHERE id = $1', [id]);
   }
 
   async setEnabled(id: string, on: boolean): Promise<Strategy | null> {
-    const r = await query('UPDATE strategy.strategies SET enabled = $1, updated_at = $2 WHERE id = $3', [on, Date.now(), id]);
+    const r = await query('UPDATE strategies SET enabled = $1, updated_at = $2 WHERE id = $3', [on, Date.now(), id]);
     return (r.rowCount ?? 0) > 0 ? this.get(id) : null;
   }
 
   /** The IST day this strategy last ran, or null. What stops a second entry. */
   async lastRunDate(id: string): Promise<string | null> {
     const r = await one<{ run_date: string }>(
-      'SELECT run_date FROM strategy.runs WHERE strategy_id = $1 ORDER BY run_date DESC LIMIT 1',
+      'SELECT run_date FROM strategy_runs WHERE strategy_id = $1 ORDER BY run_date DESC LIMIT 1',
       [id],
     );
     return r?.run_date ?? null;
@@ -329,7 +342,7 @@ export class StrategyStore {
    */
   async claim(strategyId: string, runDate: string, at = Date.now()): Promise<boolean> {
     const r = await query(
-      `INSERT INTO strategy.runs (strategy_id, run_date, status, detail, at)
+      `INSERT INTO strategy_runs (strategy_id, run_date, status, detail, at)
        VALUES ($1, $2, 'skipped', 'claimed, not yet run', $3)
        ON CONFLICT (strategy_id, run_date) DO NOTHING`,
       [strategyId, runDate, at],
@@ -340,21 +353,21 @@ export class StrategyStore {
   /** Say how the claimed day actually went. */
   async finish(strategyId: string, runDate: string, status: StrategyRun['status'], detail: string): Promise<void> {
     await query(
-      'UPDATE strategy.runs SET status = $1, detail = $2, at = $3 WHERE strategy_id = $4 AND run_date = $5',
+      'UPDATE strategy_runs SET status = $1, detail = $2, at = $3 WHERE strategy_id = $4 AND run_date = $5',
       [status, detail.slice(0, 500), Date.now(), strategyId, runDate],
     );
   }
 
   /** One strategy's row for one day, when there is one. */
   async runFor(strategyId: string, runDate: string): Promise<StrategyRun | null> {
-    const r = await one<RunRow>('SELECT * FROM strategy.runs WHERE strategy_id = $1 AND run_date = $2', [strategyId, runDate]);
+    const r = await one<RunRow>('SELECT * FROM strategy_runs WHERE strategy_id = $1 AND run_date = $2', [strategyId, runDate]);
     return r ? runFrom(r) : null;
   }
 
   /** How many of this trade's bought-back contracts have already been decided about. */
   async addedFor(sourceTradeId: string): Promise<number> {
     const r = await one<{ n: number }>(
-      'SELECT COALESCE(SUM(contracts), 0)::bigint AS n FROM strategy.adds WHERE source_trade_id = $1',
+      'SELECT COALESCE(SUM(contracts), 0)::bigint AS n FROM strategy_adds WHERE source_trade_id = $1',
       [sourceTradeId],
     );
     return r?.n ?? 0;
@@ -376,15 +389,15 @@ export class StrategyStore {
   }): Promise<StrategyAdd | null> {
     const at = a.at ?? Date.now();
     const id = await tx(async (c) => {
-      await c.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`strategy.adds:${a.sourceTradeId}`]);
+      await c.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`strategy_adds:${a.sourceTradeId}`]);
       const done = await c.query<{ n: number }>(
-        'SELECT COALESCE(SUM(contracts), 0)::bigint AS n FROM strategy.adds WHERE source_trade_id = $1',
+        'SELECT COALESCE(SUM(contracts), 0)::bigint AS n FROM strategy_adds WHERE source_trade_id = $1',
         [a.sourceTradeId],
       );
       const contracts = a.boughtBack - done.rows[0]!.n;
       if (contracts <= 0) return null;
       const ins = await c.query<{ id: number }>(
-        `INSERT INTO strategy.adds
+        `INSERT INTO strategy_adds
            (strategy_id, run_date, source_trade_id, source_side, symbol, contracts, status, detail, added_to_trade_id, at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, $9) RETURNING id`,
         [a.strategyId, a.runDate, a.sourceTradeId, a.sourceSide, a.symbol, contracts, a.status, a.detail.slice(0, 500), at],
@@ -396,21 +409,21 @@ export class StrategyStore {
 
   /** Say how an add that was being placed actually went. */
   async finishAdd(id: number, status: AddStatus, detail: string, addedToTradeId: string | null = null): Promise<void> {
-    await query('UPDATE strategy.adds SET status = $1, detail = $2, added_to_trade_id = $3 WHERE id = $4',
+    await query('UPDATE strategy_adds SET status = $1, detail = $2, added_to_trade_id = $3 WHERE id = $4',
       [status, detail.slice(0, 500), addedToTradeId, id]);
   }
 
   async add(id: number): Promise<StrategyAdd | null> {
-    const r = await one<AddRow>('SELECT * FROM strategy.adds WHERE id = $1', [id]);
+    const r = await one<AddRow>('SELECT * FROM strategy_adds WHERE id = $1', [id]);
     return r ? addFrom(r) : null;
   }
 
   async adds(limit = 60): Promise<StrategyAdd[]> {
-    return (await rows<AddRow>('SELECT * FROM strategy.adds ORDER BY at DESC, id DESC LIMIT $1', [limit])).map(addFrom);
+    return (await rows<AddRow>('SELECT * FROM strategy_adds ORDER BY at DESC, id DESC LIMIT $1', [limit])).map(addFrom);
   }
 
   async runs(limit = 60): Promise<StrategyRun[]> {
-    return (await rows<RunRow>('SELECT * FROM strategy.runs ORDER BY at DESC LIMIT $1', [limit])).map(runFrom);
+    return (await rows<RunRow>('SELECT * FROM strategy_runs ORDER BY at DESC LIMIT $1', [limit])).map(runFrom);
   }
 }
 

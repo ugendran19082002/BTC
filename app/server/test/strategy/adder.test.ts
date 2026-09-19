@@ -72,7 +72,7 @@ async function day(o: { pe?: [number, number]; cePieces?: number; ceOnly?: numbe
 
   // One database for the file; every day starts with an empty add journal.
   const store = await StrategyStore.open(new MemorySettings());
-  await query('TRUNCATE strategy.adds');
+  await query('TRUNCATE strategy_adds');
   const alerts: Alert[] = [];
   const deps: AdderDeps = {
     store,

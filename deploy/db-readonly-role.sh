@@ -34,8 +34,8 @@ ALTER ROLE desk_ro SET default_transaction_read_only = on;
 ALTER ROLE desk_ro SET statement_timeout = '30s';
 ALTER ROLE desk_ro SET idle_in_transaction_session_timeout = '60s';
 ALTER ROLE desk_ro CONNECTION LIMIT 5;
--- Open on the trading tables, and find every desk table without a schema prefix.
-ALTER ROLE desk_ro SET search_path = trading, strategy, auth, errors, market, analytics, public;
+-- Every desk table is in public (since 19 Sep 2026): the default path finds them.
+ALTER ROLE desk_ro RESET search_path;
 GRANT CONNECT ON DATABASE btc_desk TO desk_ro;
 DO $$
 DECLARE s text;
@@ -49,6 +49,6 @@ BEGIN
   END LOOP;
 END $$;
 -- The sign-in secrets are sealed, but a console has no business reading them.
-REVOKE SELECT ON auth.user, auth.sessions, auth.recovery_codes FROM desk_ro;
+REVOKE SELECT ON auth_user, auth_sessions, auth_recovery_codes FROM desk_ro;
 SQL
 echo "desk_ro ready: read-only, 30 s statement limit, no access to the sign-in secrets"

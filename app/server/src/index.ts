@@ -11,6 +11,7 @@ import { liveChain } from './market/chain.js';
 import { readMarket } from './market/moves.js';
 import { marketSchema } from './market/oi-history.js';
 import { errorLog } from './observability/errors.js';
+import { analyticsSchema } from './db/analytics-schema.js';
 
 /**
  * Start the desk.
@@ -32,6 +33,7 @@ const desk = await initTradingService();
 // the table missing. Every ledger entry is on `/api/health` before `listen`.
 await marketSchema();
 await errorLog().ready;
+await analyticsSchema();
 const strategies = await initStrategyStore();
 
 // One sign-in service for the process: the gate and the routes share the pool.

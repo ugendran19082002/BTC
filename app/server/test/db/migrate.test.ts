@@ -1,6 +1,6 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appliedMigrations, hasColumn, migrate, type Migration } from '../../src/db/migrate.js';
+import { appliedMigrations, hasColumn, migrate, moveToPublic, type Migration } from '../../src/db/migrate.js';
 import { closePool, getPool, one, rows } from '../../src/db/pool.js';
 
 /**
@@ -128,4 +128,56 @@ test('two boots at once: one runs the list, the other finds it done', async () =
   const [r1, r2] = await Promise.all([migrate([slow]), migrate([slow])]);
   assert.equal(runs, 1, 'the advisory lock let exactly one through');
   assert.deepEqual([...r1, ...r2], [`${s}-slow`]);
+});
+
+test('[critical] moveToPublic moves and renames a table with its rows, index and identity, then drops the empty schema', async () => {
+  const s = fresh();
+  await migrate([{ id: `${s}-make`, up: `
+    CREATE SCHEMA ${s};
+    CREATE TABLE ${s}.runs (id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, v TEXT NOT NULL);
+    CREATE INDEX ${s}_runs_by_v ON ${s}.runs (v);
+    INSERT INTO ${s}.runs (v) VALUES ('a'), ('b');` }]);
+  const to = `${s}_runs`;
+  await migrate([{ id: `${s}-move`, up: moveToPublic([[`${s}.runs`, to]], [s]) }]);
+
+  assert.deepEqual(await rows(`SELECT id, v FROM public.${to} ORDER BY id`), [{ id: 1, v: 'a' }, { id: 2, v: 'b' }]);
+  // the identity carried on from where it was, rather than restarting at 1
+  assert.deepEqual(await one(`INSERT INTO public.${to} (v) VALUES ('c') RETURNING id`), { id: 3 });
+  assert.ok(await one(`SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = '${s}_runs_by_v'`), 'the index moved too');
+  // what carried the old name now carries the new one, so nothing collides in public
+  assert.ok(await one(`SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = '${to}_pkey'`), 'runs_pkey renamed');
+  assert.equal(await one(`SELECT pg_get_serial_sequence('public.${to}', 'id') AS seq`).then((r) => (r as { seq: string }).seq), `public.${to}_id_seq`);
+  assert.equal(await one(`SELECT 1 FROM pg_namespace WHERE nspname = '${s}'`), null, 'the emptied schema is gone');
+});
+
+test('moveToPublic is a no-op for a table that is not there, and keeps a schema that still has tables', async () => {
+  const s = fresh();
+  await migrate([{ id: `${s}-make`, up: `CREATE SCHEMA ${s}; CREATE TABLE ${s}.stays (x INT);` }]);
+  await migrate([{ id: `${s}-move`, up: moveToPublic([[`${s}.absent`, `${s}_absent`]], [s]) }]);
+  assert.ok(await exists(s, 'stays'), 'untouched');
+  assert.ok(await one(`SELECT 1 FROM pg_namespace WHERE nspname = '${s}'`), 'not empty, so not dropped');
+});
+
+test('[critical] after boot every desk table is in public, and no desk schema is left', async () => {
+  const { SettingsCache } = await import('../../src/db/settings.js');
+  const { PgTradeStore } = await import('../../src/trading/store.js');
+  const { StrategyStore } = await import('../../src/strategy/store.js');
+  const { AuthStore } = await import('../../src/auth/store.js');
+  const { ErrorLog } = await import('../../src/observability/errors.js');
+  const { marketSchema } = await import('../../src/market/oi-history.js');
+  const { analyticsSchema } = await import('../../src/db/analytics-schema.js');
+  await new SettingsCache().load(); await PgTradeStore.open(); await StrategyStore.open(new (await import('../../src/db/settings.js')).MemorySettings());
+  await AuthStore.open(); await new ErrorLog().ready; await marketSchema(); await analyticsSchema();
+  const left = await rows<{ nspname: string }>(
+    `SELECT nspname FROM pg_namespace WHERE nspname IN ('trading', 'strategy', 'auth', 'errors', 'market', 'analytics')`,
+  );
+  assert.deepEqual(left, []);
+  const tables = (await rows<{ table_name: string }>(
+    `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY 1`,
+  )).map((r) => r.table_name);
+  for (const t of ['settings', 'trades', 'trade_events', 'mtm_samples', 'strategies', 'strategy_runs', 'strategy_adds',
+    'strategy_rebalances', 'auth_user', 'auth_sessions', 'auth_recovery_codes', 'auth_limits', 'auth_events', 'errors',
+    'oi_snapshots', 'chain_features', 'schema_migrations']) {
+    assert.ok(tables.includes(t), `${t} is in public`);
+  }
 });

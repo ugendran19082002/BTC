@@ -7,7 +7,7 @@ Copy the measured `outlook_states` (and `chain_states`, when measured) tables in
 The measurement runs against the repository's chain.db. In production the
 analytics service reads the `analytics` schema of the desk's PostgreSQL
 database, so the target is its URL: the two tables are replaced and
-`analytics.publish_meta.published_at` stamped in one transaction, and the
+`analytics_publish_meta.published_at` stamped in one transaction, and the
 service (which checks the stamp every half minute) serves the new rows without
 a restart. A SQLite target still works for local runs.
 
@@ -80,15 +80,15 @@ def publish_pg(source: str, url: str) -> int:
             con.execute(PG_SCHEMA)
             for t, rows in data.items():
                 cols = OUTLOOK_COLS if t == 'outlook_states' else CHAIN_COLS
-                con.execute(f'DELETE FROM analytics.{t}')
+                con.execute(f'DELETE FROM {t}')
                 with con.cursor() as cur:
                     cur.executemany(
-                        f'INSERT INTO analytics.{t} ({", ".join(cols)}) VALUES ({", ".join("%s" for _ in cols)})',
+                        f'INSERT INTO {t} ({", ".join(cols)}) VALUES ({", ".join("%s" for _ in cols)})',
                         [[cell(c, v) for c, v in zip(cols, r)] for r in rows],
                     )
-            con.execute('INSERT INTO analytics.publish_meta (id, published_at) VALUES (1, %s) '
+            con.execute('INSERT INTO analytics_publish_meta (id, published_at) VALUES (1, %s) '
                         'ON CONFLICT (id) DO UPDATE SET published_at = EXCLUDED.published_at', (int(time.time() * 1000),))
-        return con.execute('SELECT COUNT(*) FROM analytics.outlook_states').fetchone()[0]
+        return con.execute('SELECT COUNT(*) FROM outlook_states').fetchone()[0]
 
 
 def publish(source: str, target: str) -> int:

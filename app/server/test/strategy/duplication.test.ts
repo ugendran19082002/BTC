@@ -21,7 +21,7 @@ import { DEFAULT_CONFIG, type Strategy } from '../../src/strategy/types.js';
 // One database for the file; a fresh store starts with an empty run journal.
 await StrategyStore.open(new MemorySettings());
 const fresh = async () => {
-  await query('TRUNCATE strategy.runs, strategy.adds, strategy.rebalances');
+  await query('TRUNCATE strategy_runs, strategy_adds, strategy_rebalances');
   return StrategyStore.open(new MemorySettings());
 };
 after(() => closePool());

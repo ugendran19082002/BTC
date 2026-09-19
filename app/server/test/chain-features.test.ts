@@ -34,7 +34,7 @@ const legs = () => [
 beforeEach(async () => {
   closeOiHistory();
   await marketSchema();
-  await query('TRUNCATE market.chain_features');
+  await query('TRUNCATE chain_features');
 });
 after(() => closePool());
 
@@ -85,7 +85,7 @@ test('[critical] one row per five-minute bucket per expiry, however often it is 
 
 test('[critical] what has no history yet is recorded, so that one day it has one', async () => {
   await noteChainFeatures(record(T0));
-  const row = (await one<Record<string, unknown>>('SELECT * FROM market.chain_features LIMIT 1'))!;
+  const row = (await one<Record<string, unknown>>('SELECT * FROM chain_features LIMIT 1'))!;
   assert.equal(row.pcr_oi, 0.34);
   assert.equal(row.ce_wall, 78_400);
   assert.equal(row.pe_wall, 72_800);

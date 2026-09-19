@@ -1,4 +1,4 @@
-import { migrate, type Migration } from '../db/migrate.js';
+import { migrate, moveToPublic, type Migration } from '../db/migrate.js';
 import { one, query, rows } from '../db/pool.js';
 
 /**
@@ -76,6 +76,14 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS errors_log_by_time   ON errors.log (last_seen DESC);
       CREATE INDEX IF NOT EXISTS errors_log_by_source ON errors.log (source, last_seen DESC);
     `,
+  },  {
+    /*
+     * Every table in one schema, public, on the owner's request (19 Sep 2026):
+     * one list in a console instead of seven. Names carry their area as a
+     * prefix where a bare name would be ambiguous in one namespace.
+     */
+    id: 'errors-002-to-public',
+    up: moveToPublic([['errors.log', 'errors']], ['errors']),
   },
 ];
 
@@ -157,15 +165,15 @@ export class ErrorLog {
     this.queue = this.queue
       .then(async () => {
         await query(
-          `INSERT INTO errors.log
+          `INSERT INTO errors
              (fingerprint, source, level, message, code, stack, where_at, context, first_seen, last_seen, count)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, 1)
            ON CONFLICT (fingerprint) DO UPDATE SET
              last_seen = EXCLUDED.last_seen,
-             count     = errors.log.count + 1,
+             count     = errors.count + 1,
              -- the newest stack is the most likely to still be reachable
-             stack     = COALESCE(EXCLUDED.stack, errors.log.stack),
-             context   = COALESCE(EXCLUDED.context, errors.log.context),
+             stack     = COALESCE(EXCLUDED.stack, errors.stack),
+             context   = COALESCE(EXCLUDED.context, errors.context),
              resolved  = FALSE`,
           params,
         );
@@ -188,7 +196,7 @@ export class ErrorLog {
     if (!includeResolved) where.push('resolved = FALSE');
     params.push(limit);
     const sql =
-      `SELECT * FROM errors.log ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ` +
+      `SELECT * FROM errors ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ` +
       `ORDER BY last_seen DESC LIMIT $${params.length}`;
     return (await rows<Record<string, unknown>>(sql, params)).map(toRow);
   }
@@ -196,10 +204,10 @@ export class ErrorLog {
   /** Counts for the badge, so the UI does not have to fetch the list to know. */
   async summary(): Promise<{ total: number; unresolved: number; bySource: Record<string, number> }> {
     const counts = await one<{ total: number; unresolved: number }>(
-      'SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE NOT resolved) AS unresolved FROM errors.log',
+      'SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE NOT resolved) AS unresolved FROM errors',
     );
     const by = await rows<{ source: string; n: number }>(
-      'SELECT source, COUNT(*) AS n FROM errors.log WHERE NOT resolved GROUP BY source',
+      'SELECT source, COUNT(*) AS n FROM errors WHERE NOT resolved GROUP BY source',
     );
     return {
       total: counts?.total ?? 0,
@@ -210,21 +218,21 @@ export class ErrorLog {
 
   /** Gone for good. "Mark read" hides; this removes. */
   async remove(id: number): Promise<void> {
-    await query('DELETE FROM errors.log WHERE id = $1', [id]);
+    await query('DELETE FROM errors WHERE id = $1', [id]);
   }
 
   async resolve(id: number): Promise<void> {
-    await query('UPDATE errors.log SET resolved = TRUE WHERE id = $1', [id]);
+    await query('UPDATE errors SET resolved = TRUE WHERE id = $1', [id]);
   }
 
   async resolveAll(): Promise<number> {
-    const r = await query('UPDATE errors.log SET resolved = TRUE WHERE NOT resolved');
+    const r = await query('UPDATE errors SET resolved = TRUE WHERE NOT resolved');
     return r.rowCount ?? 0;
   }
 
   async clear(): Promise<void> {
     await this.flush();
-    await query('DELETE FROM errors.log');
+    await query('DELETE FROM errors');
   }
 
   private async prune(): Promise<void> {
@@ -232,8 +240,8 @@ export class ErrorLog {
     // that -- the oldest resolved rows -- goes. An unresolved failure is never
     // dropped to make room for a newer one.
     await query(
-      `DELETE FROM errors.log WHERE id IN (
-         SELECT id FROM errors.log
+      `DELETE FROM errors WHERE id IN (
+         SELECT id FROM errors
          ORDER BY resolved ASC, last_seen DESC
          OFFSET $1
        )`,

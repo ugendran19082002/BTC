@@ -46,7 +46,7 @@ async function fresh() {
   alerts = [];
   if (app) await app.close();
   store = await AuthStore.open();
-  await query('TRUNCATE auth.user, auth.sessions, auth.recovery_codes, auth.limits, auth.events');
+  await query('TRUNCATE auth_user, auth_sessions, auth_recovery_codes, auth_limits, auth_events');
   await store.seedUser('ugendran', hashPassword(PASSWORD), clock);
   const auth = new AuthService({ store, secrets: new Secrets('test-master-secret'), now: () => clock, onAlert: (t) => alerts.push(t) });
   app = await buildApp({ auth, now: () => clock });
@@ -261,7 +261,7 @@ test('the account page says when this sign-in ends, a week out', async () => {
 
 /** Every session row, live or not -- the store has no reader for ended ones, and the product needs none. */
 const sessionRows = () =>
-  rows<{ revoked_at: number | null; expires_at: number }>("SELECT revoked_at, expires_at FROM auth.sessions WHERE stage = 'full'");
+  rows<{ revoked_at: number | null; expires_at: number }>("SELECT revoked_at, expires_at FROM auth_sessions WHERE stage = 'full'");
 
 test('an ended session is kept a week after it ENDED, then pruned -- not a week after sign-in', async () => {
   const { secret, token: phone } = await firstSignIn();
@@ -446,7 +446,7 @@ test('a wrong username answers exactly like a wrong password', async () => {
 });
 
 test('with no user and no secret, the desk refuses everything but health and /api/me', async () => {
-  await query('TRUNCATE auth.user');
+  await query('TRUNCATE auth_user');
   const bare = await buildApp({ auth: new AuthService({ store, secrets: null, now: () => clock }) });
   assert.equal((await bare.inject({ method: 'GET', url: '/api/strategies' })).statusCode, 503);
   assert.equal((await bare.inject({ method: 'POST', url: '/api/login', payload: { username: 'x', password: 'y' } })).statusCode, 503);
