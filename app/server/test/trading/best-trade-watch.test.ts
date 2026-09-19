@@ -1,9 +1,12 @@
-import { test } from 'node:test';
+import { after, test } from 'node:test';
+import { closePool } from '../../src/db/pool.js';
 import assert from 'node:assert/strict';
 import type { Leg, Snapshot } from '../../src/market/chain.js';
 import type { Alert } from '../../src/notify/telegram.js';
 import { bestTradeText } from '../../src/notify/best-trade-alert.js';
 import { bestTradeNow } from '../../src/domain/best-trade-now.js';
+
+after(() => closePool());
 
 /**
  * "Tell me when the best pick changes."
@@ -54,17 +57,24 @@ const named = (snap: Snapshot) => {
   return new RegExp(`Sell ${p.side} ${p.strike.toLocaleString('en-IN')}`);
 };
 
-async function desk() {
+/** A desk on this process's database, the way index.ts builds one. */
+async function freshService() {
   const { TradingService } = await import('../../src/trading/service.js');
-  const svc = new TradingService();
+  const { PgTradeStore } = await import('../../src/trading/store.js');
+  const { SettingsCache } = await import('../../src/db/settings.js');
+  return new TradingService({ settings: await new SettingsCache().load(), store: await PgTradeStore.open() });
+}
+
+async function desk() {
+  const svc = await freshService();
   const sent: Alert[] = [];
   // The notifier is built from the environment; the test wants a stub.
   (svc as unknown as { notifier: { notify(a: Alert): void } }).notifier = { notify: (a) => { sent.push(a); } };
-  svc.setAlertsOn(true);
-  svc.setBestTradeAlertOn(false);
-  svc.setBestTradeMinPremiumUsd(5);
+  await svc.setAlertsOn(true);
+  await svc.setBestTradeAlertOn(false);
+  await svc.setBestTradeMinPremiumUsd(5);
   // Settings live in the journal and outlast one service; start every test at the default.
-  svc.setBestTradeRepeat(1);
+  await svc.setBestTradeRepeat(1);
   return { svc, sent };
 }
 
@@ -85,7 +95,7 @@ test('[critical] switched off, the watcher does nothing and says so', async () =
 
 test('[critical] the first look announces the pick; the same pick again is silence', async () => {
   const { svc, sent } = await desk();
-  svc.setBestTradeAlertOn(true);
+  await svc.setBestTradeAlertOn(true);
   assert.equal(await svc.watchBestTrade(NOW, { snap: CALL_BOARD, market: null }), 'sent');
   assert.equal(sent.length, 1);
   assert.equal(sent[0].key, 'best-trade');
@@ -99,7 +109,7 @@ test('[critical] the first look announces the pick; the same pick again is silen
 
 test('[critical] a different strike is announced', async () => {
   const { svc, sent } = await desk();
-  svc.setBestTradeAlertOn(true);
+  await svc.setBestTradeAlertOn(true);
   await svc.watchBestTrade(NOW, { snap: CALL_BOARD, market: null });
   assert.equal(await svc.watchBestTrade(NOW + 60_000, { snap: PUT_BOARD, market: null }), 'sent');
   assert.equal(sent.length, 2);
@@ -109,7 +119,7 @@ test('[critical] a different strike is announced', async () => {
 
 test('[critical] a pick that goes away is not announced, and its return counts against the cap', async () => {
   const { svc, sent } = await desk();
-  svc.setBestTradeAlertOn(true);
+  await svc.setBestTradeAlertOn(true);
   await svc.watchBestTrade(NOW, { snap: CALL_BOARD, market: null });
   const nothing = board(CALL_BOARD.legs.map((l) => ({ ...l, bid: 2, sellPrice: 2, ask: 2.6, mark: 2.3 })));
   assert.equal(await svc.watchBestTrade(NOW + 60_000, { snap: nothing, market: null }), 'unchanged');
@@ -128,7 +138,7 @@ test('[critical] a pick that goes away is not announced, and its return counts a
 
 test('[critical] the same strike coming back is not sent again for the same contract', async () => {
   const { svc, sent } = await desk();
-  svc.setBestTradeAlertOn(true);
+  await svc.setBestTradeAlertOn(true);
   assert.equal(svc.bestTradeRepeat, 1, 'once per strike per contract, by default');
   assert.equal(await svc.watchBestTrade(NOW, { snap: CALL_BOARD, market: null }), 'sent');
   assert.equal(await svc.watchBestTrade(NOW + 60_000, { snap: PUT_BOARD, market: null }), 'sent');
@@ -141,8 +151,8 @@ test('[critical] the same strike coming back is not sent again for the same cont
 
 test('[critical] the cap is a setting: at 2 a strike can come back once more, and no more', async () => {
   const { svc, sent } = await desk();
-  svc.setBestTradeAlertOn(true);
-  svc.setBestTradeRepeat(2);
+  await svc.setBestTradeAlertOn(true);
+  await svc.setBestTradeRepeat(2);
   for (const [i, snap, want] of [
     [0, CALL_BOARD, 'sent'], [1, PUT_BOARD, 'sent'], [2, CALL_BOARD, 'sent'], [3, PUT_BOARD, 'sent'], [4, CALL_BOARD, 'repeat'],
   ] as const) {
@@ -156,7 +166,7 @@ test('[critical] the cap is a setting: at 2 a strike can come back once more, an
 
 test('[critical] a new contract starts the count again -- the 5:31 PM reset', async () => {
   const { svc, sent } = await desk();
-  svc.setBestTradeAlertOn(true);
+  await svc.setBestTradeAlertOn(true);
   await svc.watchBestTrade(NOW, { snap: CALL_BOARD, market: null });
   await svc.watchBestTrade(NOW + 60_000, { snap: PUT_BOARD, market: null });
   assert.equal(await svc.watchBestTrade(NOW + 120_000, { snap: CALL_BOARD, market: null }), 'repeat');
@@ -170,23 +180,23 @@ test('[critical] a new contract starts the count again -- the 5:31 PM reset', as
 test('the repeat setting is kept between 1 and 10', async () => {
   const { svc } = await desk();
   assert.equal(svc.bestTradeRepeat, 1);
-  svc.setBestTradeRepeat(0);
+  await svc.setBestTradeRepeat(0);
   assert.equal(svc.bestTradeRepeat, 1);
-  svc.setBestTradeRepeat(25);
+  await svc.setBestTradeRepeat(25);
   assert.equal(svc.bestTradeRepeat, 10);
-  svc.setBestTradeRepeat(3);
+  await svc.setBestTradeRepeat(3);
   assert.equal(svc.bestTradeRepeat, 3);
-  svc.setBestTradeRepeat(1);
+  await svc.setBestTradeRepeat(1);
   svc.stop();
 });
 
 test('[critical] the floor decides: a strike paying under it is never the pick that gets sent', async () => {
   const { svc, sent } = await desk();
-  svc.setBestTradeAlertOn(true);
-  svc.setBestTradeMinPremiumUsd(20);
+  await svc.setBestTradeAlertOn(true);
+  await svc.setBestTradeMinPremiumUsd(20);
   assert.equal(await svc.watchBestTrade(NOW, { snap: CALL_BOARD, market: null }), 'unchanged');
   assert.equal(sent.length, 0);
-  svc.setBestTradeMinPremiumUsd(5);
+  await svc.setBestTradeMinPremiumUsd(5);
   assert.equal(await svc.watchBestTrade(NOW + 60_000, { snap: CALL_BOARD, market: null }), 'sent');
   assert.match(sent[0].text, /Only strikes paying \$5 or more/);
   svc.stop();
@@ -194,23 +204,23 @@ test('[critical] the floor decides: a strike paying under it is never the pick t
 
 test('[critical] phone alerts off silences the message but the pick is still remembered', async () => {
   const { svc, sent } = await desk();
-  svc.setBestTradeAlertOn(true);
-  svc.setAlertsOn(false);
+  await svc.setBestTradeAlertOn(true);
+  await svc.setAlertsOn(false);
   assert.equal(await svc.watchBestTrade(NOW, { snap: CALL_BOARD, market: null }), 'sent');
   assert.equal(sent.length, 0);
   // turning the phone back on does not replay a pick the desk already noted
-  svc.setAlertsOn(true);
+  await svc.setAlertsOn(true);
   assert.equal(await svc.watchBestTrade(NOW + 60_000, { snap: CALL_BOARD, market: null }), 'unchanged');
   svc.stop();
 });
 
 test('switching the reminder on again announces the current pick rather than waiting for a change', async () => {
   const { svc, sent } = await desk();
-  svc.setBestTradeAlertOn(true);
+  await svc.setBestTradeAlertOn(true);
   await svc.watchBestTrade(NOW, { snap: CALL_BOARD, market: null });
-  svc.setBestTradeAlertOn(false);
+  await svc.setBestTradeAlertOn(false);
   assert.equal(await svc.watchBestTrade(NOW + 60_000, { snap: CALL_BOARD, market: null }), 'off');
-  svc.setBestTradeAlertOn(true);
+  await svc.setBestTradeAlertOn(true);
   assert.equal(await svc.watchBestTrade(NOW + 120_000, { snap: CALL_BOARD, market: null }), 'sent');
   assert.equal(sent.length, 2);
   svc.stop();
@@ -218,7 +228,7 @@ test('switching the reminder on again announces the current pick rather than wai
 
 test('a board that is not live is left alone', async () => {
   const { svc, sent } = await desk();
-  svc.setBestTradeAlertOn(true);
+  await svc.setBestTradeAlertOn(true);
   assert.equal(await svc.watchBestTrade(NOW, { snap: { ...CALL_BOARD, live: false }, market: null }), 'no board');
   assert.equal(sent.length, 0);
   svc.stop();
@@ -226,9 +236,9 @@ test('a board that is not live is left alone', async () => {
 
 test('the settings survive as the desk remembers them', async () => {
   const { svc } = await desk();
-  svc.setBestTradeMinPremiumUsd(7.5);
+  await svc.setBestTradeMinPremiumUsd(7.5);
   assert.equal(svc.bestTradeMinPremiumUsd, 7.5);
-  svc.setBestTradeAlertOn(true);
+  await svc.setBestTradeAlertOn(true);
   assert.equal(svc.bestTradeAlertOn, true);
   svc.stop();
 });
@@ -266,9 +276,9 @@ test('an expiry code reads as a date', async () => {
  */
 async function armedDesk(over: Partial<Parameters<TradingServiceType['setAutoTrade']>[0]> = {}) {
   const d = await desk();
-  d.svc.setAutoTrade({ on: true, lots: 5, targetPct: 95, ...over });
+  await d.svc.setAutoTrade({ on: true, lots: 5, targetPct: 95, ...over });
   // The ledger lives in the journal and outlasts one service: start clean.
-  d.svc.clearAutoTradeLedger();
+  await d.svc.clearAutoTradeLedger();
   // Every order is answered here; the engine and the exchange have their own tests.
   const placed: { symbol: string; lots: number; takeProfitPct?: number; origin?: string }[] = [];
   (d.svc as unknown as { place: (i: Record<string, unknown>) => Promise<unknown> }).place = async (i) => {
@@ -296,7 +306,7 @@ test('[critical] armed, it sells the pick once — the second look sells nothing
 
 test('[critical] switched off it places nothing, however good the pick looks', async () => {
   const { svc, placed } = await armedDesk();
-  svc.setAutoTrade({ on: false });
+  await svc.setAutoTrade({ on: false });
   assert.deepEqual(await svc.autoTradeBestPick(NOW, { snap: CALL_BOARD, market: null }), { act: 'skip', why: 'off' });
   assert.equal(placed.length, 0);
   svc.stop();
@@ -330,12 +340,11 @@ test('[critical] a refusal is written down, said once, and not retried this cont
 
 test('the settings survive the service, and are brought inside their limits', async () => {
   const { svc } = await armedDesk();
-  assert.deepEqual(svc.setAutoTrade({ lots: 99_999, targetPct: 140 }), {
+  assert.deepEqual(await svc.setAutoTrade({ lots: 99_999, targetPct: 140 }), {
     on: true, lots: 1_000, targetPct: 99, stopPct: 0, chaseSeconds: 5, maxPerContract: 1,
   });
-  const { TradingService } = await import('../../src/trading/service.js');
-  assert.equal(new TradingService().autoTrade.lots, 1_000, 'read back from the journal');
-  svc.setAutoTrade({ on: false, lots: 5, targetPct: 95 });
+  assert.equal((await freshService()).autoTrade.lots, 1_000, 'read back from the journal');
+  await svc.setAutoTrade({ on: false, lots: 5, targetPct: 95 });
   svc.stop();
 });
 

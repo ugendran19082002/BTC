@@ -1,8 +1,18 @@
-import { test } from 'node:test';
+import { after, test } from 'node:test';
+import { closePool } from '../../src/db/pool.js';
 import assert from 'node:assert/strict';
 import { initialTrade, replay } from '../../src/trading/machine.js';
 import { istDayEnd, istDayStart, istToday, orderOutcomeOf, orderStatusOf } from '../../src/trading/status.js';
 import type { TradeEvent, TradeState } from '../../src/trading/types.js';
+
+/** A desk on this process's database, the way index.ts builds one. */
+async function freshService() {
+  const { TradingService } = await import('../../src/trading/service.js');
+  const { PgTradeStore } = await import('../../src/trading/store.js');
+  const { SettingsCache } = await import('../../src/db/settings.js');
+  return new TradingService({ settings: await new SettingsCache().load(), store: await PgTradeStore.open() });
+}
+after(() => closePool());
 
 const AT = Date.UTC(2026, 8, 8, 12, 0, 0);
 
@@ -120,8 +130,7 @@ test("today in IST is the evening's date, not yesterday's", () => {
  * inside the window share one computation.
  */
 test('[critical] callers inside the window share one computation, and one answer', async () => {
-  const { TradingService } = await import('../../src/trading/service.js');
-  const svc = new TradingService();
+  const svc = await freshService();
   let runs = 0;
   const slow = () => new Promise<number>((r) => setTimeout(() => r(++runs), 30));
   const [a, b, c] = await Promise.all([
@@ -137,8 +146,7 @@ test('[critical] callers inside the window share one computation, and one answer
 });
 
 test('after the window a fresh computation runs, and a failure does not poison the cache', async () => {
-  const { TradingService } = await import('../../src/trading/service.js');
-  const svc = new TradingService();
+  const svc = await freshService();
   let runs = 0;
   const t0 = 1_000_000;
   assert.equal(await svc.coalesce('k', 500, async () => ++runs, t0), 1);
@@ -149,8 +157,7 @@ test('after the window a fresh computation runs, and a failure does not poison t
 });
 
 test('different keys do not share', async () => {
-  const { TradingService } = await import('../../src/trading/service.js');
-  const svc = new TradingService();
+  const svc = await freshService();
   assert.equal(await svc.coalesce('a', 1_000, async () => 'A'), 'A');
   assert.equal(await svc.coalesce('b', 1_000, async () => 'B'), 'B');
 });
@@ -164,8 +171,7 @@ test('different keys do not share', async () => {
  * last answer at once.
  */
 test('[critical] a request reads the last background answer without waiting', async () => {
-  const { TradingService } = await import('../../src/trading/service.js');
-  const svc = new TradingService();
+  const svc = await freshService();
   let runs = 0;
   svc.provideStatus(async () => { await new Promise((r) => setTimeout(r, 40)); return { n: ++runs }; });
   await new Promise((r) => setTimeout(r, 60));          // the first background refresh lands
@@ -177,8 +183,7 @@ test('[critical] a request reads the last background answer without waiting', as
 });
 
 test('a stale answer is not served: the request waits for a fresh one', async () => {
-  const { TradingService } = await import('../../src/trading/service.js');
-  const svc = new TradingService();
+  const svc = await freshService();
   let runs = 0;
   svc.provideStatus(async () => ({ n: ++runs }));
   await new Promise((r) => setTimeout(r, 20));
@@ -189,8 +194,7 @@ test('a stale answer is not served: the request waits for a fresh one', async ()
 });
 
 test('with nothing computed yet the first request computes, and says so if it cannot', async () => {
-  const { TradingService } = await import('../../src/trading/service.js');
-  const svc = new TradingService();
+  const svc = await freshService();
   await assert.rejects(svc.status(), /status not provided/);
   svc.stop();
 });
