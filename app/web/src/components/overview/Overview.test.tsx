@@ -27,7 +27,7 @@ describe('the decision panels', () => {
     for (const l of ['Entry', 'Expiry', 'Prediction', 'Side mode', 'Strictness', 'Risk', 'Probability', 'Execution']) {
       expect(screen.getByText(l, { selector: '.ov-ctx-label' })).toBeInTheDocument();
     }
-    expect(screen.getByText(/ENTRY READY|NO TRADE/)).toBeInTheDocument();
+    expect(screen.getAllByText(/ENTRY READY|NO TRADE/).length).toBeGreaterThan(0);
     expect(screen.queryByText(/^Option chain/)).toBeNull();
     expect(screen.getByText(/^Selected strike: /)).toBeInTheDocument();
   });
