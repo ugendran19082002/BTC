@@ -32,6 +32,13 @@ const MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    // The desk defaults to the first listed expiry (nearest active contract)
+    // rather than the next-entry contract. Persisted so the choice survives
+    // a restart and can be changed through /api/settings.
+    id: 'trading-002-default-settings',
+    up: `INSERT INTO trading.settings (key, value) VALUES ('expiry_default', 'first') ON CONFLICT (key) DO NOTHING;`,
+  },
 ];
 
 export class SettingsCache implements Settings {

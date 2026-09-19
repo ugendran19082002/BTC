@@ -1,8 +1,7 @@
-import { DatabaseSync } from 'node:sqlite';
-import { TRADE_DB } from '../paths.js';
 import type { TradeRecord, TradeStore } from './engine.js';
 import type { MtmSample } from './pnl-history.js';
-import { appliedMigrations, migrate, type Migration } from '../db/sqlite-migrate.js';
+import { migrate, type Migration } from '../db/migrate.js';
+import { query, rows, tx } from '../db/pool.js';
 import { recompute } from './machine.js';
 import type { TradeEvent, TradeState } from './types.js';
 
@@ -10,8 +9,8 @@ import type { TradeEvent, TradeState } from './types.js';
  * The trade journal.
  *
  * Two tables and one rule: events are appended and never edited, and the state
- * row is a cache of replaying them. Market data is disposable and lives in
- * chain.db; an order history is not, so it gets its own file.
+ * row is a cache of replaying them. Market data is disposable and lives in the
+ * `market` schema; an order history is not, so it has the `trading` schema.
  *
  * The journal is what makes a restart safe. The process can die between the
  * fill and the stop going on, and what comes back knows a position exists
@@ -21,179 +20,131 @@ import type { TradeEvent, TradeState } from './types.js';
 /**
  * The journal's schema, as migrations.
  *
- * 001 is the shape the table had when it shipped. Anything that changes it
- * afterwards is a new entry -- never an edit to this one, which has already run
- * on every database that exists.
+ * The `trading` schema and its `settings` table are `db/settings.ts`'s; this
+ * list assumes they exist, which the boot order guarantees and `open()` checks.
+ * `trading-003` is the shape the tables had when the desk moved to PostgreSQL;
+ * anything that changes it afterwards is a new entry -- never an edit to this
+ * one, which has already run on every database that exists.
  */
 const MIGRATIONS: Migration[] = [
   {
-    id: '001-trades',
+    id: 'trading-003-trades',
     up: `
-      CREATE TABLE IF NOT EXISTS trades (
-        trade_id   TEXT PRIMARY KEY,
-        symbol     TEXT NOT NULL,
-        phase      TEXT NOT NULL,
+      CREATE TABLE IF NOT EXISTS trading.trades (
+        trade_id   TEXT    PRIMARY KEY,
+        symbol     TEXT    NOT NULL,
+        phase      TEXT    NOT NULL,
         position   INTEGER NOT NULL,
-        plan       TEXT NOT NULL,
-        state      TEXT NOT NULL,
-        updated_at INTEGER NOT NULL
+        plan       JSONB   NOT NULL,
+        state      JSONB   NOT NULL,
+        updated_at BIGINT  NOT NULL
       );
-      CREATE TABLE IF NOT EXISTS trade_events (
-        id       INTEGER PRIMARY KEY AUTOINCREMENT,
-        trade_id TEXT NOT NULL,
+      CREATE TABLE IF NOT EXISTS trading.trade_events (
+        id       BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        trade_id TEXT    NOT NULL REFERENCES trading.trades (trade_id) ON DELETE CASCADE,
         seq      INTEGER NOT NULL,
-        at       INTEGER NOT NULL,
-        kind     TEXT NOT NULL,
-        event    TEXT NOT NULL,
+        at       BIGINT  NOT NULL,
+        kind     TEXT    NOT NULL,
+        event    JSONB   NOT NULL,
         UNIQUE (trade_id, seq)
       );
-      CREATE INDEX IF NOT EXISTS trade_events_by_trade ON trade_events (trade_id, seq);
-      CREATE INDEX IF NOT EXISTS trades_by_phase ON trades (phase);
-      CREATE TABLE IF NOT EXISTS settings (
-        key   TEXT PRIMARY KEY,
-        value TEXT NOT NULL
-      );
+      CREATE INDEX IF NOT EXISTS trades_by_phase      ON trading.trades (phase);
+      -- The orders screen filters on when a trade last changed.
+      CREATE INDEX IF NOT EXISTS trades_by_updated_at ON trading.trades (updated_at DESC);
     `,
-  },
-  {
-    // The orders screen filters on when a trade last changed, and did it with
-    // a scan.
-    id: '002-trades-by-updated-at',
-    up: 'CREATE INDEX IF NOT EXISTS trades_by_updated_at ON trades (updated_at DESC);',
-  },
-  {
-    // The desk defaults to the first listed expiry (nearest active contract)
-    // rather than the next-entry contract.  Persisted so the choice survives
-    // a restart and can be changed through /api/settings.
-    id: '003-default-settings',
-    up: `INSERT OR IGNORE INTO settings (key, value) VALUES ('expiry_default', 'first');`,
   },
   {
     /*
      * The day's P&L, once a minute, so the day can be drawn as a line.
      *
-     * 008, not 004: the strategy store shares this file and its ledger, and
-     * 004-007 are its. One ledger per database, so one sequence.
-     *
-     * In the journal's file rather than in market.db because it is about
-     * money that was made and lost, and a deploy that replaced a market file
-     * should not take a month of P&L lines with it. Pruned at ninety days.
+     * In the journal's schema rather than in `market` because it is about
+     * money that was made and lost, and clearing a market table should not
+     * take a month of P&L lines with it. Pruned at ninety days.
      */
-    id: '008-mtm-samples',
+    id: 'trading-004-mtm-samples',
     up: `
-      CREATE TABLE IF NOT EXISTS mtm_samples (
-        at         INTEGER PRIMARY KEY,
-        day        TEXT    NOT NULL,
-        realised   REAL    NOT NULL,
-        unrealised REAL    NOT NULL,
-        charges    REAL    NOT NULL,
-        net        REAL    NOT NULL
+      CREATE TABLE IF NOT EXISTS trading.mtm_samples (
+        at         BIGINT           PRIMARY KEY,
+        day        TEXT             NOT NULL,
+        realised   DOUBLE PRECISION NOT NULL,
+        unrealised DOUBLE PRECISION NOT NULL,
+        charges    DOUBLE PRECISION NOT NULL,
+        net        DOUBLE PRECISION NOT NULL
       );
-      CREATE INDEX IF NOT EXISTS mtm_samples_by_day ON mtm_samples (day, at);
-    `,
-  },
-  {
-    /*
-     * A table nothing reads any more.
-     *
-     * It held "tell me when this strike pays 5" alerts for one afternoon on
-     * 16-17 September, before the ask turned out to be "tell me when the best
-     * pick changes" -- which needs no table, only a setting. The migration
-     * stays on the ledger because it has already run on the live desk and a
-     * ledger that loses an entry cannot be told apart from one that never ran
-     * it. The table is empty and harmless.
-     */
-    id: '009-premium-alerts',
-    up: `
-      CREATE TABLE IF NOT EXISTS premium_alerts (
-        id         INTEGER PRIMARY KEY AUTOINCREMENT,
-        symbol     TEXT    NOT NULL,
-        threshold  REAL    NOT NULL,
-        expiry_ts  INTEGER NOT NULL,
-        created_at INTEGER NOT NULL,
-        fired_at   INTEGER,
-        fired_bid  REAL
-      );
-      CREATE INDEX IF NOT EXISTS premium_alerts_live ON premium_alerts (fired_at) WHERE fired_at IS NULL;
+      CREATE INDEX IF NOT EXISTS mtm_samples_by_day ON trading.mtm_samples (day, at);
     `,
   },
 ];
-
 
 /** How long a day's line is kept. */
 export const MTM_KEEP_DAYS = 90;
 
 const OPEN_PHASES = "('precheck','entry_pending','entry_unknown','position_open','unprotected','protected','exit_pending')";
 
-export class SqliteTradeStore implements TradeStore {
-  private db: DatabaseSync;
+type Row = { trade_id: string; plan: TradeRecord['plan']; state: TradeState };
 
-  constructor(path = TRADE_DB) {
-    this.db = new DatabaseSync(path);
-    this.db.exec('PRAGMA journal_mode = WAL');
-    // Two connections share this file -- the trade journal and the strategy
-    // store -- so a write can meet the other's lock. Wait for it briefly rather
-    // than fail with SQLITE_BUSY. Sync stays at SQLite's default FULL: this is
-    // an order journal, and the last committed fill must survive a power cut.
-    this.db.exec('PRAGMA busy_timeout = 5000; PRAGMA temp_store = MEMORY; PRAGMA cache_size = -16000;');
-    migrate(this.db, MIGRATIONS);
+export class PgTradeStore implements TradeStore {
+  /** Ids applied when the store was opened. For the health endpoint. */
+  applied: string[] = [];
+
+  /** The journal, migrated. Everything else assumes this has been awaited once. */
+  static async open(): Promise<PgTradeStore> {
+    const store = new PgTradeStore();
+    store.applied = await migrate(MIGRATIONS);
+    return store;
   }
 
-  /** What this database has had applied. For the health endpoint. */
-  migrations() { return appliedMigrations(this.db); }
-
-  save(rec: TradeRecord): void {
+  /**
+   * The row and every event not yet written, in one transaction.
+   *
+   * Only what is new. An event already written is never rewritten, which is
+   * what lets the journal be trusted as an audit trail; `UNIQUE (trade_id, seq)`
+   * makes a double write impossible rather than merely unlikely.
+   */
+  async save(rec: TradeRecord): Promise<void> {
     const { state } = rec;
-    this.db
-      .prepare(
-        `INSERT INTO trades (trade_id, symbol, phase, position, plan, state, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(trade_id) DO UPDATE SET
-           phase = excluded.phase, position = excluded.position,
+    await tx(async (c) => {
+      await c.query(
+        `INSERT INTO trading.trades (trade_id, symbol, phase, position, plan, state, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (trade_id) DO UPDATE SET
+           phase = EXCLUDED.phase, position = EXCLUDED.position,
            -- The plan changes: a stop moved, a target moved, an entry that fell
            -- back. Leaving it out of the update meant it was written once on
            -- insert and never again, so every later change was lost on the next
            -- read -- the exits moved on the exchange and reverted on the screen.
-           plan = excluded.plan,
-           state = excluded.state, updated_at = excluded.updated_at`,
-      )
-      .run(
-        state.tradeId, state.symbol, state.phase, state.position,
-        JSON.stringify(rec.plan), JSON.stringify(state), state.updatedAt,
+           plan = EXCLUDED.plan,
+           state = EXCLUDED.state, updated_at = EXCLUDED.updated_at`,
+        [state.tradeId, state.symbol, state.phase, state.position, JSON.stringify(rec.plan), JSON.stringify(state), state.updatedAt],
       );
-
-    // Only what is new. An event already written is never rewritten, which is
-    // what lets the journal be trusted as an audit trail.
-    const written = this.db
-      .prepare('SELECT COUNT(*) AS n FROM trade_events WHERE trade_id = ?')
-      .get(state.tradeId) as { n: number };
-    const insert = this.db.prepare(
-      'INSERT OR IGNORE INTO trade_events (trade_id, seq, at, kind, event) VALUES (?, ?, ?, ?, ?)',
-    );
-    for (let i = written.n; i < rec.events.length; i++) {
-      const e = rec.events[i]!;
-      insert.run(state.tradeId, i, e.at, e.t, JSON.stringify(e));
-    }
+      const written = await c.query<{ n: number }>('SELECT COUNT(*) AS n FROM trading.trade_events WHERE trade_id = $1', [state.tradeId]);
+      for (let i = written.rows[0]!.n; i < rec.events.length; i++) {
+        const e = rec.events[i]!;
+        await c.query(
+          `INSERT INTO trading.trade_events (trade_id, seq, at, kind, event) VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (trade_id, seq) DO NOTHING`,
+          [state.tradeId, i, e.at, e.t, JSON.stringify(e)],
+        );
+      }
+    });
   }
 
-  get(tradeId: string): TradeRecord | null {
-    const row = this.db
-      .prepare('SELECT plan, state FROM trades WHERE trade_id = ?')
-      .get(tradeId) as { plan: string; state: string } | undefined;
-    return row ? this.hydrate(tradeId, row) : null;
+  async get(tradeId: string): Promise<TradeRecord | null> {
+    const found = await this.query('SELECT trade_id, plan, state FROM trading.trades WHERE trade_id = $1', [tradeId]);
+    return found[0] ?? null;
   }
 
-  all(): TradeRecord[] { return this.query('SELECT trade_id, plan, state FROM trades ORDER BY updated_at DESC'); }
+  all(): Promise<TradeRecord[]> {
+    return this.query('SELECT trade_id, plan, state FROM trading.trades ORDER BY updated_at DESC');
+  }
 
-  open(): TradeRecord[] {
-    return this.query(
-      `SELECT trade_id, plan, state FROM trades WHERE phase IN ${OPEN_PHASES} ORDER BY updated_at DESC`,
-    );
+  open(): Promise<TradeRecord[]> {
+    return this.query(`SELECT trade_id, plan, state FROM trading.trades WHERE phase IN ${OPEN_PHASES} ORDER BY updated_at DESC`);
   }
 
   /** Newest first, for the screen. */
-  recent(limit = 50): TradeRecord[] {
-    return this.query('SELECT trade_id, plan, state FROM trades ORDER BY updated_at DESC LIMIT ?', limit);
+  recent(limit = 50): Promise<TradeRecord[]> {
+    return this.query('SELECT trade_id, plan, state FROM trading.trades ORDER BY updated_at DESC LIMIT $1', [limit]);
   }
 
   /**
@@ -203,32 +154,16 @@ export class SqliteTradeStore implements TradeStore {
    * opened last night and closed this morning is one you did today -- and it is
    * the closing that a day's list is about.
    */
-  between(fromMs: number, toMs: number, limit = 500): TradeRecord[] {
+  between(fromMs: number, toMs: number, limit = 500): Promise<TradeRecord[]> {
     return this.query(
-      'SELECT trade_id, plan, state FROM trades WHERE updated_at >= ? AND updated_at < ? ' +
-        'ORDER BY updated_at DESC LIMIT ?',
-      fromMs, toMs, limit,
+      'SELECT trade_id, plan, state FROM trading.trades WHERE updated_at >= $1 AND updated_at < $2 ORDER BY updated_at DESC LIMIT $3',
+      [fromMs, toMs, limit],
     );
   }
 
-  /** Desk settings that must outlive a restart. Currently just the mode. */
-  getSetting(key: string): string | null {
-    const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as
-      { value: string } | undefined;
-    return row?.value ?? null;
-  }
-
-  setSetting(key: string, value: string): void {
-    this.db
-      .prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
-      .run(key, value);
-  }
-
-  events(tradeId: string): TradeEvent[] {
-    const rows = this.db
-      .prepare('SELECT event FROM trade_events WHERE trade_id = ? ORDER BY seq')
-      .all(tradeId) as { event: string }[];
-    return rows.map((r) => JSON.parse(r.event) as TradeEvent);
+  async events(tradeId: string): Promise<TradeEvent[]> {
+    return (await rows<{ event: TradeEvent }>('SELECT event FROM trading.trade_events WHERE trade_id = $1 ORDER BY seq', [tradeId]))
+      .map((r) => r.event);
   }
 
   /**
@@ -238,59 +173,61 @@ export class SqliteTradeStore implements TradeStore {
    * same reason hydrate does: a row written under a wrong calculation would
    * otherwise keep feeding the gate a wrong number.
    */
-  realisedSince(fromMs: number): number {
-    const rows = this.db
-      .prepare('SELECT state FROM trades WHERE updated_at >= ?')
-      .all(fromMs) as { state: string }[];
-    return rows.reduce(
-      (n, r) => n + (recompute(JSON.parse(r.state) as TradeState).realisedPnl ?? 0),
-      0,
-    );
+  async realisedSince(fromMs: number): Promise<number> {
+    const found = await rows<{ state: TradeState }>('SELECT state FROM trading.trades WHERE updated_at >= $1', [fromMs]);
+    return found.reduce((n, r) => n + (recompute(r.state).realisedPnl ?? 0), 0);
   }
 
   /** One reading of the day. Ignored if a reading already sits at that millisecond. */
-  sampleMtm(m: MtmSample): void {
-    this.db.prepare(
-      `INSERT OR IGNORE INTO mtm_samples (at, day, realised, unrealised, charges, net)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run(m.at, m.day, m.realisedUsd, m.unrealisedUsd, m.chargesUsd, m.netUsd);
+  async sampleMtm(m: MtmSample): Promise<void> {
+    await query(
+      `INSERT INTO trading.mtm_samples (at, day, realised, unrealised, charges, net)
+       VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (at) DO NOTHING`,
+      [m.at, m.day, m.realisedUsd, m.unrealisedUsd, m.chargesUsd, m.netUsd],
+    );
   }
 
   /** The day's line, oldest first. */
-  mtmSamples(day: string): MtmSample[] {
-    const rows = this.db.prepare(
-      'SELECT at, day, realised, unrealised, charges, net FROM mtm_samples WHERE day = ? ORDER BY at',
-    ).all(day) as { at: number; day: string; realised: number; unrealised: number; charges: number; net: number }[];
-    return rows.map((r) => ({
+  async mtmSamples(day: string): Promise<MtmSample[]> {
+    const found = await rows<{ at: number; day: string; realised: number; unrealised: number; charges: number; net: number }>(
+      'SELECT at, day, realised, unrealised, charges, net FROM trading.mtm_samples WHERE day = $1 ORDER BY at',
+      [day],
+    );
+    return found.map((r) => ({
       at: r.at, day: r.day, realisedUsd: r.realised, unrealisedUsd: r.unrealised, chargesUsd: r.charges, netUsd: r.net,
     }));
   }
 
   /** The days that have a line at all, newest first. */
-  mtmDays(limit = 120): string[] {
-    return (this.db.prepare('SELECT DISTINCT day FROM mtm_samples ORDER BY day DESC LIMIT ?').all(limit) as { day: string }[])
-      .map((r) => r.day);
+  async mtmDays(limit = 120): Promise<string[]> {
+    return (await rows<{ day: string }>('SELECT DISTINCT day FROM trading.mtm_samples ORDER BY day DESC LIMIT $1', [limit])).map((r) => r.day);
   }
 
   /** Drop lines older than `keepDays`. Returns how many readings went. */
-  pruneMtm(nowMs: number, keepDays = MTM_KEEP_DAYS): number {
-    const r = this.db.prepare('DELETE FROM mtm_samples WHERE at < ?').run(nowMs - keepDays * 86_400_000);
-    return Number(r.changes);
+  async pruneMtm(nowMs: number, keepDays = MTM_KEEP_DAYS): Promise<number> {
+    const r = await query('DELETE FROM trading.mtm_samples WHERE at < $1', [nowMs - keepDays * 86_400_000]);
+    return r.rowCount ?? 0;
   }
 
-  private query(sql: string, ...params: unknown[]): TradeRecord[] {
-    const rows = this.db.prepare(sql).all(...(params as never[])) as
-      { trade_id: string; plan: string; state: string }[];
-    return rows.map((r) => this.hydrate(r.trade_id, r));
-  }
-
-  private hydrate(tradeId: string, row: { plan: string; state: string }): TradeRecord {
+  /** Rows to records, with every trade's events fetched in one query rather than one per trade. */
+  private async query(sql: string, params: readonly (string | number)[] = []): Promise<TradeRecord[]> {
+    const found = await rows<Row>(sql, params);
+    if (!found.length) return [];
+    const events = await rows<{ trade_id: string; event: TradeEvent }>(
+      'SELECT trade_id, event FROM trading.trade_events WHERE trade_id = ANY($1) ORDER BY trade_id, seq',
+      [found.map((r) => r.trade_id)],
+    );
+    const byTrade = new Map<string, TradeEvent[]>();
+    for (const e of events) {
+      const list = byTrade.get(e.trade_id);
+      if (list) list.push(e.event); else byTrade.set(e.trade_id, [e.event]);
+    }
     // The stored figures are a cache of the fills. Recomputing on the way out
     // means a corrected calculation fixes history rather than only the future.
-    return {
-      state: recompute(JSON.parse(row.state) as TradeRecord['state']),
-      plan: JSON.parse(row.plan) as TradeRecord['plan'],
-      events: this.events(tradeId),
-    };
+    return found.map((r) => ({
+      state: recompute(r.state),
+      plan: r.plan,
+      events: byTrade.get(r.trade_id) ?? [],
+    }));
   }
 }

@@ -175,11 +175,14 @@ export interface TradeStore {
 }
 
 export class MemoryTradeStore implements TradeStore {
-  private rows = new Map<string, TradeRecord>();
-  async save(rec: TradeRecord) { this.rows.set(rec.state.tradeId, rec); }
-  async get(id: string) { return this.rows.get(id) ?? null; }
-  async all() { return [...this.rows.values()]; }
-  async open() { return (await this.all()).filter((r) => !isDone(r.state)); }
+  private byId = new Map<string, TradeRecord>();
+  async save(rec: TradeRecord) { this.byId.set(rec.state.tradeId, rec); }
+  async get(id: string) { return this.peek(id); }
+  async all() { return this.rows(); }
+  async open() { return this.rows().filter((r) => !isDone(r.state)); }
+  /** For tests: the same answers, without the await. */
+  peek(id: string): TradeRecord | null { return this.byId.get(id) ?? null; }
+  rows(): TradeRecord[] { return [...this.byId.values()]; }
 }
 
 export type EngineDeps = {
