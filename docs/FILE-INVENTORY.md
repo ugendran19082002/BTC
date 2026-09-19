@@ -248,6 +248,8 @@ The studies the strategy rests on. Not deployed; kept because every number in
 
 ## Deployment and docs
 
+`docs/Data.md`: what market data Delta gives, live and historical, at which timeframes, and which table keeps it.
+
 New with the database: `deploy/test-db.sh` (the throwaway PostgreSQL the suites use), `deploy/backup-db.sh` (`pg_dump`, keep 14, `--restore`), `deploy/.env.example` (`POSTGRES_PASSWORD`, and the Adminer secrets). For the console (`docs/ADMINER.md`): `deploy/nginx-adminer.conf` (edge vhost), `deploy/adminer/` (plugins and theme), `deploy/db-readonly-role.sh`, `deploy/adminer-otp.sh`.
 
 

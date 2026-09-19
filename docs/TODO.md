@@ -30,6 +30,9 @@ Still to do, in order:
 - [x] Every table into the one `public` schema, 12:00 IST, on request — one list
       in Adminer. Rehearsed on a restored copy of the 11:56 backup first; row
       counts identical; `backups/btc_desk-20260919-0626.dump` is the before.
+- [ ] Keep per-strike greeks, IV and bid/ask over time: Delta has no history of
+      them, and nothing here records them (`Data.md` §4). A table fed from the
+      live ticker every 5 minutes -- nearest expiry first, ~2.6 GB a year.
 - [ ] Off-host copies of the dumps. A backup on the same disk as the database
       protects against mistakes, not against the disk.
 - [ ] Drop the retired `.db` files from the `data` volume after 19 Oct 2026.
