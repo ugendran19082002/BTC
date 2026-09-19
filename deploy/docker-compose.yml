@@ -170,6 +170,53 @@ services:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
 
+  # Database console. OPT-IN: `docker compose --profile admin up -d adminer`,
+  # and `stop adminer` when done -- it is open while someone is using it, not
+  # permanently. See docs/ADMINER.md.
+  #
+  # Three locks in series: basic auth at the edge (adminer.thannigo.in), a
+  # one-time code in Adminer itself, then a database password. The login form
+  # is pinned to this compose network's `db` (no other host can be named), and
+  # the account to use day to day is `desk_ro`, which cannot write.
+  adminer:
+    profiles: ["admin"]
+    image: adminer:5.5.1-standalone
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ADMINER_DEFAULT_SERVER: db
+      # base32, from deploy/.env; without it the login refuses (fail closed)
+      ADMINER_OTP_SECRET: ${ADMINER_OTP_SECRET:-}
+    volumes:
+      # The plugin configuration, read-only. ADMINER_PLUGINS / ADMINER_DESIGN
+      # are deliberately not used: they make the entrypoint write into the
+      # image, and the root filesystem here is read-only.
+      - ./adminer/plugins-enabled:/var/www/html/plugins-enabled:ro
+    # On the docker bridge address only: the edge proxy reaches it as
+    # host.docker.internal:8098; the internet cannot, and neither can
+    # anything that only has the host's public address.
+    ports:
+      - "172.17.0.1:${ADMINER_PORT:-8098}:8080"
+    read_only: true
+    tmpfs:
+      # PHP sessions and uploads
+      - /tmp:size=16m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # A SELECT typed here runs on the same box as the trading engine.
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
   # One-shot: tops the chain cache up with any day it is missing, then exits.
   # Schedule it from cron or a systemd timer after the 12:00 UTC settlement.
   harvester:
