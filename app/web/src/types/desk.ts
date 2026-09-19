@@ -162,6 +162,15 @@ export type MarketRead = {
   /** The high and low of the last 24 hours, from the hourly bars. */
   high24h: number | null;
   low24h: number | null;
+  /** The previous completed UTC day's extremes. Absent from a server that predates them. */
+  prevDayHigh?: number | null;
+  prevDayLow?: number | null;
+  /** Realised volatility over the last 1 / 6 / 12 hours, from 5-minute closes, annualised percent. */
+  realisedVol1h?: number | null;
+  realisedVol6h?: number | null;
+  realisedVol12h?: number | null;
+  /** MACD(12, 26, 9) on the 15-minute closes. */
+  macd15m?: { line: number; signal: number; hist: number } | null;
 };
 
 /**

@@ -3,6 +3,7 @@ import { one, query, rows } from '../db/pool.js';
 import { req, type Ticker } from './delta.js';
 import { FlowSocket, PERP_SYMBOL, perpTickerOf, type FlowHealth, type PerpTicker, type Print } from './flow-socket.js';
 import { termStructure, type TermPoint } from './term.js';
+import { marketSchema } from './oi-history.js';
 
 /**
  * The perpetual's order flow, the book, funding and the IV term structure,
@@ -376,6 +377,7 @@ export type SkewRank = {
  */
 export async function skewRank(nowPts: number | null): Promise<SkewRank | null> {
   if (nowPts === null) return null;
+  await marketSchema();
   const r = await one<{ n: number; below: number; oldest: number | null }>(
     `SELECT COUNT(*)::int AS n, COUNT(*) FILTER (WHERE iv_skew_pts < $1)::int AS below, MIN(at) AS oldest
        FROM chain_features WHERE iv_skew_pts IS NOT NULL`,

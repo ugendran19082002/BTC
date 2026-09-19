@@ -13,6 +13,7 @@ import { tradingService, SHORT_CAP_KEY } from '../../trading/service.js';
 import { appliedMigrations } from '../../db/migrate.js';
 import { termStructure } from '../../market/term.js';
 import { lastOptionSnapshot, optionHistory } from '../../market/option-snapshots.js';
+import { flowFeedHealth, flowSummary, liveBook, livePerp, skewRank, termHistory } from '../../market/flow.js';
 import { one } from '../../db/pool.js';
 import { strategyStore } from './strategy.routes.js';
 import { refuse } from '../refuse.js';
@@ -83,6 +84,7 @@ export function registerDeskRoutes(app: FastifyInstance) {
       // up. A feed that has fallen back to polling should be visible from
       // outside rather than by a board that is eight seconds old.
       feed: tickerFeedHealth(),
+      flowFeed: flowFeedHealth(),
       simulationBacklog: simulationBacklog(),
       now: new Date().toISOString(),
     };
@@ -118,10 +120,46 @@ export function registerDeskRoutes(app: FastifyInstance) {
     return { symbol, points: await optionHistory(symbol, Date.now() - hours * 3_600_000) };
   });
 
-  /** ATM IV across every listed expiry, from the live board. Present only: there is no IV history. */
-  app.get('/api/term', async (_req, reply) => {
+  /**
+   * ATM IV across every listed expiry: now from the live board, and as it was
+   * a week and a month ago from the desk's own record, which began 19 Sep
+   * 2026 -- those lines are null until the record is that long. The skew's
+   * rank among every reading recorded rides along, for the same panel.
+   */
+  app.get('/api/term', async (req, reply) => {
     try {
-      return { at: Date.now(), points: termStructure(await liveTickers(), Math.floor(Date.now() / 1000)) };
+      const now = Date.now();
+      const skewPts = Number((req.query as { skewPts?: string }).skewPts);
+      const [tickers, weekAgo, monthAgo, skew] = await Promise.all([
+        liveTickers(),
+        termHistory(7 * 86_400_000, now).catch(() => null),
+        termHistory(30 * 86_400_000, now).catch(() => null),
+        skewRank(Number.isFinite(skewPts) ? skewPts : null).catch(() => null),
+      ]);
+      return { at: now, points: termStructure(tickers, Math.floor(now / 1000)), weekAgo, monthAgo, skew };
+    } catch (e) {
+      reply.code(502);
+      return { error: (e as Error).message };
+    }
+  });
+
+  /**
+   * The perpetual: its ticker (funding, open interest, turnover), the top of
+   * its book, and the last hour's order flow by aggressor side. The three
+   * things docs/test.md §10 names as the desk's biggest gap; the flow is
+   * summed from every print on the socket, and says how many of the sixty
+   * minutes it actually has.
+   */
+  app.get('/api/perp', async (req, reply) => {
+    try {
+      const now = Date.now();
+      const windowMin = Math.min(240, Math.max(5, Number((req.query as { window?: string }).window ?? 60) || 60));
+      const [ticker, book, flow] = await Promise.all([
+        livePerp(now).catch(() => null),
+        liveBook(now).catch(() => null),
+        flowSummary(windowMin, now),
+      ]);
+      return { at: now, ticker, book, flow };
     } catch (e) {
       reply.code(502);
       return { error: (e as Error).message };

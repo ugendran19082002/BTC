@@ -13,6 +13,7 @@ import { marketSchema } from './market/oi-history.js';
 import { errorLog } from './observability/errors.js';
 import { analyticsSchema } from './db/analytics-schema.js';
 import { captureOptionSnapshots, optionSnapshotsSchema } from './market/option-snapshots.js';
+import { captureIvTerm, capturePerpSnapshot, flowSchema, flushTradeFlow, startFlowSocket } from './market/flow.js';
 import { noteError } from './observability/errors.js';
 
 /**
@@ -37,6 +38,7 @@ await marketSchema();
 await errorLog().ready;
 await analyticsSchema();
 await optionSnapshotsSchema();
+await flowSchema();
 const strategies = await initStrategyStore();
 
 // One sign-in service for the process: the gate and the routes share the pool.
@@ -115,11 +117,21 @@ liveTickers()
  * the table makes it write once per five. Off the request path, and a failure
  * is one warning in the error log, never a stopped desk.
  */
+const warn = (where: string) => (e: Error) => noteError({ source: 'server', level: 'warn', where, message: `${where} not written: ${e.message}` });
 const recordOptions = () => {
   liveTickers()
-    .then((t) => captureOptionSnapshots(t, Date.now()))
-    .catch((e: Error) => noteError({ source: 'server', level: 'warn', where: 'option-snapshots', message: `option snapshot not written: ${e.message}` }));
+    .then((t) => Promise.all([captureOptionSnapshots(t, Date.now()), captureIvTerm(t, Date.now())]))
+    .catch(warn('option-snapshots'));
+  capturePerpSnapshot(Date.now()).catch(warn('perp-snapshots'));
 };
 setInterval(recordOptions, 60_000).unref();
 setTimeout(recordOptions, 15_000).unref();
+
+/*
+ * The perpetual's tape, off its own socket: every print, summed per minute
+ * by which side crossed the spread, written every twenty seconds so a restart
+ * loses at most that much of the hour's flow (docs/test.md §10).
+ */
+startFlowSocket((line) => app.log.info(line));
+setInterval(() => { flushTradeFlow(Date.now()).catch(warn('trade-flow')); }, 20_000).unref();
 

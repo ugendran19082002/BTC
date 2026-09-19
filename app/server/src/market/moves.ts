@@ -278,7 +278,54 @@ export type MarketRead = {
   /** the high and low of the last 24 hours, from the hourly bars */
   high24h: number | null;
   low24h: number | null;
+  /** the previous completed UTC day's extremes, the two levels every desk marks */
+  prevDayHigh: number | null;
+  prevDayLow: number | null;
+  /**
+   * Realised volatility over the last hour, six and twelve hours, from the
+   * 5-minute closes, annualised percent -- what BTC is delivering right now,
+   * against the 21-day figure that says what it usually delivers.
+   */
+  realisedVol1h: number | null;
+  realisedVol6h: number | null;
+  realisedVol12h: number | null;
+  /** MACD(12, 26, 9) on the 15-minute closes: the line, its signal and the histogram. */
+  macd15m: { line: number; signal: number; hist: number } | null;
 };
+
+/** Annualised volatility of log returns over consecutive bars of `minutes` each, percent. */
+export function realisedVolOf(closes: readonly number[], minutes: number): number | null {
+  if (closes.length < 3) return null;
+  const rets: number[] = [];
+  for (let i = 1; i < closes.length; i++) {
+    const a = closes[i - 1]!, b = closes[i]!;
+    if (a > 0 && b > 0) rets.push(Math.log(b / a));
+  }
+  if (rets.length < 2) return null;
+  const mean = rets.reduce((x, y) => x + y, 0) / rets.length;
+  const varr = rets.reduce((x, y) => x + (y - mean) ** 2, 0) / (rets.length - 1);
+  const perYear = (365 * 24 * 60) / minutes;
+  return Math.sqrt(varr * perYear) * 100;
+}
+
+/** MACD: EMA(fast) − EMA(slow), its EMA(signal), and the difference. Null without enough bars. */
+export function macdOf(closes: readonly number[], fast = 12, slow = 26, signal = 9): { line: number; signal: number; hist: number } | null {
+  if (closes.length < slow + signal) return null;
+  const series = (period: number): number[] => {
+    const k = 2 / (period + 1);
+    const out: number[] = [];
+    let e = closes.slice(0, period).reduce((a, b) => a + b, 0) / period;
+    for (let i = period; i < closes.length; i++) { e = closes[i]! * k + e * (1 - k); out.push(e); }
+    return out;
+  };
+  const f = series(fast), sl = series(slow);
+  // Align on the slow EMA's first value.
+  const line = sl.map((v, i) => f[i + (f.length - sl.length)]! - v);
+  if (line.length < signal) return null;
+  const sig = ema(line, signal);
+  const last = line[line.length - 1]!;
+  return sig === null ? null : { line: last, signal: sig, hist: last - sig };
+}
 
 /**
  * The newest bar's volume against the median of the twenty before it.
@@ -487,8 +534,19 @@ export async function readMarket(sinceHours?: number): Promise<MarketRead> {
   const high24h = day.length ? Math.max(...day.map((b) => b.high)) : null;
   const low24h = day.length ? Math.min(...day.map((b) => b.low)) : null;
 
+  // The previous completed daily bar; the last one is today's, still forming.
+  const prevDay = daily.length >= 2 ? daily[daily.length - 2]! : null;
+  const m5Closes = m5.map((b) => b.close);
+  const m15 = series.find(([tf]) => tf === '15m')?.[1] ?? [];
+
   return {
     spot, return24h, dailyRsiPrior, timeframes, agreement, regime, realisedVol,
     moves, max24hRangeUsd, max24hRangePct, volume, high24h, low24h,
+    prevDayHigh: prevDay?.high ?? null,
+    prevDayLow: prevDay?.low ?? null,
+    realisedVol1h: m5Closes.length >= 13 ? realisedVolOf(m5Closes.slice(-13), 5) : null,
+    realisedVol6h: m5Closes.length >= 73 ? realisedVolOf(m5Closes.slice(-73), 5) : null,
+    realisedVol12h: m5Closes.length >= 145 ? realisedVolOf(m5Closes.slice(-145), 5) : null,
+    macd15m: macdOf(m15.map((b) => b.close)),
   };
 }

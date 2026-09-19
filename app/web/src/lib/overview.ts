@@ -17,6 +17,45 @@ import type {
 /** Contract value on Delta's BTC options: one contract is 0.001 BTC. */
 export const CONTRACT_BTC = 0.001;
 
+/**
+ * What Delta holds for a short, per contract, at `leverage`: spot × contract
+ * value ÷ leverage, plus the fee to open -- the formula the server's margin
+ * model was fitted to against a real ticket (server: trading/margin.ts). An
+ * estimate; the ticket, and then the exchange, is the authority.
+ */
+export const TAKER_FEE_RATE = 0.0001;
+export const FEE_CAP_FRACTION_OF_PREMIUM = 0.035;
+export function feePerContract(spot: number, premium: number): number {
+  return Math.min(spot * CONTRACT_BTC * TAKER_FEE_RATE, premium * CONTRACT_BTC * FEE_CAP_FRACTION_OF_PREMIUM);
+}
+export function marginPerContract(spot: number, leverage: number, premium: number): number {
+  return spot * CONTRACT_BTC / Math.max(1, leverage) + feePerContract(spot, premium);
+}
+
+export type OrderEstimate = {
+  contracts: number;
+  /** Premium received, before fees. */
+  creditUsd: number;
+  feesUsd: number;
+  marginUsd: number;
+  /** Credit after the opening fee as a share of the margin it ties up. */
+  returnOnMargin: number | null;
+  /** The strike price where the short breaks even at settlement, after the opening fee. */
+  breakevenAfterFees: number;
+};
+
+export function orderEstimate(cp: 'C' | 'P', strike: number, premium: number, spot: number, leverage: number, contracts: number): OrderEstimate {
+  const creditUsd = premium * contracts * CONTRACT_BTC;
+  const feesUsd = feePerContract(spot, premium) * contracts;
+  const marginUsd = marginPerContract(spot, leverage, premium) * contracts;
+  const feePerBtc = contracts > 0 ? feesUsd / (contracts * CONTRACT_BTC) : 0;
+  return {
+    contracts, creditUsd, feesUsd, marginUsd,
+    returnOnMargin: marginUsd > 0 ? (creditUsd - feesUsd) / marginUsd : null,
+    breakevenAfterFees: cp === 'C' ? strike + premium - feePerBtc : strike - premium + feePerBtc,
+  };
+}
+
 // ------------------------------------------------------------------ volatility
 
 export type IvRv = { ivPct: number; rvPct: number; spreadPts: number; ratio: number; label: 'rich' | 'fair' | 'cheap' };
@@ -36,6 +75,16 @@ export function ivRv(atmIv: number | null, realisedVolPct: number | null): IvRv 
     ivPct, rvPct: realisedVolPct, spreadPts: ivPct - realisedVolPct, ratio,
     label: ratio >= 1.15 ? 'rich' : ratio <= 0.9 ? 'cheap' : 'fair',
   };
+}
+
+/**
+ * Is BTC moving more or less than it usually does: the last hour's realised
+ * volatility against the 21-day figure. High above 1.3×, low under 0.7×.
+ */
+export function volRegime(rvShortPct: number | null, rvLongPct: number | null): { label: 'high' | 'normal' | 'low'; ratio: number } | null {
+  if (rvShortPct === null || rvLongPct === null || !(rvLongPct > 0)) return null;
+  const ratio = rvShortPct / rvLongPct;
+  return { ratio, label: ratio >= 1.3 ? 'high' : ratio <= 0.7 ? 'low' : 'normal' };
 }
 
 // ------------------------------------------------------------------------ skew
@@ -163,6 +212,26 @@ export function payoffPrices(strike: number, spot: number, step: number, n = 3):
   const out = new Set<number>([Math.round(spot / step) * step]);
   for (let i = -n; i <= n; i++) out.add(strike + i * step);
   return [...out].sort((a, b) => a - b);
+}
+
+// ------------------------------------------------------------ both sides
+
+export type BothSides = {
+  ce: Leg | null;
+  pe: Leg | null;
+  /** A side is safe when its strike sits at least one expected move away. */
+  ceSafe: boolean | null;
+  peSafe: boolean | null;
+  /** Delta of the pair, short both: near zero is balanced. */
+  netDelta: number | null;
+};
+
+export function bothSides(legs: readonly Leg[]): BothSides {
+  const ce = bestLeg(legs, 'C');
+  const pe = bestLeg(legs, 'P');
+  const safe = (l: Leg | null) => (l === null ? null : l.emDistance === null ? null : l.emDistance >= 1);
+  const netDelta = ce?.delta != null && pe?.delta != null ? -(ce.delta + pe.delta) : null;
+  return { ce, pe, ceSafe: safe(ce), peSafe: safe(pe), netDelta };
 }
 
 // ---------------------------------------------------------- the decision
@@ -293,8 +362,10 @@ export function entryGates(input: {
   iv: IvRv | null;
   nowMs: number;
   maxSpreadPct: number | null;
+  /** The size about to be sold, what is already short, and the desk's caps: the risk gate. */
+  risk?: { contracts: number; heldShort: number; maxShortContracts: number; dayNetUsd: number | null; maxDailyLossUsd: number } | null;
 }): Gate[] {
-  const { data, leg, iv, nowMs, maxSpreadPct } = input;
+  const { data, leg, iv, nowMs, maxSpreadPct, risk } = input;
   const f = freshness(data.snapshot.ts, nowMs);
   const c = consensus(data.outlook);
   const pa = leg ? premiumAnalysis(leg, null) : null;
@@ -312,6 +383,17 @@ export function entryGates(input: {
     { key: 'liquidity', ok: pa?.spreadPct === null || pa === null || maxSpreadPct === null ? null : pa.spreadPct <= maxSpreadPct / 100,
       text: pa?.spreadPct == null ? 'Spread: no two-sided quote' : `Spread ${(pa.spreadPct * 100).toFixed(1)}%${maxSpreadPct !== null ? ` (limit ${maxSpreadPct}%)` : ''}` },
   ];
+  if (risk) {
+    const after = risk.heldShort + risk.contracts;
+    const lossHit = risk.dayNetUsd !== null && risk.dayNetUsd <= -risk.maxDailyLossUsd;
+    gates.push({
+      key: 'risk',
+      ok: after <= risk.maxShortContracts && !lossHit,
+      text: lossHit
+        ? `Day's loss $${Math.abs(risk.dayNetUsd!).toFixed(2)} has reached the $${risk.maxDailyLossUsd} limit`
+        : `Risk: ${after} short after this (cap ${risk.maxShortContracts})${risk.dayNetUsd !== null ? ` · day ${risk.dayNetUsd >= 0 ? '+' : '−'}$${Math.abs(risk.dayNetUsd).toFixed(2)} of −$${risk.maxDailyLossUsd} allowed` : ''}`,
+    });
+  }
   // The server's own gates, as it wrote them. It is the authority; these are shown, not re-judged.
   for (const [i, ch] of data.verdict.checks.entries()) {
     gates.push({ key: `verdict-${i}`, ok: ch.ok ? true : ch.severity === 'block' ? false : null, text: ch.text });
@@ -327,8 +409,13 @@ export const allClear = (gates: readonly Gate[]) => gates.length > 0 && gates.ev
 export type Level = { label: string; price: number; kind: 'resistance' | 'support' | 'pivot' | 'range' };
 
 /** Levels the board and the tape both know, sorted high to low. Nothing drawn that was not read. */
-export function keyLevels(structure: OptionStructure, high24h: number | null, low24h: number | null): Level[] {
+export function keyLevels(
+  structure: OptionStructure, high24h: number | null, low24h: number | null,
+  prevDayHigh: number | null = null, prevDayLow: number | null = null,
+): Level[] {
   const out: Level[] = [];
+  if (prevDayHigh !== null) out.push({ label: 'Prev day high', price: prevDayHigh, kind: 'range' });
+  if (prevDayLow !== null) out.push({ label: 'Prev day low', price: prevDayLow, kind: 'range' });
   const ce = structure.ceOiWallNear ?? structure.ceOiWall;
   const pe = structure.peOiWallNear ?? structure.peOiWall;
   if (ce) out.push({ label: 'Call OI wall', price: ce.strike, kind: 'resistance' });
