@@ -75,8 +75,11 @@ Backups: `deploy/backup-db.sh` writes `backups/btc_desk-<stamp>.dump`
 (`pg_dump -Fc`, consistent while the desk trades) and keeps 14. In cron:
 
 ```
-30 12 * * * /home/agent/test-delta/deploy/backup-db.sh >> /home/agent/test-delta/backup.log 2>&1
+0 18 * * * /home/agent/test-delta/deploy/backup-db.sh >> /home/agent/test-delta/backup.log 2>&1
 ```
+
+Installed. The crontab sets `CRON_TZ=Asia/Kolkata`, so that is 18:00 IST, after
+the 17:30 settlement.
 
 Restore: `./deploy/backup-db.sh --restore backups/btc_desk-<stamp>.dump` stops
 the API and analytics, restores in one transaction, starts them and
@@ -84,6 +87,9 @@ health-checks. A dump is only as good as the last time one was restored:
 rehearse it into a scratch database now and then.
 
 ### Cutover from the SQLite files (once)
+
+**Done on this server on 19 September 2026** — see TODO.md for the record. The
+steps stay here for any other copy of the desk still on SQLite.
 
 The desk kept `trades.db`, `auth.db`, `errors.db`, `market.db` and
 `analytics.db` on the `data` volume until 19 September 2026. To move a desk

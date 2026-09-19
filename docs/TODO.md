@@ -16,13 +16,24 @@ cache so the gates stay synchronous. Tests run against a real PostgreSQL
 
 Still to do, in order:
 
-- [ ] **The cutover on the live desk** — `DEPLOY.md`, "Cutover from the SQLite
-      files". Flat first. Keep the `.db` files a month.
-- [ ] `deploy/backup-db.sh` into cron beside `refresh.sh`, and one rehearsed
-      restore into a scratch database.
+- [x] **The cutover on the live desk**, 19 Sep 2026 11:20–11:26 IST, flat, no
+      strategy armed. Every table's count matched (82 trades, 629 events, 6,330
+      MTM samples, 11,792 OI snapshots…). The seed had re-created two deleted
+      strategies; removed, and the import fixed. Rollback: image
+      `btc-desk-api:0acb484-dirty-030247` + the untouched `.db` files, and
+      `backups/sqlite-pre-cutover-20260919-0552.tgz`.
+- [x] `deploy/backup-db.sh` in cron, 18:00 IST daily, 14 kept; first dump
+      restored into a scratch database and checked (82 trades, 5 strategies).
+- [x] Web port on the docker bridge (172.17.0.1:8099) — SECURITY-AUDIT #12.
+- [x] Adminer live at adminer.thannigo.in (`ADMINER.md`); credentials in
+      `~/BTC-ADMINER-CREDENTIALS.txt` (0600). Stopped by default.
 - [ ] Off-host copies of the dumps. A backup on the same disk as the database
       protects against mistakes, not against the disk.
 - [ ] Drop the retired `.db` files from the `data` volume after 19 Oct 2026.
+- [ ] `refresh.sh` cron says `40 12`, and this crontab sets
+      `CRON_TZ=Asia/Kolkata` — so it runs at 12:40 **IST**, before the 17:30 IST
+      settlement, not at 12:40 UTC as DEPLOY.md implies. Today's day is only
+      harvested the next day. Decide which was meant.
 
 ---
 
