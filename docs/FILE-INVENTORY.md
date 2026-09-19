@@ -36,7 +36,7 @@ here exists because something specific went wrong once.
 | `precheck.ts` | 293 | The gates a trade passes before a byte goes to the exchange. Each one exists because of a specific way money is lost: a stale quote, a spread too wide to cross, a premium too small to be worth the same margin, a daily loss already taken. |
 | `machine.ts` | 231 | The trade lifecycle as a pure reducer over fills. Position is *counted from fills*, never assumed. No I/O, so every case in the matrix can be built by hand. |
 | `types.ts` | 217 | The vocabulary of a live trade. All data, no behaviour. |
-| `store.ts` | 207 | The trade journal: events appended and never edited, state rebuilt from them. What makes a restart safe. |
+| `store.ts` | 260 | The trade journal (`trading` schema): events appended and never edited, state rebuilt from them. What makes a restart safe. |
 | `margin.ts` | 199 | What leverage actually does to a sold option — calibrated against a real Delta ticket, not against the docs. Also liquidation price and unrealised P&L. |
 | `status.ts` | 80 | What a trade looks like in a list of orders: completed / pending / rejected / cancelled, and the IST day boundaries the Orders screen filters on. |
 | `money.ts` | 55 | Prices and sizes the exchange will actually accept. Everything in whole ticks; a seller rounds up and a buyer rounds down, so rounding never quietly moves against you. |
@@ -82,9 +82,12 @@ here exists because something specific went wrong once.
 |---|---:|---|
 | `backtest/backtest.ts` | 278 | Backtest over `chain.db`: open at 05:30 IST, hold to the 12:00 UTC settlement. |
 | `observability/errors.ts` | 241 | Every failure this system has, in one table — server, browser, exchange, trading. Folded by fingerprint, redacted before write, and never throws. |
-| `db/migrate.ts` | 83 | Schema changes that run once and are remembered. A failure rolls back and stops the boot. |
+| `db/pool.ts` | 125 | The one PostgreSQL connection pool, from `DATABASE_URL`; `query` / `rows` / `one` / `tx`. |
+| `db/migrate.ts` | 120 | Schema changes that run once and are remembered in `public.schema_migrations`. Advisory-locked; a failure rolls back and stops the boot. |
+| `db/settings.ts` | 100 | The desk's settings: loaded once, read synchronously, written through to the database first. |
+| `db/import-sqlite.ts` | 280 | The one-shot copy of the old SQLite files into PostgreSQL, with a per-table count check (`npm run db:import`). |
 | `index.ts` | 56 | Start the desk. Composition only. |
-| `paths.ts` | 41 | Where the data lives, resolved once by walking up to a repo marker. |
+| `paths.ts` | 30 | Where `chain.db` lives, resolved once by walking up to a repo marker. |
 | `config.ts` | 40 | Every environment variable this process reads, in one place. |
 
 ### Notifications (`notify/`)
@@ -182,7 +185,9 @@ spinners removed — they are one pixel from the field on a trading screen),
 | `trading/payload.test.ts` | 133 | Pins the exact JSON body sent to Delta. Three `bad_schema` refusals came from this body; it is now asserted field by field. |
 | `trading/harness.ts` | 122 | The rig every trading test is built on. |
 | `trading/entry-types.test.ts` | 122 | Limit, market, chase, fallback. |
-| `migrate.test.ts` | 117 | Runs once, rolls back on failure, survives a reopen. |
+| `db/migrate.test.ts` | 130 | Runs once, rolls back on failure, one ledger for every schema, two boots at once run it once. |
+| `db/settings.test.ts` | 60 | Written before `set` resolves; a reload sees it; reading before load is an error. |
+| `db/import-sqlite.test.ts` | 180 | Old-schema SQLite files in, every store reads back what the SQLite desk had, idempotent. |
 | `trading/status.test.ts` | 109 | Order status and IST day boundaries. |
 | `trading/store.test.ts` | 88 | Written after the `plan`-column bug: the first test is a plan changed and read back. |
 | `trading/short-cap.test.ts` | 132 | The total-short cap. Reproduces the live refusal (410 short, 410 more, limit 500) and pins the rule that a setting may lower the cap and can never raise it above what margin covers. |
@@ -242,6 +247,9 @@ The studies the strategy rests on. Not deployed; kept because every number in
 ---
 
 ## Deployment and docs
+
+New with the database: `deploy/test-db.sh` (the throwaway PostgreSQL the suites use), `deploy/backup-db.sh` (`pg_dump`, keep 14, `--restore`), `deploy/.env.example` (`POSTGRES_PASSWORD`).
+
 
 `deploy/deploy.sh` builds both images, refuses to build if a credential is
 reachable from the build context, and rolls back to the previous images if the

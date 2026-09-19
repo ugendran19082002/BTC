@@ -1,7 +1,28 @@
 # TODO
 
 Live: https://delta.thannigo.in
-Updated 14 Sep 2026
+Updated 19 Sep 2026
+
+---
+
+## 19 Sep 2026 — one PostgreSQL database instead of five SQLite files
+
+Done: trades, strategies, settings, sign-in, the error log, market history and
+the analytics tables are one database, `btc_desk`, a schema each
+(`DB-INVENTORY.md`). `chain.db` stays a file. Every store is async; the engine
+awaits its journal write before acting on it; settings are a write-through
+cache so the gates stay synchronous. Tests run against a real PostgreSQL
+(`deploy/test-db.sh`).
+
+Still to do, in order:
+
+- [ ] **The cutover on the live desk** — `DEPLOY.md`, "Cutover from the SQLite
+      files". Flat first. Keep the `.db` files a month.
+- [ ] `deploy/backup-db.sh` into cron beside `refresh.sh`, and one rehearsed
+      restore into a scratch database.
+- [ ] Off-host copies of the dumps. A backup on the same disk as the database
+      protects against mistakes, not against the disk.
+- [ ] Drop the retired `.db` files from the `data` volume after 19 Oct 2026.
 
 ---
 

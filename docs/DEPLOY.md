@@ -98,12 +98,16 @@ that still has them:
 5. Import, from a container that sees both the volume and the database:
    ```bash
    docker run --rm --network btc-desk_default --env-file deploy/.env \
-     -v btc-desk_data:/srv/data:ro btc-desk-api:latest \
+     -v btc-desk_data:/srv/data btc-desk-api:latest \
      sh -c 'DATABASE_URL="postgres://desk:$POSTGRES_PASSWORD@db:5432/btc_desk" \
             node app/server/dist/db/import-sqlite.js --data-dir /srv/data'
    ```
    It prints every table's count on both sides and exits non-zero if any
-   differ. It can be re-run; it copies only what is missing.
+   differ. It can be re-run; it copies only what is missing. The volume is
+   mounted writable because SQLite in WAL mode creates its `-shm` file even to
+   read; the import itself opens every file read-only. Import **in place**:
+   never copy a `.db` without its `-wal` beside it — on this desk the
+   strategies were still in `trades.db-wal`, and a bare copy reads as none.
 6. `./deploy/deploy.sh`. Check `/api/health` lists the migrations and
    `db.ok: true`, sign in (same user, same authenticator — the sealed secret
    moved with it, and opens under the same `DESK_SESSION_SECRET`), and look at
