@@ -5,7 +5,7 @@ import { getPerp, getTerm } from '@/api/desk';
 import { usePoll } from '@/hooks/usePoll';
 import type { ChartTf } from '@/components/desk/PriceChart';
 import {
-  assessBoth, assessSides, expectedMove, ivRv, readiness, riskEngine, sideGates, sideSelector, sideStatusOf, skew,
+  assessSides, expectedMove, ivRv, readiness, riskEngine, sideGates, sideSelector, sideStatusOf, skew,
   type SideAssessment, type SideChoice,
 } from '@/lib/overview';
 import { DEFAULT_CONFIG, thresholds } from '@/lib/screen-config';
@@ -118,14 +118,12 @@ export function Overview({
     const allowed = config.sideMode === 'AUTO' || config.sideMode === 'BOTH_ALLOWED' || (config.sideMode === 'CE_ONLY' && s.side === 'CE') || (config.sideMode === 'PE_ONLY' && s.side === 'PE');
     return { ...s, gates, status: allowed ? sideStatusOf(gates, t.softFailsAllowed) : 'NOT PREFERRED', disabledBy: allowed ? null : `Disabled by side mode ${config.sideMode.replace('_', ' ')}` };
   }), [data, iv, emSettle, contracts, leverage, tradeLimits, t, config.sideMode]);
-  const both = useMemo(() => assessBoth(data, sides, contracts, leverage, emSettle), [data, sides, contracts, leverage, emSettle]);
   const choice: SideChoice = useMemo(() => {
     const auto = sideSelector(data.market?.regime ?? null, data.outlook, sides[0]!.status, sides[1]!.status);
     if (config.sideMode === 'CE_ONLY') return sides[0]!.status !== 'NOT PREFERRED' ? { side: 'CE', why: 'Side mode CE only; the call side passes' } : { side: 'NO_TRADE', why: 'Side mode CE only, and the call side fails its gates' };
     if (config.sideMode === 'PE_ONLY') return sides[1]!.status !== 'NOT PREFERRED' ? { side: 'PE', why: 'Side mode PE only; the put side passes' } : { side: 'NO_TRADE', why: 'Side mode PE only, and the put side fails its gates' };
-    if (config.sideMode === 'BOTH_ALLOWED') return both.status === 'BOTH' ? { side: 'BOTH', why: 'Both sides pass their gates' } : auto;
     return auto;
-  }, [data, sides, both.status, config.sideMode]);
+  }, [data, sides, config.sideMode]);
 
   // The default selection follows the desk's side; the operator's click overrides it.
   const deskPick = useMemo<Selected | null>(() => {
@@ -177,7 +175,7 @@ export function Overview({
 
         <div className="ov-col ov-right">
           <ErrorBoundary where="Outlook"><MovementPanel data={data} em={emSettle} activeMin={config.horizonMin} /></ErrorBoundary>
-          <ErrorBoundary where="Strategy decision"><StrategyDecisionPanel data={data} sides={sides} both={both} choice={choice} onSelect={setPicked} /></ErrorBoundary>
+          <ErrorBoundary where="Strategy decision"><StrategyDecisionPanel data={data} sides={sides} choice={choice} onSelect={setPicked} /></ErrorBoundary>
           <ErrorBoundary where="Strikes">
             <StrikeFinderPanel data={data} onSelect={(cp, strike) => setPicked({ cp, strike })} onSell={onSell} contracts={contracts} leverage={leverage}
               defaultSide={choice.side === 'CE' ? 'C' : choice.side === 'PE' ? 'P' : 'both'} em={emSettle} execution={config.execution} />

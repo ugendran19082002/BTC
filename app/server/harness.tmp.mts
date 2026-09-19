@@ -1,8 +1,8 @@
 // Local UI harness: the real API on 127.0.0.1:8790, a throwaway database, one fixed test session.
 import pg from 'pg';
-const admin = new pg.Client({ connectionString: 'postgres://postgres:postgres@127.0.0.1:5433/postgres' });
+const admin = new pg.Client({ connectionString: 'postgres://postgres:postgres@127.0.0.1:5434/postgres' });
 await admin.connect(); await admin.query('DROP DATABASE IF EXISTS btc_harness WITH (FORCE)'); await admin.query('CREATE DATABASE btc_harness'); await admin.end();
-process.env.DATABASE_URL = 'postgres://postgres:postgres@127.0.0.1:5433/btc_harness';
+process.env.DATABASE_URL = 'postgres://postgres:postgres@127.0.0.1:5434/btc_harness';
 process.env.DELTA_LIVE_TRADING = '0';
 const root = '/home/agent/test-delta/app/server/src';
 const { initTradingService } = await import(`${root}/trading/service.ts`);

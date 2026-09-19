@@ -2545,12 +2545,13 @@ td.liq-normal, td.liq-none { color: var(--dim); }
   .ov-right { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
 }
 @media (max-width: 760px) {
-  .ov-main, .ov-right { grid-template-columns: 1fr; display: flex; flex-direction: column; }
+  /* Stacked, every column and panel is the page's width; `align-items: start` is the grid's, not this stack's. */
+  .ov-main, .ov-right { grid-template-columns: 1fr; display: flex; flex-direction: column; align-items: stretch; }
   .ov-kpi-wide { grid-column: auto; }
 }
 
 .ov-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: inset 0 1px 0 var(--edge); min-width: 0; }
-.ov-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; border-bottom: 1px solid var(--line-soft); }
+.ov-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 9px 12px; border-bottom: 1px solid var(--line-soft); }
 .ov-panel-head h3 { font-size: 14px; font-weight: 600; margin: 0; }
 .ov-panel-body { padding: 8px 12px 10px; }
 .ov-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 3px 0; font-size: 13px; }
@@ -2607,10 +2608,9 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 .ov-mini th:first-child, .ov-mini td:first-child { text-align: left; }
 .ov-sell { background: var(--up); color: #05121f; border: 0; border-radius: 4px; padding: 3px 12px; font-weight: 600; cursor: pointer; }
 
-.ov-decide { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-/* The cards follow the panel's width, not the window's: three across only where three fit. */
+.ov-decide { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+/* The two cards follow the panel's width, not the window's: side by side only where both fit. */
 .ov-panel-body { container-type: inline-size; }
-@container (max-width: 720px) { .ov-decide { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @container (max-width: 480px) { .ov-decide { grid-template-columns: 1fr; } }
 .ov-decide-card { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; text-align: left; color: inherit; font: inherit; cursor: pointer; }
 .ov-decide-card:disabled { cursor: default; opacity: .6; }
@@ -2645,7 +2645,7 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 
 .ov-reco-side + .ov-reco-side { margin-top: 10px; }
 .ov-reco-side h4 { margin: 0 0 4px; font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
-.ov-chain-head { display: inline-flex; align-items: center; gap: 10px; font-size: 12px; }
+.ov-chain-head { display: inline-flex; align-items: center; gap: 10px; font-size: 12px; flex-wrap: wrap; min-width: 0; }
 .ov-select { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 5px; padding: 3px 6px; font: inherit; font-size: 12px; }
 
 /* Live screen: the additions of 19 Sep (perp, flow, term history, margin) */

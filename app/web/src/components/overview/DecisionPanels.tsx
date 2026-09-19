@@ -4,7 +4,7 @@ import { istLabel } from '@/lib/format';
 import type { PremiumMomentum } from '@/api/desk';
 import {
   breakeven, odds, payoffPrices, premiumAnalysis, shortPayoff, CONTRACT_BTC,
-  type BothAssessment, type ExpectedMove, type Readiness, type SideAssessment, type SideChoice,
+  type ExpectedMove, type Readiness, type SideAssessment, type SideChoice,
 } from '@/lib/overview';
 import { SideCardsRow } from './RiskPanels';
 import { fmt, More, Panel, ProbBar, Row, Tag, useWidth } from './parts';
@@ -247,8 +247,8 @@ export function PayoffChart({ rows, strike }: { rows: { price: number; pnlUsd: n
 
 // ------------------------------------------------------------ the decision
 
-export function StrategyDecisionPanel({ data, sides, both, choice, onSelect }: {
-  data: ChainResponse; sides: SideAssessment[]; both: BothAssessment; choice: SideChoice; onSelect: (s: Selected) => void;
+export function StrategyDecisionPanel({ data, sides, choice, onSelect }: {
+  data: ChainResponse; sides: SideAssessment[]; choice: SideChoice; onSelect: (s: Selected) => void;
 }) {
   const tone = choice.side === 'NO_TRADE' ? 'down' : choice.side === 'BOTH' ? 'up' : 'accent';
   // What is in the way, in plain words: the failing gates of the side the desk would take, or of the better side.
@@ -261,7 +261,7 @@ export function StrategyDecisionPanel({ data, sides, both, choice, onSelect }: {
         {blockers.length > 0 && <> In the way on {focus.side}: {blockers.slice(0, 3).join(' · ')}{blockers.length > 3 ? ` · +${blockers.length - 3} more` : ''}.</>}
         {focus.disabledBy && <> {focus.disabledBy}.</>}
       </p>
-      <SideCardsRow sides={sides} both={both} onSelect={(cp, strike) => onSelect({ cp, strike })} />
+      <SideCardsRow sides={sides} onSelect={(cp, strike) => onSelect({ cp, strike })} />
       <p className="ov-foot">{data.best.why ?? ''} Side from the regime, the horizon consensus and each side's gates — never the score alone.</p>
     </Panel>
   );

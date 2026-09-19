@@ -1,6 +1,6 @@
 import type { Leg } from '@/types/desk';
 import {
-  shockTable, type BothAssessment, type RiskEngine,
+  shockTable, type RiskEngine,
   type SideAssessment,
 } from '@/lib/overview';
 import { fmt, Panel, Row, Tag } from './parts';
@@ -53,7 +53,7 @@ function DecayCurve({ curve }: { curve: RiskEngine['decayCurve'] }) {
 
 // ------------------------------------------------- side cards (extended)
 
-export function SideCardsRow({ sides, both, onSelect }: { sides: SideAssessment[]; both: BothAssessment; onSelect: (cp: 'C' | 'P', strike: number) => void }) {
+export function SideCardsRow({ sides, onSelect }: { sides: SideAssessment[]; onSelect: (cp: 'C' | 'P', strike: number) => void }) {
   const tone = (s: SideAssessment['status']) => (s === 'SELL' ? 'up' : s === 'WATCH' ? 'warn' : 'muted');
   return (
     <div className="ov-decide">
@@ -84,24 +84,6 @@ export function SideCardsRow({ sides, both, onSelect }: { sides: SideAssessment[
           <footer><Tag tone={tone(c.status)}>{c.disabledBy ?? c.status}</Tag></footer>
         </button>
       ))}
-      <div className="ov-decide-card">
-        <header>Both sides</header>
-        <Row label="Range probability" value={fmt.pct(both.rangeProbability)} />
-        <Row label="CE safe" value={<Safe ok={both.ceSafe} />} />
-        <Row label="PE safe" value={<Safe ok={both.peSafe} />} />
-        <Row label="Net delta" value={both.netDelta === null ? '—' : fmt.signed(both.netDelta, 2)} />
-        <Row label="Net gamma" value={both.netGamma === null ? '—' : `−${both.netGamma.toPrecision(2)}`} hint="Short both legs" />
-        <Row label="Net theta" value={both.netTheta === null ? '—' : fmt.signed(-both.netTheta, 1)} hint="Per day, per BTC, as the short earns it" />
-        <Row label="Net vega" value={both.netVega === null ? '—' : fmt.signed(-both.netVega, 1)} />
-        <Row label="Combined tail loss" value={both.combinedTailLossUsd === null ? '—' : `$${both.combinedTailLossUsd.toFixed(2)}`} tone="down" />
-        <Row label="Combined expected P&L" value={both.combinedExpectedPnlUsd === null ? '—' : fmt.signed(both.combinedExpectedPnlUsd, 2)} />
-        <Row label="Margin (est.)" value={both.marginUsd === null ? '—' : `$${both.marginUsd.toFixed(2)}`} />
-        <footer><Tag tone={both.status === 'BOTH' ? 'up' : both.status === 'SINGLE SIDE' ? 'warn' : 'muted'}>{both.status}</Tag></footer>
-      </div>
     </div>
   );
-}
-
-function Safe({ ok }: { ok: boolean | null }) {
-  return ok === null ? <span className="ov-muted">—</span> : <span className={ok ? 'ov-up' : 'ov-down'}>{ok ? '✓' : '✕'}</span>;
 }
