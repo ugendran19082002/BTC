@@ -1,7 +1,8 @@
 import { config } from '../config.js';
 import { credsFromEnv } from '../delta/signed.js';
 import { TradeEngine, type AddRequest, type TradePlan, type TradeRecord } from './engine.js';
-import { SqliteTradeStore } from './store.js';
+import { PgTradeStore } from './store.js';
+import { settings as deskSettings, type Settings } from '../db/settings.js';
 import { DeltaExchange } from './exchange/delta.js';
 import { PaperExchange } from './exchange/paper.js';
 import {
@@ -70,8 +71,17 @@ export type ModeSwitch =
   | { ok: true; mode: DeskMode }
   | { ok: false; mode: DeskMode; reason: string };
 
+export type TradingServiceDeps = {
+  store: PgTradeStore;
+  /** Loaded before this is built: every getter below reads it synchronously. */
+  settings: Settings;
+  limits?: Partial<RiskLimits>;
+};
+
 export class TradingService {
-  readonly store: SqliteTradeStore;
+  readonly store: PgTradeStore;
+  /** The desk's remembered choices: the mode, the cap, the alert switches. */
+  readonly settings: Settings;
   /** Live unless the environment forbids it or there are no credentials. */
   private currentMode: DeskMode;
   private readonly live: ExchangePort | null;
@@ -110,16 +120,18 @@ export class TradingService {
    * positions still open, protect and close exactly as before.
    */
   get alertsOn(): boolean {
-    return this.store.getSetting('alerts_enabled') !== '0';
+    return this.settings.get('alerts_enabled') !== '0';
   }
 
-  setAlertsOn(on: boolean): void {
-    this.store.setSetting('alerts_enabled', on ? '1' : '0');
+  setAlertsOn(on: boolean): Promise<void> {
+    return this.settings.set('alerts_enabled', on ? '1' : '0');
   }
 
-  constructor(limits: Partial<RiskLimits> = {}) {
+  constructor({ store, settings, limits = {} }: TradingServiceDeps) {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;
+    this.store = store;
+    this.settings = settings;
     this.notifier = config.telegram
       ? new TelegramNotifier({
           ...config.telegram,
@@ -129,10 +141,9 @@ export class TradingService {
     const creds = credsFromEnv();
     this.live = creds ? new DeltaExchange(creds) : null;
     this.paperExchange = new PaperExchange({ balanceUsd: 1_000 });
-    this.store = new SqliteTradeStore();
     // A mode chosen in the browser outlives a restart; without one, the
     // environment decides.
-    const remembered = this.store.getSetting('mode') as DeskMode | null;
+    const remembered = this.settings.get('mode') as DeskMode | null;
     const wanted = remembered ?? (config.liveTradingDefault ? 'live' : 'paper');
     this.currentMode = wanted === 'live' && this.live && !config.paperLocked ? 'live' : 'paper';
 
@@ -173,7 +184,7 @@ export class TradingService {
       },
       // The mode is read at the moment of the fill, not captured, so a paper
       // fill can never reach the phone dressed as a live one.
-      onEvent: (event, before, after, plan) => {
+      onEvent: async (event, before, after, plan) => {
         // A target that bought something back may be a reason to add to the
         // other leg. Told after the commit has returned, never inside it: an
         // add is an order of its own and must not run under this trade's lock.
@@ -186,8 +197,8 @@ export class TradingService {
         // Only a closing event can end the day, so only then is the book read.
         // The journal is already written, so the store sees this trade closed.
         if (before.position !== 0 && after.position === 0) {
-          const open = this.openTrades();
-          if (bookWentFlat(before, after, open.map((r) => r.state))) this.announceDay(open.length);
+          const open = await this.openTrades();
+          if (bookWentFlat(before, after, open.map((r) => r.state))) await this.announceDay(open.length);
         }
       },
     });
@@ -201,15 +212,15 @@ export class TradingService {
   }
 
   /** One strategy's trades touched since the start of the IST day. */
-  tradesTodayFor(strategyId: string, now = Date.now()): TradeRecord[] {
-    return this.store.between(startOfDayIst(now), now + 1).filter((r) => r.plan.strategyId === strategyId);
+  async tradesTodayFor(strategyId: string, now = Date.now()): Promise<TradeRecord[]> {
+    return (await this.store.between(startOfDayIst(now), now + 1)).filter((r) => r.plan.strategyId === strategyId);
   }
 
   /** One message for the whole day, sent when nothing is held any more. */
-  private announceDay(workingOrders: number): void {
+  private async announceDay(workingOrders: number): Promise<void> {
     const now = Date.now();
     const dayStart = startOfDayIst(now);
-    const summary = daySummaryFor(this.store.between(dayStart, now + 1), {
+    const summary = daySummaryFor(await this.store.between(dayStart, now + 1), {
       mode: this.currentMode, dayStart, at: now, spot: this.lastSpot, workingOrders,
     });
     if (summary && this.alertsOn) this.notifier?.notify(summary);
@@ -229,7 +240,7 @@ export class TradingService {
    * lives on one book or the other, and switching underneath it would leave the
    * engine polling an exchange that has never heard of the order it is holding.
    */
-  setMode(next: DeskMode): ModeSwitch {
+  async setMode(next: DeskMode): Promise<ModeSwitch> {
     if (next === this.currentMode) return { ok: true, mode: this.currentMode };
     if (next === 'live' && !this.live) {
       return { ok: false, mode: this.currentMode, reason: 'No Delta credentials configured.' };
@@ -237,7 +248,7 @@ export class TradingService {
     if (next === 'live' && config.paperLocked) {
       return { ok: false, mode: this.currentMode, reason: 'DELTA_LIVE_TRADING=0 forbids live trading on this server.' };
     }
-    const open = this.openTrades();
+    const open = await this.openTrades();
     if (open.length > 0) {
       return {
         ok: false,
@@ -245,8 +256,9 @@ export class TradingService {
         reason: `Close ${open.length} open ${open.length === 1 ? 'position' : 'positions'} first — a position cannot move between books.`,
       };
     }
+    // Written first: a mode the screen was told is set, is set.
+    await this.settings.set('mode', next);
     this.currentMode = next;
-    this.store.setSetting('mode', next);
     return { ok: true, mode: this.currentMode };
   }
 
@@ -265,7 +277,7 @@ export class TradingService {
       void this.watchBestTrade().then(() => this.autoTradeBestPick());
     }, BEST_TRADE_WATCH_MS);
     this.alertTimer.unref?.();
-    this.store.pruneMtm(Date.now());
+    await this.store.pruneMtm(Date.now());
     return recovered;
   }
 
@@ -294,27 +306,27 @@ export class TradingService {
    * deploy. Honours the phone-alerts switch like every other message.
    */
   get bestTradeAlertOn(): boolean {
-    return this.store.getSetting('best_trade_alert') === '1';
+    return this.settings.get('best_trade_alert') === '1';
   }
 
-  setBestTradeAlertOn(on: boolean): void {
-    this.store.setSetting('best_trade_alert', on ? '1' : '0');
+  async setBestTradeAlertOn(on: boolean): Promise<void> {
+    await this.settings.set('best_trade_alert', on ? '1' : '0');
     // A fresh switch-on announces the current pick rather than waiting for a
     // change; forgetting the last one -- and what has been sent this contract --
     // is what makes that happen. Switching on is somebody asking to hear it.
     if (on) {
-      this.store.setSetting('best_trade_last', '');
-      this.store.setSetting('best_trade_sent', '');
+      await this.settings.set('best_trade_last', '');
+      await this.settings.set('best_trade_sent', '');
     }
   }
 
   get bestTradeMinPremiumUsd(): number {
-    const v = Number(this.store.getSetting('best_trade_min_premium'));
+    const v = Number(this.settings.get('best_trade_min_premium'));
     return Number.isFinite(v) && v > 0 ? v : BEST_TRADE_MIN_PREMIUM_USD;
   }
 
-  setBestTradeMinPremiumUsd(usd: number): void {
-    this.store.setSetting('best_trade_min_premium', String(usd));
+  setBestTradeMinPremiumUsd(usd: number): Promise<void> {
+    return this.settings.set('best_trade_min_premium', String(usd));
   }
 
   /**
@@ -326,13 +338,13 @@ export class TradingService {
    * 78,800, not two.
    */
   get bestTradeRepeat(): number {
-    const v = Number(this.store.getSetting('best_trade_repeat'));
+    const v = Number(this.settings.get('best_trade_repeat'));
     return Number.isInteger(v) && v >= 1 && v <= BEST_TRADE_REPEAT_MAX ? v : BEST_TRADE_REPEAT_DEFAULT;
   }
 
-  setBestTradeRepeat(times: number): void {
+  setBestTradeRepeat(times: number): Promise<void> {
     const v = Math.min(BEST_TRADE_REPEAT_MAX, Math.max(1, Math.round(times)));
-    this.store.setSetting('best_trade_repeat', String(v));
+    return this.settings.set('best_trade_repeat', String(v));
   }
 
   async watchBestTrade(
@@ -348,9 +360,9 @@ export class TradingService {
       snap, market, lots: 10, hedgeGap: 3, minPremiumUsd: this.bestTradeMinPremiumUsd,
     });
     const key = best.pick && !best.bestOfNone ? `${best.pick.side}-${best.pick.strike}-${snap.expiry}` : '';
-    const last = this.store.getSetting('best_trade_last') ?? '';
+    const last = this.settings.get('best_trade_last') ?? '';
     if (key === last) return 'unchanged';
-    this.store.setSetting('best_trade_last', key);
+    await this.settings.set('best_trade_last', key);
     if (!key) return 'unchanged';   // it went away; nothing to say until something comes back
 
     /*
@@ -365,7 +377,7 @@ export class TradingService {
     const n = (sent.counts[key] ?? 0) + 1;
     if (n > this.bestTradeRepeat) return 'repeat';
     sent.counts[key] = n;
-    this.store.setSetting('best_trade_sent', JSON.stringify(sent));
+    await this.settings.set('best_trade_sent', JSON.stringify(sent));
 
     if (this.notifier && this.alertsOn) {
       this.notifier.notify({
@@ -392,16 +404,16 @@ export class TradingService {
    */
   get autoTrade(): AutoTradeSettings {
     try {
-      const raw = JSON.parse(this.store.getSetting('auto_trade') || 'null') as Partial<AutoTradeSettings> | null;
+      const raw = JSON.parse(this.settings.get('auto_trade') || 'null') as Partial<AutoTradeSettings> | null;
       return cleanAutoTradeSettings(raw ?? {}, this.autoTradeLimits);
     } catch {
       return { ...AUTO_TRADE_DEFAULTS };
     }
   }
 
-  setAutoTrade(patch: Partial<AutoTradeSettings>): AutoTradeSettings {
+  async setAutoTrade(patch: Partial<AutoTradeSettings>): Promise<AutoTradeSettings> {
     const next = cleanAutoTradeSettings({ ...this.autoTrade, ...patch }, this.autoTradeLimits);
-    this.store.setSetting('auto_trade', JSON.stringify(next));
+    await this.settings.set('auto_trade', JSON.stringify(next));
     return next;
   }
 
@@ -414,19 +426,19 @@ export class TradingService {
    */
   get autoTradeLimits(): AutoTradeLimits {
     try {
-      const raw = JSON.parse(this.store.getSetting('auto_trade_limits') || 'null') as Partial<AutoTradeLimits> | null;
+      const raw = JSON.parse(this.settings.get('auto_trade_limits') || 'null') as Partial<AutoTradeLimits> | null;
       return cleanAutoTradeLimits(raw);
     } catch {
       return cleanAutoTradeLimits(null);
     }
   }
 
-  setAutoTradeLimits(patch: Partial<AutoTradeLimits>): AutoTradeLimits {
+  async setAutoTradeLimits(patch: Partial<AutoTradeLimits>): Promise<AutoTradeLimits> {
     const next = cleanAutoTradeLimits({ ...this.autoTradeLimits, ...patch });
-    this.store.setSetting('auto_trade_limits', JSON.stringify(next));
+    await this.settings.set('auto_trade_limits', JSON.stringify(next));
     // A tighter ceiling pulls the settings under it at once, rather than
     // leaving 50 lots armed under a new limit of 10.
-    this.setAutoTrade({});
+    await this.setAutoTrade({});
     return next;
   }
 
@@ -436,7 +448,7 @@ export class TradingService {
    */
   get autoTradeExpiry(): string | null {
     try {
-      const v = JSON.parse(this.store.getSetting('auto_trade_done') || 'null') as { expiry?: unknown } | null;
+      const v = JSON.parse(this.settings.get('auto_trade_done') || 'null') as { expiry?: unknown } | null;
       return typeof v?.expiry === 'string' ? v.expiry : null;
     } catch {
       return null;
@@ -446,7 +458,7 @@ export class TradingService {
   /** What has been sold automatically for this contract. */
   autoTradeLedger(expiry: string): AutoTradeLedger {
     try {
-      const v = JSON.parse(this.store.getSetting('auto_trade_done') || 'null') as AutoTradeLedger | null;
+      const v = JSON.parse(this.settings.get('auto_trade_done') || 'null') as AutoTradeLedger | null;
       if (v && v.expiry === expiry && v.entries && typeof v.entries === 'object') return v;
     } catch { /* unreadable is the same as nothing traded */ }
     return { expiry, entries: {} };
@@ -459,13 +471,13 @@ export class TradingService {
    * for 5:31 PM: somebody who has read the refusal and dealt with it can ask
    * for the strike to be considered again. It clears the note, never a position.
    */
-  clearAutoTradeLedger(): void {
-    this.store.setSetting('auto_trade_done', '');
+  clearAutoTradeLedger(): Promise<void> {
+    return this.settings.set('auto_trade_done', '');
   }
 
-  private writeAutoTrade(ledger: AutoTradeLedger, key: string, entry: AutoTradeLedger['entries'][string]): void {
+  private writeAutoTrade(ledger: AutoTradeLedger, key: string, entry: AutoTradeLedger['entries'][string]): Promise<void> {
     const next: AutoTradeLedger = { expiry: ledger.expiry, entries: { ...ledger.entries, [key]: entry } };
-    this.store.setSetting('auto_trade_done', JSON.stringify(next));
+    return this.settings.set('auto_trade_done', JSON.stringify(next));
   }
 
   async autoTradeBestPick(
@@ -486,7 +498,7 @@ export class TradingService {
       best,
       snap,
       // Anything the desk is already carrying or working, whoever opened it.
-      openSymbols: this.store.all().filter((r) => r.state.position !== 0 || r.state.entrySize > 0)
+      openSymbols: (await this.store.all()).filter((r) => r.state.position !== 0 || r.state.entrySize > 0)
         .map((r) => r.state.symbol),
       ledger,
       symbolFor: (side, strike) => `${side === 'CE' ? 'C' : 'P'}-BTC-${strike}-${snap.expiry}`,
@@ -495,7 +507,7 @@ export class TradingService {
 
     // Written before the order goes out: a crash here costs one missed trade,
     // never a second copy of one.
-    this.writeAutoTrade(ledger, decision.key, { at: now, status: 'placed' });
+    await this.writeAutoTrade(ledger, decision.key, { at: now, status: 'placed' });
     const res = await this.place({
       origin: 'best-pick',
       symbol: decision.symbol,
@@ -512,7 +524,7 @@ export class TradingService {
       const why = 'precheck' in res && !res.precheck.ok
         ? res.precheck.failures.map((f) => f.message).join('; ')
         : ('reason' in res && typeof res.reason === 'string' ? res.reason : 'the desk would not place it');
-      this.writeAutoTrade(ledger, decision.key, { at: now, status: 'refused', detail: why });
+      await this.writeAutoTrade(ledger, decision.key, { at: now, status: 'refused', detail: why });
       if (this.notifier && this.alertsOn) {
         this.notifier.notify({
           key: 'auto-trade',
@@ -522,7 +534,7 @@ export class TradingService {
       return { act: 'refused', why };
     }
     const tradeId = 'state' in res ? res.state.tradeId : decision.key;
-    this.writeAutoTrade(ledger, decision.key, { at: now, status: 'placed', tradeId });
+    await this.writeAutoTrade(ledger, decision.key, { at: now, status: 'placed', tradeId });
     return { act: 'placed', tradeId };
   }
 
@@ -548,10 +560,10 @@ export class TradingService {
    */
   async todayFigures(now = Date.now()): Promise<Omit<MtmSample, 'at' | 'day'>> {
     const dayStart = startOfDayIst(now);
-    const realisedUsd = this.store.realisedSince(dayStart);
+    const realisedUsd = await this.store.realisedSince(dayStart);
     const positions = await this.positionsForDisplay(now);
     let unrealisedUsd = 0;
-    for (const rec of this.openTrades()) {
+    for (const rec of await this.openTrades()) {
       const live = positions.find((p) => p.symbol === rec.state.symbol) ?? null;
       const quote = await this.quoteForDisplay(rec.state.symbol, now);
       const mark = live?.markPrice ?? quote?.mark ?? midOf(quote?.bid ?? null, quote?.ask ?? null);
@@ -560,7 +572,7 @@ export class TradingService {
         size: live?.size ?? rec.state.position, contractValue: rec.state.contractValue,
       }) ?? 0;
     }
-    const chargesUsd = this.store.between(dayStart, now + 1)
+    const chargesUsd = (await this.store.between(dayStart, now + 1))
       .reduce((n, rec) => n + tradeCharges(rec.state, { spot: this.lastSpot, since: dayStart }).totalUsd, 0);
     return { realisedUsd, unrealisedUsd, chargesUsd, netUsd: realisedUsd + unrealisedUsd - chargesUsd };
   }
@@ -575,8 +587,8 @@ export class TradingService {
   async sampleMtm(now = Date.now()): Promise<void> {
     try {
       const f = await this.todayFigures(now);
-      if (this.openTrades().length === 0 && f.realisedUsd === 0 && f.chargesUsd === 0) return;
-      this.store.sampleMtm({ at: now, day: istDate(now), ...f });
+      if ((await this.openTrades()).length === 0 && f.realisedUsd === 0 && f.chargesUsd === 0) return;
+      await this.store.sampleMtm({ at: now, day: istDate(now), ...f });
     } catch (e) {
       noteError({
         source: 'trading', level: 'warn', where: 'service/sampleMtm',
@@ -589,7 +601,7 @@ export class TradingService {
     if (this.stepping) return;          // a slow exchange must not stack polls
     this.stepping = true;
     try {
-      for (const rec of this.store.open()) {
+      for (const rec of await this.store.open()) {
         await this.engine.poll(rec.state.tradeId).catch(() => {});
       }
       this.feedOk = true;
@@ -632,7 +644,7 @@ export class TradingService {
    * time the option did.
    */
   async updateExits(tradeId: string, pct: { takeProfitPct?: number; stopLossPct?: number }) {
-    const rec = this.store.get(tradeId);
+    const rec = await this.store.get(tradeId);
     if (!rec) return null;
     const entry = rec.state.entryAvgPrice;
     if (entry === null) return rec.state;
@@ -879,7 +891,7 @@ export class TradingService {
 
   /** The cap the desk has been asked to hold itself to, if any. */
   get shortCapSetting(): number | null {
-    const raw = this.store.getSetting(SHORT_CAP_KEY);
+    const raw = this.settings.get(SHORT_CAP_KEY);
     if (raw === null) return null;
     const n = Number(raw);
     return Number.isFinite(n) && n > 0 ? Math.floor(n) : null;
@@ -896,7 +908,7 @@ export class TradingService {
    * Returns the reason when it will not, so the screen can say why rather than
    * showing a number that quietly did not take.
    */
-  setShortCap(contracts: number): { ok: true; cap: number } | { ok: false; reason: string } {
+  async setShortCap(contracts: number): Promise<{ ok: true; cap: number } | { ok: false; reason: string }> {
     if (!Number.isFinite(contracts) || contracts < 1 || Math.floor(contracts) !== contracts) {
       return { ok: false, reason: 'The cap must be a whole number of contracts, at least 1.' };
     }
@@ -907,15 +919,15 @@ export class TradingService {
         reason: `Margin covers ${ceiling} contracts at ${DEFAULT_LEVERAGE}x. A cap above that could never stop anything.`,
       };
     }
-    this.store.setSetting(SHORT_CAP_KEY, String(contracts));
+    await this.settings.set(SHORT_CAP_KEY, String(contracts));
     return { ok: true, cap: this.maxShortContracts };
   }
 
-  list(limit = 50): TradeRecord[] { return this.store.recent(limit); }
-  openTrades(): TradeRecord[] { return this.store.open().filter((r) => !isDone(r.state)); }
+  list(limit = 50): Promise<TradeRecord[]> { return this.store.recent(limit); }
+  async openTrades(): Promise<TradeRecord[]> { return (await this.store.open()).filter((r) => !isDone(r.state)); }
 
   /** One trade as the journal has it, or null. */
-  trade(tradeId: string): TradeRecord | null { return this.store.get(tradeId); }
+  trade(tradeId: string): Promise<TradeRecord | null> { return this.store.get(tradeId); }
 
   /** Paper mode only: lets the desk seed the simulated book from live quotes. */
   paper(): PaperExchange | null {
@@ -933,4 +945,28 @@ function startOfDayIst(now = Date.now()): number {
 }
 
 let singleton: TradingService | null = null;
-export const tradingService = (): TradingService => (singleton ??= new TradingService());
+
+/**
+ * Build the process's desk: the journal migrated, the settings loaded, the
+ * engine wired. Called once from the composition root before anything that
+ * might ask for it -- a route, the scheduler, a sign-in alert.
+ */
+export async function initTradingService(limits: Partial<RiskLimits> = {}): Promise<TradingService> {
+  if (singleton) return singleton;
+  const settings = await deskSettings().load();
+  const store = await PgTradeStore.open();
+  singleton = new TradingService({ store, settings, limits });
+  return singleton;
+}
+
+/** The desk, once `initTradingService()` has run. Asking earlier is a boot-order bug. */
+export const tradingService = (): TradingService => {
+  if (!singleton) throw new Error('tradingService() before initTradingService(): the desk is built at boot, in index.ts');
+  return singleton;
+};
+
+/** For tests that build a fresh desk against a fresh database. */
+export function resetTradingService(): void {
+  singleton?.stop();
+  singleton = null;
+}
