@@ -2710,3 +2710,6 @@ tr.ov-wall-pe td.ov-strike { box-shadow: inset -3px 0 0 var(--up); }
 tr.ov-maxpain td.ov-strike { text-decoration: underline dotted; }
 .ov-strike-tag { display: block; font-size: 9px; color: var(--muted); font-weight: 400; }
 @media (max-width: 1280px) { .ov-shocks { grid-template-columns: repeat(3, 1fr); } .ov-setup-grid { grid-template-columns: 1fr; } .ov-setup-arrow { display: none; } }
+.ov-right .ov-entry { grid-template-columns: 1fr; }
+.ov-right .ov-checks-dense { columns: 2; column-gap: 14px; }
+.ov-right .ov-checks-dense li { break-inside: avoid; }

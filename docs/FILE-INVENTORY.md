@@ -145,11 +145,14 @@ outlook row, market and moves, best pick) are no longer drawn there.
 
 | File | Lines | What it is for |
 |---|---:|---|
-| `lib/overview.ts` | 341 | The arithmetic: IV vs RV, 25Δ skew, expected move, premium analysis, odds (measured before model), short payoff, side cards, consensus, freshness and the entry gates. Pure; 27 tests. |
+| `lib/overview.ts` | 900 | The arithmetic: IV vs RV, skew, expected move, premium analysis, odds, payoff, margin and fees, the sides assessed gate by gate, the side selector, both-sides safety, the risk engine, shocks, the scenario grid, the 24-gate readiness, the position state ladder, momentum, horizons, the MTF table. Pure; 50 tests. |
 | `overview/Overview.tsx` | 130 | Lays the panels out and polls `/api/perp` and `/api/term`. Chart and compact chain optional; the selected strike can be owned by the screen. |
 | `overview/MarketPanels.tsx` | 300 | Market strip (spot, perp, funding, OI, volume, IV, PCR, regime, horizon odds), price action (trend, structure, RSI, MACD, VWAP, EMAs, ATR), key levels, volatility (RV 1h/6h/12h/21d, regime), trade flow and book, IV term structure with its history, skew with its percentile. |
 | `overview/DecisionPanels.tsx` | 430 | Selected strike (metrics / probability / payoff / momentum), model view, strategy decision with both-sides safety, sell recommendation with margin and return on margin, entry checklist with the risk gate, order panel with fees and margin, scenario P&L, status bar with margin used. |
 | `overview/parts.tsx` | 68 | Panel, row, tag, probability bar, number formats. |
+| `overview/ContextBar.tsx` | 90 | Which configuration the screen is deciding with, every setting editable in place: entry (dynamic), expiry (contract-fixed), horizon, execution, side mode, strictness, risk, EM method, probability method, strike rule, fee, freshness, size, model, data. |
+| `overview/RiskPanels.tsx` | 300 | Entry → expiry setup, the expected move by horizon, the sell-side risk engine with the shock row, the −3…+3% scenario grid, the side cards with PASS / FAIL gates, position / exit management. |
+| `lib/screen-config.ts` | 110 | The operator's settings and what they set: thresholds by risk mode and strictness, the probability label, the expected move by method, the entry window. |
 
 ### Shared UI (`components/ui/`) — 14 files, ~640 lines
 

@@ -21,6 +21,22 @@ structure, 25Δ skew, the entry checklist (freshness, contract, direction,
 An inspect on the board selects the strike the panels are about. Selling goes
 through the same ticket, so every gate still runs on the server.
 
+Then the three reference screens and the single-screen spec, as one decision
+path: a context bar of every setting the screen decides with (entry dynamic,
+expiry contract-fixed, horizon, side mode, strictness, risk mode, EM method,
+probability method, execution, fee, freshness, size); the entry → expiry
+setup; the expected move by horizon; the chain with Near ATM / All / OI walls
+/ Recommended and Quotes / Greeks; the selected strike with rho, the BS
+theoretical, the IV percentile and premium velocity; the sell-side risk
+engine with BTC ±100/250/500 and IV ±1/2 shocks; PASS / FAIL side cards and
+a side selector from regime + horizon consensus + safety (never the score
+alone); the recommendation table with tail loss, margin and risk/reward; a
+24-gate checklist ending ENTRY READY or NO TRADE; an order panel priced at
+the bid (or the estimated fill, or the mark marked as not executable);
+position / exit management on the NORMAL → EXIT ladder. Settings are per
+browser (`live:config`); moving them to the server's `settings` table is the
+next step if they should follow the operator across devices.
+
 Backend: `option_snapshots` records every strike of the two nearest expiries
 every 5 minutes; `trade_flow_1m` every print on the perp by aggressor side
 (off the `all_trades` socket); `perp_snapshots` funding, OI, turnover and the
