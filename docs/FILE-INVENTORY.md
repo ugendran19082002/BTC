@@ -60,6 +60,7 @@ here exists because something specific went wrong once.
 |---|---:|---|
 | `market/chain.ts` | 453 | Builds the option chain: strike spacing read from what Delta actually lists rather than assumed, with a fallback. |
 | `market/moves.ts` | 275 | A multi-timeframe read of BTC from public candles. |
+| `market/changes.ts` | 110 | What changed over 1m…12h for BTC, one strike and its board, from the desk's records; `/api/changes`. |
 | `market/flow.ts` | 330 | Records the perp's trade flow per minute, funding / OI / book every 5 minutes, and the IV term structure; reads the hour's flow, the book, the term structure as it was, and the skew's rank. |
 | `market/flow-socket.ts` | 250 | Delta's `all_trades` and perp ticker socket: every BTCUSD print by aggressor side, held for an hour. |
 | `market/option-snapshots.ts` | 175 | Records every strike of the two nearest expiries every 5 minutes (`option_snapshots`), and reads one strike's history back. |
@@ -150,6 +151,7 @@ outlook row, market and moves, best pick) are no longer drawn there.
 | `overview/MarketPanels.tsx` | 300 | Market strip (spot, perp, funding, OI, volume, IV, PCR, regime, horizon odds), price action (trend, structure, RSI, MACD, VWAP, EMAs, ATR), key levels, volatility (RV 1h/6h/12h/21d, regime), trade flow and book, IV term structure with its history, skew with its percentile. |
 | `overview/DecisionPanels.tsx` | 430 | Selected strike (metrics / probability / payoff / momentum), model view, strategy decision with both-sides safety, sell recommendation with margin and return on margin, entry checklist with the risk gate, order panel with fees and margin, scenario P&L, status bar with margin used. |
 | `overview/parts.tsx` | 68 | Panel, row, tag, probability bar, number formats. |
+| `overview/TraderPanels.tsx` | 260 | The decision hero (SELL CE / SELL PE / SELL BOTH / NO TRADE at the moment of entry), the early-warning panel with its triggers, thresholds, formulas and the 28 Aug 2025 reference case, movement to expiry with the board read, the what-changed table over 1m…12h, the strike finder with filters. |
 | `overview/SettingsStrip.tsx` | 190 | The strip above the chart: brand, IST clock, live pill, mode / refresh controls, presets (Conservative / Balanced / Aggressive), reset, a glossary, and every setting the screen decides with, grouped Time / Model / Rules / Pricing with what each does on hover and a plain-numbers line of what the current mode allows. |
 | `overview/RiskPanels.tsx` | 250 | Entry → expiry setup, the expected move by horizon, the sell-side risk engine with the shock row, the −3…+3% scenario grid, the side cards with PASS / FAIL gates. |
 | `lib/screen-config.ts` | 110 | The operator's settings and what they set: thresholds by risk mode and strictness, the probability label, the expected move by method, the entry window. |

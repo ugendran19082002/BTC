@@ -97,7 +97,10 @@ summed per minute by which side crossed the spread — `trade_flow_1m`), its
 and the **IV term structure** (`iv_term_snapshots`), so the "a week ago" line
 on the term chart exists once a week has been recorded. `GET /api/perp` serves
 the live ticker, book and the last hour's flow; `/api/term` adds `weekAgo`,
-`monthAgo` and the skew's percentile among every `chain_features` reading.
+`monthAgo`, the skew's and the ATM IV's percentile among every `chain_features`
+reading; `GET /api/changes?symbol=` the diff over 1m … 12h for BTC (candles by
+the minute), the strike (`option_snapshots`) and its board (`chain_features`),
+with the live figures for "now" passed by the screen.
 
 Still not captured: **liquidations** (not a public feed on Delta — a burst of
 large one-sided prints with OI falling is the visible trace) and per-strike

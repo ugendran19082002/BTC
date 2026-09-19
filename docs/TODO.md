@@ -33,6 +33,17 @@ a side selector from regime + horizon consensus + safety (never the score
 alone); the recommendation table with tail loss, margin and risk/reward; a
 24-gate checklist ending ENTRY READY or NO TRADE; an order panel priced at
 the bid (or the estimated fill, or the mark marked as not executable);
+Later still: a decision hero at the top (SELL CE / SELL PE / SELL BOTH /
+NO TRADE at the moment of entry, with the strike, credit, odds, margin and
+what is in the way); an early-warning panel for a move like 28 Aug 2025's
+(the 114,000 CE went 5.6 → 101.9 in one hour): nine triggers with their
+thresholds and formulas, a weighted score and what to do; movement to
+expiry (odds and expected move per horizon up to expiry, the board's read
+with the formula behind each line, one verdict); a what-changed table over
+1m … 12h (BTC, the strike's premium / OI / IV / volume, the board's OI,
+volume, PCR, ATM IV) off a new `/api/changes`; a strike finder with premium,
+touch, distance and side filters.
+
 Later the same day: the full board moved to its own Option Chain tab; the
 order panel, the position ladder and the footer came off the Live screen
 (Orders and Positions have their own tabs); the settings became one grouped
