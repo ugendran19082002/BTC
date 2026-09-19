@@ -19,7 +19,8 @@ import {
   StrategyDecisionPanel, type Selected,
 } from './DecisionPanels';
 import { SettingsStrip } from './SettingsStrip';
-import { EntrySetupPanel, HorizonsPanel, RiskEnginePanel, ScenarioGridPanel } from './RiskPanels';
+import { EntrySetupPanel, RiskEnginePanel, ScenarioGridPanel } from './RiskPanels';
+import { ChangesPanel, DecisionHero, EarlyWarningPanel, MovementPanel, StrikeFinderPanel, useChanges } from './TraderPanels';
 
 /**
  * The Live screen: the three reference designs (docs/image1-3.png) and the
@@ -142,14 +143,20 @@ export function Overview({
   const risk = useMemo(() => (leg ? riskEngine(leg, data.legs, emSettle, snap.spot, snap.hoursToExpiry, contracts, leverage) : null), [leg, data.legs, emSettle, snap.spot, snap.hoursToExpiry, contracts, leverage]);
   const ready = useMemo(() => readiness({ data, leg, iv, em: emSettle, nowMs: now, contracts, leverage, trade: tradeLimits, risk, t, freshnessMs: config.freshnessSec * 1000 }), [data, leg, iv, emSettle, now, contracts, leverage, tradeLimits, risk, t, config.freshnessSec]);
 
+  const changes = useChanges(data, leg, spot);
+
   return (
     <div className="ov">
       <SettingsStrip data={data} now={now} config={config} stored={stored} onChange={(patch) => setConfig({ ...stored, ...patch })} onReset={() => setConfig({})}
         choice={choice} contracts={contracts} deskContracts={deskContracts} controls={controls} error={error} />
+      <ErrorBoundary where="Decision">
+        <DecisionHero data={data} now={now} choice={choice} sides={sides} ready={ready} leg={leg} contracts={contracts} leverage={leverage} onSell={onSell} />
+      </ErrorBoundary>
       <ErrorBoundary where="Overview KPIs"><KpiStrip data={data} spot={spot} iv={iv} perp={perp} spark={spark} now={now} horizonMin={config.horizonMin} /></ErrorBoundary>
 
       <div className="ov-main">
         <div className="ov-col">
+          <ErrorBoundary where="Early warning"><EarlyWarningPanel data={data} perp={perp} changes={changes} /></ErrorBoundary>
           <ErrorBoundary where="Price action"><PriceActionPanel market={data.market} tf={chartTf} /></ErrorBoundary>
           <ErrorBoundary where="Multi-timeframe"><MtfPanel data={data} activeTf={chartTf} horizonMin={config.horizonMin} /></ErrorBoundary>
           <ErrorBoundary where="Key levels"><KeyLevelsPanel data={data} spot={spot} /></ErrorBoundary>
@@ -167,14 +174,18 @@ export function Overview({
           <ErrorBoundary where="Selected strike">
             <SelectedStrikePanel data={data} leg={leg} em={emSettle} iv={iv} contracts={contracts} ivRank={term?.iv ?? null} probabilityMode={config.probabilityMode} />
           </ErrorBoundary>
+          <ErrorBoundary where="What changed"><ChangesPanel leg={leg} rows={changes} /></ErrorBoundary>
           <ErrorBoundary where="Risk engine"><RiskEnginePanel leg={leg} risk={risk} contracts={contracts} /></ErrorBoundary>
         </div>
 
         <div className="ov-col ov-right">
           <ErrorBoundary where="Entry setup"><EntrySetupPanel data={data} now={now} entryIst={config.entryIst} /></ErrorBoundary>
           <ErrorBoundary where="Model view"><ModelViewPanel data={data} iv={iv} horizonMin={config.horizonMin} em={em} /></ErrorBoundary>
-          <ErrorBoundary where="Horizons"><HorizonsPanel data={data} activeMin={config.horizonMin} /></ErrorBoundary>
+          <ErrorBoundary where="Movement"><MovementPanel data={data} em={emSettle} activeMin={config.horizonMin} /></ErrorBoundary>
           <ErrorBoundary where="Strategy decision"><StrategyDecisionPanel data={data} sides={sides} both={both} choice={choice} onSelect={setPicked} /></ErrorBoundary>
+          <ErrorBoundary where="Strike finder">
+            <StrikeFinderPanel data={data} onSelect={(cp, strike) => setPicked({ cp, strike })} onSell={onSell} contracts={contracts} leverage={leverage} defaultSide={choice.side === 'CE' ? 'C' : choice.side === 'PE' ? 'P' : 'both'} />
+          </ErrorBoundary>
           <ErrorBoundary where="Sell recommendation">
             <SellRecommendationPanel data={data} onSelect={setPicked} onSell={onSell} leverage={leverage} contracts={contracts} iv={iv} em={emSettle} first={choice.side === 'CE' ? 'C' : 'P'} execution={config.execution} />
           </ErrorBoundary>
