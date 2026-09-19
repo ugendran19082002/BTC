@@ -99,7 +99,7 @@ export class StrategyRunner {
        * not take it -- means the sell must not follow.
        */
       buyBack: async (tradeId, lots) => {
-        const before = Math.abs(tradingService().trade(tradeId)?.state.position ?? 0);
+        const before = Math.abs((await tradingService().trade(tradeId))?.state.position ?? 0);
         const after = await tradingService().close(tradeId, lots);
         if (!after) return { ok: false, reason: 'no such trade' };
         const closed = before - Math.abs(after.position);
@@ -169,7 +169,7 @@ export class StrategyRunner {
 
   /** True when the desk is allowed to act without being asked. */
   private armed(): boolean {
-    return tradingService().store.getSetting('scheduler_enabled') === '1';
+    return tradingService().settings.get('scheduler_enabled') === '1';
   }
 
   async tick(): Promise<void> {
@@ -242,7 +242,7 @@ export class StrategyRunner {
   /** Close anything this strategy opened once its exit time has passed. */
   private async considerExit(s: Strategy): Promise<void> {
     const svc = tradingService();
-    const open = svc.openTrades().filter((t) => t.plan.strategyId === s.id && t.state.position !== 0);
+    const open = (await svc.openTrades()).filter((t) => t.plan.strategyId === s.id && t.state.position !== 0);
     if (!exitDue(s, this.now(), open.length > 0).due) return;
     for (const t of open) {
       await svc.close(t.state.tradeId);

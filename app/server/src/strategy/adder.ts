@@ -25,7 +25,7 @@ export type PlaceResult = { ok: true } | { ok: false; reason: string };
 export type AdderDeps = {
   store: Pick<StrategyStore, 'addedFor' | 'recordAdd' | 'finishAdd'>;
   /** One strategy's trades for the current IST day. */
-  tradesToday: (strategyId: string) => TradeRecord[];
+  tradesToday: (strategyId: string) => TradeRecord[] | Promise<TradeRecord[]>;
   quote: (symbol: string) => Promise<AddQuote | null>;
   /** Append to the trade: `TradeEngine.addToPosition`. */
   place: (order: AddOrder) => Promise<PlaceResult>;
@@ -42,7 +42,7 @@ export class StrategyAdder {
     const rule = s.config.addToOpposite;
     if (!rule || !s.enabled) return;
 
-    const trades = this.d.tradesToday(s.id);
+    const trades = await this.d.tradesToday(s.id);
     // Only read prices when some target has bought back something undecided:
     // most ticks nothing has, and reading the board for nothing is not free.
     const undecided = trades.some((t) => targetBoughtBack(t).contracts > this.d.store.addedFor(t.state.tradeId));

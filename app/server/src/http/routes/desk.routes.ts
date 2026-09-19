@@ -10,6 +10,8 @@ import { forecast, reloadHorizons } from '../../domain/forecast.js';
 import { loadCalibration, reloadCalibration } from '../../domain/calibration.js';
 import { loadDays, reloadDays, DEFAULTS } from '../../backtest/backtest.js';
 import { tradingService, SHORT_CAP_KEY } from '../../trading/service.js';
+import { appliedMigrations } from '../../db/migrate.js';
+import { one } from '../../db/pool.js';
 import { strategyStore } from './strategy.routes.js';
 import { refuse } from '../refuse.js';
 import { emBuffer, verdict as sideVerdict } from '../../domain/direction.js';
@@ -48,21 +50,28 @@ export const WALL_WITHIN_EM_KEY = 'wall_within_em';
 
 /** The band in force: how far a wall may sit and still be a level, in expected moves. */
 export function wallWithinEm(): number {
-  const raw = Number(tradingService().store.getSetting(WALL_WITHIN_EM_KEY));
+  const raw = Number(tradingService().settings.get(WALL_WITHIN_EM_KEY));
   return Number.isFinite(raw) && raw >= 0.25 && raw <= 20 ? raw : DEFAULT_WALL_WITHIN_EM;
 }
 
 export function registerDeskRoutes(app: FastifyInstance) {
   app.get('/api/health', async () => {
     const days = loadDays();
+    // One round trip, timed: a database that answers slowly is the first sign
+    // of one about to stop answering, and it should be readable from outside.
+    const t0 = Date.now();
+    const db = await one('SELECT 1 AS ok')
+      .then(() => ({ ok: true, latencyMs: Date.now() - t0 }))
+      .catch((e: Error) => ({ ok: false, latencyMs: Date.now() - t0, error: e.message }));
     return {
       ok: true,
+      db,
       days: days.length,
       first: days[0]?.date ?? null,
       last: days[days.length - 1]?.date ?? null,
-      // Which schema the journal is on. A container that started against an
+      // Which schema the database is on. A container that started against an
       // older database should be visible from outside rather than by symptom.
-      schema: tradingService().store.migrations().map((m) => m.id),
+      schema: db.ok ? (await appliedMigrations()).map((m) => m.id) : [],
       // Both stores share one ledger, but only asking the trade store hid a
       // deploy whose strategy tables had never been created.
       strategies: strategyStore().all().length,
@@ -448,7 +457,7 @@ export function registerDeskRoutes(app: FastifyInstance) {
     ]);
     const out: Record<string, string | null> = {};
     for (const key of [...Object.keys(ALLOWED_SETTINGS), ...NUMERIC_SETTINGS]) {
-      out[key] = svc.store.getSetting(key);
+      out[key] = svc.settings.get(key);
     }
     return {
       settings: out,
@@ -484,7 +493,7 @@ export function registerDeskRoutes(app: FastifyInstance) {
         reply.code(400);
         return { error: 'The level band must be between 0.25 and 20 expected moves.' };
       }
-      tradingService().store.setSetting(WALL_WITHIN_EM_KEY, String(n));
+      await tradingService().settings.set(WALL_WITHIN_EM_KEY, String(n));
       return { ok: true, key, value: String(n) };
     }
 
@@ -495,7 +504,7 @@ export function registerDeskRoutes(app: FastifyInstance) {
         reply.code(400);
         return { error: 'the short cap must be a whole number of contracts, at least 1' };
       }
-      const res = svc.setShortCap(n);
+      const res = await svc.setShortCap(n);
       // Holding the line against too large a cap is the desk working, not a
       // fault, so it is marked and stays out of the error log.
       if (!res.ok) return refuse(reply, 422, { error: res.reason });
@@ -513,7 +522,7 @@ export function registerDeskRoutes(app: FastifyInstance) {
       reply.code(400);
       return { error: `invalid value "${value}" for setting "${key}"; allowed: ${allowed.join(', ')}` };
     }
-    tradingService().store.setSetting(key, value);
+    await tradingService().settings.set(key, value);
     return { ok: true, key, value };
   });
 }

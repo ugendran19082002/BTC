@@ -35,14 +35,14 @@ export function registerReportRoutes(app: FastifyInstance) {
     if (typeof r === 'string') return refuse(reply, 400, { error: r });
     // From a day before the range: a trade opened the evening before and
     // closed inside it is inside it, and it is fills that decide, not rows.
-    const records = svc.store.between(Date.parse(r.from) - 2 * 86_400_000, Date.parse(r.to) + 2 * 86_400_000, 5_000);
+    const records = await svc.store.between(Date.parse(r.from) - 2 * 86_400_000, Date.parse(r.to) + 2 * 86_400_000, 5_000);
     return { mode: svc.mode, ...daysReport(records, { ...r, spot: svc.spot }) };
   });
 
   app.get('/api/report/days.csv', async (req, reply) => {
     const r = rangeOf((req.query ?? {}) as { from?: unknown; to?: unknown });
     if (typeof r === 'string') return refuse(reply, 400, { error: r });
-    const records = svc.store.between(Date.parse(r.from) - 2 * 86_400_000, Date.parse(r.to) + 2 * 86_400_000, 5_000);
+    const records = await svc.store.between(Date.parse(r.from) - 2 * 86_400_000, Date.parse(r.to) + 2 * 86_400_000, 5_000);
     reply.header('Content-Type', 'text/csv; charset=utf-8');
     reply.header('Content-Disposition', `attachment; filename="pnl-${r.from}-to-${r.to}.csv"`);
     return daysCsv(daysReport(records, { ...r, spot: svc.spot }));
@@ -53,14 +53,14 @@ export function registerReportRoutes(app: FastifyInstance) {
     const q = (req.query ?? {}) as { day?: unknown };
     const day = q.day === undefined || q.day === '' ? istDate(Date.now()) : String(q.day);
     if (!DAY.test(day)) return refuse(reply, 400, { error: 'Day must be YYYY-MM-DD.' });
-    const samples = svc.store.mtmSamples(day);
+    const samples = await svc.store.mtmSamples(day);
     return {
       mode: svc.mode,
       day,
       samples,
       stats: mtmStats(samples),
       /** Days that have a line, newest first, so the picker offers only those. */
-      days: svc.store.mtmDays(),
+      days: await svc.store.mtmDays(),
     };
   });
 }

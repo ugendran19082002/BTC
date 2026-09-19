@@ -34,7 +34,7 @@ export type PlaceResult = { ok: true } | { ok: false; reason: string };
 export type RebalancerDeps = {
   store: Pick<StrategyStore, 'rebalanceState' | 'recordRebalance' | 'finishRebalance'>;
   /** One strategy's trades for the current IST day. */
-  tradesToday: (strategyId: string) => TradeRecord[];
+  tradesToday: (strategyId: string) => TradeRecord[] | Promise<TradeRecord[]>;
   quote: (symbol: string) => Promise<RebalanceQuote | null>;
   /** Buy back part of a position at the market: `TradingService.close(tradeId, lots)`. */
   buyBack: (tradeId: string, lots: number) => Promise<PlaceResult>;
@@ -61,7 +61,7 @@ export class StrategyRebalancer {
     const rule = s.config.rebalance;
     if (!rule || !rule.enabled || !s.enabled) return;
 
-    const trades = this.d.tradesToday(s.id);
+    const trades = await this.d.tradesToday(s.id);
     const ce = legOn(trades, 'CE');
     const pe = legOn(trades, 'PE');
     if (!ce || !pe) return;

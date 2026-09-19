@@ -541,7 +541,7 @@ export class TradingService {
   /** What has been announced for this contract, or a clean slate for a new one. */
   private bestTradeSent(expiry: string): { expiry: string; counts: Record<string, number> } {
     try {
-      const v = JSON.parse(this.store.getSetting('best_trade_sent') || 'null') as { expiry?: unknown; counts?: unknown } | null;
+      const v = JSON.parse(this.settings.get('best_trade_sent') || 'null') as { expiry?: unknown; counts?: unknown } | null;
       if (v && v.expiry === expiry && v.counts && typeof v.counts === 'object') {
         return { expiry, counts: v.counts as Record<string, number> };
       }
@@ -671,7 +671,7 @@ export class TradingService {
     failed: { tradeId: string; reason: string }[];
   }> {
     const out = { cancelled: [] as string[], closed: [] as string[], failed: [] as { tradeId: string; reason: string }[] };
-    const open = this.openTrades();
+    const open = await this.openTrades();
 
     for (const rec of open.filter((r) => r.state.position === 0)) {
       try {
