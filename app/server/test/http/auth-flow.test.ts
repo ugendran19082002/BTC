@@ -27,7 +27,9 @@ const { totp, base32Decode } = await import('../../src/auth/totp.js');
 const { closePool, query, rows } = await import('../../src/db/pool.js');
 // The desk is built before the app, as index.ts does: the routes ask for it as they register.
 const { initTradingService } = await import('../../src/trading/service.js');
+const { initStrategyStore } = await import('../../src/http/routes/strategy.routes.js');
 await initTradingService();
+await initStrategyStore();
 
 const PASSWORD = 'a long private passphrase';
 const T0 = Date.UTC(2026, 8, 11, 6, 0, 0);

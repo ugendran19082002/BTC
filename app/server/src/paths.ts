@@ -24,35 +24,9 @@ function repoRoot(): string {
 export const ROOT = repoRoot();
 export const CHAIN_DB = process.env.CHAIN_DB ?? join(ROOT, 'chain.db');
 
-/**
- * Where databases go when nothing says otherwise.
- *
- * In a container the repository root is read-only and the writable volume is
- * wherever CHAIN_DB points, so that directory is the better default than the
- * root the module happens to sit under. Getting this wrong does not degrade
- * gracefully -- sqlite refuses to open the file and the process does not start.
+/*
+ * The desk's own data -- trades, strategies, settings, sign-in, the error log,
+ * open-interest history -- is in PostgreSQL (`DATABASE_URL`, see db/pool.ts),
+ * not in files beside this one. `chain.db` is the one SQLite file left: the
+ * harvester's read-only dataset, shipped whole by deploy/refresh.sh.
  */
-const DATA_DIR = process.env.CHAIN_DB ? dirname(process.env.CHAIN_DB) : ROOT;
-
-/** Where the trade journal is written. Separate file: market data is disposable,
- * an order history is not. */
-export const TRADE_DB = process.env.TRADE_DB ?? join(DATA_DIR, 'trades.db');
-/** Failures from the server, the browser and the exchange, in time order. */
-export const ERROR_DB = process.env.ERROR_DB ?? join(DATA_DIR, 'errors.db');
-/**
- * The login: the password hash, the sealed authenticator secret, sessions and
- * the security log. Its own file, so the trade journal can be copied to look at
- * without carrying the credentials with it.
- */
-export const AUTH_DB = process.env.AUTH_DB ?? join(DATA_DIR, 'auth.db');
-/**
- * What the option board looked like a while ago: open interest per strike, in
- * five-minute buckets, so a change can be read at all.
- *
- * Its own file for the reason `trades.db` is its own file, in reverse: this is
- * market data and entirely disposable. `chain.db` would be the natural home
- * except that it is read-only at runtime — `refresh.sh` replaces it wholesale
- * with a SQLite backup, and anything written into it is thrown away by the next
- * harvest.
- */
-export const MARKET_DB = process.env.MARKET_DB ?? join(DATA_DIR, 'market.db');

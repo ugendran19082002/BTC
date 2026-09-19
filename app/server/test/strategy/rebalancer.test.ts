@@ -1,9 +1,8 @@
-import { test, beforeEach } from 'node:test';
+import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { StrategyStore } from '../../src/strategy/store.js';
+import { MemorySettings } from '../../src/db/settings.js';
+import { closePool } from '../../src/db/pool.js';
 import { StrategyRebalancer, type RebalancerDeps } from '../../src/strategy/rebalancer.js';
 import { DEFAULT_REBALANCE } from '../../src/strategy/rebalance.js';
 import { DEFAULT_CONFIG, type Strategy } from '../../src/strategy/types.js';
@@ -20,7 +19,12 @@ import type { TradeRecord } from '../../src/trading/engine.js';
  * sells**.
  */
 
-process.env.TRADE_DB ??= join(mkdtempSync(join(tmpdir(), 'rebalancer-')), 'trades.db');
+// One database for the file. Each test uses its own strategy id, so the
+// journal's uniqueness is real and nothing needs wiping between them; the
+// settings are one in-memory copy shared the way the desk's cache is.
+const settings = new MemorySettings();
+const openStore = () => StrategyStore.open(settings);
+after(() => closePool());
 
 const BASE = 15;
 
@@ -59,8 +63,8 @@ const NOW = Date.UTC(2026, 8, 18, 5, 30);
 
 type Sent = { buys: [string, number][]; sells: { tradeId: string; size: number; floorPrice: number }[] };
 
-function rig(o: { ce?: number; pe?: number; buyOk?: boolean; sellOk?: boolean } = {}) {
-  const store = new StrategyStore(process.env.TRADE_DB!);
+async function rig(o: { ce?: number; pe?: number; buyOk?: boolean; sellOk?: boolean } = {}) {
+  const store = await openStore();
   const sent: Sent = { buys: [], sells: [] };
   const said: string[] = [];
   const trades = [rec('CE', 100), rec('PE', 100)];
@@ -86,21 +90,17 @@ function rig(o: { ce?: number; pe?: number; buyOk?: boolean; sellOk?: boolean } 
   return { store, deps, sent, said, marks, rebalancer: new StrategyRebalancer(deps) };
 }
 
-beforeEach(() => {
-  // Each test gets its own strategy id, so the journal's uniqueness is real.
-});
-
 // ---------------------------------------------------------------------------
 
 test('[critical] 5-6. it acts only after the condition holds for two readings', async () => {
-  const { rebalancer, sent, store } = rig({ pe: 19.5, ce: 12 });
+  const { rebalancer, sent, store } = await rig({ pe: 19.5, ce: 12 });
   const s = strategy();
   await rebalancer.consider(s);
   assert.deepEqual(sent.buys, [], 'one reading is a quote, not a move');
   await rebalancer.consider(s);
   assert.deepEqual(sent.buys, [['CE-1', 30]]);
   assert.deepEqual(sent.sells.map((x) => [x.tradeId, x.size]), [['PE-1', 30]]);
-  const [row] = store.rebalances().filter((r) => r.strategyId === s.id);
+  const [row] = (await store.rebalances()).filter((r) => r.strategyId === s.id);
   assert.equal(row?.status, 'done');
   assert.equal(row?.stage, 1);
   assert.equal(row?.upSide, 'PE');
@@ -109,7 +109,7 @@ test('[critical] 5-6. it acts only after the condition holds for two readings', 
 });
 
 test('[critical] 5. a reading that stops holding resets the count', async () => {
-  const r = rig({ pe: 19.5, ce: 12 });
+  const r = await rig({ pe: 19.5, ce: 12 });
   const s = strategy();
   await r.rebalancer.consider(s);          // 1 of 2
   r.marks['P-BTC-80000-180926'] = 17;      // condition gone
@@ -122,44 +122,44 @@ test('[critical] 5. a reading that stops holding resets the count', async () => 
 });
 
 test('[critical] 16. a stage is written down before the order, and can never be written twice', async () => {
-  const { rebalancer, store, sent } = rig({ pe: 19.5, ce: 12 });
+  const { rebalancer, store, sent } = await rig({ pe: 19.5, ce: 12 });
   const s = strategy();
   await rebalancer.consider(s);
   await rebalancer.consider(s);
   assert.equal(sent.buys.length, 1);
   // a second rebalancer -- a restart, or a second tick -- meets the same row
-  const again = new StrategyRebalancer({ ...rig({ pe: 19.5, ce: 12 }).deps, store });
+  const again = new StrategyRebalancer({ ...(await rig({ pe: 19.5, ce: 12 })).deps, store });
   await again.consider(s);
   await again.consider(s);
-  assert.equal(store.rebalances().filter((r) => r.strategyId === s.id).length, 1);
+  assert.equal((await store.rebalances()).filter((r) => r.strategyId === s.id).length, 1);
 });
 
 test('[critical] 15. a buy-back that is refused never sells: the desk ends up flatter, never larger', async () => {
-  const { rebalancer, sent, store, said } = rig({ pe: 19.5, ce: 12, buyOk: false });
+  const { rebalancer, sent, store, said } = await rig({ pe: 19.5, ce: 12, buyOk: false });
   const s = strategy();
   await rebalancer.consider(s);
   await rebalancer.consider(s);
   assert.equal(sent.buys.length, 1);
   assert.deepEqual(sent.sells, [], 'nothing is sold when the buy-back did not happen');
-  const [row] = store.rebalances().filter((r) => r.strategyId === s.id);
+  const [row] = (await store.rebalances()).filter((r) => r.strategyId === s.id);
   assert.equal(row?.status, 'failed');
   assert.match(row!.detail, /buy back refused: not enough margin/);
   assert.match(said.join(' '), /failed to buy back 30 CE/);
 });
 
 test('a sell refused after the buy is recorded as partial, and said so', async () => {
-  const { rebalancer, store, said } = rig({ pe: 19.5, ce: 12, sellOk: false });
+  const { rebalancer, store, said } = await rig({ pe: 19.5, ce: 12, sellOk: false });
   const s = strategy();
   await rebalancer.consider(s);
   await rebalancer.consider(s);
-  const [row] = store.rebalances().filter((r) => r.strategyId === s.id);
+  const [row] = (await store.rebalances()).filter((r) => r.strategyId === s.id);
   assert.equal(row?.status, 'partial');
   assert.match(row!.detail, /bought back 30 CE; the sell was refused/);
   assert.match(said.join(' '), /but selling PE was refused/);
 });
 
 test('the sell is floored at the bid that was on the screen when the stage fired', async () => {
-  const { rebalancer, sent } = rig({ pe: 19.5, ce: 12 });
+  const { rebalancer, sent } = await rig({ pe: 19.5, ce: 12 });
   const s = strategy();
   await rebalancer.consider(s);
   await rebalancer.consider(s);
@@ -167,12 +167,12 @@ test('the sell is floored at the bid that was on the screen when the stage fired
 });
 
 test('[critical] switched off, or on a one-sided day, it does nothing at all', async () => {
-  const off = rig({ pe: 19.5, ce: 12 });
+  const off = await rig({ pe: 19.5, ce: 12 });
   await off.rebalancer.consider(strategy({ rebalance: { ...DEFAULT_REBALANCE, enabled: false } }));
   await off.rebalancer.consider(strategy({ rebalance: null }));
   assert.deepEqual(off.sent.buys, []);
 
-  const oneSided = rig({ pe: 19.5, ce: 12 });
+  const oneSided = await rig({ pe: 19.5, ce: 12 });
   oneSided.deps.tradesToday = () => [rec('PE', 100)];
   const solo = new StrategyRebalancer(oneSided.deps);
   await solo.consider(strategy());
@@ -182,13 +182,13 @@ test('[critical] switched off, or on a one-sided day, it does nothing at all', a
 
 test('[critical] a refusal is written once, and does not ask again every tick', async () => {
   // nothing left to buy back on the fallen side
-  const r = rig({ pe: 19.5, ce: 12 });
+  const r = await rig({ pe: 19.5, ce: 12 });
   r.deps.tradesToday = () => [rec('PE', 100), { ...rec('CE', 0), state: { ...rec('CE', 0).state, entrySize: 100, position: 0 } } as TradeRecord];
   const only = new StrategyRebalancer(r.deps);
   const s = strategy();
   await only.consider(s);
   await only.consider(s);
-  const rows = r.store.rebalances().filter((x) => x.strategyId === s.id);
+  const rows = (await r.store.rebalances()).filter((x) => x.strategyId === s.id);
   assert.equal(rows.length, 1);
   assert.equal(rows[0]!.status, 'skipped');
   assert.match(rows[0]!.detail, /nothing left on the CE to buy back/);
@@ -196,7 +196,7 @@ test('[critical] a refusal is written once, and does not ask again every tick', 
 });
 
 test('the stages run 1, 2, 3 and then stop', async () => {
-  const r = rig({ pe: 19.5, ce: 12 });
+  const r = await rig({ pe: 19.5, ce: 12 });
   const s = strategy();
   const twice = async () => { await r.rebalancer.consider(s); await r.rebalancer.consider(s); };
   await twice();                                         // stage 1
@@ -205,25 +205,25 @@ test('the stages run 1, 2, 3 and then stop', async () => {
   r.marks['P-BTC-80000-180926'] = 22.5; r.marks['C-BTC-80000-180926'] = 9;
   await twice();                                         // stage 3
   await twice();                                         // nothing left to do
-  const rows = r.store.rebalances().filter((x) => x.strategyId === s.id).sort((a, b) => a.stage - b.stage);
+  const rows = (await r.store.rebalances()).filter((x) => x.strategyId === s.id).sort((a, b) => a.stage - b.stage);
   assert.deepEqual(rows.map((x) => [x.stage, x.status]), [[1, 'done'], [2, 'done'], [3, 'done']]);
   assert.equal(r.sent.buys.length, 3);
 });
 
-test('the defaults and the limits are settings, not numbers in the source', () => {
-  const store = new StrategyStore(process.env.TRADE_DB!);
+test('the defaults and the limits are settings, not numbers in the source', async () => {
+  const store = await openStore();
   assert.equal(store.rebalanceDefaults().steps, 3);
-  store.setRebalanceDefaults({ steps: 5, upStartPct: 40, downStartPct: 25, incrementPct: 5 });
+  await store.setRebalanceDefaults({ steps: 5, upStartPct: 40, downStartPct: 25, incrementPct: 5 });
   assert.deepEqual(
     [store.rebalanceDefaults().steps, store.rebalanceDefaults().upStartPct],
     [5, 40],
     'a new rule starts where the desk says it starts',
   );
   // a limit is a setting too, and the ceiling behind it is not
-  assert.equal(store.setRebalanceLimits({ maxSteps: 40 }).maxSteps, 40);
-  assert.equal(store.setRebalanceLimits({ maxSteps: 9_999 }).maxSteps, 100, 'the hard ceiling holds');
-  store.setRebalanceDefaults({ steps: 3, upStartPct: 30, downStartPct: 20, incrementPct: 10 });
-  store.setRebalanceLimits({ maxSteps: 20 });
+  assert.equal((await store.setRebalanceLimits({ maxSteps: 40 })).maxSteps, 40);
+  assert.equal((await store.setRebalanceLimits({ maxSteps: 9_999 })).maxSteps, 100, 'the hard ceiling holds');
+  await store.setRebalanceDefaults({ steps: 3, upStartPct: 30, downStartPct: 20, incrementPct: 10 });
+  await store.setRebalanceLimits({ maxSteps: 20 });
 });
 
 /*
@@ -235,7 +235,7 @@ test('the defaults and the limits are settings, not numbers in the source', () =
  * none -- which is what every rule saved before the control existed used.
  */
 test('[critical] the rebalance sell walks for the rule\'s own seconds', async () => {
-  const r = rig({ pe: 19.5, ce: 12 });
+  const r = await rig({ pe: 19.5, ce: 12 });
   const seen: number[] = [];
   r.deps.sell = async (o) => { seen.push(o.chaseSeconds); return { ok: true }; };
   const only = new StrategyRebalancer(r.deps);
@@ -249,7 +249,7 @@ test('[critical] the rebalance sell walks for the rule\'s own seconds', async ()
 });
 
 test('a rule with no seconds of its own uses the strategy\'s entry seconds', async () => {
-  const r = rig({ pe: 19.5, ce: 12 });
+  const r = await rig({ pe: 19.5, ce: 12 });
   const seen: number[] = [];
   r.deps.sell = async (o) => { seen.push(o.chaseSeconds); return { ok: true }; };
   const only = new StrategyRebalancer(r.deps);
@@ -260,7 +260,7 @@ test('a rule with no seconds of its own uses the strategy\'s entry seconds', asy
 });
 
 test('zero rests at the offer; the add window is what ends it', async () => {
-  const r = rig({ pe: 19.5, ce: 12 });
+  const r = await rig({ pe: 19.5, ce: 12 });
   const seen: { chase: number; timeout: number }[] = [];
   r.deps.sell = async (o) => { seen.push({ chase: o.chaseSeconds, timeout: o.timeoutMs }); return { ok: true }; };
   const only = new StrategyRebalancer(r.deps);

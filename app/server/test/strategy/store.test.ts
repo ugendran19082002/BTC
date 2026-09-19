@@ -183,11 +183,11 @@ test('[critical] both score bars are whole numbers out of a hundred, or off', ()
   assert.ok(ok({ maxShockScore: 101 }).some((m) => /sudden-move risk limit/.test(m)));
 });
 
-test('[critical] a strategy saved before the score bars reads as off, not as zero', () => {
+test('[critical] a strategy saved before the score bars reads as off, not as zero', async () => {
   // A zero bar would refuse every strike; a zero risk limit would hold every
   // day. The hydrate merge decides this, and it decides it for every strategy
-  // already in the file.
-  const s = fresh();
+  // already in the database.
+  const s = await fresh();
   const before = (await s.all()).find((x) => x.id === 'double')!;
   assert.equal(before.config.minSellScore, null);
   assert.equal(before.config.maxShockScore, null);

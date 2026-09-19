@@ -1,8 +1,7 @@
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { MemorySettings } from '../../src/db/settings.js';
+import { closePool, query } from '../../src/db/pool.js';
 import { rig, ceProduct, peProduct, planFor, quote, type Rig } from '../trading/harness.js';
 import { StrategyStore } from '../../src/strategy/store.js';
 import { StrategyAdder, type AdderDeps } from '../../src/strategy/adder.js';
@@ -71,7 +70,9 @@ async function day(o: { pe?: [number, number]; cePieces?: number; ceOnly?: numbe
   await r.engine.poll('CE-1');
   r.ex.configure({ partialFillSize: undefined });
 
-  const store = new StrategyStore(join(mkdtempSync(join(tmpdir(), 'adder-')), 'trades.db'));
+  // One database for the file; every day starts with an empty add journal.
+  const store = await StrategyStore.open(new MemorySettings());
+  await query('TRUNCATE strategy.adds');
   const alerts: Alert[] = [];
   const deps: AdderDeps = {
     store,
@@ -87,6 +88,8 @@ async function day(o: { pe?: [number, number]; cePieces?: number; ceOnly?: numbe
   };
   return { r, store, alerts, deps, adder: new StrategyAdder(deps) };
 }
+
+after(() => closePool());
 
 /** Poll the PE the way the service does, with its quote kept fresh, until the add has walked. */
 async function walkPE(r: Rig, bid = 7, ask = 7.5) {
@@ -107,7 +110,7 @@ test('[critical] the CE target buys back 425 while the PE bid is 7: 425 are appe
 
   assert.equal(pe.position, -850);
   assert.equal(pe.addedSize, 425);
-  const [row] = store.adds();
+  const [row] = await store.adds();
   assert.equal(row?.status, 'placed');
   assert.equal(row?.contracts, 425);
   assert.equal(row?.sourceTradeId, 'CE-1');
@@ -122,7 +125,7 @@ test('[critical] the nudge and the tick looking at the same fill together still 
   await Promise.all([adder.consider(strategy()), adder.consider(strategy())]);
   const pe = await walkPE(r);
   assert.equal(pe.position, -850, 'not 1,275');
-  assert.equal(store.adds().length, 1);
+  assert.equal((await store.adds()).length, 1);
 });
 
 test('[critical] a restart does not add the same contracts again', async () => {
@@ -132,7 +135,7 @@ test('[critical] a restart does not add the same contracts again', async () => {
   await new StrategyAdder(deps).consider(strategy());
   const pe = await walkPE(r);
   assert.equal(pe.position, -850);
-  assert.equal(store.adds().length, 1);
+  assert.equal((await store.adds()).length, 1);
 });
 
 test('[critical] a target in pieces adds each piece once: 200, then the other 225', async () => {
@@ -147,7 +150,7 @@ test('[critical] a target in pieces adds each piece once: 200, then the other 22
   const pe = await walkPE(r);
 
   assert.equal(pe.position, -850);
-  assert.deepEqual(store.adds().map((a) => [a.contracts, a.status]).reverse(), [[200, 'placed'], [225, 'placed']]);
+  assert.deepEqual((await store.adds()).map((a) => [a.contracts, a.status]).reverse(), [[200, 'placed'], [225, 'placed']]);
 });
 
 test('[critical] PE bid 2.00: nothing is sold, the skip is written down, and the phone is told why', async () => {
@@ -155,7 +158,7 @@ test('[critical] PE bid 2.00: nothing is sold, the skip is written down, and the
   await adder.consider(strategy());
   const pe = await walkPE(r, 2, 2.4);
   assert.equal(pe.position, -425);
-  assert.equal(store.adds()[0]?.status, 'skipped');
+  assert.equal((await store.adds())[0]?.status, 'skipped');
   assert.equal(alerts.length, 1);
   assert.match(alerts[0]!.text, /NOT ADDED/);
   assert.match(alerts[0]!.text, /PE bid 2\.00 is below \$3\.00/);
@@ -166,13 +169,13 @@ test('[critical] PE at 30, double its 15 sale: not added to', async () => {
   const { r, store, adder } = await day({ pe: [29.8, 30.4] });
   await adder.consider(strategy());
   assert.equal(r.store.peek('PE-1')!.state.position, -425);
-  assert.match(store.adds()[0]!.detail, /2x or more its 15\.00 sale/);
+  assert.match((await store.adds())[0]!.detail, /2x or more its 15\.00 sale/);
 });
 
 test('[critical] a one-sided double day (CE 850, no PE): nothing to add to', async () => {
   const { store, alerts, adder } = await day({ ceOnly: 850 });
   await adder.consider(strategy());
-  assert.equal(store.adds()[0]?.status, 'skipped');
+  assert.equal((await store.adds())[0]?.status, 'skipped');
   assert.match(alerts[0]!.text, /no PE leg today/);
 });
 
@@ -180,7 +183,7 @@ test('the gates refusing the add is written down as refused, and said', async ()
   const { r, store, alerts, adder } = await day();
   r.setFeed(false);
   await adder.consider(strategy());
-  assert.equal(store.adds()[0]?.status, 'refused');
+  assert.equal((await store.adds())[0]?.status, 'refused');
   assert.match(alerts[0]!.text, /ADD REFUSED/);
   assert.equal(r.store.peek('PE-1')!.state.position, -425);
 });
@@ -191,7 +194,7 @@ test('an add that throws is written down as failed, and said -- and not tried ag
   await adder.consider(strategy());
   await adder.consider(strategy());
   assert.equal(calls, 1);
-  assert.equal(store.adds()[0]?.status, 'failed');
+  assert.equal((await store.adds())[0]?.status, 'failed');
   assert.match(alerts[0]!.text, /ADD FAILED/);
 });
 
@@ -199,7 +202,7 @@ test('switched off, or the strategy disarmed: nothing is decided and nothing is 
   const off = await day();
   await off.adder.consider(strategy({}, { addToOpposite: null }));
   await off.adder.consider(strategy({ enabled: false }));
-  assert.deepEqual(off.store.adds(), []);
+  assert.deepEqual((await off.store.adds()), []);
   assert.equal(off.r.store.peek('PE-1')!.state.position, -425);
 });
 
@@ -212,7 +215,7 @@ test('[critical] the PE that was added to does not add back to the CE when its o
   assert.equal(r.store.peek('PE-1')!.state.position, 0, 'all 850 bought back at 0.70');
 
   await adder.consider(strategy());
-  const rows = store.adds();
+  const rows = await store.adds();
   assert.equal(rows.length, 2);
   assert.equal(rows[0]!.status, 'skipped');
   assert.match(rows[0]!.detail, /PE was itself added to today/);

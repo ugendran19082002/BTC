@@ -16,22 +16,10 @@
  * and this file creates `btc_test_<random>` inside it, points `DATABASE_URL`
  * there, and drops it when the process ends. `node --test` runs each file in
  * its own process, so each file gets its own database and none can see
- * another's rows. `TEST_PG_URL` overrides where the server is.
- *
- * `??=` rather than `=`, so a test file that wants its own path still gets it.
+ * another's rows.
  */
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import pg from 'pg';
-
-// Still needed while the SQLite stores are being replaced schema by schema.
-const dir = mkdtempSync(join(tmpdir(), 'btc-desk-test-'));
-process.env.ERROR_DB ??= join(dir, 'errors.db');
-process.env.TRADE_DB ??= join(dir, 'trades.db');
-process.env.AUTH_DB ??= join(dir, 'auth.db');
-process.env.MARKET_DB ??= join(dir, 'market.db');
 
 const ADMIN_URL = process.env.TEST_PG_URL ?? 'postgres://postgres:postgres@127.0.0.1:5433/postgres';
 const name = `btc_test_${randomBytes(6).toString('hex')}`;

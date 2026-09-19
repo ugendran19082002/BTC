@@ -71,7 +71,9 @@ const { Secrets } = await import('../../src/auth/secrets.js');
 const { tradingService } = await import('../../src/trading/service.js');
 const { closePool } = await import('../../src/db/pool.js');
 const { initTradingService } = await import('../../src/trading/service.js');
+const { initStrategyStore } = await import('../../src/http/routes/strategy.routes.js');
 await initTradingService();
+await initStrategyStore();
 
 type App = Awaited<ReturnType<typeof buildApp>>;
 let app: App;

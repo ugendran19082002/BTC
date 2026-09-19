@@ -1,10 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DatabaseSync } from 'node:sqlite';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { StrategyStore } from '../../src/strategy/store.js';
+import { MemorySettings } from '../../src/db/settings.js';
+import { closePool } from '../../src/db/pool.js';
 import {
   DEFAULT_CONFIG, defaultAddUntil, hhmmOf, isHhmm, minutesOf, time12, validateConfig, type StrategyConfig,
 } from '../../src/strategy/types.js';
@@ -146,29 +144,15 @@ test('with the add switched off, there is no latest time to check', () => {
 
 // ------------------------------------------------------------- stored
 
-const freshPath = () => join(mkdtempSync(join(tmpdir(), 'times-')), 'trades.db');
-
-test('[critical] a saved add without a latest time reads back with half an hour before its exit', () => {
-  const s = new StrategyStore(freshPath());
-  s.save({ id: 'old', name: 'Old', enabled: false, config: { ...cfg({ exitTime: '15:00' }), addToOpposite: { minPriceUsd: 3, maxMultiple: 2 } as never } });
-  assert.equal(s.get('old')!.config.addToOpposite?.addUntil, '14:30');
-});
-
-test('[critical] the migration writes the latest time into strategies stored before it, and only those', () => {
-  const path = freshPath();
-  const first = new StrategyStore(path);
-  first.save({ id: 'old', name: 'Old', enabled: false, config: { ...cfg(), addToOpposite: { minPriceUsd: 3, maxMultiple: 2 } as never } });
-  first.save({ id: 'set', name: 'Set', enabled: false, config: withAdd('12:00') });
-
-  // pretend 007 had never run
-  const raw = new DatabaseSync(path);
-  raw.prepare("DELETE FROM migrations WHERE id = '007-add-until'").run();
-  raw.close();
-
-  const again = new StrategyStore(path);
-  assert.ok(again.applied.includes('007-add-until'));
-  const stored = (id: string) => JSON.parse((new DatabaseSync(path).prepare('SELECT config FROM strategies WHERE id = ?').get(id) as { config: string }).config);
-  assert.equal(stored('old').addToOpposite.addUntil, '16:59', 'written into the row itself, not only filled on read');
-  assert.equal(stored('set').addToOpposite.addUntil, '12:00', 'a time somebody chose is left alone');
-  assert.equal(stored('double').addToOpposite, null, 'a strategy with the add off is untouched');
+test('[critical] a saved add without a latest time reads back with half an hour before its exit', async () => {
+  // The SQLite desk had a migration (007-add-until) that wrote this time into
+  // every stored row. Rows imported into PostgreSQL already carry it; a row
+  // written without it -- an old client, a hand edit -- is filled on read.
+  const s = await StrategyStore.open(new MemorySettings());
+  try {
+    await s.save({ id: 'old', name: 'Old', enabled: false, config: { ...cfg({ exitTime: '15:00' }), addToOpposite: { minPriceUsd: 3, maxMultiple: 2 } as never } });
+    assert.equal((await s.get('old'))!.config.addToOpposite?.addUntil, '14:30');
+  } finally {
+    await closePool();
+  }
 });
