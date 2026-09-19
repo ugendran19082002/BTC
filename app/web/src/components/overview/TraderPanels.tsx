@@ -1,80 +1,12 @@
 import { useEffect, useState } from 'react';
-import { entryTodayMs } from '@/lib/screen-config';
 import type { ChainResponse, Leg } from '@/types/desk';
 import { getChanges, type ChangeRow, type PerpResponse, type PremiumMomentum } from '@/api/desk';
 import {
   boardRead, candidates, earlyWarning, executionEstimate, findStrikes, horizonRows, movementVerdict, odds, orderEstimate, shortLossAt,
-  type EarlyWarning, type ExpectedMove, type FinderFilter, type Readiness, type SideAssessment, type SideChoice,
+  type EarlyWarning, type ExpectedMove, type FinderFilter,
 } from '@/lib/overview';
 import type { ScreenConfig } from '@/lib/screen-config';
 import { fmt, More, Panel, Row, Tag } from './parts';
-
-const IST_HM = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
-const IST_DATE = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short' });
-
-// ------------------------------------------------------------ the decision
-
-/**
- * The one answer a seller wants at the moment of entry, whichever moment that
- * is: SELL CE, SELL PE, SELL BOTH or NO TRADE -- with the strike, what it
- * pays, its odds, and what is in the way. Everything below this card is the
- * working.
- */
-export function DecisionHero({ data, now, choice, sides, ready, leg, contracts, leverage, onSell, entryIst = '05:30' }: {
-  data: ChainResponse; now: number; choice: SideChoice; sides: SideAssessment[]; ready: Readiness; leg: Leg | null;
-  contracts: number; leverage: number; onSell?: (l: Leg) => void; entryIst?: string;
-}) {
-  const snap = data.snapshot;
-  // The contract's day, said once: entry is now, the window is the strategy's, expiry is the contract's.
-  const entryMs = snap.live ? now : snap.ts * 1000;
-  const windowMs = entryTodayMs(entryIst, entryMs);
-  const sinceWindow = windowMs === null ? null : entryMs - windowMs;
-  const windowText = sinceWindow === null ? '' : sinceWindow >= 0 && sinceWindow <= 30 * 60_000 ? ' (in window)' : sinceWindow > 0 ? ` (${Math.floor(sinceWindow / 3_600_000)}h ${String(Math.floor((sinceWindow % 3_600_000) / 60_000)).padStart(2, '0')}m since)` : ` (in ${Math.ceil(-sinceWindow / 60_000)}m)`;
-  const leftMs = Math.max(0, snap.expiryTs * 1000 - entryMs);
-  const left = leftMs === 0 ? 'settled' : `${Math.floor(leftMs / 3_600_000)}h ${String(Math.floor((leftMs % 3_600_000) / 60_000)).padStart(2, '0')}m left`;
-  const legs = choice.side === 'BOTH' ? sides.map((s) => s.leg).filter((l): l is Leg => l !== null) : choice.side === 'NO_TRADE' ? [] : [sides.find((s) => s.side === choice.side)?.leg ?? null].filter((l): l is Leg => l !== null);
-  const tone = choice.side === 'NO_TRADE' ? 'down' : choice.side === 'BOTH' ? 'up' : 'accent';
-  const focus = sides.find((s) => s.side === (choice.side === 'CE' ? 'CE' : choice.side === 'PE' ? 'PE' : leg?.cp === 'C' ? 'CE' : 'PE'));
-  const blockers = ready.gates.filter((g) => g.ok === false).slice(0, 4);
-  return (
-    <section className={`ov-hero ov-hero-${tone}`} aria-label="Decision">
-      <div className="ov-hero-main">
-        <span className="ov-hero-when">Entry now {IST_HM.format(new Date(entryMs))} IST · window {entryIst}{windowText} → expiry {IST_DATE.format(new Date(snap.expiryTs * 1000))} {IST_HM.format(new Date(snap.expiryTs * 1000))} IST · <b>{left}</b></span>
-        <h2 className="ov-hero-verdict">
-          {choice.side === 'NO_TRADE' ? 'NO TRADE' : choice.side === 'BOTH' ? 'SELL BOTH' : `SELL ${choice.side}`}
-          {legs.length > 0 && <small> {legs.map((l) => `${fmt.n(l.strike)} ${l.cp === 'C' ? 'CE' : 'PE'}`).join(' + ')}</small>}
-        </h2>
-        <p className="ov-hero-why">{choice.why}. {ready.ready ? 'Every gate is green.' : `${ready.failing} gate${ready.failing === 1 ? '' : 's'} failing${ready.unknown ? `, ${ready.unknown} unreadable` : ''}.`}</p>
-        {blockers.length > 0 && (
-          <ul className="ov-hero-blockers">{blockers.map((b) => <li key={b.key}>✕ {b.text}</li>)}</ul>
-        )}
-      </div>
-      <div className="ov-hero-side">
-        {legs.map((l) => {
-          const o = odds(l);
-          const px = l.bid ?? l.sellPrice ?? l.mark;
-          const est = px === null ? null : orderEstimate(l.cp, l.strike, px, snap.spot, leverage, contracts);
-          return (
-            <div key={l.strike + l.cp} className="ov-hero-leg">
-              <b>{fmt.n(l.strike)} {l.cp === 'C' ? 'CE' : 'PE'}</b>
-              <span>bid {fmt.n(px, 1)} · credit {est ? `$${est.creditUsd.toFixed(2)}` : '—'} for {contracts} ct</span>
-              <span>POP {fmt.pct(o.pOtm)} · touch {fmt.pct(o.pTouch)} · {l.emDistance === null ? '—' : `${l.emDistance.toFixed(2)}× EM`}</span>
-              <span>margin {est ? `$${est.marginUsd.toFixed(2)}` : '—'} · break-even {est ? fmt.n(est.breakevenAfterFees) : '—'}</span>
-              {onSell && snap.live && <button className="ov-sell" onClick={() => onSell(l)}>Sell {fmt.n(l.strike)} {l.cp === 'C' ? 'CE' : 'PE'} via ticket</button>}
-            </div>
-          );
-        })}
-        {legs.length === 0 && focus?.leg && (
-          <div className="ov-hero-leg ov-muted">
-            <b>Closest: {fmt.n(focus.leg.strike)} {focus.side}</b>
-            <span>{focus.status} · score {focus.score === null ? '—' : focus.score.toFixed(1)} / 10</span>
-          </div>
-        )}
-        <Tag tone={ready.ready ? 'up' : 'down'}>{ready.verdict}</Tag>
-      </div>
-    </section>
-  );
-}
 
 // ---------------------------------------------------------- early warning
 

@@ -29,8 +29,8 @@ describe('the decision panels', () => {
     // Said once: no model view beside the outlook, no sell recommendation beside the strikes, no entry setup beside the decision card.
     for (const gone of [/^Model view/, 'Sell recommendation', 'Entry → expiry setup', 'Scenario P&L (−3% … +3%)']) expect(screen.queryByText(gone, { selector: 'h3' })).toBeNull();
 
-    // The decision, first and largest: one of the four answers, at the moment of entry.
-    expect(screen.getByRole('heading', { level: 2 }).textContent).toMatch(/^(SELL CE|SELL PE|SELL BOTH|NO TRADE)/);
+    // The answer, once, on the strategy decision: one of the four.
+    expect(screen.getByText(/^Desk side: (CE|PE|BOTH|NO TRADE)$/)).toBeInTheDocument();
     for (const t of [/^Early warning/, 'Outlook · movement to expiry', /^What changed/]) {
       expect(screen.getByText(t, { selector: 'h3' })).toBeInTheDocument();
     }

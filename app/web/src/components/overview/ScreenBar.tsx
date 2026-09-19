@@ -1,17 +1,22 @@
 import { useState, type ReactNode } from 'react';
 import type { ChainResponse, ExpiryOption } from '@/types/desk';
+import { entryTodayMs } from '@/lib/screen-config';
 import { Tag } from './parts';
 
 const IST_CLOCK = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+const IST_HM = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
+const IST_DATE = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short' });
+const hm = (ms: number) => `${Math.floor(ms / 3_600_000)}h ${String(Math.floor((ms % 3_600_000) / 60_000)).padStart(2, '0')}m`;
 
 /**
  * The bar above the screen: who and when (brand, clock, live), the contract
- * on the board and the list to change it, the screen's mode and refresh
- * controls, and the glossary. The screen decides with the desk's fixed
+ * on the board and the list to change it, its day (entry is now, the window
+ * is the strategy's, expiry is the contract's, and how long is left), the
+ * screen's mode and refresh controls, and the glossary. The screen decides with the desk's fixed
  * configuration (lib/screen-config.ts); nothing here changes it.
  */
-export function ScreenBar({ data, now, freshnessSec, expiries, onExpiry, controls, error }: {
-  data: ChainResponse; now: number; freshnessSec: number;
+export function ScreenBar({ data, now, freshnessSec, entryIst, expiries, onExpiry, controls, error }: {
+  data: ChainResponse; now: number; freshnessSec: number; entryIst: string;
   expiries?: readonly ExpiryOption[]; onExpiry?: (expiry: string) => void;
   controls?: ReactNode; error?: string | null;
 }) {
@@ -19,6 +24,11 @@ export function ScreenBar({ data, now, freshnessSec, expiries, onExpiry, control
   const snap = data.snapshot;
   const age = Math.max(0, Math.round((now - snap.ts * 1000) / 1000));
   const away = (h: number) => (h < 48 ? `${Math.round(h)}h` : `${Math.round(h / 24)}d`);
+  const entryMs = snap.live ? now : snap.ts * 1000;
+  const windowMs = entryTodayMs(entryIst, entryMs);
+  const since = windowMs === null ? null : entryMs - windowMs;
+  const windowText = since === null ? '' : since >= 0 && since <= 30 * 60_000 ? ' · in window' : since > 0 ? ` · ${hm(since)} since` : ` · in ${Math.ceil(-since / 60_000)}m`;
+  const leftMs = Math.max(0, snap.expiryTs * 1000 - entryMs);
   return (
     <div className="ov-settings">
       <header className="ov-screenbar">
@@ -40,6 +50,9 @@ export function ScreenBar({ data, now, freshnessSec, expiries, onExpiry, control
               </select>
             </label>
           ) : <Tag tone="accent">{snap.expiry}</Tag>}
+          <span className="ov-day" title="Entry is now; the window is the strategy's own entry time; expiry is the contract's settlement">
+            entry {IST_HM.format(new Date(entryMs))} · window {entryIst}{windowText} → {IST_DATE.format(new Date(snap.expiryTs * 1000))} {IST_HM.format(new Date(snap.expiryTs * 1000))} · <b>{leftMs === 0 ? 'settled' : `${hm(leftMs)} left`}</b>
+          </span>
           {controls}
           <button className="ov-chip" onClick={() => setHelp((v) => !v)} aria-pressed={help} title="What the terms on this screen mean">?</button>
         </div>

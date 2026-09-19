@@ -16,7 +16,7 @@ import {
 import { ChainPanel, ChecklistPanel, findLeg, SelectedStrikePanel, StrategyDecisionPanel, type Selected } from './DecisionPanels';
 import { ScreenBar } from './ScreenBar';
 import { RiskEnginePanel } from './RiskPanels';
-import { ChangesPanel, DecisionHero, EarlyWarningPanel, MovementPanel, StrikeFinderPanel, useChanges } from './TraderPanels';
+import { ChangesPanel, EarlyWarningPanel, MovementPanel, StrikeFinderPanel, useChanges } from './TraderPanels';
 
 /**
  * The Live screen: the three reference designs (docs/image1-3.png) and the
@@ -25,8 +25,8 @@ import { ChangesPanel, DecisionHero, EarlyWarningPanel, MovementPanel, StrikeFin
  *   market → price action → option chain → IV / OI / premium → horizons →
  *   CE / PE / both → strike → risk → P&L → entry → exit
  *
- * One fact, one place. The decision card owns the answer and the clock
- * (entry, window, expiry, time left); the KPI strip owns the market's
+ * One fact, one place. The bar owns the clock (entry, window, expiry, time
+ * left); the strategy decision owns the answer; the KPI strip owns the market's
  * headline numbers; the left column reads the market (trend, levels,
  * volatility, the tape); the centre is the board (chart, chain, the strike
  * under inspection, what changed, its risk); the right column decides
@@ -146,10 +146,7 @@ export function Overview({
 
   return (
     <div className="ov">
-      <ScreenBar data={data} now={now} freshnessSec={config.freshnessSec} expiries={expiries} onExpiry={onExpiry} controls={controls} error={error} />
-      <ErrorBoundary where="Decision">
-        <DecisionHero data={data} now={now} choice={choice} sides={sides} ready={ready} leg={leg} contracts={contracts} leverage={leverage} onSell={onSell} entryIst={config.entryIst} />
-      </ErrorBoundary>
+      <ScreenBar data={data} now={now} freshnessSec={config.freshnessSec} entryIst={config.entryIst} expiries={expiries} onExpiry={onExpiry} controls={controls} error={error} />
       <ErrorBoundary where="Overview KPIs"><KpiStrip data={data} spot={spot} iv={iv} perp={perp} spark={spark} now={now} /></ErrorBoundary>
 
       <div className="ov-main">
