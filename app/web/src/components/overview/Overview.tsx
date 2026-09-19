@@ -9,8 +9,8 @@ import {
   KeyLevelsPanel, KpiStrip, IvTermPanel, PriceActionPanel, SkewPanel, TradeFlowPanel, VolatilityPanel,
 } from './MarketPanels';
 import {
-  ChainPanel, EntryPanel, findLeg, ModelViewPanel, ScenarioPanel, SelectedStrikePanel, SellRecommendationPanel,
-  StatusBar, StrategyDecisionPanel, type Selected,
+  ChainPanel, EntryPanel, ExpiryHeader, findLeg, ModelViewPanel, ScenarioPanel, ScreenBar, SelectedStrikePanel,
+  SellRecommendationPanel, StatusBar, StrategyDecisionPanel, type Selected,
 } from './DecisionPanels';
 
 /**
@@ -34,6 +34,7 @@ import {
  */
 export function Overview({
   data, trade, expiries, onExpiry, onSell, contracts, leverage = 200, chart, chain = true, selected: selectedProp, onSelect, spark,
+  controls, refreshEverySec = null, error,
 }: {
   data: ChainResponse;
   trade: TradeStatus | null;
@@ -46,6 +47,12 @@ export function Overview({
   leverage?: number;
   /** Recent closes for the spot KPI's sparkline. */
   spark?: readonly number[];
+  /** The screen's mode and refresh controls, drawn in the screen bar. */
+  controls?: ReactNode;
+  /** How often the chain reloads on its own, for the status bar's countdown; null when it does not. */
+  refreshEverySec?: number | null;
+  /** The last load's error, if the chain on screen is older than it should be. */
+  error?: string | null;
   /** A price chart for the centre column; none where the screen has its own. */
   chart?: ReactNode;
   /** Draw the compact chain. Off where the screen has the full board. */
@@ -88,7 +95,8 @@ export function Overview({
 
   return (
     <div className="ov">
-      <ErrorBoundary where="Overview KPIs"><KpiStrip data={data} spot={spot} iv={iv} perp={perp} spark={spark} /></ErrorBoundary>
+      <ScreenBar data={data} now={now} controls={controls} error={error} />
+      <ErrorBoundary where="Overview KPIs"><KpiStrip data={data} spot={spot} iv={iv} perp={perp} spark={spark} now={now} /></ErrorBoundary>
 
       <div className="ov-main">
         <div className="ov-col">
@@ -111,6 +119,7 @@ export function Overview({
         </div>
 
         <div className="ov-col ov-right">
+          <ExpiryHeader data={data} now={now} />
           <ErrorBoundary where="Model view"><ModelViewPanel data={data} iv={iv} /></ErrorBoundary>
           <ErrorBoundary where="Strategy decision"><StrategyDecisionPanel data={data} iv={iv} onSelect={setPicked} /></ErrorBoundary>
           <ErrorBoundary where="Sell recommendation"><SellRecommendationPanel data={data} onSelect={setPicked} onSell={onSell} leverage={leverage} contracts={contracts} /></ErrorBoundary>
@@ -124,7 +133,7 @@ export function Overview({
         <ErrorBoundary where="Scenario P&L"><ScenarioPanel data={data} leg={leg} contracts={contracts} /></ErrorBoundary>
       </div>
 
-      <StatusBar data={data} trade={trade} now={now} leverage={leverage} />
+      <StatusBar data={data} trade={trade} now={now} leverage={leverage} refreshEverySec={refreshEverySec} />
     </div>
   );
 }

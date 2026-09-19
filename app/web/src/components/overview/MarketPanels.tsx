@@ -12,8 +12,19 @@ const usdShort = (v: number | null | undefined) => {
   return a >= 1e9 ? `$${(v / 1e9).toFixed(2)}B` : a >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : a >= 1e3 ? `$${(v / 1e3).toFixed(1)}K` : `$${v.toFixed(0)}`;
 };
 
-export function KpiStrip({ data, spot, iv, perp, spark }: {
-  data: ChainResponse; spot: number; iv: IvRv | null; perp: PerpResponse | null; spark?: readonly number[];
+/**
+ * Delta settles funding every eight hours, at 00:00, 08:00 and 16:00 UTC: the
+ * product's annualised funding is the rate × 1,095, and 1,095 is three a day.
+ */
+export function nextFundingIn(nowMs: number): string {
+  const period = 8 * 3_600_000;
+  const left = period - (nowMs % period);
+  const h = Math.floor(left / 3_600_000), m = Math.floor((left % 3_600_000) / 60_000), s = Math.floor((left % 60_000) / 1000);
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+export function KpiStrip({ data, spot, iv, perp, spark, now = Date.now() }: {
+  data: ChainResponse; spot: number; iv: IvRv | null; perp: PerpResponse | null; spark?: readonly number[]; now?: number;
 }) {
   const m = data.market;
   const s = data.structure;
@@ -31,7 +42,7 @@ export function KpiStrip({ data, spot, iv, perp, spark }: {
       <Kpi label="Perp 24h volume" value={usdShort(t?.turnoverUsd24h)} sub={t?.volume24h == null ? '' : `${fmt.n(t.volume24h)} contracts`} />
       <Kpi label="Open interest (perp)" value={usdShort(t?.oiUsd)} sub={t?.oiContracts == null ? '' : `${fmt.n(t.oiContracts)} contracts`} />
       <Kpi label="Funding rate" value={funding === null ? '—' : `${funding.toFixed(4)}%`}
-        sub={funding === null ? 'not read' : funding > 0 ? 'longs pay shorts' : funding < 0 ? 'shorts pay longs' : 'flat'}
+        sub={funding === null ? 'not read' : `${funding > 0 ? 'longs pay' : funding < 0 ? 'shorts pay' : 'flat'} · next in ${nextFundingIn(now)}`}
         tone={funding === null ? undefined : funding > 0 ? 'up' : funding < 0 ? 'down' : undefined} />
       <Kpi label="IV (ATM)" value={s.atmIv === null ? '—' : `${(s.atmIv * 100).toFixed(1)}%`}
         sub={iv ? `RV ${iv.rvPct.toFixed(1)}% · ${iv.label}` : 'realised vol —'} tone={iv?.label === 'rich' ? 'up' : iv?.label === 'cheap' ? 'down' : undefined} />

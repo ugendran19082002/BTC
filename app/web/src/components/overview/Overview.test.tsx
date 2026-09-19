@@ -20,7 +20,7 @@ describe('the decision panels', () => {
   it('draw every panel from a real chain, with the chart and chain left to the screen', () => {
     render(<Overview data={data} trade={null} contracts={1} chain={false} />);
     for (const t of ['Key levels', 'Volatility', 'Model view (12h)', 'Strategy decision', 'Sell recommendation', 'IV term structure', 'Entry checklist', 'Place sell order']) {
-      expect(screen.getByText(t)).toBeInTheDocument();
+      expect(screen.getByText(t, { selector: 'h3' })).toBeInTheDocument();
     }
     expect(screen.queryByText(/^Option chain/)).toBeNull();
     expect(screen.getByText(/^Selected strike: /)).toBeInTheDocument();

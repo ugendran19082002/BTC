@@ -21,8 +21,6 @@ import type { Selected } from '@/components/overview/DecisionPanels';
 import { usePoll } from '@/hooks/usePoll';
 import { usePageVisible } from '@/hooks/usePageVisible';
 import { useStream } from '@/hooks/useStream';
-import { MoveSection } from '@/components/desk/MoveSection';
-import { MarketHead } from '@/components/desk/MarketHead';
 import { TodayPnl } from '@/components/desk/TodayPnl';
 import { istToEpoch, type IstMoment } from '@/lib/ist-moment';
 import { usePersisted } from '@/hooks/usePersisted';
@@ -31,22 +29,15 @@ import { LoginPage } from '@/components/desk/LoginPage';
 import { LivePrice } from '@/components/desk/LivePrice';
 import { TODAY_MOVE } from '@/types/desk';
 import { tabTitle } from '@/lib/tab-title';
-import { istLabel, pnlTone, signedInr, usdToInr } from '@/lib/format';
-import { Outlook } from '@/components/desk/Outlook';
-import { SuddenMove } from '@/components/desk/SuddenMove';
-import { BestTrade } from '@/components/desk/BestTrade';
+import { pnlTone, signedInr, usdToInr } from '@/lib/format';
 import { PriceChart, CHART_TFS, type ChartTf } from '@/components/desk/PriceChart';
-import { BtcSummary } from '@/components/desk/BtcSummary';
 import { Select, SelectItem } from '@/components/ui/select';
 import { ColumnPicker } from '@/components/chain/ColumnPicker';
 import { normalise, normaliseOrder, type ColumnKey, type ColumnState } from '@/components/chain/columns';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Download } from 'lucide-react';
 import { toCsv, downloadCsv } from '@/lib/csv';
-import { CollapsibleCard } from '@/components/ui/collapsible-card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Metric, Formula } from '@/components/research/Explain';
 
 /*
  * Everything off the Live screen is loaded when it is first opened. The Live
@@ -80,9 +71,6 @@ const DateTimePicker = lazy(() => import('@/components/research/DateTimePicker')
  * The rest of the props are kept stable below (`sides`, `held`, `reload`).
  */
 const Board = memo(ChainTable);
-const OutlookRow = memo(Outlook);
-const BestPick = memo(BestTrade);
-const Shock = memo(SuddenMove);
 const Chart = memo(PriceChart);
 /** One empty list, so "no bars yet" is the same prop every render. */
 const NO_BARS: never[] = [];
@@ -109,10 +97,6 @@ export const asTab = (v: string): Tab => (TABS as readonly string[]).includes(v)
 const REFRESH_SECONDS = 5;
 // The expiry list changes once a day, at settlement.
 const EXPIRY_RECHECK_SECONDS = 60;
-
-/** Wider than a phone. Long cards and the settings start open here, folded on a phone. */
-const WIDE = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-  && window.matchMedia('(min-width: 761px)').matches;
 
 /** Yesterday at the entry minute — a sensible default for a past date. */
 function defaultPast(): IstMoment {
@@ -145,7 +129,6 @@ export default function App() {
   const [expiry, setExpiry, forgetExpiry] = usePersisted<string>('expiry', '');
   const [expiries, setExpiries] = useState<ExpiryOption[]>(loadCachedExpiries);
   const defaultExpiry = expiries.find((e) => e.isDefault)?.expiry ?? expiries[0]?.expiry ?? '';
-  const activeExpiry = (expiry && expiries.some((e) => e.expiry === expiry)) ? expiry : defaultExpiry;
   const [width] = usePersisted('width', 20);
   /*
    * Every strike Delta lists, or the twenty each side the table usually shows.
@@ -186,7 +169,6 @@ export default function App() {
    */
   /* Which window every sudden-move reading is taken over. The server computes
      all four, so this switches without asking it for anything. */
-  const [shockWindow, setShockWindow] = usePersisted('shock:window', 5);
   const [storedTf, setChartTf] = usePersisted<ChartTf>('chart:tf', '5m');
   // A timeframe remembered from an older build may no longer be offered.
   const chartTf = CHART_TFS.includes(storedTf) ? storedTf : '5m';
@@ -404,7 +386,6 @@ export default function App() {
     () => (data?.recommendation.ok ? data.recommendation.sides : []),
     [data?.recommendation],
   );
-  const reload = useCallback(() => { void load(); }, [load]);
   // The chain's move is up to five seconds old; recover the 05:30 price from
   // it and measure the ticking price against that, so the move ticks too.
   const dayMove = data?.market?.moves.find((m) => m.label === TODAY_MOVE) ?? null;
@@ -498,249 +479,80 @@ export default function App() {
       {tab === 'desk' ? (
         <>
           {/*
-            The settings, as one bar across the top.
-
-            Mode and expiry decide every figure below them, so they sit above
-            all of it rather than in a column beside the chart. Outside the data
-            guard, so a chain that 404s can still have its expiry changed.
+            The Live screen, after docs/image1.png and docs/image2.png: the
+            screen bar, the KPI strip, three columns (price action and levels
+            and volatility and flow · chart and chain and the selected strike ·
+            the model, the decision, the recommendation and the entry), the
+            bottom row (term structure, skew, scenario) and the status bar.
+            The full board follows, as the one thing the reference screens
+            compress: every column of every strike, with its own controls.
           */}
-          <div className="deskbar">
-            <div className="deskbar-brand">
-              <span className="btc-logo" aria-hidden>₿</span>
-              <span><b>BTC</b><small>Bitcoin / USD</small></span>
-            </div>
-            <div className="field">
-              <label>Mode</label>
-              <Select ariaLabel="when" value={live ? 'live' : 'past'} onValueChange={(v) => setLive(v === 'live')}>
-                <SelectItem value="live">Live now</SelectItem>
-                <SelectItem value="past">Past date</SelectItem>
-              </Select>
-            </div>
-
-            {!live && (
-              <div className="field wide">
-                <label>Date &amp; time (IST)</label>
-                <Suspense fallback={<span className="dim">Loading…</span>}>
-                  <DateTimePicker value={when} onChange={setWhen} maxDate={new Date()} />
-                </Suspense>
-              </div>
-            )}
-
-            <div className="field wide">
-              <label>Expiry</label>
-              <Select ariaLabel="expiry" value={activeExpiry} onValueChange={setExpiry}>
-                {expiries.length === 0 && <SelectItem value="" disabled>Loading…</SelectItem>}
-                {expiries.map((e) => (
-                  <SelectItem
-                    key={e.expiry}
-                    value={e.expiry}
-                    hint={
-                      e.isDefault
-                        ? 'Default — today’s contract'
-                        : e.isNextEntry
-                          ? 'The one you would sell at 05:30'
-                          : e.isDaily
-                            ? 'Today’s daily contract'
-                            : 'Not tested'
-                    }
-                  >
-                    {e.isDefault && '★ '}
-                    {istLabel(e.expiryTs)}
-                    {' · '}
-                    {e.hoursAway < 48 ? `${e.hoursAway.toFixed(0)}h left` : `in ${(e.hoursAway / 24).toFixed(0)} days`}
-                  </SelectItem>
-                ))}
-              </Select>
-              {expiries.length > 0 && Boolean(expiry && expiry !== defaultExpiry) && (
-                <button className="pinned" onClick={forgetExpiry} title="Back to the default expiry">
-                  Reset to default
-                </button>
-              )}
-            </div>
-
-            <div className="actions">
-              <Button variant="outline" onClick={() => void load()} disabled={busy}>
-                <RefreshCw className={busy ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} aria-hidden />
-                {busy ? 'Loading…' : 'Refresh'}
-              </Button>
-              {live && (
-                <Button
-                  variant={autoRefresh ? 'default' : 'outline'}
-                  onClick={() => setAutoRefresh((v) => !v)}
-                  title={`Reload the live chain every ${REFRESH_SECONDS} seconds`}
-                  aria-pressed={autoRefresh}
-                >
-                  <Activity className="h-4 w-4" aria-hidden />
-                  {autoRefresh ? 'Auto-refresh on' : 'Auto-refresh off'}
-                </Button>
-              )}
-            </div>
-          </div>
-
-          {/*
-            One row: the settings and what the board is saying on the left,
-            where BTC is against it on the right. They are read together — a
-            wall means nothing until you can see how close price is to it.
-
-            The settings live in that column rather than in a bar of their
-            own: cut to time and expiry they were a strip of two controls
-            across the whole page, and the column beside a chart was short
-            by exactly their height. They stay outside the data guard, so a
-            chain that 404s can still have its expiry changed.
-          */}
-          {/*
-            Above everything, because it is the one thing on the screen about
-            right now rather than about the contract. Quiet on an ordinary
-            board — a warning that takes the same room whether or not there is
-            anything to warn about is one nobody reads by the end of the week.
-          */}
-          {data?.shocks?.length && snap ? (
-            <Shock
-              shocks={data.shocks}
-              window={shockWindow}
-              onWindow={setShockWindow}
-              snap={snap}
-              structure={data.structure}
-              market={data.market}
-              outlook={data.outlook}
-            />
-          ) : null}
-
-          {/*
-            The chart, and BTC at a glance beside it. The walls on the chart
-            and the walls in the summary are the same two numbers, a glance
-            apart rather than a scroll apart.
-          */}
+          {err && !data && <div className="err">{err}</div>}
+          {busy && !data && <Loading />}
           {data && snap && (
-            <div className="chart-row">
-              <ErrorBoundary where="Price chart">
-                <Chart
-                  bars={candles?.bars ?? NO_BARS}
-                  // The wall within reach, not the heaviest on the board: a strike
-                  // eleven expected moves away is open interest, not a level.
-                  support={data.structure.peOiWallNear?.strike ?? null}
-                  resistance={data.structure.ceOiWallNear?.strike ?? null}
-                  spot={snap.spot}
-                  tf={chartTf}
-                  onTf={setChartTf}
-                  loading={candlesBusy}
-                  error={candles?.error}
-                />
-              </ErrorBoundary>
-              <ErrorBoundary where="BTC summary">
-                <BtcSummary
-                  snap={snap}
-                  market={data.market}
-                  structure={data.structure}
-                  outlook={data.outlook}
-                  bars={candles?.bars ?? NO_BARS}
-                  tf={chartTf}
-                />
-              </ErrorBoundary>
-            </div>
-          )}
-
-          {/*
-            Its own row, across the page.
-
-            Nine horizons and a settlement card do not belong in a third of the
-            width: squeezed into the side column each card lost its range to an
-            ellipsis, which is the one number on it that cannot be guessed.
-          */}
-          {/*
-            One card about direction, not two. "Today's side" and this row
-            read the same EMAs, RSI, structure and VWAP and said it twice a
-            screen apart; the verdict and its gates now sit at the head of the
-            row they are drawn from.
-          */}
-          {/*
-            The seller's decision, from docs/test.md and the two reference
-            screens: the market strip, price action and levels, volatility, the
-            strike under the cursor with its odds and payoff, the model, the
-            decision and the entry checklist. The chart above and the board
-            below are this screen's own, so the panels leave theirs out; an
-            inspect on the board selects the strike they are about.
-          */}
-          {data && snap && (
-            <ErrorBoundary where="Decision panels">
+            <ErrorBoundary where="Live screen">
               <Overview
                 data={data}
                 trade={trade}
+                expiries={expiries}
+                onExpiry={setExpiry}
                 onSell={snap.live ? sellLeg : undefined}
                 contracts={lots}
                 leverage={orderLeverage}
-                chain={false}
                 selected={focus}
                 onSelect={setFocus}
                 spark={sparkCloses}
+                refreshEverySec={autoRefresh && live ? REFRESH_SECONDS : null}
+                error={err}
+                controls={
+                  <>
+                    <Select ariaLabel="when" value={live ? 'live' : 'past'} onValueChange={(v) => setLive(v === 'live')}>
+                      <SelectItem value="live">Live now</SelectItem>
+                      <SelectItem value="past">Past date</SelectItem>
+                    </Select>
+                    {!live && (
+                      <Suspense fallback={<span className="dim">Loading…</span>}>
+                        <DateTimePicker value={when} onChange={setWhen} maxDate={new Date()} />
+                      </Suspense>
+                    )}
+                    {expiries.length > 0 && Boolean(expiry && expiry !== defaultExpiry) && (
+                      <button className="pinned" onClick={forgetExpiry} title="Back to the default expiry">Reset expiry</button>
+                    )}
+                    <Button variant="outline" size="sm" onClick={() => void load()} disabled={busy}>
+                      <RefreshCw className={busy ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} aria-hidden />
+                      {busy ? 'Loading…' : 'Refresh'}
+                    </Button>
+                    {live && (
+                      <Button variant={autoRefresh ? 'default' : 'outline'} size="sm" onClick={() => setAutoRefresh((v) => !v)}
+                        title={`Reload the live chain every ${REFRESH_SECONDS} seconds`} aria-pressed={autoRefresh}>
+                        <Activity className="h-4 w-4" aria-hidden />
+                        {autoRefresh ? 'Auto' : 'Manual'}
+                      </Button>
+                    )}
+                  </>
+                }
+                chart={
+                  <ErrorBoundary where="Price chart">
+                    <Chart
+                      bars={candles?.bars ?? NO_BARS}
+                      // The wall within reach, not the heaviest on the board: a strike
+                      // eleven expected moves away is open interest, not a level.
+                      support={data.structure.peOiWallNear?.strike ?? null}
+                      resistance={data.structure.ceOiWallNear?.strike ?? null}
+                      spot={snap.spot}
+                      tf={chartTf}
+                      onTf={setChartTf}
+                      loading={candlesBusy}
+                      error={candles?.error}
+                    />
+                  </ErrorBoundary>
+                }
               />
             </ErrorBoundary>
           )}
 
           {data && snap && (
-            <div className="wide-row">
-              <OutlookRow outlook={data.outlook} direction={data.direction} containment={data.containment} structure={data.structure} />
-            </div>
-          )}
-
-          {err && <div className="err">{err}</div>}
-          {busy && !data && <Loading />}
-
-          {data && snap && (
             <>
-              <div className="lead-row">
-                {/* Left: the contract and its moves. Right: the pick and its alerts. */}
-                <div className="live-col">
-                  <CollapsibleCard
-                    id="live"
-                    title={snap.live ? 'Market' : 'Past snapshot'}
-                    defaultOpen={WIDE}
-                    right={
-                      (snap.isNextEntry || snap.isDaily)
-                        ? <Badge tone="ok">{snap.isNextEntry ? 'Next entry' : 'Today’s daily'}</Badge>
-                        : <Badge tone="warn">Not the tested contract</Badge>
-                    }
-                  >
-                    <MarketHead snap={snap} market={data.market} />
-
-                    {/*
-                      Volatility and the expected move used to be here as well as
-                      in the sudden-move card at the top of the screen -- the same
-                      two numbers, twice, a screen apart. They are said once now,
-                      up there, with this card's working moved into their hints.
-                      What stays here is what is about this contract and nowhere
-                      else: when it settles, the strike at the money, and the
-                      twelve-hour move an entry would actually face.
-                    */}
-                    {snap.expectedMoveAtEntry !== null && snap.hoursToExpiry > 14 && (
-                      <Metric label="Expected move over 12h" value={'±$' + snap.expectedMoveAtEntry.toFixed(0)}>
-                        <p>You enter at 05:30 and it settles at 17:30 — about 12 hours. Judge strikes against this one.</p>
-                        <Formula>
-                          {snap.spot.toFixed(0)} × {snap.atmIv !== null ? (snap.atmIv * 100).toFixed(1) : '—'}% × √(12 ÷ 8760)
-                          <br />= ±${snap.expectedMoveAtEntry.toFixed(0)}
-                        </Formula>
-                      </Metric>
-                    )}
-                  </CollapsibleCard>
-
-                  {/*
-                    What BTC has done and what it can still do, as two cards of
-                    their own under the contract rather than inside it -- side by
-                    side where the column is wide enough, stacked where it is not.
-                  */}
-                  {data.market && <MoveSection market={data.market} snap={snap} defaultOpen={WIDE} />}
-                </div>
-
-                <div className="live-col">
-                  <BestPick
-                    best={data.best}
-                    legs={data.legs}
-                    onSell={snap.live ? sellLeg : undefined}
-                    onSettingsChanged={reload}
-                  />
-                </div>
-              </div>
-
               <div className="chain-bar">
                 <span className="dim">
                   {data.legs.length} strikes · {snap.step} apart

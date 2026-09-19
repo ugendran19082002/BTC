@@ -7,7 +7,10 @@ Updated 19 Sep 2026
 
 ## 19 Sep 2026 — the Live screen carries the seller's decision (image 1 + image 2 + test.md)
 
-Between the price chart and the chain board, the Live tab now draws: a market
+The Live tab is now the two reference screens, panel for panel, with the
+full chain board below them; the old Live cards (sudden move, BTC summary,
+outlook row, market and moves, best pick) are gone from it. It draws: a
+screen bar (IST clock, live / past, refresh), a market
 strip (spot, options volume and OI, ATM IV against realised, PCR, regime, the
 12 h odds); price action, key levels, volatility; the selected strike with its
 greeks and four tabs (metrics, settlement / touch odds, payoff at settlement,

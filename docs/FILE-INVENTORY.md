@@ -136,8 +136,12 @@ here exists because something specific went wrong once.
 
 ### Live screen decision panels (`components/overview/`, `lib/overview.ts`)
 
-Built from `docs/image1.png`, `docs/image2.png` and `docs/test.md`; drawn on the
-Live tab between the chart and the chain board.
+Built from `docs/image1.png`, `docs/image2.png` and `docs/test.md`. The Live
+tab *is* this screen -- screen bar, KPI strip, three columns (the chart and the
+compact chain in the centre), the bottom row and the status bar -- with the
+full chain board (every column of every strike) below it as the one thing the
+reference screens compress. The old Live cards (sudden move, BTC summary,
+outlook row, market and moves, best pick) are no longer drawn there.
 
 | File | Lines | What it is for |
 |---|---:|---|

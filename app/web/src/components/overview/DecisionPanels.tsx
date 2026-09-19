@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
-import type { ChainResponse, Leg } from '@/types/desk';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import type { ChainResponse, ExpiryOption, Leg } from '@/types/desk';
+import { istLabel } from '@/lib/format';
 import type { TradeStatus } from '@/types/trade';
 import { getOptionHistory, type OptionHistoryPoint } from '@/api/desk';
 import {
-  allClear, bothSides, breakeven, candidates, consensus, entryGates, expectedMove, marginPerContract, modelView, odds,
+  allClear, bothSides, breakeven, candidates, consensus, entryGates, expectedMove, ivRv, marginPerContract, modelView, odds,
   orderEstimate, payoffPrices, premiumAnalysis, shortPayoff, sideCards, CONTRACT_BTC, type ExpectedMove, type IvRv,
 } from '@/lib/overview';
 import { fmt, Panel, ProbBar, Row, Tag } from './parts';
@@ -16,31 +17,41 @@ export const findLeg = (legs: readonly Leg[], s: Selected | null) =>
 
 export function ChainPanel({ data, selected, onSelect, rows = 7, expiries, onExpiry }: {
   data: ChainResponse; selected: Selected | null; onSelect: (s: Selected) => void; rows?: number;
-  expiries?: readonly { expiry: string; hoursAway: number }[]; onExpiry?: (expiry: string) => void;
+  expiries?: readonly ExpiryOption[]; onExpiry?: (expiry: string) => void;
 }) {
   const { snapshot: snap, legs } = data;
+  const [all, setAll] = useState(false);
   const strikes = useMemo(() => {
-    const all = [...new Set(legs.map((l) => l.strike))].sort((a, b) => a - b);
-    const i = all.reduce((best, k, idx) => (Math.abs(k - snap.spot) < Math.abs(all[best]! - snap.spot) ? idx : best), 0);
-    return all.slice(Math.max(0, i - rows), i + rows + 1);
-  }, [legs, snap.spot, rows]);
+    const every = [...new Set(legs.map((l) => l.strike))].sort((a, b) => a - b);
+    if (all) return every;
+    const i = every.reduce((best, k, idx) => (Math.abs(k - snap.spot) < Math.abs(every[best]! - snap.spot) ? idx : best), 0);
+    return every.slice(Math.max(0, i - rows), i + rows + 1);
+  }, [legs, snap.spot, rows, all]);
   const byKey = useMemo(() => new Map(legs.map((l) => [`${l.cp}${l.strike}`, l])), [legs]);
   const iv = (v: number | null) => (v === null ? '—' : `${(v * 100).toFixed(1)}%`);
   const cell = (l: Leg | undefined, k: 'oi' | 'bid' | 'ask' | 'mark') =>
     !l ? '—' : k === 'oi' ? fmt.n(l.oi) : fmt.n(l[k], l[k] !== null && l[k]! < 10 ? 1 : 0);
   return (
-    <Panel title={`Option chain${snap.live ? '' : ' (past)'}`}
+    <Panel title={`Option chain (${istLabel(snap.expiryTs)})`}
       right={
         <span className="ov-chain-head">
           {expiries && onExpiry && expiries.length > 0 ? (
             <select aria-label="Expiry" className="ov-select" value={snap.expiry} onChange={(e) => onExpiry(e.target.value)}>
               {!expiries.some((e) => e.expiry === snap.expiry) && <option value={snap.expiry}>{snap.expiry}</option>}
               {expiries.map((e) => (
-                <option key={e.expiry} value={e.expiry}>{e.expiry} · {e.hoursAway < 48 ? `${Math.round(e.hoursAway)}h` : `${Math.round(e.hoursAway / 24)}d`}</option>
+                <option key={e.expiry} value={e.expiry}>
+                  {e.isDefault ? '★ ' : ''}{e.expiry} · {e.hoursAway < 48 ? `${Math.round(e.hoursAway)}h` : `${Math.round(e.hoursAway / 24)}d`}
+                  {e.isNextEntry ? ' · next entry' : e.isDaily ? ' · daily' : ''}
+                </option>
               ))}
             </select>
           ) : <span>{snap.expiry}</span>}
-          <span className="ov-muted">ATM {fmt.n(snap.atm)} · {snap.hoursToExpiry.toFixed(1)}h left</span>
+          <select aria-label="Strikes shown" className="ov-select" value={all ? 'all' : 'near'} onChange={(e) => setAll(e.target.value === 'all')}>
+            <option value="near">±{rows} strikes</option>
+            <option value="all">All strikes</option>
+          </select>
+          <Tag tone="warn">ATM: {fmt.n(snap.atm)}</Tag>
+          <Tag tone={snap.live ? 'accent' : 'muted'}>{snap.live ? 'Latest' : 'Past'}</Tag>
         </span>
       }>
       <div className="ov-chain-wrap">
@@ -69,7 +80,7 @@ export function ChainPanel({ data, selected, onSelect, rows = 7, expiries, onExp
           </tbody>
         </table>
       </div>
-      <p className="ov-foot">Click a side to inspect it. Shaded = in the money.</p>
+      <p className="ov-foot">Click a side to inspect it. Shaded = in the money. {snap.hoursToExpiry.toFixed(1)}h to settlement. Every column of every strike is on the board below.</p>
     </Panel>
   );
 }
@@ -90,7 +101,7 @@ function ChainSide({ leg, cells, selected, onClick, itm }: { leg: Leg | undefine
 
 // ------------------------------------------------------------ selected strike
 
-type Tab = 'metrics' | 'probability' | 'payoff' | 'momentum';
+type Tab = 'metrics' | 'probability' | 'payoff' | 'scenario' | 'greeks' | 'momentum';
 
 export function SelectedStrikePanel({ data, leg, em, iv, contracts }: {
   data: ChainResponse; leg: Leg | null; em: ExpectedMove; iv: IvRv | null; contracts: number;
@@ -109,7 +120,7 @@ export function SelectedStrikePanel({ data, leg, em, iv, contracts }: {
         <Greek label="IV" value={leg.iv === null ? '—' : `${(leg.iv * 100).toFixed(1)}%`} />
       </div>
       <div className="ov-tabs" role="tablist">
-        {(['metrics', 'probability', 'payoff', 'momentum'] as const).map((t) => (
+        {(['metrics', 'probability', 'payoff', 'scenario', 'greeks', 'momentum'] as const).map((t) => (
           <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>
             {t[0]!.toUpperCase() + t.slice(1)}
           </button>
@@ -118,6 +129,8 @@ export function SelectedStrikePanel({ data, leg, em, iv, contracts }: {
       {tab === 'metrics' && <MetricsTab leg={leg} em={em} iv={iv} />}
       {tab === 'probability' && <ProbabilityTab leg={leg} />}
       {tab === 'payoff' && <PayoffTab leg={leg} spot={data.snapshot.spot} step={data.snapshot.step} contracts={contracts} />}
+      {tab === 'scenario' && <ScenarioTab leg={leg} data={data} contracts={contracts} />}
+      {tab === 'greeks' && <GreeksTab leg={leg} contracts={contracts} />}
       {tab === 'momentum' && <MomentumTab symbol={`${leg.cp}-BTC-${leg.strike}-${data.snapshot.expiry}`} />}
     </Panel>
   );
@@ -125,6 +138,47 @@ export function SelectedStrikePanel({ data, leg, em, iv, contracts }: {
 
 function Greek({ label, value }: { label: string; value: string }) {
   return <div className="ov-greek"><span>{label}</span><b>{value}</b></div>;
+}
+
+/** What each greek means for `contracts` short, in dollars: the sensitivity the seller actually carries. */
+function GreeksTab({ leg, contracts }: { leg: Leg; contracts: number }) {
+  const size = contracts * CONTRACT_BTC;
+  const usd = (v: number | null, k = 1) => (v === null ? '—' : fmt.signed(-v * size * k, 2));
+  return (
+    <div>
+      <Row label="Delta" value={`${leg.delta === null ? '—' : leg.delta.toFixed(3)} · ${usd(leg.delta)} per $1 of BTC`}
+        hint="Short: the position's P&L per $1 move in BTC, in USD, for your size" />
+      <Row label="Gamma" value={`${leg.gamma === null ? '—' : leg.gamma.toPrecision(3)} · delta changes ${leg.gamma === null ? '—' : (leg.gamma * 100).toFixed(3)} per $100`}
+        hint="How fast delta moves as BTC moves; the seller's enemy near the strike" />
+      <Row label="Theta" value={`${leg.theta === null ? '—' : leg.theta.toFixed(2)} / day · ${usd(leg.theta, -1)} a day for your size`}
+        hint="Time decay per day per BTC; the seller's income" />
+      <Row label="Vega" value={`${leg.vega === null ? '—' : leg.vega.toFixed(2)} · ${usd(leg.vega)} per IV point`}
+        hint="P&L per one-point rise in implied volatility, short" />
+      <Row label="IV" value={leg.iv === null ? '—' : `${(leg.iv * 100).toFixed(1)}%`} />
+      <p className="ov-foot">Per contract is 0.001 BTC; figures are for {contracts} contracts, sign as the short sees it.</p>
+    </div>
+  );
+}
+
+/** The scenario table, in the tab the reference screen has it in as well as the panel below. */
+function ScenarioTab({ leg, data, contracts }: { leg: Leg; data: ChainResponse; contracts: number }) {
+  const premium = leg.sellPrice ?? leg.mark;
+  if (premium === null) return <p className="ov-empty">No price to sell at.</p>;
+  const rows = shortPayoff(leg.cp, leg.strike, premium, payoffPrices(leg.strike, data.snapshot.spot, data.snapshot.step, 5), contracts);
+  return (
+    <table className="ov-mini">
+      <thead><tr><th>BTC at settlement</th><th>Move</th><th>P&amp;L ({contracts} ct)</th></tr></thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={r.price}>
+            <td>{fmt.n(r.price)}</td>
+            <td className="ov-muted">{fmt.signed(((r.price - data.snapshot.spot) / data.snapshot.spot) * 100, 1)}%</td>
+            <td className={r.pnlUsd >= 0 ? 'ov-up' : 'ov-down'}>{fmt.signed(r.pnlUsd, 2)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
 }
 
 function MetricsTab({ leg, em, iv }: { leg: Leg; em: ExpectedMove; iv: IvRv | null }) {
@@ -321,7 +375,7 @@ export function SellRecommendationPanel({ data, onSelect, onSell, leverage, cont
             <h4>{side === 'C' ? 'CE side' : 'PE side'}</h4>
             {rows.length === 0 ? <p className="ov-empty">Nothing on this side clears the desk’s rules.</p> : (
               <table className="ov-mini ov-reco">
-                <thead><tr><th>Strike</th><th>Premium</th><th>P(OTM)</th><th>P(touch)</th><th>Dist/EM</th><th>EV $</th><th>Margin $</th><th>Credit/margin</th><th>Score</th><th /></tr></thead>
+                <thead><tr><th>Strike</th><th>Type</th><th>Premium</th><th>POP (OTM)</th><th>P(touch)</th><th>Dist/EM</th><th>Exp. P&amp;L</th><th>Max risk</th><th>Margin</th><th>Ret/margin</th><th>Score</th><th /></tr></thead>
                 <tbody>
                   {rows.map((l) => {
                     const o = odds(l);
@@ -330,11 +384,13 @@ export function SellRecommendationPanel({ data, onSelect, onSell, leverage, cont
                     return (
                       <tr key={l.strike} className="ov-click" onClick={() => onSelect({ cp: l.cp, strike: l.strike })}>
                         <td>{fmt.n(l.strike)}</td>
+                        <td>{l.cp === 'C' ? 'CE' : 'PE'}</td>
                         <td>{fmt.n(px, 1)}</td>
                         <td className="ov-up">{fmt.pct(o.pOtm)}</td>
                         <td>{fmt.pct(o.pTouch)}</td>
                         <td>{l.emDistance === null ? '—' : `${l.emDistance.toFixed(2)}×`}</td>
                         <td className={l.ev?.evUsd == null ? '' : l.ev.evUsd >= 0 ? 'ov-up' : 'ov-down'}>{fmt.signed(l.ev?.evUsd ?? null, 2)}</td>
+                        <td className="ov-down" title="A naked short has no bounded worst case unless hedged">{l.ev?.maxLossUsd == null ? 'unbounded' : `$${l.ev.maxLossUsd.toFixed(0)}`}</td>
                         <td>{est ? fmt.n(est.marginUsd, 2) : '—'}</td>
                         <td title="Premium after the opening fee, as a share of the margin it ties up">{est ? fmt.pct(est.returnOnMargin, 1) : '—'}</td>
                         <td>{l.score === null ? '—' : (l.score * 10).toFixed(1)}</td>
@@ -393,11 +449,75 @@ export function EntryPanel({ data, leg, iv, trade, onSell, now, contracts, lever
   );
 }
 
+// --------------------------------------------------------------- screen bar
+
+const IST_CLOCK = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+const IST_HM = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
+const istHm = (epochSeconds: number) => IST_HM.format(new Date(epochSeconds * 1000));
+
+/** The top of the reference screens: the desk's name, the IST clock, the mode, and the controls. */
+export function ScreenBar({ data, now, controls, error }: { data: ChainResponse; now: number; controls?: ReactNode; error?: string | null }) {
+  return (
+    <header className="ov-screenbar">
+      <div className="ov-brand">
+        <span className="btc-logo" aria-hidden>₿</span>
+        <span><b>BTC Options Desk</b><small>Delta Exchange (India) · Option selling intelligence</small></span>
+      </div>
+      <div className="ov-screenbar-right">
+        {error && <Tag tone="down">{error}</Tag>}
+        <span className="ov-clock">{IST_CLOCK.format(new Date(now)).replace(/,/g, '')} IST</span>
+        <Tag tone={data.snapshot.live ? 'up' : 'muted'}>{data.snapshot.live ? '● Live' : 'Past'}</Tag>
+        {controls}
+      </div>
+    </header>
+  );
+}
+
+/**
+ * The contract's day, at the head of the decision column: entry at 05:30,
+ * settlement at 17:30, and how long is left -- with the expected move and
+ * the volatility it is priced from beside it, as the second reference screen
+ * lays them out.
+ */
+export function ExpiryHeader({ data, now }: { data: ChainResponse; now: number }) {
+  const snap = data.snapshot;
+  const em = expectedMove(snap);
+  const iv = ivRvOf(data);
+  const leftMs = Math.max(0, snap.expiryTs * 1000 - now);
+  const h = Math.floor(leftMs / 3_600_000), m = Math.floor((leftMs % 3_600_000) / 60_000);
+  return (
+    <div className="ov-expiry">
+      <div className="ov-expiry-head">
+        <span>🕒 05:30 → {istHm(snap.expiryTs)} IST ({snap.isDaily || snap.isNextEntry ? 'daily expiry' : 'not the tested contract'})</span>
+        <span className="ov-muted">Time to expiry <b>{snap.live ? `${h}h ${String(m).padStart(2, '0')}m` : `${snap.hoursToExpiry.toFixed(1)}h at the snapshot`}</b></span>
+      </div>
+      <div className="ov-expiry-cards">
+        <div className="ov-mini-card">
+          <span className="ov-kpi-label">Expected move</span>
+          <b className="ov-kpi-value">{em ? `±${fmt.n(em.move)}` : '—'}</b>
+          <span className="ov-kpi-sub">{em ? `${fmt.n(em.lower)} – ${fmt.n(em.upper)} · ${em.hours.toFixed(1)}h` : 'no IV'}</span>
+        </div>
+        <div className="ov-mini-card">
+          <span className="ov-kpi-label">Volatility</span>
+          <Row label="IV" value={iv ? `${iv.ivPct.toFixed(1)}%` : '—'} />
+          <Row label="Realised (21d)" value={iv ? `${iv.rvPct.toFixed(1)}%` : '—'} />
+          <Row label="IV − RV" value={iv ? <Tag tone={iv.label === 'rich' ? 'up' : iv.label === 'cheap' ? 'down' : 'muted'}>IV {iv.label}</Tag> : '—'} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const ivRvOf = (data: ChainResponse) => ivRv(data.structure.atmIv, data.market?.realisedVol ?? null);
+
 // --------------------------------------------------------------- status bar
 
-export function StatusBar({ data, trade, now, leverage }: { data: ChainResponse; trade: TradeStatus | null; now: number; leverage: number }) {
+export function StatusBar({ data, trade, now, leverage, refreshEverySec = null }: {
+  data: ChainResponse; trade: TradeStatus | null; now: number; leverage: number; refreshEverySec?: number | null;
+}) {
   const age = Math.max(0, Math.round((now - data.snapshot.ts * 1000) / 1000));
   const measured = Boolean(data.outlook.model);
+  const nextIn = refreshEverySec === null || !data.snapshot.live ? null : Math.max(0, refreshEverySec - (age % refreshEverySec));
   const net = trade?.today?.netUsd ?? null;
   // Margin behind what is short, at the ticket's leverage, against the balance. An estimate: Delta's figure is on the Positions tab.
   const shortCt = trade ? trade.open.reduce((a, t) => a + Math.max(0, -t.position), 0) : 0;
@@ -407,7 +527,8 @@ export function StatusBar({ data, trade, now, leverage }: { data: ChainResponse;
     <footer className="ov-status">
       <Tag tone={trade?.mode === 'live' ? 'down' : 'accent'}>{trade?.mode === 'live' ? 'LIVE' : 'Paper'} · short premium</Tag>
       <Tag tone={data.snapshot.live && age <= 30 ? 'up' : 'warn'}>{data.snapshot.live ? `Data ${age}s old` : 'Past snapshot'}</Tag>
-      <Tag tone={measured ? 'up' : 'muted'}>{measured ? `Model: ${data.outlook.model!.name}` : 'Model: desk figures only'}</Tag>
+      <Tag tone={measured ? 'up' : 'muted'}>{measured ? `Models ready · ${data.outlook.model!.name}` : 'Model: desk figures only'}</Tag>
+      <span className="ov-muted">{nextIn === null ? (data.snapshot.live ? 'Auto-refresh off' : `Snapshot ${istLabel(data.snapshot.ts)}`) : `Next update: ${String(Math.floor(nextIn / 60)).padStart(2, '0')}:${String(nextIn % 60).padStart(2, '0')}`}</span>
       <span className="ov-grow" />
       <span>Day P&amp;L <b className={net === null ? '' : net >= 0 ? 'ov-up' : 'ov-down'}>{net === null ? '—' : `${net >= 0 ? '+' : '−'}$${Math.abs(net).toFixed(2)}`}</b></span>
       <span>Open positions <b>{trade?.open.length ?? '—'}</b></span>
