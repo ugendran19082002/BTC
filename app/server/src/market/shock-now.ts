@@ -51,13 +51,13 @@ export async function shockNow(
   // The same span the chain route asks for: what has happened since the desk's
   // day began at 05:30 IST, rather than a fixed day of history.
   const market = await readMarket(hoursSinceDeskOpen(snap.ts)).catch(() => null);
-  const iv = ivChange({ expiry: snap.expiry, ts: snap.ts, atmIv: snap.atmIv }, 15);
+  const iv = await ivChange({ expiry: snap.expiry, ts: snap.ts, atmIv: snap.atmIv }, 15);
 
   return shockFrom({
     snap,
     market,
     structure: optionStructure(snap, market?.realisedVol ?? null),
-    oiChanges: openInterestChange(snap, legs, 1),
+    oiChanges: await openInterestChange(snap, legs, 1),
     iv: iv && { changePct: iv.changePct, overMinutes: iv.overMinutes, from: iv.from, to: iv.to },
     window,
   });

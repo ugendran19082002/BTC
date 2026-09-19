@@ -1,6 +1,5 @@
-import { DatabaseSync } from 'node:sqlite';
-import { MARKET_DB } from '../paths.js';
-import { migrate, hasColumn, type Migration } from '../db/sqlite-migrate.js';
+import { migrate, type Migration } from '../db/migrate.js';
+import { one, query, rows, tx } from '../db/pool.js';
 
 /**
  * What open interest was, so the board can say what it has changed by.
@@ -10,14 +9,14 @@ import { migrate, hasColumn, type Migration } from '../db/sqlite-migrate.js';
  * that memory: one row per strike per bucket, and the difference between two
  * buckets is the answer.
  *
- * ## Its own file
+ * ## Its own schema
  *
- * Market data is disposable and an order history is not, which is why
- * `trades.db` is its own file; the same argument puts this one somewhere else
- * again. `chain.db` would be the natural home except that it is read-only at
- * runtime — `refresh.sh` replaces it wholesale with a SQLite backup, and a
- * write here would be thrown away by the next harvest. So: `market.db`,
- * disposable, safe to delete, and nothing that matters is lost if it is.
+ * Market data is disposable and an order history is not, which is why the
+ * trade journal has a schema of its own; the same argument puts this in
+ * another. `chain.db` would be the natural home except that it is read-only
+ * at runtime — `refresh.sh` replaces it wholesale with a SQLite backup, and a
+ * write there would be thrown away by the next harvest. So: the `market`
+ * schema, disposable, safe to truncate, and nothing that matters is lost if it is.
  *
  * ## Five minutes, not five seconds
  *
@@ -27,8 +26,8 @@ import { migrate, hasColumn, type Migration } from '../db/sqlite-migrate.js';
  * Buckets are five minutes, and the writer is throttled to one per bucket per
  * expiry however many browsers are looking. The throttle asks the database
  * rather than remembering: a remembered bucket is a second copy of what the
- * file already knows, and the two come apart the moment a deploy or
- * `refresh.sh` replaces a file under a running process.
+ * table already knows, and the two come apart the moment the table is
+ * truncated under a running process.
  */
 
 const BUCKET_MS = 5 * 60_000;
@@ -38,36 +37,27 @@ const KEEP_MS = 48 * 3600_000;
 
 const MIGRATIONS: Migration[] = [
   {
-    id: '001-oi-snapshots',
+    /*
+     * `atm_iv` is nullable on purpose: at-the-money implied volatility was
+     * added after the table first shipped (as SQLite), and the rows written
+     * before it have no value. Inventing one would put a made-up volatility in
+     * the history the shock reading is measured against.
+     */
+    id: 'market-001-oi-snapshots',
     up: `
-      CREATE TABLE IF NOT EXISTS oi_snapshots (
-        at     INTEGER NOT NULL,
-        expiry TEXT    NOT NULL,
-        cp     TEXT    NOT NULL CHECK (cp IN ('C','P')),
-        strike INTEGER NOT NULL,
-        oi     REAL    NOT NULL,
-        spot   REAL    NOT NULL,
+      CREATE SCHEMA IF NOT EXISTS market;
+      CREATE TABLE IF NOT EXISTS market.oi_snapshots (
+        at     BIGINT           NOT NULL,
+        expiry TEXT             NOT NULL,
+        cp     TEXT             NOT NULL CHECK (cp IN ('C','P')),
+        strike INTEGER          NOT NULL,
+        oi     DOUBLE PRECISION NOT NULL,
+        spot   DOUBLE PRECISION NOT NULL,
+        atm_iv DOUBLE PRECISION,
         PRIMARY KEY (at, expiry, cp, strike)
       );
-      CREATE INDEX IF NOT EXISTS oi_by_expiry_time ON oi_snapshots (expiry, at);
+      CREATE INDEX IF NOT EXISTS oi_by_expiry_time ON market.oi_snapshots (expiry, at);
     `,
-  },
-  {
-    /*
-     * At-the-money implied volatility, so an IV shock is readable the same way
-     * an open-interest change is: against what it was a few buckets ago.
-     *
-     * A second migration rather than an edit to 001, which has already run.
-     * Nullable, because the rows written before this existed have no value and
-     * inventing one would put a made-up volatility in the history the shock
-     * reading is measured against.
-     */
-    id: '002-atm-iv',
-    up: (d) => {
-      if (!hasColumn(d, 'oi_snapshots', 'atm_iv')) {
-        d.exec('ALTER TABLE oi_snapshots ADD COLUMN atm_iv REAL');
-      }
-    },
   },
   {
     /*
@@ -81,63 +71,51 @@ const MIGRATIONS: Migration[] = [
      * 17 September 2026 forward. Kept 400 days: a row is a hundred bytes and
      * the point of it is the year.
      */
-    id: '003-chain-features',
+    id: 'market-002-chain-features',
     up: `
-      CREATE TABLE IF NOT EXISTS chain_features (
-        at            INTEGER NOT NULL,
-        expiry        TEXT    NOT NULL,
-        spot          REAL    NOT NULL,
-        hours_left    REAL    NOT NULL,
-        atm_iv        REAL,
-        call_atm      REAL,
-        put_atm       REAL,
-        put_marks     TEXT,
-        call_marks    TEXT,
-        put_volume    REAL,
-        call_volume   REAL,
-        pcr_oi        REAL,
-        pcr_volume    REAL,
-        ce_oi         REAL,
-        pe_oi         REAL,
-        iv_skew_pts   REAL,
-        ce_wall       REAL,
-        pe_wall       REAL,
-        max_pain      REAL,
-        ce_oi_change  REAL,
-        pe_oi_change  REAL,
+      CREATE TABLE IF NOT EXISTS market.chain_features (
+        at            BIGINT           NOT NULL,
+        expiry        TEXT             NOT NULL,
+        spot          DOUBLE PRECISION NOT NULL,
+        hours_left    DOUBLE PRECISION NOT NULL,
+        atm_iv        DOUBLE PRECISION,
+        call_atm      DOUBLE PRECISION,
+        put_atm       DOUBLE PRECISION,
+        put_marks     JSONB,
+        call_marks    JSONB,
+        put_volume    DOUBLE PRECISION,
+        call_volume   DOUBLE PRECISION,
+        pcr_oi        DOUBLE PRECISION,
+        pcr_volume    DOUBLE PRECISION,
+        ce_oi         DOUBLE PRECISION,
+        pe_oi         DOUBLE PRECISION,
+        iv_skew_pts   DOUBLE PRECISION,
+        ce_wall       DOUBLE PRECISION,
+        pe_wall       DOUBLE PRECISION,
+        max_pain      DOUBLE PRECISION,
+        ce_oi_change  DOUBLE PRECISION,
+        pe_oi_change  DOUBLE PRECISION,
         PRIMARY KEY (at, expiry)
       );
     `,
   },
 ];
 
-let db: DatabaseSync | null = null;
-
-function open(): DatabaseSync {
-  if (db) return db;
-  db = new DatabaseSync(MARKET_DB);
-  db.exec('PRAGMA journal_mode = WAL');
-  migrate(db, MIGRATIONS);
-  return db;
-}
+let ready: Promise<void> | null = null;
 
 /**
- * The market database, migrated, for the other disposable tables that live in
- * it. `expect` is the migration the caller needs, so a module that forgot to
- * add one fails here rather than at the first query.
+ * The market schema, migrated. Memoised, so the ledger is consulted once per
+ * process; a failure is not remembered, so the next call tries again.
  */
-export function marketDb(expect?: string): DatabaseSync {
-  const d = open();
-  if (expect && !MIGRATIONS.some((m) => m.id === expect)) {
-    throw new Error(`market.db has no migration ${expect}`);
-  }
-  return d;
+export function marketSchema(): Promise<void> {
+  if (ready) return ready;
+  ready = migrate(MIGRATIONS).then(() => {}, (e) => { ready = null; throw e; });
+  return ready;
 }
 
-/** For tests, and for anything that has just moved the file underneath us. */
+/** For tests: forget that the schema was checked, so the next call checks again. */
 export function closeOiHistory(): void {
-  db?.close();
-  db = null;
+  ready = null;
 }
 
 export type OiSnapshotLeg = { cp: 'C' | 'P'; strike: number; oi: number | null };
@@ -153,46 +131,41 @@ export type OiSnapshotLeg = { cp: 'C' | 'P'; strike: number; oi: number | null }
  * thing is wrapped: the worst case is that the change column reads as absent,
  * which is exactly what it already does before the first bucket.
  */
-export function noteOpenInterest(
+export async function noteOpenInterest(
   snap: { expiry: string; spot: number; ts: number; atmIv?: number | null },
   legs: readonly OiSnapshotLeg[],
-): number | null {
+): Promise<number | null> {
   try {
     const atMs = Math.floor((snap.ts * 1000) / BUCKET_MS) * BUCKET_MS;
 
     const priced = legs.filter((l) => l.oi !== null && Number.isFinite(l.oi));
     if (!priced.length) return null;
 
-    const d = open();
+    await marketSchema();
 
     /*
-     * Ask the file, not a variable.
+     * Ask the table, not a variable.
      *
      * The throttle was a Map of the last bucket written per expiry, which is a
      * second copy of something the database already knows -- and the two can
-     * disagree. `refresh.sh` and a deploy both replace files underneath a
-     * running process, and a remembered bucket would then skip writes for a
-     * database that no longer has them. One indexed lookup per poll is nothing
-     * beside the write it is avoiding.
+     * disagree once the table is cleared under a running process. One indexed
+     * lookup per poll is nothing beside the write it is avoiding.
      */
-    const seen = d.prepare(
-      'SELECT 1 FROM oi_snapshots WHERE expiry = ? AND at = ? LIMIT 1',
-    ).get(snap.expiry, atMs);
+    const seen = await one('SELECT 1 FROM market.oi_snapshots WHERE expiry = $1 AND at = $2 LIMIT 1', [snap.expiry, atMs]);
     if (seen) return null;
-    const insert = d.prepare(
-      `INSERT OR REPLACE INTO oi_snapshots (at, expiry, cp, strike, oi, spot, atm_iv)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    );
-    d.exec('BEGIN');
-    try {
-      const iv = snap.atmIv ?? null;
-      for (const l of priced) insert.run(atMs, snap.expiry, l.cp, l.strike, l.oi!, snap.spot, iv);
-      d.prepare('DELETE FROM oi_snapshots WHERE at < ?').run(atMs - KEEP_MS);
-      d.exec('COMMIT');
-    } catch (e) {
-      d.exec('ROLLBACK');
-      throw e;
-    }
+
+    const iv = snap.atmIv ?? null;
+    await tx(async (c) => {
+      for (const l of priced) {
+        await c.query(
+          `INSERT INTO market.oi_snapshots (at, expiry, cp, strike, oi, spot, atm_iv)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           ON CONFLICT (at, expiry, cp, strike) DO UPDATE SET oi = EXCLUDED.oi, spot = EXCLUDED.spot, atm_iv = EXCLUDED.atm_iv`,
+          [atMs, snap.expiry, l.cp, l.strike, l.oi!, snap.spot, iv],
+        );
+      }
+      await c.query('DELETE FROM market.oi_snapshots WHERE at < $1', [atMs - KEEP_MS]);
+    });
 
     return atMs;
   } catch {
@@ -225,14 +198,14 @@ const keyOf = (cp: 'C' | 'P', strike: number) => `${cp}${strike}`;
  * invents a zero: "no change" and "no history" are different facts, and a board
  * showing +0 on a desk that has just started is lying about both.
  */
-export function openInterestChange(
+export async function openInterestChange(
   now: { expiry: string; spot: number; ts: number },
   current: readonly OiSnapshotLeg[],
   hours = 1,
-): Map<string, OiChange> {
+): Promise<Map<string, OiChange>> {
   const out = new Map<string, OiChange>();
   try {
-    const d = open();
+    await marketSchema();
     const targetMs = now.ts * 1000 - hours * 3600_000;
 
     /*
@@ -246,26 +219,28 @@ export function openInterestChange(
      * honest: a window nobody can see the length of is one they read as the
      * window they asked for.
      */
-    const at = (
-      d.prepare(
-        'SELECT at FROM oi_snapshots WHERE expiry = ? AND at <= ? ORDER BY at DESC LIMIT 1',
-      ).get(now.expiry, targetMs)
-      ?? d.prepare(
-        'SELECT at FROM oi_snapshots WHERE expiry = ? AND at < ? ORDER BY at ASC LIMIT 1',
-      ).get(now.expiry, Math.floor(now.ts * 1000 / BUCKET_MS) * BUCKET_MS)
-    ) as { at: number } | undefined;
+    const at =
+      await one<{ at: number }>(
+        'SELECT at FROM market.oi_snapshots WHERE expiry = $1 AND at <= $2 ORDER BY at DESC LIMIT 1',
+        [now.expiry, targetMs],
+      )
+      ?? await one<{ at: number }>(
+        'SELECT at FROM market.oi_snapshots WHERE expiry = $1 AND at < $2 ORDER BY at ASC LIMIT 1',
+        [now.expiry, Math.floor(now.ts * 1000 / BUCKET_MS) * BUCKET_MS],
+      );
     if (!at) return out;
 
-    const rows = d.prepare(
-      'SELECT cp, strike, oi, spot FROM oi_snapshots WHERE expiry = ? AND at = ?',
-    ).all(now.expiry, at.at) as { cp: 'C' | 'P'; strike: number; oi: number; spot: number }[];
-    if (!rows.length) return out;
+    const then_ = await rows<{ cp: 'C' | 'P'; strike: number; oi: number; spot: number }>(
+      'SELECT cp, strike, oi, spot FROM market.oi_snapshots WHERE expiry = $1 AND at = $2',
+      [now.expiry, at.at],
+    );
+    if (!then_.length) return out;
 
     const overMinutes = Math.round((now.ts * 1000 - at.at) / 60_000);
-    const then = rows[0]!.spot;
+    const then = then_[0]!.spot;
     const spotChangePct = then > 0 ? ((now.spot - then) / then) * 100 : null;
 
-    const before = new Map(rows.map((r) => [keyOf(r.cp, r.strike), r.oi]));
+    const before = new Map(then_.map((r) => [keyOf(r.cp, r.strike), r.oi]));
     for (const l of current) {
       if (l.oi === null || !Number.isFinite(l.oi)) continue;
       const was = before.get(keyOf(l.cp, l.strike));
@@ -318,19 +293,20 @@ export function oiReading(change: OiChange): OiReading | null {
  * column was added after the table, so early rows have none, and a shock read
  * against a missing value would be a shock invented out of nothing.
  */
-export function ivChange(
+export async function ivChange(
   now: { expiry: string; ts: number; atmIv: number | null },
   minutes = 15,
-): { from: number; to: number; changePct: number; overMinutes: number } | null {
+): Promise<{ from: number; to: number; changePct: number; overMinutes: number } | null> {
   if (now.atmIv === null || now.atmIv <= 0) return null;
   try {
-    const d = open();
+    await marketSchema();
     const targetMs = now.ts * 1000 - minutes * 60_000;
-    const row = d.prepare(
-      `SELECT at, atm_iv FROM oi_snapshots
-       WHERE expiry = ? AND at <= ? AND atm_iv IS NOT NULL
+    const row = await one<{ at: number; atm_iv: number }>(
+      `SELECT at, atm_iv FROM market.oi_snapshots
+       WHERE expiry = $1 AND at <= $2 AND atm_iv IS NOT NULL
        ORDER BY at DESC LIMIT 1`,
-    ).get(now.expiry, targetMs) as { at: number; atm_iv: number } | undefined;
+      [now.expiry, targetMs],
+    );
     if (!row || !(row.atm_iv > 0)) return null;
     return {
       from: row.atm_iv,

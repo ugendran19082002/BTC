@@ -1,5 +1,5 @@
-import { MARKET_DB } from '../paths.js';
-import { marketDb } from './oi-history.js';
+import { one, query } from '../db/pool.js';
+import { marketSchema } from './oi-history.js';
 import type { Leg } from './chain.js';
 
 /**
@@ -86,7 +86,6 @@ export function chainBoard(
   };
 }
 
-const MIGRATION_ID = '003-chain-features';
 
 export type ChainRecord = {
   expiry: string;
@@ -112,44 +111,46 @@ export type ChainRecord = {
 /**
  * Write one row per five-minute bucket per expiry.
  *
- * Throttled by asking the file, like the open-interest table beside it, and
+ * Throttled by asking the table, like the open-interest table beside it, and
  * wrapped whole: a board that cannot be drawn because a disposable side table
  * would not write is a board broken by its own bookkeeping.
  */
-export function noteChainFeatures(r: ChainRecord): number | null {
+export async function noteChainFeatures(r: ChainRecord): Promise<number | null> {
   try {
     const atMs = Math.floor((r.ts * 1000) / BUCKET_MS) * BUCKET_MS;
-    const d = marketDb(MIGRATION_ID);
-    const seen = d.prepare('SELECT 1 FROM chain_features WHERE expiry = ? AND at = ? LIMIT 1')
-      .get(r.expiry, atMs);
+    await marketSchema();
+    const seen = await one('SELECT 1 FROM market.chain_features WHERE expiry = $1 AND at = $2 LIMIT 1', [r.expiry, atMs]);
     if (seen) return null;
-    d.prepare(
-      `INSERT OR REPLACE INTO chain_features
+    await query(
+      `INSERT INTO market.chain_features
        (at, expiry, spot, hours_left, atm_iv, call_atm, put_atm, put_marks, call_marks,
         put_volume, call_volume, pcr_oi, pcr_volume, ce_oi, pe_oi, iv_skew_pts,
         ce_wall, pe_wall, max_pain, ce_oi_change, pe_oi_change)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      atMs, r.expiry, r.spot, r.hoursLeft, r.atmIv, r.board.callAtm, r.board.putAtm,
-      JSON.stringify(r.board.putMarks), JSON.stringify(r.board.callMarks),
-      r.board.putVolume, r.board.callVolume, r.pcrOi, r.pcrVolume, r.ceOi, r.peOi, r.ivSkewPts,
-      r.ceWall, r.peWall, r.maxPain, r.ceOiChange, r.peOiChange,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+       ON CONFLICT (at, expiry) DO NOTHING`,
+      [
+        atMs, r.expiry, r.spot, r.hoursLeft, r.atmIv, r.board.callAtm, r.board.putAtm,
+        JSON.stringify(r.board.putMarks), JSON.stringify(r.board.callMarks),
+        r.board.putVolume, r.board.callVolume, r.pcrOi, r.pcrVolume, r.ceOi, r.peOi, r.ivSkewPts,
+        r.ceWall, r.peWall, r.maxPain, r.ceOiChange, r.peOiChange,
+      ],
     );
-    d.prepare('DELETE FROM chain_features WHERE at < ?').run(atMs - KEEP_MS);
+    await query('DELETE FROM market.chain_features WHERE at < $1', [atMs - KEEP_MS]);
     return atMs;
   } catch {
     return null;
   }
 }
 
+const TABLE = 'market.chain_features';
+
 /** How many five-minute chains have been recorded, and since when. For the screen and the runbook. */
-export function chainHistory(): { rows: number; since: number | null; db: string } {
+export async function chainHistory(): Promise<{ rows: number; since: number | null; db: string }> {
   try {
-    const d = marketDb(MIGRATION_ID);
-    const r = d.prepare('SELECT COUNT(*) AS n, MIN(at) AS first FROM chain_features').get() as
-      { n: number; first: number | null };
-    return { rows: r.n, since: r.first, db: MARKET_DB };
+    await marketSchema();
+    const r = await one<{ n: number; first: number | null }>(`SELECT COUNT(*) AS n, MIN(at) AS first FROM ${TABLE}`);
+    return { rows: r?.n ?? 0, since: r?.first ?? null, db: TABLE };
   } catch {
-    return { rows: 0, since: null, db: MARKET_DB };
+    return { rows: 0, since: null, db: TABLE };
   }
 }

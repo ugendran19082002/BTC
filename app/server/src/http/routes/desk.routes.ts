@@ -145,11 +145,11 @@ export function registerDeskRoutes(app: FastifyInstance) {
        * writing into them would file a past board's open interest under now.
        */
       let oiChanges = new Map<string, OiChange>();
-      let iv: ReturnType<typeof ivChange> = null;
+      let iv: Awaited<ReturnType<typeof ivChange>> = null;
       if (snap.live) {
-        noteOpenInterest({ ...snap, atmIv: snap.atmIv }, scored);
-        oiChanges = openInterestChange(snap, scored, 1);
-        iv = ivChange({ expiry: snap.expiry, ts: snap.ts, atmIv: snap.atmIv }, 15);
+        await noteOpenInterest({ ...snap, atmIv: snap.atmIv }, scored);
+        oiChanges = await openInterestChange(snap, scored, 1);
+        iv = await ivChange({ expiry: snap.expiry, ts: snap.ts, atmIv: snap.atmIv }, 15);
       }
 
       const recommendation = recommend(snap, scored, market, minPremium, lots, hedgeGap, mode, safetyBar);
@@ -246,7 +246,7 @@ export function registerDeskRoutes(app: FastifyInstance) {
         const oiMoved = (legs: typeof scored) => legs.reduce(
           (t, l) => t + (oiChanges.get(`${l.cp}${l.strike}`)?.change ?? 0), 0,
         );
-        noteChainFeatures({
+        await noteChainFeatures({
           expiry: snap.expiry, ts: snap.ts, spot: snap.spot, hoursLeft: snap.hoursToExpiry,
           atmIv: snap.atmIv, board,
           pcrOi: structure.pcrOi, pcrVolume: structure.pcrVolume,
