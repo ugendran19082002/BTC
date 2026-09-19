@@ -75,7 +75,7 @@ async function day(o: { pe?: [number, number]; cePieces?: number; ceOnly?: numbe
   const alerts: Alert[] = [];
   const deps: AdderDeps = {
     store,
-    tradesToday: (id) => r.store.all().filter((t) => t.plan.strategyId === id),
+    tradesToday: (id) => r.store.rows().filter((t) => t.plan.strategyId === id),
     quote: (symbol) => r.ex.getQuote(symbol),
     place: o.place ?? (async ({ tradeId, ...req }) => {
       const res = await r.engine.addToPosition(tradeId, req);
@@ -95,12 +95,12 @@ async function walkPE(r: Rig, bid = 7, ask = 7.5) {
     r.ex.tick(quote(PE, bid, ask, { mark: (bid + ask) / 2, ts: r.now() }));
     await r.engine.poll('PE-1');
   }
-  return r.store.get('PE-1')!.state;
+  return r.store.peek('PE-1')!.state;
 }
 
 test('[critical] the CE target buys back 425 while the PE bid is 7: 425 are appended to the PE, and written down', async () => {
   const { r, store, alerts, adder } = await day();
-  assert.equal(r.store.get('CE-1')!.state.position, 0, 'the CE target bought all 425 back');
+  assert.equal(r.store.peek('CE-1')!.state.position, 0, 'the CE target bought all 425 back');
 
   await adder.consider(strategy());
   const pe = await walkPE(r);
@@ -137,7 +137,7 @@ test('[critical] a restart does not add the same contracts again', async () => {
 
 test('[critical] a target in pieces adds each piece once: 200, then the other 225', async () => {
   const { r, store, adder } = await day({ cePieces: 200 });
-  assert.equal(r.store.get('CE-1')!.state.position, -225, 'the first piece: 200');
+  assert.equal(r.store.peek('CE-1')!.state.position, -225, 'the first piece: 200');
   await adder.consider(strategy());
   await walkPE(r);
 
@@ -165,7 +165,7 @@ test('[critical] PE bid 2.00: nothing is sold, the skip is written down, and the
 test('[critical] PE at 30, double its 15 sale: not added to', async () => {
   const { r, store, adder } = await day({ pe: [29.8, 30.4] });
   await adder.consider(strategy());
-  assert.equal(r.store.get('PE-1')!.state.position, -425);
+  assert.equal(r.store.peek('PE-1')!.state.position, -425);
   assert.match(store.adds()[0]!.detail, /2x or more its 15\.00 sale/);
 });
 
@@ -182,7 +182,7 @@ test('the gates refusing the add is written down as refused, and said', async ()
   await adder.consider(strategy());
   assert.equal(store.adds()[0]?.status, 'refused');
   assert.match(alerts[0]!.text, /ADD REFUSED/);
-  assert.equal(r.store.get('PE-1')!.state.position, -425);
+  assert.equal(r.store.peek('PE-1')!.state.position, -425);
 });
 
 test('an add that throws is written down as failed, and said -- and not tried again', async () => {
@@ -200,7 +200,7 @@ test('switched off, or the strategy disarmed: nothing is decided and nothing is 
   await off.adder.consider(strategy({}, { addToOpposite: null }));
   await off.adder.consider(strategy({ enabled: false }));
   assert.deepEqual(off.store.adds(), []);
-  assert.equal(off.r.store.get('PE-1')!.state.position, -425);
+  assert.equal(off.r.store.peek('PE-1')!.state.position, -425);
 });
 
 test('[critical] the PE that was added to does not add back to the CE when its own target fills', async () => {
@@ -209,14 +209,14 @@ test('[critical] the PE that was added to does not add back to the CE when its o
   await walkPE(r);
   r.ex.tick(quote(PE, 0.6, 0.7, { mark: 0.65, ts: r.now() }));
   await r.engine.poll('PE-1');
-  assert.equal(r.store.get('PE-1')!.state.position, 0, 'all 850 bought back at 0.70');
+  assert.equal(r.store.peek('PE-1')!.state.position, 0, 'all 850 bought back at 0.70');
 
   await adder.consider(strategy());
   const rows = store.adds();
   assert.equal(rows.length, 2);
   assert.equal(rows[0]!.status, 'skipped');
   assert.match(rows[0]!.detail, /PE was itself added to today/);
-  assert.equal(r.store.get('CE-1')!.state.position, 0, 'the CE stays closed');
+  assert.equal(r.store.peek('CE-1')!.state.position, 0, 'the CE stays closed');
 });
 
 /*

@@ -22,5 +22,5 @@ test('a listener that throws cannot stop the trade being opened or written down'
   const res = await r.engine.open(planFor(ceProduct()));
   assert.equal(res.ok, true);
   assert.ok(r.events.length > 0);
-  assert.ok(r.store.get(res.state.tradeId), 'the trade must still be in the journal');
+  assert.ok(r.store.peek(res.state.tradeId), 'the trade must still be in the journal');
 });

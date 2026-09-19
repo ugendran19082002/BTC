@@ -89,10 +89,10 @@ test('[critical] protection comes off before the close is sent, not after', asyn
   // A stop for 100 and a reduce-only buy for 40 are two orders closing one
   // position, and the exchange will fill both.
   const { r, id } = await short100();
-  const armed = r.store.get(id)!.state;
+  const armed = r.store.peek(id)!.state;
   assert.ok(armed.protection.takeProfit && armed.protection.stopLoss, 'both legs were on to begin with');
   await r.engine.closeNow(id, 'manual exit', 40);
-  const order = r.store.get(id)!.events.map((e) => e.t);
+  const order = r.store.peek(id)!.events.map((e) => e.t);
   const sent = order.lastIndexOf('exit_submitted');
   const cancelled = order.lastIndexOf('sibling_cancelled');
   assert.ok(cancelled >= 0 && cancelled < sent, `cancels come first: ${order.join(', ')}`);
@@ -122,13 +122,13 @@ test('closing the rest afterwards goes flat and books both halves', async () => 
 
 test('one contract at a time is allowed, and the last one goes flat', async () => {
   const { r, plan, id } = await short100({ lots: 3 });
-  assert.equal(r.store.get(id)!.state.position, -3);
+  assert.equal(r.store.peek(id)!.state.position, -3);
   await r.engine.closeNow(id, 'manual exit', 1);
   await r.engine.poll(id);
-  assert.equal(r.store.get(id)!.state.position, -2);
+  assert.equal(r.store.peek(id)!.state.position, -2);
   await r.engine.closeNow(id, 'manual exit', 1);
   await r.engine.poll(id);
-  assert.equal(r.store.get(id)!.state.position, -1);
+  assert.equal(r.store.peek(id)!.state.position, -1);
   const s = await r.engine.closeNow(id, 'manual exit', 1);
   assert.equal(s?.position, 0);
   assert.equal(s?.phase, 'flat');
@@ -170,8 +170,8 @@ test('a size below one is refused, and the position is untouched', async () => {
   const s = await r.engine.closeNow(id, 'manual exit', 0);
   assert.equal(s?.position, -100, 'still there');
   assert.equal(s?.exitSize, 0);
-  assert.match(r.store.get(id)!.events.at(-1)!.t, /protection_failed/);
-  const why = r.store.get(id)!.events.at(-1) as { reason: string };
+  assert.match(r.store.peek(id)!.events.at(-1)!.t, /protection_failed/);
+  const why = r.store.peek(id)!.events.at(-1) as { reason: string };
   assert.match(why.reason, /whole number/);
 });
 
@@ -190,20 +190,20 @@ test('an exchange that refuses the close leaves the position and says so', async
 test('[critical] the journal says how much was asked for, and whether it was all of it', async () => {
   const { r, id } = await short100();
   await r.engine.closeNow(id, 'manual exit', 40);
-  const submitted = r.store.get(id)!.events.filter((e) => e.t === 'exit_submitted').at(-1) as
+  const submitted = r.store.peek(id)!.events.filter((e) => e.t === 'exit_submitted').at(-1) as
     { t: 'exit_submitted'; closing?: { size: number; heldBefore: number; all: boolean } };
   assert.equal(submitted.closing?.size, 40);
   assert.equal(submitted.closing?.heldBefore, 100);
   assert.equal(submitted.closing?.all, false);
   // and it is cleared once it has bought back what it asked for
-  assert.equal(r.store.get(id)!.state.closing ?? null, null);
+  assert.equal(r.store.peek(id)!.state.closing ?? null, null);
 });
 
 test('[critical] the record replays to the same position and phase it was left in', async () => {
   const { r, id } = await short100();
   await r.engine.closeNow(id, 'manual exit', 40);
   const live = (await r.engine.poll(id))!;
-  const replayed = r.store.get(id)!.state;
+  const replayed = r.store.peek(id)!.state;
   assert.equal(replayed.position, live.position);
   assert.equal(replayed.phase, live.phase);
   assert.equal(replayed.exitSize, 40);
@@ -213,12 +213,12 @@ test('an old exit_submitted with no size still reads as "all of it"', async () =
   // Every close written before sizes existed meant the whole position, and a
   // journal that reprices history is not a journal.
   const { r, id } = await short100();
-  const rec = r.store.get(id)!;
+  const rec = r.store.peek(id)!;
   const before = rec.state.position;
   assert.equal(before, -100);
   const s = await r.engine.closeNow(id);
   assert.equal(s?.phase, 'flat');
-  const submitted = rec.events.concat(r.store.get(id)!.events).filter((e) => e.t === 'exit_submitted');
+  const submitted = rec.events.concat(r.store.peek(id)!.events).filter((e) => e.t === 'exit_submitted');
   assert.ok(submitted.length >= 1);
 });
 

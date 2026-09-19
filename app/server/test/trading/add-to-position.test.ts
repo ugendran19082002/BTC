@@ -53,7 +53,7 @@ async function walk(r: Rig, ms: number, bid = 7, ask = 7.5, engine: TradeEngine 
     r.ex.tick(quote(PE, bid, ask, { mark: (bid + ask) / 2, ts: r.now() }));
     await engine.poll('PE-1');
   }
-  return r.store.get('PE-1')!.state;
+  return r.store.peek('PE-1')!.state;
 }
 
 const book = async (r: Rig) => (await r.ex.getOpenOrders(PE)).map((o) => ({
@@ -70,7 +70,7 @@ test('[critical] an add appends to the same trade: one position, one average, on
   assert.equal(s.addedSize, 425);
   assert.equal(s.entryAvgPrice, 11, '(15 x 425 + 7 x 425) / 850');
   assert.equal(s.adding, null, 'the add is over');
-  assert.equal(r.store.all().length, 1, 'still one trade on the contract');
+  assert.equal(r.store.rows().length, 1, 'still one trade on the contract');
   assert.deepEqual((await book(r)).sort((a, b) => a.type.localeCompare(b.type)), [
     { type: 'limit', side: 'buy', left: 850, limit: 0.7, stop: null, reduceOnly: true },
     // a stop limit: the trigger at 45, priced through it at 67.50 so it fills
@@ -154,7 +154,7 @@ test('stopping an add that never sold anything leaves the position exactly as it
 
 test('stopping when nothing is adding is not an error, and changes nothing', async () => {
   const { r } = await shortPE();
-  const before = r.store.get('PE-1')!.state;
+  const before = r.store.peek('PE-1')!.state;
   const s = (await r.engine.cancelAdd('PE-1'))!;
   assert.equal(s.position, before.position);
   assert.equal(s.adding ?? null, null);
@@ -228,7 +228,7 @@ test('[critical] the gates still apply: an add past the short limit is refused, 
   assert.equal(res.ok, false);
   if (!res.ok) assert.match(res.reason, /limit is 500/);
   assert.deepEqual((await book(r)).filter((o) => o.side === 'sell'), []);
-  assert.equal(r.store.get('PE-1')!.state.position, -425);
+  assert.equal(r.store.peek('PE-1')!.state.position, -425);
 });
 
 test('the add\'s own minimum stands in for the desk\'s $5 premium floor -- and only for the add', async () => {
@@ -249,7 +249,7 @@ test('[critical] Delta refusing the add does not end the trade that was already 
   r.ex.configure({ nextFault: { kind: 'reject', reason: 'insufficient_margin' } });
   const res = await r.engine.addToPosition('PE-1', addOf());
   assert.equal(res.ok, false);
-  const s = r.store.get('PE-1')!.state;
+  const s = r.store.peek('PE-1')!.state;
   assert.equal(s.phase, 'protected', 'not aborted, not rejected');
   assert.equal(s.position, -425);
   assert.equal(s.adding, null);
@@ -260,7 +260,7 @@ test('[critical] an add with no answer is looked for, never sent twice -- and it
   r.ex.configure({ nextFault: { kind: 'submit_timeout', landed: true } });
   const res = await r.engine.addToPosition('PE-1', addOf());
   assert.equal(res.ok, true);
-  assert.equal(r.store.get('PE-1')!.state.adding?.unknown, true);
+  assert.equal(r.store.peek('PE-1')!.state.adding?.unknown, true);
   const s = await walk(r, 6_000);
   assert.equal(s.position, -850);
   assert.equal((await r.ex.getOpenOrders(PE)).filter((o) => o.side === 'sell').length, 0, 'one add order, filled');
@@ -335,7 +335,7 @@ test('[critical] an add that fills under the chase is recorded, not reported', a
   assert.equal(s.adding, null, 'and the add is closed out');
   assert.deepEqual(edits.filter((c) => c.size !== undefined).map((c) => c.size), [850, 850],
     'and the target and stop were resized in the same poll, not twenty seconds later');
-  const done = r.store.get('PE-1')!.events.find((e) => e.t === 'add_done');
+  const done = r.store.peek('PE-1')!.events.find((e) => e.t === 'add_done');
   assert.equal(done && 'reason' in done ? done.reason : null, 'filled');
 });
 
@@ -399,8 +399,8 @@ test('[critical] an add by hand lands under the same trade, marked as by hand', 
   assert.equal(res.ok, true, res.ok ? '' : res.reason);
   const s = await walk(r, 6_000);
   assert.equal(s.position, -850);
-  assert.equal(r.store.all().length, 1, 'still one trade');
-  const sub = r.store.get('PE-1')!.events.find((e) => e.t === 'add_submitted');
+  assert.equal(r.store.rows().length, 1, 'still one trade');
+  const sub = r.store.peek('PE-1')!.events.find((e) => e.t === 'add_submitted');
   assert.deepEqual(sub && 'add' in sub ? sub.add.source : null, { manual: true });
 });
 
@@ -419,7 +419,7 @@ test('[critical] an add our id cannot find is found by the id the venue gave it'
   const { r } = await shortPE();
   const res = await r.engine.addToPosition('PE-1', addOf({ source: { manual: true } }));
   assert.equal(res.ok, true, res.ok ? '' : res.reason);
-  const sub = r.store.get('PE-1')!.events.find((e) => e.t === 'add_submitted');
+  const sub = r.store.peek('PE-1')!.events.find((e) => e.t === 'add_submitted');
   assert.ok(sub && 'add' in sub && sub.add.orderId, 'the acknowledgement\'s id is kept with the add');
 
   // the client-id filter goes blind, as a filtered query can
@@ -428,7 +428,7 @@ test('[critical] an add our id cannot find is found by the id the venue gave it'
   const s = await walk(r, 6_000);
   assert.equal(s.position, -850, 'still tracked, still filled, still one position');
   assert.equal(s.adding, null);
-  const done = r.store.get('PE-1')!.events.find((e) => e.t === 'add_done');
+  const done = r.store.peek('PE-1')!.events.find((e) => e.t === 'add_done');
   assert.equal(done && 'reason' in done ? done.reason : null, 'filled');
 });
 
@@ -452,7 +452,7 @@ test('[critical] an acknowledged add that is never found again is read back from
   assert.equal(s.position, -850, 'what the exchange holds');
   assert.equal(s.entrySize, 850, 'as a fill on the record, not a bare number');
   assert.equal(s.entryAvgPrice, 11.25, '(15 x 425 + 7.5 x 425) / 850 -- the price came back with it');
-  const done = r.store.get('PE-1')!.events.find((e) => e.t === 'add_done');
+  const done = r.store.peek('PE-1')!.events.find((e) => e.t === 'add_done');
   assert.equal(done && 'filled' in done ? done.filled : null, 425, 'and the add is credited with what it sold');
   assert.match(done && 'reason' in done ? done.reason : '', /read back from the exchange/);
   assert.doesNotMatch(done && 'reason' in done ? done.reason : '', /never reached/);
@@ -468,18 +468,18 @@ test('[critical] reconcile recovers a fill the record is missing, with its price
   r.ex.tick(quote(PE, 7.5, 8, { mark: 7.7, ts: r.now() }));   // fills the add on the venue
 
   // the desk's record, as it was left: the add written off, position 425
-  const rec = r.store.get('PE-1')!;
+  const rec = r.store.peek('PE-1')!;
   rec.events.push({ t: 'add_done', filled: 0, reason: 'the order never reached the exchange', at: r.now() });
   rec.state = { ...rec.state, adding: null };
-  r.store.save(rec);
-  assert.equal(r.store.get('PE-1')!.state.entrySize, 425);
+  await r.store.save(rec);
+  assert.equal(r.store.peek('PE-1')!.state.entrySize, 425);
 
   const fixed = (await r.engine.reconcile('PE-1'))!.state;
   assert.equal(fixed.position, -850);
   assert.equal(fixed.entrySize, 850, 'the missing fill is on the record');
   assert.equal(fixed.entryAvgPrice, 11.25, 'at the price it filled at');
   assert.equal(fixed.fills.filter((f) => f.role === 'entry').length, 2);
-  assert.ok(!r.store.get('PE-1')!.events.some((e) => e.t === 'reconciled'),
+  assert.ok(!r.store.peek('PE-1')!.events.some((e) => e.t === 'reconciled'),
     'nothing left to reconcile by number: the fills explained all of it');
 });
 
@@ -490,14 +490,14 @@ test('[critical] reconcile recovers the fill even when the position was already 
   const { r } = await shortPE();
   await r.engine.addToPosition('PE-1', addOf({ source: { manual: true } }));
   r.ex.tick(quote(PE, 7.5, 8, { mark: 7.7, ts: r.now() }));
-  const rec = r.store.get('PE-1')!;
+  const rec = r.store.peek('PE-1')!;
   rec.events.push(
     { t: 'add_done', filled: 0, reason: 'the order never reached the exchange', at: r.now() },
     { t: 'reconciled', position: -850, at: r.now(), note: 'exchange says -850, we had -425' },
   );
   rec.state = { ...rec.state, adding: null, position: -850 };
-  r.store.save(rec);
-  assert.equal(r.store.get('PE-1')!.state.entrySize, 425, 'the gap: 850 held, 425 sold');
+  await r.store.save(rec);
+  assert.equal(r.store.peek('PE-1')!.state.entrySize, 425, 'the gap: 850 held, 425 sold');
 
   const fixed = (await r.engine.reconcile('PE-1'))!.state;
   assert.equal(fixed.entrySize, 850);
@@ -507,9 +507,9 @@ test('[critical] reconcile recovers the fill even when the position was already 
 
 test('reconcile leaves a record alone that already carries every fill', async () => {
   const { r } = await shortPE();
-  const before = r.store.get('PE-1')!.events.length;
+  const before = r.store.peek('PE-1')!.events.length;
   await r.engine.reconcile('PE-1');
-  assert.equal(r.store.get('PE-1')!.events.length, before, 'absorb adds nothing it has seen');
+  assert.equal(r.store.peek('PE-1')!.events.length, before, 'absorb adds nothing it has seen');
 });
 
 test('a submit with no answer that is never found is still the one case that never landed', async () => {
@@ -522,7 +522,7 @@ test('a submit with no answer that is never found is still the one case that nev
   r.advance(11_000);
   const s = (await r.engine.poll('PE-1'))!;
   assert.equal(s.adding, null);
-  const done = r.store.get('PE-1')!.events.find((e) => e.t === 'add_done');
+  const done = r.store.peek('PE-1')!.events.find((e) => e.t === 'add_done');
   assert.match(done && 'reason' in done ? done.reason : '', /never reached the exchange/);
 });
 

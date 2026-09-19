@@ -95,7 +95,7 @@ test('when the rest fills, the target is the exit and the stop goes', async () =
 
 test('protection that covers more than is held is also the wrong size', async () => {
   const { r, plan } = await halfTakenByTarget();
-  const rec = r.store.get(plan.tradeId)!;
+  const rec = r.store.peek(plan.tradeId)!;
   assert.equal(missingProtection(rec), false, 'settled at 60');
   assert.equal(
     missingProtection({ ...rec, state: { ...rec.state, protection: { ...rec.state.protection, size: 100 } } }),

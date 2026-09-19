@@ -53,7 +53,7 @@ test('[critical] a wide spread stops the walk at the middle, and nothing is sold
   await hold(r, plan, 6, 37, 44);   // well past the four one-second steps
 
   assert.equal((await restingEntry(r))?.limitPrice, 40.5, 'resting at the middle of 37 / 44');
-  assert.equal(r.store.get(plan.tradeId)!.state.position, 0, 'nothing sold at 37');
+  assert.equal(r.store.peek(plan.tradeId)!.state.position, 0, 'nothing sold at 37');
 });
 
 test('[critical] when the spread narrows, the walk carries on to the bid and fills there', async () => {
@@ -65,7 +65,7 @@ test('[critical] when the spread narrows, the walk carries on to the bid and fil
   // the book tightens to 39 / 42 -- a 7.4% spread
   await hold(r, plan, 1, 39, 42);
 
-  const st = r.store.get(plan.tradeId)!.state;
+  const st = r.store.peek(plan.tradeId)!.state;
   assert.equal(st.position, -1, 'sold');
   assert.equal(st.fills[0]!.price, 39, 'at the bid, now that the spread is tight');
 });
@@ -76,7 +76,7 @@ test('without a limit -- the order ticket -- the walk still goes to the bid, as 
   await r.engine.open(plan);
   await hold(r, plan, 6, 37, 44);
 
-  const st = r.store.get(plan.tradeId)!.state;
+  const st = r.store.peek(plan.tradeId)!.state;
   assert.equal(st.position, -1);
   assert.equal(st.fills[0]!.price, 37, 'the ticket crosses whatever the spread, exactly as it did');
 });
@@ -87,7 +87,7 @@ test('[critical] if the spread never narrows, the order is cancelled when the wi
   await r.engine.open(plan);
   await hold(r, plan, 12, 37, 44);
 
-  const st = r.store.get(plan.tradeId)!.state;
+  const st = r.store.peek(plan.tradeId)!.state;
   assert.equal(st.position, 0, 'nothing sold');
   assert.equal(st.phase, 'aborted', 'the entry ended');
   assert.equal(await restingEntry(r), null, 'and nothing is left resting on the book');

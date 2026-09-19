@@ -293,7 +293,7 @@ test('19 a disconnected price feed stops new trades and leaves the old one prote
   assert.equal(blocked.ok, false);
   assert.ok(!blocked.ok && failureCodes(blocked.precheck).includes('FEED_DOWN'));
 
-  const held = r.store.get(first.tradeId)!.state;
+  const held = r.store.peek(first.tradeId)!.state;
   assert.equal(held.phase, 'protected', 'the existing stop is untouched');
 });
 
@@ -485,7 +485,7 @@ test('75 [critical] the mark falling through the target does not buy back at the
   });
   await r.engine.open(plan);
   await r.engine.poll(plan.tradeId);
-  assert.equal(r.store.get(plan.tradeId)!.state.position, -1);
+  assert.equal(r.store.peek(plan.tradeId)!.state.position, -1);
 
   // the mark falls through the target while the offer stays well above it --
   // 5 bid / 15 offered is an ordinary book for a decayed option
@@ -578,7 +578,7 @@ test('80 [critical] a target far below the mark never closes at the mark', async
   });
   await r.engine.open(plan);
   await r.engine.poll(plan.tradeId);
-  assert.equal(r.store.get(plan.tradeId)!.state.position, -1);
+  assert.equal(r.store.peek(plan.tradeId)!.state.position, -1);
 
   // several polls at an unchanged mark: the level is nowhere near being reached
   for (let i = 0; i < 3; i += 1) {
@@ -586,7 +586,7 @@ test('80 [critical] a target far below the mark never closes at the mark', async
     await r.engine.poll(plan.tradeId);
   }
 
-  const st = r.store.get(plan.tradeId)!.state;
+  const st = r.store.peek(plan.tradeId)!.state;
   assert.equal(st.position, -1, 'still short: 7.00 is nowhere near the 0.50 target');
   const exits = st.fills.filter((f) => f.side === 'buy');
   assert.deepEqual(exits, [], 'and nothing bought it back at the price it was sold at');
@@ -608,7 +608,7 @@ test('80b [critical] a target never buys back above its own price', async () => 
     await r.engine.poll(plan.tradeId);
   }
 
-  const st = r.store.get(plan.tradeId)!.state;
+  const st = r.store.peek(plan.tradeId)!.state;
   const exits = st.fills.filter((f) => f.side === 'buy');
   assert.ok(exits.length > 0, 'the offer did come down to the target in the end');
   for (const exit of exits) {
@@ -709,7 +709,7 @@ test('70 an order already at the right price is kept rather than replaced', asyn
 
   for (let i = 0; i < 3; i++) { r.advance(1_000); await r.engine.poll(plan.tradeId); }
 
-  const after = r.store.get(plan.tradeId)!.state;
+  const after = r.store.peek(plan.tradeId)!.state;
   assert.equal(after.protection.takeProfit, id, 'the same order throughout');
   assert.equal((await r.ex.getOpenOrders(CE)).filter((o) => o.reduceOnly).length, 1);
 });
@@ -747,9 +747,9 @@ test('73 an order the desk has forgotten is adopted, not duplicated', async () =
   await r.engine.open(plan);
   await r.engine.poll(plan.tradeId);
 
-  const rec = r.store.get(plan.tradeId)!;
+  const rec = r.store.peek(plan.tradeId)!;
   rec.state = { ...rec.state, protection: { takeProfit: null, stopLoss: null } };
-  r.store.save(rec);
+  await r.store.save(rec);
 
   r.advance(3_000);
   const s = await r.engine.poll(plan.tradeId);
@@ -807,7 +807,7 @@ test('65 and the next attempt places only the missing one', async () => {
     return real(req);
   };
   await r.engine.poll(plan.tradeId);
-  const firstTp = r.store.get(plan.tradeId)!.state.protection.takeProfit;
+  const firstTp = r.store.peek(plan.tradeId)!.state.protection.takeProfit;
 
   refuse = false;
   r.advance(3_000);
@@ -1007,7 +1007,7 @@ test('58 cancelling refuses once contracts exist, because the way out is to buy 
   const r = rig();
   const plan = planFor(ceProduct());
   await r.engine.open(plan);
-  assert.equal(r.store.get(plan.tradeId)!.state.position, -100);
+  assert.equal(r.store.peek(plan.tradeId)!.state.position, -100);
 
   const s = await r.engine.cancelEntry(plan.tradeId);
   assert.equal(s?.position, -100, 'still short');
@@ -1122,7 +1122,7 @@ test('31 a restart with an entry still working resumes monitoring rather than re
   const restarted = new TradeEngine({ exchange: r.ex, store: r.store, now: r.now, tradingEnabled: true });
   await restarted.recover();
   assert.equal((await r.ex.getOpenOrders(CE)).length, 1, 'still exactly one working order');
-  assert.equal(r.store.get(plan.tradeId)!.state.position, 0);
+  assert.equal(r.store.peek(plan.tradeId)!.state.position, 0);
 });
 
 // ------------------------------------------------ 32 protection failure alarm
@@ -1172,7 +1172,7 @@ test('32c [critical] a target with no stop is placed once, not replaced every se
 
   for (let i = 0; i < 5; i++) { r.advance(1_000); await r.engine.poll(plan.tradeId); }
 
-  const after = r.store.get(plan.tradeId)!.state;
+  const after = r.store.peek(plan.tradeId)!.state;
   assert.equal(after.protection.takeProfit, tp, 'the same order, not a new one');
   const live = (await r.ex.getOpenOrders(CE)).filter((o) => o.reduceOnly);
   assert.equal(live.length, 1, 'exactly one protective order on the book');
@@ -1244,7 +1244,7 @@ test('35 a manual close in the exchange UI leaves the desk flat with nothing res
   r.ex.forcePosition(CE, 0);
   await r.engine.reconcile(plan.tradeId);
   assert.equal((await r.ex.getOpenOrders(CE)).length, 0);
-  assert.equal(r.store.get(plan.tradeId)!.state.phase, 'flat');
+  assert.equal(r.store.peek(plan.tradeId)!.state.phase, 'flat');
 });
 
 test('36 a manual partial close resizes the target and the stop to what is left', async () => {

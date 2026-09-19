@@ -3,7 +3,7 @@ import { config } from './config.js';
 import { authFromEnv } from './auth/service.js';
 import { loadDays } from './backtest/backtest.js';
 import { credsFromEnv } from './delta/signed.js';
-import { initTradingService, tradingService } from './trading/service.js';
+import { initTradingService } from './trading/service.js';
 import { strategyStore } from './http/routes/strategy.routes.js';
 import { StrategyRunner } from './strategy/runner.js';
 import { liveTickers, startTickerPoller, startTickerSocket } from './market/delta.js';
@@ -28,7 +28,7 @@ const desk = await initTradingService();
 
 // One sign-in service for the process: the gate and the routes share the pool.
 const auth = await authFromEnv({
-  onAlert: (text) => tradingService().notifier?.notify({ key: `security:${Date.now()}`, text }),
+  onAlert: (text) => desk.notifier?.notify({ key: `security:${Date.now()}`, text }),
 });
 const app = await buildApp({ auth });
 await app.listen({ port: config.port, host: '0.0.0.0' });
