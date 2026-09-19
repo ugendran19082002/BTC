@@ -17,7 +17,7 @@ name's prefix wherever a bare name would be ambiguous (`auth_sessions`,
 | strategy | `strategies`, `strategy_runs`, `strategy_adds`, `strategy_rebalances` | the scheduler | Saved strategies and their run journal: what stops a strategy entering twice. |
 | sign-in | `auth_user`, `auth_sessions`, `auth_recovery_codes`, `auth_limits`, `auth_events` | the sign-in | The one user, sessions, recovery codes, rate limits, the security log. |
 | errors | `errors` | everything | Every failure, from all three tiers, in one place. |
-| market | `oi_snapshots`, `chain_features` | the chain route, every 5 minutes | What open interest and at-the-money volatility *were*, so a change in either is readable. Disposable. |
+| market | `oi_snapshots`, `chain_features`, `option_snapshots` | the chain route, and the API's one-minute recorder, every 5 minutes | What open interest and at-the-money volatility *were*, so a change in either is readable. Disposable. |
 | analytics | `outlook_states`, `chain_states`, `analytics_publish_meta` | `research/publish_outlook_states.py` | The measured Down / Side / Up tables the Python service reads. |
 | ledger | `schema_migrations` | `db/migrate.ts` | The one ledger of what has been done to the database. |
 | `chain.db` (SQLite) | 6 | the harvester, offline | Two years of settled option chains. Read-only at runtime. |
@@ -93,7 +93,7 @@ Ids are `<area>-NNN-what-it-does`. Applied on a fresh desk today:
 | Area | Migrations |
 |---|---|
 | trading | `trading-001-settings`, `trading-002-default-settings`, `trading-003-trades`, `trading-004-mtm-samples`, `trading-005-settings-to-public`, `trading-006-journal-to-public` |
-| market | `market-001-oi-snapshots`, `market-002-chain-features`, `market-003-to-public` |
+| market | `market-001-oi-snapshots`, `market-002-chain-features`, `market-003-to-public`, `market-004-option-snapshots` |
 | errors | `errors-001-log`, `errors-002-to-public` |
 | strategy | `strategy-001-tables`, `strategy-002-seed`, `strategy-003-to-public` |
 | sign-in | `auth-001-user-sessions`, `auth-002-to-public` |
@@ -335,6 +335,14 @@ as it writes. The writer is throttled by asking the table, not a variable.
 `chain_features`: the whole board every five minutes — the straddle, the
 skew, put/call volume and OI, the walls, max pain, the hour's OI change — so the
 chain can one day be measured the way the candles were. Kept 400 days.
+
+`option_snapshots` (`market/option-snapshots.ts`): `(at, symbol)` primary key,
+`(symbol, at)` index. Every strike of the two nearest live expiries, every five
+minutes — mark, last, bid, ask, sizes, mark / bid / ask IV, the five greeks, OI,
+volume and spot. Written by a timer in `index.ts` (checked each minute, one
+bucket per five, `ON CONFLICT DO NOTHING` so a restart cannot double a bucket)
+in one batched `unnest` insert; rows older than 365 days pruned as it writes.
+Created directly in `public` by `market-004-option-snapshots`.
 
 Kept apart from the journal for the reason the journal is kept apart, in reverse: this is
 market data and entirely disposable. Truncate it and the board loses its change

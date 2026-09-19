@@ -60,6 +60,8 @@ here exists because something specific went wrong once.
 |---|---:|---|
 | `market/chain.ts` | 453 | Builds the option chain: strike spacing read from what Delta actually lists rather than assumed, with a fallback. |
 | `market/moves.ts` | 275 | A multi-timeframe read of BTC from public candles. |
+| `market/option-snapshots.ts` | 175 | Records every strike of the two nearest expiries every 5 minutes (`option_snapshots`), and reads one strike's history back. |
+| `market/term.ts` | 65 | ATM IV per listed expiry — the IV term structure. |
 | `market/delta.ts` | 201 | Delta's *public* endpoints. No API key is ever used in this file. |
 | `delta/signed.ts` | 154 | Signed transport for the user's own account. One place signs, one place times out, one place decides what an error means. |
 
@@ -129,6 +131,19 @@ here exists because something specific went wrong once.
 | `desk/TodayPnl.tsx` | 55 | Today's net P&L in the header — booked + open − charges since 05:30 IST. Tap for the breakdown. |
 | `desk/BiasSection.tsx` | 62 | Which way the option board is leaning. |
 | `research/DateTimePicker.tsx` | 118 | A date and time always read as India time, because the strategy is defined in IST. |
+
+### Live screen decision panels (`components/overview/`, `lib/overview.ts`)
+
+Built from `docs/image1.png`, `docs/image2.png` and `docs/test.md`; drawn on the
+Live tab between the chart and the chain board.
+
+| File | Lines | What it is for |
+|---|---:|---|
+| `lib/overview.ts` | 341 | The arithmetic: IV vs RV, 25Δ skew, expected move, premium analysis, odds (measured before model), short payoff, side cards, consensus, freshness and the entry gates. Pure; 27 tests. |
+| `overview/Overview.tsx` | 134 | Lays the panels out. Chart and compact chain optional; the selected strike can be owned by the screen. |
+| `overview/MarketPanels.tsx` | 202 | Market strip, price action, key levels, volatility, IV term structure, skew; trade flow said as not captured. |
+| `overview/DecisionPanels.tsx` | 394 | Selected strike (metrics / probability / payoff / momentum), model view, strategy decision, sell recommendation, entry checklist, order panel, status bar. |
+| `overview/parts.tsx` | 68 | Panel, row, tag, probability bar, number formats. |
 
 ### Shared UI (`components/ui/`) — 14 files, ~640 lines
 

@@ -5,6 +5,28 @@ Updated 19 Sep 2026
 
 ---
 
+## 19 Sep 2026 — the Live screen carries the seller's decision (image 1 + image 2 + test.md)
+
+Between the price chart and the chain board, the Live tab now draws: a market
+strip (spot, options volume and OI, ATM IV against realised, PCR, regime, the
+12 h odds); price action, key levels, volatility; the selected strike with its
+greeks and four tabs (metrics, settlement / touch odds, payoff at settlement,
+5m / 15m / 1h momentum from `option_snapshots`); the model view, the CE / PE /
+both-sides decision, the sell recommendation for each side; the IV term
+structure, 25Δ skew, the entry checklist (freshness, contract, direction,
+5-of-7 consensus, IV, liquidity, and every server gate) and the order panel.
+An inspect on the board selects the strike the panels are about. Selling goes
+through the same ticket, so every gate still runs on the server.
+
+Backend: `option_snapshots` records every strike of the two nearest expiries
+every 5 minutes (a year kept); `GET /api/term` and `GET /api/option-history`.
+
+Not built, and shown as not captured rather than as zeros:
+- perpetual funding, trade flow, liquidations, order-book depth (need websocket feeds);
+- skew percentile over a year (needs a year of `option_snapshots`);
+- a model per horizon (5m…24h) — the outlook is the measured state table, not seven trained models;
+- an audit trail of why each sell was taken.
+
 ## 19 Sep 2026 — one PostgreSQL database instead of five SQLite files
 
 Done: trades, strategies, settings, sign-in, the error log, market history and

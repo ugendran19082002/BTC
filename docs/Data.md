@@ -54,6 +54,7 @@ Row counts read on 19 Sep 2026.
 | Table | What | Timeframe | Kept | Rows |
 |---|---|---|---|---|
 | `oi_snapshots` | OI per strike, with spot and ATM IV | **5 min** buckets | 48 h | 11,980 |
+| `option_snapshots` | every strike of the **two nearest live expiries**: mark, last, bid, ask, sizes, mark / bid / ask IV, delta, gamma, theta, vega, rho, OI, volume, spot | **5 min** | 365 days | recording since 19 Sep 2026 |
 | `chain_features` | the whole board summarised: PCR (OI and volume), call / put OI, IV skew, OI walls, max pain, OI change over the hour | **5 min** | 400 days | 117 — recording since 17 Sep 2026 |
 | `mtm_samples` | the day's P&L: realised, unrealised, charges, net | **1 min** | 90 days | 6,360 |
 | `trades`, `trade_events` | the desk's trades, and every order, fill and exit | per event | permanent | 82 / 629 |
@@ -78,18 +79,21 @@ topped up daily by `deploy/refresh.sh`, read-only at runtime.
 
 ## 4. The gap
 
-Nothing keeps **per-strike greeks, IV or bid/ask over time**. `chain_features`
-records a board-level summary every 5 minutes (since 17 Sep 2026) and
-`oi_snapshots` keeps per-strike OI for only 48 h, so a question like "how did
-the 80,000 call's IV move through the day" cannot be answered after the fact.
+Closed on 19 Sep 2026 for the contracts the desk trades: `option_snapshots`
+records every strike of the two nearest live expiries every 5 minutes — mark,
+bid, ask, sizes, mark / bid / ask IV, the five greeks, OI and volume — kept a
+year (about 5 GB a year at ~250 bytes a row). Read it with
+`GET /api/option-history?symbol=C-BTC-82000-190926&hours=6` (48 h at most);
+the Live screen's *Momentum* tab does. `GET /api/term` gives the ATM IV of
+every listed expiry, live, for the term-structure chart.
 
-Closing it is a new table fed from the live ticker — per strike, every 5
-minutes: mark, bid, ask, sizes, mark / bid / ask IV, the five greeks, OI and
-volume — kept for as long as the history is wanted. Sized from `oi_snapshots`
-(137 bytes a row with its index, for 7 columns; about 250 for this one):
+Still not captured, and shown as such on the Live screen rather than drawn as a
+zero: perpetual **funding**, **trade flow** (buy / sell volume, large trades),
+**liquidations** and **order-book depth**. Each needs a websocket feed the desk
+does not subscribe to. Expiries beyond the second are also not recorded per
+strike — every live BTC contract would be ~16 GB a year.
 
-| Scope | Rows a year | Disk a year |
-|---|---|---|
+---|---|---|
 | every live BTC contract (~610) | ~64 M | ~16 GB |
 | the nearest expiry only (~100 strikes) | ~10.5 M | ~2.6 GB |
 

@@ -79,3 +79,15 @@ export const getCandles = (tf: '1m' | '5m' | '15m' | '1h' | '4h' | '1d') =>
 export const setWallWithinEm = (em: number) =>
   post<{ ok: true; key: string; value: string }>('/api/settings', { key: 'wall_within_em', value: String(em) });
 
+
+/** ATM implied volatility across every listed expiry, now. There is no history of it. */
+export type TermPoint = { expiry: string; expiryTs: number; hoursAway: number; strike: number; atmIv: number; sides: 1 | 2 };
+export const getTerm = () => json<{ at: number; points: TermPoint[] }>('/api/term');
+
+/** One contract's recorded five-minute history (premium, quotes, IV, delta, OI, volume). */
+export type OptionHistoryPoint = {
+  at: number; spot: number | null; mark: number | null; bid: number | null; ask: number | null;
+  markIv: number | null; delta: number | null; oi: number | null; volume: number | null;
+};
+export const getOptionHistory = (symbol: string, hours = 6) =>
+  json<{ symbol: string; points: OptionHistoryPoint[] }>(`/api/option-history?symbol=${encodeURIComponent(symbol)}&hours=${hours}`);
