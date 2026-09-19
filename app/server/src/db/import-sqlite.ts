@@ -105,6 +105,12 @@ async function importTrades(dir: string, counts: Count[]): Promise<void> {
     (r) => [r.id, r.name, Number(r.enabled) === 1, asJson(r.config), r.created_at, r.updated_at],
     // What the person has since changed on the SQLite desk beats the fresh seed.
     '(id) DO UPDATE SET name = EXCLUDED.name, enabled = EXCLUDED.enabled, config = EXCLUDED.config, updated_at = EXCLUDED.updated_at');
+  // The SQLite desk's list is the list. The seed migration adds the three
+  // researched strategies to a fresh database; any the person had deleted
+  // must not come back just because the database is new.
+  if (hasTable(db, 'strategies')) {
+    await query('DELETE FROM strategy.strategies WHERE NOT (id = ANY($1))', [strategies.map((r) => String(r.id))]);
+  }
   counts.push({ table: 'strategy.strategies', source: strategies.length, target: await count('strategy.strategies') });
 
   const runs = readAll(db, 'strategy_runs');
