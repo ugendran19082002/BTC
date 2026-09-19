@@ -2711,3 +2711,101 @@ Data freshness → Contract validation → Entry gate → Execution quality → 
 உன் existing design-ல் market/option/model analytics side மிகவும் complete; remaining gap mostly “ENTRY → POSITION → RISK → EXIT” operational logic. Existing source already has the core quant components such as MFE/MAE, probability-of-hit, expected P&L, sizing, and adjustment states.
 
 இதுதான் நான் இப்போது main missing என்று வைத்துக்கொள்வேன்.
+
+ஆமா! News வருவதற்கு முன்பே market-ல் சில warning signals தெரியும். ஆனால் news-ஐ முன்கூட்டியே 100% predict பண்ண முடியாது.
+
+உங்க BTC options Sell CE / Sell PE bot-க்கு, news வரப்போகிறது என்பதை கணிப்பதைவிட, சந்தையில் திடீர் movement அல்லது risk அதிகரிக்கிறது என்பதை முன்கூட்டியே கண்டறிவது practical-ஆன approach.
+
+1. News வருவதற்கு முன் என்ன signals பார்க்கலாம்?
+
+1. OI + Price divergence
+
+BTC price sideways-ஆக இருந்தாலும் OI வேகமாக அதிகரித்தால் புதிய leveraged positions உருவாகியிருக்கலாம்.
+
+இது பெரிய move வரப்போகிறது என்பதற்கான உறுதி இல்லை.
+
+2. Order book liquidity
+
+Bid/ask liquidity திடீரென குறைகிறதா, spread பெரிதாகிறதா என்று பாருங்கள். Liquidity குறைந்தால் price வேகமாக நகர வாய்ப்பு அதிகரிக்கலாம்.
+
+3. Funding + leverage
+
+Funding rate மிக அதிகமாக இருப்பது அல்லது மிக negative-ஆக இருப்பது crowded positioning-ஐக் காட்டலாம். இது squeeze risk-ஐ சுட்டிக்காட்டலாம்; direction-ஐ உறுதி செய்யாது.
+
+4. Liquidation clusters
+
+ஒரே price பகுதியில் leveraged positions அதிகமாக இருந்தால், அந்த level உடைந்தபோது forced liquidations மூலம் movement பெரிதாகலாம்.
+
+5. Volatility compression → expansion
+
+Market அமைதியாக இருந்து candle range, volume, volatility திடீரென அதிகரித்தால் breakout அல்லது news reaction இருக்கலாம். இது news-specific signal அல்ல.
+
+2. உங்க bot-க்கு இரண்டு வகையான protection தேவை
+Scheduled news
+
+News calendar filter
+
+CPI, PCE, Fed rate decision போன்ற முன்கூட்டியே அறிவிக்கப்பட்ட events-ன் release time தெரியும்.
+
+Event-க்கு முன் entry pause.
+
+Event முடிந்ததும் உடனே entry allow செய்யாமல் volatility மற்றும் spread check.
+
+Unscheduled news
+
+Market anomaly detector
+
+திடீர் volume spike, OI change, liquidity drop, price jump ஆகியவற்றை கண்காணிக்கவும்.
+
+Anomaly வந்தால் புதிய short entries pause.
+
+Existing position-ன் risk-ஐ தனியாகக் கணக்கிடவும்.
+
+Market normal ஆன பிறகுதான் re-entry பரிசீலிக்கவும்.
+
+3. ஒரு practical scoring system
+
+இந்த score என்பது market stress score — news probability அல்ல.
+
+BTC Risk Signal Simulator
+
+கீழே உள்ள sliders hypothetical signal strengths. Live market data அல்ல.
+
+OI anomaly
+
+0/3
+
+Volume / volatility spike
+
+0/3
+
+Spread widening
+
+0/3
+
+Liquidity drop
+
+0/3
+
+High-impact scheduled news window
+
+Illustrative stress score
+
+0/14
+LOW DETECTED STRESS
+
+இந்த indicators மட்டும் low stress காட்டுகின்றன; sudden news risk இன்னும் உள்ளது.
+
+Reset
+
+இந்த score-க்கு எந்த predictive accuracy-யும் இன்னும் validate செய்யப்படவில்லை. Production-ல் பயன்படுத்தும் முன் historical data-வில் test செய்ய வேண்டும்.
+
+4. முக்கியமான உண்மை
+
+Scheduled news: Calendar மூலம் நேரத்தை முன்கூட்டியே தெரிந்துகொள்ள முடியும்.
+
+Unscheduled news: OI, volume, spread போன்றவை warning கொடுக்கலாம்; news-ஐ முன்கூட்டியே உறுதியாகக் கண்டறிய முடியாது.
+
+Sudden news-க்கு முன் எந்த signal-மும் இல்லாமல் market நகரலாம்.
+
+உங்க bot-ல் நான் பரிந்துரைப்பது: NEWS_CALENDAR + MARKET_ANOMALY_DETECTOR + VOLATILITY_CHECK + SPREAD_CHECK + POSITION_RISK_GUARD ஆகியவற்றை தனித்தனி modules-ஆக வைத்துக்கொள்ளுங்கள்.
