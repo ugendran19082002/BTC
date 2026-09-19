@@ -121,4 +121,7 @@ def publish(source: str, target: str) -> int:
 if __name__ == '__main__':
     if len(sys.argv) != 3:
         raise SystemExit(__doc__)
-    print(f'published {publish(sys.argv[1], sys.argv[2])} rows into {sys.argv[2]}')
+    import re
+    # never the password: this line lands in terminals and cron logs
+    shown = re.sub(r'://([^:@/]+):[^@/]*@', r'://\1:***@', sys.argv[2])
+    print(f'published {publish(sys.argv[1], sys.argv[2])} rows into {shown}')
