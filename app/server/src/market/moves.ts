@@ -426,6 +426,23 @@ export function seriesForAnalytics(): Partial<Record<'5m' | '15m' | '1h' | '4h' 
   return out;
 }
 
+/**
+ * BTC's close nearest `minutesAgo`, off the cached series: the 1-minute bars
+ * for the last eight hours, the 5-minute ones beyond. Null before the first
+ * read, or past what the cache holds.
+ */
+export function spotMinutesAgo(minutesAgo: number, nowMs = Date.now()): number | null {
+  if (!seriesCache) return null;
+  const target = Math.floor(nowMs / 1000) - minutesAgo * 60;
+  const pick = (tf: Timeframe) => {
+    const bars = seriesCache!.data.find(([t]) => t === tf)?.[1] ?? [];
+    let best: Candle | null = null;
+    for (const b of bars) if (b.time <= target && (!best || b.time > best.time)) best = b;
+    return best && target - best.time <= MINUTES[tf] * 60 * 2 ? best.close : null;
+  };
+  return pick(minutesAgo <= 8 * 60 ? '1m' : '5m') ?? pick('5m') ?? pick('1h');
+}
+
 export async function readMarket(sinceHours?: number): Promise<MarketRead> {
   let series: [Timeframe, Candle[]][];
   if (seriesCache) {

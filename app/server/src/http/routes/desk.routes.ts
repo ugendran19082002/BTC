@@ -14,6 +14,7 @@ import { appliedMigrations } from '../../db/migrate.js';
 import { termStructure } from '../../market/term.js';
 import { lastOptionSnapshot, optionHistory } from '../../market/option-snapshots.js';
 import { flowFeedHealth, flowSummary, ivRank, liveBook, livePerp, oiPulse, skewRank, termHistory } from '../../market/flow.js';
+import { changes } from '../../market/changes.js';
 import { one } from '../../db/pool.js';
 import { strategyStore } from './strategy.routes.js';
 import { refuse } from '../refuse.js';
@@ -118,6 +119,23 @@ export function registerDeskRoutes(app: FastifyInstance) {
     if (!/^[CP]-BTC-\d+-\d{6}$/.test(symbol)) return refuse(reply, 400, { error: 'symbol like C-BTC-78000-190926' });
     const hours = Math.min(48, Math.max(1, Number(q.hours ?? 6) || 6));
     return { symbol, points: await optionHistory(symbol, Date.now() - hours * 3_600_000) };
+  });
+
+  /**
+   * What changed over 1m … 12h for BTC, one strike and its board, from the
+   * desk's own records. The caller may pass the live figures for "now" so the
+   * newest change is against the board on screen, not the last 5-minute row.
+   */
+  app.get('/api/changes', async (req, reply) => {
+    const q = req.query as Record<string, string | undefined>;
+    const symbol = String(q.symbol ?? '');
+    if (!/^[CP]-BTC-\d+-\d{6}$/.test(symbol)) return refuse(reply, 400, { error: 'symbol like C-BTC-78000-190926' });
+    const expiry = symbol.split('-').pop()!;
+    const n = (k: string) => { const v = Number(q[k]); return Number.isFinite(v) ? v : undefined; };
+    return changes(symbol, expiry, Date.now(), {
+      spot: n('spot'), mark: n('mark'), oi: n('oi'), iv: n('iv'), volume: n('volume'),
+      ceOi: n('ceOi'), peOi: n('peOi'), callVolume: n('callVolume'), putVolume: n('putVolume'), pcr: n('pcr'), atmIv: n('atmIv'),
+    });
   });
 
   /**
