@@ -1,6 +1,7 @@
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { AuthStore } from './store.js';
+import { closePool } from '../db/pool.js';
 import { hashPassword } from '../http/session.js';
 import { passwordProblems } from './password.js';
 
@@ -65,9 +66,9 @@ async function newPassword(username: string): Promise<string> {
 
 async function main() {
   const [command, arg] = process.argv.slice(2);
-  const store = new AuthStore();
+  const store = await AuthStore.open();
   const now = Date.now();
-  const user = store.user();
+  const user = await store.user();
   try {
     switch (command) {
       case 'status': {
@@ -75,37 +76,37 @@ async function main() {
         console.log(`user: ${user.username}`);
         console.log(`password changed: ${new Date(user.passwordChangedAt).toISOString()}`);
         console.log(`two-step sign-in: ${user.totpEnabledAt ? `on since ${new Date(user.totpEnabledAt).toISOString()}` : 'not set up'}`);
-        console.log(`recovery codes left: ${store.recoveryCodesLeft()}`);
-        console.log(`signed-in sessions: ${store.liveSessions(now).length}`);
+        console.log(`recovery codes left: ${await store.recoveryCodesLeft()}`);
+        console.log(`signed-in sessions: ${(await store.liveSessions(now)).length}`);
         break;
       }
       case 'create': {
         if (user) throw new Error(`a user already exists (${user.username}); use set-password`);
         if (!arg) throw new Error('usage: create <username>');
-        store.seedUser(arg, hashPassword(await newPassword(arg)), now);
-        store.event('user_created', now, 'cli');
+        await store.seedUser(arg, hashPassword(await newPassword(arg)), now);
+        await store.event('user_created', now, 'cli');
         console.log(`created ${arg}. Two-step sign-in is set up at the first sign-in.`);
         break;
       }
       case 'set-password': {
         if (!user) throw new Error('no user yet; use create');
-        store.setPassword(hashPassword(await newPassword(user.username)), now);
-        const ended = store.revokeAll(now);
-        store.event('password_changed', now, 'cli', `${ended} sessions ended`);
+        await store.setPassword(hashPassword(await newPassword(user.username)), now);
+        const ended = await store.revokeAll(now);
+        await store.event('password_changed', now, 'cli', `${ended} sessions ended`);
         console.log(`password changed; ${ended} session(s) signed out.`);
         break;
       }
       case 'reset-2fa': {
         if (!user) throw new Error('no user yet');
-        store.resetTotp(now);
-        const ended = store.revokeAll(now);
-        store.event('2fa_reset', now, 'cli', `${ended} sessions ended`);
+        await store.resetTotp(now);
+        const ended = await store.revokeAll(now);
+        await store.event('2fa_reset', now, 'cli', `${ended} sessions ended`);
         console.log(`two-step sign-in cleared; ${ended} session(s) signed out. It is set up again at the next sign-in.`);
         break;
       }
       case 'sign-out-all': {
-        const ended = store.revokeAll(now);
-        store.event('signed_out_all', now, 'cli', `${ended} ended`);
+        const ended = await store.revokeAll(now);
+        await store.event('signed_out_all', now, 'cli', `${ended} ended`);
         console.log(`${ended} session(s) signed out.`);
         break;
       }
@@ -117,7 +118,7 @@ async function main() {
     console.error((e as Error).message);
     process.exitCode = 1;
   } finally {
-    store.close();
+    await closePool();
   }
 }
 
