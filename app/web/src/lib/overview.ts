@@ -983,3 +983,156 @@ export function mtfRows(market: MarketRead | null, outlook: Outlook): MtfRow[] {
     return { tf, trend: t ? (t.trend === 1 ? 'up' : t.trend === -1 ? 'down' : 'side') : '—', momentum, model, signal: lean === 1 ? '↑' : lean === -1 ? '↓' : '→' };
   });
 }
+
+// ------------------------------------------------------- early warning
+
+export type Trigger = {
+  name: string;
+  /** The reading, the threshold, and the formula, in words a trader reads. */
+  value: string;
+  threshold: string;
+  formula: string;
+  /** null: could not be read. */
+  fired: boolean | null;
+  weight: number;
+};
+
+export type EarlyWarning = {
+  triggers: Trigger[];
+  /** Weighted share of triggers fired, 0–1, over the triggers that could be read. */
+  score: number | null;
+  band: 'calm' | 'watch' | 'high' | 'sudden';
+  /** Which way the pressure points, from flow and OI: +1 up, −1 down, 0 unclear. */
+  lean: -1 | 0 | 1;
+  action: string;
+};
+
+/**
+ * Before a big move: the readings that tend to run ahead of one, each with its
+ * threshold and formula. Thresholds are the desk's, chosen to be loud only
+ * when several fire together -- one burst of volume is a print; a burst with
+ * one-sided aggressors, OI speeding up and the wings' premium jumping is a
+ * move starting. The 28 Aug 2025 session is the reference: the 114,000 call
+ * went 5.6 → 101.9 inside one hour, five hours after entry.
+ */
+export function earlyWarning(input: {
+  flow: { aggressorBuyPct: number | null; cvd: { at: number; cvd: number }[]; minutesCovered: number } | null;
+  book: { imbalance: number | null } | null;
+  oi: { ceChange1h: number | null; peChange1h: number | null; ceAcceleration: number | null; peAcceleration: number | null } | null;
+  funding: number | null;
+  market: MarketRead | null;
+  outlook: Outlook;
+  /** The selected strike's premium and ATM IV change over 15 minutes, points and percent. */
+  markChange15mPct: number | null;
+  atmIvChange15mPts: number | null;
+}): EarlyWarning {
+  const { flow, book, oi, funding, market, outlook } = input;
+  const burst = market?.volume.find((v) => v.tf === '5m')?.spike ?? null;
+  const move15 = market?.moves.find((m) => m.label === 'last 15m')?.changePct ?? null;
+  const em15 = outlook.rows.find((r) => r.minutes === 15);
+  const em15Pct = em15?.impliedUsd != null && em15.spot > 0 ? (em15.impliedUsd / em15.spot) * 100 : null;
+  const tail = flow ? flow.cvd.slice(-15) : [];
+  const slope = tail.length >= 2 ? (tail[tail.length - 1]!.cvd - tail[0]!.cvd) / (tail.length - 1) : null;
+  const totalPerMin = flow && flow.minutesCovered > 0 ? null : null;
+  void totalPerMin;
+  const accel = oi ? Math.max(Math.abs(oi.ceAcceleration ?? 0), Math.abs(oi.peAcceleration ?? 0)) : null;
+  const change = oi ? Math.max(Math.abs(oi.ceChange1h ?? 0), Math.abs(oi.peChange1h ?? 0)) : null;
+  const t: Trigger[] = [
+    { name: 'Volume burst', value: burst === null ? '—' : `${burst.toFixed(1)}× median`, threshold: '≥ 2.0×', formula: 'last 5m bar volume ÷ median of the 20 before it',
+      fired: burst === null ? null : burst >= 2, weight: 2 },
+    { name: 'One-sided aggressors', value: flow?.aggressorBuyPct == null ? '—' : `${(flow.aggressorBuyPct * 100).toFixed(0)}% buys`, threshold: '≥ 65% or ≤ 35%', formula: 'buy volume ÷ (buy + sell), aggressor side, last hour',
+      fired: flow?.aggressorBuyPct == null ? null : flow.aggressorBuyPct >= 0.65 || flow.aggressorBuyPct <= 0.35, weight: 2 },
+    { name: 'CVD slope', value: slope === null ? '—' : `${slope >= 0 ? '+' : ''}${slope.toFixed(0)} ct/min`, threshold: '|slope| ≥ 20 ct/min', formula: '(CVD now − CVD 15m ago) ÷ 15',
+      fired: slope === null ? null : Math.abs(slope) >= 20, weight: 1 },
+    { name: 'OI accelerating', value: accel === null ? '—' : `${accel.toFixed(0)} ct of ${change?.toFixed(0) ?? '—'}`, threshold: '≥ half the hour\'s change', formula: 'OI change over the hour − the same reading an hour earlier',
+      fired: accel === null || change === null || change === 0 ? null : accel >= 0.5 * change && change >= 200, weight: 1 },
+    { name: 'IV jumping', value: input.atmIvChange15mPts === null ? '—' : `${input.atmIvChange15mPts >= 0 ? '+' : ''}${input.atmIvChange15mPts.toFixed(1)} pts / 15m`, threshold: '≥ +2 pts', formula: 'ATM IV now − ATM IV 15m ago',
+      fired: input.atmIvChange15mPts === null ? null : input.atmIvChange15mPts >= 2, weight: 2 },
+    { name: 'Range expanding', value: move15 === null ? '—' : `${move15 >= 0 ? '+' : ''}${move15.toFixed(2)}% / 15m`, threshold: em15Pct === null ? '≥ 0.6 × EM(15m)' : `≥ ${(0.6 * em15Pct).toFixed(2)}%`, formula: '|BTC move over 15m| ≥ 0.6 × (spot × IV × √(15m / 1y))',
+      fired: move15 === null || em15Pct === null ? null : Math.abs(move15) >= 0.6 * em15Pct, weight: 2 },
+    { name: 'Book leaning', value: book?.imbalance == null ? '—' : `${(book.imbalance * 100).toFixed(0)}%`, threshold: '|imbalance| ≥ 30%', formula: '(bid depth − ask depth) ÷ (bid + ask), 20 levels',
+      fired: book?.imbalance == null ? null : Math.abs(book.imbalance) >= 0.3, weight: 1 },
+    { name: 'Wing premium jumping', value: input.markChange15mPct === null ? '—' : `${input.markChange15mPct >= 0 ? '+' : ''}${input.markChange15mPct.toFixed(0)}% / 15m`, threshold: '≥ +30%', formula: 'selected strike mark now ÷ mark 15m ago − 1',
+      fired: input.markChange15mPct === null ? null : input.markChange15mPct >= 30, weight: 2 },
+    { name: 'Funding stretched', value: funding === null ? '—' : `${funding.toFixed(4)}%`, threshold: '|rate| ≥ 0.05%', formula: 'the perp\'s funding rate, as Delta publishes it',
+      fired: funding === null ? null : Math.abs(funding) >= 0.05, weight: 1 },
+  ];
+  const readable = t.filter((x) => x.fired !== null);
+  const wsum = readable.reduce((a, x) => a + x.weight, 0);
+  const score = wsum === 0 ? null : readable.reduce((a, x) => a + (x.fired ? x.weight : 0), 0) / wsum;
+  const band: EarlyWarning['band'] = score === null ? 'calm' : score >= 0.6 ? 'sudden' : score >= 0.4 ? 'high' : score >= 0.2 ? 'watch' : 'calm';
+  const up = (flow?.aggressorBuyPct ?? 0.5) > 0.55 ? 1 : 0, down = (flow?.aggressorBuyPct ?? 0.5) < 0.45 ? 1 : 0;
+  const oiUp = oi && (oi.peChange1h ?? 0) > (oi.ceChange1h ?? 0) ? 1 : 0;
+  const lean: -1 | 0 | 1 = up + oiUp > down + (1 - oiUp) ? 1 : down + (1 - oiUp) > up + oiUp ? -1 : 0;
+  const action = band === 'sudden' ? 'Move starting: no new naked sells; hedge or close the threatened side now.'
+    : band === 'high' ? 'Pressure building: only sell beyond the wall, half size, with the wing bought.'
+      : band === 'watch' ? 'Something stirring: tighten stops, keep size to the risk mode.'
+        : 'Calm tape: the normal rules apply.';
+  return { triggers: t, score, band, lean, action };
+}
+
+// ------------------------------------------------------ movement read
+
+export type BoardRead = { name: string; says: 'up' | 'down' | 'range' | 'unclear'; text: string; formula: string };
+
+/** What the option board says about the way to expiry, reading by reading, with the formula behind each. */
+export function boardRead(data: Pick<ChainResponse, 'structure' | 'snapshot' | 'legs'>, em: ExpectedMove): BoardRead[] {
+  const s = data.structure;
+  const spot = data.snapshot.spot;
+  const ce = s.ceOiWallNear ?? s.ceOiWall, pe = s.peOiWallNear ?? s.peOiWall;
+  const mp = s.maxPain?.strike ?? null;
+  const out: BoardRead[] = [];
+  out.push({ name: 'Put / call OI', says: s.pcrOi === null ? 'unclear' : s.pcrOi >= 1.2 ? 'up' : s.pcrOi <= 0.8 ? 'down' : 'range',
+    text: s.pcrOi === null ? 'no OI' : `PCR ${s.pcrOi.toFixed(2)} — ${s.pcrOi >= 1.2 ? 'puts held, dips get bought' : s.pcrOi <= 0.8 ? 'calls held, rallies get sold' : 'balanced'}`,
+    formula: 'put OI ÷ call OI; above 1.2 leans up, under 0.8 leans down' });
+  if (ce && pe) {
+    const upRoom = ce.strike - spot, downRoom = spot - pe.strike;
+    out.push({ name: 'OI walls', says: em ? (upRoom < em.move && downRoom >= em.move ? 'down' : downRoom < em.move && upRoom >= em.move ? 'up' : 'range') : 'unclear',
+      text: `call wall ${ce.strike.toLocaleString('en-US')} (+${upRoom.toFixed(0)}) · put wall ${pe.strike.toLocaleString('en-US')} (−${downRoom.toFixed(0)})${em ? ` · EM ±${em.move.toFixed(0)}` : ''}`,
+      formula: 'the heaviest call and put strikes near spot; a wall inside one expected move tends to cap that side' });
+  }
+  if (mp !== null) {
+    out.push({ name: 'Max pain', says: Math.abs(mp - spot) < (em?.move ?? Infinity) * 0.25 ? 'range' : mp > spot ? 'up' : 'down',
+      text: `${mp.toLocaleString('en-US')} (${mp >= spot ? '+' : ''}${(mp - spot).toFixed(0)} from spot)`, formula: 'the strike where option holders lose most at settlement; price tends to drift toward it into expiry' });
+  }
+  const gw = s.gammaWall?.strike ?? null;
+  if (gw !== null) {
+    out.push({ name: 'Gamma wall', says: 'range', text: `${gw.toLocaleString('en-US')} — price is pinned near it while dealers are long gamma`, formula: 'the strike with the most gamma exposure; hedging flows dampen moves around it' });
+  }
+  const skewPts = s.ivSkewPts;
+  if (skewPts !== null) {
+    out.push({ name: 'Skew', says: skewPts > 3 ? 'down' : skewPts < -3 ? 'up' : 'range', text: `${skewPts >= 0 ? '+' : ''}${skewPts.toFixed(1)} pts — ${skewPts > 3 ? 'downside protection is bid' : skewPts < -3 ? 'upside is bid' : 'flat'}`,
+      formula: '25Δ put IV − 25Δ call IV, in volatility points' });
+  }
+  return out;
+}
+
+/** The single line: which way, how far, and how sure, to expiry -- from the horizons, the board and the price action together. */
+export function movementVerdict(rows: readonly HorizonRow[], board: readonly BoardRead[], market: MarketRead | null, hoursToExpiry: number): { way: 'up' | 'down' | 'range'; text: string; confidence: 'low' | 'medium' | 'high' } {
+  const toExpiry = rows.filter((r) => r.minutes <= hoursToExpiry * 60 + 1);
+  const use = toExpiry.length ? toExpiry : rows.slice(0, 1);
+  const up = use.filter((r) => r.pUp !== null && r.pUp > 0.55).length, down = use.filter((r) => r.pUp !== null && r.pUp < 0.45).length;
+  const votes = { up: up + board.filter((b) => b.says === 'up').length + ((market?.agreement ?? 0) > 0 ? 1 : 0), down: down + board.filter((b) => b.says === 'down').length + ((market?.agreement ?? 0) < 0 ? 1 : 0), range: board.filter((b) => b.says === 'range').length + use.filter((r) => r.pRange !== null && r.pRange > 0.5).length };
+  const way = votes.up > votes.down && votes.up > votes.range ? 'up' : votes.down > votes.up && votes.down > votes.range ? 'down' : 'range';
+  const total = votes.up + votes.down + votes.range;
+  const share = total ? votes[way] / total : 0;
+  const confidence = share >= 0.6 ? 'high' : share >= 0.45 ? 'medium' : 'low';
+  const last = use[use.length - 1];
+  const emText = last?.em != null ? `about ±${last.em.toFixed(0)} over ${last.label}` : '';
+  return { way, confidence, text: `${way === 'range' ? 'Range-bound' : way === 'up' ? 'Leaning up' : 'Leaning down'} to expiry, ${emText} (${votes.up} up · ${votes.down} down · ${votes.range} range votes)` };
+}
+
+// --------------------------------------------------------- strike finder
+
+export type FinderFilter = { side: 'C' | 'P' | 'both'; minPremium: number; maxPot: number; minEm: number; top: number };
+
+/** Candidates after the operator's filters, best score first. */
+export function findStrikes(legs: readonly Leg[], f: FinderFilter): Leg[] {
+  return legs
+    .filter((l) => (f.side === 'both' || l.cp === f.side) && l.moneyness !== 'ITM')
+    .filter((l) => (l.sellPrice ?? l.mark ?? 0) >= f.minPremium)
+    .filter((l) => l.probs.touch === null || l.probs.touch <= f.maxPot)
+    .filter((l) => (l.emDistance ?? l.emBuffer ?? 0) >= f.minEm)
+    .sort((a, b) => (b.score ?? -1) - (a.score ?? -1))
+    .slice(0, f.top);
+}

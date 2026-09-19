@@ -137,3 +137,23 @@ export type OptionHistoryPoint = {
 };
 export const getOptionHistory = (symbol: string, hours = 6) =>
   json<{ symbol: string; points: OptionHistoryPoint[] }>(`/api/option-history?symbol=${encodeURIComponent(symbol)}&hours=${hours}`);
+
+/** What changed over 1m … 12h for BTC, one strike and its board, from the desk's records. */
+export type ChangeRow = {
+  minutes: number;
+  spotThen: number | null; spotChange: number | null; spotChangePct: number | null;
+  markThen: number | null; markChange: number | null; markChangePct: number | null;
+  oiThen: number | null; oiChange: number | null;
+  ivThen: number | null; ivChangePts: number | null;
+  volumeThen: number | null; volumeChange: number | null;
+  ceOiChange: number | null; peOiChange: number | null;
+  callVolumeChange: number | null; putVolumeChange: number | null;
+  pcrThen: number | null; pcrChange: number | null;
+  atmIvThen: number | null; atmIvChangePts: number | null;
+};
+export type ChangesResponse = { now: Record<string, number | null>; rows: ChangeRow[] };
+export const getChanges = (symbol: string, now: Record<string, number | null | undefined>) => {
+  const q = new URLSearchParams({ symbol });
+  for (const [k, v] of Object.entries(now)) if (v !== null && v !== undefined && Number.isFinite(v)) q.set(k, String(v));
+  return json<ChangesResponse>(`/api/changes?${q.toString()}`);
+};
