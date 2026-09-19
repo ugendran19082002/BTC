@@ -2775,4 +2775,13 @@ tr.ov-fired td { background: rgba(239, 68, 68, .10); }
 .ov-checks-summary { display: flex; gap: 10px; font-size: 12px; margin: 0 0 8px; }
 .ov-tabs-inline { margin: 0; padding: 0; border: 0; gap: 2px; }
 .ov-tabs-inline button { padding: 2px 8px; font-size: 12px; }
-.ov-day { font-size: 12px; color: var(--muted); white-space: nowrap; } .ov-day b { color: var(--text); }
+.ov-day { font-size: 12px; color: var(--muted); min-width: 0; } .ov-day b { color: var(--text); white-space: nowrap; }
+/* The chart card is a flex item here: it may shrink to the column, and its tool row wraps rather than widening it. */
+.ov-col > .price-chart { min-width: 0; }
+.ov-col .price-chart-tools, .ov-col .price-chart-controls { flex-wrap: wrap; min-width: 0; }
+.ov-col .price-chart-ohlc { min-width: 0; flex-wrap: wrap; }
+@media (max-width: 760px) {
+  .ov-screenbar { flex-direction: column; align-items: stretch; }
+  .ov-screenbar-right { justify-content: flex-start; }
+  .ov-day { flex-basis: 100%; }
+}
