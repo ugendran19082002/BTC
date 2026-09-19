@@ -12,6 +12,8 @@ import { readMarket } from './market/moves.js';
 import { marketSchema } from './market/oi-history.js';
 import { errorLog } from './observability/errors.js';
 import { analyticsSchema } from './db/analytics-schema.js';
+import { captureOptionSnapshots, optionSnapshotsSchema } from './market/option-snapshots.js';
+import { noteError } from './observability/errors.js';
 
 /**
  * Start the desk.
@@ -34,6 +36,7 @@ const desk = await initTradingService();
 await marketSchema();
 await errorLog().ready;
 await analyticsSchema();
+await optionSnapshotsSchema();
 const strategies = await initStrategyStore();
 
 // One sign-in service for the process: the gate and the routes share the pool.
@@ -105,4 +108,18 @@ liveTickers()
     void readMarket().catch(() => {});
   })
   .catch((e) => app.log.warn(`ticker warm-up failed (first request will retry): ${(e as Error).message}`));
+
+/*
+ * The per-strike recorder: every strike of the two nearest expiries, every
+ * five minutes (docs/Data.md §4). Checked once a minute; the bucket guard in
+ * the table makes it write once per five. Off the request path, and a failure
+ * is one warning in the error log, never a stopped desk.
+ */
+const recordOptions = () => {
+  liveTickers()
+    .then((t) => captureOptionSnapshots(t, Date.now()))
+    .catch((e: Error) => noteError({ source: 'server', level: 'warn', where: 'option-snapshots', message: `option snapshot not written: ${e.message}` }));
+};
+setInterval(recordOptions, 60_000).unref();
+setTimeout(recordOptions, 15_000).unref();
 

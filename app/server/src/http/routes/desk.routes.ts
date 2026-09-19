@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { liveChain, historicalChain, liveExpiries, hoursSinceDeskOpen, simulationBacklog, WHOLE_BOARD, type Snapshot } from '../../market/chain.js';
 import { readMarket, seriesForAnalytics } from '../../market/moves.js';
 import { measuredOutlook } from '../../analytics/client.js';
-import { liveSpot, candles, tickerFeedHealth } from '../../market/delta.js';
+import { liveSpot, liveTickers, candles, tickerFeedHealth } from '../../market/delta.js';
 import { scoreLegs, pickSells, bias, verdict, maxLots, MARGIN_PER_LOT_USD, USDINR } from '../../domain/score.js';
 import { recommend, type PickMode } from '../../domain/recommend.js';
 import { DEFAULT_WALL_WITHIN_EM, optionStructure } from '../../domain/structure.js';
@@ -11,6 +11,8 @@ import { loadCalibration, reloadCalibration } from '../../domain/calibration.js'
 import { loadDays, reloadDays, DEFAULTS } from '../../backtest/backtest.js';
 import { tradingService, SHORT_CAP_KEY } from '../../trading/service.js';
 import { appliedMigrations } from '../../db/migrate.js';
+import { termStructure } from '../../market/term.js';
+import { lastOptionSnapshot, optionHistory } from '../../market/option-snapshots.js';
 import { one } from '../../db/pool.js';
 import { strategyStore } from './strategy.routes.js';
 import { refuse } from '../refuse.js';
@@ -63,9 +65,11 @@ export function registerDeskRoutes(app: FastifyInstance) {
     const db = await one('SELECT 1 AS ok')
       .then(() => ({ ok: true, latencyMs: Date.now() - t0 }))
       .catch((e: Error) => ({ ok: false, latencyMs: Date.now() - t0, error: e.message }));
+    const optionSnapshots = db.ok ? await lastOptionSnapshot().catch(() => null) : null;
     return {
       ok: true,
       db,
+      optionSnapshots,
       days: days.length,
       first: days[0]?.date ?? null,
       last: days[days.length - 1]?.date ?? null,
@@ -99,6 +103,29 @@ export function registerDeskRoutes(app: FastifyInstance) {
     // nobody has loaded the chain recently.
     tradingService().noteSpot(spot);
     return { spot, at: Date.now() };
+  });
+
+  /**
+   * One contract's recorded five-minute history: premium, quotes, IV, delta,
+   * OI and volume. At most two days back -- enough for momentum, and a
+   * request that cannot page through a year of rows.
+   */
+  app.get('/api/option-history', async (req, reply) => {
+    const q = req.query as { symbol?: string; hours?: string };
+    const symbol = String(q.symbol ?? '');
+    if (!/^[CP]-BTC-\d+-\d{6}$/.test(symbol)) return refuse(reply, 400, { error: 'symbol like C-BTC-78000-190926' });
+    const hours = Math.min(48, Math.max(1, Number(q.hours ?? 6) || 6));
+    return { symbol, points: await optionHistory(symbol, Date.now() - hours * 3_600_000) };
+  });
+
+  /** ATM IV across every listed expiry, from the live board. Present only: there is no IV history. */
+  app.get('/api/term', async (_req, reply) => {
+    try {
+      return { at: Date.now(), points: termStructure(await liveTickers(), Math.floor(Date.now() / 1000)) };
+    } catch (e) {
+      reply.code(502);
+      return { error: (e as Error).message };
+    }
   });
 
   app.get('/api/expiries', async (_req, reply) => {
