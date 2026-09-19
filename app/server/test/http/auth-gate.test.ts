@@ -14,7 +14,6 @@ import { join } from 'node:path';
  */
 
 const dir = mkdtempSync(join(tmpdir(), 'gate-'));
-process.env.TRADE_DB = join(dir, 'trades.db');
 process.env.CHAIN_DB = join(dir, 'chain.db');
 process.env.DELTA_LIVE_TRADING = '0';
 const { hashPassword, COOKIE } = await import('../../src/http/session.js');
@@ -23,6 +22,9 @@ const { AuthService } = await import('../../src/auth/service.js');
 const { AuthStore } = await import('../../src/auth/store.js');
 const { Secrets } = await import('../../src/auth/secrets.js');
 const { closePool } = await import('../../src/db/pool.js');
+// The desk is built before the app, as index.ts does: the routes ask for it as they register.
+const { initTradingService } = await import('../../src/trading/service.js');
+await initTradingService();
 
 type App = Awaited<ReturnType<typeof buildApp>>;
 let app: App;

@@ -1,10 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { daysCsv, daysReport, mtmStats, type MtmSample } from '../../src/trading/pnl-history.js';
-import { SqliteTradeStore } from '../../src/trading/store.js';
+import { PgTradeStore } from '../../src/trading/store.js';
+import { SettingsCache } from '../../src/db/settings.js';
+import { closePool } from '../../src/db/pool.js';
 import { initialTrade } from '../../src/trading/machine.js';
 import type { TradeRecord } from '../../src/trading/engine.js';
 import type { Fill } from '../../src/trading/types.js';
@@ -125,14 +124,19 @@ test('no samples is no statistics, not zeros', () => {
   assert.deepEqual(mtmStats([]), { nowUsd: null, min: null, max: null, maxDrawdown: null });
 });
 
-test('[critical] the store keeps the line, per day, oldest first, and prunes old days', () => {
-  const store = new SqliteTradeStore(join(mkdtempSync(join(tmpdir(), 'mtm-')), 'trades.db'));
-  store.sampleMtm(s(1, 3));
-  store.sampleMtm(s(0, -2));
-  store.sampleMtm(s(1, 999));   // the same millisecond again: ignored, never overwritten
-  store.sampleMtm({ ...s(0, 1), at: T(1, 6), day: '2026-09-01' });
-  assert.deepEqual(store.mtmSamples('2026-09-14').map((x) => x.netUsd), [-2, 3]);
-  assert.deepEqual(store.mtmDays(), ['2026-09-14', '2026-09-01']);
-  assert.equal(store.pruneMtm(T(14, 6) + 10 * 86_400_000, 12), 1, 'the 1 Sep reading is past twelve days');
-  assert.deepEqual(store.mtmDays(), ['2026-09-14']);
+test('[critical] the store keeps the line, per day, oldest first, and prunes old days', async () => {
+  await new SettingsCache().load();
+  const store = await PgTradeStore.open();
+  try {
+    await store.sampleMtm(s(1, 3));
+    await store.sampleMtm(s(0, -2));
+    await store.sampleMtm(s(1, 999));   // the same millisecond again: ignored, never overwritten
+    await store.sampleMtm({ ...s(0, 1), at: T(1, 6), day: '2026-09-01' });
+    assert.deepEqual((await store.mtmSamples('2026-09-14')).map((x) => x.netUsd), [-2, 3]);
+    assert.deepEqual(await store.mtmDays(), ['2026-09-14', '2026-09-01']);
+    assert.equal(await store.pruneMtm(T(14, 6) + 10 * 86_400_000, 12), 1, 'the 1 Sep reading is past twelve days');
+    assert.deepEqual(await store.mtmDays(), ['2026-09-14']);
+  } finally {
+    await closePool();
+  }
 });

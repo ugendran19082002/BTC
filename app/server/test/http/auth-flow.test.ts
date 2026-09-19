@@ -15,7 +15,6 @@ import { join } from 'node:path';
  */
 
 const dir = mkdtempSync(join(tmpdir(), 'auth-flow-'));
-process.env.TRADE_DB = join(dir, 'trades.db');
 process.env.CHAIN_DB = join(dir, 'chain.db');
 process.env.DELTA_LIVE_TRADING = '0';
 
@@ -26,6 +25,9 @@ const { Secrets } = await import('../../src/auth/secrets.js');
 const { hashPassword, COOKIE } = await import('../../src/http/session.js');
 const { totp, base32Decode } = await import('../../src/auth/totp.js');
 const { closePool, query, rows } = await import('../../src/db/pool.js');
+// The desk is built before the app, as index.ts does: the routes ask for it as they register.
+const { initTradingService } = await import('../../src/trading/service.js');
+await initTradingService();
 
 const PASSWORD = 'a long private passphrase';
 const T0 = Date.UTC(2026, 8, 11, 6, 0, 0);
