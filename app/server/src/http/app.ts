@@ -3,7 +3,6 @@ import { config } from '../config.js';
 import { COOKIE, readCookie } from './session.js';
 import { registerSessionRoutes, type AuthLevel } from './routes/session.routes.js';
 import { authFromEnv, type AuthService } from '../auth/service.js';
-import { AuthStore } from '../auth/store.js';
 import { tradingService } from '../trading/service.js';
 import { registerDeskRoutes } from './routes/desk.routes.js';
 import { registerBacktestRoutes } from './routes/backtest.routes.js';
@@ -70,8 +69,7 @@ export async function buildApp(o: { auth?: AuthService; now?: () => number } = {
    */
 
   const now = o.now ?? Date.now;
-  const auth = o.auth ?? authFromEnv({
-    store: new AuthStore(),
+  const auth = o.auth ?? await authFromEnv({
     now,
     // security events reach the phone the way fills do
     onAlert: (text) => tradingService().notifier?.notify({ key: `security:${now()}`, text }),
@@ -103,10 +101,10 @@ export async function buildApp(o: { auth?: AuthService; now?: () => number } = {
       ? 'public'
       : ((req.routeOptions.config as { auth?: AuthLevel } | undefined)?.auth ?? 'full');
     if (level === 'public') return;
-    if (!auth.configured) {
+    if (!(await auth.configured())) {
       return reply.send(refuse(reply, 503, { error: 'Sign-in is not set up on this server.' }));
     }
-    const s = auth.session(readCookie(req.headers.cookie, COOKIE));
+    const s = await auth.session(readCookie(req.headers.cookie, COOKIE));
     if (s && s.stage === level) return;
     reply.code(401);
     return reply.send({ error: 'not signed in', stage: s?.stage ?? 'none' });

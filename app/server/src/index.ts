@@ -19,7 +19,7 @@ import { readMarket } from './market/moves.js';
  */
 
 // One sign-in service for the process: the gate and the routes share its database handle.
-const auth = authFromEnv({
+const auth = await authFromEnv({
   onAlert: (text) => tradingService().notifier?.notify({ key: `security:${Date.now()}`, text }),
 });
 const app = await buildApp({ auth });
@@ -63,8 +63,8 @@ app.log.info(
         : 'paper trading -- no credentials, so live is not available',
 );
 app.log.info(
-  auth.configured
-    ? `sign-in required: password and authenticator code, user "${auth.username}", sessions last a week`
+  await auth.configured()
+    ? `sign-in required: password and authenticator code, user "${await auth.username()}", sessions last a week`
     : 'sign-in NOT set up -- the API refuses everything but /api/health and /api/me until DESK_USER, '
       + 'DESK_PASSWORD_HASH and DESK_SESSION_SECRET are set (or `npm run auth -- create` has run)',
 );
