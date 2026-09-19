@@ -6,9 +6,9 @@ import type { Candle } from '@/types/desk';
 import { strike as fmtStrike } from '@/lib/format';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
-export type ChartTf = '1m' | '5m' | '15m' | '1h' | '4h' | '1d';
+export type ChartTf = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d';
 
-export const CHART_TFS: readonly ChartTf[] = ['1m', '5m', '15m', '1h', '4h', '1d'];
+export const CHART_TFS: readonly ChartTf[] = ['1m', '5m', '15m', '30m', '1h', '4h', '1d'];
 
 /**
  * The canvas is drawn at the size it is shown.
@@ -170,6 +170,7 @@ export function PriceChart({
   resistance,
   spot,
   expectedMove = null,
+  levels = [],
   tf,
   onTf,
   loading = false,
@@ -183,6 +184,8 @@ export function PriceChart({
   spot: number;
   /** ± this much by settlement, shaded behind the candles. */
   expectedMove?: number | null;
+  /** Other levels worth a thin line: previous day's high and low, the session's, max pain. Drawn only when on the scale. */
+  levels?: readonly { price: number; label: string; colour?: string }[];
   tf: ChartTf;
   onTf: (tf: ChartTf) => void;
   loading?: boolean;
@@ -748,6 +751,15 @@ export function PriceChart({
             );
           })}
 
+          {geom && levels.filter((l) => l.price >= geom.lo && l.price <= geom.hi).map((l) => {
+            const y = levelY(l.price)!;
+            return (
+              <g key={l.label} opacity="0.75">
+                <line x1={PAD.left} x2={W - PAD.right} y1={y} y2={y} stroke={l.colour ?? 'var(--muted)'} strokeWidth="1" strokeDasharray="2 3" />
+                <text x={W - PAD.right - 4} y={y - 3} textAnchor="end" fontSize="9.5" fill={l.colour ?? 'var(--muted)'}>{l.label} {fmtStrike(Math.round(l.price))}</text>
+              </g>
+            );
+          })}
           {support !== null && level(support, 'var(--up)', fmtStrike(support), true)}
           {resistance !== null && level(resistance, 'var(--down)', fmtStrike(resistance), true)}
           {level(spot, 'var(--accent)', fmtStrike(Math.round(spot)))}
