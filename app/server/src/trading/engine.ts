@@ -159,19 +159,27 @@ export type TradePlan = {
 
 export type TradeRecord = { state: TradeState; plan: TradePlan; events: TradeEvent[] };
 
+/**
+ * The journal, as the engine sees it.
+ *
+ * Every call is awaited, `save` above all: the engine sends protection only
+ * once the fill that needs it is on disk, and a fire-and-forget write would
+ * let the two cross. The database is PostgreSQL in the desk and a Map in the
+ * matrix; the engine cannot tell, which is the point.
+ */
 export interface TradeStore {
-  save(rec: TradeRecord): void;
-  get(tradeId: string): TradeRecord | null;
-  all(): TradeRecord[];
-  open(): TradeRecord[];
+  save(rec: TradeRecord): Promise<void>;
+  get(tradeId: string): Promise<TradeRecord | null>;
+  all(): Promise<TradeRecord[]>;
+  open(): Promise<TradeRecord[]>;
 }
 
 export class MemoryTradeStore implements TradeStore {
   private rows = new Map<string, TradeRecord>();
-  save(rec: TradeRecord) { this.rows.set(rec.state.tradeId, rec); }
-  get(id: string) { return this.rows.get(id) ?? null; }
-  all() { return [...this.rows.values()]; }
-  open() { return this.all().filter((r) => !isDone(r.state)); }
+  async save(rec: TradeRecord) { this.rows.set(rec.state.tradeId, rec); }
+  async get(id: string) { return this.rows.get(id) ?? null; }
+  async all() { return [...this.rows.values()]; }
+  async open() { return (await this.all()).filter((r) => !isDone(r.state)); }
 }
 
 export type EngineDeps = {
@@ -184,7 +192,7 @@ export type EngineDeps = {
   /** False while the price feed is down or resyncing. */
   feedHealthy?: () => boolean;
   /** Today's realised P&L, in USD. */
-  dayPnlUsd?: () => number;
+  dayPnlUsd?: () => number | Promise<number>;
   /** BTC spot, for the margin and liquidation model. */
   spot?: () => number | null;
   onAlarm?: (trade: TradeState, message: string) => void;
@@ -353,9 +361,9 @@ export class TradeEngine {
   private get exchange() { return this.d.exchange; }
   private now() { return this.d.now(); }
   private feedHealthy() { return this.d.feedHealthy ? this.d.feedHealthy() : true; }
-  private dayPnl() { return this.d.dayPnlUsd ? this.d.dayPnlUsd() : 0; }
+  private async dayPnl() { return this.d.dayPnlUsd ? await this.d.dayPnlUsd() : 0; }
 
-  private commit(rec: TradeRecord, ...events: TradeEvent[]): TradeRecord {
+  private async commit(rec: TradeRecord, ...events: TradeEvent[]): Promise<TradeRecord> {
     let state = rec.state;
     const steps: [TradeEvent, TradeState, TradeState][] = [];
     for (const e of events) {
@@ -366,7 +374,7 @@ export class TradeEngine {
     }
     const before = rec.state.alarm;
     rec.state = state;
-    this.d.store.save(rec);
+    await this.d.store.save(rec);
     if (state.alarm && state.alarm !== before) this.d.onAlarm?.(state, state.alarm);
     // Only after the save. The journal is the record; nothing that merely
     // reports on it may stand between an event and the disk, and a listener
@@ -429,7 +437,7 @@ export class TradeEngine {
       account: { availableUsd: balance },
       existingPosition: add ? 0 : held,
       totalShortContracts: totalShort,
-      dayPnlUsd: this.dayPnl(),
+      dayPnlUsd: await this.dayPnl(),
       worstCaseLossUsd: worstCase,
       limits: add ? { ...this.limits, minPremiumUsd: add.minPremiumUsd } : this.limits,
     });
@@ -466,14 +474,14 @@ export class TradeEngine {
     };
 
     // A trade id is used once. Re-running the same signal is not a second trade.
-    const prior = this.d.store.get(plan.tradeId);
+    const prior = await this.d.store.get(plan.tradeId);
     if (prior) return { ok: true, state: prior.state };
-    this.d.store.save(rec);
+    await this.d.store.save(rec);
 
     const gate = await this.runPrecheck(plan, product);
     if (!gate.ok) {
       const why = gate.failures.map((x) => x.message).join(' ');
-      rec = this.commit(rec, { t: 'precheck_failed', reason: why, at: this.now() });
+      rec = await this.commit(rec, { t: 'precheck_failed', reason: why, at: this.now() });
       return { ok: false, state: rec.state, precheck: gate };
     }
 
@@ -484,7 +492,7 @@ export class TradeEngine {
       try {
         await this.exchange.setLeverage(product.productId, clampLeverage(plan.leverage));
       } catch (e) {
-        rec = this.commit(rec, {
+        rec = await this.commit(rec, {
           t: 'precheck_failed',
           reason: `could not set ${clampLeverage(plan.leverage)}x leverage: ${(e as Error).message}`,
           at: this.now(),
@@ -512,25 +520,25 @@ export class TradeEngine {
 
     try {
       const ack = await this.exchange.placeOrder(req);
-      rec = this.commit(rec, { t: 'entry_submitted', clientOrderId: req.clientOrderId, size, at: this.now() });
+      rec = await this.commit(rec, { t: 'entry_submitted', clientOrderId: req.clientOrderId, size, at: this.now() });
       // No deadline at all when the order is meant to rest.
       if (plan.entry.timeoutMs > 0) {
         this.entryDeadline.set(plan.tradeId, this.now() + plan.entry.timeoutMs);
       }
-      rec = this.absorb(rec, ack, 'entry');
+      rec = await this.absorb(rec, ack, 'entry');
       return { ok: true, state: rec.state };
     } catch (e) {
       if (e instanceof SubmitTimeout) {
         // We do not know whether it landed. Do not send another one.
-        rec = this.commit(rec, { t: 'entry_submit_unknown', at: this.now() });
+        rec = await this.commit(rec, { t: 'entry_submit_unknown', at: this.now() });
         return { ok: true, state: rec.state };
       }
       if (e instanceof OrderRejected) {
-        rec = this.commit(rec, { t: 'entry_rejected', reason: e.reason, at: this.now() });
+        rec = await this.commit(rec, { t: 'entry_rejected', reason: e.reason, at: this.now() });
         return { ok: false, state: rec.state, precheck: { ok: false, failures: [{ code: 'NOT_TRADABLE', message: e.reason }] } };
       }
       if (e instanceof ExchangeUnavailable) {
-        rec = this.commit(rec, { t: 'entry_submit_unknown', at: this.now() });
+        rec = await this.commit(rec, { t: 'entry_submit_unknown', at: this.now() });
         return { ok: true, state: rec.state };
       }
       throw e;
@@ -538,7 +546,7 @@ export class TradeEngine {
   }
 
   /** Turn an exchange order snapshot into whatever fills we have not seen yet. */
-  private absorb(rec: TradeRecord, order: ExchangeOrder, role: OrderRole): TradeRecord {
+  private async absorb(rec: TradeRecord, order: ExchangeOrder, role: OrderRole): Promise<TradeRecord> {
     const seen = rec.state.fills
       .filter((f) => f.orderId === order.orderId)
       .reduce((n, f) => n + f.size, 0);
@@ -550,13 +558,13 @@ export class TradeEngine {
       const price = seen > 0
         ? (order.averageFillPrice * order.filledSize - avgSeenNotional(rec.state, order.orderId)) / fresh
         : order.averageFillPrice;
-      rec = this.commit(rec, {
+      rec = await this.commit(rec, {
         t: 'fill', role, side: order.side, size: fresh, price,
         orderId: order.orderId, at: this.now(),
       });
     }
     if (order.status === 'rejected') {
-      rec = this.commit(rec, { t: 'entry_rejected', reason: order.reason ?? 'rejected', at: this.now() });
+      rec = await this.commit(rec, { t: 'entry_rejected', reason: order.reason ?? 'rejected', at: this.now() });
     }
     return rec;
   }
@@ -587,7 +595,7 @@ export class TradeEngine {
    */
   cancelAdd(tradeId: string, reason = 'stopped by hand'): Promise<TradeState | null> {
     return this.withTrade(tradeId, async () => {
-      const rec = this.d.store.get(tradeId);
+      const rec = await this.d.store.get(tradeId);
       if (!rec) return null;
       if (!rec.state.adding) return rec.state;
       return (await this.endAdd(rec, reason)).state;
@@ -622,7 +630,7 @@ export class TradeEngine {
    * the statement will.
    */
   async previewClose(tradeId: string, size?: number): Promise<ClosePreview | null> {
-    const rec = this.d.store.get(tradeId);
+    const rec = await this.d.store.get(tradeId);
     if (!rec) return null;
     const quote = await this.exchange.getQuote(rec.plan.symbol).catch(() => null);
     return closePreview({
@@ -648,7 +656,7 @@ export class TradeEngine {
    * that reads fine in lots is the one that ties up the account.
    */
   async previewAdd(tradeId: string, req: Pick<AddRequest, 'size' | 'limitPrice' | 'floorPrice'>): Promise<AddPreview> {
-    const rec = this.d.store.get(tradeId);
+    const rec = await this.d.store.get(tradeId);
     if (!rec) return { ok: false, reason: 'no such trade', failures: [] };
     const s = rec.state;
     const why = addEligibility(s, req.size);
@@ -694,7 +702,7 @@ export class TradeEngine {
   }
 
   private async pollInner(tradeId: string): Promise<TradeState | null> {
-    const rec0 = this.d.store.get(tradeId);
+    const rec0 = await this.d.store.get(tradeId);
     if (!rec0 || isDone(rec0.state)) return rec0?.state ?? null;
     let rec = rec0;
 
@@ -715,7 +723,7 @@ export class TradeEngine {
     );
     for (const [i, [role]] of legs.entries()) {
       const o = found[i];
-      if (o) rec = this.absorb(rec, o, role);
+      if (o) rec = await this.absorb(rec, o, role);
       /*
        * A protective leg the exchange says is no longer resting.
        *
@@ -735,7 +743,7 @@ export class TradeEngine {
        */
       if (o && (role === 'take_profit' || role === 'stop_loss')
           && o.status !== 'open' && o.status !== 'partial' && o.filledSize === 0) {
-        rec = this.commit(rec, { t: 'sibling_cancelled', role, at: this.now() });
+        rec = await this.commit(rec, { t: 'sibling_cancelled', role, at: this.now() });
       }
     }
     const entry = found[0];
@@ -775,9 +783,9 @@ export class TradeEngine {
             // order doing what it was sent to do, not a fault: read it again
             // now, so the fill is on the record this poll rather than next.
             const gone = await this.exchange.getOrderByClientId(entryId).catch(() => null);
-            if (gone) rec = this.absorb(rec, gone, 'entry');
+            if (gone) rec = await this.absorb(rec, gone, 'entry');
           } else if (moved) {
-            rec = this.absorb(rec, moved, 'entry');
+            rec = await this.absorb(rec, moved, 'entry');
           }
         }
       }
@@ -786,12 +794,12 @@ export class TradeEngine {
     // Entry timed out and is still resting: cancel what is left.
     const deadline = this.entryDeadline.get(tradeId);
     if (entry && (entry.status === 'open' || entry.status === 'partial') && deadline !== undefined && this.now() >= deadline) {
-      rec = this.commit(rec, { t: 'entry_timeout', at: this.now() });
+      rec = await this.commit(rec, { t: 'entry_timeout', at: this.now() });
       await this.exchange.cancelOrder(entry).catch((e) => this.note('cancel entry', entry, e));
       this.entryDeadline.delete(tradeId);
       const after = await this.exchange.getOrderByClientId(entryId).catch(() => null);
-      if (after) rec = this.absorb(rec, after, 'entry');
-      rec = this.commit(rec, { t: 'entry_cancelled', remaining: entry.size - (after?.filledSize ?? entry.filledSize), at: this.now() });
+      if (after) rec = await this.absorb(rec, after, 'entry');
+      rec = await this.commit(rec, { t: 'entry_cancelled', remaining: entry.size - (after?.filledSize ?? entry.filledSize), at: this.now() });
 
       if (rec.state.position === 0 && rec.plan.entry.marketFallback) {
         return (await this.marketFallback(tradeId)).state;
@@ -814,7 +822,7 @@ export class TradeEngine {
 
     if (rec.state.position === 0 && rec.state.entrySize > 0 && rec.state.phase !== 'flat') {
       rec = await this.cancelSiblings(rec, true);
-      rec = this.commit(rec, { t: 'reconciled', position: 0, at: this.now(), note: 'closed' });
+      rec = await this.commit(rec, { t: 'reconciled', position: 0, at: this.now(), note: 'closed' });
     }
 
     return rec.state;
@@ -822,11 +830,11 @@ export class TradeEngine {
 
   /** Cross the spread, but only after the gates say the market is still sane. */
   private async marketFallback(tradeId: string): Promise<TradeRecord> {
-    let rec = this.d.store.get(tradeId)!;
+    let rec = (await this.d.store.get(tradeId))!;
     const product = await this.exchange.getProduct(rec.plan.symbol).catch(() => null);
     const gate = await this.runPrecheck(rec.plan, product);
     if (!gate.ok) {
-      return this.commit(rec, {
+      return await this.commit(rec, {
         t: 'aborted',
         reason: `market fallback refused: ${gate.failures.map((x) => x.message).join(' ')}`,
         at: this.now(),
@@ -840,13 +848,13 @@ export class TradeEngine {
         productId: product?.productId ?? 0,
         side: 'sell', type: 'market', size, role: 'entry',
       });
-      rec = this.absorb(rec, ack, 'entry');
+      rec = await this.absorb(rec, ack, 'entry');
       if (rec.state.position !== 0) rec = await this.protect(rec);
     } catch (e) {
       if (e instanceof SubmitTimeout || e instanceof ExchangeUnavailable) {
-        rec = this.commit(rec, { t: 'entry_submit_unknown', at: this.now() });
+        rec = await this.commit(rec, { t: 'entry_submit_unknown', at: this.now() });
       } else if (e instanceof OrderRejected) {
-        rec = this.commit(rec, { t: 'entry_rejected', reason: e.message, at: this.now() });
+        rec = await this.commit(rec, { t: 'entry_rejected', reason: e.message, at: this.now() });
       } else throw e;
     }
     return rec;
@@ -1066,7 +1074,7 @@ export class TradeEngine {
     if (tp !== rec.state.protection.takeProfit
         || sl !== rec.state.protection.stopLoss
         || rec.state.protection.size !== size) {
-      rec = this.commit(rec, {
+      rec = await this.commit(rec, {
         t: 'protection_placed', takeProfit: tp, stopLoss: sl, size, at: this.now(),
       });
     }
@@ -1081,7 +1089,7 @@ export class TradeEngine {
       rec.state.tradeId,
       this.now() + Math.min(PROTECT_RETRY_MAX_MS, PROTECT_RETRY_MS * 2 ** tries),
     );
-    return this.commit(rec, { t: 'protection_failed', reason: failure, at: this.now() });
+    return await this.commit(rec, { t: 'protection_failed', reason: failure, at: this.now() });
   }
 
   /**
@@ -1105,7 +1113,7 @@ export class TradeEngine {
     const book = await this.exchange.getOpenOrders(rec.plan.symbol).catch(() => []);
     for (const o of book.filter((x) => x.reduceOnly)) await this.cancelAndVerify(o);
     if (rec.state.protection.takeProfit || rec.state.protection.stopLoss) {
-      rec = this.commit(rec, {
+      rec = await this.commit(rec, {
         t: 'protection_placed', takeProfit: null, stopLoss: null, size: 0, at: this.now(),
       });
     }
@@ -1134,7 +1142,7 @@ export class TradeEngine {
       if (o && (o.status === 'open' || o.status === 'partial')) {
         await this.exchange.cancelOrder(o).catch((e) => this.note('cancel sibling', o, e));
       }
-      rec = this.commit(rec, { t: 'sibling_cancelled', role, at: this.now() });
+      rec = await this.commit(rec, { t: 'sibling_cancelled', role, at: this.now() });
     }
     return rec;
   }
@@ -1146,7 +1154,7 @@ export class TradeEngine {
    * contracts, the way out is `closeNow`, which buys them back.
    */
   private async cancelEntryInner(tradeId: string): Promise<TradeState | null> {
-    let rec = this.d.store.get(tradeId);
+    let rec = await this.d.store.get(tradeId);
     if (!rec) return null;
     if (rec.state.position !== 0) return rec.state;
 
@@ -1154,10 +1162,10 @@ export class TradeEngine {
     if (order && (order.status === 'open' || order.status === 'partial')) {
       await this.exchange.cancelOrder(order).catch((e) => this.note('cancel entry', order, e));
       const after = await this.exchange.getOrderByClientId(clientId(tradeId, 'entry')).catch(() => null);
-      if (after) rec = this.absorb(rec, after, 'entry');
+      if (after) rec = await this.absorb(rec, after, 'entry');
     }
     this.entryDeadline.delete(tradeId);
-    rec = this.commit(rec, {
+    rec = await this.commit(rec, {
       t: 'entry_cancelled',
       remaining: order ? order.size - order.filledSize : rec.state.requestedSize,
       at: this.now(),
@@ -1182,7 +1190,7 @@ export class TradeEngine {
     tradeId: string,
     next: { takeProfitPrice?: number | null; stopPrice?: number | null },
   ): Promise<TradeState | null> {
-    let rec = this.d.store.get(tradeId);
+    let rec = await this.d.store.get(tradeId);
     if (!rec) return null;
     if (rec.state.position === 0) return rec.state;
 
@@ -1199,7 +1207,7 @@ export class TradeEngine {
     // asking it to run is the whole operation: it cancels what no longer
     // belongs, verifies that the cancel took, and places what is missing.
     rec = await this.protect(rec);
-    this.d.store.save(rec);
+    await this.d.store.save(rec);
     return rec.state;
   }
 
@@ -1238,7 +1246,7 @@ export class TradeEngine {
     // Closing at the market gives up the spread, and for a stop that is the
     // trade being made: an exit that happens beats a better price that might not.
     await this.closeNowInner(rec.state.tradeId, `stop reached at ${mark}`);
-    return this.d.store.get(rec.state.tradeId) ?? rec;
+    return await this.d.store.get(rec.state.tradeId) ?? rec;
   }
 
   // ------------------------------------------------------------ exits
@@ -1254,7 +1262,7 @@ export class TradeEngine {
    * every add.
    */
   private async closeNowInner(tradeId: string, reason = 'manual exit', want?: number): Promise<TradeState | null> {
-    let rec = this.d.store.get(tradeId);
+    let rec = await this.d.store.get(tradeId);
     if (!rec) return null;
     // Size from the exchange, not from memory: someone may have closed part of
     // it by hand while we were not looking.
@@ -1272,11 +1280,11 @@ export class TradeEngine {
     // means "all of it" by any reading.
     const size = want === undefined ? held : Math.min(Math.trunc(want), held);
     if (size < 1) {
-      return this.commit(rec, {
+      return (await this.commit(rec, {
         t: 'protection_failed',
         reason: `${reason} refused: ${closeEligibility(rec.state, Math.trunc(want ?? 0), held) ?? 'nothing to close'}`,
         at: this.now(),
-      }).state;
+      })).state;
     }
     const all = size >= held;
 
@@ -1284,7 +1292,7 @@ export class TradeEngine {
     const n = rec.events.filter((e) => e.t === 'exit_submitted').length + 1;
     const cid = clientId(tradeId, 'exit', n);
     const product = await this.exchange.getProduct(rec.plan.symbol).catch(() => null);
-    rec = this.commit(rec, {
+    rec = await this.commit(rec, {
       t: 'exit_submitted',
       role: 'manual',
       clientOrderId: cid,
@@ -1296,9 +1304,9 @@ export class TradeEngine {
         clientOrderId: cid, symbol: rec.plan.symbol, productId: product?.productId ?? 0,
         side: 'buy', type: 'market', size, reduceOnly: true, role: 'exit',
       });
-      rec = this.absorb(rec, ack, 'exit');
+      rec = await this.absorb(rec, ack, 'exit');
     } catch (e) {
-      rec = this.commit(rec, { t: 'protection_failed', reason: `${reason} failed: ${(e as Error).message}`, at: this.now() });
+      rec = await this.commit(rec, { t: 'protection_failed', reason: `${reason} failed: ${(e as Error).message}`, at: this.now() });
     }
     return rec.state;
   }
@@ -1320,7 +1328,7 @@ export class TradeEngine {
    * floor gives way to the add's own minimum, which the strategy set.
    */
   private async addInner(tradeId: string, req: AddRequest): Promise<AddResult> {
-    let rec = this.d.store.get(tradeId);
+    let rec = await this.d.store.get(tradeId);
     if (!rec) return { ok: false, reason: 'no such trade' };
     const s = rec.state;
     const why = addEligibility(s, req.size);
@@ -1342,7 +1350,7 @@ export class TradeEngine {
     );
     if (!gate.ok) {
       const why = gate.failures.map((x) => x.message).join(' ');
-      this.commit(rec, { t: 'add_done', filled: 0, reason: `refused: ${why}`, at: this.now() });
+      await this.commit(rec, { t: 'add_done', filled: 0, reason: `refused: ${why}`, at: this.now() });
       return { ok: false, reason: why, precheck: gate };
     }
 
@@ -1370,20 +1378,20 @@ export class TradeEngine {
       });
       // The id the venue gave it goes into the record with the add itself, so
       // a lookup by our id that comes back empty is not the last word.
-      rec = this.commit(rec, { t: 'add_submitted', add: { ...add, orderId: ack.orderId }, at: this.now() });
-      rec = this.absorbAdd(rec, ack);
+      rec = await this.commit(rec, { t: 'add_submitted', add: { ...add, orderId: ack.orderId }, at: this.now() });
+      rec = await this.absorbAdd(rec, ack);
       if (ack.status === 'filled' || ack.status === 'cancelled' || ack.status === 'rejected') {
-        rec = this.commit(rec, { t: 'add_done', filled: this.addFilled(rec, add), reason: ack.status, at: this.now() });
+        rec = await this.commit(rec, { t: 'add_done', filled: this.addFilled(rec, add), reason: ack.status, at: this.now() });
       }
     } catch (e) {
       if (e instanceof SubmitTimeout || e instanceof ExchangeUnavailable) {
         // Not known whether it landed. It is looked for on every poll and never
         // sent again; the window ends the wait.
-        rec = this.commit(rec, { t: 'add_submitted', add: { ...add, unknown: true }, at: this.now() });
+        rec = await this.commit(rec, { t: 'add_submitted', add: { ...add, unknown: true }, at: this.now() });
         return { ok: true, state: rec.state };
       }
       if (e instanceof OrderRejected) {
-        rec = this.commit(rec, { t: 'add_done', filled: 0, reason: `rejected: ${e.reason}`, at: this.now() });
+        rec = await this.commit(rec, { t: 'add_done', filled: 0, reason: `rejected: ${e.reason}`, at: this.now() });
         return { ok: false, reason: e.reason };
       }
       throw e;
@@ -1408,7 +1416,7 @@ export class TradeEngine {
       // an answer a filtered lookup can simply be wrong for a while.
       if (this.now() < add.deadline) return rec;
       if (add.unknown) {
-        return this.commit(rec, { t: 'add_done', filled: this.addFilled(rec, add), reason: 'the order never reached the exchange', at: this.now() });
+        return await this.commit(rec, { t: 'add_done', filled: this.addFilled(rec, add), reason: 'the order never reached the exchange', at: this.now() });
       }
       /*
        * Acknowledged, and still not found by the end of its window. That is not
@@ -1419,16 +1427,16 @@ export class TradeEngine {
        * filled contracts untracked and uncovered on 14 Sep 2026.
        */
       rec = await this.syncPosition(rec);
-      return this.commit(rec, {
+      return await this.commit(rec, {
         t: 'add_done', filled: this.addFilled(rec, add),
         reason: 'acknowledged but never found again; the position was read back from the exchange',
         at: this.now(),
       });
     }
 
-    rec = this.absorbAdd(rec, order);
+    rec = await this.absorbAdd(rec, order);
     if (order.status !== 'open' && order.status !== 'partial') {
-      return this.commit(rec, { t: 'add_done', filled: this.addFilled(rec, add), reason: order.status, at: this.now() });
+      return await this.commit(rec, { t: 'add_done', filled: this.addFilled(rec, add), reason: order.status, at: this.now() });
     }
     if (this.now() >= add.deadline) return this.endAdd(rec, 'its window closed');
 
@@ -1455,13 +1463,13 @@ export class TradeEngine {
             // rather than twenty seconds from now.
             const gone = await this.findAdd(add);
             if (gone) {
-              rec = this.absorbAdd(rec, gone);
+              rec = await this.absorbAdd(rec, gone);
               if (gone.status !== 'open' && gone.status !== 'partial') {
-                return this.commit(rec, { t: 'add_done', filled: this.addFilled(rec, add), reason: gone.status, at: this.now() });
+                return await this.commit(rec, { t: 'add_done', filled: this.addFilled(rec, add), reason: gone.status, at: this.now() });
               }
             }
           } else if (moved) {
-            rec = this.absorbAdd(rec, moved);
+            rec = await this.absorbAdd(rec, moved);
           }
         }
       }
@@ -1497,7 +1505,7 @@ export class TradeEngine {
         await this.exchange.cancelOrder(order).catch((e) => this.note('cancel add', order, e));
       }
       const after = await this.findAdd(add);
-      rec = this.absorbAdd(rec, after ?? order);
+      rec = await this.absorbAdd(rec, after ?? order);
       if (after && (after.status === 'open' || after.status === 'partial')) {
         // Still on the book. Keep it tracked -- the next poll tries again --
         // rather than forget an order that can still sell.
@@ -1506,12 +1514,12 @@ export class TradeEngine {
     } else if (order === undefined) {
       return rec;
     }
-    return this.commit(rec, { t: 'add_done', filled: this.addFilled(rec, add), reason, at: this.now() });
+    return await this.commit(rec, { t: 'add_done', filled: this.addFilled(rec, add), reason, at: this.now() });
   }
 
   /** Fills of an add are entry fills; a rejected add is not a rejected trade. */
-  private absorbAdd(rec: TradeRecord, order: ExchangeOrder): TradeRecord {
-    return this.absorb(rec, { ...order, status: order.status === 'rejected' ? 'cancelled' : order.status }, 'entry');
+  private async absorbAdd(rec: TradeRecord, order: ExchangeOrder): Promise<TradeRecord> {
+    return await this.absorb(rec, { ...order, status: order.status === 'rejected' ? 'cancelled' : order.status }, 'entry');
   }
 
   private addFilled(rec: TradeRecord, add: AddWorking): number {
@@ -1521,16 +1529,16 @@ export class TradeEngine {
   // ------------------------------------------------------- reconciliation
   /** Read the exchange and believe it. */
   private async reconcileInner(tradeId: string): Promise<TradeRecord | null> {
-    let rec = this.d.store.get(tradeId);
+    let rec = await this.d.store.get(tradeId);
     if (!rec) return null;
 
     const entryId = clientId(tradeId, 'entry');
     const entry = await this.exchange.getOrderByClientId(entryId).catch(() => null);
     if (entry) {
-      rec = this.absorb(rec, entry, 'entry');
+      rec = await this.absorb(rec, entry, 'entry');
       if (rec.state.phase === 'entry_unknown') {
-        rec = this.commit(rec, { t: 'entry_submitted', clientOrderId: entryId, size: entry.size, at: this.now() });
-        rec = this.absorb(rec, entry, 'entry');
+        rec = await this.commit(rec, { t: 'entry_submitted', clientOrderId: entryId, size: entry.size, at: this.now() });
+        rec = await this.absorb(rec, entry, 'entry');
       }
     }
     /*
@@ -1547,7 +1555,7 @@ export class TradeEngine {
     rec = await this.syncPosition(rec);
     if (!entry && rec.state.entrySize === 0 && rec.state.phase === 'entry_unknown') {
       // It never landed. Nothing is at risk and nothing was double-sent.
-      rec = this.commit(rec, { t: 'aborted', reason: 'entry never reached the exchange', at: this.now() });
+      rec = await this.commit(rec, { t: 'aborted', reason: 'entry never reached the exchange', at: this.now() });
     }
     return rec;
   }
@@ -1572,7 +1580,7 @@ export class TradeEngine {
     for (const o of history) {
       const role = roleOfClientId(o.clientOrderId, stem);
       if (role === null || o.filledSize <= 0) continue;
-      rec = this.absorb(rec, o, role);
+      rec = await this.absorb(rec, o, role);
     }
     return rec;
   }
@@ -1590,7 +1598,7 @@ export class TradeEngine {
       rec = await this.recoverFills(rec);
     }
     if (held !== rec.state.position) {
-      rec = this.commit(rec, {
+      rec = await this.commit(rec, {
         t: 'reconciled', position: held, at: this.now(),
         note: `exchange says ${held}, we had ${rec.state.position}`,
       });
@@ -1609,7 +1617,7 @@ export class TradeEngine {
    */
   async recover(): Promise<TradeState[]> {
     const out: TradeState[] = [];
-    for (const rec of this.d.store.open()) {
+    for (const rec of await this.d.store.open()) {
       const synced = await this.reconcileInner(rec.state.tradeId);
       if (synced) out.push(synced.state);
     }
