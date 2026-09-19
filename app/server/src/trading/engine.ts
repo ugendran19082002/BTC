@@ -206,7 +206,7 @@ export type EngineDeps = {
    * Called only from `commit`, never from replay, so a restart that rebuilds
    * the trades from the journal does not announce yesterday's fills again.
    */
-  onEvent?: (event: TradeEvent, before: TradeState, after: TradeState, plan: TradePlan) => void;
+  onEvent?: (event: TradeEvent, before: TradeState, after: TradeState, plan: TradePlan) => void | Promise<void>;
   /** A failure the engine carried on past. Best-effort, but not silent. */
   onSwallowed?: (what: string, order: { orderId: string; symbol?: string }, error: Error) => void;
 };
@@ -384,10 +384,15 @@ export class TradeEngine {
     // that throws is its own bug -- it does not get to become the trade's.
     if (this.d.onEvent) {
       for (const [e, prev, next] of steps) {
-        try {
-          this.d.onEvent(e, prev, next, rec.plan);
-        } catch (err) {
+        const failed = (err: unknown) =>
           this.note('event listener', { orderId: rec.state.tradeId, symbol: rec.state.symbol }, err);
+        try {
+          // Not awaited: a listener that reads the book or the network runs
+          // beside the trade, never in front of its next step.
+          const r = this.d.onEvent(e, prev, next, rec.plan);
+          if (r && typeof (r as Promise<void>).catch === 'function') (r as Promise<void>).catch(failed);
+        } catch (err) {
+          failed(err);
         }
       }
     }
