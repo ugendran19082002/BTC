@@ -130,10 +130,10 @@ export function SettingsStrip({ data, now, config, stored, onChange, onReset, ch
             <Item label="Execution" title="The price a short is judged at. Bid: what a seller receives. Depth-weighted: a tick under the bid when the bid is thinner than the size. Mark: not executable, for comparison only.">
               {sel('execution', [{ v: 'BID', label: 'Bid' }, { v: 'DEPTH', label: 'Depth-weighted' }, { v: 'MARK', label: 'Mark (not executable)' }], 'Execution price')}
             </Item>
-            <Item label="Fee ×" title="A multiplier on Delta's published taker fee, for stress: net premium, breakeven and the scenario grid follow it.">
+            <Item label="Fee ×" title="A multiplier on Delta's published taker fee, for stress: net premium and breakeven follow it.">
               {sel('feeMultiplier', [{ v: 0.5, label: '0.5' }, { v: 1, label: '1.0' }, { v: 1.5, label: '1.5' }, { v: 2, label: '2.0' }], 'Fee multiplier')}
             </Item>
-            <Item label="Size" title="Contracts per order (0.001 BTC each). 'desk' follows the desk's lots setting. Premium, margin, tail loss and the scenario grid scale with it.">
+            <Item label="Size" title="Contracts per order (0.001 BTC each). 'desk' follows the desk's lots setting. Premium, margin and tail loss scale with it.">
               <select className="ov-select ov-ctx-select" aria-label="contracts" value={config.contracts === null ? 'desk' : String(config.contracts)}
                 onChange={(e) => onChange({ contracts: e.target.value === 'desk' ? null : Number(e.target.value) })}>
                 <option value="desk">desk ({deskContracts})</option>

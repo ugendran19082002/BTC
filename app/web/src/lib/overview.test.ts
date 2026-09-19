@@ -4,7 +4,7 @@ import live from '@/test/fixtures/chain-live.json';
 import {
   allClear, bestLeg, bothSides, breakeven, candidates, consensus, entryGates, expectedMove, feePerContract, freshness, gammaRisk,
   ivRv, keyLevels, marginPerContract, modelView, odds, orderEstimate, payoffPrices, premiumAnalysis, shortPayoff, skew, volRegime,
-  assessBoth, assessSides, horizonRows, namedLevels, earlyWarning, findStrikes, boardRead, movementVerdict, parseSymbol, positionState, positionViews, premiumMomentum, readiness, riskEngine, scenarioGrid, shortLossAt,
+  assessBoth, assessSides, horizonRows, namedLevels, earlyWarning, findStrikes, boardRead, movementVerdict, parseSymbol, positionState, positionViews, premiumMomentum, readiness, riskEngine, shortLossAt,
 } from './overview';
 
 const fixtureData = () => live as unknown as ChainResponse;
@@ -264,7 +264,7 @@ describe('the sides assessed, and both together', () => {
   });
 });
 
-describe('the risk engine and the scenario grid', () => {
+describe('the risk engine', () => {
   const data = fixtureData();
   const em = expectedMove(data.snapshot);
   it('reads a strike: shocks, slippage, decay curve, protection', () => {
@@ -275,18 +275,6 @@ describe('the risk engine and the scenario grid', () => {
     expect(r.decayCurve.at(-1)!.extrinsic).toBe(0);
     expect(r.slippageUsd).toBeCloseTo(((l.ask! - l.bid!) / 2) * 0.01, 9);
     if (l.vega !== null) expect(r.vegaShockUsd).toBeCloseTo(-l.vega * 5 * 0.01, 9);
-  });
-  it('the grid runs −3% … +3% for the call, the put and both, net of the fee and half the spread', () => {
-    const ce = leg({ cp: 'C', strike: 82_000, sellPrice: 100, mark: 100, bid: 100, ask: 100 });
-    const pe = leg({ cp: 'P', strike: 78_000, sellPrice: 100, mark: 100, bid: 100, ask: 100 });
-    const cost = feePerContract(80_000, 100) * 10; // no spread: the fee alone
-    const g = scenarioGrid(ce, pe, 80_000, 10);
-    expect(g.map((r) => r.pct)).toEqual([-3, -2, -1, 0, 1, 2, 3]);
-    expect(g[3]!.ce).toBeCloseTo(1 - cost, 9);
-    expect(g[3]!.both).toBeCloseTo(2 - 2 * cost, 9);
-    expect(g[6]!.ce).toBeCloseTo((100 - 400) * 0.01 - cost, 9);
-    expect(g[0]!.pe).toBeCloseTo((100 - 400) * 0.01 - cost, 9);
-    expect(scenarioGrid(ce, pe, 80_000, 10, undefined, 2)[3]!.ce).toBeCloseTo(1 - 2 * cost, 9);
   });
 });
 

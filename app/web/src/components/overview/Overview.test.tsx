@@ -21,7 +21,7 @@ const data = live as unknown as ChainResponse;
 describe('the decision panels', () => {
   it('draw every panel from a real chain, with the chart and chain left to the screen', () => {
     render(<Overview data={data} trade={null} contracts={1} chain={false} />);
-    for (const t of ['Key levels', 'Volatility', 'Multi-timeframe', 'Model view (12h)', 'Strategy decision', 'Sell recommendation', 'IV term structure', 'Entry → expiry setup', /^Entry checklist/, /^Sell-side risk engine/, /^Scenario P&L/]) {
+    for (const t of ['Key levels', 'Volatility', 'Multi-timeframe', 'Model view (12h)', 'Strategy decision', 'Sell recommendation', 'IV term structure', 'Entry → expiry setup', /^Entry checklist/, /^Sell-side risk engine/]) {
       expect(screen.getByText(t, { selector: 'h3' })).toBeInTheDocument();
     }
     // The settings strip shows every setting the screen decides with, and no order panel: orders have their own tab.

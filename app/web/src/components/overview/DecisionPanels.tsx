@@ -196,7 +196,7 @@ function GreeksTab({ leg, contracts }: { leg: Leg; contracts: number }) {
   );
 }
 
-/** The scenario table, in the tab the reference screen has it in as well as the panel below. */
+/** The selected short at settlement, strike ± 5 steps, in the tab the reference screen has it in. */
 function ScenarioTab({ leg, data, contracts }: { leg: Leg; data: ChainResponse; contracts: number }) {
   const premium = leg.sellPrice ?? leg.mark;
   if (premium === null) return <p className="ov-empty">No price to sell at.</p>;
@@ -525,38 +525,3 @@ export function ExpiryHeader({ data, now }: { data: ChainResponse; now: number }
 
 const ivRvOf = (data: ChainResponse) => ivRv(data.structure.atmIv, data.market?.realisedVol ?? null);
 
-// ------------------------------------------------------------- scenario P&L
-
-/**
- * The selected short held to settlement, across the prices around it: the same
- * arithmetic as the Payoff tab, given its own panel in the bottom row the way
- * the reference screens lay it out.
- */
-export function ScenarioPanel({ data, leg, contracts }: { data: ChainResponse; leg: Leg | null; contracts: number }) {
-  const premium = leg ? (leg.sellPrice ?? leg.mark) : null;
-  if (!leg || premium === null) {
-    return <Panel title="Scenario P&amp;L"><p className="ov-empty">Select a strike with a price to see its payoff.</p></Panel>;
-  }
-  const side = leg.cp === 'C' ? 'CE' : 'PE';
-  const rows = shortPayoff(leg.cp, leg.strike, premium, payoffPrices(leg.strike, data.snapshot.spot, data.snapshot.step, 4), contracts);
-  return (
-    <Panel title={`Scenario P&L (short ${fmt.n(leg.strike)} ${side})`}
-      right={<small className="ov-muted">{contracts} contracts · at settlement · before fees</small>}>
-      <div className="ov-two">
-        <table className="ov-mini">
-          <thead><tr><th>BTC price</th><th>P&amp;L (USD)</th></tr></thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.price} className={Math.round(data.snapshot.spot / data.snapshot.step) * data.snapshot.step === r.price ? 'ov-atm' : undefined}>
-                <td>{fmt.n(r.price)}</td>
-                <td className={r.pnlUsd >= 0 ? 'ov-up' : 'ov-down'}>{fmt.signed(r.pnlUsd, 2)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <PayoffChart rows={rows} strike={leg.strike} />
-      </div>
-      <p className="ov-foot">Breakeven {fmt.n(breakeven(leg.cp, leg.strike, premium))} · premium {fmt.n(premium, 1)} per BTC · max profit ${(premium * contracts * CONTRACT_BTC).toFixed(2)}, loss unbounded without a hedge.</p>
-    </Panel>
-  );
-}

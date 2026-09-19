@@ -486,7 +486,7 @@ export default function App() {
             screen bar, the KPI strip, three columns (price action and levels
             and volatility and flow · chart and chain and the selected strike ·
             the model, the decision, the recommendation and the entry), the
-            bottom row (term structure, skew, scenario) and the status bar.
+            bottom row (term structure, skew) and the status bar.
             The full board follows, as the one thing the reference screens
             compress: every column of every strike, with its own controls.
           */}

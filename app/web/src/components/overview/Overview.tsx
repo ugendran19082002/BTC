@@ -19,7 +19,7 @@ import {
   StrategyDecisionPanel, type Selected,
 } from './DecisionPanels';
 import { SettingsStrip } from './SettingsStrip';
-import { EntrySetupPanel, RiskEnginePanel, ScenarioGridPanel } from './RiskPanels';
+import { EntrySetupPanel, RiskEnginePanel } from './RiskPanels';
 import { ChangesPanel, DecisionHero, EarlyWarningPanel, MovementPanel, StrikeFinderPanel, useChanges } from './TraderPanels';
 
 /**
@@ -137,8 +137,6 @@ export function Overview({
   }, [choice.side, sides, data.best]);
   const selected = picked && findLeg(data.legs, picked) ? picked : deskPick;
   const leg = findLeg(data.legs, selected);
-  const ceLeg = leg?.cp === 'C' ? leg : sides[0]!.leg;
-  const peLeg = leg?.cp === 'P' ? leg : sides[1]!.leg;
 
   const risk = useMemo(() => (leg ? riskEngine(leg, data.legs, emSettle, snap.spot, snap.hoursToExpiry, contracts, leverage) : null), [leg, data.legs, emSettle, snap.spot, snap.hoursToExpiry, contracts, leverage]);
   const ready = useMemo(() => readiness({ data, leg, iv, em: emSettle, nowMs: now, contracts, leverage, trade: tradeLimits, risk, t, freshnessMs: config.freshnessSec * 1000 }), [data, leg, iv, emSettle, now, contracts, leverage, tradeLimits, risk, t, config.freshnessSec]);
@@ -196,7 +194,6 @@ export function Overview({
       <div className="ov-bottom">
         <ErrorBoundary where="IV term structure"><IvTermPanel term={term} error={Boolean(termError)} /></ErrorBoundary>
         <ErrorBoundary where="Skew"><SkewPanel data={data} rank={term?.skew ?? null} /></ErrorBoundary>
-        <ErrorBoundary where="Scenario P&L"><ScenarioGridPanel data={data} ce={ceLeg} pe={peLeg} contracts={contracts} feeMultiplier={config.feeMultiplier} /></ErrorBoundary>
       </div>
     </div>
   );

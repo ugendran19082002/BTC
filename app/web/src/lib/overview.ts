@@ -630,35 +630,6 @@ export function riskEngine(
   };
 }
 
-// ------------------------------------------------------- scenario grid
-
-export type ScenarioRow = { pct: number; price: number; ce: number | null; pe: number | null; both: number | null };
-
-/** Fee and half-spread slippage for a short of `contracts`, USD: what a scenario row nets after. */
-function costsUsd(leg: Leg, spot: number, contracts: number, feeMultiplier = 1): number {
-  const px = leg.sellPrice ?? leg.mark ?? 0;
-  const half = leg.bid !== null && leg.ask !== null ? (leg.ask - leg.bid) / 2 : 0;
-  return feePerContract(spot, px) * contracts * feeMultiplier + half * contracts * CONTRACT_BTC;
-}
-
-/**
- * P&L at settlement for BTC −3% … +3%: the call, the put, and both together,
- * for `contracts` each, net of the opening fee and half-spread slippage:
- * premium − max(0, payout) − fees − slippage.
- */
-export function scenarioGrid(ce: Leg | null, pe: Leg | null, spot: number, contracts: number, pcts: readonly number[] = [-3, -2, -1, 0, 1, 2, 3], feeMultiplier = 1): ScenarioRow[] {
-  const cePx = ce ? (ce.sellPrice ?? ce.mark) : null;
-  const pePx = pe ? (pe.sellPrice ?? pe.mark) : null;
-  const ceCost = ce ? costsUsd(ce, spot, contracts, feeMultiplier) : 0;
-  const peCost = pe ? costsUsd(pe, spot, contracts, feeMultiplier) : 0;
-  return pcts.map((pct) => {
-    const price = spot * (1 + pct / 100);
-    const c = ce && cePx !== null ? shortPayoff('C', ce.strike, cePx, [price], contracts)[0]!.pnlUsd - ceCost : null;
-    const p = pe && pePx !== null ? shortPayoff('P', pe.strike, pePx, [price], contracts)[0]!.pnlUsd - peCost : null;
-    return { pct, price, ce: c, pe: p, both: c !== null && p !== null ? c + p : null };
-  });
-}
-
 // ------------------------------------------------- the full checklist
 
 export type Readiness = { gates: Gate[]; ready: boolean; verdict: 'ENTRY READY' | 'NO TRADE'; failing: number; unknown: number };

@@ -1,6 +1,6 @@
 import type { ChainResponse, Leg } from '@/types/desk';
 import {
-  horizonRows, scenarioGrid, shockTable, type BothAssessment, type RiskEngine,
+  horizonRows, shockTable, type BothAssessment, type RiskEngine,
   type SideAssessment,
 } from '@/lib/overview';
 import { fmt, Panel, Row, Tag } from './parts';
@@ -131,37 +131,6 @@ function DecayCurve({ curve }: { curve: RiskEngine['decayCurve'] }) {
     <span className="ov-decay">
       {curve.map((p) => <span key={p.hours}><small className="ov-muted">{p.hours.toFixed(1)}h</small> {p.extrinsic.toFixed(1)}</span>)}
     </span>
-  );
-}
-
-// --------------------------------------------------------- scenario grid
-
-/** BTC −3% … +3% at settlement: the call, the put, and both, for the size. The reference screens' scenario table, both sides. */
-export function ScenarioGridPanel({ data, ce, pe, contracts, feeMultiplier = 1 }: { data: ChainResponse; ce: Leg | null; pe: Leg | null; contracts: number; feeMultiplier?: number }) {
-  const spot = data.snapshot.spot;
-  const rows = scenarioGrid(ce, pe, spot, contracts, undefined, feeMultiplier);
-  const cePx = ce ? (ce.sellPrice ?? ce.mark) : null;
-  const pePx = pe ? (pe.sellPrice ?? pe.mark) : null;
-  const cell = (v: number | null) => <td className={v === null ? 'ov-muted' : v >= 0 ? 'ov-up' : 'ov-down'}>{v === null ? '—' : fmt.signed(v, 2)}</td>;
-  return (
-    <Panel title="Scenario P&L (−3% … +3%)" right={<small className="ov-muted">{contracts} ct a side · at settlement · before fees</small>}>
-      <table className="ov-mini ov-scenario">
-        <thead><tr><th>BTC</th><th>Price</th><th>Short {ce ? `${fmt.n(ce.strike)} CE` : 'CE'}</th><th>Short {pe ? `${fmt.n(pe.strike)} PE` : 'PE'}</th><th>Both</th></tr></thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.pct} className={r.pct === 0 ? 'ov-atm' : undefined}>
-              <td>{r.pct === 0 ? 'now' : `${r.pct > 0 ? '+' : ''}${r.pct}%`}</td>
-              <td>{fmt.n(r.price)}</td>
-              {cell(r.ce)}{cell(r.pe)}{cell(r.both)}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className="ov-foot">
-        Premium received: CE {cePx === null ? '—' : `$${(cePx * contracts * 0.001).toFixed(2)}`} · PE {pePx === null ? '—' : `$${(pePx * contracts * 0.001).toFixed(2)}`}.
-        Net of the opening fee{feeMultiplier !== 1 ? ` (×${feeMultiplier})` : ''} and half-spread slippage. Max risk is unbounded on a naked short; the tail the desk plans for is the 2×EM figure in the risk engine.
-      </p>
-    </Panel>
   );
 }
 
