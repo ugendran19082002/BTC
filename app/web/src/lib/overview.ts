@@ -815,8 +815,15 @@ export type NamedLevel = { name: string; price: number; source: string; kind: 'r
  * and the tape know, each still named for where it came from.
  */
 export function namedLevels(levels: readonly Level[], spot: number): NamedLevel[] {
-  const above = levels.filter((l) => l.price > spot && l.kind !== 'range').sort((a, b) => a.price - b.price).slice(0, 2);
-  const below = levels.filter((l) => l.price < spot && l.kind !== 'range').sort((a, b) => b.price - a.price).slice(0, 2);
+  // Two levels at one price (max pain on the gamma wall, say) are one level, named for both.
+  const merged = new Map<number, Level>();
+  for (const l of levels.filter((x) => x.kind !== 'range')) {
+    const had = merged.get(l.price);
+    merged.set(l.price, had ? { ...had, label: `${had.label} + ${l.label}` } : l);
+  }
+  const uniq = [...merged.values()];
+  const above = uniq.filter((l) => l.price > spot).sort((a, b) => a.price - b.price).slice(0, 2);
+  const below = uniq.filter((l) => l.price < spot).sort((a, b) => b.price - a.price).slice(0, 2);
   const out: NamedLevel[] = [
     ...above.map((l, i) => ({ name: `Resistance ${i + 1}`, price: l.price, source: l.label, kind: 'resistance' as const })),
     ...below.map((l, i) => ({ name: `Support ${i + 1}`, price: l.price, source: l.label, kind: 'support' as const })),

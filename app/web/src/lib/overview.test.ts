@@ -346,6 +346,9 @@ describe('named levels', () => {
     const n = namedLevels(levels, 80_600);
     expect(n.map((l) => [l.name, l.price])).toEqual([['Resistance 1', 81_000], ['Resistance 2', 82_000], ['Support 1', 80_500], ['Support 2', 79_000], ['Prev day low', 78_000]]);
     expect(n[0]!.source).toBe('Gamma wall');
+    const dup = namedLevels([{ label: 'Max pain', price: 81_200, kind: 'pivot' }, { label: 'Gamma wall', price: 81_200, kind: 'pivot' }, { label: 'Put OI wall', price: 81_000, kind: 'support' }], 81_300);
+    expect(dup.map((l) => [l.name, l.price])).toEqual([['Support 1', 81_200], ['Support 2', 81_000]]);
+    expect(dup[0]!.source).toBe('Max pain + Gamma wall');
   });
 });
 

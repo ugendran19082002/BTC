@@ -79,17 +79,15 @@ export function EarlyWarningPanel({ data, perp, changes }: { data: ChainResponse
   return (
     <Panel title="Early warning · big move ahead?" right={<Tag tone={tone}>{w.band.toUpperCase()}{w.score === null ? '' : ` · ${(w.score * 100).toFixed(0)}%`}{w.lean ? ` · pressure ${w.lean > 0 ? 'up ↑' : 'down ↓'}` : ''}</Tag>}>
       <p className="ov-summary">{w.action}{shock && shock.score !== null ? ` Desk's measured sudden-move score: ${shock.score.toFixed(0)} (${shock.band})${shock.odds ? ` — BTC has moved more than ${shock.odds.thresholdPct}% in the next ${shock.odds.overMinutes}m ${fmt.pct(shock.odds.either)} of the time from readings like these` : ''}.` : ''}</p>
-      <table className="ov-mini ov-triggers">
-        <thead><tr><th>Trigger</th><th>Now</th><th>Fires at</th><th /></tr></thead>
-        <tbody>
-          {w.triggers.map((t) => (
-            <tr key={t.name} className={t.fired ? 'ov-fired' : undefined} title={t.formula}>
-              <td>{t.name}</td><td>{t.value}</td><td className="ov-muted">{t.threshold}</td>
-              <td className={t.fired === null ? 'ov-muted' : t.fired ? 'ov-down' : 'ov-up'}>{t.fired === null ? '?' : t.fired ? 'FIRED' : 'quiet'}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <ul className="ov-triggers">
+        {w.triggers.map((t) => (
+          <li key={t.name} className={t.fired ? 'ov-fired' : undefined} title={t.formula}>
+            <span className="ov-trigger-name">{t.name}</span>
+            <span className={`ov-trigger-state ${t.fired === null ? 'ov-muted' : t.fired ? 'ov-down' : 'ov-up'}`}>{t.fired === null ? '?' : t.fired ? 'FIRED' : 'quiet'}</span>
+            <span className="ov-trigger-detail"><b>{t.value}</b> <small className="ov-muted">· fires {t.threshold}</small></span>
+          </li>
+        ))}
+      </ul>
       <More label="Formulas and the reference case">
         <ul className="ov-formulas">{w.triggers.map((t) => <li key={t.name}><b>{t.name}:</b> {t.formula}</li>)}</ul>
         <p className="ov-foot">
