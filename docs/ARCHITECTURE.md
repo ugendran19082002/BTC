@@ -32,12 +32,12 @@ broke and why — which is worth reading before changing anything in `trading/`.
      │                            │
      └──────────┬─────────────────┘
                 ▼
-          http/ routes  ── app.ts hooks ──► observability/errors.ts ──► PostgreSQL: errors.log
+          http/ routes  ── app.ts hooks ──► observability/errors.ts ──► PostgreSQL: errors
                 │
                 ▼   JSON over one session cookie
           app/web  (React 18 + Vite + Tailwind + Radix)
                         │
-                        └── failures ──► POST /api/errors ──► the same errors.log
+                        └── failures ──► POST /api/errors ──► the same errors
 
   chain.db ──► domain/, backtest/    (735 settled days; read-only at runtime)
 ```
@@ -45,10 +45,11 @@ broke and why — which is worth reading before changing anything in `trading/`.
 Four processes in production: `btc-desk-api` (Fastify), `btc-desk-web` (nginx
 serving the built bundle and proxying `/api`), `btc-desk-analytics` (Python,
 display-only models) and `db` (PostgreSQL 17). Everything the desk writes is
-in one PostgreSQL database, a schema per concern — `trading` (the journal and
-the settings), `strategy`, `auth`, `errors`, `market` (open interest and
-at-the-money volatility in five-minute buckets, so a *change* in either is
-readable at all) and `analytics`. The one file left is `chain.db`, the
+in one PostgreSQL database, in its `public` schema: the journal and settings
+(`trades`, `trade_events`, `settings`), the strategies (`strategy_*`), the
+sign-in (`auth_*`), the error log (`errors`), open interest and at-the-money
+volatility in five-minute buckets so a *change* in either is readable at all
+(`oi_snapshots`, `chain_features`), and the analytics tables. The one file left is `chain.db`, the
 harvester's read-only dataset, on the `data` volume. `DB-INVENTORY.md` has
 every table.
 
@@ -244,7 +245,7 @@ found closed on Delta without an exit fill, and one summary for the day when the
 last position closes. Off unless `TG_TOKEN` and `TG_CHAT_ID` are both set.
 
 ```
-engine.commit ──await save──► trading.trades + trade_events
+engine.commit ──await save──► trades + trade_events
       │
       └─► onEvent(event, before, after, plan)   ◄── after the save, inside a try
                 │

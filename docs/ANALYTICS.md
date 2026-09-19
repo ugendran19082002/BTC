@@ -71,7 +71,7 @@ no host port):
       sh -c 'python /repo/research/publish_outlook_states.py /repo/chain.db \
                "postgres://desk:$POSTGRES_PASSWORD@db:5432/btc_desk"'
 
-The two tables are replaced and `analytics.publish_meta.published_at` stamped in
+The two tables are replaced and `analytics_publish_meta.published_at` stamped in
 one transaction, so the service never sees half a publish. It checks the stamp
 at most every 30 s and serves the new rows; no restart. A SQLite path as the
 target still works, for local runs against `chain.db`.

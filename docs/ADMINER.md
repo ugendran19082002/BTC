@@ -20,7 +20,7 @@ a public name.
 | Bridge-only port | compose: `172.17.0.1:8098` | Reachable by the edge proxy as `host.docker.internal`; not from the host's public address. |
 | Pinned server (`login-servers`) | `001-login-servers.php` | The Server field is a one-item list: `db`. Adminer cannot be pointed at another host (the class of bug behind CVE-2021-21311). |
 | No permanent login | `002-no-permanent-login.php` | Sessions end with the browser; the flag is stripped server-side. |
-| `desk_ro` | `deploy/db-readonly-role.sh` | SELECT only, every desk schema, 30 s statement limit, read-only transactions, 5 connections, and **no access** to `auth.user`, `auth.sessions`, `auth.recovery_codes`. |
+| `desk_ro` | `deploy/db-readonly-role.sh` | SELECT only, every desk table, 30 s statement limit, read-only transactions, 5 connections, and **no access** to `auth_user`, `auth_sessions`, `auth_recovery_codes`. |
 | Container | compose `adminer` | Opt-in profile, pinned `adminer:6.0.1-standalone`, read-only root, all capabilities dropped, 0.5 CPU / 256 MB. |
 
 For changes, use your own named login, `DB_ADMIN_USER` (created by
@@ -103,3 +103,6 @@ the password.
 - **Upgrading Adminer**: change the pinned tag, re-copy the two theme files from
   the new image's `designs/`, and check the plugin constructors still match
   (`plugins/login-servers.php`).
+
+All twenty desk tables are in the `public` schema, which is where Adminer opens
+(`docs/DB-INVENTORY.md` lists them).

@@ -1,23 +1,26 @@
 # Database inventory
 
-One PostgreSQL database, `btc_desk`, holds everything the desk writes, one
-schema per concern; one SQLite file, `chain.db`, holds the evidence it reads.
-Every table and column below, what it holds, and why it is shaped that way.
+One PostgreSQL database, `btc_desk`, holds everything the desk writes, all in
+the one schema, `public`; one SQLite file, `chain.db`, holds the evidence it
+reads. Every table and column below, what it holds, and why it is shaped that
+way.
 
-Until 19 September 2026 the desk kept six SQLite files instead. The move is
-described at the end; the reasons the data was split the way it was still hold,
-and are now the reasons for the schemas.
+Until 19 September 2026 the desk kept six SQLite files. It then had a
+PostgreSQL schema per area for a few hours, and since the same afternoon every
+table is in `public` -- one list in a console, not seven. A table's area is its
+name's prefix wherever a bare name would be ambiguous (`auth_sessions`,
+`strategy_runs`), which is also the name the SQLite desk used.
 
-| Where | Written by | Tables | Purpose |
+| Area | Tables | Written by | Purpose |
 |---|---|---|---|
-| `trading` schema | the trading engine, the settings cache | 4 | The trade journal and the desk's remembered choices. What makes a restart safe. |
-| `strategy` schema | the scheduler | 4 | Saved strategies and their run journal: what stops a strategy entering twice. |
-| `auth` schema | the sign-in | 5 | The one user, sessions, recovery codes, rate limits, the security log. |
-| `errors` schema | everything | 1 | Every failure, from all three tiers, in one place. |
-| `market` schema | the chain route, every 5 minutes | 2 | What open interest and at-the-money volatility *were*, so a change in either is readable. Disposable. |
-| `analytics` schema | `research/publish_outlook_states.py` | 3 | The measured Down / Side / Up tables the Python service reads. |
-| `public.schema_migrations` | `db/migrate.ts` | 1 | The one ledger of what has been done to the database. |
-| `chain.db` (SQLite) | the harvester, offline | 6 | Two years of settled option chains. Read-only at runtime. |
+| trading | `trades`, `trade_events`, `settings`, `mtm_samples` | the trading engine, the settings cache | The trade journal and the desk's remembered choices. What makes a restart safe. |
+| strategy | `strategies`, `strategy_runs`, `strategy_adds`, `strategy_rebalances` | the scheduler | Saved strategies and their run journal: what stops a strategy entering twice. |
+| sign-in | `auth_user`, `auth_sessions`, `auth_recovery_codes`, `auth_limits`, `auth_events` | the sign-in | The one user, sessions, recovery codes, rate limits, the security log. |
+| errors | `errors` | everything | Every failure, from all three tiers, in one place. |
+| market | `oi_snapshots`, `chain_features` | the chain route, every 5 minutes | What open interest and at-the-money volatility *were*, so a change in either is readable. Disposable. |
+| analytics | `outlook_states`, `chain_states`, `analytics_publish_meta` | `research/publish_outlook_states.py` | The measured Down / Side / Up tables the Python service reads. |
+| ledger | `schema_migrations` | `db/migrate.ts` | The one ledger of what has been done to the database. |
+| `chain.db` (SQLite) | 6 | the harvester, offline | Two years of settled option chains. Read-only at runtime. |
 
 In the container the database is the `db` service (`postgres:17-alpine`) on the
 `pgdata` volume, reached as `DATABASE_URL`; `chain.db` lives on the `data`
@@ -27,20 +30,27 @@ find `chain.db` at the repository root.
 
 ---
 
-## Why one database, and why these schemas
+## Why one database, and one schema
 
 The SQLite files were separate for reasons that were each right: an order
 journal must not be replaced by a market-data refresh; the sign-in must be
 copyable without carrying the journal; the error log must never be written by a
-test. Those are separations of *ownership and lifetime*, and a schema gives
-each of them without a second file, a second connection or a second backup.
-One `pg_dump` is the whole desk. One ledger says what shape it is in. One
-connection pool means a leak shows up as exhaustion in one place.
+test. Those are separations of *ownership and lifetime*, and in one database
+they are kept by the code rather than by files: each store owns its tables and
+its migrations, and nothing but the desk writes to any of them. One `pg_dump`
+is the whole desk. One ledger says what shape it is in. One connection pool
+means a leak shows up as exhaustion in one place.
 
-What a schema does **not** give is a separate failure mode, and that is a
+What one database does **not** give is a separate failure mode, and that is a
 feature: before, a deploy could come up with `trades.db` migrated and the
-strategy tables missing, and report healthy. Now every schema is migrated at
+strategy tables missing, and report healthy. Now every store is migrated at
 boot, in order, before `listen`, and `/api/health` lists the ledger.
+
+Why one schema rather than a schema per area: a database console (Adminer)
+shows one schema at a time, and the desk's twenty tables are few enough to read
+as one list. The cost is the prefixes, and that the sign-in tables are no longer
+a separate namespace to grant or revoke as a block -- `desk_ro` is denied them
+table by table instead.
 
 ### Access, in code
 
@@ -48,7 +58,7 @@ boot, in order, before `listen`, and `/api/health` lists the ledger.
   `tx` (one connection, BEGIN/COMMIT/ROLLBACK). `BIGINT` comes back as a number.
 - `db/migrate.ts` — the ledger, below.
 - `db/settings.ts` — the settings cache, below.
-- Each store owns its schema's migrations and its SQL: `trading/store.ts`,
+- Each store owns its tables' migrations and its SQL: `trading/store.ts`,
   `strategy/store.ts`, `auth/store.ts`, `observability/errors.ts`,
   `market/oi-history.ts` (+ `chain-features.ts`).
 
@@ -78,15 +88,25 @@ Two rules for anyone adding one:
   two diverge silently. Add another.
 - **Ids are permanent.** They are the memory. Renaming one re-runs it.
 
-Ids are `<schema>-NNN-what-it-does`. Applied on a fresh desk today:
+Ids are `<area>-NNN-what-it-does`. Applied on a fresh desk today:
 
-| Schema | Migrations |
+| Area | Migrations |
 |---|---|
-| `trading` | `trading-001-settings`, `trading-002-default-settings`, `trading-003-trades`, `trading-004-mtm-samples` |
-| `market` | `market-001-oi-snapshots`, `market-002-chain-features` |
-| `errors` | `errors-001-log` |
-| `strategy` | `strategy-001-tables`, `strategy-002-seed` |
-| `auth` | `auth-001-user-sessions` |
+| trading | `trading-001-settings`, `trading-002-default-settings`, `trading-003-trades`, `trading-004-mtm-samples`, `trading-005-settings-to-public`, `trading-006-journal-to-public` |
+| market | `market-001-oi-snapshots`, `market-002-chain-features`, `market-003-to-public` |
+| errors | `errors-001-log`, `errors-002-to-public` |
+| strategy | `strategy-001-tables`, `strategy-002-seed`, `strategy-003-to-public` |
+| sign-in | `auth-001-user-sessions`, `auth-002-to-public` |
+| analytics | `analytics-001-to-public` |
+
+The `001`–`004` migrations still create each table in its old schema -- they
+have shipped, and are never edited -- and the `*-to-public` migrations after
+them move it, so a fresh database and the live one end in the same place. The
+move (`moveToPublic` in `db/migrate.ts`) is catalogue-only and instant: it
+renames the table where it is, then its indexes and identity sequence with it
+(`runs_pkey` -> `strategy_runs_pkey`), then moves it to `public`, then drops the
+old schema once it is empty. Done on the live desk at 12:00 IST, 19 Sep 2026,
+after a rehearsal on a restored copy of that morning's backup.
 
 `/api/health` reports them as `schema`, and `db: { ok, latencyMs }` beside it,
 so a deploy that did not migrate — or a database that is slow — is visible
@@ -107,7 +127,7 @@ Two tables carry the trades and one rule governs them: **events are appended and
 never edited, and the state is rebuilt from them.** The process can die between
 placing an order and hearing back; the journal is what makes that survivable.
 
-### `trading.trades` — one row per trade
+### `trades` — one row per trade
 
 | Column | Type | What it holds |
 |---|---|---|
@@ -128,7 +148,7 @@ placing an order and hearing back; the journal is what makes that survivable.
 > hour, and a panel headed "on the book now" disagreeing with Delta. Four tests
 > in `store.test.ts` cover it, the first being a plan changed and read back.
 
-### `trading.trade_events` — the append-only log
+### `trade_events` — the append-only log
 
 | Column | Type | What it holds |
 |---|---|---|
@@ -145,7 +165,7 @@ arithmetic repairs history rather than only new trades — which is how the
 realised-P&L bug (a missing × contract value, showing `+$3.00` for `+₹255`) was
 fixed for trades that had already closed.
 
-### `trading.settings`
+### `settings`
 
 | Column | Type | What it holds |
 |---|---|---|
@@ -181,11 +201,11 @@ Absent, the cap falls back to `DEFAULT_LIMITS.maxShortContracts`. It is read at
 the moment each gate runs, so a change takes effect on the next order rather
 than at the next restart.
 
-### `trading.mtm_samples`
+### `mtm_samples`
 
 The day's P&L once a minute, so the day can be drawn as a line. `at` (BIGINT PK),
 `day` (TEXT, IST date), `realised`, `unrealised`, `charges`, `net` (DOUBLE
-PRECISION, USD). Pruned at ninety days. In the journal's schema rather than in
+PRECISION, USD). Pruned at ninety days. With the journal rather than with
 `market` because it is about money that was made and lost.
 
 ---
@@ -200,13 +220,13 @@ doubles a position.
 
 | Table | Key | What it holds |
 |---|---|---|
-| `strategy.strategies` | `id` TEXT PK | `name`, `enabled` BOOLEAN, `config` JSONB, `created_at`, `updated_at`. Seeded with the three researched strategies (`baseline`, `locked`, `double`), only `double` armed; a desk that already has them keeps whatever the person has since changed. |
-| `strategy.runs` | identity; `UNIQUE (strategy_id, run_date)` | One row per strategy per IST day. `claim()` is `INSERT … ON CONFLICT DO NOTHING`: the constraint decides who won, not a check-then-write. |
-| `strategy.adds` | identity | Every decision to add to the other leg, including the ones that did not. `contracts` per source trade sum to what has been dealt with; `recordAdd` checks that sum and inserts inside one transaction, under an advisory lock keyed on the source trade — SQLite serialised writers for free, PostgreSQL has to be asked. |
-| `strategy.rebalances` | identity; `UNIQUE (strategy_id, run_date, stage)` | Every rebalance stage, written down before it is acted on. The constraint is the rule that a stage never fires twice. |
+| `strategies` | `id` TEXT PK | `name`, `enabled` BOOLEAN, `config` JSONB, `created_at`, `updated_at`. Seeded with the three researched strategies (`baseline`, `locked`, `double`), only `double` armed; a desk that already has them keeps whatever the person has since changed. |
+| `strategy_runs` | identity; `UNIQUE (strategy_id, run_date)` | One row per strategy per IST day. `claim()` is `INSERT … ON CONFLICT DO NOTHING`: the constraint decides who won, not a check-then-write. |
+| `strategy_adds` | identity | Every decision to add to the other leg, including the ones that did not. `contracts` per source trade sum to what has been dealt with; `recordAdd` checks that sum and inserts inside one transaction, under an advisory lock keyed on the source trade — SQLite serialised writers for free, PostgreSQL has to be asked. |
+| `strategy_rebalances` | identity; `UNIQUE (strategy_id, run_date, stage)` | Every rebalance stage, written down before it is acted on. The constraint is the rule that a stage never fires twice. |
 
 Desk-wide strategy settings (`rebalance_limits`, `rebalance_defaults`,
-`scheduler_enabled`) are in `trading.settings`, through the same cache.
+`scheduler_enabled`) are in `settings`, through the same cache.
 
 ---
 
@@ -219,18 +239,18 @@ instead of waiting for a signed cookie to expire.
 
 | Table | What it holds |
 |---|---|
-| `auth.user` | A single row (`CHECK (id = 1)`): `username`, `password_hash` (scrypt), `password_changed_at`, the sealed `totp_secret` and when it was enabled, `totp_last_step` (a code's step is claimed in one conditional UPDATE, so the same code sent twice passes once), the pending secret during setup. |
-| `auth.sessions` | `token_hash` PK, `stage` (`totp` \| `setup` \| `full`), created / expires / last seen, `ip`, `user_agent`, wrong-code `attempts`, `revoked_at`. Partial index on live rows. Pruned a week after a session *ended*. |
-| `auth.recovery_codes` | `code_hash` PK, `used_at`. Spent once, ever. |
-| `auth.limits` | `key` PK, `count`, `window_until`. The sign-in rate limits, per address and per account. |
-| `auth.events` | identity, `at`, `kind`, `ip`, `detail`. The security log; kept 180 days. |
+| `auth_user` | A single row (`CHECK (id = 1)`): `username`, `password_hash` (scrypt), `password_changed_at`, the sealed `totp_secret` and when it was enabled, `totp_last_step` (a code's step is claimed in one conditional UPDATE, so the same code sent twice passes once), the pending secret during setup. |
+| `auth_sessions` | `token_hash` PK, `stage` (`totp` \| `setup` \| `full`), created / expires / last seen, `ip`, `user_agent`, wrong-code `attempts`, `revoked_at`. Partial index on live rows. Pruned a week after a session *ended*. |
+| `auth_recovery_codes` | `code_hash` PK, `used_at`. Spent once, ever. |
+| `auth_limits` | `key` PK, `count`, `window_until`. The sign-in rate limits, per address and per account. |
+| `auth_events` | identity, `at`, `kind`, `ip`, `detail`. The security log; kept 180 days. |
 
 The sealed secret opens only under the `DESK_SESSION_SECRET` it was sealed with;
-a dump of this schema on its own opens nothing.
+a dump of these tables on their own opens nothing.
 
 ---
 
-## `errors.log` — every failure, one table
+## `errors` — every failure, one table
 
 A trading desk fails in three places, and they are normally three separate
 investigations: a route throwing on the server, a component throwing in the
@@ -306,17 +326,17 @@ place anyone would find out. The default is on the safe side: forgetting to call
 
 ## `market` — what the board looked like a while ago
 
-`market.oi_snapshots`: `(at, expiry, cp, strike)` primary key, carrying `oi`,
+`oi_snapshots`: `(at, expiry, cp, strike)` primary key, carrying `oi`,
 `spot` and `atm_iv` (nullable: the rows written before the column existed have
 no value, and inventing one would put a made-up volatility into the history a
 shock is measured against). Five-minute buckets, forty-eight hours kept, pruned
 as it writes. The writer is throttled by asking the table, not a variable.
 
-`market.chain_features`: the whole board every five minutes — the straddle, the
+`chain_features`: the whole board every five minutes — the straddle, the
 skew, put/call volume and OI, the walls, max pain, the hour's OI change — so the
 chain can one day be measured the way the candles were. Kept 400 days.
 
-Its own schema for the reason `trading` is its own schema, in reverse: this is
+Kept apart from the journal for the reason the journal is kept apart, in reverse: this is
 market data and entirely disposable. Truncate it and the board loses its change
 columns until the next bucket. Nothing else notices.
 
@@ -330,9 +350,9 @@ Python service (`analytics/app/db.py`, `PgStates`). Nothing in Node reads it.
 
 | Table | What it holds |
 |---|---|
-| `analytics.outlook_states` | `(minutes, feature, bucket)` PK: the measured Down / Side / Up shares per state and horizon, the quantiles, whether the lean and the side held (`BOOLEAN`), `by_year` (JSONB), `measured_at`. |
-| `analytics.chain_states` | The same at the 05:30 → 17:30 horizon for the chain features, with the terciles (`lo`, `hi`) each was cut at. |
-| `analytics.publish_meta` | One row: `published_at`. Stamped in the same transaction as the tables; the service re-reads them when it changes, checking at most every 30 s. What the file's modification time used to give. |
+| `outlook_states` | `(minutes, feature, bucket)` PK: the measured Down / Side / Up shares per state and horizon, the quantiles, whether the lean and the side held (`BOOLEAN`), `by_year` (JSONB), `measured_at`. |
+| `chain_states` | The same at the 05:30 → 17:30 horizon for the chain features, with the terciles (`lo`, `hi`) each was cut at. |
+| `analytics_publish_meta` | One row: `published_at`. Stamped in the same transaction as the tables; the service re-reads them when it changes, checking at most every 30 s. What the file's modification time used to give. |
 
 ---
 
@@ -435,7 +455,7 @@ distribution.
 
 `app/server/src/db/import-sqlite.ts` (`npm run db:import -- --data-dir /srv/data`)
 copies `trades.db`, `auth.db`, `errors.db`, `market.db` and `analytics.db` into
-the schemas above: each table in its own transaction, every row
+the tables above: each table in its own transaction, every row
 `ON CONFLICT DO NOTHING`, so it can be run again and copies only what is missing;
 ids carried over and the identity sequences moved past them; a count of every
 table on both sides at the end, and a non-zero exit if any pair differs. The

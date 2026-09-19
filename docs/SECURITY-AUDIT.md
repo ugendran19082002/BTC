@@ -140,7 +140,7 @@ web at all.
 it. Logging out only cleared the browser's copy: the same cookie kept working
 until it expired. Changing the password (then: editing `.env`) ended nothing.
 
-**Fix:** sessions are rows in `auth.db` (since 19 September 2026, `auth.sessions` in PostgreSQL), and only the SHA-256 of each token is
+**Fix:** sessions are rows in `auth.db` (since 19 September 2026, `auth_sessions` in PostgreSQL), and only the SHA-256 of each token is
 stored. Logging out ends the session on the server. Changing the password ends
 **every other** session. The account page lists the devices signed in — what
 they are, their address, when they were last active — with one button to sign

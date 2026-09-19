@@ -27,6 +27,9 @@ Still to do, in order:
 - [x] Web port on the docker bridge (172.17.0.1:8099) — SECURITY-AUDIT #12.
 - [x] Adminer live at adminer.thannigo.in (`ADMINER.md`); credentials in
       `~/BTC-ADMINER-CREDENTIALS.txt` (0600). Stopped by default.
+- [x] Every table into the one `public` schema, 12:00 IST, on request — one list
+      in Adminer. Rehearsed on a restored copy of the 11:56 backup first; row
+      counts identical; `backups/btc_desk-20260919-0626.dump` is the before.
 - [ ] Off-host copies of the dumps. A backup on the same disk as the database
       protects against mistakes, not against the disk.
 - [ ] Drop the retired `.db` files from the `data` volume after 19 Oct 2026.
