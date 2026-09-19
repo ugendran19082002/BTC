@@ -1,8 +1,5 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 
 const { measuredOutlook, resetAnalyticsClient, ANALYTICS_COOL_OFF_MS } = await import('../src/analytics/client.js');
 const { errorLog } = await import('../src/observability/errors.js');

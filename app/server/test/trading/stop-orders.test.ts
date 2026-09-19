@@ -1,8 +1,5 @@
 import { afterEach, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { orderBody } from '../../src/trading/exchange/delta.js';
 import { stopFillLimit } from '../../src/trading/money.js';
 import { PaperExchange } from '../../src/trading/exchange/paper.js';

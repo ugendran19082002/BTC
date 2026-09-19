@@ -1,8 +1,5 @@
 import { afterEach, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 
 // These failures are logged, and the log's file is fixed when paths.ts is first
 // imported -- so point it somewhere disposable before anything imports it, or
