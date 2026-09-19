@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { ChainResponse, ExpiryOption, Leg } from '@/types/desk';
 import { istLabel } from '@/lib/format';
 import type { PremiumMomentum } from '@/api/desk';
 import {
-  breakeven, candidates, consensus, executionEstimate, expectedMove, ivRv, modelView, odds,
-  orderEstimate, payoffPrices, premiumAnalysis, premiumMomentum, shortLossAt, shortPayoff, CONTRACT_BTC,
-  type BothAssessment, type ExpectedMove, type IvRv, type Readiness, type SideAssessment, type SideChoice,
+  breakeven, odds, payoffPrices, premiumAnalysis, shortPayoff, CONTRACT_BTC,
+  type BothAssessment, type ExpectedMove, type Readiness, type SideAssessment, type SideChoice,
 } from '@/lib/overview';
 import { SideCardsRow } from './RiskPanels';
 import { fmt, Panel, ProbBar, Row, Tag } from './parts';

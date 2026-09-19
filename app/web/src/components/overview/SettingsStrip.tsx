@@ -12,17 +12,10 @@ const HORIZONS: { min: number; label: string }[] = [
   { min: 180, label: '3h' }, { min: 360, label: '6h' }, { min: 720, label: '12h' }, { min: 1440, label: '24h' },
 ];
 
-/** One-click presets: strictness and risk together, the way a person thinks of them. */
-const PRESETS: { name: string; patch: Partial<ScreenConfig>; hint: string }[] = [
-  { name: 'Conservative', patch: { strictness: 'STRICT', riskMode: 'CONSERVATIVE' }, hint: 'Every gate must pass; touch ≤ 25%, ≥ 1.25 expected moves out, a quarter of the size cap' },
-  { name: 'Balanced', patch: { strictness: 'BALANCED', riskMode: 'BALANCED' }, hint: 'Two soft failures allowed; touch ≤ 35%, ≥ 1 expected move out, half the size cap' },
-  { name: 'Aggressive', patch: { strictness: 'AGGRESSIVE', riskMode: 'AGGRESSIVE' }, hint: 'Four soft failures allowed; touch ≤ 45%, ≥ 0.75 expected moves out, the full size cap. Hard safety limits still hold' },
-];
-
 /**
  * The strip above the chart: who and when (brand, clock, live), the screen's
  * mode and refresh controls, and every setting the screen decides with --
- * grouped, each with what it does on hover, with presets and a reset.
+ * grouped, each with what it does on hover, with a reset.
  *
  * Dynamic values (entry, data age) are marked so; the expiry and time left
  * are the decision card's, said once. A line under the rules says
@@ -41,7 +34,6 @@ export function SettingsStrip({ data, now, config, stored, onChange, onReset, ch
   const t = thresholds(config);
   // Only settings this build still has count; a key left in the browser by an older build does not.
   const changed = (Object.keys(DEFAULT_CONFIG) as (keyof ScreenConfig)[]).filter((k) => stored[k] !== undefined && stored[k] !== DEFAULT_CONFIG[k]).length;
-  const preset = PRESETS.find((p) => p.patch.strictness === config.strictness && p.patch.riskMode === config.riskMode)?.name ?? 'Custom';
 
   const sel = <K extends keyof ScreenConfig>(key: K, options: readonly { v: ScreenConfig[K]; label: string }[], title: string) => (
     <select className="ov-select ov-ctx-select" value={String(config[key])} title={title} aria-label={String(key)} onChange={(e) => {
@@ -64,11 +56,6 @@ export function SettingsStrip({ data, now, config, stored, onChange, onReset, ch
           <span className="ov-clock">{IST_CLOCK.format(new Date(now)).replace(/,/g, '')} IST</span>
           <Tag tone={snap.live ? (age <= config.freshnessSec ? 'up' : 'warn') : 'muted'}>{snap.live ? `● Live · ${age}s` : 'Past snapshot'}</Tag>
           {controls}
-          <span className="ov-presets" role="group" aria-label="Presets">
-            {PRESETS.map((p) => (
-              <button key={p.name} className={`ov-chip${preset === p.name ? ' on' : ''}`} title={p.hint} onClick={() => onChange(p.patch)}>{p.name}</button>
-            ))}
-          </span>
           <button className="ov-chip" onClick={onReset} disabled={changed === 0} title="Back to the desk's defaults">Reset{changed ? ` (${changed})` : ''}</button>
           <button className="ov-chip" onClick={() => setHelp((v) => !v)} aria-pressed={help} title="What the terms on this screen mean">?</button>
           <button className="ov-chip" onClick={() => setOpen((v) => !v)} aria-expanded={open} title="Show or hide the settings">{open ? 'Settings ▴' : 'Settings ▾'}</button>
@@ -124,7 +111,7 @@ export function SettingsStrip({ data, now, config, stored, onChange, onReset, ch
           </Group>
 
           <p className="ov-limits">
-            <b>{preset}</b> allows: touch ≤ {(t.maxPot * 100).toFixed(0)}% · distance ≥ {t.minEmDistance}× EM · slippage ≤ {(t.maxSlippage * 100).toFixed(0)}% of premium ·
+            <b>{config.riskMode} · {config.strictness}</b> allows: touch ≤ {(t.maxPot * 100).toFixed(0)}% · distance ≥ {t.minEmDistance}× EM · slippage ≤ {(t.maxSlippage * 100).toFixed(0)}% of premium ·
             tail ≤ {(t.tailLimitFactor * 100).toFixed(0)}% of the daily loss limit · size ≤ {(t.sizeFactor * 100).toFixed(0)}% of the short cap · {t.softFailsAllowed} soft failure{t.softFailsAllowed === 1 ? '' : 's'} still WATCH
           </p>
         </div>

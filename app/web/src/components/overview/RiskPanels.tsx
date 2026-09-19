@@ -1,4 +1,4 @@
-import type { ChainResponse, Leg } from '@/types/desk';
+import type { Leg } from '@/types/desk';
 import {
   shockTable, type BothAssessment, type RiskEngine,
   type SideAssessment,
