@@ -3,19 +3,18 @@ import type { ChainResponse, ExpiryOption, Leg } from '@/types/desk';
 import type { TradeStatus } from '@/types/trade';
 import { getPerp, getTerm } from '@/api/desk';
 import { usePoll } from '@/hooks/usePoll';
-import { usePersisted } from '@/hooks/usePersisted';
 import type { ChartTf } from '@/components/desk/PriceChart';
 import {
   assessBoth, assessSides, expectedMove, ivRv, readiness, riskEngine, sideGates, sideSelector, sideStatusOf, skew,
   type SideAssessment, type SideChoice,
 } from '@/lib/overview';
-import { DEFAULT_CONFIG, thresholds, type ScreenConfig } from '@/lib/screen-config';
+import { DEFAULT_CONFIG, thresholds } from '@/lib/screen-config';
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
 import {
   KeyLevelsPanel, KpiStrip, IvTermPanel, PriceActionPanel, SkewPanel, TradeFlowPanel, VolatilityPanel,
 } from './MarketPanels';
 import { ChainPanel, ChecklistPanel, findLeg, SelectedStrikePanel, StrategyDecisionPanel, type Selected } from './DecisionPanels';
-import { SettingsStrip } from './SettingsStrip';
+import { ScreenBar } from './ScreenBar';
 import { RiskEnginePanel } from './RiskPanels';
 import { ChangesPanel, DecisionHero, EarlyWarningPanel, MovementPanel, StrikeFinderPanel, useChanges } from './TraderPanels';
 
@@ -36,10 +35,10 @@ import { ChangesPanel, DecisionHero, EarlyWarningPanel, MovementPanel, StrikeFin
  *
  * Every figure is read from the chain response, the perp feed or the desk's
  * own record, or is arithmetic on them (lib/overview.ts); what is not
- * captured is said so. The operator's settings live in one `ScreenConfig`
- * (lib/screen-config.ts) that the context bar shows in full, so it is always
- * visible which configuration the screen is deciding with. Expiry is the
- * selected contract's and is never typed in; entry is now.
+ * captured is said so. The screen decides with the desk's fixed
+ * configuration (lib/screen-config.ts): the gates say their limits as they
+ * judge, so it is always visible what the screen is deciding with. Expiry is
+ * the selected contract's, picked from the list in the bar; entry is now.
  *
  * Nothing here places an order: the button opens the same ticket as the
  * board, and the server runs every gate again.
@@ -80,9 +79,8 @@ export function Overview({
     return () => clearInterval(id);
   }, []);
 
-  // The operator's configuration, remembered per browser. See lib/screen-config.ts.
-  const [stored, setConfig] = usePersisted<Partial<ScreenConfig>>('live:config', {});
-  const config: ScreenConfig = useMemo(() => ({ ...DEFAULT_CONFIG, ...stored }), [stored]);
+  // The desk's configuration: fixed, and shown by the panels that use it. See lib/screen-config.ts.
+  const config = DEFAULT_CONFIG;
   const t = useMemo(() => thresholds(config), [config]);
   const contracts = config.contracts ?? deskContracts;
 
@@ -148,8 +146,7 @@ export function Overview({
 
   return (
     <div className="ov">
-      <SettingsStrip data={data} now={now} config={config} stored={stored} onChange={(patch) => setConfig({ ...stored, ...patch })} onReset={() => setConfig({})}
-        choice={choice} contracts={contracts} deskContracts={deskContracts} controls={controls} error={error} />
+      <ScreenBar data={data} now={now} freshnessSec={config.freshnessSec} expiries={expiries} onExpiry={onExpiry} controls={controls} error={error} />
       <ErrorBoundary where="Decision">
         <DecisionHero data={data} now={now} choice={choice} sides={sides} ready={ready} leg={leg} contracts={contracts} leverage={leverage} onSell={onSell} entryIst={config.entryIst} />
       </ErrorBoundary>

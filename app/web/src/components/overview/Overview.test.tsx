@@ -23,14 +23,12 @@ describe('the decision panels', () => {
     for (const t of ['Key levels', 'Volatility', 'Strategy decision', 'Strikes', 'IV term structure', /^Entry checklist/, /^Sell-side risk engine/]) {
       expect(screen.getByText(t, { selector: 'h3' })).toBeInTheDocument();
     }
-    // The settings strip shows every setting the screen decides with, and no order panel: orders have their own tab.
-    for (const l of ['Entry', 'Horizon', 'Side mode', 'Strictness', 'Risk', 'Execution', 'Size']) {
-      expect(screen.getByText(l, { selector: '.ov-ctx-label' })).toBeInTheDocument();
-    }
+    // No settings toolbar and no order panel: the desk's configuration is fixed, and orders have their own tab.
+    expect(document.querySelector('.ov-ctx')).toBeNull();
     expect(screen.queryByText('Order panel', { selector: 'h3' })).toBeNull();
     // Said once: no model view beside the outlook, no sell recommendation beside the strikes, no entry setup beside the decision card.
     for (const gone of [/^Model view/, 'Sell recommendation', 'Entry → expiry setup', 'Scenario P&L (−3% … +3%)']) expect(screen.queryByText(gone, { selector: 'h3' })).toBeNull();
-    expect(screen.queryByText('Probability', { selector: '.ov-ctx-label' })).toBeNull();
+
     // The decision, first and largest: one of the four answers, at the moment of entry.
     expect(screen.getByRole('heading', { level: 2 }).textContent).toMatch(/^(SELL CE|SELL PE|SELL BOTH|NO TRADE)/);
     for (const t of [/^Early warning/, 'Outlook · movement to expiry', /^What changed/]) {
@@ -50,6 +48,13 @@ describe('the decision panels', () => {
     expect(screen.getByText(`Selected strike: ${leg.strike.toLocaleString('en-US')} PE`)).toBeInTheDocument();
     rerender(<Overview data={data} trade={null} contracts={1} chain={false} selected={{ cp: 'P', strike: 1 }} onSelect={onSelect} />);
     expect(screen.getByText(/^Selected strike: /)).toBeInTheDocument();
+  });
+
+  it('the bar lists the expiries and changes the contract from there', () => {
+    const onExpiry = vi.fn();
+    render(<Overview data={data} trade={null} contracts={1} chain={false} expiries={[{ expiry: data.snapshot.expiry, hoursAway: 5, isDaily: true, isNextEntry: true } as never, { expiry: '220926', hoursAway: 60 } as never]} onExpiry={onExpiry} />);
+    fireEvent.change(screen.getByLabelText('Expiry'), { target: { value: '220926' } });
+    expect(onExpiry).toHaveBeenCalledWith('220926');
   });
 
   it('with its own chain, a click on a strike selects it', () => {

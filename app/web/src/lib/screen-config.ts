@@ -1,8 +1,7 @@
 
 /**
- * What the Live screen is deciding *with*: the strategy-configurable settings
- * the reference spec lists, kept in one object so the context bar can show
- * every one of them and every panel reads the same values.
+ * What the Live screen is deciding *with*: the desk's settings, kept in one
+ * object so every panel reads the same values and each gate can say its limit.
  *
  * Contract-fixed values (expiry, tick, contract value) are never in here;
  * they come from the selected contract. Dynamic values (prices, greeks, odds)
