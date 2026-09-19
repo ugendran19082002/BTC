@@ -21,7 +21,17 @@ import {
  */
 
 let store: StrategyStore | null = null;
-export const strategyStore = (): StrategyStore => (store ??= new StrategyStore());
+
+/** Migrate and open the strategy tables. Called once at boot, before the routes register. */
+export async function initStrategyStore(): Promise<StrategyStore> {
+  return (store ??= await StrategyStore.open());
+}
+
+/** The store, once `initStrategyStore()` has run. Asking earlier is a boot-order bug. */
+export const strategyStore = (): StrategyStore => {
+  if (!store) throw new Error('strategyStore() before initStrategyStore(): the store is opened at boot, in index.ts');
+  return store;
+};
 
 /** Only the keys we know how to read, so a stray field cannot reach the row. */
 /** The cap the rule can actually reach, when the rule is set to work it out. */
@@ -137,14 +147,14 @@ export function registerStrategyRoutes(app: FastifyInstance) {
           return { error: `${key} must be a whole number from 1 to ${hi}` };
         }
       }
-      strategyStore().setRebalanceLimits(asked as Partial<RebalanceLimits>);
+      await strategyStore().setRebalanceLimits(asked as Partial<RebalanceLimits>);
     }
     if (b.defaults !== undefined) {
       if (b.defaults === null || typeof b.defaults !== 'object') {
         reply.code(400);
         return { error: 'defaults must be an object' };
       }
-      strategyStore().setRebalanceDefaults(b.defaults as Partial<RebalanceRule>);
+      await strategyStore().setRebalanceDefaults(b.defaults as Partial<RebalanceRule>);
     }
     return {
       ok: true,
@@ -186,8 +196,8 @@ export function registerStrategyRoutes(app: FastifyInstance) {
        */
       balanceUsd: svc.lastBalanceUsd,
       spot: svc.spot,
-      strategies: s.all().map((x) => {
-        const last = s.lastRunDate(x.id);
+      strategies: await Promise.all((await s.all()).map(async (x) => {
+        const last = await s.lastRunDate(x.id);
         const due = entryDue(x, now, last);
         return {
           ...x,
@@ -203,10 +213,10 @@ export function registerStrategyRoutes(app: FastifyInstance) {
            */
           status: statusOf(due, holdFor(x.id, entrySlotDate(x, now))),
         };
-      }),
-      runs: s.runs(40),
+      })),
+      runs: await s.runs(40),
       /** Every decision to add to the other leg -- the skips too, with their reason. */
-      adds: s.adds(40),
+      adds: await s.adds(40),
     };
   });
 
@@ -224,16 +234,16 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     const s = strategyStore();
     const id = b.id ? String(b.id) : idFrom(name);
     // Arming and saving are separate acts. A new strategy is never born armed.
-    const existing = s.get(id);
+    const existing = await s.get(id);
     const enabled = existing ? existing.enabled : false;
-    return { ok: true, strategy: s.save({ id, name, enabled, config }) };
+    return { ok: true, strategy: await s.save({ id, name, enabled, config }) };
   });
 
   app.post('/api/strategies/:id/enabled', async (req, reply) => {
     const { id } = req.params as { id: string };
     const { enabled } = (req.body ?? {}) as { enabled?: boolean };
     const s = strategyStore();
-    const found = s.get(id);
+    const found = await s.get(id);
     if (!found) { reply.code(404); return { error: 'no such strategy' }; }
 
     if (enabled) {
@@ -244,14 +254,14 @@ export function registerStrategyRoutes(app: FastifyInstance) {
         return refuse(reply, 422, { error: `Fix the settings first: ${problems.join(' ')}`, problems });
       }
     }
-    return { ok: true, strategy: s.setEnabled(id, Boolean(enabled)) };
+    return { ok: true, strategy: await s.setEnabled(id, Boolean(enabled)) };
   });
 
   app.delete('/api/strategies/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
     const s = strategyStore();
-    if (!s.get(id)) { reply.code(404); return { error: 'no such strategy' }; }
-    s.remove(id);
+    if (!(await s.get(id))) { reply.code(404); return { error: 'no such strategy' }; }
+    await s.remove(id);
     return { ok: true };
   });
 
@@ -273,5 +283,5 @@ export function registerStrategyRoutes(app: FastifyInstance) {
   });
 
   /** The run journal on its own, for the history panel. */
-  app.get('/api/strategies/runs', async () => ({ runs: strategyStore().runs(200) }));
+  app.get('/api/strategies/runs', async () => ({ runs: await strategyStore().runs(200) }));
 }

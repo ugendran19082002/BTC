@@ -4,7 +4,7 @@ import { authFromEnv } from './auth/service.js';
 import { loadDays } from './backtest/backtest.js';
 import { credsFromEnv } from './delta/signed.js';
 import { initTradingService } from './trading/service.js';
-import { strategyStore } from './http/routes/strategy.routes.js';
+import { initStrategyStore } from './http/routes/strategy.routes.js';
 import { StrategyRunner } from './strategy/runner.js';
 import { liveTickers, startTickerPoller, startTickerSocket } from './market/delta.js';
 import { liveChain } from './market/chain.js';
@@ -32,6 +32,7 @@ const desk = await initTradingService();
 // the table missing. Every ledger entry is on `/api/health` before `listen`.
 await marketSchema();
 await errorLog().ready;
+const strategies = await initStrategyStore();
 
 // One sign-in service for the process: the gate and the routes share the pool.
 const auth = await authFromEnv({
@@ -56,15 +57,15 @@ app.log.info(
  * half-migrated database should stop the boot, and a migration that only runs
  * when somebody logs in cannot.
  */
-app.log.info(`strategy schema: ${strategyStore().applied.length
-  ? strategyStore().applied.join(', ') + ' applied'
+app.log.info(`strategy schema: ${strategies.applied.length
+  ? strategies.applied.join(', ') + ' applied'
   : 'already up to date'}`);
 
 /*
  * The scheduler loop. Inert until `scheduler_enabled` is set, which is a
  * deliberate act with its own button, so starting it here costs nothing.
  */
-const runner = new StrategyRunner(strategyStore());
+const runner = new StrategyRunner(strategies);
 runner.start();
 
 app.log.info(

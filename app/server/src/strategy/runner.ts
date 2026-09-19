@@ -133,7 +133,7 @@ export class StrategyRunner {
     this.rebalancing = (async () => {
       try {
         if (!this.armed()) return;
-        for (const s of this.store.all()) {
+        for (const s of await this.store.all()) {
           await this.rebalancer.consider(s).catch((e) => this.note(s, 'rebalance', e));
         }
       } finally {
@@ -151,7 +151,7 @@ export class StrategyRunner {
         do {
           this.addAgain = false;
           if (!this.armed()) return;
-          for (const s of this.store.all()) {
+          for (const s of await this.store.all()) {
             await this.adder.consider(s).catch((e) => this.note(s, 'add', e));
           }
         } while (this.addAgain);
@@ -177,7 +177,7 @@ export class StrategyRunner {
     this.ticking = true;
     try {
       if (!this.armed()) return;
-      for (const s of this.store.all()) {
+      for (const s of await this.store.all()) {
         await this.considerExit(s).catch((e) => this.note(s, 'exit', e));
         await this.considerEntry(s).catch((e) => this.note(s, 'entry', e));
       }
@@ -218,11 +218,11 @@ export class StrategyRunner {
    * strategy, and only while that day is still running: after the exit time
    * there is nothing left to act on.
    */
-  private warnIfMissed(s: Strategy, because: string, now: number, day: string): void {
+  private async warnIfMissed(s: Strategy, because: string, now: number, day: string): Promise<void> {
     // "too late" is only said while the slot's own window is still running --
     // after that the reason is "waiting" -- so there is nothing more to check.
     if (!because.startsWith('too late')) return;
-    if (this.store.lastRunDate(s.id) === day) return;
+    if (await this.store.lastRunDate(s.id) === day) return;
     const key = `${s.id}:${day}`;
     if (this.missedAlerted.has(key)) return;
     this.missedAlerted.add(key);
@@ -260,18 +260,18 @@ export class StrategyRunner {
       // exits on the following morning, and writing that morning's row would
       // both lose this record and spend a day that has not run.
       const day = entrySlotDate(s, this.now());
-      const prior = this.store.runFor(s.id, day)?.detail ?? '';
+      const prior = (await this.store.runFor(s.id, day))?.detail ?? '';
       const closed = `closed ${open.length} leg${open.length === 1 ? '' : 's'} at ${time12(s.config.exitTime)}`;
-      this.store.finish(s.id, day, 'placed', prior ? `${prior} | ${closed}` : closed);
+      await this.store.finish(s.id, day, 'placed', prior ? `${prior} | ${closed}` : closed);
     }
   }
 
   private async considerEntry(s: Strategy): Promise<void> {
     const now = this.now();
     const day = entrySlotDate(s, now);
-    const due = entryDue(s, now, this.store.lastRunDate(s.id));
+    const due = entryDue(s, now, await this.store.lastRunDate(s.id));
     if (!due.due) {
-      this.warnIfMissed(s, due.because, now, day);
+      await this.warnIfMissed(s, due.because, now, day);
       return;
     }
 
@@ -288,7 +288,7 @@ export class StrategyRunner {
       return;
     }
     if (!snap.isDaily) {
-      this.claimAndFinish(s, day, 'skipped', 'the nearest expiry is not the daily contract');
+      await this.claimAndFinish(s, day, 'skipped', 'the nearest expiry is not the daily contract');
       return;
     }
 
@@ -334,7 +334,7 @@ export class StrategyRunner {
     // The open-interest rule looks for its wall inside the desk's level band.
     const sel = selectLegs(s, candidates, { wallWithinEm: wallWithinEm() });
     if (sel.legs.length === 0) {
-      this.claimAndFinish(s, day, 'refused', describeSelection(sel));
+      await this.claimAndFinish(s, day, 'refused', describeSelection(sel));
       return;
     }
 
@@ -377,7 +377,7 @@ export class StrategyRunner {
     }
 
     // Claim before a single order goes out. Whoever loses the race does nothing.
-    if (!this.store.claim(s.id, day, now)) return;
+    if (!await this.store.claim(s.id, day, now)) return;
 
     const placed: string[] = [];
     const failed = [...turnedDown];
@@ -398,15 +398,15 @@ export class StrategyRunner {
       ...(failed.length ? [`failed: ${failed.join('; ')}`] : []),
     ].join(' | ').slice(0, 500);
     const status = placed.length ? 'placed' : 'failed';
-    this.store.finish(s.id, day, status, detail);
+    await this.store.finish(s.id, day, status, detail);
     // Failed, or on one side only: somebody should know before the day moves on.
     this.alert((ctx) => runAlertFor({ strategy: s.name, status, detail, failedLegs: failed, at: now }, ctx));
   }
 
-  private claimAndFinish(s: Strategy, day: string, status: 'refused' | 'skipped', detail: string): void {
+  private async claimAndFinish(s: Strategy, day: string, status: 'refused' | 'skipped', detail: string): Promise<void> {
     const at = this.now();
-    if (!this.store.claim(s.id, day, at)) return;
-    this.store.finish(s.id, day, status, detail);
+    if (!await this.store.claim(s.id, day, at)) return;
+    await this.store.finish(s.id, day, status, detail);
     this.alert((ctx) => runAlertFor({ strategy: s.name, status, detail, failedLegs: [], at }, ctx));
   }
 }

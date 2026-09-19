@@ -74,7 +74,7 @@ export function registerDeskRoutes(app: FastifyInstance) {
       schema: db.ok ? (await appliedMigrations()).map((m) => m.id) : [],
       // Both stores share one ledger, but only asking the trade store hid a
       // deploy whose strategy tables had never been created.
-      strategies: strategyStore().all().length,
+      strategies: db.ok ? (await strategyStore().all()).length : 0,
       // Where the board is coming from, and whether the simulation is keeping
       // up. A feed that has fallen back to polling should be visible from
       // outside rather than by a board that is eight seconds old.

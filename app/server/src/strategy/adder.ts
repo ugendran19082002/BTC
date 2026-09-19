@@ -45,7 +45,11 @@ export class StrategyAdder {
     const trades = await this.d.tradesToday(s.id);
     // Only read prices when some target has bought back something undecided:
     // most ticks nothing has, and reading the board for nothing is not free.
-    const undecided = trades.some((t) => targetBoughtBack(t).contracts > this.d.store.addedFor(t.state.tradeId));
+    // What has already been decided about, per source trade, read once here so
+    // the pure decision below can stay synchronous.
+    const decided = new Map<string, number>();
+    for (const t of trades) decided.set(t.state.tradeId, await this.d.store.addedFor(t.state.tradeId));
+    const undecided = trades.some((t) => targetBoughtBack(t).contracts > (decided.get(t.state.tradeId) ?? 0));
     if (!undecided) return;
 
     const quotes = new Map<string, AddQuote>();
@@ -59,7 +63,7 @@ export class StrategyAdder {
     const decisions = decideAdds({
       config: s.config,
       trades,
-      decided: (id) => this.d.store.addedFor(id),
+      decided: (id) => decided.get(id) ?? 0,
       quotes,
       now,
       nowIstMinutes: istMinutes(now),
@@ -70,7 +74,7 @@ export class StrategyAdder {
       // Written first. If this returns null, the contracts were decided about
       // since the decision was made -- by a restart or a second caller -- and
       // acting again is exactly the double add the journal exists to stop.
-      const row = this.d.store.recordAdd({
+      const row = await this.d.store.recordAdd({
         strategyId: s.id,
         runDate: istDate(now),
         sourceTradeId: d.source.state.tradeId,
@@ -129,15 +133,15 @@ export class StrategyAdder {
       try {
         const res = await this.d.place(order);
         if (res.ok) {
-          this.d.store.finishAdd(row.id, 'placed', d.detail, d.opposite.state.tradeId);
+          await this.d.store.finishAdd(row.id, 'placed', d.detail, d.opposite.state.tradeId);
         } else {
           const detail = `${d.detail} — refused: ${res.reason}`;
-          this.d.store.finishAdd(row.id, 'refused', detail, d.opposite.state.tradeId);
+          await this.d.store.finishAdd(row.id, 'refused', detail, d.opposite.state.tradeId);
           tell('refused', detail);
         }
       } catch (e) {
         const detail = `${d.detail} — failed: ${(e as Error).message}`;
-        this.d.store.finishAdd(row.id, 'failed', detail, d.opposite.state.tradeId);
+        await this.d.store.finishAdd(row.id, 'failed', detail, d.opposite.state.tradeId);
         tell('failed', detail);
       }
     }

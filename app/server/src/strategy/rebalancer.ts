@@ -68,7 +68,7 @@ export class StrategyRebalancer {
 
     const now = this.d.now();
     const runDate = istDate(now);
-    const { stagesDone, lockedUpSide } = this.d.store.rebalanceState(s.id, runDate);
+    const { stagesDone, lockedUpSide } = await this.d.store.rebalanceState(s.id, runDate);
 
     const [ceQuote, peQuote] = await Promise.all([
       this.d.quote(ce.state.symbol).catch(() => null),
@@ -95,7 +95,7 @@ export class StrategyRebalancer {
     }
 
     if (decision.act === 'skip') {
-      const row = this.d.store.recordRebalance({
+      const row = await this.d.store.recordRebalance({
         strategyId: s.id, runDate, stage: decision.stage,
         upSide: 'CE', downSide: 'PE', upPct: null, downPct: null,
         lots: 0, status: 'skipped', detail: decision.detail, at: now,
@@ -118,7 +118,7 @@ export class StrategyRebalancer {
      * stage already has a row. A crash here costs one missed stage; the other
      * way round costs a second rebalance nobody asked for.
      */
-    const row = this.d.store.recordRebalance({
+    const row = await this.d.store.recordRebalance({
       strategyId: s.id, runDate, stage: decision.stage,
       upSide: decision.up.side, downSide: decision.down.side,
       upPct: decision.up.pct, downPct: decision.down.pct,
@@ -129,7 +129,7 @@ export class StrategyRebalancer {
     const bought = await this.d.buyBack(decision.down.rec.state.tradeId, decision.lots)
       .catch((e: Error) => ({ ok: false as const, reason: e.message }));
     if (!bought.ok) {
-      this.d.store.finishRebalance(row.id, 'failed', `buy back refused: ${bought.reason}`);
+      await this.d.store.finishRebalance(row.id, 'failed', `buy back refused: ${bought.reason}`);
       this.d.tell?.(`Rebalance stage ${decision.stage} failed to buy back ${decision.lots} ${decision.down.side}: ${bought.reason}`);
       return;
     }
@@ -159,7 +159,7 @@ export class StrategyRebalancer {
        * smaller than it was. Recorded as partial rather than failed, because
        * half of this did happen and the journal is what the morning reads.
        */
-      this.d.store.finishRebalance(row.id, 'partial',
+      await this.d.store.finishRebalance(row.id, 'partial',
         `${decision.detail} — bought back ${decision.lots} ${decision.down.side}; the sell was refused: ${sold.reason}`,
         { bought: decision.down.rec.state.tradeId });
       this.d.tell?.(`Rebalance stage ${decision.stage}: bought back ${decision.lots} ${decision.down.side}, `
@@ -167,7 +167,7 @@ export class StrategyRebalancer {
       return;
     }
 
-    this.d.store.finishRebalance(row.id, 'done', decision.detail, {
+    await this.d.store.finishRebalance(row.id, 'done', decision.detail, {
       bought: decision.down.rec.state.tradeId,
       sold: decision.up.rec.state.tradeId,
     });
