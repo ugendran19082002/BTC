@@ -12,7 +12,7 @@ import { loadDays, reloadDays, DEFAULTS } from '../../backtest/backtest.js';
 import { tradingService, SHORT_CAP_KEY } from '../../trading/service.js';
 import { appliedMigrations } from '../../db/migrate.js';
 import { termStructure } from '../../market/term.js';
-import { lastOptionSnapshot, optionHistory } from '../../market/option-snapshots.js';
+import { lastOptionSnapshot } from '../../market/option-snapshots.js';
 import { flowFeedHealth, flowSummary, ivRank, liveBook, livePerp, oiPulse, skewRank, termHistory } from '../../market/flow.js';
 import { changes } from '../../market/changes.js';
 import { one } from '../../db/pool.js';
@@ -106,19 +106,6 @@ export function registerDeskRoutes(app: FastifyInstance) {
     // nobody has loaded the chain recently.
     tradingService().noteSpot(spot);
     return { spot, at: Date.now() };
-  });
-
-  /**
-   * One contract's recorded five-minute history: premium, quotes, IV, delta,
-   * OI and volume. At most two days back -- enough for momentum, and a
-   * request that cannot page through a year of rows.
-   */
-  app.get('/api/option-history', async (req, reply) => {
-    const q = req.query as { symbol?: string; hours?: string };
-    const symbol = String(q.symbol ?? '');
-    if (!/^[CP]-BTC-\d+-\d{6}$/.test(symbol)) return refuse(reply, 400, { error: 'symbol like C-BTC-78000-190926' });
-    const hours = Math.min(48, Math.max(1, Number(q.hours ?? 6) || 6));
-    return { symbol, points: await optionHistory(symbol, Date.now() - hours * 3_600_000) };
   });
 
   /**

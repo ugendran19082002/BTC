@@ -43,6 +43,13 @@ export type ChangeRow = {
   atmIvChangePts: number | null;
 };
 
+/**
+ * How the premium is moving, from the last three five-minute records: the
+ * change over the newest bucket, and how that change itself changed. What a
+ * seller reads as "the premium is running away" or "the decay has started".
+ */
+export type PremiumMomentum = { velocity: number | null; acceleration: number | null };
+
 export type ChangesNow = {
   spot: number | null;
   mark: number | null; oi: number | null; iv: number | null; volume: number | null;
@@ -69,10 +76,10 @@ async function boardAt(expiry: string, atMs: number): Promise<Board | null> {
   );
 }
 
-export async function changes(symbol: string, expiry: string, nowMs = Date.now(), now?: Partial<ChangesNow>): Promise<{ now: ChangesNow; rows: ChangeRow[] }> {
+export async function changes(symbol: string, expiry: string, nowMs = Date.now(), now?: Partial<ChangesNow>): Promise<{ now: ChangesNow; rows: ChangeRow[]; momentum: PremiumMomentum }> {
   await Promise.all([optionSnapshotsSchema(), marketSchema()]);
   // "Now" is the caller's live figures where it has them, the newest record otherwise.
-  const [s0, b0] = await Promise.all([snapAt(symbol, nowMs), boardAt(expiry, nowMs)]);
+  const [s0, b0, s10] = await Promise.all([snapAt(symbol, nowMs), boardAt(expiry, nowMs), snapAt(symbol, nowMs - 10 * 60_000)]);
   const cur: ChangesNow = {
     spot: now?.spot ?? spotMinutesAgo(0, nowMs) ?? s0?.spot ?? null,
     mark: now?.mark ?? s0?.mark ?? null, oi: now?.oi ?? s0?.oi ?? null, iv: now?.iv ?? s0?.mark_iv ?? null, volume: now?.volume ?? s0?.volume ?? null,
@@ -98,5 +105,9 @@ export async function changes(symbol: string, expiry: string, nowMs = Date.now()
       atmIvThen: b?.atm_iv ?? null, atmIvChangePts: cur.atmIv !== null && b?.atm_iv != null ? (cur.atmIv - b.atm_iv) * 100 : null,
     };
   }));
-  return { now: cur, rows };
+  // Momentum from the same records the 5-minute row read, plus the bucket before it.
+  const m5 = rows.find((r) => r.minutes === 5)?.markThen ?? null;
+  const velocity = d(cur.mark, m5);
+  const prior = d(m5, s10?.mark ?? null);
+  return { now: cur, rows, momentum: { velocity, acceleration: velocity !== null && prior !== null ? velocity - prior : null } };
 }

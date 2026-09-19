@@ -45,4 +45,5 @@ test('[critical] each window diffs now against the record nearest that long ago;
   assert.equal(w720.markChange, null, 'nothing recorded that far back');
   assert.equal(r.now.mark, 220);
   assert.equal(r.now.spot, 80_600, 'the live figure the caller passed');
+  assert.deepEqual(r.momentum, { velocity: 10, acceleration: 0 }, 'a premium climbing 10 a bucket, steadily');
 });

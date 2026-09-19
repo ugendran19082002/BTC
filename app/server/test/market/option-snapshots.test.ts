@@ -1,10 +1,10 @@
 import { after, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  captureOptionSnapshots, lastOptionSnapshot, optionHistory, optionSnapshotsSchema, snapshotRows,
+  captureOptionSnapshots, lastOptionSnapshot, optionSnapshotsSchema, snapshotRows,
   OPTION_SNAPSHOT_BUCKET_MS, OPTION_SNAPSHOT_KEEP_MS,
 } from '../../src/market/option-snapshots.js';
-import { closePool, one, query } from '../../src/db/pool.js';
+import { closePool, one, query, rows } from '../../src/db/pool.js';
 import type { Ticker } from '../../src/market/delta.js';
 
 const T0 = Date.UTC(2026, 8, 19, 6, 2, 30); // 11:32:30 IST, inside the 06:00 UTC bucket
@@ -43,17 +43,18 @@ test('[critical] one bucket is written once, however often it is asked, and ever
   assert.equal(await captureOptionSnapshots(board, T0 + 60_000), null, 'same five minutes: nothing written');
   assert.equal((await one<{ n: number }>('SELECT COUNT(*)::int AS n FROM option_snapshots'))!.n, 3);
 
-  const [p] = await optionHistory('C-BTC-78000-190926', 0);
-  assert.deepEqual(p, { at: first!.at, spot: 77900, mark: 360, bid: 352, ask: 368, markIv: 0.478, delta: 0.36, oi: 12400, volume: 3100 });
+  const p = await one<Record<string, number>>(
+    "SELECT at, spot, mark, bid, ask, mark_iv, delta, oi, volume FROM option_snapshots WHERE symbol = 'C-BTC-78000-190926'");
+  assert.deepEqual(p, { at: first!.at, spot: 77900, mark: 360, bid: 352, ask: 368, mark_iv: 0.478, delta: 0.36, oi: 12400, volume: 3100 });
   const theta = await one<{ theta: number; gamma: number; ask_size: number }>(
     "SELECT theta, gamma, ask_size FROM option_snapshots WHERE symbol = 'C-BTC-78000-190926'");
   assert.deepEqual(theta, { theta: -12.8, gamma: 0.00042, ask_size: 55 });
 });
 
-test('the next bucket writes again, and history comes back oldest first', async () => {
+test('the next bucket writes again, oldest first', async () => {
   await captureOptionSnapshots(board, T0);
   await captureOptionSnapshots(board.map((t) => (t.symbol === 'C-BTC-78000-190926' ? { ...t, mark_price: '390' } : t)), T0 + OPTION_SNAPSHOT_BUCKET_MS);
-  const h = await optionHistory('C-BTC-78000-190926', 0);
+  const h = await rows<{ mark: number }>("SELECT mark FROM option_snapshots WHERE symbol = 'C-BTC-78000-190926' ORDER BY at");
   assert.deepEqual(h.map((x) => x.mark), [360, 390]);
   assert.equal((await lastOptionSnapshot())!.rows, 3);
 });

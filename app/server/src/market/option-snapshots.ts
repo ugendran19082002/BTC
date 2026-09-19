@@ -1,7 +1,7 @@
 import type { Ticker } from './delta.js';
 import { expiryTsOf } from './chain.js';
 import { migrate, type Migration } from '../db/migrate.js';
-import { one, query, rows } from '../db/pool.js';
+import { one, query } from '../db/pool.js';
 
 /**
  * Every strike of the traded expiries, every five minutes, kept for a year.
@@ -146,24 +146,6 @@ export async function captureOptionSnapshots(
   );
   await query('DELETE FROM option_snapshots WHERE at < $1', [at - OPTION_SNAPSHOT_KEEP_MS]);
   return { at, rows: snap.length };
-}
-
-export type OptionHistoryPoint = {
-  at: number; spot: number | null; mark: number | null; bid: number | null; ask: number | null;
-  markIv: number | null; delta: number | null; oi: number | null; volume: number | null;
-};
-
-/** One contract over the last `hours`, oldest first. */
-export async function optionHistory(symbol: string, sinceMs: number): Promise<OptionHistoryPoint[]> {
-  await optionSnapshotsSchema();
-  return (await rows<{
-    at: number; spot: number | null; mark: number | null; bid: number | null; ask: number | null;
-    mark_iv: number | null; delta: number | null; oi: number | null; volume: number | null;
-  }>(
-    `SELECT at, spot, mark, bid, ask, mark_iv, delta, oi, volume
-       FROM option_snapshots WHERE symbol = $1 AND at >= $2 ORDER BY at`,
-    [symbol, sinceMs],
-  )).map((r) => ({ at: r.at, spot: r.spot, mark: r.mark, bid: r.bid, ask: r.ask, markIv: r.mark_iv, delta: r.delta, oi: r.oi, volume: r.volume }));
 }
 
 /** The newest bucket written, for the freshness gate and /api/health. */
