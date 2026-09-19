@@ -22,6 +22,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE="docker compose -f ${ROOT}/deploy/docker-compose.yml"
 VOLUME="${DATA_VOLUME:-btc-desk_data}"
 WEB_PORT="${WEB_PORT:-8099}"
+DESK_HOST="${DESK_HOST:-172.17.0.1}"
 TARBALL="${1:?usage: import-data.sh <btc-desk-data-*.tar.gz>}"
 
 say()  { printf '\033[36m==>\033[0m %s\n' "$*"; }
@@ -89,7 +90,7 @@ if [[ $RUNNING -eq 1 ]]; then
   say "starting the API"
   $COMPOSE start api
   for _ in $(seq 1 30); do
-    if curl -fsS "http://127.0.0.1:${WEB_PORT}/api/health" 2>/dev/null; then
+    if curl -fsS "http://${DESK_HOST}:${WEB_PORT}/api/health" 2>/dev/null; then
       echo; say "healthy"; exit 0
     fi
     sleep 1

@@ -12,7 +12,8 @@ loops back over SSH to localhost, which works but is pointless — use the plain
 form.
 
 ```
-browser ──443──> banknifty-proxy-1 ──> host.docker.internal:8099 ──> btc-desk-web  (nginx:1.27-alpine, static build)
+browser ──443──> banknifty-proxy-1 ──> host.docker.internal:8099 ──> btc-desk-web  (published on 172.17.0.1 only)
+                                                                    btc-desk-web  (nginx:1.27-alpine, static build)
                  (nginx 1.27-alpine)                                        └──────> btc-desk-api  (Fastify, no host port)
                                                                                             ├────> db  (postgres:17-alpine, no host port, `pgdata` volume)
                                                                                             └────> /srv/data/chain.db  (`data` volume, read-only)
@@ -67,7 +68,7 @@ table.
 # a psql prompt
 docker compose -f deploy/docker-compose.yml exec db psql -U desk -d btc_desk
 # is it answering, and what has been migrated?
-curl -s http://127.0.0.1:8099/api/health | jq '{db, schema}'
+curl -s http://172.17.0.1:8099/api/health | jq '{db, schema}'
 ```
 
 Backups: `deploy/backup-db.sh` writes `backups/btc_desk-<stamp>.dump`

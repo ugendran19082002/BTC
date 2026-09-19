@@ -27,9 +27,12 @@ fi
 KEEP_IMAGES="${KEEP_IMAGES:-3}"
 PRUNE=1
 WEB_PORT="${WEB_PORT:-8099}"
-# The address the web port is published on. 0.0.0.0 reaches the internet;
-# 127.0.0.1 only a proxy on this host. See docs/NEW-SERVER.md.
-WEB_BIND="${WEB_BIND:-0.0.0.0}"
+# The address the web port is published on. The docker bridge (the default)
+# reaches a containerised edge proxy and not the internet; 127.0.0.1 suits a
+# proxy on the host; 0.0.0.0 is the internet. See docs/NEW-SERVER.md.
+WEB_BIND="${WEB_BIND:-172.17.0.1}"
+# Where this script (and its health check) reaches the desk.
+DESK_HOST="$WEB_BIND"; [[ "$DESK_HOST" == "0.0.0.0" ]] && DESK_HOST=127.0.0.1
 REMOTE=""
 CHECK_ONLY=0
 
@@ -137,7 +140,7 @@ ensure_py_deps() {
   fi
   say "installing analytics dependencies"
   if command -v uv >/dev/null; then
-    uv venv "$dir/.venv" >/dev/null && uv pip install --python "$dir/.venv/bin/python" -r "$dir/requirements-dev.txt" >/dev/null || return 1
+    uv venv --allow-existing "$dir/.venv" >/dev/null && uv pip install --python "$dir/.venv/bin/python" -r "$dir/requirements-dev.txt" >/dev/null || return 1
   else
     python3 -m venv "$dir/.venv" && "$dir/.venv/bin/python" -m pip install -q -r "$dir/requirements-dev.txt" || return 1
   fi
@@ -250,10 +253,10 @@ TAG="$TAG" WEB_PORT="$WEB_PORT" WEB_BIND="$WEB_BIND" $COMPOSE up -d
 
 say "waiting for health"
 for i in $(seq 1 30); do
-  if curl -fsS "http://127.0.0.1:${WEB_PORT}/api/health" >/dev/null 2>&1; then
+  if curl -fsS "http://${DESK_HOST}:${WEB_PORT}/api/health" >/dev/null 2>&1; then
     say "healthy after ${i}s"
-    curl -fsS "http://127.0.0.1:${WEB_PORT}/api/health"; echo
-    say "front end: http://127.0.0.1:${WEB_PORT}/"
+    curl -fsS "http://${DESK_HOST}:${WEB_PORT}/api/health"; echo
+    say "front end: http://${DESK_HOST}:${WEB_PORT}/"
     # Reported, never required: the desk is healthy without it.
     if $COMPOSE exec -T analytics python -c "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8800/health', timeout=4).status == 200 else 1)" >/dev/null 2>&1; then
       say "analytics: healthy"

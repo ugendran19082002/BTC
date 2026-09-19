@@ -184,12 +184,12 @@ internet whatever ufw says:
 WEB_BIND=127.0.0.1 ./deploy/deploy.sh
 ```
 
-(`WEB_BIND` is remembered nowhere; pass it on every deploy, or export it in
+(`WEB_BIND` defaults to the docker bridge, 172.17.0.1 -- right for a containerised proxy; it is remembered nowhere else; pass it on every deploy, or export it in
 `~/.bashrc`.) Then the chain data:
 
 ```bash
 ./deploy/refresh.sh             # harvests yesterday+today into chain.db and hands it to the container
-curl -s http://127.0.0.1:8099/api/health   # "days":735 or so, "schema" through 008-mtm-samples
+curl -s http://172.17.0.1:8099/api/health   # "days":735 or so, "db":{"ok":true}, ten "schema" entries
 ```
 
 And the daily refresh, after the 17:30 IST settlement:

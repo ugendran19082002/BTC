@@ -24,6 +24,7 @@ COMPOSE="docker compose -f ${ROOT}/deploy/docker-compose.yml"
 OUT_DIR="${BACKUP_DIR:-$ROOT/backups}"
 KEEP="${KEEP_BACKUPS:-14}"
 WEB_PORT="${WEB_PORT:-8099}"
+DESK_HOST="${DESK_HOST:-172.17.0.1}"
 
 say()  { printf '\033[36m==>\033[0m %s\n' "$*"; }
 fail() { printf '\033[31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -43,8 +44,8 @@ if [[ "${1:-}" == "--restore" ]]; then
   say "starting the API and analytics"
   $COMPOSE start api analytics
   for _ in $(seq 1 30); do
-    if curl -fsS "http://127.0.0.1:${WEB_PORT}/api/health" >/dev/null 2>&1; then
-      curl -fsS "http://127.0.0.1:${WEB_PORT}/api/health"; echo; say "healthy"; exit 0
+    if curl -fsS "http://${DESK_HOST}:${WEB_PORT}/api/health" >/dev/null 2>&1; then
+      curl -fsS "http://${DESK_HOST}:${WEB_PORT}/api/health"; echo; say "healthy"; exit 0
     fi
     sleep 1
   done

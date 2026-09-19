@@ -50,3 +50,6 @@ data-export/
 # analytics service
 analytics/.venv/
 .pytest_cache/
+
+# database dumps (deploy/backup-db.sh)
+backups/

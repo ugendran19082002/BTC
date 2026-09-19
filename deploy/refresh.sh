@@ -33,7 +33,7 @@ if docker ps --format '{{.Names}}' | grep -qx btc-desk-api-1; then
     chmod 644 "$SNAP"
     docker cp "$SNAP" btc-desk-api-1:/srv/data/chain.db
     docker exec btc-desk-api-1 sh -c 'rm -f /srv/data/chain.db-wal /srv/data/chain.db-shm'
-    curl -fsS -X POST http://127.0.0.1:8099/api/reload
+    curl -fsS -X POST "http://${DESK_HOST:-172.17.0.1}:${WEB_PORT:-8099}/api/reload"
     echo
 else
     echo "btc-desk-api-1 is not running; database updated on disk only" >&2
