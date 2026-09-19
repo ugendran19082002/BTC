@@ -1,52 +1,75 @@
 # Database inventory
 
-Three SQLite databases, each with one job. Every table and column below, what
-it holds, and why it is shaped that way.
+One PostgreSQL database, `btc_desk`, holds everything the desk writes, one
+schema per concern; one SQLite file, `chain.db`, holds the evidence it reads.
+Every table and column below, what it holds, and why it is shaped that way.
 
-Row counts were read from the live desk on 9 September 2026.
+Until 19 September 2026 the desk kept six SQLite files instead. The move is
+described at the end; the reasons the data was split the way it was still hold,
+and are now the reasons for the schemas.
 
-| Database | Written by | Tables | Purpose |
-|---|---|---:|---|
-| `chain.db` | the harvester, offline | 6 | Two years of settled option chains. The evidence every number in `domain/` rests on. Read-only at runtime. |
-| `trades.db` | the trading engine | 4 | The trade journal. What makes a restart safe. |
-| `errors.db` | everything | 2 | Every failure, from all three tiers, in one place. |
-| `market.db` | the chain route, every 5 minutes | 2 | What open interest and at-the-money volatility *were*, so a change in either is readable. Delta's ticker carries only the current figure. Disposable. |
+| Where | Written by | Tables | Purpose |
+|---|---|---|---|
+| `trading` schema | the trading engine, the settings cache | 4 | The trade journal and the desk's remembered choices. What makes a restart safe. |
+| `strategy` schema | the scheduler | 4 | Saved strategies and their run journal: what stops a strategy entering twice. |
+| `auth` schema | the sign-in | 5 | The one user, sessions, recovery codes, rate limits, the security log. |
+| `errors` schema | everything | 1 | Every failure, from all three tiers, in one place. |
+| `market` schema | the chain route, every 5 minutes | 2 | What open interest and at-the-money volatility *were*, so a change in either is readable. Disposable. |
+| `analytics` schema | `research/publish_outlook_states.py` | 3 | The measured Down / Side / Up tables the Python service reads. |
+| `public.schema_migrations` | `db/migrate.ts` | 1 | The one ledger of what has been done to the database. |
+| `chain.db` (SQLite) | the harvester, offline | 6 | Two years of settled option chains. Read-only at runtime. |
 
-### `market.db` — what the board looked like a while ago
-
-One table, `oi_snapshots`: `(at, expiry, cp, strike)` primary key, carrying `oi`,
-`spot` and `atm_iv`. Five-minute buckets, forty-eight hours kept, pruned as it
-writes. `002-atm-iv` added the volatility column — a second migration rather
-than an edit to `001`, which had already run, and nullable because the rows
-written before it have no value and inventing one would put a made-up volatility
-into the history a shock is measured against.
-
-Its own file for the reason `trades.db` is its own file, in reverse: this is
-market data and entirely disposable. `chain.db` would be the natural home except
-that it is read-only at runtime — `refresh.sh` replaces it wholesale with a
-SQLite backup, and anything written into it is thrown away by the next harvest.
-
-Delete it and the board loses its change columns until the next bucket. Nothing
-else notices.
+In the container the database is the `db` service (`postgres:17-alpine`) on the
+`pgdata` volume, reached as `DATABASE_URL`; `chain.db` lives on the `data`
+volume at `/srv/data/chain.db`. Locally, `DATABASE_URL` points wherever you
+like (`deploy/test-db.sh up` gives a throwaway one) and `paths.ts` walks up to
+find `chain.db` at the repository root.
 
 ---
 
-In the container all four live in `/srv/data/`. Locally, `paths.ts` walks up to
-find the repo root; `DATA_DIR` is derived from `CHAIN_DB` when it is set, so a
-container never resolves the other two to a read-only path — which it did once,
-and the deploy came up unhealthy.
+## Why one database, and why these schemas
 
-All four are opened `PRAGMA journal_mode = WAL`.
+The SQLite files were separate for reasons that were each right: an order
+journal must not be replaced by a market-data refresh; the sign-in must be
+copyable without carrying the journal; the error log must never be written by a
+test. Those are separations of *ownership and lifetime*, and a schema gives
+each of them without a second file, a second connection or a second backup.
+One `pg_dump` is the whole desk. One ledger says what shape it is in. One
+connection pool means a leak shows up as exhaustion in one place.
+
+What a schema does **not** give is a separate failure mode, and that is a
+feature: before, a deploy could come up with `trades.db` migrated and the
+strategy tables missing, and report healthy. Now every schema is migrated at
+boot, in order, before `listen`, and `/api/health` lists the ledger.
+
+### Access, in code
+
+- `db/pool.ts` — the one `pg.Pool`, from `DATABASE_URL`. `query`, `rows`, `one`,
+  `tx` (one connection, BEGIN/COMMIT/ROLLBACK). `BIGINT` comes back as a number.
+- `db/migrate.ts` — the ledger, below.
+- `db/settings.ts` — the settings cache, below.
+- Each store owns its schema's migrations and its SQL: `trading/store.ts`,
+  `strategy/store.ts`, `auth/store.ts`, `observability/errors.ts`,
+  `market/oi-history.ts` (+ `chain-features.ts`).
+
+Every store is `async`. The engine awaits its journal write before it does
+anything that depends on it — protection is sent only once the fill that needs
+it is committed — which is the property a fire-and-forget write would have
+lost. The one exception is `ErrorLog.record()`, which returns at once and
+queues the write: a logger that awaits the network slows the route it is
+logging, and a logger that can fail takes the thing it was logging down with it.
 
 ---
 
 ## Schema changes
 
 `db/migrate.ts` — an ordered list, each migration with a permanent id, each
-applied inside a transaction, each recorded in a `migrations` table when it
-succeeds. A migration that has run is skipped. A migration that fails rolls back
-**and stops the boot**, because starting a trading engine against a
-half-migrated database is worse than not starting.
+applied inside a transaction, each recorded in `public.schema_migrations` when
+it succeeds. A migration that has run is skipped. A migration that fails rolls
+back **and stops the boot**, because starting a trading engine against a
+half-migrated database is worse than not starting. Two boots at once take an
+advisory lock first, so one runs the list and the other finds it done — SQLite's
+file lock did this for free; PostgreSQL has to be asked.
 
 Two rules for anyone adding one:
 
@@ -55,25 +78,36 @@ Two rules for anyone adding one:
   two diverge silently. Add another.
 - **Ids are permanent.** They are the memory. Renaming one re-runs it.
 
-Applied on the live desk today:
+Ids are `<schema>-NNN-what-it-does`. Applied on a fresh desk today:
 
-| Database | Migrations |
+| Schema | Migrations |
 |---|---|
-| `trades.db` | `001-trades`, `002-trades-by-updated-at`, `003-default-settings` |
-| `errors.db` | `001-errors` |
+| `trading` | `trading-001-settings`, `trading-002-default-settings`, `trading-003-trades`, `trading-004-mtm-samples` |
+| `market` | `market-001-oi-snapshots`, `market-002-chain-features` |
+| `errors` | `errors-001-log` |
+| `strategy` | `strategy-001-tables`, `strategy-002-seed` |
+| `auth` | `auth-001-user-sessions` |
 
-`/api/health` reports the trade schema, so a deploy that did not migrate is
-visible without opening a shell.
+`/api/health` reports them as `schema`, and `db: { ok, latencyMs }` beside it,
+so a deploy that did not migrate — or a database that is slow — is visible
+without opening a shell.
+
+### `public.schema_migrations`
+
+| Column | Type | |
+|---|---|---|
+| `id` | TEXT PK | Permanent. |
+| `applied_at` | BIGINT | Epoch ms. |
 
 ---
 
-## `trades.db` — the trade journal
+## `trading` — the trade journal
 
 Two tables carry the trades and one rule governs them: **events are appended and
 never edited, and the state is rebuilt from them.** The process can die between
 placing an order and hearing back; the journal is what makes that survivable.
 
-### `trades` — one row per trade, 24 rows
+### `trading.trades` — one row per trade
 
 | Column | Type | What it holds |
 |---|---|---|
@@ -81,9 +115,9 @@ placing an order and hearing back; the journal is what makes that survivable.
 | `symbol` | TEXT | The Delta contract symbol. |
 | `phase` | TEXT | Where the trade is in its machinery: `precheck`, `entry_pending`, `entry_unknown`, `position_open`, `unprotected`, `protected`, `exit_pending`, `flat`, `aborted`. The first seven are what `OPEN_PHASES` in `store.ts` counts as still live. Not the same as the four order statuses the Orders screen shows — `status.ts` maps between them. |
 | `position` | INTEGER | Contracts held, negative for a short. **Counted from fills, never assumed.** Written as `exit.size - entry.size` so a closed trade is `0` and never `-0`. |
-| `plan` | TEXT (JSON) | What was asked for: lots, leverage, entry type and limit, chase settings, `takeProfitPrice`, `stopPrice`, and the `expect` block the precheck matches the contract against. |
-| `state` | TEXT (JSON) | The reduced state: fills, protection client ids, phase, realised P&L, `contractValue`, `wantsProtection`. |
-| `updated_at` | INTEGER | Epoch ms. Indexed by `002-trades-by-updated-at`, which is what the Orders date filter reads. |
+| `plan` | JSONB | What was asked for: lots, leverage, entry type and limit, chase settings, `takeProfitPrice`, `stopPrice`, and the `expect` block the precheck matches the contract against. |
+| `state` | JSONB | The reduced state: fills, protection client ids, phase, realised P&L, `contractValue`, `wantsProtection`. |
+| `updated_at` | BIGINT | Epoch ms. Indexed (`trades_by_updated_at`), which is what the Orders date filter reads. |
 
 > **The `plan` column is the single most expensive bug in this repo's history.**
 > `save`'s upsert originally listed `phase`, `position`, `state` and
@@ -94,38 +128,46 @@ placing an order and hearing back; the journal is what makes that survivable.
 > hour, and a panel headed "on the book now" disagreeing with Delta. Four tests
 > in `store.test.ts` cover it, the first being a plan changed and read back.
 
-### `trade_events` — the append-only log, 184 rows
+### `trading.trade_events` — the append-only log
 
 | Column | Type | What it holds |
 |---|---|---|
-| `id` | INTEGER PK | Autoincrement. |
-| `trade_id` | TEXT | The trade. |
+| `id` | BIGINT identity PK | |
+| `trade_id` | TEXT | The trade. `REFERENCES trades ON DELETE CASCADE`. |
 | `seq` | INTEGER | Position in that trade's sequence. `UNIQUE (trade_id, seq)` is what makes replay deterministic and a double-write impossible. |
-| `at` | INTEGER | Epoch ms. |
+| `at` | BIGINT | Epoch ms. |
 | `kind` | TEXT | `entry_submitted`, `fill`, `entry_timeout`, `entry_cancelled`, `protection_placed`, `protection_failed`, `exit_submitted`, `reconciled`, … |
-| `event` | TEXT (JSON) | The whole event. |
+| `event` | JSONB | The whole event. |
 
-`hydrate()` replays these through `recompute()`, so a correction to the
+`save()` writes the row and every event not yet written in one transaction.
+`hydrate()` replays them through `recompute()`, so a correction to the
 arithmetic repairs history rather than only new trades — which is how the
 realised-P&L bug (a missing × contract value, showing `+$3.00` for `+₹255`) was
 fixed for trades that had already closed.
 
-### `settings` — 2 rows
+### `trading.settings`
 
 | Column | Type | What it holds |
 |---|---|---|
 | `key` | TEXT PK | e.g. the default expiry. |
 | `value` | TEXT | The value. |
 
-Seeded by `003-default-settings`.
+Owned by `db/settings.ts`, which is the only reader and writer: a
+**write-through cache**. The table is read once at boot into memory; `get(key)`
+is synchronous, so the gates that read the mode and the cap on every order stay
+synchronous; `set(key, value)` writes the row *first* and updates memory second,
+so a setting the screen was told is saved, is saved. The process is the only
+writer, so the cache cannot go stale. The two SQLite stores used to open this
+table on two connections; this is the one copy.
 
 Keys the desk reads:
 
 | Key | Value | What it does |
 |---|---|---|
-| `expiry_default` | `first` \| `next_entry` | Which contract the board opens on. |
+| `expiry_default` | `first` \| `next_entry` | Which contract the board opens on. Seeded by `trading-002-default-settings`. |
 | `mode` | `live` \| `paper` | Which book the desk is trading. Written by the mode switch, so a mode chosen in the browser outlives a restart. |
 | `max_short_contracts` | a whole number | The most contracts the desk may be short across every strike at once. |
+| `alerts_enabled`, `best_trade_*`, `auto_trade*`, `scheduler_enabled`, `rebalance_*`, `wall_within_em` | | The other remembered switches; each is documented where it is read. |
 
 `max_short_contracts` is the one setting with a **ceiling**. `/api/settings`
 takes it, but `TradingService.setShortCap` decides: the cap may be lowered
@@ -139,16 +181,56 @@ Absent, the cap falls back to `DEFAULT_LIMITS.maxShortContracts`. It is read at
 the moment each gate runs, so a change takes effect on the next order rather
 than at the next restart.
 
-### `migrations`
+### `trading.mtm_samples`
 
-| Column | Type | |
-|---|---|---|
-| `id` | TEXT PK | Permanent. |
-| `applied_at` | INTEGER | Epoch ms. |
+The day's P&L once a minute, so the day can be drawn as a line. `at` (BIGINT PK),
+`day` (TEXT, IST date), `realised`, `unrealised`, `charges`, `net` (DOUBLE
+PRECISION, USD). Pruned at ninety days. In the journal's schema rather than in
+`market` because it is about money that was made and lost.
 
 ---
 
-## `errors.db` — every failure, one table
+## `strategy` — the scheduler's journal
+
+The `runs` table is what stops a strategy entering twice. It is written
+**before** the orders go out, not after: if the process dies between the write
+and the fill, the day is marked spent and a human looks at it, which is the
+safe direction. Marked-and-not-traded loses an opportunity; traded-and-not-marked
+doubles a position.
+
+| Table | Key | What it holds |
+|---|---|---|
+| `strategy.strategies` | `id` TEXT PK | `name`, `enabled` BOOLEAN, `config` JSONB, `created_at`, `updated_at`. Seeded with the three researched strategies (`baseline`, `locked`, `double`), only `double` armed; a desk that already has them keeps whatever the person has since changed. |
+| `strategy.runs` | identity; `UNIQUE (strategy_id, run_date)` | One row per strategy per IST day. `claim()` is `INSERT … ON CONFLICT DO NOTHING`: the constraint decides who won, not a check-then-write. |
+| `strategy.adds` | identity | Every decision to add to the other leg, including the ones that did not. `contracts` per source trade sum to what has been dealt with; `recordAdd` checks that sum and inserts inside one transaction, under an advisory lock keyed on the source trade — SQLite serialised writers for free, PostgreSQL has to be asked. |
+| `strategy.rebalances` | identity; `UNIQUE (strategy_id, run_date, stage)` | Every rebalance stage, written down before it is acted on. The constraint is the rule that a stage never fires twice. |
+
+Desk-wide strategy settings (`rebalance_limits`, `rebalance_defaults`,
+`scheduler_enabled`) are in `trading.settings`, through the same cache.
+
+---
+
+## `auth` — the sign-in
+
+One desk, one user. Only the SHA-256 of each session token is stored, so the
+table cannot be replayed if it leaks — which is what makes logging out,
+changing the password, and "log out other devices" actually end a session
+instead of waiting for a signed cookie to expire.
+
+| Table | What it holds |
+|---|---|
+| `auth.user` | A single row (`CHECK (id = 1)`): `username`, `password_hash` (scrypt), `password_changed_at`, the sealed `totp_secret` and when it was enabled, `totp_last_step` (a code's step is claimed in one conditional UPDATE, so the same code sent twice passes once), the pending secret during setup. |
+| `auth.sessions` | `token_hash` PK, `stage` (`totp` \| `setup` \| `full`), created / expires / last seen, `ip`, `user_agent`, wrong-code `attempts`, `revoked_at`. Partial index on live rows. Pruned a week after a session *ended*. |
+| `auth.recovery_codes` | `code_hash` PK, `used_at`. Spent once, ever. |
+| `auth.limits` | `key` PK, `count`, `window_until`. The sign-in rate limits, per address and per account. |
+| `auth.events` | identity, `at`, `kind`, `ip`, `detail`. The security log; kept 180 days. |
+
+The sealed secret opens only under the `DESK_SESSION_SECRET` it was sealed with;
+a dump of this schema on its own opens nothing.
+
+---
+
+## `errors.log` — every failure, one table
 
 A trading desk fails in three places, and they are normally three separate
 investigations: a route throwing on the server, a component throwing in the
@@ -157,39 +239,46 @@ a container log, a browser console nobody has open, and a swallowed
 `.catch(() => null)` is how a bug survives for a week. They all land here, in
 one shape, in time order.
 
-### `errors` — 2 rows
-
 | Column | Type | What it holds |
 |---|---|---|
-| `id` | INTEGER PK | Autoincrement. |
-| `fingerprint` | TEXT UNIQUE | `source + code + where + message`, truncated to 512. Deliberately **not** the stack: the same bug reached from two call sites is one bug, and folding on the message keeps the list short enough to read. |
+| `id` | BIGINT identity PK | |
+| `fingerprint` | TEXT UNIQUE | `source + code + where + message`, joined with the ASCII unit separator, truncated to 512. Deliberately **not** the stack: the same bug reached from two call sites is one bug, and folding on the message keeps the list short enough to read. |
 | `source` | TEXT | `server` \| `browser` \| `exchange` \| `trading`. |
 | `level` | TEXT | `error` \| `warn`. |
 | `message` | TEXT | One line, trimmed to 500. |
 | `code` | TEXT | An HTTP status, a Delta error code, or `network`. |
 | `stack` | TEXT | Trimmed to 4,000; the newest is kept, being the most likely to still be reachable. |
 | `where_at` | TEXT | A route, a component, a symbol. For browser network failures this is the **path without its query string** — using the whole URL made a separate row for every combination of chain parameters anyone had ever looked at. |
-| `context` | TEXT (JSON) | Anything that helps reproduce it, **passed through `redact()` first**. |
-| `first_seen` / `last_seen` | INTEGER | Epoch ms. |
+| `context` | JSONB | Anything that helps reproduce it, **passed through `redact()` first**. |
+| `first_seen` / `last_seen` | BIGINT | Epoch ms. |
 | `count` | INTEGER | Identical failures fold into one row, so a poll failing every second cannot bury everything else. |
-| `resolved` | INTEGER | 0 or 1. Hidden by default; `remove()` deletes for good. |
+| `resolved` | BOOLEAN | Hidden by default; `remove()` deletes for good. |
 
-Indexes: `errors_by_time (last_seen DESC)`, `errors_by_source (source, last_seen DESC)`.
+Indexes: `errors_log_by_time (last_seen DESC)`, `errors_log_by_source (source, last_seen DESC)`.
 
-Capped at 2,000 rows. Pruning takes the **oldest resolved rows first** — an
-unresolved failure is never dropped to make room for a newer one.
+Capped at 2,000 rows, pruned every fiftieth write. Pruning takes the **oldest
+resolved rows first** — an unresolved failure is never dropped to make room for
+a newer one. `errors.test.ts` pins it.
 
-Two properties this table is built around:
+> The SQLite fingerprint was joined with a NUL byte, which the driver cut the
+> string at on the way in: every stored fingerprint was its first part, the
+> source, and only the UNIQUE constraint's view of the raw bytes kept the rows
+> apart. The import rebuilt every fingerprint from its parts with today's
+> separator, so a repeat after the cutover folds into the imported row.
+
+Three properties this table is built around:
 
 - **Nothing but the desk writes to it.** The test suite used to: four test files
   pointed `ERROR_DB` at a temp path and every other file that made the exchange
   refuse an order filed that refusal here. Two rows with 72 folded occurrences
   between them — `insufficient_margin` and `unsupported` on `POST /v2/orders` —
-  turned out to be fixtures with a `node:assert` stack. `test/env.ts` is
-  preloaded before any test module now, and `env.test.ts` fails if any of the
-  three database paths resolve inside the repository.
-- **`record()` never throws.** A logger that can fail takes down the thing it
-  was logging.
+  turned out to be fixtures with a `node:assert` stack. `test/env.ts` now gives
+  every test process a `btc_test_*` database of its own and drops it afterwards;
+  `env.test.ts` fails if `DATABASE_URL` names anything else.
+- **`record()` never throws, and never waits.** A logger that can fail takes down
+  the thing it was logging; a logger that awaits the network slows it. The write
+  is queued and runs in the background, one after another, so two reports of the
+  same failure fold in the order they happened; `flush()` waits for the queue.
 - **Credentials never reach it.** `redact()` walks the context and replaces any
   key matching `api_key|secret|signature|password|token|cookie|authorization`.
   An error context is the classic place a key leaks: a failed request gets
@@ -215,11 +304,46 @@ place anyone would find out. The default is on the safe side: forgetting to call
 
 ---
 
+## `market` — what the board looked like a while ago
+
+`market.oi_snapshots`: `(at, expiry, cp, strike)` primary key, carrying `oi`,
+`spot` and `atm_iv` (nullable: the rows written before the column existed have
+no value, and inventing one would put a made-up volatility into the history a
+shock is measured against). Five-minute buckets, forty-eight hours kept, pruned
+as it writes. The writer is throttled by asking the table, not a variable.
+
+`market.chain_features`: the whole board every five minutes — the straddle, the
+skew, put/call volume and OI, the walls, max pain, the hour's OI change — so the
+chain can one day be measured the way the candles were. Kept 400 days.
+
+Its own schema for the reason `trading` is its own schema, in reverse: this is
+market data and entirely disposable. Truncate it and the board loses its change
+columns until the next bucket. Nothing else notices.
+
+---
+
+## `analytics` — the measured outlook
+
+Written by `research/publish_outlook_states.py` from the repository's `chain.db`
+after `measure_outlook.py` / `measure_chain_outlook.py` have run; read by the
+Python service (`analytics/app/db.py`, `PgStates`). Nothing in Node reads it.
+
+| Table | What it holds |
+|---|---|
+| `analytics.outlook_states` | `(minutes, feature, bucket)` PK: the measured Down / Side / Up shares per state and horizon, the quantiles, whether the lean and the side held (`BOOLEAN`), `by_year` (JSONB), `measured_at`. |
+| `analytics.chain_states` | The same at the 05:30 → 17:30 horizon for the chain features, with the terciles (`lo`, `hi`) each was cut at. |
+| `analytics.publish_meta` | One row: `published_at`. Stamped in the same transaction as the tables; the service re-reads them when it changes, checking at most every 30 s. What the file's modification time used to give. |
+
+---
+
 ## `chain.db` — the evidence
 
-Built offline by `harvester/`, shipped to the desk by `deploy/refresh.sh` as a
-SQLite backup rather than a file copy, so a half-written WAL is never shipped.
-Read-only at runtime. **735 days, 2024-09-04 to 2026-09-08.**
+The one SQLite file. Built offline by `harvester/`, shipped to the desk by
+`deploy/refresh.sh` as a SQLite backup rather than a file copy, so a half-written
+WAL is never shipped. Read-only at runtime, opened by `backtest.ts`,
+`domain/forecast.ts` and `domain/calibration.ts` — and by the harvester, the
+analytics measurement and 35 research scripts with `sqlite3`, which is why it
+stayed a file when everything else moved. **735 days, 2024-09-04 to 2026-09-08.**
 
 ### `days` — one row per expiry day, 735 rows
 
@@ -303,3 +427,23 @@ distribution.
 | `p_up_trend` | REAL | The same, restricted to a rising trend. |
 | `quantiles` | TEXT (JSON) | **101 percentiles of the signed return**, so an option's expected payout is worked out against what BTC actually did rather than against a lognormal. |
 | `measured_at`, `sample_days` | TEXT, INTEGER | Provenance. |
+
+
+---
+
+## The move from SQLite, 19 September 2026
+
+`app/server/src/db/import-sqlite.ts` (`npm run db:import -- --data-dir /srv/data`)
+copies `trades.db`, `auth.db`, `errors.db`, `market.db` and `analytics.db` into
+the schemas above: each table in its own transaction, every row
+`ON CONFLICT DO NOTHING`, so it can be run again and copies only what is missing;
+ids carried over and the identity sequences moved past them; a count of every
+table on both sides at the end, and a non-zero exit if any pair differs. The
+SQLite files are opened read-only and stay on the volume as the rollback path.
+`test/db/import-sqlite.test.ts` runs it against files written in the old schema.
+The cutover itself is in `DEPLOY.md`.
+
+Type mapping, for anyone reading an old row description: epoch-ms `INTEGER` →
+`BIGINT`; JSON in `TEXT` → `JSONB`; `REAL` → `DOUBLE PRECISION`; 0/1 flags →
+`BOOLEAN`; `AUTOINCREMENT` → identity. `premium_alerts`, a table nothing read
+and nothing had written, was not carried.

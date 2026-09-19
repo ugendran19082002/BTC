@@ -14,8 +14,14 @@ form.
 ```
 browser ──443──> banknifty-proxy-1 ──> host.docker.internal:8099 ──> btc-desk-web  (nginx:1.27-alpine, static build)
                  (nginx 1.27-alpine)                                        └──────> btc-desk-api  (Fastify, no host port)
-                                                                                            └────> /srv/data/chain.db  (volume)
+                                                                                            ├────> db  (postgres:17-alpine, no host port, `pgdata` volume)
+                                                                                            └────> /srv/data/chain.db  (`data` volume, read-only)
+                                                                    btc-desk-analytics ─────> db  (the `analytics` schema)
 ```
+
+The database password is in `deploy/.env` (gitignored; copy
+`deploy/.env.example`, `openssl rand -base64 24`). Compose refuses to start
+without it, and deploy.sh checks for it before it builds anything.
 
 Ports 80 and 443 are owned by `banknifty-proxy-1`, the edge proxy of the
 `banknifty` compose project in `/home/agent/trade`. The **host** nginx is
@@ -50,6 +56,60 @@ recreate; a file written straight into the container with `docker exec` lives
 only in the writable layer and is erased by the next `up -d`. The
 `tailscale.thannigo.in` vhost was installed that way and has since been
 removed.
+
+## The database
+
+One PostgreSQL, `btc_desk`, user `desk`, in the `db` container. Nothing outside
+the compose network can reach it. `docs/DB-INVENTORY.md` has every schema and
+table.
+
+```bash
+# a psql prompt
+docker compose -f deploy/docker-compose.yml exec db psql -U desk -d btc_desk
+# is it answering, and what has been migrated?
+curl -s http://127.0.0.1:8099/api/health | jq '{db, schema}'
+```
+
+Backups: `deploy/backup-db.sh` writes `backups/btc_desk-<stamp>.dump`
+(`pg_dump -Fc`, consistent while the desk trades) and keeps 14. In cron:
+
+```
+30 12 * * * /home/agent/test-delta/deploy/backup-db.sh >> /home/agent/test-delta/backup.log 2>&1
+```
+
+Restore: `./deploy/backup-db.sh --restore backups/btc_desk-<stamp>.dump` stops
+the API and analytics, restores in one transaction, starts them and
+health-checks. A dump is only as good as the last time one was restored:
+rehearse it into a scratch database now and then.
+
+### Cutover from the SQLite files (once)
+
+The desk kept `trades.db`, `auth.db`, `errors.db`, `market.db` and
+`analytics.db` on the `data` volume until 19 September 2026. To move a desk
+that still has them:
+
+1. **Be flat.** No open position and no working order: the switch between
+   journals is the one moment a restart is not safe to recover from. Check the
+   Orders screen and `/api/trade/status`.
+2. Put `POSTGRES_PASSWORD` in `deploy/.env`.
+3. Start only the database: `docker compose -f deploy/docker-compose.yml up -d db`.
+4. Stop the old API so nothing writes the SQLite files during the copy:
+   `docker compose -f deploy/docker-compose.yml stop api`.
+5. Import, from a container that sees both the volume and the database:
+   ```bash
+   docker run --rm --network btc-desk_default --env-file deploy/.env \
+     -v btc-desk_data:/srv/data:ro btc-desk-api:latest \
+     sh -c 'DATABASE_URL="postgres://desk:$POSTGRES_PASSWORD@db:5432/btc_desk" \
+            node app/server/dist/db/import-sqlite.js --data-dir /srv/data'
+   ```
+   It prints every table's count on both sides and exits non-zero if any
+   differ. It can be re-run; it copies only what is missing.
+6. `./deploy/deploy.sh`. Check `/api/health` lists the migrations and
+   `db.ok: true`, sign in (same user, same authenticator — the sealed secret
+   moved with it, and opens under the same `DESK_SESSION_SECRET`), and look at
+   the Orders and P&L screens for the history.
+7. Keep the `.db` files on the volume for a month. They are the rollback: the
+   previous image, started against them, is the desk as it was.
 
 ## Keeping the data fresh
 
@@ -109,12 +169,12 @@ the names back; it does not affect `delta.thannigo.in`.
 The desk is on the open internet, and the API gates itself. Signing in takes
 **two steps, both required**:
 
-1. username and password (scrypt hash, in `auth.db`);
+1. username and password (scrypt hash, in the `auth` schema);
 2. the 6-digit code from Google Authenticator (or any TOTP app).
 
 At the first sign-in the second step is set up: a QR code to scan, one code to
 verify, and ten recovery codes shown once. A session lasts **a week** and is a
-row in `auth.db` — so logging out ends it, and changing the password ends every
+row in `auth.sessions` — so logging out ends it, and changing the password ends every
 other one. The gate in `app.ts` decides on the route Fastify matched (never on
 the text of the URL) and refuses anything that is not fully signed in. Only
 `/api/health` and `/api/me` are public; `/api/login` and the code step carry
@@ -149,7 +209,8 @@ docker exec banknifty-proxy-1 nginx -s reload
 
 ## Credentials
 
-None are deployed. Every endpoint the desk reads is public. The account panel
-stays disabled unless `DELTA_API_KEY` / `DELTA_API_SECRET` appear in
-`app/server/.env`, which is git-ignored and not in any image. `deploy.sh`
+None are in any image. Every endpoint the desk reads is public. The account
+panel stays disabled unless `DELTA_API_KEY` / `DELTA_API_SECRET` appear in
+`app/server/.env`; the database password is in `deploy/.env`. Both are
+git-ignored, and deploy.sh refuses to build if `deploy/.env` is tracked. `deploy.sh`
 refuses to build if `app-ket.txt` is tracked by git or present in its history.

@@ -62,22 +62,28 @@ cannot be measured until that history exists (see TODO).
     python3 research/measure_outlook.py          # writes the repo's chain.db
     python3 research/outlook_parity.py           # refreshes the test vectors
 
-**Publish to the live volume** — into the service's own `analytics.db`, as uid
-1000 (the service's user and the owner of the volume directory). Never into the
-shared `chain.db`: it belongs to other processes and users, and a write by root
-can leave `-wal`/`-shm` files the read-only API cannot reopen.
+**Publish to the live database** — into the `analytics` schema of the desk's
+PostgreSQL, from a throwaway container on the compose network (the database has
+no host port):
 
-    docker run --rm --user 1000:1000 \
-      -v btc-desk_data:/srv/data -v "$PWD":/repo:ro btc-desk-analytics:latest \
-      python /repo/research/publish_outlook_states.py /repo/chain.db /srv/data/analytics.db
+    docker run --rm --network btc-desk_default --env-file deploy/.env \
+      -v "$PWD":/repo:ro btc-desk-analytics:latest \
+      sh -c 'python /repo/research/publish_outlook_states.py /repo/chain.db \
+               "postgres://desk:$POSTGRES_PASSWORD@db:5432/btc_desk"'
 
-The first publish creates the file. The service notices it changed and serves the
-new rows; no restart.
+The two tables are replaced and `analytics.publish_meta.published_at` stamped in
+one transaction, so the service never sees half a publish. It checks the stamp
+at most every 30 s and serves the new rows; no restart. A SQLite path as the
+target still works, for local runs against `chain.db`.
 
 **Is it answering?**
 
     docker compose -f deploy/docker-compose.yml exec analytics \
       python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8800/health').read())"
 
-`outlook_rows: 0` means the table was never published: the cards show Node's own
-figures until it is.
+`outlook_rows: 0` means the table was never published (or the database is away):
+the cards show Node's own figures until it is.
+
+**Tests against PostgreSQL** — `tests/test_pg.py` publishes, reads and
+re-publishes against a real server; it runs when `TEST_PG_URL` is set
+(`deploy/test-db.sh up` prints one) and skips otherwise. deploy.sh sets it.

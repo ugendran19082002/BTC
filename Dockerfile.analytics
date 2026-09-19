@@ -6,7 +6,7 @@
 # compose network and shows its own figures whenever it does not answer.
 
 FROM python:3.12-slim AS runtime
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 ANALYTICS_DB=/srv/data/analytics.db
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /srv/analytics
 
 # manifests first, so a source-only change reuses the install layer
@@ -15,10 +15,9 @@ RUN --mount=type=cache,target=/root/.cache/pip pip install --no-compile -r requi
 
 COPY analytics/app ./app
 
-# uid 1000: the owner of the volume directory, and so of the analytics.db this
-# service reads and the publish step (run as the same uid) creates.
-RUN useradd --system --uid 1000 --no-create-home analytics \
- && mkdir -p /srv/data && chown analytics /srv/data
+# An unprivileged user. The tables it reads are in PostgreSQL (DATABASE_URL,
+# set by compose); it owns no files.
+RUN useradd --system --uid 1000 --no-create-home analytics
 USER analytics
 
 EXPOSE 8800

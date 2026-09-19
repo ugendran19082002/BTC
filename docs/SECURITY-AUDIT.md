@@ -130,7 +130,7 @@ web at all.
 - **Lost phone:** `npm run auth -- reset-2fa` on the server, then set it up
   again at the next sign-in.
 - **The secret** is sealed with AES-256-GCM under a key derived from
-  `DESK_SESSION_SECRET`, so a copy of `auth.db` alone opens nothing.
+  `DESK_SESSION_SECRET`, so a copy of the `auth` schema (then `auth.db`) alone opens nothing.
 
 ---
 
@@ -140,7 +140,7 @@ web at all.
 it. Logging out only cleared the browser's copy: the same cookie kept working
 until it expired. Changing the password (then: editing `.env`) ended nothing.
 
-**Fix:** sessions are rows in `auth.db`, and only the SHA-256 of each token is
+**Fix:** sessions are rows in `auth.db` (since 19 September 2026, `auth.sessions` in PostgreSQL), and only the SHA-256 of each token is
 stored. Logging out ends the session on the server. Changing the password ends
 **every other** session. The account page lists the devices signed in — what
 they are, their address, when they were last active — with one button to sign

@@ -24,7 +24,7 @@ broke and why — which is worth reading before changing anything in `trading/`.
      │                           │       ▲
      │                    trading/exchange/paper.ts  (the simulator)
      ▼                           ▼
-  domain/            ◄──   trading/engine.ts   ──►  trading/store.ts  ──►  trades.db
+  domain/            ◄──   trading/engine.ts   ──►  trading/store.ts  ──►  PostgreSQL: trading.*
   score, recommend, ev,    (no clock, no timers)
   probability,                    │
   calibration,                    ▼
@@ -32,21 +32,25 @@ broke and why — which is worth reading before changing anything in `trading/`.
      │                            │
      └──────────┬─────────────────┘
                 ▼
-          http/ routes  ── app.ts hooks ──► observability/errors.ts ──► errors.db
+          http/ routes  ── app.ts hooks ──► observability/errors.ts ──► PostgreSQL: errors.log
                 │
                 ▼   JSON over one session cookie
           app/web  (React 18 + Vite + Tailwind + Radix)
                         │
-                        └── failures ──► POST /api/errors ──► the same errors.db
+                        └── failures ──► POST /api/errors ──► the same errors.log
 
   chain.db ──► domain/, backtest/    (735 settled days; read-only at runtime)
 ```
 
-Two processes in production: `btc-desk-api` (Fastify) and `btc-desk-web`
-(nginx serving the built bundle and proxying `/api`). One volume, `/srv/data`,
-holding the four databases — `chain.db`, `trades.db`, `errors.db` and
-`market.db`, the last being open interest and at-the-money volatility in
-five-minute buckets so a *change* in either is readable at all.
+Four processes in production: `btc-desk-api` (Fastify), `btc-desk-web` (nginx
+serving the built bundle and proxying `/api`), `btc-desk-analytics` (Python,
+display-only models) and `db` (PostgreSQL 17). Everything the desk writes is
+in one PostgreSQL database, a schema per concern — `trading` (the journal and
+the settings), `strategy`, `auth`, `errors`, `market` (open interest and
+at-the-money volatility in five-minute buckets, so a *change* in either is
+readable at all) and `analytics`. The one file left is `chain.db`, the
+harvester's read-only dataset, on the `data` volume. `DB-INVENTORY.md` has
+every table.
 
 ---
 
@@ -240,7 +244,7 @@ found closed on Delta without an exit fill, and one summary for the day when the
 last position closes. Off unless `TG_TOKEN` and `TG_CHAT_ID` are both set.
 
 ```
-engine.commit ──save──► trades.db
+engine.commit ──await save──► trading.trades + trade_events
       │
       └─► onEvent(event, before, after, plan)   ◄── after the save, inside a try
                 │
@@ -272,11 +276,18 @@ statement is the authority. See `TODO.md`.
 @testing-library). Run `npm test` in `app/server` and `npx vitest run` in
 `app/web`; `npm run typecheck` in both.
 
-Every database the suite touches goes to a temp directory: `test/env.ts` is
-preloaded with `--import` and `env.test.ts` asserts none of the three paths
-resolve inside the repository. Before it existed the suite filed three exchange
-refusals into the desk's real `errors.db` on every run, and two rows with 72
-occurrences between them sat in the live log looking like real order failures.
+The suite needs a PostgreSQL: `deploy/test-db.sh up` runs a throwaway one on
+127.0.0.1:5433 (tmpfs, fsync off), and `deploy.sh` starts and removes it around
+the test run. `test/env.ts` is preloaded with `--import` and gives every test
+process a `btc_test_<random>` database of its own, dropped when the process
+ends; `env.test.ts` fails if `DATABASE_URL` names anything else. Before the
+first version of that guard the suite filed three exchange refusals into the
+desk's real error log on every run, and two rows with 72 occurrences between
+them sat in the live log looking like real order failures.
+
+The engine matrix still runs on `MemoryTradeStore`, a Map behind the same async
+`TradeStore` interface, so the 81 cases stay fast and deterministic; the stores
+themselves are tested against the real database.
 
 The server suite is an 81-case matrix covering normal entry, partial fill,
 timeout, reject, network timeout, duplicate prevention, TP/SL, race conditions,
@@ -300,10 +311,17 @@ images if the new ones fail. `--check` validates without changing anything;
 `--host user@ip` builds locally and ships.
 
 `./deploy/refresh.sh` runs the harvester and hands the desk a consistent
-`chain.db` via a SQLite backup rather than a file grab.
+`chain.db` via a SQLite backup rather than a file grab. `./deploy/backup-db.sh`
+takes a `pg_dump` of the database and keeps a fortnight of them.
 
-`GET /api/health` returns the day count, the date range, and the applied trade
-migrations — so a deploy that did not migrate is visible without a shell.
+`GET /api/health` returns the day count, the date range, the database's round
+trip (`db: { ok, latencyMs }`) and every applied migration — so a deploy that
+did not migrate, or a database about to stop answering, is visible without a
+shell.
+
+At boot, before `listen`, `index.ts` migrates every schema and loads the
+settings cache; a migration that fails stops the process. A desk that cannot
+reach its journal must not take an order.
 
 ---
 

@@ -110,29 +110,32 @@ new server's public IP (`curl -4 ifconfig.me`). Do not reuse a key that has
 ever been pasted into a chat, a screenshot or a file — the first items in
 [TODO.md](TODO.md) are about exactly that.
 
-The password hash and session secret here seed the first user into
-`auth.db` and are then ignored; afterwards the password lives in `auth.db`
-and is changed from the profile screen.
+The password hash and session secret here seed the first user into the
+database and are then ignored; afterwards the password lives in the `auth`
+schema and is changed from the profile screen.
+
+**The database password** goes in a second file, `deploy/.env` (copy
+`deploy/.env.example`): `POSTGRES_PASSWORD=` followed by `openssl rand -base64 24`.
+Compose creates the database with it on the first `up`, and refuses to start
+without it. It never leaves the compose network; there is no host port.
 
 ## 4. The data
 
-Three databases live in the Docker volume `btc-desk_data` at `/srv/data`:
+Two things hold the desk's data:
 
-| File | What it is | For a paper copy | For the new home |
+| Where | What it is | For a paper copy | For the new home |
 |---|---|---|---|
-| `chain.db` | 735 days of option chains, the 733-day record every figure is tested against | **copy it** | copy it |
-| `trades.db` | the order journal, strategies, settings, MTM samples | fresh | copy it |
-| `auth.db` | password, sealed authenticator secret, sessions, security log | fresh | copy it, or set up 2FA again |
-| `errors.db`, `market.db` | error log, market cache | fresh | fresh |
+| `chain.db`, in the Docker volume `btc-desk_data` | 735 days of option chains, the 733-day record every figure is tested against | **copy it** | copy it |
+| the PostgreSQL database `btc_desk`, volume `btc-desk_pgdata` | the order journal, strategies, settings, MTM samples, sign-in, error log, market cache, analytics tables | fresh | copy it (`btc_desk.dump`) |
 
 ### Two commands
 
 On the **old** server — the desk keeps running, the copies are consistent
-(SQLite's backup API, never a `cp` of a WAL-mode file):
+(SQLite's backup API for `chain.db`, `pg_dump` for the database):
 
 ```bash
 cd ~/test-delta
-./deploy/export-data.sh            # chain.db + trades.db + auth.db  -> data-export/btc-desk-data-<stamp>.tar.gz
+./deploy/export-data.sh            # chain.db + btc_desk.dump  -> data-export/btc-desk-data-<stamp>.tar.gz
 ./deploy/export-data.sh --chain    # chain.db only: all a paper copy needs
 scp data-export/btc-desk-data-*.tar.gz newserver:/tmp/
 ```
@@ -145,16 +148,18 @@ cd ~/test-delta
 ./deploy/import-data.sh /tmp/btc-desk-data-<stamp>.tar.gz
 ```
 
-It stops the API, puts the files in the volume (replacing any with the same
-name, journals removed, owned by the API's user), places `chain.db` at the
-repository root for `refresh.sh`, starts the API and waits for `/api/health`.
+It stops the API, puts `chain.db` in the volume and at the repository root for
+`refresh.sh`, restores `btc_desk.dump` over this server's database with
+`pg_restore` (in one transaction), starts the API and waits for `/api/health`.
 
 Two things the scripts will not do for you:
 
-- **`.env` is not in the tarball** — it holds the exchange key and the
-  session secret. Carry it by hand, and read §3 before reusing any key.
-- **`auth.db` opens only under the same `DESK_SESSION_SECRET`** it was sealed
-  with. Same secret in the new `.env`: the password, the authenticator and the
+- **Neither `.env` is in the tarball** — they hold the exchange key, the
+  session secret and the database password. Carry them by hand, and read §3
+  before reusing any key. The new server's `POSTGRES_PASSWORD` may differ from
+  the old one's: the dump carries data, not roles.
+- **The sign-in tables open only under the same `DESK_SESSION_SECRET`** they
+  were sealed with. Same secret in the new `.env`: the password, the authenticator and the
   recovery codes all carry over. New secret: `cd app/server && npm run auth --
   reset-2fa`, then scan a new QR at the next sign-in.
 

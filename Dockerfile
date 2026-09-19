@@ -35,9 +35,10 @@ COPY --from=server-deps /build/server/node_modules ./app/server/node_modules
 COPY --from=server-build /build/server/dist ./app/server/dist
 COPY app/server/package.json ./app/server/package.json
 
-# The chain database is the only path this process touches outside the image,
-# and it opens it read-only. SQLite in WAL mode still needs the directory
-# writable for its shared-memory file, so it is a volume, not image content.
+# chain.db is the only file this process touches outside the image, and it
+# opens it read-only; everything it writes goes to PostgreSQL (DATABASE_URL).
+# SQLite in WAL mode still needs the directory writable for its shared-memory
+# file, so it is a volume, not image content.
 RUN mkdir -p /srv/data && chown -R node:node /srv/data
 USER node
 
