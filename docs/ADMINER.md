@@ -24,9 +24,21 @@ a public name.
 | `desk_ro` | `deploy/db-readonly-role.sh` | SELECT only, every desk schema, 30 s statement limit, read-only transactions, 5 connections, and **no access** to `auth.user`, `auth.sessions`, `auth.recovery_codes`. |
 | Container | compose `adminer` | Opt-in profile, pinned `adminer:6.0.1-standalone`, read-only root, all capabilities dropped, 0.5 CPU / 256 MB. |
 
-The owner account (`desk`, `POSTGRES_PASSWORD`) also works through the console,
-and can write. Use it deliberately, and only for something the desk's own
-screens cannot do.
+For changes, use your own named login, `DB_ADMIN_USER` (created by
+`deploy/db-admin-role.sh`): a member of `desk`, so it can read, write, alter,
+create and drop everything the desk owns, and anything it creates is owned by
+`desk`. It is not a superuser. Its own name means the database log says who
+did what, and it can be switched off without touching the application's
+password. The application's own account, `desk`, also works; leave it to the
+application.
+
+`pg_dump` does not carry roles: after a restore onto a new server, run
+`db-readonly-role.sh` and `db-admin-role.sh` again.
+
+Passwords are checked for every connection over the network (Adminer, the API).
+Inside the `db` container itself (`docker compose exec db psql`) the official
+image trusts local connections -- which is what the scripts use, and which
+needs Docker access to the server in the first place.
 
 The look: **pepa-linha** in light mode, **dracula** when your system is dark —
 `deploy/adminer/theme/`, copied from the image's own `designs/` so Adminer
@@ -42,8 +54,9 @@ After the database cutover (`DEPLOY.md`), on the server:
 openssl rand -base64 24            # -> DB_READONLY_PASSWORD=
 ./deploy/adminer-otp.sh            # -> ADMINER_OTP_SECRET=, and the otpauth:// link for your phone
 
-# 2. the read-only account
+# 2. the read-only account, and your own admin login (DB_ADMIN_USER / DB_ADMIN_PASSWORD)
 ./deploy/db-readonly-role.sh
+./deploy/db-admin-role.sh
 
 # 3. the edge password (bcrypt), in the proxy's template directory
 htpasswd -B -c /home/agent/trade/infra/nginx/.htpasswd-btc-adminer <username>
