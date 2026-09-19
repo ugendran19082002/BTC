@@ -17,7 +17,6 @@ import { getTradeStatus } from '@/api/trade';
 import { heldLegs, type HeldLeg } from '@/lib/held';
 import { getErrors } from '@/api/errors';
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
-import { Overview } from '@/components/overview/Overview';
 import type { Selected } from '@/components/overview/DecisionPanels';
 import { usePoll } from '@/hooks/usePoll';
 import { usePageVisible } from '@/hooks/usePageVisible';
@@ -88,7 +87,7 @@ const Chart = memo(PriceChart);
 /** One empty list, so "no bars yet" is the same prop every render. */
 const NO_BARS: never[] = [];
 
-type Tab = 'overview' | 'desk' | 'trade' | 'orders' | 'strategy' | 'pnl' | 'errors' | 'settings';
+type Tab = 'desk' | 'trade' | 'orders' | 'strategy' | 'pnl' | 'errors' | 'settings';
 
 /** Of two answers to the same question, the one that arrived last; either may be missing. */
 function newer<T>(a: T | null, aAt: number | null, b: T | null, bAt: number | null): T | null {
@@ -104,8 +103,8 @@ function newer<T>(a: T | null, aAt: number | null, b: T | null, bAt: number | nu
  * this line on 18 September, so clicking it fell straight back to Live. A tab
  * that exists in three places and not in the fourth is invisible.
  */
-export const TABS: readonly Tab[] = ['overview', 'desk', 'trade', 'orders', 'strategy', 'pnl', 'settings', 'errors'];
-export const asTab = (v: string): Tab => (TABS as readonly string[]).includes(v) ? (v as Tab) : 'overview';
+export const TABS: readonly Tab[] = ['desk', 'trade', 'orders', 'strategy', 'pnl', 'settings', 'errors'];
+export const asTab = (v: string): Tab => (TABS as readonly string[]).includes(v) ? (v as Tab) : 'desk';
 
 const REFRESH_SECONDS = 5;
 // The expiry list changes once a day, at settlement.
@@ -135,7 +134,7 @@ function loadCachedExpiries(): ExpiryOption[] {
 const Loading = () => <div className="spinner">Loading…</div>;
 
 export default function App() {
-  const [storedTab, setTab] = usePersisted<Tab>('tab', 'overview');
+  const [storedTab, setTab] = usePersisted<Tab>('tab', 'desk');
   const tab = asTab(storedTab);
   // A ticket is a seed plus an open flag: the sheet animates closed with its contents still on screen.
   const [ticket, setTicket] = useState<TicketSeed | null>(null);
@@ -328,7 +327,7 @@ export default function App() {
   const { data: candles, loading: candlesBusy } = usePoll(
     () => getCandles(chartTf),
     60_000,
-    { enabled: signedIn === true && (tab === 'desk' || tab === 'overview'), deps: [chartTf] },
+    { enabled: signedIn === true && tab === 'desk', deps: [chartTf] },
   );
 
   const openTicket = useCallback((i: ChainSellIntent) => {
@@ -464,9 +463,6 @@ export default function App() {
       )}
 
       <nav className="tabs" aria-label="Screens">
-        <button className={tab === 'overview' ? 'on' : ''} onClick={() => setTab('overview')}>
-          <LayoutDashboard aria-hidden /> <span>Overview</span>
-        </button>
         <button className={tab === 'desk' ? 'on' : ''} onClick={() => setTab('desk')}>
           <Activity aria-hidden /> <span>Live</span>
         </button>
@@ -495,34 +491,7 @@ export default function App() {
       </nav>
 
       <Suspense fallback={<Loading />}>
-      {tab === 'overview' ? (
-        data && snap ? (
-          <Suspense fallback={<Loading />}>
-            <Overview
-              data={data}
-              trade={trade ?? null}
-              expiries={expiries}
-              onExpiry={setExpiry}
-              onSell={snap.live ? sellLeg : undefined}
-              contracts={lots}
-              chart={
-                <ErrorBoundary where="Price chart">
-                  <Chart
-                    bars={candles?.bars ?? NO_BARS}
-                    support={data.structure.peOiWallNear?.strike ?? null}
-                    resistance={data.structure.ceOiWallNear?.strike ?? null}
-                    spot={snap.spot}
-                    tf={chartTf}
-                    onTf={setChartTf}
-                    loading={candlesBusy}
-                    error={candles?.error}
-                  />
-                </ErrorBoundary>
-              }
-            />
-          </Suspense>
-        ) : err ? <div className="err">{err}</div> : <Loading />
-      ) : tab === 'desk' ? (
+      {tab === 'desk' ? (
         <>
           {/*
             The settings, as one bar across the top.
@@ -692,11 +661,9 @@ export default function App() {
             <ErrorBoundary where="Decision panels">
               <Overview
                 data={data}
-                spot={tick?.spot ?? null}
                 trade={trade}
                 onSell={snap.live ? sellLeg : undefined}
                 contracts={lots}
-                chart={false}
                 chain={false}
                 selected={focus}
                 onSelect={setFocus}

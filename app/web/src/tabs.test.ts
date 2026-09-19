@@ -12,12 +12,12 @@ import { TABS, asTab } from '@/App';
 
 describe('the tab list', () => {
   it('[critical] every screen the desk has is in the list a click is checked against', () => {
-    expect([...TABS]).toEqual(['overview', 'desk', 'trade', 'orders', 'strategy', 'pnl', 'settings', 'errors']);
+    expect([...TABS]).toEqual(['desk', 'trade', 'orders', 'strategy', 'pnl', 'settings', 'errors']);
     for (const t of TABS) expect(asTab(t)).toBe(t);
   });
 
-  it('a tab remembered from an older build falls back to the Overview rather than a blank screen', () => {
-    expect(asTab('whatever-this-was')).toBe('overview');
-    expect(asTab('')).toBe('overview');
+  it('a tab remembered from an older build falls back to Live rather than a blank screen', () => {
+    expect(asTab('whatever-this-was')).toBe('desk');
+    expect(asTab('')).toBe('desk');
   });
 });

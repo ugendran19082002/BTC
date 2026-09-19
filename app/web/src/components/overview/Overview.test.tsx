@@ -18,7 +18,7 @@ const data = live as unknown as ChainResponse;
  */
 describe('the decision panels', () => {
   it('draw every panel from a real chain, with the chart and chain left to the screen', () => {
-    render(<Overview data={data} spot={null} trade={null} contracts={1} chart={false} chain={false} />);
+    render(<Overview data={data} trade={null} contracts={1} chain={false} />);
     for (const t of ['Key levels', 'Volatility', 'Model view (12h)', 'Strategy decision', 'Sell recommendation', 'IV term structure', 'Entry checklist', 'Place sell order']) {
       expect(screen.getByText(t)).toBeInTheDocument();
     }
@@ -30,15 +30,15 @@ describe('the decision panels', () => {
     const leg = data.legs.find((l) => l.cp === 'P')!;
     const onSelect = vi.fn();
     const { rerender } = render(
-      <Overview data={data} spot={null} trade={null} contracts={1} chart={false} chain={false} selected={{ cp: 'P', strike: leg.strike }} onSelect={onSelect} />,
+      <Overview data={data} trade={null} contracts={1} chain={false} selected={{ cp: 'P', strike: leg.strike }} onSelect={onSelect} />,
     );
     expect(screen.getByText(`Selected strike: ${leg.strike.toLocaleString('en-US')} PE`)).toBeInTheDocument();
-    rerender(<Overview data={data} spot={null} trade={null} contracts={1} chart={false} chain={false} selected={{ cp: 'P', strike: 1 }} onSelect={onSelect} />);
+    rerender(<Overview data={data} trade={null} contracts={1} chain={false} selected={{ cp: 'P', strike: 1 }} onSelect={onSelect} />);
     expect(screen.getByText(/^Selected strike: /)).toBeInTheDocument();
   });
 
   it('with its own chain, a click on a strike selects it', () => {
-    render(<Overview data={data} spot={null} trade={null} contracts={1} chart={false} />);
+    render(<Overview data={data} trade={null} contracts={1} />);
     const k = data.snapshot.atm;
     const row = screen.getByText(k.toLocaleString('en-US'), { selector: 'td.ov-strike' }).closest('tr')!;
     fireEvent.click(row.querySelectorAll('td')[0]!);

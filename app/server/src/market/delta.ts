@@ -40,7 +40,7 @@ export type Ticker = {
  * itself failed. Conflating the two is how a rate-limited minute turns into a
  * phantom "no data at that time", so keep them apart.
  */
-async function req<T>(path: string, tries = 5): Promise<T | null> {
+export async function req<T>(path: string, tries = 5): Promise<T | null> {
   let last = 'unknown error';
   for (let i = 0; i < tries; i++) {
     try {
