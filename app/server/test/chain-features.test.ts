@@ -1,8 +1,8 @@
-import { test, beforeEach } from 'node:test';
+import { test, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { closePool, one, query } from '../src/db/pool.js';
+import { chainBoard, noteChainFeatures, chainHistory, SKEW_STEPS } from '../src/market/chain-features.js';
+import { closeOiHistory, marketSchema } from '../src/market/oi-history.js';
 
 /**
  * The option board as figures a measurement can use, and the record of them.
@@ -14,13 +14,6 @@ import { join } from 'node:path';
  * readings nobody can measure yet (open interest, its change, the walls, max
  * pain) have no history at all until this has been running a year.
  */
-
-const dir = mkdtempSync(join(tmpdir(), 'chain-features-'));
-process.env.MARKET_DB = join(dir, 'market.db');
-
-const { chainBoard, noteChainFeatures, chainHistory, SKEW_STEPS } =
-  await import('../src/market/chain-features.js');
-const { closeOiHistory, marketDb } = await import('../src/market/oi-history.js');
 
 const T0 = 1_789_000_000;
 const snap = { atm: 76_000, step: 200, hoursToExpiry: 10.9, expiry: '170926', ts: T0, spot: 76_050 };
@@ -37,14 +30,17 @@ const legs = () => [
   leg('C', 75_000, 1_100, 999), leg('P', 77_000, 1_150, 999),
 ];
 
-beforeEach(() => {
+// One database for the file; each case starts its table empty.
+beforeEach(async () => {
   closeOiHistory();
-  for (const s of ['', '-wal', '-shm']) rmSync(process.env.MARKET_DB! + s, { force: true });
+  await marketSchema();
+  await query('TRUNCATE market.chain_features');
 });
+after(() => closePool());
 
 // ---------------------------------------------------------------------------
 
-test('[critical] the board is raw marks and volumes — no bucket, no verdict', () => {
+test('[critical] the board is raw marks and volumes — no bucket, no verdict', async () => {
   const b = chainBoard(snap, legs());
   assert.equal(b.callAtm, 500);
   assert.equal(b.putAtm, 488);
@@ -57,14 +53,14 @@ test('[critical] the board is raw marks and volumes — no bucket, no verdict', 
   assert.equal(Object.values(b).some((v) => typeof v === 'string'), false);
 });
 
-test('a strike with no mark is a hole, not a zero', () => {
+test('a strike with no mark is a hole, not a zero', async () => {
   const b = chainBoard(snap, legs().filter((l) => (l as { strike: number }).strike !== 76_600));
   assert.deepEqual(b.callMarks, [198, null, 84]);
   const zeroed = chainBoard(snap, [leg('C', 76_000, 0, 5), leg('P', 76_000, 488, 5)]);
   assert.equal(zeroed.callAtm, null);
 });
 
-test('an empty board reads as nothing anywhere', () => {
+test('an empty board reads as nothing anywhere', async () => {
   const b = chainBoard(snap, []);
   assert.deepEqual(
     [b.callAtm, b.putAtm, b.putVolume, b.callVolume, b.putMarks, b.callMarks],
@@ -79,18 +75,17 @@ const record = (ts: number) => ({
   ceWall: 78_400, peWall: 72_800, maxPain: 76_000, ceOiChange: 120, peOiChange: -40,
 });
 
-test('[critical] one row per five-minute bucket per expiry, however often it is called', () => {
-  assert.equal(noteChainFeatures(record(T0)), Math.floor(T0 / 300) * 300_000);
-  assert.equal(noteChainFeatures(record(T0 + 60)), null);      // same bucket
-  assert.notEqual(noteChainFeatures(record(T0 + 300)), null);  // the next one
-  assert.equal(chainHistory().rows, 2);
-  assert.equal(chainHistory().since, Math.floor(T0 / 300) * 300_000);
+test('[critical] one row per five-minute bucket per expiry, however often it is called', async () => {
+  assert.equal(await noteChainFeatures(record(T0)), Math.floor(T0 / 300) * 300_000);
+  assert.equal(await noteChainFeatures(record(T0 + 60)), null);      // same bucket
+  assert.notEqual(await noteChainFeatures(record(T0 + 300)), null);  // the next one
+  assert.equal((await chainHistory()).rows, 2);
+  assert.equal((await chainHistory()).since, Math.floor(T0 / 300) * 300_000);
 });
 
-test('[critical] what has no history yet is recorded, so that one day it has one', () => {
-  noteChainFeatures(record(T0));
-  const row = marketDb('003-chain-features')
-    .prepare('SELECT * FROM chain_features LIMIT 1').get() as Record<string, unknown>;
+test('[critical] what has no history yet is recorded, so that one day it has one', async () => {
+  await noteChainFeatures(record(T0));
+  const row = (await one<Record<string, unknown>>('SELECT * FROM market.chain_features LIMIT 1'))!;
   assert.equal(row.pcr_oi, 0.34);
   assert.equal(row.ce_wall, 78_400);
   assert.equal(row.pe_wall, 72_800);
@@ -98,14 +93,14 @@ test('[critical] what has no history yet is recorded, so that one day it has one
   assert.equal(row.ce_oi_change, 120);
   assert.equal(row.pe_oi_change, -40);
   assert.equal(row.atm_iv, 0.3);
-  assert.deepEqual(JSON.parse(row.put_marks as string), [200, 130, 80]);
+  assert.deepEqual(row.put_marks, [200, 130, 80]);
 });
 
-test('a table that cannot be read is no history, not a crash', () => {
+test('a table that cannot be read is no history, not a crash', async () => {
   closeOiHistory();
-  // nothing recorded yet in a fresh file: the runbook's "since" is absent, not zero-dated
+  // nothing recorded yet in a fresh table: the runbook's "since" is absent, not zero-dated
   assert.deepEqual(
-    { rows: chainHistory().rows, since: chainHistory().since },
+    { rows: (await chainHistory()).rows, since: (await chainHistory()).since },
     { rows: 0, since: null },
   );
 });
