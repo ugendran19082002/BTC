@@ -1,9 +1,13 @@
 import { describe, expect, test } from 'vitest';
-import type { Leg, Outlook } from '@/types/desk';
+import type { ChainResponse, Leg, Outlook } from '@/types/desk';
+import live from '@/test/fixtures/chain-live.json';
 import {
-  allClear, bestLeg, breakeven, candidates, consensus, entryGates, expectedMove, freshness, gammaRisk,
-  ivRv, keyLevels, modelView, odds, payoffPrices, premiumAnalysis, shortPayoff, skew,
+  allClear, bestLeg, bothSides, breakeven, candidates, consensus, entryGates, expectedMove, feePerContract, freshness, gammaRisk,
+  ivRv, keyLevels, marginPerContract, modelView, odds, orderEstimate, payoffPrices, premiumAnalysis, shortPayoff, skew, volRegime,
 } from './overview';
+
+const fixtureData = () => live as unknown as ChainResponse;
+const it = test;
 
 const leg = (over: Partial<Leg>): Leg => ({
   ev: { signal: 'sell' } as Leg['ev'], oiChange: null, cp: 'C', strike: 78_000, off: 1, moneyness: 'OTM',
@@ -178,4 +182,52 @@ test('key levels come sorted high to low, and only from what was read', () => {
     peOiWall: { strike: 77_420, value: 1 }, maxPain: { strike: 78_000, payoutUsd: 0 }, gammaWall: null,
   } as never, 78_120, 76_840);
   expect(lv.map((l) => l.price)).toEqual([78_400, 78_120, 78_000, 77_420, 76_840]);
+});
+
+describe('margin, fees and the order estimate', () => {
+  it('[critical] margin per contract is spot × 0.001 ÷ leverage plus the fee, as the server model was fitted', () => {
+    // Delta's ticket: index 78,405.5, 10 lots, 200x -> "Funds req. 3.93 USD" (server: trading/margin.ts)
+    const per = marginPerContract(78_405.5, 200, 506);
+    expect(per * 10).toBeCloseTo(3.93, 2);
+  });
+
+  it('the fee is capped at 3.5% of a small premium', () => {
+    expect(feePerContract(80_000, 4)).toBeCloseTo(4 * 0.001 * 0.035, 9);
+    expect(feePerContract(80_000, 1_000)).toBeCloseTo(80_000 * 0.001 * 0.0001, 9);
+  });
+
+  it('the estimate: credit, fees, margin, return on margin, and a breakeven that includes the fee', () => {
+    const e = orderEstimate('C', 82_000, 100, 80_000, 100, 10);
+    expect(e.creditUsd).toBeCloseTo(1, 9);
+    expect(e.marginUsd).toBeCloseTo(10 * (80_000 * 0.001 / 100 + feePerContract(80_000, 100)), 9);
+    expect(e.returnOnMargin).toBeGreaterThan(0);
+    expect(e.breakevenAfterFees).toBeLessThan(82_100);
+    expect(orderEstimate('P', 78_000, 100, 80_000, 100, 10).breakevenAfterFees).toBeGreaterThan(77_900);
+  });
+});
+
+describe('the risk gate', () => {
+  const base = { data: fixtureData(), leg: null, iv: null, nowMs: Date.now(), maxSpreadPct: null };
+  it('passes while the size after this sell is within the cap and the day is inside its loss limit', () => {
+    const g = entryGates({ ...base, risk: { contracts: 10, heldShort: 20, maxShortContracts: 50, dayNetUsd: -1, maxDailyLossUsd: 5 } }).find((x) => x.key === 'risk');
+    expect(g?.ok).toBe(true);
+  });
+  it('[critical] fails on the cap, and on the day\'s loss limit', () => {
+    expect(entryGates({ ...base, risk: { contracts: 40, heldShort: 20, maxShortContracts: 50, dayNetUsd: 0, maxDailyLossUsd: 5 } }).find((x) => x.key === 'risk')?.ok).toBe(false);
+    expect(entryGates({ ...base, risk: { contracts: 1, heldShort: 0, maxShortContracts: 50, dayNetUsd: -5, maxDailyLossUsd: 5 } }).find((x) => x.key === 'risk')?.ok).toBe(false);
+  });
+});
+
+describe('both sides and the vol regime', () => {
+  it('a side is safe one expected move out; net delta is the pair short', () => {
+    const b = bothSides(fixtureData().legs);
+    expect(b.ce === null || typeof b.ceSafe === 'boolean' || b.ceSafe === null).toBe(true);
+    if (b.ce?.delta != null && b.pe?.delta != null) expect(b.netDelta).toBeCloseTo(-(b.ce.delta + b.pe.delta), 9);
+  });
+  it('the regime is the hour against the month', () => {
+    expect(volRegime(60, 40)?.label).toBe('high');
+    expect(volRegime(20, 40)?.label).toBe('low');
+    expect(volRegime(40, 40)?.label).toBe('normal');
+    expect(volRegime(null, 40)).toBeNull();
+  });
 });

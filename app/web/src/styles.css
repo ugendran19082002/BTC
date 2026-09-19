@@ -2660,6 +2660,5 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 .ov-legend i.ov-legend-week { border-top-style: dashed; border-top-color: #7dd3fc; }
 .ov-legend i.ov-legend-month { border-top-style: dotted; border-top-color: #c084fc; }
 .ov-legend i:first-child { margin-left: 0; }
-.ov-warn { color: var(--warn, #f5b342); }
 .ov-meter { display: inline-block; width: 60px; height: 6px; margin-left: 6px; vertical-align: middle; background: var(--panel-2); border-radius: 3px; overflow: hidden; }
 .ov-meter > span { display: block; height: 100%; background: var(--accent); }
