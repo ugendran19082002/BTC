@@ -14,10 +14,10 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
 from . import outlook as model
-from .db import States
+from .db import open_states
 
 app = FastAPI(title='btc-desk analytics', docs_url=None, redoc_url=None, openapi_url=None)
-states = States()
+states = open_states()
 
 Tf = Literal['5m', '15m', '1h', '4h', '1d']
 

@@ -1,8 +1,17 @@
-"""The measured tables, read-only, reloaded when the research job rewrites them."""
+"""
+The measured tables, read-only, reloaded when the research job rewrites them.
+
+Two homes, one shape. In production the tables are in the desk's PostgreSQL
+database, schema `analytics`, written by `research/publish_outlook_states.py`
+(`PgStates`, chosen when `DATABASE_URL` is set). For local work and the tests
+they are a SQLite file -- the repo's chain.db, straight from the measurement
+(`States`). `open_states()` picks; the service never knows which it got.
+"""
 import json
 import os
 import sqlite3
 import threading
+import time
 from dataclasses import dataclass
 
 DEFAULT_DB = os.path.join(os.path.dirname(__file__), '..', '..', 'chain.db')
@@ -123,3 +132,99 @@ class States:
                 con.close()
         except sqlite3.Error:
             return {}
+
+
+OUTLOOK_COLS = ('minutes, feature, bucket, windows, independent, side_band_pct, '
+                'p_down, p_side, p_up, q16_pct, q50_pct, q84_pct, lean_holds, side_holds, by_year, measured_at')
+
+# The tables, as the publish script and the Node import both create them.
+PG_SCHEMA = """
+CREATE SCHEMA IF NOT EXISTS analytics;
+CREATE TABLE IF NOT EXISTS analytics.outlook_states (
+  minutes INTEGER NOT NULL, feature TEXT NOT NULL, bucket TEXT NOT NULL,
+  windows INTEGER, independent INTEGER, side_band_pct DOUBLE PRECISION,
+  p_down DOUBLE PRECISION, p_side DOUBLE PRECISION, p_up DOUBLE PRECISION,
+  q16_pct DOUBLE PRECISION, q50_pct DOUBLE PRECISION, q84_pct DOUBLE PRECISION,
+  by_year JSONB, lean_holds BOOLEAN, side_holds BOOLEAN, lean_z DOUBLE PRECISION, side_z DOUBLE PRECISION,
+  measured_at TEXT, PRIMARY KEY (minutes, feature, bucket)
+);
+CREATE TABLE IF NOT EXISTS analytics.chain_states (
+  minutes INTEGER NOT NULL, feature TEXT NOT NULL, bucket TEXT NOT NULL, lo DOUBLE PRECISION, hi DOUBLE PRECISION,
+  windows INTEGER, independent INTEGER, side_band_pct DOUBLE PRECISION,
+  p_down DOUBLE PRECISION, p_side DOUBLE PRECISION, p_up DOUBLE PRECISION,
+  q16_pct DOUBLE PRECISION, q50_pct DOUBLE PRECISION, q84_pct DOUBLE PRECISION,
+  by_year JSONB, lean_holds BOOLEAN, side_holds BOOLEAN, lean_z DOUBLE PRECISION, side_z DOUBLE PRECISION,
+  measured_at TEXT, PRIMARY KEY (minutes, feature, bucket)
+);
+CREATE TABLE IF NOT EXISTS analytics.publish_meta (
+  id INTEGER PRIMARY KEY CHECK (id = 1), published_at BIGINT NOT NULL
+);
+"""
+
+
+class PgStates:
+    """
+    The same two tables, from PostgreSQL.
+
+    A file has a modification time to watch; a table does not, so the publish
+    script stamps `analytics.publish_meta.published_at` in the same transaction
+    as the rows, and this re-reads the tables when that stamp changes. The stamp
+    itself is checked at most every `ttl` seconds -- one tiny query, not one per
+    request -- so a publish is picked up within half a minute, without a restart,
+    which is what the file's mtime gave.
+    """
+
+    def __init__(self, url: str, ttl: float = 30.0):
+        self.url = url
+        self.ttl = ttl
+        self._lock = threading.Lock()
+        self._stamp = None
+        self._checked = 0.0
+        self._rows: dict[tuple[int, str, str], StateRow] = {}
+        self._chain: dict[tuple[str, str], ChainRow] = {}
+
+    def rows(self) -> dict[tuple[int, str, str], StateRow]:
+        self._refresh()
+        return self._rows
+
+    def chain(self) -> dict[tuple[str, str], ChainRow]:
+        self._refresh()
+        return self._chain
+
+    def _connect(self):
+        import psycopg
+        return psycopg.connect(self.url, connect_timeout=5, application_name='btc-desk-analytics')
+
+    def _refresh(self) -> None:
+        now = time.monotonic()
+        with self._lock:
+            if self._stamp is not None and now - self._checked < self.ttl:
+                return
+            self._checked = now
+            try:
+                with self._connect() as con:
+                    stamp = con.execute('SELECT published_at FROM analytics.publish_meta WHERE id = 1').fetchone()
+                    stamp = stamp[0] if stamp else 0
+                    if stamp == self._stamp:
+                        return
+                    rows = {}
+                    for r in con.execute(f'SELECT {OUTLOOK_COLS} FROM analytics.outlook_states'):
+                        row = StateRow(*r[:12], bool(r[12]), bool(r[13]), r[14] or {}, r[15])
+                        rows[(row.minutes, row.feature, row.bucket)] = row
+                    chain = {}
+                    for r in con.execute(f'SELECT {OUTLOOK_COLS}, lo, hi FROM analytics.chain_states'):
+                        row = ChainRow(*r[:12], bool(r[12]), bool(r[13]), r[14] or {}, r[15], r[16], r[17])
+                        chain[(row.feature, row.bucket)] = row
+            except Exception:
+                # Not published yet, or the database is away: no rows, and the
+                # cards show Node's own figures. Tried again after the ttl.
+                if self._stamp is None:
+                    self._rows, self._chain = {}, {}
+                return
+            self._rows, self._chain, self._stamp = rows, chain, stamp
+
+
+def open_states():
+    """PostgreSQL when the desk says where it is; the SQLite file otherwise."""
+    url = os.environ.get('DATABASE_URL')
+    return PgStates(url) if url else States()

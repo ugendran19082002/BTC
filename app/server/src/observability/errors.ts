@@ -96,7 +96,7 @@ const trim = (s: string | null | undefined, n = MAX_FIELD) =>
  * It used to be NUL, which SQLite stored and PostgreSQL's TEXT refuses.
  */
 const FP_SEP = '\u001f';
-const fingerprintOf = (r: ErrorReport) =>
+export const fingerprintOf = (r: ErrorReport) =>
   [r.source, r.code ?? '', r.where ?? '', r.message].join(FP_SEP).slice(0, 512);
 
 /**
