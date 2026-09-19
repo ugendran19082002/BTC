@@ -60,6 +60,9 @@ export type Leg = {
   gamma: number | null;
   theta: number | null;
   vega: number | null;
+  rho: number | null;
+  /** Black–Scholes at the mark IV: what the quoted IV says the option is worth. Null without an IV. */
+  theoretical: number | null;
   oi: number | null;
   volume: number | null;
   /** minutes since the last real trade; null when nothing traded */
@@ -449,6 +452,8 @@ export async function liveChain(width = 25, wantExpiry?: string): Promise<Snapsh
       gamma,
       theta: num(g?.theta ?? null),
       vega: num(g?.vega ?? null),
+      rho: num(g?.rho ?? null),
+      theoretical: iv !== null && iv > 0 && tte > 0 ? greeks(cp, spot, strike, tte, iv).price : null,
       oi,
       volume: t.volume ?? null,
       ageMin: null,
@@ -551,6 +556,8 @@ export async function historicalChain(
       gamma: g?.gamma ?? null,
       theta: g?.theta ?? null,
       vega: g?.vega ?? null,
+      rho: null,
+      theoretical: g?.price ?? null,
       oi: null,
       volume: tr.reduce((a, c) => a + (c.volume ?? 0), 0),
       ageMin: last ? Math.round((minute - last.time) / 60) : null,

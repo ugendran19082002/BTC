@@ -89,11 +89,17 @@ export type TermResponse = {
   /** The term structure as recorded a week / a month ago; null until the record is that long. */
   weekAgo: { at: number; points: TermHistoryPoint[] } | null;
   monthAgo: { at: number; points: TermHistoryPoint[] } | null;
-  /** Where today's put−call skew sits among every recorded reading. */
+  /** Where today's put−call skew, and the ATM IV, sit among every recorded reading. */
   skew: { percentile: number; samples: number; days: number } | null;
+  iv?: { percentile: number; samples: number; days: number } | null;
 };
-export const getTerm = (skewPts: number | null = null) =>
-  json<TermResponse>(`/api/term${skewPts === null ? '' : `?skewPts=${encodeURIComponent(skewPts)}`}`);
+export const getTerm = (skewPts: number | null = null, atmIv: number | null = null) => {
+  const q = new URLSearchParams();
+  if (skewPts !== null) q.set('skewPts', String(skewPts));
+  if (atmIv !== null) q.set('atmIv', String(atmIv));
+  const qs = q.toString();
+  return json<TermResponse>(`/api/term${qs ? `?${qs}` : ''}`);
+};
 
 /** The perpetual: ticker, top of book, and the last hour's flow by aggressor side. */
 export type PerpTicker = {
@@ -116,8 +122,13 @@ export type FlowSummary = {
   cvd: { at: number; cvd: number; delta: number }[];
   source: 'socket' | 'none';
 };
-export type PerpResponse = { at: number; ticker: PerpTicker | null; book: BookSnapshot | null; flow: FlowSummary };
-export const getPerp = (windowMin = 60) => json<PerpResponse>(`/api/perp?window=${windowMin}`);
+export type OiPulse = {
+  ceChange1h: number | null; peChange1h: number | null;
+  ceAcceleration: number | null; peAcceleration: number | null; at: number | null;
+};
+export type PerpResponse = { at: number; ticker: PerpTicker | null; book: BookSnapshot | null; flow: FlowSummary; oi?: OiPulse | null };
+export const getPerp = (windowMin = 60, expiry: string | null = null) =>
+  json<PerpResponse>(`/api/perp?window=${windowMin}${expiry ? `&expiry=${expiry}` : ''}`);
 
 /** One contract's recorded five-minute history (premium, quotes, IV, delta, OI, volume). */
 export type OptionHistoryPoint = {

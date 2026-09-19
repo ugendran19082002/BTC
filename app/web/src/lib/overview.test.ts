@@ -4,6 +4,7 @@ import live from '@/test/fixtures/chain-live.json';
 import {
   allClear, bestLeg, bothSides, breakeven, candidates, consensus, entryGates, expectedMove, feePerContract, freshness, gammaRisk,
   ivRv, keyLevels, marginPerContract, modelView, odds, orderEstimate, payoffPrices, premiumAnalysis, shortPayoff, skew, volRegime,
+  assessBoth, assessSides, horizonRows, parseSymbol, positionState, positionViews, premiumMomentum, readiness, riskEngine, scenarioGrid, shortLossAt,
 } from './overview';
 
 const fixtureData = () => live as unknown as ChainResponse;
@@ -230,5 +231,105 @@ describe('both sides and the vol regime', () => {
     expect(volRegime(20, 40)?.label).toBe('low');
     expect(volRegime(40, 40)?.label).toBe('normal');
     expect(volRegime(null, 40)).toBeNull();
+  });
+});
+
+describe('the sides assessed, and both together', () => {
+  const data = fixtureData();
+  const iv = ivRv(data.structure.atmIv, data.market?.realisedVol ?? null);
+  const em = expectedMove(data.snapshot);
+
+  it('[critical] every side has a status, a tail loss at two expected moves, and a margin', () => {
+    const sides = assessSides(data, iv, em, 10, 200);
+    expect(sides.map((s) => s.side)).toEqual(['CE', 'PE']);
+    for (const s of sides) {
+      expect(['SELL', 'WATCH', 'NOT PREFERRED']).toContain(s.status);
+      if (s.leg && em) { expect(s.tailLossUsd).not.toBeNull(); expect(s.marginUsd).toBeGreaterThan(0); }
+    }
+  });
+
+  it('a short loses only past its strike plus the premium kept', () => {
+    expect(shortLossAt('C', 82_000, 100, 81_000, 10)).toBe(0);
+    expect(shortLossAt('C', 82_000, 100, 82_050, 10)).toBe(0);
+    expect(shortLossAt('C', 82_000, 100, 83_100, 10)).toBeCloseTo(1_000 * 10 * 0.001, 9);
+    expect(shortLossAt('P', 78_000, 100, 76_900, 10)).toBeCloseTo(1_000 * 0.01, 9);
+  });
+
+  it('[critical] both sides activates only when each side passes on its own', () => {
+    const sides = assessSides(data, iv, em, 10, 200);
+    const b = assessBoth(data, sides, 10, 200, em);
+    const pass = (s: typeof sides[number]) => Boolean(s.leg && s.status !== 'NOT PREFERRED' && (s.emDistance ?? 0) >= 1);
+    const n = sides.filter(pass).length;
+    expect(b.status).toBe(n === 2 ? 'BOTH' : n === 1 ? 'SINGLE SIDE' : 'NO TRADE');
+  });
+});
+
+describe('the risk engine and the scenario grid', () => {
+  const data = fixtureData();
+  const em = expectedMove(data.snapshot);
+  it('reads a strike: shocks, slippage, decay curve, protection', () => {
+    const l = data.legs.find((x) => x.cp === 'C' && x.bid !== null && x.ask !== null && (x.sellPrice ?? x.mark) !== null)!;
+    const r = riskEngine(l, data.legs, em, data.snapshot.spot, data.snapshot.hoursToExpiry, 10, 200)!;
+    expect(r.premium).toBeGreaterThan(0);
+    expect(r.decayCurve[0]!.extrinsic).toBeCloseTo(r.extrinsic, 9);
+    expect(r.decayCurve.at(-1)!.extrinsic).toBe(0);
+    expect(r.slippageUsd).toBeCloseTo(((l.ask! - l.bid!) / 2) * 0.01, 9);
+    if (l.vega !== null) expect(r.vegaShockUsd).toBeCloseTo(-l.vega * 5 * 0.01, 9);
+  });
+  it('the grid runs −3% … +3% for the call, the put and both', () => {
+    const ce = leg({ cp: 'C', strike: 82_000, sellPrice: 100, mark: 100 });
+    const pe = leg({ cp: 'P', strike: 78_000, sellPrice: 100, mark: 100 });
+    const g = scenarioGrid(ce, pe, 80_000, 10);
+    expect(g.map((r) => r.pct)).toEqual([-3, -2, -1, 0, 1, 2, 3]);
+    expect(g[3]!.ce).toBeCloseTo(1, 9);
+    expect(g[3]!.both).toBeCloseTo(2, 9);
+    expect(g[6]!.ce).toBeCloseTo((100 - 400) * 0.01, 9);
+    expect(g[0]!.pe).toBeCloseTo((100 - 400) * 0.01, 9);
+  });
+});
+
+describe('readiness', () => {
+  it('[critical] is ENTRY READY only when every gate is green; an unreadable gate is not a pass', () => {
+    const data = fixtureData();
+    const r = readiness({ data, leg: null, iv: null, em: null, nowMs: Date.now(), contracts: 10, leverage: 200, trade: null, risk: null });
+    expect(r.verdict).toBe('NO TRADE');
+    expect(r.gates.some((g) => g.key === 'side' && g.ok === false)).toBe(true);
+    expect(r.failing + r.unknown).toBeGreaterThan(0);
+  });
+});
+
+describe('the position state engine', () => {
+  it('[critical] walks NORMAL → WATCH → WARNING → ADJUST → HEDGE → EXIT', () => {
+    expect(positionState(1.5, 0.8, true).state).toBe('NORMAL');
+    expect(positionState(0.8, 1, true).state).toBe('WATCH');
+    expect(positionState(1.5, 1.2, true).state).toBe('WATCH');
+    expect(positionState(0.4, 1, true).state).toBe('WARNING');
+    expect(positionState(1.5, 1.6, true).state).toBe('WARNING');
+    expect(positionState(0.2, 1, true).state).toBe('ADJUST');
+    expect(positionState(0.6, 2.2, true).state).toBe('HEDGE');
+    expect(positionState(0.6, 2.2, false).state).toBe('EXIT');
+    expect(positionState(0.6, 3.1, true).state).toBe('EXIT');
+    expect(positionState(-0.1, 1, true).state).toBe('EXIT');
+  });
+  it('reads an open trade against the board', () => {
+    const data = fixtureData();
+    const l = data.legs.find((x) => x.cp === 'C' && x.mark !== null)!;
+    const v = positionViews([{ tradeId: 't', symbol: `C-BTC-${l.strike}-${data.snapshot.expiry}`, optionSide: 'CE', position: -10, entryAvgPrice: l.mark! * 2, live: { markPrice: l.mark, unrealisedPnl: 1, decayed: 0.5 } }], data.legs, data.snapshot.spot, expectedMove(data.snapshot));
+    expect(v).toHaveLength(1);
+    expect(v[0]!.strike).toBe(l.strike);
+    expect(v[0]!.contracts).toBe(10);
+    expect(parseSymbol('P-BTC-78000-190926')).toEqual({ cp: 'P', strike: 78_000, expiry: '190926' });
+  });
+});
+
+describe('horizons and momentum', () => {
+  it('lists every outlook row with its odds and implied band', () => {
+    const rows = horizonRows(fixtureData().outlook);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) if (r.pUp !== null) expect(r.pDown).toBeCloseTo(1 - r.pUp, 9);
+  });
+  it('velocity is the last step, acceleration the change of it', () => {
+    expect(premiumMomentum([{ at: 1, mark: 10 }, { at: 2, mark: 12 }, { at: 3, mark: 15 }])).toEqual({ velocity: 3, acceleration: 1 });
+    expect(premiumMomentum([{ at: 1, mark: 10 }])).toEqual({ velocity: null, acceleration: null });
   });
 });

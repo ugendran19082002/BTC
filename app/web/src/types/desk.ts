@@ -86,6 +86,10 @@ export type Leg = {
   gamma: number | null;
   theta: number | null;
   vega: number | null;
+  /** Absent from a server that predates them. */
+  rho?: number | null;
+  /** Black–Scholes at the mark IV. */
+  theoretical?: number | null;
   oi: number | null;
   volume: number | null;
   ageMin: number | null;

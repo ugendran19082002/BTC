@@ -375,6 +375,48 @@ export type SkewRank = {
  * The reference screens call it the one-year percentile; the desk has been
  * recording since 17 Sep 2026, and says how long its record actually is.
  */
+/** The current ATM IV against every reading `chain_features` holds: the IV percentile, with how long the record is. */
+export async function ivRank(atmIv: number | null): Promise<SkewRank | null> {
+  if (atmIv === null) return null;
+  await marketSchema();
+  const r = await one<{ n: number; below: number; oldest: number | null }>(
+    `SELECT COUNT(*)::int AS n, COUNT(*) FILTER (WHERE atm_iv < $1)::int AS below, MIN(at) AS oldest
+       FROM chain_features WHERE atm_iv IS NOT NULL`,
+    [atmIv],
+  );
+  if (!r || r.n < 12 || r.oldest === null) return null;
+  return { percentile: r.below / r.n, samples: r.n, days: (Date.now() - r.oldest) / 86_400_000 };
+}
+
+export type OiPulse = {
+  /** The board's open-interest change over the last hour, calls and puts, contracts. */
+  ceChange1h: number | null;
+  peChange1h: number | null;
+  /** The same reading an hour earlier: the change of the change. Positive, positioning is speeding up. */
+  ceAcceleration: number | null;
+  peAcceleration: number | null;
+  at: number | null;
+};
+
+/** OI change and its acceleration for one expiry, from the five-minute board record. */
+export async function oiPulse(expiry: string, nowMs = Date.now()): Promise<OiPulse> {
+  await marketSchema();
+  const latest = await one<{ at: number; ce: number | null; pe: number | null }>(
+    'SELECT at, ce_oi_change AS ce, pe_oi_change AS pe FROM chain_features WHERE expiry = $1 AND at <= $2 ORDER BY at DESC LIMIT 1',
+    [expiry, nowMs],
+  );
+  if (!latest) return { ceChange1h: null, peChange1h: null, ceAcceleration: null, peAcceleration: null, at: null };
+  const before = await one<{ ce: number | null; pe: number | null }>(
+    'SELECT ce_oi_change AS ce, pe_oi_change AS pe FROM chain_features WHERE expiry = $1 AND at BETWEEN $2 AND $3 ORDER BY ABS(at - $4) LIMIT 1',
+    [expiry, latest.at - 70 * 60_000, latest.at - 50 * 60_000, latest.at - 60 * 60_000],
+  );
+  const acc = (a: number | null, b: number | null | undefined) => (a === null || b === null || b === undefined ? null : a - b);
+  return {
+    ceChange1h: latest.ce, peChange1h: latest.pe,
+    ceAcceleration: acc(latest.ce, before?.ce), peAcceleration: acc(latest.pe, before?.pe), at: latest.at,
+  };
+}
+
 export async function skewRank(nowPts: number | null): Promise<SkewRank | null> {
   if (nowPts === null) return null;
   await marketSchema();

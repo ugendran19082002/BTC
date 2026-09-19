@@ -2809,3 +2809,1083 @@ Unscheduled news: OI, volume, spread போன்றவை warning கொடு�
 Sudden news-க்கு முன் எந்த signal-மும் இல்லாமல் market நகரலாம்.
 
 உங்க bot-ல் நான் பரிந்துரைப்பது: NEWS_CALENDAR + MARKET_ANOMALY_DETECTOR + VOLATILITY_CHECK + SPREAD_CHECK + POSITION_RISK_GUARD ஆகியவற்றை தனித்தனி modules-ஆக வைத்துக்கொள்ளுங்கள்.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ஆம். இந்த 3 images-ஐ ஒரே full-screen BTC Options Selling terminal-ஆக merge/generate பண்ணுவதற்கு copy-paste செய்யக்கூடிய context prompt இதுதான்:
+
+SINGLE-SCREEN UI GENERATION CONTEXT
+
+Create one ultra-wide, dense, professional dark-mode BTC Options Selling Dashboard by merging the information architecture, panels, metrics, charts, and controls from all three reference screens into ONE SINGLE SCREEN, with no scrolling and no duplicated panels.
+
+Platform: Delta Exchange India
+Instrument: BTC Options
+Purpose: Intraday short-premium / option-selling decision engine
+Design: Institutional trading terminal, dark navy/black background, compact cards, cyan/green/red accent colors, high information density, clear hierarchy.
+
+TOP HEADER
+
+Show:
+
+BTC OPTIONS DESK
+Delta Exchange (India)
+Live status
+Current timestamp
+Overview / Option Chain / Strategy / Signals / Backtest / Analytics / Settings
+TOP MARKET SUMMARY
+
+Cards for:
+
+BTC Spot
+BTC Perpetual
+24h Volume
+Perpetual OI
+Funding Rate
+ATM IV
+PCR OI
+Market Regime
+12H UP / DOWN / RANGE probabilities
+DYNAMIC ENTRY → FIXED EXPIRY
+
+Very important:
+
+Entry time must be dynamic.
+
+The UI should calculate and display:
+
+Current Entry Time
+
+→
+
+Contract Expiry Time
+
+→
+
+Time Remaining
+
+Do NOT hardcode entry time except the configured strategy window.
+
+Expiry must come from the selected option contract.
+
+Example display:
+
+ENTRY 05:30 AM → EXPIRY 05:30 PM
+
+But both timestamps must be dynamically calculated from the selected expiry contract and current system time.
+
+LEFT — BTC PRICE ACTION
+
+Large BTC candlestick chart with:
+
+1m
+5m
+15m
+30m
+1h
+4h
+1d
+
+Indicators:
+
+Trend
+HH / HL / LH / LL
+RSI
+MACD
+VWAP
+EMA
+ATR
+Volume
+Breakout / rejection
+Support / resistance
+Previous day high/low
+Session high/low
+
+Show important levels directly on chart.
+
+CENTER — FULL OPTION CHAIN
+
+Selected expiry prominently displayed.
+
+Strike-wise CE and PE:
+
+Strike
+OI
+OI change
+Bid
+Ask
+Mark
+IV
+Volume
+Delta
+Gamma
+Theta
+Vega
+
+Highlight:
+
+ATM strike
+Call OI wall
+Put OI wall
+Max Pain
+Nearest support
+Nearest resistance
+Selected strike
+
+Allow:
+
+All strikes / Near ATM / OI wall / Recommended
+
+OPTION METRICS PANEL
+
+For selected strike:
+
+Delta
+Gamma
+Theta
+Vega
+Rho
+IV
+Premium
+Intrinsic
+Extrinsic
+Theta / Premium
+Premium / Expected Move
+IV − Realized Vol
+IV percentile
+Premium velocity
+Premium acceleration
+EXPECTED MOVE ENGINE
+
+Display for the selected expiry:
+
+IV
+Realized volatility
+Expected Move
+Upper Expected Move
+Lower Expected Move
+Spot / Expected Move
+Distance to strike / Expected Move
+
+Also show:
+
+5m
+15m
+30m
+1h
+3h
+6h
+12h
+
+Each with:
+
+UP probability
+DOWN probability
+RANGE probability
+Expected move
+Target range
+VOLATILITY / IV SECTION
+
+Include:
+
+IV Term Structure
+Current IV
+1W ago
+1M ago
+25Δ Put IV
+ATM IV
+25Δ Call IV
+Put/Call Skew
+Skew percentile
+IV-RV spread
+IV richness
+Volatility regime
+TRADE FLOW
+
+Show:
+
+Buy volume
+Sell volume
+Delta volume
+CVD
+CVD slope
+Large trades
+Aggressor buy %
+Aggressor sell %
+Volume burst
+OI acceleration
+STRATEGY DECISION — VERY IMPORTANT
+
+Three side-by-side cards:
+
+SHORT CE
+
+Show:
+
+Score
+POP OTM
+Probability of Touch
+Distance / Expected Move
+IV richness
+OI wall distance
+Gamma risk
+Tail risk
+Expected P&L
+Margin
+Risk/Reward
+
+Status:
+
+SELL / WATCH / NOT PREFERRED
+
+SHORT PE
+
+Same metrics.
+
+BOTH SIDES
+
+Show:
+
+Range probability
+CE safety
+PE safety
+Net Delta
+Net Gamma
+Net Theta
+Net Vega
+Combined tail loss
+Combined expected P&L
+Margin requirement
+
+Status:
+
+BOTH / SINGLE SIDE / NO TRADE
+
+Both sides should only activate when CE and PE independently pass safety gates.
+
+SELL STRIKE RECOMMENDATION TABLE
+
+Dynamic ranking of strikes.
+
+Columns:
+
+Strike
+CE/PE
+Premium
+POP OTM
+Probability of Touch
+Distance / EM
+IV-RV
+Theta / Premium
+Expected P&L
+Tail Loss
+Margin
+Risk/Reward
+Score
+Action
+
+Show top candidates only.
+
+SELL-SPECIFIC RISK ENGINE
+
+Include:
+
+Intrinsic vs Extrinsic premium
+Theoretical premium
+Market premium richness
+Expected Move
+Probability of Touch
+Theta/Gamma ratio
+Vega shock
+Gamma shock
+Premium decay curve
+Tail / CVaR
+Break-even after fees
+Slippage
+Margin yield
+Hedge cost
+Protection availability
+SCENARIO P&L
+
+Interactive scenario graph:
+
+BTC price:
+
+−3% / −2% / −1% / Current / +1% / +2% / +3%
+
+Show:
+
+Premium received
+Net P&L
+Break-even
+Max risk
+Tail loss
+
+For CE and PE separately and combined position.
+
+ENTRY CHECKLIST
+
+Dynamic green/red validation:
+
+Market data fresh
+Correct contract
+Expiry valid
+12H direction clear
+Multi-timeframe consensus
+Side selected
+Strike passes PoT
+Distance / EM safe
+IV rich vs RV
+OI support/resistance
+Gamma acceptable
+Liquidity sufficient
+Spread acceptable
+Slippage acceptable
+Tail risk within limit
+Margin within limit
+Position size valid
+No conflicting regime signal
+
+Final result:
+
+ENTRY READY
+
+or
+
+NO TRADE
+
+ORDER PANEL
+
+Show:
+
+SELL CE / SELL PE / BOTH
+
+Selected strike
+Entry bid
+Estimated fill
+Quantity
+Premium
+Fees
+Slippage
+Margin required
+Break-even
+Max risk
+Position size
+
+Large button:
+
+PLACE SELL ORDER
+
+POSITION / EXIT MANAGEMENT
+
+After entry, same screen should dynamically show:
+
+Open position
+Current premium
+P&L
+Premium decay %
+Delta
+Gamma
+IV change
+OI change
+Spot → strike distance
+Distance → expected move
+Time remaining
+
+State engine:
+
+NORMAL → WATCH → WARNING → ADJUST → HEDGE → EXIT
+
+FOOTER
+
+Show:
+
+Live Data
+Model Ready
+Last Update
+Data Age
+Model Version
+Open Positions
+Day P&L
+Margin Used
+Risk Used
+CRITICAL UI RULES
+
+One screen only. No scrolling. No duplicate panels.
+
+The dashboard must make the complete decision path visible at once:
+
+Market → Price Action → Option Chain → IV/OI/Premium → 12H Movement → CE/PE/Both Decision → Strike Selection → Risk → P&L → Entry → Exit.
+
+Entry time = dynamic.
+
+Expiry = fixed from selected contract.
+
+The UI must never manually hardcode an expiry time.
+
+The system should recommend CE, PE, BOTH, or NO TRADE only after all risk gates pass.27. Scenario P&L
+
+Selected strike:
+
+BTC price
+P&L
+
+At expiry:
+
+76,000
+76,500
+77,000
+77,500
+78,000
+78,500
+79,000
+80,000
+
+For CE:
+
+PnL =
+premium_received
+-
+max(0, BTC_expiry - strike)
+-
+fees
+-
+slippage
+
+For PE:
+
+PnL =
+premium_received
+-
+max(0, strike - BTC_expiry)
+-
+fees
+-
+slippage
+
+Delta contract multiplier/unit convention should come from your exchange contract configuration.27. Scenario P&L
+
+Selected strike:
+
+BTC price
+P&L
+
+At expiry:
+
+76,000
+76,500
+77,000
+77,500
+78,000
+78,500
+79,000
+80,000
+
+For CE:
+
+PnL =
+premium_received
+-
+max(0, BTC_expiry - strike)
+-
+fees
+-
+slippage
+
+For PE:
+
+PnL =
+premium_received
+-
+max(0, strike - BTC_expiry)
+-
+fees
+-
+slippage
+
+Delta contract multiplier/unit convention should come from your exchange contract configuration.26. Both-side Logic
+
+Both = simply CE + PE sell அல்ல.
+
+First:
+
+CE Safe = PASS
+PE Safe = PASS
+
+Then:
+
+Combined:
+Net Delta
+Net Gamma
+Net Vega
+Tail loss
+Combined margin
+Combined expected P&L
+
+Only then:
+
+BOTH SIDES = PASS
+
+ஒரு leg fail என்றால்:
+
+BOTH = FAILShort option
+
+Sell order-க்கு actual executable price:
+
+best_bid
+
+அல்லது:
+
+depth-weighted estimated fill
+
+Mark price execution price இல்லை.
+
+Backend:
+
+ExecutionEstimator
+
+Output:
+
+expected_fill
+expected_slippage
+estimated_fee
+net_premium16. Risk Engine
+Per-option
+delta
+gamma
+theta
+vega
+Portfolio
+net_delta
+net_gamma
+net_theta
+net_vega
+Tail
+CVaR
+VaR
+stress_loss
+Shock
+BTC +100
+BTC +250
+BTC +500
+
+BTC -100
+BTC -250
+BTC -500
+
+மேலும்:
+
+IV +1%
+IV +2%
+IV -1%16. Risk Engine
+Per-option
+delta
+gamma
+theta
+vega
+Portfolio
+net_delta
+net_gamma
+net_theta
+net_vega
+Tail
+CVaR
+VaR
+stress_loss
+Shock
+BTC +100
+BTC +250
+BTC +500
+
+BTC -100
+BTC -250
+BTC -500
+
+மேலும்:
+
+IV +1%
+IV +2%
+IV -1%15. Probability Panel
+
+ஒவ்வொரு selected strike-க்கும்:
+
+P(OTM)
+P(TOUCH)
+P(ITM)
+Delta approximation
+Model P(OTM)
+Model P(ITM)
+
+மேலும் முக்கியமான distinction:
+
+P(expire OTM)
+P(touch strike)
+P(stop breach)
+P(expire beyond strike)
+
+இந்த probabilities ஒரே thing அல்ல.15. Probability Panel
+
+ஒவ்வொரு selected strike-க்கும்:
+
+P(OTM)
+P(TOUCH)
+P(ITM)
+Delta approximation
+Model P(OTM)
+Model P(ITM)
+
+மேலும் முக்கியமான distinction:
+
+P(expire OTM)
+P(touch strike)
+P(stop breach)
+P(expire beyond strike)
+
+இந்த probabilities ஒரே thing அல்ல.. Strike Ranking
+
+Side select ஆன பிறகு தான் strikes scan செய்ய வேண்டும்.
+
+StrikeSelector
+
+Candidate universe:
+
+all contracts
+↓
+expiry filter
+↓
+option side
+↓
+liquidity filter
+↓
+risk filter
+↓
+rank
+
+Score components:
+
+PoT
+P(OTM)
+Distance/EM
+IV-RV
+Premium/EM
+Theta/Premium
+Gamma risk
+OI wall
+S/R
+Liquidity
+Tail risk
+Expected P&L
+Margin yield
+Execution cost
+
+Output:
+
+76,500 PE → score 8.1
+76,000 PE → score 7.6
+75,500 PE → score 6.9. Strike Ranking
+
+Side select ஆன பிறகு தான் strikes scan செய்ய வேண்டும்.
+
+StrikeSelector
+
+Candidate universe:
+
+all contracts
+↓
+expiry filter
+↓
+option side
+↓
+liquidity filter
+↓
+risk filter
+↓
+rank
+
+Score components:
+
+PoT
+P(OTM)
+Distance/EM
+IV-RV
+Premium/EM
+Theta/Premium
+Gamma risk
+OI wall
+S/R
+Liquidity
+Tail risk
+Expected P&L
+Margin yield
+Execution cost
+
+Output:
+
+76,500 PE → score 8.1
+76,000 PE → score 7.6
+75,500 PE → score 6.913. Strategy Decision Panel
+
+Three cards:
+
+SHORT CE
+SHORT PE
+BOTH SIDES
+
+ஒவ்வொரு card-க்கும்:
+
+Score
+Direction
+PoT
+Distance/EM
+IV-RV
+Gamma risk
+Liquidity
+Tail risk
+Execution quality
+Margin
+MTF consensus
+
+இதில் ஒவ்வொன்றும்:
+
+PASS
+FAIL
+Example
+SHORT CE
+Direction        FAIL
+PoT              PASS
+Distance / EM    PASS
+IV-RV            PASS
+Gamma             FAIL
+Liquidity         PASS
+MTF Consensus     FAIL
+
+FINAL
+NOT PREFERRED
+
+இதுதான் black-box score-விட better.12. Side Selector
+
+இது முக்கிய business logic.
+
+Backend:
+
+SideSelector
+
+Output:
+
+CE
+PE
+BOTH
+NO_TRADE
+Bullish
+if bullish regime
+and MTF consensus bullish
+and PE safety PASS
+
+→ PE candidate.
+
+Bearish
+if bearish regime
+and MTF consensus bearish
+and CE safety PASS
+
+→ CE candidate.
+
+Range
+if range regime
+and CE safety PASS
+and PE safety PASS
+
+→ BOTH candidate.
+
+Conflict
+if directional conflict
+or risk gates fail
+
+→ NO TRADE.
+
+Important: score மட்டும் வைத்து side select செய்யக்கூடாது.12. Side Selector
+
+இது முக்கிய business logic.
+
+Backend:
+
+SideSelector
+
+Output:
+
+CE
+PE
+BOTH
+NO_TRADE
+Bullish
+if bullish regime
+and MTF consensus bullish
+and PE safety PASS
+
+→ PE candidate.
+
+Bearish
+if bearish regime
+and MTF consensus bearish
+and CE safety PASS
+
+→ CE candidate.
+
+Range
+if range regime
+and CE safety PASS
+and PE safety PASS
+
+→ BOTH candidate.
+
+Conflict
+if directional conflict
+or risk gates fail
+
+→ NO TRADE.
+
+Important: score மட்டும் வைத்து side select செய்யக்கூடாது.. Premium Engine
+
+ஒவ்வொரு strike:
+
+premium_change_1m
+premium_change_5m
+premium_change_15m
+premium_change_30m
+premium_change_1h
+
+premium_velocity
+premium_acceleration
+
+மேலும்:
+
+intrinsic
+extrinsic
+theta/premium
+premium/expected_move
+IV-RV spread10. Option Chain Engine
+
+ஒவ்வொரு strike:
+
+CE:
+OI
+ΔOI
+Bid
+Ask
+Mark
+IV
+Delta
+Gamma
+Theta
+Vega
+
+PE:
+same
+
+Current architecture specifically plans timestamped strike-level option snapshots containing mark, IV, Greeks, bid/ask, OI and volume.Multi-Timeframe Engine
+
+Third image-ல் இதை table-ஆக காட்டுவது நல்லது:
+
+TF	Trend	Momentum	Model	Signal
+5m	Up	Bullish	65%	↑
+15m	Up	Bullish	64%	↑
+30m	Up	Bullish	61%	↑
+1h	Up	Bullish	58%	↑
+3h	Side	Neutral	55%	→
+6h	Side	Neutral	53%	→
+12h	Up	Bullish	64%	↑
+
+Backend:
+
+HorizonPredictionService
+
+ஒவ்வொரு horizon-க்கும்:
+
+up_probability
+down_probability
+side_probability
+expected_move
+upper_target
+lower_target
+MFE
+MAE
+target_hit_probability
+time_to_target
+
+உன் existing architecture-ல் 5m–12h horizons ஏற்கனவே defined.
+
+7. Horizon Consensus
+
+Single 12h model மட்டும் பயன்படுத்த வேண்டாம்.
+
+Backend:
+
+consensus_score
+
+Example:
+
+5m   UP
+15m  UP
+30m  UP
+1h   UP
+3h   SIDE
+6h   SIDE
+12h  UP
+
+Output:
+
+UP CONSENSUS = 5/7
+DOWN = 0/7
+SIDE = 2/7
+
+UI:
+
+MTF CONSENSUS
+PASS
+
+ஒரு side-க்கு model disagreement அதிகமாக இருந்தால்:
+
+MTF CONSENSUS
+FAIL
+8. Market Regime Engine
+
+Output:
+
+TREND_UP
+TREND_DOWN
+RANGE
+BREAKOUT
+HIGH_VOL
+LOW_VOL
+EXPIRY
+
+ஒரே நேரத்தில்:
+
+primary_regime = TREND_UP
+vol_regime = HIGH
+
+UI:
+
+TREND UP
+HIGH VOLATILITY
+9. Expected Move Engine
+
+Inputs:
+
+Spot
+IV
+Time to expiry
+historical realized volatility
+
+Core:
+
+ExpectedMove ≈ Spot × IV × √T
+
+Output:
+
+Expected Move: ±1420
+Upper: 79388
+Lower: 76547
+
+மேலும்:
+
+distance_to_strike
+distance_over_EM. Price Action Engine
+
+இந்த left panel:
+
+Trend
+Structure
+RSI
+MACD
+VWAP
+ATR
+
+Backend:
+
+PriceActionEngine
+
+Output:
+
+{
+  "trend": "UP",
+  "structure": "HH_HL",
+  "rsi": 68.4,
+  "macd": "BULLISH",
+  "vwap": 77842,
+  "atr": 126.8
+}
+
+மேலும் hidden features:
+
+body_pct
+upper_wick
+lower_wick
+breakout
+rejection
+HH
+HL
+LH
+LL
+BOS
+CHOCH
+distance_to_resistance
+distance_to_support. Price Action Engine
+
+இந்த left panel:
+
+Trend
+Structure
+RSI
+MACD
+VWAP
+ATR
+
+Backend:
+
+PriceActionEngine
+
+Output:
+
+{
+  "trend": "UP",
+  "structure": "HH_HL",
+  "rsi": 68.4,
+  "macd": "BULLISH",
+  "vwap": 77842,
+  "atr": 126.8
+}
+
+மேலும் hidden features:
+
+body_pct
+upper_wick
+lower_wick
+breakout
+rejection
+HH
+HL
+LH
+LL
+BOS
+CHOCH
+distance_to_resistance
+distance_to_support

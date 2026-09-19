@@ -13,7 +13,7 @@ import { tradingService, SHORT_CAP_KEY } from '../../trading/service.js';
 import { appliedMigrations } from '../../db/migrate.js';
 import { termStructure } from '../../market/term.js';
 import { lastOptionSnapshot, optionHistory } from '../../market/option-snapshots.js';
-import { flowFeedHealth, flowSummary, liveBook, livePerp, skewRank, termHistory } from '../../market/flow.js';
+import { flowFeedHealth, flowSummary, ivRank, liveBook, livePerp, oiPulse, skewRank, termHistory } from '../../market/flow.js';
 import { one } from '../../db/pool.js';
 import { strategyStore } from './strategy.routes.js';
 import { refuse } from '../refuse.js';
@@ -129,14 +129,17 @@ export function registerDeskRoutes(app: FastifyInstance) {
   app.get('/api/term', async (req, reply) => {
     try {
       const now = Date.now();
-      const skewPts = Number((req.query as { skewPts?: string }).skewPts);
-      const [tickers, weekAgo, monthAgo, skew] = await Promise.all([
+      const q = req.query as { skewPts?: string; atmIv?: string };
+      const skewPts = Number(q.skewPts);
+      const atmIv = Number(q.atmIv);
+      const [tickers, weekAgo, monthAgo, skew, iv] = await Promise.all([
         liveTickers(),
         termHistory(7 * 86_400_000, now).catch(() => null),
         termHistory(30 * 86_400_000, now).catch(() => null),
         skewRank(Number.isFinite(skewPts) ? skewPts : null).catch(() => null),
+        ivRank(Number.isFinite(atmIv) && atmIv > 0 ? atmIv : null).catch(() => null),
       ]);
-      return { at: now, points: termStructure(tickers, Math.floor(now / 1000)), weekAgo, monthAgo, skew };
+      return { at: now, points: termStructure(tickers, Math.floor(now / 1000)), weekAgo, monthAgo, skew, iv };
     } catch (e) {
       reply.code(502);
       return { error: (e as Error).message };
@@ -153,13 +156,16 @@ export function registerDeskRoutes(app: FastifyInstance) {
   app.get('/api/perp', async (req, reply) => {
     try {
       const now = Date.now();
-      const windowMin = Math.min(240, Math.max(5, Number((req.query as { window?: string }).window ?? 60) || 60));
-      const [ticker, book, flow] = await Promise.all([
+      const q = req.query as { window?: string; expiry?: string };
+      const windowMin = Math.min(240, Math.max(5, Number(q.window ?? 60) || 60));
+      const expiry = /^\d{6}$/.test(q.expiry ?? '') ? q.expiry! : null;
+      const [ticker, book, flow, oi] = await Promise.all([
         livePerp(now).catch(() => null),
         liveBook(now).catch(() => null),
         flowSummary(windowMin, now),
+        expiry ? oiPulse(expiry, now).catch(() => null) : Promise.resolve(null),
       ]);
-      return { at: now, ticker, book, flow };
+      return { at: now, ticker, book, flow, oi };
     } catch (e) {
       reply.code(502);
       return { error: (e as Error).message };
