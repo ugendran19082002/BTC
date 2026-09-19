@@ -176,8 +176,8 @@ services:
   # and `stop adminer` when done -- it is open while someone is using it, not
   # permanently. See docs/ADMINER.md.
   #
-  # Three locks in series: basic auth at the edge (adminer.thannigo.in), a
-  # one-time code in Adminer itself, then a database password. The login form
+  # Locks in series: basic auth at the edge (adminer.thannigo.in), a rate limit
+  # on the login, then a database password. The login form
   # is pinned to this compose network's `db` (no other host can be named), and
   # the account to use day to day is `desk_ro`, which cannot write.
   adminer:
@@ -189,8 +189,6 @@ services:
         condition: service_healthy
     environment:
       ADMINER_DEFAULT_SERVER: db
-      # base32, from deploy/.env; without it the login refuses (fail closed)
-      ADMINER_OTP_SECRET: ${ADMINER_OTP_SECRET:-}
     volumes:
       # The plugin configuration, read-only. ADMINER_PLUGINS / ADMINER_DESIGN
       # are deliberately not used: they make the entrypoint write into the

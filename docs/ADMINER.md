@@ -15,12 +15,11 @@ a public name.
 |---|---|---|
 | TLS, HSTS, `noindex`, `frame-ancestors 'none'` | edge vhost `deploy/nginx-adminer.conf` | |
 | Basic auth | edge, `.htpasswd-btc-adminer` (bcrypt) | Nobody reaches Adminer's own page without it. Its own file, not banknifty's. |
-| POST rate limit, 10/min per address | edge | Adminer checks the **database password before its own one-time code**, so without this the login form is an unlimited password oracle for anyone past basic auth. |
+| POST rate limit, 10/min per address | edge | Without it the login form is an unlimited password oracle for anyone past basic auth. |
 | Optional IP allow-list | edge (commented `allow` / `deny`) | Recommended if your addresses are stable. |
 | Bridge-only port | compose: `172.17.0.1:8098` | Reachable by the edge proxy as `host.docker.internal`; not from the host's public address. |
-| One-time code (`login-otp`) | `deploy/adminer/plugins-enabled/002-login-otp.php` | A code from an authenticator app at every sign-in. **Fails closed**: with no `ADMINER_OTP_SECRET`, sign-in is refused. |
 | Pinned server (`login-servers`) | `001-login-servers.php` | The Server field is a one-item list: `db`. Adminer cannot be pointed at another host (the class of bug behind CVE-2021-21311). |
-| No permanent login | `003-no-permanent-login.php` | Sessions end with the browser; the flag is stripped server-side. |
+| No permanent login | `002-no-permanent-login.php` | Sessions end with the browser; the flag is stripped server-side. |
 | `desk_ro` | `deploy/db-readonly-role.sh` | SELECT only, every desk schema, 30 s statement limit, read-only transactions, 5 connections, and **no access** to `auth.user`, `auth.sessions`, `auth.recovery_codes`. |
 | Container | compose `adminer` | Opt-in profile, pinned `adminer:6.0.1-standalone`, read-only root, all capabilities dropped, 0.5 CPU / 256 MB. |
 
@@ -52,7 +51,6 @@ After the database cutover (`DEPLOY.md`), on the server:
 ```bash
 # 1. secrets, into deploy/.env (see deploy/.env.example)
 openssl rand -base64 24            # -> DB_READONLY_PASSWORD=
-./deploy/adminer-otp.sh            # -> ADMINER_OTP_SECRET=, and the otpauth:// link for your phone
 
 # 2. the read-only account, and your own admin login (DB_ADMIN_USER / DB_ADMIN_PASSWORD)
 ./deploy/db-readonly-role.sh
@@ -85,8 +83,15 @@ docker compose -f deploy/docker-compose.yml --profile admin up -d adminer   # op
 docker compose -f deploy/docker-compose.yml stop adminer                     # close, when done
 ```
 
-Sign in with basic auth, then: Server `BTC desk (btc_desk)`, username `desk_ro`,
-its password, the 6-digit code, database `btc_desk`.
+Sign in with basic auth, then: Server `BTC desk (btc_desk)`, username `desk_ro`
+(or your admin login), its password, database `btc_desk`.
+
+There is no one-time code: it was removed on 19 September 2026 at the owner's
+request. The edge password and the database password are the two secrets in
+front of the data, so keep the edge password strong, or add the IP allow-list
+in `deploy/nginx-adminer.conf`. To bring the code back: restore
+`plugins-enabled/002-login-otp.php` from git history and `ADMINER_OTP_SECRET`
+in compose.
 
 Stopped is its normal state. While it is stopped the name answers 502 behind
 the password.
@@ -95,8 +100,6 @@ the password.
 
 - **New read-only password**: change it in `deploy/.env`, run
   `./deploy/db-readonly-role.sh`.
-- **Lost phone**: `./deploy/adminer-otp.sh`, new secret into `deploy/.env`,
-  `up -d adminer` again.
 - **Upgrading Adminer**: change the pinned tag, re-copy the two theme files from
   the new image's `designs/`, and check the plugin constructors still match
-  (`plugins/login-servers.php`, `plugins/login-otp.php`).
+  (`plugins/login-servers.php`).
