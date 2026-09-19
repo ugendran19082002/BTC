@@ -185,7 +185,7 @@ the names back; it does not affect `delta.thannigo.in`.
 The desk is on the open internet, and the API gates itself. Signing in takes
 **two steps, both required**:
 
-1. username and password (scrypt hash, in the `auth` schema);
+1. username and password (scrypt hash, in `auth_user`);
 2. the 6-digit code from Google Authenticator (or any TOTP app).
 
 At the first sign-in the second step is set up: a QR code to scan, one code to

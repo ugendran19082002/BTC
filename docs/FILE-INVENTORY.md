@@ -36,7 +36,7 @@ here exists because something specific went wrong once.
 | `precheck.ts` | 293 | The gates a trade passes before a byte goes to the exchange. Each one exists because of a specific way money is lost: a stale quote, a spread too wide to cross, a premium too small to be worth the same margin, a daily loss already taken. |
 | `machine.ts` | 231 | The trade lifecycle as a pure reducer over fills. Position is *counted from fills*, never assumed. No I/O, so every case in the matrix can be built by hand. |
 | `types.ts` | 217 | The vocabulary of a live trade. All data, no behaviour. |
-| `store.ts` | 260 | The trade journal (`trading` schema): events appended and never edited, state rebuilt from them. What makes a restart safe. |
+| `store.ts` | 260 | The trade journal (`trades`, `trade_events`): events appended and never edited, state rebuilt from them. What makes a restart safe. |
 | `margin.ts` | 199 | What leverage actually does to a sold option — calibrated against a real Delta ticket, not against the docs. Also liquidation price and unrealised P&L. |
 | `status.ts` | 80 | What a trade looks like in a list of orders: completed / pending / rejected / cancelled, and the IST day boundaries the Orders screen filters on. |
 | `money.ts` | 55 | Prices and sizes the exchange will actually accept. Everything in whole ticks; a seller rounds up and a buyer rounds down, so rounding never quietly moves against you. |

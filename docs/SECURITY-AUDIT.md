@@ -130,7 +130,7 @@ web at all.
 - **Lost phone:** `npm run auth -- reset-2fa` on the server, then set it up
   again at the next sign-in.
 - **The secret** is sealed with AES-256-GCM under a key derived from
-  `DESK_SESSION_SECRET`, so a copy of the `auth` schema (then `auth.db`) alone opens nothing.
+  `DESK_SESSION_SECRET`, so a copy of the `auth_*` tables (then `auth.db`) alone opens nothing.
 
 ---
 
