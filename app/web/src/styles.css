@@ -133,7 +133,7 @@ header.top .top-out { margin-left: auto; flex: none; }
   header.top h1 { font-size: 15.5px; }
 }
 
-.tabs { display: flex; gap: 4px; margin-bottom: 16px; }
+.tabs { display: flex; gap: 4px; margin-bottom: 16px; flex-wrap: wrap; }
 .tabs button {
   background: transparent; border: 1px solid transparent; color: var(--muted);
   padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px;
