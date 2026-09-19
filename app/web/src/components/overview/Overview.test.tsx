@@ -7,6 +7,7 @@ import { Overview } from './Overview';
 vi.mock('@/api/desk', () => ({
   getTerm: () => new Promise(() => {}),
   getPerp: () => new Promise(() => {}),
+  getChanges: () => new Promise(() => {}),
   getOptionHistory: () => new Promise(() => {}),
 }));
 
@@ -28,6 +29,11 @@ describe('the decision panels', () => {
       expect(screen.getByText(l, { selector: '.ov-ctx-label' })).toBeInTheDocument();
     }
     expect(screen.queryByText('Order panel', { selector: 'h3' })).toBeNull();
+    // The decision, first and largest: one of the four answers, at the moment of entry.
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toMatch(/^(SELL CE|SELL PE|SELL BOTH|NO TRADE)/);
+    for (const t of [/^Early warning/, 'Movement to expiry', /^What changed/, 'Strike finder']) {
+      expect(screen.getByText(t, { selector: 'h3' })).toBeInTheDocument();
+    }
     expect(screen.getAllByText(/ENTRY READY|NO TRADE/).length).toBeGreaterThan(0);
     expect(screen.queryByText(/^Option chain/)).toBeNull();
     expect(screen.getByText(/^Selected strike: /)).toBeInTheDocument();

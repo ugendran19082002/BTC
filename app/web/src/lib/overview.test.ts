@@ -4,7 +4,7 @@ import live from '@/test/fixtures/chain-live.json';
 import {
   allClear, bestLeg, bothSides, breakeven, candidates, consensus, entryGates, expectedMove, feePerContract, freshness, gammaRisk,
   ivRv, keyLevels, marginPerContract, modelView, odds, orderEstimate, payoffPrices, premiumAnalysis, shortPayoff, skew, volRegime,
-  assessBoth, assessSides, horizonRows, namedLevels, parseSymbol, positionState, positionViews, premiumMomentum, readiness, riskEngine, scenarioGrid, shortLossAt,
+  assessBoth, assessSides, horizonRows, namedLevels, earlyWarning, findStrikes, boardRead, movementVerdict, parseSymbol, positionState, positionViews, premiumMomentum, readiness, riskEngine, scenarioGrid, shortLossAt,
 } from './overview';
 
 const fixtureData = () => live as unknown as ChainResponse;
@@ -346,5 +346,37 @@ describe('named levels', () => {
     const n = namedLevels(levels, 80_600);
     expect(n.map((l) => [l.name, l.price])).toEqual([['Resistance 1', 81_000], ['Resistance 2', 82_000], ['Support 1', 80_500], ['Support 2', 79_000], ['Prev day low', 78_000]]);
     expect(n[0]!.source).toBe('Gamma wall');
+  });
+});
+
+describe('early warning', () => {
+  const quiet = { flow: { aggressorBuyPct: 0.5, cvd: [], minutesCovered: 60 }, book: { imbalance: 0 }, oi: { ceChange1h: 100, peChange1h: 100, ceAcceleration: 0, peAcceleration: 0 }, funding: 0.01, market: fixtureData().market, outlook: fixtureData().outlook, markChange15mPct: 0, atmIvChange15mPts: 0 };
+  it('[critical] a calm tape fires nothing; one-sided flow with a jumping wing and IV reads as a move starting', () => {
+    const calm = earlyWarning(quiet);
+    expect(calm.triggers.filter((t) => t.fired === true).length).toBeLessThanOrEqual(1);
+    const hot = earlyWarning({ ...quiet, flow: { aggressorBuyPct: 0.8, cvd: Array.from({ length: 16 }, (_, i) => ({ at: i, cvd: i * 40 })), minutesCovered: 60 }, book: { imbalance: 0.4 }, markChange15mPct: 60, atmIvChange15mPts: 3, funding: 0.08 });
+    expect(hot.triggers.filter((t) => t.fired === true).length).toBeGreaterThanOrEqual(5);
+    expect(['high', 'sudden']).toContain(hot.band);
+    expect(hot.lean).toBe(1);
+    for (const t of hot.triggers) { expect(t.formula.length).toBeGreaterThan(10); expect(t.threshold.length).toBeGreaterThan(0); }
+  });
+});
+
+describe('the movement read and the finder', () => {
+  const data = fixtureData();
+  it('reads the board with a formula behind each line, and gives one verdict', () => {
+    const b = boardRead(data, expectedMove(data.snapshot));
+    expect(b.length).toBeGreaterThan(0);
+    for (const r of b) expect(['up', 'down', 'range', 'unclear']).toContain(r.says);
+    const v = movementVerdict(horizonRows(data.outlook), b, data.market, data.snapshot.hoursToExpiry);
+    expect(['up', 'down', 'range']).toContain(v.way);
+    expect(['low', 'medium', 'high']).toContain(v.confidence);
+  });
+  it('[critical] the finder keeps only OTM strikes that pass every filter, best score first', () => {
+    const f = findStrikes(data.legs, { side: 'P', minPremium: 1, maxPot: 0.5, minEm: 0.5, top: 5 });
+    expect(f.length).toBeLessThanOrEqual(5);
+    for (const l of f) { expect(l.cp).toBe('P'); expect(l.moneyness).not.toBe('ITM'); expect((l.sellPrice ?? l.mark ?? 0)).toBeGreaterThanOrEqual(1); }
+    for (let i = 1; i < f.length; i++) expect((f[i - 1]!.score ?? -1)).toBeGreaterThanOrEqual(f[i]!.score ?? -1);
+    expect(findStrikes(data.legs, { side: 'both', minPremium: 1e9, maxPot: 1, minEm: 0, top: 5 })).toEqual([]);
   });
 });
