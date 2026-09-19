@@ -34,6 +34,8 @@ ALTER ROLE desk_ro SET default_transaction_read_only = on;
 ALTER ROLE desk_ro SET statement_timeout = '30s';
 ALTER ROLE desk_ro SET idle_in_transaction_session_timeout = '60s';
 ALTER ROLE desk_ro CONNECTION LIMIT 5;
+-- Open on the trading tables, and find every desk table without a schema prefix.
+ALTER ROLE desk_ro SET search_path = trading, strategy, auth, errors, market, analytics, public;
 GRANT CONNECT ON DATABASE btc_desk TO desk_ro;
 DO $$
 DECLARE s text;
