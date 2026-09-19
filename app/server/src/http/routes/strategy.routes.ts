@@ -167,7 +167,7 @@ export function registerStrategyRoutes(app: FastifyInstance) {
        * setting rather than an env var because turning the desk off in a hurry
        * should not need a deploy.
        */
-      schedulerOn: svc.store.getSetting('scheduler_enabled') === '1',
+      schedulerOn: svc.settings.get('scheduler_enabled') === '1',
       /**
        * Whether the loop that places the orders is actually installed.
        *
@@ -268,7 +268,7 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     if (on && svc.mode === 'live' && !svc.canGoLive) {
       return refuse(reply, 409, { error: 'The desk cannot reach the exchange; the scheduler would only fail.' });
     }
-    svc.store.setSetting('scheduler_enabled', on ? '1' : '0');
+    await svc.settings.set('scheduler_enabled', on ? '1' : '0');
     return { ok: true, schedulerOn: on };
   });
 

@@ -247,7 +247,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
       svc.balanceForDisplay().catch(() => null),
       svc.positionsForDisplay().catch(() => []),
     ]);
-    const trades = svc.openTrades();
+    const trades = await svc.openTrades();
     // Both cached at the server for under a second, so this costs nothing per poll.
     const symbols = [...new Set(trades.map((t) => t.state.symbol))];
     // Each trade carries its own contract value, so there is no product to look
@@ -274,8 +274,8 @@ export function registerTradeRoutes(app: FastifyInstance) {
       /** Whether the switch can be thrown at all from here. */
       canGoLive: svc.canGoLive,
       /** Why it cannot be thrown right now, if it cannot. */
-      switchBlockedBy: svc.openTrades().length > 0
-        ? `Close ${svc.openTrades().length} open position${svc.openTrades().length === 1 ? '' : 's'} first.`
+      switchBlockedBy: trades.length > 0
+        ? `Close ${trades.length} open position${trades.length === 1 ? '' : 's'} first.`
         : svc.canGoLive ? null : 'No Delta credentials configured on the server.',
       balanceUsd: balance,
       positions,
@@ -291,7 +291,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
        */
       alerts: { configured: svc.notifier !== null, on: svc.alertsOn },
       /** Booked today, in USD. The daily-loss gate reads this; now so can you. */
-      realisedTodayUsd: svc.store.realisedSince(startOfDayIst()),
+      realisedTodayUsd: await svc.store.realisedSince(startOfDayIst()),
       /**
        * The day so far, in one place, for the header: booked, still open, and
        * Delta's charges on every fill since 05:30 IST. `netUsd` is the number
@@ -320,7 +320,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
       reply.code(400);
       return { error: "mode must be 'live' or 'paper'" };
     }
-    const res = svc.setMode(mode);
+    const res = await svc.setMode(mode);
     // Refusing to flip with a position open is the guard doing its job, not a
     // fault: it is answered plainly and stays out of the error log.
     return res.ok ? res : refuse(reply, 409, res);
@@ -378,7 +378,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
         account: { availableUsd: balance },
         existingPosition: held,
         totalShortContracts: totalShort,
-        dayPnlUsd: svc.store.realisedSince(Date.now() - 86_400_000),
+        dayPnlUsd: await svc.store.realisedSince(Date.now() - 86_400_000),
         worstCaseLossUsd: worstCase,
         // The limit in force, which is set from the balance rather than fixed.
       limits: {
@@ -539,7 +539,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
   app.post('/api/trade/add/preview', async (req, reply) => {
     const parsed = parseAddBody((req.body ?? {}) as AddBody);
     if (!parsed.ok) return refuse(reply, 422, { error: parsed.problems.join(' '), problems: parsed.problems });
-    const rec = svc.store.get(parsed.add.tradeId);
+    const rec = await svc.store.get(parsed.add.tradeId);
     if (!rec) { reply.code(404); return { error: 'no such trade' }; }
     const at = await startOf(parsed.add, rec.plan.symbol);
     if (!at) return refuse(reply, 422, { error: 'No quote to start from — the book is empty or the feed is down.' });
@@ -560,7 +560,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
   app.post('/api/trade/add', async (req, reply) => {
     const parsed = parseAddBody((req.body ?? {}) as AddBody);
     if (!parsed.ok) return refuse(reply, 422, { error: parsed.problems.join(' '), problems: parsed.problems });
-    const rec = svc.store.get(parsed.add.tradeId);
+    const rec = await svc.store.get(parsed.add.tradeId);
     if (!rec) { reply.code(404); return { error: 'no such trade' }; }
     const at = await startOf(parsed.add, rec.plan.symbol);
     if (!at) return refuse(reply, 422, { error: 'No quote to start from — the book is empty or the feed is down.' });
@@ -615,17 +615,17 @@ export function registerTradeRoutes(app: FastifyInstance) {
     const b = (req.body ?? {}) as { alertOn?: unknown; minPremiumUsd?: unknown; repeat?: unknown };
     if (b.alertOn !== undefined) {
       if (typeof b.alertOn !== 'boolean') { reply.code(400); return { error: 'alertOn must be true or false' }; }
-      svc.setBestTradeAlertOn(b.alertOn);
+      await svc.setBestTradeAlertOn(b.alertOn);
     }
     if (b.minPremiumUsd !== undefined) {
       const v = Number(b.minPremiumUsd);
       if (!Number.isFinite(v) || !(v > 0) || v > 1_000) { reply.code(400); return { error: 'minPremiumUsd must be a price above zero' }; }
-      svc.setBestTradeMinPremiumUsd(v);
+      await svc.setBestTradeMinPremiumUsd(v);
     }
     if (b.repeat !== undefined) {
       const v = Number(b.repeat);
       if (!Number.isInteger(v) || v < 1 || v > 10) { reply.code(400); return { error: 'repeat must be a whole number from 1 to 10' }; }
-      svc.setBestTradeRepeat(v);
+      await svc.setBestTradeRepeat(v);
     }
     return { ok: true, alertOn: svc.bestTradeAlertOn, minPremiumUsd: svc.bestTradeMinPremiumUsd, repeat: svc.bestTradeRepeat };
   });
@@ -671,7 +671,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
           return { error: `${key} must be a whole number from 0 to ${hi}` };
         }
       }
-      svc.setAutoTradeLimits(asked as Parameters<typeof svc.setAutoTradeLimits>[0]);
+      await svc.setAutoTradeLimits(asked as Parameters<typeof svc.setAutoTradeLimits>[0]);
     }
     const limits = svc.autoTradeLimits;
     const numeric: [string, number, number][] = [
@@ -694,19 +694,19 @@ export function registerTradeRoutes(app: FastifyInstance) {
       return { error: 'on must be true or false' };
     }
     const { limits: _ignored, ...settings } = b;
-    return { ok: true, settings: svc.setAutoTrade(settings as Parameters<typeof svc.setAutoTrade>[0]), limits };
+    return { ok: true, settings: await svc.setAutoTrade(settings as Parameters<typeof svc.setAutoTrade>[0]), limits };
   });
 
   /** "Consider these strikes again" — clears the note, never a position. */
   app.post('/api/trade/auto-trade/clear', async () => {
-    svc.clearAutoTradeLedger();
+    await svc.clearAutoTradeLedger();
     return { ok: true, done: {} };
   });
 
   app.post('/api/trade/alerts', async (req, reply) => {
     const b = (req.body ?? {}) as { on?: unknown };
     if (typeof b.on !== 'boolean') { reply.code(400); return { error: 'on must be true or false' }; }
-    svc.setAlertsOn(b.on);
+    await svc.setAlertsOn(b.on);
     return { ok: true, alerts: { configured: svc.notifier !== null, on: svc.alertsOn } };
   });
 
@@ -754,7 +754,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
     const wanted = ORDER_STATUSES.find((x) => x === q.status) ?? null;
     const limit = Math.min(1_000, Number(q.limit ?? 500));
 
-    const records = svc.store.between(Math.min(from, to), Math.max(from + 86_400_000, to), limit);
+    const records = await svc.store.between(Math.min(from, to), Math.max(from + 86_400_000, to), limit);
 
     /*
      * Prices for the trades still open, so their row can say what closing now
@@ -799,7 +799,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
 
   app.get('/api/trade/:tradeId', async (req, reply) => {
     const { tradeId } = req.params as { tradeId: string };
-    const rec = svc.store.get(tradeId);
+    const rec = await svc.store.get(tradeId);
     if (!rec) { reply.code(404); return { error: 'no such trade' }; }
     return { trade: view(rec), events: rec.events };
   });
