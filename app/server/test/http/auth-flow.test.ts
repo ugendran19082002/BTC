@@ -17,7 +17,6 @@ import { DatabaseSync } from 'node:sqlite';
 
 const dir = mkdtempSync(join(tmpdir(), 'auth-flow-'));
 process.env.TRADE_DB = join(dir, 'trades.db');
-process.env.ERROR_DB = join(dir, 'errors.db');
 process.env.CHAIN_DB = join(dir, 'chain.db');
 process.env.DELTA_LIVE_TRADING = '0';
 

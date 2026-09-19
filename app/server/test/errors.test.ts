@@ -1,15 +1,17 @@
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { ErrorLog, redact } from '../src/observability/errors.js';
 import { refuse, wasRefusal, worthLogging } from '../src/http/refuse.js';
+import { closePool, one } from '../src/db/pool.js';
 
-const fresh = () => new ErrorLog(join(mkdtempSync(join(tmpdir(), 'errlog-')), 'errors.db'));
+// One database for the file; each case starts it empty. `record()` is
+// fire-and-forget, so every read below is preceded by a `flush()`.
+const fresh = async () => { const log = new ErrorLog(); await log.ready; await log.clear(); return log; };
 
-test('a failure is stored with everything needed to fix it', () => {
-  const log = fresh();
+after(() => closePool());
+
+test('a failure is stored with everything needed to fix it', async () => {
+  const log = await fresh();
   log.record({
     source: 'server',
     message: 'cannot parse time "yesterday"',
@@ -18,7 +20,8 @@ test('a failure is stored with everything needed to fix it', () => {
     where: 'GET /api/chain',
     context: { query: { at: 'yesterday' } },
   });
-  const [row] = log.list();
+  await log.flush();
+  const [row] = await log.list();
   assert.equal(row?.message, 'cannot parse time "yesterday"');
   assert.equal(row?.where, 'GET /api/chain');
   assert.equal(row?.code, '400');
@@ -26,34 +29,37 @@ test('a failure is stored with everything needed to fix it', () => {
   assert.match(row!.stack!, /at resolveAt/);
 });
 
-test('the same failure repeated is one row with a count, not a hundred rows', () => {
-  const log = fresh();
+test('the same failure repeated is one row with a count, not a hundred rows', async () => {
+  const log = await fresh();
   for (let i = 0; i < 50; i++) {
     log.record({ source: 'exchange', message: 'Delta refused the request (insufficient_margin).' });
   }
-  const rows = log.list();
+  await log.flush();
+  const rows = await log.list();
   assert.equal(rows.length, 1, 'a poll failing every second must not bury everything else');
   assert.equal(rows[0]?.count, 50);
 });
 
-test('the same message from two places stays two rows', () => {
-  const log = fresh();
+test('the same message from two places stays two rows', async () => {
+  const log = await fresh();
   log.record({ source: 'server', message: 'timeout', where: 'GET /api/chain' });
   log.record({ source: 'server', message: 'timeout', where: 'POST /api/trade/place' });
-  assert.equal(log.list().length, 2);
+  await log.flush();
+  assert.equal((await log.list()).length, 2);
 });
 
-test('first and last seen both move the way they should', () => {
-  const log = fresh();
+test('first and last seen both move the way they should', async () => {
+  const log = await fresh();
   log.record({ source: 'browser', message: 'boom' }, 1_000);
   log.record({ source: 'browser', message: 'boom' }, 9_000);
-  const [row] = log.list();
+  await log.flush();
+  const [row] = await log.list();
   assert.equal(row?.firstSeen, 1_000, 'the first time it happened does not change');
   assert.equal(row?.lastSeen, 9_000);
 });
 
-test('a credential never reaches the table, however it is nested', () => {
-  const log = fresh();
+test('a credential never reaches the table, however it is nested', async () => {
+  const log = await fresh();
   log.record({
     source: 'exchange',
     message: 'signed request failed',
@@ -62,7 +68,8 @@ test('a credential never reaches the table, however it is nested', () => {
       nested: { deeper: { password: 'hunter2', size: 10 } },
     },
   });
-  const dump = JSON.stringify(log.list()[0]?.context);
+  await log.flush();
+  const dump = JSON.stringify((await log.list())[0]?.context);
   assert.ok(!dump.includes('live-key-abc'), 'the key is in the log, which is worse than in the env');
   assert.ok(!dump.includes('deadbeef'));
   assert.ok(!dump.includes('hunter2'));
@@ -76,64 +83,95 @@ test('redaction leaves values that are not secrets alone', () => {
   assert.deepEqual(redact('plain'), 'plain');
 });
 
-test('marking one read hides it without deleting it', () => {
-  const log = fresh();
+test('marking one read hides it without deleting it', async () => {
+  const log = await fresh();
   log.record({ source: 'server', message: 'a' });
   log.record({ source: 'server', message: 'b' });
-  const first = log.list()[0]!;
-  log.resolve(first.id);
-  assert.equal(log.list().length, 1);
-  assert.equal(log.list({ includeResolved: true }).length, 2);
+  await log.flush();
+  const first = (await log.list())[0]!;
+  await log.resolve(first.id);
+  assert.equal((await log.list()).length, 1);
+  assert.equal((await log.list({ includeResolved: true })).length, 2);
 });
 
-test('a failure that happens again after being read comes back', () => {
-  const log = fresh();
+test('a failure that happens again after being read comes back', async () => {
+  const log = await fresh();
   log.record({ source: 'trading', message: 'protection failed' });
-  log.resolve(log.list()[0]!.id);
-  assert.equal(log.list().length, 0);
+  await log.flush();
+  await log.resolve((await log.list())[0]!.id);
+  assert.equal((await log.list()).length, 0);
   log.record({ source: 'trading', message: 'protection failed' });
-  assert.equal(log.list().length, 1, 'a fix that did not work must not stay hidden');
+  await log.flush();
+  assert.equal((await log.list()).length, 1, 'a fix that did not work must not stay hidden');
 });
 
-test('the list can be narrowed to one source', () => {
-  const log = fresh();
+test('the list can be narrowed to one source', async () => {
+  const log = await fresh();
   log.record({ source: 'server', message: 'a' });
   log.record({ source: 'browser', message: 'b' });
   log.record({ source: 'exchange', message: 'c' });
-  assert.equal(log.list({ source: 'browser' }).length, 1);
-  assert.equal(log.summary().unresolved, 3);
-  assert.equal(log.summary().bySource.exchange, 1);
+  await log.flush();
+  assert.equal((await log.list({ source: 'browser' })).length, 1);
+  assert.equal((await log.summary()).unresolved, 3);
+  assert.equal((await log.summary()).bySource.exchange, 1);
 });
 
-test('newest first, because that is the one being investigated', () => {
-  const log = fresh();
+test('newest first, because that is the one being investigated', async () => {
+  const log = await fresh();
   log.record({ source: 'server', message: 'old' }, 1_000);
   log.record({ source: 'server', message: 'new' }, 2_000);
-  assert.equal(log.list()[0]?.message, 'new');
+  await log.flush();
+  assert.equal((await log.list())[0]?.message, 'new');
 });
 
-test('a huge stack is truncated rather than filling the disk', () => {
-  const log = fresh();
+test('a huge stack is truncated rather than filling the disk', async () => {
+  const log = await fresh();
   log.record({ source: 'browser', message: 'deep', stack: 'x'.repeat(50_000) });
-  assert.ok(log.list()[0]!.stack!.length < 5_000);
-  assert.match(log.list()[0]!.stack!, /truncated/);
+  await log.flush();
+  const [row] = await log.list();
+  assert.ok(row!.stack!.length < 5_000);
+  assert.match(row!.stack!, /truncated/);
 });
 
-test('the logger never throws, whatever it is handed', () => {
-  const log = fresh();
+test('the logger never throws, whatever it is handed', async () => {
+  const log = await fresh();
   const circular: Record<string, unknown> = {};
   circular.self = circular;
   // a logger that can fail takes down the thing it was logging
   assert.doesNotThrow(() => log.record({ source: 'server', message: 'circular', context: circular }));
   assert.doesNotThrow(() => log.record({ source: 'server', message: '' }));
+  await log.flush();
+  // and what could be kept, was
+  assert.equal((await log.list()).length, 1, 'the empty message became "unknown error"');
 });
 
-test('clearing empties it', () => {
-  const log = fresh();
+test('[critical] the table is capped, and an unresolved failure is never dropped to make room', async () => {
+  const log = await fresh();
+  // Two thousand old, resolved rows...
+  await one(
+    `INSERT INTO errors.log (fingerprint, source, level, message, first_seen, last_seen, resolved)
+     SELECT 'old-' || g, 'server', 'error', 'old ' || g, g, g, TRUE FROM generate_series(1, 2000) g`,
+  );
+  // ...one unresolved row older than any of them...
+  await one(
+    `INSERT INTO errors.log (fingerprint, source, level, message, first_seen, last_seen, resolved)
+     VALUES ('keep', 'trading', 'error', 'still broken', 0, 0, FALSE)`,
+  );
+  // ...and enough new reports to trigger a prune.
+  for (let i = 0; i < 50; i++) log.record({ source: 'browser', message: `fresh ${i}` }, 10_000 + i);
+  await log.flush();
+  const s = await log.summary();
+  assert.ok(s.total <= 2_000, `capped: ${s.total}`);
+  assert.equal(s.unresolved, 51, 'the old unresolved one and the fifty new ones all survive');
+  assert.equal((await log.list({ source: 'trading' }))[0]?.message, 'still broken');
+});
+
+test('clearing empties it', async () => {
+  const log = await fresh();
   log.record({ source: 'server', message: 'a' });
-  log.clear();
-  assert.equal(log.list().length, 0);
-  assert.equal(log.summary().total, 0);
+  await log.clear();
+  assert.equal((await log.list()).length, 0);
+  assert.equal((await log.summary()).total, 0);
 });
 
 // ---------------------------------------------------------------- refusals

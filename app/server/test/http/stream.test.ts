@@ -62,7 +62,6 @@ test('the keep-alive is an event the page can hear, not a comment only the proxy
 /** The route, end to end: the gate applies, and a signed-in tab gets frames. */
 const dir = mkdtempSync(join(tmpdir(), 'stream-'));
 process.env.TRADE_DB = join(dir, 'trades.db');
-process.env.ERROR_DB = join(dir, 'errors.db');
 process.env.CHAIN_DB = join(dir, 'chain.db');
 process.env.DELTA_LIVE_TRADING = '0';
 const { hashPassword, COOKIE } = await import('../../src/http/session.js');

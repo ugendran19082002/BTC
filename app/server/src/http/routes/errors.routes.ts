@@ -43,12 +43,12 @@ export function registerErrorRoutes(app: FastifyInstance) {
     const q = req.query as { limit?: string; source?: string; resolved?: string };
     const source = q.source && SOURCES.has(q.source as ErrorSource) ? (q.source as ErrorSource) : undefined;
     return {
-      errors: log.list({
+      errors: await log.list({
         limit: Math.min(500, Number(q.limit ?? 100)),
         source,
         includeResolved: q.resolved === '1' || q.resolved === 'true',
       }),
-      summary: log.summary(),
+      summary: await log.summary(),
     };
   });
 
@@ -62,20 +62,20 @@ export function registerErrorRoutes(app: FastifyInstance) {
   app.post('/api/errors/delete', async (req, reply) => {
     const { id, all } = (req.body ?? {}) as { id?: number; all?: boolean };
     if (all) {
-      const n = log.summary().total;
-      log.clear();
+      const n = (await log.summary()).total;
+      await log.clear();
       return { ok: true, deleted: n };
     }
     if (typeof id !== 'number') { reply.code(400); return { error: 'id or all is required' }; }
-    log.remove(id);
+    await log.remove(id);
     return { ok: true, deleted: 1 };
   });
 
   app.post('/api/errors/resolve', async (req, reply) => {
     const { id, all } = (req.body ?? {}) as { id?: number; all?: boolean };
-    if (all) return { ok: true, resolved: log.resolveAll() };
+    if (all) return { ok: true, resolved: await log.resolveAll() };
     if (typeof id !== 'number') { reply.code(400); return { error: 'id or all is required' }; }
-    log.resolve(id);
+    await log.resolve(id);
     return { ok: true, resolved: 1 };
   });
 }

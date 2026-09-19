@@ -19,6 +19,12 @@ import { config } from '../config.js';
 
 let pool: pg.Pool | null = null;
 
+// BIGINT (epoch milliseconds, counts) arrives from the wire as text, because a
+// 64-bit integer does not always fit a JavaScript number. Every one this desk
+// stores does -- 2^53 ms is 285,000 years -- so read them as numbers once, here,
+// rather than wrapping every `applied_at` and `COUNT(*)` in `Number()`.
+pg.types.setTypeParser(pg.types.builtins.INT8, (v) => Number(v));
+
 /** Values a query may be handed. Objects are sent as JSON. */
 export type Param = string | number | boolean | null | Date | Buffer | object;
 

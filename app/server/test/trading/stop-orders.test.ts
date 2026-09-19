@@ -131,7 +131,6 @@ test('[critical] the engine places the stop as a stop limit, and moving it moves
 const realFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = realFetch; });
 
-process.env.ERROR_DB = join(mkdtempSync(join(tmpdir(), 'stop-orders-')), 'errors.db');
 const { DeltaExchange } = await import('../../src/trading/exchange/delta.js');
 
 /** Answers each request in turn, and records the bodies sent. */

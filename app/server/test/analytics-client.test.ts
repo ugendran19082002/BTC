@@ -4,7 +4,6 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-process.env.ERROR_DB = join(mkdtempSync(join(tmpdir(), 'analytics-client-')), 'errors.db');
 const { measuredOutlook, resetAnalyticsClient, ANALYTICS_COOL_OFF_MS } = await import('../src/analytics/client.js');
 const { errorLog } = await import('../src/observability/errors.js');
 const { withMeasured } = await import('../src/domain/outlook.js');
@@ -68,7 +67,8 @@ test('[critical] a service that has not measured anything yet (503) is not an ou
 });
 
 test('[critical] a failure backs off for the cool-off, then tries again, and is logged once', async () => {
-  const before = errorLog().summary().total;
+  await errorLog().flush();
+  const before = (await errorLog().summary()).total;
   let calls = 0;
   const broken = (async () => { calls += 1; throw new Error('connect ECONNREFUSED'); }) as typeof fetch;
   assert.equal(await measuredOutlook(input, deps(broken)), null);
@@ -77,7 +77,8 @@ test('[critical] a failure backs off for the cool-off, then tries again, and is 
   clock += ANALYTICS_COOL_OFF_MS + 1;
   assert.equal(await measuredOutlook(input, deps(broken)), null);
   assert.equal(calls, 2, 'after it, one more try');
-  assert.equal(errorLog().summary().total - before, 1, 'one line for the outage, not one per request');
+  await errorLog().flush();
+  assert.equal((await errorLog().summary()).total - before, 1, 'one line for the outage, not one per request');
 });
 
 test('a malformed answer is dropped rather than half-shown', async () => {

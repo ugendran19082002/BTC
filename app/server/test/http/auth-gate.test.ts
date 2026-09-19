@@ -15,7 +15,6 @@ import { join } from 'node:path';
 
 const dir = mkdtempSync(join(tmpdir(), 'gate-'));
 process.env.TRADE_DB = join(dir, 'trades.db');
-process.env.ERROR_DB = join(dir, 'errors.db');
 process.env.CHAIN_DB = join(dir, 'chain.db');
 process.env.DELTA_LIVE_TRADING = '0';
 const { hashPassword, COOKIE } = await import('../../src/http/session.js');
