@@ -28,9 +28,9 @@ import { ChangesPanel, EarlyWarningPanel, MovementPanel, StrikeFinderPanel, useC
  * One fact, one place. The bar owns the clock (entry, window, expiry, time
  * left); the strategy decision owns the answer; the KPI strip owns the market's
  * headline numbers; the left column reads the market (trend, levels,
- * volatility, the tape); the centre is the board (chart, chain, the strike
- * under inspection, what changed, its risk); the right column decides
- * (the outlook by horizon, the sides, the strikes, the checklist). Nothing
+ * volatility, the tape, the vol surface); the centre is the board (chart, chain, the strike
+ * under inspection, what changed, its risk, its checklist); the right column
+ * decides (the outlook by horizon, the sides, the strikes). Nothing
  * is shown twice: a figure the checklist judges is not repeated as a row.
  *
  * Every figure is read from the chain response, the perp feed or the desk's
@@ -156,13 +156,15 @@ export function Overview({
           <ErrorBoundary where="Volatility"><VolatilityPanel data={data} iv={iv} /></ErrorBoundary>
           <ErrorBoundary where="Trade flow"><TradeFlowPanel perp={perp} market={data.market} /></ErrorBoundary>
           <ErrorBoundary where="Early warning"><EarlyWarningPanel data={data} perp={perp} changes={changes?.rows ?? null} /></ErrorBoundary>
+          <ErrorBoundary where="IV term structure"><IvTermPanel term={term} error={Boolean(termError)} /></ErrorBoundary>
+          <ErrorBoundary where="Skew"><SkewPanel data={data} rank={term?.skew ?? null} /></ErrorBoundary>
         </div>
 
         <div className="ov-col">
           {chart}
           {chain && (
             <ErrorBoundary where="Overview chain">
-              <ChainPanel data={data} selected={selected} onSelect={setPicked} expiries={expiries} onExpiry={onExpiry} />
+              <ChainPanel data={data} selected={selected} onSelect={setPicked} />
             </ErrorBoundary>
           )}
           <ErrorBoundary where="Selected strike">
@@ -170,6 +172,7 @@ export function Overview({
           </ErrorBoundary>
           <ErrorBoundary where="What changed"><ChangesPanel leg={leg} rows={changes?.rows ?? null} /></ErrorBoundary>
           <ErrorBoundary where="Risk engine"><RiskEnginePanel leg={leg} risk={risk} contracts={contracts} /></ErrorBoundary>
+          <ErrorBoundary where="Checklist"><ChecklistPanel leg={leg} ready={ready} onSell={onSell} /></ErrorBoundary>
         </div>
 
         <div className="ov-col ov-right">
@@ -179,13 +182,7 @@ export function Overview({
             <StrikeFinderPanel data={data} onSelect={(cp, strike) => setPicked({ cp, strike })} onSell={onSell} contracts={contracts} leverage={leverage}
               defaultSide={choice.side === 'CE' ? 'C' : choice.side === 'PE' ? 'P' : 'both'} em={emSettle} execution={config.execution} />
           </ErrorBoundary>
-          <ErrorBoundary where="Checklist"><ChecklistPanel leg={leg} ready={ready} onSell={onSell} /></ErrorBoundary>
         </div>
-      </div>
-
-      <div className="ov-bottom">
-        <ErrorBoundary where="IV term structure"><IvTermPanel term={term} error={Boolean(termError)} /></ErrorBoundary>
-        <ErrorBoundary where="Skew"><SkewPanel data={data} rank={term?.skew ?? null} /></ErrorBoundary>
       </div>
     </div>
   );

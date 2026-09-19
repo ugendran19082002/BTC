@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { ChainResponse, ExpiryOption, Leg } from '@/types/desk';
+import type { ChainResponse, Leg } from '@/types/desk';
 import { istLabel } from '@/lib/format';
 import type { PremiumMomentum } from '@/api/desk';
 import {
@@ -18,9 +18,8 @@ export const findLeg = (legs: readonly Leg[], s: Selected | null) =>
 type ChainFilter = 'near' | 'all' | 'walls' | 'recommended';
 type ChainCols = 'quotes' | 'greeks';
 
-export function ChainPanel({ data, selected, onSelect, rows = 7, expiries, onExpiry }: {
+export function ChainPanel({ data, selected, onSelect, rows = 7 }: {
   data: ChainResponse; selected: Selected | null; onSelect: (s: Selected) => void; rows?: number;
-  expiries?: readonly ExpiryOption[]; onExpiry?: (expiry: string) => void;
 }) {
   const { snapshot: snap, legs, structure } = data;
   const [filter, setFilter] = useState<ChainFilter>('near');
@@ -57,20 +56,10 @@ export function ChainPanel({ data, selected, onSelect, rows = 7, expiries, onExp
     k === snap.atm ? 'ATM' : null, k === ceWall ? 'CE wall' : null, k === peWall ? 'PE wall' : null, k === maxPain ? 'Max pain' : null,
   ].filter(Boolean).join(' · ');
   return (
-    <Panel title={`Option chain · ${istLabel(snap.expiryTs)} (fixed expiry)`}
+    <Panel title="Option chain"
       right={
         <span className="ov-chain-head">
-          {expiries && onExpiry && expiries.length > 0 ? (
-            <select aria-label="Expiry" className="ov-select" value={snap.expiry} onChange={(e) => onExpiry(e.target.value)}>
-              {!expiries.some((e) => e.expiry === snap.expiry) && <option value={snap.expiry}>{snap.expiry}</option>}
-              {expiries.map((e) => (
-                <option key={e.expiry} value={e.expiry}>
-                  {e.isDefault ? '★ ' : ''}{e.expiry} · {e.hoursAway < 48 ? `${Math.round(e.hoursAway)}h` : `${Math.round(e.hoursAway / 24)}d`}
-                  {e.isNextEntry ? ' · next entry' : e.isDaily ? ' · daily' : ''}
-                </option>
-              ))}
-            </select>
-          ) : <span>{snap.expiry}</span>}
+          <span className="ov-muted">{istLabel(snap.expiryTs)}</span>
           <select aria-label="Strikes shown" className="ov-select" value={filter} onChange={(e) => setFilter(e.target.value as ChainFilter)}>
             <option value="near">Near ATM (±{rows})</option>
             <option value="all">All strikes</option>

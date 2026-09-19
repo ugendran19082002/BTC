@@ -53,14 +53,13 @@ export function MovementPanel({ data, em, activeMin }: { data: ChainResponse; em
     <Panel title="Outlook · movement to expiry" right={<Tag tone={v.way === 'up' ? 'up' : v.way === 'down' ? 'down' : 'accent'}>{v.way.toUpperCase()} · {v.confidence} confidence</Tag>}>
       <p className="ov-summary">{v.text}.</p>
       <table className="ov-mini ov-horizons">
-        <thead><tr><th>Next</th><th>Up</th><th>Down</th><th>Range</th><th>Expected move</th><th>Target range</th></tr></thead>
+        <thead><tr><th>Next</th><th>Up</th><th>Down</th><th title="Odds BTC stays inside the expected move">Side</th><th title="Spot ± the expected move for the horizon">Range (spot ± EM)</th></tr></thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.label} className={r.minutes === activeMin ? 'ov-atm' : undefined}>
               <td>{r.label}{r.minutes === activeMin ? ' ◆' : ''}</td>
               <td className="ov-up">{fmt.pct(r.pUp)}</td><td className="ov-down">{fmt.pct(r.pDown)}</td><td className="ov-muted">{fmt.pct(r.pRange)}</td>
-              <td>{r.em === null ? '—' : `±${fmt.n(r.em)}`}</td>
-              <td className="ov-muted">{r.low === null || r.high === null ? '—' : `${fmt.n(r.low)} – ${fmt.n(r.high)}`}</td>
+              <td className="ov-muted" title={r.em === null ? undefined : `±${fmt.n(r.em)}`}>{r.low === null || r.high === null ? '—' : `${fmt.n(r.low)} – ${fmt.n(r.high)}`}</td>
             </tr>
           ))}
         </tbody>
@@ -190,10 +189,10 @@ export function StrikeFinderPanel({ data, onSelect, onSell, contracts, leverage,
       {found.length === 0 ? <p className="ov-empty">{mode === 'desk' ? 'Nothing clears the desk’s rules on either side.' : 'Nothing passes these filters. Loosen one.'}</p> : (
         <table className="ov-mini ov-reco">
           <thead><tr>
-            <th>Strike</th><th>Side</th><th title={execution === 'MARK' ? 'Mark price — not executable' : 'What a seller receives'}>{priceLabel}</th><th>Credit</th>
+            <th>Strike</th><th>Side</th><th title={`Credit for ${contracts} ct at the ${priceLabel.toLowerCase()}`}>Credit</th>
             <th title="Probability of expiring worthless">POP</th><th title="Probability BTC touches the strike before expiry">Touch</th><th title="Distance from spot in expected moves">Dist/EM</th>
             <th title="Expected P&L for your size, after charges">Exp. P&amp;L</th><th title="Loss at an adverse move of two expected moves">Tail 2×EM</th><th title="Margin estimate at the ticket's leverage">Margin</th>
-            <th title="Expected P&L per dollar of tail loss">R/R</th><th title="The desk's score, 0–10">Score</th><th>Says</th><th />
+            <th title="The desk's score, 0–10">Score</th><th>Says</th><th />
           </tr></thead>
           <tbody>
             {found.map((l) => {
@@ -202,17 +201,15 @@ export function StrikeFinderPanel({ data, onSelect, onSell, contracts, leverage,
               const est = px === null ? null : orderEstimate(l.cp, l.strike, px, spot, leverage, contracts);
               const adverse = em ? (l.cp === 'C' ? spot + 2 * em.move : spot - 2 * em.move) : null;
               const tail = px !== null && adverse !== null ? shortLossAt(l.cp, l.strike, px, adverse, contracts) : null;
-              const rr = tail !== null && tail > 0 && l.ev?.evUsd != null ? l.ev.evUsd / tail : null;
               return (
                 <tr key={`${l.cp}${l.strike}`} className="ov-click" onClick={() => onSelect(l.cp, l.strike)}>
-                  <td>{fmt.n(l.strike)}</td><td>{l.cp === 'C' ? 'CE' : 'PE'}</td><td>{fmt.n(px, 1)}</td>
-                  <td>{est ? `$${est.creditUsd.toFixed(2)}` : '—'}</td>
+                  <td>{fmt.n(l.strike)}</td><td>{l.cp === 'C' ? 'CE' : 'PE'}</td>
+                  <td title={`${priceLabel} ${fmt.n(px, 1)} per BTC`}>{est ? `$${est.creditUsd.toFixed(2)}` : '—'}</td>
                   <td className="ov-up">{fmt.pct(o.pOtm)}</td><td>{fmt.pct(o.pTouch)}</td>
                   <td>{l.emDistance === null ? '—' : `${l.emDistance.toFixed(2)}×`}</td>
                   <td className={l.ev?.evUsd == null ? '' : l.ev.evUsd >= 0 ? 'ov-up' : 'ov-down'}>{fmt.signed(l.ev?.evUsd ?? null, 2)}</td>
                   <td className="ov-down">{tail === null ? '—' : `$${tail.toFixed(2)}`}</td>
                   <td>{est ? `$${est.marginUsd.toFixed(2)}` : '—'}</td>
-                  <td>{rr === null ? '—' : `${(rr * 100).toFixed(0)}¢`}</td>
                   <td>{l.score === null ? '—' : (l.score * 10).toFixed(1)}</td>
                   <td><Tag tone={l.ev?.signal === 'sell' ? 'up' : l.ev?.signal === 'avoid' ? 'down' : 'muted'}>{l.ev?.signal ?? '—'}</Tag></td>
                   <td>{onSell && data.snapshot.live && <button className="ov-sell" onClick={(e) => { e.stopPropagation(); onSell(l); }}>Sell</button>}</td>

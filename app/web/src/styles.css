@@ -2540,13 +2540,12 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 
 .ov-main { display: grid; grid-template-columns: minmax(230px, 1fr) minmax(0, 2.4fr) minmax(300px, 1.5fr); gap: 10px; align-items: start; }
 .ov-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.ov-bottom { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; align-items: start; }
 @media (max-width: 1280px) {
   .ov-main { grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); }
   .ov-right { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
 }
 @media (max-width: 760px) {
-  .ov-main, .ov-bottom, .ov-right { grid-template-columns: 1fr; display: flex; flex-direction: column; }
+  .ov-main, .ov-right { grid-template-columns: 1fr; display: flex; flex-direction: column; }
   .ov-kpi-wide { grid-column: auto; }
 }
 
