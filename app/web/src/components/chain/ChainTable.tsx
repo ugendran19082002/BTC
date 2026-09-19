@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type MouseEvent } from 'react';
 import type { Leg, SideRecommendation, SnapshotMeta } from '@/types/desk';
 import { heldKey, type HeldLeg } from '@/lib/held';
 import { signedInr, signedUsd, usdToInr } from '@/lib/format';
@@ -401,6 +401,8 @@ export function ChainTable({
   columnOrder = DEFAULT_ORDER,
   onSell,
   onInspect,
+  focus = null,
+  onFocus,
   maxSpreadPct,
   held,
   view = 'both',
@@ -426,6 +428,14 @@ export function ChainTable({
    * A tooltip is not an answer either -- a phone has no hover.
    */
   onInspect?: (cp: 'C' | 'P', strike: number) => void;
+  /**
+   * The strike the decision panels are about, marked on the board, and the
+   * click that changes it: anywhere on a row's call half selects the call,
+   * anywhere on its put half the put. Every panel above reads from it, so
+   * the board is where a person points at what they are deciding on.
+   */
+  focus?: { cp: 'C' | 'P'; strike: number } | null;
+  onFocus?: (cp: 'C' | 'P', strike: number) => void;
   /**
    * The widest spread an order may cross, as a fraction of the mid.
    *
@@ -642,12 +652,28 @@ export function ChainTable({
             const isOpener = k === opensAt;
             const heldC = held?.get(heldKey('C', k));
             const heldP = held?.get(heldKey('P', k));
+            const focused = focus?.strike === k ? focus.cp : null;
+            // Which half of the row a click landed on: before the strike cell is the call side, after it the put side; a one-sided board is all one side.
+            const pick = (e: MouseEvent<HTMLTableRowElement>) => {
+              if (!onFocus) return;
+              const td = (e.target as Element).closest('td');
+              const row = e.currentTarget;
+              if (!td || td.parentElement !== row) return;
+              if (oneSided) { if (showCalls ? cc : pp) onFocus(showCalls ? 'C' : 'P', k); return; }
+              const cells = [...row.children];
+              const strikeAt = cells.findIndex((c) => c.classList.contains('strikecell'));
+              const i = cells.indexOf(td);
+              if (i < strikeAt && cc) onFocus('C', k);
+              else if (i > strikeAt && pp) onFocus('P', k);
+            };
             return (
               <tr
                 key={k}
                 ref={isOpener ? openAt : undefined}
+                onClick={onFocus ? pick : undefined}
                 className={[
                   isAtm ? 'atm' : '',
+                  focused ? `focused focused-${focused === 'C' ? 'c' : 'p'}` : '',
                   sellC || sellP ? 'sold' : '',
                   // Separate from `sold`: one is what the desk suggests, the
                   // other is what you have actually done, and the row must not
@@ -671,6 +697,7 @@ export function ChainTable({
                         )
                         : k}
                       {isAtm && <span className="tag">ATM</span>}
+                      {focused && <span className="tag focus" title="The strike the panels above are about">{focused === 'C' ? 'CE' : 'PE'} ◆</span>}
                       {heldC && <HeldChip held={heldC} />}
                       {heldP && <HeldChip held={heldP} />}
                       {/*
@@ -719,6 +746,7 @@ export function ChainTable({
                         )
                         : k}
                       {isAtm && <span className="tag">ATM</span>}
+                      {focused && <span className="tag focus" title="The strike the panels above are about">{focused === 'C' ? 'CE' : 'PE'} ◆</span>}
                       {heldC && <HeldChip held={heldC} />}
                       {heldP && <HeldChip held={heldP} />}
                       {/*

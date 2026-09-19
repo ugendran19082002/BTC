@@ -504,6 +504,7 @@ export default function App() {
                 leverage={orderLeverage}
                 selected={focus}
                 onSelect={setFocus}
+                chain={false}
                 spark={sparkCloses}
                 error={err}
                 controls={
@@ -628,6 +629,8 @@ export default function App() {
                   columnOrder={chainOrder}
                   onSell={openTicket}
                   onInspect={inspectLeg}
+                  focus={focus}
+                  onFocus={(cp, strike) => setFocus({ cp, strike })}
                   view={chainView}
                   eligibleOnly={eligibleOnly}
                   maxSpreadPct={trade?.limits.maxSpreadPct}
