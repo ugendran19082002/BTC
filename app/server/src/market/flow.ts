@@ -68,6 +68,14 @@ const MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    // How many large prints, not only their volume: the reference screen counts them.
+    id: 'market-006-flow-large-counts',
+    up: `
+      ALTER TABLE trade_flow_1m ADD COLUMN IF NOT EXISTS large_buy_count  INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE trade_flow_1m ADD COLUMN IF NOT EXISTS large_sell_count INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
 ];
 
 let ready: Promise<void> | null = null;
@@ -110,6 +118,8 @@ export type FlowMinute = {
   sellCount: number;
   largeBuyVolume: number;
   largeSellVolume: number;
+  largeBuyCount: number;
+  largeSellCount: number;
   vwap: number | null;
   high: number | null;
   low: number | null;
@@ -117,11 +127,11 @@ export type FlowMinute = {
 
 /** The prints of one minute, summed. Pure. */
 export function minuteOf(at: number, prints: readonly Print[], large = LARGE_PRINT_CONTRACTS): FlowMinute {
-  const m: FlowMinute = { at, buyVolume: 0, sellVolume: 0, buyCount: 0, sellCount: 0, largeBuyVolume: 0, largeSellVolume: 0, vwap: null, high: null, low: null };
+  const m: FlowMinute = { at, buyVolume: 0, sellVolume: 0, buyCount: 0, sellCount: 0, largeBuyVolume: 0, largeSellVolume: 0, largeBuyCount: 0, largeSellCount: 0, vwap: null, high: null, low: null };
   let notional = 0;
   for (const p of prints) {
-    if (p.side === 'buy') { m.buyVolume += p.size; m.buyCount++; if (p.size >= large) m.largeBuyVolume += p.size; }
-    else { m.sellVolume += p.size; m.sellCount++; if (p.size >= large) m.largeSellVolume += p.size; }
+    if (p.side === 'buy') { m.buyVolume += p.size; m.buyCount++; if (p.size >= large) { m.largeBuyVolume += p.size; m.largeBuyCount++; } }
+    else { m.sellVolume += p.size; m.sellCount++; if (p.size >= large) { m.largeSellVolume += p.size; m.largeSellCount++; } }
     notional += p.price * p.size;
     m.high = m.high === null ? p.price : Math.max(m.high, p.price);
     m.low = m.low === null ? p.price : Math.min(m.low, p.price);
@@ -156,14 +166,15 @@ export async function flushTradeFlow(nowMs: number): Promise<number> {
   const done = minutesOf(socket.printsSince(since)).filter((m) => m.at < current);
   if (!done.length) return 0;
   await query(
-    `INSERT INTO trade_flow_1m (at, buy_volume, sell_volume, buy_count, sell_count, large_buy_volume, large_sell_volume, vwap, high, low)
-     SELECT * FROM unnest($1::bigint[], $2::float8[], $3::float8[], $4::int[], $5::int[], $6::float8[], $7::float8[], $8::float8[], $9::float8[], $10::float8[])
+    `INSERT INTO trade_flow_1m (at, buy_volume, sell_volume, buy_count, sell_count, large_buy_volume, large_sell_volume, vwap, high, low, large_buy_count, large_sell_count)
+     SELECT * FROM unnest($1::bigint[], $2::float8[], $3::float8[], $4::int[], $5::int[], $6::float8[], $7::float8[], $8::float8[], $9::float8[], $10::float8[], $11::int[], $12::int[])
      ON CONFLICT (at) DO NOTHING`,
     [
       done.map((m) => m.at), done.map((m) => m.buyVolume), done.map((m) => m.sellVolume),
       done.map((m) => m.buyCount), done.map((m) => m.sellCount),
       done.map((m) => m.largeBuyVolume), done.map((m) => m.largeSellVolume),
       done.map((m) => m.vwap), done.map((m) => m.high), done.map((m) => m.low),
+      done.map((m) => m.largeBuyCount), done.map((m) => m.largeSellCount),
     ] as never,
   );
   lastFlushedMinute = done[done.length - 1]!.at;
@@ -184,6 +195,8 @@ export type FlowSummary = {
   avgTradeSize: number | null;
   largeBuyVolume: number;
   largeSellVolume: number;
+  /** Prints of `LARGE_PRINT_CONTRACTS` or more. */
+  largeTrades: number;
   /** Buy volume as a share of the total: above a half, buyers are lifting offers. */
   aggressorBuyPct: number | null;
   /** Cumulative volume delta, one point per minute, oldest first. */
@@ -199,11 +212,13 @@ export async function flowSummary(windowMin = 60, nowMs = Date.now()): Promise<F
   const since = current - (windowMin - 1) * FLOW_BUCKET_MS;
   const stored = (await rows<{
     at: number; buy_volume: number; sell_volume: number; buy_count: number; sell_count: number;
-    large_buy_volume: number; large_sell_volume: number; vwap: number | null; high: number | null; low: number | null;
+    large_buy_volume: number; large_sell_volume: number; large_buy_count: number; large_sell_count: number;
+    vwap: number | null; high: number | null; low: number | null;
   }>('SELECT * FROM trade_flow_1m WHERE at >= $1 AND at < $2 ORDER BY at', [since, current]))
     .map<FlowMinute>((r) => ({
       at: r.at, buyVolume: r.buy_volume, sellVolume: r.sell_volume, buyCount: r.buy_count, sellCount: r.sell_count,
-      largeBuyVolume: r.large_buy_volume, largeSellVolume: r.large_sell_volume, vwap: r.vwap, high: r.high, low: r.low,
+      largeBuyVolume: r.large_buy_volume, largeSellVolume: r.large_sell_volume, largeBuyCount: r.large_buy_count, largeSellCount: r.large_sell_count,
+      vwap: r.vwap, high: r.high, low: r.low,
     }));
   // Minutes the socket holds that are not written yet (the current one, and any the flush has not reached).
   const have = new Set(stored.map((m) => m.at));
@@ -213,7 +228,7 @@ export async function flowSummary(windowMin = 60, nowMs = Date.now()): Promise<F
   const s: FlowSummary = {
     windowMin, minutesCovered: minutes.length,
     buyVolume: 0, sellVolume: 0, deltaVolume: 0, totalVolume: 0, trades: 0, avgTradeSize: null,
-    largeBuyVolume: 0, largeSellVolume: 0, aggressorBuyPct: null, cvd: [],
+    largeBuyVolume: 0, largeSellVolume: 0, largeTrades: 0, aggressorBuyPct: null, cvd: [],
     source: minutes.length ? 'socket' : 'none',
   };
   let cvd = 0;
@@ -221,6 +236,7 @@ export async function flowSummary(windowMin = 60, nowMs = Date.now()): Promise<F
     s.buyVolume += m.buyVolume; s.sellVolume += m.sellVolume;
     s.trades += m.buyCount + m.sellCount;
     s.largeBuyVolume += m.largeBuyVolume; s.largeSellVolume += m.largeSellVolume;
+    s.largeTrades += m.largeBuyCount + m.largeSellCount;
     const d = m.buyVolume - m.sellVolume;
     cvd += d;
     s.cvd.push({ at: m.at, cvd, delta: d });

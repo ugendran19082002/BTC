@@ -1,7 +1,7 @@
 import type { ChainResponse, MarketRead } from '@/types/desk';
 import type { FlowSummary, PerpResponse, TermHistoryPoint, TermPoint, TermResponse } from '@/api/desk';
-import { ivRv, keyLevels, modelView, mtfRows, skew, volRegime, type IvRv } from '@/lib/overview';
-import { fmt, NotCaptured, Panel, Row, Tag } from './parts';
+import { ivRv, keyLevels, modelView, mtfRows, namedLevels, skew, volRegime, type IvRv } from '@/lib/overview';
+import { fmt, More, NotCaptured, Panel, Row, Tag } from './parts';
 
 // ------------------------------------------------------------------ KPI strip
 
@@ -72,11 +72,21 @@ const volRegimeText = (m: MarketRead | null) => {
   return r ? `${r.label} volatility · 1h RV ${r.ratio.toFixed(1)}× the 21d` : m?.realisedVol == null ? '' : `realised vol ${m.realisedVol.toFixed(1)}%`;
 };
 
+const KPI_HELP: Record<string, string> = {
+  'BTC spot': 'Delta\'s BTC index; the change is against the previous UTC daily close',
+  'BTC perp': 'The BTCUSD perpetual\'s mark price and its 24h change',
+  'Perp 24h volume': 'Turnover on the perpetual over 24 hours, USD',
+  'Open interest (perp)': 'Contracts open on the perpetual, in USD',
+  'Funding rate': 'What longs pay shorts (or the reverse) every 8 hours, as Delta publishes it',
+  'IV (ATM)': 'Implied volatility at the money, against realised volatility over 21 days',
+  'PCR (OI)': 'Put open interest over call open interest; above 1, more puts are held',
+};
+
 function Kpi({ label, value, sub, tone, muted, spark }: {
   label: string; value: string; sub?: string; tone?: 'up' | 'down'; muted?: boolean; spark?: readonly number[];
 }) {
   return (
-    <div className={`ov-kpi${muted ? ' ov-kpi-muted' : ''}`}>
+    <div className={`ov-kpi${muted ? ' ov-kpi-muted' : ''}`} title={KPI_HELP[label]}>
       <span className="ov-kpi-label">{label}</span>
       <span className={`ov-kpi-value${tone ? ` ov-${tone}` : ''}`}>{value}</span>
       {sub && <span className={`ov-kpi-sub${tone ? ` ov-${tone}` : ''}`}>{sub}</span>}
@@ -114,20 +124,22 @@ export function PriceActionPanel({ market, tf: wanted = '15m' }: { market: Marke
     <Panel title={`Price action (${use})`} right={use !== wanted ? <small className="ov-muted">{wanted} not read; {use} shown</small> : undefined}>
       {!tf ? <p className="ov-empty">No {use} bars yet.</p> : (
         <>
-          <Row label="Trend" value={tf.label} tone={trendTone} />
-          <Row label="Structure" value={tf.structure === 1 ? 'HH / HL' : tf.structure === -1 ? 'LH / LL' : 'no clear swings'}
+          <Row mark="arrow" label="Trend" value={tf.label} tone={trendTone} />
+          <Row mark="arrow" label="Structure" value={tf.structure === 1 ? 'HH / HL' : tf.structure === -1 ? 'LH / LL' : 'no clear swings'}
             tone={tf.structure === 1 ? 'up' : tf.structure === -1 ? 'down' : 'muted'} hint="Higher highs and higher lows, or the mirror, on the recent swings" />
-          <Row label="RSI (14)" value={fmt.n(tf.rsi14, 1)} tone={tf.rsi14 === null ? undefined : tf.rsi14 >= 70 || tf.rsi14 <= 30 ? 'warn' : undefined} />
-          <Row label="MACD (12, 26, 9)" value={macd ? `${macd.hist >= 0 ? 'bullish' : 'bearish'} · ${fmt.signed(macd.hist, 1)}` : use === '15m' ? '—' : 'read on 15m only'}
-            tone={macd ? (macd.hist >= 0 ? 'up' : 'down') : undefined} hint={macd ? `line ${macd.line.toFixed(1)} · signal ${macd.signal.toFixed(1)}` : undefined} />
-          <Row label="ADX (14)" value={tf.adx14 == null ? '—' : tf.adx14.toFixed(1)} hint="Trend strength, whichever way" />
-          <Row label="VWAP" value={tf.vwap == null ? '—' : `${fmt.n(tf.vwap, 1)} (${fmt.signed(tf.vwapDistPct, 2)}%)`}
-            tone={tf.vwapDistPct == null ? undefined : tf.vwapDistPct >= 0 ? 'up' : 'down'} hint="Price against the volume-weighted average of the bars read" />
-          <Row label="EMA 9 / 21 / 50" value={`${fmt.n(tf.ema9)} / ${fmt.n(tf.ema21)} / ${fmt.n(tf.ema50)}`} tone={tf.ema9 !== null && tf.ema21 !== null ? (tf.ema9 > tf.ema21 ? 'up' : 'down') : undefined} />
-          <Row label="ATR (14)" value={tf.atrPct === null ? '—' : `${fmt.n(tf.close * tf.atrPct / 100)} (${tf.atrPct.toFixed(2)}%)`} />
-          <Row label="Timeframes (5m…1d)" value={`${fmt.signed(market?.agreement ?? 0)} of ${market?.timeframes.length ?? 0}`}
-            tone={(market?.agreement ?? 0) > 0 ? 'up' : (market?.agreement ?? 0) < 0 ? 'down' : 'muted'}
-            hint="Each timeframe's trend, +1 up / −1 down, added up" />
+          <Row mark="arrow" label="RSI (14)" value={fmt.n(tf.rsi14, 1)} tone={tf.rsi14 === null ? 'muted' : tf.rsi14 >= 55 ? 'up' : tf.rsi14 <= 45 ? 'down' : 'muted'}
+            hint={tf.rsi14 !== null && (tf.rsi14 >= 70 || tf.rsi14 <= 30) ? 'Stretched: past 70 or under 30' : 'Above 55 leans up, under 45 leans down'} />
+          <Row mark="arrow" label="MACD" value={macd ? (macd.hist >= 0 ? 'Bullish' : 'Bearish') : use === '15m' ? '—' : 'read on 15m only'}
+            tone={macd ? (macd.hist >= 0 ? 'up' : 'down') : 'muted'} hint={macd ? `MACD(12, 26, 9) histogram ${fmt.signed(macd.hist, 1)} · line ${macd.line.toFixed(1)} · signal ${macd.signal.toFixed(1)}` : undefined} />
+          <Row mark="arrow" label="VWAP" value={tf.vwap == null ? '—' : fmt.n(tf.vwap, 1)}
+            tone={tf.vwapDistPct == null ? 'muted' : tf.vwapDistPct >= 0 ? 'up' : 'down'} hint={tf.vwapDistPct == null ? undefined : `Price is ${fmt.signed(tf.vwapDistPct, 2)}% from the volume-weighted average of the bars read`} />
+          <Row mark="arrow" label="ATR (14)" value={tf.atrPct === null ? '—' : fmt.n(tf.close * tf.atrPct / 100, 1)} tone="muted" hint={tf.atrPct === null ? undefined : `${tf.atrPct.toFixed(2)}% of price, average true range over 14 bars`} />
+          <More>
+            <Row label="ADX (14)" value={tf.adx14 == null ? '—' : tf.adx14.toFixed(1)} hint="Trend strength, whichever way; above 25 is a trend" />
+            <Row label="EMA 9 / 21 / 50" value={`${fmt.n(tf.ema9)} / ${fmt.n(tf.ema21)} / ${fmt.n(tf.ema50)}`} tone={tf.ema9 !== null && tf.ema21 !== null ? (tf.ema9 > tf.ema21 ? 'up' : 'down') : undefined} />
+            <Row label="Timeframes agreeing" value={`${fmt.signed(market?.agreement ?? 0)} of ${market?.timeframes.length ?? 0}`}
+              tone={(market?.agreement ?? 0) > 0 ? 'up' : (market?.agreement ?? 0) < 0 ? 'down' : 'muted'} hint="Each timeframe's trend, +1 up / −1 down, added up" />
+          </More>
         </>
       )}
     </Panel>
@@ -167,13 +179,20 @@ export function MtfPanel({ data, activeTf, horizonMin }: { data: ChainResponse; 
 
 export function KeyLevelsPanel({ data, spot }: { data: ChainResponse; spot: number }) {
   const m = data.market;
-  const levels = keyLevels(data.structure, m?.high24h ?? null, m?.low24h ?? null, m?.prevDayHigh ?? null, m?.prevDayLow ?? null);
+  const all = keyLevels(data.structure, m?.high24h ?? null, m?.low24h ?? null, m?.prevDayHigh ?? null, m?.prevDayLow ?? null);
+  const named = namedLevels(all, spot);
+  const away = (p: number) => <small className="ov-muted">{fmt.signed(((p - spot) / spot) * 100, 2)}%</small>;
   return (
     <Panel title="Key levels">
-      {levels.length === 0 ? <p className="ov-empty">No levels on this board.</p> : levels.map((l) => (
-        <Row key={l.label} label={<><i className={`ov-dot ov-bg-${l.kind === 'resistance' ? 'down' : l.kind === 'support' ? 'up' : 'muted'}`} />{l.label}</>}
-          value={<>{fmt.n(l.price)} <small className="ov-muted">{fmt.signed(((l.price - spot) / spot) * 100, 2)}%</small></>} />
+      {named.length === 0 ? <p className="ov-empty">No levels on this board.</p> : named.map((l) => (
+        <Row key={l.name} mark="dot" tone={l.kind === 'resistance' ? 'down' : l.kind === 'support' ? 'up' : 'muted'}
+          label={l.name} value={<>{fmt.n(l.price)} {away(l.price)}</>} hint={`${l.source} · ${fmt.signed(l.price - spot)} from spot`} />
       ))}
+      <More label="Every level">
+        {all.map((l) => (
+          <Row key={l.label} label={l.label} value={<>{fmt.n(l.price)} {away(l.price)}</>} />
+        ))}
+      </More>
     </Panel>
   );
 }
@@ -186,19 +205,23 @@ export function VolatilityPanel({ data, iv }: { data: ChainResponse; iv: IvRv | 
   const tf1h = m?.timeframes.find((t) => t.tf === '1h');
   const regime = volRegime(m?.realisedVol1h ?? null, m?.realisedVol ?? null);
   const pct = (v: number | null | undefined) => (v == null ? '—' : `${v.toFixed(1)}%`);
+  const atrUsd = (t: typeof tf5) => (t?.atrPct == null ? '—' : fmt.n(t.close * t.atrPct / 100, 1));
   return (
-    <Panel title="Volatility">
-      <Row label="ATM IV" value={data.structure.atmIv === null ? '—' : `${(data.structure.atmIv * 100).toFixed(1)}%`} />
-      <Row label="Realised 1h / 6h / 12h" value={`${pct(m?.realisedVol1h)} / ${pct(m?.realisedVol6h)} / ${pct(m?.realisedVol12h)}`}
-        hint="Annualised, from 5-minute closes: what BTC is delivering right now" />
-      <Row label="Realised 21d" value={pct(m?.realisedVol)} hint="Annualised, from daily closes: what it usually delivers" />
-      <Row label="IV − RV" value={iv ? `${fmt.signed(iv.spreadPts, 1)} pts` : '—'} tone={iv ? (iv.spreadPts > 0 ? 'up' : 'down') : undefined}
-        hint="What sellers are paid for above what BTC has delivered (21d)" />
-      <Row label="IV richness" value={iv ? <Tag tone={iv.label === 'rich' ? 'up' : iv.label === 'cheap' ? 'down' : 'muted'}>{iv.label} · {iv.ratio.toFixed(2)}×</Tag> : '—'} />
-      <Row label="ATR 5m / 1h" value={`${tf5?.atrPct == null ? '—' : `${tf5.atrPct.toFixed(2)}%`} / ${tf1h?.atrPct == null ? '—' : `${tf1h.atrPct.toFixed(2)}%`}`} />
-      <Row label="Vol regime" value={regime ? <Tag tone={regime.label === 'high' ? 'down' : regime.label === 'low' ? 'muted' : 'accent'}>{regime.label} · {regime.ratio.toFixed(1)}×</Tag> : '—'}
-        hint="The last hour's realised volatility against the 21-day figure" />
-      <Row label="24h range" value={m?.max24hRangeUsd == null ? '—' : `${fmt.n(m.max24hRangeUsd)} (${m.max24hRangePct?.toFixed(2)}%)`} hint="The largest single day of the last 30" />
+    <Panel title="Volatility" right={<small className="ov-muted">ATM IV {data.structure.atmIv === null ? '—' : `${(data.structure.atmIv * 100).toFixed(1)}%`}</small>}>
+      <Row mark="dot" tone="up" label="Realized vol (1h)" value={pct(m?.realisedVol1h)} hint="Annualised, from the last hour of 5-minute closes" />
+      <Row mark="dot" tone="up" label="Realized vol (6h)" value={pct(m?.realisedVol6h)} hint="Annualised, from the last six hours of 5-minute closes" />
+      <Row mark="dot" tone={iv ? (iv.spreadPts > 0 ? 'up' : 'down') : 'muted'} label="IV − RV spread" value={iv ? `${fmt.signed(iv.spreadPts, 1)} pts` : '—'}
+        hint="Implied minus realised (21d). Positive: sellers are paid more than BTC has been delivering" />
+      <Row mark="dot" tone="muted" label="ATR (5m)" value={atrUsd(tf5)} hint={tf5?.atrPct == null ? undefined : `${tf5.atrPct.toFixed(2)}% of price`} />
+      <Row mark="dot" tone="muted" label="ATR (1h)" value={atrUsd(tf1h)} hint={tf1h?.atrPct == null ? undefined : `${tf1h.atrPct.toFixed(2)}% of price`} />
+      <Row mark="dot" tone={regime ? (regime.label === 'high' ? 'down' : regime.label === 'low' ? 'muted' : 'up') : 'muted'} label="Vol regime"
+        value={regime ? <Tag tone={regime.label === 'high' ? 'down' : regime.label === 'low' ? 'muted' : 'accent'}>{regime.label}</Tag> : '—'}
+        hint={regime ? `The last hour's realised volatility is ${regime.ratio.toFixed(1)}× the 21-day figure` : 'Needs an hour of bars and the 21-day figure'} />
+      <More>
+        <Row label="Realized vol (12h / 21d)" value={`${pct(m?.realisedVol12h)} / ${pct(m?.realisedVol)}`} />
+        <Row label="IV richness" value={iv ? `${iv.label} · ${iv.ratio.toFixed(2)}× realised` : '—'} tone={iv?.label === 'rich' ? 'up' : iv?.label === 'cheap' ? 'down' : undefined} />
+        <Row label="Biggest day (30d)" value={m?.max24hRangeUsd == null ? '—' : `${fmt.n(m.max24hRangeUsd)} (${m.max24hRangePct?.toFixed(2)}%)`} hint="The largest single-day range of the last 30 days: how wrong the expected move can be" />
+      </More>
     </Panel>
   );
 }
@@ -225,24 +248,28 @@ export function TradeFlowPanel({ perp, market }: { perp: PerpResponse | null; ma
     );
   }
   const delta = f.deltaVolume;
-  const large = f.largeBuyVolume + f.largeSellVolume;
+  const last = f.cvd.at(-1)?.cvd ?? null;
+  const slope = cvdSlope(f.cvd);
+  const kct = (v: number) => (Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(1)}K` : fmt.n(v));
   return (
-    <Panel title={`Trade flow (${f.windowMin}m)`}
-      right={<small className={f.minutesCovered < f.windowMin ? 'ov-warn' : 'ov-muted'}>{f.minutesCovered} of {f.windowMin} min</small>}>
-      <Row label="Buy volume" value={`${fmt.n(f.buyVolume)} ct`} tone="up" hint="Contracts bought by the aggressor: buys that lifted the offer" />
-      <Row label="Sell volume" value={`${fmt.n(f.sellVolume)} ct`} tone="down" hint="Contracts sold by the aggressor: sells that hit the bid" />
-      <Row label="Delta volume" value={`${fmt.signed(delta)} ct`} tone={delta > 0 ? 'up' : delta < 0 ? 'down' : 'muted'} />
-      <Row label="CVD" value={<CvdLine cvd={f.cvd} />} hint="Cumulative volume delta over the window, minute by minute" />
-      <Row label="CVD slope (last 15m)" value={cvdSlope(f.cvd) === null ? '—' : `${fmt.signed(cvdSlope(f.cvd))} ct/min`} tone={cvdSlope(f.cvd) === null ? undefined : cvdSlope(f.cvd)! > 0 ? 'up' : 'down'} />
-      <Row label="Aggressor buy / sell %" value={f.aggressorBuyPct === null ? '—' : `${fmt.pct(f.aggressorBuyPct, 1)} / ${fmt.pct(1 - f.aggressorBuyPct, 1)}`} tone={f.aggressorBuyPct === null ? undefined : f.aggressorBuyPct > 0.55 ? 'up' : f.aggressorBuyPct < 0.45 ? 'down' : undefined} />
-      <Row label="Volume burst (5m)" value={burst?.spike == null ? '—' : `${burst.spike.toFixed(1)}× median`} tone={burst?.spike != null && burst.spike >= 2 ? 'warn' : undefined} hint="The last 5-minute bar's volume against the median of the twenty before it" />
-      <Row label="OI change 1h · acceleration" value={oi ? `CE ${fmt.signed(oi.ceChange1h)} (${fmt.signed(oi.ceAcceleration)}) · PE ${fmt.signed(oi.peChange1h)} (${fmt.signed(oi.peAcceleration)})` : '—'}
-        hint="The board's OI change over the hour, and how much faster or slower than an hour before" />
-      <Row label="Trades · avg size" value={`${fmt.n(f.trades)} · ${fmt.n(f.avgTradeSize, 1)} ct`} />
-      <Row label="Large prints (≥200 ct)" value={large === 0 ? 'none' : `${fmt.n(f.largeBuyVolume)} bought · ${fmt.n(f.largeSellVolume)} sold`}
-        tone={large === 0 ? 'muted' : f.largeBuyVolume > f.largeSellVolume ? 'up' : f.largeBuyVolume < f.largeSellVolume ? 'down' : undefined} />
-      {b && <BookRows b={b} />}
-      <p className="ov-foot">Liquidations are not a public feed on Delta; a burst of large one-sided prints with OI falling is the visible trace.</p>
+    <Panel title={`Trade flow (${f.windowMin >= 60 ? `${f.windowMin / 60}h` : `${f.windowMin}m`})`}
+      right={<small className={f.minutesCovered < f.windowMin ? 'ov-warn' : 'ov-muted'} title="Minutes in the window with at least one print">{f.minutesCovered} of {f.windowMin} min</small>}>
+      <Row mark="dot" tone="up" label="Buy volume" value={`${kct(f.buyVolume)} ct`} hint="Contracts bought by the aggressor: buys that lifted the offer" />
+      <Row mark="dot" tone="down" label="Sell volume" value={`${kct(f.sellVolume)} ct`} hint="Contracts sold by the aggressor: sells that hit the bid" />
+      <Row mark="dot" tone={delta > 0 ? 'up' : delta < 0 ? 'down' : 'muted'} label="Delta volume" value={`${delta > 0 ? '+' : ''}${kct(delta)} ct`} hint="Buy volume minus sell volume" />
+      <Row mark="dot" tone={last === null ? 'muted' : last >= 0 ? 'up' : 'down'} label="CVD" value={<CvdLine cvd={f.cvd} />} hint="Cumulative volume delta over the window, minute by minute" />
+      <Row mark="dot" tone={f.largeTrades > 0 ? 'warn' : 'muted'} label="Large trades" value={fmt.n(f.largeTrades)} hint={`Prints of 200 contracts (0.2 BTC) or more: ${fmt.n(f.largeBuyVolume)} ct bought, ${fmt.n(f.largeSellVolume)} ct sold`} />
+      <Row mark="dot" tone={f.aggressorBuyPct === null ? 'muted' : f.aggressorBuyPct > 0.55 ? 'up' : f.aggressorBuyPct < 0.45 ? 'down' : 'muted'} label="Aggressor buy %" value={fmt.pct(f.aggressorBuyPct, 1)} hint="Buy volume as a share of the total: above a half, buyers are lifting offers" />
+      <More>
+        <Row label="CVD slope (15m)" value={slope === null ? '—' : `${fmt.signed(slope)} ct/min`} tone={slope === null ? undefined : slope > 0 ? 'up' : 'down'} />
+        <Row label="Aggressor sell %" value={f.aggressorBuyPct === null ? '—' : fmt.pct(1 - f.aggressorBuyPct, 1)} />
+        <Row label="Trades · avg size" value={`${fmt.n(f.trades)} · ${fmt.n(f.avgTradeSize, 1)} ct`} />
+        <Row label="Volume burst (5m)" value={burst?.spike == null ? '—' : `${burst.spike.toFixed(1)}× median`} tone={burst?.spike != null && burst.spike >= 2 ? 'warn' : undefined} hint="The last 5-minute bar's volume against the median of the twenty before it" />
+        <Row label="OI change 1h (accel.)" value={oi ? `CE ${fmt.signed(oi.ceChange1h)} (${fmt.signed(oi.ceAcceleration)}) · PE ${fmt.signed(oi.peChange1h)} (${fmt.signed(oi.peAcceleration)})` : '—'}
+          hint="The board's OI change over the hour, and how much faster or slower than an hour before" />
+        {b && <BookRows b={b} />}
+        <p className="ov-foot">Liquidations are not a public feed on Delta; a burst of large one-sided prints with OI falling is the visible trace.</p>
+      </More>
     </Panel>
   );
 }

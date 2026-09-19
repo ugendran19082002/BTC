@@ -150,8 +150,8 @@ outlook row, market and moves, best pick) are no longer drawn there.
 | `overview/MarketPanels.tsx` | 300 | Market strip (spot, perp, funding, OI, volume, IV, PCR, regime, horizon odds), price action (trend, structure, RSI, MACD, VWAP, EMAs, ATR), key levels, volatility (RV 1h/6h/12h/21d, regime), trade flow and book, IV term structure with its history, skew with its percentile. |
 | `overview/DecisionPanels.tsx` | 430 | Selected strike (metrics / probability / payoff / momentum), model view, strategy decision with both-sides safety, sell recommendation with margin and return on margin, entry checklist with the risk gate, order panel with fees and margin, scenario P&L, status bar with margin used. |
 | `overview/parts.tsx` | 68 | Panel, row, tag, probability bar, number formats. |
-| `overview/ContextBar.tsx` | 90 | Which configuration the screen is deciding with, every setting editable in place: entry (dynamic), expiry (contract-fixed), horizon, execution, side mode, strictness, risk, EM method, probability method, strike rule, fee, freshness, size, model, data. |
-| `overview/RiskPanels.tsx` | 300 | Entry → expiry setup, the expected move by horizon, the sell-side risk engine with the shock row, the −3…+3% scenario grid, the side cards with PASS / FAIL gates, position / exit management. |
+| `overview/SettingsStrip.tsx` | 190 | The strip above the chart: brand, IST clock, live pill, mode / refresh controls, presets (Conservative / Balanced / Aggressive), reset, a glossary, and every setting the screen decides with, grouped Time / Model / Rules / Pricing with what each does on hover and a plain-numbers line of what the current mode allows. |
+| `overview/RiskPanels.tsx` | 250 | Entry → expiry setup, the expected move by horizon, the sell-side risk engine with the shock row, the −3…+3% scenario grid, the side cards with PASS / FAIL gates. |
 | `lib/screen-config.ts` | 110 | The operator's settings and what they set: thresholds by risk mode and strictness, the probability label, the expected move by method, the entry window. |
 
 ### Shared UI (`components/ui/`) — 14 files, ~640 lines

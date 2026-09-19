@@ -4,7 +4,7 @@ import live from '@/test/fixtures/chain-live.json';
 import {
   allClear, bestLeg, bothSides, breakeven, candidates, consensus, entryGates, expectedMove, feePerContract, freshness, gammaRisk,
   ivRv, keyLevels, marginPerContract, modelView, odds, orderEstimate, payoffPrices, premiumAnalysis, shortPayoff, skew, volRegime,
-  assessBoth, assessSides, horizonRows, parseSymbol, positionState, positionViews, premiumMomentum, readiness, riskEngine, scenarioGrid, shortLossAt,
+  assessBoth, assessSides, horizonRows, namedLevels, parseSymbol, positionState, positionViews, premiumMomentum, readiness, riskEngine, scenarioGrid, shortLossAt,
 } from './overview';
 
 const fixtureData = () => live as unknown as ChainResponse;
@@ -333,5 +333,18 @@ describe('horizons and momentum', () => {
   it('velocity is the last step, acceleration the change of it', () => {
     expect(premiumMomentum([{ at: 1, mark: 10 }, { at: 2, mark: 12 }, { at: 3, mark: 15 }])).toEqual({ velocity: 3, acceleration: 1 });
     expect(premiumMomentum([{ at: 1, mark: 10 }])).toEqual({ velocity: null, acceleration: null });
+  });
+});
+
+describe('named levels', () => {
+  it('R1 / R2 are the two nearest above spot, S1 / S2 the two nearest below, and the previous day stays named', () => {
+    const levels = [
+      { label: 'Call OI wall', price: 82_000, kind: 'resistance' as const }, { label: 'Gamma wall', price: 81_000, kind: 'pivot' as const },
+      { label: 'Max pain', price: 80_500, kind: 'pivot' as const }, { label: 'Put OI wall', price: 79_000, kind: 'support' as const },
+      { label: '24h high', price: 83_000, kind: 'range' as const }, { label: 'Prev day low', price: 78_000, kind: 'range' as const },
+    ];
+    const n = namedLevels(levels, 80_600);
+    expect(n.map((l) => [l.name, l.price])).toEqual([['Resistance 1', 81_000], ['Resistance 2', 82_000], ['Support 1', 80_500], ['Support 2', 79_000], ['Prev day low', 78_000]]);
+    expect(n[0]!.source).toBe('Gamma wall');
   });
 });

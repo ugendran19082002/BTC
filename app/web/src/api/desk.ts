@@ -117,7 +117,7 @@ export type BookSnapshot = {
 export type FlowSummary = {
   windowMin: number; minutesCovered: number;
   buyVolume: number; sellVolume: number; deltaVolume: number; totalVolume: number;
-  trades: number; avgTradeSize: number | null; largeBuyVolume: number; largeSellVolume: number;
+  trades: number; avgTradeSize: number | null; largeBuyVolume: number; largeSellVolume: number; largeTrades: number;
   aggressorBuyPct: number | null;
   cvd: { at: number; cvd: number; delta: number }[];
   source: 'socket' | 'none';

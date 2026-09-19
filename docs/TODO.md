@@ -33,9 +33,16 @@ a side selector from regime + horizon consensus + safety (never the score
 alone); the recommendation table with tail loss, margin and risk/reward; a
 24-gate checklist ending ENTRY READY or NO TRADE; an order panel priced at
 the bid (or the estimated fill, or the mark marked as not executable);
-position / exit management on the NORMAL → EXIT ladder. Settings are per
-browser (`live:config`); moving them to the server's `settings` table is the
-next step if they should follow the operator across devices.
+Later the same day: the full board moved to its own Option Chain tab; the
+order panel, the position ladder and the footer came off the Live screen
+(Orders and Positions have their own tabs); the settings became one grouped
+strip with presets, reset and a glossary; the left column follows the
+reference crop (arrows, Resistance 1 / 2, Support 1 / 2, large-trade count,
+the rest folded under "More"). Settings are per browser (`live:config`);
+moving them to the server's `settings` table is the next step if they should
+follow the operator across devices. The position-state ladder
+(`positionState` in lib/overview.ts) is kept and tested for the Positions tab
+to use.
 
 Backend: `option_snapshots` records every strike of the two nearest expiries
 every 5 minutes; `trade_flow_1m` every print on the perp by aggressor side

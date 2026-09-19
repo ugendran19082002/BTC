@@ -93,7 +93,7 @@ Ids are `<area>-NNN-what-it-does`. Applied on a fresh desk today:
 | Area | Migrations |
 |---|---|
 | trading | `trading-001-settings`, `trading-002-default-settings`, `trading-003-trades`, `trading-004-mtm-samples`, `trading-005-settings-to-public`, `trading-006-journal-to-public` |
-| market | `market-001-oi-snapshots`, `market-002-chain-features`, `market-003-to-public`, `market-004-option-snapshots`, `market-005-flow` |
+| market | `market-001-oi-snapshots`, `market-002-chain-features`, `market-003-to-public`, `market-004-option-snapshots`, `market-005-flow`, `market-006-flow-large-counts` |
 | errors | `errors-001-log`, `errors-002-to-public` |
 | strategy | `strategy-001-tables`, `strategy-002-seed`, `strategy-003-to-public` |
 | sign-in | `auth-001-user-sessions`, `auth-002-to-public` |
@@ -346,7 +346,7 @@ Created directly in `public` by `market-004-option-snapshots`.
 
 `trade_flow_1m`, `perp_snapshots`, `iv_term_snapshots` (`market/flow.ts`,
 migration `market-005-flow`): the perpetual's tape summed per minute by
-aggressor side, written every twenty seconds from the prints the
+aggressor side (volume and, since `market-006`, the count of large prints), written every twenty seconds from the prints the
 `all_trades` socket (`market/flow-socket.ts`) holds in memory, `ON CONFLICT DO
 NOTHING` so a replayed snapshot cannot double a bar; the perp ticker and the
 top of its book every five minutes; ATM IV per listed expiry every five

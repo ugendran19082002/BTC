@@ -21,14 +21,31 @@ export function Panel({ title, right, className, children, id }: {
   );
 }
 
-export function Row({ label, value, tone, hint }: {
+export function Row({ label, value, tone, hint, mark }: {
   label: ReactNode; value: ReactNode; tone?: 'up' | 'down' | 'warn' | 'muted'; hint?: string;
+  /** A leading marker, as the reference screens draw: an arrow for a reading's lean, a dot for a level's kind. */
+  mark?: 'arrow' | 'dot';
 }) {
+  const arrow = tone === 'up' ? '↗' : tone === 'down' ? '↘' : '→';
   return (
     <div className="ov-row" title={hint}>
-      <span className="ov-row-label">{label}</span>
+      <span className="ov-row-label">
+        {mark === 'arrow' && <i className={cn('ov-arrow', tone && `ov-${tone}`)} aria-hidden>{arrow}</i>}
+        {mark === 'dot' && <i className={cn('ov-dot', `ov-bg-${tone ?? 'muted'}`)} aria-hidden />}
+        {label}
+      </span>
       <span className={cn('ov-row-value', tone && `ov-${tone}`)}>{value}</span>
     </div>
+  );
+}
+
+/** The rows a screen does not need at a glance, folded under one line. */
+export function More({ label = 'More', children }: { label?: string; children: ReactNode }) {
+  return (
+    <details className="ov-more">
+      <summary>{label}</summary>
+      {children}
+    </details>
   );
 }
 

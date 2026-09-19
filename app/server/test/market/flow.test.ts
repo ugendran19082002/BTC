@@ -67,6 +67,8 @@ test('[critical] a minute sums each side, counts prints, and flags the large one
   assert.equal(m.sellCount, 1);
   assert.equal(m.largeBuyVolume, LARGE_PRINT_CONTRACTS);
   assert.equal(m.largeSellVolume, 0);
+  assert.equal(m.largeBuyCount, 1);
+  assert.equal(m.largeSellCount, 0);
   assert.equal(m.high, 81_020);
   assert.equal(m.low, 81_000);
   const vwap = (10 * 81_000 + 4 * 81_010 + LARGE_PRINT_CONTRACTS * 81_020) / (14 + LARGE_PRINT_CONTRACTS);
@@ -97,6 +99,7 @@ test('[critical] completed minutes are written once; the one in progress waits; 
   assert.equal(sum.sellVolume, 7);
   assert.equal(sum.deltaVolume, 105);
   assert.equal(sum.trades, 5);
+  assert.equal(sum.largeTrades, 0);
   assert.equal(sum.aggressorBuyPct, 112 / 119);
   assert.deepEqual(sum.cvd.map((c) => c.cvd), [10, 6, 5, 105]);
   assert.equal(sum.source, 'socket');

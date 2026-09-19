@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ChainResponse, ExpiryOption, Leg } from '@/types/desk';
 import { istLabel } from '@/lib/format';
-import type { TradeStatus } from '@/types/trade';
 import { getOptionHistory, type OptionHistoryPoint } from '@/api/desk';
 import {
-  breakeven, candidates, consensus, executionEstimate, expectedMove, ivRv, marginPerContract, modelView, odds,
+  breakeven, candidates, consensus, executionEstimate, expectedMove, ivRv, modelView, odds,
   orderEstimate, payoffPrices, premiumAnalysis, premiumMomentum, shortLossAt, shortPayoff, CONTRACT_BTC,
   type BothAssessment, type ExpectedMove, type IvRv, type Readiness, type SideAssessment, type SideChoice,
 } from '@/lib/overview';
@@ -381,10 +380,18 @@ export function StrategyDecisionPanel({ data, sides, both, choice, onSelect }: {
   data: ChainResponse; sides: SideAssessment[]; both: BothAssessment; choice: SideChoice; onSelect: (s: Selected) => void;
 }) {
   const tone = choice.side === 'NO_TRADE' ? 'down' : choice.side === 'BOTH' ? 'up' : 'accent';
+  // What is in the way, in plain words: the failing gates of the side the desk would take, or of the better side.
+  const focus = sides.find((s) => s.side === (choice.side === 'CE' ? 'CE' : choice.side === 'PE' ? 'PE' : null)) ?? [...sides].sort((a, b) => (b.score ?? -1) - (a.score ?? -1))[0]!;
+  const blockers = (focus.gates ?? []).filter((g) => g.ok === false).map((g) => `${g.name} (${g.text})`);
   return (
     <Panel title="Strategy decision" right={<Tag tone={tone}>Desk side: {choice.side.replace('_', ' ')}</Tag>}>
+      <p className="ov-summary">
+        <b>{choice.side === 'NO_TRADE' ? 'No trade' : choice.side === 'BOTH' ? 'Sell both sides' : `Sell ${choice.side}`}</b> — {choice.why}.
+        {blockers.length > 0 && <> In the way on {focus.side}: {blockers.slice(0, 3).join(' · ')}{blockers.length > 3 ? ` · +${blockers.length - 3} more` : ''}.</>}
+        {focus.disabledBy && <> {focus.disabledBy}.</>}
+      </p>
       <SideCardsRow sides={sides} both={both} onSelect={(cp, strike) => onSelect({ cp, strike })} />
-      <p className="ov-foot">{choice.why}. {data.best.why ?? ''} Side from the regime, the horizon consensus and each side's gates — never the score alone.</p>
+      <p className="ov-foot">{data.best.why ?? ''} Side from the regime, the horizon consensus and each side's gates — never the score alone.</p>
     </Panel>
   );
 }
@@ -477,6 +484,9 @@ export function ChecklistPanel({ leg, ready, onSell }: { leg: Leg | null; ready:
     </Panel>
   );
 }
+
+const IST_HM = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
+const istHm = (epochSeconds: number) => IST_HM.format(new Date(epochSeconds * 1000));
 
 /**
  * The contract's day, at the head of the decision column: entry at 05:30,

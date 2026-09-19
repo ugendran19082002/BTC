@@ -20,13 +20,14 @@ const data = live as unknown as ChainResponse;
 describe('the decision panels', () => {
   it('draw every panel from a real chain, with the chart and chain left to the screen', () => {
     render(<Overview data={data} trade={null} contracts={1} chain={false} />);
-    for (const t of ['Key levels', 'Volatility', 'Multi-timeframe', 'Model view (12h)', 'Expected move by horizon', 'Strategy decision', 'Sell recommendation', 'IV term structure', 'Entry → expiry setup', 'Order panel', /^Entry checklist/, /^Sell-side risk engine/, /^Scenario P&L/]) {
+    for (const t of ['Key levels', 'Volatility', 'Multi-timeframe', 'Model view (12h)', 'Expected move by horizon', 'Strategy decision', 'Sell recommendation', 'IV term structure', 'Entry → expiry setup', /^Entry checklist/, /^Sell-side risk engine/, /^Scenario P&L/]) {
       expect(screen.getByText(t, { selector: 'h3' })).toBeInTheDocument();
     }
-    // The context bar shows every setting the screen decides with.
-    for (const l of ['Entry', 'Expiry', 'Prediction', 'Side mode', 'Strictness', 'Risk', 'Probability', 'Execution']) {
+    // The settings strip shows every setting the screen decides with, and no order panel: orders have their own tab.
+    for (const l of ['Entry', 'Expiry', 'Horizon', 'Side mode', 'Strictness', 'Risk', 'Probability', 'Execution']) {
       expect(screen.getByText(l, { selector: '.ov-ctx-label' })).toBeInTheDocument();
     }
+    expect(screen.queryByText('Order panel', { selector: 'h3' })).toBeNull();
     expect(screen.getAllByText(/ENTRY READY|NO TRADE/).length).toBeGreaterThan(0);
     expect(screen.queryByText(/^Option chain/)).toBeNull();
     expect(screen.getByText(/^Selected strike: /)).toBeInTheDocument();

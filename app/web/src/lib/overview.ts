@@ -807,6 +807,24 @@ export function premiumMomentum(points: readonly { at: number; mark: number | nu
   return { velocity: v1, acceleration: v1 - v0 };
 }
 
+export type NamedLevel = { name: string; price: number; source: string; kind: 'resistance' | 'support' | 'range' };
+
+/**
+ * The reference screens' Resistance 1 / 2 and Support 1 / 2: the two nearest
+ * levels above spot and the two nearest below, out of every level the board
+ * and the tape know, each still named for where it came from.
+ */
+export function namedLevels(levels: readonly Level[], spot: number): NamedLevel[] {
+  const above = levels.filter((l) => l.price > spot && l.kind !== 'range').sort((a, b) => a.price - b.price).slice(0, 2);
+  const below = levels.filter((l) => l.price < spot && l.kind !== 'range').sort((a, b) => b.price - a.price).slice(0, 2);
+  const out: NamedLevel[] = [
+    ...above.map((l, i) => ({ name: `Resistance ${i + 1}`, price: l.price, source: l.label, kind: 'resistance' as const })),
+    ...below.map((l, i) => ({ name: `Support ${i + 1}`, price: l.price, source: l.label, kind: 'support' as const })),
+  ];
+  for (const l of levels) if (l.kind === 'range' && /prev day/i.test(l.label)) out.push({ name: l.label, price: l.price, source: 'previous UTC day', kind: 'range' });
+  return out;
+}
+
 // ------------------------------------------------ side gates and selector
 
 export type SideGate = { name: string; ok: boolean | null; text: string };
