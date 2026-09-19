@@ -1,9 +1,8 @@
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { StrategyStore } from '../../src/strategy/store.js';
+import { MemorySettings } from '../../src/db/settings.js';
+import { closePool, query } from '../../src/db/pool.js';
 import { DEFAULT_CONFIG, validateConfig } from '../../src/strategy/types.js';
 
 /**
@@ -11,23 +10,34 @@ import { DEFAULT_CONFIG, validateConfig } from '../../src/strategy/types.js';
  * exactly once. Everything else here is ordinary CRUD; `claim` is the part
  * that decides whether a restart can enter a second position.
  */
-const fresh = () => new StrategyStore(join(mkdtempSync(join(tmpdir(), 'strat-')), 'trades.db'));
+// One database for the file. A fresh store is the schema emptied and the seed
+// migration forgotten, so `open()` seeds the three strategies again as it
+// would on a new desk.
+await StrategyStore.open(new MemorySettings());
+const fresh = async () => {
+  await query('TRUNCATE strategy.strategies, strategy.runs, strategy.adds, strategy.rebalances');
+  await query("DELETE FROM public.schema_migrations WHERE id = 'strategy-002-seed'");
+  return StrategyStore.open(new MemorySettings());
+};
+/** A second process on the same database. */
+const reopen = () => StrategyStore.open(new MemorySettings());
+after(() => closePool());
 
-test('the migration seeds the three researched strategies', () => {
-  const s = fresh();
-  const all = s.all();
+test('the migration seeds the three researched strategies', async () => {
+  const s = await fresh();
+  const all = (await s.all());
   assert.deepEqual(all.map((x) => x.id).sort(), ['baseline', 'double', 'locked']);
 });
 
-test('only the one the record favours is armed', () => {
-  const s = fresh();
-  const on = s.all().filter((x) => x.enabled).map((x) => x.id);
+test('only the one the record favours is armed', async () => {
+  const s = await fresh();
+  const on = (await s.all()).filter((x) => x.enabled).map((x) => x.id);
   assert.deepEqual(on, ['double'], 'a fresh desk must not arm three strategies at once');
 });
 
-test('the seeded strategies differ in the two settings the research turned on', () => {
-  const s = fresh();
-  const by = Object.fromEntries(s.all().map((x) => [x.id, x.config]));
+test('the seeded strategies differ in the two settings the research turned on', async () => {
+  const s = await fresh();
+  const by = Object.fromEntries((await s.all()).map((x) => [x.id, x.config]));
   assert.equal(by.baseline!.probGate, null);
   assert.equal(by.locked!.probGate, 0.95);
   assert.equal(by.locked!.doubleWhenOneSided, false);
@@ -35,13 +45,13 @@ test('the seeded strategies differ in the two settings the research turned on', 
   assert.equal(by.double!.doubleWhenOneSided, true);
 });
 
-test('a saved strategy reads back with every field', () => {
-  const s = fresh();
-  s.save({
+test('a saved strategy reads back with every field', async () => {
+  const s = await fresh();
+  await s.save({
     id: 'mine', name: 'My rule', enabled: true,
     config: { ...DEFAULT_CONFIG, lots: 42, legs: 'CE', premium: { mode: 'atMost', usd: 11 } },
   });
-  const got = s.get('mine')!;
+  const got = (await s.get('mine'))!;
   assert.equal(got.name, 'My rule');
   assert.equal(got.enabled, true);
   assert.equal(got.config.lots, 42);
@@ -49,95 +59,94 @@ test('a saved strategy reads back with every field', () => {
   assert.deepEqual(got.config.premium, { mode: 'atMost', usd: 11 });
 });
 
-test('saving again changes it rather than adding a second', () => {
-  const s = fresh();
-  s.save({ id: 'mine', name: 'A', enabled: false, config: DEFAULT_CONFIG });
-  s.save({ id: 'mine', name: 'B', enabled: true, config: { ...DEFAULT_CONFIG, lots: 3 } });
-  assert.equal(s.all().filter((x) => x.id === 'mine').length, 1);
-  assert.equal(s.get('mine')!.name, 'B');
-  assert.equal(s.get('mine')!.config.lots, 3);
+test('saving again changes it rather than adding a second', async () => {
+  const s = await fresh();
+  await s.save({ id: 'mine', name: 'A', enabled: false, config: DEFAULT_CONFIG });
+  await s.save({ id: 'mine', name: 'B', enabled: true, config: { ...DEFAULT_CONFIG, lots: 3 } });
+  assert.equal((await s.all()).filter((x) => x.id === 'mine').length, 1);
+  assert.equal((await s.get('mine'))!.name, 'B');
+  assert.equal((await s.get('mine'))!.config.lots, 3);
 });
 
-test('a config written before a field existed gets the default, not undefined', () => {
-  const s = fresh();
-  s.save({ id: 'old', name: 'old', enabled: false, config: DEFAULT_CONFIG });
+test('a config written before a field existed gets the default, not undefined', async () => {
+  const s = await fresh();
+  await s.save({ id: 'old', name: 'old', enabled: false, config: DEFAULT_CONFIG });
   // simulate an older row that predates probGate
   const raw = { ...DEFAULT_CONFIG } as Record<string, unknown>;
   delete raw.probGate;
-  s.save({ id: 'old', name: 'old', enabled: false, config: raw as never });
-  assert.equal(s.get('old')!.config.probGate, DEFAULT_CONFIG.probGate);
+  await s.save({ id: 'old', name: 'old', enabled: false, config: raw as never });
+  assert.equal((await s.get('old'))!.config.probGate, DEFAULT_CONFIG.probGate);
 });
 
-test('turning one on does not disturb the others', () => {
-  const s = fresh();
-  s.setEnabled('baseline', true);
-  assert.equal(s.get('baseline')!.enabled, true);
-  assert.equal(s.get('locked')!.enabled, false);
-  assert.equal(s.get('double')!.enabled, true);
+test('turning one on does not disturb the others', async () => {
+  const s = await fresh();
+  await s.setEnabled('baseline', true);
+  assert.equal((await s.get('baseline'))!.enabled, true);
+  assert.equal((await s.get('locked'))!.enabled, false);
+  assert.equal((await s.get('double'))!.enabled, true);
 });
 
-test('enabling something that does not exist says so rather than creating it', () => {
-  const s = fresh();
-  assert.equal(s.setEnabled('ghost', true), null);
-  assert.equal(s.get('ghost'), null);
+test('enabling something that does not exist says so rather than creating it', async () => {
+  const s = await fresh();
+  assert.equal(await s.setEnabled('ghost', true), null);
+  assert.equal(await s.get('ghost'), null);
 });
 
 /* --------------------------------------------------------------- claims --- */
 
-test('[critical] a day can only be claimed once', () => {
-  const s = fresh();
-  assert.equal(s.claim('double', '2026-09-10'), true);
-  assert.equal(s.claim('double', '2026-09-10'), false, 'the second claim is what a restart looks like');
+test('[critical] a day can only be claimed once', async () => {
+  const s = await fresh();
+  assert.equal(await s.claim('double', '2026-09-10'), true);
+  assert.equal(await s.claim('double', '2026-09-10'), false, 'the second claim is what a restart looks like');
 });
 
-test('[critical] the claim survives a reopen, because a restart must not re-enter', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'strat-'));
-  const path = join(dir, 'trades.db');
-  assert.equal(new StrategyStore(path).claim('double', '2026-09-10'), true);
-  assert.equal(new StrategyStore(path).claim('double', '2026-09-10'), false);
+test('[critical] the claim survives a reopen, because a restart must not re-enter', async () => {
+  await fresh();
+  assert.equal(await (await reopen()).claim('double', '2026-09-10'), true);
+  assert.equal(await (await reopen()).claim('double', '2026-09-10'), false);
 });
 
-test('different days and different strategies claim independently', () => {
-  const s = fresh();
-  assert.equal(s.claim('double', '2026-09-10'), true);
-  assert.equal(s.claim('double', '2026-09-11'), true);
-  assert.equal(s.claim('locked', '2026-09-10'), true);
+test('different days and different strategies claim independently', async () => {
+  const s = await fresh();
+  assert.equal(await s.claim('double', '2026-09-10'), true);
+  assert.equal(await s.claim('double', '2026-09-11'), true);
+  assert.equal(await s.claim('locked', '2026-09-10'), true);
 });
 
-test('lastRunDate is what the scheduler reads to refuse a second entry', () => {
-  const s = fresh();
-  assert.equal(s.lastRunDate('double'), null);
-  s.claim('double', '2026-09-10');
-  assert.equal(s.lastRunDate('double'), '2026-09-10');
-  s.claim('double', '2026-09-11');
-  assert.equal(s.lastRunDate('double'), '2026-09-11');
+test('lastRunDate is what the scheduler reads to refuse a second entry', async () => {
+  const s = await fresh();
+  assert.equal(await s.lastRunDate('double'), null);
+  await s.claim('double', '2026-09-10');
+  assert.equal(await s.lastRunDate('double'), '2026-09-10');
+  await s.claim('double', '2026-09-11');
+  assert.equal(await s.lastRunDate('double'), '2026-09-11');
 });
 
-test('a claim is recorded before the outcome is known, then updated', () => {
-  const s = fresh();
-  s.claim('double', '2026-09-10');
-  assert.equal(s.runs()[0]!.status, 'skipped');
-  s.finish('double', '2026-09-10', 'placed', 'CE 80800 x20');
-  const r = s.runs()[0]!;
+test('a claim is recorded before the outcome is known, then updated', async () => {
+  const s = await fresh();
+  await s.claim('double', '2026-09-10');
+  assert.equal((await s.runs())[0]!.status, 'skipped');
+  await s.finish('double', '2026-09-10', 'placed', 'CE 80800 x20');
+  const r = (await s.runs())[0]!;
   assert.equal(r.status, 'placed');
   assert.equal(r.detail, 'CE 80800 x20');
   assert.equal(r.runDate, '2026-09-10');
 });
 
-test('finishing a day never creates a second row for it', () => {
-  const s = fresh();
-  s.claim('double', '2026-09-10');
-  s.finish('double', '2026-09-10', 'failed', 'exchange said no');
-  assert.equal(s.runs().filter((r) => r.runDate === '2026-09-10').length, 1);
+test('finishing a day never creates a second row for it', async () => {
+  const s = await fresh();
+  await s.claim('double', '2026-09-10');
+  await s.finish('double', '2026-09-10', 'failed', 'exchange said no');
+  assert.equal((await s.runs()).filter((r) => r.runDate === '2026-09-10').length, 1);
 });
 
-test('deleting a strategy keeps its history', () => {
-  const s = fresh();
-  s.claim('double', '2026-09-10');
-  s.finish('double', '2026-09-10', 'placed', 'done');
-  s.remove('double');
-  assert.equal(s.get('double'), null);
-  assert.equal(s.runs().some((r) => r.strategyId === 'double'), true,
+test('deleting a strategy keeps its history', async () => {
+  const s = await fresh();
+  await s.claim('double', '2026-09-10');
+  await s.finish('double', '2026-09-10', 'placed', 'done');
+  await s.remove('double');
+  assert.equal(await s.get('double'), null);
+  assert.equal((await s.runs()).some((r) => r.strategyId === 'double'), true,
     'what happened still happened');
 });
 
@@ -179,18 +188,18 @@ test('[critical] a strategy saved before the score bars reads as off, not as zer
   // day. The hydrate merge decides this, and it decides it for every strategy
   // already in the file.
   const s = fresh();
-  const before = s.all().find((x) => x.id === 'double')!;
+  const before = (await s.all()).find((x) => x.id === 'double')!;
   assert.equal(before.config.minSellScore, null);
   assert.equal(before.config.maxShockScore, null);
 });
 
-test('the score bars survive a save and come back as they went in', () => {
-  const s = fresh();
-  s.save({
+test('the score bars survive a save and come back as they went in', async () => {
+  const s = await fresh();
+  await s.save({
     id: 'gated', name: 'Gated', enabled: false,
     config: { ...DEFAULT_CONFIG, minSellScore: 70, maxShockScore: 25 },
   });
-  const back = s.get('gated')!;
+  const back = (await s.get('gated'))!;
   assert.equal(back.config.minSellScore, 70);
   assert.equal(back.config.maxShockScore, 25);
 });
@@ -217,44 +226,51 @@ const addRow = (s: StrategyStore, boughtBack: number, status: 'placing' | 'skipp
   symbol: 'P-BTC-74000-110926', boughtBack, status, detail: 'CE target bought back', at: 1,
 });
 
-test('[critical] the same bought-back contracts get one decision, however many times they are written', () => {
-  const s = fresh();
-  const first = addRow(s, 425);
+test('[critical] the same bought-back contracts get one decision, however many times they are written', async () => {
+  const s = await fresh();
+  const first = await addRow(s, 425);
   assert.equal(first?.contracts, 425);
-  assert.equal(addRow(s, 425), null, 'a second write for the same 425 is refused by the journal itself');
-  assert.equal(s.addedFor('CE-1'), 425);
+  assert.equal(await addRow(s, 425), null, 'a second write for the same 425 is refused by the journal itself');
+  assert.equal(await s.addedFor('CE-1'), 425);
 });
 
-test('[critical] a later piece gets a row for only what is new', () => {
-  const s = fresh();
-  addRow(s, 200);
-  assert.equal(addRow(s, 203)?.contracts, 3);
-  assert.equal(s.addedFor('CE-1'), 203);
+test('[critical] a later piece gets a row for only what is new', async () => {
+  const s = await fresh();
+  await addRow(s, 200);
+  assert.equal((await addRow(s, 203))?.contracts, 3);
+  assert.equal(await s.addedFor('CE-1'), 203);
 });
 
-test('[critical] the journal outlives a restart: a new store on the same file still knows', () => {
-  const dir = join(mkdtempSync(join(tmpdir(), 'strat-')), 'trades.db');
-  addRow(new StrategyStore(dir), 425);
-  assert.equal(new StrategyStore(dir).addedFor('CE-1'), 425);
-  assert.equal(addRow(new StrategyStore(dir), 425), null);
+test('[critical] the journal outlives a restart: a new store on the same database still knows', async () => {
+  await fresh();
+  await addRow(await reopen(), 425);
+  assert.equal(await (await reopen()).addedFor('CE-1'), 425);
+  assert.equal(await addRow(await reopen(), 425), null);
 });
 
-test('an add is finished with its outcome and the trade it went onto', () => {
-  const s = fresh();
-  const row = addRow(s, 425)!;
-  s.finishAdd(row.id, 'placed', 'added 425', 'PE-1');
-  const [got] = s.adds();
+test('[critical] two callers deciding about the same piece at once get one row between them', async () => {
+  const s = await fresh();
+  const both = await Promise.all([await addRow(s, 425), await addRow(s, 425)]);
+  assert.equal(both.filter((r) => r !== null).length, 1, 'the lock inside recordAdd serialises them');
+  assert.equal(await s.addedFor('CE-1'), 425);
+});
+
+test('an add is finished with its outcome and the trade it went onto', async () => {
+  const s = await fresh();
+  const row = (await addRow(s, 425))!;
+  await s.finishAdd(row.id, 'placed', 'added 425', 'PE-1');
+  const [got] = await s.adds();
   assert.equal(got?.status, 'placed');
   assert.equal(got?.addedToTradeId, 'PE-1');
 });
 
-test('the add setting saves and reads back, and a strategy saved before it existed reads as off', () => {
-  const s = fresh();
-  s.save({ id: 'add', name: 'Add', enabled: false, config: { ...DEFAULT_CONFIG, addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '12:15' } } });
-  assert.deepEqual(s.get('add')!.config.addToOpposite, { minPriceUsd: 3, maxMultiple: 2, addUntil: '12:15' });
-  s.save({ id: 'add2', name: 'Add', enabled: false, config: { ...DEFAULT_CONFIG, addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '12:15', crossAfterSec: 90 } } });
-  assert.equal(s.get('add2')!.config.addToOpposite!.crossAfterSec, 90, 'the add\'s own seconds survive a save');
-  assert.equal(s.get('double')!.config.addToOpposite, null, 'seeded before the setting existed');
+test('the add setting saves and reads back, and a strategy saved before it existed reads as off', async () => {
+  const s = await fresh();
+  await s.save({ id: 'add', name: 'Add', enabled: false, config: { ...DEFAULT_CONFIG, addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '12:15' } } });
+  assert.deepEqual((await s.get('add'))!.config.addToOpposite, { minPriceUsd: 3, maxMultiple: 2, addUntil: '12:15' });
+  await s.save({ id: 'add2', name: 'Add', enabled: false, config: { ...DEFAULT_CONFIG, addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '12:15', crossAfterSec: 90 } } });
+  assert.equal((await s.get('add2'))!.config.addToOpposite!.crossAfterSec, 90, 'the add\'s own seconds survive a save');
+  assert.equal((await s.get('double'))!.config.addToOpposite, null, 'seeded before the setting existed');
 });
 
 test('the add setting is checked before it is saved', () => {
