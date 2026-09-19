@@ -77,9 +77,16 @@ prune_images() {
 say "checking the build context for credentials"
 # .dockerignore keeps these out of the image, but a file that exists at all is
 # a file that can be copied by mistake later. Say so loudly.
-for f in app-ket.txt .env app/server/.env; do
+for f in app-ket.txt .env app/server/.env deploy/.env; do
   [[ -e "$ROOT/$f" ]] && printf '    present (excluded from image): %s\n' "$f"
 done
+if git -C "$ROOT" ls-files --error-unmatch deploy/.env >/dev/null 2>&1; then
+  fail "deploy/.env is tracked by git. Remove it from the index and change the database password."
+fi
+# The compose file will not start without it, and a deploy that gets as far as
+# `up` before finding that out has already stopped the old containers.
+[[ -f "$ROOT/deploy/.env" ]] && grep -qE '^POSTGRES_PASSWORD=.+' "$ROOT/deploy/.env" \
+  || fail "deploy/.env must set POSTGRES_PASSWORD (copy deploy/.env.example; openssl rand -base64 24)"
 if git -C "$ROOT" ls-files --error-unmatch app-ket.txt >/dev/null 2>&1; then
   fail "app-ket.txt is tracked by git. Remove it from the index and rotate that key before deploying."
 fi
@@ -165,13 +172,21 @@ run_jobs() {
   return $rc
 }
 
-say "running both test suites"
+# The server suite and the analytics database tests need a PostgreSQL to talk
+# to: a throwaway one, on a port the desk never uses, gone again afterwards.
+say "starting the test database"
+TEST_PG_URL="$("$ROOT/deploy/test-db.sh" up)" || fail "could not start the test database"
+trap '"$ROOT/deploy/test-db.sh" down' EXIT
+
+say "running the test suites"
 declare -A TEST_JOBS=(
-  ["server tests"]="cd '$ROOT/app/server' && npm test"
+  ["server tests"]="cd '$ROOT/app/server' && TEST_PG_URL='$TEST_PG_URL' npm test"
   ["web tests"]="cd '$ROOT/app/web' && npm test"
-  ["analytics tests"]="cd '$ROOT/analytics' && .venv/bin/python -m pytest -q"
+  ["analytics tests"]="cd '$ROOT/analytics' && TEST_PG_URL='$TEST_PG_URL' .venv/bin/python -m pytest -q"
 )
 run_jobs TEST_JOBS || fail "tests failed"
+"$ROOT/deploy/test-db.sh" down
+trap - EXIT
 
 say "type-checking before we build"
 # Call the local binary rather than going through npx: npx will happily decide a
@@ -205,6 +220,9 @@ if [[ -n "$REMOTE" ]]; then
   say "shipping compose files"
   ssh "$REMOTE" 'mkdir -p ~/btc-desk/deploy'
   scp "$ROOT/deploy/docker-compose.yml" "$REMOTE:~/btc-desk/deploy/"
+  # The database password travels with the compose file it belongs to, 0600.
+  scp "$ROOT/deploy/.env" "$REMOTE:~/btc-desk/deploy/.env"
+  ssh "$REMOTE" 'chmod 600 ~/btc-desk/deploy/.env'
   say "starting on ${REMOTE}"
   ssh "$REMOTE" "cd ~/btc-desk && TAG=${TAG} WEB_PORT=${WEB_PORT} WEB_BIND=${WEB_BIND} \
     docker compose -f deploy/docker-compose.yml up -d --no-build"
@@ -253,7 +271,8 @@ $COMPOSE logs --tail 40 >&2
 if [[ -n "$PREV" ]]; then
   say "rolling back to ${PREV}"
   # api and web only: the desk runs without analytics, and a first deploy of it
-  # has no previous analytics image to roll back to.
+  # has no previous analytics image to roll back to. The database is never
+  # rolled back -- its image is not ours, and its data is the point.
   TAG="$PREV" WEB_PORT="$WEB_PORT" WEB_BIND="$WEB_BIND" $COMPOSE up -d api web
 fi
 fail "deployment did not come up healthy"

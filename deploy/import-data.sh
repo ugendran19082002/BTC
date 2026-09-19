@@ -1,21 +1,20 @@
 #!/usr/bin/env bash
 #
-# Load databases packed by deploy/export-data.sh into this server's desk.
+# Load the data packed by deploy/export-data.sh into this server's desk.
 #
 #   ./deploy/import-data.sh /tmp/btc-desk-data-20260914-1430.tar.gz
 #
-# Run AFTER the first ./deploy/deploy.sh here, so the volume exists. The API is
-# stopped while the files go in -- a database swapped under a running process
-# is a corrupted database -- and started again after, then health-checked.
+# Run AFTER the first ./deploy/deploy.sh here, so the volume and the database
+# exist. The API is stopped while the data goes in -- a database swapped under
+# a running process is a corrupted database -- and started again after, then
+# health-checked.
 #
-# What goes in is what the tarball holds: chain.db always; trades.db and
-# auth.db when the export included them (a move, not a paper copy). A file
-# already in the volume with the same name is REPLACED, and its journal and
-# shared-memory sidecars removed, so the copy opens exactly as it was backed
-# up. chain.db is also placed at the repository root, where refresh.sh reads
-# it from each evening.
+# What goes in is what the tarball holds: chain.db always, placed on the data
+# volume and at the repository root, where refresh.sh reads it from each
+# evening; and btc_desk.dump when the export included it (a move, not a paper
+# copy), restored over this server's database with pg_restore.
 #
-# auth.db opens only with the same DESK_SESSION_SECRET it was sealed under.
+# The sign-in tables in the dump open only under the same DESK_SESSION_SECRET.
 
 set -euo pipefail
 
@@ -36,13 +35,16 @@ docker volume inspect "$VOLUME" >/dev/null 2>&1 \
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 tar -C "$WORK" -xzf "$TARBALL"
-FILES="$(cd "$WORK" && ls *.db 2>/dev/null || true)"
-[[ -n "$FILES" ]] || fail "the tarball holds no .db files"
+FILES="$(cd "$WORK" && ls *.db *.dump 2>/dev/null || true)"
+[[ -n "$FILES" ]] || fail "the tarball holds no .db or .dump files"
 say "found: $(echo $FILES)"
 
-# Each file must at least be a SQLite database before it replaces one.
+# Each file must at least be what its name says before it replaces anything.
 for f in $FILES; do
-  head -c 16 "$WORK/$f" | grep -q 'SQLite format 3' || fail "${f} is not a SQLite database"
+  case "$f" in
+    *.db)   head -c 16 "$WORK/$f" | grep -q 'SQLite format 3' || fail "${f} is not a SQLite database" ;;
+    *.dump) head -c 5  "$WORK/$f" | grep -q 'PGDMP'           || fail "${f} is not a pg_dump archive" ;;
+  esac
 done
 
 # The API, if it is running here, is stopped for the swap. `stop`, not `down`:
@@ -54,21 +56,29 @@ if $COMPOSE ps --status running -q api 2>/dev/null | grep -q .; then
   $COMPOSE stop api
 fi
 
-say "placing the files in volume ${VOLUME}"
-docker run --rm \
-  -v "${VOLUME}:/srv/data" \
-  -v "${WORK}:/in:ro" \
-  alpine sh -c '
-    set -e
-    for f in /in/*.db; do
-      n=$(basename "$f")
-      cp "$f" "/srv/data/$n"
-      rm -f "/srv/data/$n-wal" "/srv/data/$n-shm"
-      chown 1000:1000 "/srv/data/$n"
-      chmod 644 "/srv/data/$n"
-    done
-    ls -la /srv/data/*.db
-  '
+if ls "$WORK"/*.db >/dev/null 2>&1; then
+  say "placing the files in volume ${VOLUME}"
+  docker run --rm \
+    -v "${VOLUME}:/srv/data" \
+    -v "${WORK}:/in:ro" \
+    alpine sh -c '
+      set -e
+      for f in /in/*.db; do
+        n=$(basename "$f")
+        cp "$f" "/srv/data/$n"
+        rm -f "/srv/data/$n-wal" "/srv/data/$n-shm"
+        chown 1000:1000 "/srv/data/$n"
+        chmod 644 "/srv/data/$n"
+      done
+      ls -la /srv/data/*.db
+    '
+fi
+
+if [[ -f "$WORK/btc_desk.dump" ]]; then
+  say "restoring the database"
+  $COMPOSE ps --status running -q db 2>/dev/null | grep -q . || fail "the db container is not running: run ./deploy/deploy.sh once first"
+  $COMPOSE exec -T db pg_restore -U desk -d btc_desk --clean --if-exists --no-owner --single-transaction < "$WORK/btc_desk.dump"
+fi
 
 if [[ -f "$WORK/chain.db" ]]; then
   cp "$WORK/chain.db" "$ROOT/chain.db"
