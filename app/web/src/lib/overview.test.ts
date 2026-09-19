@@ -187,7 +187,8 @@ test('key levels come sorted high to low, and only from what was read', () => {
 describe('margin, fees and the order estimate', () => {
   it('[critical] margin per contract is spot × 0.001 ÷ leverage plus the fee, as the server model was fitted', () => {
     // Delta's ticket: index 78,405.5, 10 lots, 200x -> "Funds req. 3.93 USD" (server: trading/margin.ts)
-    const per = marginPerContract(78_405.5, 200, 506);
+    // A $16 premium: the fee cap (3.5% of premium) binds, and ten lots come to 3.93.
+    const per = marginPerContract(78_405.5, 200, 16);
     expect(per * 10).toBeCloseTo(3.93, 2);
   });
 
