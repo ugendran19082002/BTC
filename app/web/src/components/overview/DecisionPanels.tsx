@@ -7,7 +7,7 @@ import {
   type BothAssessment, type ExpectedMove, type Readiness, type SideAssessment, type SideChoice,
 } from '@/lib/overview';
 import { SideCardsRow } from './RiskPanels';
-import { fmt, More, Panel, ProbBar, Row, Tag } from './parts';
+import { fmt, More, Panel, ProbBar, Row, Tag, useWidth } from './parts';
 
 export type Selected = { cp: 'C' | 'P'; strike: number };
 export const findLeg = (legs: readonly Leg[], s: Selected | null) =>
@@ -236,7 +236,8 @@ function PayoffTab({ leg, spot, step, contracts }: { leg: Leg; spot: number; ste
 }
 
 export function PayoffChart({ rows, strike }: { rows: { price: number; pnlUsd: number }[]; strike: number }) {
-  const W = 220, H = 110, P = 14;
+  const [box, W] = useWidth<HTMLDivElement>(220);
+  const H = 120, P = 14;
   if (rows.length < 2) return null;
   const xs = rows.map((r) => r.price), ys = rows.map((r) => r.pnlUsd);
   const x0 = Math.min(...xs), x1 = Math.max(...xs);
@@ -245,11 +246,13 @@ export function PayoffChart({ rows, strike }: { rows: { price: number; pnlUsd: n
   const py = (y: number) => H - P - ((y - y0) / (y1 - y0 || 1)) * (H - 2 * P);
   const d = rows.map((r, i) => `${i ? 'L' : 'M'}${px(r.price).toFixed(1)},${py(r.pnlUsd).toFixed(1)}`).join(' ');
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="ov-svg" role="img" aria-label="Payoff at expiry">
-      <line x1={P} x2={W - P} y1={py(0)} y2={py(0)} className="ov-axis" strokeDasharray="3 3" />
-      <line x1={px(strike)} x2={px(strike)} y1={P} y2={H - P} className="ov-axis" />
-      <path d={d} fill="none" className="ov-line-payoff" />
-    </svg>
+    <div ref={box} className="ov-chart-box">
+      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="ov-svg" role="img" aria-label="Payoff at expiry">
+        <line x1={P} x2={W - P} y1={py(0)} y2={py(0)} className="ov-axis" strokeDasharray="3 3" />
+        <line x1={px(strike)} x2={px(strike)} y1={P} y2={H - P} className="ov-axis" />
+        <path d={d} fill="none" className="ov-line-payoff" />
+      </svg>
+    </div>
   );
 }
 

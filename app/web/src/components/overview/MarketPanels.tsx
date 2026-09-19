@@ -1,7 +1,7 @@
 import type { ChainResponse, MarketRead } from '@/types/desk';
 import type { FlowSummary, PerpResponse, TermHistoryPoint, TermPoint, TermResponse } from '@/api/desk';
 import { ivRv, keyLevels, namedLevels, skew, volRegime, type IvRv } from '@/lib/overview';
-import { fmt, More, NotCaptured, Panel, Row, Tag } from './parts';
+import { fmt, More, NotCaptured, Panel, Row, Tag, useWidth } from './parts';
 
 // ------------------------------------------------------------------ KPI strip
 
@@ -271,7 +271,8 @@ function TermLegend({ term }: { term: TermResponse | null }) {
 }
 
 function TermChart({ points, weekAgo, monthAgo }: { points: TermPoint[]; weekAgo: TermHistoryPoint[] | null; monthAgo: TermHistoryPoint[] | null }) {
-  const W = 260, H = 110, P = 22;
+  const [box, W] = useWidth<HTMLDivElement>();
+  const H = 150, P = 26;
   const series = [points, weekAgo ?? [], monthAgo ?? []];
   const ivs = series.flat().map((p) => p.atmIv * 100);
   const lo = Math.floor(Math.min(...ivs) - 2), hi = Math.ceil(Math.max(...ivs) + 2);
@@ -283,8 +284,8 @@ function TermChart({ points, weekAgo, monthAgo }: { points: TermPoint[]; weekAgo
   const py = (v: number) => H - P + 4 - ((v - lo) / (hi - lo || 1)) * (H - 2 * P);
   const path = (ps: readonly TermHistoryPoint[]) => ps.map((p, i) => `${i ? 'L' : 'M'}${px(p.hoursAway).toFixed(1)},${py(p.atmIv * 100).toFixed(1)}`).join(' ');
   return (
-    <>
-      <svg viewBox={`0 0 ${W} ${H}`} className="ov-svg" role="img" aria-label="ATM implied volatility by expiry">
+    <div ref={box} className="ov-chart-box">
+      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="ov-svg" role="img" aria-label="ATM implied volatility by expiry">
         <line x1={P} x2={W - P} y1={H - P + 4} y2={H - P + 4} className="ov-axis" />
         <text x={2} y={py(hi) + 4} className="ov-tick">{hi}%</text>
         <text x={2} y={py(lo) + 4} className="ov-tick">{lo}%</text>
@@ -298,8 +299,8 @@ function TermChart({ points, weekAgo, monthAgo }: { points: TermPoint[]; weekAgo
           return (
             <g key={p.expiry}>
               <circle cx={x} cy={py(p.atmIv * 100)} r={3} className="ov-pt" />
-              {x - prev >= 22 && (
-                <text x={x} y={H - 4} textAnchor="middle" className="ov-tick">{p.hoursAway < 48 ? `${Math.round(p.hoursAway)}h` : `${Math.round(p.hoursAway / 24)}d`}</text>
+              {x - prev >= 26 && (
+                <text x={x} y={H - 6} textAnchor="middle" className="ov-tick">{p.hoursAway < 48 ? `${Math.round(p.hoursAway)}h` : `${Math.round(p.hoursAway / 24)}d`}</text>
               )}
             </g>
           );
@@ -310,7 +311,7 @@ function TermChart({ points, weekAgo, monthAgo }: { points: TermPoint[]; weekAgo
           <span key={p.expiry}><small className="ov-muted">{p.expiry}</small> {(p.atmIv * 100).toFixed(1)}%</span>
         ))}
       </div>
-    </>
+    </div>
   );
 }
 
