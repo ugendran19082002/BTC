@@ -65,6 +65,9 @@ export function SideCardsRow({ sides, onSelect }: { sides: SideAssessment[]; onS
           <Row label="POP (OTM)" value={fmt.pct(c.pOtm)} />
           <Row label="P(touch)" value={fmt.pct(c.pTouch)} />
           <Row label="Distance / EM" value={c.emDistance === null ? '—' : `${c.emDistance.toFixed(2)}×`} tone={c.emDistance !== null && c.emDistance < 1 ? 'warn' : undefined} />
+          <Row label="Volume (today)" value={c.leg?.volume == null ? '—' : `${fmt.n(c.leg.volume)} ct`} hint="Contracts traded on this strike today, both sides together — Delta's option feed does not say who was the aggressor" />
+          <Row label="OI · change" value={c.leg?.oi == null ? '—' : `${fmt.n(c.leg.oi)}${c.leg.oiChange ? ` · ${fmt.signed(c.leg.oiChange.change)} (${c.leg.oiChange.overMinutes}m)` : ''}`}
+            tone={c.leg?.oiChange ? (c.leg.oiChange.change > 0 ? 'up' : c.leg.oiChange.change < 0 ? 'down' : undefined) : undefined} hint="Open interest on this strike, and how it moved" />
           <Row label="OI wall" value={c.wallStrike === null ? '—' : `${fmt.n(c.wallStrike)} · ${c.wallDistanceStrikes === null ? '' : `${c.wallDistanceStrikes >= 0 ? '+' : ''}${c.wallDistanceStrikes} strikes`}`}
             tone={c.wallDistanceStrikes === null ? undefined : c.wallDistanceStrikes >= 0 ? 'up' : 'down'} hint="Where the wall sits relative to the strike, in strikes; beyond is support" />
           <Row label="Gamma risk" value={c.gammaRisk ?? '—'} tone={c.gammaRisk === 'high' ? 'down' : c.gammaRisk === 'low' ? 'up' : undefined} />

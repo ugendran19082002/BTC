@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import type { ChainResponse, Leg } from '@/types/desk';
 import { istLabel } from '@/lib/format';
 import type { PremiumMomentum } from '@/api/desk';
@@ -247,8 +247,8 @@ export function PayoffChart({ rows, strike }: { rows: { price: number; pnlUsd: n
 
 // ------------------------------------------------------------ the decision
 
-export function StrategyDecisionPanel({ data, sides, choice, onSelect }: {
-  data: ChainResponse; sides: SideAssessment[]; choice: SideChoice; onSelect: (s: Selected) => void;
+export function StrategyDecisionPanel({ data, sides, choice, onSelect, strikes }: {
+  data: ChainResponse; sides: SideAssessment[]; choice: SideChoice; strikes?: ReactNode; onSelect: (s: Selected) => void;
 }) {
   const tone = choice.side === 'NO_TRADE' ? 'down' : choice.side === 'BOTH' ? 'up' : 'accent';
   // What is in the way, in plain words: the failing gates of the side the desk would take, or of the better side.
@@ -262,6 +262,7 @@ export function StrategyDecisionPanel({ data, sides, choice, onSelect }: {
         {focus.disabledBy && <> {focus.disabledBy}.</>}
       </p>
       <SideCardsRow sides={sides} onSelect={(cp, strike) => onSelect({ cp, strike })} />
+      {strikes}
       <p className="ov-foot">{data.best.why ?? ''} Side from the regime, the horizon consensus and each side's gates — never the score alone.</p>
     </Panel>
   );

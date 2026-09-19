@@ -16,7 +16,7 @@ import {
 import { ChainPanel, ChecklistPanel, findLeg, SelectedStrikePanel, StrategyDecisionPanel, type Selected } from './DecisionPanels';
 import { ScreenBar } from './ScreenBar';
 import { RiskEnginePanel } from './RiskPanels';
-import { ChangesPanel, EarlyWarningPanel, MovementPanel, StrikeFinderPanel, useChanges } from './TraderPanels';
+import { ChangesPanel, EarlyWarningPanel, MovementPanel, StrikeFinder, useChanges } from './TraderPanels';
 
 /**
  * The Live screen: the three reference designs (docs/image1-3.png) and the
@@ -30,7 +30,7 @@ import { ChangesPanel, EarlyWarningPanel, MovementPanel, StrikeFinderPanel, useC
  * headline numbers; the left column reads the market (trend, levels,
  * volatility, the tape, the vol surface); the centre is the board (chart, chain, the strike
  * under inspection, what changed, its risk, its checklist); the right column
- * decides (the outlook by horizon, the sides, the strikes). Nothing
+ * decides (the outlook by horizon; the sides, with the strikes under them). Nothing
  * is shown twice: a figure the checklist judges is not repeated as a row.
  *
  * Every figure is read from the chain response, the perp feed or the desk's
@@ -175,10 +175,12 @@ export function Overview({
 
         <div className="ov-col ov-right">
           <ErrorBoundary where="Outlook"><MovementPanel data={data} em={emSettle} activeMin={config.horizonMin} /></ErrorBoundary>
-          <ErrorBoundary where="Strategy decision"><StrategyDecisionPanel data={data} sides={sides} choice={choice} onSelect={setPicked} /></ErrorBoundary>
-          <ErrorBoundary where="Strikes">
-            <StrikeFinderPanel data={data} onSelect={(cp, strike) => setPicked({ cp, strike })} onSell={onSell} contracts={contracts} leverage={leverage}
-              defaultSide={choice.side === 'CE' ? 'C' : choice.side === 'PE' ? 'P' : 'both'} em={emSettle} execution={config.execution} />
+          <ErrorBoundary where="Strategy decision">
+            <StrategyDecisionPanel data={data} sides={sides} choice={choice} onSelect={setPicked}
+              strikes={
+                <StrikeFinder data={data} onSelect={(cp, strike) => setPicked({ cp, strike })} onSell={onSell} contracts={contracts} leverage={leverage}
+                  defaultSide={choice.side === 'CE' ? 'C' : choice.side === 'PE' ? 'P' : 'both'} em={emSettle} execution={config.execution} />
+              } />
           </ErrorBoundary>
         </div>
       </div>

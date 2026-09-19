@@ -316,7 +316,8 @@ describe('horizons and momentum', () => {
   it('lists every outlook row with its odds and implied band', () => {
     const rows = horizonRows(fixtureData().outlook);
     expect(rows.length).toBeGreaterThan(0);
-    for (const r of rows) if (r.pUp !== null) expect(r.pDown).toBeCloseTo(1 - r.pUp, 9);
+    // Above, inside and below the implied band: a partition, so a reader can add them to 100%.
+    for (const r of rows) if (r.measured) expect(r.pUp! + r.pRange! + r.pDown!).toBeCloseTo(1, 6);
   });
   it('velocity is the last step, acceleration the change of it', () => {
     expect(premiumMomentum([{ at: 1, mark: 10 }, { at: 2, mark: 12 }, { at: 3, mark: 15 }])).toEqual({ velocity: 3, acceleration: 1 });

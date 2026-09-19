@@ -53,12 +53,12 @@ export function MovementPanel({ data, em, activeMin }: { data: ChainResponse; em
     <Panel title="Outlook · movement to expiry" right={<Tag tone={v.way === 'up' ? 'up' : v.way === 'down' ? 'down' : 'accent'}>{v.way.toUpperCase()} · {v.confidence} confidence</Tag>}>
       <p className="ov-summary">{v.text}.</p>
       <table className="ov-mini ov-horizons">
-        <thead><tr><th>Next</th><th>Up</th><th>Down</th><th title="Odds BTC stays inside the expected move">Side</th><th title="Spot ± the expected move for the horizon">Range (spot ± EM)</th></tr></thead>
+        <thead><tr><th>Next</th><th title="Measured share of windows that closed above the band">Above</th><th title="Measured share that closed inside the band">Inside</th><th title="Measured share that closed below the band">Below</th><th title="Spot ± the expected move for the horizon: the band">Band (spot ± EM)</th></tr></thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.label} className={r.minutes === activeMin ? 'ov-atm' : undefined}>
               <td>{r.label}{r.minutes === activeMin ? ' ◆' : ''}</td>
-              <td className="ov-up">{fmt.pct(r.pUp)}</td><td className="ov-down">{fmt.pct(r.pDown)}</td><td className="ov-muted">{fmt.pct(r.pRange)}</td>
+              <td className="ov-up">{fmt.pct(r.pUp)}</td><td className="ov-muted">{fmt.pct(r.pRange)}</td><td className="ov-down">{fmt.pct(r.pDown)}</td>
               <td className="ov-muted" title={r.em === null ? undefined : `±${fmt.n(r.em)}`}>{r.low === null || r.high === null ? '—' : `${fmt.n(r.low)} – ${fmt.n(r.high)}`}</td>
             </tr>
           ))}
@@ -71,10 +71,10 @@ export function MovementPanel({ data, em, activeMin }: { data: ChainResponse; em
       </div>
       <More label="How it is computed">
         <ul className="ov-formulas">
-          <li><b>Up / down / range:</b> measured over the desk's history for each horizon from the current market state; never a coin flip dressed up.</li>
+          <li><b>Above / inside / below:</b> where the desk's measured record for each horizon fell against the implied band, from the current market state; the three add to 100%.</li>
           <li><b>Expected move:</b> spot × ATM IV × √(horizon ÷ 1 year); the target range is spot ± that.</li>
           {board.map((b) => <li key={b.name}><b>{b.name}:</b> {b.formula}</li>)}
-          <li><b>Verdict:</b> one vote per horizon leaning past 55 / 45, one per board reading, one for the timeframes agreeing; the way with most votes, confidence by its share.</li>
+          <li><b>Verdict:</b> one vote per horizon tilted ten points past the band on one side (inside past a half votes range), one per board reading, one for the timeframes agreeing; the way with most votes, confidence by its share.</li>
         </ul>
       </More>
     </Panel>
@@ -149,7 +149,7 @@ export function ChangesPanel({ leg, rows }: { leg: Leg | null; rows: ChangeRow[]
 
 // ------------------------------------------------------------ strike finder
 
-export function StrikeFinderPanel({ data, onSelect, onSell, contracts, leverage, defaultSide, em, execution = 'BID' }: {
+export function StrikeFinder({ data, onSelect, onSell, contracts, leverage, defaultSide, em, execution = 'BID' }: {
   data: ChainResponse; onSelect: (cp: 'C' | 'P', strike: number) => void; onSell?: (l: Leg) => void; contracts: number; leverage: number;
   defaultSide: 'C' | 'P' | 'both'; em: ExpectedMove; execution?: ScreenConfig['execution'];
 }) {
@@ -168,15 +168,17 @@ export function StrikeFinderPanel({ data, onSelect, onSell, contracts, leverage,
   const priceLabel = execution === 'MARK' ? 'Mark' : execution === 'DEPTH' ? 'Est. fill' : 'Bid';
   const otm = data.legs.filter((l) => l.moneyness !== 'ITM').length;
   return (
-    <Panel title="Strikes" right={
-      <span className="ov-chain-head">
-        <span className="ov-tabs ov-tabs-inline" role="tablist">
-          <button role="tab" aria-selected={mode === 'desk'} className={mode === 'desk' ? 'on' : ''} onClick={() => setMode('desk')} title="The desk's top three a side, by its own rules">Desk picks{picks.length === 0 ? ' (none)' : ''}</button>
-          <button role="tab" aria-selected={mode === 'filters'} className={mode === 'filters' ? 'on' : ''} onClick={() => setMode('filters')} title="Every out-of-the-money strike, through your filters">Finder</button>
+    <div className="ov-strikes">
+      <h4 className="ov-subhead">
+        <span>Strikes</span>
+        <span className="ov-chain-head">
+          <span className="ov-tabs ov-tabs-inline" role="tablist">
+            <button role="tab" aria-selected={mode === 'desk'} className={mode === 'desk' ? 'on' : ''} onClick={() => setMode('desk')} title="The desk's top three a side, by its own rules">Desk picks{picks.length === 0 ? ' (none)' : ''}</button>
+            <button role="tab" aria-selected={mode === 'filters'} className={mode === 'filters' ? 'on' : ''} onClick={() => setMode('filters')} title="Every out-of-the-money strike, through your filters">Finder</button>
+          </span>
+          <small className="ov-muted">{found.length} of {otm} OTM · {contracts} ct at {leverage}x</small>
         </span>
-        <small className="ov-muted">{found.length} of {otm} OTM · {contracts} ct at {leverage}x</small>
-      </span>
-    }>
+      </h4>
       {mode === 'filters' && (
         <div className="ov-finder">
           <label>Side <select className="ov-select" value={f.side} onChange={(e) => setF({ ...f, side: e.target.value as FinderFilter['side'] })}><option value="P">PE</option><option value="C">CE</option><option value="both">Both</option></select></label>
@@ -220,6 +222,6 @@ export function StrikeFinderPanel({ data, onSelect, onSell, contracts, leverage,
         </table>
       )}
       <p className="ov-foot">Out-of-the-money strikes only, best desk score first. Click a row to inspect it; Sell opens the ticket, where every gate runs again.</p>
-    </Panel>
+    </div>
   );
 }

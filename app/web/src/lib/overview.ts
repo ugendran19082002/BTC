@@ -434,9 +434,9 @@ export function keyLevels(
 export type HorizonRow = {
   label: string;
   minutes: number;
+  /** Measured share of windows that closed above the implied band, inside it, and below it. The three add to one. */
   pUp: number | null;
   pDown: number | null;
-  /** Measured share of windows that closed inside the implied band. */
   pRange: number | null;
   /** The option market's price of the move over this horizon, in USD. */
   em: number | null;
@@ -448,17 +448,19 @@ export type HorizonRow = {
 };
 
 /**
- * Every horizon the outlook carries, as one table: the measured up / down /
- * inside odds beside the implied move and its band. Direction odds come from
- * the measured record only; the implied move is arithmetic on the ATM IV.
+ * Every horizon the outlook carries, as one table: where the measured record
+ * fell against the implied band -- above it, inside it, below it, three
+ * shares that add to one -- beside the implied move and its band. The odds
+ * come from the measured record only; the implied move is arithmetic on the
+ * ATM IV.
  */
 export function horizonRows(outlook: Outlook): HorizonRow[] {
   return outlook.rows.map((r) => ({
     label: r.label, minutes: r.minutes,
-    pUp: r.pUp, pDown: r.pUp === null ? null : 1 - r.pUp, pRange: r.inside,
+    pUp: r.above, pDown: r.below, pRange: r.inside,
     em: r.impliedUsd, low: r.low, high: r.high,
     richness: r.richness,
-    measured: r.pUp !== null,
+    measured: r.inside !== null,
   }));
 }
 
@@ -1072,7 +1074,9 @@ export function boardRead(data: Pick<ChainResponse, 'structure' | 'snapshot' | '
 export function movementVerdict(rows: readonly HorizonRow[], board: readonly BoardRead[], market: MarketRead | null, hoursToExpiry: number): { way: 'up' | 'down' | 'range'; text: string; confidence: 'low' | 'medium' | 'high' } {
   const toExpiry = rows.filter((r) => r.minutes <= hoursToExpiry * 60 + 1);
   const use = toExpiry.length ? toExpiry : rows.slice(0, 1);
-  const up = use.filter((r) => r.pUp !== null && r.pUp > 0.55).length, down = use.filter((r) => r.pUp !== null && r.pUp < 0.45).length;
+  // A horizon votes a way when the record tilts ten points past the band on that side; inside past a half votes range.
+  const tilt = (r: HorizonRow) => (r.pUp === null || r.pDown === null ? 0 : r.pUp - r.pDown);
+  const up = use.filter((r) => tilt(r) > 0.1).length, down = use.filter((r) => tilt(r) < -0.1).length;
   const votes = { up: up + board.filter((b) => b.says === 'up').length + ((market?.agreement ?? 0) > 0 ? 1 : 0), down: down + board.filter((b) => b.says === 'down').length + ((market?.agreement ?? 0) < 0 ? 1 : 0), range: board.filter((b) => b.says === 'range').length + use.filter((r) => r.pRange !== null && r.pRange > 0.5).length };
   const way = votes.up > votes.down && votes.up > votes.range ? 'up' : votes.down > votes.up && votes.down > votes.range ? 'down' : 'range';
   const total = votes.up + votes.down + votes.range;

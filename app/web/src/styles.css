@@ -2785,3 +2785,4 @@ tr.ov-fired td { background: rgba(239, 68, 68, .10); }
   .ov-screenbar-right { justify-content: flex-start; }
   .ov-day { flex-basis: 100%; }
 }
+.ov-subhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin: 12px 0 6px; padding-top: 10px; border-top: 1px solid var(--line-soft); font-size: 13px; font-weight: 600; }
