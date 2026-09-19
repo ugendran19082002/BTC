@@ -115,6 +115,11 @@ that still has them:
 7. Keep the `.db` files on the volume for a month. They are the rollback: the
    previous image, started against them, is the desk as it was.
 
+### A console on the database
+
+`https://adminer.thannigo.in`, opt-in, behind basic auth, a one-time code and
+a read-only account: `docs/ADMINER.md`.
+
 ## Keeping the data fresh
 
 `deploy/refresh.sh` harvests yesterday and today, snapshots the database and
