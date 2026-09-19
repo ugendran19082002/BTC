@@ -1,6 +1,6 @@
 import type { ChainResponse, MarketRead } from '@/types/desk';
 import type { FlowSummary, PerpResponse, TermHistoryPoint, TermPoint, TermResponse } from '@/api/desk';
-import { ivRv, keyLevels, mtfRows, namedLevels, skew, volRegime, type IvRv } from '@/lib/overview';
+import { ivRv, keyLevels, namedLevels, skew, volRegime, type IvRv } from '@/lib/overview';
 import { fmt, More, NotCaptured, Panel, Row, Tag } from './parts';
 
 // ------------------------------------------------------------------ KPI strip
@@ -127,34 +127,6 @@ export function PriceActionPanel({ market, tf: wanted = '15m' }: { market: Marke
           </More>
         </>
       )}
-    </Panel>
-  );
-}
-
-// ------------------------------------------------------------ multi-timeframe
-
-/** TF · trend · momentum · model · signal, one row per timeframe; the chart's timeframe and the prediction horizon are marked. */
-export function MtfPanel({ data, activeTf, horizonMin }: { data: ChainResponse; activeTf: string; horizonMin: number }) {
-  const rows = mtfRows(data.market, data.outlook);
-  const mins: Record<string, number> = { '5m': 5, '15m': 15, '30m': 30, '1h': 60, '3h': 180, '4h': 240, '6h': 360, '12h': 720, '1d': 1440 };
-  const up = rows.filter((r) => r.signal === '↑').length, down = rows.filter((r) => r.signal === '↓').length;
-  return (
-    <Panel title="Multi-timeframe" right={<small className="ov-muted">{up} up · {down} down · {rows.length - up - down} side</small>}>
-      <table className="ov-mini ov-mtf">
-        <thead><tr><th>TF</th><th>Trend</th><th>Momentum</th><th /></tr></thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.tf} className={r.tf === activeTf ? 'ov-atm' : mins[r.tf] === horizonMin ? 'ov-horizon' : undefined}
-              title={r.tf === activeTf ? 'The chart\'s timeframe' : mins[r.tf] === horizonMin ? 'The prediction horizon' : undefined}>
-              <td>{r.tf}{r.tf === activeTf ? ' ●' : mins[r.tf] === horizonMin ? ' ◆' : ''}</td>
-              <td className={r.trend === 'up' ? 'ov-up' : r.trend === 'down' ? 'ov-down' : 'ov-muted'}>{r.trend}</td>
-              <td className={r.momentum === 'bullish' ? 'ov-up' : r.momentum === 'bearish' ? 'ov-down' : 'ov-muted'}>{r.momentum ?? '—'}</td>
-              <td className={r.signal === '↑' ? 'ov-up' : r.signal === '↓' ? 'ov-down' : 'ov-muted'}>{r.signal}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className="ov-foot">● chart timeframe · ◆ prediction horizon. Trend from the EMA stack, momentum from RSI; the model's odds by horizon are in the outlook.</p>
     </Panel>
   );
 }

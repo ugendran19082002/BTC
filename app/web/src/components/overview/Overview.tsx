@@ -12,7 +12,7 @@ import {
 import { DEFAULT_CONFIG, thresholds, type ScreenConfig } from '@/lib/screen-config';
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
 import {
-  KeyLevelsPanel, KpiStrip, IvTermPanel, MtfPanel, PriceActionPanel, SkewPanel, TradeFlowPanel, VolatilityPanel,
+  KeyLevelsPanel, KpiStrip, IvTermPanel, PriceActionPanel, SkewPanel, TradeFlowPanel, VolatilityPanel,
 } from './MarketPanels';
 import { ChainPanel, ChecklistPanel, findLeg, SelectedStrikePanel, StrategyDecisionPanel, type Selected } from './DecisionPanels';
 import { SettingsStrip } from './SettingsStrip';
@@ -158,7 +158,6 @@ export function Overview({
       <div className="ov-main">
         <div className="ov-col">
           <ErrorBoundary where="Price action"><PriceActionPanel market={data.market} tf={chartTf} /></ErrorBoundary>
-          <ErrorBoundary where="Multi-timeframe"><MtfPanel data={data} activeTf={chartTf} horizonMin={config.horizonMin} /></ErrorBoundary>
           <ErrorBoundary where="Key levels"><KeyLevelsPanel data={data} spot={spot} /></ErrorBoundary>
           <ErrorBoundary where="Volatility"><VolatilityPanel data={data} iv={iv} /></ErrorBoundary>
           <ErrorBoundary where="Trade flow"><TradeFlowPanel perp={perp} market={data.market} /></ErrorBoundary>

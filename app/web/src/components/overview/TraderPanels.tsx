@@ -222,13 +222,16 @@ export function StrikeFinderPanel({ data, onSelect, onSell, contracts, leverage,
   data: ChainResponse; onSelect: (cp: 'C' | 'P', strike: number) => void; onSell?: (l: Leg) => void; contracts: number; leverage: number;
   defaultSide: 'C' | 'P' | 'both'; em: ExpectedMove; execution?: ScreenConfig['execution'];
 }) {
-  const [mode, setMode] = useState<'desk' | 'filters'>('desk');
   const [f, setF] = useState<FinderFilter>({ side: defaultSide, minPremium: 15, maxPot: 0.35, minEm: 1, top: 5 });
   useEffect(() => { setF((x) => ({ ...x, side: defaultSide })); }, [defaultSide]);
   const spot = data.snapshot.spot;
   // The desk's own picks: its top three a side by its rules, the side it leans to first. Otherwise the operator's filters.
   const order: readonly ('C' | 'P')[] = defaultSide === 'C' ? ['C', 'P'] : ['P', 'C'];
-  const found = mode === 'desk' ? order.flatMap((cp) => candidates(data.legs, cp, 3)) : findStrikes(data.legs, f);
+  const picks = order.flatMap((cp) => candidates(data.legs, cp, 3));
+  // Opens on the desk's picks when it has any; on the finder when nothing clears its rules, rather than on an empty table.
+  const [chosenMode, setMode] = useState<'desk' | 'filters' | null>(null);
+  const mode = chosenMode ?? (picks.length > 0 ? 'desk' : 'filters');
+  const found = mode === 'desk' ? picks : findStrikes(data.legs, f);
   // The premium a candidate is judged at follows the execution setting: the bid a seller receives, a tick under it when thin, or the mark for comparison.
   const priceOf = (l: Leg) => (execution === 'MARK' ? l.mark : execution === 'DEPTH' ? executionEstimate(l, spot, contracts).expectedFill : l.bid ?? l.sellPrice);
   const priceLabel = execution === 'MARK' ? 'Mark' : execution === 'DEPTH' ? 'Est. fill' : 'Bid';
@@ -237,7 +240,7 @@ export function StrikeFinderPanel({ data, onSelect, onSell, contracts, leverage,
     <Panel title="Strikes" right={
       <span className="ov-chain-head">
         <span className="ov-tabs ov-tabs-inline" role="tablist">
-          <button role="tab" aria-selected={mode === 'desk'} className={mode === 'desk' ? 'on' : ''} onClick={() => setMode('desk')} title="The desk's top three a side, by its own rules">Desk picks</button>
+          <button role="tab" aria-selected={mode === 'desk'} className={mode === 'desk' ? 'on' : ''} onClick={() => setMode('desk')} title="The desk's top three a side, by its own rules">Desk picks{picks.length === 0 ? ' (none)' : ''}</button>
           <button role="tab" aria-selected={mode === 'filters'} className={mode === 'filters' ? 'on' : ''} onClick={() => setMode('filters')} title="Every out-of-the-money strike, through your filters">Finder</button>
         </span>
         <small className="ov-muted">{found.length} of {otm} OTM · {contracts} ct at {leverage}x</small>

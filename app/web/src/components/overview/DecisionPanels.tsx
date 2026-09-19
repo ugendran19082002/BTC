@@ -7,7 +7,7 @@ import {
   type BothAssessment, type ExpectedMove, type Readiness, type SideAssessment, type SideChoice,
 } from '@/lib/overview';
 import { SideCardsRow } from './RiskPanels';
-import { fmt, Panel, ProbBar, Row, Tag } from './parts';
+import { fmt, More, Panel, ProbBar, Row, Tag } from './parts';
 
 export type Selected = { cp: 'C' | 'P'; strike: number };
 export const findLeg = (legs: readonly Leg[], s: Selected | null) =>
@@ -277,16 +277,38 @@ export function StrategyDecisionPanel({ data, sides, both, choice, onSelect }: {
 
 // ------------------------------------------------------- checklist and order
 
+/** Where each gate belongs on the checklist. The server's own checks (verdict-*) are the desk's rules. */
+const GATE_SECTION: Record<string, string> = {
+  fresh: 'Market', iv: 'Market', regime: 'Market', direction: 'Market', consensus: 'Market', expiry: 'Market',
+  contract: 'Strike', side: 'Strike', pot: 'Strike', em: 'Strike', wall: 'Strike', gamma: 'Strike', liquidity: 'Strike', slippage: 'Strike',
+  risk: 'Risk', tail: 'Risk', margin: 'Risk', size: 'Risk',
+};
+const SECTIONS = ['Market', 'Strike', 'Risk', 'Desk rules'] as const;
+
+/**
+ * The entry checklist a person can read at a glance: the verdict and the
+ * counts first; then, by section, only what is failing or could not be read;
+ * what passed folds away under its count. Every gate is still here -- open
+ * the fold -- but the eye lands on what needs attention.
+ */
 export function ChecklistPanel({ leg, ready, onSell }: { leg: Leg | null; ready: Readiness; onSell?: (l: Leg) => void }) {
-  // Failing first, then what could not be read, then what passed: the eye goes to what needs attention.
-  const rank = (ok: boolean | null) => (ok === false ? 0 : ok === null ? 1 : 2);
-  const gates = [...ready.gates].sort((x, y) => rank(x.ok) - rank(y.ok));
   const side = leg ? (leg.cp === 'C' ? 'CE' : 'PE') : null;
+  const passed = ready.gates.filter((g) => g.ok === true).length;
+  const bySection = (ok: (g: Readiness['gates'][number]) => boolean) => SECTIONS
+    .map((name) => ({ name, gates: ready.gates.filter((g) => ok(g) && (GATE_SECTION[g.key] ?? 'Desk rules') === name) }))
+    .filter((x) => x.gates.length > 0);
+  const open = bySection((g) => g.ok !== true);
+  const folded = bySection((g) => g.ok === true);
+  const Item = ({ g }: { g: Readiness['gates'][number] }) => (
+    <li className={g.ok === true ? 'ok' : g.ok === false ? 'bad' : 'unknown'}>
+      <span aria-hidden>{g.ok === true ? '✓' : g.ok === false ? '✕' : '?'}</span>{g.text}
+    </li>
+  );
   return (
-    <Panel title={`Entry checklist · ${ready.gates.length} gates`}
+    <Panel title="Entry checklist"
       right={
         <span className="ov-chain-head">
-          <Tag tone={ready.ready ? 'up' : 'down'}>{ready.verdict}{ready.ready ? '' : ` · ${ready.failing} failing${ready.unknown ? `, ${ready.unknown} unreadable` : ''}`}</Tag>
+          <Tag tone={ready.ready ? 'up' : 'down'}>{ready.verdict}</Tag>
           {leg && onSell && (
             <button className="ov-sell" onClick={() => onSell(leg)} title="Opens the order ticket for this strike — every gate runs again on the server">
               Sell {fmt.n(leg.strike)} {side} via ticket
@@ -294,14 +316,35 @@ export function ChecklistPanel({ leg, ready, onSell }: { leg: Leg | null; ready:
           )}
         </span>
       }>
-      <ul className="ov-checks ov-checks-dense">
-        {gates.map((g) => (
-          <li key={g.key} className={g.ok === true ? 'ok' : g.ok === false ? 'bad' : 'unknown'}>
-            <span aria-hidden>{g.ok === true ? '✓' : g.ok === false ? '✕' : '?'}</span>{g.text}
-          </li>
-        ))}
-      </ul>
-      <p className="ov-foot">Failing first, then unreadable, then passing. Orders and positions have their own tabs; this screen decides, the ticket places.</p>
+      <p className="ov-checks-summary">
+        <b className="ov-down">{ready.failing} failing</b>
+        <b className="ov-muted">{ready.unknown} unreadable</b>
+        <b className="ov-up">{passed} passed</b>
+        <span className="ov-muted">of {ready.gates.length}</span>
+      </p>
+      {open.length === 0 ? <p className="ov-empty ov-up">Every gate is green.</p> : (
+        <div className="ov-check-groups">
+          {open.map((sec) => (
+            <div key={sec.name} className="ov-check-group">
+              <h4>{sec.name}</h4>
+              <ul className="ov-checks ov-checks-dense">{sec.gates.map((g) => <Item key={g.key} g={g} />)}</ul>
+            </div>
+          ))}
+        </div>
+      )}
+      {passed > 0 && (
+        <More label={`${passed} passed`}>
+          <div className="ov-check-groups">
+            {folded.map((sec) => (
+              <div key={sec.name} className="ov-check-group">
+                <h4>{sec.name}</h4>
+                <ul className="ov-checks ov-checks-dense">{sec.gates.map((g) => <Item key={g.key} g={g} />)}</ul>
+              </div>
+            ))}
+          </div>
+        </More>
+      )}
+      <p className="ov-foot">This screen decides; the ticket places, and the server runs every gate again.</p>
     </Panel>
   );
 }

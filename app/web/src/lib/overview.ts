@@ -393,7 +393,7 @@ export function entryGates(input: {
       ok: after <= risk.maxShortContracts && !lossHit,
       text: lossHit
         ? `Day's loss $${Math.abs(risk.dayNetUsd!).toFixed(2)} has reached the $${risk.maxDailyLossUsd} limit`
-        : `Risk: ${after} short after this (cap ${risk.maxShortContracts})${risk.dayNetUsd !== null ? ` · day ${risk.dayNetUsd >= 0 ? '+' : '−'}$${Math.abs(risk.dayNetUsd).toFixed(2)} of −$${risk.maxDailyLossUsd} allowed` : ''}`,
+        : `Risk: ${after} short after this (cap ${risk.maxShortContracts})${risk.dayNetUsd !== null ? ` · day ${risk.dayNetUsd >= 0 ? '+' : '−'}$${Math.abs(risk.dayNetUsd).toFixed(2)} of −$${risk.maxDailyLossUsd.toFixed(2)} allowed` : ''}`,
     });
   }
   // The server's own gates, as it wrote them. It is the authority; these are shown, not re-judged.
@@ -939,27 +939,6 @@ export function shockTable(leg: Leg, contracts: number): Shock[] {
     { label: 'BTC −100', pnlUsd: px(-100) }, { label: 'BTC −250', pnlUsd: px(-250) }, { label: 'BTC −500', pnlUsd: px(-500) },
     { label: 'IV +1', pnlUsd: iv(1) }, { label: 'IV +2', pnlUsd: iv(2) }, { label: 'IV −1', pnlUsd: iv(-1) },
   ];
-}
-
-// ------------------------------------------------ multi-timeframe table
-
-export type MtfRow = { tf: string; trend: string; momentum: 'bullish' | 'bearish' | 'neutral' | null; model: number | null; signal: '↑' | '↓' | '→' };
-
-/** Trend and RSI momentum from the bars, the model's up-odds from the matching horizon, one row per timeframe. */
-export function mtfRows(market: MarketRead | null, outlook: Outlook): MtfRow[] {
-  const byMin = new Map(outlook.rows.map((r) => [r.minutes, r]));
-  const mins: Record<string, number> = { '5m': 5, '15m': 15, '30m': 30, '1h': 60, '3h': 180, '4h': 240, '6h': 360, '12h': 720, '1d': 1440 };
-  const tfs = market?.timeframes ?? [];
-  const labels = [...new Set([...tfs.map((t) => t.tf), ...outlook.rows.map((r) => r.label)])]
-    .filter((l) => l in mins).sort((a, b) => mins[a]! - mins[b]!);
-  return labels.map((tf) => {
-    const t = tfs.find((x) => x.tf === tf) ?? null;
-    const r = byMin.get(mins[tf]!) ?? null;
-    const momentum = t?.rsi14 == null ? null : t.rsi14 >= 55 ? 'bullish' : t.rsi14 <= 45 ? 'bearish' : 'neutral';
-    const model = r?.pUp ?? null;
-    const lean = t ? t.trend : model === null ? 0 : model > 0.55 ? 1 : model < 0.45 ? -1 : 0;
-    return { tf, trend: t ? (t.trend === 1 ? 'up' : t.trend === -1 ? 'down' : 'side') : '—', momentum, model, signal: lean === 1 ? '↑' : lean === -1 ? '↓' : '→' };
-  });
 }
 
 // ------------------------------------------------------- early warning
