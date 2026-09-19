@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { AUTH_DB } from '../paths.js';
-import { migrate, type Migration } from '../db/migrate.js';
+import { migrate, type Migration } from '../db/sqlite-migrate.js';
 
 /**
  * Everything the login keeps, in auth.db.

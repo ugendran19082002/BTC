@@ -38,6 +38,15 @@ export type Config = {
    * the URL it travels in.
    */
   telegram: { token: string; chatId: string } | null;
+  /**
+   * The desk's database: trades, strategies, settings, sign-in, the error log
+   * and open-interest history, one PostgreSQL database with a schema each.
+   *
+   * A connection URL, so the password travels inside it and is never logged
+   * on its own. Null when unset; the pool refuses to open and says why, because
+   * a desk with nowhere to write its journal must not start.
+   */
+  databaseUrl: string | null;
 };
 
 const telegramFromEnv = (): Config['telegram'] => {
@@ -52,5 +61,6 @@ export const config: Config = {
   liveTradingDefault: !isOff(process.env.DELTA_LIVE_TRADING),
   paperLocked: isOff(process.env.DELTA_LIVE_TRADING),
   telegram: telegramFromEnv(),
+  databaseUrl: process.env.DATABASE_URL?.trim() || null,
 };
 

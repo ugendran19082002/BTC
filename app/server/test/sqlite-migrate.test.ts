@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { appliedMigrations, hasColumn, migrate, type Migration } from '../src/db/migrate.js';
+import { appliedMigrations, hasColumn, migrate, type Migration } from '../src/db/sqlite-migrate.js';
 
 /**
  * The migration ledger.

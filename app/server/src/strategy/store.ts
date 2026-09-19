@@ -13,7 +13,7 @@
  */
 import { DatabaseSync } from 'node:sqlite';
 import { TRADE_DB } from '../paths.js';
-import { migrate, type Migration } from '../db/migrate.js';
+import { migrate, type Migration } from '../db/sqlite-migrate.js';
 import {
   cleanRebalanceDefaults, cleanRebalanceLimits,
   type RebalanceLimits, type RebalanceRule,

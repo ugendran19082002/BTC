@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { MARKET_DB } from '../paths.js';
-import { migrate, hasColumn, type Migration } from '../db/migrate.js';
+import { migrate, hasColumn, type Migration } from '../db/sqlite-migrate.js';
 
 /**
  * What open interest was, so the board can say what it has changed by.

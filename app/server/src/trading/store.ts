@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { TRADE_DB } from '../paths.js';
 import type { TradeRecord, TradeStore } from './engine.js';
 import type { MtmSample } from './pnl-history.js';
-import { appliedMigrations, migrate, type Migration } from '../db/migrate.js';
+import { appliedMigrations, migrate, type Migration } from '../db/sqlite-migrate.js';
 import { recompute } from './machine.js';
 import type { TradeEvent, TradeState } from './types.js';
 

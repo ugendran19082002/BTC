@@ -19,6 +19,17 @@ import { ERROR_DB, TRADE_DB, AUTH_DB, MARKET_DB } from '../src/paths.js';
 
 const repo = new URL('../../../', import.meta.url).pathname.replace(/\/$/, '');
 
+test('[critical] DATABASE_URL names a throwaway test database while testing', () => {
+  const url = process.env.DATABASE_URL ?? '';
+  const name = new URL(url).pathname.slice(1);
+  assert.match(
+    name,
+    /^btc_test_[0-9a-f]+$/,
+    `DATABASE_URL points at "${name}" — the suite would write to a real database. ` +
+    'Is test/env.ts still preloaded? See the "test" script in package.json.',
+  );
+});
+
 for (const [name, path] of [['ERROR_DB', ERROR_DB], ['TRADE_DB', TRADE_DB], ['AUTH_DB', AUTH_DB], ['MARKET_DB', MARKET_DB]] as const) {
   test(`[critical] ${name} points outside the repository while testing`, () => {
     assert.ok(
