@@ -8,7 +8,6 @@ vi.mock('@/api/desk', () => ({
   getTerm: () => new Promise(() => {}),
   getPerp: () => new Promise(() => {}),
   getChanges: () => new Promise(() => {}),
-  getOptionHistory: () => new Promise(() => {}),
 }));
 
 const data = live as unknown as ChainResponse;
@@ -21,17 +20,20 @@ const data = live as unknown as ChainResponse;
 describe('the decision panels', () => {
   it('draw every panel from a real chain, with the chart and chain left to the screen', () => {
     render(<Overview data={data} trade={null} contracts={1} chain={false} />);
-    for (const t of ['Key levels', 'Volatility', 'Multi-timeframe', 'Model view (12h)', 'Strategy decision', 'Sell recommendation', 'IV term structure', 'Entry → expiry setup', /^Entry checklist/, /^Sell-side risk engine/]) {
+    for (const t of ['Key levels', 'Volatility', 'Multi-timeframe', 'Strategy decision', 'Strikes', 'IV term structure', /^Entry checklist/, /^Sell-side risk engine/]) {
       expect(screen.getByText(t, { selector: 'h3' })).toBeInTheDocument();
     }
     // The settings strip shows every setting the screen decides with, and no order panel: orders have their own tab.
-    for (const l of ['Entry', 'Expiry', 'Horizon', 'Side mode', 'Strictness', 'Risk', 'Probability', 'Execution']) {
+    for (const l of ['Entry', 'Horizon', 'Side mode', 'Strictness', 'Risk', 'Execution', 'Size']) {
       expect(screen.getByText(l, { selector: '.ov-ctx-label' })).toBeInTheDocument();
     }
     expect(screen.queryByText('Order panel', { selector: 'h3' })).toBeNull();
+    // Said once: no model view beside the outlook, no sell recommendation beside the strikes, no entry setup beside the decision card.
+    for (const gone of [/^Model view/, 'Sell recommendation', 'Entry → expiry setup', 'Scenario P&L (−3% … +3%)']) expect(screen.queryByText(gone, { selector: 'h3' })).toBeNull();
+    expect(screen.queryByText('Probability', { selector: '.ov-ctx-label' })).toBeNull();
     // The decision, first and largest: one of the four answers, at the moment of entry.
     expect(screen.getByRole('heading', { level: 2 }).textContent).toMatch(/^(SELL CE|SELL PE|SELL BOTH|NO TRADE)/);
-    for (const t of [/^Early warning/, 'Movement to expiry', /^What changed/, 'Strike finder']) {
+    for (const t of [/^Early warning/, 'Outlook · movement to expiry', /^What changed/]) {
       expect(screen.getByText(t, { selector: 'h3' })).toBeInTheDocument();
     }
     expect(screen.getAllByText(/ENTRY READY|NO TRADE/).length).toBeGreaterThan(0);

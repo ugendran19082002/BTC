@@ -6,20 +6,17 @@ import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import type { ChartTf } from '@/components/desk/PriceChart';
 import {
-  assessBoth, assessSides, ivRv, readiness, riskEngine, sideGates, sideSelector, sideStatusOf, skew,
+  assessBoth, assessSides, expectedMove, ivRv, readiness, riskEngine, sideGates, sideSelector, sideStatusOf, skew,
   type SideAssessment, type SideChoice,
 } from '@/lib/overview';
-import { DEFAULT_CONFIG, expectedMoveBy, thresholds, type ScreenConfig } from '@/lib/screen-config';
+import { DEFAULT_CONFIG, thresholds, type ScreenConfig } from '@/lib/screen-config';
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
 import {
   KeyLevelsPanel, KpiStrip, IvTermPanel, MtfPanel, PriceActionPanel, SkewPanel, TradeFlowPanel, VolatilityPanel,
 } from './MarketPanels';
-import {
-  ChainPanel, ChecklistPanel, findLeg, ModelViewPanel, SelectedStrikePanel, SellRecommendationPanel,
-  StrategyDecisionPanel, type Selected,
-} from './DecisionPanels';
+import { ChainPanel, ChecklistPanel, findLeg, SelectedStrikePanel, StrategyDecisionPanel, type Selected } from './DecisionPanels';
 import { SettingsStrip } from './SettingsStrip';
-import { EntrySetupPanel, RiskEnginePanel } from './RiskPanels';
+import { RiskEnginePanel } from './RiskPanels';
 import { ChangesPanel, DecisionHero, EarlyWarningPanel, MovementPanel, StrikeFinderPanel, useChanges } from './TraderPanels';
 
 /**
@@ -28,6 +25,14 @@ import { ChangesPanel, DecisionHero, EarlyWarningPanel, MovementPanel, StrikeFin
  *
  *   market → price action → option chain → IV / OI / premium → horizons →
  *   CE / PE / both → strike → risk → P&L → entry → exit
+ *
+ * One fact, one place. The decision card owns the answer and the clock
+ * (entry, window, expiry, time left); the KPI strip owns the market's
+ * headline numbers; the left column reads the market (trend, levels,
+ * volatility, the tape); the centre is the board (chart, chain, the strike
+ * under inspection, what changed, its risk); the right column decides
+ * (the outlook by horizon, the sides, the strikes, the checklist). Nothing
+ * is shown twice: a figure the checklist judges is not repeated as a row.
  *
  * Every figure is read from the chain response, the perp feed or the desk's
  * own record, or is arithmetic on them (lib/overview.ts); what is not
@@ -90,9 +95,7 @@ export function Overview({
   const snap = data.snapshot;
   const iv = ivRv(data.structure.atmIv, data.market?.realisedVol ?? null);
   // To settlement, by IV: what every strike's distance and tail is measured in.
-  const emSettle = useMemo(() => expectedMoveBy('IV', snap, data.outlook, config.horizonMin), [snap, data.outlook, config.horizonMin]);
-  // At the configured horizon, by the configured method: what the model view shows.
-  const em = useMemo(() => expectedMoveBy(config.emMethod, snap, data.outlook, config.horizonMin), [snap, data.outlook, config.horizonMin, config.emMethod]);
+  const emSettle = useMemo(() => expectedMove(snap), [snap]);
   const spot = data.market?.spot ?? snap.spot;
 
   // The perpetual (funding, book, the hour's flow, OI acceleration) every five
@@ -148,18 +151,18 @@ export function Overview({
       <SettingsStrip data={data} now={now} config={config} stored={stored} onChange={(patch) => setConfig({ ...stored, ...patch })} onReset={() => setConfig({})}
         choice={choice} contracts={contracts} deskContracts={deskContracts} controls={controls} error={error} />
       <ErrorBoundary where="Decision">
-        <DecisionHero data={data} now={now} choice={choice} sides={sides} ready={ready} leg={leg} contracts={contracts} leverage={leverage} onSell={onSell} />
+        <DecisionHero data={data} now={now} choice={choice} sides={sides} ready={ready} leg={leg} contracts={contracts} leverage={leverage} onSell={onSell} entryIst={config.entryIst} />
       </ErrorBoundary>
-      <ErrorBoundary where="Overview KPIs"><KpiStrip data={data} spot={spot} iv={iv} perp={perp} spark={spark} now={now} horizonMin={config.horizonMin} /></ErrorBoundary>
+      <ErrorBoundary where="Overview KPIs"><KpiStrip data={data} spot={spot} iv={iv} perp={perp} spark={spark} now={now} /></ErrorBoundary>
 
       <div className="ov-main">
         <div className="ov-col">
-          <ErrorBoundary where="Early warning"><EarlyWarningPanel data={data} perp={perp} changes={changes} /></ErrorBoundary>
           <ErrorBoundary where="Price action"><PriceActionPanel market={data.market} tf={chartTf} /></ErrorBoundary>
           <ErrorBoundary where="Multi-timeframe"><MtfPanel data={data} activeTf={chartTf} horizonMin={config.horizonMin} /></ErrorBoundary>
           <ErrorBoundary where="Key levels"><KeyLevelsPanel data={data} spot={spot} /></ErrorBoundary>
           <ErrorBoundary where="Volatility"><VolatilityPanel data={data} iv={iv} /></ErrorBoundary>
           <ErrorBoundary where="Trade flow"><TradeFlowPanel perp={perp} market={data.market} /></ErrorBoundary>
+          <ErrorBoundary where="Early warning"><EarlyWarningPanel data={data} perp={perp} changes={changes?.rows ?? null} /></ErrorBoundary>
         </div>
 
         <div className="ov-col">
@@ -170,22 +173,18 @@ export function Overview({
             </ErrorBoundary>
           )}
           <ErrorBoundary where="Selected strike">
-            <SelectedStrikePanel data={data} leg={leg} em={emSettle} iv={iv} contracts={contracts} ivRank={term?.iv ?? null} probabilityMode={config.probabilityMode} />
+            <SelectedStrikePanel data={data} leg={leg} em={emSettle} contracts={contracts} ivRank={term?.iv ?? null} momentum={changes?.momentum ?? null} />
           </ErrorBoundary>
-          <ErrorBoundary where="What changed"><ChangesPanel leg={leg} rows={changes} /></ErrorBoundary>
+          <ErrorBoundary where="What changed"><ChangesPanel leg={leg} rows={changes?.rows ?? null} /></ErrorBoundary>
           <ErrorBoundary where="Risk engine"><RiskEnginePanel leg={leg} risk={risk} contracts={contracts} /></ErrorBoundary>
         </div>
 
         <div className="ov-col ov-right">
-          <ErrorBoundary where="Entry setup"><EntrySetupPanel data={data} now={now} entryIst={config.entryIst} /></ErrorBoundary>
-          <ErrorBoundary where="Model view"><ModelViewPanel data={data} iv={iv} horizonMin={config.horizonMin} em={em} /></ErrorBoundary>
-          <ErrorBoundary where="Movement"><MovementPanel data={data} em={emSettle} activeMin={config.horizonMin} /></ErrorBoundary>
+          <ErrorBoundary where="Outlook"><MovementPanel data={data} em={emSettle} activeMin={config.horizonMin} /></ErrorBoundary>
           <ErrorBoundary where="Strategy decision"><StrategyDecisionPanel data={data} sides={sides} both={both} choice={choice} onSelect={setPicked} /></ErrorBoundary>
-          <ErrorBoundary where="Strike finder">
-            <StrikeFinderPanel data={data} onSelect={(cp, strike) => setPicked({ cp, strike })} onSell={onSell} contracts={contracts} leverage={leverage} defaultSide={choice.side === 'CE' ? 'C' : choice.side === 'PE' ? 'P' : 'both'} />
-          </ErrorBoundary>
-          <ErrorBoundary where="Sell recommendation">
-            <SellRecommendationPanel data={data} onSelect={setPicked} onSell={onSell} leverage={leverage} contracts={contracts} iv={iv} em={emSettle} first={choice.side === 'CE' ? 'C' : 'P'} execution={config.execution} />
+          <ErrorBoundary where="Strikes">
+            <StrikeFinderPanel data={data} onSelect={(cp, strike) => setPicked({ cp, strike })} onSell={onSell} contracts={contracts} leverage={leverage}
+              defaultSide={choice.side === 'CE' ? 'C' : choice.side === 'PE' ? 'P' : 'both'} em={emSettle} execution={config.execution} />
           </ErrorBoundary>
           <ErrorBoundary where="Checklist"><ChecklistPanel leg={leg} ready={ready} onSell={onSell} /></ErrorBoundary>
         </div>
