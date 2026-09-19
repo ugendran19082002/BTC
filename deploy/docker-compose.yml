@@ -180,7 +180,7 @@ services:
   # the account to use day to day is `desk_ro`, which cannot write.
   adminer:
     profiles: ["admin"]
-    image: adminer:5.5.1-standalone
+    image: adminer:6.0.1-standalone
     restart: "no"
     depends_on:
       db:
@@ -194,6 +194,10 @@ services:
       # are deliberately not used: they make the entrypoint write into the
       # image, and the root filesystem here is read-only.
       - ./adminer/plugins-enabled:/var/www/html/plugins-enabled:ro
+      # The look: pepa-linha in light mode, dracula when the viewer's system is
+      # dark. Vendored from the image's own designs/, so they match its checksums.
+      - ./adminer/theme/adminer.css:/var/www/html/adminer.css:ro
+      - ./adminer/theme/adminer-dark.css:/var/www/html/adminer-dark.css:ro
     # On the docker bridge address only: the edge proxy reaches it as
     # host.docker.internal:8098; the internet cannot, and neither can
     # anything that only has the host's public address.
