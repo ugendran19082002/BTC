@@ -1,9 +1,8 @@
-import { beforeEach, test } from 'node:test';
+import { after, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 
 /**
  * Signing in, end to end, through the real routes and the real gate.
@@ -26,6 +25,7 @@ const { AuthStore } = await import('../../src/auth/store.js');
 const { Secrets } = await import('../../src/auth/secrets.js');
 const { hashPassword, COOKIE } = await import('../../src/http/session.js');
 const { totp, base32Decode } = await import('../../src/auth/totp.js');
+const { closePool, query, rows } = await import('../../src/db/pool.js');
 
 const PASSWORD = 'a long private passphrase';
 const T0 = Date.UTC(2026, 8, 11, 6, 0, 0);
@@ -34,19 +34,21 @@ type App = Awaited<ReturnType<typeof buildApp>>;
 let app: App;
 let clock: number;
 let store: InstanceType<typeof AuthStore>;
-let dbPath: string;
 let alerts: string[];
 
+/** One database for the file; every case starts with the auth tables empty and one seeded user. */
 async function fresh() {
   clock = T0;
   alerts = [];
-  dbPath = join(mkdtempSync(join(dir, 'db-')), 'auth.db');
-  store = new AuthStore(dbPath);
-  store.seedUser('ugendran', hashPassword(PASSWORD), clock);
+  if (app) await app.close();
+  store = await AuthStore.open();
+  await query('TRUNCATE auth.user, auth.sessions, auth.recovery_codes, auth.limits, auth.events');
+  await store.seedUser('ugendran', hashPassword(PASSWORD), clock);
   const auth = new AuthService({ store, secrets: new Secrets('test-master-secret'), now: () => clock, onAlert: (t) => alerts.push(t) });
   app = await buildApp({ auth, now: () => clock });
 }
 beforeEach(fresh);
+after(async () => { await app?.close(); await closePool(); });
 
 const tick = (ms: number) => { clock += ms; };
 const cookieFrom = (r: { headers: Record<string, unknown> }) => {
@@ -113,7 +115,7 @@ test('[critical] setup shows a QR code and a key for the authenticator app', asy
 test('[critical] the secret is stored sealed, never as it was shown', async () => {
   const token = tokenFrom(await login());
   const { secret } = (await app.inject({ method: 'GET', url: '/api/security/setup', headers: jar(token) })).json() as { secret: string };
-  const u = store.user()!;
+  const u = (await store.user())!;
   assert.ok(u.totpPending);
   assert.doesNotMatch(u.totpPending!, new RegExp(secret));
 });
@@ -123,7 +125,7 @@ test('[critical] a wrong code does not turn it on; the right one does, and opens
   const { secret } = (await app.inject({ method: 'GET', url: '/api/security/setup', headers: jar(token) })).json() as { secret: string };
   const wrong = await app.inject({ method: 'POST', url: '/api/security/enable', payload: { code: '000000' === totp(secret, clock) ? '111111' : '000000' }, headers: jar(token) });
   assert.equal(wrong.statusCode, 401);
-  assert.equal(store.user()!.totpSecret, null);
+  assert.equal((await store.user())!.totpSecret, null);
 
   const right = await app.inject({ method: 'POST', url: '/api/security/enable', payload: { code: totp(secret, clock) }, headers: jar(token) });
   assert.equal(right.statusCode, 200);
@@ -254,12 +256,8 @@ test('the account page says when this sign-in ends, a week out', async () => {
 });
 
 /** Every session row, live or not -- the store has no reader for ended ones, and the product needs none. */
-const sessionRows = () => {
-  const db = new DatabaseSync(dbPath, { readOnly: true });
-  try {
-    return db.prepare("SELECT revoked_at, expires_at FROM auth_sessions WHERE stage = 'full'").all() as { revoked_at: number | null; expires_at: number }[];
-  } finally { db.close(); }
-};
+const sessionRows = () =>
+  rows<{ revoked_at: number | null; expires_at: number }>("SELECT revoked_at, expires_at FROM auth.sessions WHERE stage = 'full'");
 
 test('an ended session is kept a week after it ENDED, then pruned -- not a week after sign-in', async () => {
   const { secret, token: phone } = await firstSignIn();
@@ -271,22 +269,22 @@ test('an ended session is kept a week after it ENDED, then pruned -- not a week 
   const revokedAt = clock;
   tick(86_400_000 - 60_000);
   await account(phone);
-  assert.equal(sessionRows().length, 2, 'day 7: both rows still there, the revoked one included');
+  assert.equal((await sessionRows()).length, 2, 'day 7: both rows still there, the revoked one included');
   // the phone's own session ends; a fresh sign-in keeps the store's prune running
   tick(120_000);
   const { token: tablet } = await signIn(secret);
   await account(tablet);
-  assert.equal(sessionRows().filter((r) => r.revoked_at !== null).length, 1, 'six days after logging out, the row is kept');
-  assert.equal(sessionRows().length, 3, 'and the expired phone session too, for now');
+  assert.equal((await sessionRows()).filter((r) => r.revoked_at !== null).length, 1, 'six days after logging out, the row is kept');
+  assert.equal((await sessionRows()).length, 3, 'and the expired phone session too, for now');
   tick(revokedAt + 7 * 86_400_000 - clock + 1);
   await account(tablet);
-  const rows = sessionRows();
+  const rows = await sessionRows();
   assert.equal(rows.filter((r) => r.revoked_at !== null).length, 0, 'a week after logging out, gone');
   assert.equal(rows.filter((r) => r.expires_at < clock).length, 1, 'the phone expired later than the laptop logged out, so it stays a little longer');
   const phoneExpired = T0 + SESSION_MS;
   tick(phoneExpired + 7 * 86_400_000 + 1 - clock);
   await account(tablet);
-  assert.equal(sessionRows().filter((r) => r.expires_at < clock).length, 0, 'and a week after the phone expired, it goes too');
+  assert.equal((await sessionRows()).filter((r) => r.expires_at < clock).length, 0, 'and a week after the phone expired, it goes too');
 });
 
 test('[critical] logging out ends the session on the server, not just in the browser', async () => {
@@ -299,7 +297,7 @@ test('[critical] logging out ends the session on the server, not just in the bro
 
 test('only the hash of a token is stored', async () => {
   const { token } = await firstSignIn();
-  const s = store.session(token, clock)!;
+  const s = (await store.session(token, clock))!;
   assert.notEqual(s.tokenHash, token);
   assert.equal(s.tokenHash.length, 64);
 });
@@ -444,8 +442,8 @@ test('a wrong username answers exactly like a wrong password', async () => {
 });
 
 test('with no user and no secret, the desk refuses everything but health and /api/me', async () => {
-  const empty = new AuthStore(join(mkdtempSync(join(dir, 'db-')), 'auth.db'));
-  const bare = await buildApp({ auth: new AuthService({ store: empty, secrets: null, now: () => clock }) });
+  await query('TRUNCATE auth.user');
+  const bare = await buildApp({ auth: new AuthService({ store, secrets: null, now: () => clock }) });
   assert.equal((await bare.inject({ method: 'GET', url: '/api/strategies' })).statusCode, 503);
   assert.equal((await bare.inject({ method: 'POST', url: '/api/login', payload: { username: 'x', password: 'y' } })).statusCode, 503);
   assert.equal((await bare.inject({ method: 'GET', url: '/api/health' })).statusCode, 200);

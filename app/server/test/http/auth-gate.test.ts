@@ -22,15 +22,16 @@ const { buildApp } = await import('../../src/http/app.js');
 const { AuthService } = await import('../../src/auth/service.js');
 const { AuthStore } = await import('../../src/auth/store.js');
 const { Secrets } = await import('../../src/auth/secrets.js');
+const { closePool } = await import('../../src/db/pool.js');
 
 type App = Awaited<ReturnType<typeof buildApp>>;
 let app: App;
-const store = new AuthStore(join(dir, 'auth.db'));
-store.seedUser('desk', hashPassword('correct horse battery'), Date.now());
+const store = await AuthStore.open();
+await store.seedUser('desk', hashPassword('correct horse battery'), Date.now());
 // a fully signed-in session, written as sign-in would write it
-store.createSession({ token: 'full-session-token', stage: 'full', now: Date.now(), ttlMs: 3_600_000, ip: null, userAgent: null });
+await store.createSession({ token: 'full-session-token', stage: 'full', now: Date.now(), ttlMs: 3_600_000, ip: null, userAgent: null });
 before(async () => { app = await buildApp({ auth: new AuthService({ store, secrets: new Secrets('test-secret'), now: Date.now }) }); });
-after(async () => { await app.close(); });
+after(async () => { await app.close(); await closePool(); });
 
 const session = () => `${COOKIE}=${encodeURIComponent('full-session-token')}`;
 

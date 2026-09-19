@@ -70,13 +70,14 @@ const { AuthService } = await import('../../src/auth/service.js');
 const { AuthStore } = await import('../../src/auth/store.js');
 const { Secrets } = await import('../../src/auth/secrets.js');
 const { tradingService } = await import('../../src/trading/service.js');
+const { closePool } = await import('../../src/db/pool.js');
 
 type App = Awaited<ReturnType<typeof buildApp>>;
 let app: App;
 let base = '';
-const store = new AuthStore(join(dir, 'auth.db'));
-store.seedUser('desk', hashPassword('correct horse battery'), Date.now());
-store.createSession({ token: 'full-session-token', stage: 'full', now: Date.now(), ttlMs: 3_600_000, ip: null, userAgent: null });
+const store = await AuthStore.open();
+await store.seedUser('desk', hashPassword('correct horse battery'), Date.now());
+await store.createSession({ token: 'full-session-token', stage: 'full', now: Date.now(), ttlMs: 3_600_000, ip: null, userAgent: null });
 before(async () => {
   app = await buildApp({ auth: new AuthService({ store, secrets: new Secrets('test-secret'), now: Date.now }) });
   // No exchange in a test: the price the stream publishes is canned.
@@ -89,7 +90,7 @@ before(async () => {
   const addr = app.server.address();
   base = typeof addr === 'object' && addr ? `http://127.0.0.1:${addr.port}` : '';
 });
-after(async () => { tradingService().stop(); await app.close(); });
+after(async () => { tradingService().stop(); await app.close(); await closePool(); });
 
 test('[critical] the stream is behind the gate like every other route', async () => {
   const r = await fetch(`${base}/api/stream`);
