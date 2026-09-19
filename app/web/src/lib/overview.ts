@@ -1016,7 +1016,7 @@ export type EarlyWarning = {
  * went 5.6 → 101.9 inside one hour, five hours after entry.
  */
 export function earlyWarning(input: {
-  flow: { aggressorBuyPct: number | null; cvd: { at: number; cvd: number }[]; minutesCovered: number } | null;
+  flow: { aggressorBuyPct: number | null; cvd: { at: number; cvd: number }[]; minutesCovered: number; totalVolume?: number } | null;
   book: { imbalance: number | null } | null;
   oi: { ceChange1h: number | null; peChange1h: number | null; ceAcceleration: number | null; peAcceleration: number | null } | null;
   funding: number | null;
@@ -1032,9 +1032,12 @@ export function earlyWarning(input: {
   const em15 = outlook.rows.find((r) => r.minutes === 15);
   const em15Pct = em15?.impliedUsd != null && em15.spot > 0 ? (em15.impliedUsd / em15.spot) * 100 : null;
   const tail = flow ? flow.cvd.slice(-15) : [];
-  const slope = tail.length >= 2 ? (tail[tail.length - 1]!.cvd - tail[0]!.cvd) / (tail.length - 1) : null;
-  const totalPerMin = flow && flow.minutesCovered > 0 ? null : null;
-  void totalPerMin;
+  const slope = tail.length >= 6 ? (tail[tail.length - 1]!.cvd - tail[0]!.cvd) / (tail.length - 1) : null;
+  // The slope means nothing in raw contracts: a busy tape has a big CVD either way. Against the tape's own pace.
+  const perMin = flow && flow.totalVolume !== undefined && flow.minutesCovered > 0 ? flow.totalVolume / flow.minutesCovered : null;
+  const slopeShare = slope !== null && perMin !== null && perMin > 0 ? slope / perMin : null;
+  // A 15-minute implied move is small; under a quarter percent nothing is "expanding".
+  const rangeAt = em15Pct === null ? null : Math.max(0.25, 0.6 * em15Pct);
   const accel = oi ? Math.max(Math.abs(oi.ceAcceleration ?? 0), Math.abs(oi.peAcceleration ?? 0)) : null;
   const change = oi ? Math.max(Math.abs(oi.ceChange1h ?? 0), Math.abs(oi.peChange1h ?? 0)) : null;
   const t: Trigger[] = [
@@ -1042,14 +1045,14 @@ export function earlyWarning(input: {
       fired: burst === null ? null : burst >= 2, weight: 2 },
     { name: 'One-sided aggressors', value: flow?.aggressorBuyPct == null ? '—' : `${(flow.aggressorBuyPct * 100).toFixed(0)}% buys`, threshold: '≥ 65% or ≤ 35%', formula: 'buy volume ÷ (buy + sell), aggressor side, last hour',
       fired: flow?.aggressorBuyPct == null ? null : flow.aggressorBuyPct >= 0.65 || flow.aggressorBuyPct <= 0.35, weight: 2 },
-    { name: 'CVD slope', value: slope === null ? '—' : `${slope >= 0 ? '+' : ''}${slope.toFixed(0)} ct/min`, threshold: '|slope| ≥ 20 ct/min', formula: '(CVD now − CVD 15m ago) ÷ 15',
-      fired: slope === null ? null : Math.abs(slope) >= 20, weight: 1 },
+    { name: 'CVD slope', value: slope === null ? '—' : `${slope >= 0 ? '+' : ''}${slope.toFixed(0)} ct/min${slopeShare === null ? '' : ` (${(slopeShare * 100).toFixed(0)}% of pace)`}`, threshold: '|slope| ≥ 40% of the tape\'s pace', formula: '(CVD now − CVD 15m ago) ÷ 15, against volume per minute over the hour; needs six minutes of prints',
+      fired: slopeShare === null ? null : Math.abs(slopeShare) >= 0.4, weight: 1 },
     { name: 'OI accelerating', value: accel === null ? '—' : `${accel.toFixed(0)} ct of ${change?.toFixed(0) ?? '—'}`, threshold: '≥ half the hour\'s change', formula: 'OI change over the hour − the same reading an hour earlier',
       fired: accel === null || change === null || change === 0 ? null : accel >= 0.5 * change && change >= 200, weight: 1 },
     { name: 'IV jumping', value: input.atmIvChange15mPts === null ? '—' : `${input.atmIvChange15mPts >= 0 ? '+' : ''}${input.atmIvChange15mPts.toFixed(1)} pts / 15m`, threshold: '≥ +2 pts', formula: 'ATM IV now − ATM IV 15m ago',
       fired: input.atmIvChange15mPts === null ? null : input.atmIvChange15mPts >= 2, weight: 2 },
-    { name: 'Range expanding', value: move15 === null ? '—' : `${move15 >= 0 ? '+' : ''}${move15.toFixed(2)}% / 15m`, threshold: em15Pct === null ? '≥ 0.6 × EM(15m)' : `≥ ${(0.6 * em15Pct).toFixed(2)}%`, formula: '|BTC move over 15m| ≥ 0.6 × (spot × IV × √(15m / 1y))',
-      fired: move15 === null || em15Pct === null ? null : Math.abs(move15) >= 0.6 * em15Pct, weight: 2 },
+    { name: 'Range expanding', value: move15 === null ? '—' : `${move15 >= 0 ? '+' : ''}${move15.toFixed(2)}% / 15m`, threshold: rangeAt === null ? '≥ 0.6 × EM(15m), at least 0.25%' : `≥ ${rangeAt.toFixed(2)}%`, formula: '|BTC move over 15m| ≥ 0.6 × (spot × IV × √(15m / 1y)), and never under 0.25%',
+      fired: move15 === null || rangeAt === null ? null : Math.abs(move15) >= rangeAt, weight: 2 },
     { name: 'Book leaning', value: book?.imbalance == null ? '—' : `${(book.imbalance * 100).toFixed(0)}%`, threshold: '|imbalance| ≥ 30%', formula: '(bid depth − ask depth) ÷ (bid + ask), 20 levels',
       fired: book?.imbalance == null ? null : Math.abs(book.imbalance) >= 0.3, weight: 1 },
     { name: 'Wing premium jumping', value: input.markChange15mPct === null ? '—' : `${input.markChange15mPct >= 0 ? '+' : ''}${input.markChange15mPct.toFixed(0)}% / 15m`, threshold: '≥ +30%', formula: 'selected strike mark now ÷ mark 15m ago − 1',
@@ -1061,9 +1064,10 @@ export function earlyWarning(input: {
   const wsum = readable.reduce((a, x) => a + x.weight, 0);
   const score = wsum === 0 ? null : readable.reduce((a, x) => a + (x.fired ? x.weight : 0), 0) / wsum;
   const band: EarlyWarning['band'] = score === null ? 'calm' : score >= 0.6 ? 'sudden' : score >= 0.4 ? 'high' : score >= 0.2 ? 'watch' : 'calm';
-  const up = (flow?.aggressorBuyPct ?? 0.5) > 0.55 ? 1 : 0, down = (flow?.aggressorBuyPct ?? 0.5) < 0.45 ? 1 : 0;
-  const oiUp = oi && (oi.peChange1h ?? 0) > (oi.ceChange1h ?? 0) ? 1 : 0;
-  const lean: -1 | 0 | 1 = up + oiUp > down + (1 - oiUp) ? 1 : down + (1 - oiUp) > up + oiUp ? -1 : 0;
+  // Which way: aggressors lifting offers lean up; puts being written faster than calls lean up (the crowd sells the dip).
+  const flowLean = flow?.aggressorBuyPct == null ? 0 : flow.aggressorBuyPct > 0.55 ? 1 : flow.aggressorBuyPct < 0.45 ? -1 : 0;
+  const oiLean = oi && oi.peChange1h !== null && oi.ceChange1h !== null ? Math.sign(oi.peChange1h - oi.ceChange1h) : 0;
+  const lean: -1 | 0 | 1 = Math.sign(flowLean + oiLean) as -1 | 0 | 1;
   const action = band === 'sudden' ? 'Move starting: no new naked sells; hedge or close the threatened side now.'
     : band === 'high' ? 'Pressure building: only sell beyond the wall, half size, with the wing bought.'
       : band === 'watch' ? 'Something stirring: tighten stops, keep size to the risk mode.'

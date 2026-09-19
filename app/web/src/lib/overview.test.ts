@@ -354,7 +354,7 @@ describe('early warning', () => {
   it('[critical] a calm tape fires nothing; one-sided flow with a jumping wing and IV reads as a move starting', () => {
     const calm = earlyWarning(quiet);
     expect(calm.triggers.filter((t) => t.fired === true).length).toBeLessThanOrEqual(1);
-    const hot = earlyWarning({ ...quiet, flow: { aggressorBuyPct: 0.8, cvd: Array.from({ length: 16 }, (_, i) => ({ at: i, cvd: i * 40 })), minutesCovered: 60 }, book: { imbalance: 0.4 }, markChange15mPct: 60, atmIvChange15mPts: 3, funding: 0.08 });
+    const hot = earlyWarning({ ...quiet, flow: { aggressorBuyPct: 0.8, cvd: Array.from({ length: 16 }, (_, i) => ({ at: i, cvd: i * 40 })), minutesCovered: 60, totalVolume: 3000 }, book: { imbalance: 0.4 }, markChange15mPct: 60, atmIvChange15mPts: 3, funding: 0.08 });
     expect(hot.triggers.filter((t) => t.fired === true).length).toBeGreaterThanOrEqual(5);
     expect(['high', 'sudden']).toContain(hot.band);
     expect(hot.lean).toBe(1);
