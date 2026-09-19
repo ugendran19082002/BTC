@@ -146,15 +146,15 @@ outlook row, market and moves, best pick) are no longer drawn there.
 
 | File | Lines | What it is for |
 |---|---:|---|
-| `lib/overview.ts` | 900 | The arithmetic: IV vs RV, skew, expected move, premium analysis, odds, payoff, margin and fees, the sides assessed gate by gate, the side selector, both-sides safety, the risk engine, shocks, the 24-gate readiness, the position state ladder, momentum, horizons, the MTF table. Pure; 50 tests. |
-| `overview/Overview.tsx` | 130 | Lays the panels out and polls `/api/perp` and `/api/term`. Chart and compact chain optional; the selected strike can be owned by the screen. |
-| `overview/MarketPanels.tsx` | 300 | Market strip (spot, perp, funding, OI, volume, IV, PCR, regime, horizon odds), price action (trend, structure, RSI, MACD, VWAP, EMAs, ATR), key levels, volatility (RV 1h/6h/12h/21d, regime), trade flow and book, IV term structure with its history, skew with its percentile. |
-| `overview/DecisionPanels.tsx` | 430 | Selected strike (metrics / probability / payoff / momentum), model view, strategy decision with both-sides safety, sell recommendation with margin and return on margin, entry checklist with the risk gate, order panel with fees and margin, status bar with margin used. |
-| `overview/parts.tsx` | 68 | Panel, row, tag, probability bar, number formats. |
-| `overview/TraderPanels.tsx` | 260 | The decision hero (SELL CE / SELL PE / SELL BOTH / NO TRADE at the moment of entry), the early-warning panel with its triggers, thresholds, formulas and the 28 Aug 2025 reference case, movement to expiry with the board read, the what-changed table over 1m…12h, the strike finder with filters. |
-| `overview/SettingsStrip.tsx` | 190 | The strip above the chart: brand, IST clock, live pill, mode / refresh controls, presets (Conservative / Balanced / Aggressive), reset, a glossary, and every setting the screen decides with, grouped Time / Model / Rules / Pricing with what each does on hover and a plain-numbers line of what the current mode allows. |
-| `overview/RiskPanels.tsx` | 250 | Entry → expiry setup, the expected move by horizon, the sell-side risk engine with the shock row, the side cards with PASS / FAIL gates. |
-| `lib/screen-config.ts` | 110 | The operator's settings and what they set: thresholds by risk mode and strictness, the probability label, the expected move by method, the entry window. |
+| `lib/overview.ts` | 1100 | The arithmetic: IV vs RV, skew, expected move, premium analysis, odds, payoff, margin and fees, the sides assessed gate by gate, the side selector, both-sides safety, the risk engine, shocks, the 24-gate readiness, the position state ladder, horizons, the early warning, the strike finder. Pure; 50 tests. |
+| `overview/Overview.tsx` | 190 | Lays the screen out — one fact, one place: the bar, the KPI strip, three columns (market read · board · decision) — and polls `/api/perp`, `/api/term` and `/api/changes`. Decides with the fixed `DEFAULT_CONFIG`. Chart and compact chain optional; the selected strike can be owned by the screen. |
+| `overview/MarketPanels.tsx` | 340 | KPI strip (spot, perp, funding, OI, volume, IV vs RV, PCR, regime), price action (trend, structure, RSI, MACD, VWAP, EMAs, ADX), key levels, volatility (RV 1h/6h/12h/21d, IV − RV, ATR, regime), trade flow and book, IV term structure with its history, skew with its percentile. Charts draw in pixels at their box width (`useWidth`). |
+| `overview/DecisionPanels.tsx` | 340 | The compact option chain (near ATM / all / walls / recommended, quotes or greeks), the selected strike (greeks with their dollar meaning on hover; metrics / probability / payoff), the strategy decision with the two side cards, the entry checklist by section (failing and unreadable open, passed folded). |
+| `overview/parts.tsx` | 104 | Panel, row, tag, fold, probability bar, number formats, `useWidth`. |
+| `overview/TraderPanels.tsx` | 225 | The early-warning panel with its triggers, thresholds, formulas and the 28 Aug 2025 reference case; the outlook (movement to expiry by horizon, with the board read); the what-changed table over 1m…12h with the premium's momentum from the same request; the strikes table (the desk's picks, or the finder's filters) with Sell. |
+| `overview/ScreenBar.tsx` | 77 | The bar above the screen: brand, IST clock, live pill, the expiry list, the contract's day (entry now · window · expiry · time left), mode / refresh controls, a glossary. |
+| `overview/RiskPanels.tsx` | 89 | The sell-side risk engine with the shock row and the decay curve; the CE / PE side cards with their PASS / FAIL gates. |
+| `lib/screen-config.ts` | 64 | The desk's fixed configuration (horizon, entry window, strictness, risk mode, side mode, execution, freshness, size) and the thresholds it sets. No UI changes it. |
 
 ### Shared UI (`components/ui/`) — 14 files, ~640 lines
 
