@@ -105,8 +105,8 @@ export function PriceActionPanel({ market }: { market: MarketRead | null }) {
           <Row label="RSI (14)" value={fmt.n(tf.rsi14, 1)} tone={tf.rsi14 === null ? undefined : tf.rsi14 >= 70 || tf.rsi14 <= 30 ? 'warn' : undefined} />
           <Row label="MACD (12, 26, 9)" value={macd ? `${macd.hist >= 0 ? 'bullish' : 'bearish'} · ${fmt.signed(macd.hist, 1)}` : '—'}
             tone={macd ? (macd.hist >= 0 ? 'up' : 'down') : undefined} hint={macd ? `line ${macd.line.toFixed(1)} · signal ${macd.signal.toFixed(1)}` : undefined} />
-          <Row label="VWAP" value={tf.vwap === null ? '—' : `${fmt.n(tf.vwap, 1)} (${fmt.signed(tf.vwapDistPct, 2)}%)`}
-            tone={tf.vwapDistPct === null ? undefined : tf.vwapDistPct >= 0 ? 'up' : 'down'} hint="Price against the volume-weighted average of the bars read" />
+          <Row label="VWAP" value={tf.vwap == null ? '—' : `${fmt.n(tf.vwap, 1)} (${fmt.signed(tf.vwapDistPct, 2)}%)`}
+            tone={tf.vwapDistPct == null ? undefined : tf.vwapDistPct >= 0 ? 'up' : 'down'} hint="Price against the volume-weighted average of the bars read" />
           <Row label="EMA 9 / 21 / 50" value={`${fmt.n(tf.ema9)} / ${fmt.n(tf.ema21)} / ${fmt.n(tf.ema50)}`} tone={tf.ema9 !== null && tf.ema21 !== null ? (tf.ema9 > tf.ema21 ? 'up' : 'down') : undefined} />
           <Row label="ATR (14)" value={tf.atrPct === null ? '—' : `${fmt.n(tf.close * tf.atrPct / 100)} (${tf.atrPct.toFixed(2)}%)`} />
           <Row label="Timeframes (5m…1d)" value={`${fmt.signed(market?.agreement ?? 0)} of ${market?.timeframes.length ?? 0}`}

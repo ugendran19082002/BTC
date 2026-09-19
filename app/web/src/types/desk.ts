@@ -117,6 +117,14 @@ export type TimeframeRead = {
   ema21: number | null;
   ema50: number | null;
   rsi14: number | null;
+  /** RSI now less RSI one bar ago. */
+  rsiSlope?: number | null;
+  adx14?: number | null;
+  /** Volume-weighted average price over the bars read, and price against it as a percentage. */
+  vwap?: number | null;
+  vwapDistPct?: number | null;
+  /** Swing structure: +1 higher highs and higher lows, -1 the mirror, 0 neither. */
+  structure?: -1 | 0 | 1;
   atrPct: number | null;
   trend: -1 | 0 | 1;
   label: string;

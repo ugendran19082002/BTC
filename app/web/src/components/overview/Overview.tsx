@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { ChainResponse, ExpiryOption, Leg } from '@/types/desk';
 import type { TradeStatus } from '@/types/trade';
-import { expectedMove, ivRv } from '@/lib/overview';
+import { getPerp, getTerm } from '@/api/desk';
+import { usePoll } from '@/hooks/usePoll';
+import { expectedMove, ivRv, skew } from '@/lib/overview';
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
 import {
   KeyLevelsPanel, KpiStrip, IvTermPanel, PriceActionPanel, SkewPanel, TradeFlowPanel, VolatilityPanel,
@@ -30,15 +32,20 @@ import {
  * shown as not captured. Nothing here places an order: the button opens the
  * same ticket as the board, and the server runs every gate again.
  */
-export function Overview({ data, trade, expiries, onExpiry, onSell, contracts, chart, chain = true, selected: selectedProp, onSelect }: {
+export function Overview({
+  data, trade, expiries, onExpiry, onSell, contracts, leverage = 200, chart, chain = true, selected: selectedProp, onSelect, spark,
+}: {
   data: ChainResponse;
   trade: TradeStatus | null;
   expiries?: readonly ExpiryOption[];
   onExpiry?: (expiry: string) => void;
   /** Opens the order ticket. Absent on a past snapshot. */
   onSell?: (leg: Leg) => void;
-  /** The trade size the desk is set to, in contracts. */
+  /** The trade size the desk is set to, in contracts, and the ticket's leverage (for the margin estimates). */
   contracts: number;
+  leverage?: number;
+  /** Recent closes for the spot KPI's sparkline. */
+  spark?: readonly number[];
   /** A price chart for the centre column; none where the screen has its own. */
   chart?: ReactNode;
   /** Draw the compact chain. Off where the screen has the full board. */
@@ -73,16 +80,22 @@ export function Overview({ data, trade, expiries, onExpiry, onSell, contracts, c
   const em = expectedMove(data.snapshot);
   const spot = data.market?.spot ?? data.snapshot.spot;
 
+  // The perpetual (funding, book, the hour's flow) every five seconds; the
+  // term structure and the skew's rank once a minute -- they move slowly.
+  const { data: perp } = usePoll(() => getPerp(60), 5_000, { enabled: data.snapshot.live });
+  const skewPts = useMemo(() => skew(data.legs, data.structure.atmIv).putCallPts, [data.legs, data.structure.atmIv]);
+  const { data: term, error: termError } = usePoll(() => getTerm(skewPts), 60_000, { deps: [skewPts === null] });
+
   return (
     <div className="ov">
-      <ErrorBoundary where="Overview KPIs"><KpiStrip data={data} spot={spot} iv={iv} /></ErrorBoundary>
+      <ErrorBoundary where="Overview KPIs"><KpiStrip data={data} spot={spot} iv={iv} perp={perp} spark={spark} /></ErrorBoundary>
 
       <div className="ov-main">
         <div className="ov-col">
           <ErrorBoundary where="Price action"><PriceActionPanel market={data.market} /></ErrorBoundary>
           <ErrorBoundary where="Key levels"><KeyLevelsPanel data={data} spot={spot} /></ErrorBoundary>
           <ErrorBoundary where="Volatility"><VolatilityPanel data={data} iv={iv} /></ErrorBoundary>
-          <ErrorBoundary where="Trade flow"><TradeFlowPanel /></ErrorBoundary>
+          <ErrorBoundary where="Trade flow"><TradeFlowPanel perp={perp} /></ErrorBoundary>
         </div>
 
         <div className="ov-col">
@@ -100,18 +113,18 @@ export function Overview({ data, trade, expiries, onExpiry, onSell, contracts, c
         <div className="ov-col ov-right">
           <ErrorBoundary where="Model view"><ModelViewPanel data={data} iv={iv} /></ErrorBoundary>
           <ErrorBoundary where="Strategy decision"><StrategyDecisionPanel data={data} iv={iv} onSelect={setPicked} /></ErrorBoundary>
-          <ErrorBoundary where="Sell recommendation"><SellRecommendationPanel data={data} onSelect={setPicked} onSell={onSell} /></ErrorBoundary>
-          <ErrorBoundary where="Entry"><EntryPanel data={data} leg={leg} iv={iv} trade={trade} onSell={onSell} now={now} contracts={contracts} /></ErrorBoundary>
+          <ErrorBoundary where="Sell recommendation"><SellRecommendationPanel data={data} onSelect={setPicked} onSell={onSell} leverage={leverage} contracts={contracts} /></ErrorBoundary>
+          <ErrorBoundary where="Entry"><EntryPanel data={data} leg={leg} iv={iv} trade={trade} onSell={onSell} now={now} contracts={contracts} leverage={leverage} /></ErrorBoundary>
         </div>
       </div>
 
       <div className="ov-bottom">
-        <ErrorBoundary where="IV term structure"><IvTermPanel /></ErrorBoundary>
-        <ErrorBoundary where="Skew"><SkewPanel data={data} /></ErrorBoundary>
+        <ErrorBoundary where="IV term structure"><IvTermPanel term={term} error={Boolean(termError)} /></ErrorBoundary>
+        <ErrorBoundary where="Skew"><SkewPanel data={data} rank={term?.skew ?? null} /></ErrorBoundary>
         <ErrorBoundary where="Scenario P&L"><ScenarioPanel data={data} leg={leg} contracts={contracts} /></ErrorBoundary>
       </div>
 
-      <StatusBar data={data} trade={trade} now={now} />
+      <StatusBar data={data} trade={trade} now={now} leverage={leverage} />
     </div>
   );
 }

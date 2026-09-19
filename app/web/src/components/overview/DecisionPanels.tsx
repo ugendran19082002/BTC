@@ -3,8 +3,8 @@ import type { ChainResponse, Leg } from '@/types/desk';
 import type { TradeStatus } from '@/types/trade';
 import { getOptionHistory, type OptionHistoryPoint } from '@/api/desk';
 import {
-  allClear, breakeven, candidates, consensus, entryGates, expectedMove, modelView, odds, payoffPrices,
-  premiumAnalysis, shortPayoff, sideCards, CONTRACT_BTC, type ExpectedMove, type IvRv,
+  allClear, bothSides, breakeven, candidates, consensus, entryGates, expectedMove, marginPerContract, modelView, odds,
+  orderEstimate, payoffPrices, premiumAnalysis, shortPayoff, sideCards, CONTRACT_BTC, type ExpectedMove, type IvRv,
 } from '@/lib/overview';
 import { fmt, Panel, ProbBar, Row, Tag } from './parts';
 
@@ -271,6 +271,7 @@ export function ModelViewPanel({ data, iv }: { data: ChainResponse; iv: IvRv | n
 export function StrategyDecisionPanel({ data, iv, onSelect }: { data: ChainResponse; iv: IvRv | null; onSelect: (s: Selected) => void }) {
   const cards = sideCards(data, iv);
   const both = data.containment;
+  const pair = bothSides(data.legs);
   return (
     <Panel title="Strategy decision">
       <div className="ov-decide">
@@ -291,8 +292,10 @@ export function StrategyDecisionPanel({ data, iv, onSelect }: { data: ChainRespo
           <header>Both sides</header>
           <Row label="Range" value={both ? `${fmt.n(both.low)} – ${fmt.n(both.high)}` : '—'} />
           <Row label="P(stays inside)" value={fmt.pct(both?.probability ?? null)} />
-          <Row label="Low buffer / EM" value={both?.lowBuffer == null ? '—' : `${both.lowBuffer.toFixed(2)}×`} />
-          <Row label="High buffer / EM" value={both?.highBuffer == null ? '—' : `${both.highBuffer.toFixed(2)}×`} />
+          <Row label="CE safe" value={<Safe ok={pair.ceSafe} />} hint="The call strike at least one expected move away" />
+          <Row label="PE safe" value={<Safe ok={pair.peSafe} />} hint="The put strike at least one expected move away" />
+          <Row label="Net delta" value={pair.netDelta === null ? '—' : fmt.signed(pair.netDelta, 2)} hint="Short both legs; near zero is balanced" />
+          <Row label="Buffers / EM" value={both?.lowBuffer == null || both.highBuffer == null ? '—' : `${both.lowBuffer.toFixed(2)}× / ${both.highBuffer.toFixed(2)}×`} />
           <footer><Tag tone={data.recommendation.sides.length === 2 ? 'up' : 'muted'}>{data.recommendation.sides.length === 2 ? 'Desk sells both' : 'Not recommended'}</Tag></footer>
         </div>
       </div>
@@ -301,11 +304,16 @@ export function StrategyDecisionPanel({ data, iv, onSelect }: { data: ChainRespo
   );
 }
 
-export function SellRecommendationPanel({ data, onSelect, onSell }: {
-  data: ChainResponse; onSelect: (s: Selected) => void; onSell?: (l: Leg) => void;
+function Safe({ ok }: { ok: boolean | null }) {
+  return ok === null ? <span className="ov-muted">—</span> : <span className={ok ? 'ov-up' : 'ov-down'}>{ok ? '✓' : '✕'}</span>;
+}
+
+export function SellRecommendationPanel({ data, onSelect, onSell, leverage, contracts }: {
+  data: ChainResponse; onSelect: (s: Selected) => void; onSell?: (l: Leg) => void; leverage: number; contracts: number;
 }) {
+  const spot = data.snapshot.spot;
   return (
-    <Panel title="Sell recommendation">
+    <Panel title="Sell recommendation" right={<small className="ov-muted">{contracts} ct at {leverage}x · margin est.</small>}>
       {(['P', 'C'] as const).map((side) => {
         const rows = candidates(data.legs, side, 3);
         return (
@@ -313,18 +321,22 @@ export function SellRecommendationPanel({ data, onSelect, onSell }: {
             <h4>{side === 'C' ? 'CE side' : 'PE side'}</h4>
             {rows.length === 0 ? <p className="ov-empty">Nothing on this side clears the desk’s rules.</p> : (
               <table className="ov-mini ov-reco">
-                <thead><tr><th>Strike</th><th>Premium</th><th>P(OTM)</th><th>P(touch)</th><th>Dist/EM</th><th>EV $</th><th>Score</th><th /></tr></thead>
+                <thead><tr><th>Strike</th><th>Premium</th><th>P(OTM)</th><th>P(touch)</th><th>Dist/EM</th><th>EV $</th><th>Margin $</th><th>Credit/margin</th><th>Score</th><th /></tr></thead>
                 <tbody>
                   {rows.map((l) => {
                     const o = odds(l);
+                    const px = l.sellPrice ?? l.mark;
+                    const est = px === null ? null : orderEstimate(l.cp, l.strike, px, spot, leverage, contracts);
                     return (
                       <tr key={l.strike} className="ov-click" onClick={() => onSelect({ cp: l.cp, strike: l.strike })}>
                         <td>{fmt.n(l.strike)}</td>
-                        <td>{fmt.n(l.sellPrice ?? l.mark, 1)}</td>
+                        <td>{fmt.n(px, 1)}</td>
                         <td className="ov-up">{fmt.pct(o.pOtm)}</td>
                         <td>{fmt.pct(o.pTouch)}</td>
                         <td>{l.emDistance === null ? '—' : `${l.emDistance.toFixed(2)}×`}</td>
                         <td className={l.ev?.evUsd == null ? '' : l.ev.evUsd >= 0 ? 'ov-up' : 'ov-down'}>{fmt.signed(l.ev?.evUsd ?? null, 2)}</td>
+                        <td>{est ? fmt.n(est.marginUsd, 2) : '—'}</td>
+                        <td title="Premium after the opening fee, as a share of the margin it ties up">{est ? fmt.pct(est.returnOnMargin, 1) : '—'}</td>
                         <td>{l.score === null ? '—' : (l.score * 10).toFixed(1)}</td>
                         <td>{onSell && <button className="ov-sell" onClick={(e) => { e.stopPropagation(); onSell(l); }}>Sell</button>}</td>
                       </tr>
@@ -342,12 +354,17 @@ export function SellRecommendationPanel({ data, onSelect, onSell }: {
 
 // ------------------------------------------------------- checklist and order
 
-export function EntryPanel({ data, leg, iv, trade, onSell, now, contracts }: {
-  data: ChainResponse; leg: Leg | null; iv: IvRv | null; trade: TradeStatus | null; onSell?: (l: Leg) => void; now: number; contracts: number;
+export function EntryPanel({ data, leg, iv, trade, onSell, now, contracts, leverage }: {
+  data: ChainResponse; leg: Leg | null; iv: IvRv | null; trade: TradeStatus | null; onSell?: (l: Leg) => void; now: number; contracts: number; leverage: number;
 }) {
-  const gates = entryGates({ data, leg, iv, nowMs: now, maxSpreadPct: trade?.limits.maxSpreadPct ?? null });
+  const heldShort = trade ? trade.open.reduce((a, t) => a + Math.max(0, -t.position), 0) : 0;
+  const gates = entryGates({
+    data, leg, iv, nowMs: now, maxSpreadPct: trade?.limits.maxSpreadPct ?? null,
+    risk: trade ? { contracts, heldShort, maxShortContracts: trade.limits.maxShortContracts, dayNetUsd: trade.today?.netUsd ?? null, maxDailyLossUsd: trade.limits.maxDailyLossUsd } : null,
+  });
   const clear = allClear(gates);
   const premium = leg ? (leg.sellPrice ?? leg.mark) : null;
+  const est = leg && premium !== null ? orderEstimate(leg.cp, leg.strike, premium, data.snapshot.spot, leverage, contracts) : null;
   return (
     <div className="ov-entry">
       <Panel title="Entry checklist" className="ov-grow">
@@ -365,9 +382,11 @@ export function EntryPanel({ data, leg, iv, trade, onSell, now, contracts }: {
           {leg ? `Sell ${fmt.n(leg.strike)} ${leg.cp === 'C' ? 'CE' : 'PE'}` : 'Select a strike'}
         </button>
         <Row label="Premium (bid)" value={fmt.n(premium, 1)} />
-        <Row label="Contracts (your size)" value={fmt.n(contracts)} />
-        <Row label="Credit" value={premium === null ? '—' : `$${(premium * contracts * CONTRACT_BTC).toFixed(2)}`} hint="bid × contracts × 0.001 BTC, before fees" />
-        <Row label="Breakeven" value={leg && premium !== null ? fmt.n(breakeven(leg.cp, leg.strike, premium)) : '—'} />
+        <Row label="Contracts · leverage" value={`${fmt.n(contracts)} · ${leverage}x`} hint="Your size and the ticket's leverage; both can be changed on the ticket" />
+        <Row label="Estimated credit" value={est ? `$${est.creditUsd.toFixed(2)}` : '—'} hint="bid × contracts × 0.001 BTC, before fees" />
+        <Row label="Fees to open (est.)" value={est ? `$${est.feesUsd.toFixed(2)}` : '—'} hint="min(0.01% of notional, 3.5% of premium) per contract; GST on top" />
+        <Row label="Margin required (est.)" value={est ? `$${est.marginUsd.toFixed(2)}` : '—'} hint="spot × 0.001 ÷ leverage + fee, per contract — the ticket, then Delta, is the authority" />
+        <Row label="Breakeven (after fees)" value={est ? fmt.n(est.breakevenAfterFees) : leg && premium !== null ? fmt.n(breakeven(leg.cp, leg.strike, premium)) : '—'} />
         <Row label="Gates" value={<Tag tone={clear ? 'up' : 'warn'}>{clear ? 'all green' : 'not all green'}</Tag>} />
       </Panel>
     </div>
@@ -376,10 +395,14 @@ export function EntryPanel({ data, leg, iv, trade, onSell, now, contracts }: {
 
 // --------------------------------------------------------------- status bar
 
-export function StatusBar({ data, trade, now }: { data: ChainResponse; trade: TradeStatus | null; now: number }) {
+export function StatusBar({ data, trade, now, leverage }: { data: ChainResponse; trade: TradeStatus | null; now: number; leverage: number }) {
   const age = Math.max(0, Math.round((now - data.snapshot.ts * 1000) / 1000));
   const measured = Boolean(data.outlook.model);
   const net = trade?.today?.netUsd ?? null;
+  // Margin behind what is short, at the ticket's leverage, against the balance. An estimate: Delta's figure is on the Positions tab.
+  const shortCt = trade ? trade.open.reduce((a, t) => a + Math.max(0, -t.position), 0) : 0;
+  const marginUsed = trade?.balanceUsd != null && trade.balanceUsd > 0 && shortCt > 0
+    ? (shortCt * marginPerContract(data.snapshot.spot, leverage, 0)) / trade.balanceUsd : trade?.balanceUsd != null ? 0 : null;
   return (
     <footer className="ov-status">
       <Tag tone={trade?.mode === 'live' ? 'down' : 'accent'}>{trade?.mode === 'live' ? 'LIVE' : 'Paper'} · short premium</Tag>
@@ -389,6 +412,8 @@ export function StatusBar({ data, trade, now }: { data: ChainResponse; trade: Tr
       <span>Day P&amp;L <b className={net === null ? '' : net >= 0 ? 'ov-up' : 'ov-down'}>{net === null ? '—' : `${net >= 0 ? '+' : '−'}$${Math.abs(net).toFixed(2)}`}</b></span>
       <span>Open positions <b>{trade?.open.length ?? '—'}</b></span>
       <span>Balance <b>{trade?.balanceUsd == null ? '—' : `$${trade.balanceUsd.toFixed(2)}`}</b></span>
+      <span title="Margin behind the open shorts at the ticket's leverage, as a share of the balance (estimate)">Margin used <b className={marginUsed !== null && marginUsed > 0.5 ? 'ov-warn' : ''}>{marginUsed === null ? '—' : fmt.pct(marginUsed, 1)}</b>
+        {marginUsed !== null && <span className="ov-meter" aria-hidden><span style={{ width: `${Math.min(100, marginUsed * 100)}%` }} /></span>}</span>
     </footer>
   );
 }

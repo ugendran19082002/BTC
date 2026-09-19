@@ -200,6 +200,8 @@ export default function App() {
   const [hedgeGap] = usePersisted('hedgeGap', 0);
   const [requireHedge] = usePersisted('requireHedge', false);
   const [lots] = usePersisted('lots', 10);
+  // The ticket's leverage, read here too so the margin estimates on the Live screen match the ticket.
+  const [orderLeverage] = usePersisted('order:leverage', 200);
   // On by default: a live chain that silently goes stale is worse than no chain.
   const [autoRefresh, setAutoRefresh] = usePersisted('autoRefresh', true);
   const visible = usePageVisible();
@@ -391,6 +393,8 @@ export default function App() {
 
   const snap = data?.snapshot;
   snapRef.current = snap ?? null;
+  // The last two hundred closes, for the spot KPI's sparkline.
+  const sparkCloses = useMemo(() => (candles?.bars ?? NO_BARS).slice(-200).map((b) => b.close), [candles?.bars]);
 
   // The positions arrive every second as a new list; the board only needs to
   // hear about them when a held strike, its size or its P&L actually changes.
@@ -664,9 +668,11 @@ export default function App() {
                 trade={trade}
                 onSell={snap.live ? sellLeg : undefined}
                 contracts={lots}
+                leverage={orderLeverage}
                 chain={false}
                 selected={focus}
                 onSelect={setFocus}
+                spark={sparkCloses}
               />
             </ErrorBoundary>
           )}
