@@ -130,14 +130,6 @@ export type PerpResponse = { at: number; ticker: PerpTicker | null; book: BookSn
 export const getPerp = (windowMin = 60, expiry: string | null = null) =>
   json<PerpResponse>(`/api/perp?window=${windowMin}${expiry ? `&expiry=${expiry}` : ''}`);
 
-/** One contract's recorded five-minute history (premium, quotes, IV, delta, OI, volume). */
-export type OptionHistoryPoint = {
-  at: number; spot: number | null; mark: number | null; bid: number | null; ask: number | null;
-  markIv: number | null; delta: number | null; oi: number | null; volume: number | null;
-};
-export const getOptionHistory = (symbol: string, hours = 6) =>
-  json<{ symbol: string; points: OptionHistoryPoint[] }>(`/api/option-history?symbol=${encodeURIComponent(symbol)}&hours=${hours}`);
-
 /** What changed over 1m … 12h for BTC, one strike and its board, from the desk's records. */
 export type ChangeRow = {
   minutes: number;
@@ -151,7 +143,9 @@ export type ChangeRow = {
   pcrThen: number | null; pcrChange: number | null;
   atmIvThen: number | null; atmIvChangePts: number | null;
 };
-export type ChangesResponse = { now: Record<string, number | null>; rows: ChangeRow[] };
+/** How the premium is moving: change over the newest five-minute bucket, and the change of that change. */
+export type PremiumMomentum = { velocity: number | null; acceleration: number | null };
+export type ChangesResponse = { now: Record<string, number | null>; rows: ChangeRow[]; momentum: PremiumMomentum };
 export const getChanges = (symbol: string, now: Record<string, number | null | undefined>) => {
   const q = new URLSearchParams({ symbol });
   for (const [k, v] of Object.entries(now)) if (v !== null && v !== undefined && Number.isFinite(v)) q.set(k, String(v));

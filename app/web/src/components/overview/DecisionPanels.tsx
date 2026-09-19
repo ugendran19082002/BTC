@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ChainResponse, ExpiryOption, Leg } from '@/types/desk';
 import { istLabel } from '@/lib/format';
-import { getOptionHistory, type OptionHistoryPoint } from '@/api/desk';
+import type { PremiumMomentum } from '@/api/desk';
 import {
   breakeven, candidates, consensus, executionEstimate, expectedMove, ivRv, modelView, odds,
   orderEstimate, payoffPrices, premiumAnalysis, premiumMomentum, shortLossAt, shortPayoff, CONTRACT_BTC,
   type BothAssessment, type ExpectedMove, type IvRv, type Readiness, type SideAssessment, type SideChoice,
 } from '@/lib/overview';
 import { SideCardsRow } from './RiskPanels';
-import { pOtmBy, probabilityLabel, type ScreenConfig } from '@/lib/screen-config';
 import { fmt, Panel, ProbBar, Row, Tag } from './parts';
 
 export type Selected = { cp: 'C' | 'P'; strike: number };
@@ -133,109 +132,53 @@ function ChainSide({ leg, cells, selected, onClick, itm }: { leg: Leg | undefine
 
 // ------------------------------------------------------------ selected strike
 
-type Tab = 'metrics' | 'probability' | 'payoff' | 'scenario' | 'greeks' | 'momentum';
+type Tab = 'metrics' | 'probability' | 'payoff';
 
-export function SelectedStrikePanel({ data, leg, em, iv, contracts, ivRank, probabilityMode = 'MODEL' }: {
-  data: ChainResponse; leg: Leg | null; em: ExpectedMove; iv: IvRv | null; contracts: number;
-  ivRank?: { percentile: number; days: number } | null; probabilityMode?: ScreenConfig['probabilityMode'];
+export function SelectedStrikePanel({ data, leg, em, contracts, ivRank, momentum }: {
+  data: ChainResponse; leg: Leg | null; em: ExpectedMove; contracts: number;
+  ivRank?: { percentile: number; days: number } | null; momentum?: PremiumMomentum | null;
 }) {
   const [tab, setTab] = useState<Tab>('metrics');
-  const symbol = leg ? `${leg.cp}-BTC-${leg.strike}-${data.snapshot.expiry}` : null;
-  const history = useOptionHistory(symbol);
   if (!leg) return <Panel title="Selected strike"><p className="ov-empty">Click a strike on the chain.</p></Panel>;
   const side = leg.cp === 'C' ? 'CE' : 'PE';
   const g = (v: number | null | undefined, p: number) => (v === null || v === undefined ? '—' : v.toFixed(p));
+  // What each greek means for `contracts` short, in dollars: the sensitivity the seller actually carries, on hover.
+  const size = contracts * CONTRACT_BTC;
+  const usd = (v: number | null, k = 1) => (v === null ? '—' : fmt.signed(-v * size * k, 2));
   return (
     <Panel title={`Selected strike: ${fmt.n(leg.strike)} ${side}`} right={leg.ev?.signal ? <Tag tone={leg.ev.signal === 'sell' ? 'up' : leg.ev.signal === 'avoid' ? 'down' : 'muted'}>{leg.ev.signal}</Tag> : undefined}>
       <div className="ov-greeks">
-        <Greek label="Delta" value={g(leg.delta, 2)} />
-        <Greek label="Gamma" value={leg.gamma === null ? '—' : leg.gamma.toPrecision(2)} />
-        <Greek label="Theta" value={g(leg.theta, 1)} />
-        <Greek label="Vega" value={g(leg.vega, 1)} />
-        <Greek label="Rho" value={g(leg.rho, 2)} />
-        <Greek label="IV" value={leg.iv === null ? '—' : `${(leg.iv * 100).toFixed(1)}%`} />
+        <Greek label="Delta" value={g(leg.delta, 2)} hint={`Short ${contracts} ct: ${usd(leg.delta)} per $1 move in BTC`} />
+        <Greek label="Gamma" value={leg.gamma === null ? '—' : leg.gamma.toPrecision(2)} hint={`Delta changes ${leg.gamma === null ? '—' : (leg.gamma * 100).toFixed(3)} per $100 of BTC; the seller's enemy near the strike`} />
+        <Greek label="Theta" value={g(leg.theta, 1)} hint={`Per day per BTC; ${usd(leg.theta, -1)} a day for ${contracts} ct — the seller's income`} />
+        <Greek label="Vega" value={g(leg.vega, 1)} hint={`Short ${contracts} ct: ${usd(leg.vega)} per one-point rise in IV`} />
+        <Greek label="Rho" value={g(leg.rho, 2)} hint="Per one-point rise in the rate; negligible on a one-day contract" />
+        <Greek label="IV" value={leg.iv === null ? '—' : `${(leg.iv * 100).toFixed(1)}%`} hint="This strike's mark implied volatility" />
       </div>
       <div className="ov-tabs" role="tablist">
-        {(['metrics', 'probability', 'payoff', 'scenario', 'greeks', 'momentum'] as const).map((t) => (
+        {(['metrics', 'probability', 'payoff'] as const).map((t) => (
           <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>
             {t[0]!.toUpperCase() + t.slice(1)}
           </button>
         ))}
       </div>
-      {tab === 'metrics' && <MetricsTab leg={leg} em={em} iv={iv} ivRank={ivRank ?? null} history={history} />}
-      {tab === 'probability' && <ProbabilityTab leg={leg} mode={probabilityMode} />}
+      {tab === 'metrics' && <MetricsTab leg={leg} em={em} ivRank={ivRank ?? null} momentum={momentum ?? null} />}
+      {tab === 'probability' && <ProbabilityTab leg={leg} />}
       {tab === 'payoff' && <PayoffTab leg={leg} spot={data.snapshot.spot} step={data.snapshot.step} contracts={contracts} />}
-      {tab === 'scenario' && <ScenarioTab leg={leg} data={data} contracts={contracts} />}
-      {tab === 'greeks' && <GreeksTab leg={leg} contracts={contracts} />}
-      {tab === 'momentum' && <MomentumTab pts={history} />}
     </Panel>
   );
 }
 
-function Greek({ label, value }: { label: string; value: string }) {
-  return <div className="ov-greek"><span>{label}</span><b>{value}</b></div>;
+function Greek({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return <div className="ov-greek" title={hint}><span>{label}</span><b>{value}</b></div>;
 }
 
-/** What each greek means for `contracts` short, in dollars: the sensitivity the seller actually carries. */
-function GreeksTab({ leg, contracts }: { leg: Leg; contracts: number }) {
-  const size = contracts * CONTRACT_BTC;
-  const usd = (v: number | null, k = 1) => (v === null ? '—' : fmt.signed(-v * size * k, 2));
-  return (
-    <div>
-      <Row label="Delta" value={`${leg.delta === null ? '—' : leg.delta.toFixed(3)} · ${usd(leg.delta)} per $1 of BTC`}
-        hint="Short: the position's P&L per $1 move in BTC, in USD, for your size" />
-      <Row label="Gamma" value={`${leg.gamma === null ? '—' : leg.gamma.toPrecision(3)} · delta changes ${leg.gamma === null ? '—' : (leg.gamma * 100).toFixed(3)} per $100`}
-        hint="How fast delta moves as BTC moves; the seller's enemy near the strike" />
-      <Row label="Theta" value={`${leg.theta === null ? '—' : leg.theta.toFixed(2)} / day · ${usd(leg.theta, -1)} a day for your size`}
-        hint="Time decay per day per BTC; the seller's income" />
-      <Row label="Vega" value={`${leg.vega === null ? '—' : leg.vega.toFixed(2)} · ${usd(leg.vega)} per IV point`}
-        hint="P&L per one-point rise in implied volatility, short" />
-      <Row label="IV" value={leg.iv === null ? '—' : `${(leg.iv * 100).toFixed(1)}%`} />
-      <p className="ov-foot">Per contract is 0.001 BTC; figures are for {contracts} contracts, sign as the short sees it.</p>
-    </div>
-  );
-}
-
-/** The selected short at settlement, strike ± 5 steps, in the tab the reference screen has it in. */
-function ScenarioTab({ leg, data, contracts }: { leg: Leg; data: ChainResponse; contracts: number }) {
-  const premium = leg.sellPrice ?? leg.mark;
-  if (premium === null) return <p className="ov-empty">No price to sell at.</p>;
-  const rows = shortPayoff(leg.cp, leg.strike, premium, payoffPrices(leg.strike, data.snapshot.spot, data.snapshot.step, 5), contracts);
-  return (
-    <table className="ov-mini">
-      <thead><tr><th>BTC at settlement</th><th>Move</th><th>P&amp;L ({contracts} ct)</th></tr></thead>
-      <tbody>
-        {rows.map((r) => (
-          <tr key={r.price}>
-            <td>{fmt.n(r.price)}</td>
-            <td className="ov-muted">{fmt.signed(((r.price - data.snapshot.spot) / data.snapshot.spot) * 100, 1)}%</td>
-            <td className={r.pnlUsd >= 0 ? 'ov-up' : 'ov-down'}>{fmt.signed(r.pnlUsd, 2)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-/** One contract's recorded five-minute history, refetched when the contract changes. Empty until the recorder has written. */
-function useOptionHistory(symbol: string | null): OptionHistoryPoint[] | null {
-  const [pts, setPts] = useState<OptionHistoryPoint[] | null>(null);
-  useEffect(() => {
-    let live = true;
-    setPts(null);
-    if (!symbol) return;
-    getOptionHistory(symbol, 2).then((r) => { if (live) setPts(r.points); }).catch(() => { if (live) setPts([]); });
-    return () => { live = false; };
-  }, [symbol]);
-  return pts;
-}
-
-function MetricsTab({ leg, em, iv, ivRank, history }: {
-  leg: Leg; em: ExpectedMove; iv: IvRv | null; ivRank: { percentile: number; days: number } | null; history: OptionHistoryPoint[] | null;
+function MetricsTab({ leg, em, ivRank, momentum }: {
+  leg: Leg; em: ExpectedMove; ivRank: { percentile: number; days: number } | null; momentum: PremiumMomentum | null;
 }) {
   const p = premiumAnalysis(leg, em);
   if (!p) return <p className="ov-empty">No price on this strike.</p>;
-  const mom = premiumMomentum(history ?? []);
+  const mom = momentum ?? { velocity: null, acceleration: null };
   return (
     <div className="ov-two">
       <div>
@@ -249,29 +192,23 @@ function MetricsTab({ leg, em, iv, ivRank, history }: {
       <div>
         <Row label="Premium / EM" value={p.premiumPerEm === null ? '—' : fmt.pct(p.premiumPerEm, 1)} />
         <Row label="Distance / EM" value={p.emDistance === null ? '—' : `${p.emDistance.toFixed(2)}×`} tone={p.emDistance !== null && p.emDistance < 1 ? 'warn' : undefined} />
-        <Row label="IV − RV" value={iv ? `${fmt.signed(iv.spreadPts, 1)} pts` : '—'} />
         <Row label="IV percentile" value={ivRank ? `${fmt.pct(ivRank.percentile)} (${ivRank.days < 1 ? 'today' : `${Math.round(ivRank.days)}d`})` : '—'} hint="ATM IV among every recorded reading since 17 Sep 2026" />
         <Row label="Premium velocity" value={mom.velocity === null ? '—' : `${fmt.signed(mom.velocity, 1)} / 5m`} tone={mom.velocity === null ? undefined : mom.velocity > 0 ? 'down' : 'up'} hint="Mark change over the last recorded five minutes; rising premium is against a short" />
         <Row label="Premium acceleration" value={mom.acceleration === null ? '—' : fmt.signed(mom.acceleration, 1)} hint="The change of the velocity" />
-        <Row label="OI change" value={leg.oiChange ? `${fmt.signed(leg.oiChange.change)} (${leg.oiChange.overMinutes}m)` : '—'} />
-        <Row label="Breakeven" value={fmt.n(breakeven(leg.cp, leg.strike, p.premium))} />
       </div>
     </div>
   );
 }
 
-function ProbabilityTab({ leg, mode }: { leg: Leg; mode: ScreenConfig['probabilityMode'] }) {
+function ProbabilityTab({ leg }: { leg: Leg }) {
   const o = odds(leg);
-  const by = pOtmBy(mode, leg, o.modelOtm);
-  const name = probabilityLabel(mode);
+  const name = o.source === 'measured' ? 'Measured' : 'Model';
   return (
     <div>
-      <ProbBar label={`${o.source === 'measured' ? 'Measured' : name} P(expire OTM)`} value={o.source === 'measured' ? o.pOtm : by} tone="up" />
-      <ProbBar label={`${o.source === 'measured' ? 'Measured' : name} P(expire beyond strike) = P(ITM)`} value={o.source === 'measured' ? o.pItm : by === null ? null : 1 - by} tone="down" />
+      <ProbBar label={`${name} P(expire OTM)`} value={o.pOtm} tone="up" />
+      <ProbBar label={`${name} P(expire beyond strike) = P(ITM)`} value={o.pItm} tone="down" />
       <ProbBar label="P(touch strike before expiry)" value={o.pTouch} tone="muted" />
-      <Row label="|Delta| (rough P(ITM))" value={o.deltaApprox === null ? '—' : o.deltaApprox.toFixed(2)} />
-      <Row label="Model P(OTM) / P(ITM)" value={`${fmt.pct(o.modelOtm)} / ${o.modelOtm === null ? '—' : fmt.pct(1 - o.modelOtm)}`} />
-      <Row label="Delta P(OTM) / P(ITM)" value={o.deltaApprox === null ? '—' : `${fmt.pct(1 - o.deltaApprox)} / ${fmt.pct(o.deltaApprox)}`} />
+      <Row label="Delta baseline P(OTM) / P(ITM)" value={o.deltaApprox === null ? '—' : `${fmt.pct(1 - o.deltaApprox)} / ${fmt.pct(o.deltaApprox)}`} hint="1 − |delta| is the option model's own rough P(OTM); where it and the row above disagree, the measured record is the one the desk trusts" />
       <Row label="P(stop breach)" value="not modelled" tone="muted" hint="The odds of the premium reaching a stop are not measured; touching the strike and expiring beyond it are different events from it" />
       <p className="ov-foot">P(OTM) is {o.source === 'measured' ? 'the desk’s measured settlement record, adjusted' : o.source === 'model' ? 'the model — no measured record for this distance' : 'not readable'}.</p>
     </div>
@@ -317,63 +254,6 @@ export function PayoffChart({ rows, strike }: { rows: { price: number; pnlUsd: n
   );
 }
 
-/**
- * Premium momentum: how this strike's premium, OI and IV moved over the last
- * 5, 15 and 60 minutes, from the recorded five-minute snapshots. Empty until
- * the recorder has written enough -- it never extrapolates.
- */
-function MomentumTab({ pts }: { pts: OptionHistoryPoint[] | null }) {
-  if (!pts) return <p className="ov-empty">Loading…</p>;
-  const last = pts.at(-1);
-  if (!last) return <p className="ov-empty">No recorded snapshots for this strike yet — the recorder writes every 5 minutes.</p>;
-  const back = (min: number) => pts.filter((p) => p.at <= last.at - min * 60_000).at(-1) ?? null;
-  const change = (a: number | null | undefined, b: number | null | undefined, pct = true) =>
-    a == null || b == null ? null : pct ? (b === 0 ? null : a / b - 1) : a - b;
-  return (
-    <table className="ov-mini">
-      <thead><tr><th /><th>5m</th><th>15m</th><th>30m</th><th>1h</th></tr></thead>
-      <tbody>
-        {([
-          ['Premium', (p: OptionHistoryPoint | null) => fmt.pct(change(last.mark, p?.mark), 1)],
-          ['Open interest', (p: OptionHistoryPoint | null) => fmt.pct(change(last.oi, p?.oi), 1)],
-          ['IV (pts)', (p: OptionHistoryPoint | null) => { const d = change(last.markIv, p?.markIv, false); return d === null ? '—' : fmt.signed(d * 100, 1); }],
-          ['BTC', (p: OptionHistoryPoint | null) => fmt.pct(change(last.spot, p?.spot), 2)],
-        ] as const).map(([label, f]) => (
-          <tr key={label}><td>{label}</td><td>{f(back(5))}</td><td>{f(back(15))}</td><td>{f(back(30))}</td><td>{f(back(60))}</td></tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-// ------------------------------------------------------------ model and EM
-
-export function ModelViewPanel({ data, iv, horizonMin = 720, em: emIn }: { data: ChainResponse; iv: IvRv | null; horizonMin?: number; em?: (ExpectedMove & { method?: string }) | null }) {
-  const v = modelView(data.outlook, horizonMin);
-  const c = consensus(data.outlook);
-  const em = emIn === undefined ? expectedMove(data.snapshot) : emIn;
-  const label = v?.label ?? `${horizonMin >= 60 ? `${horizonMin / 60}h` : `${horizonMin}m`}`;
-  return (
-    <Panel title={`Model view (${label})`} right={v ? <Tag tone="muted">{v.source === 'measured' ? 'measured' : 'history only'}</Tag> : undefined}>
-      <div className="ov-two">
-        <div>
-          <ProbBar label="Up" value={v?.pUp ?? null} tone="up" />
-          <ProbBar label="Down" value={v?.pDown ?? null} tone="down" />
-          <ProbBar label="Range" value={v && v.source === 'measured' ? v.pSide : null} tone="muted" />
-          <p className="ov-foot">{c.scored ? `Horizons: ${c.up} up · ${c.down} down · ${c.flat} flat${c.agree ? '' : ' — no consensus'}` : 'No horizon readable.'}</p>
-        </div>
-        <div>
-          <Row label={`Expected move (${label})`} value={em ? `±${fmt.n(em.move)}` : '—'} hint={em && 'method' in em ? String(em.method) : undefined} />
-          <Row label="Upper / lower" value={em ? `${fmt.n(em.upper)} / ${fmt.n(em.lower)}` : '—'} />
-          <Row label="Over" value={em ? `${em.hours.toFixed(1)}h` : '—'} />
-          <Row label="IV / realised" value={iv ? `${iv.ivPct.toFixed(1)}% / ${iv.rvPct.toFixed(1)}%` : '—'} />
-          <Row label="IV − RV" value={iv ? <Tag tone={iv.label === 'rich' ? 'up' : iv.label === 'cheap' ? 'down' : 'muted'}>{iv.label}</Tag> : '—'} />
-        </div>
-      </div>
-    </Panel>
-  );
-}
-
 // ------------------------------------------------------------ the decision
 
 export function StrategyDecisionPanel({ data, sides, both, choice, onSelect }: {
@@ -392,64 +272,6 @@ export function StrategyDecisionPanel({ data, sides, both, choice, onSelect }: {
       </p>
       <SideCardsRow sides={sides} both={both} onSelect={(cp, strike) => onSelect({ cp, strike })} />
       <p className="ov-foot">{data.best.why ?? ''} Side from the regime, the horizon consensus and each side's gates — never the score alone.</p>
-    </Panel>
-  );
-}
-
-
-export function SellRecommendationPanel({ data, onSelect, onSell, leverage, contracts, iv, em, first = 'P', execution = 'BID' }: {
-  data: ChainResponse; onSelect: (s: Selected) => void; onSell?: (l: Leg) => void; leverage: number; contracts: number;
-  iv: IvRv | null; em: ExpectedMove; first?: 'C' | 'P'; execution?: ScreenConfig['execution'];
-}) {
-  const spot = data.snapshot.spot;
-  // The premium a candidate is judged at follows the execution setting: the bid a seller receives, a tick under it when thin, or the mark for comparison.
-  const priceOf = (l: Leg) => (execution === 'MARK' ? l.mark : execution === 'DEPTH' ? executionEstimate(l, spot, contracts).expectedFill : l.bid ?? l.sellPrice);
-  const priceLabel = execution === 'MARK' ? 'Mark' : execution === 'DEPTH' ? 'Est. fill' : 'Bid';
-  const order: readonly ('C' | 'P')[] = first === 'P' ? ['P', 'C'] : ['C', 'P'];
-  return (
-    <Panel title="Sell recommendation" right={<small className="ov-muted">{contracts} ct at {leverage}x · top 3 a side · margin est.</small>}>
-      {order.map((side) => {
-        const rows = candidates(data.legs, side, 3);
-        return (
-          <div key={side} className="ov-reco-side">
-            <h4>{side === 'C' ? 'CE side' : 'PE side'}</h4>
-            {rows.length === 0 ? <p className="ov-empty">Nothing on this side clears the desk’s rules.</p> : (
-              <table className="ov-mini ov-reco">
-                <thead><tr><th>Strike</th><th>Type</th><th title={execution === 'MARK' ? 'Mark price — not executable' : 'What a seller receives'}>{priceLabel}</th><th title="Probability of expiring worthless">POP</th><th title="Probability BTC touches the strike before expiry">P(touch)</th><th title="Distance from spot in expected moves">Dist/EM</th><th title="Implied minus realised volatility, points">IV−RV</th><th title="Theta as a share of premium, per day">θ/prem</th><th title="Expected P&L for your size, after charges">Exp. P&amp;L</th><th title="Loss at an adverse move of two expected moves">Tail (2×EM)</th><th title="Margin estimate at the ticket's leverage">Margin</th><th title="Expected P&L per dollar of tail loss">R/R</th><th title="The desk's score, 0–10">Score</th><th /></tr></thead>
-                <tbody>
-                  {rows.map((l) => {
-                    const o = odds(l);
-                    const px = priceOf(l);
-                    const est = px === null ? null : orderEstimate(l.cp, l.strike, px, spot, leverage, contracts);
-                    const pa = premiumAnalysis(l, em);
-                    const adverse = em ? (l.cp === 'C' ? spot + 2 * em.move : spot - 2 * em.move) : null;
-                    const tail = px !== null && adverse !== null ? shortLossAt(l.cp, l.strike, px, adverse, contracts) : null;
-                    const rr = tail !== null && tail > 0 && l.ev?.evUsd != null ? l.ev.evUsd / tail : null;
-                    return (
-                      <tr key={l.strike} className="ov-click" onClick={() => onSelect({ cp: l.cp, strike: l.strike })}>
-                        <td>{fmt.n(l.strike)}</td>
-                        <td>{l.cp === 'C' ? 'CE' : 'PE'}</td>
-                        <td>{fmt.n(px, 1)}</td>
-                        <td className="ov-up">{fmt.pct(o.pOtm)}</td>
-                        <td>{fmt.pct(o.pTouch)}</td>
-                        <td>{l.emDistance === null ? '—' : `${l.emDistance.toFixed(2)}×`}</td>
-                        <td>{iv ? fmt.signed(iv.spreadPts, 0) : '—'}</td>
-                        <td>{pa?.thetaPerPremiumDay == null ? '—' : fmt.pct(Math.min(9.99, pa.thetaPerPremiumDay), 0)}</td>
-                        <td className={l.ev?.evUsd == null ? '' : l.ev.evUsd >= 0 ? 'ov-up' : 'ov-down'}>{fmt.signed(l.ev?.evUsd ?? null, 2)}</td>
-                        <td className="ov-down" title="Loss at an adverse move of two expected moves; a naked short has no bounded worst case">{tail === null ? '—' : `$${tail.toFixed(2)}`}</td>
-                        <td>{est ? fmt.n(est.marginUsd, 2) : '—'}</td>
-                        <td title="Expected P&L per dollar of tail loss">{rr === null ? '—' : `${(rr * 100).toFixed(0)}¢`}</td>
-                        <td>{l.score === null ? '—' : (l.score * 10).toFixed(1)}</td>
-                        <td>{onSell && <button className="ov-sell" onClick={(e) => { e.stopPropagation(); onSell(l); }}>Sell</button>}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-          </div>
-        );
-      })}
     </Panel>
   );
 }
@@ -484,44 +306,3 @@ export function ChecklistPanel({ leg, ready, onSell }: { leg: Leg | null; ready:
     </Panel>
   );
 }
-
-const IST_HM = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
-const istHm = (epochSeconds: number) => IST_HM.format(new Date(epochSeconds * 1000));
-
-/**
- * The contract's day, at the head of the decision column: entry at 05:30,
- * settlement at 17:30, and how long is left -- with the expected move and
- * the volatility it is priced from beside it, as the second reference screen
- * lays them out.
- */
-export function ExpiryHeader({ data, now }: { data: ChainResponse; now: number }) {
-  const snap = data.snapshot;
-  const em = expectedMove(snap);
-  const iv = ivRvOf(data);
-  const leftMs = Math.max(0, snap.expiryTs * 1000 - now);
-  const h = Math.floor(leftMs / 3_600_000), m = Math.floor((leftMs % 3_600_000) / 60_000);
-  return (
-    <div className="ov-expiry">
-      <div className="ov-expiry-head">
-        <span>🕒 05:30 → {istHm(snap.expiryTs)} IST ({snap.isDaily || snap.isNextEntry ? 'daily expiry' : 'not the tested contract'})</span>
-        <span className="ov-muted">Time to expiry <b>{snap.live ? `${h}h ${String(m).padStart(2, '0')}m` : `${snap.hoursToExpiry.toFixed(1)}h at the snapshot`}</b></span>
-      </div>
-      <div className="ov-expiry-cards">
-        <div className="ov-mini-card">
-          <span className="ov-kpi-label">Expected move</span>
-          <b className="ov-kpi-value">{em ? `±${fmt.n(em.move)}` : '—'}</b>
-          <span className="ov-kpi-sub">{em ? `${fmt.n(em.lower)} – ${fmt.n(em.upper)} · ${em.hours.toFixed(1)}h` : 'no IV'}</span>
-        </div>
-        <div className="ov-mini-card">
-          <span className="ov-kpi-label">Volatility</span>
-          <Row label="IV" value={iv ? `${iv.ivPct.toFixed(1)}%` : '—'} />
-          <Row label="Realised (21d)" value={iv ? `${iv.rvPct.toFixed(1)}%` : '—'} />
-          <Row label="IV − RV" value={iv ? <Tag tone={iv.label === 'rich' ? 'up' : iv.label === 'cheap' ? 'down' : 'muted'}>IV {iv.label}</Tag> : '—'} />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const ivRvOf = (data: ChainResponse) => ivRv(data.structure.atmIv, data.market?.realisedVol ?? null);
-

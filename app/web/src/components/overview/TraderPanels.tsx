@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react';
+import { entryTodayMs } from '@/lib/screen-config';
 import type { ChainResponse, Leg } from '@/types/desk';
-import { getChanges, type ChangeRow, type PerpResponse } from '@/api/desk';
+import { getChanges, type ChangeRow, type PerpResponse, type PremiumMomentum } from '@/api/desk';
 import {
-  boardRead, earlyWarning, findStrikes, horizonRows, movementVerdict, odds, orderEstimate,
+  boardRead, candidates, earlyWarning, executionEstimate, findStrikes, horizonRows, movementVerdict, odds, orderEstimate, shortLossAt,
   type EarlyWarning, type ExpectedMove, type FinderFilter, type Readiness, type SideAssessment, type SideChoice,
 } from '@/lib/overview';
+import type { ScreenConfig } from '@/lib/screen-config';
 import { fmt, More, Panel, Row, Tag } from './parts';
 
 const IST_HM = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
+const IST_DATE = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short' });
 
 // ------------------------------------------------------------ the decision
 
@@ -17,11 +20,18 @@ const IST_HM = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour
  * pays, its odds, and what is in the way. Everything below this card is the
  * working.
  */
-export function DecisionHero({ data, now, choice, sides, ready, leg, contracts, leverage, onSell }: {
+export function DecisionHero({ data, now, choice, sides, ready, leg, contracts, leverage, onSell, entryIst = '05:30' }: {
   data: ChainResponse; now: number; choice: SideChoice; sides: SideAssessment[]; ready: Readiness; leg: Leg | null;
-  contracts: number; leverage: number; onSell?: (l: Leg) => void;
+  contracts: number; leverage: number; onSell?: (l: Leg) => void; entryIst?: string;
 }) {
   const snap = data.snapshot;
+  // The contract's day, said once: entry is now, the window is the strategy's, expiry is the contract's.
+  const entryMs = snap.live ? now : snap.ts * 1000;
+  const windowMs = entryTodayMs(entryIst, entryMs);
+  const sinceWindow = windowMs === null ? null : entryMs - windowMs;
+  const windowText = sinceWindow === null ? '' : sinceWindow >= 0 && sinceWindow <= 30 * 60_000 ? ' (in window)' : sinceWindow > 0 ? ` (${Math.floor(sinceWindow / 3_600_000)}h ${String(Math.floor((sinceWindow % 3_600_000) / 60_000)).padStart(2, '0')}m since)` : ` (in ${Math.ceil(-sinceWindow / 60_000)}m)`;
+  const leftMs = Math.max(0, snap.expiryTs * 1000 - entryMs);
+  const left = leftMs === 0 ? 'settled' : `${Math.floor(leftMs / 3_600_000)}h ${String(Math.floor((leftMs % 3_600_000) / 60_000)).padStart(2, '0')}m left`;
   const legs = choice.side === 'BOTH' ? sides.map((s) => s.leg).filter((l): l is Leg => l !== null) : choice.side === 'NO_TRADE' ? [] : [sides.find((s) => s.side === choice.side)?.leg ?? null].filter((l): l is Leg => l !== null);
   const tone = choice.side === 'NO_TRADE' ? 'down' : choice.side === 'BOTH' ? 'up' : 'accent';
   const focus = sides.find((s) => s.side === (choice.side === 'CE' ? 'CE' : choice.side === 'PE' ? 'PE' : leg?.cp === 'C' ? 'CE' : 'PE'));
@@ -29,7 +39,7 @@ export function DecisionHero({ data, now, choice, sides, ready, leg, contracts, 
   return (
     <section className={`ov-hero ov-hero-${tone}`} aria-label="Decision">
       <div className="ov-hero-main">
-        <span className="ov-hero-when">Entry now · {IST_HM.format(new Date(snap.live ? now : snap.ts * 1000))} IST → expiry {IST_HM.format(new Date(snap.expiryTs * 1000))} · {snap.hoursToExpiry.toFixed(1)}h left</span>
+        <span className="ov-hero-when">Entry now {IST_HM.format(new Date(entryMs))} IST · window {entryIst}{windowText} → expiry {IST_DATE.format(new Date(snap.expiryTs * 1000))} {IST_HM.format(new Date(snap.expiryTs * 1000))} IST · <b>{left}</b></span>
         <h2 className="ov-hero-verdict">
           {choice.side === 'NO_TRADE' ? 'NO TRADE' : choice.side === 'BOTH' ? 'SELL BOTH' : `SELL ${choice.side}`}
           {legs.length > 0 && <small> {legs.map((l) => `${fmt.n(l.strike)} ${l.cp === 'C' ? 'CE' : 'PE'}`).join(' + ')}</small>}
@@ -108,7 +118,7 @@ export function MovementPanel({ data, em, activeMin }: { data: ChainResponse; em
   const v = movementVerdict(rows, board, data.market, data.snapshot.hoursToExpiry);
   const says = (s: string) => (s === 'up' ? 'ov-up' : s === 'down' ? 'ov-down' : 'ov-muted');
   return (
-    <Panel title="Movement to expiry" right={<Tag tone={v.way === 'up' ? 'up' : v.way === 'down' ? 'down' : 'accent'}>{v.way.toUpperCase()} · {v.confidence} confidence</Tag>}>
+    <Panel title="Outlook · movement to expiry" right={<Tag tone={v.way === 'up' ? 'up' : v.way === 'down' ? 'down' : 'accent'}>{v.way.toUpperCase()} · {v.confidence} confidence</Tag>}>
       <p className="ov-summary">{v.text}.</p>
       <table className="ov-mini ov-horizons">
         <thead><tr><th>Next</th><th>Up</th><th>Down</th><th>Range</th><th>Expected move</th><th>Target range</th></tr></thead>
@@ -142,8 +152,11 @@ export function MovementPanel({ data, em, activeMin }: { data: ChainResponse; em
 
 // -------------------------------------------------------------- what changed
 
-export function useChanges(data: ChainResponse, leg: Leg | null, spot: number): ChangeRow[] | null {
-  const [rows, setRows] = useState<ChangeRow[] | null>(null);
+export type Changes = { rows: ChangeRow[]; momentum: PremiumMomentum };
+
+/** One request per strike, every 30 s: what changed by window, and the premium's momentum from the same records. */
+export function useChanges(data: ChainResponse, leg: Leg | null, spot: number): Changes | null {
+  const [rows, setRows] = useState<Changes | null>(null);
   const symbol = leg ? `${leg.cp}-BTC-${leg.strike}-${data.snapshot.expiry}` : null;
   const s = data.structure;
   useEffect(() => {
@@ -152,7 +165,7 @@ export function useChanges(data: ChainResponse, leg: Leg | null, spot: number): 
     const load = () => getChanges(symbol, {
       spot, mark: leg.mark, oi: leg.oi, iv: leg.iv, volume: leg.volume,
       ceOi: s.ceOi, peOi: s.peOi, callVolume: s.ceVolume, putVolume: s.peVolume, pcr: s.pcrOi, atmIv: s.atmIv,
-    }).then((r) => { if (live) setRows(r.rows); }).catch(() => { if (live) setRows([]); });
+    }).then((r) => { if (live) setRows({ rows: r.rows, momentum: r.momentum }); }).catch(() => { if (live) setRows({ rows: [], momentum: { velocity: null, acceleration: null } }); });
     load();
     const id = setInterval(load, 30_000);
     return () => { live = false; clearInterval(id); };
@@ -205,37 +218,66 @@ export function ChangesPanel({ leg, rows }: { leg: Leg | null; rows: ChangeRow[]
 
 // ------------------------------------------------------------ strike finder
 
-export function StrikeFinderPanel({ data, onSelect, onSell, contracts, leverage, defaultSide }: {
-  data: ChainResponse; onSelect: (cp: 'C' | 'P', strike: number) => void; onSell?: (l: Leg) => void; contracts: number; leverage: number; defaultSide: 'C' | 'P' | 'both';
+export function StrikeFinderPanel({ data, onSelect, onSell, contracts, leverage, defaultSide, em, execution = 'BID' }: {
+  data: ChainResponse; onSelect: (cp: 'C' | 'P', strike: number) => void; onSell?: (l: Leg) => void; contracts: number; leverage: number;
+  defaultSide: 'C' | 'P' | 'both'; em: ExpectedMove; execution?: ScreenConfig['execution'];
 }) {
+  const [mode, setMode] = useState<'desk' | 'filters'>('desk');
   const [f, setF] = useState<FinderFilter>({ side: defaultSide, minPremium: 15, maxPot: 0.35, minEm: 1, top: 5 });
   useEffect(() => { setF((x) => ({ ...x, side: defaultSide })); }, [defaultSide]);
-  const found = findStrikes(data.legs, f);
   const spot = data.snapshot.spot;
+  // The desk's own picks: its top three a side by its rules, the side it leans to first. Otherwise the operator's filters.
+  const order: readonly ('C' | 'P')[] = defaultSide === 'C' ? ['C', 'P'] : ['P', 'C'];
+  const found = mode === 'desk' ? order.flatMap((cp) => candidates(data.legs, cp, 3)) : findStrikes(data.legs, f);
+  // The premium a candidate is judged at follows the execution setting: the bid a seller receives, a tick under it when thin, or the mark for comparison.
+  const priceOf = (l: Leg) => (execution === 'MARK' ? l.mark : execution === 'DEPTH' ? executionEstimate(l, spot, contracts).expectedFill : l.bid ?? l.sellPrice);
+  const priceLabel = execution === 'MARK' ? 'Mark' : execution === 'DEPTH' ? 'Est. fill' : 'Bid';
+  const otm = data.legs.filter((l) => l.moneyness !== 'ITM').length;
   return (
-    <Panel title="Strike finder" right={<small className="ov-muted">{found.length} of {data.legs.filter((l) => l.moneyness !== 'ITM').length} OTM strikes pass</small>}>
-      <div className="ov-finder">
-        <label>Side <select className="ov-select" value={f.side} onChange={(e) => setF({ ...f, side: e.target.value as FinderFilter['side'] })}><option value="P">PE</option><option value="C">CE</option><option value="both">Both</option></select></label>
-        <label>Premium ≥ <input type="number" className="ov-ctx-input" min={0} step={5} value={f.minPremium} onChange={(e) => setF({ ...f, minPremium: Number(e.target.value) || 0 })} /> <small className="ov-muted">$/BTC</small></label>
-        <label>Touch ≤ <select className="ov-select" value={f.maxPot} onChange={(e) => setF({ ...f, maxPot: Number(e.target.value) })}>{[0.2, 0.25, 0.3, 0.35, 0.45, 0.6, 1].map((v) => <option key={v} value={v}>{(v * 100).toFixed(0)}%</option>)}</select></label>
-        <label>Distance ≥ <select className="ov-select" value={f.minEm} onChange={(e) => setF({ ...f, minEm: Number(e.target.value) })}>{[0, 0.5, 0.75, 1, 1.25, 1.5, 2].map((v) => <option key={v} value={v}>{v}× EM</option>)}</select></label>
-        <label>Top <select className="ov-select" value={f.top} onChange={(e) => setF({ ...f, top: Number(e.target.value) })}>{[3, 5, 8, 12].map((v) => <option key={v} value={v}>{v}</option>)}</select></label>
-      </div>
-      {found.length === 0 ? <p className="ov-empty">Nothing passes these filters. Loosen one.</p> : (
+    <Panel title="Strikes" right={
+      <span className="ov-chain-head">
+        <span className="ov-tabs ov-tabs-inline" role="tablist">
+          <button role="tab" aria-selected={mode === 'desk'} className={mode === 'desk' ? 'on' : ''} onClick={() => setMode('desk')} title="The desk's top three a side, by its own rules">Desk picks</button>
+          <button role="tab" aria-selected={mode === 'filters'} className={mode === 'filters' ? 'on' : ''} onClick={() => setMode('filters')} title="Every out-of-the-money strike, through your filters">Finder</button>
+        </span>
+        <small className="ov-muted">{found.length} of {otm} OTM · {contracts} ct at {leverage}x</small>
+      </span>
+    }>
+      {mode === 'filters' && (
+        <div className="ov-finder">
+          <label>Side <select className="ov-select" value={f.side} onChange={(e) => setF({ ...f, side: e.target.value as FinderFilter['side'] })}><option value="P">PE</option><option value="C">CE</option><option value="both">Both</option></select></label>
+          <label>Premium ≥ <input type="number" className="ov-ctx-input" min={0} step={5} value={f.minPremium} onChange={(e) => setF({ ...f, minPremium: Number(e.target.value) || 0 })} /> <small className="ov-muted">$/BTC</small></label>
+          <label>Touch ≤ <select className="ov-select" value={f.maxPot} onChange={(e) => setF({ ...f, maxPot: Number(e.target.value) })}>{[0.2, 0.25, 0.3, 0.35, 0.45, 0.6, 1].map((v) => <option key={v} value={v}>{(v * 100).toFixed(0)}%</option>)}</select></label>
+          <label>Distance ≥ <select className="ov-select" value={f.minEm} onChange={(e) => setF({ ...f, minEm: Number(e.target.value) })}>{[0, 0.5, 0.75, 1, 1.25, 1.5, 2].map((v) => <option key={v} value={v}>{v}× EM</option>)}</select></label>
+          <label>Top <select className="ov-select" value={f.top} onChange={(e) => setF({ ...f, top: Number(e.target.value) })}>{[3, 5, 8, 12].map((v) => <option key={v} value={v}>{v}</option>)}</select></label>
+        </div>
+      )}
+      {found.length === 0 ? <p className="ov-empty">{mode === 'desk' ? 'Nothing clears the desk’s rules on either side.' : 'Nothing passes these filters. Loosen one.'}</p> : (
         <table className="ov-mini ov-reco">
-          <thead><tr><th>Strike</th><th>Side</th><th>Bid</th><th>Credit</th><th>POP</th><th>Touch</th><th>Dist/EM</th><th>Margin</th><th>Score</th><th>Says</th><th /></tr></thead>
+          <thead><tr>
+            <th>Strike</th><th>Side</th><th title={execution === 'MARK' ? 'Mark price — not executable' : 'What a seller receives'}>{priceLabel}</th><th>Credit</th>
+            <th title="Probability of expiring worthless">POP</th><th title="Probability BTC touches the strike before expiry">Touch</th><th title="Distance from spot in expected moves">Dist/EM</th>
+            <th title="Expected P&L for your size, after charges">Exp. P&amp;L</th><th title="Loss at an adverse move of two expected moves">Tail 2×EM</th><th title="Margin estimate at the ticket's leverage">Margin</th>
+            <th title="Expected P&L per dollar of tail loss">R/R</th><th title="The desk's score, 0–10">Score</th><th>Says</th><th />
+          </tr></thead>
           <tbody>
             {found.map((l) => {
               const o = odds(l);
-              const px = l.bid ?? l.sellPrice ?? l.mark;
+              const px = priceOf(l);
               const est = px === null ? null : orderEstimate(l.cp, l.strike, px, spot, leverage, contracts);
+              const adverse = em ? (l.cp === 'C' ? spot + 2 * em.move : spot - 2 * em.move) : null;
+              const tail = px !== null && adverse !== null ? shortLossAt(l.cp, l.strike, px, adverse, contracts) : null;
+              const rr = tail !== null && tail > 0 && l.ev?.evUsd != null ? l.ev.evUsd / tail : null;
               return (
                 <tr key={`${l.cp}${l.strike}`} className="ov-click" onClick={() => onSelect(l.cp, l.strike)}>
                   <td>{fmt.n(l.strike)}</td><td>{l.cp === 'C' ? 'CE' : 'PE'}</td><td>{fmt.n(px, 1)}</td>
                   <td>{est ? `$${est.creditUsd.toFixed(2)}` : '—'}</td>
                   <td className="ov-up">{fmt.pct(o.pOtm)}</td><td>{fmt.pct(o.pTouch)}</td>
                   <td>{l.emDistance === null ? '—' : `${l.emDistance.toFixed(2)}×`}</td>
+                  <td className={l.ev?.evUsd == null ? '' : l.ev.evUsd >= 0 ? 'ov-up' : 'ov-down'}>{fmt.signed(l.ev?.evUsd ?? null, 2)}</td>
+                  <td className="ov-down">{tail === null ? '—' : `$${tail.toFixed(2)}`}</td>
                   <td>{est ? `$${est.marginUsd.toFixed(2)}` : '—'}</td>
+                  <td>{rr === null ? '—' : `${(rr * 100).toFixed(0)}¢`}</td>
                   <td>{l.score === null ? '—' : (l.score * 10).toFixed(1)}</td>
                   <td><Tag tone={l.ev?.signal === 'sell' ? 'up' : l.ev?.signal === 'avoid' ? 'down' : 'muted'}>{l.ev?.signal ?? '—'}</Tag></td>
                   <td>{onSell && data.snapshot.live && <button className="ov-sell" onClick={(e) => { e.stopPropagation(); onSell(l); }}>Sell</button>}</td>
@@ -245,7 +287,7 @@ export function StrikeFinderPanel({ data, onSelect, onSell, contracts, leverage,
           </tbody>
         </table>
       )}
-      <p className="ov-foot">Out-of-the-money strikes only, best desk score first, after your filters. Click a row to inspect it; Sell opens the ticket.</p>
+      <p className="ov-foot">Out-of-the-money strikes only, best desk score first. Click a row to inspect it; Sell opens the ticket, where every gate runs again.</p>
     </Panel>
   );
 }

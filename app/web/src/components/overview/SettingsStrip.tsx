@@ -1,12 +1,11 @@
 import { useState, type ReactNode } from 'react';
 import type { ChainResponse } from '@/types/desk';
 import type { SideChoice } from '@/lib/overview';
-import { DEFAULT_CONFIG, probabilityLabel, thresholds, type ScreenConfig } from '@/lib/screen-config';
+import { DEFAULT_CONFIG, thresholds, type ScreenConfig } from '@/lib/screen-config';
 import { Tag } from './parts';
 
 const IST_CLOCK = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 const IST_HM = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
-const IST_DATE = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' });
 
 const HORIZONS: { min: number; label: string }[] = [
   { min: 5, label: '5m' }, { min: 15, label: '15m' }, { min: 30, label: '30m' }, { min: 60, label: '1h' },
@@ -25,8 +24,8 @@ const PRESETS: { name: string; patch: Partial<ScreenConfig>; hint: string }[] = 
  * mode and refresh controls, and every setting the screen decides with --
  * grouped, each with what it does on hover, with presets and a reset.
  *
- * Dynamic values (entry, time to expiry, data age) are marked so; the expiry
- * is marked contract-fixed and cannot be typed. A line under the rules says
+ * Dynamic values (entry, data age) are marked so; the expiry and time left
+ * are the decision card's, said once. A line under the rules says
  * in plain numbers what the current risk mode and strictness allow, so a
  * change is never a mystery.
  */
@@ -38,12 +37,10 @@ export function SettingsStrip({ data, now, config, stored, onChange, onReset, ch
   const [open, setOpen] = useState(true);
   const [help, setHelp] = useState(false);
   const snap = data.snapshot;
-  const expiryMs = snap.expiryTs * 1000;
-  const leftMs = Math.max(0, expiryMs - (snap.live ? now : snap.ts * 1000));
-  const h = Math.floor(leftMs / 3_600_000), m = Math.floor((leftMs % 3_600_000) / 60_000);
   const age = Math.max(0, Math.round((now - snap.ts * 1000) / 1000));
   const t = thresholds(config);
-  const changed = Object.keys(stored).filter((k) => stored[k as keyof ScreenConfig] !== undefined && stored[k as keyof ScreenConfig] !== DEFAULT_CONFIG[k as keyof ScreenConfig]).length;
+  // Only settings this build still has count; a key left in the browser by an older build does not.
+  const changed = (Object.keys(DEFAULT_CONFIG) as (keyof ScreenConfig)[]).filter((k) => stored[k] !== undefined && stored[k] !== DEFAULT_CONFIG[k]).length;
   const preset = PRESETS.find((p) => p.patch.strictness === config.strictness && p.patch.riskMode === config.riskMode)?.name ?? 'Custom';
 
   const sel = <K extends keyof ScreenConfig>(key: K, options: readonly { v: ScreenConfig[K]; label: string }[], title: string) => (
@@ -85,22 +82,11 @@ export function SettingsStrip({ data, now, config, stored, onChange, onReset, ch
               <b>{snap.live ? IST_HM.format(new Date(now)) : IST_HM.format(new Date(snap.ts * 1000))}</b>
               <label className="ov-inline-label">window <input type="time" className="ov-ctx-input" aria-label="Strategy entry window (IST)" value={config.entryIst} onChange={(e) => e.target.value && onChange({ entryIst: e.target.value })} /></label>
             </Item>
-            <Item label="Expiry" tag="contract fixed" tone="accent" title="From the selected contract. Never typed in; change it with the expiry selector on the chain.">
-              <b>{IST_DATE.format(new Date(expiryMs))} · {IST_HM.format(new Date(expiryMs))}</b>
-            </Item>
-            <Item label="Time to expiry" tag="dynamic" tone="up"><b>{leftMs === 0 ? 'settled' : `${h}h ${String(m).padStart(2, '0')}m`}</b></Item>
           </Group>
 
           <Group name="Model">
-            <Item label="Horizon" title="The horizon the model view, the expected move and the odds are read at. The contract's expiry does not change with it.">
+            <Item label="Horizon" title="The horizon the outlook is read at. The contract's expiry does not change with it.">
               {sel('horizonMin', HORIZONS.map((x) => ({ v: x.min, label: x.label })), 'Prediction horizon')}
-            </Item>
-            <Item label="Probability" title="Where P(OTM) comes from. Model: the measured record where there is one, the option model otherwise. Delta: 1 − |delta|. Hybrid: their mean. The label on every probability follows this.">
-              {sel('probabilityMode', [{ v: 'MODEL', label: 'Model' }, { v: 'DELTA', label: 'Delta baseline' }, { v: 'HYBRID', label: 'Hybrid' }], 'Probability method')}
-              <small className="ov-muted">{probabilityLabel(config.probabilityMode)} P(OTM)</small>
-            </Item>
-            <Item label="Expected move" title="IV: spot × IV × √t. Historical: the measured 68% band for the horizon. Hybrid: their mean. Distances in expected moves follow it.">
-              {sel('emMethod', [{ v: 'IV', label: 'IV' }, { v: 'HISTORICAL', label: 'Historical' }, { v: 'HYBRID', label: 'Hybrid' }], 'Expected-move method')}
             </Item>
             <Item label="Fresh ≤" title="Chain data older than this blocks entry.">
               {sel('freshnessSec', [{ v: 5, label: '5 s' }, { v: 15, label: '15 s' }, { v: 30, label: '30 s' }, { v: 60, label: '60 s' }], 'Data freshness limit')}
@@ -121,17 +107,11 @@ export function SettingsStrip({ data, now, config, stored, onChange, onReset, ch
             <Item label="Risk" title="Sets the numbers: touch limit, minimum distance in expected moves, slippage limit, tail-loss limit and size cap. The desk's own caps are never exceeded.">
               {sel('riskMode', [{ v: 'CONSERVATIVE', label: 'CONSERVATIVE' }, { v: 'BALANCED', label: 'BALANCED' }, { v: 'AGGRESSIVE', label: 'AGGRESSIVE' }], 'Risk mode')}
             </Item>
-            <Item label="Strike rule" title="How candidates are ranked: the desk's hybrid score, by distance from the OI wall, or by distance in expected moves.">
-              {sel('strikeRule', [{ v: 'HYBRID', label: 'Hybrid' }, { v: 'OI_WALL', label: 'By OI wall' }, { v: 'EXPECTED_MOVE', label: 'By expected move' }], 'Strike rule')}
-            </Item>
           </Group>
 
           <Group name="Pricing">
             <Item label="Execution" title="The price a short is judged at. Bid: what a seller receives. Depth-weighted: a tick under the bid when the bid is thinner than the size. Mark: not executable, for comparison only.">
               {sel('execution', [{ v: 'BID', label: 'Bid' }, { v: 'DEPTH', label: 'Depth-weighted' }, { v: 'MARK', label: 'Mark (not executable)' }], 'Execution price')}
-            </Item>
-            <Item label="Fee ×" title="A multiplier on Delta's published taker fee, for stress: net premium and breakeven follow it.">
-              {sel('feeMultiplier', [{ v: 0.5, label: '0.5' }, { v: 1, label: '1.0' }, { v: 1.5, label: '1.5' }, { v: 2, label: '2.0' }], 'Fee multiplier')}
             </Item>
             <Item label="Size" title="Contracts per order (0.001 BTC each). 'desk' follows the desk's lots setting. Premium, margin and tail loss scale with it.">
               <select className="ov-select ov-ctx-select" aria-label="contracts" value={config.contracts === null ? 'desk' : String(config.contracts)}
