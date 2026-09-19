@@ -2587,3 +2587,127 @@ spot distance + delta jump + gamma + IV spike + premium acceleration + OI change
 Intrinsic/Extrinsic → Theoretical Value → Expected Move → Delta POP → Expected-Move Coverage → Premium/EM → Tail Probability → Break-even after costs → Expected P&L → Position Size → Dynamic adjustment state.
 
 இவை தான் முன் lists-ல் formula/logic level-ல் உண்மையாக missing ஆன முக்கியமான பகுதிகள்.
+
+
+
+
+
+
+cover ஆகிவிட்டது. இன்னும் நான் add பண்ண வேண்டியது இந்த few critical items மட்டும்:
+
+🔴 1. Data freshness / stale-data gate
+
+UI model-ready என்று காட்டுவதற்கு முன்:
+
+last_market_update
+last_OI_update
+last_chain_update
+last_model_update
+data_age_seconds
+
+Rule:
+
+if data_age > threshold → NO TRADE
+
+இது இல்லாமல் பழைய OI/option premium வைத்து entry ஆகும் risk இருக்கு.
+
+
+
+current_margin_used / available_margin
+🔴 3. Position-size calculation
+
+Strike selection மட்டும் இல்லை. எத்தனை contracts sell செய்யலாம்?
+
+size = risk_budget / estimated_tail_loss_per_contract
+
+மேலும் bid liquidity-க்கு constrain:
+
+order_size <= executable_liquidity_limit
+
+
+🔴 7. Contract validity gate
+
+Selected option:
+
+LIVE
+correct expiry
+not expired
+tradable
+sufficient liquidity
+tick-size valid
+
+இவையும் order முன் verify செய்ய வேண்டும்.
+
+🟠 8. Model disagreement
+
+7 horizons எல்லாம் ஒரே direction சொல்லுகிறதா?
+
+5m
+15m
+30m
+1h
+3h
+6h
+12h
+
+UI:
+
+Consensus = 6/7 UP
+Conflict = 1/7 DOWN
+
+Strong disagreement என்றால் NO TRADE / reduced confidence.
+
+🟠 9. Signal persistence
+
+ஒரு 5m spike வந்ததும் instant sell ஆகக்கூடாது.
+
+signal_confirmed_for = N bars
+
+உதாரணம்:
+
+signal appears
+↓
+next 2 × 5m bars confirm
+↓
+entry gate
+🟠 10. Reason trace / audit
+
+Sell button press செய்தபோது DB-ல் exact reason save செய்ய வேண்டும்:
+
+why_side_selected
+why_strike_selected
+model_probabilities
+features_snapshot
+risk_snapshot
+premium_snapshot
+expected_move
+PoT
+IV-RV
+OI state
+execution price
+
+பின்னால்:
+
+“Why did the system sell 76,500 PE at 05:30?”
+
+என்று exact replay செய்ய முடியும்.
+
+🟡 11. Regime transition alert
+
+Current:
+
+TREND_UP
+
+5 minutes later:
+
+RANGE → BREAKOUT
+
+ஆகும்போது strategy invalidation trigger வேண்டும்.
+
+So, really missing critical layer:
+
+Data freshness → Contract validation → Entry gate → Execution quality → Position sizing → Portfolio risk → Exit/Adjustment engine → Multi-timeframe consensus → Audit trail
+
+உன் existing design-ல் market/option/model analytics side மிகவும் complete; remaining gap mostly “ENTRY → POSITION → RISK → EXIT” operational logic. Existing source already has the core quant components such as MFE/MAE, probability-of-hit, expected P&L, sizing, and adjustment states.
+
+இதுதான் நான் இப்போது main missing என்று வைத்துக்கொள்வேன்.
