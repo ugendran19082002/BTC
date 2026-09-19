@@ -1,7 +1,6 @@
 import type { ChainResponse, Leg } from '@/types/desk';
-import type { TradeStatus } from '@/types/trade';
 import {
-  horizonRows, positionViews, scenarioGrid, shockTable, type BothAssessment, type ExpectedMove, type PositionState, type RiskEngine,
+  horizonRows, scenarioGrid, shockTable, type BothAssessment, type RiskEngine,
   type SideAssessment,
 } from '@/lib/overview';
 import { fmt, Panel, Row, Tag } from './parts';
@@ -162,50 +161,6 @@ export function ScenarioGridPanel({ data, ce, pe, contracts, feeMultiplier = 1 }
         Premium received: CE {cePx === null ? '—' : `$${(cePx * contracts * 0.001).toFixed(2)}`} · PE {pePx === null ? '—' : `$${(pePx * contracts * 0.001).toFixed(2)}`}.
         Net of the opening fee{feeMultiplier !== 1 ? ` (×${feeMultiplier})` : ''} and half-spread slippage. Max risk is unbounded on a naked short; the tail the desk plans for is the 2×EM figure in the risk engine.
       </p>
-    </Panel>
-  );
-}
-
-// ----------------------------------------------------- position / exit
-
-const STATE_TONE: Record<PositionState, 'up' | 'warn' | 'down' | 'muted' | 'accent'> = {
-  NORMAL: 'up', WATCH: 'accent', WARNING: 'warn', ADJUST: 'warn', HEDGE: 'down', EXIT: 'down',
-};
-
-/** Open shorts against the board, each with where it stands in the NORMAL → EXIT ladder. */
-export function PositionPanel({ data, trade, em, now }: { data: ChainResponse; trade: TradeStatus | null; em: ExpectedMove; now: number }) {
-  const open = trade?.open ?? [];
-  const views = positionViews(open, data.legs, data.snapshot.spot, em);
-  const leftMs = Math.max(0, data.snapshot.expiryTs * 1000 - now);
-  if (views.length === 0) return null;
-  return (
-    <Panel title="Position / exit management" right={<small className="ov-muted">{Math.floor(leftMs / 3_600_000)}h {String(Math.floor((leftMs % 3_600_000) / 60_000)).padStart(2, '0')}m left</small>}>
-      <div className="ov-positions">
-        {views.map((v) => (
-          <div key={v.tradeId} className="ov-position">
-            <header>
-              <b>Short {v.strike === null ? v.symbol : `${fmt.n(v.strike)} ${v.side}`} × {v.contracts}</b>
-              <Tag tone={STATE_TONE[v.state]}>{v.state}</Tag>
-            </header>
-            <div className="ov-two">
-              <div>
-                <Row label="Entry → now" value={`${fmt.n(v.entryPrice, 1)} → ${fmt.n(v.mark, 1)}`} />
-                <Row label="P&L" value={v.pnlUsd === null ? '—' : `${v.pnlUsd >= 0 ? '+' : '−'}$${Math.abs(v.pnlUsd).toFixed(2)}`} tone={v.pnlUsd === null ? undefined : v.pnlUsd >= 0 ? 'up' : 'down'} />
-                <Row label="Premium decayed" value={fmt.pct(v.decayed)} />
-                <Row label="Delta · gamma" value={`${v.delta === null ? '—' : v.delta.toFixed(2)} · ${v.gamma === null ? '—' : v.gamma.toPrecision(2)}`} />
-              </div>
-              <div>
-                <Row label="Spot → strike" value={v.distanceUsd === null ? '—' : `${fmt.signed(v.distanceUsd)} (${v.distanceEm === null ? '—' : `${v.distanceEm.toFixed(2)}× EM`})`}
-                  tone={v.distanceEm === null ? undefined : v.distanceEm < 0.5 ? 'down' : v.distanceEm < 1 ? 'warn' : 'up'} />
-                <Row label="IV" value={v.iv === null ? '—' : `${(v.iv * 100).toFixed(1)}%`} />
-                <Row label="OI change" value={v.oiChange === null ? '—' : fmt.signed(v.oiChange)} />
-                <Row label="Why" value={v.why} />
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-      <p className="ov-foot">NORMAL → WATCH → WARNING → ADJUST → HEDGE → EXIT, from the strike's distance in expected moves and the premium against entry. Acting on it goes through the Positions tab.</p>
     </Panel>
   );
 }

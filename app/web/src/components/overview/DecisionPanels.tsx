@@ -390,11 +390,14 @@ export function StrategyDecisionPanel({ data, sides, both, choice, onSelect }: {
 }
 
 
-export function SellRecommendationPanel({ data, onSelect, onSell, leverage, contracts, iv, em, first = 'P' }: {
+export function SellRecommendationPanel({ data, onSelect, onSell, leverage, contracts, iv, em, first = 'P', execution = 'BID' }: {
   data: ChainResponse; onSelect: (s: Selected) => void; onSell?: (l: Leg) => void; leverage: number; contracts: number;
-  iv: IvRv | null; em: ExpectedMove; first?: 'C' | 'P';
+  iv: IvRv | null; em: ExpectedMove; first?: 'C' | 'P'; execution?: ScreenConfig['execution'];
 }) {
   const spot = data.snapshot.spot;
+  // The premium a candidate is judged at follows the execution setting: the bid a seller receives, a tick under it when thin, or the mark for comparison.
+  const priceOf = (l: Leg) => (execution === 'MARK' ? l.mark : execution === 'DEPTH' ? executionEstimate(l, spot, contracts).expectedFill : l.bid ?? l.sellPrice);
+  const priceLabel = execution === 'MARK' ? 'Mark' : execution === 'DEPTH' ? 'Est. fill' : 'Bid';
   const order: readonly ('C' | 'P')[] = first === 'P' ? ['P', 'C'] : ['C', 'P'];
   return (
     <Panel title="Sell recommendation" right={<small className="ov-muted">{contracts} ct at {leverage}x · top 3 a side · margin est.</small>}>
@@ -405,11 +408,11 @@ export function SellRecommendationPanel({ data, onSelect, onSell, leverage, cont
             <h4>{side === 'C' ? 'CE side' : 'PE side'}</h4>
             {rows.length === 0 ? <p className="ov-empty">Nothing on this side clears the desk’s rules.</p> : (
               <table className="ov-mini ov-reco">
-                <thead><tr><th>Strike</th><th>Type</th><th>Premium</th><th>POP</th><th>P(touch)</th><th>Dist/EM</th><th>IV−RV</th><th>θ/prem</th><th>Exp. P&amp;L</th><th>Tail (2×EM)</th><th>Margin</th><th>R/R</th><th>Score</th><th /></tr></thead>
+                <thead><tr><th>Strike</th><th>Type</th><th title={execution === 'MARK' ? 'Mark price — not executable' : 'What a seller receives'}>{priceLabel}</th><th title="Probability of expiring worthless">POP</th><th title="Probability BTC touches the strike before expiry">P(touch)</th><th title="Distance from spot in expected moves">Dist/EM</th><th title="Implied minus realised volatility, points">IV−RV</th><th title="Theta as a share of premium, per day">θ/prem</th><th title="Expected P&L for your size, after charges">Exp. P&amp;L</th><th title="Loss at an adverse move of two expected moves">Tail (2×EM)</th><th title="Margin estimate at the ticket's leverage">Margin</th><th title="Expected P&L per dollar of tail loss">R/R</th><th title="The desk's score, 0–10">Score</th><th /></tr></thead>
                 <tbody>
                   {rows.map((l) => {
                     const o = odds(l);
-                    const px = l.sellPrice ?? l.mark;
+                    const px = priceOf(l);
                     const est = px === null ? null : orderEstimate(l.cp, l.strike, px, spot, leverage, contracts);
                     const pa = premiumAnalysis(l, em);
                     const adverse = em ? (l.cp === 'C' ? spot + 2 * em.move : spot - 2 * em.move) : null;
@@ -446,80 +449,32 @@ export function SellRecommendationPanel({ data, onSelect, onSell, leverage, cont
 
 // ------------------------------------------------------- checklist and order
 
-export function EntryPanel({ data, leg, other, ready, onSell, contracts, leverage, side, onSide, execution = 'BID', feeMultiplier = 1 }: {
-  data: ChainResponse; leg: Leg | null; other: Leg | null; ready: Readiness; onSell?: (l: Leg) => void; contracts: number; leverage: number;
-  side: 'CE' | 'PE' | 'BOTH'; onSide: (s: 'CE' | 'PE' | 'BOTH') => void; execution?: ScreenConfig['execution']; feeMultiplier?: number;
-}) {
-  const spot = data.snapshot.spot;
-  // The price the order is judged at: the bid (what a short receives), a tick under it when the bid is thin, or the mark on request -- which is not executable, and says so.
-  const exe0 = leg ? executionEstimate(leg, spot, contracts) : null;
-  const premium = leg ? (execution === 'MARK' ? leg.mark : execution === 'DEPTH' ? exe0?.expectedFill ?? leg.bid : leg.bid ?? leg.sellPrice) : null;
-  const est = leg && premium !== null ? orderEstimate(leg.cp, leg.strike, premium, spot, leverage, contracts) : null;
-  const exe = exe0 && est ? { ...exe0, feeUsd: exe0.feeUsd * feeMultiplier, netPremiumUsd: exe0.netPremiumUsd === null ? null : exe0.netPremiumUsd - exe0.feeUsd * (feeMultiplier - 1) } : exe0;
-  const legs = side === 'BOTH' ? [leg, other].filter((l): l is Leg => l !== null) : leg ? [leg] : [];
-  const label = side === 'BOTH' ? `Sell both (${legs.map((l) => `${fmt.n(l.strike)} ${l.cp === 'C' ? 'CE' : 'PE'}`).join(' + ')})` : leg ? `Place sell order (${fmt.n(leg.strike)} ${leg.cp === 'C' ? 'CE' : 'PE'})` : 'Select a strike';
+export function ChecklistPanel({ leg, ready, onSell }: { leg: Leg | null; ready: Readiness; onSell?: (l: Leg) => void }) {
+  // Failing first, then what could not be read, then what passed: the eye goes to what needs attention.
+  const rank = (ok: boolean | null) => (ok === false ? 0 : ok === null ? 1 : 2);
+  const gates = [...ready.gates].sort((x, y) => rank(x.ok) - rank(y.ok));
+  const side = leg ? (leg.cp === 'C' ? 'CE' : 'PE') : null;
   return (
-    <div className="ov-entry">
-      <Panel title={`Entry checklist (${ready.gates.length} gates)`} className="ov-grow"
-        right={<Tag tone={ready.ready ? 'up' : 'down'}>{ready.verdict}{ready.ready ? '' : ` · ${ready.failing} failing${ready.unknown ? `, ${ready.unknown} unreadable` : ''}`}</Tag>}>
-        <ul className="ov-checks ov-checks-dense">
-          {ready.gates.map((g) => (
-            <li key={g.key} className={g.ok === true ? 'ok' : g.ok === false ? 'bad' : 'unknown'}>
-              <span aria-hidden>{g.ok === true ? '✓' : g.ok === false ? '✕' : '?'}</span>{g.text}
-            </li>
-          ))}
-        </ul>
-      </Panel>
-      <Panel title="Order panel" right={<small className={execution === 'MARK' ? 'ov-warn' : 'ov-muted'}>{execution === 'MARK' ? 'priced at mark — not executable' : execution === 'DEPTH' ? 'priced at the estimated fill' : 'priced at the bid'}{feeMultiplier !== 1 ? ` · fee ×${feeMultiplier}` : ''}</small>}>
-        <div className="ov-tabs ov-side-toggle" role="tablist">
-          {(['CE', 'PE', 'BOTH'] as const).map((s) => (
-            <button key={s} role="tab" aria-selected={side === s} className={side === s ? 'on' : ''} onClick={() => onSide(s)}>
-              {s === 'BOTH' ? 'Both' : `Sell ${s}`}
+    <Panel title={`Entry checklist · ${ready.gates.length} gates`}
+      right={
+        <span className="ov-chain-head">
+          <Tag tone={ready.ready ? 'up' : 'down'}>{ready.verdict}{ready.ready ? '' : ` · ${ready.failing} failing${ready.unknown ? `, ${ready.unknown} unreadable` : ''}`}</Tag>
+          {leg && onSell && (
+            <button className="ov-sell" onClick={() => onSell(leg)} title="Opens the order ticket for this strike — every gate runs again on the server">
+              Sell {fmt.n(leg.strike)} {side} via ticket
             </button>
-          ))}
-        </div>
-        <button className="ov-place" disabled={legs.length === 0 || !onSell} onClick={() => legs[0] && onSell?.(legs[0])}
-          title={legs.length === 0 ? 'Select a strike on the chain' : side === 'BOTH' ? 'Opens the ticket for the first leg; place the second from the other side after it fills' : ready.ready ? 'Opens the order ticket — every gate runs again on the server' : 'Not every gate is green; the ticket still opens, and the server decides'}>
-          {label}
-        </button>
-        <Row label="Selected strike" value={leg ? `${fmt.n(leg.strike)} ${leg.cp === 'C' ? 'CE' : 'PE'}` : '—'} />
-        <Row label="Entry bid" value={`${fmt.n(exe?.bid ?? null, 1)}${exe?.bidSize != null ? ` × ${fmt.n(exe.bidSize)}` : ''}`} hint="A short fills at the bid, not the mark" />
-        <Row label="Estimated fill" value={fmt.n(exe?.expectedFill ?? null, 1)} tone={exe?.thin ? 'warn' : undefined} hint={exe?.thin ? 'The bid is thinner than your size: a tick under it' : 'The bid is deep enough for your size'} />
-        <Row label="Quantity · leverage" value={`${fmt.n(contracts)} ct · ${leverage}x`} />
-        <Row label={`Premium (${execution === 'MARK' ? 'mark' : execution === 'DEPTH' ? 'est. fill' : 'bid'})`} value={est ? `$${est.creditUsd.toFixed(2)}` : '—'} hint="price × contracts × 0.001 BTC" />
-        <Row label="Fees (est.)" value={exe ? `$${exe.feeUsd.toFixed(2)}` : '—'} hint={feeMultiplier !== 1 ? `Delta's rate × ${feeMultiplier}` : "Delta's taker rate, capped at 3.5% of premium"} />
-        <Row label="Slippage (est.)" value={exe?.slippagePerBtc == null ? '—' : `$${(exe.slippagePerBtc * contracts * CONTRACT_BTC).toFixed(2)}`} />
-        <Row label="Net premium" value={exe?.netPremiumUsd == null ? '—' : `$${exe.netPremiumUsd.toFixed(2)}`} tone="up" />
-        <Row label="Margin required (est.)" value={est ? `$${est.marginUsd.toFixed(2)}` : '—'} />
-        <Row label="Break-even (after fees)" value={est ? fmt.n(est.breakevenAfterFees) : '—'} />
-        <Row label="Max risk" value={leg?.ev?.maxLossUsd == null ? 'unbounded (naked)' : `$${leg.ev.maxLossUsd.toFixed(2)}`} tone="down" />
-        <Row label="Position size" value={`${fmt.n(contracts * (side === 'BOTH' ? 2 : 1))} ct · ${(contracts * CONTRACT_BTC * (side === 'BOTH' ? 2 : 1)).toFixed(3)} BTC`} />
-      </Panel>
-    </div>
-  );
-}
-
-// --------------------------------------------------------------- screen bar
-
-const IST_CLOCK = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-const IST_HM = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
-const istHm = (epochSeconds: number) => IST_HM.format(new Date(epochSeconds * 1000));
-
-/** The top of the reference screens: the desk's name, the IST clock, the mode, and the controls. */
-export function ScreenBar({ data, now, controls, error }: { data: ChainResponse; now: number; controls?: ReactNode; error?: string | null }) {
-  return (
-    <header className="ov-screenbar">
-      <div className="ov-brand">
-        <span className="btc-logo" aria-hidden>₿</span>
-        <span><b>BTC Options Desk</b><small>Delta Exchange (India) · Option selling intelligence</small></span>
-      </div>
-      <div className="ov-screenbar-right">
-        {error && <Tag tone="down">{error}</Tag>}
-        <span className="ov-clock">{IST_CLOCK.format(new Date(now)).replace(/,/g, '')} IST</span>
-        <Tag tone={data.snapshot.live ? 'up' : 'muted'}>{data.snapshot.live ? '● Live' : 'Past'}</Tag>
-        {controls}
-      </div>
-    </header>
+          )}
+        </span>
+      }>
+      <ul className="ov-checks ov-checks-dense">
+        {gates.map((g) => (
+          <li key={g.key} className={g.ok === true ? 'ok' : g.ok === false ? 'bad' : 'unknown'}>
+            <span aria-hidden>{g.ok === true ? '✓' : g.ok === false ? '✕' : '?'}</span>{g.text}
+          </li>
+        ))}
+      </ul>
+      <p className="ov-foot">Failing first, then unreadable, then passing. Orders and positions have their own tabs; this screen decides, the ticket places.</p>
+    </Panel>
   );
 }
 
@@ -559,36 +514,6 @@ export function ExpiryHeader({ data, now }: { data: ChainResponse; now: number }
 }
 
 const ivRvOf = (data: ChainResponse) => ivRv(data.structure.atmIv, data.market?.realisedVol ?? null);
-
-// --------------------------------------------------------------- status bar
-
-export function StatusBar({ data, trade, now, leverage, refreshEverySec = null, marginUsedPct, freshnessSec = 30 }: {
-  data: ChainResponse; trade: TradeStatus | null; now: number; leverage: number; refreshEverySec?: number | null; marginUsedPct?: number | null; freshnessSec?: number;
-}) {
-  const age = Math.max(0, Math.round((now - data.snapshot.ts * 1000) / 1000));
-  const measured = Boolean(data.outlook.model);
-  const nextIn = refreshEverySec === null || !data.snapshot.live ? null : Math.max(0, refreshEverySec - (age % refreshEverySec));
-  const net = trade?.today?.netUsd ?? null;
-  // Margin behind what is short, at the ticket's leverage, against the balance. An estimate: Delta's figure is on the Positions tab.
-  const shortCt = trade ? trade.open.reduce((a, t) => a + Math.max(0, -t.position), 0) : 0;
-  const marginUsed = marginUsedPct !== undefined ? marginUsedPct : trade?.balanceUsd != null && trade.balanceUsd > 0 && shortCt > 0
-    ? (shortCt * marginPerContract(data.snapshot.spot, leverage, 0)) / trade.balanceUsd : trade?.balanceUsd != null ? 0 : null;
-  return (
-    <footer className="ov-status">
-      <Tag tone={trade?.mode === 'live' ? 'down' : 'accent'}>{trade?.mode === 'live' ? 'LIVE' : 'Paper'} · short premium</Tag>
-      <Tag tone={data.snapshot.live && age <= freshnessSec ? 'up' : 'warn'}>{data.snapshot.live ? `Live data · ${age}s old` : 'Past snapshot'}</Tag>
-      <Tag tone={measured ? 'up' : 'muted'}>{measured ? `Models ready · ${data.outlook.model!.name}${data.outlook.model!.measuredAt ? ` · ${data.outlook.model!.measuredAt.slice(0, 10)}` : ''}` : 'Model: desk figures only'}</Tag>
-      <span className="ov-muted">{nextIn === null ? (data.snapshot.live ? 'Auto-refresh off' : `Snapshot ${istLabel(data.snapshot.ts)}`) : `Next update: ${String(Math.floor(nextIn / 60)).padStart(2, '0')}:${String(nextIn % 60).padStart(2, '0')}`}</span>
-      <span className="ov-grow" />
-      <span>Day P&amp;L <b className={net === null ? '' : net >= 0 ? 'ov-up' : 'ov-down'}>{net === null ? '—' : `${net >= 0 ? '+' : '−'}$${Math.abs(net).toFixed(2)}`}</b></span>
-      <span>Open positions <b>{trade?.open.length ?? '—'}</b></span>
-      <span>Balance <b>{trade?.balanceUsd == null ? '—' : `$${trade.balanceUsd.toFixed(2)}`}</b></span>
-      <span title="The day's loss against the daily loss limit">Risk used <b>{trade?.today && trade.limits.maxDailyLossUsd > 0 ? fmt.pct(Math.max(0, -trade.today.netUsd) / trade.limits.maxDailyLossUsd, 0) : '—'}</b></span>
-      <span title="Margin behind the open shorts at the ticket's leverage, as a share of the balance (estimate)">Margin used <b className={marginUsed !== null && marginUsed > 0.5 ? 'ov-warn' : ''}>{marginUsed === null ? '—' : fmt.pct(marginUsed, 1)}</b>
-        {marginUsed !== null && <span className="ov-meter" aria-hidden><span style={{ width: `${Math.min(100, marginUsed * 100)}%` }} /></span>}</span>
-    </footer>
-  );
-}
 
 // ------------------------------------------------------------- scenario P&L
 

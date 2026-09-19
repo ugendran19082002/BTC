@@ -6,7 +6,7 @@ import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import type { ChartTf } from '@/components/desk/PriceChart';
 import {
-  assessBoth, assessSides, ivRv, marginPerContract, readiness, riskEngine, sideGates, sideSelector, sideStatusOf, skew,
+  assessBoth, assessSides, ivRv, readiness, riskEngine, sideGates, sideSelector, sideStatusOf, skew,
   type SideAssessment, type SideChoice,
 } from '@/lib/overview';
 import { DEFAULT_CONFIG, expectedMoveBy, thresholds, type ScreenConfig } from '@/lib/screen-config';
@@ -15,11 +15,11 @@ import {
   KeyLevelsPanel, KpiStrip, IvTermPanel, MtfPanel, PriceActionPanel, SkewPanel, TradeFlowPanel, VolatilityPanel,
 } from './MarketPanels';
 import {
-  ChainPanel, EntryPanel, findLeg, ModelViewPanel, ScreenBar, SelectedStrikePanel, SellRecommendationPanel, StatusBar,
+  ChainPanel, ChecklistPanel, findLeg, ModelViewPanel, SelectedStrikePanel, SellRecommendationPanel,
   StrategyDecisionPanel, type Selected,
 } from './DecisionPanels';
-import { ContextBar } from './ContextBar';
-import { EntrySetupPanel, HorizonsPanel, PositionPanel, RiskEnginePanel, ScenarioGridPanel } from './RiskPanels';
+import { SettingsStrip } from './SettingsStrip';
+import { EntrySetupPanel, HorizonsPanel, RiskEnginePanel, ScenarioGridPanel } from './RiskPanels';
 
 /**
  * The Live screen: the three reference designs (docs/image1-3.png) and the
@@ -40,7 +40,7 @@ import { EntrySetupPanel, HorizonsPanel, PositionPanel, RiskEnginePanel, Scenari
  */
 export function Overview({
   data, trade, expiries, onExpiry, onSell, contracts: deskContracts, leverage = 200, chart, chartTf = '15m', chain = true,
-  selected: selectedProp, onSelect, spark, controls, refreshEverySec = null, error,
+  selected: selectedProp, onSelect, spark, controls, error,
 }: {
   data: ChainResponse;
   trade: TradeStatus | null;
@@ -64,8 +64,6 @@ export function Overview({
   spark?: readonly number[];
   /** The screen's mode and refresh controls, drawn in the screen bar. */
   controls?: ReactNode;
-  /** How often the chain reloads on its own, for the status bar's countdown; null when it does not. */
-  refreshEverySec?: number | null;
   /** The last load's error, if the chain on screen is older than it should be. */
   error?: string | null;
 }) {
@@ -81,7 +79,6 @@ export function Overview({
   const config: ScreenConfig = useMemo(() => ({ ...DEFAULT_CONFIG, ...stored }), [stored]);
   const t = useMemo(() => thresholds(config), [config]);
   const contracts = config.contracts ?? deskContracts;
-  const [side, setSide] = useState<'CE' | 'PE' | 'BOTH'>('PE');
 
   // The strike under inspection: the desk's own pick until someone clicks
   // another. Owned by the screen when it says so, by these panels otherwise.
@@ -130,28 +127,25 @@ export function Overview({
 
   // The default selection follows the desk's side; the operator's click overrides it.
   const deskPick = useMemo<Selected | null>(() => {
-    const want = choice.side === 'CE' ? 'CE' : choice.side === 'PE' ? 'PE' : choice.side === 'BOTH' ? (side === 'CE' ? 'CE' : 'PE') : null;
+    // BOTH reads as the put first: the side the desk sells most; the call is one click away.
+    const want = choice.side === 'CE' ? 'CE' : choice.side === 'PE' || choice.side === 'BOTH' ? 'PE' : null;
     const s = want ? sides.find((x) => x.side === want)?.leg : sides.map((x) => x.leg).find((l) => l);
     if (s) return { cp: s.cp, strike: s.strike };
     const p = data.best.pick && !data.best.bestOfNone ? data.best.pick : null;
     return p ? { cp: p.cp, strike: p.strike } : null;
-  }, [choice.side, sides, side, data.best]);
-  useEffect(() => { if (choice.side === 'CE' || choice.side === 'PE' || choice.side === 'BOTH') setSide(choice.side); }, [choice.side]);
+  }, [choice.side, sides, data.best]);
   const selected = picked && findLeg(data.legs, picked) ? picked : deskPick;
   const leg = findLeg(data.legs, selected);
-  const otherLeg = leg ? sides.find((s) => s.side === (leg.cp === 'C' ? 'PE' : 'CE'))?.leg ?? null : null;
   const ceLeg = leg?.cp === 'C' ? leg : sides[0]!.leg;
   const peLeg = leg?.cp === 'P' ? leg : sides[1]!.leg;
 
   const risk = useMemo(() => (leg ? riskEngine(leg, data.legs, emSettle, snap.spot, snap.hoursToExpiry, contracts, leverage) : null), [leg, data.legs, emSettle, snap.spot, snap.hoursToExpiry, contracts, leverage]);
   const ready = useMemo(() => readiness({ data, leg, iv, em: emSettle, nowMs: now, contracts, leverage, trade: tradeLimits, risk, t, freshnessMs: config.freshnessSec * 1000 }), [data, leg, iv, emSettle, now, contracts, leverage, tradeLimits, risk, t, config.freshnessSec]);
 
-  const marginUsedPct = trade?.balanceUsd != null && trade.balanceUsd > 0 ? (heldShort * marginPerContract(snap.spot, leverage, 0)) / trade.balanceUsd : null;
-
   return (
     <div className="ov">
-      <ScreenBar data={data} now={now} controls={controls} error={error} />
-      <ContextBar data={data} now={now} config={config} onChange={(patch) => setConfig({ ...stored, ...patch })} choice={choice} contracts={contracts} deskContracts={deskContracts} />
+      <SettingsStrip data={data} now={now} config={config} stored={stored} onChange={(patch) => setConfig({ ...stored, ...patch })} onReset={() => setConfig({})}
+        choice={choice} contracts={contracts} deskContracts={deskContracts} controls={controls} error={error} />
       <ErrorBoundary where="Overview KPIs"><KpiStrip data={data} spot={spot} iv={iv} perp={perp} spark={spark} now={now} horizonMin={config.horizonMin} /></ErrorBoundary>
 
       <div className="ov-main">
@@ -182,12 +176,9 @@ export function Overview({
           <ErrorBoundary where="Horizons"><HorizonsPanel data={data} activeMin={config.horizonMin} /></ErrorBoundary>
           <ErrorBoundary where="Strategy decision"><StrategyDecisionPanel data={data} sides={sides} both={both} choice={choice} onSelect={setPicked} /></ErrorBoundary>
           <ErrorBoundary where="Sell recommendation">
-            <SellRecommendationPanel data={data} onSelect={setPicked} onSell={onSell} leverage={leverage} contracts={contracts} iv={iv} em={emSettle} first={choice.side === 'CE' ? 'C' : 'P'} />
+            <SellRecommendationPanel data={data} onSelect={setPicked} onSell={onSell} leverage={leverage} contracts={contracts} iv={iv} em={emSettle} first={choice.side === 'CE' ? 'C' : 'P'} execution={config.execution} />
           </ErrorBoundary>
-          <ErrorBoundary where="Entry">
-            <EntryPanel data={data} leg={leg} other={otherLeg} ready={ready} onSell={onSell} contracts={contracts} leverage={leverage} side={side} onSide={setSide} execution={config.execution} feeMultiplier={config.feeMultiplier} />
-          </ErrorBoundary>
-          <ErrorBoundary where="Positions"><PositionPanel data={data} trade={trade} em={emSettle} now={now} /></ErrorBoundary>
+          <ErrorBoundary where="Checklist"><ChecklistPanel leg={leg} ready={ready} onSell={onSell} /></ErrorBoundary>
         </div>
       </div>
 
@@ -196,8 +187,6 @@ export function Overview({
         <ErrorBoundary where="Skew"><SkewPanel data={data} rank={term?.skew ?? null} /></ErrorBoundary>
         <ErrorBoundary where="Scenario P&L"><ScenarioGridPanel data={data} ce={ceLeg} pe={peLeg} contracts={contracts} feeMultiplier={config.feeMultiplier} /></ErrorBoundary>
       </div>
-
-      <StatusBar data={data} trade={trade} now={now} leverage={leverage} refreshEverySec={refreshEverySec} marginUsedPct={marginUsedPct} freshnessSec={config.freshnessSec} />
     </div>
   );
 }
