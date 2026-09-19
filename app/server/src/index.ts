@@ -9,6 +9,8 @@ import { StrategyRunner } from './strategy/runner.js';
 import { liveTickers, startTickerPoller, startTickerSocket } from './market/delta.js';
 import { liveChain } from './market/chain.js';
 import { readMarket } from './market/moves.js';
+import { marketSchema } from './market/oi-history.js';
+import { errorLog } from './observability/errors.js';
 
 /**
  * Start the desk.
@@ -25,6 +27,11 @@ import { readMarket } from './market/moves.js';
  * settings cache every sync getter reads from.
  */
 const desk = await initTradingService();
+// The rest of the schemas, for the same reason: a table that is only created
+// on the first request that needs it is a deploy that reports healthy with
+// the table missing. Every ledger entry is on `/api/health` before `listen`.
+await marketSchema();
+await errorLog().ready;
 
 // One sign-in service for the process: the gate and the routes share the pool.
 const auth = await authFromEnv({
