@@ -19,11 +19,20 @@ An inspect on the board selects the strike the panels are about. Selling goes
 through the same ticket, so every gate still runs on the server.
 
 Backend: `option_snapshots` records every strike of the two nearest expiries
-every 5 minutes (a year kept); `GET /api/term` and `GET /api/option-history`.
+every 5 minutes; `trade_flow_1m` every print on the perp by aggressor side
+(off the `all_trades` socket); `perp_snapshots` funding, OI, turnover and the
+book; `iv_term_snapshots` the term structure. All kept a year. Routes:
+`/api/perp`, `/api/term` (with `weekAgo`, `monthAgo`, skew percentile),
+`/api/option-history`. The market read gained MACD, VWAP, structure, realised
+vol over 1h / 6h / 12h and the previous day's high and low.
 
-Not built, and shown as not captured rather than as zeros:
-- perpetual funding, trade flow, liquidations, order-book depth (need websocket feeds);
-- skew percentile over a year (needs a year of `option_snapshots`);
+Shown as an estimate, and labelled so: margin and fees on the order panel and
+the recommendation table (the server's fitted formula, at the ticket's
+leverage), margin used in the status bar. The ticket, then Delta, decides.
+
+Not built, and shown as such rather than as zeros:
+- liquidations (no public feed on Delta);
+- the term structure's "a week / a month ago" lines and the skew percentile fill in as the record grows (recording from 19 Sep 2026);
 - a model per horizon (5m…24h) — the outlook is the measured state table, not seven trained models;
 - an audit trail of why each sell was taken.
 

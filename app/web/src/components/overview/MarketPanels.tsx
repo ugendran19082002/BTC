@@ -24,13 +24,13 @@ export function KpiStrip({ data, spot, iv, perp, spark }: {
   const funding = t?.fundingRate ?? null;
   return (
     <div className="ov-kpis">
-      <Kpi label="BTC spot" value={fmt.n(spot, 1)} sub={change === null ? '24h —' : `${fmt.signed(change, 2)}% 24h`} tone={change === null ? undefined : change >= 0 ? 'up' : 'down'}
+      <Kpi label="BTC spot" value={fmt.n(spot, 1)} sub={change === null ? 'vs prev close —' : `${fmt.signed(change, 2)}% vs prev close`} tone={change === null ? undefined : change >= 0 ? 'up' : 'down'}
         spark={spark} />
       <Kpi label="BTC perp" value={fmt.n(t?.mark ?? null, 1)} sub={perpChange === null ? 'mark · 24h —' : `mark · ${fmt.signed(perpChange, 2)}% 24h`}
         tone={perpChange === null ? undefined : perpChange >= 0 ? 'up' : 'down'} />
       <Kpi label="Perp 24h volume" value={usdShort(t?.turnoverUsd24h)} sub={t?.volume24h == null ? '' : `${fmt.n(t.volume24h)} contracts`} />
       <Kpi label="Open interest (perp)" value={usdShort(t?.oiUsd)} sub={t?.oiContracts == null ? '' : `${fmt.n(t.oiContracts)} contracts`} />
-      <Kpi label="Funding rate" value={funding === null ? '—' : `${(funding * 100).toFixed(4)}%`}
+      <Kpi label="Funding rate" value={funding === null ? '—' : `${funding.toFixed(4)}%`}
         sub={funding === null ? 'not read' : funding > 0 ? 'longs pay shorts' : funding < 0 ? 'shorts pay longs' : 'flat'}
         tone={funding === null ? undefined : funding > 0 ? 'up' : funding < 0 ? 'down' : undefined} />
       <Kpi label="IV (ATM)" value={s.atmIv === null ? '—' : `${(s.atmIv * 100).toFixed(1)}%`}

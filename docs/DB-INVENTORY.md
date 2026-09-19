@@ -17,7 +17,7 @@ name's prefix wherever a bare name would be ambiguous (`auth_sessions`,
 | strategy | `strategies`, `strategy_runs`, `strategy_adds`, `strategy_rebalances` | the scheduler | Saved strategies and their run journal: what stops a strategy entering twice. |
 | sign-in | `auth_user`, `auth_sessions`, `auth_recovery_codes`, `auth_limits`, `auth_events` | the sign-in | The one user, sessions, recovery codes, rate limits, the security log. |
 | errors | `errors` | everything | Every failure, from all three tiers, in one place. |
-| market | `oi_snapshots`, `chain_features`, `option_snapshots` | the chain route, and the API's one-minute recorder, every 5 minutes | What open interest and at-the-money volatility *were*, so a change in either is readable. Disposable. |
+| market | `oi_snapshots`, `chain_features`, `option_snapshots`, `trade_flow_1m`, `perp_snapshots`, `iv_term_snapshots` | the chain route, the API's recorders, and the perp's trade socket | What open interest and at-the-money volatility *were*, so a change in either is readable. Disposable. |
 | analytics | `outlook_states`, `chain_states`, `analytics_publish_meta` | `research/publish_outlook_states.py` | The measured Down / Side / Up tables the Python service reads. |
 | ledger | `schema_migrations` | `db/migrate.ts` | The one ledger of what has been done to the database. |
 | `chain.db` (SQLite) | 6 | the harvester, offline | Two years of settled option chains. Read-only at runtime. |
@@ -93,7 +93,7 @@ Ids are `<area>-NNN-what-it-does`. Applied on a fresh desk today:
 | Area | Migrations |
 |---|---|
 | trading | `trading-001-settings`, `trading-002-default-settings`, `trading-003-trades`, `trading-004-mtm-samples`, `trading-005-settings-to-public`, `trading-006-journal-to-public` |
-| market | `market-001-oi-snapshots`, `market-002-chain-features`, `market-003-to-public`, `market-004-option-snapshots` |
+| market | `market-001-oi-snapshots`, `market-002-chain-features`, `market-003-to-public`, `market-004-option-snapshots`, `market-005-flow` |
 | errors | `errors-001-log`, `errors-002-to-public` |
 | strategy | `strategy-001-tables`, `strategy-002-seed`, `strategy-003-to-public` |
 | sign-in | `auth-001-user-sessions`, `auth-002-to-public` |
@@ -343,6 +343,16 @@ volume and spot. Written by a timer in `index.ts` (checked each minute, one
 bucket per five, `ON CONFLICT DO NOTHING` so a restart cannot double a bucket)
 in one batched `unnest` insert; rows older than 365 days pruned as it writes.
 Created directly in `public` by `market-004-option-snapshots`.
+
+`trade_flow_1m`, `perp_snapshots`, `iv_term_snapshots` (`market/flow.ts`,
+migration `market-005-flow`): the perpetual's tape summed per minute by
+aggressor side, written every twenty seconds from the prints the
+`all_trades` socket (`market/flow-socket.ts`) holds in memory, `ON CONFLICT DO
+NOTHING` so a replayed snapshot cannot double a bar; the perp ticker and the
+top of its book every five minutes; ATM IV per listed expiry every five
+minutes. All kept a year. The hour's flow is read from the table plus the
+minute in progress, and says how many minutes it has -- a socket outage shows
+as a short window, never as zero flow.
 
 Kept apart from the journal for the reason the journal is kept apart, in reverse: this is
 market data and entirely disposable. Truncate it and the board loses its change

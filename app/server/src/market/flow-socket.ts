@@ -40,7 +40,7 @@ export type PerpTicker = {
   mark: number | null;
   spot: number | null;
   last: number | null;
-  /** Delta's current funding rate, as a fraction per funding period. */
+  /** Delta's current funding rate, in percent per funding period, as the exchange publishes it (0.01 is 0.01%). */
   fundingRate: number | null;
   oiContracts: number | null;
   oiUsd: number | null;
@@ -187,9 +187,13 @@ export class FlowSocket {
   }
 
   private add(p: Print): void {
-    // A snapshot repeats prints the stream already delivered; the same instant,
-    // price, size and side is the same print.
-    if (this.prints.some((q) => q.at === p.at && q.price === p.price && q.size === p.size && q.side === p.side)) return;
+    // A snapshot repeats prints the stream already delivered around the moment
+    // of subscribing; the same instant, price, size and side is the same print.
+    // Only the newest prints can overlap, so only they are scanned.
+    for (let i = this.prints.length - 1, n = 0; i >= 0 && n < 200; i--, n++) {
+      const q = this.prints[i]!;
+      if (q.at === p.at && q.price === p.price && q.size === p.size && q.side === p.side) return;
+    }
     this.prints.push(p);
     if (this.prints.length > 1 && p.at < this.prints[this.prints.length - 2]!.at) this.prints.sort((a, b) => a.at - b.at);
   }

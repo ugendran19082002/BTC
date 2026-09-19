@@ -60,6 +60,8 @@ here exists because something specific went wrong once.
 |---|---:|---|
 | `market/chain.ts` | 453 | Builds the option chain: strike spacing read from what Delta actually lists rather than assumed, with a fallback. |
 | `market/moves.ts` | 275 | A multi-timeframe read of BTC from public candles. |
+| `market/flow.ts` | 330 | Records the perp's trade flow per minute, funding / OI / book every 5 minutes, and the IV term structure; reads the hour's flow, the book, the term structure as it was, and the skew's rank. |
+| `market/flow-socket.ts` | 250 | Delta's `all_trades` and perp ticker socket: every BTCUSD print by aggressor side, held for an hour. |
 | `market/option-snapshots.ts` | 175 | Records every strike of the two nearest expiries every 5 minutes (`option_snapshots`), and reads one strike's history back. |
 | `market/term.ts` | 65 | ATM IV per listed expiry — the IV term structure. |
 | `market/delta.ts` | 201 | Delta's *public* endpoints. No API key is ever used in this file. |
@@ -140,9 +142,9 @@ Live tab between the chart and the chain board.
 | File | Lines | What it is for |
 |---|---:|---|
 | `lib/overview.ts` | 341 | The arithmetic: IV vs RV, 25Δ skew, expected move, premium analysis, odds (measured before model), short payoff, side cards, consensus, freshness and the entry gates. Pure; 27 tests. |
-| `overview/Overview.tsx` | 134 | Lays the panels out. Chart and compact chain optional; the selected strike can be owned by the screen. |
-| `overview/MarketPanels.tsx` | 202 | Market strip, price action, key levels, volatility, IV term structure, skew; trade flow said as not captured. |
-| `overview/DecisionPanels.tsx` | 394 | Selected strike (metrics / probability / payoff / momentum), model view, strategy decision, sell recommendation, entry checklist, order panel, status bar. |
+| `overview/Overview.tsx` | 130 | Lays the panels out and polls `/api/perp` and `/api/term`. Chart and compact chain optional; the selected strike can be owned by the screen. |
+| `overview/MarketPanels.tsx` | 300 | Market strip (spot, perp, funding, OI, volume, IV, PCR, regime, horizon odds), price action (trend, structure, RSI, MACD, VWAP, EMAs, ATR), key levels, volatility (RV 1h/6h/12h/21d, regime), trade flow and book, IV term structure with its history, skew with its percentile. |
+| `overview/DecisionPanels.tsx` | 430 | Selected strike (metrics / probability / payoff / momentum), model view, strategy decision with both-sides safety, sell recommendation with margin and return on margin, entry checklist with the risk gate, order panel with fees and margin, scenario P&L, status bar with margin used. |
 | `overview/parts.tsx` | 68 | Panel, row, tag, probability bar, number formats. |
 
 ### Shared UI (`components/ui/`) — 14 files, ~640 lines

@@ -55,6 +55,9 @@ Row counts read on 19 Sep 2026.
 |---|---|---|---|---|
 | `oi_snapshots` | OI per strike, with spot and ATM IV | **5 min** buckets | 48 h | 11,980 |
 | `option_snapshots` | every strike of the **two nearest live expiries**: mark, last, bid, ask, sizes, mark / bid / ask IV, delta, gamma, theta, vega, rho, OI, volume, spot | **5 min** | 365 days | recording since 19 Sep 2026 |
+| `trade_flow_1m` | the perpetual's tape, per minute, by aggressor side: buy / sell volume and count, large prints (≥200 contracts), VWAP, high, low | **1 min** | 365 days | recording since 19 Sep 2026 |
+| `perp_snapshots` | the perpetual: mark, spot, funding rate, OI (contracts, USD), 24h turnover, and the top of the book (20-level depth a side, imbalance, spread) | **5 min** | 365 days | recording since 19 Sep 2026 |
+| `iv_term_snapshots` | ATM IV per listed expiry — the term structure | **5 min** | 365 days | recording since 19 Sep 2026 |
 | `chain_features` | the whole board summarised: PCR (OI and volume), call / put OI, IV skew, OI walls, max pain, OI change over the hour | **5 min** | 400 days | 117 — recording since 17 Sep 2026 |
 | `mtm_samples` | the day's P&L: realised, unrealised, charges, net | **1 min** | 90 days | 6,360 |
 | `trades`, `trade_events` | the desk's trades, and every order, fill and exit | per event | permanent | 82 / 629 |
@@ -87,11 +90,19 @@ year (about 5 GB a year at ~250 bytes a row). Read it with
 the Live screen's *Momentum* tab does. `GET /api/term` gives the ATM IV of
 every listed expiry, live, for the term-structure chart.
 
-Still not captured, and shown as such on the Live screen rather than drawn as a
-zero: perpetual **funding**, **trade flow** (buy / sell volume, large trades),
-**liquidations** and **order-book depth**. Each needs a websocket feed the desk
-does not subscribe to. Expiries beyond the second are also not recorded per
-strike — every live BTC contract would be ~16 GB a year.
+Also closed on 19 Sep 2026, the three tables §10 of docs/test.md asks for:
+the perpetual's **trade flow** off Delta's `all_trades` socket (every print,
+summed per minute by which side crossed the spread — `trade_flow_1m`), its
+**funding rate, open interest, turnover and order-book depth** (`perp_snapshots`),
+and the **IV term structure** (`iv_term_snapshots`), so the "a week ago" line
+on the term chart exists once a week has been recorded. `GET /api/perp` serves
+the live ticker, book and the last hour's flow; `/api/term` adds `weekAgo`,
+`monthAgo` and the skew's percentile among every `chain_features` reading.
+
+Still not captured: **liquidations** (not a public feed on Delta — a burst of
+large one-sided prints with OI falling is the visible trace) and per-strike
+history for expiries beyond the second (every live BTC contract would be
+~16 GB a year).
 
 ---|---|---|
 | every live BTC contract (~610) | ~64 M | ~16 GB |

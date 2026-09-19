@@ -98,6 +98,7 @@ export const getTerm = (skewPts: number | null = null) =>
 /** The perpetual: ticker, top of book, and the last hour's flow by aggressor side. */
 export type PerpTicker = {
   at: number; mark: number | null; spot: number | null; last: number | null;
+  /** Percent per funding period, as Delta publishes it: 0.01 is 0.01%. */
   fundingRate: number | null; oiContracts: number | null; oiUsd: number | null;
   turnoverUsd24h: number | null; volume24h: number | null; change24hPct: number | null;
   high24h: number | null; low24h: number | null;
