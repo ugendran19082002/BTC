@@ -4,9 +4,12 @@ import { istLabel } from '@/lib/format';
 import type { TradeStatus } from '@/types/trade';
 import { getOptionHistory, type OptionHistoryPoint } from '@/api/desk';
 import {
-  allClear, bothSides, breakeven, candidates, consensus, entryGates, expectedMove, ivRv, marginPerContract, modelView, odds,
-  orderEstimate, payoffPrices, premiumAnalysis, shortPayoff, sideCards, CONTRACT_BTC, type ExpectedMove, type IvRv,
+  breakeven, candidates, consensus, executionEstimate, expectedMove, ivRv, marginPerContract, modelView, odds,
+  orderEstimate, payoffPrices, premiumAnalysis, premiumMomentum, shortLossAt, shortPayoff, CONTRACT_BTC,
+  type BothAssessment, type ExpectedMove, type IvRv, type Readiness, type SideAssessment, type SideChoice,
 } from '@/lib/overview';
+import { SideCardsRow } from './RiskPanels';
+import { pOtmBy, probabilityLabel, type ScreenConfig } from '@/lib/screen-config';
 import { fmt, Panel, ProbBar, Row, Tag } from './parts';
 
 export type Selected = { cp: 'C' | 'P'; strike: number };
@@ -15,24 +18,49 @@ export const findLeg = (legs: readonly Leg[], s: Selected | null) =>
 
 // -------------------------------------------------------------- option chain
 
+type ChainFilter = 'near' | 'all' | 'walls' | 'recommended';
+type ChainCols = 'quotes' | 'greeks';
+
 export function ChainPanel({ data, selected, onSelect, rows = 7, expiries, onExpiry }: {
   data: ChainResponse; selected: Selected | null; onSelect: (s: Selected) => void; rows?: number;
   expiries?: readonly ExpiryOption[]; onExpiry?: (expiry: string) => void;
 }) {
-  const { snapshot: snap, legs } = data;
-  const [all, setAll] = useState(false);
+  const { snapshot: snap, legs, structure } = data;
+  const [filter, setFilter] = useState<ChainFilter>('near');
+  const [cols, setCols] = useState<ChainCols>('quotes');
+  const ceWall = (structure.ceOiWallNear ?? structure.ceOiWall)?.strike ?? null;
+  const peWall = (structure.peOiWallNear ?? structure.peOiWall)?.strike ?? null;
+  const maxPain = structure.maxPain?.strike ?? null;
   const strikes = useMemo(() => {
     const every = [...new Set(legs.map((l) => l.strike))].sort((a, b) => a - b);
-    if (all) return every;
+    if (filter === 'all') return every;
+    if (filter === 'walls') {
+      const marks = new Set([ceWall, peWall, maxPain, snap.atm].filter((k): k is number => k !== null));
+      return every.filter((k) => marks.has(k) || [...marks].some((m) => Math.abs(k - m) <= snap.step));
+    }
+    if (filter === 'recommended') {
+      const rec = new Set(legs.filter((l) => l.ev?.signal === 'sell' || l.ev?.signal === 'watch').map((l) => l.strike));
+      return every.filter((k) => rec.has(k) || k === snap.atm);
+    }
     const i = every.reduce((best, k, idx) => (Math.abs(k - snap.spot) < Math.abs(every[best]! - snap.spot) ? idx : best), 0);
     return every.slice(Math.max(0, i - rows), i + rows + 1);
-  }, [legs, snap.spot, rows, all]);
+  }, [legs, snap.spot, snap.atm, snap.step, rows, filter, ceWall, peWall, maxPain]);
   const byKey = useMemo(() => new Map(legs.map((l) => [`${l.cp}${l.strike}`, l])), [legs]);
   const iv = (v: number | null) => (v === null ? '—' : `${(v * 100).toFixed(1)}%`);
-  const cell = (l: Leg | undefined, k: 'oi' | 'bid' | 'ask' | 'mark') =>
-    !l ? '—' : k === 'oi' ? fmt.n(l.oi) : fmt.n(l[k], l[k] !== null && l[k]! < 10 ? 1 : 0);
+  const n = (v: number | null | undefined, p = 0) => (v === null || v === undefined ? '—' : fmt.n(v, p));
+  const px = (v: number | null | undefined) => (v === null || v === undefined ? '—' : fmt.n(v, v < 10 ? 1 : 0));
+  const cells = (l: Leg | undefined): string[] => {
+    if (!l) return cols === 'quotes' ? ['—', '—', '—', '—', '—', '—', '—'] : ['—', '—', '—', '—'];
+    return cols === 'quotes'
+      ? [n(l.oi), l.oiChange ? fmt.signed(l.oiChange.change) : '—', px(l.bid), px(l.ask), px(l.mark), iv(l.iv), n(l.volume)]
+      : [l.delta === null ? '—' : l.delta.toFixed(2), l.gamma === null ? '—' : l.gamma.toPrecision(2), l.theta === null ? '—' : l.theta.toFixed(1), l.vega === null ? '—' : l.vega.toFixed(1)];
+  };
+  const head = cols === 'quotes' ? ['OI', 'ΔOI', 'Bid', 'Ask', 'Mark', 'IV', 'Vol'] : ['Δ', 'Γ', 'Θ', 'V'];
+  const mark = (k: number) => [
+    k === snap.atm ? 'ATM' : null, k === ceWall ? 'CE wall' : null, k === peWall ? 'PE wall' : null, k === maxPain ? 'Max pain' : null,
+  ].filter(Boolean).join(' · ');
   return (
-    <Panel title={`Option chain (${istLabel(snap.expiryTs)})`}
+    <Panel title={`Option chain · ${istLabel(snap.expiryTs)} (fixed expiry)`}
       right={
         <span className="ov-chain-head">
           {expiries && onExpiry && expiries.length > 0 ? (
@@ -46,9 +74,15 @@ export function ChainPanel({ data, selected, onSelect, rows = 7, expiries, onExp
               ))}
             </select>
           ) : <span>{snap.expiry}</span>}
-          <select aria-label="Strikes shown" className="ov-select" value={all ? 'all' : 'near'} onChange={(e) => setAll(e.target.value === 'all')}>
-            <option value="near">±{rows} strikes</option>
+          <select aria-label="Strikes shown" className="ov-select" value={filter} onChange={(e) => setFilter(e.target.value as ChainFilter)}>
+            <option value="near">Near ATM (±{rows})</option>
             <option value="all">All strikes</option>
+            <option value="walls">OI walls</option>
+            <option value="recommended">Recommended</option>
+          </select>
+          <select aria-label="Columns" className="ov-select" value={cols} onChange={(e) => setCols(e.target.value as ChainCols)}>
+            <option value="quotes">Quotes</option>
+            <option value="greeks">Greeks</option>
           </select>
           <Tag tone="warn">ATM: {fmt.n(snap.atm)}</Tag>
           <Tag tone={snap.live ? 'accent' : 'muted'}>{snap.live ? 'Latest' : 'Past'}</Tag>
@@ -57,30 +91,29 @@ export function ChainPanel({ data, selected, onSelect, rows = 7, expiries, onExp
       <div className="ov-chain-wrap">
         <table className="ov-chain">
           <thead>
-            <tr><th colSpan={5} className="ov-calls">Calls (CE)</th><th /><th colSpan={5} className="ov-puts">Puts (PE)</th></tr>
-            <tr><th>OI</th><th>Bid</th><th>Ask</th><th>Mark</th><th>IV</th><th>Strike</th><th>Mark</th><th>Bid</th><th>Ask</th><th>OI</th><th>IV</th></tr>
+            <tr><th colSpan={head.length} className="ov-calls">Calls (CE)</th><th /><th colSpan={head.length} className="ov-puts">Puts (PE)</th></tr>
+            <tr>{head.map((h) => <th key={`c${h}`}>{h}</th>)}<th>Strike</th>{[...head].reverse().map((h) => <th key={`p${h}`}>{h}</th>)}</tr>
           </thead>
           <tbody>
             {strikes.map((k) => {
               const c = byKey.get(`C${k}`);
               const p = byKey.get(`P${k}`);
-              const atm = k === snap.atm;
               const selC = selected?.cp === 'C' && selected.strike === k;
               const selP = selected?.cp === 'P' && selected.strike === k;
+              const tag = mark(k);
+              const cls = [k === snap.atm ? 'ov-atm' : '', k === ceWall ? 'ov-wall-ce' : '', k === peWall ? 'ov-wall-pe' : '', k === maxPain ? 'ov-maxpain' : ''].filter(Boolean).join(' ');
               return (
-                <tr key={k} className={atm ? 'ov-atm' : undefined}>
-                  <ChainSide leg={c} selected={selC} onClick={() => c && onSelect({ cp: 'C', strike: k })}
-                    cells={[cell(c, 'oi'), cell(c, 'bid'), cell(c, 'ask'), cell(c, 'mark'), iv(c?.iv ?? null)]} itm={c?.moneyness === 'ITM'} />
-                  <td className="ov-strike">{fmt.n(k)}</td>
-                  <ChainSide leg={p} selected={selP} onClick={() => p && onSelect({ cp: 'P', strike: k })}
-                    cells={[cell(p, 'mark'), cell(p, 'bid'), cell(p, 'ask'), cell(p, 'oi'), iv(p?.iv ?? null)]} itm={p?.moneyness === 'ITM'} />
+                <tr key={k} className={cls || undefined}>
+                  <ChainSide leg={c} selected={selC} onClick={() => c && onSelect({ cp: 'C', strike: k })} cells={cells(c)} itm={c?.moneyness === 'ITM'} />
+                  <td className="ov-strike" title={tag || undefined}>{fmt.n(k)}{tag && <small className="ov-strike-tag">{tag}</small>}</td>
+                  <ChainSide leg={p} selected={selP} onClick={() => p && onSelect({ cp: 'P', strike: k })} cells={cells(p).reverse()} itm={p?.moneyness === 'ITM'} />
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
-      <p className="ov-foot">Click a side to inspect it. Shaded = in the money. {snap.hoursToExpiry.toFixed(1)}h to settlement. Every column of every strike is on the board below.</p>
+      <p className="ov-foot">Click a side to inspect it. Shaded = in the money · ATM, the OI walls and max pain are marked. {snap.hoursToExpiry.toFixed(1)}h to settlement. Every column of every strike is on the board below.</p>
     </Panel>
   );
 }
@@ -103,13 +136,16 @@ function ChainSide({ leg, cells, selected, onClick, itm }: { leg: Leg | undefine
 
 type Tab = 'metrics' | 'probability' | 'payoff' | 'scenario' | 'greeks' | 'momentum';
 
-export function SelectedStrikePanel({ data, leg, em, iv, contracts }: {
+export function SelectedStrikePanel({ data, leg, em, iv, contracts, ivRank, probabilityMode = 'MODEL' }: {
   data: ChainResponse; leg: Leg | null; em: ExpectedMove; iv: IvRv | null; contracts: number;
+  ivRank?: { percentile: number; days: number } | null; probabilityMode?: ScreenConfig['probabilityMode'];
 }) {
   const [tab, setTab] = useState<Tab>('metrics');
+  const symbol = leg ? `${leg.cp}-BTC-${leg.strike}-${data.snapshot.expiry}` : null;
+  const history = useOptionHistory(symbol);
   if (!leg) return <Panel title="Selected strike"><p className="ov-empty">Click a strike on the chain.</p></Panel>;
   const side = leg.cp === 'C' ? 'CE' : 'PE';
-  const g = (v: number | null, p: number) => (v === null ? '—' : v.toFixed(p));
+  const g = (v: number | null | undefined, p: number) => (v === null || v === undefined ? '—' : v.toFixed(p));
   return (
     <Panel title={`Selected strike: ${fmt.n(leg.strike)} ${side}`} right={leg.ev?.signal ? <Tag tone={leg.ev.signal === 'sell' ? 'up' : leg.ev.signal === 'avoid' ? 'down' : 'muted'}>{leg.ev.signal}</Tag> : undefined}>
       <div className="ov-greeks">
@@ -117,6 +153,7 @@ export function SelectedStrikePanel({ data, leg, em, iv, contracts }: {
         <Greek label="Gamma" value={leg.gamma === null ? '—' : leg.gamma.toPrecision(2)} />
         <Greek label="Theta" value={g(leg.theta, 1)} />
         <Greek label="Vega" value={g(leg.vega, 1)} />
+        <Greek label="Rho" value={g(leg.rho, 2)} />
         <Greek label="IV" value={leg.iv === null ? '—' : `${(leg.iv * 100).toFixed(1)}%`} />
       </div>
       <div className="ov-tabs" role="tablist">
@@ -126,12 +163,12 @@ export function SelectedStrikePanel({ data, leg, em, iv, contracts }: {
           </button>
         ))}
       </div>
-      {tab === 'metrics' && <MetricsTab leg={leg} em={em} iv={iv} />}
-      {tab === 'probability' && <ProbabilityTab leg={leg} />}
+      {tab === 'metrics' && <MetricsTab leg={leg} em={em} iv={iv} ivRank={ivRank ?? null} history={history} />}
+      {tab === 'probability' && <ProbabilityTab leg={leg} mode={probabilityMode} />}
       {tab === 'payoff' && <PayoffTab leg={leg} spot={data.snapshot.spot} step={data.snapshot.step} contracts={contracts} />}
       {tab === 'scenario' && <ScenarioTab leg={leg} data={data} contracts={contracts} />}
       {tab === 'greeks' && <GreeksTab leg={leg} contracts={contracts} />}
-      {tab === 'momentum' && <MomentumTab symbol={`${leg.cp}-BTC-${leg.strike}-${data.snapshot.expiry}`} />}
+      {tab === 'momentum' && <MomentumTab pts={history} />}
     </Panel>
   );
 }
@@ -181,13 +218,29 @@ function ScenarioTab({ leg, data, contracts }: { leg: Leg; data: ChainResponse; 
   );
 }
 
-function MetricsTab({ leg, em, iv }: { leg: Leg; em: ExpectedMove; iv: IvRv | null }) {
+/** One contract's recorded five-minute history, refetched when the contract changes. Empty until the recorder has written. */
+function useOptionHistory(symbol: string | null): OptionHistoryPoint[] | null {
+  const [pts, setPts] = useState<OptionHistoryPoint[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    setPts(null);
+    if (!symbol) return;
+    getOptionHistory(symbol, 2).then((r) => { if (live) setPts(r.points); }).catch(() => { if (live) setPts([]); });
+    return () => { live = false; };
+  }, [symbol]);
+  return pts;
+}
+
+function MetricsTab({ leg, em, iv, ivRank, history }: {
+  leg: Leg; em: ExpectedMove; iv: IvRv | null; ivRank: { percentile: number; days: number } | null; history: OptionHistoryPoint[] | null;
+}) {
   const p = premiumAnalysis(leg, em);
   if (!p) return <p className="ov-empty">No price on this strike.</p>;
+  const mom = premiumMomentum(history ?? []);
   return (
     <div className="ov-two">
       <div>
-        <Row label="Premium (mark)" value={fmt.n(p.premium, 1)} />
+        <Row label="Premium (mark)" value={`${fmt.n(p.premium, 1)}${leg.theoretical != null ? ` · BS ${fmt.n(leg.theoretical, 1)}` : ''}`} hint="Mark, and Black–Scholes at the mark IV" />
         <Row label="Intrinsic" value={fmt.n(p.intrinsic, 1)} />
         <Row label="Extrinsic" value={`${fmt.n(p.extrinsic, 1)} (${fmt.pct(p.extrinsicShare)})`} />
         <Row label="Decay (|θ| per hour)" value={p.thetaPerHour === null ? '—' : `${fmt.n(p.thetaPerHour, 2)} / h`}
@@ -198,6 +251,9 @@ function MetricsTab({ leg, em, iv }: { leg: Leg; em: ExpectedMove; iv: IvRv | nu
         <Row label="Premium / EM" value={p.premiumPerEm === null ? '—' : fmt.pct(p.premiumPerEm, 1)} />
         <Row label="Distance / EM" value={p.emDistance === null ? '—' : `${p.emDistance.toFixed(2)}×`} tone={p.emDistance !== null && p.emDistance < 1 ? 'warn' : undefined} />
         <Row label="IV − RV" value={iv ? `${fmt.signed(iv.spreadPts, 1)} pts` : '—'} />
+        <Row label="IV percentile" value={ivRank ? `${fmt.pct(ivRank.percentile)} (${ivRank.days < 1 ? 'today' : `${Math.round(ivRank.days)}d`})` : '—'} hint="ATM IV among every recorded reading since 17 Sep 2026" />
+        <Row label="Premium velocity" value={mom.velocity === null ? '—' : `${fmt.signed(mom.velocity, 1)} / 5m`} tone={mom.velocity === null ? undefined : mom.velocity > 0 ? 'down' : 'up'} hint="Mark change over the last recorded five minutes; rising premium is against a short" />
+        <Row label="Premium acceleration" value={mom.acceleration === null ? '—' : fmt.signed(mom.acceleration, 1)} hint="The change of the velocity" />
         <Row label="OI change" value={leg.oiChange ? `${fmt.signed(leg.oiChange.change)} (${leg.oiChange.overMinutes}m)` : '—'} />
         <Row label="Breakeven" value={fmt.n(breakeven(leg.cp, leg.strike, p.premium))} />
       </div>
@@ -205,15 +261,19 @@ function MetricsTab({ leg, em, iv }: { leg: Leg; em: ExpectedMove; iv: IvRv | nu
   );
 }
 
-function ProbabilityTab({ leg }: { leg: Leg }) {
+function ProbabilityTab({ leg, mode }: { leg: Leg; mode: ScreenConfig['probabilityMode'] }) {
   const o = odds(leg);
+  const by = pOtmBy(mode, leg, o.modelOtm);
+  const name = probabilityLabel(mode);
   return (
     <div>
-      <ProbBar label="P(OTM at expiry)" value={o.pOtm} tone="up" />
-      <ProbBar label="P(ITM at expiry)" value={o.pItm} tone="down" />
-      <ProbBar label="P(touch before expiry)" value={o.pTouch} tone="muted" />
+      <ProbBar label={`${o.source === 'measured' ? 'Measured' : name} P(expire OTM)`} value={o.source === 'measured' ? o.pOtm : by} tone="up" />
+      <ProbBar label={`${o.source === 'measured' ? 'Measured' : name} P(expire beyond strike) = P(ITM)`} value={o.source === 'measured' ? o.pItm : by === null ? null : 1 - by} tone="down" />
+      <ProbBar label="P(touch strike before expiry)" value={o.pTouch} tone="muted" />
       <Row label="|Delta| (rough P(ITM))" value={o.deltaApprox === null ? '—' : o.deltaApprox.toFixed(2)} />
-      <Row label="Model P(OTM)" value={fmt.pct(o.modelOtm)} />
+      <Row label="Model P(OTM) / P(ITM)" value={`${fmt.pct(o.modelOtm)} / ${o.modelOtm === null ? '—' : fmt.pct(1 - o.modelOtm)}`} />
+      <Row label="Delta P(OTM) / P(ITM)" value={o.deltaApprox === null ? '—' : `${fmt.pct(1 - o.deltaApprox)} / ${fmt.pct(o.deltaApprox)}`} />
+      <Row label="P(stop breach)" value="not modelled" tone="muted" hint="The odds of the premium reaching a stop are not measured; touching the strike and expiring beyond it are different events from it" />
       <p className="ov-foot">P(OTM) is {o.source === 'measured' ? 'the desk’s measured settlement record, adjusted' : o.source === 'model' ? 'the model — no measured record for this distance' : 'not readable'}.</p>
     </div>
   );
@@ -263,13 +323,7 @@ export function PayoffChart({ rows, strike }: { rows: { price: number; pnlUsd: n
  * 5, 15 and 60 minutes, from the recorded five-minute snapshots. Empty until
  * the recorder has written enough -- it never extrapolates.
  */
-function MomentumTab({ symbol }: { symbol: string }) {
-  const [pts, setPts] = useState<OptionHistoryPoint[] | null>(null);
-  useEffect(() => {
-    let live = true;
-    getOptionHistory(symbol, 2).then((r) => { if (live) setPts(r.points); }).catch(() => { if (live) setPts([]); });
-    return () => { live = false; };
-  }, [symbol]);
+function MomentumTab({ pts }: { pts: OptionHistoryPoint[] | null }) {
   if (!pts) return <p className="ov-empty">Loading…</p>;
   const last = pts.at(-1);
   if (!last) return <p className="ov-empty">No recorded snapshots for this strike yet — the recorder writes every 5 minutes.</p>;
@@ -278,7 +332,7 @@ function MomentumTab({ symbol }: { symbol: string }) {
     a == null || b == null ? null : pct ? (b === 0 ? null : a / b - 1) : a - b;
   return (
     <table className="ov-mini">
-      <thead><tr><th /><th>5m</th><th>15m</th><th>1h</th></tr></thead>
+      <thead><tr><th /><th>5m</th><th>15m</th><th>30m</th><th>1h</th></tr></thead>
       <tbody>
         {([
           ['Premium', (p: OptionHistoryPoint | null) => fmt.pct(change(last.mark, p?.mark), 1)],
@@ -286,7 +340,7 @@ function MomentumTab({ symbol }: { symbol: string }) {
           ['IV (pts)', (p: OptionHistoryPoint | null) => { const d = change(last.markIv, p?.markIv, false); return d === null ? '—' : fmt.signed(d * 100, 1); }],
           ['BTC', (p: OptionHistoryPoint | null) => fmt.pct(change(last.spot, p?.spot), 2)],
         ] as const).map(([label, f]) => (
-          <tr key={label}><td>{label}</td><td>{f(back(5))}</td><td>{f(back(15))}</td><td>{f(back(60))}</td></tr>
+          <tr key={label}><td>{label}</td><td>{f(back(5))}</td><td>{f(back(15))}</td><td>{f(back(30))}</td><td>{f(back(60))}</td></tr>
         ))}
       </tbody>
     </table>
@@ -295,12 +349,13 @@ function MomentumTab({ symbol }: { symbol: string }) {
 
 // ------------------------------------------------------------ model and EM
 
-export function ModelViewPanel({ data, iv }: { data: ChainResponse; iv: IvRv | null }) {
-  const v = modelView(data.outlook, 720);
+export function ModelViewPanel({ data, iv, horizonMin = 720, em: emIn }: { data: ChainResponse; iv: IvRv | null; horizonMin?: number; em?: (ExpectedMove & { method?: string }) | null }) {
+  const v = modelView(data.outlook, horizonMin);
   const c = consensus(data.outlook);
-  const em = expectedMove(data.snapshot);
+  const em = emIn === undefined ? expectedMove(data.snapshot) : emIn;
+  const label = v?.label ?? `${horizonMin >= 60 ? `${horizonMin / 60}h` : `${horizonMin}m`}`;
   return (
-    <Panel title={`Model view (${v?.label ?? '12h'})`} right={v ? <Tag tone="muted">{v.source === 'measured' ? 'measured' : 'history only'}</Tag> : undefined}>
+    <Panel title={`Model view (${label})`} right={v ? <Tag tone="muted">{v.source === 'measured' ? 'measured' : 'history only'}</Tag> : undefined}>
       <div className="ov-two">
         <div>
           <ProbBar label="Up" value={v?.pUp ?? null} tone="up" />
@@ -309,9 +364,9 @@ export function ModelViewPanel({ data, iv }: { data: ChainResponse; iv: IvRv | n
           <p className="ov-foot">{c.scored ? `Horizons: ${c.up} up · ${c.down} down · ${c.flat} flat${c.agree ? '' : ' — no consensus'}` : 'No horizon readable.'}</p>
         </div>
         <div>
-          <Row label="Expected move" value={em ? `±${fmt.n(em.move)}` : '—'} />
+          <Row label={`Expected move (${label})`} value={em ? `±${fmt.n(em.move)}` : '—'} hint={em && 'method' in em ? String(em.method) : undefined} />
           <Row label="Upper / lower" value={em ? `${fmt.n(em.upper)} / ${fmt.n(em.lower)}` : '—'} />
-          <Row label="To settlement" value={em ? `${em.hours.toFixed(1)}h` : '—'} />
+          <Row label="Over" value={em ? `${em.hours.toFixed(1)}h` : '—'} />
           <Row label="IV / realised" value={iv ? `${iv.ivPct.toFixed(1)}% / ${iv.rvPct.toFixed(1)}%` : '—'} />
           <Row label="IV − RV" value={iv ? <Tag tone={iv.label === 'rich' ? 'up' : iv.label === 'cheap' ? 'down' : 'muted'}>{iv.label}</Tag> : '—'} />
         </div>
@@ -322,65 +377,44 @@ export function ModelViewPanel({ data, iv }: { data: ChainResponse; iv: IvRv | n
 
 // ------------------------------------------------------------ the decision
 
-export function StrategyDecisionPanel({ data, iv, onSelect }: { data: ChainResponse; iv: IvRv | null; onSelect: (s: Selected) => void }) {
-  const cards = sideCards(data, iv);
-  const both = data.containment;
-  const pair = bothSides(data.legs);
+export function StrategyDecisionPanel({ data, sides, both, choice, onSelect }: {
+  data: ChainResponse; sides: SideAssessment[]; both: BothAssessment; choice: SideChoice; onSelect: (s: Selected) => void;
+}) {
+  const tone = choice.side === 'NO_TRADE' ? 'down' : choice.side === 'BOTH' ? 'up' : 'accent';
   return (
-    <Panel title="Strategy decision">
-      <div className="ov-decide">
-        {cards.map((c) => (
-          <button key={c.side} className={`ov-decide-card ${c.preferred ? 'ov-preferred' : ''}`} disabled={!c.leg}
-            onClick={() => c.leg && onSelect({ cp: c.leg.cp, strike: c.leg.strike })}>
-            <header>Short {c.side}{c.leg ? ` · ${fmt.n(c.leg.strike)}` : ''}</header>
-            <Row label="Score" value={c.score === null ? '—' : `${c.score.toFixed(1)} / 10`} />
-            <Row label="P(OTM)" value={fmt.pct(c.pOtm)} />
-            <Row label="P(touch)" value={fmt.pct(c.pTouch)} />
-            <Row label="Distance / EM" value={c.emDistance === null ? '—' : `${c.emDistance.toFixed(2)}×`} />
-            <Row label="IV richness" value={c.ivRich ?? '—'} />
-            <Row label="Gamma risk" value={c.gammaRisk ?? '—'} tone={c.gammaRisk === 'high' ? 'down' : c.gammaRisk === 'low' ? 'up' : undefined} />
-            <footer><Tag tone={c.preferred ? 'up' : 'muted'}>{c.preferred ? 'Preferred' : 'Not preferred'}</Tag></footer>
-          </button>
-        ))}
-        <div className="ov-decide-card">
-          <header>Both sides</header>
-          <Row label="Range" value={both ? `${fmt.n(both.low)} – ${fmt.n(both.high)}` : '—'} />
-          <Row label="P(stays inside)" value={fmt.pct(both?.probability ?? null)} />
-          <Row label="CE safe" value={<Safe ok={pair.ceSafe} />} hint="The call strike at least one expected move away" />
-          <Row label="PE safe" value={<Safe ok={pair.peSafe} />} hint="The put strike at least one expected move away" />
-          <Row label="Net delta" value={pair.netDelta === null ? '—' : fmt.signed(pair.netDelta, 2)} hint="Short both legs; near zero is balanced" />
-          <Row label="Buffers / EM" value={both?.lowBuffer == null || both.highBuffer == null ? '—' : `${both.lowBuffer.toFixed(2)}× / ${both.highBuffer.toFixed(2)}×`} />
-          <footer><Tag tone={data.recommendation.sides.length === 2 ? 'up' : 'muted'}>{data.recommendation.sides.length === 2 ? 'Desk sells both' : 'Not recommended'}</Tag></footer>
-        </div>
-      </div>
-      {data.best.why && <p className="ov-foot">{data.best.why}</p>}
+    <Panel title="Strategy decision" right={<Tag tone={tone}>Desk side: {choice.side.replace('_', ' ')}</Tag>}>
+      <SideCardsRow sides={sides} both={both} onSelect={(cp, strike) => onSelect({ cp, strike })} />
+      <p className="ov-foot">{choice.why}. {data.best.why ?? ''} Side from the regime, the horizon consensus and each side's gates — never the score alone.</p>
     </Panel>
   );
 }
 
-function Safe({ ok }: { ok: boolean | null }) {
-  return ok === null ? <span className="ov-muted">—</span> : <span className={ok ? 'ov-up' : 'ov-down'}>{ok ? '✓' : '✕'}</span>;
-}
 
-export function SellRecommendationPanel({ data, onSelect, onSell, leverage, contracts }: {
+export function SellRecommendationPanel({ data, onSelect, onSell, leverage, contracts, iv, em, first = 'P' }: {
   data: ChainResponse; onSelect: (s: Selected) => void; onSell?: (l: Leg) => void; leverage: number; contracts: number;
+  iv: IvRv | null; em: ExpectedMove; first?: 'C' | 'P';
 }) {
   const spot = data.snapshot.spot;
+  const order: readonly ('C' | 'P')[] = first === 'P' ? ['P', 'C'] : ['C', 'P'];
   return (
-    <Panel title="Sell recommendation" right={<small className="ov-muted">{contracts} ct at {leverage}x · margin est.</small>}>
-      {(['P', 'C'] as const).map((side) => {
+    <Panel title="Sell recommendation" right={<small className="ov-muted">{contracts} ct at {leverage}x · top 3 a side · margin est.</small>}>
+      {order.map((side) => {
         const rows = candidates(data.legs, side, 3);
         return (
           <div key={side} className="ov-reco-side">
             <h4>{side === 'C' ? 'CE side' : 'PE side'}</h4>
             {rows.length === 0 ? <p className="ov-empty">Nothing on this side clears the desk’s rules.</p> : (
               <table className="ov-mini ov-reco">
-                <thead><tr><th>Strike</th><th>Type</th><th>Premium</th><th>POP (OTM)</th><th>P(touch)</th><th>Dist/EM</th><th>Exp. P&amp;L</th><th>Max risk</th><th>Margin</th><th>Ret/margin</th><th>Score</th><th /></tr></thead>
+                <thead><tr><th>Strike</th><th>Type</th><th>Premium</th><th>POP</th><th>P(touch)</th><th>Dist/EM</th><th>IV−RV</th><th>θ/prem</th><th>Exp. P&amp;L</th><th>Tail (2×EM)</th><th>Margin</th><th>R/R</th><th>Score</th><th /></tr></thead>
                 <tbody>
                   {rows.map((l) => {
                     const o = odds(l);
                     const px = l.sellPrice ?? l.mark;
                     const est = px === null ? null : orderEstimate(l.cp, l.strike, px, spot, leverage, contracts);
+                    const pa = premiumAnalysis(l, em);
+                    const adverse = em ? (l.cp === 'C' ? spot + 2 * em.move : spot - 2 * em.move) : null;
+                    const tail = px !== null && adverse !== null ? shortLossAt(l.cp, l.strike, px, adverse, contracts) : null;
+                    const rr = tail !== null && tail > 0 && l.ev?.evUsd != null ? l.ev.evUsd / tail : null;
                     return (
                       <tr key={l.strike} className="ov-click" onClick={() => onSelect({ cp: l.cp, strike: l.strike })}>
                         <td>{fmt.n(l.strike)}</td>
@@ -389,10 +423,12 @@ export function SellRecommendationPanel({ data, onSelect, onSell, leverage, cont
                         <td className="ov-up">{fmt.pct(o.pOtm)}</td>
                         <td>{fmt.pct(o.pTouch)}</td>
                         <td>{l.emDistance === null ? '—' : `${l.emDistance.toFixed(2)}×`}</td>
+                        <td>{iv ? fmt.signed(iv.spreadPts, 0) : '—'}</td>
+                        <td>{pa?.thetaPerPremiumDay == null ? '—' : fmt.pct(Math.min(9.99, pa.thetaPerPremiumDay), 0)}</td>
                         <td className={l.ev?.evUsd == null ? '' : l.ev.evUsd >= 0 ? 'ov-up' : 'ov-down'}>{fmt.signed(l.ev?.evUsd ?? null, 2)}</td>
-                        <td className="ov-down" title="A naked short has no bounded worst case unless hedged">{l.ev?.maxLossUsd == null ? 'unbounded' : `$${l.ev.maxLossUsd.toFixed(0)}`}</td>
+                        <td className="ov-down" title="Loss at an adverse move of two expected moves; a naked short has no bounded worst case">{tail === null ? '—' : `$${tail.toFixed(2)}`}</td>
                         <td>{est ? fmt.n(est.marginUsd, 2) : '—'}</td>
-                        <td title="Premium after the opening fee, as a share of the margin it ties up">{est ? fmt.pct(est.returnOnMargin, 1) : '—'}</td>
+                        <td title="Expected P&L per dollar of tail loss">{rr === null ? '—' : `${(rr * 100).toFixed(0)}¢`}</td>
                         <td>{l.score === null ? '—' : (l.score * 10).toFixed(1)}</td>
                         <td>{onSell && <button className="ov-sell" onClick={(e) => { e.stopPropagation(); onSell(l); }}>Sell</button>}</td>
                       </tr>
@@ -410,40 +446,54 @@ export function SellRecommendationPanel({ data, onSelect, onSell, leverage, cont
 
 // ------------------------------------------------------- checklist and order
 
-export function EntryPanel({ data, leg, iv, trade, onSell, now, contracts, leverage }: {
-  data: ChainResponse; leg: Leg | null; iv: IvRv | null; trade: TradeStatus | null; onSell?: (l: Leg) => void; now: number; contracts: number; leverage: number;
+export function EntryPanel({ data, leg, other, ready, onSell, contracts, leverage, side, onSide, execution = 'BID', feeMultiplier = 1 }: {
+  data: ChainResponse; leg: Leg | null; other: Leg | null; ready: Readiness; onSell?: (l: Leg) => void; contracts: number; leverage: number;
+  side: 'CE' | 'PE' | 'BOTH'; onSide: (s: 'CE' | 'PE' | 'BOTH') => void; execution?: ScreenConfig['execution']; feeMultiplier?: number;
 }) {
-  const heldShort = trade ? trade.open.reduce((a, t) => a + Math.max(0, -t.position), 0) : 0;
-  const gates = entryGates({
-    data, leg, iv, nowMs: now, maxSpreadPct: trade?.limits.maxSpreadPct ?? null,
-    risk: trade ? { contracts, heldShort, maxShortContracts: trade.limits.maxShortContracts, dayNetUsd: trade.today?.netUsd ?? null, maxDailyLossUsd: trade.limits.maxDailyLossUsd } : null,
-  });
-  const clear = allClear(gates);
-  const premium = leg ? (leg.sellPrice ?? leg.mark) : null;
-  const est = leg && premium !== null ? orderEstimate(leg.cp, leg.strike, premium, data.snapshot.spot, leverage, contracts) : null;
+  const spot = data.snapshot.spot;
+  // The price the order is judged at: the bid (what a short receives), a tick under it when the bid is thin, or the mark on request -- which is not executable, and says so.
+  const exe0 = leg ? executionEstimate(leg, spot, contracts) : null;
+  const premium = leg ? (execution === 'MARK' ? leg.mark : execution === 'DEPTH' ? exe0?.expectedFill ?? leg.bid : leg.bid ?? leg.sellPrice) : null;
+  const est = leg && premium !== null ? orderEstimate(leg.cp, leg.strike, premium, spot, leverage, contracts) : null;
+  const exe = exe0 && est ? { ...exe0, feeUsd: exe0.feeUsd * feeMultiplier, netPremiumUsd: exe0.netPremiumUsd === null ? null : exe0.netPremiumUsd - exe0.feeUsd * (feeMultiplier - 1) } : exe0;
+  const legs = side === 'BOTH' ? [leg, other].filter((l): l is Leg => l !== null) : leg ? [leg] : [];
+  const label = side === 'BOTH' ? `Sell both (${legs.map((l) => `${fmt.n(l.strike)} ${l.cp === 'C' ? 'CE' : 'PE'}`).join(' + ')})` : leg ? `Place sell order (${fmt.n(leg.strike)} ${leg.cp === 'C' ? 'CE' : 'PE'})` : 'Select a strike';
   return (
     <div className="ov-entry">
-      <Panel title="Entry checklist" className="ov-grow">
-        <ul className="ov-checks">
-          {gates.map((g) => (
+      <Panel title={`Entry checklist (${ready.gates.length} gates)`} className="ov-grow"
+        right={<Tag tone={ready.ready ? 'up' : 'down'}>{ready.verdict}{ready.ready ? '' : ` · ${ready.failing} failing${ready.unknown ? `, ${ready.unknown} unreadable` : ''}`}</Tag>}>
+        <ul className="ov-checks ov-checks-dense">
+          {ready.gates.map((g) => (
             <li key={g.key} className={g.ok === true ? 'ok' : g.ok === false ? 'bad' : 'unknown'}>
               <span aria-hidden>{g.ok === true ? '✓' : g.ok === false ? '✕' : '?'}</span>{g.text}
             </li>
           ))}
         </ul>
       </Panel>
-      <Panel title="Place sell order">
-        <button className="ov-place" disabled={!leg || !onSell} onClick={() => leg && onSell?.(leg)}
-          title={clear ? 'Opens the order ticket — every gate runs again on the server' : 'Some gates are not green; the ticket still opens, and the server decides'}>
-          {leg ? `Sell ${fmt.n(leg.strike)} ${leg.cp === 'C' ? 'CE' : 'PE'}` : 'Select a strike'}
+      <Panel title="Order panel" right={<small className={execution === 'MARK' ? 'ov-warn' : 'ov-muted'}>{execution === 'MARK' ? 'priced at mark — not executable' : execution === 'DEPTH' ? 'priced at the estimated fill' : 'priced at the bid'}{feeMultiplier !== 1 ? ` · fee ×${feeMultiplier}` : ''}</small>}>
+        <div className="ov-tabs ov-side-toggle" role="tablist">
+          {(['CE', 'PE', 'BOTH'] as const).map((s) => (
+            <button key={s} role="tab" aria-selected={side === s} className={side === s ? 'on' : ''} onClick={() => onSide(s)}>
+              {s === 'BOTH' ? 'Both' : `Sell ${s}`}
+            </button>
+          ))}
+        </div>
+        <button className="ov-place" disabled={legs.length === 0 || !onSell} onClick={() => legs[0] && onSell?.(legs[0])}
+          title={legs.length === 0 ? 'Select a strike on the chain' : side === 'BOTH' ? 'Opens the ticket for the first leg; place the second from the other side after it fills' : ready.ready ? 'Opens the order ticket — every gate runs again on the server' : 'Not every gate is green; the ticket still opens, and the server decides'}>
+          {label}
         </button>
-        <Row label="Premium (bid)" value={fmt.n(premium, 1)} />
-        <Row label="Contracts · leverage" value={`${fmt.n(contracts)} · ${leverage}x`} hint="Your size and the ticket's leverage; both can be changed on the ticket" />
-        <Row label="Estimated credit" value={est ? `$${est.creditUsd.toFixed(2)}` : '—'} hint="bid × contracts × 0.001 BTC, before fees" />
-        <Row label="Fees to open (est.)" value={est ? `$${est.feesUsd.toFixed(2)}` : '—'} hint="min(0.01% of notional, 3.5% of premium) per contract; GST on top" />
-        <Row label="Margin required (est.)" value={est ? `$${est.marginUsd.toFixed(2)}` : '—'} hint="spot × 0.001 ÷ leverage + fee, per contract — the ticket, then Delta, is the authority" />
-        <Row label="Breakeven (after fees)" value={est ? fmt.n(est.breakevenAfterFees) : leg && premium !== null ? fmt.n(breakeven(leg.cp, leg.strike, premium)) : '—'} />
-        <Row label="Gates" value={<Tag tone={clear ? 'up' : 'warn'}>{clear ? 'all green' : 'not all green'}</Tag>} />
+        <Row label="Selected strike" value={leg ? `${fmt.n(leg.strike)} ${leg.cp === 'C' ? 'CE' : 'PE'}` : '—'} />
+        <Row label="Entry bid" value={`${fmt.n(exe?.bid ?? null, 1)}${exe?.bidSize != null ? ` × ${fmt.n(exe.bidSize)}` : ''}`} hint="A short fills at the bid, not the mark" />
+        <Row label="Estimated fill" value={fmt.n(exe?.expectedFill ?? null, 1)} tone={exe?.thin ? 'warn' : undefined} hint={exe?.thin ? 'The bid is thinner than your size: a tick under it' : 'The bid is deep enough for your size'} />
+        <Row label="Quantity · leverage" value={`${fmt.n(contracts)} ct · ${leverage}x`} />
+        <Row label={`Premium (${execution === 'MARK' ? 'mark' : execution === 'DEPTH' ? 'est. fill' : 'bid'})`} value={est ? `$${est.creditUsd.toFixed(2)}` : '—'} hint="price × contracts × 0.001 BTC" />
+        <Row label="Fees (est.)" value={exe ? `$${exe.feeUsd.toFixed(2)}` : '—'} hint={feeMultiplier !== 1 ? `Delta's rate × ${feeMultiplier}` : "Delta's taker rate, capped at 3.5% of premium"} />
+        <Row label="Slippage (est.)" value={exe?.slippagePerBtc == null ? '—' : `$${(exe.slippagePerBtc * contracts * CONTRACT_BTC).toFixed(2)}`} />
+        <Row label="Net premium" value={exe?.netPremiumUsd == null ? '—' : `$${exe.netPremiumUsd.toFixed(2)}`} tone="up" />
+        <Row label="Margin required (est.)" value={est ? `$${est.marginUsd.toFixed(2)}` : '—'} />
+        <Row label="Break-even (after fees)" value={est ? fmt.n(est.breakevenAfterFees) : '—'} />
+        <Row label="Max risk" value={leg?.ev?.maxLossUsd == null ? 'unbounded (naked)' : `$${leg.ev.maxLossUsd.toFixed(2)}`} tone="down" />
+        <Row label="Position size" value={`${fmt.n(contracts * (side === 'BOTH' ? 2 : 1))} ct · ${(contracts * CONTRACT_BTC * (side === 'BOTH' ? 2 : 1)).toFixed(3)} BTC`} />
       </Panel>
     </div>
   );
@@ -512,8 +562,8 @@ const ivRvOf = (data: ChainResponse) => ivRv(data.structure.atmIv, data.market?.
 
 // --------------------------------------------------------------- status bar
 
-export function StatusBar({ data, trade, now, leverage, refreshEverySec = null }: {
-  data: ChainResponse; trade: TradeStatus | null; now: number; leverage: number; refreshEverySec?: number | null;
+export function StatusBar({ data, trade, now, leverage, refreshEverySec = null, marginUsedPct, freshnessSec = 30 }: {
+  data: ChainResponse; trade: TradeStatus | null; now: number; leverage: number; refreshEverySec?: number | null; marginUsedPct?: number | null; freshnessSec?: number;
 }) {
   const age = Math.max(0, Math.round((now - data.snapshot.ts * 1000) / 1000));
   const measured = Boolean(data.outlook.model);
@@ -521,18 +571,19 @@ export function StatusBar({ data, trade, now, leverage, refreshEverySec = null }
   const net = trade?.today?.netUsd ?? null;
   // Margin behind what is short, at the ticket's leverage, against the balance. An estimate: Delta's figure is on the Positions tab.
   const shortCt = trade ? trade.open.reduce((a, t) => a + Math.max(0, -t.position), 0) : 0;
-  const marginUsed = trade?.balanceUsd != null && trade.balanceUsd > 0 && shortCt > 0
+  const marginUsed = marginUsedPct !== undefined ? marginUsedPct : trade?.balanceUsd != null && trade.balanceUsd > 0 && shortCt > 0
     ? (shortCt * marginPerContract(data.snapshot.spot, leverage, 0)) / trade.balanceUsd : trade?.balanceUsd != null ? 0 : null;
   return (
     <footer className="ov-status">
       <Tag tone={trade?.mode === 'live' ? 'down' : 'accent'}>{trade?.mode === 'live' ? 'LIVE' : 'Paper'} · short premium</Tag>
-      <Tag tone={data.snapshot.live && age <= 30 ? 'up' : 'warn'}>{data.snapshot.live ? `Data ${age}s old` : 'Past snapshot'}</Tag>
-      <Tag tone={measured ? 'up' : 'muted'}>{measured ? `Models ready · ${data.outlook.model!.name}` : 'Model: desk figures only'}</Tag>
+      <Tag tone={data.snapshot.live && age <= freshnessSec ? 'up' : 'warn'}>{data.snapshot.live ? `Live data · ${age}s old` : 'Past snapshot'}</Tag>
+      <Tag tone={measured ? 'up' : 'muted'}>{measured ? `Models ready · ${data.outlook.model!.name}${data.outlook.model!.measuredAt ? ` · ${data.outlook.model!.measuredAt.slice(0, 10)}` : ''}` : 'Model: desk figures only'}</Tag>
       <span className="ov-muted">{nextIn === null ? (data.snapshot.live ? 'Auto-refresh off' : `Snapshot ${istLabel(data.snapshot.ts)}`) : `Next update: ${String(Math.floor(nextIn / 60)).padStart(2, '0')}:${String(nextIn % 60).padStart(2, '0')}`}</span>
       <span className="ov-grow" />
       <span>Day P&amp;L <b className={net === null ? '' : net >= 0 ? 'ov-up' : 'ov-down'}>{net === null ? '—' : `${net >= 0 ? '+' : '−'}$${Math.abs(net).toFixed(2)}`}</b></span>
       <span>Open positions <b>{trade?.open.length ?? '—'}</b></span>
       <span>Balance <b>{trade?.balanceUsd == null ? '—' : `$${trade.balanceUsd.toFixed(2)}`}</b></span>
+      <span title="The day's loss against the daily loss limit">Risk used <b>{trade?.today && trade.limits.maxDailyLossUsd > 0 ? fmt.pct(Math.max(0, -trade.today.netUsd) / trade.limits.maxDailyLossUsd, 0) : '—'}</b></span>
       <span title="Margin behind the open shorts at the ticket's leverage, as a share of the balance (estimate)">Margin used <b className={marginUsed !== null && marginUsed > 0.5 ? 'ov-warn' : ''}>{marginUsed === null ? '—' : fmt.pct(marginUsed, 1)}</b>
         {marginUsed !== null && <span className="ov-meter" aria-hidden><span style={{ width: `${Math.min(100, marginUsed * 100)}%` }} /></span>}</span>
     </footer>

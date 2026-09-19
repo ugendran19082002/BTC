@@ -1,10 +1,11 @@
 import type { ChainResponse, Leg } from '@/types/desk';
 import type { TradeStatus } from '@/types/trade';
 import {
-  horizonRows, positionViews, scenarioGrid, type BothAssessment, type ExpectedMove, type PositionState, type RiskEngine,
+  horizonRows, positionViews, scenarioGrid, shockTable, type BothAssessment, type ExpectedMove, type PositionState, type RiskEngine,
   type SideAssessment,
 } from '@/lib/overview';
 import { fmt, Panel, Row, Tag } from './parts';
+import { entryTodayMs } from '@/lib/screen-config';
 
 const IST_HM = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
 const IST_DATE = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' });
@@ -19,10 +20,13 @@ export const ENTRY_WINDOW_IST = '05:30';
  * the selected contract's own settlement, never typed in. The bar is how
  * much of the contract's day has gone.
  */
-export function EntrySetupPanel({ data, now }: { data: ChainResponse; now: number }) {
+export function EntrySetupPanel({ data, now, entryIst = ENTRY_WINDOW_IST }: { data: ChainResponse; now: number; entryIst?: string }) {
   const snap = data.snapshot;
   const expiryMs = snap.expiryTs * 1000;
   const entryMs = snap.live ? now : snap.ts * 1000;
+  const windowMs = entryTodayMs(entryIst, entryMs);
+  const sinceWindow = windowMs === null ? null : entryMs - windowMs;
+  const inWindow = sinceWindow !== null && sinceWindow >= 0 && sinceWindow <= 30 * 60_000;
   const leftMs = Math.max(0, expiryMs - entryMs);
   const h = Math.floor(leftMs / 3_600_000), m = Math.floor((leftMs % 3_600_000) / 60_000);
   // The contract's day runs from the previous settlement (24h before) to this one.
@@ -34,7 +38,7 @@ export function EntrySetupPanel({ data, now }: { data: ChainResponse; now: numbe
         <div className="ov-mini-card">
           <span className="ov-kpi-label">Entry time ({snap.live ? 'dynamic · now' : 'the snapshot'})</span>
           <b className="ov-kpi-value">{hm(entryMs)}</b>
-          <span className="ov-kpi-sub">strategy window {ENTRY_WINDOW_IST} IST</span>
+          <span className={`ov-kpi-sub${inWindow ? ' ov-up' : ''}`}>window {entryIst} IST{sinceWindow === null ? '' : sinceWindow >= 0 ? ` · ${Math.floor(sinceWindow / 3_600_000)}h ${String(Math.floor((sinceWindow % 3_600_000) / 60_000)).padStart(2, '0')}m since` : ` · in ${Math.ceil(-sinceWindow / 60_000)}m`}{inWindow ? ' · in window' : ''}</span>
         </div>
         <span className="ov-setup-arrow" aria-hidden>→</span>
         <div className="ov-mini-card">
@@ -55,7 +59,7 @@ export function EntrySetupPanel({ data, now }: { data: ChainResponse; now: numbe
 // ------------------------------------------------------------- horizons
 
 /** Every horizon, 5m to 24h: the measured odds and the implied move. The expected-move engine, per timeframe. */
-export function HorizonsPanel({ data }: { data: ChainResponse }) {
+export function HorizonsPanel({ data, activeMin = 720 }: { data: ChainResponse; activeMin?: number }) {
   const rows = horizonRows(data.outlook);
   const measured = Boolean(data.outlook.model);
   return (
@@ -65,8 +69,8 @@ export function HorizonsPanel({ data }: { data: ChainResponse }) {
           <thead><tr><th>Horizon</th><th>Up</th><th>Down</th><th>Range</th><th>EM</th><th>Target range</th><th>Rich</th></tr></thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.label}>
-                <td>{r.label}</td>
+              <tr key={r.label} className={r.minutes === activeMin ? 'ov-atm' : undefined} title={r.minutes === activeMin ? 'The prediction horizon' : undefined}>
+                <td>{r.label}{r.minutes === activeMin ? ' ◆' : ''}</td>
                 <td className="ov-up">{fmt.pct(r.pUp)}</td>
                 <td className="ov-down">{fmt.pct(r.pDown)}</td>
                 <td className="ov-muted">{fmt.pct(r.pRange)}</td>
@@ -112,6 +116,13 @@ export function RiskEnginePanel({ leg, risk, contracts }: { leg: Leg | null; ris
           <Row label="Premium decay (model)" value={<DecayCurve curve={risk.decayCurve} />} hint="Extrinsic left at each point to settlement: extrinsic × √(time left ÷ time now)" />
         </div>
       </div>
+      <div className="ov-shocks" title="Delta and gamma for the BTC moves, vega for the IV moves; instantaneous, for the size, as the short sees it">
+        {shockTable(leg, contracts).map((s) => (
+          <span key={s.label} className={s.pnlUsd === null ? 'ov-muted' : s.pnlUsd >= 0 ? 'ov-up' : 'ov-down'}>
+            <small>{s.label}</small>{s.pnlUsd === null ? '—' : fmt.signed(s.pnlUsd, 2)}
+          </span>
+        ))}
+      </div>
     </Panel>
   );
 }
@@ -127,9 +138,9 @@ function DecayCurve({ curve }: { curve: RiskEngine['decayCurve'] }) {
 // --------------------------------------------------------- scenario grid
 
 /** BTC −3% … +3% at settlement: the call, the put, and both, for the size. The reference screens' scenario table, both sides. */
-export function ScenarioGridPanel({ data, ce, pe, contracts }: { data: ChainResponse; ce: Leg | null; pe: Leg | null; contracts: number }) {
+export function ScenarioGridPanel({ data, ce, pe, contracts, feeMultiplier = 1 }: { data: ChainResponse; ce: Leg | null; pe: Leg | null; contracts: number; feeMultiplier?: number }) {
   const spot = data.snapshot.spot;
-  const rows = scenarioGrid(ce, pe, spot, contracts);
+  const rows = scenarioGrid(ce, pe, spot, contracts, undefined, feeMultiplier);
   const cePx = ce ? (ce.sellPrice ?? ce.mark) : null;
   const pePx = pe ? (pe.sellPrice ?? pe.mark) : null;
   const cell = (v: number | null) => <td className={v === null ? 'ov-muted' : v >= 0 ? 'ov-up' : 'ov-down'}>{v === null ? '—' : fmt.signed(v, 2)}</td>;
@@ -149,7 +160,7 @@ export function ScenarioGridPanel({ data, ce, pe, contracts }: { data: ChainResp
       </table>
       <p className="ov-foot">
         Premium received: CE {cePx === null ? '—' : `$${(cePx * contracts * 0.001).toFixed(2)}`} · PE {pePx === null ? '—' : `$${(pePx * contracts * 0.001).toFixed(2)}`}.
-        Max risk is unbounded on a naked short; the tail the desk plans for is the 2×EM figure in the risk engine.
+        Net of the opening fee{feeMultiplier !== 1 ? ` (×${feeMultiplier})` : ''} and half-spread slippage. Max risk is unbounded on a naked short; the tail the desk plans for is the 2×EM figure in the risk engine.
       </p>
     </Panel>
   );
@@ -221,7 +232,16 @@ export function SideCardsRow({ sides, both, onSelect }: { sides: SideAssessment[
           <Row label="Expected P&L" value={c.expectedPnlUsd === null ? '—' : fmt.signed(c.expectedPnlUsd, 2)} tone={c.expectedPnlUsd === null ? undefined : c.expectedPnlUsd >= 0 ? 'up' : 'down'} />
           <Row label="Margin (est.)" value={c.marginUsd === null ? '—' : `$${c.marginUsd.toFixed(2)}`} />
           <Row label="Risk / reward" value={c.riskReward === null ? '—' : `${(c.riskReward * 100).toFixed(1)}¢ per $ of tail`} />
-          <footer><Tag tone={tone(c.status)}>{c.status}</Tag></footer>
+          {c.gates && (
+            <ul className="ov-gates">
+              {c.gates.map((g) => (
+                <li key={g.name} className={g.ok === true ? 'ok' : g.ok === false ? 'bad' : 'unknown'} title={g.text}>
+                  <span>{g.name}</span><b>{g.ok === true ? 'PASS' : g.ok === false ? 'FAIL' : '?'}</b>
+                </li>
+              ))}
+            </ul>
+          )}
+          <footer><Tag tone={tone(c.status)}>{c.disabledBy ?? c.status}</Tag></footer>
         </button>
       ))}
       <div className="ov-decide-card">

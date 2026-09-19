@@ -1,6 +1,6 @@
 import type { ChainResponse, MarketRead } from '@/types/desk';
 import type { FlowSummary, PerpResponse, TermHistoryPoint, TermPoint, TermResponse } from '@/api/desk';
-import { ivRv, keyLevels, modelView, skew, volRegime, type IvRv } from '@/lib/overview';
+import { ivRv, keyLevels, modelView, mtfRows, skew, volRegime, type IvRv } from '@/lib/overview';
 import { fmt, NotCaptured, Panel, Row, Tag } from './parts';
 
 // ------------------------------------------------------------------ KPI strip
@@ -23,13 +23,13 @@ export function nextFundingIn(nowMs: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-export function KpiStrip({ data, spot, iv, perp, spark, now = Date.now() }: {
-  data: ChainResponse; spot: number; iv: IvRv | null; perp: PerpResponse | null; spark?: readonly number[]; now?: number;
+export function KpiStrip({ data, spot, iv, perp, spark, now = Date.now(), horizonMin = 720 }: {
+  data: ChainResponse; spot: number; iv: IvRv | null; perp: PerpResponse | null; spark?: readonly number[]; now?: number; horizonMin?: number;
 }) {
   const m = data.market;
   const s = data.structure;
   const t = perp?.ticker ?? null;
-  const view = modelView(data.outlook, 720);
+  const view = modelView(data.outlook, horizonMin);
   const change = m?.return24h ?? null;
   const perpChange = t?.change24hPct ?? null;
   const funding = t?.fundingRate ?? null;
@@ -102,20 +102,25 @@ const regimeTone = (r: string | undefined) =>
 
 // -------------------------------------------------------------- price action
 
-export function PriceActionPanel({ market }: { market: MarketRead | null }) {
-  const tf = market?.timeframes.find((t) => t.tf === '15m') ?? null;
+export function PriceActionPanel({ market, tf: wanted = '15m' }: { market: MarketRead | null; tf?: string }) {
+  // The chart's timeframe, where the read has it; 1m and 30m are not read, so the nearest read one stands in.
+  const have = market?.timeframes ?? [];
+  const nearest: Record<string, string> = { '1m': '5m', '30m': '15m' };
+  const use = have.some((t) => t.tf === wanted) ? wanted : nearest[wanted] ?? '15m';
+  const tf = have.find((t) => t.tf === use) ?? null;
   const trendTone = tf?.trend === 1 ? 'up' : tf?.trend === -1 ? 'down' : 'muted';
-  const macd = market?.macd15m ?? null;
+  const macd = use === '15m' ? market?.macd15m ?? null : null;
   return (
-    <Panel title="Price action (15m)">
-      {!tf ? <p className="ov-empty">No 15-minute bars yet.</p> : (
+    <Panel title={`Price action (${use})`} right={use !== wanted ? <small className="ov-muted">{wanted} not read; {use} shown</small> : undefined}>
+      {!tf ? <p className="ov-empty">No {use} bars yet.</p> : (
         <>
           <Row label="Trend" value={tf.label} tone={trendTone} />
           <Row label="Structure" value={tf.structure === 1 ? 'HH / HL' : tf.structure === -1 ? 'LH / LL' : 'no clear swings'}
             tone={tf.structure === 1 ? 'up' : tf.structure === -1 ? 'down' : 'muted'} hint="Higher highs and higher lows, or the mirror, on the recent swings" />
           <Row label="RSI (14)" value={fmt.n(tf.rsi14, 1)} tone={tf.rsi14 === null ? undefined : tf.rsi14 >= 70 || tf.rsi14 <= 30 ? 'warn' : undefined} />
-          <Row label="MACD (12, 26, 9)" value={macd ? `${macd.hist >= 0 ? 'bullish' : 'bearish'} · ${fmt.signed(macd.hist, 1)}` : '—'}
+          <Row label="MACD (12, 26, 9)" value={macd ? `${macd.hist >= 0 ? 'bullish' : 'bearish'} · ${fmt.signed(macd.hist, 1)}` : use === '15m' ? '—' : 'read on 15m only'}
             tone={macd ? (macd.hist >= 0 ? 'up' : 'down') : undefined} hint={macd ? `line ${macd.line.toFixed(1)} · signal ${macd.signal.toFixed(1)}` : undefined} />
+          <Row label="ADX (14)" value={tf.adx14 == null ? '—' : tf.adx14.toFixed(1)} hint="Trend strength, whichever way" />
           <Row label="VWAP" value={tf.vwap == null ? '—' : `${fmt.n(tf.vwap, 1)} (${fmt.signed(tf.vwapDistPct, 2)}%)`}
             tone={tf.vwapDistPct == null ? undefined : tf.vwapDistPct >= 0 ? 'up' : 'down'} hint="Price against the volume-weighted average of the bars read" />
           <Row label="EMA 9 / 21 / 50" value={`${fmt.n(tf.ema9)} / ${fmt.n(tf.ema21)} / ${fmt.n(tf.ema50)}`} tone={tf.ema9 !== null && tf.ema21 !== null ? (tf.ema9 > tf.ema21 ? 'up' : 'down') : undefined} />
@@ -125,6 +130,35 @@ export function PriceActionPanel({ market }: { market: MarketRead | null }) {
             hint="Each timeframe's trend, +1 up / −1 down, added up" />
         </>
       )}
+    </Panel>
+  );
+}
+
+// ------------------------------------------------------------ multi-timeframe
+
+/** TF · trend · momentum · model · signal, one row per timeframe; the chart's timeframe and the prediction horizon are marked. */
+export function MtfPanel({ data, activeTf, horizonMin }: { data: ChainResponse; activeTf: string; horizonMin: number }) {
+  const rows = mtfRows(data.market, data.outlook);
+  const mins: Record<string, number> = { '5m': 5, '15m': 15, '30m': 30, '1h': 60, '3h': 180, '4h': 240, '6h': 360, '12h': 720, '1d': 1440 };
+  const up = rows.filter((r) => r.signal === '↑').length, down = rows.filter((r) => r.signal === '↓').length;
+  return (
+    <Panel title="Multi-timeframe" right={<small className="ov-muted">{up} up · {down} down · {rows.length - up - down} side</small>}>
+      <table className="ov-mini ov-mtf">
+        <thead><tr><th>TF</th><th>Trend</th><th>Momentum</th><th>Model ↑</th><th /></tr></thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.tf} className={r.tf === activeTf ? 'ov-atm' : mins[r.tf] === horizonMin ? 'ov-horizon' : undefined}
+              title={r.tf === activeTf ? 'The chart\'s timeframe' : mins[r.tf] === horizonMin ? 'The prediction horizon' : undefined}>
+              <td>{r.tf}{r.tf === activeTf ? ' ●' : mins[r.tf] === horizonMin ? ' ◆' : ''}</td>
+              <td className={r.trend === 'up' ? 'ov-up' : r.trend === 'down' ? 'ov-down' : 'ov-muted'}>{r.trend}</td>
+              <td className={r.momentum === 'bullish' ? 'ov-up' : r.momentum === 'bearish' ? 'ov-down' : 'ov-muted'}>{r.momentum ?? '—'}</td>
+              <td>{fmt.pct(r.model)}</td>
+              <td className={r.signal === '↑' ? 'ov-up' : r.signal === '↓' ? 'ov-down' : 'ov-muted'}>{r.signal}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="ov-foot">● chart timeframe · ◆ prediction horizon. Trend from the EMA stack, momentum from RSI, model from the measured record.</p>
     </Panel>
   );
 }
@@ -176,9 +210,11 @@ export function VolatilityPanel({ data, iv }: { data: ChainResponse; iv: IvRv | 
  * top of its book. From the desk's own record of every print; a window the
  * socket was away for says how many minutes it actually has.
  */
-export function TradeFlowPanel({ perp }: { perp: PerpResponse | null }) {
+export function TradeFlowPanel({ perp, market }: { perp: PerpResponse | null; market: MarketRead | null }) {
   const f = perp?.flow ?? null;
   const b = perp?.book ?? null;
+  const oi = perp?.oi ?? null;
+  const burst = market?.volume.find((v) => v.tf === '5m') ?? null;
   if (!perp) return <Panel title="Trade flow (1h)"><p className="ov-empty">Loading…</p></Panel>;
   if (!f || f.source === 'none') {
     return (
@@ -197,7 +233,11 @@ export function TradeFlowPanel({ perp }: { perp: PerpResponse | null }) {
       <Row label="Sell volume" value={`${fmt.n(f.sellVolume)} ct`} tone="down" hint="Contracts sold by the aggressor: sells that hit the bid" />
       <Row label="Delta volume" value={`${fmt.signed(delta)} ct`} tone={delta > 0 ? 'up' : delta < 0 ? 'down' : 'muted'} />
       <Row label="CVD" value={<CvdLine cvd={f.cvd} />} hint="Cumulative volume delta over the window, minute by minute" />
-      <Row label="Aggressor buy %" value={fmt.pct(f.aggressorBuyPct, 1)} tone={f.aggressorBuyPct === null ? undefined : f.aggressorBuyPct > 0.55 ? 'up' : f.aggressorBuyPct < 0.45 ? 'down' : undefined} />
+      <Row label="CVD slope (last 15m)" value={cvdSlope(f.cvd) === null ? '—' : `${fmt.signed(cvdSlope(f.cvd))} ct/min`} tone={cvdSlope(f.cvd) === null ? undefined : cvdSlope(f.cvd)! > 0 ? 'up' : 'down'} />
+      <Row label="Aggressor buy / sell %" value={f.aggressorBuyPct === null ? '—' : `${fmt.pct(f.aggressorBuyPct, 1)} / ${fmt.pct(1 - f.aggressorBuyPct, 1)}`} tone={f.aggressorBuyPct === null ? undefined : f.aggressorBuyPct > 0.55 ? 'up' : f.aggressorBuyPct < 0.45 ? 'down' : undefined} />
+      <Row label="Volume burst (5m)" value={burst?.spike == null ? '—' : `${burst.spike.toFixed(1)}× median`} tone={burst?.spike != null && burst.spike >= 2 ? 'warn' : undefined} hint="The last 5-minute bar's volume against the median of the twenty before it" />
+      <Row label="OI change 1h · acceleration" value={oi ? `CE ${fmt.signed(oi.ceChange1h)} (${fmt.signed(oi.ceAcceleration)}) · PE ${fmt.signed(oi.peChange1h)} (${fmt.signed(oi.peAcceleration)})` : '—'}
+        hint="The board's OI change over the hour, and how much faster or slower than an hour before" />
       <Row label="Trades · avg size" value={`${fmt.n(f.trades)} · ${fmt.n(f.avgTradeSize, 1)} ct`} />
       <Row label="Large prints (≥200 ct)" value={large === 0 ? 'none' : `${fmt.n(f.largeBuyVolume)} bought · ${fmt.n(f.largeSellVolume)} sold`}
         tone={large === 0 ? 'muted' : f.largeBuyVolume > f.largeSellVolume ? 'up' : f.largeBuyVolume < f.largeSellVolume ? 'down' : undefined} />
@@ -217,6 +257,13 @@ function BookRows({ b }: { b: NonNullable<PerpResponse['book']> }) {
       <Row label="Spread" value={b.spreadUsd === null ? '—' : `$${b.spreadUsd.toFixed(1)} (${fmt.pct(b.spreadPct, 3)})`} />
     </>
   );
+}
+
+/** Contracts per minute over the last fifteen minutes of CVD. */
+function cvdSlope(cvd: FlowSummary['cvd']): number | null {
+  const tail = cvd.slice(-15);
+  if (tail.length < 2) return null;
+  return (tail[tail.length - 1]!.cvd - tail[0]!.cvd) / (tail.length - 1);
 }
 
 function CvdLine({ cvd }: { cvd: FlowSummary['cvd'] }) {

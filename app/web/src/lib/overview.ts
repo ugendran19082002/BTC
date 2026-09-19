@@ -364,14 +364,16 @@ export function entryGates(input: {
   maxSpreadPct: number | null;
   /** The size about to be sold, what is already short, and the desk's caps: the risk gate. */
   risk?: { contracts: number; heldShort: number; maxShortContracts: number; dayNetUsd: number | null; maxDailyLossUsd: number } | null;
+  /** Data older than this is too old to trade on; 30 s by default. */
+  freshnessMs?: number;
 }): Gate[] {
   const { data, leg, iv, nowMs, maxSpreadPct, risk } = input;
-  const f = freshness(data.snapshot.ts, nowMs);
+  const f = freshness(data.snapshot.ts, nowMs, input.freshnessMs ?? 30_000);
   const c = consensus(data.outlook);
   const pa = leg ? premiumAnalysis(leg, null) : null;
   const gates: Gate[] = [
     { key: 'fresh', ok: data.snapshot.live ? f.fresh : false,
-      text: data.snapshot.live ? `Market data ${Math.round(f.ageMs / 1000)}s old${f.fresh ? '' : ' — too old to trade on'}` : 'A past snapshot — nothing to trade' },
+      text: data.snapshot.live ? `Market data ${Math.round(f.ageMs / 1000)}s old (limit ${Math.round((input.freshnessMs ?? 30_000) / 1000)}s)${f.fresh ? '' : ' — too old to trade on'}` : 'A past snapshot — nothing to trade' },
     { key: 'contract', ok: data.snapshot.live && data.snapshot.hoursToExpiry > 0 && leg !== null,
       text: leg ? `${leg.cp === 'C' ? 'CE' : 'PE'} ${leg.strike.toLocaleString('en-US')} live, ${data.snapshot.hoursToExpiry.toFixed(1)}h to settlement` : 'No strike selected' },
     { key: 'direction', ok: data.direction.confirmed ? true : data.direction.readable === 0 ? null : false,
@@ -475,6 +477,10 @@ export type SideAssessment = SideCard & {
   /** Expected P&L per dollar of tail loss. */
   riskReward: number | null;
   status: SideStatus;
+  /** The side's gates, PASS / FAIL, once the screen has run them. */
+  gates?: SideGate[];
+  /** Why the side is off, when the side mode turns it off. */
+  disabledBy?: string | null;
 };
 
 /** Loss for a short at `price`, before fees: what the option pays out less the premium kept. Positive is a loss. */
@@ -629,10 +635,10 @@ export function riskEngine(
 export type ScenarioRow = { pct: number; price: number; ce: number | null; pe: number | null; both: number | null };
 
 /** Fee and half-spread slippage for a short of `contracts`, USD: what a scenario row nets after. */
-function costsUsd(leg: Leg, spot: number, contracts: number): number {
+function costsUsd(leg: Leg, spot: number, contracts: number, feeMultiplier = 1): number {
   const px = leg.sellPrice ?? leg.mark ?? 0;
   const half = leg.bid !== null && leg.ask !== null ? (leg.ask - leg.bid) / 2 : 0;
-  return feePerContract(spot, px) * contracts + half * contracts * CONTRACT_BTC;
+  return feePerContract(spot, px) * contracts * feeMultiplier + half * contracts * CONTRACT_BTC;
 }
 
 /**
@@ -640,11 +646,11 @@ function costsUsd(leg: Leg, spot: number, contracts: number): number {
  * for `contracts` each, net of the opening fee and half-spread slippage:
  * premium − max(0, payout) − fees − slippage.
  */
-export function scenarioGrid(ce: Leg | null, pe: Leg | null, spot: number, contracts: number, pcts: readonly number[] = [-3, -2, -1, 0, 1, 2, 3]): ScenarioRow[] {
+export function scenarioGrid(ce: Leg | null, pe: Leg | null, spot: number, contracts: number, pcts: readonly number[] = [-3, -2, -1, 0, 1, 2, 3], feeMultiplier = 1): ScenarioRow[] {
   const cePx = ce ? (ce.sellPrice ?? ce.mark) : null;
   const pePx = pe ? (pe.sellPrice ?? pe.mark) : null;
-  const ceCost = ce ? costsUsd(ce, spot, contracts) : 0;
-  const peCost = pe ? costsUsd(pe, spot, contracts) : 0;
+  const ceCost = ce ? costsUsd(ce, spot, contracts, feeMultiplier) : 0;
+  const peCost = pe ? costsUsd(pe, spot, contracts, feeMultiplier) : 0;
   return pcts.map((pct) => {
     const price = spot * (1 + pct / 100);
     const c = ce && cePx !== null ? shortPayoff('C', ce.strike, cePx, [price], contracts)[0]!.pnlUsd - ceCost : null;
@@ -672,11 +678,14 @@ export function readiness(input: {
   leverage: number;
   trade: { maxSpreadPct: number; maxShortContracts: number; maxDailyLossUsd: number; heldShort: number; dayNetUsd: number | null; balanceUsd: number | null } | null;
   risk: RiskEngine | null;
+  t?: { maxPot: number; minEmDistance: number; maxSlippage: number; tailLimitFactor: number; sizeFactor: number };
+  freshnessMs?: number;
 }): Readiness {
   const { data, leg, iv, nowMs, contracts, trade, risk } = input;
+  const t = input.t ?? { maxPot: 0.35, minEmDistance: 1, maxSlippage: 0.1, tailLimitFactor: 1, sizeFactor: 1 };
   const gates = entryGates({
-    data, leg, iv, nowMs, maxSpreadPct: trade?.maxSpreadPct ?? null,
-    risk: trade ? { contracts, heldShort: trade.heldShort, maxShortContracts: trade.maxShortContracts, dayNetUsd: trade.dayNetUsd, maxDailyLossUsd: trade.maxDailyLossUsd } : null,
+    data, leg, iv, nowMs, maxSpreadPct: trade?.maxSpreadPct ?? null, freshnessMs: input.freshnessMs,
+    risk: trade ? { contracts, heldShort: trade.heldShort, maxShortContracts: Math.max(1, Math.floor(trade.maxShortContracts * t.sizeFactor)), dayNetUsd: trade.dayNetUsd, maxDailyLossUsd: trade.maxDailyLossUsd } : null,
   });
   const snap = data.snapshot;
   const h = snap.hoursToExpiry;
@@ -685,21 +694,21 @@ export function readiness(input: {
   const wallBeyond = leg && wall ? (leg.cp === 'C' ? wall.strike >= leg.strike : wall.strike <= leg.strike) : null;
   const gamma = gammaRisk(emDist);
   const slipPct = risk && risk.premium > 0 && risk.slippageUsd !== null ? risk.slippageUsd / (risk.premium * contracts * CONTRACT_BTC) : null;
-  const tailOk = risk?.tailLossUsd == null || trade === null ? null : risk.tailLossUsd <= trade.maxDailyLossUsd;
+  const tailOk = risk?.tailLossUsd == null || trade === null ? null : risk.tailLossUsd <= trade.maxDailyLossUsd * t.tailLimitFactor;
   const regime = data.market?.regime ?? null;
   const conflict = leg && regime ? (leg.cp === 'C' && /up/i.test(regime)) || (leg.cp === 'P' && /down/i.test(regime)) : null;
   const marginUsd = leg && risk ? marginPerContract(snap.spot, input.leverage, risk.premium) * contracts : null;
   const extra: Gate[] = [
     { key: 'expiry', ok: snap.live ? h > 0 && h <= 36 : false, text: h <= 0 ? 'The contract has settled' : h > 36 ? `Expiry ${h.toFixed(0)}h away — not an intraday contract` : `Expiry valid — settles in ${h.toFixed(1)}h` },
     { key: 'side', ok: leg !== null, text: leg ? `${leg.cp === 'C' ? 'CE' : 'PE'} side selected` : 'No side selected' },
-    { key: 'pot', ok: leg?.probs.touch == null ? null : leg.probs.touch <= 0.35, text: leg?.probs.touch == null ? 'Probability of touch: not readable' : `Probability of touch ${(leg.probs.touch * 100).toFixed(0)}% (limit 35%)` },
-    { key: 'em', ok: emDist === null ? null : emDist >= 1, text: emDist === null ? 'Distance / EM: not readable' : `Strike ${emDist.toFixed(2)} expected moves away${emDist >= 1 ? '' : ' — inside the move'}` },
+    { key: 'pot', ok: leg?.probs.touch == null ? null : leg.probs.touch <= t.maxPot, text: leg?.probs.touch == null ? 'Probability of touch: not readable' : `Probability of touch ${(leg.probs.touch * 100).toFixed(0)}% (limit ${(t.maxPot * 100).toFixed(0)}%)` },
+    { key: 'em', ok: emDist === null ? null : emDist >= t.minEmDistance, text: emDist === null ? 'Distance / EM: not readable' : `Strike ${emDist.toFixed(2)} expected moves away (min ${t.minEmDistance}×)` },
     { key: 'wall', ok: wallBeyond, text: wallBeyond === null ? 'No OI wall on this side' : wallBeyond ? `OI wall at ${wall!.strike.toLocaleString('en-US')} sits beyond the strike` : `OI wall at ${wall!.strike.toLocaleString('en-US')} is inside the strike` },
     { key: 'gamma', ok: gamma === null ? null : gamma !== 'high', text: gamma === null ? 'Gamma risk: not readable' : `Gamma risk ${gamma}` },
-    { key: 'slippage', ok: slipPct === null ? null : slipPct <= 0.1, text: slipPct === null ? 'Slippage: no two-sided quote' : `Slippage ${(slipPct * 100).toFixed(1)}% of the credit (limit 10%)` },
-    { key: 'tail', ok: tailOk, text: risk?.tailLossUsd == null ? 'Tail loss: not readable' : `Tail loss at 2×EM $${risk.tailLossUsd.toFixed(2)}${trade ? ` (day limit $${trade.maxDailyLossUsd})` : ''}` },
+    { key: 'slippage', ok: slipPct === null ? null : slipPct <= t.maxSlippage, text: slipPct === null ? 'Slippage: no two-sided quote' : `Slippage ${(slipPct * 100).toFixed(1)}% of the credit (limit ${(t.maxSlippage * 100).toFixed(0)}%)` },
+    { key: 'tail', ok: tailOk, text: risk?.tailLossUsd == null ? 'Tail loss: not readable' : `Tail loss at 2×EM $${risk.tailLossUsd.toFixed(2)}${trade ? ` (limit $${(trade.maxDailyLossUsd * t.tailLimitFactor).toFixed(2)})` : ''}` },
     { key: 'margin', ok: marginUsd === null || trade?.balanceUsd == null ? null : marginUsd <= trade.balanceUsd, text: marginUsd === null ? 'Margin: not readable' : `Margin $${marginUsd.toFixed(2)}${trade?.balanceUsd != null ? ` of $${trade.balanceUsd.toFixed(2)} balance` : ''}` },
-    { key: 'size', ok: contracts > 0 && (trade ? contracts <= trade.maxShortContracts : true), text: `Position size ${contracts} contracts` },
+    { key: 'size', ok: contracts > 0 && (trade ? contracts <= Math.max(1, Math.floor(trade.maxShortContracts * t.sizeFactor)) : true), text: `Position size ${contracts} contracts${trade ? ` (this risk mode allows ${Math.max(1, Math.floor(trade.maxShortContracts * t.sizeFactor))})` : ''}` },
     { key: 'regime', ok: conflict === null ? null : !conflict, text: conflict === null ? 'Regime: not readable' : conflict ? `Regime "${regime}" conflicts with a short ${leg!.cp === 'C' ? 'call' : 'put'}` : `Regime "${regime}" does not conflict` },
   ];
   // The server's checks were appended by entryGates; keep them last.
@@ -818,8 +827,11 @@ export function sideGates(input: {
   maxDailyLossUsd: number | null;
   marginUsd: number | null;
   balanceUsd: number | null;
+  /** The risk mode's numbers; the defaults are the balanced ones. */
+  t?: { maxPot: number; minEmDistance: number; maxSlippage: number; tailLimitFactor: number };
 }): SideGate[] {
   const { side, leg, iv, regime, direction, outlook, maxSpreadPct, tailLossUsd, maxDailyLossUsd, marginUsd, balanceUsd } = input;
+  const t = input.t ?? { maxPot: 0.35, minEmDistance: 1, maxSlippage: 0.1, tailLimitFactor: 1 };
   const cp = side === 'CE' ? 'C' : 'P';
   const c = consensus(outlook);
   // A short call wants the market not to go up; a short put, not down.
@@ -833,24 +845,29 @@ export function sideGates(input: {
   const slip = pa && pa.spreadPct !== null ? pa.spreadPct / 2 : null;
   return [
     { name: 'Direction', ok: conflict === null ? (direction.readable === 0 ? null : direction.confirmed) : !conflict, text: conflict ? `regime "${regime}" runs into a short ${cp === 'C' ? 'call' : 'put'}` : direction.summary },
-    { name: 'PoT', ok: leg?.probs.touch == null ? null : leg.probs.touch <= 0.35, text: leg?.probs.touch == null ? 'not readable' : `${(leg.probs.touch * 100).toFixed(0)}% (limit 35%)` },
-    { name: 'Distance / EM', ok: emDist === null ? null : emDist >= 1, text: emDist === null ? 'not readable' : `${emDist.toFixed(2)}×` },
+    { name: 'PoT', ok: leg?.probs.touch == null ? null : leg.probs.touch <= t.maxPot, text: leg?.probs.touch == null ? 'not readable' : `${(leg.probs.touch * 100).toFixed(0)}% (limit ${(t.maxPot * 100).toFixed(0)}%)` },
+    { name: 'Distance / EM', ok: emDist === null ? null : emDist >= t.minEmDistance, text: emDist === null ? 'not readable' : `${emDist.toFixed(2)}× (min ${t.minEmDistance}×)` },
     { name: 'IV − RV', ok: iv ? iv.label !== 'cheap' : null, text: iv ? `${iv.label} · ${iv.ratio.toFixed(2)}×` : 'not readable' },
     { name: 'Gamma', ok: g === null ? null : g !== 'high', text: g ?? 'not readable' },
     { name: 'Liquidity', ok: pa?.spreadPct == null || maxSpreadPct === null ? null : pa.spreadPct <= maxSpreadPct / 100, text: pa?.spreadPct == null ? 'no two-sided quote' : `spread ${(pa.spreadPct * 100).toFixed(1)}%` },
-    { name: 'Tail risk', ok: tailLossUsd === null || maxDailyLossUsd === null ? null : tailLossUsd <= maxDailyLossUsd, text: tailLossUsd === null ? 'not readable' : `$${tailLossUsd.toFixed(2)} at 2×EM` },
-    { name: 'Execution', ok: slip === null ? null : slip <= 0.1, text: slip === null ? 'no quote' : `half-spread ${(slip * 100).toFixed(1)}% of premium` },
+    { name: 'Tail risk', ok: tailLossUsd === null || maxDailyLossUsd === null ? null : tailLossUsd <= maxDailyLossUsd * t.tailLimitFactor, text: tailLossUsd === null ? 'not readable' : `$${tailLossUsd.toFixed(2)} at 2×EM${maxDailyLossUsd === null ? '' : ` (limit $${(maxDailyLossUsd * t.tailLimitFactor).toFixed(2)})`}` },
+    { name: 'Execution', ok: slip === null ? null : slip <= t.maxSlippage, text: slip === null ? 'no quote' : `half-spread ${(slip * 100).toFixed(1)}% of premium (limit ${(t.maxSlippage * 100).toFixed(0)}%)` },
     { name: 'Margin', ok: marginUsd === null || balanceUsd === null ? null : marginUsd <= balanceUsd, text: marginUsd === null ? 'not readable' : `$${marginUsd.toFixed(2)}` },
     { name: 'MTF consensus', ok: mtf, text: c.scored === 0 ? 'no horizon readable' : `${c.up} up · ${c.down} down · ${c.flat} flat of ${c.scored}` },
   ];
 }
 
-/** SELL when every gate passes; WATCH when only soft gates fail; NOT PREFERRED otherwise. */
-export function sideStatusOf(gates: readonly SideGate[]): SideStatus {
+/**
+ * SELL when every gate passes; WATCH when only soft gates fail and no more
+ * than `softFailsAllowed` of them; NOT PREFERRED otherwise. A hard gate
+ * (direction, touch odds, distance, tail, margin) failing is never softened,
+ * whatever the strictness.
+ */
+export function sideStatusOf(gates: readonly SideGate[], softFailsAllowed = 2): SideStatus {
   const hard = new Set(['Direction', 'PoT', 'Distance / EM', 'Tail risk', 'Margin']);
   if (gates.every((g) => g.ok === true)) return 'SELL';
   if (gates.some((g) => hard.has(g.name) && g.ok === false)) return 'NOT PREFERRED';
-  return gates.filter((g) => g.ok !== true).length <= 2 ? 'WATCH' : 'NOT PREFERRED';
+  return gates.filter((g) => g.ok !== true).length <= softFailsAllowed ? 'WATCH' : 'NOT PREFERRED';
 }
 
 export type SideChoice = { side: 'CE' | 'PE' | 'BOTH' | 'NO_TRADE'; why: string };

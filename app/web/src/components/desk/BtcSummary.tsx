@@ -21,8 +21,8 @@ const EXPIRY_FORMAT = new Intl.DateTimeFormat('en-IN', {
 });
 
 /** The outlook card that answers each chart timeframe; 1m has none. */
-const ROW_FOR: Record<ChartTf, string | null> = { '1m': null, '5m': '5m', '15m': '15m', '1h': '1h', '4h': '4h', '1d': '24h' };
-const TF_MINUTES: Record<ChartTf, number> = { '1m': 1, '5m': 5, '15m': 15, '1h': 60, '4h': 240, '1d': 1440 };
+const ROW_FOR: Record<ChartTf, string | null> = { '1m': null, '5m': '5m', '15m': '15m', '30m': '30m', '1h': '1h', '4h': '4h', '1d': '24h' };
+const TF_MINUTES: Record<ChartTf, number> = { '1m': 1, '5m': 5, '15m': 15, '30m': 30, '1h': 60, '4h': 240, '1d': 1440 };
 const YEAR_MINUTES = 365 * 24 * 60;
 /** How many recent bars "holding above" looks back over. */
 export const HOLD_BARS = 12;
