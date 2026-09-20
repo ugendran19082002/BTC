@@ -12,7 +12,7 @@ import { loadDays, reloadDays, DEFAULTS } from '../../backtest/backtest.js';
 import { tradingService, SHORT_CAP_KEY } from '../../trading/service.js';
 import { appliedMigrations } from '../../db/migrate.js';
 import { termStructure } from '../../market/term.js';
-import { lastOptionSnapshot } from '../../market/option-snapshots.js';
+import { lastOptionSnapshot, lastOptionSnapshotAt } from '../../market/option-snapshots.js';
 import { flowFeedHealth, flowSummary, ivRank, liveBook, livePerp, oiPulse, skewRank, termHistory } from '../../market/flow.js';
 import { changes } from '../../market/changes.js';
 import { one } from '../../db/pool.js';
@@ -345,6 +345,7 @@ export function registerDeskRoutes(app: FastifyInstance) {
         });
       }
 
+      const feed = tickerFeedHealth();
       const measured = await measuredOutlook({
         now: Date.now(),
         spot: snap.spot,
@@ -353,6 +354,7 @@ export function registerDeskRoutes(app: FastifyInstance) {
         chain: board,
       });
 
+      const fullOutlook = withMeasured(ownOutlook, measured);
       return {
         snapshot: { ...snap, legs: undefined },
         legs: attachEv(scored, {
@@ -397,7 +399,7 @@ export function registerDeskRoutes(app: FastifyInstance) {
          * them into one number is how "the market looks bullish" becomes
          * "sell this put".
          */
-        outlook: withMeasured(ownOutlook, measured),
+        outlook: fullOutlook,
         recommendation,
         requireHedge,
         verdict: verdict(snap, picks, minPremium, lots, market, {
@@ -405,6 +407,18 @@ export function registerDeskRoutes(app: FastifyInstance) {
           hedgeMissing: recommendation.hedgeMissing,
         }),
         usdinr: USDINR,
+        /*
+         * How old each thing on the screen is, as epoch ms, so the bar can say
+         * "market 2s · chain 4s · OI 3m · model 2d" and go amber when one of
+         * them is not moving. Null where there is no record yet; null as a
+         * whole on a past snapshot, where age means nothing.
+         */
+        freshness: snap.live ? {
+          marketAt: feed.lastMessageAt ?? feed.batchAt,
+          chainAt: snap.ts * 1000,
+          oiAt: await lastOptionSnapshotAt(),
+          modelAt: fullOutlook.model?.measuredAt && Number.isFinite(Date.parse(fullOutlook.model.measuredAt)) ? Date.parse(fullOutlook.model.measuredAt) : null,
+        } : null,
       };
     } catch (e) {
       const msg = (e as Error).message;

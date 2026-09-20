@@ -5,8 +5,8 @@ import { getPerp, getTerm } from '@/api/desk';
 import { usePoll } from '@/hooks/usePoll';
 import type { ChartTf } from '@/components/desk/PriceChart';
 import {
-  assessSides, expectedMove, ivRv, readiness, riskEngine, sideGates, sideSelector, sideStatusOf, skew,
-  type SideAssessment, type SideChoice,
+  assessSides, DESK_FILTER, expectedMove, filtersChanged, findStrikes, ivRv, readiness, riskEngine, sideGates, sideSelector, sideStatusOf, skew,
+  type FinderFilter, type SideAssessment, type SideChoice,
 } from '@/lib/overview';
 import { DEFAULT_CONFIG, thresholds } from '@/lib/screen-config';
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
@@ -109,7 +109,13 @@ export function Overview({
     maxSpreadPct: trade.limits.maxSpreadPct, maxShortContracts: trade.limits.maxShortContracts, maxDailyLossUsd: trade.limits.maxDailyLossUsd,
     heldShort, dayNetUsd: trade.today?.netUsd ?? null, balanceUsd: trade.balanceUsd,
   } : null), [trade, heldShort]);
-  const sides: SideAssessment[] = useMemo(() => assessSides(data, iv, emSettle, contracts, leverage).map((s) => {
+  // The finder's filters. Left at the desk's own, the cards carry the desk's picks; moved, each card
+  // carries the best strike that passes them -- the decision is about what the person is considering.
+  const [filter, setFilter] = useState<FinderFilter>(DESK_FILTER);
+  const pick = useMemo(() => (filtersChanged(filter)
+    ? (cp: 'C' | 'P') => findStrikes(data.legs, { ...filter, side: cp, top: 1 })[0] ?? null
+    : undefined), [filter, data.legs]);
+  const sides: SideAssessment[] = useMemo(() => assessSides(data, iv, emSettle, contracts, leverage, pick).map((s) => {
     const gates = sideGates({
       side: s.side, leg: s.leg, iv, regime: data.market?.regime ?? null, direction: data.direction, outlook: data.outlook,
       maxSpreadPct: tradeLimits?.maxSpreadPct ?? null, tailLossUsd: s.tailLossUsd, maxDailyLossUsd: tradeLimits?.maxDailyLossUsd ?? null,
@@ -117,7 +123,7 @@ export function Overview({
     });
     const allowed = config.sideMode === 'AUTO' || config.sideMode === 'BOTH_ALLOWED' || (config.sideMode === 'CE_ONLY' && s.side === 'CE') || (config.sideMode === 'PE_ONLY' && s.side === 'PE');
     return { ...s, gates, status: allowed ? sideStatusOf(gates, t.softFailsAllowed) : 'NOT PREFERRED', disabledBy: allowed ? null : `Disabled by side mode ${config.sideMode.replace('_', ' ')}` };
-  }), [data, iv, emSettle, contracts, leverage, tradeLimits, t, config.sideMode]);
+  }), [data, iv, emSettle, contracts, leverage, tradeLimits, t, config.sideMode, pick]);
   const choice: SideChoice = useMemo(() => {
     const auto = sideSelector(data.market?.regime ?? null, data.outlook, sides[0]!.status, sides[1]!.status);
     if (config.sideMode === 'CE_ONLY') return sides[0]!.status !== 'NOT PREFERRED' ? { side: 'CE', why: 'Side mode CE only; the call side passes' } : { side: 'NO_TRADE', why: 'Side mode CE only, and the call side fails its gates' };
@@ -169,7 +175,7 @@ export function Overview({
             <SelectedStrikePanel data={data} leg={leg} em={emSettle} contracts={contracts} ivRank={term?.iv ?? null} momentum={changes?.momentum ?? null} />
           </ErrorBoundary>
           <ErrorBoundary where="What changed"><ChangesPanel leg={leg} rows={changes?.rows ?? null} /></ErrorBoundary>
-          <ErrorBoundary where="Risk engine"><RiskEnginePanel leg={leg} risk={risk} contracts={contracts} /></ErrorBoundary>
+          <ErrorBoundary where="Risk engine"><RiskEnginePanel leg={leg} risk={risk} contracts={contracts} hoursToExpiry={snap.hoursToExpiry} /></ErrorBoundary>
           <ErrorBoundary where="Checklist"><ChecklistPanel leg={leg} ready={ready} onSell={onSell} /></ErrorBoundary>
         </div>
 
@@ -179,7 +185,8 @@ export function Overview({
             <StrategyDecisionPanel data={data} sides={sides} choice={choice} onSelect={setPicked}
               strikes={
                 <StrikeFinder data={data} onSelect={(cp, strike) => setPicked({ cp, strike })} onSell={onSell} contracts={contracts} leverage={leverage}
-                  defaultSide={choice.side === 'CE' ? 'C' : choice.side === 'PE' ? 'P' : 'both'} em={emSettle} execution={config.execution} />
+                  defaultSide={choice.side === 'CE' ? 'C' : choice.side === 'PE' ? 'P' : 'both'} em={emSettle} execution={config.execution}
+                  filter={filter} onFilter={setFilter} />
               } />
           </ErrorBoundary>
         </div>

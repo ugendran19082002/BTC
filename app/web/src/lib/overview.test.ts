@@ -4,7 +4,7 @@ import live from '@/test/fixtures/chain-live.json';
 import {
   allClear, bestLeg, bothSides, breakeven, candidates, consensus, entryGates, expectedMove, feePerContract, freshness, gammaRisk,
   ivRv, keyLevels, marginPerContract, modelView, odds, orderEstimate, payoffPrices, premiumAnalysis, shortPayoff, skew, volRegime,
-  assessBoth, assessSides, horizonRows, namedLevels, earlyWarning, findStrikes, boardRead, movementVerdict, parseSymbol, positionState, positionViews, premiumMomentum, readiness, riskEngine, shortLossAt,
+  ageText, contractValidity, dataFreshness, premiumDecay, DESK_FILTER, filtersChanged, assessBoth, assessSides, horizonRows, namedLevels, earlyWarning, findStrikes, boardRead, movementVerdict, parseSymbol, positionState, positionViews, premiumMomentum, readiness, riskEngine, shortLossAt,
 } from './overview';
 
 const fixtureData = () => live as unknown as ChainResponse;
@@ -267,12 +267,10 @@ describe('the sides assessed, and both together', () => {
 describe('the risk engine', () => {
   const data = fixtureData();
   const em = expectedMove(data.snapshot);
-  it('reads a strike: shocks, slippage, decay curve, protection', () => {
+  it('reads a strike: shocks, slippage, protection', () => {
     const l = data.legs.find((x) => x.cp === 'C' && x.bid !== null && x.ask !== null && (x.sellPrice ?? x.mark) !== null)!;
     const r = riskEngine(l, data.legs, em, data.snapshot.spot, data.snapshot.hoursToExpiry, 10, 200)!;
     expect(r.premium).toBeGreaterThan(0);
-    expect(r.decayCurve[0]!.extrinsic).toBeCloseTo(r.extrinsic, 9);
-    expect(r.decayCurve.at(-1)!.extrinsic).toBe(0);
     expect(r.slippageUsd).toBeCloseTo(((l.ask! - l.bid!) / 2) * 0.01, 9);
     if (l.vega !== null) expect(r.vegaShockUsd).toBeCloseTo(-l.vega * 5 * 0.01, 9);
   });
@@ -370,5 +368,49 @@ describe('the movement read and the finder', () => {
     for (const l of f) { expect(l.cp).toBe('P'); expect(l.moneyness).not.toBe('ITM'); expect((l.sellPrice ?? l.mark ?? 0)).toBeGreaterThanOrEqual(1); }
     for (let i = 1; i < f.length; i++) expect((f[i - 1]!.score ?? -1)).toBeGreaterThanOrEqual(f[i]!.score ?? -1);
     expect(findStrikes(data.legs, { side: 'both', minPremium: 1e9, maxPot: 1, minEm: 0, top: 5 })).toEqual([]);
+  });
+});
+
+describe('the finder drives the cards', () => {
+  it('[critical] with a pick, each card carries the strike the pick names; without one, the desk’s own', () => {
+    const data = fixtureData();
+    const own = assessSides(data, null, expectedMove(data.snapshot), 10, 200);
+    const far = (cp: 'C' | 'P') => findStrikes(data.legs, { ...DESK_FILTER, side: cp, minEm: 2, top: 1 })[0] ?? null;
+    const picked = assessSides(data, null, expectedMove(data.snapshot), 10, 200, far);
+    for (const [i, side] of (['C', 'P'] as const).entries()) {
+      expect(picked[i]!.leg?.strike).toBe(far(side)?.strike);
+      if (far(side) && own[i]!.leg) expect(Math.abs(picked[i]!.leg!.strike - data.snapshot.spot)).toBeGreaterThanOrEqual(Math.abs(own[i]!.leg!.strike - data.snapshot.spot));
+    }
+    expect(filtersChanged(DESK_FILTER)).toBe(false);
+    expect(filtersChanged({ ...DESK_FILTER, minEm: 2 })).toBe(true);
+  });
+});
+
+describe('the contract and the data', () => {
+  const now = Date.UTC(2026, 8, 20, 6, 0, 0);
+  it('[critical] LIVE past an hour out, EXPIRING inside it, EXPIRED at settlement or on a past snapshot', () => {
+    const snap = (h: number, live = true) => ({ live, expiryTs: (now + h * 3_600_000) / 1000 });
+    expect(contractValidity(snap(5), now).state).toBe('LIVE');
+    expect(contractValidity(snap(0.5), now).state).toBe('EXPIRING');
+    expect(contractValidity(snap(0), now).state).toBe('EXPIRED');
+    expect(contractValidity(snap(5, false), now)).toMatchObject({ state: 'EXPIRED', text: 'past snapshot' });
+  });
+  it('ages are said as people say them, and each has its own limit', () => {
+    expect(ageText(4_000)).toBe('4s'); expect(ageText(190_000)).toBe('3m'); expect(ageText(7_200_000)).toBe('2h'); expect(ageText(2 * 86_400_000 + 5)).toBe('2d'); expect(ageText(null)).toBe('—');
+    const ages = dataFreshness({ marketAt: now - 2_000, chainAt: now - 45_000, oiAt: now - 4 * 60_000, modelAt: null }, now);
+    expect(ages.map((a) => [a.key, a.text, a.stale])).toEqual([['market', '2s', false], ['chain', '45s', true], ['oi', '4m', false], ['model', '—', true]]);
+    expect(dataFreshness(null, now).every((a) => a.stale)).toBe(true);
+  });
+});
+
+describe('premium decay', () => {
+  it('[critical] runs from the premium now to the intrinsic at expiry on √time; half the extrinsic goes by 0.75 T, four-fifths by 0.96 T', () => {
+    const { points, milestones } = premiumDecay(51, 3, 12, 4);
+    expect(points.map((p) => p.label)).toEqual(['Now', '3h', '6h', '9h', 'Exp']);
+    expect(points[0]!.premium).toBe(51);
+    expect(points.at(-1)!.premium).toBeCloseTo(3, 9);
+    expect(points[2]!.premium).toBeCloseTo(3 + 48 * Math.SQRT1_2, 9);
+    expect(milestones).toEqual([{ share: 0.5, hoursFromNow: 9 }, { share: 0.8, hoursFromNow: 12 * 0.96 }]);
+    for (let i = 1; i < points.length; i++) expect(points[i]!.premium).toBeLessThanOrEqual(points[i - 1]!.premium);
   });
 });

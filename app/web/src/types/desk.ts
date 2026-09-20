@@ -612,6 +612,8 @@ export type ChainContext = {
   windows: number | null;
 };
 
+export type Freshness = { marketAt: number | null; chainAt: number | null; oiAt: number | null; modelAt: number | null };
+
 export type ChainResponse = {
   snapshot: SnapshotMeta;
   legs: Leg[];
@@ -630,6 +632,8 @@ export type ChainResponse = {
   requireHedge: boolean;
   verdict: Verdict;
   usdinr: number;
+  /** When each thing on the screen was last read, epoch ms; null where there is no record. Null as a whole on a past snapshot. */
+  freshness?: Freshness | null;
 };
 
 export type Band = { min: number; max: number };

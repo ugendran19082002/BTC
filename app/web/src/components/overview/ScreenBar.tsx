@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import type { ChainResponse, ExpiryOption } from '@/types/desk';
 import { entryTodayMs } from '@/lib/screen-config';
+import { contractValidity, dataFreshness } from '@/lib/overview';
 import { Tag } from './parts';
 
 const IST_CLOCK = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
@@ -11,7 +12,9 @@ const hm = (ms: number) => `${Math.floor(ms / 3_600_000)}h ${String(Math.floor((
 /**
  * The bar above the screen: who and when (brand, clock, live), the contract
  * on the board and the list to change it, its day (entry is now, the window
- * is the strategy's, expiry is the contract's, and how long is left), the
+ * is the strategy's, expiry is the contract's, and how long is left),
+ * whether the contract can still be traded (LIVE / EXPIRING / EXPIRED), how
+ * old each thing on the screen is (market · chain · OI · model), the
  * screen's mode and refresh controls, and the glossary. The screen decides with the desk's fixed
  * configuration (lib/screen-config.ts); nothing here changes it.
  */
@@ -22,7 +25,9 @@ export function ScreenBar({ data, now, freshnessSec, entryIst, expiries, onExpir
 }) {
   const [help, setHelp] = useState(false);
   const snap = data.snapshot;
-  const age = Math.max(0, Math.round((now - snap.ts * 1000) / 1000));
+  const validity = contractValidity(snap, now);
+  const ages = dataFreshness(data.freshness, now, { market: freshnessSec * 1000, chain: freshnessSec * 1000, oi: 15 * 60_000, model: 7 * 86_400_000 });
+  const stale = ages.filter((a) => a.stale);
   const away = (h: number) => (h < 48 ? `${Math.round(h)}h` : `${Math.round(h / 24)}d`);
   const entryMs = snap.live ? now : snap.ts * 1000;
   const windowMs = entryTodayMs(entryIst, entryMs);
@@ -39,7 +44,14 @@ export function ScreenBar({ data, now, freshnessSec, entryIst, expiries, onExpir
         <div className="ov-screenbar-right">
           {error && <Tag tone="down">{error}</Tag>}
           <span className="ov-clock">{IST_CLOCK.format(new Date(now)).replace(/,/g, '')} IST</span>
-          <Tag tone={snap.live ? (age <= freshnessSec ? 'up' : 'warn') : 'muted'}>{snap.live ? `● Live · ${age}s` : 'Past snapshot'}</Tag>
+          <Tag tone={validity.state === 'LIVE' ? 'up' : validity.state === 'EXPIRING' ? 'warn' : 'down'}>
+            <span title={validity.text}>{validity.state === 'LIVE' ? '● ' : ''}{validity.state}</span>
+          </Tag>
+          <span className={`ov-ages${stale.length ? ' ov-ages-stale' : ''}`} title={snap.live ? `How old each reading is. Stale past ${freshnessSec}s for the market and the chain, 15m for the OI record, 7d for the model.` : 'A past snapshot: ages mean nothing'}>
+            {snap.live ? ages.map((a) => (
+              <span key={a.key} className={a.stale ? 'ov-warn' : undefined}>{a.label} <b>{a.text}</b></span>
+            )) : <span>past snapshot</span>}
+          </span>
           {expiries && onExpiry && expiries.length > 0 ? (
             <label className="ov-inline-label">Expiry
               <select aria-label="Expiry" className="ov-select" value={snap.expiry} onChange={(e) => onExpiry(e.target.value)}>

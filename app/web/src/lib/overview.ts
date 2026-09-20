@@ -1,5 +1,5 @@
 import type {
-  ChainResponse, Leg, MarketRead, OptionStructure, Outlook, OutlookRow, SnapshotMeta,
+  ChainResponse, Freshness, Leg, MarketRead, OptionStructure, Outlook, OutlookRow, SnapshotMeta,
 } from '@/types/desk';
 
 /**
@@ -265,13 +265,18 @@ export function bestLeg(legs: readonly Leg[], cp: 'C' | 'P'): Leg | null {
   return best;
 }
 
-export function sideCards(data: Pick<ChainResponse, 'legs' | 'best' | 'recommendation'>, iv: IvRv | null): SideCard[] {
+/**
+ * One card a side. The strike on each is the desk's own pick where it has
+ * one, otherwise its best-scored strike -- or, when the operator has set
+ * finder filters, the best strike that passes them (`pick`), so the cards
+ * judge what the person is actually considering.
+ */
+export function sideCards(data: Pick<ChainResponse, 'legs' | 'best' | 'recommendation'>, iv: IvRv | null, pick?: (cp: 'C' | 'P') => Leg | null): SideCard[] {
   const chosen = data.best.pick && !data.best.bestOfNone ? data.best.pick.side : null;
   return (['CE', 'PE'] as const).map((side) => {
     const cp = side === 'CE' ? 'C' : 'P';
-    // The desk's own pick for the side where it has one; otherwise its best-scored strike.
     const rec = data.recommendation.sides.find((s) => s.side === side)?.leg ?? null;
-    const leg = rec ?? bestLeg(data.legs, cp);
+    const leg = pick ? pick(cp) : rec ?? bestLeg(data.legs, cp);
     const o = leg ? odds(leg) : null;
     const emDistance = leg ? (leg.emDistance ?? leg.emBuffer ?? null) : null;
     return {
@@ -493,10 +498,10 @@ export function shortLossAt(cp: 'C' | 'P', strike: number, premium: number, pric
 
 export function assessSides(
   data: Pick<ChainResponse, 'legs' | 'best' | 'recommendation' | 'structure' | 'snapshot'>,
-  iv: IvRv | null, em: ExpectedMove, contracts: number, leverage: number,
+  iv: IvRv | null, em: ExpectedMove, contracts: number, leverage: number, pick?: (cp: 'C' | 'P') => Leg | null,
 ): SideAssessment[] {
   const step = data.snapshot.step || 200;
-  return sideCards(data, iv).map((c) => {
+  return sideCards(data, iv, pick).map((c) => {
     const leg = c.leg;
     const px = leg ? (leg.sellPrice ?? leg.mark) : null;
     const wall = c.side === 'CE' ? (data.structure.ceOiWallNear ?? data.structure.ceOiWall) : (data.structure.peOiWallNear ?? data.structure.peOiWall);
@@ -587,7 +592,6 @@ export type RiskEngine = {
   /** P&L for the size on a 1% adverse move in BTC, delta and gamma only, USD. */
   gammaShockUsd: number | null;
   /** Extrinsic value left at each point to settlement, model: extrinsic × √(time left ÷ time now). */
-  decayCurve: { hours: number; extrinsic: number }[];
   tailLossUsd: number | null;
   breakevenAfterFees: number | null;
   /** Half the spread, for the size, USD: what crossing to fill costs. */
@@ -610,7 +614,6 @@ export function riskEngine(
   const move = spot * 0.01 * (leg.cp === 'C' ? 1 : -1);
   const gammaShockUsd = leg.delta !== null && leg.gamma !== null ? -(leg.delta * move + 0.5 * leg.gamma * move * move) * size : null;
   const est = orderEstimate(leg.cp, leg.strike, premium, spot, leverage, contracts);
-  const points = [1, 0.75, 0.5, 0.25, 0].map((f) => ({ hours: hoursToExpiry * f, extrinsic: extrinsic * Math.sqrt(f) }));
   const further = legs
     .filter((l) => l.cp === leg.cp && (leg.cp === 'C' ? l.strike > leg.strike : l.strike < leg.strike) && l.ask !== null && l.ask > 0)
     .sort((a, b) => (leg.cp === 'C' ? a.strike - b.strike : b.strike - a.strike))[0] ?? null;
@@ -622,7 +625,6 @@ export function riskEngine(
     thetaGammaRatio: leg.theta !== null && leg.gamma !== null && leg.gamma > 0 ? Math.abs(leg.theta) / leg.gamma : null,
     vegaShockUsd: leg.vega === null ? null : -leg.vega * 5 * size,
     gammaShockUsd,
-    decayCurve: points,
     tailLossUsd: adverse === null ? null : shortLossAt(leg.cp, leg.strike, premium, adverse, contracts),
     breakevenAfterFees: est.breakevenAfterFees,
     slippageUsd: leg.bid !== null && leg.ask !== null ? ((leg.ask - leg.bid) / 2) * size : null,
@@ -1091,6 +1093,12 @@ export function movementVerdict(rows: readonly HorizonRow[], board: readonly Boa
 
 export type FinderFilter = { side: 'C' | 'P' | 'both'; minPremium: number; maxPot: number; minEm: number; top: number };
 
+/** The desk's own filters: what the strategy decision starts from. */
+export const DESK_FILTER: FinderFilter = { side: 'both', minPremium: 15, maxPot: 0.35, minEm: 1, top: 5 };
+
+/** Whether the operator has moved a filter off the desk's own. */
+export const filtersChanged = (f: FinderFilter) => f.minPremium !== DESK_FILTER.minPremium || f.maxPot !== DESK_FILTER.maxPot || f.minEm !== DESK_FILTER.minEm;
+
 /** Candidates after the operator's filters, best score first. */
 export function findStrikes(legs: readonly Leg[], f: FinderFilter): Leg[] {
   return legs
@@ -1100,4 +1108,70 @@ export function findStrikes(legs: readonly Leg[], f: FinderFilter): Leg[] {
     .filter((l) => (l.emDistance ?? l.emBuffer ?? 0) >= f.minEm)
     .sort((a, b) => (b.score ?? -1) - (a.score ?? -1))
     .slice(0, f.top);
+}
+
+// ------------------------------------------------- the contract, the data
+
+export type ContractValidity = { state: 'LIVE' | 'EXPIRING' | 'EXPIRED'; hoursLeft: number; text: string };
+
+/**
+ * Whether the contract on the board can still be traded: LIVE while more than
+ * an hour remains, EXPIRING inside the last hour (a short sold now is a
+ * settlement bet, not a decay trade), EXPIRED once it has settled or on a
+ * past snapshot.
+ */
+export function contractValidity(snap: Pick<SnapshotMeta, 'live' | 'expiryTs'>, nowMs: number, expiringHours = 1): ContractValidity {
+  const hoursLeft = (snap.expiryTs * 1000 - nowMs) / 3_600_000;
+  if (!snap.live || hoursLeft <= 0) return { state: 'EXPIRED', hoursLeft: Math.min(0, hoursLeft), text: snap.live ? 'settled' : 'past snapshot' };
+  if (hoursLeft <= expiringHours) return { state: 'EXPIRING', hoursLeft, text: `${Math.ceil(hoursLeft * 60)}m to settlement` };
+  return { state: 'LIVE', hoursLeft, text: `${Math.floor(hoursLeft)}h ${String(Math.floor((hoursLeft % 1) * 60)).padStart(2, '0')}m to settlement` };
+}
+
+export type AgeItem = { key: 'market' | 'chain' | 'oi' | 'model'; label: string; ageMs: number | null; text: string; stale: boolean };
+
+/** An age as people say it: 4s, 3m, 2h, 2d. */
+export function ageText(ms: number | null): string {
+  if (ms === null) return '—';
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86_400) return `${Math.floor(s / 3600)}h`;
+  return `${Math.floor(s / 86_400)}d`;
+}
+
+/**
+ * How old each thing on the screen is, with a limit each: the market and the
+ * chain move every few seconds, the OI record every five minutes, the model is
+ * re-measured every few days. Past its limit an item is stale; no record is
+ * stale too -- "not known" is not fresh.
+ */
+export function dataFreshness(f: Freshness | null | undefined, nowMs: number, limits = { market: 30_000, chain: 30_000, oi: 15 * 60_000, model: 7 * 86_400_000 }): AgeItem[] {
+  const item = (key: AgeItem['key'], label: string, at: number | null | undefined): AgeItem => {
+    const ageMs = at === null || at === undefined ? null : Math.max(0, nowMs - at);
+    return { key, label, ageMs, text: ageText(ageMs), stale: ageMs === null || ageMs > limits[key] };
+  };
+  return [item('market', 'Market', f?.marketAt), item('chain', 'Chain', f?.chainAt), item('oi', 'OI', f?.oiAt), item('model', 'Model', f?.modelAt)];
+}
+
+// ------------------------------------------------------ premium decay
+
+export type DecayPoint = { hoursFromNow: number; label: string; premium: number };
+export type DecayMilestone = { share: number; hoursFromNow: number };
+
+/**
+ * The premium's path to settlement under the square-root-of-time model the
+ * risk engine uses: extrinsic × √(time left ÷ time now), on top of what is
+ * intrinsic and does not decay. Sampled at `n` even steps from now to expiry,
+ * plus when half and four-fifths of the extrinsic will have gone --
+ * 0.75 T and 0.96 T from now, whatever the strike -- so a seller knows how
+ * long the trade must be held to bank most of it.
+ */
+export function premiumDecay(premium: number, intrinsic: number, hoursToExpiry: number, n = 5): { points: DecayPoint[]; milestones: DecayMilestone[] } {
+  const T = Math.max(0, hoursToExpiry);
+  const ext = Math.max(0, premium - intrinsic);
+  const at = (u: number) => intrinsic + ext * Math.sqrt(Math.max(0, (T - u) / (T || 1)));
+  const label = (u: number) => (u === 0 ? 'Now' : u >= T ? 'Exp' : u < 1 ? `${Math.round(u * 60)}m` : `${Math.round(u)}h`);
+  const points = Array.from({ length: n + 1 }, (_, i) => { const u = (T * i) / n; return { hoursFromNow: u, label: label(u), premium: at(u) }; });
+  const milestones = [0.5, 0.8].map((share) => ({ share, hoursFromNow: T * (1 - (1 - share) ** 2) }));
+  return { points, milestones };
 }

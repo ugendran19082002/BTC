@@ -1,13 +1,13 @@
 import type { Leg } from '@/types/desk';
 import {
-  shockTable, type RiskEngine,
+  premiumDecay, shockTable, type RiskEngine,
   type SideAssessment,
 } from '@/lib/overview';
-import { fmt, Panel, Row, Tag } from './parts';
+import { fmt, Panel, Row, Tag, useWidth } from './parts';
 
 // ----------------------------------------------------------- risk engine
 
-export function RiskEnginePanel({ leg, risk, contracts }: { leg: Leg | null; risk: RiskEngine | null; contracts: number }) {
+export function RiskEnginePanel({ leg, risk, contracts, hoursToExpiry }: { leg: Leg | null; risk: RiskEngine | null; contracts: number; hoursToExpiry: number }) {
   if (!leg || !risk) return <Panel title="Sell-side risk engine"><p className="ov-empty">Select a strike with a price.</p></Panel>;
   const side = leg.cp === 'C' ? 'CE' : 'PE';
   const usd = (v: number | null) => (v === null ? '—' : `${v >= 0 ? '+' : '−'}$${Math.abs(v).toFixed(2)}`);
@@ -29,9 +29,9 @@ export function RiskEnginePanel({ leg, risk, contracts }: { leg: Leg | null; ris
           <Row label="Margin yield" value={fmt.pct(risk.marginYield, 1)} hint="Credit after fees over the margin it ties up" />
           <Row label="Hedge cost" value={risk.hedge ? `${fmt.n(risk.hedge.strike)} ${side} ask ${fmt.n(risk.hedge.askUsd, 1)} · $${risk.hedge.costUsd.toFixed(2)}` : 'none listed'} />
           <Row label="Protection available" value={<Tag tone={risk.protectionAvailable ? 'up' : 'down'}>{risk.protectionAvailable ? 'yes' : 'no'}</Tag>} />
-          <Row label="Premium decay (model)" value={<DecayCurve curve={risk.decayCurve} />} hint="Extrinsic left at each point to settlement: extrinsic × √(time left ÷ time now)" />
         </div>
       </div>
+      <DecayChart premium={risk.premium} intrinsic={risk.intrinsic} hoursToExpiry={hoursToExpiry} side={side} strike={leg.strike} />
       <div className="ov-shocks" title="Delta and gamma for the BTC moves, vega for the IV moves; instantaneous, for the size, as the short sees it">
         {shockTable(leg, contracts).map((s) => (
           <span key={s.label} className={s.pnlUsd === null ? 'ov-muted' : s.pnlUsd >= 0 ? 'ov-up' : 'ov-down'}>
@@ -43,11 +43,52 @@ export function RiskEnginePanel({ leg, risk, contracts }: { leg: Leg | null; ris
   );
 }
 
-function DecayCurve({ curve }: { curve: RiskEngine['decayCurve'] }) {
+/**
+ * Option premium decay: where the premium should be at each hour to
+ * settlement under the √time model, and when half and four-fifths of it will
+ * have gone. A model, and said so -- the record of what this strike actually
+ * did sits in the what-changed table.
+ */
+function DecayChart({ premium, intrinsic, hoursToExpiry, side, strike }: { premium: number; intrinsic: number; hoursToExpiry: number; side: string; strike: number }) {
+  const [box, W] = useWidth<HTMLDivElement>(320);
+  const { points, milestones } = premiumDecay(premium, intrinsic, hoursToExpiry, 5);
+  const H = 150, P = { top: 18, right: 12, bottom: 24, left: 34 };
+  const T = Math.max(hoursToExpiry, 0.01);
+  const top = Math.max(premium, 1);
+  const px = (u: number) => P.left + (u / T) * (W - P.left - P.right);
+  const py = (v: number) => P.top + (1 - v / top) * (H - P.top - P.bottom);
+  const line = points.map((p, i) => `${i ? 'L' : 'M'}${px(p.hoursFromNow).toFixed(1)},${py(p.premium).toFixed(1)}`).join(' ');
+  const area = `${line} L${px(T).toFixed(1)},${py(0).toFixed(1)} L${px(0).toFixed(1)},${py(0).toFixed(1)} Z`;
+  const hm = (h: number) => `${Math.floor(h)}h ${String(Math.round((h % 1) * 60)).padStart(2, '0')}m`;
   return (
-    <span className="ov-decay">
-      {curve.map((p) => <span key={p.hours}><small className="ov-muted">{p.hours.toFixed(1)}h</small> {p.extrinsic.toFixed(1)}</span>)}
-    </span>
+    <div className="ov-decay-chart">
+      <div className="ov-subhead"><span>Option premium decay · {fmt.n(strike)} {side}</span><small className="ov-muted">model: extrinsic × √(time left ÷ time now)</small></div>
+      <div className="ov-decay-row">
+        <div ref={box} className="ov-chart-box">
+          <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="ov-svg" role="img" aria-label="Premium to settlement">
+            <path d={area} className="ov-area-accent" />
+            <path d={line} fill="none" className="ov-line-accent" />
+            <line x1={P.left} x2={W - P.right} y1={py(0)} y2={py(0)} className="ov-axis" />
+            <text x={P.left - 6} y={py(top) + 4} textAnchor="end" className="ov-tick">{fmt.n(top, 0)}</text>
+            <text x={P.left - 6} y={py(0) + 4} textAnchor="end" className="ov-tick">0</text>
+            {points.map((p) => (
+              <g key={p.hoursFromNow}>
+                <circle cx={px(p.hoursFromNow)} cy={py(p.premium)} r={3} className="ov-pt" />
+                <text x={px(p.hoursFromNow)} y={py(p.premium) - 7} textAnchor="middle" className="ov-tick ov-tick-strong">{fmt.n(p.premium, p.premium < 10 ? 1 : 0)}</text>
+                <text x={px(p.hoursFromNow)} y={H - 6} textAnchor="middle" className="ov-tick">{p.label}</text>
+              </g>
+            ))}
+          </svg>
+        </div>
+        <div className="ov-decay-box">
+          <span className="ov-kpi-label">Expected decay</span>
+          {milestones.map((m) => (
+            <Row key={m.share} label={`${Math.round(m.share * 100)}% of the extrinsic gone`} value={<b>{hm(m.hoursFromNow)}</b>} hint="From now, under the √time model" />
+          ))}
+          <Row label="Intrinsic (does not decay)" value={fmt.n(intrinsic, 1)} />
+        </div>
+      </div>
+    </div>
   );
 }
 

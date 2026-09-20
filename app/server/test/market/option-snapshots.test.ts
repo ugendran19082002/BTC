@@ -1,7 +1,7 @@
 import { after, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  captureOptionSnapshots, lastOptionSnapshot, optionSnapshotsSchema, snapshotRows,
+  captureOptionSnapshots, lastOptionSnapshot, lastOptionSnapshotAt, optionSnapshotsSchema, snapshotRows,
   OPTION_SNAPSHOT_BUCKET_MS, OPTION_SNAPSHOT_KEEP_MS,
 } from '../../src/market/option-snapshots.js';
 import { closePool, one, query, rows } from '../../src/db/pool.js';
@@ -51,9 +51,12 @@ test('[critical] one bucket is written once, however often it is asked, and ever
   assert.deepEqual(theta, { theta: -12.8, gamma: 0.00042, ask_size: 55 });
 });
 
-test('the next bucket writes again, oldest first', async () => {
+test('the next bucket writes again, oldest first; the newest time is memoised for half a minute', async () => {
   await captureOptionSnapshots(board, T0);
+  const firstAt = await lastOptionSnapshotAt(T0 + 1000);
   await captureOptionSnapshots(board.map((t) => (t.symbol === 'C-BTC-78000-190926' ? { ...t, mark_price: '390' } : t)), T0 + OPTION_SNAPSHOT_BUCKET_MS);
+  assert.equal(await lastOptionSnapshotAt(T0 + 2000), firstAt, 'within the memo, the earlier answer');
+  assert.equal(await lastOptionSnapshotAt(T0 + 60_000), (await lastOptionSnapshot())!.at, 'after it, the newest bucket');
   const h = await rows<{ mark: number }>("SELECT mark FROM option_snapshots WHERE symbol = 'C-BTC-78000-190926' ORDER BY at");
   assert.deepEqual(h.map((x) => x.mark), [360, 390]);
   assert.equal((await lastOptionSnapshot())!.rows, 3);

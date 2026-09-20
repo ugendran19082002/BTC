@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ChainResponse, Leg } from '@/types/desk';
 import { getChanges, type ChangeRow, type PerpResponse, type PremiumMomentum } from '@/api/desk';
 import {
-  boardRead, candidates, earlyWarning, executionEstimate, findStrikes, horizonRows, movementVerdict, odds, orderEstimate, shortLossAt,
+  boardRead, candidates, DESK_FILTER, earlyWarning, executionEstimate, filtersChanged, findStrikes, horizonRows, movementVerdict, odds, orderEstimate, shortLossAt,
   type EarlyWarning, type ExpectedMove, type FinderFilter,
 } from '@/lib/overview';
 import type { ScreenConfig } from '@/lib/screen-config';
@@ -149,12 +149,16 @@ export function ChangesPanel({ leg, rows }: { leg: Leg | null; rows: ChangeRow[]
 
 // ------------------------------------------------------------ strike finder
 
-export function StrikeFinder({ data, onSelect, onSell, contracts, leverage, defaultSide, em, execution = 'BID' }: {
+export function StrikeFinder({ data, onSelect, onSell, contracts, leverage, defaultSide, em, execution = 'BID', filter, onFilter }: {
   data: ChainResponse; onSelect: (cp: 'C' | 'P', strike: number) => void; onSell?: (l: Leg) => void; contracts: number; leverage: number;
   defaultSide: 'C' | 'P' | 'both'; em: ExpectedMove; execution?: ScreenConfig['execution'];
+  /** The filters, owned by the screen: the side cards above read them too. */
+  filter: FinderFilter; onFilter: (f: FinderFilter) => void;
 }) {
-  const [f, setF] = useState<FinderFilter>({ side: defaultSide, minPremium: 15, maxPot: 0.35, minEm: 1, top: 5 });
-  useEffect(() => { setF((x) => ({ ...x, side: defaultSide })); }, [defaultSide]);
+  const f = filter, setF = onFilter;
+  // The side follows the desk's lean until the person picks one.
+  const [sideTouched, setSideTouched] = useState(false);
+  useEffect(() => { if (!sideTouched && f.side !== defaultSide) onFilter({ ...f, side: defaultSide }); }, [defaultSide]); // eslint-disable-line react-hooks/exhaustive-deps
   const spot = data.snapshot.spot;
   // The desk's own picks: its top three a side by its rules, the side it leans to first. Otherwise the operator's filters.
   const order: readonly ('C' | 'P')[] = defaultSide === 'C' ? ['C', 'P'] : ['P', 'C'];
@@ -181,7 +185,8 @@ export function StrikeFinder({ data, onSelect, onSell, contracts, leverage, defa
       </h4>
       {mode === 'filters' && (
         <div className="ov-finder">
-          <label>Side <select className="ov-select" value={f.side} onChange={(e) => setF({ ...f, side: e.target.value as FinderFilter['side'] })}><option value="P">PE</option><option value="C">CE</option><option value="both">Both</option></select></label>
+          {filtersChanged(f) && <button className="ov-chip" onClick={() => setF({ ...DESK_FILTER, side: f.side })} title="Back to the desk's own filters">Desk filters</button>}
+          <label>Side <select className="ov-select" value={f.side} onChange={(e) => { setSideTouched(true); setF({ ...f, side: e.target.value as FinderFilter['side'] }); }}><option value="P">PE</option><option value="C">CE</option><option value="both">Both</option></select></label>
           <label>Premium ≥ <input type="number" className="ov-ctx-input" min={0} step={5} value={f.minPremium} onChange={(e) => setF({ ...f, minPremium: Number(e.target.value) || 0 })} /> <small className="ov-muted">$/BTC</small></label>
           <label>Touch ≤ <select className="ov-select" value={f.maxPot} onChange={(e) => setF({ ...f, maxPot: Number(e.target.value) })}>{[0.2, 0.25, 0.3, 0.35, 0.45, 0.6, 1].map((v) => <option key={v} value={v}>{(v * 100).toFixed(0)}%</option>)}</select></label>
           <label>Distance ≥ <select className="ov-select" value={f.minEm} onChange={(e) => setF({ ...f, minEm: Number(e.target.value) })}>{[0, 0.5, 0.75, 1, 1.25, 1.5, 2].map((v) => <option key={v} value={v}>{v}× EM</option>)}</select></label>
@@ -221,7 +226,7 @@ export function StrikeFinder({ data, onSelect, onSell, contracts, leverage, defa
           </tbody>
         </table>
       )}
-      <p className="ov-foot">Out-of-the-money strikes only, best desk score first. Click a row to inspect it; Sell opens the ticket, where every gate runs again.</p>
+      <p className="ov-foot">Out-of-the-money strikes only, best desk score first. Move a filter and the two cards above carry the best strike that passes it. Click a row to inspect it; Sell opens the ticket, where every gate runs again.</p>
     </div>
   );
 }

@@ -2793,3 +2793,12 @@ tr.focused td.strikecell { background: color-mix(in srgb, var(--accent) 22%, tra
 tr.focused-c td.strikecell ~ td, tr.focused-p td:not(.strikecell ~ td):not(.strikecell) { box-shadow: none; opacity: .75; }
 tr.focused .tag.focus { background: var(--accent); color: #111; }
 .chain tbody tr:has(td.strikecell) { cursor: pointer; }
+.ov-ages { display: inline-flex; gap: 8px; font-size: 11.5px; color: var(--muted); padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px; font-variant-numeric: tabular-nums; }
+.ov-ages b { color: var(--text); font-weight: 600; }
+.ov-ages-stale { border-color: color-mix(in srgb, var(--warn, #d29922) 60%, transparent); }
+.ov-decay-chart { margin-top: 4px; }
+.ov-decay-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(200px, 240px); gap: 12px; align-items: start; }
+@container (max-width: 520px) { .ov-decay-row { grid-template-columns: 1fr; } }
+.ov-decay-box { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.ov-area-accent { fill: var(--accent); fill-opacity: .12; }
+.ov-tick-strong { fill: var(--text); font-weight: 600; }

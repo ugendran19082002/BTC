@@ -148,6 +148,19 @@ export async function captureOptionSnapshots(
   return { at, rows: snap.length };
 }
 
+/**
+ * When the newest five-minute record was written, for the screen's freshness
+ * line. Memoised for half a minute: the chain asks every five seconds, and the
+ * answer changes every five minutes.
+ */
+let lastAtMemo: { at: number | null; askedAt: number } | null = null;
+export async function lastOptionSnapshotAt(nowMs = Date.now()): Promise<number | null> {
+  if (lastAtMemo && nowMs - lastAtMemo.askedAt < 30_000) return lastAtMemo.at;
+  const row = await lastOptionSnapshot().catch(() => null);
+  lastAtMemo = { at: row?.at ?? null, askedAt: nowMs };
+  return lastAtMemo.at;
+}
+
 /** The newest bucket written, for the freshness gate and /api/health. */
 export async function lastOptionSnapshot(): Promise<{ at: number; rows: number } | null> {
   await optionSnapshotsSchema();
