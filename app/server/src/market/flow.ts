@@ -1,7 +1,9 @@
 import { migrate, type Migration } from '../db/migrate.js';
 import { one, query, rows } from '../db/pool.js';
 import { req, type Ticker } from './delta.js';
-import { FlowSocket, PERP_SYMBOL, perpTickerOf, type FlowHealth, type PerpTicker, type Print } from './flow-socket.js';
+import { FlowSocket, OPTION_SYMBOL, PERP_SYMBOL, perpTickerOf, type FlowHealth, type PerpTicker, type Print } from './flow-socket.js';
+import { liveTickers } from './delta.js';
+import { OPTION_SNAPSHOT_EXPIRIES } from './option-snapshots.js';
 import { termStructure, type TermPoint } from './term.js';
 import { marketSchema } from './oi-history.js';
 
@@ -11,6 +13,7 @@ import { marketSchema } from './oi-history.js';
  * Live screen's "a week ago" lines need.
  *
  *   trade_flow_1m      every BTCUSD print, summed per minute by aggressor side
+ *   option_flow_1m     every print on the two nearest expiries' options, per contract per minute, by aggressor side
  *   perp_snapshots     funding, open interest, turnover and the top of the book, every 5 minutes
  *   iv_term_snapshots  ATM IV per listed expiry, every 5 minutes
  *
@@ -76,6 +79,26 @@ const MIGRATIONS: Migration[] = [
       ALTER TABLE trade_flow_1m ADD COLUMN IF NOT EXISTS large_sell_count INTEGER NOT NULL DEFAULT 0;
     `,
   },
+  {
+    // The options' own tape: who crossed the spread on each call and put, per minute. Delta's option
+    // ticker carries volume but not the aggressor; only the prints do, so they are recorded.
+    id: 'market-007-option-flow',
+    up: `
+      CREATE TABLE IF NOT EXISTS option_flow_1m (
+        at          BIGINT           NOT NULL,
+        symbol      TEXT             NOT NULL,
+        expiry      TEXT             NOT NULL,
+        cp          CHAR(1)          NOT NULL,
+        strike      INTEGER          NOT NULL,
+        buy_volume  DOUBLE PRECISION NOT NULL,
+        sell_volume DOUBLE PRECISION NOT NULL,
+        buy_count   INTEGER          NOT NULL,
+        sell_count  INTEGER          NOT NULL,
+        PRIMARY KEY (at, symbol)
+      );
+      CREATE INDEX IF NOT EXISTS option_flow_1m_expiry_at ON option_flow_1m (expiry, at);
+    `,
+  },
 ];
 
 let ready: Promise<void> | null = null;
@@ -89,9 +112,31 @@ export function flowSchema(): Promise<void> {
 
 let socket: FlowSocket | null = null;
 
+/** The option contracts to watch: every strike of the nearest live expiries, from the ticker list already in memory. */
+export function watchedOptionSymbols(tickers: readonly Ticker[], nowSec = Math.floor(Date.now() / 1000), expiries = OPTION_SNAPSHOT_EXPIRIES): string[] {
+  const codes = [...new Set(tickers.map((t) => t.symbol.split('-').pop() ?? ''))]
+    .filter((c) => /^\d{6}$/.test(c) && expiryTsOf(c) > nowSec)
+    .sort((a, b) => expiryTsOf(a) - expiryTsOf(b))
+    .slice(0, expiries);
+  const live = new Set(codes);
+  return tickers.map((t) => t.symbol).filter((sym) => OPTION_SYMBOL.test(sym) && live.has(sym.split('-').pop() ?? '')).sort();
+}
+
+/** Settlement, epoch seconds, of an expiry code DDMMYY: 17:30 IST that day. */
+function expiryTsOf(code: string): number {
+  const d = Number(code.slice(0, 2)), m = Number(code.slice(2, 4)), y = 2000 + Number(code.slice(4, 6));
+  return Date.UTC(y, m - 1, d, 12, 0, 0) / 1000;
+}
+
+let watched: string[] = [];
 export function startFlowSocket(log?: (line: string) => void): FlowSocket {
   if (socket) return socket;
-  socket = new FlowSocket({ log });
+  // The ticker list is refreshed elsewhere; here it is only read, and a fetch is kicked off for the first connect.
+  const refresh = () => { liveTickers().then((t) => { watched = watchedOptionSymbols(t); }).catch(() => {}); };
+  refresh();
+  const timer = setInterval(refresh, 10 * 60_000);
+  timer.unref?.();
+  socket = new FlowSocket({ log, options: () => watched });
   socket.start();
   return socket;
 }
@@ -163,8 +208,22 @@ export async function flushTradeFlow(nowMs: number): Promise<number> {
   await flowSchema();
   const current = Math.floor(nowMs / FLOW_BUCKET_MS) * FLOW_BUCKET_MS;
   const since = Math.max(lastFlushedMinute + FLOW_BUCKET_MS, current - 60 * FLOW_BUCKET_MS);
-  const done = minutesOf(socket.printsSince(since)).filter((m) => m.at < current);
-  if (!done.length) return 0;
+  const all = socket.printsSince(since);
+  const optionDone = optionMinutesOf(all.filter((p) => p.symbol)).filter((m) => m.at < current);
+  if (optionDone.length) {
+    await query(
+      `INSERT INTO option_flow_1m (at, symbol, expiry, cp, strike, buy_volume, sell_volume, buy_count, sell_count)
+       SELECT * FROM unnest($1::bigint[], $2::text[], $3::text[], $4::text[], $5::int[], $6::float8[], $7::float8[], $8::int[], $9::int[])
+       ON CONFLICT (at, symbol) DO NOTHING`,
+      [
+        optionDone.map((m) => m.at), optionDone.map((m) => m.symbol), optionDone.map((m) => m.expiry), optionDone.map((m) => m.cp), optionDone.map((m) => m.strike),
+        optionDone.map((m) => m.buyVolume), optionDone.map((m) => m.sellVolume), optionDone.map((m) => m.buyCount), optionDone.map((m) => m.sellCount),
+      ] as never,
+    );
+    await query('DELETE FROM option_flow_1m WHERE at < $1', [current - OPTION_FLOW_KEEP_MS]);
+  }
+  const done = minutesOf(all.filter((p) => !p.symbol)).filter((m) => m.at < current);
+  if (!done.length) { if (optionDone.length) lastFlushedMinute = Math.max(lastFlushedMinute, optionDone[optionDone.length - 1]!.at); return optionDone.length; }
   await query(
     `INSERT INTO trade_flow_1m (at, buy_volume, sell_volume, buy_count, sell_count, large_buy_volume, large_sell_volume, vwap, high, low, large_buy_count, large_sell_count)
      SELECT * FROM unnest($1::bigint[], $2::float8[], $3::float8[], $4::int[], $5::int[], $6::float8[], $7::float8[], $8::float8[], $9::float8[], $10::float8[], $11::int[], $12::int[])
@@ -179,7 +238,102 @@ export async function flushTradeFlow(nowMs: number): Promise<number> {
   );
   lastFlushedMinute = done[done.length - 1]!.at;
   await query('DELETE FROM trade_flow_1m WHERE at < $1', [current - FLOW_KEEP_MS]);
-  return done.length;
+  return done.length + optionDone.length;
+}
+
+// ------------------------------------------------------- the options' tape
+
+/** Option prints are kept for a month: the screen reads an hour, the record is for the research history. */
+export const OPTION_FLOW_KEEP_MS = 31 * 24 * 3600_000;
+
+export type OptionMinute = { at: number; symbol: string; expiry: string; cp: 'C' | 'P'; strike: number; buyVolume: number; sellVolume: number; buyCount: number; sellCount: number };
+
+/** Option prints grouped per contract per minute, oldest first. Pure. */
+export function optionMinutesOf(prints: readonly Print[]): OptionMinute[] {
+  const groups = new Map<string, OptionMinute>();
+  for (const p of prints) {
+    const m = p.symbol ? OPTION_SYMBOL.exec(p.symbol) : null;
+    if (!m) continue;
+    const at = Math.floor(p.at / FLOW_BUCKET_MS) * FLOW_BUCKET_MS;
+    const key = `${at}|${p.symbol}`;
+    const row = groups.get(key) ?? { at, symbol: p.symbol!, expiry: m[3]!, cp: m[1] as 'C' | 'P', strike: Number(m[2]), buyVolume: 0, sellVolume: 0, buyCount: 0, sellCount: 0 };
+    if (p.side === 'buy') { row.buyVolume += p.size; row.buyCount++; } else { row.sellVolume += p.size; row.sellCount++; }
+    groups.set(key, row);
+  }
+  return [...groups.values()].sort((a, b) => a.at - b.at || a.symbol.localeCompare(b.symbol));
+}
+
+export type SideFlow = {
+  buyVolume: number;
+  sellVolume: number;
+  deltaVolume: number;
+  trades: number;
+  /** Buy volume as a share of the total; null with no prints. */
+  aggressorBuyPct: number | null;
+  /** What the tape says about this side: takers lifting offers (buying) or hitting bids (selling), or nothing clear. */
+  pressure: 'BUY PRESSURE' | 'SELL PRESSURE' | 'BALANCED' | null;
+  /** The busiest strikes on this side over the window, most volume first. */
+  strikes: { strike: number; buyVolume: number; sellVolume: number }[];
+};
+
+export type OptionFlowSummary = {
+  expiry: string;
+  windowMin: number;
+  /** Minutes in the window with at least one option print on this expiry. */
+  minutesCovered: number;
+  ce: SideFlow;
+  pe: SideFlow;
+  /** CE and PE together, and which way the whole board's takers lean. */
+  combined: { buyVolume: number; sellVolume: number; deltaVolume: number; bias: 'CALL BUYING' | 'CALL SELLING' | 'PUT BUYING' | 'PUT SELLING' | 'MIXED' | null };
+  source: 'socket' | 'none';
+};
+
+/** Buy against sell, per side, from `minutes` of one expiry. Pure. */
+export function optionFlowOf(expiry: string, windowMin: number, minutes: readonly OptionMinute[]): OptionFlowSummary {
+  const side = (cp: 'C' | 'P'): SideFlow => {
+    const mine = minutes.filter((m) => m.cp === cp);
+    const byStrike = new Map<number, { strike: number; buyVolume: number; sellVolume: number }>();
+    const f: SideFlow = { buyVolume: 0, sellVolume: 0, deltaVolume: 0, trades: 0, aggressorBuyPct: null, pressure: null, strikes: [] };
+    for (const m of mine) {
+      f.buyVolume += m.buyVolume; f.sellVolume += m.sellVolume; f.trades += m.buyCount + m.sellCount;
+      const k = byStrike.get(m.strike) ?? { strike: m.strike, buyVolume: 0, sellVolume: 0 };
+      k.buyVolume += m.buyVolume; k.sellVolume += m.sellVolume; byStrike.set(m.strike, k);
+    }
+    f.deltaVolume = f.buyVolume - f.sellVolume;
+    const total = f.buyVolume + f.sellVolume;
+    f.aggressorBuyPct = total > 0 ? f.buyVolume / total : null;
+    // Past 55 / 45 the tape leans; inside it, it does not say.
+    f.pressure = f.aggressorBuyPct === null ? null : f.aggressorBuyPct >= 0.55 ? 'BUY PRESSURE' : f.aggressorBuyPct <= 0.45 ? 'SELL PRESSURE' : 'BALANCED';
+    f.strikes = [...byStrike.values()].sort((a, b) => (b.buyVolume + b.sellVolume) - (a.buyVolume + a.sellVolume)).slice(0, 3);
+    return f;
+  };
+  const ce = side('C'), pe = side('P');
+  const buyVolume = ce.buyVolume + pe.buyVolume, sellVolume = ce.sellVolume + pe.sellVolume;
+  // The heavier side of the heavier leg names the bias; a board that is not leaning is mixed.
+  const legs = [
+    { name: 'CALL BUYING' as const, v: ce.buyVolume }, { name: 'CALL SELLING' as const, v: ce.sellVolume },
+    { name: 'PUT BUYING' as const, v: pe.buyVolume }, { name: 'PUT SELLING' as const, v: pe.sellVolume },
+  ].sort((a, b) => b.v - a.v);
+  const total = buyVolume + sellVolume;
+  const bias = total <= 0 ? null : legs[0]!.v / total >= 0.4 ? legs[0]!.name : 'MIXED';
+  return {
+    expiry, windowMin, minutesCovered: new Set(minutes.map((m) => m.at)).size, ce, pe,
+    combined: { buyVolume, sellVolume, deltaVolume: buyVolume - sellVolume, bias },
+    source: minutes.length ? 'socket' : 'none',
+  };
+}
+
+/** The options' tape on one expiry over the last `windowMin` minutes: the recorded minutes plus the ones the socket still holds. */
+export async function optionFlowSummary(expiry: string, windowMin = 60, nowMs = Date.now()): Promise<OptionFlowSummary> {
+  await flowSchema();
+  const current = Math.floor(nowMs / FLOW_BUCKET_MS) * FLOW_BUCKET_MS;
+  const since = current - (windowMin - 1) * FLOW_BUCKET_MS;
+  const stored = (await rows<{ at: number; symbol: string; expiry: string; cp: 'C' | 'P'; strike: number; buy_volume: number; sell_volume: number; buy_count: number; sell_count: number }>(
+    'SELECT * FROM option_flow_1m WHERE expiry = $1 AND at >= $2 AND at < $3 ORDER BY at, symbol', [expiry, since, current],
+  )).map<OptionMinute>((r) => ({ at: r.at, symbol: r.symbol, expiry: r.expiry, cp: r.cp, strike: r.strike, buyVolume: r.buy_volume, sellVolume: r.sell_volume, buyCount: r.buy_count, sellCount: r.sell_count }));
+  const have = new Set(stored.map((m) => `${m.at}|${m.symbol}`));
+  const held = socket ? optionMinutesOf(socket.printsSince(since).filter((p) => p.symbol?.endsWith(`-${expiry}`))).filter((m) => !have.has(`${m.at}|${m.symbol}`)) : [];
+  return optionFlowOf(expiry, windowMin, [...stored, ...held]);
 }
 
 export type FlowSummary = {

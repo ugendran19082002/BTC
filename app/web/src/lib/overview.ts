@@ -829,11 +829,13 @@ export function sideGates(input: {
   balanceUsd: number | null;
   /** The risk mode's numbers; the defaults are the balanced ones. */
   t?: { maxPot: number; minEmDistance: number; maxSlippage: number; tailLimitFactor: number };
+  /** The multi-timeframe consensus the screen shows; the horizon leans stand in without it. */
+  mtf?: MtfConsensus;
 }): SideGate[] {
   const { side, leg, iv, regime, direction, outlook, maxSpreadPct, tailLossUsd, maxDailyLossUsd, marginUsd, balanceUsd } = input;
   const t = input.t ?? { maxPot: 0.35, minEmDistance: 1, maxSlippage: 0.1, tailLimitFactor: 1 };
   const cp = side === 'CE' ? 'C' : 'P';
-  const c = consensus(outlook);
+  const c = input.mtf ? { up: input.mtf.up, down: input.mtf.down, flat: input.mtf.side, scored: input.mtf.scored } : consensus(outlook);
   // A short call wants the market not to go up; a short put, not down.
   const against = side === 'CE' ? c.up : c.down;
   const withSide = side === 'CE' ? c.down + c.flat : c.up + c.flat;
@@ -853,7 +855,7 @@ export function sideGates(input: {
     { name: 'Tail risk', ok: tailLossUsd === null || maxDailyLossUsd === null ? null : tailLossUsd <= maxDailyLossUsd * t.tailLimitFactor, text: tailLossUsd === null ? 'not readable' : `$${tailLossUsd.toFixed(2)} at 2×EM${maxDailyLossUsd === null ? '' : ` (limit $${(maxDailyLossUsd * t.tailLimitFactor).toFixed(2)})`}` },
     { name: 'Execution', ok: slip === null ? null : slip <= t.maxSlippage, text: slip === null ? 'no quote' : `half-spread ${(slip * 100).toFixed(1)}% of premium (limit ${(t.maxSlippage * 100).toFixed(0)}%)` },
     { name: 'Margin', ok: marginUsd === null || balanceUsd === null ? null : marginUsd <= balanceUsd, text: marginUsd === null ? 'not readable' : `$${marginUsd.toFixed(2)}` },
-    { name: 'MTF consensus', ok: mtf, text: c.scored === 0 ? 'no horizon readable' : `${c.up} up · ${c.down} down · ${c.flat} flat of ${c.scored}` },
+    { name: 'MTF consensus', ok: mtf, text: c.scored === 0 ? 'no timeframe readable' : `${c.up} up · ${c.down} down · ${c.flat} side of ${c.scored}` },
   ];
 }
 
@@ -878,8 +880,9 @@ export type SideChoice = { side: 'CE' | 'PE' | 'BOTH' | 'NO_TRADE'; why: string 
  * Bearish and the call safe: CE. Range and both safe: BOTH. A conflict, or
  * a failed side: NO_TRADE.
  */
-export function sideSelector(regime: string | null, outlook: Outlook, ceStatus: SideStatus, peStatus: SideStatus): SideChoice {
-  const c = consensus(outlook);
+export function sideSelector(regime: string | null, outlook: Outlook, ceStatus: SideStatus, peStatus: SideStatus, mtf?: MtfConsensus): SideChoice {
+  // The multi-timeframe consensus where the screen has one (the same table it shows); the horizon leans otherwise.
+  const c = mtf ? { up: mtf.up, down: mtf.down, scored: mtf.scored } : consensus(outlook);
   const bull = c.scored > 0 && c.up > c.scored / 2;
   const bear = c.scored > 0 && c.down > c.scored / 2;
   const regUp = regime !== null && /up/i.test(regime);
@@ -955,8 +958,18 @@ export type Trigger = {
   formula: string;
   /** null: could not be read. */
   fired: boolean | null;
+  /** The reading as a share of its threshold: 1 is the threshold itself. Null where it could not be read. */
+  level: number | null;
+  /** NORMAL under 70% of the threshold, WATCH from there, TRIGGERED at or past it. A warning level, not a trade signal. */
+  state: 'NORMAL' | 'WATCH' | 'TRIGGERED' | null;
   weight: number;
 };
+
+/** The three lamps from a reading's share of its threshold. */
+export function triggerState(level: number | null): Trigger['state'] {
+  if (level === null || !Number.isFinite(level)) return null;
+  return level >= 1 ? 'TRIGGERED' : level >= 0.7 ? 'WATCH' : 'NORMAL';
+}
 
 export type EarlyWarning = {
   triggers: Trigger[];
@@ -1001,26 +1014,27 @@ export function earlyWarning(input: {
   const rangeAt = em15Pct === null ? null : Math.max(0.25, 0.6 * em15Pct);
   const accel = oi ? Math.max(Math.abs(oi.ceAcceleration ?? 0), Math.abs(oi.peAcceleration ?? 0)) : null;
   const change = oi ? Math.max(Math.abs(oi.ceChange1h ?? 0), Math.abs(oi.peChange1h ?? 0)) : null;
-  const t: Trigger[] = [
+  const raw: Omit<Trigger, 'state'>[] = [
     { name: 'Volume burst', value: burst === null ? '—' : `${burst.toFixed(1)}× median`, threshold: '≥ 2.0×', formula: 'last 5m bar volume ÷ median of the 20 before it',
-      fired: burst === null ? null : burst >= 2, weight: 2 },
+      fired: burst === null ? null : burst >= 2, level: burst === null ? null : burst / 2, weight: 2 },
     { name: 'One-sided aggressors', value: flow?.aggressorBuyPct == null ? '—' : `${(flow.aggressorBuyPct * 100).toFixed(0)}% buys`, threshold: '≥ 65% or ≤ 35%', formula: 'buy volume ÷ (buy + sell), aggressor side, last hour',
-      fired: flow?.aggressorBuyPct == null ? null : flow.aggressorBuyPct >= 0.65 || flow.aggressorBuyPct <= 0.35, weight: 2 },
+      fired: flow?.aggressorBuyPct == null ? null : flow.aggressorBuyPct >= 0.65 || flow.aggressorBuyPct <= 0.35, level: flow?.aggressorBuyPct == null ? null : Math.abs(flow.aggressorBuyPct - 0.5) / 0.15, weight: 2 },
     { name: 'CVD slope', value: slope === null ? '—' : `${slope >= 0 ? '+' : ''}${slope.toFixed(0)} ct/min${slopeShare === null ? '' : ` (${(slopeShare * 100).toFixed(0)}% of pace)`}`, threshold: '|slope| ≥ 40% of the tape\'s pace', formula: '(CVD now − CVD 15m ago) ÷ 15, against volume per minute over the hour; needs six minutes of prints',
-      fired: slopeShare === null ? null : Math.abs(slopeShare) >= 0.4, weight: 1 },
+      fired: slopeShare === null ? null : Math.abs(slopeShare) >= 0.4, level: slopeShare === null ? null : Math.abs(slopeShare) / 0.4, weight: 1 },
     { name: 'OI accelerating', value: accel === null ? '—' : `${accel.toFixed(0)} ct of ${change?.toFixed(0) ?? '—'}`, threshold: '≥ half the hour\'s change', formula: 'OI change over the hour − the same reading an hour earlier',
-      fired: accel === null || change === null || change === 0 ? null : accel >= 0.5 * change && change >= 200, weight: 1 },
+      fired: accel === null || change === null || change === 0 ? null : accel >= 0.5 * change && change >= 200, level: accel === null || change === null || change === 0 ? null : Math.min(accel / (0.5 * change), change / 200), weight: 1 },
     { name: 'IV jumping', value: input.atmIvChange15mPts === null ? '—' : `${input.atmIvChange15mPts >= 0 ? '+' : ''}${input.atmIvChange15mPts.toFixed(1)} pts / 15m`, threshold: '≥ +2 pts', formula: 'ATM IV now − ATM IV 15m ago',
-      fired: input.atmIvChange15mPts === null ? null : input.atmIvChange15mPts >= 2, weight: 2 },
+      fired: input.atmIvChange15mPts === null ? null : input.atmIvChange15mPts >= 2, level: input.atmIvChange15mPts === null ? null : Math.max(0, input.atmIvChange15mPts) / 2, weight: 2 },
     { name: 'Range expanding', value: move15 === null ? '—' : `${move15 >= 0 ? '+' : ''}${move15.toFixed(2)}% / 15m`, threshold: rangeAt === null ? '≥ 0.6 × EM(15m), at least 0.25%' : `≥ ${rangeAt.toFixed(2)}%`, formula: '|BTC move over 15m| ≥ 0.6 × (spot × IV × √(15m / 1y)), and never under 0.25%',
-      fired: move15 === null || rangeAt === null ? null : Math.abs(move15) >= rangeAt, weight: 2 },
+      fired: move15 === null || rangeAt === null ? null : Math.abs(move15) >= rangeAt, level: move15 === null || rangeAt === null ? null : Math.abs(move15) / rangeAt, weight: 2 },
     { name: 'Book leaning', value: book?.imbalance == null ? '—' : `${(book.imbalance * 100).toFixed(0)}%`, threshold: '|imbalance| ≥ 30%', formula: '(bid depth − ask depth) ÷ (bid + ask), 20 levels',
-      fired: book?.imbalance == null ? null : Math.abs(book.imbalance) >= 0.3, weight: 1 },
+      fired: book?.imbalance == null ? null : Math.abs(book.imbalance) >= 0.3, level: book?.imbalance == null ? null : Math.abs(book.imbalance) / 0.3, weight: 1 },
     { name: 'Wing premium jumping', value: input.markChange15mPct === null ? '—' : `${input.markChange15mPct >= 0 ? '+' : ''}${input.markChange15mPct.toFixed(0)}% / 15m`, threshold: '≥ +30%', formula: 'selected strike mark now ÷ mark 15m ago − 1',
-      fired: input.markChange15mPct === null ? null : input.markChange15mPct >= 30, weight: 2 },
+      fired: input.markChange15mPct === null ? null : input.markChange15mPct >= 30, level: input.markChange15mPct === null ? null : Math.max(0, input.markChange15mPct) / 30, weight: 2 },
     { name: 'Funding stretched', value: funding === null ? '—' : `${funding.toFixed(4)}%`, threshold: '|rate| ≥ 0.05%', formula: 'the perp\'s funding rate, as Delta publishes it',
-      fired: funding === null ? null : Math.abs(funding) >= 0.05, weight: 1 },
+      fired: funding === null ? null : Math.abs(funding) >= 0.05, level: funding === null ? null : Math.abs(funding) / 0.05, weight: 1 },
   ];
+  const t: Trigger[] = raw.map((x) => ({ ...x, state: triggerState(x.level) }));
   const readable = t.filter((x) => x.fired !== null);
   const wsum = readable.reduce((a, x) => a + x.weight, 0);
   const score = wsum === 0 ? null : readable.reduce((a, x) => a + (x.fired ? x.weight : 0), 0) / wsum;
@@ -1172,6 +1186,69 @@ export function premiumDecay(premium: number, intrinsic: number, hoursToExpiry: 
   const at = (u: number) => intrinsic + ext * Math.sqrt(Math.max(0, (T - u) / (T || 1)));
   const label = (u: number) => (u === 0 ? 'Now' : u >= T ? 'Exp' : u < 1 ? `${Math.round(u * 60)}m` : `${Math.round(u)}h`);
   const points = Array.from({ length: n + 1 }, (_, i) => { const u = (T * i) / n; return { hoursFromNow: u, label: label(u), premium: at(u) }; });
-  const milestones = [0.5, 0.8].map((share) => ({ share, hoursFromNow: T * (1 - (1 - share) ** 2) }));
+  // Half, four-fifths, and near zero (95%): 0.75 T, 0.96 T and 0.9975 T from now.
+  const milestones = [0.5, 0.8, 0.95].map((share) => ({ share, hoursFromNow: T * (1 - (1 - share) ** 2) }));
   return { points, milestones };
 }
+
+// ------------------------------------------------- multi-timeframe consensus
+
+export type MtfRow = {
+  tf: string;
+  trend: 'up' | 'down' | 'side' | null;
+  momentum: 'bullish' | 'bearish' | 'neutral' | null;
+  /** The measured share of windows over this horizon that closed higher. */
+  pUp: number | null;
+  signal: '↑' | '↓' | '→' | null;
+};
+export type MtfConsensus = { rows: MtfRow[]; up: number; down: number; side: number; scored: number; way: 'UP' | 'DOWN' | 'SIDE' | null; text: string };
+
+/**
+ * One row per timeframe -- the bars' trend (EMA stack), RSI momentum and the
+ * measured up-odds for the matching horizon -- each voting one way, and the
+ * count: "5/7 UP". This is the input the side selection reads.
+ */
+export function mtfConsensus(market: MarketRead | null, outlook: Outlook): MtfConsensus {
+  const mins: Record<string, number> = { '5m': 5, '15m': 15, '30m': 30, '1h': 60, '2h': 120, '3h': 180, '4h': 240, '6h': 360, '12h': 720, '1d': 1440 };
+  const tfs = market?.timeframes ?? [];
+  const byMin = new Map(outlook.rows.map((r) => [r.minutes, r]));
+  const labels = [...new Set([...tfs.map((t) => t.tf), ...outlook.rows.map((r) => r.label)])].filter((l) => l in mins).sort((a, b) => mins[a]! - mins[b]!);
+  const rows: MtfRow[] = labels.map((tf) => {
+    const t = tfs.find((x) => x.tf === tf) ?? null;
+    const r = byMin.get(mins[tf]!) ?? null;
+    const trend = t ? (t.trend === 1 ? 'up' : t.trend === -1 ? 'down' : 'side') : null;
+    const momentum = t?.rsi14 == null ? null : t.rsi14 >= 55 ? 'bullish' : t.rsi14 <= 45 ? 'bearish' : 'neutral';
+    const pUp = r?.pUp ?? null;
+    // Three votes a row -- trend, momentum, the model past 55 / 45 -- and the row goes with the majority.
+    const votes = [trend === 'up' ? 1 : trend === 'down' ? -1 : 0, momentum === 'bullish' ? 1 : momentum === 'bearish' ? -1 : 0, pUp === null ? 0 : pUp > 0.55 ? 1 : pUp < 0.45 ? -1 : 0];
+    const readable = trend !== null || momentum !== null || pUp !== null;
+    const sum = votes.reduce((a, b) => a + b, 0);
+    return { tf, trend, momentum, pUp, signal: !readable ? null : sum > 0 ? '↑' : sum < 0 ? '↓' : '→' };
+  });
+  const up = rows.filter((r) => r.signal === '↑').length, down = rows.filter((r) => r.signal === '↓').length, side = rows.filter((r) => r.signal === '→').length;
+  const scored = up + down + side;
+  const way = scored === 0 ? null : up > scored / 2 ? 'UP' : down > scored / 2 ? 'DOWN' : 'SIDE';
+  return { rows, up, down, side, scored, way, text: scored === 0 ? 'no timeframe readable' : `${way === 'DOWN' ? down : way === 'SIDE' ? side : up}/${scored} ${way}` };
+}
+
+// ------------------------------------------------- support and resistance
+
+export type SrDistance = { name: string; price: number; usd: number; pct: number; atr: number | null };
+
+/** The nearest support below spot and the nearest resistance above, how far each is in dollars, percent and ATRs. */
+export function srDistances(levels: readonly NamedLevel[], spot: number, atrUsd: number | null): { support: SrDistance | null; resistance: SrDistance | null } {
+  const make = (l: NamedLevel | undefined): SrDistance | null => (l ? { name: l.name, price: l.price, usd: l.price - spot, pct: ((l.price - spot) / spot) * 100, atr: atrUsd && atrUsd > 0 ? Math.abs(l.price - spot) / atrUsd : null } : null);
+  const above = levels.filter((l) => l.price > spot).sort((a, b) => a.price - b.price)[0];
+  const below = levels.filter((l) => l.price < spot).sort((a, b) => b.price - a.price)[0];
+  return { support: make(below), resistance: make(above) };
+}
+
+/** Swing reading on one timeframe against its trend: a break of structure continues the trend; a change of character goes against it. */
+export function structureRead(structure: -1 | 0 | 1 | undefined, trend: -1 | 0 | 1): { swings: string; kind: 'BOS' | 'CHOCH' | null } {
+  const swings = structure === 1 ? 'HH / HL' : structure === -1 ? 'LH / LL' : 'no clear swings';
+  if (!structure) return { swings, kind: null };
+  return { swings, kind: trend === 0 || Math.sign(trend) === Math.sign(structure) ? 'BOS' : 'CHOCH' };
+}
+
+/** What the desk says of a candidate, in the three words the finder shows. */
+export const finderDecision = (l: Leg): 'RECOMMENDED' | 'WATCH' | 'AVOID' | '—' => (l.ev?.signal === 'sell' ? 'RECOMMENDED' : l.ev?.signal === 'watch' ? 'WATCH' : l.ev?.signal === 'avoid' ? 'AVOID' : '—');

@@ -33,7 +33,12 @@ export type Print = {
   size: number;
   /** Which side crossed the spread: the aggressor. */
   side: 'buy' | 'sell';
+  /** The contract, for an option print; absent on the perpetual's. */
+  symbol?: string;
 };
+
+/** An option contract's symbol: C-BTC-82000-200926. */
+export const OPTION_SYMBOL = /^([CP])-BTC-(\d+)-(\d{6})$/;
 
 export type PerpTicker = {
   at: number;
@@ -66,9 +71,14 @@ const num = (v: unknown): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
-/** One trade message as a print. Null unless it is a BTCUSD trade with a price and a size. */
+/**
+ * One trade message as a print. Null unless it is a BTCUSD trade, or one of
+ * the options the socket was asked to watch, with a price and a size.
+ */
 export function printOf(m: Record<string, unknown>): Print | null {
-  if (m.symbol !== PERP_SYMBOL) return null;
+  const symbol = typeof m.symbol === 'string' ? m.symbol : '';
+  const option = symbol !== PERP_SYMBOL && OPTION_SYMBOL.test(symbol);
+  if (symbol !== PERP_SYMBOL && !option) return null;
   const price = num(m.price);
   const size = num(m.size);
   const ts = num(m.timestamp);
@@ -77,7 +87,7 @@ export function printOf(m: Record<string, unknown>): Print | null {
   const side = m.buyer_role === 'taker' ? 'buy' : m.seller_role === 'taker' ? 'sell' : null;
   if (!side) return null;
   // Delta stamps in microseconds.
-  return { at: Math.floor(ts / 1000), price, size, side };
+  return option ? { at: Math.floor(ts / 1000), price, size, side, symbol } : { at: Math.floor(ts / 1000), price, size, side };
 }
 
 export function perpTickerOf(m: Record<string, unknown>, at: number): PerpTicker | null {
@@ -109,12 +119,17 @@ export class FlowSocket {
   private watchTimer: ReturnType<typeof setInterval> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
+  /** The option contracts subscribed on top of the perpetual, and what they were last read from. */
+  private optionSymbols: string[] = [];
+
   constructor(private readonly o: {
     connect?: () => SocketLike;
     now?: () => number;
     log?: (line: string) => void;
     staleMs?: number;
     holdMs?: number;
+    /** The option contracts to watch besides the perpetual: the two nearest expiries, every strike. Read at each (re)connect and on `watch`. */
+    options?: () => string[];
   } = {}) {}
 
   private now() { return this.o.now?.() ?? Date.now(); }
@@ -161,7 +176,7 @@ export class FlowSocket {
   /** One raw message from the wire. Public so a test can feed the parser directly. */
   receive(raw: unknown): void {
     this.lastMessageAt = this.now();
-    if (typeof raw !== 'string' || !raw.includes(PERP_SYMBOL)) return;
+    if (typeof raw !== 'string' || !raw.includes('BTC')) return;
     let m: Record<string, unknown>;
     try { m = JSON.parse(raw) as Record<string, unknown>; } catch { return; }
     switch (m.type) {
@@ -188,11 +203,11 @@ export class FlowSocket {
 
   private add(p: Print): void {
     // A snapshot repeats prints the stream already delivered around the moment
-    // of subscribing; the same instant, price, size and side is the same print.
-    // Only the newest prints can overlap, so only they are scanned.
-    for (let i = this.prints.length - 1, n = 0; i >= 0 && n < 200; i--, n++) {
+    // of subscribing; the same instant, contract, price, size and side is the
+    // same print. Only the newest prints can overlap, so only they are scanned.
+    for (let i = this.prints.length - 1, n = 0; i >= 0 && n < 400; i--, n++) {
       const q = this.prints[i]!;
-      if (q.at === p.at && q.price === p.price && q.size === p.size && q.side === p.side) return;
+      if (q.at === p.at && q.price === p.price && q.size === p.size && q.side === p.side && q.symbol === p.symbol) return;
     }
     this.prints.push(p);
     if (this.prints.length > 1 && p.at < this.prints[this.prints.length - 2]!.at) this.prints.sort((a, b) => a.at - b.at);
@@ -201,6 +216,12 @@ export class FlowSocket {
   private watch(): void {
     const cutoff = this.now() - (this.o.holdMs ?? HOLD_MS);
     if (this.prints.length && this.prints[0]!.at < cutoff) this.prints = this.prints.filter((p) => p.at >= cutoff);
+    // The listed contracts change at each settlement: the new expiry's strikes are subscribed as they appear.
+    if (this.socket && this.o.options) {
+      const want = this.o.options();
+      const fresh = want.filter((sym) => !this.optionSymbols.includes(sym));
+      if (fresh.length) { this.subscribe(fresh); this.optionSymbols = [...this.optionSymbols, ...fresh]; }
+    }
     if (this.socket && this.lastMessageAt !== null && this.now() - this.lastMessageAt >= (this.o.staleMs ?? FLOW_STALE_MS)) {
       this.log('flow socket silent; reconnecting');
       this.drop();
@@ -223,11 +244,10 @@ export class FlowSocket {
       this.backoffMs = 1_000;
       this.lastMessageAt = this.now();
       ws.send(JSON.stringify({ type: 'enable_heartbeat' }));
-      ws.send(JSON.stringify({
-        type: 'subscribe',
-        payload: { channels: [{ name: 'all_trades', symbols: [PERP_SYMBOL] }, { name: 'v2/ticker', symbols: [PERP_SYMBOL] }] },
-      }));
-      this.log('flow socket open');
+      ws.send(JSON.stringify({ type: 'subscribe', payload: { channels: [{ name: 'v2/ticker', symbols: [PERP_SYMBOL] }] } }));
+      this.optionSymbols = this.o.options?.() ?? [];
+      this.subscribe([PERP_SYMBOL, ...this.optionSymbols]);
+      this.log(`flow socket open (${this.optionSymbols.length} option contracts)`);
     };
     ws.onmessage = (ev) => this.receive(ev.data);
     ws.onerror = () => { /* the close that follows carries the reconnect */ };
@@ -237,6 +257,15 @@ export class FlowSocket {
       this.log(`flow socket closed (${ev.code ?? '?'})`);
       this.scheduleReconnect();
     };
+  }
+
+  /** Every print on these contracts, in batches: Delta's subscribe payload is happiest under a hundred symbols. */
+  private subscribe(symbols: readonly string[]): void {
+    const ws = this.socket;
+    if (!ws || !symbols.length) return;
+    for (let i = 0; i < symbols.length; i += 80) {
+      ws.send(JSON.stringify({ type: 'subscribe', payload: { channels: [{ name: 'all_trades', symbols: symbols.slice(i, i + 80) }] } }));
+    }
   }
 
   private drop(): void {

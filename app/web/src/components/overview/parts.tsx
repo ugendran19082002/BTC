@@ -40,12 +40,17 @@ export function Row({ label, value, tone, hint, mark }: {
 }
 
 /** The rows a screen does not need at a glance, folded under one line. */
-export function More({ label = 'More', children }: { label?: string; children: ReactNode }) {
+/**
+ * The rest of a panel. Nothing folds: every figure is on screen at once, so
+ * the eye scans rather than clicks. The label stays as a quiet heading where
+ * one was given so the section still reads as a section.
+ */
+export function More({ label, children }: { label?: string; children: ReactNode }) {
   return (
-    <details className="ov-more">
-      <summary>{label}</summary>
+    <div className="ov-more">
+      {label && label !== 'More' && <div className="ov-more-label">{label}</div>}
       {children}
-    </details>
+    </div>
   );
 }
 

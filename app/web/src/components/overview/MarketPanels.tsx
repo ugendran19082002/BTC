@@ -1,6 +1,6 @@
 import type { ChainResponse, MarketRead } from '@/types/desk';
-import type { FlowSummary, PerpResponse, TermHistoryPoint, TermPoint, TermResponse } from '@/api/desk';
-import { ivRv, keyLevels, namedLevels, skew, volRegime, type IvRv } from '@/lib/overview';
+import type { FlowSummary, PerpResponse, SideFlow, TermHistoryPoint, TermPoint, TermResponse } from '@/api/desk';
+import { ivRv, keyLevels, namedLevels, skew, srDistances, structureRead, volRegime, type IvRv, type NamedLevel } from '@/lib/overview';
 import { fmt, More, NotCaptured, Panel, Row, Tag, useWidth } from './parts';
 
 // ------------------------------------------------------------------ KPI strip
@@ -100,7 +100,7 @@ const regimeTone = (r: string | undefined) =>
 
 // -------------------------------------------------------------- price action
 
-export function PriceActionPanel({ market, tf: wanted = '15m' }: { market: MarketRead | null; tf?: string }) {
+export function PriceActionPanel({ market, tf: wanted = '15m', levels = [], spot }: { market: MarketRead | null; tf?: string; levels?: readonly NamedLevel[]; spot?: number }) {
   // The chart's timeframe, where the read has it; 1m and 30m are not read, so the nearest read one stands in.
   const have = market?.timeframes ?? [];
   const nearest: Record<string, string> = { '1m': '5m', '30m': '15m' };
@@ -108,22 +108,29 @@ export function PriceActionPanel({ market, tf: wanted = '15m' }: { market: Marke
   const tf = have.find((t) => t.tf === use) ?? null;
   const trendTone = tf?.trend === 1 ? 'up' : tf?.trend === -1 ? 'down' : 'muted';
   const macd = use === '15m' ? market?.macd15m ?? null : null;
+  const atrUsd = tf?.atrPct == null ? null : tf.close * tf.atrPct / 100;
+  const sr = srDistances(levels, spot ?? tf?.close ?? 0, atrUsd);
+  const swing = tf ? structureRead(tf.structure, tf.trend) : null;
+  const dist = (d: typeof sr.support) => (d ? `${fmt.signed(d.usd)} (${fmt.signed(d.pct, 2)}%)${d.atr === null ? '' : ` · ${d.atr.toFixed(1)} ATR`}` : '—');
   return (
     <Panel title={`Price action (${use})`} right={use !== wanted ? <small className="ov-muted">{wanted} not read; {use} shown</small> : undefined}>
       {!tf ? <p className="ov-empty">No {use} bars yet.</p> : (
         <>
           <Row mark="arrow" label="Trend" value={tf.label} tone={trendTone} />
-          <Row mark="arrow" label="Structure" value={tf.structure === 1 ? 'HH / HL' : tf.structure === -1 ? 'LH / LL' : 'no clear swings'}
-            tone={tf.structure === 1 ? 'up' : tf.structure === -1 ? 'down' : 'muted'} hint="Higher highs and higher lows, or the mirror, on the recent swings" />
+          <Row mark="arrow" label="Structure" value={`${swing!.swings}${swing!.kind ? ` · ${swing!.kind}` : ''}`}
+            tone={tf.structure === 1 ? 'up' : tf.structure === -1 ? 'down' : 'muted'} hint="Higher highs and higher lows, or the mirror, on the recent swings. BOS: the swings continue the trend. CHOCH: they have turned against it" />
           <Row mark="arrow" label="RSI (14)" value={fmt.n(tf.rsi14, 1)} tone={tf.rsi14 === null ? 'muted' : tf.rsi14 >= 55 ? 'up' : tf.rsi14 <= 45 ? 'down' : 'muted'}
             hint={tf.rsi14 !== null && (tf.rsi14 >= 70 || tf.rsi14 <= 30) ? 'Stretched: past 70 or under 30' : 'Above 55 leans up, under 45 leans down'} />
           <Row mark="arrow" label="MACD" value={macd ? (macd.hist >= 0 ? 'Bullish' : 'Bearish') : use === '15m' ? '—' : 'read on 15m only'}
             tone={macd ? (macd.hist >= 0 ? 'up' : 'down') : 'muted'} hint={macd ? `MACD(12, 26, 9) histogram ${fmt.signed(macd.hist, 1)} · line ${macd.line.toFixed(1)} · signal ${macd.signal.toFixed(1)}` : undefined} />
           <Row mark="arrow" label="VWAP" value={tf.vwap == null ? '—' : fmt.n(tf.vwap, 1)}
             tone={tf.vwapDistPct == null ? 'muted' : tf.vwapDistPct >= 0 ? 'up' : 'down'} hint={tf.vwapDistPct == null ? undefined : `Price is ${fmt.signed(tf.vwapDistPct, 2)}% from the volume-weighted average of the bars read`} />
-          <More>
+          <Row mark="arrow" label="ATR (14)" value={atrUsd === null ? '—' : `${fmt.n(atrUsd, 1)} (${tf.atrPct!.toFixed(2)}%)`} tone="muted" hint="Average true range over 14 bars of this timeframe: the size of a typical bar" />
+          <More label="Details">
             <Row label="ADX (14)" value={tf.adx14 == null ? '—' : tf.adx14.toFixed(1)} hint="Trend strength, whichever way; above 25 is a trend" />
             <Row label="EMA 9 / 21 / 50" value={`${fmt.n(tf.ema9)} / ${fmt.n(tf.ema21)} / ${fmt.n(tf.ema50)}`} tone={tf.ema9 !== null && tf.ema21 !== null ? (tf.ema9 > tf.ema21 ? 'up' : 'down') : undefined} />
+            <Row label={`Resistance${sr.resistance ? ` · ${sr.resistance.name}` : ''}`} value={dist(sr.resistance)} tone="down" hint="The nearest level above spot: how far in dollars, percent and ATRs of this timeframe" />
+            <Row label={`Support${sr.support ? ` · ${sr.support.name}` : ''}`} value={dist(sr.support)} tone="up" hint="The nearest level below spot: how far in dollars, percent and ATRs of this timeframe" />
           </More>
         </>
       )}
@@ -133,22 +140,31 @@ export function PriceActionPanel({ market, tf: wanted = '15m' }: { market: Marke
 
 // --------------------------------------------------------------- key levels
 
-export function KeyLevelsPanel({ data, spot }: { data: ChainResponse; spot: number }) {
+export function KeyLevelsPanel({ data, spot, atrUsd = null }: { data: ChainResponse; spot: number; atrUsd?: number | null }) {
   const m = data.market;
   const all = keyLevels(data.structure, m?.high24h ?? null, m?.low24h ?? null, m?.prevDayHigh ?? null, m?.prevDayLow ?? null);
   const named = namedLevels(all, spot);
-  const away = (p: number) => <small className="ov-muted">{fmt.signed(((p - spot) / spot) * 100, 2)}%</small>;
+  const shown = new Set(named.map((l) => l.price));
+  const rest = all.filter((l) => !shown.has(l.price));
+  const row = (name: string, price: number, kind: string, source?: string) => (
+    <tr key={`${name}${price}`} title={source}>
+      <td><i className={`ov-dot ov-bg-${kind === 'resistance' ? 'down' : kind === 'support' ? 'up' : 'muted'}`} />{name}</td>
+      <td>{fmt.n(price)}</td>
+      <td className={price >= spot ? 'ov-down' : 'ov-up'}>{fmt.signed(price - spot)} <small className="ov-muted">{fmt.signed(((price - spot) / spot) * 100, 2)}%</small></td>
+      <td className="ov-muted">{atrUsd && atrUsd > 0 ? `${(Math.abs(price - spot) / atrUsd).toFixed(1)}×` : '—'}</td>
+    </tr>
+  );
   return (
-    <Panel title="Key levels">
-      {named.length === 0 ? <p className="ov-empty">No levels on this board.</p> : named.map((l) => (
-        <Row key={l.name} mark="dot" tone={l.kind === 'resistance' ? 'down' : l.kind === 'support' ? 'up' : 'muted'}
-          label={l.name} value={<>{fmt.n(l.price)} {away(l.price)}</>} hint={`${l.source} · ${fmt.signed(l.price - spot)} from spot`} />
-      ))}
-      <More label="Every level">
-        {all.map((l) => (
-          <Row key={l.label} label={l.label} value={<>{fmt.n(l.price)} {away(l.price)}</>} />
-        ))}
-      </More>
+    <Panel title="Key levels" right={<small className="ov-muted">spot {fmt.n(spot)}{atrUsd ? ` · ATR ${fmt.n(atrUsd)}` : ''}</small>}>
+      {all.length === 0 ? <p className="ov-empty">No levels on this board.</p> : (
+        <table className="ov-mini ov-levels">
+          <thead><tr><th>Level</th><th>Price</th><th title="From spot, dollars and percent">Distance</th><th title="Distance in average true ranges of the chart's timeframe: under 1 is within a bar's reach">÷ ATR</th></tr></thead>
+          <tbody>
+            {named.map((l) => row(l.name, l.price, l.kind, l.source))}
+            {rest.map((l) => row(l.label, l.price, l.kind))}
+          </tbody>
+        </table>
+      )}
     </Panel>
   );
 }
@@ -157,19 +173,14 @@ export function KeyLevelsPanel({ data, spot }: { data: ChainResponse; spot: numb
 
 export function VolatilityPanel({ data, iv }: { data: ChainResponse; iv: IvRv | null }) {
   const m = data.market;
-  const tf5 = m?.timeframes.find((t) => t.tf === '5m');
-  const tf1h = m?.timeframes.find((t) => t.tf === '1h');
   const regime = volRegime(m?.realisedVol1h ?? null, m?.realisedVol ?? null);
   const pct = (v: number | null | undefined) => (v == null ? '—' : `${v.toFixed(1)}%`);
-  const atrUsd = (t: typeof tf5) => (t?.atrPct == null ? '—' : fmt.n(t.close * t.atrPct / 100, 1));
   return (
     <Panel title="Volatility" right={<small className="ov-muted">ATM IV {data.structure.atmIv === null ? '—' : `${(data.structure.atmIv * 100).toFixed(1)}%`}</small>}>
       <Row mark="dot" tone="up" label="Realized vol (1h)" value={pct(m?.realisedVol1h)} hint="Annualised, from the last hour of 5-minute closes" />
       <Row mark="dot" tone="up" label="Realized vol (6h)" value={pct(m?.realisedVol6h)} hint="Annualised, from the last six hours of 5-minute closes" />
       <Row mark="dot" tone={iv ? (iv.spreadPts > 0 ? 'up' : 'down') : 'muted'} label="IV − RV spread" value={iv ? `${fmt.signed(iv.spreadPts, 1)} pts` : '—'}
         hint="Implied minus realised (21d). Positive: sellers are paid more than BTC has been delivering" />
-      <Row mark="dot" tone="muted" label="ATR (5m)" value={atrUsd(tf5)} hint={tf5?.atrPct == null ? undefined : `${tf5.atrPct.toFixed(2)}% of price`} />
-      <Row mark="dot" tone="muted" label="ATR (1h)" value={atrUsd(tf1h)} hint={tf1h?.atrPct == null ? undefined : `${tf1h.atrPct.toFixed(2)}% of price`} />
       <Row mark="dot" tone={regime ? (regime.label === 'high' ? 'down' : regime.label === 'low' ? 'muted' : 'up') : 'muted'} label="Vol regime"
         value={regime ? <Tag tone={regime.label === 'high' ? 'down' : regime.label === 'low' ? 'muted' : 'accent'}>{regime.label}</Tag> : '—'}
         hint={regime ? `The last hour's realised volatility is ${regime.ratio.toFixed(1)}× the 21-day figure` : 'Needs an hour of bars and the 21-day figure'} />
@@ -335,3 +346,52 @@ export function SkewPanel({ data, rank }: { data: ChainResponse; rank: TermRespo
 }
 
 export { ivRv };
+
+// ------------------------------------------------------------ option flow
+
+/**
+ * The options' own tape, a side at a time: who crossed the spread on the
+ * calls and on the puts over the window, from the desk's record of every
+ * print on the two nearest expiries. Book imbalance and spread are the
+ * perpetual's -- options have no book capture -- and are said so.
+ */
+export function OptionFlowPanel({ perp }: { perp: PerpResponse | null }) {
+  const f = perp?.optionFlow ?? null;
+  const kct = (v: number) => (Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(1)}K` : fmt.n(v));
+  if (!perp) return <Panel title="Option flow (1h)"><p className="ov-empty">Loading…</p></Panel>;
+  if (!f || f.source === 'none') {
+    return (
+      <Panel title="Option flow (1h)">
+        <NotCaptured what="No option prints in the window" why="The tape recorder subscribes to every strike of the two nearest expiries; recording began 20 Sep 2026, or the socket is down — /api/health shows flowFeed." />
+      </Panel>
+    );
+  }
+  const card = (name: string, tag: string, x: SideFlow) => (
+    <div className={`ov-flow-card ov-flow-${tag.toLowerCase()}`}>
+      <header><span>{name}</span><Tag tone={tag === 'CALL' ? 'up' : 'down'}>{tag}</Tag></header>
+      <b className="ov-kpi-value">{kct(x.buyVolume)}</b>
+      <span className="ov-kpi-sub">buy volume · contracts</span>
+      <Row label="Sell volume" value={<span className="ov-down">{kct(x.sellVolume)}</span>} />
+      <Row label="Delta volume (CVD)" value={fmt.signed(x.deltaVolume)} tone={x.deltaVolume > 0 ? 'up' : x.deltaVolume < 0 ? 'down' : 'muted'} hint="Buy minus sell over the window: the cumulative volume delta at its end" />
+      <Row label="Aggressor buy %" value={fmt.pct(x.aggressorBuyPct, 1)} />
+      <Row label="Trades" value={fmt.n(x.trades)} />
+      <Row label="Busiest strikes" value={x.strikes.length ? x.strikes.map((k) => `${fmt.n(k.strike)} (${kct(k.buyVolume + k.sellVolume)})`).join(' · ') : '—'} hint="Most contracts traded, both sides together" />
+      <footer><Tag tone={x.pressure === 'BUY PRESSURE' ? 'up' : x.pressure === 'SELL PRESSURE' ? 'down' : 'muted'}>{x.pressure ?? 'no prints'}</Tag></footer>
+    </div>
+  );
+  const biasTone = f.combined.bias === null || f.combined.bias === 'MIXED' ? 'muted' : /CALL BUYING|PUT SELLING/.test(f.combined.bias) ? 'up' : 'down';
+  return (
+    <Panel title={`Option flow (${f.windowMin >= 60 ? `${f.windowMin / 60}h` : `${f.windowMin}m`})`}
+      right={<small className={f.minutesCovered < f.windowMin ? 'ov-warn' : 'ov-muted'} title="Minutes in the window with at least one option print">{f.minutesCovered} of {f.windowMin} min · {f.expiry}</small>}>
+      <div className="ov-flow-cards">
+        {card('CE flow', 'CALL', f.ce)}
+        {card('PE flow', 'PUT', f.pe)}
+      </div>
+      <div className="ov-flow-combined">
+        <Row label="Combined" value={`buy ${kct(f.combined.buyVolume)} · sell ${kct(f.combined.sellVolume)} · Δ ${fmt.signed(f.combined.deltaVolume)}`} />
+        <Row label="Overall option flow" value={<Tag tone={biasTone}>{f.combined.bias ?? '—'}</Tag>} hint="The heaviest of the four legs names the bias when it is two-fifths of the volume; otherwise mixed. Call buying and put selling lean bullish; call selling and put buying, bearish" />
+      </div>
+      <p className="ov-foot">Book imbalance and spread are the perpetual's (trade flow above); Delta publishes no book history for options.</p>
+    </Panel>
+  );
+}

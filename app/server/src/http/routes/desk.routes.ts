@@ -13,7 +13,7 @@ import { tradingService, SHORT_CAP_KEY } from '../../trading/service.js';
 import { appliedMigrations } from '../../db/migrate.js';
 import { termStructure } from '../../market/term.js';
 import { lastOptionSnapshot, lastOptionSnapshotAt } from '../../market/option-snapshots.js';
-import { flowFeedHealth, flowSummary, ivRank, liveBook, livePerp, oiPulse, skewRank, termHistory } from '../../market/flow.js';
+import { flowFeedHealth, flowSummary, ivRank, liveBook, livePerp, oiPulse, optionFlowSummary, skewRank, termHistory } from '../../market/flow.js';
 import { changes } from '../../market/changes.js';
 import { one } from '../../db/pool.js';
 import { strategyStore } from './strategy.routes.js';
@@ -164,13 +164,14 @@ export function registerDeskRoutes(app: FastifyInstance) {
       const q = req.query as { window?: string; expiry?: string };
       const windowMin = Math.min(240, Math.max(5, Number(q.window ?? 60) || 60));
       const expiry = /^\d{6}$/.test(q.expiry ?? '') ? q.expiry! : null;
-      const [ticker, book, flow, oi] = await Promise.all([
+      const [ticker, book, flow, oi, optionFlow] = await Promise.all([
         livePerp(now).catch(() => null),
         liveBook(now).catch(() => null),
         flowSummary(windowMin, now),
         expiry ? oiPulse(expiry, now).catch(() => null) : Promise.resolve(null),
+        expiry ? optionFlowSummary(expiry, windowMin, now).catch(() => null) : Promise.resolve(null),
       ]);
-      return { at: now, ticker, book, flow, oi };
+      return { at: now, ticker, book, flow, oi, optionFlow };
     } catch (e) {
       reply.code(502);
       return { error: (e as Error).message };

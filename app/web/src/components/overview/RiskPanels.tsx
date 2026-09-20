@@ -1,13 +1,13 @@
 import type { Leg } from '@/types/desk';
 import {
-  premiumDecay, shockTable, type RiskEngine,
+  premiumDecay, shockTable, type BothAssessment, type IvRv, type RiskEngine,
   type SideAssessment,
 } from '@/lib/overview';
 import { fmt, Panel, Row, Tag, useWidth } from './parts';
 
 // ----------------------------------------------------------- risk engine
 
-export function RiskEnginePanel({ leg, risk, contracts, hoursToExpiry }: { leg: Leg | null; risk: RiskEngine | null; contracts: number; hoursToExpiry: number }) {
+export function RiskEnginePanel({ leg, risk, contracts, hoursToExpiry, iv, step }: { leg: Leg | null; risk: RiskEngine | null; contracts: number; hoursToExpiry: number; iv: IvRv | null; step: number }) {
   if (!leg || !risk) return <Panel title="Sell-side risk engine"><p className="ov-empty">Select a strike with a price.</p></Panel>;
   const side = leg.cp === 'C' ? 'CE' : 'PE';
   const usd = (v: number | null) => (v === null ? '—' : `${v >= 0 ? '+' : '−'}$${Math.abs(v).toFixed(2)}`);
@@ -15,30 +15,24 @@ export function RiskEnginePanel({ leg, risk, contracts, hoursToExpiry }: { leg: 
     <Panel title={`Sell-side risk engine · ${fmt.n(leg.strike)} ${side}`} right={<small className="ov-muted">{contracts} ct</small>}>
       <div className="ov-two">
         <div>
-          <Row label="Theoretical (BS at mark IV)" value={fmt.n(risk.theoretical, 1)} />
-          <Row label="Market premium richness" value={risk.marketRichness === null ? '—' : fmt.pct(risk.marketRichness, 1)}
-            tone={risk.marketRichness === null ? undefined : risk.marketRichness >= 0 ? 'up' : 'down'} hint="Bid against mark: what the market actually pays a seller" />
+          <Row label="IV − RV" value={iv ? `${fmt.signed(iv.spreadPts, 1)} pts · ${iv.label}` : '—'} tone={iv ? (iv.label === 'rich' ? 'up' : iv.label === 'cheap' ? 'down' : undefined) : undefined} hint="This strike is sold into the board's implied against realised volatility" />
+          <Row label="Tail loss (2×EM adverse)" value={risk.tailLossUsd === null ? '—' : `$${risk.tailLossUsd.toFixed(2)}`} tone="down" hint="The loss the desk plans for; a naked short has no bounded worst case" />
           <Row label="Theta / gamma" value={risk.thetaGammaRatio === null ? '—' : fmt.n(risk.thetaGammaRatio)} hint="Decay earned per unit of convexity risk; higher is calmer" />
           <Row label="Vega shock (+5 IV pts)" value={usd(risk.vegaShockUsd)} tone={risk.vegaShockUsd === null ? undefined : risk.vegaShockUsd >= 0 ? 'up' : 'down'} />
           <Row label="Gamma shock (1% adverse)" value={usd(risk.gammaShockUsd)} tone={risk.gammaShockUsd === null ? undefined : risk.gammaShockUsd >= 0 ? 'up' : 'down'} hint="Delta and gamma only, for the size" />
         </div>
         <div>
-          <Row label="Tail loss (2×EM adverse)" value={risk.tailLossUsd === null ? '—' : `$${risk.tailLossUsd.toFixed(2)}`} tone="down" hint="The loss the desk plans for; a naked short has no bounded worst case" />
+          <Row label="Margin yield" value={fmt.pct(risk.marginYield, 1)} hint="Credit after fees over the margin it ties up" />
+          <Row label="Hedge availability" value={<Tag tone={risk.protectionAvailable ? 'up' : 'down'}>{risk.protectionAvailable ? 'yes' : 'none listed'}</Tag>} hint="A further strike on the same side with an ask: what a wing would cost" />
+          <Row label="Protection distance" value={risk.hedge ? `${fmt.n(Math.abs(risk.hedge.strike - leg.strike))} (${Math.round(Math.abs(risk.hedge.strike - leg.strike) / (step || 200))} strike${Math.abs(risk.hedge.strike - leg.strike) / (step || 200) === 1 ? '' : 's'}) · ask ${fmt.n(risk.hedge.askUsd, 1)} · $${risk.hedge.costUsd.toFixed(2)}` : '—'} hint="How far out the nearest wing sits, and its cost for the size" />
+          <Row label="Theoretical (BS at mark IV)" value={fmt.n(risk.theoretical, 1)} />
+          <Row label="Market premium richness" value={risk.marketRichness === null ? '—' : fmt.pct(risk.marketRichness, 1)}
+            tone={risk.marketRichness === null ? undefined : risk.marketRichness >= 0 ? 'up' : 'down'} hint="Bid against mark: what the market actually pays a seller" />
           <Row label="Break-even after fees" value={fmt.n(risk.breakevenAfterFees)} />
           <Row label="Slippage (half spread)" value={risk.slippageUsd === null ? '—' : `$${risk.slippageUsd.toFixed(2)}`} />
-          <Row label="Margin yield" value={fmt.pct(risk.marginYield, 1)} hint="Credit after fees over the margin it ties up" />
-          <Row label="Hedge cost" value={risk.hedge ? `${fmt.n(risk.hedge.strike)} ${side} ask ${fmt.n(risk.hedge.askUsd, 1)} · $${risk.hedge.costUsd.toFixed(2)}` : 'none listed'} />
-          <Row label="Protection available" value={<Tag tone={risk.protectionAvailable ? 'up' : 'down'}>{risk.protectionAvailable ? 'yes' : 'no'}</Tag>} />
         </div>
       </div>
       <DecayChart premium={risk.premium} intrinsic={risk.intrinsic} hoursToExpiry={hoursToExpiry} side={side} strike={leg.strike} />
-      <div className="ov-shocks" title="Delta and gamma for the BTC moves, vega for the IV moves; instantaneous, for the size, as the short sees it">
-        {shockTable(leg, contracts).map((s) => (
-          <span key={s.label} className={s.pnlUsd === null ? 'ov-muted' : s.pnlUsd >= 0 ? 'ov-up' : 'ov-down'}>
-            <small>{s.label}</small>{s.pnlUsd === null ? '—' : fmt.signed(s.pnlUsd, 2)}
-          </span>
-        ))}
-      </div>
     </Panel>
   );
 }
@@ -94,10 +88,15 @@ function DecayChart({ premium, intrinsic, hoursToExpiry, side, strike }: { premi
 
 // ------------------------------------------------- side cards (extended)
 
-export function SideCardsRow({ sides, onSelect }: { sides: SideAssessment[]; onSelect: (cp: 'C' | 'P', strike: number) => void }) {
+/** The card's last word: PREFERRED is the desk's side, WATCH passes with soft failures, NOT PREFERRED fails a gate, NOT ALLOWED is switched off. */
+export const sideFinal = (c: SideAssessment) => (c.disabledBy ? 'NOT ALLOWED' : c.status === 'SELL' ? 'PREFERRED' : c.status === 'WATCH' ? 'WATCH' : 'NOT PREFERRED');
+
+export function SideCardsRow({ sides, both, onSelect }: { sides: SideAssessment[]; both?: BothAssessment | null; onSelect: (cp: 'C' | 'P', strike: number) => void }) {
   const tone = (s: SideAssessment['status']) => (s === 'SELL' ? 'up' : s === 'WATCH' ? 'warn' : 'muted');
+  const safe = (ok: boolean | null) => (ok === null ? <span className="ov-muted">—</span> : <span className={ok ? 'ov-up' : 'ov-down'}>{ok ? '✓ safe' : '✕ not safe'}</span>);
+  const bothFinal = !both ? null : both.status === 'BOTH' ? 'PREFERRED' : both.status === 'SINGLE SIDE' ? 'NOT PREFERRED' : 'NOT ALLOWED';
   return (
-    <div className="ov-decide">
+    <div className="ov-decide ov-decide-3">
       {sides.map((c) => (
         <button key={c.side} className={`ov-decide-card ${c.status === 'SELL' ? 'ov-preferred' : ''}`} disabled={!c.leg}
           onClick={() => c.leg && onSelect(c.leg.cp, c.leg.strike)}>
@@ -125,9 +124,53 @@ export function SideCardsRow({ sides, onSelect }: { sides: SideAssessment[]; onS
               ))}
             </ul>
           )}
-          <footer><Tag tone={tone(c.status)}>{c.disabledBy ?? c.status}</Tag></footer>
+          <footer><Tag tone={c.disabledBy ? 'down' : tone(c.status)}>{sideFinal(c)}</Tag></footer>
         </button>
       ))}
+      {both && (
+        <div className="ov-decide-card" title="Both sides at once: a strangle. Each side must pass on its own, and the two together must fit the margin.">
+          <header>Both sides</header>
+          <Row label="CE safe" value={safe(both.ceSafe)} />
+          <Row label="PE safe" value={safe(both.peSafe)} />
+          <Row label="Range probability" value={fmt.pct(both.rangeProbability)} hint="Odds BTC settles between the two strikes" />
+          <Row label="Combined delta" value={both.netDelta === null ? '—' : fmt.signed(both.netDelta, 2)} />
+          <Row label="Combined gamma" value={both.netGamma === null ? '—' : `−${both.netGamma.toPrecision(2)}`} hint="Short both legs" />
+          <Row label="Combined theta" value={both.netTheta === null ? '—' : fmt.signed(-both.netTheta, 1)} hint="Per day, per BTC, as the short earns it" />
+          <Row label="Combined tail loss" value={both.combinedTailLossUsd === null ? '—' : `$${both.combinedTailLossUsd.toFixed(2)}`} tone="down" hint="The worse side's tail: a move only ever hurts one side, and the other side's premium softens it" />
+          <Row label="Combined margin" value={both.marginUsd === null ? '—' : `$${both.marginUsd.toFixed(2)}`} />
+          <footer><Tag tone={bothFinal === 'PREFERRED' ? 'up' : bothFinal === 'NOT ALLOWED' ? 'down' : 'muted'}>{bothFinal}</Tag></footer>
+        </div>
+      )}
     </div>
+  );
+}
+
+// ------------------------------------------------------------- scenario
+
+/**
+ * The selected short under a shock, now: BTC −500 … +500 by delta and gamma,
+ * IV ±1 / +2 points by vega, for the size, as the short sees it. Instant
+ * P&L, not settlement P&L -- the payoff tab is that.
+ */
+export function ScenarioPanel({ leg, contracts }: { leg: Leg | null; contracts: number }) {
+  if (!leg) return <Panel title="Scenario"><p className="ov-empty">Select a strike.</p></Panel>;
+  const shocks = shockTable(leg, contracts);
+  const btc = shocks.filter((s) => s.label.startsWith('BTC')).sort((a, b) => Number(a.label.replace(/[^\d−-]/g, '').replace('−', '-')) - Number(b.label.replace(/[^\d−-]/g, '').replace('−', '-')));
+  const ivs = shocks.filter((s) => s.label.startsWith('IV'));
+  const cell = (s: { label: string; pnlUsd: number | null }) => (
+    <span key={s.label} className={s.pnlUsd === null ? 'ov-muted' : s.pnlUsd >= 0 ? 'ov-up' : 'ov-down'}>
+      <small>{s.label}</small>{s.pnlUsd === null ? '—' : fmt.signed(s.pnlUsd, 2)}
+    </span>
+  );
+  return (
+    <Panel title={`Scenario · ${fmt.n(leg.strike)} ${leg.cp === 'C' ? 'CE' : 'PE'}`} right={<small className="ov-muted">{contracts} ct · instant P&L, USD</small>}>
+      <div className="ov-shocks" title="Delta and gamma for the BTC moves, vega for the IV moves; instantaneous, for the size, as the short sees it">
+        {btc.slice(0, 3).map(cell)}
+        <span className="ov-now"><small>NOW</small>0.00</span>
+        {btc.slice(3).map(cell)}
+      </div>
+      <div className="ov-shocks ov-shocks-iv">{ivs.map(cell)}</div>
+      <p className="ov-foot">By the greeks at this instant, for {contracts} contracts: what the position would show if BTC or IV jumped now. At settlement the payoff tab applies.</p>
+    </Panel>
   );
 }

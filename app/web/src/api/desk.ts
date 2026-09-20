@@ -126,7 +126,20 @@ export type OiPulse = {
   ceChange1h: number | null; peChange1h: number | null;
   ceAcceleration: number | null; peAcceleration: number | null; at: number | null;
 };
-export type PerpResponse = { at: number; ticker: PerpTicker | null; book: BookSnapshot | null; flow: FlowSummary; oi?: OiPulse | null };
+/** The options' own tape on one side over the window: who crossed the spread on the calls, and on the puts. */
+export type SideFlow = {
+  buyVolume: number; sellVolume: number; deltaVolume: number; trades: number;
+  aggressorBuyPct: number | null;
+  pressure: 'BUY PRESSURE' | 'SELL PRESSURE' | 'BALANCED' | null;
+  strikes: { strike: number; buyVolume: number; sellVolume: number }[];
+};
+export type OptionFlowSummary = {
+  expiry: string; windowMin: number; minutesCovered: number;
+  ce: SideFlow; pe: SideFlow;
+  combined: { buyVolume: number; sellVolume: number; deltaVolume: number; bias: 'CALL BUYING' | 'CALL SELLING' | 'PUT BUYING' | 'PUT SELLING' | 'MIXED' | null };
+  source: 'socket' | 'none';
+};
+export type PerpResponse = { at: number; ticker: PerpTicker | null; book: BookSnapshot | null; flow: FlowSummary; oi?: OiPulse | null; optionFlow?: OptionFlowSummary | null };
 export const getPerp = (windowMin = 60, expiry: string | null = null) =>
   json<PerpResponse>(`/api/perp?window=${windowMin}${expiry ? `&expiry=${expiry}` : ''}`);
 

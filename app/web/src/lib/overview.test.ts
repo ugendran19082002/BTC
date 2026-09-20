@@ -4,7 +4,7 @@ import live from '@/test/fixtures/chain-live.json';
 import {
   allClear, bestLeg, bothSides, breakeven, candidates, consensus, entryGates, expectedMove, feePerContract, freshness, gammaRisk,
   ivRv, keyLevels, marginPerContract, modelView, odds, orderEstimate, payoffPrices, premiumAnalysis, shortPayoff, skew, volRegime,
-  ageText, contractValidity, dataFreshness, premiumDecay, DESK_FILTER, filtersChanged, assessBoth, assessSides, horizonRows, namedLevels, earlyWarning, findStrikes, boardRead, movementVerdict, parseSymbol, positionState, positionViews, premiumMomentum, readiness, riskEngine, shortLossAt,
+  ageText, contractValidity, dataFreshness, premiumDecay, triggerState, DESK_FILTER, filtersChanged, assessBoth, assessSides, horizonRows, namedLevels, earlyWarning, findStrikes, boardRead, movementVerdict, parseSymbol, positionState, positionViews, premiumMomentum, readiness, riskEngine, shortLossAt,
 } from './overview';
 
 const fixtureData = () => live as unknown as ChainResponse;
@@ -412,5 +412,19 @@ describe('premium decay', () => {
     expect(points[2]!.premium).toBeCloseTo(3 + 48 * Math.SQRT1_2, 9);
     expect(milestones).toEqual([{ share: 0.5, hoursFromNow: 9 }, { share: 0.8, hoursFromNow: 12 * 0.96 }]);
     for (let i = 1; i < points.length; i++) expect(points[i]!.premium).toBeLessThanOrEqual(points[i - 1]!.premium);
+  });
+});
+
+describe('the early warning lamps', () => {
+  it('[critical] NORMAL under 70% of the threshold, WATCH from there, TRIGGERED at it; unreadable is neither', () => {
+    expect(triggerState(0.3)).toBe('NORMAL'); expect(triggerState(0.7)).toBe('WATCH'); expect(triggerState(0.99)).toBe('WATCH');
+    expect(triggerState(1)).toBe('TRIGGERED'); expect(triggerState(null)).toBeNull();
+    const w = earlyWarning({ flow: { aggressorBuyPct: 0.62, totalVolume: 1000, minutesCovered: 60, cvd: [] } as never, book: { imbalance: -0.31 } as never, oi: null, funding: 0.01, market: null, outlook: fixtureData().outlook, markChange15mPct: null, atmIvChange15mPts: 0.5 });
+    const by = Object.fromEntries(w.triggers.map((t) => [t.name, t.state]));
+    expect(by['One-sided aggressors']).toBe('WATCH');
+    expect(by['Book leaning']).toBe('TRIGGERED');
+    expect(by['Funding stretched']).toBe('NORMAL');
+    expect(by['Wing premium jumping']).toBeNull();
+    for (const t of w.triggers) expect(t.fired).toBe(t.state === null ? null : t.state === 'TRIGGERED');
   });
 });

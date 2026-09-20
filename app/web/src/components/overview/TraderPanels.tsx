@@ -23,13 +23,14 @@ export function EarlyWarningPanel({ data, perp, changes }: { data: ChainResponse
       <p className="ov-summary">{w.action}{shock && shock.score !== null ? ` Desk's measured sudden-move score: ${shock.score.toFixed(0)} (${shock.band})${shock.odds ? ` — BTC has moved more than ${shock.odds.thresholdPct}% in the next ${shock.odds.overMinutes}m ${fmt.pct(shock.odds.either)} of the time from readings like these` : ''}.` : ''}</p>
       <ul className="ov-triggers">
         {w.triggers.map((t) => (
-          <li key={t.name} className={t.fired ? 'ov-fired' : undefined} title={t.formula}>
+          <li key={t.name} className={t.state === 'TRIGGERED' ? 'ov-fired' : t.state === 'WATCH' ? 'ov-watching' : undefined} title={`${t.formula} · triggers ${t.threshold}`}>
             <span className="ov-trigger-name">{t.name}</span>
-            <span className={`ov-trigger-state ${t.fired === null ? 'ov-muted' : t.fired ? 'ov-down' : 'ov-up'}`}>{t.fired === null ? '?' : t.fired ? 'FIRED' : 'quiet'}</span>
-            <span className="ov-trigger-detail"><b>{t.value}</b> <small className="ov-muted">· fires {t.threshold}</small></span>
+            <span className={`ov-trigger-state ov-lamp-${t.state?.toLowerCase() ?? 'none'}`}><i aria-hidden />{t.state ?? 'not read'}</span>
+            <span className="ov-trigger-detail"><b>{t.value}</b> <small className="ov-muted">· triggers {t.threshold}</small></span>
           </li>
         ))}
       </ul>
+      <p className="ov-foot">🟢 NORMAL under 70% of the threshold · 🟡 WATCH from there · 🔴 TRIGGERED = threshold crossed. A warning level, not a trade signal: the gates decide, this says what is stirring.</p>
       <More label="Formulas and the reference case">
         <ul className="ov-formulas">{w.triggers.map((t) => <li key={t.name}><b>{t.name}:</b> {t.formula}</li>)}</ul>
         <p className="ov-foot">
