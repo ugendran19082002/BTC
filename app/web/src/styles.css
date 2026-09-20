@@ -2810,3 +2810,20 @@ tr.focused .tag.focus { background: var(--accent); color: #111; }
 .ov-lamp-triggered { color: var(--down); } .ov-lamp-triggered i { background: var(--down); }
 .ov-lamp-none { color: var(--muted); }
 .ov-triggers li.ov-watching { background: rgba(227, 179, 65, .08); }
+.ov-decide-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@container (max-width: 720px) { .ov-decide-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container (max-width: 480px) { .ov-decide-3 { grid-template-columns: 1fr; } }
+.ov-levels td:first-child { white-space: nowrap; }
+.ov-mtf td { padding: 2px 4px; }
+.ov-mtf-block { margin-bottom: 8px; }
+.ov-flow-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+@container (max-width: 420px) { .ov-flow-cards { grid-template-columns: 1fr; } }
+.ov-flow-card { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.ov-flow-card header { display: flex; justify-content: space-between; align-items: center; font-weight: 600; margin-bottom: 4px; }
+.ov-flow-card .ov-row { font-size: 12px; padding: 2px 0; }
+.ov-flow-card footer { margin-top: 6px; }
+.ov-flow-combined { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line-soft); }
+.ov-shocks-iv { margin-top: 6px; }
+.ov-shocks .ov-now { font-weight: 700; }
+.ov-gate-label { font-weight: 600; }
+.ov-checks-total { margin: 8px 0 0; font-size: 13px; }

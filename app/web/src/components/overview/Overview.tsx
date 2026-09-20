@@ -5,17 +5,17 @@ import { getPerp, getTerm } from '@/api/desk';
 import { usePoll } from '@/hooks/usePoll';
 import type { ChartTf } from '@/components/desk/PriceChart';
 import {
-  assessSides, DESK_FILTER, expectedMove, filtersChanged, findStrikes, ivRv, readiness, riskEngine, sideGates, sideSelector, sideStatusOf, skew,
+  assessBoth, assessSides, DESK_FILTER, expectedMove, filtersChanged, findStrikes, ivRv, keyLevels, mtfConsensus, namedLevels, readiness, riskEngine, sideGates, sideSelector, sideStatusOf, skew,
   type FinderFilter, type SideAssessment, type SideChoice,
 } from '@/lib/overview';
 import { DEFAULT_CONFIG, thresholds } from '@/lib/screen-config';
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
 import {
-  KeyLevelsPanel, KpiStrip, IvTermPanel, PriceActionPanel, SkewPanel, TradeFlowPanel, VolatilityPanel,
+  KeyLevelsPanel, KpiStrip, IvTermPanel, OptionFlowPanel, PriceActionPanel, SkewPanel, TradeFlowPanel, VolatilityPanel,
 } from './MarketPanels';
 import { ChainPanel, ChecklistPanel, findLeg, SelectedStrikePanel, StrategyDecisionPanel, type Selected } from './DecisionPanels';
 import { ScreenBar } from './ScreenBar';
-import { RiskEnginePanel } from './RiskPanels';
+import { RiskEnginePanel, ScenarioPanel } from './RiskPanels';
 import { ChangesPanel, EarlyWarningPanel, MovementPanel, StrikeFinder, useChanges } from './TraderPanels';
 
 /**
@@ -95,6 +95,16 @@ export function Overview({
   // To settlement, by IV: what every strike's distance and tail is measured in.
   const emSettle = useMemo(() => expectedMove(snap), [snap]);
   const spot = data.market?.spot ?? snap.spot;
+  // The chart's timeframe's ATR, the levels, and the multi-timeframe consensus: read once, shown where they belong.
+  const tfRead = useMemo(() => {
+    const have = data.market?.timeframes ?? [];
+    const nearest: Record<string, string> = { '1m': '5m', '30m': '15m' };
+    const use = have.some((t) => t.tf === chartTf) ? chartTf : nearest[chartTf] ?? '15m';
+    return have.find((t) => t.tf === use) ?? null;
+  }, [data.market, chartTf]);
+  const atrUsd = tfRead?.atrPct == null ? null : tfRead.close * tfRead.atrPct / 100;
+  const levels = useMemo(() => namedLevels(keyLevels(data.structure, data.market?.high24h ?? null, data.market?.low24h ?? null, data.market?.prevDayHigh ?? null, data.market?.prevDayLow ?? null), spot), [data.structure, data.market, spot]);
+  const mtf = useMemo(() => mtfConsensus(data.market, data.outlook), [data.market, data.outlook]);
 
   // The perpetual (funding, book, the hour's flow, OI acceleration) every five
   // seconds; the term structure and the ranks once a minute -- they move slowly.
@@ -119,17 +129,18 @@ export function Overview({
     const gates = sideGates({
       side: s.side, leg: s.leg, iv, regime: data.market?.regime ?? null, direction: data.direction, outlook: data.outlook,
       maxSpreadPct: tradeLimits?.maxSpreadPct ?? null, tailLossUsd: s.tailLossUsd, maxDailyLossUsd: tradeLimits?.maxDailyLossUsd ?? null,
-      marginUsd: s.marginUsd, balanceUsd: tradeLimits?.balanceUsd ?? null, t,
+      marginUsd: s.marginUsd, balanceUsd: tradeLimits?.balanceUsd ?? null, t, mtf,
     });
     const allowed = config.sideMode === 'AUTO' || config.sideMode === 'BOTH_ALLOWED' || (config.sideMode === 'CE_ONLY' && s.side === 'CE') || (config.sideMode === 'PE_ONLY' && s.side === 'PE');
     return { ...s, gates, status: allowed ? sideStatusOf(gates, t.softFailsAllowed) : 'NOT PREFERRED', disabledBy: allowed ? null : `Disabled by side mode ${config.sideMode.replace('_', ' ')}` };
-  }), [data, iv, emSettle, contracts, leverage, tradeLimits, t, config.sideMode, pick]);
+  }), [data, iv, emSettle, contracts, leverage, tradeLimits, t, config.sideMode, pick, mtf]);
+  const both = useMemo(() => assessBoth(data, sides, contracts, leverage, emSettle), [data, sides, contracts, leverage, emSettle]);
   const choice: SideChoice = useMemo(() => {
-    const auto = sideSelector(data.market?.regime ?? null, data.outlook, sides[0]!.status, sides[1]!.status);
+    const auto = sideSelector(data.market?.regime ?? null, data.outlook, sides[0]!.status, sides[1]!.status, mtf);
     if (config.sideMode === 'CE_ONLY') return sides[0]!.status !== 'NOT PREFERRED' ? { side: 'CE', why: 'Side mode CE only; the call side passes' } : { side: 'NO_TRADE', why: 'Side mode CE only, and the call side fails its gates' };
     if (config.sideMode === 'PE_ONLY') return sides[1]!.status !== 'NOT PREFERRED' ? { side: 'PE', why: 'Side mode PE only; the put side passes' } : { side: 'NO_TRADE', why: 'Side mode PE only, and the put side fails its gates' };
     return auto;
-  }, [data, sides, config.sideMode]);
+  }, [data, sides, config.sideMode, mtf]);
 
   // The default selection follows the desk's side; the operator's click overrides it.
   const deskPick = useMemo<Selected | null>(() => {
@@ -155,10 +166,11 @@ export function Overview({
 
       <div className="ov-main">
         <div className="ov-col">
-          <ErrorBoundary where="Price action"><PriceActionPanel market={data.market} tf={chartTf} /></ErrorBoundary>
-          <ErrorBoundary where="Key levels"><KeyLevelsPanel data={data} spot={spot} /></ErrorBoundary>
+          <ErrorBoundary where="Price action"><PriceActionPanel market={data.market} tf={chartTf} levels={levels} spot={spot} /></ErrorBoundary>
+          <ErrorBoundary where="Key levels"><KeyLevelsPanel data={data} spot={spot} atrUsd={atrUsd} /></ErrorBoundary>
           <ErrorBoundary where="Volatility"><VolatilityPanel data={data} iv={iv} /></ErrorBoundary>
           <ErrorBoundary where="Trade flow"><TradeFlowPanel perp={perp} market={data.market} /></ErrorBoundary>
+          <ErrorBoundary where="Option flow"><OptionFlowPanel perp={perp} /></ErrorBoundary>
           <ErrorBoundary where="Early warning"><EarlyWarningPanel data={data} perp={perp} changes={changes?.rows ?? null} /></ErrorBoundary>
           <ErrorBoundary where="IV term structure"><IvTermPanel term={term} error={Boolean(termError)} /></ErrorBoundary>
           <ErrorBoundary where="Skew"><SkewPanel data={data} rank={term?.skew ?? null} /></ErrorBoundary>
@@ -175,18 +187,19 @@ export function Overview({
             <SelectedStrikePanel data={data} leg={leg} em={emSettle} contracts={contracts} ivRank={term?.iv ?? null} momentum={changes?.momentum ?? null} />
           </ErrorBoundary>
           <ErrorBoundary where="What changed"><ChangesPanel leg={leg} rows={changes?.rows ?? null} /></ErrorBoundary>
-          <ErrorBoundary where="Risk engine"><RiskEnginePanel leg={leg} risk={risk} contracts={contracts} hoursToExpiry={snap.hoursToExpiry} /></ErrorBoundary>
+          <ErrorBoundary where="Risk engine"><RiskEnginePanel leg={leg} risk={risk} contracts={contracts} hoursToExpiry={snap.hoursToExpiry} iv={iv} step={snap.step} /></ErrorBoundary>
+          <ErrorBoundary where="Scenario"><ScenarioPanel leg={leg} contracts={contracts} /></ErrorBoundary>
           <ErrorBoundary where="Checklist"><ChecklistPanel leg={leg} ready={ready} onSell={onSell} /></ErrorBoundary>
         </div>
 
         <div className="ov-col ov-right">
           <ErrorBoundary where="Outlook"><MovementPanel data={data} em={emSettle} activeMin={config.horizonMin} /></ErrorBoundary>
           <ErrorBoundary where="Strategy decision">
-            <StrategyDecisionPanel data={data} sides={sides} choice={choice} onSelect={setPicked}
+            <StrategyDecisionPanel data={data} sides={sides} both={both} choice={choice} onSelect={setPicked} mtf={mtf}
               strikes={
                 <StrikeFinder data={data} onSelect={(cp, strike) => setPicked({ cp, strike })} onSell={onSell} contracts={contracts} leverage={leverage}
                   defaultSide={choice.side === 'CE' ? 'C' : choice.side === 'PE' ? 'P' : 'both'} em={emSettle} execution={config.execution}
-                  filter={filter} onFilter={setFilter} />
+                  filter={filter} onFilter={setFilter} rvPct={data.market?.realisedVol ?? null} />
               } />
           </ErrorBoundary>
         </div>

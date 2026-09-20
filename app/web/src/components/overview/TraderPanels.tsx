@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ChainResponse, Leg } from '@/types/desk';
 import { getChanges, type ChangeRow, type PerpResponse, type PremiumMomentum } from '@/api/desk';
 import {
-  boardRead, candidates, DESK_FILTER, earlyWarning, executionEstimate, filtersChanged, findStrikes, horizonRows, movementVerdict, odds, orderEstimate, shortLossAt,
+  boardRead, candidates, DESK_FILTER, earlyWarning, executionEstimate, filtersChanged, finderDecision, findStrikes, horizonRows, movementVerdict, odds, orderEstimate, premiumAnalysis,
   type EarlyWarning, type ExpectedMove, type FinderFilter,
 } from '@/lib/overview';
 import type { ScreenConfig } from '@/lib/screen-config';
@@ -150,9 +150,9 @@ export function ChangesPanel({ leg, rows }: { leg: Leg | null; rows: ChangeRow[]
 
 // ------------------------------------------------------------ strike finder
 
-export function StrikeFinder({ data, onSelect, onSell, contracts, leverage, defaultSide, em, execution = 'BID', filter, onFilter }: {
+export function StrikeFinder({ data, onSelect, onSell, contracts, leverage, defaultSide, em, execution = 'BID', filter, onFilter, rvPct = null }: {
   data: ChainResponse; onSelect: (cp: 'C' | 'P', strike: number) => void; onSell?: (l: Leg) => void; contracts: number; leverage: number;
-  defaultSide: 'C' | 'P' | 'both'; em: ExpectedMove; execution?: ScreenConfig['execution'];
+  defaultSide: 'C' | 'P' | 'both'; em: ExpectedMove; execution?: ScreenConfig['execution']; rvPct?: number | null;
   /** The filters, owned by the screen: the side cards above read them too. */
   filter: FinderFilter; onFilter: (f: FinderFilter) => void;
 }) {
@@ -198,28 +198,29 @@ export function StrikeFinder({ data, onSelect, onSell, contracts, leverage, defa
         <table className="ov-mini ov-reco">
           <thead><tr>
             <th>Strike</th><th>Side</th><th title={`Credit for ${contracts} ct at the ${priceLabel.toLowerCase()}`}>Credit</th>
-            <th title="Probability of expiring worthless">POP</th><th title="Probability BTC touches the strike before expiry">Touch</th><th title="Distance from spot in expected moves">Dist/EM</th>
-            <th title="Expected P&L for your size, after charges">Exp. P&amp;L</th><th title="Loss at an adverse move of two expected moves">Tail 2×EM</th><th title="Margin estimate at the ticket's leverage">Margin</th>
-            <th title="The desk's score, 0–10">Score</th><th>Says</th><th />
+            <th title="Probability of expiring worthless">P(OTM)</th><th title="Probability BTC touches the strike before expiry">P(touch)</th><th title="Probability of expiring beyond the strike">P(breach)</th>
+            <th title="Distance from spot in expected moves">Dist/EM</th><th title="This strike's implied volatility less realised (21d), points">IV−RV</th><th title="Bid–ask spread as a share of the mid">Spread</th>
+            <th title="Margin estimate at the ticket's leverage">Margin</th><th title="The desk's score, 0–10">Score</th><th>Decision</th><th />
           </tr></thead>
           <tbody>
             {found.map((l) => {
               const o = odds(l);
               const px = priceOf(l);
               const est = px === null ? null : orderEstimate(l.cp, l.strike, px, spot, leverage, contracts);
-              const adverse = em ? (l.cp === 'C' ? spot + 2 * em.move : spot - 2 * em.move) : null;
-              const tail = px !== null && adverse !== null ? shortLossAt(l.cp, l.strike, px, adverse, contracts) : null;
+              const pa = premiumAnalysis(l, em);
+              const ivRvPts = l.iv !== null && rvPct !== null ? l.iv * 100 - rvPct : null;
+              const decision = finderDecision(l);
               return (
                 <tr key={`${l.cp}${l.strike}`} className="ov-click" onClick={() => onSelect(l.cp, l.strike)}>
                   <td>{fmt.n(l.strike)}</td><td>{l.cp === 'C' ? 'CE' : 'PE'}</td>
                   <td title={`${priceLabel} ${fmt.n(px, 1)} per BTC`}>{est ? `$${est.creditUsd.toFixed(2)}` : '—'}</td>
-                  <td className="ov-up">{fmt.pct(o.pOtm)}</td><td>{fmt.pct(o.pTouch)}</td>
+                  <td className="ov-up">{fmt.pct(o.pOtm)}</td><td>{fmt.pct(o.pTouch)}</td><td className="ov-down">{fmt.pct(o.pItm)}</td>
                   <td>{l.emDistance === null ? '—' : `${l.emDistance.toFixed(2)}×`}</td>
-                  <td className={l.ev?.evUsd == null ? '' : l.ev.evUsd >= 0 ? 'ov-up' : 'ov-down'}>{fmt.signed(l.ev?.evUsd ?? null, 2)}</td>
-                  <td className="ov-down">{tail === null ? '—' : `$${tail.toFixed(2)}`}</td>
+                  <td className={ivRvPts === null ? '' : ivRvPts >= 0 ? 'ov-up' : 'ov-down'}>{ivRvPts === null ? '—' : `${fmt.signed(ivRvPts, 1)}`}</td>
+                  <td className={pa?.spreadPct != null && pa.spreadPct > 0.1 ? 'ov-warn' : ''}>{pa?.spreadPct == null ? '—' : fmt.pct(pa.spreadPct, 1)}</td>
                   <td>{est ? `$${est.marginUsd.toFixed(2)}` : '—'}</td>
                   <td>{l.score === null ? '—' : (l.score * 10).toFixed(1)}</td>
-                  <td><Tag tone={l.ev?.signal === 'sell' ? 'up' : l.ev?.signal === 'avoid' ? 'down' : 'muted'}>{l.ev?.signal ?? '—'}</Tag></td>
+                  <td><Tag tone={decision === 'RECOMMENDED' ? 'up' : decision === 'AVOID' ? 'down' : decision === 'WATCH' ? 'warn' : 'muted'}>{decision}</Tag></td>
                   <td>{onSell && data.snapshot.live && <button className="ov-sell" onClick={(e) => { e.stopPropagation(); onSell(l); }}>Sell</button>}</td>
                 </tr>
               );

@@ -4,7 +4,7 @@ import { istLabel } from '@/lib/format';
 import type { PremiumMomentum } from '@/api/desk';
 import {
   breakeven, odds, payoffPrices, premiumAnalysis, shortPayoff, CONTRACT_BTC,
-  type ExpectedMove, type Readiness, type SideAssessment, type SideChoice,
+  type BothAssessment, type ExpectedMove, type MtfConsensus, type Readiness, type SideAssessment, type SideChoice,
 } from '@/lib/overview';
 import { SideCardsRow } from './RiskPanels';
 import { fmt, More, Panel, ProbBar, Row, Tag, useWidth } from './parts';
@@ -173,8 +173,8 @@ function MetricsTab({ leg, em, ivRank, momentum }: {
         <Row label="Premium (mark)" value={`${fmt.n(p.premium, 1)}${leg.theoretical != null ? ` · BS ${fmt.n(leg.theoretical, 1)}` : ''}`} hint="Mark, and Black–Scholes at the mark IV" />
         <Row label="Intrinsic" value={fmt.n(p.intrinsic, 1)} />
         <Row label="Extrinsic" value={`${fmt.n(p.extrinsic, 1)} (${fmt.pct(p.extrinsicShare)})`} />
-        <Row label="Decay (|θ| per hour)" value={p.thetaPerHour === null ? '—' : `${fmt.n(p.thetaPerHour, 2)} / h`}
-          hint="Delta's theta is per day; within a day of settlement the per-hour figure is the one to read" />
+        <Row label="Theta / premium" value={p.thetaPerPremiumDay === null ? '—' : `${fmt.pct(Math.min(9.99, p.thetaPerPremiumDay), 0)} / day · ${fmt.n(p.thetaPerHour, 2)} / h`}
+          hint="Delta's theta is per day; within a day of settlement the per-hour figure is the one to read, and a day's theta can exceed the premium" />
         <Row label="Spread" value={p.spreadPct === null ? '—' : fmt.pct(p.spreadPct, 1)} tone={p.spreadPct !== null && p.spreadPct > 0.1 ? 'warn' : undefined} />
       </div>
       <div>
@@ -183,6 +183,8 @@ function MetricsTab({ leg, em, ivRank, momentum }: {
         <Row label="IV percentile" value={ivRank ? `${fmt.pct(ivRank.percentile)} (${ivRank.days < 1 ? 'today' : `${Math.round(ivRank.days)}d`})` : '—'} hint="ATM IV among every recorded reading since 17 Sep 2026" />
         <Row label="Premium velocity" value={mom.velocity === null ? '—' : `${fmt.signed(mom.velocity, 1)} / 5m`} tone={mom.velocity === null ? undefined : mom.velocity > 0 ? 'down' : 'up'} hint="Mark change over the last recorded five minutes; rising premium is against a short" />
         <Row label="Premium acceleration" value={mom.acceleration === null ? '—' : fmt.signed(mom.acceleration, 1)} hint="The change of the velocity" />
+        <Row label="OI change" value={leg.oiChange ? `${fmt.signed(leg.oiChange.change)} (${leg.oiChange.overMinutes}m)` : '—'} />
+        <Row label="Breakeven" value={fmt.n(breakeven(leg.cp, leg.strike, p.premium))} hint="Before fees; the risk engine has it after fees" />
       </div>
     </div>
   );
@@ -194,10 +196,11 @@ function ProbabilityTab({ leg }: { leg: Leg }) {
   return (
     <div>
       <ProbBar label={`${name} P(expire OTM)`} value={o.pOtm} tone="up" />
-      <ProbBar label={`${name} P(expire beyond strike) = P(ITM)`} value={o.pItm} tone="down" />
       <ProbBar label="P(touch strike before expiry)" value={o.pTouch} tone="muted" />
+      <ProbBar label={`${name} P(breach) = expire beyond the strike`} value={o.pItm} tone="down" />
+      <Row label="P(premium < 10% at expiry)" value={o.pOtm === null ? '—' : `≈ ${fmt.pct(o.pOtm)}`} hint="At settlement the premium is its intrinsic value alone, so under a tenth of today's premium means settling within a few dollars of the strike or beyond it on the safe side — the same event as expiring OTM, to the nearest percent" />
+      <Row label="P(premium < 5% before expiry)" value="not measured yet" tone="muted" hint="The path the premium takes before settlement is being recorded (every strike, every five minutes, since 19 Sep 2026); a measured figure needs weeks of that record" />
       <Row label="Delta baseline P(OTM) / P(ITM)" value={o.deltaApprox === null ? '—' : `${fmt.pct(1 - o.deltaApprox)} / ${fmt.pct(o.deltaApprox)}`} hint="1 − |delta| is the option model's own rough P(OTM); where it and the row above disagree, the measured record is the one the desk trusts" />
-      <Row label="P(stop breach)" value="not modelled" tone="muted" hint="The odds of the premium reaching a stop are not measured; touching the strike and expiring beyond it are different events from it" />
       <p className="ov-foot">P(OTM) is {o.source === 'measured' ? 'the desk’s measured settlement record, adjusted' : o.source === 'model' ? 'the model — no measured record for this distance' : 'not readable'}.</p>
     </div>
   );
@@ -247,8 +250,8 @@ export function PayoffChart({ rows, strike }: { rows: { price: number; pnlUsd: n
 
 // ------------------------------------------------------------ the decision
 
-export function StrategyDecisionPanel({ data, sides, choice, onSelect, strikes }: {
-  data: ChainResponse; sides: SideAssessment[]; choice: SideChoice; strikes?: ReactNode; onSelect: (s: Selected) => void;
+export function StrategyDecisionPanel({ data, sides, both, choice, onSelect, strikes, mtf }: {
+  data: ChainResponse; sides: SideAssessment[]; both?: BothAssessment | null; choice: SideChoice; strikes?: ReactNode; onSelect: (s: Selected) => void; mtf: MtfConsensus;
 }) {
   const tone = choice.side === 'NO_TRADE' ? 'down' : choice.side === 'BOTH' ? 'up' : 'accent';
   // What is in the way, in plain words: the failing gates of the side the desk would take, or of the better side.
@@ -261,10 +264,36 @@ export function StrategyDecisionPanel({ data, sides, choice, onSelect, strikes }
         {blockers.length > 0 && <> In the way on {focus.side}: {blockers.slice(0, 3).join(' · ')}{blockers.length > 3 ? ` · +${blockers.length - 3} more` : ''}.</>}
         {focus.disabledBy && <> {focus.disabledBy}.</>}
       </p>
-      <SideCardsRow sides={sides} onSelect={(cp, strike) => onSelect({ cp, strike })} />
+      <MtfTable mtf={mtf} />
+      <SideCardsRow sides={sides} both={both} onSelect={(cp, strike) => onSelect({ cp, strike })} />
       {strikes}
-      <p className="ov-foot">{data.best.why ?? ''} Side from the regime, the horizon consensus and each side's gates — never the score alone.</p>
+      <p className="ov-foot">{data.best.why ?? ''} Side from the regime, the multi-timeframe consensus and each side's gates — never the score alone.</p>
     </Panel>
+  );
+}
+
+/** The multi-timeframe table the side is chosen from: one row a timeframe, one vote a row, and the count. */
+function MtfTable({ mtf }: { mtf: MtfConsensus }) {
+  const tone = (v: string | null | undefined) => (v === 'up' || v === 'bullish' || v === '↑' ? 'ov-up' : v === 'down' || v === 'bearish' || v === '↓' ? 'ov-down' : 'ov-muted');
+  return (
+    <div className="ov-mtf-block">
+      <h4 className="ov-subhead"><span>Multi-timeframe</span><Tag tone={mtf.way === 'UP' ? 'up' : mtf.way === 'DOWN' ? 'down' : 'muted'}>MTF consensus {mtf.text}</Tag></h4>
+      <table className="ov-mini ov-mtf">
+        <thead><tr><th>TF</th><th>Trend</th><th>Momentum</th><th title="Measured share of windows over this horizon that closed higher">P(up)</th><th>Signal</th></tr></thead>
+        <tbody>
+          {mtf.rows.map((r) => (
+            <tr key={r.tf}>
+              <td>{r.tf}</td>
+              <td className={tone(r.trend)}>{r.trend ?? '—'}</td>
+              <td className={tone(r.momentum)}>{r.momentum ?? '—'}</td>
+              <td>{fmt.pct(r.pUp)}</td>
+              <td className={tone(r.signal)}>{r.signal ?? '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="ov-foot">Trend from the EMA stack, momentum from RSI, P(up) from the measured record; each row votes with its majority. The count is the input to the CE / PE side selection.</p>
+    </div>
   );
 }
 
@@ -277,6 +306,12 @@ const GATE_SECTION: Record<string, string> = {
   risk: 'Risk', tail: 'Risk', margin: 'Risk', size: 'Risk',
 };
 const SECTIONS = ['Market', 'Strike', 'Risk', 'Desk rules'] as const;
+/** The gate's short name, the way the spec lists them; the full sentence sits beside it. */
+const GATE_LABEL: Record<string, string> = {
+  fresh: 'Data fresh', contract: 'Contract valid', expiry: 'Expiry valid', consensus: 'MTF aligned', direction: 'Direction clear',
+  pot: 'PoT pass', em: 'Distance / EM pass', iv: 'IV − RV pass', gamma: 'Gamma pass', liquidity: 'Liquidity pass', slippage: 'Execution pass',
+  tail: 'Tail risk pass', margin: 'Margin pass', size: 'Size pass', wall: 'OI wall clear', side: 'Side selected', risk: 'Desk risk', regime: 'Regime fits',
+};
 
 /**
  * The entry checklist a person can read at a glance: the verdict and the
@@ -294,7 +329,8 @@ export function ChecklistPanel({ leg, ready, onSell }: { leg: Leg | null; ready:
   const folded = bySection((g) => g.ok === true);
   const Item = ({ g }: { g: Readiness['gates'][number] }) => (
     <li className={g.ok === true ? 'ok' : g.ok === false ? 'bad' : 'unknown'}>
-      <span aria-hidden>{g.ok === true ? '✓' : g.ok === false ? '✕' : '?'}</span>{g.text}
+      <span aria-hidden>{g.ok === true ? '✓' : g.ok === false ? '✕' : '?'}</span>
+      {GATE_LABEL[g.key] ? <><b className="ov-gate-label">{GATE_LABEL[g.key]}</b> <span className="ov-muted">{g.text}</span></> : g.text}
     </li>
   );
   return (
@@ -337,6 +373,7 @@ export function ChecklistPanel({ leg, ready, onSell }: { leg: Leg | null; ready:
           </div>
         </More>
       )}
+      <p className="ov-checks-total"><b className="ov-up">{passed} PASS</b> / <b className="ov-down">{ready.failing} FAIL</b>{ready.unknown ? <span className="ov-muted"> / {ready.unknown} unreadable</span> : null}</p>
       <p className="ov-foot">This screen decides; the ticket places, and the server runs every gate again.</p>
     </Panel>
   );
