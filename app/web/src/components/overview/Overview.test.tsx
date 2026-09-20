@@ -8,6 +8,7 @@ vi.mock('@/api/desk', () => ({
   getTerm: () => new Promise(() => {}),
   getPerp: () => new Promise(() => {}),
   getChanges: () => new Promise(() => {}),
+  getMovement: () => new Promise(() => {}),
 }));
 
 const data = live as unknown as ChainResponse;

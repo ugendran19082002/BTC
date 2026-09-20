@@ -2844,3 +2844,4 @@ tr.focused .tag.focus { background: var(--accent); color: #111; }
 .ov-bottom { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; align-items: start; }
 .ov-impact-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0 0 8px; font-size: 12px; }
 .ov-warn { color: #e3b341; }
+.ov-movement td { padding: 2px 4px; white-space: nowrap; }

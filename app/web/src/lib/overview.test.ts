@@ -421,6 +421,7 @@ describe('windows', () => {
     expect(windowMinutes('15m', at)).toBe(15); expect(windowMinutes('24h', at)).toBe(1440);
     expect(windowMinutes('start', at)).toBe(240);
     expect(windowMinutes('expiry', at)).toBe(16 * 60);
-    expect(windowMinutes('start', Date.UTC(2026, 8, 19, 23, 0, 0))).toBe(23 * 60, 'before 05:30, since yesterday\'s open');
+    // Before 05:30, since yesterday's open.
+    expect(windowMinutes('start', Date.UTC(2026, 8, 19, 23, 0, 0))).toBe(23 * 60);
   });
 });

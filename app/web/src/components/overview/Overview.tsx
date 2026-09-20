@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { ChainResponse, ExpiryOption, Leg } from '@/types/desk';
 import type { TradeStatus } from '@/types/trade';
-import { getPerp, getTerm } from '@/api/desk';
+import { getMovement, getPerp, getTerm } from '@/api/desk';
 import { usePoll } from '@/hooks/usePoll';
 import type { ChartTf } from '@/components/desk/PriceChart';
 import {
@@ -17,7 +17,7 @@ import { ChainPanel, findLeg, MtfTable, SelectedStrikePanel, type Selected } fro
 import { DecisionCards } from './DecisionCards';
 import { ScreenBar } from './ScreenBar';
 import { RiskEnginePanel, ScenarioPanel } from './RiskPanels';
-import { ChangesPanel, EarlyWarningPanel, MovementPanel, StrikeFinder, useChanges, type ChangesTab } from './TraderPanels';
+import { ChangesPanel, EarlyWarningPanel, MovementPanel, MovementTypePanel, StrikeFinder, useChanges, type ChangesTab } from './TraderPanels';
 
 /**
  * The Live screen: the three reference designs (docs/image1-3.png) and the
@@ -117,6 +117,8 @@ export function Overview({
   const { data: perp } = usePoll(() => getPerp(flowMin, snap.expiry), 5_000, { enabled: snap.live, deps: [snap.expiry, flowMin] });
   const skewPts = useMemo(() => skew(data.legs, data.structure.atmIv).putCallPts, [data.legs, data.structure.atmIv]);
   const atmIv = data.structure.atmIv;
+  // The move's character by window, from the perp's records: every 30 s is plenty for minute-grain reads.
+  const { data: movement } = usePoll(getMovement, 30_000, { enabled: snap.live });
   const { data: term, error: termError } = usePoll(() => getTerm(skewPts, atmIv), 60_000, { deps: [skewPts === null, atmIv === null] });
 
   // The sides, gate by gate, then the side the desk would take.
@@ -205,6 +207,7 @@ export function Overview({
 
         <div className="ov-col ov-right">
           <ErrorBoundary where="Horizon / MTF"><MovementPanel data={data} em={emSettle} activeMin={config.horizonMin} mtf={<MtfTable mtf={mtf} />} /></ErrorBoundary>
+          <ErrorBoundary where="Movement type"><MovementTypePanel rows={movement?.rows ?? null} outlook={data.outlook} /></ErrorBoundary>
           <ErrorBoundary where="Strategy decision">
             <DecisionCards data={data} sides={sides} choice={choice} iv={iv} em={emSettle} mtf={mtf} contracts={contracts} leverage={leverage}
               onSelect={(cp, strike) => setPicked({ cp, strike })} oi={perp?.oi ?? null} />

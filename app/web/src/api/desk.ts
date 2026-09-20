@@ -178,3 +178,12 @@ export const getChanges = (symbol: string, now: Record<string, number | null | u
   if (entryMs !== null) q.set('entry', String(entryMs));
   return json<ChangesResponse>(`/api/changes?${q.toString()}`);
 };
+
+/** The character of the move by window: long buildup, short covering, short buildup, long unwinding, or mixed. */
+export type MovementType = 'LONG_BUILDUP' | 'SHORT_COVERING' | 'SHORT_BUILDUP' | 'LONG_UNWINDING' | 'MIXED';
+export type MovementRow = {
+  minutes: number; pricePct: number | null; oiPct: number | null; volumeRatio: number | null; cvd: number | null; aggressorBuyPct: number | null;
+  type: MovementType | null; direction: 'UP' | 'DOWN' | null; strength: 'WEAK' | 'MODERATE' | 'STRONG' | 'EXTREME' | null;
+  flow: 'CONFIRMS' | 'DIVERGES' | 'FLAT' | null; thresholds: { pricePct: number; oiPct: number };
+};
+export const getMovement = () => json<{ at: number; rows: MovementRow[] }>('/api/movement');

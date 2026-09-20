@@ -14,6 +14,7 @@ import { appliedMigrations } from '../../db/migrate.js';
 import { termStructure } from '../../market/term.js';
 import { lastOptionSnapshot, lastOptionSnapshotAt } from '../../market/option-snapshots.js';
 import { flowFeedHealth, flowSummary, ivRank, liveBook, livePerp, oiPulse, optionFlowSummary, skewRank, termHistory } from '../../market/flow.js';
+import { movementByWindow } from '../../market/movement.js';
 import { changes } from '../../market/changes.js';
 import { one } from '../../db/pool.js';
 import { strategyStore } from './strategy.routes.js';
@@ -160,6 +161,16 @@ export function registerDeskRoutes(app: FastifyInstance) {
    * summed from every print on the socket, and says how many of the sixty
    * minutes it actually has.
    */
+  /**
+   * The character of the move by window -- long buildup, short covering,
+   * short buildup, long unwinding, or mixed -- from the perpetual's price,
+   * open interest and tape. Strength from volume against the day's pace; the
+   * aggressor read beside it as confirmation.
+   */
+  app.get('/api/movement', async (_req, reply) => {
+    try { return await movementByWindow(Date.now()); } catch (e) { reply.code(502); return { error: (e as Error).message }; }
+  });
+
   app.get('/api/perp', async (req, reply) => {
     try {
       const now = Date.now();

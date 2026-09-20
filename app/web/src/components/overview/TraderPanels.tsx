@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ChainResponse, Leg } from '@/types/desk';
-import { getChanges, type ChangeRow, type ModelNow, type PerpResponse, type PremiumMomentum } from '@/api/desk';
+import { getChanges, type ChangeRow, type ModelNow, type MovementRow, type PerpResponse, type PremiumMomentum } from '@/api/desk';
 import {
   boardRead, candidates, DESK_FILTER, earlyWarning, executionEstimate, filtersChanged, finderDecision, findStrikes, horizonRows, movementVerdict, odds, orderEstimate, premiumAnalysis, sellerImpact, sellerState,
   type EarlyWarning, type ExpectedMove, type FinderFilter, type Impact,
@@ -280,6 +280,62 @@ export function StrikeFinder({ data, onSelect, onSell, contracts, leverage, defa
         </table>
       )}
       <p className="ov-foot">Out-of-the-money strikes only, best desk score first. Move a filter and the SELL CE / SELL PE cards carry the best strike that passes it. Click a row to inspect it; Sell opens the ticket, where every gate runs again.</p>
+    </Panel>
+  );
+}
+
+// ----------------------------------------------------------- movement type
+
+const TYPE_LABEL: Record<string, string> = {
+  LONG_BUILDUP: 'Long buildup', SHORT_COVERING: 'Short covering', SHORT_BUILDUP: 'Short buildup', LONG_UNWINDING: 'Long unwinding', MIXED: 'Mixed',
+};
+
+/**
+ * The character of the move, a window at a time: which of the four types
+ * price and OI make, how much volume is behind it, whether the tape's
+ * aggressors agree -- and beside it the measured odds and implied move for
+ * the same horizon, from the outlook. Direction is one thing; what kind of
+ * move it is, another; this says both.
+ */
+export function MovementTypePanel({ rows, outlook }: { rows: MovementRow[] | null; outlook: ChainResponse['outlook'] }) {
+  const label = (m: number) => (m >= 60 ? `${m / 60}h` : `${m}m`);
+  const lamp = (r: MovementRow) => (r.type === null ? '·' : r.direction === 'UP' ? '🟢' : r.direction === 'DOWN' ? '🔴' : '⚪');
+  const strengthTone = (v: MovementRow['strength']) => (v === 'EXTREME' ? 'ov-down' : v === 'STRONG' ? 'ov-warn' : v === 'WEAK' ? 'ov-muted' : '');
+  return (
+    <Panel title="Movement type" right={<small className="ov-muted">price · OI · volume · tape, by window</small>}>
+      {!rows ? <p className="ov-empty">Loading…</p> : (
+        <div className="ov-chain-wrap">
+          <table className="ov-mini ov-movement">
+            <thead><tr>
+              <th>Window</th><th>Type</th><th title="BTC over the window">Price</th><th title="The perpetual's open interest over the window">OI</th>
+              <th title="The window's volume per minute against the median minute of the last day">Vol</th><th title="Who crossed the spread: does the tape agree with the type?">Tape</th>
+              <th title="Measured share of windows over this horizon that closed higher, from the current market state">P(up)</th><th title="spot × ATM IV × √t for the horizon">± EM</th>
+            </tr></thead>
+            <tbody>
+              {rows.map((r) => {
+                const h = outlook.rows.find((o) => o.minutes === r.minutes) ?? null;
+                return (
+                  <tr key={r.minutes}>
+                    <td>{label(r.minutes)}</td>
+                    <td className={r.direction === 'UP' ? 'ov-up' : r.direction === 'DOWN' ? 'ov-down' : 'ov-muted'} title={`price ≥ ±${r.thresholds.pricePct.toFixed(2)}% and OI ≥ ±${r.thresholds.oiPct.toFixed(2)}% name a type`}>
+                      {lamp(r)} {r.type ? TYPE_LABEL[r.type] : '—'}{r.strength && r.type !== 'MIXED' ? <small className={strengthTone(r.strength)}> · {r.strength.toLowerCase()}</small> : null}
+                    </td>
+                    <td className={r.pricePct === null ? 'ov-muted' : r.pricePct > 0 ? 'ov-up' : r.pricePct < 0 ? 'ov-down' : ''}>{r.pricePct === null ? '—' : `${fmt.signed(r.pricePct, 2)}%`}</td>
+                    <td className={r.oiPct === null ? 'ov-muted' : r.oiPct > 0 ? 'ov-up' : r.oiPct < 0 ? 'ov-down' : ''}>{r.oiPct === null ? '—' : `${fmt.signed(r.oiPct, 2)}%`}</td>
+                    <td className={strengthTone(r.strength)}>{r.volumeRatio === null ? '—' : `${r.volumeRatio.toFixed(1)}×`}</td>
+                    <td className={r.flow === 'CONFIRMS' ? 'ov-up' : r.flow === 'DIVERGES' ? 'ov-down' : 'ov-muted'} title={r.aggressorBuyPct === null ? undefined : `${(r.aggressorBuyPct * 100).toFixed(0)}% of the volume was buys`}>
+                      {r.flow === null ? '—' : r.flow === 'CONFIRMS' ? '✓ confirms' : r.flow === 'DIVERGES' ? '✕ diverges' : 'flat'}
+                    </td>
+                    <td>{fmt.pct(h?.pUp ?? null)}</td>
+                    <td className="ov-muted">{h?.impliedUsd == null ? '—' : `±${fmt.n(h.impliedUsd)}`}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="ov-foot">Price ↑ with OI ↑ is a long buildup, ↑ with OI ↓ short covering, ↓ with OI ↑ a short buildup, ↓ with OI ↓ a long unwinding. Price and OI cannot say who started the trade; the tape column is that check. Thresholds are the desk's starting point, not a backtested truth.</p>
     </Panel>
   );
 }
