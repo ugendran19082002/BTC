@@ -3856,3 +3856,23 @@ somebody chooses a past date. The IST helpers it shared a file with moved to
 `lib/ist-moment.ts`; the picker is lazy.
 
 Server 930 tests, web 711. Databases untouched: nothing here is stored.
+
+## Expiry direction — calibration (20 Sep 2026)
+
+The Live screen's **Expiry direction** gives P(above / below / near) for the
+selected expiry from the price now: the option market's distribution (spot ×
+ATM IV × √T) with its centre tilted by the state of the market (price
+structure, MTF votes, the move's type by window, option positioning, regime,
+funding; capped at ±0.35 EM). The weights are a desk's starting point, not a
+backtested truth, and the tilted odds are **not yet calibrated** against
+outcomes. The measured record's own split (above / inside / below the implied
+band, from `outlook_states`) is shown beside them and is the calibrated part.
+
+- [ ] Record each prediction (at, expiry, spot, pUp, pDown, pRange, score) every
+      five minutes, join to the settlement price when it lands, and report a
+      Brier score and a reliability curve per confidence bucket.
+- [ ] Tune the weights walk-forward from that record; drop any reading that does
+      not earn its weight.
+- [ ] Replace the plain tilt with the analogue approach: the future-return
+      distribution over historically similar states (trend, OI, volume, funding,
+      IV−RV), which the outlook already measures for the fixed horizons.
