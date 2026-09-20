@@ -5,7 +5,7 @@ import { getPerp, getTerm } from '@/api/desk';
 import { usePoll } from '@/hooks/usePoll';
 import type { ChartTf } from '@/components/desk/PriceChart';
 import {
-  assessBoth, assessSides, DESK_FILTER, expectedMove, filtersChanged, findStrikes, ivRv, keyLevels, mtfConsensus, namedLevels, optionBias, readiness, riskEngine, sideGates, sideSelector, sideStatusOf, skew,
+  assessSides, DESK_FILTER, expectedMove, filtersChanged, findStrikes, ivRv, keyLevels, mtfConsensus, namedLevels, optionBias, readiness, riskEngine, sideGates, sideSelector, sideStatusOf, skew,
   type FinderFilter, type SideAssessment, type SideChoice,
 } from '@/lib/overview';
 import { DEFAULT_CONFIG, thresholds } from '@/lib/screen-config';
@@ -31,8 +31,8 @@ import { ChangesPanel, EarlyWarningPanel, MovementPanel, StrikeFinder, useChange
  * headline numbers; the left column reads the market (trend, levels,
  * volatility, the tape, the early warning); the centre is the board (chart,
  * the strike under inspection, what changed, its risk and decay, its
- * scenario); the right column decides (horizon and MTF; the four strategies
- * SELL CE / SELL PE / BOTH / NO TRADE; then the vol surface). The bottom row
+ * scenario); the right column decides (horizon and MTF; SELL CE beside
+ * SELL PE; then the vol surface). The bottom row
  * is the way out: the entry checklist and the strike finder. Nothing
  * is shown twice: a figure the checklist judges is not repeated as a row.
  *
@@ -137,7 +137,6 @@ export function Overview({
     const allowed = config.sideMode === 'AUTO' || config.sideMode === 'BOTH_ALLOWED' || (config.sideMode === 'CE_ONLY' && s.side === 'CE') || (config.sideMode === 'PE_ONLY' && s.side === 'PE');
     return { ...s, gates, status: allowed ? sideStatusOf(gates, t.softFailsAllowed) : 'NOT PREFERRED', disabledBy: allowed ? null : `Disabled by side mode ${config.sideMode.replace('_', ' ')}` };
   }), [data, iv, emSettle, contracts, leverage, tradeLimits, t, config.sideMode, pick, mtf]);
-  const both = useMemo(() => assessBoth(data, sides, contracts, leverage, emSettle), [data, sides, contracts, leverage, emSettle]);
   const bias = useMemo(() => optionBias({ legs: data.legs, atm: snap.atm, oi: perp?.oi ?? null, flow: perp?.optionFlow ?? null, sides }), [data.legs, snap.atm, perp, sides]);
   const choice: SideChoice = useMemo(() => {
     const auto = sideSelector(data.market?.regime ?? null, data.outlook, sides[0]!.status, sides[1]!.status, mtf);
@@ -196,8 +195,8 @@ export function Overview({
         <div className="ov-col ov-right">
           <ErrorBoundary where="Horizon / MTF"><MovementPanel data={data} em={emSettle} activeMin={config.horizonMin} mtf={<MtfTable mtf={mtf} />} /></ErrorBoundary>
           <ErrorBoundary where="Strategy decision">
-            <DecisionCards data={data} sides={sides} both={both} choice={choice} ready={ready} iv={iv} em={emSettle} mtf={mtf} contracts={contracts} leverage={leverage}
-              now={now} entryIst={config.entryIst} onSelect={(cp, strike) => setPicked({ cp, strike })} oi={perp?.oi ?? null} />
+            <DecisionCards data={data} sides={sides} choice={choice} iv={iv} em={emSettle} mtf={mtf} contracts={contracts} leverage={leverage}
+              onSelect={(cp, strike) => setPicked({ cp, strike })} oi={perp?.oi ?? null} />
           </ErrorBoundary>
           <ErrorBoundary where="IV term structure"><IvTermPanel term={term} error={Boolean(termError)} /></ErrorBoundary>
           <ErrorBoundary where="Skew"><SkewPanel data={data} rank={term?.skew ?? null} /></ErrorBoundary>

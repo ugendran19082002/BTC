@@ -27,7 +27,7 @@ describe('the decision panels', () => {
     expect(document.querySelector('.ov-ctx')).toBeNull();
     expect(screen.queryByText('Order panel', { selector: 'h3' })).toBeNull();
     // The four strategies, side by side, and one of them the desk's answer.
-    for (const t of ['SELL CE', 'SELL PE', 'BOTH SIDES', 'NO TRADE']) expect(screen.getByText(t, { selector: '.ov-card4 > header > b' })).toBeInTheDocument();
+    for (const t of ['SELL CE', 'SELL PE']) expect(screen.getByText(t, { selector: '.ov-card4 > header > b' })).toBeInTheDocument();
     expect(document.querySelectorAll('.ov-card4-chosen').length).toBeGreaterThan(0);
     // Said once: no model view beside the outlook, no sell recommendation beside the strikes, no entry setup beside the decision card.
     for (const gone of [/^Model view/, 'Sell recommendation', 'Entry → expiry setup', 'Scenario P&L (−3% … +3%)']) expect(screen.queryByText(gone, { selector: 'h3' })).toBeNull();
