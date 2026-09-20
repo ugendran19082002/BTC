@@ -1,14 +1,15 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { ChainResponse, ExpiryOption, Leg } from '@/types/desk';
 import type { TradeStatus } from '@/types/trade';
 import { getMovement, getPerp, getTerm } from '@/api/desk';
 import { usePoll } from '@/hooks/usePoll';
 import type { ChartTf } from '@/components/desk/PriceChart';
 import {
-  assessSides, DESK_FILTER, expectedMove, filtersChanged, findStrikes, ivRv, keyLevels, mtfConsensus, namedLevels, optionBias, riskEngine, windowMinutes, sideGates, sideSelector, sideStatusOf, skew,
+  assessSides, bestLeg, DESK_FILTER, expectedMove, filtersChanged, findStrikes, ivRv, keyLevels, mtfConsensus, namedLevels, optionBias, riskEngine, windowMinutes, sideGates, sideSelector, sideStatusOf, skew,
   type FinderFilter, type SideAssessment, type SideChoice, type WindowChoice,
 } from '@/lib/overview';
 import { DEFAULT_CONFIG, entryTodayMs, thresholds } from '@/lib/screen-config';
+import { fmt } from './parts';
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
 import {
   KeyLevelsPanel, KpiStrip, IvTermPanel, OptionBiasPanel, OptionFlowPanel, PriceActionPanel, SkewPanel, TradeFlowPanel, VolatilityPanel,
@@ -130,9 +131,15 @@ export function Overview({
   // The finder's filters. Left at the desk's own, the cards carry the desk's picks; moved, each card
   // carries the best strike that passes them -- the decision is about what the person is considering.
   const [filter, setFilter] = useState<FinderFilter>(DESK_FILTER);
-  const pick = useMemo(() => (filtersChanged(filter)
-    ? (cp: 'C' | 'P') => findStrikes(data.legs, { ...filter, side: cp, top: 1 })[0] ?? null
-    : undefined), [filter, data.legs]);
+  // The strike each card judges: the desk's pick, the finder's best, the selected strike, or one chosen on the card.
+  const [cardStrike, setCardStrike] = useState<{ C: number | null; P: number | null }>({ C: null, P: null });
+  const deskLegOf = useCallback((cp: 'C' | 'P') => data.recommendation.sides.find((x) => x.side === (cp === 'C' ? 'CE' : 'PE'))?.leg ?? bestLeg(data.legs, cp), [data.recommendation, data.legs]);
+  const pick = useMemo(() => (cp: 'C' | 'P') => {
+    const chosen = cardStrike[cp];
+    if (chosen !== null) { const l = data.legs.find((x) => x.cp === cp && x.strike === chosen); if (l) return l; }
+    if (filtersChanged(filter)) return findStrikes(data.legs, { ...filter, side: cp, top: 1 })[0] ?? null;
+    return deskLegOf(cp);
+  }, [cardStrike, filter, data.legs, deskLegOf]);
   const sides: SideAssessment[] = useMemo(() => assessSides(data, iv, emSettle, contracts, leverage, pick).map((s) => {
     const gates = sideGates({
       side: s.side, leg: s.leg, iv, regime: data.market?.regime ?? null, direction: data.direction, outlook: data.outlook,
@@ -212,7 +219,16 @@ export function Overview({
           <ErrorBoundary where="Movement type"><MovementTypePanel rows={movement?.rows ?? null} outlook={data.outlook} /></ErrorBoundary>
           <ErrorBoundary where="Strategy decision">
             <DecisionCards data={data} sides={sides} choice={choice} iv={iv} em={emSettle} mtf={mtf} contracts={contracts} leverage={leverage}
-              onSelect={(cp, strike) => setPicked({ cp, strike })} oi={perp?.oi ?? null} />
+              onSelect={(cp, strike) => setPicked({ cp, strike })} oi={perp?.oi ?? null}
+              strikeOptions={(cp) => {
+                const desk = deskLegOf(cp);
+                const finder = findStrikes(data.legs, { ...filter, side: cp, top: 5 });
+                const opts: { key: string; strike: number | null; label: string }[] = [{ key: 'auto', strike: null, label: `Auto${desk ? ` · ${fmt.n(desk.strike)}` : ''}` }];
+                if (leg && leg.cp === cp) opts.push({ key: 'selected', strike: leg.strike, label: `Selected · ${fmt.n(leg.strike)}` });
+                for (const f of finder) if (!opts.some((o) => o.strike === f.strike)) opts.push({ key: `f${f.strike}`, strike: f.strike, label: `Finder · ${fmt.n(f.strike)}${f.score === null ? '' : ` (${(f.score * 10).toFixed(1)})`}` });
+                return opts;
+              }}
+              cardStrike={cardStrike} onCardStrike={(cp, strike) => setCardStrike((c) => ({ ...c, [cp]: strike }))} />
           </ErrorBoundary>
           <ErrorBoundary where="IV term structure"><IvTermPanel term={term} error={Boolean(termError)} /></ErrorBoundary>
           <ErrorBoundary where="Skew"><SkewPanel data={data} rank={term?.skew ?? null} /></ErrorBoundary>

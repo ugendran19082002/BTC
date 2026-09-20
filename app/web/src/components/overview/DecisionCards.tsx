@@ -21,10 +21,16 @@ import { fmt, Panel, Row, Tag } from './parts';
  * best strike through the finder's filters. Details of a strike live below,
  * on the selected-strike panels; the cards carry the decision only.
  */
-export function DecisionCards({ data, sides, choice, iv, em, mtf, contracts, leverage, onSelect, oi = null }: {
+export type StrikeOption = { key: string; strike: number | null; label: string };
+
+export function DecisionCards({ data, sides, choice, iv, em, mtf, contracts, leverage, onSelect, oi = null, strikeOptions, cardStrike, onCardStrike }: {
   data: ChainResponse; sides: SideAssessment[]; choice: SideChoice; oi?: OiPulse | null;
   iv: IvRv | null; em: ExpectedMove; mtf: MtfConsensus; contracts: number; leverage: number;
   onSelect: (cp: 'C' | 'P', strike: number) => void;
+  /** The strikes a card may be pointed at -- auto (the desk's or the finder's), the selected strike, the finder's top -- and the choice made. */
+  strikeOptions?: (cp: 'C' | 'P') => StrikeOption[];
+  cardStrike?: { C: number | null; P: number | null };
+  onCardStrike?: (cp: 'C' | 'P', strike: number | null) => void;
 }) {
   const ce = sides.find((s) => s.side === 'CE')!, pe = sides.find((s) => s.side === 'PE')!;
   const tone = choice.side === 'NO_TRADE' ? 'down' : choice.side === 'BOTH' ? 'up' : 'accent';
@@ -32,8 +38,10 @@ export function DecisionCards({ data, sides, choice, iv, em, mtf, contracts, lev
     <Panel title="Strategy decision" right={<Tag tone={tone}>Desk side: {choice.side.replace('_', ' ')}</Tag>}>
       <p className="ov-summary"><b>{choice.side === 'NO_TRADE' ? 'No trade' : choice.side === 'BOTH' ? 'Sell both sides' : `Sell ${choice.side}`}</b> — {choice.why}.</p>
       <div className="ov-cards4">
-        <SellCard side={ce} data={data} iv={iv} em={em} mtf={mtf} contracts={contracts} leverage={leverage} chosen={choice.side === 'CE' || choice.side === 'BOTH'} onSelect={onSelect} oi={oi} />
-        <SellCard side={pe} data={data} iv={iv} em={em} mtf={mtf} contracts={contracts} leverage={leverage} chosen={choice.side === 'PE' || choice.side === 'BOTH'} onSelect={onSelect} oi={oi} />
+        <SellCard side={ce} data={data} iv={iv} em={em} mtf={mtf} contracts={contracts} leverage={leverage} chosen={choice.side === 'CE' || choice.side === 'BOTH'} onSelect={onSelect} oi={oi}
+          options={strikeOptions?.('C')} chosenStrike={cardStrike?.C ?? null} onChoose={onCardStrike ? (k) => onCardStrike('C', k) : undefined} />
+        <SellCard side={pe} data={data} iv={iv} em={em} mtf={mtf} contracts={contracts} leverage={leverage} chosen={choice.side === 'PE' || choice.side === 'BOTH'} onSelect={onSelect} oi={oi}
+          options={strikeOptions?.('P')} chosenStrike={cardStrike?.P ?? null} onChoose={onCardStrike ? (k) => onCardStrike('P', k) : undefined} />
       </div>
       <p className="ov-foot">{data.best.why ?? ''} Side from the regime, the multi-timeframe consensus and each side's gates — never the score alone. Click a card's strike to inspect it below.</p>
     </Panel>
@@ -54,9 +62,10 @@ function Section({ name, children }: { name: string; children: React.ReactNode }
   return <div className="ov-card-sec"><h5>{name}</h5>{children}</div>;
 }
 
-function SellCard({ side: s, data, iv, em, mtf, contracts, leverage, chosen, onSelect, oi: pulse }: {
+function SellCard({ side: s, data, iv, em, mtf, contracts, leverage, chosen, onSelect, oi: pulse, options, chosenStrike = null, onChoose }: {
   side: SideAssessment; data: ChainResponse; iv: IvRv | null; em: ExpectedMove; mtf: MtfConsensus; contracts: number; leverage: number; chosen: boolean;
   onSelect: (cp: 'C' | 'P', strike: number) => void; oi: OiPulse | null;
+  options?: StrikeOption[]; chosenStrike?: number | null; onChoose?: (strike: number | null) => void;
 }) {
   const leg = s.leg;
   const o = leg ? odds(leg) : null;
@@ -82,7 +91,15 @@ function SellCard({ side: s, data, iv, em, mtf, contracts, leverage, chosen, onS
             <Row label="Market regime" value={regime ?? '—'} tone={regime && /up/i.test(regime) ? 'up' : regime && /down/i.test(regime) ? 'down' : 'muted'} />
           </Section>
           <Section name="B · Strike safety">
-            <Row label="Selected strike" value={<button type="button" className="ov-linkbtn" onClick={() => onSelect(leg.cp, leg.strike)}>{fmt.n(leg.strike)} {s.side}</button>} />
+            <Row label="Strike" value={
+              options && onChoose ? (
+                <select className="ov-select" aria-label={`${s.side} strike`} value={chosenStrike === null ? 'auto' : String(chosenStrike)}
+                  onChange={(e) => onChoose(e.target.value === 'auto' ? null : Number(e.target.value))} title="Which strike this card judges: auto (the desk's pick, or the finder's best once its filters are moved), the selected strike, or one of the finder's top five">
+                  {options.map((o) => <option key={o.key} value={o.strike === null ? 'auto' : String(o.strike)}>{o.label}</option>)}
+                </select>
+              ) : null
+            } />
+            <Row label="Judging" value={<button type="button" className="ov-linkbtn" onClick={() => onSelect(leg.cp, leg.strike)}>{fmt.n(leg.strike)} {s.side}</button>} hint="Click to inspect this strike below" />
             <Row label="P(expire OTM)" value={fmt.pct(o?.pOtm)} tone="up" />
             <Row label="P(touch)" value={<>{fmt.pct(o?.pTouch)} {pass(gate(s, 'PoT')?.ok)}</>} hint={gate(s, 'PoT')?.text} />
             <Row label="P(breach)" value={fmt.pct(o?.pItm)} tone="down" hint="Expiring beyond the strike" />
