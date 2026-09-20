@@ -31,10 +31,11 @@ import { ChangesPanel, EarlyWarningPanel, MovementPanel, MovementTypePanel, Stri
  * left); the strategy decision owns the answer; the KPI strip owns the market's
  * headline numbers; the left column reads the market (trend, levels,
  * volatility, the tape); the centre is the board (chart, the strike under
- * inspection, what changed, its risk and decay, its scenario, the early
- * warning) -- the columns are stacked to end near each other; the right column decides (horizon and MTF; SELL CE beside
- * SELL PE; then the vol surface). The bottom row
- * is the strike finder. Nothing
+ * inspection, what changed, its risk and decay, its scenario, the move's
+ * character); the right column decides (option bias, horizon and MTF, SELL
+ * CE beside SELL PE, the early warning). The bottom row is the strike
+ * finder beside the vol surface (term structure, skew). The three columns
+ * are stacked to end near each other. Nothing
  * is shown twice: a figure the checklist judges is not repeated as a row.
  *
  * Every figure is read from the chain response, the perp feed or the desk's
@@ -220,13 +221,12 @@ export function Overview({
           <ErrorBoundary where="What changed"><ChangesPanel tab={changesTab} onTab={setChangesTab} ce={ceLeg} pe={peLeg} board={(changesTab === 'BOARD' ? changes : activeChanges)?.rows ?? null} changes={activeChanges} /></ErrorBoundary>
           <ErrorBoundary where="Risk engine"><RiskEnginePanel leg={leg} risk={risk} contracts={contracts} hoursToExpiry={snap.hoursToExpiry} iv={iv} step={snap.step} /></ErrorBoundary>
           <ErrorBoundary where="Scenario"><ScenarioPanel leg={leg} contracts={contracts} /></ErrorBoundary>
-          <ErrorBoundary where="Early warning"><EarlyWarningPanel data={data} perp={perp} changes={changes?.rows ?? null} /></ErrorBoundary>
+          <ErrorBoundary where="Movement type"><MovementTypePanel rows={movement?.rows ?? null} outlook={data.outlook} /></ErrorBoundary>
         </div>
 
         <div className="ov-col ov-right">
           <ErrorBoundary where="Option bias"><OptionBiasPanel bias={bias} /></ErrorBoundary>
           <ErrorBoundary where="Horizon / MTF"><MovementPanel data={data} em={emSettle} activeMin={config.horizonMin} mtf={<MtfTable mtf={mtf} />} /></ErrorBoundary>
-          <ErrorBoundary where="Movement type"><MovementTypePanel rows={movement?.rows ?? null} outlook={data.outlook} /></ErrorBoundary>
           <ErrorBoundary where="Strategy decision">
             <DecisionCards data={data} sides={sides} choice={choice} iv={iv} em={emSettle} mtf={mtf} contracts={contracts} leverage={leverage}
               onSelect={(cp, strike) => setPicked({ cp, strike })} oi={perp?.oi ?? null}
@@ -240,8 +240,7 @@ export function Overview({
               }}
               cardStrike={cardStrike} onCardStrike={(cp, strike) => setCardStrike((c) => ({ ...c, [cp]: strike }))} />
           </ErrorBoundary>
-          <ErrorBoundary where="IV term structure"><IvTermPanel term={term} error={Boolean(termError)} /></ErrorBoundary>
-          <ErrorBoundary where="Skew"><SkewPanel data={data} rank={term?.skew ?? null} /></ErrorBoundary>
+          <ErrorBoundary where="Early warning"><EarlyWarningPanel data={data} perp={perp} changes={changes?.rows ?? null} /></ErrorBoundary>
         </div>
       </div>
 
@@ -251,6 +250,10 @@ export function Overview({
             defaultSide={choice.side === 'CE' ? 'C' : choice.side === 'PE' ? 'P' : 'both'} em={emSettle} execution={config.execution}
             filter={filter} onFilter={setFilter} rvPct={data.market?.realisedVol ?? null} />
         </ErrorBoundary>
+        <div className="ov-col">
+          <ErrorBoundary where="IV term structure"><IvTermPanel term={term} error={Boolean(termError)} /></ErrorBoundary>
+          <ErrorBoundary where="Skew"><SkewPanel data={data} rank={term?.skew ?? null} /></ErrorBoundary>
+        </div>
       </div>
     </div>
   );
