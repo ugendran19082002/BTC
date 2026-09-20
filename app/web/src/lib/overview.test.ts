@@ -4,7 +4,7 @@ import live from '@/test/fixtures/chain-live.json';
 import {
   bestLeg, bothSides, breakeven, candidates, consensus, expectedMove, feePerContract, freshness, gammaRisk,
   ivRv, keyLevels, marginPerContract, modelView, odds, orderEstimate, payoffPrices, premiumAnalysis, shortPayoff, skew, volRegime,
-  ageText, contractValidity, dataFreshness, optionBias, sellerImpact, sellerState, windowMinutes, premiumDecay, triggerState, DESK_FILTER, filtersChanged, assessBoth, assessSides, horizonRows, namedLevels, earlyWarning, findStrikes, boardRead, movementVerdict, parseSymbol, positionState, positionViews, premiumMomentum, riskEngine, shortLossAt,
+  ageText, contractValidity, dataFreshness, executionRead, optionBias, sellerImpact, sellerState, strikeSignals, windowMinutes, premiumDecay, triggerState, DESK_FILTER, filtersChanged, assessBoth, assessSides, horizonRows, namedLevels, earlyWarning, findStrikes, boardRead, movementVerdict, parseSymbol, positionState, positionViews, premiumMomentum, riskEngine, shortLossAt,
 } from './overview';
 
 const fixtureData = () => live as unknown as ChainResponse;
@@ -423,5 +423,18 @@ describe('windows', () => {
     expect(windowMinutes('expiry', at)).toBe(16 * 60);
     // Before 05:30, since yesterday's open.
     expect(windowMinutes('start', Date.UTC(2026, 8, 19, 23, 0, 0))).toBe(23 * 60);
+  });
+});
+
+describe('strike signals and the execution read', () => {
+  it('[critical] tags what the strike\'s own fields say, and nothing they do not', () => {
+    const data = fixtureData();
+    const l = data.legs.find((x) => x.cp === 'C' && x.moneyness === 'OTM' && x.bid !== null && x.ask !== null && x.theta !== null)!;
+    const sig = strikeSignals(l, { oiChange: 600, oiThen: 10_000, ivChangePts: 2.5 }, ivRv(0.5, 0.3 * 100));
+    expect(sig).toContain('OI BUILDUP'); expect(sig).toContain('IV EXPANSION'); expect(sig).toContain('PREMIUM RICH');
+    expect(strikeSignals(l, { oiChange: -800, oiThen: 10_000, ivChangePts: -3 }, null)).toEqual(expect.arrayContaining(['OI UNWIND', 'IV CRUSH']));
+    expect(strikeSignals(l, null, null).some((x) => ['OI BUILDUP', 'OI UNWIND', 'IV EXPANSION', 'IV CRUSH'].includes(x))).toBe(false);
+    const r = executionRead({ ...l, bid: 10, ask: 12, mark: 11 } as never, data.snapshot.spot, 1);
+    expect(r.mid).toBe(11); expect(r.spread).toBe(2); expect(r.spreadPct).toBeCloseTo(18.18, 1); expect(r.markToBid).toBeCloseTo(1.1, 9);
   });
 });

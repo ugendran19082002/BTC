@@ -1245,3 +1245,55 @@ export function windowMinutes(choice: WindowChoice, nowMs: number): number {
   return Math.max(5, Math.min(1440, Math.round((nowMs - from) / 60_000)));
 }
 export const windowLabel = (c: WindowChoice) => (c === 'start' ? 'since 05:30' : c === 'expiry' ? 'since last expiry' : c);
+
+// ---------------------------------------------------------- strike signals
+
+export type StrikeSignal =
+  | 'SAFE SELL' | 'WATCH' | 'PREMIUM RICH' | 'OI BUILDUP' | 'OI UNWIND' | 'IV EXPANSION' | 'IV CRUSH'
+  | 'TOUCH RISK' | 'BREACH RISK' | 'DECAY FAVORABLE' | 'DECAY WEAK' | 'NO TRADE';
+
+/**
+ * What the strike's own fields say, as tags: the desk's verdict on it first,
+ * then what is moving (OI, IV over the last hour), what could hurt (touch
+ * and breach odds), and whether decay is working for a seller. Read from
+ * the leg and the what-changed row; nothing here is a new model.
+ */
+export function strikeSignals(leg: Leg, changed: { oiChange: number | null; oiThen: number | null; ivChangePts: number | null } | null, iv: IvRv | null, t = { maxPot: 0.25, minEmDistance: 1.25 }): StrikeSignal[] {
+  const out: StrikeSignal[] = [];
+  const o = odds(leg);
+  const pa = premiumAnalysis(leg, null);
+  if (leg.ev?.signal === 'sell') out.push('SAFE SELL');
+  else if (leg.ev?.signal === 'watch') out.push('WATCH');
+  else if (leg.ev?.signal === 'avoid') out.push('NO TRADE');
+  if (iv?.label === 'rich') out.push('PREMIUM RICH');
+  if (changed && changed.oiChange !== null && changed.oiThen !== null && changed.oiThen > 0) {
+    const pct = changed.oiChange / changed.oiThen;
+    if (pct >= 0.05) out.push('OI BUILDUP');
+    else if (pct <= -0.05) out.push('OI UNWIND');
+  }
+  if (changed && changed.ivChangePts !== null) {
+    if (changed.ivChangePts >= 2) out.push('IV EXPANSION');
+    else if (changed.ivChangePts <= -2) out.push('IV CRUSH');
+  }
+  if (o.pTouch !== null && o.pTouch > t.maxPot) out.push('TOUCH RISK');
+  if (o.pItm !== null && o.pItm > 0.15) out.push('BREACH RISK');
+  const dist = leg.emDistance ?? leg.emBuffer ?? null;
+  if (pa && pa.thetaPerPremiumDay !== null) {
+    // Decay is working when the day's theta is a fair share of the premium and the strike sits out past the desk's distance.
+    if (pa.thetaPerPremiumDay >= 0.15 && dist !== null && dist >= t.minEmDistance) out.push('DECAY FAVORABLE');
+    else if (pa.thetaPerPremiumDay < 0.05) out.push('DECAY WEAK');
+  }
+  return out;
+}
+
+/** The execution read of one strike: mid, spread, mark against bid, and what a seller of `contracts` should expect to receive. */
+export function executionRead(leg: Leg, spot: number, contracts: number): { mid: number | null; spread: number | null; spreadPct: number | null; markToBid: number | null; expectedFill: number | null } {
+  const mid = leg.bid !== null && leg.ask !== null ? (leg.bid + leg.ask) / 2 : null;
+  const spread = leg.bid !== null && leg.ask !== null ? leg.ask - leg.bid : null;
+  return {
+    mid, spread,
+    spreadPct: mid !== null && mid > 0 && spread !== null ? (spread / mid) * 100 : null,
+    markToBid: leg.mark !== null && leg.bid !== null && leg.bid > 0 ? leg.mark / leg.bid : null,
+    expectedFill: executionEstimate(leg, spot, contracts).expectedFill,
+  };
+}

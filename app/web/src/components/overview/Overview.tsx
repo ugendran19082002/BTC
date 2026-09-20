@@ -198,7 +198,8 @@ export function Overview({
             </ErrorBoundary>
           )}
           <ErrorBoundary where="Selected strike">
-            <SelectedStrikePanel data={data} leg={leg} em={emSettle} contracts={contracts} ivRank={term?.iv ?? null} momentum={changes?.momentum ?? null} />
+            <SelectedStrikePanel data={data} leg={leg} em={emSettle} contracts={contracts} ivRank={term?.iv ?? null} momentum={changes?.momentum ?? null} iv={iv}
+              changed={(() => { const r = changes?.rows.find((x) => x.minutes === 60) ?? null; return r ? { oiChange: r.oiChange, oiThen: r.oiThen, ivChangePts: r.ivChangePts } : null; })()} />
           </ErrorBoundary>
           <ErrorBoundary where="What changed"><ChangesPanel tab={changesTab} onTab={setChangesTab} ce={ceLeg} pe={peLeg} board={(changesTab === 'BOARD' ? changes : activeChanges)?.rows ?? null} changes={activeChanges} /></ErrorBoundary>
           <ErrorBoundary where="Risk engine"><RiskEnginePanel leg={leg} risk={risk} contracts={contracts} hoursToExpiry={snap.hoursToExpiry} iv={iv} step={snap.step} /></ErrorBoundary>

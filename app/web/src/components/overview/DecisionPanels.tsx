@@ -3,8 +3,8 @@ import type { ChainResponse, Leg } from '@/types/desk';
 import { istLabel } from '@/lib/format';
 import type { PremiumMomentum } from '@/api/desk';
 import {
-  breakeven, odds, payoffPrices, premiumAnalysis, shortPayoff, CONTRACT_BTC,
-  type ExpectedMove, type MtfConsensus,
+  breakeven, executionRead, odds, payoffPrices, premiumAnalysis, shortPayoff, strikeSignals, CONTRACT_BTC,
+  type ExpectedMove, type IvRv, type MtfConsensus,
 } from '@/lib/overview';
 import { fmt, Panel, ProbBar, Row, Tag, useWidth } from './parts';
 
@@ -121,9 +121,11 @@ function ChainSide({ leg, cells, selected, onClick, itm }: { leg: Leg | undefine
 
 type Tab = 'metrics' | 'probability' | 'payoff';
 
-export function SelectedStrikePanel({ data, leg, em, contracts, ivRank, momentum }: {
+export function SelectedStrikePanel({ data, leg, em, contracts, ivRank, momentum, changed = null, iv = null }: {
   data: ChainResponse; leg: Leg | null; em: ExpectedMove; contracts: number;
   ivRank?: { percentile: number; days: number } | null; momentum?: PremiumMomentum | null;
+  /** The strike's hour: OI then and its change, IV change, for the signal tags. */
+  changed?: { oiChange: number | null; oiThen: number | null; ivChangePts: number | null } | null; iv?: IvRv | null;
 }) {
   const [tab, setTab] = useState<Tab>('metrics');
   if (!leg) return <Panel title="Selected strike"><p className="ov-empty">Click a strike on the chain.</p></Panel>;
@@ -133,7 +135,7 @@ export function SelectedStrikePanel({ data, leg, em, contracts, ivRank, momentum
   const size = contracts * CONTRACT_BTC;
   const usd = (v: number | null, k = 1) => (v === null ? '—' : fmt.signed(-v * size * k, 2));
   return (
-    <Panel title={`Selected strike: ${fmt.n(leg.strike)} ${side}`} right={leg.ev?.signal ? <Tag tone={leg.ev.signal === 'sell' ? 'up' : leg.ev.signal === 'avoid' ? 'down' : 'muted'}>{leg.ev.signal}</Tag> : undefined}>
+    <Panel title={`Selected strike: ${fmt.n(leg.strike)} ${side}`} right={<span className="ov-signals">{strikeSignals(leg, changed, iv).map((x) => <Tag key={x} tone={/SAFE|RICH|FAVORABLE|UNWIND|CRUSH/.test(x) ? 'up' : /RISK|NO TRADE|WEAK|BUILDUP|EXPANSION/.test(x) ? 'down' : 'warn'}>{x}</Tag>)}</span>}>
       <div className="ov-greeks">
         <Greek label="Delta" value={g(leg.delta, 2)} hint={`Short ${contracts} ct: ${usd(leg.delta)} per $1 move in BTC`} />
         <Greek label="Gamma" value={leg.gamma === null ? '—' : leg.gamma.toPrecision(2)} hint={`Delta changes ${leg.gamma === null ? '—' : (leg.gamma * 100).toFixed(3)} per $100 of BTC; the seller's enemy near the strike`} />
@@ -149,7 +151,7 @@ export function SelectedStrikePanel({ data, leg, em, contracts, ivRank, momentum
           </button>
         ))}
       </div>
-      {tab === 'metrics' && <MetricsTab leg={leg} em={em} ivRank={ivRank ?? null} momentum={momentum ?? null} />}
+      {tab === 'metrics' && <MetricsTab leg={leg} em={em} ivRank={ivRank ?? null} momentum={momentum ?? null} spot={data.snapshot.spot} contracts={contracts} />}
       {tab === 'probability' && <ProbabilityTab leg={leg} />}
       {tab === 'payoff' && <PayoffTab leg={leg} spot={data.snapshot.spot} step={data.snapshot.step} contracts={contracts} />}
     </Panel>
@@ -160,11 +162,12 @@ function Greek({ label, value, hint }: { label: string; value: string; hint?: st
   return <div className="ov-greek" title={hint}><span>{label}</span><b>{value}</b></div>;
 }
 
-function MetricsTab({ leg, em, ivRank, momentum }: {
-  leg: Leg; em: ExpectedMove; ivRank: { percentile: number; days: number } | null; momentum: PremiumMomentum | null;
+function MetricsTab({ leg, em, ivRank, momentum, spot, contracts }: {
+  leg: Leg; em: ExpectedMove; ivRank: { percentile: number; days: number } | null; momentum: PremiumMomentum | null; spot: number; contracts: number;
 }) {
   const p = premiumAnalysis(leg, em);
   if (!p) return <p className="ov-empty">No price on this strike.</p>;
+  const x = executionRead(leg, spot, contracts);
   const mom = momentum ?? { velocity: null, acceleration: null };
   return (
     <div className="ov-two">
@@ -174,7 +177,10 @@ function MetricsTab({ leg, em, ivRank, momentum }: {
         <Row label="Extrinsic" value={`${fmt.n(p.extrinsic, 1)} (${fmt.pct(p.extrinsicShare)})`} />
         <Row label="Theta / premium" value={p.thetaPerPremiumDay === null ? '—' : `${fmt.pct(Math.min(9.99, p.thetaPerPremiumDay), 0)} / day · ${fmt.n(p.thetaPerHour, 2)} / h`}
           hint="Delta's theta is per day; within a day of settlement the per-hour figure is the one to read, and a day's theta can exceed the premium" />
-        <Row label="Spread" value={p.spreadPct === null ? '—' : fmt.pct(p.spreadPct, 1)} tone={p.spreadPct !== null && p.spreadPct > 0.1 ? 'warn' : undefined} />
+        <Row label="Bid / mid / ask" value={`${fmt.n(leg.bid, 1)} / ${fmt.n(x.mid, 1)} / ${fmt.n(leg.ask, 1)}`} />
+        <Row label="Spread" value={x.spread === null ? '—' : `${fmt.n(x.spread, 1)} (${x.spreadPct!.toFixed(1)}%)`} tone={x.spreadPct !== null && x.spreadPct > 10 ? 'warn' : undefined} />
+        <Row label="Mark / bid" value={x.markToBid === null ? '—' : `${x.markToBid.toFixed(2)}×`} hint="Mark against what a seller is actually bid; far above 1, the mark flatters" />
+        <Row label={`Est. fill (${contracts} ct)`} value={fmt.n(x.expectedFill, 1)} hint="The bid, or a tick under it when the bid is thinner than the size" />
       </div>
       <div>
         <Row label="Premium / EM" value={p.premiumPerEm === null ? '—' : fmt.pct(p.premiumPerEm, 1)} />
