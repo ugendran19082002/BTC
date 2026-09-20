@@ -58,6 +58,7 @@ Row counts read on 19 Sep 2026.
 | `trade_flow_1m` | the perpetual's tape, per minute, by aggressor side: buy / sell volume and count, large prints (≥200 contracts), VWAP, high, low | **1 min** | 365 days | recording since 19 Sep 2026 |
 | `perp_snapshots` | the perpetual: mark, spot, funding rate, OI (contracts, USD), 24h turnover, and the top of the book (20-level depth a side, imbalance, spread) | **5 min** | 365 days | recording since 19 Sep 2026 |
 | `iv_term_snapshots` | ATM IV per listed expiry — the term structure | **5 min** | 365 days | recording since 19 Sep 2026 |
+| `option_flow_1m` | the options' own tape: every print on every strike of the two nearest expiries, per contract per minute, by aggressor side (buy / sell volume and count) — the CE / PE flow the Live screen shows, which Delta's option ticker cannot give (it carries volume, not who crossed the spread) | **1 min** | 31 days | recording since 20 Sep 2026 |
 | `chain_features` | the whole board summarised: PCR (OI and volume), call / put OI, IV skew, OI walls, max pain, OI change over the hour | **5 min** | 400 days | 117 — recording since 17 Sep 2026 |
 | `mtm_samples` | the day's P&L: realised, unrealised, charges, net | **1 min** | 90 days | 6,360 |
 | `trades`, `trade_events` | the desk's trades, and every order, fill and exit | per event | permanent | 82 / 629 |
