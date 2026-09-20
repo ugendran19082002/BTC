@@ -4,7 +4,8 @@ import live from '@/test/fixtures/chain-live.json';
 import {
   bestLeg, bothSides, breakeven, candidates, consensus, expectedMove, feePerContract, freshness, gammaRisk,
   ivRv, keyLevels, marginPerContract, modelView, odds, orderEstimate, payoffPrices, premiumAnalysis, shortPayoff, skew, volRegime,
-  ageText, contractValidity, dataFreshness, executionRead, optionBias, sellerImpact, sellerState, strikeSignals, windowMinutes, premiumDecay, triggerState, DESK_FILTER, filtersChanged, assessBoth, assessSides, horizonRows, namedLevels, earlyWarning, findStrikes, boardRead, movementVerdict, parseSymbol, positionState, positionViews, premiumMomentum, riskEngine, shortLossAt,
+  ageText, contractChecks, contractValidity, dataFreshness, executionRead, finderRanks, mustChange, optionBias, persistence, sellerImpact, sellerState, skewRichness, strikeSignals, windowMinutes, premiumDecay, triggerState, DESK_FILTER, filtersChanged, assessBoth, assessSides, horizonRows, namedLevels, earlyWarning, findStrikes, boardRead, movementVerdict, parseSymbol, positionState, positionViews, premiumMomentum, riskEngine, shortLossAt,
+  type SideAssessment,
 } from './overview';
 
 const fixtureData = () => live as unknown as ChainResponse;
@@ -365,8 +366,8 @@ describe('premium decay', () => {
     expect(points[0]!.premium).toBe(51);
     expect(points.at(-1)!.premium).toBeCloseTo(3, 9);
     expect(points[2]!.premium).toBeCloseTo(3 + 48 * Math.SQRT1_2, 9);
-    expect(milestones.map((m) => m.share)).toEqual([0.5, 0.8, 0.95]);
-    expect(milestones[0]!.hoursFromNow).toBeCloseTo(9, 9); expect(milestones[1]!.hoursFromNow).toBeCloseTo(12 * 0.96, 9); expect(milestones[2]!.hoursFromNow).toBeCloseTo(12 * 0.9975, 9);
+    expect(milestones.map((m) => m.share)).toEqual([0.5, 0.8, 0.9]);
+    expect(milestones[0]!.hoursFromNow).toBeCloseTo(9, 9); expect(milestones[1]!.hoursFromNow).toBeCloseTo(12 * 0.96, 9); expect(milestones[2]!.hoursFromNow).toBeCloseTo(12 * 0.99, 9);
     for (let i = 1; i < points.length; i++) expect(points[i]!.premium).toBeLessThanOrEqual(points[i - 1]!.premium);
   });
 });
@@ -436,5 +437,38 @@ describe('strike signals and the execution read', () => {
     expect(strikeSignals(l, null, null).some((x) => ['OI BUILDUP', 'OI UNWIND', 'IV EXPANSION', 'IV CRUSH'].includes(x))).toBe(false);
     const r = executionRead({ ...l, bid: 10, ask: 12, mark: 11 } as never, data.snapshot.spot, 1);
     expect(r.mid).toBe(11); expect(r.spread).toBe(2); expect(r.spreadPct).toBeCloseTo(18.18, 1); expect(r.markToBid).toBeCloseTo(1.1, 9);
+  });
+});
+
+describe('the finder\'s best, persistence, what must change, the contract', () => {
+  it('names the safest, the most balanced and the richest strike a side', () => {
+    const data = fixtureData();
+    const r = finderRanks(findStrikes(data.legs, { ...DESK_FILTER, side: 'both', minPremium: 1, maxPot: 1, minEm: 0, top: 10 }));
+    const all = [...r.values()].flat();
+    for (const k of ['BEST SAFE', 'BEST BALANCED', 'BEST PREMIUM']) expect(all.filter((x) => x === k).length).toBeLessThanOrEqual(2);
+    expect(all.length).toBeGreaterThan(0);
+  });
+  it('[critical] a side is VALID only after three boards agree', () => {
+    expect(persistence(['PE'])).toMatchObject({ side: 'PE', confirmations: 1, valid: false });
+    expect(persistence(['CE', 'PE', 'PE'])).toMatchObject({ confirmations: 2, valid: false });
+    expect(persistence(['PE', 'PE', 'PE', 'PE'])).toMatchObject({ confirmations: 3, valid: true, text: 'VALID' });
+  });
+  it('turns the failing gates into what must change, and says when to look again', () => {
+    const focus = { side: 'PE', gates: [{ name: 'IV − RV', ok: false, text: 'cheap' }, { name: 'Liquidity', ok: false, text: 'spread 8%' }, { name: 'PoT', ok: true, text: '' }] } as never as SideAssessment;
+    const m = mustChange(focus, { scored: 7, up: 3, down: 2, side: 2, way: 'SIDE', text: '3/7 SIDE', rows: [] }, { maxPot: 0.25, minEmDistance: 1.25, maxSlippage: 0.05 }, 0.15, Date.UTC(2026, 8, 20, 2, 33, 0), '05:30');
+    expect(m.why).toEqual(['IV − RV: cheap', 'Liquidity: spread 8%']);
+    expect(m.toTrade).toEqual(['IV above realised (ratio ≥ 0.9×)', 'Spread ≤ 0.15%']);
+    expect(m.recheckIst).toBe('08:05');
+    const c = contractChecks({ live: true, expiryTs: Date.UTC(2026, 8, 20, 12) / 1000, isDaily: true, isNextEntry: true, step: 200, hoursToExpiry: 8 }, Date.UTC(2026, 8, 20, 4));
+    expect(c.map((x) => x.ok)).toEqual([true, true, true, true]);
+  });
+});
+
+describe('skew richness', () => {
+  it('a strong positive skew makes PE rich, a strong negative CE; near zero is normal', () => {
+    expect(skewRichness(7.5, 0.72)).toMatchObject({ ce: 'LOW', pe: 'HIGH' });
+    expect(skewRichness(-3, null)).toMatchObject({ ce: 'HIGH', pe: 'LOW' });
+    expect(skewRichness(-1, 0.52)).toMatchObject({ ce: 'NORMAL', pe: 'NORMAL' });
+    expect(skewRichness(null, null)).toBeNull();
   });
 });

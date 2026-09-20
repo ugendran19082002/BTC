@@ -1065,8 +1065,8 @@ export function premiumDecay(premium: number, intrinsic: number, hoursToExpiry: 
   const at = (u: number) => intrinsic + ext * Math.sqrt(Math.max(0, (T - u) / (T || 1)));
   const label = (u: number) => (u === 0 ? 'Now' : u >= T ? 'Exp' : u < 1 ? `${Math.round(u * 60)}m` : `${Math.round(u)}h`);
   const points = Array.from({ length: n + 1 }, (_, i) => { const u = (T * i) / n; return { hoursFromNow: u, label: label(u), premium: at(u) }; });
-  // Half, four-fifths, and near zero (95%): 0.75 T, 0.96 T and 0.9975 T from now.
-  const milestones = [0.5, 0.8, 0.95].map((share) => ({ share, hoursFromNow: T * (1 - (1 - share) ** 2) }));
+  // Half, four-fifths, and nine-tenths of the extrinsic gone (under a tenth of the premium left): 0.75 T, 0.96 T and 0.99 T from now.
+  const milestones = [0.5, 0.8, 0.9].map((share) => ({ share, hoursFromNow: T * (1 - (1 - share) ** 2) }));
   return { points, milestones };
 }
 
@@ -1296,4 +1296,120 @@ export function executionRead(leg: Leg, spot: number, contracts: number): { mid:
     markToBid: leg.mark !== null && leg.bid !== null && leg.bid > 0 ? leg.mark / leg.bid : null,
     expectedFill: executionEstimate(leg, spot, contracts).expectedFill,
   };
+}
+
+// -------------------------------------------------------- the finder's best
+
+export type FinderRank = 'BEST SAFE' | 'BEST BALANCED' | 'BEST PREMIUM';
+
+/**
+ * Three ways to be the best strike on a side: safest (lowest touch odds,
+ * highest P(OTM) on a tie), most balanced (the desk's score), richest
+ * (the most credit). One strike can hold more than one; a strike holds a
+ * rank only against others of its side.
+ */
+export function finderRanks(legs: readonly Leg[]): Map<string, FinderRank[]> {
+  const out = new Map<string, FinderRank[]>();
+  const key = (l: Leg) => `${l.cp}${l.strike}`;
+  const add = (l: Leg | undefined, r: FinderRank) => { if (l) out.set(key(l), [...(out.get(key(l)) ?? []), r]); };
+  for (const cp of ['C', 'P'] as const) {
+    const mine = legs.filter((l) => l.cp === cp);
+    if (!mine.length) continue;
+    const safe = [...mine].sort((a, b) => (a.probs.touch ?? 1) - (b.probs.touch ?? 1) || (odds(b).pOtm ?? 0) - (odds(a).pOtm ?? 0))[0];
+    const balanced = [...mine].sort((a, b) => (b.score ?? -1) - (a.score ?? -1))[0];
+    const premium = [...mine].sort((a, b) => (b.bid ?? b.sellPrice ?? b.mark ?? 0) - (a.bid ?? a.sellPrice ?? a.mark ?? 0))[0];
+    add(safe, 'BEST SAFE'); add(balanced, 'BEST BALANCED'); add(premium, 'BEST PREMIUM');
+  }
+  return out;
+}
+
+// ----------------------------------------------------- signal persistence
+
+export type Persistence = { side: SideChoice['side']; confirmations: number; needed: number; valid: boolean; text: string };
+
+/**
+ * A side is VALID once the desk has said the same thing on `needed`
+ * consecutive boards; a spike on one refresh flips nothing. `history` is
+ * the sides said, newest last, one per board.
+ */
+export function persistence(history: readonly SideChoice['side'][], needed = 3): Persistence {
+  const side = history[history.length - 1] ?? 'NO_TRADE';
+  let n = 0;
+  for (let i = history.length - 1; i >= 0 && history[i] === side; i--) n++;
+  const confirmations = Math.min(n, needed);
+  return { side, confirmations, needed, valid: n >= needed, text: n >= needed ? 'VALID' : `${confirmations} / ${needed} confirmations` };
+}
+
+// ------------------------------------------------------- what must change
+
+export type MustChange = { why: string[]; toTrade: string[]; recheckIst: string };
+
+const IST_HM_FMT = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
+
+/**
+ * NO TRADE, made actionable: which gates fail on the side that came
+ * closest, what each would have to become, and when to look again (the
+ * entry window if it has not opened, the next five-minute mark otherwise).
+ */
+export function mustChange(focus: SideAssessment | null, mtf: MtfConsensus, t: { maxPot: number; minEmDistance: number; maxSlippage: number }, maxSpreadPct: number | null, nowMs: number, entryIst: string): MustChange {
+  const fails = (focus?.gates ?? []).filter((g) => g.ok === false);
+  const why = fails.map((g) => `${g.name}: ${g.text}`);
+  const toTrade: string[] = [];
+  for (const g of fails) {
+    switch (g.name) {
+      case 'IV − RV': toTrade.push('IV above realised (ratio ≥ 0.9×)'); break;
+      case 'Liquidity': toTrade.push(`Spread ≤ ${maxSpreadPct ?? '—'}%`); break;
+      case 'Execution': toTrade.push(`Half-spread ≤ ${(t.maxSlippage * 100).toFixed(0)}% of the premium`); break;
+      case 'MTF consensus': toTrade.push(`MTF ≥ ${Math.ceil(mtf.scored / 2) + (mtf.scored % 2 === 0 ? 1 : 0)}/${mtf.scored} one way`); break;
+      case 'PoT': toTrade.push(`P(touch) ≤ ${(t.maxPot * 100).toFixed(0)}% — a further strike`); break;
+      case 'Distance / EM': toTrade.push(`Strike ≥ ${t.minEmDistance}× EM out`); break;
+      case 'Direction': toTrade.push('Regime and direction to agree with the side'); break;
+      case 'Gamma': toTrade.push('Gamma risk below high — a further strike or a calmer tape'); break;
+      case 'Tail risk': toTrade.push('Tail loss within the daily limit'); break;
+      case 'Margin': toTrade.push('Margin within the balance'); break;
+      default: toTrade.push(g.name);
+    }
+  }
+  const m = /^(\d{1,2}):(\d{2})$/.exec(entryIst);
+  const IST = 5.5 * 3_600_000;
+  const ist = new Date(nowMs + IST);
+  const day = Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate()) - IST;
+  const windowMs = m ? day + (Number(m[1]) * 60 + Number(m[2])) * 60_000 : null;
+  const recheckMs = windowMs !== null && windowMs > nowMs ? windowMs : Math.ceil((nowMs + 1) / 300_000) * 300_000;
+  return { why, toTrade: [...new Set(toTrade)], recheckIst: IST_HM_FMT.format(new Date(recheckMs)) };
+}
+
+// ------------------------------------------------- the contract's checks
+
+export type ContractCheck = { name: string; ok: boolean | null; text: string };
+
+/** The four things an order needs of the contract before any gate: the right expiry, tradable, a known tick, and live. */
+export function contractChecks(snap: Pick<SnapshotMeta, 'live' | 'expiryTs' | 'isDaily' | 'isNextEntry' | 'step' | 'hoursToExpiry'>, nowMs: number): ContractCheck[] {
+  const v = contractValidity(snap, nowMs);
+  return [
+    { name: 'Correct expiry', ok: snap.isNextEntry || snap.isDaily ? true : false, text: snap.isNextEntry ? 'the next entry' : snap.isDaily ? 'a daily' : 'not the tested contract' },
+    { name: 'Tradable', ok: snap.live && snap.hoursToExpiry > 0, text: snap.live ? `${snap.hoursToExpiry.toFixed(1)}h to settlement` : 'past snapshot' },
+    { name: 'Tick size', ok: snap.step > 0, text: snap.step > 0 ? `strikes every ${snap.step.toLocaleString('en-US')}` : 'unknown' },
+    { name: 'Contract state', ok: v.state === 'LIVE', text: v.state },
+  ];
+}
+
+// ---------------------------------------------------------- skew richness
+
+export type SkewRichness = { ce: 'HIGH' | 'NORMAL' | 'LOW'; pe: 'HIGH' | 'NORMAL' | 'LOW'; text: string };
+
+/**
+ * Which side the skew makes relatively rich: positive skew (25Δ put IV over
+ * 25Δ call IV) prices the puts up, negative the calls. HIGH when the tilt
+ * is two points or more, or sits in the top third of its recorded range;
+ * LOW for the other side in the same case; NORMAL near zero. Relative
+ * pricing only -- IV − RV says whether the whole board is rich, and the
+ * strike's own odds say whether it is safe.
+ */
+export function skewRichness(putCallPts: number | null, percentile: number | null): SkewRichness | null {
+  if (putCallPts === null) return null;
+  const strong = Math.abs(putCallPts) >= 2 || (percentile !== null && (percentile >= 0.7 || percentile <= 0.3));
+  if (putCallPts > 0.5 && strong) return { ce: 'LOW', pe: 'HIGH', text: 'puts priced up: PE premium relatively rich' };
+  if (putCallPts < -0.5 && strong) return { ce: 'HIGH', pe: 'LOW', text: 'calls priced up: CE premium relatively rich' };
+  return { ce: 'NORMAL', pe: 'NORMAL', text: 'both sides priced alike' };
 }

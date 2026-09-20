@@ -1,10 +1,9 @@
 import { useMemo, useState } from 'react';
 import type { ChainResponse, Leg } from '@/types/desk';
 import { istLabel } from '@/lib/format';
-import type { PremiumMomentum } from '@/api/desk';
 import {
   breakeven, executionRead, odds, payoffPrices, premiumAnalysis, shortPayoff, strikeSignals, CONTRACT_BTC,
-  type ExpectedMove, type IvRv, type MtfConsensus,
+  type IvRv,
 } from '@/lib/overview';
 import { fmt, Panel, ProbBar, Row, Tag, useWidth } from './parts';
 
@@ -15,7 +14,7 @@ export const findLeg = (legs: readonly Leg[], s: Selected | null) =>
 // -------------------------------------------------------------- option chain
 
 type ChainFilter = 'near' | 'all' | 'walls' | 'recommended';
-type ChainCols = 'quotes' | 'greeks';
+type ChainCols = 'quotes' | 'greeks' | 'odds';
 
 export function ChainPanel({ data, selected, onSelect, rows = 7 }: {
   data: ChainResponse; selected: Selected | null; onSelect: (s: Selected) => void; rows?: number;
@@ -45,12 +44,13 @@ export function ChainPanel({ data, selected, onSelect, rows = 7 }: {
   const n = (v: number | null | undefined, p = 0) => (v === null || v === undefined ? '—' : fmt.n(v, p));
   const px = (v: number | null | undefined) => (v === null || v === undefined ? '—' : fmt.n(v, v < 10 ? 1 : 0));
   const cells = (l: Leg | undefined): string[] => {
-    if (!l) return cols === 'quotes' ? ['—', '—', '—', '—', '—', '—', '—'] : ['—', '—', '—', '—'];
+    if (!l) return cols === 'quotes' ? ['—', '—', '—', '—', '—', '—', '—'] : cols === 'greeks' ? ['—', '—', '—', '—'] : ['—', '—', '—', '—', '—'];
+    if (cols === 'odds') { const o = odds(l); return [px(l.bid), fmt.pct(o.pOtm), fmt.pct(o.pTouch), l.emDistance === null ? '—' : `${l.emDistance.toFixed(1)}×`, l.score === null ? '—' : (l.score * 10).toFixed(1)]; }
     return cols === 'quotes'
       ? [n(l.oi), l.oiChange ? fmt.signed(l.oiChange.change) : '—', px(l.bid), px(l.ask), px(l.mark), iv(l.iv), n(l.volume)]
       : [l.delta === null ? '—' : l.delta.toFixed(2), l.gamma === null ? '—' : l.gamma.toPrecision(2), l.theta === null ? '—' : l.theta.toFixed(1), l.vega === null ? '—' : l.vega.toFixed(1)];
   };
-  const head = cols === 'quotes' ? ['OI', 'ΔOI', 'Bid', 'Ask', 'Mark', 'IV', 'Vol'] : ['Δ', 'Γ', 'Θ', 'V'];
+  const head = cols === 'quotes' ? ['OI', 'ΔOI', 'Bid', 'Ask', 'Mark', 'IV', 'Vol'] : cols === 'greeks' ? ['Δ', 'Γ', 'Θ', 'V'] : ['Bid', 'P(OTM)', 'Touch', 'EM×', 'Score'];
   const mark = (k: number) => [
     k === snap.atm ? 'ATM' : null, k === ceWall ? 'CE wall' : null, k === peWall ? 'PE wall' : null, k === maxPain ? 'Max pain' : null,
   ].filter(Boolean).join(' · ');
@@ -68,6 +68,7 @@ export function ChainPanel({ data, selected, onSelect, rows = 7 }: {
           <select aria-label="Columns" className="ov-select" value={cols} onChange={(e) => setCols(e.target.value as ChainCols)}>
             <option value="quotes">Quotes</option>
             <option value="greeks">Greeks</option>
+            <option value="odds">Seller's odds</option>
           </select>
           <Tag tone="warn">ATM: {fmt.n(snap.atm)}</Tag>
           <Tag tone={snap.live ? 'accent' : 'muted'}>{snap.live ? 'Latest' : 'Past'}</Tag>
@@ -98,7 +99,7 @@ export function ChainPanel({ data, selected, onSelect, rows = 7 }: {
           </tbody>
         </table>
       </div>
-      <p className="ov-foot">Click a side to inspect it. Shaded = in the money · ATM, the OI walls and max pain are marked. {snap.hoursToExpiry.toFixed(1)}h to settlement. Every column of every strike is on the board below.</p>
+      <p className="ov-foot">Click a side to inspect it. Shaded = in the money · ATM, the OI walls and max pain are marked. {snap.hoursToExpiry.toFixed(1)}h to settlement. Every column of every strike is on the Option Chain tab.</p>
     </Panel>
   );
 }
@@ -121,11 +122,10 @@ function ChainSide({ leg, cells, selected, onClick, itm }: { leg: Leg | undefine
 
 type Tab = 'metrics' | 'probability' | 'payoff';
 
-export function SelectedStrikePanel({ data, leg, em, contracts, ivRank, momentum, changed = null, iv = null, options, onChoose }: {
-  data: ChainResponse; leg: Leg | null; em: ExpectedMove; contracts: number;
+export function SelectedStrikePanel({ data, leg, contracts, changed = null, iv = null, options, onChoose }: {
+  data: ChainResponse; leg: Leg | null; contracts: number;
   /** The strikes the panels below can be pointed at (the desk's picks, the finder's top, the board's click), and the choice. */
   options?: { key: string; cp: 'C' | 'P'; strike: number; label: string }[]; onChoose?: (cp: 'C' | 'P', strike: number) => void;
-  ivRank?: { percentile: number; days: number } | null; momentum?: PremiumMomentum | null;
   /** The strike's hour: OI then and its change, IV change, for the signal tags. */
   changed?: { oiChange: number | null; oiThen: number | null; ivChangePts: number | null } | null; iv?: IvRv | null;
 }) {
@@ -160,7 +160,7 @@ export function SelectedStrikePanel({ data, leg, em, contracts, ivRank, momentum
           </button>
         ))}
       </div>
-      {tab === 'metrics' && <MetricsTab leg={leg} em={em} ivRank={ivRank ?? null} momentum={momentum ?? null} spot={data.snapshot.spot} contracts={contracts} />}
+      {tab === 'metrics' && <MetricsTab leg={leg} spot={data.snapshot.spot} contracts={contracts} changed={changed} />}
       {tab === 'probability' && <ProbabilityTab leg={leg} />}
       {tab === 'payoff' && <PayoffTab leg={leg} spot={data.snapshot.spot} step={data.snapshot.step} contracts={contracts} />}
     </Panel>
@@ -171,34 +171,28 @@ function Greek({ label, value, hint }: { label: string; value: string; hint?: st
   return <div className="ov-greek" title={hint}><span>{label}</span><b>{value}</b></div>;
 }
 
-function MetricsTab({ leg, em, ivRank, momentum, spot, contracts }: {
-  leg: Leg; em: ExpectedMove; ivRank: { percentile: number; days: number } | null; momentum: PremiumMomentum | null; spot: number; contracts: number;
-}) {
-  const p = premiumAnalysis(leg, em);
+function MetricsTab({ leg, spot, contracts, changed }: { leg: Leg; spot: number; contracts: number; changed: { oiChange: number | null; oiThen: number | null; ivChangePts: number | null } | null }) {
+  const p = premiumAnalysis(leg, null);
   if (!p) return <p className="ov-empty">No price on this strike.</p>;
   const x = executionRead(leg, spot, contracts);
-  const mom = momentum ?? { velocity: null, acceleration: null };
+  const dOi = changed?.oiChange ?? (leg.oiChange?.change ?? null);
   return (
     <div className="ov-two">
       <div>
         <Row label="Premium (mark)" value={`${fmt.n(p.premium, 1)}${leg.theoretical != null ? ` · BS ${fmt.n(leg.theoretical, 1)}` : ''}`} hint="Mark, and Black–Scholes at the mark IV" />
         <Row label="Intrinsic" value={fmt.n(p.intrinsic, 1)} />
         <Row label="Extrinsic" value={`${fmt.n(p.extrinsic, 1)} (${fmt.pct(p.extrinsicShare)})`} />
-        <Row label="Theta / premium" value={p.thetaPerPremiumDay === null ? '—' : `${fmt.pct(Math.min(9.99, p.thetaPerPremiumDay), 0)} / day · ${fmt.n(p.thetaPerHour, 2)} / h`}
-          hint="Delta's theta is per day; within a day of settlement the per-hour figure is the one to read, and a day's theta can exceed the premium" />
+        <Row label="IV" value={leg.iv === null ? '—' : `${(leg.iv * 100).toFixed(1)}%`} />
+        <Row label="OI" value={fmt.n(leg.oi)} />
+        <Row label="ΔOI (1h)" value={dOi === null ? '—' : fmt.signed(dOi)} tone={dOi === null ? undefined : dOi > 0 ? 'up' : dOi < 0 ? 'down' : undefined} />
+        <Row label="Volume (today)" value={leg.volume === null ? '—' : `${fmt.n(leg.volume)} ct`} />
+      </div>
+      <div>
         <Row label="Bid / mid / ask" value={`${fmt.n(leg.bid, 1)} / ${fmt.n(x.mid, 1)} / ${fmt.n(leg.ask, 1)}`} />
         <Row label="Spread" value={x.spread === null ? '—' : `${fmt.n(x.spread, 1)} (${x.spreadPct!.toFixed(1)}%)`} tone={x.spreadPct !== null && x.spreadPct > 10 ? 'warn' : undefined} />
         <Row label="Mark / bid" value={x.markToBid === null ? '—' : `${x.markToBid.toFixed(2)}×`} hint="Mark against what a seller is actually bid; far above 1, the mark flatters" />
         <Row label={`Est. fill (${contracts} ct)`} value={fmt.n(x.expectedFill, 1)} hint="The bid, or a tick under it when the bid is thinner than the size" />
-      </div>
-      <div>
-        <Row label="Premium / EM" value={p.premiumPerEm === null ? '—' : fmt.pct(p.premiumPerEm, 1)} />
-        <Row label="Distance / EM" value={p.emDistance === null ? '—' : `${p.emDistance.toFixed(2)}×`} tone={p.emDistance !== null && p.emDistance < 1 ? 'warn' : undefined} />
-        <Row label="IV percentile" value={ivRank ? `${fmt.pct(ivRank.percentile)} (${ivRank.days < 1 ? 'today' : `${Math.round(ivRank.days)}d`})` : '—'} hint="ATM IV among every recorded reading since 17 Sep 2026" />
-        <Row label="Premium velocity" value={mom.velocity === null ? '—' : `${fmt.signed(mom.velocity, 1)} / 5m`} tone={mom.velocity === null ? undefined : mom.velocity > 0 ? 'down' : 'up'} hint="Mark change over the last recorded five minutes; rising premium is against a short" />
-        <Row label="Premium acceleration" value={mom.acceleration === null ? '—' : fmt.signed(mom.acceleration, 1)} hint="The change of the velocity" />
-        <Row label="OI change" value={leg.oiChange ? `${fmt.signed(leg.oiChange.change)} (${leg.oiChange.overMinutes}m)` : '—'} />
-        <Row label="Breakeven" value={fmt.n(breakeven(leg.cp, leg.strike, p.premium))} hint="Before fees; the risk engine has it after fees" />
+        <Row label="Bid size / ask size" value={`${fmt.n(leg.bidSize ?? null)} / ${fmt.n(leg.askSize ?? null)}`} hint="Contracts resting at the best bid and ask" />
       </div>
     </div>
   );
@@ -264,27 +258,3 @@ export function PayoffChart({ rows, strike }: { rows: { price: number; pnlUsd: n
 
 // ------------------------------------------------------------ the decision
 
-/** The multi-timeframe table the side is chosen from: one row a timeframe, one vote a row, and the count. */
-export function MtfTable({ mtf }: { mtf: MtfConsensus }) {
-  const tone = (v: string | null | undefined) => (v === 'up' || v === 'bullish' || v === '↑' ? 'ov-up' : v === 'down' || v === 'bearish' || v === '↓' ? 'ov-down' : 'ov-muted');
-  return (
-    <div className="ov-mtf-block">
-      <h4 className="ov-subhead"><span>Multi-timeframe</span><Tag tone={mtf.way === 'UP' ? 'up' : mtf.way === 'DOWN' ? 'down' : 'muted'}>MTF consensus {mtf.text}</Tag></h4>
-      <table className="ov-mini ov-mtf">
-        <thead><tr><th>TF</th><th>Trend</th><th>Momentum</th><th title="Measured share of windows over this horizon that closed higher">P(up)</th><th>Signal</th></tr></thead>
-        <tbody>
-          {mtf.rows.map((r) => (
-            <tr key={r.tf}>
-              <td>{r.tf}</td>
-              <td className={tone(r.trend)}>{r.trend ?? '—'}</td>
-              <td className={tone(r.momentum)}>{r.momentum ?? '—'}</td>
-              <td>{fmt.pct(r.pUp)}</td>
-              <td className={tone(r.signal)}>{r.signal ?? '—'}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className="ov-foot">Trend from the EMA stack, momentum from RSI, P(up) from the measured record; each row votes with its majority. The count is the input to the CE / PE side selection.</p>
-    </div>
-  );
-}

@@ -5,7 +5,7 @@ import { getMovement, getPerp, getTerm } from '@/api/desk';
 import { usePoll } from '@/hooks/usePoll';
 import type { ChartTf } from '@/components/desk/PriceChart';
 import {
-  assessSides, bestLeg, DESK_FILTER, expectedMove, filtersChanged, findStrikes, ivRv, keyLevels, mtfConsensus, namedLevels, optionBias, riskEngine, windowMinutes, sideGates, sideSelector, sideStatusOf, skew,
+  assessBoth, assessSides, bestLeg, dataFreshness, DESK_FILTER, mustChange, persistence, expectedMove, filtersChanged, findStrikes, ivRv, keyLevels, mtfConsensus, namedLevels, optionBias, riskEngine, windowMinutes, sideGates, sideSelector, sideStatusOf, skew,
   type FinderFilter, type SideAssessment, type SideChoice, type WindowChoice,
 } from '@/lib/overview';
 import { DEFAULT_CONFIG, entryTodayMs, thresholds } from '@/lib/screen-config';
@@ -14,11 +14,12 @@ import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
 import {
   KeyLevelsPanel, KpiStrip, IvTermPanel, OptionBiasPanel, OptionFlowPanel, PriceActionPanel, SkewPanel, TradeFlowPanel, VolatilityPanel,
 } from './MarketPanels';
-import { ChainPanel, findLeg, MtfTable, SelectedStrikePanel, type Selected } from './DecisionPanels';
+import { ChainPanel, findLeg, SelectedStrikePanel, type Selected } from './DecisionPanels';
 import { DecisionCards } from './DecisionCards';
+import { FinalDecision } from './FinalDecision';
 import { ScreenBar } from './ScreenBar';
-import { RiskEnginePanel, ScenarioPanel } from './RiskPanels';
-import { ChangesPanel, EarlyWarningPanel, MovementPanel, MovementTypePanel, StrikeFinder, useChanges, type ChangesTab } from './TraderPanels';
+import { RiskEnginePanel } from './RiskPanels';
+import { ChangesPanel, EarlyWarningPanel, MovementPanel, StrikeFinder, useChanges } from './TraderPanels';
 
 /**
  * The Live screen: the three reference designs (docs/image1-3.png) and the
@@ -30,12 +31,11 @@ import { ChangesPanel, EarlyWarningPanel, MovementPanel, MovementTypePanel, Stri
  * One fact, one place. The bar owns the clock (entry, window, expiry, time
  * left); the strategy decision owns the answer; the KPI strip owns the market's
  * headline numbers; the left column reads the market (trend, levels,
- * volatility, the tape, the skew); the centre is the board (chart, the strike under
- * inspection, what changed, its risk and decay, its scenario, the move's
- * character); the right column decides (option bias, horizon and MTF, SELL
- * CE beside SELL PE, the early warning). The bottom row is the strike
- * finder beside the term structure. The three columns
- * are stacked to end near each other. Nothing
+ * volatility, the tape); the centre is the board (chart, compact chain, the
+ * strike under inspection, what changed, its risk with stress and decay);
+ * the right column decides (the option bias, the one multi-timeframe table,
+ * SELL CE beside SELL PE, the early warning, the vol surface). The final
+ * decision strip sits above it all; the strike finder below. Nothing
  * is shown twice: a figure the checklist judges is not repeated as a row.
  *
  * Every figure is read from the chain response, the perp feed or the desk's
@@ -158,6 +158,19 @@ export function Overview({
     return auto;
   }, [data, sides, config.sideMode, mtf]);
 
+  // Signal persistence: the side the desk said on each board, newest last; three in a row make it VALID.
+  const [history, setHistory] = useState<SideChoice['side'][]>([]);
+  useEffect(() => { setHistory((h) => [...h.slice(-5), choice.side]); }, [snap.ts]); // eslint-disable-line react-hooks/exhaustive-deps
+  const persist = useMemo(() => persistence(history.length ? history : [choice.side]), [history, choice.side]);
+  const both = useMemo(() => assessBoth(data, sides, contracts, leverage, emSettle), [data, sides, contracts, leverage, emSettle]);
+  const ages = useMemo(() => dataFreshness(data.freshness, now, { market: config.freshnessSec * 1000, chain: config.freshnessSec * 1000, oi: 15 * 60_000, model: 7 * 86_400_000 }), [data.freshness, now, config.freshnessSec]);
+  // What must change, from the side that came closest.
+  const must = useMemo(() => {
+    if (choice.side !== 'NO_TRADE') return null;
+    const focus = [...sides].sort((a, b) => ((a.gates ?? []).filter((g) => g.ok === false).length) - ((b.gates ?? []).filter((g) => g.ok === false).length))[0] ?? null;
+    return mustChange(focus, mtf, t, tradeLimits?.maxSpreadPct ?? null, now, config.entryIst);
+  }, [choice.side, sides, mtf, t, tradeLimits, now, config.entryIst]);
+
   // The default selection follows the desk's side; the operator's click overrides it.
   const deskPick = useMemo<Selected | null>(() => {
     // BOTH reads as the put first: the side the desk sells most; the call is one click away.
@@ -172,30 +185,25 @@ export function Overview({
 
   const risk = useMemo(() => (leg ? riskEngine(leg, data.legs, emSettle, snap.spot, snap.hoursToExpiry, contracts, leverage) : null), [leg, data.legs, emSettle, snap.spot, snap.hoursToExpiry, contracts, leverage]);
 
-  // What changed, a side at a time: the CE and the PE the decision is about (the selected strike where it is one of them).
-  const ceLeg = leg?.cp === 'C' ? leg : sides[0]!.leg;
-  const peLeg = leg?.cp === 'P' ? leg : sides[1]!.leg;
-  const [changesTab, setChangesTab] = useState<ChangesTab>(leg?.cp === 'P' ? 'PE' : 'CE');
-  useEffect(() => { if (leg) setChangesTab(leg.cp === 'P' ? 'PE' : 'CE'); }, [leg?.cp, leg?.strike]); // eslint-disable-line react-hooks/exhaustive-deps
+  // What changed, for the strike under inspection: one request, every 30 s, with the since-entry row.
   const entryMs = useMemo(() => { const e = entryTodayMs(config.entryIst, now); return e !== null && e < now ? e : null; }, [config.entryIst, Math.floor(now / 60_000)]); // eslint-disable-line react-hooks/exhaustive-deps
-  const ceChanges = useChanges(data, ceLeg, spot, entryMs);
-  const peChanges = useChanges(data, peLeg, spot, entryMs);
-  const changes = leg?.cp === 'P' ? peChanges : ceChanges;
-  const activeChanges = changesTab === 'PE' ? peChanges : ceChanges;
+  const changes = useChanges(data, leg, spot, entryMs);
 
   return (
     <div className="ov">
       <ScreenBar data={data} now={now} freshnessSec={config.freshnessSec} entryIst={config.entryIst} expiries={expiries} onExpiry={onExpiry} controls={controls} error={error} />
+      <ErrorBoundary where="Final decision">
+        <FinalDecision data={data} sides={sides} both={both} choice={choice} leg={leg} mtf={mtf} persist={persist} freshness={ages} must={must} now={now} onSelect={(cp, strike) => setPicked({ cp, strike })} onSell={onSell} />
+      </ErrorBoundary>
       <ErrorBoundary where="Overview KPIs"><KpiStrip data={data} spot={spot} iv={iv} perp={perp} spark={spark} now={now} /></ErrorBoundary>
 
       <div className="ov-main">
         <div className="ov-col">
           <ErrorBoundary where="Price action"><PriceActionPanel market={data.market} tf={chartTf} levels={levels} spot={spot} /></ErrorBoundary>
-          <ErrorBoundary where="Key levels"><KeyLevelsPanel data={data} spot={spot} atrUsd={atrUsd} /></ErrorBoundary>
+          <ErrorBoundary where="Key levels"><KeyLevelsPanel data={data} spot={spot} atrUsd={atrUsd} emUsd={emSettle?.move ?? null} /></ErrorBoundary>
           <ErrorBoundary where="Volatility"><VolatilityPanel data={data} iv={iv} /></ErrorBoundary>
           <ErrorBoundary where="Trade flow"><TradeFlowPanel perp={perp} market={data.market} window={flowWindow} onWindow={setFlowWindow} /></ErrorBoundary>
           <ErrorBoundary where="Option flow"><OptionFlowPanel perp={perp} legs={data.legs} atm={snap.atm} window={flowWindow} onWindow={setFlowWindow} /></ErrorBoundary>
-          <ErrorBoundary where="Skew"><SkewPanel data={data} rank={term?.skew ?? null} /></ErrorBoundary>
         </div>
 
         <div className="ov-col">
@@ -206,7 +214,7 @@ export function Overview({
             </ErrorBoundary>
           )}
           <ErrorBoundary where="Selected strike">
-            <SelectedStrikePanel data={data} leg={leg} em={emSettle} contracts={contracts} ivRank={term?.iv ?? null} momentum={changes?.momentum ?? null} iv={iv}
+            <SelectedStrikePanel data={data} leg={leg} contracts={contracts} iv={iv}
               onChoose={(cp, strike) => setPicked({ cp, strike })}
               options={(() => {
                 const out: { key: string; cp: 'C' | 'P'; strike: number; label: string }[] = [];
@@ -219,15 +227,13 @@ export function Overview({
               })()}
               changed={(() => { const r = changes?.rows.find((x) => x.minutes === 60) ?? null; return r ? { oiChange: r.oiChange, oiThen: r.oiThen, ivChangePts: r.ivChangePts } : null; })()} />
           </ErrorBoundary>
-          <ErrorBoundary where="What changed"><ChangesPanel tab={changesTab} onTab={setChangesTab} ce={ceLeg} pe={peLeg} board={(changesTab === 'BOARD' ? changes : activeChanges)?.rows ?? null} changes={activeChanges} /></ErrorBoundary>
+          <ErrorBoundary where="What changed"><ChangesPanel leg={leg} changes={changes} /></ErrorBoundary>
           <ErrorBoundary where="Risk engine"><RiskEnginePanel leg={leg} risk={risk} contracts={contracts} hoursToExpiry={snap.hoursToExpiry} iv={iv} step={snap.step} /></ErrorBoundary>
-          <ErrorBoundary where="Scenario"><ScenarioPanel leg={leg} contracts={contracts} /></ErrorBoundary>
-          <ErrorBoundary where="Movement type"><MovementTypePanel rows={movement?.rows ?? null} outlook={data.outlook} /></ErrorBoundary>
         </div>
 
         <div className="ov-col ov-right">
           <ErrorBoundary where="Option bias"><OptionBiasPanel bias={bias} /></ErrorBoundary>
-          <ErrorBoundary where="Horizon / MTF"><MovementPanel data={data} em={emSettle} activeMin={config.horizonMin} mtf={<MtfTable mtf={mtf} />} /></ErrorBoundary>
+          <ErrorBoundary where="Multi-timeframe"><MovementPanel data={data} em={emSettle} activeMin={config.horizonMin} mtf={mtf} movement={movement?.rows ?? null} /></ErrorBoundary>
           <ErrorBoundary where="Strategy decision">
             <DecisionCards data={data} sides={sides} choice={choice} iv={iv} em={emSettle} mtf={mtf} contracts={contracts} leverage={leverage}
               onSelect={(cp, strike) => setPicked({ cp, strike })} oi={perp?.oi ?? null}
@@ -242,6 +248,8 @@ export function Overview({
               cardStrike={cardStrike} onCardStrike={(cp, strike) => setCardStrike((c) => ({ ...c, [cp]: strike }))} />
           </ErrorBoundary>
           <ErrorBoundary where="Early warning"><EarlyWarningPanel data={data} perp={perp} changes={changes?.rows ?? null} /></ErrorBoundary>
+          <ErrorBoundary where="IV term structure"><IvTermPanel term={term} error={Boolean(termError)} /></ErrorBoundary>
+          <ErrorBoundary where="Skew"><SkewPanel data={data} rank={term?.skew ?? null} /></ErrorBoundary>
         </div>
       </div>
 
@@ -251,9 +259,6 @@ export function Overview({
             defaultSide={choice.side === 'CE' ? 'C' : choice.side === 'PE' ? 'P' : 'both'} em={emSettle} execution={config.execution}
             filter={filter} onFilter={setFilter} rvPct={data.market?.realisedVol ?? null} />
         </ErrorBoundary>
-        <div className="ov-col">
-          <ErrorBoundary where="IV term structure"><IvTermPanel term={term} error={Boolean(termError)} /></ErrorBoundary>
-        </div>
       </div>
     </div>
   );

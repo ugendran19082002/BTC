@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { ChainResponse, Leg, MarketRead } from '@/types/desk';
 import type { FlowSummary, PerpResponse, SideFlow, TermHistoryPoint, TermPoint, TermResponse } from '@/api/desk';
-import { ivRv, keyLevels, namedLevels, skew, srDistances, structureRead, volRegime, WINDOW_CHOICES, windowLabel, type IvRv, type NamedLevel, type OptionBias, type WindowChoice } from '@/lib/overview';
+import { ivRv, keyLevels, namedLevels, skew, skewRichness, srDistances, structureRead, volRegime, WINDOW_CHOICES, windowLabel, type IvRv, type NamedLevel, type OptionBias, type WindowChoice } from '@/lib/overview';
 import { fmt, More, NotCaptured, Panel, Row, Tag, useWidth } from './parts';
 
 // ------------------------------------------------------------------ KPI strip
@@ -174,28 +174,26 @@ export function PriceActionPanel({ market, tf: chartTf = '15m', levels = [], spo
 
 // --------------------------------------------------------------- key levels
 
-export function KeyLevelsPanel({ data, spot, atrUsd = null }: { data: ChainResponse; spot: number; atrUsd?: number | null }) {
+export function KeyLevelsPanel({ data, spot, atrUsd = null, emUsd = null }: { data: ChainResponse; spot: number; atrUsd?: number | null; emUsd?: number | null }) {
   const m = data.market;
   const all = keyLevels(data.structure, m?.high24h ?? null, m?.low24h ?? null, m?.prevDayHigh ?? null, m?.prevDayLow ?? null);
   const named = namedLevels(all, spot);
-  const shown = new Set(named.map((l) => l.price));
-  const rest = all.filter((l) => !shown.has(l.price));
   const row = (name: string, price: number, kind: string, source?: string) => (
     <tr key={`${name}${price}`} title={source}>
       <td><i className={`ov-dot ov-bg-${kind === 'resistance' ? 'down' : kind === 'support' ? 'up' : 'muted'}`} />{name}</td>
       <td>{fmt.n(price)}</td>
       <td className={price >= spot ? 'ov-down' : 'ov-up'}>{fmt.signed(price - spot)} <small className="ov-muted">{fmt.signed(((price - spot) / spot) * 100, 2)}%</small></td>
       <td className="ov-muted">{atrUsd && atrUsd > 0 ? `${(Math.abs(price - spot) / atrUsd).toFixed(1)}×` : '—'}</td>
+      <td className="ov-muted">{emUsd && emUsd > 0 ? `${(Math.abs(price - spot) / emUsd).toFixed(2)}×` : '—'}</td>
     </tr>
   );
   return (
     <Panel title="Key levels" right={<small className="ov-muted">spot {fmt.n(spot)}{atrUsd ? ` · ATR ${fmt.n(atrUsd)}` : ''}</small>}>
       {all.length === 0 ? <p className="ov-empty">No levels on this board.</p> : (
         <table className="ov-mini ov-levels">
-          <thead><tr><th>Level</th><th>Price</th><th title="From spot, dollars and percent">Distance</th><th title="Distance in average true ranges of the chart's timeframe: under 1 is within a bar's reach">÷ ATR</th></tr></thead>
+          <thead><tr><th>Level</th><th>Price</th><th title="From spot, dollars and percent">Distance</th><th title="Distance in average true ranges of the chart's timeframe: under 1 is within a bar's reach">÷ ATR</th><th title="Distance in expected moves to settlement">÷ EM</th></tr></thead>
           <tbody>
             {named.map((l) => row(l.name, l.price, l.kind, l.source))}
-            {rest.map((l) => row(l.label, l.price, l.kind))}
           </tbody>
         </table>
       )}
@@ -238,10 +236,10 @@ export function TradeFlowPanel({ perp, market, window: win, onWindow }: { perp: 
   const head = win && onWindow ? <WindowSelect value={win} onChange={onWindow} /> : null;
   const f = perp?.flow ?? null;
   const b = perp?.book ?? null;
-  if (!perp) return <Panel title="Trade flow" right={head}><p className="ov-empty">Loading…</p></Panel>;
+  if (!perp) return <Panel title="BTC flow · perpetual" right={head}><p className="ov-empty">Loading…</p></Panel>;
   if (!f || f.source === 'none') {
     return (
-      <Panel title="Trade flow" right={head}>
+      <Panel title="BTC flow · perpetual" right={head}>
         <NotCaptured what="No prints in the window" why="The tape recorder has just started, or its socket is down — /api/health shows flowFeed." />
         {b && <BookRows b={b} />}
       </Panel>
@@ -251,7 +249,7 @@ export function TradeFlowPanel({ perp, market, window: win, onWindow }: { perp: 
   const last = f.cvd.at(-1)?.cvd ?? null;
   const kct = (v: number) => (Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(1)}K` : fmt.n(v));
   return (
-    <Panel title="Trade flow"
+    <Panel title="BTC flow · perpetual"
       right={<span className="ov-chain-head">{head}<small className={f.minutesCovered < f.windowMin ? 'ov-warn' : 'ov-muted'} title="Minutes in the window with at least one print">{f.minutesCovered} of {f.windowMin} min</small></span>}>
       <Row mark="dot" tone="up" label="Buy volume" value={`${kct(f.buyVolume)} ct`} hint="Contracts bought by the aggressor: buys that lifted the offer" />
       <Row mark="dot" tone="down" label="Sell volume" value={`${kct(f.sellVolume)} ct`} hint="Contracts sold by the aggressor: sells that hit the bid" />
@@ -365,6 +363,8 @@ function TermChart({ points, weekAgo, monthAgo }: { points: TermPoint[]; weekAgo
 
 export function SkewPanel({ data, rank }: { data: ChainResponse; rank: TermResponse['skew'] | null }) {
   const s = skew(data.legs, data.structure.atmIv);
+  const rich = skewRichness(s.putCallPts, rank?.percentile ?? null);
+  const tone = (v: 'HIGH' | 'NORMAL' | 'LOW') => (v === 'HIGH' ? 'down' : v === 'LOW' ? 'up' : 'muted');
   const iv = (v: number | null | undefined) => (v === null || v === undefined ? '—' : `${(v * 100).toFixed(1)}%`);
   return (
     <Panel title={`Skew (${data.snapshot.expiry})`}>
@@ -376,6 +376,9 @@ export function SkewPanel({ data, rank }: { data: ChainResponse; rank: TermRespo
       <Row label={`Skew percentile${rank ? ` (${rank.days < 1 ? 'today' : `${Math.round(rank.days)}d`})` : ''}`}
         value={rank ? fmt.pct(rank.percentile) : '—'} tone={rank ? (rank.percentile >= 0.8 ? 'down' : rank.percentile <= 0.2 ? 'up' : undefined) : 'muted'}
         hint={rank ? `Among ${rank.samples} recorded readings since 17 Sep 2026; the reference screens want a year` : 'Needs recorded skew readings; recording started 17 Sep 2026'} />
+      <Row label="PE richness" value={rich ? <Tag tone={tone(rich.pe)}>{rich.pe}</Tag> : '—'} hint="Relative pricing from the skew: HIGH means the puts are priced up against the calls — richer to sell, and the market is paying for downside" />
+      <Row label="CE richness" value={rich ? <Tag tone={tone(rich.ce)}>{rich.ce}</Tag> : '—'} hint="Relative pricing from the skew: HIGH means the calls are priced up against the puts" />
+      <p className="ov-foot">{rich ? `${rich.text[0]!.toUpperCase()}${rich.text.slice(1)}.` : ''} Skew is relative pricing only; IV − RV says whether the whole board is rich, and a strike's own odds whether it is safe.</p>
     </Panel>
   );
 }
@@ -401,10 +404,10 @@ export function OptionFlowPanel({ perp, legs = [], atm = null, window: win, onWi
   };
   const spreadOf = (l: Leg | null) => (l && l.bid !== null && l.ask !== null && l.bid + l.ask > 0 ? (l.ask - l.bid) / ((l.bid + l.ask) / 2) : null);
   const kct = (v: number) => (Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(1)}K` : fmt.n(v));
-  if (!perp) return <Panel title="Option flow" right={head}><p className="ov-empty">Loading…</p></Panel>;
+  if (!perp) return <Panel title="Option flow · CE / PE" right={head}><p className="ov-empty">Loading…</p></Panel>;
   if (!f || f.source === 'none') {
     return (
-      <Panel title="Option flow" right={head}>
+      <Panel title="Option flow · CE / PE" right={head}>
         <NotCaptured what="No option prints in the window" why="The tape recorder subscribes to every strike of the two nearest expiries; recording began 20 Sep 2026, or the socket is down — /api/health shows flowFeed." />
       </Panel>
     );
@@ -426,7 +429,7 @@ export function OptionFlowPanel({ perp, legs = [], atm = null, window: win, onWi
   );
   const biasTone = f.combined.bias === null || f.combined.bias === 'MIXED' ? 'muted' : /CALL BUYING|PUT SELLING/.test(f.combined.bias) ? 'up' : 'down';
   return (
-    <Panel title="Option flow"
+    <Panel title="Option flow · CE / PE"
       right={<span className="ov-chain-head">{head}<small className={f.minutesCovered < f.windowMin ? 'ov-warn' : 'ov-muted'} title="Minutes in the window with at least one option print">{f.minutesCovered} of {f.windowMin} min · {f.expiry}</small></span>}>
       <div className="ov-flow-cards">
         {card('CE flow', 'CALL', f.ce, atmLeg('C'))}

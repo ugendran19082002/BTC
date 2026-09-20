@@ -482,13 +482,11 @@ export default function App() {
       {tab === 'desk' ? (
         <>
           {/*
-            The Live screen, after docs/image1.png and docs/image2.png: the
-            screen bar, the KPI strip, three columns (price action and levels
-            and volatility and flow · chart and chain and the selected strike ·
-            the model, the decision, the recommendation and the entry), the
-            bottom row (term structure, skew) and the status bar.
-            The full board follows, as the one thing the reference screens
-            compress: every column of every strike, with its own controls.
+            The Live screen: the final decision, the KPI strip, three columns
+            (market read · chart, compact chain and the selected strike ·
+            the decision), and the strike finder. The compact chain selects
+            a strike on click; the full board, every column of every strike,
+            is the Option Chain tab.
           */}
           {err && !data && <div className="err">{err}</div>}
           {busy && !data && <Loading />}
@@ -504,7 +502,6 @@ export default function App() {
                 leverage={orderLeverage}
                 selected={focus}
                 onSelect={setFocus}
-                chain={false}
                 spark={sparkCloses}
                 error={err}
                 controls={

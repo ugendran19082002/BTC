@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import type { ChainResponse, Leg } from '@/types/desk';
 import { getChanges, type ChangeRow, type ModelNow, type MovementRow, type PerpResponse, type PremiumMomentum } from '@/api/desk';
 import {
-  boardRead, candidates, DESK_FILTER, earlyWarning, executionEstimate, filtersChanged, finderDecision, findStrikes, horizonRows, movementVerdict, odds, orderEstimate, premiumAnalysis, sellerImpact, sellerState,
-  type EarlyWarning, type ExpectedMove, type FinderFilter, type Impact,
+  boardRead, candidates, DESK_FILTER, earlyWarning, executionEstimate, filtersChanged, finderDecision, finderRanks, findStrikes, horizonRows, movementVerdict, odds, orderEstimate, premiumAnalysis, sellerImpact, sellerState,
+  type EarlyWarning, type ExpectedMove, type FinderFilter, type Impact, type MtfConsensus,
 } from '@/lib/overview';
 import type { ScreenConfig } from '@/lib/screen-config';
 import { fmt, Panel, Row, Tag } from './parts';
@@ -19,14 +19,13 @@ export function EarlyWarningPanel({ data, perp, changes }: { data: ChainResponse
   const shock = data.shocks?.[0] ?? null;
   const tone = w.band === 'sudden' ? 'down' : w.band === 'high' ? 'warn' : w.band === 'watch' ? 'accent' : 'up';
   return (
-    <Panel title="Early warning · big move ahead?" right={<Tag tone={tone}>{w.band.toUpperCase()}{w.score === null ? '' : ` · ${(w.score * 100).toFixed(0)}%`}{w.lean ? ` · pressure ${w.lean > 0 ? 'up ↑' : 'down ↓'}` : ''}</Tag>}>
-      <p className="ov-summary">{w.action}{shock && shock.score !== null ? ` Desk's measured sudden-move score: ${shock.score.toFixed(0)} (${shock.band})${shock.odds ? ` — BTC has moved more than ${shock.odds.thresholdPct}% in the next ${shock.odds.overMinutes}m ${fmt.pct(shock.odds.either)} of the time from readings like these` : ''}.` : ''}</p>
+    <Panel title="Early warning" right={<Tag tone={tone}>{w.band.toUpperCase()}{w.score === null ? '' : ` · ${(w.score * 100).toFixed(0)}%`}{w.lean ? ` · pressure ${w.lean > 0 ? 'up ↑' : 'down ↓'}` : ''}</Tag>}>
+      <p className="ov-summary">{w.action}{shock && shock.score !== null ? ` Measured sudden-move score ${shock.score.toFixed(0)} (${shock.band}).` : ''}</p>
       <ul className="ov-triggers">
         {w.triggers.map((t) => (
-          <li key={t.name} className={t.state === 'TRIGGERED' ? 'ov-fired' : t.state === 'WATCH' ? 'ov-watching' : undefined} title={`${t.formula} · triggers ${t.threshold}`}>
+          <li key={t.name} className={`ov-trigger-compact${t.state === 'TRIGGERED' ? ' ov-fired' : t.state === 'WATCH' ? ' ov-watching' : ''}`} title={`${t.value} · triggers ${t.threshold} · ${t.formula}`}>
             <span className="ov-trigger-name">{t.name}</span>
             <span className={`ov-trigger-state ov-lamp-${t.state?.toLowerCase() ?? 'none'}`}><i aria-hidden />{t.state ?? 'not read'}</span>
-            <span className="ov-trigger-detail"><b>{t.value}</b> <small className="ov-muted">· triggers {t.threshold}</small></span>
           </li>
         ))}
       </ul>
@@ -36,27 +35,60 @@ export function EarlyWarningPanel({ data, perp, changes }: { data: ChainResponse
 
 // ------------------------------------------------------ movement to expiry
 
-export function MovementPanel({ data, em, activeMin, mtf }: { data: ChainResponse; em: ExpectedMove; activeMin: number; mtf?: React.ReactNode }) {
+const TYPE_LABEL: Record<string, string> = {
+  LONG_BUILDUP: 'Long buildup', SHORT_COVERING: 'Short covering', SHORT_BUILDUP: 'Short buildup', LONG_UNWINDING: 'Long unwinding', MIXED: 'Mixed',
+};
+
+/**
+ * Multi-timeframe, the one place: a row a horizon with the direction the
+ * timeframe votes (EMA trend, RSI momentum, the measured odds together),
+ * the character of the move the perpetual's price, OI and tape make of it,
+ * the measured odds and where they fell against the implied band, and the
+ * implied move. The consensus at the foot is the input the side selection
+ * reads; the cards say only whether it passed. Under it, the board read.
+ */
+export function MovementPanel({ data, em, activeMin, mtf, movement }: { data: ChainResponse; em: ExpectedMove; activeMin: number; mtf: MtfConsensus; movement: MovementRow[] | null }) {
   const rows = horizonRows(data.outlook).filter((r) => r.minutes <= Math.max(60, data.snapshot.hoursToExpiry * 60 + 1));
   const board = boardRead(data, em);
   const v = movementVerdict(rows, board, data.market, data.snapshot.hoursToExpiry);
   const says = (s: string) => (s === 'up' ? 'ov-up' : s === 'down' ? 'ov-down' : 'ov-muted');
+  const mins: Record<string, number> = { '5m': 5, '15m': 15, '30m': 30, '1h': 60, '2h': 120, '3h': 180, '4h': 240, '6h': 360, '12h': 720, '1d': 1440 };
+  const labels = [...new Set([...mtf.rows.map((r) => r.tf), ...rows.map((r) => r.label)])].filter((l) => l in mins).sort((a, b) => mins[a]! - mins[b]!);
+  const tone = (v: string | null | undefined) => (v === '↑' || v === 'UP' ? 'ov-up' : v === '↓' || v === 'DOWN' ? 'ov-down' : 'ov-muted');
   return (
-    <Panel title="Horizon / MTF · movement to expiry" right={<Tag tone={v.way === 'up' ? 'up' : v.way === 'down' ? 'down' : 'accent'}>{v.way.toUpperCase()} · {v.confidence} confidence</Tag>}>
+    <Panel title="Multi-timeframe" right={<Tag tone={mtf.way === 'UP' ? 'up' : mtf.way === 'DOWN' ? 'down' : 'muted'}>MTF consensus {mtf.text}</Tag>}>
       <p className="ov-summary">{v.text}.</p>
-      {mtf}
-      <table className="ov-mini ov-horizons">
-        <thead><tr><th>Next</th><th title="Measured share of windows that closed above the band">Above</th><th title="Measured share that closed inside the band">Inside</th><th title="Measured share that closed below the band">Below</th><th title="Spot ± the expected move for the horizon: the band">Band (spot ± EM)</th></tr></thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.label} className={r.minutes === activeMin ? 'ov-atm' : undefined}>
-              <td>{r.label}{r.minutes === activeMin ? ' ◆' : ''}</td>
-              <td className="ov-up">{fmt.pct(r.pUp)}</td><td className="ov-muted">{fmt.pct(r.pRange)}</td><td className="ov-down">{fmt.pct(r.pDown)}</td>
-              <td className="ov-muted" title={r.em === null ? undefined : `±${fmt.n(r.em)}`}>{r.low === null || r.high === null ? '—' : `${fmt.n(r.low)} – ${fmt.n(r.high)}`}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="ov-chain-wrap">
+        <table className="ov-mini ov-mtf">
+          <thead><tr>
+            <th>TF</th><th title="The timeframe's vote: EMA trend, RSI momentum and the measured odds, majority">Direction</th>
+            <th title="What the perpetual's price, OI and tape make of the move over this window">Type</th>
+            <th title="Measured share of windows over this horizon that closed higher">P(up)</th>
+            <th title="Where the measured record fell against the implied band: above · inside · below">Band</th>
+            <th title="spot × ATM IV × √t for the horizon">± Move</th>
+          </tr></thead>
+          <tbody>
+            {labels.map((tf) => {
+              const m = mtf.rows.find((r) => r.tf === tf) ?? null;
+              const h = rows.find((r) => r.label === tf) ?? null;
+              const t = movement?.find((r) => r.minutes === mins[tf]) ?? null;
+              return (
+                <tr key={tf} className={mins[tf] === activeMin ? 'ov-atm' : undefined}>
+                  <td>{tf}{mins[tf] === activeMin ? ' ◆' : ''}</td>
+                  <td className={tone(m?.signal)}>{m?.signal === '↑' ? 'UP' : m?.signal === '↓' ? 'DOWN' : m?.signal === '→' ? 'SIDE' : '—'}</td>
+                  <td className={t?.direction === 'UP' ? 'ov-up' : t?.direction === 'DOWN' ? 'ov-down' : 'ov-muted'} title={t ? `price ${t.pricePct === null ? '—' : `${fmt.signed(t.pricePct, 2)}%`} · OI ${t.oiPct === null ? '—' : `${fmt.signed(t.oiPct, 2)}%`} · volume ${t.volumeRatio === null ? '—' : `${t.volumeRatio.toFixed(1)}×`} · tape ${t.flow?.toLowerCase() ?? '—'}` : undefined}>
+                    {t?.type ? TYPE_LABEL[t.type] : '—'}{t?.strength && t.type !== 'MIXED' ? <small className="ov-muted"> · {t.strength.toLowerCase()}</small> : null}{t?.flow === 'CONFIRMS' ? <small className="ov-up"> ✓</small> : t?.flow === 'DIVERGES' ? <small className="ov-down"> ✕</small> : null}
+                  </td>
+                  <td>{fmt.pct(m?.pUp ?? null)}</td>
+                  <td className="ov-muted">{h ? `${fmt.pct(h.pUp)} · ${fmt.pct(h.pRange)} · ${fmt.pct(h.pDown)}` : '—'}</td>
+                  <td className="ov-muted">{h?.em == null ? '—' : `±${fmt.n(h.em)}`}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="ov-foot">Type: price ↑ with OI ↑ is a long buildup, ↑ with OI ↓ short covering, ↓ with OI ↑ a short buildup, ↓ with OI ↓ a long unwinding; ✓ / ✕ is whether the tape's aggressors agree. The three band shares add to 100%.</p>
       <div className="ov-board-read">
         {board.map((b) => (
           <Row key={b.name} mark="arrow" tone={b.says === 'up' ? 'up' : b.says === 'down' ? 'down' : 'muted'} label={b.name} value={<span className={says(b.says)}>{b.text}</span>} hint={b.formula} />
@@ -91,8 +123,6 @@ export function useChanges(data: ChainResponse, leg: Leg | null, spot: number, e
   return rows;
 }
 
-export type ChangesTab = 'CE' | 'PE' | 'BOARD';
-
 /**
  * What changed, for a seller: one table a strike (the CE and the PE the
  * decision is about), with the premium read the short's way -- up is risk,
@@ -102,14 +132,7 @@ export type ChangesTab = 'CE' | 'PE' | 'BOARD';
  * the whole chain's calls against puts. The since-entry row runs from the
  * strategy's entry moment, once a window has passed since.
  */
-export function ChangesPanel({ tab, onTab, ce, pe, board, changes }: {
-  tab: ChangesTab; onTab: (t: ChangesTab) => void;
-  ce: Leg | null; pe: Leg | null;
-  /** The board's changes: the rows of whichever strike is loaded. */
-  board: ChangeRow[] | null;
-  /** The active strike's changes. */
-  changes: Changes | null;
-}) {
+export function ChangesPanel({ leg, changes }: { leg: Leg | null; changes: Changes | null }) {
   const sgn = (v: number | null, p = 0, unit = '') => (v === null ? '—' : `${fmt.signed(v, p)}${unit}`);
   const cls = (v: number | null, invert = false) => (v === null ? 'ov-muted' : (invert ? -v : v) > 0 ? 'ov-up' : (invert ? -v : v) < 0 ? 'ov-down' : '');
   const label = (r: { minutes: number; sinceEntry?: boolean }) => (r.sinceEntry ? `entry · ${r.minutes >= 60 ? `${Math.floor(r.minutes / 60)}h ${String(r.minutes % 60).padStart(2, '0')}m` : `${r.minutes}m`}` : r.minutes >= 60 ? `${r.minutes / 60}h` : `${r.minutes}m`);
@@ -120,60 +143,27 @@ export function ChangesPanel({ tab, onTab, ce, pe, board, changes }: {
     const tone = Math.abs(d) < 1e-9 ? '' : (betterWhenUp ? d > 0 : d < 0) ? 'ov-up' : 'ov-down';
     return <span><span className="ov-muted">{f(then)} → </span><b className={tone}>{f(now)}</b></span>;
   };
-  const strikeLabel = (l: Leg | null, side: 'CE' | 'PE') => (l ? `${side} ${fmt.n(l.strike)}` : side);
-  const rows = tab === 'BOARD' ? board : changes?.rows ?? null;
+  const rows = changes?.rows ?? null;
   const model = changes?.model ?? null;
-  const impacts = tab === 'BOARD' || !rows || !model ? [] : rows.filter((r) => !r.sinceEntry).map((r) => ({ minutes: r.minutes, impact: sellerImpact(r, model) }));
+  const impacts = !rows || !model ? [] : rows.filter((r) => !r.sinceEntry).map((r) => ({ minutes: r.minutes, impact: sellerImpact(r, model) }));
   const state = sellerState(impacts);
   return (
-    <Panel title="What changed"
-      right={
-        <span className="ov-chain-head">
-          <span className="ov-tabs ov-tabs-inline" role="tablist">
-            {(['CE', 'PE', 'BOARD'] as const).map((t) => (
-              <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} onClick={() => onTab(t)}>
-                {t === 'BOARD' ? 'Board' : strikeLabel(t === 'CE' ? ce : pe, t)}
-              </button>
-            ))}
-          </span>
-        </span>
-      }>
-      {tab !== 'BOARD' && impacts.length > 0 && (
+    <Panel title={`What changed${leg ? ` · ${fmt.n(leg.strike)} ${leg.cp === 'C' ? 'CE' : 'PE'}` : ''}`} right={<small className="ov-muted">this strike, 1m … 12h and since entry</small>}>
+      {impacts.length > 0 && (
         <div className="ov-impact-line">
           {impacts.map((x) => <span key={x.minutes}><small className="ov-muted">{x.minutes >= 60 ? `${x.minutes / 60}h` : `${x.minutes}m`}</small> {x.impact === 'BETTER' ? '🟢' : x.impact === 'WORSE' ? '🔴' : x.impact === 'NEUTRAL' ? '🟡' : '·'}</span>)}
           <Tag tone={state.state === 'IMPROVING' ? 'up' : state.state === 'DETERIORATING' ? 'down' : state.state === 'MIXED' ? 'warn' : 'muted'}>{state.state === 'DETERIORATING' ? '⚠ ' : ''}{state.text}</Tag>
         </div>
       )}
-      {!rows ? <p className="ov-empty">{tab === 'BOARD' || (tab === 'CE' ? ce : pe) ? 'Loading…' : `No ${tab} strike on the cards.`}</p> : tab === 'BOARD' ? (
-        <div className="ov-chain-wrap">
-          <table className="ov-mini ov-changes">
-            <thead><tr><th>Window</th><th>BTC</th><th>BTC %</th><th>CE OI Δ</th><th>PE OI Δ</th><th>Call vol Δ</th><th>Put vol Δ</th><th>PCR Δ</th><th>ATM IV Δ</th></tr></thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={`${r.minutes}${r.sinceEntry ? 'e' : ''}`} className={r.sinceEntry ? 'ov-atm' : undefined}>
-                  <td>{label(r)}</td>
-                  <td className={cls(r.spotChange)}>{sgn(r.spotChange)}</td>
-                  <td className={cls(r.spotChangePct)}>{sgn(r.spotChangePct, 2, '%')}</td>
-                  <td className={cls(r.ceOiChange)}>{sgn(r.ceOiChange)}</td>
-                  <td className={cls(r.peOiChange)}>{sgn(r.peOiChange)}</td>
-                  <td>{sgn(r.callVolumeChange)}</td>
-                  <td>{sgn(r.putVolumeChange)}</td>
-                  <td className={cls(r.pcrChange)}>{sgn(r.pcrChange, 2)}</td>
-                  <td className={cls(r.atmIvChangePts, true)}>{sgn(r.atmIvChangePts, 1, ' pts')}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
+      {!rows ? <p className="ov-empty">{leg ? 'Loading…' : 'Select a strike.'}</p> : (
         <div className="ov-chain-wrap">
           <table className="ov-mini ov-changes">
             <thead>
               <tr>
-                <th>Window</th><th>BTC %</th>
+                <th>Window</th><th title="BTC over the window">BTC Δ</th>
                 <th title="The premium then → now. For a short, up is risk and down is favourable">Premium</th><th>Prem Δ</th>
-                <th title="Open interest on this strike: context beside the premium, not a verdict on its own">OI Δ</th><th>IV Δ</th><th>Vol Δ</th>
-                <th title="By the option model, then → now">P(OTM)</th><th title="By the option model, then → now">Touch</th><th title="By the model, then → now">Dist/EM</th>
+                <th title="Open interest on this strike: context beside the premium, not a verdict on its own">OI Δ</th><th>IV Δ</th><th>Vol</th>
+                <th title="By the option model, then → now">Touch Δ</th><th title="By the model, then → now">Dist/EM Δ</th>
                 <th title="Premium, touch odds, distance and IV together, for the seller of this strike">Impact</th>
               </tr>
             </thead>
@@ -187,7 +177,6 @@ export function ChangesPanel({ tab, onTab, ce, pe, board, changes }: {
                   <td className={cls(r.oiChange)}>{sgn(r.oiChange)}</td>
                   <td className={cls(r.ivChangePts, true)}>{sgn(r.ivChangePts, 1)}</td>
                   <td>{sgn(r.volumeChange)}</td>
-                  <td>{thenNow(r.pOtmThen, r.pOtmNow ?? model?.pOtm ?? null, (v) => `${Math.round(v * 100)}%`, true)}</td>
                   <td>{thenNow(r.pTouchThen, r.pTouchNow ?? model?.pTouch ?? null, (v) => `${Math.round(v * 100)}%`, false)}</td>
                   <td>{thenNow(r.emDistanceThen, r.emDistanceNow ?? model?.emDistance ?? null, (v) => `${v.toFixed(1)}×`, true)}</td>
                   <td>{lamp(model ? sellerImpact(r, model) : null)}</td>
@@ -197,7 +186,7 @@ export function ChangesPanel({ tab, onTab, ce, pe, board, changes }: {
           </table>
         </div>
       )}
-      <p className="ov-foot">{tab === 'BOARD' ? 'The whole chain: calls against puts by window.' : 'Premium ↑ = 🔴 risk for a short, ↓ = 🟢 favourable. OI beside it: premium ↑ with OI ↑ is demand, premium ↓ with OI ↑ is writing into it, both ↓ is an unwind. Odds and distance by the option model then and now.'} A dash means no record that far back.</p>
+      <p className="ov-foot">Premium ↑ = 🔴 risk for a short, ↓ = 🟢 favourable. OI beside it: premium ↑ with OI ↑ is demand, premium ↓ with OI ↑ is writing into it, both ↓ is an unwind. Touch odds and distance by the option model then → now. A dash means no record that far back.</p>
     </Panel>
   );
 }
@@ -222,6 +211,7 @@ export function StrikeFinder({ data, onSelect, onSell, contracts, leverage, defa
   const [chosenMode, setMode] = useState<'desk' | 'filters' | null>(null);
   const mode = chosenMode ?? (picks.length > 0 ? 'desk' : 'filters');
   const found = mode === 'desk' ? picks : findStrikes(data.legs, f);
+  const ranks = finderRanks(found);
   // The premium a candidate is judged at follows the execution setting: the bid a seller receives, a tick under it when thin, or the mark for comparison.
   const priceOf = (l: Leg) => (execution === 'MARK' ? l.mark : execution === 'DEPTH' ? executionEstimate(l, spot, contracts).expectedFill : l.bid ?? l.sellPrice);
   const priceLabel = execution === 'MARK' ? 'Mark' : execution === 'DEPTH' ? 'Est. fill' : 'Bid';
@@ -264,7 +254,7 @@ export function StrikeFinder({ data, onSelect, onSell, contracts, leverage, defa
               const decision = finderDecision(l);
               return (
                 <tr key={`${l.cp}${l.strike}`} className="ov-click" onClick={() => onSelect(l.cp, l.strike)}>
-                  <td>{fmt.n(l.strike)}</td><td>{l.cp === 'C' ? 'CE' : 'PE'}</td>
+                  <td>{fmt.n(l.strike)}{(ranks.get(`${l.cp}${l.strike}`) ?? []).map((r) => <Tag key={r} tone={r === 'BEST SAFE' ? 'up' : r === 'BEST PREMIUM' ? 'warn' : 'accent'}><span className="ov-rank">{r}</span></Tag>)}</td><td>{l.cp === 'C' ? 'CE' : 'PE'}</td>
                   <td title={`${priceLabel} ${fmt.n(px, 1)} per BTC · margin ${est ? `$${est.marginUsd.toFixed(2)}` : '—'}`}>{est ? `$${est.creditUsd.toFixed(2)}` : '—'}</td>
                   <td className="ov-up">{fmt.pct(o.pOtm)}</td><td>{fmt.pct(o.pTouch)}</td>
                   <td>{l.emDistance === null ? '—' : `${l.emDistance.toFixed(2)}×`}</td>
@@ -279,63 +269,7 @@ export function StrikeFinder({ data, onSelect, onSell, contracts, leverage, defa
           </tbody>
         </table>
       )}
-      <p className="ov-foot">Out-of-the-money strikes only, best desk score first. Move a filter and the SELL CE / SELL PE cards carry the best strike that passes it. Click a row to inspect it; Sell opens the ticket, where every gate runs again.</p>
-    </Panel>
-  );
-}
-
-// ----------------------------------------------------------- movement type
-
-const TYPE_LABEL: Record<string, string> = {
-  LONG_BUILDUP: 'Long buildup', SHORT_COVERING: 'Short covering', SHORT_BUILDUP: 'Short buildup', LONG_UNWINDING: 'Long unwinding', MIXED: 'Mixed',
-};
-
-/**
- * The character of the move, a window at a time: which of the four types
- * price and OI make, how much volume is behind it, whether the tape's
- * aggressors agree -- and beside it the measured odds and implied move for
- * the same horizon, from the outlook. Direction is one thing; what kind of
- * move it is, another; this says both.
- */
-export function MovementTypePanel({ rows, outlook }: { rows: MovementRow[] | null; outlook: ChainResponse['outlook'] }) {
-  const label = (m: number) => (m >= 60 ? `${m / 60}h` : `${m}m`);
-  const lamp = (r: MovementRow) => (r.type === null ? '·' : r.direction === 'UP' ? '🟢' : r.direction === 'DOWN' ? '🔴' : '⚪');
-  const strengthTone = (v: MovementRow['strength']) => (v === 'EXTREME' ? 'ov-down' : v === 'STRONG' ? 'ov-warn' : v === 'WEAK' ? 'ov-muted' : '');
-  return (
-    <Panel title="Movement type" right={<small className="ov-muted">price · OI · volume · tape, by window</small>}>
-      {!rows ? <p className="ov-empty">Loading…</p> : (
-        <div className="ov-chain-wrap">
-          <table className="ov-mini ov-movement">
-            <thead><tr>
-              <th>Window</th><th>Type</th><th title="BTC over the window">Price</th><th title="The perpetual's open interest over the window">OI</th>
-              <th title="The window's volume per minute against the median minute of the last day">Vol</th><th title="Who crossed the spread: does the tape agree with the type?">Tape</th>
-              <th title="Measured share of windows over this horizon that closed higher, from the current market state">P(up)</th><th title="spot × ATM IV × √t for the horizon">± EM</th>
-            </tr></thead>
-            <tbody>
-              {rows.map((r) => {
-                const h = outlook.rows.find((o) => o.minutes === r.minutes) ?? null;
-                return (
-                  <tr key={r.minutes}>
-                    <td>{label(r.minutes)}</td>
-                    <td className={r.direction === 'UP' ? 'ov-up' : r.direction === 'DOWN' ? 'ov-down' : 'ov-muted'} title={`price ≥ ±${r.thresholds.pricePct.toFixed(2)}% and OI ≥ ±${r.thresholds.oiPct.toFixed(2)}% name a type`}>
-                      {lamp(r)} {r.type ? TYPE_LABEL[r.type] : '—'}{r.strength && r.type !== 'MIXED' ? <small className={strengthTone(r.strength)}> · {r.strength.toLowerCase()}</small> : null}
-                    </td>
-                    <td className={r.pricePct === null ? 'ov-muted' : r.pricePct > 0 ? 'ov-up' : r.pricePct < 0 ? 'ov-down' : ''}>{r.pricePct === null ? '—' : `${fmt.signed(r.pricePct, 2)}%`}</td>
-                    <td className={r.oiPct === null ? 'ov-muted' : r.oiPct > 0 ? 'ov-up' : r.oiPct < 0 ? 'ov-down' : ''}>{r.oiPct === null ? '—' : `${fmt.signed(r.oiPct, 2)}%`}</td>
-                    <td className={strengthTone(r.strength)}>{r.volumeRatio === null ? '—' : `${r.volumeRatio.toFixed(1)}×`}</td>
-                    <td className={r.flow === 'CONFIRMS' ? 'ov-up' : r.flow === 'DIVERGES' ? 'ov-down' : 'ov-muted'} title={r.aggressorBuyPct === null ? undefined : `${(r.aggressorBuyPct * 100).toFixed(0)}% of the volume was buys`}>
-                      {r.flow === null ? '—' : r.flow === 'CONFIRMS' ? '✓ confirms' : r.flow === 'DIVERGES' ? '✕ diverges' : 'flat'}
-                    </td>
-                    <td>{fmt.pct(h?.pUp ?? null)}</td>
-                    <td className="ov-muted">{h?.impliedUsd == null ? '—' : `±${fmt.n(h.impliedUsd)}`}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-      <p className="ov-foot">Price ↑ with OI ↑ is a long buildup, ↑ with OI ↓ short covering, ↓ with OI ↑ a short buildup, ↓ with OI ↓ a long unwinding. Price and OI cannot say who started the trade; the tape column is that check. Thresholds are the desk's starting point, not a backtested truth.</p>
+      <p className="ov-foot">Out-of-the-money strikes only, best desk score first. BEST SAFE is the lowest touch odds on its side, BEST BALANCED the desk's score, BEST PREMIUM the most credit. Move a filter and the SELL CE / SELL PE cards carry the best strike that passes it. Click a row to inspect it; Sell opens the ticket, where every gate runs again.</p>
     </Panel>
   );
 }

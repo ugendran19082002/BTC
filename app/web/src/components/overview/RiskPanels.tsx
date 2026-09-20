@@ -31,6 +31,8 @@ export function RiskEnginePanel({ leg, risk, contracts, hoursToExpiry, iv, step 
           <Row label="Slippage (half spread)" value={risk.slippageUsd === null ? '—' : `$${risk.slippageUsd.toFixed(2)}`} />
         </div>
       </div>
+      <div className="ov-subhead"><span>Stress &amp; scenario</span><small className="ov-muted">{contracts} ct · instant P&L, USD · by the greeks now</small></div>
+      <StressRow leg={leg} contracts={contracts} />
       <DecayChart premium={risk.premium} intrinsic={risk.intrinsic} hoursToExpiry={hoursToExpiry} side={side} strike={leg.strike} />
     </Panel>
   );
@@ -84,17 +86,13 @@ function DecayChart({ premium, intrinsic, hoursToExpiry, side, strike }: { premi
   );
 }
 
-// ------------------------------------------------------------- scenario
+// ---------------------------------------------------------- stress row
 
-/**
- * The selected short under a shock, now: BTC −500 … +500 by delta and gamma,
- * IV ±1 / +2 points by vega, for the size, as the short sees it. Instant
- * P&L, not settlement P&L -- the payoff tab is that.
- */
-export function ScenarioPanel({ leg, contracts }: { leg: Leg | null; contracts: number }) {
-  if (!leg) return <Panel title="Scenario"><p className="ov-empty">Select a strike.</p></Panel>;
+/** BTC −500 … +500 by delta and gamma, IV ±1 / +2 by vega, for the size, as the short sees it: instant P&L, not settlement P&L. */
+function StressRow({ leg, contracts }: { leg: Leg; contracts: number }) {
   const shocks = shockTable(leg, contracts);
-  const btc = shocks.filter((s) => s.label.startsWith('BTC')).sort((a, b) => Number(a.label.replace(/[^\d−-]/g, '').replace('−', '-')) - Number(b.label.replace(/[^\d−-]/g, '').replace('−', '-')));
+  const num = (l: string) => Number(l.replace(/[^\d−-]/g, '').replace('−', '-'));
+  const btc = shocks.filter((s) => s.label.startsWith('BTC')).sort((a, b) => num(a.label) - num(b.label));
   const ivs = shocks.filter((s) => s.label.startsWith('IV'));
   const cell = (s: { label: string; pnlUsd: number | null }) => (
     <span key={s.label} className={s.pnlUsd === null ? 'ov-muted' : s.pnlUsd >= 0 ? 'ov-up' : 'ov-down'}>
@@ -102,14 +100,9 @@ export function ScenarioPanel({ leg, contracts }: { leg: Leg | null; contracts: 
     </span>
   );
   return (
-    <Panel title={`Scenario · ${fmt.n(leg.strike)} ${leg.cp === 'C' ? 'CE' : 'PE'}`} right={<small className="ov-muted">{contracts} ct · instant P&L, USD</small>}>
-      <div className="ov-shocks" title="Delta and gamma for the BTC moves, vega for the IV moves; instantaneous, for the size, as the short sees it">
-        {btc.slice(0, 3).map(cell)}
-        <span className="ov-now"><small>NOW</small>0.00</span>
-        {btc.slice(3).map(cell)}
-      </div>
+    <>
+      <div className="ov-shocks">{btc.slice(0, 3).map(cell)}<span className="ov-now"><small>NOW</small>0.00</span>{btc.slice(3).map(cell)}</div>
       <div className="ov-shocks ov-shocks-iv">{ivs.map(cell)}</div>
-      <p className="ov-foot">By the greeks at this instant, for {contracts} contracts: what the position would show if BTC or IV jumped now. At settlement the payoff tab applies.</p>
-    </Panel>
+    </>
   );
 }
