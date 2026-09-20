@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import { usePersisted } from '@/hooks/usePersisted';
 import type { ChainResponse, Leg } from '@/types/desk';
 import { istLabel } from '@/lib/format';
 import {
@@ -20,11 +21,19 @@ export function ChainPanel({ data, selected, onSelect, rows = 7 }: {
   data: ChainResponse; selected: Selected | null; onSelect: (s: Selected) => void; rows?: number;
 }) {
   const { snapshot: snap, legs, structure } = data;
-  const [filter, setFilter] = useState<ChainFilter>('near');
-  const [cols, setCols] = useState<ChainCols>('quotes');
+  const [filter, setFilter] = usePersisted<ChainFilter>('live:chain:filter', 'all');
+  const [cols, setCols] = usePersisted<ChainCols>('live:chain:cols', 'quotes');
   const ceWall = (structure.ceOiWallNear ?? structure.ceOiWall)?.strike ?? null;
   const peWall = (structure.peOiWallNear ?? structure.peOiWall)?.strike ?? null;
   const maxPain = structure.maxPain?.strike ?? null;
+  // The board scrolls inside a fixed height, and opens with the money in the middle: every strike is a wheel away, the ATM never off screen.
+  const box = useRef<HTMLDivElement>(null);
+  const atmRow = useRef<HTMLTableRowElement>(null);
+  useEffect(() => {
+    const b = box.current, r = atmRow.current;
+    if (!b || !r) return;
+    b.scrollTop = Math.max(0, r.offsetTop - b.clientHeight / 2 + r.offsetHeight / 2);
+  }, [snap.expiry, filter, snap.atm]);
   const strikes = useMemo(() => {
     const every = [...new Set(legs.map((l) => l.strike))].sort((a, b) => a - b);
     if (filter === 'all') return every;
@@ -74,7 +83,7 @@ export function ChainPanel({ data, selected, onSelect, rows = 7 }: {
           <Tag tone={snap.live ? 'accent' : 'muted'}>{snap.live ? 'Latest' : 'Past'}</Tag>
         </span>
       }>
-      <div className="ov-chain-wrap">
+      <div className="ov-chain-wrap ov-chain-scroll" ref={box}>
         <table className="ov-chain">
           <thead>
             <tr><th colSpan={head.length} className="ov-calls">Calls (CE)</th><th /><th colSpan={head.length} className="ov-puts">Puts (PE)</th></tr>
@@ -89,7 +98,7 @@ export function ChainPanel({ data, selected, onSelect, rows = 7 }: {
               const tag = mark(k);
               const cls = [k === snap.atm ? 'ov-atm' : '', k === ceWall ? 'ov-wall-ce' : '', k === peWall ? 'ov-wall-pe' : '', k === maxPain ? 'ov-maxpain' : ''].filter(Boolean).join(' ');
               return (
-                <tr key={k} className={cls || undefined}>
+                <tr key={k} className={cls || undefined} ref={k === snap.atm ? atmRow : undefined}>
                   <ChainSide leg={c} selected={selC} onClick={() => c && onSelect({ cp: 'C', strike: k })} cells={cells(c)} itm={c?.moneyness === 'ITM'} />
                   <td className="ov-strike" title={tag || undefined}>{fmt.n(k)}{tag && <small className="ov-strike-tag">{tag}</small>}</td>
                   <ChainSide leg={p} selected={selP} onClick={() => p && onSelect({ cp: 'P', strike: k })} cells={cells(p).reverse()} itm={p?.moneyness === 'ITM'} />
@@ -129,7 +138,7 @@ export function SelectedStrikePanel({ data, leg, contracts, changed = null, iv =
   /** The strike's hour: OI then and its change, IV change, for the signal tags. */
   changed?: { oiChange: number | null; oiThen: number | null; ivChangePts: number | null } | null; iv?: IvRv | null;
 }) {
-  const [tab, setTab] = useState<Tab>('metrics');
+  const [tab, setTab] = usePersisted<Tab>('live:strike:tab', 'metrics');
   const chooser = options && onChoose && options.length > 0 ? (
     <select className="ov-select" aria-label="Strike to inspect" value={leg ? `${leg.cp}${leg.strike}` : ''} onChange={(e) => { const o = options.find((x) => `${x.cp}${x.strike}` === e.target.value); if (o) onChoose(o.cp, o.strike); }}
       title="Which strike the panels below are about: the desk's picks, the finder's top strikes, or the one clicked on the board">

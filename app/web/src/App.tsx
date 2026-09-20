@@ -366,7 +366,7 @@ export default function App() {
   }, [data]);
 
   // The strike the decision panels are about; null = the desk's own default.
-  const [focus, setFocus] = useState<Selected | null>(null);
+  const [focus, setFocus] = usePersisted<Selected | null>('live:focus', null);
   const inspectLeg = useCallback((cp: 'C' | 'P', strike: number) => {
     setFocus({ cp, strike });
     setInspecting({ cp, strike });

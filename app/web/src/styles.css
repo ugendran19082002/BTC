@@ -2580,9 +2580,13 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 .ov-prob-value { text-align: right; font-variant-numeric: tabular-nums; }
 
 .ov-chain-wrap { overflow-x: auto; }
-.ov-chain { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
-.ov-chain th { color: var(--muted); font-weight: 500; padding: 5px 6px; text-align: right; background: var(--panel-2); }
-.ov-chain td { padding: 5px 6px; text-align: right; border-top: 1px solid var(--line-soft); }
+/* The compact board: every strike inside a fixed height, the header pinned, the money scrolled to the middle. */
+.ov-chain-scroll { max-height: 460px; overflow-y: auto; }
+.ov-chain-scroll thead th { position: sticky; top: 0; z-index: 1; }
+.ov-chain-scroll thead tr:nth-child(2) th { top: 27px; }
+.ov-chain { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.ov-chain th { color: var(--muted); font-weight: 500; padding: 4px 5px; text-align: right; background: var(--panel-2); }
+.ov-chain td { padding: 4px 5px; text-align: right; border-top: 1px solid var(--line-soft); }
 .ov-chain .ov-calls { text-align: center; background: var(--up-bg); color: var(--up); }
 .ov-chain .ov-puts { text-align: center; background: var(--down-bg); color: var(--down); }
 .ov-chain .ov-strike { text-align: center; font-weight: 600; background: var(--panel-2); }

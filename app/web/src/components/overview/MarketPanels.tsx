@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { usePersisted } from '@/hooks/usePersisted';
 import type { ChainResponse, Leg, MarketRead } from '@/types/desk';
 import type { FlowSummary, PerpResponse, SideFlow, TermHistoryPoint, TermPoint, TermResponse } from '@/api/desk';
 import { ivRv, keyLevels, namedLevels, skew, skewRichness, srDistances, structureRead, volRegime, WINDOW_CHOICES, windowLabel, type IvRv, type NamedLevel, type OptionBias, type WindowChoice } from '@/lib/overview';
@@ -127,7 +127,7 @@ const PA_TFS = ['5m', '15m', '30m', '1h', '2h', '4h', '6h', '12h', '1d'] as cons
 
 export function PriceActionPanel({ market, tf: chartTf = '15m', levels = [], spot }: { market: MarketRead | null; tf?: string; levels?: readonly NamedLevel[]; spot?: number }) {
   // Its own timeframe, starting from the chart's; the read has five, and the others borrow the nearest one read.
-  const [own, setOwn] = useState<string | null>(null);
+  const [own, setOwn] = usePersisted<string | null>('live:priceAction:tf', null);
   const wanted = own ?? chartTf;
   const have = market?.timeframes ?? [];
   const nearest: Record<string, string> = { '1m': '5m', '30m': '15m', '2h': '1h', '6h': '4h', '12h': '4h', '24h': '1d' };

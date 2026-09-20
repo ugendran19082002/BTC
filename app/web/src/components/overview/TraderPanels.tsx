@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { usePersisted } from '@/hooks/usePersisted';
 import type { ChainResponse, Leg } from '@/types/desk';
 import { getChanges, type ChangeRow, type ModelNow, type MovementRow, type PerpResponse, type PremiumMomentum } from '@/api/desk';
 import {
@@ -208,7 +209,7 @@ export function StrikeFinder({ data, onSelect, onSell, contracts, leverage, defa
   const order: readonly ('C' | 'P')[] = defaultSide === 'C' ? ['C', 'P'] : ['P', 'C'];
   const picks = order.flatMap((cp) => candidates(data.legs, cp, 3));
   // Opens on the desk's picks when it has any; on the finder when nothing clears its rules, rather than on an empty table.
-  const [chosenMode, setMode] = useState<'desk' | 'filters' | null>(null);
+  const [chosenMode, setMode] = usePersisted<'desk' | 'filters' | null>('live:finder:mode', null);
   const mode = chosenMode ?? (picks.length > 0 ? 'desk' : 'filters');
   const found = mode === 'desk' ? picks : findStrikes(data.legs, f);
   const ranks = finderRanks(found);

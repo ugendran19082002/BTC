@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { usePersisted } from '@/hooks/usePersisted';
 import type { ChainResponse, ExpiryOption, Leg } from '@/types/desk';
 import type { TradeStatus } from '@/types/trade';
 import { getMovement, getPerp, getTerm } from '@/api/desk';
@@ -34,8 +35,8 @@ import { ChangesPanel, EarlyWarningPanel, MovementPanel, StrikeFinder, useChange
  * volatility, the tape); the centre is the board (chart, compact chain, the
  * strike under inspection, what changed, its risk with stress and decay);
  * the right column decides (the option bias, the one multi-timeframe table,
- * SELL CE beside SELL PE, the early warning, the vol surface). The final
- * decision strip sits above it all; the strike finder below. Nothing
+ * SELL CE beside SELL PE, the early warning, the vol surface, the strike
+ * finder). The final decision strip sits above it all. Nothing
  * is shown twice: a figure the checklist judges is not repeated as a row.
  *
  * Every figure is read from the chain response, the perp feed or the desk's
@@ -91,7 +92,7 @@ export function Overview({
 
   // The strike under inspection: the desk's own pick until someone clicks
   // another. Owned by the screen when it says so, by these panels otherwise.
-  const [ownPicked, setOwnPicked] = useState<Selected | null>(null);
+  const [ownPicked, setOwnPicked] = usePersisted<Selected | null>('live:strike', null);
   const picked = onSelect ? selectedProp ?? null : ownPicked;
   const setPicked = onSelect ?? setOwnPicked;
 
@@ -114,7 +115,7 @@ export function Overview({
   // The perpetual (funding, book, the hour's flow, OI acceleration) every five
   // seconds; the term structure and the ranks once a minute -- they move slowly.
   // The tape's window, shared by the perp's flow and the options' flow; the request follows it.
-  const [flowWindow, setFlowWindow] = useState<WindowChoice>('1h');
+  const [flowWindow, setFlowWindow] = usePersisted<WindowChoice>('live:flow:window', '1h');
   const flowMin = windowMinutes(flowWindow, now);
   const { data: perp } = usePoll(() => getPerp(flowMin, snap.expiry), 5_000, { enabled: snap.live, deps: [snap.expiry, flowMin] });
   const skewPts = useMemo(() => skew(data.legs, data.structure.atmIv).putCallPts, [data.legs, data.structure.atmIv]);
@@ -131,9 +132,9 @@ export function Overview({
   } : null), [trade, heldShort]);
   // The finder's filters. Left at the desk's own, the cards carry the desk's picks; moved, each card
   // carries the best strike that passes them -- the decision is about what the person is considering.
-  const [filter, setFilter] = useState<FinderFilter>(DESK_FILTER);
+  const [filter, setFilter] = usePersisted<FinderFilter>('live:finder:filter', DESK_FILTER);
   // The strike each card judges: the desk's pick, the finder's best, the selected strike, or one chosen on the card.
-  const [cardStrike, setCardStrike] = useState<{ C: number | null; P: number | null }>({ C: null, P: null });
+  const [cardStrike, setCardStrike] = usePersisted<{ C: number | null; P: number | null }>('live:card:strike', { C: null, P: null });
   const deskLegOf = useCallback((cp: 'C' | 'P') => data.recommendation.sides.find((x) => x.side === (cp === 'C' ? 'CE' : 'PE'))?.leg ?? bestLeg(data.legs, cp), [data.recommendation, data.legs]);
   const pick = useMemo(() => (cp: 'C' | 'P') => {
     const chosen = cardStrike[cp];
@@ -250,16 +251,14 @@ export function Overview({
           <ErrorBoundary where="Early warning"><EarlyWarningPanel data={data} perp={perp} changes={changes?.rows ?? null} /></ErrorBoundary>
           <ErrorBoundary where="IV term structure"><IvTermPanel term={term} error={Boolean(termError)} /></ErrorBoundary>
           <ErrorBoundary where="Skew"><SkewPanel data={data} rank={term?.skew ?? null} /></ErrorBoundary>
+          <ErrorBoundary where="Strike finder">
+            <StrikeFinder data={data} onSelect={(cp, strike) => setPicked({ cp, strike })} onSell={onSell} contracts={contracts} leverage={leverage}
+              defaultSide={choice.side === 'CE' ? 'C' : choice.side === 'PE' ? 'P' : 'both'} em={emSettle} execution={config.execution}
+              filter={filter} onFilter={setFilter} rvPct={data.market?.realisedVol ?? null} />
+          </ErrorBoundary>
         </div>
       </div>
 
-      <div className="ov-bottom">
-        <ErrorBoundary where="Strike finder">
-          <StrikeFinder data={data} onSelect={(cp, strike) => setPicked({ cp, strike })} onSell={onSell} contracts={contracts} leverage={leverage}
-            defaultSide={choice.side === 'CE' ? 'C' : choice.side === 'PE' ? 'P' : 'both'} em={emSettle} execution={config.execution}
-            filter={filter} onFilter={setFilter} rvPct={data.market?.realisedVol ?? null} />
-        </ErrorBoundary>
-      </div>
     </div>
   );
 }
