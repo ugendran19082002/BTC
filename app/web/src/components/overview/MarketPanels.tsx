@@ -188,7 +188,7 @@ export function KeyLevelsPanel({ data, spot, emUsd = null }: { data: ChainRespon
   const cell = (price: number, atrUsd: number | null) => (
     <>
       <td>{fmt.n(price)}</td>
-      <td className={price >= spot ? 'ov-down' : 'ov-up'}>{fmt.signed(price - spot)} <small className="ov-muted">{fmt.signed(((price - spot) / spot) * 100, 2)}%</small></td>
+      <td className={price >= spot ? 'ov-down' : 'ov-up'} title={`${fmt.signed(((price - spot) / spot) * 100, 2)}%`}>{fmt.signed(price - spot)}</td>
       <td className="ov-muted">{atrUsd && atrUsd > 0 ? `${(Math.abs(price - spot) / atrUsd).toFixed(1)}×` : '—'}</td>
       <td className="ov-muted">{emUsd && emUsd > 0 ? `${(Math.abs(price - spot) / emUsd).toFixed(2)}×` : '—'}</td>
     </>
@@ -227,7 +227,7 @@ export function KeyLevelsPanel({ data, spot, emUsd = null }: { data: ChainRespon
           <tbody>
             {groups.map((g) => (
               <Fragment key={g.name}>
-                <tr className="ov-levels-group"><td colSpan={5} title={g.hint}>{g.name} <small className="ov-muted">· {g.hint}</small></td></tr>
+                <tr className="ov-levels-group"><td colSpan={5} title={g.hint}>{g.name}</td></tr>
                 {g.rows.map((r) => (
                   <tr key={r.label}>
                     <td><i className={`ov-dot ov-bg-${r.kind === 'resistance' ? 'down' : r.kind === 'support' ? 'up' : 'muted'}`} />{r.label}</td>
