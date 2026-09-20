@@ -19,12 +19,12 @@ import { fmt, Panel, Row, Tag } from './parts';
  * best strike through the finder's filters. Details of a strike live below,
  * on the selected-strike panels; the cards carry the decision only.
  */
-export function DecisionCards({ data, sides, choice, iv, em, mtf, contracts, leverage, onSelect, oi = null, selectedCp = null }: {
+export function DecisionCards({ data, sides, choice, iv, em, mtf, contracts, leverage, onSelect, oi = null, selectedCp = null, pair = null }: {
   data: ChainResponse; sides: SideAssessment[]; choice: SideChoice; oi?: OiPulse | null;
   iv: IvRv | null; em: ExpectedMove; mtf: MtfConsensus; contracts: number; leverage: number;
   onSelect: (cp: 'C' | 'P', strike: number) => void;
-  /** The side of the strike selected on the board: that card judges the selection; the other judges the desk's pick. */
-  selectedCp?: 'C' | 'P' | null;
+  /** The side of the strike selected on the board, and the CE / PE pair chosen: a card judges its chosen strike, the desk's pick otherwise. */
+  selectedCp?: 'C' | 'P' | null; pair?: { C: number | null; P: number | null } | null;
 }) {
   const ce = sides.find((s) => s.side === 'CE')!, pe = sides.find((s) => s.side === 'PE')!;
   const tone = choice.side === 'NO_TRADE' ? 'down' : choice.side === 'BOTH' ? 'up' : 'accent';
@@ -32,8 +32,8 @@ export function DecisionCards({ data, sides, choice, iv, em, mtf, contracts, lev
     <Panel title="Strategy decision" right={<Tag tone={tone}>Desk side: {choice.side.replace('_', ' ')}</Tag>}>
       <p className="ov-summary"><b>{choice.side === 'NO_TRADE' ? 'No trade' : choice.side === 'BOTH' ? 'Sell both sides' : `Sell ${choice.side}`}</b> — {choice.why}.</p>
       <div className="ov-cards4">
-        <SellCard side={ce} data={data} iv={iv} em={em} mtf={mtf} contracts={contracts} leverage={leverage} chosen={choice.side === 'CE' || choice.side === 'BOTH'} onSelect={onSelect} oi={oi} selected={selectedCp === 'C'} />
-        <SellCard side={pe} data={data} iv={iv} em={em} mtf={mtf} contracts={contracts} leverage={leverage} chosen={choice.side === 'PE' || choice.side === 'BOTH'} onSelect={onSelect} oi={oi} selected={selectedCp === 'P'} />
+        <SellCard side={ce} data={data} iv={iv} em={em} mtf={mtf} contracts={contracts} leverage={leverage} chosen={choice.side === 'CE' || choice.side === 'BOTH'} onSelect={onSelect} oi={oi} selected={selectedCp === 'C' || (pair?.C !== null && pair?.C !== undefined && pair.C === ce.leg?.strike)} />
+        <SellCard side={pe} data={data} iv={iv} em={em} mtf={mtf} contracts={contracts} leverage={leverage} chosen={choice.side === 'PE' || choice.side === 'BOTH'} onSelect={onSelect} oi={oi} selected={selectedCp === 'P' || (pair?.P !== null && pair?.P !== undefined && pair.P === pe.leg?.strike)} />
       </div>
       <p className="ov-foot">{data.best.why ?? ''} Side from the regime, the multi-timeframe consensus and each side's gates — never the score alone. A gate's reading is on hover; the strike's details are below.</p>
     </Panel>
@@ -62,7 +62,7 @@ function SellCard({ side: s, data, iv, em, mtf, contracts, leverage, chosen, onS
       </header>
       {!leg ? <p className="ov-empty">No out-of-the-money {s.side} strike with a price.</p> : (
         <>
-          <Row label={selected ? 'Selected strike' : 'Desk\'s pick'} value={<button type="button" className="ov-linkbtn" onClick={() => onSelect(leg.cp, leg.strike)}>{fmt.n(leg.strike)} {s.side}</button>} hint={selected ? 'The strike selected on the board; every panel is about it' : 'Nothing is selected on this side: the desk\'s own pick (or the finder\'s best once its filters are moved). Click to select it'} />
+          <Row label={selected ? 'Chosen strike' : 'Desk\'s pick'} value={<button type="button" className="ov-linkbtn" onClick={() => onSelect(leg.cp, leg.strike)}>{fmt.n(leg.strike)} {s.side}</button>} hint={selected ? 'The strike chosen for this side on the chain' : 'Nothing chosen on this side yet: the desk\'s own pick (or the finder\'s best once its filters are moved). Click to choose it'} />
           <Row label="P(OTM) · touch · breach" value={`${fmt.pct(o?.pOtm)} · ${fmt.pct(o?.pTouch)} · ${fmt.pct(o?.pItm)}`} hint="Expire worthless · touch before expiry · expire beyond the strike" />
           <ul className="ov-gates ov-gates-1">
             {(['Direction', 'MTF consensus', 'PoT', 'Distance / EM', 'IV − RV', 'Gamma', 'Liquidity', 'Execution', 'Tail risk', 'Margin'] as const).map((name) => {

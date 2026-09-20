@@ -17,8 +17,10 @@ export const findLeg = (legs: readonly Leg[], s: Selected | null) =>
 type ChainFilter = 'near' | 'all' | 'walls' | 'recommended';
 type ChainCols = 'quotes' | 'greeks' | 'odds';
 
-export function ChainPanel({ data, selected, onSelect, rows = 7 }: {
+export function ChainPanel({ data, selected, onSelect, rows = 7, pair = null }: {
   data: ChainResponse; selected: Selected | null; onSelect: (s: Selected) => void; rows?: number;
+  /** The CE and the PE chosen, one a side, both lit. */
+  pair?: { C: number | null; P: number | null } | null;
 }) {
   const { snapshot: snap, legs, structure } = data;
   const [filter, setFilter] = usePersisted<ChainFilter>('live:chain:filter', 'all');
@@ -94,8 +96,8 @@ export function ChainPanel({ data, selected, onSelect, rows = 7 }: {
             {strikes.map((k) => {
               const c = byKey.get(`C${k}`);
               const p = byKey.get(`P${k}`);
-              const selC = selected?.cp === 'C' && selected.strike === k;
-              const selP = selected?.cp === 'P' && selected.strike === k;
+              const selC = (selected?.cp === 'C' && selected.strike === k) || pair?.C === k;
+              const selP = (selected?.cp === 'P' && selected.strike === k) || pair?.P === k;
               const tag = mark(k);
               const cls = [k === snap.atm ? 'ov-atm' : '', k === ceWall ? 'ov-wall-ce' : '', k === peWall ? 'ov-wall-pe' : '', k === maxPain ? 'ov-maxpain' : ''].filter(Boolean).join(' ');
               return (
@@ -109,7 +111,7 @@ export function ChainPanel({ data, selected, onSelect, rows = 7 }: {
           </tbody>
         </table>
       </div>
-      <p className="ov-foot">Click a side to inspect it. Shaded = in the money · ATM, the OI walls and max pain are marked. {snap.hoursToExpiry.toFixed(1)}h to settlement. Every column of every strike is on the Option Chain tab.</p>
+      <p className="ov-foot">Click the call half to choose the CE, the put half to choose the PE; both stay lit, the last click is inspected below. Shaded = in the money · ATM, the OI walls and max pain are marked. {snap.hoursToExpiry.toFixed(1)}h to settlement. Every column of every strike is on the Option Chain tab.</p>
     </Panel>
   );
 }

@@ -94,7 +94,13 @@ export function Overview({
   // another. Owned by the screen when it says so, by these panels otherwise.
   const [ownPicked, setOwnPicked] = usePersisted<Selected | null>('live:strike', null);
   const picked = onSelect ? selectedProp ?? null : ownPicked;
-  const setPicked = onSelect ?? setOwnPicked;
+  // One strike a side: a click on the chain's call half sets the CE, on its put half the PE. The last click is the strike the panels inspect;
+  // both sit on the cards and are lit on the chain.
+  const [pair, setPair] = usePersisted<{ C: number | null; P: number | null }>('live:pair', { C: null, P: null });
+  const setPicked = useCallback((sel: Selected | null) => {
+    (onSelect ?? setOwnPicked)(sel);
+    if (sel) setPair((p) => ({ ...p, [sel.cp]: sel.strike }));
+  }, [onSelect, setPair]);
 
   const snap = data.snapshot;
   const iv = ivRv(data.structure.atmIv, data.market?.realisedVol ?? null);
@@ -138,9 +144,11 @@ export function Overview({
   const chosenLeg = picked ? findLeg(data.legs, picked) : null;
   const pick = useMemo(() => (cp: 'C' | 'P') => {
     if (chosenLeg && chosenLeg.cp === cp) return chosenLeg;
+    const paired = pair[cp] !== null ? data.legs.find((l) => l.cp === cp && l.strike === pair[cp]) ?? null : null;
+    if (paired) return paired;
     if (filtersChanged(filter)) return findStrikes(data.legs, { ...filter, side: cp, top: 1 })[0] ?? null;
     return deskLegOf(cp);
-  }, [chosenLeg, filter, data.legs, deskLegOf]);
+  }, [chosenLeg, pair, filter, data.legs, deskLegOf]);
   const sides: SideAssessment[] = useMemo(() => assessSides(data, iv, emSettle, contracts, leverage, pick).map((s) => {
     const gates = sideGates({
       side: s.side, leg: s.leg, iv, regime: data.market?.regime ?? null, direction: data.direction, outlook: data.outlook,
@@ -210,7 +218,7 @@ export function Overview({
           {chart}
           {chain && (
             <ErrorBoundary where="Overview chain">
-              <ChainPanel data={data} selected={selected} onSelect={setPicked} />
+              <ChainPanel data={data} selected={selected} pair={pair} onSelect={setPicked} />
             </ErrorBoundary>
           )}
           <ErrorBoundary where="Selected strike">
@@ -236,7 +244,7 @@ export function Overview({
           <ErrorBoundary where="Multi-timeframe"><MovementPanel data={data} em={emSettle} activeMin={config.horizonMin} mtf={mtf} movement={movement?.rows ?? null} /></ErrorBoundary>
           <ErrorBoundary where="Strategy decision">
             <DecisionCards data={data} sides={sides} choice={choice} iv={iv} em={emSettle} mtf={mtf} contracts={contracts} leverage={leverage}
-              onSelect={(cp, strike) => setPicked({ cp, strike })} oi={perp?.oi ?? null} selectedCp={leg?.cp ?? null} />
+              onSelect={(cp, strike) => setPicked({ cp, strike })} oi={perp?.oi ?? null} selectedCp={leg?.cp ?? null} pair={pair} />
           </ErrorBoundary>
           <ErrorBoundary where="Early warning"><EarlyWarningPanel data={data} perp={perp} changes={changes?.rows ?? null} /></ErrorBoundary>
           <ErrorBoundary where="IV term structure"><IvTermPanel term={term} error={Boolean(termError)} /></ErrorBoundary>
