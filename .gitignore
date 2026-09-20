@@ -53,3 +53,4 @@ analytics/.venv/
 
 # database dumps (deploy/backup-db.sh)
 backups/
+app/server/harness.tmp.mts
