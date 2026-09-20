@@ -137,7 +137,7 @@ export function ChangesPanel({ strikes }: { strikes: { leg: Leg | null; changes:
   const shown = strikes.filter((x) => x.leg);
   const title = shown.map((x) => `${fmt.n(x.leg!.strike)} ${x.leg!.cp === 'C' ? 'CE' : 'PE'}`).join(' · ');
   return (
-    <Panel title={`What changed${title ? ` · ${title}` : ''}`} right={<small className="ov-muted">the chosen strikes, 1m … 12h and since entry</small>}>
+    <Panel name="What changed" title={`What changed${title ? ` · ${title}` : ''}`} right={<small className="ov-muted">the chosen strikes, 1m … 12h and since entry</small>}>
       {shown.length === 0 ? <p className="ov-empty">Choose a strike on the chain.</p> : shown.map((x) => <ChangesTable key={`${x.leg!.cp}${x.leg!.strike}`} leg={x.leg!} changes={x.changes} two={shown.length > 1} />)}
       <p className="ov-foot">Premium ↑ = 🔴 risk for a short, ↓ = 🟢 favourable. OI beside it: premium ↑ with OI ↑ is demand, premium ↓ with OI ↑ is writing into it, both ↓ is an unwind. Touch odds and distance by the option model then → now. A dash means no record that far back.</p>
     </Panel>

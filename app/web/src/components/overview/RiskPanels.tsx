@@ -11,7 +11,7 @@ export function RiskEnginePanel({ strikes, contracts, hoursToExpiry, iv, step }:
   const shown = strikes.filter((x) => x.leg && x.risk) as { leg: Leg; risk: RiskEngine }[];
   const title = shown.map((x) => `${fmt.n(x.leg.strike)} ${x.leg.cp === 'C' ? 'CE' : 'PE'}`).join(' · ');
   return (
-    <Panel title={`Sell-side risk engine${title ? ` · ${title}` : ''}`} right={<small className="ov-muted">{contracts} ct</small>}>
+    <Panel name="Sell-side risk engine" title={`Sell-side risk engine${title ? ` · ${title}` : ''}`} right={<small className="ov-muted">{contracts} ct</small>}>
       {shown.length === 0 ? <p className="ov-empty">Choose a strike with a price.</p> : shown.map((x) => <RiskBlock key={`${x.leg.cp}${x.leg.strike}`} leg={x.leg} risk={x.risk} contracts={contracts} hoursToExpiry={hoursToExpiry} iv={iv} step={step} two={shown.length > 1} />)}
     </Panel>
   );

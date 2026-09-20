@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { usePersisted } from '@/hooks/usePersisted';
 import { cn } from '@/lib/utils';
 
 /**
@@ -7,16 +8,37 @@ import { cn } from '@/lib/utils';
  * desk does not capture, said as such rather than drawn as a zero.
  */
 
-export function Panel({ title, right, className, children, id }: {
+/**
+ * "Collapse all" / "Expand all" from the bar: a stamp that changes each time
+ * it is pressed, and what it asked for. Each panel follows the newest stamp
+ * it has not seen, and keeps its own choice after that.
+ */
+export const PanelFold = createContext<{ stamp: number; collapsed: boolean }>({ stamp: 0, collapsed: false });
+
+/**
+ * A panel folds from its header: the title and its controls stay, the body
+ * goes, and the choice is remembered per panel (by `name`, or the title
+ * when it is a string). On a phone every panel is one screen, so folding
+ * is how the screen is read.
+ */
+export function Panel({ title, right, className, children, id, name }: {
   title: ReactNode; right?: ReactNode; className?: string; children: ReactNode; id?: string;
+  /** The key the fold is remembered under; needed when the title is not a plain string. */
+  name?: string;
 }) {
+  const key = name ?? (typeof title === 'string' ? title : 'panel');
+  const [collapsed, setCollapsed] = usePersisted<boolean>(`live:fold:${key}`, false);
+  const fold = useContext(PanelFold);
+  const seen = useRef(fold.stamp);
+  useEffect(() => { if (fold.stamp !== seen.current) { seen.current = fold.stamp; setCollapsed(fold.collapsed); } }, [fold.stamp, fold.collapsed, setCollapsed]);
   return (
-    <section className={cn('ov-panel', className)} aria-labelledby={id}>
+    <section className={cn('ov-panel', className, collapsed && 'ov-panel-folded')} aria-labelledby={id}>
       <header className="ov-panel-head">
+        <button type="button" className="ov-fold" aria-expanded={!collapsed} aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${key}`} title={collapsed ? 'Expand' : 'Collapse'} onClick={() => setCollapsed(!collapsed)}>{collapsed ? '▸' : '▾'}</button>
         <h3 id={id}>{title}</h3>
-        {right}
+        {!collapsed && right}
       </header>
-      <div className="ov-panel-body">{children}</div>
+      {!collapsed && <div className="ov-panel-body">{children}</div>}
     </section>
   );
 }

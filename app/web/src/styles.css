@@ -2893,3 +2893,18 @@ table.ov-mini.ov-levels { width: auto; min-width: 100%; }
 .ov-dir-why { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--line-soft); }
 .ov-dir-why .ov-row-value { font-family: monospace; letter-spacing: .1em; }
 @container (max-width: 360px) { .ov-dir-odds { grid-template-columns: 1fr; } }
+
+/* Folding: the chevron before the title; a folded panel is its header alone. */
+.ov-panel-head .ov-fold { appearance: none; background: none; border: 0; color: var(--muted); cursor: pointer; padding: 0 4px 0 0; font-size: 12px; line-height: 1; flex: none; }
+.ov-panel-head .ov-fold:hover { color: var(--text); }
+.ov-panel-folded .ov-panel-head { border-bottom: 0; }
+.ov-panel-head h3 { flex: 1 1 auto; min-width: 0; }
+.ov-fold-all { display: inline-flex; gap: 4px; }
+
+/* The contract's day as a bar under the screen bar: how much has gone, and which quarter this is. */
+.ov-expiry-bar { display: flex; align-items: center; gap: 10px; padding: 4px 12px 8px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+.ov-expiry-bar-label b { color: var(--text); }
+.ov-expiry-bar .ov-meter { flex: 1 1 160px; }
+.ov-expiry-phases { display: inline-flex; gap: 14px; font-size: 10.5px; letter-spacing: .06em; }
+.ov-expiry-phases em { font-style: normal; color: var(--dim); } .ov-expiry-phases em.on { color: var(--up); font-weight: 700; }
+.ov-mono { font-family: monospace; font-weight: 600; }

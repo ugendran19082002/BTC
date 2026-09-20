@@ -410,7 +410,7 @@ export function SkewPanel({ data, rank }: { data: ChainResponse; rank: TermRespo
   const tone = (v: 'HIGH' | 'NORMAL' | 'LOW') => (v === 'HIGH' ? 'down' : v === 'LOW' ? 'up' : 'muted');
   const iv = (v: number | null | undefined) => (v === null || v === undefined ? '—' : `${(v * 100).toFixed(1)}%`);
   return (
-    <Panel title={`Skew (${data.snapshot.expiry})`}>
+    <Panel name="Skew" title={`Skew (${data.snapshot.expiry})`}>
       <Row label={`25Δ put IV${s.put25 ? ` · ${fmt.n(s.put25.strike)}` : ''}`} value={iv(s.put25?.iv)} />
       <Row label="ATM IV" value={iv(s.atmIv)} />
       <Row label={`25Δ call IV${s.call25 ? ` · ${fmt.n(s.call25.strike)}` : ''}`} value={iv(s.call25?.iv)} />
@@ -493,5 +493,42 @@ export function WindowSelect({ value, onChange }: { value: WindowChoice; onChang
     <select className="ov-select" aria-label="Window" value={value} onChange={(e) => onChange(e.target.value as WindowChoice)} title="How far back the tape is summed">
       {WINDOW_CHOICES.map((w) => <option key={w} value={w}>{windowLabel(w)}</option>)}
     </select>
+  );
+}
+
+// ------------------------------------------------------------- desk events
+
+const IST_HM_EV = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
+
+/**
+ * What is scheduled: the entry window, funding settlements, this contract's
+ * settlement, the desk's own recorders. Computed from the clock, never
+ * fetched. A news feed is not captured -- said so rather than faked.
+ */
+export function DeskEventsPanel({ now, expiryTs, entryIst }: { now: number; expiryTs: number; entryIst: string }) {
+  const IST = 5.5 * 3_600_000;
+  const ist = new Date(now + IST);
+  const day = Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate()) - IST;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(entryIst);
+  let entry = m ? day + (Number(m[1]) * 60 + Number(m[2])) * 60_000 : null;
+  if (entry !== null && entry < now) entry += 24 * 3_600_000;
+  // Delta settles funding at 00:00, 08:00 and 16:00 UTC.
+  const utcDay = Date.UTC(new Date(now).getUTCFullYear(), new Date(now).getUTCMonth(), new Date(now).getUTCDate());
+  const funding = [0, 8, 16, 24].map((h) => utcDay + h * 3_600_000).find((t) => t > now)!;
+  const nextRecord = Math.ceil((now + 1) / 300_000) * 300_000;
+  const events = [
+    { at: entry, name: 'Entry window opens', what: `${entryIst} IST, the strategy's own entry time` },
+    { at: funding, name: 'Funding settles', what: 'the perpetual pays or receives; the rate resets' },
+    { at: nextRecord, name: 'Next 5-minute record', what: 'every strike, the board, the perp' },
+    { at: expiryTs * 1000, name: 'This expiry settles', what: '17:30 IST' },
+  ].filter((e): e is { at: number; name: string; what: string } => e.at !== null).sort((a, b) => a.at - b.at);
+  const inText = (ms: number) => (ms < 60_000 ? 'now' : ms < 3_600_000 ? `in ${Math.round(ms / 60_000)}m` : `in ${Math.floor(ms / 3_600_000)}h ${String(Math.round((ms % 3_600_000) / 60_000)).padStart(2, '0')}m`);
+  return (
+    <Panel title="Desk events" right={<small className="ov-muted">IST</small>}>
+      {events.map((e) => (
+        <Row key={e.name} label={<><b className="ov-mono">{IST_HM_EV.format(new Date(e.at))}</b> {e.name}</>} value={<span className="ov-muted">{inText(e.at - now)}</span>} hint={e.what} />
+      ))}
+      <p className="ov-foot">Computed from the clock. Market news and events are not captured — nothing here is a headline.</p>
+    </Panel>
   );
 }

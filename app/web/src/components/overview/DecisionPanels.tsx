@@ -158,7 +158,7 @@ export function SelectedStrikePanel({ data, leg, contracts, changed = null, iv =
   const size = contracts * CONTRACT_BTC;
   const usd = (v: number | null, k = 1) => (v === null ? '—' : fmt.signed(-v * size * k, 2));
   return (
-    <Panel title={`Selected strike: ${fmt.n(leg.strike)} ${side}`} right={<span className="ov-signals">{chooser}{strikeSignals(leg, changed, iv).map((x) => <Tag key={x} tone={/SAFE|RICH|FAVORABLE|UNWIND|CRUSH/.test(x) ? 'up' : /RISK|NO TRADE|WEAK|BUILDUP|EXPANSION/.test(x) ? 'down' : 'warn'}>{x}</Tag>)}</span>}>
+    <Panel name="Selected strike" title={`Selected strike: ${fmt.n(leg.strike)} ${side}`} right={<span className="ov-signals">{chooser}{strikeSignals(leg, changed, iv).map((x) => <Tag key={x} tone={/SAFE|RICH|FAVORABLE|UNWIND|CRUSH/.test(x) ? 'up' : /RISK|NO TRADE|WEAK|BUILDUP|EXPANSION/.test(x) ? 'down' : 'warn'}>{x}</Tag>)}</span>}>
       <div className="ov-greeks">
         <Greek label="Delta" value={g(leg.delta, 2)} hint={`Short ${contracts} ct: ${usd(leg.delta)} per $1 move in BTC`} />
         <Greek label="Gamma" value={leg.gamma === null ? '—' : leg.gamma.toPrecision(2)} hint={`Delta changes ${leg.gamma === null ? '—' : (leg.gamma * 100).toFixed(3)} per $100 of BTC; the seller's enemy near the strike`} />

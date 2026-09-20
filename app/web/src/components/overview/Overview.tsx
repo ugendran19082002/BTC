@@ -10,10 +10,10 @@ import {
   type FinderFilter, type SideAssessment, type SideChoice, type WindowChoice,
 } from '@/lib/overview';
 import { DEFAULT_CONFIG, entryTodayMs, thresholds } from '@/lib/screen-config';
-import { fmt } from './parts';
+import { fmt, PanelFold } from './parts';
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
 import {
-  KeyLevelsPanel, KpiStrip, IvTermPanel, OptionBiasPanel, OptionFlowPanel, PriceActionPanel, SkewPanel, TradeFlowPanel, VolatilityPanel,
+  DeskEventsPanel, KeyLevelsPanel, KpiStrip, IvTermPanel, OptionBiasPanel, OptionFlowPanel, PriceActionPanel, SkewPanel, TradeFlowPanel, VolatilityPanel,
 } from './MarketPanels';
 import { ChainPanel, findLeg, SelectedStrikePanel, type Selected } from './DecisionPanels';
 import { DecisionCards } from './DecisionCards';
@@ -166,6 +166,10 @@ export function Overview({
     return auto;
   }, [data, sides, config.sideMode, mtf]);
 
+  // Collapse all / expand all, from the bar: a stamp each press, and what it asked for.
+  const [fold, setFold] = useState({ stamp: 0, collapsed: false });
+  const foldAll = useCallback((collapsed: boolean) => setFold((f) => ({ stamp: f.stamp + 1, collapsed })), []);
+
   // Signal persistence: the side the desk said on each board, newest last; three in a row make it VALID.
   const [history, setHistory] = useState<SideChoice['side'][]>([]);
   useEffect(() => { setHistory((h) => [...h.slice(-5), choice.side]); }, [snap.ts]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -204,8 +208,9 @@ export function Overview({
   const chosenPair = useMemo(() => [{ leg, changes, risk }, { leg: otherLeg, changes: otherChanges, risk: otherRisk }].sort((a, b) => (a.leg?.cp === 'C' ? 0 : 1) - (b.leg?.cp === 'C' ? 0 : 1)), [leg, changes, risk, otherLeg, otherChanges, otherRisk]);
 
   return (
+    <PanelFold.Provider value={fold}>
     <div className="ov">
-      <ScreenBar data={data} now={now} freshnessSec={config.freshnessSec} entryIst={config.entryIst} expiries={expiries} onExpiry={onExpiry} controls={controls} error={error} />
+      <ScreenBar data={data} now={now} freshnessSec={config.freshnessSec} entryIst={config.entryIst} expiries={expiries} onExpiry={onExpiry} controls={controls} error={error} onFoldAll={foldAll} />
       <ErrorBoundary where="Final decision">
         <FinalDecision data={data} sides={sides} both={both} choice={choice} leg={leg} mtf={mtf} persist={persist} freshness={ages} must={must} now={now} onSelect={(cp, strike) => setPicked({ cp, strike })} onSell={onSell} />
       </ErrorBoundary>
@@ -218,6 +223,7 @@ export function Overview({
           <ErrorBoundary where="Volatility"><VolatilityPanel data={data} iv={iv} /></ErrorBoundary>
           <ErrorBoundary where="Option flow"><OptionFlowPanel perp={perp} legs={data.legs} atm={snap.atm} window={flowWindow} onWindow={setFlowWindow} /></ErrorBoundary>
           <ErrorBoundary where="Key levels"><KeyLevelsPanel data={data} spot={spot} emUsd={emSettle?.move ?? null} /></ErrorBoundary>
+          <ErrorBoundary where="Desk events"><DeskEventsPanel now={now} expiryTs={snap.expiryTs} entryIst={config.entryIst} /></ErrorBoundary>
         </div>
 
         <div className="ov-col">
@@ -265,5 +271,6 @@ export function Overview({
       </div>
 
     </div>
+    </PanelFold.Provider>
   );
 }

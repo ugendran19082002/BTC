@@ -19,8 +19,10 @@ const hm = (ms: number) => `${Math.floor(ms / 3_600_000)}h ${String(Math.floor((
  * screen's mode and refresh controls, and the glossary. The screen decides with the desk's fixed
  * configuration (lib/screen-config.ts); nothing here changes it.
  */
-export function ScreenBar({ data, now, freshnessSec, entryIst, expiries, onExpiry, controls, error }: {
+export function ScreenBar({ data, now, freshnessSec, entryIst, expiries, onExpiry, controls, error, onFoldAll }: {
   data: ChainResponse; now: number; freshnessSec: number; entryIst: string;
+  /** Collapse or expand every panel on the screen. */
+  onFoldAll?: (collapsed: boolean) => void;
   expiries?: readonly ExpiryOption[]; onExpiry?: (expiry: string) => void;
   controls?: ReactNode; error?: string | null;
 }) {
@@ -38,6 +40,10 @@ export function ScreenBar({ data, now, freshnessSec, entryIst, expiries, onExpir
   const since = windowMs === null ? null : entryMs - windowMs;
   const windowText = since === null ? '' : since >= 0 && since <= 30 * 60_000 ? ' · in window' : since > 0 ? ` · ${hm(since)} since` : ` · in ${Math.ceil(-since / 60_000)}m`;
   const leftMs = Math.max(0, snap.expiryTs * 1000 - entryMs);
+  // The contract's day runs from the previous settlement to this one: where in it we are, in quarters.
+  const dayMs = 24 * 3_600_000;
+  const elapsed = Math.min(1, Math.max(0, 1 - leftMs / dayMs));
+  const phase = elapsed < 0.25 ? 'EARLY' : elapsed < 0.5 ? 'MID' : elapsed < 0.75 ? 'LATE' : 'FINAL';
   return (
     <div className="ov-settings">
       <header className="ov-screenbar">
@@ -70,10 +76,21 @@ export function ScreenBar({ data, now, freshnessSec, entryIst, expiries, onExpir
             entry {IST_HM.format(new Date(entryMs))} · window {entryIst}{windowText} → {IST_DATE.format(new Date(snap.expiryTs * 1000))} {IST_HM.format(new Date(snap.expiryTs * 1000))} · <b>{leftMs === 0 ? 'settled' : `${hm(leftMs)} left`}</b>
           </span>
           {controls}
+          {onFoldAll && (
+            <span className="ov-fold-all">
+              <button className="ov-chip" onClick={() => onFoldAll(true)} title="Fold every panel to its header">Collapse all</button>
+              <button className="ov-chip" onClick={() => onFoldAll(false)} title="Open every panel">Expand all</button>
+            </span>
+          )}
           <button className="ov-chip" onClick={() => setHelp((v) => !v)} aria-pressed={help} title="What the terms on this screen mean">?</button>
         </div>
       </header>
 
+      <div className="ov-expiry-bar" title={`${Math.round(elapsed * 100)}% of the contract's day has gone; settlement ${IST_DATE.format(new Date(snap.expiryTs * 1000))} 17:30 IST`}>
+        <span className="ov-expiry-bar-label">Expiry <b>{IST_DATE.format(new Date(snap.expiryTs * 1000))} 17:30 IST</b></span>
+        <span className="ov-meter ov-meter-wide" aria-hidden><span style={{ width: `${elapsed * 100}%` }} /></span>
+        <span className="ov-expiry-phases">{(['EARLY', 'MID', 'LATE', 'FINAL'] as const).map((p) => <em key={p} className={p === phase ? 'on' : undefined}>{p}</em>)}</span>
+      </div>
       {help && (
         <dl className="ov-glossary">
           <div><dt>POP / P(OTM)</dt><dd>Probability the option expires worthless — the short keeps the premium.</dd></div>
