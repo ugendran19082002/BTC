@@ -13,6 +13,8 @@ import { marketSchema } from './market/oi-history.js';
 import { errorLog } from './observability/errors.js';
 import { analyticsSchema } from './db/analytics-schema.js';
 import { captureOptionSnapshots, optionSnapshotsSchema } from './market/option-snapshots.js';
+import { captureBoard } from './market/chain-features.js';
+import { wallWithinEm } from './http/routes/desk.routes.js';
 import { captureIvTerm, capturePerpSnapshot, flowSchema, flushTradeFlow, startFlowSocket } from './market/flow.js';
 import { noteError } from './observability/errors.js';
 
@@ -126,6 +128,10 @@ const recordOptions = () => {
 };
 setInterval(recordOptions, 60_000).unref();
 setTimeout(recordOptions, 15_000).unref();
+// The board's own record, every five minutes, viewer or no viewer: the hour-ago reads must have no gaps.
+const recordBoardNow = () => { captureBoard(Date.now(), wallWithinEm()).catch(warn('board-record')); };
+setInterval(recordBoardNow, 5 * 60_000).unref();
+setTimeout(recordBoardNow, 25_000).unref();
 
 /*
  * The perpetual's tape, off its own socket: every print, summed per minute

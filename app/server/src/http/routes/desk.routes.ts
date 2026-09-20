@@ -25,7 +25,7 @@ import { outlook, withMeasured } from '../../domain/outlook.js';
 import { pBetween } from '../../domain/probability.js';
 import { attachEv } from '../../domain/ev.js';
 import { noteOpenInterest, openInterestChange, ivChange, type OiChange } from '../../market/oi-history.js';
-import { chainBoard, noteChainFeatures } from '../../market/chain-features.js';
+import { chainBoard, recordBoard } from '../../market/chain-features.js';
 import { SHOCK_WINDOWS } from '../../domain/shock.js';
 import { shockFrom } from '../../market/shock-now.js';
 
@@ -164,7 +164,8 @@ export function registerDeskRoutes(app: FastifyInstance) {
     try {
       const now = Date.now();
       const q = req.query as { window?: string; expiry?: string };
-      const windowMin = Math.min(240, Math.max(5, Number(q.window ?? 60) || 60));
+      // Up to a day: the contract's whole life, or since the desk opened.
+      const windowMin = Math.min(1440, Math.max(5, Number(q.window ?? 60) || 60));
       const expiry = /^\d{6}$/.test(q.expiry ?? '') ? q.expiry! : null;
       const [ticker, book, flow, oi, optionFlow] = await Promise.all([
         livePerp(now).catch(() => null),
@@ -327,26 +328,7 @@ export function registerDeskRoutes(app: FastifyInstance) {
        * until this has been running for a year.
        */
       const board = chainBoard(snap, scored);
-      if (snap.live) {
-        const ce = scored.filter((l) => l.cp === 'C');
-        const pe = scored.filter((l) => l.cp === 'P');
-        const oiSum = (legs: typeof scored) => legs.reduce((t, l) => t + (l.oi ?? 0), 0);
-        const oiMoved = (legs: typeof scored) => legs.reduce(
-          (t, l) => t + (oiChanges.get(`${l.cp}${l.strike}`)?.change ?? 0), 0,
-        );
-        await noteChainFeatures({
-          expiry: snap.expiry, ts: snap.ts, spot: snap.spot, hoursLeft: snap.hoursToExpiry,
-          atmIv: snap.atmIv, board,
-          pcrOi: structure.pcrOi, pcrVolume: structure.pcrVolume,
-          ceOi: oiSum(ce), peOi: oiSum(pe),
-          ivSkewPts: structure.ivSkewPts,
-          ceWall: structure.ceOiWall?.strike ?? null,
-          peWall: structure.peOiWall?.strike ?? null,
-          maxPain: structure.maxPain?.strike ?? null,
-          ceOiChange: oiChanges.size ? oiMoved(ce) : null,
-          peOiChange: oiChanges.size ? oiMoved(pe) : null,
-        });
-      }
+      if (snap.live) await recordBoard(snap, scored, structure, oiChanges);
 
       const feed = tickerFeedHealth();
       const measured = await measuredOutlook({

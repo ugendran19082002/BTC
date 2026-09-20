@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import type { ChainResponse, Leg, MarketRead } from '@/types/desk';
 import type { FlowSummary, PerpResponse, SideFlow, TermHistoryPoint, TermPoint, TermResponse } from '@/api/desk';
-import { ivRv, keyLevels, namedLevels, skew, srDistances, structureRead, volRegime, type IvRv, type NamedLevel, type OptionBias } from '@/lib/overview';
+import { ivRv, keyLevels, namedLevels, skew, srDistances, structureRead, volRegime, WINDOW_CHOICES, windowLabel, type IvRv, type NamedLevel, type OptionBias, type WindowChoice } from '@/lib/overview';
 import { fmt, More, NotCaptured, Panel, Row, Tag, useWidth } from './parts';
 
 // ------------------------------------------------------------------ KPI strip
@@ -124,10 +125,14 @@ const regimeTone = (r: string | undefined) =>
 
 // -------------------------------------------------------------- price action
 
-export function PriceActionPanel({ market, tf: wanted = '15m', levels = [], spot }: { market: MarketRead | null; tf?: string; levels?: readonly NamedLevel[]; spot?: number }) {
-  // The chart's timeframe, where the read has it; 1m and 30m are not read, so the nearest read one stands in.
+const PA_TFS = ['5m', '15m', '30m', '1h', '2h', '4h', '6h', '12h', '1d'] as const;
+
+export function PriceActionPanel({ market, tf: chartTf = '15m', levels = [], spot }: { market: MarketRead | null; tf?: string; levels?: readonly NamedLevel[]; spot?: number }) {
+  // Its own timeframe, starting from the chart's; the read has five, and the others borrow the nearest one read.
+  const [own, setOwn] = useState<string | null>(null);
+  const wanted = own ?? chartTf;
   const have = market?.timeframes ?? [];
-  const nearest: Record<string, string> = { '1m': '5m', '30m': '15m' };
+  const nearest: Record<string, string> = { '1m': '5m', '30m': '15m', '2h': '1h', '6h': '4h', '12h': '4h', '24h': '1d' };
   const use = have.some((t) => t.tf === wanted) ? wanted : nearest[wanted] ?? '15m';
   const tf = have.find((t) => t.tf === use) ?? null;
   const trendTone = tf?.trend === 1 ? 'up' : tf?.trend === -1 ? 'down' : 'muted';
@@ -137,7 +142,14 @@ export function PriceActionPanel({ market, tf: wanted = '15m', levels = [], spot
   const swing = tf ? structureRead(tf.structure, tf.trend) : null;
   const dist = (d: typeof sr.support) => (d ? `${fmt.signed(d.usd)} (${fmt.signed(d.pct, 2)}%)${d.atr === null ? '' : ` · ${d.atr.toFixed(1)} ATR`}` : '—');
   return (
-    <Panel title={`Price action (${use})`} right={use !== wanted ? <small className="ov-muted">{wanted} not read; {use} shown</small> : undefined}>
+    <Panel title="Price action" right={
+      <span className="ov-chain-head">
+        <select className="ov-select" aria-label="Timeframe" value={wanted} onChange={(e) => setOwn(e.target.value)} title="The bars the read is taken from">
+          {PA_TFS.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+        {use !== wanted && <small className="ov-muted">{wanted} not read; {use} shown</small>}
+      </span>
+    }>
       {!tf ? <p className="ov-empty">No {use} bars yet.</p> : (
         <>
           <Row mark="arrow" label="Trend" value={tf.label} tone={trendTone} />
@@ -224,13 +236,14 @@ export function VolatilityPanel({ data, iv }: { data: ChainResponse; iv: IvRv | 
  * top of its book. From the desk's own record of every print; a window the
  * socket was away for says how many minutes it actually has.
  */
-export function TradeFlowPanel({ perp, market }: { perp: PerpResponse | null; market: MarketRead | null }) {
+export function TradeFlowPanel({ perp, market, window: win, onWindow }: { perp: PerpResponse | null; market: MarketRead | null; window?: WindowChoice; onWindow?: (w: WindowChoice) => void }) {
+  const head = win && onWindow ? <WindowSelect value={win} onChange={onWindow} /> : null;
   const f = perp?.flow ?? null;
   const b = perp?.book ?? null;
-  if (!perp) return <Panel title="Trade flow (1h)"><p className="ov-empty">Loading…</p></Panel>;
+  if (!perp) return <Panel title="Trade flow" right={head}><p className="ov-empty">Loading…</p></Panel>;
   if (!f || f.source === 'none') {
     return (
-      <Panel title="Trade flow (1h)">
+      <Panel title="Trade flow" right={head}>
         <NotCaptured what="No prints in the window" why="The tape recorder has just started, or its socket is down — /api/health shows flowFeed." />
         {b && <BookRows b={b} />}
       </Panel>
@@ -240,8 +253,8 @@ export function TradeFlowPanel({ perp, market }: { perp: PerpResponse | null; ma
   const last = f.cvd.at(-1)?.cvd ?? null;
   const kct = (v: number) => (Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(1)}K` : fmt.n(v));
   return (
-    <Panel title={`Trade flow (${f.windowMin >= 60 ? `${f.windowMin / 60}h` : `${f.windowMin}m`})`}
-      right={<small className={f.minutesCovered < f.windowMin ? 'ov-warn' : 'ov-muted'} title="Minutes in the window with at least one print">{f.minutesCovered} of {f.windowMin} min</small>}>
+    <Panel title="Trade flow"
+      right={<span className="ov-chain-head">{head}<small className={f.minutesCovered < f.windowMin ? 'ov-warn' : 'ov-muted'} title="Minutes in the window with at least one print">{f.minutesCovered} of {f.windowMin} min</small></span>}>
       <Row mark="dot" tone="up" label="Buy volume" value={`${kct(f.buyVolume)} ct`} hint="Contracts bought by the aggressor: buys that lifted the offer" />
       <Row mark="dot" tone="down" label="Sell volume" value={`${kct(f.sellVolume)} ct`} hint="Contracts sold by the aggressor: sells that hit the bid" />
       <Row mark="dot" tone={delta > 0 ? 'up' : delta < 0 ? 'down' : 'muted'} label="Delta volume" value={`${delta > 0 ? '+' : ''}${kct(delta)} ct`} hint="Buy volume minus sell volume" />
@@ -379,8 +392,9 @@ export { ivRv };
  * print on the two nearest expiries. Book imbalance and spread are the
  * perpetual's -- options have no book capture -- and are said so.
  */
-export function OptionFlowPanel({ perp, legs = [], atm = null }: { perp: PerpResponse | null; legs?: readonly Leg[]; atm?: number | null }) {
+export function OptionFlowPanel({ perp, legs = [], atm = null, window: win, onWindow }: { perp: PerpResponse | null; legs?: readonly Leg[]; atm?: number | null; window?: WindowChoice; onWindow?: (w: WindowChoice) => void }) {
   const f = perp?.optionFlow ?? null;
+  const head = win && onWindow ? <WindowSelect value={win} onChange={onWindow} /> : null;
   // The side's own book, as far as Delta shows one: the at-the-money option's top of book.
   const atmLeg = (cp: 'C' | 'P') => legs.find((l) => l.cp === cp && l.strike === atm) ?? null;
   const bookOf = (l: Leg | null) => {
@@ -389,10 +403,10 @@ export function OptionFlowPanel({ perp, legs = [], atm = null }: { perp: PerpRes
   };
   const spreadOf = (l: Leg | null) => (l && l.bid !== null && l.ask !== null && l.bid + l.ask > 0 ? (l.ask - l.bid) / ((l.bid + l.ask) / 2) : null);
   const kct = (v: number) => (Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(1)}K` : fmt.n(v));
-  if (!perp) return <Panel title="Option flow (1h)"><p className="ov-empty">Loading…</p></Panel>;
+  if (!perp) return <Panel title="Option flow" right={head}><p className="ov-empty">Loading…</p></Panel>;
   if (!f || f.source === 'none') {
     return (
-      <Panel title="Option flow (1h)">
+      <Panel title="Option flow" right={head}>
         <NotCaptured what="No option prints in the window" why="The tape recorder subscribes to every strike of the two nearest expiries; recording began 20 Sep 2026, or the socket is down — /api/health shows flowFeed." />
       </Panel>
     );
@@ -414,8 +428,8 @@ export function OptionFlowPanel({ perp, legs = [], atm = null }: { perp: PerpRes
   );
   const biasTone = f.combined.bias === null || f.combined.bias === 'MIXED' ? 'muted' : /CALL BUYING|PUT SELLING/.test(f.combined.bias) ? 'up' : 'down';
   return (
-    <Panel title={`Option flow (${f.windowMin >= 60 ? `${f.windowMin / 60}h` : `${f.windowMin}m`})`}
-      right={<small className={f.minutesCovered < f.windowMin ? 'ov-warn' : 'ov-muted'} title="Minutes in the window with at least one option print">{f.minutesCovered} of {f.windowMin} min · {f.expiry}</small>}>
+    <Panel title="Option flow"
+      right={<span className="ov-chain-head">{head}<small className={f.minutesCovered < f.windowMin ? 'ov-warn' : 'ov-muted'} title="Minutes in the window with at least one option print">{f.minutesCovered} of {f.windowMin} min · {f.expiry}</small></span>}>
       <div className="ov-flow-cards">
         {card('CE flow', 'CALL', f.ce, atmLeg('C'))}
         {card('PE flow', 'PUT', f.pe, atmLeg('P'))}
@@ -426,5 +440,14 @@ export function OptionFlowPanel({ perp, legs = [], atm = null }: { perp: PerpRes
       </div>
       <p className="ov-foot">Prints from the desk's own tape of every strike on this expiry; book and spread from the at-the-money option's live quote.</p>
     </Panel>
+  );
+}
+
+/** The window the tape is summed over: the fixed ones, since the desk opened, or since the last settlement. */
+export function WindowSelect({ value, onChange }: { value: WindowChoice; onChange: (w: WindowChoice) => void }) {
+  return (
+    <select className="ov-select" aria-label="Window" value={value} onChange={(e) => onChange(e.target.value as WindowChoice)} title="How far back the tape is summed">
+      {WINDOW_CHOICES.map((w) => <option key={w} value={w}>{windowLabel(w)}</option>)}
+    </select>
   );
 }

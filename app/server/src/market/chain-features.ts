@@ -1,6 +1,8 @@
 import { one, query } from '../db/pool.js';
-import { marketSchema } from './oi-history.js';
-import type { Leg } from './chain.js';
+import { marketSchema, noteOpenInterest, openInterestChange, type OiChange } from './oi-history.js';
+import { liveChain, WHOLE_BOARD, type Leg, type Snapshot } from './chain.js';
+import { scoreLegs, type ScoredLeg } from '../domain/score.js';
+import { optionStructure, type OptionStructure } from '../domain/structure.js';
 
 /**
  * The option board as figures a measurement can use — and a record of them.
@@ -153,4 +155,47 @@ export async function chainHistory(): Promise<{ rows: number; since: number | nu
   } catch {
     return { rows: 0, since: null, db: TABLE };
   }
+}
+
+/**
+ * The board, recorded: what the chain route writes after it has drawn one.
+ * Idempotent by five-minute bucket, so the route and the scheduled recorder
+ * can both call it. The OI changes are the per-strike hour deltas the route
+ * already computed; without them the change columns are null, not zero.
+ */
+export async function recordBoard(snap: Snapshot, scored: readonly ScoredLeg[], structure: OptionStructure, oiChanges: Map<string, OiChange>): Promise<number | null> {
+  const board = chainBoard(snap, scored);
+  const ce = scored.filter((l) => l.cp === 'C');
+  const pe = scored.filter((l) => l.cp === 'P');
+  const oiSum = (legs: readonly ScoredLeg[]) => legs.reduce((t, l) => t + (l.oi ?? 0), 0);
+  const oiMoved = (legs: readonly ScoredLeg[]) => legs.reduce((t, l) => t + (oiChanges.get(`${l.cp}${l.strike}`)?.change ?? 0), 0);
+  return noteChainFeatures({
+    expiry: snap.expiry, ts: snap.ts, spot: snap.spot, hoursLeft: snap.hoursToExpiry,
+    atmIv: snap.atmIv, board,
+    pcrOi: structure.pcrOi, pcrVolume: structure.pcrVolume,
+    ceOi: oiSum(ce), peOi: oiSum(pe),
+    ivSkewPts: structure.ivSkewPts,
+    ceWall: structure.ceOiWall?.strike ?? null,
+    peWall: structure.peOiWall?.strike ?? null,
+    maxPain: structure.maxPain?.strike ?? null,
+    ceOiChange: oiChanges.size ? oiMoved(ce) : null,
+    peOiChange: oiChanges.size ? oiMoved(pe) : null,
+  });
+}
+
+/**
+ * The board every five minutes whether or not anyone is looking: the
+ * "an hour ago" reads (OI, the ATM premiums, IV) need a record that has no
+ * gaps, and the chain route only writes when a browser asks for the board.
+ * The nearest live expiry, the whole board, from the tickers already cached.
+ */
+export async function captureBoard(nowMs = Date.now(), wallWithinEm = 1.25, realisedVolPct: number | null = null): Promise<number | null> {
+  const snap = await liveChain(WHOLE_BOARD);
+  if (!snap.live) return null;
+  const scored = scoreLegs(snap);
+  await noteOpenInterest({ ...snap, atmIv: snap.atmIv }, scored);
+  const oiChanges = await openInterestChange(snap, scored, 1);
+  const structure = optionStructure(snap, realisedVolPct, wallWithinEm);
+  void nowMs;
+  return recordBoard(snap, scored, structure, oiChanges);
 }

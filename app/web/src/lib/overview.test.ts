@@ -4,7 +4,7 @@ import live from '@/test/fixtures/chain-live.json';
 import {
   bestLeg, bothSides, breakeven, candidates, consensus, expectedMove, feePerContract, freshness, gammaRisk,
   ivRv, keyLevels, marginPerContract, modelView, odds, orderEstimate, payoffPrices, premiumAnalysis, shortPayoff, skew, volRegime,
-  ageText, contractValidity, dataFreshness, optionBias, sellerImpact, sellerState, premiumDecay, triggerState, DESK_FILTER, filtersChanged, assessBoth, assessSides, horizonRows, namedLevels, earlyWarning, findStrikes, boardRead, movementVerdict, parseSymbol, positionState, positionViews, premiumMomentum, riskEngine, shortLossAt,
+  ageText, contractValidity, dataFreshness, optionBias, sellerImpact, sellerState, windowMinutes, premiumDecay, triggerState, DESK_FILTER, filtersChanged, assessBoth, assessSides, horizonRows, namedLevels, earlyWarning, findStrikes, boardRead, movementVerdict, parseSymbol, positionState, positionViews, premiumMomentum, riskEngine, shortLossAt,
 } from './overview';
 
 const fixtureData = () => live as unknown as ChainResponse;
@@ -412,5 +412,15 @@ describe('seller impact', () => {
     expect(st.state).toBe('IMPROVING');
     expect(sellerState([{ minutes: 5, impact: 'WORSE' }, { minutes: 30, impact: 'BETTER' }, { minutes: 60, impact: 'WORSE' }]).state).toBe('DETERIORATING');
     expect(sellerState([]).state).toBeNull();
+  });
+});
+
+describe('windows', () => {
+  it('fixed windows as written; start is since 05:30 IST today, expiry since 17:30 IST yesterday', () => {
+    const at = Date.UTC(2026, 8, 20, 4, 0, 0); // 09:30 IST
+    expect(windowMinutes('15m', at)).toBe(15); expect(windowMinutes('24h', at)).toBe(1440);
+    expect(windowMinutes('start', at)).toBe(240);
+    expect(windowMinutes('expiry', at)).toBe(16 * 60);
+    expect(windowMinutes('start', Date.UTC(2026, 8, 19, 23, 0, 0))).toBe(23 * 60, 'before 05:30, since yesterday\'s open');
   });
 });

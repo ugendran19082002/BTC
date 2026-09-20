@@ -1221,3 +1221,27 @@ export function sellerState(impacts: readonly { minutes: number; impact: Impact 
   if (worse > better) return { state: 'DETERIORATING', text: 'Risk increasing' };
   return { state: 'MIXED', text: 'Mixed' };
 }
+
+// ------------------------------------------------------------ windows
+
+export type WindowChoice = '5m' | '15m' | '30m' | '1h' | '2h' | '4h' | '6h' | '12h' | '24h' | 'start' | 'expiry';
+export const WINDOW_CHOICES: readonly WindowChoice[] = ['5m', '15m', '30m', '1h', '2h', '4h', '6h', '12h', '24h', 'start', 'expiry'];
+
+/**
+ * A window choice as minutes: the fixed ones as written; `start` since the
+ * desk opened at 05:30 IST today; `expiry` since the last settlement, 17:30
+ * IST yesterday -- the contract's whole life. Never under five minutes, never
+ * over a day.
+ */
+export function windowMinutes(choice: WindowChoice, nowMs: number): number {
+  const fixed: Record<string, number> = { '5m': 5, '15m': 15, '30m': 30, '1h': 60, '2h': 120, '4h': 240, '6h': 360, '12h': 720, '24h': 1440 };
+  if (choice in fixed) return fixed[choice]!;
+  const IST = 5.5 * 3_600_000;
+  const ist = new Date(nowMs + IST);
+  const day = Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate()) - IST;
+  const start = day + 5.5 * 3_600_000;
+  const lastSettle = day + 17.5 * 3_600_000 - 24 * 3_600_000;
+  const from = choice === 'start' ? (start <= nowMs ? start : start - 24 * 3_600_000) : (lastSettle <= nowMs ? lastSettle : lastSettle - 24 * 3_600_000);
+  return Math.max(5, Math.min(1440, Math.round((nowMs - from) / 60_000)));
+}
+export const windowLabel = (c: WindowChoice) => (c === 'start' ? 'since 05:30' : c === 'expiry' ? 'since last expiry' : c);
