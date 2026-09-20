@@ -2531,7 +2531,8 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 .ov-kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
   display: flex; flex-direction: column; gap: 2px; box-shadow: inset 0 1px 0 var(--edge); min-width: 0; }
 .ov-kpi-wide { grid-column: auto; }
-@media (min-width: 1500px) { .ov-kpis { grid-template-columns: repeat(9, minmax(0, 1fr)); } }
+/* Nine cards across on a wide screen, the bias card taking two of the eleven tracks; auto-fit under that. */
+@media (min-width: 1500px) { .ov-kpis { grid-template-columns: repeat(10, minmax(0, 1fr)); } }
 .ov-kpi-muted { opacity: .65; }
 .ov-kpi-label { color: var(--muted); font-size: 12px; }
 .ov-kpi-value { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.2; }
@@ -2623,7 +2624,8 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 @media (max-width: 760px) { .ov-entry { grid-template-columns: 1fr; } }
 .ov-checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; font-size: 13px; }
 .ov-checks li { display: flex; gap: 8px; align-items: baseline; }
-.ov-checks li span { width: 16px; flex: none; text-align: center; font-weight: 700; }
+.ov-checks li > span:first-child { width: 16px; flex: none; text-align: center; font-weight: 700; }
+.ov-checks li .ov-gate-text { flex: 1 1 auto; min-width: 0; }
 .ov-checks li.ok span { color: var(--up); } .ov-checks li.bad span { color: var(--down); } .ov-checks li.unknown span { color: var(--muted); }
 .ov-checks li.bad { color: var(--text); }
 .ov-place { width: 100%; background: var(--up); color: #05121f; border: 0; border-radius: 6px; padding: 12px; font-size: 15px; font-weight: 700; cursor: pointer; margin-bottom: 8px; }
@@ -2832,3 +2834,8 @@ tr.focused .tag.focus { background: var(--accent); color: #111; }
 .ov-bias-col > b { font-size: 13px; margin-bottom: 2px; }
 .ov-bias-ce > b { color: var(--up); } .ov-bias-pe > b { color: var(--down); }
 .ov-bias-col .ov-tag { align-self: flex-start; margin-top: 3px; }
+.ov-flow-card .ov-kpi-value { display: block; }
+.ov-decay-box .ov-row-value { white-space: nowrap; }
+.ov-bias { grid-column: span 2; }
+@media (max-width: 760px) { .ov-bias { grid-column: 1 / -1; } }
+.ov-levels th, .ov-levels td { padding: 2px 4px; }

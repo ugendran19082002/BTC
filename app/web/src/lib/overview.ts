@@ -1301,5 +1301,7 @@ export function optionBias(input: {
     };
   };
   const ce = one('CE'), pe = one('PE');
-  return { ce, pe, pressureOn: ce.score === pe.score ? null : ce.score > pe.score ? 'CE' : 'PE' };
+  // The pressure is on the side that scores higher, and only when that side is actually being pushed (a positive score).
+  const lead = ce.score === pe.score ? null : ce.score > pe.score ? ce : pe;
+  return { ce, pe, pressureOn: lead && lead.score > 0 ? lead.side : null };
 }

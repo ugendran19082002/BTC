@@ -28,9 +28,10 @@ import { ChangesPanel, EarlyWarningPanel, MovementPanel, StrikeFinder, useChange
  * One fact, one place. The bar owns the clock (entry, window, expiry, time
  * left); the strategy decision owns the answer; the KPI strip owns the market's
  * headline numbers; the left column reads the market (trend, levels,
- * volatility, the tape, the vol surface); the centre is the board (chart, chain, the strike
+ * volatility, the tape); the centre is the board (chart, chain, the strike
  * under inspection, what changed, its risk, its checklist); the right column
- * decides (the outlook by horizon; the sides, with the strikes under them). Nothing
+ * decides (the outlook by horizon; the sides, with the strikes under them;
+ * then the vol surface: term structure and skew). Nothing
  * is shown twice: a figure the checklist judges is not repeated as a row.
  *
  * Every figure is read from the chain response, the perp feed or the desk's
@@ -173,8 +174,6 @@ export function Overview({
           <ErrorBoundary where="Trade flow"><TradeFlowPanel perp={perp} market={data.market} /></ErrorBoundary>
           <ErrorBoundary where="Option flow"><OptionFlowPanel perp={perp} /></ErrorBoundary>
           <ErrorBoundary where="Early warning"><EarlyWarningPanel data={data} perp={perp} changes={changes?.rows ?? null} /></ErrorBoundary>
-          <ErrorBoundary where="IV term structure"><IvTermPanel term={term} error={Boolean(termError)} /></ErrorBoundary>
-          <ErrorBoundary where="Skew"><SkewPanel data={data} rank={term?.skew ?? null} /></ErrorBoundary>
         </div>
 
         <div className="ov-col">
@@ -203,6 +202,8 @@ export function Overview({
                   filter={filter} onFilter={setFilter} rvPct={data.market?.realisedVol ?? null} />
               } />
           </ErrorBoundary>
+          <ErrorBoundary where="IV term structure"><IvTermPanel term={term} error={Boolean(termError)} /></ErrorBoundary>
+          <ErrorBoundary where="Skew"><SkewPanel data={data} rank={term?.skew ?? null} /></ErrorBoundary>
         </div>
       </div>
     </div>

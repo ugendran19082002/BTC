@@ -153,8 +153,8 @@ export function PriceActionPanel({ market, tf: wanted = '15m', levels = [], spot
           <More label="Details">
             <Row label="ADX (14)" value={tf.adx14 == null ? '—' : tf.adx14.toFixed(1)} hint="Trend strength, whichever way; above 25 is a trend" />
             <Row label="EMA 9 / 21 / 50" value={`${fmt.n(tf.ema9)} / ${fmt.n(tf.ema21)} / ${fmt.n(tf.ema50)}`} tone={tf.ema9 !== null && tf.ema21 !== null ? (tf.ema9 > tf.ema21 ? 'up' : 'down') : undefined} />
-            <Row label={`Resistance${sr.resistance ? ` · ${sr.resistance.name}` : ''}`} value={dist(sr.resistance)} tone="down" hint="The nearest level above spot: how far in dollars, percent and ATRs of this timeframe" />
-            <Row label={`Support${sr.support ? ` · ${sr.support.name}` : ''}`} value={dist(sr.support)} tone="up" hint="The nearest level below spot: how far in dollars, percent and ATRs of this timeframe" />
+            <Row label={sr.resistance ? `↑ ${sr.resistance.name}` : 'Resistance'} value={dist(sr.resistance)} tone="down" hint="The nearest level above spot: how far in dollars, percent and ATRs of this timeframe" />
+            <Row label={sr.support ? `↓ ${sr.support.name}` : 'Support'} value={dist(sr.support)} tone="up" hint="The nearest level below spot: how far in dollars, percent and ATRs of this timeframe" />
           </More>
         </>
       )}
@@ -412,7 +412,7 @@ export function OptionFlowPanel({ perp }: { perp: PerpResponse | null }) {
         {card('PE flow', 'PUT', f.pe)}
       </div>
       <div className="ov-flow-combined">
-        <Row label="Combined" value={`buy ${kct(f.combined.buyVolume)} · sell ${kct(f.combined.sellVolume)} · Δ ${fmt.signed(f.combined.deltaVolume)}`} />
+        <Row label="Total" value={`buy ${kct(f.combined.buyVolume)} · sell ${kct(f.combined.sellVolume)} · Δ ${fmt.signed(f.combined.deltaVolume)}`} />
         <Row label="Overall option flow" value={<Tag tone={biasTone}>{f.combined.bias ?? '—'}</Tag>} hint="The heaviest of the four legs names the bias when it is two-fifths of the volume; otherwise mixed. Call buying and put selling lean bullish; call selling and put buying, bearish" />
       </div>
       <p className="ov-foot">Book imbalance and spread are the perpetual's (trade flow above); Delta publishes no book history for options.</p>

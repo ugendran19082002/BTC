@@ -330,7 +330,7 @@ export function ChecklistPanel({ leg, ready, onSell }: { leg: Leg | null; ready:
   const Item = ({ g }: { g: Readiness['gates'][number] }) => (
     <li className={g.ok === true ? 'ok' : g.ok === false ? 'bad' : 'unknown'}>
       <span aria-hidden>{g.ok === true ? '✓' : g.ok === false ? '✕' : '?'}</span>
-      {GATE_LABEL[g.key] ? <><b className="ov-gate-label">{GATE_LABEL[g.key]}</b> <span className="ov-muted">{g.text}</span></> : g.text}
+      <em className="ov-gate-text">{GATE_LABEL[g.key] ? <><b className="ov-gate-label">{GATE_LABEL[g.key]}</b> <span className="ov-muted">{g.text}</span></> : g.text}</em>
     </li>
   );
   return (

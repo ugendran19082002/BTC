@@ -63,7 +63,6 @@ function DecayChart({ premium, intrinsic, hoursToExpiry, side, strike }: { premi
             <path d={area} className="ov-area-accent" />
             <path d={line} fill="none" className="ov-line-accent" />
             <line x1={P.left} x2={W - P.right} y1={py(0)} y2={py(0)} className="ov-axis" />
-            <text x={P.left - 6} y={py(top) + 4} textAnchor="end" className="ov-tick">{fmt.n(top, 0)}</text>
             <text x={P.left - 6} y={py(0) + 4} textAnchor="end" className="ov-tick">0</text>
             {points.map((p) => (
               <g key={p.hoursFromNow}>
@@ -94,7 +93,8 @@ export const sideFinal = (c: SideAssessment) => (c.disabledBy ? 'NOT ALLOWED' : 
 export function SideCardsRow({ sides, both, onSelect }: { sides: SideAssessment[]; both?: BothAssessment | null; onSelect: (cp: 'C' | 'P', strike: number) => void }) {
   const tone = (s: SideAssessment['status']) => (s === 'SELL' ? 'up' : s === 'WATCH' ? 'warn' : 'muted');
   const safe = (ok: boolean | null) => (ok === null ? <span className="ov-muted">—</span> : <span className={ok ? 'ov-up' : 'ov-down'}>{ok ? '✓ safe' : '✕ not safe'}</span>);
-  const bothFinal = !both ? null : both.status === 'BOTH' ? 'PREFERRED' : both.status === 'SINGLE SIDE' ? 'NOT PREFERRED' : 'NOT ALLOWED';
+  // Both together: PREFERRED when each side passes, NOT ALLOWED when a side is switched off, NOT PREFERRED otherwise.
+  const bothFinal = !both ? null : sides.some((c) => c.disabledBy) ? 'NOT ALLOWED' : both.status === 'BOTH' ? 'PREFERRED' : 'NOT PREFERRED';
   return (
     <div className="ov-decide ov-decide-3">
       {sides.map((c) => (
