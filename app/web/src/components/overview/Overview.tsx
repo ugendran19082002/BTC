@@ -51,7 +51,7 @@ import { ChangesPanel, EarlyWarningPanel, MovementPanel, StrikeFinder, useChange
  */
 export function Overview({
   data, trade, expiries, onExpiry, onSell, contracts: deskContracts, leverage = 200, chart, chartTf = '15m', chain = true,
-  selected: selectedProp, onSelect, spark, controls, error,
+  selected: selectedProp, onSelect, pair: pairProp, spark, controls, error,
 }: {
   data: ChainResponse;
   trade: TradeStatus | null;
@@ -71,6 +71,8 @@ export function Overview({
   /** The selected strike, when the screen owns it; `null` means the desk's pick. */
   selected?: Selected | null;
   onSelect?: (s: Selected | null) => void;
+  /** The CE and PE chosen, when the screen keeps them; otherwise these panels remember their own. */
+  pair?: { C: number | null; P: number | null } | null;
   /** Recent closes for the spot KPI's sparkline. */
   spark?: readonly number[];
   /** The screen's mode and refresh controls, drawn in the screen bar. */
@@ -96,13 +98,15 @@ export function Overview({
   const picked = onSelect ? selectedProp ?? null : ownPicked;
   // One strike a side: a click on the chain's call half sets the CE, on its put half the PE. The last click is the strike the panels inspect;
   // both sit on the cards and are lit on the chain.
-  const [pair, setPair] = usePersisted<{ C: number | null; P: number | null }>('live:pair', { C: null, P: null });
+  const snap = data.snapshot;
+  // Remembered per expiry: a pair chosen on one contract says nothing about the next one's board.
+  const [pairStore, setPairStore] = usePersisted<{ expiry: string; C: number | null; P: number | null }>('live:pair', { expiry: '', C: null, P: null });
+  const pair = useMemo(() => pairProp ?? (pairStore.expiry === snap.expiry ? pairStore : { expiry: snap.expiry, C: null, P: null }), [pairProp, pairStore, snap.expiry]);
   const setPicked = useCallback((sel: Selected | null) => {
     (onSelect ?? setOwnPicked)(sel);
-    if (sel) setPair((p) => ({ ...p, [sel.cp]: sel.strike }));
-  }, [onSelect, setPair]);
+    if (sel && !pairProp) setPairStore((p) => ({ ...(p.expiry === snap.expiry ? p : { expiry: snap.expiry, C: null, P: null }), [sel.cp]: sel.strike }));
+  }, [onSelect, setPairStore, snap.expiry, pairProp]);
 
-  const snap = data.snapshot;
   const iv = ivRv(data.structure.atmIv, data.market?.realisedVol ?? null);
   // To settlement, by IV: what every strike's distance and tail is measured in.
   const emSettle = useMemo(() => expectedMove(snap), [snap]);

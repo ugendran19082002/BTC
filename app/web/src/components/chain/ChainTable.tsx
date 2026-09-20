@@ -402,6 +402,7 @@ export function ChainTable({
   onSell,
   onInspect,
   focus = null,
+  pair = null,
   onFocus,
   maxSpreadPct,
   held,
@@ -435,6 +436,8 @@ export function ChainTable({
    * the board is where a person points at what they are deciding on.
    */
   focus?: { cp: 'C' | 'P'; strike: number } | null;
+  /** The CE and the PE chosen, one a side: both marked, whichever was clicked last is `focus`. */
+  pair?: { C: number | null; P: number | null } | null;
   onFocus?: (cp: 'C' | 'P', strike: number) => void;
   /**
    * The widest spread an order may cross, as a fraction of the mid.
@@ -653,6 +656,7 @@ export function ChainTable({
             const heldC = held?.get(heldKey('C', k));
             const heldP = held?.get(heldKey('P', k));
             const focused = focus?.strike === k ? focus.cp : null;
+            const marks = (['C', 'P'] as const).filter((cp) => (pair ? pair[cp] === k : false) || focused === cp);
             // Which half of the row a click landed on: before the strike cell is the call side, after it the put side; a one-sided board is all one side.
             const pick = (e: MouseEvent<HTMLTableRowElement>) => {
               if (!onFocus) return;
@@ -673,7 +677,7 @@ export function ChainTable({
                 onClick={onFocus ? pick : undefined}
                 className={[
                   isAtm ? 'atm' : '',
-                  focused ? `focused focused-${focused === 'C' ? 'c' : 'p'}` : '',
+                  marks.length ? `focused ${marks.map((cp) => `focused-${cp.toLowerCase()}`).join(' ')}` : '',
                   sellC || sellP ? 'sold' : '',
                   // Separate from `sold`: one is what the desk suggests, the
                   // other is what you have actually done, and the row must not
@@ -697,7 +701,7 @@ export function ChainTable({
                         )
                         : k}
                       {isAtm && <span className="tag">ATM</span>}
-                      {focused && <span className="tag focus" title="The strike the panels above are about">{focused === 'C' ? 'CE' : 'PE'} ◆</span>}
+                      {marks.map((cp) => <span key={cp} className="tag focus" title={cp === focused ? 'The strike the Live screen inspects' : 'Chosen for this side'}>{cp === 'C' ? 'CE' : 'PE'} ◆</span>)}
                       {heldC && <HeldChip held={heldC} />}
                       {heldP && <HeldChip held={heldP} />}
                       {/*
@@ -746,7 +750,7 @@ export function ChainTable({
                         )
                         : k}
                       {isAtm && <span className="tag">ATM</span>}
-                      {focused && <span className="tag focus" title="The strike the panels above are about">{focused === 'C' ? 'CE' : 'PE'} ◆</span>}
+                      {marks.map((cp) => <span key={cp} className="tag focus" title={cp === focused ? 'The strike the Live screen inspects' : 'Chosen for this side'}>{cp === 'C' ? 'CE' : 'PE'} ◆</span>)}
                       {heldC && <HeldChip held={heldC} />}
                       {heldP && <HeldChip held={heldP} />}
                       {/*

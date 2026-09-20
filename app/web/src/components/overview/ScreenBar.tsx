@@ -7,6 +7,7 @@ import { Tag } from './parts';
 const IST_CLOCK = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 const IST_HM = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
 const IST_DATE = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short' });
+const IST_DAY = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric', month: 'short' });
 const hm = (ms: number) => `${Math.floor(ms / 3_600_000)}h ${String(Math.floor((ms % 3_600_000) / 60_000)).padStart(2, '0')}m`;
 
 /**
@@ -28,7 +29,10 @@ export function ScreenBar({ data, now, freshnessSec, entryIst, expiries, onExpir
   const validity = contractValidity(snap, now);
   const ages = dataFreshness(data.freshness, now, { market: freshnessSec * 1000, chain: freshnessSec * 1000, oi: 15 * 60_000, model: 7 * 86_400_000 });
   const stale = ages.filter((a) => a.stale);
-  const away = (h: number) => (h < 48 ? `${Math.round(h)}h` : `${Math.round(h / 24)}d`);
+  // An expiry as a person says it: the day, when it settles, how far away, and what it is to the desk.
+  const away = (h: number) => (h <= 0 ? 'settled' : h < 1 ? `${Math.round(h * 60)}m left` : h < 48 ? `${Math.floor(h)}h ${String(Math.round((h % 1) * 60)).padStart(2, '0')}m left` : `${Math.round(h / 24)}d away`);
+  const expiryLabel = (e: { expiry: string; expiryTs: number; hoursAway: number; isDaily: boolean; isNextEntry: boolean; isDefault?: boolean }) =>
+    `${IST_DAY.format(new Date(e.expiryTs * 1000))} · 17:30 IST · ${away(e.hoursAway)}${e.isNextEntry ? ' · next entry ★' : e.isDaily ? ' · daily' : e.hoursAway >= 24 * 6 ? ' · weekly / monthly' : ''}`;
   const entryMs = snap.live ? now : snap.ts * 1000;
   const windowMs = entryTodayMs(entryIst, entryMs);
   const since = windowMs === null ? null : entryMs - windowMs;
@@ -55,9 +59,9 @@ export function ScreenBar({ data, now, freshnessSec, entryIst, expiries, onExpir
           {expiries && onExpiry && expiries.length > 0 ? (
             <label className="ov-inline-label">Expiry
               <select aria-label="Expiry" className="ov-select" value={snap.expiry} onChange={(e) => onExpiry(e.target.value)}>
-                {!expiries.some((e) => e.expiry === snap.expiry) && <option value={snap.expiry}>{snap.expiry}</option>}
+                {!expiries.some((e) => e.expiry === snap.expiry) && <option value={snap.expiry}>{IST_DAY.format(new Date(snap.expiryTs * 1000))} · 17:30 IST</option>}
                 {expiries.map((e) => (
-                  <option key={e.expiry} value={e.expiry}>{e.expiry} · {away(e.hoursAway)}{e.isNextEntry ? ' · next entry' : e.isDaily ? ' · daily' : ''}</option>
+                  <option key={e.expiry} value={e.expiry}>{expiryLabel(e)}</option>
                 ))}
               </select>
             </label>

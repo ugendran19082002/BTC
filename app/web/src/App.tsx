@@ -366,12 +366,20 @@ export default function App() {
   }, [data]);
 
   // The strike the decision panels are about; null = the desk's own default.
-  const [focus, setFocus] = usePersisted<Selected | null>('live:focus', null);
+  const [focusStore, setFocusStore] = usePersisted<{ expiry: string; sel: Selected | null; C: number | null; P: number | null }>('live:focus', { expiry: '', sel: null, C: null, P: null });
+  const focusExpiry = snapRef.current?.expiry ?? expiry;
+  const focus = focusStore.expiry === focusExpiry ? focusStore.sel : null;
+  // One strike a side, per expiry: a click sets its side's strike and becomes the one inspected.
+  const pair = useMemo(() => (focusStore.expiry === focusExpiry ? { C: focusStore.C, P: focusStore.P } : { C: null, P: null }), [focusStore, focusExpiry]);
+  const setFocus = useCallback((sel: Selected | null) => setFocusStore((f) => {
+    const base = f.expiry === focusExpiry ? f : { expiry: focusExpiry, sel: null, C: null, P: null };
+    return sel ? { ...base, sel, [sel.cp]: sel.strike } : { ...base, sel: null };
+  }), [setFocusStore, focusExpiry]);
   const inspectLeg = useCallback((cp: 'C' | 'P', strike: number) => {
     setFocus({ cp, strike });
     setInspecting({ cp, strike });
     setInspectOpen(true);
-  }, []);
+  }, [setFocus]);
 
   const snap = data?.snapshot;
   snapRef.current = snap ?? null;
@@ -502,6 +510,7 @@ export default function App() {
                 leverage={orderLeverage}
                 selected={focus}
                 onSelect={setFocus}
+                pair={pair}
                 spark={sparkCloses}
                 error={err}
                 controls={
@@ -627,6 +636,7 @@ export default function App() {
                   onSell={openTicket}
                   onInspect={inspectLeg}
                   focus={focus}
+                  pair={pair}
                   onFocus={(cp, strike) => setFocus({ cp, strike })}
                   view={chainView}
                   eligibleOnly={eligibleOnly}

@@ -56,7 +56,7 @@ describe('the decision panels', () => {
 
   it('the bar lists the expiries and changes the contract from there', () => {
     const onExpiry = vi.fn();
-    render(<Overview data={data} trade={null} contracts={1} chain={false} expiries={[{ expiry: data.snapshot.expiry, hoursAway: 5, isDaily: true, isNextEntry: true } as never, { expiry: '220926', hoursAway: 60 } as never]} onExpiry={onExpiry} />);
+    render(<Overview data={data} trade={null} contracts={1} chain={false} expiries={[{ expiry: data.snapshot.expiry, expiryTs: data.snapshot.expiryTs, hoursAway: 5, isDaily: true, isNextEntry: true } as never, { expiry: '220926', expiryTs: data.snapshot.expiryTs + 2 * 86_400, hoursAway: 60 } as never]} onExpiry={onExpiry} />);
     fireEvent.change(screen.getByLabelText('Expiry'), { target: { value: '220926' } });
     expect(onExpiry).toHaveBeenCalledWith('220926');
   });
