@@ -30,11 +30,11 @@ import { ChangesPanel, EarlyWarningPanel, MovementPanel, MovementTypePanel, Stri
  * One fact, one place. The bar owns the clock (entry, window, expiry, time
  * left); the strategy decision owns the answer; the KPI strip owns the market's
  * headline numbers; the left column reads the market (trend, levels,
- * volatility, the tape); the centre is the board (chart, the strike under
+ * volatility, the tape, the skew); the centre is the board (chart, the strike under
  * inspection, what changed, its risk and decay, its scenario, the move's
  * character); the right column decides (option bias, horizon and MTF, SELL
  * CE beside SELL PE, the early warning). The bottom row is the strike
- * finder beside the vol surface (term structure, skew). The three columns
+ * finder beside the term structure. The three columns
  * are stacked to end near each other. Nothing
  * is shown twice: a figure the checklist judges is not repeated as a row.
  *
@@ -195,6 +195,7 @@ export function Overview({
           <ErrorBoundary where="Volatility"><VolatilityPanel data={data} iv={iv} /></ErrorBoundary>
           <ErrorBoundary where="Trade flow"><TradeFlowPanel perp={perp} market={data.market} window={flowWindow} onWindow={setFlowWindow} /></ErrorBoundary>
           <ErrorBoundary where="Option flow"><OptionFlowPanel perp={perp} legs={data.legs} atm={snap.atm} window={flowWindow} onWindow={setFlowWindow} /></ErrorBoundary>
+          <ErrorBoundary where="Skew"><SkewPanel data={data} rank={term?.skew ?? null} /></ErrorBoundary>
         </div>
 
         <div className="ov-col">
@@ -252,7 +253,6 @@ export function Overview({
         </ErrorBoundary>
         <div className="ov-col">
           <ErrorBoundary where="IV term structure"><IvTermPanel term={term} error={Boolean(termError)} /></ErrorBoundary>
-          <ErrorBoundary where="Skew"><SkewPanel data={data} rank={term?.skew ?? null} /></ErrorBoundary>
         </div>
       </div>
     </div>
