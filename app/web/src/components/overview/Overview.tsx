@@ -133,15 +133,14 @@ export function Overview({
   // The finder's filters. Left at the desk's own, the cards carry the desk's picks; moved, each card
   // carries the best strike that passes them -- the decision is about what the person is considering.
   const [filter, setFilter] = usePersisted<FinderFilter>('live:finder:filter', DESK_FILTER);
-  // The strike each card judges: the desk's pick, the finder's best, the selected strike, or one chosen on the card.
-  const [cardStrike, setCardStrike] = usePersisted<{ C: number | null; P: number | null }>('live:card:strike', { C: null, P: null });
+  // The strike each card judges: the selected strike for its side; for the other side, the desk's pick (or the finder's best once its filters are moved).
   const deskLegOf = useCallback((cp: 'C' | 'P') => data.recommendation.sides.find((x) => x.side === (cp === 'C' ? 'CE' : 'PE'))?.leg ?? bestLeg(data.legs, cp), [data.recommendation, data.legs]);
+  const chosenLeg = picked ? findLeg(data.legs, picked) : null;
   const pick = useMemo(() => (cp: 'C' | 'P') => {
-    const chosen = cardStrike[cp];
-    if (chosen !== null) { const l = data.legs.find((x) => x.cp === cp && x.strike === chosen); if (l) return l; }
+    if (chosenLeg && chosenLeg.cp === cp) return chosenLeg;
     if (filtersChanged(filter)) return findStrikes(data.legs, { ...filter, side: cp, top: 1 })[0] ?? null;
     return deskLegOf(cp);
-  }, [cardStrike, filter, data.legs, deskLegOf]);
+  }, [chosenLeg, filter, data.legs, deskLegOf]);
   const sides: SideAssessment[] = useMemo(() => assessSides(data, iv, emSettle, contracts, leverage, pick).map((s) => {
     const gates = sideGates({
       side: s.side, leg: s.leg, iv, regime: data.market?.regime ?? null, direction: data.direction, outlook: data.outlook,
@@ -237,16 +236,7 @@ export function Overview({
           <ErrorBoundary where="Multi-timeframe"><MovementPanel data={data} em={emSettle} activeMin={config.horizonMin} mtf={mtf} movement={movement?.rows ?? null} /></ErrorBoundary>
           <ErrorBoundary where="Strategy decision">
             <DecisionCards data={data} sides={sides} choice={choice} iv={iv} em={emSettle} mtf={mtf} contracts={contracts} leverage={leverage}
-              onSelect={(cp, strike) => setPicked({ cp, strike })} oi={perp?.oi ?? null}
-              strikeOptions={(cp) => {
-                const desk = deskLegOf(cp);
-                const finder = findStrikes(data.legs, { ...filter, side: cp, top: 5 });
-                const opts: { key: string; strike: number | null; label: string }[] = [{ key: 'auto', strike: null, label: `Auto${desk ? ` · ${fmt.n(desk.strike)}` : ''}` }];
-                if (leg && leg.cp === cp) opts.push({ key: 'selected', strike: leg.strike, label: `Selected · ${fmt.n(leg.strike)}` });
-                for (const f of finder) if (!opts.some((o) => o.strike === f.strike)) opts.push({ key: `f${f.strike}`, strike: f.strike, label: `Finder · ${fmt.n(f.strike)}${f.score === null ? '' : ` (${(f.score * 10).toFixed(1)})`}` });
-                return opts;
-              }}
-              cardStrike={cardStrike} onCardStrike={(cp, strike) => setCardStrike((c) => ({ ...c, [cp]: strike }))} />
+              onSelect={(cp, strike) => setPicked({ cp, strike })} oi={perp?.oi ?? null} selectedCp={leg?.cp ?? null} />
           </ErrorBoundary>
           <ErrorBoundary where="Early warning"><EarlyWarningPanel data={data} perp={perp} changes={changes?.rows ?? null} /></ErrorBoundary>
           <ErrorBoundary where="IV term structure"><IvTermPanel term={term} error={Boolean(termError)} /></ErrorBoundary>

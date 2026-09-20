@@ -50,13 +50,14 @@ export function ChainPanel({ data, selected, onSelect, rows = 7 }: {
   }, [legs, snap.spot, snap.atm, snap.step, rows, filter, ceWall, peWall, maxPain]);
   const byKey = useMemo(() => new Map(legs.map((l) => [`${l.cp}${l.strike}`, l])), [legs]);
   const iv = (v: number | null) => (v === null ? '—' : `${(v * 100).toFixed(1)}%`);
-  const n = (v: number | null | undefined, p = 0) => (v === null || v === undefined ? '—' : fmt.n(v, p));
+  // Contracts in thousands past ten thousand, signed where a change: the board must fit its column.
+  const k = (v: number | null | undefined, signed = false) => (v === null || v === undefined ? '—' : Math.abs(v) >= 10_000 ? `${signed && v > 0 ? '+' : ''}${(v / 1000).toFixed(1)}K` : signed ? fmt.signed(v) : fmt.n(v));
   const px = (v: number | null | undefined) => (v === null || v === undefined ? '—' : fmt.n(v, v < 10 ? 1 : 0));
   const cells = (l: Leg | undefined): string[] => {
     if (!l) return cols === 'quotes' ? ['—', '—', '—', '—', '—', '—', '—'] : cols === 'greeks' ? ['—', '—', '—', '—'] : ['—', '—', '—', '—', '—'];
     if (cols === 'odds') { const o = odds(l); return [px(l.bid), fmt.pct(o.pOtm), fmt.pct(o.pTouch), l.emDistance === null ? '—' : `${l.emDistance.toFixed(1)}×`, l.score === null ? '—' : (l.score * 10).toFixed(1)]; }
     return cols === 'quotes'
-      ? [n(l.oi), l.oiChange ? fmt.signed(l.oiChange.change) : '—', px(l.bid), px(l.ask), px(l.mark), iv(l.iv), n(l.volume)]
+      ? [k(l.oi), l.oiChange ? k(l.oiChange.change, true) : '—', px(l.bid), px(l.ask), px(l.mark), iv(l.iv), k(l.volume)]
       : [l.delta === null ? '—' : l.delta.toFixed(2), l.gamma === null ? '—' : l.gamma.toPrecision(2), l.theta === null ? '—' : l.theta.toFixed(1), l.vega === null ? '—' : l.vega.toFixed(1)];
   };
   const head = cols === 'quotes' ? ['OI', 'ΔOI', 'Bid', 'Ask', 'Mark', 'IV', 'Vol'] : cols === 'greeks' ? ['Δ', 'Γ', 'Θ', 'V'] : ['Bid', 'P(OTM)', 'Touch', 'EM×', 'Score'];
