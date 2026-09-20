@@ -188,7 +188,7 @@ export function KeyLevelsPanel({ data, spot, emUsd = null }: { data: ChainRespon
   const cell = (price: number, atrUsd: number | null) => (
     <>
       <td>{fmt.n(price)}</td>
-      <td className={price >= spot ? 'ov-down' : 'ov-up'} title={`${fmt.signed(((price - spot) / spot) * 100, 2)}%`}>{fmt.signed(price - spot)}</td>
+      <td className={price >= spot ? 'ov-down' : 'ov-up'}>{fmt.signed(price - spot)} <small className="ov-muted ov-levels-pct">{fmt.signed(((price - spot) / spot) * 100, 2)}%</small></td>
       <td className="ov-muted">{atrUsd && atrUsd > 0 ? `${(Math.abs(price - spot) / atrUsd).toFixed(1)}×` : '—'}</td>
       <td className="ov-muted">{emUsd && emUsd > 0 ? `${(Math.abs(price - spot) / emUsd).toFixed(2)}×` : '—'}</td>
     </>
@@ -211,8 +211,8 @@ export function KeyLevelsPanel({ data, spot, emUsd = null }: { data: ChainRespon
   if (dayRows.length) groups.push({ name: 'Prev day', hint: 'Yesterday\'s high and low', rows: dayRows });
   const st = data.structure;
   const optRows = [
-    ...(st.ceOiWallNear ?? st.ceOiWall ? [{ label: 'Call OI wall', price: (st.ceOiWallNear ?? st.ceOiWall)!.strike, kind: 'resistance' as const, atrUsd: null }] : []),
-    ...(st.peOiWallNear ?? st.peOiWall ? [{ label: 'Put OI wall', price: (st.peOiWallNear ?? st.peOiWall)!.strike, kind: 'support' as const, atrUsd: null }] : []),
+    ...(st.ceOiWallNear ?? st.ceOiWall ? [{ label: 'Call wall', price: (st.ceOiWallNear ?? st.ceOiWall)!.strike, kind: 'resistance' as const, atrUsd: null }] : []),
+    ...(st.peOiWallNear ?? st.peOiWall ? [{ label: 'Put wall', price: (st.peOiWallNear ?? st.peOiWall)!.strike, kind: 'support' as const, atrUsd: null }] : []),
     ...(st.maxPain ? [{ label: 'Max pain', price: st.maxPain.strike, kind: 'pivot' as const, atrUsd: null }] : []),
     ...(st.gammaWall ? [{ label: 'Gamma wall', price: st.gammaWall.strike, kind: 'pivot' as const, atrUsd: null }] : []),
   ];
