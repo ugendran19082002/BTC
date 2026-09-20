@@ -32,11 +32,11 @@ import { ChangesPanel, EarlyWarningPanel, MovementPanel, StrikeFinder, useChange
  * One fact, one place. The bar owns the clock (entry, window, expiry, time
  * left); the strategy decision owns the answer; the KPI strip owns the market's
  * headline numbers; the left column reads the market (trend, levels,
- * volatility, the tape); the centre is the board (chart, compact chain, the
- * strike under inspection, what changed, its risk with stress and decay);
- * the right column decides (the option bias, the one multi-timeframe table,
- * SELL CE beside SELL PE, the early warning, the vol surface, the strike
- * finder). The final decision strip sits above it all. Nothing
+ * volatility, the tape, the early warning); the centre is the board (chart,
+ * compact chain, the strike under inspection, the chosen strikes' risk with
+ * stress and decay); the right column decides (the option bias, the one
+ * multi-timeframe table, SELL CE beside SELL PE, what changed on the chosen
+ * strikes, the vol surface, the strike finder). The final decision strip sits above it all. Nothing
  * is shown twice: a figure the checklist judges is not repeated as a row.
  *
  * Every figure is read from the chain response, the perp feed or the desk's
@@ -218,6 +218,7 @@ export function Overview({
           <ErrorBoundary where="Volatility"><VolatilityPanel data={data} iv={iv} /></ErrorBoundary>
           <ErrorBoundary where="Trade flow"><TradeFlowPanel perp={perp} market={data.market} window={flowWindow} onWindow={setFlowWindow} /></ErrorBoundary>
           <ErrorBoundary where="Option flow"><OptionFlowPanel perp={perp} legs={data.legs} atm={snap.atm} window={flowWindow} onWindow={setFlowWindow} /></ErrorBoundary>
+          <ErrorBoundary where="Early warning"><EarlyWarningPanel data={data} perp={perp} changes={changes?.rows ?? null} /></ErrorBoundary>
         </div>
 
         <div className="ov-col">
@@ -241,7 +242,6 @@ export function Overview({
               })()}
               changed={(() => { const r = changes?.rows.find((x) => x.minutes === 60) ?? null; return r ? { oiChange: r.oiChange, oiThen: r.oiThen, ivChangePts: r.ivChangePts } : null; })()} />
           </ErrorBoundary>
-          <ErrorBoundary where="What changed"><ChangesPanel strikes={chosenPair} /></ErrorBoundary>
           <ErrorBoundary where="Risk engine"><RiskEnginePanel strikes={chosenPair} contracts={contracts} hoursToExpiry={snap.hoursToExpiry} iv={iv} step={snap.step} /></ErrorBoundary>
         </div>
 
@@ -252,7 +252,7 @@ export function Overview({
             <DecisionCards data={data} sides={sides} choice={choice} iv={iv} em={emSettle} mtf={mtf} contracts={contracts} leverage={leverage}
               onSelect={(cp, strike) => setPicked({ cp, strike })} oi={perp?.oi ?? null} selectedCp={leg?.cp ?? null} pair={pair} />
           </ErrorBoundary>
-          <ErrorBoundary where="Early warning"><EarlyWarningPanel data={data} perp={perp} changes={changes?.rows ?? null} /></ErrorBoundary>
+          <ErrorBoundary where="What changed"><ChangesPanel strikes={chosenPair} /></ErrorBoundary>
           <ErrorBoundary where="IV term structure"><IvTermPanel term={term} error={Boolean(termError)} /></ErrorBoundary>
           <ErrorBoundary where="Skew"><SkewPanel data={data} rank={term?.skew ?? null} /></ErrorBoundary>
           <ErrorBoundary where="Strike finder">
