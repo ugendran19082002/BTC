@@ -96,6 +96,16 @@ momentum (velocity over the newest five-minute bucket, and its
 acceleration); and, with `entry=<epoch ms>`, one more row that runs from the
 strategy's entry moment. One request per strike. `GET /api/term` gives the ATM IV
 of every listed expiry, live, for the term-structure chart.
+`GET /api/movement` reads the perpetual's records by window (5m … 12h): BTC,
+its open interest and its tape, classed as long buildup / short covering /
+short buildup / long unwinding / mixed, with the volume's strength against
+the day's pace and whether the aggressors agree. `GET /api/perp?window=` now
+takes up to 1440 minutes.
+
+The board's own record (`chain_features`) is written by the server every
+five minutes since 20 Sep 2026, whether or not a browser is open — before
+that it was written only when the chain was requested, and the "an hour
+ago" reads had gaps.
 
 Also closed on 19 Sep 2026, the three tables §10 of docs/test.md asks for:
 the perpetual's **trade flow** off Delta's `all_trades` socket (every print,
