@@ -1418,3 +1418,145 @@ export function skewRichness(putCallPts: number | null, percentile: number | nul
   if (putCallPts < -0.5 && strong) return { ce: 'HIGH', pe: 'LOW', text: 'calls priced up: CE premium relatively rich' };
   return { ce: 'NORMAL', pe: 'NORMAL', text: 'both sides priced alike' };
 }
+
+// ------------------------------------------------------ expiry direction
+
+export type DirectionWhy = { name: string; score: number; weight: number; text: string };
+export type ExpiryDirection = {
+  spot: number;
+  hoursToExpiry: number;
+  /** spot × ATM IV × √T: one standard deviation of settlement, USD. */
+  em: number;
+  /** The tilt the market's state puts on the centre of the distribution, USD; −0.35 EM … +0.35 EM. */
+  tiltUsd: number;
+  /** The combined direction score, −1 … +1, and its parts. */
+  score: number;
+  why: DirectionWhy[];
+  /** Settles above / below / within a quarter of an expected move of the price now, by the tilted model. */
+  pUp: number; pDown: number; pRange: number;
+  /** The measured record's own split for this horizon, against the implied band, where the outlook has one. */
+  measured: { above: number; inside: number; below: number; low: number | null; high: number | null; windows: number | null } | null;
+  expectedExpiry: number;
+  range80: { low: number; high: number };
+  distance: { label: string; price: number; p: number }[];
+  bias: 'UP' | 'DOWN' | 'RANGE';
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+};
+
+/** The standard normal CDF, Abramowitz–Stegun to a few 1e-8. */
+function phi(x: number): number {
+  const t = 1 / (1 + 0.2316419 * Math.abs(x));
+  const d = 0.3989422804014327 * Math.exp(-x * x / 2);
+  const p = d * t * (0.319381530 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
+  return x >= 0 ? 1 - p : p;
+}
+
+const clamp1 = (v: number) => Math.max(-1, Math.min(1, v));
+
+/**
+ * Where this expiry settles against the price now: above, below, or near.
+ *
+ * The distribution of settlement is the option market's own -- one standard
+ * deviation is spot × ATM IV × √T -- with its centre tilted by the state of
+ * the market, each reading scored −1 … +1 and weighted as a desk would
+ * weight it (structure and the multi-timeframe votes most; positioning,
+ * the move's character, the regime, funding after). The tilt is capped at
+ * 0.35 EM: the state leans the odds, it never overrules the volatility. The
+ * measured record's own split for the horizon is shown beside it and is the
+ * calibrated part; the tilted odds are a model until the desk has scored
+ * them against outcomes.
+ */
+export function expiryDirection(input: {
+  spot: number; atmIv: number | null; hoursToExpiry: number;
+  outlook: Outlook;
+  mtf: MtfConsensus;
+  movement: readonly { minutes: number; type: string | null; direction: 'UP' | 'DOWN' | null; strength: string | null; flow: string | null }[] | null;
+  market: MarketRead | null;
+  structure: Pick<OptionStructure, 'pcrOi' | 'ceOiWallNear' | 'ceOiWall' | 'peOiWallNear' | 'peOiWall'>;
+  iv: IvRv | null;
+  fundingRate: number | null;
+}): ExpiryDirection | null {
+  const { spot, atmIv, hoursToExpiry: h } = input;
+  if (!(spot > 0) || atmIv === null || !(atmIv > 0) || !(h > 0)) return null;
+  const em = spot * atmIv * Math.sqrt(h / 8760);
+
+  // --- the state, one reading at a time
+  const why: DirectionWhy[] = [];
+  const tfs = input.market?.timeframes ?? [];
+  const tf = (k: string) => tfs.find((t) => t.tf === k) ?? null;
+  // Price structure: the 15m and 1h trend and swings, the way the chart reads them.
+  const sTrend = (['15m', '1h'] as const).map((k) => { const t = tf(k); return t ? (t.trend + (t.structure ?? 0)) / 2 : 0; });
+  const structureScore = clamp1(sTrend.reduce((a, b) => a + b, 0) / Math.max(1, sTrend.filter((x) => x !== 0).length || 1));
+  why.push({ name: 'Price structure', score: structureScore, weight: 0.2, text: `15m ${tf('15m')?.label ?? '—'} · 1h ${tf('1h')?.label ?? '—'}` });
+  // MTF consensus: the votes, nearer horizons weighted more heavily.
+  const wTf: Record<string, number> = { '5m': 0.05, '15m': 0.1, '30m': 0.15, '1h': 0.2, '2h': 0.1, '3h': 0.1, '4h': 0.1, '6h': 0.15, '12h': 0.15, '1d': 0.1 };
+  let mtfSum = 0, mtfW = 0;
+  for (const r of input.mtf.rows) { if (r.signal === null) continue; const w = wTf[r.tf] ?? 0.1; mtfSum += w * (r.signal === '↑' ? 1 : r.signal === '↓' ? -1 : 0); mtfW += w; }
+  const mtfScore = mtfW ? clamp1(mtfSum / mtfW) : 0;
+  why.push({ name: 'MTF consensus', score: mtfScore, weight: 0.2, text: input.mtf.text });
+  // The move's character: buildups and coverings by window, weighted by their volume.
+  let mvSum = 0, mvW = 0;
+  for (const m of input.movement ?? []) {
+    if (!m.type || m.type === 'MIXED' || !m.direction) continue;
+    const w = m.strength === 'EXTREME' ? 1 : m.strength === 'STRONG' ? 0.8 : m.strength === 'MODERATE' ? 0.5 : 0.25;
+    mvSum += w * (m.direction === 'UP' ? 1 : -1) * (m.flow === 'DIVERGES' ? 0.5 : 1); mvW += w;
+  }
+  const oiScore = mvW ? clamp1(mvSum / mvW) : 0;
+  why.push({ name: 'OI regime', score: oiScore, weight: 0.15, text: mvW ? `${(input.movement ?? []).filter((m) => m.type && m.type !== 'MIXED').map((m) => `${m.minutes >= 60 ? `${m.minutes / 60}h` : `${m.minutes}m`} ${m.type!.toLowerCase().replace('_', ' ')}`).join(' · ')}` : 'no window past its thresholds' });
+  // Volume: how much of the tape stands behind the leaning windows.
+  const vol = (input.movement ?? []).filter((m) => m.direction);
+  const volScore = vol.length ? clamp1(vol.reduce((a, m) => a + (m.direction === 'UP' ? 1 : -1) * (m.strength === 'EXTREME' || m.strength === 'STRONG' ? 1 : m.strength === 'MODERATE' ? 0.5 : 0.2), 0) / vol.length) : 0;
+  why.push({ name: 'Volume', score: volScore, weight: 0.1, text: vol.length ? `${vol.filter((m) => m.strength === 'STRONG' || m.strength === 'EXTREME').length} of ${vol.length} leaning windows on strong volume` : 'no leaning window' });
+  // Option positioning: puts held under the price support it; the nearer wall caps that side.
+  const pcr = input.structure.pcrOi;
+  const ceWall = (input.structure.ceOiWallNear ?? input.structure.ceOiWall)?.strike ?? null;
+  const peWall = (input.structure.peOiWallNear ?? input.structure.peOiWall)?.strike ?? null;
+  let posScore = pcr === null ? 0 : pcr >= 1.2 ? 0.4 : pcr <= 0.8 ? -0.4 : 0;
+  if (ceWall !== null && peWall !== null && em > 0) {
+    const up = (ceWall - spot) / em, down = (spot - peWall) / em;
+    posScore += down < up ? 0.3 : down > up ? -0.3 : 0;
+  }
+  posScore = clamp1(posScore);
+  why.push({ name: 'Option positioning', score: posScore, weight: 0.15, text: `PCR ${pcr === null ? '—' : pcr.toFixed(2)}${ceWall !== null ? ` · call wall ${ceWall.toLocaleString('en-US')}` : ''}${peWall !== null ? ` · put wall ${peWall.toLocaleString('en-US')}` : ''}` });
+  // The regime, as the desk reads it.
+  const regime = input.market?.regime ?? null;
+  const regScore = regime === null ? 0 : /up|bull/i.test(regime) ? 0.6 : /down|bear/i.test(regime) ? -0.6 : 0;
+  why.push({ name: 'Market regime', score: regScore, weight: 0.1, text: regime ?? '—' });
+  // Funding: a crowded side pays; stretched funding leans against the crowd.
+  const f = input.fundingRate;
+  const fundScore = f === null ? 0 : f >= 0.05 ? -0.5 : f <= -0.05 ? 0.5 : 0;
+  why.push({ name: 'Funding', score: fundScore, weight: 0.05, text: f === null ? '—' : `${f.toFixed(4)}%` });
+  // IV / RV says nothing about direction; it goes on the trace as what it is.
+  why.push({ name: 'IV / RV', score: 0, weight: 0.05, text: input.iv ? `${input.iv.label} · ${input.iv.ratio.toFixed(2)}× — no direction in it` : '—' });
+
+  const wsum = why.reduce((a, w) => a + w.weight, 0);
+  const score = clamp1(why.reduce((a, w) => a + w.score * w.weight, 0) / wsum);
+  const tiltUsd = score * 0.35 * em;
+  const centre = spot + tiltUsd;
+  const pAbove = (x: number) => 1 - phi((x - centre) / em);
+  const pBelow = (x: number) => phi((x - centre) / em);
+  const eps = 0.25 * em;
+  const pRange = pBelow(spot + eps) - pBelow(spot - eps);
+  const pUp = pAbove(spot + eps), pDown = pBelow(spot - eps);
+  const sett = input.outlook.rows.find((r) => r.isExpiry) ?? null;
+  const measured = sett && sett.above !== null && sett.inside !== null && sett.below !== null
+    ? { above: sett.above, inside: sett.inside, below: sett.below, low: sett.measuredLow, high: sett.measuredHigh, windows: input.outlook.sampleWindows ?? null }
+    : null;
+  const bias: ExpiryDirection['bias'] = pRange >= Math.max(pUp, pDown) ? 'RANGE' : pUp > pDown ? 'UP' : 'DOWN';
+  const agree = measured === null ? true : bias === 'RANGE' ? measured.inside >= Math.max(measured.above, measured.below) : bias === 'UP' ? measured.above >= measured.below : measured.below >= measured.above;
+  const strength = Math.abs(score);
+  const confidence: ExpiryDirection['confidence'] = strength >= 0.5 && agree ? 'HIGH' : strength >= 0.25 || (strength >= 0.5 && !agree) ? 'MEDIUM' : 'LOW';
+  const z80 = 1.2816;
+  return {
+    spot, hoursToExpiry: h, em, tiltUsd, score, why, pUp, pDown, pRange, measured,
+    expectedExpiry: centre,
+    range80: { low: centre - z80 * em, high: centre + z80 * em },
+    distance: [
+      { label: '> +1 EM', price: spot + em, p: pAbove(spot + em) },
+      { label: '> +0.5 EM', price: spot + 0.5 * em, p: pAbove(spot + 0.5 * em) },
+      { label: '< −0.5 EM', price: spot - 0.5 * em, p: pBelow(spot - 0.5 * em) },
+      { label: '< −1 EM', price: spot - em, p: pBelow(spot - em) },
+    ],
+    bias, confidence,
+  };
+}

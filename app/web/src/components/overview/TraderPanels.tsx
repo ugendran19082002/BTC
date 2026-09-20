@@ -4,7 +4,7 @@ import type { ChainResponse, Leg } from '@/types/desk';
 import { getChanges, type ChangeRow, type ModelNow, type MovementRow, type PerpResponse, type PremiumMomentum } from '@/api/desk';
 import {
   boardRead, candidates, DESK_FILTER, earlyWarning, executionEstimate, filtersChanged, finderDecision, finderRanks, findStrikes, horizonRows, movementVerdict, odds, orderEstimate, premiumAnalysis, sellerImpact, sellerState,
-  type EarlyWarning, type ExpectedMove, type FinderFilter, type Impact, type MtfConsensus,
+  type EarlyWarning, type ExpectedMove, type ExpiryDirection, type FinderFilter, type Impact, type MtfConsensus,
 } from '@/lib/overview';
 import type { ScreenConfig } from '@/lib/screen-config';
 import { fmt, Panel, Row, Tag } from './parts';
@@ -282,6 +282,57 @@ export function StrikeFinder({ data, onSelect, onSell, contracts, leverage, defa
         </table>
       )}
       <p className="ov-foot">Out-of-the-money strikes only, best desk score first. BEST SAFE is the lowest touch odds on its side, BEST BALANCED the desk's score, BEST PREMIUM the most credit. Move a filter and the SELL CE / SELL PE cards carry the best strike that passes it. Click a row to inspect it; Sell opens the ticket, where every gate runs again.</p>
+    </Panel>
+  );
+}
+
+// ---------------------------------------------------------- expiry direction
+
+const plus = (score: number) => (score >= 0.6 ? '+++' : score >= 0.3 ? '++' : score > 0.05 ? '+' : score <= -0.6 ? '−−−' : score <= -0.3 ? '−−' : score < -0.05 ? '−' : '·');
+
+/**
+ * Expiry direction: from the price now, does this expiry settle above,
+ * below, or near it? The option market's own distribution (spot × ATM IV ×
+ * √T), its centre tilted by the state of the market -- the trace below
+ * says by what -- with the measured record's own split beside it. Then the
+ * expected settlement, the 80% range, and the odds of finishing past half
+ * and one expected move each way, which is what a strike is chosen by.
+ */
+export function ExpiryDirectionPanel({ d, hoursLeftText }: { d: ExpiryDirection | null; hoursLeftText: string }) {
+  if (!d) return <Panel title="Expiry direction"><p className="ov-empty">No ATM IV or no time left on this contract.</p></Panel>;
+  const tone = d.bias === 'UP' ? 'up' : d.bias === 'DOWN' ? 'down' : 'accent';
+  const pct = (v: number) => `${Math.round(v * 100)}%`;
+  return (
+    <Panel title="Expiry direction" right={<span className="ov-chain-head"><Tag tone={tone}>{d.bias === 'UP' ? '↑ UP' : d.bias === 'DOWN' ? '↓ DOWN' : '↔ RANGE'}</Tag><Tag tone={d.confidence === 'HIGH' ? 'up' : d.confidence === 'MEDIUM' ? 'warn' : 'muted'}>{d.confidence} confidence</Tag></span>}>
+      <div className="ov-dir-head">
+        <div><span className="ov-kpi-label">BTC now</span><b className="ov-kpi-value">{fmt.n(d.spot, 1)}</b></div>
+        <div><span className="ov-kpi-label">Expiry in</span><b className="ov-kpi-value">{hoursLeftText}</b></div>
+      </div>
+      <div className="ov-dir-odds">
+        <div className="ov-dir-odd ov-up"><span>▲ ABOVE</span><b>{pct(d.pUp)}</b><small className="ov-muted" title="The measured record: how often settlement finished above the implied 1σ band from states like this one">{d.measured ? `measured above band ${pct(d.measured.above)}` : ''}</small></div>
+        <div className="ov-dir-odd ov-down"><span>▼ BELOW</span><b>{pct(d.pDown)}</b><small className="ov-muted" title="The measured record: how often settlement finished below the implied 1σ band">{d.measured ? `measured below band ${pct(d.measured.below)}` : ''}</small></div>
+        <div className="ov-dir-odd ov-muted"><span>↔ NEAR</span><b>{pct(d.pRange)}</b><small className="ov-muted" title="The measured record: how often settlement stayed inside the implied 1σ band">{d.measured ? `measured inside band ${pct(d.measured.inside)}` : ''}</small></div>
+      </div>
+      <div className="ov-two">
+        <div>
+          <Row label="Expected settlement" value={<b>{fmt.n(d.expectedExpiry)}</b>} hint={`Spot ${fmt.n(d.spot)} tilted ${fmt.signed(d.tiltUsd)} by the market's state (capped at ±0.35 EM)`} />
+          <Row label="Expected move (1σ)" value={`±${fmt.n(d.em)}`} hint="spot × ATM IV × √(time to settlement ÷ 1 year) — a volatility range, not a forecast" />
+          <Row label="80% range" value={`${fmt.n(d.range80.low)} – ${fmt.n(d.range80.high)}`} />
+          {d.measured?.low != null && d.measured.high != null && <Row label="Measured 68% band" value={`${fmt.n(d.measured.low)} – ${fmt.n(d.measured.high)}`} hint={`Where settlement fell two thirds of the time from states like this one${d.measured.windows ? `, over ${fmt.n(d.measured.windows)} windows` : ''}`} />}
+        </div>
+        <div>
+          {d.distance.map((x) => (
+            <Row key={x.label} label={`P(${x.label}) · ${fmt.n(x.price)}`} value={pct(x.p)} tone={x.label.startsWith('>') ? 'up' : 'down'} hint="The odds settlement finishes past that distance; the number a short strike on that side is chosen by" />
+          ))}
+        </div>
+      </div>
+      <div className="ov-dir-why">
+        <div className="ov-final-sub">Why</div>
+        {d.why.map((w) => (
+          <Row key={w.name} label={w.name} value={<span className={w.score > 0.05 ? 'ov-up' : w.score < -0.05 ? 'ov-down' : 'ov-muted'}>{plus(w.score)}</span>} hint={`${w.text} · weight ${Math.round(w.weight * 100)}%`} />
+        ))}
+      </div>
+      <p className="ov-foot">Near = within a quarter of an expected move of the price now. The odds are the option market's distribution with its centre tilted by the state above — a model; the measured figures beside them are the desk's own record for this horizon, and are the calibrated part. Direction alone never sells a strike: the strike's own odds and gates decide.</p>
     </Panel>
   );
 }

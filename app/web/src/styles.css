@@ -2881,3 +2881,15 @@ table.ov-mini.ov-levels { width: auto; min-width: 100%; }
 .ov-screenbar .ov-inline-label { min-width: 0; max-width: 100%; display: inline-flex; align-items: center; gap: 4px; }
 .ov-screenbar .ov-inline-label .ov-select { max-width: min(100%, 360px); min-width: 0; width: auto; }
 @media (max-width: 760px) { .ov-screenbar .ov-inline-label { width: 100%; } .ov-screenbar .ov-inline-label .ov-select { flex: 1 1 0; max-width: 100%; width: 0; } }
+
+/* Expiry direction: the two facts, the three odds, then the working. */
+.ov-dir-head { display: flex; gap: 18px; margin-bottom: 6px; }
+.ov-dir-head > div { display: flex; flex-direction: column; }
+.ov-dir-odds { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 4px 0 8px; }
+.ov-dir-odd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.ov-dir-odd span { font-size: 11px; letter-spacing: .05em; }
+.ov-dir-odd b { font-size: 22px; font-variant-numeric: tabular-nums; }
+.ov-dir-odd small { font-size: 10.5px; }
+.ov-dir-why { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--line-soft); }
+.ov-dir-why .ov-row-value { font-family: monospace; letter-spacing: .1em; }
+@container (max-width: 360px) { .ov-dir-odds { grid-template-columns: 1fr; } }

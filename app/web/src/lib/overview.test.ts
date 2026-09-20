@@ -4,7 +4,7 @@ import live from '@/test/fixtures/chain-live.json';
 import {
   bestLeg, bothSides, breakeven, candidates, consensus, expectedMove, feePerContract, freshness, gammaRisk,
   ivRv, keyLevels, marginPerContract, modelView, odds, orderEstimate, payoffPrices, premiumAnalysis, shortPayoff, skew, volRegime,
-  ageText, contractChecks, contractValidity, dataFreshness, executionRead, finderRanks, mustChange, optionBias, persistence, sellerImpact, sellerState, skewRichness, strikeSignals, windowMinutes, premiumDecay, triggerState, DESK_FILTER, filtersChanged, assessBoth, assessSides, horizonRows, namedLevels, earlyWarning, findStrikes, boardRead, movementVerdict, parseSymbol, positionState, positionViews, premiumMomentum, riskEngine, shortLossAt,
+  ageText, contractChecks, contractValidity, dataFreshness, expiryDirection, mtfConsensus, executionRead, finderRanks, mustChange, optionBias, persistence, sellerImpact, sellerState, skewRichness, strikeSignals, windowMinutes, premiumDecay, triggerState, DESK_FILTER, filtersChanged, assessBoth, assessSides, horizonRows, namedLevels, earlyWarning, findStrikes, boardRead, movementVerdict, parseSymbol, positionState, positionViews, premiumMomentum, riskEngine, shortLossAt,
   type SideAssessment,
 } from './overview';
 
@@ -470,5 +470,27 @@ describe('skew richness', () => {
     expect(skewRichness(-3, null)).toMatchObject({ ce: 'HIGH', pe: 'LOW' });
     expect(skewRichness(-1, 0.52)).toMatchObject({ ce: 'NORMAL', pe: 'NORMAL' });
     expect(skewRichness(null, null)).toBeNull();
+  });
+});
+
+describe('expiry direction', () => {
+  const data = fixtureData();
+  const base = () => ({ spot: data.snapshot.spot, atmIv: data.snapshot.atmIv, hoursToExpiry: data.snapshot.hoursToExpiry, outlook: data.outlook, mtf: mtfConsensus(data.market, data.outlook), movement: null, market: data.market, structure: data.structure, iv: null, fundingRate: null });
+  it('[critical] the three odds add to one, the centre is spot plus the tilt, the tilt never exceeds 0.35 EM', () => {
+    const d = expiryDirection(base())!;
+    expect(d.pUp + d.pDown + d.pRange).toBeCloseTo(1, 6);
+    expect(d.expectedExpiry).toBeCloseTo(d.spot + d.tiltUsd, 6);
+    expect(Math.abs(d.tiltUsd)).toBeLessThanOrEqual(0.35 * d.em + 1e-9);
+    expect(d.range80.high - d.range80.low).toBeCloseTo(2 * 1.2816 * d.em, 3);
+    expect(d.distance.map((x) => x.label)).toEqual(['> +1 EM', '> +0.5 EM', '< −0.5 EM', '< −1 EM']);
+    expect(d.measured).not.toBeNull();
+    expect(d.why.reduce((a, w) => a + w.weight, 0)).toBeCloseTo(1, 6);
+  });
+  it('a bullish state tilts the odds up, a bearish one down; without an IV there is no answer', () => {
+    const up = expiryDirection({ ...base(), market: { ...data.market!, regime: 'trending up', timeframes: data.market!.timeframes.map((t) => ({ ...t, trend: 1, structure: 1 })) }, movement: [{ minutes: 60, type: 'LONG_BUILDUP', direction: 'UP', strength: 'STRONG', flow: 'CONFIRMS' }] })!;
+    const down = expiryDirection({ ...base(), market: { ...data.market!, regime: 'trending down', timeframes: data.market!.timeframes.map((t) => ({ ...t, trend: -1, structure: -1 })) }, movement: [{ minutes: 60, type: 'SHORT_BUILDUP', direction: 'DOWN', strength: 'STRONG', flow: 'CONFIRMS' }] })!;
+    expect(up.pUp).toBeGreaterThan(down.pUp);
+    expect(up.tiltUsd).toBeGreaterThan(0); expect(down.tiltUsd).toBeLessThan(0);
+    expect(expiryDirection({ ...base(), atmIv: null })).toBeNull();
   });
 });
