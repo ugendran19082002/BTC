@@ -2839,3 +2839,21 @@ tr.focused .tag.focus { background: var(--accent); color: #111; }
 .ov-bias { grid-column: span 2; }
 @media (max-width: 760px) { .ov-bias { grid-column: 1 / -1; } }
 .ov-levels th, .ov-levels td { padding: 2px 4px; }
+
+/* The four strategies. Two across where the panel is wide enough, one otherwise; the desk's answer is outlined. */
+.ov-cards4 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+@container (max-width: 440px) { .ov-cards4 { grid-template-columns: 1fr; } }
+@container (min-width: 1100px) { .ov-cards4 { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.ov-card4 { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-width: 0; display: flex; flex-direction: column; }
+.ov-card4-chosen { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.ov-card4 > header { display: flex; justify-content: space-between; align-items: center; gap: 6px; margin-bottom: 4px; font-size: 14px; }
+.ov-card4-ce > header > b { color: var(--down); } .ov-card4-pe > header > b { color: var(--up); } .ov-card4-both > header > b { color: #7dd3fc; } .ov-card4-none > header > b { color: var(--muted); }
+.ov-card4 .ov-row { font-size: 12px; padding: 2px 0; }
+.ov-card-sec { margin-top: 6px; padding-top: 4px; border-top: 1px dashed var(--line-soft); }
+.ov-card-sec h5 { margin: 0 0 2px; font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.ov-card4 > footer { margin-top: auto; padding-top: 8px; display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: 12px; flex-wrap: wrap; }
+.ov-card4 > footer > span { white-space: nowrap; }
+.ov-reasons { list-style: none; margin: 0; padding: 0; font-size: 12px; display: flex; flex-direction: column; gap: 3px; }
+.ov-linkbtn { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; text-decoration: underline dotted; }
+.ov-bottom { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 10px; align-items: start; }
+@media (max-width: 1100px) { .ov-bottom { grid-template-columns: 1fr; } }

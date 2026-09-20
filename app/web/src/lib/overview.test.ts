@@ -4,7 +4,8 @@ import live from '@/test/fixtures/chain-live.json';
 import {
   allClear, bestLeg, bothSides, breakeven, candidates, consensus, entryGates, expectedMove, feePerContract, freshness, gammaRisk,
   ivRv, keyLevels, marginPerContract, modelView, odds, orderEstimate, payoffPrices, premiumAnalysis, shortPayoff, skew, volRegime,
-  ageText, contractValidity, dataFreshness, optionBias, premiumDecay, triggerState, DESK_FILTER, filtersChanged, assessBoth, assessSides, horizonRows, namedLevels, earlyWarning, findStrikes, boardRead, movementVerdict, parseSymbol, positionState, positionViews, premiumMomentum, readiness, riskEngine, shortLossAt,
+  ageText, contractValidity, dataFreshness, noTradeCard, optionBias, premiumDecay, triggerState, DESK_FILTER, filtersChanged, assessBoth, assessSides, horizonRows, namedLevels, earlyWarning, findStrikes, boardRead, movementVerdict, parseSymbol, positionState, positionViews, premiumMomentum, readiness, riskEngine, shortLossAt,
+  type SideAssessment,
 } from './overview';
 
 const fixtureData = () => live as unknown as ChainResponse;
@@ -443,5 +444,21 @@ describe('the option bias', () => {
     expect(b.pe).toMatchObject({ strength: 'STRONG', flow: 'BUY', pTouch: 0.09, score: 3 });
     expect(b.pressureOn).toBe('PE');
     expect(optionBias({ legs: data.legs, atm: data.snapshot.atm, oi: null, flow: null, sides: [] }).pressureOn).toBeNull();
+  });
+});
+
+describe('the NO TRADE card', () => {
+  it('[critical] names the failing gates for their side, says how sure, when to look again and what to wait for', () => {
+    const now = Date.UTC(2026, 8, 20, 2, 33, 0); // 08:03 IST, past the 05:30 window
+    const sides = [
+      { side: 'CE', gates: [{ name: 'IV − RV', ok: false, text: 'cheap' }, { name: 'Liquidity', ok: false, text: 'spread 8%' }, { name: 'PoT', ok: true, text: '' }] },
+      { side: 'PE', gates: [{ name: 'MTF consensus', ok: false, text: '3 up · 2 down' }, { name: 'PoT', ok: false, text: '40%' }, { name: 'Gamma', ok: false, text: 'high' }] },
+    ] as never as SideAssessment[];
+    const c = noTradeCard(sides, [{ key: 'fresh', ok: true, text: 'fresh' }, { key: 'verdict-0', ok: false, text: 'The window has not opened' }], now, '05:30');
+    expect(c.reasons).toEqual(['CE IV − RV: cheap', 'CE Liquidity: spread 8%', 'PE MTF consensus: 3 up · 2 down', 'PE PoT: 40%', 'PE Gamma: high']);
+    expect(c.confidence).toBe('Medium');
+    expect(c.recheckIst).toBe('08:05');
+    expect(c.waitFor).toEqual(['IV expansion', 'Spread improvement', 'MTF alignment', 'A further strike, or a calmer tape', 'The entry window']);
+    expect(noTradeCard(sides, [], Date.UTC(2026, 8, 19, 22, 0, 0), '05:30').recheckIst).toBe('05:30');
   });
 });

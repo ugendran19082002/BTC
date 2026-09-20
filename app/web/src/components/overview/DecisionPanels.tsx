@@ -1,12 +1,11 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState } from 'react';
 import type { ChainResponse, Leg } from '@/types/desk';
 import { istLabel } from '@/lib/format';
 import type { PremiumMomentum } from '@/api/desk';
 import {
   breakeven, odds, payoffPrices, premiumAnalysis, shortPayoff, CONTRACT_BTC,
-  type BothAssessment, type ExpectedMove, type MtfConsensus, type Readiness, type SideAssessment, type SideChoice,
+  type ExpectedMove, type MtfConsensus, type Readiness,
 } from '@/lib/overview';
-import { SideCardsRow } from './RiskPanels';
 import { fmt, More, Panel, ProbBar, Row, Tag, useWidth } from './parts';
 
 export type Selected = { cp: 'C' | 'P'; strike: number };
@@ -250,30 +249,8 @@ export function PayoffChart({ rows, strike }: { rows: { price: number; pnlUsd: n
 
 // ------------------------------------------------------------ the decision
 
-export function StrategyDecisionPanel({ data, sides, both, choice, onSelect, strikes, mtf }: {
-  data: ChainResponse; sides: SideAssessment[]; both?: BothAssessment | null; choice: SideChoice; strikes?: ReactNode; onSelect: (s: Selected) => void; mtf: MtfConsensus;
-}) {
-  const tone = choice.side === 'NO_TRADE' ? 'down' : choice.side === 'BOTH' ? 'up' : 'accent';
-  // What is in the way, in plain words: the failing gates of the side the desk would take, or of the better side.
-  const focus = sides.find((s) => s.side === (choice.side === 'CE' ? 'CE' : choice.side === 'PE' ? 'PE' : null)) ?? [...sides].sort((a, b) => (b.score ?? -1) - (a.score ?? -1))[0]!;
-  const blockers = (focus.gates ?? []).filter((g) => g.ok === false).map((g) => `${g.name} (${g.text})`);
-  return (
-    <Panel title="Strategy decision" right={<Tag tone={tone}>Desk side: {choice.side.replace('_', ' ')}</Tag>}>
-      <p className="ov-summary">
-        <b>{choice.side === 'NO_TRADE' ? 'No trade' : choice.side === 'BOTH' ? 'Sell both sides' : `Sell ${choice.side}`}</b> — {choice.why}.
-        {blockers.length > 0 && <> In the way on {focus.side}: {blockers.slice(0, 3).join(' · ')}{blockers.length > 3 ? ` · +${blockers.length - 3} more` : ''}.</>}
-        {focus.disabledBy && <> {focus.disabledBy}.</>}
-      </p>
-      <MtfTable mtf={mtf} />
-      <SideCardsRow sides={sides} both={both} onSelect={(cp, strike) => onSelect({ cp, strike })} />
-      {strikes}
-      <p className="ov-foot">{data.best.why ?? ''} Side from the regime, the multi-timeframe consensus and each side's gates — never the score alone.</p>
-    </Panel>
-  );
-}
-
 /** The multi-timeframe table the side is chosen from: one row a timeframe, one vote a row, and the count. */
-function MtfTable({ mtf }: { mtf: MtfConsensus }) {
+export function MtfTable({ mtf }: { mtf: MtfConsensus }) {
   const tone = (v: string | null | undefined) => (v === 'up' || v === 'bullish' || v === '↑' ? 'ov-up' : v === 'down' || v === 'bearish' || v === '↓' ? 'ov-down' : 'ov-muted');
   return (
     <div className="ov-mtf-block">

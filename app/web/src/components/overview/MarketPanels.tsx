@@ -1,4 +1,4 @@
-import type { ChainResponse, MarketRead } from '@/types/desk';
+import type { ChainResponse, Leg, MarketRead } from '@/types/desk';
 import type { FlowSummary, PerpResponse, SideFlow, TermHistoryPoint, TermPoint, TermResponse } from '@/api/desk';
 import { ivRv, keyLevels, namedLevels, skew, srDistances, structureRead, volRegime, type IvRv, type NamedLevel, type OptionBias } from '@/lib/overview';
 import { fmt, More, NotCaptured, Panel, Row, Tag, useWidth } from './parts';
@@ -379,8 +379,15 @@ export { ivRv };
  * print on the two nearest expiries. Book imbalance and spread are the
  * perpetual's -- options have no book capture -- and are said so.
  */
-export function OptionFlowPanel({ perp }: { perp: PerpResponse | null }) {
+export function OptionFlowPanel({ perp, legs = [], atm = null }: { perp: PerpResponse | null; legs?: readonly Leg[]; atm?: number | null }) {
   const f = perp?.optionFlow ?? null;
+  // The side's own book, as far as Delta shows one: the at-the-money option's top of book.
+  const atmLeg = (cp: 'C' | 'P') => legs.find((l) => l.cp === cp && l.strike === atm) ?? null;
+  const bookOf = (l: Leg | null) => {
+    if (!l || l.bidSize == null || l.askSize == null || l.bidSize + l.askSize === 0) return null;
+    return (l.bidSize - l.askSize) / (l.bidSize + l.askSize);
+  };
+  const spreadOf = (l: Leg | null) => (l && l.bid !== null && l.ask !== null && l.bid + l.ask > 0 ? (l.ask - l.bid) / ((l.bid + l.ask) / 2) : null);
   const kct = (v: number) => (Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(1)}K` : fmt.n(v));
   if (!perp) return <Panel title="Option flow (1h)"><p className="ov-empty">Loading…</p></Panel>;
   if (!f || f.source === 'none') {
@@ -390,15 +397,17 @@ export function OptionFlowPanel({ perp }: { perp: PerpResponse | null }) {
       </Panel>
     );
   }
-  const card = (name: string, tag: string, x: SideFlow) => (
+  const card = (name: string, tag: string, x: SideFlow, l: Leg | null) => (
     <div className={`ov-flow-card ov-flow-${tag.toLowerCase()}`}>
       <header><span>{name}</span><Tag tone={tag === 'CALL' ? 'up' : 'down'}>{tag}</Tag></header>
-      <b className="ov-kpi-value">{kct(x.buyVolume)}</b>
-      <span className="ov-kpi-sub">buy volume · contracts</span>
-      <Row label="Sell volume" value={<span className="ov-down">{kct(x.sellVolume)}</span>} />
-      <Row label="Delta volume (CVD)" value={fmt.signed(x.deltaVolume)} tone={x.deltaVolume > 0 ? 'up' : x.deltaVolume < 0 ? 'down' : 'muted'} hint="Buy minus sell over the window: the cumulative volume delta at its end" />
-      <Row label="Aggressor buy %" value={fmt.pct(x.aggressorBuyPct, 1)} />
+      <Row label="Buy" value={<span className="ov-up">{kct(x.buyVolume)} ct</span>} hint="Contracts bought by the aggressor: buys that lifted the offer" />
+      <Row label="Sell" value={<span className="ov-down">{kct(x.sellVolume)} ct</span>} hint="Contracts sold by the aggressor: sells that hit the bid" />
+      <Row label="Delta" value={fmt.signed(x.deltaVolume)} tone={x.deltaVolume > 0 ? 'up' : x.deltaVolume < 0 ? 'down' : 'muted'} hint="Buy minus sell over the window" />
+      <Row label="CVD" value={<CvdLine cvd={x.cvd} />} hint="Cumulative volume delta, minute by minute" />
+      <Row label="Aggressor %" value={fmt.pct(x.aggressorBuyPct, 1)} hint="Buy volume as a share of the total" />
       <Row label="Trades" value={fmt.n(x.trades)} />
+      <Row label={`Book imbalance${l ? ` · ATM ${fmt.n(l.strike)}` : ''}`} value={bookOf(l) === null ? '—' : fmt.signed(bookOf(l)! * 100, 0) + '%'} tone={bookOf(l) === null ? undefined : bookOf(l)! > 0 ? 'up' : 'down'} hint="The at-the-money option's top of book: (bid size − ask size) ÷ (bid + ask)" />
+      <Row label="Spread" value={spreadOf(l) === null ? '—' : fmt.pct(spreadOf(l), 1)} hint="The at-the-money option's bid–ask spread as a share of the mid" />
       <Row label="Busiest strikes" value={x.strikes.length ? x.strikes.map((k) => `${fmt.n(k.strike)} (${kct(k.buyVolume + k.sellVolume)})`).join(' · ') : '—'} hint="Most contracts traded, both sides together" />
       <footer><Tag tone={x.pressure === 'BUY PRESSURE' ? 'up' : x.pressure === 'SELL PRESSURE' ? 'down' : 'muted'}>{x.pressure ?? 'no prints'}</Tag></footer>
     </div>
@@ -408,14 +417,14 @@ export function OptionFlowPanel({ perp }: { perp: PerpResponse | null }) {
     <Panel title={`Option flow (${f.windowMin >= 60 ? `${f.windowMin / 60}h` : `${f.windowMin}m`})`}
       right={<small className={f.minutesCovered < f.windowMin ? 'ov-warn' : 'ov-muted'} title="Minutes in the window with at least one option print">{f.minutesCovered} of {f.windowMin} min · {f.expiry}</small>}>
       <div className="ov-flow-cards">
-        {card('CE flow', 'CALL', f.ce)}
-        {card('PE flow', 'PUT', f.pe)}
+        {card('CE flow', 'CALL', f.ce, atmLeg('C'))}
+        {card('PE flow', 'PUT', f.pe, atmLeg('P'))}
       </div>
       <div className="ov-flow-combined">
         <Row label="Total" value={`buy ${kct(f.combined.buyVolume)} · sell ${kct(f.combined.sellVolume)} · Δ ${fmt.signed(f.combined.deltaVolume)}`} />
         <Row label="Overall option flow" value={<Tag tone={biasTone}>{f.combined.bias ?? '—'}</Tag>} hint="The heaviest of the four legs names the bias when it is two-fifths of the volume; otherwise mixed. Call buying and put selling lean bullish; call selling and put buying, bearish" />
       </div>
-      <p className="ov-foot">Book imbalance and spread are the perpetual's (trade flow above); Delta publishes no book history for options.</p>
+      <p className="ov-foot">Prints from the desk's own tape of every strike on this expiry; book and spread from the at-the-money option's live quote.</p>
     </Panel>
   );
 }

@@ -20,19 +20,21 @@ const data = live as unknown as ChainResponse;
 describe('the decision panels', () => {
   it('draw every panel from a real chain, with the chart and chain left to the screen', () => {
     render(<Overview data={data} trade={null} contracts={1} chain={false} />);
-    for (const t of ['Key levels', 'Volatility', 'Strategy decision', 'IV term structure', /^Entry checklist/, /^Sell-side risk engine/]) {
+    for (const t of ['Key levels', 'Volatility', 'Strategy decision', 'IV term structure', 'Strike finder', /^Entry checklist/, /^Sell-side risk engine/, /^Scenario/]) {
       expect(screen.getByText(t, { selector: 'h3' })).toBeInTheDocument();
     }
     // No settings toolbar and no order panel: the desk's configuration is fixed, and orders have their own tab.
     expect(document.querySelector('.ov-ctx')).toBeNull();
     expect(screen.queryByText('Order panel', { selector: 'h3' })).toBeNull();
-    expect(screen.getByText('Strikes', { selector: 'h4 span' })).toBeInTheDocument();
+    // The four strategies, side by side, and one of them the desk's answer.
+    for (const t of ['SELL CE', 'SELL PE', 'BOTH SIDES', 'NO TRADE']) expect(screen.getByText(t, { selector: '.ov-card4 > header > b' })).toBeInTheDocument();
+    expect(document.querySelectorAll('.ov-card4-chosen').length).toBeGreaterThan(0);
     // Said once: no model view beside the outlook, no sell recommendation beside the strikes, no entry setup beside the decision card.
     for (const gone of [/^Model view/, 'Sell recommendation', 'Entry → expiry setup', 'Scenario P&L (−3% … +3%)']) expect(screen.queryByText(gone, { selector: 'h3' })).toBeNull();
 
     // The answer, once, on the strategy decision: one of the four.
     expect(screen.getByText(/^Desk side: (CE|PE|BOTH|NO TRADE)$/)).toBeInTheDocument();
-    for (const t of [/^Early warning/, 'Outlook · movement to expiry', /^What changed/]) {
+    for (const t of [/^Early warning/, 'Horizon / MTF · movement to expiry', /^What changed/]) {
       expect(screen.getByText(t, { selector: 'h3' })).toBeInTheDocument();
     }
     expect(screen.getAllByText(/ENTRY READY|NO TRADE/).length).toBeGreaterThan(0);

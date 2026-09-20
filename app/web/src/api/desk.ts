@@ -136,6 +136,7 @@ export type SideFlow = {
   aggressorBuyPct: number | null;
   pressure: 'BUY PRESSURE' | 'SELL PRESSURE' | 'BALANCED' | null;
   strikes: { strike: number; buyVolume: number; sellVolume: number }[];
+  cvd: { at: number; cvd: number; delta: number }[];
 };
 export type OptionFlowSummary = {
   expiry: string; windowMin: number; minutesCovered: number;

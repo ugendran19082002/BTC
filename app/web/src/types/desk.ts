@@ -79,6 +79,9 @@ export type Leg = {
   ltp: number | null;
   mark: number | null;
   bid: number | null;
+  /** Contracts resting at the best bid and ask; null on a past snapshot or an older server. */
+  bidSize?: number | null;
+  askSize?: number | null;
   ask: number | null;
   sellPrice: number | null;
   iv: number | null;

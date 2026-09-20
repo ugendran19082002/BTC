@@ -1,7 +1,6 @@
 import type { Leg } from '@/types/desk';
 import {
-  premiumDecay, shockTable, type BothAssessment, type IvRv, type RiskEngine,
-  type SideAssessment,
+  premiumDecay, shockTable, type IvRv, type RiskEngine,
 } from '@/lib/overview';
 import { fmt, Panel, Row, Tag, useWidth } from './parts';
 
@@ -81,66 +80,6 @@ function DecayChart({ premium, intrinsic, hoursToExpiry, side, strike }: { premi
           <Row label="Intrinsic (does not decay)" value={fmt.n(intrinsic, 1)} />
         </div>
       </div>
-    </div>
-  );
-}
-
-// ------------------------------------------------- side cards (extended)
-
-/** The card's last word: PREFERRED is the desk's side, WATCH passes with soft failures, NOT PREFERRED fails a gate, NOT ALLOWED is switched off. */
-export const sideFinal = (c: SideAssessment) => (c.disabledBy ? 'NOT ALLOWED' : c.status === 'SELL' ? 'PREFERRED' : c.status === 'WATCH' ? 'WATCH' : 'NOT PREFERRED');
-
-export function SideCardsRow({ sides, both, onSelect }: { sides: SideAssessment[]; both?: BothAssessment | null; onSelect: (cp: 'C' | 'P', strike: number) => void }) {
-  const tone = (s: SideAssessment['status']) => (s === 'SELL' ? 'up' : s === 'WATCH' ? 'warn' : 'muted');
-  const safe = (ok: boolean | null) => (ok === null ? <span className="ov-muted">—</span> : <span className={ok ? 'ov-up' : 'ov-down'}>{ok ? '✓ safe' : '✕ not safe'}</span>);
-  // Both together: PREFERRED when each side passes, NOT ALLOWED when a side is switched off, NOT PREFERRED otherwise.
-  const bothFinal = !both ? null : sides.some((c) => c.disabledBy) ? 'NOT ALLOWED' : both.status === 'BOTH' ? 'PREFERRED' : 'NOT PREFERRED';
-  return (
-    <div className="ov-decide ov-decide-3">
-      {sides.map((c) => (
-        <button key={c.side} className={`ov-decide-card ${c.status === 'SELL' ? 'ov-preferred' : ''}`} disabled={!c.leg}
-          onClick={() => c.leg && onSelect(c.leg.cp, c.leg.strike)}>
-          <header>Short {c.side}{c.leg ? ` · ${fmt.n(c.leg.strike)}` : ''}</header>
-          <Row label="Score" value={c.score === null ? '—' : `${c.score.toFixed(1)} / 10`} />
-          <Row label="POP (OTM)" value={fmt.pct(c.pOtm)} />
-          <Row label="P(touch)" value={fmt.pct(c.pTouch)} />
-          <Row label="Distance / EM" value={c.emDistance === null ? '—' : `${c.emDistance.toFixed(2)}×`} tone={c.emDistance !== null && c.emDistance < 1 ? 'warn' : undefined} />
-          <Row label="Volume (today)" value={c.leg?.volume == null ? '—' : `${fmt.n(c.leg.volume)} ct`} hint="Contracts traded on this strike today, both sides together — Delta's option feed does not say who was the aggressor" />
-          <Row label="OI · change" value={c.leg?.oi == null ? '—' : `${fmt.n(c.leg.oi)}${c.leg.oiChange ? ` · ${fmt.signed(c.leg.oiChange.change)} (${c.leg.oiChange.overMinutes}m)` : ''}`}
-            tone={c.leg?.oiChange ? (c.leg.oiChange.change > 0 ? 'up' : c.leg.oiChange.change < 0 ? 'down' : undefined) : undefined} hint="Open interest on this strike, and how it moved" />
-          <Row label="OI wall" value={c.wallStrike === null ? '—' : `${fmt.n(c.wallStrike)} · ${c.wallDistanceStrikes === null ? '' : `${c.wallDistanceStrikes >= 0 ? '+' : ''}${c.wallDistanceStrikes} strikes`}`}
-            tone={c.wallDistanceStrikes === null ? undefined : c.wallDistanceStrikes >= 0 ? 'up' : 'down'} hint="Where the wall sits relative to the strike, in strikes; beyond is support" />
-          <Row label="Gamma risk" value={c.gammaRisk ?? '—'} tone={c.gammaRisk === 'high' ? 'down' : c.gammaRisk === 'low' ? 'up' : undefined} />
-          <Row label="Tail loss (2×EM)" value={c.tailLossUsd === null ? '—' : `$${c.tailLossUsd.toFixed(2)}`} tone="down" />
-          <Row label="Expected P&L" value={c.expectedPnlUsd === null ? '—' : fmt.signed(c.expectedPnlUsd, 2)} tone={c.expectedPnlUsd === null ? undefined : c.expectedPnlUsd >= 0 ? 'up' : 'down'} />
-          <Row label="Margin (est.)" value={c.marginUsd === null ? '—' : `$${c.marginUsd.toFixed(2)}`} />
-          <Row label="Risk / reward" value={c.riskReward === null ? '—' : `${(c.riskReward * 100).toFixed(1)}¢ per $ of tail`} />
-          {c.gates && (
-            <ul className="ov-gates">
-              {c.gates.map((g) => (
-                <li key={g.name} className={g.ok === true ? 'ok' : g.ok === false ? 'bad' : 'unknown'} title={g.text}>
-                  <span>{g.name}</span><b>{g.ok === true ? 'PASS' : g.ok === false ? 'FAIL' : '?'}</b>
-                </li>
-              ))}
-            </ul>
-          )}
-          <footer><Tag tone={c.disabledBy ? 'down' : tone(c.status)}>{sideFinal(c)}</Tag></footer>
-        </button>
-      ))}
-      {both && (
-        <div className="ov-decide-card" title="Both sides at once: a strangle. Each side must pass on its own, and the two together must fit the margin.">
-          <header>Both sides</header>
-          <Row label="CE safe" value={safe(both.ceSafe)} />
-          <Row label="PE safe" value={safe(both.peSafe)} />
-          <Row label="Range probability" value={fmt.pct(both.rangeProbability)} hint="Odds BTC settles between the two strikes" />
-          <Row label="Combined delta" value={both.netDelta === null ? '—' : fmt.signed(both.netDelta, 2)} />
-          <Row label="Combined gamma" value={both.netGamma === null ? '—' : `−${both.netGamma.toPrecision(2)}`} hint="Short both legs" />
-          <Row label="Combined theta" value={both.netTheta === null ? '—' : fmt.signed(-both.netTheta, 1)} hint="Per day, per BTC, as the short earns it" />
-          <Row label="Combined tail loss" value={both.combinedTailLossUsd === null ? '—' : `$${both.combinedTailLossUsd.toFixed(2)}`} tone="down" hint="The worse side's tail: a move only ever hurts one side, and the other side's premium softens it" />
-          <Row label="Combined margin" value={both.marginUsd === null ? '—' : `$${both.marginUsd.toFixed(2)}`} />
-          <footer><Tag tone={bothFinal === 'PREFERRED' ? 'up' : bothFinal === 'NOT ALLOWED' ? 'down' : 'muted'}>{bothFinal}</Tag></footer>
-        </div>
-      )}
     </div>
   );
 }

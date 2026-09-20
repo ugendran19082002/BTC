@@ -13,7 +13,8 @@ import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
 import {
   KeyLevelsPanel, KpiStrip, IvTermPanel, OptionFlowPanel, PriceActionPanel, SkewPanel, TradeFlowPanel, VolatilityPanel,
 } from './MarketPanels';
-import { ChainPanel, ChecklistPanel, findLeg, SelectedStrikePanel, StrategyDecisionPanel, type Selected } from './DecisionPanels';
+import { ChainPanel, ChecklistPanel, findLeg, MtfTable, SelectedStrikePanel, type Selected } from './DecisionPanels';
+import { DecisionCards } from './DecisionCards';
 import { ScreenBar } from './ScreenBar';
 import { RiskEnginePanel, ScenarioPanel } from './RiskPanels';
 import { ChangesPanel, EarlyWarningPanel, MovementPanel, StrikeFinder, useChanges } from './TraderPanels';
@@ -28,10 +29,11 @@ import { ChangesPanel, EarlyWarningPanel, MovementPanel, StrikeFinder, useChange
  * One fact, one place. The bar owns the clock (entry, window, expiry, time
  * left); the strategy decision owns the answer; the KPI strip owns the market's
  * headline numbers; the left column reads the market (trend, levels,
- * volatility, the tape); the centre is the board (chart, chain, the strike
- * under inspection, what changed, its risk, its checklist); the right column
- * decides (the outlook by horizon; the sides, with the strikes under them;
- * then the vol surface: term structure and skew). Nothing
+ * volatility, the tape, the early warning); the centre is the board (chart,
+ * the strike under inspection, what changed, its risk and decay, its
+ * scenario); the right column decides (horizon and MTF; the four strategies
+ * SELL CE / SELL PE / BOTH / NO TRADE; then the vol surface). The bottom row
+ * is the way out: the entry checklist and the strike finder. Nothing
  * is shown twice: a figure the checklist judges is not repeated as a row.
  *
  * Every figure is read from the chain response, the perp feed or the desk's
@@ -172,7 +174,7 @@ export function Overview({
           <ErrorBoundary where="Key levels"><KeyLevelsPanel data={data} spot={spot} atrUsd={atrUsd} /></ErrorBoundary>
           <ErrorBoundary where="Volatility"><VolatilityPanel data={data} iv={iv} /></ErrorBoundary>
           <ErrorBoundary where="Trade flow"><TradeFlowPanel perp={perp} market={data.market} /></ErrorBoundary>
-          <ErrorBoundary where="Option flow"><OptionFlowPanel perp={perp} /></ErrorBoundary>
+          <ErrorBoundary where="Option flow"><OptionFlowPanel perp={perp} legs={data.legs} atm={snap.atm} /></ErrorBoundary>
           <ErrorBoundary where="Early warning"><EarlyWarningPanel data={data} perp={perp} changes={changes?.rows ?? null} /></ErrorBoundary>
         </div>
 
@@ -189,22 +191,26 @@ export function Overview({
           <ErrorBoundary where="What changed"><ChangesPanel leg={leg} rows={changes?.rows ?? null} /></ErrorBoundary>
           <ErrorBoundary where="Risk engine"><RiskEnginePanel leg={leg} risk={risk} contracts={contracts} hoursToExpiry={snap.hoursToExpiry} iv={iv} step={snap.step} /></ErrorBoundary>
           <ErrorBoundary where="Scenario"><ScenarioPanel leg={leg} contracts={contracts} /></ErrorBoundary>
-          <ErrorBoundary where="Checklist"><ChecklistPanel leg={leg} ready={ready} onSell={onSell} /></ErrorBoundary>
         </div>
 
         <div className="ov-col ov-right">
-          <ErrorBoundary where="Outlook"><MovementPanel data={data} em={emSettle} activeMin={config.horizonMin} /></ErrorBoundary>
+          <ErrorBoundary where="Horizon / MTF"><MovementPanel data={data} em={emSettle} activeMin={config.horizonMin} mtf={<MtfTable mtf={mtf} />} /></ErrorBoundary>
           <ErrorBoundary where="Strategy decision">
-            <StrategyDecisionPanel data={data} sides={sides} both={both} choice={choice} onSelect={setPicked} mtf={mtf}
-              strikes={
-                <StrikeFinder data={data} onSelect={(cp, strike) => setPicked({ cp, strike })} onSell={onSell} contracts={contracts} leverage={leverage}
-                  defaultSide={choice.side === 'CE' ? 'C' : choice.side === 'PE' ? 'P' : 'both'} em={emSettle} execution={config.execution}
-                  filter={filter} onFilter={setFilter} rvPct={data.market?.realisedVol ?? null} />
-              } />
+            <DecisionCards data={data} sides={sides} both={both} choice={choice} ready={ready} iv={iv} em={emSettle} mtf={mtf} contracts={contracts} leverage={leverage}
+              now={now} entryIst={config.entryIst} onSelect={(cp, strike) => setPicked({ cp, strike })} oi={perp?.oi ?? null} />
           </ErrorBoundary>
           <ErrorBoundary where="IV term structure"><IvTermPanel term={term} error={Boolean(termError)} /></ErrorBoundary>
           <ErrorBoundary where="Skew"><SkewPanel data={data} rank={term?.skew ?? null} /></ErrorBoundary>
         </div>
+      </div>
+
+      <div className="ov-bottom">
+        <ErrorBoundary where="Checklist"><ChecklistPanel leg={leg} ready={ready} onSell={onSell} /></ErrorBoundary>
+        <ErrorBoundary where="Strike finder">
+          <StrikeFinder data={data} onSelect={(cp, strike) => setPicked({ cp, strike })} onSell={onSell} contracts={contracts} leverage={leverage}
+            defaultSide={choice.side === 'CE' ? 'C' : choice.side === 'PE' ? 'P' : 'both'} em={emSettle} execution={config.execution}
+            filter={filter} onFilter={setFilter} rvPct={data.market?.realisedVol ?? null} />
+        </ErrorBoundary>
       </div>
     </div>
   );

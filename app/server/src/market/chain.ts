@@ -53,6 +53,9 @@ export type Leg = {
   mark: number | null;
   bid: number | null;
   ask: number | null;
+  /** Contracts resting at the best bid and ask, live only: the strike's own top of book. */
+  bidSize: number | null;
+  askSize: number | null;
   /** the price a seller can realistically expect to receive */
   sellPrice: number | null;
   iv: number | null;
@@ -426,6 +429,8 @@ export async function liveChain(width = 25, wantExpiry?: string): Promise<Snapsh
     const cp: 'C' | 'P' = t.contract_type === 'call_options' ? 'C' : 'P';
     const bid = num(t.quotes?.best_bid ?? null);
     const ask = num(t.quotes?.best_ask ?? null);
+    const bidSize = num(t.quotes?.bid_size ?? null);
+    const askSize = num(t.quotes?.ask_size ?? null);
     const mark = num(t.mark_price);
     const g = t.greeks;
     const iv = num(t.quotes?.mark_iv ?? null);
@@ -445,6 +450,8 @@ export async function liveChain(width = 25, wantExpiry?: string): Promise<Snapsh
       mark,
       bid,
       ask,
+      bidSize,
+      askSize,
       // selling hits the bid; fall back to mark when the book is empty
       sellPrice: bid ?? mark,
       iv,
@@ -549,6 +556,8 @@ export async function historicalChain(
       mark,
       bid: null,
       ask: null,
+      bidSize: null,
+      askSize: null,
       // no historical book, so the mark is the honest sell estimate
       sellPrice: mark ?? bar?.close ?? null,
       iv,

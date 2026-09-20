@@ -274,6 +274,8 @@ export type SideFlow = {
   pressure: 'BUY PRESSURE' | 'SELL PRESSURE' | 'BALANCED' | null;
   /** The busiest strikes on this side over the window, most volume first. */
   strikes: { strike: number; buyVolume: number; sellVolume: number }[];
+  /** Cumulative volume delta, minute by minute over the window. */
+  cvd: { at: number; cvd: number; delta: number }[];
 };
 
 export type OptionFlowSummary = {
@@ -293,9 +295,11 @@ export function optionFlowOf(expiry: string, windowMin: number, minutes: readonl
   const side = (cp: 'C' | 'P'): SideFlow => {
     const mine = minutes.filter((m) => m.cp === cp);
     const byStrike = new Map<number, { strike: number; buyVolume: number; sellVolume: number }>();
-    const f: SideFlow = { buyVolume: 0, sellVolume: 0, deltaVolume: 0, trades: 0, aggressorBuyPct: null, pressure: null, strikes: [] };
+    const f: SideFlow = { buyVolume: 0, sellVolume: 0, deltaVolume: 0, trades: 0, aggressorBuyPct: null, pressure: null, strikes: [], cvd: [] };
+    const byMinute = new Map<number, number>();
     for (const m of mine) {
       f.buyVolume += m.buyVolume; f.sellVolume += m.sellVolume; f.trades += m.buyCount + m.sellCount;
+      byMinute.set(m.at, (byMinute.get(m.at) ?? 0) + m.buyVolume - m.sellVolume);
       const k = byStrike.get(m.strike) ?? { strike: m.strike, buyVolume: 0, sellVolume: 0 };
       k.buyVolume += m.buyVolume; k.sellVolume += m.sellVolume; byStrike.set(m.strike, k);
     }
@@ -305,6 +309,8 @@ export function optionFlowOf(expiry: string, windowMin: number, minutes: readonl
     // Past 55 / 45 the tape leans; inside it, it does not say.
     f.pressure = f.aggressorBuyPct === null ? null : f.aggressorBuyPct >= 0.55 ? 'BUY PRESSURE' : f.aggressorBuyPct <= 0.45 ? 'SELL PRESSURE' : 'BALANCED';
     f.strikes = [...byStrike.values()].sort((a, b) => (b.buyVolume + b.sellVolume) - (a.buyVolume + a.sellVolume)).slice(0, 3);
+    let run = 0;
+    for (const [at, delta] of [...byMinute.entries()].sort((a, b) => a[0] - b[0])) { run += delta; f.cvd.push({ at, cvd: run, delta }); }
     return f;
   };
   const ce = side('C'), pe = side('P');

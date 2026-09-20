@@ -30,29 +30,21 @@ export function EarlyWarningPanel({ data, perp, changes }: { data: ChainResponse
           </li>
         ))}
       </ul>
-      <p className="ov-foot">🟢 NORMAL under 70% of the threshold · 🟡 WATCH from there · 🔴 TRIGGERED = threshold crossed. A warning level, not a trade signal: the gates decide, this says what is stirring.</p>
-      <More label="Formulas and the reference case">
-        <ul className="ov-formulas">{w.triggers.map((t) => <li key={t.name}><b>{t.name}:</b> {t.formula}</li>)}</ul>
-        <p className="ov-foot">
-          Score = fired weight ÷ readable weight: watch ≥ 20%, high ≥ 40%, sudden ≥ 60%. Reference, 28 Aug 2025 (chain.db): entry 111,191, settle 112,920;
-          the 114,000 CE sold at 22.7 fell to 5.6 by hour 4, then printed 101.9 in hour 5 and 116 at its high — 5.1× the entry premium. A move like that
-          shows first as volume, one-sided aggressors and the wing's premium jumping; this panel watches for exactly those.
-        </p>
-      </More>
     </Panel>
   );
 }
 
 // ------------------------------------------------------ movement to expiry
 
-export function MovementPanel({ data, em, activeMin }: { data: ChainResponse; em: ExpectedMove; activeMin: number }) {
+export function MovementPanel({ data, em, activeMin, mtf }: { data: ChainResponse; em: ExpectedMove; activeMin: number; mtf?: React.ReactNode }) {
   const rows = horizonRows(data.outlook).filter((r) => r.minutes <= Math.max(60, data.snapshot.hoursToExpiry * 60 + 1));
   const board = boardRead(data, em);
   const v = movementVerdict(rows, board, data.market, data.snapshot.hoursToExpiry);
   const says = (s: string) => (s === 'up' ? 'ov-up' : s === 'down' ? 'ov-down' : 'ov-muted');
   return (
-    <Panel title="Outlook · movement to expiry" right={<Tag tone={v.way === 'up' ? 'up' : v.way === 'down' ? 'down' : 'accent'}>{v.way.toUpperCase()} · {v.confidence} confidence</Tag>}>
+    <Panel title="Horizon / MTF · movement to expiry" right={<Tag tone={v.way === 'up' ? 'up' : v.way === 'down' ? 'down' : 'accent'}>{v.way.toUpperCase()} · {v.confidence} confidence</Tag>}>
       <p className="ov-summary">{v.text}.</p>
+      {mtf}
       <table className="ov-mini ov-horizons">
         <thead><tr><th>Next</th><th title="Measured share of windows that closed above the band">Above</th><th title="Measured share that closed inside the band">Inside</th><th title="Measured share that closed below the band">Below</th><th title="Spot ± the expected move for the horizon: the band">Band (spot ± EM)</th></tr></thead>
         <tbody>
@@ -173,9 +165,7 @@ export function StrikeFinder({ data, onSelect, onSell, contracts, leverage, defa
   const priceLabel = execution === 'MARK' ? 'Mark' : execution === 'DEPTH' ? 'Est. fill' : 'Bid';
   const otm = data.legs.filter((l) => l.moneyness !== 'ITM').length;
   return (
-    <div className="ov-strikes">
-      <h4 className="ov-subhead">
-        <span>Strikes</span>
+    <Panel title="Strike finder" right={
         <span className="ov-chain-head">
           <span className="ov-tabs ov-tabs-inline" role="tablist">
             <button role="tab" aria-selected={mode === 'desk'} className={mode === 'desk' ? 'on' : ''} onClick={() => setMode('desk')} title="The desk's top three a side, by its own rules">Desk picks{picks.length === 0 ? ' (none)' : ''}</button>
@@ -183,7 +173,7 @@ export function StrikeFinder({ data, onSelect, onSell, contracts, leverage, defa
           </span>
           <small className="ov-muted">{found.length} of {otm} OTM · {contracts} ct at {leverage}x</small>
         </span>
-      </h4>
+      }>
       {mode === 'filters' && (
         <div className="ov-finder">
           {filtersChanged(f) && <button className="ov-chip" onClick={() => setF({ ...DESK_FILTER, side: f.side })} title="Back to the desk's own filters">Desk filters</button>}
@@ -198,9 +188,9 @@ export function StrikeFinder({ data, onSelect, onSell, contracts, leverage, defa
         <table className="ov-mini ov-reco">
           <thead><tr>
             <th>Strike</th><th>Side</th><th title={`Credit for ${contracts} ct at the ${priceLabel.toLowerCase()}`}>Credit</th>
-            <th title="Probability of expiring worthless">P(OTM)</th><th title="Probability BTC touches the strike before expiry">P(touch)</th><th title="Probability of expiring beyond the strike">P(breach)</th>
+            <th title="Probability of expiring worthless">P(OTM)</th><th title="Probability BTC touches the strike before expiry">Touch</th>
             <th title="Distance from spot in expected moves">Dist/EM</th><th title="This strike's implied volatility less realised (21d), points">IV−RV</th><th title="Bid–ask spread as a share of the mid">Spread</th>
-            <th title="Margin estimate at the ticket's leverage">Margin</th><th title="The desk's score, 0–10">Score</th><th>Decision</th><th />
+            <th title="The desk's score, 0–10">Score</th><th>Decision</th><th />
           </tr></thead>
           <tbody>
             {found.map((l) => {
@@ -213,12 +203,11 @@ export function StrikeFinder({ data, onSelect, onSell, contracts, leverage, defa
               return (
                 <tr key={`${l.cp}${l.strike}`} className="ov-click" onClick={() => onSelect(l.cp, l.strike)}>
                   <td>{fmt.n(l.strike)}</td><td>{l.cp === 'C' ? 'CE' : 'PE'}</td>
-                  <td title={`${priceLabel} ${fmt.n(px, 1)} per BTC`}>{est ? `$${est.creditUsd.toFixed(2)}` : '—'}</td>
-                  <td className="ov-up">{fmt.pct(o.pOtm)}</td><td>{fmt.pct(o.pTouch)}</td><td className="ov-down">{fmt.pct(o.pItm)}</td>
+                  <td title={`${priceLabel} ${fmt.n(px, 1)} per BTC · margin ${est ? `$${est.marginUsd.toFixed(2)}` : '—'}`}>{est ? `$${est.creditUsd.toFixed(2)}` : '—'}</td>
+                  <td className="ov-up">{fmt.pct(o.pOtm)}</td><td>{fmt.pct(o.pTouch)}</td>
                   <td>{l.emDistance === null ? '—' : `${l.emDistance.toFixed(2)}×`}</td>
                   <td className={ivRvPts === null ? '' : ivRvPts >= 0 ? 'ov-up' : 'ov-down'}>{ivRvPts === null ? '—' : `${fmt.signed(ivRvPts, 1)}`}</td>
                   <td className={pa?.spreadPct != null && pa.spreadPct > 0.1 ? 'ov-warn' : ''}>{pa?.spreadPct == null ? '—' : fmt.pct(pa.spreadPct, 1)}</td>
-                  <td>{est ? `$${est.marginUsd.toFixed(2)}` : '—'}</td>
                   <td>{l.score === null ? '—' : (l.score * 10).toFixed(1)}</td>
                   <td><Tag tone={decision === 'RECOMMENDED' ? 'up' : decision === 'AVOID' ? 'down' : decision === 'WATCH' ? 'warn' : 'muted'}>{decision}</Tag></td>
                   <td>{onSell && data.snapshot.live && <button className="ov-sell" onClick={(e) => { e.stopPropagation(); onSell(l); }}>Sell</button>}</td>
@@ -228,7 +217,7 @@ export function StrikeFinder({ data, onSelect, onSell, contracts, leverage, defa
           </tbody>
         </table>
       )}
-      <p className="ov-foot">Out-of-the-money strikes only, best desk score first. Move a filter and the two cards above carry the best strike that passes it. Click a row to inspect it; Sell opens the ticket, where every gate runs again.</p>
-    </div>
+      <p className="ov-foot">Out-of-the-money strikes only, best desk score first. Move a filter and the SELL CE / SELL PE cards carry the best strike that passes it. Click a row to inspect it; Sell opens the ticket, where every gate runs again.</p>
+    </Panel>
   );
 }
