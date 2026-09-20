@@ -35,7 +35,9 @@ export function ChainPanel({ data, selected, onSelect, rows = 7, pair = null }: 
     const b = box.current, r = atmRow.current;
     if (!b || !r) return;
     b.scrollTop = Math.max(0, r.offsetTop - b.clientHeight / 2 + r.offsetHeight / 2);
-  }, [snap.expiry, filter, snap.atm]);
+    // Wider than its box, the strike column sits in the middle: calls to the left, puts to the right, both a small scroll away.
+    b.scrollLeft = Math.max(0, (b.scrollWidth - b.clientWidth) / 2);
+  }, [snap.expiry, filter, snap.atm, cols]);
   const strikes = useMemo(() => {
     const every = [...new Set(legs.map((l) => l.strike))].sort((a, b) => a - b);
     if (filter === 'all') return every;
