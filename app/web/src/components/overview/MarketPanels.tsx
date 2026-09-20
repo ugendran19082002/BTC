@@ -24,8 +24,8 @@ export function nextFundingIn(nowMs: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-export function KpiStrip({ data, spot, iv, perp, spark, now = Date.now(), bias }: {
-  data: ChainResponse; spot: number; iv: IvRv | null; perp: PerpResponse | null; spark?: readonly number[]; now?: number; bias?: OptionBias | null;
+export function KpiStrip({ data, spot, iv, perp, spark, now = Date.now() }: {
+  data: ChainResponse; spot: number; iv: IvRv | null; perp: PerpResponse | null; spark?: readonly number[]; now?: number;
 }) {
   const m = data.market;
   const s = data.structure;
@@ -52,13 +52,12 @@ export function KpiStrip({ data, spot, iv, perp, spark, now = Date.now(), bias }
         <span className="ov-kpi-value"><Tag tone={regimeTone(m?.regime)}>{m?.regime ?? '—'}</Tag></span>
         <span className="ov-kpi-sub">{volRegimeText(m)}</span>
       </div>
-      {bias && <OptionBiasKpi bias={bias} />}
     </div>
   );
 }
 
-/** CE against PE in one card: premium pressure, OI build-up, IV, touch odds, the tape -- and where the pressure is. */
-function OptionBiasKpi({ bias }: { bias: OptionBias }) {
+/** CE against PE in one panel: premium pressure, OI build-up, IV, touch odds, the tape -- and where the pressure is. Its own panel, so the KPI row keeps one height. */
+export function OptionBiasPanel({ bias }: { bias: OptionBias }) {
   const arrow = (v: number | null, up = 'up', down = 'down') => (v === null ? <span className="ov-muted">—</span> : <span className={v > 0 ? `ov-${up}` : v < 0 ? `ov-${down}` : 'ov-muted'}>{v > 0 ? '↑' : v < 0 ? '↓' : '→'} {fmt.signed(v, 1)}%</span>);
   const col = (b: OptionBias['ce']) => (
     <div className={`ov-bias-col ov-bias-${b.side.toLowerCase()}`}>
@@ -72,11 +71,10 @@ function OptionBiasKpi({ bias }: { bias: OptionBias }) {
     </div>
   );
   return (
-    <div className="ov-kpi ov-kpi-wide ov-bias" title="Premium rising, OI building and takers buying make a side STRONG — under pressure, dangerous to be short. The reverse makes it WEAK — favourable to a seller.">
-      <span className="ov-kpi-label">Option bias · CE / PE</span>
-      <div className="ov-bias-grid">{col(bias.ce)}{col(bias.pe)}</div>
-      <span className="ov-kpi-sub">Pressure → <b>{bias.pressureOn ?? 'even'}</b>{bias.pressureOn ? ` · the ${bias.pressureOn} side is the one being bought and built` : ''}</span>
-    </div>
+    <Panel title="Option bias · CE / PE" className="ov-bias" right={<small className="ov-muted">Pressure → <b>{bias.pressureOn ?? 'even'}</b></small>}>
+      <div className="ov-bias-grid" title="Premium rising, OI building and takers buying make a side STRONG — under pressure, dangerous to be short. The reverse makes it WEAK — favourable to a seller.">{col(bias.ce)}{col(bias.pe)}</div>
+      <p className="ov-foot">{bias.pressureOn ? `The ${bias.pressureOn} side is the one being bought and built.` : 'Neither side is being pushed.'} Premium and OI over the hour from the board's record; the tape from the options' own prints.</p>
+    </Panel>
   );
 }
 

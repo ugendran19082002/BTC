@@ -11,7 +11,7 @@ import {
 import { DEFAULT_CONFIG, entryTodayMs, thresholds } from '@/lib/screen-config';
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
 import {
-  KeyLevelsPanel, KpiStrip, IvTermPanel, OptionFlowPanel, PriceActionPanel, SkewPanel, TradeFlowPanel, VolatilityPanel,
+  KeyLevelsPanel, KpiStrip, IvTermPanel, OptionBiasPanel, OptionFlowPanel, PriceActionPanel, SkewPanel, TradeFlowPanel, VolatilityPanel,
 } from './MarketPanels';
 import { ChainPanel, findLeg, MtfTable, SelectedStrikePanel, type Selected } from './DecisionPanels';
 import { DecisionCards } from './DecisionCards';
@@ -29,9 +29,9 @@ import { ChangesPanel, EarlyWarningPanel, MovementPanel, MovementTypePanel, Stri
  * One fact, one place. The bar owns the clock (entry, window, expiry, time
  * left); the strategy decision owns the answer; the KPI strip owns the market's
  * headline numbers; the left column reads the market (trend, levels,
- * volatility, the tape, the early warning); the centre is the board (chart,
- * the strike under inspection, what changed, its risk and decay, its
- * scenario); the right column decides (horizon and MTF; SELL CE beside
+ * volatility, the tape); the centre is the board (chart, the strike under
+ * inspection, what changed, its risk and decay, its scenario, the early
+ * warning) -- the columns are stacked to end near each other; the right column decides (horizon and MTF; SELL CE beside
  * SELL PE; then the vol surface). The bottom row
  * is the strike finder. Nothing
  * is shown twice: a figure the checklist judges is not repeated as a row.
@@ -178,7 +178,7 @@ export function Overview({
   return (
     <div className="ov">
       <ScreenBar data={data} now={now} freshnessSec={config.freshnessSec} entryIst={config.entryIst} expiries={expiries} onExpiry={onExpiry} controls={controls} error={error} />
-      <ErrorBoundary where="Overview KPIs"><KpiStrip data={data} spot={spot} iv={iv} perp={perp} spark={spark} now={now} bias={bias} /></ErrorBoundary>
+      <ErrorBoundary where="Overview KPIs"><KpiStrip data={data} spot={spot} iv={iv} perp={perp} spark={spark} now={now} /></ErrorBoundary>
 
       <div className="ov-main">
         <div className="ov-col">
@@ -187,7 +187,6 @@ export function Overview({
           <ErrorBoundary where="Volatility"><VolatilityPanel data={data} iv={iv} /></ErrorBoundary>
           <ErrorBoundary where="Trade flow"><TradeFlowPanel perp={perp} market={data.market} window={flowWindow} onWindow={setFlowWindow} /></ErrorBoundary>
           <ErrorBoundary where="Option flow"><OptionFlowPanel perp={perp} legs={data.legs} atm={snap.atm} window={flowWindow} onWindow={setFlowWindow} /></ErrorBoundary>
-          <ErrorBoundary where="Early warning"><EarlyWarningPanel data={data} perp={perp} changes={changes?.rows ?? null} /></ErrorBoundary>
         </div>
 
         <div className="ov-col">
@@ -204,9 +203,11 @@ export function Overview({
           <ErrorBoundary where="What changed"><ChangesPanel tab={changesTab} onTab={setChangesTab} ce={ceLeg} pe={peLeg} board={(changesTab === 'BOARD' ? changes : activeChanges)?.rows ?? null} changes={activeChanges} /></ErrorBoundary>
           <ErrorBoundary where="Risk engine"><RiskEnginePanel leg={leg} risk={risk} contracts={contracts} hoursToExpiry={snap.hoursToExpiry} iv={iv} step={snap.step} /></ErrorBoundary>
           <ErrorBoundary where="Scenario"><ScenarioPanel leg={leg} contracts={contracts} /></ErrorBoundary>
+          <ErrorBoundary where="Early warning"><EarlyWarningPanel data={data} perp={perp} changes={changes?.rows ?? null} /></ErrorBoundary>
         </div>
 
         <div className="ov-col ov-right">
+          <ErrorBoundary where="Option bias"><OptionBiasPanel bias={bias} /></ErrorBoundary>
           <ErrorBoundary where="Horizon / MTF"><MovementPanel data={data} em={emSettle} activeMin={config.horizonMin} mtf={<MtfTable mtf={mtf} />} /></ErrorBoundary>
           <ErrorBoundary where="Movement type"><MovementTypePanel rows={movement?.rows ?? null} outlook={data.outlook} /></ErrorBoundary>
           <ErrorBoundary where="Strategy decision">
