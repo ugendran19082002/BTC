@@ -53,7 +53,7 @@ export function ScreenBar({ data, now, freshnessSec, entryIst, expiries, onExpir
           </Tag>
           <span className={`ov-ages${stale.length ? ' ov-ages-stale' : ''}`} title={snap.live ? `How old each reading is. Stale past ${freshnessSec}s for the market and the chain, 15m for the OI record, 7d for the model.` : 'A past snapshot: ages mean nothing'}>
             {snap.live ? ages.map((a) => (
-              <span key={a.key} className={a.stale ? 'ov-warn' : undefined}>{a.label} <b>{a.text}</b></span>
+              <span key={a.key} className={a.stale ? 'ov-warn' : undefined} title={a.hint}>{a.label} <b>{a.text}</b></span>
             )) : <span>past snapshot</span>}
           </span>
           {expiries && onExpiry && expiries.length > 0 ? (

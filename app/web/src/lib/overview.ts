@@ -1020,7 +1020,7 @@ export function contractValidity(snap: Pick<SnapshotMeta, 'live' | 'expiryTs'>, 
   return { state: 'LIVE', hoursLeft, text: `${Math.floor(hoursLeft)}h ${String(Math.floor((hoursLeft % 1) * 60)).padStart(2, '0')}m to settlement` };
 }
 
-export type AgeItem = { key: 'market' | 'chain' | 'oi' | 'model'; label: string; ageMs: number | null; text: string; stale: boolean };
+export type AgeItem = { key: 'market' | 'chain' | 'oi' | 'model'; label: string; ageMs: number | null; text: string; stale: boolean; /** What the age is of, and how often it can move. */ hint: string };
 
 /** An age as people say it: 4s, 3m, 2h, 2d. */
 export function ageText(ms: number | null): string {
@@ -1039,11 +1039,16 @@ export function ageText(ms: number | null): string {
  * stale too -- "not known" is not fresh.
  */
 export function dataFreshness(f: Freshness | null | undefined, nowMs: number, limits = { market: 30_000, chain: 30_000, oi: 15 * 60_000, model: 7 * 86_400_000 }): AgeItem[] {
-  const item = (key: AgeItem['key'], label: string, at: number | null | undefined): AgeItem => {
+  const item = (key: AgeItem['key'], label: string, at: number | null | undefined, hint: string): AgeItem => {
     const ageMs = at === null || at === undefined ? null : Math.max(0, nowMs - at);
-    return { key, label, ageMs, text: ageText(ageMs), stale: ageMs === null || ageMs > limits[key] };
+    return { key, label, ageMs, text: ageText(ageMs), stale: ageMs === null || ageMs > limits[key], hint };
   };
-  return [item('market', 'Market', f?.marketAt), item('chain', 'Chain', f?.chainAt), item('oi', 'OI', f?.oiAt), item('model', 'Model', f?.modelAt)];
+  return [
+    item('market', 'Market', f?.marketAt, 'The newest tick from the exchange feed; moves every second'),
+    item('chain', 'Chain', f?.chainAt, 'When this board was assembled; every five seconds while the screen is open'),
+    item('oi', 'OI record', f?.oiAt, 'The desk\'s own five-minute record of every strike (OI, quotes, greeks) — the one the hour-ago reads come from; 0–5m is normal, stale past 15m. Live OI on the board is as old as the chain'),
+    item('model', 'Model', f?.modelAt, 'When the measured model was last re-measured; days is normal, stale past a week'),
+  ];
 }
 
 // ------------------------------------------------------ premium decay

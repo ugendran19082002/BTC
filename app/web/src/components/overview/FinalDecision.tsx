@@ -71,7 +71,7 @@ export function FinalDecision({ data, sides, both, choice, leg, mtf, persist, fr
         </div>
         <div className="ov-final-col">
           <div className="ov-final-sub">Data</div>
-          {freshness.map((a) => <Row key={a.key} label={a.label} value={<span className={a.stale ? 'ov-down' : 'ov-up'}>{a.text} {a.stale ? '⛔ BLOCK' : '✅'}</span>} />)}
+          {freshness.map((a) => <Row key={a.key} label={a.label} value={<span className={a.stale ? 'ov-down' : 'ov-up'}>{a.text}{a.key === 'oi' && a.ageMs !== null ? <small className="ov-muted"> / 5m</small> : null} {a.stale ? '⛔ BLOCK' : '✅'}</span>} hint={a.hint} />)}
           <div className="ov-final-sub">Contract</div>
           {checks.map((c) => <Row key={c.name} label={c.name} value={<span className={c.ok ? 'ov-up' : 'ov-down'}>{c.ok ? '✅' : '❌'} {c.text}</span>} />)}
         </div>
