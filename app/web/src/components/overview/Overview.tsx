@@ -111,14 +111,7 @@ export function Overview({
   // To settlement, by IV: what every strike's distance and tail is measured in.
   const emSettle = useMemo(() => expectedMove(snap), [snap]);
   const spot = data.market?.spot ?? snap.spot;
-  // The chart's timeframe's ATR, the levels, and the multi-timeframe consensus: read once, shown where they belong.
-  const tfRead = useMemo(() => {
-    const have = data.market?.timeframes ?? [];
-    const nearest: Record<string, string> = { '1m': '5m', '30m': '15m' };
-    const use = have.some((t) => t.tf === chartTf) ? chartTf : nearest[chartTf] ?? '15m';
-    return have.find((t) => t.tf === use) ?? null;
-  }, [data.market, chartTf]);
-  const atrUsd = tfRead?.atrPct == null ? null : tfRead.close * tfRead.atrPct / 100;
+  // The levels and the multi-timeframe consensus: read once, shown where they belong.
   const levels = useMemo(() => namedLevels(keyLevels(data.structure, data.market?.high24h ?? null, data.market?.low24h ?? null, data.market?.prevDayHigh ?? null, data.market?.prevDayLow ?? null), spot), [data.structure, data.market, spot]);
   const mtf = useMemo(() => mtfConsensus(data.market, data.outlook), [data.market, data.outlook]);
 
@@ -218,7 +211,7 @@ export function Overview({
       <div className="ov-main">
         <div className="ov-col">
           <ErrorBoundary where="Price action"><PriceActionPanel market={data.market} tf={chartTf} levels={levels} spot={spot} /></ErrorBoundary>
-          <ErrorBoundary where="Key levels"><KeyLevelsPanel data={data} spot={spot} atrUsd={atrUsd} emUsd={emSettle?.move ?? null} /></ErrorBoundary>
+          <ErrorBoundary where="Key levels"><KeyLevelsPanel data={data} spot={spot} emUsd={emSettle?.move ?? null} /></ErrorBoundary>
           <ErrorBoundary where="Volatility"><VolatilityPanel data={data} iv={iv} /></ErrorBoundary>
           <ErrorBoundary where="Trade flow"><TradeFlowPanel perp={perp} market={data.market} window={flowWindow} onWindow={setFlowWindow} /></ErrorBoundary>
           <ErrorBoundary where="Option flow"><OptionFlowPanel perp={perp} legs={data.legs} atm={snap.atm} window={flowWindow} onWindow={setFlowWindow} /></ErrorBoundary>

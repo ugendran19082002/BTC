@@ -132,6 +132,9 @@ export type TimeframeRead = {
   vwapDistPct?: number | null;
   /** Swing structure: +1 higher highs and higher lows, -1 the mirror, 0 neither. */
   structure?: -1 | 0 | 1;
+  /** This timeframe's nearest swing highs above and swing lows below the close, nearest first. Absent from an older server. */
+  resistance?: number[];
+  support?: number[];
   atrPct: number | null;
   trend: -1 | 0 | 1;
   label: string;

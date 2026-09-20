@@ -80,6 +80,13 @@ export type TimeframeRead = {
   vwapDistPct: number | null;
   /** Swing structure: +1 higher highs and higher lows, -1 the mirror, 0 neither. */
   structure: -1 | 0 | 1;
+  /**
+   * This timeframe's own support and resistance: the two nearest fractal
+   * swing highs above the close and swing lows below it, from the bars read.
+   * Nearest first. Empty where the bars hold no swing on that side.
+   */
+  resistance: number[];
+  support: number[];
   /** average true range as a percentage of price */
   atrPct: number | null;
   /** -1 falling, 0 flat, +1 rising, from the EMA stack */
@@ -187,6 +194,27 @@ function structureOf(bars: Candle[]): -1 | 0 | 1 {
   return 0;
 }
 
+/** Every fractal swing high and low in the bars: a bar whose high (low) beats the two either side. Pure. */
+export function swingsOf(bars: readonly Candle[]): { highs: number[]; lows: number[] } {
+  const highs: number[] = [];
+  const lows: number[] = [];
+  for (let i = 2; i < bars.length - 2; i++) {
+    const b = bars[i]!;
+    if (b.high > bars[i - 1]!.high && b.high > bars[i - 2]!.high && b.high > bars[i + 1]!.high && b.high > bars[i + 2]!.high) highs.push(b.high);
+    if (b.low < bars[i - 1]!.low && b.low < bars[i - 2]!.low && b.low < bars[i + 1]!.low && b.low < bars[i + 2]!.low) lows.push(b.low);
+  }
+  return { highs, lows };
+}
+
+/** The two nearest swing highs above `price` and swing lows below it, nearest first; a swing within a tenth of a percent of price is the price, not a level. */
+export function swingLevels(bars: readonly Candle[], price: number, n = 2): { resistance: number[]; support: number[] } {
+  const { highs, lows } = swingsOf(bars);
+  const gap = price * 0.001;
+  const above = [...new Set(highs.filter((h) => h > price + gap))].sort((a, b) => a - b).slice(0, n);
+  const below = [...new Set(lows.filter((l) => l < price - gap))].sort((a, b) => b - a).slice(0, n);
+  return { resistance: above, support: below };
+}
+
 function readOne(tf: Timeframe, bars: Candle[]): TimeframeRead | null {
   if (bars.length < 25) return null;
   const closes = bars.map((b) => b.close);
@@ -219,6 +247,7 @@ function readOne(tf: Timeframe, bars: Candle[]): TimeframeRead | null {
     vwap,
     vwapDistPct: vwap === null || !(vwap > 0) ? null : ((close - vwap) / vwap) * 100,
     structure: structureOf(bars),
+    ...swingLevels(bars, close),
     atrPct: a === null ? null : (a / close) * 100,
     trend,
     label: trend === 1 ? 'rising' : trend === -1 ? 'falling' : 'flat',
