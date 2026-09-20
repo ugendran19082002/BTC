@@ -2827,3 +2827,8 @@ tr.focused .tag.focus { background: var(--accent); color: #111; }
 .ov-shocks .ov-now { font-weight: 700; }
 .ov-gate-label { font-weight: 600; }
 .ov-checks-total { margin: 8px 0 0; font-size: 13px; }
+.ov-bias .ov-bias-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; margin: 2px 0 4px; }
+.ov-bias-col { display: flex; flex-direction: column; gap: 1px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.ov-bias-col > b { font-size: 13px; margin-bottom: 2px; }
+.ov-bias-ce > b { color: var(--up); } .ov-bias-pe > b { color: var(--down); }
+.ov-bias-col .ov-tag { align-self: flex-start; margin-top: 3px; }

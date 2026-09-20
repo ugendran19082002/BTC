@@ -174,8 +174,9 @@ test('the IV rank and the OI pulse read the board record', async () => {
   assert.equal(await ivRank(0.4), null, 'a dozen readings at least');
   const cols = '(at, expiry, spot, hours_left, atm_iv, call_atm, put_atm, put_marks, call_marks, put_volume, call_volume, pcr_oi, pcr_volume, ce_oi, pe_oi, iv_skew_pts, ce_wall, pe_wall, max_pain, ce_oi_change, pe_oi_change)';
   for (let i = 0; i < 14; i++) {
-    await query(`INSERT INTO chain_features ${cols} VALUES ($1, '190926', 80000, 5, $2, 1, 1, '{}', '{}', 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, $3, $4)`,
-      [T0 - (13 - i) * 5 * 60_000, 0.30 + i * 0.01, 100 + i * 10, -50]);
+    // The ATM call's mark climbs 2 a bucket, the put's falls 1; call OI 5000, put OI 4000.
+    await query(`INSERT INTO chain_features ${cols} VALUES ($1, '190926', 80000, 5, $2, $5, $6, '{}', '{}', 1, 1, 1, 1, 5000, 4000, 1, 1, 1, 1, $3, $4)`,
+      [T0 - (13 - i) * 5 * 60_000, 0.30 + i * 0.01, 100 + i * 10, -50, 100 + i * 2, 100 - i]);
   }
   const r = await ivRank(0.365);
   assert.equal(r?.samples, 14);
@@ -184,4 +185,8 @@ test('the IV rank and the OI pulse read the board record', async () => {
   assert.equal(o.ceChange1h, 230);
   assert.equal(o.ceAcceleration, 230 - 110, 'against the reading an hour earlier');
   assert.equal(o.peAcceleration, 0);
+  assert.ok(Math.abs(o.ceOiChange1hPct! - 230 / 5000 * 100) < 1e-9, 'the hour\'s change as a share of the side\'s OI');
+  assert.ok(Math.abs(o.peOiChange1hPct! - (-50 / 4000 * 100)) < 1e-9);
+  assert.ok(Math.abs(o.ceAtmMarkChange1hPct! - (126 / 102 - 1) * 100) < 1e-9, 'the ATM call against an hour ago');
+  assert.ok(Math.abs(o.peAtmMarkChange1hPct! - (87 / 99 - 1) * 100) < 1e-9);
 });

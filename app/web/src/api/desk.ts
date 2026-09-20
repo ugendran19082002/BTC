@@ -124,7 +124,11 @@ export type FlowSummary = {
 };
 export type OiPulse = {
   ceChange1h: number | null; peChange1h: number | null;
-  ceAcceleration: number | null; peAcceleration: number | null; at: number | null;
+  ceAcceleration: number | null; peAcceleration: number | null;
+  /** The hour's OI change as a share of the side's OI, and the ATM call's / put's mark against an hour ago, percent. */
+  ceOiChange1hPct?: number | null; peOiChange1hPct?: number | null;
+  ceAtmMarkChange1hPct?: number | null; peAtmMarkChange1hPct?: number | null;
+  at: number | null;
 };
 /** The options' own tape on one side over the window: who crossed the spread on the calls, and on the puts. */
 export type SideFlow = {

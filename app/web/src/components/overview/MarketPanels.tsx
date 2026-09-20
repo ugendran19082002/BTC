@@ -1,6 +1,6 @@
 import type { ChainResponse, MarketRead } from '@/types/desk';
 import type { FlowSummary, PerpResponse, SideFlow, TermHistoryPoint, TermPoint, TermResponse } from '@/api/desk';
-import { ivRv, keyLevels, namedLevels, skew, srDistances, structureRead, volRegime, type IvRv, type NamedLevel } from '@/lib/overview';
+import { ivRv, keyLevels, namedLevels, skew, srDistances, structureRead, volRegime, type IvRv, type NamedLevel, type OptionBias } from '@/lib/overview';
 import { fmt, More, NotCaptured, Panel, Row, Tag, useWidth } from './parts';
 
 // ------------------------------------------------------------------ KPI strip
@@ -23,8 +23,8 @@ export function nextFundingIn(nowMs: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-export function KpiStrip({ data, spot, iv, perp, spark, now = Date.now() }: {
-  data: ChainResponse; spot: number; iv: IvRv | null; perp: PerpResponse | null; spark?: readonly number[]; now?: number;
+export function KpiStrip({ data, spot, iv, perp, spark, now = Date.now(), bias }: {
+  data: ChainResponse; spot: number; iv: IvRv | null; perp: PerpResponse | null; spark?: readonly number[]; now?: number; bias?: OptionBias | null;
 }) {
   const m = data.market;
   const s = data.structure;
@@ -51,6 +51,30 @@ export function KpiStrip({ data, spot, iv, perp, spark, now = Date.now() }: {
         <span className="ov-kpi-value"><Tag tone={regimeTone(m?.regime)}>{m?.regime ?? '—'}</Tag></span>
         <span className="ov-kpi-sub">{volRegimeText(m)}</span>
       </div>
+      {bias && <OptionBiasKpi bias={bias} />}
+    </div>
+  );
+}
+
+/** CE against PE in one card: premium pressure, OI build-up, IV, touch odds, the tape -- and where the pressure is. */
+function OptionBiasKpi({ bias }: { bias: OptionBias }) {
+  const arrow = (v: number | null, up = 'up', down = 'down') => (v === null ? <span className="ov-muted">—</span> : <span className={v > 0 ? `ov-${up}` : v < 0 ? `ov-${down}` : 'ov-muted'}>{v > 0 ? '↑' : v < 0 ? '↓' : '→'} {fmt.signed(v, 1)}%</span>);
+  const col = (b: OptionBias['ce']) => (
+    <div className={`ov-bias-col ov-bias-${b.side.toLowerCase()}`}>
+      <b>{b.side}</b>
+      <span title="The at-the-money option's mark against an hour ago">Premium {arrow(b.premiumChangePct)}</span>
+      <span title="The hour's open-interest change as a share of the side's OI">OI {arrow(b.oiChangePct)}</span>
+      <span title="The at-the-money option's implied volatility">IV {b.iv === null ? '—' : `${(b.iv * 100).toFixed(1)}%`}</span>
+      <span title="Probability of touch on the desk's pick for this side">Touch {fmt.pct(b.pTouch)}</span>
+      <span title="The options' tape on this side over the hour: who crossed the spread">Flow {b.flow === null ? <span className="ov-muted">—</span> : <span className={b.flow === 'BUY' ? 'ov-up' : b.flow === 'SELL' ? 'ov-down' : 'ov-muted'}>{b.flow}</span>}</span>
+      <Tag tone={b.strength === 'STRONG' ? 'down' : b.strength === 'WEAK' ? 'up' : 'muted'}>{b.strength}</Tag>
+    </div>
+  );
+  return (
+    <div className="ov-kpi ov-kpi-wide ov-bias" title="Premium rising, OI building and takers buying make a side STRONG — under pressure, dangerous to be short. The reverse makes it WEAK — favourable to a seller.">
+      <span className="ov-kpi-label">Option bias · CE / PE</span>
+      <div className="ov-bias-grid">{col(bias.ce)}{col(bias.pe)}</div>
+      <span className="ov-kpi-sub">Pressure → <b>{bias.pressureOn ?? 'even'}</b>{bias.pressureOn ? ` · the ${bias.pressureOn} side is the one being bought and built` : ''}</span>
     </div>
   );
 }

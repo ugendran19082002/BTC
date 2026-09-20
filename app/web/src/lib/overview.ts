@@ -1252,3 +1252,54 @@ export function structureRead(structure: -1 | 0 | 1 | undefined, trend: -1 | 0 |
 
 /** What the desk says of a candidate, in the three words the finder shows. */
 export const finderDecision = (l: Leg): 'RECOMMENDED' | 'WATCH' | 'AVOID' | '—' => (l.ev?.signal === 'sell' ? 'RECOMMENDED' : l.ev?.signal === 'watch' ? 'WATCH' : l.ev?.signal === 'avoid' ? 'AVOID' : '—');
+
+// ------------------------------------------------------------ option bias
+
+export type SideBias = {
+  side: 'CE' | 'PE';
+  /** The ATM option's mark against an hour ago, percent. */
+  premiumChangePct: number | null;
+  /** The hour's OI change as a share of the side's open interest, percent. */
+  oiChangePct: number | null;
+  /** The at-the-money option's implied volatility. */
+  iv: number | null;
+  /** Probability of touch on the desk's pick for the side. */
+  pTouch: number | null;
+  flow: 'BUY' | 'SELL' | 'BALANCED' | null;
+  /** How much pressure the side is under: premium rising, OI building and takers buying each add; the reverse each subtract. */
+  score: number;
+  strength: 'STRONG' | 'WEAK' | 'NEUTRAL';
+};
+export type OptionBias = { ce: SideBias; pe: SideBias; pressureOn: 'CE' | 'PE' | null };
+
+/**
+ * The compact CE-against-PE read for the top of the screen: premium pressure,
+ * OI build-up, IV and touch odds a side at a time, and where the pressure is.
+ * Every figure is a record the desk keeps (the board's five-minute features,
+ * the options' tape); nothing is inferred from the perpetual.
+ */
+export function optionBias(input: {
+  legs: readonly Leg[]; atm: number; oi: { ceOiChange1hPct?: number | null; peOiChange1hPct?: number | null; ceAtmMarkChange1hPct?: number | null; peAtmMarkChange1hPct?: number | null } | null;
+  flow: { ce: { pressure: string | null }; pe: { pressure: string | null } } | null;
+  sides: readonly { side: 'CE' | 'PE'; pTouch: number | null }[];
+}): OptionBias {
+  const one = (side: 'CE' | 'PE'): SideBias => {
+    const cp = side === 'CE' ? 'C' : 'P';
+    const atmLeg = input.legs.find((l) => l.cp === cp && l.strike === input.atm) ?? null;
+    const premiumChangePct = (side === 'CE' ? input.oi?.ceAtmMarkChange1hPct : input.oi?.peAtmMarkChange1hPct) ?? null;
+    const oiChangePct = (side === 'CE' ? input.oi?.ceOiChange1hPct : input.oi?.peOiChange1hPct) ?? null;
+    const p = (side === 'CE' ? input.flow?.ce.pressure : input.flow?.pe.pressure) ?? null;
+    const flow = p === 'BUY PRESSURE' ? 'BUY' : p === 'SELL PRESSURE' ? 'SELL' : p === 'BALANCED' ? 'BALANCED' : null;
+    // One point each way per reading past a small threshold, so noise does not move it.
+    const score = (premiumChangePct === null ? 0 : premiumChangePct > 3 ? 1 : premiumChangePct < -3 ? -1 : 0)
+      + (oiChangePct === null ? 0 : oiChangePct > 2 ? 1 : oiChangePct < -2 ? -1 : 0)
+      + (flow === 'BUY' ? 1 : flow === 'SELL' ? -1 : 0);
+    return {
+      side, premiumChangePct, oiChangePct, iv: atmLeg?.iv ?? null,
+      pTouch: input.sides.find((s) => s.side === side)?.pTouch ?? null, flow, score,
+      strength: score >= 2 ? 'STRONG' : score <= -2 ? 'WEAK' : 'NEUTRAL',
+    };
+  };
+  const ce = one('CE'), pe = one('PE');
+  return { ce, pe, pressureOn: ce.score === pe.score ? null : ce.score > pe.score ? 'CE' : 'PE' };
+}

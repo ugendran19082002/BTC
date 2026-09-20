@@ -5,7 +5,7 @@ import { getPerp, getTerm } from '@/api/desk';
 import { usePoll } from '@/hooks/usePoll';
 import type { ChartTf } from '@/components/desk/PriceChart';
 import {
-  assessBoth, assessSides, DESK_FILTER, expectedMove, filtersChanged, findStrikes, ivRv, keyLevels, mtfConsensus, namedLevels, readiness, riskEngine, sideGates, sideSelector, sideStatusOf, skew,
+  assessBoth, assessSides, DESK_FILTER, expectedMove, filtersChanged, findStrikes, ivRv, keyLevels, mtfConsensus, namedLevels, optionBias, readiness, riskEngine, sideGates, sideSelector, sideStatusOf, skew,
   type FinderFilter, type SideAssessment, type SideChoice,
 } from '@/lib/overview';
 import { DEFAULT_CONFIG, thresholds } from '@/lib/screen-config';
@@ -135,6 +135,7 @@ export function Overview({
     return { ...s, gates, status: allowed ? sideStatusOf(gates, t.softFailsAllowed) : 'NOT PREFERRED', disabledBy: allowed ? null : `Disabled by side mode ${config.sideMode.replace('_', ' ')}` };
   }), [data, iv, emSettle, contracts, leverage, tradeLimits, t, config.sideMode, pick, mtf]);
   const both = useMemo(() => assessBoth(data, sides, contracts, leverage, emSettle), [data, sides, contracts, leverage, emSettle]);
+  const bias = useMemo(() => optionBias({ legs: data.legs, atm: snap.atm, oi: perp?.oi ?? null, flow: perp?.optionFlow ?? null, sides }), [data.legs, snap.atm, perp, sides]);
   const choice: SideChoice = useMemo(() => {
     const auto = sideSelector(data.market?.regime ?? null, data.outlook, sides[0]!.status, sides[1]!.status, mtf);
     if (config.sideMode === 'CE_ONLY') return sides[0]!.status !== 'NOT PREFERRED' ? { side: 'CE', why: 'Side mode CE only; the call side passes' } : { side: 'NO_TRADE', why: 'Side mode CE only, and the call side fails its gates' };
@@ -162,7 +163,7 @@ export function Overview({
   return (
     <div className="ov">
       <ScreenBar data={data} now={now} freshnessSec={config.freshnessSec} entryIst={config.entryIst} expiries={expiries} onExpiry={onExpiry} controls={controls} error={error} />
-      <ErrorBoundary where="Overview KPIs"><KpiStrip data={data} spot={spot} iv={iv} perp={perp} spark={spark} now={now} /></ErrorBoundary>
+      <ErrorBoundary where="Overview KPIs"><KpiStrip data={data} spot={spot} iv={iv} perp={perp} spark={spark} now={now} bias={bias} /></ErrorBoundary>
 
       <div className="ov-main">
         <div className="ov-col">

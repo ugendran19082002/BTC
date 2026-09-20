@@ -4,7 +4,7 @@ import live from '@/test/fixtures/chain-live.json';
 import {
   allClear, bestLeg, bothSides, breakeven, candidates, consensus, entryGates, expectedMove, feePerContract, freshness, gammaRisk,
   ivRv, keyLevels, marginPerContract, modelView, odds, orderEstimate, payoffPrices, premiumAnalysis, shortPayoff, skew, volRegime,
-  ageText, contractValidity, dataFreshness, premiumDecay, triggerState, DESK_FILTER, filtersChanged, assessBoth, assessSides, horizonRows, namedLevels, earlyWarning, findStrikes, boardRead, movementVerdict, parseSymbol, positionState, positionViews, premiumMomentum, readiness, riskEngine, shortLossAt,
+  ageText, contractValidity, dataFreshness, optionBias, premiumDecay, triggerState, DESK_FILTER, filtersChanged, assessBoth, assessSides, horizonRows, namedLevels, earlyWarning, findStrikes, boardRead, movementVerdict, parseSymbol, positionState, positionViews, premiumMomentum, readiness, riskEngine, shortLossAt,
 } from './overview';
 
 const fixtureData = () => live as unknown as ChainResponse;
@@ -410,7 +410,8 @@ describe('premium decay', () => {
     expect(points[0]!.premium).toBe(51);
     expect(points.at(-1)!.premium).toBeCloseTo(3, 9);
     expect(points[2]!.premium).toBeCloseTo(3 + 48 * Math.SQRT1_2, 9);
-    expect(milestones).toEqual([{ share: 0.5, hoursFromNow: 9 }, { share: 0.8, hoursFromNow: 12 * 0.96 }]);
+    expect(milestones.map((m) => m.share)).toEqual([0.5, 0.8, 0.95]);
+    expect(milestones[0]!.hoursFromNow).toBeCloseTo(9, 9); expect(milestones[1]!.hoursFromNow).toBeCloseTo(12 * 0.96, 9); expect(milestones[2]!.hoursFromNow).toBeCloseTo(12 * 0.9975, 9);
     for (let i = 1; i < points.length; i++) expect(points[i]!.premium).toBeLessThanOrEqual(points[i - 1]!.premium);
   });
 });
@@ -426,5 +427,21 @@ describe('the early warning lamps', () => {
     expect(by['Funding stretched']).toBe('NORMAL');
     expect(by['Wing premium jumping']).toBeNull();
     for (const t of w.triggers) expect(t.fired).toBe(t.state === null ? null : t.state === 'TRIGGERED');
+  });
+});
+
+describe('the option bias', () => {
+  it('[critical] a side rising in premium, building OI and being bought is STRONG; the reverse WEAK; the pressure is on the stronger', () => {
+    const data = fixtureData();
+    const b = optionBias({
+      legs: data.legs, atm: data.snapshot.atm,
+      oi: { ceOiChange1hPct: -12.2, peOiChange1hPct: 18.4, ceAtmMarkChange1hPct: -8.4, peAtmMarkChange1hPct: 12.6 },
+      flow: { ce: { pressure: 'SELL PRESSURE' }, pe: { pressure: 'BUY PRESSURE' } },
+      sides: [{ side: 'CE', pTouch: 0.14 }, { side: 'PE', pTouch: 0.09 }],
+    });
+    expect(b.ce).toMatchObject({ strength: 'WEAK', flow: 'SELL', pTouch: 0.14, score: -3 });
+    expect(b.pe).toMatchObject({ strength: 'STRONG', flow: 'BUY', pTouch: 0.09, score: 3 });
+    expect(b.pressureOn).toBe('PE');
+    expect(optionBias({ legs: data.legs, atm: data.snapshot.atm, oi: null, flow: null, sides: [] }).pressureOn).toBeNull();
   });
 });

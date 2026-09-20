@@ -565,25 +565,38 @@ export type OiPulse = {
   /** The same reading an hour earlier: the change of the change. Positive, positioning is speeding up. */
   ceAcceleration: number | null;
   peAcceleration: number | null;
+  /** The hour's OI change as a share of the side's open interest. */
+  ceOiChange1hPct: number | null;
+  peOiChange1hPct: number | null;
+  /** The at-the-money call's and put's mark against an hour ago, percent: premium pressure a side at a time. */
+  ceAtmMarkChange1hPct: number | null;
+  peAtmMarkChange1hPct: number | null;
   at: number | null;
 };
 
 /** OI change and its acceleration for one expiry, from the five-minute board record. */
 export async function oiPulse(expiry: string, nowMs = Date.now()): Promise<OiPulse> {
   await marketSchema();
-  const latest = await one<{ at: number; ce: number | null; pe: number | null }>(
-    'SELECT at, ce_oi_change AS ce, pe_oi_change AS pe FROM chain_features WHERE expiry = $1 AND at <= $2 ORDER BY at DESC LIMIT 1',
+  type Row = { at: number; ce: number | null; pe: number | null; ce_oi: number | null; pe_oi: number | null; call_atm: number | null; put_atm: number | null };
+  const latest = await one<Row>(
+    'SELECT at, ce_oi_change AS ce, pe_oi_change AS pe, ce_oi, pe_oi, call_atm, put_atm FROM chain_features WHERE expiry = $1 AND at <= $2 ORDER BY at DESC LIMIT 1',
     [expiry, nowMs],
   );
-  if (!latest) return { ceChange1h: null, peChange1h: null, ceAcceleration: null, peAcceleration: null, at: null };
-  const before = await one<{ ce: number | null; pe: number | null }>(
-    'SELECT ce_oi_change AS ce, pe_oi_change AS pe FROM chain_features WHERE expiry = $1 AND at BETWEEN $2 AND $3 ORDER BY ABS(at - $4) LIMIT 1',
+  const none: OiPulse = { ceChange1h: null, peChange1h: null, ceAcceleration: null, peAcceleration: null, ceOiChange1hPct: null, peOiChange1hPct: null, ceAtmMarkChange1hPct: null, peAtmMarkChange1hPct: null, at: null };
+  if (!latest) return none;
+  const before = await one<Row>(
+    'SELECT at, ce_oi_change AS ce, pe_oi_change AS pe, ce_oi, pe_oi, call_atm, put_atm FROM chain_features WHERE expiry = $1 AND at BETWEEN $2 AND $3 ORDER BY ABS(at - $4) LIMIT 1',
     [expiry, latest.at - 70 * 60_000, latest.at - 50 * 60_000, latest.at - 60 * 60_000],
   );
   const acc = (a: number | null, b: number | null | undefined) => (a === null || b === null || b === undefined ? null : a - b);
+  const pct = (now: number | null, then: number | null | undefined) => (now === null || then === null || then === undefined || then === 0 ? null : (now / then - 1) * 100);
+  const share = (change: number | null, oi: number | null) => (change === null || oi === null || oi === 0 ? null : (change / oi) * 100);
   return {
     ceChange1h: latest.ce, peChange1h: latest.pe,
-    ceAcceleration: acc(latest.ce, before?.ce), peAcceleration: acc(latest.pe, before?.pe), at: latest.at,
+    ceAcceleration: acc(latest.ce, before?.ce), peAcceleration: acc(latest.pe, before?.pe),
+    ceOiChange1hPct: share(latest.ce, latest.ce_oi), peOiChange1hPct: share(latest.pe, latest.pe_oi),
+    ceAtmMarkChange1hPct: pct(latest.call_atm, before?.call_atm), peAtmMarkChange1hPct: pct(latest.put_atm, before?.put_atm),
+    at: latest.at,
   };
 }
 
