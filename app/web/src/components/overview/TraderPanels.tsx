@@ -6,7 +6,7 @@ import {
   type EarlyWarning, type ExpectedMove, type FinderFilter,
 } from '@/lib/overview';
 import type { ScreenConfig } from '@/lib/screen-config';
-import { fmt, More, Panel, Row, Tag } from './parts';
+import { fmt, Panel, Row, Tag } from './parts';
 
 // ---------------------------------------------------------- early warning
 
@@ -62,14 +62,6 @@ export function MovementPanel({ data, em, activeMin, mtf }: { data: ChainRespons
           <Row key={b.name} mark="arrow" tone={b.says === 'up' ? 'up' : b.says === 'down' ? 'down' : 'muted'} label={b.name} value={<span className={says(b.says)}>{b.text}</span>} hint={b.formula} />
         ))}
       </div>
-      <More label="How it is computed">
-        <ul className="ov-formulas">
-          <li><b>Above / inside / below:</b> where the desk's measured record for each horizon fell against the implied band, from the current market state; the three add to 100%.</li>
-          <li><b>Expected move:</b> spot × ATM IV × √(horizon ÷ 1 year); the target range is spot ± that.</li>
-          {board.map((b) => <li key={b.name}><b>{b.name}:</b> {b.formula}</li>)}
-          <li><b>Verdict:</b> one vote per horizon tilted ten points past the band on one side (inside past a half votes range), one per board reading, one for the timeframes agreeing; the way with most votes, confidence by its share.</li>
-        </ul>
-      </More>
     </Panel>
   );
 }
