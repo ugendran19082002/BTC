@@ -121,21 +121,30 @@ function ChainSide({ leg, cells, selected, onClick, itm }: { leg: Leg | undefine
 
 type Tab = 'metrics' | 'probability' | 'payoff';
 
-export function SelectedStrikePanel({ data, leg, em, contracts, ivRank, momentum, changed = null, iv = null }: {
+export function SelectedStrikePanel({ data, leg, em, contracts, ivRank, momentum, changed = null, iv = null, options, onChoose }: {
   data: ChainResponse; leg: Leg | null; em: ExpectedMove; contracts: number;
+  /** The strikes the panels below can be pointed at (the desk's picks, the finder's top, the board's click), and the choice. */
+  options?: { key: string; cp: 'C' | 'P'; strike: number; label: string }[]; onChoose?: (cp: 'C' | 'P', strike: number) => void;
   ivRank?: { percentile: number; days: number } | null; momentum?: PremiumMomentum | null;
   /** The strike's hour: OI then and its change, IV change, for the signal tags. */
   changed?: { oiChange: number | null; oiThen: number | null; ivChangePts: number | null } | null; iv?: IvRv | null;
 }) {
   const [tab, setTab] = useState<Tab>('metrics');
-  if (!leg) return <Panel title="Selected strike"><p className="ov-empty">Click a strike on the chain.</p></Panel>;
+  const chooser = options && onChoose && options.length > 0 ? (
+    <select className="ov-select" aria-label="Strike to inspect" value={leg ? `${leg.cp}${leg.strike}` : ''} onChange={(e) => { const o = options.find((x) => `${x.cp}${x.strike}` === e.target.value); if (o) onChoose(o.cp, o.strike); }}
+      title="Which strike the panels below are about: the desk's picks, the finder's top strikes, or the one clicked on the board">
+      {leg && !options.some((x) => x.cp === leg.cp && x.strike === leg.strike) && <option value={`${leg.cp}${leg.strike}`}>Board · {fmt.n(leg.strike)} {leg.cp === 'C' ? 'CE' : 'PE'}</option>}
+      {options.map((o) => <option key={o.key} value={`${o.cp}${o.strike}`}>{o.label}</option>)}
+    </select>
+  ) : null;
+  if (!leg) return <Panel title="Selected strike" right={chooser}><p className="ov-empty">Click a strike on the chain.</p></Panel>;
   const side = leg.cp === 'C' ? 'CE' : 'PE';
   const g = (v: number | null | undefined, p: number) => (v === null || v === undefined ? '—' : v.toFixed(p));
   // What each greek means for `contracts` short, in dollars: the sensitivity the seller actually carries, on hover.
   const size = contracts * CONTRACT_BTC;
   const usd = (v: number | null, k = 1) => (v === null ? '—' : fmt.signed(-v * size * k, 2));
   return (
-    <Panel title={`Selected strike: ${fmt.n(leg.strike)} ${side}`} right={<span className="ov-signals">{strikeSignals(leg, changed, iv).map((x) => <Tag key={x} tone={/SAFE|RICH|FAVORABLE|UNWIND|CRUSH/.test(x) ? 'up' : /RISK|NO TRADE|WEAK|BUILDUP|EXPANSION/.test(x) ? 'down' : 'warn'}>{x}</Tag>)}</span>}>
+    <Panel title={`Selected strike: ${fmt.n(leg.strike)} ${side}`} right={<span className="ov-signals">{chooser}{strikeSignals(leg, changed, iv).map((x) => <Tag key={x} tone={/SAFE|RICH|FAVORABLE|UNWIND|CRUSH/.test(x) ? 'up' : /RISK|NO TRADE|WEAK|BUILDUP|EXPANSION/.test(x) ? 'down' : 'warn'}>{x}</Tag>)}</span>}>
       <div className="ov-greeks">
         <Greek label="Delta" value={g(leg.delta, 2)} hint={`Short ${contracts} ct: ${usd(leg.delta)} per $1 move in BTC`} />
         <Greek label="Gamma" value={leg.gamma === null ? '—' : leg.gamma.toPrecision(2)} hint={`Delta changes ${leg.gamma === null ? '—' : (leg.gamma * 100).toFixed(3)} per $100 of BTC; the seller's enemy near the strike`} />

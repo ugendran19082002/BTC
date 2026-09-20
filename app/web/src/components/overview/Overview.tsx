@@ -205,6 +205,16 @@ export function Overview({
           )}
           <ErrorBoundary where="Selected strike">
             <SelectedStrikePanel data={data} leg={leg} em={emSettle} contracts={contracts} ivRank={term?.iv ?? null} momentum={changes?.momentum ?? null} iv={iv}
+              onChoose={(cp, strike) => setPicked({ cp, strike })}
+              options={(() => {
+                const out: { key: string; cp: 'C' | 'P'; strike: number; label: string }[] = [];
+                for (const cp of ['C', 'P'] as const) {
+                  const d = pick(cp);
+                  if (d) out.push({ key: `card${cp}`, cp, strike: d.strike, label: `Card · ${fmt.n(d.strike)} ${cp === 'C' ? 'CE' : 'PE'}` });
+                  for (const f of findStrikes(data.legs, { ...filter, side: cp, top: 5 })) if (!out.some((o) => o.cp === cp && o.strike === f.strike)) out.push({ key: `f${cp}${f.strike}`, cp, strike: f.strike, label: `Finder · ${fmt.n(f.strike)} ${cp === 'C' ? 'CE' : 'PE'}${f.score === null ? '' : ` (${(f.score * 10).toFixed(1)})`}` });
+                }
+                return out;
+              })()}
               changed={(() => { const r = changes?.rows.find((x) => x.minutes === 60) ?? null; return r ? { oiChange: r.oiChange, oiThen: r.oiThen, ivChangePts: r.ivChangePts } : null; })()} />
           </ErrorBoundary>
           <ErrorBoundary where="What changed"><ChangesPanel tab={changesTab} onTab={setChangesTab} ce={ceLeg} pe={peLeg} board={(changesTab === 'BOARD' ? changes : activeChanges)?.rows ?? null} changes={activeChanges} /></ErrorBoundary>
