@@ -160,12 +160,21 @@ export type ChangeRow = {
   callVolumeChange: number | null; putVolumeChange: number | null;
   pcrThen: number | null; pcrChange: number | null;
   atmIvThen: number | null; atmIvChangePts: number | null;
+  /** The strike's odds and distance then, by the option model from that moment's spot, IV and time left. */
+  pOtmThen: number | null; pTouchThen: number | null; emDistanceThen: number | null;
+  /** The same now, on the row's basis (strike IV where the record had it, ATM IV otherwise). */
+  pOtmNow: number | null; pTouchNow: number | null; emDistanceNow: number | null;
+  /** True on the row that runs from the strategy's entry moment. */
+  sinceEntry?: boolean;
 };
+/** The same odds and distance now, by the same model. */
+export type ModelNow = { pOtm: number | null; pTouch: number | null; emDistance: number | null };
 /** How the premium is moving: change over the newest five-minute bucket, and the change of that change. */
 export type PremiumMomentum = { velocity: number | null; acceleration: number | null };
-export type ChangesResponse = { now: Record<string, number | null>; rows: ChangeRow[]; momentum: PremiumMomentum };
-export const getChanges = (symbol: string, now: Record<string, number | null | undefined>) => {
+export type ChangesResponse = { now: Record<string, number | null>; model: ModelNow; rows: ChangeRow[]; momentum: PremiumMomentum };
+export const getChanges = (symbol: string, now: Record<string, number | null | undefined>, entryMs: number | null = null) => {
   const q = new URLSearchParams({ symbol });
   for (const [k, v] of Object.entries(now)) if (v !== null && v !== undefined && Number.isFinite(v)) q.set(k, String(v));
+  if (entryMs !== null) q.set('entry', String(entryMs));
   return json<ChangesResponse>(`/api/changes?${q.toString()}`);
 };

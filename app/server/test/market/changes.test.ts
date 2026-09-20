@@ -46,4 +46,20 @@ test('[critical] each window diffs now against the record nearest that long ago;
   assert.equal(r.now.mark, 220);
   assert.equal(r.now.spot, 80_600, 'the live figure the caller passed');
   assert.deepEqual(r.momentum, { velocity: 10, acceleration: 0 }, 'a premium climbing 10 a bucket, steadily');
+  // The model's read then: from that bucket's spot and IV, with the time that was left. A 5m-old row has all three.
+  assert.ok(w5.pOtmThen !== null && w5.pOtmThen > 0.5 && w5.pOtmThen < 1, 'an 82,000 call with spot near 80,600 is out of the money');
+  assert.ok(w5.pTouchThen !== null && w5.pTouchThen > 0 && w5.emDistanceThen !== null && w5.emDistanceThen > 0);
+  assert.equal(w1.pOtmThen, null, 'no record a minute ago');
+  assert.ok(r.model.pOtm !== null, 'the same model now');
+  assert.ok(w5.pOtmNow !== null && w5.pOtmNow !== w5.pOtmThen, 'now, on the row\'s own basis');
+});
+
+test('a since-entry row runs from the entry moment, once at least a window is behind it', async () => {
+  const at = T0 - 30 * 60_000;
+  await query(`INSERT INTO option_snapshots (at, symbol, expiry, cp, strike, spot, mark, mark_iv, oi, volume) VALUES ($1, $2, '190926', 'C', 82000, 80000, 100, 0.3, 1000, 0)`, [at, SYM]);
+  const r = await changes(SYM, '190926', T0, { spot: 80_600, mark: 120 }, T0 - 30 * 60_000);
+  const e = r.rows.find((x) => x.sinceEntry)!;
+  assert.equal(e.minutes, 30);
+  assert.equal(e.markChange, 20, 'against the record at the entry moment');
+  assert.equal((await changes(SYM, '190926', T0, {}, T0 - 60_000)).rows.some((x) => x.sinceEntry), false, 'a minute since entry is not a window yet');
 });

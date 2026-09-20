@@ -344,72 +344,13 @@ export function consensus(outlook: Outlook): { up: number; down: number; flat: n
   };
 }
 
-// ------------------------------------------------------------- the gates
-
-export type Gate = { key: string; ok: boolean | null; text: string };
+// ---------------------------------------------------------- freshness
 
 /** How old the board is. Beyond `maxAgeMs` nothing on it is a price to trade on. */
 export function freshness(snapTsSec: number, nowMs: number, maxAgeMs = 30_000): { ageMs: number; fresh: boolean } {
   const ageMs = Math.max(0, nowMs - snapTsSec * 1000);
   return { ageMs, fresh: ageMs <= maxAgeMs };
 }
-
-/**
- * The entry checklist: every gate that must be green before a sell.
- *
- * The desk's own verdict checks come first -- they are the server's, and the
- * server decides -- and the screen-side ones (fresh data, a live contract,
- * horizons agreeing, the spread) are added beside them, each with its reason.
- */
-export function entryGates(input: {
-  data: Pick<ChainResponse, 'snapshot' | 'verdict' | 'direction' | 'outlook'>;
-  leg: Leg | null;
-  iv: IvRv | null;
-  nowMs: number;
-  maxSpreadPct: number | null;
-  /** The size about to be sold, what is already short, and the desk's caps: the risk gate. */
-  risk?: { contracts: number; heldShort: number; maxShortContracts: number; dayNetUsd: number | null; maxDailyLossUsd: number } | null;
-  /** Data older than this is too old to trade on; 30 s by default. */
-  freshnessMs?: number;
-}): Gate[] {
-  const { data, leg, iv, nowMs, maxSpreadPct, risk } = input;
-  const f = freshness(data.snapshot.ts, nowMs, input.freshnessMs ?? 30_000);
-  const c = consensus(data.outlook);
-  const pa = leg ? premiumAnalysis(leg, null) : null;
-  const gates: Gate[] = [
-    { key: 'fresh', ok: data.snapshot.live ? f.fresh : false,
-      text: data.snapshot.live ? `Market data ${Math.round(f.ageMs / 1000)}s old (limit ${Math.round((input.freshnessMs ?? 30_000) / 1000)}s)${f.fresh ? '' : ' — too old to trade on'}` : 'A past snapshot — nothing to trade' },
-    { key: 'contract', ok: data.snapshot.live && data.snapshot.hoursToExpiry > 0 && leg !== null,
-      text: leg ? `${leg.cp === 'C' ? 'CE' : 'PE'} ${leg.strike.toLocaleString('en-US')} live, ${data.snapshot.hoursToExpiry.toFixed(1)}h to settlement` : 'No strike selected' },
-    { key: 'direction', ok: data.direction.confirmed ? true : data.direction.readable === 0 ? null : false,
-      text: data.direction.summary },
-    { key: 'consensus', ok: c.scored === 0 ? null : c.agree,
-      text: c.scored === 0 ? 'No horizon could be read' : `Horizons: ${c.up} up · ${c.down} down · ${c.flat} flat${c.agree ? '' : ' — they disagree'}` },
-    { key: 'iv', ok: iv ? iv.label !== 'cheap' : null,
-      text: iv ? `IV ${iv.ivPct.toFixed(1)}% vs realised ${iv.rvPct.toFixed(1)}% — ${iv.label}` : 'IV vs realised: not readable' },
-    { key: 'liquidity', ok: pa?.spreadPct === null || pa === null || maxSpreadPct === null ? null : pa.spreadPct <= maxSpreadPct / 100,
-      text: pa?.spreadPct == null ? 'Spread: no two-sided quote' : `Spread ${(pa.spreadPct * 100).toFixed(1)}%${maxSpreadPct !== null ? ` (limit ${maxSpreadPct}%)` : ''}` },
-  ];
-  if (risk) {
-    const after = risk.heldShort + risk.contracts;
-    const lossHit = risk.dayNetUsd !== null && risk.dayNetUsd <= -risk.maxDailyLossUsd;
-    gates.push({
-      key: 'risk',
-      ok: after <= risk.maxShortContracts && !lossHit,
-      text: lossHit
-        ? `Day's loss $${Math.abs(risk.dayNetUsd!).toFixed(2)} has reached the $${risk.maxDailyLossUsd} limit`
-        : `Risk: ${after} short after this (cap ${risk.maxShortContracts})${risk.dayNetUsd !== null ? ` · day ${risk.dayNetUsd >= 0 ? '+' : '−'}$${Math.abs(risk.dayNetUsd).toFixed(2)} of −$${risk.maxDailyLossUsd.toFixed(2)} allowed` : ''}`,
-    });
-  }
-  // The server's own gates, as it wrote them. It is the authority; these are shown, not re-judged.
-  for (const [i, ch] of data.verdict.checks.entries()) {
-    gates.push({ key: `verdict-${i}`, ok: ch.ok ? true : ch.severity === 'block' ? false : null, text: ch.text });
-  }
-  return gates;
-}
-
-/** All hard gates green. A `null` (unreadable) is not a pass. */
-export const allClear = (gates: readonly Gate[]) => gates.length > 0 && gates.every((g) => g.ok === true);
 
 // ------------------------------------------------------------ key levels
 
@@ -632,68 +573,6 @@ export function riskEngine(
     hedge: further ? { strike: further.strike, askUsd: further.ask!, costUsd: further.ask! * size } : null,
     protectionAvailable: further !== null,
   };
-}
-
-// ------------------------------------------------- the full checklist
-
-export type Readiness = { gates: Gate[]; ready: boolean; verdict: 'ENTRY READY' | 'NO TRADE'; failing: number; unknown: number };
-
-/**
- * The spec's full checklist: the desk's gates plus the ones a seller adds by
- * hand. `null` is "could not be read", which is not a pass. Ready only when
- * every gate is green.
- */
-export function readiness(input: {
-  data: Pick<ChainResponse, 'snapshot' | 'verdict' | 'direction' | 'outlook' | 'structure' | 'market'>;
-  leg: Leg | null;
-  iv: IvRv | null;
-  em: ExpectedMove;
-  nowMs: number;
-  contracts: number;
-  leverage: number;
-  trade: { maxSpreadPct: number; maxShortContracts: number; maxDailyLossUsd: number; heldShort: number; dayNetUsd: number | null; balanceUsd: number | null } | null;
-  risk: RiskEngine | null;
-  t?: { maxPot: number; minEmDistance: number; maxSlippage: number; tailLimitFactor: number; sizeFactor: number };
-  freshnessMs?: number;
-}): Readiness {
-  const { data, leg, iv, nowMs, contracts, trade, risk } = input;
-  const t = input.t ?? { maxPot: 0.35, minEmDistance: 1, maxSlippage: 0.1, tailLimitFactor: 1, sizeFactor: 1 };
-  const gates = entryGates({
-    data, leg, iv, nowMs, maxSpreadPct: trade?.maxSpreadPct ?? null, freshnessMs: input.freshnessMs,
-    risk: trade ? { contracts, heldShort: trade.heldShort, maxShortContracts: Math.max(1, Math.floor(trade.maxShortContracts * t.sizeFactor)), dayNetUsd: trade.dayNetUsd, maxDailyLossUsd: trade.maxDailyLossUsd } : null,
-  });
-  const snap = data.snapshot;
-  const h = snap.hoursToExpiry;
-  const emDist = leg ? (leg.emDistance ?? leg.emBuffer ?? null) : null;
-  const wall = leg ? (leg.cp === 'C' ? (data.structure.ceOiWallNear ?? data.structure.ceOiWall) : (data.structure.peOiWallNear ?? data.structure.peOiWall)) : null;
-  const wallBeyond = leg && wall ? (leg.cp === 'C' ? wall.strike >= leg.strike : wall.strike <= leg.strike) : null;
-  const gamma = gammaRisk(emDist);
-  const slipPct = risk && risk.premium > 0 && risk.slippageUsd !== null ? risk.slippageUsd / (risk.premium * contracts * CONTRACT_BTC) : null;
-  const tailOk = risk?.tailLossUsd == null || trade === null ? null : risk.tailLossUsd <= trade.maxDailyLossUsd * t.tailLimitFactor;
-  const regime = data.market?.regime ?? null;
-  const conflict = leg && regime ? (leg.cp === 'C' && /up/i.test(regime)) || (leg.cp === 'P' && /down/i.test(regime)) : null;
-  const marginUsd = leg && risk ? marginPerContract(snap.spot, input.leverage, risk.premium) * contracts : null;
-  const extra: Gate[] = [
-    { key: 'expiry', ok: snap.live ? h > 0 && h <= 36 : false, text: h <= 0 ? 'The contract has settled' : h > 36 ? `Expiry ${h.toFixed(0)}h away — not an intraday contract` : `Expiry valid — settles in ${h.toFixed(1)}h` },
-    { key: 'side', ok: leg !== null, text: leg ? `${leg.cp === 'C' ? 'CE' : 'PE'} side selected` : 'No side selected' },
-    { key: 'pot', ok: leg?.probs.touch == null ? null : leg.probs.touch <= t.maxPot, text: leg?.probs.touch == null ? 'Probability of touch: not readable' : `Probability of touch ${(leg.probs.touch * 100).toFixed(0)}% (limit ${(t.maxPot * 100).toFixed(0)}%)` },
-    { key: 'em', ok: emDist === null ? null : emDist >= t.minEmDistance, text: emDist === null ? 'Distance / EM: not readable' : `Strike ${emDist.toFixed(2)} expected moves away (min ${t.minEmDistance}×)` },
-    { key: 'wall', ok: wallBeyond, text: wallBeyond === null ? 'No OI wall on this side' : wallBeyond ? `OI wall at ${wall!.strike.toLocaleString('en-US')} sits beyond the strike` : `OI wall at ${wall!.strike.toLocaleString('en-US')} is inside the strike` },
-    { key: 'gamma', ok: gamma === null ? null : gamma !== 'high', text: gamma === null ? 'Gamma risk: not readable' : `Gamma risk ${gamma}` },
-    { key: 'slippage', ok: slipPct === null ? null : slipPct <= t.maxSlippage, text: slipPct === null ? 'Slippage: no two-sided quote' : `Slippage ${(slipPct * 100).toFixed(1)}% of the credit (limit ${(t.maxSlippage * 100).toFixed(0)}%)` },
-    { key: 'tail', ok: tailOk, text: risk?.tailLossUsd == null ? 'Tail loss: not readable' : `Tail loss at 2×EM $${risk.tailLossUsd.toFixed(2)}${trade ? ` (limit $${(trade.maxDailyLossUsd * t.tailLimitFactor).toFixed(2)})` : ''}` },
-    { key: 'margin', ok: marginUsd === null || trade?.balanceUsd == null ? null : marginUsd <= trade.balanceUsd, text: marginUsd === null ? 'Margin: not readable' : `Margin $${marginUsd.toFixed(2)}${trade?.balanceUsd != null ? ` of $${trade.balanceUsd.toFixed(2)} balance` : ''}` },
-    { key: 'size', ok: contracts > 0 && (trade ? contracts <= Math.max(1, Math.floor(trade.maxShortContracts * t.sizeFactor)) : true), text: `Position size ${contracts} contracts${trade ? ` (this risk mode allows ${Math.max(1, Math.floor(trade.maxShortContracts * t.sizeFactor))})` : ''}` },
-    { key: 'regime', ok: conflict === null ? null : !conflict, text: conflict === null ? 'Regime: not readable' : conflict ? `Regime "${regime}" conflicts with a short ${leg!.cp === 'C' ? 'call' : 'put'}` : `Regime "${regime}" does not conflict` },
-  ];
-  // The server's checks were appended by entryGates; keep them last.
-  const server = gates.filter((g) => g.key.startsWith('verdict-'));
-  const mine = gates.filter((g) => !g.key.startsWith('verdict-'));
-  const all = [...mine, ...extra, ...server];
-  const failing = all.filter((g) => g.ok === false).length;
-  const unknown = all.filter((g) => g.ok === null).length;
-  const ready = allClear(all);
-  return { gates: all, ready, verdict: ready ? 'ENTRY READY' : 'NO TRADE', failing, unknown };
 }
 
 // -------------------------------------------------- position state
@@ -1304,4 +1183,41 @@ export function optionBias(input: {
   // The pressure is on the side that scores higher, and only when that side is actually being pushed (a positive score).
   const lead = ce.score === pe.score ? null : ce.score > pe.score ? ce : pe;
   return { ce, pe, pressureOn: lead && lead.score > 0 ? lead.side : null };
+}
+
+// ------------------------------------------------------ seller impact
+
+export type Impact = 'BETTER' | 'NEUTRAL' | 'WORSE' | null;
+
+/**
+ * What one window's changes mean for a short seller of this strike, in one
+ * word. Premium falling, the strike moving further out in expected moves,
+ * the touch odds falling and IV falling each count for; the reverse each
+ * count against. OI is context, not a vote -- more open interest with the
+ * premium falling is writing, with it rising is demand, and only the
+ * premium says which. Null when nothing could be read.
+ */
+export function sellerImpact(r: { markChangePct: number | null; ivChangePts: number | null; pTouchThen: number | null; emDistanceThen: number | null; pTouchNow?: number | null; emDistanceNow?: number | null }, fallback: { pTouch: number | null; emDistance: number | null }): Impact {
+  // The row's own now where the server gave one (same basis as then); the strike's model now otherwise.
+  const now = { pTouch: r.pTouchNow ?? fallback.pTouch, emDistance: r.emDistanceNow ?? fallback.emDistance };
+  const votes: number[] = [];
+  if (r.markChangePct !== null) votes.push(r.markChangePct <= -5 ? 1 : r.markChangePct >= 5 ? -1 : 0);
+  if (r.ivChangePts !== null) votes.push(r.ivChangePts <= -1 ? 1 : r.ivChangePts >= 1 ? -1 : 0);
+  if (r.pTouchThen !== null && now.pTouch !== null) { const d = now.pTouch - r.pTouchThen; votes.push(d <= -0.03 ? 1 : d >= 0.03 ? -1 : 0); }
+  if (r.emDistanceThen !== null && now.emDistance !== null) { const d = now.emDistance - r.emDistanceThen; votes.push(d >= 0.1 ? 1 : d <= -0.1 ? -1 : 0); }
+  if (!votes.length) return null;
+  const sum = votes.reduce((a, b) => a + b, 0);
+  return sum > 0 ? 'BETTER' : sum < 0 ? 'WORSE' : 'NEUTRAL';
+}
+
+export type SellerState = { state: 'IMPROVING' | 'MIXED' | 'DETERIORATING' | null; text: string };
+
+/** The short windows together (up to an hour): where the strike is heading for its seller right now. */
+export function sellerState(impacts: readonly { minutes: number; impact: Impact }[]): SellerState {
+  const recent = impacts.filter((x) => x.minutes <= 60 && x.impact !== null);
+  if (!recent.length) return { state: null, text: 'No record yet' };
+  const better = recent.filter((x) => x.impact === 'BETTER').length, worse = recent.filter((x) => x.impact === 'WORSE').length;
+  if (better > worse && worse === 0) return { state: 'IMPROVING', text: 'Improving for the seller' };
+  if (worse > better) return { state: 'DETERIORATING', text: 'Risk increasing' };
+  return { state: 'MIXED', text: 'Mixed' };
 }

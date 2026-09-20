@@ -2,9 +2,9 @@ import { describe, expect, test } from 'vitest';
 import type { ChainResponse, Leg, Outlook } from '@/types/desk';
 import live from '@/test/fixtures/chain-live.json';
 import {
-  allClear, bestLeg, bothSides, breakeven, candidates, consensus, entryGates, expectedMove, feePerContract, freshness, gammaRisk,
+  bestLeg, bothSides, breakeven, candidates, consensus, expectedMove, feePerContract, freshness, gammaRisk,
   ivRv, keyLevels, marginPerContract, modelView, odds, orderEstimate, payoffPrices, premiumAnalysis, shortPayoff, skew, volRegime,
-  ageText, contractValidity, dataFreshness, optionBias, premiumDecay, triggerState, DESK_FILTER, filtersChanged, assessBoth, assessSides, horizonRows, namedLevels, earlyWarning, findStrikes, boardRead, movementVerdict, parseSymbol, positionState, positionViews, premiumMomentum, readiness, riskEngine, shortLossAt,
+  ageText, contractValidity, dataFreshness, optionBias, sellerImpact, sellerState, premiumDecay, triggerState, DESK_FILTER, filtersChanged, assessBoth, assessSides, horizonRows, namedLevels, earlyWarning, findStrikes, boardRead, movementVerdict, parseSymbol, positionState, positionViews, premiumMomentum, riskEngine, shortLossAt,
 } from './overview';
 
 const fixtureData = () => live as unknown as ChainResponse;
@@ -147,33 +147,10 @@ describe('model view and consensus', () => {
   });
 });
 
-describe('gates', () => {
-  const base = {
-    snapshot: { ts: 1_000, live: true, hoursToExpiry: 12 } as never,
-    verdict: { checks: [{ ok: true, severity: 'block', text: 'spread gate' }] } as never,
-    direction: { confirmed: true, readable: 5, summary: 'bullish, confirmed' } as never,
-    outlook: outlook({ bullish: 6, bearish: 1 }),
-  };
+describe('freshness', () => {
   test('fresh is thirty seconds', () => {
     expect(freshness(1_000, 1_000_000 + 29_000).fresh).toBe(true);
     expect(freshness(1_000, 1_000_000 + 31_000).fresh).toBe(false);
-  });
-  test('[critical] all green only when every gate is green; stale data blocks', () => {
-    const iv = ivRv(0.48, 32);
-    const green = entryGates({ data: base, leg: leg({}), iv, nowMs: 1_000_000 + 5_000, maxSpreadPct: 10 });
-    expect(allClear(green)).toBe(true);
-    const stale = entryGates({ data: base, leg: leg({}), iv, nowMs: 1_000_000 + 60_000, maxSpreadPct: 10 });
-    expect(allClear(stale)).toBe(false);
-    expect(stale.find((g) => g.key === 'fresh')?.ok).toBe(false);
-  });
-  test('an unreadable gate is not a pass', () => {
-    const g = entryGates({ data: base, leg: leg({}), iv: null, nowMs: 1_005_000, maxSpreadPct: 10 });
-    expect(g.find((x) => x.key === 'iv')?.ok).toBeNull();
-    expect(allClear(g)).toBe(false);
-  });
-  test('a past snapshot never passes', () => {
-    const g = entryGates({ data: { ...base, snapshot: { ts: 1_000, live: false, hoursToExpiry: 12 } as never }, leg: leg({}), iv: ivRv(0.48, 32), nowMs: 1_001_000, maxSpreadPct: 10 });
-    expect(allClear(g)).toBe(false);
   });
 });
 
@@ -205,18 +182,6 @@ describe('margin, fees and the order estimate', () => {
     expect(e.returnOnMargin).toBeGreaterThan(0);
     expect(e.breakevenAfterFees).toBeLessThan(82_100);
     expect(orderEstimate('P', 78_000, 100, 80_000, 100, 10).breakevenAfterFees).toBeGreaterThan(77_900);
-  });
-});
-
-describe('the risk gate', () => {
-  const base = { data: fixtureData(), leg: null, iv: null, nowMs: Date.now(), maxSpreadPct: null };
-  it('passes while the size after this sell is within the cap and the day is inside its loss limit', () => {
-    const g = entryGates({ ...base, risk: { contracts: 10, heldShort: 20, maxShortContracts: 50, dayNetUsd: -1, maxDailyLossUsd: 5 } }).find((x) => x.key === 'risk');
-    expect(g?.ok).toBe(true);
-  });
-  it('[critical] fails on the cap, and on the day\'s loss limit', () => {
-    expect(entryGates({ ...base, risk: { contracts: 40, heldShort: 20, maxShortContracts: 50, dayNetUsd: 0, maxDailyLossUsd: 5 } }).find((x) => x.key === 'risk')?.ok).toBe(false);
-    expect(entryGates({ ...base, risk: { contracts: 1, heldShort: 0, maxShortContracts: 50, dayNetUsd: -5, maxDailyLossUsd: 5 } }).find((x) => x.key === 'risk')?.ok).toBe(false);
   });
 });
 
@@ -273,16 +238,6 @@ describe('the risk engine', () => {
     expect(r.premium).toBeGreaterThan(0);
     expect(r.slippageUsd).toBeCloseTo(((l.ask! - l.bid!) / 2) * 0.01, 9);
     if (l.vega !== null) expect(r.vegaShockUsd).toBeCloseTo(-l.vega * 5 * 0.01, 9);
-  });
-});
-
-describe('readiness', () => {
-  it('[critical] is ENTRY READY only when every gate is green; an unreadable gate is not a pass', () => {
-    const data = fixtureData();
-    const r = readiness({ data, leg: null, iv: null, em: null, nowMs: Date.now(), contracts: 10, leverage: 200, trade: null, risk: null });
-    expect(r.verdict).toBe('NO TRADE');
-    expect(r.gates.some((g) => g.key === 'side' && g.ok === false)).toBe(true);
-    expect(r.failing + r.unknown).toBeGreaterThan(0);
   });
 });
 
@@ -443,5 +398,19 @@ describe('the option bias', () => {
     expect(b.pe).toMatchObject({ strength: 'STRONG', flow: 'BUY', pTouch: 0.09, score: 3 });
     expect(b.pressureOn).toBe('PE');
     expect(optionBias({ legs: data.legs, atm: data.snapshot.atm, oi: null, flow: null, sides: [] }).pressureOn).toBeNull();
+  });
+});
+
+describe('seller impact', () => {
+  it('[critical] premium down, touch odds down, distance up and IV down are BETTER; the reverse WORSE; OI is not a vote', () => {
+    const now = { pTouch: 0.10, emDistance: 1.8 };
+    expect(sellerImpact({ markChangePct: -20, ivChangePts: -1.5, pTouchThen: 0.15, emDistanceThen: 1.6 }, now)).toBe('BETTER');
+    expect(sellerImpact({ markChangePct: 117, ivChangePts: 11, pTouchThen: 0.05, emDistanceThen: 2.2 }, now)).toBe('WORSE');
+    expect(sellerImpact({ markChangePct: 2, ivChangePts: 0.3, pTouchThen: 0.10, emDistanceThen: 1.8 }, now)).toBe('NEUTRAL');
+    expect(sellerImpact({ markChangePct: null, ivChangePts: null, pTouchThen: null, emDistanceThen: null }, now)).toBeNull();
+    const st = sellerState([{ minutes: 5, impact: 'BETTER' }, { minutes: 15, impact: 'BETTER' }, { minutes: 60, impact: 'NEUTRAL' }, { minutes: 720, impact: 'WORSE' }]);
+    expect(st.state).toBe('IMPROVING');
+    expect(sellerState([{ minutes: 5, impact: 'WORSE' }, { minutes: 30, impact: 'BETTER' }, { minutes: 60, impact: 'WORSE' }]).state).toBe('DETERIORATING');
+    expect(sellerState([]).state).toBeNull();
   });
 });

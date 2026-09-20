@@ -88,9 +88,13 @@ records every strike of the two nearest live expiries every 5 minutes — mark,
 bid, ask, sizes, mark / bid / ask IV, the five greeks, OI and volume — kept a
 year (about 5 GB a year at ~250 bytes a row). The Live screen reads it
 through `GET /api/changes?symbol=C-BTC-82000-190926&…` — what changed over
-1m … 12h for BTC, the strike and its board, plus the premium's momentum
-(velocity over the newest five-minute bucket, and its acceleration) from
-the same records, one request per strike. `GET /api/term` gives the ATM IV
+1m … 12h for BTC, the strike and its board; the option model's P(OTM),
+P(touch) and distance in expected moves as they were at each window's start
+(from that moment's recorded spot, IV and time left) beside the same now,
+so a seller sees the strike getting safer or less safe; the premium's
+momentum (velocity over the newest five-minute bucket, and its
+acceleration); and, with `entry=<epoch ms>`, one more row that runs from the
+strategy's entry moment. One request per strike. `GET /api/term` gives the ATM IV
 of every listed expiry, live, for the term-structure chart.
 
 Also closed on 19 Sep 2026, the three tables §10 of docs/test.md asks for:

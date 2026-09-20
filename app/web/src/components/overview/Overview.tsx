@@ -5,19 +5,19 @@ import { getPerp, getTerm } from '@/api/desk';
 import { usePoll } from '@/hooks/usePoll';
 import type { ChartTf } from '@/components/desk/PriceChart';
 import {
-  assessSides, DESK_FILTER, expectedMove, filtersChanged, findStrikes, ivRv, keyLevels, mtfConsensus, namedLevels, optionBias, readiness, riskEngine, sideGates, sideSelector, sideStatusOf, skew,
+  assessSides, DESK_FILTER, expectedMove, filtersChanged, findStrikes, ivRv, keyLevels, mtfConsensus, namedLevels, optionBias, riskEngine, sideGates, sideSelector, sideStatusOf, skew,
   type FinderFilter, type SideAssessment, type SideChoice,
 } from '@/lib/overview';
-import { DEFAULT_CONFIG, thresholds } from '@/lib/screen-config';
+import { DEFAULT_CONFIG, entryTodayMs, thresholds } from '@/lib/screen-config';
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
 import {
   KeyLevelsPanel, KpiStrip, IvTermPanel, OptionFlowPanel, PriceActionPanel, SkewPanel, TradeFlowPanel, VolatilityPanel,
 } from './MarketPanels';
-import { ChainPanel, ChecklistPanel, findLeg, MtfTable, SelectedStrikePanel, type Selected } from './DecisionPanels';
+import { ChainPanel, findLeg, MtfTable, SelectedStrikePanel, type Selected } from './DecisionPanels';
 import { DecisionCards } from './DecisionCards';
 import { ScreenBar } from './ScreenBar';
 import { RiskEnginePanel, ScenarioPanel } from './RiskPanels';
-import { ChangesPanel, EarlyWarningPanel, MovementPanel, StrikeFinder, useChanges } from './TraderPanels';
+import { ChangesPanel, EarlyWarningPanel, MovementPanel, StrikeFinder, useChanges, type ChangesTab } from './TraderPanels';
 
 /**
  * The Live screen: the three reference designs (docs/image1-3.png) and the
@@ -33,7 +33,7 @@ import { ChangesPanel, EarlyWarningPanel, MovementPanel, StrikeFinder, useChange
  * the strike under inspection, what changed, its risk and decay, its
  * scenario); the right column decides (horizon and MTF; SELL CE beside
  * SELL PE; then the vol surface). The bottom row
- * is the way out: the entry checklist and the strike finder. Nothing
+ * is the strike finder. Nothing
  * is shown twice: a figure the checklist judges is not repeated as a row.
  *
  * Every figure is read from the chain response, the perp feed or the desk's
@@ -158,9 +158,17 @@ export function Overview({
   const leg = findLeg(data.legs, selected);
 
   const risk = useMemo(() => (leg ? riskEngine(leg, data.legs, emSettle, snap.spot, snap.hoursToExpiry, contracts, leverage) : null), [leg, data.legs, emSettle, snap.spot, snap.hoursToExpiry, contracts, leverage]);
-  const ready = useMemo(() => readiness({ data, leg, iv, em: emSettle, nowMs: now, contracts, leverage, trade: tradeLimits, risk, t, freshnessMs: config.freshnessSec * 1000 }), [data, leg, iv, emSettle, now, contracts, leverage, tradeLimits, risk, t, config.freshnessSec]);
 
-  const changes = useChanges(data, leg, spot);
+  // What changed, a side at a time: the CE and the PE the decision is about (the selected strike where it is one of them).
+  const ceLeg = leg?.cp === 'C' ? leg : sides[0]!.leg;
+  const peLeg = leg?.cp === 'P' ? leg : sides[1]!.leg;
+  const [changesTab, setChangesTab] = useState<ChangesTab>(leg?.cp === 'P' ? 'PE' : 'CE');
+  useEffect(() => { if (leg) setChangesTab(leg.cp === 'P' ? 'PE' : 'CE'); }, [leg?.cp, leg?.strike]); // eslint-disable-line react-hooks/exhaustive-deps
+  const entryMs = useMemo(() => { const e = entryTodayMs(config.entryIst, now); return e !== null && e < now ? e : null; }, [config.entryIst, Math.floor(now / 60_000)]); // eslint-disable-line react-hooks/exhaustive-deps
+  const ceChanges = useChanges(data, ceLeg, spot, entryMs);
+  const peChanges = useChanges(data, peLeg, spot, entryMs);
+  const changes = leg?.cp === 'P' ? peChanges : ceChanges;
+  const activeChanges = changesTab === 'PE' ? peChanges : ceChanges;
 
   return (
     <div className="ov">
@@ -187,7 +195,7 @@ export function Overview({
           <ErrorBoundary where="Selected strike">
             <SelectedStrikePanel data={data} leg={leg} em={emSettle} contracts={contracts} ivRank={term?.iv ?? null} momentum={changes?.momentum ?? null} />
           </ErrorBoundary>
-          <ErrorBoundary where="What changed"><ChangesPanel leg={leg} rows={changes?.rows ?? null} /></ErrorBoundary>
+          <ErrorBoundary where="What changed"><ChangesPanel tab={changesTab} onTab={setChangesTab} ce={ceLeg} pe={peLeg} board={(changesTab === 'BOARD' ? changes : activeChanges)?.rows ?? null} changes={activeChanges} /></ErrorBoundary>
           <ErrorBoundary where="Risk engine"><RiskEnginePanel leg={leg} risk={risk} contracts={contracts} hoursToExpiry={snap.hoursToExpiry} iv={iv} step={snap.step} /></ErrorBoundary>
           <ErrorBoundary where="Scenario"><ScenarioPanel leg={leg} contracts={contracts} /></ErrorBoundary>
         </div>
@@ -204,7 +212,6 @@ export function Overview({
       </div>
 
       <div className="ov-bottom">
-        <ErrorBoundary where="Checklist"><ChecklistPanel leg={leg} ready={ready} onSell={onSell} /></ErrorBoundary>
         <ErrorBoundary where="Strike finder">
           <StrikeFinder data={data} onSelect={(cp, strike) => setPicked({ cp, strike })} onSell={onSell} contracts={contracts} leverage={leverage}
             defaultSide={choice.side === 'CE' ? 'C' : choice.side === 'PE' ? 'P' : 'both'} em={emSettle} execution={config.execution}

@@ -119,10 +119,12 @@ export function registerDeskRoutes(app: FastifyInstance) {
     if (!/^[CP]-BTC-\d+-\d{6}$/.test(symbol)) return refuse(reply, 400, { error: 'symbol like C-BTC-78000-190926' });
     const expiry = symbol.split('-').pop()!;
     const n = (k: string) => { const v = Number(q[k]); return Number.isFinite(v) ? v : undefined; };
+    // `entry`: the strategy's entry moment, epoch ms, for the since-entry row.
+    const entry = n('entry');
     return changes(symbol, expiry, Date.now(), {
       spot: n('spot'), mark: n('mark'), oi: n('oi'), iv: n('iv'), volume: n('volume'),
       ceOi: n('ceOi'), peOi: n('peOi'), callVolume: n('callVolume'), putVolume: n('putVolume'), pcr: n('pcr'), atmIv: n('atmIv'),
-    });
+    }, entry ?? null);
   });
 
   /**

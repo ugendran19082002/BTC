@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { ChainResponse, Leg } from '@/types/desk';
-import { getChanges, type ChangeRow, type PerpResponse, type PremiumMomentum } from '@/api/desk';
+import { getChanges, type ChangeRow, type ModelNow, type PerpResponse, type PremiumMomentum } from '@/api/desk';
 import {
-  boardRead, candidates, DESK_FILTER, earlyWarning, executionEstimate, filtersChanged, finderDecision, findStrikes, horizonRows, movementVerdict, odds, orderEstimate, premiumAnalysis,
-  type EarlyWarning, type ExpectedMove, type FinderFilter,
+  boardRead, candidates, DESK_FILTER, earlyWarning, executionEstimate, filtersChanged, finderDecision, findStrikes, horizonRows, movementVerdict, odds, orderEstimate, premiumAnalysis, sellerImpact, sellerState,
+  type EarlyWarning, type ExpectedMove, type FinderFilter, type Impact,
 } from '@/lib/overview';
 import type { ScreenConfig } from '@/lib/screen-config';
 import { fmt, Panel, Row, Tag } from './parts';
@@ -68,10 +68,10 @@ export function MovementPanel({ data, em, activeMin, mtf }: { data: ChainRespons
 
 // -------------------------------------------------------------- what changed
 
-export type Changes = { rows: ChangeRow[]; momentum: PremiumMomentum };
+export type Changes = { rows: ChangeRow[]; momentum: PremiumMomentum; model: ModelNow };
 
-/** One request per strike, every 30 s: what changed by window, and the premium's momentum from the same records. */
-export function useChanges(data: ChainResponse, leg: Leg | null, spot: number): Changes | null {
+/** One request per strike, every 30 s: what changed by window (and since entry), the model's odds then and now, and the premium's momentum. */
+export function useChanges(data: ChainResponse, leg: Leg | null, spot: number, entryMs: number | null = null): Changes | null {
   const [rows, setRows] = useState<Changes | null>(null);
   const symbol = leg ? `${leg.cp}-BTC-${leg.strike}-${data.snapshot.expiry}` : null;
   const s = data.structure;
@@ -81,7 +81,7 @@ export function useChanges(data: ChainResponse, leg: Leg | null, spot: number): 
     const load = () => getChanges(symbol, {
       spot, mark: leg.mark, oi: leg.oi, iv: leg.iv, volume: leg.volume,
       ceOi: s.ceOi, peOi: s.peOi, callVolume: s.ceVolume, putVolume: s.peVolume, pcr: s.pcrOi, atmIv: s.atmIv,
-    }).then((r) => { if (live) setRows({ rows: r.rows, momentum: r.momentum }); }).catch(() => { if (live) setRows({ rows: [], momentum: { velocity: null, acceleration: null } }); });
+    }, entryMs).then((r) => { if (live) setRows({ rows: r.rows, momentum: r.momentum, model: r.model ?? { pOtm: null, pTouch: null, emDistance: null } }); }).catch(() => { if (live) setRows({ rows: [], momentum: { velocity: null, acceleration: null }, model: { pOtm: null, pTouch: null, emDistance: null } }); });
     load();
     const id = setInterval(load, 30_000);
     return () => { live = false; clearInterval(id); };
@@ -91,30 +91,69 @@ export function useChanges(data: ChainResponse, leg: Leg | null, spot: number): 
   return rows;
 }
 
-export function ChangesPanel({ leg, rows }: { leg: Leg | null; rows: ChangeRow[] | null }) {
+export type ChangesTab = 'CE' | 'PE' | 'BOARD';
+
+/**
+ * What changed, for a seller: one table a strike (the CE and the PE the
+ * decision is about), with the premium read the short's way -- up is risk,
+ * down is favourable -- beside the OI, the IV and the model's odds and
+ * distance then → now, and one word a window: BETTER / NEUTRAL / WORSE. A
+ * summary line above says where the last hour is heading. The BOARD tab is
+ * the whole chain's calls against puts. The since-entry row runs from the
+ * strategy's entry moment, once a window has passed since.
+ */
+export function ChangesPanel({ tab, onTab, ce, pe, board, changes }: {
+  tab: ChangesTab; onTab: (t: ChangesTab) => void;
+  ce: Leg | null; pe: Leg | null;
+  /** The board's changes: the rows of whichever strike is loaded. */
+  board: ChangeRow[] | null;
+  /** The active strike's changes. */
+  changes: Changes | null;
+}) {
   const sgn = (v: number | null, p = 0, unit = '') => (v === null ? '—' : `${fmt.signed(v, p)}${unit}`);
   const cls = (v: number | null, invert = false) => (v === null ? 'ov-muted' : (invert ? -v : v) > 0 ? 'ov-up' : (invert ? -v : v) < 0 ? 'ov-down' : '');
-  const label = (m: number) => (m >= 60 ? `${m / 60}h` : `${m}m`);
+  const label = (r: { minutes: number; sinceEntry?: boolean }) => (r.sinceEntry ? `entry · ${r.minutes >= 60 ? `${Math.floor(r.minutes / 60)}h ${String(r.minutes % 60).padStart(2, '0')}m` : `${r.minutes}m`}` : r.minutes >= 60 ? `${r.minutes / 60}h` : `${r.minutes}m`);
+  const lamp = (i: Impact) => (i === 'BETTER' ? <span className="ov-up">🟢 Better</span> : i === 'WORSE' ? <span className="ov-down">🔴 Worse</span> : i === 'NEUTRAL' ? <span className="ov-warn">🟡 Neutral</span> : <span className="ov-muted">—</span>);
+  const thenNow = (then: number | null, now: number | null, f: (v: number) => string, betterWhenUp: boolean) => {
+    if (then === null || now === null) return <span className="ov-muted">{now === null ? '—' : f(now)}</span>;
+    const d = now - then;
+    const tone = Math.abs(d) < 1e-9 ? '' : (betterWhenUp ? d > 0 : d < 0) ? 'ov-up' : 'ov-down';
+    return <span><span className="ov-muted">{f(then)} → </span><b className={tone}>{f(now)}</b></span>;
+  };
+  const strikeLabel = (l: Leg | null, side: 'CE' | 'PE') => (l ? `${side} ${fmt.n(l.strike)}` : side);
+  const rows = tab === 'BOARD' ? board : changes?.rows ?? null;
+  const model = changes?.model ?? null;
+  const impacts = tab === 'BOARD' || !rows || !model ? [] : rows.filter((r) => !r.sinceEntry).map((r) => ({ minutes: r.minutes, impact: sellerImpact(r, model) }));
+  const state = sellerState(impacts);
   return (
-    <Panel title={`What changed · last 1m … 12h${leg ? ` · ${fmt.n(leg.strike)} ${leg.cp === 'C' ? 'CE' : 'PE'}` : ''}`}
-      right={<small className="ov-muted">BTC by the minute · strike and board by the 5-minute record</small>}>
-      {!rows ? <p className="ov-empty">{leg ? 'Loading…' : 'Select a strike.'}</p> : (
+    <Panel title="What changed"
+      right={
+        <span className="ov-chain-head">
+          <span className="ov-tabs ov-tabs-inline" role="tablist">
+            {(['CE', 'PE', 'BOARD'] as const).map((t) => (
+              <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} onClick={() => onTab(t)}>
+                {t === 'BOARD' ? 'Board' : strikeLabel(t === 'CE' ? ce : pe, t)}
+              </button>
+            ))}
+          </span>
+        </span>
+      }>
+      {tab !== 'BOARD' && impacts.length > 0 && (
+        <div className="ov-impact-line">
+          {impacts.map((x) => <span key={x.minutes}><small className="ov-muted">{x.minutes >= 60 ? `${x.minutes / 60}h` : `${x.minutes}m`}</small> {x.impact === 'BETTER' ? '🟢' : x.impact === 'WORSE' ? '🔴' : x.impact === 'NEUTRAL' ? '🟡' : '·'}</span>)}
+          <Tag tone={state.state === 'IMPROVING' ? 'up' : state.state === 'DETERIORATING' ? 'down' : state.state === 'MIXED' ? 'warn' : 'muted'}>{state.state === 'DETERIORATING' ? '⚠ ' : ''}{state.text}</Tag>
+        </div>
+      )}
+      {!rows ? <p className="ov-empty">{tab === 'BOARD' || (tab === 'CE' ? ce : pe) ? 'Loading…' : `No ${tab} strike on the cards.`}</p> : tab === 'BOARD' ? (
         <div className="ov-chain-wrap">
           <table className="ov-mini ov-changes">
-            <thead>
-              <tr><th>Window</th><th>BTC</th><th>BTC %</th><th>Premium</th><th>Premium %</th><th>Strike OI</th><th>Strike IV</th><th>Strike vol</th><th>CE OI</th><th>PE OI</th><th>Call vol</th><th>Put vol</th><th>PCR</th><th>ATM IV</th></tr>
-            </thead>
+            <thead><tr><th>Window</th><th>BTC</th><th>BTC %</th><th>CE OI Δ</th><th>PE OI Δ</th><th>Call vol Δ</th><th>Put vol Δ</th><th>PCR Δ</th><th>ATM IV Δ</th></tr></thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.minutes}>
-                  <td>{label(r.minutes)}</td>
+                <tr key={`${r.minutes}${r.sinceEntry ? 'e' : ''}`} className={r.sinceEntry ? 'ov-atm' : undefined}>
+                  <td>{label(r)}</td>
                   <td className={cls(r.spotChange)}>{sgn(r.spotChange)}</td>
                   <td className={cls(r.spotChangePct)}>{sgn(r.spotChangePct, 2, '%')}</td>
-                  <td className={cls(r.markChange, true)} title="Rising premium is against a short">{sgn(r.markChange, 1)}</td>
-                  <td className={cls(r.markChangePct, true)}>{sgn(r.markChangePct, 0, '%')}</td>
-                  <td className={cls(r.oiChange)}>{sgn(r.oiChange)}</td>
-                  <td className={cls(r.ivChangePts, true)}>{sgn(r.ivChangePts, 1, ' pts')}</td>
-                  <td>{sgn(r.volumeChange)}</td>
                   <td className={cls(r.ceOiChange)}>{sgn(r.ceOiChange)}</td>
                   <td className={cls(r.peOiChange)}>{sgn(r.peOiChange)}</td>
                   <td>{sgn(r.callVolumeChange)}</td>
@@ -126,8 +165,39 @@ export function ChangesPanel({ leg, rows }: { leg: Leg | null; rows: ChangeRow[]
             </tbody>
           </table>
         </div>
+      ) : (
+        <div className="ov-chain-wrap">
+          <table className="ov-mini ov-changes">
+            <thead>
+              <tr>
+                <th>Window</th><th>BTC %</th>
+                <th title="The premium then → now. For a short, up is risk and down is favourable">Premium</th><th>Prem Δ</th>
+                <th title="Open interest on this strike: context beside the premium, not a verdict on its own">OI Δ</th><th>IV Δ</th><th>Vol Δ</th>
+                <th title="By the option model, then → now">P(OTM)</th><th title="By the option model, then → now">Touch</th><th title="By the model, then → now">Dist/EM</th>
+                <th title="Premium, touch odds, distance and IV together, for the seller of this strike">Impact</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={`${r.minutes}${r.sinceEntry ? 'e' : ''}`} className={r.sinceEntry ? 'ov-atm' : undefined}>
+                  <td>{label(r)}</td>
+                  <td className={cls(r.spotChangePct)}>{sgn(r.spotChangePct, 2, '%')}</td>
+                  <td>{r.markThen === null || r.markChange === null ? '—' : <><span className="ov-muted">{fmt.n(r.markThen, 1)} → </span>{fmt.n(r.markThen + r.markChange, 1)}</>}</td>
+                  <td className={cls(r.markChangePct, true)} title="For a short: up is risk, down is favourable">{r.markChangePct === null ? '—' : `${fmt.signed(r.markChangePct, 0)}% ${r.markChangePct >= 5 ? '🔴' : r.markChangePct <= -5 ? '🟢' : '🟡'}`}</td>
+                  <td className={cls(r.oiChange)}>{sgn(r.oiChange)}</td>
+                  <td className={cls(r.ivChangePts, true)}>{sgn(r.ivChangePts, 1)}</td>
+                  <td>{sgn(r.volumeChange)}</td>
+                  <td>{thenNow(r.pOtmThen, r.pOtmNow ?? model?.pOtm ?? null, (v) => `${Math.round(v * 100)}%`, true)}</td>
+                  <td>{thenNow(r.pTouchThen, r.pTouchNow ?? model?.pTouch ?? null, (v) => `${Math.round(v * 100)}%`, false)}</td>
+                  <td>{thenNow(r.emDistanceThen, r.emDistanceNow ?? model?.emDistance ?? null, (v) => `${v.toFixed(1)}×`, true)}</td>
+                  <td>{lamp(model ? sellerImpact(r, model) : null)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
-      <p className="ov-foot">Green helps a short, red hurts it. A dash means the desk has no record that far back — the records began 17–19 Sep 2026 and fill in from here.</p>
+      <p className="ov-foot">{tab === 'BOARD' ? 'The whole chain: calls against puts by window.' : 'Premium ↑ = 🔴 risk for a short, ↓ = 🟢 favourable. OI beside it: premium ↑ with OI ↑ is demand, premium ↓ with OI ↑ is writing into it, both ↓ is an unwind. Odds and distance by the option model then and now.'} A dash means no record that far back.</p>
     </Panel>
   );
 }

@@ -1,5 +1,7 @@
 import { one } from '../db/pool.js';
 import { spotMinutesAgo } from './moves.js';
+import { expiryTsOf } from './chain.js';
+import { pExpireWorthless, pTouch } from '../domain/probability.js';
 import { optionSnapshotsSchema } from './option-snapshots.js';
 import { marketSchema } from './oi-history.js';
 
@@ -41,7 +43,43 @@ export type ChangeRow = {
   pcrChange: number | null;
   atmIvThen: number | null;
   atmIvChangePts: number | null;
+  /**
+   * The strike's odds and distance as they were then, by the option model
+   * from that moment's spot, IV and time left -- so a seller sees the strike
+   * getting safer or less safe, not only the premium moving.
+   */
+  pOtmThen: number | null;
+  pTouchThen: number | null;
+  emDistanceThen: number | null;
+  /**
+   * The same three now, on the same basis as `…Then` -- the strike's own IV
+   * where the record had it, the ATM IV otherwise -- so then and now compare
+   * like with like whatever the record holds.
+   */
+  pOtmNow: number | null;
+  pTouchNow: number | null;
+  emDistanceNow: number | null;
+  /** True on the row that runs from the strategy's entry time rather than a fixed window. */
+  sinceEntry?: boolean;
 };
+
+/** The same odds and distance now, by the same model, so then and now compare like with like. */
+export type ModelNow = { pOtm: number | null; pTouch: number | null; emDistance: number | null };
+
+const YEAR_MS = 365 * 24 * 3_600_000;
+
+/** The model's read of one strike at one moment. Pure. */
+export function modelAt(cp: 'C' | 'P', strike: number, spot: number | null, iv: number | null, atmIv: number | null, expiryMs: number, atMs: number): { pOtm: number | null; pTouch: number | null; emDistance: number | null } {
+  const t = (expiryMs - atMs) / YEAR_MS;
+  if (spot === null || !(t > 0)) return { pOtm: null, pTouch: null, emDistance: null };
+  const v = iv ?? atmIv;
+  const em = atmIv !== null && atmIv > 0 ? spot * atmIv * Math.sqrt(t) : null;
+  return {
+    pOtm: v !== null ? pExpireWorthless(cp, spot, strike, t, v) : null,
+    pTouch: v !== null ? pTouch(spot, strike, t, v) : null,
+    emDistance: em !== null && em > 0 ? Math.abs(strike - spot) / em : null,
+  };
+}
 
 /**
  * How the premium is moving, from the last three five-minute records: the
@@ -76,8 +114,12 @@ async function boardAt(expiry: string, atMs: number): Promise<Board | null> {
   );
 }
 
-export async function changes(symbol: string, expiry: string, nowMs = Date.now(), now?: Partial<ChangesNow>): Promise<{ now: ChangesNow; rows: ChangeRow[]; momentum: PremiumMomentum }> {
+export async function changes(symbol: string, expiry: string, nowMs = Date.now(), now?: Partial<ChangesNow>, entryMs: number | null = null): Promise<{ now: ChangesNow; model: ModelNow; rows: ChangeRow[]; momentum: PremiumMomentum }> {
   await Promise.all([optionSnapshotsSchema(), marketSchema()]);
+  const parts = /^([CP])-BTC-(\d+)-(\d{6})$/.exec(symbol);
+  const cp = (parts?.[1] ?? 'C') as 'C' | 'P';
+  const strike = Number(parts?.[2] ?? 0);
+  const expiryMs = expiryTsOf(expiry) * 1000;
   // "Now" is the caller's live figures where it has them, the newest record otherwise.
   const [s0, b0, s10] = await Promise.all([snapAt(symbol, nowMs), boardAt(expiry, nowMs), snapAt(symbol, nowMs - 10 * 60_000)]);
   const cur: ChangesNow = {
@@ -87,13 +129,21 @@ export async function changes(symbol: string, expiry: string, nowMs = Date.now()
     callVolume: now?.callVolume ?? b0?.call_volume ?? null, putVolume: now?.putVolume ?? b0?.put_volume ?? null,
     pcr: now?.pcr ?? b0?.pcr_oi ?? null, atmIv: now?.atmIv ?? b0?.atm_iv ?? null,
   };
-  const rows = await Promise.all(CHANGE_WINDOWS_MIN.map(async (minutes): Promise<ChangeRow> => {
+  // The fixed windows, and one from the strategy's entry when it is behind us by at least a window.
+  const sinceEntryMin = entryMs !== null && nowMs - entryMs >= 5 * 60_000 ? Math.round((nowMs - entryMs) / 60_000) : null;
+  const windows: { minutes: number; sinceEntry: boolean }[] = [...CHANGE_WINDOWS_MIN.map((minutes) => ({ minutes, sinceEntry: false })), ...(sinceEntryMin !== null ? [{ minutes: sinceEntryMin, sinceEntry: true }] : [])];
+  const rows = await Promise.all(windows.map(async ({ minutes, sinceEntry }): Promise<ChangeRow> => {
     const then = nowMs - minutes * 60_000;
     // The five-minute records cannot answer a one-minute window.
     const [s, b] = minutes < 5 ? [null, null] : await Promise.all([snapAt(symbol, then), boardAt(expiry, then)]);
     const spotThen = spotMinutesAgo(minutes, nowMs);
+    // Then, and now on the same footing: the strike's IV only where the record has it.
+    const strikeIv = s?.mark_iv != null && cur.iv !== null;
+    const m = modelAt(cp, strike, s?.spot ?? spotThen, strikeIv ? s!.mark_iv : null, b?.atm_iv ?? null, expiryMs, then);
+    const n = modelAt(cp, strike, cur.spot, strikeIv ? cur.iv : null, cur.atmIv, expiryMs, nowMs);
     return {
       minutes,
+      ...(sinceEntry ? { sinceEntry: true } : {}),
       spotThen, spotChange: d(cur.spot, spotThen), spotChangePct: pct(cur.spot, spotThen),
       markThen: s?.mark ?? null, markChange: d(cur.mark, s?.mark ?? null), markChangePct: pct(cur.mark, s?.mark ?? null),
       oiThen: s?.oi ?? null, oiChange: d(cur.oi, s?.oi ?? null),
@@ -103,11 +153,14 @@ export async function changes(symbol: string, expiry: string, nowMs = Date.now()
       callVolumeChange: d(cur.callVolume, b?.call_volume ?? null), putVolumeChange: d(cur.putVolume, b?.put_volume ?? null),
       pcrThen: b?.pcr_oi ?? null, pcrChange: d(cur.pcr, b?.pcr_oi ?? null),
       atmIvThen: b?.atm_iv ?? null, atmIvChangePts: cur.atmIv !== null && b?.atm_iv != null ? (cur.atmIv - b.atm_iv) * 100 : null,
+      pOtmThen: m.pOtm, pTouchThen: m.pTouch, emDistanceThen: m.emDistance,
+      pOtmNow: n.pOtm, pTouchNow: n.pTouch, emDistanceNow: n.emDistance,
     };
   }));
   // Momentum from the same records the 5-minute row read, plus the bucket before it.
   const m5 = rows.find((r) => r.minutes === 5)?.markThen ?? null;
   const velocity = d(cur.mark, m5);
   const prior = d(m5, s10?.mark ?? null);
-  return { now: cur, rows, momentum: { velocity, acceleration: velocity !== null && prior !== null ? velocity - prior : null } };
+  const model = modelAt(cp, strike, cur.spot, cur.iv, cur.atmIv, expiryMs, nowMs);
+  return { now: cur, model, rows, momentum: { velocity, acceleration: velocity !== null && prior !== null ? velocity - prior : null } };
 }

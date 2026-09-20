@@ -20,7 +20,7 @@ const data = live as unknown as ChainResponse;
 describe('the decision panels', () => {
   it('draw every panel from a real chain, with the chart and chain left to the screen', () => {
     render(<Overview data={data} trade={null} contracts={1} chain={false} />);
-    for (const t of ['Key levels', 'Volatility', 'Strategy decision', 'IV term structure', 'Strike finder', /^Entry checklist/, /^Sell-side risk engine/, /^Scenario/]) {
+    for (const t of ['Key levels', 'Volatility', 'Strategy decision', 'IV term structure', 'Strike finder', /^Sell-side risk engine/, /^Scenario/]) {
       expect(screen.getByText(t, { selector: 'h3' })).toBeInTheDocument();
     }
     // No settings toolbar and no order panel: the desk's configuration is fixed, and orders have their own tab.
@@ -36,7 +36,6 @@ describe('the decision panels', () => {
     for (const t of [/^Early warning/, 'Horizon / MTF · movement to expiry', /^What changed/]) {
       expect(screen.getByText(t, { selector: 'h3' })).toBeInTheDocument();
     }
-    expect(screen.getAllByText(/ENTRY READY|NO TRADE/).length).toBeGreaterThan(0);
     expect(screen.queryByText(/^Option chain/)).toBeNull();
     expect(screen.getByText(/^Selected strike: /)).toBeInTheDocument();
   });
