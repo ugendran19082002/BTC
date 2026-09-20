@@ -6,12 +6,23 @@ import { fmt, Panel, Row, Tag, useWidth } from './parts';
 
 // ----------------------------------------------------------- risk engine
 
-export function RiskEnginePanel({ leg, risk, contracts, hoursToExpiry, iv, step }: { leg: Leg | null; risk: RiskEngine | null; contracts: number; hoursToExpiry: number; iv: IvRv | null; step: number }) {
-  if (!leg || !risk) return <Panel title="Sell-side risk engine"><p className="ov-empty">Select a strike with a price.</p></Panel>;
+/** The risk engine for both chosen strikes, CE then PE: derived risk only, one block each. */
+export function RiskEnginePanel({ strikes, contracts, hoursToExpiry, iv, step }: { strikes: { leg: Leg | null; risk: RiskEngine | null }[]; contracts: number; hoursToExpiry: number; iv: IvRv | null; step: number }) {
+  const shown = strikes.filter((x) => x.leg && x.risk) as { leg: Leg; risk: RiskEngine }[];
+  const title = shown.map((x) => `${fmt.n(x.leg.strike)} ${x.leg.cp === 'C' ? 'CE' : 'PE'}`).join(' · ');
+  return (
+    <Panel title={`Sell-side risk engine${title ? ` · ${title}` : ''}`} right={<small className="ov-muted">{contracts} ct</small>}>
+      {shown.length === 0 ? <p className="ov-empty">Choose a strike with a price.</p> : shown.map((x) => <RiskBlock key={`${x.leg.cp}${x.leg.strike}`} leg={x.leg} risk={x.risk} contracts={contracts} hoursToExpiry={hoursToExpiry} iv={iv} step={step} two={shown.length > 1} />)}
+    </Panel>
+  );
+}
+
+function RiskBlock({ leg, risk, contracts, hoursToExpiry, iv, step, two }: { leg: Leg; risk: RiskEngine; contracts: number; hoursToExpiry: number; iv: IvRv | null; step: number; two: boolean }) {
   const side = leg.cp === 'C' ? 'CE' : 'PE';
   const usd = (v: number | null) => (v === null ? '—' : `${v >= 0 ? '+' : '−'}$${Math.abs(v).toFixed(2)}`);
   return (
-    <Panel title={`Sell-side risk engine · ${fmt.n(leg.strike)} ${side}`} right={<small className="ov-muted">{contracts} ct</small>}>
+    <div className="ov-risk-block">
+      {two && <h4 className="ov-subhead"><span>{fmt.n(leg.strike)} {side}</span></h4>}
       <div className="ov-two">
         <div>
           <Row label="IV − RV" value={iv ? `${fmt.signed(iv.spreadPts, 1)} pts · ${iv.label}` : '—'} tone={iv ? (iv.label === 'rich' ? 'up' : iv.label === 'cheap' ? 'down' : undefined) : undefined} hint="This strike is sold into the board's implied against realised volatility" />
@@ -34,7 +45,7 @@ export function RiskEnginePanel({ leg, risk, contracts, hoursToExpiry, iv, step 
       <div className="ov-subhead"><span>Stress &amp; scenario</span><small className="ov-muted">{contracts} ct · instant P&L, USD · by the greeks now</small></div>
       <StressRow leg={leg} contracts={contracts} />
       <DecayChart premium={risk.premium} intrinsic={risk.intrinsic} hoursToExpiry={hoursToExpiry} side={side} strike={leg.strike} />
-    </Panel>
+    </div>
   );
 }
 

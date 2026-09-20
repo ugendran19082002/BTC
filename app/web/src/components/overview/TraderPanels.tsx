@@ -129,11 +129,22 @@ export function useChanges(data: ChainResponse, leg: Leg | null, spot: number, e
  * decision is about), with the premium read the short's way -- up is risk,
  * down is favourable -- beside the OI, the IV and the model's odds and
  * distance then → now, and one word a window: BETTER / NEUTRAL / WORSE. A
- * summary line above says where the last hour is heading. The BOARD tab is
- * the whole chain's calls against puts. The since-entry row runs from the
- * strategy's entry moment, once a window has passed since.
+ * summary line above says where the last hour is heading. Both chosen
+ * strikes, CE then PE. The since-entry row runs from the strategy's entry
+ * moment, once a window has passed since.
  */
-export function ChangesPanel({ leg, changes }: { leg: Leg | null; changes: Changes | null }) {
+export function ChangesPanel({ strikes }: { strikes: { leg: Leg | null; changes: Changes | null }[] }) {
+  const shown = strikes.filter((x) => x.leg);
+  const title = shown.map((x) => `${fmt.n(x.leg!.strike)} ${x.leg!.cp === 'C' ? 'CE' : 'PE'}`).join(' · ');
+  return (
+    <Panel title={`What changed${title ? ` · ${title}` : ''}`} right={<small className="ov-muted">the chosen strikes, 1m … 12h and since entry</small>}>
+      {shown.length === 0 ? <p className="ov-empty">Choose a strike on the chain.</p> : shown.map((x) => <ChangesTable key={`${x.leg!.cp}${x.leg!.strike}`} leg={x.leg!} changes={x.changes} two={shown.length > 1} />)}
+      <p className="ov-foot">Premium ↑ = 🔴 risk for a short, ↓ = 🟢 favourable. OI beside it: premium ↑ with OI ↑ is demand, premium ↓ with OI ↑ is writing into it, both ↓ is an unwind. Touch odds and distance by the option model then → now. A dash means no record that far back.</p>
+    </Panel>
+  );
+}
+
+function ChangesTable({ leg, changes, two }: { leg: Leg; changes: Changes | null; two: boolean }) {
   const sgn = (v: number | null, p = 0, unit = '') => (v === null ? '—' : `${fmt.signed(v, p)}${unit}`);
   const cls = (v: number | null, invert = false) => (v === null ? 'ov-muted' : (invert ? -v : v) > 0 ? 'ov-up' : (invert ? -v : v) < 0 ? 'ov-down' : '');
   const label = (r: { minutes: number; sinceEntry?: boolean }) => (r.sinceEntry ? `entry · ${r.minutes >= 60 ? `${Math.floor(r.minutes / 60)}h ${String(r.minutes % 60).padStart(2, '0')}m` : `${r.minutes}m`}` : r.minutes >= 60 ? `${r.minutes / 60}h` : `${r.minutes}m`);
@@ -149,14 +160,15 @@ export function ChangesPanel({ leg, changes }: { leg: Leg | null; changes: Chang
   const impacts = !rows || !model ? [] : rows.filter((r) => !r.sinceEntry).map((r) => ({ minutes: r.minutes, impact: sellerImpact(r, model) }));
   const state = sellerState(impacts);
   return (
-    <Panel title={`What changed${leg ? ` · ${fmt.n(leg.strike)} ${leg.cp === 'C' ? 'CE' : 'PE'}` : ''}`} right={<small className="ov-muted">this strike, 1m … 12h and since entry</small>}>
+    <div className="ov-changes-block">
+      {two && <h4 className="ov-subhead"><span>{fmt.n(leg.strike)} {leg.cp === 'C' ? 'CE' : 'PE'}</span></h4>}
       {impacts.length > 0 && (
         <div className="ov-impact-line">
           {impacts.map((x) => <span key={x.minutes}><small className="ov-muted">{x.minutes >= 60 ? `${x.minutes / 60}h` : `${x.minutes}m`}</small> {x.impact === 'BETTER' ? '🟢' : x.impact === 'WORSE' ? '🔴' : x.impact === 'NEUTRAL' ? '🟡' : '·'}</span>)}
           <Tag tone={state.state === 'IMPROVING' ? 'up' : state.state === 'DETERIORATING' ? 'down' : state.state === 'MIXED' ? 'warn' : 'muted'}>{state.state === 'DETERIORATING' ? '⚠ ' : ''}{state.text}</Tag>
         </div>
       )}
-      {!rows ? <p className="ov-empty">{leg ? 'Loading…' : 'Select a strike.'}</p> : (
+      {!rows ? <p className="ov-empty">Loading…</p> : (
         <div className="ov-chain-wrap">
           <table className="ov-mini ov-changes">
             <thead>
@@ -187,8 +199,7 @@ export function ChangesPanel({ leg, changes }: { leg: Leg | null; changes: Chang
           </table>
         </div>
       )}
-      <p className="ov-foot">Premium ↑ = 🔴 risk for a short, ↓ = 🟢 favourable. OI beside it: premium ↑ with OI ↑ is demand, premium ↓ with OI ↑ is writing into it, both ↓ is an unwind. Touch odds and distance by the option model then → now. A dash means no record that far back.</p>
-    </Panel>
+    </div>
   );
 }
 

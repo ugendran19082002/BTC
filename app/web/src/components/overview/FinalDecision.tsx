@@ -7,7 +7,7 @@ import { fmt, Row, Tag } from './parts';
 
 /**
  * The first thing a trader reads: the four outcomes with their last word,
- * the strike the answer is about and its odds, the MTF consensus, whether
+ * both chosen strikes with their odds and last word, the MTF consensus, whether
  * the signal has persisted, whether the data and the contract allow an
  * order at all -- and, when the answer is NO TRADE, what must change and
  * when to look again. Everything below the strip is the working.
@@ -27,7 +27,23 @@ export function FinalDecision({ data, sides, both, choice, leg, mtf, persist, fr
   ];
   const mark = (r: { final: string; on: boolean }) => (r.on ? '✅' : r.final === '—' ? '·' : '❌');
   const pick = choice.side === 'CE' ? ce.leg : choice.side === 'PE' || choice.side === 'BOTH' ? pe.leg : leg;
-  const o = pick ? odds(pick) : null;
+  // Both chosen strikes, side by side: the cards judge exactly these.
+  const strikeCol = (s: SideAssessment) => {
+    const l = s.leg;
+    const o = l ? odds(l) : null;
+    const on = choice.side === s.side || choice.side === 'BOTH';
+    return (
+      <div key={s.side} className={`ov-final-strike${on ? ' ov-final-strike-on' : ''}`}>
+        <Row label={<b>{s.side}</b>} value={l ? <button type="button" className="ov-linkbtn" onClick={() => onSelect(l.cp, l.strike)}>{fmt.n(l.strike)}</button> : '—'} hint="The strike chosen on the chain for this side (the desk's pick until one is chosen); click to inspect it" />
+        <Row label="Score" value={s.score == null ? '—' : `${s.score.toFixed(1)} / 10`} />
+        <Row label="P(expire OTM)" value={fmt.pct(o?.pOtm)} tone="up" />
+        <Row label="P(touch)" value={fmt.pct(o?.pTouch)} />
+        <Row label="P(breach)" value={fmt.pct(o?.pItm)} tone="down" />
+        <Row label="P(premium < 10%)" value={o?.pOtm == null ? '—' : `≈ ${fmt.pct(o.pOtm)}`} hint="At settlement the premium is its intrinsic alone: under a tenth of today's premium is the same event as expiring OTM, to the nearest percent" />
+        <Row label="Last word" value={<span className={on ? 'ov-up' : 'ov-muted'}>{sideFinal(s)}</span>} />
+      </div>
+    );
+  };
   const stale = freshness.filter((a) => a.stale);
   const checks = contractChecks(data.snapshot, now);
   const contractOk = checks.every((c) => c.ok === true);
@@ -47,14 +63,10 @@ export function FinalDecision({ data, sides, both, choice, leg, mtf, persist, fr
             <Row key={r.name} label={<b>{r.name}</b>} value={<span className={r.on ? 'ov-up' : 'ov-muted'}>{mark(r)} {r.final}</span>} />
           ))}
         </div>
-        <div className="ov-final-col">
-          <Row label="Selected" value={pick ? <button type="button" className="ov-linkbtn" onClick={() => onSelect(pick.cp, pick.strike)}>{pick.cp === 'C' ? 'CE' : 'PE'} {fmt.n(pick.strike)}</button> : '—'} hint="The strike the answer is about; click to inspect it" />
-          <Row label="Score" value={(() => { const s = choice.side === 'CE' ? ce : choice.side === 'PE' || choice.side === 'BOTH' ? pe : null; return s?.score == null ? '—' : `${s.score.toFixed(1)} / 10`; })()} hint="The desk's score for that strike — its measured record, not a confidence the desk has not measured" />
+        <div className="ov-final-col ov-final-pair">
+          <div className="ov-final-sub">Chosen strikes</div>
+          <div className="ov-final-strikes">{strikeCol(ce)}{strikeCol(pe)}</div>
           <Row label="MTF" value={<span className={mtf.way === 'UP' ? 'ov-up' : mtf.way === 'DOWN' ? 'ov-down' : 'ov-muted'}>{mtf.text}</span>} />
-          <Row label="P(expire OTM)" value={fmt.pct(o?.pOtm)} tone="up" />
-          <Row label="P(touch)" value={fmt.pct(o?.pTouch)} />
-          <Row label="P(breach)" value={fmt.pct(o?.pItm)} tone="down" />
-          <Row label="P(premium < 10%)" value={o?.pOtm == null ? '—' : `≈ ${fmt.pct(o.pOtm)}`} hint="At settlement the premium is its intrinsic alone: under a tenth of today's premium is the same event as expiring OTM, to the nearest percent" />
           <Row label="P(premium < 5%)" value="not measured" tone="muted" hint="Needs weeks of the premium record (every strike, every five minutes, since 19 Sep 2026)" />
         </div>
         <div className="ov-final-col">

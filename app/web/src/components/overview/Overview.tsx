@@ -196,6 +196,12 @@ export function Overview({
   // What changed, for the strike under inspection: one request, every 30 s, with the since-entry row.
   const entryMs = useMemo(() => { const e = entryTodayMs(config.entryIst, now); return e !== null && e < now ? e : null; }, [config.entryIst, Math.floor(now / 60_000)]); // eslint-disable-line react-hooks/exhaustive-deps
   const changes = useChanges(data, leg, spot, entryMs);
+  // The other chosen strike, so What changed shows the pair; one request each, and none when it is the same strike.
+  const otherLeg = useMemo(() => { const cp = leg?.cp === 'C' ? 'P' : 'C'; const k = pair[cp]; return k === null ? null : data.legs.find((l) => l.cp === cp && l.strike === k) ?? null; }, [leg?.cp, pair, data.legs]);
+  const otherChanges = useChanges(data, otherLeg, spot, entryMs);
+  const otherRisk = useMemo(() => (otherLeg ? riskEngine(otherLeg, data.legs, emSettle, snap.spot, snap.hoursToExpiry, contracts, leverage) : null), [otherLeg, data.legs, emSettle, snap.spot, snap.hoursToExpiry, contracts, leverage]);
+  // The chosen strikes, CE first, for the panels that show both.
+  const chosenPair = useMemo(() => [{ leg, changes, risk }, { leg: otherLeg, changes: otherChanges, risk: otherRisk }].sort((a, b) => (a.leg?.cp === 'C' ? 0 : 1) - (b.leg?.cp === 'C' ? 0 : 1)), [leg, changes, risk, otherLeg, otherChanges, otherRisk]);
 
   return (
     <div className="ov">
@@ -235,8 +241,8 @@ export function Overview({
               })()}
               changed={(() => { const r = changes?.rows.find((x) => x.minutes === 60) ?? null; return r ? { oiChange: r.oiChange, oiThen: r.oiThen, ivChangePts: r.ivChangePts } : null; })()} />
           </ErrorBoundary>
-          <ErrorBoundary where="What changed"><ChangesPanel leg={leg} changes={changes} /></ErrorBoundary>
-          <ErrorBoundary where="Risk engine"><RiskEnginePanel leg={leg} risk={risk} contracts={contracts} hoursToExpiry={snap.hoursToExpiry} iv={iv} step={snap.step} /></ErrorBoundary>
+          <ErrorBoundary where="What changed"><ChangesPanel strikes={chosenPair} /></ErrorBoundary>
+          <ErrorBoundary where="Risk engine"><RiskEnginePanel strikes={chosenPair} contracts={contracts} hoursToExpiry={snap.hoursToExpiry} iv={iv} step={snap.step} /></ErrorBoundary>
         </div>
 
         <div className="ov-col ov-right">
