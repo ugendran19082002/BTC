@@ -1357,7 +1357,7 @@ const IST_HM_FMT = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', 
  * closest, what each would have to become, and when to look again (the
  * entry window if it has not opened, the next five-minute mark otherwise).
  */
-export function mustChange(focus: SideAssessment | null, mtf: MtfConsensus, t: { maxPot: number; minEmDistance: number; maxSlippage: number }, maxSpreadPct: number | null, nowMs: number, entryIst: string): MustChange {
+export function mustChange(focus: SideAssessment | null, mtf: MtfConsensus, t: { maxPot: number; minEmDistance: number; maxSlippage: number }, maxSpreadPct: number | null, nowMs: number): MustChange {
   const fails = (focus?.gates ?? []).filter((g) => g.ok === false);
   const why = fails.map((g) => `${g.name}: ${g.text}`);
   const toTrade: string[] = [];
@@ -1376,12 +1376,8 @@ export function mustChange(focus: SideAssessment | null, mtf: MtfConsensus, t: {
       default: toTrade.push(g.name);
     }
   }
-  const m = /^(\d{1,2}):(\d{2})$/.exec(entryIst);
-  const IST = 5.5 * 3_600_000;
-  const ist = new Date(nowMs + IST);
-  const day = Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate()) - IST;
-  const windowMs = m ? day + (Number(m[1]) * 60 + Number(m[2])) * 60_000 : null;
-  const recheckMs = windowMs !== null && windowMs > nowMs ? windowMs : Math.ceil((nowMs + 1) / 300_000) * 300_000;
+  // Entry is whenever the trader decides; the next look is the next board, five minutes on.
+  const recheckMs = Math.ceil((nowMs + 1) / 300_000) * 300_000;
   return { why, toTrade: [...new Set(toTrade)], recheckIst: IST_HM_FMT.format(new Date(recheckMs)) };
 }
 

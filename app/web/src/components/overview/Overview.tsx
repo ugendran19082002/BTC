@@ -9,7 +9,7 @@ import {
   assessBoth, assessSides, bestLeg, dataFreshness, DESK_FILTER, mustChange, persistence, expectedMove, expiryDirection, filtersChanged, findStrikes, ivRv, keyLevels, mtfConsensus, namedLevels, optionBias, riskEngine, windowMinutes, sideGates, sideSelector, sideStatusOf, skew,
   type FinderFilter, type SideAssessment, type SideChoice, type WindowChoice,
 } from '@/lib/overview';
-import { DEFAULT_CONFIG, entryTodayMs, thresholds } from '@/lib/screen-config';
+import { DEFAULT_CONFIG, thresholds } from '@/lib/screen-config';
 import { fmt, PanelFold } from './parts';
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
 import {
@@ -124,7 +124,14 @@ export function Overview({
   const skewPts = useMemo(() => skew(data.legs, data.structure.atmIv).putCallPts, [data.legs, data.structure.atmIv]);
   const atmIv = data.structure.atmIv;
   // The move's character by window, from the perp's records: every 30 s is plenty for minute-grain reads.
-  const entryMs = useMemo(() => { const e = entryTodayMs(config.entryIst, now); return e !== null && e < now ? e : null; }, [config.entryIst, Math.floor(now / 60_000)]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Entry is whenever the trader decides -- now. The only entry the screen measures from is a held position's:
+  // its first fill, per strike for What changed, the oldest open one for the price-change table.
+  const entryOf = useCallback((symbol: string | null) => {
+    const open = (trade?.open ?? []).filter((x) => x.position !== 0 && (symbol === null || x.symbol === symbol));
+    const ts = open.flatMap((x) => x.fills.map((f) => f.ts)).filter((v) => v > 0);
+    return ts.length ? Math.min(...ts) : null;
+  }, [trade?.open]);
+  const entryMs = entryOf(null);
   const { data: movement } = usePoll(() => getMovement(entryMs, snap.expiryTs), 30_000, { enabled: snap.live, deps: [entryMs, snap.expiryTs] });
   const { data: term, error: termError } = usePoll(() => getTerm(skewPts, atmIv), 60_000, { deps: [skewPts === null, atmIv === null] });
 
@@ -181,8 +188,8 @@ export function Overview({
   const must = useMemo(() => {
     if (choice.side !== 'NO_TRADE') return null;
     const focus = [...sides].sort((a, b) => ((a.gates ?? []).filter((g) => g.ok === false).length) - ((b.gates ?? []).filter((g) => g.ok === false).length))[0] ?? null;
-    return mustChange(focus, mtf, t, tradeLimits?.maxSpreadPct ?? null, now, config.entryIst);
-  }, [choice.side, sides, mtf, t, tradeLimits, now, config.entryIst]);
+    return mustChange(focus, mtf, t, tradeLimits?.maxSpreadPct ?? null, now);
+  }, [choice.side, sides, mtf, t, tradeLimits, now]);
 
   // The default selection follows the desk's side; the operator's click overrides it.
   const deskPick = useMemo<Selected | null>(() => {
@@ -199,10 +206,10 @@ export function Overview({
   const risk = useMemo(() => (leg ? riskEngine(leg, data.legs, emSettle, snap.spot, snap.hoursToExpiry, contracts, leverage) : null), [leg, data.legs, emSettle, snap.spot, snap.hoursToExpiry, contracts, leverage]);
 
   // What changed, for the strike under inspection: one request, every 30 s, with the since-entry row.
-  const changes = useChanges(data, leg, spot, entryMs);
+  const changes = useChanges(data, leg, spot, leg ? entryOf(`${leg.cp}-BTC-${leg.strike}-${snap.expiry}`) : null);
   // The other chosen strike, so What changed shows the pair; one request each, and none when it is the same strike.
   const otherLeg = useMemo(() => { const cp = leg?.cp === 'C' ? 'P' : 'C'; const k = pair[cp]; return k === null ? null : data.legs.find((l) => l.cp === cp && l.strike === k) ?? null; }, [leg?.cp, pair, data.legs]);
-  const otherChanges = useChanges(data, otherLeg, spot, entryMs);
+  const otherChanges = useChanges(data, otherLeg, spot, otherLeg ? entryOf(`${otherLeg.cp}-BTC-${otherLeg.strike}-${snap.expiry}`) : null);
   const otherRisk = useMemo(() => (otherLeg ? riskEngine(otherLeg, data.legs, emSettle, snap.spot, snap.hoursToExpiry, contracts, leverage) : null), [otherLeg, data.legs, emSettle, snap.spot, snap.hoursToExpiry, contracts, leverage]);
   // The chosen strikes, CE first, for the panels that show both.
   const chosenPair = useMemo(() => [{ leg, changes, risk }, { leg: otherLeg, changes: otherChanges, risk: otherRisk }].sort((a, b) => (a.leg?.cp === 'C' ? 0 : 1) - (b.leg?.cp === 'C' ? 0 : 1)), [leg, changes, risk, otherLeg, otherChanges, otherRisk]);
@@ -210,7 +217,7 @@ export function Overview({
   return (
     <PanelFold.Provider value={fold}>
     <div className="ov">
-      <ScreenBar data={data} now={now} freshnessSec={config.freshnessSec} entryIst={config.entryIst} expiries={expiries} onExpiry={onExpiry} controls={controls} error={error} onFoldAll={foldAll} />
+      <ScreenBar data={data} now={now} freshnessSec={config.freshnessSec} expiries={expiries} onExpiry={onExpiry} controls={controls} error={error} onFoldAll={foldAll} />
       <ErrorBoundary where="Final decision">
         <FinalDecision data={data} sides={sides} both={both} choice={choice} leg={leg} mtf={mtf} persist={persist} freshness={ages} must={must} now={now} onSelect={(cp, strike) => setPicked({ cp, strike })} onSell={onSell} />
       </ErrorBoundary>
@@ -219,12 +226,12 @@ export function Overview({
       <div className="ov-main">
         <div className="ov-col">
           <ErrorBoundary where="Price action"><PriceActionPanel market={data.market} tf={chartTf} levels={levels} spot={spot} /></ErrorBoundary>
-          <ErrorBoundary where="Price change"><PriceChangePanel price={movement?.price ?? null} spot={spot} entryIst={config.entryIst} /></ErrorBoundary>
+          <ErrorBoundary where="Price change"><PriceChangePanel price={movement?.price ?? null} spot={spot} /></ErrorBoundary>
           <ErrorBoundary where="Early warning"><EarlyWarningPanel data={data} perp={perp} changes={changes?.rows ?? null} /></ErrorBoundary>
           <ErrorBoundary where="Volatility"><VolatilityPanel data={data} iv={iv} /></ErrorBoundary>
           <ErrorBoundary where="Option flow"><OptionFlowPanel perp={perp} legs={data.legs} atm={snap.atm} window={flowWindow} onWindow={setFlowWindow} /></ErrorBoundary>
           <ErrorBoundary where="Key levels"><KeyLevelsPanel data={data} spot={spot} emUsd={emSettle?.move ?? null} /></ErrorBoundary>
-          <ErrorBoundary where="Desk events"><DeskEventsPanel now={now} expiryTs={snap.expiryTs} entryIst={config.entryIst} /></ErrorBoundary>
+          <ErrorBoundary where="Desk events"><DeskEventsPanel now={now} expiryTs={snap.expiryTs} /></ErrorBoundary>
         </div>
 
         <div className="ov-col">

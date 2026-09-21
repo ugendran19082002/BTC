@@ -455,7 +455,7 @@ describe('the finder\'s best, persistence, what must change, the contract', () =
   });
   it('turns the failing gates into what must change, and says when to look again', () => {
     const focus = { side: 'PE', gates: [{ name: 'IV − RV', ok: false, text: 'cheap' }, { name: 'Liquidity', ok: false, text: 'spread 8%' }, { name: 'PoT', ok: true, text: '' }] } as never as SideAssessment;
-    const m = mustChange(focus, { scored: 7, up: 3, down: 2, side: 2, way: 'SIDE', text: '3/7 SIDE', rows: [] }, { maxPot: 0.25, minEmDistance: 1.25, maxSlippage: 0.05 }, 0.15, Date.UTC(2026, 8, 20, 2, 33, 0), '05:30');
+    const m = mustChange(focus, { scored: 7, up: 3, down: 2, side: 2, way: 'SIDE', text: '3/7 SIDE', rows: [] }, { maxPot: 0.25, minEmDistance: 1.25, maxSlippage: 0.05 }, 0.15, Date.UTC(2026, 8, 20, 2, 33, 0));
     expect(m.why).toEqual(['IV − RV: cheap', 'Liquidity: spread 8%']);
     expect(m.toTrade).toEqual(['IV above realised (ratio ≥ 0.9×)', 'Spread ≤ 15% of the premium']);
     expect(m.recheckIst).toBe('08:05');

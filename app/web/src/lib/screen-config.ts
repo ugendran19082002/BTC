@@ -12,7 +12,6 @@ export type ScreenConfig = {
   /** Prediction horizon the outlook is read at, minutes. */
   horizonMin: number;
   /** The configured entry time, IST "HH:MM". Entry shown is *now*; this is the strategy window it is judged against. */
-  entryIst: string;
   strictness: 'STRICT' | 'BALANCED' | 'AGGRESSIVE';
   sideMode: 'AUTO' | 'CE_ONLY' | 'PE_ONLY' | 'BOTH_ALLOWED';
   riskMode: 'CONSERVATIVE' | 'BALANCED' | 'AGGRESSIVE';
@@ -23,8 +22,15 @@ export type ScreenConfig = {
   contracts: number | null;
 };
 
+/**
+ * The desk's defaults. BALANCED strictness: up to two soft gates may fail and
+ * the side is WATCH rather than NOT PREFERRED -- under STRICT no soft failure
+ * is allowed, so WATCH can never appear and the four outcomes are really two
+ * (chosen 21 Sep 2026). CONSERVATIVE risk keeps the safety numbers tight:
+ * P(touch) ≤ 25 %, ≥ 1.25 EM away, half-spread ≤ 5 % of the premium.
+ */
 export const DEFAULT_CONFIG: ScreenConfig = {
-  horizonMin: 720, entryIst: '05:30', strictness: 'STRICT', sideMode: 'AUTO', riskMode: 'CONSERVATIVE',
+  horizonMin: 720, strictness: 'BALANCED', sideMode: 'AUTO', riskMode: 'CONSERVATIVE',
   execution: 'BID', freshnessSec: 30, contracts: null,
 };
 
@@ -51,14 +57,4 @@ export function thresholds(c: Pick<ScreenConfig, 'strictness' | 'riskMode'>): Th
       ? { maxPot: 0.35, minEmDistance: 1.0, maxSlippage: 0.1, tailLimitFactor: 1.0, sizeFactor: 0.5 }
       : { maxPot: 0.45, minEmDistance: 0.75, maxSlippage: 0.15, tailLimitFactor: 1.0, sizeFactor: 1.0 };
   return { ...risk, softFailsAllowed: c.strictness === 'STRICT' ? 0 : c.strictness === 'BALANCED' ? 2 : 4 };
-}
-
-/** The IST entry time as today's epoch ms, for "time since entry". */
-export function entryTodayMs(entryIst: string, nowMs: number): number | null {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(entryIst);
-  if (!m) return null;
-  // IST is UTC+5:30 with no daylight saving.
-  const ist = new Date(nowMs + 5.5 * 3_600_000);
-  const day = Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate());
-  return day + (Number(m[1]) * 60 + Number(m[2])) * 60_000 - 5.5 * 3_600_000;
 }

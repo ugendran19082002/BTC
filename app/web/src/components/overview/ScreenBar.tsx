@@ -1,6 +1,5 @@
 import { useState, type ReactNode } from 'react';
 import type { ChainResponse, ExpiryOption } from '@/types/desk';
-import { entryTodayMs } from '@/lib/screen-config';
 import { contractValidity, dataFreshness } from '@/lib/overview';
 import { Tag } from './parts';
 
@@ -19,8 +18,8 @@ const hm = (ms: number) => `${Math.floor(ms / 3_600_000)}h ${String(Math.floor((
  * screen's mode and refresh controls, and the glossary. The screen decides with the desk's fixed
  * configuration (lib/screen-config.ts); nothing here changes it.
  */
-export function ScreenBar({ data, now, freshnessSec, entryIst, expiries, onExpiry, controls, error, onFoldAll }: {
-  data: ChainResponse; now: number; freshnessSec: number; entryIst: string;
+export function ScreenBar({ data, now, freshnessSec, expiries, onExpiry, controls, error, onFoldAll }: {
+  data: ChainResponse; now: number; freshnessSec: number;
   /** Collapse or expand every panel on the screen. */
   onFoldAll?: (collapsed: boolean) => void;
   expiries?: readonly ExpiryOption[]; onExpiry?: (expiry: string) => void;
@@ -35,10 +34,8 @@ export function ScreenBar({ data, now, freshnessSec, entryIst, expiries, onExpir
   const away = (h: number) => (h <= 0 ? 'settled' : h < 1 ? `${Math.round(h * 60)}m left` : h < 48 ? `${Math.floor(h)}h ${String(Math.round((h % 1) * 60)).padStart(2, '0')}m left` : `${Math.round(h / 24)}d away`);
   const expiryLabel = (e: { expiry: string; expiryTs: number; hoursAway: number; isDaily: boolean; isNextEntry: boolean; isDefault?: boolean }) =>
     `${IST_DAY.format(new Date(e.expiryTs * 1000))} · 17:30 IST · ${away(e.hoursAway)}${e.isNextEntry ? ' · next entry ★' : e.isDaily ? ' · daily' : e.hoursAway >= 24 * 6 ? ' · weekly / monthly' : ''}`;
+  // Entry is now: the screen decides for an order placed this minute, whatever the clock says.
   const entryMs = snap.live ? now : snap.ts * 1000;
-  const windowMs = entryTodayMs(entryIst, entryMs);
-  const since = windowMs === null ? null : entryMs - windowMs;
-  const windowText = since === null ? '' : since >= 0 && since <= 30 * 60_000 ? ' · in window' : since > 0 ? ` · ${hm(since)} since` : ` · in ${Math.ceil(-since / 60_000)}m`;
   const leftMs = Math.max(0, snap.expiryTs * 1000 - entryMs);
   // The contract's day runs from the previous settlement to this one: where in it we are, in quarters.
   const dayMs = 24 * 3_600_000;
@@ -72,8 +69,8 @@ export function ScreenBar({ data, now, freshnessSec, entryIst, expiries, onExpir
               </select>
             </label>
           ) : <Tag tone="accent">{snap.expiry}</Tag>}
-          <span className="ov-day" title="Entry is now; the window is the strategy's own entry time; expiry is the contract's settlement">
-            entry {IST_HM.format(new Date(entryMs))} · window {entryIst}{windowText} → {IST_DATE.format(new Date(snap.expiryTs * 1000))} {IST_HM.format(new Date(snap.expiryTs * 1000))} · <b>{leftMs === 0 ? 'settled' : `${hm(leftMs)} left`}</b>
+          <span className="ov-day" title="Entry is now — the screen decides for an order placed this minute; expiry is the contract's settlement">
+            entry now {IST_HM.format(new Date(entryMs))} IST → {IST_DATE.format(new Date(snap.expiryTs * 1000))} {IST_HM.format(new Date(snap.expiryTs * 1000))} · <b>{leftMs === 0 ? 'settled' : `${hm(leftMs)} left`}</b>
           </span>
           {controls}
           {onFoldAll && (

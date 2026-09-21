@@ -501,27 +501,20 @@ export function WindowSelect({ value, onChange }: { value: WindowChoice; onChang
 const IST_HM_EV = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
 
 /**
- * What is scheduled: the entry window, funding settlements, this contract's
- * settlement, the desk's own recorders. Computed from the clock, never
+ * What is scheduled: funding settlements, this contract's settlement, the
+ * desk's own recorders. Entry has no slot: it is whenever the trader decides. Computed from the clock, never
  * fetched. A news feed is not captured -- said so rather than faked.
  */
-export function DeskEventsPanel({ now, expiryTs, entryIst }: { now: number; expiryTs: number; entryIst: string }) {
-  const IST = 5.5 * 3_600_000;
-  const ist = new Date(now + IST);
-  const day = Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate()) - IST;
-  const m = /^(\d{1,2}):(\d{2})$/.exec(entryIst);
-  let entry = m ? day + (Number(m[1]) * 60 + Number(m[2])) * 60_000 : null;
-  if (entry !== null && entry < now) entry += 24 * 3_600_000;
+export function DeskEventsPanel({ now, expiryTs }: { now: number; expiryTs: number }) {
   // Delta settles funding at 00:00, 08:00 and 16:00 UTC.
   const utcDay = Date.UTC(new Date(now).getUTCFullYear(), new Date(now).getUTCMonth(), new Date(now).getUTCDate());
   const funding = [0, 8, 16, 24].map((h) => utcDay + h * 3_600_000).find((t) => t > now)!;
   const nextRecord = Math.ceil((now + 1) / 300_000) * 300_000;
   const events = [
-    { at: entry, name: 'Entry window opens', what: `${entryIst} IST, the strategy's own entry time` },
     { at: funding, name: 'Funding settles', what: 'the perpetual pays or receives; the rate resets' },
     { at: nextRecord, name: 'Next 5-minute record', what: 'every strike, the board, the perp' },
     { at: expiryTs * 1000, name: 'This expiry settles', what: '17:30 IST' },
-  ].filter((e): e is { at: number; name: string; what: string } => e.at !== null).sort((a, b) => a.at - b.at);
+  ].sort((a, b) => a.at - b.at);
   const inText = (ms: number) => (ms < 60_000 ? 'now' : ms < 3_600_000 ? `in ${Math.round(ms / 60_000)}m` : `in ${Math.floor(ms / 3_600_000)}h ${String(Math.round((ms % 3_600_000) / 60_000)).padStart(2, '0')}m`);
   return (
     <Panel title="Desk events" right={<small className="ov-muted">IST</small>}>
@@ -538,13 +531,13 @@ export function DeskEventsPanel({ now, expiryTs, entryIst }: { now: number; expi
 const IST_HM_PC = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
 
 /**
- * BTC now against then: the last minute out to half a day, since the entry
- * window, since the contract's day began (the previous 17:30 IST
+ * BTC now against then: the last minute out to half a day, since a held
+ * position's entry (its first fill) when there is one, since the contract's day began (the previous 17:30 IST
  * settlement). Points and percent, from the server's cached candles.
  */
-export function PriceChangePanel({ price, spot, entryIst }: { price: { spot: number | null; rows: PriceChange[] } | null; spot: number | null; entryIst: string }) {
+export function PriceChangePanel({ price, spot }: { price: { spot: number | null; rows: PriceChange[] } | null; spot: number | null }) {
   const rows = price?.rows ?? [];
-  const label = (r: PriceChange) => r.mark === 'entry' ? `Since entry ${entryIst}` : r.mark === 'dayStart' ? 'Since 17:30 (day start)' : r.minutes! >= 60 ? `${r.minutes! / 60}h` : `${r.minutes}m`;
+  const label = (r: PriceChange) => r.mark === 'entry' ? `Since position entry ${IST_HM_PC.format(new Date(r.at))}` : r.mark === 'dayStart' ? 'Since last settlement 17:30' : r.minutes! >= 60 ? `${r.minutes! / 60}h` : `${r.minutes}m`;
   const now = price?.spot ?? spot;
   return (
     <Panel title="Price change" right={<small className="ov-muted">BTC {fmt.n(now)}</small>}>
@@ -566,7 +559,7 @@ export function PriceChangePanel({ price, spot, entryIst }: { price: { spot: num
           </tbody>
         </table>
       )}
-      <p className="ov-foot">Then is the candle's close at that time; the marks are the desk's own — the entry window and the contract's day start.</p>
+      <p className="ov-foot">Then is the candle's close at that time; the marks are the last settlement (17:30 IST) and, when a position is held, its entry (its first fill).</p>
     </Panel>
   );
 }
