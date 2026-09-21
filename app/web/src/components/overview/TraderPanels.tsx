@@ -39,6 +39,11 @@ export function EarlyWarningPanel({ data, perp, changes }: { data: ChainResponse
 const TYPE_LABEL: Record<string, string> = {
   LONG_BUILDUP: 'Long buildup', SHORT_COVERING: 'Short covering', SHORT_BUILDUP: 'Short buildup', LONG_UNWINDING: 'Long unwinding', MIXED: 'Mixed',
 };
+/** What each type means for the price: new positions are pressure, positions closing are only potential. */
+const TYPE_PRESSURE: Record<string, { text: string; tone: 'ov-up' | 'ov-down' }> = {
+  LONG_BUILDUP: { text: 'Bullish pressure', tone: 'ov-up' }, SHORT_BUILDUP: { text: 'Bearish pressure', tone: 'ov-down' },
+  SHORT_COVERING: { text: 'Potential bullish', tone: 'ov-up' }, LONG_UNWINDING: { text: 'Potential bearish', tone: 'ov-down' },
+};
 
 /**
  * Multi-timeframe, the one place: a row a horizon with the direction the
@@ -73,12 +78,14 @@ export function MovementPanel({ data, em, activeMin, mtf, movement }: { data: Ch
               const m = mtf.rows.find((r) => r.tf === tf) ?? null;
               const h = rows.find((r) => r.label === tf) ?? null;
               const t = movement?.find((r) => r.minutes === mins[tf]) ?? null;
+              const pressure = t?.type ? TYPE_PRESSURE[t.type] ?? null : null;
               return (
                 <tr key={tf} className={mins[tf] === activeMin ? 'ov-atm' : undefined}>
                   <td>{tf}{mins[tf] === activeMin ? ' ◆' : ''}</td>
                   <td className={tone(m?.signal)}>{m?.signal === '↑' ? 'UP' : m?.signal === '↓' ? 'DOWN' : m?.signal === '→' ? 'SIDE' : '—'}</td>
                   <td className={t?.direction === 'UP' ? 'ov-up' : t?.direction === 'DOWN' ? 'ov-down' : 'ov-muted'} title={t ? `price ${t.pricePct === null ? '—' : `${fmt.signed(t.pricePct, 2)}%`} · OI ${t.oiPct === null ? '—' : `${fmt.signed(t.oiPct, 2)}%`} · volume ${t.volumeRatio === null ? '—' : `${t.volumeRatio.toFixed(1)}×`} · tape ${t.flow?.toLowerCase() ?? '—'}` : undefined}>
                     {t?.type ? TYPE_LABEL[t.type] : '—'}{t?.strength && t.type !== 'MIXED' ? <small className="ov-muted"> · {t.strength.toLowerCase()}</small> : null}{t?.flow === 'CONFIRMS' ? <small className="ov-up"> ✓</small> : t?.flow === 'DIVERGES' ? <small className="ov-down"> ✕</small> : null}
+                    {pressure ? <small className={`ov-mtf-pressure ${pressure.tone}`}>{pressure.text}</small> : null}
                   </td>
                   <td>{fmt.pct(m?.pUp ?? null)}</td>
                   <td className="ov-muted">{h ? `${fmt.pct(h.pUp)} · ${fmt.pct(h.pRange)} · ${fmt.pct(h.pDown)}` : '—'}</td>
@@ -89,7 +96,7 @@ export function MovementPanel({ data, em, activeMin, mtf, movement }: { data: Ch
           </tbody>
         </table>
       </div>
-      <p className="ov-foot">Type: price ↑ with OI ↑ is a long buildup, ↑ with OI ↓ short covering, ↓ with OI ↑ a short buildup, ↓ with OI ↓ a long unwinding; ✓ / ✕ is whether the tape's aggressors agree. The three band shares add to 100%.</p>
+      <p className="ov-foot">Type: price ↑ with OI ↑ is a long buildup (new longs — bullish pressure), ↓ with OI ↑ a short buildup (new shorts — bearish pressure), ↑ with OI ↓ short covering (shorts closing — potential bullish), ↓ with OI ↓ a long unwinding (longs closing — potential bearish); ✓ / ✕ is whether the tape's aggressors agree. The three band shares add to 100%.</p>
       <div className="ov-board-read">
         {board.map((b) => (
           <Row key={b.name} mark="arrow" tone={b.says === 'up' ? 'up' : b.says === 'down' ? 'down' : 'muted'} label={b.name} value={<span className={says(b.says)}>{b.text}</span>} hint={b.formula} />

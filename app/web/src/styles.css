@@ -2913,3 +2913,6 @@ table.ov-mini.ov-levels { width: auto; min-width: 100%; }
 .ov-pchange td:not(:first-child), .ov-pchange th:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
 .ov-pchange tr.ov-pchange-mark td { border-top: 1px solid var(--border); font-weight: 600; }
 .ov-pchange tr.ov-pchange-mark + tr.ov-pchange-mark td { border-top: 0; }
+
+/* Multi-timeframe: the pressure a move's type puts on the price, under the type. */
+.ov-mtf-pressure { display: block; font-size: 10.5px; line-height: 1.2; opacity: .85; }
