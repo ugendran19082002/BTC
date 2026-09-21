@@ -22,3 +22,14 @@ describe('MovementPanel', () => {
     expect(document.querySelectorAll('.ov-mtf-pressure')).toHaveLength(4);
   });
 });
+
+describe('MovementPanel expected move', () => {
+  it('signs the move by the timeframe direction: + up, − down, ± side', () => {
+    render(<MovementPanel data={data} em={expectedMove(data.snapshot)} activeMin={720} mtf={mtfConsensus(data.market, data.outlook)} movement={null} />);
+    const cells = [...document.querySelectorAll('tbody tr')].map((r) => ({ dir: r.children[1]!.textContent, move: r.children[5]!.textContent!.trim() }));
+    expect(cells.length).toBeGreaterThan(0);
+    for (const c of cells.filter((x) => x.move !== '—')) {
+      expect(c.move).toMatch(c.dir === 'UP' ? /^\+[\d,]+ pts$/ : c.dir === 'DOWN' ? /^−[\d,]+ pts$/ : /^±[\d,]+ pts$/);
+    }
+  });
+});

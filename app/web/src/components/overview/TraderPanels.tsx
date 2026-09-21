@@ -71,7 +71,7 @@ export function MovementPanel({ data, em, activeMin, mtf, movement }: { data: Ch
             <th title="What the perpetual's price, OI and tape make of the move over this window">Type</th>
             <th title="Measured share of windows over this horizon that closed higher">P(up)</th>
             <th title="Where the measured record fell against the implied band: above · inside · below">Band</th>
-            <th title="spot × ATM IV × √t for the horizon">± Move</th>
+            <th title="spot × ATM IV × √t for the horizon, signed by the direction: + UP, − DOWN, ± SIDE">Expected move</th>
           </tr></thead>
           <tbody>
             {labels.map((tf) => {
@@ -89,14 +89,16 @@ export function MovementPanel({ data, em, activeMin, mtf, movement }: { data: Ch
                   </td>
                   <td>{fmt.pct(m?.pUp ?? null)}</td>
                   <td className="ov-muted">{h ? `${fmt.pct(h.pUp)} · ${fmt.pct(h.pRange)} · ${fmt.pct(h.pDown)}` : '—'}</td>
-                  <td className="ov-muted">{h?.em == null ? '—' : `±${fmt.n(h.em)}`}</td>
+                  <td className={tone(m?.signal)} title="The expected move for the horizon, signed by the timeframe's direction: + for UP, − for DOWN, ± for SIDE">
+                    {h?.em == null ? '—' : `${m?.signal === '↑' ? '+' : m?.signal === '↓' ? '−' : '±'}${fmt.n(h.em)} pts`}
+                  </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
-      <p className="ov-foot">Type: price ↑ with OI ↑ is a long buildup (new longs — bullish pressure), ↓ with OI ↑ a short buildup (new shorts — bearish pressure), ↑ with OI ↓ short covering (shorts closing — potential bullish), ↓ with OI ↓ a long unwinding (longs closing — potential bearish); ✓ / ✕ is whether the tape's aggressors agree. The three band shares add to 100%.</p>
+      <p className="ov-foot">Type: price ↑ with OI ↑ is a long buildup (new longs — bullish pressure), ↓ with OI ↑ a short buildup (new shorts — bearish pressure), ↑ with OI ↓ short covering (shorts closing — potential bullish), ↓ with OI ↓ a long unwinding (longs closing — potential bearish); ✓ / ✕ is whether the tape's aggressors agree. The three band shares add to 100%. Expected move is signed by the direction: UP +pts, DOWN −pts, SIDE ±pts.</p>
       <div className="ov-board-read">
         {board.map((b) => (
           <Row key={b.name} mark="arrow" tone={b.says === 'up' ? 'up' : b.says === 'down' ? 'down' : 'muted'} label={b.name} value={<span className={says(b.says)}>{b.text}</span>} hint={b.formula} />
