@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import type { ChainResponse, Leg, Outlook } from '@/types/desk';
 import live from '@/test/fixtures/chain-live.json';
 import {
-  bestLeg, bothSides, breakeven, candidates, consensus, expectedMove, feePerContract, freshness, gammaRisk,
+  sideGates, bestLeg, bothSides, breakeven, candidates, consensus, expectedMove, feePerContract, freshness, gammaRisk,
   ivRv, keyLevels, marginPerContract, modelView, odds, orderEstimate, payoffPrices, premiumAnalysis, shortPayoff, skew, volRegime,
   ageText, contractChecks, contractValidity, dataFreshness, expiryDirection, mtfConsensus, executionRead, finderRanks, mustChange, optionBias, persistence, sellerImpact, sellerState, skewRichness, strikeSignals, windowMinutes, premiumDecay, triggerState, DESK_FILTER, filtersChanged, assessBoth, assessSides, horizonRows, namedLevels, earlyWarning, findStrikes, boardRead, movementVerdict, parseSymbol, positionState, positionViews, premiumMomentum, riskEngine, shortLossAt,
   type SideAssessment,
@@ -457,7 +457,7 @@ describe('the finder\'s best, persistence, what must change, the contract', () =
     const focus = { side: 'PE', gates: [{ name: 'IV − RV', ok: false, text: 'cheap' }, { name: 'Liquidity', ok: false, text: 'spread 8%' }, { name: 'PoT', ok: true, text: '' }] } as never as SideAssessment;
     const m = mustChange(focus, { scored: 7, up: 3, down: 2, side: 2, way: 'SIDE', text: '3/7 SIDE', rows: [] }, { maxPot: 0.25, minEmDistance: 1.25, maxSlippage: 0.05 }, 0.15, Date.UTC(2026, 8, 20, 2, 33, 0), '05:30');
     expect(m.why).toEqual(['IV − RV: cheap', 'Liquidity: spread 8%']);
-    expect(m.toTrade).toEqual(['IV above realised (ratio ≥ 0.9×)', 'Spread ≤ 0.15%']);
+    expect(m.toTrade).toEqual(['IV above realised (ratio ≥ 0.9×)', 'Spread ≤ 15% of the premium']);
     expect(m.recheckIst).toBe('08:05');
     const c = contractChecks({ live: true, expiryTs: Date.UTC(2026, 8, 20, 12) / 1000, isDaily: true, isNextEntry: true, step: 200, hoursToExpiry: 8 }, Date.UTC(2026, 8, 20, 4));
     expect(c.map((x) => x.ok)).toEqual([true, true, true, true]);
@@ -492,5 +492,18 @@ describe('expiry direction', () => {
     expect(up.pUp).toBeGreaterThan(down.pUp);
     expect(up.tiltUsd).toBeGreaterThan(0); expect(down.tiltUsd).toBeLessThan(0);
     expect(expiryDirection({ ...base(), atmIv: null })).toBeNull();
+  });
+});
+
+describe("sideGates liquidity", () => {
+  // The desk's limit arrives as a fraction (0.15 = 15 % of the premium), the number the ticket's precheck uses.
+  const leg = { ...fixtureData().legs.find((l) => l.cp === 'C' && l.bid && l.ask)! };
+  const base = { side: 'CE' as const, iv: null, regime: null, direction: { confirmed: true, readable: 1, summary: '' }, outlook: fixtureData().outlook, tailLossUsd: null, maxDailyLossUsd: null, marginUsd: null, balanceUsd: null };
+  test('passes a 10 % spread against a 15 % limit and fails it against 5 %', () => {
+    const wide = { ...leg, bid: 100, ask: 110, mark: 105 };
+    const pass = sideGates({ ...base, leg: wide, maxSpreadPct: 0.15 }).find((g) => g.name === 'Liquidity')!;
+    expect(pass.ok).toBe(true);
+    expect(pass.text).toBe('spread 9.5% of premium (limit 15%)');
+    expect(sideGates({ ...base, leg: wide, maxSpreadPct: 0.05 }).find((g) => g.name === 'Liquidity')!.ok).toBe(false);
   });
 });

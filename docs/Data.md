@@ -99,8 +99,13 @@ of every listed expiry, live, for the term-structure chart.
 `GET /api/movement` reads the perpetual's records by window (5m … 12h): BTC,
 its open interest and its tape, classed as long buildup / short covering /
 short buildup / long unwinding / mixed, with the volume's strength against
-the day's pace and whether the aggressors agree. `GET /api/perp?window=` now
-takes up to 1440 minutes.
+the day's pace and whether the aggressors agree. Its `price` block is BTC
+now against then — 1m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 12h back, plus the desk's
+marks: since the entry window (`?entry=` epoch ms) and since the contract's
+day began, the previous 17:30 IST settlement (`?expiry=` epoch seconds) —
+points and percent from the cached candles (minute bars to eight hours,
+five-minute bars beyond; null where they do not reach). `GET /api/perp?window=`
+now takes up to 1440 minutes.
 
 The board's own record (`chain_features`) is written by the server every
 five minutes since 20 Sep 2026, whether or not a browser is open — before

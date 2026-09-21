@@ -701,6 +701,7 @@ export function sideGates(input: {
   regime: string | null;
   direction: { confirmed: boolean; readable: number; summary: string };
   outlook: Outlook;
+  /** The desk's spread limit as a fraction of the premium (0.15 = 15 %), the same number the ticket's precheck uses. */
   maxSpreadPct: number | null;
   tailLossUsd: number | null;
   maxDailyLossUsd: number | null;
@@ -730,7 +731,7 @@ export function sideGates(input: {
     { name: 'Distance / EM', ok: emDist === null ? null : emDist >= t.minEmDistance, text: emDist === null ? 'not readable' : `${emDist.toFixed(2)}× (min ${t.minEmDistance}×)` },
     { name: 'IV − RV', ok: iv ? iv.label !== 'cheap' : null, text: iv ? `${iv.label} · ${iv.ratio.toFixed(2)}×` : 'not readable' },
     { name: 'Gamma', ok: g === null ? null : g !== 'high', text: g ?? 'not readable' },
-    { name: 'Liquidity', ok: pa?.spreadPct == null || maxSpreadPct === null ? null : pa.spreadPct <= maxSpreadPct / 100, text: pa?.spreadPct == null ? 'no two-sided quote' : `spread ${(pa.spreadPct * 100).toFixed(1)}%` },
+    { name: 'Liquidity', ok: pa?.spreadPct == null || maxSpreadPct === null ? null : pa.spreadPct <= maxSpreadPct, text: pa?.spreadPct == null ? 'no two-sided quote' : `spread ${(pa.spreadPct * 100).toFixed(1)}% of premium${maxSpreadPct === null ? '' : ` (limit ${(maxSpreadPct * 100).toFixed(0)}%)`}` },
     { name: 'Tail risk', ok: tailLossUsd === null || maxDailyLossUsd === null ? null : tailLossUsd <= maxDailyLossUsd * t.tailLimitFactor, text: tailLossUsd === null ? 'not readable' : `$${tailLossUsd.toFixed(2)} at 2×EM${maxDailyLossUsd === null ? '' : ` (limit $${(maxDailyLossUsd * t.tailLimitFactor).toFixed(2)})`}` },
     { name: 'Execution', ok: slip === null ? null : slip <= t.maxSlippage, text: slip === null ? 'no quote' : `half-spread ${(slip * 100).toFixed(1)}% of premium (limit ${(t.maxSlippage * 100).toFixed(0)}%)` },
     { name: 'Margin', ok: marginUsd === null || balanceUsd === null ? null : marginUsd <= balanceUsd, text: marginUsd === null ? 'not readable' : `$${marginUsd.toFixed(2)}` },
@@ -1363,7 +1364,7 @@ export function mustChange(focus: SideAssessment | null, mtf: MtfConsensus, t: {
   for (const g of fails) {
     switch (g.name) {
       case 'IV − RV': toTrade.push('IV above realised (ratio ≥ 0.9×)'); break;
-      case 'Liquidity': toTrade.push(`Spread ≤ ${maxSpreadPct ?? '—'}%`); break;
+      case 'Liquidity': toTrade.push(`Spread ≤ ${maxSpreadPct === null ? '—' : (maxSpreadPct * 100).toFixed(0)}% of the premium`); break;
       case 'Execution': toTrade.push(`Half-spread ≤ ${(t.maxSlippage * 100).toFixed(0)}% of the premium`); break;
       case 'MTF consensus': toTrade.push(`MTF ≥ ${Math.ceil(mtf.scored / 2) + (mtf.scored % 2 === 0 ? 1 : 0)}/${mtf.scored} one way`); break;
       case 'PoT': toTrade.push(`P(touch) ≤ ${(t.maxPot * 100).toFixed(0)}% — a further strike`); break;

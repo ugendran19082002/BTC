@@ -1,7 +1,7 @@
 import { Fragment } from 'react';
 import { usePersisted } from '@/hooks/usePersisted';
 import type { ChainResponse, Leg, MarketRead } from '@/types/desk';
-import type { FlowSummary, PerpResponse, SideFlow, TermHistoryPoint, TermPoint, TermResponse } from '@/api/desk';
+import type { FlowSummary, PerpResponse, PriceChange, SideFlow, TermHistoryPoint, TermPoint, TermResponse } from '@/api/desk';
 import { ivRv, skew, skewRichness, srDistances, structureRead, volRegime, WINDOW_CHOICES, windowLabel, type IvRv, type NamedLevel, type OptionBias, type WindowChoice } from '@/lib/overview';
 import { fmt, More, NotCaptured, Panel, Row, Tag, useWidth } from './parts';
 
@@ -529,6 +529,44 @@ export function DeskEventsPanel({ now, expiryTs, entryIst }: { now: number; expi
         <Row key={e.name} label={<><b className="ov-mono">{IST_HM_EV.format(new Date(e.at))}</b> {e.name}</>} value={<span className="ov-muted">{inText(e.at - now)}</span>} hint={e.what} />
       ))}
       <p className="ov-foot">Computed from the clock. Market news and events are not captured — nothing here is a headline.</p>
+    </Panel>
+  );
+}
+
+// ------------------------------------------------------------ price change
+
+const IST_HM_PC = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
+
+/**
+ * BTC now against then: the last minute out to half a day, since the entry
+ * window, since the contract's day began (the previous 17:30 IST
+ * settlement). Points and percent, from the server's cached candles.
+ */
+export function PriceChangePanel({ price, spot, entryIst }: { price: { spot: number | null; rows: PriceChange[] } | null; spot: number | null; entryIst: string }) {
+  const rows = price?.rows ?? [];
+  const label = (r: PriceChange) => r.mark === 'entry' ? `Since entry ${entryIst}` : r.mark === 'dayStart' ? 'Since 17:30 (day start)' : r.minutes! >= 60 ? `${r.minutes! / 60}h` : `${r.minutes}m`;
+  const now = price?.spot ?? spot;
+  return (
+    <Panel title="Price change" right={<small className="ov-muted">BTC {fmt.n(now)}</small>}>
+      {rows.length === 0 ? <p className="ov-empty">No price record yet.</p> : (
+        <table className="ov-mini ov-pchange">
+          <thead><tr><th>Window</th><th>Then</th><th>Δ pts</th><th>Δ %</th></tr></thead>
+          <tbody>
+            {rows.map((r) => {
+              const tone = r.pts === null ? 'ov-muted' : r.pts > 0 ? 'ov-up' : r.pts < 0 ? 'ov-down' : 'ov-muted';
+              return (
+                <tr key={`${r.mark ?? r.minutes}`} className={r.mark ? 'ov-pchange-mark' : undefined}>
+                  <td title={`${IST_HM_PC.format(new Date(r.at))} IST`}>{label(r)}</td>
+                  <td>{fmt.n(r.then)}</td>
+                  <td className={tone}>{r.pts === null ? '—' : `${r.pts > 0 ? '+' : ''}${fmt.n(Math.round(r.pts))}`}</td>
+                  <td className={tone}>{r.pct === null ? '—' : `${r.pct > 0 ? '+' : ''}${r.pct.toFixed(2)}%`}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+      <p className="ov-foot">Then is the candle's close at that time; the marks are the desk's own — the entry window and the contract's day start.</p>
     </Panel>
   );
 }

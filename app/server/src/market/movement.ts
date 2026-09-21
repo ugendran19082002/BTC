@@ -1,6 +1,6 @@
 import { one, rows } from '../db/pool.js';
 import { flowSchema, livePerp } from './flow.js';
-import { spotMinutesAgo } from './moves.js';
+import { readMarket, spotMinutesAgo } from './moves.js';
 
 /**
  * The character of a move, by window: price, open interest and volume
@@ -24,6 +24,37 @@ import { spotMinutesAgo } from './moves.js';
  */
 
 export const MOVEMENT_WINDOWS_MIN = [5, 15, 30, 60, 180, 360, 720] as const;
+
+/** The windows the price-change table shows: the tape's last minute out to half a day. */
+export const PRICE_WINDOWS_MIN = [1, 5, 15, 30, 60, 120, 240, 360, 720] as const;
+
+export type PriceChange = {
+  /** Minutes back, or a named mark: the entry window, the contract's day start (the previous 17:30 IST settlement). */
+  minutes: number | null;
+  mark: 'entry' | 'dayStart' | null;
+  /** When "then" is, epoch ms. */
+  at: number;
+  then: number | null;
+  pts: number | null;
+  pct: number | null;
+};
+
+/**
+ * BTC now against BTC then, for each window and for the desk's own marks:
+ * points and percent, from the cached candles (the minute bars out to eight
+ * hours, five-minute bars beyond). Null where the candles do not reach.
+ */
+export function priceChanges(spotNow: number | null, nowMs: number, marks: { entryMs?: number | null; dayStartMs?: number | null } = {}): PriceChange[] {
+  const row = (minutes: number | null, mark: PriceChange['mark'], at: number): PriceChange => {
+    const then = at < nowMs - 30_000 ? spotMinutesAgo((nowMs - at) / 60_000, nowMs) : spotNow;
+    const ok = spotNow !== null && then !== null && then > 0;
+    return { minutes, mark, at, then, pts: ok ? spotNow - then : null, pct: ok ? (spotNow / then - 1) * 100 : null };
+  };
+  const out = PRICE_WINDOWS_MIN.map((m) => row(m, null, nowMs - m * 60_000));
+  if (marks.entryMs != null && marks.entryMs <= nowMs) out.push(row(null, 'entry', marks.entryMs));
+  if (marks.dayStartMs != null && marks.dayStartMs <= nowMs) out.push(row(null, 'dayStart', marks.dayStartMs));
+  return out;
+}
 
 export type MovementType = 'LONG_BUILDUP' | 'SHORT_COVERING' | 'SHORT_BUILDUP' | 'LONG_UNWINDING' | 'MIXED';
 export type MovementStrength = 'WEAK' | 'MODERATE' | 'STRONG' | 'EXTREME';
@@ -77,7 +108,7 @@ export function flowRead(direction: 'UP' | 'DOWN' | null, aggressorBuyPct: numbe
 }
 
 /** One row per window, from the records. */
-export async function movementByWindow(nowMs = Date.now()): Promise<{ at: number; rows: MovementRow[] }> {
+export async function movementByWindow(nowMs = Date.now(), marks: { entryMs?: number | null; dayStartMs?: number | null } = {}): Promise<{ at: number; rows: MovementRow[]; price: { spot: number | null; rows: PriceChange[] } }> {
   await flowSchema();
   const current = Math.floor(nowMs / 60_000) * 60_000;
   const dayAgo = current - 24 * 3_600_000;
@@ -88,6 +119,8 @@ export async function movementByWindow(nowMs = Date.now()): Promise<{ at: number
   );
   const vols = minutes.map((m) => m.vol).sort((a, b) => a - b);
   const medianMinute = vols.length >= 30 ? vols[Math.floor(vols.length / 2)]! : null;
+  // The candles are cached by the chain route; on a cold process, fetch them once so the windows can be read.
+  if (spotMinutesAgo(5, nowMs) === null) await readMarket().catch(() => {});
   const perp = await livePerp(nowMs).catch(() => null);
   const spotNow = perp?.spot ?? perp?.mark ?? spotMinutesAgo(0, nowMs);
   const oiNow = perp?.oiContracts ?? null;
@@ -115,5 +148,5 @@ export async function movementByWindow(nowMs = Date.now()): Promise<{ at: number
       flow: flowRead(c.direction, aggressorBuyPct), thresholds: t,
     });
   }
-  return { at: nowMs, rows: out };
+  return { at: nowMs, rows: out, price: { spot: spotNow, rows: priceChanges(spotNow, nowMs, marks) } };
 }

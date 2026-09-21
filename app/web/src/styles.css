@@ -2908,3 +2908,8 @@ table.ov-mini.ov-levels { width: auto; min-width: 100%; }
 .ov-expiry-phases { display: inline-flex; gap: 14px; font-size: 10.5px; letter-spacing: .06em; }
 .ov-expiry-phases em { font-style: normal; color: var(--dim); } .ov-expiry-phases em.on { color: var(--up); font-weight: 700; }
 .ov-mono { font-family: monospace; font-weight: 600; }
+
+/* Price change: the marks (since entry, since the day start) sit apart from the windows. */
+.ov-pchange td:not(:first-child), .ov-pchange th:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
+.ov-pchange tr.ov-pchange-mark td { border-top: 1px solid var(--border); font-weight: 600; }
+.ov-pchange tr.ov-pchange-mark + tr.ov-pchange-mark td { border-top: 0; }

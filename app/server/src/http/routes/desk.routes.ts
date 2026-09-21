@@ -167,8 +167,17 @@ export function registerDeskRoutes(app: FastifyInstance) {
    * open interest and tape. Strength from volume against the day's pace; the
    * aggressor read beside it as confirmation.
    */
-  app.get('/api/movement', async (_req, reply) => {
-    try { return await movementByWindow(Date.now()); } catch (e) { reply.code(502); return { error: (e as Error).message }; }
+  app.get('/api/movement', async (req, reply) => {
+    try {
+      const q = req.query as { entry?: string; expiry?: string };
+      const now = Date.now();
+      // The desk's marks for the price-change table: the entry window (epoch ms) and the contract's day start,
+      // the previous 17:30 IST settlement -- a day before the expiry's own (epoch seconds).
+      const entryMs = /^\d{12,13}$/.test(q.entry ?? '') ? Number(q.entry) : null;
+      const expiryTs = /^\d{9,10}$/.test(q.expiry ?? '') ? Number(q.expiry) : null;
+      const dayStartMs = expiryTs === null ? null : expiryTs * 1000 - 24 * 3_600_000;
+      return await movementByWindow(now, { entryMs, dayStartMs });
+    } catch (e) { reply.code(502); return { error: (e as Error).message }; }
   });
 
   app.get('/api/perp', async (req, reply) => {

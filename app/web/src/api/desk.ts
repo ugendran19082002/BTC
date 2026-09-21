@@ -186,4 +186,13 @@ export type MovementRow = {
   type: MovementType | null; direction: 'UP' | 'DOWN' | null; strength: 'WEAK' | 'MODERATE' | 'STRONG' | 'EXTREME' | null;
   flow: 'CONFIRMS' | 'DIVERGES' | 'FLAT' | null; thresholds: { pricePct: number; oiPct: number };
 };
-export const getMovement = () => json<{ at: number; rows: MovementRow[] }>('/api/movement');
+/** BTC now against then: a window back, or the desk's marks (the entry window, the contract's day start). */
+export type PriceChange = { minutes: number | null; mark: 'entry' | 'dayStart' | null; at: number; then: number | null; pts: number | null; pct: number | null };
+export type MovementResponse = { at: number; rows: MovementRow[]; price: { spot: number | null; rows: PriceChange[] } };
+export const getMovement = (entryMs: number | null = null, expiryTs: number | null = null) => {
+  const q = new URLSearchParams();
+  if (entryMs !== null) q.set('entry', String(entryMs));
+  if (expiryTs !== null) q.set('expiry', String(expiryTs));
+  const qs = q.toString();
+  return json<MovementResponse>(`/api/movement${qs ? `?${qs}` : ''}`);
+};
