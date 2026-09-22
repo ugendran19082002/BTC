@@ -51,6 +51,8 @@ export type Chosen = {
   pOtm: number | null;
   lots: number;
   ask: number | null;
+  /** Set when the premium rule's own number found nothing and its fallback found this. */
+  fallbackUsd?: number;
 };
 
 export type Selection = {
@@ -134,16 +136,37 @@ export function pickStrike(
     return readable.reduce((a, b) => (b.oi! > a.oi! ? b : a));
   }
 
-  if (cfg.premium.mode === 'atLeast') {
-    const paying = otm.filter((l) => l.sellPrice! >= cfg.premium.usd);
-    if (paying.length === 0) return null;
-    // Furthest from the money is the cheapest of those that still pay it.
-    return paying.reduce((a, b) => (b.sellPrice! < a.sellPrice! ? b : a));
-  }
-  const under = otm.filter((l) => l.sellPrice! <= cfg.premium.usd);
-  if (under.length === 0) return null;
-  // Richest at or below the cap.
-  return under.reduce((a, b) => (b.sellPrice! > a.sellPrice! ? b : a));
+  /*
+   * The number first, and the fallback only when the number finds nothing at
+   * all -- never because the fallback's strike looks better. "At most $20, else
+   * at most $50" is a rule about a board with nothing under $20, not a second
+   * opinion on a board that has one.
+   */
+  const fallback = cfg.premium.fallbackUsd;
+  return pickByPremium(otm, cfg.premium.mode, cfg.premium.usd)
+    ?? (fallback !== null && fallback !== undefined ? pickByPremium(otm, cfg.premium.mode, fallback) : null);
+}
+
+/** Whether a price meets a premium rule. */
+export const meetsPremium = (price: number, mode: StrategyConfig['premium']['mode'], usd: number): boolean =>
+  mode === 'atLeast' ? price >= usd : price <= usd;
+
+/**
+ * One premium rule over out-of-the-money strikes.
+ *
+ *   atLeast   furthest from the money still paying it: the cheapest that pays
+ *   atMost    the richest at or below it: the last strike before the cap
+ */
+export function pickByPremium(
+  otm: readonly Candidate[],
+  mode: StrategyConfig['premium']['mode'],
+  usd: number,
+): Candidate | null {
+  const ok = otm.filter((l) => meetsPremium(l.sellPrice!, mode, usd));
+  if (ok.length === 0) return null;
+  return mode === 'atLeast'
+    ? ok.reduce((a, b) => (b.sellPrice! < a.sellPrice! ? b : a))
+    : ok.reduce((a, b) => (b.sellPrice! > a.sellPrice! ? b : a));
 }
 
 /**
@@ -172,7 +195,8 @@ export function selectLegs(
           ? `${leg}: no ${strikeLabel(cfg.strikeStep)} strike listed with a price`
           : cfg.strikeRule === 'oiWall'
             ? `${leg}: no wall within ${opts.wallWithinEm ?? DEFAULT_WALL_WITHIN_EM} expected moves that pays $${cfg.premium.usd}`
-            : `${leg}: nothing out of the money ${cfg.premium.mode === 'atLeast' ? 'paying' : 'at or below'} $${cfg.premium.usd}`,
+            : `${leg}: nothing out of the money ${cfg.premium.mode === 'atLeast' ? 'paying' : 'at or below'} $${cfg.premium.usd}`
+              + (cfg.premium.fallbackUsd != null ? `, nor $${cfg.premium.fallbackUsd}` : ''),
       );
       continue;
     }
@@ -226,9 +250,17 @@ export function selectLegs(
       pOtm: c.pOtm,
       lots: lots[leg],
       ask: c.ask ?? null,
+      ...(viaFallback(cfg, c) ? { fallbackUsd: cfg.premium.fallbackUsd! } : {}),
     })),
     refusals,
   };
+}
+
+/** True when this strike was found by the premium fallback rather than the rule's own number. */
+function viaFallback(cfg: StrategyConfig, c: Candidate): boolean {
+  return cfg.strikeRule === 'premium'
+    && cfg.premium.fallbackUsd !== null && cfg.premium.fallbackUsd !== undefined
+    && !meetsPremium(c.sellPrice!, cfg.premium.mode, cfg.premium.usd);
 }
 
 /**
@@ -270,7 +302,8 @@ export function afterDeskCheck(s: Strategy, asked: readonly Verdict[]): Selectio
 
 /** A one-line account of what a run did, for the journal and the screen. */
 export function describeSelection(sel: Selection): string {
-  const sold = sel.legs.map((l) => `${l.cp === 'C' ? 'CE' : 'PE'} ${l.strike} x${l.lots} @ ${l.price}`);
+  const sold = sel.legs.map((l) => `${l.cp === 'C' ? 'CE' : 'PE'} ${l.strike} x${l.lots} @ ${l.price}`
+    + (l.fallbackUsd !== undefined ? ` (fallback $${l.fallbackUsd})` : ''));
   if (sold.length === 0) return sel.refusals.join('; ') || 'nothing to sell';
   return sold.join(', ') + (sel.refusals.length ? ` (${sel.refusals.join('; ')})` : '');
 }

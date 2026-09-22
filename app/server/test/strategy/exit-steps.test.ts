@@ -406,3 +406,22 @@ describe('real time: a strategy trade on the paper exchange, walked across its s
     assert.deepEqual((await r.ex.getOpenOrders(CE)).filter((o) => o.reduceOnly), [], 'the stop went with it');
   });
 });
+
+describe('validateConfig: premium fallback', () => {
+  const v = (premium: StrategyConfig['premium']) => validateConfig(cfg({ premium }));
+  test('[critical] at most $20, fallback $50 is valid', () => assert.deepEqual(v({ mode: 'atMost', usd: 20, fallbackUsd: 50 }), []));
+  test('at most: a fallback not above the number could never find more', () => {
+    assert.deepEqual(v({ mode: 'atMost', usd: 20, fallbackUsd: 20 }), ['The fallback must be above $20: it is tried when nothing is at or below $20.']);
+    assert.deepEqual(v({ mode: 'atMost', usd: 20, fallbackUsd: 10 }), ['The fallback must be above $20: it is tried when nothing is at or below $20.']);
+  });
+  test('at least: the fallback floor must be lower', () => {
+    assert.deepEqual(v({ mode: 'atLeast', usd: 20, fallbackUsd: 10 }), []);
+    assert.deepEqual(v({ mode: 'atLeast', usd: 20, fallbackUsd: 30 }), ['The fallback must be below $20: it is tried when nothing pays $20.']);
+  });
+  test('zero, negative or nonsense is refused; null and absent are off', () => {
+    assert.match(v({ mode: 'atMost', usd: 20, fallbackUsd: 0 })[0]!, /positive number of dollars/);
+    assert.match(v({ mode: 'atMost', usd: 20, fallbackUsd: Number.NaN })[0]!, /positive number of dollars/);
+    assert.deepEqual(v({ mode: 'atMost', usd: 20, fallbackUsd: null }), []);
+    assert.deepEqual(v({ mode: 'atMost', usd: 20 }), []);
+  });
+});

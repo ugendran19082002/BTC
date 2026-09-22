@@ -407,3 +407,57 @@ test('a strike with no distance to read is not thrown out by the band', () => {
   assert.equal(pickStrike(board, 'C', wall({ premium: { mode: 'atLeast', usd: 15 } }))?.strike, 80_000);
 });
 
+
+/* ------------------------------------------------------------------ premium fallback */
+
+/** A board where every out-of-the-money strike pays more than $20: the near ones only, on a wild day. */
+const RICH: Candidate[] = [
+  leg('C', 79_000, 90, 0.7), leg('C', 79_400, 62, 0.8), leg('C', 79_800, 44, 0.86), leg('C', 80_200, 31, 0.9),
+  leg('P', 78_200, 85, 0.7), leg('P', 77_800, 48, 0.85), leg('P', 77_400, 26, 0.9),
+];
+
+test('[critical] at most $20 finds nothing, so the fallback takes the last strike at or below $50', () => {
+  const c = cfg({ premium: { mode: 'atMost', usd: 20, fallbackUsd: 50 } });
+  assert.equal(pickStrike(RICH, 'C', c)?.strike, 79_800, 'richest at or below 50: 44');
+  assert.equal(pickStrike(RICH, 'P', c)?.strike, 77_800, 'richest at or below 50: 48');
+});
+
+test('[critical] the fallback is never used while the number itself finds a strike', () => {
+  const c = cfg({ premium: { mode: 'atMost', usd: 20, fallbackUsd: 50 } });
+  assert.equal(pickStrike(BOARD, 'C', c)?.sellPrice, 18, 'the $18 call is at or below $20 -- not the richer $30');
+});
+
+test('at least $20 finds nothing, so a lower fallback floor takes the furthest still paying it', () => {
+  const thin: Candidate[] = [leg('C', 79_800, 14, 0.94), leg('C', 80_200, 11, 0.96), leg('C', 80_600, 6, 0.98)];
+  const c = cfg({ premium: { mode: 'atLeast', usd: 20, fallbackUsd: 10 } });
+  assert.equal(pickStrike(thin, 'C', c)?.sellPrice, 11);
+});
+
+test('no fallback is the rule as it always was: nothing found, nothing sold', () => {
+  assert.equal(pickStrike(RICH, 'C', cfg({ premium: { mode: 'atMost', usd: 20 } })), null);
+  assert.equal(pickStrike(RICH, 'C', cfg({ premium: { mode: 'atMost', usd: 20, fallbackUsd: null } })), null);
+});
+
+test('[critical] a leg sold on the fallback says so in the journal', () => {
+  const sel = selectLegs(strat({ probGate: null, premium: { mode: 'atMost', usd: 20, fallbackUsd: 50 } }), RICH);
+  assert.equal(sel.legs.length, 2);
+  assert.ok(sel.legs.every((l) => l.fallbackUsd === 50));
+  assert.match(describeSelection(sel), /CE 79800 x10 @ 44 \(fallback \$50\)/);
+});
+
+test('a leg found by the number itself carries no fallback mark', () => {
+  const sel = selectLegs(strat({ probGate: null, premium: { mode: 'atMost', usd: 20, fallbackUsd: 50 } }), BOARD);
+  assert.ok(sel.legs.every((l) => l.fallbackUsd === undefined));
+  assert.doesNotMatch(describeSelection(sel), /fallback/);
+});
+
+test('when the fallback finds nothing either, the refusal names both numbers', () => {
+  const sel = selectLegs(strat({ legs: 'CE', doubleWhenOneSided: false, probGate: null, premium: { mode: 'atMost', usd: 20, fallbackUsd: 25 } }), RICH);
+  assert.deepEqual(sel.refusals, ['CE: nothing out of the money at or below $20, nor $25']);
+});
+
+test('the fallback still has to pass the safety gate', () => {
+  const sel = selectLegs(strat({ legs: 'CE', doubleWhenOneSided: false, probGate: 0.9, premium: { mode: 'atMost', usd: 20, fallbackUsd: 50 } }), RICH);
+  assert.equal(sel.legs.length, 0);
+  assert.match(sel.refusals[0]!, /79800 is 86\.0% to expire worthless, below the 90\.0% bar/);
+});

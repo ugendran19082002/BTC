@@ -113,8 +113,18 @@ export type StrategyConfig = {
    * safety gate will refuse it on almost any day it is switched on.
    */
   strikeStep: number;
-  /** How much premium a leg must pay, and which way to read it. Read when `strikeRule` is `premium`. */
-  premium: { mode: PremiumMode; usd: number };
+  /**
+   * How much premium a leg must pay, and which way to read it. Read when
+   * `strikeRule` is `premium`.
+   *
+   * `fallbackUsd` is a second number on the same rule, tried only when the
+   * first finds no strike at all: "at most $20, and if nothing is at or under
+   * $20, the richest strike at or under $50". So it sits above `usd` for
+   * `atMost` and below it for `atLeast` -- the direction that finds more
+   * strikes. Null or absent is no fallback, which is every strategy saved
+   * before it existed.
+   */
+  premium: { mode: PremiumMode; usd: number; fallbackUsd?: number | null };
   /**
    * How the entry is priced.
    *
@@ -497,7 +507,7 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   exitTime: '17:29',
   strikeRule: 'premium',
   strikeStep: 0,
-  premium: { mode: 'atLeast', usd: 15 },
+  premium: { mode: 'atLeast', usd: 15, fallbackUsd: null },
   entryPrice: 'offer',
   entryLimit: null,
   crossAfterSec: 5,
@@ -577,6 +587,9 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
     bad.push('Premium rule must be "at least" or "at most".');
   } else if (!(p.usd > 0) || p.usd > 10_000) {
     bad.push('Premium must be a positive number of dollars.');
+  } else {
+    const f = premiumFallbackProblem(p);
+    if (f) bad.push(f);
   }
   // Both fields are always kept, whichever mode reads them, so both are checked.
   if (!(typeof c.takeProfitPct === 'number') || c.takeProfitPct < 0 || c.takeProfitPct > MAX_TARGET_PCT) {
@@ -700,6 +713,23 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
     }
   }
   return bad;
+}
+
+/**
+ * Why a premium fallback is not usable, or null. Shared with the form, word
+ * for word, through the browser's copy of this rule.
+ */
+export function premiumFallbackProblem(p: { mode: PremiumMode; usd: number; fallbackUsd?: number | null }): string | null {
+  const f = p.fallbackUsd;
+  if (f === null || f === undefined) return null;
+  if (typeof f !== 'number' || !(f > 0) || f > 10_000) return 'The fallback premium must be a positive number of dollars.';
+  if (p.mode === 'atMost' && !(f > p.usd)) {
+    return `The fallback must be above $${p.usd}: it is tried when nothing is at or below $${p.usd}.`;
+  }
+  if (p.mode === 'atLeast' && !(f < p.usd)) {
+    return `The fallback must be below $${p.usd}: it is tried when nothing pays $${p.usd}.`;
+  }
+  return null;
 }
 
 /** Whether the strategy enters with a target at all -- in either mode. */

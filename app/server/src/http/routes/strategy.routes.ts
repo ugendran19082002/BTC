@@ -70,6 +70,10 @@ function cleanConfig(raw: unknown): StrategyConfig {
     premium: {
       mode: c.premium?.mode === 'atMost' ? 'atMost' : 'atLeast',
       usd: Number(c.premium?.usd ?? DEFAULT_CONFIG.premium.usd),
+      // Absent from a client or a strategy that predates it: no fallback.
+      fallbackUsd: c.premium?.fallbackUsd === null || c.premium?.fallbackUsd === undefined
+        ? null
+        : Number(c.premium.fallbackUsd),
     },
     entryPrice: c.entryPrice === 'now' || c.entryPrice === 'set' ? c.entryPrice : 'offer',
     entryLimit: c.entryLimit === null || c.entryLimit === undefined ? null : Number(c.entryLimit),
