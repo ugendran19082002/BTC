@@ -136,8 +136,9 @@ export function ExitRuleEditor({
       {rule.steps.length > 0 && (
         <ol className="m-0 mt-2 flex list-none flex-col gap-1.5 p-0" aria-label={`${title} steps`}>
           {rule.steps.map((st, i) => (
-            <li key={i} className="flex items-center gap-2">
-              <span className="w-10 flex-none text-[11.5px] text-muted-foreground">From</span>
+            <li key={i} className="flex items-center gap-1.5">
+              {/* "From" only where there is room: on a phone the time itself needs the width. */}
+              <span className="hidden w-10 flex-none text-[11.5px] text-muted-foreground sm:inline">From</span>
               <TimePicker
                 label={`${title} step ${i + 1} time`}
                 value={st.at}
@@ -151,7 +152,7 @@ export function ExitRuleEditor({
                 value={toShown(st.value)}
                 onChange={(n) => setStep(i, { value: fromShown(n) })}
                 unit={unit}
-                className="w-24 flex-none"
+                className="w-[5.5rem] flex-none"
               />
               <button
                 type="button"

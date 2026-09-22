@@ -1,7 +1,51 @@
 # TODO
 
 Live: https://delta.thannigo.in
-Updated 19 Sep 2026
+Updated 22 Sep 2026
+
+---
+
+## 22 Sep 2026 — exits typed, % or fixed, on a timetable; a premium fallback; a feed that came back
+
+**Done (built, tested, not yet deployed):**
+
+- [x] **The ticker socket never came back.** Silent from 21 Sep 08:19 IST for 32 h, 3,833 reconnects and
+      not one `open`: each new socket was dropped by the next 1-second check while still in its handshake,
+      judged by the dead socket's last message. Silence is now counted from the later of the last message
+      and the last attempt (`openedAt`), in `TickerSocket` and `FlowSocket`. ARCHITECTURE.md rule 7.
+- [x] **"market 1d" on the bar** while the REST poll was carrying the board: the freshness read the dead
+      socket's timestamp ahead of the fresh batch. It takes the newer of the two now.
+- [x] **Exits are typed, not dragged.** The ticket's and Edit exits' sliders are gone; each exit is a box.
+      Target stays within 99% (a buy at zero cannot rest); the stop may go past 100% — the old bar ended at
+      300% — up to the 2000% typo guard, and a number out of range is said under the box and holds Sell /
+      Save back rather than being clamped.
+- [x] **% or Fixed**, per exit, on the ticket, Edit exits and the strategy form: the stop at entry + points,
+      the target at entry − points (never under 1% of the entry). Each mode keeps its own number.
+- [x] **Time-based target and stop on a strategy.** Steps like `5:30 80% → 7:30 85% → 9:30 90%`, typed
+      one by one or filled ("every 2 h, +5"). Every step must fall after the entry and before the exit
+      time, in order. `strategy/exit-steps.ts` applies each stage once, when it begins, through the same
+      call Edit exits makes, and only to the leg whose stage changed — a stop moved by hand is not undone
+      twenty seconds later. An entry taken late enters with the value in force.
+- [x] **Premium fallback on the strategy's Sell tab.** "At most $20 — and if nothing is at or below $20,
+      the last strike at or below $50." Tried only when the number itself finds no strike; the journal says
+      `(fallback $50)` on a leg it chose. For "at least", the fallback is a lower floor.
+
+**To do:**
+
+- [ ] **Deploy** the above, then watch `/api/health` → `feed.source` read `socket` again.
+- [ ] **One live test of a stepped exit** with one lot: a stage moving a real Delta target / stop in place.
+      The paper-exchange test proves our logic; only Delta proves Delta's (rule 2).
+- [ ] **The stage memory is in-process.** After a restart the stage in force is applied once more — the
+      safe direction, but it overrides a hand-moved exit of that stage. Persist it in `trades.state` if that
+      ever matters.
+- [ ] **A market entry (`entryPrice: now`) still gets no exits at placement** — `orderPlan` has no price to
+      read a percentage or points off. Older than this work; worth its own look.
+- [ ] **A stop above ~80% at 200x is usually past the liquidation price.** The ticket says so and refuses;
+      a strategy with such a stop would be refused at entry every day. The form could warn when it is saved.
+- [ ] **A failed lazy chunk blanks the whole page** (seen on a stale dev server: "Failed to fetch dynamically
+      imported module"). An error boundary around the lazy panels would keep the rest of the desk up.
+- [ ] **The local harness's paper exchange holds no contracts** ("No such contract on the exchange"), so a
+      paper fill cannot be walked through by hand there.
 
 ---
 

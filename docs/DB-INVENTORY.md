@@ -228,6 +228,14 @@ doubles a position.
 Desk-wide strategy settings (`rebalance_limits`, `rebalance_defaults`,
 `scheduler_enabled`) are in `settings`, through the same cache.
 
+`config` is JSONB, so a new setting needs no migration -- and must read an
+absent key as what older strategies were doing. Since 22 Sep 2026 it may carry
+`targetMode` / `stopMode` (`pct` or `points`), `takeProfitPoints` /
+`stopLossPoints`, `targetSteps` / `stopSteps` (`[{ at: "HH:MM", value }]`, each
+between entry and exit) and `premium.fallbackUsd`. Absent, they read as a
+percentage all day and no fallback (`exitRules()`, `cleanConfig()`). Which stage
+of a timetable a trade is on is not stored: it is a function of the clock.
+
 ---
 
 ## `auth` — the sign-in
