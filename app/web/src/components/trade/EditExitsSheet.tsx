@@ -25,7 +25,7 @@ import {
  */
 /** Keeps a reverse-computed value inside what the box accepts. */
 const clampTo = (n: number, max: number) => Math.min(max, Math.max(0, Math.round(n * 10_000) / 10_000));
-const OFF: ExitInput = { on: false, mode: 'pct', pct: 0.8, points: 10 };
+const OFF: ExitInput = { on: false, mode: 'pct', pct: 0.8, points: 10, price: 0 };
 
 export function EditExitsSheet({ trade, open, onOpenChange, onSaved }: {
   trade: Trade | null;
@@ -71,11 +71,11 @@ export function EditExitsSheet({ trade, open, onOpenChange, onSaved }: {
     // price that is live: a target at 3.00 off 15 is 80% and 12 points alike.
     setTarget({
       ...OFF, on: tp !== null,
-      ...(tp !== null ? { pct: clampTo(1 - tp / entry, MAX_TARGET_PCT), points: clampTo(entry - tp, MAX_EXIT_POINTS) } : {}),
+      ...(tp !== null ? { pct: clampTo(1 - tp / entry, MAX_TARGET_PCT), points: clampTo(entry - tp, MAX_EXIT_POINTS), price: tp } : {}),
     });
     setStop({
       ...OFF, pct: 1.5, on: sl !== null,
-      ...(sl !== null ? { pct: clampTo(sl / entry - 1, MAX_STOP_PCT), points: clampTo(sl - entry, MAX_EXIT_POINTS) } : {}),
+      ...(sl !== null ? { pct: clampTo(sl / entry - 1, MAX_STOP_PCT), points: clampTo(sl - entry, MAX_EXIT_POINTS), price: sl } : {}),
     });
     setFailed(null);
   }, [open, trade, entry]);
@@ -112,7 +112,7 @@ export function EditExitsSheet({ trade, open, onOpenChange, onSaved }: {
    * before the button rather than discovered after it.
    */
   const wantedStop = levelOf('stop', stop, entry);
-  const typedWrong = inputProblem('target', target) ?? inputProblem('stop', stop);
+  const typedWrong = inputProblem('target', target, entry) ?? inputProblem('stop', stop, entry);
   const problems = checkExits({ mark, entry, targetPrice: wantedTarget, stopPrice: wantedStop });
 
   const save = async () => {

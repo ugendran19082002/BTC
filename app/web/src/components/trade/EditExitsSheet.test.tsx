@@ -172,6 +172,32 @@ describe('saving', () => {
     expect(screen.getByRole('textbox', { name: 'target points' })).toHaveValue('29');  // 30.90 - 1.90
   });
 
+  it('[critical] a stop typed as a price is sent as that price', async () => {
+    render(<EditExitsSheet trade={trade()} open onOpenChange={() => {}} />);
+    fireEvent.click(screen.getByRole('checkbox', { name: /stop loss/i }));
+    fireEvent.click(screen.getAllByRole('radio', { name: 'Price' })[1]!);
+    type('stop price', '70');
+    expect(screen.getByText(/entry 30.90 \+ 39.1 pts/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /save exits/i }));
+    await waitFor(() => expect(updateExits).toHaveBeenCalled());
+    expect(updateExits.mock.calls[0]![1]).toMatchObject({ stopLossPct: 0, stopLossPoints: 0, stopPrice: 70 });
+  });
+
+  it('Price opens on the level that is live on the book', () => {
+    render(<EditExitsSheet trade={trade()} open onOpenChange={() => {}} />);
+    fireEvent.click(screen.getAllByRole('radio', { name: 'Price' })[0]!);
+    expect(screen.getByRole('textbox', { name: 'target price' })).toHaveValue('1.9');
+  });
+
+  it('[critical] a stop price under the entry holds Save back', () => {
+    render(<EditExitsSheet trade={trade()} open onOpenChange={() => {}} />);
+    fireEvent.click(screen.getByRole('checkbox', { name: /stop loss/i }));
+    fireEvent.click(screen.getAllByRole('radio', { name: 'Price' })[1]!);
+    type('stop price', '20');
+    expect(screen.getByRole('alert')).toHaveTextContent('A stop of 20 must be over the 30.9 entry');
+    expect(screen.getByRole('button', { name: /save exits/i })).toBeDisabled();
+  });
+
   it('[critical] Save is held back while a number is out of range', () => {
     render(<EditExitsSheet trade={trade()} open onOpenChange={() => {}} />);
     type('target percent', '120');

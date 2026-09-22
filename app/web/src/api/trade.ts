@@ -174,7 +174,11 @@ export const closeAllTrades = () =>
 /** Move the stop or the target on a position that is already open. */
 export const updateExits = (
   tradeId: string,
-  ask: { takeProfitPct?: number; stopLossPct?: number; takeProfitPoints?: number; stopLossPoints?: number },
+  ask: {
+    takeProfitPct?: number; stopLossPct?: number; takeProfitPoints?: number; stopLossPoints?: number;
+    /** The levels themselves, when typed as prices. */
+    takeProfitPrice?: number; stopPrice?: number;
+  },
 ) => post<{ ok: true; trade: Trade }>('/api/trade/protection', { tradeId, ...ask });
 
 export const reconcileTrade = (tradeId: string) =>

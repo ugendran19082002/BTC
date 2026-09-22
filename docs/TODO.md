@@ -26,6 +26,10 @@ Updated 22 Sep 2026
       time, in order. `strategy/exit-steps.ts` applies each stage once, when it begins, through the same
       call Edit exits makes, and only to the leg whose stage changed — a stop moved by hand is not undone
       twenty seconds later. An entry taken late enters with the value in force.
+- [x] **Price, a third way to type an exit** on the ticket and Edit exits: the level itself — entry 16,
+      stop typed as 70 — read back as the distance it is ("+54 pts, +337.5%"). A target at or over the
+      entry, or a stop at or under it, would fire on placement and is refused, in the box and on the
+      server (`exitPriceProblem`). Not on a strategy: its entry premium is not known until it runs.
 - [x] **Premium fallback on the strategy's Sell tab.** "At most $20 — and if nothing is at or below $20,
       the last strike at or below $50." Tried only when the number itself finds no strike; the journal says
       `(fallback $50)` on a leg it chose. For "at least", the fallback is a lower floor.

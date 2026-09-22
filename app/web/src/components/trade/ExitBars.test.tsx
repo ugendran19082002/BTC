@@ -11,7 +11,7 @@ import type { ExitInput } from '@/lib/exit-input';
  * ceiling on the stop short of the 2000% typo guard.
  */
 
-const off: ExitInput = { on: false, mode: 'pct', pct: 0, points: 0 };
+const off: ExitInput = { on: false, mode: 'pct', pct: 0, points: 0, price: 0 };
 const base = {
   entry: 10,
   size: 5,
@@ -139,7 +139,7 @@ describe('the stop, in percent', () => {
 
 describe('fixed points', () => {
   it('[critical] switching to Fixed reads points from the entry: sold at 10, stop 10 pts buys back at 20', () => {
-    render(<Live stop={{ on: true, mode: 'pct', pct: 1.5, points: 10 }} />);
+    render(<Live stop={{ ...off, on: true, mode: 'pct', pct: 1.5, points: 10 }} />);
     fireEvent.click(screen.getByRole('radio', { name: 'Fixed' }));
     expect(screen.getByRole('textbox', { name: 'stop points' })).toHaveValue('10');
     expect(screen.getByText('+10 pts')).toBeInTheDocument();
@@ -147,22 +147,52 @@ describe('fixed points', () => {
   });
 
   it('switching back finds the percentage where it was left', () => {
-    render(<Live stop={{ on: true, mode: 'points', pct: 1.5, points: 10 }} />);
+    render(<Live stop={{ ...off, on: true, mode: 'points', pct: 1.5, points: 10 }} />);
     fireEvent.click(screen.getByRole('radio', { name: '%' }));
     expect(screen.getByRole('textbox', { name: 'stop percent' })).toHaveValue('150');
   });
 
   it('a target in points buys back under the entry', () => {
-    render(<ExitBars {...base} target={{ on: true, mode: 'points', pct: 0, points: 6 }} />);
+    render(<ExitBars {...base} target={{ ...off, on: true, mode: 'points', points: 6 }} />);
     expect(screen.getByText('−6 pts')).toBeInTheDocument();
     expect(screen.getByText('4.00')).toBeInTheDocument();
     expect(screen.getByText('$30.00')).toBeInTheDocument();
   });
 
   it('a target of more points than the premium says it rests at 1% of it', () => {
-    render(<ExitBars {...base} target={{ on: true, mode: 'points', pct: 0, points: 15 }} />);
+    render(<ExitBars {...base} target={{ ...off, on: true, mode: 'points', points: 15 }} />);
     expect(screen.getByText(/more than the premium/)).toBeInTheDocument();
     expect(screen.getByText('0.10')).toBeInTheDocument();
+  });
+});
+
+describe('Price: the level itself', () => {
+  it('[critical] entry 16, stop typed as 70: shows 70, and that it is 54 points (+337.5%) over', () => {
+    render(<Live entry={16} stop={{ ...off, on: true, mode: 'points', points: 10 }} />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Price' }));
+    // opens on the level the old mode meant: 16 + 10
+    expect(screen.getByRole('textbox', { name: 'stop price' })).toHaveValue('26');
+    type('stop price', '70');
+    expect(screen.getByText('at 70.00 (+54 pts)')).toBeInTheDocument();
+    expect(screen.getByText(/entry 16.00 \+ 54 pts \(\+337.5%\)/)).toBeInTheDocument();
+  });
+
+  it('a target typed as 4 against 16 is 12 points under', () => {
+    render(<Live entry={16} target={{ ...off, on: true, mode: 'price', price: 4 }} />);
+    expect(screen.getByText('at 4.00 (-12 pts)')).toBeInTheDocument();
+    expect(screen.getByText(/entry 16.00 − 12 pts \(-75%\)/)).toBeInTheDocument();
+  });
+
+  it('[critical] a stop typed under the entry is refused under the box', () => {
+    render(<Live entry={16} stop={{ ...off, on: true, mode: 'price', price: 70 }} />);
+    type('stop price', '12');
+    expect(screen.getByRole('alert')).toHaveTextContent('A stop of 12 must be over the 16 entry');
+  });
+
+  it('a target typed over the entry is refused too', () => {
+    render(<Live entry={16} target={{ ...off, on: true, mode: 'price', price: 4 }} />);
+    type('target price', '18');
+    expect(screen.getByRole('alert')).toHaveTextContent('A target of 18 must be under the 16 entry');
   });
 });
 

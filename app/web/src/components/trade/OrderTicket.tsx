@@ -11,8 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Select, SelectItem } from '@/components/ui/select';
 import { ExitBars } from '@/components/trade/ExitBars';
-import { exitAskOf, inputProblem, valueOf, type ExitInput } from '@/lib/exit-input';
-import type { ExitMode } from '@/types/strategy';
+import { exitAskOf, inputProblem, valueOf, type ExitInput, type TicketExitMode } from '@/lib/exit-input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { usePersisted } from '@/hooks/usePersisted';
 import { usePoll } from '@/hooks/usePoll';
@@ -106,21 +105,22 @@ export function OrderTicket({
   const [targetPct, setTargetPct] = usePersisted('exit:targetPct', 0.8);
   const [stopPct, setStopPct] = usePersisted('exit:stopPct', 1.5);
   // Percent or fixed points, each number kept so switching back finds it.
-  const [targetMode, setTargetMode] = usePersisted<ExitMode>('exit:targetMode', 'pct');
-  const [stopMode, setStopMode] = usePersisted<ExitMode>('exit:stopMode', 'pct');
+  const [targetMode, setTargetMode] = usePersisted<TicketExitMode>('exit:targetMode', 'pct');
+  const [stopMode, setStopMode] = usePersisted<TicketExitMode>('exit:stopMode', 'pct');
   const [targetPoints, setTargetPoints] = usePersisted('exit:targetPoints', 10);
   const [stopPoints, setStopPoints] = usePersisted('exit:stopPoints', 10);
-  const target: ExitInput = { on: targetOn, mode: targetMode, pct: targetPct, points: targetPoints };
-  const stop: ExitInput = { on: stopOn, mode: stopMode, pct: stopPct, points: stopPoints };
+  // A price is about one contract, so unlike the rest it does not carry to the next ticket.
+  const [targetAt, setTargetAt] = useState(0);
+  const [stopAt, setStopAt] = useState(0);
+  const target: ExitInput = { on: targetOn, mode: targetMode, pct: targetPct, points: targetPoints, price: targetAt };
+  const stop: ExitInput = { on: stopOn, mode: stopMode, pct: stopPct, points: stopPoints, price: stopAt };
   const patchExit = (leg: 'target' | 'stop') => (p: Partial<ExitInput>) => {
     if (p.on !== undefined) (leg === 'target' ? setTargetOn : setStopOn)(p.on);
     if (p.mode !== undefined) (leg === 'target' ? setTargetMode : setStopMode)(p.mode);
     if (p.pct !== undefined) (leg === 'target' ? setTargetPct : setStopPct)(p.pct);
     if (p.points !== undefined) (leg === 'target' ? setTargetPoints : setStopPoints)(p.points);
+    if (p.price !== undefined) (leg === 'target' ? setTargetAt : setStopAt)(p.price);
   };
-  // An exit typed out of range is said under its box and holds the Sell back:
-  // the server would clamp it, and a clamp changes the number without a word.
-  const exitProblem = inputProblem('target', target) ?? inputProblem('stop', stop);
   /**
    * Rest at the offer, and cross if nobody takes it. On by default.
    *
@@ -184,6 +184,8 @@ export function OrderTicket({
     // trade, and with the timed cross below there is no day it costs you.
     setMode(seed.ask !== null ? 'ask' : 'now');
     setCustom('');
+    setTargetAt(0);
+    setStopAt(0);
     setResult(null);
     setFailed(null);
     setPreview(null);
@@ -225,7 +227,7 @@ export function OrderTicket({
       convertToMarketAfterSec: rests && convertOn ? convertSec : 0,
     },
     [seed, lots, limitPrice, leverage, targetPct, stopPct, targetOn, stopOn, targetMode, stopMode,
-      targetPoints, stopPoints, rests, convertOn, convertSec],
+      targetPoints, stopPoints, targetAt, stopAt, rests, convertOn, convertSec],
   );
 
   // Debounced, because typing a price should not be a request per keystroke.
@@ -264,6 +266,9 @@ export function OrderTicket({
   const credit =
     preview?.creditUsd ?? (working !== null ? working * lots * (preview?.contractValue ?? 0.001) : null);
   const blocked = preview !== null && !preview.ok;
+  // An exit typed out of range, or a price the wrong side of the entry, is said
+  // under its box and holds the Sell back: a clamp would change it without a word.
+  const exitProblem = inputProblem('target', target, limitPrice) ?? inputProblem('stop', stop, limitPrice);
   const canSend = !!preview?.ok && !placing && !checking && exitProblem === null;
   /**
    * What the balance covers -- shown, never enforced.

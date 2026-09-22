@@ -200,6 +200,10 @@ export type OrderDraft = {
   takeProfitPoints?: number;
   /** The stop as points over the entry. Above zero, it replaces the percentage. */
   stopLossPoints?: number;
+  /** The target as the price itself. Wins over points and percentage. */
+  takeProfitPrice?: number;
+  /** The stop as the price itself: sold at 16, 70 is 54 points over. */
+  stopPrice?: number;
   /**
    * Seconds to wait for a resting order before crossing the spread.
    * Zero means wait for as long as it takes.

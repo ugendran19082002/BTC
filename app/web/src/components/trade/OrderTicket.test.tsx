@@ -483,6 +483,25 @@ describe('exits typed on the ticket', () => {
     await waitFor(() => expect(screen.getByText('Can’t sell')).toBeInTheDocument());
   });
 
+  it('[critical] a stop typed as a price goes to the preview as that price', async () => {
+    show();
+    fireEvent.click(screen.getByRole('checkbox', { name: /stop loss/i }));
+    fireEvent.click(screen.getAllByRole('radio', { name: 'Price' }).at(-1)!);
+    typeBox('stop price', '40');
+    await waitFor(() => expect(previewOrder.mock.calls.at(-1)![0]).toMatchObject({ stopPrice: 40, stopLossPct: 0, stopLossPoints: 0 }));
+  });
+
+  it('a price is about one contract, so the next ticket does not carry it', () => {
+    const { unmount } = show();
+    fireEvent.click(screen.getByRole('checkbox', { name: /stop loss/i }));
+    fireEvent.click(screen.getAllByRole('radio', { name: 'Price' }).at(-1)!);
+    typeBox('stop price', '40');
+    unmount();
+    show();
+    // the mode carries; the price opens again from the level the old mode meant, not 40
+    expect(screen.getByRole('textbox', { name: 'stop price' })).not.toHaveValue('40');
+  });
+
   it('the choice of mode carries to the next ticket, like the tick boxes do', () => {
     const { unmount } = show();
     fireEvent.click(screen.getByRole('checkbox', { name: /stop loss/i }));

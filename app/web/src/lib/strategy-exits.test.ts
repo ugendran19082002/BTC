@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   exitPrice, exitRuleProblems, exitRules, exitWords, fillSteps, premiumFallbackProblem, suggestedFallback, withExitRule,
 } from '@/lib/strategy-exits';
-import { exitAskOf, inputProblem, levelOf, valueOf } from '@/lib/exit-input';
+import { distanceOf, exitAskOf, inputProblem, levelOf, switchMode, valueOf } from '@/lib/exit-input';
 import { DEFAULT_CONFIG } from '@/types/strategy';
 
 describe('fillSteps', () => {
@@ -108,8 +108,8 @@ describe('premium fallback', () => {
 });
 
 describe('the ticket\'s exit inputs', () => {
-  const t = { on: true, mode: 'pct' as const, pct: 0.8, points: 10 };
-  const s = { on: true, mode: 'points' as const, pct: 1.5, points: 10 };
+  const t = { on: true, mode: 'pct' as const, pct: 0.8, points: 10, price: 0 };
+  const s = { on: true, mode: 'points' as const, pct: 1.5, points: 10, price: 0 };
   it('[critical] sends only the mode in force, the other as zero', () => {
     expect(exitAskOf(t, s)).toEqual({ takeProfitPct: 0.8, takeProfitPoints: 0, stopLossPct: 0, stopLossPoints: 10 });
     expect(exitAskOf({ ...t, on: false }, { ...s, on: false })).toEqual({ takeProfitPct: 0, takeProfitPoints: 0, stopLossPct: 0, stopLossPoints: 0 });
@@ -122,5 +122,31 @@ describe('the ticket\'s exit inputs', () => {
   it('an unticked exit is never a problem, whatever it holds', () => {
     expect(inputProblem('target', { ...t, on: false, pct: 5 })).toBeNull();
     expect(inputProblem('target', { ...t, pct: 5 })).toMatch(/99%/);
+  });
+});
+
+describe('the ticket\'s Price mode', () => {
+  const x = (over: Partial<import('@/lib/exit-input').ExitInput>) => ({ on: true, mode: 'price' as const, pct: 0, points: 0, price: 0, ...over });
+  it('[critical] entry 16, stop typed as 70: the level is 70, 54 points and 338% over', () => {
+    expect(levelOf('stop', x({ price: 70 }), 16)).toBe(70);
+    expect(distanceOf(70, 16)).toEqual({ points: 54, pct: 337.5 });
+    expect(distanceOf(4, 16)).toEqual({ points: -12, pct: -75 });
+  });
+  it('[critical] is sent as the price, with the other modes zero', () => {
+    expect(exitAskOf(x({ price: 4 }), x({ price: 70 }))).toEqual({
+      takeProfitPct: 0, takeProfitPoints: 0, stopLossPct: 0, stopLossPoints: 0, takeProfitPrice: 4, stopPrice: 70,
+    });
+  });
+  it('[critical] a price the wrong side of the entry is refused -- it would fire on placement', () => {
+    expect(inputProblem('stop', x({ price: 70 }), 16)).toBeNull();
+    expect(inputProblem('stop', x({ price: 16 }), 16)).toMatch(/must be over the 16 entry/);
+    expect(inputProblem('target', x({ price: 20 }), 16)).toMatch(/must be under the 16 entry/);
+    expect(inputProblem('target', x({ price: 0 }), 16)).toBe('Type the price to buy back at.');
+    expect(inputProblem('stop', x({ price: 70 }), null)).toBeNull();
+  });
+  it('switching to Price opens on the level the old mode meant', () => {
+    expect(switchMode('target', { on: true, mode: 'pct', pct: 0.8, points: 0, price: 0 }, 'price', 16)).toEqual({ mode: 'price', price: 3.2 });
+    expect(switchMode('stop', { on: true, mode: 'points', pct: 0, points: 54, price: 0 }, 'price', 16)).toEqual({ mode: 'price', price: 70 });
+    expect(switchMode('stop', { on: true, mode: 'points', pct: 0, points: 54, price: 66 }, 'price', 16)).toEqual({ mode: 'price' });
   });
 });
