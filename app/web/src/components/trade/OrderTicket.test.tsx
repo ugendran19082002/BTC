@@ -452,3 +452,43 @@ describe('a new contract', () => {
     expect(container).toBeEmptyDOMElement();
   });
 });
+
+describe('exits typed on the ticket', () => {
+  const typeBox = (label: string, text: string) => {
+    const box = screen.getByRole('textbox', { name: label });
+    fireEvent.focus(box);
+    fireEvent.change(box, { target: { value: text } });
+  };
+
+  it('[critical] a fixed stop goes to the preview as points, and the percentage as zero', async () => {
+    show();
+    fireEvent.click(screen.getByRole('checkbox', { name: /stop loss/i }));
+    fireEvent.click(screen.getAllByRole('radio', { name: 'Fixed' }).at(-1)!);
+    typeBox('stop points', '15');
+    await waitFor(() => expect(previewOrder.mock.calls.at(-1)![0]).toMatchObject({ stopLossPct: 0, stopLossPoints: 15 }));
+  });
+
+  it('[critical] a stop above 100% goes as typed', async () => {
+    show();
+    fireEvent.click(screen.getByRole('checkbox', { name: /stop loss/i }));
+    typeBox('stop percent', '400');
+    await waitFor(() => expect(previewOrder.mock.calls.at(-1)![0]).toMatchObject({ stopLossPct: 4, stopLossPoints: 0 }));
+  });
+
+  it('[critical] a target above 99% holds the sell back and says why', async () => {
+    show();
+    fireEvent.click(screen.getByRole('checkbox', { name: /take profit/i }));
+    typeBox('target percent', '120');
+    expect(screen.getByRole('alert')).toHaveTextContent(/between 0 and 99%/);
+    await waitFor(() => expect(screen.getByText('Can’t sell')).toBeInTheDocument());
+  });
+
+  it('the choice of mode carries to the next ticket, like the tick boxes do', () => {
+    const { unmount } = show();
+    fireEvent.click(screen.getByRole('checkbox', { name: /stop loss/i }));
+    fireEvent.click(screen.getAllByRole('radio', { name: 'Fixed' }).at(-1)!);
+    unmount();
+    show();
+    expect(screen.getByRole('textbox', { name: 'stop points' })).toBeInTheDocument();
+  });
+});
