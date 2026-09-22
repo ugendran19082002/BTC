@@ -1,14 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { refuse } from '../refuse.js';
 import { StrategyStore } from '../../strategy/store.js';
-import { entryDue, entrySlotDate, istDate, nextEntryAt } from '../../strategy/schedule.js';
-import { holdFor, statusOf } from '../../strategy/holds.js';
-import { DEFAULT_CONFIG, defaultAddUntil, validateConfig, type ExitStep, type StrategyConfig } from '../../strategy/types.js';
+import { entryDue, istDate, nextEntryAt } from '../../strategy/schedule.js';
+import { DEFAULT_CONFIG, validateConfig, type ExitStep, type StrategyConfig } from '../../strategy/types.js';
 import { tradingService } from '../../trading/service.js';
-import {
-  REBALANCE_CEILINGS, capFor, cleanRebalance, stageThresholds,
-  type RebalanceLimits, type RebalanceRule,
-} from '../../strategy/rebalance.js';
 
 /**
  * The strategy desk: what is saved, what is armed, and when it next runs.
@@ -33,13 +28,6 @@ export const strategyStore = (): StrategyStore => {
   return store;
 };
 
-/** Only the keys we know how to read, so a stray field cannot reach the row. */
-/** The cap the rule can actually reach, when the rule is set to work it out. */
-function withAutoCap(rule: RebalanceRule | null, lots: number): RebalanceRule | null {
-  if (!rule || !rule.capAuto || rule.maxLotsPerSide === null) return rule;
-  return { ...rule, maxLotsPerSide: capFor(rule, lots) };
-}
-
 /**
  * Only `at` and `value` of each step, in the order sent. Not sorted: a step
  * out of order is a mistake the person should be told about, not one to be
@@ -55,12 +43,16 @@ function cleanSteps(raw: unknown): ExitStep[] {
   });
 }
 
+/**
+ * Only the keys we know how to read, so a stray field cannot reach the row --
+ * which is also what retires a setting: a key the desk no longer has is
+ * dropped on the next save of any strategy that still carried it.
+ */
 function cleanConfig(raw: unknown): StrategyConfig {
   const c = (raw ?? {}) as Partial<StrategyConfig>;
-  const exitTime = String(c.exitTime ?? DEFAULT_CONFIG.exitTime);
   return {
     entryTime: String(c.entryTime ?? DEFAULT_CONFIG.entryTime),
-    exitTime,
+    exitTime: String(c.exitTime ?? DEFAULT_CONFIG.exitTime),
     // A client that predates the strike rule sends neither field, and means
     // premium -- which is what it has been doing all along.
     strikeRule: c.strikeRule === 'strict' ? 'strict'
@@ -94,43 +86,6 @@ function cleanConfig(raw: unknown): StrategyConfig {
     // A client that predates the setting sends nothing and means the old
     // constant, which is what DEFAULT_CONFIG carries.
     graceMin: Math.trunc(Number(c.graceMin ?? DEFAULT_CONFIG.graceMin)) || DEFAULT_CONFIG.graceMin,
-    probGate: c.probGate === null || c.probGate === undefined ? null : Number(c.probGate),
-    doubleWhenOneSided: Boolean(c.doubleWhenOneSided),
-    minSellScore: c.minSellScore === null || c.minSellScore === undefined
-      ? null
-      : Math.trunc(Number(c.minSellScore)),
-    // Absent from a client that predates the gate, and from every strategy
-    // saved before it existed: off, which is what they have been doing.
-    maxShockScore: c.maxShockScore === null || c.maxShockScore === undefined
-      ? null
-      : Math.trunc(Number(c.maxShockScore)),
-    /*
-     * The rebalance rule, checked against the limits in force rather than a
-     * number in the source: "…n stages" is what somebody typed on the screen.
-     */
-    /*
-     * An automatic cap is recomputed here, on every save, from the lots and the
-     * stages as they are now: changing 3 stages to 5 must not leave a cap that
-     * silently refuses the last two.
-     */
-    rebalance: withAutoCap(cleanRebalance(
-      c.rebalance as Partial<RebalanceRule> | null,
-      strategyStore().rebalanceLimits(),
-      strategyStore().rebalanceDefaults(),
-    ), Math.floor(Number(c.lots ?? DEFAULT_CONFIG.lots))),
-    addToOpposite: c.addToOpposite === null || c.addToOpposite === undefined || typeof c.addToOpposite !== 'object'
-      ? null
-      : {
-          minPriceUsd: Number(c.addToOpposite.minPriceUsd),
-          maxMultiple: Number(c.addToOpposite.maxMultiple),
-          // Absent from a client that predates it: half an hour before the exit.
-          addUntil: c.addToOpposite.addUntil === undefined ? defaultAddUntil(exitTime) : String(c.addToOpposite.addUntil),
-          // Absent, or cleared: the entry's own seconds, which is what every
-          // strategy saved before this did.
-          crossAfterSec: c.addToOpposite.crossAfterSec === undefined || c.addToOpposite.crossAfterSec === null
-            ? null
-            : Math.floor(Number(c.addToOpposite.crossAfterSec)),
-        },
     weekdays: Array.isArray(c.weekdays)
       ? [...new Set(c.weekdays.map((d) => Math.floor(Number(d))))].sort()
       : [...DEFAULT_CONFIG.weekdays],
@@ -142,54 +97,7 @@ const idFrom = (name: string) =>
   name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)
   || `s${Date.now()}`;
 
-/**
- * The rebalance defaults and the limits a rule is held to.
- *
- * Both are settings, so a desk that runs five stages at 40/25 types it once
- * and every new rule starts there. `ceilings` is what no limit may pass and is
- * not editable; the screen shows it as the outer bound of each box.
- */
 export function registerStrategyRoutes(app: FastifyInstance) {
-  app.get('/api/strategies/rebalance-settings', async () => ({
-    defaults: strategyStore().rebalanceDefaults(),
-    limits: strategyStore().rebalanceLimits(),
-    ceilings: REBALANCE_CEILINGS,
-    /** The stages those defaults make, so the screen can show them without arithmetic. */
-    stages: stageThresholds(strategyStore().rebalanceDefaults(), { up: null, down: null }),
-  }));
-
-  app.post('/api/strategies/rebalance-settings', async (req, reply) => {
-    const b = (req.body ?? {}) as { defaults?: unknown; limits?: unknown };
-    if (b.limits !== undefined) {
-      if (b.limits === null || typeof b.limits !== 'object') {
-        reply.code(400);
-        return { error: 'limits must be an object' };
-      }
-      const asked = b.limits as Record<string, unknown>;
-      for (const [key, hi] of Object.entries(REBALANCE_CEILINGS)) {
-        if (asked[key] === undefined) continue;
-        const v = Number(asked[key]);
-        if (!Number.isInteger(v) || v < 1 || v > hi) {
-          reply.code(400);
-          return { error: `${key} must be a whole number from 1 to ${hi}` };
-        }
-      }
-      await strategyStore().setRebalanceLimits(asked as Partial<RebalanceLimits>);
-    }
-    if (b.defaults !== undefined) {
-      if (b.defaults === null || typeof b.defaults !== 'object') {
-        reply.code(400);
-        return { error: 'defaults must be an object' };
-      }
-      await strategyStore().setRebalanceDefaults(b.defaults as Partial<RebalanceRule>);
-    }
-    return {
-      ok: true,
-      defaults: strategyStore().rebalanceDefaults(),
-      limits: strategyStore().rebalanceLimits(),
-    };
-  });
-
   const svc = tradingService();
 
   app.get('/api/strategies', async () => {
@@ -231,19 +139,11 @@ export function registerStrategyRoutes(app: FastifyInstance) {
           lastRunDate: last,
           ranToday: last === today,
           nextEntryAt: nextEntryAt(x, now, last),
-          /**
-           * Why it is not entering this second. The screen shows this verbatim.
-           *
-           * A hold outranks "due now": the clock says it is time and the desk
-           * has decided to wait, which is exactly the case the screen was
-           * silent about before.
-           */
-          status: statusOf(due, holdFor(x.id, entrySlotDate(x, now))),
+          /** Why it is not entering this second. The screen shows this verbatim. */
+          status: due.due ? 'due now' : due.because,
         };
       })),
       runs: await s.runs(40),
-      /** Every decision to add to the other leg -- the skips too, with their reason. */
-      adds: await s.adds(40),
     };
   });
 
