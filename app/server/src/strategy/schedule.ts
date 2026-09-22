@@ -207,32 +207,3 @@ export function nextEntryAt(s: Strategy, nowMs: number, lastRunDate: string | nu
   }
   return null;
 }
-
-/**
- * How many lots each leg gets, given which legs survived.
- *
- * The doubling rule lives here rather than in the runner so it can be tested
- * without an exchange: a two-legged strategy that ends up with one leg carries
- * two lots on it.
- *
- * **Whatever refused the other leg.** It used to require the probability gate,
- * because that is what the research measured -- +36% on the record for no more
- * drawdown, a leg that passes alone being the safer trade. But the desk refuses
- * legs for other reasons that mean exactly the same thing: no strike the rule
- * can take, a sell score under the bar, or the trading gate turning the order
- * down for premium, spread or margin. On 16 September the open-interest rule
- * picked the 80,000 call, the desk refused it at $1 against a $5 floor, and the
- * put went on alone at one lot -- a one-sided day that the setting was written
- * for and did not cover, because the refusal arrived from the wrong direction.
- */
-export function lotsPerLeg(
-  s: Strategy,
-  qualified: readonly ('CE' | 'PE')[],
-): Record<'CE' | 'PE', number> {
-  const base = s.config.lots;
-  const out: Record<'CE' | 'PE', number> = { CE: 0, PE: 0 };
-  const doubling = s.config.doubleWhenOneSided
-    && s.config.legs === 'both' && qualified.length === 1;
-  for (const leg of qualified) out[leg] = doubling ? base * 2 : base;
-  return out;
-}

@@ -19,7 +19,6 @@ import { DEFAULT_WALL_WITHIN_EM } from '../domain/structure.js';
  * general, which is why it is a setting.
  */
 import type { StrategyConfig } from './types.js';
-import { lotsPerLeg } from './schedule.js';
 import { strikeLabel, type Strategy } from './types.js';
 
 /** Only the parts of a scored leg this decision needs. */
@@ -167,8 +166,7 @@ export function pickByPremium(
 /**
  * The whole day's decision: which legs, at what size.
  *
- * A leg is refused when there is no strike the rule can take, or when the gate
- * puts it below the bar. Refusals are returned rather than swallowed, because
+ * A leg is refused when there is no strike the rule can take. Refusals are returned rather than swallowed, because
  * "sold nothing today" and "sold nothing today because nothing paid $15" are
  * different facts and only one of them needs looking at.
  */
@@ -198,14 +196,13 @@ export function selectLegs(
     picked.set(leg, chosen);
   }
 
-  const lots = lotsPerLeg(s);
   return {
     legs: [...picked.entries()].map(([leg, c]) => ({
       cp: c.cp,
       strike: c.strike,
       price: c.sellPrice!,
       pOtm: c.pOtm,
-      lots: lots[leg],
+      lots: cfg.lots,
       ask: c.ask ?? null,
       ...(viaFallback(cfg, c) ? { fallbackUsd: cfg.premium.fallbackUsd! } : {}),
     })),

@@ -1,19 +1,13 @@
 import { liveChain, WHOLE_BOARD } from '../market/chain.js';
 import { scoreLegs } from '../domain/score.js';
-import { attachEv } from '../domain/ev.js';
 import { wallWithinEm } from '../http/routes/desk.routes.js';
 import { tradingService } from '../trading/service.js';
 import { noteError } from '../observability/errors.js';
 import { StrategyStore } from './store.js';
 import { entryDue, entrySlotDate, entryWindowEnd, exitDue, graceOf, istMinutes } from './schedule.js';
-import { afterDeskCheck, describeSelection, selectLegs, type Candidate } from './select.js';
-import { shockGate } from './gate.js';
-import { clearHold, noteHold } from './holds.js';
-import { shockNow } from '../market/shock-now.js';
+import { describeSelection, selectLegs, type Candidate } from './select.js';
 import { exitAsk, exitRules, exitValueAt, time12, type Strategy } from './types.js';
-import { addAlertFor, missedEntryAlert, runAlertFor, type Alert, type AlertContext } from '../notify/messages.js';
-import { StrategyAdder, type AddOrder, type PlaceResult } from './adder.js';
-import { StrategyRebalancer } from './rebalancer.js';
+import { missedEntryAlert, runAlertFor, type Alert, type AlertContext } from '../notify/messages.js';
 import { StrategyExitStepper } from './exit-steps.js';
 
 /**
@@ -61,58 +55,12 @@ export class StrategyRunner {
   private ticking = false;
   /** Strategy and day pairs already told about a missed entry, so it is said once. */
   private readonly missedAlerted = new Set<string>();
-  private readonly adder: StrategyAdder;
-  private readonly rebalancer: StrategyRebalancer;
   private readonly exitStepper: StrategyExitStepper;
-  /** One pass over the rebalances at a time, like the adds. */
-  private rebalancing: Promise<void> | null = null;
-  /** One pass over the adds at a time; a nudge during a pass asks for one more. */
-  private adding: Promise<void> | null = null;
-  private addAgain = false;
 
   constructor(
     private readonly store: StrategyStore,
     private readonly now: () => number = Date.now,
   ) {
-    this.adder = new StrategyAdder({
-      store,
-      tradesToday: (id) => tradingService().tradesTodayFor(id, this.now()),
-      quote: (symbol) => tradingService().quoteForDisplay(symbol),
-      place: (o) => placeAdd(o),
-      alert: (make) => this.alert(make),
-      addAlert: addAlertFor,
-      now: this.now,
-    });
-    /*
-     * The dynamic one-sided rebalance, on the same tick.
-     *
-     * It buys back part of the side that fell and sells the same number again
-     * on the side that rose -- through the engine both times, so the gates, the
-     * entry walk and the leg's own target and stop all apply.
-     */
-    this.rebalancer = new StrategyRebalancer({
-      store,
-      tradesToday: (id) => tradingService().tradesTodayFor(id, this.now()),
-      quote: (symbol) => tradingService().quoteForDisplay(symbol),
-      /*
-       * `close` answers with the trade's state, not with ok/no, so the buy-back
-       * is judged the only way that is true: the position is smaller than it
-       * was. Anything else -- no record, nothing bought, an exchange that would
-       * not take it -- means the sell must not follow.
-       */
-      buyBack: async (tradeId, lots) => {
-        const before = Math.abs((await tradingService().trade(tradeId))?.state.position ?? 0);
-        const after = await tradingService().close(tradeId, lots);
-        if (!after) return { ok: false, reason: 'no such trade' };
-        const closed = before - Math.abs(after.position);
-        return closed > 0
-          ? { ok: true }
-          : { ok: false, reason: after.note ?? 'nothing was bought back' };
-      },
-      sell: (o) => placeAdd(o),
-      tell: (text) => this.alert(() => ({ key: 'rebalance', text })),
-      now: this.now,
-    });
     /*
      * Time-based exits: at each step's time, the target or stop of every open
      * trade this strategy placed moves to the step's value -- through the same
@@ -130,49 +78,6 @@ export class StrategyRunner {
     this.timer ??= setInterval(() => { void this.tick(); }, TICK_MS);
     // Unref so the loop never holds the process open on its own.
     this.timer?.unref?.();
-    // A target fill is acted on within a moment, not at the next 20-second tick:
-    // the other leg's price is the whole rule, and it moves.
-    tradingService().onTargetFill(() => { void this.considerAdds(); });
-  }
-
-  /**
-   * Look at every strategy for a rebalance stage that is due.
-   *
-   * Every tick rather than on a fill: the trigger is a pair of premiums moving,
-   * which nothing on this desk emits an event for.
-   */
-  considerRebalances(): Promise<void> {
-    if (this.rebalancing) return this.rebalancing;
-    this.rebalancing = (async () => {
-      try {
-        if (!this.armed()) return;
-        for (const s of await this.store.all()) {
-          await this.rebalancer.consider(s).catch((e) => this.note(s, 'rebalance', e));
-        }
-      } finally {
-        this.rebalancing = null;
-      }
-    })();
-    return this.rebalancing;
-  }
-
-  /** Look at every strategy's targets for something to add to the other leg. */
-  considerAdds(): Promise<void> {
-    if (this.adding) { this.addAgain = true; return this.adding; }
-    this.adding = (async () => {
-      try {
-        do {
-          this.addAgain = false;
-          if (!this.armed()) return;
-          for (const s of await this.store.all()) {
-            await this.adder.consider(s).catch((e) => this.note(s, 'add', e));
-          }
-        } while (this.addAgain);
-      } finally {
-        this.adding = null;
-      }
-    })();
-    return this.adding;
   }
 
   stop(): void {
@@ -195,11 +100,6 @@ export class StrategyRunner {
         await this.considerEntry(s).catch((e) => this.note(s, 'entry', e));
         await this.exitStepper.consider(s).catch((e) => this.note(s, 'exit step', e));
       }
-      // Also on the tick, for a fill the nudge missed -- one found by a restart's
-      // reconcile, say. The journal makes a second look harmless.
-      await this.considerAdds();
-      // And the rebalance, whose trigger is two premiums moving rather than a fill.
-      await this.considerRebalances();
     } finally {
       this.ticking = false;
     }
@@ -306,44 +206,9 @@ export class StrategyRunner {
       return;
     }
 
-    const scored = scoreLegs(snap);
-
-    /*
-     * Calm enough to sell into?
-     *
-     * Before the strike is chosen, because the answer is about the tape and not
-     * about any particular leg -- and before the claim, because a hold is not a
-     * refusal: the day stays open and the next tick asks again, until the entry
-     * window closes and the missed-entry alert says nothing was tried. The
-     * reason is kept where the screen can read it, so a strategy waiting out a
-     * violent five minutes says so instead of reading "due now" and doing
-     * nothing.
-     */
-    if (s.config.maxShockScore !== null) {
-      const reading = await shockNow(snap, scored).catch(() => null);
-      const gate = shockGate(s.config.maxShockScore, reading);
-      if (!gate.pass) {
-        noteHold(s.id, day, gate.reason, now);
-        return;
-      }
-    }
-    clearHold(s.id);
-
-    /*
-     * The same arithmetic the board shows, so a strategy's sell-score bar is
-     * checked against the number a person can see against that strike -- one
-     * computed here from its own weights would be a bar nobody could check.
-     */
-    const candidates: Candidate[] = attachEv(scored, {
-      spot: snap.spot,
-      lots: s.config.lots,
-      minPremium: s.config.premium.usd,
-      atmIv: snap.atmIv,
-      expectedMove: snap.expectedMove,
-    }).map((l) => ({
+    const candidates: Candidate[] = scoreLegs(snap).map((l) => ({
       cp: l.cp, strike: l.strike, sellPrice: l.sellPrice, pOtm: l.pOtm,
       moneyness: l.moneyness, ask: l.ask, oi: l.oi, emBuffer: l.emBuffer,
-      sellScore: l.ev.score, tier: l.ev.tier,
     }));
     // The open-interest rule looks for its wall inside the desk's level band.
     const sel = selectLegs(s, candidates, { wallWithinEm: wallWithinEm() });
@@ -352,20 +217,7 @@ export class StrategyRunner {
       return;
     }
 
-    /*
-     * Ask the desk about every leg before sending any of it.
-     *
-     * Only because of doubling. The size of the surviving leg depends on
-     * whether the other one goes, and asked after the first order is on the
-     * book the answer arrives too late to size anything. The gate is the same
-     * one `place` runs a moment later -- a dry run, nothing sent -- so a leg
-     * that passes here all but always passes there, and one that fails here
-     * would have failed there with the same words.
-     *
-     * Only worth the two extra reads when doubling is on and both legs were
-     * selected; otherwise the sizes cannot change and the run goes straight to
-     * the orders it always sent.
-     */
+    /* The same shape the chain table hands the ticket. */
     const legOf = (leg: typeof sel.legs[number]) => ({
       symbol: `${leg.cp}-BTC-${leg.strike}-${snap.expiry}`,
       optionSide: (leg.cp === 'C' ? 'CE' : 'PE') as 'CE' | 'PE',
@@ -376,25 +228,13 @@ export class StrategyRunner {
       cancelAfterMs: Math.max(1_000, entryWindowEnd(s, now) - now),
     });
 
-    let legs = sel.legs;
-    const turnedDown: string[] = [];
-    if (s.config.doubleWhenOneSided && s.config.legs === 'both' && legs.length === 2) {
-      const asked = await Promise.all(legs.map(async (leg) => ({
-        leg,
-        // A dry run that itself fails to run is not a refusal: let the order
-        // answer that question, the way it did before any of this existed.
-        refusedBy: await svcWouldPlace(s, legOf(leg)).catch(() => null),
-      })));
-      const after = afterDeskCheck(s, asked);
-      legs = after.legs;
-      turnedDown.push(...after.refusals);
-    }
+    const legs = sel.legs;
 
     // Claim before a single order goes out. Whoever loses the race does nothing.
     if (!await this.store.claim(s.id, day, now)) return;
 
     const placed: string[] = [];
-    const failed = [...turnedDown];
+    const failed: string[] = [];
     for (const leg of legs) {
       // The same shape the chain table hands the ticket, so a scheduled order
       // and a tapped one address the identical contract.
@@ -425,16 +265,6 @@ export class StrategyRunner {
   }
 }
 
-/**
- * Why the desk would turn this leg down, or null if it would take it.
- *
- * The same arguments `svcPlace` sends, through the same gate, with no order
- * behind them.
- */
-async function svcWouldPlace(s: Strategy, o: Parameters<typeof svcPlace>[1]): Promise<string | null> {
-  const gate = await tradingService().wouldPlace(placeArgs(s, o));
-  return gate.ok ? null : failureText(gate);
-}
 
 /** Place one leg through the same service the order ticket uses. */
 async function svcPlace(
@@ -506,11 +336,6 @@ export function exitsNow(s: Strategy, nowMs: number) {
 }
 
 /** Append to the other leg's trade, through the engine and its gates. */
-export async function placeAdd(o: AddOrder): Promise<PlaceResult> {
-  const { tradeId, ...req } = o;
-  const res = await tradingService().addToPosition(tradeId, req);
-  return res.ok ? { ok: true } : { ok: false, reason: res.reason };
-}
 
 function failureText(p: { ok: boolean; failures?: { message: string }[] }): string {
   return p.failures?.map((f) => f.message).join('; ') ?? 'refused';
