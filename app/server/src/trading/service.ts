@@ -185,12 +185,6 @@ export class TradingService {
       // The mode is read at the moment of the fill, not captured, so a paper
       // fill can never reach the phone dressed as a live one.
       onEvent: async (event, before, after, plan) => {
-        // A target that bought something back may be a reason to add to the
-        // other leg. Told after the commit has returned, never inside it: an
-        // add is an order of its own and must not run under this trade's lock.
-        if (event.t === 'fill' && event.role === 'take_profit' && plan.strategyId) {
-          for (const listener of this.targetFillListeners) setTimeout(() => listener(plan), 0);
-        }
         if (!this.notifier || !this.alertsOn) return;
         const alert = alertFor(event, before, after, plan, { mode: this.currentMode });
         if (alert) this.notifier.notify(alert);
@@ -204,12 +198,6 @@ export class TradingService {
     });
   }
 
-  private readonly targetFillListeners: ((plan: TradePlan) => void)[] = [];
-
-  /** Be told, soon after, whenever a strategy trade's target fills. */
-  onTargetFill(listener: (plan: TradePlan) => void): void {
-    this.targetFillListeners.push(listener);
-  }
 
   /** One strategy's trades touched since the start of the IST day. */
   async tradesTodayFor(strategyId: string, now = Date.now()): Promise<TradeRecord[]> {

@@ -459,37 +459,6 @@ export function runAlertFor(r: RunOutcome, ctx: AlertContext): Alert | null {
   return null;
 }
 
-export type AddOutcome = {
-  strategy: string;
-  sourceTradeId: string;
-  /** 'placed' is announced by its own fill, so only the other three reach here. */
-  status: 'skipped' | 'refused' | 'failed';
-  /** The decision in words: what was bought back and why nothing was sold. */
-  detail: string;
-  at: number;
-};
-
-/**
- * An add to the other leg that did not happen.
- *
- * A skip is not a problem -- the rule said no -- but it is said, once per
- * target piece, because "the CE target hit and the PE was not added to" is
- * the question the phone gets asked, and silence cannot answer it. A refusal
- * or a failure is a problem, and says so.
- */
-export function addAlertFor(r: AddOutcome, ctx: AlertContext): Alert {
-  const foot = `🕒 ${istTime(r.at)} IST · auto-trading · ${ctx.mode === 'live' ? 'LIVE' : 'PAPER'}`;
-  const [icon, title, after] = r.status === 'skipped'
-    ? ['ℹ️', 'NOT ADDED', 'Nothing was sold.']
-    : r.status === 'refused'
-      ? ['⚠️', 'ADD REFUSED', 'The checks turned the add down, so nothing was sold. The positions already open are unchanged.']
-      : ['🚨', 'ADD FAILED', 'The add could not be sent. The positions already open are unchanged.'];
-  return {
-    key: `add:${r.sourceTradeId}`,
-    text: lines(headline(ctx, icon, `${title} · ${escape(r.strategy)}`), '', escape(r.detail), after, '', foot),
-  };
-}
-
 /** The entry window closed with nothing tried: the desk or the price feed was down the whole time. */
 export function missedEntryAlert(
   strategy: string, entryTime: string, graceMin: number, at: number, ctx: AlertContext,
