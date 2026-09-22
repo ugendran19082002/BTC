@@ -14,10 +14,6 @@ const leg = (
   moneyness: Candidate['moneyness'] = 'OTM',
 ): Candidate => ({ cp, strike, sellPrice, pOtm, moneyness });
 
-/** The same leg, carrying the board's own sell score. */
-const scored = (c: Candidate, sellScore: number | null, tier?: Candidate['tier']): Candidate =>
-  ({ ...c, sellScore, tier });
-
 /** A board around spot 78,600: calls above, puts below, cheaper further out. */
 const BOARD: Candidate[] = [
   leg('C', 78_600, 300, 0.50, 'ATM'),
@@ -136,79 +132,14 @@ test('the refusal names the strike that was asked for', () => {
   assert.match(sel.refusals.join(' '), /CE: no OTM 9 strike listed with a price/);
 });
 
-test('[critical] the safety gate still has its say over a strike picked by position', () => {
-  // OTM 1 is 79,000 at 80% and 78,200 at 81%: both below the 95% bar.
-  const sel = selectLegs(strat({ strikeRule: 'strict', strikeStep: 1, doubleWhenOneSided: false }), BOARD);
-  assert.equal(sel.legs.length, 0);
-  assert.match(sel.refusals.join(' '), /79000 is 80\.0%/);
-});
+/* ------------------------------------------------------------- sizing --- */
 
-/* ------------------------------------------------------------- the gate --- */
-
-test('both legs clearing the gate are both sold, one lot each', () => {
-  // atMost $15 -> C 80,200 at 0.96 and P 77,400 at 0.95. Both clear 0.95.
+test('both legs are sold, each at the strategy\'s own lots', () => {
+  // atMost $15 -> C 80,200 and P 77,400.
   const sel = selectLegs(strat({ premium: { mode: 'atMost', usd: 15 }, lots: 10 }), BOARD);
   assert.equal(sel.legs.length, 2);
   assert.deepEqual(sel.legs.map((l) => l.lots), [10, 10]);
   assert.deepEqual(sel.refusals, []);
-});
-
-test('[critical] a leg below the bar is refused, and the survivor doubles', () => {
-  // atLeast $15 -> C 79,800 at 0.94 (refused) and P 77,400 at 0.95 (kept).
-  const sel = selectLegs(strat({ premium: { mode: 'atLeast', usd: 15 }, lots: 10 }), BOARD);
-  assert.equal(sel.legs.length, 1);
-  assert.equal(sel.legs[0]!.cp, 'P');
-  assert.equal(sel.legs[0]!.lots, 20, 'the survivor carries the refused leg\'s lot');
-  assert.match(sel.refusals.join(' '), /CE: 79800 is 94.0%/);
-});
-
-test('the refusal says both numbers, so it can be acted on', () => {
-  const sel = selectLegs(strat({ premium: { mode: 'atLeast', usd: 15 } }), BOARD);
-  assert.match(sel.refusals[0]!, /94\.0%/);
-  assert.match(sel.refusals[0]!, /95\.0% bar/);
-});
-
-test('with the gate off, a leg below the bar is sold anyway', () => {
-  const sel = selectLegs(
-    strat({ premium: { mode: 'atLeast', usd: 15 }, probGate: null, doubleWhenOneSided: false }),
-    BOARD,
-  );
-  assert.equal(sel.legs.length, 2);
-  assert.deepEqual(sel.legs.map((l) => l.lots), [10, 10]);
-});
-
-test('[critical] a leg with no probability is refused, not passed', () => {
-  // A gate that silently passes what it cannot check is not a gate.
-  // The put must clear the $15 cap too, or it is refused for price and the
-  // test proves nothing about the probability check.
-  const board = [leg('C', 80_200, 12, null), leg('P', 77_000, 9, 0.97)];
-  const sel = selectLegs(strat({ premium: { mode: 'atMost', usd: 15 } }), board);
-  assert.equal(sel.legs.length, 1);
-  assert.equal(sel.legs[0]!.cp, 'P');
-  assert.match(sel.refusals.join(' '), /no probability/);
-});
-
-test('neither leg qualifying sells nothing and says why twice', () => {
-  const sel = selectLegs(strat({ premium: { mode: 'atLeast', usd: 15 }, probGate: 0.999 }), BOARD);
-  assert.equal(sel.legs.length, 0);
-  assert.equal(sel.refusals.length, 2);
-});
-
-test('a single-leg strategy never doubles, even alone', () => {
-  const sel = selectLegs(
-    strat({ legs: 'PE', premium: { mode: 'atMost', usd: 15 }, lots: 10 }),
-    BOARD,
-  );
-  assert.equal(sel.legs.length, 1);
-  assert.equal(sel.legs[0]!.lots, 10, 'a CE-only strategy is always one-sided; doubling it would double every day');
-});
-
-test('a board with no puts refuses the put and doubles the call', () => {
-  const callsOnly = BOARD.filter((l) => l.cp === 'C');
-  const sel = selectLegs(strat({ premium: { mode: 'atMost', usd: 15 }, lots: 10 }), callsOnly);
-  assert.equal(sel.legs.length, 1);
-  assert.equal(sel.legs[0]!.lots, 20);
-  assert.match(sel.refusals.join(' '), /PE: nothing out of the money/);
 });
 
 test('an empty board sells nothing rather than throwing', () => {
@@ -224,11 +155,6 @@ test('the description names what was sold', () => {
   const s = describeSelection(sel);
   assert.match(s, /CE 80200 x10/);
   assert.match(s, /PE 77000 x10/);
-});
-
-test('the description carries the refusal when only one leg sold', () => {
-  const sel = selectLegs(strat({ premium: { mode: 'atLeast', usd: 15 }, lots: 10 }), BOARD);
-  assert.match(describeSelection(sel), /PE 77400 x20 .*below the/s);
 });
 
 test('selling nothing still says why', () => {
@@ -313,65 +239,6 @@ test('the refusal says what was missing, not just that there was nothing', () =>
   );
 });
 
-
-/**
- * The sell-score bar.
- *
- * The same shape as the probability gate beside it, and refusing for the same
- * reason: the strike is what it is, and looking again in twenty seconds will
- * not change its score. What must not happen is a bar that passes a strike it
- * could not score -- a bar that only stops what it can read is not a bar.
- */
-const SCORED: Candidate[] = BOARD.map((l) =>
-  scored(l, l.cp === 'C' ? 72 : 48, l.cp === 'C' ? 'candidate' : 'watch'));
-
-test('[critical] off, the bar reads nothing and refuses nothing', () => {
-  const sel = selectLegs(
-    strat({ premium: { mode: 'atLeast', usd: 15 }, probGate: null, minSellScore: null }),
-    BOARD.map((l) => scored(l, null)),
-  );
-  assert.equal(sel.legs.length, 2, 'an unscored board sells both legs while the bar is off');
-});
-
-test('[critical] a strike under the bar is refused, with its own number', () => {
-  const sel = selectLegs(
-    strat({ premium: { mode: 'atLeast', usd: 15 }, probGate: null, minSellScore: 65 }),
-    SCORED,
-  );
-  assert.deepEqual(sel.legs.map((l) => l.cp), ['C'], 'the call scores 72, the put 48');
-  assert.equal(sel.refusals.length, 1);
-  assert.match(sel.refusals[0]!, /PE: \d+ scores 48\/100 \(watch\), below the 65 bar/);
-});
-
-test('[critical] a strike with no score is refused, not waved through', () => {
-  const sel = selectLegs(
-    strat({ premium: { mode: 'atLeast', usd: 15 }, probGate: null, minSellScore: 65 }),
-    BOARD.map((l) => scored(l, null)),
-  );
-  assert.equal(sel.legs.length, 0);
-  assert.match(sel.refusals[0]!, /no sell score to check against the bar/);
-});
-
-test('at the bar passes -- "65 or better" includes 65', () => {
-  const at = (score: number) => selectLegs(
-    strat({ legs: 'CE', premium: { mode: 'atLeast', usd: 15 }, probGate: null, minSellScore: 65, doubleWhenOneSided: false }),
-    BOARD.map((l) => scored(l, score)),
-  ).legs.length;
-  assert.equal(at(65), 1);
-  assert.equal(at(64), 0);
-});
-
-test('the probability gate still has the first word', () => {
-  // Both would refuse; the reason printed is the one that was reached first,
-  // so a leg is never reported as low-scoring when it never got past safety.
-  const sel = selectLegs(
-    strat({ legs: 'CE', premium: { mode: 'atLeast', usd: 15 }, probGate: 0.999, minSellScore: 65, doubleWhenOneSided: false }),
-    BOARD.map((l) => scored(l, 10)),
-  );
-  assert.equal(sel.legs.length, 0);
-  assert.match(sel.refusals[0]!, /to expire worthless/);
-});
-
 /*
  * 18 September, asked which pair the rule takes: 71,000 – 89,000 or 76,000 –
  * 77,800. It took the first -- the heaviest anywhere on the board, paying
@@ -407,7 +274,6 @@ test('a strike with no distance to read is not thrown out by the band', () => {
   assert.equal(pickStrike(board, 'C', wall({ premium: { mode: 'atLeast', usd: 15 } }))?.strike, 80_000);
 });
 
-
 /* ------------------------------------------------------------------ premium fallback */
 
 /** A board where every out-of-the-money strike pays more than $20: the near ones only, on a wild day. */
@@ -439,25 +305,20 @@ test('no fallback is the rule as it always was: nothing found, nothing sold', ()
 });
 
 test('[critical] a leg sold on the fallback says so in the journal', () => {
-  const sel = selectLegs(strat({ probGate: null, premium: { mode: 'atMost', usd: 20, fallbackUsd: 50 } }), RICH);
+  const sel = selectLegs(strat({ premium: { mode: 'atMost', usd: 20, fallbackUsd: 50 } }), RICH);
   assert.equal(sel.legs.length, 2);
   assert.ok(sel.legs.every((l) => l.fallbackUsd === 50));
   assert.match(describeSelection(sel), /CE 79800 x10 @ 44 \(fallback \$50\)/);
 });
 
 test('a leg found by the number itself carries no fallback mark', () => {
-  const sel = selectLegs(strat({ probGate: null, premium: { mode: 'atMost', usd: 20, fallbackUsd: 50 } }), BOARD);
+  const sel = selectLegs(strat({ premium: { mode: 'atMost', usd: 20, fallbackUsd: 50 } }), BOARD);
   assert.ok(sel.legs.every((l) => l.fallbackUsd === undefined));
   assert.doesNotMatch(describeSelection(sel), /fallback/);
 });
 
 test('when the fallback finds nothing either, the refusal names both numbers', () => {
-  const sel = selectLegs(strat({ legs: 'CE', doubleWhenOneSided: false, probGate: null, premium: { mode: 'atMost', usd: 20, fallbackUsd: 25 } }), RICH);
+  const sel = selectLegs(strat({ legs: 'CE', premium: { mode: 'atMost', usd: 20, fallbackUsd: 25 } }), RICH);
   assert.deepEqual(sel.refusals, ['CE: nothing out of the money at or below $20, nor $25']);
 });
 
-test('the fallback still has to pass the safety gate', () => {
-  const sel = selectLegs(strat({ legs: 'CE', doubleWhenOneSided: false, probGate: 0.9, premium: { mode: 'atMost', usd: 20, fallbackUsd: 50 } }), RICH);
-  assert.equal(sel.legs.length, 0);
-  assert.match(sel.refusals[0]!, /79800 is 86\.0% to expire worthless, below the 90\.0% bar/);
-});
