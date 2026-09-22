@@ -114,6 +114,8 @@ export class FlowSocket {
   private socket: SocketLike | null = null;
   private stopped = true;
   private lastMessageAt: number | null = null;
+  /** When the current socket was asked for: silence is counted from here too, or a reopen dies in its handshake. */
+  private openedAt = 0;
   private reconnects = 0;
   private backoffMs = 1_000;
   private watchTimer: ReturnType<typeof setInterval> | null = null;
@@ -222,7 +224,9 @@ export class FlowSocket {
       const fresh = want.filter((sym) => !this.optionSymbols.includes(sym));
       if (fresh.length) { this.subscribe(fresh); this.optionSymbols = [...this.optionSymbols, ...fresh]; }
     }
-    if (this.socket && this.lastMessageAt !== null && this.now() - this.lastMessageAt >= (this.o.staleMs ?? FLOW_STALE_MS)) {
+    // The later of the last message and the last attempt -- see TickerSocket.snapshot.
+    const heardAt = Math.max(this.lastMessageAt ?? 0, this.openedAt);
+    if (this.socket && this.now() - heardAt >= (this.o.staleMs ?? FLOW_STALE_MS)) {
       this.log('flow socket silent; reconnecting');
       this.drop();
       this.scheduleReconnect();
@@ -240,6 +244,7 @@ export class FlowSocket {
       return;
     }
     this.socket = ws;
+    this.openedAt = this.now();
     ws.onopen = () => {
       this.backoffMs = 1_000;
       this.lastMessageAt = this.now();

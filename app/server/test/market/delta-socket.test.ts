@@ -143,3 +143,36 @@ test('a closed socket is reopened; stop() means stopped', () => {
   feed.stop();
   assert.equal(feed.health().connected, false);
 });
+
+test('[critical] a remade socket gets its handshake time: a stale old message cannot kill it on the next tick', () => {
+  // 21 September: the socket went silent, and every reopen was dropped by the
+  // very next snapshot -- still in its handshake, judged by the dead socket's
+  // last message. 3,833 reconnects in 32 hours, none of them heard.
+  const { feed, sockets, now } = rig();
+  feed.start();
+  sockets[0].onopen?.({});
+  sockets[0].onmessage?.({ data: wire() });
+  now.t += 25_000;
+  feed.snapshot();
+  assert.equal(sockets[0].closed, true, 'the silent one is dropped');
+  now.t += 1_000;
+  (feed as unknown as { open(): void }).open();   // what the reconnect timer does
+  assert.equal(sockets.length, 2);
+  now.t += 5;
+  feed.snapshot();
+  assert.equal(sockets[1].closed, false, 'a socket still connecting is not silent');
+  assert.equal(feed.health().connected, true);
+  sockets[1].onopen?.({});
+  sockets[1].onmessage?.({ data: wire() });
+  assert.equal(feed.health().source, 'socket', 'and it becomes the feed again');
+  feed.stop();
+});
+
+test('a socket that never finishes connecting is still given up on', () => {
+  const { feed, sockets, now } = rig();
+  feed.start();
+  now.t += 25_000;
+  feed.snapshot();
+  assert.equal(sockets[0].closed, true, 'twenty seconds with no open and no message is dead');
+  feed.stop();
+});

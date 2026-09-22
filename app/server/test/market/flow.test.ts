@@ -190,3 +190,30 @@ test('the IV rank and the OI pulse read the board record', async () => {
   assert.ok(Math.abs(o.ceAtmMarkChange1hPct! - (126 / 102 - 1) * 100) < 1e-9, 'the ATM call against an hour ago');
   assert.ok(Math.abs(o.peAtmMarkChange1hPct! - (87 / 99 - 1) * 100) < 1e-9);
 });
+
+test('[critical] a remade flow socket gets its handshake time: a stale old message cannot kill it on the next watch', () => {
+  // The ticker socket's 21 September loop, which this socket shares the shape of.
+  const clock = { t: T0 };
+  const sockets: { closed: boolean; onopen: ((e: unknown) => void) | null; onmessage: ((e: { data: unknown }) => void) | null }[] = [];
+  const s = new FlowSocket({
+    now: () => clock.t,
+    connect: () => {
+      const ws = { closed: false, send: () => {}, close: () => { ws.closed = true; }, onopen: null, onmessage: null, onclose: null, onerror: null };
+      sockets.push(ws);
+      return ws;
+    },
+  });
+  const inner = s as unknown as { open(): void; watch(): void };
+  s.start();
+  sockets[0]!.onopen?.({});
+  sockets[0]!.onmessage?.({ data: '{}' });
+  clock.t += 60_000;
+  inner.watch();
+  assert.equal(sockets[0]!.closed, true, 'the silent one is dropped');
+  clock.t += 1_000;
+  inner.open();   // what the reconnect timer does
+  clock.t += 5;
+  inner.watch();
+  assert.equal(sockets[1]!.closed, false, 'a socket still connecting is not silent');
+  s.stop();
+});

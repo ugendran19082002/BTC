@@ -170,6 +170,25 @@ Sources: [Delta Exchange API](https://docs.delta.exchange/) (order types,
 `stop_trigger_method`, bracket fields), [SEC — stop orders](https://www.sec.gov/answers/stopord.htm),
 [Order (exchange)](https://en.wikipedia.org/wiki/Order_(exchange)).
 
+### 7. A feed's age is the age of what arrived last, from any source
+
+On 21 September the ticker socket went silent, and for 32 hours every reopen
+was dropped on the very next tick: silence was measured from the *dead*
+socket's last message, so a new socket still in its handshake already looked
+twenty seconds silent. 3,833 reconnects, none heard. The REST poll carried the
+board the whole time, yet the bar said **market 1d**, because the freshness
+read the socket's timestamp ahead of the fresher REST batch.
+
+- **Silence is counted from the later of the last message and the last
+  attempt** (`openedAt` in `TickerSocket` and `FlowSocket`). A reopen gets the
+  full stale window to connect, and a socket that never opens is still given up on.
+- **"How old is this" is the newest of every source that feeds it**, never the
+  first non-null one. A stale fallback and a stale primary are different
+  alarms, and `/api/health`'s `feed` block keeps both readable.
+- A reconnect loop that never logs `open` is an outage, not noise. Checking
+  `docker logs … | grep 'socket open'` against `reconnects` in `/api/health`
+  is the quickest check.
+
 ---
 
 ## The lifecycle of one trade
@@ -273,7 +292,7 @@ statement is the authority. See `TODO.md`.
 
 ## Testing
 
-695 server tests (`node:test` via tsx), 495 browser tests (vitest +
+1,055 server tests (`node:test` via tsx), 878 browser tests (vitest +
 @testing-library). Run `npm test` in `app/server` and `npx vitest run` in
 `app/web`; `npm run typecheck` in both.
 

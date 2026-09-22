@@ -419,7 +419,9 @@ export function registerDeskRoutes(app: FastifyInstance) {
          * whole on a past snapshot, where age means nothing.
          */
         freshness: snap.live ? {
-          marketAt: feed.lastMessageAt ?? feed.batchAt,
+          // The newer of the two feeds: a dead socket's last message must not
+          // age a board the REST poll refreshed seconds ago ("market 1d", 22 Sep).
+          marketAt: Math.max(feed.lastMessageAt ?? 0, feed.batchAt ?? 0) || null,
           chainAt: snap.ts * 1000,
           oiAt: await lastOptionSnapshotAt(),
           modelAt: fullOutlook.model?.measuredAt && Number.isFinite(Date.parse(fullOutlook.model.measuredAt)) ? Date.parse(fullOutlook.model.measuredAt) : null,

@@ -122,6 +122,8 @@ export class TickerSocket {
   private dirty = false;
   private stopped = true;
   private lastMessageAt: number | null = null;
+  /** When the current socket was asked for: silence is counted from here too, or a reopen dies in its handshake. */
+  private openedAt = 0;
   private reconnects = 0;
   private backoffMs = 1_000;
   private snapshotTimer: ReturnType<typeof setInterval> | null = null;
@@ -207,8 +209,12 @@ export class TickerSocket {
   /** Hand the batch on if anything changed since the last one. */
   snapshot(): void {
     // A silent open socket is a dead one; say so by dropping it, which is
-    // what starts the reconnect and lets the REST poll notice.
-    if (this.socket && this.lastMessageAt !== null && this.now() - this.lastMessageAt >= (this.o.staleMs ?? STALE_MS)) {
+    // what starts the reconnect and lets the REST poll notice. Counted from the
+    // later of the last message and the last attempt: judged by the dead
+    // socket's last message alone, every reopen was dropped mid-handshake on
+    // the next tick, 3,833 times over 21-22 September.
+    const heardAt = Math.max(this.lastMessageAt ?? 0, this.openedAt);
+    if (this.socket && this.now() - heardAt >= (this.o.staleMs ?? STALE_MS)) {
       this.log('ticker socket silent; reconnecting');
       this.drop();
       this.scheduleReconnect();
@@ -233,6 +239,7 @@ export class TickerSocket {
       return;
     }
     this.socket = ws;
+    this.openedAt = this.now();
     ws.onopen = () => {
       this.backoffMs = 1_000;
       this.lastMessageAt = this.now();
