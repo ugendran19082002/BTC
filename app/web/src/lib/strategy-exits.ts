@@ -50,7 +50,8 @@ export function withExitRule(c: StrategyConfig, leg: ExitLeg, rule: ExitRule): S
 /** Whether a rule does anything at the entry. */
 export const exitOn = (r: ExitRule) => r.value > 0;
 
-function valueProblem(leg: ExitLeg, mode: ExitMode, v: number): string | null {
+/** Why one exit value cannot be used, in words; null when it can. The ticket and the form share it. */
+export function exitValueProblem(leg: ExitLeg, mode: ExitMode, v: number): string | null {
   const Leg = leg === 'target' ? 'Take profit' : 'Stop loss';
   if (!Number.isFinite(v) || v < 0) return `${Leg} cannot be negative or blank.`;
   if (mode === 'points') {
@@ -68,7 +69,7 @@ function valueProblem(leg: ExitLeg, mode: ExitMode, v: number): string | null {
 export function exitRuleProblems(leg: ExitLeg, rule: ExitRule, entryTime: string, exitTime: string): string[] {
   const bad: string[] = [];
   const Leg = leg === 'target' ? 'Take profit' : 'Stop loss';
-  const first = valueProblem(leg, rule.mode, rule.value);
+  const first = exitValueProblem(leg, rule.mode, rule.value);
   if (first) bad.push(first);
   if (rule.steps.length > MAX_EXIT_STEPS) bad.push(`${Leg} can change at most ${MAX_EXIT_STEPS} times a day.`);
   const windowOk = isHhmm(entryTime) && isHhmm(exitTime);
@@ -88,7 +89,7 @@ export function exitRuleProblems(leg: ExitLeg, rule: ExitRule, entryTime: string
       }
       last = Math.max(last, at);
     }
-    const p = valueProblem(leg, rule.mode, st.value);
+    const p = exitValueProblem(leg, rule.mode, st.value);
     if (p) bad.push(`Step ${n}: ${p}`);
   });
   return bad;

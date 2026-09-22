@@ -12,6 +12,9 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { TimePicker } from '@/components/ui/time-picker';
 import { addExamples, describeStrategy, sizingOf } from '@/lib/strategy-preview';
+import { exitRules, suggestedFallback, withExitRule } from '@/lib/strategy-exits';
+import { ExitRuleEditor } from '@/components/strategy/ExitRuleEditor';
+import { NumberField } from '@/components/ui/number-field';
 import { problemFor, strategyProblems, type FormField, type FormTab, type Problem } from '@/lib/strategy-rules';
 import { SETTLEMENT, defaultAddUntil, hhmmOf, isHhmm, minutesOf, spanLabel, time12, wrapsMidnight } from '@/lib/time';
 import { inr, usd } from '@/lib/format';
@@ -111,6 +114,7 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
   }, [autoCap, c.rebalance?.enabled, c.rebalance?.capAuto, c.rebalance?.maxLotsPerSide]);
 
   const problems = useMemo(() => strategyProblems(c, name), [c, name]);
+  const exits = useMemo(() => exitRules(c), [c]);
   /*
    * The name box sits above the tabs, so its problem belongs to no tab. It used
    * to count for When: a new strategy opened with a red dot on When and "1 thing
@@ -436,6 +440,38 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                     </Affix>
                   </div>
                 </Stack>
+              ) : null}
+
+              {/*
+                A second number on the same rule, tried only when the first finds
+                no strike: "at most $20 -- and if nothing is at or under $20, the
+                last strike at or under $50". Off until it is switched on.
+              */}
+              {c.strikeRule === 'oiWall' ? null : c.strikeRule === 'premium' ? (
+                <div className="mt-2">
+                  <Switch
+                    label={c.premium.mode === 'atMost' ? 'If nothing is at or below it, try a higher cap' : 'If nothing pays it, try a lower floor'}
+                    description={c.premium.fallbackUsd != null
+                      ? (c.premium.mode === 'atMost'
+                        ? `No strike at or below $${c.premium.usd}? Sells the last strike at or below $${c.premium.fallbackUsd}.`
+                        : `No strike paying $${c.premium.usd}? Sells the furthest still paying $${c.premium.fallbackUsd}.`)
+                      : 'Off — no strike means that leg is not sold today.'}
+                    checked={c.premium.fallbackUsd != null}
+                    onCheckedChange={(on) => set('premium', { ...c.premium, fallbackUsd: on ? suggestedFallback(c.premium) : null })}
+                  />
+                  {c.premium.fallbackUsd != null && (
+                    <Stack label={c.premium.mode === 'atMost' ? 'Fallback cap' : 'Fallback floor'} error={err('premiumFallback')} className="mt-1 w-40"
+                           hint={c.premium.mode === 'atMost' ? `above $${c.premium.usd}` : `below $${c.premium.usd}`}>
+                      <NumberField label="premium fallback usd" unitBefore="$" value={c.premium.fallbackUsd}
+                                   onChange={(n) => set('premium', { ...c.premium, fallbackUsd: n })} />
+                    </Stack>
+                  )}
+                  {err('premiumFallback') && (
+                    <QuickFix onClick={() => set('premium', { ...c.premium, fallbackUsd: suggestedFallback(c.premium) })}>
+                      Use ${suggestedFallback(c.premium)}
+                    </QuickFix>
+                  )}
+                </div>
               ) : (
                 <Stack
                   label="Which strike"
@@ -526,19 +562,28 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                 </div>
               )}
 
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <Stack label="Take profit" error={err('takeProfitPct')} hint={c.takeProfitPct > 0 ? 'of the premium earned' : '0 holds to expiry'}>
-                  <Affix after="%">
-                    <Input value={String(Math.round(c.takeProfitPct * 100))} aria-label="take profit pct" inputMode="numeric" className="pr-7"
-                           onChange={(e) => set('takeProfitPct', num(e.target.value, 0) / 100)} />
-                  </Affix>
-                </Stack>
-                <Stack label="Stop loss" error={err('stopLossPct')} hint={c.stopLossPct > 0 ? 'above the entry price' : '0 means no stop'}>
-                  <Affix after="%">
-                    <Input value={String(Math.round(c.stopLossPct * 100))} aria-label="stop loss pct" inputMode="numeric" className="pr-7"
-                           onChange={(e) => set('stopLossPct', num(e.target.value, 0) / 100)} />
-                  </Affix>
-                </Stack>
+              {/*
+                The two exits, typed rather than dragged, each as a percentage or
+                fixed points, and each able to move on a timetable between the
+                entry and the exit. Shown against the premium the rule asks for,
+                so "80%" reads as the price it is.
+              */}
+              <div className="mt-3 flex flex-col gap-2">
+                {(['target', 'stop'] as const).map((leg) => (
+                  <ExitRuleEditor
+                    key={leg}
+                    leg={leg}
+                    rule={exits[leg]}
+                    onChange={(r) => setC((p) => withExitRule(p, leg, r))}
+                    onMode={(mode) => setC((p) => (leg === 'target'
+                      ? { ...p, targetMode: mode, targetSteps: [] }
+                      : { ...p, stopMode: mode, stopSteps: [] }))}
+                    entryTime={c.entryTime}
+                    exitTime={c.exitTime}
+                    samplePrice={c.strikeRule === 'premium' && c.premium.usd > 0 ? c.premium.usd : null}
+                    error={err(leg === 'target' ? 'takeProfitPct' : 'stopLossPct')}
+                  />
+                ))}
               </div>
               <Warnings items={warnings.filter((w) => /target and no stop/.test(w))} />
             </>

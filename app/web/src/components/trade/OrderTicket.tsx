@@ -11,6 +11,8 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Select, SelectItem } from '@/components/ui/select';
 import { ExitBars } from '@/components/trade/ExitBars';
+import { exitAskOf, inputProblem, valueOf, type ExitInput } from '@/lib/exit-input';
+import type { ExitMode } from '@/types/strategy';
 import { Checkbox } from '@/components/ui/checkbox';
 import { usePersisted } from '@/hooks/usePersisted';
 import { usePoll } from '@/hooks/usePoll';
@@ -103,6 +105,22 @@ export function OrderTicket({
   const [stopOn, setStopOn] = usePersisted('exit:stopOn', false);
   const [targetPct, setTargetPct] = usePersisted('exit:targetPct', 0.8);
   const [stopPct, setStopPct] = usePersisted('exit:stopPct', 1.5);
+  // Percent or fixed points, each number kept so switching back finds it.
+  const [targetMode, setTargetMode] = usePersisted<ExitMode>('exit:targetMode', 'pct');
+  const [stopMode, setStopMode] = usePersisted<ExitMode>('exit:stopMode', 'pct');
+  const [targetPoints, setTargetPoints] = usePersisted('exit:targetPoints', 10);
+  const [stopPoints, setStopPoints] = usePersisted('exit:stopPoints', 10);
+  const target: ExitInput = { on: targetOn, mode: targetMode, pct: targetPct, points: targetPoints };
+  const stop: ExitInput = { on: stopOn, mode: stopMode, pct: stopPct, points: stopPoints };
+  const patchExit = (leg: 'target' | 'stop') => (p: Partial<ExitInput>) => {
+    if (p.on !== undefined) (leg === 'target' ? setTargetOn : setStopOn)(p.on);
+    if (p.mode !== undefined) (leg === 'target' ? setTargetMode : setStopMode)(p.mode);
+    if (p.pct !== undefined) (leg === 'target' ? setTargetPct : setStopPct)(p.pct);
+    if (p.points !== undefined) (leg === 'target' ? setTargetPoints : setStopPoints)(p.points);
+  };
+  // An exit typed out of range is said under its box and holds the Sell back:
+  // the server would clamp it, and a clamp changes the number without a word.
+  const exitProblem = inputProblem('target', target) ?? inputProblem('stop', stop);
   /**
    * Rest at the offer, and cross if nobody takes it. On by default.
    *
@@ -202,12 +220,12 @@ export function OrderTicket({
     () => seed && {
       symbol: seed.symbol, side: seed.side, strike: seed.strike,
       expiryTs: seed.expiryTs, lots, limitPrice, leverage,
-      takeProfitPct: targetOn ? targetPct : 0,
-      stopLossPct: stopOn ? stopPct : 0,
+      ...exitAskOf(target, stop),
       // Meaningless on an order that crosses immediately, so it is not sent.
       convertToMarketAfterSec: rests && convertOn ? convertSec : 0,
     },
-    [seed, lots, limitPrice, leverage, targetPct, stopPct, targetOn, stopOn, rests, convertOn, convertSec],
+    [seed, lots, limitPrice, leverage, targetPct, stopPct, targetOn, stopOn, targetMode, stopMode,
+      targetPoints, stopPoints, rests, convertOn, convertSec],
   );
 
   // Debounced, because typing a price should not be a request per keystroke.
@@ -246,7 +264,7 @@ export function OrderTicket({
   const credit =
     preview?.creditUsd ?? (working !== null ? working * lots * (preview?.contractValue ?? 0.001) : null);
   const blocked = preview !== null && !preview.ok;
-  const canSend = !!preview?.ok && !placing && !checking;
+  const canSend = !!preview?.ok && !placing && !checking && exitProblem === null;
   /**
    * What the balance covers -- shown, never enforced.
    *
@@ -462,14 +480,10 @@ export function OrderTicket({
               entry={working}
               size={preview?.size ?? lots}
               contractValue={preview?.contractValue ?? 0.001}
-              targetOn={targetOn}
-              stopOn={stopOn}
-              onTargetOn={setTargetOn}
-              onStopOn={setStopOn}
-              targetPct={targetPct}
-              stopPct={stopPct}
-              onTargetPct={setTargetPct}
-              onStopPct={setStopPct}
+              target={target}
+              stop={stop}
+              onTarget={patchExit('target')}
+              onStop={patchExit('stop')}
               liquidationPrice={preview?.liquidationPrice ?? null}
             />
 
@@ -506,12 +520,12 @@ export function OrderTicket({
                 hint="Delta buys your position back at this price, whether you want it or not. Lower leverage moves it further away."
               />
               <Line
-                label={stopOn && stopPct > 0 ? 'Worst case' : 'Worst case (no stop)'}
+                label={valueOf(stop) > 0 ? 'Worst case' : 'Worst case (no stop)'}
                 value={preview?.worstCaseLossUsd != null ? signedInr(usdToInr(-preview.worstCaseLossUsd)) : '—'}
                 second={preview?.worstCaseLossUsd != null ? signedUsd(-preview.worstCaseLossUsd) : undefined}
                 tone="down"
                 hint={
-                  stopOn && stopPct > 0
+                  valueOf(stop) > 0
                     ? 'What the stop costs you if it fires.'
                     : 'With no stop, liquidation is where it ends. That is the cap.'
                 }
@@ -557,7 +571,7 @@ export function OrderTicket({
                 label={`Swipe to sell · ${inr(usdToInr(credit))}`}
                 busyLabel="Sending…"
                 disabled={!canSend}
-                disabledLabel={blocked ? 'Can’t sell' : checking ? 'Checking…' : 'Can’t sell yet'}
+                disabledLabel={blocked || exitProblem ? 'Can’t sell' : checking ? 'Checking…' : 'Can’t sell yet'}
                 onConfirm={submit}
               />
             </SheetFooter>

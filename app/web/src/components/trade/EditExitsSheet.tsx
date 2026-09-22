@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button';
 import { ExitBars } from '@/components/trade/ExitBars';
 import { Figure } from '@/components/ui/figure';
 import { checkExits } from '@/lib/exit-checks';
+import { exitAskOf, inputProblem, levelOf, type ExitInput } from '@/lib/exit-input';
+import { MAX_EXIT_POINTS, MAX_STOP_PCT, MAX_TARGET_PCT } from '@/lib/strategy-exits';
 import {
   contractLabel, price, signedInr, signedUsd, usdToInr,
 } from '@/lib/format';
@@ -14,15 +16,16 @@ import {
 /**
  * Change the stop and the target on a position that is already on.
  *
- * The same bars as the ticket, on purpose: the control that set these levels
+ * The same exit boxes as the ticket, on purpose: the control that set these levels
  * and the control that moves them should not be two different things to learn.
  *
  * The percentages are read back off the position rather than starting from a
  * default, so opening this shows where the levels actually are instead of
  * where a fresh ticket would have put them.
  */
-/** Keeps a reverse-computed percentage inside what the bar can show. */
-const clampPct = (n: number, max: number) => Math.min(max, Math.max(0, n));
+/** Keeps a reverse-computed value inside what the box accepts. */
+const clampTo = (n: number, max: number) => Math.min(max, Math.max(0, Math.round(n * 10_000) / 10_000));
+const OFF: ExitInput = { on: false, mode: 'pct', pct: 0.8, points: 10 };
 
 export function EditExitsSheet({ trade, open, onOpenChange, onSaved }: {
   trade: Trade | null;
@@ -31,19 +34,17 @@ export function EditExitsSheet({ trade, open, onOpenChange, onSaved }: {
   onSaved?: () => void;
 }) {
   const entry = trade?.entryAvgPrice ?? null;
-  const [targetOn, setTargetOn] = useState(false);
-  const [stopOn, setStopOn] = useState(false);
-  const [targetPct, setTargetPct] = useState(0.8);
-  const [stopPct, setStopPct] = useState(1.5);
+  const [target, setTarget] = useState<ExitInput>(OFF);
+  const [stop, setStop] = useState<ExitInput>({ ...OFF, pct: 1.5 });
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
 
   /**
-   * Seed the bars from the levels that are live, exactly once per opening.
+   * Seed the boxes from the levels that are live, exactly once per opening.
    *
    * The trade object is replaced every second by the poll, so an effect that
-   * depends on anything inside it re-runs while you are dragging and puts the
-   * slider back where it started. Seeding is keyed on the opening itself, and a
+   * depends on anything inside it re-runs while you are typing and puts the
+   * number back where it started. Seeding is keyed on the opening itself, and a
    * ref makes that literal rather than a hope about dependency arrays: once the
    * form is seeded for this open, nothing reseeds it until it closes.
    */
@@ -66,10 +67,16 @@ export function EditExitsSheet({ trade, open, onOpenChange, onSaved }: {
     // seeding it from the plan showed −94% beside a book holding 25.10.
     const tp = trade.onBook?.target ?? trade.plan?.takeProfitPrice ?? null;
     const sl = trade.onBook?.stop ?? trade.plan?.stopPrice ?? null;
-    setTargetOn(tp !== null);
-    setStopOn(sl !== null);
-    if (tp !== null) setTargetPct(clampPct(1 - tp / entry, 0.99));
-    if (sl !== null) setStopPct(clampPct(sl / entry - 1, 3));
+    // Both readings of each level are filled in, so either mode opens on the
+    // price that is live: a target at 3.00 off 15 is 80% and 12 points alike.
+    setTarget({
+      ...OFF, on: tp !== null,
+      ...(tp !== null ? { pct: clampTo(1 - tp / entry, MAX_TARGET_PCT), points: clampTo(entry - tp, MAX_EXIT_POINTS) } : {}),
+    });
+    setStop({
+      ...OFF, pct: 1.5, on: sl !== null,
+      ...(sl !== null ? { pct: clampTo(sl / entry - 1, MAX_STOP_PCT), points: clampTo(sl - entry, MAX_EXIT_POINTS) } : {}),
+    });
     setFailed(null);
   }, [open, trade, entry]);
 
@@ -92,7 +99,7 @@ export function EditExitsSheet({ trade, open, onOpenChange, onSaved }: {
    * This is a short, so the target is below and the mark has to *fall* to reach
    * it. A positive number is how much further it has to go.
    */
-  const wantedTarget = targetOn && entry !== null ? entry * (1 - targetPct) : null;
+  const wantedTarget = levelOf('target', target, entry);
   const toTarget = mark !== null && wantedTarget !== null ? mark - wantedTarget : null;
 
   /*
@@ -104,16 +111,14 @@ export function EditExitsSheet({ trade, open, onOpenChange, onSaved }: {
    * close at is the system working, and somebody may well mean it. It is said
    * before the button rather than discovered after it.
    */
-  const wantedStop = stopOn && entry !== null ? entry * (1 + stopPct) : null;
+  const wantedStop = levelOf('stop', stop, entry);
+  const typedWrong = inputProblem('target', target) ?? inputProblem('stop', stop);
   const problems = checkExits({ mark, entry, targetPrice: wantedTarget, stopPrice: wantedStop });
 
   const save = async () => {
     setBusy(true);
     try {
-      await updateExits(trade.tradeId, {
-        takeProfitPct: targetOn ? targetPct : 0,
-        stopLossPct: stopOn ? stopPct : 0,
-      });
+      await updateExits(trade.tradeId, exitAskOf(target, stop));
       onSaved?.();
       onOpenChange(false);
     } catch (e) {
@@ -158,20 +163,16 @@ export function EditExitsSheet({ trade, open, onOpenChange, onSaved }: {
           entry={entry}
           size={Math.abs(trade.position)}
           contractValue={0.001}
-          targetOn={targetOn}
-          stopOn={stopOn}
-          onTargetOn={setTargetOn}
-          onStopOn={setStopOn}
-          targetPct={targetPct}
-          stopPct={stopPct}
-          onTargetPct={setTargetPct}
-          onStopPct={setStopPct}
+          target={target}
+          stop={stop}
+          onTarget={(p) => setTarget((x) => ({ ...x, ...p }))}
+          onStop={(p) => setStop((x) => ({ ...x, ...p }))}
           liquidationPrice={trade.live?.liquidationPrice ?? null}
         />
 
         {/*
           What is on the book right now, in the exchange's own prices. Without
-          it there is no way to tell whether a change landed -- the bars show
+          it there is no way to tell whether a change landed -- the boxes show
           what you have asked for, which is not the same question.
         */}
         <dl className="m-0 mt-3 grid gap-1 rounded-lg bg-muted px-2.5 py-2 text-[12px]">
@@ -213,7 +214,7 @@ export function EditExitsSheet({ trade, open, onOpenChange, onSaved }: {
           <Button variant="outline" className="h-11 flex-none px-4" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button className="h-11 flex-1" disabled={busy} onClick={() => void save()}>
+          <Button className="h-11 flex-1" disabled={busy || typedWrong !== null} onClick={() => void save()}>
             {busy && <Loader2 className="h-4 w-4 animate-spin" />}
             Save exits
           </Button>

@@ -194,8 +194,12 @@ export type OrderDraft = {
   limitPrice: number | null;
   /** 0 to 0.99. Zero means no target. */
   takeProfitPct?: number;
-  /** 0 upwards. Zero means no stop. */
+  /** 0 upwards; above 1 is allowed. Zero means no stop. */
   stopLossPct?: number;
+  /** The target as points under the entry. Above zero, it replaces the percentage. */
+  takeProfitPoints?: number;
+  /** The stop as points over the entry. Above zero, it replaces the percentage. */
+  stopLossPoints?: number;
   /**
    * Seconds to wait for a resting order before crossing the spread.
    * Zero means wait for as long as it takes.
