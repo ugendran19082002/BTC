@@ -542,3 +542,176 @@ describe('the late-entry window', () => {
     expect(stages.getAllByText('160 / 40')).toHaveLength(2);
   });
 });
+
+/* ------------------------------------------------------------------ exits: typed, % or fixed, on a timetable */
+
+const typeInto = (label: string | RegExp, text: string, root: HTMLElement = document.body) => {
+  const box = within(root).getByRole('textbox', { name: label });
+  fireEvent.focus(box);
+  fireEvent.change(box, { target: { value: text } });
+  fireEvent.blur(box);
+};
+const exitBox = (name: 'Take profit' | 'Stop loss') => screen.getByRole('region', { name });
+const saved = async () => {
+  fireEvent.click(saveButton());
+  await vi.waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+  return saveStrategy.mock.calls[0]![0].config;
+};
+
+describe('exits: typed, not dragged', () => {
+  it('[critical] a stop above 100% is taken and saved as typed', async () => {
+    show();
+    tab('Entry & exit');
+    typeInto('Stop loss percent', '250');
+    expect(within(exitBox('Stop loss')).queryByRole('alert')).toBeNull();
+    expect(within(exitBox('Stop loss')).getByText(/buys back 250% above the entry/)).toBeInTheDocument();
+    expect((await saved()).stopLossPct).toBe(2.5);
+  });
+
+  it('[critical] a target above 99% is said under its box and holds the save', () => {
+    show();
+    tab('Entry & exit');
+    typeInto('Take profit percent', '100');
+    expect(within(exitBox('Take profit')).getByRole('alert')).toHaveTextContent('Take profit must be between 0 and 99% of the credit.');
+    fireEvent.click(saveButton());
+    expect(saveStrategy).not.toHaveBeenCalled();
+  });
+
+  it('shows the level against the premium the rule asks for', () => {
+    show(editing({ premium: { mode: 'atLeast', usd: 15 }, takeProfitPct: 0.8 }));
+    tab('Entry & exit');
+    expect(within(exitBox('Take profit')).getByText('3.00')).toBeInTheDocument();  // 15 × 0.2
+  });
+
+  it('[critical] Fixed reads points from the entry and saves the mode with them', async () => {
+    show(editing({ premium: { mode: 'atLeast', usd: 15 } }));
+    tab('Entry & exit');
+    const stop = exitBox('Stop loss');
+    fireEvent.click(within(stop).getByRole('radio', { name: 'Fixed' }));
+    typeInto('Stop loss points', '10', stop);
+    expect(within(stop).getByText(/buys back 10 pts above the entry/)).toBeInTheDocument();
+    expect(within(stop).getByText('25.00')).toBeInTheDocument();  // 15 + 10
+    const c = await saved();
+    expect(c).toMatchObject({ stopMode: 'points', stopLossPoints: 10 });
+  });
+
+  it('switching mode keeps each mode\'s number and drops steps written in the other units', () => {
+    show(editing({ takeProfitPct: 0.8, targetSteps: [{ at: '07:30', value: 0.85 }] }));
+    tab('Entry & exit');
+    const tp = exitBox('Take profit');
+    expect(within(tp).getByRole('list', { name: 'Take profit steps' })).toBeInTheDocument();
+    fireEvent.click(within(tp).getByRole('radio', { name: 'Fixed' }));
+    expect(within(tp).queryByRole('list')).toBeNull();
+    fireEvent.click(within(tp).getByRole('radio', { name: '%' }));
+    expect(within(tp).getByRole('textbox', { name: 'Take profit percent' })).toHaveValue('80');
+  });
+});
+
+describe('exits on a timetable', () => {
+  it('[critical] entry 5:30, 80% -- Fill every 2 h by +5 builds 7:30 85%, 9:30 90%, 11:30 95% ... and saves it', async () => {
+    show(editing({ entryTime: '05:30', exitTime: '17:29', takeProfitPct: 0.8 }));
+    tab('Entry & exit');
+    const tp = exitBox('Take profit');
+    fireEvent.click(within(tp).getByRole('button', { name: 'Fill steps…' }));
+    typeInto('Take profit fill every hours', '2', tp);
+    typeInto('Take profit fill change by', '5', tp);
+    fireEvent.click(within(tp).getByRole('button', { name: 'Fill' }));
+
+    expect(within(tp).getByRole('button', { name: 'Take profit step 1 time: 7:30 AM' })).toBeInTheDocument();
+    expect(within(tp).getByRole('textbox', { name: 'Take profit step 1 percent' })).toHaveValue('85');
+    expect(within(tp).getByRole('button', { name: 'Take profit step 3 time: 11:30 AM' })).toBeInTheDocument();
+    expect(within(tp).getByRole('textbox', { name: 'Take profit step 4 percent' })).toHaveValue('99');
+    expect(within(tp).queryByRole('textbox', { name: 'Take profit step 5 percent' })).toBeNull();
+
+    const c = await saved();
+    expect(c.targetSteps).toEqual([
+      { at: '07:30', value: 0.85 }, { at: '09:30', value: 0.9 }, { at: '11:30', value: 0.95 }, { at: '13:30', value: 0.99 },
+    ]);
+  });
+
+  it('the same for the stop, in points', async () => {
+    show(editing({ entryTime: '05:30', exitTime: '12:00', stopMode: 'points', stopLossPoints: 10 }));
+    tab('Entry & exit');
+    const sl = exitBox('Stop loss');
+    fireEvent.click(within(sl).getByRole('button', { name: 'Fill steps…' }));
+    typeInto('Stop loss fill every hours', '2', sl);
+    typeInto('Stop loss fill change by', '10', sl);
+    fireEvent.click(within(sl).getByRole('button', { name: 'Fill' }));
+    const c = await saved();
+    expect(c.stopSteps).toEqual([{ at: '07:30', value: 20 }, { at: '09:30', value: 30 }, { at: '11:30', value: 40 }]);
+  });
+
+  it('Add a time step puts one an hour on, carrying the value; ✕ takes it away', () => {
+    show(editing({ entryTime: '05:30', takeProfitPct: 0.8 }));
+    tab('Entry & exit');
+    const tp = exitBox('Take profit');
+    fireEvent.click(within(tp).getByRole('button', { name: /Add a time step/ }));
+    expect(within(tp).getByRole('button', { name: 'Take profit step 1 time: 6:30 AM' })).toBeInTheDocument();
+    expect(within(tp).getByRole('textbox', { name: 'Take profit step 1 percent' })).toHaveValue('80');
+    fireEvent.click(within(tp).getByRole('button', { name: /Add a time step/ }));
+    expect(within(tp).getByRole('button', { name: 'Take profit step 2 time: 7:30 AM' })).toBeInTheDocument();
+    fireEvent.click(within(tp).getByRole('button', { name: 'remove take profit step 1' }));
+    expect(within(tp).getByRole('button', { name: 'Take profit step 1 time: 7:30 AM' })).toBeInTheDocument();
+  });
+
+  it('[critical] a step at or after the exit time is refused, and the tab is marked', () => {
+    show(editing({ entryTime: '05:30', exitTime: '11:00', targetSteps: [{ at: '11:30', value: 0.9 }] }));
+    tab('Entry & exit');
+    expect(within(exitBox('Take profit')).getByRole('alert'))
+      .toHaveTextContent('Take profit step 1 (11:30 AM) must be after entry (5:30 AM) and before exit (11:00 AM).');
+    fireEvent.click(saveButton());
+    expect(saveStrategy).not.toHaveBeenCalled();
+  });
+
+  it('steps out of order are refused', () => {
+    show(editing({ stopLossPct: 1, stopSteps: [{ at: '09:30', value: 2 }, { at: '07:30', value: 3 }] }));
+    tab('Entry & exit');
+    expect(within(exitBox('Stop loss')).getByRole('alert')).toHaveTextContent('Stop loss step 2 (7:30 AM) must come after step 1.');
+  });
+
+  it('the read-back sentence says the timetable', () => {
+    show(editing({ takeProfitPct: 0.8, targetSteps: [{ at: '07:30', value: 0.85 }], stopMode: 'points', stopLossPoints: 10 }));
+    expect(screen.getAllByText(/buys back at 80% decay → 85% at 7:30 AM, stop at entry \+ 10 pts/).length).toBeGreaterThan(0);
+  });
+});
+
+describe('premium fallback', () => {
+  it('[critical] at most $20, else the last strike at or below $50 -- switched on, set, and saved', async () => {
+    show(editing({ premium: { mode: 'atMost', usd: 20 } }));
+    tab('Sell');
+    const sw = screen.getByRole('switch', { name: /If nothing is at or below it, try a higher cap/ });
+    expect(sw).not.toBeChecked();
+    fireEvent.click(sw);
+    typeInto('premium fallback usd', '50');
+    expect(screen.getByText('No strike at or below $20? Sells the last strike at or below $50.')).toBeInTheDocument();
+    expect((await saved()).premium).toEqual({ mode: 'atMost', usd: 20, fallbackUsd: 50 });
+  });
+
+  it('a fallback that could never find more is refused, with a quick fix', () => {
+    show(editing({ premium: { mode: 'atMost', usd: 20, fallbackUsd: 10 } }));
+    tab('Sell');
+    expect(screen.getByText('The fallback must be above $20: it is tried when nothing is at or below $20.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Use $50' }));
+    expect(screen.queryByText(/The fallback must be above/)).toBeNull();
+  });
+
+  it('at least reads the other way: a lower floor', () => {
+    show(editing({ premium: { mode: 'atLeast', usd: 20 } }));
+    tab('Sell');
+    fireEvent.click(screen.getByRole('switch', { name: /If nothing pays it, try a lower floor/ }));
+    expect(screen.getByText('No strike paying $20? Sells the furthest still paying $10.')).toBeInTheDocument();
+  });
+
+  it('off is saved as null, and a strict or wall rule has no fallback to offer', async () => {
+    show(editing({ premium: { mode: 'atMost', usd: 20, fallbackUsd: 50 } }));
+    tab('Sell');
+    fireEvent.click(screen.getByRole('switch', { name: /try a higher cap/ }));
+    expect((await saved()).premium.fallbackUsd).toBeNull();
+  });
+
+  it('is not offered under the strict rule', () => {
+    show(editing({ strikeRule: 'strict' }));
+    tab('Sell');
+    expect(screen.queryByRole('switch', { name: /try a/ })).toBeNull();
+  });
+});
