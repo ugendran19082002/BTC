@@ -54,6 +54,55 @@ export const targetPriceFor = (entry: number, pct: number): number | null =>
 export const stopPriceFor = (entry: number, pct: number): number | null =>
   pct > 0 ? round1(entry * (1 + pct)) : null;
 
+/**
+ * The same two exits as a fixed distance in the option's own price: sold at
+ * 15, a 10-point stop buys back at 25 and a 10-point target at 5.
+ *
+ * A target can ask for no more than a percentage can -- 99% of the premium --
+ * so points larger than what was sold buy back at 1% of it, never at zero or
+ * below, which is not a price a limit can rest at.
+ */
+export const targetPriceByPoints = (entry: number, points: number): number | null =>
+  points > 0 ? Math.max(0.1, round1(Math.max(entry * 0.01, entry - points))) : null;
+
+export const stopPriceByPoints = (entry: number, points: number): number | null =>
+  points > 0 ? round1(entry + points) : null;
+
+/** An exit asked for either way. Points, when above zero, win: they are the more exact ask. */
+export type ExitAsk = {
+  takeProfitPct?: number;
+  stopLossPct?: number;
+  takeProfitPoints?: number;
+  stopLossPoints?: number;
+};
+
+/** The target price, read off an entry, however it was asked for. Zero or absent means none. */
+export const targetFor = (entry: number, x: ExitAsk): number | null =>
+  (x.takeProfitPoints ?? 0) > 0
+    ? targetPriceByPoints(entry, x.takeProfitPoints!)
+    : targetPriceFor(entry, x.takeProfitPct ?? 0);
+
+/**
+ * The protection change an ask makes to a position opened at `entry`.
+ *
+ * A leg asked about neither way is `undefined` -- left as it is -- which is
+ * different from a leg asked for at zero, which is `null`: taken off.
+ */
+export function protectionFor(entry: number, ask: ExitAsk): { takeProfitPrice?: number | null; stopPrice?: number | null } {
+  const target = ask.takeProfitPct !== undefined || ask.takeProfitPoints !== undefined;
+  const stop = ask.stopLossPct !== undefined || ask.stopLossPoints !== undefined;
+  return {
+    takeProfitPrice: target ? targetFor(entry, ask) : undefined,
+    stopPrice: stop ? stopFor(entry, ask) : undefined,
+  };
+}
+
+/** The stop price, read off an entry, however it was asked for. Zero or absent means none. */
+export const stopFor = (entry: number, x: ExitAsk): number | null =>
+  (x.stopLossPoints ?? 0) > 0
+    ? stopPriceByPoints(entry, x.stopLossPoints!)
+    : stopPriceFor(entry, x.stopLossPct ?? 0);
+
 export type PlaceInput = {
   symbol: string;
   optionSide: 'CE' | 'PE';
@@ -77,6 +126,10 @@ export type PlaceInput = {
   takeProfitPct?: number;
   /** 0 upwards. Zero means no stop. */
   stopLossPct?: number;
+  /** Target as points under the entry instead of a percentage. Above zero, it wins. */
+  takeProfitPoints?: number;
+  /** Stop as points over the entry instead of a percentage. Above zero, it wins. */
+  stopLossPoints?: number;
   /** Overrides the percentage, when a caller wants an exact price. */
   takeProfitPrice?: number | null;
   stopPrice?: number | null;
@@ -133,11 +186,11 @@ export function orderPlan(input: PlaceInput, tradeId: string): TradePlan {
     takeProfitPrice:
       input.takeProfitPrice !== undefined
         ? input.takeProfitPrice
-        : basis !== null ? targetPriceFor(basis, input.takeProfitPct ?? 0) : null,
+        : basis !== null ? targetFor(basis, input) : null,
     stopPrice:
       input.stopPrice !== undefined
         ? input.stopPrice
-        : basis !== null ? stopPriceFor(basis, input.stopLossPct ?? 0) : null,
+        : basis !== null ? stopFor(basis, input) : null,
     expect: {
       underlying: 'BTC',
       optionSide: input.optionSide,

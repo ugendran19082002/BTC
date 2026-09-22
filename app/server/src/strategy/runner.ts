@@ -5,15 +5,16 @@ import { wallWithinEm } from '../http/routes/desk.routes.js';
 import { tradingService } from '../trading/service.js';
 import { noteError } from '../observability/errors.js';
 import { StrategyStore } from './store.js';
-import { entryDue, entrySlotDate, entryWindowEnd, exitDue, graceOf } from './schedule.js';
+import { entryDue, entrySlotDate, entryWindowEnd, exitDue, graceOf, istMinutes } from './schedule.js';
 import { afterDeskCheck, describeSelection, selectLegs, type Candidate } from './select.js';
 import { shockGate } from './gate.js';
 import { clearHold, noteHold } from './holds.js';
 import { shockNow } from '../market/shock-now.js';
-import { time12, type Strategy } from './types.js';
+import { exitAsk, exitRules, exitValueAt, time12, type Strategy } from './types.js';
 import { addAlertFor, missedEntryAlert, runAlertFor, type Alert, type AlertContext } from '../notify/messages.js';
 import { StrategyAdder, type AddOrder, type PlaceResult } from './adder.js';
 import { StrategyRebalancer } from './rebalancer.js';
+import { StrategyExitStepper } from './exit-steps.js';
 
 /**
  * The loop that turns a due strategy into orders.
@@ -62,6 +63,7 @@ export class StrategyRunner {
   private readonly missedAlerted = new Set<string>();
   private readonly adder: StrategyAdder;
   private readonly rebalancer: StrategyRebalancer;
+  private readonly exitStepper: StrategyExitStepper;
   /** One pass over the rebalances at a time, like the adds. */
   private rebalancing: Promise<void> | null = null;
   /** One pass over the adds at a time; a nudge during a pass asks for one more. */
@@ -109,6 +111,17 @@ export class StrategyRunner {
       },
       sell: (o) => placeAdd(o),
       tell: (text) => this.alert(() => ({ key: 'rebalance', text })),
+      now: this.now,
+    });
+    /*
+     * Time-based exits: at each step's time, the target or stop of every open
+     * trade this strategy placed moves to the step's value -- through the same
+     * call the Edit exits sheet makes, so the book is reconciled the same way.
+     */
+    this.exitStepper = new StrategyExitStepper({
+      openTrades: async (id) => (await tradingService().openTrades()).filter((t) => t.plan.strategyId === id),
+      move: (tradeId, ask) => tradingService().updateExits(tradeId, ask),
+      tell: (text) => this.alert(() => ({ key: 'exit-step', text })),
       now: this.now,
     });
   }
@@ -180,6 +193,7 @@ export class StrategyRunner {
       for (const s of await this.store.all()) {
         await this.considerExit(s).catch((e) => this.note(s, 'exit', e));
         await this.considerEntry(s).catch((e) => this.note(s, 'entry', e));
+        await this.exitStepper.consider(s).catch((e) => this.note(s, 'exit step', e));
       }
       // Also on the tick, for a fill the nudge missed -- one found by a restart's
       // reconcile, say. The journal makes a second look harmless.
@@ -471,8 +485,23 @@ function placeArgs(s: Strategy, o: Parameters<typeof svcPlace>[1]) {
     // close of the entry window rather than resting into the day.
     maxCrossSpreadPct: c.entryPrice === 'offer' ? (c.maxCrossSpreadPct ?? 0.15) : null,
     timeoutMs: c.entryPrice === 'offer' && c.crossAfterSec > 0 ? cancelAfterMs : undefined,
-    takeProfitPct: c.takeProfitPct,
-    stopLossPct: c.stopLossPct,
+    ...exitsNow(s, Date.now()),
+  };
+}
+
+/**
+ * The exits to enter with: the values in force now, in each rule's own mode.
+ *
+ * Usually the starting values. An entry taken late, inside its grace window,
+ * after a step's time, enters with that step's value -- the same value the
+ * stepper would move it to twenty seconds later.
+ */
+export function exitsNow(s: Strategy, nowMs: number) {
+  const { target, stop } = exitRules(s.config);
+  const minute = istMinutes(nowMs);
+  return {
+    ...exitAsk(target, exitValueAt(target, s.config.entryTime, minute).value, 'target'),
+    ...exitAsk(stop, exitValueAt(stop, s.config.entryTime, minute).value, 'stop'),
   };
 }
 

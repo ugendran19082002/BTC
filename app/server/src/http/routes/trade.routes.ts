@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { stopPriceFor, targetPriceFor, tradingService } from '../../trading/service.js';
+import { stopFor, targetFor, tradingService } from '../../trading/service.js';
 import { AUTO_TRADE_CEILINGS, AUTO_TRADE_DEFAULTS } from '../../trading/auto-trade.js';
 import { lotsToContracts } from '../../trading/money.js';
 import { DEFAULT_LIMITS, precheck } from '../../trading/precheck.js';
@@ -51,12 +51,21 @@ type PlaceBody = {
   takeProfitPct?: number;
   /** 0 upwards. Zero means no stop. */
   stopLossPct?: number;
+  /** The target as points under the entry. Above zero, it replaces the percentage. */
+  takeProfitPoints?: number;
+  /** The stop as points over the entry. Above zero, it replaces the percentage. */
+  stopLossPoints?: number;
 };
 
 const pct = (v: unknown, max: number) => {
   const n = Number(v ?? 0);
   return Number.isFinite(n) && n > 0 ? Math.min(max, n) : 0;
 };
+
+/** The most a fixed exit may sit from the entry, in the option's own price: a typo guard, not a rule. */
+export const MAX_EXIT_POINTS = 10_000;
+/** Points from the entry. Zero, blank or nonsense is "not by points". */
+const points = (v: unknown) => pct(v, MAX_EXIT_POINTS);
 
 const view = (
   r: TradeRecord,
@@ -225,6 +234,8 @@ function parse(body: PlaceBody) {
     leverage: clampLeverage(Number(body.leverage ?? 200)),
     takeProfitPct: pct(body.takeProfitPct, 0.99),
     stopLossPct: pct(body.stopLossPct, 20),
+    takeProfitPoints: points(body.takeProfitPoints),
+    stopLossPoints: points(body.stopLossPoints),
   };
 }
 
@@ -350,8 +361,8 @@ export function registerTradeRoutes(app: FastifyInstance) {
       const price = p.limitPrice ?? quote?.bid ?? null;
       const held = positions.find((x) => x.symbol === p.symbol)?.size ?? 0;
       const totalShort = positions.reduce((n, x) => n + (x.size < 0 ? -x.size : 0), 0);
-      const stop = p.stopPrice ?? (price !== null ? stopPriceFor(price, p.stopLossPct) : null);
-      const target = p.takeProfitPrice ?? (price !== null ? targetPriceFor(price, p.takeProfitPct) : null);
+      const stop = p.stopPrice ?? (price !== null ? stopFor(price, p) : null);
+      const target = p.takeProfitPrice ?? (price !== null ? targetFor(price, p) : null);
       const credit = premiumUsd(price ?? 0, size, product?.contractValue);
       const worstCase = worstCaseLoss({
         stopPrice: stop, price, size, credit, spot: svc.spot,
@@ -451,6 +462,8 @@ export function registerTradeRoutes(app: FastifyInstance) {
         limitPrice: p.limitPrice,
         takeProfitPct: p.takeProfitPct,
         stopLossPct: p.stopLossPct,
+        takeProfitPoints: p.takeProfitPoints,
+        stopLossPoints: p.stopLossPoints,
         chaseSeconds: p.convertToMarketAfterSec,
       });
       if (!res.ok) {
@@ -712,11 +725,15 @@ export function registerTradeRoutes(app: FastifyInstance) {
 
   /** Move the stop or the target on a position that is already open. */
   app.post('/api/trade/protection', async (req, reply) => {
-    const b = (req.body ?? {}) as { tradeId?: string; takeProfitPct?: number; stopLossPct?: number };
+    const b = (req.body ?? {}) as {
+      tradeId?: string; takeProfitPct?: number; stopLossPct?: number; takeProfitPoints?: number; stopLossPoints?: number;
+    };
     if (!b.tradeId) { reply.code(400); return { error: 'tradeId is required' }; }
     const state = await svc.updateExits(b.tradeId, {
       takeProfitPct: b.takeProfitPct === undefined ? undefined : pct(b.takeProfitPct, 0.99),
       stopLossPct: b.stopLossPct === undefined ? undefined : pct(b.stopLossPct, 20),
+      takeProfitPoints: b.takeProfitPoints === undefined ? undefined : points(b.takeProfitPoints),
+      stopLossPoints: b.stopLossPoints === undefined ? undefined : points(b.stopLossPoints),
     });
     if (!state) { reply.code(404); return { error: 'no such trade' }; }
     return { ok: true, trade: state };

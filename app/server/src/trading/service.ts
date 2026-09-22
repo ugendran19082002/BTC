@@ -9,9 +9,9 @@ import {
   DEFAULT_LIMITS, dailyLossLimitFor, maxShortContractsFor, type RiskLimits,
 } from './precheck.js';
 import { fundsRequiredPerContract } from './margin.js';
-import { DEFAULT_LEVERAGE, orderPlan, stopPriceFor, targetPriceFor, type PlaceInput } from './order-plan.js';
+import { DEFAULT_LEVERAGE, orderPlan, protectionFor, type ExitAsk, type PlaceInput } from './order-plan.js';
 
-export { stopPriceFor, targetPriceFor } from './order-plan.js';
+export { stopFor, stopPriceFor, targetFor, targetPriceFor } from './order-plan.js';
 import { isDone } from './machine.js';
 import { tradeCharges } from './charges.js';
 import { unrealisedPnlUsd } from './margin.js';
@@ -639,19 +639,16 @@ export class TradingService {
   /**
    * Move the exits on an open position.
    *
-   * Percentages in, prices out, measured off the price the position was
-   * actually opened at -- not off the mark, which would move the stop every
-   * time the option did.
+   * Percentages or points in, prices out, measured off the price the position
+   * was actually opened at -- not off the mark, which would move the stop every
+   * time the option did. A leg asked about neither way is left where it is.
    */
-  async updateExits(tradeId: string, pct: { takeProfitPct?: number; stopLossPct?: number }) {
+  async updateExits(tradeId: string, ask: ExitAsk) {
     const rec = await this.store.get(tradeId);
     if (!rec) return null;
     const entry = rec.state.entryAvgPrice;
     if (entry === null) return rec.state;
-    return this.engine.updateProtection(tradeId, {
-      takeProfitPrice: pct.takeProfitPct === undefined ? undefined : targetPriceFor(entry, pct.takeProfitPct),
-      stopPrice: pct.stopLossPct === undefined ? undefined : stopPriceFor(entry, pct.stopLossPct),
-    });
+    return this.engine.updateProtection(tradeId, protectionFor(entry, ask));
   }
 
   /**

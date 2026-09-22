@@ -151,10 +151,31 @@ export type StrategyConfig = {
   /**
    * Buy back once the mark has fallen this far, as a fraction of the credit.
    * 0.95 is the 95% decay target. Zero means hold to settlement.
+   * Read when `targetMode` is `pct`, which is every strategy saved before it existed.
    */
   takeProfitPct: number;
-  /** Buy back if the mark rises this far above entry. Zero means no stop. */
+  /**
+   * Buy back if the mark rises this far above entry, as a fraction of it. Zero
+   * means no stop. Above 1 is allowed and normal for a short option: a premium
+   * of 5 that triples is a 200% stop. Read when `stopMode` is `pct`.
+   */
   stopLossPct: number;
+  /** How the target is read: a share of the credit, or points under the entry. Absent is `pct`. */
+  targetMode?: ExitMode;
+  /** The target as points under the entry price: sold at 15, 10 points buys back at 5. Absent is 0. */
+  takeProfitPoints?: number;
+  /**
+   * The target over the day: from each step's time it becomes that step's
+   * value, in `targetMode`'s units, until the next step. Before the first step
+   * the plain value above is in force. Absent or empty is one value all day.
+   */
+  targetSteps?: ExitStep[];
+  /** How the stop is read: a share of the entry, or points over it. Absent is `pct`. */
+  stopMode?: ExitMode;
+  /** The stop as points over the entry price: sold at 15, 10 points buys back at 25. Absent is 0. */
+  stopLossPoints?: number;
+  /** The stop over the day, the same way `targetSteps` moves the target. */
+  stopSteps?: ExitStep[];
   /** Contracts per leg. */
   lots: number;
   legs: LegConfig;
@@ -288,6 +309,150 @@ export type AddToOpposite = {
   crossAfterSec?: number | null;
 };
 
+/**
+ * An exit is read one of two ways.
+ *
+ *   pct     a fraction: of the credit for a target (0.8 = keep 80%), of the
+ *           entry for a stop (1.5 = buy back at 2.5x the entry)
+ *   points  a distance in the option's own price: the stop at entry + points,
+ *           the target at entry - points
+ */
+export type ExitMode = 'pct' | 'points';
+
+/** From `at` (IST "HH:MM"), the exit becomes `value`, in its rule's units. Zero turns it off. */
+export type ExitStep = { at: string; value: number };
+
+/** One exit, whole: how it is read, where it starts, and how it moves through the day. */
+export type ExitRule = { mode: ExitMode; value: number; steps: ExitStep[] };
+
+/** A target can keep at most 99% of the premium: 100% is a buy at zero, which no limit rests at. */
+export const MAX_TARGET_PCT = 0.99;
+/** A stop may sit far above 100% -- a short option can multiply -- but 2000% is a typo, not a stop. */
+export const MAX_STOP_PCT = 20;
+/** The most a fixed exit may sit from the entry, in the option's own price. */
+export const MAX_EXIT_POINTS = 10_000;
+/** More steps than there are hours in a contract is a mistake, not a schedule. */
+export const MAX_EXIT_STEPS = 24;
+
+/**
+ * The two exits of a config, read the one way everything reads them.
+ *
+ * A strategy saved before modes and steps existed has neither, and reads as
+ * what it was doing: a percentage, the same all day.
+ */
+export function exitRules(c: StrategyConfig): { target: ExitRule; stop: ExitRule } {
+  const targetMode: ExitMode = c.targetMode === 'points' ? 'points' : 'pct';
+  const stopMode: ExitMode = c.stopMode === 'points' ? 'points' : 'pct';
+  return {
+    target: {
+      mode: targetMode,
+      value: targetMode === 'points' ? (c.takeProfitPoints ?? 0) : c.takeProfitPct,
+      steps: c.targetSteps ?? [],
+    },
+    stop: {
+      mode: stopMode,
+      value: stopMode === 'points' ? (c.stopLossPoints ?? 0) : c.stopLossPct,
+      steps: c.stopSteps ?? [],
+    },
+  };
+}
+
+/**
+ * The value of one exit in force at an IST minute of the day, and which stage
+ * that is: 0 for the starting value, n for the nth step.
+ *
+ * Measured forward from the entry, like every other time in a strategy, so a
+ * schedule that runs past midnight is the same arithmetic as one that does
+ * not. Steps are taken in order; a step whose time has not come is not in
+ * force, and nor is anything after it.
+ */
+export function exitValueAt(
+  rule: ExitRule,
+  entryTime: string,
+  istMinute: number,
+): { value: number; stage: number } {
+  const entry = minutesOf(entryTime);
+  const since = minutesForward(entry, istMinute);
+  let value = rule.value;
+  let stage = 0;
+  rule.steps.forEach((st, i) => {
+    if (isHhmm(st.at) && minutesForward(entry, minutesOf(st.at)) <= since) {
+      value = st.value;
+      stage = i + 1;
+    }
+  });
+  return { value, stage };
+}
+
+/** An exit rule's value, as the place and protection calls take it. */
+export function exitAsk(rule: ExitRule, value: number, leg: 'target' | 'stop') {
+  if (leg === 'target') {
+    return rule.mode === 'points' ? { takeProfitPct: 0, takeProfitPoints: value } : { takeProfitPct: value, takeProfitPoints: 0 };
+  }
+  return rule.mode === 'points' ? { stopLossPct: 0, stopLossPoints: value } : { stopLossPct: value, stopLossPoints: 0 };
+}
+
+/** Why one exit value is not usable, in words; null when it is. */
+function exitValueProblem(leg: 'target' | 'stop', mode: ExitMode, v: unknown): string | null {
+  const Leg = leg === 'target' ? 'Take profit' : 'Stop loss';
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) return `${Leg} cannot be negative or blank.`;
+  if (mode === 'points') {
+    return v > MAX_EXIT_POINTS ? `${Leg} must be at most ${MAX_EXIT_POINTS.toLocaleString('en-US')} points from the entry.` : null;
+  }
+  if (leg === 'target') return v > MAX_TARGET_PCT ? 'Take profit must be between 0 and 99% of the credit.' : null;
+  return v > MAX_STOP_PCT ? 'Stop loss must be between 0 and 2000% of the credit.' : null;
+}
+
+/**
+ * What is wrong with one exit, start and steps, in words.
+ *
+ * Every step must fall after the entry and before the exit -- the position is
+ * gone by then, and a step it never reaches is a promise the desk cannot keep
+ * -- and each after the one before, so the schedule reads top to bottom the
+ * way it runs.
+ */
+export function exitRuleProblems(
+  leg: 'target' | 'stop', rule: { mode?: unknown; value: unknown; steps?: unknown },
+  entryTime: string | undefined, exitTime: string | undefined,
+): string[] {
+  const bad: string[] = [];
+  const Leg = leg === 'target' ? 'Take profit' : 'Stop loss';
+  if (rule.mode !== undefined && rule.mode !== 'pct' && rule.mode !== 'points') {
+    bad.push(`${Leg} must be a percentage or points.`);
+    return bad;
+  }
+  const mode: ExitMode = rule.mode === 'points' ? 'points' : 'pct';
+  const first = exitValueProblem(leg, mode, rule.value);
+  if (first) bad.push(first);
+  const steps = rule.steps;
+  if (steps === undefined || steps === null) return bad;
+  if (!Array.isArray(steps)) { bad.push(`${Leg} steps must be a list.`); return bad; }
+  if (steps.length > MAX_EXIT_STEPS) bad.push(`${Leg} can change at most ${MAX_EXIT_STEPS} times a day.`);
+  const windowOk = isHhmm(entryTime) && isHhmm(exitTime);
+  const entry = windowOk ? minutesOf(entryTime) : 0;
+  const span = windowOk ? minutesForward(entry, minutesOf(exitTime)) : 0;
+  let last = 0;
+  steps.forEach((raw, i) => {
+    const st = (raw ?? {}) as Partial<ExitStep>;
+    const n = i + 1;
+    if (!isHhmm(st.at)) {
+      bad.push(`${Leg} step ${n} needs a time of day, like 7:30 AM.`);
+    } else if (windowOk) {
+      const at = minutesForward(entry, minutesOf(st.at));
+      if (at === 0 || at >= span) {
+        bad.push(`${Leg} step ${n} (${time12(st.at)}) must be after entry (${time12(entryTime!)}) `
+          + `and before exit (${time12(exitTime!)}).`);
+      } else if (at <= last) {
+        bad.push(`${Leg} step ${n} (${time12(st.at)}) must come after step ${n - 1}.`);
+      }
+      last = Math.max(last, at);
+    }
+    const p = exitValueProblem(leg, mode, st.value);
+    if (p) bad.push(`Step ${n}: ${p}`);
+  });
+  return bad;
+}
+
 /** A 24-hour "HH:MM". Defined before anything below uses it at load. */
 const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const DEFAULT_EXIT = '17:29';
@@ -339,6 +504,12 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   maxCrossSpreadPct: 0.15,
   takeProfitPct: 0.95,
   stopLossPct: 0,
+  targetMode: 'pct',
+  takeProfitPoints: 0,
+  targetSteps: [],
+  stopMode: 'pct',
+  stopLossPoints: 0,
+  stopSteps: [],
   lots: 10,
   legs: 'both',
   probGate: 0.95,
@@ -407,11 +578,22 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
   } else if (!(p.usd > 0) || p.usd > 10_000) {
     bad.push('Premium must be a positive number of dollars.');
   }
-  if (!(typeof c.takeProfitPct === 'number') || c.takeProfitPct < 0 || c.takeProfitPct > 0.99) {
+  // Both fields are always kept, whichever mode reads them, so both are checked.
+  if (!(typeof c.takeProfitPct === 'number') || c.takeProfitPct < 0 || c.takeProfitPct > MAX_TARGET_PCT) {
     bad.push('Take profit must be between 0 and 99% of the credit.');
   }
-  if (!(typeof c.stopLossPct === 'number') || c.stopLossPct < 0 || c.stopLossPct > 20) {
+  if (!(typeof c.stopLossPct === 'number') || c.stopLossPct < 0 || c.stopLossPct > MAX_STOP_PCT) {
     bad.push('Stop loss must be between 0 and 2000% of the credit.');
+  }
+  for (const leg of ['target', 'stop'] as const) {
+    const mode = leg === 'target' ? c.targetMode : c.stopMode;
+    const points = leg === 'target' ? c.takeProfitPoints : c.stopLossPoints;
+    const steps = leg === 'target' ? c.targetSteps : c.stopSteps;
+    const value = mode === 'points' ? points : (leg === 'target' ? c.takeProfitPct : c.stopLossPct);
+    // The percentage itself was checked just above; only a mode, points and steps are new here.
+    const found = exitRuleProblems(leg, { mode, value: value ?? 0, steps }, c.entryTime, c.exitTime)
+      .filter((m) => !/^(Take profit|Stop loss) must be between/.test(m));
+    bad.push(...found);
   }
   if (!Number.isInteger(c.lots) || (c.lots ?? 0) < 1) bad.push('Lots must be a whole number, at least 1.');
   if (c.entryPrice !== 'now' && c.entryPrice !== 'offer' && c.entryPrice !== 'set') {
@@ -478,7 +660,7 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
       }
     }
     if (c.legs !== 'both') bad.push('Adding to the other leg needs both legs selected.');
-    if (!((c.takeProfitPct ?? 0) > 0)) bad.push('Adding to the other leg needs a target -- it runs when a target fills.');
+    if (!targetAtEntry(c)) bad.push('Adding to the other leg needs a target -- it runs when a target fills.');
   }
   const reb = c.rebalance;
   if (reb && reb.enabled) {
@@ -518,6 +700,11 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
     }
   }
   return bad;
+}
+
+/** Whether the strategy enters with a target at all -- in either mode. */
+function targetAtEntry(c: Partial<StrategyConfig>): boolean {
+  return c.targetMode === 'points' ? (c.takeProfitPoints ?? 0) > 0 : (c.takeProfitPct ?? 0) > 0;
 }
 
 /** "05:30" -> 330. Times are IST throughout; the desk never uses another one. */

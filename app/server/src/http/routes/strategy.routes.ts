@@ -3,7 +3,7 @@ import { refuse } from '../refuse.js';
 import { StrategyStore } from '../../strategy/store.js';
 import { entryDue, entrySlotDate, istDate, nextEntryAt } from '../../strategy/schedule.js';
 import { holdFor, statusOf } from '../../strategy/holds.js';
-import { DEFAULT_CONFIG, defaultAddUntil, validateConfig, type StrategyConfig } from '../../strategy/types.js';
+import { DEFAULT_CONFIG, defaultAddUntil, validateConfig, type ExitStep, type StrategyConfig } from '../../strategy/types.js';
 import { tradingService } from '../../trading/service.js';
 import {
   REBALANCE_CEILINGS, capFor, cleanRebalance, stageThresholds,
@@ -40,6 +40,21 @@ function withAutoCap(rule: RebalanceRule | null, lots: number): RebalanceRule | 
   return { ...rule, maxLotsPerSide: capFor(rule, lots) };
 }
 
+/**
+ * Only `at` and `value` of each step, in the order sent. Not sorted: a step
+ * out of order is a mistake the person should be told about, not one to be
+ * quietly repaired into a schedule they did not write. A non-list is passed
+ * through as-is so validation can say so.
+ */
+function cleanSteps(raw: unknown): ExitStep[] {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) return raw as ExitStep[];
+  return raw.map((st) => {
+    const o = (st ?? {}) as Partial<ExitStep>;
+    return { at: String(o.at ?? ''), value: Number(o.value) };
+  });
+}
+
 function cleanConfig(raw: unknown): StrategyConfig {
   const c = (raw ?? {}) as Partial<StrategyConfig>;
   const exitTime = String(c.exitTime ?? DEFAULT_CONFIG.exitTime);
@@ -62,6 +77,14 @@ function cleanConfig(raw: unknown): StrategyConfig {
     maxCrossSpreadPct: Number(c.maxCrossSpreadPct ?? DEFAULT_CONFIG.maxCrossSpreadPct),
     takeProfitPct: Number(c.takeProfitPct ?? DEFAULT_CONFIG.takeProfitPct),
     stopLossPct: Number(c.stopLossPct ?? DEFAULT_CONFIG.stopLossPct),
+    // Absent from a client, or a strategy, that predates them: a percentage,
+    // one value all day -- which is what those strategies have been doing.
+    targetMode: c.targetMode === 'points' ? 'points' : 'pct',
+    takeProfitPoints: Number(c.takeProfitPoints ?? 0),
+    targetSteps: cleanSteps(c.targetSteps),
+    stopMode: c.stopMode === 'points' ? 'points' : 'pct',
+    stopLossPoints: Number(c.stopLossPoints ?? 0),
+    stopSteps: cleanSteps(c.stopSteps),
     lots: Math.floor(Number(c.lots ?? DEFAULT_CONFIG.lots)),
     legs: c.legs === 'CE' || c.legs === 'PE' ? c.legs : 'both',
     // A client that predates the setting sends nothing and means the old
