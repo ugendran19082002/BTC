@@ -134,11 +134,12 @@ test('[critical] every table lands, and what the stores read back is what the SQ
   const double = (await strategies.get('double'))!;
   assert.equal(double.name, 'Double one-sided (mine)');
   assert.equal(double.config.lots, 42);
-  assert.equal(double.config.probGate, 0.9);
+  assert.equal('probGate' in double.config, false, 'a retired setting is not read back');
   // the two seeds the fixture desk does not have were not resurrected
   assert.deepEqual((await strategies.all()).map((x) => x.id), ['double'], 'a deleted strategy does not come back');
   assert.equal(await strategies.lastRunDate('double'), '2026-09-09', 'the day stays claimed: no re-entry after the cutover');
-  assert.equal(await strategies.addedFor('C-BTC-79600-090926-1'), 10);
+  // the add journal is retired but its history stays in the database
+  assert.equal((await one<{ n: number }>("SELECT COALESCE(SUM(contracts), 0)::int AS n FROM strategy_adds WHERE source_trade_id = 'C-BTC-79600-090926-1'"))!.n, 10);
 
   // the sign-in: the same user, the same live session, one recovery code left
   const auth = await AuthStore.open();

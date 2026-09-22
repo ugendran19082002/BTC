@@ -1,7 +1,6 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { StrategyStore } from '../../src/strategy/store.js';
-import { MemorySettings } from '../../src/db/settings.js';
+import { RETIRED_KEYS, StrategyStore } from '../../src/strategy/store.js';
 import { closePool, query, rows } from '../../src/db/pool.js';
 import { DEFAULT_CONFIG, validateConfig } from '../../src/strategy/types.js';
 
@@ -12,7 +11,7 @@ import { DEFAULT_CONFIG, validateConfig } from '../../src/strategy/types.js';
  */
 // One database for the file. A fresh store is the tables emptied and the
 // three seeded strategies put back as a new desk has them.
-await StrategyStore.open(new MemorySettings());
+await StrategyStore.open();
 // The seeded rows, as a new desk has them; every case starts from exactly these.
 const seeded = await rows('SELECT * FROM strategies');
 const fresh = async () => {
@@ -23,10 +22,10 @@ const fresh = async () => {
       [r.id, r.name, r.enabled, JSON.stringify(r.config), r.created_at, r.updated_at],
     );
   }
-  return StrategyStore.open(new MemorySettings());
+  return StrategyStore.open();
 };
 /** A second process on the same database. */
-const reopen = () => StrategyStore.open(new MemorySettings());
+const reopen = () => StrategyStore.open();
 after(() => closePool());
 
 test('the migration seeds the three researched strategies', async () => {
@@ -41,16 +40,26 @@ test('only the one the record favours is armed', async () => {
   assert.deepEqual(on, ['double'], 'a fresh desk must not arm three strategies at once');
 });
 
-test('the seeded strategies differ in the two settings the research turned on', async () => {
+test('[critical] the retired settings are gone from every seeded strategy', async () => {
+  // strategy-002 still writes them (it has shipped and is never edited);
+  // strategy-004 strips them, so a fresh desk and the live one end the same.
   const s = await fresh();
-  const by = Object.fromEntries((await s.all()).map((x) => [x.id, x.config]));
-  assert.equal(by.baseline!.probGate, null);
-  assert.equal(by.locked!.probGate, 0.95);
-  assert.equal(by.locked!.doubleWhenOneSided, false);
-  assert.equal(by.double!.probGate, 0.95);
-  assert.equal(by.double!.doubleWhenOneSided, true);
+  const raw = await rows<{ id: string; config: Record<string, unknown> }>('SELECT id, config FROM strategies');
+  for (const r of raw) {
+    for (const k of RETIRED_KEYS) assert.equal(k in r.config, false, `${r.id} still carries ${k}`);
+  }
+  for (const x of await s.all()) {
+    for (const k of RETIRED_KEYS) assert.equal(k in x.config, false, `${x.id} reads back ${k}`);
+  }
 });
 
+test('a config still carrying a retired key reads back without it', async () => {
+  const s = await fresh();
+  await query('UPDATE strategies SET config = config || $1::jsonb WHERE id = $2', [JSON.stringify({ probGate: 0.95, rebalance: { enabled: true } }), 'double']);
+  const got = (await s.get('double'))!.config as Record<string, unknown>;
+  assert.equal('probGate' in got, false);
+  assert.equal('rebalance' in got, false);
+});
 test('a saved strategy reads back with every field', async () => {
   const s = await fresh();
   await s.save({
@@ -175,124 +184,8 @@ test('an exit the contract does not live to see is refused', () => {
   assert.ok(bad.some((m) => /5:30 PM settlement/.test(m)), bad.join(' | '));
 });
 
-test('[critical] both score bars are whole numbers out of a hundred, or off', () => {
-  const ok = (over: Record<string, unknown>) => validateConfig({ ...DEFAULT_CONFIG, ...over });
-  assert.deepEqual(ok({ minSellScore: null, maxShockScore: null }), []);
-  assert.deepEqual(ok({ minSellScore: 65, maxShockScore: 25 }), []);
-  assert.deepEqual(ok({ minSellScore: 1, maxShockScore: 100 }), [], 'both ends are usable');
-
-  assert.ok(ok({ minSellScore: 0 }).some((m) => /sell-score bar/.test(m)));
-  assert.ok(ok({ minSellScore: 101 }).some((m) => /sell-score bar/.test(m)));
-  assert.ok(ok({ minSellScore: 65.5 }).some((m) => /sell-score bar/.test(m)),
-    'the score is a whole number, so a bar of 65.5 is a bar nobody can read back');
-  assert.ok(ok({ maxShockScore: 0 }).some((m) => /sudden-move risk limit/.test(m)));
-  assert.ok(ok({ maxShockScore: 101 }).some((m) => /sudden-move risk limit/.test(m)));
-});
-
-test('[critical] a strategy saved before the score bars reads as off, not as zero', async () => {
-  // A zero bar would refuse every strike; a zero risk limit would hold every
-  // day. The hydrate merge decides this, and it decides it for every strategy
-  // already in the database.
-  const s = await fresh();
-  const before = (await s.all()).find((x) => x.id === 'double')!;
-  assert.equal(before.config.minSellScore, null);
-  assert.equal(before.config.maxShockScore, null);
-});
-
-test('the score bars survive a save and come back as they went in', async () => {
-  const s = await fresh();
-  await s.save({
-    id: 'gated', name: 'Gated', enabled: false,
-    config: { ...DEFAULT_CONFIG, minSellScore: 70, maxShockScore: 25 },
-  });
-  const back = (await s.get('gated'))!;
-  assert.equal(back.config.minSellScore, 70);
-  assert.equal(back.config.maxShockScore, 25);
-});
-
-test('[critical] doubling without the gate is fine: it covers every refusal now', () => {
-  const ok = validateConfig({ ...DEFAULT_CONFIG, probGate: null, doubleWhenOneSided: true });
-  assert.deepEqual(ok, [], `no objection expected: ${ok.join(' ')}`);
-});
-
-test('doubling on a single-leg strategy is explained', () => {
-  const bad = validateConfig({ ...DEFAULT_CONFIG, legs: 'PE', doubleWhenOneSided: true });
-  assert.ok(bad.some((m) => /both legs/.test(m)));
-});
-
 test('no days at all is refused, because it can never run', () => {
   assert.ok(validateConfig({ ...DEFAULT_CONFIG, weekdays: [] })
     .some((m) => /at least one day/.test(m)));
 });
 
-// ------------------------------------------------ adding to the other leg
-
-const addRow = (s: StrategyStore, boughtBack: number, status: 'placing' | 'skipped' = 'placing') => s.recordAdd({
-  strategyId: 's', runDate: '2026-09-11', sourceTradeId: 'CE-1', sourceSide: 'CE',
-  symbol: 'P-BTC-74000-110926', boughtBack, status, detail: 'CE target bought back', at: 1,
-});
-
-test('[critical] the same bought-back contracts get one decision, however many times they are written', async () => {
-  const s = await fresh();
-  const first = await addRow(s, 425);
-  assert.equal(first?.contracts, 425);
-  assert.equal(await addRow(s, 425), null, 'a second write for the same 425 is refused by the journal itself');
-  assert.equal(await s.addedFor('CE-1'), 425);
-});
-
-test('[critical] a later piece gets a row for only what is new', async () => {
-  const s = await fresh();
-  await addRow(s, 200);
-  assert.equal((await addRow(s, 203))?.contracts, 3);
-  assert.equal(await s.addedFor('CE-1'), 203);
-});
-
-test('[critical] the journal outlives a restart: a new store on the same database still knows', async () => {
-  await fresh();
-  await addRow(await reopen(), 425);
-  assert.equal(await (await reopen()).addedFor('CE-1'), 425);
-  assert.equal(await addRow(await reopen(), 425), null);
-});
-
-test('[critical] two callers deciding about the same piece at once get one row between them', async () => {
-  const s = await fresh();
-  const both = await Promise.all([await addRow(s, 425), await addRow(s, 425)]);
-  assert.equal(both.filter((r) => r !== null).length, 1, 'the lock inside recordAdd serialises them');
-  assert.equal(await s.addedFor('CE-1'), 425);
-});
-
-test('an add is finished with its outcome and the trade it went onto', async () => {
-  const s = await fresh();
-  const row = (await addRow(s, 425))!;
-  await s.finishAdd(row.id, 'placed', 'added 425', 'PE-1');
-  const [got] = await s.adds();
-  assert.equal(got?.status, 'placed');
-  assert.equal(got?.addedToTradeId, 'PE-1');
-});
-
-test('the add setting saves and reads back, and a strategy saved before it existed reads as off', async () => {
-  const s = await fresh();
-  await s.save({ id: 'add', name: 'Add', enabled: false, config: { ...DEFAULT_CONFIG, addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '12:15' } } });
-  assert.deepEqual((await s.get('add'))!.config.addToOpposite, { minPriceUsd: 3, maxMultiple: 2, addUntil: '12:15' });
-  await s.save({ id: 'add2', name: 'Add', enabled: false, config: { ...DEFAULT_CONFIG, addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '12:15', crossAfterSec: 90 } } });
-  assert.equal((await s.get('add2'))!.config.addToOpposite!.crossAfterSec, 90, 'the add\'s own seconds survive a save');
-  assert.equal((await s.get('double'))!.config.addToOpposite, null, 'seeded before the setting existed');
-});
-
-test('the add setting is checked before it is saved', () => {
-  const add = (over: object, cfg: object = {}) =>
-    validateConfig({ ...DEFAULT_CONFIG, ...cfg, addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59', ...over } });
-  assert.deepEqual(add({}), []);
-  assert.ok(add({ minPriceUsd: 0 }).some((p) => /minimum price/.test(p)));
-  assert.ok(add({ maxMultiple: 0 }).some((p) => /between 0 and 20/.test(p)));
-  assert.ok(add({}, { legs: 'CE', doubleWhenOneSided: false }).some((p) => /needs both legs/.test(p)));
-  assert.ok(add({}, { takeProfitPct: 0 }).some((p) => /needs a target/.test(p)));
-  // "If not filled, sell at bid after N seconds", on the add itself
-  assert.deepEqual(add({ crossAfterSec: 0 }), []);
-  assert.deepEqual(add({ crossAfterSec: 600 }), []);
-  assert.deepEqual(add({ crossAfterSec: null }), [], 'cleared means the entry\'s own seconds');
-  assert.ok(add({ crossAfterSec: 601 }).some((p) => /0 to 600/.test(p)));
-  assert.ok(add({ crossAfterSec: -1 }).some((p) => /0 to 600/.test(p)));
-  assert.ok(add({ crossAfterSec: 1.5 }).some((p) => /whole number/.test(p)));
-  assert.deepEqual(validateConfig({ ...DEFAULT_CONFIG, addToOpposite: null }), []);
-});

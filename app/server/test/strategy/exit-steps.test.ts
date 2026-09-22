@@ -157,13 +157,7 @@ describe('validateConfig: exits', () => {
     const steps = Array.from({ length: 25 }, (_, i) => ({ at: `${String(6 + Math.floor(i / 3)).padStart(2, '0')}:${String((i % 3) * 15 + 1).padStart(2, '0')}`, value: 0.5 }));
     says({ targetSteps: steps }, /at most 24 times a day/);
   });
-  test('adding to the other leg accepts a target set in points', () => {
-    ok({
-      takeProfitPct: 0, targetMode: 'points', takeProfitPoints: 12,
-      addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59' },
-    });
-    says({ takeProfitPct: 0, addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59' } }, /needs a target/);
-  });
+
 });
 
 describe('prices from points', () => {
