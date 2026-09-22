@@ -70,7 +70,7 @@ describe('four tabs instead of one long page', () => {
     expect(screen.queryByRole('button', { name: /^Entry time:/ })).toBeNull();
 
     tab('Entry & exit');
-    expect(screen.getByLabelText('take profit pct')).toBeInTheDocument();
+    expect(screen.getByLabelText('Take profit percent')).toBeInTheDocument();
 
     tab('Extras');
     expect(screen.getByRole('switch', { name: /Add to the other leg/ })).toBeInTheDocument();

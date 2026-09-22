@@ -48,10 +48,11 @@ describe('opening it', () => {
     expect(screen.getByText('On Delta now · stop').nextSibling).toHaveTextContent('none');
   });
 
-  it('seeds the bar from that level, not from a default', () => {
-    // 1 - 1.90/30.90 is 94%, and that is what the bar must say
+  it('seeds the box from that level, not from a default', () => {
+    // 1 - 1.90/30.90 is 93.85%, and that is what the box must say
     render(<EditExitsSheet trade={trade()} open onOpenChange={() => {}} />);
-    expect(screen.getByText('−94%')).toBeInTheDocument();
+    expect(screen.getByText('−93.9%')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'target percent' })).toHaveValue('93.85');
     expect(screen.getByRole('checkbox', { name: /take profit/i })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: /stop loss/i })).not.toBeChecked();
   });
@@ -73,55 +74,55 @@ describe('opening it', () => {
     expect(screen.getByText(/asked for 1.90 but Delta holds 20.80/)).toBeInTheDocument();
   });
 
-  it('[critical] the bar shows the book, not the plan, when they differ', () => {
-    // −94% beside a book holding 25.10 is the bar describing something that is
-    // not there. 1 - 25.10/30.90 is 19%.
+  it('[critical] the box shows the book, not the plan, when they differ', () => {
+    // −94% beside a book holding 25.10 is the box describing something that is
+    // not there. 1 - 25.10/30.90 is 18.8%.
     render(<EditExitsSheet trade={trade({ onBook: { target: 25.1, stop: null } })} open onOpenChange={() => {}} />);
-    expect(screen.getByText('−19%')).toBeInTheDocument();
-    expect(screen.queryByText('−94%')).toBeNull();
+    expect(screen.getByText('−18.8%')).toBeInTheDocument();
+    expect(screen.queryByText('−93.9%')).toBeNull();
     // the price sits in its own <b>, so match the value rather than the sentence
     expect(screen.getAllByText('25.10').length).toBeGreaterThan(0);
   });
 });
 
-describe('[critical] the poll must not undo your drag', () => {
-  it('keeps what you dragged when the trade object is replaced', async () => {
-    // the trade is refreshed every second; an effect that depends on anything
-    // inside it puts the slider back where it started, mid-drag
-    const { rerender } = render(<EditExitsSheet trade={trade()} open onOpenChange={() => {}} />);
+/** Type into one of the exit boxes the way a person does: focus, then the text. */
+const type = (label: string, text: string) => {
+  const box = screen.getByRole('textbox', { name: label });
+  fireEvent.focus(box);
+  fireEvent.change(box, { target: { value: text } });
+};
 
-    const slider = screen.getByRole('slider', { name: 'target percent' });
-    slider.focus();
-    for (let i = 0; i < 5; i++) fireEvent.keyDown(slider, { key: 'ArrowLeft' });
-    const dragged = screen.getByText(/−\d+%/).textContent;
-    expect(dragged).not.toBe('−94%');
+describe('[critical] the poll must not undo what you typed', () => {
+  it('keeps what you typed when the trade object is replaced', async () => {
+    // the trade is refreshed every second; an effect that depends on anything
+    // inside it puts the number back where it started, mid-typing
+    const { rerender } = render(<EditExitsSheet trade={trade()} open onOpenChange={() => {}} />);
+    type('target percent', '90');
+    expect(screen.getByText('−90%')).toBeInTheDocument();
 
     // a poll arrives: same trade, new object, new timestamp
     await act(async () => {
       rerender(<EditExitsSheet trade={trade({ updatedAt: Date.now() + 1_000 })} open onOpenChange={() => {}} />);
     });
-    expect(screen.getByText(/−\d+%/).textContent).toBe(dragged);
+    expect(screen.getByText('−90%')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'target percent' })).toHaveValue('90');
   });
 
   it('sends what is on screen, not what it opened with', async () => {
     render(<EditExitsSheet trade={trade()} open onOpenChange={() => {}} />);
-    const slider = screen.getByRole('slider', { name: 'target percent' });
-    slider.focus();
-    fireEvent.keyDown(slider, { key: 'ArrowLeft' });
+    type('target percent', '92.5');
 
     fireEvent.click(screen.getByRole('button', { name: /save exits/i }));
     await waitFor(() => expect(updateExits).toHaveBeenCalled());
-    const [, pct] = updateExits.mock.calls[0]!;
-    expect(pct.takeProfitPct).toBeLessThan(0.94);
-    expect(pct.takeProfitPct).toBeGreaterThan(0.9);
+    const [, ask] = updateExits.mock.calls[0]!;
+    expect(ask.takeProfitPct).toBeCloseTo(0.925);
+    expect(ask.takeProfitPoints).toBe(0);
   });
 
-  it('reseeds when it is opened again, so it never shows a stale drag', async () => {
+  it('reseeds when it is opened again, so it never shows a stale edit', async () => {
     const { rerender } = render(<EditExitsSheet trade={trade()} open onOpenChange={() => {}} />);
-    const slider = screen.getByRole('slider', { name: 'target percent' });
-    slider.focus();
-    for (let i = 0; i < 10; i++) fireEvent.keyDown(slider, { key: 'ArrowLeft' });
-    expect(screen.getByText(/−\d+%/).textContent).not.toBe('−94%');
+    type('target percent', '50');
+    expect(screen.getByText('−50%')).toBeInTheDocument();
 
     // two commits, because that is what closing and reopening actually is --
     // batching them into one would test a thing the browser never does
@@ -131,16 +132,51 @@ describe('[critical] the poll must not undo your drag', () => {
     await act(async () => {
       rerender(<EditExitsSheet trade={trade()} open onOpenChange={() => {}} />);
     });
-    expect(screen.getByText('−94%')).toBeInTheDocument();
+    expect(screen.getByText('−93.9%')).toBeInTheDocument();
   });
 });
 
 describe('saving', () => {
-  it('turns a bar that is off into a zero, which means off', async () => {
+  it('turns an exit that is off into a zero, which means off', async () => {
     render(<EditExitsSheet trade={trade()} open onOpenChange={() => {}} />);
     fireEvent.click(screen.getByRole('checkbox', { name: /take profit/i }));
     fireEvent.click(screen.getByRole('button', { name: /save exits/i }));
-    await waitFor(() => expect(updateExits).toHaveBeenCalledWith('t1', { takeProfitPct: 0, stopLossPct: 0 }));
+    await waitFor(() => expect(updateExits).toHaveBeenCalledWith('t1', {
+      takeProfitPct: 0, takeProfitPoints: 0, stopLossPct: 0, stopLossPoints: 0,
+    }));
+  });
+
+  it('[critical] a stop above 100% is saved as typed', async () => {
+    render(<EditExitsSheet trade={trade()} open onOpenChange={() => {}} />);
+    fireEvent.click(screen.getByRole('checkbox', { name: /stop loss/i }));
+    type('stop percent', '250');
+    fireEvent.click(screen.getByRole('button', { name: /save exits/i }));
+    await waitFor(() => expect(updateExits).toHaveBeenCalled());
+    expect(updateExits.mock.calls[0]![1].stopLossPct).toBe(2.5);
+  });
+
+  it('[critical] a fixed stop is sent as points, and the level shown is entry + points', async () => {
+    render(<EditExitsSheet trade={trade()} open onOpenChange={() => {}} />);
+    fireEvent.click(screen.getByRole('checkbox', { name: /stop loss/i }));
+    fireEvent.click(screen.getAllByRole('radio', { name: 'Fixed' })[1]!);
+    type('stop points', '20');
+    expect(screen.getAllByText('50.90').length).toBeGreaterThan(0);  // 30.90 + 20
+    fireEvent.click(screen.getByRole('button', { name: /save exits/i }));
+    await waitFor(() => expect(updateExits).toHaveBeenCalled());
+    expect(updateExits.mock.calls[0]![1]).toMatchObject({ stopLossPct: 0, stopLossPoints: 20 });
+  });
+
+  it('opening on a live target fills the Fixed box with the same level in points', () => {
+    render(<EditExitsSheet trade={trade()} open onOpenChange={() => {}} />);
+    fireEvent.click(screen.getAllByRole('radio', { name: 'Fixed' })[0]!);
+    expect(screen.getByRole('textbox', { name: 'target points' })).toHaveValue('29');  // 30.90 - 1.90
+  });
+
+  it('[critical] Save is held back while a number is out of range', () => {
+    render(<EditExitsSheet trade={trade()} open onOpenChange={() => {}} />);
+    type('target percent', '120');
+    expect(screen.getByRole('alert')).toHaveTextContent(/between 0 and 99%/);
+    expect(screen.getByRole('button', { name: /save exits/i })).toBeDisabled();
   });
 
   it('closes and reports back when it lands', async () => {
