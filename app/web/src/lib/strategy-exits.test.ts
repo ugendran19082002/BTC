@@ -16,7 +16,7 @@ describe('fillSteps', () => {
   });
   it('a stop may climb past 100%', () => {
     const steps = fillSteps({ leg: 'stop', mode: 'pct', entryTime: '05:30', exitTime: '17:29', start: 1.5, everyMin: 240, by: 1 });
-    expect(steps.map((s) => s.value)).toEqual([2.5, 3.5, 4.5]);
+    expect(steps).toEqual([{ at: '09:30', value: 2.5 }, { at: '13:30', value: 3.5 }]);  // 17:30 is past the 17:29 exit
   });
   it('runs past midnight for an overnight strategy', () => {
     expect(fillSteps({ leg: 'stop', mode: 'points', entryTime: '23:30', exitTime: '05:00', start: 10, everyMin: 120, by: 5 }))
