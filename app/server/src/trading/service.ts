@@ -651,7 +651,18 @@ export class TradingService {
     // Asked for as prices, the levels must sit the right side of the entry.
     const wrong = exitPriceProblem(entry, ask);
     if (wrong) throw new ExitAskError(wrong);
-    return this.engine.updateProtection(tradeId, protectionFor(entry, ask));
+    // A share or a distance keeps following the fill (a later add moves the
+    // average); a level typed as a price on an open position is pinned there.
+    const follow: ExitAsk = {};
+    if (!((ask.takeProfitAt ?? 0) > 0) && (ask.takeProfitPct !== undefined || ask.takeProfitPoints !== undefined)) {
+      follow.takeProfitPct = ask.takeProfitPct ?? 0;
+      follow.takeProfitPoints = ask.takeProfitPoints ?? 0;
+    }
+    if (!((ask.stopAt ?? 0) > 0) && (ask.stopLossPct !== undefined || ask.stopLossPoints !== undefined)) {
+      follow.stopLossPct = ask.stopLossPct ?? 0;
+      follow.stopLossPoints = ask.stopLossPoints ?? 0;
+    }
+    return this.engine.updateProtection(tradeId, protectionFor(entry, ask), follow);
   }
 
   /**

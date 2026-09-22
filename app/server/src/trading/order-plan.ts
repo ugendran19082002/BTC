@@ -131,6 +131,37 @@ export const stopFor = (entry: number, x: ExitAsk): number | null =>
       ? stopPriceByPoints(entry, x.stopLossPoints!)
       : stopPriceFor(entry, x.stopLossPct ?? 0);
 
+/**
+ * The exits as they should follow the fill.
+ *
+ *   pct / points   kept as asked: 80% of the fill, fill + 55
+ *   a price        turned into its distance from the price it was typed
+ *                  against -- typed 70 over a 15 offer is fill + 55 -- so the
+ *                  gap the person saw is the gap they get, wherever it fills
+ *   an exact price given by a caller, or a price with no entry to measure
+ *   from (a market order), is pinned and follows nothing
+ *
+ * Undefined when neither leg follows.
+ */
+export function followingAsk(input: PlaceInput, basis: number | null): ExitAsk | undefined {
+  const ask: ExitAsk = {};
+  if (input.takeProfitPrice === undefined) {
+    if ((input.takeProfitAt ?? 0) > 0) {
+      if (basis !== null && basis - input.takeProfitAt! > 0) ask.takeProfitPoints = round2(basis - input.takeProfitAt!);
+    } else if ((input.takeProfitPoints ?? 0) > 0) ask.takeProfitPoints = input.takeProfitPoints;
+    else if ((input.takeProfitPct ?? 0) > 0) ask.takeProfitPct = input.takeProfitPct;
+  }
+  if (input.stopPrice === undefined) {
+    if ((input.stopAt ?? 0) > 0) {
+      if (basis !== null && input.stopAt! - basis > 0) ask.stopLossPoints = round2(input.stopAt! - basis);
+    } else if ((input.stopLossPoints ?? 0) > 0) ask.stopLossPoints = input.stopLossPoints;
+    else if ((input.stopLossPct ?? 0) > 0) ask.stopLossPct = input.stopLossPct;
+  }
+  return Object.keys(ask).length ? ask : undefined;
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
 export type PlaceInput = {
   symbol: string;
   optionSide: 'CE' | 'PE';
@@ -215,14 +246,17 @@ export function orderPlan(input: PlaceInput, tradeId: string): TradePlan {
               }
             : null,
         },
+    // A first reading off the limit, so the screen and the precheck have a
+    // level before anything fills; `exitAsk` re-reads it off the actual fill.
     takeProfitPrice:
       input.takeProfitPrice !== undefined
         ? input.takeProfitPrice
-        : basis !== null ? targetFor(basis, input) : null,
+        : basis !== null ? targetFor(basis, input) : (input.takeProfitAt ?? 0) > 0 ? round1(input.takeProfitAt!) : null,
     stopPrice:
       input.stopPrice !== undefined
         ? input.stopPrice
-        : basis !== null ? stopFor(basis, input) : null,
+        : basis !== null ? stopFor(basis, input) : (input.stopAt ?? 0) > 0 ? round1(input.stopAt!) : null,
+    exitAsk: followingAsk(input, basis),
     expect: {
       underlying: 'BTC',
       optionSide: input.optionSide,

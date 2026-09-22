@@ -490,6 +490,7 @@ export function OrderTicket({
               onTarget={patchExit('target')}
               onStop={patchExit('stop')}
               liquidationPrice={preview?.liquidationPrice ?? null}
+              followsFill
             />
 
             <Separator className="my-3" />

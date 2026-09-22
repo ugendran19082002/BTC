@@ -1,7 +1,7 @@
 import type {
   AddWorking, ExchangeOrder, OptionSide, OrderRole, PlaceOrderRequest, ProductSpec, Quote, TradeEvent, TradeState,
 } from './types.js';
-import { CHASE_STEPS } from './order-plan.js';
+import { CHASE_STEPS, protectionFor, type ExitAsk } from './order-plan.js';
 import { applyEvent, initialTrade, isDone, protectionSize } from './machine.js';
 import { priceFor, lotsToContracts, stopFillLimit, stopPriceFor } from './money.js';
 import { DEFAULT_LIMITS, precheck, type Failure, type PrecheckResult, type RiskLimits } from './precheck.js';
@@ -154,10 +154,45 @@ export type TradePlan = {
   /** Buy-back trigger that caps the loss. `null` means no stop -- and the
    * engine will say so, loudly, rather than pretending the trade is protected. */
   stopPrice: number | null;
+  /**
+   * The exits as they were asked for -- a share or a distance -- rather than as
+   * prices. When present, `takeProfitPrice` and `stopPrice` are worked out from
+   * the ACTUAL average fill each time protection is reconciled (`anchorExits`),
+   * not from the limit the order was sent at.
+   *
+   * An offer that walks to the bid, a Bid-now entry, a market entry: each fills
+   * somewhere other than the price the ticket showed, and a stop 55 points over
+   * "the entry" means 55 over the entry that happened. A leg absent here is
+   * pinned: its price stands as set (a level typed as a price on an open
+   * position, or a plan written before this existed).
+   */
+  exitAsk?: ExitAsk;
   expect: { underlying: string; optionSide: OptionSide; strike: number; expiryTs: number };
 };
 
 export type TradeRecord = { state: TradeState; plan: TradePlan; events: TradeEvent[] };
+
+/** Whether an ask carries a stop at all. */
+const asksStop = (a: ExitAsk | undefined) => !!a && ((a.stopLossPct ?? 0) > 0 || (a.stopLossPoints ?? 0) > 0);
+
+/**
+ * The exits re-read off the actual average fill. Pure: the same record back
+ * when nothing moves, so a caller can tell "unchanged" by identity.
+ */
+export function anchorExits(rec: TradeRecord): TradeRecord {
+  const ask = rec.plan.exitAsk;
+  const avg = rec.state.entryAvgPrice;
+  if (!ask || avg === null || !(avg > 0)) return rec;
+  const p = protectionFor(avg, ask);
+  const tp = p.takeProfitPrice === undefined ? rec.plan.takeProfitPrice : p.takeProfitPrice;
+  const sl = p.stopPrice === undefined ? rec.plan.stopPrice : p.stopPrice;
+  if (tp === rec.plan.takeProfitPrice && sl === rec.plan.stopPrice) return rec;
+  return {
+    ...rec,
+    plan: { ...rec.plan, takeProfitPrice: tp, stopPrice: sl },
+    state: { ...rec.state, wantsProtection: sl !== null },
+  };
+}
 
 /**
  * The journal, as the engine sees it.
@@ -476,7 +511,8 @@ export class TradeEngine {
       state: initialTrade({
         tradeId: plan.tradeId, symbol: plan.symbol, productId: product?.productId ?? 0,
         optionSide: plan.optionSide, requestedSize: size, at,
-        wantsProtection: plan.stopPrice !== null,
+        // A stop asked for off the fill has no price until the fill, and is still wanted.
+        wantsProtection: plan.stopPrice !== null || asksStop(plan.exitAsk),
         contractValue: product?.contractValue,
       }),
     };
@@ -614,8 +650,13 @@ export class TradeEngine {
   updateProtection(
     tradeId: string,
     next: { takeProfitPrice?: number | null; stopPrice?: number | null },
+    /**
+     * The legs to keep following the fill, as asked. A leg given a price here
+     * and not in `follow` is pinned to that price from now on.
+     */
+    follow?: ExitAsk,
   ): Promise<TradeState | null> {
-    return this.withTrade(tradeId, () => this.updateProtectionInner(tradeId, next));
+    return this.withTrade(tradeId, () => this.updateProtectionInner(tradeId, next, follow));
   }
 
   /**
@@ -817,8 +858,14 @@ export class TradeEngine {
     // An exit printed: the other side has to go before it can re-open us.
     if (rec.state.exitWinner) rec = await this.cancelSiblings(rec);
 
-    if (rec.state.position !== 0 && rec.state.phase !== 'exit_pending' && missingProtection(rec)) {
+    // Exits asked for off the fill follow the fill: a partial fill at a new
+    // price moves the average, and the levels move with it.
+    const anchored = anchorExits(rec);
+    const moved = anchored !== rec;
+    rec = anchored;
+    if (rec.state.position !== 0 && rec.state.phase !== 'exit_pending' && (moved || missingProtection(rec))) {
       rec = await this.protect(rec);
+      if (moved) await this.d.store.save(rec);
     }
 
     // The stop is judged here as well as at the exchange. This runs after
@@ -890,7 +937,7 @@ export class TradeEngine {
    * cancel is exactly how two live orders happen.
    */
   async protect(recIn: TradeRecord): Promise<TradeRecord> {
-    let rec = recIn;
+    let rec = anchorExits(recIn);
     const size = protectionSize(rec.state);
     if (size === 0) return rec;
     if (rec.plan.takeProfitPrice === null && rec.plan.stopPrice === null) {
@@ -1197,15 +1244,23 @@ export class TradeEngine {
   private async updateProtectionInner(
     tradeId: string,
     next: { takeProfitPrice?: number | null; stopPrice?: number | null },
+    follow?: ExitAsk,
   ): Promise<TradeState | null> {
     let rec = await this.d.store.get(tradeId);
     if (!rec) return null;
     if (rec.state.position === 0) return rec.state;
 
+    // A leg that is set here stops following its old ask; it follows the new
+    // one if `follow` carries one, and is pinned to its price if not.
+    const ask: ExitAsk = { ...rec.plan.exitAsk };
+    if (next.takeProfitPrice !== undefined) { delete ask.takeProfitPct; delete ask.takeProfitPoints; delete ask.takeProfitAt; }
+    if (next.stopPrice !== undefined) { delete ask.stopLossPct; delete ask.stopLossPoints; delete ask.stopAt; }
+    Object.assign(ask, follow ?? {});
     rec.plan = {
       ...rec.plan,
       takeProfitPrice: next.takeProfitPrice !== undefined ? next.takeProfitPrice : rec.plan.takeProfitPrice,
       stopPrice: next.stopPrice !== undefined ? next.stopPrice : rec.plan.stopPrice,
+      exitAsk: Object.keys(ask).length ? ask : undefined,
     };
     rec.state = { ...rec.state, wantsProtection: rec.plan.stopPrice !== null };
 

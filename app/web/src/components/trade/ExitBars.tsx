@@ -49,10 +49,15 @@ export type ExitBarsProps = {
   contractValue?: number;
   /** Where the exchange closes the position out, if it is known. */
   liquidationPrice?: number | null;
+  /**
+   * Before the order fills: the levels are re-read off the price it actually
+   * fills at, keeping the distance shown. Said once, under the exits.
+   */
+  followsFill?: boolean;
 };
 
 export function ExitBars({
-  target, stop, onTarget, onStop, entry, size, liquidationPrice, contractValue = 0.001,
+  target, stop, onTarget, onStop, entry, size, liquidationPrice, contractValue = 0.001, followsFill = false,
 }: ExitBarsProps) {
   const targetPrice = levelOf('target', target, entry);
   const stopPrice = levelOf('stop', stop, entry);
@@ -142,6 +147,11 @@ export function ExitBars({
           ) : (
             <>No stop — the position runs until Delta liquidates it.</>
           )}
+        </p>
+      )}
+      {followsFill && (target.on || stop.on) && (
+        <p className="m-0 mt-1.5 pl-[26px] text-[11px] leading-snug text-[var(--dim)]">
+          Shown against {entry !== null ? fmtPrice(entry) : 'the entry'}. If it fills at another price, the levels move with the fill and keep the same distance.
         </p>
       )}
     </div>

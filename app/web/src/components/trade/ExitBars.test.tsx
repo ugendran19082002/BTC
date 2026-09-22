@@ -196,6 +196,21 @@ describe('Price: the level itself', () => {
   });
 });
 
+describe('before it fills', () => {
+  it('[critical] says the levels follow the fill, on the ticket only', () => {
+    const { rerender } = render(<ExitBars {...base} entry={15} followsFill stop={{ ...off, on: true, mode: 'price', price: 70 }} />);
+    expect(screen.getByText(/Shown against 15.00\. If it fills at another price, the levels move with the fill/)).toBeInTheDocument();
+    rerender(<ExitBars {...base} entry={15} stop={{ ...off, on: true, mode: 'price', price: 70 }} />);
+    expect(screen.queryByText(/move with the fill/)).toBeNull();
+  });
+  it('[critical] switching the entry from the offer to the bid re-reads the distance at once', () => {
+    const { rerender } = render(<ExitBars {...base} entry={15} stop={{ ...off, on: true, mode: 'price', price: 70 }} />);
+    expect(screen.getByText('at 70.00 (+55 pts)')).toBeInTheDocument();
+    rerender(<ExitBars {...base} entry={14} stop={{ ...off, on: true, mode: 'price', price: 70 }} />);
+    expect(screen.getByText('at 70.00 (+56 pts)')).toBeInTheDocument();
+  });
+});
+
 describe('a quoted price is dollars per BTC', () => {
   it('turns a 0.001 BTC contract into the money that changes hands', () => {
     // sold at 10, target 80% -> buys back at 2, five contracts of 0.001 BTC
