@@ -1,7 +1,6 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { StrategyStore } from '../../src/strategy/store.js';
-import { MemorySettings } from '../../src/db/settings.js';
 import { closePool, query } from '../../src/db/pool.js';
 import { entryDue, exitDue, istDate } from '../../src/strategy/schedule.js';
 import { DEFAULT_CONFIG, type Strategy } from '../../src/strategy/types.js';
@@ -19,10 +18,10 @@ import { DEFAULT_CONFIG, type Strategy } from '../../src/strategy/types.js';
  * only prove the fake agrees with the code. ARCHITECTURE.md rule 2.
  */
 // One database for the file; a fresh store starts with an empty run journal.
-await StrategyStore.open(new MemorySettings());
+await StrategyStore.open();
 const fresh = async () => {
   await query('TRUNCATE strategy_runs, strategy_adds, strategy_rebalances');
-  return StrategyStore.open(new MemorySettings());
+  return StrategyStore.open();
 };
 after(() => closePool());
 
@@ -67,19 +66,19 @@ test('[critical] a restart mid-day does not re-enter', async () => {
   await fresh();
   const placed: string[] = [];
 
-  await tick(await StrategyStore.open(new MemorySettings()), strat(), THU_0530, placed);
+  await tick(await StrategyStore.open(), strat(), THU_0530, placed);
   // process dies, comes back four minutes later, still inside the grace window
-  await tick(await StrategyStore.open(new MemorySettings()), strat(), THU_0530 + 4 * 60_000, placed);
+  await tick(await StrategyStore.open(), strat(), THU_0530 + 4 * 60_000, placed);
   // and again, and again
-  await tick(await StrategyStore.open(new MemorySettings()), strat(), THU_0530 + 10 * 60_000, placed);
+  await tick(await StrategyStore.open(), strat(), THU_0530 + 10 * 60_000, placed);
   assert.equal(placed.length, 1, 'a redeploy at 05:34 is the normal case, not the exotic one');
 });
 
 test('[critical] two workers racing the same day produce one entry', async () => {
   // Both read "not run yet" before either writes. Only the claim decides.
   await fresh();
-  const a = await StrategyStore.open(new MemorySettings());
-  const b = await StrategyStore.open(new MemorySettings());
+  const a = await StrategyStore.open();
+  const b = await StrategyStore.open();
   const day = '2026-09-10';
 
   assert.equal(await a.lastRunDate('double'), null);

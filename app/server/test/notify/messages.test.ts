@@ -202,7 +202,6 @@ test('every & in every message is an entity, because Telegram refuses the whole 
 
 // ------------------------------------------------- adding to the other leg
 
-import { addAlertFor } from '../../src/notify/messages.js';
 import type { AddWorking } from '../../src/trading/types.js';
 
 const working = (over: Partial<AddWorking> = {}): AddWorking => ({
@@ -268,9 +267,3 @@ test('an add turned down before it was sent is not announced by the engine -- th
   assert.equal(out.at(-1), null);
 });
 
-test('the adder\'s messages: skipped, refused, failed', () => {
-  const base = { strategy: 'CE+PE add', sourceTradeId: 'CE-1', detail: 'CE target bought back 425 — PE bid 2.00 is below $3.00', at: AT };
-  assert.match(addAlertFor({ ...base, status: 'skipped' }, { mode: 'live' }).text, /ℹ️ <b>NOT ADDED · CE\+PE add<\/b>[\s\S]*below \$3\.00[\s\S]*Nothing was sold/);
-  assert.match(addAlertFor({ ...base, status: 'refused' }, { mode: 'live' }).text, /⚠️ <b>ADD REFUSED/);
-  assert.match(addAlertFor({ ...base, status: 'failed' }, { mode: 'paper' }).text, /🧪 <b>PAPER<\/b> · 🚨 <b>ADD FAILED/);
-});

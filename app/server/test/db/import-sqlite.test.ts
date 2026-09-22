@@ -130,7 +130,7 @@ test('[critical] every table lands, and what the stores read back is what the SQ
   assert.equal(settings.get('expiry_default'), 'first', 'the seeded default is still there');
 
   // the strategy the person had edited beats the fresh seed
-  const strategies = await StrategyStore.open(new MemorySettings());
+  const strategies = await StrategyStore.open();
   const double = (await strategies.get('double'))!;
   assert.equal(double.name, 'Double one-sided (mine)');
   assert.equal(double.config.lots, 42);

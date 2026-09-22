@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  GRACE_MIN, entryDue, entrySlotDate, entryWindowEnd, exitDue, graceOf, istDate, istMinutes, istWeekday, lotsPerLeg, nextEntryAt,
+  GRACE_MIN, entryDue, entrySlotDate, entryWindowEnd, exitDue, graceOf, istDate, istMinutes, istWeekday, nextEntryAt,
 } from '../../src/strategy/schedule.js';
 import { DEFAULT_CONFIG, type Strategy } from '../../src/strategy/types.js';
 
@@ -217,50 +217,6 @@ test('a strategy that is off has no next entry', () => {
 });
 
 /* ---------------------------------------------------------------- lots ---- */
-
-test('both legs qualifying get one lot each', () => {
-  assert.deepEqual(lotsPerLeg(strat(), ['CE', 'PE']), { CE: 10, PE: 10 });
-});
-
-test('[critical] one leg surviving the gate carries two lots', () => {
-  assert.deepEqual(lotsPerLeg(strat(), ['CE']), { CE: 20, PE: 0 });
-});
-
-test('[critical] doubling does not care which rule refused the other leg', () => {
-  // It used to need the probability gate, which is what the research measured.
-  // But a leg refused for its premium, its spread, its score or because the
-  // open-interest rule found nothing leaves exactly the same one-sided day.
-  const s = strat({ config: { ...DEFAULT_CONFIG, probGate: null } });
-  assert.deepEqual(lotsPerLeg(s, ['CE']), { CE: 20, PE: 0 });
-  const oi = strat({ config: { ...DEFAULT_CONFIG, probGate: null, strikeRule: 'oiWall' } });
-  assert.deepEqual(lotsPerLeg(oi, ['PE']), { CE: 0, PE: 20 });
-});
-
-test('both legs surviving is never doubled, whatever the rules', () => {
-  const s = strat({ config: { ...DEFAULT_CONFIG, probGate: null } });
-  assert.deepEqual(lotsPerLeg(s, ['CE', 'PE']), { CE: 10, PE: 10 });
-});
-
-test('no leg surviving sells nothing', () => {
-  const s = strat({ config: { ...DEFAULT_CONFIG, probGate: null } });
-  assert.deepEqual(lotsPerLeg(s, []), { CE: 0, PE: 0 });
-});
-
-test('doubling needs both legs configured', () => {
-  // A CE-only strategy always has exactly one leg; doubling it would silently
-  // run at twice the size the person asked for, every day.
-  const s = strat({ config: { ...DEFAULT_CONFIG, legs: 'CE' } });
-  assert.deepEqual(lotsPerLeg(s, ['CE']), { CE: 10, PE: 0 });
-});
-
-test('doubling switched off leaves one lot', () => {
-  const s = strat({ config: { ...DEFAULT_CONFIG, doubleWhenOneSided: false } });
-  assert.deepEqual(lotsPerLeg(s, ['PE']), { CE: 0, PE: 10 });
-});
-
-test('no leg qualifying sells nothing', () => {
-  assert.deepEqual(lotsPerLeg(strat(), []), { CE: 0, PE: 0 });
-});
 
 /**
  * How late is too late, per strategy.

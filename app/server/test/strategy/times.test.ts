@@ -1,10 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { StrategyStore } from '../../src/strategy/store.js';
-import { MemorySettings } from '../../src/db/settings.js';
 import { closePool } from '../../src/db/pool.js';
 import {
-  DEFAULT_CONFIG, defaultAddUntil, hhmmOf, isHhmm, minutesOf, time12, validateConfig, type StrategyConfig,
+  DEFAULT_CONFIG, hhmmOf, isHhmm, minutesOf, time12, validateConfig, type StrategyConfig,
 } from '../../src/strategy/types.js';
 
 /**
@@ -17,8 +16,6 @@ import {
  */
 
 const cfg = (over: Partial<StrategyConfig> = {}): StrategyConfig => ({ ...DEFAULT_CONFIG, ...over });
-const withAdd = (addUntil: unknown, over: Partial<StrategyConfig> = {}) =>
-  cfg({ ...over, addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil } as StrategyConfig['addToOpposite'] });
 
 // ------------------------------------------------------------- reading
 
@@ -40,12 +37,6 @@ test('minutes and "HH:MM" turn into each other and back', () => {
 test('only a real 24-hour time counts as one', () => {
   for (const ok of ['00:00', '09:05', '23:59']) assert.equal(isHhmm(ok), true, ok);
   for (const bad of ['24:00', '5:30', '05:60', '5:30 PM', '', null, 530]) assert.equal(isHhmm(bad), false, String(bad));
-});
-
-test('the latest time to add defaults to half an hour before the exit', () => {
-  assert.equal(defaultAddUntil('17:29'), '16:59');
-  assert.equal(defaultAddUntil('12:00'), '11:30');
-  assert.equal(defaultAddUntil('00:20'), '00:19', 'a strategy shorter than that gets the minute before');
 });
 
 // ------------------------------------------------------------- entry and exit
@@ -97,18 +88,6 @@ test('[critical] an overnight window still has to end before the settlement that
   assert.ok(validateConfig(cfg({ entryTime: '23:30', exitTime: '17:30' })).some((p) => /5:30 PM settlement/.test(p)));
 });
 
-test('the latest time to add sits inside an overnight window too', () => {
-  const night = { entryTime: '23:30', exitTime: '05:30' };
-  assert.deepEqual(validateConfig(withAdd('05:00', night)), [], 'half an hour before the exit, after midnight');
-  assert.deepEqual(validateConfig(withAdd('23:45', night)), [], 'a quarter of an hour after the entry, before midnight');
-  for (const outside of ['23:30', '05:30', '12:00']) {
-    assert.ok(
-      validateConfig(withAdd(outside, night)).some((p) => /must be after entry \(11:30 PM\) and before exit \(5:30 AM\)/.test(p)),
-      outside,
-    );
-  }
-});
-
 test('a time that is not a time is refused in words, with an example', () => {
   const bad = validateConfig(cfg({ entryTime: '25:00', exitTime: 'soon' }));
   assert.ok(bad.includes('Entry time must be a time of day, like 5:30 AM.'));
@@ -117,42 +96,5 @@ test('a time that is not a time is refused in words, with an example', () => {
 
 // ------------------------------------------------------------- the latest time to add
 
-test('[critical] the latest time to add must sit between entry and exit', () => {
-  assert.deepEqual(validateConfig(withAdd('16:59')), [], 'between 5:30 AM and 5:29 PM');
-  assert.deepEqual(validateConfig(withAdd('05:31')), [], 'a minute after entry is allowed');
-  assert.deepEqual(validateConfig(withAdd('17:28')), [], 'a minute before exit is allowed');
-  for (const outside of ['05:30', '05:00', '17:29', '17:45']) {
-    const bad = validateConfig(withAdd(outside));
-    assert.ok(bad.some((p) => /must be after entry \(5:30 AM\) and before exit \(5:29 PM\)/.test(p)), `${outside}: ${bad.join(' | ')}`);
-  }
-});
-
-test('the check follows the strategy\'s own times, not the defaults', () => {
-  const day = { entryTime: '09:00', exitTime: '15:00' };
-  assert.deepEqual(validateConfig(withAdd('14:30', day)), []);
-  assert.ok(validateConfig(withAdd('16:59', day)).some((p) => /before exit \(3:00 PM\)/.test(p)));
-});
-
-test('a latest time to add that is not a time is refused', () => {
-  assert.ok(validateConfig(withAdd('4:59 PM')).some((p) => /latest time to add must be a time of day/.test(p)));
-  assert.ok(validateConfig(withAdd(undefined)).some((p) => /latest time to add must be a time of day/.test(p)));
-});
-
-test('with the add switched off, there is no latest time to check', () => {
-  assert.deepEqual(validateConfig(cfg({ addToOpposite: null })), []);
-});
-
 // ------------------------------------------------------------- stored
 
-test('[critical] a saved add without a latest time reads back with half an hour before its exit', async () => {
-  // The SQLite desk had a migration (007-add-until) that wrote this time into
-  // every stored row. Rows imported into PostgreSQL already carry it; a row
-  // written without it -- an old client, a hand edit -- is filled on read.
-  const s = await StrategyStore.open(new MemorySettings());
-  try {
-    await s.save({ id: 'old', name: 'Old', enabled: false, config: { ...cfg({ exitTime: '15:00' }), addToOpposite: { minPriceUsd: 3, maxMultiple: 2 } as never } });
-    assert.equal((await s.get('old'))!.config.addToOpposite?.addUntil, '14:30');
-  } finally {
-    await closePool();
-  }
-});
