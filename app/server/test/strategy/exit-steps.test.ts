@@ -7,7 +7,7 @@ import {
 } from '../../src/strategy/types.js';
 import { StrategyExitStepper, exitWords, type ExitStepperDeps } from '../../src/strategy/exit-steps.js';
 import {
-  orderPlan, protectionFor, stopFor, stopPriceByPoints, targetFor, targetPriceByPoints, type ExitAsk,
+  exitPriceProblem, orderPlan, protectionFor, stopFor, stopPriceByPoints, targetFor, targetPriceByPoints, type ExitAsk,
 } from '../../src/trading/order-plan.js';
 import type { TradeRecord } from '../../src/trading/engine.js';
 import { rig, ceProduct, planFor, quote, T0 } from '../trading/harness.js';
@@ -423,5 +423,35 @@ describe('validateConfig: premium fallback', () => {
     assert.match(v({ mode: 'atMost', usd: 20, fallbackUsd: Number.NaN })[0]!, /positive number of dollars/);
     assert.deepEqual(v({ mode: 'atMost', usd: 20, fallbackUsd: null }), []);
     assert.deepEqual(v({ mode: 'atMost', usd: 20 }), []);
+  });
+});
+
+describe('exits typed as the price itself', () => {
+  test('[critical] entry 16, stop typed as 70: the stop is 70 -- 54 points over', () => {
+    assert.equal(stopFor(16, { stopAt: 70 }), 70);
+    assert.equal(targetFor(16, { takeProfitAt: 4 }), 4);
+  });
+  test('a price wins over points and a percentage', () => {
+    assert.equal(stopFor(16, { stopAt: 70, stopLossPoints: 10, stopLossPct: 1 }), 70);
+    assert.equal(targetFor(16, { takeProfitAt: 4, takeProfitPoints: 2, takeProfitPct: 0.5 }), 4);
+  });
+  test('[critical] a target at or over the entry, or a stop at or under it, is refused: it would fire on placement', () => {
+    assert.equal(exitPriceProblem(16, { takeProfitAt: 4, stopAt: 70 }), null);
+    assert.match(exitPriceProblem(16, { takeProfitAt: 16 })!, /target of 16 must be under the 16 entry/);
+    assert.match(exitPriceProblem(16, { takeProfitAt: 20 })!, /must be under/);
+    assert.match(exitPriceProblem(16, { stopAt: 16 })!, /stop of 16 must be over the 16 entry/);
+    assert.match(exitPriceProblem(16, { stopAt: 10 })!, /fires at once/);
+    assert.equal(exitPriceProblem(16, {}), null);
+  });
+  test('protectionFor moves only the leg given as a price', () => {
+    assert.deepEqual(protectionFor(16, { stopAt: 70 }), { takeProfitPrice: undefined, stopPrice: 70 });
+  });
+  test('orderPlan takes the prices as they are', () => {
+    const plan = orderPlan({
+      symbol: 'C-BTC-80000-080926', optionSide: 'CE', strike: 80_000, expiryTs: 1, lots: 1,
+      limitPrice: 16, takeProfitAt: 4, stopAt: 70,
+    }, 't');
+    assert.equal(plan.takeProfitPrice, 4);
+    assert.equal(plan.stopPrice, 70);
   });
 });

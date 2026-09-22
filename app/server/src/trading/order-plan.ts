@@ -68,19 +68,45 @@ export const targetPriceByPoints = (entry: number, points: number): number | nul
 export const stopPriceByPoints = (entry: number, points: number): number | null =>
   points > 0 ? round1(entry + points) : null;
 
-/** An exit asked for either way. Points, when above zero, win: they are the more exact ask. */
+/**
+ * An exit asked for any of three ways: a percentage, points from the entry, or
+ * the price itself. The most exact wins when more than one is above zero:
+ * a price, then points, then a percentage.
+ */
 export type ExitAsk = {
   takeProfitPct?: number;
   stopLossPct?: number;
   takeProfitPoints?: number;
   stopLossPoints?: number;
+  /** The target price itself: sold at 16, 4 buys back at 4. */
+  takeProfitAt?: number;
+  /** The stop price itself: sold at 16, 70 buys back at 70 -- 54 points over. */
+  stopAt?: number;
 };
+
+/**
+ * Why an exit typed as a price cannot stand against this entry, or null.
+ *
+ * A short makes money as the option gets cheaper, so its target must be under
+ * the entry and its stop over it. A target at or over the entry fills the
+ * moment it is placed -- which is how a short sold at 7.00 bought itself back
+ * at 7.00 on 9 September -- and a stop at or under it fires on placement.
+ */
+export function exitPriceProblem(entry: number, x: Pick<ExitAsk, 'takeProfitAt' | 'stopAt'>): string | null {
+  const tp = x.takeProfitAt ?? 0;
+  const sl = x.stopAt ?? 0;
+  if (tp > 0 && !(tp < entry)) return `A target of ${tp} must be under the ${entry} entry: a short makes money as the price falls.`;
+  if (sl > 0 && !(sl > entry)) return `A stop of ${sl} must be over the ${entry} entry: at or under it, it fires at once.`;
+  return null;
+}
 
 /** The target price, read off an entry, however it was asked for. Zero or absent means none. */
 export const targetFor = (entry: number, x: ExitAsk): number | null =>
-  (x.takeProfitPoints ?? 0) > 0
-    ? targetPriceByPoints(entry, x.takeProfitPoints!)
-    : targetPriceFor(entry, x.takeProfitPct ?? 0);
+  (x.takeProfitAt ?? 0) > 0
+    ? round1(x.takeProfitAt!)
+    : (x.takeProfitPoints ?? 0) > 0
+      ? targetPriceByPoints(entry, x.takeProfitPoints!)
+      : targetPriceFor(entry, x.takeProfitPct ?? 0);
 
 /**
  * The protection change an ask makes to a position opened at `entry`.
@@ -89,8 +115,8 @@ export const targetFor = (entry: number, x: ExitAsk): number | null =>
  * different from a leg asked for at zero, which is `null`: taken off.
  */
 export function protectionFor(entry: number, ask: ExitAsk): { takeProfitPrice?: number | null; stopPrice?: number | null } {
-  const target = ask.takeProfitPct !== undefined || ask.takeProfitPoints !== undefined;
-  const stop = ask.stopLossPct !== undefined || ask.stopLossPoints !== undefined;
+  const target = ask.takeProfitPct !== undefined || ask.takeProfitPoints !== undefined || ask.takeProfitAt !== undefined;
+  const stop = ask.stopLossPct !== undefined || ask.stopLossPoints !== undefined || ask.stopAt !== undefined;
   return {
     takeProfitPrice: target ? targetFor(entry, ask) : undefined,
     stopPrice: stop ? stopFor(entry, ask) : undefined,
@@ -99,9 +125,11 @@ export function protectionFor(entry: number, ask: ExitAsk): { takeProfitPrice?: 
 
 /** The stop price, read off an entry, however it was asked for. Zero or absent means none. */
 export const stopFor = (entry: number, x: ExitAsk): number | null =>
-  (x.stopLossPoints ?? 0) > 0
-    ? stopPriceByPoints(entry, x.stopLossPoints!)
-    : stopPriceFor(entry, x.stopLossPct ?? 0);
+  (x.stopAt ?? 0) > 0
+    ? round1(x.stopAt!)
+    : (x.stopLossPoints ?? 0) > 0
+      ? stopPriceByPoints(entry, x.stopLossPoints!)
+      : stopPriceFor(entry, x.stopLossPct ?? 0);
 
 export type PlaceInput = {
   symbol: string;
@@ -130,6 +158,10 @@ export type PlaceInput = {
   takeProfitPoints?: number;
   /** Stop as points over the entry instead of a percentage. Above zero, it wins. */
   stopLossPoints?: number;
+  /** The target price itself. Above zero, it wins over points and percentage. */
+  takeProfitAt?: number;
+  /** The stop price itself. Above zero, it wins over points and percentage. */
+  stopAt?: number;
   /** Overrides the percentage, when a caller wants an exact price. */
   takeProfitPrice?: number | null;
   stopPrice?: number | null;

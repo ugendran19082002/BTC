@@ -9,7 +9,7 @@ import {
   DEFAULT_LIMITS, dailyLossLimitFor, maxShortContractsFor, type RiskLimits,
 } from './precheck.js';
 import { fundsRequiredPerContract } from './margin.js';
-import { DEFAULT_LEVERAGE, orderPlan, protectionFor, type ExitAsk, type PlaceInput } from './order-plan.js';
+import { DEFAULT_LEVERAGE, exitPriceProblem, orderPlan, protectionFor, type ExitAsk, type PlaceInput } from './order-plan.js';
 
 export { stopFor, stopPriceFor, targetFor, targetPriceFor } from './order-plan.js';
 import { isDone } from './machine.js';
@@ -648,6 +648,9 @@ export class TradingService {
     if (!rec) return null;
     const entry = rec.state.entryAvgPrice;
     if (entry === null) return rec.state;
+    // Asked for as prices, the levels must sit the right side of the entry.
+    const wrong = exitPriceProblem(entry, ask);
+    if (wrong) throw new ExitAskError(wrong);
     return this.engine.updateProtection(tradeId, protectionFor(entry, ask));
   }
 
@@ -932,6 +935,9 @@ export class TradingService {
   }
 }
 
+
+/** An exit asked for in a way that cannot stand -- a person's mistake, answered 400, not logged as a fault. */
+export class ExitAskError extends Error {}
 
 /** 05:30 IST is when the daily contract opens, so that is where the day starts. */
 function startOfDayIst(now = Date.now()): number {

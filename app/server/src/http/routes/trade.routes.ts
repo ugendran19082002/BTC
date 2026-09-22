@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
-import { stopFor, targetFor, tradingService } from '../../trading/service.js';
+import { ExitAskError, stopFor, targetFor, tradingService } from '../../trading/service.js';
+import { exitPriceProblem } from '../../trading/order-plan.js';
 import { AUTO_TRADE_CEILINGS, AUTO_TRADE_DEFAULTS } from '../../trading/auto-trade.js';
 import { lotsToContracts } from '../../trading/money.js';
 import { DEFAULT_LIMITS, precheck } from '../../trading/precheck.js';
@@ -66,6 +67,12 @@ const pct = (v: unknown, max: number) => {
 export const MAX_EXIT_POINTS = 10_000;
 /** Points from the entry. Zero, blank or nonsense is "not by points". */
 const points = (v: unknown) => pct(v, MAX_EXIT_POINTS);
+
+/** The exits a body gave as prices, in the engine's words; absent when it gave none. */
+const atOf = (p: { takeProfitPrice: number | null; stopPrice: number | null }) => ({
+  ...(p.takeProfitPrice !== null && p.takeProfitPrice > 0 ? { takeProfitAt: p.takeProfitPrice } : {}),
+  ...(p.stopPrice !== null && p.stopPrice > 0 ? { stopAt: p.stopPrice } : {}),
+});
 
 const view = (
   r: TradeRecord,
@@ -226,8 +233,9 @@ function parse(body: PlaceBody) {
     strike: Number(body.strike ?? 0),
     expiryTs: Number(body.expiryTs ?? 0),
     limitPrice: body.limitPrice === null || body.limitPrice === undefined ? undefined : Number(body.limitPrice),
-    takeProfitPrice: body.takeProfitPrice ?? null,
-    stopPrice: body.stopPrice ?? null,
+    // Prices from a person: a number above zero, or none.
+    takeProfitPrice: body.takeProfitPrice == null ? null : (Number(body.takeProfitPrice) > 0 ? Number(body.takeProfitPrice) : null),
+    stopPrice: body.stopPrice == null ? null : (Number(body.stopPrice) > 0 ? Number(body.stopPrice) : null),
     // AlgoTest calls this "Convert to Market After", and it is the same idea:
     // rest at the offer, and if nobody takes it within the wait, cross.
     convertToMarketAfterSec: Math.max(0, Math.min(600, Number(body.convertToMarketAfterSec ?? 0) || 0)),
@@ -399,10 +407,14 @@ export function registerTradeRoutes(app: FastifyInstance) {
       },
       });
 
+      // An exit typed as a price is checked against the entry it is priced off,
+      // beside the gates, so the refusal shows above the button with the rest.
+      const wrongSide = price !== null ? exitPriceProblem(price, atOf(p)) : null;
+      const failures = [...(gates.ok ? [] : gates.failures), ...(wrongSide ? [{ code: 'exit_price' as const, message: wrongSide }] : [])];
       return {
         mode: svc.mode,
-        ok: gates.ok,
-        failures: gates.ok ? [] : gates.failures,
+        ok: failures.length === 0,
+        failures,
         quote, product,
         size,
         contractValue: product?.contractValue ?? 0.001,
@@ -451,6 +463,9 @@ export function registerTradeRoutes(app: FastifyInstance) {
   app.post('/api/trade/place', async (req, reply) => {
     try {
       const p = parse((req.body ?? {}) as PlaceBody);
+      // A price exit that would fill on placement is refused before anything is sent.
+      const wrongSide = p.limitPrice !== undefined ? exitPriceProblem(p.limitPrice, atOf(p)) : null;
+      if (wrongSide) return refuse(reply, 422, { mode: svc.mode, ok: false, failures: [{ code: 'exit_price', message: wrongSide }] });
       const res = await svc.place({
         // From the ticket, by a person: the one place that is true.
         origin: 'manual',
@@ -464,6 +479,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
         stopLossPct: p.stopLossPct,
         takeProfitPoints: p.takeProfitPoints,
         stopLossPoints: p.stopLossPoints,
+        ...atOf(p),
         chaseSeconds: p.convertToMarketAfterSec,
       });
       if (!res.ok) {
@@ -727,6 +743,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
   app.post('/api/trade/protection', async (req, reply) => {
     const b = (req.body ?? {}) as {
       tradeId?: string; takeProfitPct?: number; stopLossPct?: number; takeProfitPoints?: number; stopLossPoints?: number;
+      takeProfitPrice?: number; stopPrice?: number;
     };
     if (!b.tradeId) { reply.code(400); return { error: 'tradeId is required' }; }
     const state = await svc.updateExits(b.tradeId, {
@@ -734,7 +751,13 @@ export function registerTradeRoutes(app: FastifyInstance) {
       stopLossPct: b.stopLossPct === undefined ? undefined : pct(b.stopLossPct, 20),
       takeProfitPoints: b.takeProfitPoints === undefined ? undefined : points(b.takeProfitPoints),
       stopLossPoints: b.stopLossPoints === undefined ? undefined : points(b.stopLossPoints),
+      takeProfitAt: b.takeProfitPrice === undefined ? undefined : points(b.takeProfitPrice),
+      stopAt: b.stopPrice === undefined ? undefined : points(b.stopPrice),
+    }).catch((e: Error) => {
+      if (e instanceof ExitAskError) return e;
+      throw e;
     });
+    if (state instanceof ExitAskError) return refuse(reply, 400, { error: state.message });
     if (!state) { reply.code(404); return { error: 'no such trade' }; }
     return { ok: true, trade: state };
   });

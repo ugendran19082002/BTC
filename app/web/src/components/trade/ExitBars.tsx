@@ -2,8 +2,9 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { NumberField } from '@/components/ui/number-field';
 import { price as fmtPrice, inr, usd, usdToInr } from '@/lib/format';
 import { exitWords, type ExitLeg } from '@/lib/strategy-exits';
-import { inputProblem, levelOf, valueOf, type ExitInput } from '@/lib/exit-input';
-import type { ExitMode } from '@/types/strategy';
+import {
+  distanceOf, inputProblem, levelOf, switchMode, valueOf, type ExitInput, type TicketExitMode,
+} from '@/lib/exit-input';
 import { cn } from '@/lib/utils';
 
 /**
@@ -14,8 +15,11 @@ import { cn } from '@/lib/utils';
  * ended at 300% because a bar has to end somewhere. Now each is a box, read as
  * a percentage or as fixed points from the entry:
  *
- *   target  keep 80% of the premium        | or 10 points under the entry
- *   stop    buy back 150% above the entry  | or 10 points over it
+ *   target  keep 80% of the premium        | 12 pts under the entry | at 4
+ *   stop    buy back 150% above the entry  | 54 pts over it         | at 70
+ *
+ * The third, Price, is the level itself, read back as the distance it is:
+ * "entry 16 + 54 pts (+338%)".
  *
  * The target stops at 99% -- 100% is a buy at zero, which no limit rests at.
  * The stop has no ceiling here beyond the 2000% typo guard: a short option can
@@ -66,19 +70,21 @@ export function ExitBars({
       <Checkbox
         checked={target.on}
         onChange={(e) => onTarget({ on: e.target.checked })}
-        label={<Head title="Take profit" tone="up" x={target} sign="−" />}
+        label={<Head title="Take profit" tone="up" x={target} sign="−" entry={entry} level={targetPrice} />}
       />
       {target.on && (
         <Row
           leg="target"
           x={target}
+          entry={entry}
           onChange={onTarget}
           detail={
             valueOf(target) === 0 ? (
-              <>Type how much of the premium to keep.</>
+              <>{target.mode === 'price' ? 'Type the price to buy back at.' : 'Type how much of the premium to keep.'}</>
             ) : (
               <>
                 Buys back at <b className="tabular-nums text-foreground">{fmtPrice(targetPrice)}</b>
+                <Distance level={targetPrice} entry={entry} show={target.mode === 'price'} />
                 {keep !== null && (
                   <> · you keep <b className="tabular-nums text-[var(--up)]">{inr(usdToInr(keep))}</b>
                     <span className="text-[var(--dim)]"> {usd(keep)}</span></>
@@ -95,17 +101,18 @@ export function ExitBars({
       <Checkbox
         checked={stop.on}
         onChange={(e) => onStop({ on: e.target.checked })}
-        label={<Head title="Stop loss" tone="down" x={stop} sign="+" />}
+        label={<Head title="Stop loss" tone="down" x={stop} sign="+" entry={entry} level={stopPrice} />}
       />
       {stop.on ? (
         <Row
           leg="stop"
           x={stop}
+          entry={entry}
           onChange={onStop}
           warn={stopPastCloseOut}
           detail={
             valueOf(stop) === 0 ? (
-              <>Type how far it may go against you.</>
+              <>{stop.mode === 'price' ? 'Type the price to stop at.' : 'Type how far it may go against you.'}</>
             ) : stopPastCloseOut ? (
               <>
                 <b className="text-[var(--down)]">
@@ -116,6 +123,7 @@ export function ExitBars({
             ) : (
               <>
                 Buys back at <b className="tabular-nums text-foreground">{fmtPrice(stopPrice)}</b>
+                <Distance level={stopPrice} entry={entry} show={stop.mode === 'price'} />
                 {lose !== null && (
                   <> · you lose <b className="tabular-nums text-[var(--down)]">{inr(usdToInr(lose))}</b>
                     <span className="text-[var(--dim)]"> {usd(lose)}</span></>
@@ -140,45 +148,70 @@ export function ExitBars({
   );
 }
 
-/** "Take profit −80%" / "Stop loss +10 pts" beside the box. */
-function Head({ title, tone, x, sign }: { title: string; tone: 'up' | 'down'; x: ExitInput; sign: string }) {
+/** "Take profit −80%" / "Stop loss +10 pts" / "Stop loss at 70" beside the box. */
+function Head({ title, tone, x, sign, entry, level }: {
+  title: string; tone: 'up' | 'down'; x: ExitInput; sign: string; entry: number | null; level: number | null;
+}) {
   const v = valueOf(x);
+  const d = x.mode === 'price' ? distanceOf(level, entry) : null;
   return (
     <span className="flex items-baseline gap-1.5">
       <span>{title}</span>
       {x.on && v > 0 && (
         <span className={cn('text-[12px] font-semibold tabular-nums', tone === 'up' ? 'text-[var(--up)]' : 'text-[var(--down)]')}>
-          {sign}{exitWords(x.mode, v)}
+          {x.mode === 'price' ? `at ${fmtPrice(level)}${d ? ` (${d.points > 0 ? '+' : ''}${d.points} pts)` : ''}` : `${sign}${exitWords(x.mode, v)}`}
         </span>
       )}
     </span>
   );
 }
 
+/**
+ * "entry 16 → 70 · +54 pts (+338%)": the typed price read back as the
+ * distance it is, so a level and a move are never confused.
+ */
+function Distance({ level, entry, show }: { level: number | null; entry: number | null; show: boolean }) {
+  const d = show ? distanceOf(level, entry) : null;
+  if (!d || entry === null) return null;
+  return (
+    <span className="text-[var(--dim)] tabular-nums">
+      {' '}· entry {fmtPrice(entry)} {d.points > 0 ? '+' : '−'} {Math.abs(d.points)} pts ({d.pct > 0 ? '+' : ''}{d.pct}%)
+    </span>
+  );
+}
+
+const UNIT: Record<TicketExitMode, { word: string; unit?: string }> = {
+  pct: { word: 'percent', unit: '%' },
+  points: { word: 'points', unit: 'pts' },
+  price: { word: 'price' },
+};
+
 function Row({
-  leg, x, onChange, detail, warn,
+  leg, x, entry, onChange, detail, warn,
 }: {
   leg: ExitLeg;
   x: ExitInput;
+  entry: number | null;
   onChange: (patch: Partial<ExitInput>) => void;
   detail: React.ReactNode;
   warn?: boolean;
 }) {
   const name = leg === 'target' ? 'target' : 'stop';
-  const pct = x.mode === 'pct';
-  const problem = inputProblem(leg, x);
+  const problem = inputProblem(leg, x, entry);
+  const shown = x.mode === 'pct' ? x.pct * 100 : x.mode === 'points' ? x.points : x.price;
   return (
     <div className="pl-[26px]">
       <div className="flex items-center gap-2">
         <NumberField
-          label={`${name} ${pct ? 'percent' : 'points'}`}
-          value={pct ? x.pct * 100 : x.points}
-          onChange={(n) => onChange(pct ? { pct: n / 100 } : { points: n })}
-          unit={pct ? '%' : 'pts'}
+          label={`${name} ${UNIT[x.mode].word}`}
+          value={shown}
+          onChange={(n) => onChange(x.mode === 'pct' ? { pct: n / 100 } : x.mode === 'points' ? { points: n } : { price: n })}
+          unit={UNIT[x.mode].unit}
+          unitBefore={x.mode === 'price' ? '@' : undefined}
           invalid={Boolean(problem)}
           className="w-28 flex-none"
         />
-        <ModeSwitch name={name} mode={x.mode} onChange={(mode) => onChange({ mode })} />
+        <ModeSwitch name={name} mode={x.mode} onChange={(mode) => onChange(switchMode(leg, x, mode, entry))} />
       </div>
       {problem ? (
         <p role="alert" className="m-0 mt-1 min-h-[2.2em] text-[11.5px] leading-snug text-[var(--down)]">{problem}</p>
@@ -191,11 +224,11 @@ function Row({
   );
 }
 
-/** Percent or fixed points; each keeps its own number, so switching back finds it. */
-function ModeSwitch({ name, mode, onChange }: { name: string; mode: ExitMode; onChange: (m: ExitMode) => void }) {
+/** Percent, fixed points, or the price itself; each keeps its own number, so switching back finds it. */
+function ModeSwitch({ name, mode, onChange }: { name: string; mode: TicketExitMode; onChange: (m: TicketExitMode) => void }) {
   return (
     <div role="radiogroup" aria-label={`${name} by`} className="flex gap-0.5 rounded-md bg-muted p-0.5">
-      {(['pct', 'points'] as const).map((m) => (
+      {(['pct', 'points', 'price'] as const).map((m) => (
         <button
           key={m}
           type="button"
@@ -207,7 +240,7 @@ function ModeSwitch({ name, mode, onChange }: { name: string; mode: ExitMode; on
             mode === m ? 'bg-background text-foreground shadow-sm' : 'bg-transparent text-muted-foreground',
           )}
         >
-          {m === 'pct' ? '%' : 'Fixed'}
+          {m === 'pct' ? '%' : m === 'points' ? 'Fixed' : 'Price'}
         </button>
       ))}
     </div>
