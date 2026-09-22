@@ -18,7 +18,6 @@ import { DEFAULT_WALL_WITHIN_EM } from '../domain/structure.js';
  * Rs -1,241, atMost Rs +9,881 at Rs -721. Neither is the right answer in
  * general, which is why it is a setting.
  */
-import type { Tier } from '../domain/ev.js';
 import type { StrategyConfig } from './types.js';
 import { lotsPerLeg } from './schedule.js';
 import { strikeLabel, type Strategy } from './types.js';
@@ -38,10 +37,6 @@ export type Candidate = {
   oi?: number | null;
   /** How far the strike sits from spot, in expected moves. Read only by the open-interest rule. */
   emBuffer?: number | null;
-  /** `domain/ev.ts`'s 0-100 sell score. Read only by the sell-score bar. */
-  sellScore?: number | null;
-  /** What the score is called once hard rules have had their say. */
-  tier?: Tier | null;
 };
 
 export type Chosen = {
@@ -200,48 +195,10 @@ export function selectLegs(
       );
       continue;
     }
-    if (cfg.probGate !== null) {
-      if (chosen.pOtm === null) {
-        // No probability means the gate cannot be applied, and a gate that
-        // silently passes is not a gate.
-        refusals.push(`${leg}: ${chosen.strike} has no probability to check against the gate`);
-        continue;
-      }
-      if (chosen.pOtm < cfg.probGate) {
-        refusals.push(
-          `${leg}: ${chosen.strike} is ${(chosen.pOtm * 100).toFixed(1)}% to expire worthless, below the ${(cfg.probGate * 100).toFixed(1)}% bar`,
-        );
-        continue;
-      }
-    }
-    /*
-     * The sell-score bar, after the probability gate and for the same reasons.
-     *
-     * Refused rather than held: the strike is what it is, and asking again in
-     * twenty seconds gets the same answer. A strike with no score is refused
-     * too -- an unscored strike is an unpriced one, and a bar that passes
-     * whatever it cannot read is not a bar.
-     */
-    if (cfg.minSellScore !== null && cfg.minSellScore !== undefined) {
-      const score = chosen.sellScore;
-      if (score === null || score === undefined) {
-        refusals.push(`${leg}: ${chosen.strike} has no sell score to check against the bar`);
-        continue;
-      }
-      if (score < cfg.minSellScore) {
-        refusals.push(
-          `${leg}: ${chosen.strike} scores ${Math.round(score)}/100`
-          + `${chosen.tier ? ` (${chosen.tier})` : ''}, below the ${cfg.minSellScore} bar`,
-        );
-        continue;
-      }
-    }
     picked.set(leg, chosen);
   }
 
-  // Doubling is decided by how many legs survived, so it happens after the
-  // gate rather than beside it.
-  const lots = lotsPerLeg(s, [...picked.keys()]);
+  const lots = lotsPerLeg(s);
   return {
     legs: [...picked.entries()].map(([leg, c]) => ({
       cp: c.cp,
@@ -261,43 +218,6 @@ function viaFallback(cfg: StrategyConfig, c: Candidate): boolean {
   return cfg.strikeRule === 'premium'
     && cfg.premium.fallbackUsd !== null && cfg.premium.fallbackUsd !== undefined
     && !meetsPremium(c.sellPrice!, cfg.premium.mode, cfg.premium.usd);
-}
-
-/**
- * What the desk said about each selected leg, before anything was sent.
- *
- * `refusedBy` is the trading gate's own words -- the premium floor, the spread,
- * the margin -- or null when it would take the order.
- */
-export type Verdict = { leg: Chosen; refusedBy: string | null };
-
-/**
- * The legs to actually send, once the desk has had its say on all of them.
- *
- * This exists because doubling and the desk's own gate used to be blind to
- * each other. The gate refuses a leg when the order is sent, one leg at a
- * time, and by then the other leg is already on the book at single size --
- * so a strategy set to double on a one-sided day sold one lot on the only
- * side that went. On 16 September the open-interest rule picked the 80,000
- * call, the desk refused it at $1 against its $5 floor, and the put went on
- * alone at ten lots instead of twenty.
- *
- * So the legs are asked about first and sized afterwards. A refusal here is
- * exactly a refusal in `selectLegs`: one side is not being sold today, and the
- * setting says what that means for the other one.
- */
-export function afterDeskCheck(s: Strategy, asked: readonly Verdict[]): Selection {
-  const survivors = asked.filter((a) => a.refusedBy === null).map((a) => a.leg);
-  const refusals = asked
-    .filter((a) => a.refusedBy !== null)
-    .map((a) => `${a.leg.cp === 'C' ? 'CE' : 'PE'} ${a.leg.strike}: ${a.refusedBy}`);
-
-  const sides = survivors.map((l) => (l.cp === 'C' ? 'CE' : 'PE') as 'CE' | 'PE');
-  const lots = lotsPerLeg(s, sides);
-  return {
-    legs: survivors.map((l, i) => ({ ...l, lots: lots[sides[i]!] })),
-    refusals,
-  };
 }
 
 /** A one-line account of what a run did, for the journal and the screen. */

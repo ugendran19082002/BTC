@@ -1,4 +1,3 @@
-import type { RebalanceRule } from './rebalance.js';
 /**
  * A saved strategy: everything the desk needs to place a day's trade without
  * being asked twice.
@@ -190,12 +189,6 @@ export type StrategyConfig = {
   lots: number;
   legs: LegConfig;
   /**
-   * Refuse a leg the model puts below this to expire worthless. `null` is off.
-   *
-   * 0.95 is the measured line: legs scoring 95%+ settled at zero 98.85% of the
-   * time across the record, and the gate holds in both halves of it.
-   */
-  /**
    * How late an entry may still be taken, in minutes after its time.
    *
    * A desk that was down at 05:30 and comes up at 05:34 should still trade; one
@@ -206,117 +199,8 @@ export type StrategyConfig = {
    * Absent on strategies written before this existed, which read as 60.
    */
   graceMin: number;
-  probGate: number | null;
-  /**
-   * When one leg is refused, sell two lots of the one that survived.
-   *
-   * Worth +36% on the record for no more drawdown, because a leg that passes
-   * alone is the safer trade -- profit factor 11.73 against 2.46 for a leg sold
-   * beside a partner. Measured on the probability gate's refusals, and applied
-   * to every refusal: no strike the rule can take, a score under the bar, or
-   * the desk turning the order down for premium, spread or margin. A one-sided
-   * day is a one-sided day whichever rule made it one. Needs `legs: 'both'`.
-   */
-  doubleWhenOneSided: boolean;
-  /**
-   * Sell a leg only if its strike scores at least this out of 100. `null` is
-   * off, and every strategy saved before this existed reads as off.
-   *
-   * `domain/ev.ts`'s sell score — distance, probability, open interest, volume,
-   * implied volatility, premium and expected value under `SCORE_WEIGHTS` — the
-   * number the board shows against each strike. A leg the rule picks but the
-   * score will not have is refused the way the probability gate refuses one,
-   * and for the same reason: the strike is what it is, and looking again in
-   * twenty seconds will not change it. That makes this a gate, not a hold.
-   *
-   * **It ranks a board against itself.** A day where every strike scores 40 is
-   * not a day to stand aside from; it is a quiet board where 40 is the best
-   * there is. A bar set high enough will refuse those days, which may be what
-   * is wanted — but it is a different statement from "this strike is bad".
-   *
-   * Untested as a trading rule, like [maxShockScore] and unlike [probGate].
-   */
-  minSellScore: number | null;
-  /**
-   * Enter only while the sudden-move risk score is at most this, 1-100.
-   * `null` is off, and every strategy saved before this existed reads as off.
-   *
-   * The score is `domain/shock.ts`'s five readings of the present tape over the
-   * five-minute window — the same number, over the same window, that the live
-   * screen shows by default, so what a person sees is what the gate uses.
-   *
-   * **It waits; it does not spend the day.** Above the limit the strategy is
-   * held rather than refused, and the next tick looks again, until its entry
-   * window closes and the missed-entry alert says so. "Enter when it is calm"
-   * is what was asked for, and a gate that burned the day on the first noisy
-   * five minutes would be a different rule entirely.
-   *
-   * **Untested as a trading rule**, and differently untested from the
-   * probability gate beside it: that one carries a 733-day record, this one
-   * carries none. None of the five weights behind the score has been through
-   * the cross-period screen the premium floor and the RSI gate went through.
-   * It is here because waiting out a violent five minutes before selling
-   * premium is a thing a person will reasonably want, and the form says what
-   * it rests on.
-   */
-  maxShockScore: number | null;
-  /**
-   * When one leg's target buys contracts back, sell as many more of the other
-   * leg -- while that leg is still paying enough, and has not run away. `null`
-   * is off, and every strategy saved before this existed reads as off.
-   *
-   * Sold 425 CE and 425 PE at 15; the CE target buys 425 back at 1 while the
-   * PE is at 7: sell 425 more PE at 7, with the PE's own target and stop. The
-   * premium the CE has finished earning goes back to work on the PE.
-   *
-   * Only on a day with both legs. A one-sided day -- the doubled CE 850 -- has
-   * no other leg to add to, so nothing happens.
-   */
-  addToOpposite: AddToOpposite | null;
-  /**
-   * Dynamic one-sided rebalance: buy back part of the side that fell, sell the
-   * same number again on the side that rose, stage by stage. Null is off, which
-   * is what every strategy saved before this had.
-   */
-  rebalance: RebalanceRule | null;
   /** Days it may run. 0 = Sunday … 6 = Saturday. Empty means never. */
   weekdays: number[];
-};
-
-export type AddToOpposite = {
-  /**
-   * The other leg's bid must be at least this, in dollars. The bid, because it
-   * is the least a sell there can get: a mark of 7 over a bid of 2 is not 7.
-   */
-  minPriceUsd: number;
-  /**
-   * ...and its mark below this multiple of what it was sold for. 2 means not
-   * once it has doubled: a leg that has gone from 15 to 30 is a leg losing
-   * money, and adding to it is adding to the loss.
-   */
-  maxMultiple: number;
-  /**
-   * The latest IST time an add may be made, "HH:MM". Must fall between the
-   * entry and exit times.
-   *
-   * An add late in the day pays to get in and again to be closed minutes later
-   * at the exit, for premium that has almost nothing left to decay. The default
-   * is half an hour before the exit.
-   */
-  addUntil: string;
-  /**
-   * If the add has not filled, sell at the bid after this many seconds.
-   *
-   * The same control the order ticket and the add-lots sheet carry, and for the
-   * same reason: an add rests at the offer and nobody is watching it at 11 in
-   * the morning. Zero rests at the offer and never crosses -- the add window
-   * ends it either way, and the minimum price is still a floor, so "sell at the
-   * bid" can never mean selling under what the rule asked for.
-   *
-   * Absent on a strategy saved before this existed: the entry's own
-   * `crossAfterSec`, which is what those strategies have been doing.
-   */
-  crossAfterSec?: number | null;
 };
 
 /**
@@ -465,20 +349,6 @@ export function exitRuleProblems(
 
 /** A 24-hour "HH:MM". Defined before anything below uses it at load. */
 const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
-const DEFAULT_EXIT = '17:29';
-
-/** How long before the exit the default latest-add time sits. */
-export const DEFAULT_ADD_CUTOFF_MIN = 30;
-
-/** Half an hour before the exit -- or a minute before, on a strategy shorter than that. */
-export function defaultAddUntil(exitTime: string): string {
-  const exit = HHMM.test(exitTime) ? minutesOf(exitTime) : minutesOf(DEFAULT_EXIT);
-  return hhmmOf(exit - DEFAULT_ADD_CUTOFF_MIN > 0 ? exit - DEFAULT_ADD_CUTOFF_MIN : Math.max(0, exit - 1));
-}
-
-export const DEFAULT_ADD_TO_OPPOSITE: AddToOpposite = { minPriceUsd: 3, maxMultiple: 2, addUntil: defaultAddUntil(DEFAULT_EXIT) };
-
-export type { RebalanceRule } from './rebalance.js';
 
 export type Strategy = {
   id: string;
@@ -522,13 +392,7 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   stopSteps: [],
   lots: 10,
   legs: 'both',
-  probGate: 0.95,
   graceMin: 60,
-  doubleWhenOneSided: true,
-  minSellScore: null,
-  maxShockScore: null,
-  addToOpposite: null,
-  rebalance: null,
   weekdays: [0, 1, 2, 3, 4, 5, 6],
 };
 
@@ -623,18 +487,6 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
     bad.push('The spread limit for selling at the bid must be between 1% and 100%.');
   }
   if (c.legs !== 'CE' && c.legs !== 'PE' && c.legs !== 'both') bad.push('Legs must be CE, PE or both.');
-  if (c.probGate !== null && c.probGate !== undefined
-      && (!(c.probGate > 0) || c.probGate >= 1)) {
-    bad.push('The probability gate must be between 0 and 1, or off.');
-  }
-  if (c.minSellScore !== null && c.minSellScore !== undefined
-      && (!Number.isInteger(c.minSellScore) || c.minSellScore < 1 || c.minSellScore > 100)) {
-    bad.push('The sell-score bar must be a whole number from 1 to 100, or off.');
-  }
-  if (c.maxShockScore !== null && c.maxShockScore !== undefined
-      && (!Number.isInteger(c.maxShockScore) || c.maxShockScore < 1 || c.maxShockScore > 100)) {
-    bad.push('The sudden-move risk limit must be a whole number from 1 to 100, or off.');
-  }
   if (c.graceMin !== undefined
     && (!Number.isInteger(c.graceMin) || c.graceMin < 1 || c.graceMin > 240)) {
     bad.push('The late-entry window must be a whole number of minutes from 1 to 240.');
@@ -643,74 +495,6 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
     bad.push('Days must be whole numbers from 0 (Sunday) to 6 (Saturday).');
   } else if (c.weekdays.length === 0) {
     bad.push('Pick at least one day, or the strategy can never run.');
-  }
-  // Not an error, but the combination does nothing and saying so beats silence.
-  if (c.doubleWhenOneSided && c.legs !== 'both') {
-    bad.push('Doubling the surviving leg needs both legs selected.');
-  }
-  const add = c.addToOpposite;
-  if (add !== null && add !== undefined) {
-    if (!(typeof add.minPriceUsd === 'number') || !(add.minPriceUsd > 0) || add.minPriceUsd > 10_000) {
-      bad.push('Adding to the other leg needs a minimum price above $0.');
-    }
-    if (!(typeof add.maxMultiple === 'number') || !(add.maxMultiple > 0) || add.maxMultiple > 20) {
-      bad.push('The "not once it has risen to" limit must be between 0 and 20 times the sale price.');
-    }
-    if (add.crossAfterSec !== null && add.crossAfterSec !== undefined
-      && (!Number.isInteger(add.crossAfterSec) || add.crossAfterSec < 0 || add.crossAfterSec > 600)) {
-      bad.push('Seconds before the add sells at the bid must be a whole number from 0 to 600.');
-    }
-    if (!isHhmm(add.addUntil)) {
-      bad.push('The latest time to add must be a time of day, like 4:59 PM.');
-    } else if (entryOk && exitOk) {
-      // Also measured forward from the entry, so it lands inside an overnight
-      // window the same way it lands inside a daytime one.
-      const entry = minutesOf(c.entryTime!);
-      const toUntil = minutesForward(entry, minutesOf(add.addUntil));
-      if (toUntil === 0 || toUntil >= minutesForward(entry, minutesOf(c.exitTime!))) {
-        bad.push(`The latest time to add (${time12(add.addUntil)}) must be after entry (${time12(c.entryTime!)}) `
-          + `and before exit (${time12(c.exitTime!)}).`);
-      }
-    }
-    if (c.legs !== 'both') bad.push('Adding to the other leg needs both legs selected.');
-    if (!targetAtEntry(c)) bad.push('Adding to the other leg needs a target -- it runs when a target fills.');
-  }
-  const reb = c.rebalance;
-  if (reb && reb.enabled) {
-    if (c.legs !== 'both') bad.push('Rebalancing needs both legs selected — there is nothing to rebalance between.');
-    if (!Number.isInteger(reb.steps) || reb.steps < 1) bad.push('Rebalancing needs at least one stage.');
-    if (!(reb.lotsPerStep > 0)) bad.push('Rebalancing needs a lot size above zero.');
-    if (!(reb.upStartPct > 0)) bad.push('The first up move must be above 0%.');
-    if (!(reb.downStartPct > 0) || reb.downStartPct >= 100) {
-      bad.push('The first down move must be above 0% and under 100% — a premium cannot fall by more than all of itself.');
-    }
-    if (!(reb.incrementPct >= 0)) bad.push('The step between stages cannot be negative.');
-    // The last stage's fall must still be a price: 20% + 10 × 9 is 110% of the premium.
-    const lastDown = reb.downStartPct + reb.incrementPct * (reb.steps - 1);
-    if (lastDown >= 100) {
-      bad.push(`Stage ${reb.steps} would need the price to fall ${lastDown}%, which cannot happen. `
-        + 'Use fewer stages, a smaller step, or a smaller first down move.');
-    }
-    if (reb.crossAfterSec !== null && reb.crossAfterSec !== undefined
-      && (!Number.isInteger(reb.crossAfterSec) || reb.crossAfterSec < 0 || reb.crossAfterSec > 600)) {
-      bad.push('Seconds before the rebalance sells at the bid must be a whole number from 0 to 600.');
-    }
-    if (!Number.isInteger(reb.confirmTicks) || reb.confirmTicks < 1) {
-      bad.push('Rebalancing needs at least one confirming reading.');
-    }
-    if (!isHhmm(reb.endTime)) {
-      bad.push('The latest time to rebalance must be a time of day, like 1:30 PM.');
-    } else if (entryOk && exitOk) {
-      const entry = minutesOf(c.entryTime!);
-      const toEnd = minutesForward(entry, minutesOf(reb.endTime));
-      if (toEnd === 0 || toEnd >= minutesForward(entry, minutesOf(c.exitTime!))) {
-        bad.push(`The latest time to rebalance (${time12(reb.endTime)}) must be after entry (${time12(c.entryTime!)}) `
-          + `and before exit (${time12(c.exitTime!)}).`);
-      }
-    }
-    if (reb.maxLotsPerSide !== null && (c.lots ?? 0) > reb.maxLotsPerSide) {
-      bad.push(`The cap per side (${reb.maxLotsPerSide}) is under the ${c.lots} lots the strategy opens with.`);
-    }
   }
   return bad;
 }
@@ -730,11 +514,6 @@ export function premiumFallbackProblem(p: { mode: PremiumMode; usd: number; fall
     return `The fallback must be below $${p.usd}: it is tried when nothing pays $${p.usd}.`;
   }
   return null;
-}
-
-/** Whether the strategy enters with a target at all -- in either mode. */
-function targetAtEntry(c: Partial<StrategyConfig>): boolean {
-  return c.targetMode === 'points' ? (c.takeProfitPoints ?? 0) > 0 : (c.takeProfitPct ?? 0) > 0;
 }
 
 /** "05:30" -> 330. Times are IST throughout; the desk never uses another one. */
