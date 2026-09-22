@@ -1,5 +1,6 @@
 import { MAX_STRIKE_STEP, type StrategyConfig } from '@/types/strategy';
 import { isHhmm, minutesForward, minutesOf, minutesToSettlement, time12 } from '@/lib/time';
+import { exitRuleProblems, exitRules, premiumFallbackProblem } from '@/lib/strategy-exits';
 
 /**
  * What is wrong with a strategy before it is saved, and where on the form.
@@ -14,7 +15,7 @@ export type FormTab = 'when' | 'sell' | 'trade' | 'extras';
 
 export type FormField =
   | 'name' | 'entryTime' | 'exitTime' | 'weekdays' | 'graceMin'
-  | 'legs' | 'strikeRule' | 'strikeStep' | 'premium' | 'lots'
+  | 'legs' | 'strikeRule' | 'strikeStep' | 'premium' | 'premiumFallback' | 'lots'
   | 'entryLimit' | 'crossAfterSec' | 'maxCrossSpreadPct' | 'takeProfitPct' | 'stopLossPct'
   | 'probGate' | 'doubleWhenOneSided' | 'minSellScore' | 'maxShockScore'
   | 'addMinPrice' | 'addMultiple' | 'addUntil' | 'addCrossAfterSec' | 'add'
@@ -26,7 +27,7 @@ export type Problem = { field: FormField; tab: FormTab; message: string };
 
 const TAB: Record<FormField, FormTab> = {
   name: 'when', entryTime: 'when', exitTime: 'when', weekdays: 'when', graceMin: 'when',
-  legs: 'sell', strikeRule: 'sell', strikeStep: 'sell', premium: 'sell', lots: 'sell',
+  legs: 'sell', strikeRule: 'sell', strikeStep: 'sell', premium: 'sell', premiumFallback: 'sell', lots: 'sell',
   entryLimit: 'trade', crossAfterSec: 'trade', maxCrossSpreadPct: 'trade', takeProfitPct: 'trade', stopLossPct: 'trade',
   probGate: 'extras', doubleWhenOneSided: 'extras', minSellScore: 'extras', maxShockScore: 'extras',
   addMinPrice: 'extras', addMultiple: 'extras', addUntil: 'extras', addCrossAfterSec: 'extras', add: 'extras',
@@ -62,7 +63,12 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
   if (c.strikeRule === 'strict' && (!Number.isInteger(c.strikeStep) || Math.abs(c.strikeStep) > MAX_STRIKE_STEP)) {
     say('strikeStep', `Pick a strike between ITM ${MAX_STRIKE_STEP} and OTM ${MAX_STRIKE_STEP}, or at the money.`);
   }
-  if (!(c.premium.usd > 0) || c.premium.usd > 10_000) say('premium', 'Premium must be a positive number of dollars.');
+  if (!(c.premium.usd > 0) || c.premium.usd > 10_000) {
+    say('premium', 'Premium must be a positive number of dollars.');
+  } else if (c.strikeRule === 'premium') {
+    const f = premiumFallbackProblem(c.premium);
+    if (f) say('premiumFallback', f);
+  }
   if (!Number.isInteger(c.lots) || c.lots < 1) say('lots', 'Lots must be a whole number, at least 1.');
 
   if (c.entryPrice === 'set' && !((c.entryLimit ?? 0) > 0)) say('entryLimit', 'A set entry needs a price above zero.');
@@ -72,8 +78,10 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
   if (c.maxCrossSpreadPct !== undefined && (!(c.maxCrossSpreadPct > 0) || c.maxCrossSpreadPct > 1)) {
     say('maxCrossSpreadPct', 'The spread limit for selling at the bid must be between 1% and 100%.');
   }
-  if (!(c.takeProfitPct >= 0) || c.takeProfitPct > 0.99) say('takeProfitPct', 'Take profit must be between 0 and 99% of the credit.');
-  if (!(c.stopLossPct >= 0) || c.stopLossPct > 20) say('stopLossPct', 'Stop loss must be between 0 and 2000% of the credit.');
+  // Each exit, start and time steps, in whichever mode it is read -- said under its own box.
+  const rules = exitRules(c);
+  for (const m of exitRuleProblems('target', rules.target, c.entryTime, c.exitTime)) say('takeProfitPct', m);
+  for (const m of exitRuleProblems('stop', rules.stop, c.entryTime, c.exitTime)) say('stopLossPct', m);
 
   if (!Number.isInteger(c.graceMin) || c.graceMin < 1 || c.graceMin > 240) {
     say('graceMin', 'The late-entry window must be a whole number of minutes from 1 to 240.');
@@ -110,7 +118,7 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
       }
     }
     if (c.legs !== 'both') say('add', 'Adding to the other leg needs both legs selected.');
-    if (!(c.takeProfitPct > 0)) say('add', 'Adding to the other leg needs a target -- it runs when a target fills.');
+    if (!(rules.target.value > 0)) say('add', 'Adding to the other leg needs a target -- it runs when a target fills.');
   }
 
   /*

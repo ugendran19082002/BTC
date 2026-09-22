@@ -1,5 +1,6 @@
 import { strikeLabel, type AddToOpposite, type StrategyConfig } from '@/types/strategy';
 import { defaultAddUntil, time12, wrapsMidnight } from '@/lib/time';
+import { exitRules, exitWords, type ExitRule } from '@/lib/strategy-exits';
 
 /**
  * What a strategy will actually do, in words and in money.
@@ -29,9 +30,15 @@ export function describeDays(weekdays: number[]): string {
  * are spelled out: which strike it takes, and which way that moves the risk.
  */
 export function describePremium(c: StrategyConfig): string {
-  return c.premium.mode === 'atLeast'
+  const f = c.premium.fallbackUsd;
+  const fallback = f === null || f === undefined
+    ? ''
+    : c.premium.mode === 'atLeast'
+      ? ` (none? then at least $${f})`
+      : ` (none? then the last strike at or below $${f})`;
+  return (c.premium.mode === 'atLeast'
     ? `at least $${c.premium.usd} — takes the furthest strike still paying it`
-    : `at most $${c.premium.usd} — takes the richest strike under it`;
+    : `at most $${c.premium.usd} — takes the richest strike under it`) + fallback;
 }
 
 /**
@@ -57,12 +64,21 @@ export function describeEntry(c: StrategyConfig): string {
 }
 
 export function describeExit(c: StrategyConfig): string {
-  const tp = c.takeProfitPct > 0
-    ? `buys back at ${Math.round(c.takeProfitPct * 100)}% decay`
+  const { target, stop } = exitRules(c);
+  const tp = target.value > 0
+    ? target.mode === 'points'
+      ? `buys back ${target.value} pts under the entry`
+      : `buys back at ${Math.round(target.value * 100)}% decay`
     : 'holds to settlement';
-  return c.stopLossPct > 0
-    ? `${tp}, stop at +${Math.round(c.stopLossPct * 100)}%`
-    : `${tp}, no stop`;
+  const sl = stop.value > 0
+    ? stop.mode === 'points' ? `stop at entry + ${stop.value} pts` : `stop at +${Math.round(stop.value * 100)}%`
+    : 'no stop';
+  return `${tp}${ladderWords(target)}, ${sl}${ladderWords(stop)}`;
+}
+
+/** " → 85% at 7:30 AM → 90% at 9:30 AM", or nothing when the exit holds all day. */
+function ladderWords(r: ExitRule): string {
+  return r.steps.map((st) => ` → ${exitWords(r.mode, st.value)} at ${time12(st.at)}`).join('');
 }
 
 /** One sentence covering the whole rule, for the list and the form header. */
@@ -184,7 +200,9 @@ export function sizingOf(
   if (c.legs !== 'both' && c.doubleWhenOneSided) {
     warnings.push('Doubling needs both legs; a single-leg strategy never has a survivor.');
   }
-  if (c.takeProfitPct === 0 && c.stopLossPct === 0) {
+  const ex = exitRules(c);
+  const anyExit = [ex.target, ex.stop].some((r) => r.value > 0 || r.steps.some((st) => st.value > 0));
+  if (!anyExit) {
     warnings.push('No target and no stop — the position runs to settlement whatever happens.');
   }
   if (c.weekdays.length === 0) warnings.push('No days picked, so this can never run.');

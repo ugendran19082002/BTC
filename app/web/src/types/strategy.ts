@@ -29,6 +29,12 @@ export function strikeLabel(step: number): string {
   return step > 0 ? `OTM ${step}` : `ITM ${-step}`;
 }
 
+/** An exit read as a share (0.8 = 80%) or as points in the option's own price. */
+export type ExitMode = 'pct' | 'points';
+
+/** From `at` (IST "HH:MM"), the exit becomes `value`, in its rule's units. Zero turns it off. */
+export type ExitStep = { at: string; value: number };
+
 export type StrategyConfig = {
   /** IST, 24-hour "HH:MM". Shown as 12-hour with AM or PM. */
   entryTime: string;
@@ -41,7 +47,12 @@ export type StrategyConfig = {
    * 0 = ATM, +n = OTM n, -n = ITM n, over the strikes actually listed.
    */
   strikeStep: number;
-  premium: { mode: PremiumMode; usd: number };
+  /**
+   * `fallbackUsd`: tried only when `usd` finds no strike -- "at most $20, else
+   * the last strike at or under $50". Above `usd` for at-most, below it for
+   * at-least. Null or absent is no fallback.
+   */
+  premium: { mode: PremiumMode; usd: number; fallbackUsd?: number | null };
   entryPrice: EntryPrice;
   entryLimit: number | null;
   /** Seconds to wait at the offer before crossing. Zero rests until filled. */
@@ -49,7 +60,20 @@ export type StrategyConfig = {
   /** Sell at the bid only while the spread is at most this (0.15 = 15%). Older strategies may lack it. */
   maxCrossSpreadPct?: number;
   takeProfitPct: number;
+  /** Above 1 is allowed: a short option can multiply. 2000% is the typo guard. */
   stopLossPct: number;
+  /** How the target is read: a share of the credit, or points under the entry. Absent is 'pct'. */
+  targetMode?: ExitMode;
+  /** Target as points under the entry price. Absent is 0. */
+  takeProfitPoints?: number;
+  /** From each step's time, the target becomes its value, in `targetMode` units. */
+  targetSteps?: ExitStep[];
+  /** How the stop is read: a share of the entry, or points over it. Absent is 'pct'. */
+  stopMode?: ExitMode;
+  /** Stop as points over the entry price. Absent is 0. */
+  stopLossPoints?: number;
+  /** From each step's time, the stop becomes its value, in `stopMode` units. */
+  stopSteps?: ExitStep[];
   lots: number;
   legs: LegConfig;
   /** null means the gate is off. */
@@ -291,13 +315,19 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   exitTime: '17:29',
   strikeRule: 'premium',
   strikeStep: 0,
-  premium: { mode: 'atLeast', usd: 15 },
+  premium: { mode: 'atLeast', usd: 15, fallbackUsd: null },
   entryPrice: 'offer',
   entryLimit: null,
   crossAfterSec: 5,
   maxCrossSpreadPct: 0.15,
   takeProfitPct: 0.95,
   stopLossPct: 0,
+  targetMode: 'pct',
+  takeProfitPoints: 0,
+  targetSteps: [],
+  stopMode: 'pct',
+  stopLossPoints: 0,
+  stopSteps: [],
   lots: 10,
   legs: 'both',
   graceMin: 60,
