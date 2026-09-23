@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MarketState } from '@/components/desk/MarketState';
 import type { MarketStateResponse, StateHistoryRow } from '@/api/desk';
 
@@ -95,31 +94,31 @@ describe('the market-state card', () => {
     expect(checks.className).toContain('is-unknown');
   });
 
-  it('the tabs swap what is under the banner, and the plans stay put', async () => {
+  it('the tabs swap what is under the banner, and the plans stay put', () => {
     render(<MarketState data={base} tf="15m" />);
     expect(screen.getByText('Volume over 1.5x')).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('tab', { name: 'Patterns' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Patterns' }));
     expect(screen.getByText('Ascending Triangle')).toBeInTheDocument();
     expect(screen.queryByText('Volume over 1.5x')).toBeNull();
     expect(screen.getByText('> 86,800')).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('tab', { name: 'Indicators' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Indicators' }));
     expect(screen.getByText('RSI (14)')).toBeInTheDocument();
     expect(screen.getByText('1.8x')).toBeInTheDocument();
   });
 
-  it('the full targets show on the Levels tab and are folded away elsewhere', async () => {
+  it('the full targets show on the Levels tab and are folded away elsewhere', () => {
     const { container } = render(<MarketState data={base} tf="15m" />);
     expect(container.querySelector('.bt-market-state__plans')!.className).toContain('is-compact');
-    await userEvent.click(screen.getByRole('tab', { name: 'Levels' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Levels' }));
     expect(container.querySelector('.bt-market-state__plans')!.className).not.toContain('is-compact');
     expect(screen.getByText('87,200')).toBeInTheDocument();
   });
 
-  it('a pattern from earlier bars says how far back it was', async () => {
+  it('a pattern from earlier bars says how far back it was', () => {
     render(<MarketState data={base} tf="15m" />);
-    await userEvent.click(screen.getByRole('tab', { name: 'Patterns' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Patterns' }));
     expect(screen.getByText('2 bars ago')).toBeInTheDocument();
   });
 
@@ -138,10 +137,10 @@ describe('the market-state card', () => {
     expect(screen.getByText('—')).toBeInTheDocument();
   });
 
-  it('switches timeframe through the caller', async () => {
+  it('switches timeframe through the caller', () => {
     const seen: string[] = [];
     render(<MarketState data={base} tf="15m" tfs={['5m', '15m', '1h']} onTf={(t) => seen.push(t)} />);
-    await userEvent.click(screen.getByRole('button', { name: '1h' }));
+    fireEvent.click(screen.getByRole('button', { name: '1h' }));
     expect(seen).toEqual(['1h']);
     expect(screen.getByRole('button', { name: '15m' })).toHaveAttribute('aria-pressed', 'true');
   });

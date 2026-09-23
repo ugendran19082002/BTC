@@ -3,7 +3,7 @@ import {
   Activity, AlertTriangle, BarChart3, Bot, Briefcase, ListOrdered, RefreshCw, SlidersHorizontal,
 } from 'lucide-react';
 import { NotSignedIn } from '@/api/client';
-import { getCandles, getChain, getExpiries, getHealth, getSpot } from '@/api/desk';
+import { getCandles, getChain, getExpiries, getHealth, getMarketState, getSpot, getStateHistory } from '@/api/desk';
 import { getMe, type Stage } from '@/api/session';
 import { ProfileMenu } from '@/components/auth/ProfileMenu';
 import { TwoStepSetup } from '@/components/auth/TwoStepSetup';
@@ -29,8 +29,9 @@ import { LoginPage } from '@/components/desk/LoginPage';
 import { LivePrice } from '@/components/desk/LivePrice';
 import { TODAY_MOVE } from '@/types/desk';
 import { tabTitle } from '@/lib/tab-title';
-import { pnlTone, signedInr, usdToInr } from '@/lib/format';
+import { pnlTone, signedInr, strike as fmtStrike, usdToInr } from '@/lib/format';
 import { PriceChart, CHART_TFS, type ChartTf } from '@/components/desk/PriceChart';
+import { MarketState } from '@/components/desk/MarketState';
 import { Select, SelectItem } from '@/components/ui/select';
 import { ColumnPicker } from '@/components/chain/ColumnPicker';
 import { normalise, normaliseOrder, type ColumnKey, type ColumnState } from '@/components/chain/columns';
@@ -72,6 +73,9 @@ const DateTimePicker = lazy(() => import('@/components/research/DateTimePicker')
  */
 const Board = memo(ChainTable);
 const Chart = memo(PriceChart);
+
+/** The timeframes the market-state card offers, which the chart also draws. */
+const STATE_CARD_TFS = ['5m', '15m', '30m', '1h', '4h'] as const;
 /** One empty list, so "no bars yet" is the same prop every render. */
 const NO_BARS: never[] = [];
 
@@ -313,6 +317,45 @@ export default function App() {
     60_000,
     { enabled: signedIn === true && tab === 'desk', deps: [chartTf] },
   );
+  /*
+   * The market state, on the chart's own timeframe.
+   *
+   * Every 30 seconds: it is read off closed bars, so polling it faster only
+   * asks the same question again. The chart's minute timeframe has no state of
+   * its own -- a level made of twenty one-minute bars is noise -- so the card
+   * reads 5m under it and says which timeframe it is reading.
+   */
+  const stateTf = chartTf === '1m' ? '5m' : chartTf;
+  const { data: marketState } = usePoll(
+    () => getMarketState(stateTf),
+    30_000,
+    { enabled: signedIn === true && tab === 'desk', deps: [stateTf] },
+  );
+  const { data: stateHistory } = usePoll(
+    () => getStateHistory(stateTf, 10),
+    120_000,
+    { enabled: signedIn === true && tab === 'desk', deps: [stateTf] },
+  );
+
+  /*
+   * The two bands drawn behind the candles: the same levels the state is
+   * judged against, to the same tolerance it breaks them by, so the chart and
+   * the card can never disagree about where the level is.
+   */
+  const chartZones = useMemo(() => {
+    const level = marketState?.state.level;
+    const atr = marketState?.inputs.atr ?? null;
+    if (!level || !atr) return [];
+    const band = Math.max(atr * 0.1, 1);
+    const out: { from: number; to: number; label: string; tone: 'up' | 'down' }[] = [];
+    if (level.resistance !== null) {
+      out.push({ from: level.resistance - band, to: level.resistance + band, label: `Resistance ${fmtStrike(level.resistance)}`, tone: 'up' });
+    }
+    if (level.support !== null) {
+      out.push({ from: level.support - band, to: level.support + band, label: `Support ${fmtStrike(level.support)}`, tone: 'down' });
+    }
+    return out;
+  }, [marketState]);
 
   const openTicket = useCallback((i: ChainSellIntent) => {
     if (!snapRef.current) return;
@@ -544,6 +587,7 @@ export default function App() {
                       support={data.structure.peOiWallNear?.strike ?? null}
                       resistance={data.structure.ceOiWallNear?.strike ?? null}
                       spot={snap.spot}
+                      zones={chartZones}
                       tf={chartTf}
                       onTf={setChartTf}
                       loading={candlesBusy}
@@ -551,6 +595,26 @@ export default function App() {
                     />
                   </ErrorBoundary>
                 }
+              />
+            </ErrorBoundary>
+          )}
+
+          {/*
+            What the chart above is doing, read out (23 Sep 2026): the level
+            price is against, whether it has gone through, what has to be true
+            for that to count, and the trade either way. Directly under the
+            chart, because it is the chart's own reading -- on a phone the two
+            stack and it is the first thing under the candles.
+          */}
+          {live && (
+            <ErrorBoundary where="Market state">
+              <MarketState
+                data={marketState ?? null}
+                history={stateHistory?.rows}
+                hitRate={stateHistory?.hitRate}
+                tf={stateTf}
+                tfs={STATE_CARD_TFS}
+                onTf={(t) => setChartTf(t as ChartTf)}
               />
             </ErrorBoundary>
           )}

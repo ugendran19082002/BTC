@@ -171,6 +171,7 @@ export function PriceChart({
   spot,
   expectedMove = null,
   levels = [],
+  zones = [],
   tf,
   onTf,
   loading = false,
@@ -186,6 +187,17 @@ export function PriceChart({
   expectedMove?: number | null;
   /** Other levels worth a thin line: previous day's high and low, the session's, max pain. Drawn only when on the scale. */
   levels?: readonly { price: number; label: string; colour?: string }[];
+  /**
+   * The bands the market-state card is judging price against, shaded behind
+   * the candles: the resistance it is pushing at and the support under it.
+   *
+   * A band rather than a line on purpose. A level is never one price -- it is
+   * where a cluster of highs sit -- and a hairline invites an argument about
+   * whether a wick that went two dollars through it counts. The band is drawn
+   * to the same tolerance the engine breaks it by, so what you see is what it
+   * measured.
+   */
+  zones?: readonly { from: number; to: number; label: string; tone: 'up' | 'down' }[];
   tf: ChartTf;
   onTf: (tf: ChartTf) => void;
   loading?: boolean;
@@ -708,6 +720,31 @@ export function PriceChart({
               </text>
             </g>
           )}
+
+          {/*
+            The level bands, behind the candles and over the expected-move
+            shading: the two prices the state engine is actually judging
+            against, drawn where it judges them.
+          */}
+          {zones.map((z) => {
+            const top = Math.max(PAD.top, geom.y(Math.max(z.from, z.to)));
+            const bottom = Math.min(PAD.top + geom.priceH, geom.y(Math.min(z.from, z.to)));
+            if (!(bottom > top)) return null;
+            const colour = z.tone === 'up' ? 'var(--down)' : 'var(--up)';
+            return (
+              <g key={z.label} data-zone={z.label}>
+                <rect
+                  x={PAD.left} y={top} width={W - PAD.right - PAD.left} height={bottom - top}
+                  fill={colour} opacity="0.1"
+                />
+                <line x1={PAD.left} x2={W - PAD.right} y1={z.tone === 'up' ? top : bottom} y2={z.tone === 'up' ? top : bottom}
+                  stroke={colour} strokeWidth="1" strokeDasharray="4 3" opacity="0.8" />
+                <text x={PAD.left + 4} y={z.tone === 'up' ? top + 11 : bottom - 4} fontSize="9.5" fill={colour}>
+                  {z.label}
+                </text>
+              </g>
+            );
+          })}
 
           {/* volume, under its own baseline */}
           <line
