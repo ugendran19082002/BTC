@@ -1,8 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  clv, efficiencyRatio, ema, indicators, logReturn, macd, mean, percentileOf,
-  relevantIndicators, roc, simpleReturn, stdev, zScore, type IndicatorInput,
+  aroon, bollinger, choppiness, clv, donchian, efficiencyRatio, ema, indicators, logReturn, macd, mean, obvSlope, percentileOf, relevantIndicators, roc, simpleReturn, stdev, stochastic, type IndicatorInput, williamsR, zScore,
 } from '../../src/domain/indicators.js';
 import type { Candle } from '../../src/market/delta.js';
 
@@ -132,4 +131,75 @@ test('IV − RV is on the card only when the desk has both', () => {
   const withIv = indicators(input({ ivRvPts: -14.2 })).find((i) => i.key === 'ivrv')!;
   assert.equal(withIv.text, '-14.2 pts');
   assert.equal(withIv.read, 'Options cheap');
+});
+
+/*
+ * The wider list, all of it from the bars the chart already has -- which is
+ * why these are the ones that got built: no second feed, no second key, and
+ * nothing extra to be down at four in the morning. None of them is on the card
+ * unless the state calls for it; they are votes in the chart's badge.
+ */
+const ramp = (n: number, from: number, step: number): Candle =>
+  ({ time: n, open: from, high: from + step, low: from - step, close: from + step / 2, volume: 100 });
+const flat = Array.from({ length: 30 }, (_, i) => ramp(i, 100, 2));
+const climbing = Array.from({ length: 30 }, (_, i) => ramp(i, 100 + i * 2, 1));
+
+test('[critical] range position is 1 at the top of the window and 0 at the bottom', () => {
+  const top = [...flat.slice(0, 29), { time: 30, open: 100, high: 130, low: 99, close: 130, volume: 100 }];
+  assert.equal(donchian(top), 1);
+  const bottom = [...flat.slice(0, 29), { time: 30, open: 100, high: 101, low: 70, close: 70, volume: 100 }];
+  assert.equal(donchian(bottom), 0);
+});
+
+test('a window with no range at all is the middle, not a divide by zero', () => {
+  const same = Array.from({ length: 20 }, (_, i) => ({ time: i, open: 100, high: 100, low: 100, close: 100, volume: 1 }));
+  assert.equal(donchian(same), 0.5);
+  assert.equal(bollinger(same.map((b) => b.close)), null, 'no deviation, no band');
+});
+
+test('[critical] %B says where price sits across the band, and the width says how wide it is', () => {
+  const closes = climbing.map((b) => b.close);
+  const bb = bollinger(closes)!;
+  assert.ok(bb.percentB > 0.8, 'a straight climb finishes at the top of its own band');
+  assert.ok(bb.width > 0);
+});
+
+test('choppiness is low when the bars are going somewhere and high when they are not', () => {
+  const trending = choppiness(climbing)!;
+  const chop = choppiness(Array.from({ length: 20 }, (_, i) => ramp(i, 100, 6)))!;
+  assert.ok(trending < chop, `${trending} should be under ${chop}`);
+});
+
+test('on-balance volume is read as a slope, since its level depends on where the series began', () => {
+  assert.ok(obvSlope(climbing)! > 0);
+  const falling = Array.from({ length: 30 }, (_, i) => ramp(i, 160 - i * 2, 1));
+  assert.ok(obvSlope(falling)! < 0);
+});
+
+test('Williams %R is the stochastic upside down, which is how it is quoted', () => {
+  const bars = climbing;
+  const s = stochastic(bars)!;
+  assert.ok(Math.abs(williamsR(bars)! - (s - 100)) < 1e-9);
+});
+
+test('aroon is positive while the highs are the newer ones', () => {
+  assert.ok(aroon(climbing)! > 0);
+  const falling = Array.from({ length: 30 }, (_, i) => ramp(i, 160 - i * 2, 1));
+  assert.ok(aroon(falling)! < 0);
+});
+
+test('[critical] every wider reading is in the payload, and none of them is on the card by default', () => {
+  /*
+   * The owner's rule, and the right one: everything in the backend, six on the
+   * screen. Forty readings on one card is a card nobody reads.
+   */
+  const all = indicators({
+    bars: climbing, rsi14: 60, adx14: 25, atrPct: 0.4, vwapDistPct: 0.2,
+    emaFast: 120, emaSlow: 110, volumeRatio: 1.2, cvdSlope: 10, aggressorBuyPct: 55, oiChangePct: 1,
+  });
+  const keys = all.map((i) => i.key);
+  for (const k of ['bollinger', 'bbwidth', 'donchian', 'stoch', 'williams', 'cci', 'obv', 'chop', 'aroon']) {
+    assert.ok(keys.includes(k), `${k} is measured`);
+  }
+  assert.equal(relevantIndicators(all, 'WATCH').length, 6);
 });

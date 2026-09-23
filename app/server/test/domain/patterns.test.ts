@@ -223,10 +223,10 @@ test('[critical] a sweep is the wick going through and the close not', () => {
    * above the high were taken and the price was handed straight back.
    */
   const bars = series([
-    [100, 120], [95, 130], [100, 120], [95, 125], [100, 118], [98, 122], [100, 120],
+    [100, 120], [95, 130], [100, 150], [95, 125], [100, 118], [98, 122], [100, 120], [96, 124], [99, 121], [97, 123],
   ]);
-  // the last bar spikes through the earlier swing high and closes back under it
-  bars.push(sw(118, 150, 121));
+  // the next bar spikes through the earlier swing high at 150 and closes back under it
+  bars.push(sw(118, 168, 121));
   bars.push(sw(115, 125, 118));
   const names = marketStructure({ bars, atr: 4 }).map((p) => p.name);
   assert.ok(names.includes('Liquidity Sweep (High)'), names.join(', '));
@@ -234,7 +234,7 @@ test('[critical] a sweep is the wick going through and the close not', () => {
 
 test('a double top is the same price refused twice, with a real dip between', () => {
   const bars = series([
-    [100, 120], [95, 150], [90, 110], [85, 105], [88, 112], [95, 149], [92, 118], [90, 115],
+    [100, 120], [95, 150], [90, 110], [85, 105], [88, 112], [92, 116], [95, 149], [92, 118], [90, 115], [89, 114], [88, 113],
   ]);
   const found = marketStructure({ bars, atr: 6 }).find((p) => p.name === 'Double Top');
   assert.ok(found);
@@ -243,7 +243,9 @@ test('a double top is the same price refused twice, with a real dip between', ()
 
 test('two pushes to the same price with no dip between them is not a pattern', () => {
   // Two highs in consecutive bars are one high.
-  const bars = series([[100, 120], [118, 150], [119, 149], [100, 120], [95, 118], [92, 115], [90, 112], [88, 110]]);
+  const bars = series([
+    [100, 120], [118, 150], [119, 149], [100, 120], [95, 118], [92, 115], [90, 112], [88, 110], [87, 109], [86, 108], [85, 107],
+  ]);
   const names = marketStructure({ bars, atr: 6 }).map((p) => p.name);
   assert.ok(!names.includes('Double Top'), names.join(', '));
 });
