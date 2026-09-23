@@ -177,6 +177,8 @@ describe('the market-state card', () => {
     }];
     render(<MarketState data={base} history={rows} tf="15m" />);
     const row = document.querySelector('.bt-market-state__history li')!;
+    // Not yet graded says so, rather than reading like a range nobody grades.
+    expect(row.textContent).toContain('Waiting');
     expect(row.textContent).toContain('Support');
     expect(row.textContent).toContain('86,200');
     expect(row.textContent).toContain('85,800');

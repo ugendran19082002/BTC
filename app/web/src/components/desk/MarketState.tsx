@@ -261,6 +261,16 @@ const OUTCOME_WORDS: Record<string, string> = {
 };
 
 /**
+ * A call that has not been graded yet says so.
+ *
+ * It read "—" before, which is what a range reads -- so a breakout waiting on
+ * its four bars looked exactly like a call nobody would ever grade, and the
+ * list looked broken rather than busy.
+ */
+const outcomeWord = (o: string | null | undefined): string =>
+  o == null ? 'Waiting' : OUTCOME_WORDS[o] ?? '—';
+
+/**
  * What the card has said before, and whether it was right.
  *
  * The reason the score can be believed at all, or not. A call is graded
@@ -318,7 +328,7 @@ function History({ rows, rate, spot }: {
                 <span className={cn('bt-market-state__hist-out',
                   r.outcome === 'CORRECT' && 'is-up', r.outcome === 'WRONG' && 'is-down',
                   (r.outcome === 'CORRECT' || r.outcome === 'WRONG') && 'is-chip')}>
-                  {OUTCOME_WORDS[r.outcome ?? 'NOT_GRADED'] ?? '—'}
+                  {outcomeWord(r.outcome)}
                 </span>
               </div>
               {/* The level it was a call about, and what it was worth if it
