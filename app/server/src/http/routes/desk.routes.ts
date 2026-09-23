@@ -13,7 +13,7 @@ import { tradingService, SHORT_CAP_KEY } from '../../trading/service.js';
 import { appliedMigrations } from '../../db/migrate.js';
 import { termStructure } from '../../market/term.js';
 import { lastOptionSnapshot, lastOptionSnapshotAt } from '../../market/option-snapshots.js';
-import { flowFeedHealth, flowSummary, ivRank, liveBook, livePerp, oiPulse, optionFlowSummary, skewRank, termHistory } from '../../market/flow.js';
+import { flowFeedHealth, flowSummary, ivRank, liveBook, livePerp, oiPulse, optionFlowSummary, skewRank } from '../../market/flow.js';
 import { movementByWindow } from '../../market/movement.js';
 import { changes } from '../../market/changes.js';
 import { one } from '../../db/pool.js';
@@ -129,10 +129,14 @@ export function registerDeskRoutes(app: FastifyInstance) {
   });
 
   /**
-   * ATM IV across every listed expiry: now from the live board, and as it was
-   * a week and a month ago from the desk's own record, which began 19 Sep
-   * 2026 -- those lines are null until the record is that long. The skew's
-   * rank among every reading recorded rides along, for the same panel.
+   * ATM IV across every listed expiry, from the live board, with the skew's
+   * and the IV's rank among every reading the desk has recorded.
+   *
+   * It used to carry "a week ago" and "a month ago" lines too, read from
+   * `iv_term_snapshots`. The card that showed them was removed on 22 September
+   * and the table on the 23rd (`market-009`), so the two questions this asked
+   * the database every minute, per open browser, are gone with them. The ranks
+   * are read from `chain_features`, which plenty else needs.
    */
   app.get('/api/term', async (req, reply) => {
     try {
@@ -140,14 +144,12 @@ export function registerDeskRoutes(app: FastifyInstance) {
       const q = req.query as { skewPts?: string; atmIv?: string };
       const skewPts = Number(q.skewPts);
       const atmIv = Number(q.atmIv);
-      const [tickers, weekAgo, monthAgo, skew, iv] = await Promise.all([
+      const [tickers, skew, iv] = await Promise.all([
         liveTickers(),
-        termHistory(7 * 86_400_000, now).catch(() => null),
-        termHistory(30 * 86_400_000, now).catch(() => null),
         skewRank(Number.isFinite(skewPts) ? skewPts : null).catch(() => null),
         ivRank(Number.isFinite(atmIv) && atmIv > 0 ? atmIv : null).catch(() => null),
       ]);
-      return { at: now, points: termStructure(tickers, Math.floor(now / 1000)), weekAgo, monthAgo, skew, iv };
+      return { at: now, points: termStructure(tickers, Math.floor(now / 1000)), skew, iv };
     } catch (e) {
       reply.code(502);
       return { error: (e as Error).message };

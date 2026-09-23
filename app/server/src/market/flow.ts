@@ -4,18 +4,18 @@ import { req, type Ticker } from './delta.js';
 import { FlowSocket, OPTION_SYMBOL, PERP_SYMBOL, perpTickerOf, type FlowHealth, type PerpTicker, type Print } from './flow-socket.js';
 import { liveTickers } from './delta.js';
 import { OPTION_SNAPSHOT_EXPIRIES } from './option-snapshots.js';
-import { termStructure, type TermPoint } from './term.js';
 import { marketSchema } from './oi-history.js';
 
 /**
- * The perpetual's order flow, the book, funding and the IV term structure,
- * recorded -- the three tables docs/test.md §10 asks for, and the history the
- * Live screen's "a week ago" lines need.
+ * The perpetual's order flow, the book and funding, recorded.
  *
  *   trade_flow_1m      every BTCUSD print, summed per minute by aggressor side
  *   option_flow_1m     every print on the two nearest expiries' options, per contract per minute, by aggressor side
  *   perp_snapshots     funding, open interest, turnover and the top of the book, every 5 minutes
- *   iv_term_snapshots  ATM IV per listed expiry, every 5 minutes
+ *
+ * There was a fourth, `iv_term_snapshots`, for the IV term structure card's
+ * "a week ago" lines. The card went on 22 September and the table with it
+ * (`market-009`); the term structure itself is read live, from the tickers.
  *
  * The prints come off the socket (`flow-socket.ts`); the book and, when the
  * socket is quiet, the perp ticker come from REST. Every reader here says how
@@ -511,47 +511,6 @@ export async function capturePerpSnapshot(nowMs: number): Promise<{ at: number }
   );
   await query('DELETE FROM perp_snapshots WHERE at < $1', [at - FLOW_KEEP_MS]);
   return { at };
-}
-
-// ------------------------------------------------------------ term history
-
-/** One five-minute bucket of the term structure. Idempotent per bucket. */
-export async function captureIvTerm(tickers: readonly Ticker[], nowMs: number): Promise<{ at: number; rows: number } | null> {
-  await flowSchema();
-  const at = Math.floor(nowMs / PERP_BUCKET_MS) * PERP_BUCKET_MS;
-  if (await one('SELECT 1 FROM iv_term_snapshots WHERE at = $1 LIMIT 1', [at])) return null;
-  const pts = termStructure(tickers, Math.floor(nowMs / 1000));
-  if (!pts.length) return null;
-  await query(
-    `INSERT INTO iv_term_snapshots (at, expiry, hours_away, strike, atm_iv)
-     SELECT $1, * FROM unnest($2::text[], $3::float8[], $4::int[], $5::float8[])
-     ON CONFLICT (at, expiry) DO NOTHING`,
-    [at, pts.map((p) => p.expiry), pts.map((p) => p.hoursAway), pts.map((p) => p.strike), pts.map((p) => p.atmIv)] as never,
-  );
-  await query('DELETE FROM iv_term_snapshots WHERE at < $1', [at - FLOW_KEEP_MS]);
-  return { at, rows: pts.length };
-}
-
-export type TermHistoryPoint = Pick<TermPoint, 'expiry' | 'hoursAway' | 'strike' | 'atmIv'>;
-
-/**
- * The term structure as it was `agoMs` ago: the bucket nearest that instant,
- * within an hour of it. Null when the desk was not recording then -- a line
- * from a week ago needs a week of recording, and there is no other source.
- */
-export async function termHistory(agoMs: number, nowMs = Date.now()): Promise<{ at: number; points: TermHistoryPoint[] } | null> {
-  await flowSchema();
-  const target = nowMs - agoMs;
-  const near = await one<{ at: number }>(
-    'SELECT at FROM iv_term_snapshots WHERE at BETWEEN $1 AND $2 ORDER BY ABS(at - $3) LIMIT 1',
-    [target - 3_600_000, target + 3_600_000, target],
-  );
-  if (!near) return null;
-  const pts = await rows<{ expiry: string; hours_away: number; strike: number; atm_iv: number }>(
-    'SELECT expiry, hours_away, strike, atm_iv FROM iv_term_snapshots WHERE at = $1 ORDER BY hours_away',
-    [near.at],
-  );
-  return { at: near.at, points: pts.map((p) => ({ expiry: p.expiry, hoursAway: p.hours_away, strike: p.strike, atmIv: p.atm_iv })) };
 }
 
 // -------------------------------------------------------------- skew history

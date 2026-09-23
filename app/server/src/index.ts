@@ -15,7 +15,7 @@ import { analyticsSchema } from './db/analytics-schema.js';
 import { captureOptionSnapshots, optionSnapshotsSchema } from './market/option-snapshots.js';
 import { captureBoard } from './market/chain-features.js';
 import { wallWithinEm } from './http/routes/desk.routes.js';
-import { captureIvTerm, capturePerpSnapshot, flowSchema, flushTradeFlow, startFlowSocket } from './market/flow.js';
+import { capturePerpSnapshot, flowSchema, flushTradeFlow, startFlowSocket } from './market/flow.js';
 import { noteError } from './observability/errors.js';
 
 /**
@@ -126,7 +126,7 @@ liveTickers()
 const warn = (where: string) => (e: Error) => noteError({ source: 'server', level: 'warn', where, message: `${where} not written: ${e.message}` });
 const recordOptions = () => {
   liveTickers()
-    .then((t) => Promise.all([captureOptionSnapshots(t, Date.now()), captureIvTerm(t, Date.now())]))
+    .then((t) => captureOptionSnapshots(t, Date.now()))
     .catch(warn('option-snapshots'));
   capturePerpSnapshot(Date.now()).catch(warn('perp-snapshots'));
 };
