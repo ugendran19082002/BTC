@@ -164,6 +164,25 @@ describe('the market-state card', () => {
     expect(screen.getByText('+200 pts').className).toContain('is-up');
   });
 
+  it('[critical] a call names the level it was about and what it was worth', () => {
+    /*
+     * A breakdown at 86,200 with the target four hundred points under it is a
+     * different call from one with forty, and the row said neither.
+     */
+    const rows: StateHistoryRow[] = [{
+      id: 1, at: base.at, tf: '15m', event: 'BREAKDOWN_CONFIRMED', stage: 'CONFIRMED', side: 'DOWN',
+      confirmed: true, confidence: 71, close: 86_190,
+      plan: { side: 'DOWN', trigger: 86_200, target1: 85_800, target2: 85_400, invalidation: 86_600 },
+      outcome: null, gradedAt: null,
+    }];
+    render(<MarketState data={base} history={rows} tf="15m" />);
+    const row = document.querySelector('.bt-market-state__history li')!;
+    expect(row.textContent).toContain('Support');
+    expect(row.textContent).toContain('86,200');
+    expect(row.textContent).toContain('85,800');
+    expect(screen.getByText('−400 pts')).toBeInTheDocument();
+  });
+
   it('[critical] shows five calls a page, newest first, and pages back through the rest', () => {
     // Ten rows of small print is a wall nobody reads to the end of.
     const rows: StateHistoryRow[] = Array.from({ length: 12 }, (_, i) => ({

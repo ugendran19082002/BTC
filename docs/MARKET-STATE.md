@@ -235,10 +235,13 @@ with the plan a scroll away from the level it is about.
 6. **The plans, always.** Breakout / range / breakdown with target 1, target 2
    and the stop on all of them, under every tab. They were folded away except
    on the Levels tab; a stop you have to change tab to read is one you set late.
-7. **The signal history**, five calls a page, newest first, each saying what
-   BTC did after it in points -- to the next call, or to the price now for the
-   newest. The colour follows the call rather than the direction, so a fall
-   after a breakdown is green. The tally stays a count ("3 of 4 came good").
+7. **The signal history**, five calls a page, newest first. Each row names the
+   level it was a call about (resistance over, support under), the target and
+   what that was worth in index points, then what BTC actually did in points --
+   from the graded row where there is one, otherwise to the next call, or to
+   the price now for the newest. The colour follows the call rather than the
+   direction, so a fall after a breakdown is green. The tally stays a count
+   ("3 of 4 came good"), because four calls is not a hit rate.
 
 The analysis sits **beside** the chart on a wide screen and drops under it
 below 1100px. The panel runs the width of the desk: in the middle of three columns the chart

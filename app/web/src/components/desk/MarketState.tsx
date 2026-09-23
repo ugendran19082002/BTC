@@ -321,6 +321,24 @@ function History({ rows, rate, spot }: {
                   {OUTCOME_WORDS[r.outcome ?? 'NOT_GRADED'] ?? '—'}
                 </span>
               </div>
+              {/* The level it was a call about, and what it was worth if it
+                  went: a breakdown at 84,200 with the target four hundred
+                  points under it is a different call from one with forty. */}
+              {r.plan ? (
+                <div className="bt-market-state__hist-line is-level">
+                  <span>
+                    {r.side === 'UP' ? 'Resistance' : 'Support'} <b>{fmtStrike(r.plan.trigger)}</b>
+                    {' → '}target <b>{fmtStrike(r.plan.target1)}</b>
+                  </span>
+                  <span className="bt-market-state__hist-target">
+                    {(() => {
+                      const pts = Math.round(r.plan.target1 - r.plan.trigger);
+                      return `${pts > 0 ? '+' : pts < 0 ? '−' : ''}${Math.abs(pts).toLocaleString('en-US')} pts`;
+                    })()}
+                  </span>
+                </div>
+              ) : null}
+
               {/* The index either side of the call, so the points are a figure
                   somebody can check rather than one they have to trust. */}
               <div className="bt-market-state__hist-line is-prices">

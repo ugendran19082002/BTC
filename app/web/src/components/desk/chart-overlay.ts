@@ -52,6 +52,13 @@ export type Converters = {
   x: (barsAgo: number) => number | null;
   width: number;
   height: number;
+  /**
+   * The price axis on the right, in pixels.
+   *
+   * Nothing may be drawn over it: the axis is where the reader looks to check
+   * a number, and a callout box across it hides the very prices it is quoting.
+   */
+  gutter?: number;
 };
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -122,12 +129,19 @@ export function lineShapes(lines: readonly TrendLine[], c: Converters): LineShap
  */
 export function calloutShapes(p: Projection | null, spot: number, c: Converters): CalloutShape[] {
   if (!p) return [];
-  const x = c.width - CALLOUT_W - 6;
+  const x = c.width - (c.gutter ?? 0) - CALLOUT_W - 10;
   const inPlot = (y: number) => clamp(y, CALLOUT_H / 2 + 2, c.height - CALLOUT_H / 2 - 2);
   const at = (price: number) => inPlot(c.y(price) ?? (price > spot ? 0 : c.height));
-  const fromY = at(spot);
+  const fromY = inPlot(c.y(spot) ?? c.height / 2);
   const out: CalloutShape[] = [];
 
+  if (p.up) {
+    out.push({
+      key: 'up', title: 'Breakout ↑', price: p.up.target1, low: null, high: null,
+      awayPct: spot > 0 ? ((p.up.target1 - spot) / spot) * 100 : 0,
+      x, y: at(p.up.target1), fromY,
+    });
+  }
   if (p.range) {
     const mid = (Math.max(p.range.from, p.range.to) + Math.min(p.range.from, p.range.to)) / 2;
     out.push({
@@ -136,15 +150,37 @@ export function calloutShapes(p: Projection | null, spot: number, c: Converters)
       x, y: at(mid), fromY,
     });
   }
-  for (const [key, leg, title] of [
-    ['up', p.up, 'Breakout ↑'], ['down', p.down, 'Breakdown ↓'],
-  ] as const) {
-    if (!leg) continue;
+  if (p.down) {
     out.push({
-      key, title, price: leg.target1, low: null, high: null,
-      awayPct: spot > 0 ? ((leg.target1 - spot) / spot) * 100 : 0,
-      x, y: at(leg.target1), fromY,
+      key: 'down', title: 'Breakdown ↓', price: p.down.target1, low: null, high: null,
+      awayPct: spot > 0 ? ((p.down.target1 - spot) / spot) * 100 : 0,
+      x, y: at(p.down.target1), fromY,
     });
   }
-  return out;
+  return spread(out, c.height);
+}
+
+/**
+ * Push the boxes apart so none is drawn over another.
+ *
+ * On a quiet chart the two targets and the range between them are a few
+ * hundredths of the scale apart, and three boxes at the same height are one
+ * unreadable box. They are laid out top to bottom in the order they were
+ * added -- breakout, range, breakdown, which is the order they sit in price --
+ * each pushed down to clear the one above it, then the whole stack lifted if
+ * it has run off the bottom. Every box keeps its arrow to where it belongs, so
+ * moving one costs nothing but a slightly longer line.
+ */
+function spread(shapes: CalloutShape[], height: number): CalloutShape[] {
+  const gap = CALLOUT_H + 6;
+  const out = shapes.map((s) => ({ ...s }));
+  for (let i = 1; i < out.length; i++) {
+    const above = out[i - 1]!;
+    const here = out[i]!;
+    if (here.y - above.y < gap) here.y = above.y + gap;
+  }
+  const last = out[out.length - 1];
+  const over = last ? last.y + CALLOUT_H / 2 + 2 - height : 0;
+  if (over > 0) for (const s of out) s.y -= over;
+  return out.map((s) => ({ ...s, y: Math.max(CALLOUT_H / 2 + 2, s.y) }));
 }

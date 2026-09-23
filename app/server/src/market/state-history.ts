@@ -197,6 +197,14 @@ export async function noteState(read: StateRead): Promise<number | null> {
  * One fetch of bars per row, and only for rows whose window has actually
  * closed -- grading a call whose bars have not happened yet would answer the
  * question with a shrug and then never ask it again.
+ *
+ * **Oldest first.** It took the newest ungraded rows at first, which starved
+ * the journal completely: the desk writes a row every time the state changes,
+ * so the twenty newest ungraded calls are almost always the twenty youngest,
+ * every one of them still inside its window -- the pass skipped all twenty,
+ * and the older rows that were ready never came up. The whole history sat at
+ * "—" while the grader ran on every poll. Oldest first, a call is graded the
+ * first pass after its bars exist.
  */
 export async function gradeStates(nowMs = Date.now(), limit = 20): Promise<number> {
   await stateHistorySchema();
@@ -205,7 +213,7 @@ export async function gradeStates(nowMs = Date.now(), limit = 20): Promise<numbe
     trigger: number | null; target1: number | null; target2: number | null; invalidation: number | null;
   }>(
     `SELECT id, at, tf, side, close, trigger, target1, target2, invalidation
-       FROM market_states WHERE outcome IS NULL ORDER BY at DESC LIMIT $1`, [limit],
+       FROM market_states WHERE outcome IS NULL ORDER BY at ASC LIMIT $1`, [limit],
   );
   let graded = 0;
   for (const r of due) {

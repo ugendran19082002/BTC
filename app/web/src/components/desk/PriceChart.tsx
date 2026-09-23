@@ -138,16 +138,25 @@ export function PriceChart({
       localization: {
         locale: 'en-IN',
         timeFormatter: (t: Time) => IST_FULL.format(Number(t) * 1000),
+        // 84800.00 on the axis is two digits of noise on a number nobody
+        // trades to the cent: BTC is quoted whole here, as it is everywhere
+        // else on the desk.
+        priceFormatter: (p: number) => Math.round(p).toLocaleString('en-US'),
       },
     });
 
     const candles = chart.addSeries(CandlestickSeries, {
       upColor: UP, downColor: DOWN, borderUpColor: UP, borderDownColor: DOWN,
       wickUpColor: UP, wickDownColor: DOWN,
+      priceFormat: { type: 'price', precision: 0, minMove: 1 },
     });
     const volume = chart.addSeries(HistogramSeries, {
       priceFormat: { type: 'volume' },
       priceScaleId: 'volume',
+      // The volume's own last value on the price axis is a number in the wrong
+      // units sitting among prices, in the corner where the newest bar is.
+      lastValueVisible: false,
+      priceLineVisible: false,
     });
     volume.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
 
@@ -242,6 +251,9 @@ export function PriceChart({
     const c: Converters = {
       width: size.width,
       height: priceH,
+      // The axis is where a number is checked; a box across it hides the very
+      // prices it quotes. `width()` is what the library actually reserved.
+      gutter: chartRef.current?.priceScale('right').width?.() ?? 64,
       y: (price) => {
         const at = candles.priceToCoordinate(price);
         return at === null ? null : Number(at);
@@ -355,9 +367,13 @@ export function PriceChart({
                   );
                 })}
 
+                {/* Drawn in a neutral white rather than in the up and down
+                    colours: they are where the swings were, not a call on
+                    which way it goes, and two more green and red lines over
+                    green and red candles is noise. */}
                 {overlay.lines.map((l, i) => (
                   <line key={`trend-${i}`} data-trend={l.kind} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
-                    stroke={l.kind === 'support' ? UP : DOWN} strokeWidth="1.3" opacity="0.75" strokeDasharray="6 4" />
+                    stroke="rgba(226,235,245,0.55)" strokeWidth="1.2" strokeDasharray="7 5" />
                 ))}
 
                 {overlay.callouts.map((c) => {
