@@ -337,13 +337,13 @@ function History({ rows, rate, spot }: {
               {r.plan ? (
                 <div className="bt-market-state__hist-line is-level">
                   <span>
-                    {r.side === 'UP' ? 'Resistance' : 'Support'} <b>{fmtStrike(r.plan.trigger)}</b>
-                    {' → '}target <b>{fmtStrike(r.plan.target1)}</b>
+                    {r.side === 'UP' ? 'Over' : 'Under'} <b>{fmtStrike(Math.round(r.plan.trigger))}</b>
+                    {' → '}target <b>{fmtStrike(Math.round(r.plan.target1))}</b>
                   </span>
                   <span className="bt-market-state__hist-target">
                     {(() => {
                       const pts = Math.round(r.plan.target1 - r.plan.trigger);
-                      return `${pts > 0 ? '+' : pts < 0 ? '−' : ''}${Math.abs(pts).toLocaleString('en-US')} pts`;
+                      return `worth ${Math.abs(pts).toLocaleString('en-US')} pts`;
                     })()}
                   </span>
                 </div>
@@ -353,13 +353,14 @@ function History({ rows, rate, spot }: {
                   somebody can check rather than one they have to trust. */}
               <div className="bt-market-state__hist-line is-prices">
                 <span>
-                  {fmtStrike(Math.round(r.close))}
+                  BTC {fmtStrike(Math.round(r.close))}
                   {after === null ? null : <> → {fmtStrike(Math.round(after))}</>}
                 </span>
                 <span className={cn('bt-market-state__hist-pts',
                   went === true && 'is-up', went === false && 'is-down')}
                   title="BTC index points between this call and the next one — the underlying, not option premium">
-                  {move === null ? '—' : `${move > 0 ? '+' : move < 0 ? '−' : ''}${Math.abs(move).toLocaleString('en-US')} pts`}
+                  {move === null ? '—'
+                    : `moved ${move > 0 ? '+' : move < 0 ? '−' : ''}${Math.abs(Math.round(move)).toLocaleString('en-US')} pts`}
                 </span>
               </div>
             </li>

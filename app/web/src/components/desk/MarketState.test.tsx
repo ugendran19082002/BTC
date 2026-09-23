@@ -158,10 +158,10 @@ describe('the market-state card', () => {
     ];
     render(<MarketState data={base} history={rows} tf="15m" spot={86_200} />);
     // newest: 86,200 now against 86,500 called -- 300 down, and it was a breakdown
-    const newest = screen.getByText('−300 pts');
+    const newest = screen.getByText('moved −300 pts');
     expect(newest.className).toContain('is-up');
     // the one before it: 86,500 at the next call against 86,300 -- up, after a breakout watch
-    expect(screen.getByText('+200 pts').className).toContain('is-up');
+    expect(screen.getByText('moved +200 pts').className).toContain('is-up');
   });
 
   it('[critical] a call names the level it was about and what it was worth', () => {
@@ -179,10 +179,11 @@ describe('the market-state card', () => {
     const row = document.querySelector('.bt-market-state__history li')!;
     // Not yet graded says so, rather than reading like a range nobody grades.
     expect(row.textContent).toContain('Waiting');
-    expect(row.textContent).toContain('Support');
+    expect(row.textContent).toContain('Under');
     expect(row.textContent).toContain('86,200');
     expect(row.textContent).toContain('85,800');
-    expect(screen.getByText('−400 pts')).toBeInTheDocument();
+    // the two point figures in a row are labelled, so neither can be read as the other
+    expect(screen.getByText('worth 400 pts')).toBeInTheDocument();
   });
 
   it('[critical] shows five calls a page, newest first, and pages back through the rest', () => {

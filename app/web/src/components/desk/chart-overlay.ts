@@ -129,7 +129,7 @@ export function lineShapes(lines: readonly TrendLine[], c: Converters): LineShap
  */
 export function calloutShapes(p: Projection | null, spot: number, c: Converters): CalloutShape[] {
   if (!p) return [];
-  const x = c.width - (c.gutter ?? 0) - CALLOUT_W - 10;
+  const x = c.width - (c.gutter ?? 0) - CALLOUT_W - 16;
   const inPlot = (y: number) => clamp(y, CALLOUT_H / 2 + 2, c.height - CALLOUT_H / 2 - 2);
   const at = (price: number) => inPlot(c.y(price) ?? (price > spot ? 0 : c.height));
   const fromY = inPlot(c.y(spot) ?? c.height / 2);

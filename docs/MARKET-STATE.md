@@ -159,8 +159,8 @@ Grading also writes **where price actually finished** the window and the BTC
 points from the call, so the history's "+350 pts" is a recorded figure rather
 than one that depends on when the screen happened to be open.
 
-Each row is graded four bars later, by a rule fixed before the outcome was
-known (`verdictFor`):
+Each row is graded four bars later, **oldest ungraded first**, by a rule fixed
+before the outcome was known (`verdictFor`):
 
 * target1 reached before invalidation → **CORRECT**
 * invalidation first → **WRONG**
@@ -170,6 +170,17 @@ known (`verdictFor`):
   win is how a hit rate ends up describing the grader
 * no plan behind it (a range) → **NOT GRADED**: "nothing is happening" is not a
   prediction anybody can be wrong about
+
+A call whose four bars have not happened yet reads **"Waiting"** rather than
+"—": a dash is what a range gets, and a breakout still inside its window looked
+identical to one nobody would ever grade.
+
+The order matters more than it sounds. The grader took the *newest* ungraded
+rows at first, and the journal never graded anything at all: the desk writes a
+row every time the state changes, so the twenty newest ungraded calls are the
+twenty youngest, every one still inside its window and skipped -- while the
+older rows that were ready never came up. Oldest first, a call is graded on the
+first pass after its bars exist.
 
 The card shows the tally as "3 of 4 came good", never as a percentage. Four
 calls is not a hit rate.
