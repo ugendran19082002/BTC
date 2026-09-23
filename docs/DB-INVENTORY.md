@@ -363,14 +363,22 @@ bucket per five, `ON CONFLICT DO NOTHING` so a restart cannot double a bucket)
 in one batched `unnest` insert; rows older than 365 days pruned as it writes.
 Created directly in `public` by `market-004-option-snapshots`.
 
-`market_states` (`market/state-history.ts`, migration `market-010`): every
+`market_states` (`market/state-history.ts`, migrations `market-010` and
+`market-011`): every
 breakout / rejection / breakdown / range the desk has called, written **on
 change only** -- the state is read whenever somebody opens the Live screen, and
 a row per poll would be a journal of how often the page was looked at. Each row
 is graded four bars later against the candles that followed, by a rule fixed
 before the outcome was known, and carries `outcome` (CORRECT / WRONG /
-UNRESOLVED / NOT_GRADED) and `graded_at`. Kept 90 days. It is what makes the
-card's score answerable: see docs/MARKET-STATE.md.
+UNRESOLVED / NOT_GRADED) and `graded_at`, plus `resolved_close` and `move_pts`
+-- where price actually finished the window and the BTC points from the call,
+recorded rather than worked out later from the next row. `market-011` added the
+rest of what the card said: `words`, `insight`, `volume_ratio`, `atr`, and
+`parts` / `inputs` / `patterns` / `indicators` as JSONB (their shape is the
+engine's, and a column per indicator would be a migration every time one is
+added). Without them a row lists a call and cannot answer which readings ever
+paid, since none of it can be reconstructed from bars afterwards. Kept 90 days.
+It is what makes the card's score answerable: see docs/MARKET-STATE.md.
 
 `trade_flow_1m`, `perp_snapshots` (`market/flow.ts`, migration
 `market-005-flow`): the perpetual's tape summed per minute by

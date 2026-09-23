@@ -914,7 +914,11 @@ td.evcol.down { color: var(--down); }
 .price-chart-canvas { position: absolute; inset: 0; }
 .price-chart-overlay { position: absolute; inset: 0; pointer-events: none; }
 .price-chart.is-full .price-chart-plot { height: calc(100vh - 190px); }
-.price-chart-note { margin: 8px 0 0; font-size: 11px; color: var(--muted); line-height: 1.4; }
+.price-chart-note {
+  margin: 8px 0 0; font-size: 11px; color: var(--muted); line-height: 1.5;
+  display: grid; gap: 2px;
+}
+.price-chart-note b { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 600; }
 .price-chart-error { margin: 0; padding: 24px 0; text-align: center; color: var(--down); font-size: 12.5px; }
 @media (max-width: 760px) { .price-chart-plot { height: 320px; } }
 .price-chart-empty {

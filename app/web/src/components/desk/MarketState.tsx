@@ -293,8 +293,14 @@ function History({ rows, rate, spot }: {
            * and reading it off two close prices in your head is the part
            * nobody does.
            */
-          const after = rows[at * PAGE + i - 1]?.close ?? spot ?? null;
-          const move = after === null ? null : Math.round(after - r.close);
+          /*
+           * What BTC did after the call. The graded rows carry it: the server
+           * wrote down where price finished the window, so the figure does not
+           * depend on when this screen happened to be open. An ungraded one is
+           * measured to the next call, or to the price now for the newest.
+           */
+          const after = r.resolvedClose ?? rows[at * PAGE + i - 1]?.close ?? spot ?? null;
+          const move = r.movePts ?? (after === null ? null : Math.round(after - r.close));
           // Which way it went is not the same as whether the call was right:
           // the colour follows the call, so a fall after a breakdown is green.
           const went = move === null || r.side === null ? null

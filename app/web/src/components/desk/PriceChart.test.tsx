@@ -85,16 +85,23 @@ describe('the price chart', () => {
     expect(volume.data[1].color).toContain('226,80,79');
   });
 
-  it('[critical] marks spot and both open-interest walls', () => {
+  it('[critical] draws spot, and names the open-interest walls under the chart instead', () => {
+    /*
+     * The walls were two more horizontals through the candles, competing with
+     * the bands the state is actually judged against -- for levels that are
+     * not levels in the price sense at all. They are where open interest sits.
+     */
     chart();
-    const titles = priceLines.map((l) => l.title);
-    expect(titles).toEqual(['Spot', 'Support', 'Resistance']);
+    expect(priceLines.map((l) => l.title)).toEqual(['Spot']);
     expect(priceLines[0].price).toBe(77_200);
+    const note = screen.getByText(/where open interest sits/);
+    expect(note.textContent).toContain('74,400');
+    expect(note.textContent).toContain('80,000');
   });
 
-  it('leaves out a wall the board does not have', () => {
+  it('says so rather than showing a price when the board has no wall', () => {
     chart({ support: null, resistance: null });
-    expect(priceLines.map((l) => l.title)).toEqual(['Spot']);
+    expect(screen.getByText(/where open interest sits/).textContent).toContain('—');
   });
 
   it('[critical] zoom is off until it is asked for, so the page scrolls over the chart', () => {

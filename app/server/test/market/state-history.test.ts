@@ -1,6 +1,10 @@
-import { test } from 'node:test';
+import { after, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { outcomeWords, verdictFor } from '../../src/market/state-history.js';
+import {
+  noteState, outcomeWords, recentStates, stateHistorySchema, verdictFor,
+} from '../../src/market/state-history.js';
+import { closePool, one, query } from '../../src/db/pool.js';
+import type { StateRead } from '../../src/market/state-read.js';
 import type { Candle } from '../../src/market/delta.js';
 import type { Plan } from '../../src/domain/market-state.js';
 
@@ -45,4 +49,93 @@ test('the words the list shows for each verdict', () => {
   assert.equal(outcomeWords('UNRESOLVED'), 'No follow-through');
   assert.equal(outcomeWords('NOT_GRADED'), '—');
   assert.equal(outcomeWords(null), '—', 'not graded yet reads the same as never graded');
+});
+
+/*
+ * What a call is worth answering for, the row has to hold. The first version
+ * kept the verdict and the levels only, which lists the calls and cannot
+ * answer the one question worth asking of them -- which readings ever paid --
+ * because the inputs cannot be worked out again from the bars afterwards.
+ */
+const read = (over: Partial<StateRead> = {}): StateRead => ({
+  at: Date.UTC(2026, 8, 23, 6, 0),
+  tf: '15m',
+  bars: [{ time: 1_758_600_000, open: 86_400, high: 86_700, low: 86_300, close: 86_554, volume: 342 }],
+  state: {
+    event: 'BREAKOUT_WATCH', stage: 'WATCH', side: 'UP', confirmed: false,
+    level: { resistance: 86_800, support: 86_200 }, against: 86_800, distance: -246, confidence: 76,
+    parts: { levelBreak: 0.3, volume: 1, candle: 0.8, retest: 0, flow: 0.9, mtf: 0.71, regime: 1 },
+    checks: [{ label: 'Close over 86,800', ok: false }],
+    plan: { side: 'UP', trigger: 86_800, target1: 87_200, target2: 87_600, invalidation: 86_400 },
+    plans: {
+      up: { side: 'UP', trigger: 86_800, target1: 87_200, target2: 87_600, invalidation: 86_400 },
+      down: { side: 'DOWN', trigger: 86_200, target1: 85_800, target2: 85_400, invalidation: 86_600 },
+    },
+    volumeRatio: 1.8, volumeRead: 'STRONG',
+    words: 'Price is near resistance.',
+    insight: 'If 86,800 breaks, the next move is towards 87,200.',
+  },
+  patterns: {
+    all: [],
+    shown: [{ name: 'Ascending Triangle', bias: 'BULLISH', kind: 'structure', note: 'Higher lows', barsAgo: 0 }],
+  },
+  indicators: {
+    all: [],
+    shown: [{ key: 'rsi', label: 'RSI (14)', value: 62, text: '62', read: 'Neutral', bias: 'NEUTRAL', gauge: 0.62 }],
+  },
+  lines: [],
+  inputs: {
+    atr: 400, oiChangePct: 2.1, cvdSlope: 120, aggressorBuyPct: 58,
+    mtf: { up: 5, down: 2, total: 7 }, regime: 'TREND_UP',
+  },
+  ...over,
+} as StateRead);
+
+beforeEach(async () => { await stateHistorySchema(); await query('TRUNCATE market_states'); });
+after(() => closePool());
+
+test('[critical] the whole reading is written down with the call, not just the verdict', async () => {
+  const id = await noteState(read());
+  assert.ok(id);
+  const row = await one<{
+    words: string; insight: string; volume_ratio: number; atr: number;
+    parts: Record<string, number>; inputs: Record<string, unknown>;
+    patterns: { name: string }[]; indicators: { key: string }[];
+  }>('SELECT words, insight, volume_ratio, atr, parts, inputs, patterns, indicators FROM market_states WHERE id = $1', [id]);
+  assert.equal(row?.insight, 'If 86,800 breaks, the next move is towards 87,200.');
+  assert.equal(row?.volume_ratio, 1.8);
+  assert.equal(row?.atr, 400);
+  assert.equal(row?.parts.mtf, 0.71);
+  assert.equal(row?.inputs.regime, 'TREND_UP');
+  assert.equal(row?.patterns[0]?.name, 'Ascending Triangle');
+  assert.equal(row?.indicators[0]?.key, 'rsi');
+});
+
+test('the same state again is not a second row, and a different one is', async () => {
+  // A row per poll would be a journal of how often the screen was open.
+  assert.ok(await noteState(read()));
+  assert.equal(await noteState(read()), null);
+  const moved = read();
+  assert.ok(await noteState({ ...moved, state: { ...moved.state, event: 'BREAKOUT_CONFIRMED', stage: 'CONFIRMED' } }));
+  const n = await one<{ n: string }>('SELECT COUNT(*) AS n FROM market_states');
+  assert.equal(Number(n?.n), 2);
+});
+
+test('[critical] the list carries where price went, not only whether the plan worked', async () => {
+  /*
+   * The verdict answers "did the plan work"; the points answer "what did BTC
+   * do", which is the other half. Recorded at grading rather than worked out
+   * from the next row, which would make the figure depend on when the screen
+   * happened to be open.
+   */
+  const id = await noteState(read());
+  await query(
+    'UPDATE market_states SET outcome = $1, graded_at = $2, resolved_close = $3, move_pts = $4 WHERE id = $5',
+    ['CORRECT', Date.now(), 86_904, 350, id],
+  );
+  const [row] = await recentStates('15m', 5);
+  assert.equal(row?.outcome, 'CORRECT');
+  assert.equal(row?.resolvedClose, 86_904);
+  assert.equal(row?.movePts, 350);
+  assert.equal(row?.close, 86_554);
 });

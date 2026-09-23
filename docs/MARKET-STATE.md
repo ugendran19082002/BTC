@@ -142,9 +142,22 @@ for anything that wants to measure them.
 
 ## The journal, and whether any of this works
 
-`market_states` (migration `market-010`) records **every state the desk calls,
-when it changes** — not per poll, or the table would be a record of how often
-the page was open.
+`market_states` (migrations `market-010` and `market-011`) records **every
+state the desk calls, when it changes** — not per poll, or the table would be a
+record of how often the page was open.
+
+It holds the whole reading, not the verdict alone: the words and the sentence,
+the volume ratio and the ATR, the score's parts, the inputs it was measured
+from, and the patterns and readings that were on the card (JSONB, because their
+shape is the engine's and a column per indicator would be a migration every
+time one is added). The first version kept the levels and the outcome, which
+lists the calls and cannot answer the only question worth asking of them —
+*which of these readings ever paid* — since none of it can be reconstructed
+from bars afterwards.
+
+Grading also writes **where price actually finished** the window and the BTC
+points from the call, so the history's "+350 pts" is a recorded figure rather
+than one that depends on when the screen happened to be open.
 
 Each row is graded four bars later, by a rule fixed before the outcome was
 known (`verdictFor`):
@@ -171,9 +184,23 @@ them, the numbers behind those, the sentence, then the plan. It was four cards
 in a column until 23 Sep -- four borders and four headings for one thought,
 with the plan a scroll away from the level it is about.
 
-1. **A readable window.** The chart opens on as many bars as fit at nine pixels
-   a candle, newest first, not on every bar loaded. Four hundred candles across
-   six hundred pixels is a smear; *All* still shows the whole series.
+1. **The chart is `lightweight-charts`.** The candles, the volume, the axes,
+   the crosshair, the wheel, the pinch and the pan are the library's; they were
+   a thousand lines of hand-written SVG until 23 Sep and they are a solved
+   problem. It opens on about ninety bars with a gutter of twelve kept clear to
+   the right, and *Fit* shows the whole series. Zoom and pan stay locked until
+   asked for, because the chart sits in the middle of a scrolling page.
+
+   Only spot is drawn as a price line. The two open-interest walls are named
+   under the chart instead: they are where the board's open interest sits, not
+   where BTC will settle, and a line through the candles claims more than that
+   while competing with the bands the state is actually judged against.
+
+   Everything the library has no opinion about -- the bands, the swing lines,
+   the callouts -- is laid out in `chart-overlay.ts` as pixels and drawn as one
+   SVG over the canvas. The split is the point: the library owns pixels of
+   price, the desk owns meaning, and the geometry stays testable because the
+   canvas is not.
 2. **Bands, not lines.** The resistance and support the state is judged against
    are shaded behind the candles, to the same tolerance the engine breaks them
    by, each labelled with its name and the two prices it runs between. A level
@@ -229,16 +256,17 @@ five-digit numbers three abreast.
 | The journal and grading | `app/server/src/market/state-history.ts` |
 | Routes | `GET /api/market-state?tf=`, `GET /api/market-state/history` |
 | The card | `app/web/src/components/desk/MarketState.tsx` |
-| The bands and the projection | `zones` / `projection` on `PriceChart` |
+| The chart | `app/web/src/components/desk/PriceChart.tsx` (lightweight-charts) |
+| The overlay geometry, pure | `app/web/src/components/desk/chart-overlay.ts` |
 | The strip under the chart | `app/web/src/components/desk/ChartReadout.tsx` |
 | The one panel they all sit in | `app/web/src/components/desk/MarketPanel.tsx` |
 
 Tests: `test/domain/market-state.test.ts` (25), `test/domain/patterns.test.ts`
 (19), `test/domain/indicators.test.ts` (12), `test/market/state-read.test.ts`
 (6), `test/market/state-history.test.ts` (5), `MarketState.test.tsx` (13),
-`ChartReadout.test.tsx` (7), `MarketPanel.test.tsx` (3), and eight more in
-`PriceChart.test.tsx` for the bands, the lines, the projection and the
-opening window.
+`ChartReadout.test.tsx` (7), `MarketPanel.test.tsx` (3), `chart-overlay.test.ts`
+(12) for the bands, lines and callouts, and `PriceChart.test.tsx` (7) against a
+stubbed library.
 
 ---
 

@@ -254,6 +254,9 @@ export type StateHistoryRow = {
   plan: StatePlan | null;
   outcome: 'CORRECT' | 'WRONG' | 'UNRESOLVED' | 'NOT_GRADED' | null;
   gradedAt: number | null;
+  /** Where price finished the grading window, and the BTC points from the call. */
+  resolvedClose?: number | null;
+  movePts?: number | null;
 };
 
 export const getStateHistory = (tf: string, limit = 10) =>

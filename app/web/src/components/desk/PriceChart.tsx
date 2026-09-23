@@ -211,20 +211,25 @@ export function PriceChart({
     chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, last - OPENING_BARS), to: last + RIGHT_BARS });
   }, [tf, bars.length === 0]);
 
-  // The price lines the board cares about: spot, and the two walls.
+  /*
+   * Spot, and spot only, drawn on the plot.
+   *
+   * The two open-interest walls used to be lines across the chart as well, and
+   * they were two more horizontals competing with the bands the state is
+   * actually judged against -- for levels that are not levels in the price
+   * sense at all. They are where open interest sits, which is worth knowing
+   * and is not worth a line through the candles. They are named under the
+   * chart instead.
+   */
   useEffect(() => {
     const candles = candleRef.current;
     if (!candles) return;
-    const drawn = [
-      { price: spot, colour: '#e0b13a', title: 'Spot' },
-      ...(support === null ? [] : [{ price: support, colour: UP, title: 'Support' }]),
-      ...(resistance === null ? [] : [{ price: resistance, colour: DOWN, title: 'Resistance' }]),
-    ].map((l) => candles.createPriceLine({
-      price: l.price, color: l.colour, lineWidth: 1, lineStyle: LineStyle.Dashed,
-      axisLabelVisible: true, title: l.title,
-    }));
-    return () => { for (const line of drawn) candles.removePriceLine(line); };
-  }, [spot, support, resistance, bars.length === 0, open, error]);
+    const line = candles.createPriceLine({
+      price: spot, color: '#e0b13a', lineWidth: 1, lineStyle: LineStyle.Dashed,
+      axisLabelVisible: true, title: 'Spot',
+    });
+    return () => { candles.removePriceLine(line); };
+  }, [spot, bars.length === 0, open, error]);
 
   // --------------------------------------------------------------- the overlay
   const overlay = useMemo(() => {
@@ -393,9 +398,19 @@ export function PriceChart({
           </div>
         )}
 
+        {/* The open-interest walls, said rather than drawn: they are where the
+            board's open interest sits, not where BTC will settle, and a line
+            through the candles claims more than that. */}
         <p className="price-chart-note">
-          support · heaviest put strike · resistance · heaviest call strike — where open interest sits, not where
-          BTC will settle · times IST · {zoomOn ? 'scroll or pinch to zoom, drag to pan' : 'zoom is off, so the page scrolls over the chart'}
+          <span>
+            OI walls · support{' '}
+            <b>{support === null ? '—' : fmtStrike(support)}</b> (heaviest put strike) · resistance{' '}
+            <b>{resistance === null ? '—' : fmtStrike(resistance)}</b> (heaviest call strike) — where open
+            interest sits, not where BTC will settle
+          </span>
+          <span>
+            times IST · {zoomOn ? 'scroll or pinch to zoom, drag to pan' : 'zoom is off, so the page scrolls over the chart'}
+          </span>
         </p>
       </Collapsible.Content>
     </Collapsible.Root>

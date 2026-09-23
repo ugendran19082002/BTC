@@ -35,7 +35,7 @@ broke and why — which is worth reading before changing anything in `trading/`.
           http/ routes  ── app.ts hooks ──► observability/errors.ts ──► PostgreSQL: errors
                 │
                 ▼   JSON over one session cookie
-          app/web  (React 18 + Vite + Tailwind + Radix)
+          app/web  (React 18 + Vite + Tailwind + Radix + lightweight-charts)
                         │
                         └── failures ──► POST /api/errors ──► the same errors
 
