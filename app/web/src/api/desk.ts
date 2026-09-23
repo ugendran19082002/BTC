@@ -203,6 +203,13 @@ export type StateIndicator = {
   read: string; bias: 'BULLISH' | 'BEARISH' | 'NEUTRAL'; gauge: number | null;
 };
 
+export type StateTrendLine = {
+  kind: 'support' | 'resistance';
+  bias: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  from: { barsAgo: number; price: number };
+  to: { barsAgo: number; price: number };
+};
+
 export type MarketStateResponse = {
   at: number;
   tf: string;
@@ -229,6 +236,8 @@ export type MarketStateResponse = {
     insight: string;
   };
   patterns: { all: StatePattern[]; shown: StatePattern[] };
+  /** The lines through the last swings, in bars back from the newest bar. */
+  lines: StateTrendLine[];
   indicators: { all: StateIndicator[]; shown: StateIndicator[] };
   inputs: {
     atr: number | null; oiChangePct: number | null; cvdSlope: number | null;

@@ -610,6 +610,7 @@ export default function App() {
                           resistance={data.structure.ceOiWallNear?.strike ?? null}
                           spot={snap.spot}
                           zones={chartZones}
+                          lines={marketState?.lines ?? []}
                           projection={chartProjection}
                           tf={chartTf}
                           onTf={setChartTf}

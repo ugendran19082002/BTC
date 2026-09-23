@@ -35,6 +35,19 @@ export type Pattern = {
   barsAgo: number;
 };
 
+/**
+ * A line drawn on the chart, in bars back from the newest bar.
+ *
+ * Not a pattern: a pattern is a name for what the bars did, this is where to
+ * put the ink. The two travel together because they come from the same swings.
+ */
+export type TrendLine = {
+  kind: 'support' | 'resistance';
+  bias: Bias;
+  from: { barsAgo: number; price: number };
+  to: { barsAgo: number; price: number };
+};
+
 // ------------------------------------------------------------ candle shapes
 
 /** Under this share of its own range, a body is no body at all. */
@@ -233,15 +246,60 @@ const struct = (name: string, bias: Bias, note: string): Pattern => ({ name, bia
 
 /** The fractal swing points: a bar higher (or lower) than its two neighbours. */
 function swings(bars: readonly Candle[], which: 'high' | 'low'): number[] {
-  const out: number[] = [];
+  return pivots(bars, which).map((p) => p.price);
+}
+
+/** The same swings, with the bar each one is on. */
+function pivots(bars: readonly Candle[], which: 'high' | 'low'): { i: number; price: number }[] {
+  const out: { i: number; price: number }[] = [];
   for (let i = 1; i < bars.length - 1; i++) {
     const a = bars[i - 1]!, b = bars[i]!, c = bars[i + 1]!;
     if (which === 'high' ? b.high > a.high && b.high > c.high : b.low < a.low && b.low < c.low) {
-      out.push(which === 'high' ? b.high : b.low);
+      out.push({ i, price: which === 'high' ? b.high : b.low });
     }
   }
   return out;
 }
+
+/**
+ * The two lines somebody would draw on this chart: one under the lows, one
+ * over the highs.
+ *
+ * Through the last two swings on each side, carried forward to the newest bar
+ * -- which is the whole point of drawing one, since the line only says
+ * anything where price has not been yet. Both ends are given as bars back from
+ * the newest bar rather than as an index into a slice, so a chart showing a
+ * different window can still place them.
+ *
+ * Two swings is the least a line can be drawn through and is what a trader
+ * uses; it is also the weakest kind, so nothing here calls it confirmed.
+ */
+export function trendLines(bars: readonly Candle[], lookback = 20): TrendLine[] {
+  const window = bars.slice(-lookback);
+  if (window.length < 5) return [];
+  const last = window.length - 1;
+  const out: TrendLine[] = [];
+
+  for (const [which, kind] of [['low', 'support'], ['high', 'resistance']] as const) {
+    const found = pivots(window, which);
+    if (found.length < 2) continue;
+    const a = found[found.length - 2]!;
+    const b = found[found.length - 1]!;
+    if (b.i === a.i) continue;
+    const slope = (b.price - a.price) / (b.i - a.i);
+    // Carried to the newest bar, which is where a trendline earns its keep.
+    const end = b.price + slope * (last - b.i);
+    out.push({
+      kind,
+      bias: slope > 0 ? 'BULLISH' : slope < 0 ? 'BEARISH' : 'NEUTRAL',
+      from: { barsAgo: last - a.i, price: round2(a.price) },
+      to: { barsAgo: 0, price: round2(end) },
+    });
+  }
+  return out;
+}
+
+const round2 = (v: number) => Math.round(v * 100) / 100;
 
 const rising = (xs: readonly number[]) => xs.length >= 2 && xs.every((v, i) => i === 0 || v >= xs[i - 1]!);
 const avg = (xs: readonly number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;

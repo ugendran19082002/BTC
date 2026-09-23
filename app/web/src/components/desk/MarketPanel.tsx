@@ -39,23 +39,35 @@ export function MarketPanel({
 }) {
   return (
     <section className="bt-card bt-analysis" aria-label="Price chart and market analysis">
-      {chart}
+      <div className="bt-analysis__chart">
+        {chart}
 
+        {/* The shapes and the readings sit under the candles they were taken
+            from, not beside the plan: they are how the chart was read, and the
+            plan is what came of it. */}
+        {ready ? (
+          <>
+            <div className="bt-analysis__strip">
+              <PatternStrip patterns={data?.patterns.shown ?? []} />
+              <IndicatorSummary items={data?.indicators.shown ?? []} />
+            </div>
+            {data ? <ChartInsight insight={data.state.insight} /> : null}
+          </>
+        ) : null}
+      </div>
+
+      {/* The analysis beside the chart, where the level on the card and the
+          level on the candles can be seen at once. Under 1100px it drops below
+          the chart instead, in the same reading order. */}
       {ready ? (
-        <>
-          <div className="bt-analysis__strip">
-            <PatternStrip patterns={data?.patterns.shown ?? []} />
-            <IndicatorSummary items={data?.indicators.shown ?? []} />
-          </div>
-
-          {data ? <ChartInsight insight={data.state.insight} /> : null}
-
+        <div className="bt-analysis__side">
           <MarketState
             data={data} history={history} hitRate={hitRate} spot={spot}
             tf={tf} tfs={tfs} onTf={onTf ? (t) => onTf(t as ChartTf) : undefined}
           />
-        </>
+        </div>
       ) : null}
+
     </section>
   );
 }

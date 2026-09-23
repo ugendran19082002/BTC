@@ -193,6 +193,7 @@ export function PriceChart({
   expectedMove = null,
   levels = [],
   zones = [],
+  lines = [],
   projection = null,
   tf,
   onTf,
@@ -220,6 +221,19 @@ export function PriceChart({
    * measured.
    */
   zones?: readonly { from: number; to: number; label: string; tone: 'up' | 'down' }[];
+  /**
+   * The lines a chart reader would draw: through the last two swing lows, and
+   * the last two swing highs, carried forward to the newest bar.
+   *
+   * In bars back from the newest bar rather than in prices alone, because a
+   * sloping line is two points and the window under it moves. Found on the
+   * server (`domain/patterns.ts`) with everything else that reads the bars.
+   */
+  lines?: readonly {
+    kind: 'support' | 'resistance';
+    from: { barsAgo: number; price: number };
+    to: { barsAgo: number; price: number };
+  }[];
   /**
    * Where it goes if it goes, drawn off the right-hand edge.
    *
@@ -807,6 +821,34 @@ export function PriceChart({
                   {fmtStrike(Math.round(Math.min(z.from, z.to)))} – {fmtStrike(Math.round(Math.max(z.from, z.to)))}
                 </text>
               </g>
+            );
+          })}
+
+          {/*
+            The lines through the swings, drawn where the swings are.
+
+            `barsAgo` counts back from the newest bar of the whole series, so a
+            window that has been panned or zoomed still puts them on the right
+            candles -- and a line whose far end is off the left of the window is
+            clipped to the plot rather than dropped, since the half of it that
+            is on screen is the half being traded against.
+          */}
+          {lines.map((l, i) => {
+            const from = win?.from ?? 0;
+            const xOf = (barsAgo: number) => geom.x(bars.length - 1 - barsAgo - from);
+            const x1 = xOf(l.from.barsAgo);
+            const x2 = xOf(l.to.barsAgo);
+            const y1 = geom.y(l.from.price);
+            const y2 = geom.y(l.to.price);
+            if (![x1, x2, y1, y2].every(Number.isFinite)) return null;
+            const colour = l.kind === 'support' ? 'var(--up)' : 'var(--down)';
+            return (
+              <line
+                key={`trend-${i}`} data-trend={l.kind}
+                x1={clamp(x1, PAD.left, W - PAD.right)} y1={clamp(y1, PAD.top, PAD.top + geom.priceH)}
+                x2={clamp(x2, PAD.left, W - PAD.right)} y2={clamp(y2, PAD.top, PAD.top + geom.priceH)}
+                stroke={colour} strokeWidth="1.2" opacity="0.7" strokeDasharray="6 4"
+              />
             );
           })}
 

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { candlePatterns, relevant, structurePatterns, type Pattern } from '../../src/domain/patterns.js';
+import { candlePatterns, relevant, structurePatterns, trendLines, type Pattern } from '../../src/domain/patterns.js';
 import type { Candle } from '../../src/market/delta.js';
 
 let t = 0;
@@ -162,4 +162,31 @@ test('[critical] while a level is being tested, the pattern that contradicts the
 test('an older pattern ranks under a newer one of the same standing', () => {
   const all = [p('Hammer', 'BULLISH', 'candle', 2), p('Bullish Pin Bar', 'BULLISH', 'candle', 0)];
   assert.equal(relevant(all, 'BREAKOUT_CONFIRMED', 'UP', 1)[0]!.name, 'Bullish Pin Bar');
+});
+
+/*
+ * The lines a chart reader would draw. One only says anything where price has
+ * not been yet, so it is carried forward to the newest bar rather than
+ * stopping at the last swing it was drawn through.
+ */
+const swingBar = (low: number, high: number): Candle =>
+  ({ time: 0, open: (low + high) / 2, high, low, close: (low + high) / 2, volume: 100 });
+
+test('[critical] the support line runs through the last two swing lows, carried to the newest bar', () => {
+  // Swing lows at bar 2 (100) and bar 6 (140): ten a bar, two bars on to the end.
+  const bars = [
+    swingBar(120, 200), swingBar(115, 200), swingBar(100, 200), swingBar(130, 200),
+    swingBar(150, 200), swingBar(145, 200), swingBar(140, 200), swingBar(160, 200), swingBar(170, 200),
+  ];
+  const support = trendLines(bars).find((l) => l.kind === 'support');
+  assert.ok(support);
+  assert.equal(support.bias, 'BULLISH');
+  assert.deepEqual(support.from, { barsAgo: 6, price: 100 });
+  assert.deepEqual(support.to, { barsAgo: 0, price: 160 });
+});
+
+test('no line where there are not two swings to draw one through', () => {
+  const flat = Array.from({ length: 6 }, () => swingBar(100, 200));
+  assert.deepEqual(trendLines(flat), []);
+  assert.deepEqual(trendLines([swingBar(100, 200), swingBar(101, 201)]), []);
 });

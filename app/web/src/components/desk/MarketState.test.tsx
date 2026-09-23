@@ -32,6 +32,7 @@ const base: MarketStateResponse = {
     words: 'Price is near resistance. A close over 86,800 is the break.',
     insight: 'If 86,800 breaks and a 15m candle closes above it with volume, the next move is towards 87,200 – 87,600. If it is rejected, watch 86,200 for the short.',
   },
+  lines: [],
   patterns: {
     all: [],
     shown: [

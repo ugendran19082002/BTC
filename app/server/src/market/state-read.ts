@@ -3,7 +3,7 @@ import { atr, readMarket, type MarketRead } from './moves.js';
 import { flowSummary } from './flow.js';
 import { movementByWindow } from './movement.js';
 import { marketState, LEVEL_BARS, type MarketState, type Regime, type StateInput } from '../domain/market-state.js';
-import { candlePatterns, relevant, structurePatterns, type Pattern } from '../domain/patterns.js';
+import { candlePatterns, relevant, structurePatterns, trendLines, type Pattern, type TrendLine } from '../domain/patterns.js';
 import { indicators, relevantIndicators, type Indicator } from '../domain/indicators.js';
 
 /**
@@ -40,6 +40,8 @@ export type StateRead = {
   state: MarketState;
   /** Every pattern that is true, and the few worth showing. */
   patterns: { all: Pattern[]; shown: Pattern[] };
+  /** The lines through the last swings, for drawing on the chart. */
+  lines: TrendLine[];
   /** Every reading, and the few that decide this state. */
   indicators: { all: Indicator[]; shown: Indicator[] };
   /** What each borrowed reading was, so the card can show its working. */
@@ -180,6 +182,7 @@ export async function readState(tf: StateTf = '15m', nowMs = Date.now()): Promis
     bars,
     state,
     patterns: { all: found, shown: relevant(found, state.event, state.side) },
+    lines: trendLines(bars),
     indicators: { all: read, shown: relevantIndicators(read, state.stage) },
     inputs,
   };

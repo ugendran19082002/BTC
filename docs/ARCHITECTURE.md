@@ -292,7 +292,7 @@ statement is the authority. See `TODO.md`.
 
 ## Testing
 
-1,081 server tests (`node:test` via tsx), 946 browser tests (vitest +
+1,081 server tests (`node:test` via tsx), 954 browser tests (vitest +
 @testing-library). Run `npm test` in `app/server` and `npx vitest run` in
 `app/web`; `npm run typecheck` in both.
 
