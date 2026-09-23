@@ -99,6 +99,24 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS option_flow_1m_expiry_at ON option_flow_1m (expiry, at);
     `,
   },
+  {
+    /*
+     * The IV term record goes with the card that read it.
+     *
+     * `iv_term_snapshots` existed for one thing: the "a week ago / a month ago"
+     * lines on the IV term structure card, removed from the Live screen on 22
+     * September. Since then it was written every five minutes and read by
+     * nobody, and `/api/term` was asking it two questions a minute per open
+     * browser for numbers that went nowhere.
+     *
+     * The term structure itself is unaffected: it is read from the live
+     * tickers, not from here. What is lost is the recorded history -- four
+     * days of it -- so if the card ever comes back, its comparison lines start
+     * again from the day it does.
+     */
+    id: 'market-009-drop-iv-term',
+    up: 'DROP TABLE IF EXISTS iv_term_snapshots;',
+  },
 ];
 
 let ready: Promise<void> | null = null;

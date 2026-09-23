@@ -154,6 +154,23 @@ const MIGRATIONS: Migration[] = [
       COMMENT ON TABLE strategy_rebalances IS 'Retired 22 Sep 2026 with the rebalance. History only: nothing reads or writes it.';
     `,
   },
+  {
+    /*
+     * "Delete later" is now (23 Sep 2026): the desk keeps no table nothing
+     * reads. `strategy-004` retired the two features and deliberately left
+     * their tables standing, because a drop is irreversible and belongs in a
+     * step of its own that somebody chooses to run. This is that step, and it
+     * takes 25 columns of retired history with it.
+     *
+     * There is no other copy of those rows. `deploy/backup-db.sh` before the
+     * deploy that runs this is the whole of the safety net.
+     */
+    id: 'strategy-005-drop-retired-tables',
+    up: `
+      DROP TABLE IF EXISTS strategy_adds;
+      DROP TABLE IF EXISTS strategy_rebalances;
+    `,
+  },
 ];
 
 /** A config without the settings the desk no longer has. */
