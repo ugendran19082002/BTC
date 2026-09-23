@@ -31,8 +31,7 @@ import { TODAY_MOVE } from '@/types/desk';
 import { tabTitle } from '@/lib/tab-title';
 import { pnlTone, signedInr, usdToInr } from '@/lib/format';
 import { PriceChart, CHART_TFS, type ChartTf } from '@/components/desk/PriceChart';
-import { MarketState } from '@/components/desk/MarketState';
-import { ChartInsight, IndicatorSummary, PatternStrip } from '@/components/desk/ChartReadout';
+import { MarketPanel } from '@/components/desk/MarketPanel';
 import { Select, SelectItem } from '@/components/ui/select';
 import { ColumnPicker } from '@/components/chain/ColumnPicker';
 import { normalise, normaliseOrder, type ColumnKey, type ColumnState } from '@/components/chain/columns';
@@ -333,7 +332,7 @@ export default function App() {
     { enabled: signedIn === true && tab === 'desk', deps: [stateTf] },
   );
   const { data: stateHistory } = usePoll(
-    () => getStateHistory(stateTf, 10),
+    () => getStateHistory(stateTf, 30),
     120_000,
     { enabled: signedIn === true && tab === 'desk', deps: [stateTf] },
   );
@@ -594,60 +593,40 @@ export default function App() {
                   </>
                 }
                 chart={
-                  <>
-                    <ErrorBoundary where="Price chart">
-                      <Chart
-                        bars={candles?.bars ?? NO_BARS}
-                        // The wall within reach, not the heaviest on the board: a strike
-                        // eleven expected moves away is open interest, not a level.
-                        support={data.structure.peOiWallNear?.strike ?? null}
-                        resistance={data.structure.ceOiWallNear?.strike ?? null}
-                        spot={snap.spot}
-                        zones={chartZones}
-                        projection={chartProjection}
-                        tf={chartTf}
-                        onTf={setChartTf}
-                        loading={candlesBusy}
-                        error={candles?.error}
-                      />
-                    </ErrorBoundary>
-
+                  <ErrorBoundary where="Price chart">
                     {/*
-                      The chart's own reading, in the chart's own column (23 Sep
-                      2026). It used to be rendered after the three-column grid,
-                      which put a screen and a half of other panels between the
-                      candles and what they meant -- read in the wrong order, or
-                      not at all. Patterns and readings first, then the sentence,
-                      then the card with the levels and the plans.
+                      One panel, not four (23 Sep 2026): the candles, the shapes
+                      on them, the readings behind those, the sentence and the
+                      plan. They are one thought and they now sit in one card,
+                      in the order somebody reads them.
                     */}
-                    {live && (
-                      <ErrorBoundary where="Chart readout">
-                        <div className="bt-readout-row">
-                          <PatternStrip patterns={marketState?.patterns.shown ?? []} />
-                          <IndicatorSummary items={marketState?.indicators.shown ?? []} />
-                        </div>
-                      </ErrorBoundary>
-                    )}
-
-                    {live && marketState ? (
-                      <ErrorBoundary where="Chart insight">
-                        <ChartInsight insight={marketState.state.insight} />
-                      </ErrorBoundary>
-                    ) : null}
-
-                    {live && (
-                      <ErrorBoundary where="Market state">
-                        <MarketState
-                          data={marketState ?? null}
-                          history={stateHistory?.rows}
-                          hitRate={stateHistory?.hitRate}
-                          tf={stateTf}
-                          tfs={STATE_CARD_TFS}
-                          onTf={(t) => setChartTf(t as ChartTf)}
+                    <MarketPanel
+                      chart={
+                        <Chart
+                          bars={candles?.bars ?? NO_BARS}
+                          // The wall within reach, not the heaviest on the board: a strike
+                          // eleven expected moves away is open interest, not a level.
+                          support={data.structure.peOiWallNear?.strike ?? null}
+                          resistance={data.structure.ceOiWallNear?.strike ?? null}
+                          spot={snap.spot}
+                          zones={chartZones}
+                          projection={chartProjection}
+                          tf={chartTf}
+                          onTf={setChartTf}
+                          loading={candlesBusy}
+                          error={candles?.error}
                         />
-                      </ErrorBoundary>
-                    )}
-                  </>
+                      }
+                      data={marketState ?? null}
+                      history={stateHistory?.rows}
+                      hitRate={stateHistory?.hitRate}
+                      tf={stateTf}
+                      tfs={STATE_CARD_TFS}
+                      onTf={setChartTf}
+                      spot={snap.spot}
+                      ready={live}
+                    />
+                  </ErrorBoundary>
                 }
               />
             </ErrorBoundary>

@@ -165,22 +165,31 @@ calls is not a hit rate.
 
 ## On the chart, and under it
 
-Three things were added to the Live screen to match the reference the owner
-sent (23 Sep):
+The Live screen shows the chart and everything read off it as **one panel**
+(`MarketPanel`), in the order somebody reads it: the candles, the shapes on
+them, the numbers behind those, the sentence, then the plan. It was four cards
+in a column until 23 Sep -- four borders and four headings for one thought,
+with the plan a scroll away from the level it is about.
 
-1. **Bands, not lines.** The resistance and support the state is judged against
+1. **A readable window.** The chart opens on as many bars as fit at nine pixels
+   a candle, newest first, not on every bar loaded. Four hundred candles across
+   six hundred pixels is a smear; *All* still shows the whole series.
+2. **Bands, not lines.** The resistance and support the state is judged against
    are shaded behind the candles, to the same tolerance the engine breaks them
-   by. A level is never one price, and a hairline invites an argument about a
-   wick two dollars through it.
-2. **The projection.** An arrow out of the newest bar to each target with the
-   price in a box, drawn in the gap kept clear to the right of the last candle
-   so it never covers a bar. A target beyond the scale is drawn at the edge
-   *with its number* rather than dropped -- losing it entirely would read as
-   there being no target.
-3. **The strip.** Pattern detection (four, with a small drawing of each shape)
-   and the indicator summary (six, with a dial where the reading has natural
-   bounds and the figure alone where it does not -- MACD's histogram has no
-   top, and a dial would be inventing one), then **the sentence**:
+   by, each labelled with its name and the two prices it runs between. A level
+   is never one price, and a hairline invites an argument about a wick two
+   dollars through it.
+3. **The projection.** An arrow out of the newest bar to each target, in a box
+   saying which way, the price, and how far that is from here in percent --
+   drawn in the gap kept clear to the right of the last candle so it never
+   covers a bar. A target beyond the scale is drawn at the edge *with its
+   number* rather than dropped; losing it entirely would read as there being no
+   target. Between the two sits the **possible range**, because "neither has
+   happened yet" is a reading too, and the one most often mistaken for a signal.
+4. **The strip.** Pattern detection (four, with a small drawing of each shape)
+   and the indicator summary (six, the reading inside a dial where it has
+   natural bounds and standing alone where it does not -- MACD's histogram has
+   no top, and a dial would be inventing one), then **the sentence**:
 
    > If 86,800 breaks and a 15m candle closes above it with volume, the next
    > move is towards 87,200 – 87,600. If it is rejected, watch 86,200 for the
@@ -190,6 +199,9 @@ sent (23 Sep):
    only the side currently favoured is the one that gets somebody caught on
    the other. It is built on the server (`insightFor`) so the sentence, the
    card and the journal cannot drift apart.
+5. **The plans, always.** Breakout / range / breakdown with target 1, target 2
+   and the stop on all of them, under every tab. They were folded away except
+   on the Levels tab; a stop you have to change tab to read is one you set late.
 
 ## Where each piece lives
 
@@ -204,12 +216,13 @@ sent (23 Sep):
 | The card | `app/web/src/components/desk/MarketState.tsx` |
 | The bands and the projection | `zones` / `projection` on `PriceChart` |
 | The strip under the chart | `app/web/src/components/desk/ChartReadout.tsx` |
+| The one panel they all sit in | `app/web/src/components/desk/MarketPanel.tsx` |
 
 Tests: `test/domain/market-state.test.ts` (25), `test/domain/patterns.test.ts`
 (17), `test/domain/indicators.test.ts` (12), `test/market/state-read.test.ts`
 (6), `test/market/state-history.test.ts` (5), `MarketState.test.tsx` (11),
-`ChartReadout.test.tsx` (7), and five more in `PriceChart.test.tsx` for the
-bands and the projection.
+`ChartReadout.test.tsx` (7), `MarketPanel.test.tsx` (3), and eight more in
+`PriceChart.test.tsx` for the bands, the projection and the opening window.
 
 ---
 

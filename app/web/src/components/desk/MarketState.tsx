@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ArrowDownRight, ArrowUpRight, CircleAlert, CircleCheck, Clock, Minus, TrendingDown, TrendingUp } from 'lucide-react';
+import { ArrowDownRight, ArrowUpRight, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Clock, Minus, TrendingDown, TrendingUp } from 'lucide-react';
 import type {
   MarketStateResponse, StateHistoryRow, StateIndicator, StatePattern, StatePlan,
 } from '@/api/desk';
@@ -61,7 +61,7 @@ const IST = new Intl.DateTimeFormat('en-IN', {
 });
 
 export function MarketState({
-  data, history, hitRate, tf, onTf, tfs,
+  data, history, hitRate, tf, onTf, tfs, spot,
 }: {
   data: MarketStateResponse | null;
   history?: StateHistoryRow[];
@@ -69,6 +69,8 @@ export function MarketState({
   tf: string;
   onTf?: (tf: string) => void;
   tfs?: readonly string[];
+  /** BTC now, so each earlier call can say what price did after it. */
+  spot?: number;
 }) {
   const [tab, setTab] = useState<Tab>('Analysis');
   const s = data?.state ?? null;
@@ -84,7 +86,7 @@ export function MarketState({
   }, [s, words]);
 
   return (
-    <section className="bt-card bt-market-state" aria-label="Market state">
+    <section className="bt-market-state" aria-label="Market analysis">
       <header className="bt-market-state__head">
         <h3>Market analysis</h3>
         <div className="bt-market-state__head-right">
@@ -150,7 +152,7 @@ export function MarketState({
             <Plans plans={s.plans} level={s.level} distance={s.distance} against={s.against} />
           </div>
 
-          {history?.length ? <History rows={history} rate={hitRate} /> : null}
+          {history?.length ? <History rows={history} rate={hitRate} spot={spot} /> : null}
         </div>
       ) : null}
     </section>
@@ -259,6 +261,9 @@ function Indicators({ items }: { items: readonly StateIndicator[] }) {
   );
 }
 
+/** Five calls a page: the newest is the one being looked for. */
+const PAGE = 5;
+
 const OUTCOME_WORDS: Record<string, string> = {
   CORRECT: 'Correct', WRONG: 'Wrong', UNRESOLVED: 'No follow-through', NOT_GRADED: '—',
 };
@@ -271,7 +276,17 @@ const OUTCOME_WORDS: Record<string, string> = {
  * and the tally is given as "3 of 4" rather than a percentage, because four
  * calls is not a hit rate.
  */
-function History({ rows, rate }: { rows: readonly StateHistoryRow[]; rate?: { correct: number; graded: number } }) {
+function History({ rows, rate, spot }: {
+  rows: readonly StateHistoryRow[];
+  rate?: { correct: number; graded: number };
+  spot?: number;
+}) {
+  const [page, setPage] = useState(0);
+  const pages = Math.max(1, Math.ceil(rows.length / PAGE));
+  const at = Math.min(page, pages - 1);
+  const shown = rows.slice(at * PAGE, at * PAGE + PAGE);
+  const first = at * PAGE + 1;
+
   return (
     <div className="bt-market-state__history">
       <h4>
@@ -279,23 +294,59 @@ function History({ rows, rate }: { rows: readonly StateHistoryRow[]; rate?: { co
         {rate && rate.graded > 0 ? <span>{rate.correct} of {rate.graded} came good</span> : <span>none graded yet</span>}
       </h4>
       <ul>
-        {rows.map((r) => (
-          <li key={r.id}>
-            <span className="bt-market-state__hist-at">{IST.format(r.at)}</span>
-            {r.side === 'UP' ? <ArrowUpRight size={14} className="is-up" aria-hidden />
-              : r.side === 'DOWN' ? <ArrowDownRight size={14} className="is-down" aria-hidden />
-                : <Minus size={14} aria-hidden />}
-            <span className="bt-market-state__hist-what">
-              {STATE_WORDS[r.event]?.title ?? r.event} <em>({r.confidence})</em>
-            </span>
-            <span className={cn('bt-market-state__hist-out',
-              r.outcome === 'CORRECT' && 'is-up', r.outcome === 'WRONG' && 'is-down',
-              (r.outcome === 'CORRECT' || r.outcome === 'WRONG') && 'is-chip')}>
-              {OUTCOME_WORDS[r.outcome ?? 'NOT_GRADED'] ?? '—'}
-            </span>
-          </li>
-        ))}
+        {shown.map((r, i) => {
+          /*
+           * What BTC did after the call: to the next call, or to the price now
+           * for the newest one. It is the question the row is read to answer,
+           * and reading it off two close prices in your head is the part
+           * nobody does.
+           */
+          const after = rows[at * PAGE + i - 1]?.close ?? spot ?? null;
+          const move = after === null ? null : Math.round(after - r.close);
+          // Which way it went is not the same as whether the call was right:
+          // the colour follows the call, so a fall after a breakdown is green.
+          const went = move === null || r.side === null ? null
+            : (r.side === 'UP' ? move > 0 : move < 0);
+          return (
+            <li key={r.id}>
+              <span className="bt-market-state__hist-at">{IST.format(r.at)}</span>
+              {r.side === 'UP' ? <ArrowUpRight size={14} className="is-up" aria-hidden />
+                : r.side === 'DOWN' ? <ArrowDownRight size={14} className="is-down" aria-hidden />
+                  : <Minus size={14} aria-hidden />}
+              <span className="bt-market-state__hist-what">
+                {STATE_WORDS[r.event]?.title ?? r.event} <em>({r.confidence})</em>
+              </span>
+              <span className={cn('bt-market-state__hist-pts',
+                went === true && 'is-up', went === false && 'is-down')}
+                title="What BTC did between this call and the next one">
+                {move === null ? '—' : `${move > 0 ? '+' : move < 0 ? '−' : ''}${Math.abs(move).toLocaleString('en-US')} pts`}
+              </span>
+              <span className={cn('bt-market-state__hist-out',
+                r.outcome === 'CORRECT' && 'is-up', r.outcome === 'WRONG' && 'is-down',
+                (r.outcome === 'CORRECT' || r.outcome === 'WRONG') && 'is-chip')}>
+                {OUTCOME_WORDS[r.outcome ?? 'NOT_GRADED'] ?? '—'}
+              </span>
+            </li>
+          );
+        })}
       </ul>
+
+      {/* Five at a time, newest first. Ten rows of small print is a wall
+          nobody reads to the end of, and the newest call is the one being
+          looked for. */}
+      {rows.length > PAGE ? (
+        <div className="bt-market-state__pager">
+          <span>{first}–{first + shown.length - 1} of {rows.length}</span>
+          <button type="button" className="bt-chip" aria-label="Newer calls"
+            disabled={at === 0} onClick={() => setPage(at - 1)}>
+            <ChevronLeft size={14} aria-hidden />
+          </button>
+          <button type="button" className="bt-chip" aria-label="Older calls"
+            disabled={at >= pages - 1} onClick={() => setPage(at + 1)}>
+            <ChevronRight size={14} aria-hidden />
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

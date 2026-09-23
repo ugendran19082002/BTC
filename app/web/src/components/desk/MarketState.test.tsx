@@ -144,6 +144,47 @@ describe('the market-state card', () => {
     expect(screen.getByText('—')).toBeInTheDocument();
   });
 
+  it('[critical] each earlier call says what BTC did after it', () => {
+    /*
+     * The question the row is read to answer. Between two calls it is the move
+     * to the next one; for the newest it is the move to the price now -- and
+     * the colour follows the call, so a fall after a breakdown is green.
+     */
+    const rows: StateHistoryRow[] = [
+      { id: 3, at: base.at, tf: '15m', event: 'BREAKDOWN_CONFIRMED', stage: 'CONFIRMED', side: 'DOWN', confirmed: true, confidence: 70, close: 86_500, plan: null, outcome: 'CORRECT', gradedAt: base.at },
+      { id: 2, at: base.at - 3_600_000, tf: '15m', event: 'BREAKOUT_WATCH', stage: 'WATCH', side: 'UP', confirmed: false, confidence: 60, close: 86_300, plan: null, outcome: 'WRONG', gradedAt: base.at },
+    ];
+    render(<MarketState data={base} history={rows} tf="15m" spot={86_200} />);
+    // newest: 86,200 now against 86,500 called -- 300 down, and it was a breakdown
+    const newest = screen.getByText('−300 pts');
+    expect(newest.className).toContain('is-up');
+    // the one before it: 86,500 at the next call against 86,300 -- up, after a breakout watch
+    expect(screen.getByText('+200 pts').className).toContain('is-up');
+  });
+
+  it('[critical] shows five calls a page, newest first, and pages back through the rest', () => {
+    // Ten rows of small print is a wall nobody reads to the end of.
+    const rows: StateHistoryRow[] = Array.from({ length: 12 }, (_, i) => ({
+      id: i + 1, at: base.at - i * 900_000, tf: '15m', event: 'RANGE', stage: 'RANGE',
+      side: null, confirmed: false, confidence: 50 + i, close: 86_000 + i, plan: null,
+      outcome: 'NOT_GRADED' as const, gradedAt: null,
+    }));
+    render(<MarketState data={base} history={rows} tf="15m" />);
+    expect(screen.getByText('1–5 of 12')).toBeInTheDocument();
+    expect(screen.getAllByText(/^Range/)).toHaveLength(5);
+    expect(screen.getByText('(50)')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Newer calls' })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Older calls' }));
+    expect(screen.getByText('6–10 of 12')).toBeInTheDocument();
+    expect(screen.getByText('(55)')).toBeInTheDocument();
+    expect(screen.queryByText('(50)')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Older calls' }));
+    expect(screen.getByText('11–12 of 12')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Older calls' })).toBeDisabled();
+  });
+
   it('switches timeframe through the caller', () => {
     const seen: string[] = [];
     render(<MarketState data={base} tf="15m" tfs={['5m', '15m', '1h']} onTf={(t) => seen.push(t)} />);

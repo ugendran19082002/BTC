@@ -55,7 +55,7 @@ function glyphFor(name: string): string[] {
 
 export function PatternStrip({ patterns }: { patterns: readonly StatePattern[] }) {
   return (
-    <section className="bt-card bt-readout" aria-label="Pattern detection">
+    <section className="bt-readout" aria-label="Pattern detection">
       <h3><ScanLine size={14} aria-hidden /> Pattern detection</h3>
       {patterns.length === 0 ? (
         <p className="bt-muted">Nothing named on these bars.</p>
@@ -85,24 +85,26 @@ export function PatternStrip({ patterns }: { patterns: readonly StatePattern[] }
  * histogram has no top, so a dial would be inventing one -- those get the
  * figure and the word, which is all they can honestly carry.
  */
-function Dial({ value, bias }: { value: number; bias: StateIndicator['bias'] }) {
+function Dial({ value, bias, text }: { value: number; bias: StateIndicator['bias']; text: string }) {
   const R = 22;
   const CIRC = Math.PI * R;
   const colour = bias === 'BULLISH' ? 'var(--up)' : bias === 'BEARISH' ? 'var(--down)' : 'var(--accent, var(--text))';
   return (
-    <svg viewBox="0 0 56 32" className="bt-readout__dial" aria-hidden>
+    <svg viewBox="0 0 56 34" className="bt-readout__dial">
       <path d="M 6 28 A 22 22 0 0 1 50 28" fill="none" stroke="var(--line)" strokeWidth="5" strokeLinecap="round" />
       <path
         d="M 6 28 A 22 22 0 0 1 50 28" fill="none" stroke={colour} strokeWidth="5" strokeLinecap="round"
         strokeDasharray={`${CIRC * Math.max(0, Math.min(1, value))} ${CIRC}`}
       />
+      {/* The reading sits in the arc, where the eye already is. */}
+      <text x="28" y="27" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text)">{text}</text>
     </svg>
   );
 }
 
 export function IndicatorSummary({ items }: { items: readonly StateIndicator[] }) {
   return (
-    <section className="bt-card bt-readout" aria-label="Indicator summary">
+    <section className="bt-readout" aria-label="Indicator summary">
       <h3><GaugeIcon size={14} aria-hidden /> Indicator summary</h3>
       {items.length === 0 ? (
         <p className="bt-muted">No readings yet.</p>
@@ -111,8 +113,12 @@ export function IndicatorSummary({ items }: { items: readonly StateIndicator[] }
           {items.map((i) => (
             <li key={i.key}>
               <span className="bt-readout__dial-label">{i.label}</span>
-              {i.gauge !== null ? <Dial value={i.gauge} bias={i.bias} /> : <span className="bt-readout__dial-gap" aria-hidden />}
-              <strong>{i.text}</strong>
+              {/* The number goes in the arc where there is one, and stands on its
+                  own where there is not -- never both, which reads as two
+                  different readings of the same thing. */}
+              {i.gauge !== null
+                ? <Dial value={i.gauge} bias={i.bias} text={i.text} />
+                : <strong className="bt-readout__dial-figure">{i.text}</strong>}
               <span className={cn('bt-readout__dial-read',
                 i.bias === 'BULLISH' && 'is-up', i.bias === 'BEARISH' && 'is-down')}>{i.read}</span>
             </li>
@@ -132,7 +138,7 @@ export function IndicatorSummary({ items }: { items: readonly StateIndicator[] }
  */
 export function ChartInsight({ insight }: { insight: string }) {
   return (
-    <section className="bt-card bt-insight" aria-label="What this means">
+    <section className="bt-insight" aria-label="What this means">
       <Lightbulb size={16} aria-hidden />
       <div>
         <h3>What this means</h3>
