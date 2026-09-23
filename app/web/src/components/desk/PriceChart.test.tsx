@@ -85,15 +85,16 @@ describe('the price chart', () => {
     expect(volume.data[1].color).toContain('226,80,79');
   });
 
-  it('[critical] draws spot, and names the open-interest walls under the chart instead', () => {
+  it('[critical] draws no price lines, and names the open-interest walls under the chart', () => {
     /*
-     * The walls were two more horizontals through the candles, competing with
-     * the bands the state is actually judged against -- for levels that are
-     * not levels in the price sense at all. They are where open interest sits.
+     * The walls were two more horizontals through the candles, and spot was a
+     * third -- whose axis tag sat on top of the series' own last-price tag, a
+     * few dollars apart, both over the callouts. The candles already show
+     * where price is; the walls are where open interest sits, which is worth
+     * saying and not worth a line.
      */
     chart();
-    expect(priceLines.map((l) => l.title)).toEqual(['Spot']);
-    expect(priceLines[0].price).toBe(77_200);
+    expect(priceLines).toHaveLength(0);
     const note = screen.getByText(/where open interest sits/);
     expect(note.textContent).toContain('74,400');
     expect(note.textContent).toContain('80,000');

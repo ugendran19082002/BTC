@@ -202,10 +202,17 @@ with the plan a scroll away from the level it is about.
    the right, and *Fit* shows the whole series. Zoom and pan stay locked until
    asked for, because the chart sits in the middle of a scrolling page.
 
-   Only spot is drawn as a price line. The two open-interest walls are named
-   under the chart instead: they are where the board's open interest sits, not
-   where BTC will settle, and a line through the candles claims more than that
-   while competing with the bands the state is actually judged against.
+   **Nothing is drawn as a price line.** The walls went first -- they are where
+   the board's open interest sits, not where BTC will settle, and they are
+   named under the chart instead -- and then spot, whose axis tag sat on top of
+   the series' own last-price tag a few dollars away, both over the callouts.
+   The candles already show where price is. What is drawn is what the state is
+   judged against: the two bands.
+
+   The possible-range box went the same way. It quoted the two numbers the
+   shaded bands either side of it were already labelled with: the same fact
+   three times, in the most crowded corner of the screen. The card still gives
+   the range in words, where there is room.
 
    Everything the library has no opinion about -- the bands, the swing lines,
    the callouts -- is laid out in `chart-overlay.ts` as pixels and drawn as one

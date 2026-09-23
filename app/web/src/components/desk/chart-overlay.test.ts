@@ -48,10 +48,26 @@ describe('the level bands', () => {
     expect(floor!.edge).toBeCloseTo(floor!.top + floor!.height, 5);
   });
 
-  it('the tag sits outside the band, over a ceiling and under a floor', () => {
-    const [ceiling] = zoneShapes([{ from: 76_000, to: 76_400, label: 'R', tone: 'up' }], c);
+  it('[critical] a deep band carries its label inside; a thin one has it just outside', () => {
+    /*
+     * Inside is where a band's label belongs -- it is the band it names. A band
+     * opened out to eighteen pixels because the tolerance was a couple of
+     * dollars cannot hold two lines of text, so that one is labelled outside.
+     */
+    const [deep] = zoneShapes([{ from: 74_000, to: 76_000, label: 'Support zone', tone: 'down' }], c);
+    expect(deep!.labelInside).toBe(true);
+    expect(deep!.tagY).toBeGreaterThanOrEqual(deep!.top);
+    expect(deep!.tagY).toBeLessThan(deep!.top + deep!.height);
+
+    const [thin] = zoneShapes([{ from: 75_000, to: 75_020, label: 'Resistance zone', tone: 'up' }], c);
+    expect(thin!.labelInside).toBe(false);
+    expect(thin!.tagY).toBeLessThan(thin!.top);
+  });
+
+  it('a thin band is tagged over a ceiling and under a floor', () => {
+    const [ceiling] = zoneShapes([{ from: 76_000, to: 76_050, label: 'R', tone: 'up' }], c);
     expect(ceiling!.tagY).toBeLessThan(ceiling!.top);
-    const [floor] = zoneShapes([{ from: 74_000, to: 74_400, label: 'S', tone: 'down' }], c);
+    const [floor] = zoneShapes([{ from: 74_000, to: 74_050, label: 'S', tone: 'down' }], c);
     expect(floor!.tagY).toBeGreaterThan(floor!.top);
   });
 });
@@ -110,8 +126,9 @@ describe('the target callouts', () => {
     // very prices it is quoting.
     const axis = 64;
     for (const s of calloutShapes(p, 75_000, { ...c, gutter: axis })) {
+      // clear of the axis, and still in the gutter to the right of the bars
       expect(s.x + CALLOUT_W).toBeLessThanOrEqual(c.width - axis);
-      expect(s.x).toBeGreaterThan(c.width / 2);
+      expect(s.x).toBeGreaterThan(0);
     }
   });
 

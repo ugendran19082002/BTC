@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as Collapsible from '@radix-ui/react-collapsible';
 import {
-  CandlestickSeries, ColorType, CrosshairMode, HistogramSeries, LineStyle, createChart,
+  CandlestickSeries, ColorType, CrosshairMode, HistogramSeries, createChart,
   type IChartApi, type ISeriesApi, type Time, type UTCTimestamp,
 } from 'lightweight-charts';
 import { ChevronDown, Expand, Lock, Maximize2, Minimize, Move } from 'lucide-react';
@@ -42,8 +42,15 @@ export const CHART_TFS: readonly ChartTf[] = ['5m', '15m', '30m', '1h', '4h'];
 
 /** Bars of empty plot kept to the right, where the callouts live. */
 const RIGHT_BARS = 12;
-/** Bars on screen when the chart is first drawn: a readable candle width. */
-const OPENING_BARS = 90;
+/**
+ * Bars on screen when the chart is first drawn.
+ *
+ * Ninety of them squeezed a five-minute chart's whole day onto the scale, and
+ * the candles that matter -- the last couple of hours -- were a band an inch
+ * tall in the middle of it. Sixty is about four hours on 5m, which fills the
+ * height with bars somebody is actually deciding on; *Fit* still shows the lot.
+ */
+const OPENING_BARS = 60;
 
 const IST_FULL = new Intl.DateTimeFormat('en-IN', {
   timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false,
@@ -113,18 +120,23 @@ export function PriceChart({
       width: host.clientWidth || 720,
       height: host.clientHeight || 360,
       layout: {
-        background: { type: ColorType.Solid, color: 'transparent' },
-        textColor: 'rgba(190, 200, 215, 0.75)',
+        // Its own dark ground rather than the card's: a transparent canvas
+        // took whatever was behind it, so the grid, the wicks and the axis all
+        // sat at a different contrast from every other dark panel on the desk.
+        background: { type: ColorType.Solid, color: '#0c1219' },
+        textColor: 'rgba(206, 216, 230, 0.85)',
         fontSize: 11,
         attributionLogo: false,
       },
       grid: {
-        vertLines: { color: 'rgba(255,255,255,0.045)' },
-        horzLines: { color: 'rgba(255,255,255,0.045)' },
+        vertLines: { color: 'rgba(255,255,255,0.06)' },
+        horzLines: { color: 'rgba(255,255,255,0.06)' },
       },
-      rightPriceScale: { borderColor: 'rgba(255,255,255,0.1)', scaleMargins: { top: 0.08, bottom: 0.26 } },
+      // The candles get the height: a wide margin above and below is empty
+      // chart, and empty chart is what makes a candle a smudge.
+      rightPriceScale: { borderColor: 'rgba(255,255,255,0.14)', scaleMargins: { top: 0.06, bottom: 0.22 } },
       timeScale: {
-        borderColor: 'rgba(255,255,255,0.1)',
+        borderColor: 'rgba(255,255,255,0.14)',
         timeVisible: true,
         secondsVisible: false,
         // The gutter the callouts live in: without it the newest candle is
@@ -158,7 +170,7 @@ export function PriceChart({
       lastValueVisible: false,
       priceLineVisible: false,
     });
-    volume.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+    volume.priceScale().applyOptions({ scaleMargins: { top: 0.84, bottom: 0 } });
 
     chart.subscribeCrosshairMove((param) => {
       const at = param.time === undefined ? null : param.seriesData.get(candles);
@@ -221,24 +233,14 @@ export function PriceChart({
   }, [tf, bars.length === 0]);
 
   /*
-   * Spot, and spot only, drawn on the plot.
+   * Nothing is drawn as a price line any more.
    *
-   * The two open-interest walls used to be lines across the chart as well, and
-   * they were two more horizontals competing with the bands the state is
-   * actually judged against -- for levels that are not levels in the price
-   * sense at all. They are where open interest sits, which is worth knowing
-   * and is not worth a line through the candles. They are named under the
-   * chart instead.
+   * Spot was, and it produced two labels on the axis a few dollars apart --
+   * the yellow spot tag sitting on top of the series' own last-price tag, both
+   * saying essentially the same number, both over the callouts. The candle
+   * series already marks where price is. The open-interest walls are named
+   * under the chart, and the levels that matter are the shaded bands.
    */
-  useEffect(() => {
-    const candles = candleRef.current;
-    if (!candles) return;
-    const line = candles.createPriceLine({
-      price: spot, color: '#e0b13a', lineWidth: 1, lineStyle: LineStyle.Dashed,
-      axisLabelVisible: true, title: 'Spot',
-    });
-    return () => { candles.removePriceLine(line); };
-  }, [spot, bars.length === 0, open, error]);
 
   // --------------------------------------------------------------- the overlay
   const overlay = useMemo(() => {
@@ -354,13 +356,19 @@ export function PriceChart({
                   const colour = z.tone === 'up' ? DOWN : UP;
                   return (
                     <g key={z.label} data-zone={z.label}>
-                      <rect x={0} y={z.top} width={overlay.width} height={z.height} fill={colour} opacity="0.14" />
+                      <rect x={0} y={z.top} width={overlay.width} height={z.height} fill={colour} opacity="0.16" />
                       <line x1={0} x2={overlay.width} y1={z.edge} y2={z.edge} stroke={colour}
-                        strokeWidth="1.2" strokeDasharray="5 4" opacity="0.9" />
-                      <rect x={6} y={z.tagY} width={112} height={26} rx={4} fill="rgba(10,16,24,0.92)"
-                        stroke={colour} strokeWidth="0.8" />
-                      <text x={12} y={z.tagY + 11} fontSize="9.5" fontWeight="600" fill={colour}>{z.label}</text>
-                      <text x={12} y={z.tagY + 21} fontSize="9.5" fill="rgba(226,235,245,0.9)">
+                        strokeWidth="1.3" strokeDasharray="6 4" opacity="0.95" />
+                      {/* Inside the band where it is deep enough to hold the
+                          words, just outside where it is not. */}
+                      {!z.labelInside && (
+                        <rect x={6} y={z.tagY} width={124} height={28} rx={4} fill="rgba(10,16,24,0.92)"
+                          stroke={colour} strokeWidth="0.8" />
+                      )}
+                      <text x={z.labelInside ? 14 : 12} y={z.tagY + 13} fontSize="11" fontWeight="600" fill={colour}>
+                        {z.label}
+                      </text>
+                      <text x={z.labelInside ? 14 : 12} y={z.tagY + 25} fontSize="11" fill="rgba(226,235,245,0.92)">
                         {fmtStrike(Math.round(z.low))} – {fmtStrike(Math.round(z.high))}
                       </text>
                     </g>
@@ -373,12 +381,12 @@ export function PriceChart({
                     green and red candles is noise. */}
                 {overlay.lines.map((l, i) => (
                   <line key={`trend-${i}`} data-trend={l.kind} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
-                    stroke="rgba(226,235,245,0.55)" strokeWidth="1.2" strokeDasharray="7 5" />
+                    stroke="rgba(236,243,250,0.8)" strokeWidth="1.8" strokeLinecap="round" />
                 ))}
 
                 {overlay.callouts.map((c) => {
                   const colour = c.key === 'up' ? UP : c.key === 'down' ? DOWN : 'rgba(190,200,215,0.8)';
-                  const h = c.key === 'range' ? 30 : CALLOUT_H;
+                  const h = c.key === 'range' ? 34 : CALLOUT_H;
                   return (
                     <g key={c.key} data-leg={c.key}>
                       {c.key !== 'range' && (
@@ -386,22 +394,22 @@ export function PriceChart({
                           fill="none" stroke={colour} strokeWidth="1.6" opacity="0.85"
                           markerEnd={`url(#pc-arrow-${c.key})`} />
                       )}
-                      <rect x={c.x} y={c.y - h / 2} width={CALLOUT_W} height={h} rx={5}
-                        fill="rgba(10,16,24,0.95)" stroke={colour} strokeWidth="1" />
-                      <text x={c.x + 8} y={c.y - h / 2 + 13} fontSize="9.5" fontWeight="600"
-                        fill={c.key === 'range' ? 'rgba(190,200,215,0.9)' : colour}>{c.title}</text>
+                      <rect x={c.x} y={c.y - h / 2} width={CALLOUT_W} height={h} rx={6}
+                        fill="rgba(10,16,24,0.96)" stroke={colour} strokeWidth="1.2" />
+                      <text x={c.x + 10} y={c.y - h / 2 + 16} fontSize="11.5" fontWeight="600"
+                        fill={c.key === 'range' ? 'rgba(206,216,230,0.95)' : colour}>{c.title}</text>
                       {c.key === 'range' ? (
-                        <text x={c.x + 8} y={c.y + 9} fontSize="10" fill="rgba(226,235,245,0.95)">
+                        <text x={c.x + 10} y={c.y + 10} fontSize="11.5" fill="rgba(226,235,245,0.95)">
                           {fmtStrike(Math.round(c.low ?? 0))} – {fmtStrike(Math.round(c.high ?? 0))}
                         </text>
                       ) : (
                         <>
-                          <text x={c.x + 8} y={c.y + 5} fontSize="9.5" fill="rgba(190,200,215,0.8)">Target</text>
-                          <text x={c.x + CALLOUT_W - 8} y={c.y + 5} fontSize="10.5" textAnchor="end"
-                            fill="rgba(226,235,245,0.98)">
+                          <text x={c.x + 10} y={c.y + 5} fontSize="11" fill="rgba(190,200,215,0.85)">Target</text>
+                          <text x={c.x + CALLOUT_W - 10} y={c.y + 5} fontSize="12" textAnchor="end"
+                            fill="rgba(232,240,248,1)">
                             {Math.round(c.price ?? 0).toLocaleString('en-US')}
                           </text>
-                          <text x={c.x + CALLOUT_W - 8} y={c.y + 15} fontSize="9" textAnchor="end" fill={colour}>
+                          <text x={c.x + CALLOUT_W - 10} y={c.y + 18} fontSize="10.5" textAnchor="end" fill={colour}>
                             ({(c.awayPct ?? 0) >= 0 ? '+' : '−'}{Math.abs(c.awayPct ?? 0).toFixed(2)}%)
                           </text>
                         </>

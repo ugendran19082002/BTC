@@ -30,6 +30,14 @@ export type ZoneShape = {
   label: string; tone: 'up' | 'down';
   top: number; height: number; edge: number;
   tagY: number; low: number; high: number;
+  /**
+   * Whether the band is deep enough to carry its own label.
+   *
+   * Inside is where a band label belongs -- it is the band it names, and the
+   * reference reads that way. A band eighteen pixels tall cannot hold two
+   * lines of text, so a thin one is labelled just outside instead.
+   */
+  labelInside: boolean;
 };
 export type LineShape = { kind: 'support' | 'resistance'; x1: number; y1: number; x2: number; y2: number };
 export type CalloutShape = {
@@ -42,8 +50,8 @@ export type CalloutShape = {
 /** How thin a band may be drawn before it stops being visible at all. */
 export const MIN_ZONE_PX = 18;
 /** The callout boxes, and the gutter they live in. */
-export const CALLOUT_W = 104;
-export const CALLOUT_H = 38;
+export const CALLOUT_W = 126;
+export const CALLOUT_H = 46;
 
 export type Converters = {
   /** Price to a y in the plot, or null when it is off the scale. */
@@ -89,7 +97,12 @@ export function zoneShapes(zones: readonly Zone[], c: Converters): ZoneShape[] {
     // The tag sits outside the band -- over a ceiling, under a floor -- so it
     // never has to be read through the candles it is labelling.
     const tagY = clamp(z.tone === 'up' ? top - 30 : bottom + 4, 0, Math.max(0, c.height - 28));
-    out.push({ label: z.label, tone: z.tone, top, height: bottom - top, edge, tagY, low, high });
+    const height = bottom - top;
+    out.push({
+      label: z.label, tone: z.tone, top, height, edge, low, high,
+      labelInside: height >= 34,
+      tagY: height >= 34 ? top + 4 : tagY,
+    });
   }
   return out;
 }
@@ -129,7 +142,7 @@ export function lineShapes(lines: readonly TrendLine[], c: Converters): LineShap
  */
 export function calloutShapes(p: Projection | null, spot: number, c: Converters): CalloutShape[] {
   if (!p) return [];
-  const x = c.width - (c.gutter ?? 0) - CALLOUT_W - 16;
+  const x = c.width - (c.gutter ?? 0) - CALLOUT_W - 22;
   const inPlot = (y: number) => clamp(y, CALLOUT_H / 2 + 2, c.height - CALLOUT_H / 2 - 2);
   const at = (price: number) => inPlot(c.y(price) ?? (price > spot ? 0 : c.height));
   const fromY = inPlot(c.y(spot) ?? c.height / 2);

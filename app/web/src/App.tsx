@@ -361,13 +361,17 @@ export default function App() {
   const chartProjection = useMemo(() => {
     const plans = marketState?.state.plans;
     if (!plans || (!plans.up && !plans.down)) return null;
-    const level = marketState?.state.level;
     return {
       up: plans.up ? { trigger: plans.up.trigger, target1: plans.up.target1 } : null,
       down: plans.down ? { trigger: plans.down.trigger, target1: plans.down.target1 } : null,
-      // The box between the two triggers: where price is until one of them goes.
-      range: level && level.support !== null && level.resistance !== null
-        ? { from: level.support, to: level.resistance } : null,
+      /*
+       * No range box on the chart. It said "84,108 – 84,326" in the gutter
+       * while the two shaded bands either side of that range were already
+       * drawn and labelled with the same two numbers -- the same fact three
+       * times, in the most crowded corner of the screen. The card still gives
+       * the range in words, where there is room for it.
+       */
+      range: null,
     };
   }, [marketState]);
 

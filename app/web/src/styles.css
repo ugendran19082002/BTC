@@ -910,7 +910,10 @@ td.evcol.down { color: var(--down); }
 /* The library paints into `.price-chart-canvas`; the desk's own bands, swing
    lines and callouts are one SVG laid over it, which takes no pointer events so
    the crosshair, the drag and the pinch underneath still work. */
-.price-chart-plot { position: relative; width: 100%; height: 420px; min-width: 0; }
+.price-chart-plot {
+  position: relative; width: 100%; height: 440px; min-width: 0;
+  background: #0c1219; border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+}
 .price-chart-canvas { position: absolute; inset: 0; }
 .price-chart-overlay { position: absolute; inset: 0; pointer-events: none; }
 .price-chart.is-full .price-chart-plot { height: calc(100vh - 190px); }
