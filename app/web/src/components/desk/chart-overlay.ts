@@ -197,3 +197,103 @@ function spread(shapes: CalloutShape[], height: number): CalloutShape[] {
   if (over > 0) for (const s of out) s.y -= over;
   return out.map((s) => ({ ...s, y: Math.max(CALLOUT_H / 2 + 2, s.y) }));
 }
+
+/**
+ * The events worth flagging on the candles themselves.
+ *
+ * The journal already holds every state the desk has called, with the minute
+ * it was called at, so the flags on the chart are the same calls the history
+ * list below it is grading -- not a second opinion drawn by the chart. That is
+ * the whole reason they come from the rows rather than from a fresh pass over
+ * the bars: a chart that disagrees with the list under it is worse than a
+ * chart with nothing on it.
+ *
+ * Only the ones a reader would draw by hand. A watch is a maybe and there are
+ * dozens of them; what goes on the candles is what happened -- a break that
+ * confirmed, a rejection, a retest that failed, a bounce.
+ */
+export type StateMarker = {
+  time: number;
+  label: string;
+  /** Above the bar for a rejection or a top, below for a bounce or a break up. */
+  above: boolean;
+  tone: 'up' | 'down';
+};
+
+const MARKER_WORDS: Record<string, { label: string; above: boolean; tone: 'up' | 'down' }> = {
+  BREAKOUT_CONFIRMED: { label: 'Breakout', above: false, tone: 'up' },
+  BREAKDOWN_CONFIRMED: { label: 'Breakdown', above: true, tone: 'down' },
+  REJECTION: { label: 'Rejection', above: true, tone: 'down' },
+  SUPPORT_REJECTION: { label: 'Support bounce', above: false, tone: 'up' },
+  FALSE_BREAKOUT: { label: 'Retest failed', above: true, tone: 'down' },
+  FALSE_BREAKDOWN: { label: 'Retest failed', above: false, tone: 'up' },
+  RETEST_HOLD: { label: 'Retest held', above: false, tone: 'up' },
+};
+
+/**
+ * One flag per bar, newest kept, and never more than `limit` of them.
+ *
+ * The desk can call the same thing twice in a minute while a level is being
+ * argued over, and two flags on one candle is one unreadable flag. Older
+ * events are dropped first: the reason to look at a flag is to see what just
+ * happened.
+ */
+export function markersFrom(
+  rows: readonly { at: number; event: string }[],
+  barSeconds: number,
+  limit = 6,
+): StateMarker[] {
+  const byBar = new Map<number, StateMarker>();
+  for (const r of rows) {
+    const words = MARKER_WORDS[r.event];
+    if (!words) continue;
+    const bar = Math.floor(r.at / 1000 / barSeconds) * barSeconds;
+    // Rows arrive newest first, so the first one on a bar is the one to keep.
+    if (!byBar.has(bar)) byBar.set(bar, { time: bar, label: words.label, above: words.above, tone: words.tone });
+  }
+  return [...byBar.values()].sort((a, b) => b.time - a.time).slice(0, limit).sort((a, b) => a.time - b.time);
+}
+
+/**
+ * The detected patterns, put on the bars they were detected on.
+ *
+ * The strip under the chart names them; this is the same list drawn where it
+ * happened, because "Bearish Engulfing" means very little until you can see
+ * which candle it was. `barsAgo` counts back from the newest bar, exactly as
+ * the server measured it.
+ */
+export function patternMarkers(
+  patterns: readonly { name: string; bias: 'BULLISH' | 'BEARISH' | 'NEUTRAL'; barsAgo: number }[],
+  bars: readonly { time: number }[],
+  limit = 5,
+): StateMarker[] {
+  const out: StateMarker[] = [];
+  for (const p of patterns) {
+    const bar = bars[bars.length - 1 - p.barsAgo];
+    if (!bar) continue;
+    out.push({
+      time: bar.time,
+      label: p.name,
+      // A bearish shape is flagged over the bar and a bullish one under it, so
+      // the flag sits on the side the move it warns about would come from.
+      above: p.bias === 'BEARISH',
+      tone: p.bias === 'BEARISH' ? 'down' : 'up',
+    });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/**
+ * Both kinds of flag, one per bar.
+ *
+ * A state the desk called outranks a shape it noticed on the same candle: the
+ * state is the thing being traded and the shape is part of why. Two flags on
+ * one bar is one unreadable flag.
+ */
+export function mergeMarkers(states: readonly StateMarker[], patterns: readonly StateMarker[], limit = 8): StateMarker[] {
+  const byBar = new Map<number, StateMarker>();
+  for (const m of states) byBar.set(m.time, m);
+  for (const m of patterns) if (!byBar.has(m.time)) byBar.set(m.time, m);
+  return [...byBar.values()].sort((a, b) => b.time - a.time).slice(0, limit).sort((a, b) => a.time - b.time);
+}

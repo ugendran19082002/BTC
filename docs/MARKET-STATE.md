@@ -237,7 +237,17 @@ with the plan a scroll away from the level it is about.
    number* rather than dropped; losing it entirely would read as there being no
    target. Between the two sits the **possible range**, because "neither has
    happened yet" is a reading too, and the one most often mistaken for a signal.
-5. **The strip.** Pattern detection (four, with a small drawing of each shape)
+5. **The flags, and the one word.** What the desk called is flagged on the bar
+   it was called on -- a confirmed break, a rejection, a retest that failed, a
+   bounce -- and so is every pattern it named, on the bar it was named on.
+   "Bearish Engulfing" in a list means very little until you can see which
+   candle it was. The flags come from the journal and from the same pattern
+   list the strip shows, never from a second pass over the bars: a chart that
+   disagrees with the card under it is worse than a chart with nothing on it. A
+   watch never gets one -- there are dozens an hour and none of them has
+   happened -- one flag a bar, at most eight, newest kept. The header carries
+   the regime in a word: **↗ Uptrend / ↘ Downtrend / ↔ Range / → Quiet**.
+6. **The strip.** Pattern detection (four, with a small drawing of each shape)
    and the indicator summary (six, the reading inside a dial where it has
    natural bounds and standing alone where it does not -- MACD's histogram has
    no top, and a dial would be inventing one), then **the sentence**:
@@ -250,10 +260,10 @@ with the plan a scroll away from the level it is about.
    only the side currently favoured is the one that gets somebody caught on
    the other. It is built on the server (`insightFor`) so the sentence, the
    card and the journal cannot drift apart.
-6. **The plans, always.** Breakout / range / breakdown with target 1, target 2
+7. **The plans, always.** Breakout / range / breakdown with target 1, target 2
    and the stop on all of them, under every tab. They were folded away except
    on the Levels tab; a stop you have to change tab to read is one you set late.
-7. **The signal history**, five calls a page, newest first. Each row names the
+8. **The signal history**, five calls a page, newest first. Each row names the
    level it was a call about (resistance over, support under), the target and
    what that was worth in index points, then what BTC actually did in points --
    from the graded row where there is one, otherwise to the next call, or to

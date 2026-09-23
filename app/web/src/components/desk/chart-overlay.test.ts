@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CALLOUT_H, CALLOUT_W, MIN_ZONE_PX, calloutShapes, lineShapes, zoneShapes, type Converters,
+  CALLOUT_H, CALLOUT_W, MIN_ZONE_PX, calloutShapes, lineShapes, markersFrom, mergeMarkers,
+  patternMarkers, zoneShapes, type Converters,
 } from '@/components/desk/chart-overlay';
 
 /*
@@ -157,5 +158,61 @@ describe('the target callouts', () => {
 
   it('draws nothing when there is no projection', () => {
     expect(calloutShapes(null, 75_000, c)).toEqual([]);
+  });
+});
+
+describe('the flags on the candles', () => {
+  it('[critical] flags what happened, and leaves out what might', () => {
+    /*
+     * A watch is a maybe and there are dozens of them in an hour; what goes on
+     * the candles is what happened. They come from the journal rather than
+     * from a fresh pass over the bars, so the flags and the history list under
+     * the chart can never disagree.
+     */
+    const rows = [
+      { at: 1_757_003_640_000, event: 'BREAKDOWN_CONFIRMED' },
+      { at: 1_757_003_400_000, event: 'BREAKOUT_WATCH' },
+      { at: 1_757_003_100_000, event: 'REJECTION' },
+    ];
+    const flags = markersFrom(rows, 300);
+    expect(flags.map((f) => f.label)).toEqual(['Rejection', 'Breakdown']);
+    expect(flags[1]).toMatchObject({ above: true, tone: 'down' });
+    // snapped to the bar it happened in, oldest first
+    expect(flags[0]!.time).toBe(1_757_003_100);
+    expect(flags[1]!.time).toBe(1_757_003_400);
+  });
+
+  it('keeps the newest call where two land on one bar', () => {
+    // The desk can call the same level twice in a minute while it is argued
+    // over, and two flags on one candle is one unreadable flag.
+    const flags = markersFrom([
+      { at: 1_757_003_580_000, event: 'REJECTION' },
+      { at: 1_757_003_420_000, event: 'BREAKDOWN_CONFIRMED' },
+    ], 300);
+    expect(flags).toHaveLength(1);
+    expect(flags[0]!.label).toBe('Rejection');
+  });
+
+  it('[critical] a pattern is flagged on the bar it was detected on', () => {
+    const bars = Array.from({ length: 10 }, (_, i) => ({ time: 1_000 + i * 300 }));
+    const flags = patternMarkers([
+      { name: 'Bearish Engulfing', bias: 'BEARISH', barsAgo: 0 },
+      { name: 'Hammer', bias: 'BULLISH', barsAgo: 3 },
+    ], bars);
+    expect(flags[0]).toMatchObject({ time: 3_700, label: 'Bearish Engulfing', above: true });
+    expect(flags[1]).toMatchObject({ time: 2_800, label: 'Hammer', above: false });
+  });
+
+  it('a called state outranks a shape noticed on the same bar', () => {
+    const state = [{ time: 900, label: 'Breakdown', above: true, tone: 'down' as const }];
+    const pattern = [{ time: 900, label: 'Bearish Engulfing', above: true, tone: 'down' as const }];
+    expect(mergeMarkers(state, pattern).map((m) => m.label)).toEqual(['Breakdown']);
+  });
+
+  it('never litters the chart with more than a handful', () => {
+    const rows = Array.from({ length: 30 }, (_, i) => ({ at: 1_757_000_000_000 + i * 300_000, event: 'REJECTION' }));
+    expect(markersFrom(rows, 300).length).toBeLessThanOrEqual(6);
+    const many = Array.from({ length: 20 }, (_, i) => ({ time: i * 300, label: `p${i}`, above: false, tone: 'up' as const }));
+    expect(mergeMarkers(many, [])).toHaveLength(8);
   });
 });

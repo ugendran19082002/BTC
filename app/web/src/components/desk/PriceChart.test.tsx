@@ -13,6 +13,7 @@ import type { Candle } from '@/types/desk';
  */
 
 const series = { candles: null as any, volume: null as any };
+const markerSets: any[][] = [];
 const setDataCalls: { which: string; data: any[] }[] = [];
 const applied: Record<string, unknown>[] = [];
 const priceLines: any[] = [];
@@ -27,6 +28,7 @@ vi.mock('lightweight-charts', () => {
     removePriceLine = vi.fn();
   }
   return {
+    createSeriesMarkers: vi.fn(() => ({ setMarkers: (m: any[]) => { markerSets.push(m); } })),
     ColorType: { Solid: 'solid' },
     CrosshairMode: { Normal: 0 },
     LineStyle: { Dashed: 2 },
@@ -66,6 +68,7 @@ const chart = (props: Partial<Parameters<typeof PriceChart>[0]> = {}) =>
   );
 
 beforeEach(() => {
+  markerSets.length = 0;
   setDataCalls.length = 0;
   applied.length = 0;
   priceLines.length = 0;
@@ -136,6 +139,27 @@ describe('the price chart', () => {
     expect(screen.getByText('40 bars')).toBeInTheDocument();
     // the last bar of the fixture: open 77,390, close 77,370
     expect(screen.getByText('77,390')).toBeInTheDocument();
+  });
+
+  it('[critical] flags what happened on the bar it happened on, and names the trend', () => {
+    /*
+     * "Bearish Engulfing" in a list under the chart means very little until
+     * you can see which candle it was. The flags are drawn by the library
+     * rather than by the overlay so they move with their bar through every pan
+     * and zoom.
+     */
+    chart({
+      trend: 'DOWN',
+      markers: [
+        { time: 1_757_003_600, label: 'Rejection', above: true, tone: 'down' },
+        { time: 1_757_007_200, label: 'Support bounce', above: false, tone: 'up' },
+      ],
+    });
+    const drawn = markerSets.at(-1)!;
+    expect(drawn.map((m) => m.text)).toEqual(['Rejection', 'Support bounce']);
+    expect(drawn[0]).toMatchObject({ position: 'aboveBar', shape: 'arrowDown' });
+    expect(drawn[1]).toMatchObject({ position: 'belowBar', shape: 'arrowUp' });
+    expect(screen.getByText('↘ Downtrend')).toBeInTheDocument();
   });
 
   it('says what is wrong instead of drawing an empty chart', () => {

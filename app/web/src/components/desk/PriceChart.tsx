@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as Collapsible from '@radix-ui/react-collapsible';
 import {
-  CandlestickSeries, ColorType, CrosshairMode, HistogramSeries, createChart,
-  type IChartApi, type ISeriesApi, type Time, type UTCTimestamp,
+  CandlestickSeries, ColorType, CrosshairMode, HistogramSeries, createChart, createSeriesMarkers,
+  type IChartApi, type ISeriesApi, type ISeriesMarkersPluginApi, type Time, type UTCTimestamp,
 } from 'lightweight-charts';
 import { ChevronDown, Expand, Lock, Maximize2, Minimize, Move } from 'lucide-react';
 import { usePersisted } from '@/hooks/usePersisted';
@@ -11,7 +11,7 @@ import { strike as fmtStrike } from '@/lib/format';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import {
   CALLOUT_H, CALLOUT_W, calloutShapes, lineShapes, zoneShapes,
-  type Converters, type Projection, type TrendLine, type Zone,
+  type Converters, type Projection, type StateMarker, type TrendLine, type Zone,
 } from '@/components/desk/chart-overlay';
 
 /**
@@ -61,7 +61,7 @@ const DOWN = '#e2504f';
 
 export function PriceChart({
   bars, support, resistance, spot, zones = [], lines = [], projection = null,
-  tf, onTf, loading = false, error,
+  markers = [], trend = null, tf, onTf, loading = false, error,
 }: {
   bars: Candle[];
   /** Heaviest put strike, or null when the board has no open interest to read. */
@@ -75,6 +75,10 @@ export function PriceChart({
   lines?: readonly TrendLine[];
   /** Where price goes if it goes, drawn in the right-hand gutter. */
   projection?: Projection | null;
+  /** What happened, flagged on the bar it happened on. */
+  markers?: readonly StateMarker[];
+  /** Up, down or neither, in the header: the one word the chart is read for. */
+  trend?: 'UP' | 'DOWN' | 'RANGE' | 'QUIET' | null;
   tf: ChartTf;
   onTf: (tf: ChartTf) => void;
   loading?: boolean;
@@ -85,6 +89,7 @@ export function PriceChart({
   const chartRef = useRef<IChartApi | null>(null);
   const candleRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+  const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
 
   const [open, setOpen] = usePersisted('open:price-chart', true);
   const [full, setFull] = useState(false);
@@ -181,6 +186,7 @@ export function PriceChart({
     chartRef.current = chart;
     candleRef.current = candles;
     volumeRef.current = volume;
+    markersRef.current = createSeriesMarkers(candles, []);
     setSize({ width: host.clientWidth, height: host.clientHeight });
 
     const ro = new ResizeObserver(([entry]) => {
@@ -200,6 +206,7 @@ export function PriceChart({
       chartRef.current = null;
       candleRef.current = null;
       volumeRef.current = null;
+      markersRef.current = null;
     };
   }, [open, error]);
 
@@ -241,6 +248,23 @@ export function PriceChart({
    * series already marks where price is. The open-interest walls are named
    * under the chart, and the levels that matter are the shaded bands.
    */
+
+  /*
+   * The flags on the candles: what the desk called, and what it saw.
+   *
+   * The library draws these, not the overlay, because a marker has to move
+   * with its bar through every pan and zoom -- an SVG flag would need
+   * repositioning on every frame and would drift on the one frame it missed.
+   */
+  useEffect(() => {
+    markersRef.current?.setMarkers(markers.map((m) => ({
+      time: m.time as UTCTimestamp,
+      position: m.above ? 'aboveBar' : 'belowBar',
+      shape: m.above ? 'arrowDown' : 'arrowUp',
+      color: m.tone === 'up' ? UP : DOWN,
+      text: m.label,
+    })));
+  }, [markers, bars.length === 0, open, error]);
 
   // --------------------------------------------------------------- the overlay
   const overlay = useMemo(() => {
@@ -285,6 +309,16 @@ export function PriceChart({
             <ChevronDown className={`smr-chev${open ? '' : ' shut'}`} size={13} aria-hidden />
             BTC <span className="price-chart-dot" aria-hidden>•</span> {tf === '1d' ? '1D' : tf}
           </Collapsible.Trigger>
+
+          {/* One word for what the chart is doing, which is what it is opened
+              to find out. It is the regime the state engine measured, not a
+              second guess made here. */}
+          {trend ? (
+            <span className={`price-chart-trend is-${trend.toLowerCase()}`}>
+              {trend === 'UP' ? '↗ Uptrend' : trend === 'DOWN' ? '↘ Downtrend'
+                : trend === 'QUIET' ? '→ Quiet' : '↔ Range'}
+            </span>
+          ) : null}
 
           {open && shown && !error && (
             <div className="price-chart-ohlc">

@@ -32,6 +32,7 @@ import { tabTitle } from '@/lib/tab-title';
 import { pnlTone, signedInr, usdToInr } from '@/lib/format';
 import { PriceChart, CHART_TFS, type ChartTf } from '@/components/desk/PriceChart';
 import { MarketPanel } from '@/components/desk/MarketPanel';
+import { markersFrom, mergeMarkers, patternMarkers } from '@/components/desk/chart-overlay';
 import { Select, SelectItem } from '@/components/ui/select';
 import { ColumnPicker } from '@/components/chain/ColumnPicker';
 import { normalise, normaliseOrder, type ColumnKey, type ColumnState } from '@/components/chain/columns';
@@ -357,6 +358,22 @@ export default function App() {
     return out;
   }, [marketState]);
 
+  /*
+   * The flags on the candles: every pattern the desk named, on the bar it was
+   * named on, plus the states it called from the journal. The strip under the
+   * chart lists the same patterns -- this is where they happened, which is
+   * what makes "Bearish Engulfing" mean anything.
+   */
+  const chartMarkers = useMemo(() => {
+    const bars = candles?.bars ?? NO_BARS;
+    if (!bars.length) return [];
+    const seconds = bars.length > 1 ? bars[1]!.time - bars[0]!.time : 300;
+    return mergeMarkers(
+      markersFrom(stateHistory?.rows ?? [], seconds),
+      patternMarkers(marketState?.patterns.all ?? marketState?.patterns.shown ?? [], bars),
+    );
+  }, [candles, marketState, stateHistory]);
+
   /** The two targets drawn off the right edge: the card's plan, on the chart. */
   const chartProjection = useMemo(() => {
     const plans = marketState?.state.plans;
@@ -616,6 +633,10 @@ export default function App() {
                           zones={chartZones}
                           lines={marketState?.lines ?? []}
                           projection={chartProjection}
+                          markers={chartMarkers}
+                          trend={marketState?.inputs.regime === 'TREND_UP' ? 'UP'
+                            : marketState?.inputs.regime === 'TREND_DOWN' ? 'DOWN'
+                              : marketState?.inputs.regime ?? null}
                           tf={chartTf}
                           onTf={setChartTf}
                           loading={candlesBusy}
