@@ -51,7 +51,7 @@ function rsi(values: number[], period = 14): number | null {
   return 100 - 100 / (1 + gain / loss);
 }
 
-function atr(bars: Candle[], period = 14): number | null {
+export function atr(bars: readonly Candle[], period = 14): number | null {
   if (bars.length < period + 1) return null;
   const tr: number[] = [];
   for (let i = 1; i < bars.length; i++) {

@@ -15,6 +15,7 @@ import { termStructure } from '../../market/term.js';
 import { lastOptionSnapshot, lastOptionSnapshotAt } from '../../market/option-snapshots.js';
 import { flowFeedHealth, flowSummary, ivRank, liveBook, livePerp, oiPulse, optionFlowSummary, skewRank } from '../../market/flow.js';
 import { movementByWindow } from '../../market/movement.js';
+import { readState, STATE_TFS, type StateTf } from '../../market/state-read.js';
 import { changes } from '../../market/changes.js';
 import { one } from '../../db/pool.js';
 import { strategyStore } from './strategy.routes.js';
@@ -126,6 +127,34 @@ export function registerDeskRoutes(app: FastifyInstance) {
       spot: n('spot'), mark: n('mark'), oi: n('oi'), iv: n('iv'), volume: n('volume'),
       ceOi: n('ceOi'), peOi: n('peOi'), callVolume: n('callVolume'), putVolume: n('putVolume'), pcr: n('pcr'), atmIv: n('atmIv'),
     }, entry ?? null);
+  });
+
+  /**
+   * Where price is against the level that matters: the market-state card.
+   *
+   * Breakout, rejection, breakdown or range, on one timeframe, with the
+   * confirmation list, both sides' plans and every reading the score was built
+   * from. The rules are in `domain/market-state.ts` and are pure; this only
+   * chooses the timeframe and hands back what that module says.
+   *
+   * `confidence` is a score out of a hundred, by the weights in that module --
+   * **not** a probability. Nothing here is calibrated against history, and a
+   * number that looks like a probability and is not is worse than no number,
+   * so the field is named for what it is and the card says so too.
+   */
+  app.get('/api/market-state', async (req, reply) => {
+    const q = req.query as { tf?: string };
+    const tf = (STATE_TFS as readonly string[]).includes(q.tf ?? '') ? (q.tf as StateTf) : '15m';
+    try {
+      const read = await readState(tf);
+      // The bars are already on the screen from /api/candles; sending sixty
+      // more of them with every poll would double the payload for nothing.
+      const { bars, ...rest } = read;
+      return { ...rest, bars: bars.length };
+    } catch (e) {
+      reply.code(502);
+      return { error: (e as Error).message };
+    }
   });
 
   /**
