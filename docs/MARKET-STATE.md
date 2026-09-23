@@ -202,6 +202,14 @@ with the plan a scroll away from the level it is about.
 5. **The plans, always.** Breakout / range / breakdown with target 1, target 2
    and the stop on all of them, under every tab. They were folded away except
    on the Levels tab; a stop you have to change tab to read is one you set late.
+6. **The signal history**, five calls a page, newest first, each saying what
+   BTC did after it in points -- to the next call, or to the price now for the
+   newest. The colour follows the call rather than the direction, so a fall
+   after a breakdown is green. The tally stays a count ("3 of 4 came good").
+
+The panel runs the width of the desk: in the middle of three columns the chart
+was about six hundred pixels, which is a candle every two pixels and a plan in
+five-digit numbers three abreast.
 
 ## Where each piece lives
 
@@ -220,7 +228,7 @@ with the plan a scroll away from the level it is about.
 
 Tests: `test/domain/market-state.test.ts` (25), `test/domain/patterns.test.ts`
 (17), `test/domain/indicators.test.ts` (12), `test/market/state-read.test.ts`
-(6), `test/market/state-history.test.ts` (5), `MarketState.test.tsx` (11),
+(6), `test/market/state-history.test.ts` (5), `MarketState.test.tsx` (13),
 `ChartReadout.test.tsx` (7), `MarketPanel.test.tsx` (3), and eight more in
 `PriceChart.test.tsx` for the bands, the projection and the opening window.
 

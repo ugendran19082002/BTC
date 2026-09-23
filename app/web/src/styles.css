@@ -2541,6 +2541,7 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 .ov-kpi-sub { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .ov-kpi-trio { display: flex; gap: 14px; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
 
+.ov-chart-wide { margin-bottom: 10px; min-width: 0; }
 .ov-main { display: grid; grid-template-columns: minmax(230px, 1fr) minmax(0, 2.1fr) minmax(320px, 1.7fr); gap: 10px; align-items: start; }
 .ov-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 @media (max-width: 1280px) {

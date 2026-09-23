@@ -136,12 +136,13 @@ describe('the market-state card', () => {
       { id: 2, at: base.at - 3_600_000, tf: '15m', event: 'RANGE', stage: 'RANGE', side: null, confirmed: false, confidence: 62, close: 86_500, plan: null, outcome: 'NOT_GRADED', gradedAt: null },
       { id: 3, at: base.at - 7_200_000, tf: '15m', event: 'REJECTION', stage: 'FAILED', side: 'DOWN', confirmed: true, confidence: 70, close: 86_610, plan: null, outcome: 'WRONG', gradedAt: base.at },
     ];
-    render(<MarketState data={base} history={rows} hitRate={{ correct: 1, graded: 2 }} tf="15m" />);
+    const { container } = render(<MarketState data={base} history={rows} hitRate={{ correct: 1, graded: 2 }} tf="15m" />);
     expect(screen.getByText('1 of 2 came good')).toBeInTheDocument();
     expect(screen.getByText('Correct')).toBeInTheDocument();
     expect(screen.getByText('Wrong')).toBeInTheDocument();
     // A range is not a prediction, so it is not marked right or wrong.
-    expect(screen.getByText('—')).toBeInTheDocument();
+    const outcomes = [...container.querySelectorAll('.bt-market-state__hist-out')].map((e) => e.textContent);
+    expect(outcomes).toEqual(['Correct', '—', 'Wrong']);
   });
 
   it('[critical] each earlier call says what BTC did after it', () => {
@@ -171,7 +172,7 @@ describe('the market-state card', () => {
     }));
     render(<MarketState data={base} history={rows} tf="15m" />);
     expect(screen.getByText('1–5 of 12')).toBeInTheDocument();
-    expect(screen.getAllByText(/^Range/)).toHaveLength(5);
+    expect(document.querySelectorAll('.bt-market-state__history li')).toHaveLength(5);
     expect(screen.getByText('(50)')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Newer calls' })).toBeDisabled();
 

@@ -202,6 +202,16 @@ export function Overview({
       <ScreenBar data={data} now={now} freshnessSec={config.freshnessSec} expiries={expiries} onExpiry={onExpiry} controls={controls} error={error} onFoldAll={foldAll} />
       <ErrorBoundary where="Overview KPIs"><KpiStrip data={data} spot={spot} iv={iv} perp={perp} spark={spark} now={now} /></ErrorBoundary>
 
+      {/*
+        The chart and its reading run the width of the desk (23 Sep 2026).
+        Squeezed into the middle of three columns it was about six hundred
+        pixels wide -- a chart that narrow shows a candle every two pixels and
+        a plan in a column of five-digit numbers three abreast. It is the panel
+        the screen is opened for, so it gets the room; the three columns of
+        supporting panels start under it.
+      */}
+      {chart ? <div className="ov-chart-wide">{chart}</div> : null}
+
       <div className="ov-main">
         <div className="ov-col">
           <ErrorBoundary where="Price action"><PriceActionPanel market={data.market} tf={chartTf} levels={levels} spot={spot} /></ErrorBoundary>
@@ -212,7 +222,6 @@ export function Overview({
         </div>
 
         <div className="ov-col">
-          {chart}
           <ErrorBoundary where="Flow"><FlowPanel perp={perp} market={data.market} legs={data.legs} atm={snap.atm} window={flowWindow} onWindow={setFlowWindow} /></ErrorBoundary>
           <ErrorBoundary where="What changed"><ChangesPanel strikes={chosenPair} /></ErrorBoundary>
         </div>
