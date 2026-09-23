@@ -2951,3 +2951,128 @@ table.ov-mini.ov-levels { width: auto; min-width: 100%; }
 .ov-funding-up { color: var(--up); background: color-mix(in srgb, var(--up) 16%, transparent); }
 .ov-funding-down { color: var(--down); background: color-mix(in srgb, var(--down) 16%, transparent); }
 .ov-funding-muted { color: var(--muted); background: var(--panel-2); }
+
+/* ------------------------------------------------------------------
+   Market state (23 Sep 2026): breakout / rejection / breakdown, with
+   the confirmations, both sides' plans and what the card said before.
+
+   Two rules the colours follow. A state that is not confirmed never gets
+   the confirmed colour -- it gets a dimmer version of it, so "likely" and
+   "happened" can be told apart across a room. And the score is never
+   coloured like a probability, because it is not one. */
+.bt-market-state { display: grid; gap: 10px; }
+.bt-market-state__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.bt-market-state__head h3 { margin: 0; font-size: 14px; }
+.bt-market-state__head-right { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.bt-market-state__tfs { display: flex; gap: 4px; }
+.bt-market-state__at { color: var(--muted); font-size: 11.5px; }
+.bt-market-state__score {
+  padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--panel-2); font-size: 11.5px; color: var(--muted); white-space: nowrap;
+}
+.bt-market-state__score b { color: var(--text); font-size: 13px; }
+
+.bt-market-state__banner {
+  display: flex; align-items: flex-start; gap: 10px; padding: 12px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2);
+}
+.bt-market-state__banner strong { display: block; font-size: 15px; }
+.bt-market-state__banner p { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+.bt-market-state__banner > svg { flex: none; margin-top: 2px; }
+.bt-market-state__bias { font-weight: 500; color: var(--muted); font-size: 13px; }
+.bt-market-state__stage {
+  margin-left: auto; flex: none; align-self: center; font-size: 10.5px; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--muted); padding: 3px 7px; border-radius: 6px; background: var(--panel);
+}
+.bt-state-up { border-color: color-mix(in srgb, var(--up) 55%, var(--line)); background: color-mix(in srgb, var(--up) 10%, transparent); }
+.bt-state-up svg, .bt-state-up strong { color: var(--up); }
+.bt-state-up-soft { border-color: color-mix(in srgb, var(--up) 30%, var(--line)); background: color-mix(in srgb, var(--up) 4%, transparent); }
+.bt-state-down { border-color: color-mix(in srgb, var(--down) 55%, var(--line)); background: color-mix(in srgb, var(--down) 10%, transparent); }
+.bt-state-down svg, .bt-state-down strong { color: var(--down); }
+.bt-state-down-soft { border-color: color-mix(in srgb, var(--down) 30%, var(--line)); background: color-mix(in srgb, var(--down) 4%, transparent); }
+.bt-state-flat { border-color: var(--line); }
+
+.bt-market-state__tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.bt-market-state__tab {
+  padding: 7px 11px; font-size: 12px; color: var(--muted); background: none; border: 0;
+  border-bottom: 2px solid transparent; white-space: nowrap; cursor: pointer;
+}
+.bt-market-state__tab--on { color: var(--text); border-bottom-color: var(--accent, var(--text)); }
+
+.bt-market-state__checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.bt-market-state__checks li { display: flex; align-items: center; gap: 8px; font-size: 12.5px; min-width: 0; }
+.bt-market-state__checks li > span { min-width: 0; }
+.bt-market-state__checks li em { margin-left: auto; color: var(--muted); font-size: 11px; font-style: normal; }
+.bt-market-state__checks .is-ok > svg { color: var(--up); }
+.bt-market-state__checks .is-no > svg { color: var(--warn, #d9a441); }
+.bt-market-state__checks .is-unknown { color: var(--muted); }
+
+.bt-market-state__plans { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.bt-market-state__plan {
+  border: 1px solid var(--line); border-radius: 9px; padding: 9px; min-width: 0; background: var(--panel-2);
+}
+.bt-market-state__plan h4 { margin: 0 0 4px; font-size: 11.5px; display: flex; gap: 5px; flex-wrap: wrap; }
+.bt-market-state__plan h4 span { color: var(--muted); font-weight: 500; }
+.bt-market-state__plan.is-up { border-color: color-mix(in srgb, var(--up) 35%, var(--line)); }
+.bt-market-state__plan.is-up h4 { color: var(--up); }
+.bt-market-state__plan.is-down { border-color: color-mix(in srgb, var(--down) 35%, var(--line)); }
+.bt-market-state__plan.is-down h4 { color: var(--down); }
+.bt-market-state__trigger { margin: 0 0 6px; font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 3px; }
+.bt-market-state__plan dl { margin: 0; display: grid; gap: 3px; font-size: 11.5px; }
+.bt-market-state__plan dl > div { display: flex; justify-content: space-between; gap: 6px; }
+.bt-market-state__plan dt { color: var(--muted); }
+.bt-market-state__plan dd { margin: 0; font-variant-numeric: tabular-nums; }
+.bt-market-state__range { margin: 0 0 4px; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.bt-market-state__plans.is-compact .bt-market-state__plan dl { display: none; }
+.bt-market-state__plans.is-compact .bt-market-state__trigger { font-size: 13px; margin-bottom: 0; }
+
+.bt-market-state__patterns, .bt-market-state__indicators { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+.bt-market-state__patterns li {
+  display: grid; gap: 1px; padding: 7px 9px; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--panel-2); min-width: 0;
+}
+.bt-market-state__patterns li strong { font-size: 12.5px; }
+.bt-market-state__patterns li span { color: var(--muted); font-size: 11.5px; }
+.bt-market-state__patterns li em { color: var(--muted); font-size: 10.5px; font-style: normal; }
+.bt-market-state__patterns li.is-up strong { color: var(--up); }
+.bt-market-state__patterns li.is-down strong { color: var(--down); }
+
+.bt-market-state__indicators { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.bt-market-state__indicators li {
+  display: grid; gap: 2px; padding: 8px; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--panel-2); min-width: 0;
+}
+.bt-market-state__ind-label { color: var(--muted); font-size: 10.5px; }
+.bt-market-state__indicators strong { font-size: 15px; font-variant-numeric: tabular-nums; }
+.bt-market-state__ind-read { font-size: 11px; color: var(--muted); }
+.bt-market-state__ind-read.is-up { color: var(--up); }
+.bt-market-state__ind-read.is-down { color: var(--down); }
+.bt-market-state__gauge { display: block; height: 3px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.bt-market-state__gauge > span { display: block; height: 100%; background: var(--text); }
+
+.bt-market-state__history { border-top: 1px solid var(--line); padding-top: 8px; }
+.bt-market-state__history h4 { margin: 0 0 6px; font-size: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+.bt-market-state__history h4 span { margin-left: auto; color: var(--muted); font-weight: 500; }
+.bt-market-state__history ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+.bt-market-state__history li { display: flex; align-items: center; gap: 8px; font-size: 12px; min-width: 0; }
+.bt-market-state__hist-at { color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
+.bt-market-state__hist-what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bt-market-state__hist-what em { color: var(--muted); font-style: normal; }
+.bt-market-state__hist-out { margin-left: auto; flex: none; color: var(--muted); }
+.bt-market-state__hist-out.is-up { color: var(--up); }
+.bt-market-state__hist-out.is-down { color: var(--down); }
+.bt-market-state__history .is-up { color: var(--up); }
+.bt-market-state__history .is-down { color: var(--down); }
+
+/* On a phone the three plan columns stack: three columns of five digits each
+   is unreadable under 420px, and the trigger is the number that matters. */
+@media (max-width: 560px) {
+  .bt-market-state__plans { grid-template-columns: 1fr; }
+  .bt-market-state__indicators { grid-template-columns: 1fr; }
+  .bt-market-state__banner { padding: 10px; }
+  .bt-market-state__stage { display: none; }
+}
+@media (pointer: coarse) {
+  .bt-market-state__tab { min-height: 34px; }
+  .bt-market-state__tfs .bt-chip { min-height: 32px; }
+}
