@@ -914,6 +914,18 @@ td.evcol.down { color: var(--down); }
 }
 .price-chart-trend.is-up { color: var(--up); border-color: color-mix(in srgb, var(--up) 45%, var(--line)); }
 .price-chart-trend.is-down { color: var(--down); border-color: color-mix(in srgb, var(--down) 45%, var(--line)); }
+/* The vote: the one word, then the weight either way in smaller type. */
+.price-chart-bias {
+  display: inline-flex; align-items: baseline; gap: 6px; padding: 2px 9px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--panel-2); font-size: 11px; white-space: nowrap;
+}
+.price-chart-bias b { font-size: 12px; }
+.price-chart-bias > span { color: var(--muted); font-variant-numeric: tabular-nums; }
+.price-chart-bias.is-up { border-color: color-mix(in srgb, var(--up) 50%, var(--line)); background: color-mix(in srgb, var(--up) 10%, transparent); }
+.price-chart-bias.is-up b { color: var(--up); }
+.price-chart-bias.is-down { border-color: color-mix(in srgb, var(--down) 50%, var(--line)); background: color-mix(in srgb, var(--down) 10%, transparent); }
+.price-chart-bias.is-down b { color: var(--down); }
+.price-chart-bias.is-neutral b { color: var(--muted); }
 /* The library paints into `.price-chart-canvas`; the desk's own bands, swing
    lines and callouts are one SVG laid over it, which takes no pointer events so
    the crosshair, the drag and the pinch underneath still work. */

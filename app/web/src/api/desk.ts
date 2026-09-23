@@ -210,6 +210,15 @@ export type StateTrendLine = {
   to: { barsAgo: number; price: number };
 };
 
+export type StateBias = {
+  side: 'UP' | 'DOWN' | 'NEUTRAL';
+  /** How lopsided the vote was, 0-100. A lean, not a probability. */
+  strength: number;
+  up: number;
+  down: number;
+  reasons: { text: string; side: 'UP' | 'DOWN'; weight: number }[];
+};
+
 export type MarketStateResponse = {
   at: number;
   tf: string;
@@ -238,6 +247,8 @@ export type MarketStateResponse = {
   patterns: { all: StatePattern[]; shown: StatePattern[] };
   /** The lines through the last swings, in bars back from the newest bar. */
   lines: StateTrendLine[];
+  /** Up or down, from everything measured, as a vote. */
+  bias: StateBias;
   indicators: { all: StateIndicator[]; shown: StateIndicator[] };
   inputs: {
     atr: number | null; oiChangePct: number | null; cvdSlope: number | null;

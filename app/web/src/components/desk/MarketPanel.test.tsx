@@ -22,6 +22,7 @@ const data: MarketStateResponse = {
     insight: 'If 86,800 breaks, the next move is towards 87,200.',
   },
   lines: [],
+  bias: { side: 'UP', strength: 40, up: 7, down: 3, reasons: [{ text: 'higher lows', side: 'UP', weight: 2 }] },
   patterns: { all: [], shown: [{ name: 'Ascending Triangle', bias: 'BULLISH', kind: 'structure', note: 'Higher lows', barsAgo: 0 }] },
   indicators: { all: [], shown: [{ key: 'rsi', label: 'RSI (14)', value: 62, text: '62', read: 'Neutral', bias: 'NEUTRAL', gauge: 0.62 }] },
   inputs: { atr: 400, oiChangePct: 2.1, cvdSlope: 120, aggressorBuyPct: 58, mtf: { up: 5, down: 2, total: 7 }, regime: 'TREND_UP' },

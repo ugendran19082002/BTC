@@ -61,7 +61,7 @@ const DOWN = '#e2504f';
 
 export function PriceChart({
   bars, support, resistance, spot, zones = [], lines = [], projection = null,
-  markers = [], trend = null, tf, onTf, loading = false, error,
+  markers = [], trend = null, bias = null, tf, onTf, loading = false, error,
 }: {
   bars: Candle[];
   /** Heaviest put strike, or null when the board has no open interest to read. */
@@ -79,6 +79,15 @@ export function PriceChart({
   markers?: readonly StateMarker[];
   /** Up, down or neither, in the header: the one word the chart is read for. */
   trend?: 'UP' | 'DOWN' | 'RANGE' | 'QUIET' | null;
+  /**
+   * The vote of everything the desk measured, for the badge beside the trend.
+   *
+   * A lean, and labelled as one: "UP · 7 of 10 readings" says what it is.
+   * There is no percentage on it, because the weight pointing one way now is
+   * not how often that way happens next.
+   */
+  bias?: { side: 'UP' | 'DOWN' | 'NEUTRAL'; strength: number; up: number; down: number;
+    reasons: { text: string; side: 'UP' | 'DOWN'; weight: number }[] } | null;
   tf: ChartTf;
   onTf: (tf: ChartTf) => void;
   loading?: boolean;
@@ -317,6 +326,21 @@ export function PriceChart({
             <span className={`price-chart-trend is-${trend.toLowerCase()}`}>
               {trend === 'UP' ? '↗ Uptrend' : trend === 'DOWN' ? '↘ Downtrend'
                 : trend === 'QUIET' ? '→ Quiet' : '↔ Range'}
+            </span>
+          ) : null}
+
+          {/* Which way everything measured is pointing, and by how much. The
+              share is given as weight for and against, never as a percentage
+              chance: what is true now is not how often it works out. */}
+          {bias ? (
+            <span className={`price-chart-bias is-${bias.side.toLowerCase()}`}
+              title={bias.reasons.length
+                ? `${bias.reasons.map((r) => r.text).join(' · ')} — a weighted vote of what is true now, not a probability`
+                : 'Nothing measured is pointing either way'}>
+              <b>{bias.side === 'UP' ? '▲ Up' : bias.side === 'DOWN' ? '▼ Down' : '● No lean'}</b>
+              {bias.up + bias.down > 0 ? (
+                <span>{Math.round(Math.max(bias.up, bias.down))} vs {Math.round(Math.min(bias.up, bias.down))}</span>
+              ) : null}
             </span>
           ) : null}
 

@@ -334,3 +334,152 @@ export function relevant(all: readonly Pattern[], event: MarketEvent, side: Side
     return n;
   }
 }
+
+// -------------------------------------------------------- market structure
+
+/**
+ * What the swings themselves are doing: the structure half of the owner's list.
+ *
+ * Higher highs and lower lows, the break of structure that ends a trend, the
+ * change of character that warns of it, the sweep that takes the stops above a
+ * high and gives it all back, and the shapes those swings make -- double tops,
+ * head and shoulders, flags, channels.
+ *
+ * All of it from the same fractal pivots the trendlines are drawn through, so
+ * nothing here can name a high the lines do not also bend around. Everything
+ * is a pure function of bars; none of it is shown on its own, because a card
+ * with thirty true things on it is a card nobody reads -- they are all votes
+ * in the chart's up-or-down badge, and `relevant()` picks the few worth space.
+ */
+export function marketStructure(input: { bars: readonly Candle[]; atr: number | null }): Pattern[] {
+  const out: Pattern[] = [];
+  const bars = input.bars.slice(-40);
+  if (bars.length < 10) return out;
+  const tol = Math.max((input.atr ?? 0) * 0.2, 1);
+  const last = bars[bars.length - 1]!;
+  const highs = pivots(bars, 'high');
+  const lows = pivots(bars, 'low');
+  const agoOf = (i: number) => bars.length - 1 - i;
+  const near = (a: number, b: number) => Math.abs(a - b) <= tol;
+
+  const h1 = highs[highs.length - 1];
+  const h0 = highs[highs.length - 2];
+  const l1 = lows[lows.length - 1];
+  const l0 = lows[lows.length - 2];
+
+  // The four labels every structure reading is built out of.
+  if (h1 && h0) {
+    if (h1.price > h0.price + tol) out.push(at('Higher High', 'BULLISH', 'Each push is going further', agoOf(h1.i)));
+    else if (h1.price < h0.price - tol) out.push(at('Lower High', 'BEARISH', 'The last push fell short of the one before', agoOf(h1.i)));
+    else out.push(at('Equal Highs', 'NEUTRAL', 'Two pushes stopped at the same price: stops are sitting above', agoOf(h1.i)));
+  }
+  if (l1 && l0) {
+    if (l1.price > l0.price + tol) out.push(at('Higher Low', 'BULLISH', 'The dip was bought earlier than the last one', agoOf(l1.i)));
+    else if (l1.price < l0.price - tol) out.push(at('Lower Low', 'BEARISH', 'The dip went further than the last one', agoOf(l1.i)));
+    else out.push(at('Equal Lows', 'NEUTRAL', 'Two dips stopped at the same price: stops are sitting below', agoOf(l1.i)));
+  }
+
+  /*
+   * Break of structure and change of character.
+   *
+   * A BOS is the trend continuing: price closes through the swing it was
+   * already heading towards. A CHOCH is the first sign it is not -- an uptrend
+   * closing below the low it last bounced from. The difference is which way
+   * the swings were going before the break, so both need the pair, not one.
+   */
+  const upTrend = h1 && h0 && l1 && l0 && h1.price > h0.price && l1.price > l0.price;
+  const downTrend = h1 && h0 && l1 && l0 && h1.price < h0.price && l1.price < l0.price;
+  if (h1 && last.close > h1.price + tol) {
+    out.push(one2(upTrend ? 'BOS (Break of Structure)' : 'Market Structure Shift', 'BULLISH',
+      upTrend ? `Closed through the last swing high at ${fmt(h1.price)}` : `Took out ${fmt(h1.price)} against the run of the swings`));
+  }
+  if (l1 && last.close < l1.price - tol) {
+    out.push(one2(downTrend ? 'BOS (Break of Structure)' : 'Market Structure Shift', 'BEARISH',
+      downTrend ? `Closed through the last swing low at ${fmt(l1.price)}` : `Lost ${fmt(l1.price)} against the run of the swings`));
+  }
+  if (upTrend && l1 && last.close < l1.price - tol) {
+    out.push(one2('CHOCH (Change of Character)', 'BEARISH', 'An uptrend has closed under the low it last bounced from'));
+  }
+  if (downTrend && h1 && last.close > h1.price + tol) {
+    out.push(one2('CHOCH (Change of Character)', 'BULLISH', 'A downtrend has closed over the high it last turned at'));
+  }
+
+  /*
+   * A liquidity sweep: the wick goes through, the close does not.
+   *
+   * It is the one shape where more of the move is evidence *against* it -- the
+   * stops above the high were taken and the price was given straight back.
+   */
+  for (const [i, bar] of bars.slice(-3).entries()) {
+    const ago = 2 - i;
+    if (h0 && bar.high > h0.price + tol && bar.close < h0.price) {
+      out.push(at('Liquidity Sweep (High)', 'BEARISH', `Took the stops over ${fmt(h0.price)} and closed back under`, ago));
+    }
+    if (l0 && bar.low < l0.price - tol && bar.close > l0.price) {
+      out.push(at('Liquidity Sweep (Low)', 'BULLISH', `Took the stops under ${fmt(l0.price)} and closed back over`, ago));
+    }
+  }
+
+  // Double and triple tops and bottoms: the same price refused twice or three
+  // times, with a real trough between -- two highs in consecutive bars are one
+  // high, not a pattern.
+  const trough = (a: { i: number }, b: { i: number }) => Math.min(...bars.slice(a.i, b.i + 1).map((x) => x.low));
+  const peak = (a: { i: number }, b: { i: number }) => Math.max(...bars.slice(a.i, b.i + 1).map((x) => x.high));
+  if (h1 && h0 && near(h1.price, h0.price) && h0.price - trough(h0, h1) >= tol * 3) {
+    const third = highs[highs.length - 3];
+    const triple = third && near(third.price, h0.price);
+    out.push(at(triple ? 'Triple Top' : 'Double Top', 'BEARISH',
+      `${fmt(h1.price)} refused ${triple ? 'three times' : 'twice'}`, agoOf(h1.i)));
+  }
+  if (l1 && l0 && near(l1.price, l0.price) && peak(l0, l1) - l0.price >= tol * 3) {
+    const third = lows[lows.length - 3];
+    const triple = third && near(third.price, l0.price);
+    out.push(at(triple ? 'Triple Bottom' : 'Double Bottom', 'BULLISH',
+      `${fmt(l1.price)} held ${triple ? 'three times' : 'twice'}`, agoOf(l1.i)));
+  }
+
+  // Head and shoulders: a peak with a lower one either side of it, within a
+  // tolerance of each other.
+  const h2 = highs[highs.length - 3];
+  if (h2 && h0 && h1 && h0.price > h2.price + tol && h0.price > h1.price + tol && near(h2.price, h1.price)) {
+    out.push(at('Head & Shoulders', 'BEARISH', 'A high with a lower one either side: the push is done', agoOf(h1.i)));
+  }
+  const l2 = lows[lows.length - 3];
+  if (l2 && l0 && l1 && l0.price < l2.price - tol && l0.price < l1.price - tol && near(l2.price, l1.price)) {
+    out.push(at('Inverse Head & Shoulders', 'BULLISH', 'A low with a higher one either side: the fall is done', agoOf(l1.i)));
+  }
+
+  // A channel: both ends of the swing moving the same way.
+  if (h1 && h0 && l1 && l0) {
+    if (h1.price > h0.price + tol && l1.price > l0.price + tol) {
+      out.push(one2('Channel Up', 'BULLISH', 'Higher highs and higher lows together'));
+    }
+    if (h1.price < h0.price - tol && l1.price < l0.price - tol) {
+      out.push(one2('Channel Down', 'BEARISH', 'Lower highs and lower lows together'));
+    }
+  }
+
+  /*
+   * Flags: a hard push, then a quiet drift against it.
+   *
+   * The drift is the point -- price that gives nothing back after a run is
+   * being held, and the shape resolves the way the run went far more often
+   * than the drift does.
+   */
+  const impulse = bars.slice(-9, -4);
+  const drift = bars.slice(-4);
+  if (impulse.length === 5 && drift.length === 4 && input.atr) {
+    const move = impulse[impulse.length - 1]!.close - impulse[0]!.open;
+    const driftRange = Math.max(...drift.map((b) => b.high)) - Math.min(...drift.map((b) => b.low));
+    if (Math.abs(move) >= input.atr * 1.5 && driftRange <= Math.abs(move) * 0.5) {
+      out.push(one2(move > 0 ? 'Bull Flag' : 'Bear Flag', move > 0 ? 'BULLISH' : 'BEARISH',
+        `${fmt(Math.abs(move))} in five bars, and it has given almost none of it back`));
+    }
+  }
+
+  return out;
+}
+
+const at = (name: string, bias: Bias, note: string, barsAgo: number): Pattern =>
+  ({ name, bias, kind: 'structure', note, barsAgo: Math.max(0, barsAgo) });
+const one2 = (name: string, bias: Bias, note: string): Pattern => at(name, bias, note, 0);

@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { candlePatterns, relevant, structurePatterns, trendLines, type Pattern } from '../../src/domain/patterns.js';
+import {
+  candlePatterns, marketStructure, relevant, structurePatterns, trendLines, type Pattern,
+} from '../../src/domain/patterns.js';
 import type { Candle } from '../../src/market/delta.js';
 
 let t = 0;
@@ -189,4 +191,63 @@ test('no line where there are not two swings to draw one through', () => {
   const flat = Array.from({ length: 6 }, () => swingBar(100, 200));
   assert.deepEqual(trendLines(flat), []);
   assert.deepEqual(trendLines([swingBar(100, 200), swingBar(101, 201)]), []);
+});
+
+/*
+ * Market structure: the swings themselves, and the shapes they make. The
+ * fixtures are built swing by swing, because a detector that fires on
+ * "roughly the right shape" fires on everything.
+ */
+const sw = (low: number, high: number, close?: number): Candle =>
+  ({ time: 0, open: (low + high) / 2, high, low, close: close ?? (low + high) / 2, volume: 100 });
+
+/** A series of pivots: each turn is a bar higher (or lower) than its neighbours. */
+const series = (points: number[][]): Candle[] => points.map(([l, h, c]) => sw(l!, h!, c));
+
+test('[critical] the four labels: higher high, higher low, lower high, lower low', () => {
+  const up = marketStructure({
+    bars: series([
+      [100, 120], [90, 110], [105, 125], [95, 115], [115, 140], [110, 130], [125, 150], [120, 145], [130, 160], [128, 155],
+    ]),
+    atr: 5,
+  });
+  const names = up.map((p) => p.name);
+  assert.ok(names.includes('Higher High'), names.join(', '));
+  assert.ok(names.includes('Higher Low'));
+  assert.ok(!names.includes('Lower High'));
+});
+
+test('[critical] a sweep is the wick going through and the close not', () => {
+  /*
+   * The one shape where more of the move is evidence against it: the stops
+   * above the high were taken and the price was handed straight back.
+   */
+  const bars = series([
+    [100, 120], [95, 130], [100, 120], [95, 125], [100, 118], [98, 122], [100, 120],
+  ]);
+  // the last bar spikes through the earlier swing high and closes back under it
+  bars.push(sw(118, 150, 121));
+  bars.push(sw(115, 125, 118));
+  const names = marketStructure({ bars, atr: 4 }).map((p) => p.name);
+  assert.ok(names.includes('Liquidity Sweep (High)'), names.join(', '));
+});
+
+test('a double top is the same price refused twice, with a real dip between', () => {
+  const bars = series([
+    [100, 120], [95, 150], [90, 110], [85, 105], [88, 112], [95, 149], [92, 118], [90, 115],
+  ]);
+  const found = marketStructure({ bars, atr: 6 }).find((p) => p.name === 'Double Top');
+  assert.ok(found);
+  assert.equal(found.bias, 'BEARISH');
+});
+
+test('two pushes to the same price with no dip between them is not a pattern', () => {
+  // Two highs in consecutive bars are one high.
+  const bars = series([[100, 120], [118, 150], [119, 149], [100, 120], [95, 118], [92, 115], [90, 112], [88, 110]]);
+  const names = marketStructure({ bars, atr: 6 }).map((p) => p.name);
+  assert.ok(!names.includes('Double Top'), names.join(', '));
+});
+
+test('nothing is claimed from too few bars to have a structure', () => {
+  assert.deepEqual(marketStructure({ bars: series([[100, 120], [95, 115]]), atr: 5 }), []);
 });

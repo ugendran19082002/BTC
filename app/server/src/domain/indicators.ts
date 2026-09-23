@@ -124,6 +124,122 @@ export function macd(closes: readonly number[], fast = 12, slow = 26, signal = 9
 
 export type IndicatorBias = 'BULLISH' | 'BEARISH' | 'NEUTRAL';
 
+/**
+ * The rest of the owner's indicator list, computed from bars alone.
+ *
+ * Everything here needs nothing but the candles the chart is already drawing,
+ * which is the whole reason these are the ones that got built: the desk can
+ * take them on any timeframe without another feed, another key or another
+ * thing to be down at four in the morning.
+ *
+ * None of them is shown by default. They are votes in the chart's up-or-down
+ * badge, and `relevantIndicators()` still picks six for the card -- the owner's
+ * own rule, and the right one: a screen with forty readings on it is a screen
+ * nobody reads.
+ */
+
+/** Where price sits in its own recent range, 0 at the low and 1 at the high. */
+export function donchian(bars: readonly Candle[], n = 20): number | null {
+  const window = bars.slice(-n);
+  if (window.length < Math.min(5, n)) return null;
+  const high = Math.max(...window.map((b) => b.high));
+  const low = Math.min(...window.map((b) => b.low));
+  const close = window[window.length - 1]!.close;
+  return high === low ? 0.5 : (close - low) / (high - low);
+}
+
+/** Bollinger %B: where price sits across the band, and how wide the band is. */
+export function bollinger(closes: readonly number[], n = 20, k = 2): { percentB: number; width: number } | null {
+  const window = closes.slice(-n);
+  if (window.length < n) return null;
+  const mid = mean(window);
+  const sd = stdev(window);
+  if (mid === null || sd === null || sd === 0 || mid === 0) return null;
+  const upper = mid + k * sd;
+  const lower = mid - k * sd;
+  return {
+    percentB: (window[window.length - 1]! - lower) / (upper - lower),
+    width: ((upper - lower) / mid) * 100,
+  };
+}
+
+/** Stochastic %K: the same idea as Donchian, said the way a trader says it. */
+export const stochastic = (bars: readonly Candle[], n = 14): number | null => {
+  const d = donchian(bars, n);
+  return d === null ? null : d * 100;
+};
+
+/** Williams %R: the stochastic upside down, which is how it is quoted. */
+export const williamsR = (bars: readonly Candle[], n = 14): number | null => {
+  const d = donchian(bars, n);
+  return d === null ? null : (d - 1) * 100;
+};
+
+/** CCI: how far price is from its own mean, in mean deviations. */
+export function cci(bars: readonly Candle[], n = 20): number | null {
+  const window = bars.slice(-n);
+  if (window.length < n) return null;
+  const typical = window.map((b) => (b.high + b.low + b.close) / 3);
+  const avgT = mean(typical);
+  if (avgT === null) return null;
+  const dev = mean(typical.map((t) => Math.abs(t - avgT)));
+  if (dev === null || dev === 0) return null;
+  return (typical[typical.length - 1]! - avgT) / (0.015 * dev);
+}
+
+/**
+ * On-balance volume, as a slope rather than a level.
+ *
+ * The level depends on where the series happens to start, so it says nothing
+ * on its own; whether it is rising while price is not is the whole reading.
+ */
+export function obvSlope(bars: readonly Candle[], n = 20): number | null {
+  const window = bars.slice(-(n + 1));
+  if (window.length < 5) return null;
+  let obv = 0;
+  const series: number[] = [];
+  for (let i = 1; i < window.length; i++) {
+    const now = window[i]!;
+    const before = window[i - 1]!;
+    obv += now.close > before.close ? now.volume : now.close < before.close ? -now.volume : 0;
+    series.push(obv);
+  }
+  const total = series.reduce((a, b) => a + Math.abs(b), 0) / series.length;
+  if (total === 0) return null;
+  return ((series[series.length - 1]! - series[0]!) / total) * 100;
+}
+
+/**
+ * The choppiness index: 0 trending, 100 going nowhere.
+ *
+ * The sum of the bars' own ranges against the range they covered together --
+ * a lot of movement inside a small range is the definition of chop.
+ */
+export function choppiness(bars: readonly Candle[], n = 14): number | null {
+  const window = bars.slice(-n);
+  if (window.length < n) return null;
+  const sumRange = window.reduce((a, b) => a + (b.high - b.low), 0);
+  const high = Math.max(...window.map((b) => b.high));
+  const low = Math.min(...window.map((b) => b.low));
+  if (high === low || sumRange === 0) return null;
+  return (100 * Math.log10(sumRange / (high - low))) / Math.log10(n);
+}
+
+/** Aroon: how recently the highest high and the lowest low happened, -100 to 100. */
+export function aroon(bars: readonly Candle[], n = 25): number | null {
+  const window = bars.slice(-n);
+  if (window.length < Math.min(10, n)) return null;
+  let hi = 0;
+  let lo = 0;
+  for (let i = 1; i < window.length; i++) {
+    if (window[i]!.high >= window[hi]!.high) hi = i;
+    if (window[i]!.low <= window[lo]!.low) lo = i;
+  }
+  const len = window.length - 1;
+  if (len === 0) return null;
+  return ((hi - lo) / len) * 100;
+}
+
 export type Indicator = {
   key: string;
   /** What goes above the number: "RSI (14)", "EMA 21/50". */
@@ -204,6 +320,50 @@ export function indicators(input: IndicatorInput): Indicator[] {
     out.push(num('ivrv', 'IV − RV', input.ivRvPts ?? null, (v) => `${v > 0 ? '+' : ''}${v.toFixed(1)} pts`,
       (v) => (v > 2 ? ['Options dear', 'NEUTRAL'] : v < -2 ? ['Options cheap', 'NEUTRAL'] : ['Fair', 'NEUTRAL']), () => null));
   }
+
+  /*
+   * The wider list, computed from the bars the chart already has. They are not
+   * on the card unless the state calls for them -- they are here so the badge
+   * on the chart is a vote of everything measured rather than of the six that
+   * happened to fit.
+   */
+  const bb = bollinger(closes);
+  out.push(num('bollinger', 'Bollinger %B', bb === null ? null : bb.percentB * 100, (v) => v.toFixed(0),
+    (v) => (v >= 100 ? ['Over the band', 'BULLISH'] : v <= 0 ? ['Under the band', 'BEARISH']
+      : v >= 70 ? ['Upper half', 'BULLISH'] : v <= 30 ? ['Lower half', 'BEARISH'] : ['Middle', 'NEUTRAL']),
+    (v) => v / 100));
+  out.push(num('bbwidth', 'Band width', bb === null ? null : bb.width, (v) => `${v.toFixed(2)}%`,
+    (v) => (v <= 0.6 ? ['Squeezed', 'NEUTRAL'] : v >= 3 ? ['Wide', 'NEUTRAL'] : ['Normal', 'NEUTRAL']), () => null));
+
+  out.push(num('donchian', 'Range position', donchian(input.bars) === null ? null : donchian(input.bars)! * 100,
+    (v) => `${v.toFixed(0)}%`,
+    (v) => (v >= 80 ? ['At the highs', 'BULLISH'] : v <= 20 ? ['At the lows', 'BEARISH'] : ['Mid range', 'NEUTRAL']),
+    (v) => v / 100));
+
+  out.push(num('stoch', 'Stochastic', stochastic(input.bars), (v) => v.toFixed(0),
+    (v) => (v >= 80 ? ['Overbought', 'BEARISH'] : v <= 20 ? ['Oversold', 'BULLISH']
+      : v >= 55 ? ['Bullish', 'BULLISH'] : v <= 45 ? ['Bearish', 'BEARISH'] : ['Neutral', 'NEUTRAL']),
+    (v) => v / 100));
+
+  out.push(num('williams', 'Williams %R', williamsR(input.bars), (v) => v.toFixed(0),
+    (v) => (v >= -20 ? ['Overbought', 'BEARISH'] : v <= -80 ? ['Oversold', 'BULLISH'] : ['Neutral', 'NEUTRAL']),
+    (v) => (v + 100) / 100));
+
+  out.push(num('cci', 'CCI (20)', cci(input.bars), (v) => (v > 0 ? '+' : '') + v.toFixed(0),
+    (v) => (v >= 100 ? ['Strong up', 'BULLISH'] : v <= -100 ? ['Strong down', 'BEARISH']
+      : v > 0 ? ['Above mean', 'BULLISH'] : ['Below mean', 'BEARISH']), () => null));
+
+  out.push(num('obv', 'OBV slope', obvSlope(input.bars), (v) => (v > 0 ? '+' : '') + v.toFixed(0),
+    (v) => (v > 10 ? ['Accumulating', 'BULLISH'] : v < -10 ? ['Distributing', 'BEARISH'] : ['Flat', 'NEUTRAL']),
+    () => null));
+
+  out.push(num('chop', 'Choppiness', choppiness(input.bars), (v) => v.toFixed(0),
+    (v) => (v >= 61 ? ['Going nowhere', 'NEUTRAL'] : v <= 38 ? ['Trending', 'NEUTRAL'] : ['Mixed', 'NEUTRAL']),
+    (v) => v / 100));
+
+  out.push(num('aroon', 'Aroon', aroon(input.bars), (v) => (v > 0 ? '+' : '') + v.toFixed(0),
+    (v) => (v >= 50 ? ['Highs are newer', 'BULLISH'] : v <= -50 ? ['Lows are newer', 'BEARISH'] : ['Mixed', 'NEUTRAL']),
+    (v) => (v + 100) / 200));
 
   return out;
 }

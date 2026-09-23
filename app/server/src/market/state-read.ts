@@ -3,7 +3,10 @@ import { atr, readMarket, type MarketRead } from './moves.js';
 import { flowSummary } from './flow.js';
 import { movementByWindow } from './movement.js';
 import { marketState, LEVEL_BARS, type MarketState, type Regime, type StateInput } from '../domain/market-state.js';
-import { candlePatterns, relevant, structurePatterns, trendLines, type Pattern, type TrendLine } from '../domain/patterns.js';
+import {
+  candlePatterns, marketStructure, relevant, structurePatterns, trendLines, type Pattern, type TrendLine,
+} from '../domain/patterns.js';
+import { biasFrom, type BiasRead } from '../domain/bias.js';
 import { indicators, relevantIndicators, type Indicator } from '../domain/indicators.js';
 
 /**
@@ -42,6 +45,8 @@ export type StateRead = {
   patterns: { all: Pattern[]; shown: Pattern[] };
   /** The lines through the last swings, for drawing on the chart. */
   lines: TrendLine[];
+  /** Up or down, from everything measured, as a vote rather than a claim. */
+  bias: BiasRead;
   /** Every reading, and the few that decide this state. */
   indicators: { all: Indicator[]; shown: Indicator[] };
   /** What each borrowed reading was, so the card can show its working. */
@@ -160,6 +165,7 @@ export async function readState(tf: StateTf = '15m', nowMs = Date.now()): Promis
   // and a state judged against another.
   const found = [
     ...structurePatterns({ bars, level: input.level, atr: inputs.atr }),
+    ...marketStructure({ bars, atr: inputs.atr }),
     ...candlePatterns(bars),
   ];
   const read = indicators({
@@ -183,6 +189,19 @@ export async function readState(tf: StateTf = '15m', nowMs = Date.now()): Promis
     state,
     patterns: { all: found, shown: relevant(found, state.event, state.side) },
     lines: trendLines(bars),
+    // Everything above, in one word, from the whole list rather than the few
+    // that are shown: the badge on the chart is the only thing most people
+    // will read, so it is not decided by what happened to fit on the card.
+    bias: biasFrom({
+      state: { side: state.side, confirmed: state.confirmed, event: state.event },
+      patterns: found,
+      indicators: read,
+      mtf: inputs.mtf,
+      oiChangePct: inputs.oiChangePct,
+      cvdSlope: inputs.cvdSlope,
+      aggressorBuyPct: inputs.aggressorBuyPct,
+      regime: inputs.regime,
+    }),
     indicators: { all: read, shown: relevantIndicators(read, state.stage) },
     inputs,
   };

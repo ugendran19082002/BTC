@@ -634,6 +634,7 @@ export default function App() {
                           lines={marketState?.lines ?? []}
                           projection={chartProjection}
                           markers={chartMarkers}
+                          bias={marketState?.bias ?? null}
                           trend={marketState?.inputs.regime === 'TREND_UP' ? 'UP'
                             : marketState?.inputs.regime === 'TREND_DOWN' ? 'DOWN'
                               : marketState?.inputs.regime ?? null}

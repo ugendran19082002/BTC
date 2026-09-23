@@ -162,6 +162,28 @@ describe('the price chart', () => {
     expect(screen.getByText('↘ Downtrend')).toBeInTheDocument();
   });
 
+  it('[critical] says which way everything measured points, as a vote and not a chance', () => {
+    /*
+     * The one question the chart is opened to answer. The weight each way is
+     * printed beside it -- "8 vs 3" -- because a lone percentage would be read
+     * as "it goes up 73% of the time", which is a claim nothing here has
+     * earned.
+     */
+    const { container } = chart({ bias: { side: 'UP', strength: 45, up: 8.2, down: 3.1, reasons: [
+      { text: '5 of 6 timeframes up', side: 'UP', weight: 2.5 },
+    ] } });
+    const badge = container.querySelector('.price-chart-bias')!;
+    expect(badge.textContent).toContain('▲ Up');
+    expect(badge.textContent).toContain('8 vs 3');
+    expect(badge.textContent).not.toContain('%');
+    expect(badge.getAttribute('title')).toContain('not a probability');
+  });
+
+  it('says there is no lean rather than picking a side to fill the badge', () => {
+    chart({ bias: { side: 'NEUTRAL', strength: 4, up: 5, down: 4.7, reasons: [] } });
+    expect(screen.getByText('● No lean')).toBeInTheDocument();
+  });
+
   it('says what is wrong instead of drawing an empty chart', () => {
     const { rerender } = chart({ bars: [], loading: true });
     expect(screen.getByText('Loading candles…')).toBeInTheDocument();

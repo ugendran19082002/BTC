@@ -33,6 +33,7 @@ const base: MarketStateResponse = {
     insight: 'If 86,800 breaks and a 15m candle closes above it with volume, the next move is towards 87,200 – 87,600. If it is rejected, watch 86,200 for the short.',
   },
   lines: [],
+  bias: { side: 'UP', strength: 40, up: 7, down: 3, reasons: [{ text: 'higher lows', side: 'UP', weight: 2 }] },
   patterns: {
     all: [],
     shown: [
