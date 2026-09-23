@@ -179,14 +179,20 @@ with the plan a scroll away from the level it is about.
    by, each labelled with its name and the two prices it runs between. A level
    is never one price, and a hairline invites an argument about a wick two
    dollars through it.
-3. **The projection.** An arrow out of the newest bar to each target, in a box
+3. **The trendlines.** The two lines a chart reader draws by hand -- through
+   the last two swing lows and the last two swing highs -- carried forward to
+   the newest bar, which is the only place a trendline says anything. Found on
+   the server (`trendLines` in `domain/patterns.ts`) with everything else that
+   reads the bars, and given in bars back from the newest bar so a panned or
+   zoomed window still puts them on the right candles.
+4. **The projection.** An arrow out of the newest bar to each target, in a box
    saying which way, the price, and how far that is from here in percent --
    drawn in the gap kept clear to the right of the last candle so it never
    covers a bar. A target beyond the scale is drawn at the edge *with its
    number* rather than dropped; losing it entirely would read as there being no
    target. Between the two sits the **possible range**, because "neither has
    happened yet" is a reading too, and the one most often mistaken for a signal.
-4. **The strip.** Pattern detection (four, with a small drawing of each shape)
+5. **The strip.** Pattern detection (four, with a small drawing of each shape)
    and the indicator summary (six, the reading inside a dial where it has
    natural bounds and standing alone where it does not -- MACD's histogram has
    no top, and a dial would be inventing one), then **the sentence**:
@@ -199,15 +205,16 @@ with the plan a scroll away from the level it is about.
    only the side currently favoured is the one that gets somebody caught on
    the other. It is built on the server (`insightFor`) so the sentence, the
    card and the journal cannot drift apart.
-5. **The plans, always.** Breakout / range / breakdown with target 1, target 2
+6. **The plans, always.** Breakout / range / breakdown with target 1, target 2
    and the stop on all of them, under every tab. They were folded away except
    on the Levels tab; a stop you have to change tab to read is one you set late.
-6. **The signal history**, five calls a page, newest first, each saying what
+7. **The signal history**, five calls a page, newest first, each saying what
    BTC did after it in points -- to the next call, or to the price now for the
    newest. The colour follows the call rather than the direction, so a fall
    after a breakdown is green. The tally stays a count ("3 of 4 came good").
 
-The panel runs the width of the desk: in the middle of three columns the chart
+The analysis sits **beside** the chart on a wide screen and drops under it
+below 1100px. The panel runs the width of the desk: in the middle of three columns the chart
 was about six hundred pixels, which is a candle every two pixels and a plan in
 five-digit numbers three abreast.
 
@@ -227,10 +234,11 @@ five-digit numbers three abreast.
 | The one panel they all sit in | `app/web/src/components/desk/MarketPanel.tsx` |
 
 Tests: `test/domain/market-state.test.ts` (25), `test/domain/patterns.test.ts`
-(17), `test/domain/indicators.test.ts` (12), `test/market/state-read.test.ts`
+(19), `test/domain/indicators.test.ts` (12), `test/market/state-read.test.ts`
 (6), `test/market/state-history.test.ts` (5), `MarketState.test.tsx` (13),
 `ChartReadout.test.tsx` (7), `MarketPanel.test.tsx` (3), and eight more in
-`PriceChart.test.tsx` for the bands, the projection and the opening window.
+`PriceChart.test.tsx` for the bands, the lines, the projection and the
+opening window.
 
 ---
 

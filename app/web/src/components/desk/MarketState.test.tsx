@@ -187,12 +187,12 @@ describe('the market-state card', () => {
     expect(screen.getByRole('button', { name: 'Older calls' })).toBeDisabled();
   });
 
-  it('switches timeframe through the caller', () => {
-    const seen: string[] = [];
-    render(<MarketState data={base} tf="15m" tfs={['5m', '15m', '1h']} onTf={(t) => seen.push(t)} />);
-    fireEvent.click(screen.getByRole('button', { name: '1h' }));
-    expect(seen).toEqual(['1h']);
-    expect(screen.getByRole('button', { name: '15m' })).toHaveAttribute('aria-pressed', 'true');
+  it('[critical] shows the chart\'s timeframe and does not offer a second switch', () => {
+    // Two timeframe controls for one question is two answers on screen the
+    // moment they disagree. The chart owns the row; this follows it.
+    render(<MarketState data={base} tf="15m" />);
+    expect(screen.getByText('15m')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '1h' })).toBeNull();
   });
 
   it('says so rather than breaking when there is no state yet', () => {

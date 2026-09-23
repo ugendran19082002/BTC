@@ -75,7 +75,6 @@ const Board = memo(ChainTable);
 const Chart = memo(PriceChart);
 
 /** The timeframes the market-state card offers, which the chart also draws. */
-const STATE_CARD_TFS = ['5m', '15m', '30m', '1h', '4h'] as const;
 /** One empty list, so "no bars yet" is the same prop every render. */
 const NO_BARS: never[] = [];
 
@@ -325,7 +324,8 @@ export default function App() {
    * its own -- a level made of twenty one-minute bars is noise -- so the card
    * reads 5m under it and says which timeframe it is reading.
    */
-  const stateTf = chartTf === '1m' ? '5m' : chartTf;
+  // One row for both: the analysis is read off the chart in front of you.
+  const stateTf = chartTf;
   const { data: marketState } = usePoll(
     () => getMarketState(stateTf),
     30_000,
@@ -622,8 +622,6 @@ export default function App() {
                       history={stateHistory?.rows}
                       hitRate={stateHistory?.hitRate}
                       tf={stateTf}
-                      tfs={STATE_CARD_TFS}
-                      onTf={setChartTf}
                       spot={snap.spot}
                       ready={live}
                     />

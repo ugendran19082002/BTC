@@ -61,14 +61,13 @@ const IST = new Intl.DateTimeFormat('en-IN', {
 });
 
 export function MarketState({
-  data, history, hitRate, tf, onTf, tfs, spot,
+  data, history, hitRate, tf, spot,
 }: {
   data: MarketStateResponse | null;
   history?: StateHistoryRow[];
   hitRate?: { correct: number; graded: number };
+  /** The chart's timeframe, shown but not switched here: there is one row. */
   tf: string;
-  onTf?: (tf: string) => void;
-  tfs?: readonly string[];
   /** BTC now, so each earlier call can say what price did after it. */
   spot?: number;
 }) {
@@ -90,14 +89,7 @@ export function MarketState({
       <header className="bt-market-state__head">
         <h3>Market analysis</h3>
         <div className="bt-market-state__head-right">
-          {tfs && onTf ? (
-            <div className="bt-market-state__tfs" role="group" aria-label="Timeframe">
-              {tfs.map((t) => (
-                <button key={t} type="button" onClick={() => onTf(t)} aria-pressed={t === tf}
-                  className={cn('bt-chip', t === tf && 'bt-chip--on')}>{t}</button>
-              ))}
-            </div>
-          ) : null}
+          <span className="bt-market-state__tf">{tf}</span>
           {data ? (
             <span className="bt-market-state__at"><Clock size={12} aria-hidden /> Updated {IST.format(data.at)}</span>
           ) : null}
@@ -290,7 +282,7 @@ function History({ rows, rate, spot }: {
   return (
     <div className="bt-market-state__history">
       <h4>
-        Signal history
+        Signal history <span className="bt-market-state__hist-unit">BTC pts</span>
         {rate && rate.graded > 0 ? <span>{rate.correct} of {rate.graded} came good</span> : <span>none graded yet</span>}
       </h4>
       <ul>
@@ -309,23 +301,33 @@ function History({ rows, rate, spot }: {
             : (r.side === 'UP' ? move > 0 : move < 0);
           return (
             <li key={r.id}>
-              <span className="bt-market-state__hist-at">{IST.format(r.at)}</span>
-              {r.side === 'UP' ? <ArrowUpRight size={14} className="is-up" aria-hidden />
-                : r.side === 'DOWN' ? <ArrowDownRight size={14} className="is-down" aria-hidden />
-                  : <Minus size={14} aria-hidden />}
-              <span className="bt-market-state__hist-what">
-                {STATE_WORDS[r.event]?.title ?? r.event} <em>({r.confidence})</em>
-              </span>
-              <span className={cn('bt-market-state__hist-pts',
-                went === true && 'is-up', went === false && 'is-down')}
-                title="What BTC did between this call and the next one">
-                {move === null ? '—' : `${move > 0 ? '+' : move < 0 ? '−' : ''}${Math.abs(move).toLocaleString('en-US')} pts`}
-              </span>
-              <span className={cn('bt-market-state__hist-out',
-                r.outcome === 'CORRECT' && 'is-up', r.outcome === 'WRONG' && 'is-down',
-                (r.outcome === 'CORRECT' || r.outcome === 'WRONG') && 'is-chip')}>
-                {OUTCOME_WORDS[r.outcome ?? 'NOT_GRADED'] ?? '—'}
-              </span>
+              <div className="bt-market-state__hist-line">
+                <span className="bt-market-state__hist-at">{IST.format(r.at)}</span>
+                {r.side === 'UP' ? <ArrowUpRight size={14} className="is-up" aria-hidden />
+                  : r.side === 'DOWN' ? <ArrowDownRight size={14} className="is-down" aria-hidden />
+                    : <Minus size={14} aria-hidden />}
+                <span className="bt-market-state__hist-what">
+                  {STATE_WORDS[r.event]?.title ?? r.event} <em>({r.confidence})</em>
+                </span>
+                <span className={cn('bt-market-state__hist-out',
+                  r.outcome === 'CORRECT' && 'is-up', r.outcome === 'WRONG' && 'is-down',
+                  (r.outcome === 'CORRECT' || r.outcome === 'WRONG') && 'is-chip')}>
+                  {OUTCOME_WORDS[r.outcome ?? 'NOT_GRADED'] ?? '—'}
+                </span>
+              </div>
+              {/* The index either side of the call, so the points are a figure
+                  somebody can check rather than one they have to trust. */}
+              <div className="bt-market-state__hist-line is-prices">
+                <span>
+                  {fmtStrike(Math.round(r.close))}
+                  {after === null ? null : <> → {fmtStrike(Math.round(after))}</>}
+                </span>
+                <span className={cn('bt-market-state__hist-pts',
+                  went === true && 'is-up', went === false && 'is-down')}
+                  title="BTC index points between this call and the next one — the underlying, not option premium">
+                  {move === null ? '—' : `${move > 0 ? '+' : move < 0 ? '−' : ''}${Math.abs(move).toLocaleString('en-US')} pts`}
+                </span>
+              </div>
             </li>
           );
         })}

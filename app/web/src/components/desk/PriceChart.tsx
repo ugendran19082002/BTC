@@ -8,7 +8,15 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
 export type ChartTf = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d';
 
-export const CHART_TFS: readonly ChartTf[] = ['1m', '5m', '15m', '30m', '1h', '4h', '1d'];
+/**
+ * The one timeframe row on the screen.
+ *
+ * The chart had seven and the analysis card had five of its own underneath it,
+ * which is two controls for one question -- and two answers on screen whenever
+ * they disagreed. There is one row now, the chart owns it, and everything read
+ * off the chart follows it.
+ */
+export const CHART_TFS: readonly ChartTf[] = ['5m', '15m', '30m', '1h', '4h'];
 
 /**
  * The canvas is drawn at the size it is shown.
@@ -39,6 +47,22 @@ const PAD = { top: 10, right: 74, bottom: 26, left: 8 };
  * still run the full width into the axis, so nothing is shortened but the bars.
  */
 const RIGHT_GAP = 26;
+/**
+ * The gutter when there are target callouts to put in it.
+ *
+ * The boxes used to be drawn over the newest candles, which is exactly where
+ * the eye is and exactly the bars they hide. Widening the empty plot to the
+ * right of the last bar gives them somewhere of their own to sit.
+ */
+const PROJECTION_GAP = 112;
+
+/**
+ * How thin a level band may be drawn.
+ *
+ * The engine's tolerance is a tenth of an ATR, which on a one-minute chart is
+ * a couple of pixels -- a zone nobody can see is a zone nobody can use.
+ */
+const MIN_ZONE_PX = 18;
 /** The bottom fifth is volume. Price gets the rest. */
 const VOL_SHARE = 0.2;
 const GAP = 8;
@@ -52,7 +76,7 @@ const MIN_BARS = 12;
  * Under about nine pixels the body, the two wicks and the gap beside it stop
  * being separate things and the chart reads as a smear of colour.
  */
-const BAR_W = 9;
+const BAR_W = 12;
 
 /**
  * How many bars a chart nobody has zoomed shows: as many as fit at a readable
@@ -326,13 +350,16 @@ export function PriceChart({
   // somewhere arbitrary in it.
   useEffect(() => { setView(null); }, [tf]);
 
+  /** The empty plot kept to the right: wider when callouts have to go in it. */
+  const rightGap = projection ? PROJECTION_GAP : RIGHT_GAP;
+
   const win = useMemo(() => {
     if (!bars.length) return null;
-    const fits = barsThatFit(W - PAD.left - PAD.right - RIGHT_GAP, bars.length);
+    const fits = barsThatFit(W - PAD.left - PAD.right - rightGap, bars.length);
     const count = clamp(view?.count ?? fits, Math.min(MIN_BARS, bars.length), bars.length);
     const from = clamp(view?.from ?? bars.length - count, 0, Math.max(0, bars.length - count));
     return { from, count, slice: bars.slice(from, from + count), yZoom: view?.yZoom ?? 1 };
-  }, [bars, view, W]);
+  }, [bars, view, W, rightGap]);
 
   const geom = useMemo(() => {
     if (!win || !win.slice.length) return null;
@@ -365,7 +392,7 @@ export function PriceChart({
     );
     const yFloor = clamp(fitHalf / (reach * 1.12), 0.02, 0.4);
 
-    const plotW = W - PAD.left - PAD.right - RIGHT_GAP;
+    const plotW = W - PAD.left - PAD.right - rightGap;
     const plotH = H - PAD.top - PAD.bottom;
     const volH = plotH * VOL_SHARE;
     const priceH = plotH - volH - GAP;
@@ -373,7 +400,7 @@ export function PriceChart({
     const y = (p: number) => PAD.top + ((hi - p) / (hi - lo)) * priceH;
     const step = plotW / shown.length;
     const x = (i: number) => PAD.left + i * step + step / 2;
-    const bodyW = Math.max(1, Math.min(11, step * 0.66));
+    const bodyW = Math.max(1, Math.min(14, step * 0.66));
 
     const maxVol = Math.max(...shown.map((b) => b.volume), 1);
     const volTop = PAD.top + priceH + GAP;
@@ -406,7 +433,7 @@ export function PriceChart({
       // Where the newest bar is, for anything drawn out of it into the gap.
       lastX: shown.length ? x(shown.length - 1) : null,
     };
-  }, [win, spot, support, resistance, W, H]);
+  }, [win, spot, support, resistance, W, H, rightGap]);
 
   /**
    * Where a level is drawn: on the axis if the scale reaches it, pinned inside
@@ -477,7 +504,7 @@ export function PriceChart({
     return { x: ((clientX - box.left) / box.width) * W, y: ((clientY - box.top) / box.width) * W };
   };
   const vx = (clientX: number): number | null => vpoint(clientX, 0)?.x ?? null;
-  const plotW = W - PAD.left - PAD.right - RIGHT_GAP;
+  const plotW = W - PAD.left - PAD.right - rightGap;
   const anchorAt = (x: number) => clamp((x - PAD.left) / plotW, 0, 1);
   const current = (): View | null => (win ? { from: win.from, count: win.count, yZoom: win.yZoom } : null);
 
@@ -798,27 +825,44 @@ export function PriceChart({
             against, drawn where it judges them.
           */}
           {zones.map((z) => {
-            const top = Math.max(PAD.top, geom.y(Math.max(z.from, z.to)));
-            const bottom = Math.min(PAD.top + geom.priceH, geom.y(Math.min(z.from, z.to)));
+            const hiP = Math.max(z.from, z.to);
+            const loP = Math.min(z.from, z.to);
+            // On the scale at all? Judged on the band as given, never on the
+            // one drawn: a level miles away must not be pinned to the edge.
+            if (geom.y(loP) < PAD.top || geom.y(hiP) > PAD.top + geom.priceH) return null;
+            /*
+             * A band is drawn no thinner than it can be seen.
+             *
+             * The tolerance the engine breaks a level by is a tenth of an ATR,
+             * which on a one-minute chart is a few dollars -- a band two pixels
+             * tall, which reads as a smudge on the grid rather than as a zone.
+             * Thin ones are opened out about their own middle, so the shading
+             * still says "here, about this price".
+             */
+            const raw = { top: geom.y(hiP), bottom: geom.y(loP) };
+            const grow = Math.max(0, MIN_ZONE_PX - (raw.bottom - raw.top)) / 2;
+            const top = clamp(raw.top - grow, PAD.top, PAD.top + geom.priceH);
+            const bottom = clamp(raw.bottom + grow, PAD.top, PAD.top + geom.priceH);
             if (!(bottom > top)) return null;
             const colour = z.tone === 'up' ? 'var(--down)' : 'var(--up)';
-            // The dashed edge is the side price has to get through: the top of
-            // a resistance band, the bottom of a support one.
             const edge = z.tone === 'up' ? top : bottom;
-            // Two lines, inside the band: what it is, then the prices it runs
-            // between -- a band labelled with one price is half a label.
-            const nameY = z.tone === 'up' ? top + 11 : bottom - 13;
+            // The tag sits outside the band -- above a ceiling, below a floor --
+            // on its own backing, so it never has to be read through candles.
+            const tagH = 26;
+            const tagY = clamp(z.tone === 'up' ? top - tagH - 2 : bottom + 2, PAD.top, PAD.top + geom.priceH - tagH);
             return (
               <g key={z.label} data-zone={z.label}>
                 <rect
                   x={PAD.left} y={top} width={W - PAD.right - PAD.left} height={bottom - top}
-                  fill={colour} opacity="0.1"
+                  fill={colour} opacity="0.14"
                 />
                 <line x1={PAD.left} x2={W - PAD.right} y1={edge} y2={edge}
-                  stroke={colour} strokeWidth="1" strokeDasharray="4 3" opacity="0.8" />
-                <text x={PAD.left + 5} y={nameY} fontSize="9.5" fontWeight="600" fill={colour}>{z.label}</text>
-                <text x={PAD.left + 5} y={nameY + 10} fontSize="9" fill={colour} opacity="0.85">
-                  {fmtStrike(Math.round(Math.min(z.from, z.to)))} – {fmtStrike(Math.round(Math.max(z.from, z.to)))}
+                  stroke={colour} strokeWidth="1.2" strokeDasharray="5 4" opacity="0.9" />
+                <rect x={PAD.left + 2} y={tagY} width={104} height={tagH} rx={4}
+                  fill="var(--panel)" stroke={colour} strokeWidth="0.8" opacity="0.92" />
+                <text x={PAD.left + 8} y={tagY + 11} fontSize="9.5" fontWeight="600" fill={colour}>{z.label}</text>
+                <text x={PAD.left + 8} y={tagY + 21} fontSize="9.5" fill="var(--text)">
+                  {fmtStrike(Math.round(loP))} – {fmtStrike(Math.round(hiP))}
                 </text>
               </g>
             );

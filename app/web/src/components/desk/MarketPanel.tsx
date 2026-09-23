@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import type { ChartTf } from '@/components/desk/PriceChart';
 import { ChartInsight, IndicatorSummary, PatternStrip } from '@/components/desk/ChartReadout';
 import { MarketState } from '@/components/desk/MarketState';
 import type { MarketStateResponse, StateHistoryRow } from '@/api/desk';
@@ -22,7 +21,7 @@ import type { MarketStateResponse, StateHistoryRow } from '@/api/desk';
  * a fifth thing that knows all their rules.
  */
 export function MarketPanel({
-  chart, data, history, hitRate, tf, tfs, onTf, spot, ready = true,
+  chart, data, history, hitRate, tf, spot, ready = true,
 }: {
   /** The price chart itself, passed in so this file never grows chart logic. */
   chart: ReactNode;
@@ -30,8 +29,6 @@ export function MarketPanel({
   history?: StateHistoryRow[];
   hitRate?: { correct: number; graded: number };
   tf: string;
-  tfs?: readonly string[];
-  onTf?: (tf: ChartTf) => void;
   /** BTC now, so each earlier call can say what price did after it. */
   spot?: number;
   /** False on a past date, where there is no live state to read. */
@@ -62,8 +59,7 @@ export function MarketPanel({
       {ready ? (
         <div className="bt-analysis__side">
           <MarketState
-            data={data} history={history} hitRate={hitRate} spot={spot}
-            tf={tf} tfs={tfs} onTf={onTf ? (t) => onTf(t as ChartTf) : undefined}
+            data={data} history={history} hitRate={hitRate} spot={spot} tf={tf}
           />
         </div>
       ) : null}

@@ -138,13 +138,20 @@ describe('the price chart', () => {
     expect(screen.getByText('C')).toBeInTheDocument();
   });
 
-  it('offers every timeframe the desk fetches', () => {
+  it('[critical] offers one timeframe row, and it is the only one on the screen', () => {
+    /*
+     * The chart had seven timeframes and the analysis card beside it had five
+     * of its own: two controls for one question, and two answers on screen the
+     * moment they disagreed. One row, on the chart, and the analysis follows it.
+     */
     render(
       <PriceChart bars={bars(8)} support={null} resistance={null} spot={77_172} tf="1h" onTf={noop} />,
     );
-    for (const t of ['5m', '15m', '1h', '4h', '1D']) {
+    for (const t of ['5m', '15m', '30m', '1h', '4h']) {
       expect(screen.getByRole('radio', { name: t })).toBeInTheDocument();
     }
+    expect(screen.queryByRole('radio', { name: '1m' })).toBeNull();
+    expect(screen.queryByRole('radio', { name: '1D' })).toBeNull();
   });
 
   it('labels both walls and the price, however far away they sit', () => {
@@ -297,9 +304,9 @@ describe('zoom and pan', () => {
     expect(v.count).toBe(60);
   });
 
-  it('offers every timeframe, 1m through 1D', () => {
+  it('offers the five timeframes the desk reads', () => {
     chart();
-    for (const t of ['1m', '5m', '15m', '1h', '4h', '1D']) {
+    for (const t of ['5m', '15m', '30m', '1h', '4h']) {
       expect(screen.getByRole('radio', { name: t })).toBeInTheDocument();
     }
   });
