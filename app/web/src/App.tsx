@@ -29,7 +29,7 @@ import { LoginPage } from '@/components/desk/LoginPage';
 import { LivePrice } from '@/components/desk/LivePrice';
 import { TODAY_MOVE } from '@/types/desk';
 import { tabTitle } from '@/lib/tab-title';
-import { pnlTone, signedInr, strike as fmtStrike, usdToInr } from '@/lib/format';
+import { pnlTone, signedInr, usdToInr } from '@/lib/format';
 import { PriceChart, CHART_TFS, type ChartTf } from '@/components/desk/PriceChart';
 import { MarketState } from '@/components/desk/MarketState';
 import { ChartInsight, IndicatorSummary, PatternStrip } from '@/components/desk/ChartReadout';
@@ -350,10 +350,10 @@ export default function App() {
     const band = Math.max(atr * 0.1, 1);
     const out: { from: number; to: number; label: string; tone: 'up' | 'down' }[] = [];
     if (level.resistance !== null) {
-      out.push({ from: level.resistance - band, to: level.resistance + band, label: `Resistance ${fmtStrike(level.resistance)}`, tone: 'up' });
+      out.push({ from: level.resistance - band, to: level.resistance + band, label: 'Resistance zone', tone: 'up' });
     }
     if (level.support !== null) {
-      out.push({ from: level.support - band, to: level.support + band, label: `Support ${fmtStrike(level.support)}`, tone: 'down' });
+      out.push({ from: level.support - band, to: level.support + band, label: 'Support zone', tone: 'down' });
     }
     return out;
   }, [marketState]);
@@ -362,9 +362,13 @@ export default function App() {
   const chartProjection = useMemo(() => {
     const plans = marketState?.state.plans;
     if (!plans || (!plans.up && !plans.down)) return null;
+    const level = marketState?.state.level;
     return {
       up: plans.up ? { trigger: plans.up.trigger, target1: plans.up.target1 } : null,
       down: plans.down ? { trigger: plans.down.trigger, target1: plans.down.target1 } : null,
+      // The box between the two triggers: where price is until one of them goes.
+      range: level && level.support !== null && level.resistance !== null
+        ? { from: level.support, to: level.resistance } : null,
     };
   }, [marketState]);
 

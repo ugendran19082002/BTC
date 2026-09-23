@@ -210,6 +210,8 @@ export function PriceChart({
   projection?: {
     up: { trigger: number; target1: number } | null;
     down: { trigger: number; target1: number } | null;
+    /** Where price sits while neither level has gone: drawn as its own box. */
+    range?: { from: number; to: number } | null;
   } | null;
   tf: ChartTf;
   onTf: (tf: ChartTf) => void;
@@ -757,16 +759,23 @@ export function PriceChart({
             const bottom = Math.min(PAD.top + geom.priceH, geom.y(Math.min(z.from, z.to)));
             if (!(bottom > top)) return null;
             const colour = z.tone === 'up' ? 'var(--down)' : 'var(--up)';
+            // The dashed edge is the side price has to get through: the top of
+            // a resistance band, the bottom of a support one.
+            const edge = z.tone === 'up' ? top : bottom;
+            // Two lines, inside the band: what it is, then the prices it runs
+            // between -- a band labelled with one price is half a label.
+            const nameY = z.tone === 'up' ? top + 11 : bottom - 13;
             return (
               <g key={z.label} data-zone={z.label}>
                 <rect
                   x={PAD.left} y={top} width={W - PAD.right - PAD.left} height={bottom - top}
                   fill={colour} opacity="0.1"
                 />
-                <line x1={PAD.left} x2={W - PAD.right} y1={z.tone === 'up' ? top : bottom} y2={z.tone === 'up' ? top : bottom}
+                <line x1={PAD.left} x2={W - PAD.right} y1={edge} y2={edge}
                   stroke={colour} strokeWidth="1" strokeDasharray="4 3" opacity="0.8" />
-                <text x={PAD.left + 4} y={z.tone === 'up' ? top + 11 : bottom - 4} fontSize="9.5" fill={colour}>
-                  {z.label}
+                <text x={PAD.left + 5} y={nameY} fontSize="9.5" fontWeight="600" fill={colour}>{z.label}</text>
+                <text x={PAD.left + 5} y={nameY + 10} fontSize="9" fill={colour} opacity="0.85">
+                  {fmtStrike(Math.round(Math.min(z.from, z.to)))} – {fmtStrike(Math.round(Math.max(z.from, z.to)))}
                 </text>
               </g>
             );
@@ -784,30 +793,59 @@ export function PriceChart({
           {projection && geom.lastX !== null && (() => {
             const fromX = geom.lastX;
             const toX = W - PAD.right - 2;
-            const clampY = (p: number) => clamp(geom.y(p), PAD.top + 8, PAD.top + geom.priceH - 8);
+            const BOX_W = 92;
+            const clampY = (p: number) => clamp(geom.y(p), PAD.top + 20, PAD.top + geom.priceH - 20);
             const legs = [
-              projection.up ? { key: 'up', tone: 'up' as const, y: clampY(projection.up.target1), price: projection.up.target1 } : null,
-              projection.down ? { key: 'down', tone: 'down' as const, y: clampY(projection.down.target1), price: projection.down.target1 } : null,
-            ].filter((v): v is { key: string; tone: 'up' | 'down'; y: number; price: number } => v !== null);
+              projection.up ? { key: 'up', tone: 'up' as const, title: 'Breakout ↑', price: projection.up.target1 } : null,
+              projection.down ? { key: 'down', tone: 'down' as const, title: 'Breakdown ↓', price: projection.down.target1 } : null,
+            ].filter((v): v is { key: string; tone: 'up' | 'down'; title: string; price: number } => v !== null)
+              .map((l) => ({ ...l, y: clampY(l.price), away: spot > 0 ? ((l.price - spot) / spot) * 100 : 0 }));
             const fromY = clampY(spot);
+            const range = projection.range ?? null;
+            const rangeTop = range ? clampY(Math.max(range.from, range.to)) : 0;
+            const rangeBottom = range ? clampY(Math.min(range.from, range.to)) : 0;
             return (
               <g className="price-chart-projection" aria-hidden>
+                {/*
+                  Where price is while neither level has gone. Named on the
+                  chart because "nothing has happened yet" is a reading too,
+                  and the one most often mistaken for a signal.
+                */}
+                {range && (
+                  <g data-leg="range">
+                    <rect
+                      x={toX - BOX_W} y={(rangeTop + rangeBottom) / 2 - 15} width={BOX_W} height={30} rx={4}
+                      fill="var(--panel)" stroke="var(--line)" strokeWidth="1" opacity="0.95"
+                    />
+                    <text x={toX - BOX_W + 6} y={(rangeTop + rangeBottom) / 2 - 3} fontSize="9" fill="var(--muted)">
+                      Possible range
+                    </text>
+                    <text x={toX - BOX_W + 6} y={(rangeTop + rangeBottom) / 2 + 9} fontSize="9.5" fill="var(--text)">
+                      {fmtStrike(Math.round(Math.min(range.from, range.to)))} – {fmtStrike(Math.round(Math.max(range.from, range.to)))}
+                    </text>
+                  </g>
+                )}
                 {legs.map((leg) => {
                   const colour = leg.tone === 'up' ? 'var(--up)' : 'var(--down)';
                   const midX = (fromX + toX) / 2;
                   return (
                     <g key={leg.key} data-leg={leg.key}>
                       <path
-                        d={`M ${fromX} ${fromY} Q ${midX} ${fromY} ${toX - 46} ${leg.y}`}
+                        d={`M ${fromX} ${fromY} Q ${midX} ${fromY} ${toX - BOX_W - 4} ${leg.y}`}
                         fill="none" stroke={colour} strokeWidth="1.6" opacity="0.85"
                         markerEnd={`url(#price-chart-arrow-${leg.tone})`}
                       />
                       <rect
-                        x={toX - 44} y={leg.y - 9} width={44} height={18} rx={4}
-                        fill="var(--panel)" stroke={colour} strokeWidth="1" opacity="0.95"
+                        x={toX - BOX_W} y={leg.y - 17} width={BOX_W} height={34} rx={4}
+                        fill="var(--panel)" stroke={colour} strokeWidth="1" opacity="0.97"
                       />
-                      <text x={toX - 22} y={leg.y + 4} fontSize="9.5" textAnchor="middle" fill={colour}>
+                      <text x={toX - BOX_W + 6} y={leg.y - 6} fontSize="9" fontWeight="600" fill={colour}>{leg.title}</text>
+                      <text x={toX - BOX_W + 6} y={leg.y + 6} fontSize="9" fill="var(--muted)">Target</text>
+                      <text x={toX - 6} y={leg.y + 6} fontSize="10" textAnchor="end" fill="var(--text)">
                         {Math.round(leg.price).toLocaleString('en-US')}
+                      </text>
+                      <text x={toX - 6} y={leg.y + 15} fontSize="8.5" textAnchor="end" fill={colour}>
+                        ({leg.away >= 0 ? '+' : '−'}{Math.abs(leg.away).toFixed(2)}%)
                       </text>
                     </g>
                   );

@@ -640,6 +640,44 @@ describe('the level bands and the projection (23 Sep 2026)', () => {
     expect(screen.getByText('200,000')).toBeInTheDocument();
   });
 
+  it('[critical] a band says what it is and the two prices it runs between', () => {
+    // A band labelled with one price is half a label: the whole point of a
+    // band is that the level is a stretch, not a number.
+    const { container } = render(
+      <PriceChart bars={bars(40)} support={null} resistance={null} spot={77_200} zones={zones} tf="1h" onTf={noop} />,
+    );
+    const band = container.querySelector('[data-zone="Resistance 77,400"]')!;
+    expect(band.textContent).toContain('77,360 – 77,440');
+  });
+
+  it('[critical] each target says which way and how far, not just a price', () => {
+    /*
+     * "77,900" alone leaves the reader doing the arithmetic against a spot
+     * that is moving. The distance is the part a decision is made on.
+     */
+    const { container } = render(
+      <PriceChart bars={bars(40)} support={null} resistance={null} spot={77_400} tf="1h" onTf={noop}
+        projection={{ up: { trigger: 77_800, target1: 77_900 }, down: { trigger: 77_000, target1: 76_900 } }} />,
+    );
+    const up = container.querySelector('[data-leg="up"]')!;
+    expect(up.textContent).toContain('Breakout');
+    expect(up.textContent).toContain('77,900');
+    expect(up.textContent).toContain('(+0.65%)');
+    const down = container.querySelector('[data-leg="down"]')!;
+    expect(down.textContent).toContain('Breakdown');
+    expect(down.textContent).toContain('(−0.65%)');
+  });
+
+  it('names the range between the levels, because waiting is a reading too', () => {
+    const { container } = render(
+      <PriceChart bars={bars(40)} support={null} resistance={null} spot={77_200} tf="1h" onTf={noop}
+        projection={{ up: { trigger: 77_400, target1: 77_800 }, down: null, range: { from: 77_000, to: 77_400 } }} />,
+    );
+    const box = container.querySelector('[data-leg="range"]')!;
+    expect(box.textContent).toContain('Possible range');
+    expect(box.textContent).toContain('77,000 – 77,400');
+  });
+
   it('draws nothing extra when no state has been read', () => {
     const { container } = render(
       <PriceChart bars={bars(40)} support={null} resistance={null} spot={77_400} tf="1h" onTf={noop} />,
