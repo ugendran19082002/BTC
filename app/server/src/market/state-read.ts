@@ -148,6 +148,7 @@ export async function readState(tf: StateTf = '15m', nowMs = Date.now()): Promis
     aggressorBuyPct: inputs.aggressorBuyPct,
     mtf: inputs.mtf,
     regime: inputs.regime,
+    tfLabel: tf,
   };
 
   const state = marketState(input);

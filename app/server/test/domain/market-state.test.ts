@@ -210,3 +210,42 @@ test('no bars at all is a quiet range, not a crash', () => {
   assert.equal(s.confidence, 0);
   assert.deepEqual(s.checks, []);
 });
+
+// ------------------------------------------------------------- the sentence
+
+test('[critical] a range says both branches: what breaks it, and what to watch if refused', () => {
+  /*
+   * The line the owner asked for, in the words it has to be in. Both halves
+   * matter while the bar is still forming -- a sentence that gives only the
+   * side currently favoured is the one that gets somebody caught on the other.
+   */
+  const s = marketState(input([...background(), bar(86_500, 86_560, 86_450, 86_500)], { tfLabel: '15m' }));
+  assert.match(s.insight, /If 86,800 breaks and a 15m candle closes above it with volume/);
+  assert.match(s.insight, /towards 87,200 – 87,600/);
+  assert.match(s.insight, /If it is rejected, watch 86,200 for the short/);
+});
+
+test('a confirmed break says it has gone, with the targets and where it is wrong', () => {
+  const s = marketState(input([...background(100), bar(86_700, 86_930, 86_680, 86_910, 180)], {
+    oiChangePct: 2.4, cvdSlope: 1.2, aggressorBuyPct: 61, mtf: { up: 5, down: 2, total: 7 }, regime: 'TREND_UP',
+  }));
+  assert.match(s.insight, /86,800 has gone on a close with volume behind it/);
+  assert.match(s.insight, /wrong back under 86,400/);
+});
+
+test('a candidate says what is still missing, not that it has broken', () => {
+  const s = marketState(input([...background(100), bar(86_780, 86_900, 86_770, 86_880, 110)]));
+  assert.match(s.insight, /without the volume to prove it/);
+  assert.match(s.insight, /a close back under is a false break/);
+});
+
+test('a rejection turns the sentence round to the other side', () => {
+  const s = marketState(input([...background(100), bar(86_700, 86_920, 86_600, 86_610, 170)]));
+  assert.match(s.insight, /The push was refused/);
+  assert.match(s.insight, /watch 86,200 for the short/i);
+});
+
+test('with no level either side there is nothing to say, and it says that', () => {
+  const s = marketState({ bars: [], level: { resistance: null, support: null }, atr: null });
+  assert.equal(s.insight, 'No level near enough to trade against yet.');
+});

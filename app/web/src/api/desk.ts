@@ -225,6 +225,8 @@ export type MarketStateResponse = {
     volumeRatio: number | null;
     volumeRead: 'WEAK' | 'NORMAL' | 'STRONG' | 'BURST' | null;
     words: string;
+    /** The whole thing as one sentence, both branches in it. */
+    insight: string;
   };
   patterns: { all: StatePattern[]; shown: StatePattern[] };
   indicators: { all: StateIndicator[]; shown: StateIndicator[] };

@@ -585,3 +585,66 @@ describe('the plot itself', () => {
     expect(screen.getAllByText('80,000').length).toBeGreaterThan(0);
   });
 });
+
+describe('the level bands and the projection (23 Sep 2026)', () => {
+  /*
+   * The market-state card judges price against a level, and the chart has to
+   * draw that same level in the same place. A band rather than a hairline,
+   * because a level is never one price -- and because a wick two dollars
+   * through a hairline starts an argument the band settles.
+   */
+  // Inside the scale these forty bars draw: 76,940 to 77,450.
+  const zones = [
+    { from: 77_360, to: 77_440, label: 'Resistance 77,400', tone: 'up' as const },
+    { from: 76_960, to: 77_040, label: 'Support 77,000', tone: 'down' as const },
+  ];
+
+  it('[critical] draws a band for each level, labelled with its price', () => {
+    const { container } = render(
+      <PriceChart bars={bars(40)} support={null} resistance={null} spot={77_200} zones={zones} tf="1h" onTf={noop} />,
+    );
+    const drawn = [...container.querySelectorAll('[data-zone]')].map((g) => g.getAttribute('data-zone'));
+    expect(drawn).toEqual(['Resistance 77,400', 'Support 77,000']);
+    expect(container.querySelector('[data-zone="Resistance 77,400"] rect')).toBeTruthy();
+  });
+
+  it('a band off the scale is left out rather than drawn at the edge', () => {
+    // Pinning it to the edge would say "price is right at this level", which
+    // is the opposite of the truth when the level is miles away.
+    const { container } = render(
+      <PriceChart bars={bars(40)} support={null} resistance={null} spot={77_400} tf="1h" onTf={noop}
+        zones={[{ from: 120_000, to: 121_000, label: 'Far above', tone: 'up' }]} />,
+    );
+    expect(container.querySelector('[data-zone="Far above"]')).toBeNull();
+  });
+
+  it('[critical] draws an arrow and a price box for each target', () => {
+    const { container } = render(
+      <PriceChart bars={bars(40)} support={null} resistance={null} spot={77_400} tf="1h" onTf={noop}
+        projection={{ up: { trigger: 77_800, target1: 77_900 }, down: { trigger: 77_000, target1: 76_900 } }} />,
+    );
+    expect(container.querySelector('[data-leg="up"]')).toBeTruthy();
+    expect(container.querySelector('[data-leg="down"]')).toBeTruthy();
+    expect(screen.getByText('77,900')).toBeInTheDocument();
+    expect(screen.getByText('76,900')).toBeInTheDocument();
+  });
+
+  it('a target beyond the scale is drawn at the edge with its number, not dropped', () => {
+    // The honest way to say "further than this chart goes": losing the target
+    // entirely would read as there being no target at all.
+    const { container } = render(
+      <PriceChart bars={bars(40)} support={null} resistance={null} spot={77_400} tf="1h" onTf={noop}
+        projection={{ up: { trigger: 77_800, target1: 200_000 }, down: null }} />,
+    );
+    expect(container.querySelector('[data-leg="up"]')).toBeTruthy();
+    expect(screen.getByText('200,000')).toBeInTheDocument();
+  });
+
+  it('draws nothing extra when no state has been read', () => {
+    const { container } = render(
+      <PriceChart bars={bars(40)} support={null} resistance={null} spot={77_400} tf="1h" onTf={noop} />,
+    );
+    expect(container.querySelector('[data-zone]')).toBeNull();
+    expect(container.querySelector('.price-chart-projection')).toBeNull();
+  });
+});

@@ -32,6 +32,7 @@ import { tabTitle } from '@/lib/tab-title';
 import { pnlTone, signedInr, strike as fmtStrike, usdToInr } from '@/lib/format';
 import { PriceChart, CHART_TFS, type ChartTf } from '@/components/desk/PriceChart';
 import { MarketState } from '@/components/desk/MarketState';
+import { ChartInsight, IndicatorSummary, PatternStrip } from '@/components/desk/ChartReadout';
 import { Select, SelectItem } from '@/components/ui/select';
 import { ColumnPicker } from '@/components/chain/ColumnPicker';
 import { normalise, normaliseOrder, type ColumnKey, type ColumnState } from '@/components/chain/columns';
@@ -357,6 +358,16 @@ export default function App() {
     return out;
   }, [marketState]);
 
+  /** The two targets drawn off the right edge: the card's plan, on the chart. */
+  const chartProjection = useMemo(() => {
+    const plans = marketState?.state.plans;
+    if (!plans || (!plans.up && !plans.down)) return null;
+    return {
+      up: plans.up ? { trigger: plans.up.trigger, target1: plans.up.target1 } : null,
+      down: plans.down ? { trigger: plans.down.trigger, target1: plans.down.target1 } : null,
+    };
+  }, [marketState]);
+
   const openTicket = useCallback((i: ChainSellIntent) => {
     if (!snapRef.current) return;
     setTicket({
@@ -588,6 +599,7 @@ export default function App() {
                       resistance={data.structure.ceOiWallNear?.strike ?? null}
                       spot={snap.spot}
                       zones={chartZones}
+                      projection={chartProjection}
                       tf={chartTf}
                       onTf={setChartTf}
                       loading={candlesBusy}
@@ -606,6 +618,21 @@ export default function App() {
             chart, because it is the chart's own reading -- on a phone the two
             stack and it is the first thing under the candles.
           */}
+          {live && (
+            <ErrorBoundary where="Chart readout">
+              <div className="bt-readout-row">
+                <PatternStrip patterns={marketState?.patterns.shown ?? []} />
+                <IndicatorSummary items={marketState?.indicators.shown ?? []} />
+              </div>
+            </ErrorBoundary>
+          )}
+
+          {live && marketState ? (
+            <ErrorBoundary where="Chart insight">
+              <ChartInsight insight={marketState.state.insight} />
+            </ErrorBoundary>
+          ) : null}
+
           {live && (
             <ErrorBoundary where="Market state">
               <MarketState

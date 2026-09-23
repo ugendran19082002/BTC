@@ -5,9 +5,25 @@ Updated 23 Sep 2026
 
 ---
 
-## 23 Sep 2026 — the phone stops repeating itself; two dead tables go
+## 23 Sep 2026 — the phone stops repeating itself; two dead tables go; the chart reads itself
 
 **Done (built, tested, not yet deployed):**
+
+- [x] **Market state on the Live screen.** Breakout / breakout watch / candidate / confirmed / retest,
+      rejection, breakdown, false breakout and false breakdown, read off the chart's own timeframe, with
+      the confirmation list, both sides' plans (trigger, two targets, invalidation) and the readings the
+      score was built from. Levels are drawn as bands behind the candles, to the same tolerance the
+      engine breaks them by, so the chart and the card cannot disagree. `domain/market-state.ts` is pure
+      and holds every rule; `market/state-read.ts` fetches and borrows the readings the desk already has
+      rather than measuring anything twice. **The number is a score, not a probability, and the card says
+      so** -- see docs/MARKET-STATE.md for the formulas and for what is deliberately not built yet.
+- [x] **Pattern and indicator layers.** 25 candle patterns and 10 structure shapes (`domain/patterns.ts`);
+      the arithmetic -- returns, CLV, ROC, z-score, percentile, efficiency ratio, EMA, MACD --
+      in `domain/indicators.ts`. Neither is shown in full: four patterns and six readings are picked for
+      the state price is actually in, and while a level is being tested the pattern that *contradicts* the
+      push outranks one more that agrees with it.
+- [x] **`market_states` (`market-010`).** Every call written down when it changes, graded four bars later
+      by a rule fixed before the outcome was known. The card shows "3 of 4 came good", never a percentage.
 
 - [x] **Telegram said the same thing over and over.** The desk retries a protective order Delta
       refused every 2 s, backing off to 60 s, and every attempt that fails raises the alarm again.

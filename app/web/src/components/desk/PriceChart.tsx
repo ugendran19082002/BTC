@@ -172,6 +172,7 @@ export function PriceChart({
   expectedMove = null,
   levels = [],
   zones = [],
+  projection = null,
   tf,
   onTf,
   loading = false,
@@ -198,6 +199,18 @@ export function PriceChart({
    * measured.
    */
   zones?: readonly { from: number; to: number; label: string; tone: 'up' | 'down' }[];
+  /**
+   * Where it goes if it goes, drawn off the right-hand edge.
+   *
+   * An arrow out of the last bar to each target with the number in a box, and
+   * the range between the levels shaded as the place where neither has
+   * happened yet. It is the same plan the market-state card gives in words --
+   * drawn, because a target is a price on a chart before it is a sentence.
+   */
+  projection?: {
+    up: { trigger: number; target1: number } | null;
+    down: { trigger: number; target1: number } | null;
+  } | null;
   tf: ChartTf;
   onTf: (tf: ChartTf) => void;
   loading?: boolean;
@@ -352,6 +365,8 @@ export function PriceChart({
 
     return {
       shown, lo, hi, y, x, step, bodyW, ticks, timeTicks, volY, volTop, volH, priceH, yFloor,
+      // Where the newest bar is, for anything drawn out of it into the gap.
+      lastX: shown.length ? x(shown.length - 1) : null,
     };
   }, [win, spot, support, resistance, W, H]);
 
@@ -667,6 +682,17 @@ export function PriceChart({
           onDoubleClick={() => zoomOn && setView(null)}
           aria-label={`BTC ${tf} candles, ${geom.shown.length} of ${bars.length} bars shown, with open-interest walls at ${support ?? '—'} and ${resistance ?? '—'}`}
         >
+          {/* Arrowheads for the projection legs. Two, because they are coloured. */}
+          <defs>
+            {(['up', 'down'] as const).map((tone) => (
+              <marker
+                key={tone} id={`price-chart-arrow-${tone}`} viewBox="0 0 8 8" refX="6" refY="4"
+                markerWidth="5" markerHeight="5" orient="auto-start-reverse"
+              >
+                <path d="M 0 1 L 7 4 L 0 7 z" fill={tone === 'up' ? 'var(--up)' : 'var(--down)'} />
+              </marker>
+            ))}
+          </defs>
           {/*
             The price axis is a control -- the wheel over it stretches the
             scale -- so it gets a target of its own and a cursor that says so.
@@ -745,6 +771,50 @@ export function PriceChart({
               </g>
             );
           })}
+
+          {/*
+            The projection: an arrow out of the newest bar to each target, with
+            the price in a box against the right edge.
+
+            Drawn in the gap kept clear to the right of the last candle, so it
+            never covers a bar. Clamped to the plot: a target off the top of
+            the scale is drawn at the top with its number, which is the honest
+            way to say "further than this chart goes" -- better than vanishing.
+          */}
+          {projection && geom.lastX !== null && (() => {
+            const fromX = geom.lastX;
+            const toX = W - PAD.right - 2;
+            const clampY = (p: number) => clamp(geom.y(p), PAD.top + 8, PAD.top + geom.priceH - 8);
+            const legs = [
+              projection.up ? { key: 'up', tone: 'up' as const, y: clampY(projection.up.target1), price: projection.up.target1 } : null,
+              projection.down ? { key: 'down', tone: 'down' as const, y: clampY(projection.down.target1), price: projection.down.target1 } : null,
+            ].filter((v): v is { key: string; tone: 'up' | 'down'; y: number; price: number } => v !== null);
+            const fromY = clampY(spot);
+            return (
+              <g className="price-chart-projection" aria-hidden>
+                {legs.map((leg) => {
+                  const colour = leg.tone === 'up' ? 'var(--up)' : 'var(--down)';
+                  const midX = (fromX + toX) / 2;
+                  return (
+                    <g key={leg.key} data-leg={leg.key}>
+                      <path
+                        d={`M ${fromX} ${fromY} Q ${midX} ${fromY} ${toX - 46} ${leg.y}`}
+                        fill="none" stroke={colour} strokeWidth="1.6" opacity="0.85"
+                        markerEnd={`url(#price-chart-arrow-${leg.tone})`}
+                      />
+                      <rect
+                        x={toX - 44} y={leg.y - 9} width={44} height={18} rx={4}
+                        fill="var(--panel)" stroke={colour} strokeWidth="1" opacity="0.95"
+                      />
+                      <text x={toX - 22} y={leg.y + 4} fontSize="9.5" textAnchor="middle" fill={colour}>
+                        {Math.round(leg.price).toLocaleString('en-US')}
+                      </text>
+                    </g>
+                  );
+                })}
+              </g>
+            );
+          })()}
 
           {/* volume, under its own baseline */}
           <line

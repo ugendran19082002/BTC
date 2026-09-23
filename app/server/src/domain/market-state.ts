@@ -82,6 +82,8 @@ export type StateInput = {
   mtf?: MtfVote | null;
   /** The wider market, as `readMarket` reads it: a break with the trend scores higher. */
   regime?: Regime | null;
+  /** What to call the timeframe in the sentence: "15m". */
+  tfLabel?: string;
 };
 
 export type Regime = 'TREND_UP' | 'TREND_DOWN' | 'RANGE' | 'QUIET';
@@ -126,6 +128,15 @@ export type MarketState = {
   volumeRead: VolumeRead | null;
   /** One sentence, the way the card says it. */
   words: string;
+  /**
+   * The whole thing as one sentence, in the words somebody would say it in.
+   *
+   * Both branches, because both are live until one happens: what has to occur
+   * for the break to count and where it goes if it does, then what it means if
+   * it is refused instead. The card's top line is the state; this is the line
+   * under it that a person can act on without reading the rest.
+   */
+  insight: string;
 };
 
 export type Plan = {
@@ -512,6 +523,10 @@ function build(
   const { resistance, support } = input.level.resistance === null && input.level.support === null
     ? levelsFrom(input.bars)
     : input.level;
+  const plans = {
+    up: resistance === null ? null : planFor('UP', resistance, input.atr),
+    down: support === null ? null : planFor('DOWN', support, input.atr),
+  };
   return {
     event,
     stage,
@@ -526,14 +541,81 @@ function build(
     checks: checksFor(input, bar, ratio, side, stage),
     // A failed break's plan is the other way: that is the whole news in it.
     plan: side === null || against === null ? null : planFor(side, against, input.atr),
-    plans: {
-      up: resistance === null ? null : planFor('UP', resistance, input.atr),
-      down: support === null ? null : planFor('DOWN', support, input.atr),
-    },
+    plans,
     volumeRatio: ratio === null ? null : Math.round(ratio * 100) / 100,
     volumeRead: read,
     words,
+    insight: insightFor(stage, side, plans, tfWords(input)),
   };
+}
+
+/** The timeframe in the sentence, when the caller named one. */
+const tfWords = (input: StateInput) => input.tfLabel ?? 'this';
+
+/**
+ * The state as one sentence, with both branches in it.
+ *
+ * Written as a person would say it at the desk: what has to happen for the
+ * break to count, where it goes if it does, and -- in the same breath -- what
+ * it means if the level holds instead. Both halves matter while the bar is
+ * still forming, and a sentence that gives only the side it currently favours
+ * is the sentence that gets somebody caught on the other one.
+ */
+export function insightFor(
+  stage: EventStage, side: Side | null,
+  plans: { up: Plan | null; down: Plan | null },
+  tf = 'this',
+): string {
+  const up = plans.up;
+  const down = plans.down;
+  if (!up && !down) return 'No level near enough to trade against yet.';
+
+  const breakUp = up
+    ? `If ${fmt(up.trigger)} breaks and a ${tf} candle closes above it with volume, `
+      + `the next move is towards ${fmt(up.target1)} – ${fmt(up.target2)}.`
+    : '';
+  const breakDown = down
+    ? `If ${fmt(down.trigger)} gives way on a close, ${fmt(down.target1)} – ${fmt(down.target2)} is next.`
+    : '';
+
+  switch (stage) {
+    case 'CONFIRMED':
+      return side === 'UP' && up
+        ? `${fmt(up.trigger)} has gone on a close with volume behind it. `
+          + `${fmt(up.target1)} then ${fmt(up.target2)}; it is wrong back under ${fmt(up.invalidation)}.`
+        : down
+          ? `${fmt(down.trigger)} has gone on a close with volume behind it. `
+            + `${fmt(down.target1)} then ${fmt(down.target2)}; it is wrong back over ${fmt(down.invalidation)}.`
+          : breakUp;
+    case 'CANDIDATE':
+      return side === 'UP' && up
+        ? `Price closed over ${fmt(up.trigger)} but without the volume to prove it. `
+          + `Another close above holds it towards ${fmt(up.target1)}; a close back under is a false break.`
+        : down
+          ? `Price closed under ${fmt(down.trigger)} but without the volume to prove it. `
+            + `Another close below holds it towards ${fmt(down.target1)}; a close back over is a false break.`
+          : breakDown;
+    case 'RETEST':
+      return side === 'UP' && up
+        ? `${fmt(up.trigger)} was given back to the market and held. `
+          + `That is the retest; ${fmt(up.target1)} – ${fmt(up.target2)} while it stays above.`
+        : down
+          ? `${fmt(down.trigger)} was retested from below and held. `
+            + `${fmt(down.target1)} – ${fmt(down.target2)} while it stays under.`
+          : breakUp;
+    case 'FAILED':
+      return side === 'DOWN' && down
+        ? `The push was refused. Watch ${fmt(down.trigger)} for the short; `
+          + `${fmt(down.target1)} – ${fmt(down.target2)} if it goes.`
+        : up
+          ? `The fall was refused and the level reclaimed. Watch ${fmt(up.trigger)} for the long; `
+            + `${fmt(up.target1)} – ${fmt(up.target2)} if it goes.`
+          : breakDown;
+    default:
+      // Range and watch: both branches, because neither has happened.
+      return [breakUp, down ? `If it is rejected, watch ${fmt(down.trigger)} for the short.` : '']
+        .filter(Boolean).join(' ');
+  }
 }
 
 /** The tick list under the card: what has happened, what is still wanted. */
@@ -580,6 +662,7 @@ function quiet(
     score: 0, confidence: 0,
     parts: { levelBreak: 0, volume: 0, candle: 0, retest: 0, flow: 0, mtf: 0, regime: 0 },
     checks: [], plan: null, plans: { up: null, down: null }, volumeRatio: ratio, volumeRead: read, words,
+    insight: 'No level near enough to trade against yet.',
   };
 }
 
