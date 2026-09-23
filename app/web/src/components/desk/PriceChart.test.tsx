@@ -702,11 +702,33 @@ describe('the level bands and the projection (23 Sep 2026)', () => {
     expect(box.textContent).toContain('77,000 – 77,400');
   });
 
+  it('[critical] draws the swing lines where the swings are, clipped to the plot', () => {
+    /*
+     * The sloping lines a chart reader draws by hand. They are given in bars
+     * back from the newest bar, so a window that has been panned still puts
+     * them on the right candles.
+     */
+    const { container } = render(
+      <PriceChart bars={bars(40)} support={null} resistance={null} spot={77_200} tf="1h" onTf={noop}
+        lines={[
+          { kind: 'support', from: { barsAgo: 10, price: 77_100 }, to: { barsAgo: 0, price: 77_350 } },
+          { kind: 'resistance', from: { barsAgo: 8, price: 77_400 }, to: { barsAgo: 0, price: 77_440 } },
+        ]} />,
+    );
+    const drawn = [...container.querySelectorAll('[data-trend]')];
+    expect(drawn.map((l) => l.getAttribute('data-trend'))).toEqual(['support', 'resistance']);
+    // a rising line: the newer end is drawn higher up the plot, which is a smaller y
+    const support = drawn[0]!;
+    expect(Number(support.getAttribute('y2'))).toBeLessThan(Number(support.getAttribute('y1')));
+    expect(Number(support.getAttribute('x2'))).toBeGreaterThan(Number(support.getAttribute('x1')));
+  });
+
   it('draws nothing extra when no state has been read', () => {
     const { container } = render(
       <PriceChart bars={bars(40)} support={null} resistance={null} spot={77_400} tf="1h" onTf={noop} />,
     );
     expect(container.querySelector('[data-zone]')).toBeNull();
+    expect(container.querySelector('[data-trend]')).toBeNull();
     expect(container.querySelector('.price-chart-projection')).toBeNull();
   });
 });
