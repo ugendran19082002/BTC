@@ -56,6 +56,36 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS market_states_ungraded ON market_states (at) WHERE outcome IS NULL;
     `,
   },
+  {
+    /*
+     * The rest of what the card said, kept with the call it belongs to.
+     *
+     * The first version wrote the verdict and the levels and nothing else, so
+     * a row could say a breakout was called at 76 but not what the 76 was made
+     * of, what the bars looked like, or where price actually went. That is
+     * enough to list the calls and not enough to answer the only question
+     * worth asking of them -- which of these readings ever paid -- and the
+     * inputs cannot be reconstructed afterwards from bars alone.
+     *
+     * The measured columns are their own; the several-of-a-kind ones are JSONB
+     * because their shape is the engine's and will move with it, and a column
+     * per indicator would be a migration every time one is added.
+     */
+    id: 'market-011-state-detail',
+    up: `
+      ALTER TABLE market_states
+        ADD COLUMN IF NOT EXISTS words          TEXT,
+        ADD COLUMN IF NOT EXISTS insight        TEXT,
+        ADD COLUMN IF NOT EXISTS volume_ratio   DOUBLE PRECISION,
+        ADD COLUMN IF NOT EXISTS atr            DOUBLE PRECISION,
+        ADD COLUMN IF NOT EXISTS parts          JSONB,
+        ADD COLUMN IF NOT EXISTS inputs         JSONB,
+        ADD COLUMN IF NOT EXISTS patterns       JSONB,
+        ADD COLUMN IF NOT EXISTS indicators     JSONB,
+        ADD COLUMN IF NOT EXISTS resolved_close DOUBLE PRECISION,
+        ADD COLUMN IF NOT EXISTS move_pts       DOUBLE PRECISION;
+    `,
+  },
 ];
 
 let ready: Promise<void> | null = null;
@@ -88,6 +118,10 @@ export type StateRow = {
   plan: Plan | null;
   outcome: Outcome | null;
   gradedAt: number | null;
+  /** The close of the last bar of the grading window, once it has been graded. */
+  resolvedClose: number | null;
+  /** BTC index points from the call to that close: the move, not the verdict. */
+  movePts: number | null;
 };
 
 /**
@@ -130,16 +164,27 @@ export async function noteState(read: StateRead): Promise<number | null> {
   const s = read.state;
   if (last && last.event === s.event && last.stage === s.stage) return null;
   const bar = read.bars[read.bars.length - 1] ?? null;
+  /*
+   * Everything the card showed, not just the verdict: the score's parts, what
+   * it was measured against, the shapes named and the readings taken. Written
+   * as it was at the moment of the call, because none of it can be worked out
+   * again later from the bars.
+   */
   const row = await one<{ id: number }>(
     `INSERT INTO market_states
        (at, tf, event, stage, side, confirmed, confidence, close, resistance, support,
-        trigger, target1, target2, invalidation)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+        trigger, target1, target2, invalidation,
+        words, insight, volume_ratio, atr, parts, inputs, patterns, indicators)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
+             $15,$16,$17,$18,$19,$20,$21,$22)
      RETURNING id`,
     [
       read.at, read.tf, s.event, s.stage, s.side, s.confirmed, s.confidence, bar?.close ?? 0,
       s.level.resistance, s.level.support,
       s.plan?.trigger ?? null, s.plan?.target1 ?? null, s.plan?.target2 ?? null, s.plan?.invalidation ?? null,
+      s.words, s.insight, s.volumeRatio, read.inputs.atr,
+      JSON.stringify(s.parts), JSON.stringify(read.inputs),
+      JSON.stringify(read.patterns.shown), JSON.stringify(read.indicators.shown),
     ],
   );
   await query('DELETE FROM market_states WHERE at < $1', [read.at - MARKET_STATES_KEEP_MS]);
@@ -156,10 +201,10 @@ export async function noteState(read: StateRead): Promise<number | null> {
 export async function gradeStates(nowMs = Date.now(), limit = 20): Promise<number> {
   await stateHistorySchema();
   const due = await rows<{
-    id: number; at: number; tf: StateTf; side: Side | null;
+    id: number; at: number; tf: StateTf; side: Side | null; close: number;
     trigger: number | null; target1: number | null; target2: number | null; invalidation: number | null;
   }>(
-    `SELECT id, at, tf, side, trigger, target1, target2, invalidation
+    `SELECT id, at, tf, side, close, trigger, target1, target2, invalidation
        FROM market_states WHERE outcome IS NULL ORDER BY at DESC LIMIT $1`, [limit],
   );
   let graded = 0;
@@ -171,11 +216,25 @@ export async function gradeStates(nowMs = Date.now(), limit = 20): Promise<numbe
       side: r.side, trigger: r.trigger ?? 0, target1: r.target1, target2: r.target2 ?? r.target1,
       invalidation: r.invalidation,
     };
-    const after = plan === null ? [] : await candles(
+    // Fetched even for a range, which is not graded but still moved somewhere.
+    const after = await candles(
       'BTCUSD', Math.floor(r.at / 1000), Math.floor((r.at + windowMs) / 1000), r.tf,
     ).catch(() => [] as Candle[]);
     const outcome = verdictFor(plan, r.side, after);
-    await query('UPDATE market_states SET outcome = $1, graded_at = $2 WHERE id = $3', [outcome, nowMs, r.id]);
+    /*
+     * Where price actually finished the window, and how far that is from the
+     * call. The verdict answers "did the plan work"; this answers "what did
+     * BTC do", which is the other half and the one the list is read for. It is
+     * recorded rather than worked out later from the next row, which would
+     * make the figure depend on when the screen happened to be open.
+     */
+    const last = after[after.length - 1] ?? null;
+    const move = last === null ? null : Math.round((last.close - r.close) * 100) / 100;
+    await query(
+      `UPDATE market_states SET outcome = $1, graded_at = $2, resolved_close = $3, move_pts = $4
+        WHERE id = $5`,
+      [outcome, nowMs, last?.close ?? null, move, r.id],
+    );
     graded += 1;
   }
   return graded;
@@ -189,9 +248,11 @@ export async function recentStates(tf: StateTf | null = null, limit = 10): Promi
     confirmed: boolean; confidence: number; close: number;
     trigger: number | null; target1: number | null; target2: number | null; invalidation: number | null;
     outcome: Outcome | null; graded_at: number | null;
+    resolved_close: number | null; move_pts: number | null;
   }>(
     `SELECT id, at, tf, event, stage, side, confirmed, confidence, close,
-            trigger, target1, target2, invalidation, outcome, graded_at
+            trigger, target1, target2, invalidation, outcome, graded_at,
+            resolved_close, move_pts
        FROM market_states ${tf ? 'WHERE tf = $2' : ''} ORDER BY at DESC LIMIT $1`,
     tf ? [limit, tf] : [limit],
   );
@@ -204,6 +265,8 @@ export async function recentStates(tf: StateTf | null = null, limit = 10): Promi
     },
     outcome: r.outcome,
     gradedAt: r.graded_at === null ? null : Number(r.graded_at),
+    resolvedClose: r.resolved_close,
+    movePts: r.move_pts,
   }));
 }
 
