@@ -74,10 +74,15 @@ export function candlePatterns(bars: readonly Candle[]): Pattern[] {
 
   // ---- one bar
   if (shape <= DOJI_BODY) {
+    /*
+     * Three cases and they cover everything, which matters more than it looks.
+     * A bar with no body has all of its range in its wicks, so one of them is
+     * always at least half the bar -- a classification that left a gap here
+     * would drop dojis on the floor rather than name them.
+     */
     if (lw >= range(c) * 0.6) out.push(one('Dragonfly Doji', 'BULLISH', 'Sold down and bought all the way back'));
     else if (uw >= range(c) * 0.6) out.push(one('Gravestone Doji', 'BEARISH', 'Bought up and sold all the way back'));
-    else if (uw >= range(c) * 0.3 && lw >= range(c) * 0.3) out.push(one('Long-Legged Doji', 'NEUTRAL', 'Both sides tried; neither held'));
-    else out.push(one('Doji', 'NEUTRAL', 'Opened and closed in the same place'));
+    else out.push(one('Doji', 'NEUTRAL', 'Opened and closed in the same place: neither side held'));
   } else if (shape >= MARUBOZU_BODY) {
     out.push(one(up(c) ? 'Bullish Marubozu' : 'Bearish Marubozu', up(c) ? 'BULLISH' : 'BEARISH',
       'All body, no wick: one side had it the whole bar'));

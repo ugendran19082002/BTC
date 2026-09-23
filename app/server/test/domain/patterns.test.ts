@@ -13,10 +13,10 @@ const has = (ps: readonly Pattern[], name: string) => names(ps).includes(name);
 // ------------------------------------------------------------------ candles
 
 test('a doji is a bar that opened and closed in the same place', () => {
-  assert.ok(has(candlePatterns([c(100, 100.5, 99.5, 100)]), 'Doji'));
-  // Equal wicks half the bar long either side is the long-legged one: both
-  // sides tried and neither held, which says more than "no body".
-  assert.ok(has(candlePatterns([c(100, 105, 95, 100)]), 'Long-Legged Doji'));
+  // A bar with no body has all its range in its wicks, so one of them is
+  // always at least half of it. The three cases cover every such bar: which
+  // wick dominates, or neither.
+  assert.ok(has(candlePatterns([c(100, 105, 95, 100)]), 'Doji'), 'even wicks either side');
   assert.ok(has(candlePatterns([c(100, 101, 90, 100)]), 'Dragonfly Doji'), 'sold down and bought back');
   assert.ok(has(candlePatterns([c(100, 110, 99, 100)]), 'Gravestone Doji'), 'bought up and sold back');
 });
