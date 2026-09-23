@@ -3,6 +3,8 @@ import { atr, readMarket, type MarketRead } from './moves.js';
 import { flowSummary } from './flow.js';
 import { movementByWindow } from './movement.js';
 import { marketState, LEVEL_BARS, type MarketState, type Regime, type StateInput } from '../domain/market-state.js';
+import { candlePatterns, relevant, structurePatterns, type Pattern } from '../domain/patterns.js';
+import { indicators, relevantIndicators, type Indicator } from '../domain/indicators.js';
 
 /**
  * The market-state card's one request: bars in, a state out.
@@ -36,6 +38,10 @@ export type StateRead = {
   /** The bars the state was read from, newest last -- the same ones the chart draws. */
   bars: Candle[];
   state: MarketState;
+  /** Every pattern that is true, and the few worth showing. */
+  patterns: { all: Pattern[]; shown: Pattern[] };
+  /** Every reading, and the few that decide this state. */
+  indicators: { all: Indicator[]; shown: Indicator[] };
   /** What each borrowed reading was, so the card can show its working. */
   inputs: {
     atr: number | null;
@@ -122,6 +128,7 @@ export async function readState(tf: StateTf = '15m', nowMs = Date.now()): Promis
     movementByWindow(nowMs).catch(() => null),
   ]);
 
+  const tfRead = market?.timeframes.find((x) => x.tf === (tf as string)) ?? null;
   const inputs: StateRead['inputs'] = {
     atr: atr(bars),
     oiChangePct: movement ? oiFor(movement.rows, tf) : null,
@@ -143,5 +150,36 @@ export async function readState(tf: StateTf = '15m', nowMs = Date.now()): Promis
     regime: inputs.regime,
   };
 
-  return { at: nowMs, tf, bars, state: marketState(input), inputs };
+  const state = marketState(input);
+
+  // The patterns and the readings are worked out from the same bars and the
+  // same level, so the card can never show a pattern drawn against one level
+  // and a state judged against another.
+  const found = [
+    ...structurePatterns({ bars, level: input.level, atr: inputs.atr }),
+    ...candlePatterns(bars),
+  ];
+  const read = indicators({
+    bars,
+    rsi14: tfRead?.rsi14 ?? null,
+    adx14: tfRead?.adx14 ?? null,
+    atrPct: tfRead?.atrPct ?? null,
+    vwapDistPct: tfRead?.vwapDistPct ?? null,
+    emaFast: tfRead?.ema21 ?? null,
+    emaSlow: tfRead?.ema50 ?? null,
+    volumeRatio: state.volumeRatio,
+    cvdSlope: inputs.cvdSlope,
+    aggressorBuyPct: inputs.aggressorBuyPct,
+    oiChangePct: inputs.oiChangePct,
+  });
+
+  return {
+    at: nowMs,
+    tf,
+    bars,
+    state,
+    patterns: { all: found, shown: relevant(found, state.event, state.side) },
+    indicators: { all: read, shown: relevantIndicators(read, state.stage) },
+    inputs,
+  };
 }

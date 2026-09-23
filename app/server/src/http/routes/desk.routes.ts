@@ -16,6 +16,7 @@ import { lastOptionSnapshot, lastOptionSnapshotAt } from '../../market/option-sn
 import { flowFeedHealth, flowSummary, ivRank, liveBook, livePerp, oiPulse, optionFlowSummary, skewRank } from '../../market/flow.js';
 import { movementByWindow } from '../../market/movement.js';
 import { readState, STATE_TFS, type StateTf } from '../../market/state-read.js';
+import { gradeStates, hitRate, noteState, recentStates } from '../../market/state-history.js';
 import { changes } from '../../market/changes.js';
 import { one } from '../../db/pool.js';
 import { strategyStore } from './strategy.routes.js';
@@ -147,10 +148,39 @@ export function registerDeskRoutes(app: FastifyInstance) {
     const tf = (STATE_TFS as readonly string[]).includes(q.tf ?? '') ? (q.tf as StateTf) : '15m';
     try {
       const read = await readState(tf);
+      /*
+       * Written down when it changes, so the card can be held to it later.
+       * Neither the writing nor the grading may fail the request: a journal
+       * that cannot be written is a warning, not a reason to leave the screen
+       * without a state on it.
+       */
+      void noteState(read).catch(() => null);
+      void gradeStates().catch(() => 0);
       // The bars are already on the screen from /api/candles; sending sixty
       // more of them with every poll would double the payload for nothing.
       const { bars, ...rest } = read;
       return { ...rest, bars: bars.length };
+    } catch (e) {
+      reply.code(502);
+      return { error: (e as Error).message };
+    }
+  });
+
+  /**
+   * The last ten calls and how they turned out: the signal-history list.
+   *
+   * The hit rate rides along, as "3 of 4" rather than a bare percentage --
+   * four calls is not a hit rate, and a number that looks like one when it is
+   * not is exactly the thing this list exists to stop.
+   */
+  app.get('/api/market-state/history', async (req, reply) => {
+    const q = req.query as { tf?: string; limit?: string };
+    const tf = (STATE_TFS as readonly string[]).includes(q.tf ?? '') ? (q.tf as StateTf) : null;
+    const limit = Math.min(50, Math.max(1, Number(q.limit) || 10));
+    try {
+      await gradeStates().catch(() => 0);
+      const [rows, rate] = await Promise.all([recentStates(tf, limit), hitRate(tf)]);
+      return { at: Date.now(), tf, rows, hitRate: rate };
     } catch (e) {
       reply.code(502);
       return { error: (e as Error).message };

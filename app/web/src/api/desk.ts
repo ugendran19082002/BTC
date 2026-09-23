@@ -192,3 +192,60 @@ export const getMovement = (entryMs: number | null = null, expiryTs: number | nu
   const qs = q.toString();
   return json<MovementResponse>(`/api/movement${qs ? `?${qs}` : ''}`);
 };
+
+// ------------------------------------------------------- the market state
+
+export type StateCheck = { label: string; ok: boolean | null };
+export type StatePlan = { side: 'UP' | 'DOWN'; trigger: number; target1: number; target2: number; invalidation: number };
+export type StatePattern = { name: string; bias: 'BULLISH' | 'BEARISH' | 'NEUTRAL'; kind: 'candle' | 'structure'; note: string; barsAgo: number };
+export type StateIndicator = {
+  key: string; label: string; value: number | null; text: string;
+  read: string; bias: 'BULLISH' | 'BEARISH' | 'NEUTRAL'; gauge: number | null;
+};
+
+export type MarketStateResponse = {
+  at: number;
+  tf: string;
+  bars: number;
+  state: {
+    event: string;
+    stage: 'RANGE' | 'WATCH' | 'CANDIDATE' | 'CONFIRMED' | 'RETEST' | 'FAILED';
+    side: 'UP' | 'DOWN' | null;
+    /** Whether this has happened, or might. The card must never say them alike. */
+    confirmed: boolean;
+    level: { resistance: number | null; support: number | null };
+    against: number | null;
+    distance: number | null;
+    /** A score out of 100 by fixed weights -- NOT a calibrated probability. */
+    confidence: number;
+    parts: Record<string, number>;
+    checks: StateCheck[];
+    plan: StatePlan | null;
+    plans: { up: StatePlan | null; down: StatePlan | null };
+    volumeRatio: number | null;
+    volumeRead: 'WEAK' | 'NORMAL' | 'STRONG' | 'BURST' | null;
+    words: string;
+  };
+  patterns: { all: StatePattern[]; shown: StatePattern[] };
+  indicators: { all: StateIndicator[]; shown: StateIndicator[] };
+  inputs: {
+    atr: number | null; oiChangePct: number | null; cvdSlope: number | null;
+    aggressorBuyPct: number | null; mtf: { up: number; down: number; total: number } | null;
+    regime: 'TREND_UP' | 'TREND_DOWN' | 'RANGE' | 'QUIET' | null;
+  };
+};
+
+export const getMarketState = (tf: string) => json<MarketStateResponse>(`/api/market-state?tf=${encodeURIComponent(tf)}`);
+
+export type StateHistoryRow = {
+  id: number; at: number; tf: string; event: string; stage: string;
+  side: 'UP' | 'DOWN' | null; confirmed: boolean; confidence: number; close: number;
+  plan: StatePlan | null;
+  outcome: 'CORRECT' | 'WRONG' | 'UNRESOLVED' | 'NOT_GRADED' | null;
+  gradedAt: number | null;
+};
+
+export const getStateHistory = (tf: string, limit = 10) =>
+  json<{ at: number; rows: StateHistoryRow[]; hitRate: { correct: number; graded: number } }>(
+    `/api/market-state/history?tf=${encodeURIComponent(tf)}&limit=${limit}`,
+  );

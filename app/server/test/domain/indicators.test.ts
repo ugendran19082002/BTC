@@ -21,7 +21,7 @@ test('returns, simple and log', () => {
 
 test('rate of change is measured over n bars, not since the beginning', () => {
   const closes = [100, 101, 102, 103, 110];
-  assert.equal(roc(closes, 4), 10);
+  assert.equal(Math.round(roc(closes, 4)! * 100) / 100, 10);
   assert.equal(Math.round(roc(closes, 1)! * 100) / 100, 6.8);
   assert.equal(roc([100], 4), null, 'not enough bars to look back that far');
 });
@@ -57,10 +57,14 @@ test('[critical] the efficiency ratio separates a trend from the same ground cov
 test('EMA and MACD', () => {
   assert.equal(ema([1, 2, 3], 5), null, 'not enough points for the period');
   assert.equal(ema([2, 2, 2, 2, 2], 5), 2);
-  const rising = Array.from({ length: 60 }, (_, i) => 100 + i);
-  const m = macd(rising)!;
-  assert.ok(m.macd > 0, 'a market going straight up has a positive MACD line');
-  assert.ok(m.histogram > 0, 'and the line is over its signal');
+  // A straight line is the case that catches a careless test: the MACD line
+  // settles to a constant, so the signal catches it and the histogram is nil.
+  const straight = Array.from({ length: 60 }, (_, i) => 100 + i);
+  assert.ok(macd(straight)!.macd > 0, 'a market going up has a positive MACD line');
+  assert.ok(Math.abs(macd(straight)!.histogram) < 0.2, 'a constant line is not momentum');
+  // A market accelerating away is: the line rises and the signal lags it.
+  const accelerating = Array.from({ length: 60 }, (_, i) => 100 * 1.01 ** i);
+  assert.ok(macd(accelerating)!.histogram > 0, 'the line is pulling away from its signal');
   assert.equal(macd([1, 2, 3]), null);
 });
 
