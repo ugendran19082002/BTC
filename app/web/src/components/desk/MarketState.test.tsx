@@ -109,12 +109,18 @@ describe('the market-state card', () => {
     expect(screen.getByText('1.8x')).toBeInTheDocument();
   });
 
-  it('the full targets show on the Levels tab and are folded away elsewhere', () => {
-    const { container } = render(<MarketState data={base} tf="15m" />);
-    expect(container.querySelector('.bt-market-state__plans')!.className).toContain('is-compact');
-    fireEvent.click(screen.getByRole('tab', { name: 'Levels' }));
-    expect(container.querySelector('.bt-market-state__plans')!.className).not.toContain('is-compact');
+  it('[critical] the targets and the stop are on the card under every tab', () => {
+    /*
+     * They were folded away on every tab but Levels, which made the numbers a
+     * trade is actually placed with something you had to go and find. A stop
+     * you have to change tab to read is one you set late.
+     */
+    render(<MarketState data={base} tf="15m" />);
     expect(screen.getByText('87,200')).toBeInTheDocument();
+    expect(screen.getAllByText('Stop loss').length).toBe(2);
+    fireEvent.click(screen.getByRole('tab', { name: 'Patterns' }));
+    expect(screen.getByText('87,200')).toBeInTheDocument();
+    expect(screen.getByText('86,400')).toBeInTheDocument();
   });
 
   it('a pattern from earlier bars says how far back it was', () => {

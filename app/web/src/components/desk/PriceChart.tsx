@@ -46,6 +46,27 @@ const GAP = 8;
 /** Fewer than this and the bars are wider than they are tall. */
 const MIN_BARS = 12;
 
+/**
+ * How wide a candle has to be before it is a candle.
+ *
+ * Under about nine pixels the body, the two wicks and the gap beside it stop
+ * being separate things and the chart reads as a smear of colour.
+ */
+const BAR_W = 9;
+
+/**
+ * How many bars a chart nobody has zoomed shows: as many as fit at a readable
+ * width, newest first.
+ *
+ * It used to open on the whole series -- 432 five-minute candles across six
+ * hundred pixels, which is more than one bar per pixel. Every bar was on
+ * screen and not one of them could be read, which is the wrong trade for a
+ * chart somebody is deciding on. The rest is one press of Whole series away,
+ * and zooming out still reaches it.
+ */
+export const barsThatFit = (plotW: number, total: number) =>
+  clamp(Math.floor(plotW / BAR_W), Math.min(MIN_BARS, total), total);
+
 const IST = (opts: Intl.DateTimeFormatOptions) =>
   new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', ...opts });
 const IST_TIME = IST({ hour: '2-digit', minute: '2-digit', hour12: false });
@@ -293,10 +314,11 @@ export function PriceChart({
 
   const win = useMemo(() => {
     if (!bars.length) return null;
-    const count = clamp(view?.count ?? bars.length, Math.min(MIN_BARS, bars.length), bars.length);
+    const fits = barsThatFit(W - PAD.left - PAD.right - RIGHT_GAP, bars.length);
+    const count = clamp(view?.count ?? fits, Math.min(MIN_BARS, bars.length), bars.length);
     const from = clamp(view?.from ?? bars.length - count, 0, Math.max(0, bars.length - count));
     return { from, count, slice: bars.slice(from, from + count), yZoom: view?.yZoom ?? 1 };
-  }, [bars, view]);
+  }, [bars, view, W]);
 
   const geom = useMemo(() => {
     if (!win || !win.slice.length) return null;
@@ -652,11 +674,18 @@ export function PriceChart({
               {full ? <Minimize size={13} aria-hidden /> : <Expand size={13} aria-hidden />}
             </button>
             <button
+              type="button" className="chain-chip"
+              title="Show every bar loaded, however thin they get"
+              onClick={() => setView({ from: 0, count: bars.length, yZoom: 1 })}
+            >
+              <Maximize2 size={12} aria-hidden /> All
+            </button>
+            <button
               type="button" className="chain-chip" disabled={!zoomed}
-              title="Show the whole series again, at the fitted scale"
+              title="Back to the default window, at a readable candle width"
               onClick={() => setView(null)}
             >
-              <Maximize2 size={12} aria-hidden /> Fit
+              <Minimize size={12} aria-hidden /> Fit
             </button>
           </div>
         </div>

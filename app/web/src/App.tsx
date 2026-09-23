@@ -594,58 +594,61 @@ export default function App() {
                   </>
                 }
                 chart={
-                  <ErrorBoundary where="Price chart">
-                    <Chart
-                      bars={candles?.bars ?? NO_BARS}
-                      // The wall within reach, not the heaviest on the board: a strike
-                      // eleven expected moves away is open interest, not a level.
-                      support={data.structure.peOiWallNear?.strike ?? null}
-                      resistance={data.structure.ceOiWallNear?.strike ?? null}
-                      spot={snap.spot}
-                      zones={chartZones}
-                      projection={chartProjection}
-                      tf={chartTf}
-                      onTf={setChartTf}
-                      loading={candlesBusy}
-                      error={candles?.error}
-                    />
-                  </ErrorBoundary>
+                  <>
+                    <ErrorBoundary where="Price chart">
+                      <Chart
+                        bars={candles?.bars ?? NO_BARS}
+                        // The wall within reach, not the heaviest on the board: a strike
+                        // eleven expected moves away is open interest, not a level.
+                        support={data.structure.peOiWallNear?.strike ?? null}
+                        resistance={data.structure.ceOiWallNear?.strike ?? null}
+                        spot={snap.spot}
+                        zones={chartZones}
+                        projection={chartProjection}
+                        tf={chartTf}
+                        onTf={setChartTf}
+                        loading={candlesBusy}
+                        error={candles?.error}
+                      />
+                    </ErrorBoundary>
+
+                    {/*
+                      The chart's own reading, in the chart's own column (23 Sep
+                      2026). It used to be rendered after the three-column grid,
+                      which put a screen and a half of other panels between the
+                      candles and what they meant -- read in the wrong order, or
+                      not at all. Patterns and readings first, then the sentence,
+                      then the card with the levels and the plans.
+                    */}
+                    {live && (
+                      <ErrorBoundary where="Chart readout">
+                        <div className="bt-readout-row">
+                          <PatternStrip patterns={marketState?.patterns.shown ?? []} />
+                          <IndicatorSummary items={marketState?.indicators.shown ?? []} />
+                        </div>
+                      </ErrorBoundary>
+                    )}
+
+                    {live && marketState ? (
+                      <ErrorBoundary where="Chart insight">
+                        <ChartInsight insight={marketState.state.insight} />
+                      </ErrorBoundary>
+                    ) : null}
+
+                    {live && (
+                      <ErrorBoundary where="Market state">
+                        <MarketState
+                          data={marketState ?? null}
+                          history={stateHistory?.rows}
+                          hitRate={stateHistory?.hitRate}
+                          tf={stateTf}
+                          tfs={STATE_CARD_TFS}
+                          onTf={(t) => setChartTf(t as ChartTf)}
+                        />
+                      </ErrorBoundary>
+                    )}
+                  </>
                 }
-              />
-            </ErrorBoundary>
-          )}
-
-          {/*
-            What the chart above is doing, read out (23 Sep 2026): the level
-            price is against, whether it has gone through, what has to be true
-            for that to count, and the trade either way. Directly under the
-            chart, because it is the chart's own reading -- on a phone the two
-            stack and it is the first thing under the candles.
-          */}
-          {live && (
-            <ErrorBoundary where="Chart readout">
-              <div className="bt-readout-row">
-                <PatternStrip patterns={marketState?.patterns.shown ?? []} />
-                <IndicatorSummary items={marketState?.indicators.shown ?? []} />
-              </div>
-            </ErrorBoundary>
-          )}
-
-          {live && marketState ? (
-            <ErrorBoundary where="Chart insight">
-              <ChartInsight insight={marketState.state.insight} />
-            </ErrorBoundary>
-          ) : null}
-
-          {live && (
-            <ErrorBoundary where="Market state">
-              <MarketState
-                data={marketState ?? null}
-                history={stateHistory?.rows}
-                hitRate={stateHistory?.hitRate}
-                tf={stateTf}
-                tfs={STATE_CARD_TFS}
-                onTf={(t) => setChartTf(t as ChartTf)}
               />
             </ErrorBoundary>
           )}

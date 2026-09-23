@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { PriceChart, pinchZoom, stretchByDrag, zoomByButton, zoomHorizontally, zoomVertically } from '@/components/desk/PriceChart';
+import {
+  PriceChart, barsThatFit, pinchZoom, stretchByDrag, zoomByButton, zoomHorizontally, zoomVertically,
+} from '@/components/desk/PriceChart';
 import type { Candle } from '@/types/desk';
 
 /**
@@ -9,6 +11,15 @@ import type { Candle } from '@/types/desk';
  * resistance line clipped off the top reads as "price is nowhere near it" when
  * the truth may be the opposite.
  */
+
+/*
+ * What a chart nobody has touched shows (23 Sep 2026).
+ *
+ * The default canvas is 780 wide, of which the plot is 672 after the padding
+ * and the gap kept clear at the right -- so a readable candle width puts
+ * seventy-four bars on screen, not the whole series.
+ */
+const DEFAULT_SHOWN = barsThatFit(672, 200);
 
 const bars = (n: number, base = 77_000): Candle[] =>
   Array.from({ length: n }, (_, i) => ({
@@ -211,12 +222,21 @@ describe('zoom and pan', () => {
       />,
     );
 
-  it('opens fitted to the whole series, with nothing to fit and nothing further out', () => {
+  it('[critical] opens on a window a candle can be read at, with the whole series a press away', () => {
+    /*
+     * It used to open on every bar loaded: two hundred candles across six
+     * hundred pixels is three to the pixel, which is a smear and not a chart.
+     * The rest of the series is one press of All away and zooming out reaches
+     * it, so nothing is lost but the illegibility.
+     */
     chart();
-    expect(screen.getByText('200 of 200 bars')).toBeInTheDocument();
+    expect(screen.getByText(`${DEFAULT_SHOWN} of 200 bars`)).toBeInTheDocument();
+    expect(DEFAULT_SHOWN).toBeLessThan(200);
     expect(screen.getByRole('button', { name: /Fit/ })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'zoom out' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'zoom in' })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole('button', { name: /All/ }));
+    expect(screen.getByText('200 of 200 bars')).toBeInTheDocument();
   });
 
   /*
@@ -330,7 +350,7 @@ describe('arming zoom', () => {
 
     // not cancelled: the page keeps the gesture
     expect(fireEvent.wheel(svg, { deltaY: -100, clientX: 390 })).toBe(true);
-    expect(screen.getByText('200 of 200 bars')).toBeInTheDocument();
+    expect(screen.getByText(`${DEFAULT_SHOWN} of 200 bars`)).toBeInTheDocument();
   });
 
   it('[critical] takes the wheel, and zooms, once it is armed', () => {
@@ -338,7 +358,7 @@ describe('arming zoom', () => {
     expect(svg).toHaveClass('armed');
     // cancelled: the chart owns the gesture and the page does not move
     expect(fireEvent.wheel(svg, { deltaY: -100, clientX: 390 })).toBe(false);
-    expect(screen.queryByText('200 of 200 bars')).not.toBeInTheDocument();
+    expect(screen.queryByText(`${DEFAULT_SHOWN} of 200 bars`)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Fit/ })).toBeInTheDocument();
   });
 
@@ -408,12 +428,12 @@ describe('zoom without a wheel', () => {
     expect(screen.getByRole('button', { name: /Zoom off/ })).toHaveAttribute('aria-pressed', 'false');
     fireEvent.click(screen.getByRole('button', { name: 'zoom in' }));
     const after = shownBars();
-    expect(after).toBeLessThan(200);
+    expect(after).toBeLessThan(DEFAULT_SHOWN);
     expect(screen.getByRole('button', { name: 'zoom out' })).toBeEnabled();
     fireEvent.click(screen.getByRole('button', { name: 'zoom out' }));
     expect(shownBars()).toBeGreaterThan(after);
     fireEvent.click(screen.getByRole('button', { name: /Fit/ }));
-    expect(shownBars()).toBe(200);
+    expect(shownBars()).toBe(DEFAULT_SHOWN);
   });
 
   it('[critical] + zooms about the newest bar, so the newest bar stays on screen', () => {
@@ -454,11 +474,11 @@ describe('zoom without a wheel', () => {
     fireEvent.pointerDown(svg, { pointerId: 2, pointerType: 'touch', clientX: 400, clientY: 150 });
     fireEvent.pointerMove(svg, { pointerId: 2, pointerType: 'touch', clientX: 500, clientY: 150 });
     // 100 apart to 200 apart: half the bars
-    expect(shownBars()).toBe(100);
+    expect(shownBars()).toBe(Math.round(DEFAULT_SHOWN / 2));
     fireEvent.pointerUp(svg, { pointerId: 2, pointerType: 'touch', clientX: 500, clientY: 150 });
     fireEvent.pointerUp(svg, { pointerId: 1, pointerType: 'touch', clientX: 300, clientY: 150 });
     // the finger left behind does not drag the window somewhere new on its way out
-    expect(shownBars()).toBe(100);
+    expect(shownBars()).toBe(Math.round(DEFAULT_SHOWN / 2));
   });
 
   it('one finger on an armed chart pans it, and does not scroll the page', () => {
@@ -503,12 +523,12 @@ describe('zoom without a wheel', () => {
     const { svg } = plain();
     fireEvent.click(screen.getByRole('button', { name: /Zoom off/ }));
     fireEvent.click(screen.getByRole('button', { name: 'zoom in' }));
-    expect(shownBars()).toBeLessThan(200);
+    expect(shownBars()).toBeLessThan(DEFAULT_SHOWN);
     for (const _ of [1, 2]) {
       fireEvent.pointerDown(svg, { pointerId: 1, pointerType: 'touch', clientX: 300, clientY: 150 });
       fireEvent.pointerUp(svg, { pointerId: 1, pointerType: 'touch', clientX: 300, clientY: 150 });
     }
-    expect(shownBars()).toBe(200);
+    expect(shownBars()).toBe(DEFAULT_SHOWN);
   });
 
   it('with zoom off a finger is left to the page: no pan, no pinch', () => {
@@ -517,7 +537,7 @@ describe('zoom without a wheel', () => {
     fireEvent.pointerDown(svg, { pointerId: 1, pointerType: 'touch', clientX: 300, clientY: 150 });
     fireEvent.pointerDown(svg, { pointerId: 2, pointerType: 'touch', clientX: 400, clientY: 150 });
     fireEvent.pointerMove(svg, { pointerId: 2, pointerType: 'touch', clientX: 600, clientY: 150 });
-    expect(shownBars()).toBe(200);
+    expect(shownBars()).toBe(DEFAULT_SHOWN);
   });
 });
 
@@ -549,7 +569,11 @@ describe('on a narrow screen', () => {
       const right = Number(last.getAttribute('x')) + Number(last.getAttribute('width'));
       expect(360 - 74 - right).toBeGreaterThanOrEqual(20);
     } finally {
+      // jsdom defines clientWidth on Element, not HTMLElement, so there is no
+      // own descriptor to put back: the override has to be deleted or every
+      // later test in this file draws on a 360-wide card.
       if (wide) Object.defineProperty(HTMLElement.prototype, 'clientWidth', wide);
+      else Reflect.deleteProperty(HTMLElement.prototype, 'clientWidth');
       vi.unstubAllGlobals();
     }
   });
