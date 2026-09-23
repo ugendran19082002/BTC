@@ -1,7 +1,7 @@
 import { after, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  noteState, outcomeWords, recentStates, stateHistorySchema, verdictFor,
+  gradeStates, noteState, outcomeWords, recentStates, stateHistorySchema, verdictFor,
 } from '../../src/market/state-history.js';
 import { closePool, one, query } from '../../src/db/pool.js';
 import type { StateRead } from '../../src/market/state-read.js';
@@ -138,4 +138,34 @@ test('[critical] the list carries where price went, not only whether the plan wo
   assert.equal(row?.resolvedClose, 86_904);
   assert.equal(row?.movePts, 350);
   assert.equal(row?.close, 86_554);
+});
+
+test('[critical] grading starts with the oldest ungraded call, not the newest', async () => {
+  /*
+   * It took the newest twenty at first, and the journal never graded anything.
+   * The desk writes a row every time the state changes, so the newest ungraded
+   * calls are the youngest ones -- all still inside their window, all skipped
+   * -- and the older rows that were ready never came up. Every row on the card
+   * sat at "—" while the grader ran on every poll.
+   *
+   * Nothing here needs candles: what is being pinned is which rows a pass
+   * looks at, so the assertion is that the old one is no longer ungraded and
+   * the young one still is.
+   */
+  const day = 24 * 3_600_000;
+  const old = await noteState(read({ at: Date.now() - day }));
+  // Two dozen younger rows, more than one pass will take.
+  for (let i = 0; i < 24; i++) {
+    await noteState(read({
+      at: Date.now() - i * 1_000,
+      state: { ...read().state, event: i % 2 ? 'BREAKOUT_WATCH' : 'RANGE', stage: i % 2 ? 'WATCH' : 'RANGE' },
+    }));
+  }
+  await gradeStates(Date.now(), 20);
+  const row = await one<{ outcome: string | null }>('SELECT outcome FROM market_states WHERE id = $1', [old]);
+  assert.notEqual(row?.outcome, null, 'the day-old call was graded');
+  const young = await one<{ n: string }>(
+    'SELECT COUNT(*) AS n FROM market_states WHERE outcome IS NULL AND at > $1', [Date.now() - 60_000],
+  );
+  assert.ok(Number(young?.n) > 0, 'calls whose bars have not happened yet are left alone');
 });

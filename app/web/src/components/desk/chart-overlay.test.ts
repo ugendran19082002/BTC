@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CALLOUT_W, MIN_ZONE_PX, calloutShapes, lineShapes, zoneShapes, type Converters,
+  CALLOUT_H, CALLOUT_W, MIN_ZONE_PX, calloutShapes, lineShapes, zoneShapes, type Converters,
 } from '@/components/desk/chart-overlay';
 
 /*
@@ -105,11 +105,37 @@ describe('the target callouts', () => {
     expect(up.y).toBeLessThan(60);
   });
 
-  it('every box is in the gutter kept clear to the right', () => {
-    for (const s of calloutShapes(p, 75_000, c)) {
-      expect(s.x + CALLOUT_W).toBeLessThanOrEqual(c.width);
+  it('[critical] no box is drawn over the price axis', () => {
+    // The axis is where a number is checked; a callout across it hides the
+    // very prices it is quoting.
+    const axis = 64;
+    for (const s of calloutShapes(p, 75_000, { ...c, gutter: axis })) {
+      expect(s.x + CALLOUT_W).toBeLessThanOrEqual(c.width - axis);
       expect(s.x).toBeGreaterThan(c.width / 2);
     }
+  });
+
+  it('[critical] boxes at the same height are pushed apart, not stacked on each other', () => {
+    /*
+     * On a quiet chart the two targets and the range between them are a few
+     * hundredths of the scale apart, and three boxes at one height is one
+     * unreadable box.
+     */
+    const tight = {
+      up: { trigger: 75_010, target1: 75_020 },
+      down: { trigger: 74_990, target1: 74_980 },
+      range: { from: 74_990, to: 75_010 },
+    };
+    const shapes = calloutShapes(tight, 75_000, { ...c, gutter: 64 });
+    expect(shapes.map((s) => s.key)).toEqual(['up', 'range', 'down']);
+    for (let i = 1; i < shapes.length; i++) {
+      expect(shapes[i]!.y - shapes[i - 1]!.y).toBeGreaterThanOrEqual(CALLOUT_H);
+    }
+    // and the stack still fits the plot
+    expect(shapes.at(-1)!.y).toBeLessThan(c.height);
+    expect(shapes[0]!.y).toBeGreaterThan(0);
+    // each box keeps its arrow to where price is now
+    for (const s of shapes) expect(s.fromY).toBeCloseTo(at(75_000), 5);
   });
 
   it('draws nothing when there is no projection', () => {
