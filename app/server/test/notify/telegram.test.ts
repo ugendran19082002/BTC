@@ -110,3 +110,78 @@ test('a reporter that throws cannot turn a failed alert into an exception', asyn
   });
   assert.equal(await n.send('x'), false);
 });
+
+/*
+ * The repeat guard.
+ *
+ * On 23 September the phone was buzzing with the same alert over and over. The
+ * desk retries a protective order Delta refused every few seconds, each attempt
+ * that fails raises the alarm again, and the alarm carries Delta's own words --
+ * so "the same alert" was never quite the same string, and nothing stopped it.
+ * These pin both halves: identical words are not said again for a while, and an
+ * alert that knows it comes from a retry loop asks for a quiet period whatever
+ * the words.
+ */
+
+/** A notifier with a clock the test moves. */
+function timed(over: Partial<TelegramOptions> = {}) {
+  let clock = 1_790_000_000_000;
+  const made = make([], { now: () => clock, coalesceMs: 0, ...over });
+  return { ...made, tick: (ms: number) => { clock += ms; } };
+}
+
+test('the same words under the same key are not said again for the quiet period', async () => {
+  const { n, calls, tick } = timed({ repeatMs: 900_000 });
+  n.notify({ key: 't1:problem:no-stop', text: 'NO STOP-LOSS' });
+  await n.drain();
+  tick(60_000);
+  n.notify({ key: 't1:problem:no-stop', text: 'NO STOP-LOSS' });
+  await n.drain();
+  assert.equal(calls.length, 1, 'a minute later is still the same news');
+  assert.equal(n.repeatsHeld, 1);
+
+  tick(900_000);
+  n.notify({ key: 't1:problem:no-stop', text: 'NO STOP-LOSS' });
+  await n.drain();
+  assert.equal(calls.length, 2, 'a position still unprotected a quarter of an hour on is worth saying again');
+});
+
+test('[critical] a retry loop whose words keep changing is still one alert, not one a retry', async () => {
+  const { n, calls, tick } = timed();
+  // What the engine actually produces: Delta's reason, and it moves.
+  const reasons = [
+    'POSITION UNPROTECTED: could not cancel the stop loss already on the book',
+    'POSITION UNPROTECTED: order rejected: risk check failed at 09:41:02',
+    'POSITION UNPROTECTED: order rejected: risk check failed at 09:41:04',
+  ];
+  for (const reason of reasons) {
+    n.notify({ key: 't1:problem:no-stop', text: reason, repeatAfterMs: 900_000 });
+    await n.drain();
+    tick(2_000);
+  }
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]!.body.text, reasons[0]);
+  assert.equal(n.repeatsHeld, 2);
+});
+
+test('a quiet period covers only its own key: other news gets through', async () => {
+  const { n, calls } = timed();
+  n.notify({ key: 't1:problem:no-stop', text: 'no stop', repeatAfterMs: 900_000 });
+  await n.drain();
+  n.notify({ key: 't1:problem:rejected', text: 'rejected', repeatAfterMs: 900_000 });
+  n.notify({ key: 't1:exit', text: 'target hit' });
+  await n.drain();
+  assert.deepEqual(calls.map((c) => c.body.text), ['no stop', 'rejected', 'target hit']);
+});
+
+test('a message Telegram refused starts no quiet period -- the next one must still go', async () => {
+  const { n, calls } = make([{ status: 403, body: { ok: false, description: 'Forbidden' } }], {
+    now: () => 1_790_000_000_000, coalesceMs: 0,
+  });
+  n.notify({ key: 't1:entry', text: 'SOLD 425' });
+  await n.drain();
+  n.notify({ key: 't1:entry', text: 'SOLD 425' });
+  await n.drain();
+  assert.equal(calls.length, 2, 'nothing arrived the first time, so it is not a repeat');
+  assert.equal(n.repeatsHeld, 0);
+});

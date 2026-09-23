@@ -25,7 +25,23 @@ export type Alert = {
   key: string;
   /** Telegram HTML: only <b> and <i>, and every `&` written as `&amp;`. */
   text: string;
+  /**
+   * How long nothing else is said under this key once this has been sent.
+   *
+   * For the alerts the desk raises from a retry loop. The engine tries a
+   * refused stop again every few seconds, and every attempt that fails raises
+   * the alarm afresh -- without this, "NO STOP-LOSS" arrives once a retry
+   * instead of once, and the alert that matters most is the one that gets
+   * muted. Left unset for fills, where each message says something new.
+   */
+  repeatAfterMs?: number;
 };
+
+/**
+ * A problem the desk keeps retrying is worth saying again, as a reminder,
+ * about four times an hour -- not once every two seconds.
+ */
+export const PROBLEM_REPEAT_MS = 15 * 60_000;
 
 export type AlertContext = { mode: 'live' | 'paper' };
 
@@ -82,45 +98,72 @@ function problemAlertFor(
   plan: TradePlan,
   ctx: AlertContext,
 ): Alert | null {
-  const key = `${after.tradeId}:problem`;
+  /*
+   * A key per kind of problem, not one per trade: a rejection and a missing
+   * stop are different news, and the quiet period each earns is its own. They
+   * shared a key while the only thing it did was coalesce a burst, and sharing
+   * it now would let a stop alarm silence the rejection behind it.
+   */
+  const key = (kind: string) => `${after.tradeId}:problem:${kind}`;
   const held = Math.abs(after.position);
   const side = after.position < 0 ? 'short' : 'long';
 
   // A scheduled entry that ran out of window. A hand-placed one was cancelled
   // by the person who placed it, and needs no message.
   if (event.t === 'entry_cancelled' && after.entrySize === 0 && plan.strategyId) {
-    return { key, text: problemText(ctx, 'ℹ️', `NOT FILLED · ${contract(plan)}`, [
+    return { key: key('not-filled'), text: problemText(ctx, 'ℹ️', `NOT FILLED · ${contract(plan)}`, [
       'The entry window closed before the order filled, so it was cancelled. Nothing was sold.',
       'Usually the spread stayed too wide to sell at the bid.',
     ], event.at, plan) };
   }
 
   if (event.t === 'entry_rejected') {
-    return { key, text: problemText(ctx, '🚨', `ORDER REJECTED · ${contract(plan)}`, [
-      `Delta refused the order: <i>${escape(event.reason)}</i>`,
-      held > 0 ? `${qty(held)} had already filled — that part is still open.` : 'Nothing was sold.',
-    ], event.at, plan) };
+    return {
+      key: key('rejected'), repeatAfterMs: PROBLEM_REPEAT_MS,
+      text: problemText(ctx, '🚨', `ORDER REJECTED · ${contract(plan)}`, [
+        `Delta refused the order: <i>${escape(event.reason)}</i>`,
+        held > 0 ? `${qty(held)} had already filled — that part is still open.` : 'Nothing was sold.',
+      ], event.at, plan),
+    };
   }
   if (event.t === 'entry_submit_unknown') {
-    return { key, text: problemText(ctx, '⚠️', `ORDER STATUS UNKNOWN · ${contract(plan)}`, [
-      'Delta did not answer when the order was sent.',
-      'The desk reads the account back before doing anything else, so no second order is sent.',
-    ], event.at, plan) };
+    return {
+      key: key('unknown'), repeatAfterMs: PROBLEM_REPEAT_MS,
+      text: problemText(ctx, '⚠️', `ORDER STATUS UNKNOWN · ${contract(plan)}`, [
+        'Delta did not answer when the order was sent.',
+        'The desk reads the account back before doing anything else, so no second order is sent.',
+      ], event.at, plan),
+    };
   }
   // An exit was asked for and did not go: the position is still there.
   if (event.t === 'protection_failed' && before.phase === 'exit_pending' && held > 0) {
-    return { key, text: problemText(ctx, '🚨', `EXIT FAILED · ${contract(plan)}`, [
-      `Could not close: <i>${escape(event.reason)}</i>`,
-      `Still ${side} <b>${qty(held)}</b>. Tap Close now again, or close it on Delta.`,
-    ], event.at, plan) };
+    return {
+      key: key('exit-failed'), repeatAfterMs: PROBLEM_REPEAT_MS,
+      text: problemText(ctx, '🚨', `EXIT FAILED · ${contract(plan)}`, [
+        `Could not close: <i>${escape(event.reason)}</i>`,
+        `Still ${side} <b>${qty(held)}</b>. Tap Close now again, or close it on Delta.`,
+      ], event.at, plan),
+    };
   }
-  // Newly unprotected. Once per alarm, not once per retry: the protection loop
-  // tries again every few seconds, and the phone only needs telling once.
+  /*
+   * Newly unprotected.
+   *
+   * The comparison here catches the ordinary case: the same alarm, raised
+   * again, says nothing new. It is not enough on its own, because the alarm
+   * carries the exchange's words for why the stop could not go on, and those
+   * change between attempts -- and a retry that places the target and then
+   * fails on the stop clears the alarm and raises it again in one pass. Both
+   * read as a new alarm. `repeatAfterMs` is what makes this once, then a
+   * reminder: see `PROBLEM_REPEAT_MS`.
+   */
   if (after.alarm && after.alarm !== before.alarm && held > 0) {
-    return { key, text: problemText(ctx, '🚨', `NO STOP-LOSS · ${contract(plan)}`, [
-      `<i>${escape(after.alarm)}</i>`,
-      `${side === 'short' ? 'Short' : 'Long'} <b>${qty(held)}</b> with nothing protecting it. The desk keeps retrying — check Delta now.`,
-    ], event.at, plan) };
+    return {
+      key: key('no-stop'), repeatAfterMs: PROBLEM_REPEAT_MS,
+      text: problemText(ctx, '🚨', `NO STOP-LOSS · ${contract(plan)}`, [
+        `<i>${escape(after.alarm)}</i>`,
+        `${side === 'short' ? 'Short' : 'Long'} <b>${qty(held)}</b> with nothing protecting it. The desk keeps retrying — check Delta now.`,
+      ], event.at, plan),
+    };
   }
   return null;
 }

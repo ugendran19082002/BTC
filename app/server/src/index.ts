@@ -45,7 +45,11 @@ const strategies = await initStrategyStore();
 
 // One sign-in service for the process: the gate and the routes share the pool.
 const auth = await authFromEnv({
-  onAlert: (text) => desk.notifier?.notify({ key: `security:${Date.now()}`, text }),
+  // One key, not one per message: a bot working through passwords raises the
+  // same lockout alert again and again, and the notifier's repeat guard only
+  // recognises a repeat when the key is the same. The words differ between
+  // kinds of security news, so nothing is lost by sharing it.
+  onAlert: (text) => desk.notifier?.notify({ key: 'security', text }),
 });
 const app = await buildApp({ auth });
 await app.listen({ port: config.port, host: '0.0.0.0' });

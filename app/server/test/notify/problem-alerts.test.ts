@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { applyEvent, initialTrade } from '../../src/trading/machine.js';
-import { alertFor, missedEntryAlert, runAlertFor, type Alert, type RunOutcome } from '../../src/notify/messages.js';
+import {
+  alertFor, missedEntryAlert, PROBLEM_REPEAT_MS, runAlertFor, type Alert, type RunOutcome,
+} from '../../src/notify/messages.js';
 import type { TradePlan } from '../../src/trading/engine.js';
 import type { TradeEvent, TradeState } from '../../src/trading/types.js';
 import { ceProduct, planFor } from '../trading/harness.js';
@@ -44,7 +46,7 @@ test('a hand-placed order cancelled unfilled stays quiet -- the person cancelled
 test('Delta refusing an order is an alert, with Delta’s reason', () => {
   const [, a] = alerts([submitted, { t: 'entry_rejected', reason: 'insufficient_margin & more', at: AT }]);
   assert.ok(a);
-  assert.equal(a.key, 't1:problem');
+  assert.equal(a.key, 't1:problem:rejected');
   assert.match(a.text, /🚨 <b>ORDER REJECTED · BTC 80,000 CE<\/b>/);
   assert.match(a.text, /insufficient_margin &amp; more/);
   assert.match(a.text, /Nothing was sold/);
@@ -143,4 +145,27 @@ test('every & and < in every problem alert is escaped, because Telegram refuses 
     const withoutTags = a.text.replace(/<\/?(b|i)>/g, '');
     assert.doesNotMatch(withoutTags, /&(?!amp;|lt;|gt;|quot;)|<|>/, a.text);
   }
+});
+
+test('[critical] each kind of problem has its own key and asks for a quiet period', () => {
+  /*
+   * The alert layer is pure and cannot count time, so it says the same thing
+   * on every retry -- honestly. What stops the phone buzzing once a retry is
+   * the quiet period it asks for, enforced by the notifier. Without it, a stop
+   * Delta keeps refusing arrives every couple of seconds; with a shared key,
+   * the rejection behind it would be swallowed instead.
+   */
+  const [, , unprotected] = alerts([submitted, sold, failedProtection('API down')], { wantsProtection: true });
+  assert.equal(unprotected!.key, 't1:problem:no-stop');
+  assert.equal(unprotected!.repeatAfterMs, PROBLEM_REPEAT_MS);
+
+  const [, rejected] = alerts([submitted, { t: 'entry_rejected', reason: 'insufficient_margin', at: AT }]);
+  assert.equal(rejected!.key, 't1:problem:rejected');
+  assert.notEqual(rejected!.key, unprotected!.key, 'two problems must not silence each other');
+});
+
+test('a fill asks for no quiet period: every fill message says something new', () => {
+  const [, a] = alerts([submitted, sold]);
+  assert.match(a!.text, /SOLD/);
+  assert.equal(a!.repeatAfterMs, undefined);
 });

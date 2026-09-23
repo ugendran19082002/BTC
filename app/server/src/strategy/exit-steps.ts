@@ -32,8 +32,8 @@ export type ExitStepperDeps = {
   openTrades: (strategyId: string) => TradeRecord[] | Promise<TradeRecord[]>;
   /** Move the exits: `TradingService.updateExits`, measured off each trade's own entry. */
   move: (tradeId: string, ask: ExitAsk) => Promise<unknown>;
-  /** Said once per trade per stage. */
-  tell?: (text: string) => void;
+  /** Said once per trade per stage, keyed by the trade it moved. */
+  tell?: (text: string, tradeId: string) => void;
   now: () => number;
 };
 
@@ -81,7 +81,7 @@ export class StrategyExitStepper {
       await this.d.move(id, ask);
       this.applied.set(id, key);
       moved.push(id);
-      this.d.tell?.(stepWords(s, trade.plan.symbol, target, t, prevTarget, stop, st, prevStop));
+      this.d.tell?.(stepWords(s, trade.plan.symbol, target, t, prevTarget, stop, st, prevStop), id);
     }
     // Forget trades that are gone, so the map does not grow for ever.
     const open = new Set(trades.filter((x) => x.state.position !== 0).map((x) => x.state.tradeId));

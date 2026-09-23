@@ -515,7 +515,9 @@ export class TradingService {
       await this.writeAutoTrade(ledger, decision.key, { at: now, status: 'refused', detail: why });
       if (this.notifier && this.alertsOn) {
         this.notifier.notify({
-          key: 'auto-trade',
+          // Per decision: two strikes refused in the same minute are two
+          // messages, not the second one quietly replacing the first.
+          key: `auto-trade:${decision.key}`,
           text: `🤖 Auto-trade did not sell ${decision.side} ${decision.strike.toLocaleString('en-IN')}: ${why}`,
         });
       }

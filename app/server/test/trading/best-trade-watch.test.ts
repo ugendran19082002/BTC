@@ -331,7 +331,9 @@ test('[critical] a refusal is written down, said once, and not retried this cont
   const r = await svc.autoTradeBestPick(NOW, { snap: CALL_BOARD, market: null });
   assert.equal(r.act, 'refused');
   assert.match(r.why, /not enough margin/);
-  assert.equal(sent.filter((a) => a.key === 'auto-trade').length, 1);
+  // Keyed per decision since 23 Sep: two strikes refused a minute apart are
+  // two messages, not the second replacing the first before it is sent.
+  assert.equal(sent.filter((a) => a.key.startsWith('auto-trade:')).length, 1);
   const again = await svc.autoTradeBestPick(NOW + 60_000, { snap: CALL_BOARD, market: null });
   assert.equal(again.act, 'skip');
   assert.equal(placed.length, 1, 'Delta is not asked the same refused question every minute');
