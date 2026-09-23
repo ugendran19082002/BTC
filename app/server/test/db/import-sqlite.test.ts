@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { importSqlite } from '../../src/db/import-sqlite.js';
-import { closePool, one, query } from '../../src/db/pool.js';
+import { closePool, one, query, rows } from '../../src/db/pool.js';
 import { PgTradeStore } from '../../src/trading/store.js';
 import { StrategyStore } from '../../src/strategy/store.js';
 import { AuthStore } from '../../src/auth/store.js';
@@ -138,8 +138,17 @@ test('[critical] every table lands, and what the stores read back is what the SQ
   // the two seeds the fixture desk does not have were not resurrected
   assert.deepEqual((await strategies.all()).map((x) => x.id), ['double'], 'a deleted strategy does not come back');
   assert.equal(await strategies.lastRunDate('double'), '2026-09-09', 'the day stays claimed: no re-entry after the cutover');
-  // the add journal is retired but its history stays in the database
-  assert.equal((await one<{ n: number }>("SELECT COALESCE(SUM(contracts), 0)::int AS n FROM strategy_adds WHERE source_trade_id = 'C-BTC-79600-090926-1'"))!.n, 10);
+  // The add and rebalance journals are not carried: the features were retired
+  // on 22 Sep and their tables removed on the 23rd. The fixture still has them
+  // on the SQLite side, which is the point -- the import must step over them
+  // rather than fail on a table that no longer exists here.
+  assert.deepEqual(
+    await rows<{ table_name: string }>(
+      `SELECT table_name FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name IN ('strategy_adds', 'strategy_rebalances')`,
+    ),
+    [],
+  );
 
   // the sign-in: the same user, the same live session, one recovery code left
   const auth = await AuthStore.open();

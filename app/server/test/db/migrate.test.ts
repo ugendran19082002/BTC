@@ -175,8 +175,8 @@ test('[critical] after boot every desk table is in public, and no desk schema is
   const tables = (await rows<{ table_name: string }>(
     `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY 1`,
   )).map((r) => r.table_name);
-  for (const t of ['settings', 'trades', 'trade_events', 'mtm_samples', 'strategies', 'strategy_runs', 'strategy_adds',
-    'strategy_rebalances', 'auth_user', 'auth_sessions', 'auth_recovery_codes', 'auth_limits', 'auth_events', 'errors',
+  for (const t of ['settings', 'trades', 'trade_events', 'mtm_samples', 'strategies', 'strategy_runs',
+    'auth_user', 'auth_sessions', 'auth_recovery_codes', 'auth_limits', 'auth_events', 'errors',
     'oi_snapshots', 'chain_features', 'schema_migrations']) {
     assert.ok(tables.includes(t), `${t} is in public`);
   }

@@ -82,14 +82,10 @@ export const setWallWithinEm = (em: number) =>
 
 /** ATM implied volatility across every listed expiry, now. There is no history of it. */
 export type TermPoint = { expiry: string; expiryTs: number; hoursAway: number; strike: number; atmIv: number; sides: 1 | 2 };
-export type TermHistoryPoint = Pick<TermPoint, 'expiry' | 'hoursAway' | 'strike' | 'atmIv'>;
 export type TermResponse = {
   at: number;
   points: TermPoint[];
-  /** The term structure as recorded a week / a month ago; null until the record is that long. */
-  weekAgo: { at: number; points: TermHistoryPoint[] } | null;
-  monthAgo: { at: number; points: TermHistoryPoint[] } | null;
-  /** Where today's put−call skew, and the ATM IV, sit among every recorded reading. */
+  /** Where today's put-call skew, and the ATM IV, sit among every recorded reading. */
   skew: { percentile: number; samples: number; days: number } | null;
   iv?: { percentile: number; samples: number; days: number } | null;
 };

@@ -1,7 +1,43 @@
 # TODO
 
 Live: https://delta.thannigo.in
-Updated 22 Sep 2026
+Updated 23 Sep 2026
+
+---
+
+## 23 Sep 2026 — the phone stops repeating itself; two dead tables go
+
+**Done (built, tested, not yet deployed):**
+
+- [x] **Telegram said the same thing over and over.** The desk retries a protective order Delta
+      refused every 2 s, backing off to 60 s, and every attempt that fails raises the alarm again.
+      The alert was guarded by "is this alarm different from the last one?" -- and it always was,
+      because the alarm carries Delta's own words for the refusal, and because a retry that places
+      the target and then fails on the stop clears the alarm and raises it again in one pass. So
+      "NO STOP-LOSS" arrived once a retry, for as long as the trouble lasted: the alert that matters
+      most, trained into noise. Fixed in the notifier, where it belongs: the same words under the
+      same key are not repeated for 15 minutes, and an alert raised from a retry loop names its own
+      quiet period (`repeatAfterMs`, `PROBLEM_REPEAT_MS`), so a problem is said once and then
+      repeated as a reminder four times an hour at most. `repeatsHeld` counts what was held back.
+- [x] **Alert keys that were wrong.** `security:${Date.now()}` made every security alert unique, so
+      no repeat could ever be recognised; one `exit-step` key for every trade meant a CE and a PE
+      stepping in the same tick sent one message, not two; one `auto-trade` key did the same to two
+      refused strikes. Each is now keyed by what it is about. Problem alerts are keyed per kind
+      (`:no-stop`, `:rejected`, `:exit-failed`, `:unknown`) so one cannot silence another.
+- [x] **`strategy_adds` and `strategy_rebalances` removed** (`strategy-005`). Retired with their
+      features on 22 Sep and left standing on the rule "remove first, delete later"; this is the
+      later. 19 rows of add history and 25 columns go, irreversibly. **Take `deploy/backup-db.sh`
+      before the deploy that runs this.**
+- [x] **`iv_term_snapshots` removed** (`market-009`). It fed one thing, the IV term structure card's
+      "a week ago / a month ago" lines, and that card went on 22 Sep. Since then it was written
+      every five minutes and read by nobody, and `/api/term` asked it two questions a minute per
+      open browser. The recorder, `termHistory()` and those two response fields go with it. The
+      term structure itself is read live from the tickers and is unchanged; only four days of
+      recorded history are lost.
+- [x] **Swept for anything else dead.** Every column of every table checked against every reader in
+      the server, the web app and the Python service: nothing else is unread. `outlook_states`,
+      `chain_states` and `analytics_publish_meta` look dead from the server but are the analytics
+      service's inputs, and stay.
 
 ---
 

@@ -119,18 +119,10 @@ async function importTrades(dir: string, counts: Count[]): Promise<void> {
   await bumpIdentity('strategy_runs');
   counts.push({ table: 'strategy_runs', source: runs.length, target: await count('strategy_runs') });
 
-  const adds = readAll(db, 'strategy_adds');
-  await copy('strategy_adds', ['id', 'strategy_id', 'run_date', 'source_trade_id', 'source_side', 'symbol', 'contracts', 'status', 'detail', 'added_to_trade_id', 'at'], adds,
-    (r) => [r.id, r.strategy_id, r.run_date, r.source_trade_id, r.source_side, r.symbol, r.contracts, r.status, r.detail, r.added_to_trade_id, r.at], 'DO NOTHING', true);
-  await bumpIdentity('strategy_adds');
-  counts.push({ table: 'strategy_adds', source: adds.length, target: await count('strategy_adds') });
-
-  const rebalances = readAll(db, 'strategy_rebalances');
-  await copy('strategy_rebalances', ['id', 'strategy_id', 'run_date', 'stage', 'up_side', 'down_side', 'up_pct', 'down_pct', 'lots', 'status', 'detail', 'bought_trade_id', 'sold_trade_id', 'at'], rebalances,
-    (r) => [r.id, r.strategy_id, r.run_date, r.stage, r.up_side, r.down_side, r.up_pct, r.down_pct, r.lots, r.status, r.detail, r.bought_trade_id, r.sold_trade_id, r.at], 'DO NOTHING', true);
-  await bumpIdentity('strategy_rebalances');
-  counts.push({ table: 'strategy_rebalances', source: rebalances.length, target: await count('strategy_rebalances') });
-
+  // strategy_adds and strategy_rebalances: the two retired features' history.
+  // Carried until 23 Sep 2026, when the tables went (`strategy-005`). There is
+  // nowhere to put them any more, and the sqlite file still has them if anyone
+  // ever needs to look.
   // premium_alerts: a table nothing read, empty on the live desk. Not carried.
   db.close();
 }

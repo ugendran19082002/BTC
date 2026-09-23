@@ -2,8 +2,8 @@ import { after, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { FlowSocket, printOf, perpTickerOf, type Print } from '../../src/market/flow-socket.js';
 import {
-  bookOf, captureIvTerm, capturePerpSnapshot, flowSchema, flowSummary, flushTradeFlow, minuteOf, minutesOf,
-  skewRank, termHistory, useFlowSocket, FLOW_BUCKET_MS, LARGE_PRINT_CONTRACTS,
+  bookOf, capturePerpSnapshot, flowSchema, flowSummary, flushTradeFlow, minuteOf, minutesOf,
+  skewRank, useFlowSocket, FLOW_BUCKET_MS, LARGE_PRINT_CONTRACTS,
 } from '../../src/market/flow.js';
 import { closePool, one, query } from '../../src/db/pool.js';
 import { marketSchema } from '../../src/market/oi-history.js';
@@ -15,7 +15,7 @@ const p = (at: number, side: 'buy' | 'sell', size: number, price = 81_000): Prin
 
 beforeEach(async () => {
   await flowSchema();
-  await query('TRUNCATE trade_flow_1m, perp_snapshots, iv_term_snapshots');
+  await query('TRUNCATE trade_flow_1m, perp_snapshots');
   useFlowSocket(null);
 });
 after(() => closePool());
@@ -136,15 +136,12 @@ const tk = (symbol: string, cp: 'C' | 'P', strike: number, iv: string): Ticker =
   quotes: { best_bid: '1', best_ask: '2', bid_size: '1', ask_size: '1', mark_iv: iv, bid_iv: iv, ask_iv: iv },
 });
 
-test('[critical] the term structure is recorded per bucket and read back as it was a week ago', async () => {
-  const board = [tk('C-BTC-78000-190926', 'C', 78_000, '0.40'), tk('C-BTC-78000-260926', 'C', 78_000, '0.45')];
-  const weekAgo = T0 - 7 * 86_400_000;
-  assert.ok(await captureIvTerm(board, weekAgo));
-  assert.equal(await captureIvTerm(board, weekAgo + 1_000), null, 'the same bucket is not written twice');
-  const h = await termHistory(7 * 86_400_000, T0);
-  assert.deepEqual(h?.points.map((x) => [x.expiry, x.atmIv]), [['190926', 0.4], ['260926', 0.45]]);
-  assert.equal(await termHistory(30 * 86_400_000, T0), null, 'no record a month back');
-});
+/*
+ * The IV term record was retired on 23 September with the card that read it
+ * (`market-009`): the table is gone, and so are `captureIvTerm` and
+ * `termHistory`. The term structure itself is read from the live tickers and is
+ * covered by `market/term.test.ts`.
+ */
 
 test('a perp snapshot is one row per five-minute bucket', async () => {
   const s = new FlowSocket({ now: () => T0 });

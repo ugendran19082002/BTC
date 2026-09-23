@@ -15,7 +15,7 @@ await StrategyStore.open();
 // The seeded rows, as a new desk has them; every case starts from exactly these.
 const seeded = await rows('SELECT * FROM strategies');
 const fresh = async () => {
-  await query('TRUNCATE strategies, strategy_runs, strategy_adds, strategy_rebalances');
+  await query('TRUNCATE strategies, strategy_runs');
   for (const r of seeded) {
     await query(
       'INSERT INTO strategies (id, name, enabled, config, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)',

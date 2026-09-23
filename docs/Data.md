@@ -57,7 +57,6 @@ Row counts read on 19 Sep 2026.
 | `option_snapshots` | every strike of the **two nearest live expiries**: mark, last, bid, ask, sizes, mark / bid / ask IV, delta, gamma, theta, vega, rho, OI, volume, spot | **5 min** | 365 days | recording since 19 Sep 2026 |
 | `trade_flow_1m` | the perpetual's tape, per minute, by aggressor side: buy / sell volume and count, large prints (≥200 contracts), VWAP, high, low | **1 min** | 365 days | recording since 19 Sep 2026 |
 | `perp_snapshots` | the perpetual: mark, spot, funding rate, OI (contracts, USD), 24h turnover, and the top of the book (20-level depth a side, imbalance, spread) | **5 min** | 365 days | recording since 19 Sep 2026 |
-| `iv_term_snapshots` | ATM IV per listed expiry — the term structure | **5 min** | 365 days | recording since 19 Sep 2026 |
 | `option_flow_1m` | the options' own tape: every print on every strike of the two nearest expiries, per contract per minute, by aggressor side (buy / sell volume and count) — the CE / PE flow the Live screen shows, which Delta's option ticker cannot give (it carries volume, not who crossed the spread) | **1 min** | 31 days | recording since 20 Sep 2026 |
 | `chain_features` | the whole board summarised: PCR (OI and volume), call / put OI, IV skew, OI walls, max pain, OI change over the hour | **5 min** | 400 days | 117 — recording since 17 Sep 2026 |
 | `mtm_samples` | the day's P&L: realised, unrealised, charges, net | **1 min** | 90 days | 6,360 |
@@ -117,11 +116,12 @@ Also closed on 19 Sep 2026, the three tables §10 of docs/test.md asks for:
 the perpetual's **trade flow** off Delta's `all_trades` socket (every print,
 summed per minute by which side crossed the spread — `trade_flow_1m`), its
 **funding rate, open interest, turnover and order-book depth** (`perp_snapshots`),
-and the **IV term structure** (`iv_term_snapshots`), so the "a week ago" line
-on the term chart exists once a week has been recorded. `GET /api/perp` serves
-the live ticker, book and the last hour's flow; `/api/term` adds `weekAgo`,
-`monthAgo`, the skew's and the ATM IV's percentile among every `chain_features`
-reading; `GET /api/changes?symbol=` the diff over 1m … 12h for BTC (candles by
+and the **IV term structure**. That third one, `iv_term_snapshots`, was removed
+on 23 Sep 2026 (`market-009`) with the card that read it: the term structure is
+served live from the tickers, and only its recorded history is gone.
+`GET /api/perp` serves the live ticker, book and the last hour's flow;
+`/api/term` the term structure now, plus the skew's and the ATM IV's percentile
+among every `chain_features` reading; `GET /api/changes?symbol=` the diff over 1m … 12h for BTC (candles by
 the minute), the strike (`option_snapshots`) and its board (`chain_features`),
 with the live figures for "now" passed by the screen.
 

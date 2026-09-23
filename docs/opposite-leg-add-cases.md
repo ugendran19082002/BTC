@@ -1,8 +1,9 @@
 # Opposite-leg add — test cases
 
 > **Retired 22 Sep 2026.** Adding to the other leg was removed with the rest of
-> the strategy form's Extras. This page is kept as the record of how it worked;
-> its history is in `strategy_adds`, which nothing reads or writes any more.
+> the strategy form's Extras. This page is kept as the record of how it worked.
+> Its history was in `strategy_adds`, which was removed from the database on
+> 23 Sep 2026 (`strategy-005`).
 
 BTC Desk · Strategy · 11 Sep 2026 · **not deployed**
 

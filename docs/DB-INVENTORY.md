@@ -14,10 +14,10 @@ name's prefix wherever a bare name would be ambiguous (`auth_sessions`,
 | Area | Tables | Written by | Purpose |
 |---|---|---|---|
 | trading | `trades`, `trade_events`, `settings`, `mtm_samples` | the trading engine, the settings cache | The trade journal and the desk's remembered choices. What makes a restart safe. |
-| strategy | `strategies`, `strategy_runs`, `strategy_adds`, `strategy_rebalances` | the scheduler | Saved strategies and their run journal: what stops a strategy entering twice. |
+| strategy | `strategies`, `strategy_runs` | the scheduler | Saved strategies and their run journal: what stops a strategy entering twice. |
 | sign-in | `auth_user`, `auth_sessions`, `auth_recovery_codes`, `auth_limits`, `auth_events` | the sign-in | The one user, sessions, recovery codes, rate limits, the security log. |
 | errors | `errors` | everything | Every failure, from all three tiers, in one place. |
-| market | `oi_snapshots`, `chain_features`, `option_snapshots`, `option_snapshots_1m`, `trade_flow_1m`, `option_flow_1m`, `perp_snapshots`, `iv_term_snapshots` | the chain route, the API's recorders, and the perp's trade socket | What open interest and at-the-money volatility *were*, so a change in either is readable. Disposable. |
+| market | `oi_snapshots`, `chain_features`, `option_snapshots`, `option_snapshots_1m`, `trade_flow_1m`, `option_flow_1m`, `perp_snapshots` | the chain route, the API's recorders, and the perp's trade socket | What open interest and at-the-money volatility *were*, so a change in either is readable. Disposable. |
 | analytics | `outlook_states`, `chain_states`, `analytics_publish_meta` | `research/publish_outlook_states.py` | The measured Down / Side / Up tables the Python service reads. |
 | ledger | `schema_migrations` | `db/migrate.ts` | The one ledger of what has been done to the database. |
 | `chain.db` (SQLite) | 6 | the harvester, offline | Two years of settled option chains. Read-only at runtime. |
@@ -93,9 +93,9 @@ Ids are `<area>-NNN-what-it-does`. Applied on a fresh desk today:
 | Area | Migrations |
 |---|---|
 | trading | `trading-001-settings`, `trading-002-default-settings`, `trading-003-trades`, `trading-004-mtm-samples`, `trading-005-settings-to-public`, `trading-006-journal-to-public` |
-| market | `market-001-oi-snapshots`, `market-002-chain-features`, `market-003-to-public`, `market-004-option-snapshots`, `market-005-flow`, `market-006-flow-large-counts`, `market-007-option-flow`, `market-008-option-snapshots-1m` |
+| market | `market-001-oi-snapshots`, `market-002-chain-features`, `market-003-to-public`, `market-004-option-snapshots`, `market-005-flow`, `market-006-flow-large-counts`, `market-007-option-flow`, `market-008-option-snapshots-1m`, `market-009-drop-iv-term` |
 | errors | `errors-001-log`, `errors-002-to-public` |
-| strategy | `strategy-001-tables`, `strategy-002-seed`, `strategy-003-to-public`, `strategy-004-retire-extras` |
+| strategy | `strategy-001-tables`, `strategy-002-seed`, `strategy-003-to-public`, `strategy-004-retire-extras`, `strategy-005-drop-retired-tables` |
 | sign-in | `auth-001-user-sessions`, `auth-002-to-public` |
 | analytics | `analytics-001-to-public` |
 
@@ -222,8 +222,12 @@ doubles a position.
 |---|---|---|
 | `strategies` | `id` TEXT PK | `name`, `enabled` BOOLEAN, `config` JSONB, `created_at`, `updated_at`. Seeded with the three researched strategies (`baseline`, `locked`, `double`), only `double` armed; a desk that already has them keeps whatever the person has since changed. |
 | `strategy_runs` | identity; `UNIQUE (strategy_id, run_date)` | One row per strategy per IST day. `claim()` is `INSERT … ON CONFLICT DO NOTHING`: the constraint decides who won, not a check-then-write. |
-| `strategy_adds` | identity | **Retired 22 Sep 2026** with add-to-the-other-leg. History only: nothing reads or writes it. Kept rather than dropped -- a drop is irreversible and can be its own migration once nobody needs to look back. |
-| `strategy_rebalances` | identity; `UNIQUE (strategy_id, run_date, stage)` | **Retired 22 Sep 2026** with the rebalance. History only, kept for the same reason. |
+
+`strategy_adds` and `strategy_rebalances` were retired with their features on
+22 Sep 2026 and **removed on 23 Sep 2026** by `strategy-005`, taking 19 rows of
+add history and 25 columns with them. `strategy-004` had deliberately left them
+standing -- remove first, delete later -- and this was the "later". There is no
+other copy: the backup taken before that deploy is the only one.
 
 The desk-wide strategy setting `scheduler_enabled` is in `settings`, through
 the same cache. (`rebalance_limits` and `rebalance_defaults` were deleted by
@@ -359,13 +363,14 @@ bucket per five, `ON CONFLICT DO NOTHING` so a restart cannot double a bucket)
 in one batched `unnest` insert; rows older than 365 days pruned as it writes.
 Created directly in `public` by `market-004-option-snapshots`.
 
-`trade_flow_1m`, `perp_snapshots`, `iv_term_snapshots` (`market/flow.ts`,
-migration `market-005-flow`): the perpetual's tape summed per minute by
+`trade_flow_1m`, `perp_snapshots` (`market/flow.ts`, migration
+`market-005-flow`): the perpetual's tape summed per minute by
 aggressor side (volume and, since `market-006`, the count of large prints), written every twenty seconds from the prints the
 `all_trades` socket (`market/flow-socket.ts`) holds in memory, `ON CONFLICT DO
 NOTHING` so a replayed snapshot cannot double a bar; the perp ticker and the
-top of its book every five minutes; ATM IV per listed expiry every five
-minutes. All kept a year. The hour's flow is read from the table plus the
+top of its book every five minutes. Both kept a year. `market-005` created a
+third here, `iv_term_snapshots` (ATM IV per listed expiry); it fed the IV term
+structure card alone, and went with it on 23 Sep 2026 (`market-009`). The hour's flow is read from the table plus the
 minute in progress, and says how many minutes it has -- a socket outage shows
 as a short window, never as zero flow.
 
