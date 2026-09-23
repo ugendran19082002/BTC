@@ -907,13 +907,16 @@ td.evcol.down { color: var(--down); }
   gap: 10px; flex-wrap: wrap; margin-bottom: 8px;
 }
 .price-chart-title { font-size: 12.5px; font-weight: 600; min-width: 0; }
-.price-chart-svg {
-  display: block; width: 100%; height: auto;
-  /* No height cap. `width: 100%` with `max-height` makes the browser fit the
-     viewBox to the *height* and centre it, so on a wide card the candles sat in
-     a column down the middle with blank space either side. Height follows width
-     from the viewBox's own ratio instead, and the drawing always fills the box. */
-}
+/* The library paints into `.price-chart-canvas`; the desk's own bands, swing
+   lines and callouts are one SVG laid over it, which takes no pointer events so
+   the crosshair, the drag and the pinch underneath still work. */
+.price-chart-plot { position: relative; width: 100%; height: 420px; min-width: 0; }
+.price-chart-canvas { position: absolute; inset: 0; }
+.price-chart-overlay { position: absolute; inset: 0; pointer-events: none; }
+.price-chart.is-full .price-chart-plot { height: calc(100vh - 190px); }
+.price-chart-note { margin: 8px 0 0; font-size: 11px; color: var(--muted); line-height: 1.4; }
+.price-chart-error { margin: 0; padding: 24px 0; text-align: center; color: var(--down); font-size: 12.5px; }
+@media (max-width: 760px) { .price-chart-plot { height: 320px; } }
 .price-chart-empty {
   height: 140px; display: flex; align-items: center; justify-content: center;
   color: var(--dim); font-size: 12.5px;
