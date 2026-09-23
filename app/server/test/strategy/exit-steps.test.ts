@@ -121,7 +121,15 @@ describe('validateConfig: exits', () => {
     says({ stopMode: 'points', stopLossPoints: Number.NaN }, /Stop loss cannot be negative or blank/);
   });
   test('an unknown mode is refused', () => {
-    says({ stopMode: 'dollars' as never }, /Stop loss must be a percentage or points/);
+    says({ stopMode: 'dollars' as never }, /Stop loss must be a percentage, points or a price/);
+  });
+  test('[critical] price mode: the level itself, stored as a level', () => {
+    ok({ stopMode: 'price', stopLossAt: 70, targetMode: 'price', takeProfitAt: 5 });
+    says({ stopMode: 'price', stopLossAt: -1 }, /Stop loss cannot be negative/);
+    const { stop } = exitRules(cfg({ stopMode: 'price', stopLossAt: 70 }));
+    assert.deepEqual(stop, { mode: 'price', value: 70, steps: [] });
+    assert.deepEqual(exitAsk(stop, 70, 'stop'), { stopLossPct: 0, stopLossPoints: 0, stopAt: 70 });
+    assert.equal(exitWords(stop, 70), 'at 70');
   });
 
   test('[critical] the example ladder is valid inside a 5:30-17:29 day', () => {
@@ -447,5 +455,53 @@ describe('exits typed as the price itself', () => {
     }, 't');
     assert.equal(plan.takeProfitPrice, 4);
     assert.equal(plan.stopPrice, 70);
+  });
+});
+
+describe('real time: UG-PE as saved on 22 Sep -- price stop 70, target 80 → 85 → 90 → 95%', () => {
+  const PE = 'P-BTC-77000-080926';
+  // The rig's clock reads 03:43:20 IST; the strategy's hours are shifted by the same amount so its
+  // 05:30 / 07:30 / 09:30 / 11:30 read as 03:40 / 05:40 / 07:40 / 09:40 here.
+  const istOfRig = (hhmm: string) => (minutesOf(hhmm) - (3 * 60 + 43)) * 60_000 - 20_000;
+
+  test('[critical] sold at 18: stop rests at 70 all day; the target steps 3.6 → 2.7 → 1.8 → 0.9', async () => {
+    const { peProduct } = await import('../trading/harness.js');
+    const r = rig({ products: [peProduct()], quotes: [quote(PE, 18, 18.5)], limits: { maxShortContracts: 5_000 } });
+    const s = strat({
+      legs: 'PE', lots: 100, entryTime: '03:40', exitTime: '15:39',
+      takeProfitPct: 0.8, targetSteps: [{ at: '05:40', value: 0.85 }, { at: '07:40', value: 0.9 }, { at: '09:40', value: 0.95 }],
+      stopMode: 'price', stopLossAt: 70,
+    });
+    // Entered the way the runner enters: the exits in force now, in each rule's mode.
+    const { exitsNow } = await import('../../src/strategy/runner.js').catch(() => ({ exitsNow: null }));
+    const ask = exitsNow ? exitsNow(s, r.now()) : { takeProfitPct: 0.8, stopAt: 70 };
+    await r.engine.open(orderPlan({ symbol: PE, optionSide: 'PE', strike: 77_000, expiryTs: 1_700_040_000, lots: 100, leverage: 200, strategyId: 's', limitPrice: 18, ...ask }, 'PE-1'));
+    await r.engine.poll('PE-1');
+    const stepper = new StrategyExitStepper({
+      openTrades: () => r.store.rows().filter((t) => t.plan.strategyId === 's' && t.state.position !== 0),
+      move: async (id, a) => r.engine.updateProtection(id, protectionFor(r.store.peek(id)!.state.entryAvgPrice!, a)),
+      now: r.now,
+    });
+    const book = async () => {
+      const open = (await r.ex.getOpenOrders(PE)).filter((o) => o.reduceOnly);
+      return {
+        target: open.filter((o) => o.type === 'limit').map((o) => o.limitPrice),
+        stop: open.filter((o) => o.type === 'stop_limit' || o.type === 'stop_market').map((o) => o.stopPrice),
+      };
+    };
+    const at = async (hhmm: string) => {
+      r.advance(istOfRig(hhmm) - (r.now() - T0));
+      r.ex.tick(quote(PE, 9, 9.5, { mark: 9.25, ts: r.now() }));
+      await stepper.consider(s);
+      await r.engine.poll('PE-1');
+      return book();
+    };
+    assert.equal(r.store.peek('PE-1')!.state.position, -100, 'filled 100 at 18');
+    assert.deepEqual(await book(), { target: [3.6], stop: [70] }, '80% of 18, stop at the level typed');
+    assert.deepEqual(await at('05:40'), { target: [2.7], stop: [70] }, '85% from "7:30"');
+    assert.deepEqual(await at('07:40'), { target: [1.8], stop: [70] }, '90% from "9:30"');
+    assert.deepEqual(await at('09:40'), { target: [0.9], stop: [70] }, '95% from "11:30"');
+    assert.equal(70 - r.store.peek('PE-1')!.state.entryAvgPrice!, 52, 'the balance: 70 − 18');
+    assert.equal((await r.ex.getOpenOrders(PE)).filter((o) => o.reduceOnly).length, 2, 'one target, one stop -- never two of either');
   });
 });

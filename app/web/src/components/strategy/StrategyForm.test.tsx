@@ -1,34 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { StrategyForm } from '@/components/strategy/StrategyForm';
-import { DEFAULT_CONFIG, DEFAULT_REBALANCE, type Strategy } from '@/types/strategy';
+import { DEFAULT_CONFIG, type Strategy } from '@/types/strategy';
 
 const saveStrategy = vi.fn();
-const rebalanceSettings = {
-  defaults: {
-    enabled: true, lotsPerStep: 30, steps: 3, upStartPct: 30, downStartPct: 20, incrementPct: 10,
-    confirmTicks: 2, endTime: '13:30', lockDirection: true, maxLotsPerSide: 200, allowPartial: true, maxSpreadPct: 0.15,
-  },
-  limits: {
-    maxSteps: 20, maxLotsPerStep: 10_000, maxUpPct: 500, maxDownPct: 99,
-    maxIncrementPct: 500, maxConfirmTicks: 10, maxLotsPerSide: 100_000,
-  },
-  ceilings: {
-    maxSteps: 100, maxLotsPerStep: 100_000, maxUpPct: 10_000, maxDownPct: 99,
-    maxIncrementPct: 10_000, maxConfirmTicks: 60, maxLotsPerSide: 1_000_000,
-  },
-};
 vi.mock('@/api/strategy', () => ({
   saveStrategy: (...a: unknown[]) => saveStrategy(...a),
-  // The form reads the desk's rebalance defaults and limits rather than holding its own.
-  getRebalanceSettings: () => Promise.resolve(rebalanceSettings),
-  setRebalanceSettings: vi.fn(),
 }));
 
 /**
  * The strategy form, on a phone.
  *
- * Four tabs instead of one long column; times picked on a clock with AM or PM;
+ * Three tabs instead of one long column; times picked on a clock with AM or PM;
  * each problem written under its field, its tab marked, and Save saying what is
  * left. What goes to the server is still 24-hour "HH:MM".
  */
@@ -57,10 +40,10 @@ beforeEach(() => {
   saveStrategy.mockResolvedValue({ ok: true });
 });
 
-describe('four tabs instead of one long page', () => {
+describe('three tabs instead of one long page', () => {
   it('[critical] opens on When, and each tab shows only its own settings', () => {
     show();
-    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['When', 'Sell', 'Entry & exit', 'Extras']);
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['When', 'Sell', 'Entry & exit']);
     expect(screen.getByRole('tab', { name: 'When' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('button', { name: /^Entry time:/ })).toBeInTheDocument();
     expect(screen.queryByLabelText('lots')).toBeNull();
@@ -72,8 +55,6 @@ describe('four tabs instead of one long page', () => {
     tab('Entry & exit');
     expect(screen.getByLabelText('Take profit percent')).toBeInTheDocument();
 
-    tab('Extras');
-    expect(screen.getByRole('switch', { name: /Add to the other leg/ })).toBeInTheDocument();
   });
 
   it('arrow keys move between tabs', () => {
@@ -82,7 +63,7 @@ describe('four tabs instead of one long page', () => {
     expect(screen.getByRole('tab', { name: 'Sell' })).toHaveAttribute('aria-selected', 'true');
     fireEvent.keyDown(screen.getByRole('tablist'), { key: 'ArrowLeft' });
     fireEvent.keyDown(screen.getByRole('tablist'), { key: 'ArrowLeft' });
-    expect(screen.getByRole('tab', { name: 'Extras' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Entry & exit' })).toHaveAttribute('aria-selected', 'true');
   });
 
   it('a choice shows one line for what it does, not a card per option', () => {
@@ -185,211 +166,6 @@ describe('times on a clock', () => {
 });
 
 /**
- * Two bars, each off until it is switched on.
- *
- * They are different rules and the difference matters at the moment they stop
- * something: the sell-score bar stands the day down, the sudden-move limit
- * waits and looks again. Nothing about either appears on the form until it is
- * armed -- a number on a form for a rule that is not running is a setting that
- * looks live and is not.
- */
-describe('the two score bars', () => {
-  it('[critical] both start off, with no number to fill in', () => {
-    show();
-    tab('Extras');
-    expect(screen.getByRole('switch', { name: /scores too low/ })).toHaveAttribute('aria-checked', 'false');
-    expect(screen.getByRole('switch', { name: /sudden move/ })).toHaveAttribute('aria-checked', 'false');
-    expect(screen.queryByLabelText('minimum sell score')).toBeNull();
-    expect(screen.queryByLabelText('maximum sudden move score')).toBeNull();
-  });
-
-  it('[critical] switching one on reveals its number, and leaves the other alone', () => {
-    show();
-    tab('Extras');
-    fireEvent.click(screen.getByRole('switch', { name: /scores too low/ }));
-    expect(screen.getByLabelText('minimum sell score')).toHaveValue('65');
-    expect(screen.queryByLabelText('maximum sudden move score')).toBeNull();
-
-    fireEvent.click(screen.getByRole('switch', { name: /sudden move/ }));
-    expect(screen.getByLabelText('maximum sudden move score')).toHaveValue('25');
-  });
-
-  it('[critical] saves the numbers that were chosen', async () => {
-    show();
-    tab('Extras');
-    fireEvent.click(screen.getByRole('switch', { name: /scores too low/ }));
-    fireEvent.click(screen.getByRole('switch', { name: /sudden move/ }));
-    fireEvent.change(screen.getByLabelText('minimum sell score'), { target: { value: '70' } });
-    fireEvent.change(screen.getByLabelText('maximum sudden move score'), { target: { value: '25' } });
-    fireEvent.click(saveButton());
-    await vi.waitFor(() => expect(saveStrategy).toHaveBeenCalled());
-    const cfg = saveStrategy.mock.calls[0]![0].config;
-    expect(cfg.minSellScore).toBe(70);
-    expect(cfg.maxShockScore).toBe(25);
-  });
-
-  it('[critical] switching one off saves it as off, not as zero', async () => {
-    // Zero would be the strictest possible bar rather than no bar at all: a
-    // sell-score bar of 0 refuses nothing, but a risk limit of 0 holds every
-    // day there is.
-    show(editing({ minSellScore: 70, maxShockScore: 25 }));
-    tab('Extras');
-    fireEvent.click(screen.getByRole('switch', { name: /scores too low/ }));
-    fireEvent.click(screen.getByRole('switch', { name: /sudden move/ }));
-    fireEvent.click(saveButton());
-    await vi.waitFor(() => expect(saveStrategy).toHaveBeenCalled());
-    const cfg = saveStrategy.mock.calls[0]![0].config;
-    expect(cfg.minSellScore).toBeNull();
-    expect(cfg.maxShockScore).toBeNull();
-  });
-
-  it('an editing strategy opens with its own numbers, already on', () => {
-    show(editing({ minSellScore: 80, maxShockScore: 40 }));
-    tab('Extras');
-    expect(screen.getByRole('switch', { name: /scores too low/ })).toHaveAttribute('aria-checked', 'true');
-    expect(screen.getByLabelText('minimum sell score')).toHaveValue('80');
-    expect(screen.getByLabelText('maximum sudden move score')).toHaveValue('40');
-  });
-
-  it('a bar outside 1-100 is caught before the save, under its own field', () => {
-    show(editing({ minSellScore: 65 }));
-    tab('Extras');
-    fireEvent.change(screen.getByLabelText('minimum sell score'), { target: { value: '150' } });
-    expect(screen.getByRole('alert')).toHaveTextContent('The sell-score bar must be a whole number from 1 to 100, or off.');
-    expect(saveButton()).toHaveTextContent(/^Fix 1 to save$/);
-  });
-
-  it('says which one waits and which one stands the day down', () => {
-    show(editing({ minSellScore: 65, maxShockScore: 25 }));
-    tab('Extras');
-    expect(screen.getByText(/stood down for the day/)).toBeInTheDocument();
-    expect(screen.getByText(/waits and looks again/)).toBeInTheDocument();
-  });
-});
-
-describe('adding to the other leg', () => {
-  it('is off by default, with nothing to fill in', () => {
-    show();
-    tab('Extras');
-    expect(screen.getByRole('switch', { name: /Add to the other leg/ })).toHaveAttribute('aria-checked', 'false');
-    expect(screen.queryByLabelText('add minimum price')).toBeNull();
-  });
-
-  it('[critical] turning it on starts at $3, 2x, and half an hour before the exit', () => {
-    show(editing({ exitTime: '15:00' }));
-    tab('Extras');
-    fireEvent.click(screen.getByRole('switch', { name: /Add to the other leg/ }));
-    expect(screen.getByLabelText('add minimum price')).toHaveValue('3');
-    expect(screen.getByLabelText('add maximum multiple')).toHaveValue('2');
-    expect(screen.getByRole('button', { name: 'Latest time to add: 2:30 PM' })).toBeInTheDocument();
-    const examples = within(screen.getByLabelText('add examples'));
-    expect(examples.getAllByText('adds — sells 425 more')).toHaveLength(2);
-    expect(examples.getByText('no — below $3')).toBeInTheDocument();
-  });
-
-  it('[critical] the latest time to add can only be picked between entry and exit', () => {
-    show(editing({ addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59' } }));
-    tab('Extras');
-    fireEvent.click(screen.getByRole('button', { name: /^Latest time to add:/ }));
-    expect(screen.getByText('Allowed: 5:31 AM to 5:28 PM')).toBeInTheDocument();
-  });
-
-  it('[critical] moving the exit before the latest time to add flags Extras, and offers the fix', () => {
-    show(editing({ addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59' } }));
-    pickTyped(/^Exit time:/, '3 pm', /^Set 3:00 PM$/);
-    expect(within(screen.getByRole('tab', { name: /Extras/ })).getByLabelText('has a problem')).toBeInTheDocument();
-    tab('Extras');
-    expect(screen.getByRole('alert')).toHaveTextContent('The latest time to add (4:59 PM) must be after entry (5:30 AM) and before exit (3:00 PM).');
-    fireEvent.click(screen.getByRole('button', { name: 'Use 2:30 PM (30 min before exit)' }));
-    expect(screen.queryByRole('alert')).toBeNull();
-  });
-
-  it('[critical] the minimum is dynamic: typing $5 redraws the examples and the sentence', () => {
-    show(editing({ addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59' } }));
-    tab('Extras');
-    fireEvent.change(screen.getByLabelText('add minimum price'), { target: { value: '5' } });
-    const examples = within(screen.getByLabelText('add examples'));
-    expect(examples.getByText('$4.00')).toBeInTheDocument();
-    expect(examples.getByText('no — below $5')).toBeInTheDocument();
-    expect(screen.getByText(/bid is \$5 or more/)).toBeInTheDocument();
-  });
-
-  it('[critical] saves exactly the numbers and the time chosen', async () => {
-    show(editing({ addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59' } }));
-    tab('Extras');
-    fireEvent.change(screen.getByLabelText('add minimum price'), { target: { value: '4.5' } });
-    fireEvent.change(screen.getByLabelText('add maximum multiple'), { target: { value: '1.5' } });
-    pickTyped(/^Latest time to add:/, '12:15 pm', /^Set 12:15 PM$/);
-    fireEvent.click(saveButton());
-    await vi.waitFor(() => expect(saveStrategy).toHaveBeenCalled());
-    expect(saveStrategy.mock.calls[0]![0].config.addToOpposite).toEqual({ minPriceUsd: 4.5, maxMultiple: 1.5, addUntil: '12:15' });
-  });
-
-  /*
-   * "If not filled, sell at bid after N seconds", on the add.
-   *
-   * The add rests at the other leg's offer at 11 in the morning with nobody
-   * watching it, so it carries its own seconds. Blank keeps the entry's, which
-   * is what every strategy saved before the control existed does.
-   */
-  it('[critical] blank means the entry\'s seconds, and says so', () => {
-    show(editing({ crossAfterSec: 7, addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59' } }));
-    tab('Extras');
-    const box = screen.getByLabelText('add cross after seconds');
-    expect(box).toHaveValue('');
-    expect(box).toHaveAttribute('placeholder', '7');
-    expect(screen.getByText(/blank — the entry's 7 sec/)).toBeInTheDocument();
-  });
-
-  it('[critical] the add\'s own seconds are saved on the rule, not on the entry', async () => {
-    show(editing({ crossAfterSec: 7, addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59' } }));
-    tab('Extras');
-    fireEvent.change(screen.getByLabelText('add cross after seconds'), { target: { value: '90' } });
-    fireEvent.click(saveButton());
-    await vi.waitFor(() => expect(saveStrategy).toHaveBeenCalled());
-    const cfg = saveStrategy.mock.calls[0]![0].config;
-    expect(cfg.addToOpposite).toEqual({ minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59', crossAfterSec: 90 });
-    expect(cfg.crossAfterSec).toBe(7);
-  });
-
-  it('zero rests at the offer, and the hint says the window still ends it', () => {
-    show(editing({ addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59', crossAfterSec: 0 } }));
-    tab('Extras');
-    expect(screen.getByLabelText('add cross after seconds')).toHaveValue('0');
-    expect(screen.getByText(/rests at the offer; the add window still ends it/)).toBeInTheDocument();
-  });
-
-  it('more than ten minutes is refused before it can be saved', () => {
-    show(editing({ addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59', crossAfterSec: 601 } }));
-    tab('Extras');
-    expect(screen.getByText(/whole number from 0 to 600/)).toBeInTheDocument();
-    expect(saveButton()).toHaveTextContent(/Fix \d+ to save/);
-  });
-
-  it('turning it off saves it as off', async () => {
-    show(editing({ addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59' } }));
-    tab('Extras');
-    fireEvent.click(screen.getByRole('switch', { name: /Add to the other leg/ }));
-    fireEvent.click(saveButton());
-    await vi.waitFor(() => expect(saveStrategy).toHaveBeenCalled());
-    expect(saveStrategy.mock.calls[0]![0].config.addToOpposite).toBeNull();
-  });
-
-  it('a one-legged strategy with the add on is caught before the save', () => {
-    show(editing({ legs: 'CE', doubleWhenOneSided: false, addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59' } }));
-    tab('Extras');
-    expect(screen.getByRole('alert')).toHaveTextContent('Adding to the other leg needs both legs selected.');
-  });
-
-  it('shows the server\'s objection when it refuses anyway', async () => {
-    saveStrategy.mockRejectedValue(new Error('Something the server checks that the form does not.'));
-    show();
-    fireEvent.click(saveButton());
-    expect(await screen.findByText('Something the server checks that the form does not.')).toBeInTheDocument();
-  });
-});
-
-/**
  * How late is too late.
  *
  * It was one constant for the whole desk — sixty minutes — and invisible, so a
@@ -437,109 +213,6 @@ describe('the late-entry window', () => {
     }
     fireEvent.click(saveButton());
     await waitFor(() => expect(saveStrategy).not.toHaveBeenCalled());
-  });
-
-  /*
-   * The rebalance rule's own controls.
-   *
-   * Two things bit on 18 September: the sell had no "if not filled, sell at bid
-   * after" of its own, and a desk default cap of 200 on a strategy that sells
-   * 700 a side blocked every stage before it started.
-   */
-  it('[critical] turning it on picks a cap that fits the lots, not the desk default', () => {
-    show(editing({ lots: 700, rebalance: null }));
-    tab('Extras');
-    fireEvent.click(screen.getByRole('switch', { name: /Rebalance one side into the other/ }));
-    // 700 a side, 30 a stage over 3 stages: it can reach 790
-    expect(screen.getByLabelText('rebalance cap per side')).toHaveValue('790');
-    expect(screen.queryByText(/is under the 700 lots/)).toBeNull();
-    expect(screen.queryByText(/stage \d+ is refused/)).toBeNull();
-  });
-
-  it('[critical] the cap follows the numbers while it is automatic', () => {
-    show(editing({ lots: 100, rebalance: { ...DEFAULT_REBALANCE, capAuto: true, maxLotsPerSide: 200 } }));
-    tab('Extras');
-    const cap = screen.getByLabelText('rebalance cap per side');
-    // 100 a side, 30 a stage, 3 stages: 90 lots can move, so it reaches 190
-    expect(cap).toHaveValue('190');
-    expect(cap).toBeDisabled();
-    // five stages of 30 is 150 to move, and only 100 are there: 200
-    fireEvent.change(screen.getByLabelText('rebalance stages'), { target: { value: '5' } });
-    expect(screen.getByLabelText('rebalance cap per side')).toHaveValue('200');
-    // 60 a stage cannot move more than the 100 that exist either
-    fireEvent.change(screen.getByLabelText('rebalance lots per stage'), { target: { value: '60' } });
-    expect(screen.getByLabelText('rebalance cap per side')).toHaveValue('200');
-    // a bigger strategy moves it: 700 a side, 30 a stage, 5 stages
-    show(editing({ lots: 700, rebalance: { ...DEFAULT_REBALANCE, capAuto: true, maxLotsPerSide: 200 } }));
-    tab('Extras');
-    expect(screen.getAllByLabelText('rebalance cap per side')[1]).toHaveValue('790');
-  });
-
-  it('[critical] it can be typed by hand, and then it stays where it is put', async () => {
-    show(editing({ lots: 100, rebalance: { ...DEFAULT_REBALANCE, capAuto: true, maxLotsPerSide: 200 } }));
-    tab('Extras');
-    fireEvent.click(screen.getByRole('button', { name: 'set the cap by hand' }));
-    const cap = screen.getByLabelText('rebalance cap per side');
-    expect(cap).toBeEnabled();
-    fireEvent.change(cap, { target: { value: '160' } });
-    // changing the stages no longer moves it
-    fireEvent.change(screen.getByLabelText('rebalance stages'), { target: { value: '5' } });
-    expect(screen.getByLabelText('rebalance cap per side')).toHaveValue('160');
-    fireEvent.click(saveButton());
-    await vi.waitFor(() => expect(saveStrategy).toHaveBeenCalled());
-    expect(saveStrategy.mock.calls[0]![0].config.rebalance.maxLotsPerSide).toBe(160);
-    expect(saveStrategy.mock.calls[0]![0].config.rebalance.capAuto).toBe(false);
-  });
-
-  it('[critical] a cap that is too small says which stages it refuses', () => {
-    show(editing({ lots: 100, rebalance: { ...DEFAULT_REBALANCE, capAuto: false, maxLotsPerSide: 160 } }));
-    tab('Extras');
-    expect(screen.getByText(/The cap stops it after stage 2: stage 3 is refused\. Raise it to 190 for all 3\./))
-      .toBeInTheDocument();
-    const stages = within(screen.getByLabelText('rebalance stage table'));
-    expect(stages.getAllByText('capped')).toHaveLength(1);
-  });
-
-  it('[critical] a cap with no room at all says no stage can run', () => {
-    show(editing({ lots: 100, rebalance: { ...DEFAULT_REBALANCE, capAuto: false, maxLotsPerSide: 100 } }));
-    tab('Extras');
-    expect(screen.getByText(/No stage can run: the cap \(100\) leaves no room above the 100 lots each side opens with\./))
-      .toBeInTheDocument();
-  });
-
-  it('a cap under the lots says why nothing could ever run, and what the rule reaches', () => {
-    show(editing({ lots: 700, rebalance: { ...DEFAULT_REBALANCE, capAuto: false, maxLotsPerSide: 200 } }));
-    tab('Extras');
-    expect(screen.getByText(/The cap \(200\) is under the 700 lots the strategy opens with, so no stage could ever run/))
-      .toBeInTheDocument();
-    expect(screen.getByText(/This rule reaches 790 lots at most/)).toBeInTheDocument();
-  });
-
-  it('[critical] the sell has its own seconds, and blank keeps the entry\'s', async () => {
-    show(editing({ lots: 100, crossAfterSec: 7, rebalance: { ...DEFAULT_REBALANCE, capAuto: false, maxLotsPerSide: 200 } }));
-    tab('Extras');
-    const box = screen.getByLabelText('rebalance cross after seconds');
-    expect(box).toHaveValue('');
-    expect(box).toHaveAttribute('placeholder', '7');
-    expect(screen.getByText(/blank — the entry's 7 sec/)).toBeInTheDocument();
-    fireEvent.change(box, { target: { value: '45' } });
-    fireEvent.click(saveButton());
-    await vi.waitFor(() => expect(saveStrategy).toHaveBeenCalled());
-    expect(saveStrategy.mock.calls[0]![0].config.rebalance.crossAfterSec).toBe(45);
-    expect(saveStrategy.mock.calls[0]![0].config.crossAfterSec).toBe(7);
-  });
-
-  it('the stage table says what the cap does, in words', () => {
-    show(editing({ lots: 100, rebalance: { ...DEFAULT_REBALANCE, capAuto: false, maxLotsPerSide: 160 } }));
-    tab('Extras');
-    // the cap bites, so the table says which stage it refuses rather than the
-    // plain "neither side passes" line
-    expect(screen.getByText(/stage 3 is refused\. Raise it to/)).toBeInTheDocument();
-    const stages = within(screen.getByLabelText('rebalance stage table'));
-    // 100 + 100, 30 a stage, capped at 160: 130, 160, then the cap holds it
-    expect(stages.getByText('130 / 70')).toBeInTheDocument();
-    // stage 2 reaches the cap, and stage 3 can add nothing more
-    expect(stages.getAllByText('160 / 40')).toHaveLength(2);
   });
 });
 
@@ -713,5 +386,67 @@ describe('premium fallback', () => {
     show(editing({ strikeRule: 'strict' }));
     tab('Sell');
     expect(screen.queryByRole('switch', { name: /try a/ })).toBeNull();
+  });
+});
+
+describe('exits as a price: the level fixed, the balance shown against the entry', () => {
+  it('[critical] Offer at $15: SL typed 70 shows the balance +55 and saves the level', async () => {
+    show(editing({ premium: { mode: 'atLeast', usd: 15 }, entryPrice: 'offer' }));
+    tab('Entry & exit');
+    const sl = exitBox('Stop loss');
+    fireEvent.click(within(sl).getByRole('radio', { name: 'Price' }));
+    typeInto('Stop loss price', '70', sl);
+    expect(within(sl).getByText(/stops at/)).toBeInTheDocument();
+    expect(within(sl).getByText('+55 pts')).toBeInTheDocument();
+    expect(within(sl).getByText(/offer ≈ 15.00 → balance/)).toBeInTheDocument();
+    expect(within(sl).getByText(/the balance changes, not the stop/)).toBeInTheDocument();
+    expect(await saved()).toMatchObject({ stopMode: 'price', stopLossAt: 70 });
+  });
+
+  it('[critical] Bid now reads the same level against the bid, and the balance updates as the premium changes', () => {
+    show(editing({ premium: { mode: 'atLeast', usd: 15 }, entryPrice: 'now', stopMode: 'price', stopLossAt: 70 }));
+    tab('Sell');
+    const usd = screen.getByRole('textbox', { name: 'premium usd' });
+    fireEvent.change(usd, { target: { value: '20' } });
+    tab('Entry & exit');
+    const sl = exitBox('Stop loss');
+    expect(within(sl).getByText(/bid ≈ 20.00 → balance/)).toBeInTheDocument();
+    expect(within(sl).getByText('+50 pts')).toBeInTheDocument();
+  });
+
+  it('My price reads it against your own price', () => {
+    show(editing({ entryPrice: 'set', entryLimit: 16, targetMode: 'price', takeProfitAt: 4 }));
+    tab('Entry & exit');
+    expect(within(exitBox('Take profit')).getByText(/your price 16.00 → balance/)).toBeInTheDocument();
+    expect(within(exitBox('Take profit')).getByText('−12 pts')).toBeInTheDocument();
+  });
+
+  it('[critical] a stop typed under the entry is warned about before the save', () => {
+    show(editing({ premium: { mode: 'atLeast', usd: 15 }, stopMode: 'price', stopLossAt: 12 }));
+    tab('Entry & exit');
+    expect(within(exitBox('Stop loss')).getByText(/this stop is not over the entry, so the order would be refused/)).toBeInTheDocument();
+  });
+
+  it('a rule that picks the strike by position says the balance is worked out when it runs', () => {
+    show(editing({ strikeRule: 'strict', stopMode: 'price', stopLossAt: 70 }));
+    tab('Entry & exit');
+    expect(within(exitBox('Stop loss')).getByText(/The entry is not known until the strike is picked/)).toBeInTheDocument();
+  });
+
+  it('the read-back sentence says the level', () => {
+    show(editing({ stopMode: 'price', stopLossAt: 70 }));
+    expect(screen.getAllByText(/stop at 70/).length).toBeGreaterThan(0);
+  });
+});
+
+describe('warnings for what is allowed but probably not meant', () => {
+  it('[critical] a name that says CE on a put strategy is warned about', () => {
+    show(editing({ legs: 'PE' }, 'UG-CE'));
+    expect(screen.getAllByText('The name says CE, but this sells a put (PE).').length).toBeGreaterThan(0);
+  });
+  it('[critical] a step that repeats the value before it is warned about', () => {
+    show(editing({ takeProfitPct: 0.8, targetSteps: [{ at: '07:30', value: 0.8 }, { at: '09:30', value: 0.85 }] }));
+    tab('Entry & exit');
+    expect(screen.getByText(/The 7:30 AM step keeps 80% -- it changes nothing/)).toBeInTheDocument();
   });
 });

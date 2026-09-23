@@ -100,8 +100,21 @@ type Board = { ce_oi: number | null; pe_oi: number | null; call_volume: number |
 const d = (a: number | null, b: number | null) => (a === null || b === null ? null : a - b);
 const pct = (a: number | null, b: number | null) => (a === null || b === null || b === 0 ? null : (a / b - 1) * 100);
 
-/** The five-minute record nearest `atMs`, within a bucket and a half of it. */
-async function snapAt(symbol: string, atMs: number): Promise<Snap | null> {
+/**
+ * The record nearest `atMs`: the minute record where it reaches (the last six
+ * hours), within ninety seconds; otherwise the five-minute one, within a bucket
+ * and a half. The finer record makes a "5 minutes ago" row five minutes ago
+ * rather than somewhere between two and a half and seven and a half.
+ */
+async function snapAt(symbol: string, atMs: number, fineOnly = false): Promise<Snap | null> {
+  const fine = await one<Snap>(
+    'SELECT spot, mark, oi, mark_iv, volume FROM option_snapshots_1m WHERE symbol = $1 AND at BETWEEN $2 AND $3 ORDER BY ABS(at - $4) LIMIT 1',
+    [symbol, atMs - 90_000, atMs + 90_000, atMs],
+  ).catch(() => null);
+  // Under five minutes only the minute record can answer: the five-minute one
+  // would hand back the bucket "now" is read from, and a window against itself
+  // reads as "nothing changed".
+  if (fine || fineOnly) return fine;
   return one<Snap>(
     'SELECT spot, mark, oi, mark_iv, volume FROM option_snapshots WHERE symbol = $1 AND at BETWEEN $2 AND $3 ORDER BY ABS(at - $4) LIMIT 1',
     [symbol, atMs - 7.5 * 60_000, atMs + 7.5 * 60_000, atMs],
@@ -134,8 +147,9 @@ export async function changes(symbol: string, expiry: string, nowMs = Date.now()
   const windows: { minutes: number; sinceEntry: boolean }[] = [...CHANGE_WINDOWS_MIN.map((minutes) => ({ minutes, sinceEntry: false })), ...(sinceEntryMin !== null ? [{ minutes: sinceEntryMin, sinceEntry: true }] : [])];
   const rows = await Promise.all(windows.map(async ({ minutes, sinceEntry }): Promise<ChangeRow> => {
     const then = nowMs - minutes * 60_000;
-    // The five-minute records cannot answer a one-minute window.
-    const [s, b] = minutes < 5 ? [null, null] : await Promise.all([snapAt(symbol, then), boardAt(expiry, then)]);
+    // The strike's own record reaches a minute back now; the board's is still
+    // five-minutely, so its columns stay empty under that.
+    const [s, b] = await Promise.all([snapAt(symbol, then, minutes < 5), minutes < 5 ? null : boardAt(expiry, then)]);
     const spotThen = spotMinutesAgo(minutes, nowMs);
     // Then, and now on the same footing: the strike's IV only where the record has it.
     const strikeIv = s?.mark_iv != null && cur.iv !== null;

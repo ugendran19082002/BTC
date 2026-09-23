@@ -4,7 +4,7 @@ import type { ExitMode } from '@/types/strategy';
 import { NumberField } from '@/components/ui/number-field';
 import { TimePicker } from '@/components/ui/time-picker';
 import {
-  exitPrice, exitWords, fillSteps, MAX_EXIT_STEPS, type ExitLeg, type ExitRule,
+  balanceOf, exitPrice, exitWords, fillSteps, MAX_EXIT_STEPS, type ExitLeg, type ExitRule,
 } from '@/lib/strategy-exits';
 import { hhmmOf, isHhmm, minutesForward, minutesOf, time12 } from '@/lib/time';
 import { price as fmtPrice } from '@/lib/format';
@@ -13,12 +13,15 @@ import { cn } from '@/lib/utils';
 /**
  * One exit of a strategy -- the target or the stop -- typed, not dragged.
  *
- *   [ % | Fixed ]   80 %      sold at 15 → buys back at 3.00
+ *   [ % | Fixed | Price ]   80 %      sold at 15 → buys back at 3.00
  *   From 7:30 AM    85 %      ✕
  *   From 9:30 AM    90 %      ✕
  *   + Add a step    Fill: every 2 h, +5 %
  *
- * Percent or fixed points, and either can move through the day. Every step is
+ * Percent, fixed points, or the price itself -- and any can move through the
+ * day. A price is the level whatever the entry: stop at 70 is 70, and the
+ * balance (70 minus the entry) is shown against the entry the form knows and
+ * re-measured from the entry that happens. Every step is
  * held between the entry and the exit on the picker itself, and anything still
  * wrong is said under the box by the form's rules -- the same words the server
  * answers with.
@@ -28,7 +31,7 @@ import { cn } from '@/lib/utils';
  * red and over it. The stop may be far above 100%; the target stops at 99%.
  */
 export function ExitRuleEditor({
-  leg, rule, onChange, onMode, entryTime, exitTime, samplePrice, error,
+  leg, rule, onChange, onMode, entryTime, exitTime, samplePrice, sampleLabel = 'sold at', error,
 }: {
   leg: ExitLeg;
   rule: ExitRule;
@@ -41,18 +44,22 @@ export function ExitRuleEditor({
   onMode: (mode: ExitMode) => void;
   entryTime: string;
   exitTime: string;
-  /** A premium to show the level against -- the rule's own number, when it has one. */
+  /** The entry to show the level and the balance against: the rule's own number, or the price typed. */
   samplePrice: number | null;
+  /** What that entry is: "offer ≈" for the premium rule, "your price" for a set one. */
+  sampleLabel?: string;
   error?: string | null;
 }) {
   const target = leg === 'target';
   const title = target ? 'Take profit' : 'Stop loss';
   const tone = target ? 'text-[var(--up)]' : 'text-[var(--down)]';
   const pct = rule.mode === 'pct';
+  const atPrice = rule.mode === 'price';
   // Percent is shown as a percent and kept as a fraction: 80 on screen is 0.8 in the rule.
   const toShown = (v: number) => (pct ? v * 100 : v);
   const fromShown = (n: number) => (pct ? n / 100 : n);
-  const unit = pct ? '%' : 'pts';
+  const unit = pct ? '%' : atPrice ? undefined : 'pts';
+  const word = pct ? 'percent' : atPrice ? 'price' : 'points';
 
   const windowOk = isHhmm(entryTime) && isHhmm(exitTime);
   const firstAt = windowOk ? hhmmOf(minutesOf(entryTime) + 1) : null;
@@ -88,13 +95,14 @@ export function ExitRuleEditor({
   };
 
   const level = exitPrice(leg, rule.mode, rule.value, samplePrice);
+  const balance = atPrice ? balanceOf(leg, rule.value > 0 ? rule.value : null, samplePrice) : null;
 
   return (
     <section aria-label={title} className="rounded-lg border border-[var(--line)] p-2.5">
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className={cn('text-[13px] font-semibold', tone)}>{title}</span>
         <div role="radiogroup" aria-label={`${title} by`} className="flex gap-0.5 rounded-md bg-muted p-0.5">
-          {(['pct', 'points'] as const).map((m) => (
+          {(['pct', 'points', 'price'] as const).map((m) => (
             <button
               key={m}
               type="button"
@@ -106,7 +114,7 @@ export function ExitRuleEditor({
                 rule.mode === m ? 'bg-background text-foreground shadow-sm' : 'bg-transparent text-muted-foreground',
               )}
             >
-              {m === 'pct' ? '%' : 'Fixed'}
+              {m === 'pct' ? '%' : m === 'points' ? 'Fixed' : 'Price'}
             </button>
           ))}
         </div>
@@ -114,24 +122,46 @@ export function ExitRuleEditor({
 
       <div className="flex items-start gap-2">
         <NumberField
-          label={`${title} ${pct ? 'percent' : 'points'}`}
+          label={`${title} ${word}`}
           value={toShown(rule.value)}
           onChange={(n) => onChange({ ...rule, value: fromShown(n) })}
           unit={unit}
+          unitBefore={atPrice ? '@' : undefined}
           invalid={Boolean(error)}
           className="w-28 flex-none"
         />
         <p className="m-0 min-w-0 pt-1 text-[11.5px] leading-snug text-muted-foreground">
           {!(rule.value > 0)
             ? (target ? 'Off — holds to expiry.' : 'Off — no stop.')
-            : target
-              ? pct ? <>keeps {exitWords('pct', rule.value)} of the premium</> : <>buys back {rule.value} pts under the entry</>
-              : pct ? <>buys back {exitWords('pct', rule.value)} above the entry</> : <>buys back {rule.value} pts above the entry</>}
-          {level !== null && samplePrice !== null && (
-            <> · sold at {fmtPrice(samplePrice)} → <b className={cn('tabular-nums', tone)}>{fmtPrice(level)}</b></>
+            : atPrice
+              ? <>{target ? 'buys back' : 'stops'} at <b className={cn('tabular-nums', tone)}>{fmtPrice(rule.value)}</b>, whatever the entry</>
+              : target
+                ? pct ? <>keeps {exitWords('pct', rule.value)} of the premium</> : <>buys back {rule.value} pts under the entry</>
+                : pct ? <>buys back {exitWords('pct', rule.value)} above the entry</> : <>buys back {rule.value} pts above the entry</>}
+          {!atPrice && level !== null && samplePrice !== null && (
+            <> · {sampleLabel} {fmtPrice(samplePrice)} → <b className={cn('tabular-nums', tone)}>{fmtPrice(level)}</b></>
+          )}
+          {atPrice && balance && (
+            <> · {sampleLabel} {fmtPrice(samplePrice)} → balance <b className="tabular-nums">{balance.points > 0 ? '+' : '−'}{Math.abs(balance.points)} pts</b> ({balance.pct > 0 ? '+' : ''}{balance.pct}%)</>
           )}
         </p>
       </div>
+      {atPrice && balance?.wrongSide && (
+        <p className="m-0 mt-1 text-[11.5px] leading-snug text-[var(--warn)]">
+          At an entry of {fmtPrice(samplePrice)} this {target ? 'target is not under' : 'stop is not over'} the entry, so the order would be refused.
+          {target ? ' Type a price under it.' : ' Type a price over it.'}
+        </p>
+      )}
+      {atPrice && samplePrice === null && rule.value > 0 && (
+        <p className="m-0 mt-1 text-[11px] leading-snug text-[var(--dim)]">
+          The entry is not known until the strike is picked, so the balance is worked out then. A level on the wrong side of it refuses that order.
+        </p>
+      )}
+      {atPrice && (
+        <p className="m-0 mt-1 text-[10.5px] leading-snug text-[var(--dim)]">
+          The level stays where you type it; if it fills at another price, the balance changes, not the {target ? 'target' : 'stop'}.
+        </p>
+      )}
 
       {rule.steps.length > 0 && (
         <ol className="m-0 mt-2 flex list-none flex-col gap-1.5 p-0" aria-label={`${title} steps`}>
@@ -148,10 +178,11 @@ export function ExitRuleEditor({
                 className="min-w-0 flex-1"
               />
               <NumberField
-                label={`${title} step ${i + 1} ${pct ? 'percent' : 'points'}`}
+                label={`${title} step ${i + 1} ${word}`}
                 value={toShown(st.value)}
                 onChange={(n) => setStep(i, { value: fromShown(n) })}
                 unit={unit}
+                unitBefore={atPrice ? '@' : undefined}
                 className="w-[5.5rem] flex-none"
               />
               <button

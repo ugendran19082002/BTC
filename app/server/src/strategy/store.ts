@@ -267,6 +267,15 @@ export class StrategyStore {
     return r ? runFrom(r) : null;
   }
 
+  /** The run a position opened under: the latest claim at or before it. */
+  async runDateAtOrBefore(strategyId: string, atMs: number): Promise<string | null> {
+    const r = await one<{ run_date: string }>(
+      'SELECT run_date FROM strategy_runs WHERE strategy_id = $1 AND at <= $2 ORDER BY at DESC LIMIT 1',
+      [strategyId, atMs],
+    );
+    return r?.run_date ?? null;
+  }
+
   async runs(limit = 60): Promise<StrategyRun[]> {
     return (await rows<RunRow>('SELECT * FROM strategy_runs ORDER BY at DESC LIMIT $1', [limit])).map(runFrom);
   }

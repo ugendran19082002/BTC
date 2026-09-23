@@ -1,14 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Loader2, RotateCcw } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import {
   getAutoTrade, setAutoTrade, type AutoTradeSettings as AutoTrade, type AutoTradeState,
 } from '@/api/trade';
-import { getRebalanceSettings, setRebalanceSettings, type RebalanceSettings } from '@/api/strategy';
 import { getSettings, setWallWithinEm } from '@/api/desk';
-import type { RebalanceLimits, RebalanceRule } from '@/types/strategy';
 import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 /**
@@ -28,7 +25,6 @@ export function SettingsPanel() {
   return (
     <div className="grid gap-3">
       <AutoTradeLimitsCard />
-      <RebalanceDefaultsCard />
       <LevelsCard />
       <p className="m-0 px-1 text-[11.5px] leading-relaxed text-[var(--dim)]">
         The switches that actually place orders are where the orders are: the best-pick card on the Live screen,
@@ -94,98 +90,6 @@ function AutoTradeLimitsCard() {
              onSave={(v) => void save({ maxChaseSec: v })} />
         <Num label="Most trades per contract" value={state.limits.maxPerContract} max={ceilings.maxPerContract} busy={busy}
              onSave={(v) => void save({ maxPerContract: v })} />
-      </div>
-      {failed && <p className="settings-note warn" role="alert">{failed}</p>}
-    </CollapsibleCard>
-  );
-}
-
-/** What a new rebalance rule starts as, and the range any rule may use. */
-function RebalanceDefaultsCard() {
-  const [state, setState] = useState<RebalanceSettings | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState<string | null>(null);
-
-  useEffect(() => { getRebalanceSettings().then(setState).catch((e: Error) => setFailed(e.message)); }, []);
-
-  const save = async (patch: { defaults?: Partial<RebalanceRule>; limits?: Partial<RebalanceLimits> }) => {
-    setBusy(true);
-    setFailed(null);
-    try {
-      const r = await setRebalanceSettings(patch);
-      setState((s) => (s ? { ...s, defaults: r.defaults, limits: r.limits } : s));
-    } catch (e) {
-      setFailed((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  if (!state) {
-    return (
-      <CollapsibleCard id="settings-rebalance" title="One-sided rebalance — defaults and limits" ariaLabel="rebalance settings">
-        <p className="m-0 text-[12px] text-muted-foreground">{failed ?? 'Reading…'}</p>
-      </CollapsibleCard>
-    );
-  }
-  const d = state.defaults;
-
-  return (
-    <CollapsibleCard
-      id="settings-rebalance"
-      title="One-sided rebalance — defaults and limits"
-      ariaLabel="rebalance settings"
-      right={
-        <Button
-          variant="ghost" className="h-7 px-2 text-[11.5px]" disabled={busy}
-          onClick={() => void save({
-            defaults: {
-              lotsPerStep: 30, steps: 3, upStartPct: 30, downStartPct: 20, incrementPct: 10,
-              confirmTicks: 2, endTime: '13:30', lockDirection: true, maxLotsPerSide: 200,
-              allowPartial: true, maxSpreadPct: 0.15,
-            },
-          })}
-        >
-          <RotateCcw size={12} aria-hidden /> Reset defaults
-        </Button>
-      }
-    >
-      <p className="settings-lead">
-        What a rule starts as when the switch is first turned on, and the range any rule may use.
-        Today that is {d.steps} stages from +{d.upStartPct}% / −{d.downStartPct}%, going up
-        by {d.incrementPct} points a stage, {d.lotsPerStep} lots each time, until {d.endTime}.
-      </p>
-
-      <div className="settings-sub">A new rule starts at</div>
-      <div className="settings-grid">
-        <Num label="Lots each stage" value={d.lotsPerStep} max={state.limits.maxLotsPerStep} busy={busy}
-             onSave={(v) => void save({ defaults: { lotsPerStep: v } })} />
-        <Num label="Stages" value={d.steps} max={state.limits.maxSteps} busy={busy}
-             onSave={(v) => void save({ defaults: { steps: v } })} />
-        <Num label="First up move %" value={d.upStartPct} max={state.limits.maxUpPct} busy={busy}
-             onSave={(v) => void save({ defaults: { upStartPct: v } })} />
-        <Num label="First down move %" value={d.downStartPct} max={state.limits.maxDownPct} busy={busy}
-             onSave={(v) => void save({ defaults: { downStartPct: v } })} />
-        <Num label="Step per stage %" value={d.incrementPct} max={state.limits.maxIncrementPct} busy={busy} min={0}
-             onSave={(v) => void save({ defaults: { incrementPct: v } })} />
-        <Num label="Confirming readings" value={d.confirmTicks} max={state.limits.maxConfirmTicks} busy={busy}
-             onSave={(v) => void save({ defaults: { confirmTicks: v } })} />
-      </div>
-
-      <div className="settings-sub">No rule may go past</div>
-      <div className="settings-grid">
-        <Num label="Stages" value={state.limits.maxSteps} max={state.ceilings.maxSteps} busy={busy}
-             onSave={(v) => void save({ limits: { maxSteps: v } })} />
-        <Num label="Lots each stage" value={state.limits.maxLotsPerStep} max={state.ceilings.maxLotsPerStep} busy={busy}
-             onSave={(v) => void save({ limits: { maxLotsPerStep: v } })} />
-        <Num label="Up move %" value={state.limits.maxUpPct} max={state.ceilings.maxUpPct} busy={busy}
-             onSave={(v) => void save({ limits: { maxUpPct: v } })} />
-        <Num label="Down move %" value={state.limits.maxDownPct} max={state.ceilings.maxDownPct} busy={busy}
-             onSave={(v) => void save({ limits: { maxDownPct: v } })} />
-        <Num label="Step per stage %" value={state.limits.maxIncrementPct} max={state.ceilings.maxIncrementPct} busy={busy}
-             onSave={(v) => void save({ limits: { maxIncrementPct: v } })} />
-        <Num label="Lots on one side" value={state.limits.maxLotsPerSide} max={state.ceilings.maxLotsPerSide} busy={busy}
-             onSave={(v) => void save({ limits: { maxLotsPerSide: v } })} />
       </div>
       {failed && <p className="settings-note warn" role="alert">{failed}</p>}
     </CollapsibleCard>

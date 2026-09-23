@@ -90,18 +90,6 @@ export function NotCaptured({ what, why }: { what: string; why: string }) {
   );
 }
 
-/** A 0–1 share as a bar and a percent. */
-export function ProbBar({ label, value, tone }: { label: string; value: number | null; tone: 'up' | 'down' | 'muted' }) {
-  const w = value === null ? 0 : Math.max(0, Math.min(1, value)) * 100;
-  return (
-    <div className="ov-prob">
-      <span className="ov-prob-label">{label}</span>
-      <span className="ov-prob-track" aria-hidden><span className={`ov-prob-fill ov-bg-${tone}`} style={{ width: `${w}%` }} /></span>
-      <span className="ov-prob-value">{value === null ? '—' : `${Math.round(w)}%`}</span>
-    </div>
-  );
-}
-
 export const fmt = {
   n: (v: number | null | undefined, places = 0) =>
     v === null || v === undefined || !Number.isFinite(v) ? '—' : v.toLocaleString('en-US', { minimumFractionDigits: places, maximumFractionDigits: places }),

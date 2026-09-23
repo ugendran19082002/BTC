@@ -8,8 +8,6 @@ import { DEFAULT_CONFIG, type StrategyConfig } from '@/types/strategy';
  * the form says before a save is what the server would say after it.
  */
 const cfg = (over: Partial<StrategyConfig> = {}): StrategyConfig => ({ ...DEFAULT_CONFIG, ...over });
-const add = (addUntil: string, over: Partial<StrategyConfig> = {}) =>
-  cfg({ ...over, addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil } });
 const messages = (c: StrategyConfig, name = 'S') => strategyProblems(c, name).map((p) => p.message);
 
 describe('entry and exit', () => {
@@ -28,8 +26,10 @@ describe('entry and exit', () => {
 
   it('[critical] an overnight window is allowed: 11:30 PM to 5:30 AM', () => {
     expect(messages(cfg({ entryTime: '23:30', exitTime: '05:30' }))).toEqual([]);
-    expect(messages(add('05:00', { entryTime: '23:30', exitTime: '05:30' }))).toEqual([]);
-    expect(messages(add('12:00', { entryTime: '23:30', exitTime: '05:30' })).join())
+    // a time step inside the window is measured forward from the entry, past midnight
+    const step = (at: string) => cfg({ entryTime: '23:30', exitTime: '05:30', stopLossPct: 1, stopSteps: [{ at, value: 2 }] });
+    expect(messages(step('05:00'))).toEqual([]);
+    expect(messages(step('12:00')).join())
       .toMatch(/must be after entry \(11:30 PM\) and before exit \(5:30 AM\)/);
   });
 
@@ -51,72 +51,12 @@ describe('entry and exit', () => {
   });
 });
 
-describe('the latest time to add', () => {
-  it('[critical] must sit strictly between entry and exit, on the Extras tab', () => {
-    expect(messages(add('16:59'))).toEqual([]);
-    for (const outside of ['05:30', '04:00', '17:29', '18:00']) {
-      const ps = strategyProblems(add(outside), 'S');
-      expect(ps).toHaveLength(1);
-      expect(ps[0]).toMatchObject({ field: 'addUntil', tab: 'extras' });
-      expect(ps[0]!.message).toBe(`The latest time to add (${outside === '05:30' ? '5:30 AM' : outside === '04:00' ? '4:00 AM' : outside === '17:29' ? '5:29 PM' : '6:00 PM'}) must be after entry (5:30 AM) and before exit (5:29 PM).`);
-    }
-  });
-
-  it('follows the strategy\'s own times', () => {
-    expect(messages(add('14:30', { entryTime: '09:00', exitTime: '15:00' }))).toEqual([]);
-    expect(messages(add('15:30', { entryTime: '09:00', exitTime: '15:00' })).join()).toMatch(/before exit \(3:00 PM\)/);
-  });
-
-  it('is not checked with the add off', () => {
-    expect(messages(cfg({ addToOpposite: null }))).toEqual([]);
-  });
-});
-
-describe('the two score bars', () => {
-  const messages = (c: Parameters<typeof strategyProblems>[0]) =>
-    strategyProblems(c, 'S').map((p) => p.message);
-
-  it('are not checked at all while they are off', () => {
-    expect(messages(cfg({ minSellScore: null, maxShockScore: null }))).toEqual([]);
-  });
-
-  it('[critical] take a whole number from 1 to 100 and nothing else', () => {
-    expect(messages(cfg({ minSellScore: 65, maxShockScore: 25 }))).toEqual([]);
-    expect(messages(cfg({ minSellScore: 1 }))).toEqual([]);
-    expect(messages(cfg({ maxShockScore: 100 }))).toEqual([]);
-    expect(messages(cfg({ minSellScore: 0 }))[0]).toMatch(/sell-score bar/);
-    expect(messages(cfg({ minSellScore: 101 }))[0]).toMatch(/sell-score bar/);
-    expect(messages(cfg({ minSellScore: 65.5 }))[0]).toMatch(/whole number/);
-    expect(messages(cfg({ maxShockScore: 0 }))[0]).toMatch(/sudden-move risk limit/);
-  });
-
-  it('say it in the same words the server would', () => {
-    // The server is the authority and answers a save it will not take; these
-    // run as the form is edited, and two spellings of one rule is how a form
-    // ends up arguing with the API.
-    expect(messages(cfg({ maxShockScore: 200 })))
-      .toEqual(['The sudden-move risk limit must be a whole number from 1 to 100, or off.']);
-  });
-
-  it('land on the Extras tab, where their switches are', () => {
-    const ps = strategyProblems(cfg({ minSellScore: 0, maxShockScore: 0 }), 'S');
-    expect(ps.map((p) => [p.field, p.tab])).toEqual([
-      ['minSellScore', 'extras'], ['maxShockScore', 'extras'],
-    ]);
-  });
-});
-
 describe('the other settings land on their tabs', () => {
-  it('[critical] doubling with the probability gate off is allowed: it covers every refusal', () => {
-    // It used to be refused as a contradiction. Now a leg the open-interest
-    // rule cannot sell, or one the desk turns down, is a one-sided day too.
-    expect(strategyProblems(cfg({ doubleWhenOneSided: true, probGate: null }), 'S')).toEqual([]);
-  });
 
   it('puts each problem where its field is', () => {
-    const ps = strategyProblems(cfg({ lots: 0, stopLossPct: 25, weekdays: [], doubleWhenOneSided: true, legs: 'CE' }), 'S');
+    const ps = strategyProblems(cfg({ lots: 0, stopLossPct: 25, weekdays: [] }), 'S');
     expect(ps.map((p) => [p.field, p.tab])).toEqual([
-      ['weekdays', 'when'], ['lots', 'sell'], ['stopLossPct', 'trade'], ['doubleWhenOneSided', 'extras'],
+      ['weekdays', 'when'], ['lots', 'sell'], ['stopLossPct', 'trade'],
     ]);
   });
 });

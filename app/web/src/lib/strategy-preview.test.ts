@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  addExamples, describeAdd, describeDays, describeEntry, describeExit, describePremium, describeScores,
+  describeDays, describeEntry, describeExit, describePremium,
   describeStrategy, sizingOf,
 } from '@/lib/strategy-preview';
 import { DEFAULT_CONFIG, type StrategyConfig } from '@/types/strategy';
@@ -92,43 +92,6 @@ describe('the whole rule, read back as a sentence', () => {
     expect(s).toContain('95%');
   });
 
-  it('says when there is no gate rather than staying quiet about it', () => {
-    expect(describeStrategy(cfg({ probGate: null, doubleWhenOneSided: false })))
-      .toContain('no probability gate');
-  });
-
-  it('only claims doubling when doubling can actually happen', () => {
-    // On a single-leg strategy there is never a survivor to double.
-    expect(describeStrategy(cfg({ legs: 'CE', doubleWhenOneSided: true })))
-      .not.toContain('doubles');
-    expect(describeStrategy(cfg({ doubleWhenOneSided: true }))).toContain('doubles');
-  });
-
-  it('[critical] doubling no longer reads as a probability-gate feature', () => {
-    // It covers every refusal now -- a gate, a score, no strike the rule can
-    // take, or the desk turning the order down -- so it says so with the gate
-    // off, where it used to say nothing at all.
-    const s = describeStrategy(cfg({ probGate: null, doubleWhenOneSided: true }));
-    expect(s).toContain('doubles the one that goes when the other is refused for any reason');
-  });
-
-  it('[critical] says which bar waits and which stands the day down', () => {
-    // They are one switch apart on the form and they behave differently at the
-    // moment they stop something, which is the moment it matters.
-    const s = describeStrategy(cfg({ minSellScore: 70, maxShockScore: 25 }));
-    expect(s).toContain('skips a strike scoring under 70/100');
-    expect(s).toContain('waits while sudden-move risk is above 25/100');
-  });
-
-  it('says nothing at all about a bar that is off', () => {
-    expect(describeScores(cfg({ minSellScore: null, maxShockScore: null }))).toBeNull();
-    expect(describeScores(cfg({ minSellScore: 70, maxShockScore: null })))
-      .toBe('It skips a strike scoring under 70/100.');
-    expect(describeScores(cfg({ minSellScore: null, maxShockScore: 25 })))
-      .toBe('It waits while sudden-move risk is above 25/100.');
-    expect(describeStrategy(cfg())).not.toContain('sudden-move');
-  });
-
   it('uses the singular for one lot', () => {
     expect(describeStrategy(cfg({ lots: 1 }))).toContain('1 lot each');
   });
@@ -138,22 +101,13 @@ describe('what the size actually costs', () => {
   const SPOT = 78_600;   // margin per contract at 200x is spot/200 * 0.001
 
   it('prices both legs at one lot', () => {
-    const s = sizingOf(cfg({ lots: 10, doubleWhenOneSided: false }), 300, SPOT);
+    const s = sizingOf(cfg({ lots: 10, }), 300, SPOT);
     expect(s.maxContracts).toBe(20);
     expect(s.marginUsd).toBeCloseTo(20 * (SPOT / 200) * 0.001, 5);
   });
 
-  it('[critical] prices the doubled day, not the typical one', () => {
-    // A form that quotes the typical size is a form that runs out of margin on
-    // the day it matters. Two legs at one lot and one leg at two are the same
-    // number of contracts, so the peak is unchanged -- but it must be reached
-    // deliberately rather than by luck.
-    const s = sizingOf(cfg({ lots: 10, doubleWhenOneSided: true }), 300, SPOT);
-    expect(s.maxContracts).toBe(20);
-  });
-
   it('a single-leg strategy carries half the contracts', () => {
-    expect(sizingOf(cfg({ legs: 'CE', lots: 10, doubleWhenOneSided: false }), 300, SPOT).maxContracts)
+    expect(sizingOf(cfg({ legs: 'CE', lots: 10, }), 300, SPOT).maxContracts)
       .toBe(10);
   });
 
@@ -175,19 +129,6 @@ describe('what the size actually costs', () => {
     expect(s.warnings.join(' ')).not.toMatch(/tie up|cannot be funded/);
   });
 
-  it('flags the settings that quietly do nothing', () => {
-    expect(sizingOf(cfg({ legs: 'PE', doubleWhenOneSided: true }), 300, SPOT)
-      .warnings.join(' ')).toMatch(/needs both legs/);
-  });
-
-  it('[critical] sizes a doubling day at twice the lots even with no probability gate', () => {
-    // The margin has to be there on the day one leg is refused, and the gate is
-    // no longer the only thing that refuses one.
-    const s = sizingOf(cfg({ probGate: null, doubleWhenOneSided: true, lots: 10 }), 300, SPOT);
-    expect(s.maxContracts).toBe(20);
-    expect(s.warnings.join(' ')).not.toMatch(/probability gate/);
-  });
-
   it('flags a trade with neither a target nor a stop', () => {
     expect(sizingOf(cfg({ takeProfitPct: 0, stopLossPct: 0 }), 300, SPOT)
       .warnings.join(' ')).toMatch(/runs to settlement/);
@@ -202,35 +143,3 @@ describe('what the size actually costs', () => {
   });
 });
 
-describe('adding to the other leg, read back with its own numbers', () => {
-  const add = (minPriceUsd: number, maxMultiple: number, over: Partial<StrategyConfig> = {}) =>
-    cfg({ addToOpposite: { minPriceUsd, maxMultiple, addUntil: '16:59' }, ...over });
-
-  it('says the minimum and the multiple that were typed, not fixed ones', () => {
-    expect(describeAdd(add(3, 2))).toMatch(/bid is \$3 or more and it is under 2x what it was sold for/);
-    expect(describeAdd(add(4.5, 1.5))).toMatch(/bid is \$4\.5 or more and it is under 1\.5x/);
-  });
-
-  it('says the latest time to add, as it is read', () => {
-    expect(describeAdd(add(3, 2))).toMatch(/not after 4:59 PM\.$/);
-    expect(describeAdd(cfg({ addToOpposite: { minPriceUsd: 3, maxMultiple: 2, addUntil: '12:00' } }))).toMatch(/not after 12:00 PM/);
-  });
-
-  it('is part of the whole sentence when on, and absent when off or one-legged', () => {
-    expect(describeStrategy(add(3, 2))).toMatch(/sells that many more of the other leg/);
-    expect(describeAdd(cfg())).toBeNull();
-    expect(describeAdd(add(3, 2, { legs: 'CE' }))).toBeNull();
-  });
-
-  it('tries the rule on prices: 7 and exactly 3 add, 2 does not, 30 (double 15) does not', () => {
-    expect(addExamples({ minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59' }).map((x) => [x.bid, x.adds])).toEqual([
-      [7, true], [3, true], [2, false], [30, false],
-    ]);
-  });
-
-  it('redraws when the numbers change: at $5 and 1.5x, 7 still adds, 4 does not, 22.50 does not', () => {
-    const rows = addExamples({ minPriceUsd: 5, maxMultiple: 1.5, addUntil: '16:59' });
-    expect(rows.map((x) => [x.bid, x.adds])).toEqual([[7, true], [5, true], [4, false], [22.5, false]]);
-    expect(rows[2]!.why).toBe('below $5');
-  });
-});

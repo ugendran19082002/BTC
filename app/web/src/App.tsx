@@ -35,7 +35,7 @@ import { Select, SelectItem } from '@/components/ui/select';
 import { ColumnPicker } from '@/components/chain/ColumnPicker';
 import { normalise, normaliseOrder, type ColumnKey, type ColumnState } from '@/components/chain/columns';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { Download, Table2 } from 'lucide-react';
+import { Download } from 'lucide-react';
 import { toCsv, downloadCsv } from '@/lib/csv';
 import { Button } from '@/components/ui/button';
 
@@ -75,7 +75,7 @@ const Chart = memo(PriceChart);
 /** One empty list, so "no bars yet" is the same prop every render. */
 const NO_BARS: never[] = [];
 
-type Tab = 'desk' | 'chain' | 'trade' | 'orders' | 'strategy' | 'pnl' | 'errors' | 'settings';
+type Tab = 'desk' | 'trade' | 'orders' | 'strategy' | 'pnl' | 'errors' | 'settings';
 
 /** Of two answers to the same question, the one that arrived last; either may be missing. */
 function newer<T>(a: T | null, aAt: number | null, b: T | null, bAt: number | null): T | null {
@@ -91,7 +91,7 @@ function newer<T>(a: T | null, aAt: number | null, b: T | null, bAt: number | nu
  * this line on 18 September, so clicking it fell straight back to Live. A tab
  * that exists in three places and not in the fourth is invisible.
  */
-export const TABS: readonly Tab[] = ['desk', 'chain', 'trade', 'orders', 'strategy', 'pnl', 'settings', 'errors'];
+export const TABS: readonly Tab[] = ['desk', 'trade', 'orders', 'strategy', 'pnl', 'settings', 'errors'];
 export const asTab = (v: string): Tab => (TABS as readonly string[]).includes(v) ? (v as Tab) : 'desk';
 
 const REFRESH_SECONDS = 5;
@@ -459,9 +459,6 @@ export default function App() {
         <button className={tab === 'desk' ? 'on' : ''} onClick={() => setTab('desk')}>
           <Activity aria-hidden /> <span>Live</span>
         </button>
-        <button className={tab === 'chain' ? 'on' : ''} onClick={() => setTab('chain')}>
-          <Table2 aria-hidden /> <span>Option Chain</span>
-        </button>
         <button className={tab === 'trade' ? 'on' : ''} onClick={() => setTab('trade')}>
           <Briefcase aria-hidden /> <span>Positions</span>
           {trade && trade.open.length > 0 && <span className="pip">{trade.open.length}</span>}
@@ -490,11 +487,9 @@ export default function App() {
       {tab === 'desk' ? (
         <>
           {/*
-            The Live screen: the final decision, the KPI strip, three columns
-            (market read · chart, compact chain and the selected strike ·
-            the decision), and the strike finder. The compact chain selects
-            a strike on click; the full board, every column of every strike,
-            is the Option Chain tab.
+            The Live screen: the KPI strip, three columns (market read · chart
+            and the selected strike · the decision), and under them the full
+            option chain -- once its own tab, now where the strike is chosen.
           */}
           {err && !data && <div className="err">{err}</div>}
           {busy && !data && <Loading />}
@@ -560,17 +555,15 @@ export default function App() {
             </ErrorBoundary>
           )}
 
-        </>
-      ) : tab === 'chain' ? (
-        <>
           {/*
-            The full board, on its own tab: every column of every strike, with
-            its own controls. The Live screen keeps the compact chain; a tap
-            here opens the same ticket. The expiry and mode follow the Live
-            screen's.
+            The full board, at the bottom of the Live screen (22 Sep 2026) rather
+            than on a tab of its own: every column of every strike, with its own
+            controls. A tap on a price opens the same ticket; a tap on a strike
+            makes it the one the panels above are about.
           */}
-          {err && <div className="err">{err}</div>}
-          {busy && !data && <Loading />}
+          <section className="live-chain" aria-label="Option chain">
+            <h2 className="live-chain-title">Option chain</h2>
+
           {data && snap && (
             <>
               <div className="chain-bar">
@@ -647,6 +640,7 @@ export default function App() {
               </ErrorBoundary>
             </>
           )}
+          </section>
         </>
       ) : tab === 'trade' ? (
         <div className="flex flex-col gap-3">

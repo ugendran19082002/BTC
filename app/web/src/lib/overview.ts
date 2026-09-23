@@ -190,49 +190,9 @@ export function odds(leg: Leg): Odds {
 
 // ---------------------------------------------------------------- payoff
 
-export type PayoffRow = { price: number; pnlUsd: number };
-
-/**
- * A short option held to settlement: premium kept, less what it pays out at
- * each price. Per `contracts` (0.001 BTC each), in USD, before fees.
- */
-export function shortPayoff(cp: 'C' | 'P', strike: number, premium: number, prices: readonly number[], contracts: number): PayoffRow[] {
-  const size = contracts * CONTRACT_BTC;
-  return prices.map((price) => {
-    const payout = cp === 'C' ? Math.max(0, price - strike) : Math.max(0, strike - price);
-    return { price, pnlUsd: (premium - payout) * size };
-  });
-}
-
-/** The strike price where a short breaks even at settlement, before fees. */
-export const breakeven = (cp: 'C' | 'P', strike: number, premium: number) => (cp === 'C' ? strike + premium : strike - premium);
-
-/** Prices to show a payoff over: the strike ± a few steps, and spot, sorted and de-duplicated. */
-export function payoffPrices(strike: number, spot: number, step: number, n = 3): number[] {
-  const out = new Set<number>([Math.round(spot / step) * step]);
-  for (let i = -n; i <= n; i++) out.add(strike + i * step);
-  return [...out].sort((a, b) => a - b);
-}
 
 // ------------------------------------------------------------ both sides
 
-export type BothSides = {
-  ce: Leg | null;
-  pe: Leg | null;
-  /** A side is safe when its strike sits at least one expected move away. */
-  ceSafe: boolean | null;
-  peSafe: boolean | null;
-  /** Delta of the pair, short both: near zero is balanced. */
-  netDelta: number | null;
-};
-
-export function bothSides(legs: readonly Leg[]): BothSides {
-  const ce = bestLeg(legs, 'C');
-  const pe = bestLeg(legs, 'P');
-  const safe = (l: Leg | null) => (l === null ? null : l.emDistance === null ? null : l.emDistance >= 1);
-  const netDelta = ce?.delta != null && pe?.delta != null ? -(ce.delta + pe.delta) : null;
-  return { ce, pe, ceSafe: safe(ce), peSafe: safe(pe), netDelta };
-}
 
 // ---------------------------------------------------------- the decision
 
@@ -462,117 +422,6 @@ export function assessSides(
       status,
     };
   });
-}
-
-export type BothStatus = 'BOTH' | 'SINGLE SIDE' | 'NO TRADE';
-
-export type BothAssessment = BothSides & {
-  rangeProbability: number | null;
-  netGamma: number | null;
-  netTheta: number | null;
-  netVega: number | null;
-  /** The worse of the two tails: a move only ever hurts one side, and the other side's premium softens it. */
-  combinedTailLossUsd: number | null;
-  combinedExpectedPnlUsd: number | null;
-  marginUsd: number | null;
-  status: BothStatus;
-};
-
-/**
- * Both sides together. Activates only when the call and the put each pass
- * their own gates (sell or watch, at least one expected move out); one side
- * passing is a single-side day; neither is no trade.
- */
-export function assessBoth(
-  data: Pick<ChainResponse, 'legs' | 'containment' | 'snapshot'>, sides: readonly SideAssessment[], contracts: number, leverage: number, em: ExpectedMove,
-): BothAssessment {
-  const b = bothSides(data.legs);
-  const ce = sides.find((s) => s.side === 'CE') ?? null;
-  const pe = sides.find((s) => s.side === 'PE') ?? null;
-  const pass = (s: SideAssessment | null) => Boolean(s?.leg && s.status !== 'NOT PREFERRED' && (s.emDistance ?? 0) >= 1);
-  const cePass = pass(ce), pePass = pass(pe);
-  const sum = (a: number | null | undefined, c: number | null | undefined) => (a == null || c == null ? null : a + c);
-  const size = contracts * CONTRACT_BTC;
-  const cePx = b.ce ? (b.ce.sellPrice ?? b.ce.mark) : null;
-  const pePx = b.pe ? (b.pe.sellPrice ?? b.pe.mark) : null;
-  let combinedTailLossUsd: number | null = null;
-  if (b.ce && b.pe && cePx !== null && pePx !== null && em) {
-    const up = shortLossAt('C', b.ce.strike, cePx, data.snapshot.spot + 2 * em.move, contracts) - pePx * size;
-    const down = shortLossAt('P', b.pe.strike, pePx, data.snapshot.spot - 2 * em.move, contracts) - cePx * size;
-    combinedTailLossUsd = Math.max(0, up, down);
-  }
-  return {
-    ...b,
-    rangeProbability: data.containment?.probability ?? null,
-    netGamma: b.ce && b.pe ? sum(b.ce.gamma, b.pe.gamma) : null,
-    netTheta: b.ce && b.pe ? sum(b.ce.theta, b.pe.theta) : null,
-    netVega: b.ce && b.pe ? sum(b.ce.vega, b.pe.vega) : null,
-    combinedTailLossUsd,
-    combinedExpectedPnlUsd: sum(ce?.expectedPnlUsd, pe?.expectedPnlUsd),
-    marginUsd: cePx !== null && pePx !== null
-      ? (marginPerContract(data.snapshot.spot, leverage, cePx) + marginPerContract(data.snapshot.spot, leverage, pePx)) * contracts : null,
-    status: cePass && pePass ? 'BOTH' : cePass || pePass ? 'SINGLE SIDE' : 'NO TRADE',
-  };
-}
-
-// ---------------------------------------------------------- risk engine
-
-export type RiskEngine = {
-  premium: number;
-  intrinsic: number;
-  extrinsic: number;
-  /** Black–Scholes at the mark IV, from the server. Null on an older server. */
-  theoretical: number | null;
-  /** What the bid pays against the mark: negative, the market pays less than fair. */
-  marketRichness: number | null;
-  pTouch: number | null;
-  /** |theta| ÷ gamma: how much decay is earned per unit of convexity risk. */
-  thetaGammaRatio: number | null;
-  /** P&L for the size if IV rises five points, USD. */
-  vegaShockUsd: number | null;
-  /** P&L for the size on a 1% adverse move in BTC, delta and gamma only, USD. */
-  gammaShockUsd: number | null;
-  /** Extrinsic value left at each point to settlement, model: extrinsic × √(time left ÷ time now). */
-  tailLossUsd: number | null;
-  breakevenAfterFees: number | null;
-  /** Half the spread, for the size, USD: what crossing to fill costs. */
-  slippageUsd: number | null;
-  /** Credit after fees over margin. */
-  marginYield: number | null;
-  /** The next strike out on the same side with an ask: what protection costs, per BTC, and whether there is any. */
-  hedge: { strike: number; askUsd: number; costUsd: number } | null;
-  protectionAvailable: boolean;
-};
-
-export function riskEngine(
-  leg: Leg, legs: readonly Leg[], em: ExpectedMove, spot: number, hoursToExpiry: number, contracts: number, leverage: number,
-): RiskEngine | null {
-  const premium = leg.sellPrice ?? leg.mark;
-  if (premium === null) return null;
-  const size = contracts * CONTRACT_BTC;
-  const extrinsic = Math.max(0, premium - leg.intrinsic);
-  const adverse = em ? (leg.cp === 'C' ? spot + 2 * em.move : spot - 2 * em.move) : null;
-  const move = spot * 0.01 * (leg.cp === 'C' ? 1 : -1);
-  const gammaShockUsd = leg.delta !== null && leg.gamma !== null ? -(leg.delta * move + 0.5 * leg.gamma * move * move) * size : null;
-  const est = orderEstimate(leg.cp, leg.strike, premium, spot, leverage, contracts);
-  const further = legs
-    .filter((l) => l.cp === leg.cp && (leg.cp === 'C' ? l.strike > leg.strike : l.strike < leg.strike) && l.ask !== null && l.ask > 0)
-    .sort((a, b) => (leg.cp === 'C' ? a.strike - b.strike : b.strike - a.strike))[0] ?? null;
-  return {
-    premium, intrinsic: leg.intrinsic, extrinsic,
-    theoretical: leg.theoretical ?? null,
-    marketRichness: leg.mark !== null && leg.mark > 0 && leg.bid !== null ? leg.bid / leg.mark - 1 : null,
-    pTouch: leg.probs.touch,
-    thetaGammaRatio: leg.theta !== null && leg.gamma !== null && leg.gamma > 0 ? Math.abs(leg.theta) / leg.gamma : null,
-    vegaShockUsd: leg.vega === null ? null : -leg.vega * 5 * size,
-    gammaShockUsd,
-    tailLossUsd: adverse === null ? null : shortLossAt(leg.cp, leg.strike, premium, adverse, contracts),
-    breakevenAfterFees: est.breakevenAfterFees,
-    slippageUsd: leg.bid !== null && leg.ask !== null ? ((leg.ask - leg.bid) / 2) * size : null,
-    marginYield: est.returnOnMargin,
-    hedge: further ? { strike: further.strike, askUsd: further.ask!, costUsd: further.ask! * size } : null,
-    protectionAvailable: further !== null,
-  };
 }
 
 // -------------------------------------------------- position state
@@ -812,22 +661,6 @@ export function executionEstimate(leg: Leg, spot: number, contracts: number, tic
   };
 }
 
-// ---------------------------------------------------------- shock table
-
-export type Shock = { label: string; pnlUsd: number | null };
-
-/** P&L for the size on fixed BTC moves (delta + gamma) and IV moves (vega), as the short sees them. */
-export function shockTable(leg: Leg, contracts: number): Shock[] {
-  const size = contracts * CONTRACT_BTC;
-  const px = (d: number) => (leg.delta === null || leg.gamma === null ? null : -(leg.delta * d + 0.5 * leg.gamma * d * d) * size);
-  const iv = (pts: number) => (leg.vega === null ? null : -leg.vega * pts * size);
-  return [
-    { label: 'BTC +100', pnlUsd: px(100) }, { label: 'BTC +250', pnlUsd: px(250) }, { label: 'BTC +500', pnlUsd: px(500) },
-    { label: 'BTC −100', pnlUsd: px(-100) }, { label: 'BTC −250', pnlUsd: px(-250) }, { label: 'BTC −500', pnlUsd: px(-500) },
-    { label: 'IV +1', pnlUsd: iv(1) }, { label: 'IV +2', pnlUsd: iv(2) }, { label: 'IV −1', pnlUsd: iv(-1) },
-  ];
-}
-
 // ------------------------------------------------------- early warning
 
 export type Trigger = {
@@ -1052,30 +885,6 @@ export function dataFreshness(f: Freshness | null | undefined, nowMs: number, li
   ];
 }
 
-// ------------------------------------------------------ premium decay
-
-export type DecayPoint = { hoursFromNow: number; label: string; premium: number };
-export type DecayMilestone = { share: number; hoursFromNow: number };
-
-/**
- * The premium's path to settlement under the square-root-of-time model the
- * risk engine uses: extrinsic × √(time left ÷ time now), on top of what is
- * intrinsic and does not decay. Sampled at `n` even steps from now to expiry,
- * plus when half and four-fifths of the extrinsic will have gone --
- * 0.75 T and 0.96 T from now, whatever the strike -- so a seller knows how
- * long the trade must be held to bank most of it.
- */
-export function premiumDecay(premium: number, intrinsic: number, hoursToExpiry: number, n = 5): { points: DecayPoint[]; milestones: DecayMilestone[] } {
-  const T = Math.max(0, hoursToExpiry);
-  const ext = Math.max(0, premium - intrinsic);
-  const at = (u: number) => intrinsic + ext * Math.sqrt(Math.max(0, (T - u) / (T || 1)));
-  const label = (u: number) => (u === 0 ? 'Now' : u >= T ? 'Exp' : u < 1 ? `${Math.round(u * 60)}m` : `${Math.round(u)}h`);
-  const points = Array.from({ length: n + 1 }, (_, i) => { const u = (T * i) / n; return { hoursFromNow: u, label: label(u), premium: at(u) }; });
-  // Half, four-fifths, and nine-tenths of the extrinsic gone (under a tenth of the premium left): 0.75 T, 0.96 T and 0.99 T from now.
-  const milestones = [0.5, 0.8, 0.9].map((share) => ({ share, hoursFromNow: T * (1 - (1 - share) ** 2) }));
-  return { points, milestones };
-}
-
 // ------------------------------------------------- multi-timeframe consensus
 
 export type MtfRow = {
@@ -1252,58 +1061,6 @@ export function windowMinutes(choice: WindowChoice, nowMs: number): number {
 }
 export const windowLabel = (c: WindowChoice) => (c === 'start' ? 'since 05:30' : c === 'expiry' ? 'since last expiry' : c);
 
-// ---------------------------------------------------------- strike signals
-
-export type StrikeSignal =
-  | 'SAFE SELL' | 'WATCH' | 'PREMIUM RICH' | 'OI BUILDUP' | 'OI UNWIND' | 'IV EXPANSION' | 'IV CRUSH'
-  | 'TOUCH RISK' | 'BREACH RISK' | 'DECAY FAVORABLE' | 'DECAY WEAK' | 'NO TRADE';
-
-/**
- * What the strike's own fields say, as tags: the desk's verdict on it first,
- * then what is moving (OI, IV over the last hour), what could hurt (touch
- * and breach odds), and whether decay is working for a seller. Read from
- * the leg and the what-changed row; nothing here is a new model.
- */
-export function strikeSignals(leg: Leg, changed: { oiChange: number | null; oiThen: number | null; ivChangePts: number | null } | null, iv: IvRv | null, t = { maxPot: 0.25, minEmDistance: 1.25 }): StrikeSignal[] {
-  const out: StrikeSignal[] = [];
-  const o = odds(leg);
-  const pa = premiumAnalysis(leg, null);
-  if (leg.ev?.signal === 'sell') out.push('SAFE SELL');
-  else if (leg.ev?.signal === 'watch') out.push('WATCH');
-  else if (leg.ev?.signal === 'avoid') out.push('NO TRADE');
-  if (iv?.label === 'rich') out.push('PREMIUM RICH');
-  if (changed && changed.oiChange !== null && changed.oiThen !== null && changed.oiThen > 0) {
-    const pct = changed.oiChange / changed.oiThen;
-    if (pct >= 0.05) out.push('OI BUILDUP');
-    else if (pct <= -0.05) out.push('OI UNWIND');
-  }
-  if (changed && changed.ivChangePts !== null) {
-    if (changed.ivChangePts >= 2) out.push('IV EXPANSION');
-    else if (changed.ivChangePts <= -2) out.push('IV CRUSH');
-  }
-  if (o.pTouch !== null && o.pTouch > t.maxPot) out.push('TOUCH RISK');
-  if (o.pItm !== null && o.pItm > 0.15) out.push('BREACH RISK');
-  const dist = leg.emDistance ?? leg.emBuffer ?? null;
-  if (pa && pa.thetaPerPremiumDay !== null) {
-    // Decay is working when the day's theta is a fair share of the premium and the strike sits out past the desk's distance.
-    if (pa.thetaPerPremiumDay >= 0.15 && dist !== null && dist >= t.minEmDistance) out.push('DECAY FAVORABLE');
-    else if (pa.thetaPerPremiumDay < 0.05) out.push('DECAY WEAK');
-  }
-  return out;
-}
-
-/** The execution read of one strike: mid, spread, mark against bid, and what a seller of `contracts` should expect to receive. */
-export function executionRead(leg: Leg, spot: number, contracts: number): { mid: number | null; spread: number | null; spreadPct: number | null; markToBid: number | null; expectedFill: number | null } {
-  const mid = leg.bid !== null && leg.ask !== null ? (leg.bid + leg.ask) / 2 : null;
-  const spread = leg.bid !== null && leg.ask !== null ? leg.ask - leg.bid : null;
-  return {
-    mid, spread,
-    spreadPct: mid !== null && mid > 0 && spread !== null ? (spread / mid) * 100 : null,
-    markToBid: leg.mark !== null && leg.bid !== null && leg.bid > 0 ? leg.mark / leg.bid : null,
-    expectedFill: executionEstimate(leg, spot, contracts).expectedFill,
-  };
-}
-
 // -------------------------------------------------------- the finder's best
 
 export type FinderRank = 'BEST SAFE' | 'BEST BALANCED' | 'BEST PREMIUM';
@@ -1327,73 +1084,6 @@ export function finderRanks(legs: readonly Leg[]): Map<string, FinderRank[]> {
     add(safe, 'BEST SAFE'); add(balanced, 'BEST BALANCED'); add(premium, 'BEST PREMIUM');
   }
   return out;
-}
-
-// ----------------------------------------------------- signal persistence
-
-export type Persistence = { side: SideChoice['side']; confirmations: number; needed: number; valid: boolean; text: string };
-
-/**
- * A side is VALID once the desk has said the same thing on `needed`
- * consecutive boards; a spike on one refresh flips nothing. `history` is
- * the sides said, newest last, one per board.
- */
-export function persistence(history: readonly SideChoice['side'][], needed = 3): Persistence {
-  const side = history[history.length - 1] ?? 'NO_TRADE';
-  let n = 0;
-  for (let i = history.length - 1; i >= 0 && history[i] === side; i--) n++;
-  const confirmations = Math.min(n, needed);
-  return { side, confirmations, needed, valid: n >= needed, text: n >= needed ? 'VALID' : `${confirmations} / ${needed} confirmations` };
-}
-
-// ------------------------------------------------------- what must change
-
-export type MustChange = { why: string[]; toTrade: string[]; recheckIst: string };
-
-const IST_HM_FMT = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
-
-/**
- * NO TRADE, made actionable: which gates fail on the side that came
- * closest, what each would have to become, and when to look again (the
- * entry window if it has not opened, the next five-minute mark otherwise).
- */
-export function mustChange(focus: SideAssessment | null, mtf: MtfConsensus, t: { maxPot: number; minEmDistance: number; maxSlippage: number }, maxSpreadPct: number | null, nowMs: number): MustChange {
-  const fails = (focus?.gates ?? []).filter((g) => g.ok === false);
-  const why = fails.map((g) => `${g.name}: ${g.text}`);
-  const toTrade: string[] = [];
-  for (const g of fails) {
-    switch (g.name) {
-      case 'IV − RV': toTrade.push('IV above realised (ratio ≥ 0.9×)'); break;
-      case 'Liquidity': toTrade.push(`Spread ≤ ${maxSpreadPct === null ? '—' : (maxSpreadPct * 100).toFixed(0)}% of the premium`); break;
-      case 'Execution': toTrade.push(`Half-spread ≤ ${(t.maxSlippage * 100).toFixed(0)}% of the premium`); break;
-      case 'MTF consensus': toTrade.push(`MTF ≥ ${Math.ceil(mtf.scored / 2) + (mtf.scored % 2 === 0 ? 1 : 0)}/${mtf.scored} one way`); break;
-      case 'PoT': toTrade.push(`P(touch) ≤ ${(t.maxPot * 100).toFixed(0)}% — a further strike`); break;
-      case 'Distance / EM': toTrade.push(`Strike ≥ ${t.minEmDistance}× EM out`); break;
-      case 'Direction': toTrade.push('Regime and direction to agree with the side'); break;
-      case 'Gamma': toTrade.push('Gamma risk below high — a further strike or a calmer tape'); break;
-      case 'Tail risk': toTrade.push('Tail loss within the daily limit'); break;
-      case 'Margin': toTrade.push('Margin within the balance'); break;
-      default: toTrade.push(g.name);
-    }
-  }
-  // Entry is whenever the trader decides; the next look is the next board, five minutes on.
-  const recheckMs = Math.ceil((nowMs + 1) / 300_000) * 300_000;
-  return { why, toTrade: [...new Set(toTrade)], recheckIst: IST_HM_FMT.format(new Date(recheckMs)) };
-}
-
-// ------------------------------------------------- the contract's checks
-
-export type ContractCheck = { name: string; ok: boolean | null; text: string };
-
-/** The four things an order needs of the contract before any gate: the right expiry, tradable, a known tick, and live. */
-export function contractChecks(snap: Pick<SnapshotMeta, 'live' | 'expiryTs' | 'isDaily' | 'isNextEntry' | 'step' | 'hoursToExpiry'>, nowMs: number): ContractCheck[] {
-  const v = contractValidity(snap, nowMs);
-  return [
-    { name: 'Correct expiry', ok: snap.isNextEntry || snap.isDaily ? true : false, text: snap.isNextEntry ? 'the next entry' : snap.isDaily ? 'a daily' : 'not the tested contract' },
-    { name: 'Tradable', ok: snap.live && snap.hoursToExpiry > 0, text: snap.live ? `${snap.hoursToExpiry.toFixed(1)}h to settlement` : 'past snapshot' },
-    { name: 'Tick size', ok: snap.step > 0, text: snap.step > 0 ? `strikes every ${snap.step.toLocaleString('en-US')}` : 'unknown' },
-    { name: 'Contract state', ok: v.state === 'LIVE', text: v.state },
-  ];
 }
 
 // ---------------------------------------------------------- skew richness
@@ -1556,4 +1246,34 @@ export function expiryDirection(input: {
     ],
     bias, confidence,
   };
+}
+
+// ------------------------------------------------------------------ funding
+
+export type FundingRead = {
+  /** The rate as a decimal: 0.0095% is 0.000095. */
+  decimal: number;
+  /** What a $10,000 position pays (or receives) at one settlement, in USD. */
+  per10k: number;
+  who: 'longs' | 'shorts' | 'none';
+  /** "Longs pay · bullish", "Shorts pay · mild bearish", "Neutral · no payment". */
+  label: string;
+  tone: 'up' | 'down' | 'muted';
+};
+
+/**
+ * The perpetual's funding, read the way a person asks about it: who pays, how
+ * much on a round $10,000, and which way the crowd leans. Delta quotes the rate
+ * in per cent per eight hours; 0.005% and more reads as a full bias, under it
+ * as mild -- 0.0095% is bullish, 0.001% mildly so.
+ */
+export function fundingRead(ratePct: number | null): FundingRead | null {
+  if (ratePct === null || !Number.isFinite(ratePct)) return null;
+  const decimal = Math.round((ratePct / 100) * 1e10) / 1e10;   // 0.0095 / 100 is 0.0000949999… in floating point
+  const per10k = Math.round(10_000 * decimal * 100) / 100;
+  if (ratePct === 0) return { decimal, per10k: 0, who: 'none', label: 'Neutral · no payment', tone: 'muted' };
+  const strong = Math.abs(ratePct) >= 0.005;
+  return ratePct > 0
+    ? { decimal, per10k, who: 'longs', label: `Longs pay · ${strong ? 'bullish' : 'mild bullish'}`, tone: 'up' }
+    : { decimal, per10k: Math.abs(per10k), who: 'shorts', label: `Shorts pay · ${strong ? 'bearish' : 'mild bearish'}`, tone: 'down' };
 }

@@ -34,16 +34,66 @@ Updated 22 Sep 2026
       the last strike at or below $50." Tried only when the number itself finds no strike; the journal says
       `(fallback $50)` on a leg it chose. For "at least", the fallback is a lower floor.
 
+- [x] **Exits against the entry that actually happened.** An Offer that walks to the bid, a Bid-now
+      order or a market order fills away from the ticket's price. A **% or Fixed** exit is a distance, so
+      the plan keeps it as asked (`exitAsk`) and `protect()` re-reads it off the average fill
+      (`anchorExits`): Fixed +55 over a fill at 14 is 69. A **Price** exit is the level itself: SL typed
+      70 stays at 70 and its *balance* (70 − entry) is re-measured from the fill -- 55 at 15, 56 at 14.
+      A level on the wrong side of the entry is refused by the precheck (`EXIT_WRONG_SIDE_OF_ENTRY`) for
+      every path: ticket, strategy, auto-trade. A market entry now gets exits at all.
+- [x] **Price mode on strategies** (`stopMode: 'price'`, `stopLossAt`): the form shows the balance live
+      against the entry it knows -- the premium rule's number for Offer / Bid now, your own price for My
+      price -- and warns when a level would sit on the wrong side of it.
+- [x] **The OI record at two grains.** Five-minute buckets could not answer a one-minute window (the 1m
+      row was dashes) and were kept for a year -- ~16 MB a day, ~5.9 GB a year, on a disk with 12 GB free.
+      Now: five minutes kept 90 days (~1.4 GB) plus `option_snapshots_1m`, every minute, six hours deep
+      (~20 MB rolling). No extra Delta requests. Windows under five minutes read the minute record only,
+      never the bucket "now" comes from. The freshness bar reads the newest of the two.
+- [x] **"What changed" showed the previous strike's numbers under the new strike's name.** The card's
+      title changed at once, the table only when the next read landed. `useChanges` clears on the strike
+      change and the table says "Reading the record for …" until its own answer arrives
+      (`Changes.test.tsx`). Audited the other live pollers at the same time: each refetches when what it
+      is about changes, and every endpoint answers in 100–750 ms with the bar reading Market 2s · Chain 2s.
+- [x] **Step-by-step tests end to end** (`test/e2e/strategy-lifecycle.test.ts`, 14 steps): save → arm →
+      claim the day → place → fill and protect → time step → edit while open → exits by hand → exit at
+      the position's own time → refusals → delete, through the real API, engine and database.
+      `docs/TEST-PLAN.md` maps every step of a strategy's life to the test that proves it.
+- [x] **A live position closed 38 s after it opened (22 Sep, 22:25, UG-PE, −$0.06).** The runner judged the
+      exit from the strategy's *current* entry time; editing it to 22:27 while the position was on read as
+      "22:27 yesterday + hold to 17:29 = 17:29 today, passed" and it closed at the market. A position's
+      exit is now the first exit time after *it* opened (`exitMomentFor`, `openedAtOf`); editing a strategy
+      never closes a position already on. Reproduced in `schedule.test.ts`.
+- [x] **Funding, read as who pays:** the KPI tile shows the rate, what $10,000 pays per 8 h, and a
+      "Longs pay · bullish" / "Shorts pay · bearish" / "Neutral" chip, coloured by side (`fundingRead`).
+- [x] **Option chain moved to the bottom of Live**, its own tab removed (an old saved "chain" tab opens Live).
+      **Flow merged:** BTC perpetual and the options' CE / PE flow are one card with one window picker.
+- [x] **Phones:** every screen measured at 360 / 390 / 768 px with a touch pointer -- no sideways scroll
+      anywhere (Settings scrolled; a card could not be narrower than its title), and tap targets raised
+      to 32 px+ on touch screens only (fold arrows were 10×12, chain buttons 23 px, P&L days 22×22).
+- [x] **Strategy warnings** for what is allowed but probably not meant: two strategies selling the same
+      leg at the same minute (UG-CE + UG-PE: 200 lots on one put), a name that says CE on a put strategy,
+      a time step that repeats the value before it. A leftover "My price" is dropped on save.
+- [x] **Live screen trimmed:** the final-decision card, the IV term structure, the compact option chain,
+      the desk events, the sell-side risk engine and the selected-strike card are gone (and their now-unused
+      code); skew is inside
+      the volatility card.
+- [x] **The Extras tab retired** (UI, backend, DB): the safety % gate, doubling, the sell-score bar, the
+      sudden-move limit, adding to the other leg, the rebalance. `strategy-004-retire-extras` strips
+      their keys from saved configs and deletes the rebalance settings; `strategy_adds` (19 rows) and
+      `strategy_rebalances` are kept as history, not dropped. `double` now sells like `baseline`.
+- [x] **UG-CE fixed in production:** target 80% → 85% at 7:30 → 90% at 9:30 → 95% at 11:30 (the saved
+      one started at the form's default 95% and loosened to 80% at 7:30).
+
 **To do:**
 
+- [ ] **Drop `strategy_adds` / `strategy_rebalances`** in a later migration, after a backup, once
+      nobody needs to look back at them.
 - [ ] **Deploy** the above, then watch `/api/health` → `feed.source` read `socket` again.
 - [ ] **One live test of a stepped exit** with one lot: a stage moving a real Delta target / stop in place.
       The paper-exchange test proves our logic; only Delta proves Delta's (rule 2).
 - [ ] **The stage memory is in-process.** After a restart the stage in force is applied once more — the
       safe direction, but it overrides a hand-moved exit of that stage. Persist it in `trades.state` if that
       ever matters.
-- [ ] **A market entry (`entryPrice: now`) still gets no exits at placement** — `orderPlan` has no price to
-      read a percentage or points off. Older than this work; worth its own look.
 - [ ] **A stop above ~80% at 200x is usually past the liquidation price.** The ticket says so and refuses;
       a strategy with such a stop would be refused at entry every day. The form could warn when it is saved.
 - [ ] **A failed lazy chunk blanks the whole page** (seen on a stale dev server: "Failed to fetch dynamically

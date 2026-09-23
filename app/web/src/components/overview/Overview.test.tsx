@@ -20,17 +20,23 @@ const data = live as unknown as ChainResponse;
  */
 describe('the decision panels', () => {
   it('draw every panel from a real chain, with the chart and chain left to the screen', () => {
-    render(<Overview data={data} trade={null} contracts={1} chain={false} />);
-    for (const t of ['Key levels', 'Volatility', 'Strategy decision', 'IV term structure', 'Strike finder', 'Multi-timeframe', /^Sell-side risk engine/]) {
+    render(<Overview data={data} trade={null} contracts={1} />);
+    for (const t of ['Key levels', 'Volatility & skew', 'Flow · BTC perpetual & options', 'Strategy decision', 'Strike finder', 'Multi-timeframe']) {
       expect(screen.getByText(t, { selector: 'h3' })).toBeInTheDocument();
     }
     // No settings toolbar and no order panel: the desk's configuration is fixed, and orders have their own tab.
     expect(document.querySelector('.ov-ctx')).toBeNull();
     expect(screen.queryByText('Order panel', { selector: 'h3' })).toBeNull();
-    // The final decision first, then the two sides; the desk's answer is on both.
-    expect(screen.getByText('FINAL EXPIRY SELL DECISION')).toBeInTheDocument();
-    for (const t of ['SELL CE', 'SELL PE', 'BOTH', 'NO TRADE']) expect(screen.getByText(t, { selector: '.ov-final-col .ov-row-label b' })).toBeInTheDocument();
+    // The two sides, on the strategy decision.
     for (const t of ['SELL CE', 'SELL PE']) expect(screen.getByText(t, { selector: '.ov-card4 > header > b' })).toBeInTheDocument();
+    // Removed on the owner's request, 22 Sep 2026: the final-decision card, the IV term structure,
+    // the compact chain and the desk events; skew is inside the volatility card now.
+    expect(screen.queryByText('FINAL EXPIRY SELL DECISION')).toBeNull();
+    for (const gone of ['IV term structure', 'Desk events', /^Skew \(/, 'Volatility', /^Sell-side risk engine/, 'BTC flow · perpetual', 'Option flow · CE / PE']) expect(screen.queryByText(gone, { selector: 'h3' })).toBeNull();
+    // one flow card, two sections, one window picker
+    expect(screen.getAllByText(/^(BTC perpetual|Options · CE \/ PE)$/).length).toBe(2);
+    expect(screen.getByText(/^Skew · /)).toBeInTheDocument();
+    expect(screen.getByText(/^Put − call skew/)).toBeInTheDocument();
     // Said once: no model view beside the outlook, no sell recommendation beside the strikes, no entry setup beside the decision card.
     for (const gone of [/^Model view/, 'Sell recommendation', 'Entry → expiry setup', 'Scenario P&L (−3% … +3%)']) expect(screen.queryByText(gone, { selector: 'h3' })).toBeNull();
 
@@ -40,32 +46,26 @@ describe('the decision panels', () => {
       expect(screen.getByText(t, { selector: 'h3' })).toBeInTheDocument();
     }
     expect(screen.queryByText(/^Option chain/)).toBeNull();
-    expect(screen.getByText(/^Selected strike: /)).toBeInTheDocument();
+    // Removed on the owner's request, 22 Sep 2026: the selected-strike card.
+    expect(screen.queryByText(/^Selected strike: /)).toBeNull();
   });
 
   it('follow the strike the screen selects, and fall back when it is not on the board', () => {
     const leg = data.legs.find((l) => l.cp === 'P')!;
     const onSelect = vi.fn();
     const { rerender } = render(
-      <Overview data={data} trade={null} contracts={1} chain={false} selected={{ cp: 'P', strike: leg.strike }} onSelect={onSelect} />,
+      <Overview data={data} trade={null} contracts={1} selected={{ cp: 'P', strike: leg.strike }} onSelect={onSelect} />,
     );
-    expect(screen.getByText(`Selected strike: ${leg.strike.toLocaleString('en-US')} PE`)).toBeInTheDocument();
-    rerender(<Overview data={data} trade={null} contracts={1} chain={false} selected={{ cp: 'P', strike: 1 }} onSelect={onSelect} />);
-    expect(screen.getByText(/^Selected strike: /)).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(`^What changed · .*${leg.strike.toLocaleString('en-US')} PE`))).toBeInTheDocument();
+    rerender(<Overview data={data} trade={null} contracts={1} selected={{ cp: 'P', strike: 1 }} onSelect={onSelect} />);
+    expect(screen.getByText(/^What changed · /)).toBeInTheDocument();
   });
 
   it('the bar lists the expiries and changes the contract from there', () => {
     const onExpiry = vi.fn();
-    render(<Overview data={data} trade={null} contracts={1} chain={false} expiries={[{ expiry: data.snapshot.expiry, expiryTs: data.snapshot.expiryTs, hoursAway: 5, isDaily: true, isNextEntry: true } as never, { expiry: '220926', expiryTs: data.snapshot.expiryTs + 2 * 86_400, hoursAway: 60 } as never]} onExpiry={onExpiry} />);
+    render(<Overview data={data} trade={null} contracts={1} expiries={[{ expiry: data.snapshot.expiry, expiryTs: data.snapshot.expiryTs, hoursAway: 5, isDaily: true, isNextEntry: true } as never, { expiry: '220926', expiryTs: data.snapshot.expiryTs + 2 * 86_400, hoursAway: 60 } as never]} onExpiry={onExpiry} />);
     fireEvent.change(screen.getByLabelText('Expiry'), { target: { value: '220926' } });
     expect(onExpiry).toHaveBeenCalledWith('220926');
   });
 
-  it('with its own chain, a click on a strike selects it', () => {
-    render(<Overview data={data} trade={null} contracts={1} />);
-    const k = data.snapshot.atm;
-    const row = screen.getByText(k.toLocaleString('en-US'), { selector: 'td.ov-strike' }).closest('tr')!;
-    fireEvent.click(row.querySelectorAll('td')[0]!);
-    expect(screen.getByText(`Selected strike: ${k.toLocaleString('en-US')} CE`)).toBeInTheDocument();
-  });
 });

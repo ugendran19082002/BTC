@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  exitPrice, exitRuleProblems, exitRules, exitWords, fillSteps, premiumFallbackProblem, suggestedFallback, withExitRule,
+  balanceOf, exitPrice, exitRuleProblems, exitRules, exitWords, fillSteps, premiumFallbackProblem, suggestedFallback, withExitRule,
 } from '@/lib/strategy-exits';
 import { distanceOf, exitAskOf, inputProblem, levelOf, switchMode, valueOf } from '@/lib/exit-input';
 import { DEFAULT_CONFIG } from '@/types/strategy';
@@ -148,5 +148,27 @@ describe('the ticket\'s Price mode', () => {
     expect(switchMode('target', { on: true, mode: 'pct', pct: 0.8, points: 0, price: 0 }, 'price', 16)).toEqual({ mode: 'price', price: 3.2 });
     expect(switchMode('stop', { on: true, mode: 'points', pct: 0, points: 54, price: 0 }, 'price', 16)).toEqual({ mode: 'price', price: 70 });
     expect(switchMode('stop', { on: true, mode: 'points', pct: 0, points: 54, price: 66 }, 'price', 16)).toEqual({ mode: 'price' });
+  });
+});
+
+describe('a price exit: the level fixed, the balance re-measured', () => {
+  it('[critical] SL typed 70: balance 55 at a 15 entry, 56 at 14, 54 at 16 -- the level never moves', () => {
+    expect(exitPrice('stop', 'price', 70, 15)).toBe(70);
+    expect(exitPrice('stop', 'price', 70, 14)).toBe(70);
+    expect(balanceOf('stop', 70, 15)).toEqual({ points: 55, pct: 366.7, wrongSide: false });
+    expect(balanceOf('stop', 70, 14)?.points).toBe(56);
+    expect(balanceOf('stop', 70, 16)?.points).toBe(54);
+  });
+  it('TGT typed 5 against 15 is 10 under', () => {
+    expect(balanceOf('target', 5, 15)).toEqual({ points: -10, pct: -66.7, wrongSide: false });
+  });
+  it('[critical] the wrong side of the entry is flagged', () => {
+    expect(balanceOf('stop', 12, 15)?.wrongSide).toBe(true);
+    expect(balanceOf('target', 18, 15)?.wrongSide).toBe(true);
+  });
+  it('a price needs no entry to be a level; the balance does', () => {
+    expect(exitPrice('stop', 'price', 70, null)).toBe(70);
+    expect(balanceOf('stop', 70, null)).toBeNull();
+    expect(exitWords('price', 70)).toBe('at 70');
   });
 });

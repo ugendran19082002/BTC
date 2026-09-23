@@ -27,6 +27,20 @@ import {
 const clampTo = (n: number, max: number) => Math.min(max, Math.max(0, Math.round(n * 10_000) / 10_000));
 const OFF: ExitInput = { on: false, mode: 'pct', pct: 0.8, points: 10, price: 0 };
 
+/**
+ * The mode an exit was set in, from the plan: following the fill as a % or as
+ * points, or -- a leg the plan does not follow -- a fixed price.
+ */
+function modeOf(ask: NonNullable<Trade['plan']>['exitAsk'] | null, leg: 'target' | 'stop', level: number | null): ExitInput['mode'] {
+  // Nothing set yet has no mode of its own: a new exit starts as a percentage.
+  if (level === null) return 'pct';
+  const pct = leg === 'target' ? ask?.takeProfitPct : ask?.stopLossPct;
+  const pts = leg === 'target' ? ask?.takeProfitPoints : ask?.stopLossPoints;
+  if ((pts ?? 0) > 0) return 'points';
+  if ((pct ?? 0) > 0) return 'pct';
+  return 'price';
+}
+
 export function EditExitsSheet({ trade, open, onOpenChange, onSaved }: {
   trade: Trade | null;
   open: boolean;
@@ -69,12 +83,15 @@ export function EditExitsSheet({ trade, open, onOpenChange, onSaved }: {
     const sl = trade.onBook?.stop ?? trade.plan?.stopPrice ?? null;
     // Both readings of each level are filled in, so either mode opens on the
     // price that is live: a target at 3.00 off 15 is 80% and 12 points alike.
+    // Each exit opens in the terms it was set in -- a strategy's "stop at 70"
+    // opens as Price 70, not as "+250%" -- so saving it unchanged changes nothing.
+    const ask = trade.plan?.exitAsk ?? null;
     setTarget({
-      ...OFF, on: tp !== null,
+      ...OFF, on: tp !== null, mode: modeOf(ask, 'target', tp),
       ...(tp !== null ? { pct: clampTo(1 - tp / entry, MAX_TARGET_PCT), points: clampTo(entry - tp, MAX_EXIT_POINTS), price: tp } : {}),
     });
     setStop({
-      ...OFF, pct: 1.5, on: sl !== null,
+      ...OFF, pct: 1.5, on: sl !== null, mode: modeOf(ask, 'stop', sl),
       ...(sl !== null ? { pct: clampTo(sl / entry - 1, MAX_STOP_PCT), points: clampTo(sl - entry, MAX_EXIT_POINTS), price: sl } : {}),
     });
     setFailed(null);

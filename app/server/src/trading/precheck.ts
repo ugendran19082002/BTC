@@ -20,7 +20,7 @@ export type PrecheckCode =
   | 'PREMIUM_TOO_LOW'
   | 'INSUFFICIENT_MARGIN' | 'DUPLICATE_POSITION' | 'MAX_POSITION' | 'DAILY_LOSS_LIMIT'
   | 'WRONG_EXIT_SIDE' | 'KILL_SWITCH'
-  | 'LEVERAGE_TOO_HIGH' | 'STOP_BEYOND_LIQUIDATION';
+  | 'LEVERAGE_TOO_HIGH' | 'STOP_BEYOND_LIQUIDATION' | 'EXIT_WRONG_SIDE_OF_ENTRY';
 
 export type Failure = { code: PrecheckCode; message: string };
 export type PrecheckResult = { ok: true } | { ok: false; failures: Failure[] };
@@ -157,6 +157,8 @@ export type PrecheckInput = {
     crossing: boolean;
     /** Where the stop buys back, if there is one. */
     stopPrice?: number | null;
+    /** Where the target buys back, if there is one. */
+    takeProfitPrice?: number | null;
   };
   /** BTC spot, for the margin model. */
   spot: number | null;
@@ -284,6 +286,21 @@ export function precheck(input: PrecheckInput): PrecheckResult {
   }
 
   // --- opening trades only ----------------------------------------------
+  /*
+   * A short makes money as the option gets cheaper: its target sits under the
+   * entry and its stop over it. The other way round, each fires the moment it
+   * lands -- a short sold at 7.00 bought itself back at 7.00 that way on
+   * 9 September. A level typed as a price is the case this catches; one worked
+   * out from a percentage or points is always on the right side.
+   */
+  if (!intent.reduceOnly && intent.price !== null) {
+    if (intent.stopPrice != null && !(intent.stopPrice > intent.price)) {
+      add('EXIT_WRONG_SIDE_OF_ENTRY', `A stop of ${intent.stopPrice} must be over the ${intent.price} entry: at or under it, it fires at once.`);
+    }
+    if (intent.takeProfitPrice != null && !(intent.takeProfitPrice < intent.price)) {
+      add('EXIT_WRONG_SIDE_OF_ENTRY', `A target of ${intent.takeProfitPrice} must be under the ${intent.price} entry: a short makes money as the price falls.`);
+    }
+  }
   if (!intent.reduceOnly) {
     if (intent.price !== null && intent.price < limits.minPremiumUsd) {
       add(

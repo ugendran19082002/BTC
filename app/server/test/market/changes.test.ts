@@ -10,7 +10,7 @@ const SYM = 'C-BTC-82000-190926';
 
 beforeEach(async () => {
   await optionSnapshotsSchema(); await marketSchema();
-  await query('TRUNCATE option_snapshots, chain_features');
+  await query('TRUNCATE option_snapshots, option_snapshots_1m, chain_features');
 });
 after(() => closePool());
 
@@ -40,7 +40,7 @@ test('[critical] each window diffs now against the record nearest that long ago;
   assert.equal(w60.markChange, 120);
   assert.equal(w60.callVolumeChange, 240);
   const w1 = r.rows.find((x) => x.minutes === 1)!;
-  assert.equal(w1.markChange, null, 'five-minute records cannot answer a one-minute window');
+  assert.equal(w1.markChange, null, 'with no minute record, a one-minute window has nothing to diff -- never the bucket now is read from');
   const w720 = r.rows.find((x) => x.minutes === 720)!;
   assert.equal(w720.markChange, null, 'nothing recorded that far back');
   assert.equal(r.now.mark, 220);
@@ -62,4 +62,29 @@ test('a since-entry row runs from the entry moment, once at least a window is be
   assert.equal(e.minutes, 30);
   assert.equal(e.markChange, 20, 'against the record at the entry moment');
   assert.equal((await changes(SYM, '190926', T0, {}, T0 - 60_000)).rows.some((x) => x.sinceEntry), false, 'a minute since entry is not a window yet');
+});
+
+test('[critical] the minute record answers the one-minute window, and sharpens the five', async () => {
+  // The same strike a minute apart for ten minutes: mark climbing 2 a minute.
+  for (let i = 0; i <= 10; i++) {
+    await query(
+      `INSERT INTO option_snapshots_1m (at, symbol, expiry, cp, strike, spot, mark, mark_iv, oi, volume) VALUES ($1, $2, '190926', 'C', 82000, 80000, $3, 0.3, $4, 0)`,
+      [T0 - (10 - i) * 60_000, SYM, 100 + i * 2, 1000 + i * 10],
+    );
+  }
+  const r = await changes(SYM, '190926', T0, { spot: 80_000, mark: 120, oi: 1100, iv: 0.3, volume: 0 });
+  const w1 = r.rows.find((x) => x.minutes === 1)!;
+  assert.equal(w1.markChange, 2, 'a minute ago, exactly');
+  assert.equal(w1.oiChange, 10);
+  const w5 = r.rows.find((x) => x.minutes === 5)!;
+  assert.equal(w5.markChange, 10, 'five minutes ago, exactly -- not the nearest five-minute bucket');
+});
+
+test('a window beyond the minute record still reads the five-minute one', async () => {
+  await query(
+    `INSERT INTO option_snapshots (at, symbol, expiry, cp, strike, spot, mark, mark_iv, oi, volume) VALUES ($1, $2, '190926', 'C', 82000, 80000, 50, 0.3, 900, 0)`,
+    [T0 - 60 * 60_000, SYM],
+  );
+  const r = await changes(SYM, '190926', T0, { spot: 80_000, mark: 120, oi: 1100, iv: 0.3, volume: 0 });
+  assert.equal(r.rows.find((x) => x.minutes === 60)!.markChange, 70);
 });

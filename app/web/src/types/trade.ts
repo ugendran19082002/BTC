@@ -76,6 +76,11 @@ export type Trade = {
     entry: { type: 'limit' | 'market'; limitPrice?: number; timeoutMs: number; marketFallback: boolean };
     takeProfitPrice: number | null;
     stopPrice: number | null;
+    /**
+     * How each exit was asked for: a leg here follows the fill (a % or points);
+     * a leg absent is a fixed price. Absent from an older server.
+     */
+    exitAsk?: { takeProfitPct?: number; takeProfitPoints?: number; stopLossPct?: number; stopLossPoints?: number } | null;
     leverage?: number;
   };
   /** The exchange's own figures, not a second opinion computed here. */

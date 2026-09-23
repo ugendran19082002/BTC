@@ -26,25 +26,25 @@ export const MAX_EXIT_STEPS = 24;
 
 /** Both exits of a config; a strategy saved before modes and steps reads as a percentage, all day. */
 export function exitRules(c: StrategyConfig): Record<ExitLeg, ExitRule> {
-  const targetMode: ExitMode = c.targetMode === 'points' ? 'points' : 'pct';
-  const stopMode: ExitMode = c.stopMode === 'points' ? 'points' : 'pct';
+  const modeOf = (m: unknown): ExitMode => (m === 'points' || m === 'price' ? m : 'pct');
+  const targetMode = modeOf(c.targetMode);
+  const stopMode = modeOf(c.stopMode);
+  const tv = targetMode === 'points' ? (c.takeProfitPoints ?? 0) : targetMode === 'price' ? (c.takeProfitAt ?? 0) : c.takeProfitPct;
+  const sv = stopMode === 'points' ? (c.stopLossPoints ?? 0) : stopMode === 'price' ? (c.stopLossAt ?? 0) : c.stopLossPct;
   return {
-    target: { mode: targetMode, value: targetMode === 'points' ? (c.takeProfitPoints ?? 0) : c.takeProfitPct, steps: c.targetSteps ?? [] },
-    stop: { mode: stopMode, value: stopMode === 'points' ? (c.stopLossPoints ?? 0) : c.stopLossPct, steps: c.stopSteps ?? [] },
+    target: { mode: targetMode, value: tv, steps: c.targetSteps ?? [] },
+    stop: { mode: stopMode, value: sv, steps: c.stopSteps ?? [] },
   };
 }
 
 /** The config fields one rule is stored in -- the other mode's value is kept, not wiped. */
 export function withExitRule(c: StrategyConfig, leg: ExitLeg, rule: ExitRule): StrategyConfig {
+  const field = leg === 'target'
+    ? (rule.mode === 'points' ? 'takeProfitPoints' : rule.mode === 'price' ? 'takeProfitAt' : 'takeProfitPct')
+    : (rule.mode === 'points' ? 'stopLossPoints' : rule.mode === 'price' ? 'stopLossAt' : 'stopLossPct');
   return leg === 'target'
-    ? {
-        ...c, targetMode: rule.mode, targetSteps: rule.steps,
-        ...(rule.mode === 'points' ? { takeProfitPoints: rule.value } : { takeProfitPct: rule.value }),
-      }
-    : {
-        ...c, stopMode: rule.mode, stopSteps: rule.steps,
-        ...(rule.mode === 'points' ? { stopLossPoints: rule.value } : { stopLossPct: rule.value }),
-      };
+    ? { ...c, targetMode: rule.mode, targetSteps: rule.steps, [field]: rule.value }
+    : { ...c, stopMode: rule.mode, stopSteps: rule.steps, [field]: rule.value };
 }
 
 /** Whether a rule does anything at the entry. */
@@ -56,6 +56,9 @@ export function exitValueProblem(leg: ExitLeg, mode: ExitMode, v: number): strin
   if (!Number.isFinite(v) || v < 0) return `${Leg} cannot be negative or blank.`;
   if (mode === 'points') {
     return v > MAX_EXIT_POINTS ? `${Leg} must be at most ${MAX_EXIT_POINTS.toLocaleString('en-US')} points from the entry.` : null;
+  }
+  if (mode === 'price') {
+    return v > MAX_EXIT_POINTS ? `${Leg} must be a price of at most ${MAX_EXIT_POINTS.toLocaleString('en-US')}.` : null;
   }
   if (leg === 'target') return v > MAX_TARGET_PCT ? 'Take profit must be between 0 and 99% of the credit.' : null;
   return v > MAX_STOP_PCT ? 'Stop loss must be between 0 and 2000% of the credit.' : null;
@@ -123,7 +126,7 @@ export function fillSteps(o: {
   if (!isHhmm(o.entryTime) || !isHhmm(o.exitTime) || !(o.everyMin >= 1)) return [];
   const entry = minutesOf(o.entryTime);
   const span = minutesForward(entry, minutesOf(o.exitTime));
-  const ceiling = o.mode === 'points' ? MAX_EXIT_POINTS : o.leg === 'target' ? MAX_TARGET_PCT : MAX_STOP_PCT;
+  const ceiling = o.mode !== 'pct' ? MAX_EXIT_POINTS : o.leg === 'target' ? MAX_TARGET_PCT : MAX_STOP_PCT;
   const steps: ExitStep[] = [];
   let value = o.start;
   for (let at = o.everyMin; at < span && steps.length < MAX_EXIT_STEPS; at += o.everyMin) {
@@ -137,9 +140,10 @@ export function fillSteps(o: {
 
 const round = (n: number) => Math.round(n * 10_000) / 10_000;
 
-/** "80%" / "10 pts" / "off". */
+/** "80%" / "10 pts" / "at 70" / "off". */
 export function exitWords(mode: ExitMode, value: number): string {
   if (!(value > 0)) return 'off';
+  if (mode === 'price') return `at ${value}`;
   return mode === 'points' ? `${value} pts` : `${Math.round(value * 1000) / 10}%`;
 }
 
@@ -148,10 +152,29 @@ export function exitWords(mode: ExitMode, value: number): string {
  * the server's `targetFor` / `stopFor`, for showing the level while it is typed.
  */
 export function exitPrice(leg: ExitLeg, mode: ExitMode, value: number, entry: number | null): number | null {
-  if (entry === null || !(value > 0)) return null;
+  if (!(value > 0)) return null;
   const r1 = (n: number) => Math.round(n * 10) / 10;
+  // A price is the level whatever the entry; the others need one to measure from.
+  if (mode === 'price') return r1(value);
+  if (entry === null) return null;
   if (leg === 'stop') return mode === 'points' ? r1(entry + value) : r1(entry * (1 + value));
   return mode === 'points'
     ? Math.max(0.1, r1(Math.max(entry * 0.01, entry - value)))
     : r1(entry * (1 - Math.min(MAX_TARGET_PCT, value)));
+}
+
+/**
+ * A level against an entry: the balance -- level minus entry, in points and in
+ * per cent -- and whether it sits the right side of it. A stop must be over
+ * the entry and a target under it, or it fires the moment it lands.
+ */
+export function balanceOf(leg: ExitLeg, level: number | null, entry: number | null):
+  { points: number; pct: number; wrongSide: boolean } | null {
+  if (level === null || entry === null || !(entry > 0)) return null;
+  const points = Math.round((level - entry) * 100) / 100;
+  return {
+    points,
+    pct: Math.round(((level - entry) / entry) * 1000) / 10,
+    wrongSide: leg === 'stop' ? !(level > entry) : !(level < entry),
+  };
 }

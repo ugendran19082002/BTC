@@ -17,7 +17,7 @@ name's prefix wherever a bare name would be ambiguous (`auth_sessions`,
 | strategy | `strategies`, `strategy_runs`, `strategy_adds`, `strategy_rebalances` | the scheduler | Saved strategies and their run journal: what stops a strategy entering twice. |
 | sign-in | `auth_user`, `auth_sessions`, `auth_recovery_codes`, `auth_limits`, `auth_events` | the sign-in | The one user, sessions, recovery codes, rate limits, the security log. |
 | errors | `errors` | everything | Every failure, from all three tiers, in one place. |
-| market | `oi_snapshots`, `chain_features`, `option_snapshots`, `trade_flow_1m`, `option_flow_1m`, `perp_snapshots`, `iv_term_snapshots` | the chain route, the API's recorders, and the perp's trade socket | What open interest and at-the-money volatility *were*, so a change in either is readable. Disposable. |
+| market | `oi_snapshots`, `chain_features`, `option_snapshots`, `option_snapshots_1m`, `trade_flow_1m`, `option_flow_1m`, `perp_snapshots`, `iv_term_snapshots` | the chain route, the API's recorders, and the perp's trade socket | What open interest and at-the-money volatility *were*, so a change in either is readable. Disposable. |
 | analytics | `outlook_states`, `chain_states`, `analytics_publish_meta` | `research/publish_outlook_states.py` | The measured Down / Side / Up tables the Python service reads. |
 | ledger | `schema_migrations` | `db/migrate.ts` | The one ledger of what has been done to the database. |
 | `chain.db` (SQLite) | 6 | the harvester, offline | Two years of settled option chains. Read-only at runtime. |
@@ -93,9 +93,9 @@ Ids are `<area>-NNN-what-it-does`. Applied on a fresh desk today:
 | Area | Migrations |
 |---|---|
 | trading | `trading-001-settings`, `trading-002-default-settings`, `trading-003-trades`, `trading-004-mtm-samples`, `trading-005-settings-to-public`, `trading-006-journal-to-public` |
-| market | `market-001-oi-snapshots`, `market-002-chain-features`, `market-003-to-public`, `market-004-option-snapshots`, `market-005-flow`, `market-006-flow-large-counts`, `market-007-option-flow` |
+| market | `market-001-oi-snapshots`, `market-002-chain-features`, `market-003-to-public`, `market-004-option-snapshots`, `market-005-flow`, `market-006-flow-large-counts`, `market-007-option-flow`, `market-008-option-snapshots-1m` |
 | errors | `errors-001-log`, `errors-002-to-public` |
-| strategy | `strategy-001-tables`, `strategy-002-seed`, `strategy-003-to-public` |
+| strategy | `strategy-001-tables`, `strategy-002-seed`, `strategy-003-to-public`, `strategy-004-retire-extras` |
 | sign-in | `auth-001-user-sessions`, `auth-002-to-public` |
 | analytics | `analytics-001-to-public` |
 
@@ -222,11 +222,18 @@ doubles a position.
 |---|---|---|
 | `strategies` | `id` TEXT PK | `name`, `enabled` BOOLEAN, `config` JSONB, `created_at`, `updated_at`. Seeded with the three researched strategies (`baseline`, `locked`, `double`), only `double` armed; a desk that already has them keeps whatever the person has since changed. |
 | `strategy_runs` | identity; `UNIQUE (strategy_id, run_date)` | One row per strategy per IST day. `claim()` is `INSERT … ON CONFLICT DO NOTHING`: the constraint decides who won, not a check-then-write. |
-| `strategy_adds` | identity | Every decision to add to the other leg, including the ones that did not. `contracts` per source trade sum to what has been dealt with; `recordAdd` checks that sum and inserts inside one transaction, under an advisory lock keyed on the source trade — SQLite serialised writers for free, PostgreSQL has to be asked. |
-| `strategy_rebalances` | identity; `UNIQUE (strategy_id, run_date, stage)` | Every rebalance stage, written down before it is acted on. The constraint is the rule that a stage never fires twice. |
+| `strategy_adds` | identity | **Retired 22 Sep 2026** with add-to-the-other-leg. History only: nothing reads or writes it. Kept rather than dropped -- a drop is irreversible and can be its own migration once nobody needs to look back. |
+| `strategy_rebalances` | identity; `UNIQUE (strategy_id, run_date, stage)` | **Retired 22 Sep 2026** with the rebalance. History only, kept for the same reason. |
 
-Desk-wide strategy settings (`rebalance_limits`, `rebalance_defaults`,
-`scheduler_enabled`) are in `settings`, through the same cache.
+The desk-wide strategy setting `scheduler_enabled` is in `settings`, through
+the same cache. (`rebalance_limits` and `rebalance_defaults` were deleted by
+`strategy-004`.)
+
+**The Extras were retired on 22 Sep 2026** -- the safety % gate, doubling the
+surviving leg, the sell-score bar, the sudden-move limit, adding to the other
+leg and the rebalance. `strategy-004-retire-extras` removed their keys from
+every saved config (`RETIRED_KEYS` in `strategy/store.ts`), and the store drops
+them from anything read back, so a strategy reads as what it now does.
 
 `config` is JSONB, so a new setting needs no migration -- and must read an
 absent key as what older strategies were doing. Since 22 Sep 2026 it may carry
@@ -365,6 +372,31 @@ as a short window, never as zero flow.
 Kept apart from the journal for the reason the journal is kept apart, in reverse: this is
 market data and entirely disposable. Truncate it and the board loses its change
 columns until the next bucket. Nothing else notices.
+
+---
+
+### The option record, at two grains (22 Sep 2026)
+
+`option_snapshots` holds every strike of the two nearest expiries every **five
+minutes**, and `option_snapshots_1m` the same rows every **minute**. Measured on
+the live desk: ~350 bytes a row, 161 strikes a bucket.
+
+| Table | Grain | Kept | Size | Answers |
+|---|---|---|---|---|
+| `option_snapshots` | 5 minutes | 90 days | ~16 MB a day, ~1.4 GB at 90 days | the hour-ago and day-ago reads, ΔOI, IV change |
+| `option_snapshots_1m` | 1 minute | 6 hours | ~20 MB, rolling | the 1-minute window and the premium's velocity |
+
+Why two: a minute grain kept like the other would be ~30 GB a year, which this
+disk does not have; a five-minute grain alone cannot answer "what has this
+premium done in the last minute" -- the 1m row on *What changed* was dashes, and
+a window under five minutes read against the bucket "now" comes from would say
+"nothing changed", which is worse than a dash. Neither costs an extra request:
+the recorder wakes every minute and skips the five-minute write when its bucket
+exists. The retention was a year until 22 Sep 2026; at ~16 MB a day that reaches
+~5.9 GB, against 12 GB free.
+
+The freshness bar's "OI record" reads the newest of the two, so it moves every
+minute; `/api/health` still reports the five-minute bucket.
 
 ---
 

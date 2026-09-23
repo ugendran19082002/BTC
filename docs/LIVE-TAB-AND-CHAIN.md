@@ -445,9 +445,8 @@ would count a day that cannot happen.
 
 `shock.ts`, windows 5m / 15m / 1h / 4h. A 0–100 score from price velocity
 against its own recent normal, volume pulse, IV change, open-interest change
-and where price sits against the walls. A strategy can refuse to enter while
-it is above a limit (`maxShockScore`) — a *hold*, not a refusal: the day stays
-open and the next tick asks again.
+and where price sits against the walls. It is a reading on the screen only:
+the strategy limit that once held an entry on it was retired on 22 Sep 2026.
 
 The odds block under it answers "how often did a move like this carry on?"
 from the record, over **the window you are looking at** — not a fixed day.

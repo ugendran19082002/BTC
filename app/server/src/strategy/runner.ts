@@ -4,7 +4,7 @@ import { wallWithinEm } from '../http/routes/desk.routes.js';
 import { tradingService } from '../trading/service.js';
 import { noteError } from '../observability/errors.js';
 import { StrategyStore } from './store.js';
-import { entryDue, entrySlotDate, entryWindowEnd, exitDue, graceOf, istMinutes } from './schedule.js';
+import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMinutes, openedAtOf } from './schedule.js';
 import { describeSelection, selectLegs, type Candidate } from './select.js';
 import { exitAsk, exitRules, exitValueAt, time12, type Strategy } from './types.js';
 import { missedEntryAlert, runAlertFor, type Alert, type AlertContext } from '../notify/messages.js';
@@ -153,29 +153,35 @@ export class StrategyRunner {
     });
   }
 
-  /** Close anything this strategy opened once its exit time has passed. */
+  /**
+   * Close whatever this strategy opened once that position's own exit time has
+   * passed -- the first exit time after the position opened, so editing the
+   * strategy's entry time never closes a position that is already on.
+   */
   private async considerExit(s: Strategy): Promise<void> {
     const svc = tradingService();
+    const now = this.now();
     const open = (await svc.openTrades()).filter((t) => t.plan.strategyId === s.id && t.state.position !== 0);
-    if (!exitDue(s, this.now(), open.length > 0).due) return;
-    for (const t of open) {
+    const due = open.filter((t) => now >= exitMomentFor(s.config.exitTime, openedAtOf(t, now)));
+    if (!due.length) return;
+    for (const t of due) {
       await svc.close(t.state.tradeId);
     }
-    if (open.length) {
-      /*
-       * Add to the day's record rather than replace it.
-       *
-       * `finish` overwrites, and the row already holds what was sold this
-       * morning. Writing "closed 2 legs" over it would leave a journal that
-       * cannot answer the first question anybody asks about a day -- what did
-       * it put on -- while claiming to be the audit trail.
-       */
-      // The day the entry belongs to, not today's date: an overnight strategy
-      // exits on the following morning, and writing that morning's row would
-      // both lose this record and spend a day that has not run.
-      const day = entrySlotDate(s, this.now());
+    /*
+     * Add to the day's record rather than replace it: `finish` overwrites, and
+     * the row already holds what was sold. The day is the run the position
+     * came from -- found by when it opened, not by today's date or the entry
+     * time as it reads now, which may have been edited since.
+     */
+    const byDay = new Map<string, number>();
+    for (const t of due) {
+      const opened = openedAtOf(t, now);
+      const day = (await this.store.runDateAtOrBefore(s.id, opened)) ?? entrySlotDate(s, opened);
+      byDay.set(day, (byDay.get(day) ?? 0) + 1);
+    }
+    for (const [day, n] of byDay) {
       const prior = (await this.store.runFor(s.id, day))?.detail ?? '';
-      const closed = `closed ${open.length} leg${open.length === 1 ? '' : 's'} at ${time12(s.config.exitTime)}`;
+      const closed = `closed ${n} leg${n === 1 ? '' : 's'} at ${time12(s.config.exitTime)}`;
       await this.store.finish(s.id, day, 'placed', prior ? `${prior} | ${closed}` : closed);
     }
   }

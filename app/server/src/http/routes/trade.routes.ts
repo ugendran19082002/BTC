@@ -1,6 +1,5 @@
 import type { FastifyInstance } from 'fastify';
 import { ExitAskError, stopFor, targetFor, tradingService } from '../../trading/service.js';
-import { exitPriceProblem } from '../../trading/order-plan.js';
 import { AUTO_TRADE_CEILINGS, AUTO_TRADE_DEFAULTS } from '../../trading/auto-trade.js';
 import { lotsToContracts } from '../../trading/money.js';
 import { DEFAULT_LIMITS, precheck } from '../../trading/precheck.js';
@@ -136,6 +135,14 @@ const view = (
       entry: r.plan.entry,
       takeProfitPrice: r.plan.takeProfitPrice,
       stopPrice: r.plan.stopPrice,
+      /*
+       * How each exit was asked for, so a screen that edits it opens in the
+       * same terms: a leg here follows the fill as a % or points; a leg absent
+       * is a fixed price. Without it the Edit exits sheet showed a strategy's
+       * "stop at 70" as "+250%", and saving it unchanged would have turned a
+       * fixed level into one that moves with the fill (22 Sep 2026).
+       */
+      exitAsk: r.plan.exitAsk ?? null,
       leverage: r.plan.leverage,
     },
     live: {
@@ -386,7 +393,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
         now: Date.now(),
         intent: {
           side: 'sell', size, price, reduceOnly: false,
-          leverage: p.leverage, stopPrice: stop,
+          leverage: p.leverage, stopPrice: stop, takeProfitPrice: target,
           crossing: crossesSpread('sell', p.limitPrice === undefined ? 'market' : 'limit', p.limitPrice ?? null, quote),
           expect: { underlying: 'BTC', optionSide: p.side, strike: p.strike, expiryTs: p.expiryTs },
         },
@@ -407,14 +414,10 @@ export function registerTradeRoutes(app: FastifyInstance) {
       },
       });
 
-      // An exit typed as a price is checked against the entry it is priced off,
-      // beside the gates, so the refusal shows above the button with the rest.
-      const wrongSide = price !== null ? exitPriceProblem(price, atOf(p)) : null;
-      const failures = [...(gates.ok ? [] : gates.failures), ...(wrongSide ? [{ code: 'exit_price' as const, message: wrongSide }] : [])];
       return {
         mode: svc.mode,
-        ok: failures.length === 0,
-        failures,
+        ok: gates.ok,
+        failures: gates.ok ? [] : gates.failures,
         quote, product,
         size,
         contractValue: product?.contractValue ?? 0.001,
@@ -463,9 +466,6 @@ export function registerTradeRoutes(app: FastifyInstance) {
   app.post('/api/trade/place', async (req, reply) => {
     try {
       const p = parse((req.body ?? {}) as PlaceBody);
-      // A price exit that would fill on placement is refused before anything is sent.
-      const wrongSide = p.limitPrice !== undefined ? exitPriceProblem(p.limitPrice, atOf(p)) : null;
-      if (wrongSide) return refuse(reply, 422, { mode: svc.mode, ok: false, failures: [{ code: 'exit_price', message: wrongSide }] });
       const res = await svc.place({
         // From the ticket, by a person: the one place that is true.
         origin: 'manual',

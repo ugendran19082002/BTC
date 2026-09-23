@@ -22,7 +22,7 @@ const board = [
   tk('C-BTC-78000-180926', 'C', 78_000, '1'),      // settled: out of scope
 ];
 
-beforeEach(async () => { await optionSnapshotsSchema(); await query('TRUNCATE option_snapshots'); });
+beforeEach(async () => { await optionSnapshotsSchema(); await query('TRUNCATE option_snapshots, option_snapshots_1m'); });
 after(() => closePool());
 
 test('[critical] the two nearest live expiries, every strike, and nothing else', () => {
@@ -40,8 +40,12 @@ test('[critical] the two nearest live expiries, every strike, and nothing else',
 test('[critical] one bucket is written once, however often it is asked, and every column round-trips', async () => {
   const first = await captureOptionSnapshots(board, T0);
   assert.deepEqual(first, { at: Math.floor(T0 / OPTION_SNAPSHOT_BUCKET_MS) * OPTION_SNAPSHOT_BUCKET_MS, rows: 3 });
-  assert.equal(await captureOptionSnapshots(board, T0 + 60_000), null, 'same five minutes: nothing written');
+  assert.equal(await captureOptionSnapshots(board, T0 + 1_000), null, 'the same minute of the same bucket: nothing written');
   assert.equal((await one<{ n: number }>('SELECT COUNT(*)::int AS n FROM option_snapshots'))!.n, 3);
+  // A minute later the five-minute bucket is done and the minute record is not.
+  await captureOptionSnapshots(board, T0 + 60_000);
+  assert.equal((await one<{ n: number }>('SELECT COUNT(*)::int AS n FROM option_snapshots'))!.n, 3, 'still one five-minute bucket');
+  assert.equal((await one<{ n: number }>('SELECT COUNT(*)::int AS n FROM option_snapshots_1m'))!.n, 6, 'two minute buckets');
 
   const p = await one<Record<string, number>>(
     "SELECT at, spot, mark, bid, ask, mark_iv, delta, oi, volume FROM option_snapshots WHERE symbol = 'C-BTC-78000-190926'");
@@ -56,13 +60,15 @@ test('the next bucket writes again, oldest first; the newest time is memoised fo
   const firstAt = await lastOptionSnapshotAt(T0 + 1000);
   await captureOptionSnapshots(board.map((t) => (t.symbol === 'C-BTC-78000-190926' ? { ...t, mark_price: '390' } : t)), T0 + OPTION_SNAPSHOT_BUCKET_MS);
   assert.equal(await lastOptionSnapshotAt(T0 + 2000), firstAt, 'within the memo, the earlier answer');
-  assert.equal(await lastOptionSnapshotAt(T0 + 60_000), (await lastOptionSnapshot())!.at, 'after it, the newest bucket');
+  // After the memo: the newest record the desk holds, which is the minute one.
+  assert.equal(await lastOptionSnapshotAt(T0 + 60_000), Math.floor((T0 + OPTION_SNAPSHOT_BUCKET_MS) / 60_000) * 60_000, 'after it, the newest record');
+  assert.equal((await lastOptionSnapshot())!.at, Math.floor((T0 + OPTION_SNAPSHOT_BUCKET_MS) / OPTION_SNAPSHOT_BUCKET_MS) * OPTION_SNAPSHOT_BUCKET_MS, 'health still reports the five-minute bucket');
   const h = await rows<{ mark: number }>("SELECT mark FROM option_snapshots WHERE symbol = 'C-BTC-78000-190926' ORDER BY at");
   assert.deepEqual(h.map((x) => x.mark), [360, 390]);
   assert.equal((await lastOptionSnapshot())!.rows, 3);
 });
 
-test('a year is kept; older rows go as it writes', async () => {
+test('the retention is kept; older rows go as it writes', async () => {
   await captureOptionSnapshots(board, T0 - OPTION_SNAPSHOT_KEEP_MS - OPTION_SNAPSHOT_BUCKET_MS * 2);
   await captureOptionSnapshots(board, T0);
   const oldest = await one<{ at: number }>('SELECT MIN(at) AS at FROM option_snapshots');
@@ -71,4 +77,13 @@ test('a year is kept; older rows go as it writes', async () => {
 
 test('a board with nothing in scope writes nothing', async () => {
   assert.equal(await captureOptionSnapshots([], T0), null);
+});
+
+test('[critical] the freshness bar reads the newest record of either grain', async () => {
+  await captureOptionSnapshots(board, T0);
+  const minuteLater = T0 + 60_000;
+  await captureOptionSnapshots(board, minuteLater);
+  // the five-minute bucket is T0's; the minute record is a minute newer
+  assert.equal((await lastOptionSnapshot())!.at, Math.floor(T0 / OPTION_SNAPSHOT_BUCKET_MS) * OPTION_SNAPSHOT_BUCKET_MS);
+  assert.equal(await lastOptionSnapshotAt(minuteLater + 60_000), Math.floor(minuteLater / 60_000) * 60_000);
 });

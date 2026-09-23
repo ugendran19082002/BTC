@@ -434,7 +434,8 @@ test('48 the spread gate lets a resting order through and stops one that crosses
   const wide = { products: [ceProduct()], quotes: [quote(CE, 17, 25)], balanceUsd: 100 };
 
   const resting = await rig(wide).engine.open(
-    planFor(ceProduct(), { lots: 1, stopPrice: 40, entry: { type: 'limit', limitPrice: 25, timeoutMs: 0, marketFallback: false, chase: null } }),
+    // A target under the 25 it sells at: the harness default (90) is over it, which is its own refusal.
+    planFor(ceProduct(), { lots: 1, stopPrice: 40, takeProfitPrice: 5, entry: { type: 'limit', limitPrice: 25, timeoutMs: 0, marketFallback: false, chase: null } }),
   );
   assert.ok(resting.ok, `resting at the offer should be allowed: ${JSON.stringify(resting.ok ? '' : resting.precheck)}`);
 

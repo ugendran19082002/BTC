@@ -197,11 +197,14 @@ describe('Price: the level itself', () => {
 });
 
 describe('before it fills', () => {
-  it('[critical] says the levels follow the fill, on the ticket only', () => {
+  it('[critical] a Price stays where it was typed; a % or Fixed moves with the fill -- said on the ticket only', () => {
     const { rerender } = render(<ExitBars {...base} entry={15} followsFill stop={{ ...off, on: true, mode: 'price', price: 70 }} />);
-    expect(screen.getByText(/Shown against 15.00\. If it fills at another price, the levels move with the fill/)).toBeInTheDocument();
+    expect(screen.getByText(/a Price stays where you typed it, and its balance is re-measured from the fill/)).toBeInTheDocument();
+    expect(screen.queryByText(/moves with the fill/)).toBeNull();
+    rerender(<ExitBars {...base} entry={15} followsFill stop={{ ...off, on: true, mode: 'points', points: 55 }} />);
+    expect(screen.getByText(/a % or Fixed exit moves with the fill and keeps its distance/)).toBeInTheDocument();
     rerender(<ExitBars {...base} entry={15} stop={{ ...off, on: true, mode: 'price', price: 70 }} />);
-    expect(screen.queryByText(/move with the fill/)).toBeNull();
+    expect(screen.queryByText(/re-measured from the fill/)).toBeNull();
   });
   it('[critical] switching the entry from the offer to the bid re-reads the distance at once', () => {
     const { rerender } = render(<ExitBars {...base} entry={15} stop={{ ...off, on: true, mode: 'price', price: 70 }} />);

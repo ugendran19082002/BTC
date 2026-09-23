@@ -134,33 +134,28 @@ export const stopFor = (entry: number, x: ExitAsk): number | null =>
 /**
  * The exits as they should follow the fill.
  *
- *   pct / points   kept as asked: 80% of the fill, fill + 55
- *   a price        turned into its distance from the price it was typed
- *                  against -- typed 70 over a 15 offer is fill + 55 -- so the
- *                  gap the person saw is the gap they get, wherever it fills
- *   an exact price given by a caller, or a price with no entry to measure
- *   from (a market order), is pinned and follows nothing
+ *   pct / points   kept as asked, and re-read off the actual fill: 80% of it,
+ *                  fill + 55 -- they are distances, and a distance is from the
+ *                  entry that happened
+ *   a price        NOT kept here: a level typed as a price is the level. Typed
+ *                  70 over a 15 offer that fills at 14, the stop is 70 and the
+ *                  balance is 56 -- re-measured from the fill, the level fixed
+ *   an exact price from a caller is pinned the same way
  *
  * Undefined when neither leg follows.
  */
-export function followingAsk(input: PlaceInput, basis: number | null): ExitAsk | undefined {
+export function followingAsk(input: PlaceInput, _basis: number | null): ExitAsk | undefined {
   const ask: ExitAsk = {};
-  if (input.takeProfitPrice === undefined) {
-    if ((input.takeProfitAt ?? 0) > 0) {
-      if (basis !== null && basis - input.takeProfitAt! > 0) ask.takeProfitPoints = round2(basis - input.takeProfitAt!);
-    } else if ((input.takeProfitPoints ?? 0) > 0) ask.takeProfitPoints = input.takeProfitPoints;
+  if (input.takeProfitPrice === undefined && !((input.takeProfitAt ?? 0) > 0)) {
+    if ((input.takeProfitPoints ?? 0) > 0) ask.takeProfitPoints = input.takeProfitPoints;
     else if ((input.takeProfitPct ?? 0) > 0) ask.takeProfitPct = input.takeProfitPct;
   }
-  if (input.stopPrice === undefined) {
-    if ((input.stopAt ?? 0) > 0) {
-      if (basis !== null && input.stopAt! - basis > 0) ask.stopLossPoints = round2(input.stopAt! - basis);
-    } else if ((input.stopLossPoints ?? 0) > 0) ask.stopLossPoints = input.stopLossPoints;
+  if (input.stopPrice === undefined && !((input.stopAt ?? 0) > 0)) {
+    if ((input.stopLossPoints ?? 0) > 0) ask.stopLossPoints = input.stopLossPoints;
     else if ((input.stopLossPct ?? 0) > 0) ask.stopLossPct = input.stopLossPct;
   }
   return Object.keys(ask).length ? ask : undefined;
 }
-
-const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export type PlaceInput = {
   symbol: string;

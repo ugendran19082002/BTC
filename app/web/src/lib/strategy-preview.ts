@@ -1,5 +1,5 @@
-import { strikeLabel, type AddToOpposite, type StrategyConfig } from '@/types/strategy';
-import { defaultAddUntil, time12, wrapsMidnight } from '@/lib/time';
+import { strikeLabel, type StrategyConfig } from '@/types/strategy';
+import { time12, wrapsMidnight } from '@/lib/time';
 import { exitRules, exitWords, type ExitRule } from '@/lib/strategy-exits';
 
 /**
@@ -68,10 +68,14 @@ export function describeExit(c: StrategyConfig): string {
   const tp = target.value > 0
     ? target.mode === 'points'
       ? `buys back ${target.value} pts under the entry`
-      : `buys back at ${Math.round(target.value * 100)}% decay`
+      : target.mode === 'price'
+        ? `buys back at ${target.value}`
+        : `buys back at ${Math.round(target.value * 100)}% decay`
     : 'holds to settlement';
   const sl = stop.value > 0
-    ? stop.mode === 'points' ? `stop at entry + ${stop.value} pts` : `stop at +${Math.round(stop.value * 100)}%`
+    ? stop.mode === 'points' ? `stop at entry + ${stop.value} pts`
+      : stop.mode === 'price' ? `stop at ${stop.value}`
+        : `stop at +${Math.round(stop.value * 100)}%`
     : 'no stop';
   return `${tp}${ladderWords(target)}, ${sl}${ladderWords(stop)}`;
 }
@@ -84,73 +88,11 @@ function ladderWords(r: ExitRule): string {
 /** One sentence covering the whole rule, for the list and the form header. */
 export function describeStrategy(c: StrategyConfig): string {
   const legs = c.legs === 'both' ? 'a call and a put' : `a ${c.legs === 'CE' ? 'call' : 'put'}`;
-  const gate = c.probGate === null
-    ? 'no probability gate'
-    : `skips a leg below ${Math.round(c.probGate * 1000) / 10}% to expire worthless`;
-  // Whatever refused the other leg: the gate, the score bar, no strike the
-  // rule can take, or the desk turning the order down for premium or spread.
-  const dbl = c.doubleWhenOneSided && c.legs === 'both'
-    ? ', and doubles the one that goes when the other is refused for any reason'
-    : '';
   return `At ${time12(c.entryTime)} IST on ${describeDays(c.weekdays)}, sells ${legs} `
     + `${describeStrike(c)}, ${c.lots} lot${c.lots === 1 ? '' : 's'} each. `
     + `It ${describeEntry(c)}, then ${describeExit(c)} or closes at ${time12(c.exitTime)}`
-    + `${wrapsMidnight(c.entryTime, c.exitTime) ? ' the next day' : ''}. `
-    + `It ${gate}${dbl}.`
-    + (describeScores(c) ? ` ${describeScores(c)}` : '')
-    + (describeAdd(c) ? ` ${describeAdd(c)}` : '');
+    + `${wrapsMidnight(c.entryTime, c.exitTime) ? ' the next day' : ''}.`;
 }
-
-/**
- * The two score bars, in the same sentence as each other because they are read
- * as a pair and behave differently: one waits, the other stands the day down.
- *
- * Written out rather than left to the switches, so the difference is read while
- * the numbers are being chosen rather than discovered from a journal line a
- * week later.
- */
-export function describeScores(c: StrategyConfig): string | null {
-  const parts: string[] = [];
-  if (c.minSellScore !== null && c.minSellScore !== undefined) {
-    parts.push(`skips a strike scoring under ${c.minSellScore}/100`);
-  }
-  if (c.maxShockScore !== null && c.maxShockScore !== undefined) {
-    parts.push(`waits while sudden-move risk is above ${c.maxShockScore}/100`);
-  }
-  if (!parts.length) return null;
-  return `It ${parts.join(', and ')}.`;
-}
-
-/**
- * The add to the other leg, as one sentence with its own numbers in it -- so
- * "$3" and "2x" are read back while they are being typed, not found out later.
- */
-export function describeAdd(c: StrategyConfig): string | null {
-  const a = c.addToOpposite;
-  if (!a || c.legs !== 'both') return null;
-  const min = `$${fmtNum(a.minPriceUsd)}`;
-  return `When one leg's target buys contracts back, it sells that many more of the other leg `
-    + `while its bid is ${min} or more and it is under ${fmtNum(a.maxMultiple)}x what it was sold for, `
-    + `appended to that leg with the same target and stop. Not on a one-sided day, `
-    + `and not after ${time12(a.addUntil ?? defaultAddUntil(c.exitTime))}.`;
-}
-
-/**
- * The rule tried on a few prices, so the numbers can be checked by eye.
- * `sold` is what the other leg was sold at; each row is its bid now.
- */
-export function addExamples(a: AddToOpposite, sold = 15, bought = 425): { bid: number; adds: boolean; why: string }[] {
-  const cap = sold * a.maxMultiple;
-  return [7, a.minPriceUsd, Math.max(0.05, a.minPriceUsd - 1), cap]
-    .filter((bid, i, all) => all.indexOf(bid) === i)
-    .map((bid) => {
-      if (bid < a.minPriceUsd) return { bid, adds: false, why: `below $${fmtNum(a.minPriceUsd)}` };
-      if (bid >= cap) return { bid, adds: false, why: `${fmtNum(a.maxMultiple)}x its $${fmtNum(sold)} sale or more` };
-      return { bid, adds: true, why: `sells ${bought} more` };
-    });
-}
-
-const fmtNum = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/0+$/, '').replace(/\.$/, ''));
 
 export type Sizing = {
   /** Contracts on the book at once, in the worst case this config allows. */
@@ -170,10 +112,7 @@ const MARGIN_PER_CONTRACT = (spot: number) => (spot / 200) * 0.001;
 /**
  * What this config would put at risk, in the numbers on the account card.
  *
- * The worst case rather than the typical one: doubling means a one-sided day
- * carries twice the lots, and that is the day the margin has to be there for.
- * A form that quotes the typical size is a form that runs out of margin on the
- * day it matters.
+ * Every leg the strategy sells, at its lots: what is on the book at once.
  */
 export function sizingOf(
   c: StrategyConfig,
@@ -182,11 +121,7 @@ export function sizingOf(
   usdInr = 85,
 ): Sizing {
   const legsOn = c.legs === 'both' ? 2 : 1;
-  const doubling = c.doubleWhenOneSided && c.legs === 'both';
-  // Both legs at one lot, or one leg at two: the same number of contracts.
-  // What changes is that doubling can also reach two legs on separate days, so
-  // the peak is the larger of the two shapes.
-  const maxContracts = Math.max(c.lots * legsOn, doubling ? c.lots * 2 : 0);
+  const maxContracts = c.lots * legsOn;
   const per = spot && spot > 0 ? MARGIN_PER_CONTRACT(spot) : 0;
   const marginUsd = per * maxContracts;
   const share = balanceUsd && balanceUsd > 0 ? marginUsd / balanceUsd : null;
@@ -196,9 +131,6 @@ export function sizingOf(
     warnings.push(`Needs about $${marginUsd.toFixed(0)} of margin against $${balanceUsd!.toFixed(0)} free — this cannot be funded.`);
   } else if (share !== null && share > 0.5) {
     warnings.push(`Would tie up ${Math.round(share * 100)}% of the account on a single day.`);
-  }
-  if (c.legs !== 'both' && c.doubleWhenOneSided) {
-    warnings.push('Doubling needs both legs; a single-leg strategy never has a survivor.');
   }
   const ex = exitRules(c);
   const anyExit = [ex.target, ex.stop].some((r) => r.value > 0 || r.steps.some((st) => st.value > 0));

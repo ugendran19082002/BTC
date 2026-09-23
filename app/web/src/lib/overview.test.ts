@@ -2,10 +2,9 @@ import { describe, expect, test } from 'vitest';
 import type { ChainResponse, Leg, Outlook } from '@/types/desk';
 import live from '@/test/fixtures/chain-live.json';
 import {
-  sideGates, bestLeg, bothSides, breakeven, candidates, consensus, expectedMove, feePerContract, freshness, gammaRisk,
-  ivRv, keyLevels, marginPerContract, modelView, odds, orderEstimate, payoffPrices, premiumAnalysis, shortPayoff, skew, volRegime,
-  ageText, contractChecks, contractValidity, dataFreshness, expiryDirection, mtfConsensus, executionRead, finderRanks, mustChange, optionBias, persistence, sellerImpact, sellerState, skewRichness, strikeSignals, windowMinutes, premiumDecay, triggerState, DESK_FILTER, filtersChanged, assessBoth, assessSides, horizonRows, namedLevels, earlyWarning, findStrikes, boardRead, movementVerdict, parseSymbol, positionState, positionViews, premiumMomentum, riskEngine, shortLossAt,
-  type SideAssessment,
+  sideGates, bestLeg, candidates, consensus, expectedMove, feePerContract, freshness, gammaRisk,
+  ivRv, keyLevels, marginPerContract, modelView, odds, orderEstimate, premiumAnalysis, skew, volRegime,
+  ageText, contractValidity, dataFreshness, expiryDirection, mtfConsensus, finderRanks, optionBias, sellerImpact, sellerState, skewRichness, fundingRead, windowMinutes, triggerState, DESK_FILTER, filtersChanged, assessSides, horizonRows, namedLevels, earlyWarning, findStrikes, boardRead, movementVerdict, parseSymbol, positionState, positionViews, premiumMomentum, shortLossAt,
 } from './overview';
 
 const fixtureData = () => live as unknown as ChainResponse;
@@ -81,26 +80,6 @@ describe('odds', () => {
   });
   test('with no measured figure, the model, labelled as the model', () => {
     expect(odds(leg({})).source).toBe('model');
-  });
-});
-
-describe('payoff', () => {
-  test('[critical] a short call keeps the premium below the strike and loses the move above it', () => {
-    const rows = shortPayoff('C', 78_500, 193, [78_000, 78_500, 79_000, 80_000], 1_000);
-    expect(rows.map((r) => r.pnlUsd)).toEqual([193, 193, -307, -1_307]);
-  });
-  test('a short put is the mirror', () => {
-    expect(shortPayoff('P', 76_500, 51, [76_000, 77_000], 1_000).map((r) => r.pnlUsd)).toEqual([-449, 51]);
-  });
-  test('scaled by contracts: 10 contracts is a hundredth of a BTC', () => {
-    expect(shortPayoff('C', 78_500, 193, [78_000], 10)[0]!.pnlUsd).toBeCloseTo(1.93, 9);
-  });
-  test('breakeven', () => {
-    expect(breakeven('C', 78_500, 193)).toBe(78_693);
-    expect(breakeven('P', 76_500, 51)).toBe(76_449);
-  });
-  test('the price grid includes spot and straddles the strike', () => {
-    expect(payoffPrices(78_000, 77_967, 500, 1)).toEqual([77_500, 78_000, 78_500]);
   });
 });
 
@@ -186,12 +165,7 @@ describe('margin, fees and the order estimate', () => {
   });
 });
 
-describe('both sides and the vol regime', () => {
-  it('a side is safe one expected move out; net delta is the pair short', () => {
-    const b = bothSides(fixtureData().legs);
-    expect(b.ce === null || typeof b.ceSafe === 'boolean' || b.ceSafe === null).toBe(true);
-    if (b.ce?.delta != null && b.pe?.delta != null) expect(b.netDelta).toBeCloseTo(-(b.ce.delta + b.pe.delta), 9);
-  });
+describe('the vol regime', () => {
   it('the regime is the hour against the month', () => {
     expect(volRegime(60, 40)?.label).toBe('high');
     expect(volRegime(20, 40)?.label).toBe('low');
@@ -221,25 +195,6 @@ describe('the sides assessed, and both together', () => {
     expect(shortLossAt('P', 78_000, 100, 76_900, 10)).toBeCloseTo(1_000 * 0.01, 9);
   });
 
-  it('[critical] both sides activates only when each side passes on its own', () => {
-    const sides = assessSides(data, iv, em, 10, 200);
-    const b = assessBoth(data, sides, 10, 200, em);
-    const pass = (s: typeof sides[number]) => Boolean(s.leg && s.status !== 'NOT PREFERRED' && (s.emDistance ?? 0) >= 1);
-    const n = sides.filter(pass).length;
-    expect(b.status).toBe(n === 2 ? 'BOTH' : n === 1 ? 'SINGLE SIDE' : 'NO TRADE');
-  });
-});
-
-describe('the risk engine', () => {
-  const data = fixtureData();
-  const em = expectedMove(data.snapshot);
-  it('reads a strike: shocks, slippage, protection', () => {
-    const l = data.legs.find((x) => x.cp === 'C' && x.bid !== null && x.ask !== null && (x.sellPrice ?? x.mark) !== null)!;
-    const r = riskEngine(l, data.legs, em, data.snapshot.spot, data.snapshot.hoursToExpiry, 10, 200)!;
-    expect(r.premium).toBeGreaterThan(0);
-    expect(r.slippageUsd).toBeCloseTo(((l.ask! - l.bid!) / 2) * 0.01, 9);
-    if (l.vega !== null) expect(r.vegaShockUsd).toBeCloseTo(-l.vega * 5 * 0.01, 9);
-  });
 });
 
 describe('the position state engine', () => {
@@ -359,19 +314,6 @@ describe('the contract and the data', () => {
   });
 });
 
-describe('premium decay', () => {
-  it('[critical] runs from the premium now to the intrinsic at expiry on √time; half the extrinsic goes by 0.75 T, four-fifths by 0.96 T', () => {
-    const { points, milestones } = premiumDecay(51, 3, 12, 4);
-    expect(points.map((p) => p.label)).toEqual(['Now', '3h', '6h', '9h', 'Exp']);
-    expect(points[0]!.premium).toBe(51);
-    expect(points.at(-1)!.premium).toBeCloseTo(3, 9);
-    expect(points[2]!.premium).toBeCloseTo(3 + 48 * Math.SQRT1_2, 9);
-    expect(milestones.map((m) => m.share)).toEqual([0.5, 0.8, 0.9]);
-    expect(milestones[0]!.hoursFromNow).toBeCloseTo(9, 9); expect(milestones[1]!.hoursFromNow).toBeCloseTo(12 * 0.96, 9); expect(milestones[2]!.hoursFromNow).toBeCloseTo(12 * 0.99, 9);
-    for (let i = 1; i < points.length; i++) expect(points[i]!.premium).toBeLessThanOrEqual(points[i - 1]!.premium);
-  });
-});
-
 describe('the early warning lamps', () => {
   it('[critical] NORMAL under 70% of the threshold, WATCH from there, TRIGGERED at it; unreadable is neither', () => {
     expect(triggerState(0.3)).toBe('NORMAL'); expect(triggerState(0.7)).toBe('WATCH'); expect(triggerState(0.99)).toBe('WATCH');
@@ -427,20 +369,7 @@ describe('windows', () => {
   });
 });
 
-describe('strike signals and the execution read', () => {
-  it('[critical] tags what the strike\'s own fields say, and nothing they do not', () => {
-    const data = fixtureData();
-    const l = data.legs.find((x) => x.cp === 'C' && x.moneyness === 'OTM' && x.bid !== null && x.ask !== null && x.theta !== null)!;
-    const sig = strikeSignals(l, { oiChange: 600, oiThen: 10_000, ivChangePts: 2.5 }, ivRv(0.5, 0.3 * 100));
-    expect(sig).toContain('OI BUILDUP'); expect(sig).toContain('IV EXPANSION'); expect(sig).toContain('PREMIUM RICH');
-    expect(strikeSignals(l, { oiChange: -800, oiThen: 10_000, ivChangePts: -3 }, null)).toEqual(expect.arrayContaining(['OI UNWIND', 'IV CRUSH']));
-    expect(strikeSignals(l, null, null).some((x) => ['OI BUILDUP', 'OI UNWIND', 'IV EXPANSION', 'IV CRUSH'].includes(x))).toBe(false);
-    const r = executionRead({ ...l, bid: 10, ask: 12, mark: 11 } as never, data.snapshot.spot, 1);
-    expect(r.mid).toBe(11); expect(r.spread).toBe(2); expect(r.spreadPct).toBeCloseTo(18.18, 1); expect(r.markToBid).toBeCloseTo(1.1, 9);
-  });
-});
-
-describe('the finder\'s best, persistence, what must change, the contract', () => {
+describe('the finder\'s best', () => {
   it('names the safest, the most balanced and the richest strike a side', () => {
     const data = fixtureData();
     const r = finderRanks(findStrikes(data.legs, { ...DESK_FILTER, side: 'both', minPremium: 1, maxPot: 1, minEm: 0, top: 10 }));
@@ -448,20 +377,7 @@ describe('the finder\'s best, persistence, what must change, the contract', () =
     for (const k of ['BEST SAFE', 'BEST BALANCED', 'BEST PREMIUM']) expect(all.filter((x) => x === k).length).toBeLessThanOrEqual(2);
     expect(all.length).toBeGreaterThan(0);
   });
-  it('[critical] a side is VALID only after three boards agree', () => {
-    expect(persistence(['PE'])).toMatchObject({ side: 'PE', confirmations: 1, valid: false });
-    expect(persistence(['CE', 'PE', 'PE'])).toMatchObject({ confirmations: 2, valid: false });
-    expect(persistence(['PE', 'PE', 'PE', 'PE'])).toMatchObject({ confirmations: 3, valid: true, text: 'VALID' });
-  });
-  it('turns the failing gates into what must change, and says when to look again', () => {
-    const focus = { side: 'PE', gates: [{ name: 'IV − RV', ok: false, text: 'cheap' }, { name: 'Liquidity', ok: false, text: 'spread 8%' }, { name: 'PoT', ok: true, text: '' }] } as never as SideAssessment;
-    const m = mustChange(focus, { scored: 7, up: 3, down: 2, side: 2, way: 'SIDE', text: '3/7 SIDE', rows: [] }, { maxPot: 0.25, minEmDistance: 1.25, maxSlippage: 0.05 }, 0.15, Date.UTC(2026, 8, 20, 2, 33, 0));
-    expect(m.why).toEqual(['IV − RV: cheap', 'Liquidity: spread 8%']);
-    expect(m.toTrade).toEqual(['IV above realised (ratio ≥ 0.9×)', 'Spread ≤ 15% of the premium']);
-    expect(m.recheckIst).toBe('08:05');
-    const c = contractChecks({ live: true, expiryTs: Date.UTC(2026, 8, 20, 12) / 1000, isDaily: true, isNextEntry: true, step: 200, hoursToExpiry: 8 }, Date.UTC(2026, 8, 20, 4));
-    expect(c.map((x) => x.ok)).toEqual([true, true, true, true]);
-  });
+
 });
 
 describe('skew richness', () => {
@@ -505,5 +421,21 @@ describe("sideGates liquidity", () => {
     expect(pass.ok).toBe(true);
     expect(pass.text).toBe('spread 9.5% of premium (limit 15%)');
     expect(sideGates({ ...base, leg: wide, maxSpreadPct: 0.05 }).find((g) => g.name === 'Liquidity')!.ok).toBe(false);
+  });
+});
+
+describe('funding, read as who pays', () => {
+  it('[critical] the four readings from the reference: 0.0095%, 0.001%, 0, −0.0095%', () => {
+    expect(fundingRead(0.0095)).toEqual({ decimal: 0.000095, per10k: 0.95, who: 'longs', label: 'Longs pay · bullish', tone: 'up' });
+    expect(fundingRead(0.001)).toMatchObject({ per10k: 0.1, who: 'longs', label: 'Longs pay · mild bullish', tone: 'up' });
+    expect(fundingRead(0)).toMatchObject({ per10k: 0, who: 'none', label: 'Neutral · no payment', tone: 'muted' });
+    expect(fundingRead(-0.0095)).toMatchObject({ per10k: 0.95, who: 'shorts', label: 'Shorts pay · bearish', tone: 'down' });
+  });
+  it('the usual 0.01% is $1.00 on $10,000 every 8 hours', () => {
+    expect(fundingRead(0.01)?.per10k).toBe(1);
+  });
+  it('no reading is no card', () => {
+    expect(fundingRead(null)).toBeNull();
+    expect(fundingRead(Number.NaN)).toBeNull();
   });
 });

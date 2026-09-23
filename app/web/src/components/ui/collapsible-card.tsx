@@ -49,7 +49,9 @@ export function CollapsibleCard({
       aria-label={ariaLabel}
       className={cn(
         'rounded-lg border border-border bg-background p-3.5 sm:p-4',
-        'flex flex-col gap-0',
+        // min-w-0: a card in a grid or flex column must be able to be narrower
+        // than its longest title, or a phone scrolls sideways (Settings, 22 Sep).
+        'flex min-w-0 flex-col gap-0',
         className,
       )}
     >
@@ -74,7 +76,7 @@ export function CollapsibleCard({
               open ? '' : '-rotate-90',
             )}
           />
-          <h2 className="m-0 truncate text-[10.5px] font-semibold uppercase tracking-[0.8px] text-muted-foreground">
+          <h2 className="m-0 min-w-0 truncate text-[10.5px] font-semibold uppercase tracking-[0.8px] text-muted-foreground">
             {title}
           </h2>
         </Collapsible.Trigger>

@@ -11,17 +11,12 @@ import { exitRuleProblems, exitRules, premiumFallbackProblem } from '@/lib/strat
  * the tab it is on, and Save says what is left rather than failing afterwards.
  */
 
-export type FormTab = 'when' | 'sell' | 'trade' | 'extras';
+export type FormTab = 'when' | 'sell' | 'trade';
 
 export type FormField =
   | 'name' | 'entryTime' | 'exitTime' | 'weekdays' | 'graceMin'
   | 'legs' | 'strikeRule' | 'strikeStep' | 'premium' | 'premiumFallback' | 'lots'
-  | 'entryLimit' | 'crossAfterSec' | 'maxCrossSpreadPct' | 'takeProfitPct' | 'stopLossPct'
-  | 'probGate' | 'doubleWhenOneSided' | 'minSellScore' | 'maxShockScore'
-  | 'addMinPrice' | 'addMultiple' | 'addUntil' | 'addCrossAfterSec' | 'add'
-  | 'rebalance' | 'rebalanceLots' | 'rebalanceSteps' | 'rebalanceUp' | 'rebalanceDown'
-  | 'rebalanceIncrement' | 'rebalanceConfirm' | 'rebalanceCap' | 'rebalanceEnd'
-  | 'rebalanceCross' | 'rebalanceSpread';
+  | 'entryLimit' | 'crossAfterSec' | 'maxCrossSpreadPct' | 'takeProfitPct' | 'stopLossPct';
 
 export type Problem = { field: FormField; tab: FormTab; message: string };
 
@@ -29,11 +24,6 @@ const TAB: Record<FormField, FormTab> = {
   name: 'when', entryTime: 'when', exitTime: 'when', weekdays: 'when', graceMin: 'when',
   legs: 'sell', strikeRule: 'sell', strikeStep: 'sell', premium: 'sell', premiumFallback: 'sell', lots: 'sell',
   entryLimit: 'trade', crossAfterSec: 'trade', maxCrossSpreadPct: 'trade', takeProfitPct: 'trade', stopLossPct: 'trade',
-  probGate: 'extras', doubleWhenOneSided: 'extras', minSellScore: 'extras', maxShockScore: 'extras',
-  addMinPrice: 'extras', addMultiple: 'extras', addUntil: 'extras', addCrossAfterSec: 'extras', add: 'extras',
-  rebalance: 'extras', rebalanceLots: 'extras', rebalanceSteps: 'extras', rebalanceUp: 'extras',
-  rebalanceDown: 'extras', rebalanceIncrement: 'extras', rebalanceConfirm: 'extras',
-  rebalanceCap: 'extras', rebalanceEnd: 'extras', rebalanceCross: 'extras', rebalanceSpread: 'extras',
 };
 
 export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
@@ -85,83 +75,6 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
 
   if (!Number.isInteger(c.graceMin) || c.graceMin < 1 || c.graceMin > 240) {
     say('graceMin', 'The late-entry window must be a whole number of minutes from 1 to 240.');
-  }
-  if (c.probGate !== null && (!(c.probGate > 0) || c.probGate >= 1)) say('probGate', 'The probability gate must be between 0 and 1, or off.');
-  if (c.doubleWhenOneSided && c.legs !== 'both') say('doubleWhenOneSided', 'Doubling the surviving leg needs both legs selected.');
-
-  const whole = (v: number) => Number.isInteger(v) && v >= 1 && v <= 100;
-  if (c.minSellScore !== null && c.minSellScore !== undefined && !whole(c.minSellScore)) {
-    say('minSellScore', 'The sell-score bar must be a whole number from 1 to 100, or off.');
-  }
-  if (c.maxShockScore !== null && c.maxShockScore !== undefined && !whole(c.maxShockScore)) {
-    say('maxShockScore', 'The sudden-move risk limit must be a whole number from 1 to 100, or off.');
-  }
-
-  const add = c.addToOpposite;
-  if (add) {
-    if (!(add.minPriceUsd > 0) || add.minPriceUsd > 10_000) say('addMinPrice', 'Adding to the other leg needs a minimum price above $0.');
-    if (!(add.maxMultiple > 0) || add.maxMultiple > 20) {
-      say('addMultiple', 'The "not once it has risen to" limit must be between 0 and 20 times the sale price.');
-    }
-    const cross = add.crossAfterSec;
-    if (cross !== null && cross !== undefined && (!Number.isInteger(cross) || cross < 0 || cross > 600)) {
-      say('addCrossAfterSec', 'Seconds before the add sells at the bid must be a whole number from 0 to 600.');
-    }
-    if (!isHhmm(add.addUntil)) {
-      say('addUntil', 'The latest time to add must be a time of day, like 4:59 PM.');
-    } else if (entryOk && exitOk) {
-      const entry = minutesOf(c.entryTime);
-      const until = minutesForward(entry, minutesOf(add.addUntil));
-      if (until === 0 || until >= minutesForward(entry, minutesOf(c.exitTime))) {
-        say('addUntil', `The latest time to add (${time12(add.addUntil)}) must be after entry (${time12(c.entryTime)}) `
-          + `and before exit (${time12(c.exitTime)}).`);
-      }
-    }
-    if (c.legs !== 'both') say('add', 'Adding to the other leg needs both legs selected.');
-    if (!(rules.target.value > 0)) say('add', 'Adding to the other leg needs a target -- it runs when a target fills.');
-  }
-
-  /*
-   * The rebalance, checked in the browser so the form can point at the box
-   * rather than showing a server message after a save. The same checks run
-   * again on the server, which is the one that counts.
-   */
-  const reb = c.rebalance;
-  if (reb && reb.enabled) {
-    if (c.legs !== 'both') say('rebalance', 'Rebalancing needs both legs selected — there is nothing to rebalance between.');
-    if (!Number.isInteger(reb.steps) || reb.steps < 1) say('rebalanceSteps', 'At least one stage.');
-    if (!Number.isInteger(reb.lotsPerStep) || reb.lotsPerStep < 1) say('rebalanceLots', 'Lots must be a whole number above zero.');
-    if (!(reb.upStartPct > 0)) say('rebalanceUp', 'The first up move must be above 0%.');
-    if (!(reb.downStartPct > 0) || reb.downStartPct >= 100) {
-      say('rebalanceDown', 'The first down move must be above 0% and under 100% — a premium cannot fall by more than all of itself.');
-    }
-    if (!(reb.incrementPct >= 0)) say('rebalanceIncrement', 'The step cannot be negative.');
-    const lastDown = reb.downStartPct + reb.incrementPct * (reb.steps - 1);
-    if (reb.steps >= 1 && lastDown >= 100) {
-      say('rebalanceSteps', `Stage ${reb.steps} would need the price to fall ${lastDown}%, which cannot happen. `
-        + 'Use fewer stages, a smaller step, or a smaller first down move.');
-    }
-    if (!Number.isInteger(reb.confirmTicks) || reb.confirmTicks < 1) {
-      say('rebalanceConfirm', 'At least one confirming reading.');
-    }
-    const cross = reb.crossAfterSec;
-    if (cross !== null && cross !== undefined && (!Number.isInteger(cross) || cross < 0 || cross > 600)) {
-      say('rebalanceCross', 'Seconds before it sells at the bid must be a whole number from 0 to 600.');
-    }
-    if (reb.maxLotsPerSide !== null && reb.maxLotsPerSide < c.lots) {
-      say('rebalanceCap', `The cap (${reb.maxLotsPerSide}) is under the ${c.lots} lots the strategy opens with, `
-        + `so no stage could ever run. This rule reaches ${c.lots + Math.min(c.lots, reb.lotsPerStep * reb.steps)} lots at most.`);
-    }
-    if (!isHhmm(reb.endTime)) {
-      say('rebalanceEnd', 'The latest time to rebalance must be a time of day, like 1:30 PM.');
-    } else if (entryOk && exitOk) {
-      const entry = minutesOf(c.entryTime);
-      const until = minutesForward(entry, minutesOf(reb.endTime));
-      if (until === 0 || until >= minutesForward(entry, minutesOf(c.exitTime))) {
-        say('rebalanceEnd', `The latest time to rebalance (${time12(reb.endTime)}) must be after entry `
-          + `(${time12(c.entryTime)}) and before exit (${time12(c.exitTime)}).`);
-      }
-    }
   }
   return out;
 }

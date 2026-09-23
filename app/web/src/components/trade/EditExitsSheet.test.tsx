@@ -30,6 +30,8 @@ const trade = (over: Partial<Trade> = {}): Trade => ({
     entry: { type: 'limit', limitPrice: 30.9, timeoutMs: 0, marketFallback: false },
     takeProfitPrice: 1.9,
     stopPrice: null,
+    // set as a percentage, so it opens as one
+    exitAsk: { takeProfitPct: 0.94 },
     leverage: 200,
   },
   onBook: { target: 1.9, stop: null },
@@ -286,5 +288,35 @@ describe('the live figures', () => {
   it('has nothing to claim when the exchange has not sent a mark', () => {
     render(<EditExitsSheet trade={withLive({ markPrice: null })} open onOpenChange={() => {}} />);
     expect(screen.queryByText(/fills as soon as it is set/)).toBeNull();
+  });
+});
+
+describe('[critical] each exit opens in the terms it was set in', () => {
+  /** 22 Sep: UG-PE sold 100 × 83,800 PE at 20 -- target 80% (follows the fill), stop at 70 (a fixed price). */
+  const ug = () => trade({
+    symbol: 'P-BTC-83800-230926', position: -100, entrySize: 100, entryAvgPrice: 20,
+    plan: { ...trade().plan!, takeProfitPrice: 4, stopPrice: 70, exitAsk: { takeProfitPct: 0.8 } },
+    onBook: { target: 4, stop: 70 },
+  });
+
+  it('the stop set as a price opens as Price 70 -- not as "+250%"', () => {
+    render(<EditExitsSheet trade={ug()} open onOpenChange={() => {}} />);
+    expect(screen.getByRole('textbox', { name: 'stop price' })).toHaveValue('70');
+    expect(screen.queryByText('+250%')).toBeNull();
+    expect(screen.getByText('at 70.00 (+50 pts)')).toBeInTheDocument();
+    // the target was a percentage, and stays one
+    expect(screen.getByRole('textbox', { name: 'target percent' })).toHaveValue('80');
+  });
+
+  it('[critical] saving without touching anything keeps the stop fixed at 70', async () => {
+    render(<EditExitsSheet trade={ug()} open onOpenChange={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: /save exits/i }));
+    await waitFor(() => expect(updateExits).toHaveBeenCalled());
+    expect(updateExits.mock.calls[0]![1]).toMatchObject({ stopPrice: 70, stopLossPct: 0, stopLossPoints: 0, takeProfitPct: 0.8 });
+  });
+
+  it('a stop set as points opens as Fixed', () => {
+    render(<EditExitsSheet trade={trade({ plan: { ...ug().plan!, exitAsk: { stopLossPoints: 50 } }, onBook: { target: 4, stop: 70 }, entryAvgPrice: 20 })} open onOpenChange={() => {}} />);
+    expect(screen.getByRole('textbox', { name: 'stop points' })).toHaveValue('50');
   });
 });

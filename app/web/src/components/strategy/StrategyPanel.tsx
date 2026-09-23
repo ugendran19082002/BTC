@@ -8,9 +8,12 @@ import { StrategyForm } from '@/components/strategy/StrategyForm';
 import { usePoll } from '@/hooks/usePoll';
 import { clock, stamp } from '@/lib/format';
 import { describeDays, describeStrike } from '@/lib/strategy-preview';
-import { defaultAddUntil, time12 } from '@/lib/time';
+import { time12 } from '@/lib/time';
+import { exitRules, exitWords, type ExitRule } from '@/lib/strategy-exits';
 import { cn } from '@/lib/utils';
 import { LogTable } from '@/components/strategy/LogTable';
+import { overlapWarnings } from '@/lib/strategy-checks';
+import { EntryCountdown } from '@/components/strategy/EntryCountdown';
 
 /**
  * The strategies, what is armed, and when each one next runs.
@@ -25,6 +28,8 @@ import { LogTable } from '@/components/strategy/LogTable';
 /** The whole rule in one line, so a strategy can be checked without opening it. */
 function summarise(s: Strategy): string {
   const c = s.config;
+  const exits = exitRules(c);
+  const steps = (r: ExitRule) => (r.steps.length ? ` → ${r.steps.map((st) => exitWords(r.mode, st.value)).join(' → ')}` : '');
   const parts = [
     c.legs === 'both' ? 'CE + PE' : c.legs,
     // The rule that picks the strike, whichever one it is. It used to read the
@@ -36,14 +41,10 @@ function summarise(s: Strategy): string {
     c.entryPrice === 'offer'
       ? `sell at offer${c.crossAfterSec ? `, bid after ${c.crossAfterSec}s if spread ≤ ${Math.round((c.maxCrossSpreadPct ?? 0.15) * 100)}%` : ', wait'}`
       : `sell at ${c.entryPrice}`,
-    c.takeProfitPct > 0 ? `target ${Math.round(c.takeProfitPct * 100)}%` : 'hold to expiry',
+    // In the exit's own mode, and with its timetable when it has one.
+    exits.target.value > 0 ? `target ${exitWords(exits.target.mode, exits.target.value)}${steps(exits.target)}` : 'hold to expiry',
   ];
-  if (c.stopLossPct > 0) parts.push(`stop ${Math.round(c.stopLossPct * 100)}%`);
-  if (c.probGate !== null) parts.push(`min safety ${Math.round(c.probGate * 1000) / 10}%`);
-  if (c.doubleWhenOneSided) parts.push('double if one side is refused');
-  if (c.addToOpposite) {
-    parts.push(`add to other leg if bid ≥ $${c.addToOpposite.minPriceUsd}, under ${c.addToOpposite.maxMultiple}x, until ${time12(c.addToOpposite.addUntil ?? defaultAddUntil(c.exitTime))}`);
-  }
+  if (exits.stop.value > 0) parts.push(`stop ${exitWords(exits.stop.mode, exits.stop.value)}${steps(exits.stop)}`);
   return parts.join(' · ');
 }
 
@@ -131,7 +132,17 @@ export function StrategyPanel() {
           </Button>
         }
       >
-
+        {/*
+          Two strategies that would sell the same leg at the same minute: fine
+          alone, twice the lots on one strike together. Said above the list so
+          it is read before either is switched on.
+        */}
+        {overlapWarnings(data.strategies).map((w) => (
+          <p key={w.ids.join('+')} role="alert"
+             className="m-0 mb-2 rounded-md border border-[var(--warn)]/40 bg-[var(--warn)]/10 px-2.5 py-2 text-[12px] leading-snug text-[var(--warn)]">
+            {w.text}
+          </p>
+        ))}
         <div className="grid gap-2">
           {data.strategies.map((s) => (
             <div
@@ -202,6 +213,8 @@ export function StrategyPanel() {
                 {s.status}
                 {s.nextEntryAt && ` · next ${stamp(s.nextEntryAt)}`}
               </p>
+              {/* Armed: the time left to its entry, ticking. */}
+              {s.enabled && <EntryCountdown nextEntryAt={s.nextEntryAt} schedulerOn={data.schedulerOn} />}
             </div>
           ))}
         </div>
@@ -233,35 +246,6 @@ export function StrategyPanel() {
         </CollapsibleCard>
       )}
 
-      {(data.adds?.length ?? 0) > 0 && (
-        <CollapsibleCard id="strategy-adds" title="Adds to the other leg">
-          {/*
-            Every time a target bought contracts back on a strategy that adds,
-            and what was decided -- including the times nothing was added, with
-            the reason, because that is the one a person checks.
-          */}
-          <LogTable
-            label="adds"
-            extraHead="From"
-            rows={data.adds!.map((a) => ({
-              id: a.id,
-              // Date and time, not the clock alone: the runs log beside it
-              // carries its own run date, so a bare "13:54" here reads as
-              // today's and an add from Friday is indistinguishable from one
-              // from ten minutes ago.
-              at: stamp(a.at),
-              who: data.strategies.find((s) => s.id === a.strategyId)?.name ?? a.strategyId,
-              extra: `${a.sourceSide} × ${a.contracts}`,
-              outcome: a.status === 'placed' ? 'added'
-                : a.status === 'placing' ? 'sending'
-                  : a.status === 'skipped' ? 'not added' : a.status,
-              tone: a.status === 'placed' ? 'ok' as const
-                : a.status === 'refused' || a.status === 'failed' ? 'bad' as const : 'quiet' as const,
-              detail: a.detail,
-            }))}
-          />
-        </CollapsibleCard>
-      )}
 
       <StrategyForm
         // Remounts when the target changes, so the form never opens holding the

@@ -151,7 +151,10 @@ export function ExitBars({
       )}
       {followsFill && (target.on || stop.on) && (
         <p className="m-0 mt-1.5 pl-[26px] text-[11px] leading-snug text-[var(--dim)]">
-          Shown against {entry !== null ? fmtPrice(entry) : 'the entry'}. If it fills at another price, the levels move with the fill and keep the same distance.
+          Shown against {entry !== null ? fmtPrice(entry) : 'the entry'}. If it fills at another price,{' '}
+          {[target, stop].some((x) => x.on && x.mode !== 'price') && 'a % or Fixed exit moves with the fill and keeps its distance'}
+          {[target, stop].some((x) => x.on && x.mode !== 'price') && [target, stop].some((x) => x.on && x.mode === 'price') && '; '}
+          {[target, stop].some((x) => x.on && x.mode === 'price') && 'a Price stays where you typed it, and its balance is re-measured from the fill'}.
         </p>
       )}
     </div>

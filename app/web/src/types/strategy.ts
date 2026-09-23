@@ -29,8 +29,12 @@ export function strikeLabel(step: number): string {
   return step > 0 ? `OTM ${step}` : `ITM ${-step}`;
 }
 
-/** An exit read as a share (0.8 = 80%) or as points in the option's own price. */
-export type ExitMode = 'pct' | 'points';
+/**
+ * An exit read as a share (0.8 = 80%), as points from the entry, or as the
+ * price itself -- the level, whatever the entry; its balance (level minus
+ * entry) is re-measured from the entry that happens.
+ */
+export type ExitMode = 'pct' | 'points' | 'price';
 
 /** From `at` (IST "HH:MM"), the exit becomes `value`, in its rule's units. Zero turns it off. */
 export type ExitStep = { at: string; value: number };
@@ -66,12 +70,16 @@ export type StrategyConfig = {
   targetMode?: ExitMode;
   /** Target as points under the entry price. Absent is 0. */
   takeProfitPoints?: number;
+  /** Target as the price itself, in `price` mode. Absent is 0. */
+  takeProfitAt?: number;
   /** From each step's time, the target becomes its value, in `targetMode` units. */
   targetSteps?: ExitStep[];
   /** How the stop is read: a share of the entry, or points over it. Absent is 'pct'. */
   stopMode?: ExitMode;
   /** Stop as points over the entry price. Absent is 0. */
   stopLossPoints?: number;
+  /** Stop as the price itself, in `price` mode: 70 is 70, whatever the entry. Absent is 0. */
+  stopLossAt?: number;
   /** From each step's time, the stop becomes its value, in `stopMode` units. */
   stopSteps?: ExitStep[];
   lots: number;
@@ -87,189 +95,8 @@ export type StrategyConfig = {
    * existed, which read as 60.
    */
   graceMin: number;
-  probGate: number | null;
-  doubleWhenOneSided: boolean;
-  /**
-   * Sell a leg only if its strike scores at least this out of 100 — the board's
-   * own sell score. null is off; older strategies lack it.
-   *
-   * Refuses the day, like the probability gate: the strike is what it is.
-   */
-  minSellScore?: number | null;
-  /**
-   * Enter only while the sudden-move risk score is at most this, out of 100.
-   * null is off; older strategies lack it.
-   *
-   * Waits rather than refusing — the next tick looks again, until the entry
-   * window closes.
-   */
-  maxShockScore?: number | null;
-  /**
-   * When one leg's target buys contracts back, sell as many more of the other
-   * leg -- while its bid is at least `minPriceUsd` and its price is under
-   * `maxMultiple` times what it was sold for. null is off; older strategies lack it.
-   */
-  addToOpposite?: AddToOpposite | null;
-  /** Null is off, which is what every strategy saved before this had. */
-  rebalance?: RebalanceRule | null;
   /** 0 = Sunday … 6 = Saturday. */
   weekdays: number[];
-};
-
-/**
- * Dynamic one-sided rebalance: buy back part of the side that fell, sell the
- * same number again on the side that rose, stage by stage. Every number here is
- * typed on the screen -- the stages are "…n", not three.
- */
-export type RebalanceRule = {
-  enabled: boolean;
-  lotsPerStep: number;
-  steps: number;
-  upStartPct: number;
-  downStartPct: number;
-  incrementPct: number;
-  confirmTicks: number;
-  /** Latest IST time a stage may fire, "HH:MM". The exit still runs after it. */
-  endTime: string;
-  lockDirection: boolean;
-  maxLotsPerSide: number | null;
-  /** Keep the cap at what the rule can reach. A number typed by hand turns it off. */
-  capAuto?: boolean;
-  allowPartial: boolean;
-  maxSpreadPct: number | null;
-  /**
-   * If the rebalance sell has not filled, sell at the bid after this many
-   * seconds. Null is the strategy's own entry seconds; zero rests at the offer.
-   */
-  crossAfterSec?: number | null;
-};
-
-export type RebalanceLimits = {
-  maxSteps: number;
-  maxLotsPerStep: number;
-  maxUpPct: number;
-  maxDownPct: number;
-  maxIncrementPct: number;
-  maxConfirmTicks: number;
-  maxLotsPerSide: number;
-};
-
-/** What a rule starts as before the desk's own defaults arrive from the server. */
-export const DEFAULT_REBALANCE: RebalanceRule = {
-  enabled: true,
-  lotsPerStep: 30,
-  steps: 3,
-  upStartPct: 30,
-  downStartPct: 20,
-  incrementPct: 10,
-  confirmTicks: 2,
-  endTime: '13:30',
-  lockDirection: true,
-  maxLotsPerSide: 200,
-  capAuto: true,
-  allowPartial: true,
-  maxSpreadPct: 0.15,
-  crossAfterSec: null,
-};
-
-/** Stage n's thresholds, and what they mean in money against a sale price. */
-export function stageThresholds(
-  rule: Pick<RebalanceRule, 'steps' | 'upStartPct' | 'downStartPct' | 'incrementPct'>,
-  base: number | null,
-): { stage: number; upPct: number; downPct: number; upPrice: number | null; downPrice: number | null }[] {
-  const out = [];
-  for (let i = 0; i < Math.max(0, Math.min(100, Math.round(rule.steps))); i++) {
-    const upPct = rule.upStartPct + rule.incrementPct * i;
-    const downPct = rule.downStartPct + rule.incrementPct * i;
-    out.push({
-      stage: i + 1,
-      upPct,
-      downPct,
-      upPrice: base === null ? null : Math.round(base * (1 + upPct / 100) * 100) / 100,
-      downPrice: base === null ? null : Math.round(base * (1 - downPct / 100) * 100) / 100,
-    });
-  }
-  return out;
-}
-
-/**
- * The most one side can ever reach, so the cap can be set to fit rather than
- * guessed. Each stage moves lots from the fallen side to the risen one, and the
- * fallen side is what runs out: 700 + 700 with 30 a stage over 3 stages reaches
- * 790 at most.
- */
-export function mostOneSideCanReach(rule: Pick<RebalanceRule, 'lotsPerStep' | 'steps'>, lots: number): number {
-  return lots + Math.min(lots, Math.max(0, Math.round(rule.lotsPerStep * rule.steps)));
-}
-
-/**
- * What the position becomes after each stage, and whether the cap held it back.
- *
- * `blocked` is what the form says out loud: a cap of 160 on 100 + 100 lets
- * stages 1 and 2 run and refuses stage 3, and a cap under the opening lots
- * refuses all of them.
- */
-export function stagePositions(rule: RebalanceRule, lots: number): {
-  stage: number; up: number; down: number; blocked: boolean;
-}[] {
-  const out = [];
-  let up = lots;
-  let down = lots;
-  for (let i = 0; i < Math.max(0, Math.min(100, Math.round(rule.steps))); i++) {
-    const step = rule.allowPartial ? Math.min(rule.lotsPerStep, down) : (down >= rule.lotsPerStep ? rule.lotsPerStep : 0);
-    const room = rule.maxLotsPerSide === null ? step : Math.max(0, Math.min(step, rule.maxLotsPerSide - up));
-    down -= room;
-    up += room;
-    out.push({ stage: i + 1, up, down, blocked: room < step });
-  }
-  return out;
-}
-
-/** "stages 1–2 run, stage 3 is refused" — the cap in words, counted not guessed. */
-export function capWords(rule: RebalanceRule, lots: number): string | null {
-  if (rule.maxLotsPerSide === null) return null;
-  const rows = stagePositions(rule, lots);
-  const blocked = rows.filter((r) => r.blocked).map((r) => r.stage);
-  if (!blocked.length) return null;
-  if (blocked.length === rows.length) {
-    return `No stage can run: the cap (${rule.maxLotsPerSide}) leaves no room above the ${lots} lots each side opens with.`;
-  }
-  const ran = rows.length - blocked.length;
-  return `The cap stops it after stage ${ran}: stage${blocked.length === 1 ? '' : 's'} `
-    + `${blocked.join(', ')} ${blocked.length === 1 ? 'is' : 'are'} refused. `
-    + `Raise it to ${mostOneSideCanReach(rule, lots)} for all ${rows.length}.`;
-}
-
-export type AddToOpposite = {
-  minPriceUsd: number;
-  maxMultiple: number;
-  /** The latest IST time an add may be made, 24-hour "HH:MM", between entry and exit. */
-  addUntil: string;
-  /**
-   * If the add has not filled, sell at the bid after this many seconds. Null,
-   * or absent on a strategy saved before the control existed, means the entry's
-   * own seconds -- which is what those strategies have been doing. Zero rests
-   * at the offer and never crosses; the add window still ends it.
-   */
-  crossAfterSec?: number | null;
-};
-
-/** Half an hour before the default 5:29 PM exit. Turning the add on uses the strategy's own exit. */
-export const DEFAULT_ADD_TO_OPPOSITE: AddToOpposite = { minPriceUsd: 3, maxMultiple: 2, addUntil: '16:59' };
-
-/** One decision to add to the other leg -- the skips too, with their reason. */
-export type StrategyAdd = {
-  id: number;
-  strategyId: string;
-  runDate: string;
-  sourceTradeId: string;
-  sourceSide: 'CE' | 'PE';
-  symbol: string | null;
-  contracts: number;
-  status: 'placing' | 'placed' | 'skipped' | 'refused' | 'failed';
-  detail: string;
-  addedToTradeId: string | null;
-  at: number;
 };
 
 export type Strategy = {
@@ -306,8 +133,6 @@ export type StrategyStatus = {
   spot: number | null;
   strategies: Strategy[];
   runs: StrategyRun[];
-  /** Every decision to add to the other leg. Absent from an older server. */
-  adds?: StrategyAdd[];
 };
 
 export const DEFAULT_CONFIG: StrategyConfig = {
@@ -324,19 +149,15 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   stopLossPct: 0,
   targetMode: 'pct',
   takeProfitPoints: 0,
+  takeProfitAt: 0,
   targetSteps: [],
   stopMode: 'pct',
   stopLossPoints: 0,
+  stopLossAt: 0,
   stopSteps: [],
   lots: 10,
   legs: 'both',
   graceMin: 60,
-  probGate: 0.95,
-  doubleWhenOneSided: true,
-  minSellScore: null,
-  maxShockScore: null,
-  addToOpposite: null,
-  rebalance: null,
   weekdays: [0, 1, 2, 3, 4, 5, 6],
 };
 

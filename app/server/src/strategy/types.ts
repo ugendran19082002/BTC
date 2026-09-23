@@ -173,6 +173,8 @@ export type StrategyConfig = {
   targetMode?: ExitMode;
   /** The target as points under the entry price: sold at 15, 10 points buys back at 5. Absent is 0. */
   takeProfitPoints?: number;
+  /** The target as the price itself, when `targetMode` is `price`. Absent is 0. */
+  takeProfitAt?: number;
   /**
    * The target over the day: from each step's time it becomes that step's
    * value, in `targetMode`'s units, until the next step. Before the first step
@@ -183,6 +185,8 @@ export type StrategyConfig = {
   stopMode?: ExitMode;
   /** The stop as points over the entry price: sold at 15, 10 points buys back at 25. Absent is 0. */
   stopLossPoints?: number;
+  /** The stop as the price itself, when `stopMode` is `price`: 70 is 70, whatever the entry. Absent is 0. */
+  stopLossAt?: number;
   /** The stop over the day, the same way `targetSteps` moves the target. */
   stopSteps?: ExitStep[];
   /** Contracts per leg. */
@@ -210,8 +214,11 @@ export type StrategyConfig = {
  *           entry for a stop (1.5 = buy back at 2.5x the entry)
  *   points  a distance in the option's own price: the stop at entry + points,
  *           the target at entry - points
+ *   price   the level itself: stop at 70, whatever the entry. The balance --
+ *           70 minus the entry -- is re-measured from the entry that happens,
+ *           and a level on the wrong side of it refuses the order
  */
-export type ExitMode = 'pct' | 'points';
+export type ExitMode = 'pct' | 'points' | 'price';
 
 /** From `at` (IST "HH:MM"), the exit becomes `value`, in its rule's units. Zero turns it off. */
 export type ExitStep = { at: string; value: number };
@@ -235,17 +242,18 @@ export const MAX_EXIT_STEPS = 24;
  * what it was doing: a percentage, the same all day.
  */
 export function exitRules(c: StrategyConfig): { target: ExitRule; stop: ExitRule } {
-  const targetMode: ExitMode = c.targetMode === 'points' ? 'points' : 'pct';
-  const stopMode: ExitMode = c.stopMode === 'points' ? 'points' : 'pct';
+  const modeOf = (m: unknown): ExitMode => (m === 'points' || m === 'price' ? m : 'pct');
+  const targetMode = modeOf(c.targetMode);
+  const stopMode = modeOf(c.stopMode);
   return {
     target: {
       mode: targetMode,
-      value: targetMode === 'points' ? (c.takeProfitPoints ?? 0) : c.takeProfitPct,
+      value: targetMode === 'points' ? (c.takeProfitPoints ?? 0) : targetMode === 'price' ? (c.takeProfitAt ?? 0) : c.takeProfitPct,
       steps: c.targetSteps ?? [],
     },
     stop: {
       mode: stopMode,
-      value: stopMode === 'points' ? (c.stopLossPoints ?? 0) : c.stopLossPct,
+      value: stopMode === 'points' ? (c.stopLossPoints ?? 0) : stopMode === 'price' ? (c.stopLossAt ?? 0) : c.stopLossPct,
       steps: c.stopSteps ?? [],
     },
   };
@@ -281,8 +289,10 @@ export function exitValueAt(
 /** An exit rule's value, as the place and protection calls take it. */
 export function exitAsk(rule: ExitRule, value: number, leg: 'target' | 'stop') {
   if (leg === 'target') {
+    if (rule.mode === 'price') return { takeProfitPct: 0, takeProfitPoints: 0, takeProfitAt: value };
     return rule.mode === 'points' ? { takeProfitPct: 0, takeProfitPoints: value } : { takeProfitPct: value, takeProfitPoints: 0 };
   }
+  if (rule.mode === 'price') return { stopLossPct: 0, stopLossPoints: 0, stopAt: value };
   return rule.mode === 'points' ? { stopLossPct: 0, stopLossPoints: value } : { stopLossPct: value, stopLossPoints: 0 };
 }
 
@@ -292,6 +302,9 @@ function exitValueProblem(leg: 'target' | 'stop', mode: ExitMode, v: unknown): s
   if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) return `${Leg} cannot be negative or blank.`;
   if (mode === 'points') {
     return v > MAX_EXIT_POINTS ? `${Leg} must be at most ${MAX_EXIT_POINTS.toLocaleString('en-US')} points from the entry.` : null;
+  }
+  if (mode === 'price') {
+    return v > MAX_EXIT_POINTS ? `${Leg} must be a price of at most ${MAX_EXIT_POINTS.toLocaleString('en-US')}.` : null;
   }
   if (leg === 'target') return v > MAX_TARGET_PCT ? 'Take profit must be between 0 and 99% of the credit.' : null;
   return v > MAX_STOP_PCT ? 'Stop loss must be between 0 and 2000% of the credit.' : null;
@@ -311,11 +324,11 @@ export function exitRuleProblems(
 ): string[] {
   const bad: string[] = [];
   const Leg = leg === 'target' ? 'Take profit' : 'Stop loss';
-  if (rule.mode !== undefined && rule.mode !== 'pct' && rule.mode !== 'points') {
-    bad.push(`${Leg} must be a percentage or points.`);
+  if (rule.mode !== undefined && rule.mode !== 'pct' && rule.mode !== 'points' && rule.mode !== 'price') {
+    bad.push(`${Leg} must be a percentage, points or a price.`);
     return bad;
   }
-  const mode: ExitMode = rule.mode === 'points' ? 'points' : 'pct';
+  const mode: ExitMode = rule.mode === 'points' || rule.mode === 'price' ? rule.mode : 'pct';
   const first = exitValueProblem(leg, mode, rule.value);
   if (first) bad.push(first);
   const steps = rule.steps;
@@ -386,9 +399,11 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   stopLossPct: 0,
   targetMode: 'pct',
   takeProfitPoints: 0,
+  takeProfitAt: 0,
   targetSteps: [],
   stopMode: 'pct',
   stopLossPoints: 0,
+  stopLossAt: 0,
   stopSteps: [],
   lots: 10,
   legs: 'both',
@@ -465,8 +480,9 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
   for (const leg of ['target', 'stop'] as const) {
     const mode = leg === 'target' ? c.targetMode : c.stopMode;
     const points = leg === 'target' ? c.takeProfitPoints : c.stopLossPoints;
+    const at = leg === 'target' ? c.takeProfitAt : c.stopLossAt;
     const steps = leg === 'target' ? c.targetSteps : c.stopSteps;
-    const value = mode === 'points' ? points : (leg === 'target' ? c.takeProfitPct : c.stopLossPct);
+    const value = mode === 'points' ? points : mode === 'price' ? at : (leg === 'target' ? c.takeProfitPct : c.stopLossPct);
     // The percentage itself was checked just above; only a mode, points and steps are new here.
     const found = exitRuleProblems(leg, { mode, value: value ?? 0, steps }, c.entryTime, c.exitTime)
       .filter((m) => !/^(Take profit|Stop loss) must be between/.test(m));

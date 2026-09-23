@@ -93,6 +93,7 @@ export class StrategyExitStepper {
 /** "80%" / "10 pts" / "off" -- a value in its rule's own units. */
 export function exitWords(rule: ExitRule, value: number): string {
   if (!(value > 0)) return 'off';
+  if (rule.mode === 'price') return `at ${value}`;
   return rule.mode === 'points' ? `${value} pts` : `${Math.round(value * 1000) / 10}%`;
 }
 

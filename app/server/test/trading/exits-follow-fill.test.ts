@@ -34,9 +34,10 @@ async function sell(r: Rig, input: Partial<PlaceInput>, id = 'T') {
 
 /* ------------------------------------------------------------------ pure */
 
-test('[critical] a price typed against the entry becomes its distance: 70 over a 15 offer follows as +55', () => {
-  assert.deepEqual(followingAsk({ ...base, limitPrice: 15, stopAt: 70, takeProfitAt: 5 }, 15), { stopLossPoints: 55, takeProfitPoints: 10 });
+test('[critical] a price typed is the level: it does not follow the fill; a % or points does', () => {
+  assert.equal(followingAsk({ ...base, limitPrice: 15, stopAt: 70, takeProfitAt: 5 }, 15), undefined);
   assert.deepEqual(followingAsk({ ...base, stopLossPct: 1.5, takeProfitPct: 0.8 }, 15), { stopLossPct: 1.5, takeProfitPct: 0.8 });
+  assert.deepEqual(followingAsk({ ...base, stopAt: 70, takeProfitPct: 0.8 }, 15), { takeProfitPct: 0.8 }, 'each leg on its own');
 });
 
 test('an exact price from a caller, or a price with no entry to measure from, follows nothing', () => {
@@ -64,12 +65,29 @@ test('protectionFor on a following ask is the same arithmetic the plan gets', ()
 
 /* ------------------------------------------------------------------ the engine, on the paper exchange */
 
-test('[critical] Offer at 15 that walks to a 14 bid: stop typed as 70 lands at 69 -- 55 over the real entry', async () => {
+test('[critical] Offer at 15 that walks to a 14 bid: stop typed as 70 stays at 70 -- the balance is 56 now, not 55', async () => {
+  // Asked 22 Sep: "70 SL set, subtract the entry from 70, the balance is the SL".
   const r = rig({ products: [ceProduct()], quotes: [quote(CE, 14, 15)], limits: { maxShortContracts: 5_000 } });
   const rec = await sell(r, { limitPrice: 15, chaseSeconds: 4, stopAt: 70, takeProfitAt: 5 });
   assert.equal(rec.state.entryAvgPrice, 14, 'the chase ended at the bid');
-  assert.deepEqual(await book(r), { target: [4], stop: [69] }, 'target 10 under and stop 55 over the fill');
-  assert.equal(rec.plan.stopPrice, 69, 'the plan says what the book holds');
+  assert.deepEqual(await book(r), { target: [5], stop: [70] }, 'the levels as typed');
+  assert.equal(rec.plan.stopPrice! - rec.state.entryAvgPrice!, 56, 'the balance, re-measured from the fill');
+  assert.equal(rec.plan.exitAsk, undefined, 'nothing follows the fill');
+});
+
+test('[critical] a stop typed at or under the entry is refused before anything is sent', async () => {
+  const r = rig({ products: [ceProduct()], quotes: [quote(CE, 15, 15.5)], limits: { maxShortContracts: 5_000 } });
+  const res = await r.engine.open(orderPlan({ ...base, limitPrice: 15, stopAt: 12 }, 'W'));
+  assert.equal(res.ok, false);
+  assert.match(JSON.stringify(res), /A stop of 12 must be over the 15 entry/);
+  assert.deepEqual(await r.ex.getOpenOrders(CE), [], 'no order reached the book');
+});
+
+test('a target typed at or over the entry is refused the same way', async () => {
+  const r = rig({ products: [ceProduct()], quotes: [quote(CE, 15, 15.5)], limits: { maxShortContracts: 5_000 } });
+  const res = await r.engine.open(orderPlan({ ...base, limitPrice: 15, takeProfitAt: 15 }, 'W2'));
+  assert.equal(res.ok, false);
+  assert.match(JSON.stringify(res), /A target of 15 must be under the 15 entry/);
 });
 
 test('[critical] Bid now improved to 16: a 150% stop is 150% of 16, not of the 15 on the ticket', async () => {

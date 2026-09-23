@@ -179,6 +179,34 @@ export function exitDue(s: Strategy, nowMs: number, hasOpenPosition: boolean): D
  * hours away. Reading the clock alone would close the position five minutes
  * after opening it.
  */
+/**
+ * When an open position was opened: its first entry fill, or -- before any
+ * fill -- the moment its trade was created, which its id carries.
+ */
+export function openedAtOf(t: { state: { tradeId: string; fills: readonly { role: string; ts: number }[] } }, fallbackMs: number): number {
+  const fill = t.state.fills.find((f) => f.role === 'entry');
+  if (fill) return fill.ts;
+  const idMs = Number(t.state.tradeId.split('-').at(-1));
+  return Number.isFinite(idMs) && idMs > 1e12 ? idMs : fallbackMs;
+}
+
+/**
+ * The moment a position opened at `openedAtMs` is closed: the first `exitTime`
+ * after it opened.
+ *
+ * Measured from the position, not from the strategy's entry time -- which is
+ * a setting and can be edited while the position is on. On 22 Sep 2026 UG-PE
+ * entered at 22:25, its entry time was then moved to 22:27, and the next tick
+ * read "22:27 yesterday + the hold to 17:29 = 17:29 today, passed" and closed
+ * a live position 38 seconds after it opened. A position's exit is a fact
+ * about the position.
+ */
+export function exitMomentFor(exitTime: string, openedAtMs: number): number {
+  const minute = Math.floor(openedAtMs / 60_000) * 60_000;
+  const ahead = minutesForward(istMinutes(openedAtMs), minutesOf(exitTime)) || 1440;
+  return minute + ahead * 60_000;
+}
+
 export function exitMomentAt(s: Strategy, nowMs: number): number {
   return entrySlotAt(s, nowMs) + holdMinutes(s) * 60_000;
 }

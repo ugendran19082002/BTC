@@ -469,7 +469,7 @@ export class TradeEngine {
       now: this.now(),
       intent: {
         side: 'sell', size, expect: plan.expect, price, reduceOnly: false,
-        leverage: clampLeverage(plan.leverage), stopPrice: plan.stopPrice,
+        leverage: clampLeverage(plan.leverage), stopPrice: plan.stopPrice, takeProfitPrice: plan.takeProfitPrice,
         crossing: crossesSpread('sell', plan.entry.type, plan.entry.limitPrice ?? null, quote),
       },
       spot,

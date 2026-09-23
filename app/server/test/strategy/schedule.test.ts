@@ -258,3 +258,34 @@ test('the next entry skips today once this strategy’s own window has closed', 
   const at = nextEntryAt(tight, THU_0530 + 30 * 60_000, null);
   assert.ok(at !== null && at > THU_0530 + 30 * 60_000, 'not today’s slot any more');
 });
+
+/* -------------------------------------------------- a position's exit is a fact about the position */
+
+import { exitMomentAt, exitMomentFor, openedAtOf } from '../../src/strategy/schedule.js';
+
+/** IST wall-clock on 22 Sep 2026, as epoch ms. */
+const ist22 = (hhmm: string, sec = 0) => Date.UTC(2026, 8, 22) - 330 * 60_000 + (Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3))) * 60_000 + sec * 1000;
+
+test('[critical] 22 Sep: UG-PE filled at 22:25:17 -- its exit is 17:29 TOMORROW, whatever the entry time is edited to', () => {
+  const filled = 1790096117088;                     // the live fill, 22:25:17 IST
+  const tomorrow1729 = ist22('17:29') + 86_400_000;
+  assert.equal(exitMomentFor('17:29', filled), tomorrow1729);
+  // What closed it: at 22:25:49 the entry time read 22:27, so the old arithmetic
+  // put the entry at 22:27 YESTERDAY and the exit at 17:29 today -- already past.
+  const edited = strat({ entryTime: '22:27', exitTime: '17:29' });
+  assert.ok(exitMomentAt(edited, ist22('22:25', 49)) <= ist22('22:25', 49), 'the old reading: exit already due');
+  assert.ok(exitMomentFor('17:29', filled) > ist22('22:25', 49), 'the new one: not for nineteen hours');
+});
+
+test('a morning entry exits the same day; an entry in the exit minute waits a full day, never closes at once', () => {
+  assert.equal(exitMomentFor('17:29', ist22('05:30', 12)), ist22('17:29'));
+  assert.equal(exitMomentFor('17:29', ist22('17:29', 30)), ist22('17:29') + 86_400_000);
+  assert.equal(exitMomentFor('05:30', ist22('23:30')), ist22('05:30') + 86_400_000, 'overnight');
+});
+
+test('when a position opened: its first entry fill, else the moment in its trade id', () => {
+  const t = (fills: { role: string; ts: number }[], tradeId = 'P-BTC-83600-230926-1790096108050') => ({ state: { tradeId, fills } });
+  assert.equal(openedAtOf(t([{ role: 'entry', ts: 1790096117088 }]), 0), 1790096117088);
+  assert.equal(openedAtOf(t([]), 0), 1790096108050, 'no fill yet: the id');
+  assert.equal(openedAtOf(t([], 'odd-id'), 42), 42, 'neither: the fallback');
+});

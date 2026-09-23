@@ -1,9 +1,9 @@
 import { Fragment } from 'react';
 import { usePersisted } from '@/hooks/usePersisted';
 import type { ChainResponse, Leg, MarketRead } from '@/types/desk';
-import type { FlowSummary, PerpResponse, PriceChange, SideFlow, TermHistoryPoint, TermPoint, TermResponse } from '@/api/desk';
-import { ivRv, skew, skewRichness, srDistances, structureRead, volRegime, WINDOW_CHOICES, windowLabel, type IvRv, type NamedLevel, type OptionBias, type WindowChoice } from '@/lib/overview';
-import { fmt, More, NotCaptured, Panel, Row, Tag, useWidth } from './parts';
+import type { FlowSummary, PerpResponse, PriceChange, SideFlow, TermResponse } from '@/api/desk';
+import { fundingRead, ivRv, skew, skewRichness, srDistances, structureRead, volRegime, WINDOW_CHOICES, windowLabel, type IvRv, type NamedLevel, type OptionBias, type WindowChoice } from '@/lib/overview';
+import { fmt, More, NotCaptured, Panel, Row, Tag } from './parts';
 
 // ------------------------------------------------------------------ KPI strip
 
@@ -42,9 +42,7 @@ export function KpiStrip({ data, spot, iv, perp, spark, now = Date.now() }: {
         tone={perpChange === null ? undefined : perpChange >= 0 ? 'up' : 'down'} />
       <Kpi label="Perp 24h volume" value={usdShort(t?.turnoverUsd24h)} sub={t?.volume24h == null ? '' : `${fmt.n(t.volume24h)} contracts`} />
       <Kpi label="Open interest (perp)" value={usdShort(t?.oiUsd)} sub={t?.oiContracts == null ? '' : `${fmt.n(t.oiContracts)} contracts`} />
-      <Kpi label="Funding rate" value={funding === null ? '—' : `${funding.toFixed(4)}%`}
-        sub={funding === null ? 'not read' : `${funding > 0 ? 'longs pay' : funding < 0 ? 'shorts pay' : 'flat'} · next in ${nextFundingIn(now)}`}
-        tone={funding === null ? undefined : funding > 0 ? 'up' : funding < 0 ? 'down' : undefined} />
+      <FundingKpi ratePct={funding} nextIn={nextFundingIn(now)} />
       <Kpi label="IV (ATM)" value={s.atmIv === null ? '—' : `${(s.atmIv * 100).toFixed(1)}%`}
         sub={iv ? `RV ${iv.rvPct.toFixed(1)}% · ${iv.label}` : 'realised vol —'} tone={iv?.label === 'rich' ? 'up' : iv?.label === 'cheap' ? 'down' : undefined} />
       <Kpi label="PCR (OI)" value={fmt.n(s.pcrOi, 2)} sub={`PCR vol ${fmt.n(s.pcrVolume, 2)}`} />
@@ -93,6 +91,27 @@ const KPI_HELP: Record<string, string> = {
   'IV (ATM)': 'Implied volatility at the money, against realised volatility over 21 days',
   'PCR (OI)': 'Put open interest over call open interest; above 1, more puts are held',
 };
+
+/**
+ * Funding, in the words a person asks it in: the rate, what a round $10,000
+ * pays at the next settlement, and who pays -- which is which way the crowd
+ * leans. The decimal and the eight-hour rhythm are on hover.
+ */
+function FundingKpi({ ratePct, nextIn }: { ratePct: number | null; nextIn: string }) {
+  const f = fundingRead(ratePct);
+  if (!f) return <Kpi label="Funding rate" value="—" sub="not read" />;
+  const tone = f.tone === 'muted' ? undefined : f.tone;
+  const money = f.who === 'none' ? 'no payment' : `$10k ${f.who === 'longs' ? 'pays' : 'gets'} $${f.per10k.toFixed(2)} / 8h`;
+  return (
+    <div className={`ov-kpi ov-kpi-funding ov-kpi-${f.tone}`}
+      title={`${ratePct!.toFixed(4)}% = ${f.decimal.toFixed(6)} as a decimal, every 8 hours. ${f.who === 'longs' ? 'Longs pay shorts' : f.who === 'shorts' ? 'Shorts pay longs' : 'Nobody pays'}; next settlement in ${nextIn}.`}>
+      <span className="ov-kpi-label">Funding rate</span>
+      <span className={`ov-kpi-value${tone ? ` ov-${tone}` : ''}`}>{ratePct!.toFixed(4)}%</span>
+      <span className="ov-kpi-sub">{money} · next {nextIn}</span>
+      <span className={`ov-funding-chip ov-funding-${f.tone}`}>{f.label}</span>
+    </div>
+  );
+}
 
 function Kpi({ label, value, sub, tone, muted, spark }: {
   label: string; value: string; sub?: string; tone?: 'up' | 'down'; muted?: boolean; spark?: readonly number[];
@@ -239,19 +258,23 @@ export function KeyLevelsPanel({ data, spot, emUsd = null }: { data: ChainRespon
           </tbody>
         </table>
       )}
-      <p className="ov-foot">15m and 1h are the levels to decide by; 4h and 1D confirm; 5m is the tape, never a strike's reason. Swing highs and lows are fractals on each timeframe's own bars.</p>
     </Panel>
   );
 }
 
 // --------------------------------------------------------------- volatility
 
-export function VolatilityPanel({ data, iv }: { data: ChainResponse; iv: IvRv | null }) {
+/**
+ * Volatility and skew, one card (22 Sep 2026): the level of implied volatility
+ * against realised, then how it is spread between puts and calls. They were two
+ * cards that are read together -- is the board rich, and which side is.
+ */
+export function VolatilityPanel({ data, iv, skewRank = null }: { data: ChainResponse; iv: IvRv | null; skewRank?: TermResponse['skew'] | null }) {
   const m = data.market;
   const regime = volRegime(m?.realisedVol1h ?? null, m?.realisedVol ?? null);
   const pct = (v: number | null | undefined) => (v == null ? '—' : `${v.toFixed(1)}%`);
   return (
-    <Panel title="Volatility" right={<small className="ov-muted">ATM IV {data.structure.atmIv === null ? '—' : `${(data.structure.atmIv * 100).toFixed(1)}%`}</small>}>
+    <Panel name="Volatility" title="Volatility & skew" right={<small className="ov-muted">ATM IV {data.structure.atmIv === null ? '—' : `${(data.structure.atmIv * 100).toFixed(1)}%`}</small>}>
       <Row mark="dot" tone="up" label="Realized vol (1h)" value={pct(m?.realisedVol1h)} hint="Annualised, from the last hour of 5-minute closes" />
       <Row mark="dot" tone="up" label="Realized vol (6h)" value={pct(m?.realisedVol6h)} hint="Annualised, from the last six hours of 5-minute closes" />
       <Row mark="dot" tone={iv ? (iv.spreadPts > 0 ? 'up' : 'down') : 'muted'} label="IV − RV spread" value={iv ? `${fmt.signed(iv.spreadPts, 1)} pts` : '—'}
@@ -264,7 +287,40 @@ export function VolatilityPanel({ data, iv }: { data: ChainResponse; iv: IvRv | 
         <Row label="IV richness" value={iv ? `${iv.label} · ${iv.ratio.toFixed(2)}× realised` : '—'} tone={iv?.label === 'rich' ? 'up' : iv?.label === 'cheap' ? 'down' : undefined} />
         <Row label="Biggest day (30d)" value={m?.max24hRangeUsd == null ? '—' : `${fmt.n(m.max24hRangeUsd)} (${m.max24hRangePct?.toFixed(2)}%)`} hint="The largest single-day range of the last 30 days: how wrong the expected move can be" />
       </More>
+      <div className="ov-subhead"><span>Skew · {data.snapshot.expiry}</span><small className="ov-muted">puts vs calls</small></div>
+      <SkewRows data={data} rank={skewRank} />
     </Panel>
+  );
+}
+
+// --------------------------------------------------------------------- flow
+
+/**
+ * Who is crossing the spread, on the perpetual and on the options, in one card
+ * (22 Sep 2026): the two were separate cards reading the same tape over the
+ * same window, and read together -- is the perp being bought, and are calls
+ * or puts. One window picker drives both.
+ */
+export function FlowPanel({ perp, market, legs, atm, window: win, onWindow }: {
+  perp: PerpResponse | null; market: MarketRead | null; legs: readonly Leg[]; atm: number | null;
+  window: WindowChoice; onWindow: (w: WindowChoice) => void;
+}) {
+  return (
+    <Panel name="Flow" title="Flow · BTC perpetual & options" right={<WindowSelect value={win} onChange={onWindow} />}>
+      <TradeFlowPanel bare perp={perp} market={market} />
+      <OptionFlowPanel bare perp={perp} legs={legs} atm={atm} />
+    </Panel>
+  );
+}
+
+/** A card of its own, or -- `bare` -- a titled section inside another card. */
+function Frame({ bare, title, right, children }: { bare: boolean; title: string; right?: React.ReactNode; children: React.ReactNode }) {
+  if (!bare) return <Panel title={title} right={right}>{children}</Panel>;
+  return (
+    <>
+      <div className="ov-subhead"><span>{title.replace('BTC flow · perpetual', 'BTC perpetual').replace('Option flow · CE / PE', 'Options · CE / PE')}</span>{right}</div>
+      {children}
+    </>
   );
 }
 
@@ -275,24 +331,24 @@ export function VolatilityPanel({ data, iv }: { data: ChainResponse; iv: IvRv | 
  * top of its book. From the desk's own record of every print; a window the
  * socket was away for says how many minutes it actually has.
  */
-export function TradeFlowPanel({ perp, market, window: win, onWindow }: { perp: PerpResponse | null; market: MarketRead | null; window?: WindowChoice; onWindow?: (w: WindowChoice) => void }) {
-  const head = win && onWindow ? <WindowSelect value={win} onChange={onWindow} /> : null;
+export function TradeFlowPanel({ perp, market, window: win, onWindow, bare = false }: { perp: PerpResponse | null; market: MarketRead | null; window?: WindowChoice; onWindow?: (w: WindowChoice) => void; bare?: boolean }) {
+  const head = !bare && win && onWindow ? <WindowSelect value={win} onChange={onWindow} /> : null;
   const f = perp?.flow ?? null;
   const b = perp?.book ?? null;
-  if (!perp) return <Panel title="BTC flow · perpetual" right={head}><p className="ov-empty">Loading…</p></Panel>;
+  if (!perp) return <Frame bare={bare} title="BTC flow · perpetual" right={head}><p className="ov-empty">Loading…</p></Frame>;
   if (!f || f.source === 'none') {
     return (
-      <Panel title="BTC flow · perpetual" right={head}>
+      <Frame bare={bare} title="BTC flow · perpetual" right={head}>
         <NotCaptured what="No prints in the window" why="The tape recorder has just started, or its socket is down — /api/health shows flowFeed." />
         {b && <BookRows b={b} />}
-      </Panel>
+      </Frame>
     );
   }
   const delta = f.deltaVolume;
   const last = f.cvd.at(-1)?.cvd ?? null;
   const kct = (v: number) => (Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(1)}K` : fmt.n(v));
   return (
-    <Panel title="BTC flow · perpetual"
+    <Frame bare={bare} title="BTC flow · perpetual"
       right={<span className="ov-chain-head">{head}<small className={f.minutesCovered < f.windowMin ? 'ov-warn' : 'ov-muted'} title="Minutes in the window with at least one print">{f.minutesCovered} of {f.windowMin} min</small></span>}>
       <Row mark="dot" tone="up" label="Buy volume" value={`${kct(f.buyVolume)} ct`} hint="Contracts bought by the aggressor: buys that lifted the offer" />
       <Row mark="dot" tone="down" label="Sell volume" value={`${kct(f.sellVolume)} ct`} hint="Contracts sold by the aggressor: sells that hit the bid" />
@@ -304,9 +360,8 @@ export function TradeFlowPanel({ perp, market, window: win, onWindow }: { perp: 
         <Row label="Aggressor sell %" value={f.aggressorBuyPct === null ? '—' : fmt.pct(1 - f.aggressorBuyPct, 1)} />
         <Row label="Trades · avg size" value={`${fmt.n(f.trades)} · ${fmt.n(f.avgTradeSize, 1)} ct`} />
         {b && <BookRows b={b} />}
-        <p className="ov-foot">Bursts, CVD slope and OI acceleration are read as rules in the early warning. Liquidations are not a public feed on Delta; a burst of large one-sided prints with OI falling is the visible trace.</p>
       </More>
-    </Panel>
+    </Frame>
   );
 }
 
@@ -333,84 +388,16 @@ function CvdLine({ cvd }: { cvd: FlowSummary['cvd'] }) {
   );
 }
 
-// ------------------------------------------------------------ term structure
-
-export function IvTermPanel({ term, error }: { term: TermResponse | null; error?: boolean }) {
-  const points = term?.points ?? null;
-  return (
-    <Panel title="IV term structure" right={<TermLegend term={term} />}>
-      {error ? <p className="ov-empty">Could not read the term structure.</p>
-        : !points ? <p className="ov-empty">Loading…</p>
-          : points.length === 0 ? <p className="ov-empty">No listed expiry has an IV.</p>
-            : <TermChart points={points} weekAgo={term?.weekAgo?.points ?? null} monthAgo={term?.monthAgo?.points ?? null} />}
-    </Panel>
-  );
-}
-
-function TermLegend({ term }: { term: TermResponse | null }) {
-  return (
-    <span className="ov-legend">
-      <i className="ov-legend-now" /> now
-      <i className="ov-legend-week" /> 1W ago{term && !term.weekAgo && <small className="ov-muted"> (no record yet)</small>}
-      <i className="ov-legend-month" /> 1M ago{term && !term.monthAgo && <small className="ov-muted"> (no record yet)</small>}
-    </span>
-  );
-}
-
-function TermChart({ points, weekAgo, monthAgo }: { points: TermPoint[]; weekAgo: TermHistoryPoint[] | null; monthAgo: TermHistoryPoint[] | null }) {
-  const [box, W] = useWidth<HTMLDivElement>();
-  const H = 150, P = 26;
-  const series = [points, weekAgo ?? [], monthAgo ?? []];
-  const ivs = series.flat().map((p) => p.atmIv * 100);
-  const lo = Math.floor(Math.min(...ivs) - 2), hi = Math.ceil(Math.max(...ivs) + 2);
-  // Hours to settlement on a square-root axis: the short end is where the detail is.
-  const sx = (h: number) => Math.sqrt(Math.max(h, 0.1));
-  const xs = series.flat().map((p) => sx(p.hoursAway));
-  const x0 = Math.min(...xs), x1 = Math.max(...xs);
-  const px = (h: number) => (x1 === x0 ? W / 2 : P + ((sx(h) - x0) / (x1 - x0)) * (W - 2 * P));
-  const py = (v: number) => H - P + 4 - ((v - lo) / (hi - lo || 1)) * (H - 2 * P);
-  const path = (ps: readonly TermHistoryPoint[]) => ps.map((p, i) => `${i ? 'L' : 'M'}${px(p.hoursAway).toFixed(1)},${py(p.atmIv * 100).toFixed(1)}`).join(' ');
-  return (
-    <div ref={box} className="ov-chart-box">
-      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="ov-svg" role="img" aria-label="ATM implied volatility by expiry">
-        <line x1={P} x2={W - P} y1={H - P + 4} y2={H - P + 4} className="ov-axis" />
-        <text x={2} y={py(hi) + 4} className="ov-tick">{hi}%</text>
-        <text x={2} y={py(lo) + 4} className="ov-tick">{lo}%</text>
-        {monthAgo && monthAgo.length > 1 && <path d={path(monthAgo)} className="ov-line-month" fill="none" />}
-        {weekAgo && weekAgo.length > 1 && <path d={path(weekAgo)} className="ov-line-week" fill="none" />}
-        <path d={path(points)} className="ov-line-accent" fill="none" />
-        {points.map((p, i) => {
-          // A label only where there is room for it: near expiries crowd the short end.
-          const x = px(p.hoursAway);
-          const prev = i > 0 ? px(points[i - 1]!.hoursAway) : -Infinity;
-          return (
-            <g key={p.expiry}>
-              <circle cx={x} cy={py(p.atmIv * 100)} r={3} className="ov-pt" />
-              {x - prev >= 26 && (
-                <text x={x} y={H - 6} textAnchor="middle" className="ov-tick">{p.hoursAway < 48 ? `${Math.round(p.hoursAway)}h` : `${Math.round(p.hoursAway / 24)}d`}</text>
-              )}
-            </g>
-          );
-        })}
-      </svg>
-      <div className="ov-term-list">
-        {points.slice(0, 6).map((p) => (
-          <span key={p.expiry}><small className="ov-muted">{p.expiry}</small> {(p.atmIv * 100).toFixed(1)}%</span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // --------------------------------------------------------------------- skew
 
-export function SkewPanel({ data, rank }: { data: ChainResponse; rank: TermResponse['skew'] | null }) {
+/** The skew section of the volatility card. */
+function SkewRows({ data, rank }: { data: ChainResponse; rank: TermResponse['skew'] | null }) {
   const s = skew(data.legs, data.structure.atmIv);
   const rich = skewRichness(s.putCallPts, rank?.percentile ?? null);
   const tone = (v: 'HIGH' | 'NORMAL' | 'LOW') => (v === 'HIGH' ? 'down' : v === 'LOW' ? 'up' : 'muted');
   const iv = (v: number | null | undefined) => (v === null || v === undefined ? '—' : `${(v * 100).toFixed(1)}%`);
   return (
-    <Panel name="Skew" title={`Skew (${data.snapshot.expiry})`}>
+    <>
       <Row label={`25Δ put IV${s.put25 ? ` · ${fmt.n(s.put25.strike)}` : ''}`} value={iv(s.put25?.iv)} />
       <Row label="ATM IV" value={iv(s.atmIv)} />
       <Row label={`25Δ call IV${s.call25 ? ` · ${fmt.n(s.call25.strike)}` : ''}`} value={iv(s.call25?.iv)} />
@@ -422,7 +409,7 @@ export function SkewPanel({ data, rank }: { data: ChainResponse; rank: TermRespo
       <Row label="PE richness" value={rich ? <Tag tone={tone(rich.pe)}>{rich.pe}</Tag> : '—'} hint="Relative pricing from the skew: HIGH means the puts are priced up against the calls — richer to sell, and the market is paying for downside" />
       <Row label="CE richness" value={rich ? <Tag tone={tone(rich.ce)}>{rich.ce}</Tag> : '—'} hint="Relative pricing from the skew: HIGH means the calls are priced up against the puts" />
       <p className="ov-foot">{rich ? `${rich.text[0]!.toUpperCase()}${rich.text.slice(1)}.` : ''} Skew is relative pricing only; IV − RV says whether the whole board is rich, and a strike's own odds whether it is safe.</p>
-    </Panel>
+    </>
   );
 }
 
@@ -436,9 +423,9 @@ export { ivRv };
  * print on the two nearest expiries. Book imbalance and spread are the
  * perpetual's -- options have no book capture -- and are said so.
  */
-export function OptionFlowPanel({ perp, legs = [], atm = null, window: win, onWindow }: { perp: PerpResponse | null; legs?: readonly Leg[]; atm?: number | null; window?: WindowChoice; onWindow?: (w: WindowChoice) => void }) {
+export function OptionFlowPanel({ perp, legs = [], atm = null, window: win, onWindow, bare = false }: { perp: PerpResponse | null; legs?: readonly Leg[]; atm?: number | null; window?: WindowChoice; onWindow?: (w: WindowChoice) => void; bare?: boolean }) {
   const f = perp?.optionFlow ?? null;
-  const head = win && onWindow ? <WindowSelect value={win} onChange={onWindow} /> : null;
+  const head = !bare && win && onWindow ? <WindowSelect value={win} onChange={onWindow} /> : null;
   // The side's own book, as far as Delta shows one: the at-the-money option's top of book.
   const atmLeg = (cp: 'C' | 'P') => legs.find((l) => l.cp === cp && l.strike === atm) ?? null;
   const bookOf = (l: Leg | null) => {
@@ -447,12 +434,12 @@ export function OptionFlowPanel({ perp, legs = [], atm = null, window: win, onWi
   };
   const spreadOf = (l: Leg | null) => (l && l.bid !== null && l.ask !== null && l.bid + l.ask > 0 ? (l.ask - l.bid) / ((l.bid + l.ask) / 2) : null);
   const kct = (v: number) => (Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(1)}K` : fmt.n(v));
-  if (!perp) return <Panel title="Option flow · CE / PE" right={head}><p className="ov-empty">Loading…</p></Panel>;
+  if (!perp) return <Frame bare={bare} title="Option flow · CE / PE" right={head}><p className="ov-empty">Loading…</p></Frame>;
   if (!f || f.source === 'none') {
     return (
-      <Panel title="Option flow · CE / PE" right={head}>
+      <Frame bare={bare} title="Option flow · CE / PE" right={head}>
         <NotCaptured what="No option prints in the window" why="The tape recorder subscribes to every strike of the two nearest expiries; recording began 20 Sep 2026, or the socket is down — /api/health shows flowFeed." />
-      </Panel>
+      </Frame>
     );
   }
   const card = (name: string, tag: string, x: SideFlow, l: Leg | null) => (
@@ -472,7 +459,7 @@ export function OptionFlowPanel({ perp, legs = [], atm = null, window: win, onWi
   );
   const biasTone = f.combined.bias === null || f.combined.bias === 'MIXED' ? 'muted' : /CALL BUYING|PUT SELLING/.test(f.combined.bias) ? 'up' : 'down';
   return (
-    <Panel title="Option flow · CE / PE"
+    <Frame bare={bare} title="Option flow · CE / PE"
       right={<span className="ov-chain-head">{head}<small className={f.minutesCovered < f.windowMin ? 'ov-warn' : 'ov-muted'} title="Minutes in the window with at least one option print">{f.minutesCovered} of {f.windowMin} min · {f.expiry}</small></span>}>
       <div className="ov-flow-cards">
         {card('CE flow', 'CALL', f.ce, atmLeg('C'))}
@@ -482,8 +469,7 @@ export function OptionFlowPanel({ perp, legs = [], atm = null, window: win, onWi
         <Row label="Total" value={`buy ${kct(f.combined.buyVolume)} · sell ${kct(f.combined.sellVolume)} · Δ ${fmt.signed(f.combined.deltaVolume)}`} />
         <Row label="Overall option flow" value={<Tag tone={biasTone}>{f.combined.bias ?? '—'}</Tag>} hint="The heaviest of the four legs names the bias when it is two-fifths of the volume; otherwise mixed. Call buying and put selling lean bullish; call selling and put buying, bearish" />
       </div>
-      <p className="ov-foot">Prints from the desk's own tape of every strike on this expiry; book and spread from the at-the-money option's live quote.</p>
-    </Panel>
+    </Frame>
   );
 }
 
@@ -493,36 +479,6 @@ export function WindowSelect({ value, onChange }: { value: WindowChoice; onChang
     <select className="ov-select" aria-label="Window" value={value} onChange={(e) => onChange(e.target.value as WindowChoice)} title="How far back the tape is summed">
       {WINDOW_CHOICES.map((w) => <option key={w} value={w}>{windowLabel(w)}</option>)}
     </select>
-  );
-}
-
-// ------------------------------------------------------------- desk events
-
-const IST_HM_EV = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
-
-/**
- * What is scheduled: funding settlements, this contract's settlement, the
- * desk's own recorders. Entry has no slot: it is whenever the trader decides. Computed from the clock, never
- * fetched. A news feed is not captured -- said so rather than faked.
- */
-export function DeskEventsPanel({ now, expiryTs }: { now: number; expiryTs: number }) {
-  // Delta settles funding at 00:00, 08:00 and 16:00 UTC.
-  const utcDay = Date.UTC(new Date(now).getUTCFullYear(), new Date(now).getUTCMonth(), new Date(now).getUTCDate());
-  const funding = [0, 8, 16, 24].map((h) => utcDay + h * 3_600_000).find((t) => t > now)!;
-  const nextRecord = Math.ceil((now + 1) / 300_000) * 300_000;
-  const events = [
-    { at: funding, name: 'Funding settles', what: 'the perpetual pays or receives; the rate resets' },
-    { at: nextRecord, name: 'Next 5-minute record', what: 'every strike, the board, the perp' },
-    { at: expiryTs * 1000, name: 'This expiry settles', what: '17:30 IST' },
-  ].sort((a, b) => a.at - b.at);
-  const inText = (ms: number) => (ms < 60_000 ? 'now' : ms < 3_600_000 ? `in ${Math.round(ms / 60_000)}m` : `in ${Math.floor(ms / 3_600_000)}h ${String(Math.round((ms % 3_600_000) / 60_000)).padStart(2, '0')}m`);
-  return (
-    <Panel title="Desk events" right={<small className="ov-muted">IST</small>}>
-      {events.map((e) => (
-        <Row key={e.name} label={<><b className="ov-mono">{IST_HM_EV.format(new Date(e.at))}</b> {e.name}</>} value={<span className="ov-muted">{inText(e.at - now)}</span>} hint={e.what} />
-      ))}
-      <p className="ov-foot">Computed from the clock. Market news and events are not captured — nothing here is a headline.</p>
-    </Panel>
   );
 }
 
@@ -537,7 +493,7 @@ const IST_HM_PC = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', h
  */
 export function PriceChangePanel({ price, spot }: { price: { spot: number | null; rows: PriceChange[] } | null; spot: number | null }) {
   const rows = price?.rows ?? [];
-  const label = (r: PriceChange) => r.mark === 'entry' ? `Since position entry ${IST_HM_PC.format(new Date(r.at))}` : r.mark === 'dayStart' ? 'Since last settlement 17:30' : r.minutes! >= 60 ? `${r.minutes! / 60}h` : `${r.minutes}m`;
+  const label = (r: PriceChange) => r.mark === 'entry' ? `Since  entry ${IST_HM_PC.format(new Date(r.at))}` : r.mark === 'dayStart' ? 'last settlement 17:30' : r.minutes! >= 60 ? `${r.minutes! / 60}h` : `${r.minutes}m`;
   const now = price?.spot ?? spot;
   return (
     <Panel title="Price change" right={<small className="ov-muted">BTC {fmt.n(now)}</small>}>
@@ -559,7 +515,6 @@ export function PriceChangePanel({ price, spot }: { price: { spot: number | null
           </tbody>
         </table>
       )}
-      <p className="ov-foot">Then is the candle's close at that time; the marks are the last settlement (17:30 IST) and, when a position is held, its entry (its first fill).</p>
     </Panel>
   );
 }

@@ -4,7 +4,8 @@ import { migrate, type Migration } from '../db/migrate.js';
 import { one, query } from '../db/pool.js';
 
 /**
- * Every strike of the traded expiries, every five minutes, kept for a year.
+ * Every strike of the traded expiries: a five-minute record kept for months,
+ * and a one-minute record kept for hours.
  *
  * Delta publishes greeks, IV and quotes live only (docs/Data.md §2); without
  * this, "how did the 78,000 call's IV and OI move through the morning" has no
@@ -13,11 +14,27 @@ import { one, query } from '../db/pool.js';
  * a feature thought of next month can still be computed over last month.
  *
  * Scope: the two nearest listed expiries -- today's contract and the one the
- * 05:30 entry sells -- every strike Delta lists for them. About 2.6 GB a year.
+ * 05:30 entry sells -- every strike Delta lists for them.
+ *
+ * Two grains, because they answer different questions and cost differently
+ * (measured 22 Sep 2026: about 350 bytes a row, 161 strikes a bucket):
+ *
+ *   five minutes, 90 days   the record the hour-ago and day-ago reads use.
+ *                           ~16 MB a day, ~1.4 GB at 90 days.
+ *   one minute, 6 hours     what the last hour actually did, minute by minute:
+ *                           the 1m window and the premium's velocity. ~81 MB a
+ *                           day if it were kept, ~20 MB as a rolling six hours.
+ *
+ * Neither costs an extra request: the recorder already wakes every minute and
+ * the five-minute write is skipped when its bucket exists.
  */
 
 export const OPTION_SNAPSHOT_BUCKET_MS = 5 * 60_000;
-export const OPTION_SNAPSHOT_KEEP_MS = 365 * 24 * 3600_000;
+/** 90 days of the five-minute record: ~1.4 GB, against a disk with 12 GB free. */
+export const OPTION_SNAPSHOT_KEEP_MS = 90 * 24 * 3600_000;
+/** The fine record: every minute, six hours deep. */
+export const OPTION_SNAPSHOT_1M_BUCKET_MS = 60_000;
+export const OPTION_SNAPSHOT_1M_KEEP_MS = 6 * 3600_000;
 /** How many of the nearest expiries are recorded. */
 export const OPTION_SNAPSHOT_EXPIRIES = 2;
 
@@ -52,6 +69,20 @@ const MIGRATIONS: Migration[] = [
       );
       -- "this contract over the day": the other way into the table.
       CREATE INDEX IF NOT EXISTS option_snapshots_by_symbol ON option_snapshots (symbol, at);
+    `,
+  },
+  {
+    /*
+     * The same rows a minute apart, six hours deep (22 Sep 2026).
+     *
+     * The five-minute record cannot answer "what has this premium done in the
+     * last minute", which is the question the early warning and the 1m row on
+     * "What changed" ask -- they showed dashes. A minute grain over a year
+     * would be ~30 GB; over six hours it is ~20 MB, rolling.
+     */
+    id: 'market-008-option-snapshots-1m',
+    up: `
+      CREATE TABLE IF NOT EXISTS option_snapshots_1m (LIKE option_snapshots INCLUDING ALL);
     `,
   },
 ];
@@ -131,20 +162,30 @@ export async function captureOptionSnapshots(
 ): Promise<{ at: number; rows: number } | null> {
   await optionSnapshotsSchema();
   const at = Math.floor(nowMs / OPTION_SNAPSHOT_BUCKET_MS) * OPTION_SNAPSHOT_BUCKET_MS;
-  if (await one('SELECT 1 FROM option_snapshots WHERE at = $1 LIMIT 1', [at])) return null;
+  const minute = Math.floor(nowMs / OPTION_SNAPSHOT_1M_BUCKET_MS) * OPTION_SNAPSHOT_1M_BUCKET_MS;
+  const fiveDone = Boolean(await one('SELECT 1 FROM option_snapshots WHERE at = $1 LIMIT 1', [at]));
+  const minuteDone = Boolean(await one('SELECT 1 FROM option_snapshots_1m WHERE at = $1 LIMIT 1', [minute]));
+  if (fiveDone && minuteDone) return null;
   const snap = snapshotRows(tickers, Math.floor(nowMs / 1000));
   if (!snap.length) return null;
 
   // One statement for the whole board: an array per column, unnested.
   const arrays = PICK.map((f) => snap.map(f));
   const sel = COLS.map((c, i) => `$${i + 2}::${TYPES[i]}[]`).join(', ');
-  await query(
-    `INSERT INTO option_snapshots (at, ${COLS.join(', ')})
+  const write = (table: string, bucket: number) => query(
+    `INSERT INTO ${table} (at, ${COLS.join(', ')})
      SELECT $1, * FROM unnest(${sel})
      ON CONFLICT (at, symbol) DO NOTHING`,
-    [at, ...arrays] as never,
+    [bucket, ...arrays] as never,
   );
-  await query('DELETE FROM option_snapshots WHERE at < $1', [at - OPTION_SNAPSHOT_KEEP_MS]);
+  if (!fiveDone) {
+    await write('option_snapshots', at);
+    await query('DELETE FROM option_snapshots WHERE at < $1', [at - OPTION_SNAPSHOT_KEEP_MS]);
+  }
+  if (!minuteDone) {
+    await write('option_snapshots_1m', minute);
+    await query('DELETE FROM option_snapshots_1m WHERE at < $1', [minute - OPTION_SNAPSHOT_1M_KEEP_MS]);
+  }
   return { at, rows: snap.length };
 }
 
@@ -154,10 +195,20 @@ export async function captureOptionSnapshots(
  * answer changes every five minutes.
  */
 let lastAtMemo: { at: number | null; askedAt: number } | null = null;
+/**
+ * The newest record of either grain, for the screen's freshness bar.
+ *
+ * The minute record is the freshest evidence the desk holds, and both are
+ * written by the same call -- so a bar reading five minutes while a record a
+ * minute old sat beside it was saying the desk is staler than it is. Memoised
+ * for half a minute: it is read on every board.
+ */
 export async function lastOptionSnapshotAt(nowMs = Date.now()): Promise<number | null> {
   if (lastAtMemo && nowMs - lastAtMemo.askedAt < 30_000) return lastAtMemo.at;
-  const row = await lastOptionSnapshot().catch(() => null);
-  lastAtMemo = { at: row?.at ?? null, askedAt: nowMs };
+  const row = await one<{ at: number | null }>(
+    'SELECT GREATEST(COALESCE((SELECT MAX(at) FROM option_snapshots), 0), COALESCE((SELECT MAX(at) FROM option_snapshots_1m), 0)) AS at',
+  ).catch(() => null);
+  lastAtMemo = { at: row?.at ? row.at : null, askedAt: nowMs };
   return lastAtMemo.at;
 }
 

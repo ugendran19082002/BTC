@@ -170,7 +170,7 @@ function ShortCapLine({ held, inForce }: { held: number; inForce: number }) {
           {!editing && (
             <button
               type="button"
-              className="text-[12px] text-muted-foreground underline underline-offset-2"
+              className="inline-flex min-h-8 min-w-8 items-center justify-center text-[12px] text-muted-foreground underline underline-offset-2"
               onClick={() => { setDraft(String(limit)); setRefusal(null); setEditing(true); }}
             >
               Edit

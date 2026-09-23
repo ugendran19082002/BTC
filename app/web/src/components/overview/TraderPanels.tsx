@@ -98,7 +98,6 @@ export function MovementPanel({ data, em, activeMin, mtf, movement }: { data: Ch
           </tbody>
         </table>
       </div>
-      <p className="ov-foot">Type: price ↑ with OI ↑ is a long buildup (new longs — bullish pressure), ↓ with OI ↑ a short buildup (new shorts — bearish pressure), ↑ with OI ↓ short covering (shorts closing — potential bullish), ↓ with OI ↓ a long unwinding (longs closing — potential bearish); ✓ / ✕ is whether the tape's aggressors agree. The three band shares add to 100%. Expected move is signed by the direction: UP +pts, DOWN −pts, SIDE ±pts.</p>
       <div className="ov-board-read">
         {board.map((b) => (
           <Row key={b.name} mark="arrow" tone={b.says === 'up' ? 'up' : b.says === 'down' ? 'down' : 'muted'} label={b.name} value={<span className={says(b.says)}>{b.text}</span>} hint={b.formula} />
@@ -118,7 +117,17 @@ export function useChanges(data: ChainResponse, leg: Leg | null, spot: number, e
   const symbol = leg ? `${leg.cp}-BTC-${leg.strike}-${data.snapshot.expiry}` : null;
   const s = data.structure;
   useEffect(() => {
-    if (!symbol || !leg) { setRows(null); return; }
+    /*
+     * The previous strike's numbers are not this strike's.
+     *
+     * Cleared the moment the strike changes, because the card's title changes
+     * at once and the table did not: it went on showing 89,600 CE's figures
+     * under "What changed · 83,800 PE" until the next read landed, which reads
+     * as the screen lagging and is worse -- it is the wrong strike's record
+     * under the right strike's name.
+     */
+    setRows(null);
+    if (!symbol || !leg) return;
     let live = true;
     const load = () => getChanges(symbol, {
       spot, mark: leg.mark, oi: leg.oi, iv: leg.iv, volume: leg.volume,
@@ -154,6 +163,15 @@ export function ChangesPanel({ strikes }: { strikes: { leg: Leg | null; changes:
 }
 
 function ChangesTable({ leg, changes, two }: { leg: Leg; changes: Changes | null; two: boolean }) {
+  // Nothing read yet for this strike: said, rather than drawn as a table of dashes.
+  if (!changes) {
+    return (
+      <>
+        {two && <h4 className="ov-subhead"><span>{fmt.n(leg.strike)} {leg.cp === 'C' ? 'CE' : 'PE'}</span></h4>}
+        <p className="ov-empty">Reading the record for {fmt.n(leg.strike)} {leg.cp === 'C' ? 'CE' : 'PE'}…</p>
+      </>
+    );
+  }
   const sgn = (v: number | null, p = 0, unit = '') => (v === null ? '—' : `${fmt.signed(v, p)}${unit}`);
   const cls = (v: number | null, invert = false) => (v === null ? 'ov-muted' : (invert ? -v : v) > 0 ? 'ov-up' : (invert ? -v : v) < 0 ? 'ov-down' : '');
   const label = (r: { minutes: number; sinceEntry?: boolean }) => (r.sinceEntry ? `entry · ${r.minutes >= 60 ? `${Math.floor(r.minutes / 60)}h ${String(r.minutes % 60).padStart(2, '0')}m` : `${r.minutes}m`}` : r.minutes >= 60 ? `${r.minutes / 60}h` : `${r.minutes}m`);
@@ -239,14 +257,14 @@ export function StrikeFinder({ data, onSelect, onSell, contracts, leverage, defa
   const otm = data.legs.filter((l) => l.moneyness !== 'ITM').length;
   return (
     <Panel title="Strike finder" right={
-        <span className="ov-chain-head">
-          <span className="ov-tabs ov-tabs-inline" role="tablist">
-            <button role="tab" aria-selected={mode === 'desk'} className={mode === 'desk' ? 'on' : ''} onClick={() => setMode('desk')} title="The desk's top three a side, by its own rules">Desk picks{picks.length === 0 ? ' (none)' : ''}</button>
-            <button role="tab" aria-selected={mode === 'filters'} className={mode === 'filters' ? 'on' : ''} onClick={() => setMode('filters')} title="Every out-of-the-money strike, through your filters">Finder</button>
-          </span>
-          <small className="ov-muted">{found.length} of {otm} OTM · {contracts} ct at {leverage}x</small>
+      <span className="ov-chain-head">
+        <span className="ov-tabs ov-tabs-inline" role="tablist">
+          <button role="tab" aria-selected={mode === 'desk'} className={mode === 'desk' ? 'on' : ''} onClick={() => setMode('desk')} title="The desk's top three a side, by its own rules">Desk picks{picks.length === 0 ? ' (none)' : ''}</button>
+          <button role="tab" aria-selected={mode === 'filters'} className={mode === 'filters' ? 'on' : ''} onClick={() => setMode('filters')} title="Every out-of-the-money strike, through your filters">Finder</button>
         </span>
-      }>
+        <small className="ov-muted">{found.length} of {otm} OTM · {contracts} ct at {leverage}x</small>
+      </span>
+    }>
       {mode === 'filters' && (
         <div className="ov-finder">
           {filtersChanged(f) && <button className="ov-chip" onClick={() => setF({ ...DESK_FILTER, side: f.side })} title="Back to the desk's own filters">Desk filters</button>}
@@ -290,7 +308,6 @@ export function StrikeFinder({ data, onSelect, onSell, contracts, leverage, defa
           </tbody>
         </table>
       )}
-      <p className="ov-foot">Out-of-the-money strikes only, best desk score first. BEST SAFE is the lowest touch odds on its side, BEST BALANCED the desk's score, BEST PREMIUM the most credit. Move a filter and the SELL CE / SELL PE cards carry the best strike that passes it. Click a row to inspect it; Sell opens the ticket, where every gate runs again.</p>
     </Panel>
   );
 }
@@ -341,7 +358,6 @@ export function ExpiryDirectionPanel({ d, hoursLeftText }: { d: ExpiryDirection 
           <Row key={w.name} label={w.name} value={<span className={w.score > 0.05 ? 'ov-up' : w.score < -0.05 ? 'ov-down' : 'ov-muted'}>{plus(w.score)}</span>} hint={`${w.text} · weight ${Math.round(w.weight * 100)}%`} />
         ))}
       </div>
-      <p className="ov-foot">Near = within a quarter of an expected move of the price now. The odds are the option market's distribution with its centre tilted by the state above — a model; the measured figures beside them are the desk's own record for this horizon, and are the calibrated part. Direction alone never sells a strike: the strike's own odds and gates decide.</p>
     </Panel>
   );
 }
