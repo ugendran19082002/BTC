@@ -142,11 +142,22 @@ see **What is not built**.
 
 ## Patterns and indicators
 
+The **price-action panel is gone** (24 Sep): it sat in the left column saying
+"Trend falling, RSI 38.8, MACD bearish, VWAP 85,648" -- the same readings the
+summary under the chart was already showing, in different words, a screen away
+from the chart they describe. Two panels that can disagree about RSI is one
+panel too many. Trend, structure and the distance to each level are rows in the
+readings now, at the top where they belong, and the strip under the chart is
+one row of two columns: the shapes on the left, the readings on the right.
+
 `domain/patterns.ts` names what the bars are doing, in three layers:
 
-* **Candles** -- doji and its two, marubozu, hammer / hanging man, shooting
-  star / inverted hammer, pin bars, engulfing, harami, piercing, dark cloud,
-  tweezers, morning and evening star, three soldiers and crows.
+* **Candles** -- doji and its two, high wave, marubozu, hammer / hanging man,
+  shooting star / inverted hammer, pin bars, engulfing, harami and harami
+  cross, piercing, dark cloud, tweezers, matching high and low, counterattack,
+  kicking, on-neck / in-neck, thrusting, morning and evening star, three
+  soldiers and crows, three inside and outside up and down, abandoned baby,
+  three gaps.
 * **Shapes** -- higher lows, lower highs, the three triangles, rectangle, level
   tests with a touch count, volume buildup, compression.
 * **Market structure** -- higher high / higher low / lower high / lower low,
@@ -158,7 +169,10 @@ see **What is not built**.
 standard deviation, **z-score**, **percentile**, **efficiency ratio**, EMA,
 MACD, **Bollinger %B and width**, **range position (Donchian)**,
 **stochastic**, **Williams %R**, **CCI**, **OBV slope**, **choppiness**,
-**Aroon** -- and assembles the readings. Everything here needs only the candles
+**Aroon**, **SuperTrend**, **vortex**, **TRIX**, **awesome oscillator**,
+**MFI**, **Chaikin money flow**, **relative volume**, **HMA**, and the
+price-action read itself (trend, structure, and the distance to each level) --
+and assembles the readings. Everything here needs only the candles
 the chart is already drawing, which is why these are the ones that got built:
 no second feed, no second key, nothing more to be down at four in the morning.
 
@@ -307,6 +321,25 @@ The analysis sits **beside** the chart on a wide screen and drops under it
 below 1100px. The panel runs the width of the desk: in the middle of three columns the chart
 was about six hundred pixels, which is a candle every two pixels and a plan in
 five-digit numbers three abreast.
+
+## One card, six tabs
+
+The analysis card carries **Analysis · Levels · Patterns · Indicators ·
+Expiry · Options**. The last two were cards of their own in the right-hand
+column -- the expiry read (where BTC settles, the implied and measured bands)
+and the CE/PE bias (premium, OI, IV, touch, flow either side). They ask the
+same question this card asks, *which way and how sure*, from the options board
+instead of the bars, and three cards for one question is how a screen gets read
+in the wrong order.
+
+**Their logic is untouched.** The panels are built where their inputs are, in
+`Overview`, and handed to the card through the chart slot; the card renders
+what it is given and has no idea what an expiry is. The move changed where they
+are shown and nothing else.
+
+The readings tab shows **twenty**, in the order the state cares about -- what
+decides this state first, then the rest. Rows made that possible: the same
+space held six tiles with dials on them.
 
 ## The big-move catch
 

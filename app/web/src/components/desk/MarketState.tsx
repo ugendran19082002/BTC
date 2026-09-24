@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { ArrowDownRight, ArrowUpRight, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Clock, Minus, TrendingDown, TrendingUp } from 'lucide-react';
 import type {
   MarketStateResponse, StateHistoryRow, StateIndicator, StatePattern, StatePlan,
@@ -54,14 +54,24 @@ const TONE_CLASS: Record<Tone, string> = {
 };
 
 const TABS = ['Analysis', 'Levels', 'Patterns', 'Indicators'] as const;
-type Tab = (typeof TABS)[number];
+
+/**
+ * The readings that stay on screen whatever tab is open.
+ *
+ * The price-action panel is gone and its six headline rows are these: what the
+ * trend is, what the swings are doing, and the four readings a trader glances
+ * at before anything else. Everything else is a tab away -- but a reading you
+ * have to go and find is one you decide without.
+ */
+const KEY_READINGS = ['trend', 'structure', 'rsi', 'macd', 'vwap', 'atr'] as const;
+type Tab = string;
 
 const IST = new Intl.DateTimeFormat('en-IN', {
   timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true,
 });
 
 export function MarketState({
-  data, history, hitRate, tf, spot,
+  data, history, hitRate, tf, spot, extra = [],
 }: {
   data: MarketStateResponse | null;
   history?: StateHistoryRow[];
@@ -70,8 +80,21 @@ export function MarketState({
   tf: string;
   /** BTC now, so each earlier call can say what price did after it. */
   spot?: number;
+  /**
+   * Tabs the caller fills: the expiry read and the options' own bias.
+   *
+   * They were two more cards in the right-hand column, asking the same
+   * question this card asks -- which way, and how sure -- from the options
+   * board instead of the bars. Three cards for one question is how a screen
+   * gets read in the wrong order. They are passed in rather than built here so
+   * their own logic is untouched and this file stays free of the chain's
+   * types: it shows them, it does not compute them.
+   */
+  extra?: readonly { label: string; node: ReactNode }[];
 }) {
   const [tab, setTab] = useState<Tab>('Analysis');
+  const tabs: readonly Tab[] = [...TABS, ...extra.map((e) => e.label)];
+  const shownExtra = extra.find((e) => e.label === tab) ?? null;
   const s = data?.state ?? null;
   const words = s ? STATE_WORDS[s.event] ?? { title: s.event, tone: 'flat' as Tone } : null;
 
@@ -124,11 +147,32 @@ export function MarketState({
         after it -- the reference the owner sent is a column, and it reads like
         one because of that. Under 900px they stack.
       */}
+      {/*
+        Always on screen, above the tabs: the six the old price-action panel
+        led with. They are taken from every reading measured rather than from
+        the twenty this state happens to want, so the row is the same six
+        wherever price is -- a strip that changes what it shows is a strip
+        nobody learns to read.
+      */}
+      {data && data.indicators.all.length > 0 ? (
+        <ul className="bt-market-state__key">
+          {KEY_READINGS.map((key) => data.indicators.all.find((i) => i.key === key))
+            .filter((i): i is StateIndicator => i !== undefined)
+            .map((i) => (
+              <li key={i.key} className={cn(i.bias === 'BULLISH' && 'is-up', i.bias === 'BEARISH' && 'is-down')}
+                title={`${i.label}: ${i.text} · ${i.read}`}>
+                <span>{i.label}</span>
+                <b>{i.text}</b>
+              </li>
+            ))}
+        </ul>
+      ) : null}
+
       {s ? (
         <div className="bt-market-state__body">
           <div className="bt-market-state__main">
             <div className="bt-market-state__tabs" role="tablist">
-              {TABS.map((t) => (
+              {tabs.map((t) => (
                 <button key={t} role="tab" type="button" aria-selected={t === tab} onClick={() => setTab(t)}
                   className={cn('bt-market-state__tab', t === tab && 'bt-market-state__tab--on')}>{t}</button>
               ))}
@@ -137,6 +181,7 @@ export function MarketState({
             {tab === 'Analysis' ? <Checks checks={s.checks} /> : null}
             {tab === 'Patterns' ? <Patterns patterns={data?.patterns.shown ?? []} /> : null}
             {tab === 'Indicators' ? <Indicators items={data?.indicators.shown ?? []} /> : null}
+            {shownExtra ? <div className="bt-market-state__extra">{shownExtra.node}</div> : null}
 
             {/* The plans sit under every tab, targets and all: they are what the
                 card is for, and a number you have to change tab to see is one

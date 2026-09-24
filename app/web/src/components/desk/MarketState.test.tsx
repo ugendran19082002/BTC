@@ -42,7 +42,15 @@ const base: MarketStateResponse = {
     ],
   },
   indicators: {
-    all: [],
+    all: [
+      { key: 'trend', label: 'Trend', value: 1, text: 'Rising', read: 'Up', bias: 'BULLISH', gauge: null },
+      { key: 'structure', label: 'Structure', value: 1, text: 'Higher highs and lows', read: 'Up', bias: 'BULLISH', gauge: null },
+      { key: 'rsi', label: 'RSI (14)', value: 62, text: '62', read: 'Bullish', bias: 'BULLISH', gauge: 0.62 },
+      { key: 'macd', label: 'MACD', value: 41, text: '+41', read: 'Bullish', bias: 'BULLISH', gauge: null },
+      { key: 'vwap', label: 'VWAP', value: 0.4, text: '+0.4%', read: 'Above', bias: 'BULLISH', gauge: null },
+      { key: 'atr', label: 'ATR (14)', value: 0.47, text: '0.47%', read: 'Normal', bias: 'NEUTRAL', gauge: null },
+      { key: 'chop', label: 'Choppiness', value: 44, text: '44', read: 'Mixed', bias: 'NEUTRAL', gauge: 0.44 },
+    ],
     shown: [
       { key: 'rsi', label: 'RSI (14)', value: 62, text: '62', read: 'Bullish', bias: 'BULLISH', gauge: 0.62 },
       { key: 'volume', label: 'Volume', value: 1.8, text: '1.8x', read: 'Increasing', bias: 'NEUTRAL', gauge: 0.6 },
@@ -107,7 +115,8 @@ describe('the market-state card', () => {
     expect(screen.getByText('> 86,800')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('tab', { name: 'Indicators' }));
-    expect(screen.getByText('RSI (14)')).toBeInTheDocument();
+    // RSI is in the key row as well, so the tab's own list is what is checked
+    expect(document.querySelectorAll('.bt-market-state__indicators li')).toHaveLength(2);
     expect(screen.getByText('1.8x')).toBeInTheDocument();
   });
 
@@ -216,6 +225,49 @@ describe('the market-state card', () => {
     render(<MarketState data={base} tf="15m" />);
     expect(screen.getByText('15m')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '1h' })).toBeNull();
+  });
+
+  it('[critical] the six price-action readings stay on screen whatever tab is open', () => {
+    /*
+     * They were a panel of their own in another column. A reading you have to
+     * go and find is one you decide without -- and the row is the same six
+     * wherever price is, because a strip that changes what it shows is a strip
+     * nobody learns to read.
+     */
+    const { container } = render(<MarketState data={base} tf="15m" />);
+    const key = container.querySelector('.bt-market-state__key')!;
+    expect([...key.querySelectorAll('span')].map((e) => e.textContent))
+      .toEqual(['Trend', 'Structure', 'RSI (14)', 'MACD', 'VWAP', 'ATR (14)']);
+    expect(key.textContent).toContain('Rising');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Patterns' }));
+    expect(container.querySelector('.bt-market-state__key')!.textContent).toContain('Rising');
+    // and a reading that is not one of the six is not smuggled in
+    expect(key.textContent).not.toContain('Choppiness');
+  });
+
+  it('[critical] the expiry read and the options bias are tabs on this card, not cards of their own', () => {
+    /*
+     * They asked the same question this card asks -- which way, and how sure
+     * -- from the options board rather than the bars, from two more cards in
+     * another column. Three cards for one question is how a screen gets read
+     * in the wrong order. They are passed in, so their own logic is untouched.
+     */
+    render(<MarketState data={base} tf="15m" extra={[
+      { label: 'Expiry', node: <p>expiry read</p> },
+      { label: 'Options', node: <p>CE / PE bias</p> },
+    ]} />);
+    expect(screen.getByRole('tab', { name: 'Expiry' })).toBeInTheDocument();
+    expect(screen.queryByText('expiry read')).toBeNull();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Expiry' }));
+    expect(screen.getByText('expiry read')).toBeInTheDocument();
+    // the plans stay put whatever tab is open: they are what the card is for
+    expect(screen.getByText('> 86,800')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Options' }));
+    expect(screen.getByText('CE / PE bias')).toBeInTheDocument();
+    expect(screen.queryByText('expiry read')).toBeNull();
   });
 
   it('says so rather than breaking when there is no state yet', () => {

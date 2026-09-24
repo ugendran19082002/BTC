@@ -613,7 +613,7 @@ export default function App() {
                     )}
                   </>
                 }
-                chart={
+                chart={(slots) => (
                   <ErrorBoundary where="Price chart">
                     {/*
                       One panel, not four (23 Sep 2026): the candles, the shapes
@@ -650,9 +650,22 @@ export default function App() {
                       tf={stateTf}
                       spot={snap.spot}
                       ready={live}
+                      /*
+                       * The expiry read and the options' CE/PE bias, as tabs on
+                       * the analysis card. They asked the same question this
+                       * card asks -- which way, and how sure -- from the board
+                       * instead of the bars, from two more cards in the
+                       * right-hand column. Same panels, same inputs, built
+                       * where their inputs are; only where they are shown has
+                       * changed.
+                       */
+                      extra={[
+                        { label: 'Expiry', node: slots.expiry },
+                        { label: 'Options', node: slots.options },
+                      ]}
                     />
                   </ErrorBoundary>
-                }
+                )}
               />
             </ErrorBoundary>
           )}

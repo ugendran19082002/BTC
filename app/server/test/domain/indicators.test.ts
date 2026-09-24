@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  aroon, bollinger, choppiness, clv, donchian, efficiencyRatio, ema, indicators, logReturn, macd, mean, obvSlope, percentileOf, relevantIndicators, roc, simpleReturn, stdev, stochastic, type IndicatorInput, williamsR, zScore,
+  aroon, awesome, bollinger, choppiness, clv, cmf, donchian, efficiencyRatio, ema, hma, indicators, logReturn, macd, mean, mfi, obvSlope, percentileOf, relativeVolume, relevantIndicators, roc, simpleReturn, stdev, stochastic, superTrend, trix, type IndicatorInput, vortex, williamsR, zScore,
 } from '../../src/domain/indicators.js';
 import type { Candle } from '../../src/market/delta.js';
 
@@ -109,13 +109,13 @@ test('a reading that could not be taken says so rather than showing a zero', () 
 
 test('[critical] the card shows the readings that decide the state it is in', () => {
   /*
-   * A dozen now rather than six: the readings became rows instead of tiles
-   * with dials, and a row fits. It is still a chosen few out of everything
-   * measured -- forty on a card is a card nobody reads.
+   * Twenty now rather than six: the readings became rows instead of tiles with
+   * dials, and rows fit. It is still a chosen set out of everything measured,
+   * in the order the state cares about -- what decides this state first.
    */
   const all = indicators(input());
   const watching = relevantIndicators(all, 'WATCH').map((i) => i.key);
-  assert.equal(watching.length, 12, 'a dozen, not everything');
+  assert.equal(watching.length, 20, 'twenty, not everything');
   assert.ok(all.length > watching.length, 'the rest are still in the payload');
   for (const want of ['volume', 'cvd', 'aggressor']) {
     assert.ok(watching.includes(want), `${want} decides a level being tested: ${watching.join(', ')}`);
@@ -128,7 +128,7 @@ test('[critical] the card shows the readings that decide the state it is in', ()
 test('an unmeasured reading does not take a slot from one that could be measured', () => {
   const all = indicators(input({ cvdSlope: null, aggressorBuyPct: null }));
   const shown = relevantIndicators(all, 'WATCH');
-  assert.equal(shown.length, 12);
+  assert.equal(shown.length, 20);
   assert.ok(shown.every((i) => i.value !== null), shown.map((i) => `${i.key}=${i.value}`).join(', '));
 });
 
@@ -207,5 +207,63 @@ test('[critical] every wider reading is in the payload, and none of them is on t
   for (const k of ['bollinger', 'bbwidth', 'donchian', 'stoch', 'williams', 'cci', 'obv', 'chop', 'aroon']) {
     assert.ok(keys.includes(k), `${k} is measured`);
   }
-  assert.equal(relevantIndicators(all, 'WATCH').length, 12);
+  assert.equal(relevantIndicators(all, 'WATCH').length, 20);
+});
+
+/*
+ * The trend, momentum and volume readings the owner's list asks for, all of
+ * them from the same bars. What each test pins is the direction of the answer
+ * on a series whose direction is not in doubt -- a reading that says "bullish"
+ * on a straight fall is worse than no reading.
+ */
+const falling = Array.from({ length: 60 }, (_, i) => ramp(i, 220 - i * 2, 1));
+const rising = Array.from({ length: 60 }, (_, i) => ramp(i, 100 + i * 2, 1));
+
+test('[critical] SuperTrend, vortex and TRIX all point the way the bars go', () => {
+  assert.equal(superTrend(rising), 1);
+  assert.equal(superTrend(falling), -1);
+  assert.ok(vortex(rising)! > 0);
+  assert.ok(vortex(falling)! < 0);
+  assert.ok(trix(rising.map((b) => b.close))! > 0);
+  assert.ok(trix(falling.map((b) => b.close))! < 0);
+});
+
+test('the awesome oscillator is the short average against the long one', () => {
+  assert.ok(awesome(rising)! > 0);
+  assert.ok(awesome(falling)! < 0);
+  assert.equal(awesome(rising.slice(-10)), null, 'thirty-four bars or nothing');
+});
+
+test('[critical] money flow counts the volume behind the move, not just the move', () => {
+  /*
+   * The whole point of MFI over RSI: a rise on nothing is not the same as a
+   * rise on everything, and the index has to be able to tell them apart.
+   */
+  const heavyUp = rising.map((b, i) => ({ ...b, volume: i % 2 === 0 ? 1000 : 10 }));
+  const heavyDown = falling.map((b, i) => ({ ...b, volume: i % 2 === 0 ? 1000 : 10 }));
+  assert.ok(mfi(heavyUp)! > 50);
+  assert.ok(mfi(heavyDown)! < 50);
+});
+
+test('Chaikin flow reads where in its range each bar closed', () => {
+  const closingHigh = Array.from({ length: 20 }, (_, i) => ({ time: i, open: 100, high: 110, low: 90, close: 109, volume: 100 }));
+  const closingLow = closingHigh.map((b) => ({ ...b, close: 91 }));
+  assert.ok(cmf(closingHigh)! > 0.5);
+  assert.ok(cmf(closingLow)! < -0.5);
+});
+
+test('relative volume is this bar against the ones before it', () => {
+  const quiet = Array.from({ length: 21 }, (_, i) => ({ time: i, open: 100, high: 101, low: 99, close: 100, volume: i === 20 ? 300 : 100 }));
+  assert.equal(relativeVolume(quiet), 3);
+});
+
+test('[critical] a moving average says nothing on its own: the reading is which side price is', () => {
+  // The number is a number; "price above it" is the reading, which is why the
+  // row says that rather than quoting a level nobody can place.
+  const up = indicators({
+    bars: rising, rsi14: null, adx14: null, atrPct: null, vwapDistPct: null,
+    emaFast: null, emaSlow: null, volumeRatio: null, cvdSlope: null, aggressorBuyPct: null, oiChangePct: null,
+  }).find((i) => i.key === 'hma')!;
+  assert.equal(up.read, 'Price above');
+  assert.equal(up.bias, 'BULLISH');
 });

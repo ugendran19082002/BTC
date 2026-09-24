@@ -240,6 +240,159 @@ export function aroon(bars: readonly Candle[], n = 25): number | null {
   return ((hi - lo) / len) * 100;
 }
 
+/** A plain moving average, and the weighted and hull ones the list asks for. */
+export const sma = (xs: readonly number[], n: number): number | null =>
+  xs.length < n ? null : mean(xs.slice(-n));
+
+export function wma(xs: readonly number[], n: number): number | null {
+  if (xs.length < n) return null;
+  const window = xs.slice(-n);
+  let num = 0;
+  let den = 0;
+  for (let i = 0; i < window.length; i++) { num += window[i]! * (i + 1); den += i + 1; }
+  return num / den;
+}
+
+/** Hull: fast and smooth at once, which is the only reason it exists. */
+export function hma(xs: readonly number[], n = 16): number | null {
+  const half = wma(xs, Math.max(2, Math.round(n / 2)));
+  const full = wma(xs, n);
+  if (half === null || full === null) return null;
+  const root = Math.max(2, Math.round(Math.sqrt(n)));
+  // The raw series 2×WMA(n/2) − WMA(n), smoothed again over √n.
+  const raw: number[] = [];
+  for (let i = xs.length - root; i < xs.length; i++) {
+    const a = wma(xs.slice(0, i + 1), Math.max(2, Math.round(n / 2)));
+    const b = wma(xs.slice(0, i + 1), n);
+    if (a === null || b === null) return null;
+    raw.push(2 * a - b);
+  }
+  return wma(raw, raw.length);
+}
+
+/**
+ * SuperTrend, as a direction rather than a line.
+ *
+ * The line's value means nothing without the chart under it; which side of it
+ * price is on is the whole reading, and that is +1 or −1.
+ */
+export function superTrend(bars: readonly Candle[], n = 10, mult = 3): -1 | 0 | 1 {
+  if (bars.length < n + 2) return 0;
+  const tr = (i: number): number => {
+    const b = bars[i]!;
+    const a = bars[i - 1]!;
+    return Math.max(b.high - b.low, Math.abs(b.high - a.close), Math.abs(b.low - a.close));
+  };
+  let trend: -1 | 0 | 1 = 0;
+  let upper = Infinity;
+  let lower = -Infinity;
+  for (let i = n; i < bars.length; i++) {
+    const trs: number[] = [];
+    for (let k = i - n + 1; k <= i; k++) trs.push(tr(k));
+    const atr = mean(trs);
+    if (atr === null || atr === 0) continue;
+    const b = bars[i]!;
+    const mid = (b.high + b.low) / 2;
+    const basicUpper = mid + mult * atr;
+    const basicLower = mid - mult * atr;
+    const before = bars[i - 1]!;
+    // The bands only ever tighten, until price closes through them: that is
+    // what makes SuperTrend a trailing stop rather than a pair of envelopes.
+    upper = basicUpper < upper || before.close > upper ? basicUpper : upper;
+    lower = basicLower > lower || before.close < lower ? basicLower : lower;
+    trend = trend === 1 ? (b.close < lower ? -1 : 1)
+      : trend === -1 ? (b.close > upper ? 1 : -1)
+        : b.close > mid ? 1 : -1;
+  }
+  return trend;
+}
+
+/** The vortex indicator: which side's swing is doing more work. */
+export function vortex(bars: readonly Candle[], n = 14): number | null {
+  const window = bars.slice(-(n + 1));
+  if (window.length < n + 1) return null;
+  let up = 0;
+  let down = 0;
+  let tr = 0;
+  for (let i = 1; i < window.length; i++) {
+    const b = window[i]!;
+    const a = window[i - 1]!;
+    up += Math.abs(b.high - a.low);
+    down += Math.abs(b.low - a.high);
+    tr += Math.max(b.high - b.low, Math.abs(b.high - a.close), Math.abs(b.low - a.close));
+  }
+  if (tr === 0) return null;
+  return (up - down) / tr;
+}
+
+/** TRIX: the triple-smoothed rate of change, in basis points a bar. */
+export function trix(closes: readonly number[], n = 15): number | null {
+  const one = ema(closes, n);
+  if (one === null) return null;
+  const twice = ema(closes.slice(0, -1), n);
+  if (twice === null || twice === 0) return null;
+  return ((one - twice) / twice) * 10_000;
+}
+
+/** The awesome oscillator: the 5-bar midpoint average against the 34-bar one. */
+export function awesome(bars: readonly Candle[]): number | null {
+  const mids = bars.map((b) => (b.high + b.low) / 2);
+  const fast = sma(mids, 5);
+  const slow = sma(mids, 34);
+  return fast === null || slow === null ? null : fast - slow;
+}
+
+/** Money flow index: RSI with the volume behind each bar counted. */
+export function mfi(bars: readonly Candle[], n = 14): number | null {
+  const window = bars.slice(-(n + 1));
+  if (window.length < n + 1) return null;
+  let positive = 0;
+  let negative = 0;
+  for (let i = 1; i < window.length; i++) {
+    const b = window[i]!;
+    const a = window[i - 1]!;
+    const typical = (b.high + b.low + b.close) / 3;
+    const before = (a.high + a.low + a.close) / 3;
+    const flow = typical * b.volume;
+    if (typical > before) positive += flow;
+    else if (typical < before) negative += flow;
+  }
+  if (positive + negative === 0) return null;
+  return (positive / (positive + negative)) * 100;
+}
+
+/** Chaikin money flow: where in its range each bar closed, weighted by volume. */
+export function cmf(bars: readonly Candle[], n = 20): number | null {
+  const window = bars.slice(-n);
+  if (window.length < Math.min(5, n)) return null;
+  let flow = 0;
+  let volume = 0;
+  for (const b of window) {
+    const range = b.high - b.low;
+    if (range > 0) flow += (((b.close - b.low) - (b.high - b.close)) / range) * b.volume;
+    volume += b.volume;
+  }
+  return volume === 0 ? null : flow / volume;
+}
+
+/** Relative volume: this bar against the average of the ones before it. */
+export function relativeVolume(bars: readonly Candle[], n = 20): number | null {
+  const window = bars.slice(-(n + 1));
+  if (window.length < 6) return null;
+  const before = mean(window.slice(0, -1).map((b) => b.volume));
+  const now = window[window.length - 1]!.volume;
+  return before === null || before === 0 ? null : now / before;
+}
+
+/** Realised volatility, annualised from the bars' own returns. */
+export function realisedVol(closes: readonly number[], barsPerYear: number, n = 30): number | null {
+  const window = closes.slice(-(n + 1));
+  if (window.length < 10) return null;
+  const rets = window.slice(1).map((c, i) => Math.log(c / window[i]!));
+  const sd = stdev(rets);
+  return sd === null ? null : sd * Math.sqrt(barsPerYear) * 100;
+}
+
 export type Indicator = {
   key: string;
   /** What goes above the number: "RSI (14)", "EMA 21/50". */
@@ -397,6 +550,31 @@ export function indicators(input: IndicatorInput): Indicator[] {
     (v) => (v >= 50 ? ['Highs are newer', 'BULLISH'] : v <= -50 ? ['Lows are newer', 'BEARISH'] : ['Mixed', 'NEUTRAL']),
     (v) => (v + 100) / 200));
 
+  out.push(num('supertrend', 'SuperTrend', superTrend(input.bars), (v) => (v > 0 ? 'Up' : v < 0 ? 'Down' : 'Flat'),
+    (v) => (v > 0 ? ['Above the band', 'BULLISH'] : v < 0 ? ['Below the band', 'BEARISH'] : ['On it', 'NEUTRAL']), () => null));
+  out.push(num('vortex', 'Vortex', vortex(input.bars), (v) => (v > 0 ? '+' : '') + v.toFixed(2),
+    (v) => (v >= 0.1 ? ['Buyers', 'BULLISH'] : v <= -0.1 ? ['Sellers', 'BEARISH'] : ['Even', 'NEUTRAL']),
+    (v) => (v + 1) / 2));
+  out.push(num('trix', 'TRIX', trix(closes), (v) => (v > 0 ? '+' : '') + v.toFixed(0),
+    (v) => (v > 0 ? ['Rising', 'BULLISH'] : v < 0 ? ['Falling', 'BEARISH'] : ['Flat', 'NEUTRAL']), () => null));
+  out.push(num('ao', 'Awesome', awesome(input.bars), (v) => (v > 0 ? '+' : '') + v.toFixed(0),
+    (v) => (v > 0 ? ['Bullish', 'BULLISH'] : v < 0 ? ['Bearish', 'BEARISH'] : ['Flat', 'NEUTRAL']), () => null));
+  out.push(num('mfi', 'MFI (14)', mfi(input.bars), (v) => v.toFixed(0),
+    (v) => (v >= 80 ? ['Overbought', 'BEARISH'] : v <= 20 ? ['Oversold', 'BULLISH']
+      : v >= 55 ? ['Money in', 'BULLISH'] : v <= 45 ? ['Money out', 'BEARISH'] : ['Neutral', 'NEUTRAL']),
+    (v) => v / 100));
+  out.push(num('cmf', 'Chaikin flow', cmf(input.bars), (v) => (v > 0 ? '+' : '') + v.toFixed(2),
+    (v) => (v >= 0.05 ? ['Accumulation', 'BULLISH'] : v <= -0.05 ? ['Distribution', 'BEARISH'] : ['Balanced', 'NEUTRAL']),
+    (v) => (v + 1) / 2));
+  out.push(num('rvol', 'Relative volume', relativeVolume(input.bars), (v) => `${v.toFixed(1)}x`,
+    (v) => (v >= 2 ? ['Burst', 'NEUTRAL'] : v >= 1.5 ? ['Busy', 'NEUTRAL'] : v <= 0.6 ? ['Quiet', 'NEUTRAL'] : ['Normal', 'NEUTRAL']),
+    (v) => v / 3));
+  out.push(num('hma', 'HMA (16)', hma(closes), (v) => v.toFixed(0),
+    (v) => {
+      const last = closes[closes.length - 1] ?? v;
+      return last > v ? ['Price above', 'BULLISH'] : last < v ? ['Price below', 'BEARISH'] : ['On it', 'NEUTRAL'];
+    }, () => null));
+
   return out;
 }
 
@@ -432,7 +610,7 @@ function num(
 }
 
 /**
- * The six to ten worth showing, for the state price is in.
+ * The twenty worth showing, for the state price is in.
  *
  * Each state has the readings that decide it. At a level being tested that is
  * volume, who is crossing the spread and where the bar closed; in a range it
@@ -440,19 +618,19 @@ function num(
  * in the payload -- this only decides what is on the card.
  */
 export const RELEVANT_BY_STATE: Record<string, readonly string[]> = {
-  WATCH: ['trend', 'structure', 'resistance', 'support', 'volume', 'cvd', 'aggressor', 'oi', 'rsi', 'macd', 'ema', 'vwap', 'atr', 'adx', 'bollinger', 'stoch', 'williams', 'obv', 'aroon', 'er'],
-  CANDIDATE: ['trend', 'structure', 'resistance', 'support', 'volume', 'cvd', 'aggressor', 'oi', 'rsi', 'macd', 'ema', 'vwap', 'atr', 'adx', 'bollinger', 'stoch'],
-  CONFIRMED: ['trend', 'structure', 'resistance', 'support', 'volume', 'cvd', 'oi', 'macd', 'ema', 'adx', 'rsi', 'vwap', 'atr', 'obv', 'donchian', 'aroon'],
-  RETEST: ['trend', 'structure', 'resistance', 'support', 'volume', 'cvd', 'vwap', 'ema', 'adx', 'oi', 'rsi', 'macd', 'atr', 'bollinger', 'donchian', 'stoch'],
-  FAILED: ['trend', 'structure', 'resistance', 'support', 'volume', 'aggressor', 'cvd', 'rsi', 'vwap', 'oi', 'macd', 'ema', 'atr', 'adx', 'stoch', 'williams'],
-  RANGE: ['trend', 'structure', 'resistance', 'support', 'atr', 'adx', 'er', 'volume', 'rsi', 'vwap', 'macd', 'ema', 'bollinger', 'chop', 'stoch', 'williams'],
+  WATCH: ['trend', 'structure', 'resistance', 'support', 'volume', 'rvol', 'cvd', 'aggressor', 'oi', 'rsi', 'macd', 'ema', 'vwap', 'atr', 'adx', 'supertrend', 'bollinger', 'stoch', 'williams', 'obv', 'mfi', 'cmf', 'aroon', 'vortex', 'er', 'chop'],
+  CANDIDATE: ['trend', 'structure', 'resistance', 'support', 'volume', 'rvol', 'cvd', 'aggressor', 'oi', 'rsi', 'macd', 'ema', 'vwap', 'atr', 'adx', 'supertrend', 'bollinger', 'stoch', 'mfi', 'cmf', 'obv', 'ao', 'trix', 'vortex'],
+  CONFIRMED: ['trend', 'structure', 'resistance', 'support', 'volume', 'rvol', 'cvd', 'oi', 'macd', 'ema', 'adx', 'supertrend', 'rsi', 'vwap', 'atr', 'obv', 'donchian', 'aroon', 'ao', 'trix', 'mfi', 'vortex', 'hma', 'cmf'],
+  RETEST: ['trend', 'structure', 'resistance', 'support', 'volume', 'rvol', 'cvd', 'vwap', 'ema', 'adx', 'oi', 'rsi', 'macd', 'atr', 'bollinger', 'donchian', 'stoch', 'supertrend', 'obv', 'cmf', 'hma', 'aroon'],
+  FAILED: ['trend', 'structure', 'resistance', 'support', 'volume', 'rvol', 'aggressor', 'cvd', 'rsi', 'vwap', 'oi', 'macd', 'ema', 'atr', 'adx', 'stoch', 'williams', 'mfi', 'cmf', 'obv', 'bollinger', 'ao'],
+  RANGE: ['trend', 'structure', 'resistance', 'support', 'atr', 'adx', 'er', 'chop', 'volume', 'rvol', 'rsi', 'vwap', 'macd', 'ema', 'bollinger', 'bbwidth', 'donchian', 'stoch', 'williams', 'supertrend', 'aroon', 'cmf'],
 };
 
 export function relevantIndicators(
   all: readonly Indicator[],
   stage: keyof typeof RELEVANT_BY_STATE | string,
   _event?: MarketEvent, _side?: Side | null,
-  limit = 12,
+  limit = 20,
 ): Indicator[] {
   const wanted = RELEVANT_BY_STATE[stage] ?? RELEVANT_BY_STATE.RANGE!;
   const by = new Map(all.map((i) => [i.key, i]));

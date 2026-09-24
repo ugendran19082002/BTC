@@ -13,7 +13,7 @@ import { DEFAULT_CONFIG, thresholds } from '@/lib/screen-config';
 import { PanelFold } from './parts';
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
 import {
-  FlowPanel, KeyLevelsPanel, KpiStrip, OptionBiasPanel, PriceChangePanel, VolatilityPanel,
+  FlowPanel, KpiStrip, OptionBiasPanel, PriceChangePanel, VolatilityPanel,
 } from './MarketPanels';
 import { findLeg, type Selected } from './DecisionPanels';
 import { DecisionCards } from './DecisionCards';
@@ -60,8 +60,16 @@ export function Overview({
   /** The trade size the desk is set to, in contracts, and the ticket's leverage (for the margin estimates). */
   contracts: number;
   leverage?: number;
-  /** A price chart for the centre column; none where the screen has its own. */
-  chart?: ReactNode;
+  /**
+   * The chart and its analysis.
+   *
+   * Given a function, it is handed the two panels that ask the same question
+   * from the options board -- the expiry read and the CE/PE bias -- so the
+   * caller can put them on the analysis card as tabs instead of leaving them
+   * as two more cards in the right-hand column. They are built here, where
+   * their inputs are, and their own logic is untouched by the move.
+   */
+  chart?: ReactNode | ((slots: { expiry: ReactNode; options: ReactNode }) => ReactNode);
   /** The chart's timeframe: the price-action panel follows it. */
   chartTf?: ChartTf;
   /** The selected strike, when the screen owns it; `null` means the desk's pick. */
@@ -208,14 +216,22 @@ export function Overview({
         the screen is opened for, so it gets the room; the three columns of
         supporting panels start under it.
       */}
-      {chart ? <div className="ov-chart-wide">{chart}</div> : null}
+      {chart ? (
+        <div className="ov-chart-wide">
+          {typeof chart === 'function'
+            ? chart({
+              expiry: <ErrorBoundary where="Expiry direction"><ExpiryDirectionPanel d={direction} hoursLeftText={hoursLeftText} /></ErrorBoundary>,
+              options: <ErrorBoundary where="Option bias"><OptionBiasPanel bias={bias} /></ErrorBoundary>,
+            })
+            : chart}
+        </div>
+      ) : null}
 
       <div className="ov-main">
         <div className="ov-col">
           <ErrorBoundary where="Price change"><PriceChangePanel price={movement?.price ?? null} spot={spot} /></ErrorBoundary>
           <ErrorBoundary where="Early warning"><EarlyWarningPanel data={data} perp={perp} changes={changes?.rows ?? null} /></ErrorBoundary>
           <ErrorBoundary where="Volatility"><VolatilityPanel data={data} iv={iv} skewRank={term?.skew ?? null} /></ErrorBoundary>
-          <ErrorBoundary where="Key levels"><KeyLevelsPanel data={data} spot={spot} emUsd={emSettle?.move ?? null} /></ErrorBoundary>
         </div>
 
         <div className="ov-col">
@@ -224,8 +240,6 @@ export function Overview({
         </div>
 
         <div className="ov-col ov-right">
-          <ErrorBoundary where="Expiry direction"><ExpiryDirectionPanel d={direction} hoursLeftText={hoursLeftText} /></ErrorBoundary>
-          <ErrorBoundary where="Option bias"><OptionBiasPanel bias={bias} /></ErrorBoundary>
           <ErrorBoundary where="Multi-timeframe"><MovementPanel data={data} em={emSettle} activeMin={config.horizonMin} mtf={mtf} movement={movement?.rows ?? null} /></ErrorBoundary>
           <ErrorBoundary where="Strategy decision">
             <DecisionCards data={data} sides={sides} choice={choice} iv={iv} em={emSettle} mtf={mtf} contracts={contracts} leverage={leverage}

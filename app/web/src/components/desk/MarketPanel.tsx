@@ -21,7 +21,7 @@ import type { MarketStateResponse, StateHistoryRow } from '@/api/desk';
  * a fifth thing that knows all their rules.
  */
 export function MarketPanel({
-  chart, data, history, hitRate, tf, spot, ready = true,
+  chart, data, history, hitRate, tf, spot, extra = [], ready = true,
 }: {
   /** The price chart itself, passed in so this file never grows chart logic. */
   chart: ReactNode;
@@ -31,6 +31,8 @@ export function MarketPanel({
   tf: string;
   /** BTC now, so each earlier call can say what price did after it. */
   spot?: number;
+  /** The expiry read and the options' bias, as tabs on the card. */
+  extra?: readonly { label: string; node: ReactNode }[];
   /** False on a past date, where there is no live state to read. */
   ready?: boolean;
 }) {
@@ -59,7 +61,7 @@ export function MarketPanel({
       {ready ? (
         <div className="bt-analysis__side">
           <MarketState
-            data={data} history={history} hitRate={hitRate} spot={spot} tf={tf}
+            data={data} history={history} hitRate={hitRate} spot={spot} tf={tf} extra={extra}
           />
         </div>
       ) : null}

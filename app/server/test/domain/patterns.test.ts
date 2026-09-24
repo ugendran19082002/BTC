@@ -255,3 +255,50 @@ test('two pushes to the same price with no dip between them is not a pattern', (
 test('nothing is claimed from too few bars to have a structure', () => {
   assert.deepEqual(marketStructure({ bars: series([[100, 120], [95, 115]]), atr: 5 }), []);
 });
+
+/*
+ * The rest of the owner's candle list. Each fixture is the shape itself and
+ * nothing else: a detector that fires on "roughly right" fires on everything,
+ * and these are the patterns that are supposed to be rare.
+ */
+const cd = (open: number, high: number, low: number, close: number): Candle =>
+  ({ time: 0, open, high, low, close, volume: 100 });
+
+test('[critical] a kicking pair: two solid bars the opposite way, with a gap', () => {
+  const found = names(candlePatterns([cd(120, 121, 100, 100), cd(130, 150, 129, 150)]));
+  assert.ok(found.includes('Kicking (Bullish)'), found.join(', '));
+  const down = names(candlePatterns([cd(100, 121, 99, 120), cd(90, 91, 70, 70)]));
+  assert.ok(down.includes('Kicking (Bearish)'), down.join(', '));
+});
+
+test('matching lows are two falls that stopped at the same price', () => {
+  const found = names(candlePatterns([cd(120, 121, 99, 100), cd(110, 111, 99, 100)]));
+  assert.ok(found.includes('Matching Low'), found.join(', '));
+});
+
+test('a harami cross is the pause said harder: a doji inside the last bar', () => {
+  const found = names(candlePatterns([cd(120, 121, 99, 100), cd(110, 112, 108, 110)]));
+  assert.ok(found.includes('Harami Cross (Bullish)'), found.join(', '));
+});
+
+test('[critical] an abandoned baby is a doji gapped away from both its neighbours', () => {
+  // The cleanest three-bar reversal there is, and the rarest -- so it must not
+  // fire on a doji that merely sits between two bars.
+  const gapped = names(candlePatterns([cd(120, 121, 100, 100), cd(90, 92, 88, 90), cd(110, 130, 109, 130)]));
+  assert.ok(gapped.includes('Abandoned Baby (Bullish)'), gapped.join(', '));
+  const touching = names(candlePatterns([cd(120, 121, 100, 100), cd(101, 103, 99, 101), cd(110, 130, 109, 130)]));
+  assert.ok(!touching.includes('Abandoned Baby (Bullish)'), touching.join(', '));
+});
+
+test('three inside up is a fall, a bar inside it, and a close back through the top', () => {
+  const found = names(candlePatterns([cd(130, 131, 99, 100), cd(110, 112, 105, 108), cd(112, 140, 111, 135)]));
+  assert.ok(found.includes('Three Inside Up'), found.join(', '));
+});
+
+test('a high wave candle is long wicks both ways, not a spinning top', () => {
+  // A body under a tenth of the range is a doji, whatever its wicks do: the
+  // fixture has to have a body for this to be the shape being tested.
+  const found = names(candlePatterns([cd(100, 140, 60, 112)]));
+  assert.ok(found.includes('High Wave Candle'), found.join(', '));
+  assert.ok(!found.includes('Spinning Top'), 'the louder name wins where both would fit');
+});
