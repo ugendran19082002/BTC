@@ -21,7 +21,7 @@ const data = live as unknown as ChainResponse;
 describe('the decision panels', () => {
   it('draw every panel from a real chain, with the chart and chain left to the screen', () => {
     render(<Overview data={data} trade={null} contracts={1} />);
-    for (const t of ['Key levels', 'Volatility & skew', 'Flow · BTC perpetual & options', 'Strategy decision', 'Strike finder', 'Multi-timeframe']) {
+    for (const t of ['Volatility & skew', 'Flow · BTC perpetual & options', 'Strategy decision', 'Multi-timeframe']) {
       expect(screen.getByText(t, { selector: 'h3' })).toBeInTheDocument();
     }
     // No settings toolbar and no order panel: the desk's configuration is fixed, and orders have their own tab.
@@ -29,8 +29,17 @@ describe('the decision panels', () => {
     expect(screen.queryByText('Order panel', { selector: 'h3' })).toBeNull();
     // The two sides, on the strategy decision.
     for (const t of ['SELL CE', 'SELL PE']) expect(screen.getByText(t, { selector: '.ov-card4 > header > b' })).toBeInTheDocument();
-    // Removed on the owner's request, 22 Sep 2026: the final-decision card, the IV term structure,
-    // the compact chain and the desk events; skew is inside the volatility card now.
+    /*
+     * Removed on the owner's request, 22 Sep 2026: the final-decision card, the
+     * IV term structure, the compact chain and the desk events; skew is inside
+     * the volatility card now. And on 24 Sep: price action and key levels,
+     * whose readings are under the chart; the expiry read and the CE/PE bias,
+     * which are tabs on the analysis card; and the strike finder, whose job the
+     * strategy decision already does.
+     */
+    for (const gone of ['Price action', 'Key levels', 'Strike finder', 'Expiry direction', 'Option bias · CE / PE']) {
+      expect(screen.queryByText(gone, { selector: 'h3' })).toBeNull();
+    }
     expect(screen.queryByText('FINAL EXPIRY SELL DECISION')).toBeNull();
     for (const gone of ['IV term structure', 'Desk events', /^Skew \(/, 'Volatility', /^Sell-side risk engine/, 'BTC flow · perpetual', 'Option flow · CE / PE']) expect(screen.queryByText(gone, { selector: 'h3' })).toBeNull();
     // one flow card, two sections, one window picker
