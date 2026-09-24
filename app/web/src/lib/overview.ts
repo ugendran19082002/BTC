@@ -249,14 +249,6 @@ export function sideCards(data: Pick<ChainResponse, 'legs' | 'best' | 'recommend
   });
 }
 
-/** Top `n` sell candidates on one side, by the desk's score, out of the money and not refused. */
-export function candidates(legs: readonly Leg[], cp: 'C' | 'P', n = 3): Leg[] {
-  return legs
-    .filter((l) => l.cp === cp && l.moneyness === 'OTM' && l.score !== null && l.ev?.signal !== 'avoid')
-    .sort((a, b) => b.score! - a.score!)
-    .slice(0, n);
-}
-
 // ------------------------------------------------------------- the model view
 
 export type ModelView = {
@@ -845,27 +837,6 @@ export function movementVerdict(rows: readonly HorizonRow[], board: readonly Boa
   return { way, confidence, text: `${way === 'range' ? 'Range-bound' : way === 'up' ? 'Leaning up' : 'Leaning down'} to expiry, ${emText} (${votes.up} up · ${votes.down} down · ${votes.range} range votes)` };
 }
 
-// --------------------------------------------------------- strike finder
-
-export type FinderFilter = { side: 'C' | 'P' | 'both'; minPremium: number; maxPot: number; minEm: number; top: number };
-
-/** The desk's own filters: what the strategy decision starts from. */
-export const DESK_FILTER: FinderFilter = { side: 'both', minPremium: 15, maxPot: 0.35, minEm: 1, top: 5 };
-
-/** Whether the operator has moved a filter off the desk's own. */
-export const filtersChanged = (f: FinderFilter) => f.minPremium !== DESK_FILTER.minPremium || f.maxPot !== DESK_FILTER.maxPot || f.minEm !== DESK_FILTER.minEm;
-
-/** Candidates after the operator's filters, best score first. */
-export function findStrikes(legs: readonly Leg[], f: FinderFilter): Leg[] {
-  return legs
-    .filter((l) => (f.side === 'both' || l.cp === f.side) && l.moneyness !== 'ITM')
-    .filter((l) => (l.sellPrice ?? l.mark ?? 0) >= f.minPremium)
-    .filter((l) => l.probs.touch === null || l.probs.touch <= f.maxPot)
-    .filter((l) => (l.emDistance ?? l.emBuffer ?? 0) >= f.minEm)
-    .sort((a, b) => (b.score ?? -1) - (a.score ?? -1))
-    .slice(0, f.top);
-}
-
 // ------------------------------------------------- the contract, the data
 
 export type ContractValidity = { state: 'LIVE' | 'EXPIRING' | 'EXPIRED'; hoursLeft: number; text: string };
@@ -1092,28 +1063,6 @@ export const windowLabel = (c: WindowChoice) => (c === 'start' ? 'since 05:30' :
 
 // -------------------------------------------------------- the finder's best
 
-export type FinderRank = 'BEST SAFE' | 'BEST BALANCED' | 'BEST PREMIUM';
-
-/**
- * Three ways to be the best strike on a side: safest (lowest touch odds,
- * highest P(OTM) on a tie), most balanced (the desk's score), richest
- * (the most credit). One strike can hold more than one; a strike holds a
- * rank only against others of its side.
- */
-export function finderRanks(legs: readonly Leg[]): Map<string, FinderRank[]> {
-  const out = new Map<string, FinderRank[]>();
-  const key = (l: Leg) => `${l.cp}${l.strike}`;
-  const add = (l: Leg | undefined, r: FinderRank) => { if (l) out.set(key(l), [...(out.get(key(l)) ?? []), r]); };
-  for (const cp of ['C', 'P'] as const) {
-    const mine = legs.filter((l) => l.cp === cp);
-    if (!mine.length) continue;
-    const safe = [...mine].sort((a, b) => (a.probs.touch ?? 1) - (b.probs.touch ?? 1) || (odds(b).pOtm ?? 0) - (odds(a).pOtm ?? 0))[0];
-    const balanced = [...mine].sort((a, b) => (b.score ?? -1) - (a.score ?? -1))[0];
-    const premium = [...mine].sort((a, b) => (b.bid ?? b.sellPrice ?? b.mark ?? 0) - (a.bid ?? a.sellPrice ?? a.mark ?? 0))[0];
-    add(safe, 'BEST SAFE'); add(balanced, 'BEST BALANCED'); add(premium, 'BEST PREMIUM');
-  }
-  return out;
-}
 
 // ---------------------------------------------------------- skew richness
 
