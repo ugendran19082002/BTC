@@ -6,14 +6,14 @@ import { getMovement, getPerp, getTerm } from '@/api/desk';
 import { usePoll } from '@/hooks/usePoll';
 import type { ChartTf } from '@/components/desk/PriceChart';
 import {
-  assessSides, bestLeg, DESK_FILTER, expectedMove, expiryDirection, filtersChanged, findStrikes, ivRv, keyLevels, mtfConsensus, namedLevels, optionBias, windowMinutes, sideGates, sideSelector, sideStatusOf, skew,
+  assessSides, bestLeg, DESK_FILTER, expectedMove, expiryDirection, filtersChanged, findStrikes, ivRv, mtfConsensus, optionBias, windowMinutes, sideGates, sideSelector, sideStatusOf, skew,
   type FinderFilter, type SideAssessment, type SideChoice, type WindowChoice,
 } from '@/lib/overview';
 import { DEFAULT_CONFIG, thresholds } from '@/lib/screen-config';
 import { PanelFold } from './parts';
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
 import {
-  FlowPanel, KeyLevelsPanel, KpiStrip, OptionBiasPanel, PriceActionPanel, PriceChangePanel, VolatilityPanel,
+  FlowPanel, KeyLevelsPanel, KpiStrip, OptionBiasPanel, PriceChangePanel, VolatilityPanel,
 } from './MarketPanels';
 import { findLeg, type Selected } from './DecisionPanels';
 import { DecisionCards } from './DecisionCards';
@@ -29,7 +29,7 @@ import { ChangesPanel, EarlyWarningPanel, ExpiryDirectionPanel, MovementPanel, S
  *
  * One fact, one place. The bar owns the clock (entry, window, expiry, time
  * left); the strategy decision owns the answer; the KPI strip owns the market's
- * headline numbers; the left column reads the market (trend, levels,
+ * headline numbers; the left column reads the market (levels,
  * volatility, the options' tape, the early warning); the centre is the board (chart, the perpetual's tape under it,
  * compact chain, the strike under inspection, what changed on the chosen
  * strikes, their risk with stress and decay); the right column decides
@@ -107,8 +107,6 @@ export function Overview({
   // To settlement, by IV: what every strike's distance and tail is measured in.
   const emSettle = useMemo(() => expectedMove(snap), [snap]);
   const spot = data.market?.spot ?? snap.spot;
-  // The levels and the multi-timeframe consensus: read once, shown where they belong.
-  const levels = useMemo(() => namedLevels(keyLevels(data.structure, data.market?.high24h ?? null, data.market?.low24h ?? null, data.market?.prevDayHigh ?? null, data.market?.prevDayLow ?? null), spot), [data.structure, data.market, spot]);
   const mtf = useMemo(() => mtfConsensus(data.market, data.outlook), [data.market, data.outlook]);
 
   // The perpetual (funding, book, the hour's flow, OI acceleration) every five
@@ -214,7 +212,6 @@ export function Overview({
 
       <div className="ov-main">
         <div className="ov-col">
-          <ErrorBoundary where="Price action"><PriceActionPanel market={data.market} tf={chartTf} levels={levels} spot={spot} /></ErrorBoundary>
           <ErrorBoundary where="Price change"><PriceChangePanel price={movement?.price ?? null} spot={spot} /></ErrorBoundary>
           <ErrorBoundary where="Early warning"><EarlyWarningPanel data={data} perp={perp} changes={changes?.rows ?? null} /></ErrorBoundary>
           <ErrorBoundary where="Volatility"><VolatilityPanel data={data} iv={iv} skewRank={term?.skew ?? null} /></ErrorBoundary>

@@ -159,6 +159,7 @@ export async function readState(tf: StateTf = '15m', nowMs = Date.now()): Promis
   };
 
   const state = marketState(input);
+  const last = bars[bars.length - 1] ?? null;
 
   // The patterns and the readings are worked out from the same bars and the
   // same level, so the card can never show a pattern drawn against one level
@@ -180,6 +181,18 @@ export async function readState(tf: StateTf = '15m', nowMs = Date.now()): Promis
     cvdSlope: inputs.cvdSlope,
     aggressorBuyPct: inputs.aggressorBuyPct,
     oiChangePct: inputs.oiChangePct,
+    // The price-action read, folded in here rather than kept as a panel of its
+    // own saying the same six things a screen away from the chart.
+    trend: tfRead ? { label: tfRead.label, way: tfRead.trend } : null,
+    structure: tfRead
+      ? {
+        label: tfRead.structure === 1 ? 'higher highs and lows'
+          : tfRead.structure === -1 ? 'lower highs and lows' : 'no clear swings',
+        way: tfRead.structure,
+      }
+      : null,
+    toResistance: state.level.resistance === null || !last ? null : state.level.resistance - last.close,
+    toSupport: state.level.support === null || !last ? null : state.level.support - last.close,
   });
 
   return {

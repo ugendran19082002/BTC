@@ -269,6 +269,20 @@ export type IndicatorInput = {
   oiChangePct: number | null;
   /** Implied less realised volatility, in points. Negative is options cheap. */
   ivRvPts?: number | null;
+  /**
+   * The price-action read for this timeframe, folded in here (24 Sep 2026).
+   *
+   * It was a panel of its own in the left column saying "Trend: falling, RSI
+   * 38.8, MACD bearish, VWAP 85,648" -- the same six readings the summary
+   * under the chart was already showing, in a different order with different
+   * words, a screen away from the chart they describe. Two panels that can
+   * disagree about RSI is one panel too many.
+   */
+  trend?: { label: string; way: -1 | 0 | 1 } | null;
+  structure?: { label: string; way: -1 | 0 | 1 } | null;
+  /** How far spot is from the level either side, in points. */
+  toResistance?: number | null;
+  toSupport?: number | null;
 };
 
 /** Everything measurable, in the order a reader would want it. */
@@ -277,6 +291,24 @@ export function indicators(input: IndicatorInput): Indicator[] {
   const m = macd(closes);
   const er = efficiencyRatio(closes);
   const out: Indicator[] = [];
+
+  /*
+   * The price-action rows first: what the bars are doing, before the readings
+   * taken off them. A trend and a structure are not numbers, so they are shown
+   * as the words they are -- `num()` is for readings with a scale.
+   */
+  if (input.trend) {
+    out.push(word('trend', 'Trend', input.trend.label, input.trend.way));
+  }
+  if (input.structure) {
+    out.push(word('structure', 'Structure', input.structure.label, input.structure.way));
+  }
+  out.push(num('resistance', 'To resistance', input.toResistance ?? null,
+    (v) => `${v >= 0 ? '+' : '−'}${Math.abs(Math.round(v)).toLocaleString('en-US')}`,
+    (v) => (Math.abs(v) <= 50 ? ['At the level', 'NEUTRAL'] : ['Above', 'BEARISH']), () => null));
+  out.push(num('support', 'To support', input.toSupport ?? null,
+    (v) => `${v >= 0 ? '+' : '−'}${Math.abs(Math.round(v)).toLocaleString('en-US')}`,
+    (v) => (Math.abs(v) <= 50 ? ['At the level', 'NEUTRAL'] : ['Below', 'BULLISH']), () => null));
 
   out.push(num('rsi', 'RSI (14)', input.rsi14, (v) => v.toFixed(0),
     (v) => (v >= 70 ? ['Overbought', 'BEARISH'] : v <= 30 ? ['Oversold', 'BULLISH'] : v >= 55 ? ['Bullish', 'BULLISH'] : v <= 45 ? ['Bearish', 'BEARISH'] : ['Neutral', 'NEUTRAL']),
@@ -368,6 +400,22 @@ export function indicators(input: IndicatorInput): Indicator[] {
   return out;
 }
 
+/**
+ * A reading that is a word rather than a number.
+ *
+ * "Falling" has no scale, no gauge and nothing to round; forcing it through
+ * `num()` would mean inventing a number for it, which is how a screen ends up
+ * quoting a trend as 0.6.
+ */
+function word(key: string, label: string, text: string, way: -1 | 0 | 1): Indicator {
+  return {
+    key, label, value: way, text: text.charAt(0).toUpperCase() + text.slice(1),
+    read: way === 1 ? 'Up' : way === -1 ? 'Down' : 'Flat',
+    bias: way === 1 ? 'BULLISH' : way === -1 ? 'BEARISH' : 'NEUTRAL',
+    gauge: null,
+  };
+}
+
 function num(
   key: string, label: string, value: number | null,
   text: (v: number) => string,
@@ -392,12 +440,12 @@ function num(
  * in the payload -- this only decides what is on the card.
  */
 export const RELEVANT_BY_STATE: Record<string, readonly string[]> = {
-  WATCH: ['volume', 'cvd', 'aggressor', 'oi', 'rsi', 'macd', 'ema', 'vwap', 'atr', 'adx', 'bollinger', 'stoch', 'williams', 'obv', 'aroon', 'er'],
-  CANDIDATE: ['volume', 'cvd', 'aggressor', 'oi', 'rsi', 'macd', 'ema', 'vwap', 'atr', 'adx', 'bollinger', 'stoch'],
-  CONFIRMED: ['volume', 'cvd', 'oi', 'macd', 'ema', 'adx', 'rsi', 'vwap', 'atr', 'obv', 'donchian', 'aroon'],
-  RETEST: ['volume', 'cvd', 'vwap', 'ema', 'adx', 'oi', 'rsi', 'macd', 'atr', 'bollinger', 'donchian', 'stoch'],
-  FAILED: ['volume', 'aggressor', 'cvd', 'rsi', 'vwap', 'oi', 'macd', 'ema', 'atr', 'adx', 'stoch', 'williams'],
-  RANGE: ['atr', 'adx', 'er', 'volume', 'rsi', 'vwap', 'macd', 'ema', 'bollinger', 'chop', 'stoch', 'williams'],
+  WATCH: ['trend', 'structure', 'resistance', 'support', 'volume', 'cvd', 'aggressor', 'oi', 'rsi', 'macd', 'ema', 'vwap', 'atr', 'adx', 'bollinger', 'stoch', 'williams', 'obv', 'aroon', 'er'],
+  CANDIDATE: ['trend', 'structure', 'resistance', 'support', 'volume', 'cvd', 'aggressor', 'oi', 'rsi', 'macd', 'ema', 'vwap', 'atr', 'adx', 'bollinger', 'stoch'],
+  CONFIRMED: ['trend', 'structure', 'resistance', 'support', 'volume', 'cvd', 'oi', 'macd', 'ema', 'adx', 'rsi', 'vwap', 'atr', 'obv', 'donchian', 'aroon'],
+  RETEST: ['trend', 'structure', 'resistance', 'support', 'volume', 'cvd', 'vwap', 'ema', 'adx', 'oi', 'rsi', 'macd', 'atr', 'bollinger', 'donchian', 'stoch'],
+  FAILED: ['trend', 'structure', 'resistance', 'support', 'volume', 'aggressor', 'cvd', 'rsi', 'vwap', 'oi', 'macd', 'ema', 'atr', 'adx', 'stoch', 'williams'],
+  RANGE: ['trend', 'structure', 'resistance', 'support', 'atr', 'adx', 'er', 'volume', 'rsi', 'vwap', 'macd', 'ema', 'bollinger', 'chop', 'stoch', 'williams'],
 };
 
 export function relevantIndicators(
