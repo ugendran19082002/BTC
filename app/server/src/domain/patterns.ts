@@ -399,7 +399,7 @@ const fmt = (v: number) => v.toLocaleString('en-US', { maximumFractionDigits: 0 
  * first, because that is what somebody looking at the chart already sees, then
  * candles that agree with the side the state is about, then whatever is left.
  */
-export function relevant(all: readonly Pattern[], event: MarketEvent, side: Side | null, limit = 6): Pattern[] {
+export function relevant(all: readonly Pattern[], event: MarketEvent, side: Side | null, limit = 20): Pattern[] {
   const wants: Bias | null = side === 'UP' ? 'BULLISH' : side === 'DOWN' ? 'BEARISH' : null;
   const testing = event.includes('WATCH') || event.includes('REJECTION');
   const ranked = [...all].sort((a, b) => score(b) - score(a));
