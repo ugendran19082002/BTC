@@ -1,4 +1,3 @@
-import { Fragment } from 'react';
 import { usePersisted } from '@/hooks/usePersisted';
 import type { ChainResponse, Leg, MarketRead } from '@/types/desk';
 import type { FlowSummary, PerpResponse, PriceChange, SideFlow, TermResponse } from '@/api/desk';
