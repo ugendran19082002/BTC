@@ -18,7 +18,7 @@ import {
 import { findLeg, type Selected } from './DecisionPanels';
 import { DecisionCards } from './DecisionCards';
 import { ScreenBar } from './ScreenBar';
-import { ChangesPanel, EarlyWarningPanel, ExpiryDirectionPanel, MovementPanel, StrikeFinder, useChanges } from './TraderPanels';
+import { ChangesPanel, EarlyWarningPanel, ExpiryDirectionPanel, MovementPanel, useChanges } from './TraderPanels';
 
 /**
  * The Live screen: the three reference designs (docs/image1-3.png) and the
@@ -244,11 +244,6 @@ export function Overview({
           <ErrorBoundary where="Strategy decision">
             <DecisionCards data={data} sides={sides} choice={choice} iv={iv} em={emSettle} mtf={mtf} contracts={contracts} leverage={leverage}
               onSelect={(cp, strike) => setPicked({ cp, strike })} oi={perp?.oi ?? null} selectedCp={leg?.cp ?? null} pair={pair} />
-          </ErrorBoundary>
-          <ErrorBoundary where="Strike finder">
-            <StrikeFinder data={data} onSelect={(cp, strike) => setPicked({ cp, strike })} onSell={onSell} contracts={contracts} leverage={leverage}
-              defaultSide={choice.side === 'CE' ? 'C' : choice.side === 'PE' ? 'P' : 'both'} em={emSettle} execution={config.execution}
-              filter={filter} onFilter={setFilter} rvPct={data.market?.realisedVol ?? null} />
           </ErrorBoundary>
         </div>
       </div>
