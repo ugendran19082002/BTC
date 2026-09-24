@@ -290,6 +290,27 @@ statement is the authority. See `TODO.md`.
 
 ---
 
+## The stop that cost nine points (24 Sep 2026)
+
+A stop asked for at 70 filled at 79. It was not latency -- the engine polls
+every second and the stop itself rests at the exchange, triggered on the mark.
+It was the shape of the order: the desk sent the stop as a **limit priced 50%
+through its own trigger**, so a stop at 70 went out as a buy limit at 105,
+which is a market order wearing a hat. When the trigger hit, the order swept
+every offer up to 105 and filled at 79. Nothing measured it, so nothing said
+so, and it was found by reading the day's fills by hand.
+
+Three changes, in `trading/money.ts` and `trading/engine.ts`:
+
+* `STOP_LIMIT_SLACK` is **15%**, not 50% -- still clears a normal book by a
+  wide margin, with the five-tick floor for penny options, and bounded on a
+  thin one. The violent gap is still covered: `stopIfReached` closes at the
+  market when the mark passes the stop, so the two halves cover each other.
+* `slippageOf()` measures what an exit cost against what was asked for, signed
+  against the desk whichever side it was.
+* A fill that misses its own trigger by **5% or more** raises an alarm, once,
+  where the alerts already go.
+
 ## Testing
 
 1,128 server tests (`node:test` via tsx), 928 browser tests (vitest +
