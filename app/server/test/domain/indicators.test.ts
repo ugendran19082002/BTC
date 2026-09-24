@@ -108,9 +108,15 @@ test('a reading that could not be taken says so rather than showing a zero', () 
 });
 
 test('[critical] the card shows the readings that decide the state it is in', () => {
+  /*
+   * A dozen now rather than six: the readings became rows instead of tiles
+   * with dials, and a row fits. It is still a chosen few out of everything
+   * measured -- forty on a card is a card nobody reads.
+   */
   const all = indicators(input());
   const watching = relevantIndicators(all, 'WATCH').map((i) => i.key);
-  assert.equal(watching.length, 6, 'six, not everything');
+  assert.equal(watching.length, 12, 'a dozen, not everything');
+  assert.ok(all.length > watching.length, 'the rest are still in the payload');
   for (const want of ['volume', 'cvd', 'aggressor']) {
     assert.ok(watching.includes(want), `${want} decides a level being tested: ${watching.join(', ')}`);
   }
@@ -122,7 +128,7 @@ test('[critical] the card shows the readings that decide the state it is in', ()
 test('an unmeasured reading does not take a slot from one that could be measured', () => {
   const all = indicators(input({ cvdSlope: null, aggressorBuyPct: null }));
   const shown = relevantIndicators(all, 'WATCH');
-  assert.equal(shown.length, 6);
+  assert.equal(shown.length, 12);
   assert.ok(shown.every((i) => i.value !== null), shown.map((i) => `${i.key}=${i.value}`).join(', '));
 });
 
@@ -201,5 +207,5 @@ test('[critical] every wider reading is in the payload, and none of them is on t
   for (const k of ['bollinger', 'bbwidth', 'donchian', 'stoch', 'williams', 'cci', 'obv', 'chop', 'aroon']) {
     assert.ok(keys.includes(k), `${k} is measured`);
   }
-  assert.equal(relevantIndicators(all, 'WATCH').length, 6);
+  assert.equal(relevantIndicators(all, 'WATCH').length, 12);
 });

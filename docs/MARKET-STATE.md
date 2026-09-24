@@ -117,18 +117,50 @@ way price leaves it.
 
 ---
 
+## Up or down, in one word
+
+`domain/bias.ts` turns everything measured into the one thing a chart is
+opened to answer. Every reading with a direction casts a vote, weighted by what
+it is worth hearing from:
+
+| Evidence | Weight | Why |
+|---|---|---|
+| The state, confirmed | 3 | The market having actually done something |
+| The state, a setup | 1.5 | Half of a fact |
+| Timeframes agreeing | 3 × share | Six of six outranks four of six, and both outrank one bar |
+| Flow (CVD, aggressors) | 1 each | Who is crossing the spread |
+| Market structure | 2 | The swings, which survive a bar |
+| Regime | 1.5 | With the trend or against it |
+| A candle shape | 1 × fade | One bar's opinion, fading 20% a bar behind |
+| A reading | 1 | And **zero** where it could not be taken |
+
+Under a 12-point lean it says **no lean** rather than picking a side to fill
+the badge. The badge shows the weight each way -- "8 vs 3" -- and never a
+percentage: what is true now is not how often it works out, and a lone figure
+would be read as the second thing. That number needs the matched-state history;
+see **What is not built**.
+
 ## Patterns and indicators
 
-`domain/patterns.ts` names what the bars are doing: candle patterns (doji and
-its two, marubozu, hammer / hanging man, shooting star / inverted hammer, pin
-bars, engulfing, harami, piercing, dark cloud, tweezers, morning and evening
-star, three soldiers and crows) and structure (higher lows, lower highs, the
-three triangles, rectangle, level tests with a touch count, volume buildup,
-compression).
+`domain/patterns.ts` names what the bars are doing, in three layers:
 
-`domain/indicators.ts` holds the arithmetic — returns, CLV, ROC, mean, standard
-deviation, **z-score**, **percentile**, **efficiency ratio**, EMA, MACD — and
-assembles the readings.
+* **Candles** -- doji and its two, marubozu, hammer / hanging man, shooting
+  star / inverted hammer, pin bars, engulfing, harami, piercing, dark cloud,
+  tweezers, morning and evening star, three soldiers and crows.
+* **Shapes** -- higher lows, lower highs, the three triangles, rectangle, level
+  tests with a touch count, volume buildup, compression.
+* **Market structure** -- higher high / higher low / lower high / lower low,
+  equal highs and lows, **BOS**, **CHOCH**, market structure shift, liquidity
+  sweeps either side, double and triple tops and bottoms, head and shoulders
+  and its inverse, channels up and down, bull and bear flags.
+
+`domain/indicators.ts` holds the arithmetic -- returns, CLV, ROC, mean,
+standard deviation, **z-score**, **percentile**, **efficiency ratio**, EMA,
+MACD, **Bollinger %B and width**, **range position (Donchian)**,
+**stochastic**, **Williams %R**, **CCI**, **OBV slope**, **choppiness**,
+**Aroon** -- and assembles the readings. Everything here needs only the candles
+the chart is already drawing, which is why these are the ones that got built:
+no second feed, no second key, nothing more to be down at four in the morning.
 
 **Neither is shown in full, on purpose.** A card with thirty patterns on it is
 a card nobody reads. `relevant()` and `relevantIndicators()` pick four patterns
@@ -275,6 +307,25 @@ The analysis sits **beside** the chart on a wide screen and drops under it
 below 1100px. The panel runs the width of the desk: in the middle of three columns the chart
 was about six hundred pixels, which is a candle every two pixels and a plan in
 five-digit numbers three abreast.
+
+## The big-move catch
+
+The early-warning panel answers a different question from the state card --
+*is something about to happen* rather than *which way* -- and it now shows its
+working the same way. Every trigger carries **how far it has come towards its
+own threshold, out of 100**, with a bar behind it; the lamp still says whether
+the threshold is actually crossed, because those are different claims and only
+the second is one a position is changed on. The header carries the weighted
+mean of those scores beside the band: the pressure moves long before the band
+does, which is the whole point of an early warning rather than a late one.
+
+Nine grey lamps look identical at twenty and at eighty. Eighty is the
+interesting one.
+
+The reading is journalled server-side (`market/shock-history.ts`,
+`shock_snapshots`) and settled fifteen minutes later against where price went,
+so "when it said sudden, did anything happen?" has an answer that does not
+depend on who was watching. See docs/DB-INVENTORY.md.
 
 ## Where each piece lives
 

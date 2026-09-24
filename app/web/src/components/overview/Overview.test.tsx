@@ -42,7 +42,7 @@ describe('the decision panels', () => {
 
     // The answer, once, on the strategy decision: one of the four.
     expect(screen.getByText(/^Desk side: (CE|PE|BOTH|NO TRADE)$/)).toBeInTheDocument();
-    for (const t of [/^Early warning/, /^What changed/]) {
+    for (const t of [/^Big move catch/, /^What changed/]) {
       expect(screen.getByText(t, { selector: 'h3' })).toBeInTheDocument();
     }
     expect(screen.queryByText(/^Option chain/)).toBeNull();

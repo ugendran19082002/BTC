@@ -392,19 +392,19 @@ function num(
  * in the payload -- this only decides what is on the card.
  */
 export const RELEVANT_BY_STATE: Record<string, readonly string[]> = {
-  WATCH: ['volume', 'cvd', 'aggressor', 'oi', 'rsi', 'adx', 'er'],
-  CANDIDATE: ['volume', 'cvd', 'aggressor', 'oi', 'macd', 'rsi'],
-  CONFIRMED: ['volume', 'cvd', 'oi', 'macd', 'ema', 'adx'],
-  RETEST: ['volume', 'cvd', 'vwap', 'ema', 'adx', 'oi'],
-  FAILED: ['volume', 'aggressor', 'cvd', 'rsi', 'vwap', 'oi'],
-  RANGE: ['atr', 'adx', 'er', 'volume', 'rsi', 'vwap'],
+  WATCH: ['volume', 'cvd', 'aggressor', 'oi', 'rsi', 'macd', 'ema', 'vwap', 'atr', 'adx', 'bollinger', 'stoch', 'williams', 'obv', 'aroon', 'er'],
+  CANDIDATE: ['volume', 'cvd', 'aggressor', 'oi', 'rsi', 'macd', 'ema', 'vwap', 'atr', 'adx', 'bollinger', 'stoch'],
+  CONFIRMED: ['volume', 'cvd', 'oi', 'macd', 'ema', 'adx', 'rsi', 'vwap', 'atr', 'obv', 'donchian', 'aroon'],
+  RETEST: ['volume', 'cvd', 'vwap', 'ema', 'adx', 'oi', 'rsi', 'macd', 'atr', 'bollinger', 'donchian', 'stoch'],
+  FAILED: ['volume', 'aggressor', 'cvd', 'rsi', 'vwap', 'oi', 'macd', 'ema', 'atr', 'adx', 'stoch', 'williams'],
+  RANGE: ['atr', 'adx', 'er', 'volume', 'rsi', 'vwap', 'macd', 'ema', 'bollinger', 'chop', 'stoch', 'williams'],
 };
 
 export function relevantIndicators(
   all: readonly Indicator[],
   stage: keyof typeof RELEVANT_BY_STATE | string,
   _event?: MarketEvent, _side?: Side | null,
-  limit = 6,
+  limit = 12,
 ): Indicator[] {
   const wanted = RELEVANT_BY_STATE[stage] ?? RELEVANT_BY_STATE.RANGE!;
   const by = new Map(all.map((i) => [i.key, i]));

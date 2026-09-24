@@ -46,7 +46,7 @@ export function MarketPanel({
           <>
             <div className="bt-analysis__strip">
               <PatternStrip patterns={data?.patterns.shown ?? []} />
-              <IndicatorSummary items={data?.indicators.shown ?? []} />
+              <IndicatorSummary items={data?.indicators.shown ?? []} tf={tf} />
             </div>
             {data ? <ChartInsight insight={data.state.insight} /> : null}
           </>

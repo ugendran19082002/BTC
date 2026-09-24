@@ -380,6 +380,18 @@ added). Without them a row lists a call and cannot answer which readings ever
 paid, since none of it can be reconstructed from bars afterwards. Kept 90 days.
 It is what makes the card's score answerable: see docs/MARKET-STATE.md.
 
+`shock_snapshots` (`market/shock-history.ts`, migration `market-012`): the
+big-move catch, written down. Every sudden-move reading the server takes on the
+shortest window, kept when it says something new -- the band changed, the score
+moved eight points, or the ten-minute heartbeat came round so the series has no
+holes in a quiet afternoon. Each row carries the score, the band, the direction
+and its parts (JSONB, the shock engine's own shape), and is settled a quarter
+of an hour later with `move_pts` and `move_pct`: where price actually went
+after the warning, recorded then rather than worked out from whenever somebody
+next opened the screen. Read back by `GET /api/warning/history`, which also
+gives the mean absolute move per band **with the count behind it** -- a mean
+over four readings is not a finding. Kept 90 days.
+
 `trade_flow_1m`, `perp_snapshots` (`market/flow.ts`, migration
 `market-005-flow`): the perpetual's tape summed per minute by
 aggressor side (volume and, since `market-006`, the count of large prints), written every twenty seconds from the prints the

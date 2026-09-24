@@ -56,19 +56,20 @@ function glyphFor(name: string): string[] {
 export function PatternStrip({ patterns }: { patterns: readonly StatePattern[] }) {
   return (
     <section className="bt-readout" aria-label="Pattern detection">
-      <h3><ScanLine size={14} aria-hidden /> Pattern detection</h3>
+      <h3><ScanLine size={14} aria-hidden /> Pattern detection <span>recent</span></h3>
       {patterns.length === 0 ? (
         <p className="bt-muted">Nothing named on these bars.</p>
       ) : (
         <ul className="bt-readout__patterns">
           {patterns.map((p) => (
-            <li key={p.name} className={cn(p.bias === 'BULLISH' && 'is-up', p.bias === 'BEARISH' && 'is-down')}>
+            <li key={p.name} className={cn(p.bias === 'BULLISH' && 'is-up', p.bias === 'BEARISH' && 'is-down')}
+              title={`${p.note}${p.barsAgo > 0 ? ` · ${p.barsAgo} bars ago` : ''}`}>
+              <Glyph name={p.name} bias={p.bias} />
               <strong>{p.name}</strong>
+              {p.barsAgo > 0 ? <em>{p.barsAgo}b</em> : null}
               <span className="bt-readout__bias">
                 {p.bias === 'BULLISH' ? 'Bullish' : p.bias === 'BEARISH' ? 'Bearish' : 'Neutral'}
               </span>
-              <Glyph name={p.name} bias={p.bias} />
-              <span className="bt-readout__note">{p.note}</span>
             </li>
           ))}
         </ul>
@@ -78,49 +79,30 @@ export function PatternStrip({ patterns }: { patterns: readonly StatePattern[] }
 }
 
 /**
- * A half-circle for the readings that have natural bounds, and the number
- * alone for the ones that do not.
+ * The readings as a list, the way a trader reads them.
  *
- * RSI runs 0 to 100 and a dial says where in that it sits at a glance. MACD's
- * histogram has no top, so a dial would be inventing one -- those get the
- * figure and the word, which is all they can honestly carry.
+ * They were tiles with dials on them, four across, and six of them filled the
+ * width of the screen -- so six was all there was room for, and the ones that
+ * did not fit were the ones somebody went looking for. A row each fits a dozen
+ * in the same space: the name, the number, and the word for what it means.
+ * That is what a reading is, and the dial was decoration around it.
  */
-function Dial({ value, bias, text }: { value: number; bias: StateIndicator['bias']; text: string }) {
-  const R = 22;
-  const CIRC = Math.PI * R;
-  const colour = bias === 'BULLISH' ? 'var(--up)' : bias === 'BEARISH' ? 'var(--down)' : 'var(--accent, var(--text))';
-  return (
-    <svg viewBox="0 0 56 34" className="bt-readout__dial">
-      <path d="M 6 28 A 22 22 0 0 1 50 28" fill="none" stroke="var(--line)" strokeWidth="5" strokeLinecap="round" />
-      <path
-        d="M 6 28 A 22 22 0 0 1 50 28" fill="none" stroke={colour} strokeWidth="5" strokeLinecap="round"
-        strokeDasharray={`${CIRC * Math.max(0, Math.min(1, value))} ${CIRC}`}
-      />
-      {/* The reading sits in the arc, where the eye already is. */}
-      <text x="28" y="27" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text)">{text}</text>
-    </svg>
-  );
-}
-
-export function IndicatorSummary({ items }: { items: readonly StateIndicator[] }) {
+export function IndicatorSummary({ items, tf }: { items: readonly StateIndicator[]; tf?: string }) {
   return (
     <section className="bt-readout" aria-label="Indicator summary">
-      <h3><GaugeIcon size={14} aria-hidden /> Indicator summary</h3>
+      <h3>
+        <GaugeIcon size={14} aria-hidden /> Technical indicators
+        {tf ? <span>{tf}</span> : null}
+      </h3>
       {items.length === 0 ? (
         <p className="bt-muted">No readings yet.</p>
       ) : (
         <ul className="bt-readout__dials">
           {items.map((i) => (
-            <li key={i.key}>
+            <li key={i.key} className={cn(i.bias === 'BULLISH' && 'is-up', i.bias === 'BEARISH' && 'is-down')}>
               <span className="bt-readout__dial-label">{i.label}</span>
-              {/* The number goes in the arc where there is one, and stands on its
-                  own where there is not -- never both, which reads as two
-                  different readings of the same thing. */}
-              {i.gauge !== null
-                ? <Dial value={i.gauge} bias={i.bias} text={i.text} />
-                : <strong className="bt-readout__dial-figure">{i.text}</strong>}
-              <span className={cn('bt-readout__dial-read',
-                i.bias === 'BULLISH' && 'is-up', i.bias === 'BEARISH' && 'is-down')}>{i.read}</span>
+              <strong>{i.text}</strong>
+              <span className="bt-readout__dial-read">{i.read}</span>
             </li>
           ))}
         </ul>

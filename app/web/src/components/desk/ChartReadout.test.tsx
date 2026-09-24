@@ -13,16 +13,22 @@ const indicator = (over: Partial<StateIndicator> = {}): StateIndicator => ({
 });
 
 describe('the pattern strip', () => {
-  it('[critical] names each shape with its bias and what it means', () => {
+  it('[critical] one row a shape: the name, its bias, and what it means on hover', () => {
+    /*
+     * A row each rather than a tile each. The tiles fit four across and six
+     * filled the screen, so six was all there was room for -- and the note
+     * that took a third of every tile is a sentence nobody reads twice, which
+     * is what a title is for.
+     */
     render(<PatternStrip patterns={[
       pattern(),
       pattern({ name: 'Resistance Test (3x)', bias: 'BEARISH', note: 'Tested 86,800 3 times without going through' }),
     ]} />);
     expect(screen.getByText('Ascending Triangle')).toBeInTheDocument();
     expect(screen.getByText('Bullish')).toBeInTheDocument();
-    expect(screen.getByText('Resistance Test (3x)')).toBeInTheDocument();
     expect(screen.getByText('Bearish')).toBeInTheDocument();
-    expect(screen.getByText(/Tested 86,800 3 times/)).toBeInTheDocument();
+    const row = screen.getByText('Resistance Test (3x)').closest('li')!;
+    expect(row.getAttribute('title')).toContain('Tested 86,800 3 times');
   });
 
   it('a level test keeps its drawing when it carries a touch count', () => {
@@ -43,16 +49,21 @@ describe('the pattern strip', () => {
 });
 
 describe('the indicator summary', () => {
-  it('[critical] a reading with natural bounds gets a dial; one without does not', () => {
-    // MACD's histogram has no top, so a dial would be inventing one.
-    const { container } = render(<IndicatorSummary items={[
+  it('[critical] every reading is a row: the name, the number and what it means', () => {
+    /*
+     * Dials made each reading a tile, and a dozen tiles do not fit -- so the
+     * readings somebody goes looking for were the ones left out. A row fits
+     * them all, and a number with a word beside it is what a reading is.
+     */
+    render(<IndicatorSummary items={[
       indicator(),
       indicator({ key: 'macd', label: 'MACD', text: '+41', read: 'Bullish', bias: 'BULLISH', gauge: null }),
-    ]} />);
-    expect(container.querySelectorAll('.bt-readout__dial')).toHaveLength(1);
+    ]} tf="5m" />);
+    expect(screen.getByText('RSI (14)')).toBeInTheDocument();
     expect(screen.getByText('62')).toBeInTheDocument();
     expect(screen.getByText('+41')).toBeInTheDocument();
     expect(screen.getByText('Bullish')).toBeInTheDocument();
+    expect(screen.getByText('5m')).toBeInTheDocument();
   });
 
   it('a reading that could not be taken shows a dash, not a zero', () => {

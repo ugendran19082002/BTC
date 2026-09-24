@@ -17,6 +17,7 @@ import { flowFeedHealth, flowSummary, ivRank, liveBook, livePerp, oiPulse, optio
 import { movementByWindow } from '../../market/movement.js';
 import { readState, STATE_TFS, type StateTf } from '../../market/state-read.js';
 import { gradeStates, hitRate, noteState, recentStates } from '../../market/state-history.js';
+import { noteShock, recentShocks, settleShocks, shockOutcomes } from '../../market/shock-history.js';
 import { changes } from '../../market/changes.js';
 import { one } from '../../db/pool.js';
 import { strategyStore } from './strategy.routes.js';
@@ -188,6 +189,28 @@ export function registerDeskRoutes(app: FastifyInstance) {
   });
 
   /**
+   * The warning's own record: what the big-move catch said, and what followed.
+   *
+   * A warning that cannot be looked back at is a warning nobody should act on,
+   * so the rows carry the move that came after each reading and the means are
+   * given with the count behind them -- four readings is not a finding.
+   */
+  app.get('/api/warning/history', async (req, reply) => {
+    const q = req.query as { window?: string; limit?: string };
+    const asked = Number(q.window);
+    const window = (SHOCK_WINDOWS as readonly number[]).includes(asked) ? asked : Math.min(...SHOCK_WINDOWS);
+    const limit = Math.min(50, Math.max(1, Number(q.limit) || 20));
+    try {
+      const [rows, outcomes] = await Promise.all([recentShocks(window, limit), shockOutcomes(window)]);
+      return { at: Date.now(), window, rows, outcomes };
+    } catch (e) {
+      reply.code(502);
+      return { error: (e as Error).message };
+    }
+  });
+
+
+  /**
    * ATM IV across every listed expiry, from the live board, with the skew's
    * and the IV's rank among every reading the desk has recorded.
    *
@@ -322,6 +345,30 @@ export function registerDeskRoutes(app: FastifyInstance) {
         iv = await ivChange({ expiry: snap.expiry, ts: snap.ts, atmIv: snap.atmIv }, 15);
       }
 
+      const shocks = SHOCK_WINDOWS.map((window) => shockFrom({
+        snap,
+        market,
+        structure,
+        oiChanges,
+        iv: iv && { changePct: iv.changePct, overMinutes: iv.overMinutes, from: iv.from, to: iv.to },
+        window,
+      }));
+
+      /*
+       * The warning, written down (24 Sep 2026).
+       *
+       * A warning nobody can look back at is a warning nobody can believe, so
+       * the shortest window -- the one that answers "is something happening
+       * now" -- is journalled when it changes, and settled a quarter of an
+       * hour later against where price actually went. Neither call blocks the
+       * response: the screen is not waiting on the record of itself.
+       */
+      const shortest = shocks.find((x) => x.window === Math.min(...SHOCK_WINDOWS));
+      if (shortest) {
+        void noteShock(shortest, Date.now(), snap.spot).catch(() => null);
+        void settleShocks(Date.now(), snap.spot).catch(() => 0);
+      }
+
       const recommendation = recommend(snap, scored, market, minPremium, lots, hedgeGap, mode, safetyBar);
       const structure = optionStructure(snap, market?.realisedVol ?? null, wallWithinEm());
 
@@ -442,17 +489,7 @@ export function registerDeskRoutes(app: FastifyInstance) {
          * so computing all four costs nothing measurable and lets the screen
          * switch between them without going back to the server.
          */
-        shocks: SHOCK_WINDOWS.map((window) => shockFrom({
-          snap,
-          market,
-          structure,
-          oiChanges,
-          iv: iv && {
-            changePct: iv.changePct, overMinutes: iv.overMinutes,
-            from: iv.from, to: iv.to,
-          },
-          window,
-        })),
+        shocks: shocks,
         forecast: forecast(snap),
         direction,
         containment,

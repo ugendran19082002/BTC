@@ -144,7 +144,9 @@ test('[critical] only a few are shown, structure first', () => {
     p('Spinning Top', 'NEUTRAL', 'candle'),
   ];
   const shown = names(relevant(all, 'BREAKOUT_WATCH', 'UP'));
-  assert.equal(shown.length, 4, 'a card with everything on it is a card nobody reads');
+  assert.equal(shown.length, all.length, 'five is under the limit, so all five are shown');
+  assert.ok(relevant([...all, ...all.map((x) => ({ ...x, name: `${x.name} 2` }))], 'BREAKOUT_WATCH', 'UP').length === 6,
+    'six at most: a card with everything on it is a card nobody reads');
   assert.ok(shown.slice(0, 2).includes('Ascending Triangle'));
   assert.ok(shown.slice(0, 2).includes('Higher Lows'));
 });

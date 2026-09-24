@@ -3165,34 +3165,46 @@ table.ov-mini.ov-levels { width: auto; min-width: 100%; }
    in -- so the layout is fixed-width cards that wrap, not a scrolling list. */
 .bt-readout { display: grid; gap: 8px; min-width: 0; }
 .bt-readout h3 { margin: 0; font-size: 13px; display: flex; align-items: center; gap: 6px; color: var(--muted); }
-.bt-readout__patterns, .bt-readout__dials { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.bt-readout__patterns { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
-.bt-readout__patterns li {
-  display: grid; gap: 3px; padding: 11px; min-width: 0;
-  border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2);
-}
-.bt-readout__patterns li.is-up { border-color: color-mix(in srgb, var(--up) 30%, var(--line)); }
-.bt-readout__patterns li.is-down { border-color: color-mix(in srgb, var(--down) 30%, var(--line)); }
-.bt-readout__patterns strong { font-size: 13px; line-height: 1.25; }
-.bt-readout__bias { font-size: 11.5px; color: var(--muted); }
-.bt-readout__patterns li.is-up .bt-readout__bias { color: var(--up); }
-.bt-readout__patterns li.is-down .bt-readout__bias { color: var(--down); }
-.bt-readout__glyph { width: 100%; height: 34px; margin: 4px 0; }
-.bt-readout__note { font-size: 11.5px; color: var(--muted); line-height: 1.35; }
+.bt-readout__patterns, .bt-readout__dials { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
 
-.bt-readout__dials { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
-.bt-readout__dials li {
-  display: grid; gap: 2px; justify-items: center; text-align: center; padding: 11px 8px; min-width: 0;
-  border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2);
+/*
+ * A row each, not a tile each (24 Sep 2026).
+ *
+ * They were tiles four across with a drawing and a dial on them, and six of
+ * those filled the screen -- so six was all there was room for, and the
+ * readings that did not fit were the ones somebody went looking for. A row
+ * fits a dozen in the same space, which is what the owner's reference does and
+ * what every terminal does: the name, the number, and the word for what it
+ * means. The drawing survives as a small icon, because it is how a shape is
+ * recognised at a glance.
+ */
+.bt-readout__patterns li, .bt-readout__dials li {
+  display: grid; align-items: center; gap: 8px; min-width: 0;
+  padding: 5px 8px; border-radius: 6px; font-size: 12.5px;
 }
-.bt-readout__dial-label { font-size: 11px; color: var(--muted); }
-.bt-readout__dial { width: 76px; height: 44px; }
-.bt-readout__dial-gap { height: 44px; }
-.bt-readout__dials strong { font-size: 18px; font-variant-numeric: tabular-nums; line-height: 1.1; }
-.bt-readout__dial-figure { display: grid; place-items: center; height: 44px; }
-.bt-readout__dial-read { font-size: 11.5px; color: var(--muted); }
-.bt-readout__dial-read.is-up { color: var(--up); }
-.bt-readout__dial-read.is-down { color: var(--down); }
+.bt-readout__patterns li { grid-template-columns: 20px minmax(0, 1fr) auto auto; }
+.bt-readout__dials li { grid-template-columns: minmax(0, 1fr) auto auto; }
+.bt-readout__patterns li:nth-child(odd), .bt-readout__dials li:nth-child(odd) { background: var(--panel-2); }
+.bt-readout__patterns strong, .bt-readout__dial-label {
+  font-size: 12.5px; font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bt-readout__patterns strong { font-weight: 600; }
+.bt-readout__glyph { width: 20px; height: 16px; }
+.bt-readout__patterns li em { color: var(--dim, var(--muted)); font-style: normal; font-size: 10.5px; }
+.bt-readout__bias, .bt-readout__dial-read {
+  font-size: 11.5px; color: var(--muted); text-align: right; white-space: nowrap; min-width: 62px;
+}
+.bt-readout__patterns li.is-up .bt-readout__bias, .bt-readout__dials li.is-up .bt-readout__dial-read { color: var(--up); }
+.bt-readout__patterns li.is-down .bt-readout__bias, .bt-readout__dials li.is-down .bt-readout__dial-read { color: var(--down); }
+.bt-readout__dials strong {
+  font-size: 12.5px; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap;
+}
+.bt-readout__dials li.is-up strong { color: var(--up); }
+.bt-readout__dials li.is-down strong { color: var(--down); }
+.bt-readout h3 span {
+  font-weight: 500; font-size: 10.5px; color: var(--muted); border: 1px solid var(--line);
+  border-radius: 999px; padding: 1px 6px;
+}
 
 .bt-insight { display: flex; gap: 10px; align-items: flex-start; }
 .bt-insight > svg { flex: none; margin-top: 2px; color: var(--warn, #d9a441); }
@@ -3243,3 +3255,26 @@ table.ov-mini.ov-levels { width: auto; min-width: 100%; }
 
 /* The projection never draws over the axis labels on a narrow chart. */
 .price-chart-projection text { font-variant-numeric: tabular-nums; }
+
+/* ------------------------------------------------------------------
+   Big move catch (24 Sep 2026): every early-warning reading with how far
+   it has come, not just whether it has gone. Nine grey lamps look the same
+   at twenty as at eighty, and eighty is the interesting one. */
+.ov-triggers-scored .ov-trigger-compact,
+.ov-triggers-scored .ov-trigger-head {
+  display: grid; grid-template-columns: minmax(0, 1fr) 120px 92px; gap: 8px; align-items: center;
+}
+.ov-trigger-head { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); padding-bottom: 2px; }
+.ov-trigger-head span:last-child { text-align: right; }
+.ov-trigger-score { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.ov-trigger-score b { font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; }
+.ov-trigger-bar { flex: 1 1 auto; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.ov-trigger-bar > i { display: block; height: 100%; background: var(--muted); }
+.ov-watching .ov-trigger-bar > i { background: var(--warn, #d9a441); }
+.ov-fired .ov-trigger-bar > i { background: var(--down); }
+.ov-note { margin: 8px 0 0; font-size: 10.5px; color: var(--muted); line-height: 1.45; }
+@media (max-width: 560px) {
+  .ov-triggers-scored .ov-trigger-compact,
+  .ov-triggers-scored .ov-trigger-head { grid-template-columns: minmax(0, 1fr) 86px; }
+  .ov-triggers-scored .ov-trigger-state { display: none; }
+}

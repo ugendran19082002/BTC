@@ -675,6 +675,17 @@ export type Trigger = {
   level: number | null;
   /** NORMAL under 70% of the threshold, WATCH from there, TRIGGERED at or past it. A warning level, not a trade signal. */
   state: 'NORMAL' | 'WATCH' | 'TRIGGERED' | null;
+  /**
+   * How far this reading has come towards its own trigger, out of 100.
+   *
+   * A lamp says fired or not fired, which is the answer to the wrong
+   * question: the useful one is *how close*, and three readings at 80 is a
+   * tape about to do something while three at 20 is a quiet afternoon --
+   * both of them show as nine grey lamps. Capped at 100, because a reading
+   * three times its threshold is not three times the warning, and the raw
+   * figure is on the row anyway.
+   */
+  score: number | null;
   weight: number;
 };
 
@@ -688,6 +699,16 @@ export type EarlyWarning = {
   triggers: Trigger[];
   /** Weighted share of triggers fired, 0–1, over the triggers that could be read. */
   score: number | null;
+  /**
+   * The weighted mean of how far every readable trigger has come, 0-100.
+   *
+   * The band is still decided by what has actually fired -- a warning that
+   * goes off because several things are at eighty would be a warning that goes
+   * off constantly. This is the number beside it: the pressure, which moves
+   * long before the band does, and which is what somebody watching the screen
+   * is actually watching.
+   */
+  pressure: number | null;
   band: 'calm' | 'watch' | 'high' | 'sudden';
   /** Which way the pressure points, from flow and OI: +1 up, −1 down, 0 unclear. */
   lean: -1 | 0 | 1;
@@ -727,7 +748,7 @@ export function earlyWarning(input: {
   const rangeAt = em15Pct === null ? null : Math.max(0.25, 0.6 * em15Pct);
   const accel = oi ? Math.max(Math.abs(oi.ceAcceleration ?? 0), Math.abs(oi.peAcceleration ?? 0)) : null;
   const change = oi ? Math.max(Math.abs(oi.ceChange1h ?? 0), Math.abs(oi.peChange1h ?? 0)) : null;
-  const raw: Omit<Trigger, 'state'>[] = [
+  const raw: Omit<Trigger, 'state' | 'score'>[] = [
     { name: 'Volume burst', value: burst === null ? '—' : `${burst.toFixed(1)}× median`, threshold: '≥ 2.0×', formula: 'last 5m bar volume ÷ median of the 20 before it',
       fired: burst === null ? null : burst >= 2, level: burst === null ? null : burst / 2, weight: 2 },
     { name: 'One-sided aggressors', value: flow?.aggressorBuyPct == null ? '—' : `${(flow.aggressorBuyPct * 100).toFixed(0)}% buys`, threshold: '≥ 65% or ≤ 35%', formula: 'buy volume ÷ (buy + sell), aggressor side, last hour',
@@ -747,10 +768,18 @@ export function earlyWarning(input: {
     { name: 'Funding stretched', value: funding === null ? '—' : `${funding.toFixed(4)}%`, threshold: '|rate| ≥ 0.05%', formula: 'the perp\'s funding rate, as Delta publishes it',
       fired: funding === null ? null : Math.abs(funding) >= 0.05, level: funding === null ? null : Math.abs(funding) / 0.05, weight: 1 },
   ];
-  const t: Trigger[] = raw.map((x) => ({ ...x, state: triggerState(x.level) }));
+  const t: Trigger[] = raw.map((x) => ({
+    ...x,
+    state: triggerState(x.level),
+    score: x.level === null || !Number.isFinite(x.level) ? null : Math.round(Math.max(0, Math.min(1, x.level)) * 100),
+  }));
   const readable = t.filter((x) => x.fired !== null);
   const wsum = readable.reduce((a, x) => a + x.weight, 0);
   const score = wsum === 0 ? null : readable.reduce((a, x) => a + (x.fired ? x.weight : 0), 0) / wsum;
+  const scored = readable.filter((x) => x.score !== null);
+  const pressureSum = scored.reduce((a, x) => a + x.weight, 0);
+  const pressure = pressureSum === 0 ? null
+    : Math.round(scored.reduce((a, x) => a + x.score! * x.weight, 0) / pressureSum);
   const band: EarlyWarning['band'] = score === null ? 'calm' : score >= 0.6 ? 'sudden' : score >= 0.4 ? 'high' : score >= 0.2 ? 'watch' : 'calm';
   // Which way: aggressors lifting offers lean up; puts being written faster than calls lean up (the crowd sells the dip).
   const flowLean = flow?.aggressorBuyPct == null ? 0 : flow.aggressorBuyPct > 0.55 ? 1 : flow.aggressorBuyPct < 0.45 ? -1 : 0;
@@ -760,7 +789,7 @@ export function earlyWarning(input: {
     : band === 'high' ? 'Pressure building: only sell beyond the wall, half size, with the wing bought.'
       : band === 'watch' ? 'Something stirring: tighten stops, keep size to the risk mode.'
         : 'Calm tape: the normal rules apply.';
-  return { triggers: t, score, band, lean, action };
+  return { triggers: t, score, pressure, band, lean, action };
 }
 
 // ------------------------------------------------------ movement read
