@@ -99,6 +99,11 @@ export function candlePatterns(bars: readonly Candle[]): Pattern[] {
   } else if (shape >= MARUBOZU_BODY) {
     out.push(one(up(c) ? 'Bullish Marubozu' : 'Bearish Marubozu', up(c) ? 'BULLISH' : 'BEARISH',
       'All body, no wick: one side had it the whole bar'));
+  } else if (shape <= 0.3 && uw >= bodyC && lw >= bodyC && range(c) > 0
+    && uw + lw >= range(c) * 0.8) {
+    // Both wicks long against a small body: more violent than a spinning top,
+    // and it means the same thing twice as loudly.
+    out.push(one('High Wave Candle', 'NEUTRAL', 'Long wicks both ways: the bar was fought over and settled nothing'));
   } else if (shape <= 0.3 && uw > 0 && lw > 0) {
     out.push(one('Spinning Top', 'NEUTRAL', 'A small body between two wicks: indecision'));
   }
@@ -146,6 +151,47 @@ export function candlePatterns(bars: readonly Candle[]): Pattern[] {
     if (near(c.high, p.high) && up(p) && down(c)) out.push(one('Tweezer Top', 'BEARISH', 'Two bars refused the same high'));
   }
 
+  // ---- two bars, the rest of the owner's list
+  if (p && range(p) > 0) {
+    const gapUp = c.low > p.high;
+    const gapDown = c.high < p.low;
+    if (body(p) > 0 && shape <= DOJI_BODY
+      && Math.max(c.open, c.close) <= Math.max(p.open, p.close)
+      && Math.min(c.open, c.close) >= Math.min(p.open, p.close)) {
+      // A harami whose inside bar is a doji: the same pause, said harder.
+      out.push(one(down(p) ? 'Harami Cross (Bullish)' : 'Harami Cross (Bearish)', down(p) ? 'BULLISH' : 'BEARISH',
+        'A doji inside the last bar: the move has stopped'));
+    }
+    const closeNear = (a: number, b: number) => Math.abs(a - b) <= Math.max(range(c), range(p)) * 0.03;
+    if (closeNear(c.close, p.close)) {
+      if (down(p) && down(c)) out.push(one('Matching Low', 'BULLISH', 'Two falls closed at the same price: it is being defended'));
+      if (up(p) && up(c)) out.push(one('Matching High', 'BEARISH', 'Two rises closed at the same price: it is being sold'));
+    }
+    if (down(p) && up(c) && gapDown && closeNear(c.close, p.close)) {
+      out.push(one('Bullish Counterattack', 'BULLISH', 'Opened far lower and closed right back at the last close'));
+    }
+    if (up(p) && down(c) && gapUp && closeNear(c.close, p.close)) {
+      out.push(one('Bearish Counterattack', 'BEARISH', 'Opened far higher and closed right back at the last close'));
+    }
+    // Kicking: two marubozu the opposite way with a gap between them. Rare, and
+    // about as strong a two-bar signal as there is.
+    const solid = (b: Candle) => range(b) > 0 && body(b) / range(b) >= MARUBOZU_BODY;
+    if (solid(p) && solid(c) && down(p) && up(c) && gapUp) {
+      out.push(one('Kicking (Bullish)', 'BULLISH', 'A solid fall, a gap up, a solid rise: the tape turned overnight'));
+    }
+    if (solid(p) && solid(c) && up(p) && down(c) && gapDown) {
+      out.push(one('Kicking (Bearish)', 'BEARISH', 'A solid rise, a gap down, a solid fall: the tape turned overnight'));
+    }
+    // Where a rally stalls: opening into the last bar's body and closing inside it.
+    if (down(p) && up(c) && c.open < p.low && c.close > p.close && c.close < mid(p)) {
+      out.push(one(c.close <= p.close + body(p) * 0.1 ? 'On-Neck Line' : 'In-Neck Line', 'BEARISH',
+        'Bounced into the last bar and stopped at its bottom: the fall is not done'));
+    }
+    if (down(p) && up(c) && c.open < p.low && c.close > mid(p) && c.close < p.open) {
+      out.push(one('Thrusting Pattern', 'BEARISH', 'Back into the last bar but not through its middle'));
+    }
+  }
+
   // ---- three bars
   if (p && p2 && range(p) > 0 && range(p2) > 0) {
     const small = body(p) <= range(p) * 0.4;
@@ -162,6 +208,43 @@ export function candlePatterns(bars: readonly Candle[]): Pattern[] {
     if (down(p2) && down(p) && down(c) && c.close < p.close && p.close < p2.close
       && body(c) > range(c) * 0.5 && body(p) > range(p) * 0.5) {
       out.push({ ...one('Three Black Crows', 'BEARISH', 'Three strong bars down, each closing lower'), barsAgo: 2 });
+    }
+  }
+
+
+  // ---- three bars, the rest of the list
+  if (p && p2 && range(p) > 0 && range(p2) > 0) {
+    const inside = body(p2) > 0
+      && Math.max(p.open, p.close) <= Math.max(p2.open, p2.close)
+      && Math.min(p.open, p.close) >= Math.min(p2.open, p2.close);
+    if (inside && up(c) && down(p2) && c.close > p2.open) {
+      out.push({ ...one('Three Inside Up', 'BULLISH', 'A fall, a bar inside it, and a close back through the top'), barsAgo: 2 });
+    }
+    if (inside && down(c) && up(p2) && c.close < p2.open) {
+      out.push({ ...one('Three Inside Down', 'BEARISH', 'A rise, a bar inside it, and a close back through the bottom'), barsAgo: 2 });
+    }
+    const engulfs = down(p2) && up(p) && p.close >= p2.open && p.open <= p2.close;
+    if (engulfs && up(c) && c.close > p.close) {
+      out.push({ ...one('Three Outside Up', 'BULLISH', 'A fall, a bar covering it, and another up'), barsAgo: 2 });
+    }
+    const engulfsDown = up(p2) && down(p) && p.close <= p2.open && p.open >= p2.close;
+    if (engulfsDown && down(c) && c.close < p.close) {
+      out.push({ ...one('Three Outside Down', 'BEARISH', 'A rise, a bar covering it, and another down'), barsAgo: 2 });
+    }
+    // Abandoned baby: a doji gapped away from both neighbours. The cleanest
+    // three-bar reversal there is, and the rarest.
+    const pShape = bodyRatio(p) ?? 1;
+    if (pShape <= DOJI_BODY && down(p2) && up(c) && p.high < p2.low && p.high < c.low) {
+      out.push({ ...one('Abandoned Baby (Bullish)', 'BULLISH', 'A doji gapped below both its neighbours'), barsAgo: 2 });
+    }
+    if (pShape <= DOJI_BODY && up(p2) && down(c) && p.low > p2.high && p.low > c.high) {
+      out.push({ ...one('Abandoned Baby (Bearish)', 'BEARISH', 'A doji gapped above both its neighbours'), barsAgo: 2 });
+    }
+    if (up(p2) && up(p) && up(c) && c.low > p.low && p.low > p2.low) {
+      out.push({ ...one('Three Gaps Up', 'BEARISH', 'Three rises, each starting above the last: stretched'), barsAgo: 2 });
+    }
+    if (down(p2) && down(p) && down(c) && c.high < p.high && p.high < p2.high) {
+      out.push({ ...one('Three Gaps Down', 'BULLISH', 'Three falls, each starting below the last: stretched'), barsAgo: 2 });
     }
   }
 
