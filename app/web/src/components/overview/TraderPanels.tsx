@@ -3,10 +3,10 @@ import { usePersisted } from '@/hooks/usePersisted';
 import type { ChainResponse, Leg } from '@/types/desk';
 import { getChanges, type ChangeRow, type ModelNow, type MovementRow, type PerpResponse, type PremiumMomentum } from '@/api/desk';
 import {
-  boardRead, candidates, DESK_FILTER, earlyWarning, executionEstimate, filtersChanged, finderDecision, finderRanks, findStrikes, horizonRows, movementVerdict, odds, orderEstimate, premiumAnalysis, sellerImpact, sellerState,
-  type EarlyWarning, type ExpectedMove, type ExpiryDirection, type FinderFilter, type Impact, type MtfConsensus,
+  boardRead, candidates, earlyWarning, executionEstimate, finderDecision, finderRanks, horizonRows,
+  movementVerdict, sellerImpact, sellerState,
+  type EarlyWarning, type ExpectedMove, type ExpiryDirection, type Impact, type MtfConsensus,
 } from '@/lib/overview';
-import type { ScreenConfig } from '@/lib/screen-config';
 import { fmt, Panel, Row, Tag } from './parts';
 
 // ---------------------------------------------------------- early warning
