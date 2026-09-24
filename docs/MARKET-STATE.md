@@ -322,15 +322,45 @@ below 1100px. The panel runs the width of the desk: in the middle of three colum
 was about six hundred pixels, which is a candle every two pixels and a plan in
 five-digit numbers three abreast.
 
-## One card, six tabs
+## What the Live screen dropped (24 Sep)
 
-The analysis card carries **Analysis · Levels · Patterns · Indicators ·
-Expiry · Options**. The last two were cards of their own in the right-hand
-column -- the expiry read (where BTC settles, the implied and measured bands)
-and the CE/PE bias (premium, OI, IV, touch, flow either side). They ask the
-same question this card asks, *which way and how sure*, from the options board
-instead of the bars, and three cards for one question is how a screen gets read
-in the wrong order.
+Four panels went, and none of their readings did:
+
+| Gone | Where its content is now |
+|---|---|
+| Price action | The six key readings on the analysis card, always on screen |
+| Key levels | The bands on the chart, and the distance rows in the readings |
+| Expiry direction | The **Expiry** tab on the analysis card |
+| Option bias · CE / PE | The **Options** tab on the same card |
+| Strike finder | The strategy decision, which already picked the strike |
+
+The finder's helpers went with it -- `findStrikes`, `finderRanks`,
+`DESK_FILTER`, `filtersChanged`, `candidates` -- and so did the branch in
+`pick()` that could only fire when a finder filter had been moved. Code nothing
+renders is code that rots, and a filter nothing can change is a branch that can
+only ever mislead the next reader.
+
+## One card, no tabs
+
+The card runs down in the order somebody reads it: the banner, **what has to be
+true**, **the trade either way**, **where the board says it settles**, and
+**which side the options are being bought on**. Then the signal history.
+
+It had six tabs for about an hour -- Analysis, Levels, Patterns, Indicators,
+Expiry, Options -- and every one of them hid an answer to a question already
+being asked on the same screen. The patterns and the readings are in the strip
+beside the chart; the levels *are* the plans, which are never hidden; and the
+expiry read and the CE/PE bias were two more cards in the right-hand column
+asking *which way and how sure* from the options board instead of the bars. A
+tab bar over a card this short is a filing cabinet for one page.
+
+The six-reading strip went the same way: trend, structure, RSI, MACD, VWAP and
+ATR are rows in the readings beside the chart, and saying them twice on one
+screen is how two panels come to disagree about RSI.
+
+The expiry panel's **"Why"** list went with it -- eight rows of dots and plus
+signs, which is a weight table rather than a reading. What each part scored is
+still in the payload for anything measuring the model.
 
 **Their logic is untouched.** The panels are built where their inputs are, in
 `Overview`, and handed to the card through the chart slot; the card renders

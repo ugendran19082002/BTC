@@ -267,7 +267,6 @@ function ChangesTable({ leg, changes, two }: { leg: Leg; changes: Changes | null
 
 // ---------------------------------------------------------- expiry direction
 
-const plus = (score: number) => (score >= 0.6 ? '+++' : score >= 0.3 ? '++' : score > 0.05 ? '+' : score <= -0.6 ? '−−−' : score <= -0.3 ? '−−' : score < -0.05 ? '−' : '·');
 
 /**
  * Expiry direction: from the price now, does this expiry settle above,
@@ -305,12 +304,13 @@ export function ExpiryDirectionPanel({ d, hoursLeftText }: { d: ExpiryDirection 
           ))}
         </div>
       </div>
-      <div className="ov-dir-why">
-        <div className="ov-final-sub">Why</div>
-        {d.why.map((w) => (
-          <Row key={w.name} label={w.name} value={<span className={w.score > 0.05 ? 'ov-up' : w.score < -0.05 ? 'ov-down' : 'ov-muted'}>{plus(w.score)}</span>} hint={`${w.text} · weight ${Math.round(w.weight * 100)}%`} />
-        ))}
-      </div>
+      {/*
+        The "Why" list is gone (24 Sep 2026): eight rows of dots and plus signs
+        -- price structure ·, MTF consensus ·, OI regime −−−, funding · -- which
+        is a weight table, not a reading. What each part scored is still in the
+        payload for anything measuring the model; the card gives the answer and
+        the band it is drawn from.
+      */}
     </Panel>
   );
 }

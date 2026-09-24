@@ -1,8 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { ArrowDownRight, ArrowUpRight, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Clock, Minus, TrendingDown, TrendingUp } from 'lucide-react';
-import type {
-  MarketStateResponse, StateHistoryRow, StateIndicator, StatePattern, StatePlan,
-} from '@/api/desk';
+import type { MarketStateResponse, StateHistoryRow, StatePlan } from '@/api/desk';
 import { strike as fmtStrike } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -53,18 +51,6 @@ const TONE_CLASS: Record<Tone, string> = {
   flat: 'bt-state-flat',
 };
 
-const TABS = ['Analysis', 'Levels', 'Patterns', 'Indicators'] as const;
-
-/**
- * The readings that stay on screen whatever tab is open.
- *
- * The price-action panel is gone and its six headline rows are these: what the
- * trend is, what the swings are doing, and the four readings a trader glances
- * at before anything else. Everything else is a tab away -- but a reading you
- * have to go and find is one you decide without.
- */
-const KEY_READINGS = ['trend', 'structure', 'rsi', 'macd', 'vwap', 'atr'] as const;
-type Tab = string;
 
 const IST = new Intl.DateTimeFormat('en-IN', {
   timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true,
@@ -92,9 +78,6 @@ export function MarketState({
    */
   extra?: readonly { label: string; node: ReactNode }[];
 }) {
-  const [tab, setTab] = useState<Tab>('Analysis');
-  const tabs: readonly Tab[] = [...TABS, ...extra.map((e) => e.label)];
-  const shownExtra = extra.find((e) => e.label === tab) ?? null;
   const s = data?.state ?? null;
   const words = s ? STATE_WORDS[s.event] ?? { title: s.event, tone: 'flat' as Tone } : null;
 
@@ -141,57 +124,37 @@ export function MarketState({
       )}
 
       {/*
-        Two columns where there is room: the reading on the left, what the card
-        said earlier on the right. Full width for a card this size stretched
-        every row into a thin line of text with a hand's width of empty panel
-        after it -- the reference the owner sent is a column, and it reads like
-        one because of that. Under 900px they stack.
-      */}
-      {/*
-        Always on screen, above the tabs: the six the old price-action panel
-        led with. They are taken from every reading measured rather than from
-        the twenty this state happens to want, so the row is the same six
-        wherever price is -- a strip that changes what it shows is a strip
-        nobody learns to read.
-      */}
-      {data && data.indicators.all.length > 0 ? (
-        <ul className="bt-market-state__key">
-          {KEY_READINGS.map((key) => data.indicators.all.find((i) => i.key === key))
-            .filter((i): i is StateIndicator => i !== undefined)
-            .map((i) => (
-              <li key={i.key} className={cn(i.bias === 'BULLISH' && 'is-up', i.bias === 'BEARISH' && 'is-down')}
-                title={`${i.label}: ${i.text} · ${i.read}`}>
-                <span>{i.label}</span>
-                <b>{i.text}</b>
-              </li>
-            ))}
-        </ul>
-      ) : null}
+        No tabs (24 Sep 2026).
 
+        The card had six -- Analysis, Levels, Patterns, Indicators, Expiry,
+        Options -- and five of them hid an answer to a question already being
+        asked on the same screen: the patterns and the readings are in the
+        strip beside the chart, and the levels are the plans, which are never
+        hidden anyway. A tab bar over a card this short is a filing cabinet for
+        one page.
+
+        What is left runs down the card in the order somebody reads it: what
+        has to be true, the trade either way, where the board says it settles,
+        and which side the options are being bought on.
+      */}
       {s ? (
         <div className="bt-market-state__body">
           <div className="bt-market-state__main">
-            <div className="bt-market-state__tabs" role="tablist">
-              {tabs.map((t) => (
-                <button key={t} role="tab" type="button" aria-selected={t === tab} onClick={() => setTab(t)}
-                  className={cn('bt-market-state__tab', t === tab && 'bt-market-state__tab--on')}>{t}</button>
-              ))}
-            </div>
+            <Checks checks={s.checks} />
 
-            {tab === 'Analysis' ? <Checks checks={s.checks} /> : null}
-            {tab === 'Patterns' ? <Patterns patterns={data?.patterns.shown ?? []} /> : null}
-            {tab === 'Indicators' ? <Indicators items={data?.indicators.shown ?? []} /> : null}
-            {shownExtra ? <div className="bt-market-state__extra">{shownExtra.node}</div> : null}
-
-            {/* The plans sit under every tab, targets and all: they are what the
-                card is for, and a number you have to change tab to see is one
-                you act on late. */}
             <Plans plans={s.plans} level={s.level} distance={s.distance} against={s.against} />
+
+            {extra.map((e) => (
+              <section key={e.label} className="bt-market-state__extra" aria-label={e.label}>
+                {e.node}
+              </section>
+            ))}
           </div>
 
           {history?.length ? <History rows={history} rate={hitRate} spot={spot} /> : null}
         </div>
       ) : null}
+
     </section>
   );
 }
@@ -259,42 +222,6 @@ function PlanBox({ plan, title, action, tone }: { plan: StatePlan | null; title:
         </>
       ) : <p className="bt-muted">No level on this side</p>}
     </div>
-  );
-}
-
-function Patterns({ patterns }: { patterns: readonly StatePattern[] }) {
-  if (!patterns.length) return <p className="bt-muted">Nothing named on these bars.</p>;
-  return (
-    <ul className="bt-market-state__patterns">
-      {patterns.map((p) => (
-        <li key={p.name} className={cn(p.bias === 'BULLISH' && 'is-up', p.bias === 'BEARISH' && 'is-down')}>
-          <strong>{p.name}</strong>
-          <span>{p.note}</span>
-          {p.barsAgo > 0 ? <em>{p.barsAgo} bars ago</em> : null}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function Indicators({ items }: { items: readonly StateIndicator[] }) {
-  if (!items.length) return <p className="bt-muted">No readings yet.</p>;
-  return (
-    <ul className="bt-market-state__indicators">
-      {items.map((i) => (
-        <li key={i.key}>
-          <span className="bt-market-state__ind-label">{i.label}</span>
-          <strong>{i.text}</strong>
-          <span className={cn('bt-market-state__ind-read',
-            i.bias === 'BULLISH' && 'is-up', i.bias === 'BEARISH' && 'is-down')}>{i.read}</span>
-          {i.gauge !== null ? (
-            <span className="bt-market-state__gauge" aria-hidden>
-              <span style={{ width: `${Math.round(i.gauge * 100)}%` }} />
-            </span>
-          ) : null}
-        </li>
-      ))}
-    </ul>
   );
 }
 

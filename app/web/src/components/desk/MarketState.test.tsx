@@ -105,40 +105,21 @@ describe('the market-state card', () => {
     expect(checks.className).toContain('is-unknown');
   });
 
-  it('the tabs swap what is under the banner, and the plans stay put', () => {
-    render(<MarketState data={base} tf="15m" />);
-    expect(screen.getByText('Volume over 1.5x')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Patterns' }));
-    expect(screen.getByText('Ascending Triangle')).toBeInTheDocument();
-    expect(screen.queryByText('Volume over 1.5x')).toBeNull();
-    expect(screen.getByText('> 86,800')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Indicators' }));
-    // RSI is in the key row as well, so the tab's own list is what is checked
-    expect(document.querySelectorAll('.bt-market-state__indicators li')).toHaveLength(2);
-    expect(screen.getByText('1.8x')).toBeInTheDocument();
-  });
-
-  it('[critical] the targets and the stop are on the card under every tab', () => {
+  it('[critical] the whole card is one column: nothing a trade needs is behind a tab', () => {
     /*
-     * They were folded away on every tab but Levels, which made the numbers a
-     * trade is actually placed with something you had to go and find. A stop
-     * you have to change tab to read is one you set late.
+     * The card had six tabs and five of them hid an answer to a question being
+     * asked elsewhere on the same screen. The targets and the stop were the
+     * worst of it: numbers a trade is placed with, a click away.
      */
-    render(<MarketState data={base} tf="15m" />);
-    expect(screen.getByText('87,200')).toBeInTheDocument();
-    expect(screen.getAllByText('Stop loss').length).toBe(2);
-    fireEvent.click(screen.getByRole('tab', { name: 'Patterns' }));
+    const { container } = render(<MarketState data={base} tf="15m" />);
+    expect(container.querySelector('[role="tablist"]')).toBeNull();
     expect(screen.getByText('87,200')).toBeInTheDocument();
     expect(screen.getByText('86,400')).toBeInTheDocument();
+    expect(screen.getAllByText('Stop loss').length).toBe(2);
+    expect(screen.getByText('Volume over 1.5x')).toBeInTheDocument();
   });
 
-  it('a pattern from earlier bars says how far back it was', () => {
-    render(<MarketState data={base} tf="15m" />);
-    fireEvent.click(screen.getByRole('tab', { name: 'Patterns' }));
-    expect(screen.getByText('2 bars ago')).toBeInTheDocument();
-  });
 
   it('[critical] the history tallies what came good, as a count and not a percentage', () => {
     // Four calls is not a hit rate, and a percentage would say it was.
@@ -227,26 +208,8 @@ describe('the market-state card', () => {
     expect(screen.queryByRole('button', { name: '1h' })).toBeNull();
   });
 
-  it('[critical] the six price-action readings stay on screen whatever tab is open', () => {
-    /*
-     * They were a panel of their own in another column. A reading you have to
-     * go and find is one you decide without -- and the row is the same six
-     * wherever price is, because a strip that changes what it shows is a strip
-     * nobody learns to read.
-     */
-    const { container } = render(<MarketState data={base} tf="15m" />);
-    const key = container.querySelector('.bt-market-state__key')!;
-    expect([...key.querySelectorAll('span')].map((e) => e.textContent))
-      .toEqual(['Trend', 'Structure', 'RSI (14)', 'MACD', 'VWAP', 'ATR (14)']);
-    expect(key.textContent).toContain('Rising');
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Patterns' }));
-    expect(container.querySelector('.bt-market-state__key')!.textContent).toContain('Rising');
-    // and a reading that is not one of the six is not smuggled in
-    expect(key.textContent).not.toContain('Choppiness');
-  });
-
-  it('[critical] the expiry read and the options bias are tabs on this card, not cards of their own', () => {
+  it('[critical] the expiry read and the options bias are on this card, not cards of their own', () => {
     /*
      * They asked the same question this card asks -- which way, and how sure
      * -- from the options board rather than the bars, from two more cards in
@@ -257,17 +220,10 @@ describe('the market-state card', () => {
       { label: 'Expiry', node: <p>expiry read</p> },
       { label: 'Options', node: <p>CE / PE bias</p> },
     ]} />);
-    expect(screen.getByRole('tab', { name: 'Expiry' })).toBeInTheDocument();
-    expect(screen.queryByText('expiry read')).toBeNull();
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Expiry' }));
+    // Both are on the card, under the plans, in the order they are read.
     expect(screen.getByText('expiry read')).toBeInTheDocument();
-    // the plans stay put whatever tab is open: they are what the card is for
-    expect(screen.getByText('> 86,800')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Options' }));
     expect(screen.getByText('CE / PE bias')).toBeInTheDocument();
-    expect(screen.queryByText('expiry read')).toBeNull();
+    expect(screen.getByText('> 86,800')).toBeInTheDocument();
   });
 
   it('says so rather than breaking when there is no state yet', () => {
