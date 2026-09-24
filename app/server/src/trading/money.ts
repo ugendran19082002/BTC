@@ -47,15 +47,24 @@ export const stopPriceFor = (side: 'buy' | 'sell', price: number, tick: number) 
  * book cannot take a market order at all, which is exactly the moment a stop
  * matters. A limit order needs no book to be accepted.
  *
- * So the stop is a limit priced well through its trigger: far enough that it
- * still fills like a stop, near enough that it is not a blank cheque. Half
- * again for a buy-back, and never less than five ticks away, because on a
- * penny option a percentage is nothing.
+ * So the stop is a limit priced through its trigger: far enough that it still
+ * fills like a stop, near enough that it is not a blank cheque.
  *
- * What it costs: a limit can be jumped in a violent gap. The desk's own stop
- * watch closes at the market in that case, so the two cover each other.
+ * **The slack was 50% until 24 September 2026, and it cost real money.** A
+ * stop at 70 went to the exchange as a buy limit at 105, which is a market
+ * order wearing a hat: when the trigger hit, the order swept every offer up to
+ * 105 and filled at 79 -- nine points, 13% of the stop, paid for nothing. The
+ * owner found it on the day's trades, not on the screen, because nothing
+ * measured it.
+ *
+ * It is 15% now, which still clears a normal book by a wide margin (five ticks
+ * at the floor, for a penny option where a percentage is nothing). What it
+ * gives up is the violent gap, where the limit is jumped -- and `stopIfReached`
+ * already closes at the market in that case, so the two cover each other. The
+ * difference is that the sweep is now bounded by default and unbounded only
+ * where a human-shaped gap actually happened.
  */
-export const STOP_LIMIT_SLACK = 0.5;
+export const STOP_LIMIT_SLACK = 0.15;
 export const STOP_LIMIT_MIN_TICKS = 5;
 
 export function stopFillLimit(side: 'buy' | 'sell', trigger: number, tick: number): number {
@@ -63,6 +72,35 @@ export function stopFillLimit(side: 'buy' | 'sell', trigger: number, tick: numbe
   const through = side === 'buy' ? trigger + slack : Math.max(tick, trigger - slack);
   return stopPriceFor(side, through, tick);
 }
+
+/**
+ * What the exit actually cost against the price that was asked for.
+ *
+ * Positive is money lost to the fill: a stop at 70 filled at 79 is +9, +12.9%.
+ * A stop is a buy-back, so paying more is worse; a target is a sell, so
+ * receiving less is worse. Both are reported the same way -- the sign says
+ * "against you" rather than "up" -- because the one question is how much the
+ * exit cost, and a reader should not have to remember which side they were on.
+ *
+ * `null` where there was nothing to compare against, which is not the same as
+ * zero and must not be shown as it.
+ */
+export function slippageOf(
+  role: 'stop_loss' | 'take_profit', wanted: number | null, filled: number | null,
+): { points: number; pct: number } | null {
+  if (wanted === null || filled === null || !(wanted > 0) || !(filled > 0)) return null;
+  const points = role === 'stop_loss' ? filled - wanted : wanted - filled;
+  return { points: Math.round(points * 100) / 100, pct: Math.round((points / wanted) * 1000) / 10 };
+}
+
+/**
+ * Slippage worth telling somebody about.
+ *
+ * A tick or two on a thin option is the cost of doing business. A tenth of the
+ * stop is the desk paying for its own haste, and it went unnoticed for weeks
+ * because nothing added it up.
+ */
+export const SLIPPAGE_ALERT_PCT = 5;
 
 export const lotsToContracts = (lots: number, lotSize: number) => Math.floor(lots) * lotSize;
 

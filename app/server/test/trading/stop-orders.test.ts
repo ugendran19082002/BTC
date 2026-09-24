@@ -56,18 +56,25 @@ test('the refused order from 12 September, sent the new way, is a limit order', 
 
 // ------------------------------------------------------- where the limit sits
 
-test('[critical] the limit is through the trigger, so the stop still fills', () => {
-  assert.equal(stopFillLimit('buy', 10.5, 0.1), 15.8, '50% through, rounded towards filling');
-  assert.equal(stopFillLimit('buy', 45, 0.5), 67.5);
+test('[critical] the limit is through the trigger, so the stop still fills -- and no further', () => {
+  /*
+   * 15% through, rounded towards filling. It was 50% until 24 September 2026,
+   * which is a market order wearing a hat: a stop at 70 went out as a buy limit
+   * at 105 and filled at 79, nine points against the desk, and nothing measured
+   * it. Fifteen clears a normal book and bounds the damage on a thin one.
+   */
+  assert.equal(stopFillLimit('buy', 10.5, 0.1), 12.1);
+  assert.equal(stopFillLimit('buy', 45, 0.5), 52);
+  assert.equal(stopFillLimit('buy', 70, 0.1), 80.5, 'the trade that started this');
 });
 
 test('on a penny option the minimum is five ticks, not a percentage of nothing', () => {
-  // 0.2 + 50% is 0.30, which is one tick away on a 0.1 tick: not enough room
+  // 0.2 + 15% is 0.23, which rounds to one tick away: not enough room to fill.
   assert.equal(stopFillLimit('buy', 0.2, 0.1), 0.7);
 });
 
 test('a sell stop is priced the other way, and never below one tick', () => {
-  assert.equal(stopFillLimit('sell', 10, 0.1), 5);
+  assert.equal(stopFillLimit('sell', 10, 0.1), 8.5);
   assert.equal(stopFillLimit('sell', 0.2, 0.1), 0.1);
 });
 
@@ -115,12 +122,12 @@ test('[critical] the engine places the stop as a stop limit, and moving it moves
   const [stop] = (await r.ex.getOpenOrders(ceProduct().symbol)).filter((o) => o.type === 'stop_limit');
   assert.ok(stop, 'the stop leg is a stop limit');
   assert.equal(stop.stopPrice, 110);
-  assert.equal(stop.limitPrice, 165, 'priced through the trigger');
+  assert.equal(stop.limitPrice, 126.5, 'priced through the trigger, 15% of it');
 
   await r.engine.updateProtection(plan.tradeId, { stopPrice: 130 });
   const [moved] = (await r.ex.getOpenOrders(ceProduct().symbol)).filter((o) => o.type === 'stop_limit');
   assert.equal(moved?.stopPrice, 130);
-  assert.equal(moved?.limitPrice, 195, 'the limit travels with the trigger');
+  assert.equal(moved?.limitPrice, 149.5, 'the limit travels with the trigger');
 });
 
 // ------------------------------------- when Delta cannot price a market order
@@ -165,8 +172,12 @@ test('[critical] a reduce-only market exit Delta cannot price is retried once, a
   assert.equal(sent.length, 2, 'once as a market order, once as a limit');
   assert.equal(sent[0]!.order_type, 'market_order');
   assert.equal(sent[1]!.order_type, 'limit_order');
-  // the offer is 11.50, so the limit goes through it and pays at most that much more
-  assert.equal(sent[1]!.limit_price, '17.3');
+  /*
+   * The offer is 11.50 and the limit goes 15% through it: enough to clear the
+   * touch, bounded where it used to be 50% -- which is how a stop asked for at
+   * 70 came back filled at 79 on 24 September.
+   */
+  assert.equal(sent[1]!.limit_price, '13.3');
   assert.equal(sent[1]!.reduce_only, true);
   assert.equal(sent[1]!.client_order_id, 'abc123X1', 'the same id: a duplicate is impossible');
 });

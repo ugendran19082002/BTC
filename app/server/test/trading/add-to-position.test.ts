@@ -73,8 +73,8 @@ test('[critical] an add appends to the same trade: one position, one average, on
   assert.equal(r.store.rows().length, 1, 'still one trade on the contract');
   assert.deepEqual((await book(r)).sort((a, b) => a.type.localeCompare(b.type)), [
     { type: 'limit', side: 'buy', left: 850, limit: 0.7, stop: null, reduceOnly: true },
-    // a stop limit: the trigger at 45, priced through it at 67.50 so it fills
-    { type: 'stop_limit', side: 'buy', left: 850, limit: 67.5, stop: 45, reduceOnly: true },
+    // a stop limit: the trigger at 45, priced 15% through it so it fills
+    { type: 'stop_limit', side: 'buy', left: 850, limit: 51.8, stop: 45, reduceOnly: true },
   ], "the leg's own target and stop, resized to 850 -- at the same prices");
   assert.equal((await r.ex.getPositions()).find((p) => p.symbol === PE)?.size, -850, 'and the exchange agrees');
 });

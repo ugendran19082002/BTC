@@ -170,6 +170,42 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     return { ok: true, strategy: await s.save({ id, name, enabled, config }) };
   });
 
+  /**
+   * Copy a strategy, settings and all, as a new one that is not armed.
+   *
+   * The desk's strategies differ from each other in one or two fields --
+   * another strike distance, an hour later, a different stop -- and building
+   * the second one by hand from the first is how a field gets missed. A copy
+   * carries everything and changes two things: the name, and the fact that it
+   * is off.
+   *
+   * **Never armed.** Cloning an armed strategy and leaving it armed would
+   * double the position the scheduler takes, at the moment the operator is
+   * least expecting it -- they asked for a draft, not a second live rule.
+   */
+  app.post('/api/strategies/:id/clone', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const b = (req.body ?? {}) as { name?: string; id?: string };
+    const s = strategyStore();
+    const from = await s.get(id);
+    if (!from) { reply.code(404); return { error: 'no such strategy' }; }
+
+    const name = String(b.name ?? `${from.name} copy`).trim();
+    if (!name) { reply.code(400); return { error: 'name is required' }; }
+
+    // A name already taken gets a number rather than silently overwriting the
+    // strategy it collides with: a copy that eats its own source is the worst
+    // possible reading of "clone".
+    const wanted = b.id ? String(b.id) : idFrom(name);
+    let newId = wanted;
+    for (let n = 2; await s.get(newId); n++) newId = `${wanted}-${n}`.slice(0, 48);
+
+    return {
+      ok: true,
+      strategy: await s.save({ id: newId, name, enabled: false, config: from.config }),
+    };
+  });
+
   app.post('/api/strategies/:id/enabled', async (req, reply) => {
     const { id } = req.params as { id: string };
     const { enabled } = (req.body ?? {}) as { enabled?: boolean };

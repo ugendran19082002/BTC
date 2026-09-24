@@ -18,6 +18,17 @@ export const setStrategyEnabled = (id: string, enabled: boolean) =>
 export const setScheduler = (on: boolean) =>
   post<{ ok: true; schedulerOn: boolean }>('/api/strategies/scheduler', { on });
 
+/**
+ * Copy one, settings and all, as a new draft.
+ *
+ * The desk's strategies differ by a field or two, and building the second by
+ * hand from the first is how one gets missed. The copy is never armed,
+ * whatever the original was: the operator asked for a draft, not a second live
+ * rule taking its own position.
+ */
+export const cloneStrategy = (id: string, name?: string) =>
+  post<{ ok: true; strategy: Strategy }>(`/api/strategies/${encodeURIComponent(id)}/clone`, { name });
+
 export const deleteStrategy = (id: string) =>
   fetch(`/api/strategies/${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' })
     .then((r) => { if (!r.ok) throw new Error('could not delete'); });

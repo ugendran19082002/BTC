@@ -3,7 +3,9 @@ import type {
 } from './types.js';
 import { CHASE_STEPS, protectionFor, type ExitAsk } from './order-plan.js';
 import { applyEvent, initialTrade, isDone, protectionSize } from './machine.js';
-import { priceFor, lotsToContracts, stopFillLimit, stopPriceFor } from './money.js';
+import {
+  priceFor, lotsToContracts, slippageOf, stopFillLimit, stopPriceFor, SLIPPAGE_ALERT_PCT,
+} from './money.js';
 import { DEFAULT_LIMITS, precheck, type Failure, type PrecheckResult, type RiskLimits } from './precheck.js';
 import { clampLeverage, fundsRequiredPerContract, liquidationRoom, premiumUsd } from './margin.js';
 import { fillChargesUsd } from './charges.js';
@@ -606,6 +608,26 @@ export class TradeEngine {
         t: 'fill', role, side: order.side, size: fresh, price,
         orderId: order.orderId, at: this.now(),
       });
+      /*
+       * What the exit cost against the price that was asked for.
+       *
+       * On 24 September 2026 a stop at 70 filled at 79 and nothing on the desk
+       * said so: the trade closed, the P&L absorbed it, and the nine points
+       * were only found by reading the day's fills by hand. A fill that misses
+       * its own trigger by more than a few percent is now said out loud, once,
+       * where the alerts go.
+       */
+      if (role === 'stop_loss' || role === 'take_profit') {
+        const wanted = role === 'stop_loss' ? rec.plan.stopPrice : rec.plan.takeProfitPrice;
+        const slip = slippageOf(role, wanted ?? null, price);
+        if (slip && slip.pct >= SLIPPAGE_ALERT_PCT) {
+          this.d.onAlarm?.(
+            rec.state,
+            `${role === 'stop_loss' ? 'Stop' : 'Target'} asked ${wanted}, filled ${price.toFixed(1)}`
+            + ` — ${slip.points > 0 ? '+' : ''}${slip.points} points against it (${slip.pct}%).`,
+          );
+        }
+      }
     }
     if (order.status === 'rejected') {
       rec = await this.commit(rec, { t: 'entry_rejected', reason: order.reason ?? 'rejected', at: this.now() });

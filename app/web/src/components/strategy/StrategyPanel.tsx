@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
-import { deleteStrategy, getStrategies, setScheduler, setStrategyEnabled } from '@/api/strategy';
+import { Copy, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
+import { cloneStrategy, deleteStrategy, getStrategies, setScheduler, setStrategyEnabled } from '@/api/strategy';
 import type { Strategy, StrategyStatus } from '@/types/strategy';
 import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { Button } from '@/components/ui/button';
@@ -172,6 +172,25 @@ export function StrategyPanel() {
                   <Button size="sm" variant="ghost" className="h-8"
                           onClick={() => { setEditing(s); setFormOpen(true); }}>
                     <Pencil className="h-3 w-3" /> Edit
+                  </Button>
+                  {/*
+                    Copy, then edit the copy: the way a second rule is actually
+                    made. It opens the form on the new draft rather than
+                    leaving it in the list to be found, because nobody clones a
+                    strategy in order to keep it identical.
+                  */}
+                  <Button
+                    size="sm" variant="ghost" className="h-8"
+                    aria-label={`Copy ${s.name}`}
+                    disabled={busy === `copy-${s.id}`}
+                    onClick={() => void act(`copy-${s.id}`, async () => {
+                      const { strategy } = await cloneStrategy(s.id);
+                      setEditing(strategy);
+                      setFormOpen(true);
+                    })}
+                  >
+                    {busy === `copy-${s.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : <Copy className="h-3 w-3" />}
+                    Copy
                   </Button>
                   <Button
                     size="sm" variant="ghost"

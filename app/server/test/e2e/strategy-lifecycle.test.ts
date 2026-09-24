@@ -122,6 +122,42 @@ test('2 [critical] a good strategy is saved as typed; a retired setting sent by 
   assert.equal(row.config.entryLimit, null, 'no stale "my price" on an offer entry');
 });
 
+test('2b [critical] a clone carries every setting and is never born armed', async () => {
+  /*
+   * The desk's strategies differ by a field or two, and building the second by
+   * hand from the first is how one gets missed. A clone that stayed armed
+   * would double the scheduler's position at the moment nobody expects it.
+   */
+  const armed = await api('POST', '/api/strategies/e2e-pe/enabled', { enabled: true });
+  assert.equal(armed.status, 200, JSON.stringify(armed.body));
+
+  const r = await api('POST', '/api/strategies/e2e-pe/clone', { name: 'E2E PE later' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.strategy.id, 'e2e-pe-later');
+  assert.equal(r.body.strategy.enabled, false, 'a copy of an armed rule is still a draft');
+
+  const row = await one<{ config: Record<string, unknown>; enabled: boolean }>("SELECT config, enabled FROM strategies WHERE id = 'e2e-pe-later'");
+  assert.ok(row);
+  assert.equal(row.enabled, false);
+  assert.equal(row.config.stopLossAt, 70, 'every setting came with it');
+  assert.deepEqual(row.config.targetSteps, [{ at: STEP, value: 0.85 }]);
+
+  // The source is untouched, and still armed.
+  const from = await one<{ enabled: boolean }>("SELECT enabled FROM strategies WHERE id = 'e2e-pe'");
+  assert.equal(from?.enabled, true);
+
+  // A second copy of the same name gets a number rather than eating the first.
+  const again = await api('POST', '/api/strategies/e2e-pe/clone', { name: 'E2E PE later' });
+  assert.equal(again.body.strategy.id, 'e2e-pe-later-2');
+
+  assert.equal((await api('POST', '/api/strategies/nope/clone', {})).status, 404);
+
+  // Put it back the way the rest of this file expects to find it.
+  await api('POST', '/api/strategies/e2e-pe/enabled', { enabled: false });
+  await api('DELETE', '/api/strategies/e2e-pe-later');
+  await api('DELETE', '/api/strategies/e2e-pe-later-2');
+});
+
 test('3 it is listed, off, with its next entry', async () => {
   const r = await api('GET', '/api/strategies');
   const s = r.body.strategies.find((x: any) => x.id === 'e2e-pe');

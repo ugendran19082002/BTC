@@ -4,9 +4,11 @@ import { StrategyPanel } from '@/components/strategy/StrategyPanel';
 import { DEFAULT_CONFIG, type StrategyStatus } from '@/types/strategy';
 
 const getStrategies = vi.fn();
+const cloned = vi.fn();
 vi.mock('@/api/strategy', () => ({
   getStrategies: (...a: unknown[]) => getStrategies(...a),
   saveStrategy: vi.fn(), setScheduler: vi.fn(), setStrategyEnabled: vi.fn(), deleteStrategy: vi.fn(),
+  cloneStrategy: (...a: unknown[]) => cloned(...a),
 }));
 
 /** One strategy on the screen, with whatever config a test needs. */
@@ -86,5 +88,28 @@ describe('the entry countdown on the list', () => {
     render(<StrategyPanel />);
     expect(await screen.findAllByRole('timer')).toHaveLength(1);
     expect(screen.getByRole('timer')).toHaveTextContent(/^Entry in (9m|10m) \d\ds/);
+  });
+});
+
+describe('copying a strategy', () => {
+  it('[critical] copies the settings and opens the copy, which is never armed', async () => {
+    /*
+     * The way a second rule is actually made: take the one that works, change
+     * a field. Building it by hand from the first is how a field gets missed
+     * -- and a copy that stayed armed would double the scheduler's position at
+     * the moment nobody is expecting it.
+     */
+    getStrategies.mockResolvedValue(status());
+    cloned.mockResolvedValue({
+      ok: true,
+      strategy: { id: 's-copy', name: 'UG-CE copy', enabled: false, createdAt: 0, updatedAt: 0,
+        lastRunDate: null, ranToday: false, nextEntryAt: null, status: 'off', config: DEFAULT_CONFIG },
+    });
+    render(<StrategyPanel />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Copy UG-CE' }));
+
+    await waitFor(() => expect(cloned).toHaveBeenCalledWith('s'));
+    // the form opens on the copy, because nobody clones a rule to keep it identical
+    expect(await screen.findByDisplayValue('UG-CE copy')).toBeInTheDocument();
   });
 });
