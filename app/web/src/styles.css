@@ -3027,6 +3027,33 @@ table.ov-mini.ov-levels { width: auto; min-width: 100%; }
 .bt-state-flat { border-color: var(--line); }
 
 .bt-market-state__checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+
+/* The confirmations, and what kind of market they are confirmations of. */
+.bt-market-state__reading { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr) minmax(0, 240px); }
+@media (max-width: 760px) { .bt-market-state__reading { grid-template-columns: 1fr; } }
+.bt-market-state__chips { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; align-content: start; }
+.bt-market-state__chips li {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); font-size: 12px;
+}
+.bt-market-state__chips span { color: var(--muted); }
+.bt-market-state__chips b { text-align: right; }
+.bt-market-state__chips li.is-up b { color: var(--up); }
+.bt-market-state__chips li.is-down b { color: var(--down); }
+
+/* R1, R2, S1, S2 -- what price is working against, and what is behind it. */
+.bt-market-state__levels h4 { margin: 0 0 6px; font-size: 12.5px; }
+.bt-market-state__levels ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+.bt-market-state__levels li {
+  display: grid; grid-template-columns: 32px auto minmax(0, 1fr); gap: 10px; align-items: baseline;
+  padding: 6px 10px; border-radius: 6px; font-size: 12.5px;
+}
+.bt-market-state__levels li:nth-child(odd) { background: var(--panel-2); }
+.bt-market-state__level-tag { font-weight: 600; font-size: 11.5px; color: var(--muted); }
+.bt-market-state__levels b { font-variant-numeric: tabular-nums; }
+.bt-market-state__levels em { font-style: normal; color: var(--muted); font-size: 11.5px; text-align: right; }
+.bt-market-state__levels li.is-up .bt-market-state__level-tag { color: var(--up); }
+.bt-market-state__levels li.is-down .bt-market-state__level-tag { color: var(--down); }
 /* A panel shown inside the card gives up its own frame: a box inside a box is
    a frame the eye crosses for nothing. */
 .bt-market-state__extra > .ov-panel, .bt-market-state__extra .ov-card {
@@ -3107,6 +3134,29 @@ table.ov-mini.ov-levels { width: auto; min-width: 100%; }
   color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; padding-left: 2px;
 }
 .bt-market-state__hist-line.is-level b { color: var(--text); font-weight: 600; }
+
+/* The trigger, the target and the stop, in the order a call is read. */
+.bt-market-state__hist-plan {
+  display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 2px 2px 0; font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.bt-market-state__hist-plan span { display: inline-flex; gap: 5px; align-items: baseline; }
+.bt-market-state__hist-plan em { font-style: normal; color: var(--muted); }
+.bt-market-state__hist-far { color: var(--warn, #d9a441); }
+.bt-market-state__hist-tf {
+  font-size: 10.5px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0 6px;
+}
+
+/* The status: the only red word is for a call that ran and hit its stop. */
+.bt-market-state__hist-out.is-target_hit { color: var(--up); background: color-mix(in srgb, var(--up) 14%, transparent); }
+.bt-market-state__hist-out.is-invalidated { color: var(--down); background: color-mix(in srgb, var(--down) 14%, transparent); }
+.bt-market-state__hist-out.is-waiting { color: var(--warn, #d9a441); background: color-mix(in srgb, var(--warn, #d9a441) 14%, transparent); }
+.bt-market-state__hist-out.is-expired, .bt-market-state__hist-out.is-not_triggered { color: var(--muted); background: var(--panel-2); }
+.bt-market-state__hist-out.is-not_graded { color: var(--muted); background: transparent; }
+.bt-market-state__hist-out {
+  padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600;
+  letter-spacing: 0.02em; text-transform: uppercase; white-space: nowrap;
+}
 .bt-market-state__hist-target { margin-left: auto; flex: none; }
 .bt-market-state__history li:first-child { border-top: 0; }
 .bt-market-state__hist-pts {

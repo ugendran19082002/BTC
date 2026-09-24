@@ -249,6 +249,14 @@ export type MarketStateResponse = {
   lines: StateTrendLine[];
   /** Up or down, from everything measured, as a vote. */
   bias: StateBias;
+  /** The three chips beside the checks: regime, volatility, timeframe alignment. */
+  context: {
+    regime: string;
+    volatility: { word: string; atrPct: number | null };
+    alignment: { word: string; side: 'UP' | 'DOWN' | null; tfs: string[] };
+  };
+  /** R1, R2 above and S1, S2 below, nearest first. */
+  levels: { label: string; price: number; strength: string; side: 'resistance' | 'support' }[];
   indicators: { all: StateIndicator[]; shown: StateIndicator[] };
   inputs: {
     atr: number | null; oiChangePct: number | null; cvdSlope: number | null;
@@ -263,7 +271,14 @@ export type StateHistoryRow = {
   id: number; at: number; tf: string; event: string; stage: string;
   side: 'UP' | 'DOWN' | null; confirmed: boolean; confidence: number; close: number;
   plan: StatePlan | null;
-  outcome: 'CORRECT' | 'WRONG' | 'UNRESOLVED' | 'NOT_GRADED' | null;
+  /**
+   * Where the call ended, in the words of what happened.
+   *
+   * Never "wrong": a setup whose trigger was never reached did not happen, and
+   * one still inside its window has not finished. The old words still arrive
+   * from rows written before 24 Sep 2026 and are mapped on the server.
+   */
+  outcome: 'TARGET_HIT' | 'INVALIDATED' | 'NOT_TRIGGERED' | 'EXPIRED' | 'NOT_GRADED' | null;
   gradedAt: number | null;
   /** Where price finished the grading window, and the BTC points from the call. */
   resolvedClose?: number | null;

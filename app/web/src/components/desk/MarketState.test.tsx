@@ -33,6 +33,16 @@ const base: MarketStateResponse = {
     insight: 'If 86,800 breaks and a 15m candle closes above it with volume, the next move is towards 87,200 – 87,600. If it is rejected, watch 86,200 for the short.',
   },
   lines: [],
+  context: {
+    regime: 'Downtrend',
+    volatility: { word: 'Medium', atrPct: 0.24 },
+    alignment: { word: 'Bearish (4 of 5)', side: 'DOWN', tfs: [] },
+  },
+  levels: [
+    { label: 'R1', price: 86_800, strength: 'Resistance', side: 'resistance' },
+    { label: 'S1', price: 86_200, strength: 'Strong support', side: 'support' },
+  ],
+
   bias: { side: 'UP', strength: 40, up: 7, down: 3, reasons: [{ text: 'higher lows', side: 'UP', weight: 2 }] },
   patterns: {
     all: [],
@@ -124,17 +134,21 @@ describe('the market-state card', () => {
   it('[critical] the history tallies what came good, as a count and not a percentage', () => {
     // Four calls is not a hit rate, and a percentage would say it was.
     const rows: StateHistoryRow[] = [
-      { id: 1, at: base.at, tf: '15m', event: 'BREAKOUT_CONFIRMED', stage: 'CONFIRMED', side: 'UP', confirmed: true, confidence: 76, close: 86_900, plan: null, outcome: 'CORRECT', gradedAt: base.at },
+      { id: 1, at: base.at, tf: '15m', event: 'BREAKOUT_CONFIRMED', stage: 'CONFIRMED', side: 'UP', confirmed: true, confidence: 76, close: 86_900, plan: null, outcome: 'TARGET_HIT', gradedAt: base.at },
       { id: 2, at: base.at - 3_600_000, tf: '15m', event: 'RANGE', stage: 'RANGE', side: null, confirmed: false, confidence: 62, close: 86_500, plan: null, outcome: 'NOT_GRADED', gradedAt: null },
-      { id: 3, at: base.at - 7_200_000, tf: '15m', event: 'REJECTION', stage: 'FAILED', side: 'DOWN', confirmed: true, confidence: 70, close: 86_610, plan: null, outcome: 'WRONG', gradedAt: base.at },
+      { id: 3, at: base.at - 7_200_000, tf: '15m', event: 'REJECTION', stage: 'FAILED', side: 'DOWN', confirmed: true, confidence: 70, close: 86_610, plan: null, outcome: 'INVALIDATED', gradedAt: base.at },
     ];
     const { container } = render(<MarketState data={base} history={rows} hitRate={{ correct: 1, graded: 2 }} tf="15m" />);
-    expect(screen.getByText('1 of 2 came good')).toBeInTheDocument();
-    expect(screen.getByText('Correct')).toBeInTheDocument();
-    expect(screen.getByText('Wrong')).toBeInTheDocument();
+    expect(screen.getByText('1 of 2 reached target')).toBeInTheDocument();
+    expect(screen.getByText('Target hit')).toBeInTheDocument();
+    expect(screen.getByText('Invalidated')).toBeInTheDocument();
     // A range is not a prediction, so it is not marked right or wrong.
     const outcomes = [...container.querySelectorAll('.bt-market-state__hist-out')].map((e) => e.textContent);
-    expect(outcomes).toEqual(['Correct', '—', 'Wrong']);
+    expect(outcomes).toEqual(['Target hit', '—', 'Invalidated']);
+    // The word the owner banned from the live screen (24 Sep 2026): a setup
+    // that never triggered is not a failure, and most of what it marked had
+    // not finished.
+    expect(container.textContent).not.toMatch(/wrong/i);
   });
 
   it('[critical] each earlier call says what BTC did after it', () => {
@@ -144,8 +158,8 @@ describe('the market-state card', () => {
      * the colour follows the call, so a fall after a breakdown is green.
      */
     const rows: StateHistoryRow[] = [
-      { id: 3, at: base.at, tf: '15m', event: 'BREAKDOWN_CONFIRMED', stage: 'CONFIRMED', side: 'DOWN', confirmed: true, confidence: 70, close: 86_500, plan: null, outcome: 'CORRECT', gradedAt: base.at },
-      { id: 2, at: base.at - 3_600_000, tf: '15m', event: 'BREAKOUT_WATCH', stage: 'WATCH', side: 'UP', confirmed: false, confidence: 60, close: 86_300, plan: null, outcome: 'WRONG', gradedAt: base.at },
+      { id: 3, at: base.at, tf: '15m', event: 'BREAKDOWN_CONFIRMED', stage: 'CONFIRMED', side: 'DOWN', confirmed: true, confidence: 70, close: 86_500, plan: null, outcome: 'TARGET_HIT', gradedAt: base.at },
+      { id: 2, at: base.at - 3_600_000, tf: '15m', event: 'BREAKOUT_WATCH', stage: 'WATCH', side: 'UP', confirmed: false, confidence: 60, close: 86_300, plan: null, outcome: 'INVALIDATED', gradedAt: base.at },
     ];
     render(<MarketState data={base} history={rows} tf="15m" spot={86_200} />);
     // newest: 86,200 now against 86,500 called -- 300 down, and it was a breakdown
@@ -170,11 +184,40 @@ describe('the market-state card', () => {
     const row = document.querySelector('.bt-market-state__history li')!;
     // Not yet graded says so, rather than reading like a range nobody grades.
     expect(row.textContent).toContain('Waiting');
-    expect(row.textContent).toContain('Under');
+    // Trigger, target and stop, in the order a call is read.
+    expect(row.textContent).toContain('Trigger');
     expect(row.textContent).toContain('86,200');
+    expect(row.textContent).toContain('Target');
     expect(row.textContent).toContain('85,800');
-    // the two point figures in a row are labelled, so neither can be read as the other
-    expect(screen.getByText('worth 400 pts')).toBeInTheDocument();
+    expect(row.textContent).toContain('Stop');
+    expect(row.textContent).toContain('86,600');
+  });
+
+  it('[critical] a setup waiting on its trigger says how far, not whether it was right', () => {
+    /*
+     * The bug the owner found on 24 September: a breakout watch whose trigger
+     * was never reached was marked WRONG, so the screen filled with red for
+     * calls that were never anything but a plan. A call that has not triggered
+     * says how far away the trigger is; one that never did says so; and
+     * neither is counted for or against.
+     */
+    const rows: StateHistoryRow[] = [
+      { id: 1, at: base.at, tf: '5m', event: 'BREAKOUT_WATCH', stage: 'WATCH', side: 'UP',
+        confirmed: false, confidence: 35, close: 84_436,
+        plan: { side: 'UP', trigger: 84_532, target1: 84_731, target2: 84_900, invalidation: 84_309 },
+        outcome: null, gradedAt: null },
+      { id: 2, at: base.at - 900_000, tf: '5m', event: 'BREAKOUT_WATCH', stage: 'WATCH', side: 'UP',
+        confirmed: false, confidence: 30, close: 84_373,
+        plan: { side: 'UP', trigger: 84_459, target1: 84_653, target2: 84_800, invalidation: 84_220 },
+        outcome: 'NOT_TRIGGERED', gradedAt: base.at },
+    ];
+    const { container } = render(<MarketState data={base} history={rows} tf="5m" spot={84_436} />);
+    // The chip is upper-cased by the stylesheet; the text itself is a word.
+    expect(screen.getByText('Waiting')).toBeInTheDocument();
+    expect(screen.getByText('96 pts to trigger')).toBeInTheDocument();
+    expect(screen.getByText('Not triggered')).toBeInTheDocument();
+    expect(screen.getByText('Never triggered')).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/wrong/i);
   });
 
   it('[critical] shows five calls a page, newest first, and pages back through the rest', () => {
@@ -185,18 +228,18 @@ describe('the market-state card', () => {
       outcome: 'NOT_GRADED' as const, gradedAt: null,
     }));
     render(<MarketState data={base} history={rows} tf="15m" />);
-    expect(screen.getByText('1–5 of 12')).toBeInTheDocument();
+    expect(screen.getByText('1–5 of 12 signals')).toBeInTheDocument();
     expect(document.querySelectorAll('.bt-market-state__history li')).toHaveLength(5);
     expect(screen.getByText('(50)')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Newer calls' })).toBeDisabled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Older calls' }));
-    expect(screen.getByText('6–10 of 12')).toBeInTheDocument();
+    expect(screen.getByText('6–10 of 12 signals')).toBeInTheDocument();
     expect(screen.getByText('(55)')).toBeInTheDocument();
     expect(screen.queryByText('(50)')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Older calls' }));
-    expect(screen.getByText('11–12 of 12')).toBeInTheDocument();
+    expect(screen.getByText('11–12 of 12 signals')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Older calls' })).toBeDisabled();
   });
 

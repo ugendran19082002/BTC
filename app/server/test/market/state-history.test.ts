@@ -1,7 +1,7 @@
 import { after, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  gradeStates, noteState, outcomeWords, recentStates, stateHistorySchema, verdictFor,
+  EVAL_WINDOW_MIN, gradeStates, noteState, outcomeFor, outcomeWords, recentStates, stateHistorySchema,
 } from '../../src/market/state-history.js';
 import { closePool, one, query } from '../../src/db/pool.js';
 import type { StateRead } from '../../src/market/state-read.js';
@@ -14,41 +14,91 @@ const bar = (high: number, low: number): Candle =>
 const long: Plan = { side: 'UP', trigger: 86_800, target1: 87_200, target2: 87_600, invalidation: 86_400 };
 const short: Plan = { side: 'DOWN', trigger: 86_200, target1: 85_800, target2: 85_400, invalidation: 86_600 };
 
-test('[critical] the target before the invalidation is correct; the other way round is wrong', () => {
-  assert.equal(verdictFor(long, 'UP', [bar(86_900, 86_700), bar(87_250, 86_850)]), 'CORRECT');
-  assert.equal(verdictFor(long, 'UP', [bar(86_900, 86_700), bar(86_800, 86_350)]), 'WRONG');
-  assert.equal(verdictFor(short, 'DOWN', [bar(86_150, 85_750)]), 'CORRECT');
-  assert.equal(verdictFor(short, 'DOWN', [bar(86_650, 86_100)]), 'WRONG');
-});
-
-test('[critical] a bar that reaches both counts against the call', () => {
+test('[critical] a setup whose trigger was never reached did not happen', () => {
   /*
-   * Which came first is not in the bar, and the assumption that goes against
-   * the call is the only one that cannot flatter the hit rate.
+   * The bug that made the history useless (24 Sep 2026). A breakout watch says
+   * "over 86,800 this goes to 87,200". If price never reached 86,800 there was
+   * no trade to be right or wrong about -- and the old grader called it WRONG,
+   * so the screen filled with red for calls that were never anything but a
+   * plan. Nothing happened. That is what it says now.
    */
-  assert.equal(verdictFor(long, 'UP', [bar(87_300, 86_300)]), 'WRONG');
+  const never = [bar(86_700, 86_500), bar(86_650, 86_400)];
+  assert.equal(outcomeFor({ plan: long, side: 'UP', stage: 'WATCH', after: never }), 'NOT_TRIGGERED');
+  // and the same for a breakdown that never broke down
+  assert.equal(
+    outcomeFor({ plan: short, side: 'DOWN', stage: 'WATCH', after: [bar(86_500, 86_300)] }),
+    'NOT_TRIGGERED',
+  );
 });
 
-test('[critical] going neither way is unresolved, not a win', () => {
-  // Price drifted the right way and reached nothing. Counting that as correct
-  // is how a hit rate ends up describing the grader rather than the model.
-  assert.equal(verdictFor(long, 'UP', [bar(87_000, 86_700), bar(87_100, 86_900)]), 'UNRESOLVED');
-  assert.equal(verdictFor(long, 'UP', []), 'UNRESOLVED', 'no bars yet is not a verdict either');
+test('[critical] once it triggers, the target before the invalidation is the target hit', () => {
+  const triggered = [bar(86_900, 86_700), bar(87_250, 86_850)];
+  assert.equal(outcomeFor({ plan: long, side: 'UP', stage: 'WATCH', after: triggered }), 'TARGET_HIT');
+  assert.equal(
+    outcomeFor({ plan: short, side: 'DOWN', stage: 'WATCH', after: [bar(86_150, 85_750)] }),
+    'TARGET_HIT',
+  );
+});
+
+test('[critical] triggered and then through the invalidation is invalidated', () => {
+  assert.equal(
+    outcomeFor({ plan: long, side: 'UP', stage: 'WATCH', after: [bar(86_900, 86_700), bar(86_800, 86_350)] }),
+    'INVALIDATED',
+  );
+  // A bar that reached both counts against: the order is not in the bar.
+  assert.equal(
+    outcomeFor({ plan: long, side: 'UP', stage: 'CONFIRMED', after: [bar(87_300, 86_300)] }),
+    'INVALIDATED',
+  );
+});
+
+test('[critical] a confirmed state is already through its trigger', () => {
+  // Price was past the level when the desk called it, so the trigger is not
+  // asked for again -- only what happened next.
+  assert.equal(
+    outcomeFor({ plan: long, side: 'UP', stage: 'CONFIRMED', after: [bar(87_250, 86_900)] }),
+    'TARGET_HIT',
+  );
+});
+
+test('triggered, and then neither, is expired -- not a miss', () => {
+  // Price drifted. Counting that either way would be choosing an answer
+  // rather than measuring one.
+  assert.equal(
+    outcomeFor({ plan: long, side: 'UP', stage: 'WATCH', after: [bar(86_900, 86_700), bar(87_100, 86_900)] }),
+    'EXPIRED',
+  );
+  assert.equal(outcomeFor({ plan: long, side: 'UP', stage: 'WATCH', after: [] }), 'EXPIRED');
 });
 
 test('a call with no plan behind it is not graded at all', () => {
-  // A range says nothing is happening, and nothing happening is not a
-  // prediction anybody can be wrong about.
-  assert.equal(verdictFor(null, null, [bar(87_300, 86_300)]), 'NOT_GRADED');
-  assert.equal(verdictFor(long, null, [bar(87_300, 86_300)]), 'NOT_GRADED');
+  assert.equal(outcomeFor({ plan: null, side: null, stage: 'RANGE', after: [bar(87_300, 86_300)] }), 'NOT_GRADED');
+  assert.equal(outcomeFor({ plan: long, side: null, stage: 'RANGE', after: [bar(87_300, 86_300)] }), 'NOT_GRADED');
 });
 
-test('the words the list shows for each verdict', () => {
-  assert.equal(outcomeWords('CORRECT'), 'Correct');
-  assert.equal(outcomeWords('WRONG'), 'Wrong');
-  assert.equal(outcomeWords('UNRESOLVED'), 'No follow-through');
+test('[critical] each timeframe is given a window its own move fits in', () => {
+  // Four bars is right for a five-minute chart and far too short for an hourly
+  // one: an hourly setup that needs an afternoon was done in four hours.
+  assert.equal(EVAL_WINDOW_MIN['5m'], 30);
+  assert.equal(EVAL_WINDOW_MIN['1h'], 240);
+  assert.ok(EVAL_WINDOW_MIN['4h']! > EVAL_WINDOW_MIN['1h']!);
+});
+
+test('[critical] the word "wrong" is not on the live screen at all', () => {
+  /*
+   * It belongs on a backtest page, after a window has closed, beside what was
+   * predicted and what happened. On a live screen most of what it marked had
+   * not finished yet.
+   */
+  assert.equal(outcomeWords('TARGET_HIT'), 'Target hit');
+  assert.equal(outcomeWords('INVALIDATED'), 'Invalidated');
+  assert.equal(outcomeWords('NOT_TRIGGERED'), 'Not triggered');
+  assert.equal(outcomeWords('EXPIRED'), 'Expired');
   assert.equal(outcomeWords('NOT_GRADED'), '—');
-  assert.equal(outcomeWords(null), '—', 'not graded yet reads the same as never graded');
+  assert.equal(outcomeWords(null), 'Waiting', 'still inside its window says so');
+  for (const o of ['TARGET_HIT', 'INVALIDATED', 'NOT_TRIGGERED', 'EXPIRED', 'NOT_GRADED', null] as const) {
+    assert.doesNotMatch(outcomeWords(o), /wrong/i);
+  }
 });
 
 /*
@@ -131,10 +181,10 @@ test('[critical] the list carries where price went, not only whether the plan wo
   const id = await noteState(read());
   await query(
     'UPDATE market_states SET outcome = $1, graded_at = $2, resolved_close = $3, move_pts = $4 WHERE id = $5',
-    ['CORRECT', Date.now(), 86_904, 350, id],
+    ['TARGET_HIT', Date.now(), 86_904, 350, id],
   );
   const [row] = await recentStates('15m', 5);
-  assert.equal(row?.outcome, 'CORRECT');
+  assert.equal(row?.outcome, 'TARGET_HIT');
   assert.equal(row?.resolvedClose, 86_904);
   assert.equal(row?.movePts, 350);
   assert.equal(row?.close, 86_554);

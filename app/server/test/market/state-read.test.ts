@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cvdSlopeOf, levelFor, oiFor, regimeOf, voteOf, STATE_TF_MINUTES } from '../../src/market/state-read.js';
+import {
+  STATE_TF_MINUTES, contextFor, cvdSlopeOf, levelFor, levelsAround, oiFor, regimeOf, voteOf,
+} from '../../src/market/state-read.js';
 import type { MarketRead } from '../../src/market/moves.js';
 import type { Candle } from '../../src/market/delta.js';
 
@@ -66,4 +68,62 @@ test('every timeframe the card offers has a length', () => {
   for (const [tf, minutes] of Object.entries(STATE_TF_MINUTES)) {
     assert.ok(minutes > 0, `${tf} has no length`);
   }
+});
+
+/*
+ * The three chips and the levels either side: what the owner's reference puts
+ * beside the checks, and what a reader asks before any of the detail.
+ */
+test('[critical] the context says what kind of market this is, in three words', () => {
+  const read = contextFor(
+    { atr: 120, oiChangePct: 1, cvdSlope: 10, aggressorBuyPct: 55, mtf: { up: 4, down: 1, total: 5 }, regime: 'TREND_DOWN' },
+    0.5,
+  );
+  assert.equal(read.regime, 'Downtrend');
+  assert.equal(read.volatility.word, 'High', 'half a percent a bar is a day somebody remembers');
+  assert.equal(read.alignment.word, 'Bullish (4 of 5)');
+  assert.equal(read.alignment.side, 'UP');
+});
+
+test('a reading nobody could take says so rather than defaulting to the middle', () => {
+  const read = contextFor(
+    { atr: null, oiChangePct: null, cvdSlope: null, aggressorBuyPct: null, mtf: null, regime: null },
+    null,
+  );
+  assert.equal(read.volatility.word, 'Not read');
+  assert.equal(read.alignment.word, 'Not read');
+  assert.equal(read.alignment.side, null);
+});
+
+test('timeframes split down the middle are split, not a direction', () => {
+  const read = contextFor(
+    { atr: 1, oiChangePct: null, cvdSlope: null, aggressorBuyPct: null, mtf: { up: 3, down: 3, total: 6 }, regime: 'RANGE' },
+    0.2,
+  );
+  assert.equal(read.alignment.word, 'Split');
+  assert.equal(read.volatility.word, 'Medium');
+});
+
+test('[critical] the levels either side are named the way a trader names them', () => {
+  /*
+   * R1 and S1 are what price is working against now; R2 and S2 are where it
+   * goes if those give way. A level the hourly chart also knows is a stronger
+   * thing than one only this bar's swings can see.
+   */
+  const market = {
+    timeframes: [
+      { tf: '5m', resistance: [84_600, 84_800, 85_200], support: [83_800, 83_400] },
+      { tf: '1h', resistance: [84_800], support: [83_400] },
+    ],
+  } as unknown as Parameters<typeof levelsAround>[0];
+  const out = levelsAround(market, '5m', 84_100);
+  assert.deepEqual(out.map((l) => l.label), ['R1', 'R2', 'S1', 'S2']);
+  assert.deepEqual(out.map((l) => l.price), [84_600, 84_800, 83_800, 83_400]);
+  assert.equal(out[0]!.strength, 'Resistance');
+  assert.equal(out[1]!.strength, 'Strong resistance', 'the hourly chart knows this one too');
+  assert.equal(out[3]!.strength, 'Strong support');
+});
+
+test('no market read is no levels, rather than levels at zero', () => {
+  assert.deepEqual(levelsAround(null, '5m', 84_000), []);
 });

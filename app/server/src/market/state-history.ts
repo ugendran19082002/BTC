@@ -23,6 +23,22 @@ export const MARKET_STATES_KEEP_MS = 90 * 24 * 3_600_000;
 /** How many bars of its own timeframe a call is given to come good. */
 export const GRADE_BARS = 4;
 
+/**
+ * How long a call is given, per timeframe.
+ *
+ * Four bars is right for a five-minute chart and far too short for an hourly
+ * one: an hourly setup that needs an afternoon was being marked done in four
+ * hours. The windows are the owner's (24 Sep 2026) -- long enough for the move
+ * the timeframe is about, short enough that the journal is not full of calls
+ * still waiting a week later.
+ */
+export const EVAL_WINDOW_MIN: Record<string, number> = {
+  '5m': 30, '15m': 90, '30m': 120, '1h': 240, '2h': 480, '4h': 720,
+};
+
+export const windowMsFor = (tf: string): number =>
+  (EVAL_WINDOW_MIN[tf] ?? STATE_TF_MINUTES[tf as StateTf] * GRADE_BARS) * 60_000;
+
 const MIGRATIONS: Migration[] = [
   {
     /*
@@ -96,14 +112,38 @@ export function stateHistorySchema(): Promise<void> {
 }
 
 /**
- * CORRECT and WRONG are what they sound like. UNRESOLVED is the honest third
- * answer: the call was directional, the bars went neither to the target nor
- * through the invalidation, and calling that a win because price drifted the
- * right way is how a hit rate gets flattering. A range is never graded -- it
- * is a statement that nothing is happening, and nothing happening is not a
- * prediction anybody can be wrong about.
+ * What became of a call, in the words of what actually happened.
+ *
+ * It used to be CORRECT / WRONG / UNRESOLVED, and **WRONG was a lie most of
+ * the time it appeared**. A breakout watch says "over 84,532 this goes to
+ * 84,731" -- if price never reached 84,532 the setup never happened, and
+ * marking it wrong grades a trade nobody could have taken. The screen filled
+ * with red for calls that were never anything but a plan.
+ *
+ * So a call now ends where it actually ended:
+ *
+ * * `NOT_TRIGGERED` -- the trigger was never reached. Nothing happened. This
+ *   is not a failure and is never shown as one.
+ * * `TARGET_HIT` -- triggered, and the first target came before the stop.
+ * * `INVALIDATED` -- triggered, and the invalidation came first. A bar that
+ *   reached both counts here: the order is not in the bar, and the assumption
+ *   against the call is the only one that cannot flatter it.
+ * * `EXPIRED` -- triggered, and the window closed with neither reached. Price
+ *   drifted. Counting that either way would be choosing an answer.
+ * * `NOT_GRADED` -- a range. "Nothing is happening" is not a prediction.
+ *
+ * The word *wrong* belongs on a backtest page, after a window has closed, next
+ * to what was predicted and what happened. It does not belong on a live screen
+ * where most of what it marks has not finished yet.
  */
-export type Outcome = 'CORRECT' | 'WRONG' | 'UNRESOLVED' | 'NOT_GRADED';
+export type Outcome = 'TARGET_HIT' | 'INVALIDATED' | 'NOT_TRIGGERED' | 'EXPIRED' | 'NOT_GRADED';
+
+/** The rows written before 24 Sep 2026 carry the old words. */
+const OLD_OUTCOMES: Record<string, Outcome> = {
+  CORRECT: 'TARGET_HIT', WRONG: 'INVALIDATED', UNRESOLVED: 'EXPIRED', NOT_GRADED: 'NOT_GRADED',
+};
+export const outcomeOf = (stored: string | null): Outcome | null =>
+  stored === null ? null : OLD_OUTCOMES[stored] ?? (stored as Outcome);
 
 export type StateRow = {
   id: number;
@@ -125,29 +165,56 @@ export type StateRow = {
 };
 
 /**
- * Did it come good, in the bars after it was called?
+ * What happened after the call, judged in the order it could have happened.
  *
- * Target before invalidation, on the bars' own highs and lows rather than
- * their closes -- a stop that was traded through is a stop that was hit,
- * whatever the bar closed at. A bar that reaches both is counted WRONG: the
- * order they happened in is not in the bar, and the assumption that goes
- * against the call is the one that cannot flatter it.
+ * **The trigger comes first.** A setup is a conditional -- *over this price,
+ * towards that one* -- so the bars are read for the trigger before anything
+ * else is asked. Until price reaches it there is no trade and no verdict; the
+ * old grader skipped this step entirely and marked every untriggered watch
+ * wrong, which is how a screen of red came to mean nothing.
+ *
+ * A state that was already confirmed when it was written is triggered by
+ * definition: price was through the level when the desk called it.
  */
-export function verdictFor(plan: Plan | null, side: Side | null, after: readonly Candle[]): Outcome {
+export function outcomeFor(input: {
+  plan: Plan | null;
+  side: Side | null;
+  /** WATCH and CANDIDATE are setups; CONFIRMED and RETEST are already through. */
+  stage: string;
+  after: readonly Candle[];
+}): Outcome {
+  const { plan, side, stage, after } = input;
   if (!plan || side === null) return 'NOT_GRADED';
-  if (!after.length) return 'UNRESOLVED';
-  for (const bar of after) {
+  if (!after.length) return 'EXPIRED';
+
+  const through = (bar: Candle) => (side === 'UP' ? bar.high >= plan.trigger : bar.low <= plan.trigger);
+  const alreadyThrough = stage === 'CONFIRMED' || stage === 'RETEST' || stage === 'FAILED';
+  const from = alreadyThrough ? 0 : after.findIndex(through);
+  if (from < 0) return 'NOT_TRIGGERED';
+
+  for (const bar of after.slice(from)) {
     const hitTarget = side === 'UP' ? bar.high >= plan.target1 : bar.low <= plan.target1;
     const hitStop = side === 'UP' ? bar.low <= plan.invalidation : bar.high >= plan.invalidation;
-    if (hitStop) return 'WRONG';
-    if (hitTarget) return 'CORRECT';
+    if (hitStop) return 'INVALIDATED';
+    if (hitTarget) return 'TARGET_HIT';
   }
-  return 'UNRESOLVED';
+  return 'EXPIRED';
 }
 
-/** The words the card puts in the right-hand column. */
+/**
+ * The words the card puts in the right-hand column.
+ *
+ * None of them is "wrong". A call that has not finished says so, a setup that
+ * never triggered says that, and the only red word is for a call that actually
+ * went against its own invalidation.
+ */
 export const outcomeWords = (o: Outcome | null): string =>
-  o === 'CORRECT' ? 'Correct' : o === 'WRONG' ? 'Wrong' : o === 'UNRESOLVED' ? 'No follow-through' : '—';
+  o === 'TARGET_HIT' ? 'Target hit'
+    : o === 'INVALIDATED' ? 'Invalidated'
+      : o === 'NOT_TRIGGERED' ? 'Not triggered'
+        : o === 'EXPIRED' ? 'Expired'
+          : o === null ? 'Waiting'
+            : '—';
 
 /**
  * Write this state down, unless it is the same one the last row already says.
@@ -209,16 +276,15 @@ export async function noteState(read: StateRead): Promise<number | null> {
 export async function gradeStates(nowMs = Date.now(), limit = 20): Promise<number> {
   await stateHistorySchema();
   const due = await rows<{
-    id: number; at: number; tf: StateTf; side: Side | null; close: number;
+    id: number; at: number; tf: StateTf; side: Side | null; close: number; stage: string;
     trigger: number | null; target1: number | null; target2: number | null; invalidation: number | null;
   }>(
-    `SELECT id, at, tf, side, close, trigger, target1, target2, invalidation
+    `SELECT id, at, tf, side, close, stage, trigger, target1, target2, invalidation
        FROM market_states WHERE outcome IS NULL ORDER BY at ASC LIMIT $1`, [limit],
   );
   let graded = 0;
   for (const r of due) {
-    const minutes = STATE_TF_MINUTES[r.tf] ?? 15;
-    const windowMs = minutes * 60_000 * GRADE_BARS;
+    const windowMs = windowMsFor(r.tf);
     if (nowMs < r.at + windowMs) continue;
     const plan: Plan | null = r.target1 === null || r.invalidation === null || r.side === null ? null : {
       side: r.side, trigger: r.trigger ?? 0, target1: r.target1, target2: r.target2 ?? r.target1,
@@ -228,7 +294,7 @@ export async function gradeStates(nowMs = Date.now(), limit = 20): Promise<numbe
     const after = await candles(
       'BTCUSD', Math.floor(r.at / 1000), Math.floor((r.at + windowMs) / 1000), r.tf,
     ).catch(() => [] as Candle[]);
-    const outcome = verdictFor(plan, r.side, after);
+    const outcome = outcomeFor({ plan, side: r.side, stage: r.stage, after });
     /*
      * Where price actually finished the window, and how far that is from the
      * call. The verdict answers "did the plan work"; this answers "what did
@@ -271,7 +337,7 @@ export async function recentStates(tf: StateTf | null = null, limit = 10): Promi
       side: r.side, trigger: r.trigger ?? 0, target1: r.target1,
       target2: r.target2 ?? r.target1, invalidation: r.invalidation ?? 0,
     },
-    outcome: r.outcome,
+    outcome: outcomeOf(r.outcome as string | null),
     gradedAt: r.graded_at === null ? null : Number(r.graded_at),
     resolvedClose: r.resolved_close,
     movePts: r.move_pts,
@@ -288,8 +354,14 @@ export async function recentStates(tf: StateTf | null = null, limit = 10): Promi
 export async function hitRate(tf: StateTf | null = null): Promise<{ correct: number; graded: number }> {
   await stateHistorySchema();
   const r = await one<{ correct: string; graded: string }>(
-    `SELECT COUNT(*) FILTER (WHERE outcome = 'CORRECT') AS correct,
-            COUNT(*) FILTER (WHERE outcome IN ('CORRECT', 'WRONG')) AS graded
+    /*
+     * Only the calls that actually ran. A setup whose trigger was never
+     * reached is not a miss -- counting it would be marking the desk down for
+     * a trade nobody took -- and one still inside its window has not finished.
+     * The old words are included so rows written before 24 Sep still count.
+     */
+    `SELECT COUNT(*) FILTER (WHERE outcome IN ('TARGET_HIT', 'CORRECT')) AS correct,
+            COUNT(*) FILTER (WHERE outcome IN ('TARGET_HIT', 'INVALIDATED', 'CORRECT', 'WRONG')) AS graded
        FROM market_states ${tf ? 'WHERE tf = $1' : ''}`,
     tf ? [tf] : [],
   );

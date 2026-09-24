@@ -140,7 +140,51 @@ export function MarketState({
       {s ? (
         <div className="bt-market-state__body">
           <div className="bt-market-state__main">
-            <Checks checks={s.checks} />
+            {/*
+              The checks on the left, what kind of market it is on the right.
+              A reader asks the three chips first -- is there a trend, are the
+              bars big, do the other timeframes agree -- and then reads the
+              confirmations knowing what they are confirmations of.
+            */}
+            <div className="bt-market-state__reading">
+              <Checks checks={s.checks} />
+              {data ? (
+                <ul className="bt-market-state__chips">
+                  <li><span>Market regime</span><b>{data.context.regime}</b></li>
+                  <li>
+                    <span>Volatility</span>
+                    <b title={data.context.volatility.atrPct === null ? undefined
+                      : `ATR is ${data.context.volatility.atrPct.toFixed(2)}% of price a bar`}>
+                      {data.context.volatility.word}
+                    </b>
+                  </li>
+                  <li className={cn(data.context.alignment.side === 'UP' && 'is-up',
+                    data.context.alignment.side === 'DOWN' && 'is-down')}>
+                    <span>Timeframe alignment</span><b>{data.context.alignment.word}</b>
+                  </li>
+                </ul>
+              ) : null}
+            </div>
+
+            {/*
+              The levels either side, named the way a trader names them: R1 and
+              S1 are what price is working against now, R2 and S2 are where it
+              goes if those give way.
+            */}
+            {data && data.levels.length > 0 ? (
+              <div className="bt-market-state__levels">
+                <h4>Key levels</h4>
+                <ul>
+                  {data.levels.map((l) => (
+                    <li key={l.label} className={cn(l.side === 'resistance' ? 'is-down' : 'is-up')}>
+                      <span className="bt-market-state__level-tag">{l.label}</span>
+                      <b>{fmtStrike(Math.round(l.price))}</b>
+                      <em>{l.strength}</em>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
 
             <Plans plans={s.plans} level={s.level} distance={s.distance} against={s.against} />
 
@@ -228,8 +272,22 @@ function PlanBox({ plan, title, action, tone }: { plan: StatePlan | null; title:
 /** Five calls a page: the newest is the one being looked for. */
 const PAGE = 5;
 
+/**
+ * Where each call ended.
+ *
+ * **"Wrong" is not one of them, on purpose (24 Sep 2026).** A breakout watch
+ * says "over 84,532 this goes to 84,731"; if price never reached 84,532 there
+ * was no trade to be wrong about, and the screen was filling with red for
+ * calls that were never anything but a plan. A call that has not finished says
+ * *waiting*, one that never started says *not triggered*, and the only red
+ * word is for a call that ran and hit its own invalidation.
+ */
 const OUTCOME_WORDS: Record<string, string> = {
-  CORRECT: 'Correct', WRONG: 'Wrong', UNRESOLVED: 'No follow-through', NOT_GRADED: '—',
+  TARGET_HIT: 'Target hit',
+  INVALIDATED: 'Invalidated',
+  NOT_TRIGGERED: 'Not triggered',
+  EXPIRED: 'Expired',
+  NOT_GRADED: '—',
 };
 
 /**
@@ -265,30 +323,32 @@ function History({ rows, rate, spot }: {
     <div className="bt-market-state__history">
       <h4>
         Signal history <span className="bt-market-state__hist-unit">BTC pts</span>
-        {rate && rate.graded > 0 ? <span>{rate.correct} of {rate.graded} came good</span> : <span>none graded yet</span>}
+        {rate && rate.graded > 0
+          ? <span title="Of the calls that actually triggered and finished. A setup whose trigger was never reached is not counted either way.">
+            {rate.correct} of {rate.graded} reached target
+          </span>
+          : <span>none finished yet</span>}
       </h4>
       <ul>
         {shown.map((r, i) => {
           /*
-           * What BTC did after the call: to the next call, or to the price now
-           * for the newest one. It is the question the row is read to answer,
-           * and reading it off two close prices in your head is the part
-           * nobody does.
-           */
-          /*
-           * What BTC did after the call. The graded rows carry it: the server
-           * wrote down where price finished the window, so the figure does not
-           * depend on when this screen happened to be open. An ungraded one is
-           * measured to the next call, or to the price now for the newest.
+           * Where the call got to.
+           *
+           * A row answers four questions in the order they are asked: what was
+           * called, did it trigger, where did it end, and what did that cost or
+           * make. The trigger comes first because until price reaches it there
+           * is no trade -- which is the whole reason this list stopped saying
+           * "wrong" for setups that never happened.
            */
           const after = r.resolvedClose ?? rows[at * PAGE + i - 1]?.close ?? spot ?? null;
           const move = r.movePts ?? (after === null ? null : Math.round(after - r.close));
-          // Which way it went is not the same as whether the call was right:
-          // the colour follows the call, so a fall after a breakdown is green.
           const went = move === null || r.side === null ? null
             : (r.side === 'UP' ? move > 0 : move < 0);
+          const waiting = r.outcome === null;
+          const toTrigger = r.plan && after !== null ? Math.round(Math.abs(r.plan.trigger - after)) : null;
+          const status = outcomeWord(r.outcome);
           return (
-            <li key={r.id}>
+            <li key={r.id} data-outcome={r.outcome ?? 'WAITING'}>
               <div className="bt-market-state__hist-line">
                 <span className="bt-market-state__hist-at">{IST.format(r.at)}</span>
                 {r.side === 'UP' ? <ArrowUpRight size={14} className="is-up" aria-hidden />
@@ -297,32 +357,26 @@ function History({ rows, rate, spot }: {
                 <span className="bt-market-state__hist-what">
                   {STATE_WORDS[r.event]?.title ?? r.event} <em>({r.confidence})</em>
                 </span>
-                <span className={cn('bt-market-state__hist-out',
-                  r.outcome === 'CORRECT' && 'is-up', r.outcome === 'WRONG' && 'is-down',
-                  (r.outcome === 'CORRECT' || r.outcome === 'WRONG') && 'is-chip')}>
-                  {outcomeWord(r.outcome)}
+                <span className="bt-market-state__hist-tf">{r.tf}</span>
+                <span className={cn('bt-market-state__hist-out', `is-${(r.outcome ?? 'waiting').toLowerCase()}`)}>
+                  {status}
                 </span>
               </div>
-              {/* The level it was a call about, and what it was worth if it
-                  went: a breakdown at 84,200 with the target four hundred
-                  points under it is a different call from one with forty. */}
+
               {r.plan ? (
-                <div className="bt-market-state__hist-line is-level">
-                  <span>
-                    {r.side === 'UP' ? 'Over' : 'Under'} <b>{fmtStrike(Math.round(r.plan.trigger))}</b>
-                    {' → '}target <b>{fmtStrike(Math.round(r.plan.target1))}</b>
-                  </span>
-                  <span className="bt-market-state__hist-target">
-                    {(() => {
-                      const pts = Math.round(r.plan.target1 - r.plan.trigger);
-                      return `worth ${Math.abs(pts).toLocaleString('en-US')} pts`;
-                    })()}
-                  </span>
+                <div className="bt-market-state__hist-plan">
+                  <span><em>Trigger</em><b>{fmtStrike(Math.round(r.plan.trigger))}</b></span>
+                  <span><em>Target</em><b>{fmtStrike(Math.round(r.plan.target1))}</b></span>
+                  <span><em>Stop</em><b>{fmtStrike(Math.round(r.plan.invalidation))}</b></span>
+                  {/* Waiting on the trigger is a distance, not a verdict. */}
+                  {waiting && toTrigger !== null ? (
+                    <span className="bt-market-state__hist-far">{toTrigger} pts to trigger</span>
+                  ) : r.outcome === 'NOT_TRIGGERED' ? (
+                    <span className="bt-market-state__hist-far">Never triggered</span>
+                  ) : null}
                 </div>
               ) : null}
 
-              {/* The index either side of the call, so the points are a figure
-                  somebody can check rather than one they have to trust. */}
               <div className="bt-market-state__hist-line is-prices">
                 <span>
                   BTC {fmtStrike(Math.round(r.close))}
@@ -331,8 +385,9 @@ function History({ rows, rate, spot }: {
                 <span className={cn('bt-market-state__hist-pts',
                   went === true && 'is-up', went === false && 'is-down')}
                   title="BTC index points between this call and the next one — the underlying, not option premium">
-                  {move === null ? '—'
-                    : `moved ${move > 0 ? '+' : move < 0 ? '−' : ''}${Math.abs(Math.round(move)).toLocaleString('en-US')} pts`}
+                  {r.outcome === 'NOT_TRIGGERED' ? '0 pts'
+                    : move === null ? '—'
+                      : `${waiting ? 'now ' : 'moved '}${move > 0 ? '+' : move < 0 ? '−' : ''}${Math.abs(Math.round(move)).toLocaleString('en-US')} pts`}
                 </span>
               </div>
             </li>
@@ -345,7 +400,7 @@ function History({ rows, rate, spot }: {
           looked for. */}
       {rows.length > PAGE ? (
         <div className="bt-market-state__pager">
-          <span>{first}–{first + shown.length - 1} of {rows.length}</span>
+          <span>{first}–{first + shown.length - 1} of {rows.length} signals</span>
           <button type="button" className="bt-chip" aria-label="Newer calls"
             disabled={at === 0} onClick={() => setPage(at - 1)}>
             <ChevronLeft size={14} aria-hidden />

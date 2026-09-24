@@ -2,7 +2,7 @@ import { candles, type Candle } from './delta.js';
 import { atr, readMarket, type MarketRead } from './moves.js';
 import { flowSummary } from './flow.js';
 import { movementByWindow } from './movement.js';
-import { marketState, LEVEL_BARS, type MarketState, type Regime, type StateInput } from '../domain/market-state.js';
+import { marketState, LEVEL_BARS, type MarketState, type Regime, type Side, type StateInput } from '../domain/market-state.js';
 import {
   candlePatterns, marketStructure, relevant, structurePatterns, trendLines, type Pattern, type TrendLine,
 } from '../domain/patterns.js';
@@ -47,6 +47,17 @@ export type StateRead = {
   lines: TrendLine[];
   /** Up or down, from everything measured, as a vote rather than a claim. */
   bias: BiasRead;
+  /**
+   * The three chips the card carries beside the checks: what kind of market
+   * this is, how big its bars are, and whether the timeframes agree.
+   */
+  context: {
+    regime: string;
+    volatility: { word: string; atrPct: number | null };
+    alignment: { word: string; side: Side | null; tfs: string[] };
+  };
+  /** The levels either side, nearest first: R1, R2 above and S1, S2 below. */
+  levels: { label: string; price: number; strength: string; side: 'resistance' | 'support' }[];
   /** Every reading, and the few that decide this state. */
   indicators: { all: Indicator[]; shown: Indicator[] };
   /** What each borrowed reading was, so the card can show its working. */
@@ -202,6 +213,8 @@ export async function readState(tf: StateTf = '15m', nowMs = Date.now()): Promis
     state,
     patterns: { all: found, shown: relevant(found, state.event, state.side) },
     lines: trendLines(bars),
+    context: contextFor(inputs, tfRead?.atrPct ?? null),
+    levels: levelsAround(market, tf, last?.close ?? 0),
     // Everything above, in one word, from the whole list rather than the few
     // that are shown: the badge on the chart is the only thing most people
     // will read, so it is not decided by what happened to fit on the card.
@@ -218,4 +231,67 @@ export async function readState(tf: StateTf = '15m', nowMs = Date.now()): Promis
     indicators: { all: read, shown: relevantIndicators(read, state.stage) },
     inputs,
   };
+}
+
+
+/**
+ * What kind of market this is, in three words.
+ *
+ * The reference the owner sent puts these beside the checks, and they are the
+ * three things a reader asks before any of the detail: is there a trend, are
+ * the bars big, and do the other timeframes agree. Every one of them is a
+ * reading the desk already takes -- this only says them plainly.
+ */
+export function contextFor(
+  inputs: StateRead['inputs'], atrPct: number | null,
+): StateRead['context'] {
+  const regime = inputs.regime === 'TREND_UP' ? 'Uptrend'
+    : inputs.regime === 'TREND_DOWN' ? 'Downtrend'
+      : inputs.regime === 'QUIET' ? 'Quiet' : 'Range';
+  // ATR as a share of price: a fifth of a percent a bar is a normal five
+  // minutes on BTC, half a percent is a day somebody will remember.
+  const vol = atrPct === null ? 'Not read'
+    : atrPct >= 0.45 ? 'High' : atrPct >= 0.18 ? 'Medium' : 'Low';
+  const mtf = inputs.mtf;
+  const side: Side | null = !mtf || mtf.up === mtf.down ? null : mtf.up > mtf.down ? 'UP' : 'DOWN';
+  const word = !mtf || mtf.total === 0 ? 'Not read'
+    : side === null ? 'Split'
+      : `${side === 'UP' ? 'Bullish' : 'Bearish'} (${Math.max(mtf.up, mtf.down)} of ${mtf.total})`;
+  return {
+    regime,
+    volatility: { word: vol, atrPct },
+    alignment: { word, side, tfs: [] },
+  };
+}
+
+/**
+ * The two levels above and the two below, as a trader names them.
+ *
+ * R1 and S1 are the ones price is working against now; R2 and S2 are where it
+ * goes if those give way. The strength word is the timeframe they came from --
+ * a level the hourly chart also knows is a different thing from one only this
+ * bar's swings can see.
+ */
+export function levelsAround(
+  market: MarketRead | null, tf: StateTf, close: number,
+): StateRead['levels'] {
+  if (!market || !(close > 0)) return [];
+  const own = market.timeframes.find((t) => t.tf === (tf as string)) ?? null;
+  const bigger = market.timeframes.find((t) => t.tf === '1h') ?? null;
+  const strong = new Set([...(bigger?.resistance ?? []), ...(bigger?.support ?? [])]);
+  const near = (xs: readonly number[], want: 'above' | 'below') =>
+    [...xs].filter((p) => (want === 'above' ? p > close : p < close))
+      .sort((a, b) => (want === 'above' ? a - b : b - a))
+      .slice(0, 2);
+
+  const out: StateRead['levels'] = [];
+  near(own?.resistance ?? [], 'above').forEach((price, i) => out.push({
+    label: `R${i + 1}`, price, side: 'resistance',
+    strength: strong.has(price) ? 'Strong resistance' : 'Resistance',
+  }));
+  near(own?.support ?? [], 'below').forEach((price, i) => out.push({
+    label: `S${i + 1}`, price, side: 'support',
+    strength: strong.has(price) ? 'Strong support' : 'Support',
+  }));
+  return out;
 }
