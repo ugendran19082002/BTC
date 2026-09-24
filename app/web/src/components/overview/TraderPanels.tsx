@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react';
-import { usePersisted } from '@/hooks/usePersisted';
 import type { ChainResponse, Leg } from '@/types/desk';
 import { getChanges, type ChangeRow, type ModelNow, type MovementRow, type PerpResponse, type PremiumMomentum } from '@/api/desk';
 import {
-  boardRead, candidates, earlyWarning, executionEstimate, finderDecision, finderRanks, horizonRows,
-  movementVerdict, sellerImpact, sellerState,
+  boardRead, earlyWarning, horizonRows, movementVerdict, sellerImpact, sellerState,
   type EarlyWarning, type ExpectedMove, type ExpiryDirection, type Impact, type MtfConsensus,
 } from '@/lib/overview';
 import { fmt, Panel, Row, Tag } from './parts';

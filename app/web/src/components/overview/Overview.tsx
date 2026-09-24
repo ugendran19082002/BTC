@@ -6,8 +6,8 @@ import { getMovement, getPerp, getTerm } from '@/api/desk';
 import { usePoll } from '@/hooks/usePoll';
 import type { ChartTf } from '@/components/desk/PriceChart';
 import {
-  assessSides, bestLeg, DESK_FILTER, expectedMove, expiryDirection, filtersChanged, findStrikes, ivRv, mtfConsensus, optionBias, windowMinutes, sideGates, sideSelector, sideStatusOf, skew,
-  type FinderFilter, type SideAssessment, type SideChoice, type WindowChoice,
+  assessSides, bestLeg, expectedMove, expiryDirection, ivRv, mtfConsensus, optionBias, windowMinutes, sideGates, sideSelector, sideStatusOf, skew,
+ type SideAssessment, type SideChoice, type WindowChoice,
 } from '@/lib/overview';
 import { DEFAULT_CONFIG, thresholds } from '@/lib/screen-config';
 import { PanelFold } from './parts';
@@ -145,7 +145,6 @@ export function Overview({
   } : null), [trade, heldShort]);
   // The finder's filters. Left at the desk's own, the cards carry the desk's picks; moved, each card
   // carries the best strike that passes them -- the decision is about what the person is considering.
-  const [filter, setFilter] = usePersisted<FinderFilter>('live:finder:filter', DESK_FILTER);
   // The strike each card judges: the selected strike for its side; for the other side, the desk's pick (or the finder's best once its filters are moved).
   const deskLegOf = useCallback((cp: 'C' | 'P') => data.recommendation.sides.find((x) => x.side === (cp === 'C' ? 'CE' : 'PE'))?.leg ?? bestLeg(data.legs, cp), [data.recommendation, data.legs]);
   const chosenLeg = picked ? findLeg(data.legs, picked) : null;
@@ -153,9 +152,14 @@ export function Overview({
     if (chosenLeg && chosenLeg.cp === cp) return chosenLeg;
     const paired = pair[cp] !== null ? data.legs.find((l) => l.cp === cp && l.strike === pair[cp]) ?? null : null;
     if (paired) return paired;
-    if (filtersChanged(filter)) return findStrikes(data.legs, { ...filter, side: cp, top: 1 })[0] ?? null;
+    /*
+     * The strike finder is gone (24 Sep 2026), and with it the only way its
+     * filters could be changed -- so the branch that picked a strike from them
+     * could never be reached and has gone too. The desk's own pick is what is
+     * left, which is what it fell back to every time anyway.
+     */
     return deskLegOf(cp);
-  }, [chosenLeg, pair, filter, data.legs, deskLegOf]);
+  }, [chosenLeg, pair, data.legs, deskLegOf]);
   const sides: SideAssessment[] = useMemo(() => assessSides(data, iv, emSettle, contracts, leverage, pick).map((s) => {
     const gates = sideGates({
       side: s.side, leg: s.leg, iv, regime: data.market?.regime ?? null, direction: data.direction, outlook: data.outlook,
