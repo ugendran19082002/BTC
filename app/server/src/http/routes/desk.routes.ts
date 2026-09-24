@@ -345,6 +345,9 @@ export function registerDeskRoutes(app: FastifyInstance) {
         iv = await ivChange({ expiry: snap.expiry, ts: snap.ts, atmIv: snap.atmIv }, 15);
       }
 
+      const recommendation = recommend(snap, scored, market, minPremium, lots, hedgeGap, mode, safetyBar);
+      const structure = optionStructure(snap, market?.realisedVol ?? null, wallWithinEm());
+
       const shocks = SHOCK_WINDOWS.map((window) => shockFrom({
         snap,
         market,
@@ -369,8 +372,6 @@ export function registerDeskRoutes(app: FastifyInstance) {
         void settleShocks(Date.now(), snap.spot).catch(() => 0);
       }
 
-      const recommendation = recommend(snap, scored, market, minPremium, lots, hedgeGap, mode, safetyBar);
-      const structure = optionStructure(snap, market?.realisedVol ?? null, wallWithinEm());
 
       /*
        * Is there a side today, and would the desk's own gates take it?
