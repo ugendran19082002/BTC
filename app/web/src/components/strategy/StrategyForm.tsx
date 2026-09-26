@@ -300,27 +300,56 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                 the wick and the close when the move is real. Both are right
                 sometimes, which is why it is a choice and not a default.
               */}
-              <Stack
-                label="Trade monitoring"
-                className="mt-3"
-                hint={c.monitorOn === 'close'
-                  ? 'The desk acts when a bar closes through the level. A wick through it is not a break. The stop resting at the exchange still watches the mark, so it can fire first in a fast move.'
-                  : 'The desk acts the moment the mark reaches the level, like the stop resting at the exchange. Fastest, and it exits on wicks that a close would have ridden out.'}
-              >
-                <div className="flex gap-2">
-                  {([['ltp', 'On LTP'], ['close', 'On candle close']] as const).map(([value, label]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      className={cn('bt-chip', (c.monitorOn ?? 'ltp') === value && 'bt-chip--on')}
-                      aria-pressed={(c.monitorOn ?? 'ltp') === value}
-                      onClick={() => set('monitorOn', value)}
-                    >
-                      {label}
-                    </button>
-                  ))}
+              <div className="mt-3">
+                <div className="mb-1 truncate text-[12px] text-muted-foreground">Trade monitoring</div>
+                <div className="flex flex-col gap-2">
+                  {([
+                    ['ltp', 'On LTP', '⚡', 'Acts the moment the mark reaches the level — fastest exit, but exits on wicks too.'],
+                    ['close', 'On candle close', '🕯', 'Acts only when a bar closes through the level — rides out wicks, gives back a little on the real move.'],
+                  ] as const).map(([value, label, icon, desc]) => {
+                    const active = (c.monitorOn ?? 'ltp') === value;
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
+                        onClick={() => set('monitorOn', value)}
+                        className={cn(
+                          'group flex items-start gap-3 rounded-lg border px-3.5 py-3 text-left transition-all duration-150',
+                          active
+                            ? 'border-[hsl(var(--primary))] bg-[hsl(var(--primary)/0.08)] shadow-sm'
+                            : 'border-border bg-muted/40 hover:border-[hsl(var(--primary)/0.4)] hover:bg-muted/70',
+                        )}
+                      >
+                        <span className={cn(
+                          'mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-md text-base transition-colors',
+                          active ? 'bg-[hsl(var(--primary)/0.18)]' : 'bg-muted',
+                        )}>
+                          {icon}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className={cn(
+                            'block text-[13px] font-semibold leading-tight',
+                            active ? 'text-foreground' : 'text-foreground/80',
+                          )}>
+                            {label}
+                          </span>
+                          <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">
+                            {desc}
+                          </span>
+                        </span>
+                        <span className={cn(
+                          'mt-1 h-3.5 w-3.5 flex-none rounded-full border-2 transition-colors',
+                          active
+                            ? 'border-[hsl(var(--primary))] bg-[hsl(var(--primary))]'
+                            : 'border-muted-foreground/40 bg-transparent',
+                        )} />
+                      </button>
+                    );
+                  })}
                 </div>
-              </Stack>
+              </div>
 
               <Stack
                 label="Still enter if late by"

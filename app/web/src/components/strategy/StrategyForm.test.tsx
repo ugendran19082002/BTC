@@ -461,9 +461,9 @@ describe('what the stop and the target are watched on', () => {
      * right sometimes, so neither is assumed.
      */
     show();
-    expect(screen.getByRole('button', { name: 'On LTP' })).toHaveAttribute('aria-pressed', 'true');
-    fireEvent.click(screen.getByRole('button', { name: 'On candle close' }));
-    expect(screen.getByRole('button', { name: 'On candle close' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('radio', { name: /On LTP/ })).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(screen.getByRole('radio', { name: /On candle close/ }));
+    expect(screen.getByRole('radio', { name: /On candle close/ })).toHaveAttribute('aria-checked', 'true');
 
     fireEvent.click(saveButton());
     await vi.waitFor(() => expect(saveStrategy).toHaveBeenCalled());
@@ -472,8 +472,8 @@ describe('what the stop and the target are watched on', () => {
 
   it('says what each one costs, rather than leaving it to be found out', () => {
     show();
-    expect(screen.getByText(/exits on wicks that a close would have ridden out/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'On candle close' }));
-    expect(screen.getByText(/A wick through it is not a break/)).toBeInTheDocument();
+    // Both descriptions are always visible (not hidden in a hint).
+    expect(screen.getByText(/exits on wicks too/)).toBeInTheDocument();
+    expect(screen.getByText(/rides out wicks/)).toBeInTheDocument();
   });
 });
