@@ -283,6 +283,23 @@ export type StateHistoryRow = {
   /** Where price finished the grading window, and the BTC points from the call. */
   resolvedClose?: number | null;
   movePts?: number | null;
+  triggeredAt?: number | null;
+  confirmedAt?: number | null;
+  targetHitAt?: number | null;
+  stopHitAt?: number | null;
+  expiredAt?: number | null;
+  firstHit?: 'TARGET' | 'STOP' | 'NONE' | null;
+  firstHitPrice?: number | null;
+  firstHitTime?: number | null;
+  mfe?: number | null;
+  mae?: number | null;
+  mfePrice?: number | null;
+  maePrice?: number | null;
+  evalWindowMin?: number | null;
+  score?: number | null;
+  probability?: number | null;
+  regime?: string | null;
+  mtfConsensus?: string | null;
 };
 
 export const getStateHistory = (tf: string, limit = 10) =>

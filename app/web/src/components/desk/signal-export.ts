@@ -33,6 +33,8 @@ const cell = (v: string | number | null | undefined): string => {
 export const SIGNAL_COLUMNS = [
   'Time (IST)', 'Timeframe', 'Signal', 'Side', 'Score', 'Status',
   'Trigger', 'Target', 'Stop', 'BTC at call', 'BTC after', 'Points',
+  'Triggered At', 'First Hit', 'First Hit Price', 'First Hit Time',
+  'MFE (pts)', 'MAE (pts)', 'MFE Price', 'MAE Price',
 ] as const;
 
 export function signalsToCsv(rows: readonly StateHistoryRow[], words: (o: string | null) => string): string {
@@ -51,6 +53,14 @@ export function signalsToCsv(rows: readonly StateHistoryRow[], words: (o: string
       Math.round(r.close),
       r.resolvedClose === null || r.resolvedClose === undefined ? '' : Math.round(r.resolvedClose),
       r.movePts === null || r.movePts === undefined ? '' : Math.round(r.movePts),
+      r.triggeredAt ? IST_STAMP.format(r.triggeredAt).replace(', ', ' ') : '',
+      r.firstHit ?? '',
+      r.firstHitPrice === null || r.firstHitPrice === undefined ? '' : Math.round(r.firstHitPrice * 10) / 10,
+      r.firstHitTime ? IST_STAMP.format(r.firstHitTime).replace(', ', ' ') : '',
+      r.mfe === null || r.mfe === undefined ? '' : Math.round(r.mfe * 10) / 10,
+      r.mae === null || r.mae === undefined ? '' : Math.round(r.mae * 10) / 10,
+      r.mfePrice === null || r.mfePrice === undefined ? '' : Math.round(r.mfePrice * 10) / 10,
+      r.maePrice === null || r.maePrice === undefined ? '' : Math.round(r.maePrice * 10) / 10,
     ].map(cell).join(','));
   }
   // A trailing newline: some tools drop the last row without one.
