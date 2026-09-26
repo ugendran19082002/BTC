@@ -4,6 +4,7 @@ import { orderBody } from '../../src/trading/exchange/delta.js';
 import { stopFillLimit } from '../../src/trading/money.js';
 import { PaperExchange } from '../../src/trading/exchange/paper.js';
 import { rig, ceProduct, planFor, quote } from './harness.js';
+import { anchorExits } from '../../src/trading/engine.js';
 import type { PlaceOrderRequest, ProductSpec } from '../../src/trading/types.js';
 
 /**
@@ -255,4 +256,60 @@ test('a close-watched stop with no candles does nothing, rather than falling bac
   await r.engine.open(plan);
   await r.engine.poll(plan.tradeId);
   assert.notEqual((await r.store.get(plan.tradeId))!.state.position, 0);
+});
+
+/*
+ * A fixed price the fill has overtaken.
+ *
+ * `stopAt: 70` means seventy whatever the entry -- which is what a strategy
+ * wants right up until the entry fills at seventy-five. The "stop" is then
+ * under the position, `stopIfReached` sees the mark already past it, and the
+ * trade opens and shuts inside a second for a loss nobody can explain.
+ */
+test('[critical] a fixed stop under the actual fill is refused, not acted on', () => {
+  const rec = {
+    plan: {
+      tradeId: 't', symbol: 'C-BTC-80000-080926', optionSide: 'CE' as const, lots: 1, leverage: 100,
+      entry: { kind: 'market' as const }, takeProfitPrice: null, stopPrice: 70,
+      exitAsk: { stopAt: 70 },
+    },
+    state: { entryAvgPrice: 75, wantsProtection: true },
+  } as unknown as Parameters<typeof anchorExits>[0];
+
+  const after = anchorExits(rec);
+  assert.equal(after.plan.stopPrice, null, 'a stop under the entry is no stop');
+  assert.equal(after.state.wantsProtection, false);
+  assert.match(after.plan.exitProblem ?? '', /must be over the 75 entry/);
+});
+
+test('[critical] a fixed target the fill has already passed goes the same way', () => {
+  const rec = {
+    plan: {
+      tradeId: 't', symbol: 'C-BTC-80000-080926', optionSide: 'CE' as const, lots: 1, leverage: 100,
+      entry: { kind: 'market' as const }, takeProfitPrice: 20, stopPrice: null,
+      exitAsk: { takeProfitAt: 20 },
+    },
+    state: { entryAvgPrice: 18, wantsProtection: false },
+  } as unknown as Parameters<typeof anchorExits>[0];
+
+  const after = anchorExits(rec);
+  assert.equal(after.plan.takeProfitPrice, null);
+  assert.match(after.plan.exitProblem ?? '', /must be under the 18 entry/);
+});
+
+test('a fill on the right side of both prices anchors as usual', () => {
+  const rec = {
+    plan: {
+      tradeId: 't', symbol: 'C-BTC-80000-080926', optionSide: 'CE' as const, lots: 1, leverage: 100,
+      entry: { kind: 'market' as const }, takeProfitPrice: null, stopPrice: null,
+      exitAsk: { stopAt: 70, takeProfitAt: 5 },
+    },
+    state: { entryAvgPrice: 15, wantsProtection: false },
+  } as unknown as Parameters<typeof anchorExits>[0];
+
+  const after = anchorExits(rec);
+  assert.equal(after.plan.stopPrice, 70);
+  assert.equal(after.plan.takeProfitPrice, 5);
+  assert.equal(after.plan.exitProblem, undefined);
+  assert.equal(after.state.wantsProtection, true);
 });
