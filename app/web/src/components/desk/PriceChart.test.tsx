@@ -184,6 +184,27 @@ describe('the price chart', () => {
     expect(screen.getByText('● No lean')).toBeInTheDocument();
   });
 
+  it('[critical] the chart is built when the candles arrive, not only when the card mounts', () => {
+    /*
+     * The blank-chart bug (26 Sep 2026). The plot -- and so the element the
+     * library draws into -- only exists once there are bars, and the effect
+     * that creates the chart was keyed on the card being open. On a cold load
+     * the bars arrived second, the element mounted, and nothing ever created
+     * a chart in it: a drawn box, a note underneath, no candles.
+     */
+    const { rerender } = render(
+      <PriceChart bars={[]} support={null} resistance={null} spot={77_200} tf="15m" onTf={noop} loading />,
+    );
+    expect(setDataCalls).toHaveLength(0);
+
+    rerender(
+      <PriceChart bars={bars(40)} support={null} resistance={null} spot={77_200} tf="15m" onTf={noop} />,
+    );
+    const candles = setDataCalls.find((c) => c.which === 'candles');
+    expect(candles?.data).toHaveLength(40);
+    expect(setDataCalls.find((c) => c.which === 'volume')?.data).toHaveLength(40);
+  });
+
   it('says what is wrong instead of drawing an empty chart', () => {
     const { rerender } = chart({ bars: [], loading: true });
     expect(screen.getByText('Loading candles…')).toBeInTheDocument();
