@@ -1,7 +1,7 @@
 import { after, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  EVAL_WINDOW_MIN, gradeStates, noteState, outcomeFor, outcomeWords, recentStates, stateHistorySchema,
+  EVAL_WINDOW_MIN, evaluateSignalOutcome, gradeStates, noteState, outcomeFor, outcomeWords, recentStates, stateHistorySchema,
 } from '../../src/market/state-history.js';
 import { closePool, one, query } from '../../src/db/pool.js';
 import type { StateRead } from '../../src/market/state-read.js';
@@ -219,3 +219,30 @@ test('[critical] grading starts with the oldest ungraded call, not the newest', 
   );
   assert.ok(Number(young?.n) > 0, 'calls whose bars have not happened yet are left alone');
 });
+
+test('[critical] signal evaluation records first hit, timestamps, and excursions (MFE/MAE)', () => {
+  const bars: Candle[] = [
+    { time: 100, open: 86600, high: 86750, low: 86550, close: 86700, volume: 10 },
+    { time: 105, open: 86700, high: 86950, low: 86700, close: 86900, volume: 15 },
+    { time: 110, open: 86900, high: 87250, low: 86900, close: 87000, volume: 20 },
+    { time: 115, open: 87000, high: 87050, low: 86800, close: 86850, volume: 10 },
+  ];
+  const audit = evaluateSignalOutcome({
+    plan: long,
+    side: 'UP',
+    stage: 'WATCH',
+    callAt: 95_000,
+    closeAtCall: 86_600,
+    windowMs: 30 * 60_000,
+    after: bars,
+  });
+
+  assert.equal(audit.outcome, 'TARGET_HIT');
+  assert.equal(audit.firstHit, 'TARGET');
+  assert.equal(audit.firstHitPrice, 87_200);
+  assert.equal(audit.firstHitTime, 110_000);
+  assert.equal(audit.triggeredAt, 105_000);
+  assert.equal(audit.mfePrice, 87_250);
+  assert.equal(audit.mfe, 450); // 87,250 - 86,800
+});
+
