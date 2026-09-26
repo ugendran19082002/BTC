@@ -496,7 +496,7 @@ function History({ rows, rate, spot }: {
         somebody goes to check last Tuesday against their broker statement.
       */}
       <Sheet open={allOpen} onOpenChange={setAllOpen}>
-        <SheetContent title="Signal history — all days">
+        <SheetContent title="Signal history — all days" className="sm:w-[min(960px,92vw)]">
           <div className="bt-market-state__all">
             <div className="bt-market-state__all-head">
               <span>{rows.length} signals</span>
@@ -507,7 +507,7 @@ function History({ rows, rate, spot }: {
             {[...new Set(rows.map((r) => istDay(r.at)))].map((day) => (
               <section key={day}>
                 <h5>{day}</h5>
-                <ul className="bt-signals">
+                <ul className="bt-signals bt-signals--wide">
                   {rows.filter((r) => istDay(r.at) === day).map((r, i, list) => (
                     <SignalRow key={r.id} row={r} next={list[i - 1] ?? null} spot={spot} />
                   ))}

@@ -3170,14 +3170,22 @@ table.ov-mini.ov-levels { width: auto; min-width: 100%; }
 .bt-market-state__history ul { list-style: none; margin: 0; padding: 0; display: grid; }
 
 /*
- * One signal a row, the way the owner's reference draws it: when, which way,
- * what was called, where it ended, the three prices, how far it got, and what
- * that came to. The same row in the list and behind "View all" -- two
- * renderings of one thing is two things to keep true.
+ * One signal a row.
+ *
+ * The reference draws seven columns -- when, which way, what, where it ended,
+ * the three prices, the track, the result -- and seven columns need about nine
+ * hundred pixels. The card is four hundred and seventy, so the first attempt
+ * put them all in anyway and they landed on top of each other: "Trigger Target
+ * Stop" written through the track, the name cut to "B…".
+ *
+ * So there are two layouts of the same row. In the card it stacks: the call on
+ * one line, the prices and the result on the next, the track under both. In
+ * the all-days sheet, which is given the width, it is the reference's grid.
+ * Nothing is dropped either way -- the narrow one is shorter, not emptier.
  */
 .bt-signals li {
-  display: grid; gap: 10px; align-items: center; padding: 9px 4px;
-  grid-template-columns: 62px 28px minmax(0, 1.6fr) 96px minmax(0, 1.1fr) minmax(0, 1.2fr) 86px;
+  display: grid; gap: 6px 10px; align-items: center; padding: 9px 4px;
+  grid-template-columns: 58px 26px minmax(0, 1fr) auto;
   border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
 }
 .bt-signals li:first-child { border-top: 0; }
@@ -3198,22 +3206,30 @@ table.ov-mini.ov-levels { width: auto; min-width: 100%; }
   font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.bt-signal__prices { display: flex; gap: 12px; font-size: 11.5px; font-variant-numeric: tabular-nums; }
-.bt-signal__prices span { display: grid; gap: 1px; }
+.bt-signal__prices {
+  grid-column: 3 / -1; display: flex; gap: 14px; font-size: 11.5px; font-variant-numeric: tabular-nums;
+}
+.bt-signal__prices span { display: flex; gap: 5px; align-items: baseline; }
 .bt-signal__prices em { font-style: normal; color: var(--muted); font-size: 10.5px; }
-.bt-signal__result { display: grid; gap: 1px; text-align: right; }
+.bt-signals li > .bt-market-state__track { grid-column: 3 / -1; }
+.bt-signal__result { display: flex; gap: 6px; align-items: baseline; justify-self: end; }
 .bt-signal__result span { color: var(--muted); font-size: 10.5px; }
 .bt-signal__result b { font-size: 13px; font-variant-numeric: tabular-nums; }
 .bt-signal__result b.is-up { color: var(--up); }
 .bt-signal__result b.is-down { color: var(--down); }
 
-/* Narrow: the row folds into three lines rather than shrinking to a smear. */
-@media (max-width: 900px) {
-  .bt-signals li { grid-template-columns: 58px 26px minmax(0, 1fr) 92px; row-gap: 6px; }
-  .bt-signal__prices { grid-column: 3 / -1; }
-  .bt-signals li > .bt-market-state__track { grid-column: 1 / -1; }
-  .bt-signal__result { grid-column: 1 / -1; text-align: left; display: flex; gap: 6px; align-items: baseline; }
+/* Where there is room: the reference's own grid, one line a signal. */
+@media (min-width: 900px) {
+  .bt-signals--wide li {
+    grid-template-columns: 64px 28px minmax(140px, 1.4fr) 104px minmax(150px, 1fr) minmax(120px, 1fr) 92px;
+    gap: 12px; align-items: center;
+  }
+  .bt-signals--wide .bt-signal__prices,
+  .bt-signals--wide li > .bt-market-state__track { grid-column: auto; }
+  .bt-signals--wide .bt-signal__prices span { display: grid; gap: 1px; }
+  .bt-signals--wide .bt-signal__result { display: grid; gap: 1px; text-align: right; }
 }
+
 .bt-market-state__history li {
   display: grid; gap: 2px; font-size: 12.5px; min-width: 0;
   padding: 7px 0; border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
