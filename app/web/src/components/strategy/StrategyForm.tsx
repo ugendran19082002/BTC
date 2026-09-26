@@ -302,7 +302,7 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
               */}
               <div className="mt-3">
                 <div className="mb-1 truncate text-[12px] text-muted-foreground">Trade monitoring</div>
-                <div className="flex flex-col gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   {([
                     ['ltp', 'On LTP', '⚡', 'Acts the moment the mark reaches the level — fastest exit, but exits on wicks too.'],
                     ['close', 'On candle close', '🕯', 'Acts only when a bar closes through the level — rides out wicks, gives back a little on the real move.'],
@@ -316,35 +316,24 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                         aria-checked={active}
                         onClick={() => set('monitorOn', value)}
                         className={cn(
-                          'group flex items-start gap-3 rounded-lg border px-3.5 py-3 text-left transition-all duration-150',
+                          'flex items-start gap-2 rounded-lg border px-3 py-2.5 text-left transition-colors duration-150',
                           active
-                            ? 'border-[hsl(var(--primary))] bg-[hsl(var(--primary)/0.08)] shadow-sm'
-                            : 'border-border bg-muted/40 hover:border-[hsl(var(--primary)/0.4)] hover:bg-muted/70',
+                            ? 'border-l-2 border-l-[hsl(var(--primary))] border-t-border border-r-border border-b-border bg-muted/60'
+                            : 'border-border bg-muted/30 hover:bg-muted/60',
                         )}
                       >
-                        <span className={cn(
-                          'mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-md text-base transition-colors',
-                          active ? 'bg-[hsl(var(--primary)/0.18)]' : 'bg-muted',
-                        )}>
-                          {icon}
-                        </span>
-                        <span className="min-w-0 flex-1">
+                        <span className="mt-0.5 text-sm flex-none">{icon}</span>
+                        <span className="min-w-0">
                           <span className={cn(
-                            'block text-[13px] font-semibold leading-tight',
-                            active ? 'text-foreground' : 'text-foreground/80',
+                            'block text-[12.5px] font-medium leading-tight',
+                            active ? 'text-foreground' : 'text-foreground/70',
                           )}>
                             {label}
                           </span>
-                          <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">
+                          <span className="mt-0.5 block text-[10.5px] leading-snug text-muted-foreground">
                             {desc}
                           </span>
                         </span>
-                        <span className={cn(
-                          'mt-1 h-3.5 w-3.5 flex-none rounded-full border-2 transition-colors',
-                          active
-                            ? 'border-[hsl(var(--primary))] bg-[hsl(var(--primary))]'
-                            : 'border-muted-foreground/40 bg-transparent',
-                        )} />
                       </button>
                     );
                   })}
