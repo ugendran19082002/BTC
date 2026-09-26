@@ -89,14 +89,22 @@ export function MarketState({
   const s = data?.state ?? null;
   const words = s ? STATE_WORDS[s.event] ?? { title: s.event, tone: 'flat' as Tone } : null;
 
+  const isRange = s?.event === 'RANGE';
+  const biasLean = s?.side === 'UP' ? 'Bullish lean' : s?.side === 'DOWN' ? 'Bearish lean' : 'Neutral';
+
   // "Likely" while it is a setup, the plain name once it has happened. The
   // difference is the whole point of the stage, so it is in the title itself
   // rather than in a subtitle somebody can miss.
   const title = useMemo(() => {
     if (!s || !words) return 'Reading the chart…';
+    if (isRange) return `Range (${biasLean})`;
     if (s.stage === 'WATCH') return `${words.title.replace(' watch', '')} likely`;
     return words.title;
-  }, [s, words]);
+  }, [s, words, isRange, biasLean]);
+
+  const rsiVal = data?.indicators.all.find((i) => i.key === 'rsi')?.value;
+  const isOversold = typeof rsiVal === 'number' && rsiVal <= 30;
+  const showOversoldRisk = isOversold && (s?.side === 'DOWN' || s?.event.includes('BREAKDOWN'));
 
   return (
     <section className="bt-market-state" aria-label="Market analysis">
@@ -108,7 +116,7 @@ export function MarketState({
             <span className="bt-market-state__at"><Clock size={12} aria-hidden /> Updated {IST.format(data.at)}</span>
           ) : null}
           {s ? (
-            <span className="bt-market-state__score" title="A weighted score of the confirmations below, out of 100. Not a probability: nothing here is calibrated against history yet.">
+            <span className="bt-market-state__score" title="A weighted evidence score of the confirmations below, out of 100. Evidence strength, not a probability: nothing here is calibrated against history yet.">
               <b>{s.confidence}</b> score
             </span>
           ) : null}
@@ -116,17 +124,24 @@ export function MarketState({
       </header>
 
       {s && words ? (
-        <div className={cn('bt-market-state__banner', TONE_CLASS[words.tone])}>
-          {s.side === 'UP' ? <TrendingUp size={22} aria-hidden /> : s.side === 'DOWN' ? <TrendingDown size={22} aria-hidden /> : <Minus size={22} aria-hidden />}
-          <div>
-            <strong>
-              {title}
-              {s.side ? <span className="bt-market-state__bias">{s.side === 'UP' ? ' (bullish)' : ' (bearish)'}</span> : null}
-            </strong>
-            <p>{s.words}</p>
+        <>
+          <div className={cn('bt-market-state__banner', TONE_CLASS[words.tone])}>
+            {s.side === 'UP' ? <TrendingUp size={22} aria-hidden /> : s.side === 'DOWN' ? <TrendingDown size={22} aria-hidden /> : <Minus size={22} aria-hidden />}
+            <div>
+              <strong>
+                {title}
+                {s.side && !isRange ? <span className="bt-market-state__bias">{s.side === 'UP' ? ' (bullish)' : ' (bearish)'}</span> : null}
+              </strong>
+              <p>{s.words}</p>
+            </div>
+            <span className="bt-market-state__stage">{s.confirmed ? 'Confirmed' : isRange ? 'In range' : 'Not confirmed'}</span>
           </div>
-          <span className="bt-market-state__stage">{s.confirmed ? 'Confirmed' : 'Not confirmed'}</span>
-        </div>
+          {showOversoldRisk ? (
+            <div className="flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-400 mt-2">
+              <span>⚠ <b>Oversold Risk:</b> RSI at {Math.round(rsiVal!)} — Bearish structure, but bounce/reversal risk elevated.</span>
+            </div>
+          ) : null}
+        </>
       ) : (
         <p className="bt-muted">No state yet.</p>
       )}
@@ -194,7 +209,7 @@ export function MarketState({
               </div>
             ) : null}
 
-            <Plans plans={s.plans} level={s.level} distance={s.distance} against={s.against} />
+            <Plans plans={s.plans} level={s.level} distance={s.distance} against={s.against} isRange={isRange} />
 
             {extra.map((e) => (
               <section key={e.label} className="bt-market-state__extra" aria-label={e.label}>
@@ -230,34 +245,42 @@ function Checks({ checks }: { checks: readonly { label: string; ok: boolean | nu
 
 /** Both sides at once: go long over the level, wait between, go short under. */
 function Plans({
-  plans, level, distance, against,
+  plans, level, distance, against, isRange,
 }: {
   plans: { up: StatePlan | null; down: StatePlan | null };
   level: { resistance: number | null; support: number | null };
   distance: number | null;
   against: number | null;
+  isRange?: boolean;
 }) {
   return (
     <div className="bt-market-state__plans">
-      <PlanBox plan={plans.up} title="Breakout" action="go long" tone="up" />
+      <PlanBox plan={plans.up} title={isRange ? 'Breakout Scenario' : 'Breakout'} action={isRange ? 'only if triggered' : 'go long'} tone="up" isScenario={isRange} />
       <div className="bt-market-state__plan bt-market-state__plan--wait">
-        <h4>Range <span>wait</span></h4>
+        <h4>Range <span>{isRange ? 'no trade' : 'wait'}</span></h4>
         <p className="bt-market-state__range">
           {level.support !== null ? fmtStrike(level.support) : '—'} – {level.resistance !== null ? fmtStrike(level.resistance) : '—'}
         </p>
-        {against !== null && distance !== null ? (
+        {isRange ? (
+          <p className="bt-muted font-medium text-amber-500">NO DIRECTIONAL TRADE (Inside Range)</p>
+        ) : against !== null && distance !== null ? (
           <p className="bt-muted">{distance > 0 ? '+' : ''}{Math.round(distance)} from {fmtStrike(against)}</p>
         ) : <p className="bt-muted">No trade between them</p>}
       </div>
-      <PlanBox plan={plans.down} title="Breakdown" action="go short" tone="down" />
+      <PlanBox plan={plans.down} title={isRange ? 'Breakdown Scenario' : 'Breakdown'} action={isRange ? 'only if triggered' : 'go short'} tone="down" isScenario={isRange} />
     </div>
   );
 }
 
-function PlanBox({ plan, title, action, tone }: { plan: StatePlan | null; title: string; action: string; tone: 'up' | 'down' }) {
+function PlanBox({ plan, title, action, tone, isScenario }: { plan: StatePlan | null; title: string; action: string; tone: 'up' | 'down'; isScenario?: boolean }) {
   return (
     <div className={cn('bt-market-state__plan', tone === 'up' ? 'is-up' : 'is-down')}>
       <h4>{title} <span>{action}</span></h4>
+      {isScenario && plan ? (
+        <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block mb-1">
+          Scenario — only after trigger
+        </span>
+      ) : null}
       {plan ? (
         <>
           <p className="bt-market-state__trigger">
@@ -303,8 +326,9 @@ function SignalRow({ row: r, next, spot }: {
   const went = move === null || r.side === null ? null : (r.side === 'UP' ? move > 0 : move < 0);
   const waiting = r.outcome === null;
   const toTrigger = r.plan && after !== null ? Math.round(Math.abs(r.plan.trigger - after)) : null;
+  const trackPrice = r.outcome === 'TARGET_HIT' ? (r.mfePrice ?? r.plan?.target1 ?? after) : (r.mfePrice ?? after);
   const track = r.plan ? trackFor({
-    side: r.side, trigger: r.plan.trigger, target: r.plan.target1, price: after, outcome: r.outcome ?? null,
+    side: r.side, trigger: r.plan.trigger, target: r.plan.target1, price: trackPrice, outcome: r.outcome ?? null,
   }) : null;
 
   return (
@@ -333,6 +357,12 @@ function SignalRow({ row: r, next, spot }: {
         <span className="bt-signal__btc">
           BTC {fmtStrike(Math.round(r.close))}
           {after === null ? null : <> → {fmtStrike(Math.round(after))}</>}
+          {r.firstHit && r.firstHit !== 'NONE' ? (
+            <small className="bt-muted block text-[11px] font-mono">
+              Hit: {r.firstHit} at {r.firstHitPrice ? fmtStrike(Math.round(r.firstHitPrice)) : ''}
+              {r.mfe ? ` · MFE +${Math.round(r.mfe)} pts` : ''}
+            </small>
+          ) : null}
         </span>
       </div>
 
