@@ -2595,7 +2595,8 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 }
 
 /* The signal strip: the screen's three answers, each a button to its panel (SignalStrip.tsx). */
-.ov-sig { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.ov-sig { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 8px; }
+.ov-sig-alert { border-color: var(--warn); background: var(--warn-bg); }
 .ov-sig-tile { all: unset; box-sizing: border-box; cursor: pointer; display: flex; flex-direction: column; gap: 3px; min-width: 0;
   background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; box-shadow: inset 0 1px 0 var(--edge); }
 .ov-sig-tile:hover { border-color: var(--muted); }
@@ -2606,12 +2607,39 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 .ov-sig-sub, .ov-sig-tiers { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; font-variant-numeric: tabular-nums; }
 .ov-sig-why { color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 @media (max-width: 560px) {
-  .ov-sig { gap: 6px; }
+  /* Four answers two by two on a phone: three across leaves each a thumb wide. */
+  .ov-sig { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .ov-sig-tiers { flex-direction: row; }
   .ov-sig-tile { padding: 8px; }
   .ov-sig-head { font-size: 15px; }
   .ov-sig-sub, .ov-sig-tiers { font-size: 11px; gap: 2px 6px; }
-  .ov-sig-tiers { flex-direction: column; }
 }
+/* Big move risk (BreakRiskCard.tsx): what the hour after a break measured, never which way. */
+.ov-br-active { border-color: var(--warn); }
+.ov-br-quiet { margin: 4px 0; font-size: 13px; }
+.ov-br-when { margin: 2px 0 10px; font-size: 13px; color: var(--muted); }
+.ov-br-when b { color: var(--text); }
+.ov-br-head { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.ov-br-head > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ov-br-label { color: var(--muted); font-size: 12px; }
+.ov-br-big { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.ov-br-sub { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.ov-br-zones { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; margin-bottom: 10px; }
+.ov-br-zones caption { text-align: left; color: var(--muted); font-size: 12px; padding-bottom: 4px; }
+.ov-br-zones th, .ov-br-zones td { padding: 4px 6px; text-align: right; border-top: 1px solid var(--line-soft); }
+.ov-br-zones th[scope=row] { text-align: left; font-weight: 600; white-space: nowrap; }
+.ov-br-zones thead th { color: var(--muted); font-weight: 500; border-top: 0; }
+.ov-br-strikes { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.ov-br-strikes li { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; align-items: center; font-size: 13px; padding: 5px 0; border-top: 1px solid var(--line-soft); font-variant-numeric: tabular-nums; }
+.ov-br-act { margin: 6px 0; padding: 8px 10px; border-radius: 6px; background: var(--down-bg); color: var(--down); font-size: 13px; font-weight: 600; }
+@media (max-width: 560px) {
+  .ov-br-head { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ov-br-head > div:last-child { grid-column: 1 / -1; }
+  .ov-br-big { font-size: 17px; }
+  .ov-br-strikes li { grid-template-columns: minmax(0, 1fr) auto; }
+  .ov-br-strikes li > span:nth-child(2), .ov-br-strikes li > span:nth-child(3) { font-size: 12px; }
+}
+
 /* A jump lands under the sticky app bar, not behind it; an empty marker takes no gap of its own. */
 .ov-anchor { scroll-margin-top: 72px; }
 .ov-anchor:empty { margin-bottom: -10px; }

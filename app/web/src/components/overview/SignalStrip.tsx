@@ -1,3 +1,4 @@
+import type { BreakRisk } from '@/api/desk';
 import type { ExpiryDirection, MtfConsensus, SideChoice } from '@/lib/overview';
 
 type Way = 'UP' | 'DOWN' | 'SIDE' | 'RANGE' | null;
@@ -16,7 +17,7 @@ const DECISION: Record<SideChoice['side'], { text: string; tone: 'up' | 'muted' 
 };
 
 /** Where each tile's full panel lives on the page. */
-export const SIGNAL_ANCHORS = { trend: 'ov-sig-trend', expiry: 'ov-sig-expiry', decision: 'ov-sig-decision' } as const;
+export const SIGNAL_ANCHORS = { momentum: 'ov-sig-momentum', trend: 'ov-sig-trend', expiry: 'ov-sig-expiry', decision: 'ov-sig-decision' } as const;
 
 function jump(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -35,11 +36,14 @@ function jump(id: string) {
  * direction (12H-4H), setup (2H-30M), trigger (15M-5M) -- rather than as a
  * flat count of timeframes, so one bullish minute cannot outvote the day.
  */
-export function SignalStrip({ mtf, direction, choice, hoursLeftText }: {
+export function SignalStrip({ mtf, direction, choice, hoursLeftText, risk, now = Date.now() }: {
   mtf: MtfConsensus;
   direction: ExpiryDirection | null;
   choice: SideChoice;
   hoursLeftText: string;
+  /** The hour after a break, when one is running; undefined while it loads or on a past date. */
+  risk?: BreakRisk | null;
+  now?: number;
 }) {
   const tiers: { label: string; way: Way }[] = [
     { label: 'Direction', way: mtf.tiers.macro },
@@ -47,8 +51,25 @@ export function SignalStrip({ mtf, direction, choice, hoursLeftText }: {
     { label: 'Trigger', way: mtf.tiers.trigger },
   ];
   const decision = DECISION[choice.side];
+  const active = !!risk && risk.until > now;
   return (
     <nav className="ov-sig" aria-label="Signals">
+      {risk !== undefined && (
+        <button type="button" className={`ov-sig-tile${active ? ' ov-sig-alert' : ''}`} onClick={() => jump(SIGNAL_ANCHORS.momentum)}>
+          <span className="ov-sig-label">Big move</span>
+          {active ? (
+            <>
+              <b className="ov-sig-head ov-warn">↕ ±{Math.round(risk.eitherPts[0]).toLocaleString('en-US')}</b>
+              <span className="ov-sig-sub">{risk.tf} {risk.side === 'UP' ? 'breakout' : 'breakdown'} · {Math.max(0, Math.ceil((risk.until - now) / 60_000))}m left</span>
+            </>
+          ) : (
+            <>
+              <b className="ov-sig-head ov-muted">Quiet</b>
+              <span className="ov-sig-sub ov-muted">no break this hour</span>
+            </>
+          )}
+        </button>
+      )}
       <button type="button" className="ov-sig-tile" onClick={() => jump(SIGNAL_ANCHORS.trend)}>
         <span className="ov-sig-label">Trend</span>
         <b className={`ov-sig-head ov-${toneOf(mtf.way)}`}>

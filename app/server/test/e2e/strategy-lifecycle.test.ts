@@ -171,7 +171,11 @@ test('7 [critical] it fills, the target and the stop reach the book, and every s
   );
   assert.deepEqual(book.filter((o) => o.type === 'limit').map((o) => o.limitPrice), [4]);
   assert.deepEqual(book.filter((o) => o.type !== 'limit').map((o) => o.stopPrice), [70]);
-  const events = await rows<{ kind: string }>('SELECT kind FROM trade_events WHERE trade_id = $1 ORDER BY seq', [tradeId]);
+  const events = await until(
+    () => rows<{ kind: string }>('SELECT kind FROM trade_events WHERE trade_id = $1 ORDER BY seq', [tradeId]),
+    (evs) => evs.length >= 3,
+    'every step journalled in order',
+  );
   const kinds = events.map((e) => e.kind);
   assert.deepEqual(kinds.slice(0, 3), ['entry_submitted', 'fill', 'protection_placed'], kinds.join(','));
   const st = await one<{ state: any; position: number }>('SELECT state, position FROM trades WHERE trade_id = $1', [tradeId]);

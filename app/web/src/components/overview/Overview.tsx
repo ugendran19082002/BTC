@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { usePersisted } from '@/hooks/usePersisted';
 import type { ChainResponse, ExpiryOption, Leg } from '@/types/desk';
 import type { TradeStatus } from '@/types/trade';
-import { getMovement, getPerp, getTerm } from '@/api/desk';
+import { getBreakRisk, getMovement, getPerp, getTerm } from '@/api/desk';
 import { usePoll } from '@/hooks/usePoll';
 import type { ChartTf } from '@/components/desk/PriceChart';
 import {
@@ -19,6 +19,8 @@ import { findLeg, type Selected } from './DecisionPanels';
 import { DecisionCards } from './DecisionCards';
 import { ScreenBar } from './ScreenBar';
 import { SIGNAL_ANCHORS, SignalStrip } from './SignalStrip';
+import { BreakRiskCard, type WatchedStrike } from './BreakRiskCard';
+import { parseOption } from '@/lib/break-risk';
 import { ChangesPanel, EarlyWarningPanel, ExpiryDirectionPanel, MovementPanel, useChanges } from './TraderPanels';
 
 /**
@@ -137,6 +139,9 @@ export function Overview({
   const entryMs = entryOf(null);
   const { data: movement } = usePoll(() => getMovement(entryMs, snap.expiryTs), 30_000, { enabled: snap.live, deps: [entryMs, snap.expiryTs] });
   const { data: term } = usePoll(() => getTerm(skewPts, atmIv), 60_000, { deps: [skewPts === null, atmIv === null] });
+  // The hour after a break: read every 30 s, the server's own cache is 30 s too. Live only -- a past date has no current hour.
+  const { data: breakRead } = usePoll(() => getBreakRisk(), 30_000, { enabled: snap.live });
+  const breakRisk = snap.live ? breakRead?.risk : null;
 
   // The sides, gate by gate, then the side the desk would take.
   const heldShort = trade ? trade.open.reduce((a, x) => a + Math.max(0, -x.position), 0) : 0;
@@ -199,6 +204,18 @@ export function Overview({
   const leg = findLeg(data.legs, selected);
 
 
+  // What a move would hurt: the short strikes held, then the desk's picks, each once.
+  const watched = useMemo<WatchedStrike[]>(() => {
+    const out: WatchedStrike[] = [];
+    const add = (w: WatchedStrike) => { if (!out.some((x) => x.cp === w.cp && x.strike === w.strike)) out.push(w); };
+    for (const t of trade?.open ?? []) {
+      const o = t.position < 0 ? parseOption(t.symbol) : null;
+      if (o) add({ ...o, held: true });
+    }
+    for (const s of sides) if (s.leg) add({ cp: s.leg.cp, strike: s.leg.strike, held: false });
+    return out;
+  }, [trade?.open, sides]);
+
   // What changed, for the strike under inspection: one request, every 30 s, with the since-entry row.
   const changes = useChanges(data, leg, spot, leg ? entryOf(`${leg.cp}-BTC-${leg.strike}-${snap.expiry}`) : null);
   // The other chosen strike, so What changed shows the pair; one request each, and none when it is the same strike.
@@ -232,7 +249,8 @@ export function Overview({
     <PanelFold.Provider value={fold}>
     <div className="ov">
       <ScreenBar data={data} now={now} freshnessSec={config.freshnessSec} expiries={expiries} onExpiry={onExpiry} controls={controls} error={error} onFoldAll={foldAll} />
-      <ErrorBoundary where="Signals"><SignalStrip mtf={mtf} direction={direction} choice={choice} hoursLeftText={hoursLeftText} /></ErrorBoundary>
+      <ErrorBoundary where="Signals"><SignalStrip mtf={mtf} direction={direction} choice={choice} hoursLeftText={hoursLeftText} risk={breakRisk} now={now} /></ErrorBoundary>
+      {snap.live && <ErrorBoundary where="Big move risk"><div className="ov-anchor" id={SIGNAL_ANCHORS.momentum}><BreakRiskCard risk={breakRisk} now={now} strikes={watched} /></div></ErrorBoundary>}
       <ErrorBoundary where="Overview KPIs"><KpiStrip data={data} spot={spot} iv={iv} perp={perp} spark={spark} now={now} /></ErrorBoundary>
 
       {/*
