@@ -9,8 +9,10 @@ import { candles, type Candle } from './delta.js';
  * cannot quietly become a trading rule.
  */
 
-export type Timeframe = '1m' | '5m' | '15m' | '1h' | '4h' | '1d';
-const MINUTES: Record<Timeframe, number> = { '1m': 1, '5m': 5, '15m': 15, '1h': 60, '4h': 240, '1d': 1440 };
+export type Timeframe = '1m' | '5m' | '15m' | '30m' | '1h' | '2h' | '4h' | '6h' | '12h' | '1d';
+const MINUTES: Record<Timeframe, number> = {
+  '1m': 1, '5m': 5, '15m': 15, '30m': 30, '1h': 60, '2h': 120, '4h': 240, '6h': 360, '12h': 720, '1d': 1440,
+};
 
 /**
  * The timeframes the trend read is built from -- five, and deliberately not
@@ -20,8 +22,65 @@ const MINUTES: Record<Timeframe, number> = { '1m': 1, '5m': 5, '15m': 15, '1h': 
  * count, both of which are on the screen. Letting a newly fetched series join
  * the list would quietly change a number nobody asked to change. The 1-minute
  * bars are fetched for the moves table alone.
+ *
+ * It stayed at five when 30m, 2h, 6h and 12h were added for the Live screen's
+ * hierarchy (26 Sep 2026), for exactly that reason: the new frames are read by
+ * `HIERARCHY_TIMEFRAMES` and reported in `timeframes`, and they must not move
+ * `agreement` or `regime`.
  */
 const TREND_TIMEFRAMES: readonly Timeframe[] = ['5m', '15m', '1h', '4h', '1d'];
+
+/**
+ * Every timeframe the Live screen's hierarchy reads, coarsest first.
+ *
+ * `docs/New.md` asks for 12H / 6H (direction), 4H / 2H (structure),
+ * 1H / 30M (setup), 15M (pattern), 5M (trigger), 1M (execution). Delta India
+ * serves 30m, 2h and 6h natively; **12h it does not** -- the endpoint answers
+ * with an empty result, measured 26 Sep 2026 -- so the 12-hour series is built
+ * by pairing 6-hour bars. See `resampleTf`.
+ */
+export const HIERARCHY_TIMEFRAMES: readonly Timeframe[] = ['12h', '6h', '4h', '2h', '1h', '30m', '15m', '5m', '1m'];
+
+/** The resolutions Delta India actually serves. `12h` is absent on purpose -- it returns nothing. */
+const VENUE_TIMEFRAMES: readonly Timeframe[] = ['1m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '1d'];
+
+/**
+ * Fold `n` bars into one, dropping any leading partial group so every bar
+ * returned covers a whole period aligned to the epoch.
+ *
+ * Only used for 12h-from-6h. The alignment matters: folding from the start of
+ * whatever the venue happened to return would put the boundary at an arbitrary
+ * hour, and a 12-hour bar that starts at 07:00 is not the bar any other chart
+ * would draw. Aligning on the epoch puts them at 00:00 and 12:00 UTC, which is
+ * also where the desk's own day (05:30 IST = 00:00 UTC) begins.
+ */
+export function resampleTf(bars: readonly Candle[], n: number): Candle[] {
+  if (n <= 1) return bars.map((b) => ({ ...b }));
+  if (bars.length < 2) return [];
+  const stepSec = bars[1]!.time - bars[0]!.time;
+  if (!(stepSec > 0)) return [];
+  const periodSec = stepSec * n;
+  const out: Candle[] = [];
+  let group: Candle[] = [];
+  for (const b of bars) {
+    // A group may only open on a bar that opens a period; bars before the
+    // first such bar are a partial group and are dropped.
+    if (group.length === 0 && b.time % periodSec !== 0) continue;
+    group.push(b);
+    if (group.length === n) {
+      out.push({
+        time: group[0]!.time,
+        open: group[0]!.open,
+        high: Math.max(...group.map((x) => x.high)),
+        low: Math.min(...group.map((x) => x.low)),
+        close: group[group.length - 1]!.close,
+        volume: group.reduce((a, x) => a + (x.volume ?? 0), 0),
+      });
+      group = [];
+    }
+  }
+  return out;
+}
 
 function ema(values: number[], period: number): number | null {
   if (values.length < period) return null;
@@ -292,6 +351,13 @@ export type MarketRead = {
    */
   dailyRsiPrior: number | null;
   timeframes: TimeframeRead[];
+  /**
+   * The Live screen's ladder: 12h, 6h, 4h, 2h, 1h, 30m, 15m, 5m, 1m, coarsest
+   * first, each read exactly as `timeframes` is read. Separate from it so the
+   * measured `agreement` and `regime` keep counting the same five frames.
+   * A frame with too few bars to read is simply absent.
+   */
+  hierarchy: TimeframeRead[];
   /** how many of the five timeframes agree, signed */
   agreement: number;
   regime: 'trending up' | 'trending down' | 'mixed' | 'quiet';
@@ -413,14 +479,18 @@ async function fetchSeriesFresh(): Promise<[Timeframe, Candle[]][]> {
   seriesInflight = (async () => {
     try {
       const now = Math.floor(Date.now() / 1000);
-      const wanted: Timeframe[] = ['1m', '5m', '15m', '1h', '4h', '1d'];
       const data = await Promise.all(
-        wanted.map(async (tf) => {
+        VENUE_TIMEFRAMES.map(async (tf) => {
           const span = MINUTES[tf] * 60 * 220;
           const bars = await candles('BTCUSD', now - span, now, tf).catch(() => []);
           return [tf, bars] as [Timeframe, Candle[]];
         }),
       );
+      // 12h is not a Delta resolution; pair the 6h bars for it. Appended
+      // rather than fetched so one venue request is saved and the boundary is
+      // ours, not whatever the endpoint would have chosen.
+      const sixes = data.find(([tf]) => tf === '6h')?.[1] ?? [];
+      data.push(['12h', resampleTf(sixes, 2)]);
       seriesCache = { at: Date.now(), data };
       return data;
     } finally {
@@ -445,12 +515,21 @@ async function fetchSeriesFresh(): Promise<[Timeframe, Candle[]][]> {
  * drops it itself, the same way the history it was measured on never saw one.
  * Null until the first read has filled the cache.
  */
-export function seriesForAnalytics(): Partial<Record<'5m' | '15m' | '1h' | '4h' | '1d', { t: number[]; c: number[] }>> | null {
+type AnalyticsTf = '5m' | '15m' | '1h' | '4h' | '1d';
+/**
+ * The five the analytics service was measured on -- named, not "everything
+ * except 1m". When 30m, 2h, 6h and 12h joined the cache (26 Sep 2026) the old
+ * "skip 1m" rule would have started posting four frames the service has never
+ * seen a measurement for.
+ */
+const ANALYTICS_TFS: readonly AnalyticsTf[] = ['5m', '15m', '1h', '4h', '1d'];
+
+export function seriesForAnalytics(): Partial<Record<AnalyticsTf, { t: number[]; c: number[] }>> | null {
   if (!seriesCache) return null;
-  const out: Partial<Record<'5m' | '15m' | '1h' | '4h' | '1d', { t: number[]; c: number[] }>> = {};
+  const out: Partial<Record<AnalyticsTf, { t: number[]; c: number[] }>> = {};
   for (const [tf, bars] of seriesCache.data) {
-    if (tf === '1m') continue;
-    out[tf] = { t: bars.map((b) => b.time), c: bars.map((b) => b.close) };
+    if (!ANALYTICS_TFS.includes(tf as AnalyticsTf)) continue;
+    out[tf as AnalyticsTf] = { t: bars.map((b) => b.time), c: bars.map((b) => b.close) };
   }
   return out;
 }
@@ -494,6 +573,18 @@ export async function readMarket(sinceHours?: number): Promise<MarketRead> {
     // agreement and the regime are counted over. See TREND_TIMEFRAMES.
     .filter(([tf]) => TREND_TIMEFRAMES.includes(tf))
     .map(([tf, bars]) => readOne(tf, bars))
+    .filter((r): r is TimeframeRead => r !== null);
+
+  /*
+   * The Live screen's ladder, coarsest first, as its own field.
+   *
+   * Deliberately not merged into `timeframes`: that array feeds `agreement`
+   * and `regime`, which are measured numbers, and nine frames voting where
+   * five used to would change them without anyone asking. Same reads, same
+   * `readOne`, different list.
+   */
+  const hierarchy = HIERARCHY_TIMEFRAMES
+    .map((tf) => readOne(tf, series.find(([x]) => x === tf)?.[1] ?? []))
     .filter((r): r is TimeframeRead => r !== null);
 
   const daily = series.find(([tf]) => tf === '1d')?.[1] ?? [];
@@ -586,7 +677,7 @@ export async function readMarket(sinceHours?: number): Promise<MarketRead> {
   const m15 = series.find(([tf]) => tf === '15m')?.[1] ?? [];
 
   return {
-    spot, return24h, dailyRsiPrior, timeframes, agreement, regime, realisedVol,
+    spot, return24h, dailyRsiPrior, timeframes, hierarchy, agreement, regime, realisedVol,
     moves, max24hRangeUsd, max24hRangePct, volume, high24h, low24h,
     prevDayHigh: prevDay?.high ?? null,
     prevDayLow: prevDay?.low ?? null,
