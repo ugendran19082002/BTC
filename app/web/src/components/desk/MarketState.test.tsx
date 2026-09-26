@@ -220,6 +220,30 @@ describe('the market-state card', () => {
     expect(container.textContent).not.toMatch(/wrong/i);
   });
 
+  it('[critical] today is what the list shows, with every day behind View all', () => {
+    /*
+     * The list answers "what has the desk called since this morning". A page
+     * of yesterday's calls at the top answers a question nobody asked --
+     * everything is still there, one click away, with the lot downloadable.
+     */
+    const now = Date.now();
+    const rows: StateHistoryRow[] = [
+      { id: 1, at: now, tf: '5m', event: 'BREAKOUT_WATCH', stage: 'WATCH', side: 'UP', confirmed: false,
+        confidence: 40, close: 84_400, plan: null, outcome: null, gradedAt: null },
+      { id: 2, at: now - 36 * 3_600_000, tf: '5m', event: 'REJECTION', stage: 'FAILED', side: 'DOWN',
+        confirmed: true, confidence: 60, close: 84_000, plan: null, outcome: 'TARGET_HIT', gradedAt: now },
+    ];
+    render(<MarketState data={base} history={rows} tf="5m" />);
+    expect(screen.getByText('Today')).toBeInTheDocument();
+    // yesterday's call is not in the list on screen
+    expect(screen.queryByText(/Resistance rejection/)).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /View all/ }));
+    expect(screen.getByText('2 signals')).toBeInTheDocument();
+    expect(screen.getByText(/Resistance rejection/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Download CSV/ })).toBeInTheDocument();
+  });
+
   it('[critical] shows five calls a page, newest first, and pages back through the rest', () => {
     // Ten rows of small print is a wall nobody reads to the end of.
     const rows: StateHistoryRow[] = Array.from({ length: 12 }, (_, i) => ({

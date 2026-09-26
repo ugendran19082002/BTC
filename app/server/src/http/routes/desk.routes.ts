@@ -177,7 +177,12 @@ export function registerDeskRoutes(app: FastifyInstance) {
   app.get('/api/market-state/history', async (req, reply) => {
     const q = req.query as { tf?: string; limit?: string };
     const tf = (STATE_TFS as readonly string[]).includes(q.tf ?? '') ? (q.tf as StateTf) : null;
-    const limit = Math.min(50, Math.max(1, Number(q.limit) || 10));
+    /*
+     * The screen shows today and keeps the rest behind "View all", so it asks
+     * for more than it draws. Two hundred is a few days of a five-minute
+     * timeframe -- enough to check last Tuesday, small enough to send.
+     */
+    const limit = Math.min(200, Math.max(1, Number(q.limit) || 10));
     try {
       await gradeStates().catch(() => 0);
       const [rows, rate] = await Promise.all([recentStates(tf, limit), hitRate(tf)]);

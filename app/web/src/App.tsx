@@ -333,7 +333,7 @@ export default function App() {
     { enabled: signedIn === true && tab === 'desk', deps: [stateTf] },
   );
   const { data: stateHistory } = usePoll(
-    () => getStateHistory(stateTf, 30),
+    () => getStateHistory(stateTf, 120),
     120_000,
     { enabled: signedIn === true && tab === 'desk', deps: [stateTf] },
   );
