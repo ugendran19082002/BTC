@@ -229,3 +229,27 @@ describe('before a quote arrives', () => {
     expect(screen.getAllByText('—').length).toBeGreaterThan(0);
   });
 });
+
+describe('a stop the desk refused to place', () => {
+  it('[critical] says why, and does not read like a trade that chose to run naked', () => {
+    /*
+     * `stopAt: 70` means seventy whatever the entry -- until the entry fills
+     * at seventy-five and the stop is under the position. Placed, it would
+     * close the trade a second after opening it, so the engine leaves it off.
+     * The screen has to say that: an unprotected position that looks
+     * deliberate is the worst thing the desk can show.
+     */
+    render(
+      <ExitBars
+        target={{ on: false, mode: 'price', value: 0 }}
+        stop={{ on: false, mode: 'price', value: 0 }}
+        onTarget={() => {}} onStop={() => {}}
+        entry={75} size={10}
+        exitProblem="A stop of 70 must be over the 75 entry: at or under it, it fires at once."
+      />,
+    );
+    expect(screen.getByText(/must be over the 75 entry/)).toBeInTheDocument();
+    expect(screen.getByText(/would have fired at once|fired at once/)).toBeInTheDocument();
+    expect(screen.queryByText(/runs until Delta liquidates it/)).toBeNull();
+  });
+});
