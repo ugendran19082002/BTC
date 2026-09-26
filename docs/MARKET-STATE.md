@@ -205,28 +205,35 @@ Grading also writes **where price actually finished** the window and the BTC
 points from the call, so the history's "+350 pts" is a recorded figure rather
 than one that depends on when the screen happened to be open.
 
-Each row is graded four bars later, **oldest ungraded first**, by a rule fixed
-before the outcome was known (`verdictFor`):
+Each row is graded **oldest ungraded first**, after a window sized to its own
+timeframe (5m → 30 min, 15m → 90, 1h → 4 hours), by a rule fixed before the
+outcome was known — and the rule asks the **trigger first**:
 
-* target1 reached before invalidation → **CORRECT**
-* invalidation first → **WRONG**
-* a bar that reaches both → **WRONG** (the order is not in the bar, and the
-  assumption that goes against the call is the only one that cannot flatter it)
-* neither, in four bars → **UNRESOLVED** — counting a drift the right way as a
-  win is how a hit rate ends up describing the grader
-* no plan behind it (a range) → **NOT GRADED**: "nothing is happening" is not a
-  prediction anybody can be wrong about
+| Outcome | What it means |
+|---|---|
+| `NOT_TRIGGERED` | Price never reached the trigger. Nothing happened. |
+| `TARGET_HIT` | Triggered, and target 1 came before the stop. |
+| `INVALIDATED` | Triggered, and the invalidation came first — including a bar that reached both, since the order is not in the bar. |
+| `EXPIRED` | Triggered, and the window closed with neither reached. |
+| `NOT_GRADED` | A range. "Nothing is happening" is not a prediction. |
 
-A call whose four bars have not happened yet reads **"Waiting"** rather than
-"—": a dash is what a range gets, and a breakout still inside its window looked
-identical to one nobody would ever grade.
+**The word "wrong" is gone from the live screen (24 Sep 2026), and it was
+wrong.** A breakout watch says *over 84,532 this goes to 84,731*. If price
+never reached 84,532 there was no trade to be right or wrong about — and the
+old grader marked every untriggered setup WRONG, so the screen filled with red
+for calls that were never anything but a plan. The trigger is now the first
+question asked of the bars; a call still inside its window says **Waiting**,
+one that never started says **Not triggered**, and the only red word is for a
+call that ran and hit its own invalidation.
 
-The order matters more than it sounds. The grader took the *newest* ungraded
-rows at first, and the journal never graded anything at all: the desk writes a
-row every time the state changes, so the twenty newest ungraded calls are the
-twenty youngest, every one still inside its window and skipped -- while the
-older rows that were ready never came up. Oldest first, a call is graded on the
-first pass after its bars exist.
+Rows written before the change carry `CORRECT` / `WRONG` / `UNRESOLVED`; they
+are mapped on read rather than rewritten, so the history stays readable without
+editing what was recorded.
+
+The tally counts only the calls that **triggered and finished** — a setup whose
+trigger was never reached is not counted either way, because marking the desk
+down for a trade nobody could take is how a hit rate ends up describing the
+grader.
 
 The card shows the tally as "3 of 4 came good", never as a percentage. Four
 calls is not a hit rate.
@@ -339,6 +346,15 @@ The finder's helpers went with it -- `findStrikes`, `finderRanks`,
 `pick()` that could only fire when a finder filter had been moved. Code nothing
 renders is code that rots, and a filter nothing can change is a branch that can
 only ever mislead the next reader.
+
+## What the card carries now
+
+Beside the confirmations: **market regime**, **volatility** (from ATR as a
+share of price) and **timeframe alignment** — the three things a reader asks
+before any of the detail. Under them, the **key levels** either side, named the
+way a trader names them: R1 and S1 are what price is working against now, R2
+and S2 are where it goes if those give way, and a level the hourly chart also
+knows is marked *strong*.
 
 ## One card, no tabs
 

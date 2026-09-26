@@ -3143,6 +3143,25 @@ table.ov-mini.ov-levels { width: auto; min-width: 100%; }
 .bt-market-state__hist-plan span { display: inline-flex; gap: 5px; align-items: baseline; }
 .bt-market-state__hist-plan em { font-style: normal; color: var(--muted); }
 .bt-market-state__hist-far { color: var(--warn, #d9a441); }
+
+/* Trigger at one end, target at the other, a dot where price reached. */
+.bt-market-state__track { display: grid; gap: 2px; padding: 4px 2px 2px; }
+.bt-market-state__track-line {
+  position: relative; display: block; height: 4px; border-radius: 2px; background: var(--line);
+}
+.bt-market-state__track-line > i { display: block; height: 100%; border-radius: 2px; background: var(--muted); }
+.bt-market-state__track-line > em {
+  position: absolute; top: 50%; width: 9px; height: 9px; border-radius: 999px;
+  transform: translate(-50%, -50%); background: var(--muted); border: 2px solid var(--panel);
+}
+.bt-market-state__track.is-up .bt-market-state__track-line > i,
+.bt-market-state__track.is-up .bt-market-state__track-line > em { background: var(--up); }
+.bt-market-state__track.is-down .bt-market-state__track-line > i,
+.bt-market-state__track.is-down .bt-market-state__track-line > em { background: var(--down); }
+.bt-market-state__track-ends {
+  display: flex; justify-content: space-between; font-size: 10.5px; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
 .bt-market-state__hist-tf {
   font-size: 10.5px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0 6px;
 }

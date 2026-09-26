@@ -15,6 +15,7 @@ import { analyticsSchema } from './db/analytics-schema.js';
 import { captureOptionSnapshots, optionSnapshotsSchema } from './market/option-snapshots.js';
 import { captureBoard } from './market/chain-features.js';
 import { wallWithinEm } from './http/routes/desk.routes.js';
+import { captureIndex } from './market/index-1m.js';
 import { capturePerpSnapshot, flowSchema, flushTradeFlow, startFlowSocket } from './market/flow.js';
 import { noteError } from './observability/errors.js';
 
@@ -129,6 +130,14 @@ const recordOptions = () => {
     .then((t) => captureOptionSnapshots(t, Date.now()))
     .catch(warn('option-snapshots'));
   capturePerpSnapshot(Date.now()).catch(warn('perp-snapshots'));
+  /*
+   * BTC itself, once a minute (24 Sep 2026). Every other recorder keeps a
+   * reading and carries the price as a column at its own cadence; this is the
+   * price on its own, which is the series every "+350 pts" on the screen is
+   * measured against. Checked on the same minute timer, and the minute is the
+   * primary key, so a restart or a double tick cannot write it twice.
+   */
+  captureIndex(Date.now()).catch(warn('index-1m'));
 };
 setInterval(recordOptions, 60_000).unref();
 setTimeout(recordOptions, 15_000).unref();

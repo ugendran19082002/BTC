@@ -189,6 +189,21 @@ export type StrategyConfig = {
   stopLossAt?: number;
   /** The stop over the day, the same way `targetSteps` moves the target. */
   stopSteps?: ExitStep[];
+  /**
+   * What the stop and the target are watched on.
+   *
+   * `ltp` fires the moment the mark touches the level, which is what a resting
+   * stop at the exchange does and what most desks mean by a stop. `close`
+   * waits for the bar to finish: a wick through the level is not a break, and
+   * a thin option's mark can print a level nothing traded at.
+   *
+   * The difference is real money in both directions -- `ltp` exits on noise
+   * that a close would have ridden out, `close` gives back the distance
+   * between the wick and the close when the move is real -- so it is a choice
+   * the operator makes per strategy rather than one the desk makes for them.
+   * Absent is `ltp`, which is what the desk did before this existed.
+   */
+  monitorOn?: MonitorOn;
   /** Contracts per leg. */
   lots: number;
   legs: LegConfig;
@@ -218,6 +233,9 @@ export type StrategyConfig = {
  *           70 minus the entry -- is re-measured from the entry that happens,
  *           and a level on the wrong side of it refuses the order
  */
+/** What a stop or target is judged on: the touch, or the bar's close. */
+export type MonitorOn = 'ltp' | 'close';
+
 export type ExitMode = 'pct' | 'points' | 'price';
 
 /** From `at` (IST "HH:MM"), the exit becomes `value`, in its rule's units. Zero turns it off. */
@@ -405,6 +423,7 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   stopLossPoints: 0,
   stopLossAt: 0,
   stopSteps: [],
+  monitorOn: 'ltp',
   lots: 10,
   legs: 'both',
   graceMin: 60,

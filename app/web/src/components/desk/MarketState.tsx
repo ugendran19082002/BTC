@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { ArrowDownRight, ArrowUpRight, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Clock, Minus, TrendingDown, TrendingUp } from 'lucide-react';
 import type { MarketStateResponse, StateHistoryRow, StatePlan } from '@/api/desk';
 import { strike as fmtStrike } from '@/lib/format';
+import { trackFor } from '@/components/desk/signal-track';
 import { cn } from '@/lib/utils';
 
 /**
@@ -347,6 +348,11 @@ function History({ rows, rate, spot }: {
           const waiting = r.outcome === null;
           const toTrigger = r.plan && after !== null ? Math.round(Math.abs(r.plan.trigger - after)) : null;
           const status = outcomeWord(r.outcome);
+          // The furthest price got, or where it is now while the call runs.
+          const track = r.plan ? trackFor({
+            side: r.side, trigger: r.plan.trigger, target: r.plan.target1,
+            price: after, outcome: r.outcome ?? null,
+          }) : null;
           return (
             <li key={r.id} data-outcome={r.outcome ?? 'WAITING'}>
               <div className="bt-market-state__hist-line">
@@ -374,6 +380,28 @@ function History({ rows, rate, spot }: {
                   ) : r.outcome === 'NOT_TRIGGERED' ? (
                     <span className="bt-market-state__hist-far">Never triggered</span>
                   ) : null}
+                </div>
+              ) : null}
+
+              {/*
+                The track: trigger at one end, target at the other, a dot where
+                price reached. One glance answers what the three numbers above
+                answer slowly -- did it trigger, how far did it get, how did it
+                end. The arithmetic is in `signal-track.ts`, because a dot on
+                the wrong side of a trigger is a row that says the opposite of
+                the truth.
+              */}
+              {track ? (
+                <div className={cn('bt-market-state__track', `is-${track.tone}`)}
+                  title={track.reached ? `${Math.round(track.at * 100)}% of the way to target` : `${track.shortBy} points short of the trigger`}>
+                  <span className="bt-market-state__track-line" aria-hidden>
+                    <i style={{ width: `${Math.round(track.at * 100)}%` }} />
+                    <em style={{ left: `${Math.round(track.at * 100)}%` }} />
+                  </span>
+                  <span className="bt-market-state__track-ends" aria-hidden>
+                    <b>{fmtStrike(Math.round(r.plan!.trigger))}</b>
+                    <b>{fmtStrike(Math.round(r.plan!.target1))}</b>
+                  </span>
                 </div>
               ) : null}
 

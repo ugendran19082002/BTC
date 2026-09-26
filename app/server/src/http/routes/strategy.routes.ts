@@ -85,6 +85,9 @@ function cleanConfig(raw: unknown): StrategyConfig {
     stopLossPoints: Number(c.stopLossPoints ?? 0),
     stopLossAt: Number(c.stopLossAt ?? 0),
     stopSteps: cleanSteps(c.stopSteps),
+    // A screen that predates the setting sends nothing and means the touch,
+    // which is what every strategy has been doing.
+    monitorOn: c.monitorOn === 'close' ? 'close' : 'ltp',
     lots: Math.floor(Number(c.lots ?? DEFAULT_CONFIG.lots)),
     legs: c.legs === 'CE' || c.legs === 'PE' ? c.legs : 'both',
     // A client that predates the setting sends nothing and means the old
