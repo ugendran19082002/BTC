@@ -163,10 +163,10 @@ describe('the market-state card', () => {
     ];
     render(<MarketState data={base} history={rows} tf="15m" spot={86_200} />);
     // newest: 86,200 now against 86,500 called -- 300 down, and it was a breakdown
-    const newest = screen.getByText('moved −300 pts');
+    // A fall after a breakdown call is green: the colour follows the call.
+    const newest = screen.getByText('−300 pts');
     expect(newest.className).toContain('is-up');
-    // the one before it: 86,500 at the next call against 86,300 -- up, after a breakout watch
-    expect(screen.getByText('moved +200 pts').className).toContain('is-up');
+    expect(screen.getByText('+200 pts').className).toContain('is-up');
   });
 
   it('[critical] a call names the level it was about and what it was worth', () => {
@@ -215,8 +215,8 @@ describe('the market-state card', () => {
     // The chip is upper-cased by the stylesheet; the text itself is a word.
     expect(screen.getByText('Waiting')).toBeInTheDocument();
     expect(screen.getByText('96 pts to trigger')).toBeInTheDocument();
-    expect(screen.getByText('Not triggered')).toBeInTheDocument();
-    expect(screen.getByText('Never triggered')).toBeInTheDocument();
+    // Once as the status, once at the end of its own track.
+    expect(screen.getAllByText('Not triggered')).toHaveLength(2);
     expect(container.textContent).not.toMatch(/wrong/i);
   });
 

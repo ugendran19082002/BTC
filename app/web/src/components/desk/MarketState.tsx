@@ -287,13 +287,18 @@ function PlanBox({ plan, title, action, tone }: { plan: StatePlan | null; title:
  * The same row is used in the list and behind *View all*, because two
  * renderings of one thing is two things to keep true.
  */
-function SignalRow({ row: r, before, spot }: {
+function SignalRow({ row: r, next, spot }: {
   row: StateHistoryRow;
-  /** The call before this one, whose close says where price went after it. */
-  before: StateHistoryRow | null;
+  /**
+   * The *next* call, which is the one above this row: the list runs newest
+   * first, so where price went after this call is the close of the one after
+   * it in time, not the one under it on screen. Getting this backwards reads
+   * every move in the list the wrong way round.
+   */
+  next: StateHistoryRow | null;
   spot?: number;
 }) {
-  const after = r.resolvedClose ?? before?.close ?? spot ?? null;
+  const after = r.resolvedClose ?? next?.close ?? spot ?? null;
   const move = r.movePts ?? (after === null ? null : Math.round(after - r.close));
   const went = move === null || r.side === null ? null : (r.side === 'UP' ? move > 0 : move < 0);
   const waiting = r.outcome === null;
@@ -464,7 +469,7 @@ function History({ rows, rate, spot }: {
       </h4>
       <ul className="bt-signals">
         {shown.map((r, i) => (
-          <SignalRow key={r.id} row={r} before={shownRows[i + 1] ?? null} spot={spot} />
+          <SignalRow key={r.id} row={r} next={shownRows[at * PAGE + i - 1] ?? null} spot={spot} />
         ))}
       </ul>
 
@@ -504,7 +509,7 @@ function History({ rows, rate, spot }: {
                 <h5>{day}</h5>
                 <ul className="bt-signals">
                   {rows.filter((r) => istDay(r.at) === day).map((r, i, list) => (
-                    <SignalRow key={r.id} row={r} before={list[i + 1] ?? null} spot={spot} />
+                    <SignalRow key={r.id} row={r} next={list[i - 1] ?? null} spot={spot} />
                   ))}
                 </ul>
               </section>
