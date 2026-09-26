@@ -241,8 +241,8 @@ describe('a stop the desk refused to place', () => {
      */
     render(
       <ExitBars
-        target={{ on: false, mode: 'price', value: 0 }}
-        stop={{ on: false, mode: 'price', value: 0 }}
+        target={{ on: false, mode: 'price', pct: 0, points: 0, price: 0 }}
+        stop={{ on: false, mode: 'price', pct: 0, points: 0, price: 0 }}
         onTarget={() => {}} onStop={() => {}}
         entry={75} size={10}
         exitProblem="A stop of 70 must be over the 75 entry: at or under it, it fires at once."
