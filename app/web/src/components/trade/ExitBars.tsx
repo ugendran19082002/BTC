@@ -50,6 +50,14 @@ export type ExitBarsProps = {
   /** Where the exchange closes the position out, if it is known. */
   liquidationPrice?: number | null;
   /**
+   * Why there is no stop, where the desk refused to place one.
+   *
+   * A fixed stop the entry overtook would have fired the moment it was placed,
+   * so the engine leaves it off and says why. Different from a trade that
+   * chose to run unprotected, and it reads differently.
+   */
+  exitProblem?: string | null;
+  /**
    * Before the order fills: the levels are re-read off the price it actually
    * fills at, keeping the distance shown. Said once, under the exits.
    */
@@ -58,6 +66,7 @@ export type ExitBarsProps = {
 
 export function ExitBars({
   target, stop, onTarget, onStop, entry, size, liquidationPrice, contractValue = 0.001, followsFill = false,
+  exitProblem = null,
 }: ExitBarsProps) {
   const targetPrice = levelOf('target', target, entry);
   const stopPrice = levelOf('stop', stop, entry);
@@ -139,7 +148,18 @@ export function ExitBars({
         />
       ) : (
         <p className="m-0 pl-[26px] text-[11.5px] leading-snug text-muted-foreground">
-          {liquidationPrice != null ? (
+          {/*
+            A stop that could not be placed is a different thing from a trade
+            that chose to run without one, and it is the operator's to fix: the
+            fill overtook the price they fixed, so the desk refused to place a
+            "stop" that would have closed the trade a second after opening it.
+          */}
+          {exitProblem ? (
+            <>
+              <b className="text-[var(--down)]">No stop — {exitProblem}</b>{' '}
+              The desk did not place it: it would have fired at once. Set a new one.
+            </>
+          ) : liquidationPrice != null ? (
             <>
               No stop — Delta liquidates the position at{' '}
               <b className="tabular-nums text-[var(--down)]">{fmtPrice(liquidationPrice)}</b>.
