@@ -60,6 +60,9 @@ const TONE_CLASS: Record<Tone, string> = {
 const IST = new Intl.DateTimeFormat('en-IN', {
   timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true,
 });
+const IST_DAY = new Intl.DateTimeFormat('en-IN', {
+  timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short',
+});
 
 export function MarketState({
   data, history, hitRate, tf, spot, extra = [],
@@ -274,6 +277,100 @@ function PlanBox({ plan, title, action, tone }: { plan: StatePlan | null; title:
   );
 }
 
+/**
+ * One signal, the way the owner's reference draws it.
+ *
+ * Left to right, in the order the questions are asked: when, which way, what
+ * was called and how sure, where it ended up, the three prices it was defined
+ * by, how far it actually got, and what that came to in points.
+ *
+ * The same row is used in the list and behind *View all*, because two
+ * renderings of one thing is two things to keep true.
+ */
+function SignalRow({ row: r, before, spot }: {
+  row: StateHistoryRow;
+  /** The call before this one, whose close says where price went after it. */
+  before: StateHistoryRow | null;
+  spot?: number;
+}) {
+  const after = r.resolvedClose ?? before?.close ?? spot ?? null;
+  const move = r.movePts ?? (after === null ? null : Math.round(after - r.close));
+  const went = move === null || r.side === null ? null : (r.side === 'UP' ? move > 0 : move < 0);
+  const waiting = r.outcome === null;
+  const toTrigger = r.plan && after !== null ? Math.round(Math.abs(r.plan.trigger - after)) : null;
+  const track = r.plan ? trackFor({
+    side: r.side, trigger: r.plan.trigger, target: r.plan.target1, price: after, outcome: r.outcome ?? null,
+  }) : null;
+
+  return (
+    <li data-outcome={r.outcome ?? 'WAITING'}>
+      <div className="bt-signal__when">
+        <b>{IST.format(r.at)}</b>
+        <span>{IST_DAY.format(r.at)}</span>
+      </div>
+
+      <span className={cn('bt-signal__side', r.side === 'UP' && 'is-up', r.side === 'DOWN' && 'is-down')} aria-hidden>
+        {r.side === 'UP' ? <ArrowUpRight size={16} /> : r.side === 'DOWN' ? <ArrowDownRight size={16} /> : <Minus size={16} />}
+      </span>
+
+      <div className="bt-signal__what">
+        <div>
+          <strong>{STATE_WORDS[r.event]?.title ?? r.event}</strong>
+          <em>({r.confidence})</em>
+          <span className="bt-market-state__hist-tf">{r.tf}</span>
+        </div>
+        {r.plan ? (
+          <span className="bt-signal__call">
+            {r.side === 'UP' ? 'Over' : 'Under'} {fmtStrike(Math.round(r.plan.trigger))}
+            {' → target '}{fmtStrike(Math.round(r.plan.target1))}
+          </span>
+        ) : null}
+        <span className="bt-signal__btc">
+          BTC {fmtStrike(Math.round(r.close))}
+          {after === null ? null : <> → {fmtStrike(Math.round(after))}</>}
+        </span>
+      </div>
+
+      <span className={cn('bt-market-state__hist-out', `is-${(r.outcome ?? 'waiting').toLowerCase()}`)}>
+        {outcomeWord(r.outcome)}
+      </span>
+
+      {r.plan ? (
+        <div className="bt-signal__prices">
+          <span><em>Trigger</em><b>{fmtStrike(Math.round(r.plan.trigger))}</b></span>
+          <span><em>Target</em><b>{fmtStrike(Math.round(r.plan.target1))}</b></span>
+          <span><em>Stop</em><b>{fmtStrike(Math.round(r.plan.invalidation))}</b></span>
+        </div>
+      ) : <div className="bt-signal__prices" />}
+
+      {/* How far it got: the dot is where price reached between the two. */}
+      {track ? (
+        <div className={cn('bt-market-state__track', `is-${track.tone}`)}>
+          <span className="bt-market-state__track-line" aria-hidden>
+            <i style={{ width: `${Math.round(track.at * 100)}%` }} />
+            <em style={{ left: `${Math.round(track.at * 100)}%` }} />
+          </span>
+          <span className="bt-market-state__track-ends">
+            <b>{fmtStrike(Math.round(r.plan!.trigger))}</b>
+            {waiting && toTrigger !== null ? <b className="bt-market-state__hist-far">{toTrigger} pts to trigger</b>
+              : r.outcome === 'NOT_TRIGGERED' ? <b className="bt-market-state__hist-far">Not triggered</b>
+                : <b>{fmtStrike(Math.round(r.plan!.target1))}</b>}
+          </span>
+        </div>
+      ) : <div />}
+
+      <div className="bt-signal__result">
+        <span>{waiting ? 'Current' : r.outcome === 'NOT_TRIGGERED' || r.outcome === 'EXPIRED' ? 'Expired' : 'Result'}</span>
+        <b className={cn(went === true && 'is-up', went === false && 'is-down')}>
+          {r.outcome === 'NOT_TRIGGERED' ? '0 pts'
+            : move === null ? '—'
+              : `${move > 0 ? '+' : move < 0 ? '−' : ''}${Math.abs(Math.round(move)).toLocaleString('en-US')} pts`}
+        </b>
+      </div>
+    </li>
+  );
+}
+
 /** Five calls a page: the newest is the one being looked for. */
 const PAGE = 5;
 
@@ -365,97 +462,10 @@ function History({ rows, rate, spot }: {
           View all <ChevronRight size={12} aria-hidden />
         </button>
       </h4>
-      <ul>
-        {shown.map((r, i) => {
-          /*
-           * Where the call got to.
-           *
-           * A row answers four questions in the order they are asked: what was
-           * called, did it trigger, where did it end, and what did that cost or
-           * make. The trigger comes first because until price reaches it there
-           * is no trade -- which is the whole reason this list stopped saying
-           * "wrong" for setups that never happened.
-           */
-          const after = r.resolvedClose ?? rows[at * PAGE + i - 1]?.close ?? spot ?? null;
-          const move = r.movePts ?? (after === null ? null : Math.round(after - r.close));
-          const went = move === null || r.side === null ? null
-            : (r.side === 'UP' ? move > 0 : move < 0);
-          const waiting = r.outcome === null;
-          const toTrigger = r.plan && after !== null ? Math.round(Math.abs(r.plan.trigger - after)) : null;
-          const status = outcomeWord(r.outcome);
-          // The furthest price got, or where it is now while the call runs.
-          const track = r.plan ? trackFor({
-            side: r.side, trigger: r.plan.trigger, target: r.plan.target1,
-            price: after, outcome: r.outcome ?? null,
-          }) : null;
-          return (
-            <li key={r.id} data-outcome={r.outcome ?? 'WAITING'}>
-              <div className="bt-market-state__hist-line">
-                <span className="bt-market-state__hist-at">{IST.format(r.at)}</span>
-                {r.side === 'UP' ? <ArrowUpRight size={14} className="is-up" aria-hidden />
-                  : r.side === 'DOWN' ? <ArrowDownRight size={14} className="is-down" aria-hidden />
-                    : <Minus size={14} aria-hidden />}
-                <span className="bt-market-state__hist-what">
-                  {STATE_WORDS[r.event]?.title ?? r.event} <em>({r.confidence})</em>
-                </span>
-                <span className="bt-market-state__hist-tf">{r.tf}</span>
-                <span className={cn('bt-market-state__hist-out', `is-${(r.outcome ?? 'waiting').toLowerCase()}`)}>
-                  {status}
-                </span>
-              </div>
-
-              {r.plan ? (
-                <div className="bt-market-state__hist-plan">
-                  <span><em>Trigger</em><b>{fmtStrike(Math.round(r.plan.trigger))}</b></span>
-                  <span><em>Target</em><b>{fmtStrike(Math.round(r.plan.target1))}</b></span>
-                  <span><em>Stop</em><b>{fmtStrike(Math.round(r.plan.invalidation))}</b></span>
-                  {/* Waiting on the trigger is a distance, not a verdict. */}
-                  {waiting && toTrigger !== null ? (
-                    <span className="bt-market-state__hist-far">{toTrigger} pts to trigger</span>
-                  ) : r.outcome === 'NOT_TRIGGERED' ? (
-                    <span className="bt-market-state__hist-far">Never triggered</span>
-                  ) : null}
-                </div>
-              ) : null}
-
-              {/*
-                The track: trigger at one end, target at the other, a dot where
-                price reached. One glance answers what the three numbers above
-                answer slowly -- did it trigger, how far did it get, how did it
-                end. The arithmetic is in `signal-track.ts`, because a dot on
-                the wrong side of a trigger is a row that says the opposite of
-                the truth.
-              */}
-              {track ? (
-                <div className={cn('bt-market-state__track', `is-${track.tone}`)}
-                  title={track.reached ? `${Math.round(track.at * 100)}% of the way to target` : `${track.shortBy} points short of the trigger`}>
-                  <span className="bt-market-state__track-line" aria-hidden>
-                    <i style={{ width: `${Math.round(track.at * 100)}%` }} />
-                    <em style={{ left: `${Math.round(track.at * 100)}%` }} />
-                  </span>
-                  <span className="bt-market-state__track-ends" aria-hidden>
-                    <b>{fmtStrike(Math.round(r.plan!.trigger))}</b>
-                    <b>{fmtStrike(Math.round(r.plan!.target1))}</b>
-                  </span>
-                </div>
-              ) : null}
-
-              <div className="bt-market-state__hist-line is-prices">
-                <span>
-                  BTC {fmtStrike(Math.round(r.close))}
-                  {after === null ? null : <> → {fmtStrike(Math.round(after))}</>}
-                </span>
-                <span className={cn('bt-market-state__hist-pts',
-                  went === true && 'is-up', went === false && 'is-down')}
-                  title="BTC index points between this call and the next one — the underlying, not option premium">
-                  {r.outcome === 'NOT_TRIGGERED' ? '0 pts'
-                    : move === null ? '—'
-                      : `${waiting ? 'now ' : 'moved '}${move > 0 ? '+' : move < 0 ? '−' : ''}${Math.abs(Math.round(move)).toLocaleString('en-US')} pts`}
-                </span>
-              </div>
-            </li>
-          );
-        })}
+      <ul className="bt-signals">
+        {shown.map((r, i) => (
+          <SignalRow key={r.id} row={r} before={shownRows[i + 1] ?? null} spot={spot} />
+        ))}
       </ul>
 
       {/* Five at a time, newest first. Ten rows of small print is a wall
@@ -492,17 +502,9 @@ function History({ rows, rate, spot }: {
             {[...new Set(rows.map((r) => istDay(r.at)))].map((day) => (
               <section key={day}>
                 <h5>{day}</h5>
-                <ul>
-                  {rows.filter((r) => istDay(r.at) === day).map((r) => (
-                    <li key={r.id}>
-                      <span className="bt-market-state__hist-at">{IST.format(r.at)}</span>
-                      <span className="bt-market-state__hist-what">
-                        {STATE_WORDS[r.event]?.title ?? r.event} <em>({r.confidence})</em>
-                      </span>
-                      <span className={cn('bt-market-state__hist-out', `is-${(r.outcome ?? 'waiting').toLowerCase()}`)}>
-                        {outcomeWord(r.outcome)}
-                      </span>
-                    </li>
+                <ul className="bt-signals">
+                  {rows.filter((r) => istDay(r.at) === day).map((r, i, list) => (
+                    <SignalRow key={r.id} row={r} before={list[i + 1] ?? null} spot={spot} />
                   ))}
                 </ul>
               </section>

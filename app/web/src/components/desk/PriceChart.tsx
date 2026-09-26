@@ -196,6 +196,27 @@ export function PriceChart({
     candleRef.current = candles;
     volumeRef.current = volume;
     markersRef.current = createSeriesMarkers(candles, []);
+    /*
+     * Seed the series here, not only in the data effect.
+     *
+     * The plot is not rendered at all until there are bars, so on a cold load
+     * the chart is created *after* `bars` last changed -- and the effect that
+     * feeds it is keyed on `bars`, so it would not run again. The result was
+     * a chart with a canvas and nothing on it: the box drawn, the note under
+     * it drawn, and no candles. Whatever is in hand at creation goes in now.
+     */
+    if (bars.length) {
+      candles.setData(bars.map((b) => ({
+        time: b.time as UTCTimestamp, open: b.open, high: b.high, low: b.low, close: b.close,
+      })));
+      volume.setData(bars.map((b) => ({
+        time: b.time as UTCTimestamp,
+        value: b.volume,
+        color: b.close >= b.open ? 'rgba(38,161,123,0.45)' : 'rgba(226,80,79,0.45)',
+      })));
+      const last = bars.length - 1;
+      chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, last - OPENING_BARS), to: last + RIGHT_BARS });
+    }
     setSize({ width: host.clientWidth, height: host.clientHeight });
 
     const ro = new ResizeObserver(([entry]) => {
@@ -217,7 +238,12 @@ export function PriceChart({
       volumeRef.current = null;
       markersRef.current = null;
     };
-  }, [open, error]);
+    /*
+     * `bars.length === 0` is a dependency because the plot -- and so the host
+     * element -- only exists once there are bars. Without it the chart is
+     * built at most once, before the element it draws into is on the page.
+     */
+  }, [open, error, bars.length === 0]);
 
   // Zoom and pan follow the lock, without tearing the chart down.
   useEffect(() => {

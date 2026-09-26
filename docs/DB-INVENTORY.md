@@ -380,6 +380,18 @@ added). Without them a row lists a call and cannot answer which readings ever
 paid, since none of it can be reconstructed from bars afterwards. Kept 90 days.
 It is what makes the card's score answerable: see docs/MARKET-STATE.md.
 
+`index_1m` (`market/index-1m.ts`, migration `market-013`): BTC, once a minute,
+and nothing else. Every other recorder keeps a *reading* and carries the price
+as a column at its own cadence, so "what did BTC do between 13:18 and 13:33"
+needed a round trip to Delta and a signal's points moved could not be checked
+after the fact at all. The minute is the primary key, so a restart, a double
+timer or a replayed snapshot cannot write it twice, and a minute with no price
+is left as a hole rather than filled with the last one -- inventing a tick that
+never happened is worse than a gap. Kept a year: half a million rows of three
+numbers. `moveOver()` gives the points and percent between two moments **with
+the minutes it actually covered**, because a move measured over 40 minutes of
+an hour is a different figure from one measured over the hour.
+
 `shock_snapshots` (`market/shock-history.ts`, migration `market-012`): the
 big-move catch, written down. Every sudden-move reading the server takes on the
 shortest window, kept when it says something new -- the band changed, the score
