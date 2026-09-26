@@ -1,7 +1,7 @@
 import type {
   AddWorking, ExchangeOrder, OptionSide, OrderRole, PlaceOrderRequest, ProductSpec, Quote, TradeEvent, TradeState,
 } from './types.js';
-import { CHASE_STEPS, protectionFor, type ExitAsk } from './order-plan.js';
+import { CHASE_STEPS, exitPriceProblem, protectionFor, type ExitAsk } from './order-plan.js';
 import type { Candle } from '../market/delta.js';
 import { applyEvent, initialTrade, isDone, protectionSize } from './machine.js';
 import {
@@ -173,6 +173,15 @@ export type TradePlan = {
    */
   monitorOn?: 'ltp' | 'close';
   /**
+   * Why the exits could not be anchored to the fill, when they could not.
+   *
+   * Set only where a fixed target or stop was overtaken by the entry itself.
+   * It is on the plan rather than in a log line because the screen has to be
+   * able to say it: an unprotected position that looks protected is the worst
+   * thing this engine can show.
+   */
+  exitProblem?: string;
+  /**
    * The exits as they were asked for -- a share or a distance -- rather than as
    * prices. When present, `takeProfitPrice` and `stopPrice` are worked out from
    * the ACTUAL average fill each time protection is reconciled (`anchorExits`),
@@ -201,6 +210,39 @@ export function anchorExits(rec: TradeRecord): TradeRecord {
   const ask = rec.plan.exitAsk;
   const avg = rec.state.entryAvgPrice;
   if (!ask || avg === null || !(avg > 0)) return rec;
+
+  /*
+   * A fixed price that the fill has overtaken is not a stop.
+   *
+   * `stopAt: 70` means seventy whatever the entry -- which is what a strategy
+   * wants right up until the entry fills at seventy-five. Then the "stop" sits
+   * *under* the position: `stopIfReached` sees the mark already past it and
+   * closes at the market within a second of entering, and the day's record
+   * shows a trade that opened and shut for a loss with nobody able to say why.
+   * The same in reverse for a fixed target the fill has already passed.
+   *
+   * The engine refuses to anchor to a broken price rather than acting on it.
+   * `protect()` then reports `no stop`, loudly, which is the true state: this
+   * position is not protected and a person has to decide, because every
+   * automatic answer here -- move the stop, close the trade, ignore it --
+   * spends the operator's money on a guess about what they meant.
+   */
+  const broken = exitPriceProblem(avg, ask);
+  if (broken !== null) {
+    return {
+      ...rec,
+      plan: {
+        ...rec.plan,
+        // Keep whichever leg is still valid; drop the one the fill overtook.
+        takeProfitPrice: (ask.takeProfitAt ?? 0) > 0 && !(ask.takeProfitAt! < avg)
+          ? null : rec.plan.takeProfitPrice,
+        stopPrice: (ask.stopAt ?? 0) > 0 && !(ask.stopAt! > avg) ? null : rec.plan.stopPrice,
+        exitProblem: broken,
+      },
+      state: { ...rec.state, wantsProtection: false },
+    };
+  }
+
   const p = protectionFor(avg, ask);
   const tp = p.takeProfitPrice === undefined ? rec.plan.takeProfitPrice : p.takeProfitPrice;
   const sl = p.stopPrice === undefined ? rec.plan.stopPrice : p.stopPrice;
