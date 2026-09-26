@@ -278,7 +278,8 @@ test('[critical] a fixed stop under the actual fill is refused, not acted on', (
 
   const after = anchorExits(rec);
   assert.equal(after.plan.stopPrice, null, 'a stop under the entry is no stop');
-  assert.equal(after.state.wantsProtection, false);
+  assert.equal(after.state.wantsProtection, true,
+    'the strategy asked for a stop and has none: that is what the alarm is for');
   assert.match(after.plan.exitProblem ?? '', /must be over the 75 entry/);
 });
 

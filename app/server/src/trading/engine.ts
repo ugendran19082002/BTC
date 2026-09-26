@@ -239,7 +239,13 @@ export function anchorExits(rec: TradeRecord): TradeRecord {
         stopPrice: (ask.stopAt ?? 0) > 0 && !(ask.stopAt! > avg) ? null : rec.plan.stopPrice,
         exitProblem: broken,
       },
-      state: { ...rec.state, wantsProtection: false },
+      /*
+       * `wantsProtection` stays as it was. The strategy did ask for a stop and
+       * there is none on -- that is exactly the state the alarm exists for.
+       * Turning it off here would leave an unprotected position looking like
+       * a trade that chose to run without one.
+       */
+      state: rec.state,
     };
   }
 
@@ -1030,7 +1036,19 @@ export class TradeEngine {
     const size = protectionSize(rec.state);
     if (size === 0) return rec;
     if (rec.plan.takeProfitPrice === null && rec.plan.stopPrice === null) {
-      // Nothing wanted. Anything still resting is left over and has to go.
+      /*
+       * A price the fill overtook is not "nothing wanted": it is a stop that
+       * cannot be placed. Say so once, loudly, before clearing the book --
+       * `wantsProtection` is still true, so the machine raises the alarm and
+       * the phone call goes out.
+       */
+      if (rec.plan.exitProblem && rec.state.wantsProtection
+        && !rec.events.some((e) => e.t === 'protection_failed' && e.reason === rec.plan.exitProblem)) {
+        rec = await this.commit(rec, {
+          t: 'protection_failed', reason: rec.plan.exitProblem, at: this.now(),
+        });
+      }
+      // Nothing placeable. Anything still resting is left over and has to go.
       return this.clearProtection(rec);
     }
 
