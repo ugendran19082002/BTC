@@ -57,19 +57,27 @@ export function KpiStrip({ data, spot, iv, perp, spark, now = Date.now() }: {
 /** CE against PE in one panel: premium pressure, OI build-up, IV, touch odds, the tape -- and where the pressure is. Its own panel, so the KPI row keeps one height. */
 export function OptionBiasPanel({ bias }: { bias: OptionBias }) {
   const arrow = (v: number | null, up = 'up', down = 'down') => (v === null ? <span className="ov-muted">—</span> : <span className={v > 0 ? `ov-${up}` : v < 0 ? `ov-${down}` : 'ov-muted'}>{v > 0 ? '↑' : v < 0 ? '↓' : '→'} {fmt.signed(v, 1)}%</span>);
-  const col = (b: OptionBias['ce']) => (
-    <div className={`ov-bias-col ov-bias-${b.side.toLowerCase()}`}>
-      <b>{b.side}</b>
-      <span title="The at-the-money option's mark against an hour ago">Premium {arrow(b.premiumChangePct)}</span>
-      <span title="The hour's open-interest change as a share of the side's OI">OI {arrow(b.oiChangePct)}</span>
-      <span title="The at-the-money option's implied volatility">IV {b.iv === null ? '—' : `${(b.iv * 100).toFixed(1)}%`}</span>
-      <span title="Probability of touch on the desk's pick for this side">Touch {fmt.pct(b.pTouch)}</span>
-      <span title="The options' tape on this side over the hour: who crossed the spread">Flow {b.flow === null ? <span className="ov-muted">—</span> : <span className={b.flow === 'BUY' ? 'ov-up' : b.flow === 'SELL' ? 'ov-down' : 'ov-muted'}>{b.flow}</span>}</span>
-      <Tag tone={b.strength === 'STRONG' ? 'down' : b.strength === 'WEAK' ? 'up' : 'muted'}>{b.strength}</Tag>
-    </div>
-  );
+  const col = (b: OptionBias['ce']) => {
+    const statusLabel = b.strength !== 'NEUTRAL' ? b.strength
+      : b.score > 0 ? 'MILD (+1)' : b.score < 0 ? 'MILD (−1)' : 'NEUTRAL';
+    const tagTone = b.strength === 'STRONG' ? 'down'
+      : b.strength === 'WEAK' ? 'up'
+        : b.score !== 0 ? 'warn' : 'muted';
+    return (
+      <div className={`ov-bias-col ov-bias-${b.side.toLowerCase()}`}>
+        <b>{b.side}</b>
+        <span title="The at-the-money option's mark against an hour ago">Premium {arrow(b.premiumChangePct)}</span>
+        <span title="The hour's open-interest change as a share of the side's OI">OI {arrow(b.oiChangePct)}</span>
+        <span title="The at-the-money option's implied volatility">IV {b.iv === null ? '—' : `${(b.iv * 100).toFixed(1)}%`}</span>
+        <span title="Probability of touch on the desk's pick for this side">Touch {fmt.pct(b.pTouch)}</span>
+        <span title="The options' tape on this side over the hour: who crossed the spread">Flow {b.flow === null ? <span className="ov-muted">—</span> : <span className={b.flow === 'BUY' ? 'ov-up' : b.flow === 'SELL' ? 'ov-down' : 'ov-muted'}>{b.flow}</span>}</span>
+        <Tag tone={tagTone}>{statusLabel}</Tag>
+      </div>
+    );
+  };
+  const isMild = bias.pressureOn && (bias.ce.score === 1 || bias.pe.score === 1);
   return (
-    <Panel title="Option bias · CE / PE" className="ov-bias" right={<small className="ov-muted">Pressure → <b>{bias.pressureOn ?? 'even'}</b></small>}>
+    <Panel title="Option bias · CE / PE" className="ov-bias" right={<small className="ov-muted">Pressure → <b>{bias.pressureOn ? `${bias.pressureOn}${isMild ? ' (mild)' : ''}` : 'even'}</b></small>}>
       <div className="ov-bias-grid" title="Premium rising, OI building and takers buying make a side STRONG — under pressure, dangerous to be short. The reverse makes it WEAK — favourable to a seller.">{col(bias.ce)}{col(bias.pe)}</div>
       <p className="ov-foot">{bias.pressureOn ? `The ${bias.pressureOn} side is the one being bought and built.` : 'Neither side is being pushed.'} Premium and OI over the hour from the board's record; the tape from the options' own prints.</p>
     </Panel>

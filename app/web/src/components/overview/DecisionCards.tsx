@@ -28,9 +28,45 @@ export function DecisionCards({ data, sides, choice, iv, em, mtf, contracts, lev
 }) {
   const ce = sides.find((s) => s.side === 'CE')!, pe = sides.find((s) => s.side === 'PE')!;
   const tone = choice.side === 'NO_TRADE' ? 'down' : choice.side === 'BOTH' ? 'up' : 'accent';
+
+  const allGateNames = ['Direction', 'MTF consensus', 'PoT', 'Distance / EM', 'IV − RV', 'Gamma', 'Liquidity', 'Execution', 'Tail risk', 'Margin'] as const;
+  const failedOnBoth = allGateNames.filter((name) => {
+    const gCe = gate(ce, name), gPe = gate(pe, name);
+    return gCe?.ok === false && gPe?.ok === false;
+  });
+  const failedOnAny = allGateNames.filter((name) => {
+    const gCe = gate(ce, name), gPe = gate(pe, name);
+    return gCe?.ok === false || gPe?.ok === false;
+  });
+  const passedOnAny = allGateNames.filter((name) => {
+    const gCe = gate(ce, name), gPe = gate(pe, name);
+    return gCe?.ok === true || gPe?.ok === true;
+  });
+
+  const primary = failedOnBoth[0] ?? failedOnAny[0] ?? null;
+  const primaryText = primary ? (gate(ce, primary)?.text ?? gate(pe, primary)?.text) : null;
+  const secondary = (failedOnBoth.length > 0 ? failedOnBoth : failedOnAny).slice(1);
+
   return (
     <Panel title="Strategy decision" right={<Tag tone={tone}>Desk side: {choice.side.replace('_', ' ')}</Tag>}>
       <p className="ov-summary"><b>{choice.side === 'NO_TRADE' ? 'No trade' : choice.side === 'BOTH' ? 'Sell both sides' : `Sell ${choice.side}`}</b> — {choice.why}.</p>
+      {choice.side === 'NO_TRADE' && primary ? (
+        <div className="ov-no-trade-blockers" style={{ margin: '8px 0 12px', padding: '10px 14px', background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '6px', fontSize: '12px' }}>
+          <div style={{ color: '#ef4444', fontWeight: 600 }}>
+            ⛔ Primary blocker: {primary} {primaryText ? `— ${primaryText}` : 'FAIL'}
+          </div>
+          {secondary.length > 0 ? (
+            <div style={{ color: '#f87171', marginTop: '3px' }}>
+              Secondary blockers: {secondary.join(', ')} FAIL
+            </div>
+          ) : null}
+          {passedOnAny.length > 0 ? (
+            <div style={{ color: '#9ca3af', marginTop: '3px', fontSize: '11px' }}>
+              Passed: {passedOnAny.join(', ')}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <div className="ov-cards4">
         <SellCard side={ce} data={data} iv={iv} em={em} mtf={mtf} contracts={contracts} leverage={leverage} chosen={choice.side === 'CE' || choice.side === 'BOTH'} onSelect={onSelect} oi={oi} selected={selectedCp === 'C' || (pair?.C !== null && pair?.C !== undefined && pair.C === ce.leg?.strike)} />
         <SellCard side={pe} data={data} iv={iv} em={em} mtf={mtf} contracts={contracts} leverage={leverage} chosen={choice.side === 'PE' || choice.side === 'BOTH'} onSelect={onSelect} oi={oi} selected={selectedCp === 'P' || (pair?.P !== null && pair?.P !== undefined && pair.P === pe.leg?.strike)} />
