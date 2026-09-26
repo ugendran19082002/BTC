@@ -270,6 +270,19 @@ export function hma(xs: readonly number[], n = 16): number | null {
   return wma(raw, raw.length);
 }
 
+/** Average true range in price units. */
+export function atr(bars: readonly Candle[], n = 14): number | null {
+  if (bars.length < n + 1) return null;
+  const trs: number[] = [];
+  for (let i = 1; i < bars.length; i++) {
+    const b = bars[i]!;
+    const a = bars[i - 1]!;
+    trs.push(Math.max(b.high - b.low, Math.abs(b.high - a.close), Math.abs(b.low - a.close)));
+  }
+  const lastN = trs.slice(-n);
+  return mean(lastN);
+}
+
 /**
  * SuperTrend, as a direction rather than a line.
  *
@@ -456,11 +469,22 @@ export function indicators(input: IndicatorInput): Indicator[] {
   if (input.structure) {
     out.push(word('structure', 'Structure', input.structure.label, input.structure.way));
   }
+  const a = atr(input.bars);
+  const fmtDist = (v: number) => {
+    const sign = v >= 0 ? '+' : '−';
+    const pts = Math.abs(Math.round(v)).toLocaleString('en-US');
+    if (a !== null && a > 0) {
+      const atrs = (Math.abs(v) / a).toFixed(2);
+      return `${sign}${pts} pts / ${atrs} ATR`;
+    }
+    return `${sign}${pts} pts`;
+  };
+
   out.push(num('resistance', 'To resistance', input.toResistance ?? null,
-    (v) => `${v >= 0 ? '+' : '−'}${Math.abs(Math.round(v)).toLocaleString('en-US')}`,
+    fmtDist,
     (v) => (Math.abs(v) <= 50 ? ['At the level', 'NEUTRAL'] : ['Above', 'BEARISH']), () => null));
   out.push(num('support', 'To support', input.toSupport ?? null,
-    (v) => `${v >= 0 ? '+' : '−'}${Math.abs(Math.round(v)).toLocaleString('en-US')}`,
+    fmtDist,
     (v) => (Math.abs(v) <= 50 ? ['At the level', 'NEUTRAL'] : ['Below', 'BULLISH']), () => null));
 
   out.push(num('rsi', 'RSI (14)', input.rsi14, (v) => v.toFixed(0),
