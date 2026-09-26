@@ -137,6 +137,8 @@ export type MarketState = {
    * under it that a person can act on without reading the rest.
    */
   insight: string;
+  /** Actionable execution guidance: whether to enter on close or wait for micro-retest */
+  executionNote: string | null;
 };
 
 export type Plan = {
@@ -511,6 +513,24 @@ export function planFor(side: Side, level: number, atr: number | null): Plan | n
   };
 }
 
+export function executionNoteFor(stage: EventStage, volumeRatio: number | null): string | null {
+  if (stage === 'CONFIRMED') {
+    return volumeRatio && volumeRatio >= 2.0
+      ? 'Strong momentum (volume > 2x) · Direct entry favorable'
+      : 'Confirmed on close · Wait for 1m micro-retest near level for optimal R:R';
+  }
+  if (stage === 'RETEST') {
+    return 'Retest holding · Prime entry zone with tight invalidation';
+  }
+  if (stage === 'CANDIDATE') {
+    return 'Unproven candle · Await completed close before entry';
+  }
+  if (stage === 'FAILED') {
+    return 'Break refused · Counter-trend scalp only or wait for reclaim';
+  }
+  return null;
+}
+
 // ------------------------------------------------------------------ the card
 
 function build(
@@ -546,6 +566,7 @@ function build(
     volumeRead: read,
     words,
     insight: insightFor(stage, side, plans, tfWords(input)),
+    executionNote: executionNoteFor(stage, ratio),
   };
 }
 
@@ -663,6 +684,7 @@ function quiet(
     parts: { levelBreak: 0, volume: 0, candle: 0, retest: 0, flow: 0, mtf: 0, regime: 0 },
     checks: [], plan: null, plans: { up: null, down: null }, volumeRatio: ratio, volumeRead: read, words,
     insight: 'No level near enough to trade against yet.',
+    executionNote: null,
   };
 }
 

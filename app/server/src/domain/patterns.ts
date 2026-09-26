@@ -408,6 +408,7 @@ export function relevant(all: readonly Pattern[], event: MarketEvent, side: Side
   function score(p: Pattern): number {
     let n = 0;
     if (p.kind === 'structure') n += 3;
+    if (p.name.includes('Order Block') || p.name.includes('FVG')) n += 2;
     // While a level is being tested, the pattern that contradicts the push is
     // the one that matters: that is what a rejection looks like as it forms.
     if (wants && p.bias === wants) n += testing ? 1 : 2;
@@ -557,6 +558,82 @@ export function marketStructure(input: { bars: readonly Candle[]; atr: number | 
     if (Math.abs(move) >= input.atr * 1.5 && driftRange <= Math.abs(move) * 0.5) {
       out.push(one2(move > 0 ? 'Bull Flag' : 'Bear Flag', move > 0 ? 'BULLISH' : 'BEARISH',
         `${fmt(Math.abs(move))} in five bars, and it has given almost none of it back`));
+    }
+  }
+
+  // Fair Value Gaps (FVG) / Imbalances:
+  // 3-bar pattern where the wicks of bar 1 and bar 3 do not overlap, creating an institutional imbalance.
+  const fvgTol = Math.max((input.atr ?? 0) * 0.1, 1);
+  for (let i = bars.length - 3; i >= Math.max(0, bars.length - 15); i--) {
+    const b0 = bars[i]!, b1 = bars[i + 1]!, b2 = bars[i + 2]!;
+    if (b1.close > b1.open && b2.low > b0.high + fvgTol) {
+      const later = bars.slice(i + 3);
+      const mitigated = later.some((b) => b.low <= b0.high);
+      if (!mitigated) {
+        const testing = last.low <= b2.low && last.high >= b0.high;
+        out.push(at(
+          testing ? `Bullish FVG Test (${fmt(b0.high)}–${fmt(b2.low)})` : `Bullish FVG (${fmt(b0.high)}–${fmt(b2.low)})`,
+          'BULLISH',
+          testing ? `Price currently testing unmitigated buyer imbalance at ${fmt(b0.high)}–${fmt(b2.low)}`
+            : `Unmitigated buyer imbalance zone at ${fmt(b0.high)}–${fmt(b2.low)}`,
+          agoOf(i + 1),
+        ));
+        break;
+      }
+    }
+    if (b1.close < b1.open && b0.low > b2.high + fvgTol) {
+      const later = bars.slice(i + 3);
+      const mitigated = later.some((b) => b.high >= b0.low);
+      if (!mitigated) {
+        const testing = last.high >= b2.high && last.low <= b0.low;
+        out.push(at(
+          testing ? `Bearish FVG Test (${fmt(b2.high)}–${fmt(b0.low)})` : `Bearish FVG (${fmt(b2.high)}–${fmt(b0.low)})`,
+          'BEARISH',
+          testing ? `Price currently testing unmitigated seller imbalance at ${fmt(b2.high)}–${fmt(b0.low)}`
+            : `Unmitigated seller imbalance zone at ${fmt(b2.high)}–${fmt(b0.low)}`,
+          agoOf(i + 1),
+        ));
+        break;
+      }
+    }
+  }
+
+  // Order Blocks (OB):
+  // The origin counter-trend candle before an aggressive expansion (>= 1.2 * ATR).
+  if (input.atr && input.atr > 0) {
+    for (let i = bars.length - 2; i >= Math.max(1, bars.length - 20); i--) {
+      const impulseBar = bars[i]!;
+      const obBar = bars[i - 1]!;
+      if (obBar.close < obBar.open && (impulseBar.close - impulseBar.open) >= input.atr * 1.2 && impulseBar.close > obBar.high) {
+        const later = bars.slice(i + 1);
+        const broken = later.some((b) => b.close < obBar.low);
+        if (!broken) {
+          const inZone = last.low <= obBar.high && last.close >= obBar.low;
+          out.push(at(
+            inZone ? `Bullish Order Block Test (${fmt(obBar.low)}–${fmt(obBar.high)})` : `Bullish Order Block (${fmt(obBar.low)}–${fmt(obBar.high)})`,
+            'BULLISH',
+            inZone ? `Price testing institutional demand base at ${fmt(obBar.low)}–${fmt(obBar.high)}`
+              : `Institutional demand base before breakout at ${fmt(obBar.low)}–${fmt(obBar.high)}`,
+            agoOf(i - 1),
+          ));
+          break;
+        }
+      }
+      if (obBar.close > obBar.open && (impulseBar.open - impulseBar.close) >= input.atr * 1.2 && impulseBar.close < obBar.low) {
+        const later = bars.slice(i + 1);
+        const broken = later.some((b) => b.close > obBar.high);
+        if (!broken) {
+          const inZone = last.high >= obBar.low && last.close <= obBar.high;
+          out.push(at(
+            inZone ? `Bearish Order Block Test (${fmt(obBar.low)}–${fmt(obBar.high)})` : `Bearish Order Block (${fmt(obBar.low)}–${fmt(obBar.high)})`,
+            'BEARISH',
+            inZone ? `Price testing institutional supply base at ${fmt(obBar.low)}–${fmt(obBar.high)}`
+              : `Institutional supply base before breakdown at ${fmt(obBar.low)}–${fmt(obBar.high)}`,
+            agoOf(i - 1),
+          ));
+          break;
+        }
+      }
     }
   }
 

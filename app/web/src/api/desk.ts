@@ -243,6 +243,7 @@ export type MarketStateResponse = {
     words: string;
     /** The whole thing as one sentence, both branches in it. */
     insight: string;
+    executionNote?: string | null;
   };
   patterns: { all: StatePattern[]; shown: StatePattern[] };
   /** The lines through the last swings, in bars back from the newest bar. */

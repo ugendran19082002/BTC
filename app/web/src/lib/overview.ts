@@ -887,15 +887,39 @@ export function dataFreshness(f: Freshness | null | undefined, nowMs: number, li
 
 // ------------------------------------------------- multi-timeframe consensus
 
+export type MtfTier = 'macro' | 'setup' | 'trigger' | 'execution';
+
+export function tierOfTf(min: number): MtfTier {
+  if (min >= 240) return 'macro';
+  if (min >= 30) return 'setup';
+  if (min >= 5) return 'trigger';
+  return 'execution';
+}
+
 export type MtfRow = {
   tf: string;
+  tier: MtfTier;
   trend: 'up' | 'down' | 'side' | null;
   momentum: 'bullish' | 'bearish' | 'neutral' | null;
   /** The measured share of windows over this horizon that closed higher. */
   pUp: number | null;
   signal: '↑' | '↓' | '→' | null;
 };
-export type MtfConsensus = { rows: MtfRow[]; up: number; down: number; side: number; scored: number; way: 'UP' | 'DOWN' | 'SIDE' | null; text: string };
+export type MtfConsensus = {
+  rows: MtfRow[];
+  up: number;
+  down: number;
+  side: number;
+  scored: number;
+  way: 'UP' | 'DOWN' | 'SIDE' | null;
+  text: string;
+  tiers: {
+    macro: 'UP' | 'DOWN' | 'SIDE' | null;
+    setup: 'UP' | 'DOWN' | 'SIDE' | null;
+    trigger: 'UP' | 'DOWN' | 'SIDE' | null;
+  };
+  tierSummary: string;
+};
 
 /**
  * One row per timeframe -- the bars' trend (EMA stack), RSI momentum and the
@@ -908,8 +932,9 @@ export function mtfConsensus(market: MarketRead | null, outlook: Outlook): MtfCo
   const byMin = new Map(outlook.rows.map((r) => [r.minutes, r]));
   const labels = [...new Set([...tfs.map((t) => t.tf), ...outlook.rows.map((r) => r.label)])].filter((l) => l in mins).sort((a, b) => mins[a]! - mins[b]!);
   const rows: MtfRow[] = labels.map((tf) => {
+    const min = mins[tf]!;
     const t = tfs.find((x) => x.tf === tf) ?? null;
-    const r = byMin.get(mins[tf]!) ?? null;
+    const r = byMin.get(min) ?? null;
     const trend = t ? (t.trend === 1 ? 'up' : t.trend === -1 ? 'down' : 'side') : null;
     const momentum = t?.rsi14 == null ? null : t.rsi14 >= 55 ? 'bullish' : t.rsi14 <= 45 ? 'bearish' : 'neutral';
     const pUp = r?.pUp ?? null;
@@ -917,12 +942,45 @@ export function mtfConsensus(market: MarketRead | null, outlook: Outlook): MtfCo
     const votes = [trend === 'up' ? 1 : trend === 'down' ? -1 : 0, momentum === 'bullish' ? 1 : momentum === 'bearish' ? -1 : 0, pUp === null ? 0 : pUp > 0.55 ? 1 : pUp < 0.45 ? -1 : 0];
     const readable = trend !== null || momentum !== null || pUp !== null;
     const sum = votes.reduce((a, b) => a + b, 0);
-    return { tf, trend, momentum, pUp, signal: !readable ? null : sum > 0 ? '↑' : sum < 0 ? '↓' : '→' };
+    return { tf, tier: tierOfTf(min), trend, momentum, pUp, signal: !readable ? null : sum > 0 ? '↑' : sum < 0 ? '↓' : '→' };
   });
   const up = rows.filter((r) => r.signal === '↑').length, down = rows.filter((r) => r.signal === '↓').length, side = rows.filter((r) => r.signal === '→').length;
   const scored = up + down + side;
   const way = scored === 0 ? null : up > scored / 2 ? 'UP' : down > scored / 2 ? 'DOWN' : 'SIDE';
-  return { rows, up, down, side, scored, way, text: scored === 0 ? 'no timeframe readable' : `${way === 'DOWN' ? down : way === 'SIDE' ? side : up}/${scored} ${way}` };
+
+  const tierWay = (tier: MtfTier): 'UP' | 'DOWN' | 'SIDE' | null => {
+    const list = rows.filter((r) => r.tier === tier && r.signal !== null);
+    if (!list.length) return null;
+    const u = list.filter((r) => r.signal === '↑').length;
+    const d = list.filter((r) => r.signal === '↓').length;
+    return u > d ? 'UP' : d > u ? 'DOWN' : 'SIDE';
+  };
+
+  const tiers = {
+    macro: tierWay('macro'),
+    setup: tierWay('setup'),
+    trigger: tierWay('trigger'),
+  };
+
+  const activeTiers = [tiers.macro, tiers.setup, tiers.trigger].filter((x): x is 'UP' | 'DOWN' | 'SIDE' => x !== null);
+  const downTiers = activeTiers.filter((t) => t === 'DOWN').length;
+  const upTiers = activeTiers.filter((t) => t === 'UP').length;
+  const tierSummary = activeTiers.length === 0 ? 'No tiers active'
+    : downTiers >= 2 ? `${downTiers}/${activeTiers.length} Tiers Bearish`
+      : upTiers >= 2 ? `${upTiers}/${activeTiers.length} Tiers Bullish`
+        : 'Tiers Mixed / Neutral';
+
+  return {
+    rows,
+    up,
+    down,
+    side,
+    scored,
+    way,
+    text: scored === 0 ? 'no timeframe readable' : `${way === 'DOWN' ? down : way === 'SIDE' ? side : up}/${scored} ${way}`,
+    tiers,
+    tierSummary,
+  };
 }
 
 // ------------------------------------------------- support and resistance

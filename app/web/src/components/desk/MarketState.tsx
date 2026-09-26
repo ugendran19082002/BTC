@@ -210,6 +210,11 @@ export function MarketState({
             ) : null}
 
             <Plans plans={s.plans} level={s.level} distance={s.distance} against={s.against} isRange={isRange} />
+            {s.executionNote ? (
+              <div className="flex items-center gap-2 rounded-md border border-sky-500/30 bg-sky-500/10 px-3 py-1.5 text-xs text-sky-400 mt-2">
+                <span>🎯 <b>Execution Timing:</b> {s.executionNote}</span>
+              </div>
+            ) : null}
 
             {extra.map((e) => (
               <section key={e.label} className="bt-market-state__extra" aria-label={e.label}>

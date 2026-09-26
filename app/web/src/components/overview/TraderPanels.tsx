@@ -96,6 +96,24 @@ export function MovementPanel({ data, em, activeMin, mtf, movement }: { data: Ch
   return (
     <Panel title="Multi-timeframe" right={<Tag tone={mtf.way === 'UP' ? 'up' : mtf.way === 'DOWN' ? 'down' : 'muted'}>MTF consensus {mtf.text}</Tag>}>
       <p className="ov-summary">{v.text}.</p>
+      {mtf.tiers ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', margin: '4px 0 10px', fontSize: '11px' }}>
+          <span style={{ color: 'var(--muted, #9ca3af)', fontWeight: 600 }}>Tiers:</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 8px', borderRadius: '4px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <span style={{ color: 'var(--muted, #9ca3af)' }}>Macro (4H/1D):</span>
+            <Tag tone={mtf.tiers.macro === 'UP' ? 'up' : mtf.tiers.macro === 'DOWN' ? 'down' : 'muted'}>{mtf.tiers.macro ?? '—'}</Tag>
+          </span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 8px', borderRadius: '4px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <span style={{ color: 'var(--muted, #9ca3af)' }}>Setup (1H/30M):</span>
+            <Tag tone={mtf.tiers.setup === 'UP' ? 'up' : mtf.tiers.setup === 'DOWN' ? 'down' : 'muted'}>{mtf.tiers.setup ?? '—'}</Tag>
+          </span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 8px', borderRadius: '4px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <span style={{ color: 'var(--muted, #9ca3af)' }}>Trigger (5M/15M):</span>
+            <Tag tone={mtf.tiers.trigger === 'UP' ? 'up' : mtf.tiers.trigger === 'DOWN' ? 'down' : 'muted'}>{mtf.tiers.trigger ?? '—'}</Tag>
+          </span>
+          <span style={{ marginLeft: 'auto', color: 'var(--muted, #9ca3af)', fontWeight: 500 }}>{mtf.tierSummary}</span>
+        </div>
+      ) : null}
       <div className="ov-chain-wrap">
         <table className="ov-mini ov-mtf">
           <thead><tr>
@@ -107,13 +125,27 @@ export function MovementPanel({ data, em, activeMin, mtf, movement }: { data: Ch
           </tr></thead>
           <tbody>
             {labels.map((tf) => {
+              const tfMin = mins[tf] ?? 0;
               const m = mtf.rows.find((r) => r.tf === tf) ?? null;
               const h = rows.find((r) => r.label === tf) ?? null;
-              const t = movement?.find((r) => r.minutes === mins[tf]) ?? null;
+              const t = movement?.find((r) => r.minutes === tfMin) ?? null;
               const pressure = t?.type ? TYPE_PRESSURE[t.type] ?? null : null;
               return (
-                <tr key={tf} className={mins[tf] === activeMin ? 'ov-atm' : undefined}>
-                  <td>{tf}{mins[tf] === activeMin ? ' ◆' : ''}</td>
+                <tr key={tf} className={tfMin === activeMin ? 'ov-atm' : undefined}>
+                  <td>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                      <span style={{
+                        fontSize: '9px', textTransform: 'uppercase', padding: '1px 4px', borderRadius: '3px',
+                        background: tfMin >= 240 ? 'rgba(168, 85, 247, 0.12)' : tfMin >= 30 ? 'rgba(59, 130, 246, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                        color: tfMin >= 240 ? '#c084fc' : tfMin >= 30 ? '#60a5fa' : '#fbbf24',
+                        border: '1px solid currentColor',
+                        fontWeight: 600,
+                      }}>
+                        {tfMin >= 240 ? 'Macro' : tfMin >= 30 ? 'Setup' : 'Trigger'}
+                      </span>
+                      {tf}{tfMin === activeMin ? ' ◆' : ''}
+                    </span>
+                  </td>
                   <td className={tone(m?.signal)}>{m?.signal === '↑' ? 'UP' : m?.signal === '↓' ? 'DOWN' : m?.signal === '→' ? 'SIDE' : '—'}</td>
                   <td className={t?.direction === 'UP' ? 'ov-up' : t?.direction === 'DOWN' ? 'ov-down' : 'ov-muted'} title={t ? `price ${t.pricePct === null ? '—' : `${fmt.signed(t.pricePct, 2)}%`} · OI ${t.oiPct === null ? '—' : `${fmt.signed(t.oiPct, 2)}%`} · volume ${t.volumeRatio === null ? '—' : `${t.volumeRatio.toFixed(1)}×`} · tape ${t.flow?.toLowerCase() ?? '—'}` : undefined}>
                     {t?.type ? TYPE_LABEL[t.type] : '—'}{t?.strength && t.type !== 'MIXED' ? <small className="ov-muted"> · {t.strength.toLowerCase()}</small> : null}{t?.flow === 'CONFIRMS' ? <small className="ov-up"> ✓</small> : t?.flow === 'DIVERGES' ? <small className="ov-down"> ✕</small> : null}

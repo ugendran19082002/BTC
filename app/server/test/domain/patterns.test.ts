@@ -304,3 +304,34 @@ test('a high wave candle is long wicks both ways, not a spinning top', () => {
   assert.ok(found.includes('High Wave Candle'), found.join(', '));
   assert.ok(!found.includes('Spinning Top'), 'the louder name wins where both would fit');
 });
+
+test('[critical] bullish and bearish Fair Value Gaps (FVG) identify unmitigated imbalances', () => {
+  const base = Array.from({ length: 10 }, (_, i) => c(100 + i, 102 + i, 99 + i, 101 + i));
+  const b0 = c(100, 102, 99, 101);
+  const b1 = c(102, 122, 102, 120);
+  const b2 = c(120, 125, 110, 122);
+  const found = names(marketStructure({ bars: [...base, b0, b1, b2], atr: 10 }));
+  assert.ok(found.some((n) => n.startsWith('Bullish FVG')), found.join(', '));
+
+  const bDown0 = c(120, 122, 118, 120);
+  const bDown1 = c(118, 118, 98, 100);
+  const bDown2 = c(100, 106, 95, 98);
+  const downFound = names(marketStructure({ bars: [...base, bDown0, bDown1, bDown2], atr: 10 }));
+  assert.ok(downFound.some((n) => n.startsWith('Bearish FVG')), downFound.join(', '));
+});
+
+test('[critical] order blocks identify the institutional origin candle before an impulse', () => {
+  const base = Array.from({ length: 12 }, () => c(100, 103, 98, 100));
+  const ob = c(101, 102, 95, 96);
+  const impulse = c(96, 125, 96, 124);
+  const follow = c(124, 126, 122, 125);
+  const found = names(marketStructure({ bars: [...base, ob, impulse, follow], atr: 10 }));
+  assert.ok(found.some((n) => n.startsWith('Bullish Order Block')), found.join(', '));
+
+  const obDown = c(99, 105, 98, 104);
+  const impulseDown = c(104, 104, 75, 76);
+  const followDown = c(76, 78, 74, 75);
+  const downFound = names(marketStructure({ bars: [...base, obDown, impulseDown, followDown], atr: 10 }));
+  assert.ok(downFound.some((n) => n.startsWith('Bearish Order Block')), downFound.join(', '));
+});
+
