@@ -1123,3 +1123,831 @@ Options Strike screen: OTM / Touch / Breach / Distance-EM / IV-RV / Gamma / Liqu
 Signal History: Trigger → Confirm → Target/Stop → First Hit → MFE/MAE.
 
 இதுதான் உன் system-க்கு பெரிய complete feature dictionary / analysis universe ஆக வைத்துக்கொள்ளலாம்.
+
+
+
+ஆம். நீ already வைத்திருக்கும் candles + chart patterns + indicators + OI + volume + CVD + options + Greeks + MTF + probability + risk எல்லாத்தையும் தாண்டி, இன்னும் பல useful layers இருக்கு.
+
+உன் BTC intraday + options selling + expiry prediction project-க்கு நான் add பண்ண நினைக்கும் கூடுதல் master list:
+
+1. Wyckoff / Auction Market Structure
+Accumulation
+Distribution
+Markup
+Markdown
+
+PSY
+BC
+AR
+ST
+Spring
+Test
+SOS
+LPS
+UTAD
+UT
+SOW
+
+Buying Climax
+Selling Climax
+Automatic Rally
+Automatic Reaction
+2. Market Profile / Auction Theory
+POC
+VAH
+VAL
+HVN
+LVN
+Value Area
+Initial Balance
+IB High
+IB Low
+
+Opening Range
+Balance Area
+Acceptance
+Rejection
+Poor High
+Poor Low
+Single Prints
+Excess High
+Excess Low
+Failed Auction
+Initiative Move
+Responsive Buying
+Responsive Selling
+3. Volume Profile Advanced
+Session Volume Profile
+Daily Volume Profile
+Weekly Volume Profile
+Fixed Range Profile
+Visible Range Profile
+Anchored Profile
+
+POC Migration
+VA Migration
+HVN Shift
+LVN Break
+Volume Node Rejection
+Volume Node Acceptance
+4. Liquidity / Stop-Hunt Logic
+Buy-side Liquidity
+Sell-side Liquidity
+
+Equal High Sweep
+Equal Low Sweep
+
+Previous Day High Sweep
+Previous Day Low Sweep
+Session High Sweep
+Session Low Sweep
+
+Stop Run
+Stop Hunt
+Liquidity Grab
+Liquidity Vacuum
+Liquidity Raid
+Liquidity Reclaim
+
+Sweep → Reclaim
+Sweep → Reject
+Sweep → Continuation
+5. SMC / ICT-style Structures
+
+நீ OB/FVG already வைத்திருக்கிறாய்; அதற்கு மேல:
+
+Breaker Block
+Mitigation Block
+Rejection Block
+Propulsion Block
+Order Block Failure
+
+BPR
+Balanced Price Range
+
+Premium
+Equilibrium
+Discount
+
+Dealing Range
+OTE
+Inducement
+Displacement
+Internal Liquidity
+External Liquidity
+
+Liquidity Void
+Imbalance
+Consequent Encroachment
+6. Displacement / Impulse Detection
+Bullish Displacement
+Bearish Displacement
+Impulse Candle
+Impulse Sequence
+Expansion Candle
+Expansion Sequence
+
+Body Expansion
+Range Expansion
+Volume Expansion
+Delta Expansion
+OI Expansion
+
+Displacement Strength
+Displacement Failure
+7. Compression → Expansion Engine
+
+பெரிய move முன்பே catch பண்ண இதுதான் useful:
+
+Volatility Compression
+ATR Compression
+BB Compression
+Range Compression
+Volume Compression
+OI Compression
+
+Compression Score
+
+Expansion Trigger
+Range Expansion
+Volume Expansion
+OI Expansion
+IV Expansion
+
+Compression → Breakout
+Compression → Fakeout
+8. Trend Transition Detector
+Trend Continuation
+Trend Weakening
+Trend Exhaustion
+Trend Transition
+Trend Reversal
+
+Momentum Decay
+Momentum Recovery
+
+HH Failure
+HL Failure
+LH Failure
+LL Failure
+
+BOS Failure
+CHOCH Confirmation
+Structure Recovery
+9. Exhaustion Detection
+Buying Climax
+Selling Climax
+
+Volume Climax
+Delta Climax
+OI Climax
+IV Climax
+Range Climax
+
+Long Upper Wick Exhaustion
+Long Lower Wick Exhaustion
+
+Momentum Exhaustion
+Trend Exhaustion
+Late Breakout Exhaustion
+10. Divergence Advanced
+
+Already basic divergence இருக்கிறது; இதை deeper ஆக:
+
+Regular Bullish Divergence
+Regular Bearish Divergence
+
+Hidden Bullish Divergence
+Hidden Bearish Divergence
+
+Price vs RSI
+Price vs MACD
+Price vs CVD
+Price vs Volume
+Price vs OI
+Price vs VWAP
+Price vs OBV
+
+Multi-timeframe Divergence
+Converging Divergence
+Divergence Failure
+11. Time / Session Intelligence
+
+BTC 24×7 என்பதால் useful:
+
+UTC Session
+Asia
+London
+New York
+
+Session Open
+Session High
+Session Low
+
+Session Overlap
+Session Range
+Session Breakout
+Session Reversal
+
+Hour-of-Day Effect
+Minute-of-Hour Effect
+Day-of-Week Effect
+Expiry-Day Effect
+Pre-Expiry Effect
+Post-Expiry Effect
+12. Time-of-Day Statistics
+
+உன் historical data-க்கு மிகவும் useful:
+
+5-min outcome by hour
+15-min outcome by hour
+30-min outcome by hour
+1h outcome by hour
+
+Average move by time
+Median move by time
+Volatility by time
+Breakout frequency by time
+Reversal frequency by time
+False breakout rate by time
+
+உதாரணம்:
+
+13:30–14:00
+Breakout success = X%
+Avg move = Y pts
+
+இதைக் time filter ஆக பயன்படுத்தலாம்.
+
+13. Day-Type Classification
+
+ஒவ்வொரு நாளையும்:
+
+Trend Day
+Range Day
+Expansion Day
+Compression Day
+Reversal Day
+Double Distribution
+Neutral Day
+Normal Variation
+Neutral Extreme
+
+என்று classify செய்யலாம்.
+
+இது intraday prediction-க்கு useful.
+
+14. Day Regime Transition
+Range → Trend
+Trend → Range
+Low Vol → High Vol
+High Vol → Low Vol
+
+Compression → Expansion
+Expansion → Compression
+
+மேலும்:
+
+Regime Persistence
+Regime Change Probability
+15. Event / News-aware Layer
+
+Data source இருந்தால் மட்டும்:
+
+Macro Event
+CPI
+FOMC
+NFP
+Fed Speech
+ETF-related event
+Crypto-specific event
+Exchange outage
+Major liquidation event
+
+Derived:
+
+Pre-event volatility
+Post-event volatility
+Event shock
+Recovery speed
+16. Futures Term Structure
+
+Perpetual மட்டும் இல்லாமல் expiry-wise futures இருந்தால்:
+
+Basis
+Annualized Basis
+Contango
+Backwardation
+Term Structure
+Basis Spread
+Front vs Next Contract
+Curve Steepness
+Curve Inversion
+17. Options Surface
+
+நீ ATM IV / skew வைத்திருக்கிறாய்; இன்னும்:
+
+IV Smile
+IV Skew Curve
+IV Surface
+Strike vs IV
+Expiry vs IV
+
+Smile Shift
+Skew Shift
+ATM IV Shift
+Wing IV Shift
+
+IV Flattening
+IV Steepening
+IV Inversion
+18. Advanced Greeks
+
+Basic Delta/Gamma/Theta/Vega/Rho-க்கு மேல:
+
+Charm
+Vanna
+Vomma
+Volga
+Speed
+Zomma
+Color
+Ultima
+Dual Delta
+
+Dealer exposure:
+
+Dealer Delta
+Dealer Gamma
+Dealer Vega
+Dealer Charm
+Dealer Vanna
+19. Gamma Regime
+Positive Gamma
+Negative Gamma
+Gamma Flip
+Gamma Wall
+Nearest Gamma Wall
+Gamma Pin
+Gamma Magnet
+Gamma Acceleration
+Gamma Risk
+
+Price toward Gamma Wall
+Price away from Gamma Wall
+
+இது expiry day-ல் useful.
+
+20. Dealer Positioning
+
+Data/model கிடைத்தால்:
+
+Dealer Long Gamma
+Dealer Short Gamma
+Dealer Long Vega
+Dealer Short Vega
+
+Gamma Hedging Pressure
+Delta Hedging Pressure
+Vanna Hedging Pressure
+Charm Hedging Pressure
+21. Pin Risk / Expiry Mechanics
+
+உன் project-க்கு very relevant:
+
+Pin Strike
+Pin Distance
+Pin Probability
+Max Pain Distance
+Gamma Wall Distance
+ATM Distance
+
+Settlement Magnet
+Strike Pinning
+Expiry Acceleration
+Late-Day Gamma Risk
+22. Option Chain Dynamics
+
+ஒவ்வொரு strike-க்கும்:
+
+Premium Acceleration
+OI Acceleration
+IV Acceleration
+Volume Acceleration
+
+Bid/Ask Improvement
+Spread Widening
+Spread Compression
+
+Touch Probability Change
+Breach Probability Change
+OTM Probability Change
+
+Strike Migration
+OI Migration
+Wall Migration
+23. Premium Behaviour
+Premium Expansion
+Premium Compression
+Premium Decay
+Premium Repricing
+Premium Shock
+
+Theta Decay
+Theta Acceleration
+Theta Deceleration
+
+Premium vs Underlying
+Premium vs IV
+Premium vs OI
+Premium vs Volume
+24. Option Seller Safety Metrics
+Distance / EM
+Distance / ATR
+Premium / EM
+Premium / Margin
+Premium / Risk
+Expected Return / Risk
+
+P(OTM)
+P(Touch)
+P(Breach)
+
+Tail Risk
+Expected Tail Loss
+Worst Historical Move
+Worst Similar-State Move
+25. Distribution / Tail Models
+
+Basic mean/std-க்கு மேல:
+
+Quantile Regression
+Conditional Quantiles
+EVT
+Tail Distribution
+Expected Shortfall
+Value at Risk
+Conditional VaR
+
+5th percentile
+10th percentile
+25th percentile
+50th percentile
+75th percentile
+90th percentile
+95th percentile
+99th percentile
+
+இதிலிருந்து:
+
+Expected Move
+Worst-case Move
+Tail Move
+
+பிரிக்கலாம்.
+
+26. Advanced Volatility Models
+
+Research layer:
+
+GARCH
+EGARCH
+GJR-GARCH
+Realized Volatility
+Realized Kernel
+HAR-RV
+
+Volatility Forecast
+Volatility Shock
+Volatility Mean Reversion
+Volatility Regime
+27. Distribution Shape
+Skewness
+Kurtosis
+Tail Thickness
+Left Tail Risk
+Right Tail Risk
+
+Return Asymmetry
+Volatility Asymmetry
+28. Wave / Frequency Analysis
+
+Research-heavy, ஆனால் interesting:
+
+FFT
+Wavelet Transform
+Wavelet Energy
+Low-frequency trend
+High-frequency noise
+Multi-resolution decomposition
+Cycle detection
+Dominant frequency
+
+இதைக் direct trade signal ஆக இல்லாமல் feature-ஆக வைத்துக்கொள்ளலாம்.
+
+29. Pattern Quality / Reliability
+
+ஒரு pattern வந்தாலே signal அல்ல.
+
+ஒவ்வொரு patternக்கும்:
+
+Historical Win Rate
+Historical Avg Move
+Historical Max Adverse Move
+Historical False Break Rate
+Average Confirmation Time
+Average Time to Target
+Average Failure Time
+
+Pattern Strength
+Pattern Freshness
+Pattern Frequency
+30. Context-Aware Pattern Score
+
+உதாரணம்:
+
+Bullish Engulfing
+
+அது:
+
+At Support
++ Volume ↑
++ CVD ↑
++ MTF UP
+
+என்றால் pattern quality வேற.
+
+அதே pattern:
+
+Inside strong downtrend
++ resistance
++ CVD ↓
+
+என்றால் வேற.
+
+அதனால்:
+
+Pattern
+× Context
+× Regime
+× Volume
+× Structure
+31. Signal Quality Controls
+
+இது உன் system-ல் ரொம்ப முக்கியமான missing category.
+
+Signal Persistence
+Signal Age
+Signal Freshness
+Duplicate Signal Suppression
+Signal Debounce
+Signal Cooldown
+Signal Hysteresis
+Confirmation Timeout
+Trigger Timeout
+Expiry Timeout
+
+Repeated Signal Count
+Same-Level Signal Count
+Same-Pattern Frequency
+
+இதனால் same breakout-ஐ 15 times signal generate பண்ணாது.
+
+32. Prediction Stability
+Prediction Flip Count
+UP → DOWN flips
+DOWN → UP flips
+
+Probability Stability
+Score Stability
+MTF Stability
+Regime Stability
+
+Signal Persistence %
+
+Example:
+
+Last 10 min:
+UP
+UP
+UP
+SIDE
+UP
+
+→ stable.
+
+UP
+DOWN
+UP
+DOWN
+SIDE
+
+→ unstable.
+
+UI:
+
+⚠ LOW SIGNAL STABILITY
+33. Prediction Confidence Penalty
+
+இதையும் add பண்ணலாம்:
+
+Data stale
+MTF conflict
+Regime transition
+Low volume
+Wide spread
+High noise
+Probability disagreement
+Model disagreement
+
+அப்போ final confidence குறையும்.
+
+34. Model Ensemble
+
+ஒரே model மட்டும் இல்லாமல்:
+
+Price-action model
+Flow model
+Options model
+Volatility model
+ML model
+Historical similarity model
+
+Output:
+
+Price model      → DOWN
+Flow model       → DOWN
+Options model    → SIDE
+ML model         → DOWN
+Similarity       → DOWN
+
+Final:
+
+Consensus = DOWN
+35. Model Disagreement
+
+இதையும் காட்டலாம்:
+
+Price → DOWN
+Flow → DOWN
+Options → UP
+ML → DOWN
+
+அப்போ:
+
+⚠ MODEL DISAGREEMENT
+
+என்று signal strength குறைக்கலாம்.
+
+36. Change-Point Detection
+
+Market suddenly behaviour change ஆகிறதா?
+
+Change Point
+Trend Break
+Volatility Regime Shift
+Volume Regime Shift
+OI Regime Shift
+Correlation Break
+
+Algorithms:
+
+CUSUM
+BOCPD
+Bayesian Change Point
+37. Anomaly Detection
+Price anomaly
+Volume anomaly
+OI anomaly
+IV anomaly
+Spread anomaly
+Flow anomaly
+Funding anomaly
+
+Z-score anomaly
+Isolation Forest
+Mahalanobis anomaly
+
+Output:
+
+⚠ Unusual Market Activity
+38. Execution Quality
+
+Entry prediction மட்டும் இல்லாமல்:
+
+Expected Fill
+Actual Fill
+Slippage
+Spread at Entry
+Spread at Exit
+Latency
+Quote Age
+Market Impact
+Fill Probability
+Partial Fill
+39. Data Quality
+
+இதையும் forgotten category-ஆக வைத்துக்கொள்ளாதே:
+
+Data Freshness
+Missing Candles
+Duplicate Candles
+Out-of-order candles
+Bad OHLC
+Zero volume
+Stale OI
+Stale IV
+Stale bid/ask
+Cross-source mismatch
+Clock drift
+40. Backtest Reality Controls
+
+Prediction quality உண்மையாக இருக்க:
+
+Walk Forward
+Purged K-Fold
+Embargo
+Combinatorial Purged CV
+Out-of-Sample
+Out-of-Time
+Regime-wise Backtest
+
+Slippage
+Fees
+Latency
+Partial Fill
+Spread
+Market Impact
+41. Backtest Statistical Checks
+Expectancy
+Profit Factor
+Sharpe
+Sortino
+Calmar
+Max Drawdown
+Ulcer Index
+Recovery Factor
+
+Win Rate
+Loss Rate
+Avg Win
+Avg Loss
+Median Win
+Median Loss
+
+Longest Win Streak
+Longest Loss Streak
+MAE
+MFE
+42. Strategy Robustness
+Parameter Sensitivity
+Threshold Sensitivity
+Walk-forward Stability
+Regime Stability
+Time Stability
+Expiry Stability
+
+Monte Carlo
+Trade Shuffle
+Bootstrap
+Stress Test
+43. Feature Leakage / Data Leakage Protection
+
+மிக முக்கியம், குறிப்பாக உன் 5m/expiry model-க்கு:
+
+No future candle
+No future OI
+No future IV
+No future settlement
+No future high/low
+No look-ahead
+No future-derived labels in features
+
+Also:
+
+Timestamp alignment
+Feature availability time
+Event-time cutoff
+44. Signal Explainability
+
+ஒவ்வொரு predictionக்கும்:
+
+WHY UP?
+WHY DOWN?
+WHY NO TRADE?
+
+Top 3 positive factors
+Top 3 negative factors
+Blocking factor
+Missing confirmation
+
+Example:
+
+DOWN
++ Lower High
++ CVD falling
++ OI buildup
+
+Against:
+- RSI oversold
+- Support nearby

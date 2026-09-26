@@ -18,6 +18,7 @@ import {
 import { findLeg, type Selected } from './DecisionPanels';
 import { DecisionCards } from './DecisionCards';
 import { ScreenBar } from './ScreenBar';
+import { SIGNAL_ANCHORS, SignalStrip } from './SignalStrip';
 import { ChangesPanel, EarlyWarningPanel, ExpiryDirectionPanel, MovementPanel, useChanges } from './TraderPanels';
 
 /**
@@ -210,6 +211,7 @@ export function Overview({
     <PanelFold.Provider value={fold}>
     <div className="ov">
       <ScreenBar data={data} now={now} freshnessSec={config.freshnessSec} expiries={expiries} onExpiry={onExpiry} controls={controls} error={error} onFoldAll={foldAll} />
+      <ErrorBoundary where="Signals"><SignalStrip mtf={mtf} direction={direction} choice={choice} hoursLeftText={hoursLeftText} /></ErrorBoundary>
       <ErrorBoundary where="Overview KPIs"><KpiStrip data={data} spot={spot} iv={iv} perp={perp} spark={spark} now={now} /></ErrorBoundary>
 
       {/*
@@ -221,7 +223,7 @@ export function Overview({
         supporting panels start under it.
       */}
       {chart ? (
-        <div className="ov-chart-wide">
+        <div className="ov-chart-wide ov-anchor" id={SIGNAL_ANCHORS.expiry}>
           {typeof chart === 'function'
             ? chart({
               expiry: <ErrorBoundary where="Expiry direction"><ExpiryDirectionPanel d={direction} hoursLeftText={hoursLeftText} /></ErrorBoundary>,
@@ -244,7 +246,9 @@ export function Overview({
         </div>
 
         <div className="ov-col ov-right">
+          <div className="ov-anchor" id={SIGNAL_ANCHORS.trend} />
           <ErrorBoundary where="Multi-timeframe"><MovementPanel data={data} em={emSettle} activeMin={config.horizonMin} mtf={mtf} movement={movement?.rows ?? null} /></ErrorBoundary>
+          <div className="ov-anchor" id={SIGNAL_ANCHORS.decision} />
           <ErrorBoundary where="Strategy decision">
             <DecisionCards data={data} sides={sides} choice={choice} iv={iv} em={emSettle} mtf={mtf} contracts={contracts} leverage={leverage}
               onSelect={(cp, strike) => setPicked({ cp, strike })} oi={perp?.oi ?? null} selectedCp={leg?.cp ?? null} pair={pair} />
