@@ -136,6 +136,12 @@ const view = (
       takeProfitPrice: r.plan.takeProfitPrice,
       stopPrice: r.plan.stopPrice,
       /*
+       * Why there is no stop, where a fixed one was overtaken by the fill
+       * itself. The screen has to be able to say this: an unprotected position
+       * that looks protected is the worst thing the desk can show.
+       */
+      exitProblem: r.plan.exitProblem ?? null,
+      /*
        * How each exit was asked for, so a screen that edits it opens in the
        * same terms: a leg here follows the fill as a % or points; a leg absent
        * is a fixed price. Without it the Edit exits sheet showed a strategy's
