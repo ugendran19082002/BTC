@@ -7,12 +7,21 @@ Updated 23 Sep 2026
 
 ## 26 Sep 2026 — open
 
+- [x] **A fixed stop the fill overtakes is refused, not acted on (26 Sep).** `stopAt: 70` means
+      seventy whatever the entry -- until the entry fills at 75, and the "stop" is under the
+      position: `stopIfReached` saw the mark already past it and closed at the market a second
+      after opening, for a loss nobody could explain. `anchorExits` now refuses to anchor to a
+      price the fill has overtaken, leaves the leg off, records why, and **keeps the alarm**, so
+      the desk says POSITION UNPROTECTED rather than quietly running naked. The position row says
+      it too. Same guard on a target the fill has already passed.
 - [ ] **Today's strategy runs: audit the fills against the plan.** The owner reports a run that did
       not go as configured -- stop and target to be checked against what actually reached the book,
       and one strategy failed outright. Needs a production read (`strategy_runs`, `trade_events` for
       the day) which this session cannot do: the sandbox refuses production psql. Either grant one
       read or paste the run's events, and the engine's own journal will say which order went out,
-      at what price, and what came back.
+      at what price, and what came back. **The API container was recreated at 18:11 IST on 26 Sep,
+      so its log no longer covers the earlier runs** -- `strategy_runs` and `trade_events` in the
+      database are the only remaining record of them.
 - [x] **`monitorOn` is honoured (26 Sep).** The strategy form offers **On LTP / On candle close**,
       the runner carries it into the plan, and `stopIfReached` reads the option's own last
       *finished* minute when `close` is asked for -- a wick through the level is not an exit, and a
