@@ -1,8 +1,14 @@
-# The Live screen
+# The Signals screen
 
-**Rebuilt 27 September 2026**, top to bottom, from `docs/New.md`'s hierarchy.
+**Built 27 September 2026**, top to bottom, from `docs/New.md`'s hierarchy.
 This document is what the screen claims, what each claim stands on, and the two
 measurements that decided its shape.
+
+> **Where it lives.** The **Signals** tab, beside the Live screen rather than
+> in place of it. The Live screen is untouched — the same `Overview`, the same
+> panels, the same behaviour it has always had. This is a second reading of the
+> same market, built to a different rule, and the two can be compared on live
+> data before anything is decided about either.
 
 ---
 
@@ -33,17 +39,16 @@ Top to bottom, the questions in the order a person actually asks them:
 
 ```
 1  VERDICT          which way, and may I act?          ← one answer, above its own argument
-2  CHART            what does it look like?
-3  BIG MOVE         is something breaking now?         ← with SL / TGT and its measured record
+2  BIG MOVE         is something breaking now?         ← with SL / TGT and its measured record
    SETTLEMENT BAND  how far can it get by 17:30?       ← the cone, from measured windows
-4  TIMEFRAMES       where did the verdict come from?   ← the weighted 12H → 1M ladder
+3  TIMEFRAMES       where did the verdict come from?   ← the weighted 12H → 1M ladder
    STRIKE SAFETY    are these strikes far enough?      ← against that same band
-5  NOT READ         what the screen wanted and missed
-6  OPTION CHAIN     the board
+4  NOT READ         what the screen wanted and missed
 ```
 
-Cards 3 and 4 are pairs on a wide screen and stack on a phone. Neither half of
-either pair is subordinate to the other.
+Rows 2 and 3 are pairs on a wide screen and stack on a phone. Neither half of
+either pair is subordinate to the other. The chart and the option chain stay on
+the Live tab, which is where they already were.
 
 ---
 
@@ -51,10 +56,10 @@ either pair is subordinate to the other.
 
 ### 1. One read, one timestamp
 
-Everything comes from a single `GET /api/live`. The screen this replaced polled
-eight endpoints on four different intervals, so its 12-hour row could be a
-minute older than its 5-minute row, and the page could contradict itself while
-every individual part was correct. `asOf` is on the response and the header
+Everything comes from a single `GET /api/live`. The Live tab polls eight
+endpoints on four different intervals, so its 12-hour row can be a minute older
+than its 5-minute row and the page can contradict itself while every individual
+part is correct. This screen cannot: one call, one timestamp. `asOf` is on the response and the header
 prints it; past 90 seconds it says how stale it is rather than pretending.
 
 ### 2. No figure without its provenance
@@ -63,7 +68,7 @@ Every number is badged **measured**, **modelled** or **observed now**, and a
 measured badge carries its sample size — "measured" over eleven windows is not
 measured. An ungraded state is badged **never graded** and says so in words.
 
-`docs/FULL-STUDY.md` §7.5 was filed against the old screen for showing an 80%
+`docs/FULL-STUDY.md` §7.5 was filed against the Live tab for showing an 80%
 hit rate with no cost beside it. The fix is not a tooltip: `MomentumCard`
 **cannot be rendered** without the net-after-fees row, and the verdict badge is
 computed from the measurement, not from the setup.
@@ -105,9 +110,10 @@ the entire reason the file exists. `docs/New.md` names the failure:
 > எல்லாவற்றையும் equal vote பண்ணுவது. … 1M bullish candle வந்ததுக்காக
 > 12H bearish bias flip ஆகக்கூடாது.
 
-The screen this replaced did exactly that — `mtfConsensus` counted one vote per
-readable row and took a flat majority, so five fast frames outvoted four slow
-ones.
+The Live tab's `mtfConsensus` does exactly that — one vote per readable row,
+flat majority — so five fast frames can outvote four slow ones. That is the
+single clearest difference between the two screens, and the reason to compare
+them on live data rather than argue about them.
 
 Each frame votes on four of its own reads (EMA stack, RSI, swing structure,
 and VWAP when price is ≥0.1% away from it — inside that it is noise and gets no
@@ -243,8 +249,8 @@ risk of a short.
 | `web/src/components/live/` | The screen. `LiveScreen` and six cards. |
 | `web/src/types/live.ts` | The shapes, mirroring the server. |
 
-Replaced and deleted: `web/src/components/overview/` (15 components) and
-`web/src/lib/overview.ts` (1,315 lines).
+Nothing was removed. `web/src/components/overview/` and `web/src/lib/overview.ts`
+are exactly as they were; the Live tab still renders them.
 
 ---
 

@@ -592,13 +592,16 @@ rate is not an edge when a quarter of the "hits" were already past their target
 when the call was made, and the survivors do not clear fees.** The same lesson
 the sibling project learned from a 98% win rate that lost money.
 
-**Fixed in the Live screen rebuild (27 Sep 2026).** `MomentumCard` cannot be
+**Addressed on the new Signals tab (27 Sep 2026).** `MomentumCard` cannot be
 rendered without its net-after-fees row, and its verdict badge is computed from
 the measurement rather than the setup: a shape whose measured net R is not
 positive prints **"Not a trade — information only"** beside the call, in the
 same breath. All four timeframes currently print that. The study now emits a
 machine-readable scorecard (`domain/momentum-measured.data.ts`) so the card
 reads the real numbers rather than a copied constant. See `docs/LIVE-SCREEN.md`.
+
+The Live tab still shows the original cards, so the finding stays open **there**
+until the two screens are compared and one is chosen.
 
 The original finding follows, for the record.
 
