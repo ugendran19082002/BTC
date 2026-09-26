@@ -34,6 +34,8 @@ export function strikeLabel(step: number): string {
  * price itself -- the level, whatever the entry; its balance (level minus
  * entry) is re-measured from the entry that happens.
  */
+export type MonitorOn = 'ltp' | 'close';
+
 export type ExitMode = 'pct' | 'points' | 'price';
 
 /** From `at` (IST "HH:MM"), the exit becomes `value`, in its rule's units. Zero turns it off. */
@@ -76,6 +78,16 @@ export type StrategyConfig = {
   targetSteps?: ExitStep[];
   /** How the stop is read: a share of the entry, or points over it. Absent is 'pct'. */
   stopMode?: ExitMode;
+  /**
+   * What the stop and the target are watched on: the touch, or the bar's close.
+   *
+   * `ltp` fires the moment the mark reaches the level, which is what a resting
+   * stop at the exchange does. `close` waits for the bar to finish -- a wick
+   * through a level is not a break, and a thin option's mark can print a price
+   * nothing traded at. The difference is real money both ways, so it is the
+   * operator's choice per strategy.
+   */
+  monitorOn?: MonitorOn;
   /** Stop as points over the entry price. Absent is 0. */
   stopLossPoints?: number;
   /** Stop as the price itself, in `price` mode: 70 is 70, whatever the entry. Absent is 0. */
@@ -148,6 +160,7 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   takeProfitPct: 0.95,
   stopLossPct: 0,
   targetMode: 'pct',
+  monitorOn: 'ltp',
   takeProfitPoints: 0,
   takeProfitAt: 0,
   targetSteps: [],

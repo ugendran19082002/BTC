@@ -291,6 +291,37 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                 twelve-hour contract is nothing, ten minutes into a signal is
                 everything.
               */}
+              {/*
+                What the stop and the target are watched on.
+                A wick through a level is not a break, and a thin option's mark
+                can print a price nothing traded at -- so a stop on the touch
+                exits on noise a close would have ridden out. The other way
+                round, waiting for the close gives back the distance between
+                the wick and the close when the move is real. Both are right
+                sometimes, which is why it is a choice and not a default.
+              */}
+              <Stack
+                label="Trade monitoring"
+                className="mt-3"
+                hint={c.monitorOn === 'close'
+                  ? 'The desk acts when a bar closes through the level. A wick through it is not a break. The stop resting at the exchange still watches the mark, so it can fire first in a fast move.'
+                  : 'The desk acts the moment the mark reaches the level, like the stop resting at the exchange. Fastest, and it exits on wicks that a close would have ridden out.'}
+              >
+                <div className="flex gap-2">
+                  {([['ltp', 'On LTP'], ['close', 'On candle close']] as const).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      className={cn('bt-chip', (c.monitorOn ?? 'ltp') === value && 'bt-chip--on')}
+                      aria-pressed={(c.monitorOn ?? 'ltp') === value}
+                      onClick={() => set('monitorOn', value)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </Stack>
+
               <Stack
                 label="Still enter if late by"
                 error={err('graceMin')}
