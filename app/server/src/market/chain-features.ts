@@ -1,8 +1,12 @@
+import { migrate, type Migration } from '../db/migrate.js';
 import { one, query } from '../db/pool.js';
 import { marketSchema, noteOpenInterest, openInterestChange, type OiChange } from './oi-history.js';
 import { liveChain, WHOLE_BOARD, type Leg, type Snapshot } from './chain.js';
 import { scoreLegs, type ScoredLeg } from '../domain/score.js';
 import { optionStructure, type OptionStructure } from '../domain/structure.js';
+import { rowAt, quantileShare } from '../domain/outlook.js';
+import { loadHorizons } from '../domain/forecast.js';
+import { readMarket } from './moves.js';
 
 /**
  * The option board as figures a measurement can use — and a record of them.
@@ -33,6 +37,40 @@ export const SKEW_STEPS = [2, 3, 4] as const;
 /** A year of five-minute rows is about 105,000 — small, and the point of keeping them. */
 const KEEP_MS = 400 * 24 * 3600_000;
 const BUCKET_MS = 5 * 60_000;
+
+const MIGRATIONS: Migration[] = [
+  {
+    /*
+     * Three columns: how often BTC finishes above, inside and below the
+     * implied 1σ band for this contract's remaining time, as measured from
+     * 735 settled days.
+     *
+     * These are the same `above / inside / below` figures the outlook card
+     * shows in real time, stored here so the series can be read back
+     * ("what was the measured above% when we entered?") and eventually
+     * measured against ("how often did the card say 42% and the leg expire
+     * above the band?").
+     *
+     * All three are nullable: they are null when the implied band cannot be
+     * read (no IV), when there are no measured quantiles, or when there are
+     * fewer than two minutes left on the contract.
+     */
+    id: 'market-014-chain-band-pcts',
+    up: `
+      ALTER TABLE chain_features ADD COLUMN IF NOT EXISTS band_above  DOUBLE PRECISION;
+      ALTER TABLE chain_features ADD COLUMN IF NOT EXISTS band_below  DOUBLE PRECISION;
+      ALTER TABLE chain_features ADD COLUMN IF NOT EXISTS band_inside DOUBLE PRECISION;
+    `,
+  },
+];
+
+let _ready: Promise<void> | null = null;
+async function chainFeaturesSchema(): Promise<void> {
+  await marketSchema();
+  if (_ready) return _ready;
+  _ready = migrate(MIGRATIONS).then(() => {}, (e) => { _ready = null; throw e; });
+  return _ready;
+}
 
 export type ChainBoard = {
   hoursLeft: number;
@@ -89,6 +127,16 @@ export function chainBoard(
 }
 
 
+/** The measured band frequencies for the contract's remaining time. */
+export type ChainBandPcts = {
+  /** Share of measured windows that finished above the implied 1σ band. */
+  above: number | null;
+  /** Share that finished below it. */
+  below: number | null;
+  /** Share that finished inside it (1 − above − below). */
+  inside: number | null;
+};
+
 export type ChainRecord = {
   expiry: string;
   ts: number;
@@ -108,6 +156,8 @@ export type ChainRecord = {
   /** open interest added on each side over the last hour, contracts */
   ceOiChange: number | null;
   peOiChange: number | null;
+  /** how often BTC finishes above / inside / below the implied band for this contract's remaining time */
+  bandPcts?: ChainBandPcts | null;
 };
 
 /**
@@ -120,21 +170,24 @@ export type ChainRecord = {
 export async function noteChainFeatures(r: ChainRecord): Promise<number | null> {
   try {
     const atMs = Math.floor((r.ts * 1000) / BUCKET_MS) * BUCKET_MS;
-    await marketSchema();
+    await chainFeaturesSchema();
     const seen = await one('SELECT 1 FROM chain_features WHERE expiry = $1 AND at = $2 LIMIT 1', [r.expiry, atMs]);
     if (seen) return null;
+    const bp = r.bandPcts ?? null;
     await query(
       `INSERT INTO chain_features
        (at, expiry, spot, hours_left, atm_iv, call_atm, put_atm, put_marks, call_marks,
         put_volume, call_volume, pcr_oi, pcr_volume, ce_oi, pe_oi, iv_skew_pts,
-        ce_wall, pe_wall, max_pain, ce_oi_change, pe_oi_change)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+        ce_wall, pe_wall, max_pain, ce_oi_change, pe_oi_change,
+        band_above, band_below, band_inside)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
        ON CONFLICT (at, expiry) DO NOTHING`,
       [
         atMs, r.expiry, r.spot, r.hoursLeft, r.atmIv, r.board.callAtm, r.board.putAtm,
         JSON.stringify(r.board.putMarks), JSON.stringify(r.board.callMarks),
         r.board.putVolume, r.board.callVolume, r.pcrOi, r.pcrVolume, r.ceOi, r.peOi, r.ivSkewPts,
         r.ceWall, r.peWall, r.maxPain, r.ceOiChange, r.peOiChange,
+        bp?.above ?? null, bp?.below ?? null, bp?.inside ?? null,
       ],
     );
     await query('DELETE FROM chain_features WHERE at < $1', [atMs - KEEP_MS]);
@@ -163,6 +216,31 @@ export async function chainHistory(): Promise<{ rows: number; since: number | nu
  * can both call it. The OI changes are the per-strike hour deltas the route
  * already computed; without them the change columns are null, not zero.
  */
+/**
+ * Compute band_above / band_below / band_inside for a snap.
+ *
+ * Uses the same measured-quantile lookup the outlook card does:
+ * given IV and the contract's remaining time, what share of measured
+ * windows finished above / inside / below the implied 1σ band?
+ * Pure; null when IV or quantiles are not available.
+ */
+function bandPctsOf(snap: Pick<Snapshot, 'spot' | 'atmIv' | 'hoursToExpiry'>): ChainBandPcts {
+  if (!snap.atmIv || !(snap.hoursToExpiry > 0)) return { above: null, below: null, inside: null };
+  const minutes = snap.hoursToExpiry * 60;
+  const horizons = loadHorizons();
+  const m = rowAt(horizons, minutes);
+  if (!m) return { above: null, below: null, inside: null };
+  const implied = snap.spot * snap.atmIv * Math.sqrt(minutes / (365 * 24 * 60));
+  const impliedPct = (implied / snap.spot) * 100;
+  const belowShare = quantileShare(m.quantiles, -impliedPct);
+  const aboveShare = quantileShare(m.quantiles, impliedPct);
+  if (belowShare === null || aboveShare === null) return { above: null, below: null, inside: null };
+  const above = 1 - aboveShare;
+  const below = belowShare;
+  const inside = Math.max(0, 1 - above - below);
+  return { above, below, inside };
+}
+
 export async function recordBoard(snap: Snapshot, scored: readonly ScoredLeg[], structure: OptionStructure, oiChanges: Map<string, OiChange>): Promise<number | null> {
   const board = chainBoard(snap, scored);
   const ce = scored.filter((l) => l.cp === 'C');
@@ -180,6 +258,7 @@ export async function recordBoard(snap: Snapshot, scored: readonly ScoredLeg[], 
     maxPain: structure.maxPain?.strike ?? null,
     ceOiChange: oiChanges.size ? oiMoved(ce) : null,
     peOiChange: oiChanges.size ? oiMoved(pe) : null,
+    bandPcts: bandPctsOf(snap),
   });
 }
 
@@ -197,5 +276,9 @@ export async function captureBoard(nowMs = Date.now(), wallWithinEm = 1.25, real
   const oiChanges = await openInterestChange(snap, scored, 1);
   const structure = optionStructure(snap, realisedVolPct, wallWithinEm);
   void nowMs;
+  // Pre-warm the measured-move table if needed, so bandPctsOf can read it.
+  // The chain route always has this warmed; the scheduled recorder may not,
+  // especially on startup.
+  if (!loadHorizons().length) await readMarket().catch(() => {});
   return recordBoard(snap, scored, structure, oiChanges);
 }
