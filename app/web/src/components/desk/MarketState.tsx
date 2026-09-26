@@ -1,8 +1,12 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { ArrowDownRight, ArrowUpRight, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Clock, Minus, TrendingDown, TrendingUp } from 'lucide-react';
+import {
+  ArrowDownRight, ArrowUpRight, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Clock, Download, Minus, TrendingDown, TrendingUp,
+} from 'lucide-react';
 import type { MarketStateResponse, StateHistoryRow, StatePlan } from '@/api/desk';
 import { strike as fmtStrike } from '@/lib/format';
 import { trackFor } from '@/components/desk/signal-track';
+import { csvNameFor, istDay, signalsToCsv } from '@/components/desk/signal-export';
+import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 
 /**
@@ -315,20 +319,51 @@ function History({ rows, rate, spot }: {
   spot?: number;
 }) {
   const [page, setPage] = useState(0);
-  const pages = Math.max(1, Math.ceil(rows.length / PAGE));
+  const [allOpen, setAllOpen] = useState(false);
+  /*
+   * Today, by default.
+   *
+   * The list is read to answer "what has the desk called since this morning",
+   * and a page of yesterday's calls at the top answers a question nobody
+   * asked. Everything is still there behind *View all*, where a day is a
+   * heading and the whole lot can be taken away as a file.
+   */
+  const today = istDay(Date.now());
+  const todays = rows.filter((r) => istDay(r.at) === today);
+  const shownRows = todays.length > 0 ? todays : rows;
+  const pages = Math.max(1, Math.ceil(shownRows.length / PAGE));
   const at = Math.min(page, pages - 1);
-  const shown = rows.slice(at * PAGE, at * PAGE + PAGE);
+  const shown = shownRows.slice(at * PAGE, at * PAGE + PAGE);
   const first = at * PAGE + 1;
+
+  /*
+   * The file is built here rather than asked of the server: the rows are
+   * already on the screen, and a download that needs a round trip is one that
+   * can fail while somebody is looking at the data it would contain.
+   */
+  const download = () => {
+    const csv = signalsToCsv(rows, outcomeWord);
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = csvNameFor(rows[0]?.tf ?? 'all');
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="bt-market-state__history">
       <h4>
         Signal history <span className="bt-market-state__hist-unit">BTC pts</span>
+        <span className="bt-market-state__hist-scope">{todays.length > 0 ? 'Today' : 'Latest'}</span>
         {rate && rate.graded > 0
           ? <span title="Of the calls that actually triggered and finished. A setup whose trigger was never reached is not counted either way.">
             {rate.correct} of {rate.graded} reached target
           </span>
           : <span>none finished yet</span>}
+        <button type="button" className="bt-market-state__hist-all" onClick={() => setAllOpen(true)}>
+          View all <ChevronRight size={12} aria-hidden />
+        </button>
       </h4>
       <ul>
         {shown.map((r, i) => {
@@ -426,9 +461,9 @@ function History({ rows, rate, spot }: {
       {/* Five at a time, newest first. Ten rows of small print is a wall
           nobody reads to the end of, and the newest call is the one being
           looked for. */}
-      {rows.length > PAGE ? (
+      {shownRows.length > PAGE ? (
         <div className="bt-market-state__pager">
-          <span>{first}–{first + shown.length - 1} of {rows.length} signals</span>
+          <span>{first}–{first + shown.length - 1} of {shownRows.length} signals</span>
           <button type="button" className="bt-chip" aria-label="Newer calls"
             disabled={at === 0} onClick={() => setPage(at - 1)}>
             <ChevronLeft size={14} aria-hidden />
@@ -439,6 +474,42 @@ function History({ rows, rate, spot }: {
           </button>
         </div>
       ) : null}
+
+      {/*
+        Every day the journal still holds, grouped by the day it happened on,
+        with the whole lot downloadable. The screen keeps today; this is where
+        somebody goes to check last Tuesday against their broker statement.
+      */}
+      <Sheet open={allOpen} onOpenChange={setAllOpen}>
+        <SheetContent title="Signal history — all days">
+          <div className="bt-market-state__all">
+            <div className="bt-market-state__all-head">
+              <span>{rows.length} signals</span>
+              <button type="button" className="bt-chip" onClick={download}>
+                <Download size={13} aria-hidden /> Download CSV
+              </button>
+            </div>
+            {[...new Set(rows.map((r) => istDay(r.at)))].map((day) => (
+              <section key={day}>
+                <h5>{day}</h5>
+                <ul>
+                  {rows.filter((r) => istDay(r.at) === day).map((r) => (
+                    <li key={r.id}>
+                      <span className="bt-market-state__hist-at">{IST.format(r.at)}</span>
+                      <span className="bt-market-state__hist-what">
+                        {STATE_WORDS[r.event]?.title ?? r.event} <em>({r.confidence})</em>
+                      </span>
+                      <span className={cn('bt-market-state__hist-out', `is-${(r.outcome ?? 'waiting').toLowerCase()}`)}>
+                        {outcomeWord(r.outcome)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

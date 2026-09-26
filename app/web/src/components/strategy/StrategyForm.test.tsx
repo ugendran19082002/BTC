@@ -450,3 +450,30 @@ describe('warnings for what is allowed but probably not meant', () => {
     expect(screen.getByText(/The 7:30 AM step keeps 80% -- it changes nothing/)).toBeInTheDocument();
   });
 });
+
+describe('what the stop and the target are watched on', () => {
+  it('[critical] the touch is the default, and the close is a deliberate choice', async () => {
+    /*
+     * A wick through a level is not a break, and a thin option's mark can
+     * print a price nothing traded at -- so a stop on the touch exits on noise
+     * a close would have ridden out. Waiting for the close gives back the
+     * distance between the wick and the close when the move is real. Both are
+     * right sometimes, so neither is assumed.
+     */
+    show();
+    expect(screen.getByRole('button', { name: 'On LTP' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'On candle close' }));
+    expect(screen.getByRole('button', { name: 'On candle close' })).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.click(saveButton());
+    await vi.waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    expect(saveStrategy.mock.calls.at(-1)![0].config).toMatchObject({ monitorOn: 'close' });
+  });
+
+  it('says what each one costs, rather than leaving it to be found out', () => {
+    show();
+    expect(screen.getByText(/exits on wicks that a close would have ridden out/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'On candle close' }));
+    expect(screen.getByText(/A wick through it is not a break/)).toBeInTheDocument();
+  });
+});
