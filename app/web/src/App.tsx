@@ -325,8 +325,13 @@ export default function App() {
    * its own -- a level made of twenty one-minute bars is noise -- so the card
    * reads 5m under it and says which timeframe it is reading.
    */
-  // One row for both: the analysis is read off the chart in front of you.
-  const stateTf = chartTf;
+  /*
+   * One row for both: the analysis is read off the chart in front of you --
+   * except at one minute, which the state engine does not read. A minute bar
+   * has no level worth judging a break against, so the card stays on five
+   * minutes and carries its own timeframe badge, which says so.
+   */
+  const stateTf = chartTf === '1m' ? '5m' : chartTf;
   const { data: marketState } = usePoll(
     () => getMarketState(stateTf),
     30_000,

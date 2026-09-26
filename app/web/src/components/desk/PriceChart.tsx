@@ -37,8 +37,13 @@ export type ChartTf = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d';
  * The chart had seven and the analysis beside it had five of its own, which is
  * two controls for one question -- and two answers the moment they disagree.
  * One row, the chart owns it, everything read off the chart follows it.
+ *
+ * One minute is on the row for the candles (26 Sep 2026) although the state
+ * engine does not read it: a minute bar has no level worth judging a break
+ * against, so the analysis stays on five minutes and says so on its own badge.
+ * The chart is for looking; the card is for deciding.
  */
-export const CHART_TFS: readonly ChartTf[] = ['5m', '15m', '30m', '1h', '4h'];
+export const CHART_TFS: readonly ChartTf[] = ['1m', '5m', '15m', '30m', '1h', '4h'];
 
 /** Bars of empty plot kept to the right, where the callouts live. */
 const RIGHT_BARS = 12;

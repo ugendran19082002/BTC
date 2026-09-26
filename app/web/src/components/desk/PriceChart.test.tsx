@@ -122,13 +122,18 @@ describe('the price chart', () => {
     expect(screen.getByRole('button', { name: 'Zoom on' })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('offers one timeframe row, and only the five the desk reads', () => {
-    // Two timeframe controls for one question is two answers the moment they
-    // disagree: the chart owns the row and the analysis follows it.
+  it('[critical] offers one timeframe row, and it is the only one on the screen', () => {
+    /*
+     * Two timeframe controls for one question is two answers the moment they
+     * disagree: the chart owns the row and the analysis follows it. One minute
+     * is on the row for the candles even though the state engine does not read
+     * it -- the card stays on five minutes and says so on its own badge.
+     */
     const seen: string[] = [];
     chart({ onTf: (t) => seen.push(t) });
     for (const t of CHART_TFS) expect(screen.getByRole('radio', { name: t })).toBeInTheDocument();
-    expect(screen.queryByRole('radio', { name: '1m' })).toBeNull();
+    expect(screen.getByRole('radio', { name: '1m' })).toBeInTheDocument();
+    expect(screen.queryByRole('radio', { name: '1D' })).toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: '1h' }));
     expect(seen).toEqual(['1h']);
   });

@@ -313,7 +313,7 @@ Three changes, in `trading/money.ts` and `trading/engine.ts`:
 
 ## Testing
 
-1,134 server tests (`node:test` via tsx), 929 browser tests (vitest +
+1,147 server tests (`node:test` via tsx), 945 browser tests (vitest +
 @testing-library). Run `npm test` in `app/server` and `npx vitest run` in
 `app/web`; `npm run typecheck` in both.
 
