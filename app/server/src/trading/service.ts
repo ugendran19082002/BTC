@@ -18,6 +18,7 @@ import { unrealisedPnlUsd } from './margin.js';
 import { midOf } from './money.js';
 import { istDate } from '../strategy/schedule.js';
 import type { MtmSample } from './pnl-history.js';
+import { candles } from '../market/delta.js';
 import { noteError } from '../observability/errors.js';
 import { alertFor, bookWentFlat, daySummaryFor } from '../notify/messages.js';
 import { TelegramNotifier } from '../notify/telegram.js';
@@ -169,6 +170,9 @@ export class TradingService {
       feedHealthy: () => this.feedOk,
       dayPnlUsd: () => this.store.realisedSince(startOfDayIst()),
       spot: () => this.lastSpot,
+      // The option's own candles, for a stop the strategy asked to watch on
+      // the close rather than on the touch.
+      candles: (symbol, startSec, endSec, resolution) => candles(symbol, startSec, endSec, resolution),
       onSwallowed: (what, order, error) => {
         noteError({
           source: 'trading',

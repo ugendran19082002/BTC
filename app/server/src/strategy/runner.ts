@@ -317,6 +317,13 @@ function placeArgs(s: Strategy, o: Parameters<typeof svcPlace>[1]) {
     ...order,
     strategyId: s.id,
     origin: 'strategy' as const,
+    /*
+     * What the desk's own stop watch judges the level on. The resting stop at
+     * Delta still triggers on the mark either way -- it is there so the stop
+     * works when this process does not -- so `close` makes this desk patient,
+     * not the venue. The strategy form says exactly that.
+     */
+    monitorOn: s.config.monitorOn ?? 'ltp',
     limitPrice,
     chaseSeconds: c.entryPrice === 'offer' ? c.crossAfterSec : 0,
     // Wait for a tight spread before selling into the bid, and give up at the

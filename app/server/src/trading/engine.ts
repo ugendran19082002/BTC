@@ -2,6 +2,7 @@ import type {
   AddWorking, ExchangeOrder, OptionSide, OrderRole, PlaceOrderRequest, ProductSpec, Quote, TradeEvent, TradeState,
 } from './types.js';
 import { CHASE_STEPS, protectionFor, type ExitAsk } from './order-plan.js';
+import type { Candle } from '../market/delta.js';
 import { applyEvent, initialTrade, isDone, protectionSize } from './machine.js';
 import {
   priceFor, lotsToContracts, slippageOf, stopFillLimit, stopPriceFor, SLIPPAGE_ALERT_PCT,
@@ -157,6 +158,21 @@ export type TradePlan = {
    * engine will say so, loudly, rather than pretending the trade is protected. */
   stopPrice: number | null;
   /**
+   * What the desk's own stop watch judges the level on.
+   *
+   * `ltp` (the default, and what every trade did before this existed) acts the
+   * moment the mark reaches the stop. `close` waits for a bar of the option's
+   * own chart to close through it: a wick through a level is not a break, and
+   * a thin option's mark can print a price nothing traded at.
+   *
+   * **The stop resting at Delta still triggers on the mark either way.** It is
+   * there so the stop works when this process does not, and taking it off to
+   * make `close` absolute would trade a slower exit for no exit at all during
+   * an outage. So `close` makes the desk's own watch patient; it does not make
+   * the venue's. The strategy form says exactly this.
+   */
+  monitorOn?: 'ltp' | 'close';
+  /**
    * The exits as they were asked for -- a share or a distance -- rather than as
    * prices. When present, `takeProfitPrice` and `stopPrice` are worked out from
    * the ACTUAL average fill each time protection is reconciled (`anchorExits`),
@@ -246,6 +262,15 @@ export type EngineDeps = {
   onEvent?: (event: TradeEvent, before: TradeState, after: TradeState, plan: TradePlan) => void | Promise<void>;
   /** A failure the engine carried on past. Best-effort, but not silent. */
   onSwallowed?: (what: string, order: { orderId: string; symbol?: string }, error: Error) => void;
+  /**
+   * The option's own candles, for a stop watched on the close.
+   *
+   * Injected rather than imported so a test can hand the engine a series
+   * without a network, and so an engine built without it simply cannot use
+   * close-watching -- which is safer than one that silently falls back to the
+   * touch and tells nobody.
+   */
+  candles?: (symbol: string, startSec: number, endSec: number, resolution: string) => Promise<Candle[]>;
 };
 
 export type OpenResult =
@@ -1321,6 +1346,21 @@ export class TradeEngine {
     const stop = rec.plan.stopPrice;
     if (stop === null) return rec;
 
+    /*
+     * On the close, where the strategy asked for it.
+     *
+     * A wick through a level is not a break, and an option's mark can print a
+     * price nothing traded at -- so a stop watched on the touch exits on noise
+     * a close would have ridden out. The bar has to be a *closed* one: judging
+     * the bar being formed is watching the touch with extra steps.
+     */
+    if (rec.plan.monitorOn === 'close') {
+      const bar = await this.lastClosedBar(rec.plan.symbol);
+      if (bar === null || bar.close < stop) return rec;
+      await this.closeNowInner(rec.state.tradeId, `stop: a bar closed at ${bar.close} through ${stop}`);
+      return await this.d.store.get(rec.state.tradeId) ?? rec;
+    }
+
     const quote = await this.exchange.getQuote(rec.plan.symbol).catch(() => null);
     const mark = quote?.mark ?? null;
     // A missing, stale, or nonsensical mark is not a reason to do anything.
@@ -1332,6 +1372,23 @@ export class TradeEngine {
     // trade being made: an exit that happens beats a better price that might not.
     await this.closeNowInner(rec.state.tradeId, `stop reached at ${mark}`);
     return await this.d.store.get(rec.state.tradeId) ?? rec;
+  }
+
+  /**
+   * The last *finished* minute of this option's own chart.
+   *
+   * Null when the feed has nothing, which is read as "no reason to act": a
+   * stop that fires because a candle request failed is a stop that fires at
+   * random. The desk falls back to nothing, not to the mark -- the operator
+   * asked for the close, and the resting stop at the exchange is still there
+   * on the mark underneath.
+   */
+  private async lastClosedBar(symbol: string): Promise<Candle | null> {
+    const now = Math.floor(this.now() / 1000);
+    const bars = await this.d.candles?.(symbol, now - 15 * 60, now, '1m').catch(() => []) ?? [];
+    // The last bar of the series is the one still being formed.
+    const closed = bars.length >= 2 ? bars[bars.length - 2]! : null;
+    return closed ?? null;
   }
 
   // ------------------------------------------------------------ exits

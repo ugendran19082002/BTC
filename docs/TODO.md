@@ -13,13 +13,13 @@ Updated 23 Sep 2026
       the day) which this session cannot do: the sandbox refuses production psql. Either grant one
       read or paste the run's events, and the engine's own journal will say which order went out,
       at what price, and what came back.
-- [ ] **Honour `monitorOn` in the engine.** The strategy form now offers **On LTP / On candle
-      close** and the choice is stored, but `stopIfReached` still watches the mark either way, and
-      the stop resting at Delta triggers on the mark by design. Making `close` mean what it says
-      needs (a) the option's own candles from Delta so the desk can read a closed bar, and (b) a
-      decision about the exchange-side stop: leaving it on the mark means the venue can fire first,
-      removing it means an outage is no longer covered. That trade-off is the operator's, and the
-      form should say which it is doing. **Until then the setting is recorded and not yet acted on.**
+- [x] **`monitorOn` is honoured (26 Sep).** The strategy form offers **On LTP / On candle close**,
+      the runner carries it into the plan, and `stopIfReached` reads the option's own last
+      *finished* minute when `close` is asked for -- a wick through the level is not an exit, and a
+      candle request that fails does nothing rather than falling back to the touch. The resting
+      stop at Delta still triggers on the mark either way: it is there so the stop works when this
+      process does not, and removing it would trade a slower exit for no exit at all during an
+      outage. The form's hint says exactly that.
 - [ ] **A backtest page for the word "wrong".** The live screen no longer says it (24 Sep) and
       should not -- but after a window has closed, beside what was predicted and what happened, it
       is the right word. That page does not exist yet.

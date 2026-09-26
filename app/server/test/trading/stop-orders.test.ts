@@ -203,3 +203,56 @@ test('a refusal that is not about pricing is not retried', async () => {
   }), OrderRejected);
   assert.equal(sent.length, 1);
 });
+
+/*
+ * A stop watched on the close.
+ *
+ * A wick through a level is not a break, and an option's mark can print a
+ * price nothing traded at -- so a stop on the touch exits on noise a close
+ * would have ridden out. The strategy chooses; the resting stop at Delta still
+ * triggers on the mark underneath either way, which is why `close` makes this
+ * desk patient and not the venue.
+ */
+const bar = (close: number, at = 0): Candle =>
+  ({ time: at, open: close, high: close + 1, low: close - 1, close, volume: 10 });
+
+test('[critical] on the close, a wick through the stop is not an exit', async () => {
+  // The mark is through the stop, and the last closed bar is not.
+  const r = rig({
+    quotes: [quote(ceProduct().symbol, 129.5, 130.5)],
+    candles: async () => [bar(104, 1), bar(107, 2), bar(131, 3)],
+  });
+  const plan = { ...planFor(ceProduct(), { lots: 1, stopPrice: 110 }), monitorOn: 'close' as const };
+  await r.engine.open(plan);
+  await r.engine.poll(plan.tradeId);
+
+  const after = (await r.store.get(plan.tradeId))!;
+  assert.notEqual(after.state.position, 0, 'the bar being formed is not a closed bar');
+});
+
+test('[critical] on the close, a bar that finishes through the stop is an exit', async () => {
+  // The second-to-last bar is the last finished one, and it closed through.
+  const r = rig({
+    quotes: [quote(ceProduct().symbol, 103.5, 104.5)],
+    candles: async () => [bar(104, 1), bar(118, 2), bar(107, 3)],
+  });
+  const plan = { ...planFor(ceProduct(), { lots: 1, stopPrice: 110 }), monitorOn: 'close' as const };
+  await r.engine.open(plan);
+  await r.engine.poll(plan.tradeId);
+
+  const after = (await r.store.get(plan.tradeId))!;
+  assert.equal(after.state.position, 0, 'closed on the bar, not on the wick');
+});
+
+test('a close-watched stop with no candles does nothing, rather than falling back to the touch', async () => {
+  // A stop that fires because a candle request failed is a stop that fires at
+  // random. The resting stop at the exchange is still there on the mark.
+  const r = rig({
+    quotes: [quote(ceProduct().symbol, 139.5, 140.5)],
+    candles: async () => { throw new Error('feed down'); },
+  });
+  const plan = { ...planFor(ceProduct(), { lots: 1, stopPrice: 110 }), monitorOn: 'close' as const };
+  await r.engine.open(plan);
+  await r.engine.poll(plan.tradeId);
+  assert.notEqual((await r.store.get(plan.tradeId))!.state.position, 0);
+});

@@ -86,6 +86,8 @@ export function rig(opts: {
   spot?: number | null;
   /** Called after the rig has recorded the event -- including when it throws. */
   onEvent?: EngineDeps['onEvent'];
+  /** The option's own candles, for a stop watched on the close. */
+  candles?: EngineDeps['candles'];
 } = {}): Rig {
   const ex = new PaperExchange({ balanceUsd: opts.balanceUsd ?? 100_000 });
   for (const p of opts.products ?? [ceProduct()]) ex.addProduct(p);
@@ -117,6 +119,7 @@ export function rig(opts: {
     dayPnlUsd: () => pnl,
     spot: () => spot,
     onAlarm: (t, message) => alarms.push({ tradeId: t.tradeId, message }),
+    candles: opts.candles,
     onSwallowed: (what, _order, error) => swallowed.push({ what, message: error.message }),
     onEvent: (event, before, after, plan) => {
       events.push({ event, before, after });
