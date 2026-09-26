@@ -206,6 +206,27 @@ export function Overview({
   const otherChanges = useChanges(data, otherLeg, spot, otherLeg ? entryOf(`${otherLeg.cp}-BTC-${otherLeg.strike}-${snap.expiry}`) : null);
   // The chosen strikes, CE first, for the panels that show both.
   const chosenPair = useMemo(() => [{ leg, changes }, { leg: otherLeg, changes: otherChanges }].sort((a, b) => (a.leg?.cp === 'C' ? 0 : 1) - (b.leg?.cp === 'C' ? 0 : 1)), [leg, changes, otherLeg, otherChanges]);
+  /*
+   * What changed opens on the at-the-money CE and PE (26 Sep 2026).
+   *
+   * Until a strike is chosen it showed the desk's own pick, an out-of-the-money
+   * strike whose premium moves a fraction of the ATM's -- the ATM pair is where
+   * a change in the market shows first, and the pair the owner asked to see.
+   * Choosing a strike on the chain still wins: the panel is about what is
+   * being considered. The ATM reads reuse the inspected strike's request when
+   * it is the same strike, and ask for nothing once a choice is made.
+   */
+  const chose = picked !== null || pair.C !== null || pair.P !== null;
+  const atmLeg = (cp: 'C' | 'P') => (chose ? null : data.legs.find((l) => l.cp === cp && l.strike === snap.atm) ?? null);
+  const atmC = atmLeg('C');
+  const atmP = atmLeg('P');
+  const same = (a: Leg | null, b: Leg | null) => !!a && !!b && a.cp === b.cp && a.strike === b.strike;
+  const atmCChanges = useChanges(data, same(atmC, leg) ? null : atmC, spot, atmC ? entryOf(`C-BTC-${atmC.strike}-${snap.expiry}`) : null);
+  const atmPChanges = useChanges(data, same(atmP, leg) ? null : atmP, spot, atmP ? entryOf(`P-BTC-${atmP.strike}-${snap.expiry}`) : null);
+  const changedPair = useMemo(() => (chose ? chosenPair : [
+    { leg: atmC, changes: same(atmC, leg) ? changes : atmCChanges },
+    { leg: atmP, changes: same(atmP, leg) ? changes : atmPChanges },
+  ]), [chose, chosenPair, atmC, atmP, leg, changes, atmCChanges, atmPChanges]);
 
   return (
     <PanelFold.Provider value={fold}>
@@ -242,7 +263,7 @@ export function Overview({
 
         <div className="ov-col">
           <ErrorBoundary where="Flow"><FlowPanel perp={perp} market={data.market} legs={data.legs} atm={snap.atm} window={flowWindow} onWindow={setFlowWindow} /></ErrorBoundary>
-          <ErrorBoundary where="What changed"><ChangesPanel strikes={chosenPair} /></ErrorBoundary>
+          <ErrorBoundary where="What changed"><ChangesPanel strikes={changedPair} /></ErrorBoundary>
         </div>
 
         <div className="ov-col ov-right">

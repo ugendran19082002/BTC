@@ -70,6 +70,19 @@ describe('the decision panels', () => {
     expect(screen.getByText(/^What changed · /)).toBeInTheDocument();
   });
 
+  it('[critical] What changed opens on the at-the-money CE and PE until a strike is chosen', () => {
+    localStorage.clear();
+    const atm = data.snapshot.atm.toLocaleString('en-US');
+    const onSelect = vi.fn();
+    const { rerender } = render(<Overview data={data} trade={null} contracts={1} selected={null} onSelect={onSelect} />);
+    expect(screen.getByText(`What changed · ${atm} CE · ${atm} PE`, { selector: 'h3' })).toBeInTheDocument();
+    // A chosen strike wins over the default.
+    const put = data.legs.find((l) => l.cp === 'P' && l.strike !== data.snapshot.atm)!;
+    rerender(<Overview data={data} trade={null} contracts={1} selected={{ cp: 'P', strike: put.strike }} onSelect={onSelect} />);
+    expect(screen.getByText(new RegExp(`^What changed · .*${put.strike.toLocaleString('en-US')} PE`), { selector: 'h3' })).toBeInTheDocument();
+    expect(screen.queryByText(`What changed · ${atm} CE · ${atm} PE`, { selector: 'h3' })).toBeNull();
+  });
+
   it('the bar lists the expiries and changes the contract from there', () => {
     const onExpiry = vi.fn();
     render(<Overview data={data} trade={null} contracts={1} expiries={[{ expiry: data.snapshot.expiry, expiryTs: data.snapshot.expiryTs, hoursAway: 5, isDaily: true, isNextEntry: true } as never, { expiry: '220926', expiryTs: data.snapshot.expiryTs + 2 * 86_400, hoursAway: 60 } as never]} onExpiry={onExpiry} />);
