@@ -102,6 +102,34 @@ const MIGRATIONS: Migration[] = [
         ADD COLUMN IF NOT EXISTS move_pts       DOUBLE PRECISION;
     `,
   },
+  {
+    /*
+     * Full signal lifecycle audit trail: exactly when the trigger was breached,
+     * whether first hit was target or stop and at what price and timestamp,
+     * plus maximum favorable/adverse excursion (MFE / MAE) and context.
+     */
+    id: 'market-015-signal-lifecycle-audit',
+    up: `
+      ALTER TABLE market_states
+        ADD COLUMN IF NOT EXISTS triggered_at    BIGINT,
+        ADD COLUMN IF NOT EXISTS confirmed_at    BIGINT,
+        ADD COLUMN IF NOT EXISTS target_hit_at   BIGINT,
+        ADD COLUMN IF NOT EXISTS stop_hit_at     BIGINT,
+        ADD COLUMN IF NOT EXISTS expired_at      BIGINT,
+        ADD COLUMN IF NOT EXISTS first_hit       TEXT,
+        ADD COLUMN IF NOT EXISTS first_hit_price DOUBLE PRECISION,
+        ADD COLUMN IF NOT EXISTS first_hit_time  BIGINT,
+        ADD COLUMN IF NOT EXISTS mfe             DOUBLE PRECISION,
+        ADD COLUMN IF NOT EXISTS mae             DOUBLE PRECISION,
+        ADD COLUMN IF NOT EXISTS mfe_price       DOUBLE PRECISION,
+        ADD COLUMN IF NOT EXISTS mae_price       DOUBLE PRECISION,
+        ADD COLUMN IF NOT EXISTS eval_window_min INTEGER,
+        ADD COLUMN IF NOT EXISTS score           INTEGER,
+        ADD COLUMN IF NOT EXISTS probability     INTEGER,
+        ADD COLUMN IF NOT EXISTS regime          TEXT,
+        ADD COLUMN IF NOT EXISTS mtf_consensus   TEXT;
+    `,
+  },
 ];
 
 let ready: Promise<void> | null = null;
@@ -162,19 +190,172 @@ export type StateRow = {
   resolvedClose: number | null;
   /** BTC index points from the call to that close: the move, not the verdict. */
   movePts: number | null;
+  triggeredAt?: number | null;
+  confirmedAt?: number | null;
+  targetHitAt?: number | null;
+  stopHitAt?: number | null;
+  expiredAt?: number | null;
+  firstHit?: 'TARGET' | 'STOP' | 'NONE' | null;
+  firstHitPrice?: number | null;
+  firstHitTime?: number | null;
+  mfe?: number | null;
+  mae?: number | null;
+  mfePrice?: number | null;
+  maePrice?: number | null;
+  evalWindowMin?: number | null;
+  score?: number | null;
+  probability?: number | null;
+  regime?: string | null;
+  mtfConsensus?: string | null;
 };
+
+export type SignalAudit = {
+  outcome: Outcome;
+  triggeredAt: number | null;
+  confirmedAt: number | null;
+  targetHitAt: number | null;
+  stopHitAt: number | null;
+  expiredAt: number | null;
+  firstHit: 'TARGET' | 'STOP' | 'NONE';
+  firstHitPrice: number | null;
+  firstHitTime: number | null;
+  mfe: number | null;
+  mae: number | null;
+  mfePrice: number | null;
+  maePrice: number | null;
+};
+
+/**
+ * Full intrabar audit evaluation of a signal over the bars following its call.
+ *
+ * Tracks the trigger moment, whether target or stop was hit first, the exact price
+ * and timestamp of that first hit, and the maximum favorable and adverse excursion.
+ */
+export function evaluateSignalOutcome(input: {
+  plan: Plan | null;
+  side: Side | null;
+  stage: string;
+  callAt: number;
+  closeAtCall: number;
+  windowMs: number;
+  after: readonly Candle[];
+}): SignalAudit {
+  const { plan, side, stage, callAt, closeAtCall, windowMs, after } = input;
+  const defAudit: SignalAudit = {
+    outcome: 'NOT_GRADED',
+    triggeredAt: null,
+    confirmedAt: null,
+    targetHitAt: null,
+    stopHitAt: null,
+    expiredAt: null,
+    firstHit: 'NONE',
+    firstHitPrice: null,
+    firstHitTime: null,
+    mfe: null,
+    mae: null,
+    mfePrice: null,
+    maePrice: null,
+  };
+
+  if (!plan || side === null) return defAudit;
+  if (!after.length) {
+    return { ...defAudit, outcome: 'EXPIRED', expiredAt: callAt + windowMs };
+  }
+
+  const through = (bar: Candle) => (side === 'UP' ? bar.high >= plan.trigger : bar.low <= plan.trigger);
+  const alreadyThrough = stage === 'CONFIRMED' || stage === 'RETEST' || stage === 'FAILED';
+  const from = alreadyThrough ? 0 : after.findIndex(through);
+
+  if (from < 0) {
+    return {
+      ...defAudit,
+      outcome: 'NOT_TRIGGERED',
+      expiredAt: callAt + windowMs,
+    };
+  }
+
+  const triggerBar = after[from]!;
+  const triggeredAt = alreadyThrough ? callAt : triggerBar.time * 1000;
+  const confirmedAt = (alreadyThrough || stage === 'CONFIRMED') ? callAt : null;
+  const tradeBars = after.slice(from);
+  const entryPrice = alreadyThrough ? closeAtCall : plan.trigger;
+
+  let bestPrice = entryPrice;
+  let worstPrice = entryPrice;
+  let firstHit: 'TARGET' | 'STOP' | 'NONE' = 'NONE';
+  let firstHitPrice: number | null = null;
+  let firstHitTime: number | null = null;
+  let targetHitAt: number | null = null;
+  let stopHitAt: number | null = null;
+  let outcome: Outcome = 'EXPIRED';
+
+  for (const bar of tradeBars) {
+    const barTimeMs = bar.time * 1000;
+    if (side === 'UP') {
+      if (bar.high > bestPrice) bestPrice = bar.high;
+      if (bar.low < worstPrice) worstPrice = bar.low;
+    } else {
+      if (bar.low < bestPrice) bestPrice = bar.low;
+      if (bar.high > worstPrice) worstPrice = bar.high;
+    }
+
+    const hitTarget = side === 'UP' ? bar.high >= plan.target1 : bar.low <= plan.target1;
+    const hitStop = side === 'UP' ? bar.low <= plan.invalidation : bar.high >= plan.invalidation;
+
+    if (firstHit === 'NONE') {
+      if (hitStop && hitTarget) {
+        firstHit = 'STOP';
+        firstHitPrice = plan.invalidation;
+        firstHitTime = barTimeMs;
+        stopHitAt = barTimeMs;
+        outcome = 'INVALIDATED';
+      } else if (hitStop) {
+        firstHit = 'STOP';
+        firstHitPrice = plan.invalidation;
+        firstHitTime = barTimeMs;
+        stopHitAt = barTimeMs;
+        outcome = 'INVALIDATED';
+      } else if (hitTarget) {
+        firstHit = 'TARGET';
+        firstHitPrice = plan.target1;
+        firstHitTime = barTimeMs;
+        targetHitAt = barTimeMs;
+        outcome = 'TARGET_HIT';
+      }
+    }
+  }
+
+  const expiredAt = outcome === 'EXPIRED' ? callAt + windowMs : null;
+  const mfe = side === 'UP'
+    ? Math.max(0, Math.round((bestPrice - entryPrice) * 100) / 100)
+    : Math.max(0, Math.round((entryPrice - bestPrice) * 100) / 100);
+  const mae = side === 'UP'
+    ? Math.max(0, Math.round((entryPrice - worstPrice) * 100) / 100)
+    : Math.max(0, Math.round((worstPrice - entryPrice) * 100) / 100);
+
+  return {
+    outcome,
+    triggeredAt,
+    confirmedAt,
+    targetHitAt,
+    stopHitAt,
+    expiredAt,
+    firstHit,
+    firstHitPrice,
+    firstHitTime,
+    mfe,
+    mae,
+    mfePrice: bestPrice,
+    maePrice: worstPrice,
+  };
+}
 
 /**
  * What happened after the call, judged in the order it could have happened.
  *
- * **The trigger comes first.** A setup is a conditional -- *over this price,
- * towards that one* -- so the bars are read for the trigger before anything
- * else is asked. Until price reaches it there is no trade and no verdict; the
- * old grader skipped this step entirely and marked every untriggered watch
- * wrong, which is how a screen of red came to mean nothing.
- *
- * A state that was already confirmed when it was written is triggered by
- * definition: price was through the level when the desk called it.
+ * The trigger comes first. A setup is a conditional -- over this price,
+ * towards that one -- so the bars are read for the trigger before anything
+ * else is asked. Until price reaches it there is no trade and no verdict.
  */
 export function outcomeFor(input: {
   plan: Plan | null;
@@ -183,22 +364,15 @@ export function outcomeFor(input: {
   stage: string;
   after: readonly Candle[];
 }): Outcome {
-  const { plan, side, stage, after } = input;
-  if (!plan || side === null) return 'NOT_GRADED';
-  if (!after.length) return 'EXPIRED';
-
-  const through = (bar: Candle) => (side === 'UP' ? bar.high >= plan.trigger : bar.low <= plan.trigger);
-  const alreadyThrough = stage === 'CONFIRMED' || stage === 'RETEST' || stage === 'FAILED';
-  const from = alreadyThrough ? 0 : after.findIndex(through);
-  if (from < 0) return 'NOT_TRIGGERED';
-
-  for (const bar of after.slice(from)) {
-    const hitTarget = side === 'UP' ? bar.high >= plan.target1 : bar.low <= plan.target1;
-    const hitStop = side === 'UP' ? bar.low <= plan.invalidation : bar.high >= plan.invalidation;
-    if (hitStop) return 'INVALIDATED';
-    if (hitTarget) return 'TARGET_HIT';
-  }
-  return 'EXPIRED';
+  return evaluateSignalOutcome({
+    plan: input.plan,
+    side: input.side,
+    stage: input.stage,
+    callAt: 0,
+    closeAtCall: input.plan?.trigger ?? 0,
+    windowMs: 0,
+    after: input.after,
+  }).outcome;
 }
 
 /**
@@ -241,9 +415,11 @@ export async function noteState(read: StateRead): Promise<number | null> {
     `INSERT INTO market_states
        (at, tf, event, stage, side, confirmed, confidence, close, resistance, support,
         trigger, target1, target2, invalidation,
-        words, insight, volume_ratio, atr, parts, inputs, patterns, indicators)
+        words, insight, volume_ratio, atr, parts, inputs, patterns, indicators,
+        confirmed_at, eval_window_min, score, probability, regime, mtf_consensus)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
-             $15,$16,$17,$18,$19,$20,$21,$22)
+             $15,$16,$17,$18,$19,$20,$21,$22,
+             $23,$24,$25,$26,$27,$28)
      RETURNING id`,
     [
       read.at, read.tf, s.event, s.stage, s.side, s.confirmed, s.confidence, bar?.close ?? 0,
@@ -252,6 +428,12 @@ export async function noteState(read: StateRead): Promise<number | null> {
       s.words, s.insight, s.volumeRatio, read.inputs.atr,
       JSON.stringify(s.parts), JSON.stringify(read.inputs),
       JSON.stringify(read.patterns.shown), JSON.stringify(read.indicators.shown),
+      s.confirmed ? read.at : null,
+      EVAL_WINDOW_MIN[read.tf] ?? 30,
+      s.confidence,
+      null,
+      read.context?.regime ?? null,
+      read.context?.alignment?.word ?? null,
     ],
   );
   await query('DELETE FROM market_states WHERE at < $1', [read.at - MARKET_STATES_KEEP_MS]);
@@ -265,13 +447,7 @@ export async function noteState(read: StateRead): Promise<number | null> {
  * closed -- grading a call whose bars have not happened yet would answer the
  * question with a shrug and then never ask it again.
  *
- * **Oldest first.** It took the newest ungraded rows at first, which starved
- * the journal completely: the desk writes a row every time the state changes,
- * so the twenty newest ungraded calls are almost always the twenty youngest,
- * every one of them still inside its window -- the pass skipped all twenty,
- * and the older rows that were ready never came up. The whole history sat at
- * "—" while the grader ran on every poll. Oldest first, a call is graded the
- * first pass after its bars exist.
+ * Oldest first, a call is graded the first pass after its bars exist.
  */
 export async function gradeStates(nowMs = Date.now(), limit = 20): Promise<number> {
   await stateHistorySchema();
@@ -294,20 +470,39 @@ export async function gradeStates(nowMs = Date.now(), limit = 20): Promise<numbe
     const after = await candles(
       'BTCUSD', Math.floor(r.at / 1000), Math.floor((r.at + windowMs) / 1000), r.tf,
     ).catch(() => [] as Candle[]);
-    const outcome = outcomeFor({ plan, side: r.side, stage: r.stage, after });
+    const audit = evaluateSignalOutcome({
+      plan,
+      side: r.side,
+      stage: r.stage,
+      callAt: r.at,
+      closeAtCall: r.close,
+      windowMs,
+      after,
+    });
     /*
      * Where price actually finished the window, and how far that is from the
-     * call. The verdict answers "did the plan work"; this answers "what did
-     * BTC do", which is the other half and the one the list is read for. It is
-     * recorded rather than worked out later from the next row, which would
-     * make the figure depend on when the screen happened to be open.
+     * call. Recorded alongside the full intrabar first-hit audit trail.
      */
     const last = after[after.length - 1] ?? null;
     const move = last === null ? null : Math.round((last.close - r.close) * 100) / 100;
     await query(
-      `UPDATE market_states SET outcome = $1, graded_at = $2, resolved_close = $3, move_pts = $4
-        WHERE id = $5`,
-      [outcome, nowMs, last?.close ?? null, move, r.id],
+      `UPDATE market_states SET
+         outcome = $1, graded_at = $2, resolved_close = $3, move_pts = $4,
+         triggered_at = $5, confirmed_at = COALESCE(confirmed_at, $6),
+         target_hit_at = $7, stop_hit_at = $8, expired_at = $9,
+         first_hit = $10, first_hit_price = $11, first_hit_time = $12,
+         mfe = $13, mae = $14, mfe_price = $15, mae_price = $16,
+         eval_window_min = COALESCE(eval_window_min, $17)
+       WHERE id = $18`,
+      [
+        audit.outcome, nowMs, last?.close ?? null, move,
+        audit.triggeredAt, audit.confirmedAt,
+        audit.targetHitAt, audit.stopHitAt, audit.expiredAt,
+        audit.firstHit, audit.firstHitPrice, audit.firstHitTime,
+        audit.mfe, audit.mae, audit.mfePrice, audit.maePrice,
+        Math.round(windowMs / 60_000),
+        r.id,
+      ],
     );
     graded += 1;
   }
@@ -323,10 +518,20 @@ export async function recentStates(tf: StateTf | null = null, limit = 10): Promi
     trigger: number | null; target1: number | null; target2: number | null; invalidation: number | null;
     outcome: Outcome | null; graded_at: number | null;
     resolved_close: number | null; move_pts: number | null;
+    triggered_at: number | null; confirmed_at: number | null;
+    target_hit_at: number | null; stop_hit_at: number | null; expired_at: number | null;
+    first_hit: string | null; first_hit_price: number | null; first_hit_time: number | null;
+    mfe: number | null; mae: number | null; mfe_price: number | null; mae_price: number | null;
+    eval_window_min: number | null; score: number | null; probability: number | null;
+    regime: string | null; mtf_consensus: string | null;
   }>(
     `SELECT id, at, tf, event, stage, side, confirmed, confidence, close,
             trigger, target1, target2, invalidation, outcome, graded_at,
-            resolved_close, move_pts
+            resolved_close, move_pts,
+            triggered_at, confirmed_at, target_hit_at, stop_hit_at, expired_at,
+            first_hit, first_hit_price, first_hit_time,
+            mfe, mae, mfe_price, mae_price,
+            eval_window_min, score, probability, regime, mtf_consensus
        FROM market_states ${tf ? 'WHERE tf = $2' : ''} ORDER BY at DESC LIMIT $1`,
     tf ? [limit, tf] : [limit],
   );
@@ -341,6 +546,23 @@ export async function recentStates(tf: StateTf | null = null, limit = 10): Promi
     gradedAt: r.graded_at === null ? null : Number(r.graded_at),
     resolvedClose: r.resolved_close,
     movePts: r.move_pts,
+    triggeredAt: r.triggered_at === null ? null : Number(r.triggered_at),
+    confirmedAt: r.confirmed_at === null ? null : Number(r.confirmed_at),
+    targetHitAt: r.target_hit_at === null ? null : Number(r.target_hit_at),
+    stopHitAt: r.stop_hit_at === null ? null : Number(r.stop_hit_at),
+    expiredAt: r.expired_at === null ? null : Number(r.expired_at),
+    firstHit: (r.first_hit as 'TARGET' | 'STOP' | 'NONE' | null) ?? null,
+    firstHitPrice: r.first_hit_price,
+    firstHitTime: r.first_hit_time === null ? null : Number(r.first_hit_time),
+    mfe: r.mfe,
+    mae: r.mae,
+    mfePrice: r.mfe_price,
+    maePrice: r.mae_price,
+    evalWindowMin: r.eval_window_min,
+    score: r.score,
+    probability: r.probability,
+    regime: r.regime,
+    mtfConsensus: r.mtf_consensus,
   }));
 }
 
