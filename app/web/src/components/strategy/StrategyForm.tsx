@@ -318,16 +318,13 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                         className={cn(
                           'flex items-start gap-2 rounded-lg border px-3 py-2.5 text-left transition-colors duration-150',
                           active
-                            ? 'border-l-2 border-l-[hsl(var(--primary))] border-t-border border-r-border border-b-border bg-muted/60'
-                            : 'border-border bg-muted/30 hover:bg-muted/60',
+                            ? 'border-[hsl(var(--primary))] bg-muted/50'
+                            : 'border-border bg-muted/20 opacity-60 hover:opacity-80',
                         )}
                       >
                         <span className="mt-0.5 text-sm flex-none">{icon}</span>
                         <span className="min-w-0">
-                          <span className={cn(
-                            'block text-[12.5px] font-medium leading-tight',
-                            active ? 'text-foreground' : 'text-foreground/70',
-                          )}>
+                          <span className="block text-[12.5px] font-medium leading-tight text-foreground">
                             {label}
                           </span>
                           <span className="mt-0.5 block text-[10.5px] leading-snug text-muted-foreground">
