@@ -268,6 +268,35 @@ export type MarketStateResponse = {
 
 export const getMarketState = (tf: string) => json<MarketStateResponse>(`/api/market-state?tf=${encodeURIComponent(tf)}`);
 
+/**
+ * The hour after a confirmed break on 15m / 30m / 1h, as measured over
+ * 2024-2026 (server: domain/break-risk.ts). Sizes are BTC points from the
+ * break's close; `keptGoing` is the measured share that went on the break's
+ * way -- a coin flip, which is why the card never calls a direction.
+ */
+export type BreakRisk = {
+  tf: '15m' | '30m' | '1h';
+  side: 'UP' | 'DOWN';
+  level: number;
+  at: number;
+  until: number;
+  entry: number;
+  atr: number;
+  withPts: [number, number, number, number];
+  againstPts: [number, number, number, number];
+  eitherPts: [number, number];
+  baselinePts: [number, number];
+  bigger: number;
+  keptGoing: number;
+  keptGoingByYear: Record<string, { n: number; keptGoing: number }>;
+  n: number;
+  from: string;
+  to: string;
+  reach: { stepsAtr: readonly number[]; with: number[]; against: number[] };
+};
+
+export const getBreakRisk = () => json<{ at: number; risk: BreakRisk | null }>('/api/break-risk');
+
 export type StateHistoryRow = {
   id: number; at: number; tf: string; event: string; stage: string;
   side: 'UP' | 'DOWN' | null; confirmed: boolean; confidence: number; close: number;

@@ -32,6 +32,7 @@ import { noteOpenInterest, openInterestChange, ivChange, type OiChange } from '.
 import { chainBoard, recordBoard } from '../../market/chain-features.js';
 import { SHOCK_WINDOWS } from '../../domain/shock.js';
 import { shockFrom } from '../../market/shock-now.js';
+import { breakRiskNow } from '../../market/break-risk-now.js';
 
 /** Resolve the `at` query param: "now" (or absent) means live. */
 function resolveAt(at: string | undefined): number | null {
@@ -266,6 +267,17 @@ export function registerDeskRoutes(app: FastifyInstance) {
       const expiryTs = /^\d{9,10}$/.test(q.expiry ?? '') ? Number(q.expiry) : null;
       const dayStartMs = expiryTs === null ? null : expiryTs * 1000 - 24 * 3_600_000;
       return await movementByWindow(now, { entryMs, dayStartMs });
+    } catch (e) { reply.code(502); return { error: (e as Error).message }; }
+  });
+
+  /*
+   * The hour after a confirmed break on 15m, 30m or 1h: how far it measured,
+   * and which way it went (a coin flip). `risk` is null outside that hour.
+   * See domain/break-risk.ts and research/MOMENTUM-MEASURED.txt.
+   */
+  app.get('/api/break-risk', async (_req, reply) => {
+    try {
+      return await breakRiskNow();
     } catch (e) { reply.code(502); return { error: (e as Error).message }; }
   });
 

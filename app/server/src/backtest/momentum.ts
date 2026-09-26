@@ -1,7 +1,9 @@
 import type { Candle } from '../market/delta.js';
 import { atr, ema, mean } from '../domain/indicators.js';
-import { marketState, type Side } from '../domain/market-state.js';
+import type { Side } from '../domain/market-state.js';
+import { confirmedBreaks, resample, TF_BARS_OF_5M, type Tf } from '../domain/break-risk.js';
 import { evaluateSignalOutcome } from '../market/state-history.js';
+import type { CarryStats } from '../domain/break-risk.js';
 
 /**
  * The momentum call, replayed over history (26 Sep 2026).
@@ -18,37 +20,7 @@ import { evaluateSignalOutcome } from '../market/state-history.js';
  * prints is `momentum-study.ts`.
  */
 
-export type Tf = '5m' | '15m' | '30m' | '1h';
-export const TF_BARS_OF_5M: Record<Tf, number> = { '5m': 1, '15m': 3, '30m': 6, '1h': 12 };
-
-/** Five-minute bars into `n`-bar bars, aligned to the clock, incomplete buckets dropped. */
-export function resample(bars: readonly Candle[], n: number): Candle[] {
-  if (n === 1) return [...bars];
-  const span = n * 300;
-  const out: Candle[] = [];
-  let bucket: Candle[] = [];
-  let start = -1;
-  const flush = () => {
-    if (bucket.length === n) {
-      out.push({
-        time: start,
-        open: bucket[0]!.open,
-        high: Math.max(...bucket.map((b) => b.high)),
-        low: Math.min(...bucket.map((b) => b.low)),
-        close: bucket[bucket.length - 1]!.close,
-        volume: bucket.reduce((a, b) => a + b.volume, 0),
-      });
-    }
-    bucket = [];
-  };
-  for (const b of bars) {
-    const s = b.time - (b.time % span);
-    if (s !== start) { flush(); start = s; }
-    bucket.push(b);
-  }
-  flush();
-  return out;
-}
+export { resample, TF_BARS_OF_5M, type Tf } from '../domain/break-risk.js';
 
 export type Trend = 1 | -1 | 0;
 
@@ -110,59 +82,44 @@ export type Signal = {
   };
 };
 
-const WINDOW = 60;
-
 /**
  * Every confirmed breakout and breakdown on `tf`, as the live card would have
- * called it at the bar's close.
- *
- * A second call the same way within `cooldownBars` is the same move and is
- * dropped: counting it again would count one good hour several times.
+ * called it at the bar's close -- found by the same `confirmedBreaks` the live
+ * risk card uses -- with the features the filters are tested on.
  */
-export function extractSignals(bars5m: readonly Candle[], tf: Tf, cooldownBars = 3): { signals: Signal[]; bars: Candle[] } {
+export function extractSignals(bars5m: readonly Candle[], tf: Tf): { signals: Signal[]; bars: Candle[] } {
   const bars = resample(bars5m, TF_BARS_OF_5M[tf]);
   const h1 = trendSeries(resample(bars5m, 12), 3600, 20);
   const h4 = trendSeries(resample(bars5m, 48), 4 * 3600, 20);
   const span = TF_BARS_OF_5M[tf] * 300;
-  const signals: Signal[] = [];
-  const lastAt: Record<Side, number> = { UP: -Infinity, DOWN: -Infinity };
   // A rolling true range, for the compression ratio.
   const trs: number[] = [0];
   for (let i = 1; i < bars.length; i++) {
     const b = bars[i]!; const a = bars[i - 1]!;
     trs.push(Math.max(b.high - b.low, Math.abs(b.high - a.close), Math.abs(b.low - a.close)));
   }
-  for (let i = Math.max(WINDOW, 115); i < bars.length; i++) {
-    const window = bars.slice(i - WINDOW + 1, i + 1);
-    const a = atr(window, 14);
-    if (!a || a <= 0) continue;
-    const s = marketState({ bars: window, level: { resistance: null, support: null }, atr: a, tfLabel: tf });
-    if (s.stage !== 'CONFIRMED' || !s.side || s.against === null) continue;
-    if (s.event !== 'BREAKOUT_CONFIRMED' && s.event !== 'BREAKDOWN_CONFIRMED') continue;
-    if (i - lastAt[s.side] <= cooldownBars) { lastAt[s.side] = i; continue; }
-    lastAt[s.side] = i;
-    const plan = s.plans[s.side === 'UP' ? 'up' : 'down'];
-    if (!plan) continue;
-    const bar = bars[i]!;
+  // From bar 115: the compression feature wants a hundred bars of true range behind it.
+  const signals = confirmedBreaks(bars, 115).map((k): Signal => {
+    const bar = bars[k.i]!;
     const closeT = bar.time + span;
-    const dir = s.side === 'UP' ? 1 : -1;
-    const prior = mean(trs.slice(i - 114, i - 14));
-    const nowAtr = mean(trs.slice(i - 14, i));
-    signals.push({
-      tf, time: bar.time, side: s.side, level: s.against, entry: bar.close, atr: a,
-      barExtreme: s.side === 'UP' ? bar.low : bar.high,
-      plan: { trigger: plan.trigger, target1: plan.target1, invalidation: plan.invalidation },
+    const dir = k.side === 'UP' ? 1 : -1;
+    const prior = mean(trs.slice(k.i - 114, k.i - 14));
+    const nowAtr = mean(trs.slice(k.i - 14, k.i));
+    return {
+      tf, time: bar.time, side: k.side, level: k.level, entry: k.entry, atr: k.atr,
+      barExtreme: k.side === 'UP' ? bar.low : bar.high,
+      plan: k.plan,
       features: {
         year: new Date(closeT * 1000).getUTCFullYear(),
         h1: (h1(closeT) * dir) as Trend,
         h4: (h4(closeT) * dir) as Trend,
         compression: prior && nowAtr ? nowAtr / prior : null,
-        volumeRatio: s.volumeRatio,
-        overshootAtr: Math.abs(bar.close - s.against) / a,
+        volumeRatio: k.volumeRatio,
+        overshootAtr: Math.abs(k.entry - k.level) / k.atr,
         hourIst: Math.floor(((closeT + 19_800) % 86_400) / 3600),
       },
-    });
-  }
+    };
+  });
   return { signals, bars };
 }
 
@@ -251,4 +208,83 @@ export function add(t: Tally, x: Result): void {
   if (x.outcome === 'TARGET') t.hits++;
   t.r += x.r;
   t.rNet += x.rNet;
+}
+
+// ------------------------------------------------------------------ carry
+
+/** Distances the reach curve is measured at, in the timeframe's ATR. */
+export const REACH_STEPS_ATR = Array.from({ length: 33 }, (_, i) => i * 0.25);
+
+export type { CarryStats } from '../domain/break-risk.js';
+
+const quantile = (xs: readonly number[], p: number) => {
+  const s = [...xs].sort((a, b) => a - b);
+  return s.length ? s[Math.min(s.length - 1, Math.floor(p * s.length))]! : 0;
+};
+const r3 = (v: number) => Math.round(v * 1000) / 1000;
+
+/**
+ * How far the hour after a confirmed break goes, measured in the break
+ * timeframe's own ATR so the table holds at any BTC price.
+ *
+ * The hour is read from the five-minute bars after the signal bar closed.
+ * The baseline is every seventh five-minute bar's following hour, measured in
+ * the same timeframe's ATR at that moment: the comparison is "a break's hour"
+ * against "any hour", like for like.
+ */
+export function carryStats(bars5m: readonly Candle[], tf: Tf, hourBars = 12): CarryStats {
+  const { signals, bars } = extractSignals(bars5m, tf);
+  const idx5 = new Map(bars5m.map((b, i) => [b.time, i]));
+  const span = TF_BARS_OF_5M[tf] * 300;
+  const withs: number[] = []; const againsts: number[] = []; const eithers: number[] = [];
+  let kept = 0;
+  const byYear: Record<string, { n: number; kept: number }> = {};
+  for (const s of signals) {
+    const i = idx5.get(s.time + span - 300);
+    if (i === undefined) continue;
+    const next = bars5m.slice(i + 1, i + 1 + hourBars);
+    if (next.length < hourBars) continue;
+    const d = s.side === 'UP' ? 1 : -1;
+    const w = Math.max(0, ...next.map((b) => d * ((d === 1 ? b.high : b.low) - s.entry))) / s.atr;
+    const a = Math.max(0, ...next.map((b) => -d * ((d === 1 ? b.low : b.high) - s.entry))) / s.atr;
+    const k = d * (next[next.length - 1]!.close - s.entry) > 0;
+    withs.push(w); againsts.push(a); eithers.push(Math.max(w, a));
+    if (k) kept++;
+    const y = String(s.features.year);
+    byYear[y] ??= { n: 0, kept: 0 };
+    byYear[y]!.n++;
+    if (k) byYear[y]!.kept++;
+  }
+  // Any hour: the timeframe's ATR at each sampled moment, from its closed bars.
+  const tfAtr = new Map<number, number>();
+  for (let j = 15; j < bars.length; j++) {
+    const a = atr(bars.slice(j - 15, j + 1), 14);
+    if (a) tfAtr.set(bars[j]!.time + span, a);
+  }
+  const baseline: number[] = [];
+  for (let i = 300; i < bars5m.length - hourBars; i += 7) {
+    const closeT = bars5m[i]!.time + 300;
+    const a = tfAtr.get(closeT - (closeT % span));
+    if (!a) continue;
+    const e = bars5m[i]!.close;
+    const next = bars5m.slice(i + 1, i + 1 + hourBars);
+    baseline.push(Math.max(...next.map((b) => b.high - e), ...next.map((b) => e - b.low)) / a);
+  }
+  const reach = (xs: readonly number[]) => REACH_STEPS_ATR.map((k) => r3(xs.filter((x) => x >= k).length / Math.max(1, xs.length)));
+  const q4 = (xs: readonly number[]) => [0.5, 0.75, 0.9, 0.95].map((p) => r3(quantile(xs, p))) as [number, number, number, number];
+  const day = (t: number) => new Date(t * 1000).toISOString().slice(0, 10);
+  return {
+    tf,
+    n: withs.length,
+    from: day(bars5m[0]!.time),
+    to: day(bars5m[bars5m.length - 1]!.time),
+    keptGoing: r3(kept / Math.max(1, withs.length)),
+    keptGoingByYear: Object.fromEntries(Object.entries(byYear).map(([y, v]) => [y, { n: v.n, keptGoing: r3(v.kept / v.n) }])),
+    withAtr: q4(withs),
+    againstAtr: q4(againsts),
+    eitherAtr: [r3(quantile(eithers, 0.5)), r3(quantile(eithers, 0.9))],
+    baselineEitherAtr: [r3(quantile(baseline, 0.5)), r3(quantile(baseline, 0.9))],
+    reachWith: reach(withs),
+    reachAgainst: reach(againsts),
+  };
 }
