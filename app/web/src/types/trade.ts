@@ -77,6 +77,15 @@ export type Trade = {
     takeProfitPrice: number | null;
     stopPrice: number | null;
     /**
+     * Why there is no stop, where a fixed one was overtaken by the fill.
+     *
+     * `stopAt: 70` means seventy whatever the entry -- until the entry fills at
+     * seventy-five, and the stop is suddenly under the position. The engine
+     * refuses to place it rather than closing the trade a second after opening
+     * it, and this is what it says instead. Absent from an older server.
+     */
+    exitProblem?: string | null;
+    /**
      * How each exit was asked for: a leg here follows the fill (a % or points);
      * a leg absent is a fixed price. Absent from an older server.
      */
