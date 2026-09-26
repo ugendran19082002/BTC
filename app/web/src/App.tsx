@@ -1,6 +1,6 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Activity, AlertTriangle, BarChart3, Bot, Briefcase, ListOrdered, RefreshCw, SlidersHorizontal,
+  Activity, AlertTriangle, BarChart3, Bot, Briefcase, Gauge, ListOrdered, RefreshCw, SlidersHorizontal,
 } from 'lucide-react';
 import { NotSignedIn } from '@/api/client';
 import { getCandles, getChain, getExpiries, getHealth, getMarketState, getSpot, getStateHistory } from '@/api/desk';
@@ -48,6 +48,7 @@ import { Button } from '@/components/ui/button';
  * demand and are cached from then on.
  */
 const Overview = lazy(() => import('@/components/overview/Overview').then((m) => ({ default: m.Overview })));
+const LiveScreen = lazy(() => import('@/components/live/LiveScreen').then((m) => ({ default: m.LiveScreen })));
 const OrderTicket = lazy(() => import('@/components/trade/OrderTicket').then((m) => ({ default: m.OrderTicket })));
 const StrikeAnalysis = lazy(() => import('@/components/desk/StrikeAnalysis').then((m) => ({ default: m.StrikeAnalysis })));
 const PositionsCard = lazy(() => import('@/components/trade/PositionsCard').then((m) => ({ default: m.PositionsCard })));
@@ -79,7 +80,7 @@ const Chart = memo(PriceChart);
 /** One empty list, so "no bars yet" is the same prop every render. */
 const NO_BARS: never[] = [];
 
-type Tab = 'desk' | 'trade' | 'orders' | 'strategy' | 'pnl' | 'errors' | 'settings';
+type Tab = 'desk' | 'signals' | 'trade' | 'orders' | 'strategy' | 'pnl' | 'errors' | 'settings';
 
 /** Of two answers to the same question, the one that arrived last; either may be missing. */
 function newer<T>(a: T | null, aAt: number | null, b: T | null, bAt: number | null): T | null {
@@ -95,7 +96,7 @@ function newer<T>(a: T | null, aAt: number | null, b: T | null, bAt: number | nu
  * this line on 18 September, so clicking it fell straight back to Live. A tab
  * that exists in three places and not in the fourth is invisible.
  */
-export const TABS: readonly Tab[] = ['desk', 'trade', 'orders', 'strategy', 'pnl', 'settings', 'errors'];
+export const TABS: readonly Tab[] = ['desk', 'signals', 'trade', 'orders', 'strategy', 'pnl', 'settings', 'errors'];
 export const asTab = (v: string): Tab => (TABS as readonly string[]).includes(v) ? (v as Tab) : 'desk';
 
 const REFRESH_SECONDS = 5;
@@ -542,6 +543,9 @@ export default function App() {
         <button className={tab === 'desk' ? 'on' : ''} onClick={() => setTab('desk')}>
           <Activity aria-hidden /> <span>Live</span>
         </button>
+        <button className={tab === 'signals' ? 'on' : ''} onClick={() => setTab('signals')}>
+          <Gauge aria-hidden /> <span>Signals</span>
+        </button>
         <button className={tab === 'trade' ? 'on' : ''} onClick={() => setTab('trade')}>
           <Briefcase aria-hidden /> <span>Positions</span>
           {trade && trade.open.length > 0 && <span className="pip">{trade.open.length}</span>}
@@ -762,6 +766,23 @@ export default function App() {
           )}
           </section>
         </>
+      ) : tab === 'signals' ? (
+        /*
+         * The measured read, beside the Live screen rather than replacing it
+         * (27 Sep 2026): the weighted 12H-1M ladder, the momentum call with
+         * its stop, its target and what that shape has actually paid, and the
+         * measured band to settlement. See docs/LIVE-SCREEN.md.
+         */
+        <ErrorBoundary where="Signals">
+          <LiveScreen
+            expiry={snap?.expiry}
+            strikes={[
+              ...(pair.C !== null ? [{ cp: 'C' as const, strike: pair.C }] : []),
+              ...(pair.P !== null ? [{ cp: 'P' as const, strike: pair.P }] : []),
+              ...(focus && focus.strike !== pair[focus.cp] ? [{ cp: focus.cp, strike: focus.strike }] : []),
+            ]}
+          />
+        </ErrorBoundary>
       ) : tab === 'trade' ? (
         <div className="flex flex-col gap-3">
           <ErrorBoundary where="Account">

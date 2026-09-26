@@ -560,7 +560,7 @@ study, not the desk.
 Everything in it is still true of `research/`. It is simply no longer the
 repository's front door. `ARCHITECTURE.md` is.
 
-### 7.5 🟡 The momentum study is a negative result the UI has not absorbed
+### 7.5 ✅ The momentum study is a negative result the UI has not absorbed — *fixed 27 Sep 2026*
 
 `research/MOMENTUM-MEASURED.txt`, regenerated today (commit `b840282`), replays
 **every** `BREAKOUT`/`BREAKDOWN CONFIRMED` the live card would have called, over
@@ -591,6 +591,16 @@ This is good research and an honest report. The finding is that **a 71–80% hit
 rate is not an edge when a quarter of the "hits" were already past their target
 when the call was made, and the survivors do not clear fees.** The same lesson
 the sibling project learned from a 98% win rate that lost money.
+
+**Fixed in the Live screen rebuild (27 Sep 2026).** `MomentumCard` cannot be
+rendered without its net-after-fees row, and its verdict badge is computed from
+the measurement rather than the setup: a shape whose measured net R is not
+positive prints **"Not a trade — information only"** beside the call, in the
+same breath. All four timeframes currently print that. The study now emits a
+machine-readable scorecard (`domain/momentum-measured.data.ts`) so the card
+reads the real numbers rather than a copied constant. See `docs/LIVE-SCREEN.md`.
+
+The original finding follows, for the record.
 
 The risk is presentational, not analytical: `SignalStrip`, `MarketState` and
 `DecisionCards` surface these calls on the Live screen, and nothing on that

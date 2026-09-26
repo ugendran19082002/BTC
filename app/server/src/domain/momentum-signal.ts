@@ -1,5 +1,6 @@
 import type { Candle } from '../market/delta.js';
-import { confirmedBreaks, resample, TF_BARS_OF_5M, type Tf, type Side } from './break-risk.js';
+import { confirmedBreaks, resample, TF_BARS_OF_5M, type Tf } from './break-risk.js';
+import type { Side } from './market-state.js';
 import { atr as atrOf } from './indicators.js';
 import { MOMENTUM_MEASURED, MEASURED_FROM, MEASURED_TO, type MeasuredPolicy } from './momentum-measured.data.js';
 

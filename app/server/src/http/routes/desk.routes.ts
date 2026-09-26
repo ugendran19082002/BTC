@@ -33,6 +33,7 @@ import { chainBoard, recordBoard } from '../../market/chain-features.js';
 import { SHOCK_WINDOWS } from '../../domain/shock.js';
 import { shockFrom } from '../../market/shock-now.js';
 import { breakRiskNow } from '../../market/break-risk-now.js';
+import { liveRead, safetyOf } from '../../market/live-read.js';
 
 /** Resolve the `at` query param: "now" (or absent) means live. */
 function resolveAt(at: string | undefined): number | null {
@@ -278,6 +279,52 @@ export function registerDeskRoutes(app: FastifyInstance) {
   app.get('/api/break-risk', async (_req, reply) => {
     try {
       return await breakRiskNow();
+    } catch (e) { reply.code(502); return { error: (e as Error).message }; }
+  });
+
+  /*
+   * The Live screen, in one read.
+   *
+   * The weighted 12H→1M ladder, the measured band to settlement, and the
+   * momentum call with its stop, its target and what that exact shape actually
+   * paid -- all off one set of bars with one timestamp, so no two rows on the
+   * screen are describing different moments. See market/live-read.ts.
+   *
+   * `expiry` picks the contract the band is drawn to; without it the nearest
+   * live one is used. `strikes` is an optional comma-separated list judged
+   * against the same band.
+   */
+  app.get('/api/live', async (req, reply) => {
+    try {
+      const q = req.query as { expiry?: string; strikes?: string; at?: string };
+      const snap = await snapshotFor(q.at, WHOLE_BOARD, q.expiry);
+      const read = await liveRead({
+        hoursToExpiry: snap.hoursToExpiry,
+        atmIv: snap.atmIv,
+      });
+      const wanted = (q.strikes ?? '')
+        .split(',')
+        .map((x) => x.trim())
+        .filter((x) => /^[CP]:\d+$/.test(x))
+        .slice(0, 40);
+      const strikes = wanted
+        .map((x) => {
+          const [cp, k] = x.split(':') as ['C' | 'P', string];
+          return safetyOf({
+            cp, strike: Number(k), spot: read.spot,
+            hoursToExpiry: snap.hoursToExpiry, atmIv: snap.atmIv, path: read.path,
+          });
+        })
+        .filter((x): x is NonNullable<typeof x> => x !== null);
+      return {
+        ...read,
+        expiry: snap.expiry,
+        expiryTs: snap.expiryTs,
+        hoursToExpiry: snap.hoursToExpiry,
+        atmIv: snap.atmIv,
+        atm: snap.atm,
+        strikes,
+      };
     } catch (e) { reply.code(502); return { error: (e as Error).message }; }
   });
 

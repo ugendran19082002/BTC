@@ -1,5 +1,5 @@
 Momentum call, replayed: every BREAKOUT/BREAKDOWN CONFIRMED the live card would have called.
-BTCUSD 5m bars 2024-04-01 → 2026-09-26 (261,710 bars). Same marketState(), same grader.
+BTCUSD 5m bars 2024-04-01 → 2026-09-26 (261,713 bars). Same marketState(), same grader.
 Entry at the signal bar's close. A bar touching both stop and target counts as the stop.
 Net = after 0.05% taker fee each side. R = profit ÷ risk. Chosen on 2024+2025; 2026 is out of sample.
 
