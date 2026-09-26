@@ -12,7 +12,7 @@ import { TABS, asTab } from '@/App';
 
 describe('the tab list', () => {
   it('[critical] every screen the desk has is in the list a click is checked against', () => {
-    expect([...TABS]).toEqual(['desk', 'trade', 'orders', 'strategy', 'pnl', 'settings', 'errors']);
+    expect([...TABS]).toEqual(['desk', 'signals', 'trade', 'orders', 'strategy', 'pnl', 'settings', 'errors']);
     for (const t of TABS) expect(asTab(t)).toBe(t);
   });
 
@@ -21,5 +21,11 @@ describe('the tab list', () => {
     expect(asTab('')).toBe('desk');
     // The Option Chain tab (removed 22 Sep 2026): its board is at the bottom of Live now.
     expect(asTab('chain')).toBe('desk');
+  });
+
+  it('Signals is its own screen, not a rename of Live', () => {
+    // Added 27 Sep 2026 beside Live, not in place of it. Both must resolve.
+    expect(asTab('signals')).toBe('signals');
+    expect(asTab('desk')).toBe('desk');
   });
 });
