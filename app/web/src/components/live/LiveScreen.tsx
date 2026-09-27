@@ -71,7 +71,6 @@ export function LiveScreen({
   strikes = [],
   chart,
   journal,
-  history,
   chain,
   controls,
 }: {
@@ -89,8 +88,16 @@ export function LiveScreen({
    * call is look at the picture.
    */
   chart?: ReactNode;
-  /** The journal's rows for the chosen range, and everything the header needs. */
-  journal?: {
+  /**
+   * The journal's rows for the chosen range, and everything the header needs.
+   *
+   * Required: there is one layout now. The stacked fallback that rendered the
+   * four cards and a separate history list underneath was removed on 27 Sep
+   * 2026 — two layouts for one screen meant the cards could be read without the
+   * measured record that qualifies them, which is the whole reason the desk
+   * exists.
+   */
+  journal: {
     rows: readonly StateHistoryRow[];
     rate?: { correct: number; graded: number };
     measured?: Measured | null;
@@ -101,18 +108,6 @@ export function LiveScreen({
     onRange: (days: number | null) => void;
     tfControl?: ReactNode;
   };
-  /**
-   * The signal-history list, rendered at the foot of this section.
-   *
-   * Passed in rather than fetched here: it is driven by
-   * `/api/market-state/history`, which the caller already polls for the chart's
-   * own timeframe, and two polls of the same endpoint on two intervals is how a
-   * screen ends up showing two different histories.
-   *
-   * It belongs *here*, under the live read, because the two answer one question:
-   * what is the signal saying, and has it been worth listening to?
-   */
-  history?: ReactNode;
   /** The option chain, rendered under the screen by the caller. */
   chain?: ReactNode;
   /** Mode and refresh controls, drawn in the header. */
@@ -173,69 +168,24 @@ export function LiveScreen({
         `SignalDesk` owns the layout; the cards are passed into it so each one
         stays the single place its own figure is drawn.
       */}
-      {journal ? (
-        <ErrorBoundary where="Signal desk">
-          <SignalDesk
-            rows={journal.rows}
-            rate={journal.rate}
-            measured={journal.measured}
-            checked={journal.checked}
-            total={journal.total}
-            tf={journal.tf}
-            spot={data.spot}
-            range={journal.range}
-            onRange={journal.onRange}
-            tfControl={journal.tfControl}
-            bigMove={<MomentumCard signal={data.momentum} id="live-momentum" />}
-            settlement={<ExpiryCone path={data.path} bias={data.ladder.bias} spotFrom={data.spotFrom} id="live-cone" />}
-            timeframes={<Ladder ladder={data.ladder} id="live-ladder" />}
-            strikes={<StrikeSafety strikes={data.strikes} id="live-strikes" />}
-          />
-        </ErrorBoundary>
-      ) : (
-      <>
-      {/*
-        The two questions the desk actually asks, side by side on a wide
-        screen and stacked on a phone — "is something happening now" and
-        "where can it end up". Neither is subordinate to the other.
-      */}
-      {/*
-        Two columns from `md` (768px) rather than `lg`, so a tablet and a
-        half-width desktop window both get the pair side by side instead of one
-        very long column.
-
-        `min-w-0` on every cell is load-bearing: a grid track is `auto` by
-        default, so a wide table inside it makes the track wider than the
-        viewport and the whole page scrolls sideways. With `min-w-0` the track
-        may shrink and the table's own `overflow-x-auto` takes the scroll, which
-        is the one place it belongs.
-      */}
-      <div className="grid gap-3 md:grid-cols-2">
-        <ErrorBoundary where="Big move">
-          <div className="min-w-0"><MomentumCard signal={data.momentum} id="live-momentum" /></div>
-        </ErrorBoundary>
-        <ErrorBoundary where="Settlement band">
-          <div className="min-w-0"><ExpiryCone path={data.path} bias={data.ladder.bias} spotFrom={data.spotFrom} id="live-cone" /></div>
-        </ErrorBoundary>
-      </div>
-
-      <div className="grid gap-3 md:grid-cols-2">
-        <ErrorBoundary where="Timeframes">
-          <div className="min-w-0"><Ladder ladder={data.ladder} id="live-ladder" /></div>
-        </ErrorBoundary>
-        <ErrorBoundary where="Strike safety">
-          <div className="min-w-0"><StrikeSafety strikes={data.strikes} id="live-strikes" /></div>
-        </ErrorBoundary>
-      </div>
-
-      {/*
-        And what it has said before. The live read above is a claim; this is the
-        record of the same claim's past, which is the only thing that makes the
-        claim readable.
-      */}
-      {history && <ErrorBoundary where="Signal history">{history}</ErrorBoundary>}
-      </>
-      )}
+      <ErrorBoundary where="Signal desk">
+        <SignalDesk
+          rows={journal.rows}
+          rate={journal.rate}
+          measured={journal.measured}
+          checked={journal.checked}
+          total={journal.total}
+          tf={journal.tf}
+          spot={data.spot}
+          range={journal.range}
+          onRange={journal.onRange}
+          tfControl={journal.tfControl}
+          bigMove={<MomentumCard signal={data.momentum} id="live-momentum" />}
+          settlement={<ExpiryCone path={data.path} bias={data.ladder.bias} spotFrom={data.spotFrom} id="live-cone" />}
+          timeframes={<Ladder ladder={data.ladder} id="live-ladder" />}
+          strikes={<StrikeSafety strikes={data.strikes} id="live-strikes" />}
+        />
+      </ErrorBoundary>
 
       {/*
         What the screen could not read. Absent data is stated, never drawn as
