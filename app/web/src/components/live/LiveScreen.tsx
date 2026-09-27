@@ -8,6 +8,7 @@ import { MomentumCard } from './MomentumCard';
 import { ExpiryCone } from './ExpiryCone';
 import { Ladder } from './Ladder';
 import { StrikeSafety } from './StrikeSafety';
+import { FocusSummary } from './FocusSummary';
 import { Card, Nothing } from './parts';
 
 /**
@@ -142,6 +143,10 @@ export function LiveScreen({
           stability={data.stability}
           penalties={data.penalties}
         />
+      </ErrorBoundary>
+
+      <ErrorBoundary where="Decision focus">
+        <FocusSummary path={data.path} momentum={data.momentum} />
       </ErrorBoundary>
 
       {chart && <ErrorBoundary where="Price chart">{chart}</ErrorBoundary>}

@@ -307,9 +307,15 @@ export default function App() {
   const { data: polledTick, updatedAt: polledTickAt } = usePoll(getSpot, 1_000, { enabled: polls });
   const trade = newer(stream.status, stream.statusAt, polledTrade, polledTradeAt);
   const tick = useMemo(() => {
-    const spot = newer(stream.spot, stream.spotAt, polledTick?.spot ?? null, polledTickAt);
-    return spot === null ? null : { spot };
-  }, [stream.spot, stream.spotAt, polledTick?.spot, polledTickAt]);
+    const streamSpot = stream.spot;
+    const pollSpot = polledTick?.spot ?? null;
+    if (streamSpot === null && pollSpot === null) return null;
+    if (streamSpot === null) return { spot: pollSpot!, at: polledTick?.at ?? polledTickAt };
+    if (pollSpot === null) return { spot: streamSpot, at: stream.spotAt };
+    return stream.spotAt !== null && stream.spotAt >= (polledTickAt ?? -Infinity)
+      ? { spot: streamSpot, at: stream.spotAt }
+      : { spot: pollSpot, at: polledTick?.at ?? polledTickAt };
+  }, [stream.spot, stream.spotAt, polledTick?.spot, polledTick?.at, polledTickAt]);
   /*
    * Bars move far more slowly than the book, and the chart is context rather
    * than a price to act on -- so a minute, not the board's five seconds. Only
@@ -542,13 +548,14 @@ export default function App() {
           </div>
         </div>
         <div className="top-row top-row-2">
-          {snap && (
+          {liveSpot !== null && (
             <LivePrice
-              spot={tick?.spot ?? snap.spot}
-              live={snap.live}
+              spot={liveSpot}
+              live={live}
               sinceOpenUsd={sinceOpenUsd}
               sinceOpenPct={sinceOpenPct}
               feed={stream.live ? 'pushed' : 'polling'}
+              updatedAt={tick?.at ?? snap?.ts ?? null}
             />
           )}
           <TodayPnl status={trade} />
@@ -658,7 +665,7 @@ export default function App() {
                           // eleven expected moves away is open interest, not a level.
                           support={data.structure.peOiWallNear?.strike ?? null}
                           resistance={data.structure.ceOiWallNear?.strike ?? null}
-                          spot={snap.spot}
+                          spot={liveSpot ?? snap.spot}
                           zones={chartZones}
                           lines={marketState?.lines ?? []}
                           projection={chartProjection}

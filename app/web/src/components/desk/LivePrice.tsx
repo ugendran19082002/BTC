@@ -16,7 +16,7 @@ import { useEffect, useRef, useState } from 'react';
  * showing either way.
  */
 export function LivePrice({
-  spot, live, sinceOpenUsd, sinceOpenPct, feed,
+  spot, live, sinceOpenUsd, sinceOpenPct, feed, updatedAt,
 }: {
   spot: number;
   live: boolean;
@@ -25,8 +25,11 @@ export function LivePrice({
   /** Dollars moved since the contract opened at 05:30 IST. */
   sinceOpenUsd?: number | null;
   sinceOpenPct?: number | null;
+  /** When this value arrived. A live number without freshness is too easy to trust. */
+  updatedAt?: number | null;
 }) {
   const [dir, setDir] = useState<'up' | 'down' | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const prev = useRef(spot);
   const opened = useRef(spot);
 
@@ -39,15 +42,24 @@ export function LivePrice({
     return () => clearTimeout(t);
   }, [spot]);
 
+  useEffect(() => {
+    if (!live || updatedAt === null || updatedAt === undefined) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(id);
+  }, [live, updatedAt]);
+
   const fromContract = sinceOpenUsd !== null && sinceOpenUsd !== undefined;
   const move = fromContract ? sinceOpenUsd : spot - opened.current;
   // Always shown once it is measured against the contract. Hiding a move under a
   // dollar made the figure vanish for the first minutes of every contract, which
   // reads as broken rather than as "nothing has happened yet".
   const show = fromContract || Math.abs(move) >= 1;
+  const ageMs = live && updatedAt != null ? Math.max(0, now - updatedAt) : null;
+  const stale = ageMs != null && ageMs > 10_000;
+  const ageText = ageMs == null ? 'waiting for a tick' : ageMs < 1_000 ? 'updated just now' : `updated ${Math.floor(ageMs / 1_000)}s ago`;
 
   return (
-    <span className={`liveprice${dir ? ' flash-' + dir : ''}`}>
+    <span className={`liveprice${dir ? ' flash-' + dir : ''}${stale ? ' is-stale' : ''}`}>
       <i
         className={live ? 'dot on' : 'dot'}
         role="img"
@@ -57,6 +69,9 @@ export function LivePrice({
             : 'Live. Updates arrive the moment they change.'}
       />
       <b>{spot.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</b>
+      <span className="liveprice-age" title={stale ? 'The last LTP is older than 10 seconds. Treat distance and option calculations carefully until it refreshes.' : ageText}>
+        {live ? (stale ? 'stale' : ageText) : 'past snapshot'}
+      </span>
       {show && (
         <span
           className={move >= 0 ? 'up' : 'down'}

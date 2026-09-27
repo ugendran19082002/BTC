@@ -563,6 +563,9 @@ td.sellcell {
 }
 .liveprice b { font-weight: 600; }
 .liveprice > span { font-size: 11.5px; }
+.liveprice .liveprice-age { color: var(--dim); font-size: 10px; white-space: nowrap; }
+.liveprice.is-stale { border-color: var(--warn, #d9a441); }
+.liveprice.is-stale .liveprice-age { color: var(--warn, #d9a441); font-weight: 650; }
 .liveprice .dot {
   width: 6px; height: 6px; border-radius: 50%; background: var(--dim);
   align-self: center; flex: none;
