@@ -1,5 +1,6 @@
 import { readState, STATE_TFS, type StateTf } from './state-read.js';
 import { gradeStates, noteState } from './state-history.js';
+import { backfillStates } from './backfill-states.js';
 
 /**
  * The signal journal's own recorder: every timeframe, on the server's clock.
@@ -109,6 +110,9 @@ export function startStateRecorder(opts: {
 } = {}): () => void {
   const { onWarn, now = Date.now } = opts;
   const timers: NodeJS.Timeout[] = [];
+
+  // Replay and backfill any missed state changes (e.g. overnight or downtime)
+  void backfillStates().catch((e: Error) => onWarn?.(`market-state backfill failed: ${e.message}`));
 
   STATE_TFS.forEach((tf, i) => {
     const tick = () => {

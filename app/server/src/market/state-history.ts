@@ -561,15 +561,19 @@ export async function gradeStates(nowMs = Date.now(), limit = 20): Promise<numbe
   let graded = 0;
   for (const r of due) {
     const windowMs = windowMsFor(r.tf);
-    if (nowMs < r.at + windowMs) continue;
+    const isWindowClosed = nowMs >= r.at + windowMs;
+    const endMs = Math.min(nowMs, r.at + windowMs);
+
     const plan: Plan | null = r.target1 === null || r.invalidation === null || r.side === null ? null : {
       side: r.side, trigger: r.trigger ?? 0, target1: r.target1, target2: r.target2 ?? r.target1,
       invalidation: r.invalidation,
     };
     // Fetched even for a range, which is not graded but still moved somewhere.
     const after = await candles(
-      'BTCUSD', Math.floor(r.at / 1000), Math.floor((r.at + windowMs) / 1000), r.tf,
+      'BTCUSD', Math.floor(r.at / 1000), Math.floor(endMs / 1000), r.tf,
     ).catch(() => [] as Candle[]);
+    if (!after.length && !isWindowClosed) continue;
+
     const audit = evaluateSignalOutcome({
       plan,
       side: r.side,
@@ -579,6 +583,11 @@ export async function gradeStates(nowMs = Date.now(), limit = 20): Promise<numbe
       windowMs,
       after,
     });
+    // If window is still active, resolve early only when target or stop has been hit.
+    // A trade still navigating towards target/stop stays open so the user sees live state.
+    if (!isWindowClosed && audit.firstHit === 'NONE') {
+      continue;
+    }
     /*
      * Where price actually finished the window, and how far that is from the
      * call. Recorded alongside the full intrabar first-hit audit trail.
