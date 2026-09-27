@@ -1,6 +1,7 @@
 import { candles, type Candle } from './delta.js';
 import { atr, readMarket, type MarketRead } from './moves.js';
 import { flowSummary } from './flow.js';
+import { levelUnder, DEFAULT_LEVEL_MODE, LIVE_LEVEL_MODE, type LevelMode } from '../domain/level-mode.js';
 import { movementByWindow } from './movement.js';
 import { marketState, LEVEL_BARS, type MarketState, type Regime, type Side, type StateInput } from '../domain/market-state.js';
 import {
@@ -111,15 +112,30 @@ export function cvdSlopeOf(points: readonly { cvd: number }[]): number | null {
  * falls back to the same twenty bars itself, so a missing read costs nothing
  * but precision.
  */
-export function levelFor(m: MarketRead | null, tf: StateTf, bars: readonly Candle[]): { resistance: number | null; support: number | null } {
-  const read = m?.timeframes.find((t) => t.tf === tf) ?? null;
-  const past = bars.slice(0, -1).slice(-LEVEL_BARS);
-  const high = past.length ? Math.max(...past.map((b) => b.high)) : null;
-  const low = past.length ? Math.min(...past.map((b) => b.low)) : null;
-  return {
-    resistance: read?.resistance[0] ?? high,
-    support: read?.support[0] ?? low,
-  };
+export function levelFor(
+  m: MarketRead | null,
+  tf: StateTf,
+  bars: readonly Candle[],
+  mode: LevelMode = DEFAULT_LEVEL_MODE,
+): { resistance: number | null; support: number | null } {
+  /*
+   * `rolling` is the default because it is the only mode with a measured record
+   * behind it (27 Sep 2026).
+   *
+   * This used to take the swing level unconditionally from `readMarket`, which
+   * was a *third* definition again: swings on the frames `TREND_TIMEFRAMES`
+   * happens to hold, and the rolling range on 30m and 2h, which it does not --
+   * four timeframes judged one way and two the other, on one card, with nothing
+   * saying which. `levelUnder` computes both modes from the same bars for every
+   * frame, so a mode means one thing everywhere.
+   *
+   * `m` and `tf` are no longer read. They are kept in the signature because the
+   * caller has them and a future mode may want a level the *bigger* timeframe
+   * also knows -- a level two charts agree on is a different thing from one only
+   * this bar's swings can see.
+   */
+  void m; void tf;
+  return levelUnder(bars, mode);
 }
 
 /** The open-interest change over roughly this timeframe's own bar. */
@@ -158,7 +174,12 @@ export async function readState(tf: StateTf = '15m', nowMs = Date.now()): Promis
 
   const input: StateInput = {
     bars,
-    level: levelFor(market, tf, bars),
+    /*
+     * The same mode the measured record is keyed by (`LIVE_LEVEL_MODE`), so the
+     * figure the card prints describes the call the card is making. Until
+     * 27 Sep 2026 these were different and nothing said so.
+     */
+    level: levelFor(market, tf, bars, LIVE_LEVEL_MODE),
     atr: inputs.atr,
     tick: 0.5,
     oiChangePct: inputs.oiChangePct,

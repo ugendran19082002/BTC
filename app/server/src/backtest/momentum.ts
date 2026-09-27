@@ -2,6 +2,7 @@ import type { Candle } from '../market/delta.js';
 import { atr, ema, mean } from '../domain/indicators.js';
 import type { Side } from '../domain/market-state.js';
 import { confirmedBreaks, resample, TF_BARS_OF_5M, type Tf } from '../domain/break-risk.js';
+import { DEFAULT_LEVEL_MODE, type LevelMode } from '../domain/level-mode.js';
 import { evaluateSignalOutcome } from '../market/state-history.js';
 import type { CarryStats } from '../domain/break-risk.js';
 
@@ -87,7 +88,12 @@ export type Signal = {
  * called it at the bar's close -- found by the same `confirmedBreaks` the live
  * risk card uses -- with the features the filters are tested on.
  */
-export function extractSignals(bars5m: readonly Candle[], tf: Tf): { signals: Signal[]; bars: Candle[] } {
+export function extractSignals(
+  bars5m: readonly Candle[],
+  tf: Tf,
+  /** Which level definition to find breaks with. Travels into the measured table. */
+  mode: LevelMode = DEFAULT_LEVEL_MODE,
+): { signals: Signal[]; bars: Candle[] } {
   const bars = resample(bars5m, TF_BARS_OF_5M[tf]);
   const h1 = trendSeries(resample(bars5m, 12), 3600, 20);
   const h4 = trendSeries(resample(bars5m, 48), 4 * 3600, 20);
@@ -99,7 +105,7 @@ export function extractSignals(bars5m: readonly Candle[], tf: Tf): { signals: Si
     trs.push(Math.max(b.high - b.low, Math.abs(b.high - a.close), Math.abs(b.low - a.close)));
   }
   // From bar 115: the compression feature wants a hundred bars of true range behind it.
-  const signals = confirmedBreaks(bars, 115).map((k): Signal => {
+  const signals = confirmedBreaks(bars, 115, mode).map((k): Signal => {
     const bar = bars[k.i]!;
     const closeT = bar.time + span;
     const dir = k.side === 'UP' ? 1 : -1;

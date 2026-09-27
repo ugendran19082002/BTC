@@ -1,6 +1,7 @@
 import type { Candle } from '../market/delta.js';
 import { atr } from './indicators.js';
 import { marketState, type Side } from './market-state.js';
+import { levelUnder, DEFAULT_LEVEL_MODE, type LevelMode } from './level-mode.js';
 
 /**
  * The hour after a break: how big, not which way (26 Sep 2026).
@@ -70,13 +71,25 @@ export type Break = {
 /**
  * Every confirmed breakout and breakdown in `bars`, at each bar's close.
  *
- * The levels are the last twenty bars' range and the ATR is fourteen bars,
- * both from `marketState` itself. A second break the same way within the
+ * The level is whichever `mode` asks for -- the last twenty bars' range by
+ * default, the nearest fractal swing when asked -- and the ATR is fourteen bars. A second break the same way within the
  * cooldown is dropped, and still resets it, so one long push counts once.
  * `from` skips the bars nobody is asking about; the cooldown is still
  * honoured across it.
  */
-export function confirmedBreaks(bars: readonly Candle[], from = 0): Break[] {
+export function confirmedBreaks(
+  bars: readonly Candle[],
+  from = 0,
+  /**
+   * Which level definition to judge against.
+   *
+   * It used to be hard-coded by passing `level: null` into `marketState`, which
+   * silently meant "the rolling range" -- while the live path judged against
+   * swing levels. Now it is named, it travels into the measured table, and the
+   * live card looks up the mode it actually used. See `domain/level-mode.ts`.
+   */
+  mode: LevelMode = DEFAULT_LEVEL_MODE,
+): Break[] {
   const out: Break[] = [];
   const lastAt: Record<Side, number> = { UP: -Infinity, DOWN: -Infinity };
   // Started early: a run of breaks each inside the last one's cooldown carries it further back than one cooldown.
@@ -85,7 +98,7 @@ export function confirmedBreaks(bars: readonly Candle[], from = 0): Break[] {
     const window = bars.slice(i - BREAK_WINDOW + 1, i + 1);
     const a = atr(window, 14);
     if (!a || a <= 0) continue;
-    const s = marketState({ bars: window, level: { resistance: null, support: null }, atr: a });
+    const s = marketState({ bars: window, level: levelUnder(window, mode), atr: a });
     if (s.stage !== 'CONFIRMED' || !s.side || s.against === null) continue;
     if (s.event !== 'BREAKOUT_CONFIRMED' && s.event !== 'BREAKDOWN_CONFIRMED') continue;
     const repeat = i - lastAt[s.side] <= BREAK_COOLDOWN;

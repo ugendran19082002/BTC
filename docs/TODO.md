@@ -107,6 +107,74 @@ implies otherwise is the bug.
       three times the recorder's own interval. A test asserts the two silences can
       never produce the same words.
 
+**🔴 OPEN — the live signal and its measured record judge different levels (found 27 Sep):**
+
+- [ ] **`readState` and `confirmedBreaks` do not use the same level, so the
+      net-R figure on screen does not describe the signal on screen.**
+
+      The live path (`market/state-read.ts`):
+      ```ts
+      level: levelFor(market, tf, bars)
+      // = readMarket's nearest fractal SWING high/low,
+      //   falling back to the 20-bar high/low only when there is no swing
+      ```
+      The measured path (`domain/break-risk.ts`, which the momentum study replays):
+      ```ts
+      marketState({ bars: window, level: { resistance: null, support: null }, atr: a })
+      // level null => marketState falls back to its own levelsFrom():
+      //   the last 20 bars' high/low. The docstring says so outright.
+      ```
+
+      Measured live on 27 Sep at the same instant, on the same 60 bars:
+
+      | | resistance |
+      |---|---|
+      | `readState` (swing) | **84,546** |
+      | `levelsFrom` (20-bar) | **84,503** |
+
+      A fractal swing high is a local peak with two bars either side, so it sits
+      **further away** than the recent rolling high. The live card therefore needs
+      a bigger move to reach WATCH, and a bigger one again to CONFIRM, than
+      anything the study ever graded.
+
+      **What it explains.** Replaying the last 17.5 hours of 5m bars through the
+      *measured* level produced **80 state changes**, including 5
+      BREAKOUT_CONFIRMED and 2 BREAKDOWN_CONFIRMED. The live journal recorded
+      none of them, and `readState('5m')` reported RANGE throughout. Not a
+      recorder fault — a different question being asked. It is also why a rising
+      market shows BREAKOUT_WATCH repeatedly without ever confirming: the swing
+      high keeps the level out of reach.
+
+      **Why it matters more than the missed rows.** `MeasuredRecord` prints
+      *"replay 23% hit · −0.612R net over 9,981"* beside the live call. Those
+      9,981 calls were found with the 20-bar level. The call on screen was found
+      with a swing level. The number is honest about its own sample and still
+      describes **a different signal**. This is precisely the failure the sibling
+      project states as a standing rule: *"The training grid and the signal grid
+      must match. A mismatch is silent — same column names, different scale,
+      nothing raises."*
+
+      **Recommended fix, and it is a decision for the owner because it changes
+      which signals fire on a live desk:**
+      1. *Cheapest and immediately consistent* — make the live path pass
+         `level: { resistance: null, support: null }` so both use `levelsFrom`.
+         The measured record then describes the live signal exactly. Expect
+         **many more** signals than today (80 per 17h on 5m, not 0).
+      2. *Better trading logic, unmeasured* — keep swing levels and re-run
+         `momentum-study.ts` with `levelFor`'s definition, then compare the two
+         net-R tables and keep the better. Until that run exists, the swing
+         variant has **no measured record at all** and the card should say so
+         rather than borrowing the 20-bar one.
+
+      Do **not** do neither. Either number on screen is then describing something
+      that is not on screen.
+- [ ] **`levelFor` is inconsistent across timeframes.** It reads swings from
+      `readMarket().timeframes`, which holds only `TREND_TIMEFRAMES` —
+      `5m 15m 1h 4h 1d`. `STATE_TFS` is `5m 15m 30m 1h 2h 4h`, so **30m and 2h
+      have no swing read** and silently fall back to the 20-bar level. Four
+      timeframes are judged one way and two the other, on the same card, with
+      nothing saying which.
+
 **Open — the journal's correctness and timeliness:**
 - [ ] **Grading is not idempotent across restarts.** `gradeStates` runs on a timer
       now, which fixes the overnight gap, but a row whose window closed while the

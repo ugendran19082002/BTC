@@ -6,6 +6,10 @@ import {
   add, carryStats, emptyTally, extractSignals, liveGrade, POLICIES, REACH_STEPS_ATR, simulate, TF_BARS_OF_5M,
   type CarryStats, type Policy, type Signal, type Tally, type Tf,
 } from './momentum.js';
+import { LEVEL_MODE_LABEL, type LevelMode } from '../domain/level-mode.js';
+
+/** Every level definition, graded side by side. Neither may be the only one measured. */
+const LEVEL_MODES: readonly LevelMode[] = ['rolling', 'swing'];
 
 /**
  * How good is the momentum call, measured rather than claimed.
@@ -70,6 +74,12 @@ const pad = (s: string, n: number) => s.padEnd(n);
 /** One measured row per (timeframe, stop/target policy), emitted for the live card. */
 type ScoreRow = {
   tf: Tf;
+  /**
+   * Which level definition found these breaks. The live card looks its own mode
+   * up here; a mode with no row returns null and the card says "never graded"
+   * rather than borrowing the other one's number. See `domain/level-mode.ts`.
+   */
+  mode: LevelMode;
   policy: string;
   n: number;
   noRoom: number;
@@ -93,8 +103,15 @@ async function main() {
   say('Net = after 0.05% taker fee each side. R = profit ÷ risk. Chosen on 2024+2025; 2026 is out of sample.');
   say();
 
+  for (const mode of LEVEL_MODES) {
+  say('#'.repeat(96));
+  say(`## LEVEL MODE: ${mode} — ${LEVEL_MODE_LABEL[mode]}`);
+  say('   Both modes are graded because the live card and this study disagreed about the level until');
+  say('   27 Sep 2026: live judged against swings, this judged against the rolling range, and the');
+  say('   screen printed the rolling record beside a swing call. See docs/TODO.md.');
+  say();
   for (const tf of TFS) {
-    const { signals, bars } = extractSignals(bars5m, tf);
+    const { signals, bars } = extractSignals(bars5m, tf, mode);
     const spanSec = TF_BARS_OF_5M[tf] * 300;
     const indexOf = new Map(bars.map((b, i) => [b.time, i]));
     const afterOf = (s: Signal) => bars.slice(indexOf.get(s.time)! + 1);
@@ -144,6 +161,7 @@ async function main() {
        */
       scorecard.push({
         tf,
+        mode,
         policy: p.name,
         n: all.n,
         noRoom: all.noRoom,
@@ -184,6 +202,7 @@ async function main() {
     }
     say();
   }
+  }
   // What the live risk card reads: how big the hour after a break is, not which way it goes.
   say('='.repeat(96));
   say('== The hour after a break: how far, either way (in the break timeframe\'s ATR at the break)');
@@ -220,6 +239,8 @@ async function main() {
     'export type MeasuredYear = { n: number; hitRate: number; netR: number };',
     'export type MeasuredPolicy = {',
     '  tf: string;',
+    '  /** Which level definition found these breaks — see domain/level-mode.ts. */',
+    '  mode: string;',
     '  policy: string;',
     '  n: number;',
     '  noRoom: number;',

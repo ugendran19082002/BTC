@@ -3,6 +3,7 @@ import { confirmedBreaks, resample, TF_BARS_OF_5M, type Tf } from './break-risk.
 import type { Side } from './market-state.js';
 import { atr as atrOf } from './indicators.js';
 import { MOMENTUM_MEASURED, MEASURED_FROM, MEASURED_TO, type MeasuredPolicy } from './momentum-measured.data.js';
+import { DEFAULT_LEVEL_MODE, LEVEL_MODE_LABEL, LIVE_LEVEL_MODE, type LevelMode } from './level-mode.js';
 
 /**
  * "A big move is coming -- here is the stop and the target."
@@ -54,6 +55,10 @@ export type Plan = {
 export type Measured = {
   policy: string;
   tf: string;
+  /** Which level definition found these breaks. Must match the one the live call used. */
+  mode: string;
+  /** That mode in words, for the card. */
+  modeLabel: string;
   n: number;
   hitRate: number;
   netR: number;
@@ -97,6 +102,11 @@ export type MomentumSignal = {
  * best-measured pair rather than the first one somebody wrote.
  */
 export const LIVE_POLICY = 'entry 1.5 ATR : 3 ATR';
+
+/** Re-exported for readers already here: the live level mode lives in `level-mode.ts`. */
+export { LIVE_LEVEL_MODE };
+
+
 const STOP_ATR = 1.5;
 const TARGET_ATR = 3;
 
@@ -111,9 +121,26 @@ export const FRESH_SEC = 3_600;
 
 const round = (v: number) => Math.round(v * 10) / 10;
 
-/** The measured row for a (timeframe, policy) pair, or null when the study has never graded it. */
-export function measuredFor(tf: string, policy: string): Measured | null {
-  const row: MeasuredPolicy | undefined = MOMENTUM_MEASURED.find((m) => m.tf === tf && m.policy === policy);
+/**
+ * The measured row for a (timeframe, policy, level mode) triple, or null when
+ * the study has never graded that combination.
+ *
+ * The mode is part of the key, not a detail. Before 27 Sep 2026 it was not, and
+ * the card printed the rolling level's record beside a swing-level call: a real
+ * number describing a different signal. Null here is the correct answer for an
+ * ungraded mode, and the card renders it as "never graded".
+ */
+export function measuredFor(
+  tf: string,
+  policy: string,
+  mode: LevelMode = DEFAULT_LEVEL_MODE,
+): Measured | null {
+  const row: MeasuredPolicy | undefined = MOMENTUM_MEASURED.find(
+    (m) => m.tf === tf && m.policy === policy
+      // Rows emitted before the mode existed carry none; treat those as the
+      // rolling range, which is what they were measured with.
+      && ((m as { mode?: string }).mode ?? 'rolling') === mode,
+  );
   if (!row || row.n === 0) return null;
   // The last year in the table is the held-out one.
   const years = Object.keys(row.byYear).sort();
@@ -122,6 +149,8 @@ export function measuredFor(tf: string, policy: string): Measured | null {
   return {
     policy: row.policy,
     tf: row.tf,
+    mode,
+    modeLabel: LEVEL_MODE_LABEL[mode],
     n: row.n,
     hitRate: row.hitRate,
     netR: row.netR,
@@ -199,7 +228,7 @@ export function momentumSignal(input: {
     const bar = bars[last.i]!;
     const at = (bar.time + span) * 1000;
     const plan = planFrom(last.side, last.entry, last.atr);
-    const measured = measuredFor(tf, LIVE_POLICY);
+    const measured = measuredFor(tf, LIVE_POLICY, LIVE_LEVEL_MODE);
     const compression = compressionOf(bars);
 
     const warnings: string[] = [];
