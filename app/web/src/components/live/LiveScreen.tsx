@@ -1,12 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { usePoll } from '@/hooks/usePoll';
-import { getLive, strikeKey } from '@/api/live';
+import { getLive } from '@/api/live';
 import type { LiveResponse } from '@/types/live';
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
 import { VerdictBar } from './VerdictBar';
 import { MomentumCard } from './MomentumCard';
 import { Ladder } from './Ladder';
-import { StrikeSafety } from './StrikeSafety';
 import { Card, Nothing } from './parts';
 import { SignalDesk } from './SignalDesk';
 import type { StateHistoryRow } from '@/api/desk';
@@ -25,7 +24,6 @@ import type { Checked } from './Liveness';
  *      what has that shape actually paid?
  *   3. **Settlement band** — how far can it get before 17:30?
  *   4. **Timeframes** — the weighted 12H→1M ladder the verdict came from.
- *   5. **Strike safety** — the strikes on the board, against that same band.
  *
  * Two design rules hold the screen together, and both come from measurement
  * rather than taste:
@@ -66,7 +64,6 @@ const POLL_MS = 5_000;
 
 export function LiveScreen({
   expiry,
-  strikes = [],
   chart,
   journal,
   chain,
@@ -74,8 +71,6 @@ export function LiveScreen({
 }: {
   /** The contract the band is drawn to. Absent means the nearest live one. */
   expiry?: string;
-  /** Strikes to judge, as `{cp, strike}`. The board below decides what is here. */
-  strikes?: readonly { cp: 'C' | 'P'; strike: number }[];
   /**
    * The candles.
    *
@@ -117,11 +112,15 @@ export function LiveScreen({
     return () => clearInterval(id);
   }, []);
 
-  const keys = strikes.map((s) => strikeKey(s.cp, s.strike));
+  /*
+   * No `strikes`: the strike-safety card was removed on 27 Sep 2026, so the
+   * screen stopped asking the server to judge strikes it no longer draws. The
+   * endpoint still accepts them for whoever wants them next.
+   */
   const { data, error, loading } = usePoll<LiveResponse>(
-    () => getLive({ expiry, strikes: keys }),
+    () => getLive({ expiry }),
     POLL_MS,
-    { deps: [expiry, keys.join(',')] },
+    { deps: [expiry] },
   );
 
   if (error && !data) {
@@ -162,20 +161,24 @@ export function LiveScreen({
           range={journal.range}
           onRange={journal.onRange}
           tfControl={journal.tfControl}
-          verdict={(
-            <VerdictBar
-              ladder={data.ladder}
-              readiness={data.readiness}
-              hoursLeft={data.hoursToExpiry}
-              asOf={data.asOf}
-              now={now}
-              stability={data.stability}
-              penalties={data.penalties}
+          bigMove={(
+            <MomentumCard
+              signal={data.momentum}
+              id="live-momentum"
+              readout={(
+                <VerdictBar
+                  ladder={data.ladder}
+                  readiness={data.readiness}
+                  hoursLeft={data.hoursToExpiry}
+                  asOf={data.asOf}
+                  now={now}
+                  stability={data.stability}
+                  penalties={data.penalties}
+                />
+              )}
             />
           )}
-          bigMove={<MomentumCard signal={data.momentum} id="live-momentum" />}
           timeframes={<Ladder ladder={data.ladder} id="live-ladder" />}
-          strikes={<StrikeSafety strikes={data.strikes} id="live-strikes" />}
         />
       </ErrorBoundary>
 

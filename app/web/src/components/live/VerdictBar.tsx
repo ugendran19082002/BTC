@@ -57,7 +57,12 @@ export function VerdictBar({ ladder, readiness, hoursLeft, asOf, now, stability,
   const m = Math.round((hoursLeft - h) * 60);
 
   return (
-    <div className="rounded-lg border border-border bg-card p-3 sm:p-4">
+    /*
+     * No frame of its own: this sits *inside* the Big move card (27 Sep 2026),
+     * and a bordered box inside a bordered box reads as two things when it is
+     * the heading of one.
+     */
+    <div className="border-b border-border pb-2">
       <div className="flex flex-wrap items-baseline gap-x-4 gap-y-2">
         <div className="flex items-baseline gap-2">
           <span className={cn('text-[26px] leading-none', TONE_TEXT[tone])} aria-hidden>{ARROW[ladder.bias]}</span>

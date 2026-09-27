@@ -737,11 +737,6 @@ export default function App() {
               <ErrorBoundary where="Signals">
                 <LiveScreen
                   expiry={snap.expiry}
-                  strikes={[
-                    ...(pair.C !== null ? [{ cp: 'C' as const, strike: pair.C }] : []),
-                    ...(pair.P !== null ? [{ cp: 'P' as const, strike: pair.P }] : []),
-                    ...(focus && focus.strike !== pair[focus.cp] ? [{ cp: focus.cp, strike: focus.strike }] : []),
-                  ]}
                   journal={{
                     rows: stateHistory?.rows ?? NO_ROWS,
                     rate: stateHistory?.hitRate,

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { MomentumSignal } from '@/types/live';
 import { Card, Row, Warnings, Nothing, Provenance, pct0, usd0, TONE_TEXT } from './parts';
 import { MeasuredRecord } from './MeasuredRecord';
@@ -25,13 +26,31 @@ const STATE_WORD = {
   NONE: 'Nothing',
 } as const;
 
-export function MomentumCard({ signal, id }: { signal: MomentumSignal; id?: string }) {
+export function MomentumCard({ signal, readout, id }: {
+  signal: MomentumSignal;
+  /**
+   * The desk's one-line read — which way, may it act, and everything discounting
+   * that (27 Sep 2026).
+   *
+   * Inside this card rather than above it. "A big move is starting" and "the
+   * desk may not act on it, and here is why" are halves of one sentence, and
+   * separating them let a reader take the first without the second — which is
+   * the precise failure this card was built to stop.
+   *
+   * Named `readout`, not `verdict`: the signal already has a `verdict`
+   * (TRADEABLE / INFORMATIONAL) and they are different things — one is whether
+   * the shape has ever paid, the other is whether the desk may act right now.
+   */
+  readout?: ReactNode;
+  id?: string;
+}) {
   const { state, plan, measured, verdict } = signal;
   const tradeable = verdict === 'TRADEABLE';
 
   if (state === 'NONE') {
     return (
       <Card id={id} title="Big move" hint="A break that has just happened, or a range tight enough that one is due.">
+        {readout}
         <Nothing>{signal.headline}</Nothing>
         {signal.compression !== null && (
           <Row
@@ -51,7 +70,9 @@ export function MomentumCard({ signal, id }: { signal: MomentumSignal; id?: stri
       hint="A break that has just happened, or a range tight enough that one is due."
       right={signal.tf ? <span className="font-mono">{signal.tf}</span> : null}
     >
-      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+      {readout}
+
+      <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <span
           className={cn(
             'text-[15px] font-semibold',

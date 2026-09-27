@@ -58,7 +58,7 @@ function Stat({ label, value, sub, tone }: {
 
 export function SignalDesk({
   rows, rate, measured, checked, total, tf, spot, range, onRange, tfControl,
-  verdict, expiry, bigMove, timeframes, strikes,
+  bigMove, timeframes,
 }: {
   rows: readonly StateHistoryRow[];
   rate?: { correct: number; graded: number };
@@ -75,19 +75,16 @@ export function SignalDesk({
   /** The timeframe picker, owned by the caller. */
   tfControl?: ReactNode;
   /**
-   * The one-line read — which way, and may the desk act.
+   * The right-hand column: what is happening now, over the ladder it came from.
    *
-   * It sits under the header rather than in a block of its own above the fold
-   * (27 Sep 2026). As a separate section it repeated, one scroll higher, the
-   * same direction and the same blockers the desk below already carried, and a
-   * figure said twice on one screen is a figure that can disagree with itself.
+   * Two things, stacked, beside the list rather than under it — the list is
+   * tall and scrolls, and a reader checking "what does it say now" against
+   * "what did it say before" should not have to scroll past twenty rows to do
+   * it. `Big move` sits above `Timeframes` because it is the conclusion and the
+   * ladder is the working.
    */
-  verdict?: ReactNode;
-  /** The right-hand column and the row beneath, passed in so this file stays layout. */
-  expiry?: ReactNode;
   bigMove?: ReactNode;
   timeframes?: ReactNode;
-  strikes?: ReactNode;
 }) {
   const [page, setPage] = useState(0);
   const pages = Math.max(1, Math.ceil(rows.length / PAGE));
@@ -175,10 +172,8 @@ export function SignalDesk({
         </div>
       </div>
 
-      {verdict}
-
-      {/* 3 — the calls themselves */}
-      <div className="sd-main sd-main--wide">
+      {/* 3 — the calls, beside the read they are the record of */}
+      <div className="sd-main">
         <div className="sd-list-wrap">
           <div className="sd-list-head">
             <h3>Signal List</h3>
@@ -205,18 +200,10 @@ export function SignalDesk({
           )}
         </div>
 
-        {expiry ? <div className="sd-side">{expiry}</div> : null}
-      </div>
-
-      {/*
-        4 — what is happening now, and where it can get to. Beneath the calls
-        rather than beside them: the record is what qualifies the live read, so
-        the record is read first.
-      */}
-      <div className="sd-foot">
-        {bigMove}
-        {timeframes}
-        {strikes}
+        <div className="sd-side">
+          {bigMove}
+          {timeframes}
+        </div>
       </div>
     </section>
   );
