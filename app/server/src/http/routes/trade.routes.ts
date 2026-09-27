@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { startOfDayIst } from '../../strategy/schedule.js';
 import { ExitAskError, stopFor, targetFor, tradingService } from '../../trading/service.js';
 import { AUTO_TRADE_CEILINGS, AUTO_TRADE_DEFAULTS } from '../../trading/auto-trade.js';
 import { lotsToContracts } from '../../trading/money.js';

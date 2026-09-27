@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { liveChain, historicalChain, liveExpiries, hoursSinceDeskOpen, simulationBacklog, WHOLE_BOARD, type Snapshot } from '../../market/chain.js';
+import { startOfDayIst } from '../../strategy/schedule.js';
 import { readMarket, seriesForAnalytics } from '../../market/moves.js';
 import { measuredOutlook } from '../../analytics/client.js';
 import { liveSpot, liveTickers, candles, tickerFeedHealth } from '../../market/delta.js';

@@ -16,7 +16,7 @@ import { isDone } from './machine.js';
 import { tradeCharges } from './charges.js';
 import { unrealisedPnlUsd } from './margin.js';
 import { midOf } from './money.js';
-import { istDate } from '../strategy/schedule.js';
+import { istDate, startOfDayIst } from '../strategy/schedule.js';
 import type { MtmSample } from './pnl-history.js';
 import { candles } from '../market/delta.js';
 import { noteError } from '../observability/errors.js';
@@ -972,14 +972,6 @@ export class TradingService {
 
 /** An exit asked for in a way that cannot stand -- a person's mistake, answered 400, not logged as a fault. */
 export class ExitAskError extends Error {}
-
-/** 05:30 IST is when the daily contract opens, so that is where the day starts. */
-function startOfDayIst(now = Date.now()): number {
-  const IST = 5.5 * 3600_000;
-  const local = now + IST;
-  const midnight = Math.floor(local / 86_400_000) * 86_400_000;
-  return midnight - IST;
-}
 
 let singleton: TradingService | null = null;
 

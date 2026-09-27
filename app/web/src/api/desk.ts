@@ -333,7 +333,16 @@ export type StateHistoryRow = {
   mtfConsensus?: string | null;
 };
 
-export const getStateHistory = (tf: string, limit = 10) =>
+/**
+ * The signal journal.
+ *
+ * `days` is the range the screen's tabs ask for: `0` is today since the desk's
+ * 05:30 IST open, `1 | 3 | 7` are rolling windows, and `undefined` is every day
+ * the journal still holds. A range as well as a limit because they answer
+ * different questions — on a quiet 4-hour frame "the last 200 calls" reaches
+ * back a fortnight while the reader believes they are looking at this morning.
+ */
+export const getStateHistory = (tf: string, limit = 10, days?: number) =>
   json<{
     at: number;
     rows: StateHistoryRow[];
@@ -351,6 +360,11 @@ export const getStateHistory = (tf: string, limit = 10) =>
      * inserted, which is what makes "quiet" readable as distinct from "dead".
      */
     checked: { tf: string; at: number; event: string; stage: string; wrote: number | null } | null;
+    /** Every call the journal holds for this timeframe, across all days. */
+    total: number;
+    /** The range that was served, echoed back so the screen cannot mislabel it. */
+    days: number | null;
   }>(
-    `/api/market-state/history?tf=${encodeURIComponent(tf)}&limit=${limit}`,
+    `/api/market-state/history?tf=${encodeURIComponent(tf)}&limit=${limit}`
+      + (days === undefined ? '' : `&days=${days}`),
   );
