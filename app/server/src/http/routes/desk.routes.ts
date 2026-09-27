@@ -16,7 +16,7 @@ import { lastOptionSnapshot, lastOptionSnapshotAt } from '../../market/option-sn
 import { flowFeedHealth, flowSummary, ivRank, liveBook, livePerp, oiPulse, optionFlowSummary, skewRank } from '../../market/flow.js';
 import { movementByWindow } from '../../market/movement.js';
 import { readState, STATE_TFS, type StateTf } from '../../market/state-read.js';
-import { gradeStates, hitRate, lastCheck, noteState, recentStates } from '../../market/state-history.js';
+import { countStates, gradeStates, hitRate, lastCheck, noteState, recentStates } from '../../market/state-history.js';
 import { noteShock, recentShocks, settleShocks, shockOutcomes } from '../../market/shock-history.js';
 import { changes } from '../../market/changes.js';
 import { one } from '../../db/pool.js';
@@ -178,17 +178,34 @@ export function registerDeskRoutes(app: FastifyInstance) {
    * not is exactly the thing this list exists to stop.
    */
   app.get('/api/market-state/history', async (req, reply) => {
-    const q = req.query as { tf?: string; limit?: string };
+    const q = req.query as { tf?: string; limit?: string; days?: string };
     const tf = (STATE_TFS as readonly string[]).includes(q.tf ?? '') ? (q.tf as StateTf) : null;
     /*
      * The screen shows today and keeps the rest behind "View all", so it asks
      * for more than it draws. Two hundred is a few days of a five-minute
      * timeframe -- enough to check last Tuesday, small enough to send.
      */
-    const limit = Math.min(200, Math.max(1, Number(q.limit) || 10));
+    const limit = Math.min(500, Math.max(1, Number(q.limit) || 10));
+    /*
+     * The range tabs: Today, 1 / 3 / 7 days, All. `days=0` means today since
+     * the desk's own 05:30 IST open, which is the day a trader means; the
+     * others are rolling windows back from now.
+     *
+     * A range as well as a limit because they answer different questions: on a
+     * quiet 4-hour frame "the last 200 calls" reaches back a fortnight while
+     * the reader believes they are looking at this morning.
+     */
+    const days = q.days === undefined ? null : Number(q.days);
+    const sinceMs = days === null || !Number.isFinite(days) || days < 0
+      ? null
+      : days === 0
+        ? startOfDayIst(Date.now())
+        : Date.now() - days * 24 * 3_600_000;
     try {
       await gradeStates().catch(() => 0);
-      const [rows, rate] = await Promise.all([recentStates(tf, limit), hitRate(tf)]);
+      const [rows, rate, total] = await Promise.all([
+        recentStates(tf, limit, sinceMs), hitRate(tf), countStates(tf),
+      ]);
       /*
        * What this timeframe's break shape has actually paid, beside the
        * journal's own count (27 Sep 2026).
@@ -215,7 +232,7 @@ export function registerDeskRoutes(app: FastifyInstance) {
        * hours and the screen looked exactly the same either way.
        */
       const checked = await lastCheck(tf).catch(() => null);
-      return { at: Date.now(), tf, rows, hitRate: rate, measured, checked };
+      return { at: Date.now(), tf, rows, hitRate: rate, measured, checked, total, days };
     } catch (e) {
       reply.code(502);
       return { error: (e as Error).message };

@@ -342,6 +342,74 @@ implies otherwise is the bug.
 
 ---
 
+## 27 Sep 2026 (evening) — today's strategy runs, audited
+
+Three runs: `3-55-copy` at 15:29 and `5-01-copy` at 15:55 both **placed**;
+`5-01` at 17:01 **failed**. Audited against config and against what reached the
+book, which closes the 26 Sep row below ("stop and target to be checked").
+
+**The arithmetic was right.** All four placed legs anchored exactly as
+configured — `stop = entry × (1 + 1.85) = ×2.85`, `target = entry × (1 − 0.99)`,
+rounded up to tick:
+
+| leg | entry fill | stop | expected | target | outcome |
+|---|---:|---:|---:|---:|---|
+| CE 85200 15:29 | 20.6×7, 18.0×3 → 19.82 | 56.5 | 56.5 ✓ | 0.2 | **stop @ 65** |
+| PE 84600 15:29 | 16.0 | 45.6 | 45.6 ✓ | 0.2 | target ✓ |
+| CE 85200 15:55 | 25.0 | 71.3 | 71.25 ✓ | 0.3 | target ✓ |
+| PE 84800 15:55 | 37.6 | 107.2 | 107.16 ✓ | 0.4 | target ✓ |
+
+- [x] **🔴 The slippage alarm went nowhere (fixed 27 Sep).** The 15:29 CE stop was
+      asked at 56.5 and filled at **65** — 8.5 points, **15.0% through its own
+      trigger**, three times `SLIPPAGE_ALERT_PCT`. The alarm fired correctly and
+      then `onAlarm` pushed it onto a fifty-entry **in-memory array** and did
+      nothing else: not the phone, not the error log, not a log line, gone on the
+      next restart. `/api/trade/status` returned the array, the web type declared
+      it, and **no component ever drew it**. So the safeguard `ARCHITECTURE.md`
+      describes as raising "an alarm, once, where the alerts already go" did not
+      go where the alerts go, and the cost was again found by reading the day's
+      fills by hand — the exact failure of 24 Sep that the alarm was written for.
+      It now goes three places: the array (the status route already serves it),
+      the **error log** so it survives a restart, and the **phone**, keyed per
+      trade with `PROBLEM_REPEAT_MS` so a violent exit printing in five pieces is
+      one message. `onAlarm` now carries the plan, so the alert can name the
+      contract without a second read of the store.
+
+      The cost, for the record: the configured stop was 185%; the realised exit
+      was 65 / 19.82 = **228%**. The full 15% `STOP_LIMIT_SLACK`, swept to the
+      limit.
+- [x] **🟠 The order label showed the strategy's id, not its name (fixed 27 Sep).**
+      `PositionsCard` and `OrdersPanel` both passed `plan.strategyId` into
+      `OriginTag`'s `strategyName` prop — whose own docstring says *"the id is not
+      worth showing"*. The ids are historical and the names are entry times, so
+      they disagree: `5-01-copy` is named **3.55** and enters at **15:55**, and
+      `3-55-copy` is named **3.29** and enters at **15:29**. An order placed at
+      15:55 was therefore tagged `5-01-copy`, which reads as 5:01. The plan now
+      carries `strategyName`, **stamped at placement** so the label still reads
+      correctly after a rename or a delete — the order record should say what
+      happened, not what the settings say today. Orders placed before this fall
+      back to the id, and the tooltip says that is what they are.
+
+- [ ] **🟠 The `5-01` strategy cannot ever fire.** It failed today and on 26 Sep
+      with the same two refusals:
+      ```
+      CE 85200: pays 1.00, desk will not sell below 5.00 …; Already holding -10 on this contract.
+      PE 84800: pays 4.10, desk will not sell below 5.00 …; Already holding -10 on this contract.
+      ```
+      Both are structural, not engine faults. It enters at **17:01, 28 minutes
+      before settlement**, when premium has decayed below the 5.00 floor; and it
+      selects the same strikes `5-01-copy` already sold at 15:55, so the
+      already-holding guard refuses it as well. Either move its entry earlier,
+      lower its floor for that window, or delete it — as configured it can only
+      log a failure once a day.
+- [ ] **🟡 A 99% target can round to zero.** The aborted `5-01` legs carry
+      `takeProfitPrice: 0` (entries of 1.0 and 4.1, × 0.01). A buy-back at 0 is
+      not an order. Harmless today because the precheck aborted them first, but a
+      cheap option that clears the floor would get a zero target. Floor it at one
+      tick.
+
+---
+
 ## 26 Sep 2026 — open
 
 - [x] **A fixed stop the fill overtakes is refused, not acted on (26 Sep).** `stopAt: 70` means

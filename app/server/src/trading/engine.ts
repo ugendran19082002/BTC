@@ -310,7 +310,14 @@ export type EngineDeps = {
   dayPnlUsd?: () => number | Promise<number>;
   /** BTC spot, for the margin and liquidation model. */
   spot?: () => number | null;
-  onAlarm?: (trade: TradeState, message: string) => void;
+  /**
+   * Something the desk should be told about out loud.
+   *
+   * The plan travels with it because the handler has to name the contract, and
+   * looking it up again from the store would be a second read of a record the
+   * caller is already holding.
+   */
+  onAlarm?: (trade: TradeState, message: string, plan: TradePlan) => void;
   /**
    * Every journal event as it is written, with the trade either side of it.
    *
@@ -499,7 +506,7 @@ export class TradeEngine {
     const before = rec.state.alarm;
     rec.state = state;
     await this.d.store.save(rec);
-    if (state.alarm && state.alarm !== before) this.d.onAlarm?.(state, state.alarm);
+    if (state.alarm && state.alarm !== before) this.d.onAlarm?.(state, state.alarm, rec.plan);
     // Only after the save. The journal is the record; nothing that merely
     // reports on it may stand between an event and the disk, and a listener
     // that throws is its own bug -- it does not get to become the trade's.
@@ -709,6 +716,7 @@ export class TradeEngine {
             rec.state,
             `${role === 'stop_loss' ? 'Stop' : 'Target'} asked ${wanted}, filled ${price.toFixed(1)}`
             + ` — ${slip.points > 0 ? '+' : ''}${slip.points} points against it (${slip.pct}%).`,
+            rec.plan,
           );
         }
       }

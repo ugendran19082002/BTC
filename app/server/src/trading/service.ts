@@ -20,7 +20,7 @@ import { istDate } from '../strategy/schedule.js';
 import type { MtmSample } from './pnl-history.js';
 import { candles } from '../market/delta.js';
 import { noteError } from '../observability/errors.js';
-import { alertFor, bookWentFlat, daySummaryFor } from '../notify/messages.js';
+import { alertFor, bookWentFlat, daySummaryFor, slippageAlert } from '../notify/messages.js';
 import { TelegramNotifier } from '../notify/telegram.js';
 import { BEST_TRADE_REPEAT_DEFAULT, BEST_TRADE_REPEAT_MAX, bestTradeText } from '../notify/best-trade-alert.js';
 import {
@@ -182,9 +182,38 @@ export class TradingService {
           context: { orderId: order.orderId, symbol: order.symbol ?? null },
         });
       },
-      onAlarm: (t, message) => {
+      /*
+       * An alarm goes three places, because until 27 Sep 2026 it went to one and
+       * that one was invisible.
+       *
+       * It was pushed onto `this.alarms` -- fifty entries in memory, returned by
+       * `/api/trade/status`, drawn by no component, gone on restart. So the
+       * safeguard `ARCHITECTURE.md` describes as raising "an alarm, once, where
+       * the alerts already go" did not go where the alerts go. A stop asked at
+       * 56.5 filled at 65 that day and was found by reading fills by hand.
+       *
+       * Now: the array as before (cheap, and the status route already serves
+       * it), the error log so it survives a restart and can be read after the
+       * fact, and the phone, which is what "where the alerts already go" meant.
+       */
+      onAlarm: (t, message, plan) => {
         this.alarms.unshift({ tradeId: t.tradeId, message, at: Date.now() });
         this.alarms.length = Math.min(this.alarms.length, 50);
+
+        noteError({
+          source: 'trading',
+          level: 'warn',
+          where: 'trade-alarm',
+          message,
+          context: { tradeId: t.tradeId, symbol: t.symbol ?? null },
+        });
+
+        // Never let a failed alert touch the trade: the same rule the fill
+        // notifications follow.
+        try {
+          if (!this.notifier || !this.alertsOn) return;
+          this.notifier.notify(slippageAlert({ mode: this.currentMode }, t, plan, message, Date.now()));
+        } catch { /* an alert is never worth a trade */ }
       },
       // The mode is read at the moment of the fill, not captured, so a paper
       // fill can never reach the phone dressed as a live one.

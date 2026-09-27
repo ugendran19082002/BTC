@@ -537,6 +537,7 @@ export default function App() {
     <div className="app">
       <header className="top">
         <div className="top-row">
+          <span className="btc-logo sm" aria-hidden="true">₿</span>
           <h1>BTC Desk</h1>
           <span className="sub">
             Delta Exchange India{days !== null && <> · {days} days tested</>}

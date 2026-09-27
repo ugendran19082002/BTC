@@ -99,20 +99,24 @@ body {
 
 /* Wide enough to use a desktop, capped so line lengths stay readable on a
    very wide one. The chain table scrolls inside itself either way. */
-.app { max-width: 1680px; margin: 0 auto; padding: 16px 18px 48px; }
-@media (min-width: 1800px) { .app { max-width: 1780px; } }
+.app { max-width: 1920px; margin: 0 auto; padding: 8px 10px 36px; }
+@media (min-width: 1800px) { .app { max-width: 1920px; padding-inline: 14px; } }
 
 header.top {
   display: flex; flex-direction: column; gap: 8px;
-  padding-bottom: 12px; border-bottom: 1px solid var(--line); margin-bottom: 16px;
+  padding: 7px 8px 8px; border: 1px solid var(--line); border-radius: 7px;
+  background: linear-gradient(180deg, #151a21 0%, #0d1116 100%);
+  box-shadow: inset 0 1px 0 var(--edge), 0 4px 14px #00000030; margin-bottom: 7px;
 }
-header.top .top-row { display: flex; align-items: center; gap: 12px; min-width: 0; }
+header.top .top-row { display: flex; align-items: center; gap: 9px; min-width: 0; }
 header.top h1 {
-  font-size: 17px; margin: 0; font-weight: 600; letter-spacing: -0.2px;
+  font-size: 17px; margin: 0; font-weight: 700; letter-spacing: 0;
   white-space: nowrap;
 }
-header.top .sub { color: var(--muted); font-size: 12px; min-width: 0; }
+header.top .sub { color: var(--muted); font-size: 11px; min-width: 0; }
 header.top .top-out { margin-left: auto; flex: none; }
+header.top .top-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+header.top .top-row-2 { justify-content: flex-start; }
 
 /* Above a phone the two rows are one line, and the reading order is the source
    order: title, then price, then everything else. Reordering with `order` put
@@ -133,13 +137,20 @@ header.top .top-out { margin-left: auto; flex: none; }
   header.top h1 { font-size: 15.5px; }
 }
 
-.tabs { display: flex; gap: 4px; margin-bottom: 16px; flex-wrap: wrap; }
-.tabs button {
-  background: transparent; border: 1px solid transparent; color: var(--muted);
-  padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px;
+.tabs {
+  display: flex; gap: 2px; margin-bottom: 8px; flex-wrap: nowrap; overflow-x: auto;
+  padding: 3px; border: 1px solid var(--line); border-radius: 7px; background: #0f1318;
+  scrollbar-width: none;
 }
-.tabs button:hover { color: var(--text); }
-.tabs button.on { background: var(--panel-2); border-color: var(--line); color: var(--text); }
+.tabs::-webkit-scrollbar { display: none; }
+.tabs button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: 0 0 auto;
+  background: transparent; border: 1px solid transparent; color: var(--muted);
+  padding: 6px 11px; min-height: 30px; border-radius: 5px; cursor: pointer; font-size: 12px;
+}
+.tabs button svg { width: 13px; height: 13px; }
+.tabs button:hover { color: var(--text); background: #ffffff08; }
+.tabs button.on { background: #1264a3; border-color: #2388d3; color: #fff; box-shadow: inset 0 1px 0 #ffffff25; }
 
 .bar {
   display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end;
@@ -2287,8 +2298,8 @@ td.liq-normal, td.liq-none { color: var(--dim); }
    glance beside it; stacked on a phone. */
 .deskbar {
   display: flex; align-items: flex-end; gap: 12px 18px; flex-wrap: wrap;
-  border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
-  padding: 12px 16px; margin-bottom: 12px;
+  border: 1px solid var(--line); border-radius: 7px; background: var(--panel);
+  padding: 9px 12px; margin-bottom: 8px;
 }
 .deskbar .field { display: flex; flex-direction: column; gap: 4px; min-width: 150px; }
 .deskbar .field.wide { flex: 0 1 400px; min-width: 0; }
@@ -2560,16 +2571,16 @@ td.liq-normal, td.liq-none { color: var(--dim); }
    Overview — the whole desk on one screen (components/overview).
    Three columns on a desktop, stacked on a phone; the theme's own tokens.
    ===================================================================== */
-.ov { display: flex; flex-direction: column; gap: 10px; }
+.ov { display: flex; flex-direction: column; gap: 8px; }
 .ov-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
-.ov-kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
+.ov-kpi { background: #11161c; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px;
   display: flex; flex-direction: column; gap: 2px; box-shadow: inset 0 1px 0 var(--edge); min-width: 0; }
 .ov-kpi-wide { grid-column: auto; }
 /* Nine cards across on a wide screen; auto-fit under that. */
 @media (min-width: 1500px) { .ov-kpis { grid-template-columns: repeat(9, minmax(0, 1fr)); } }
 .ov-kpi-muted { opacity: .65; }
 .ov-kpi-label { color: var(--muted); font-size: 12px; }
-.ov-kpi-value { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.ov-kpi-value { font-size: 19px; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.2; }
 .ov-kpi-sub { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .ov-kpi-trio { display: flex; gap: 14px; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
 
@@ -2647,7 +2658,7 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 .ov-anchor { scroll-margin-top: 72px; }
 .ov-anchor:empty { margin-bottom: -10px; }
 
-.ov-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: inset 0 1px 0 var(--edge); min-width: 0; }
+.ov-panel { background: #11161c; border: 1px solid var(--line); border-radius: 6px; box-shadow: inset 0 1px 0 var(--edge); min-width: 0; }
 .ov-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 9px 12px; border-bottom: 1px solid var(--line-soft); }
 .ov-panel-head h3 { font-size: 14px; font-weight: 600; margin: 0; }
 .ov-panel-body { padding: 8px 12px 10px; }

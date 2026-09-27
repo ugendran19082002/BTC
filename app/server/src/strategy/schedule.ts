@@ -18,6 +18,21 @@ import { minutesForward, minutesOf, time12 } from './types.js';
 const IST_OFFSET_MIN = 330;
 
 /** The IST calendar day a moment falls in, as `YYYY-MM-DD`. */
+/**
+ * When the desk's day starts: 05:30 IST, because that is when the daily
+ * contract opens.
+ *
+ * One definition. It was written out twice -- `http/routes/trade.routes.ts` and
+ * `trading/service.ts` -- and a third copy was about to go into
+ * `desk.routes.ts` for the signal-history range tabs. Three private copies of a
+ * day boundary on a desk that reports P&L per day is how two of them come to
+ * disagree by an hour and nobody notices until a Monday.
+ */
+export function startOfDayIst(now = Date.now()): number {
+  const IST = 5.5 * 3_600_000;
+  return Math.floor((now + IST) / 86_400_000) * 86_400_000 - IST;
+}
+
 export function istDate(nowMs: number): string {
   const shifted = new Date(nowMs + IST_OFFSET_MIN * 60_000);
   return shifted.toISOString().slice(0, 10);

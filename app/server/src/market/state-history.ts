@@ -529,6 +529,21 @@ export async function noteState(read: StateRead): Promise<number | null> {
   return row?.id ?? null;
 }
 
+/**
+ * How many calls the journal holds in total, for this timeframe or for all.
+ *
+ * The header says "120 signals across all days" beside a list showing today's.
+ * Without this the reader cannot tell a quiet day from a young journal.
+ */
+export async function countStates(tf: StateTf | null = null): Promise<number> {
+  await stateHistorySchema();
+  const r = await one<{ n: string }>(
+    `SELECT count(*)::text AS n FROM market_states ${tf ? 'WHERE tf = $1' : ''}`,
+    tf ? [tf] : [],
+  );
+  return Number(r?.n ?? 0);
+}
+
 /** When the journal last looked at this timeframe, and what it saw. Null if it never has. */
 export type StateCheck = { tf: string; at: number; event: string; stage: string; wrote: number | null };
 
@@ -619,7 +634,20 @@ export async function gradeStates(nowMs = Date.now(), limit = 20): Promise<numbe
 }
 
 /** The last few calls, newest first: the "AI signal history" list. */
-export async function recentStates(tf: StateTf | null = null, limit = 10): Promise<StateRow[]> {
+export async function recentStates(
+  tf: StateTf | null = null,
+  limit = 10,
+  /**
+   * Only calls at or after this moment, ms. For the range tabs — Today, 1 day,
+   * 3 days, 7 days, All.
+   *
+   * A range rather than a bare limit because "the last 200 calls" and "today"
+   * are different questions, and on a quiet 4-hour frame the first can reach
+   * back a fortnight while the reader believes they are looking at this
+   * morning.
+   */
+  sinceMs: number | null = null,
+): Promise<StateRow[]> {
   await stateHistorySchema();
   const got = await rows<{
     id: number; at: number; tf: StateTf; event: MarketEvent; stage: string; side: Side | null;
@@ -641,8 +669,14 @@ export async function recentStates(tf: StateTf | null = null, limit = 10): Promi
             first_hit, first_hit_price, first_hit_time,
             mfe, mae, mfe_price, mae_price,
             eval_window_min, score, probability, regime, mtf_consensus
-       FROM market_states ${tf ? 'WHERE tf = $2' : ''} ORDER BY at DESC LIMIT $1`,
-    tf ? [limit, tf] : [limit],
+       FROM market_states
+       ${tf && sinceMs !== null ? 'WHERE tf = $2 AND at >= $3'
+         : tf ? 'WHERE tf = $2'
+         : sinceMs !== null ? 'WHERE at >= $2' : ''}
+       ORDER BY at DESC LIMIT $1`,
+    tf && sinceMs !== null ? [limit, tf, sinceMs]
+      : tf ? [limit, tf]
+        : sinceMs !== null ? [limit, sinceMs] : [limit],
   );
   return got.map((r) => ({
     id: r.id, at: Number(r.at), tf: r.tf, event: r.event, stage: r.stage, side: r.side,

@@ -18,12 +18,6 @@ import { refuse } from '../refuse.js';
 import { parseAddBody, toAddRequest, type AddBody } from '../add-body.js';
 import { parseCloseBody, type CloseBody } from '../close-body.js';
 
-/** 05:30 IST is when the daily contract opens, so that is where the day starts. */
-function startOfDayIst(now = Date.now()): number {
-  const IST = 5.5 * 3600_000;
-  return Math.floor((now + IST) / 86_400_000) * 86_400_000 - IST;
-}
-
 /**
  * The order desk.
  *
