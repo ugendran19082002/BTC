@@ -3,6 +3,7 @@
 # Build and deploy the BTC Options Desk.
 #
 #   ./deploy/deploy.sh                 build and run locally
+#   ./deploy/deploy.sh --no-test       fast deploy without running test suites
 #   ./deploy/deploy.sh --check         validate only, change nothing
 #   ./deploy/deploy.sh --host user@ip  build locally, ship, run there
 #   ./deploy/deploy.sh --no-prune      deploy, but keep every old image
@@ -35,13 +36,15 @@ WEB_BIND="${WEB_BIND:-172.17.0.1}"
 DESK_HOST="$WEB_BIND"; [[ "$DESK_HOST" == "0.0.0.0" ]] && DESK_HOST=127.0.0.1
 REMOTE=""
 CHECK_ONLY=0
+NO_TEST=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --check) CHECK_ONLY=1; shift ;;
+    --no-test|--fast|-f) NO_TEST=1; shift ;;
     --host)  REMOTE="${2:?--host needs user@host}"; shift 2 ;;
     --no-prune) PRUNE=0; shift ;;
-    -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -100,6 +103,10 @@ fi
 
 say "checking tooling"
 command -v docker >/dev/null || fail "docker is not installed"
+# The health gate is a curl call. Without curl every probe fails silently, the
+# loop runs its full thirty seconds, and a perfectly good deploy is rolled back
+# -- a missing tool reported as a broken build.
+command -v curl >/dev/null || fail "curl is not installed; the health check needs it"
 docker compose version >/dev/null 2>&1 || fail "docker compose v2 is required"
 
 # Install only when the dependencies actually changed.
@@ -124,8 +131,10 @@ ensure_deps() {
   printf '%s' "$want" > "$stamp"
 }
 
-ensure_deps "$ROOT/app/server" server || fail "server install failed"
-ensure_deps "$ROOT/app/web"    web    || fail "web install failed"
+if [[ $NO_TEST -ne 1 ]]; then
+  ensure_deps "$ROOT/app/server" server || fail "server install failed"
+  ensure_deps "$ROOT/app/web"    web    || fail "web install failed"
+fi
 
 # The analytics service's test environment, rebuilt only when its requirements
 # change -- the same stamp idea as `ensure_deps`. uv when it is installed (fast,
@@ -146,7 +155,9 @@ ensure_py_deps() {
   fi
   printf '%s' "$want" > "$stamp"
 }
-ensure_py_deps || fail "analytics install failed"
+if [[ $NO_TEST -ne 1 ]]; then
+  ensure_py_deps || fail "analytics install failed"
+fi
 
 # Both suites and both type-checks at once.
 #
@@ -175,31 +186,35 @@ run_jobs() {
   return $rc
 }
 
-# The server suite and the analytics database tests need a PostgreSQL to talk
-# to: a throwaway one, on a port the desk never uses, gone again afterwards.
-say "starting the test database"
-TEST_PG_URL="$("$ROOT/deploy/test-db.sh" up)" || fail "could not start the test database"
-trap '"$ROOT/deploy/test-db.sh" down' EXIT
+if [[ $NO_TEST -eq 1 ]]; then
+  say "skipping test suites and host type-checks (--no-test active)"
+else
+  # The server suite and the analytics database tests need a PostgreSQL to talk
+  # to: a throwaway one, on a port the desk never uses, gone again afterwards.
+  say "starting the test database"
+  TEST_PG_URL="$("$ROOT/deploy/test-db.sh" up)" || fail "could not start the test database"
+  trap '"$ROOT/deploy/test-db.sh" down' EXIT
 
-say "running the test suites"
-declare -A TEST_JOBS=(
-  ["server tests"]="cd '$ROOT/app/server' && TEST_PG_URL='$TEST_PG_URL' npm test"
-  ["web tests"]="cd '$ROOT/app/web' && npm test"
-  ["analytics tests"]="cd '$ROOT/analytics' && TEST_PG_URL='$TEST_PG_URL' .venv/bin/python -m pytest -q"
-)
-run_jobs TEST_JOBS || fail "tests failed"
-"$ROOT/deploy/test-db.sh" down
-trap - EXIT
+  say "running the test suites"
+  declare -A TEST_JOBS=(
+    ["server tests"]="cd '$ROOT/app/server' && TEST_PG_URL='$TEST_PG_URL' npm test"
+    ["web tests"]="cd '$ROOT/app/web' && npm test"
+    ["analytics tests"]="cd '$ROOT/analytics' && TEST_PG_URL='$TEST_PG_URL' .venv/bin/python -m pytest -q"
+  )
+  run_jobs TEST_JOBS || fail "tests failed"
+  "$ROOT/deploy/test-db.sh" down
+  trap - EXIT
 
-say "type-checking before we build"
-# Call the local binary rather than going through npx: npx will happily decide a
-# package is missing and offer to fetch it, which turns a dependency problem into
-# a confusing prompt in the middle of a deploy.
-declare -A TYPE_JOBS=(
-  ["server type-check"]="cd '$ROOT/app/server' && ./node_modules/.bin/tsc -p tsconfig.json --noEmit"
-  ["web type-check"]="cd '$ROOT/app/web' && ./node_modules/.bin/tsc -b --noEmit"
-)
-run_jobs TYPE_JOBS || fail "type-check failed"
+  say "type-checking before we build"
+  # Call the local binary rather than going through npx: npx will happily decide a
+  # package is missing and offer to fetch it, which turns a dependency problem into
+  # a confusing prompt in the middle of a deploy.
+  declare -A TYPE_JOBS=(
+    ["server type-check"]="cd '$ROOT/app/server' && ./node_modules/.bin/tsc -p tsconfig.json --noEmit"
+    ["web type-check"]="cd '$ROOT/app/web' && ./node_modules/.bin/tsc -b --noEmit"
+  )
+  run_jobs TYPE_JOBS || fail "type-check failed"
+fi
 
 if [[ $CHECK_ONLY -eq 1 ]]; then
   say "check only; nothing was built or started"
@@ -210,9 +225,26 @@ fi
 
 say "building images at tag ${TAG}"
 TAG="$TAG" WEB_PORT="$WEB_PORT" WEB_BIND="$WEB_BIND" $COMPOSE build
-# `latest` follows the newest build, so a bare `docker compose up` can never
-# start code from days ago -- which is what `latest` pointed at before this.
-for repo in btc-desk-api btc-desk-web btc-desk-analytics; do docker tag "${repo}:${TAG}" "${repo}:latest"; done
+
+# `latest` follows the newest build that actually came up, so a bare
+# `docker compose up` can never start code from days ago -- which is what
+# `latest` pointed at before it existed.
+#
+# It is moved *after* the health gate on purpose. Tagging it straight after the
+# build meant a deploy that failed its health check left `latest` on the broken
+# image: the rollback put the previous tag back into the running containers, but
+# the next bare `docker compose up` still started the build that had just been
+# rejected. `latest` now means "the newest build seen healthy", which is the only
+# reading that makes it safe to start from.
+tag_latest() {
+  local want="$1" repo
+  for repo in btc-desk-api btc-desk-web btc-desk-analytics; do
+    # A rollback target may predate one of the three images; skip what is absent
+    # rather than abort a rollback over a tag that was never built.
+    docker image inspect "${repo}:${want}" >/dev/null 2>&1 || continue
+    docker tag "${repo}:${want}" "${repo}:latest"
+  done
+}
 
 # ---------------------------------------------------------------- ship
 
@@ -229,6 +261,9 @@ if [[ -n "$REMOTE" ]]; then
   say "starting on ${REMOTE}"
   ssh "$REMOTE" "cd ~/btc-desk && TAG=${TAG} WEB_PORT=${WEB_PORT} WEB_BIND=${WEB_BIND} \
     docker compose -f deploy/docker-compose.yml up -d --no-build"
+  # Shipped and started there; nothing local was health-checked, but the images
+  # are known good enough to have started, so local `latest` may follow them.
+  tag_latest "$TAG"
   say "deployed. Point your reverse proxy at port ${WEB_PORT} on that host."
   exit 0
 fi
@@ -263,6 +298,8 @@ for i in $(seq 1 30); do
     else
       say "analytics: not answering yet -- the cards show the desk's own figures until it does"
     fi
+    # Healthy: this is now the build a bare `docker compose up` should start.
+    tag_latest "$TAG"
     if [[ $PRUNE -eq 1 ]]; then prune_images; fi
     exit 0
   fi
@@ -277,5 +314,8 @@ if [[ -n "$PREV" ]]; then
   # has no previous analytics image to roll back to. The database is never
   # rolled back -- its image is not ours, and its data is the point.
   TAG="$PREV" WEB_PORT="$WEB_PORT" WEB_BIND="$WEB_BIND" $COMPOSE up -d api web
+  # And `latest` goes back with them, or the next bare `up` starts the build
+  # that was just rolled back.
+  tag_latest "$PREV"
 fi
 fail "deployment did not come up healthy"
