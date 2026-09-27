@@ -47,9 +47,12 @@ describe('the big-move card', () => {
     expect(screen.getByText('Net after fees')).toBeVisible();
   });
 
-  it('[critical] the sample size is shown beside the word "measured"', () => {
+  it('[critical] the sample size is on screen, so "20% hit" can never be read alone', () => {
+    // Wording comes from the shared MeasuredRecord (27 Sep merge): the Live
+    // screen's signal history and this card draw it with one component.
     render(<MomentumCard signal={confirmed()} />);
-    expect(screen.getByText(/measured · n=1,317/)).toBeInTheDocument();
+    expect(screen.getByText('1,317 calls')).toBeVisible();
+    expect(screen.getByText(/Replay · 30m/)).toBeVisible();
   });
 
   it('shows the held-out year separately from the whole sample', () => {
@@ -80,8 +83,10 @@ describe('the big-move card', () => {
 
   it('[critical] an ungraded call says so rather than borrowing a number', () => {
     render(<MomentumCard signal={confirmed({ measured: null, warnings: [] })} />);
-    expect(screen.getByText(/never graded/i)).toBeInTheDocument();
-    expect(screen.getByText(/do not size a trade off this card/i)).toBeInTheDocument();
+    expect(screen.getByText(/never graded/i)).toBeVisible();
+    expect(screen.getByText(/do not size a trade off this/i)).toBeVisible();
+    // And it must not be offered as a trade.
+    expect(screen.getByText(/Information only/i)).toBeVisible();
   });
 
   it('[critical] a coil names both edges and offers no plan', () => {

@@ -6,6 +6,8 @@ import type { MarketStateResponse, StateHistoryRow, StatePlan } from '@/api/desk
 import { strike as fmtStrike } from '@/lib/format';
 import { trackFor } from '@/components/desk/signal-track';
 import { csvNameFor, istDay, signalsToCsv } from '@/components/desk/signal-export';
+import { MeasuredInline, MeasuredRecord } from '@/components/live/MeasuredRecord';
+import type { Measured } from '@/types/live';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 
@@ -65,11 +67,13 @@ const IST_DAY = new Intl.DateTimeFormat('en-IN', {
 });
 
 export function MarketState({
-  data, history, hitRate, tf, spot, extra = [],
+  data, history, hitRate, measured, tf, spot, extra = [],
 }: {
   data: MarketStateResponse | null;
   history?: StateHistoryRow[];
   hitRate?: { correct: number; graded: number };
+  /** The replay's record for this timeframe. `null` = never graded, `undefined` = loading. */
+  measured?: Measured | null;
   /** The chart's timeframe, shown but not switched here: there is one row. */
   tf: string;
   /** BTC now, so each earlier call can say what price did after it. */
@@ -223,7 +227,7 @@ export function MarketState({
             ))}
           </div>
 
-          {history?.length ? <History rows={history} rate={hitRate} spot={spot} /> : null}
+          {history?.length ? <History rows={history} rate={hitRate} measured={measured} spot={spot} /> : null}
         </div>
       ) : null}
 
@@ -450,9 +454,11 @@ const outcomeWord = (o: string | null | undefined): string =>
  * and the tally is given as "3 of 4" rather than a percentage, because four
  * calls is not a hit rate.
  */
-function History({ rows, rate, spot }: {
+function History({ rows, rate, measured, spot }: {
   rows: readonly StateHistoryRow[];
   rate?: { correct: number; graded: number };
+  /** What the replay says this shape has paid. `null` means never graded; `undefined` means still loading. */
+  measured?: Measured | null;
   spot?: number;
 }) {
   const [page, setPage] = useState(0);
@@ -498,6 +504,19 @@ function History({ rows, rate, spot }: {
             {rate.correct} of {rate.graded} reached target
           </span>
           : <span>none finished yet</span>}
+        {/*
+          And what the shape has actually paid, in the same heading (27 Sep
+          2026). The journal's count is a few dozen calls from whatever hours
+          the desk was watched; on its own it is a hit rate with no cost beside
+          it, which is the finding docs/FULL-STUDY.md 7.5 was filed about.
+          Drawn by the same component the Signals tab uses, so the two screens
+          cannot quote different numbers about one shape.
+        */}
+        {measured !== undefined && (
+          <span className="bt-market-state__hist-measured">
+            <MeasuredInline measured={measured} tf={rows[0]?.tf} />
+          </span>
+        )}
         <button type="button" className="bt-market-state__hist-all" onClick={() => setAllOpen(true)}>
           View all <ChevronRight size={12} aria-hidden />
         </button>
@@ -533,6 +552,14 @@ function History({ rows, rate, spot }: {
       <Sheet open={allOpen} onOpenChange={setAllOpen}>
         <SheetContent title="Signal history — all days" className="sm:w-[min(960px,92vw)]">
           <div className="bt-market-state__all">
+            {measured !== undefined && (
+              <MeasuredRecord
+                measured={measured}
+                live={rate ?? null}
+                tf={rows[0]?.tf}
+                className="mb-3"
+              />
+            )}
             <div className="bt-market-state__all-head">
               <span>{rows.length} signals</span>
               <button type="button" className="bt-chip" onClick={download}>

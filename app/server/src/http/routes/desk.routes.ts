@@ -34,6 +34,7 @@ import { SHOCK_WINDOWS } from '../../domain/shock.js';
 import { shockFrom } from '../../market/shock-now.js';
 import { breakRiskNow } from '../../market/break-risk-now.js';
 import { liveRead, safetyOf } from '../../market/live-read.js';
+import { measuredFor, LIVE_POLICY } from '../../domain/momentum-signal.js';
 
 /** Resolve the `at` query param: "now" (or absent) means live. */
 function resolveAt(at: string | undefined): number | null {
@@ -188,7 +189,24 @@ export function registerDeskRoutes(app: FastifyInstance) {
     try {
       await gradeStates().catch(() => 0);
       const [rows, rate] = await Promise.all([recentStates(tf, limit), hitRate(tf)]);
-      return { at: Date.now(), tf, rows, hitRate: rate };
+      /*
+       * What this timeframe's break shape has actually paid, beside the
+       * journal's own count (27 Sep 2026).
+       *
+       * The list answers "what has the desk called and how did those turn
+       * out" over a few dozen calls. That is a small sample taken from
+       * whatever hours the desk happened to be watched, and on its own it is
+       * the number docs/FULL-STUDY.md 7.5 was filed about: a hit rate with no
+       * cost beside it. The replay's row for the same timeframe -- thousands
+       * of calls, after fees, with 2026 held out -- is the context that makes
+       * the journal's count readable, so it is served from the same place
+       * rather than from a second request the screen could forget to make.
+       *
+       * Null for a timeframe the study never graded (2h, 4h), which the card
+       * says in words rather than drawing as a zero.
+       */
+      const measured = tf ? measuredFor(tf, LIVE_POLICY) : null;
+      return { at: Date.now(), tf, rows, hitRate: rate, measured };
     } catch (e) {
       reply.code(502);
       return { error: (e as Error).message };

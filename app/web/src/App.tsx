@@ -29,6 +29,7 @@ import { LoginPage } from '@/components/desk/LoginPage';
 import { LivePrice } from '@/components/desk/LivePrice';
 import { TODAY_MOVE } from '@/types/desk';
 import { tabTitle } from '@/lib/tab-title';
+import { TF_SECONDS, withLtp } from '@/lib/live-bar';
 import { pnlTone, signedInr, usdToInr } from '@/lib/format';
 import { PriceChart, CHART_TFS, type ChartTf } from '@/components/desk/PriceChart';
 import { MarketPanel } from '@/components/desk/MarketPanel';
@@ -481,6 +482,26 @@ export default function App() {
   // The chain's move is up to five seconds old; recover the 05:30 price from
   // it and measure the ticking price against that, so the move ticks too.
   const dayMove = data?.market?.moves.find((m) => m.label === TODAY_MOVE) ?? null;
+  /*
+   * The bars the chart draws, with the forming candle carried to the last
+   * traded price (27 Sep 2026).
+   *
+   * `/api/candles` returns the forming bar as it stood when the request was
+   * made, so between polls the newest candle sat still while the ticker moved
+   * -- on a 1-hour chart, for minutes. The tick arrives every second, so the
+   * bar is finished off here. Display only: `withLtp` never reaches the signal
+   * rules, which read closed bars because that is what their measured records
+   * were taken on. See lib/live-bar.ts.
+   */
+  const liveBars = useMemo(
+    // `Date.now()` rather than a ticking clock of its own: the tick arrives
+    // every second and is a dependency, so this recomputes as often as there is
+    // anything new to draw. When the tick stops the bar stops being carried,
+    // which is the right behaviour -- a dead feed must not keep painting.
+    () => withLtp(candles?.bars ?? NO_BARS, tick?.spot ?? null, TF_SECONDS[chartTf] ?? 0, Date.now()),
+    [candles?.bars, tick?.spot, chartTf],
+  );
+
   const openedAt = snap && dayMove?.changeUsd != null ? snap.spot - dayMove.changeUsd : null;
   const liveSpot = tick?.spot ?? snap?.spot ?? null;
   const sinceOpenUsd = openedAt !== null && liveSpot !== null ? liveSpot - openedAt : null;
@@ -633,7 +654,7 @@ export default function App() {
                     <MarketPanel
                       chart={
                         <Chart
-                          bars={candles?.bars ?? NO_BARS}
+                          bars={liveBars}
                           // The wall within reach, not the heaviest on the board: a strike
                           // eleven expected moves away is open interest, not a level.
                           support={data.structure.peOiWallNear?.strike ?? null}
@@ -656,6 +677,7 @@ export default function App() {
                       data={marketState ?? null}
                       history={stateHistory?.rows}
                       hitRate={stateHistory?.hitRate}
+                      measured={stateHistory?.measured}
                       tf={stateTf}
                       spot={snap.spot}
                       ready={live}

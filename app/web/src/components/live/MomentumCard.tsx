@@ -1,5 +1,6 @@
 import type { MomentumSignal } from '@/types/live';
-import { Card, Row, Warnings, Nothing, Provenance, signedR, pct0, usd0, TONE_TEXT } from './parts';
+import { Card, Row, Warnings, Nothing, Provenance, pct0, usd0, TONE_TEXT } from './parts';
+import { MeasuredRecord } from './MeasuredRecord';
 import { cn } from '@/lib/utils';
 
 /**
@@ -94,41 +95,13 @@ export function MomentumCard({ signal, id }: { signal: MomentumSignal; id?: stri
       )}
 
       {/*
-        What this exact shape actually did. Never collapsed: this is the row
+        What this exact shape actually did -- drawn by the same component the
+        Live screen's signal history uses, so the two screens cannot quote
+        different numbers about one shape. Never collapsed: this is the row
         that was missing when the screen showed an 80% hit rate and a net loss.
       */}
-      <div className="mt-3">
-        <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-[0.8px] text-muted-foreground">
-          What this shape has actually paid
-          {measured
-            ? <Provenance kind="measured" n={measured.n} note={`${measured.from} → ${measured.to}, after 0.05% taker fees each side.`} />
-            : <Provenance kind="ungraded" note="The replay has never graded this state." />}
-        </div>
-        {measured ? (
-          <>
-            <Row label="Hit rate" value={pct0(measured.hitRate)} tone="plain" />
-            <Row
-              label="Net after fees"
-              value={signedR(measured.netR)}
-              tone={measured.netR > 0 ? 'up' : 'down'}
-              hint="Profit per unit of risk, after 0.05% taker fee on both sides. This is the number that decides the verdict."
-            />
-            <Row label="Before fees" value={signedR(measured.avgR)} tone="dim" />
-            {measured.outOfSample && (
-              <Row
-                label={`${measured.outOfSample.year}, held out`}
-                value={`${signedR(measured.outOfSample.netR)} · n=${measured.outOfSample.n}`}
-                tone={measured.outOfSample.netR > 0 ? 'up' : 'down'}
-                hint="The year that was not used to choose anything — the only one that says whether the shape was real."
-              />
-            )}
-          </>
-        ) : (
-          <Nothing>
-            This state has never been graded, so nothing is claimed about it. Watch the level; do not size a trade off this card.
-          </Nothing>
-        )}
-      </div>
+      {/* `showVerdict={false}`: this card already carries the verdict beside the state, above. */}
+      <MeasuredRecord measured={measured} tf={signal.tf ?? undefined} className="mt-3" showVerdict={false} />
 
       <Warnings items={signal.warnings} />
     </Card>

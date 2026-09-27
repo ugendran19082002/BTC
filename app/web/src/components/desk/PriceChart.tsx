@@ -68,7 +68,7 @@ export function PriceChart({
   bars, support, resistance, spot, zones = [], lines = [], projection = null,
   markers = [], trend = null, bias = null, tf, onTf, loading = false, error,
 }: {
-  bars: Candle[];
+  bars: readonly Candle[];
   /** Heaviest put strike, or null when the board has no open interest to read. */
   support: number | null;
   /** Heaviest call strike. */

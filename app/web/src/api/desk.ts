@@ -1,5 +1,6 @@
 import type { CandlesResponse, ChainResponse, ExpiryOption } from '@/types/desk';
 import { json, post } from '@/api/client';
+import type { Measured } from '@/types/live';
 
 export function getChain(
   at: string,
@@ -333,6 +334,17 @@ export type StateHistoryRow = {
 };
 
 export const getStateHistory = (tf: string, limit = 10) =>
-  json<{ at: number; rows: StateHistoryRow[]; hitRate: { correct: number; graded: number } }>(
+  json<{
+    at: number;
+    rows: StateHistoryRow[];
+    hitRate: { correct: number; graded: number };
+    /**
+     * What the replay says this timeframe's break shape has paid, after fees.
+     * Null for a timeframe the study never graded (2h, 4h). Served here rather
+     * than from a second request so the journal's count and the shape's real
+     * record cannot be drawn from two different moments.
+     */
+    measured: Measured | null;
+  }>(
     `/api/market-state/history?tf=${encodeURIComponent(tf)}&limit=${limit}`,
   );

@@ -1,7 +1,165 @@
 # TODO
 
 Live: https://delta.thannigo.in
-Updated 23 Sep 2026
+Updated 27 Sep 2026
+
+---
+
+## 27 Sep 2026 — the journal stopped overnight; signals, LTP, and what "accurate" can mean
+
+### First, the one thing that cannot be built
+
+**A 100% accurate signal does not exist, and this desk has measured why.** Two of
+its own tables say so, over samples nothing on the internet will beat:
+
+| Measurement | Result |
+|---|---|
+| `chain.db.horizons` — 105,119 windows, 364 days, 8 horizons | P(up) is **49.4–50.6%** at *every* horizon from 5m to 12h. Conditioning on trend makes it **worse** (48.9–50.2%). |
+| `research/MOMENTUM-MEASURED.txt` — 261,713 bars, 2024-04 → 2026-09 | Every stop/target policy is **net negative after fees** at every timeframe. 0 of 582 filters survived out of sample at 5m and 15m. After a confirmed break price kept going only **44.8%** of the time. |
+
+`docs/New.md` reaches the same conclusion in its own words: *100% accuracy இல்லை.*
+
+**What can be 100% is the journal.** "correct update ஆகணும், late ஆக கூடாது" is a
+real and achievable requirement, and it is a different requirement from
+prediction accuracy:
+
+- every state change recorded, for every timeframe, whether or not anybody is watching
+- recorded within a bar of when it happened
+- graded when its window closes, not when somebody opens the page
+- entry / target / stop stored as they were at the call, never recomputed later
+- CONFIRMED vs INVALIDATED decided by one rule, in one place, and auditable
+
+That is what the rows below are about. Everything below is about making the
+record trustworthy; none of it makes the prediction better, and a screen that
+implies otherwise is the bug.
+
+---
+
+**Fixed today:**
+
+- [x] **The signal journal stopped overnight, and nobody could have known (27 Sep).**
+      `noteState` was called from **one place only** — `GET /api/market-state`, the
+      request the Live chart makes. So a call was journalled if and only if somebody
+      had the page open *and* had that timeframe selected. The table on the morning
+      of 27 Sep:
+
+      ```
+       tf  |  n  |       newest
+      -----+-----+---------------------
+       1h  |   4 | 2026-09-27 00:41:06
+       30m |  18 | 2026-09-27 00:10:10
+       4h  |   1 | 2026-09-27 00:01:19
+       5m  | 215 | 2026-09-26 19:37:21   <- thirteen hours earlier
+       15m |  45 | 2026-09-26 15:06:10
+      ```
+
+      Those are not readings of the market; they are a record of which chart was
+      left open. 5m has 215 rows because that is the tab people sit on; 4h has 1
+      because nobody selects it. **And the hit rate on the card was computed from
+      that** — a sample drawn from exactly the hours somebody was watching.
+      `market/state-recorder.ts` now reads all six timeframes on the server's own
+      timer, staggered, off the request path, and grades once a minute. The repo
+      already had this rule and had applied it to four other tables: *"every five
+      minutes, viewer or no viewer: the hour-ago reads must have no gaps."*
+- [x] **The signal history shows what the shape has actually paid (27 Sep).**
+      `/api/market-state/history` now returns the replay's row for that timeframe
+      beside the journal's count, and both screens draw it with one component
+      (`components/live/MeasuredRecord.tsx`). The heading used to read "8 of 11
+      reached target" with no cost anywhere near it — `docs/FULL-STUDY.md` §7.5.
+      It now reads the journal's count *and* "replay 20% hit · −0.149R net over
+      1,317". One component, so the Live tab and the Signals tab cannot quote
+      different numbers about one shape.
+- [x] **The chart follows the last traded price on every timeframe (27 Sep).**
+      `/api/candles` returns the forming bar as it stood when the request was made,
+      so between polls the newest candle sat still while the ticker moved — minutes
+      at a time on a 1-hour chart. `lib/live-bar.ts` carries the forming bar to the
+      tick: close takes it, high and low stretch to include it, **open and volume
+      are never touched**, and a closed bar is left alone rather than a new one
+      invented. The chart was also being passed the chain snapshot's spot rather
+      than the live tick.
+
+---
+
+**Open — the journal's correctness and timeliness:**
+
+- [ ] **`market_states` needs a uniqueness rule, not just a dedupe in code.**
+      `noteState` compares against the last row for that timeframe and skips a
+      write when `(event, stage)` match. That is the right behaviour, but it lives
+      only in TypeScript: two processes, or a deploy overlapping an old container,
+      can both read "no change" and both insert. Wanted: a partial unique index or
+      an exclusion constraint that makes a duplicate `(tf, event, stage)` at the
+      same state **impossible at the database**, the way `trades` already enforces
+      one open position per source. Until then the count behind the hit rate can
+      double without anything complaining.
+- [ ] **Record the state at every bar close, not only on change.** The dedupe means
+      a timeframe sitting in RANGE for thirteen hours writes nothing — correct for
+      a *signal* journal, wrong for answering "was the desk reading the market at
+      04:00?". Those two questions want two tables: keep `market_states` as the
+      change log, and add a heartbeat row per timeframe per bar so a gap in the
+      record is distinguishable from a quiet market. Right now they look identical.
+- [ ] **Grading is not idempotent across restarts.** `gradeStates` runs on a timer
+      now, which fixes the overnight gap, but a row whose window closed while the
+      process was down is graded on the next boot using bars fetched *now*. Check
+      that the grader reads the window's own bars rather than the newest ones, and
+      pin it with a test that grades the same row twice and asserts the same
+      outcome.
+- [ ] **`confirmed` vs `outcome` can disagree and nothing notices.** `confirmed` is
+      written at the call; `outcome` is written by the grader. A row with
+      `confirmed = false` and `outcome = TARGET_HIT` is currently possible (id 283
+      is one: `BREAKOUT_WATCH`, `confirmed = f`, `TARGET_HIT`) and it is not
+      obviously wrong — a watch can reach the target without ever confirming — but
+      nothing states the intended relationship, so nobody can tell a legitimate
+      case from a bug. Write the invariant down, then assert it in
+      `db/test/invariants.sql` the way the trading tables are.
+- [ ] **Entry / target / stop are stored, but not the fill they were measured
+      against.** `trigger`, `target1`, `target2`, `invalidation` are written at the
+      call. What is missing is what the *price* was doing at the moment the grader
+      decided: `first_hit_price` and `mfe`/`mae` exist, but there is no record of
+      which bar closed the decision. Without it, a disputed grade cannot be
+      re-checked from the row alone.
+
+**Open — the signal itself:**
+
+- [ ] **The coiled state has never been graded.** It is the one card on the Signals
+      tab making a claim with no number behind it, and it says so. The measurement:
+      how often does a contraction below 0.8× resolve into an hour bigger than
+      baseline, and by how much? Until that exists the card must stay marked
+      *never graded*.
+- [ ] **The ladder's weights are `docs/New.md`'s ordering, not a measurement.**
+      3/3/2/3/3/0 is printed on screen so it can be argued with, but nobody has
+      tested whether it beats a flat 1/1/1/1/1/0 at anything. Same for the ±15%
+      dead band and the ADX ≥ 20 floor — all three are reasoning, not evidence.
+- [ ] **Real-time signal evaluation is deliberately NOT done, and that is a
+      decision worth re-reading before anyone changes it.** `momentum-signal.ts`
+      and `market-state.ts` read **closed bars only**, because their measured
+      records were taken at bar closes. Feeding the LTP into those rules would
+      produce signals the replay never graded, and the net-R figure beside them
+      would stop describing the thing on screen: price crosses a level, the card
+      says CONFIRMED, price falls back before the close — the call never existed,
+      except that the journal now holds it and the hit rate is computed from it.
+      If a faster read is wanted, the honest shape is a **provisional** state,
+      visibly labelled, that never enters the journal and never carries a measured
+      figure. `lib/live-bar.ts` documents the boundary.
+- [ ] **One signal vocabulary across both screens.** The Live tab's
+      `mtfConsensus` votes one-per-frame over five frames; the Signals tab weights
+      nine frames by job. They can and do disagree — Live can read `↑ Up` while
+      Signals reads `↔ No side` with *"5M trigger is DOWN, direction is UP"*. That
+      disagreement is currently the most informative thing on the desk and should
+      be watched for a few sessions, then **one of them deleted**. Two screens with
+      two answers is a temporary state, not a design.
+
+**Open — the Live screen, usability:**
+
+- [ ] **Say when the chart is not live.** `barAgeSec` exists and is unused: when the
+      newest bar closed and no new one has opened, the chart should say so rather
+      than showing a still candle that looks like a quiet market.
+- [ ] **`styles.css` is 3,510 lines and the most-churned file in the repo** (143
+      commits). Tailwind is present; this is the overflow it did not absorb. Worth a
+      pass once the screen settles — not before.
+- [ ] **The web suite runs a 5s per-test timeout on a 4-vCPU box that also runs the
+      live desk.** `ReportPanel.test.tsx` timed out on 27 Sep purely under load and
+      passes alone. Either raise `testTimeout` or move to `pool: 'vmThreads'`
+      (vitest says so itself: jsdom is created 69 times, 39% of the run).
 
 ---
 
