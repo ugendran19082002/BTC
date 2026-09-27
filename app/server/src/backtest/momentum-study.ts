@@ -116,6 +116,32 @@ const READING_FILTERS: Filter[] = (() => {
   banded('Relative volume', (s) => i(s).relVolume, 0.8, 1.5);
   banded('Band width', (s) => i(s).bandWidth, 0.15, 0.5);
 
+  // The readings New.md leans on hardest, added 27 Sep 2026.
+  signed('Aroon', (s) => i(s).aroon, 30);
+  signed('HMA slope', (s) => i(s).hmaSlope);
+  signed('Market structure', (s) => i(s).structureWay);
+  signed('VWAP side', (s) => i(s).vwapDistPct, 0.1);
+  signed('Z-score(50)', (s) => i(s).zScore, 1);
+
+  banded('RSI(14)', (s) => i(s).rsi14, 35, 65);
+  banded('ADX(14)', (s) => i(s).adx14, 20, 30);
+  banded('Donchian position', (s) => i(s).donchianPos, 0.2, 0.8);
+  banded('Realised vol', (s) => i(s).realisedVol, 30, 70);
+
+  /*
+   * RSI with the call is not the same question as RSI high: a breakdown into an
+   * oversold RSI is a late entry, a breakout into an overbought one is a strong
+   * one, and a band alone cannot tell them apart.
+   */
+  out.push({
+    name: 'RSI momentum with the call',
+    ok: (s) => { const v = i(s).rsi14; return v !== null && (s.side === 'UP' ? v > 55 : v < 45); },
+  });
+  out.push({
+    name: 'RSI momentum against the call',
+    ok: (s) => { const v = i(s).rsi14; return v !== null && (s.side === 'UP' ? v < 45 : v > 55); },
+  });
+
   out.push({ name: 'Close at bar extreme (|CLV| > 0.6)', ok: (s) => { const v = i(s).clv; return v !== null && Math.abs(v) > 0.6; } });
   out.push({ name: 'No pattern named', ok: (s) => i(s).patternCount === 0 });
   out.push({ name: 'Three or more patterns named', ok: (s) => i(s).patternCount >= 3 });

@@ -3,8 +3,10 @@ import {
   atr, ema, mean,
   awesome, bollinger, cci, choppiness, clv, cmf, efficiencyRatio, macd, mfi, obvSlope,
   relativeVolume, roc, stochastic, superTrend, trix, vortex, williamsR,
+  aroon, donchian, hma, realisedVol, zScore,
 } from '../domain/indicators.js';
-import { candlePatterns, structurePatterns } from '../domain/patterns.js';
+import { candlePatterns, marketStructure, structurePatterns } from '../domain/patterns.js';
+import { rsi, adx, vwapOf } from '../market/moves.js';
 import type { Side } from '../domain/market-state.js';
 import { confirmedBreaks, resample, TF_BARS_OF_5M, type Tf } from '../domain/break-risk.js';
 import { DEFAULT_LEVEL_MODE, levelUnder, type LevelMode } from '../domain/level-mode.js';
@@ -131,6 +133,31 @@ export type Readings = {
   structureBias: -1 | 0 | 1;
   /** How many patterns were named at all. A bar nobody can read is its own state. */
   patternCount: number;
+
+  /*
+   * The readings `docs/New.md` leans on hardest, added 27 Sep 2026.
+   *
+   * RSI, ADX and VWAP come from `market/moves.ts` — the same functions the live
+   * ladder reads, exported rather than rewritten. A second RSI written for the
+   * study would be a second RSI, and the point of measuring a filter is that the
+   * thing measured is the thing that runs.
+   */
+  rsi14: number | null;
+  adx14: number | null;
+  /** Price against this frame's VWAP, in percent. */
+  vwapDistPct: number | null;
+  /** Aroon oscillator: +100 is a fresh high, −100 a fresh low. */
+  aroon: number | null;
+  /** Where the close sits in the 20-bar Donchian channel, 0..1. */
+  donchianPos: number | null;
+  /** Annualised realised volatility over the recent bars, percent. */
+  realisedVol: number | null;
+  /** Hull moving average now less one bar ago: the fast trend's own slope. */
+  hmaSlope: number | null;
+  /** How unusual this close is against the last 50, in standard deviations. */
+  zScore: number | null;
+  /** Higher highs and higher lows (+1), lower highs and lower lows (−1), neither (0). */
+  structureWay: -1 | 0 | 1;
 };
 
 const NO_READINGS: Readings = {
@@ -138,6 +165,8 @@ const NO_READINGS: Readings = {
   williamsR: null, choppiness: null, efficiency: null, obvSlope: null, superTrend: 0,
   vortex: null, trix: null, awesome: null, cmf: null, relVolume: null, roc10: null,
   clv: null, emaStack: 0, candleBias: 0, structureBias: 0, patternCount: 0,
+  rsi14: null, adx14: null, vwapDistPct: null, aroon: null, donchianPos: null,
+  realisedVol: null, hmaSlope: null, zScore: null, structureWay: 0,
 };
 
 /** Fold a list of patterns into one signed bias: mixed cancels to 0. */
@@ -185,6 +214,35 @@ export function readingsAt(bars: readonly Candle[], level: { resistance: number 
     candleBias: biasOf(candlePatterns(bars)),
     structureBias: biasOf(structurePatterns({ bars, level, atr: a })),
     patternCount: candlePatterns(bars).length + structurePatterns({ bars, level, atr: a }).length,
+
+    rsi14: rsi(closes),
+    adx14: adx([...bars]),
+    vwapDistPct: (() => {
+      const v = vwapOf([...bars]);
+      return v === null || !(v > 0) ? null : ((last.close - v) / v) * 100;
+    })(),
+    aroon: aroon(bars),
+    donchianPos: (() => {
+      // `donchian` gives the channel's width; the position wants both edges.
+      const win = bars.slice(-20);
+      if (win.length < 20) return null;
+      const hi = Math.max(...win.map((b) => b.high));
+      const lo = Math.min(...win.map((b) => b.low));
+      return hi === lo ? null : (last.close - lo) / (hi - lo);
+    })(),
+    realisedVol: realisedVol(closes, 105_120, 30),
+    hmaSlope: (() => {
+      const now = hma(closes);
+      const before = hma(closes.slice(0, -1));
+      return now === null || before === null ? null : now - before;
+    })(),
+    zScore: zScore(closes.slice(-50), last.close),
+    structureWay: (() => {
+      const ms = marketStructure({ bars, atr: a });
+      const up = ms.filter((x) => x.bias === 'BULLISH').length;
+      const down = ms.filter((x) => x.bias === 'BEARISH').length;
+      return up > down ? 1 : down > up ? -1 : 0;
+    })(),
   };
 }
 

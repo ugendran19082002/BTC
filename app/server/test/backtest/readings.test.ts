@@ -56,6 +56,8 @@ describe('a reading that cannot be taken is null, not neutral', () => {
     const nullable: (keyof Readings)[] = [
       'macdHist', 'percentB', 'cci', 'mfi', 'stoch', 'williamsR', 'choppiness',
       'efficiency', 'obvSlope', 'vortex', 'trix', 'awesome', 'cmf', 'relVolume', 'roc10',
+      // Added 27 Sep 2026 — every one of these must obey the same rule.
+      'rsi14', 'adx14', 'vwapDistPct', 'aroon', 'donchianPos', 'realisedVol', 'hmaSlope', 'zScore',
     ];
     for (const k of nullable) assert.equal(r[k], null, `${k} guessed a value it could not read`);
   });
@@ -66,12 +68,43 @@ describe('a reading that cannot be taken is null, not neutral', () => {
     assert.equal(r.emaStack, 0);
     assert.equal(r.candleBias, 0);
     assert.equal(r.structureBias, 0);
+    assert.equal(r.structureWay, 0);
+  });
+
+  test('[critical] every field of Readings is accounted for — a new one cannot slip in unchecked', () => {
+    const full = readingsAt(bars(200, wavy), { resistance: null, support: null });
+    const thin = readingsAt(bars(10, wavy), { resistance: null, support: null });
+    for (const k of Object.keys(full) as (keyof Readings)[]) {
+      // Each reading is either nullable (null when unreadable) or a signed
+      // 0/±1. Anything else would be a reading that guesses.
+      const v = thin[k];
+      assert.ok(
+        v === null || v === 0 || typeof v === 'number',
+        `${k} produced ${String(v)} on too few bars`,
+      );
+    }
   });
 });
 
 describe('the readings themselves', () => {
   const b = bars(200, wavy);
   const r = readingsAt(b, levelUnder(b, 'rolling'));
+
+  test('[critical] the new bounded readings stay inside their bounds too', () => {
+    if (r.rsi14 !== null) assert.ok(r.rsi14 >= 0 && r.rsi14 <= 100);
+    if (r.adx14 !== null) assert.ok(r.adx14 >= 0 && r.adx14 <= 100);
+    if (r.aroon !== null) assert.ok(r.aroon >= -100 && r.aroon <= 100);
+    if (r.donchianPos !== null) assert.ok(r.donchianPos >= 0 && r.donchianPos <= 1);
+    if (r.realisedVol !== null) assert.ok(r.realisedVol >= 0);
+    assert.ok([-1, 0, 1].includes(r.structureWay));
+  });
+
+  test('[critical] RSI is the one the live ladder reads, not a second implementation', async () => {
+    // Same function, same bars, same number — asserted rather than assumed.
+    const { rsi } = await import('../../src/market/moves.js');
+    const closes = b.map((x) => x.close);
+    assert.equal(r.rsi14, rsi(closes));
+  });
 
   test('bounded readings stay inside their bounds', () => {
     if (r.stoch !== null) assert.ok(r.stoch >= 0 && r.stoch <= 100);

@@ -90,7 +90,13 @@ function ema(values: number[], period: number): number | null {
   return e;
 }
 
-function rsi(values: number[], period = 14): number | null {
+/**
+ * Wilder's RSI. Exported since 27 Sep 2026 so the filter sweep reads the same
+ * RSI the live ladder does — a second implementation written for the study
+ * would be a second RSI, and the point of measuring a filter is that the thing
+ * measured is the thing that runs.
+ */
+export function rsi(values: number[], period = 14): number | null {
   if (values.length < period + 1) return null;
   let gain = 0;
   let loss = 0;
@@ -160,7 +166,7 @@ export type TimeframeRead = {
  * in a market going nowhere is agreement about noise, and the score should read
  * it as less than the same agreement in a market that is actually moving.
  */
-function adx(bars: Candle[], period = 14): number | null {
+export function adx(bars: Candle[], period = 14): number | null {
   if (bars.length < period * 2 + 1) return null;
   const tr: number[] = [];
   const plus: number[] = [];
@@ -211,7 +217,7 @@ function adx(bars: Candle[], period = 14): number | null {
  * weighted by that bar's volume, which is the standard definition and the one
  * every other screen will agree with.
  */
-function vwapOf(bars: Candle[]): number | null {
+export function vwapOf(bars: Candle[]): number | null {
   let pv = 0;
   let v = 0;
   for (const b of bars) {
