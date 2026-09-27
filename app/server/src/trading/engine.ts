@@ -132,6 +132,17 @@ export type TradePlan = {
    */
   strategyId?: string;
   /**
+   * The strategy's name as it was when this order was placed.
+   *
+   * Stamped rather than looked up, so the label still reads correctly after the
+   * strategy is renamed or deleted -- the order record should say what actually
+   * happened, not what the settings say today. The id is kept beside it because
+   * the id is what everything else joins on; it is not a label. Until 27 Sep
+   * 2026 the screen showed the id, so an order placed at 15:55 by a strategy
+   * called "3.55" was tagged `5-01-copy`, which reads as 5:01.
+   */
+  strategyName?: string;
+  /**
    * Who asked for this trade.
    *
    * Absent on everything opened before the field existed, which is read as

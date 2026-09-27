@@ -9,7 +9,6 @@ import { csvNameFor, istDay, signalsToCsv } from '@/components/desk/signal-expor
 import { MeasuredInline, MeasuredRecord } from '@/components/live/MeasuredRecord';
 import { Liveness, type Checked } from '@/components/live/Liveness';
 import type { Measured } from '@/types/live';
-import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 
 /**
@@ -475,14 +474,15 @@ export function History({ rows, rate, measured, checked, spot }: {
   spot?: number;
 }) {
   const [page, setPage] = useState(0);
-  const [allOpen, setAllOpen] = useState(false);
+  // History is a primary screen, so the full list is visible by default.
+  const [allOpen, setAllOpen] = useState(true);
   /*
    * Today, by default.
    *
    * The list is read to answer "what has the desk called since this morning",
    * and a page of yesterday's calls at the top answers a question nobody
-   * asked. Everything is still there behind *View all*, where a day is a
-   * heading and the whole lot can be taken away as a file.
+   * asked. The full day-grouped list is the default; the compact latest view
+   * remains available through *Hide all*.
    */
   const today = istDay(Date.now());
   const todays = rows.filter((r) => istDay(r.at) === today);
@@ -511,7 +511,7 @@ export function History({ rows, rate, measured, checked, spot }: {
     <div className="bt-market-state__history">
       <h4>
         Signal history <span className="bt-market-state__hist-unit">BTC pts</span>
-        <span className="bt-market-state__hist-scope">{todays.length > 0 ? 'Today' : 'Latest'}</span>
+        <span className="bt-market-state__hist-scope">{allOpen ? 'All days' : todays.length > 0 ? 'Today' : 'Latest'}</span>
         {/*
           Whether the journal is still looking (27 Sep 2026). This list is a
           change log, so "no new rows" is ambiguous: a quiet market and a stopped
@@ -537,68 +537,64 @@ export function History({ rows, rate, measured, checked, spot }: {
             <MeasuredInline measured={measured} tf={rows[0]?.tf} />
           </span>
         )}
-        <button type="button" className="bt-market-state__hist-all" onClick={() => setAllOpen(true)}>
-          View all <ChevronRight size={12} aria-hidden />
+        <button type="button" className="bt-market-state__hist-all" onClick={() => setAllOpen((open) => !open)} aria-expanded={allOpen}>
+          {allOpen ? 'Hide all' : 'View all'} <ChevronRight size={12} aria-hidden />
         </button>
       </h4>
-      <ul className="bt-signals">
-        {shown.map((r, i) => (
-          <SignalRow key={r.id} row={r} next={shownRows[at * PAGE + i - 1] ?? null} spot={spot} />
-        ))}
-      </ul>
+      {!allOpen ? (
+        <>
+          <ul className="bt-signals">
+            {shown.map((r, i) => (
+              <SignalRow key={r.id} row={r} next={shownRows[at * PAGE + i - 1] ?? null} spot={spot} />
+            ))}
+          </ul>
 
-      {/* Five at a time, newest first. Ten rows of small print is a wall
-          nobody reads to the end of, and the newest call is the one being
-          looked for. */}
-      {shownRows.length > PAGE ? (
-        <div className="bt-market-state__pager">
-          <span>{first}–{first + shown.length - 1} of {shownRows.length} signals</span>
-          <button type="button" className="bt-chip" aria-label="Newer calls"
-            disabled={at === 0} onClick={() => setPage(at - 1)}>
-            <ChevronLeft size={14} aria-hidden />
-          </button>
-          <button type="button" className="bt-chip" aria-label="Older calls"
-            disabled={at >= pages - 1} onClick={() => setPage(at + 1)}>
-            <ChevronRight size={14} aria-hidden />
-          </button>
-        </div>
-      ) : null}
-
-      {/*
-        Every day the journal still holds, grouped by the day it happened on,
-        with the whole lot downloadable. The screen keeps today; this is where
-        somebody goes to check last Tuesday against their broker statement.
-      */}
-      <Sheet open={allOpen} onOpenChange={setAllOpen}>
-        <SheetContent title="Signal history — all days" className="sm:w-[min(960px,92vw)]">
-          <div className="bt-market-state__all">
-            {measured !== undefined && (
-              <MeasuredRecord
-                measured={measured}
-                live={rate ?? null}
-                tf={rows[0]?.tf}
-                className="mb-3"
-              />
-            )}
-            <div className="bt-market-state__all-head">
-              <span>{rows.length} signals</span>
-              <button type="button" className="bt-chip" onClick={download}>
-                <Download size={13} aria-hidden /> Download CSV
+          {/* Five at a time, newest first in the compact view. */}
+          {shownRows.length > PAGE ? (
+            <div className="bt-market-state__pager">
+              <span>{first}–{first + shown.length - 1} of {shownRows.length} signals</span>
+              <button type="button" className="bt-chip" aria-label="Newer calls"
+                disabled={at === 0} onClick={() => setPage(at - 1)}>
+                <ChevronLeft size={14} aria-hidden />
+              </button>
+              <button type="button" className="bt-chip" aria-label="Older calls"
+                disabled={at >= pages - 1} onClick={() => setPage(at + 1)}>
+                <ChevronRight size={14} aria-hidden />
               </button>
             </div>
-            {[...new Set(rows.map((r) => istDay(r.at)))].map((day) => (
-              <section key={day}>
-                <h5>{day}</h5>
-                <ul className="bt-signals bt-signals--wide">
-                  {rows.filter((r) => istDay(r.at) === day).map((r, i, list) => (
-                    <SignalRow key={r.id} row={r} next={list[i - 1] ?? null} spot={spot} />
-                  ))}
-                </ul>
-              </section>
-            ))}
+          ) : null}
+        </>
+      ) : null}
+
+      {allOpen ? (
+        <div className="bt-market-state__all" aria-label="All signal history">
+          {measured !== undefined && (
+            <MeasuredRecord
+              measured={measured}
+              live={rate ?? null}
+              tf={rows[0]?.tf}
+              className="mb-3"
+            />
+          )}
+          <div className="bt-market-state__all-head">
+            <span>{rows.length} signals</span>
+            <span className="bt-market-state__all-scope">across all days</span>
+            <button type="button" className="bt-chip" onClick={download}>
+              <Download size={13} aria-hidden /> Download CSV
+            </button>
           </div>
-        </SheetContent>
-      </Sheet>
+          {[...new Set(rows.map((r) => istDay(r.at)))].map((day) => (
+            <section key={day}>
+              <h5>{day}</h5>
+              <ul className="bt-signals bt-signals--wide">
+                {rows.filter((r) => istDay(r.at) === day).map((r, i, list) => (
+                  <SignalRow key={r.id} row={r} next={list[i - 1] ?? null} spot={spot} />
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -316,6 +316,7 @@ function placeArgs(s: Strategy, o: Parameters<typeof svcPlace>[1]) {
   return {
     ...order,
     strategyId: s.id,
+    strategyName: s.name,
     origin: 'strategy' as const,
     /*
      * What the desk's own stop watch judges the level on. The resting stop at

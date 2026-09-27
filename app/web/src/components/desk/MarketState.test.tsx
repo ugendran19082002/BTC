@@ -220,7 +220,7 @@ describe('the market-state card', () => {
     expect(container.textContent).not.toMatch(/wrong/i);
   });
 
-  it('[critical] today is what the list shows, with every day behind View all', () => {
+  it('[critical] all signal days are visible in the external list, with a compact view available', () => {
     /*
      * The list answers "what has the desk called since this morning". A page
      * of yesterday's calls at the top answers a question nobody asked --
@@ -234,10 +234,12 @@ describe('the market-state card', () => {
         confirmed: true, confidence: 60, close: 84_000, plan: null, outcome: 'TARGET_HIT', gradedAt: now },
     ];
     render(<MarketState data={base} history={rows} tf="5m" />);
-    expect(screen.getByText('Today')).toBeInTheDocument();
-    // yesterday's call is not in the list on screen
-    expect(screen.queryByText(/Resistance rejection/)).toBeNull();
+    expect(screen.getByText('All days')).toBeInTheDocument();
+    expect(screen.getByText(/Resistance rejection/)).toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole('button', { name: /Hide all/ }));
+    expect(screen.getByText('Today')).toBeInTheDocument();
+    expect(screen.queryByText(/Resistance rejection/)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /View all/ }));
     expect(screen.getByText('2 signals')).toBeInTheDocument();
     expect(screen.getByText(/Resistance rejection/)).toBeInTheDocument();
@@ -252,6 +254,7 @@ describe('the market-state card', () => {
       outcome: 'NOT_GRADED' as const, gradedAt: null,
     }));
     render(<MarketState data={base} history={rows} tf="15m" />);
+    fireEvent.click(screen.getByRole('button', { name: /Hide all/ }));
     expect(screen.getByText('1–5 of 12 signals')).toBeInTheDocument();
     expect(document.querySelectorAll('.bt-market-state__history li')).toHaveLength(5);
     expect(screen.getByText('(50)')).toBeInTheDocument();

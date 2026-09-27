@@ -45,6 +45,41 @@ export const PROBLEM_REPEAT_MS = 15 * 60_000;
 
 export type AlertContext = { mode: 'live' | 'paper' };
 
+/**
+ * An exit that printed a long way from the price that asked for it.
+ *
+ * `engine.ts` has raised this since 24 September 2026, after a stop asked at 70
+ * filled at 79 and nothing said so. It reached `service.onAlarm`, which pushed
+ * it onto an in-memory array of fifty and did nothing else — not the phone, not
+ * the error log, not even a log line, and gone on the next restart. `/api/trade/
+ * status` returned the array and no component ever drew it.
+ *
+ * So the safeguard existed and could not be observed, and on 27 September a stop
+ * asked at 56.5 filled at 65 — 8.5 points, 15% through its own trigger — and was
+ * again found only by reading the day's fills by hand. This is the alert it
+ * should have been all along.
+ *
+ * `repeatAfterMs` is set because a violent exit can print in several pieces and
+ * each one raises this; the phone wants the first, not all five.
+ */
+export function slippageAlert(
+  ctx: AlertContext,
+  trade: TradeState,
+  plan: TradePlan,
+  message: string,
+  at: number,
+): Alert {
+  return {
+    key: `${trade.tradeId}:problem:slippage`,
+    repeatAfterMs: PROBLEM_REPEAT_MS,
+    text: problemText(ctx, '⚠️', `EXIT MISSED ITS PRICE · ${contract(plan)}`, [
+      escape(message),
+      'The order was filled — this is what it cost against the level that asked for it,',
+      'not a failure to exit.',
+    ], at, plan),
+  };
+}
+
 type FillEvent = Extract<TradeEvent, { t: 'fill' }>;
 
 export function alertFor(

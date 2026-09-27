@@ -20,22 +20,33 @@ export const ORIGIN_WORDS: Record<TradeOrigin, string> = {
   'best-pick': 'Best pick',
 };
 
-export function OriginTag({ origin, strategyName, className }: {
+export function OriginTag({ origin, strategyName, strategyId, className }: {
   origin?: TradeOrigin | null;
-  /** The strategy's name, when it is known; the id is not worth showing. */
+  /**
+   * The strategy's name as stamped on the order when it was placed.
+   *
+   * Absent on orders placed before 27 Sep 2026, when the plan carried only the
+   * id — `strategyId` is the fallback for those, and it is a poor label: the ids
+   * are historical (`5-01-copy` is the strategy named "3.55", entering at 15:55),
+   * so an old row reads as the wrong time. New orders carry the name.
+   */
   strategyName?: string | null;
+  /** Only used as a last resort for orders placed before the name was stamped. */
+  strategyId?: string | null;
   className?: string;
 }) {
   // Absent is what every trade placed before the field existed was: by hand.
   const kind: TradeOrigin = origin ?? 'manual';
   const Icon = kind === 'strategy' ? CalendarClock : kind === 'best-pick' ? Bot : Hand;
-  const label = kind === 'strategy' && strategyName ? strategyName : ORIGIN_WORDS[kind];
+  const named = strategyName ?? strategyId ?? null;
+  const label = kind === 'strategy' && named ? named : ORIGIN_WORDS[kind];
   return (
     <span
       className={cn('origin-tag', kind, className)}
       aria-label={`placed by: ${ORIGIN_WORDS[kind].toLowerCase()}`}
       title={kind === 'strategy'
-        ? `Placed by a saved strategy${strategyName ? ` (${strategyName})` : ''} at its entry time.`
+        ? `Placed by a saved strategy${named ? ` (${named})` : ''} at its entry time.`
+          + (!strategyName && strategyId ? ' Placed before the name was recorded, so this is its id.' : '')
         : kind === 'best-pick'
           ? 'Placed automatically from the best-pick card, by the rules set there.'
           : 'Placed by hand from the order ticket.'}

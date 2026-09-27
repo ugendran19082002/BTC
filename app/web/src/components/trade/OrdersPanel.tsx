@@ -212,7 +212,7 @@ function OrderRow({ order }: { order: OrderRecord }) {
             </span>
             {reason && <span className={cn('text-[11px] font-medium', REASON_TONE[reason])}>{reason}</span>}
             {/* Who asked for it: the ticket, a strategy, or the best-pick auto-trade. */}
-            <OriginTag origin={order.plan?.origin} strategyName={order.plan?.strategyId ?? null} />
+            <OriginTag origin={order.plan?.origin} strategyName={order.plan?.strategyName ?? null} strategyId={order.plan?.strategyId ?? null} />
           </span>
           <span className="mt-0.5 block text-[11.5px] text-muted-foreground">{order.outcome}</span>
         </span>

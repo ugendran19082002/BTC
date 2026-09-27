@@ -90,7 +90,7 @@ function ContractName({ trade }: { trade: Trade }) {
       <span className="text-[14px] font-semibold text-foreground">{contractLabel(trade.symbol)}</span>
       <Badge tone={trade.optionSide === 'CE' ? 'ok' : 'warn'}>{trade.optionSide}</Badge>
       {/* Three things place orders here; which one did is the first question. */}
-      <OriginTag origin={trade.plan?.origin} strategyName={trade.plan?.strategyId ?? null} />
+      <OriginTag origin={trade.plan?.origin} strategyName={trade.plan?.strategyName ?? null} strategyId={trade.plan?.strategyId ?? null} />
     </div>
   );
 }

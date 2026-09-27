@@ -73,6 +73,8 @@ export type Trade = {
     origin?: TradeOrigin;
     /** Which saved strategy, when a strategy opened it. */
     strategyId?: string | null;
+    /** The strategy's name when the order was placed. Absent on orders placed before 27 Sep 2026. */
+    strategyName?: string | null;
     entry: { type: 'limit' | 'market'; limitPrice?: number; timeoutMs: number; marketFallback: boolean };
     takeProfitPrice: number | null;
     stopPrice: number | null;
