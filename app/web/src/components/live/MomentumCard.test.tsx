@@ -6,6 +6,8 @@ import type { MomentumSignal, Measured } from '@/types/live';
 const measured = (over: Partial<Measured> = {}): Measured => ({
   policy: 'entry 1.5 ATR : 3 ATR',
   tf: '30m',
+  mode: 'rolling',
+  modeLabel: "the last 20 bars' high and low",
   n: 1317,
   hitRate: 0.198,
   netR: -0.149,
