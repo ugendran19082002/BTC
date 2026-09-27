@@ -7,6 +7,7 @@ import { strike as fmtStrike } from '@/lib/format';
 import { trackFor } from '@/components/desk/signal-track';
 import { csvNameFor, istDay, signalsToCsv } from '@/components/desk/signal-export';
 import { MeasuredInline, MeasuredRecord } from '@/components/live/MeasuredRecord';
+import { Liveness, type Checked } from '@/components/live/Liveness';
 import type { Measured } from '@/types/live';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
@@ -67,13 +68,15 @@ const IST_DAY = new Intl.DateTimeFormat('en-IN', {
 });
 
 export function MarketState({
-  data, history, hitRate, measured, tf, spot, extra = [],
+  data, history, hitRate, measured, checked, tf, spot, extra = [],
 }: {
   data: MarketStateResponse | null;
   history?: StateHistoryRow[];
   hitRate?: { correct: number; graded: number };
   /** The replay's record for this timeframe. `null` = never graded, `undefined` = loading. */
   measured?: Measured | null;
+  /** When the journal last looked at this timeframe. */
+  checked?: Checked;
   /** The chart's timeframe, shown but not switched here: there is one row. */
   tf: string;
   /** BTC now, so each earlier call can say what price did after it. */
@@ -227,7 +230,7 @@ export function MarketState({
             ))}
           </div>
 
-          {history?.length ? <History rows={history} rate={hitRate} measured={measured} spot={spot} /> : null}
+          {history?.length ? <History rows={history} rate={hitRate} measured={measured} checked={checked} spot={spot} /> : null}
         </div>
       ) : null}
 
@@ -454,11 +457,13 @@ const outcomeWord = (o: string | null | undefined): string =>
  * and the tally is given as "3 of 4" rather than a percentage, because four
  * calls is not a hit rate.
  */
-function History({ rows, rate, measured, spot }: {
+function History({ rows, rate, measured, checked, spot }: {
   rows: readonly StateHistoryRow[];
   rate?: { correct: number; graded: number };
   /** What the replay says this shape has paid. `null` means never graded; `undefined` means still loading. */
   measured?: Measured | null;
+  /** When the journal last looked. Without this, quiet and dead look identical. */
+  checked?: Checked;
   spot?: number;
 }) {
   const [page, setPage] = useState(0);
@@ -499,6 +504,13 @@ function History({ rows, rate, measured, spot }: {
       <h4>
         Signal history <span className="bt-market-state__hist-unit">BTC pts</span>
         <span className="bt-market-state__hist-scope">{todays.length > 0 ? 'Today' : 'Latest'}</span>
+        {/*
+          Whether the journal is still looking (27 Sep 2026). This list is a
+          change log, so "no new rows" is ambiguous: a quiet market and a stopped
+          recorder both look like this. It read as quiet for thirteen hours while
+          the recorder was in fact dead.
+        */}
+        {checked !== undefined && <Liveness checked={checked} />}
         {rate && rate.graded > 0
           ? <span title="Of the calls that actually triggered and finished. A setup whose trigger was never reached is not counted either way.">
             {rate.correct} of {rate.graded} reached target

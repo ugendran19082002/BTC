@@ -345,6 +345,12 @@ export const getStateHistory = (tf: string, limit = 10) =>
      * record cannot be drawn from two different moments.
      */
     measured: Measured | null;
+    /**
+     * When the journal last looked at this timeframe, and what it saw. Null
+     * before the recorder has run once. `wrote` is the last time it actually
+     * inserted, which is what makes "quiet" readable as distinct from "dead".
+     */
+    checked: { tf: string; at: number; event: string; stage: string; wrote: number | null } | null;
   }>(
     `/api/market-state/history?tf=${encodeURIComponent(tf)}&limit=${limit}`,
   );

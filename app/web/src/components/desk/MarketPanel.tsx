@@ -21,7 +21,7 @@ import type { MarketStateResponse, StateHistoryRow } from '@/api/desk';
  * a fifth thing that knows all their rules.
  */
 export function MarketPanel({
-  chart, data, history, hitRate, measured, tf, spot, extra = [], ready = true,
+  chart, data, history, hitRate, measured, checked, tf, spot, extra = [], ready = true,
 }: {
   /** The price chart itself, passed in so this file never grows chart logic. */
   chart: ReactNode;
@@ -30,6 +30,8 @@ export function MarketPanel({
   hitRate?: { correct: number; graded: number };
   /** The replay's record for this timeframe, passed straight through to the history list. */
   measured?: import('@/types/live').Measured | null;
+  /** When the journal last looked, passed straight through to the history list. */
+  checked?: import('@/components/live/Liveness').Checked;
   tf: string;
   /** BTC now, so each earlier call can say what price did after it. */
   spot?: number;
@@ -63,7 +65,7 @@ export function MarketPanel({
       {ready ? (
         <div className="bt-analysis__side">
           <MarketState
-            data={data} history={history} hitRate={hitRate} measured={measured} spot={spot} tf={tf} extra={extra}
+            data={data} history={history} hitRate={hitRate} measured={measured} checked={checked} spot={spot} tf={tf} extra={extra}
           />
         </div>
       ) : null}

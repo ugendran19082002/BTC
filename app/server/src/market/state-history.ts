@@ -130,6 +130,78 @@ const MIGRATIONS: Migration[] = [
         ADD COLUMN IF NOT EXISTS mtf_consensus   TEXT;
     `,
   },
+  {
+    /*
+     * The dedupe rule, enforced by the database rather than only by the code.
+     *
+     * `noteState` reads the last row for the timeframe and skips the insert when
+     * `(event, stage)` match. That is the right rule, and until now it lived
+     * only in TypeScript -- so two writers could both read "no change" and both
+     * insert. Two writers is not hypothetical: a deploy overlaps the old
+     * container with the new one, and both run the recorder.
+     *
+     * A unique index cannot say "not equal to the *previous* row", so this is a
+     * BEFORE INSERT trigger. It returns NULL for a duplicate, which makes
+     * PostgreSQL skip the row silently -- so `INSERT ... RETURNING id` yields
+     * nothing and `noteState` returns null, exactly its existing contract for
+     * "nothing changed". Raising instead would turn a harmless race into a
+     * failed request.
+     *
+     * Why it matters beyond tidiness: the hit rate on the card counts rows. A
+     * duplicated call is counted twice, and a duplicated *win* is counted twice
+     * in the numerator -- so the number that says "is this signal any good"
+     * drifts upward with every race.
+     */
+    /*
+     * A heartbeat per timeframe: when the journal last *looked*, whatever it saw.
+     *
+     * `market_states` is a change log, and a change log cannot answer "is this
+     * still being watched?". A timeframe sitting in RANGE for thirteen hours
+     * writes nothing -- correct -- and on screen that is indistinguishable from a
+     * recorder that died at 19:37. Both are "no new rows". On the morning of
+     * 27 Sep the second was true; the reader had no way to tell.
+     *
+     * One row per timeframe, overwritten every check. It answers "checked 40
+     * seconds ago, still Range", which is the sentence the signal history needed
+     * and could not say.
+     */
+    id: 'market-016-state-heartbeat',
+    up: `
+      CREATE TABLE IF NOT EXISTS market_state_checks (
+        tf     TEXT PRIMARY KEY,
+        at     BIGINT NOT NULL,
+        event  TEXT   NOT NULL,
+        stage  TEXT   NOT NULL,
+        wrote  BIGINT
+      );
+    `,
+  },
+  {
+    id: 'market-017-state-dedupe-at-db',
+    up: `
+      CREATE OR REPLACE FUNCTION market_states_skip_unchanged() RETURNS TRIGGER AS $fn$
+      DECLARE last_event TEXT; last_stage TEXT;
+      BEGIN
+        SELECT event, stage INTO last_event, last_stage
+          FROM market_states
+          WHERE tf = NEW.tf AND at <= NEW.at
+          ORDER BY at DESC, id DESC
+          LIMIT 1;
+        IF last_event IS NOT NULL
+           AND last_event = NEW.event
+           AND last_stage = NEW.stage THEN
+          RETURN NULL;
+        END IF;
+        RETURN NEW;
+      END;
+      $fn$ LANGUAGE plpgsql;
+
+      DROP TRIGGER IF EXISTS market_states_dedupe ON market_states;
+      CREATE TRIGGER market_states_dedupe
+        BEFORE INSERT ON market_states
+        FOR EACH ROW EXECUTE FUNCTION market_states_skip_unchanged();
+    `,
+  },
 ];
 
 let ready: Promise<void> | null = null;
@@ -403,7 +475,23 @@ export async function noteState(read: StateRead): Promise<number | null> {
     'SELECT event, stage FROM market_states WHERE tf = $1 ORDER BY at DESC LIMIT 1', [read.tf],
   );
   const s = read.state;
-  if (last && last.event === s.event && last.stage === s.stage) return null;
+  /*
+   * The heartbeat first, and unconditionally: it is the record that the journal
+   * looked, and it must survive the early return below. Without it "no new row"
+   * and "nothing is running" are the same thing on screen.
+   */
+  const beat = (wrote: number | null) => query(
+    `INSERT INTO market_state_checks (tf, at, event, stage, wrote)
+     VALUES ($1,$2,$3,$4,$5)
+     ON CONFLICT (tf) DO UPDATE SET at = $2, event = $3, stage = $4,
+       wrote = COALESCE($5, market_state_checks.wrote)`,
+    [read.tf, read.at, s.event, s.stage, wrote],
+  );
+
+  if (last && last.event === s.event && last.stage === s.stage) {
+    await beat(null);
+    return null;
+  }
   const bar = read.bars[read.bars.length - 1] ?? null;
   /*
    * Everything the card showed, not just the verdict: the score's parts, what
@@ -436,8 +524,20 @@ export async function noteState(read: StateRead): Promise<number | null> {
       read.context?.alignment?.word ?? null,
     ],
   );
+  await beat(read.at);
   await query('DELETE FROM market_states WHERE at < $1', [read.at - MARKET_STATES_KEEP_MS]);
   return row?.id ?? null;
+}
+
+/** When the journal last looked at this timeframe, and what it saw. Null if it never has. */
+export type StateCheck = { tf: string; at: number; event: string; stage: string; wrote: number | null };
+
+export async function lastCheck(tf: string | null): Promise<StateCheck | null> {
+  await stateHistorySchema();
+  const r = tf === null
+    ? await one<StateCheck>('SELECT tf, at, event, stage, wrote FROM market_state_checks ORDER BY at DESC LIMIT 1')
+    : await one<StateCheck>('SELECT tf, at, event, stage, wrote FROM market_state_checks WHERE tf = $1', [tf]);
+  return r ?? null;
 }
 
 /**

@@ -3189,6 +3189,14 @@ table.ov-mini.ov-levels { width: auto; min-width: 100%; }
  * figure is the one thing in this heading that must not be cut off, and an
  * ellipsis on a phone is exactly how a hit rate ends up read on its own.
  */
+/*
+ * The Signals section on the Live screen (27 Sep 2026): the measured read, with
+ * the signal history rather than on a tab of its own. Same frame as the option
+ * chain section below it, so the screen reads as three bands, not two plus a
+ * stray.
+ */
+.live-signals { margin-top: 14px; min-width: 0; }
+
 .bt-market-state__hist-measured {
   color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums;
   margin-left: auto;

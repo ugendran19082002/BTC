@@ -12,7 +12,7 @@ import { TABS, asTab } from '@/App';
 
 describe('the tab list', () => {
   it('[critical] every screen the desk has is in the list a click is checked against', () => {
-    expect([...TABS]).toEqual(['desk', 'signals', 'trade', 'orders', 'strategy', 'pnl', 'settings', 'errors']);
+    expect([...TABS]).toEqual(['desk', 'trade', 'orders', 'strategy', 'pnl', 'settings', 'errors']);
     for (const t of TABS) expect(asTab(t)).toBe(t);
   });
 
@@ -23,9 +23,11 @@ describe('the tab list', () => {
     expect(asTab('chain')).toBe('desk');
   });
 
-  it('Signals is its own screen, not a rename of Live', () => {
-    // Added 27 Sep 2026 beside Live, not in place of it. Both must resolve.
-    expect(asTab('signals')).toBe('signals');
+  it('Signals was folded into Live, so its old tab falls back rather than blanking', () => {
+    // A second tab for half a day (27 Sep 2026), then merged into the Live
+    // screen beside the signal history. Anyone whose browser remembers it must
+    // land on Live, not on nothing.
+    expect(asTab('signals')).toBe('desk');
     expect(asTab('desk')).toBe('desk');
   });
 });

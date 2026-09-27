@@ -80,23 +80,34 @@ implies otherwise is the bug.
 
 ---
 
-**Open — the journal's correctness and timeliness:**
+**Fixed later the same day — the journal's correctness and timeliness:**
 
-- [ ] **`market_states` needs a uniqueness rule, not just a dedupe in code.**
-      `noteState` compares against the last row for that timeframe and skips a
-      write when `(event, stage)` match. That is the right behaviour, but it lives
-      only in TypeScript: two processes, or a deploy overlapping an old container,
-      can both read "no change" and both insert. Wanted: a partial unique index or
-      an exclusion constraint that makes a duplicate `(tf, event, stage)` at the
-      same state **impossible at the database**, the way `trades` already enforces
-      one open position per source. Until then the count behind the hit rate can
-      double without anything complaining.
-- [ ] **Record the state at every bar close, not only on change.** The dedupe means
-      a timeframe sitting in RANGE for thirteen hours writes nothing — correct for
-      a *signal* journal, wrong for answering "was the desk reading the market at
-      04:00?". Those two questions want two tables: keep `market_states` as the
-      change log, and add a heartbeat row per timeframe per bar so a gap in the
-      record is distinguishable from a quiet market. Right now they look identical.
+- [x] **`market_states` duplicates are now impossible at the database (27 Sep).**
+      `noteState` compared against the last row and skipped when `(event, stage)`
+      matched — right rule, but it lived only in TypeScript, so two writers (a
+      deploy overlapping the old container, both running the recorder) could both
+      read "no change" and both insert. A unique index cannot say "not equal to
+      the *previous* row", so `market-017-state-dedupe-at-db` is a BEFORE INSERT
+      trigger returning NULL, which makes PostgreSQL skip the row silently —
+      `INSERT … RETURNING id` yields nothing and `noteState` returns null, exactly
+      its existing contract. Why it mattered: the hit rate counts rows, so a
+      duplicated *win* was counted twice in the numerator and the number that
+      answers "is this signal any good" drifted upward with every race. Asserted
+      in `test/market/state-journal-integrity.test.ts` by inserting a duplicate
+      straight through SQL, bypassing the code path entirely.
+- [x] **Quiet is now distinguishable from dead (27 Sep).** The dedupe means a
+      timeframe holding RANGE for thirteen hours writes nothing — correct for a
+      change log, and indistinguishable on screen from a recorder that stopped.
+      Which is exactly what happened: it read as a quiet market while the recorder
+      was dead, and the hit rate was computed from the gap.
+      `market-016-state-heartbeat` adds `market_state_checks`, one row per
+      timeframe overwritten on every look, and the signal-history heading now says
+      **"checked 40s ago · still Range"** or **"not checked for 13h"** —
+      `components/live/Liveness.tsx`, with a per-timeframe staleness limit of
+      three times the recorder's own interval. A test asserts the two silences can
+      never produce the same words.
+
+**Open — the journal's correctness and timeliness:**
 - [ ] **Grading is not idempotent across restarts.** `gradeStates` runs on a timer
       now, which fixes the overnight gap, but a row whose window closed while the
       process was down is graded on the next boot using bars fetched *now*. Check
@@ -140,13 +151,19 @@ implies otherwise is the bug.
       If a faster read is wanted, the honest shape is a **provisional** state,
       visibly labelled, that never enters the journal and never carries a measured
       figure. `lib/live-bar.ts` documents the boundary.
-- [ ] **One signal vocabulary across both screens.** The Live tab's
-      `mtfConsensus` votes one-per-frame over five frames; the Signals tab weights
-      nine frames by job. They can and do disagree — Live can read `↑ Up` while
-      Signals reads `↔ No side` with *"5M trigger is DOWN, direction is UP"*. That
-      disagreement is currently the most informative thing on the desk and should
-      be watched for a few sessions, then **one of them deleted**. Two screens with
-      two answers is a temporary state, not a design.
+- [x] **Signals folded into the Live screen (27 Sep).** It was a second tab for
+      half a day, which put "what the signal says now" one click away from "what
+      it said before and how those turned out" — two halves of one question on two
+      screens. Now one `Signals` section on the Live screen, directly under the
+      card that holds the history list. The old `signals` tab id falls back to
+      Live so a remembered tab cannot blank the screen.
+- [ ] **One signal vocabulary, still two answers.** The Live card's
+      `mtfConsensus` votes one-per-frame over five frames; the `Signals` section
+      weights nine frames by job. They can and do disagree — one can read `↑ Up`
+      while the other reads `↔ No side` with *"5M trigger is DOWN, direction is
+      UP"*. They are now on the same screen, which makes the disagreement visible
+      instead of a tab away; it is still the most informative thing on the desk
+      and should be watched for a few sessions, then **one of them deleted**.
 
 **Open — the Live screen, usability:**
 

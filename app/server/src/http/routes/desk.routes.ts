@@ -16,7 +16,7 @@ import { lastOptionSnapshot, lastOptionSnapshotAt } from '../../market/option-sn
 import { flowFeedHealth, flowSummary, ivRank, liveBook, livePerp, oiPulse, optionFlowSummary, skewRank } from '../../market/flow.js';
 import { movementByWindow } from '../../market/movement.js';
 import { readState, STATE_TFS, type StateTf } from '../../market/state-read.js';
-import { gradeStates, hitRate, noteState, recentStates } from '../../market/state-history.js';
+import { gradeStates, hitRate, lastCheck, noteState, recentStates } from '../../market/state-history.js';
 import { noteShock, recentShocks, settleShocks, shockOutcomes } from '../../market/shock-history.js';
 import { changes } from '../../market/changes.js';
 import { one } from '../../db/pool.js';
@@ -206,7 +206,16 @@ export function registerDeskRoutes(app: FastifyInstance) {
        * says in words rather than drawing as a zero.
        */
       const measured = tf ? measuredFor(tf, LIVE_POLICY) : null;
-      return { at: Date.now(), tf, rows, hitRate: rate, measured };
+      /*
+       * When the journal last looked, whatever it saw (27 Sep 2026).
+       *
+       * Without it the list cannot tell a quiet market from a dead recorder:
+       * a timeframe holding RANGE writes no rows, and so does a recorder that
+       * stopped. On the morning of 27 Sep the second was true for thirteen
+       * hours and the screen looked exactly the same either way.
+       */
+      const checked = await lastCheck(tf).catch(() => null);
+      return { at: Date.now(), tf, rows, hitRate: rate, measured, checked };
     } catch (e) {
       reply.code(502);
       return { error: (e as Error).message };
