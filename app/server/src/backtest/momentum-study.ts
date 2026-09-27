@@ -57,10 +57,86 @@ function inHours(s: Signal, from: number, to: number) {
   const h = s.features.hourIst + 0.5;
   return h >= from && h < to;
 }
+/**
+ * Every reading `docs/New.md` asks for, as a filter on the call.
+ *
+ * Direction-aware where the reading has a direction: a breakout with RSI-like
+ * momentum *with* it is a different proposition from one against it, and
+ * testing "CCI > 100" without regard to side would mix the two into a number
+ * that describes neither. `dir` is +1 for a breakout and −1 for a breakdown, so
+ * `with` means the reading agrees with the call.
+ *
+ * A null reading **excludes** the signal rather than counting as neutral. A
+ * filter whose sample is padded with calls it could not actually read is a
+ * filter measuring something else.
+ */
+const READING_FILTERS: Filter[] = (() => {
+  const out: Filter[] = [];
+  const dirOf = (s: Signal) => (s.side === 'UP' ? 1 : -1);
+
+  /** A reading that is directional: tested as "with the call" and "against it". */
+  const signed = (name: string, get: (s: Signal) => number | null, dead = 0) => {
+    out.push({
+      name: `${name} with`,
+      ok: (s) => { const v = get(s); return v !== null && Math.abs(v) > dead && Math.sign(v) === dirOf(s); },
+    });
+    out.push({
+      name: `${name} against`,
+      ok: (s) => { const v = get(s); return v !== null && Math.abs(v) > dead && Math.sign(v) !== dirOf(s); },
+    });
+  };
+
+  /** A reading with a natural band: tested above and below a stated level. */
+  const banded = (name: string, get: (s: Signal) => number | null, lo: number, hi: number) => {
+    out.push({ name: `${name} > ${hi}`, ok: (s) => { const v = get(s); return v !== null && v > hi; } });
+    out.push({ name: `${name} < ${lo}`, ok: (s) => { const v = get(s); return v !== null && v < lo; } });
+  };
+
+  const i = (s: Signal) => s.features.ind;
+
+  signed('MACD histogram', (s) => i(s).macdHist);
+  signed('OBV slope', (s) => i(s).obvSlope);
+  signed('TRIX', (s) => i(s).trix);
+  signed('Awesome osc', (s) => i(s).awesome);
+  signed('CMF', (s) => i(s).cmf, 0.05);
+  signed('ROC(10)', (s) => i(s).roc10);
+  signed('SuperTrend', (s) => i(s).superTrend);
+  signed('EMA 21/50 stack', (s) => i(s).emaStack);
+  signed('Candle pattern', (s) => i(s).candleBias);
+  signed('Structure pattern', (s) => i(s).structureBias);
+  signed('CCI', (s) => i(s).cci, 100);
+
+  banded('Stochastic', (s) => i(s).stoch, 20, 80);
+  banded('MFI', (s) => i(s).mfi, 20, 80);
+  banded('Williams %R', (s) => i(s).williamsR, -80, -20);
+  banded('Bollinger %B', (s) => i(s).percentB, 0.2, 0.8);
+  banded('Choppiness', (s) => i(s).choppiness, 38, 62);
+  banded('Efficiency ratio', (s) => i(s).efficiency, 0.2, 0.4);
+  banded('Vortex', (s) => i(s).vortex, 0.95, 1.05);
+  banded('Relative volume', (s) => i(s).relVolume, 0.8, 1.5);
+  banded('Band width', (s) => i(s).bandWidth, 0.15, 0.5);
+
+  out.push({ name: 'Close at bar extreme (|CLV| > 0.6)', ok: (s) => { const v = i(s).clv; return v !== null && Math.abs(v) > 0.6; } });
+  out.push({ name: 'No pattern named', ok: (s) => i(s).patternCount === 0 });
+  out.push({ name: 'Three or more patterns named', ok: (s) => i(s).patternCount >= 3 });
+
+  return out;
+})();
+
 // Every filter alone and every pair of compatible filters.
 const FILTERS: Filter[] = [
   { name: 'all', ok: () => true },
   ...BASE_FILTERS,
+  ...READING_FILTERS,
+  /*
+   * Pairs, but only of the original fourteen.
+   *
+   * Pairing the readings too would take the count from a few hundred to several
+   * thousand, and at that width the winners are chosen by luck rather than
+   * found: twenty filters tested at a one-in-twenty threshold produce one
+   * "discovery" from noise alone. The readings get one clean pass each; if one
+   * of them survives 2026 on its own, *then* it has earned a pair search.
+   */
   ...BASE_FILTERS.flatMap((a, i) => BASE_FILTERS.slice(i + 1)
     .filter((b) => a.name.split(' ')[0] !== b.name.split(' ')[0])
     .map((b) => ({ name: `${a.name} + ${b.name}`, ok: (s: Signal) => a.ok(s) && b.ok(s) }))),
@@ -101,6 +177,9 @@ async function main() {
   say(`BTCUSD 5m bars ${first} → ${last} (${bars5m.length.toLocaleString()} bars). Same marketState(), same grader.`);
   say('Entry at the signal bar\'s close. A bar touching both stop and target counts as the stop.');
   say('Net = after 0.05% taker fee each side. R = profit ÷ risk. Chosen on 2024+2025; 2026 is out of sample.');
+  say('Every reading docs/New.md asks for is swept as a filter, taken at the signal bar with no lookahead.');
+  say('A null reading excludes the call rather than counting as neutral, so no filter is padded with calls it could not read.');
+  say('Read the "by chance" line under each table before the table: at this many filters, some survive on luck.');
   say();
 
   for (const mode of LEVEL_MODES) {
@@ -194,6 +273,19 @@ async function main() {
     const eligible = rows.filter((r) => r.ins.n >= MIN_IN_SAMPLE && [...IN_SAMPLE].every((y) => (r.y[y]?.n ?? 0) >= 30 && avg(r.y[y]!) > 0));
     eligible.sort((a, b) => avg(b.ins) - avg(a.ins));
     say(`   Filters positive after fees in BOTH 2024 and 2025 (≥30 each, ≥${MIN_IN_SAMPLE} together): ${eligible.length} of ${rows.length} tried.`);
+    /*
+     * What luck alone would produce.
+     *
+     * A filter has to be positive in two independent years to be eligible. If
+     * every filter were pure noise, each year is a coin flip, so about a quarter
+     * clear both — that is the number `eligible` has to beat before any of it
+     * means anything. Printed every run, beside the count, because a table of
+     * survivors with no null hypothesis beside it is how a sweep talks somebody
+     * into a rule.
+     */
+    const byChance = Math.round(rows.length * 0.25);
+    say(`   If every one of them were noise, about ${byChance} would clear that bar anyway (two coin-flip years).`);
+    say(`   ${eligible.length >= byChance ? 'This run is at or below what chance alone gives' : 'This run is below what chance alone gives'} — treat the list as candidates, not findings.`);
     say('   Best ten by in-sample net R, and what they then did in 2026 without being re-chosen:');
     for (const r of eligible.slice(0, 10)) {
       const holds = r.oos.n >= 20 && avg(r.oos) > 0;

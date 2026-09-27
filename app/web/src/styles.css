@@ -3647,8 +3647,16 @@ table.ov-mini.ov-levels { width: auto; min-width: 100%; }
 .sd-empty { font-size: 12.5px; color: var(--muted); line-height: 1.5; margin: 8px 0; }
 .sd-list { list-style: none; margin: 0; padding: 0; display: grid; }
 .sd-side { display: grid; gap: 10px; align-content: start; min-width: 0; }
-.sd-foot { display: grid; gap: 10px; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
-@media (max-width: 1100px) { .sd-foot { grid-template-columns: minmax(0, 1fr); } }
+/* With no side column the list takes the width; with one it keeps the split. */
+.sd-main--wide:not(:has(.sd-side)) { grid-template-columns: minmax(0, 1fr); }
+
+/*
+ * The foot: what is happening now (Big move), the ladder it came from, and the
+ * strikes it judges. Three across on a wide screen, one on a phone — and the
+ * ladder gets the middle width because its table is the widest of the three.
+ */
+.sd-foot { display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1fr); }
+@media (max-width: 1200px) { .sd-foot { grid-template-columns: minmax(0, 1fr); } }
 
 .sd-pager { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding-top: 8px; font-size: 12px; color: var(--muted); }
 .sd-pager button {

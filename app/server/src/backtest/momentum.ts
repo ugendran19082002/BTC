@@ -1,8 +1,13 @@
 import type { Candle } from '../market/delta.js';
-import { atr, ema, mean } from '../domain/indicators.js';
+import {
+  atr, ema, mean,
+  awesome, bollinger, cci, choppiness, clv, cmf, efficiencyRatio, macd, mfi, obvSlope,
+  relativeVolume, roc, stochastic, superTrend, trix, vortex, williamsR,
+} from '../domain/indicators.js';
+import { candlePatterns, structurePatterns } from '../domain/patterns.js';
 import type { Side } from '../domain/market-state.js';
 import { confirmedBreaks, resample, TF_BARS_OF_5M, type Tf } from '../domain/break-risk.js';
-import { DEFAULT_LEVEL_MODE, type LevelMode } from '../domain/level-mode.js';
+import { DEFAULT_LEVEL_MODE, levelUnder, type LevelMode } from '../domain/level-mode.js';
 import { evaluateSignalOutcome } from '../market/state-history.js';
 import type { CarryStats } from '../domain/break-risk.js';
 
@@ -80,8 +85,108 @@ export type Signal = {
     overshootAtr: number;
     /** Hour of the day, IST. */
     hourIst: number;
+    /**
+     * Every reading `docs/New.md` asks for, taken at the signal bar's close.
+     *
+     * Two rules make these usable as evidence rather than decoration:
+     *
+     *  - **No lookahead.** Each is computed from `bars[0..i]` only — the bar the
+     *    call was made on and everything before it. Nothing after.
+     *  - **Null is null.** A reading with too few bars stays null and its filter
+     *    excludes the signal rather than guessing a neutral value, which would
+     *    quietly pad a filter's sample with calls it never actually read.
+     *
+     * They exist to be *measured*, not to be added to a score. The whole point of
+     * the sweep in `momentum-study.ts` is to find which — if any — of these
+     * change the net R, rather than assuming that more inputs is more accuracy.
+     */
+    ind: Readings;
   };
 };
+
+/** The readings taken at a signal bar. All price and volume; no flow, no OI. */
+export type Readings = {
+  macdHist: number | null;
+  percentB: number | null;
+  bandWidth: number | null;
+  cci: number | null;
+  mfi: number | null;
+  stoch: number | null;
+  williamsR: number | null;
+  choppiness: number | null;
+  efficiency: number | null;
+  obvSlope: number | null;
+  superTrend: -1 | 0 | 1;
+  vortex: number | null;
+  trix: number | null;
+  awesome: number | null;
+  cmf: number | null;
+  relVolume: number | null;
+  roc10: number | null;
+  clv: number | null;
+  emaStack: -1 | 0 | 1;
+  /** Bias of the candle patterns named on this bar: +1 bullish, -1 bearish, 0 none or mixed. */
+  candleBias: -1 | 0 | 1;
+  /** Same for the structure patterns (FVG, order block, sweep, BOS…). */
+  structureBias: -1 | 0 | 1;
+  /** How many patterns were named at all. A bar nobody can read is its own state. */
+  patternCount: number;
+};
+
+const NO_READINGS: Readings = {
+  macdHist: null, percentB: null, bandWidth: null, cci: null, mfi: null, stoch: null,
+  williamsR: null, choppiness: null, efficiency: null, obvSlope: null, superTrend: 0,
+  vortex: null, trix: null, awesome: null, cmf: null, relVolume: null, roc10: null,
+  clv: null, emaStack: 0, candleBias: 0, structureBias: 0, patternCount: 0,
+};
+
+/** Fold a list of patterns into one signed bias: mixed cancels to 0. */
+function biasOf(ps: readonly { bias: string }[]): -1 | 0 | 1 {
+  const up = ps.filter((p) => p.bias === 'BULLISH').length;
+  const down = ps.filter((p) => p.bias === 'BEARISH').length;
+  return up > down ? 1 : down > up ? -1 : 0;
+}
+
+/**
+ * Every reading, at `bars[bars.length - 1]`'s close.
+ *
+ * `bars` must already be truncated to the signal bar — this function has no way
+ * to know what came after and must never be handed it.
+ */
+export function readingsAt(bars: readonly Candle[], level: { resistance: number | null; support: number | null }): Readings {
+  if (bars.length < 30) return NO_READINGS;
+  const closes = bars.map((b) => b.close);
+  const last = bars[bars.length - 1]!;
+  const m = macd(closes);
+  const bb = bollinger(closes);
+  const e21 = ema(closes, 21);
+  const e50 = ema(closes, 50);
+  const a = atr(bars, 14);
+  return {
+    macdHist: m?.histogram ?? null,
+    percentB: bb?.percentB ?? null,
+    bandWidth: bb?.width ?? null,
+    cci: cci(bars),
+    mfi: mfi(bars),
+    stoch: stochastic(bars),
+    williamsR: williamsR(bars),
+    choppiness: choppiness(bars),
+    efficiency: efficiencyRatio(closes),
+    obvSlope: obvSlope(bars),
+    superTrend: superTrend(bars),
+    vortex: vortex(bars),
+    trix: trix(closes),
+    awesome: awesome(bars),
+    cmf: cmf(bars),
+    relVolume: relativeVolume(bars),
+    roc10: roc(closes, 10),
+    clv: clv(last),
+    emaStack: e21 === null || e50 === null ? 0 : e21 > e50 ? 1 : e21 < e50 ? -1 : 0,
+    candleBias: biasOf(candlePatterns(bars)),
+    structureBias: biasOf(structurePatterns({ bars, level, atr: a })),
+    patternCount: candlePatterns(bars).length + structurePatterns({ bars, level, atr: a }).length,
+  };
+}
 
 /**
  * Every confirmed breakout and breakdown on `tf`, as the live card would have
@@ -123,6 +228,12 @@ export function extractSignals(
         volumeRatio: k.volumeRatio,
         overshootAtr: Math.abs(k.entry - k.level) / k.atr,
         hourIst: Math.floor(((closeT + 19_800) % 86_400) / 3600),
+        /*
+         * Bars up to and including the signal bar, and nothing after it. The
+         * slice is the no-lookahead guarantee: `readingsAt` cannot see the
+         * future because it is never given it.
+         */
+        ind: readingsAt(bars.slice(0, k.i + 1), levelUnder(bars.slice(0, k.i + 1), mode)),
       },
     };
   });

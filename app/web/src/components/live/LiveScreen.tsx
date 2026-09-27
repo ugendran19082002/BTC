@@ -7,7 +7,6 @@ import { VerdictBar } from './VerdictBar';
 import { MomentumCard } from './MomentumCard';
 import { Ladder } from './Ladder';
 import { StrikeSafety } from './StrikeSafety';
-import { FocusSummary } from './FocusSummary';
 import { Card, Nothing } from './parts';
 import { SignalDesk } from './SignalDesk';
 import type { StateHistoryRow } from '@/api/desk';
@@ -144,22 +143,6 @@ export function LiveScreen({
     <div className="flex min-w-0 flex-col gap-3">
       {controls && <div className="flex flex-wrap items-center gap-2">{controls}</div>}
 
-      <ErrorBoundary where="Verdict">
-        <VerdictBar
-          ladder={data.ladder}
-          readiness={data.readiness}
-          hoursLeft={data.hoursToExpiry}
-          asOf={data.asOf}
-          now={now}
-          stability={data.stability}
-          penalties={data.penalties}
-        />
-      </ErrorBoundary>
-
-      <ErrorBoundary where="Decision focus">
-        <FocusSummary path={data.path} momentum={data.momentum} />
-      </ErrorBoundary>
-
       {chart && <ErrorBoundary where="Price chart">{chart}</ErrorBoundary>}
 
       {/*
@@ -179,6 +162,17 @@ export function LiveScreen({
           range={journal.range}
           onRange={journal.onRange}
           tfControl={journal.tfControl}
+          verdict={(
+            <VerdictBar
+              ladder={data.ladder}
+              readiness={data.readiness}
+              hoursLeft={data.hoursToExpiry}
+              asOf={data.asOf}
+              now={now}
+              stability={data.stability}
+              penalties={data.penalties}
+            />
+          )}
           bigMove={<MomentumCard signal={data.momentum} id="live-momentum" />}
           timeframes={<Ladder ladder={data.ladder} id="live-ladder" />}
           strikes={<StrikeSafety strikes={data.strikes} id="live-strikes" />}

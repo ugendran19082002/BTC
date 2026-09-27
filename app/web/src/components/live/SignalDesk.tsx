@@ -58,7 +58,7 @@ function Stat({ label, value, sub, tone }: {
 
 export function SignalDesk({
   rows, rate, measured, checked, total, tf, spot, range, onRange, tfControl,
-  expiry, bigMove, timeframes, strikes,
+  verdict, expiry, bigMove, timeframes, strikes,
 }: {
   rows: readonly StateHistoryRow[];
   rate?: { correct: number; graded: number };
@@ -74,6 +74,15 @@ export function SignalDesk({
   onRange: (days: number | null) => void;
   /** The timeframe picker, owned by the caller. */
   tfControl?: ReactNode;
+  /**
+   * The one-line read — which way, and may the desk act.
+   *
+   * It sits under the header rather than in a block of its own above the fold
+   * (27 Sep 2026). As a separate section it repeated, one scroll higher, the
+   * same direction and the same blockers the desk below already carried, and a
+   * figure said twice on one screen is a figure that can disagree with itself.
+   */
+  verdict?: ReactNode;
   /** The right-hand column and the row beneath, passed in so this file stays layout. */
   expiry?: ReactNode;
   bigMove?: ReactNode;
@@ -166,8 +175,10 @@ export function SignalDesk({
         </div>
       </div>
 
-      {/* 3 and 4 — the calls, and what the market can still do */}
-      <div className="sd-main">
+      {verdict}
+
+      {/* 3 — the calls themselves */}
+      <div className="sd-main sd-main--wide">
         <div className="sd-list-wrap">
           <div className="sd-list-head">
             <h3>Signal List</h3>
@@ -194,13 +205,16 @@ export function SignalDesk({
           )}
         </div>
 
-        <div className="sd-side">
-          {expiry}
-          {bigMove}
-        </div>
+        {expiry ? <div className="sd-side">{expiry}</div> : null}
       </div>
 
+      {/*
+        4 — what is happening now, and where it can get to. Beneath the calls
+        rather than beside them: the record is what qualifies the live read, so
+        the record is read first.
+      */}
       <div className="sd-foot">
+        {bigMove}
         {timeframes}
         {strikes}
       </div>
