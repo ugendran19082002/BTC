@@ -215,12 +215,52 @@ export function useChanges(data: ChainResponse, leg: Leg | null, spot: number, e
  * strikes, CE then PE. The since-entry row runs from the strategy's entry
  * moment, once a window has passed since.
  */
+/**
+ * What changed on the chosen strikes — one list, with a tab per side.
+ *
+ * It was two tables stacked (27 Sep 2026), each nine rows of nine columns, so
+ * comparing the call against the put meant scrolling one out of view to read
+ * the other. They are the two halves of one position and the question is always
+ * "which side is getting worse", so they share a list and the tab switches
+ * which side is in it.
+ *
+ * The tab is only drawn when there are two: a single strike needs no chooser,
+ * and a control with one option is a control that teaches people to ignore
+ * controls.
+ */
 export function ChangesPanel({ strikes }: { strikes: { leg: Leg | null; changes: Changes | null }[] }) {
   const shown = strikes.filter((x) => x.leg);
+  const [side, setSide] = useState<'C' | 'P'>('C');
+  // The side actually on screen: the chosen one when it is there, else whatever is.
+  const active = shown.find((x) => x.leg!.cp === side) ?? shown[0] ?? null;
   const title = shown.map((x) => `${fmt.n(x.leg!.strike)} ${x.leg!.cp === 'C' ? 'CE' : 'PE'}`).join(' · ');
   return (
     <Panel name="What changed" title={`What changed${title ? ` · ${title}` : ''}`} right={<small className="ov-muted">the chosen strikes, 1m … 12h and since entry</small>}>
-      {shown.length === 0 ? <p className="ov-empty">Choose a strike on the chain.</p> : shown.map((x) => <ChangesTable key={`${x.leg!.cp}${x.leg!.strike}`} leg={x.leg!} changes={x.changes} two={shown.length > 1} />)}
+      {shown.length === 0 ? <p className="ov-empty">Choose a strike on the chain.</p> : (
+        <>
+          {shown.length > 1 && (
+            <div className="ov-side-tabs" role="tablist" aria-label="Which side">
+              {shown.map((x) => {
+                const cp = x.leg!.cp;
+                const on = active?.leg!.cp === cp;
+                return (
+                  <button
+                    key={cp}
+                    type="button"
+                    role="tab"
+                    aria-selected={on}
+                    className={`ov-side-tab${on ? ' on' : ''} ${cp === 'C' ? 'ce' : 'pe'}`}
+                    onClick={() => setSide(cp)}
+                  >
+                    {fmt.n(x.leg!.strike)} {cp === 'C' ? 'CE' : 'PE'}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {active && <ChangesTable key={`${active.leg!.cp}${active.leg!.strike}`} leg={active.leg!} changes={active.changes} two={false} />}
+        </>
+      )}
       <p className="ov-foot">Premium ↑ = 🔴 risk for a short, ↓ = 🟢 favourable. OI beside it: premium ↑ with OI ↑ is demand, premium ↓ with OI ↑ is writing into it, both ↓ is an unwind. Touch odds and distance by the option model then → now. A dash means no record that far back.</p>
     </Panel>
   );

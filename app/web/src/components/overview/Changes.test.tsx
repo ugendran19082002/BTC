@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ChainResponse, Leg } from '@/types/desk';
 import live from '@/test/fixtures/chain-live.json';
 import { ChangesPanel, useChanges } from './TraderPanels';
@@ -50,5 +50,52 @@ describe('what changed, for the strike that is actually selected', () => {
     render(<Harness leg={ce} />);
     await waitFor(() => expect(getChanges).toHaveBeenCalled());
     expect(getChanges.mock.calls[0]![0]).toContain(`${ce.cp}-BTC-${ce.strike}-`);
+  });
+});
+
+/**
+ * One list, a tab per side (27 Sep 2026).
+ *
+ * The panel drew both strikes as two stacked nine-row tables, so comparing the
+ * call against the put meant scrolling one out of view. They are two halves of
+ * one position; the tab switches which half is in the list.
+ */
+describe('the side tabs', () => {
+  const both = () => [
+    { leg: legOf('C'), changes: answer(10) as never },
+    { leg: legOf('P'), changes: answer(20) as never },
+  ];
+
+  it('[critical] offers a tab per side, with exactly one selected', () => {
+    render(<ChangesPanel strikes={both()} />);
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs).toHaveLength(2);
+    expect(tabs.filter((t) => t.getAttribute('aria-selected') === 'true')).toHaveLength(1);
+  });
+
+  it('[critical] pressing the put tab selects it', () => {
+    render(<ChangesPanel strikes={both()} />);
+    const put = screen.getByRole('tab', { name: new RegExp(`${legOf('P').strike.toLocaleString('en-US')} PE`) });
+    fireEvent.click(put);
+    expect(put).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: new RegExp(`${legOf('C').strike.toLocaleString('en-US')} CE`) }))
+      .toHaveAttribute('aria-selected', 'false');
+  });
+
+  it('[critical] the title still names both strikes — the tab hides a table, not the position', () => {
+    render(<ChangesPanel strikes={both()} />);
+    const title = screen.getByText(/^What changed · /);
+    expect(title).toHaveTextContent('CE');
+    expect(title).toHaveTextContent('PE');
+  });
+
+  it('a single strike draws no chooser — a control with one option teaches people to ignore controls', () => {
+    render(<ChangesPanel strikes={[{ leg: legOf('C'), changes: answer(10) as never }]} />);
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+  });
+
+  it('no strike at all asks for one rather than drawing an empty table', () => {
+    render(<ChangesPanel strikes={[]} />);
+    expect(screen.getByText(/Choose a strike on the chain/)).toBeVisible();
   });
 });

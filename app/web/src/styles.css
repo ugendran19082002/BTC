@@ -3719,3 +3719,20 @@ table.ov-mini.ov-levels { width: auto; min-width: 100%; }
 .sig-result b.up { color: var(--up); }
 .sig-result b.down { color: var(--down); }
 .sig-result b.flat { color: var(--muted); }
+
+/* ------------------------------------------------ What changed: side tabs
+ * One list, a tab per side (27 Sep 2026). CE and PE are the two halves of one
+ * position, and stacking their tables meant scrolling one out of view to read
+ * the other. Colour marks the side, not the quality — the same rule the rest of
+ * the desk follows.
+ */
+.ov-side-tabs { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+.ov-side-tab {
+  border: 1px solid var(--line); background: none; color: var(--muted);
+  border-radius: 999px; padding: 3px 11px; font-size: 12px; cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.ov-side-tab:hover { color: var(--text); }
+.ov-side-tab.on { color: var(--text); border-color: currentColor; }
+.ov-side-tab.on.ce { color: var(--up); }
+.ov-side-tab.on.pe { color: var(--down); }
