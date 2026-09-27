@@ -3244,7 +3244,290 @@ table.ov-mini.ov-levels { width: auto; min-width: 100%; }
  * chain section below it, so the screen reads as three bands, not two plus a
  * stray.
  */
-.live-signals { margin-top: 14px; min-width: 0; }
+.live-signals { margin-top: 24px; min-width: 0; }
+
+/* ==========================================================================
+   USER-FRIENDLY UPGRADE: SIGNALS & OPTION CHAIN SECTION STYLING
+   ========================================================================== */
+
+.desk-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #0a0e17;
+  border: 1px solid #162032;
+  border-radius: 12px;
+  padding: 12px 18px;
+  margin: 20px 0 12px 0;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.desk-section-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.desk-section-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 0 12px rgba(0, 229, 255, 0.15);
+}
+
+.desk-section-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.2px;
+}
+
+.desk-section-subtitle {
+  font-size: 11px;
+  color: #8492a6;
+}
+
+.desk-section-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.desk-badge-pill {
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 20px;
+  padding: 3px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: ui-monospace, monospace;
+}
+
+/* User-friendly SignalDesk improvements */
+.sd {
+  gap: 12px !important;
+}
+
+.sd-head {
+  background: #0d121c !important;
+  border: 1px solid #162032 !important;
+  border-radius: 12px !important;
+  padding: 12px 16px !important;
+  gap: 12px !important;
+}
+
+.sd-title {
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  color: #fff !important;
+}
+
+.sd-ranges {
+  gap: 6px !important;
+}
+
+.sd-range {
+  background: #080c13 !important;
+  border: 1px solid #1e293b !important;
+  color: #8492a6 !important;
+  border-radius: 20px !important;
+  padding: 4px 12px !important;
+  font-size: 11.5px !important;
+  font-weight: 600 !important;
+  transition: all 0.15s ease !important;
+}
+
+.sd-range:hover {
+  background: #141c2c !important;
+  border-color: #00e5ff !important;
+  color: #fff !important;
+}
+
+.sd-range.on {
+  background: rgba(0, 229, 255, 0.15) !important;
+  border-color: #00e5ff !important;
+  color: #fff !important;
+  box-shadow: 0 0 10px rgba(0, 229, 255, 0.25) !important;
+}
+
+.sd-hitbar {
+  background: #1e293b !important;
+}
+
+.sd-hitbar > span {
+  background: linear-gradient(90deg, #00e5ff, #00e676) !important;
+}
+
+.sd-strip {
+  background: #0d121c !important;
+  border: 1px solid #162032 !important;
+  border-radius: 12px !important;
+  padding: 14px !important;
+  gap: 12px !important;
+}
+
+.sd-stat {
+  background: #080c13 !important;
+  border: 1px solid #1e293b !important;
+  border-radius: 10px !important;
+  padding: 10px 14px !important;
+}
+
+.sd-stat-label {
+  font-size: 11px !important;
+  color: #8492a6 !important;
+  font-weight: 500 !important;
+}
+
+.sd-stat-value {
+  font-size: 19px !important;
+  font-weight: 700 !important;
+  color: #fff !important;
+  letter-spacing: -0.3px !important;
+}
+
+.sd-stat-value.up {
+  color: #00e676 !important;
+}
+
+.sd-stat-value.down {
+  color: #ff3b57 !important;
+}
+
+.sd-note {
+  background: rgba(0, 229, 255, 0.05) !important;
+  border: 1px solid rgba(0, 229, 255, 0.2) !important;
+  border-radius: 10px !important;
+  padding: 10px 12px !important;
+}
+
+.sd-list-wrap {
+  background: #0d121c !important;
+  border: 1px solid #162032 !important;
+  border-radius: 12px !important;
+  padding: 14px !important;
+}
+
+.sd-list-head h3 {
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  color: #fff !important;
+}
+
+.sd-count {
+  background: rgba(0, 229, 255, 0.1) !important;
+  border-color: rgba(0, 229, 255, 0.3) !important;
+  color: #00e5ff !important;
+  font-weight: 700 !important;
+}
+
+.sig-row {
+  border-top-color: #162032 !important;
+  padding: 10px 4px !important;
+  transition: background 0.12s ease !important;
+}
+
+.sig-row:hover {
+  background: rgba(255, 255, 255, 0.03) !important;
+  border-radius: 6px !important;
+}
+
+.sig-when b {
+  color: #fff !important;
+}
+
+.sig-badge.waiting {
+  background: rgba(245, 158, 11, 0.15) !important;
+  color: #fbbf24 !important;
+  border: 1px solid rgba(245, 158, 11, 0.3) !important;
+}
+
+.sig-badge.up {
+  background: rgba(0, 230, 118, 0.15) !important;
+  color: #00e676 !important;
+  border: 1px solid rgba(0, 230, 118, 0.3) !important;
+}
+
+.sig-badge.down {
+  background: rgba(255, 59, 87, 0.15) !important;
+  color: #ff3b57 !important;
+  border: 1px solid rgba(255, 59, 87, 0.3) !important;
+}
+
+.sig-result b.is-up {
+  color: #00e676 !important;
+  font-weight: 700 !important;
+}
+
+.sig-result b.is-down {
+  color: #ff3b57 !important;
+  font-weight: 700 !important;
+}
+
+.sd-pager button {
+  background: #080c13 !important;
+  border: 1px solid #1e293b !important;
+  border-radius: 6px !important;
+  color: #fff !important;
+  font-weight: 700 !important;
+}
+
+.sd-pager button:hover:not(:disabled) {
+  background: rgba(0, 229, 255, 0.15) !important;
+  border-color: #00e5ff !important;
+}
+
+/* User-friendly Option Chain improvements */
+.live-chain {
+  margin-top: 24px !important;
+  padding-top: 0 !important;
+  border-top: none !important;
+}
+
+.chain-bar {
+  background: #0a0e17 !important;
+  border: 1px solid #162032 !important;
+  border-radius: 12px !important;
+  padding: 10px 16px !important;
+  margin-bottom: 10px !important;
+}
+
+.chain-chip {
+  background: #0d121c !important;
+  border: 1px solid #1e293b !important;
+  color: #e2e8f0 !important;
+  border-radius: 8px !important;
+  padding: 5px 12px !important;
+  font-size: 11.5px !important;
+  font-weight: 600 !important;
+  transition: all 0.15s ease !important;
+}
+
+.chain-chip:hover {
+  background: #141c2c !important;
+  border-color: #00e5ff !important;
+}
+
+.chain-chip.on {
+  background: rgba(0, 229, 255, 0.15) !important;
+  border-color: #00e5ff !important;
+  color: #fff !important;
+}
+
+.chain-link {
+  color: #00e5ff !important;
+  text-decoration: underline !important;
+  cursor: pointer !important;
+}
+
 
 .bt-market-state__hist-measured {
   color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums;

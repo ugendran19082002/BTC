@@ -737,7 +737,25 @@ export default function App() {
           */}
           {snap && (
             <section className="live-signals" aria-label="Signals">
-              <h2 className="live-chain-title">Signals</h2>
+              <div className="desk-section-header">
+                <div className="desk-section-title-wrap">
+                  <div className="desk-section-icon" style={{ background: 'rgba(0, 229, 255, 0.12)', color: '#00e5ff' }}>
+                    <Activity size={18} />
+                  </div>
+                  <div>
+                    <h2 className="desk-section-title">Signals &amp; Momentum Journal</h2>
+                    <span className="desk-section-subtitle">Real-Time State Transitions · Measured Outcomes · Timeframe Alignment</span>
+                  </div>
+                </div>
+                <div className="desk-section-badges">
+                  <span className="desk-badge-pill" style={{ background: 'rgba(0, 230, 118, 0.12)', color: '#00e676', border: '1px solid rgba(0, 230, 118, 0.3)' }}>
+                    ● LIVE VERIFIED
+                  </span>
+                  <span className="desk-badge-pill" style={{ background: 'rgba(255, 255, 255, 0.05)', color: '#94a3b8', border: '1px solid #1e293b' }}>
+                    5m Horizon
+                  </span>
+                </div>
+              </div>
               <ErrorBoundary where="Signals">
                 <LiveScreen
                   expiry={snap.expiry}
@@ -764,7 +782,25 @@ export default function App() {
             makes it the one the panels above are about.
           */}
           <section className="live-chain" aria-label="Option chain">
-            <h2 className="live-chain-title">Option chain</h2>
+            <div className="desk-section-header">
+              <div className="desk-section-title-wrap">
+                <div className="desk-section-icon" style={{ background: 'rgba(168, 85, 247, 0.12)', color: '#a855f7' }}>
+                  <BarChart3 size={18} />
+                </div>
+                <div>
+                  <h2 className="desk-section-title">Option Chain Board</h2>
+                  <span className="desk-section-subtitle">{snap?.expiry ? `${snap.expiry} Expiry` : 'Active Board'} · 27 Columns · Calls &amp; Puts Matrix</span>
+                </div>
+              </div>
+              <div className="desk-section-badges">
+                <span className="desk-badge-pill" style={{ background: 'rgba(0, 229, 255, 0.12)', color: '#00e5ff', border: '1px solid rgba(0, 229, 255, 0.3)' }}>
+                  ATM: {snap?.atm ? snap.atm.toLocaleString() : '—'}
+                </span>
+                <span className="desk-badge-pill" style={{ background: 'rgba(255, 255, 255, 0.05)', color: '#94a3b8', border: '1px solid #1e293b' }}>
+                  {data?.legs?.length ?? 0} Strikes
+                </span>
+              </div>
+            </div>
 
           {data && snap && (
             <>
