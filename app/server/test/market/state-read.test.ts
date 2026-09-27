@@ -35,16 +35,47 @@ test('the timeframe vote is counted off the reads the desk already did', () => {
   assert.equal(voteOf(null), null);
 });
 
-test('[critical] the level is the timeframe’s own swing, and the last twenty bars when there is none', () => {
+/*
+ * CHANGED 27 Sep 2026, deliberately — this test pinned the old contract.
+ *
+ * `levelFor` used to take the swing level from `readMarket`, falling back to the
+ * rolling range. That made the *live* level a different thing from the one the
+ * momentum study measured (`confirmedBreaks`, which used the rolling range), so
+ * the card printed a measured net-R beside a signal it did not describe. Worse,
+ * `readMarket` only carries `TREND_TIMEFRAMES` — no 30m, no 2h — so those two
+ * frames silently fell back while the other four used swings.
+ *
+ * The level is now chosen by an explicit mode, computed from the bars for every
+ * frame alike, and the mode travels into the measured table. See
+ * `domain/level-mode.ts`.
+ */
+test('[critical] the level comes from the mode, computed off the bars, not from readMarket', () => {
   const bars = [bar(86_800, 86_200), bar(86_700, 86_300), bar(86_600, 86_400)];
   const withSwing = read({
     timeframes: [{ tf: '15m', resistance: [86_950], support: [86_050] } as MarketRead['timeframes'][number]],
   });
-  assert.deepEqual(levelFor(withSwing, '15m', bars), { resistance: 86_950, support: 86_050 });
-  // No read for this timeframe: the plain high and low of the bars before the
-  // one being formed, which is what the engine would have used anyway.
+  // The read is no longer consulted: the same bars give the same level whether
+  // or not `readMarket` happened to hold a swing for this timeframe.
+  assert.deepEqual(levelFor(withSwing, '15m', bars), levelFor(read(), '15m', bars));
+  // Default mode is `rolling`: the high and low of the bars before the one
+  // being formed, which is exactly what the engine falls back to internally.
   assert.deepEqual(levelFor(read(), '15m', bars), { resistance: 86_800, support: 86_200 });
   assert.deepEqual(levelFor(null, '15m', []), { resistance: null, support: null });
+});
+
+test('[critical] 30m and 2h are judged the same way as every other frame', () => {
+  /*
+   * They could not be before: `readMarket().timeframes` holds only 5m, 15m, 1h,
+   * 4h and 1d, so 30m and 2h fell through to the rolling range while the others
+   * used swings — four frames judged one way and two the other, on one card.
+   */
+  const bars = [bar(86_800, 86_200), bar(86_700, 86_300), bar(86_600, 86_400)];
+  const m = read({
+    timeframes: [{ tf: '15m', resistance: [86_950], support: [86_050] } as MarketRead['timeframes'][number]],
+  });
+  for (const tf of ['5m', '15m', '30m', '1h', '2h', '4h'] as const) {
+    assert.deepEqual(levelFor(m, tf, bars), levelFor(m, '5m', bars), `${tf} was judged differently`);
+  }
 });
 
 test('open interest is taken from the window nearest the timeframe’s own bar', () => {

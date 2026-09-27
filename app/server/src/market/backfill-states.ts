@@ -1,10 +1,25 @@
 import { candles, type Candle } from './delta.js';
 import { atr } from './moves.js';
-import { levelsFrom, marketState } from '../domain/market-state.js';
+import { marketState } from '../domain/market-state.js';
+import { levelUnder, LIVE_LEVEL_MODE } from '../domain/level-mode.js';
 import { query, one } from '../db/pool.js';
 import { gradeStates, EVAL_WINDOW_MIN } from './state-history.js';
 import { STATE_TFS, STATE_TF_MINUTES, type StateTf } from './state-read.js';
 
+/**
+ * Replay the bars the journal missed and write the state changes it should have
+ * recorded.
+ *
+ * Runs on boot. Before 27 Sep 2026 the journal only advanced while somebody had
+ * the screen open, so every unwatched hour is a hole; this fills them from the
+ * venue's own candles, using the same rules the live read uses.
+ *
+ * Safe to run repeatedly: it starts after the newest row for each timeframe,
+ * skips a timeframe whose newest row is under ten minutes old, and repeats the
+ * `(event, stage)` dedupe. The database enforces that dedupe as well
+ * (`market-017-state-dedupe-at-db`), so a race between this and the live
+ * recorder cannot double-count a call.
+ */
 export async function backfillStates(hours = 24): Promise<{ tf: string; inserted: number }[]> {
   const nowMs = Date.now();
   const endSec = Math.floor(nowMs / 1000);
@@ -42,7 +57,16 @@ export async function backfillStates(hours = 24): Promise<{ tf: string; inserted
 
       const window = bars.slice(0, i + 1);
       const a = atr(window, 14);
-      const level = levelsFrom(window);
+      /*
+       * The same level definition the live read uses, not a hard-coded one.
+       *
+       * It called `levelsFrom` directly, which happens to equal the live mode
+       * today -- and would silently stop matching the moment `LIVE_LEVEL_MODE`
+       * changed, putting backfilled rows and live rows in one table under two
+       * different definitions. That is the 27 Sep bug in miniature; see
+       * `domain/level-mode.ts`.
+       */
+      const level = levelUnder(window, LIVE_LEVEL_MODE);
       const s = marketState({ bars: window, level, atr: a, tick: 0.5, tfLabel: tf });
 
       if (s.event === prevEvent && s.stage === prevStage) continue;

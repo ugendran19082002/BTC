@@ -107,73 +107,80 @@ implies otherwise is the bug.
       three times the recorder's own interval. A test asserts the two silences can
       never produce the same words.
 
-**🔴 OPEN — the live signal and its measured record judge different levels (found 27 Sep):**
+**✅ FIXED 27 Sep — the live signal and its measured record now judge the same level:**
 
-- [ ] **`readState` and `confirmedBreaks` do not use the same level, so the
-      net-R figure on screen does not describe the signal on screen.**
+- [x] **The level is one named, shared, measured thing.**
 
-      The live path (`market/state-read.ts`):
-      ```ts
-      level: levelFor(market, tf, bars)
-      // = readMarket's nearest fractal SWING high/low,
-      //   falling back to the 20-bar high/low only when there is no swing
+      It was two, and nothing said so:
       ```
-      The measured path (`domain/break-risk.ts`, which the momentum study replays):
-      ```ts
-      marketState({ bars: window, level: { resistance: null, support: null }, atr: a })
-      // level null => marketState falls back to its own levelsFrom():
-      //   the last 20 bars' high/low. The docstring says so outright.
+      live      market/state-read.ts   levelFor()  -> readMarket's fractal SWING high/low
+      measured  domain/break-risk.ts   level: null -> levelsFrom(): the 20-bar high/low
       ```
+      Measured at one instant on the same sixty 5-minute bars: swing resistance
+      **84,546**, rolling **84,503**. A swing high is a local peak with two bars
+      either side, so it sits further away — the live card needed a bigger move to
+      reach WATCH and a bigger one again to CONFIRM than anything the study had
+      graded. Replaying 17.5 hours through the rolling level gave **80 state
+      changes** including seven confirmed breaks; the live journal, on swings,
+      recorded **none**. Over the last 6 hours: rolling 10 changes, swing 4.
 
-      Measured live on 27 Sep at the same instant, on the same 60 bars:
+      Meanwhile the card printed *"23% hit · −0.612R net over 9,981"* beside a
+      swing-level call — a real number describing a different signal. Exactly the
+      rule the sibling project states: *the training grid and the signal grid must
+      match; a mismatch is silent.*
 
-      | | resistance |
-      |---|---|
-      | `readState` (swing) | **84,546** |
-      | `levelsFrom` (20-bar) | **84,503** |
+      **The fix, in `domain/level-mode.ts`:** one `LevelMode` (`rolling` |
+      `swing`), one `levelUnder()` used by the live read, the measured path and
+      the backfill alike, and one `LIVE_LEVEL_MODE`. The mode travels into the
+      measured table, `measuredFor(tf, policy, mode)` is keyed by it, and a mode
+      with no graded row returns **null** so the card says "never graded" instead
+      of borrowing the other one's number. `momentum-study.ts` grades **both**
+      modes. A test asserts `LIVE_LEVEL_MODE` has a measured record, so changing
+      it without re-running the study fails loudly in CI rather than silently on
+      screen.
 
-      A fractal swing high is a local peak with two bars either side, so it sits
-      **further away** than the recent rolling high. The live card therefore needs
-      a bigger move to reach WATCH, and a bigger one again to CONFIRM, than
-      anything the study ever graded.
+      `LIVE_LEVEL_MODE` is `rolling` because it is the mode with a record. A mode
+      becomes eligible to be the default by being measured, not by being argued
+      for.
+- [x] **30m and 2h are no longer judged differently from the rest.**
+      `levelFor` read swings from `readMarket().timeframes`, which holds only
+      `TREND_TIMEFRAMES` — `5m 15m 1h 4h 1d`. `STATE_TFS` includes 30m and 2h, so
+      those two silently fell back to the rolling range: four frames judged one
+      way and two the other, on one card, with nothing saying which. `levelUnder`
+      computes both modes from the bars for every frame. A test pins it.
+- [x] **The backfill uses the shared mode too.** `backfill-states.ts` called
+      `levelsFrom` directly — equal to the live mode today, and silently unequal
+      the moment the mode changed, which would have put backfilled and live rows
+      in one table under two definitions.
 
-      **What it explains.** Replaying the last 17.5 hours of 5m bars through the
-      *measured* level produced **80 state changes**, including 5
-      BREAKOUT_CONFIRMED and 2 BREAKDOWN_CONFIRMED. The live journal recorded
-      none of them, and `readState('5m')` reported RANGE throughout. Not a
-      recorder fault — a different question being asked. It is also why a rising
-      market shows BREAKOUT_WATCH repeatedly without ever confirming: the swing
-      high keeps the level out of reach.
+- [x] **Both modes are now graded, and the comparison is in (27 Sep).**
+      `entry 1.5 ATR : 3 ATR`, after fees, 2024-04 → 2026-09:
 
-      **Why it matters more than the missed rows.** `MeasuredRecord` prints
-      *"replay 23% hit · −0.612R net over 9,981"* beside the live call. Those
-      9,981 calls were found with the 20-bar level. The call on screen was found
-      with a swing level. The number is honest about its own sample and still
-      describes **a different signal**. This is precisely the failure the sibling
-      project states as a standing rule: *"The training grid and the signal grid
-      must match. A mismatch is silent — same column names, different scale,
-      nothing raises."*
+      | tf | rolling | n | swing | n | 2026 rolling / swing |
+      |---|---:|---:|---:|---:|---|
+      | 5m | −0.612R | 9,987 | −0.605R | 6,460 | −0.645 / −0.676 |
+      | 15m | −0.284R | 2,835 | −0.270R | 1,693 | −0.326 / −0.283 |
+      | 30m | −0.149R | 1,318 | **−0.084R** | 729 | −0.091 / **−0.053** |
+      | 1h | −0.124R | 644 | −0.120R | 379 | −0.114 / −0.150 |
 
-      **Recommended fix, and it is a decision for the owner because it changes
-      which signals fire on a live desk:**
-      1. *Cheapest and immediately consistent* — make the live path pass
-         `level: { resistance: null, support: null }` so both use `levelsFrom`.
-         The measured record then describes the live signal exactly. Expect
-         **many more** signals than today (80 per 17h on 5m, not 0).
-      2. *Better trading logic, unmeasured* — keep swing levels and re-run
-         `momentum-study.ts` with `levelFor`'s definition, then compare the two
-         net-R tables and keep the better. Until that run exists, the swing
-         variant has **no measured record at all** and the card should say so
-         rather than borrowing the 20-bar one.
+      **Swing is less bad at every timeframe, and neither pays.** The margin is
+      0.004–0.014R at 5m, 15m and 1h — noise, on a sample that halves. Only 30m
+      is a real gap (−0.149 → −0.084, and −0.091 → −0.053 out of sample).
 
-      Do **not** do neither. Either number on screen is then describing something
-      that is not on screen.
-- [ ] **`levelFor` is inconsistent across timeframes.** It reads swings from
-      `readMarket().timeframes`, which holds only `TREND_TIMEFRAMES` —
-      `5m 15m 1h 4h 1d`. `STATE_TFS` is `5m 15m 30m 1h 2h 4h`, so **30m and 2h
-      have no swing read** and silently fall back to the 20-bar level. Four
-      timeframes are judged one way and two the other, on the same card, with
-      nothing saying which.
+      **`rolling` stays live**, for three reasons that all point the same way:
+      the difference is inside the noise except at 30m; swing finds ~35% fewer
+      signals, which is the complaint that started this ("no signal after
+      7:37pm"); and rolling carries the larger sample, so its number is the more
+      trustworthy of two untrustworthy numbers.
+
+      Neither is a trading rule. Both are negative after fees at every timeframe,
+      which is the same answer the desk has had since the first momentum study,
+      now with the level ambiguity removed from it.
+- [ ] **30m is the only place worth another look.** It is the least-bad cell in
+      the table under both modes, and the only one where the two modes differ by
+      more than noise. If any of this is ever going to pay, that is where to
+      measure next — with a filter search of its own, chosen in 2024/25 and held
+      out on 2026, the way the existing study does it.
 
 **Open — the journal's correctness and timeliness:**
 - [ ] **Grading is not idempotent across restarts.** `gradeStates` runs on a timer

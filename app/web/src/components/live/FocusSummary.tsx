@@ -11,8 +11,8 @@ export function FocusSummary({ path, momentum }: { path: ExpiryPath | null; mome
   const momentumTone = momentum.side === 'UP' ? 'text-[var(--up)]' : momentum.side === 'DOWN' ? 'text-[var(--down)]' : 'text-foreground';
 
   return (
-    <section className="grid gap-2 md:grid-cols-2" aria-label="Decision focus">
-      <article className="min-w-0 rounded-lg border border-border bg-card p-3">
+    <section className="desk-focus-summary grid gap-2 md:grid-cols-2" aria-label="Decision focus" aria-live="polite">
+      <article className="desk-focus-summary__card min-w-0 rounded-lg border border-border bg-card p-3">
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="m-0 text-[10.5px] font-semibold uppercase tracking-[0.8px] text-muted-foreground">Expiry path</p>
@@ -40,7 +40,7 @@ export function FocusSummary({ path, momentum }: { path: ExpiryPath | null; mome
         </p>
       </article>
 
-      <article className="min-w-0 rounded-lg border border-border bg-card p-3">
+      <article className="desk-focus-summary__card min-w-0 rounded-lg border border-border bg-card p-3">
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="m-0 text-[10.5px] font-semibold uppercase tracking-[0.8px] text-muted-foreground">Big momentum</p>
@@ -51,7 +51,7 @@ export function FocusSummary({ path, momentum }: { path: ExpiryPath | null; mome
           </span>
         </div>
         {momentum.plan ? (
-          <dl className="mt-3 grid grid-cols-3 gap-2 text-[12px]">
+          <dl className="desk-focus-summary__plan mt-3 grid grid-cols-3 gap-2 text-[12px]">
             <div><dt className="text-muted-foreground">Entry</dt><dd className="m-0 mt-0.5 font-mono text-[15px]">{price(momentum.plan.entry)}</dd></div>
             <div><dt className="text-muted-foreground">Stop</dt><dd className="m-0 mt-0.5 font-mono text-[15px] text-[var(--down)]">{price(momentum.plan.stop)}</dd></div>
             <div><dt className="text-muted-foreground">Target</dt><dd className="m-0 mt-0.5 font-mono text-[15px] text-[var(--up)]">{price(momentum.plan.target)}</dd></div>

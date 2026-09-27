@@ -7,9 +7,9 @@ export const REACH_STEPS_ATR: readonly number[] = [0,0.25,0.5,0.75,1,1.25,1.5,1.
 export const BREAK_CARRY: readonly CarryStats[] = [
   {
     "tf": "5m",
-    "n": 9981,
+    "n": 9986,
     "from": "2024-04-01",
-    "to": "2026-09-26",
+    "to": "2026-09-27",
     "keptGoing": 0.448,
     "keptGoingByYear": {
       "2024": {
@@ -21,25 +21,25 @@ export const BREAK_CARRY: readonly CarryStats[] = [
         "keptGoing": 0.468
       },
       "2026": {
-        "n": 2931,
+        "n": 2936,
         "keptGoing": 0.444
       }
     },
     "withAtr": [
       1.648,
-      3.217,
+      3.216,
       5.423,
       7.437
     ],
     "againstAtr": [
       1.834,
       3.087,
-      4.598,
+      4.599,
       5.889
     ],
     "eitherAtr": [
       3.064,
-      6.545
+      6.546
     ],
     "baselineEitherAtr": [
       2.642,
@@ -49,32 +49,32 @@ export const BREAK_CARRY: readonly CarryStats[] = [
       1,
       0.888,
       0.812,
-      0.735,
+      0.736,
       0.662,
-      0.593,
+      0.594,
       0.534,
       0.476,
       0.423,
       0.379,
       0.341,
       0.304,
-      0.275,
+      0.274,
       0.245,
       0.223,
       0.201,
       0.18,
       0.162,
       0.148,
-      0.132,
+      0.131,
       0.121,
       0.108,
       0.096,
       0.087,
       0.081,
       0.074,
-      0.067,
+      0.066,
       0.061,
-      0.057,
+      0.056,
       0.053,
       0.049,
       0.045,
@@ -82,7 +82,7 @@ export const BREAK_CARRY: readonly CarryStats[] = [
     ],
     "reachAgainst": [
       1,
-      0.934,
+      0.935,
       0.873,
       0.804,
       0.731,
@@ -101,7 +101,7 @@ export const BREAK_CARRY: readonly CarryStats[] = [
       0.123,
       0.106,
       0.092,
-      0.081,
+      0.082,
       0.072,
       0.063,
       0.055,
@@ -110,7 +110,7 @@ export const BREAK_CARRY: readonly CarryStats[] = [
       0.037,
       0.033,
       0.028,
-      0.025,
+      0.026,
       0.022,
       0.02,
       0.018
@@ -118,9 +118,9 @@ export const BREAK_CARRY: readonly CarryStats[] = [
   },
   {
     "tf": "15m",
-    "n": 2834,
+    "n": 2835,
     "from": "2024-04-01",
-    "to": "2026-09-26",
+    "to": "2026-09-27",
     "keptGoing": 0.456,
     "keptGoingByYear": {
       "2024": {
@@ -132,12 +132,12 @@ export const BREAK_CARRY: readonly CarryStats[] = [
         "keptGoing": 0.467
       },
       "2026": {
-        "n": 841,
+        "n": 842,
         "keptGoing": 0.447
       }
     },
     "withAtr": [
-      1.017,
+      1.016,
       2.045,
       3.466,
       4.6
@@ -145,21 +145,21 @@ export const BREAK_CARRY: readonly CarryStats[] = [
     "againstAtr": [
       1.056,
       1.724,
-      2.724,
-      3.678
+      2.725,
+      3.679
     ],
     "eitherAtr": [
       1.803,
-      4.129
+      4.13
     ],
     "baselineEitherAtr": [
       1.396,
-      3.167
+      3.168
     ],
     "reachWith": [
       1,
       0.85,
-      0.719,
+      0.72,
       0.607,
       0.505,
       0.419,
@@ -204,16 +204,16 @@ export const BREAK_CARRY: readonly CarryStats[] = [
       0.152,
       0.123,
       0.098,
-      0.078,
+      0.079,
       0.065,
-      0.055,
-      0.047,
-      0.037,
+      0.056,
+      0.048,
+      0.038,
       0.031,
       0.026,
       0.023,
       0.018,
-      0.014,
+      0.015,
       0.012,
       0.011,
       0.008,
@@ -229,9 +229,9 @@ export const BREAK_CARRY: readonly CarryStats[] = [
   },
   {
     "tf": "30m",
-    "n": 1317,
+    "n": 1318,
     "from": "2024-04-01",
-    "to": "2026-09-26",
+    "to": "2026-09-27",
     "keptGoing": 0.461,
     "keptGoingByYear": {
       "2024": {
@@ -243,8 +243,8 @@ export const BREAK_CARRY: readonly CarryStats[] = [
         "keptGoing": 0.481
       },
       "2026": {
-        "n": 375,
-        "keptGoing": 0.461
+        "n": 376,
+        "keptGoing": 0.463
       }
     },
     "withAtr": [
@@ -271,7 +271,7 @@ export const BREAK_CARRY: readonly CarryStats[] = [
       1,
       0.825,
       0.663,
-      0.522,
+      0.523,
       0.406,
       0.317,
       0.247,
@@ -309,7 +309,7 @@ export const BREAK_CARRY: readonly CarryStats[] = [
       0.503,
       0.365,
       0.251,
-      0.185,
+      0.184,
       0.128,
       0.091,
       0.068,
@@ -342,7 +342,7 @@ export const BREAK_CARRY: readonly CarryStats[] = [
     "tf": "1h",
     "n": 644,
     "from": "2024-04-01",
-    "to": "2026-09-26",
+    "to": "2026-09-27",
     "keptGoing": 0.446,
     "keptGoingByYear": {
       "2024": {

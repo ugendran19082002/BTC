@@ -3416,6 +3416,46 @@ table.ov-mini.ov-levels { width: auto; min-width: 100%; }
   .bt-market-state__tfs .bt-chip { min-height: 32px; }
 }
 
+/* Desk phone pass: dynamic prices and labels must yield before the viewport does. */
+.desk-focus-summary { min-width: 0; }
+.desk-focus-summary__card { overflow: hidden; }
+.desk-focus-summary__card h2 { overflow-wrap: anywhere; }
+.desk-focus-summary__plan { min-width: 0; }
+.desk-focus-summary__plan dd { overflow-wrap: anywhere; }
+
+@media (max-width: 560px) {
+  .desk-focus-summary__card { padding: 10px; }
+  .desk-focus-summary__card h2 { font-size: 15px; }
+  .desk-focus-summary__plan { gap: 6px; }
+  .desk-focus-summary__plan dd { font-size: 14px; }
+
+  .bt-market-state__levels li {
+    grid-template-columns: 30px minmax(0, auto) minmax(0, 1fr);
+    gap: 6px;
+    padding-inline: 7px;
+  }
+  .bt-market-state__levels em { overflow-wrap: anywhere; }
+  .bt-market-state__hist-line { flex-wrap: wrap; row-gap: 3px; }
+  .bt-market-state__hist-what { flex: 1 1 110px; }
+  .bt-market-state__hist-target, .bt-market-state__hist-pts { margin-left: 0; }
+  .bt-market-state__hist-plan { gap: 3px 9px; }
+  .bt-market-state__pager { flex-wrap: wrap; }
+  .bt-market-state__pager span { flex: 1 1 100%; margin-right: 0; }
+  .bt-market-state__all-head { flex-wrap: wrap; }
+  .bt-market-state__all-head button { min-height: 32px; }
+}
+
+@media (max-width: 380px) {
+  .desk-focus-summary__plan { grid-template-columns: 1fr; }
+  .desk-focus-summary__plan > div { display: grid; grid-template-columns: 58px minmax(0, 1fr); align-items: baseline; gap: 6px; }
+  .desk-focus-summary__plan dd { margin-top: 0; }
+}
+
+@media (pointer: coarse) {
+  .ov-sig-tile, .ov-chip, .ov-tabs button, .ov-select, .bt-chip { min-height: 32px; }
+  .ov-sig-tile { justify-content: center; }
+}
+
 /* The strip under the chart (23 Sep 2026): patterns, readings, and the one
    sentence. Four and six of them, chosen by the server for the state price is
    in -- so the layout is fixed-width cards that wrap, not a scrolling list. */
