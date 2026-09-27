@@ -20,13 +20,24 @@ import type { Candle } from '../../src/market/delta.js';
 const bar = (time: number, o: number, h: number, l: number, c: number): Candle =>
   ({ time, open: o, high: h, low: l, close: c, volume: 10 });
 
-/** A clean peak in the middle: a fractal swing high two bars either side. */
+/**
+ * A fractal swing high that sits OUTSIDE the rolling 20-bar window.
+ *
+ * That placement is the whole point: a peak inside the last twenty bars is found
+ * by both definitions, so it cannot tell them apart. The one that matters is the
+ * older peak a chart reader still draws a line through while the rolling range
+ * has already forgotten it — which is exactly the case that made the live card
+ * and the study disagree.
+ */
 function withSwing(): Candle[] {
   const out: Candle[] = [];
   const shape = [
-    84_000, 84_050, 84_100, 84_150, 84_900, 84_200, 84_150, 84_100, 84_050, 84_000,
-    83_980, 83_990, 84_010, 84_020, 84_030, 84_040, 84_050, 84_060, 84_070, 84_080,
-    84_090, 84_100, 84_110, 84_120, 84_130,
+    84_000, 84_100, 84_900, 84_150, 84_050,          // the peak, at index 2
+    83_980, 83_990, 84_000, 84_010, 84_020,          // then twenty-five quieter bars,
+    84_030, 84_040, 84_050, 84_060, 84_070,          // so the rolling window no longer
+    84_080, 84_090, 84_100, 84_110, 84_120,          // reaches back to it
+    84_130, 84_140, 84_150, 84_160, 84_170,
+    84_180, 84_190, 84_200, 84_210, 84_220,
   ];
   shape.forEach((c, i) => out.push(bar(1_790_000_000 + i * 300, c - 10, c + 20, c - 20, c)));
   return out;
