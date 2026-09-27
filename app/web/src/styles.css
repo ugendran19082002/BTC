@@ -3589,3 +3589,126 @@ table.ov-mini.ov-levels { width: auto; min-width: 100%; }
   .ov-triggers-scored .ov-trigger-head { grid-template-columns: minmax(0, 1fr) 86px; }
   .ov-triggers-scored .ov-trigger-state { display: none; }
 }
+
+/* ------------------------------------------------------------------ signal desk
+ * The signal journal and its measured record, on one screen (27 Sep 2026).
+ *
+ * Dense on purpose: this is a page somebody scans for an anomaly, and whitespace
+ * between rows is whitespace between a row and the row that contradicts it. It
+ * still has to survive a phone, so every fixed grid below collapses and every
+ * wide table scrolls inside its own box rather than taking the page with it.
+ */
+.sd { display: grid; gap: 10px; min-width: 0; }
+
+.sd-head {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--panel);
+}
+.sd-title { margin: 0; font-size: 15px; font-weight: 650; }
+.sd-ranges { display: flex; gap: 4px; flex-wrap: wrap; }
+.sd-range {
+  border: 1px solid var(--line); background: none; color: var(--muted);
+  border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer;
+}
+.sd-range.on { background: var(--accent, #2563eb); border-color: transparent; color: #fff; }
+.sd-live { font-size: 11.5px; }
+.sd-hitrate { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.sd-hitbar { width: 140px; height: 4px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.sd-hitbar > span { display: block; height: 100%; background: var(--accent, #2563eb); }
+
+/* The measured strip. Six cells that wrap; the note is always last and widest. */
+.sd-strip {
+  display: grid; gap: 10px; align-items: stretch;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--panel);
+}
+.sd-stat { display: grid; gap: 2px; align-content: start; min-width: 0; }
+.sd-stat-label { font-size: 11px; color: var(--muted); }
+.sd-stat-value { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.sd-stat-value.up { color: var(--up); }
+.sd-stat-value.down { color: var(--down); }
+.sd-stat-sub { font-size: 11px; color: var(--muted); }
+.sd-note {
+  display: grid; gap: 3px; align-content: start; min-width: 0;
+  border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font-size: 11.5px;
+  grid-column: span 2;
+}
+.sd-note b { font-size: 12px; }
+.sd-note-dim { color: var(--muted); }
+.sd-note-warn { color: var(--warn); }
+
+/* The list beside the market read. One column under 1100px. */
+.sd-main { display: grid; gap: 10px; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }
+@media (max-width: 1100px) { .sd-main { grid-template-columns: minmax(0, 1fr); } }
+.sd-list-wrap { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 10px 12px; min-width: 0; }
+.sd-list-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.sd-list-head h3 { margin: 0; font-size: 13px; }
+.sd-count { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+.sd-empty { font-size: 12.5px; color: var(--muted); line-height: 1.5; margin: 8px 0; }
+.sd-list { list-style: none; margin: 0; padding: 0; display: grid; }
+.sd-side { display: grid; gap: 10px; align-content: start; min-width: 0; }
+.sd-foot { display: grid; gap: 10px; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+@media (max-width: 1100px) { .sd-foot { grid-template-columns: minmax(0, 1fr); } }
+
+.sd-pager { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding-top: 8px; font-size: 12px; color: var(--muted); }
+.sd-pager button {
+  border: 1px solid var(--line); background: none; color: inherit; border-radius: 6px;
+  width: 26px; height: 24px; cursor: pointer;
+}
+.sd-pager button:disabled { opacity: 0.4; cursor: default; }
+
+/* ---------------------------------------------------------------- one signal */
+.sig-row {
+  display: grid; gap: 10px; align-items: center; padding: 9px 2px;
+  border-top: 1px solid var(--line);
+  grid-template-columns: 58px 18px minmax(0, 1fr) minmax(120px, 210px) 120px 92px;
+}
+.sd-list > .sig-row:first-child { border-top: 0; }
+@media (max-width: 860px) {
+  /* On a phone the bar and the verdict move under the body rather than off the edge. */
+  .sig-row { grid-template-columns: 52px 16px minmax(0, 1fr) auto; row-gap: 6px; }
+  .sig-bar-cell { grid-column: 3 / -1; }
+  .sig-verdict { grid-column: 3; }
+  .sig-result { grid-column: 4; }
+}
+.sig-when { display: grid; font-size: 11px; line-height: 1.3; color: var(--muted); }
+.sig-when b { color: var(--text); font-weight: 600; }
+.sig-arrow { font-size: 13px; text-align: center; }
+.sig-arrow.up { color: var(--up); }
+.sig-arrow.down { color: var(--down); }
+.sig-arrow.flat { color: var(--muted); }
+.sig-body { min-width: 0; display: grid; gap: 1px; }
+.sig-head { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; font-size: 12.5px; }
+.sig-score { color: var(--muted); font-size: 11px; }
+.sig-tf { font-size: 10.5px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; }
+.sig-plan-line, .sig-move, .sig-hit { font-size: 11.5px; color: var(--muted); }
+.sig-hit { color: var(--warn); }
+.sig-levels { display: flex; gap: 10px; flex-wrap: wrap; font-size: 11px; color: var(--muted); }
+.sig-levels b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+.sig-bar-cell { min-width: 0; }
+.sig-bar { position: relative; height: 5px; border-radius: 999px; background: var(--line); }
+.sig-bar-fill { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: var(--up); }
+.sig-bar-fill.lost { background: var(--down); }
+.sig-bar-dot {
+  position: absolute; top: 50%; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--up); transform: translate(-50%, -50%);
+}
+.sig-bar-dot.lost { background: var(--down); }
+.sig-bar-ends { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); padding-top: 3px; font-variant-numeric: tabular-nums; }
+.sig-bar-none { color: var(--muted); font-size: 11px; }
+
+.sig-verdict { display: grid; gap: 2px; justify-items: start; }
+.sig-badge { font-size: 10px; font-weight: 650; letter-spacing: 0.4px; border-radius: 4px; padding: 2px 6px; }
+.sig-badge.waiting { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+.sig-badge.up { background: color-mix(in srgb, var(--up) 18%, transparent); color: var(--up); }
+.sig-badge.down { background: color-mix(in srgb, var(--down) 18%, transparent); color: var(--down); }
+.sig-badge.dim { background: var(--line); color: var(--muted); }
+.sig-to-trigger { font-size: 11px; color: var(--warn); }
+
+.sig-result { text-align: right; display: grid; gap: 1px; }
+.sig-result-label { font-size: 10.5px; color: var(--muted); }
+.sig-result b { font-variant-numeric: tabular-nums; font-size: 13px; }
+.sig-result b.up { color: var(--up); }
+.sig-result b.down { color: var(--down); }
+.sig-result b.flat { color: var(--muted); }

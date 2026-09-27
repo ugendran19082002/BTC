@@ -10,6 +10,10 @@ import { Ladder } from './Ladder';
 import { StrikeSafety } from './StrikeSafety';
 import { FocusSummary } from './FocusSummary';
 import { Card, Nothing } from './parts';
+import { SignalDesk } from './SignalDesk';
+import type { StateHistoryRow } from '@/api/desk';
+import type { Measured } from '@/types/live';
+import type { Checked } from './Liveness';
 
 /**
  * The Live screen, rebuilt top to bottom (27 Sep 2026).
@@ -66,6 +70,7 @@ export function LiveScreen({
   expiry,
   strikes = [],
   chart,
+  journal,
   history,
   chain,
   controls,
@@ -84,6 +89,18 @@ export function LiveScreen({
    * call is look at the picture.
    */
   chart?: ReactNode;
+  /** The journal's rows for the chosen range, and everything the header needs. */
+  journal?: {
+    rows: readonly StateHistoryRow[];
+    rate?: { correct: number; graded: number };
+    measured?: Measured | null;
+    checked?: Checked;
+    total?: number;
+    tf?: string;
+    range: number | null;
+    onRange: (days: number | null) => void;
+    tfControl?: ReactNode;
+  };
   /**
    * The signal-history list, rendered at the foot of this section.
    *
@@ -152,6 +169,32 @@ export function LiveScreen({
       {chart && <ErrorBoundary where="Price chart">{chart}</ErrorBoundary>}
 
       {/*
+        The journal and the market read as one screen (27 Sep 2026).
+        `SignalDesk` owns the layout; the cards are passed into it so each one
+        stays the single place its own figure is drawn.
+      */}
+      {journal ? (
+        <ErrorBoundary where="Signal desk">
+          <SignalDesk
+            rows={journal.rows}
+            rate={journal.rate}
+            measured={journal.measured}
+            checked={journal.checked}
+            total={journal.total}
+            tf={journal.tf}
+            spot={data.spot}
+            range={journal.range}
+            onRange={journal.onRange}
+            tfControl={journal.tfControl}
+            bigMove={<MomentumCard signal={data.momentum} id="live-momentum" />}
+            settlement={<ExpiryCone path={data.path} bias={data.ladder.bias} spotFrom={data.spotFrom} id="live-cone" />}
+            timeframes={<Ladder ladder={data.ladder} id="live-ladder" />}
+            strikes={<StrikeSafety strikes={data.strikes} id="live-strikes" />}
+          />
+        </ErrorBoundary>
+      ) : (
+      <>
+      {/*
         The two questions the desk actually asks, side by side on a wide
         screen and stacked on a phone — "is something happening now" and
         "where can it end up". Neither is subordinate to the other.
@@ -191,6 +234,8 @@ export function LiveScreen({
         claim readable.
       */}
       {history && <ErrorBoundary where="Signal history">{history}</ErrorBoundary>}
+      </>
+      )}
 
       {/*
         What the screen could not read. Absent data is stated, never drawn as

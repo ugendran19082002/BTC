@@ -33,7 +33,6 @@ import { TF_SECONDS, withLtp } from '@/lib/live-bar';
 import { pnlTone, signedInr, usdToInr } from '@/lib/format';
 import { PriceChart, CHART_TFS, type ChartTf } from '@/components/desk/PriceChart';
 import { MarketPanel } from '@/components/desk/MarketPanel';
-import { History as SignalHistory } from '@/components/desk/MarketState';
 import { markersFrom, mergeMarkers, patternMarkers } from '@/components/desk/chart-overlay';
 import { Select, SelectItem } from '@/components/ui/select';
 import { ColumnPicker } from '@/components/chain/ColumnPicker';
@@ -81,6 +80,8 @@ const Chart = memo(PriceChart);
 /** The timeframes the market-state card offers, which the chart also draws. */
 /** One empty list, so "no bars yet" is the same prop every render. */
 const NO_BARS: never[] = [];
+/** A stable empty list, so a journal that has not loaded does not remount the rows. */
+const NO_ROWS: never[] = [];
 
 type Tab = 'desk' | 'trade' | 'orders' | 'strategy' | 'pnl' | 'errors' | 'settings';
 
@@ -341,15 +342,22 @@ export default function App() {
    * minutes and carries its own timeframe badge, which says so.
    */
   const stateTf = chartTf === '1m' ? '5m' : chartTf;
+  /*
+   * Which range of the journal the Signals section shows: 0 = today since the
+   * desk's 05:30 open, 1/3/7 = rolling days, null = every day it still holds.
+   * Remembered, because the range somebody chose is part of how they read the
+   * page and losing it on every reload is its own small tax.
+   */
+  const [journalRange, setJournalRange] = usePersisted<number | null>('live:journal:range', 0);
   const { data: marketState } = usePoll(
     () => getMarketState(stateTf),
     30_000,
     { enabled: signedIn === true && tab === 'desk', deps: [stateTf] },
   );
   const { data: stateHistory } = usePoll(
-    () => getStateHistory(stateTf, 120),
+    () => getStateHistory(stateTf, 400, journalRange ?? undefined),
     120_000,
-    { enabled: signedIn === true && tab === 'desk', deps: [stateTf] },
+    { enabled: signedIn === true && tab === 'desk', deps: [stateTf, journalRange] },
   );
 
   /*
@@ -734,15 +742,16 @@ export default function App() {
                     ...(pair.P !== null ? [{ cp: 'P' as const, strike: pair.P }] : []),
                     ...(focus && focus.strike !== pair[focus.cp] ? [{ cp: focus.cp, strike: focus.strike }] : []),
                   ]}
-                  history={stateHistory?.rows?.length ? (
-                    <SignalHistory
-                      rows={stateHistory.rows}
-                      rate={stateHistory.hitRate}
-                      measured={stateHistory.measured}
-                      checked={stateHistory.checked}
-                      spot={liveSpot ?? undefined}
-                    />
-                  ) : undefined}
+                  journal={{
+                    rows: stateHistory?.rows ?? NO_ROWS,
+                    rate: stateHistory?.hitRate,
+                    measured: stateHistory?.measured,
+                    checked: stateHistory?.checked,
+                    total: stateHistory?.total,
+                    tf: stateTf,
+                    range: journalRange,
+                    onRange: setJournalRange,
+                  }}
                 />
               </ErrorBoundary>
             </section>
