@@ -756,16 +756,328 @@
 .desk-tag-bearish { background: rgba(255, 59, 87, 0.15); color: var(--desk-red); }
 .desk-tag-neutral { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; }
 
-/* Responsive adjustments */
-@media (max-width: 1200px) {
-  .desk-kpis-grid { grid-template-columns: repeat(3, 1fr); }
-  .desk-center-row { grid-template-columns: 1fr; }
-  .desk-stats-strip { grid-template-columns: repeat(4, 1fr); }
-  .desk-bottom-grid { grid-template-columns: 1fr 1fr; }
+/* ==========================================================================
+   RESPONSIVE DESIGN SYSTEM (MOBILE, TABLET, LAPTOP, DESKTOP)
+   ========================================================================== */
+
+/* 1. Large Laptops / Desktops (<= 1400px) */
+@media (max-width: 1400px) {
+  .desk-kpis-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .desk-stats-strip {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 
-@media (max-width: 768px) {
-  .desk-kpis-grid { grid-template-columns: 1fr; }
-  .desk-stats-strip { grid-template-columns: 1fr 1fr; }
-  .desk-bottom-grid { grid-template-columns: 1fr; }
+/* 2. Standard Laptops / Small Desktops (<= 1200px) */
+@media (max-width: 1200px) {
+  .desk-kpis-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .desk-center-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .desk-chart-panel {
+    grid-column: span 2;
+  }
+  .desk-bottom-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
+
+/* 3. Tablets / Portrait Monitors (<= 992px) */
+@media (max-width: 992px) {
+  .desk-root {
+    padding: 10px 12px;
+  }
+  .desk-header {
+    gap: 10px;
+  }
+  .desk-center-row {
+    grid-template-columns: 1fr;
+  }
+  .desk-chart-panel {
+    grid-column: span 1;
+    min-height: 420px;
+  }
+  .desk-stats-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .desk-sig-split {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* 4. Small Tablets & Large Phones (<= 768px) */
+@media (max-width: 768px) {
+  .desk-root {
+    padding: 8px 8px;
+    overflow-x: hidden;
+  }
+
+  .desk-header {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 8px 10px;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .desk-header-left {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    gap: 8px;
+  }
+
+  .desk-logo-box {
+    gap: 8px;
+  }
+
+  .desk-btc-icon {
+    width: 28px;
+    height: 28px;
+    font-size: 16px;
+  }
+
+  .desk-title-group h1 {
+    font-size: 15px;
+  }
+
+  .desk-title-group span {
+    font-size: 10px;
+  }
+
+  .desk-live-badge {
+    padding: 2px 8px;
+    font-size: 10px;
+  }
+
+  .desk-tf-selector {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding: 2px;
+    justify-content: space-between;
+  }
+
+  .desk-tf-selector::-webkit-scrollbar {
+    display: none;
+  }
+
+  .desk-tf-btn {
+    flex: 1 0 auto;
+    text-align: center;
+    padding: 4px 6px;
+    font-size: 11px;
+  }
+
+  .desk-expiry-pill {
+    width: 100%;
+    justify-content: space-between;
+    font-size: 11px;
+    padding: 4px 8px;
+    box-sizing: border-box;
+  }
+
+  .desk-header-right {
+    width: 100%;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .desk-spot-chip {
+    flex: 1 1 auto;
+    min-width: 120px;
+    padding: 4px 8px;
+  }
+
+  .desk-spot-chip .desk-spot-val {
+    font-size: 14px;
+  }
+
+  .desk-btn-tool {
+    padding: 6px 10px;
+    font-size: 11px;
+  }
+
+  /* 5 KPI Cards on Mobile */
+  .desk-kpis-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .desk-kpi-card {
+    padding: 10px 10px;
+    gap: 8px;
+  }
+
+  .desk-kpi-icon-wrap {
+    width: 30px;
+    height: 30px;
+  }
+
+  .desk-kpi-val {
+    font-size: 14px;
+  }
+
+  .desk-kpi-sub {
+    font-size: 10px;
+  }
+
+  /* Chart on Mobile */
+  .desk-chart-panel {
+    padding: 8px;
+    min-height: 360px;
+  }
+
+  .desk-chart-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  .desk-chart-ohlc {
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    font-size: 10px;
+    gap: 5px;
+    padding-bottom: 2px;
+  }
+
+  .desk-chart-ohlc::-webkit-scrollbar {
+    display: none;
+  }
+
+  .desk-chart-tools {
+    justify-content: flex-end;
+    gap: 2px;
+  }
+
+  .desk-chart-tool-btn {
+    padding: 3px 5px;
+  }
+
+  .desk-chart-container {
+    min-height: 280px;
+  }
+
+  .desk-zone-overlay-res,
+  .desk-zone-overlay-sup {
+    right: 50px;
+  }
+
+  .desk-zone-label-res,
+  .desk-zone-label-sup {
+    font-size: 9px;
+    padding: 1px 4px;
+  }
+
+  /* Stats Strip on Mobile */
+  .desk-stats-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .desk-stat-card {
+    padding: 8px 10px;
+  }
+
+  .desk-stat-main {
+    font-size: 13.5px;
+  }
+
+  /* Bottom Grid on Mobile */
+  .desk-bottom-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .desk-grid-card {
+    padding: 10px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .desk-breakout-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .desk-breakout-tile {
+    padding: 6px 8px;
+  }
+}
+
+/* 5. Mobile Phones (<= 480px) */
+@media (max-width: 480px) {
+  .desk-root {
+    padding: 6px 4px;
+  }
+
+  .desk-header {
+    padding: 6px 8px;
+  }
+
+  .desk-btn-tool span {
+    display: none;
+  }
+
+  .desk-btn-tool {
+    padding: 6px 8px;
+  }
+
+  .desk-kpis-grid {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .desk-sig-split {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .desk-sig-levels {
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: 6px;
+    padding: 6px 8px;
+  }
+
+  .desk-breakout-strip {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .desk-stats-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .desk-stat-card {
+    padding: 6px 8px;
+  }
+
+  .desk-stat-lbl {
+    font-size: 9.5px;
+  }
+
+  .desk-stat-main {
+    font-size: 13px;
+  }
+
+  .desk-stat-sub {
+    font-size: 9px;
+  }
+}
+
