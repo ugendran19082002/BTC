@@ -70,6 +70,7 @@ export function LiveScreen({
   journal,
   chain,
   controls,
+  onlySignals = false,
 }: {
   /** The contract the band is drawn to. Absent means the nearest live one. */
   expiry?: string;
@@ -107,6 +108,8 @@ export function LiveScreen({
   chain?: ReactNode;
   /** Mode and refresh controls, drawn in the header. */
   controls?: ReactNode;
+  /** When true, only renders the Signal history section without duplicate KPIs. */
+  onlySignals?: boolean;
 }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -137,6 +140,45 @@ export function LiveScreen({
       <Card title="Live">
         <Nothing>{loading ? 'Reading the market…' : 'No data.'}</Nothing>
       </Card>
+    );
+  }
+
+  if (onlySignals) {
+    return (
+      <div className="flex min-w-0 flex-col gap-3">
+        <ErrorBoundary where="Signal desk">
+          <SignalDesk
+            rows={journal.rows}
+            rate={journal.rate}
+            measured={journal.measured}
+            checked={journal.checked}
+            total={journal.total}
+            tf={journal.tf}
+            spot={data.spot}
+            range={journal.range}
+            onRange={journal.onRange}
+            tfControl={journal.tfControl}
+            bigMove={(
+              <MomentumCard
+                signal={data.momentum}
+                id="live-momentum"
+                readout={(
+                  <VerdictBar
+                    ladder={data.ladder}
+                    readiness={data.readiness}
+                    hoursLeft={data.hoursToExpiry}
+                    asOf={data.asOf}
+                    now={now}
+                    stability={data.stability}
+                    penalties={data.penalties}
+                  />
+                )}
+              />
+            )}
+            timeframes={<Ladder ladder={data.ladder} id="live-ladder" />}
+          />
+        </ErrorBoundary>
+      </div>
     );
   }
 

@@ -607,7 +607,7 @@ export default function App() {
 
       <Suspense fallback={<Loading />}>
       {tab === 'desk' ? (
-        <>
+        <div className="desk-shell">
           {/*
             The Live screen: the KPI strip, three columns (market read · chart
             and the selected strike · the decision), and under them the full
@@ -631,6 +631,10 @@ export default function App() {
                 spark={sparkCloses}
                 tick={liveSpot}
                 error={err}
+                bars={liveBars}
+                marketState={marketState}
+                chartTf={chartTf}
+                onTf={setChartTf}
                 controls={
                   <>
                     <Select ariaLabel="when" value={live ? 'live' : 'past'} onValueChange={(v) => setLive(v === 'live')}>
@@ -737,6 +741,7 @@ export default function App() {
               <ErrorBoundary where="Signals">
                 <LiveScreen
                   expiry={snap.expiry}
+                  onlySignals={true}
                   journal={{
                     rows: stateHistory?.rows ?? NO_ROWS,
                     rate: stateHistory?.hitRate,
@@ -838,7 +843,7 @@ export default function App() {
             </>
           )}
           </section>
-        </>
+        </div>
       ) : tab === 'trade' ? (
         <div className="flex flex-col gap-3">
           <ErrorBoundary where="Account">

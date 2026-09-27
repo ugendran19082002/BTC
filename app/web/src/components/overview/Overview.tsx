@@ -1,27 +1,29 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { usePersisted } from '@/hooks/usePersisted';
-import type { ChainResponse, ExpiryOption, Leg } from '@/types/desk';
+import type { Candle, ChainResponse, ExpiryOption, Leg } from '@/types/desk';
 import type { TradeStatus } from '@/types/trade';
-import { getBreakRisk, getMovement, getPerp, getTerm } from '@/api/desk';
+import { getBreakRisk, getMovement, getPerp, getTerm, type MarketStateResponse } from '@/api/desk';
+import { getLive } from '@/api/live';
+import type { LiveResponse } from '@/types/live';
+import { DeskDashboard } from '@/components/desk-screen/DeskDashboard';
 import { usePoll } from '@/hooks/usePoll';
 import type { ChartTf } from '@/components/desk/PriceChart';
 import {
-  assessSides, bestLeg, expectedMove, expiryDirection, ivRv, mtfConsensus, optionBias, windowMinutes, sideGates, sideSelector, sideStatusOf, skew,
+  assessSides, bestLeg, expectedMove, ivRv, mtfConsensus, optionBias, windowMinutes, sideGates, sideSelector, sideStatusOf, skew,
  type SideAssessment, type SideChoice, type WindowChoice,
 } from '@/lib/overview';
 import { DEFAULT_CONFIG, thresholds } from '@/lib/screen-config';
 import { PanelFold } from './parts';
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
 import {
-  FlowPanel, KpiStrip, OptionBiasPanel, PriceChangePanel, VolatilityPanel,
+  FlowPanel, VolatilityPanel,
 } from './MarketPanels';
 import { findLeg, type Selected } from './DecisionPanels';
 import { DecisionCards } from './DecisionCards';
-import { ScreenBar } from './ScreenBar';
-import { SIGNAL_ANCHORS, SignalStrip } from './SignalStrip';
+import { SIGNAL_ANCHORS } from './SignalStrip';
 import { BreakRiskCard, type WatchedStrike } from './BreakRiskCard';
 import { parseOption } from '@/lib/break-risk';
-import { ChangesPanel, EarlyWarningPanel, ExpiryDirectionPanel, MovementPanel, useChanges } from './TraderPanels';
+import { ChangesPanel, EarlyWarningPanel, MovementPanel, useChanges } from './TraderPanels';
 
 /**
  * The Live screen: the three reference designs (docs/image1-3.png) and the
@@ -53,6 +55,7 @@ import { ChangesPanel, EarlyWarningPanel, ExpiryDirectionPanel, MovementPanel, u
 export function Overview({
   data, trade, expiries, onExpiry, onSell, contracts: deskContracts, leverage = 200, chart, chartTf = '15m',
   selected: selectedProp, onSelect, pair: pairProp, spark, tick, controls, error,
+  bars = [], marketState = null, onTf,
 }: {
   data: ChainResponse;
   trade: TradeStatus | null;
@@ -63,15 +66,6 @@ export function Overview({
   /** The trade size the desk is set to, in contracts, and the ticket's leverage (for the margin estimates). */
   contracts: number;
   leverage?: number;
-  /**
-   * The chart and its analysis.
-   *
-   * Given a function, it is handed the two panels that ask the same question
-   * from the options board -- the expiry read and the CE/PE bias -- so the
-   * caller can put them on the analysis card as tabs instead of leaving them
-   * as two more cards in the right-hand column. They are built here, where
-   * their inputs are, and their own logic is untouched by the move.
-   */
   chart?: ReactNode | ((slots: { expiry: ReactNode; options: ReactNode }) => ReactNode);
   /** The chart's timeframe: the price-action panel follows it. */
   chartTf?: ChartTf;
@@ -82,15 +76,14 @@ export function Overview({
   pair?: { C: number | null; P: number | null } | null;
   /** Recent closes for the spot KPI's sparkline. */
   spark?: readonly number[];
-  /**
-   * The last traded price, polled every second by the caller. Preferred over
-   * every other spot on the screen; absent falls back to the chain snapshot.
-   */
   tick?: number | null;
   /** The screen's mode and refresh controls, drawn in the screen bar. */
   controls?: ReactNode;
   /** The last load's error, if the chain on screen is older than it should be. */
   error?: string | null;
+  bars?: readonly Candle[];
+  marketState?: MarketStateResponse | null;
+  onTf?: (tf: ChartTf) => void;
 }) {
   // A clock for the data-age gate and the status bar, ticking once a second.
   const [now, setNow] = useState(() => Date.now());
@@ -98,6 +91,12 @@ export function Overview({
     const id = setInterval(() => setNow(Date.now()), 1_000);
     return () => clearInterval(id);
   }, []);
+
+  const { data: liveData } = usePoll<LiveResponse>(
+    () => getLive({ expiry: data.snapshot.expiry }),
+    5_000,
+    { deps: [data.snapshot.expiry] },
+  );
 
   // The desk's configuration: fixed, and shown by the panels that use it. See lib/screen-config.ts.
   const config = DEFAULT_CONFIG;
@@ -194,9 +193,6 @@ export function Overview({
     const allowed = config.sideMode === 'AUTO' || config.sideMode === 'BOTH_ALLOWED' || (config.sideMode === 'CE_ONLY' && s.side === 'CE') || (config.sideMode === 'PE_ONLY' && s.side === 'PE');
     return { ...s, gates, status: allowed ? sideStatusOf(gates, t.softFailsAllowed) : 'NOT PREFERRED', disabledBy: allowed ? null : `Disabled by side mode ${config.sideMode.replace('_', ' ')}` };
   }), [data, iv, emSettle, contracts, leverage, tradeLimits, t, config.sideMode, pick, mtf]);
-  // Where this expiry settles against the price now, from the state of the market.
-  const direction = useMemo(() => expiryDirection({ spot, atmIv: snap.atmIv, hoursToExpiry: snap.hoursToExpiry, outlook: data.outlook, mtf, movement: movement?.rows ?? null, market: data.market, structure: data.structure, iv, fundingRate: perp?.ticker?.fundingRate ?? null }), [spot, snap.atmIv, snap.hoursToExpiry, data.outlook, mtf, movement, data.market, data.structure, iv, perp?.ticker?.fundingRate]);
-  const hoursLeftText = (() => { const ms = Math.max(0, snap.expiryTs * 1000 - now); return ms === 0 ? 'settled' : `${Math.floor(ms / 3_600_000)}h ${String(Math.floor((ms % 3_600_000) / 60_000)).padStart(2, '0')}m`; })();
   const bias = useMemo(() => optionBias({ legs: data.legs, atm: snap.atm, oi: perp?.oi ?? null, flow: perp?.optionFlow ?? null, sides }), [data.legs, snap.atm, perp, sides]);
   const choice: SideChoice = useMemo(() => {
     const auto = sideSelector(data.market?.regime ?? null, data.outlook, sides[0]!.status, sides[1]!.status, mtf);
@@ -205,9 +201,8 @@ export function Overview({
     return auto;
   }, [data, sides, config.sideMode, mtf]);
 
-  // Collapse all / expand all, from the bar: a stamp each press, and what it asked for.
-  const [fold, setFold] = useState({ stamp: 0, collapsed: false });
-  const foldAll = useCallback((collapsed: boolean) => setFold((f) => ({ stamp: f.stamp + 1, collapsed })), []);
+  // Collapse all / expand all: a stamp each press, and what it asked for.
+  const [fold] = useState({ stamp: 0, collapsed: false });
 
 
   // The default selection follows the desk's side; the operator's click overrides it.
@@ -267,53 +262,83 @@ export function Overview({
   return (
     <PanelFold.Provider value={fold}>
     <div className="ov">
-      <ScreenBar data={data} now={now} freshnessSec={config.freshnessSec} expiries={expiries} onExpiry={onExpiry} controls={controls} error={error} onFoldAll={foldAll} />
-      <ErrorBoundary where="Signals"><SignalStrip mtf={mtf} direction={direction} choice={choice} hoursLeftText={hoursLeftText} risk={breakRisk} now={now} /></ErrorBoundary>
-      {snap.live && <ErrorBoundary where="Big move risk"><div className="ov-anchor" id={SIGNAL_ANCHORS.momentum}><BreakRiskCard risk={breakRisk} now={now} strikes={watched} /></div></ErrorBoundary>}
-      <ErrorBoundary where="Overview KPIs"><KpiStrip data={data} spot={spot} iv={iv} perp={perp} spark={spark} now={now} /></ErrorBoundary>
+      {/* 1. Complete Desk Dashboard matching docs/image.png */}
+      <DeskDashboard
+        data={data}
+        liveData={liveData}
+        marketState={marketState}
+        perp={perp}
+        breakRisk={breakRisk}
+        bars={bars}
+        spot={spot}
+        tf={chartTf}
+        onTf={onTf ?? (() => {})}
+        expiryLabel={snap.expiry ? `${snap.expiry} 17:30 IST` : undefined}
+        hoursToExpiry={snap.hoursToExpiry}
+        optionBias={bias}
+        error={error ?? undefined}
+        controls={controls}
+      />
 
-      {/*
-        The chart and its reading run the width of the desk (23 Sep 2026).
-        Squeezed into the middle of three columns it was about six hundred
-        pixels wide -- a chart that narrow shows a candle every two pixels and
-        a plan in a column of five-digit numbers three abreast. It is the panel
-        the screen is opened for, so it gets the room; the three columns of
-        supporting panels start under it.
+      {/* 
+        2. Protected Core Trading Panels (DO NOT TOUCH):
+           - Big move catch (BreakRiskCard)
+           - Flow · BTC perpetual & options (FlowPanel)
+           - Strategy decision (DecisionCards)
       */}
-      {chart ? (
-        <div className="ov-chart-wide ov-anchor" id={SIGNAL_ANCHORS.expiry}>
-          {typeof chart === 'function'
-            ? chart({
-              expiry: <ErrorBoundary where="Expiry direction"><ExpiryDirectionPanel d={direction} hoursLeftText={hoursLeftText} /></ErrorBoundary>,
-              options: <ErrorBoundary where="Option bias"><OptionBiasPanel bias={bias} /></ErrorBoundary>,
-            })
-            : chart}
-        </div>
-      ) : null}
-
-      <div className="ov-main">
-        <div className="ov-col">
-          <ErrorBoundary where="Price change"><PriceChangePanel price={movement?.price ?? null} spot={spot} /></ErrorBoundary>
-          <ErrorBoundary where="Early warning"><EarlyWarningPanel data={data} perp={perp} changes={changes?.rows ?? null} /></ErrorBoundary>
-          <ErrorBoundary where="Volatility"><VolatilityPanel data={data} iv={iv} skewRank={term?.skew ?? null} /></ErrorBoundary>
+      <section className="ov-protected-section" aria-label="Core Trading Panels" style={{ marginTop: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: '#0a0e17', border: '1px solid #162032', borderRadius: 10, marginBottom: 12 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: '#f1f5f9', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>⚡ Big Move Catch &amp; Strategy Decision</span>
+            <span style={{ fontSize: 10, background: 'rgba(0,229,255,0.12)', color: '#00e5ff', padding: '2px 8px', borderRadius: 4, fontWeight: 700 }}>
+              Active Execution
+            </span>
+          </span>
+          <span style={{ fontSize: 11, color: '#94a3b8' }}>
+            Flow · Decision Gates · Strike Inspections
+          </span>
         </div>
 
-        <div className="ov-col">
-          <ErrorBoundary where="Flow"><FlowPanel perp={perp} market={data.market} legs={data.legs} atm={snap.atm} window={flowWindow} onWindow={setFlowWindow} /></ErrorBoundary>
-          <ErrorBoundary where="What changed"><ChangesPanel strikes={changedPair} /></ErrorBoundary>
-        </div>
-
-        <div className="ov-col ov-right">
-          <div className="ov-anchor" id={SIGNAL_ANCHORS.trend} />
-          <ErrorBoundary where="Multi-timeframe"><MovementPanel data={data} em={emSettle} activeMin={config.horizonMin} mtf={mtf} movement={movement?.rows ?? null} /></ErrorBoundary>
-          <div className="ov-anchor" id={SIGNAL_ANCHORS.decision} />
-          <ErrorBoundary where="Strategy decision">
-            <DecisionCards data={data} sides={sides} choice={choice} iv={iv} em={emSettle} mtf={mtf} contracts={contracts} leverage={leverage}
-              onSelect={(cp, strike) => setPicked({ cp, strike })} oi={perp?.oi ?? null} selectedCp={leg?.cp ?? null} pair={pair} />
+        {snap.live && (
+          <ErrorBoundary where="Big move risk">
+            <div className="ov-anchor" id={SIGNAL_ANCHORS.momentum}>
+              <BreakRiskCard risk={breakRisk} now={now} strikes={watched} />
+            </div>
           </ErrorBoundary>
-        </div>
-      </div>
+        )}
 
+        <div className="ov-main" style={{ marginTop: 12 }}>
+          <div className="ov-col">
+            <ErrorBoundary where="Early warning">
+              <EarlyWarningPanel data={data} perp={perp} changes={changes?.rows ?? null} />
+            </ErrorBoundary>
+            <ErrorBoundary where="Volatility">
+              <VolatilityPanel data={data} iv={iv} skewRank={term?.skew ?? null} />
+            </ErrorBoundary>
+          </div>
+
+          <div className="ov-col">
+            <ErrorBoundary where="Flow">
+              <FlowPanel perp={perp} market={data.market} legs={data.legs} atm={snap.atm} window={flowWindow} onWindow={setFlowWindow} />
+            </ErrorBoundary>
+            <ErrorBoundary where="What changed">
+              <ChangesPanel strikes={changedPair} />
+            </ErrorBoundary>
+          </div>
+
+          <div className="ov-col ov-right">
+            <div className="ov-anchor" id={SIGNAL_ANCHORS.trend} />
+            <ErrorBoundary where="Multi-timeframe">
+              <MovementPanel data={data} em={emSettle} activeMin={config.horizonMin} mtf={mtf} movement={movement?.rows ?? null} />
+            </ErrorBoundary>
+            <div className="ov-anchor" id={SIGNAL_ANCHORS.decision} />
+            <ErrorBoundary where="Strategy decision">
+              <DecisionCards data={data} sides={sides} choice={choice} iv={iv} em={emSettle} mtf={mtf} contracts={contracts} leverage={leverage}
+                onSelect={(cp, strike) => setPicked({ cp, strike })} oi={perp?.oi ?? null} selectedCp={leg?.cp ?? null} pair={pair} />
+            </ErrorBoundary>
+          </div>
+        </div>
+      </section>
     </div>
     </PanelFold.Provider>
   );
