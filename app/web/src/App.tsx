@@ -33,6 +33,7 @@ import { TF_SECONDS, withLtp } from '@/lib/live-bar';
 import { pnlTone, signedInr, usdToInr } from '@/lib/format';
 import { PriceChart, CHART_TFS, type ChartTf } from '@/components/desk/PriceChart';
 import { MarketPanel } from '@/components/desk/MarketPanel';
+import { History as SignalHistory } from '@/components/desk/MarketState';
 import { markersFrom, mergeMarkers, patternMarkers } from '@/components/desk/chart-overlay';
 import { Select, SelectItem } from '@/components/ui/select';
 import { ColumnPicker } from '@/components/chain/ColumnPicker';
@@ -612,6 +613,7 @@ export default function App() {
                 onSelect={setFocus}
                 pair={pair}
                 spark={sparkCloses}
+                tick={liveSpot}
                 error={err}
                 controls={
                   <>
@@ -672,10 +674,12 @@ export default function App() {
                         />
                       }
                       data={marketState ?? null}
-                      history={stateHistory?.rows}
-                      hitRate={stateHistory?.hitRate}
-                      measured={stateHistory?.measured}
-                      checked={stateHistory?.checked}
+                      /*
+                        The history list moved to the Signals section below
+                        (27 Sep 2026): the live read and the record of past reads
+                        answer one question and now sit together. This card keeps
+                        the state, the plan and the checks.
+                      */
                       tf={stateTf}
                       spot={snap.spot}
                       ready={live}
@@ -722,6 +726,15 @@ export default function App() {
                     ...(pair.P !== null ? [{ cp: 'P' as const, strike: pair.P }] : []),
                     ...(focus && focus.strike !== pair[focus.cp] ? [{ cp: focus.cp, strike: focus.strike }] : []),
                   ]}
+                  history={stateHistory?.rows?.length ? (
+                    <SignalHistory
+                      rows={stateHistory.rows}
+                      rate={stateHistory.hitRate}
+                      measured={stateHistory.measured}
+                      checked={stateHistory.checked}
+                      spot={liveSpot ?? undefined}
+                    />
+                  ) : undefined}
                 />
               </ErrorBoundary>
             </section>

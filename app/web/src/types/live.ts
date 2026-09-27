@@ -127,12 +127,28 @@ export type StrikeSafety = {
 
 export type LiveResponse = {
   asOf: number;
+  /** The last traded price — what every mark on the screen is measured from. */
   spot: number;
+  /** Where `spot` came from. `candle-close` means the tick was unavailable and the number may be minutes old. */
+  spotFrom: 'ticker' | 'candle-close';
+  spotAgeMs: number | null;
   ladder: Ladder;
   readiness: Readiness;
   path: ExpiryPath | null;
   momentum: MomentumSignal;
   weights: { tier: Tier; weight: number }[];
+  /** Whether the read has been holding its direction — New.md §32. */
+  stability: {
+    verdict: 'STABLE' | 'CHOPPY' | 'UNSTABLE' | 'TOO_FEW';
+    n: number;
+    flips: number;
+    persistence: number;
+    leaning: 'UP' | 'DOWN' | null;
+    ageMs: number | null;
+    text: string;
+  } | null;
+  /** Reasons to read the confidence down — New.md §33. Not blockers. */
+  penalties: { reason: string; detail: string }[];
   missing: string[];
   expiry: string;
   expiryTs: number;

@@ -52,7 +52,7 @@ import { ChangesPanel, EarlyWarningPanel, ExpiryDirectionPanel, MovementPanel, u
  */
 export function Overview({
   data, trade, expiries, onExpiry, onSell, contracts: deskContracts, leverage = 200, chart, chartTf = '15m',
-  selected: selectedProp, onSelect, pair: pairProp, spark, controls, error,
+  selected: selectedProp, onSelect, pair: pairProp, spark, tick, controls, error,
 }: {
   data: ChainResponse;
   trade: TradeStatus | null;
@@ -82,6 +82,11 @@ export function Overview({
   pair?: { C: number | null; P: number | null } | null;
   /** Recent closes for the spot KPI's sparkline. */
   spark?: readonly number[];
+  /**
+   * The last traded price, polled every second by the caller. Preferred over
+   * every other spot on the screen; absent falls back to the chain snapshot.
+   */
+  tick?: number | null;
   /** The screen's mode and refresh controls, drawn in the screen bar. */
   controls?: ReactNode;
   /** The last load's error, if the chain on screen is older than it should be. */
@@ -117,7 +122,21 @@ export function Overview({
   const iv = ivRv(data.structure.atmIv, data.market?.realisedVol ?? null);
   // To settlement, by IV: what every strike's distance and tail is measured in.
   const emSettle = useMemo(() => expectedMove(snap), [snap]);
-  const spot = data.market?.spot ?? snap.spot;
+  /*
+   * The price every figure on this screen is measured from — newest source first
+   * (27 Sep 2026).
+   *
+   * It read `data.market?.spot ?? snap.spot`, which *preferred* the 5-minute
+   * candle close over the ticker. Measured live that ran 36.8 points behind, so
+   * the KPI strip said 84,358 while the header said 84,403.6 — two prices on one
+   * screen, and the stale one feeding the arithmetic.
+   *
+   * Order now: the 1-second tick the header already polls, then the chain
+   * snapshot's own `spot_price` (the option tickers, ~8s), then the 5-minute
+   * close as a last resort. Every step down is a step staler, so the fallbacks
+   * run in that order and never the other way.
+   */
+  const spot = tick ?? snap.spot ?? data.market?.spot ?? 0;
   const mtf = useMemo(() => mtfConsensus(data.market, data.outlook), [data.market, data.outlook]);
 
   // The perpetual (funding, book, the hour's flow, OI acceleration) every five

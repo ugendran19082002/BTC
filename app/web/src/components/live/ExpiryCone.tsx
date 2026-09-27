@@ -27,7 +27,17 @@ const WATCH_WORD: Record<ExpiryPath['watch'], string> = {
   BOTH: 'No side from the ladder — watch both edges',
 };
 
-export function ExpiryCone({ path, bias, id }: { path: ExpiryPath | null; bias: Way; id?: string }) {
+export function ExpiryCone({ path, bias, spotFrom, id }: {
+  path: ExpiryPath | null;
+  bias: Way;
+  /**
+   * Where the centre price came from. A band centred on a five-minute-old close
+   * is a band in the wrong place, and until 27 Sep 2026 that is what this was --
+   * 36.8 points out, on a screen showing the tick two cards above.
+   */
+  spotFrom?: 'ticker' | 'candle-close';
+  id?: string;
+}) {
   if (!path || !path.rows.length) {
     return (
       <Card id={id} title="Where it can be at settlement">
@@ -46,7 +56,17 @@ export function ExpiryCone({ path, bias, id }: { path: ExpiryPath | null; bias: 
       right={<span className="font-mono">{path.hoursToExpiry.toFixed(1)}h left</span>}
     >
       <div className="mb-2 flex items-baseline justify-between gap-3">
-        <span className="font-mono text-[15px]">{usd0(path.spot)}</span>
+        <span className="font-mono text-[15px]">
+          {usd0(path.spot)}
+          {spotFrom === 'candle-close' && (
+            <span
+              className="ml-1.5 align-middle text-[10px] uppercase tracking-wide text-[var(--warn)]"
+              title="No live tick: this is the last completed 5-minute close and may be minutes old, so the band is centred behind the market."
+            >
+              5m close
+            </span>
+          )}
+        </span>
         <span className="text-[11px] text-muted-foreground">
           {WATCH_WORD[path.watch]}
           <Provenance kind="observed" note="Which edge to watch comes from the hierarchy; it never moves the band." />

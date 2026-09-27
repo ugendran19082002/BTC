@@ -1,4 +1,4 @@
-import type { Ladder, Readiness } from '@/types/live';
+import type { Ladder, Readiness, LiveResponse } from '@/types/live';
 import { ARROW, WORD, toneOf, TONE_TEXT, pct0 } from './parts';
 import { cn } from '@/lib/utils';
 
@@ -13,12 +13,40 @@ import { cn } from '@/lib/utils';
  * When it is not ready, every blocker is listed here rather than summarised.
  * "Not ready (3)" makes a person hunt; the three sentences make them decide.
  */
-export function VerdictBar({ ladder, readiness, hoursLeft, asOf, now }: {
+/**
+ * Words for the stability verdict, and how alarmed to be about each.
+ *
+ * "Holding" is muted, not green: on this screen colour means *direction*, never
+ * quality (see `parts.tsx`), and a stable read is a fact about the read rather
+ * than a recommendation. Only the two that should slow somebody down are
+ * coloured, and `warn` is the one tone that legitimately means "look at this".
+ */
+const STABILITY: Record<string, { text: string; tone: 'dim' | 'warn' }> = {
+  STABLE: { text: 'Holding', tone: 'dim' },
+  CHOPPY: { text: 'Mixed', tone: 'warn' },
+  UNSTABLE: { text: 'Low stability', tone: 'warn' },
+  TOO_FEW: { text: 'Too few calls', tone: 'dim' },
+};
+
+export function VerdictBar({ ladder, readiness, hoursLeft, asOf, now, stability, penalties = [] }: {
   ladder: Ladder;
   readiness: Readiness;
   hoursLeft: number;
   asOf: number;
   now: number;
+  /**
+   * Whether the read has been holding its direction — `docs/New.md` §32.
+   *
+   * It sits beside the arrow because a direction that changed side four times in
+   * the last hour is not a direction, and the arrow alone cannot say so.
+   */
+  stability?: LiveResponse['stability'];
+  /**
+   * Reasons the confidence is worth less than it looks — `docs/New.md` §33.
+   * Shown under the verdict, separately from the blockers: a blocker stops you,
+   * a penalty discounts you.
+   */
+  penalties?: LiveResponse['penalties'];
 }) {
   const tone = toneOf(ladder.bias);
   const ageSec = Math.max(0, Math.round((now - asOf) / 1000));
@@ -49,6 +77,16 @@ export function VerdictBar({ ladder, readiness, hoursLeft, asOf, now }: {
           {pct0(ladder.alignment)} of the weight agrees
         </span>
 
+        {stability && STABILITY[stability.verdict] && (
+          <span
+            className={cn('text-[12px]', TONE_TEXT[STABILITY[stability.verdict]!.tone])}
+            title={stability.text}
+          >
+            {STABILITY[stability.verdict]!.text}
+            {stability.flips > 0 && ` · ${stability.flips} side change${stability.flips === 1 ? '' : 's'}/h`}
+          </span>
+        )}
+
         <span className="ml-auto flex items-baseline gap-3 text-[12px] text-muted-foreground">
           <span className="font-mono">{h}h {String(m).padStart(2, '0')}m to settlement</span>
           <span className={cn('font-mono', stale && TONE_TEXT.warn)} title={new Date(asOf).toLocaleTimeString()}>
@@ -56,6 +94,22 @@ export function VerdictBar({ ladder, readiness, hoursLeft, asOf, now }: {
           </span>
         </span>
       </div>
+
+      {/*
+        Penalties before blockers: a blocker is about *this* trade, a penalty is
+        about how much the whole screen is worth right now, and the second is the
+        thing somebody skimming needs to see.
+      */}
+      {penalties.length > 0 && (
+        <ul className="mt-2.5 space-y-1" aria-label="Why this read is worth less than it looks">
+          {penalties.map((p) => (
+            <li key={p.reason} className="flex flex-wrap gap-x-1.5 text-[12.5px] leading-snug">
+              <span className="flex-none font-semibold text-[var(--warn)]">{p.reason}:</span>
+              <span className="text-muted-foreground">{p.detail}</span>
+            </li>
+          ))}
+        </ul>
+      )}
 
       {!readiness.ready && readiness.blockers.length > 0 && (
         <ul className="mt-2.5 space-y-1" aria-label="What is blocking entry">

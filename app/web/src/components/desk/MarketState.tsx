@@ -457,7 +457,15 @@ const outcomeWord = (o: string | null | undefined): string =>
  * and the tally is given as "3 of 4" rather than a percentage, because four
  * calls is not a hit rate.
  */
-function History({ rows, rate, measured, checked, spot }: {
+/**
+ * The signal-history list.
+ *
+ * Exported since 27 Sep 2026: it now renders at the foot of the Live screen's
+ * `Signals` section rather than inside this card, so "what the signal says now"
+ * and "what it said before, and how those turned out" are one block instead of
+ * two places. Nothing about the list changed — only who draws it.
+ */
+export function History({ rows, rate, measured, checked, spot }: {
   rows: readonly StateHistoryRow[];
   rate?: { correct: number; graded: number };
   /** What the replay says this shape has paid. `null` means never graded; `undefined` means still loading. */

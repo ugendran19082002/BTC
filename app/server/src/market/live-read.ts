@@ -4,6 +4,9 @@ import { ladder, readiness, TIER_WEIGHT, TIER_ORDER, type Ladder, type Readiness
 import { expiryPath, strikeSafety, type ExpiryPath, type StrikeSafety } from '../domain/expiry-path.js';
 import { momentumSignal, type MomentumSignal } from '../domain/momentum-signal.js';
 import { loadHorizons } from '../domain/forecast.js';
+import { penaltiesFor, stabilityOf, type Penalty, type Stability } from '../domain/stability.js';
+import { ADX_TRENDING } from '../domain/hierarchy.js';
+import { recentStates } from './state-history.js';
 
 /**
  * Everything the Live screen decides with, in one read.
@@ -26,12 +29,35 @@ import { loadHorizons } from '../domain/forecast.js';
 /** Four and a half days of 5m bars: enough for the 1h break rule's sixty closed hours plus its cooldown. */
 const LOOKBACK_SEC = 108 * 3600;
 
-/** A break is read at bar closes, the smallest fifteen minutes apart; a fresher answer is the same answer. */
+/**
+ * How long the *bar-derived* part of the read may be reused.
+ *
+ * Only the expensive, slow-moving half is cached: the candle fetch, the
+ * timeframe ladder and the momentum call, all of which are decided at bar
+ * closes and cannot change between them. The price and everything measured from
+ * it -- the band's centre, every strike distance -- is recomputed on every
+ * request from the live tick, because a screen that claims to be LTP-based must
+ * not serve a twenty-second-old price out of a cache.
+ */
 const TTL_MS = 20_000;
 
 export type LiveRead = {
   asOf: number;
+  /**
+   * The price every mark on this screen is measured from: the **last traded
+   * price**, not a candle close.
+   *
+   * It used to be `readMarket().spot`, which is
+   * `timeframes.find(t => t.tf === '5m').close` -- the last *completed*
+   * five-minute candle. Measured on 27 Sep 2026 that ran 36.8 points behind the
+   * ticker, so the settlement band was centred in the wrong place and a strike
+   * 404 away was reported as 358. Two prices on one screen, and the wrong one
+   * feeding the arithmetic.
+   */
   spot: number;
+  /** Where `spot` came from, and how old it is. A price with no provenance is a price nobody can check. */
+  spotFrom: 'ticker' | 'candle-close';
+  spotAgeMs: number | null;
   /** The weighted multi-timeframe ladder -- the screen's direction section. */
   ladder: Ladder;
   /** Whether the ladder allows a trade, and everything blocking it. */
@@ -42,29 +68,128 @@ export type LiveRead = {
   momentum: MomentumSignal;
   /** The weights the ladder decided with, so the screen can print them beside the table. */
   weights: { tier: string; weight: number }[];
+  /**
+   * Whether the read has been holding its direction — `docs/New.md` §32.
+   * Measured over the journal, which is the only record of what the screen
+   * actually said. Null when the journal cannot be read.
+   */
+  stability: Stability | null;
+  /**
+   * Reasons to read the screen's confidence *down* — `docs/New.md` §33.
+   *
+   * Deliberately not merged into `readiness.blockers`: a blocker says "you may
+   * not act", a penalty says "you may, but this is worth less than it looks".
+   * Merging them turns a hard rule into a suggestion.
+   */
+  penalties: Penalty[];
   /** Named so the screen never has to guess why a row is missing. */
   missing: string[];
 };
 
-let cache: { at: number; read: LiveRead } | null = null;
-let inflight: Promise<LiveRead> | null = null;
+/** The half that is decided at bar closes, and so may be reused between them. */
+type BarPart = {
+  ladder: Ladder;
+  readiness: Readiness;
+  momentum: MomentumSignal;
+  close: number;
+  missing: string[];
+};
+
+let cache: { at: number; part: BarPart } | null = null;
+let inflight: Promise<BarPart> | null = null;
 
 export async function liveRead(input: {
   now?: number;
   hoursToExpiry: number;
   atmIv: number | null;
+  /**
+   * The last traded price. Everything that is a *mark* -- the band's centre,
+   * every strike distance -- is measured from this rather than from a candle
+   * close. Null falls back to the close, and `spotFrom` says which happened.
+   *
+   * Signals are NOT computed from it: `momentumSignal` and the state rules read
+   * closed bars, because that is what their measured records were taken on. See
+   * `domain/momentum-signal.ts`.
+   */
+  ltp?: number | null;
   fetchBars?: (start: number, end: number) => Promise<Candle[]>;
-} ): Promise<LiveRead> {
+}): Promise<LiveRead> {
   const now = input.now ?? Date.now();
-  // The expiry and the IV change between contracts, so they are not part of
-  // what the cache can answer for; only the bars and the market read are.
-  if (cache && now - cache.at < TTL_MS && cache.read.path?.hoursToExpiry === input.hoursToExpiry) return cache.read;
+  const part = await barPart(now, input.fetchBars);
+
+  /*
+   * The tick first, the candle close only as a fallback -- and applied here,
+   * outside the cache, so it is this request's price and not the price the cache
+   * was filled with. A five-minute close can be five minutes old; on a desk
+   * measuring "how far is this strike" that is a five-minute-old answer to a
+   * question about now. Measured 27 Sep 2026: 36.8 points, which turned a strike
+   * 404 away into one reported as 358.
+   */
+  const usable = input.ltp != null && Number.isFinite(input.ltp) && input.ltp > 0;
+  const spot = usable ? input.ltp! : part.close;
+  const spotFrom: 'ticker' | 'candle-close' = usable ? 'ticker' : 'candle-close';
+
+  const horizons = loadHorizons();
+  const missing = [...part.missing];
+
+  /*
+   * Stability over the journal rather than over anything recomputed here: the
+   * rows are what the screen actually said, and a read that flip-flopped is a
+   * read whose direction is noise even when every individual call was correct.
+   */
+  const stability = await recentStates(null, 60)
+    .then((rows) => stabilityOf(
+      rows.map((r) => ({ at: r.at, side: r.side === 'UP' || r.side === 'DOWN' ? r.side : null })),
+      now,
+    ))
+    .catch(() => null);
+  if (!usable) missing.push('No live tick — marks are measured from the last 5-minute close, which may be minutes old.');
+  if (!horizons.length) missing.push('chain.db has no measured horizons — the settlement band cannot be drawn.');
+
+  const path = expiryPath({
+    spot, hoursToExpiry: input.hoursToExpiry, atmIv: input.atmIv, horizons, ladder: part.ladder,
+  });
+
+  const adxs = part.ladder.rows.filter((r) => r.weight > 0 && r.adx !== null).map((r) => r.adx!);
+  const penalties = penaltiesFor({
+    against: part.ladder.against,
+    spotFrom,
+    missing,
+    stability,
+    maxAdx: adxs.length ? Math.max(...adxs) : null,
+    adxFloor: ADX_TRENDING,
+  });
+
+  return {
+    asOf: now,
+    spot,
+    spotFrom,
+    stability,
+    penalties,
+    // The tick's own age is not exposed by `liveSpot`; null says "unknown"
+    // rather than implying a freshness nobody measured.
+    spotAgeMs: null,
+    ladder: part.ladder,
+    readiness: part.readiness,
+    path,
+    momentum: part.momentum,
+    weights: TIER_ORDER.map((tier) => ({ tier, weight: TIER_WEIGHT[tier] })),
+    missing,
+  };
+}
+
+/** The bar-derived half, cached for `TTL_MS` and shared between concurrent callers. */
+async function barPart(
+  now: number,
+  fetch?: (start: number, end: number) => Promise<Candle[]>,
+): Promise<BarPart> {
+  if (cache && now - cache.at < TTL_MS) return cache.part;
   if (inflight) return inflight;
 
-  const fetchBars = input.fetchBars ?? ((s: number, e: number) => candles('BTCUSD', s, e, '5m'));
+  const fetchBars = fetch ?? ((s: number, e: number) => candles('BTCUSD', s, e, '5m'));
   const nowSec = Math.floor(now / 1000);
 
-  inflight = (async (): Promise<LiveRead> => {
+  inflight = (async (): Promise<BarPart> => {
     const [market, bars5m] = await Promise.all([
       readMarket().catch(() => null),
       fetchBars(nowSec - LOOKBACK_SEC, nowSec).catch(() => [] as Candle[]),
@@ -76,35 +201,23 @@ export async function liveRead(input: {
     const l = ladder(reads);
     const r = readiness(l);
 
-    const spot = market?.spot ?? bars5m[bars5m.length - 1]?.close ?? 0;
-
-    const horizons = loadHorizons();
-    if (!horizons.length) missing.push('chain.db has no measured horizons — the settlement band cannot be drawn.');
-    const path = expiryPath({
-      spot, hoursToExpiry: input.hoursToExpiry, atmIv: input.atmIv, horizons, ladder: l,
-    });
-
     if (!bars5m.length) missing.push('No 5-minute bars — the momentum call cannot be made.');
     const momentum = momentumSignal({ bars5m, nowSec });
 
-    // Which frames the ladder wanted and did not get.
     const got = new Set(l.rows.map((x) => x.tf));
     for (const tf of ['12h', '6h', '4h', '2h', '1h', '30m', '15m', '5m'] as const) {
       if (!got.has(tf)) missing.push(`${tf} has too few bars to read.`);
     }
 
-    const read: LiveRead = {
-      asOf: now,
-      spot,
+    const part: BarPart = {
       ladder: l,
       readiness: r,
-      path,
       momentum,
-      weights: TIER_ORDER.map((tier) => ({ tier, weight: TIER_WEIGHT[tier] })),
+      close: market?.spot ?? bars5m[bars5m.length - 1]?.close ?? 0,
       missing,
     };
-    cache = { at: now, read };
-    return read;
+    cache = { at: now, part };
+    return part;
   })().finally(() => { inflight = null; });
 
   return inflight;

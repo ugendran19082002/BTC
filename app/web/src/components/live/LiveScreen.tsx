@@ -45,13 +45,27 @@ import { Card, Nothing } from './parts';
  * travel rather than which way it goes.
  */
 
-/** The market moves; the ladder's slowest frame does not. Twenty seconds is the server's own cache. */
-const POLL_MS = 20_000;
+/**
+ * Five seconds, not twenty (27 Sep 2026).
+ *
+ * The marks on this screen -- the band's centre, every strike distance -- are
+ * measured from the last traded price, so polling every twenty seconds meant
+ * they could sit twenty seconds behind the price in the header. A screen that
+ * says it is LTP-based has to keep up with the tick.
+ *
+ * Cheap, because the server splits its cache: the expensive half (the candle
+ * fetch, the timeframe ladder, the momentum call) is decided at bar closes and
+ * reused for twenty seconds, while the price and the arithmetic over it are
+ * recomputed per request. So a faster poll costs one cached ticker read and some
+ * floating-point, not six candle fetches.
+ */
+const POLL_MS = 5_000;
 
 export function LiveScreen({
   expiry,
   strikes = [],
   chart,
+  history,
   chain,
   controls,
 }: {
@@ -69,6 +83,18 @@ export function LiveScreen({
    * call is look at the picture.
    */
   chart?: ReactNode;
+  /**
+   * The signal-history list, rendered at the foot of this section.
+   *
+   * Passed in rather than fetched here: it is driven by
+   * `/api/market-state/history`, which the caller already polls for the chart's
+   * own timeframe, and two polls of the same endpoint on two intervals is how a
+   * screen ends up showing two different histories.
+   *
+   * It belongs *here*, under the live read, because the two answer one question:
+   * what is the signal saying, and has it been worth listening to?
+   */
+  history?: ReactNode;
   /** The option chain, rendered under the screen by the caller. */
   chain?: ReactNode;
   /** Mode and refresh controls, drawn in the header. */
@@ -103,7 +129,7 @@ export function LiveScreen({
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex min-w-0 flex-col gap-3">
       {controls && <div className="flex flex-wrap items-center gap-2">{controls}</div>}
 
       <ErrorBoundary where="Verdict">
@@ -113,6 +139,8 @@ export function LiveScreen({
           hoursLeft={data.hoursToExpiry}
           asOf={data.asOf}
           now={now}
+          stability={data.stability}
+          penalties={data.penalties}
         />
       </ErrorBoundary>
 
@@ -123,23 +151,41 @@ export function LiveScreen({
         screen and stacked on a phone — "is something happening now" and
         "where can it end up". Neither is subordinate to the other.
       */}
-      <div className="grid gap-3 lg:grid-cols-2">
+      {/*
+        Two columns from `md` (768px) rather than `lg`, so a tablet and a
+        half-width desktop window both get the pair side by side instead of one
+        very long column.
+
+        `min-w-0` on every cell is load-bearing: a grid track is `auto` by
+        default, so a wide table inside it makes the track wider than the
+        viewport and the whole page scrolls sideways. With `min-w-0` the track
+        may shrink and the table's own `overflow-x-auto` takes the scroll, which
+        is the one place it belongs.
+      */}
+      <div className="grid gap-3 md:grid-cols-2">
         <ErrorBoundary where="Big move">
-          <MomentumCard signal={data.momentum} id="live-momentum" />
+          <div className="min-w-0"><MomentumCard signal={data.momentum} id="live-momentum" /></div>
         </ErrorBoundary>
         <ErrorBoundary where="Settlement band">
-          <ExpiryCone path={data.path} bias={data.ladder.bias} id="live-cone" />
+          <div className="min-w-0"><ExpiryCone path={data.path} bias={data.ladder.bias} spotFrom={data.spotFrom} id="live-cone" /></div>
         </ErrorBoundary>
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="grid gap-3 md:grid-cols-2">
         <ErrorBoundary where="Timeframes">
-          <Ladder ladder={data.ladder} id="live-ladder" />
+          <div className="min-w-0"><Ladder ladder={data.ladder} id="live-ladder" /></div>
         </ErrorBoundary>
         <ErrorBoundary where="Strike safety">
-          <StrikeSafety strikes={data.strikes} id="live-strikes" />
+          <div className="min-w-0"><StrikeSafety strikes={data.strikes} id="live-strikes" /></div>
         </ErrorBoundary>
       </div>
+
+      {/*
+        And what it has said before. The live read above is a claim; this is the
+        record of the same claim's past, which is the only thing that makes the
+        claim readable.
+      */}
+      {history && <ErrorBoundary where="Signal history">{history}</ErrorBoundary>}
 
       {/*
         What the screen could not read. Absent data is stated, never drawn as

@@ -325,9 +325,14 @@ export function registerDeskRoutes(app: FastifyInstance) {
     try {
       const q = req.query as { expiry?: string; strikes?: string; at?: string };
       const snap = await snapshotFor(q.at, WHOLE_BOARD, q.expiry);
+      // The tick, not the chain snapshot's spot and not a candle close: the
+      // band's centre and every strike distance are marks, and a mark is only
+      // worth the freshness of the price behind it.
+      const ltp = await liveSpot().catch(() => null);
       const read = await liveRead({
         hoursToExpiry: snap.hoursToExpiry,
         atmIv: snap.atmIv,
+        ltp,
       });
       const wanted = (q.strikes ?? '')
         .split(',')

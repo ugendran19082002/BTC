@@ -165,7 +165,94 @@ implies otherwise is the bug.
       instead of a tab away; it is still the most informative thing on the desk
       and should be watched for a few sessions, then **one of them deleted**.
 
+**Open — everything measured from the tick, and the rest of today's asks:**
+
+- [x] **Marks now come from the last traded price, not a candle close (27 Sep).**
+      `/api/live` used `readMarket().spot`, which is
+      `timeframes.find(t => t.tf === '5m').close` — the last *completed* 5-minute
+      candle. Measured live: **36.8 points behind the ticker**, so the settlement
+      band was centred in the wrong place and strike 84,000 at 404 away was
+      reported as 358, on a screen showing the tick two cards above. The route now
+      passes `liveSpot()`, the server's cache is **split** so the expensive
+      bar-derived half (candles, ladder, momentum) is reused for 20s while the
+      price and everything measured from it is recomputed per request, the screen
+      polls every 5s instead of 20s, and the cone labels the price `5m close` when
+      no tick was available.
+- [ ] **Signals still read closed bars, deliberately — do not "fix" this.**
+      `momentum-signal.ts` and `market-state.ts` read closed bars because their
+      measured records were taken at closes. Feeding the tick in produces calls
+      the replay never graded: price crosses a level, the card says CONFIRMED,
+      price falls back before the close — the call never existed, except the
+      journal now holds it and the hit rate counts it. That is the 27 Sep bug
+      re-entering from the other end. If a faster read is wanted the honest shape
+      is a **provisional** state, visibly labelled, that never enters the journal
+      and never carries a measured figure. `lib/live-bar.ts` documents the line.
+- [ ] **Two prices can still appear on the Live tab.** The Signals section is on
+      the tick now; the chain snapshot, the KPI strip and `Price change` each read
+      their own spot. They agreed to within a point most of the time, which is
+      exactly why the 36.8-point gap went unnoticed for so long. One spot, read
+      once per render, passed down — the same rule the Signals section already
+      follows.
+- [ ] **Mobile and narrow windows.** `overflow-x: auto` is on every wide table in
+      `components/live/`, and the card pairs collapse at `lg`. What has *not* been
+      checked is the Live tab as a whole on a phone: the option chain is 19
+      columns, the ladder is 6, and `app/web/scripts/responsive-check.mjs` exists
+      (`npm run test:responsive`) but is not part of the suite or of
+      `deploy.sh --check`. Wire it in, then fix what it finds.
+- [ ] **Logs: the recorder is silent when it works.** `startStateRecorder` reports
+      only failures, so "is it running?" is answerable from the database but not
+      from `docker logs`. One line per pass at debug level, and one line per
+      *written* row at info, would make an outage visible in the place people look
+      first. It would also have shortened the 13-hour blind spot to one `grep`.
+- [ ] **Accuracy: the three unmeasured constants.** The ladder's 3/3/2/3/3/0
+      weights, the ±15% dead band and the ADX ≥ 20 floor are all reasoning rather
+      than evidence. They are printed on screen so they can be argued with, but
+      the honest next step is to replay each against the same 2024/2025-choose,
+      2026-hold-out discipline the momentum study uses, and keep whichever
+      survives. Until then "accuracy" on this desk means the journal's accuracy,
+      not the signal's.
+
+**Done — the Live screen, 27 Sep:**
+
+- [x] **Signal quality controls and prediction stability** — `docs/New.md` §31–33,
+      which New.md itself calls *"ரொம்ப முக்கியமான missing category"*.
+      `domain/stability.ts` measures, over the journal rather than over anything
+      recomputed now, how often the read changed side in the last hour and what
+      share of calls agreed. New.md's own examples are the tests:
+      `UP UP UP SIDE UP` is STABLE, `UP DOWN UP DOWN SIDE` is UNSTABLE, and a
+      range call between two same-side calls is deliberately **not** a flip.
+      The verdict bar says `Holding` / `Mixed` / `Low stability · 4 side
+      changes/h` beside the arrow, because a direction that changed four times in
+      an hour is not a direction.
+- [x] **Confidence penalties (§33), kept separate from blockers.** A stale price,
+      disagreeing timeframes, nothing trending, an unstable read or an incomplete
+      read each print a reason and an explanation under the verdict. They are
+      *not* merged into `readiness.blockers` on purpose: a blocker says "you may
+      not act", a penalty says "you may, but this is worth less than it looks",
+      and merging them turns a hard rule into a suggestion.
+- [x] **Signal history merged into the Signals section.** The list was inside the
+      market-state card while the live read was in its own section below —
+      "what it says now" and "what it said before, and did that pay" in two
+      places. `History` is now drawn at the foot of the Signals block. One
+      question, one place.
+- [x] **Grid overflow fixed.** The card pairs now go two-up from `md` (768px)
+      rather than `lg`, and every grid cell carries `min-w-0`. Without it a grid
+      track is `auto`, so a wide table makes the track wider than the viewport and
+      the **whole page** scrolls sideways instead of the table doing it.
+
 **Open — the Live screen, usability:**
+
+- [ ] **Run the responsive checker against a real browser.**
+      `app/web/scripts/responsive-check.mjs` already loads the app at nine widths
+      (360 → 1920) and fails when the page scrolls sideways or a panel body
+      overflows. It needs the dev harness plus a session cookie, so it has never
+      been run in CI or in `deploy.sh --check`, and the `min-w-0` fix above is
+      reasoned rather than observed. Wire it in, run it, fix what it finds.
+- [ ] **The desk tab is long on a phone.** Verdict → chart → four cards →
+      history → 19-column chain is a lot of scrolling before the option board.
+      Candidates: collapse the cards by default under `md`, or an anchor strip at
+      the top. Needs the checker above first — guessing at phone layout without
+      measuring it is how the `lg` breakpoint got chosen in the first place.
 
 - [ ] **Say when the chart is not live.** `barAgeSec` exists and is unused: when the
       newest bar closed and no new one has opened, the chart should say so rather
