@@ -5,7 +5,6 @@ import type { LiveResponse } from '@/types/live';
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
 import { VerdictBar } from './VerdictBar';
 import { MomentumCard } from './MomentumCard';
-import { ExpiryCone } from './ExpiryCone';
 import { Ladder } from './Ladder';
 import { StrikeSafety } from './StrikeSafety';
 import { FocusSummary } from './FocusSummary';
@@ -181,7 +180,6 @@ export function LiveScreen({
           onRange={journal.onRange}
           tfControl={journal.tfControl}
           bigMove={<MomentumCard signal={data.momentum} id="live-momentum" />}
-          settlement={<ExpiryCone path={data.path} bias={data.ladder.bias} spotFrom={data.spotFrom} id="live-cone" />}
           timeframes={<Ladder ladder={data.ladder} id="live-ladder" />}
           strikes={<StrikeSafety strikes={data.strikes} id="live-strikes" />}
         />

@@ -88,6 +88,10 @@ export type MomentumPlan = {
 export type Measured = {
   policy: string;
   tf: string;
+  /** Which level definition found these breaks — see server `domain/level-mode.ts`. */
+  mode: string;
+  /** That mode in words. */
+  modeLabel: string;
   n: number;
   hitRate: number;
   netR: number;

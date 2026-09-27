@@ -58,7 +58,7 @@ function Stat({ label, value, sub, tone }: {
 
 export function SignalDesk({
   rows, rate, measured, checked, total, tf, spot, range, onRange, tfControl,
-  expiry, bigMove, settlement, timeframes, strikes,
+  expiry, bigMove, timeframes, strikes,
 }: {
   rows: readonly StateHistoryRow[];
   rate?: { correct: number; graded: number };
@@ -77,7 +77,6 @@ export function SignalDesk({
   /** The right-hand column and the row beneath, passed in so this file stays layout. */
   expiry?: ReactNode;
   bigMove?: ReactNode;
-  settlement?: ReactNode;
   timeframes?: ReactNode;
   strikes?: ReactNode;
 }) {
@@ -198,7 +197,6 @@ export function SignalDesk({
         <div className="sd-side">
           {expiry}
           {bigMove}
-          {settlement}
         </div>
       </div>
 
