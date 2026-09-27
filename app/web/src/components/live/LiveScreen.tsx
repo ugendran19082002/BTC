@@ -8,6 +8,8 @@ import { MomentumCard } from './MomentumCard';
 import { Ladder } from './Ladder';
 import { Card, Nothing } from './parts';
 import { SignalDesk } from './SignalDesk';
+import { DeskKpis } from './DeskKpis';
+import { ExpiryPredictionCard } from './ExpiryPrediction';
 import type { StateHistoryRow } from '@/api/desk';
 import type { Measured } from '@/types/live';
 import type { Checked } from './Liveness';
@@ -142,7 +144,20 @@ export function LiveScreen({
     <div className="flex min-w-0 flex-col gap-3">
       {controls && <div className="flex flex-wrap items-center gap-2">{controls}</div>}
 
+      {/*
+        The five answers first, then the picture, then the working. Each tile is
+        a view of a card further down — none computes anything of its own, so a
+        tile can never disagree with what it summarises.
+      */}
+      <ErrorBoundary where="Desk summary">
+        <DeskKpis data={data} />
+      </ErrorBoundary>
+
       {chart && <ErrorBoundary where="Price chart">{chart}</ErrorBoundary>}
+
+      <ErrorBoundary where="Expiry prediction">
+        <ExpiryPredictionCard prediction={data.prediction} id="live-prediction" />
+      </ErrorBoundary>
 
       {/*
         The journal and the market read as one screen (27 Sep 2026).

@@ -3736,3 +3736,24 @@ table.ov-mini.ov-levels { width: auto; min-width: 100%; }
 .ov-side-tab.on { color: var(--text); border-color: currentColor; }
 .ov-side-tab.on.ce { color: var(--up); }
 .ov-side-tab.on.pe { color: var(--down); }
+
+/* --------------------------------------------------------------- desk KPIs
+ * Five answers across the top, one line of type each. They wrap rather than
+ * shrink: a tile squeezed to four characters is a tile nobody reads, and on a
+ * phone two rows of readable tiles beat five unreadable ones.
+ */
+.dk {
+  display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+.dk-tile {
+  display: flex; gap: 10px; align-items: flex-start; min-width: 0;
+  border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--panel);
+}
+.dk-icon { font-size: 17px; line-height: 1.2; opacity: 0.8; }
+.dk-body { display: grid; gap: 1px; min-width: 0; }
+.dk-label { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
+.dk-value { font-size: 16px; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.25; }
+.dk-sub { font-size: 11px; color: var(--muted); }
+.dk-dim { opacity: 0.7; }
+.dk-tiers { display: flex; gap: 8px; flex-wrap: wrap; font-size: 11px; }

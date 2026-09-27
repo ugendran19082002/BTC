@@ -75,6 +75,32 @@ export type ExpiryPath = {
   note: string;
 };
 
+/** Where the contract most probably settles: edges measured, percentage modelled. */
+export type ExpiryPrediction = {
+  spot: number;
+  hoursToExpiry: number;
+  band: {
+    low: number;
+    high: number;
+    widthPct: number;
+    pInside: number | null;
+    pBelow: number | null;
+    pAbove: number | null;
+  };
+  targets: {
+    label: 'T1' | 'T2' | 'T3';
+    side: 'UP' | 'DOWN';
+    price: number;
+    movePct: number;
+    pTouch: number | null;
+    /** Which measured percentile this rung is — never an invented multiple. */
+    from: 'typical' | '68%' | '95%';
+  }[];
+  /** True when the edges came from measured windows rather than the option model. */
+  bandMeasured: boolean;
+  note: string;
+};
+
 export type MomentumPlan = {
   entry: number;
   stop: number;
@@ -139,6 +165,7 @@ export type LiveResponse = {
   ladder: Ladder;
   readiness: Readiness;
   path: ExpiryPath | null;
+  prediction: ExpiryPrediction | null;
   momentum: MomentumSignal;
   weights: { tier: Tier; weight: number }[];
   /** Whether the read has been holding its direction — New.md §32. */

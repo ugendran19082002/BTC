@@ -2,6 +2,7 @@ import { candles, type Candle } from './delta.js';
 import { readMarket } from './moves.js';
 import { ladder, readiness, TIER_WEIGHT, TIER_ORDER, type Ladder, type Readiness } from '../domain/hierarchy.js';
 import { expiryPath, strikeSafety, type ExpiryPath, type StrikeSafety } from '../domain/expiry-path.js';
+import { expiryPrediction, type ExpiryPrediction } from '../domain/expiry-prediction.js';
 import { momentumSignal, type MomentumSignal } from '../domain/momentum-signal.js';
 import { loadHorizons } from '../domain/forecast.js';
 import { penaltiesFor, stabilityOf, type Penalty, type Stability } from '../domain/stability.js';
@@ -64,6 +65,13 @@ export type LiveRead = {
   readiness: Readiness;
   /** The measured band to settlement. Null before the horizons table has loaded. */
   path: ExpiryPath | null;
+  /**
+   * Where the contract most probably settles, and the target ladder to it.
+   *
+   * The band's edges are measured; its percentage is modelled. They are carried
+   * apart, and the screen shows them apart.
+   */
+  prediction: ExpiryPrediction | null;
   /** The live momentum call, with its stop, its target and its measured record. */
   momentum: MomentumSignal;
   /** The weights the ladder decided with, so the screen can print them beside the table. */
@@ -112,6 +120,8 @@ export async function liveRead(input: {
    * `domain/momentum-signal.ts`.
    */
   ltp?: number | null;
+  /** The chain's strike step, so the predicted range lands on strikes that exist. */
+  strikeStep?: number;
   fetchBars?: (start: number, end: number) => Promise<Candle[]>;
 }): Promise<LiveRead> {
   const now = input.now ?? Date.now();
@@ -149,6 +159,9 @@ export async function liveRead(input: {
   const path = expiryPath({
     spot, hoursToExpiry: input.hoursToExpiry, atmIv: input.atmIv, horizons, ladder: part.ladder,
   });
+  const prediction = expiryPrediction({
+    spot, hoursToExpiry: input.hoursToExpiry, atmIv: input.atmIv, path, strikeStep: input.strikeStep,
+  });
 
   const adxs = part.ladder.rows.filter((r) => r.weight > 0 && r.adx !== null).map((r) => r.adx!);
   const penalties = penaltiesFor({
@@ -172,6 +185,7 @@ export async function liveRead(input: {
     ladder: part.ladder,
     readiness: part.readiness,
     path,
+    prediction,
     momentum: part.momentum,
     weights: TIER_ORDER.map((tier) => ({ tier, weight: TIER_WEIGHT[tier] })),
     missing,

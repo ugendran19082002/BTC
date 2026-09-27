@@ -351,6 +351,7 @@ export function registerDeskRoutes(app: FastifyInstance) {
         hoursToExpiry: snap.hoursToExpiry,
         atmIv: snap.atmIv,
         ltp,
+        strikeStep: snap.step,
       });
       const wanted = (q.strikes ?? '')
         .split(',')
