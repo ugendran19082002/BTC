@@ -706,7 +706,7 @@
 /* Breakout 3-tile Strip */
 .desk-breakout-strip {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 8px;
   margin-top: 8px;
 }
@@ -732,6 +732,15 @@
 .desk-tile-breakdown {
   background: rgba(255, 59, 87, 0.08);
   border: 1px solid rgba(255, 59, 87, 0.3);
+}
+
+/* Option Bias Grid */
+.desk-opt-bias-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(115px, 1fr));
+  gap: 8px;
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
 }
 
 /* Table styles */
@@ -786,10 +795,22 @@
 @media (max-width: 1400px) {
   .desk-kpis-grid {
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 10px;
+    gap: 8px;
+  }
+  .desk-kpi-card {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+  .desk-kpi-val {
+    font-size: 15px;
   }
   .desk-stats-strip {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .desk-bottom-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
   }
 }
 
@@ -797,45 +818,77 @@
 @media (max-width: 1200px) {
   .desk-kpis-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .desk-kpis-grid > .desk-kpi-card:last-child:nth-child(odd) {
+    grid-column: span 2;
   }
   .desk-center-row {
     grid-template-columns: 1fr 1fr;
+    gap: 10px;
   }
   .desk-chart-panel {
     grid-column: span 2;
-  }
-  .desk-bottom-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-/* 3. Tablets / Portrait Monitors (<= 992px) */
-@media (max-width: 992px) {
-  .desk-root {
-    padding: 10px 12px;
-  }
-  .desk-header {
-    gap: 10px;
-  }
-  .desk-center-row {
-    grid-template-columns: 1fr;
-  }
-  .desk-chart-panel {
-    grid-column: span 1;
     min-height: 420px;
   }
   .desk-stats-strip {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
-  .desk-sig-split {
-    grid-template-columns: 1fr 1fr;
+  .desk-bottom-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+}
+
+/* 3. Tablets / Portrait Monitors (<= 1024px) */
+@media (max-width: 1024px) {
+  .desk-root {
+    padding: 10px;
+  }
+  .desk-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 10px 12px;
+  }
+  .desk-header-left {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    gap: 8px;
+  }
+  .desk-header-right {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    gap: 8px;
+  }
+  .desk-center-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .desk-chart-panel {
+    grid-column: span 1;
+    min-height: 400px;
+  }
+  .desk-stats-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .desk-bottom-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
   }
 }
 
 /* 4. Small Tablets & Large Phones (<= 768px) */
 @media (max-width: 768px) {
   .desk-root {
-    padding: 8px 8px;
+    padding: 8px 6px;
     overflow-x: hidden;
   }
 
@@ -895,7 +948,7 @@
   .desk-tf-btn {
     flex: 1 0 auto;
     text-align: center;
-    padding: 4px 6px;
+    padding: 5px 8px;
     font-size: 11px;
   }
 
@@ -903,8 +956,10 @@
     width: 100%;
     justify-content: space-between;
     font-size: 11px;
-    padding: 4px 8px;
+    padding: 5px 8px;
     box-sizing: border-box;
+    flex-wrap: wrap;
+    gap: 4px;
   }
 
   .desk-header-right {
@@ -936,6 +991,10 @@
     margin-bottom: 8px;
   }
 
+  .desk-kpis-grid > .desk-kpi-card:last-child:nth-child(odd) {
+    grid-column: span 2;
+  }
+
   .desk-kpi-card {
     padding: 10px 10px;
     gap: 8px;
@@ -952,6 +1011,7 @@
 
   .desk-kpi-sub {
     font-size: 10px;
+    flex-wrap: wrap;
   }
 
   /* Chart on Mobile */
@@ -1028,28 +1088,39 @@
 
   .desk-grid-card {
     padding: 10px;
+    box-sizing: border-box;
+    width: 100%;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
   }
-
-  .desk-breakout-strip {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 6px;
-  }
-
-  .desk-breakout-tile {
-    padding: 6px 8px;
-  }
 }
 
-/* 5. Mobile Phones (<= 480px) */
-@media (max-width: 480px) {
+/* 5. Mobile Phones (<= 560px) */
+@media (max-width: 560px) {
   .desk-root {
     padding: 6px 4px;
   }
 
   .desk-header {
     padding: 6px 8px;
+  }
+
+  .desk-logo-box {
+    gap: 6px;
+  }
+
+  .desk-btc-icon {
+    width: 26px;
+    height: 26px;
+    font-size: 14px;
+  }
+
+  .desk-title-group h1 {
+    font-size: 14px;
+  }
+
+  .desk-title-group span {
+    display: none;
   }
 
   .desk-btn-tool span {
@@ -1065,6 +1136,14 @@
     gap: 6px;
   }
 
+  .desk-kpi-card {
+    padding: 10px 12px;
+  }
+
+  .desk-kpi-val {
+    font-size: 15px;
+  }
+
   .desk-sig-split {
     grid-template-columns: 1fr;
     gap: 8px;
@@ -1074,11 +1153,6 @@
     background: rgba(0, 0, 0, 0.25);
     border-radius: 6px;
     padding: 6px 8px;
-  }
-
-  .desk-breakout-strip {
-    grid-template-columns: 1fr;
-    gap: 6px;
   }
 
   .desk-stats-strip {
@@ -1100,6 +1174,29 @@
 
   .desk-stat-sub {
     font-size: 9px;
+  }
+
+  .desk-chart-container {
+    min-height: 240px;
+  }
+
+  .desk-pred-panel,
+  .desk-momentum-panel {
+    padding: 10px;
+  }
+}
+
+/* 6. Tiny Mobile Phones (<= 360px) */
+@media (max-width: 360px) {
+  .desk-stats-strip {
+    grid-template-columns: 1fr;
+  }
+  .desk-prob-bar {
+    font-size: 10px;
+  }
+  .desk-pred-panel,
+  .desk-momentum-panel {
+    padding: 8px;
   }
 }
 

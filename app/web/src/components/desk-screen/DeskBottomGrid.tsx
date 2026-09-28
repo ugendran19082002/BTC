@@ -375,7 +375,7 @@ export function DeskBottomGrid({
             <span>Option Bias — CE / PE (Expiry)</span>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 11, fontFamily: 'ui-monospace, monospace' }}>
+          <div className="desk-opt-bias-grid">
             <div style={{ background: '#0a0e17', padding: '6px 8px', borderRadius: 6 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', color: '#00e5ff', fontWeight: 700, marginBottom: 4 }}>
                 <span>CE (Calls)</span>
