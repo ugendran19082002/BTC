@@ -1,24 +1,26 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { usePersisted } from '@/hooks/usePersisted';
 import type { Candle, ChainResponse, ExpiryOption } from '@/types/desk';
+import type { TradeStatus } from '@/types/trade';
 import { getPerp, getTerm, type MarketStateResponse } from '@/api/desk';
 import { getLive } from '@/api/live';
 import type { LiveResponse } from '@/types/live';
 import { DeskDashboard } from '@/components/desk-screen/DeskDashboard';
 import { usePoll } from '@/hooks/usePoll';
 import type { ChartTf } from '@/components/desk/PriceChart';
-import { ivRv, windowMinutes, skew, type WindowChoice } from '@/lib/overview';
+import { bestLeg, ivRv, windowMinutes, skew, type WindowChoice } from '@/lib/overview';
 import { PanelFold } from './parts';
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
 import { FlowPanel, VolatilityPanel } from './MarketPanels';
+import { findLeg, type Selected } from './DecisionPanels';
+import { EarlyWarningPanel, useChanges } from './TraderPanels';
 
 /**
  * The Live screen: the desk dashboard (header, chart, momentum signal, stats
- * strip), then the market read -- volatility and the options' and
- * perpetual's tape.
+ * strip), then the market read -- the early warning ("Big move catch"),
+ * volatility and the options' and perpetual's tape.
  *
- * The Big Move Catch section (the early warning, signal history, big move
- * risk), What changed, the multi-timeframe table and the strategy decision
+ * The Big Move Catch section's signal history and big move risk, What changed, the multi-timeframe table and the strategy decision
  * were removed on 28 Sep 2026, with the dashboard's KPI strip, expiry
  * prediction and analysis grid. See docs/TODO.md.
  *
@@ -27,14 +29,19 @@ import { FlowPanel, VolatilityPanel } from './MarketPanels';
  * an order.
  */
 export function Overview({
-  data, expiries, onExpiry, chartTf = '15m', tick, controls, error,
+  data, trade, expiries, onExpiry, chartTf = '15m',
+  selected: selectedProp, onSelect, tick, controls, error,
   bars = [], marketState = null, onTf,
 }: {
   data: ChainResponse;
+  trade: TradeStatus | null;
   expiries?: readonly ExpiryOption[];
   onExpiry?: (expiry: string) => void;
   /** The chart's timeframe. */
   chartTf?: ChartTf;
+  /** The selected strike, when the screen owns it; `null` means the desk's pick. */
+  selected?: Selected | null;
+  onSelect?: (s: Selected | null) => void;
   tick?: number | null;
   /** The screen's mode and refresh controls, drawn in the screen bar. */
   controls?: ReactNode;
@@ -77,6 +84,28 @@ export function Overview({
   const atmIv = data.structure.atmIv;
   const { data: term } = usePoll(() => getTerm(skewPts, atmIv), 60_000, { deps: [skewPts === null, atmIv === null] });
 
+  // The strike the early warning reads its premium and IV changes from: the
+  // one clicked on the chain, else the server's own pick, the put first -- the
+  // side the desk sells most.
+  const [ownPicked] = usePersisted<Selected | null>('live:strike', null);
+  const picked = onSelect ? selectedProp ?? null : ownPicked;
+  const deskPick = useMemo<Selected | null>(() => {
+    const legOf = (cp: 'C' | 'P') => data.recommendation.sides.find((x) => x.side === (cp === 'C' ? 'CE' : 'PE'))?.leg ?? bestLeg(data.legs, cp);
+    const s = legOf('P') ?? legOf('C');
+    if (s) return { cp: s.cp, strike: s.strike };
+    const p = data.best.pick && !data.best.bestOfNone ? data.best.pick : null;
+    return p ? { cp: p.cp, strike: p.strike } : null;
+  }, [data.recommendation, data.legs, data.best]);
+  const selected = picked && findLeg(data.legs, picked) ? picked : deskPick;
+  const leg = findLeg(data.legs, selected);
+  // A held position's first fill, so the changes run from entry.
+  const entryOf = useCallback((symbol: string) => {
+    const open = (trade?.open ?? []).filter((x) => x.position !== 0 && x.symbol === symbol);
+    const ts = open.flatMap((x) => x.fills.map((f) => f.ts)).filter((v) => v > 0);
+    return ts.length ? Math.min(...ts) : null;
+  }, [trade?.open]);
+  const changes = useChanges(data, leg, spot, leg ? entryOf(`${leg.cp}-BTC-${leg.strike}-${snap.expiry}`) : null);
+
   // Collapse all / expand all: a stamp each press, and what it asked for.
   const [fold] = useState({ stamp: 0, collapsed: false });
 
@@ -118,6 +147,9 @@ export function Overview({
 
       <section className="ov-main" aria-label="Market read" style={{ marginTop: 24 }}>
         <div className="ov-col">
+          <ErrorBoundary where="Early warning">
+            <EarlyWarningPanel data={data} perp={perp} changes={changes?.rows ?? null} />
+          </ErrorBoundary>
           <ErrorBoundary where="Volatility">
             <VolatilityPanel data={data} iv={iv} skewRank={term?.skew ?? null} />
           </ErrorBoundary>

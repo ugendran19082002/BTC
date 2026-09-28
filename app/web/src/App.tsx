@@ -555,8 +555,11 @@ export default function App() {
             <ErrorBoundary where="Live screen">
               <Overview
                 data={data}
+                trade={trade}
                 expiries={expiries}
                 onExpiry={setExpiry}
+                selected={focus}
+                onSelect={setFocus}
                 tick={liveSpot}
                 error={err}
                 bars={liveBars}
