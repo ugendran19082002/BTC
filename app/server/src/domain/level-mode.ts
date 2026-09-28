@@ -11,7 +11,7 @@ import { swingLevels } from '../market/moves.js';
  * levels**, and nothing said so:
  *
  * ```
- * live      market/state-read.ts   levelFor()  -> nearest fractal SWING high/low
+ * live      market/state-read.ts   levelFor()  -> nearest fractal SWING high/low  (removed 28 Sep 2026)
  * measured  domain/break-risk.ts   level: null -> levelsFrom(): the 20-bar high/low
  * ```
  *

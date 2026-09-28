@@ -179,6 +179,14 @@ export type DealingRange = {
 export type SmcOptions = {
   /** Seconds per bar, for session and day boundaries. */
   tfSec: number;
+  /** Where the stop goes: beyond the POI's far edge ('zone', the default), or beyond the sweep's extreme as well ('sweep'). */
+  stopAt?: 'zone' | 'sweep';
+  /** A volatility floor: the stop is at least this many ATRs from the entry. 0, the default, is structure only. */
+  minStopAtr?: number;
+  /** How a READY setup is entered: at the close that confirms the retest (the default), or a resting limit at the zone edge. */
+  entry?: 'close' | 'limit';
+  /** Also trade continuation: a with-trend BOS made with displacement, entered on its retrace, no sweep needed. Off by default. */
+  continuation?: boolean;
   /** Fractal size. Two bars each side is the usual intraday choice. */
   pivotLeft?: number;
   pivotRight?: number;

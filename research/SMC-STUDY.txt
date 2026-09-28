@@ -1,0 +1,42 @@
+SMC engine replay · 275,548 5m candles · 2024-01-10 → 2026-08-31 · 3.5 s
+fees: 0.05% a side (taker), charged in R on the whole position
+
+== Funnel
+   setups started (a sweep): 29,711  ·  planned (READY): 3,719 (12.5%)  ·  filled: 781 (21.0% of plans)  ·  finished: 781
+   ≈ 0.81 trades a day, 3.86 plans a day
+   how setups ended without a trade:
+      13066   44.0%  invalidated: superseded by a newer sweep
+      11152   37.5%  invalidated: closed beyond the sweep
+       1607    5.4%  expired: ran to TP# without a retest
+        632    2.1%  invalidated: closed through the stop before entry
+        559    1.9%  invalidated: TP# SSL pays ## under #
+        550    1.9%  invalidated: TP# BSL pays ## under #
+        533    1.8%  invalidated: confirmed too far from the zone: TP# # at the close
+        502    1.7%  expired: no displaced structure shift
+        159    0.5%  expired: no retest
+         54    0.2%  invalidated: no liquidity to aim at
+         42    0.1%  invalidated: TP# EQH pays ## under #
+         37    0.1%  invalidated: TP# EQL pays ## under #
+
+== Trades (every year is out of sample: nothing was fitted)
+   2024       n  279  win  25.8%  TP1  24.4%  SL  72.0%  avg -0.08R  net -0.64R  fee 0.56R  total net -178.87R  MFE 2.00R
+   2025       n  289  win  23.2%  TP1  22.5%  SL  74.4%  avg -0.17R  net -0.83R  fee 0.66R  total net -239.45R  MFE 1.79R
+   2026       n  213  win  22.1%  TP1  20.7%  SL  77.5%  avg -0.14R  net -0.77R  fee 0.63R  total net -164.16R  MFE 1.95R
+   long       n  382  win  24.3%  TP1  23.0%  SL  73.8%  avg -0.06R  net -0.65R  fee 0.59R  total net -249.41R  MFE 1.98R
+   short      n  399  win  23.3%  TP1  22.3%  SL  74.9%  avg -0.19R  net -0.83R  fee 0.64R  total net -333.07R  MFE 1.84R
+   ALL        n  781  win  23.8%  TP1  22.7%  SL  74.4%  avg -0.13R  net -0.75R  fee 0.62R  total net -582.48R  MFE 1.91R
+   exits: STOPPED 581 · PROTECTED 102 · TP3 26 · EXPIRED 72
+
+== Big moves: 2249 one-hour moves of 1% or more (≈ 2.33 a day)
+   caught (a trade in the move's direction entered during it): 40 of 2249 (1.8%), avg +2.11R
+   missed, by what stopped a trade:
+       717   31.9%  invalidated: closed beyond the sweep
+       456   20.3%  expired: ran to TP# without a retest
+       347   15.4%  no setup: no sweep of opposite liquidity before the move
+       114    5.1%  invalidated: TP# SSL pays ## under #
+       108    4.8%  expired: no displaced structure shift
+        90    4.0%  invalidated: TP# BSL pays ## under #
+        88    3.9%  invalidated: confirmed too far from the zone: TP# # at the close
+        81    3.6%  invalidated: superseded by a newer sweep
+        48    2.1%  stopped: stop hit
+        44    2.0%  invalidated: closed through the stop before entry

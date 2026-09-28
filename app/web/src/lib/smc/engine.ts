@@ -37,6 +37,8 @@ const dayOf = (t: number) => Math.floor(t / DAY);
 const weekOf = (t: number) => Math.floor((t / DAY + WEEK_OFFSET_DAYS) / 7);
 const monthOf = (t: number) => { const d = new Date(t * 1000); return d.getUTCFullYear() * 12 + d.getUTCMonth(); };
 
+/** Candles after which resting liquidity and zones leave play (about a week of 5m candles). */
+const RETIRE_BARS = 2000;
 /** How long a setup may wait at each stage, in bars. */
 const FORMING_BARS = 24;
 const READY_BARS = 30;
@@ -77,6 +79,7 @@ export class SmcEngine {
   /** Zones and pools still in play, with what has already happened to each. */
   private readonly liveZones = new Map<string, { zone: Zone; touched: boolean; filled: boolean }>();
   private readonly livePools = new Map<string, Pool>();
+  private readonly zoneIds = new Set<string>();
   private long: Setup | null = null;
   private short: Setup | null = null;
 
@@ -86,7 +89,7 @@ export class SmcEngine {
   private session: { name: Session; day: number; from: number; ext: Extreme } | null = null;
 
   constructor(opts: SmcOptions) {
-    this.o = { pivotLeft: 2, pivotRight: 2, ...opts };
+    this.o = { pivotLeft: 2, pivotRight: 2, stopAt: 'zone', minStopAtr: 0, entry: 'close', continuation: false, ...opts };
   }
 
   /** Feed the next closed candle. Candles must arrive in time order. */
@@ -105,6 +108,7 @@ export class SmcEngine {
     this.gaps(i);
     this.candleTags(i);
     this.advanceSetups(i);
+    if (i % 250 === 0) this.retire(i);
   }
 
   state(): SmcState {
@@ -125,6 +129,18 @@ export class SmcEngine {
       setups: this.setups.map((s) => ({ ...s, confirmations: s.confirmations.map((c) => ({ ...c })), targets: [...s.targets], events: [...s.events] })),
       range: this.dealingRange(),
     };
+  }
+
+  /**
+   * Liquidity and zones older than `RETIRE_BARS` are dropped from play: a
+   * week-old 5-minute swing is not intraday liquidity, and keeping every one
+   * ever made would make each candle slower than the last. Their records stay
+   * in the history; only the live sets are pruned. Decided by bar index alone,
+   * so it cannot depend on anything after the candle.
+   */
+  private retire(i: number) {
+    for (const [id, p] of this.livePools) if (p.known < i - RETIRE_BARS) this.livePools.delete(id);
+    for (const [id, z] of this.liveZones) if (z.zone.known < i - RETIRE_BARS) this.liveZones.delete(id);
   }
 
   // ---------------------------------------------------------------- volatility
@@ -310,6 +326,7 @@ export class SmcEngine {
     this.trend = dir;
     const ob = this.orderBlock(dir, swing.at, i, brk.id);
     this.onStructure(brk, ob, i);
+    if (this.o.continuation && kind === 'BOS') this.onContinuation(brk, ob, swing, i);
   }
 
   /**
@@ -332,9 +349,10 @@ export class SmcEngine {
     const c = this.b[pick]!;
     if (c.high <= c.low) return null;
     const id = `OB-${dir}-${c.time}`;
-    if (this.liveZones.has(id) || this.zones.some((z) => z.id === id)) return null;
+    if (this.zoneIds.has(id)) return null;
     const zone: Zone = { id, kind: 'OB', dir, low: c.low, high: c.high, at: pick, known: i, source };
     this.zones.push(zone);
+    this.zoneIds.add(id);
     this.liveZones.set(id, { zone, touched: false, filled: false });
     return zone;
   }
@@ -350,6 +368,7 @@ export class SmcEngine {
     else if (a.low - c.high > min) zone = { id: `FVG-bear-${this.b[i - 1]!.time}`, kind: 'FVG', dir: 'bear', low: c.high, high: a.low, at: i - 1, known: i, source: 'gap' };
     if (!zone) return;
     this.zones.push(zone);
+    this.zoneIds.add(zone.id);
     this.liveZones.set(zone.id, { zone, touched: false, filled: false });
   }
 
@@ -475,28 +494,65 @@ export class SmcEngine {
   private onStructure(brk: StructureBreak, ob: Zone | null, i: number) {
     const s = brk.dir === 'bull' ? this.long : this.short;
     if (!s || s.state !== 'FORMING' || s.createdAt >= i) return;
+    s.confirmations[1] = { ...s.confirmations[1]!, ok: true, at: i };
+    this.plan(s, brk, ob, s.createdAt, s.events[0]!.price, i);
+  }
+
+  /**
+   * Continuation (research option): a with-trend BOS made with displacement is
+   * itself the setup -- the retrace into the zone it left is the entry. It
+   * never replaces a setup already running on that side.
+   */
+  private onContinuation(brk: StructureBreak, ob: Zone | null, swing: Swing, i: number) {
+    const bull = brk.dir === 'bull';
+    if (bull ? this.long : this.short) return;
+    const s: Setup = {
+      id: `${bull ? 'CL' : 'CS'}-${this.b[i]!.time}`, dir: brk.dir, createdAt: i, state: 'FORMING',
+      confirmations: [
+        { name: 'With the trend (continuation)', ok: true, at: i },
+        { name: `${bull ? 'Bullish' : 'Bearish'} BOS`, ok: true, at: i },
+        { name: 'Displacement', ok: false, at: null },
+        { name: 'OB / FVG from the move', ok: false, at: null },
+        { name: 'Retest', ok: false, at: null },
+        { name: 'Close confirms', ok: false, at: null },
+      ],
+      poi: null, entry: null, stop: null, targets: [], risk: null, fill: null, htf: null,
+      events: [{ state: 'FORMING', at: i, known: i, price: null, note: `${bull ? 'bullish' : 'bearish'} BOS ${Math.round(brk.level)} with the trend` }],
+      trail: [], mfeR: null, maeR: null, resultR: null, closedAt: null,
+    };
+    this.setups.push(s);
+    if (bull) this.long = s; else this.short = s;
+    this.plan(s, brk, ob, swing.at, null, i);
+    if (s.state === 'FORMING') this.finish(s, 'INVALIDATED', i, null, 'BOS without displacement');
+  }
+
+  /** Displacement, a POI, the stop, the targets and the R filter: shared by both kinds of setup. */
+  private plan(s: Setup, brk: StructureBreak, ob: Zone | null, since: number, sweepPrice: number | null, i: number) {
     const ok = (k: number) => { s.confirmations[k] = { ...s.confirmations[k]!, ok: true, at: i }; };
-    ok(1);
     /*
      * The move must have been made with intent. Displacement is a move strong
      * enough to leave an imbalance: a displacement candle, or the fair value
-     * gap such a move leaves, between the sweep and the break.
+     * gap such a move leaves, since the sweep (or the broken swing).
      */
-    const disp = this.tags.some((t) => t.name === 'Displacement' && t.dir === brk.dir && t.at > s.createdAt && t.at <= i)
-      || this.zones.some((z) => z.kind === 'FVG' && z.dir === brk.dir && z.known > s.createdAt && z.known <= i);
+    const disp = someSince(this.tags, since, (t) => t.name === 'Displacement' && t.dir === brk.dir)
+      || someSince(this.zones, since, (z) => z.kind === 'FVG' && z.dir === brk.dir);
     if (!disp) return; // a break without displacement is not enough; a later break may still qualify
     ok(2);
     const fvg = [...this.liveZones.values()].map((l) => l.zone).reverse()
-      .find((z) => z.kind === 'FVG' && z.dir === brk.dir && z.known > s.createdAt && z.known <= i);
+      .find((z) => z.kind === 'FVG' && z.dir === brk.dir && z.known > since && z.known <= i);
     const poi = ob ?? fvg ?? null;
     if (!poi) { this.finish(s, 'INVALIDATED', i, null, `${brk.kind} left no OB or FVG to enter from`); return; }
     ok(3);
 
     const bull = brk.dir === 'bull';
     const atr = this.atrs[i] ?? 0;
+    const buf = stopBuffer(atr);
     const entry = bull ? poi.high : poi.low;
     // The stop: beyond the POI's distal edge -- the level whose loss says the zone failed -- plus the buffer.
-    const stop = bull ? poi.low - stopBuffer(atr) : poi.high + stopBuffer(atr);
+    let stop = bull ? poi.low - buf : poi.high + buf;
+    if (this.o.stopAt === 'sweep' && sweepPrice !== null) stop = bull ? Math.min(stop, sweepPrice - buf) : Math.max(stop, sweepPrice + buf);
+    const floor = this.o.minStopAtr * atr;
+    if (floor > 0) stop = bull ? Math.min(stop, entry - floor) : Math.max(stop, entry + floor);
     const risk = bull ? entry - stop : stop - entry;
     if (!(risk > 0) || risk > 4 * atr) { this.finish(s, 'INVALIDATED', i, null, 'stop wider than four ATR'); return; }
     const targets = this.targetsFor(brk.dir, entry, risk, i);
@@ -597,6 +653,18 @@ export class SmcEngine {
           return;
         }
         ok(4);
+        if (this.o.entry === 'limit') {
+          // Research option: a resting limit at the zone edge, filled on the touch. On the fill
+          // candle only the stop is checked -- which extreme came first is unknown.
+          ok(5);
+          s.fill = { at: i, price: s.entry!, risk: s.risk! };
+          s.state = 'ACTIVE';
+          s.events.push({ state: 'ACTIVE', at: i, known: i, price: s.entry!, note: 'filled at the zone edge (limit)' });
+          s.mfeR = Math.max(0, (bull ? bar.close - s.entry! : s.entry! - bar.close) / s.risk!);
+          s.maeR = Math.max(0, (bull ? s.entry! - bar.low : bar.high - s.entry!) / s.risk!);
+          if (bull ? bar.low <= stop : bar.high >= stop) this.finish(s, 'STOPPED', i, stop, 'stop hit on the fill candle');
+          return;
+        }
       }
       // The trigger: a candle that closes back out of the zone in the trade's direction.
       const confirms = bull ? bar.close > poi.high && bar.close > bar.open : bar.close < poi.low && bar.close < bar.open;
@@ -694,6 +762,12 @@ export class SmcEngine {
       position: Math.max(0, Math.min(1, (last.close - l.price) / r)),
     };
   }
+}
+
+/** Whether anything recorded after candle `after` matches -- scanning back from the newest, and stopping there. */
+function someSince<T extends { known: number }>(xs: readonly T[], after: number, match: (x: T) => boolean): boolean {
+  for (let k = xs.length - 1; k >= 0 && xs[k]!.known > after; k--) if (match(xs[k]!)) return true;
+  return false;
 }
 
 function ext(bar: Bar, i: number): Extreme {
