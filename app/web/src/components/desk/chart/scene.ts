@@ -192,9 +192,15 @@ function liquidity(st: SmcState, n: number, last: number, near: (p: number) => n
         });
       }
     }
-    for (const p of swing) {
-      const e = ended.get(p.id);
-      if (!e || e.type !== 'swept' || e.at < n - 80) continue;
+    // The latest sweeps only, one a candle and side: a sweep is an event, and old ones are noise.
+    const seen = new Set<string>();
+    const sweeps = swing
+      .map((p) => ({ p, e: ended.get(p.id) }))
+      .filter((x): x is { p: Pool; e: PoolEvent } => !!x.e && x.e.type === 'swept' && x.e.at >= n - 80)
+      .sort((a, b) => b.e.at - a.e.at)
+      .filter(({ p, e }) => { const k = `${e.at}:${p.side}`; if (seen.has(k)) return false; seen.add(k); return true; })
+      .slice(0, 6);
+    for (const { p, e } of sweeps) {
       const buy = p.side === 'buy';
       out.push({ t: 'line', layer: 'liquidity', x1: p.at, x2: e.at, y: p.price, color: buy ? C.bsl : C.ssl, dash: 'dot', priority: 5 });
       out.push({

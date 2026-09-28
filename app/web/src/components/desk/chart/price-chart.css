@@ -179,4 +179,6 @@
   .pc-tfs button, .pc-tool { min-height: 32px; padding: 0 8px; }
   .pc-tool span { display: none; }
   .pc-hud { max-width: calc(100% - 16px); font-size: 11px; }
+  .pc-hud-body { max-height: 38vh; overflow-y: auto; }
+  .pc-hud-record, .pc-hud-ohlc { display: none; }
 }

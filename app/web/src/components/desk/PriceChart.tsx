@@ -20,8 +20,8 @@ import './chart/price-chart.css';
 export type ChartTf = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d';
 export const CHART_TFS: readonly ChartTf[] = ['1m', '5m', '15m', '30m', '1h', '4h'];
 
-/** Bars shown when a timeframe opens, and the empty space kept right of the last one for levels and labels. */
-const OPENING_BARS = 90;
+/** Bars shown when a timeframe opens -- about nine pixels each, at least thirty -- and the space kept right of the last one for levels and labels. */
+const openingBars = (width: number) => Math.max(30, Math.min(90, Math.floor(width / 9)));
 const RIGHT_BARS = 24;
 
 const IST_FULL = new Intl.DateTimeFormat('en-IN', {
@@ -56,6 +56,7 @@ export function PriceChart({
   const cardRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const hudRef = useRef<HTMLDivElement>(null);
+  const toolbarRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeRef = useRef<ISeriesApi<'Histogram'> | null>(null);
@@ -63,7 +64,8 @@ export function PriceChart({
 
   const [zoomOn, setZoomOn] = usePersisted('zoom:price-chart', false);
   const [layerList, setLayerList] = usePersisted<Layer[]>('chart:layers', [...DEFAULT_LAYERS]);
-  const [hudOpen, setHudOpen] = usePersisted('chart:hud-open', true);
+  // Folded by default on a phone, where it would cover half the candles; one tap opens it.
+  const [hudOpen, setHudOpen] = usePersisted('chart:hud-open', typeof window === 'undefined' || window.innerWidth > 640);
   const [full, setFull] = useState(false);
   const [hover, setHover] = useState<Candle | null>(null);
   const [saved, setSaved] = useState<Annotation[]>([]);
@@ -179,26 +181,29 @@ export function PriceChart({
     const chart = chartRef.current;
     if (!chart || !bars.length) return;
     const last = bars.length - 1;
-    chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, last - OPENING_BARS), to: last + RIGHT_BARS });
+    const width = hostRef.current?.clientWidth || 720;
+    chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, last - openingBars(width)), to: last + Math.round(openingBars(width) / 4) });
   }, [tf, bars.length === 0, error]);
 
   useEffect(() => { primitiveRef.current?.setScene(scene); }, [scene, error, bars.length === 0]);
 
-  // Keep labels out from under the HUD.
+  // Keep labels out from under the HUD and the toolbar.
   useEffect(() => {
-    const hud = hudRef.current;
     const host = hostRef.current;
     const primitive = primitiveRef.current;
     if (!primitive || !host) return;
-    if (!hud) { primitive.setReserved([]); return; }
+    const covers = [hudRef.current, toolbarRef.current].filter((x): x is HTMLDivElement => !!x);
     const measure = () => {
-      const h = hud.getBoundingClientRect();
       const c = host.getBoundingClientRect();
-      primitive.setReserved([{ x: h.left - c.left - 4, y: h.top - c.top - 4, w: h.width + 8, h: h.height + 8 }]);
+      primitive.setReserved(covers.map((el) => {
+        const r = el.getBoundingClientRect();
+        return { x: r.left - c.left - 4, y: r.top - c.top - 4, w: r.width + 8, h: r.height + 8 };
+      }));
     };
     measure();
     const ro = new ResizeObserver(measure);
-    ro.observe(hud);
+    covers.forEach((el) => ro.observe(el));
+    ro.observe(host);
     return () => ro.disconnect();
   }, [hudOpen, read, error, bars.length === 0]);
 
@@ -215,7 +220,7 @@ export function PriceChart({
         <div className="pc-stage">
           <div ref={hostRef} className="pc-host" />
 
-          <div className="pc-toolbar" role="toolbar" aria-label="Chart controls">
+          <div ref={toolbarRef} className="pc-toolbar" role="toolbar" aria-label="Chart controls">
             <div className="pc-tfs" role="group" aria-label="Timeframe">
               {CHART_TFS.map((t) => (
                 <button key={t} type="button" className={t === tf ? 'on' : ''} aria-pressed={t === tf} onClick={() => onTf(t)}>{t}</button>
