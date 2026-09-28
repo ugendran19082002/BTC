@@ -623,36 +623,6 @@ export function sideSelector(regime: string | null, outlook: Outlook, ceStatus: 
 
 // --------------------------------------------------- execution estimate
 
-export type ExecutionEstimate = {
-  bid: number | null;
-  bidSize: number | null;
-  /** Where a sell of `contracts` fills: the bid when the bid is deep enough, a tick under it otherwise. */
-  expectedFill: number | null;
-  /** Bid to expected fill, plus half the spread, per BTC. */
-  slippagePerBtc: number | null;
-  feeUsd: number;
-  /** Premium at the expected fill less fee and slippage, USD for the size. */
-  netPremiumUsd: number | null;
-  thin: boolean;
-};
-
-/** A short fills at the bid, not the mark. Delta's ticker carries the best bid and its size; that is what is used. */
-export function executionEstimate(leg: Leg, spot: number, contracts: number, tick = 0.5): ExecutionEstimate {
-  const bid = leg.bid;
-  const size = contracts * CONTRACT_BTC;
-  const bidSize = (leg as Leg & { bidSize?: number | null }).bidSize ?? null;
-  const thin = bidSize !== null && bidSize < contracts;
-  const expectedFill = bid === null ? null : thin ? Math.max(0, bid - tick) : bid;
-  const half = leg.bid !== null && leg.ask !== null ? (leg.ask - leg.bid) / 2 : 0;
-  const slippagePerBtc = bid === null || expectedFill === null ? null : bid - expectedFill + half;
-  const feeUsd = expectedFill === null ? 0 : feePerContract(spot, expectedFill) * contracts;
-  return {
-    bid, bidSize, expectedFill, slippagePerBtc, feeUsd,
-    netPremiumUsd: expectedFill === null || slippagePerBtc === null ? null : expectedFill * size - feeUsd - slippagePerBtc * size,
-    thin,
-  };
-}
-
 // ------------------------------------------------------- early warning
 
 export type Trigger = {
@@ -1001,9 +971,6 @@ export function structureRead(structure: -1 | 0 | 1 | undefined, trend: -1 | 0 |
   if (!structure) return { swings, kind: null };
   return { swings, kind: trend === 0 || Math.sign(trend) === Math.sign(structure) ? 'BOS' : 'CHOCH' };
 }
-
-/** What the desk says of a candidate, in the three words the finder shows. */
-export const finderDecision = (l: Leg): 'RECOMMENDED' | 'WATCH' | 'AVOID' | '—' => (l.ev?.signal === 'sell' ? 'RECOMMENDED' : l.ev?.signal === 'watch' ? 'WATCH' : l.ev?.signal === 'avoid' ? 'AVOID' : '—');
 
 // ------------------------------------------------------------ option bias
 

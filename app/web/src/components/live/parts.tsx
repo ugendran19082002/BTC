@@ -31,7 +31,6 @@ export const TONE_TEXT = {
   warn: 'text-[var(--warn)]',
 } as const;
 
-export const pct1 = (v: number) => `${(v * 100).toFixed(1)}%`;
 export const pct0 = (v: number) => `${Math.round(v * 100)}%`;
 export const usd0 = (v: number) => Math.round(v).toLocaleString('en-IN');
 export const signedR = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(3)}R`;

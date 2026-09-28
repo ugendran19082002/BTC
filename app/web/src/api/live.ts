@@ -21,5 +21,3 @@ export function getLive(opts: { expiry?: string; strikes?: readonly string[]; at
   return json<LiveResponse>(`/api/live${s ? `?${s}` : ''}`);
 }
 
-/** The key a strike is asked for by: `C:84000`. */
-export const strikeKey = (cp: 'C' | 'P', strike: number) => `${cp}:${strike}`;
