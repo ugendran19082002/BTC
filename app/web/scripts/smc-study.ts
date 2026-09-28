@@ -48,6 +48,11 @@ const VARIANTS: Variant[] = [
   { name: 'G  + continuation', opts: { continuation: true } },
   { name: 'H  + continuation, floor 1.0 ATR', opts: { continuation: true, minStopAtr: 1.0 } },
   { name: 'I  + continuation, floor 1.5 ATR', opts: { continuation: true, minStopAtr: 1.5 } },
+  // Added after the 28 Sep trace: the day's rally was refused for a TP1 of 0.9R.
+  { name: 'J  I, no TP1 minimum', opts: { continuation: true, minStopAtr: 1.5, minTp1R: 0 } },
+  { name: 'K  I, TP1 = first liquidity over 1.5R', opts: { continuation: true, minStopAtr: 1.5, tp1: 'first-over-min' } },
+  // Added after the same trace: the rally never came back to its zone. Enter on the break instead.
+  { name: 'L  J, entered at the break (no retest)', opts: { continuation: true, minStopAtr: 1.5, minTp1R: 0, entry: 'break' } },
 ];
 const netOf = (xs: Setup[]) => xs.reduce((a, s) => a + s.resultR! - (2 * FEE * s.fill!.price) / s.fill!.risk, 0);
 say('== Variants (net of fees; per trade and total; 2024-25 chooses, 2026 judges)');

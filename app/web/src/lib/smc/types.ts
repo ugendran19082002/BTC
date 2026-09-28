@@ -183,10 +183,22 @@ export type SmcOptions = {
   stopAt?: 'zone' | 'sweep';
   /** A volatility floor: the stop is at least this many ATRs from the entry. 0, the default, is structure only. */
   minStopAtr?: number;
-  /** How a READY setup is entered: at the close that confirms the retest (the default), or a resting limit at the zone edge. */
-  entry?: 'close' | 'limit';
+  /**
+   * How a READY setup is entered: at the close that confirms the retest (the
+   * default), a resting limit at the zone edge, or at the close of the break
+   * itself, without waiting for a retest ('break').
+   */
+  entry?: 'close' | 'limit' | 'break';
   /** Also trade continuation: a with-trend BOS made with displacement, entered on its retrace, no sweep needed. Off by default. */
   continuation?: boolean;
+  /**
+   * TP1: the nearest liquidity, with no trade when it pays under `minTp1R`
+   * ('nearest', the default), or the nearest liquidity that pays at least
+   * `minTp1R`, closer levels passed over ('first-over-min').
+   */
+  tp1?: 'nearest' | 'first-over-min';
+  /** The least TP1 may pay, in R. 1.5 by default. */
+  minTp1R?: number;
   /** Fractal size. Two bars each side is the usual intraday choice. */
   pivotLeft?: number;
   pivotRight?: number;

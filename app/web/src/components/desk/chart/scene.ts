@@ -287,6 +287,26 @@ function trade(st: SmcState, n: number, out: SceneItem[], blocked: readonly stri
     out.push({ t: 'mark', layer: 'trade', x: x1, y: s.fill.price, glyph: bull ? '▲' : '▼', color: bull ? C.bull : C.bear, side: bull ? 'below' : 'above', text: bull ? 'Long' : 'Short', priority: 74 });
   }
 
+  // Setups that got as far as a structure shift and ended without a trade: a quiet note of why, on the candle it ended.
+  const SHORT: [RegExp, string][] = [
+    [/^TP1 .* pays ([\d.]+R)/, 'TP1 only $1'], [/ran to TP1 without a retest/, 'ran, no retest'], [/no retest/, 'no retest'],
+    [/closed through the stop/, 'stop broken first'], [/confirmed too far/, 'entry too late'], [/no liquidity/, 'no target'],
+    [/wider than four ATR/, 'stop too wide'], [/left no OB or FVG/, 'no OB / FVG'], [/retest never closed/, 'no close back'],
+  ];
+  for (const s of st.setups) {
+    if (s.fill || s.closedAt === null || s.closedAt < n - 150 || !s.confirmations[1]!.ok) continue;
+    const note = s.events[s.events.length - 1]!.note;
+    const hit = SHORT.find(([re]) => re.test(note));
+    if (!hit) continue;
+    const bar = s.closedAt;
+    const y = s.entry ?? s.poi?.high ?? null;
+    if (y === null) continue;
+    out.push({
+      t: 'mark', layer: 'trade', x: bar, y, color: C.muted, side: long(s) ? 'below' : 'above',
+      text: `No ${long(s) ? 'long' : 'short'}: ${hit[1].replace('$1', note.match(hit[0])?.[1] ?? '')}`, priority: 45,
+    });
+  }
+
   const live = [...st.setups].reverse().find((s) => s.closedAt === null && LIVE_SETUP.includes(s.state));
   if (!live) return;
   const ready = live.events.find((e) => e.state === 'READY')!.at;

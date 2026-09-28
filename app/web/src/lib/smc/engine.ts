@@ -89,7 +89,7 @@ export class SmcEngine {
   private session: { name: Session; day: number; from: number; ext: Extreme } | null = null;
 
   constructor(opts: SmcOptions) {
-    this.o = { pivotLeft: 2, pivotRight: 2, stopAt: 'zone', minStopAtr: 0, entry: 'close', continuation: false, ...opts };
+    this.o = { pivotLeft: 2, pivotRight: 2, stopAt: 'zone', minStopAtr: 0, entry: 'close', continuation: false, tp1: 'nearest', minTp1R: MIN_TP1_R, ...opts };
   }
 
   /** Feed the next closed candle. Candles must arrive in time order. */
@@ -557,8 +557,8 @@ export class SmcEngine {
     if (!(risk > 0) || risk > 4 * atr) { this.finish(s, 'INVALIDATED', i, null, 'stop wider than four ATR'); return; }
     const targets = this.targetsFor(brk.dir, entry, risk, i);
     if (!targets) { this.finish(s, 'INVALIDATED', i, null, 'no liquidity to aim at'); return; }
-    if (targets[0]!.rr < MIN_TP1_R) {
-      this.finish(s, 'INVALIDATED', i, null, `TP1 ${targets[0]!.label} pays ${targets[0]!.rr.toFixed(1)}R, under ${MIN_TP1_R}R`);
+    if (targets[0]!.rr < this.o.minTp1R) {
+      this.finish(s, 'INVALIDATED', i, null, `TP1 ${targets[0]!.label} pays ${targets[0]!.rr.toFixed(1)}R, under ${this.o.minTp1R}R`);
       return;
     }
 
@@ -570,6 +570,21 @@ export class SmcEngine {
     s.htf = this.o.htfTrendAt?.(this.b[i]!.time + this.o.tfSec) ?? null;
     s.state = 'READY';
     s.events.push({ state: 'READY', at: i, known: i, price: entry, note: `${brk.mss ? 'MSS' : brk.kind} ${Math.round(brk.level)}; POI ${poi.kind} ${Math.round(poi.low)}–${Math.round(poi.high)}` });
+
+    if (this.o.entry === 'break') {
+      // Momentum entry: at the close of the break itself, no retest. Same stop and targets.
+      const close = this.b[i]!.close;
+      const fillRisk = bull ? close - stop : stop - close;
+      const rr1 = (bull ? targets[0]!.price - close : close - targets[0]!.price) / fillRisk;
+      if (!(fillRisk > 0) || rr1 <= 0 || rr1 < this.o.minTp1R) { this.finish(s, 'INVALIDATED', i, close, `break entry: TP1 ${rr1.toFixed(1)}R at the close`); return; }
+      ok(4);
+      ok(5);
+      s.fill = { at: i, price: close, risk: fillRisk };
+      s.state = 'ACTIVE';
+      s.events.push({ state: 'ACTIVE', at: i, known: i, price: close, note: 'entered at the close of the break' });
+      s.mfeR = 0;
+      s.maeR = 0;
+    }
   }
 
   /**
@@ -606,7 +621,9 @@ export class SmcEngine {
     const nearest = (xs: C[], beyond: number) => xs.filter((c) => dist(c.price) > beyond + 0.2 * atr).sort((a, b) => dist(a.price) - dist(b.price))[0] ?? null;
     const of = (src: Target['source']) => pools.filter((c) => c.source === src);
 
-    const tp1 = nearest(of('internal'), 0) ?? nearest(pools, 0);
+    // 'first-over-min' passes over levels that would pay less than the minimum.
+    const floor = this.o.tp1 === 'first-over-min' ? this.o.minTp1R * risk : 0;
+    const tp1 = nearest(of('internal'), floor) ?? nearest(pools, floor);
     if (!tp1) return null;
     const tp2 = nearest(of('external'), dist(tp1.price)) ?? nearest(pools, dist(tp1.price));
     const tp3 = tp2 ? nearest(of('zone'), dist(tp2.price)) ?? nearest(pools, dist(tp2.price)) : null;
@@ -674,7 +691,7 @@ export class SmcEngine {
       }
       const risk = bull ? bar.close - stop : stop - bar.close;
       const rr1 = (bull ? s.targets[0]!.price - bar.close : bar.close - s.targets[0]!.price) / risk;
-      if (!(risk > 0) || rr1 < MIN_TP1_R) {
+      if (!(risk > 0) || rr1 < this.o.minTp1R) {
         this.finish(s, 'INVALIDATED', i, bar.close, `confirmed too far from the zone: TP1 ${rr1.toFixed(1)}R at the close`);
         return;
       }
@@ -780,12 +797,13 @@ function grow(e: Extreme, bar: Bar, i: number) {
 }
 
 /**
- * The options the desk's chart runs with: continuation setups on, and a stop
- * at least 1.5 ATR from the entry. Chosen on 2024-25 out of nine variants
- * declared in advance, then judged once on 2026 -- see research/SMC-STUDY.txt,
- * which also shows that no variant clears fees. The HUD prints that record.
+ * The options the desk's chart runs with: continuation setups on, a stop at
+ * least 1.5 ATR from the entry, and no minimum on TP1 (the nearest liquidity
+ * is TP1 whatever it pays). Chosen on 2024-25 out of eleven variants, then
+ * judged once on 2026 -- see research/SMC-STUDY.txt, which also shows that no
+ * variant clears fees. The HUD prints that record beside every setup.
  */
-export const DESK_SMC_OPTIONS = { continuation: true, minStopAtr: 1.5 } as const;
+export const DESK_SMC_OPTIONS = { continuation: true, minStopAtr: 1.5, minTp1R: 0 } as const;
 
 /** Run the engine over closed candles. The forming candle, if any, must be left out by the caller. */
 export function runSmc(bars: readonly Bar[], opts: SmcOptions): SmcState {

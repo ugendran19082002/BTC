@@ -23,6 +23,7 @@ export type ChartTf = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d';
 const openingBars = (width: number) => Math.max(30, Math.min(90, Math.floor(width / 9)));
 const RIGHT_BARS = 24;
 
+const IST_TICK = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
 const IST_FULL = new Intl.DateTimeFormat('en-IN', {
   timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false,
 });
@@ -124,7 +125,11 @@ export function PriceChart({
       },
       grid: { vertLines: { color: 'rgba(255,255,255,0.04)' }, horzLines: { color: 'rgba(255,255,255,0.04)' } },
       rightPriceScale: { borderColor: 'rgba(255,255,255,0.12)', scaleMargins: { top: 0.1, bottom: 0.2 } },
-      timeScale: { borderColor: 'rgba(255,255,255,0.12)', timeVisible: true, secondsVisible: false, rightOffset: RIGHT_BARS, barSpacing: 8 },
+      timeScale: {
+        borderColor: 'rgba(255,255,255,0.12)', timeVisible: true, secondsVisible: false, rightOffset: RIGHT_BARS, barSpacing: 8,
+        // The axis in IST like the crosshair: without this the library labels it in UTC, and one candle read 11:10 on the axis and 16:40 on hover.
+        tickMarkFormatter: (t: Time) => IST_TICK.format(Number(t) * 1000),
+      },
       crosshair: { mode: CrosshairMode.Normal },
       handleScroll: zoomOn,
       handleScale: zoomOn,
