@@ -508,34 +508,6 @@ export async function capturePerpSnapshot(nowMs: number): Promise<{ at: number }
   return { at };
 }
 
-// -------------------------------------------------------------- skew history
-
-export type SkewRank = {
-  /** Where today's skew sits among every recorded reading, 0–1. */
-  percentile: number;
-  samples: number;
-  /** How far back the record goes, in days. */
-  days: number;
-};
-
-/**
- * The current put−call skew against every reading `chain_features` holds.
- * The reference screens call it the one-year percentile; the desk has been
- * recording since 17 Sep 2026, and says how long its record actually is.
- */
-/** The current ATM IV against every reading `chain_features` holds: the IV percentile, with how long the record is. */
-export async function ivRank(atmIv: number | null): Promise<SkewRank | null> {
-  if (atmIv === null) return null;
-  await marketSchema();
-  const r = await one<{ n: number; below: number; oldest: number | null }>(
-    `SELECT COUNT(*)::int AS n, COUNT(*) FILTER (WHERE atm_iv < $1)::int AS below, MIN(at) AS oldest
-       FROM chain_features WHERE atm_iv IS NOT NULL`,
-    [atmIv],
-  );
-  if (!r || r.n < 12 || r.oldest === null) return null;
-  return { percentile: r.below / r.n, samples: r.n, days: (Date.now() - r.oldest) / 86_400_000 };
-}
-
 export type OiPulse = {
   /** The board's open-interest change over the last hour, calls and puts, contracts. */
   ceChange1h: number | null;
@@ -576,16 +548,4 @@ export async function oiPulse(expiry: string, nowMs = Date.now()): Promise<OiPul
     ceAtmMarkChange1hPct: pct(latest.call_atm, before?.call_atm), peAtmMarkChange1hPct: pct(latest.put_atm, before?.put_atm),
     at: latest.at,
   };
-}
-
-export async function skewRank(nowPts: number | null): Promise<SkewRank | null> {
-  if (nowPts === null) return null;
-  await marketSchema();
-  const r = await one<{ n: number; below: number; oldest: number | null }>(
-    `SELECT COUNT(*)::int AS n, COUNT(*) FILTER (WHERE iv_skew_pts < $1)::int AS below, MIN(at) AS oldest
-       FROM chain_features WHERE iv_skew_pts IS NOT NULL`,
-    [nowPts],
-  );
-  if (!r || r.n < 12 || r.oldest === null) return null;
-  return { percentile: r.below / r.n, samples: r.n, days: (Date.now() - r.oldest) / 86_400_000 };
 }
