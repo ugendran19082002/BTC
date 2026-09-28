@@ -3,7 +3,7 @@ import {
   Activity, AlertTriangle, BarChart3, Bot, Briefcase, ListOrdered, RefreshCw, SlidersHorizontal,
 } from 'lucide-react';
 import { NotSignedIn } from '@/api/client';
-import { getCandles, getChain, getExpiries, getHealth, getMarketState, getSpot } from '@/api/desk';
+import { getCandles, getChain, getExpiries, getHealth, getSpot } from '@/api/desk';
 import { getMe, type Stage } from '@/api/session';
 import { ProfileMenu } from '@/components/auth/ProfileMenu';
 import { TwoStepSetup } from '@/components/auth/TwoStepSetup';
@@ -321,13 +321,6 @@ export default function App() {
     60_000,
     { enabled: signedIn === true && tab === 'desk', deps: [chartTf] },
   );
-  // The market state on the chart's timeframe, every 30 seconds: it is read off closed bars.
-  const { data: marketState } = usePoll(
-    () => getMarketState(chartTf),
-    30_000,
-    { enabled: signedIn === true && tab === 'desk' },
-  );
-
   const openTicket = useCallback((i: ChainSellIntent) => {
     if (!snapRef.current) return;
     setTicket({
@@ -551,7 +544,6 @@ export default function App() {
                 tick={liveSpot}
                 error={err}
                 bars={liveBars}
-                marketState={marketState}
                 chartTf={chartTf}
                 controls={
                   <>

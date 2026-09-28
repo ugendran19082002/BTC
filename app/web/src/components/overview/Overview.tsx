@@ -2,9 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { usePersisted } from '@/hooks/usePersisted';
 import type { Candle, ChainResponse, ExpiryOption } from '@/types/desk';
 import type { TradeStatus } from '@/types/trade';
-import { getPerp, type MarketStateResponse } from '@/api/desk';
-import { getLive } from '@/api/live';
-import type { LiveResponse } from '@/types/live';
+import { getPerp } from '@/api/desk';
 import { DeskDashboard } from '@/components/desk-screen/DeskDashboard';
 import { usePoll } from '@/hooks/usePoll';
 import type { ChartTf } from '@/components/desk/PriceChart';
@@ -40,7 +38,7 @@ export const screenSpot = (tick: number | null | undefined, snapshot: number | n
 export function Overview({
   data, trade, expiries, onExpiry, chartTf = '15m',
   selected: selectedProp, onSelect, tick, controls, error,
-  bars = [], marketState = null,
+  bars = [],
 }: {
   data: ChainResponse;
   trade: TradeStatus | null;
@@ -57,7 +55,6 @@ export function Overview({
   /** The last load's error, if the chain on screen is older than it should be. */
   error?: string | null;
   bars?: readonly Candle[];
-  marketState?: MarketStateResponse | null;
 }) {
   // A clock for the flow window, ticking once a second.
   const [now, setNow] = useState(() => Date.now());
@@ -67,11 +64,6 @@ export function Overview({
   }, []);
 
   const snap = data.snapshot;
-  const { data: liveData } = usePoll<LiveResponse>(
-    () => getLive({ expiry: snap.expiry }),
-    5_000,
-    { deps: [snap.expiry] },
-  );
 
   /*
    * The price every figure on this screen is measured from — newest source first
@@ -118,8 +110,6 @@ export function Overview({
     <div className="ov">
       <DeskDashboard
         data={data}
-        liveData={liveData}
-        marketState={marketState}
         perp={perp}
         bars={bars}
         spot={spot}
