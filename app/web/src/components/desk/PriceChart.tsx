@@ -7,7 +7,7 @@ import { Expand, Layers, Lock, Minimize2, Unlock } from 'lucide-react';
 import type { Candle } from '@/types/desk';
 import { usePersisted } from '@/hooks/usePersisted';
 import { TF_SECONDS } from '@/lib/live-bar';
-import { runSmc } from '@/lib/smc/engine';
+import { DESK_SMC_OPTIONS, runSmc } from '@/lib/smc/engine';
 import { closedBars, trendTimeline, type TfRead } from '@/lib/smc/context';
 import { readout } from '@/lib/smc/readout';
 import { clearAnnotationsApi, getAnnotations, type Annotation } from '@/api/annotations';
@@ -83,7 +83,7 @@ export function PriceChart({
     [regimeKey],
   );
   // Keyed on the closed candles, not the array: the forming candle changes every tick and must not re-run the engine.
-  const smc = useMemo(() => runSmc(closed, { tfSec, htfTrendAt }), [closedKey, htfTrendAt]);
+  const smc = useMemo(() => runSmc(closed, { tfSec, htfTrendAt, ...DESK_SMC_OPTIONS }), [closedKey, htfTrendAt]);
   const read = useMemo(() => readout(smc, closed, context), [smc, context]);
   const nowMin = Math.floor(Date.now() / 60_000);
   const overlays = useMemo(() => higher

@@ -103,6 +103,8 @@ describe('the price chart', () => {
     const hud = screen.getByLabelText('Setup readout');
     expect(hud.textContent).toMatch(/NO TRADE|FORMING|READY|ACTIVE/);
     expect(hud.textContent).not.toMatch(/will (reach|hit)/i);
+    // A setup on the chart always carries the measured record of its rules, after fees.
+    if (/FORMING|READY|ACTIVE/.test(hud.textContent ?? '')) expect(hud.textContent).toMatch(/Measured .* after fees/);
   });
 
   it('shows the timeframe context when it is given', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MIN_TP1_R, runSmc, SCALE_OUT, SmcEngine, sessionOf } from './engine';
+import { DESK_SMC_OPTIONS, MIN_TP1_R, runSmc, SCALE_OUT, SmcEngine, sessionOf } from './engine';
 import type { Bar, SmcState } from './types';
 import { walk } from '@/test/bars';
 
@@ -50,6 +50,14 @@ describe('the no-lookahead contract', () => {
     for (let k = 0; k < bars.length; k++) {
       const prefix = runSmc(bars.slice(0, k + 1), { tfSec: M5 });
       expect(asOf(prefix, k), `candle ${k}`).toEqual(asOf(full, k));
+    }
+  }, 120_000);
+
+  it('[critical] the desk\'s own options keep the contract too', () => {
+    const opts = { tfSec: M5, ...DESK_SMC_OPTIONS };
+    const whole = runSmc(bars, opts);
+    for (let k = 0; k < bars.length; k += 3) {
+      expect(asOf(runSmc(bars.slice(0, k + 1), opts), k), `candle ${k}`).toEqual(asOf(whole, k));
     }
   }, 120_000);
 

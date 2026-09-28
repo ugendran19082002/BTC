@@ -156,6 +156,7 @@
 .pc-hud-ctx span.down { color: #f87171; }
 .pc-hud-ctx b { color: #e2e8f0; font-weight: 600; }
 .pc-hud-record { margin: 0; font-size: 11px; color: #94a3b8; }
+.pc-hud-measured { margin: 0; padding: 4px 6px; border-radius: 5px; background: rgba(250, 204, 21, 0.07); color: #fcd34d; font-size: 11px; }
 .pc-hud-ohlc { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; font-size: 11px; color: #94a3b8; font-variant-numeric: tabular-nums; }
 .pc-hud-ohlc .up { color: #4ade80; }
 .pc-hud-ohlc .down { color: #f87171; }

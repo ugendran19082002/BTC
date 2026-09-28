@@ -779,6 +779,14 @@ function grow(e: Extreme, bar: Bar, i: number) {
   if (bar.low < e.low) { e.low = bar.low; e.lowAt = i; }
 }
 
+/**
+ * The options the desk's chart runs with: continuation setups on, and a stop
+ * at least 1.5 ATR from the entry. Chosen on 2024-25 out of nine variants
+ * declared in advance, then judged once on 2026 -- see research/SMC-STUDY.txt,
+ * which also shows that no variant clears fees. The HUD prints that record.
+ */
+export const DESK_SMC_OPTIONS = { continuation: true, minStopAtr: 1.5 } as const;
+
 /** Run the engine over closed candles. The forming candle, if any, must be left out by the caller. */
 export function runSmc(bars: readonly Bar[], opts: SmcOptions): SmcState {
   const e = new SmcEngine(opts);
