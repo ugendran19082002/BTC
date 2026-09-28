@@ -22,8 +22,7 @@ export const screenSpot = (tick: number | null | undefined, snapshot: number | n
   tick ?? snapshot ?? close5m ?? 0;
 
 /**
- * The Live screen: the desk dashboard (header, chart, momentum signal, stats
- * strip), then the market read -- the early warning ("Big move catch") and
+ * The Live screen: the desk dashboard (header, then the chart), then the market read -- the early warning ("Big move catch") and
  * the options' and perpetual's tape.
  *
  * The Big Move Catch section's signal history and big move risk, What changed,
@@ -109,10 +108,7 @@ export function Overview({
     <PanelFold.Provider value={fold}>
     <div className="ov">
       <DeskDashboard
-        data={data}
-        perp={perp}
         bars={bars}
-        spot={spot}
         tf={chartTf}
         expiryLabel={snap.expiry ? `${snap.expiry} 17:30 IST` : undefined}
         hoursToExpiry={snap.hoursToExpiry}

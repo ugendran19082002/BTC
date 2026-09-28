@@ -179,156 +179,11 @@
 
 /* Expiry Prediction Card */
 
-.desk-panel-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 13px;
-  font-weight: 700;
-  color: #fff;
-}
-
 /* Big Momentum Signal Card */
-.desk-momentum-panel {
-  background: var(--desk-card-bg);
-  border: 1px solid var(--desk-border);
-  border-radius: 12px;
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  height: 100%;
-  box-sizing: border-box;
-}
-
-.desk-sig-box {
-  background: #0a0e17;
-  border-radius: 10px;
-  padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.desk-sig-box.long {
-  border: 1px solid rgba(0, 230, 118, 0.3);
-  transition: all 0.2s ease;
-}
-
-.desk-sig-box.long.is-active-sig {
-  border-color: rgba(0, 230, 118, 0.85);
-  box-shadow: 0 0 14px rgba(0, 230, 118, 0.25);
-}
-
-.desk-sig-box.short {
-  border: 1px solid rgba(255, 59, 87, 0.3);
-  transition: all 0.2s ease;
-}
-
-.desk-sig-box.short.is-active-sig {
-  border-color: rgba(255, 59, 87, 0.85);
-  box-shadow: 0 0 14px rgba(255, 59, 87, 0.25);
-}
-
-.desk-sig-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.desk-sig-name {
-  font-size: 13px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.desk-sig-split {
-  display: grid;
-  grid-template-columns: 1.25fr 0.95fr;
-  gap: 8px;
-}
-
-.desk-sig-checklist {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.desk-check-item {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  color: var(--desk-text-muted);
-  white-space: nowrap;
-}
-
-.desk-check-item.done {
-  color: #e2e8f0;
-}
-
-.desk-check-icon {
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.desk-check-item.done .desk-check-icon {
-  color: var(--desk-green);
-}
-
-.desk-sig-levels {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-family: ui-monospace, monospace;
-  font-size: 11px;
-}
-
-.desk-level-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
 
 /* Market Analysis Score */
 
 /* 7 Stats Bar Strip */
-.desk-stats-strip {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.desk-stat-card {
-  background: var(--desk-card-bg);
-  border: 1px solid var(--desk-border);
-  border-radius: 10px;
-  padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.desk-stat-lbl {
-  font-size: 10.5px;
-  color: var(--desk-text-muted);
-  font-weight: 500;
-}
-
-.desk-stat-main {
-  font-size: 15px;
-  font-weight: 700;
-  font-family: ui-monospace, monospace;
-  color: #fff;
-}
-
-.desk-stat-sub {
-  font-size: 10.5px;
-  color: var(--desk-text-muted);
-}
 
 /* Bottom 5-Column Grid (matching docs/image.png) */
 
@@ -345,21 +200,12 @@
    ========================================================================== */
 
 /* 1. Large Laptops / Desktops (<= 1400px) */
-@media (max-width: 1400px) {
-  .desk-stats-strip {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 8px;
-  }
-}
 
 /* 2. Standard Laptops / Small Desktops (<= 1200px) */
 @media (max-width: 1200px) {
   .desk-chart-panel {
     grid-column: span 2;
     min-height: 420px;
-  }
-  .desk-stats-strip {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
@@ -377,10 +223,6 @@
   .desk-chart-panel {
     grid-column: span 1;
     min-height: 400px;
-  }
-  .desk-stats-strip {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
   }
 }
 
@@ -450,19 +292,6 @@
   }
 
   /* Stats Strip on Mobile */
-  .desk-stats-strip {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
-    margin-bottom: 8px;
-  }
-
-  .desk-stat-card {
-    padding: 8px 10px;
-  }
-
-  .desk-stat-main {
-    font-size: 13.5px;
-  }
 
   /* Bottom Grid on Mobile */
 }
@@ -503,56 +332,12 @@
     padding: 6px 8px;
   }
 
-  .desk-sig-split {
-    grid-template-columns: 1fr;
-    gap: 8px;
-  }
-
-  .desk-sig-levels {
-    background: rgba(0, 0, 0, 0.25);
-    border-radius: 6px;
-    padding: 6px 8px;
-  }
-
-  .desk-stats-strip {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 6px;
-  }
-
-  .desk-stat-card {
-    padding: 6px 8px;
-  }
-
-  .desk-stat-lbl {
-    font-size: 9.5px;
-  }
-
-  .desk-stat-main {
-    font-size: 13px;
-  }
-
-  .desk-stat-sub {
-    font-size: 9px;
-  }
-
   .desk-chart-container {
     min-height: 240px;
-  }
-
-  .desk-momentum-panel {
-    padding: 10px;
   }
 }
 
 /* 6. Tiny Mobile Phones (<= 360px) */
-@media (max-width: 360px) {
-  .desk-stats-strip {
-    grid-template-columns: 1fr;
-  }
-  .desk-momentum-panel {
-    padding: 8px;
-  }
-}
 
 /* Header, one row (28 Sep 2026): logo · live · expiry, then the actions on the
    right. Wraps as a row on a narrow screen rather than stacking into a column. */
@@ -586,8 +371,7 @@
 
 /* The price chart on a row of its own, full width (28 Sep 2026); the momentum
    signal sits under it at the same width. */
-.desk-chart-row,
-.desk-signal-row {
+.desk-chart-row {
   display: block;
   width: 100%;
   margin-bottom: 12px;

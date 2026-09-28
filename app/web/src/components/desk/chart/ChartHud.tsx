@@ -62,7 +62,6 @@ export const ChartHud = forwardRef<HTMLDivElement, {
                 <span key={c.tf} className={c.trend === 'bull' ? 'up' : c.trend === 'bear' ? 'down' : ''}
                   title={c.last ? `${c.last.kind} ${c.last.dir === 'bull' ? 'up' : 'down'}, ${c.last.barsAgo} candles ago` : 'No break yet'}>
                   <b>{c.tf}</b> {c.trend === 'bull' ? '▲' : c.trend === 'bear' ? '▼' : '–'} {c.role}
-                  {c.setup ? <small> · {c.setup.dir === 'bull' ? 'long' : 'short'} {c.setup.state.toLowerCase()}</small> : null}
                 </span>
               ))}
             </div>

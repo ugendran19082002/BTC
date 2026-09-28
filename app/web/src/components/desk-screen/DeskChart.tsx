@@ -12,12 +12,12 @@ const M1 = 60;
 
 /**
  * The Live screen's chart, with the timeframe context the setup reads:
- * 4H = macro, 1H = regime, 30M = bias, 15M = structure, 5M = setup, 1M = trigger.
+ * 1H = regime, 30M = bias, 15M = structure, 5M = setup, 1M = trigger.
  * The chart itself also draws the 1H order blocks and the 15m breaks.
  *
- * Three requests a minute: the hour candles (fourteen days, folded into 4H
- * here), the 5-minute (thirty-six hours, folded into 15m and 30m) and the
- * 1-minute. Only closed candles are read.
+ * Three requests a minute: the hour candles (fourteen days), the 5-minute
+ * (thirty-six hours, folded into 15m and 30m) and the 1-minute. Only closed
+ * candles are read.
  */
 export function DeskChart({
   bars, tf = '5m', loading = false, error,
@@ -38,10 +38,7 @@ export function DeskChart({
     const hour = closedBars(h1?.bars ?? [], HOUR, now);
     const five = closedBars(m5?.bars ?? [], M5, now);
     const one = closedBars(m1?.bars ?? [], M1, now);
-    if (hour.length) {
-      out.push(readTf('4H', 'Macro', aggregate(hour, HOUR, 4 * HOUR), 4 * HOUR));
-      out.push(readTf('1H', 'Regime', hour, HOUR));
-    }
+    if (hour.length) out.push(readTf('1H', 'Regime', hour, HOUR));
     if (five.length) {
       out.push(readTf('30M', 'Bias', aggregate(five, M5, 1800), 1800));
       out.push(readTf('15M', 'Structure', aggregate(five, M5, 900), 900));

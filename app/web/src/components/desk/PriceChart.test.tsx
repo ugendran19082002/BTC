@@ -108,14 +108,15 @@ describe('the price chart', () => {
   it('shows the timeframe context when it is given', () => {
     chart({
       context: [
-        { tf: '1H', role: 'Regime', trend: 'bull', last: { kind: 'BOS', dir: 'bull', barsAgo: 3 }, setup: null },
-        { tf: '5M', role: 'Setup', trend: 'bear', last: null, setup: { dir: 'bear', state: 'READY' } },
+        { tf: '1H', role: 'Regime', trend: 'bull', last: { kind: 'BOS', dir: 'bull', barsAgo: 3 } },
+        { tf: '5M', role: 'Setup', trend: 'bear', last: null },
       ],
     });
     const ctx = screen.getByLabelText('Timeframe context');
     expect(ctx.textContent).toContain('1H ▲ Regime');
     expect(ctx.textContent).toContain('5M ▼ Setup');
-    expect(ctx.textContent).toContain('short ready');
+    // Trend only: setups are the 5m chart's, read in the headline, not a suffix on each timeframe.
+    expect(ctx.textContent).not.toMatch(/forming|ready|active/i);
   });
 
   it('remembers which layers are drawn', () => {

@@ -1,11 +1,11 @@
 import { runSmc } from './engine';
-import type { Bar, Dir, SetupState, SmcState } from './types';
+import type { Bar, Dir, SmcState } from './types';
 
 /**
  * The multi-timeframe context, read with the same no-lookahead rule as the
  * engine: a higher-timeframe candle counts only once it has closed.
  *
- *   4H = macro · 1H = regime · 30M = bias · 15M = structure · 5M = setup · 1M = trigger
+ *   1H = regime · 30M = bias · 15M = structure · 5M = setup · 1M = trigger
  */
 
 /** Only candles that have finished: a candle opened at t closes at t + tfSec. */
@@ -62,7 +62,7 @@ export function trendTimeline(st: SmcState, bars: readonly Bar[], tfSec: number)
   };
 }
 
-export type TfRole = 'Macro' | 'Regime' | 'Bias' | 'Structure' | 'Setup' | 'Trigger';
+export type TfRole = 'Regime' | 'Bias' | 'Structure' | 'Setup' | 'Trigger';
 
 export type TfRead = {
   tf: string;
@@ -70,17 +70,13 @@ export type TfRead = {
   trend: Dir | null;
   /** The last break on that timeframe, with how many of its candles ago. */
   last: { kind: 'BOS' | 'CHoCH'; dir: Dir; barsAgo: number } | null;
-  /** The setup in progress there, if any. */
-  setup: { dir: Dir; state: SetupState } | null;
 };
 
 export function readTf(tf: string, role: TfRole, bars: readonly Bar[], tfSec: number): TfRead {
   const st = runSmc(bars, { tfSec });
   const brk = st.breaks[st.breaks.length - 1];
-  const live = [...st.setups].reverse().find((s) => s.closedAt === null) ?? null;
   return {
     tf, role, trend: st.trend,
     last: brk ? { kind: brk.kind, dir: brk.dir, barsAgo: bars.length - 1 - brk.at } : null,
-    setup: live ? { dir: live.dir, state: live.state } : null,
   };
 }

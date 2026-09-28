@@ -840,23 +840,10 @@ td.evcol.down { color: var(--down); }
    Ten figures, each an icon, a label, a number and the line it rests on.
    `auto-fit` fills whatever the width allows — five across on a desk, three on
    a tablet, two on a phone — so a tile is never left alone against a gap. */
-.insight {
-  display: flex; align-items: center; gap: 9px;
-  min-width: 0;
-  padding: 9px 10px;
-  border: 1px solid var(--line);
-  border-left-width: 3px;
-  border-radius: 7px;
-  background: var(--panel-2);
-}
 
 /* The stripe says which tile this is at a glance; the value carries the same
    colour so the two never argue. `-v` is the value's own tone, which is not
    always the tile's -- a green spot tile can sit above a red move. */
-
-@media (max-width: 420px) {
-  .insight { padding: 8px; gap: 7px; }
-}
 
 /* ── The bar under the chart's pointer ─────────────────────────────────────── */
 

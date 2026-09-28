@@ -20,7 +20,7 @@ function atReady() {
   throw new Error('no READY setup in the fixture');
 }
 
-const ctx = (role: TfRead['role'], trend: TfRead['trend']): TfRead => ({ tf: role === 'Bias' ? '30M' : '15M', role, trend, last: null, setup: null });
+const ctx = (role: TfRead['role'], trend: TfRead['trend']): TfRead => ({ tf: role === 'Bias' ? '30M' : '15M', role, trend, last: null });
 
 describe('readout', () => {
   it('with no setup, says what the next one needs rather than naming a price it will reach', () => {
@@ -50,7 +50,7 @@ describe('readout', () => {
   it('agreeing context, or a timeframe that is not a gate, does not block it', () => {
     const { st, past, dir } = atReady();
     const against = dir === 'bull' ? 'bear' : 'bull';
-    const r = readout(st, past, [ctx('Bias', dir), ctx('Structure', dir), { tf: '1M', role: 'Trigger', trend: against, last: null, setup: null }]);
+    const r = readout(st, past, [ctx('Bias', dir), ctx('Structure', dir), { tf: '1M', role: 'Trigger', trend: against, last: null }]);
     expect(r.blocked).toEqual([]);
   });
 });

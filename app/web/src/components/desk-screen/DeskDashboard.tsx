@@ -1,27 +1,19 @@
-import type { Candle, ChainResponse } from '@/types/desk';
-import type { LiveResponse } from '@/types/live';
-import type { MarketStateResponse, PerpResponse } from '@/api/desk';
+import type { Candle } from '@/types/desk';
 import type { ChartTf } from '@/components/desk/PriceChart';
 import { DeskHeader } from './DeskHeader';
 import { DeskChart } from './DeskChart';
-import { DeskMomentumSignal } from './DeskMomentumSignal';
-import { DeskStatsBar } from './DeskStatsBar';
 import './desk-dashboard.css';
 
 /*
- * The KPI strip (market state, direction, expiry, big move risk, decision,
- * regime), the expiry prediction engine and the bottom analysis grid (key
- * levels, the multi-timeframe hierarchy, option bias, market score, expiry
- * chances) were removed on 28 Sep 2026. See docs/TODO.md.
+ * The Live screen's top: a one-row header, then the price chart at full
+ * width. The KPI strip, expiry prediction and analysis grid went on 28 Sep
+ * 2026, and later that day the Big Momentum Signal card and the stats strip
+ * (spot, perp, volume, OI, funding, IV, PCR) -- the chart's own readout carries
+ * the setup now. See docs/TODO.md.
  */
 export function DeskDashboard({
-  data,
-  liveData,
-  marketState,
-  perp,
   bars,
-  spot,
-  tf = '15m',
+  tf = '5m',
   expiryLabel,
   hoursToExpiry,
   loading = false,
@@ -30,12 +22,7 @@ export function DeskDashboard({
   onSettings,
   controls,
 }: {
-  data?: ChainResponse | null;
-  liveData?: LiveResponse | null;
-  marketState?: MarketStateResponse | null;
-  perp?: PerpResponse | null;
   bars: readonly Candle[];
-  spot: number;
   tf: ChartTf;
   expiryLabel?: string;
   hoursToExpiry?: number;
@@ -45,51 +32,18 @@ export function DeskDashboard({
   onSettings?: () => void;
   controls?: React.ReactNode;
 }) {
-  const effectiveSpot = spot || liveData?.spot || data?.snapshot.spot || 84595;
-
-  const atmIv = data?.snapshot.atmIv ? data.snapshot.atmIv * 100 : (liveData?.atmIv ? liveData.atmIv * 100 : 25.3);
-  const pcr = data?.structure.pcrOi ?? 1.88;
-  const pcrVol = data?.structure.pcrVolume ?? 1.36;
-
   return (
     <div className="desk-root" aria-label="BTC Live Desk">
-      {/* 1. Header, one row */}
       <DeskHeader
         expiryLabel={expiryLabel}
-        hoursToExpiry={hoursToExpiry ?? liveData?.hoursToExpiry}
+        hoursToExpiry={hoursToExpiry}
         onAlerts={onAlerts}
         onSettings={onSettings}
         controls={controls}
       />
-
-      {/* 2. The price chart, full width on a row of its own */}
       <div className="desk-chart-row">
-        <DeskChart
-          bars={bars}
-          tf={tf}
-          loading={loading}
-          error={error}
-        />
+        <DeskChart bars={bars} tf={tf} loading={loading} error={error} />
       </div>
-
-      {/* 3. The momentum signal, under the chart */}
-      <div className="desk-signal-row">
-        <DeskMomentumSignal
-          spot={effectiveSpot}
-          momentum={liveData?.momentum}
-          marketState={marketState}
-        />
-      </div>
-
-      {/* 4. Stats Bar Strip (7 KPI metrics) */}
-      <DeskStatsBar
-        spot={effectiveSpot}
-        perpTicker={perp?.ticker}
-        atmIv={atmIv}
-        pcr={pcr}
-        pcrVol={pcrVol}
-        changePct={perp?.ticker?.change24hPct ?? 0.32}
-      />
     </div>
   );
 }
