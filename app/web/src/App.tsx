@@ -31,7 +31,7 @@ import { TODAY_MOVE } from '@/types/desk';
 import { tabTitle } from '@/lib/tab-title';
 import { TF_SECONDS, withLtp } from '@/lib/live-bar';
 import { pnlTone, signedInr, usdToInr } from '@/lib/format';
-import { PriceChart, CHART_TFS, type ChartTf } from '@/components/desk/PriceChart';
+import { CHART_TFS, type ChartTf } from '@/components/desk/PriceChart';
 import { Select, SelectItem } from '@/components/ui/select';
 import { ColumnPicker } from '@/components/chain/ColumnPicker';
 import { normalise, normaliseOrder, type ColumnKey, type ColumnState } from '@/components/chain/columns';
@@ -184,8 +184,6 @@ export default function App() {
   const [hedgeGap] = usePersisted('hedgeGap', 0);
   const [requireHedge] = usePersisted('requireHedge', false);
   const [lots] = usePersisted('lots', 10);
-  // The ticket's leverage, read here too so the margin estimates on the Live screen match the ticket.
-  const [orderLeverage] = usePersisted('order:leverage', 200);
   // On by default: a live chain that silently goes stale is worse than no chain.
   const [autoRefresh, setAutoRefresh] = usePersisted('autoRefresh', true);
   const visible = usePageVisible();
@@ -316,7 +314,7 @@ export default function App() {
    * than a price to act on -- so a minute, not the board's five seconds. Only
    * while the Live screen is the one being looked at.
    */
-  const { data: candles, loading: candlesBusy } = usePoll(
+  const { data: candles } = usePoll(
     () => getCandles(chartTf),
     60_000,
     { enabled: signedIn === true && tab === 'desk', deps: [chartTf] },
@@ -557,11 +555,8 @@ export default function App() {
             <ErrorBoundary where="Live screen">
               <Overview
                 data={data}
-                trade={trade}
                 expiries={expiries}
                 onExpiry={setExpiry}
-                selected={focus}
-                onSelect={setFocus}
                 tick={liveSpot}
                 error={err}
                 bars={liveBars}
