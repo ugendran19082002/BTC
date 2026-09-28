@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { PriceChart, CHART_TFS } from '@/components/desk/PriceChart';
 import type { SceneItem } from '@/components/desk/chart/scene';
 import type { Candle } from '@/types/desk';
@@ -125,14 +125,17 @@ describe('the price chart', () => {
     chart();
     fireEvent.click(screen.getByRole('button', { name: 'Layers' }));
     fireEvent.click(screen.getByLabelText('Structure'));
-    expect(JSON.parse(localStorage.getItem('desk:chart:layers') ?? localStorage.getItem('chart:layers') ?? '[]')).not.toContain('structure');
+    const stored = JSON.parse(localStorage.getItem('btc-desk:chart:layers')!) as string[];
+    expect(stored).not.toContain('structure');
+    expect(stored).toContain('liquidity');
   });
 
   it('folds the readout to one line', () => {
     chart();
-    const head = screen.getByRole('button', { expanded: true });
-    fireEvent.click(head);
-    expect(screen.getByRole('button', { expanded: false })).toBeInTheDocument();
+    const hud = screen.getByLabelText('Setup readout');
+    fireEvent.click(within(hud).getByRole('button', { expanded: true }));
+    expect(within(hud).getByRole('button', { expanded: false })).toBeInTheDocument();
+    expect(within(hud).queryByText(/between|waiting|filled/i)).toBeNull();
   });
 
   it('says it is loading, and what is wrong, instead of drawing an empty chart', () => {
