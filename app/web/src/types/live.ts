@@ -12,95 +12,6 @@ export type Way = 'UP' | 'DOWN' | 'SIDE';
 /** What a timeframe is *for*. The tier sets the weight; `execution` carries none. */
 export type Tier = 'direction' | 'structure' | 'setup' | 'pattern' | 'trigger' | 'execution';
 
-export type LadderRow = {
-  tf: string;
-  tier: Tier;
-  weight: number;
-  trend: -1 | 0 | 1;
-  momentum: 'bullish' | 'bearish' | 'neutral' | null;
-  structure: -1 | 0 | 1;
-  vwapDistPct: number | null;
-  adx: number | null;
-  way: Way;
-  /** 0..1 — the share of this frame's own sub-votes that agreed. Scales its weight. */
-  conviction: number;
-};
-
-export type Ladder = {
-  rows: LadderRow[];
-  tiers: Partial<Record<Tier, Way>>;
-  score: number;
-  /** −1..+1, the weighted read divided by the weight that voted. */
-  normalised: number;
-  bias: Way;
-  alignment: number;
-  text: string;
-  /** Frames disagreeing with `bias`. Never hidden. */
-  against: string[];
-};
-
-export type Readiness = {
-  ready: boolean;
-  side: 'UP' | 'DOWN' | null;
-  blockers: string[];
-};
-
-export type PathRow = {
-  label: string;
-  minutes: number;
-  interpolated: boolean;
-  windows: number;
-  medianUsd: number;
-  p68Usd: number;
-  p95Usd: number;
-  low68: number;
-  high68: number;
-  low95: number;
-  high95: number;
-  impliedUsd: number | null;
-  pUp: number;
-  leanUsd: number;
-};
-
-export type ExpiryPath = {
-  spot: number;
-  hoursToExpiry: number;
-  rows: PathRow[];
-  settlement: PathRow | null;
-  /** The largest |pUp − 50| anywhere in the measured table, in percentage points. */
-  directionEdgePct: number;
-  sampleWindows: number;
-  sampleDays: number;
-  watch: 'UPPER' | 'LOWER' | 'BOTH';
-  note: string;
-};
-
-/** Where the contract most probably settles: edges measured, percentage modelled. */
-export type ExpiryPrediction = {
-  spot: number;
-  hoursToExpiry: number;
-  band: {
-    low: number;
-    high: number;
-    widthPct: number;
-    pInside: number | null;
-    pBelow: number | null;
-    pAbove: number | null;
-  };
-  targets: {
-    label: 'T1' | 'T2' | 'T3';
-    side: 'UP' | 'DOWN';
-    price: number;
-    movePct: number;
-    pTouch: number | null;
-    /** Which measured percentile this rung is — never an invented multiple. */
-    from: 'typical' | '68%' | '95%';
-  }[];
-  /** True when the edges came from measured windows rather than the option model. */
-  bandMeasured: boolean;
-  note: string;
-};
-
 export type MomentumPlan = {
   entry: number;
   stop: number;
@@ -144,48 +55,19 @@ export type MomentumSignal = {
   warnings: string[];
 };
 
-export type StrikeSafety = {
-  strike: number;
-  cp: 'C' | 'P';
-  distanceUsd: number;
-  distanceInP95: number | null;
-  pExpireWorthless: number | null;
-  pTouch: number | null;
-  outsideMeasured95: boolean;
-  why: string;
-};
-
 export type LiveResponse = {
   asOf: number;
-  /** The last traded price — what every mark on the screen is measured from. */
+  /** The last traded price. */
   spot: number;
   /** Where `spot` came from. `candle-close` means the tick was unavailable and the number may be minutes old. */
   spotFrom: 'ticker' | 'candle-close';
   spotAgeMs: number | null;
-  ladder: Ladder;
-  readiness: Readiness;
-  path: ExpiryPath | null;
-  prediction: ExpiryPrediction | null;
   momentum: MomentumSignal;
-  weights: { tier: Tier; weight: number }[];
-  /** Whether the read has been holding its direction — New.md §32. */
-  stability: {
-    verdict: 'STABLE' | 'CHOPPY' | 'UNSTABLE' | 'TOO_FEW';
-    n: number;
-    flips: number;
-    persistence: number;
-    leaning: 'UP' | 'DOWN' | null;
-    ageMs: number | null;
-    text: string;
-  } | null;
-  /** Reasons to read the confidence down — New.md §33. Not blockers. */
-  penalties: { reason: string; detail: string }[];
   missing: string[];
   expiry: string;
   expiryTs: number;
   hoursToExpiry: number;
   atmIv: number | null;
   atm: number;
-  strikes: StrikeSafety[];
 };
 
