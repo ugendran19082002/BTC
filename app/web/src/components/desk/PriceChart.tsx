@@ -483,30 +483,37 @@ export function PriceChart({
       },
     };
 
-    // Safe Y that NEVER returns null (falls back proportionally to visible canvas)
+    // Safe Y that NEVER returns null or NaN (falls back proportionally to visible canvas)
     const safeY = (price: number): number => {
+      if (!Number.isFinite(price)) return Math.round(plotH / 2);
       const at = candles.priceToCoordinate(price);
-      if (at !== null && Number.isFinite(at)) {
+      if (at !== null && Number.isFinite(Number(at))) {
         return Math.max(4, Math.min(plotH - 4, Number(at)));
       }
-      const ratio = (maxBarPrice - price) / priceSpan;
+      const span = priceSpan > 0 ? priceSpan : 100;
+      const ratio = (maxBarPrice - price) / span;
+      if (!Number.isFinite(ratio)) return Math.round(plotH / 2);
       return Math.max(4, Math.min(plotH - 4, ratio * (plotH * 0.8) + plotH * 0.1));
     };
 
-    // Safe X that maps accurately across time or bar index without nulls
+    // Safe X that maps accurately across time or bar index without nulls or NaNs
     const safeX = (time: number, barIndex?: number): number => {
-      const at = chart.timeScale().timeToCoordinate(time as UTCTimestamp);
-      if (at !== null && Number.isFinite(at)) {
-        return Math.max(0, Math.min(xMax, Number(at)));
+      if (Number.isFinite(time)) {
+        const at = chart.timeScale().timeToCoordinate(time as UTCTimestamp);
+        if (at !== null && Number.isFinite(Number(at))) {
+          return Math.max(0, Math.min(xMax, Number(at)));
+        }
       }
-      if (typeof barIndex === 'number' && effectiveBars.length > 0) {
+      if (typeof barIndex === 'number' && Number.isFinite(barIndex) && effectiveBars.length > 0) {
         const barsAgo = effectiveBars.length - 1 - barIndex;
         const atAgo = c.x(barsAgo);
         if (atAgo !== null && Number.isFinite(atAgo)) {
           return Math.max(0, Math.min(xMax, atAgo));
         }
         const pct = barIndex / Math.max(effectiveBars.length - 1, 1);
-        return Math.max(0, Math.min(xMax, pct * (xMax - 30)));
+        if (Number.isFinite(pct)) {
+          return Math.max(0, Math.min(xMax, pct * (xMax - 30)));
+        }
       }
       if (effectiveBars.length > 0 && time <= effectiveBars[0]!.time) return 0;
       return 0;
@@ -517,6 +524,9 @@ export function PriceChart({
       plan: AutoTradePlan;
       entryY: number;
       spotY: number;
+      slY: number;
+      tp1Y: number;
+      tp2Y: number;
       slTop: number;
       slHeight: number;
       tp1Top: number;
@@ -558,6 +568,9 @@ export function PriceChart({
         plan: p,
         entryY,
         spotY,
+        slY,
+        tp1Y,
+        tp2Y,
         slTop,
         slHeight,
         tp1Top,
