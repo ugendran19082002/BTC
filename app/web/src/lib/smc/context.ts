@@ -5,7 +5,7 @@ import type { Bar, Dir, SetupState, SmcState } from './types';
  * The multi-timeframe context, read with the same no-lookahead rule as the
  * engine: a higher-timeframe candle counts only once it has closed.
  *
- *   1H = regime · 30M = bias · 15M = structure · 5M = setup · 1M = trigger
+ *   4H = macro · 1H = regime · 30M = bias · 15M = structure · 5M = setup · 1M = trigger
  */
 
 /** Only candles that have finished: a candle opened at t closes at t + tfSec. */
@@ -62,7 +62,7 @@ export function trendTimeline(st: SmcState, bars: readonly Bar[], tfSec: number)
   };
 }
 
-export type TfRole = 'Regime' | 'Bias' | 'Structure' | 'Setup' | 'Trigger';
+export type TfRole = 'Macro' | 'Regime' | 'Bias' | 'Structure' | 'Setup' | 'Trigger';
 
 export type TfRead = {
   tf: string;

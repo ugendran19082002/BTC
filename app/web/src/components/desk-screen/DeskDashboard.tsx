@@ -22,7 +22,6 @@ export function DeskDashboard({
   bars,
   spot,
   tf = '15m',
-  onTf,
   expiryLabel,
   hoursToExpiry,
   loading = false,
@@ -38,7 +37,6 @@ export function DeskDashboard({
   bars: readonly Candle[];
   spot: number;
   tf: ChartTf;
-  onTf: (tf: ChartTf) => void;
   expiryLabel?: string;
   hoursToExpiry?: number;
   loading?: boolean;
@@ -69,7 +67,6 @@ export function DeskDashboard({
         <DeskChart
           bars={bars}
           tf={tf}
-          onTf={onTf}
           loading={loading}
           error={error}
         />

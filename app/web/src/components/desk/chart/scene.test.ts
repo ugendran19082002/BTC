@@ -6,11 +6,13 @@ import { buildScene, DEFAULT_LAYERS, LAYERS, type Layer, type SceneItem } from '
 const bars = walk(3 * 288, 11);
 const st = runSmc(bars, { tfSec: 300 });
 const all = new Set<Layer>(LAYERS.map((l) => l.key));
-const xsOf = (it: SceneItem) => (it.t === 'mark' ? [it.x] : it.t === 'path' ? it.points.map((p) => p[0]) : [it.x1, ...(typeof it.x2 === 'number' ? [it.x2] : [])]);
+const xsOf = (it: SceneItem) => (it.t === 'mark' || it.t === 'vline' ? [it.x] : it.t === 'path' ? it.points.map((p) => p[0]) : [it.x1, ...(typeof it.x2 === 'number' ? [it.x2] : [])]);
 
 describe('the scene', () => {
-  it('[critical] draws nothing past the last closed candle except levels running to the edge', () => {
-    for (const it of buildScene(st, bars, all)) for (const x of xsOf(it)) expect(x).toBeLessThan(bars.length);
+  it('[critical] draws nothing past the last closed candle, except the trade box reaching into the space on the right', () => {
+    for (const it of buildScene(st, bars, all)) {
+      for (const x of xsOf(it)) expect(x).toBeLessThan(it.layer === 'trade' ? bars.length + 40 : bars.length);
+    }
   });
 
   it('draws only the layers asked for', () => {
@@ -53,8 +55,18 @@ describe('the scene', () => {
     const past = bars.slice(0, k + 1);
     const scene = buildScene(runSmc(past, { tfSec: 300 }), past, new Set<Layer>(['trade']));
     const labels = scene.flatMap((it) => (it.t === 'line' && it.label ? [it.label] : []));
-    expect(labels.some((l) => l.startsWith('Entry'))).toBe(true);
+    expect(labels.some((l) => /^(LONG|SHORT) (limit|entry) /.test(l))).toBe(true);
     expect(labels.some((l) => /^SL .*−1R$/.test(l))).toBe(true);
     expect(labels.filter((l) => /^TP[123] /.test(l))).toHaveLength(3);
+    // One box: the reward and the risk halves share their left and right edges and meet at the entry.
+    const boxes = scene.filter((it) => it.t === 'box');
+    expect(boxes).toHaveLength(2);
+    const [a, b] = boxes as Extract<SceneItem, { t: 'box' }>[];
+    expect([a!.x1, a!.x2]).toEqual([b!.x1, b!.x2]);
+    const entry = (scene.find((it) => it.t === 'line' && /^(LONG|SHORT)/.test(it.label ?? '')) as Extract<SceneItem, { t: 'line' }>).y;
+    expect([a!.y1, a!.y2, b!.y1, b!.y2].filter((y) => y === entry)).toHaveLength(2);
+    // Every trade line spans the box, not the chart.
+    for (const it of scene) if (it.t === 'line') expect(it.x2).toBe(a!.x2);
+    expect(scene.some((it) => it.t === 'vline')).toBe(true);
   });
 });

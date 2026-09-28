@@ -1,4 +1,5 @@
 import type { Bar, Confirmation, Pool, Setup, SmcState, Target } from './types';
+import type { TfRead } from './context';
 
 /**
  * What the chart says in words: the one live setup, or what the next one is
@@ -17,6 +18,8 @@ export type Readout = {
   plan: { entry: number; stop: number; targets: Target[]; risk: number; filled: boolean; breakEven: boolean } | null;
   nearest: { buy: Pool | null; sell: Pool | null };
   record: Record | null;
+  /** Why a setup the engine found is not a trade: the timeframes it runs against. */
+  blocked: string[];
 };
 
 export type Record = {
@@ -32,7 +35,14 @@ export type Record = {
 const fmt = (p: number) => Math.round(p).toLocaleString('en-US');
 const SWING: readonly Pool['kind'][] = ['BSL', 'SSL', 'EQH', 'EQL'];
 
-export function readout(st: SmcState, bars: readonly Bar[]): Readout {
+/**
+ * The timeframes whose read a setup must not run against: the 30M bias and
+ * the 15M structure. A 1M or 5M signal against both of them is a counter-trend
+ * scalp, and the desk does not call that a trade.
+ */
+const GATES = ['Bias', 'Structure'] as const;
+
+export function readout(st: SmcState, bars: readonly Bar[], context: readonly TfRead[] = []): Readout {
   const last = bars[bars.length - 1]?.close ?? null;
   const nearest = nearestPools(st, last);
   const record = recordOf(st.setups);
@@ -47,7 +57,7 @@ export function readout(st: SmcState, bars: readonly Bar[]): Readout {
       tone: 'flat',
       headline: 'NO TRADE — waiting for a sweep',
       detail: `${between} A long needs a sell-side sweep → bullish CHoCH/BOS → OB/FVG retest; a short the mirror.`,
-      confirmations: [], plan: null, nearest, record,
+      confirmations: [], plan: null, nearest, record, blocked: [],
     };
   }
 
@@ -71,7 +81,19 @@ export function readout(st: SmcState, bars: readonly Bar[]): Readout {
     : live.state === 'READY'
       ? `Waiting for the retest of ${poi}.${live.htf && live.htf !== live.dir ? ' Against the higher-timeframe trend.' : ''}`
       : `Filled at ${fmt(live.entry!)}${poi ? ` from ${poi}` : ''}.`;
-  return { tone, headline, detail, confirmations: live.confirmations, plan, nearest, record };
+  const blocked = context
+    .filter((c) => (GATES as readonly string[]).includes(c.role) && c.trend !== null && c.trend !== live.dir)
+    .map((c) => `${c.tf} ${c.role.toLowerCase()} ${c.trend === 'bull' ? '▲' : '▼'}`);
+  if (blocked.length && live.state !== 'FORMING') {
+    const inTrade = plan?.filled ?? false;
+    return {
+      tone: inTrade ? tone : 'flat',
+      headline: inTrade ? `${headline} — against ${blocked.join(', ')}` : `NO TRADE — ${side.toLowerCase()} setup against ${blocked.join(', ')}`,
+      detail: inTrade ? detail : `The ${side.toLowerCase()} plan below is what the setup chart sees; the higher timeframes disagree, so it is not taken.`,
+      confirmations: live.confirmations, plan, nearest, record, blocked,
+    };
+  }
+  return { tone, headline, detail, confirmations: live.confirmations, plan, nearest, record, blocked };
 }
 
 function nearestPools(st: SmcState, last: number | null): Readout['nearest'] {

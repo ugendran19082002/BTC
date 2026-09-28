@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { PriceChart, CHART_TFS } from '@/components/desk/PriceChart';
+import { PriceChart } from '@/components/desk/PriceChart';
 import type { SceneItem } from '@/components/desk/chart/scene';
 import type { Candle } from '@/types/desk';
 
@@ -55,9 +55,8 @@ const bars = (n: number, base = 77_000): Candle[] => {
   }));
 };
 
-const noop = () => {};
 const chart = (props: Partial<Parameters<typeof PriceChart>[0]> = {}) =>
-  render(<PriceChart bars={bars(60)} tf="1h" onTf={noop} {...props} />);
+  render(<PriceChart bars={bars(60)} tf="1h" {...props} />);
 
 beforeEach(() => {
   setDataCalls.length = 0;
@@ -83,21 +82,19 @@ describe('the price chart', () => {
     expect(applied.some((o) => o.handleScroll === true && o.handleScale === true)).toBe(true);
   });
 
-  it('[critical] offers one timeframe row, inside the chart', () => {
-    const onTf = vi.fn();
-    render(<PriceChart bars={bars(60)} tf="1h" onTf={onTf} />);
-    const row = screen.getByRole('group', { name: 'Timeframe' });
-    expect(row.querySelectorAll('button')).toHaveLength(CHART_TFS.length);
-    fireEvent.click(screen.getByRole('button', { name: '15m' }));
-    expect(onTf).toHaveBeenCalledWith('15m');
-    expect(screen.getByRole('button', { name: '1h' })).toHaveAttribute('aria-pressed', 'true');
+  it('[critical] is one 5m view, with no timeframe row to switch', () => {
+    chart({ tf: '5m' });
+    expect(screen.queryByRole('group', { name: 'Timeframe' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '15m' })).toBeNull();
+    expect(screen.getByLabelText('Setup readout').textContent).toContain('5m');
   });
 
   it('[critical] draws through a primitive, and never reads the candle still forming', () => {
     chart();
     expect(primitives).toHaveLength(1);
     const scene = primitives[0]!.scene;
-    const xs = scene.flatMap((it) => (it.t === 'box' || it.t === 'line' ? [it.x1] : it.t === 'mark' ? [it.x] : it.points.map((p) => p[0])));
+    const xs = scene.filter((it) => it.layer !== 'trade')
+      .flatMap((it) => (it.t === 'box' || it.t === 'line' ? [it.x1] : it.t === 'mark' || it.t === 'vline' ? [it.x] : it.points.map((p) => p[0])));
     expect(Math.max(-1, ...xs)).toBeLessThan(59);
   });
 
@@ -139,9 +136,9 @@ describe('the price chart', () => {
   });
 
   it('says it is loading, and what is wrong, instead of drawing an empty chart', () => {
-    const { rerender } = render(<PriceChart bars={[]} tf="15m" onTf={noop} loading />);
+    const { rerender } = render(<PriceChart bars={[]} tf="15m" loading />);
     expect(screen.getByText('Loading candles…')).toBeInTheDocument();
-    rerender(<PriceChart bars={[]} tf="15m" onTf={noop} error="feed down" />);
+    rerender(<PriceChart bars={[]} tf="15m" error="feed down" />);
     expect(screen.getByRole('alert')).toHaveTextContent('feed down');
   });
 });

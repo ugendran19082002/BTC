@@ -113,7 +113,7 @@ export class SmcPrimitive implements ISeriesPrimitive<Time> {
       if (it.stroke) {
         ctx.save();
         ctx.strokeStyle = it.stroke;
-        ctx.globalAlpha = 0.55;
+        ctx.globalAlpha = it.layer === 'trade' ? 0.85 : 0.55;
         ctx.lineWidth = 1;
         ctx.setLineDash(it.dash ? [4, 3] : []);
         ctx.strokeRect(Math.round(sx[0]) + 0.5, Math.round(top) + 0.5, Math.round(sx[1] - sx[0]), Math.round(h));
@@ -137,6 +137,7 @@ export class SmcPrimitive implements ISeriesPrimitive<Time> {
       else if (it.t === 'path') this.path(ctx, it.points, it.color, width, it.label, it.priority, labels, () => id++, measure);
       else if (it.t === 'mark') this.mark(ctx, it, labels, () => id++, measure);
       else if (it.t === 'box' && it.label) this.boxLabel(it, width, labels, () => id++, measure);
+      else if (it.t === 'vline') this.vline(ctx, it.x, it.y1, it.y2, it.color);
     }
 
     const reqs: LabelRequest[] = labels.map((l) => ({ id: l.id, priority: l.priority, candidates: l.candidates }));
@@ -171,6 +172,23 @@ export class SmcPrimitive implements ISeriesPrimitive<Time> {
       id: nextId(), priority: it.priority, text: it.label, color: it.color,
       candidates: it.labelAt === 'end' ? [first, other, ...stacked(first, LABEL_H + 2).slice(1)] : [first, other],
     });
+  }
+
+  private vline(ctx: Ctx, i: number, p1: number, p2: number, color: string) {
+    const x = this.x(i, Infinity);
+    const y1 = this.y(p1);
+    const y2 = this.y(p2);
+    if (x === null || y1 === null || y2 === null) return;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.6;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(Math.round(x) + 0.5, y1);
+    ctx.lineTo(Math.round(x) + 0.5, y2);
+    ctx.stroke();
+    ctx.restore();
   }
 
   private path(ctx: Ctx, points: [number, number][], color: string, width: number, label: string | undefined, priority: number, labels: Label[], nextId: () => number, measure: (t: string) => number) {

@@ -40,7 +40,7 @@ export const screenSpot = (tick: number | null | undefined, snapshot: number | n
 export function Overview({
   data, trade, expiries, onExpiry, chartTf = '15m',
   selected: selectedProp, onSelect, tick, controls, error,
-  bars = [], marketState = null, onTf,
+  bars = [], marketState = null,
 }: {
   data: ChainResponse;
   trade: TradeStatus | null;
@@ -58,7 +58,6 @@ export function Overview({
   error?: string | null;
   bars?: readonly Candle[];
   marketState?: MarketStateResponse | null;
-  onTf?: (tf: ChartTf) => void;
 }) {
   // A clock for the flow window, ticking once a second.
   const [now, setNow] = useState(() => Date.now());
@@ -125,7 +124,6 @@ export function Overview({
         bars={bars}
         spot={spot}
         tf={chartTf}
-        onTf={onTf ?? (() => {})}
         expiryLabel={snap.expiry ? `${snap.expiry} 17:30 IST` : undefined}
         hoursToExpiry={snap.hoursToExpiry}
         error={error ?? undefined}

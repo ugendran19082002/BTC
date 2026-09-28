@@ -13,12 +13,11 @@ import { readout } from '@/lib/smc/readout';
 import { clearAnnotationsApi, getAnnotations, type Annotation } from '@/api/annotations';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { SmcPrimitive } from './chart/smc-primitive';
-import { buildScene, C, DEFAULT_LAYERS, LAYERS, type Layer, type SceneItem } from './chart/scene';
+import { buildScene, C, DEFAULT_LAYERS, htfScene, LAYERS, type Layer, type SceneItem } from './chart/scene';
 import { ChartHud } from './chart/ChartHud';
 import './chart/price-chart.css';
 
 export type ChartTf = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d';
-export const CHART_TFS: readonly ChartTf[] = ['1m', '5m', '15m', '30m', '1h', '4h'];
 
 /** Bars shown when a timeframe opens -- about nine pixels each, at least thirty -- and the space kept right of the last one for levels and labels. */
 const openingBars = (width: number) => Math.max(30, Math.min(90, Math.floor(width / 9)));
@@ -40,17 +39,18 @@ const IST_FULL = new Intl.DateTimeFormat('en-IN', {
  * appears and then vanishes within a candle.
  */
 export function PriceChart({
-  bars, tf, onTf, loading = false, error, context = [], regime, symbol = 'BTCUSD',
+  bars, tf, loading = false, error, context = [], regime, higher = [], symbol = 'BTCUSD',
 }: {
   bars: readonly Candle[];
   tf: ChartTf;
-  onTf: (tf: ChartTf) => void;
   loading?: boolean;
   error?: string;
   /** The higher / lower timeframe reads for the HUD's context row. */
   context?: readonly TfRead[];
   /** The regime timeframe's candles (1H): each setup records whether it agreed with that trend as it was known then. */
   regime?: { bars: readonly Candle[]; tfSec: number } | null;
+  /** Higher timeframes drawn on this chart: 1H order blocks, 15m structure. Ignored when not higher than this chart. */
+  higher?: readonly { tf: string; tfSec: number; bars: readonly Candle[]; show: 'zones' | 'structure' }[];
   symbol?: string;
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
@@ -84,14 +84,22 @@ export function PriceChart({
   );
   // Keyed on the closed candles, not the array: the forming candle changes every tick and must not re-run the engine.
   const smc = useMemo(() => runSmc(closed, { tfSec, htfTrendAt }), [closedKey, htfTrendAt]);
-  const read = useMemo(() => readout(smc, closed), [smc]);
+  const read = useMemo(() => readout(smc, closed, context), [smc, context]);
+  const nowMin = Math.floor(Date.now() / 60_000);
+  const overlays = useMemo(() => higher
+    .filter((h) => h.tfSec > tfSec)
+    .map((h) => {
+      const hb = closedBars(h.bars, h.tfSec, nowMin * 60);
+      return { tf: h.tf, tfSec: h.tfSec, bars: hb, state: runSmc(hb, { tfSec: h.tfSec }), show: h.show };
+    }), [higher, tfSec, nowMin]);
 
   // ── What is drawn ─────────────────────────────────────────────────────────
   const scene = useMemo<SceneItem[]>(() => {
-    const items = buildScene(smc, closed, layers);
+    const items = buildScene(smc, closed, layers, read.blocked);
+    if (layers.has('htf')) items.push(...htfScene(overlays, closed));
     if (layers.has('saved')) items.push(...savedBoxes(saved, bars));
     return items;
-  }, [smc, layers, saved, bars.length]);
+  }, [smc, layers, saved, bars.length, read.blocked, overlays]);
 
   const loadSaved = useCallback(async () => {
     try { setSaved(await getAnnotations(symbol, tf)); } catch { /* the chart works without them */ }
@@ -221,11 +229,6 @@ export function PriceChart({
           <div ref={hostRef} className="pc-host" />
 
           <div ref={toolbarRef} className="pc-toolbar" role="toolbar" aria-label="Chart controls">
-            <div className="pc-tfs" role="group" aria-label="Timeframe">
-              {CHART_TFS.map((t) => (
-                <button key={t} type="button" className={t === tf ? 'on' : ''} aria-pressed={t === tf} onClick={() => onTf(t)}>{t}</button>
-              ))}
-            </div>
             <Popover>
               <PopoverTrigger asChild>
                 <button type="button" className="pc-tool" aria-label="Layers" title="What the chart draws"><Layers size={14} /><span>Layers</span></button>

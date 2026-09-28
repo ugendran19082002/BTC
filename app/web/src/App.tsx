@@ -31,7 +31,7 @@ import { TODAY_MOVE } from '@/types/desk';
 import { tabTitle } from '@/lib/tab-title';
 import { TF_SECONDS, withLtp } from '@/lib/live-bar';
 import { pnlTone, signedInr, usdToInr } from '@/lib/format';
-import { CHART_TFS, type ChartTf } from '@/components/desk/PriceChart';
+import type { ChartTf } from '@/components/desk/PriceChart';
 import { Select, SelectItem } from '@/components/ui/select';
 import { ColumnPicker } from '@/components/chain/ColumnPicker';
 import { normalise, normaliseOrder, type ColumnKey, type ColumnState } from '@/components/chain/columns';
@@ -169,11 +169,13 @@ export default function App() {
    * expected-value figures are still worked out from them -- at whatever was
    * last chosen, or the tested defaults on a fresh browser.
    */
-  /* Which window every sudden-move reading is taken over. The server computes
-     all four, so this switches without asking it for anything. */
-  const [storedTf, setChartTf] = usePersisted<ChartTf>('chart:tf', '5m');
-  // A timeframe remembered from an older build may no longer be offered.
-  const chartTf = CHART_TFS.includes(storedTf) ? storedTf : '5m';
+  /*
+   * The chart the desk is read on is the 5-minute, always (28 Sep 2026). The
+   * other timeframes are read behind it -- 1m trigger, 15m structure, 30m
+   * bias, 1H regime, 4H macro -- and shown as its context, not as charts of
+   * equal weight to switch between.
+   */
+  const chartTf: ChartTf = '5m';
   // A strike is a leg plus an open flag, the same shape as the ticket: the sheet
   // animates closed with its contents still on screen.
   const [inspecting, setInspecting] = useState<{ cp: 'C' | 'P'; strike: number } | null>(null);
@@ -319,25 +321,11 @@ export default function App() {
     60_000,
     { enabled: signedIn === true && tab === 'desk', deps: [chartTf] },
   );
-  /*
-   * The market state, on the chart's own timeframe.
-   *
-   * Every 30 seconds: it is read off closed bars, so polling it faster only
-   * asks the same question again. The chart's minute timeframe has no state of
-   * its own -- a level made of twenty one-minute bars is noise -- so the card
-   * reads 5m under it and says which timeframe it is reading.
-   */
-  /*
-   * One row for both: the analysis is read off the chart in front of you --
-   * except at one minute, which the state engine does not read. A minute bar
-   * has no level worth judging a break against, so the card stays on five
-   * minutes and carries its own timeframe badge, which says so.
-   */
-  const stateTf = chartTf === '1m' ? '5m' : chartTf;
+  // The market state on the chart's timeframe, every 30 seconds: it is read off closed bars.
   const { data: marketState } = usePoll(
-    () => getMarketState(stateTf),
+    () => getMarketState(chartTf),
     30_000,
-    { enabled: signedIn === true && tab === 'desk', deps: [stateTf] },
+    { enabled: signedIn === true && tab === 'desk' },
   );
 
   const openTicket = useCallback((i: ChainSellIntent) => {
@@ -565,7 +553,6 @@ export default function App() {
                 bars={liveBars}
                 marketState={marketState}
                 chartTf={chartTf}
-                onTf={setChartTf}
                 controls={
                   <>
                     <Select ariaLabel="when" value={live ? 'live' : 'past'} onValueChange={(v) => setLive(v === 'live')}>
