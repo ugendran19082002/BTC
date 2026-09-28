@@ -1043,16 +1043,173 @@ td.evcol.down { color: var(--down); }
    smc-chart class is added by the upgraded PriceChart component.             */
 .price-chart.smc-chart {
   container-type: inline-size;
+  position: relative;
 }
 .smc-chart .price-chart-plot {
-  height: 480px;
+  height: 500px;
   border-radius: 6px;
   background: #0a0e17;
+  position: relative;
 }
 .smc-chart.is-full .price-chart-plot { height: calc(100vh - 180px); }
 @media (max-width: 760px) {
-  .smc-chart .price-chart-plot { height: 340px; }
+  .smc-chart .price-chart-plot { height: 360px; }
 }
+
+/* ── Toast notification ─────────────────────────────────────────────────────── */
+.smc-toast {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(96, 165, 250, 0.5);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 16px rgba(96, 165, 250, 0.2);
+  color: #e2e8f0;
+  font-size: 11.5px;
+  font-weight: 600;
+  animation: smcToastIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+}
+.smc-toast-icon {
+  color: #38bdf8;
+  flex-shrink: 0;
+}
+@keyframes smcToastIn {
+  from { opacity: 0; transform: translate(-50%, -8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* ── SMC Feature Pill Toolbar ──────────────────────────────────────────────── */
+.smc-tool-strip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.smc-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.14s ease;
+  white-space: nowrap;
+}
+.smc-pill-btn:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+.smc-pill-btn.on.trade {
+  background: rgba(38, 161, 123, 0.15);
+  border-color: rgba(38, 161, 123, 0.5);
+  color: #34d399;
+  box-shadow: 0 0 10px rgba(38, 161, 123, 0.2);
+}
+.smc-pill-btn.on.smc {
+  background: rgba(96, 165, 250, 0.15);
+  border-color: rgba(96, 165, 250, 0.5);
+  color: #60a5fa;
+  box-shadow: 0 0 10px rgba(96, 165, 250, 0.2);
+}
+.smc-pill-btn.on.struct {
+  background: rgba(167, 139, 250, 0.15);
+  border-color: rgba(167, 139, 250, 0.5);
+  color: #a78bfa;
+  box-shadow: 0 0 10px rgba(167, 139, 250, 0.2);
+}
+.smc-pill-btn.on.liq {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.5);
+  color: #fbbf24;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.2);
+}
+.smc-pill-btn.save-btn {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.16), rgba(96, 165, 250, 0.16));
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  color: #fde68a;
+}
+.smc-pill-btn.save-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.28), rgba(96, 165, 250, 0.28));
+  border-color: #fbbf24;
+  color: #fff;
+  box-shadow: 0 0 14px rgba(245, 158, 11, 0.3);
+}
+
+/* ── Active Auto Setup Info Bar ────────────────────────────────────────────── */
+.smc-autoplan-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 14px;
+  background: rgba(10, 14, 23, 0.95);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 11.5px;
+  flex-wrap: wrap;
+}
+.smc-autoplan-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+.smc-autoplan-badge[data-direction='LONG'] {
+  background: rgba(38, 161, 123, 0.18);
+  border: 1px solid rgba(38, 161, 123, 0.45);
+  color: #34d399;
+}
+.smc-autoplan-badge[data-direction='SHORT'] {
+  background: rgba(226, 80, 79, 0.18);
+  border: 1px solid rgba(226, 80, 79, 0.45);
+  color: #f87171;
+}
+.smc-autoplan-metrics {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+  flex-wrap: wrap;
+}
+.smc-sep {
+  color: var(--dim);
+  opacity: 0.5;
+}
+.smc-metric-sl { color: #f87171; }
+.smc-metric-tp { color: #34d399; }
+.smc-metric-rr { color: #60a5fa; font-weight: 700; }
+.smc-autoplan-reason {
+  margin-left: auto;
+  font-size: 11px;
+}
+
+/* ── SVG Auto-Draw Styles ──────────────────────────────────────────────────── */
+.smc-ob-group text,
+.smc-fvg-group text,
+.smc-liq-group text,
+.smc-break-group text,
+.smc-swing-tag text,
+.smc-trade-plan-group text {
+  user-select: none;
+  font-family: inherit;
+}
+
 
 /* ── Annotation panel ───────────────────────────────────────────────────────
    Lives below the candle chart. Add-form at the top, saved list below.      */

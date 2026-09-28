@@ -7,6 +7,7 @@ import {
 import {
   ChevronDown, Expand, Lock, Maximize2, Minimize, Move,
   Trash2, Plus, Target, TrendingUp, TrendingDown, Square, Zap,
+  CheckCircle2, Layers, BarChart2, Droplets, BookmarkCheck,
 } from 'lucide-react';
 import { usePersisted } from '@/hooks/usePersisted';
 import type { Candle } from '@/types/desk';
@@ -17,23 +18,28 @@ import {
   type Converters, type Projection, type StateMarker, type TrendLine, type Zone,
 } from '@/components/desk/chart-overlay';
 import {
-  getAnnotations, createAnnotation, deleteAnnotationById,
+  getAnnotations, createAnnotation, deleteAnnotationById, clearAnnotationsApi,
   type Annotation, type AnnotationKind,
 } from '@/api/annotations';
+import {
+  analyzeSmc, type SmcAnalysisResult, type AutoTradePlan,
+} from '@/lib/smc-engine';
 
 /**
- * BTC price chart — upgraded with:
- *  • Full-width single-row layout (no sidebar cramping)
- *  • SMC overlay: BOS / CHoCH / OB / FVG / Supply / Demand drawn on the canvas
- *  • Red SL box + Green TGT boxes persisted to PostgreSQL
- *  • AUTO kind-picker: no manual selection needed — system reads TF + trend + price position
+ * BTC Price Chart — Full Auto SMC & Price Action Suite:
+ *  • Zero manual entry needed: System automatically detects Market Structure,
+ *    Order Blocks (OB↑/OB↓), Fair Value Gaps (FVG), Liquidity Pools (BSL/SSL/EQH/EQL),
+ *    and generates a complete Auto Trade Setup with Red Stop Loss & Green Target Boxes!
+ *  • Full-width layout with responsive canvas & SVG overlay.
+ *  • 1-Click "Save Auto Setup to DB" to persist levels to PostgreSQL.
+ *  • Individual toggle controls for SMC, Trade Setup, Liquidity, and Structure.
  */
 
 export type ChartTf = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d';
 export const CHART_TFS: readonly ChartTf[] = ['1m', '5m', '15m', '30m', '1h', '4h'];
 
-const RIGHT_BARS = 14;
-const OPENING_BARS = 60;
+const RIGHT_BARS = 18;
+const OPENING_BARS = 65;
 
 const IST_FULL = new Intl.DateTimeFormat('en-IN', {
   timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false,
@@ -59,10 +65,10 @@ const C_DEMAND  = 'rgba(38,161,123,0.14)';
 type KindMeta = { label: string; fill: string; border: string; group: 'trade' | 'smc' | 'liq' };
 
 const KIND_META: Record<AnnotationKind, KindMeta> = {
-  sl:       { label: 'SL',      fill: 'rgba(226,80,79,0.18)',   border: C_SL,     group: 'trade' },
-  tgt:      { label: 'TP 1',    fill: 'rgba(38,161,123,0.18)',  border: C_TGT,    group: 'trade' },
-  tgt2:     { label: 'TP 2',    fill: 'rgba(52,211,153,0.14)',  border: C_TGT2,   group: 'trade' },
-  tgt3:     { label: 'TP 3',    fill: 'rgba(110,231,183,0.10)', border: C_TGT3,   group: 'trade' },
+  sl:       { label: 'SL',      fill: 'rgba(226,80,79,0.20)',   border: C_SL,     group: 'trade' },
+  tgt:      { label: 'TP 1',    fill: 'rgba(38,161,123,0.20)',  border: C_TGT,    group: 'trade' },
+  tgt2:     { label: 'TP 2',    fill: 'rgba(52,211,153,0.16)',  border: C_TGT2,   group: 'trade' },
+  tgt3:     { label: 'TP 3',    fill: 'rgba(110,231,183,0.12)', border: C_TGT3,   group: 'trade' },
   ob_bull:  { label: 'OB↑',    fill: C_OB_B,                   border: C_UP,     group: 'smc'   },
   ob_bear:  { label: 'OB↓',    fill: C_OB_R,                   border: C_DOWN,   group: 'smc'   },
   fvg_bull: { label: 'FVG↑',   fill: C_FVG_B,                  border: C_BOS,    group: 'smc'   },
@@ -78,96 +84,18 @@ const KIND_META: Record<AnnotationKind, KindMeta> = {
   breaker:  { label: 'Breaker', fill: 'rgba(245,158,11,0.12)',  border: C_CHOCH,  group: 'smc'   },
 };
 
-// ── AUTO-PICK ENGINE ──────────────────────────────────────────────────────────
-/**
- * Automatically determines the correct SMC kind from context.
- *
- * Best-practice hierarchy:
- *  1. Price position relative to spot (above / below / at = SL)
- *  2. Timeframe:
- *     4h / 1h   → institutional zones → Supply / Demand
- *     15m / 5m  → execution zones    → OB / FVG
- *     1m        → entry execution    → SL / TGT
- *  3. Trend / bias direction (UP → bullish kinds; DOWN → bearish kinds)
- *  4. Zone width: tight (<0.3% of spot) → SL/TGT; wide → zone
- *
- * Returns { kind, reason } so the UI can explain its pick.
- */
-function autoPickKind(
-  tf: ChartTf,
-  trend: 'UP' | 'DOWN' | 'RANGE' | 'QUIET' | null,
-  spot: number,
-  lo: number,
-  hi: number,
-): { kind: AnnotationKind; reason: string } {
-  if (!Number.isFinite(lo) || !Number.isFinite(hi) || spot <= 0) {
-    return { kind: 'sl', reason: 'Enter price range first' };
-  }
+// ── TF best-practice display label ───────────────────────────────────────────
+const TF_ROLE: Record<ChartTf, string> = {
+  '1d': 'Macro Direction & Higher Swings',
+  '4h': 'Institutional Zones — Supply / Demand',
+  '1h': 'Key Levels — Supply / Demand / Trend',
+  '30m': 'Setup Frame — Order Blocks & Imbalances',
+  '15m': 'Execution Frame — OB, FVG, BOS/CHoCH',
+  '5m':  'Micro Trigger — Liquidity Sweeps & Tight Setups',
+  '1m':  'Scalp Execution — Rapid SL/TP Execution',
+};
 
-  const mid = (lo + hi) / 2;
-  const widthPct = spot > 0 ? ((hi - lo) / spot) * 100 : 0;
-  const above = mid > spot * 1.0005;  // zone centre is above spot
-  const below = mid < spot * 0.9995;  // zone centre is below spot
-  const atSpot = !above && !below;
-
-  const dir = trend === 'UP' ? 'up' : trend === 'DOWN' ? 'down' : 'neutral';
-
-  // ── At-spot → always SL (tight stop around current price)
-  if (atSpot || widthPct < 0.15) {
-    return { kind: 'sl', reason: `Zone ≈ spot → SL (tight, ${widthPct.toFixed(2)}% wide)` };
-  }
-
-  // ── 1-minute: execution only — SL or TP
-  if (tf === '1m') {
-    if (above && dir === 'down') return { kind: 'sl',  reason: '1m + trend DOWN + above spot → SL' };
-    if (above && dir === 'up')   return { kind: 'tgt', reason: '1m + trend UP + above spot → TP 1' };
-    if (below && dir === 'up')   return { kind: 'sl',  reason: '1m + trend UP + below spot → SL' };
-    if (below && dir === 'down') return { kind: 'tgt', reason: '1m + trend DOWN + below spot → TP 1' };
-    return { kind: above ? 'tgt' : 'sl', reason: '1m execution — SL/TP by position' };
-  }
-
-  // ── 4h / 1h: institutional zones — Supply / Demand
-  if (tf === '4h' || tf === '1h') {
-    if (above) {
-      const kind: AnnotationKind = dir === 'up' ? 'tgt' : 'supply';
-      return { kind, reason: `${tf} + above spot + ${dir} → ${KIND_META[kind].label}` };
-    } else {
-      const kind: AnnotationKind = dir === 'down' ? 'tgt' : 'demand';
-      return { kind, reason: `${tf} + below spot + ${dir} → ${KIND_META[kind].label}` };
-    }
-  }
-
-  // ── 15m / 5m: execution zones — OB or FVG
-  // Wide zones (>0.5%) → OB; narrow (0.15–0.5%) → FVG
-  if (tf === '15m' || tf === '5m') {
-    const useOb = widthPct >= 0.5;
-    if (above) {
-      if (dir === 'up')   return { kind: 'tgt',     reason: `${tf} + UP + above → TP 1 (price heading there)` };
-      if (useOb)          return { kind: 'ob_bear',  reason: `${tf} + DOWN + above + wide (${widthPct.toFixed(2)}%) → OB↓` };
-      return               { kind: 'fvg_bear',        reason: `${tf} + DOWN + above + narrow → FVG↓` };
-    } else {
-      if (dir === 'down') return { kind: 'tgt',     reason: `${tf} + DOWN + below → TP 1` };
-      if (useOb)          return { kind: 'ob_bull',  reason: `${tf} + UP + below + wide → OB↑` };
-      return               { kind: 'fvg_bull',        reason: `${tf} + UP + below + narrow → FVG↑` };
-    }
-  }
-
-  // ── 30m: mixed — OB for wide, SL/TGT for tight
-  if (tf === '30m') {
-    if (widthPct < 0.4) {
-      // Tight → trade management
-      const kind: AnnotationKind = (above && dir === 'down') || (below && dir === 'up') ? 'sl' : 'tgt';
-      return { kind, reason: `30m tight zone → ${KIND_META[kind].label}` };
-    }
-    if (above) return { kind: dir === 'up' ? 'supply' : 'ob_bear', reason: `30m + above + ${dir} → zone` };
-    return       { kind: dir === 'down' ? 'demand' : 'ob_bull',     reason: `30m + below + ${dir} → zone` };
-  }
-
-  // ── default fallback (shouldn't reach here)
-  return { kind: above ? 'supply' : 'demand', reason: 'Default: zone by position' };
-}
-
-// ── Quick-add kinds for optional manual override ──────────────────────────────
+// ── Quick-add kinds for manual override ───────────────────────────────────────
 const OVERRIDE_KINDS: { kind: AnnotationKind; label: string; color: string }[] = [
   { kind: 'sl',       label: 'SL',      color: C_SL    },
   { kind: 'tgt',      label: 'TP 1',    color: C_TGT   },
@@ -185,18 +113,6 @@ const OVERRIDE_KINDS: { kind: AnnotationKind; label: string; color: string }[] =
   { kind: 'bsl',      label: 'BSL',     color: C_UP    },
 ];
 
-// ── TF best-practice display label ───────────────────────────────────────────
-const TF_ROLE: Record<ChartTf, string> = {
-  '1d': 'Macro direction',
-  '4h': 'Institutional zones — Supply / Demand',
-  '1h': 'Key levels — Supply / Demand',
-  '30m': 'Setup frame — OB / Zones',
-  '15m': 'Pattern confirm — OB / FVG',
-  '5m':  'Trigger confirm — OB / FVG',
-  '1m':  'Execution only — SL / TP',
-};
-
-// ── component ─────────────────────────────────────────────────────────────────
 export function PriceChart({
   bars, support, resistance, spot, zones = [], lines = [], projection = null,
   markers = [], trend = null, bias = null, tf, onTf, loading = false, error,
@@ -235,36 +151,31 @@ export function PriceChart({
   const [moved, setMoved] = useState(0);
   const [size, setSize] = useState({ width: 0, height: 0 });
 
-  // ── annotation state ──────────────────────────────────────────────────────
+  // ── Auto Draw Feature Toggles (Persisted) ──────────────────────────────────
+  const [showSmc, setShowSmc] = usePersisted('chart:show-smc', true);
+  const [showTradePlan, setShowTradePlan] = usePersisted('chart:show-trade-plan', true);
+  const [showStructure, setShowStructure] = usePersisted('chart:show-structure', true);
+  const [showLiquidity, setShowLiquidity] = usePersisted('chart:show-liquidity', true);
+  const [showAnnPanel, setShowAnnPanel] = usePersisted('chart:ann-panel', false);
+
+  // ── DB-saved annotations state ─────────────────────────────────────────────
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [annBusy, setAnnBusy] = useState(false);
-  const [showAnnPanel, setShowAnnPanel] = usePersisted('chart:ann-panel', true);
+  const [savedToast, setSavedToast] = useState<string | null>(null);
 
-  // Price inputs — kind is AUTO-derived, no manual kind state needed as default
+  // ── Manual form inputs (optional override) ─────────────────────────────────
   const [addLow, setAddLow] = useState('');
   const [addHigh, setAddHigh] = useState('');
   const [addLabel, setAddLabel] = useState('');
-  /** null = AUTO mode (recommended); non-null = trader manual override */
   const [manualKind, setManualKind] = useState<AnnotationKind | null>(null);
   const [showOverride, setShowOverride] = useState(false);
 
-  // ── AUTO pick — recalculates whenever inputs or context change ─────────────
-  const autoPick = useMemo(() => {
-    const lo = parseFloat(addLow);
-    const hi = parseFloat(addHigh);
-    return autoPickKind(tf, trend, spot, lo, hi);
-  }, [tf, trend, spot, addLow, addHigh]);
+  // ── Automated SMC & Price Action Engine ────────────────────────────────────
+  const smc = useMemo<SmcAnalysisResult>(() => {
+    return analyzeSmc(bars, spot, tf, trend);
+  }, [bars, spot, tf, trend]);
 
-  // The effective kind: manual override wins, else auto
-  const effectiveKind = manualKind ?? autoPick.kind;
-  const effectiveMeta = KIND_META[effectiveKind];
-
-  // Reset manual override when TF, trend, or price changes significantly
-  useEffect(() => {
-    setManualKind(null);
-    setShowOverride(false);
-  }, [tf, trend]);
-
+  // Load annotations from PostgreSQL DB
   const loadAnnotations = useCallback(async () => {
     try {
       const list = await getAnnotations(symbol, tf);
@@ -274,22 +185,86 @@ export function PriceChart({
 
   useEffect(() => { void loadAnnotations(); }, [loadAnnotations]);
 
-  const handleAddAnnotation = useCallback(async () => {
+  // Reset manual override on TF or trend change
+  useEffect(() => {
+    setManualKind(null);
+    setShowOverride(false);
+  }, [tf, trend]);
+
+  // ── 1-Click Save Auto Plan to Database ─────────────────────────────────────
+  const handleSaveAutoSetup = useCallback(async () => {
+    if (!smc.tradePlan) return;
+    const plan = smc.tradePlan;
+    const lastBar = bars[bars.length - 1];
+    const now = Math.floor(Date.now() / 1000);
+    const fromTime = lastBar ? lastBar.time - 3600 : now - 3600;
+    const toTime = now + 86400 * 3;
+
+    setAnnBusy(true);
+    try {
+      // 1. Save Stop Loss box
+      const slAnn = await createAnnotation({
+        symbol, tf, kind: 'sl',
+        fromTime, toTime,
+        priceLow: Math.min(plan.sl.priceLow, plan.sl.priceHigh),
+        priceHigh: Math.max(plan.sl.priceLow, plan.sl.priceHigh),
+        label: plan.sl.label,
+        meta: { autoGenerated: true, direction: plan.direction, reason: plan.reason },
+      });
+
+      // 2. Save TP 1 box
+      const tp1Ann = await createAnnotation({
+        symbol, tf, kind: 'tgt',
+        fromTime, toTime,
+        priceLow: Math.min(plan.tp1.priceLow, plan.tp1.priceHigh),
+        priceHigh: Math.max(plan.tp1.priceLow, plan.tp1.priceHigh),
+        label: plan.tp1.label,
+        meta: { autoGenerated: true, direction: plan.direction, rr: plan.tp1.rr },
+      });
+
+      // 3. Save primary active Order Block if available
+      const primaryOb = smc.orderBlocks[0];
+      let obAnn: Annotation | null = null;
+      if (primaryOb) {
+        obAnn = await createAnnotation({
+          symbol, tf, kind: primaryOb.kind,
+          fromTime: primaryOb.time, toTime,
+          priceLow: primaryOb.priceLow,
+          priceHigh: primaryOb.priceHigh,
+          label: primaryOb.label,
+          meta: { autoGenerated: true },
+        });
+      }
+
+      setAnnotations((prev) => [slAnn, tp1Ann, ...(obAnn ? [obAnn] : []), ...prev]);
+      setSavedToast(`⚡ Saved Auto ${plan.direction} Setup (SL & TP) to Database!`);
+      setTimeout(() => setSavedToast(null), 4000);
+    } catch {
+      setSavedToast('Failed to save to DB.');
+      setTimeout(() => setSavedToast(null), 3000);
+    } finally {
+      setAnnBusy(false);
+    }
+  }, [smc.tradePlan, bars, symbol, tf, smc.orderBlocks]);
+
+  // ── Manual Add / Delete Handlers ───────────────────────────────────────────
+  const handleAddManualAnnotation = useCallback(async () => {
     const lo = parseFloat(addLow);
     const hi = parseFloat(addHigh);
     if (!Number.isFinite(lo) || !Number.isFinite(hi)) return;
+    const kind = manualKind ?? (smc.tradePlan?.direction === 'SHORT' ? 'sl' : 'tgt');
     const lastBar = bars[bars.length - 1];
     const now = Math.floor(Date.now() / 1000);
     setAnnBusy(true);
     try {
       const ann = await createAnnotation({
-        symbol, tf, kind: effectiveKind,
+        symbol, tf, kind,
         fromTime: lastBar ? lastBar.time : now - 3600,
         toTime: now + 86400 * 3,
         priceLow: Math.min(lo, hi),
         priceHigh: Math.max(lo, hi),
         label: addLabel || null,
-        meta: { autoPickReason: manualKind ? 'manual' : autoPick.reason },
+        meta: { manual: true },
       });
       setAnnotations((prev) => [ann, ...prev]);
       setAddLow(''); setAddHigh(''); setAddLabel('');
@@ -297,7 +272,7 @@ export function PriceChart({
     } catch { /* ignore */ } finally {
       setAnnBusy(false);
     }
-  }, [symbol, tf, effectiveKind, addLow, addHigh, addLabel, bars, autoPick.reason, manualKind]);
+  }, [addLow, addHigh, manualKind, smc.tradePlan, bars, symbol, tf, addLabel]);
 
   const handleDeleteAnnotation = useCallback(async (id: number) => {
     try {
@@ -306,7 +281,14 @@ export function PriceChart({
     } catch { /* ignore */ }
   }, []);
 
-  // ── candle data ────────────────────────────────────────────────────────────
+  const handleClearAll = useCallback(async () => {
+    try {
+      await clearAnnotationsApi(symbol, tf);
+      setAnnotations([]);
+    } catch { /* ignore */ }
+  }, [symbol, tf]);
+
+  // ── OHLC Candle data ───────────────────────────────────────────────────────
   const shown = hover ?? bars[bars.length - 1] ?? null;
   const previous = useMemo(() => {
     if (!shown) return null;
@@ -316,14 +298,14 @@ export function PriceChart({
   const change = shown && previous ? shown.close - previous.close : null;
   const changePct = change !== null && previous ? (change / previous.close) * 100 : null;
 
-  // ── chart init ────────────────────────────────────────────────────────────
+  // ── Chart Initialization ───────────────────────────────────────────────────
   useLayoutEffect(() => {
     const host = hostRef.current;
     if (!host || !open || error) return;
 
     const chart = createChart(host, {
       width: host.clientWidth || 720,
-      height: host.clientHeight || 380,
+      height: host.clientHeight || 420,
       layout: {
         background: { type: ColorType.Solid, color: '#0a0e17' },
         textColor: 'rgba(206, 216, 230, 0.85)',
@@ -334,7 +316,7 @@ export function PriceChart({
         vertLines: { color: 'rgba(255,255,255,0.05)' },
         horzLines: { color: 'rgba(255,255,255,0.05)' },
       },
-      rightPriceScale: { borderColor: 'rgba(255,255,255,0.12)', scaleMargins: { top: 0.06, bottom: 0.22 } },
+      rightPriceScale: { borderColor: 'rgba(255,255,255,0.12)', scaleMargins: { top: 0.08, bottom: 0.22 } },
       timeScale: {
         borderColor: 'rgba(255,255,255,0.12)',
         timeVisible: true,
@@ -447,17 +429,20 @@ export function PriceChart({
     })));
   }, [markers, bars.length === 0, open, error]);
 
-  // ── SVG overlay ───────────────────────────────────────────────────────────
+  // ── SVG Overlay Math & Geometry ────────────────────────────────────────────
   const overlay = useMemo(() => {
     const chart = chartRef.current;
     const candles = candleRef.current;
     if (!chart || !candles || !bars.length || !size.width || !size.height) return null;
     void moved;
-    const priceH = size.height * 0.74;
+    const priceH = size.height * 0.76;
+    const gutter = chartRef.current?.priceScale('right').width?.() ?? 64;
+    const xMax = Math.max(100, size.width - gutter);
+
     const c: Converters = {
       width: size.width,
       height: priceH,
-      gutter: chartRef.current?.priceScale('right').width?.() ?? 64,
+      gutter,
       y: (price) => {
         const at = candles.priceToCoordinate(price);
         return at === null ? null : Number(at);
@@ -470,18 +455,146 @@ export function PriceChart({
       },
     };
 
+    const xFromTime = (time: number): number | null => {
+      const at = chart.timeScale().timeToCoordinate(time as UTCTimestamp);
+      return at === null ? null : Number(at);
+    };
+
+    // 1. Auto Trade Setup (Stop Loss Box & Target Boxes)
+    let autoTradeBox: {
+      plan: AutoTradePlan;
+      entryY: number;
+      slTop: number;
+      slHeight: number;
+      tp1Top: number;
+      tp1Height: number;
+      tp2Top: number;
+      tp2Height: number;
+      xStart: number;
+      xEnd: number;
+    } | null = null;
+
+    if (showTradePlan && smc.tradePlan) {
+      const p = smc.tradePlan;
+      const entryY = c.y(p.entry);
+      const slHighY = c.y(p.sl.priceHigh);
+      const slLowY = c.y(p.sl.priceLow);
+      const tp1HighY = c.y(p.tp1.priceHigh);
+      const tp1LowY = c.y(p.tp1.priceLow);
+      const tp2HighY = c.y(p.tp2.priceHigh);
+      const tp2LowY = c.y(p.tp2.priceLow);
+
+      if (entryY !== null) {
+        // Red SL box coordinates
+        const slY1 = slHighY ?? (p.direction === 'LONG' ? entryY + 40 : entryY - 40);
+        const slY2 = slLowY ?? (p.direction === 'LONG' ? entryY + 60 : entryY - 60);
+        const slTop = Math.min(slY1, slY2);
+        const slHeight = Math.max(Math.abs(slY2 - slY1), 16);
+
+        // Green TP1 box coordinates
+        const tp1Y1 = tp1HighY ?? (p.direction === 'LONG' ? entryY - 40 : entryY + 40);
+        const tp1Y2 = tp1LowY ?? (p.direction === 'LONG' ? entryY - 60 : entryY + 60);
+        const tp1Top = Math.min(tp1Y1, tp1Y2);
+        const tp1Height = Math.max(Math.abs(tp1Y2 - tp1Y1), 16);
+
+        // Green TP2 box coordinates
+        const tp2Y1 = tp2HighY ?? tp1Top - 25;
+        const tp2Y2 = tp2LowY ?? tp1Top - 50;
+        const tp2Top = Math.min(tp2Y1, tp2Y2);
+        const tp2Height = Math.max(Math.abs(tp2Y2 - tp2Y1), 16);
+
+        const lastBarX = c.x(0) ?? (xMax - 180);
+        const xStart = Math.max(0, lastBarX - 40);
+        const xEnd = xMax;
+
+        autoTradeBox = {
+          plan: p,
+          entryY,
+          slTop,
+          slHeight,
+          tp1Top,
+          tp1Height,
+          tp2Top,
+          tp2Height,
+          xStart,
+          xEnd,
+        };
+      }
+    }
+
+    // 2. Auto Order Blocks (OB↑ & OB↓)
+    const obShapes = (showSmc ? smc.orderBlocks : []).map((ob) => {
+      const yHigh = c.y(ob.priceHigh);
+      const yLow = c.y(ob.priceLow);
+      if (yHigh === null || yLow === null) return null;
+      const top = Math.min(yHigh, yLow);
+      const height = Math.max(Math.abs(yLow - yHigh), 6);
+      const tX = xFromTime(ob.time);
+      const xLeft = Math.max(0, tX ?? 0);
+      const xRight = xMax;
+      return { ob, top, height, xLeft, xRight };
+    }).filter(Boolean) as {
+      ob: (typeof smc.orderBlocks)[number];
+      top: number; height: number; xLeft: number; xRight: number;
+    }[];
+
+    // 3. Auto Fair Value Gaps (FVG)
+    const fvgShapes = (showSmc ? smc.fvgs : []).map((fvg) => {
+      const yHigh = c.y(fvg.priceHigh);
+      const yLow = c.y(fvg.priceLow);
+      if (yHigh === null || yLow === null) return null;
+      const top = Math.min(yHigh, yLow);
+      const height = Math.max(Math.abs(yLow - yHigh), 4);
+      const tX = xFromTime(fvg.time);
+      const xLeft = Math.max(0, tX ?? 0);
+      const xRight = xMax;
+      return { fvg, top, height, xLeft, xRight };
+    }).filter(Boolean) as {
+      fvg: (typeof smc.fvgs)[number];
+      top: number; height: number; xLeft: number; xRight: number;
+    }[];
+
+    // 4. Market Structure Swings (HH, HL, LH, LL)
+    const swingShapes = (showStructure ? smc.swings : []).map((s) => {
+      const y = c.y(s.price);
+      const x = xFromTime(s.time);
+      if (y === null || x === null) return null;
+      return { s, x, y };
+    }).filter(Boolean) as {
+      s: (typeof smc.swings)[number]; x: number; y: number;
+    }[];
+
+    // 5. Structure Breaks (BOS & CHoCH)
+    const breakShapes = (showStructure ? smc.breaks : []).map((b) => {
+      const y = c.y(b.price);
+      const x1 = xFromTime(b.fromTime);
+      const x2 = xFromTime(b.toTime) ?? xMax;
+      if (y === null || x1 === null) return null;
+      return { b, y, x1: Math.max(0, x1), x2: Math.min(xMax, Math.max(x1 + 30, x2)) };
+    }).filter(Boolean) as {
+      b: (typeof smc.breaks)[number]; y: number; x1: number; x2: number;
+    }[];
+
+    // 6. Liquidity Lines (BSL, SSL, EQH, EQL)
+    const liqShapes = (showLiquidity ? smc.liquidity : []).map((l) => {
+      const y = c.y(l.price);
+      if (y === null) return null;
+      return { l, y, x1: 0, x2: xMax };
+    }).filter(Boolean) as {
+      l: (typeof smc.liquidity)[number]; y: number; x1: number; x2: number;
+    }[];
+
+    // 7. DB Saved Annotations (manual or previously saved auto setups)
     const annShapes = annotations.map((ann) => {
-      const meta = KIND_META[ann.kind];
+      const meta = KIND_META[ann.kind] ?? { label: ann.label || 'Zone', fill: 'rgba(255,255,255,0.1)', border: '#60a5fa' };
       const yTop = c.y(ann.priceHigh);
       const yBot = c.y(ann.priceLow);
       if (yTop === null || yBot === null) return null;
       const top = Math.min(yTop, yBot);
-      const bot = Math.max(yTop, yBot);
-      const height = Math.max(bot - top, 3);
-      let xLeft = 0;
+      const height = Math.max(Math.abs(yBot - yTop), 3);
       const tCoord = chart.timeScale().timeToCoordinate(ann.fromTime as UTCTimestamp);
-      if (tCoord !== null) xLeft = Math.max(0, Number(tCoord));
-      const xRight = Math.max(xLeft + 20, size.width - (c.gutter ?? 64));
+      const xLeft = Math.max(0, tCoord !== null ? Number(tCoord) : 0);
+      const xRight = Math.max(xLeft + 20, xMax);
       return { ann, meta, top, height, xLeft, xRight };
     }).filter(Boolean) as {
       ann: Annotation; meta: KindMeta;
@@ -489,33 +602,44 @@ export function PriceChart({
     }[];
 
     return {
+      autoTradeBox,
+      obShapes,
+      fvgShapes,
+      swingShapes,
+      breakShapes,
+      liqShapes,
+      annShapes,
       zones: zoneShapes(zones, c),
       lines: lineShapes(lines, c),
       callouts: calloutShapes(projection, spot, c),
-      annShapes,
       width: size.width,
       height: size.height,
+      xMax,
     };
-  }, [zones, lines, projection, spot, bars, size, moved, annotations]);
+  }, [
+    bars, size, moved, showTradePlan, showSmc, showStructure, showLiquidity,
+    smc, annotations, zones, lines, projection, spot,
+  ]);
 
-  // ── helpers ────────────────────────────────────────────────────────────────
   const fillSpot = useCallback(() => {
     const p = String(Math.round(spot));
     setAddLow(p); setAddHigh(p);
   }, [spot]);
 
-  const tradeAnns = annotations.filter((a) => KIND_META[a.kind]?.group === 'trade');
-  const smcAnns   = annotations.filter((a) => KIND_META[a.kind]?.group === 'smc');
-  const liqAnns   = annotations.filter((a) => KIND_META[a.kind]?.group === 'liq');
-
-  const readyToAdd = Boolean(addLow && addHigh && !annBusy);
-
-  // ── render ─────────────────────────────────────────────────────────────────
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <Collapsible.Root ref={cardRef} open={open} onOpenChange={setOpen}
       className={`price-chart smc-chart${full ? ' is-full' : ''}`}>
 
-      {/* ── header ─────────────────────────────────────────────────────────── */}
+      {/* ── Toast notification ────────────────────────────────────────────── */}
+      {savedToast && (
+        <div className="smc-toast" role="status">
+          <BookmarkCheck size={14} className="smc-toast-icon" />
+          <span>{savedToast}</span>
+        </div>
+      )}
+
+      {/* ── Header ────────────────────────────────────────────────────────── */}
       <div className={`price-chart-head${hideHeadline ? ' is-compact' : ''}`}>
         {!hideHeadline && (
           <div className="price-chart-headline">
@@ -534,7 +658,7 @@ export function PriceChart({
             {bias && (
               <span className={`price-chart-bias is-${bias.side.toLowerCase()}`}
                 title={bias.reasons.length
-                  ? `${bias.reasons.map((r) => r.text).join(' · ')} — weighted vote`
+                  ? `${bias.reasons.map((r) => r.text).join(' · ')} — weighted vote, not a probability`
                   : 'Nothing measured is pointing either way'}>
                 <b>{bias.side === 'UP' ? '▲ Up' : bias.side === 'DOWN' ? '▼ Down' : '● No lean'}</b>
                 {bias.up + bias.down > 0 && (
@@ -571,7 +695,57 @@ export function PriceChart({
             </ToggleGroup>
           )}
 
-          <div className="price-chart-tools" role="group" aria-label="zoom">
+          {/* ── Auto-Draw Feature Pill Toolbar ──────────────────────────────── */}
+          <div className="smc-tool-strip" role="toolbar" aria-label="SMC auto overlay toggles">
+            <button
+              type="button"
+              className={`smc-pill-btn${showTradePlan ? ' on trade' : ''}`}
+              title="Toggle Auto Trade Setup (Red Stop Loss Box & Green Take Profit Boxes with R:R)"
+              onClick={() => setShowTradePlan((v) => !v)}>
+              <Target size={12} aria-hidden />
+              <span>SL/TP Plan</span>
+            </button>
+
+            <button
+              type="button"
+              className={`smc-pill-btn${showSmc ? ' on smc' : ''}`}
+              title="Toggle Order Blocks (OB↑/OB↓) & Fair Value Gaps (FVG)"
+              onClick={() => setShowSmc((v) => !v)}>
+              <Layers size={12} aria-hidden />
+              <span>OB & FVG</span>
+            </button>
+
+            <button
+              type="button"
+              className={`smc-pill-btn${showStructure ? ' on struct' : ''}`}
+              title="Toggle Market Structure Swings (HH/HL/LH/LL) & BOS/CHoCH"
+              onClick={() => setShowStructure((v) => !v)}>
+              <BarChart2 size={12} aria-hidden />
+              <span>Structure</span>
+            </button>
+
+            <button
+              type="button"
+              className={`smc-pill-btn${showLiquidity ? ' on liq' : ''}`}
+              title="Toggle Liquidity Pools (BSL Buy Stops & SSL Sell Stops)"
+              onClick={() => setShowLiquidity((v) => !v)}>
+              <Droplets size={12} aria-hidden />
+              <span>Liquidity</span>
+            </button>
+
+            {/* 1-Click Save Auto Setup to DB */}
+            {smc.tradePlan && (
+              <button
+                type="button"
+                className="smc-pill-btn save-btn"
+                disabled={annBusy}
+                title="1-Click Save Auto-Detected Stop Loss & Target Boxes to Database"
+                onClick={() => void handleSaveAutoSetup()}>
+                <Zap size={12} style={{ color: '#fbbf24' }} aria-hidden />
+                <span>{annBusy ? 'Saving…' : 'Save Setup'}</span>
+              </button>
+            )}
+
             <button type="button" className={`chain-chip${zoomOn ? ' on' : ''}`} aria-pressed={zoomOn}
               title={zoomOn ? 'Zoom on' : 'Zoom off'} onClick={() => setZoomOn(!zoomOn)}>
               {zoomOn ? <Move size={13} aria-hidden /> : <Lock size={13} aria-hidden />}
@@ -586,13 +760,39 @@ export function PriceChart({
             </button>
             <button type="button"
               className={`chain-chip${showAnnPanel ? ' on' : ''}`}
-              title="Zone / SL / TGT annotation panel"
+              title="Toggle Details & Manual Drawing Panel"
               onClick={() => setShowAnnPanel(!showAnnPanel)}>
-              <Square size={12} aria-hidden /> Zones
+              <Square size={12} aria-hidden /> Panel
             </button>
           </div>
         </div>
       </div>
+
+      {/* ── Active Auto Setup Info Bar ───────────────────────────────────────── */}
+      {smc.tradePlan && showTradePlan && (
+        <div className="smc-autoplan-strip">
+          <div className="smc-autoplan-badge" data-direction={smc.tradePlan.direction}>
+            {smc.tradePlan.direction === 'LONG' ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
+            <span>AUTO {smc.tradePlan.direction} SETUP</span>
+          </div>
+
+          <div className="smc-autoplan-metrics">
+            <span>Entry: <b>${smc.tradePlan.entry.toLocaleString()}</b></span>
+            <span className="smc-sep">•</span>
+            <span className="smc-metric-sl">SL: <b>${smc.tradePlan.sl.price.toLocaleString()}</b> (-{smc.tradePlan.sl.riskPct.toFixed(2)}%)</span>
+            <span className="smc-sep">•</span>
+            <span className="smc-metric-tp">TP 1: <b>${smc.tradePlan.tp1.price.toLocaleString()}</b> (+{smc.tradePlan.tp1.gainPct.toFixed(2)}%)</span>
+            <span className="smc-sep">•</span>
+            <span className="smc-metric-tp">TP 2: <b>${smc.tradePlan.tp2.price.toLocaleString()}</b></span>
+            <span className="smc-sep">•</span>
+            <span className="smc-metric-rr">R:R <b>{smc.tradePlan.riskReward}</b></span>
+          </div>
+
+          <div className="smc-autoplan-reason dim" title={smc.tradePlan.reason}>
+            {TF_ROLE[tf]}
+          </div>
+        </div>
+      )}
 
       <Collapsible.Content>
         {error ? (
@@ -615,7 +815,286 @@ export function PriceChart({
                   </marker>
                 </defs>
 
-                {/* Level bands */}
+                {/* ── 1. Order Blocks (OB↑ & OB↓) ─────────────────────────── */}
+                {overlay.obShapes.map(({ ob, top, height, xLeft, xRight }) => {
+                  const isBull = ob.type === 'bull';
+                  const strokeColor = isBull ? C_UP : C_DOWN;
+                  const fillColor = isBull ? 'rgba(38,161,123,0.18)' : 'rgba(226,80,79,0.18)';
+                  return (
+                    <g key={ob.id} className="smc-ob-group" data-type={ob.type}>
+                      <rect x={xLeft} y={top} width={Math.max(xRight - xLeft, 10)} height={height}
+                        fill={fillColor} stroke={strokeColor} strokeWidth="1.2" rx={3} />
+                      {/* Left Badge */}
+                      <rect x={xLeft + 4} y={top + 2} width={isBull ? 110 : 106} height={17} rx={3}
+                        fill="rgba(10,14,23,0.85)" stroke={strokeColor} strokeWidth="0.8" />
+                      <text x={xLeft + 8} y={top + 14} fontSize="10" fontWeight="700" fill={strokeColor}>
+                        {ob.label}
+                      </text>
+                      {/* Price Range */}
+                      <text x={xRight - 6} y={top + 13} fontSize="9.5" fill="rgba(206,216,230,0.8)" textAnchor="end">
+                        {fmtStrike(Math.round(ob.priceHigh))} – {fmtStrike(Math.round(ob.priceLow))}
+                      </text>
+                    </g>
+                  );
+                })}
+
+                {/* ── 2. Fair Value Gaps (FVG) ────────────────────────────── */}
+                {overlay.fvgShapes.map(({ fvg, top, height, xLeft, xRight }) => {
+                  const isBull = fvg.type === 'bull';
+                  const strokeColor = isBull ? C_BOS : C_CHOCH;
+                  const fillColor = isBull ? 'rgba(96,165,250,0.13)' : 'rgba(245,158,11,0.13)';
+                  return (
+                    <g key={fvg.id} className="smc-fvg-group" data-type={fvg.type}>
+                      <rect x={xLeft} y={top} width={Math.max(xRight - xLeft, 10)} height={height}
+                        fill={fillColor} stroke={strokeColor} strokeWidth="1" strokeDasharray="4 3" rx={2} />
+                      <rect x={xLeft + 4} y={top + 2} width={68} height={15} rx={2}
+                        fill="rgba(10,14,23,0.85)" />
+                      <text x={xLeft + 8} y={top + 13} fontSize="9.5" fontWeight="700" fill={strokeColor}>
+                        {fvg.label}
+                      </text>
+                    </g>
+                  );
+                })}
+
+                {/* ── 3. Liquidity Lines (BSL & SSL) ──────────────────────── */}
+                {overlay.liqShapes.map(({ l, y, x1, x2 }) => {
+                  const isBsl = l.type === 'BSL';
+                  const color = isBsl ? C_UP : C_DOWN;
+                  return (
+                    <g key={`liq-${l.type}-${l.time}`} className="smc-liq-group">
+                      <line x1={x1} x2={x2} y1={y} y2={y} stroke={color}
+                        strokeWidth="1.2" strokeDasharray="3 3" opacity="0.85" />
+                      <rect x={x2 - 145} y={y - 10} width={140} height={18} rx={3}
+                        fill="rgba(10,14,23,0.92)" stroke={color} strokeWidth="0.8" />
+                      <text x={x2 - 138} y={y + 3} fontSize="10" fontWeight="600" fill={color}>
+                        {l.label}
+                      </text>
+                    </g>
+                  );
+                })}
+
+                {/* ── 4. Structure Breaks (BOS & CHoCH) ───────────────────── */}
+                {overlay.breakShapes.map(({ b, y, x1, x2 }, idx) => {
+                  const isBos = b.type === 'BOS';
+                  const color = isBos ? C_BOS : C_CHOCH;
+                  return (
+                    <g key={`break-${idx}`} className="smc-break-group">
+                      <line x1={x1} x2={x2} y1={y} y2={y} stroke={color}
+                        strokeWidth="1.4" strokeDasharray="5 3" />
+                      <rect x={x2 - 58} y={y - 9} width={56} height={16} rx={3}
+                        fill="rgba(10,14,23,0.9)" stroke={color} strokeWidth="0.8" />
+                      <text x={x2 - 52} y={y + 3} fontSize="10" fontWeight="700" fill={color}>
+                        {b.label}
+                      </text>
+                    </g>
+                  );
+                })}
+
+                {/* ── 5. Market Structure Swings (HH, HL, LH, LL) ─────────── */}
+                {overlay.swingShapes.map(({ s, x, y }, idx) => {
+                  const isHigh = s.kind === 'high';
+                  const isBull = s.type === 'HH' || s.type === 'HL';
+                  const color = isBull ? C_UP : C_DOWN;
+                  const tagY = isHigh ? y - 14 : y + 6;
+                  return (
+                    <g key={`swing-${idx}`} className="smc-swing-tag">
+                      <circle cx={x} cy={y} r="2.5" fill={color} />
+                      <rect x={x - 14} y={tagY} width={28} height={14} rx={3}
+                        fill="rgba(10,14,23,0.88)" stroke={color} strokeWidth="0.8" />
+                      <text x={x} y={tagY + 10} fontSize="8.5" fontWeight="800"
+                        fill={color} textAnchor="middle">
+                        {s.type}
+                      </text>
+                    </g>
+                  );
+                })}
+
+                {/* ── 6. Automated Trade Setup (Red SL & Green TP Boxes) ──── */}
+                {overlay.autoTradeBox && (
+                  <g className="smc-trade-plan-group">
+                    {/* Entry Line */}
+                    <line
+                      x1={overlay.autoTradeBox.xStart}
+                      x2={overlay.autoTradeBox.xEnd}
+                      y1={overlay.autoTradeBox.entryY}
+                      y2={overlay.autoTradeBox.entryY}
+                      stroke="#ffffff"
+                      strokeWidth="1.5"
+                      strokeDasharray="4 2"
+                      opacity="0.9"
+                    />
+                    <rect
+                      x={overlay.autoTradeBox.xStart + 6}
+                      y={overlay.autoTradeBox.entryY - 9}
+                      width={104}
+                      height={18}
+                      rx={3}
+                      fill="rgba(10,14,23,0.95)"
+                      stroke="#ffffff"
+                      strokeWidth="0.8"
+                    />
+                    <text
+                      x={overlay.autoTradeBox.xStart + 12}
+                      y={overlay.autoTradeBox.entryY + 4}
+                      fontSize="10"
+                      fontWeight="700"
+                      fill="#ffffff">
+                      ENTRY ${overlay.autoTradeBox.plan.entry.toLocaleString()}
+                    </text>
+
+                    {/* RED STOP LOSS BOX */}
+                    <rect
+                      x={overlay.autoTradeBox.xStart}
+                      y={overlay.autoTradeBox.slTop}
+                      width={overlay.autoTradeBox.xEnd - overlay.autoTradeBox.xStart}
+                      height={overlay.autoTradeBox.slHeight}
+                      fill="rgba(226, 80, 79, 0.22)"
+                      stroke="#e2504f"
+                      strokeWidth="1.4"
+                      rx={3}
+                    />
+                    <rect
+                      x={overlay.autoTradeBox.xStart + 6}
+                      y={overlay.autoTradeBox.slTop + 3}
+                      width={132}
+                      height={18}
+                      rx={3}
+                      fill="rgba(10,14,23,0.95)"
+                      stroke="#e2504f"
+                      strokeWidth="0.8"
+                    />
+                    <text
+                      x={overlay.autoTradeBox.xStart + 12}
+                      y={overlay.autoTradeBox.slTop + 16}
+                      fontSize="10"
+                      fontWeight="800"
+                      fill="#e2504f">
+                      🛑 {overlay.autoTradeBox.plan.sl.label}
+                    </text>
+
+                    {/* GREEN TP 1 BOX */}
+                    <rect
+                      x={overlay.autoTradeBox.xStart}
+                      y={overlay.autoTradeBox.tp1Top}
+                      width={overlay.autoTradeBox.xEnd - overlay.autoTradeBox.xStart}
+                      height={overlay.autoTradeBox.tp1Height}
+                      fill="rgba(38, 161, 123, 0.22)"
+                      stroke="#26a17b"
+                      strokeWidth="1.4"
+                      rx={3}
+                    />
+                    <rect
+                      x={overlay.autoTradeBox.xStart + 6}
+                      y={overlay.autoTradeBox.tp1Top + 3}
+                      width={132}
+                      height={18}
+                      rx={3}
+                      fill="rgba(10,14,23,0.95)"
+                      stroke="#26a17b"
+                      strokeWidth="0.8"
+                    />
+                    <text
+                      x={overlay.autoTradeBox.xStart + 12}
+                      y={overlay.autoTradeBox.tp1Top + 16}
+                      fontSize="10"
+                      fontWeight="800"
+                      fill="#26a17b">
+                      🎯 {overlay.autoTradeBox.plan.tp1.label}
+                    </text>
+
+                    {/* GREEN TP 2 BOX */}
+                    <rect
+                      x={overlay.autoTradeBox.xStart}
+                      y={overlay.autoTradeBox.tp2Top}
+                      width={overlay.autoTradeBox.xEnd - overlay.autoTradeBox.xStart}
+                      height={overlay.autoTradeBox.tp2Height}
+                      fill="rgba(52, 211, 153, 0.14)"
+                      stroke="#34d399"
+                      strokeWidth="1.2"
+                      strokeDasharray="4 3"
+                      rx={3}
+                    />
+                    <rect
+                      x={overlay.autoTradeBox.xStart + 6}
+                      y={overlay.autoTradeBox.tp2Top + 3}
+                      width={124}
+                      height={17}
+                      rx={3}
+                      fill="rgba(10,14,23,0.95)"
+                      stroke="#34d399"
+                      strokeWidth="0.8"
+                    />
+                    <text
+                      x={overlay.autoTradeBox.xStart + 12}
+                      y={overlay.autoTradeBox.tp2Top + 15}
+                      fontSize="9.5"
+                      fontWeight="700"
+                      fill="#34d399">
+                      🚀 {overlay.autoTradeBox.plan.tp2.label}
+                    </text>
+
+                    {/* Summary Callout Banner in Gutter */}
+                    <rect
+                      x={overlay.autoTradeBox.xEnd - 130}
+                      y={overlay.autoTradeBox.entryY - 26}
+                      width={124}
+                      height={50}
+                      rx={5}
+                      fill="rgba(10,14,23,0.96)"
+                      stroke="#60a5fa"
+                      strokeWidth="1.2"
+                    />
+                    <text
+                      x={overlay.autoTradeBox.xEnd - 68}
+                      y={overlay.autoTradeBox.entryY - 11}
+                      fontSize="10.5"
+                      fontWeight="800"
+                      fill="#60a5fa"
+                      textAnchor="middle">
+                      {overlay.autoTradeBox.plan.direction} SETUP
+                    </text>
+                    <text
+                      x={overlay.autoTradeBox.xEnd - 68}
+                      y={overlay.autoTradeBox.entryY + 4}
+                      fontSize="10"
+                      fontWeight="700"
+                      fill="#34d399"
+                      textAnchor="middle">
+                      R:R {overlay.autoTradeBox.plan.riskReward}
+                    </text>
+                    <text
+                      x={overlay.autoTradeBox.xEnd - 68}
+                      y={overlay.autoTradeBox.entryY + 17}
+                      fontSize="9"
+                      fill="rgba(206,216,230,0.8)"
+                      textAnchor="middle">
+                      Risk {overlay.autoTradeBox.plan.sl.riskPct.toFixed(2)}% | TP +{overlay.autoTradeBox.plan.tp1.gainPct.toFixed(2)}%
+                    </text>
+                  </g>
+                )}
+
+                {/* ── 7. DB Saved Annotations ─────────────────────────────── */}
+                {overlay.annShapes.map(({ ann, meta, top, height, xLeft, xRight }) => {
+                  const lbl = ann.label || meta.label;
+                  return (
+                    <g key={`ann-${ann.id}`} data-ann-kind={ann.kind}>
+                      <rect x={xLeft} y={top} width={Math.max(xRight - xLeft, 2)} height={height}
+                        fill={meta.fill} rx={2} />
+                      <line x1={xLeft} x2={xRight} y1={top} y2={top}
+                        stroke={meta.border} strokeWidth="1.8" />
+                      <line x1={xLeft} x2={xRight} y1={top + height} y2={top + height}
+                        stroke={meta.border} strokeWidth="1.2" strokeDasharray="4 3" opacity="0.6" />
+                      <text x={xLeft + 8} y={top + Math.min(height * 0.55, 16)}
+                        fontSize="11" fontWeight="700" fill={meta.border}>{lbl}</text>
+                      <text x={xLeft + 8} y={top + Math.min(height * 0.55, 16) + 13}
+                        fontSize="10" fill="rgba(206,216,230,0.8)">
+                        {fmtStrike(Math.round(ann.priceHigh))} – {fmtStrike(Math.round(ann.priceLow))}
+                      </text>
+                    </g>
+                  );
+                })}
+
+                {/* Level bands from desk */}
                 {overlay.zones.map((z) => {
                   const colour = z.tone === 'up' ? C_DOWN : C_UP;
                   return (
@@ -635,33 +1114,11 @@ export function PriceChart({
                   );
                 })}
 
-                {/* Swing lines */}
+                {/* Swing lines from desk */}
                 {overlay.lines.map((l, i) => (
                   <line key={`trend-${i}`} data-trend={l.kind} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
                     stroke="rgba(236,243,250,0.7)" strokeWidth="1.6" strokeLinecap="round" />
                 ))}
-
-                {/* Saved annotation boxes */}
-                {overlay.annShapes.map(({ ann, meta, top, height, xLeft, xRight }) => {
-                  const lbl = ann.label || meta.label;
-                  const isThin = height < 20;
-                  return (
-                    <g key={`ann-${ann.id}`} data-ann-kind={ann.kind}>
-                      <rect x={xLeft} y={top} width={Math.max(xRight - xLeft, 2)} height={height}
-                        fill={meta.fill} rx={2} />
-                      <line x1={xLeft} x2={xRight} y1={top} y2={top}
-                        stroke={meta.border} strokeWidth="1.8" />
-                      <line x1={xLeft} x2={xRight} y1={top + height} y2={top + height}
-                        stroke={meta.border} strokeWidth="1.2" strokeDasharray="4 3" opacity="0.6" />
-                      <text x={xLeft + 8} y={isThin ? top - 4 : top + Math.min(height * 0.55, 16)}
-                        fontSize="11" fontWeight="700" fill={meta.border}>{lbl}</text>
-                      <text x={xLeft + 8} y={isThin ? top - 4 : top + Math.min(height * 0.55, 16) + 13}
-                        fontSize="10" fill="rgba(206,216,230,0.8)">
-                        {fmtStrike(Math.round(ann.priceHigh))} – {fmtStrike(Math.round(ann.priceLow))}
-                      </text>
-                    </g>
-                  );
-                })}
 
                 {/* Projection callouts */}
                 {overlay.callouts.map((c) => {
@@ -678,11 +1135,7 @@ export function PriceChart({
                         fill="rgba(10,14,23,0.96)" stroke={colour} strokeWidth="1.2" />
                       <text x={c.x + 10} y={c.y - h / 2 + 16} fontSize="11.5" fontWeight="600"
                         fill={c.key === 'range' ? 'rgba(206,216,230,0.95)' : colour}>{c.title}</text>
-                      {c.key === 'range' ? (
-                        <text x={c.x + 10} y={c.y + 10} fontSize="11.5" fill="rgba(226,235,245,0.95)">
-                          {fmtStrike(Math.round(c.low ?? 0))} – {fmtStrike(Math.round(c.high ?? 0))}
-                        </text>
-                      ) : (
+                      {c.key !== 'range' && (
                         <>
                           <text x={c.x + 10} y={c.y + 5} fontSize="11" fill="rgba(190,200,215,0.85)">Target</text>
                           <text x={c.x + CALLOUT_W - 10} y={c.y + 5} fontSize="12" textAnchor="end" fill="rgba(232,240,248,1)">
@@ -703,74 +1156,63 @@ export function PriceChart({
 
         <p className="price-chart-note">
           <span>
-            OI walls · support <b>{support === null ? '—' : fmtStrike(support)}</b> (heaviest put) · resistance{' '}
-            <b>{resistance === null ? '—' : fmtStrike(resistance)}</b> (heaviest call)
+            {support === null && resistance === null
+              ? 'No open-interest wall within reach — where open interest sits is off the scale —'
+              : <>OI walls · support <b>{support === null ? '—' : fmtStrike(support)}</b> (put wall) · resistance{' '}<b>{resistance === null ? '—' : fmtStrike(resistance)}</b> (call wall) — where open interest sits</>}
           </span>
-          <span>{zoomOn ? 'scroll/pinch to zoom, drag to pan' : 'zoom off — page scrolls over chart'} · times IST</span>
+          <span>{zoomOn ? 'scroll/pinch to zoom, drag to pan' : 'zoom is off, so the page scrolls over the chart'} · times IST</span>
         </p>
 
-        {/* ── ZONE ANNOTATION PANEL ─────────────────────────────────────── */}
+        {/* ── ZONE & ANNOTATION DRAWER (OPTIONAL/DETAIL) ───────────────────── */}
         {showAnnPanel && (
           <div className="ann-panel">
-
-            {/* TF context banner */}
             <div className="ann-tf-banner">
               <Zap size={12} style={{ color: '#60a5fa', flexShrink: 0 }} aria-hidden />
               <span className="ann-tf-name">{tf}</span>
               <span className="ann-tf-role">{TF_ROLE[tf]}</span>
+              {annotations.length > 0 && (
+                <button
+                  type="button"
+                  className="ann-del-btn"
+                  title="Clear all saved annotations for this TF"
+                  onClick={() => void handleClearAll()}
+                  style={{ marginLeft: 'auto', fontSize: '11px', width: 'auto', padding: '2px 8px' }}>
+                  Clear All
+                </button>
+              )}
             </div>
 
-            {/* ── Auto-pick form ────────────────────────────────────────── */}
+            {/* Manual price input form (for traders who want custom zones) */}
             <div className="ann-add-form">
-
-              {/* Auto-picked kind display — the big pill */}
               <div className="ann-autopick-row">
-                <div className="ann-autopick-badge"
-                  style={{ '--ann-color': effectiveMeta.border } as React.CSSProperties}>
+                <span className="ann-autopick-badge" style={{ '--ann-color': '#60a5fa' } as React.CSSProperties}>
                   <Zap size={11} aria-hidden />
-                  {manualKind ? 'Override' : 'Auto'}
-                  <span className="ann-autopick-kind" style={{ color: effectiveMeta.border }}>
-                    {effectiveMeta.label}
-                  </span>
-                </div>
-
-                {/* Reason tooltip */}
-                <span className="ann-autopick-reason" title={autoPick.reason}>
-                  {manualKind ? `Override: ${effectiveMeta.label}` : autoPick.reason}
+                  {manualKind ? `Override: ${KIND_META[manualKind].label}` : 'Auto Engine Active'}
                 </span>
-
-                {/* Toggle override picker */}
-                <button type="button"
+                <span className="ann-autopick-reason">
+                  {smc.tradePlan ? smc.tradePlan.reason : 'All SMC zones and trade setups are auto-calculated and drawn on chart.'}
+                </span>
+                <button
+                  type="button"
                   className={`ann-override-toggle${showOverride ? ' on' : ''}`}
-                  onClick={() => setShowOverride((v) => !v)}
-                  title="Manually override the auto-picked kind">
-                  {showOverride ? 'Hide override' : 'Override'}
+                  onClick={() => setShowOverride((v) => !v)}>
+                  {showOverride ? 'Hide Custom Kinds' : 'Custom Kind'}
                 </button>
-
-                {manualKind && (
-                  <button type="button" className="ann-override-toggle"
-                    onClick={() => { setManualKind(null); }}
-                    title="Back to auto-pick">
-                    ↺ Auto
-                  </button>
-                )}
               </div>
 
-              {/* Override picker — only shown on demand */}
               {showOverride && (
                 <div className="ann-kind-row">
                   {OVERRIDE_KINDS.map(({ kind, label, color }) => (
                     <button key={kind} type="button"
                       className={`ann-kind-btn${manualKind === kind ? ' on' : ''}`}
                       style={{ '--ann-color': color } as React.CSSProperties}
-                      onClick={() => { setManualKind(kind); }}>
+                      onClick={() => setManualKind(kind)}>
                       {label}
                     </button>
                   ))}
                 </div>
               )}
 
-              {/* Price inputs */}
               <div className="ann-price-row">
                 <input
                   className="ann-price-input"
@@ -796,113 +1238,51 @@ export function PriceChart({
                   onChange={(e) => setAddLabel(e.target.value)}
                   maxLength={40}
                 />
-                <button type="button" className="chain-chip dim" title="Fill with current spot price"
-                  onClick={fillSpot}>
+                <button type="button" className="chain-chip dim" title="Fill with spot" onClick={fillSpot}>
                   Spot
                 </button>
-                <button type="button"
+                <button
+                  type="button"
                   className="ann-add-btn"
-                  style={{ '--ann-color': effectiveMeta.border } as React.CSSProperties}
-                  disabled={!readyToAdd}
-                  onClick={() => void handleAddAnnotation()}>
+                  style={{ '--ann-color': '#60a5fa' } as React.CSSProperties}
+                  disabled={!addLow || !addHigh || annBusy}
+                  onClick={() => void handleAddManualAnnotation()}>
                   <Plus size={13} aria-hidden />
-                  Save {effectiveMeta.label}
+                  Add Custom Zone
                 </button>
               </div>
             </div>
 
-            {/* ── Saved boxes list ───────────────────────────────────────── */}
+            {/* Saved list */}
             {annotations.length > 0 && (
               <div className="ann-list">
-                {tradeAnns.length > 0 && (
-                  <div className="ann-group">
-                    <div className="ann-group-title"><Target size={12} aria-hidden /> Trade</div>
-                    <div className="ann-rows">
-                      {tradeAnns.map((ann) => {
-                        const meta = KIND_META[ann.kind];
-                        return (
-                          <div key={ann.id} className="ann-row" data-kind={ann.kind}>
-                            <span className="ann-row-badge"
-                              style={{ background: meta.fill, borderColor: meta.border, color: meta.border }}>
-                              {ann.label || meta.label}
-                            </span>
-                            <span className="ann-row-prices">
-                              <span style={{ color: meta.border }}>{fmtStrike(Math.round(ann.priceHigh))}</span>
-                              <span className="dim"> – </span>
-                              <span style={{ color: meta.border }}>{fmtStrike(Math.round(ann.priceLow))}</span>
-                            </span>
-                            <span className="ann-row-tf dim">{ann.tf}</span>
-                            <button type="button" className="ann-del-btn" title="Delete" aria-label="delete"
-                              onClick={() => void handleDeleteAnnotation(ann.id)}>
-                              <Trash2 size={12} aria-hidden />
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
+                <div className="ann-group">
+                  <div className="ann-group-title"><CheckCircle2 size={12} aria-hidden /> Saved DB Annotations ({annotations.length})</div>
+                  <div className="ann-rows">
+                    {annotations.map((ann) => {
+                      const meta = KIND_META[ann.kind] ?? { label: ann.label || 'Zone', fill: 'rgba(255,255,255,0.1)', border: '#60a5fa' };
+                      return (
+                        <div key={ann.id} className="ann-row" data-kind={ann.kind}>
+                          <span className="ann-row-badge"
+                            style={{ background: meta.fill, borderColor: meta.border, color: meta.border }}>
+                            {ann.label || meta.label}
+                          </span>
+                          <span className="ann-row-prices">
+                            <span style={{ color: meta.border }}>{fmtStrike(Math.round(ann.priceHigh))}</span>
+                            <span className="dim"> – </span>
+                            <span style={{ color: meta.border }}>{fmtStrike(Math.round(ann.priceLow))}</span>
+                          </span>
+                          <span className="ann-row-tf dim">{ann.tf}</span>
+                          <button type="button" className="ann-del-btn" title="Delete" aria-label="delete"
+                            onClick={() => void handleDeleteAnnotation(ann.id)}>
+                            <Trash2 size={12} aria-hidden />
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
-                )}
-
-                {smcAnns.length > 0 && (
-                  <div className="ann-group">
-                    <div className="ann-group-title"><TrendingUp size={12} aria-hidden /> SMC Zones</div>
-                    <div className="ann-rows">
-                      {smcAnns.map((ann) => {
-                        const meta = KIND_META[ann.kind];
-                        return (
-                          <div key={ann.id} className="ann-row" data-kind={ann.kind}>
-                            <span className="ann-row-badge"
-                              style={{ background: meta.fill, borderColor: meta.border, color: meta.border }}>
-                              {ann.label || meta.label}
-                            </span>
-                            <span className="ann-row-prices">
-                              {fmtStrike(Math.round(ann.priceHigh))} – {fmtStrike(Math.round(ann.priceLow))}
-                            </span>
-                            <span className="ann-row-tf dim">{ann.tf}</span>
-                            <button type="button" className="ann-del-btn" title="Delete" aria-label="delete"
-                              onClick={() => void handleDeleteAnnotation(ann.id)}>
-                              <Trash2 size={12} aria-hidden />
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {liqAnns.length > 0 && (
-                  <div className="ann-group">
-                    <div className="ann-group-title"><TrendingDown size={12} aria-hidden /> Liquidity</div>
-                    <div className="ann-rows">
-                      {liqAnns.map((ann) => {
-                        const meta = KIND_META[ann.kind];
-                        return (
-                          <div key={ann.id} className="ann-row" data-kind={ann.kind}>
-                            <span className="ann-row-badge"
-                              style={{ background: meta.fill, borderColor: meta.border, color: meta.border }}>
-                              {ann.label || meta.label}
-                            </span>
-                            <span className="ann-row-prices">
-                              {fmtStrike(Math.round(ann.priceHigh))} – {fmtStrike(Math.round(ann.priceLow))}
-                            </span>
-                            <span className="ann-row-tf dim">{ann.tf}</span>
-                            <button type="button" className="ann-del-btn" title="Delete" aria-label="delete"
-                              onClick={() => void handleDeleteAnnotation(ann.id)}>
-                              <Trash2 size={12} aria-hidden />
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
+                </div>
               </div>
-            )}
-
-            {annotations.length === 0 && (
-              <p className="ann-empty">
-                Enter Low + High price → kind auto-selected by TF + trend. Click "Save" to draw on chart.
-              </p>
             )}
           </div>
         )}
