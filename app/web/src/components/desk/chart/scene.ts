@@ -56,7 +56,7 @@ export const C = {
   bsl: '#f59e0b', ssl: '#38bdf8', level: '#a78bfa', eq: '#94a3b8', ote: '#facc15',
   vwap: '#e879f9', text: '#e5e7eb', muted: '#94a3b8',
   premium: 'rgba(226,80,79,0.05)', discount: 'rgba(38,161,123,0.05)', oteFill: 'rgba(250,204,21,0.08)',
-  profit: 'rgba(38,161,123,0.20)', risk: 'rgba(226,80,79,0.20)',
+  profit: 'rgba(38,161,123,0.11)', risk: 'rgba(226,80,79,0.15)',
   session: { Asia: 'rgba(100,116,139,0.07)', London: 'rgba(59,130,246,0.07)', 'New York': 'rgba(249,115,22,0.07)' } as const,
 } as const;
 
@@ -267,14 +267,18 @@ function trade(st: SmcState, n: number, out: SceneItem[], blocked: readonly stri
   for (const s of st.setups) {
     const fill = s.events.find((e) => e.state === 'ACTIVE');
     if (!fill || s.closedAt === null || s.closedAt < n - 150) continue;
+    // A finished trade is drawn as what happened: entry to exit, green or red.
     const x1 = fill.at;
     const x2 = Math.max(s.closedAt, x1 + 2);
     const bull = long(s);
-    const tp3 = s.targets[2]!.price;
-    out.push({ t: 'box', layer: 'trade', x1, x2, y1: Math.min(s.entry!, tp3), y2: Math.max(s.entry!, tp3), fill: 'rgba(38,161,123,0.09)', stroke: C.bull, priority: 8 });
-    out.push({ t: 'box', layer: 'trade', x1, x2, y1: Math.min(s.entry!, s.stop!), y2: Math.max(s.entry!, s.stop!), fill: 'rgba(226,80,79,0.09)', stroke: C.bear, priority: 8 });
-    out.push({ t: 'line', layer: 'trade', x1, x2, y: s.entry!, color: C.muted, width: 1, priority: 7 });
+    const exit = s.events[s.events.length - 1]!.price ?? s.entry!;
     const r = s.resultR;
+    const won = r !== null && r > 0;
+    out.push({
+      t: 'box', layer: 'trade', x1, x2, y1: Math.min(s.entry!, exit), y2: Math.max(s.entry!, exit) + (exit === s.entry ? 1 : 0),
+      fill: won ? 'rgba(38,161,123,0.12)' : r === 0 ? 'rgba(148,163,184,0.10)' : 'rgba(226,80,79,0.12)', stroke: won ? C.bull : r === 0 ? C.muted : C.bear, priority: 8,
+    });
+    out.push({ t: 'line', layer: 'trade', x1, x2, y: s.entry!, color: C.muted, width: 1, priority: 7 });
     const word = s.state === 'TP3' ? 'TP3' : s.state === 'STOPPED' ? 'SL' : s.state === 'BREAKEVEN' ? 'BE' : 'Exit';
     out.push({
       t: 'mark', layer: 'trade', x: s.closedAt, y: s.events[s.events.length - 1]!.price ?? s.entry!, color: r !== null && r > 0 ? C.bull : r === 0 ? C.muted : C.bear,

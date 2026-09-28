@@ -39,15 +39,6 @@
   justify-content: flex-end;
   max-width: calc(100% - 90px);
 }
-.pc-tfs {
-  display: flex;
-  gap: 2px;
-  padding: 2px;
-  background: rgba(10, 14, 23, 0.86);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 7px;
-}
-.pc-tfs button,
 .pc-tool {
   display: inline-flex;
   align-items: center;
@@ -61,15 +52,12 @@
   border: 0;
   cursor: pointer;
 }
-.pc-tfs button:hover,
 .pc-tool:hover { background: rgba(255, 255, 255, 0.06); }
-.pc-tfs button.on { background: rgba(56, 189, 248, 0.16); color: #7dd3fc; }
 .pc-tool {
   background: rgba(10, 14, 23, 0.86);
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 .pc-tool.on { color: #7dd3fc; border-color: rgba(56, 189, 248, 0.4); }
-.pc-tfs button:focus-visible,
 .pc-tool:focus-visible,
 .pc-hud-head:focus-visible { outline: 2px solid #38bdf8; outline-offset: 1px; }
 
@@ -176,7 +164,7 @@
 @media (max-width: 640px) {
   .pc-stage { height: clamp(380px, 70vh, 620px); }
   .pc-toolbar { top: auto; bottom: 34px; right: 8px; max-width: calc(100% - 16px); }
-  .pc-tfs button, .pc-tool { min-height: 32px; padding: 0 8px; }
+  .pc-tool { min-height: 32px; padding: 0 8px; }
   .pc-tool span { display: none; }
   .pc-hud { max-width: calc(100% - 16px); font-size: 11px; }
   .pc-hud-body { max-height: 38vh; overflow-y: auto; }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { runSmc } from '@/lib/smc/engine';
 import { walk } from '@/test/bars';
-import { buildScene, DEFAULT_LAYERS, LAYERS, type Layer, type SceneItem } from './scene';
+import { buildScene, DEFAULT_LAYERS, htfScene, LAYERS, type Layer, type SceneItem } from './scene';
 
 const bars = walk(3 * 288, 11);
 const st = runSmc(bars, { tfSec: 300 });
@@ -68,5 +68,22 @@ describe('the scene', () => {
     // Every trade line spans the box, not the chart.
     for (const it of scene) if (it.t === 'line') expect(it.x2).toBe(a!.x2);
     expect(scene.some((it) => it.t === 'vline')).toBe(true);
+  });
+});
+
+describe('higher timeframes on the main chart', () => {
+  it('names each object with its timeframe and puts it on the candle it happened on', () => {
+    const h15 = walk(96, 3).map((b, i) => ({ ...b, time: bars[0]!.time + i * 900 }));
+    const st15 = runSmc(h15, { tfSec: 900 });
+    const items = htfScene([{ tf: '15m', tfSec: 900, bars: h15, state: st15, show: 'structure' }], bars);
+    expect(items.length).toBeGreaterThan(0);
+    for (const it of items) {
+      expect(it.layer).toBe('htf');
+      if (it.t !== 'line') continue;
+      expect(it.label).toMatch(/^15m (BOS|CHoCH|MSS)$/);
+      const brk = st15.breaks.find((b) => b.level === it.y)!;
+      expect(bars[it.x1]!.time).toBeLessThanOrEqual(h15[brk.from]!.time);
+      expect(bars[it.x1 + 1]!.time).toBeGreaterThan(h15[brk.from]!.time);
+    }
   });
 });
