@@ -146,6 +146,34 @@ export type SupplyDemandZone = {
   sublabel: string;
 };
 
+export type DealingRange = {
+  high: number;
+  low: number;
+  equilibrium: number;
+  premiumZone: { low: number; high: number };
+  discountZone: { low: number; high: number };
+  ote: { low: number; high: number; sweetSpot: number };
+  currentZone: 'PREMIUM' | 'DISCOUNT' | 'EQUILIBRIUM' | 'OTE';
+  currentPct: number;
+};
+
+export type SessionState = {
+  asiaActive: boolean;
+  londonActive: boolean;
+  nyActive: boolean;
+  currentSession: string;
+  pdh: number;
+  pdl: number;
+};
+
+export type CandlePattern = {
+  name: string;
+  type: 'bull' | 'bear' | 'neutral';
+  barIndex: number;
+  time: number;
+  description: string;
+};
+
 export type SmcAnalysisResult = {
   swings: SwingPoint[];
   breaks: StructureBreak[];
@@ -159,6 +187,9 @@ export type SmcAnalysisResult = {
   displacements: Displacement[];
   mitigations: MitigationBlock[];
   supplyDemandZones: SupplyDemandZone[];
+  dealingRange: DealingRange;
+  sessions: SessionState;
+  candlePatterns: CandlePattern[];
 };
 
 /** Calculate Average True Range (ATR) */
@@ -231,6 +262,25 @@ export function analyzeSmc(
     displacements: [],
     mitigations: [],
     supplyDemandZones: [],
+    dealingRange: {
+      high: 0,
+      low: 0,
+      equilibrium: 0,
+      premiumZone: { low: 0, high: 0 },
+      discountZone: { low: 0, high: 0 },
+      ote: { low: 0, high: 0, sweetSpot: 0 },
+      currentZone: 'EQUILIBRIUM',
+      currentPct: 50,
+    },
+    sessions: {
+      asiaActive: false,
+      londonActive: false,
+      nyActive: false,
+      currentSession: 'Off-Hours',
+      pdh: 0,
+      pdl: 0,
+    },
+    candlePatterns: [],
   };
 
   if (!bars || bars.length < 8 || spot <= 0) return empty;
@@ -773,6 +823,127 @@ export function analyzeSmc(
     });
   }
 
+  // ── 11. Premium / Discount & Optimal Trade Entry (OTE) ─────────────────────
+  const rangeHigh = visibleBars.length >= 5 ? Math.max(...visibleBars.map((b) => b.high)) : spot * 1.02;
+  const rangeLow = visibleBars.length >= 5 ? Math.min(...visibleBars.map((b) => b.low)) : spot * 0.98;
+  const rangeDiff = Math.max(rangeHigh - rangeLow, 50);
+  const equilibrium = Math.round(rangeLow + rangeDiff * 0.5);
+  const currentPct = Math.round(((spot - rangeLow) / rangeDiff) * 1000) / 10;
+
+  // Fibonacci OTE (61.8% to 79%)
+  const ote62 = Math.round(rangeLow + rangeDiff * 0.618);
+  const ote705 = Math.round(rangeLow + rangeDiff * 0.705);
+  const ote79 = Math.round(rangeLow + rangeDiff * 0.79);
+
+  let currentZone: 'PREMIUM' | 'DISCOUNT' | 'EQUILIBRIUM' | 'OTE' = 'EQUILIBRIUM';
+  if (currentPct >= 61.8 && currentPct <= 79) {
+    currentZone = 'OTE';
+  } else if (currentPct > 52) {
+    currentZone = 'PREMIUM';
+  } else if (currentPct < 48) {
+    currentZone = 'DISCOUNT';
+  }
+
+  const dealingRange: DealingRange = {
+    high: Math.round(rangeHigh),
+    low: Math.round(rangeLow),
+    equilibrium,
+    premiumZone: { low: equilibrium, high: Math.round(rangeHigh) },
+    discountZone: { low: Math.round(rangeLow), high: equilibrium },
+    ote: { low: Math.min(ote62, ote79), high: Math.max(ote62, ote79), sweetSpot: ote705 },
+    currentZone,
+    currentPct,
+  };
+
+  // ── 12. Session Concepts & Kill Zones (Asia, London, New York) ─────────────
+  const now = new Date();
+  const utcHour = now.getUTCHours();
+  const asiaActive = utcHour >= 0 && utcHour < 9;
+  const londonActive = utcHour >= 7 && utcHour < 16;
+  const nyActive = utcHour >= 13 && utcHour < 22;
+  const activeSessions = [
+    asiaActive ? 'Asia' : null,
+    londonActive ? 'London' : null,
+    nyActive ? 'New York' : null,
+  ].filter(Boolean);
+  const currentSession = activeSessions.join(' + ') || 'Off-Hours';
+
+  const oneDayAgo = Math.floor(Date.now() / 1000) - 86400;
+  const dayBars = bars.filter((b) => b.time >= oneDayAgo);
+  const pdh = dayBars.length ? Math.max(...dayBars.map((b) => b.high)) : rangeHigh;
+  const pdl = dayBars.length ? Math.min(...dayBars.map((b) => b.low)) : rangeLow;
+
+  const sessions: SessionState = {
+    asiaActive,
+    londonActive,
+    nyActive,
+    currentSession,
+    pdh: Math.round(pdh),
+    pdl: Math.round(pdl),
+  };
+
+  // ── 13. Institutional Candle Patterns ─────────────────────────────────────
+  const candlePatterns: CandlePattern[] = [];
+  for (let i = Math.max(1, bars.length - 8); i < bars.length; i++) {
+    const cur = bars[i]!;
+    const prev = bars[i - 1]!;
+    const range = cur.high - cur.low;
+    if (range <= 0) continue;
+    const body = Math.abs(cur.close - cur.open);
+    const upperWick = cur.high - Math.max(cur.open, cur.close);
+    const lowerWick = Math.min(cur.open, cur.close) - cur.low;
+
+    if (body <= range * 0.12) {
+      candlePatterns.push({
+        name: 'Doji',
+        type: 'neutral',
+        barIndex: i,
+        time: cur.time,
+        description: 'Indecision & equilibrium candle at key level',
+      });
+    } else if (lowerWick >= body * 2.0 && upperWick <= body * 0.8) {
+      candlePatterns.push({
+        name: 'Pin Bar (Rejection)',
+        type: 'bull',
+        barIndex: i,
+        time: cur.time,
+        description: 'Bullish liquidity grab & bottom rejection wick',
+      });
+    } else if (upperWick >= body * 2.0 && lowerWick <= body * 0.8) {
+      candlePatterns.push({
+        name: 'Pin Bar (Rejection)',
+        type: 'bear',
+        barIndex: i,
+        time: cur.time,
+        description: 'Bearish liquidity sweep & top rejection wick',
+      });
+    } else if (prev.close < prev.open && cur.close > cur.open && cur.close >= prev.open && cur.open <= prev.close) {
+      candlePatterns.push({
+        name: 'Engulfing',
+        type: 'bull',
+        barIndex: i,
+        time: cur.time,
+        description: 'Bullish momentum reversal engulfing previous candle',
+      });
+    } else if (prev.close > prev.open && cur.close < cur.open && cur.close <= prev.open && cur.open >= prev.close) {
+      candlePatterns.push({
+        name: 'Engulfing',
+        type: 'bear',
+        barIndex: i,
+        time: cur.time,
+        description: 'Bearish distribution engulfing previous candle',
+      });
+    } else if (cur.high <= prev.high && cur.low >= prev.low) {
+      candlePatterns.push({
+        name: 'Inside Bar',
+        type: 'neutral',
+        barIndex: i,
+        time: cur.time,
+        description: 'Consolidation & contraction before breakout expansion',
+      });
+    }
+  }
+
   return {
     swings,
     breaks: activeBreaks,
@@ -786,5 +957,8 @@ export function analyzeSmc(
     displacements,
     mitigations,
     supplyDemandZones,
+    dealingRange,
+    sessions,
+    candlePatterns,
   };
 }

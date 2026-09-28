@@ -1137,6 +1137,12 @@ td.evcol.down { color: var(--down); }
   color: #fbbf24;
   box-shadow: 0 0 10px rgba(245, 158, 11, 0.2);
 }
+.smc-pill-btn.on.prem {
+  background: rgba(234, 179, 8, 0.15);
+  border-color: rgba(234, 179, 8, 0.5);
+  color: #facc15;
+  box-shadow: 0 0 10px rgba(234, 179, 8, 0.2);
+}
 .smc-pill-btn.save-btn {
   background: linear-gradient(135deg, rgba(245, 158, 11, 0.16), rgba(96, 165, 250, 0.16));
   border: 1px solid rgba(245, 158, 11, 0.45);
@@ -1251,6 +1257,172 @@ td.evcol.down { color: var(--down); }
 .ann-tf-role {
   color: var(--muted);
   font-size: 11px;
+}
+
+/* ── SMC Master Legend & Inspector Dashboard ────────────────────────────── */
+.smc-legend-dashboard {
+  padding: 12px 14px;
+  background: rgba(10, 14, 23, 0.75);
+  border-bottom: 1px solid var(--line);
+}
+.smc-legend-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.smc-legend-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+.smc-badge-icon {
+  font-size: 13px;
+}
+.smc-legend-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.smc-tag-pill {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+}
+.smc-tag-pill.blue { color: #60a5fa; border-color: rgba(96,165,250,0.4); background: rgba(96,165,250,0.1); }
+.smc-tag-pill.green { color: #34d399; border-color: rgba(52,211,153,0.4); background: rgba(52,211,153,0.1); }
+.smc-tag-pill.red { color: #f87171; border-color: rgba(248,113,113,0.4); background: rgba(248,113,113,0.1); }
+.smc-tag-pill.teal { color: #2dd4bf; border-color: rgba(45,212,191,0.4); background: rgba(45,212,191,0.1); }
+
+.smc-legend-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+}
+.smc-legend-card {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 7px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.smc-legend-card.c-blue { border-top: 2px solid #3b82f6; }
+.smc-legend-card.c-purple { border-top: 2px solid #a855f7; }
+.smc-legend-card.c-red { border-top: 2px solid #ef4444; }
+.smc-legend-card.c-cyan { border-top: 2px solid #06b6d4; }
+.smc-legend-card.c-green { border-top: 2px solid #10b981; }
+.smc-legend-card.c-yellow { border-top: 2px solid #eab308; }
+.smc-legend-card.c-orange { border-top: 2px solid #f97316; }
+.smc-legend-card.c-teal { border-top: 2px solid #14b8a6; }
+.smc-legend-card.c-rose { border-top: 2px solid #f43f5e; }
+.smc-legend-card.c-violet { border-top: 2px solid #8b5cf6; }
+
+.smc-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+.smc-card-badge {
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+}
+.smc-card-badge.amber { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+.smc-card-badge.teal { background: rgba(20, 184, 166, 0.15); color: #2dd4bf; border: 1px solid rgba(20, 184, 166, 0.3); }
+.smc-card-badge.rose { background: rgba(244, 63, 94, 0.15); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.3); }
+.smc-card-badge.violet { background: rgba(139, 92, 246, 0.15); color: #c084fc; border: 1px solid rgba(139, 92, 246, 0.3); }
+
+.smc-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 10.5px;
+}
+.smc-item-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.smc-item-tag {
+  font-size: 9.5px;
+  font-weight: 800;
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+}
+.smc-item-tag.blue { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border-color: rgba(59, 130, 246, 0.3); }
+.smc-item-tag.green { background: rgba(16, 185, 129, 0.15); color: #34d399; border-color: rgba(16, 185, 129, 0.3); }
+.smc-item-tag.red { background: rgba(239, 68, 68, 0.15); color: #f87171; border-color: rgba(239, 68, 68, 0.3); }
+.smc-item-tag.purple { background: rgba(168, 85, 247, 0.15); color: #c084fc; border-color: rgba(168, 85, 247, 0.3); }
+.smc-item-tag.cyan { background: rgba(6, 182, 212, 0.15); color: #38bdf8; border-color: rgba(6, 182, 212, 0.3); }
+.smc-item-tag.orange { background: rgba(249, 115, 22, 0.15); color: #fb923c; border-color: rgba(249, 115, 22, 0.3); }
+.smc-item-tag.yellow { background: rgba(234, 179, 8, 0.15); color: #facc15; border-color: rgba(234, 179, 8, 0.3); }
+.smc-item-tag.slate { background: rgba(100, 116, 139, 0.2); color: #cbd5e1; border-color: rgba(100, 116, 139, 0.3); }
+
+.smc-item-desc {
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.smc-item-desc b {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.smc-prem-meter {
+  height: 6px;
+  width: 100%;
+  border-radius: 999px;
+  background: linear-gradient(to right, #10b981 0%, #10b981 45%, #ffffff 50%, #ef4444 55%, #ef4444 100%);
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 2px;
+}
+.smc-prem-bar {
+  height: 100%;
+  background: #facc15;
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.smc-session-chips {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.smc-session-chip {
+  font-size: 9.5px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.smc-session-chip.on {
+  background: rgba(20, 184, 166, 0.18);
+  border-color: rgba(20, 184, 166, 0.45);
+  color: #2dd4bf;
+  font-weight: 700;
 }
 
 /* Auto-pick pill row */

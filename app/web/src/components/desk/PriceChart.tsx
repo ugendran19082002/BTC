@@ -156,6 +156,7 @@ export function PriceChart({
   const [showTradePlan, setShowTradePlan] = usePersisted('chart:show-trade-plan', true);
   const [showStructure, setShowStructure] = usePersisted('chart:show-structure', true);
   const [showLiquidity, setShowLiquidity] = usePersisted('chart:show-liquidity', true);
+  const [showPremDisc, setShowPremDisc] = usePersisted('chart:show-prem-disc', true);
   const [showAnnPanel, setShowAnnPanel] = usePersisted('chart:ann-panel', false);
 
   // ── DB-saved annotations state ─────────────────────────────────────────────
@@ -636,7 +637,25 @@ export function PriceChart({
       return { ...sd, top, height };
     });
 
-    // 11. DB Saved Annotations (manual or previously saved auto setups)
+    // 11. Premium / Discount & OTE (Optimal Trade Entry 61.8% – 79%)
+    let premDiscShapes: {
+      highY: number;
+      lowY: number;
+      eqY: number;
+      oteLowY: number;
+      oteHighY: number;
+    } | null = null;
+
+    if (showPremDisc && smc.dealingRange.high > 0) {
+      const highY = safeY(smc.dealingRange.high);
+      const lowY = safeY(smc.dealingRange.low);
+      const eqY = safeY(smc.dealingRange.equilibrium);
+      const oteLowY = safeY(smc.dealingRange.ote.low);
+      const oteHighY = safeY(smc.dealingRange.ote.high);
+      premDiscShapes = { highY, lowY, eqY, oteLowY, oteHighY };
+    }
+
+    // 12. DB Saved Annotations (manual or previously saved auto setups)
     const annShapes = annotations.map((ann) => {
       const meta = KIND_META[ann.kind] ?? { label: ann.label || 'Zone', fill: 'rgba(255,255,255,0.1)', border: '#60a5fa' };
       const yTop = safeY(ann.priceHigh);
@@ -660,6 +679,7 @@ export function PriceChart({
       dispShapes,
       mitShapes,
       supplyDemandShapes,
+      premDiscShapes,
       zones: zoneShapes(zones, c),
       lines: lineShapes(lines, c),
       callouts: calloutShapes(projection, spot > 0 ? spot : effectiveBars[effectiveBars.length - 1]!.close, c),
@@ -668,7 +688,7 @@ export function PriceChart({
       xMax,
     };
   }, [
-    effectiveBars, size, moved, showTradePlan, showSmc, showStructure, showLiquidity,
+    effectiveBars, size, moved, showTradePlan, showSmc, showStructure, showLiquidity, showPremDisc,
     smc, annotations, zones, lines, projection, spot,
   ]);
 
@@ -784,6 +804,15 @@ export function PriceChart({
               <span>Liquidity</span>
             </button>
 
+            <button
+              type="button"
+              className={`smc-pill-btn${showPremDisc ? ' on prem' : ''}`}
+              title="Toggle Premium / Discount & OTE (Optimal Trade Entry 61.8% – 79%)"
+              onClick={() => setShowPremDisc((v) => !v)}>
+              <span style={{ fontSize: '11px' }}>⚖️</span>
+              <span>Prem/Disc</span>
+            </button>
+
             {/* 1-Click Save Auto Setup to DB */}
             {smc.tradePlan && (
               <button
@@ -880,6 +909,51 @@ export function PriceChart({
                     <path d="M 0 0 L 8 4 L 0 8 z" fill="#a855f7" />
                   </marker>
                 </defs>
+
+                {/* ── 0. Premium / Discount & OTE Bands ─────────────────── */}
+                {overlay.premDiscShapes && (
+                  <g className="smc-prem-disc-group">
+                    {/* Premium Zone (Upper 50% - Red tint) */}
+                    <rect x={0} y={overlay.premDiscShapes.highY} width={overlay.xMax}
+                      height={Math.max(overlay.premDiscShapes.eqY - overlay.premDiscShapes.highY, 10)}
+                      fill="rgba(239, 68, 68, 0.05)" stroke="none" />
+                    <text x={overlay.xMax - 80} y={overlay.premDiscShapes.highY + 16} fontSize="10"
+                      fontWeight="700" fill="rgba(248, 113, 113, 0.7)" textAnchor="end">
+                      PREMIUM ZONE (Shorts)
+                    </text>
+                    
+                    {/* Discount Zone (Lower 50% - Green tint) */}
+                    <rect x={0} y={overlay.premDiscShapes.eqY} width={overlay.xMax}
+                      height={Math.max(overlay.premDiscShapes.lowY - overlay.premDiscShapes.eqY, 10)}
+                      fill="rgba(16, 185, 129, 0.05)" stroke="none" />
+                    <text x={overlay.xMax - 80} y={overlay.premDiscShapes.lowY - 8} fontSize="10"
+                      fontWeight="700" fill="rgba(52, 211, 153, 0.7)" textAnchor="end">
+                      DISCOUNT ZONE (Longs)
+                    </text>
+
+                    {/* OTE Box (Optimal Trade Entry 61.8% to 79%) */}
+                    <rect x={overlay.xMax - 250}
+                      y={Math.min(overlay.premDiscShapes.oteLowY, overlay.premDiscShapes.oteHighY)}
+                      width={230}
+                      height={Math.max(Math.abs(overlay.premDiscShapes.oteLowY - overlay.premDiscShapes.oteHighY), 16)}
+                      fill="rgba(245, 158, 11, 0.12)" stroke="#f59e0b" strokeWidth="1.2" strokeDasharray="5 3" rx={3} />
+                    <text x={overlay.xMax - 135}
+                      y={Math.min(overlay.premDiscShapes.oteLowY, overlay.premDiscShapes.oteHighY) + 12}
+                      fontSize="9.5" fontWeight="800" fill="#f59e0b" textAnchor="middle">
+                      OTE (61.8% – 79%) · Optimal Entry
+                    </text>
+
+                    {/* 50% Equilibrium Line */}
+                    <line x1={0} x2={overlay.xMax} y1={overlay.premDiscShapes.eqY} y2={overlay.premDiscShapes.eqY}
+                      stroke="rgba(255, 255, 255, 0.4)" strokeWidth="1.2" strokeDasharray="6 4" />
+                    <rect x={24} y={overlay.premDiscShapes.eqY - 10} width={135} height={20} rx={3}
+                      fill="rgba(10, 14, 23, 0.94)" stroke="rgba(255,255,255,0.4)" strokeWidth="1" />
+                    <text x={91} y={overlay.premDiscShapes.eqY + 4} fontSize="9.5" fontWeight="800"
+                      fill="#ffffff" textAnchor="middle">
+                      EQ 50% · ${smc.dealingRange.equilibrium.toLocaleString()}
+                    </text>
+                  </g>
+                )}
 
                 {/* ── 1. Institutional Supply & Demand Zones ───────────────── */}
                 {overlay.supplyDemandShapes.map((zone, idx) => {
@@ -1411,6 +1485,216 @@ export function PriceChart({
                   Clear All
                 </button>
               )}
+            </div>
+
+            {/* ── MASTER SMC & PRICE ACTION LEGEND / INSPECTOR ───────────────── */}
+            <div className="smc-legend-dashboard">
+              <div className="smc-legend-header">
+                <div className="smc-legend-title">
+                  <span className="smc-badge-icon">⚡</span>
+                  <span>Smart Money Concepts (SMC) & Price Action Master Toolkit</span>
+                </div>
+                <div className="smc-legend-badges">
+                  <span className="smc-tag-pill blue">Trend: {smc.trend}</span>
+                  <span className={`smc-tag-pill ${smc.dealingRange.currentZone === 'DISCOUNT' || smc.dealingRange.currentZone === 'OTE' ? 'green' : 'red'}`}>
+                    {smc.dealingRange.currentZone} ({smc.dealingRange.currentPct}%)
+                  </span>
+                  <span className="smc-tag-pill teal">Session: {smc.sessions.currentSession}</span>
+                </div>
+              </div>
+
+              <div className="smc-legend-grid">
+                {/* 1. Market Structure */}
+                <div className="smc-legend-card c-blue">
+                  <div className="smc-card-head">
+                    <span className="smc-card-title">1. Market Structure</span>
+                    <span className="smc-card-badge">{smc.swings.length} Swings</span>
+                  </div>
+                  <div className="smc-card-body">
+                    <div className="smc-item-row">
+                      <span className="smc-item-tag blue">HH</span>
+                      <span className="smc-item-tag green">HL</span>
+                      <span className="smc-item-tag red">LH</span>
+                      <span className="smc-item-tag red">LL</span>
+                    </div>
+                    <div className="smc-item-desc">
+                      <b>BOS</b>: Break of Structure (trend continuation)<br/>
+                      <b>CHoCH</b>: Change of Character (trend reversal)<br/>
+                      <b>MSS / SMS</b>: Market Structure Shift
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Liquidity Concepts */}
+                <div className="smc-legend-card c-purple">
+                  <div className="smc-card-head">
+                    <span className="smc-card-title">2. Liquidity Concepts</span>
+                    <span className="smc-card-badge">{smc.liquidity.length} Pools</span>
+                  </div>
+                  <div className="smc-card-body">
+                    <div className="smc-item-row">
+                      <span className="smc-item-tag purple">EQH</span>
+                      <span className="smc-item-tag purple">EQL</span>
+                      <span className="smc-item-tag green">BSL</span>
+                      <span className="smc-item-tag red">SSL</span>
+                    </div>
+                    <div className="smc-item-desc">
+                      <b>Liquidity Sweep</b>: Takes stops and reverses<br/>
+                      <b>Stop Hunt</b>: Traps retail orders before move<br/>
+                      BSL: ${smc.liquidity.find(l => l.type === 'BSL')?.price.toLocaleString() ?? '—'} | SSL: ${smc.liquidity.find(l => l.type === 'SSL')?.price.toLocaleString() ?? '—'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Order Blocks (OB) */}
+                <div className="smc-legend-card c-red">
+                  <div className="smc-card-head">
+                    <span className="smc-card-title">3. Order Blocks (OB)</span>
+                    <span className="smc-card-badge">{smc.orderBlocks.length} Active</span>
+                  </div>
+                  <div className="smc-card-body">
+                    <div className="smc-item-row">
+                      <span className="smc-item-tag green">Bullish OB</span>
+                      <span className="smc-item-tag red">Bearish OB</span>
+                    </div>
+                    <div className="smc-item-desc">
+                      <b>Bullish OB</b>: Last down candle before impulse (Demand)<br/>
+                      <b>Bearish OB</b>: Last up candle before selloff (Supply)<br/>
+                      <b>Breaker / Mitigation Block</b>: Retested re-entry level
+                    </div>
+                  </div>
+                </div>
+
+                {/* 4. Imbalance Zones */}
+                <div className="smc-legend-card c-cyan">
+                  <div className="smc-card-head">
+                    <span className="smc-card-title">4. Imbalance Zones</span>
+                    <span className="smc-card-badge">{smc.fvgs.length} FVGs</span>
+                  </div>
+                  <div className="smc-card-body">
+                    <div className="smc-item-row">
+                      <span className="smc-item-tag cyan">FVG</span>
+                      <span className="smc-item-tag slate">IFVG</span>
+                      <span className="smc-item-tag blue">BPR</span>
+                    </div>
+                    <div className="smc-item-desc">
+                      <b>FVG</b>: Fair Value Gap (3-candle price imbalance)<br/>
+                      <b>IFVG</b>: Inverted FVG (mitigated & flipped)<br/>
+                      <b>50% CE</b>: Consequent Encroachment midpoint
+                    </div>
+                  </div>
+                </div>
+
+                {/* 5. Supply & Demand */}
+                <div className="smc-legend-card c-green">
+                  <div className="smc-card-head">
+                    <span className="smc-card-title">5. Supply & Demand</span>
+                    <span className="smc-card-badge">{smc.supplyDemandZones.length} Zones</span>
+                  </div>
+                  <div className="smc-card-body">
+                    <div className="smc-item-row">
+                      <span className="smc-item-tag red">Supply Zone</span>
+                      <span className="smc-item-tag green">Demand Zone</span>
+                    </div>
+                    <div className="smc-item-desc">
+                      <b>Supply</b>: Institutional distribution & seller concentration<br/>
+                      <b>Demand</b>: Institutional accumulation & buyer support<br/>
+                      <b>Flip Zone</b>: Support ➔ Resistance / Resistance ➔ Support
+                    </div>
+                  </div>
+                </div>
+
+                {/* 6. Premium / Discount & OTE */}
+                <div className="smc-legend-card c-yellow">
+                  <div className="smc-card-head">
+                    <span className="smc-card-title">6. Premium / Discount</span>
+                    <span className="smc-card-badge amber">{smc.dealingRange.currentZone}</span>
+                  </div>
+                  <div className="smc-card-body">
+                    <div className="smc-prem-meter">
+                      <div className="smc-prem-bar" style={{ width: `${Math.min(Math.max(smc.dealingRange.currentPct, 0), 100)}%` }} />
+                    </div>
+                    <div className="smc-item-desc">
+                      <b>Premium (Upper 50%)</b>: ${smc.dealingRange.equilibrium.toLocaleString()} – ${smc.dealingRange.high.toLocaleString()}<br/>
+                      <b>Equilibrium (50%)</b>: ${smc.dealingRange.equilibrium.toLocaleString()}<br/>
+                      <b>Discount (Lower 50%)</b>: ${smc.dealingRange.low.toLocaleString()} – ${smc.dealingRange.equilibrium.toLocaleString()}<br/>
+                      <b>OTE (61.8% – 79%)</b>: ${smc.dealingRange.ote.low.toLocaleString()} – ${smc.dealingRange.ote.high.toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 7. Candle Patterns */}
+                <div className="smc-legend-card c-orange">
+                  <div className="smc-card-head">
+                    <span className="smc-card-title">7. Candle Patterns</span>
+                    <span className="smc-card-badge">{smc.candlePatterns.length ? smc.candlePatterns[smc.candlePatterns.length - 1]?.name : 'Normal'}</span>
+                  </div>
+                  <div className="smc-card-body">
+                    <div className="smc-item-row">
+                      <span className="smc-item-tag orange">Pin Bar</span>
+                      <span className="smc-item-tag green">Engulfing</span>
+                      <span className="smc-item-tag yellow">Doji</span>
+                      <span className="smc-item-tag slate">Inside Bar</span>
+                    </div>
+                    <div className="smc-item-desc">
+                      <b>Pin Bar / Wick Sweep</b>: Key level liquidity grab & rejection<br/>
+                      <b>Engulfing</b>: Dominant institutional expansion<br/>
+                      <b>Displacement</b>: Momentum shift with strong body
+                    </div>
+                  </div>
+                </div>
+
+                {/* 8. Session Concepts */}
+                <div className="smc-legend-card c-teal">
+                  <div className="smc-card-head">
+                    <span className="smc-card-title">8. Session Concepts</span>
+                    <span className="smc-card-badge teal">{smc.sessions.currentSession}</span>
+                  </div>
+                  <div className="smc-card-body">
+                    <div className="smc-session-chips">
+                      <span className={`smc-session-chip${smc.sessions.asiaActive ? ' on' : ''}`}>Asia (00-09 UTC)</span>
+                      <span className={`smc-session-chip${smc.sessions.londonActive ? ' on' : ''}`}>London (07-16 UTC)</span>
+                      <span className={`smc-session-chip${smc.sessions.nyActive ? ' on' : ''}`}>New York (13-22 UTC)</span>
+                    </div>
+                    <div className="smc-item-desc">
+                      <b>PDH (Prev Day High)</b>: ${smc.sessions.pdh.toLocaleString()}<br/>
+                      <b>PDL (Prev Day Low)</b>: ${smc.sessions.pdl.toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 9. Trade Management */}
+                <div className="smc-legend-card c-rose">
+                  <div className="smc-card-head">
+                    <span className="smc-card-title">9. Trade Management</span>
+                    <span className="smc-card-badge rose">{smc.tradePlan ? smc.tradePlan.direction : 'MONITOR'}</span>
+                  </div>
+                  <div className="smc-card-body">
+                    <div className="smc-item-desc">
+                      <b>Entry</b>: {smc.tradePlan ? `$${smc.tradePlan.entry.toLocaleString()}` : '$' + spot.toLocaleString()}<br/>
+                      <b>Stop Loss</b>: {smc.tradePlan ? `$${smc.tradePlan.sl.price.toLocaleString()} (-${smc.tradePlan.sl.riskPct.toFixed(2)}%)` : 'Under OB'}<br/>
+                      <b>Targets</b>: {smc.tradePlan ? `TP1 $${smc.tradePlan.tp1.price.toLocaleString()} | TP2 $${smc.tradePlan.tp2.price.toLocaleString()}` : 'Targeting BSL/SSL'}<br/>
+                      <b>R:R Ratio</b>: {smc.tradePlan ? smc.tradePlan.riskReward : '1 : 2.5'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 10. Advanced Concepts */}
+                <div className="smc-legend-card c-violet">
+                  <div className="smc-card-head">
+                    <span className="smc-card-title">10. Advanced Concepts</span>
+                    <span className="smc-card-badge violet">ICT / SMC</span>
+                  </div>
+                  <div className="smc-card-body">
+                    <div className="smc-item-desc">
+                      <b>POI</b>: Point of Interest confluence (OB + FVG + Liquidity)<br/>
+                      <b>Dealing Range</b>: Active high/low swing framework<br/>
+                      <b>Inducement</b>: Minor liquidity traps before genuine POI<br/>
+                      <b>Kill Zones</b>: High volatility institutional execution windows
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Manual price input form (for traders who want custom zones) */}
