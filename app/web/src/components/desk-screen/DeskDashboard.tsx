@@ -47,9 +47,7 @@ export function DeskDashboard({
   onSettings?: () => void;
   controls?: React.ReactNode;
 }) {
-  const effectiveHours = hoursToExpiry ?? liveData?.hoursToExpiry ?? 20.6;
   const effectiveSpot = spot || liveData?.spot || data?.snapshot.spot || 84595;
-  const effectiveExpiryLabel = expiryLabel || '28 Sept 17:30 IST';
 
   const atmIv = data?.snapshot.atmIv ? data.snapshot.atmIv * 100 : (liveData?.atmIv ? liveData.atmIv * 100 : 25.3);
   const pcr = data?.structure.pcrOi ?? 1.88;
@@ -57,14 +55,10 @@ export function DeskDashboard({
 
   return (
     <div className="desk-root" aria-label="BTC Live Desk">
-      {/* 1. Top Header */}
+      {/* 1. Header, one row */}
       <DeskHeader
-        spot={effectiveSpot}
-        changePct={perp?.ticker?.change24hPct ?? 0.32}
-        tf={tf}
-        onTf={onTf}
-        expiryLabel={effectiveExpiryLabel}
-        hoursToExpiry={effectiveHours}
+        expiryLabel={expiryLabel}
+        hoursToExpiry={hoursToExpiry ?? liveData?.hoursToExpiry}
         onAlerts={onAlerts}
         onSettings={onSettings}
         controls={controls}
