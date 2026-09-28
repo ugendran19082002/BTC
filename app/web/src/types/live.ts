@@ -1,13 +1,4 @@
-/**
- * The Live screen's own shapes, mirroring `app/server/src/market/live-read.ts`.
- *
- * Kept flat and kept here, the same way `types/trade.ts` mirrors the trading
- * engine: the screen should be readable without opening the server, and a
- * field that changes shape should break the build rather than arrive as
- * `undefined` in a panel.
- */
 
-export type Way = 'UP' | 'DOWN' | 'SIDE';
 
 /** What a timeframe is *for*. The tier sets the weight; `execution` carries none. */
 export type Tier = 'direction' | 'structure' | 'setup' | 'pattern' | 'trigger' | 'execution';
