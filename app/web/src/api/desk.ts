@@ -1,6 +1,5 @@
 import type { CandlesResponse, ChainResponse, ExpiryOption } from '@/types/desk';
 import { json, post } from '@/api/client';
-import type { Measured } from '@/types/live';
 
 export function getChain(
   at: string,
@@ -80,24 +79,6 @@ export const getCandles = (tf: '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d')
 export const setWallWithinEm = (em: number) =>
   post<{ ok: true; key: string; value: string }>('/api/settings', { key: 'wall_within_em', value: String(em) });
 
-
-/** ATM implied volatility across every listed expiry, now. There is no history of it. */
-export type TermPoint = { expiry: string; expiryTs: number; hoursAway: number; strike: number; atmIv: number; sides: 1 | 2 };
-export type TermResponse = {
-  at: number;
-  points: TermPoint[];
-  /** Where today's put-call skew, and the ATM IV, sit among every recorded reading. */
-  skew: { percentile: number; samples: number; days: number } | null;
-  iv?: { percentile: number; samples: number; days: number } | null;
-};
-export const getTerm = (skewPts: number | null = null, atmIv: number | null = null) => {
-  const q = new URLSearchParams();
-  if (skewPts !== null) q.set('skewPts', String(skewPts));
-  if (atmIv !== null) q.set('atmIv', String(atmIv));
-  const qs = q.toString();
-  return json<TermResponse>(`/api/term${qs ? `?${qs}` : ''}`);
-};
-
 /** The perpetual: ticker, top of book, and the last hour's flow by aggressor side. */
 export type PerpTicker = {
   at: number; mark: number | null; spot: number | null; last: number | null;
@@ -174,24 +155,6 @@ export const getChanges = (symbol: string, now: Record<string, number | null | u
   for (const [k, v] of Object.entries(now)) if (v !== null && v !== undefined && Number.isFinite(v)) q.set(k, String(v));
   if (entryMs !== null) q.set('entry', String(entryMs));
   return json<ChangesResponse>(`/api/changes?${q.toString()}`);
-};
-
-/** The character of the move by window: long buildup, short covering, short buildup, long unwinding, or mixed. */
-export type MovementType = 'LONG_BUILDUP' | 'SHORT_COVERING' | 'SHORT_BUILDUP' | 'LONG_UNWINDING' | 'MIXED';
-export type MovementRow = {
-  minutes: number; pricePct: number | null; oiPct: number | null; volumeRatio: number | null; cvd: number | null; aggressorBuyPct: number | null;
-  type: MovementType | null; direction: 'UP' | 'DOWN' | null; strength: 'WEAK' | 'MODERATE' | 'STRONG' | 'EXTREME' | null;
-  flow: 'CONFIRMS' | 'DIVERGES' | 'FLAT' | null; thresholds: { pricePct: number; oiPct: number };
-};
-/** BTC now against then: a window back, or the desk's marks (the entry window, the contract's day start). */
-export type PriceChange = { minutes: number | null; mark: 'entry' | 'dayStart' | null; at: number; then: number | null; pts: number | null; pct: number | null };
-export type MovementResponse = { at: number; rows: MovementRow[]; price: { spot: number | null; rows: PriceChange[] } };
-export const getMovement = (entryMs: number | null = null, expiryTs: number | null = null) => {
-  const q = new URLSearchParams();
-  if (entryMs !== null) q.set('entry', String(entryMs));
-  if (expiryTs !== null) q.set('expiry', String(expiryTs));
-  const qs = q.toString();
-  return json<MovementResponse>(`/api/movement${qs ? `?${qs}` : ''}`);
 };
 
 // ------------------------------------------------------- the market state
@@ -296,8 +259,6 @@ export type BreakRisk = {
   reach: { stepsAtr: readonly number[]; with: number[]; against: number[] };
 };
 
-export const getBreakRisk = () => json<{ at: number; risk: BreakRisk | null }>('/api/break-risk');
-
 export type StateHistoryRow = {
   id: number; at: number; tf: string; event: string; stage: string;
   side: 'UP' | 'DOWN' | null; confirmed: boolean; confidence: number; close: number;
@@ -332,39 +293,3 @@ export type StateHistoryRow = {
   regime?: string | null;
   mtfConsensus?: string | null;
 };
-
-/**
- * The signal journal.
- *
- * `days` is the range the screen's tabs ask for: `0` is today since the desk's
- * 05:30 IST open, `1 | 3 | 7` are rolling windows, and `undefined` is every day
- * the journal still holds. A range as well as a limit because they answer
- * different questions — on a quiet 4-hour frame "the last 200 calls" reaches
- * back a fortnight while the reader believes they are looking at this morning.
- */
-export const getStateHistory = (tf: string, limit = 10, days?: number) =>
-  json<{
-    at: number;
-    rows: StateHistoryRow[];
-    hitRate: { correct: number; graded: number };
-    /**
-     * What the replay says this timeframe's break shape has paid, after fees.
-     * Null for a timeframe the study never graded (2h, 4h). Served here rather
-     * than from a second request so the journal's count and the shape's real
-     * record cannot be drawn from two different moments.
-     */
-    measured: Measured | null;
-    /**
-     * When the journal last looked at this timeframe, and what it saw. Null
-     * before the recorder has run once. `wrote` is the last time it actually
-     * inserted, which is what makes "quiet" readable as distinct from "dead".
-     */
-    checked: { tf: string; at: number; event: string; stage: string; wrote: number | null } | null;
-    /** Every call the journal holds for this timeframe, across all days. */
-    total: number;
-    /** The range that was served, echoed back so the screen cannot mislabel it. */
-    days: number | null;
-  }>(
-    `/api/market-state/history?tf=${encodeURIComponent(tf)}&limit=${limit}`
-      + (days === undefined ? '' : `&days=${days}`),
-  );

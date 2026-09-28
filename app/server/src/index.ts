@@ -17,7 +17,6 @@ import { captureBoard } from './market/chain-features.js';
 import { wallWithinEm } from './http/routes/desk.routes.js';
 import { captureIndex } from './market/index-1m.js';
 import { capturePerpSnapshot, flowSchema, flushTradeFlow, startFlowSocket } from './market/flow.js';
-import { startStateRecorder } from './market/state-recorder.js';
 import { noteError } from './observability/errors.js';
 
 /**
@@ -146,16 +145,6 @@ setTimeout(recordOptions, 15_000).unref();
 const recordBoardNow = () => { captureBoard(Date.now(), wallWithinEm()).catch(warn('board-record')); };
 setInterval(recordBoardNow, 5 * 60_000).unref();
 setTimeout(recordBoardNow, 25_000).unref();
-
-/*
- * The signal journal, every timeframe, viewer or no viewer (27 Sep 2026).
- *
- * It used to be written only by `GET /api/market-state`, so the journal
- * recorded a call only while somebody had the Live screen open on that
- * timeframe -- 5m last written 19:37 and nothing overnight, while the hit rate
- * on the card was computed from those gaps. See market/state-recorder.ts.
- */
-startStateRecorder({ onWarn: (message) => noteError({ source: 'server', level: 'warn', where: 'market-state', message }) });
 
 /*
  * The perpetual's tape, off its own socket: every print, summed per minute

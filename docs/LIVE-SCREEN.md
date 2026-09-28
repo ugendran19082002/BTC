@@ -1,5 +1,15 @@
 # The Signals screen
 
+> **Status, 28 Sep 2026.** Most of what this document describes has been
+> removed at the owner's request: the KPI strip, the expiry prediction engine,
+> the multi-timeframe hierarchy and ladder, key levels, option bias, the market
+> analysis score, expiry movement chances, the signal history, big move risk,
+> What changed, volatility & skew and the strategy decision -- UI, routes and
+> journals. The Live screen is now: a one-row header, the price chart at full
+> width, the momentum signal, the stats strip, the early warning ("Big move
+> catch") and flow, then the option chain. Kept as the record of what was built
+> and why. See TODO.md, 28 Sep 2026.
+
 **Built 27 September 2026**, top to bottom, from `docs/New.md`'s hierarchy.
 This document is what the screen claims, what each claim stands on, and the two
 measurements that decided its shape.

@@ -1,5 +1,9 @@
 # File inventory
 
+> **28 Sep 2026:** the dead-code pass and the Live screen trim removed the
+> files listed under that date in `TODO.md`; their rows are gone from here.
+> This index is still maintained by hand -- see the TODO to generate it.
+
 Every source file in the project, what it is for, and how big it is. Written to
 be read cold: someone opening this repo for the first time — or the same person
 six months later — should be able to find the file they need without opening
@@ -64,7 +68,6 @@ here exists because something specific went wrong once.
 | `market/flow.ts` | 330 | Records the perp's trade flow per minute, funding / OI / book every 5 minutes, and the IV term structure; reads the hour's flow, the book, the term structure as it was, and the skew's rank. |
 | `market/flow-socket.ts` | 250 | Delta's `all_trades` and perp ticker socket: every BTCUSD print by aggressor side, held for an hour. |
 | `market/option-snapshots.ts` | 175 | Records every strike of the two nearest expiries every 5 minutes (`option_snapshots`), and reads one strike's history back. |
-| `market/term.ts` | 65 | ATM IV per listed expiry — the IV term structure. |
 | `market/delta.ts` | 201 | Delta's *public* endpoints. No API key is ever used in this file. |
 | `delta/signed.ts` | 154 | Signed transport for the user's own account. One place signs, one place times out, one place decides what an error means. |
 
@@ -79,7 +82,6 @@ here exists because something specific went wrong once.
 | `session.ts` | 130 | Password login for a desk on the open internet. The password is never stored, sent back, or logged. |
 | `refuse.ts` | 53 | An answer of "no", said deliberately — so a gate turning an order down does not look like a fault. `worthLogging` is the whole rule, in one testable function. |
 | `routes/session.routes.ts` | 48 | Login, logout, me. |
-| `routes/backtest.routes.ts` | 38 | Backtest over the harvested days. |
 
 ### Plumbing
 
@@ -125,11 +127,8 @@ here exists because something specific went wrong once.
 | File | Lines | What it is for |
 |---|---:|---|
 | `chain/ChainTable.tsx` | 324 | The board. Tappable prices (one tap opens the ticket), bid shown by default because it is what a seller receives, uncrossable bids struck through. |
-| `desk/RecommendPanel.tsx` | 253 | What to sell, in as few words as possible. |
 | `research/BacktestPanel.tsx` | 226 | Run the backtest from the screen. |
-| `desk/MoveSection.tsx` | 169 | What BTC has actually done, under what the market says it will do. |
 | `desk/LoginPage.tsx` | 98 | The gate. Says as little as possible when it fails. |
-| `research/Explain.tsx` | 90 | A labelled number that can show its own arithmetic. |
 | `desk/LivePrice.tsx` | 74 | Spot, ticking, and how far it has come since the contract opened. |
 | `desk/TodayPnl.tsx` | 55 | Today's net P&L in the header — booked + open − charges since 05:30 IST. Tap for the breakdown. |
 | `desk/BiasSection.tsx` | 62 | Which way the option board is leaning. |
@@ -150,14 +149,11 @@ outlook row, market and moves, best pick) are no longer drawn there.
 | `overview/Overview.tsx` | 190 | Lays the screen out — one fact, one place: the bar, the KPI strip, three columns (market read · board · decision) — and polls `/api/perp`, `/api/term` and `/api/changes`. Decides with the fixed `DEFAULT_CONFIG`. Chart and compact chain optional; the selected strike can be owned by the screen. |
 | `overview/MarketPanels.tsx` | 500 | KPI strip (spot, perp, funding, OI, volume, IV vs RV, PCR, regime), the CE / PE option bias panel, price action (its own timeframe; trend, swings with BOS / CHOCH, RSI, MACD, VWAP, ATR, S/R distance), key levels by timeframe (each timeframe's own fractal swing highs and lows — 5m the tape, 15m and 1h to decide by, 4h and 1D to confirm — the previous day's high and low, and the option walls as their own group, with ÷ that timeframe's ATR and ÷ EM), volatility, BTC flow (the perpetual's tape and book) and Option flow · CE / PE (the options' own tape with CVD, the ATM book, the board's lean), both on one window dropdown; Price change (BTC now against 1m … 12h back, since the last settlement and, when a position is held, since its entry; points and percent); IV term structure with its history; skew with its percentile and PE / CE richness; Desk events (the next funding settlement, the next 5-minute record, this expiry's settlement — computed from the clock; a news feed is not captured and the panel says so). Charts draw in pixels at their box width (`useWidth`). |
 | `overview/DecisionPanels.tsx` | 250 | The compact option chain (near ATM / all / walls / recommended; quotes, greeks or the seller's odds; a click selects), the selected strike as option details only (premium, intrinsic, extrinsic, IV, greeks, OI, ΔOI, volume, bid / mid / ask, spread, mark ÷ bid, est. fill; probability and payoff tabs; signal tags; a chooser over the cards' and the finder's strikes). |
-| `overview/DecisionCards.tsx` | 100 | SELL CE beside SELL PE as summaries: the strike (with a chooser: auto · selected · the finder's top five), its three odds, the gates as ticks in a seller's order, the score, the last word (PREFERRED / WATCH / NOT PREFERRED / NOT ALLOWED). Readings on hover; details below. |
 | `overview/FinalDecision.tsx` | 90 | The strip a trader reads first: SELL CE / SELL PE / BOTH / NO TRADE with their last word, the strike and its P(OTM) / touch / breach / P(premium < 10%), the MTF consensus, signal persistence (three boards), ENTRY OPEN / BLOCKED from data freshness and the contract's four checks, and for NO TRADE the why, what must change and the next recheck. |
 | `overview/parts.tsx` | 131 | Panel — every one folds to its header (`▾ / ▸`, remembered per panel as `live:fold:<name>`, and following the bar's Collapse all / Expand all through the `PanelFold` context) — row, tag, probability bar, number formats, `useWidth`. |
 | `overview/TraderPanels.tsx` | 420 | Expiry direction (from the price now: settles above / below / near, by the option market's distribution with its centre tilted by the state of the market, the measured record's own split beside it, expected settlement, the 80% range, the odds past ±0.5 and ±1 EM, and the WHY trace); the early-warning lamps (NORMAL / WATCH / TRIGGERED a trigger, the reading on hover); the one multi-timeframe table (direction · the move's type from price, OI and tape · P(up) · above / inside / below the band · ± move, the consensus, the board read); What changed for the strike under inspection (the premium read the seller's way, OI, IV, volume, touch and distance then → now, BETTER / NEUTRAL / WORSE a window, the last hour's state, a since-entry row); the strike finder (desk picks or filters; BEST SAFE / BALANCED / PREMIUM tags; the filters also drive the SELL cards) with Sell. |
-| `overview/ScreenBar.tsx` | 110 | The bar above the screen: brand, IST clock, LIVE / EXPIRING / EXPIRED, the freshness pill (market · chain · OI · model age), the expiry list, the contract's day (entry now → settlement · time left), mode / refresh controls, Collapse all / Expand all, a glossary; under it the contract's day as a bar — how much has gone, and which quarter (EARLY / MID / LATE / FINAL) this is. |
 | `overview/RiskPanels.tsx` | 150 | The sell-side risk engine — derived risk only: IV − RV, tail, θ/γ, vega and gamma shocks, margin yield, hedge and protection distance, the stress row (BTC ±100/250/500, IV ±1/+2) and the option-premium-decay chart with its 50 / 80 / 90 % milestones. |
 | `../scripts/responsive-check.mjs` | 78 | `npm run test:responsive`: loads the running app (the dev harness by default) at 360 → 1920 px in headless Chromium and fails on any sideways page scroll, any panel whose body spills past it, or a panel without a fold; reports the columns' heights; presses Collapse all / Expand all and counts. Resolves `playwright-core` from an npx cache when it is not installed here. |
-| `lib/screen-config.ts` | 64 | The desk's fixed configuration (horizon, strictness BALANCED, risk mode CONSERVATIVE, side mode, execution, freshness, size) and the thresholds it sets. No UI changes it. There is no entry time: entry is whenever the trader decides — now. |
 
 ### Shared UI (`components/ui/`) — 14 files, ~640 lines
 
@@ -168,12 +164,12 @@ where that helps and resets it explicitly where it does not.
 `select.tsx` (95, a listbox rather than a native `<select>`), `sheet.tsx` (83,
 bottom on a phone, centred on a desktop), `collapsible-card.tsx` (76, folded
 state remembered per card), `card.tsx` (68), `checkbox.tsx` (49),
-`slider.tsx` (48, 4px track and a 40px hit area), `date-range-picker.tsx` (144,
+`date-range-picker.tsx` (144,
 presets plus a calendar, dates as `YYYY-MM-DD` strings throughout),
 `calendar.tsx` (42), `toggle-group.tsx` (40, scrolls rather than squeezes),
-`button.tsx` (40), `stat.tsx` (41), `badge.tsx` (31), `input.tsx` (27, number
+`button.tsx` (40), `badge.tsx` (31), `input.tsx` (27, number
 spinners removed — they are one pixel from the field on a trading screen),
-`popover.tsx` (26), `separator.tsx` (21), `section.tsx` (20), `label.tsx` (15).
+`popover.tsx` (26), `separator.tsx` (21), `label.tsx` (15).
 
 ### App shell, hooks, lib, api
 

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { createContext, useContext, useEffect, useRef, type ReactNode } from 'react';
 import { usePersisted } from '@/hooks/usePersisted';
 import { cn } from '@/lib/utils';
 
@@ -99,21 +99,3 @@ export const fmt = {
     v === null || v === undefined || !Number.isFinite(v) ? '—' : `${v > 0 ? '+' : ''}${v.toLocaleString('en-US', { minimumFractionDigits: places, maximumFractionDigits: places })}`,
 };
 
-/**
- * The width of an element, kept current as it resizes. A chart drawn in
- * pixels at this width keeps its text and points the same size in a
- * half-page panel and on a phone; one drawn to a fixed viewBox and stretched
- * by CSS does not.
- */
-export function useWidth<T extends HTMLElement>(fallback = 320): [RefObject<T>, number] {
-  const ref = useRef<T>(null);
-  const [w, setW] = useState(fallback);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(([e]) => { const cw = e?.contentRect.width ?? 0; if (cw > 0) setW(Math.floor(cw)); });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  return [ref, w];
-}

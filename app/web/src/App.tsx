@@ -3,7 +3,7 @@ import {
   Activity, AlertTriangle, BarChart3, Bot, Briefcase, ListOrdered, RefreshCw, SlidersHorizontal,
 } from 'lucide-react';
 import { NotSignedIn } from '@/api/client';
-import { getCandles, getChain, getExpiries, getHealth, getMarketState, getSpot, getStateHistory } from '@/api/desk';
+import { getCandles, getChain, getExpiries, getHealth, getMarketState, getSpot } from '@/api/desk';
 import { getMe, type Stage } from '@/api/session';
 import { ProfileMenu } from '@/components/auth/ProfileMenu';
 import { TwoStepSetup } from '@/components/auth/TwoStepSetup';
@@ -31,9 +31,7 @@ import { TODAY_MOVE } from '@/types/desk';
 import { tabTitle } from '@/lib/tab-title';
 import { TF_SECONDS, withLtp } from '@/lib/live-bar';
 import { pnlTone, signedInr, usdToInr } from '@/lib/format';
-import { PriceChart, CHART_TFS, type ChartTf } from '@/components/desk/PriceChart';
-import { MarketPanel } from '@/components/desk/MarketPanel';
-import { markersFrom, mergeMarkers, patternMarkers } from '@/components/desk/chart-overlay';
+import { CHART_TFS, type ChartTf } from '@/components/desk/PriceChart';
 import { Select, SelectItem } from '@/components/ui/select';
 import { ColumnPicker } from '@/components/chain/ColumnPicker';
 import { normalise, normaliseOrder, type ColumnKey, type ColumnState } from '@/components/chain/columns';
@@ -49,7 +47,6 @@ import { Button } from '@/components/ui/button';
  * demand and are cached from then on.
  */
 const Overview = lazy(() => import('@/components/overview/Overview').then((m) => ({ default: m.Overview })));
-const LiveScreen = lazy(() => import('@/components/live/LiveScreen').then((m) => ({ default: m.LiveScreen })));
 const OrderTicket = lazy(() => import('@/components/trade/OrderTicket').then((m) => ({ default: m.OrderTicket })));
 const StrikeAnalysis = lazy(() => import('@/components/desk/StrikeAnalysis').then((m) => ({ default: m.StrikeAnalysis })));
 const PositionsCard = lazy(() => import('@/components/trade/PositionsCard').then((m) => ({ default: m.PositionsCard })));
@@ -75,13 +72,10 @@ const DateTimePicker = lazy(() => import('@/components/research/DateTimePicker')
  * The rest of the props are kept stable below (`sides`, `held`, `reload`).
  */
 const Board = memo(ChainTable);
-const Chart = memo(PriceChart);
 
 /** The timeframes the market-state card offers, which the chart also draws. */
 /** One empty list, so "no bars yet" is the same prop every render. */
 const NO_BARS: never[] = [];
-/** A stable empty list, so a journal that has not loaded does not remount the rows. */
-const NO_ROWS: never[] = [];
 
 type Tab = 'desk' | 'trade' | 'orders' | 'strategy' | 'pnl' | 'errors' | 'settings';
 
@@ -190,8 +184,6 @@ export default function App() {
   const [hedgeGap] = usePersisted('hedgeGap', 0);
   const [requireHedge] = usePersisted('requireHedge', false);
   const [lots] = usePersisted('lots', 10);
-  // The ticket's leverage, read here too so the margin estimates on the Live screen match the ticket.
-  const [orderLeverage] = usePersisted('order:leverage', 200);
   // On by default: a live chain that silently goes stale is worse than no chain.
   const [autoRefresh, setAutoRefresh] = usePersisted('autoRefresh', true);
   const visible = usePageVisible();
@@ -322,7 +314,7 @@ export default function App() {
    * than a price to act on -- so a minute, not the board's five seconds. Only
    * while the Live screen is the one being looked at.
    */
-  const { data: candles, loading: candlesBusy } = usePoll(
+  const { data: candles } = usePoll(
     () => getCandles(chartTf),
     60_000,
     { enabled: signedIn === true && tab === 'desk', deps: [chartTf] },
@@ -342,77 +334,11 @@ export default function App() {
    * minutes and carries its own timeframe badge, which says so.
    */
   const stateTf = chartTf === '1m' ? '5m' : chartTf;
-  /*
-   * Which range of the journal the Signals section shows: 0 = today since the
-   * desk's 05:30 open, 1/3/7 = rolling days, null = every day it still holds.
-   * Remembered, because the range somebody chose is part of how they read the
-   * page and losing it on every reload is its own small tax.
-   */
-  const [journalRange, setJournalRange] = usePersisted<number | null>('live:journal:range', 0);
   const { data: marketState } = usePoll(
     () => getMarketState(stateTf),
     30_000,
     { enabled: signedIn === true && tab === 'desk', deps: [stateTf] },
   );
-  const { data: stateHistory } = usePoll(
-    () => getStateHistory(stateTf, 400, journalRange ?? undefined),
-    120_000,
-    { enabled: signedIn === true && tab === 'desk', deps: [stateTf, journalRange] },
-  );
-
-  /*
-   * The two bands drawn behind the candles: the same levels the state is
-   * judged against, to the same tolerance it breaks them by, so the chart and
-   * the card can never disagree about where the level is.
-   */
-  const chartZones = useMemo(() => {
-    const level = marketState?.state.level;
-    const atr = marketState?.inputs.atr ?? null;
-    if (!level || !atr) return [];
-    const band = Math.max(atr * 0.1, 1);
-    const out: { from: number; to: number; label: string; tone: 'up' | 'down' }[] = [];
-    if (level.resistance !== null) {
-      out.push({ from: level.resistance - band, to: level.resistance + band, label: 'Resistance zone', tone: 'up' });
-    }
-    if (level.support !== null) {
-      out.push({ from: level.support - band, to: level.support + band, label: 'Support zone', tone: 'down' });
-    }
-    return out;
-  }, [marketState]);
-
-  /*
-   * The flags on the candles: every pattern the desk named, on the bar it was
-   * named on, plus the states it called from the journal. The strip under the
-   * chart lists the same patterns -- this is where they happened, which is
-   * what makes "Bearish Engulfing" mean anything.
-   */
-  const chartMarkers = useMemo(() => {
-    const bars = candles?.bars ?? NO_BARS;
-    if (!bars.length) return [];
-    const seconds = bars.length > 1 ? bars[1]!.time - bars[0]!.time : 300;
-    return mergeMarkers(
-      markersFrom(stateHistory?.rows ?? [], seconds),
-      patternMarkers(marketState?.patterns.all ?? marketState?.patterns.shown ?? [], bars),
-    );
-  }, [candles, marketState, stateHistory]);
-
-  /** The two targets drawn off the right edge: the card's plan, on the chart. */
-  const chartProjection = useMemo(() => {
-    const plans = marketState?.state.plans;
-    if (!plans || (!plans.up && !plans.down)) return null;
-    return {
-      up: plans.up ? { trigger: plans.up.trigger, target1: plans.up.target1 } : null,
-      down: plans.down ? { trigger: plans.down.trigger, target1: plans.down.target1 } : null,
-      /*
-       * No range box on the chart. It said "84,108 – 84,326" in the gutter
-       * while the two shaded bands either side of that range were already
-       * drawn and labelled with the same two numbers -- the same fact three
-       * times, in the most crowded corner of the screen. The card still gives
-       * the range in words, where there is room for it.
-       */
-      range: null,
-    };
-  }, [marketState]);
 
   const openTicket = useCallback((i: ChainSellIntent) => {
     if (!snapRef.current) return;
@@ -495,8 +421,6 @@ export default function App() {
   }, [snap?.coverage, distinctStrikes]);
 
   const isShowingAllStrikes = allStrikes || (totalStrikes > 0 && distinctStrikes >= totalStrikes);
-  // The last two hundred closes, for the spot KPI's sparkline.
-  const sparkCloses = useMemo(() => (candles?.bars ?? NO_BARS).slice(-200).map((b) => b.close), [candles?.bars]);
 
   // The positions arrive every second as a new list; the board only needs to
   // hear about them when a held strike, its size or its P&L actually changes.
@@ -634,13 +558,8 @@ export default function App() {
                 trade={trade}
                 expiries={expiries}
                 onExpiry={setExpiry}
-                onSell={snap.live ? sellLeg : undefined}
-                contracts={lots}
-                leverage={orderLeverage}
                 selected={focus}
                 onSelect={setFocus}
-                pair={pair}
-                spark={sparkCloses}
                 tick={liveSpot}
                 error={err}
                 bars={liveBars}
@@ -673,79 +592,6 @@ export default function App() {
                       </Button>
                     )}
                   </>
-                }
-                chart={(slots) => (
-                  <ErrorBoundary where="Price chart">
-                    {/*
-                      One panel, not four (23 Sep 2026): the candles, the shapes
-                      on them, the readings behind those, the sentence and the
-                      plan. They are one thought and they now sit in one card,
-                      in the order somebody reads them.
-                    */}
-                    <MarketPanel
-                      chart={
-                        <Chart
-                          bars={liveBars}
-                          // The wall within reach, not the heaviest on the board: a strike
-                          // eleven expected moves away is open interest, not a level.
-                          support={data.structure.peOiWallNear?.strike ?? null}
-                          resistance={data.structure.ceOiWallNear?.strike ?? null}
-                          spot={liveSpot ?? snap.spot}
-                          zones={chartZones}
-                          lines={marketState?.lines ?? []}
-                          projection={chartProjection}
-                          markers={chartMarkers}
-                          bias={marketState?.bias ?? null}
-                          trend={marketState?.inputs.regime === 'TREND_UP' ? 'UP'
-                            : marketState?.inputs.regime === 'TREND_DOWN' ? 'DOWN'
-                              : marketState?.inputs.regime ?? null}
-                          tf={chartTf}
-                          onTf={setChartTf}
-                          loading={candlesBusy}
-                          error={candles?.error}
-                        />
-                      }
-                      data={marketState ?? null}
-                      /*
-                        The history list moved to the Signals section below
-                        (27 Sep 2026): the live read and the record of past reads
-                        answer one question and now sit together. This card keeps
-                        the state, the plan and the checks.
-                      */
-                      tf={stateTf}
-                      spot={snap.spot}
-                      ready={live}
-                      /*
-                       * The expiry read and the options' CE/PE bias, as tabs on
-                       * the analysis card. They asked the same question this
-                       * card asks -- which way, and how sure -- from the board
-                       * instead of the bars, from two more cards in the
-                       * right-hand column. Same panels, same inputs, built
-                       * where their inputs are; only where they are shown has
-                       * changed.
-                       */
-                      extra={[
-                        { label: 'Expiry', node: slots.expiry },
-                        { label: 'Options', node: slots.options },
-                      ]}
-                    />
-                  </ErrorBoundary>
-                )}
-                signals={
-                  <LiveScreen
-                    expiry={snap.expiry}
-                    onlySignals={true}
-                    journal={{
-                      rows: stateHistory?.rows ?? NO_ROWS,
-                      rate: stateHistory?.hitRate,
-                      measured: stateHistory?.measured,
-                      checked: stateHistory?.checked,
-                      total: stateHistory?.total,
-                      tf: stateTf,
-                      range: journalRange,
-                      onRange: setJournalRange,
-                    }}
-                  />
                 }
               />
             </ErrorBoundary>

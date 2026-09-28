@@ -1,7 +1,90 @@
 # TODO
 
 Live: https://delta.thannigo.in
-Updated 27 Sep 2026
+Updated 28 Sep 2026
+
+---
+
+## 28 Sep 2026 — dead code out, and the Live screen trimmed to what is used
+
+Two passes on one branch. First an audit for dead code (knip, `tsc
+--noUnusedLocals`, the jCodemunch import graph, a CSS class scan, and every
+table and column checked for a writer and a reader). Then, at the owner's
+request, the Live screen's analysis panels were removed -- UI, routes and the
+journals behind them -- following "remove first, delete later".
+
+### Removed
+
+- **UI panels:** the KPI strip (market state, direction/setup/trigger, at
+  expiry, big move risk, decision, market regime), the expiry prediction
+  engine, the bottom analysis grid (key levels, "what this means", the
+  multi-timeframe hierarchy, option bias CE/PE, market analysis score, expiry
+  movement chances), the Big Move Catch section's signal history and big move
+  risk, What changed, the Multi-timeframe table, Volatility & skew and the
+  Strategy decision. **Kept on request:** the early warning ("Big move catch").
+- **Header:** BTC spot and the timeframe buttons (the app bar has the price;
+  the chart has its own timeframe picker). One row now, wrapping on a phone.
+- **Chart:** full width on its own row; the momentum signal sits under it,
+  without its 12H/6H multi-timeframe gate.
+- **Already dead before today:** 15 unmounted components (RecommendPanel,
+  ScreenBar, Explain, ui/section, ui/slider, BestTrade, BtcSummary, MarketHead,
+  MarketInsights, MoveSection, Outlook, FocusSummary, Ladder, MomentumCard,
+  VerdictBar), the MarketPanel chart block App.tsx built and Overview never
+  drew, 29 exports nothing imported, an unused private `replaceIfResized` in
+  the engine (an unverified cancel, rule 1), and three unused packages
+  (`@radix-ui/react-slider`, `@radix-ui/react-tabs`, `@fastify/cors`).
+- **Routes:** `/api/market-state/history`, `/api/warning/history`,
+  `/api/term`, `/api/movement`, `/api/break-risk`, and `/api/backtest`,
+  `/api/backtest/byyear`, `/api/sizing`, `/api/presets`, `/api/calibration`,
+  which nothing called. `chain-route.test.ts` asserts all ten are 404.
+  `/api/live` now returns the momentum call and the price only.
+- **Server modules:** `domain/hierarchy`, `expiry-path`, `expiry-prediction`,
+  `stability`, `break-carry.data` (and the study's step that generated it),
+  `market/break-risk-now`, `term`, `state-history`, `shock-history`,
+  `state-recorder`, `backfill-states`; `flow.ts`'s `ivRank` / `skewRank`.
+  `evaluateSignalOutcome` moved to `backtest/signal-outcome.ts` with its tests
+  -- the momentum study still grades with it.
+- **CSS:** 461 classes nothing used (desk-dashboard.css 1,256 → ~630 lines,
+  styles.css 5,059 → 3,443).
+- The price-source rule (tick → snapshot → 5m close) is now `screenSpot()` and
+  tested directly, since the header chip its test read is gone.
+
+Web 841 tests, server 1,213, both typechecks and the production build pass.
+
+### Open -- needs the owner
+
+- [ ] **Drop the retired journals.** `market_states`, `market_state_checks`
+  and `shock_snapshots` have no writer and no reader. Take
+  `deploy/backup-db.sh` first, then add `market-019-drop-retired-journals`
+  (`DROP TABLE IF EXISTS` each) run at boot. Not done here: it deletes data and
+  was held for an explicit go-ahead.
+- [ ] **Auto-trade and best-trade settings have no screen.**
+  `AutoTradeSettings.tsx` and `BestTradeSettings.tsx` were already unmounted
+  before today; the server still runs both from their saved settings. Mount
+  them (Settings tab) or retire them -- kept until decided.
+- [ ] **Invented numbers on the dashboard.** `DeskDashboard` and
+  `DeskMomentumSignal` fall back to made-up figures when data is missing (spot
+  84,595, ATM IV 25.3, PCR 1.88 / 1.36, 24h +0.32%, resistance spot+536, ATR
+  160, volume 1.2x, candle 0.6). A missing number should read "—".
+
+### Open -- hygiene
+
+- [ ] Put `chart_annotations` under the migration ledger (it is created by
+  raw SQL when the routes register; the comment claimed `market-014`).
+- [ ] Unused parameters `tsc --noUnusedParameters` still finds:
+  `market-state.ts:417 input`, `score.ts:138/211 snap`,
+  `option-snapshots.ts:174 c`, `select.ts:200 leg`.
+- [ ] 98 exports used only inside their own file could drop `export`.
+- [ ] Generate `FILE-INVENTORY.md` from the tree and test it; rewrite
+  `README.md` as the desk's front door (both from FULL-STUDY.md §9).
+- [ ] `/api/health` still answers without a session (SECURITY-AUDIT #13).
+
+### Next
+
+- [ ] **Price chart upgrade** -- every SMC / price-action concept drawn on the
+  candles (structure, liquidity, OB/FVG, premium/discount, sessions, levels,
+  entry/SL/TP), from a strict no-lookahead engine with a setup state machine
+  and saved setup history. Spec from the owner, 28 Sep 2026.
 
 ---
 

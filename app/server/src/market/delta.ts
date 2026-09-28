@@ -147,15 +147,6 @@ export function startTickerPoller(intervalMs = 8_000) {
   }
 }
 
-export function stopTickerPoller() {
-  if (tickerPollerId) {
-    clearInterval(tickerPollerId);
-    tickerPollerId = null;
-  }
-  tickerSocket?.stop();
-  tickerSocket = null;
-}
-
 /**
  * The socket feed. Every batch it hands over becomes the ticker cache, and
  * its freshest spot becomes the price -- the same two places the REST poll
@@ -232,10 +223,6 @@ export async function liveTickers(): Promise<Ticker[]> {
     if (cached) return cached.data;
     throw e;
   }
-}
-
-export async function productExists(symbol: string): Promise<boolean> {
-  return (await req<unknown>(`/products/${symbol}`)) !== null;
 }
 
 /** Run `fn` over `items` with bounded concurrency, preserving order. */

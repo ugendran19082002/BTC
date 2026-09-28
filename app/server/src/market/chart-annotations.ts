@@ -3,7 +3,9 @@
  *
  * Stored in `chart_annotations` in PostgreSQL. Each annotation belongs to a
  * symbol+timeframe and is kept until the trader deletes it or it expires.
- * The table is created by migration `market-014-chart-annotations`.
+ * The table is created by `ANNOTATION_SCHEMA` when the annotation routes are
+ * registered -- outside the migration ledger (there is no `market-014-chart-
+ * annotations`; `market-014` is `chain-band-pcts`). See docs/TODO.md.
  */
 
 import { rows } from '../db/pool.js';

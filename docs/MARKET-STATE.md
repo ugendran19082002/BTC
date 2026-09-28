@@ -1,5 +1,11 @@
 # Market state — breakout, rejection, breakdown, range
 
+> **Status, 28 Sep 2026.** The market-state engine still drives the chart's
+> levels and the momentum card, but the market-state card, its history list
+> (`/api/market-state/history`) and the `market_states` journal were removed
+> at the owner's request. Sections below about the journal, grading and the
+> history list describe code that no longer exists. See TODO.md, 28 Sep 2026.
+
 Built 23 Sep 2026, to the owner's specification. The question a chart is opened
 to answer, answered by the desk: **is price going through the level, or has it
 been turned back?**

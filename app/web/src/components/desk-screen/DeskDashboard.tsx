@@ -3,20 +3,22 @@ import type { LiveResponse } from '@/types/live';
 import type { MarketStateResponse, PerpResponse } from '@/api/desk';
 import type { ChartTf } from '@/components/desk/PriceChart';
 import { DeskHeader } from './DeskHeader';
-import { DeskTopKpis } from './DeskTopKpis';
 import { DeskChart } from './DeskChart';
-import { DeskExpiryPrediction } from './DeskExpiryPrediction';
 import { DeskMomentumSignal } from './DeskMomentumSignal';
 import { DeskStatsBar } from './DeskStatsBar';
-import { DeskBottomGrid } from './DeskBottomGrid';
 import './desk-dashboard.css';
 
+/*
+ * The KPI strip (market state, direction, expiry, big move risk, decision,
+ * regime), the expiry prediction engine and the bottom analysis grid (key
+ * levels, the multi-timeframe hierarchy, option bias, market score, expiry
+ * chances) were removed on 28 Sep 2026. See docs/TODO.md.
+ */
 export function DeskDashboard({
   data,
   liveData,
   marketState,
   perp,
-  breakRisk,
   bars,
   spot,
   tf = '15m',
@@ -27,14 +29,12 @@ export function DeskDashboard({
   error,
   onAlerts,
   onSettings,
-  optionBias,
   controls,
 }: {
   data?: ChainResponse | null;
   liveData?: LiveResponse | null;
   marketState?: MarketStateResponse | null;
   perp?: PerpResponse | null;
-  breakRisk?: any;
   bars: readonly Candle[];
   spot: number;
   tf: ChartTf;
@@ -45,12 +45,9 @@ export function DeskDashboard({
   error?: string;
   onAlerts?: () => void;
   onSettings?: () => void;
-  optionBias?: any;
   controls?: React.ReactNode;
 }) {
-  const effectiveHours = hoursToExpiry ?? liveData?.hoursToExpiry ?? 20.6;
   const effectiveSpot = spot || liveData?.spot || data?.snapshot.spot || 84595;
-  const effectiveExpiryLabel = expiryLabel || '28 Sept 17:30 IST';
 
   const atmIv = data?.snapshot.atmIv ? data.snapshot.atmIv * 100 : (liveData?.atmIv ? liveData.atmIv * 100 : 25.3);
   const pcr = data?.structure.pcrOi ?? 1.88;
@@ -58,30 +55,17 @@ export function DeskDashboard({
 
   return (
     <div className="desk-root" aria-label="BTC Live Desk">
-      {/* 1. Top Header */}
+      {/* 1. Header, one row */}
       <DeskHeader
-        spot={effectiveSpot}
-        changePct={perp?.ticker?.change24hPct ?? 0.32}
-        tf={tf}
-        onTf={onTf}
-        expiryLabel={effectiveExpiryLabel}
-        hoursToExpiry={effectiveHours}
+        expiryLabel={expiryLabel}
+        hoursToExpiry={hoursToExpiry ?? liveData?.hoursToExpiry}
         onAlerts={onAlerts}
         onSettings={onSettings}
         controls={controls}
       />
 
-      {/* 2. Top 5 KPI Cards */}
-      <DeskTopKpis
-        liveData={liveData}
-        marketState={marketState}
-        breakRisk={breakRisk}
-        hoursToExpiry={effectiveHours}
-      />
-
-      {/* 3. Center 3-Column Row: Chart | Expiry Prediction | Momentum & Score */}
-      <div className="desk-center-row">
-        {/* Left: Candlestick Chart with Volume & Overlaid Zones */}
+      {/* 2. The price chart, full width on a row of its own */}
+      <div className="desk-chart-row">
         <DeskChart
           bars={bars}
           spot={effectiveSpot}
@@ -91,22 +75,14 @@ export function DeskDashboard({
           loading={loading}
           error={error}
         />
+      </div>
 
-        {/* Middle: Expiry Prediction Card */}
-        <DeskExpiryPrediction
-          prediction={liveData?.prediction}
-          spot={effectiveSpot}
-          hoursToExpiry={effectiveHours}
-          tf={tf}
-          marketState={marketState}
-        />
-
-        {/* Right: Big Momentum Signal (matching docs/image.png) */}
+      {/* 3. The momentum signal, under the chart */}
+      <div className="desk-signal-row">
         <DeskMomentumSignal
           spot={effectiveSpot}
           momentum={liveData?.momentum}
           marketState={marketState}
-          ladder={liveData?.ladder}
         />
       </div>
 
@@ -118,17 +94,6 @@ export function DeskDashboard({
         pcr={pcr}
         pcrVol={pcrVol}
         changePct={perp?.ticker?.change24hPct ?? 0.32}
-      />
-
-      {/* 5. Bottom 4-Column Analysis Grid */}
-      <DeskBottomGrid
-        bars={bars}
-        spot={effectiveSpot}
-        tf={tf}
-        marketState={marketState}
-        ladder={liveData?.ladder}
-        prediction={liveData?.prediction}
-        optionBias={optionBias}
       />
     </div>
   );

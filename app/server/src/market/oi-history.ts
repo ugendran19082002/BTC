@@ -1,5 +1,5 @@
 import { migrate, moveToPublic, type Migration } from '../db/migrate.js';
-import { one, query, rows, tx } from '../db/pool.js';
+import { one, rows, tx } from '../db/pool.js';
 
 /**
  * What open interest was, so the board can say what it has changed by.

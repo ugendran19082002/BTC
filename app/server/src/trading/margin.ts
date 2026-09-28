@@ -112,9 +112,6 @@ export function initialMarginPerContract({ spot, leverage, contractValue = CONTR
   return (spot / clampLeverage(leverage)) * contractValue;
 }
 
-export const maintenanceMarginPerContract = (i: MarginInputs): number =>
-  initialMarginPerContract(i) * MAINTENANCE_FRACTION;
-
 /**
  * Trading fee for one contract.
  *

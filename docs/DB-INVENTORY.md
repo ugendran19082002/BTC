@@ -17,7 +17,9 @@ name's prefix wherever a bare name would be ambiguous (`auth_sessions`,
 | strategy | `strategies`, `strategy_runs` | the scheduler | Saved strategies and their run journal: what stops a strategy entering twice. |
 | sign-in | `auth_user`, `auth_sessions`, `auth_recovery_codes`, `auth_limits`, `auth_events` | the sign-in | The one user, sessions, recovery codes, rate limits, the security log. |
 | errors | `errors` | everything | Every failure, from all three tiers, in one place. |
-| market | `oi_snapshots`, `chain_features`, `option_snapshots`, `option_snapshots_1m`, `trade_flow_1m`, `option_flow_1m`, `perp_snapshots`, `market_states` | the chain route, the API's recorders, and the perp's trade socket | What open interest and at-the-money volatility *were*, so a change in either is readable. Disposable. |
+| market | `oi_snapshots`, `chain_features`, `option_snapshots`, `option_snapshots_1m`, `trade_flow_1m`, `option_flow_1m`, `perp_snapshots`, `index_1m` | the chain route, the API's recorders, and the perp's trade socket | What open interest and at-the-money volatility *were*, so a change in either is readable. Disposable. |
+| chart | `chart_annotations` | the annotation routes | Levels and zones saved on the price chart. Created outside the ledger (see TODO.md). |
+| retired | `market_states`, `market_state_checks`, `shock_snapshots` | nothing, since 28 Sep 2026 | The Signal History and big-move journals. Writers and readers removed; the tables are left for a drop that needs the owner's go-ahead and a backup first (TODO.md). |
 | analytics | `outlook_states`, `chain_states`, `analytics_publish_meta` | `research/publish_outlook_states.py` | The measured Down / Side / Up tables the Python service reads. |
 | ledger | `schema_migrations` | `db/migrate.ts` | The one ledger of what has been done to the database. |
 | `chain.db` (SQLite) | 6 | the harvester, offline | Two years of settled option chains. Read-only at runtime. |
@@ -93,7 +95,8 @@ Ids are `<area>-NNN-what-it-does`. Applied on a fresh desk today:
 | Area | Migrations |
 |---|---|
 | trading | `trading-001-settings`, `trading-002-default-settings`, `trading-003-trades`, `trading-004-mtm-samples`, `trading-005-settings-to-public`, `trading-006-journal-to-public` |
-| market | `market-001-oi-snapshots`, `market-002-chain-features`, `market-003-to-public`, `market-004-option-snapshots`, `market-005-flow`, `market-006-flow-large-counts`, `market-007-option-flow`, `market-008-option-snapshots-1m`, `market-009-drop-iv-term`, `market-010-market-states` |
+| market | `market-001-oi-snapshots`, `market-002-chain-features`, `market-003-to-public`, `market-004-option-snapshots`, `market-005-flow`, `market-006-flow-large-counts`, `market-007-option-flow`, `market-008-option-snapshots-1m`, `market-009-drop-iv-term`, `market-013-index-1m`, `market-014-chain-band-pcts` |
+| market, retired | `market-010-market-states`, `market-011-state-detail`, `market-012-shock-snapshots`, `market-015-signal-lifecycle-audit`, `market-016-state-heartbeat`, `market-017-state-dedupe-at-db`, `market-018-clean-range-outcomes` -- applied lazily on first write, and removed from the code with their journals on 28 Sep 2026. They stay in a live ledger; a fresh database never runs them. |
 | errors | `errors-001-log`, `errors-002-to-public` |
 | strategy | `strategy-001-tables`, `strategy-002-seed`, `strategy-003-to-public`, `strategy-004-retire-extras`, `strategy-005-drop-retired-tables` |
 | sign-in | `auth-001-user-sessions`, `auth-002-to-public` |
@@ -362,6 +365,10 @@ volume and spot. Written by a timer in `index.ts` (checked each minute, one
 bucket per five, `ON CONFLICT DO NOTHING` so a restart cannot double a bucket)
 in one batched `unnest` insert; rows older than 365 days pruned as it writes.
 Created directly in `public` by `market-004-option-snapshots`.
+
+> **Retired 28 Sep 2026.** Nothing writes or reads `market_states`,
+> `market_state_checks` or `shock_snapshots` any more; the two paragraphs
+> below describe what they held. Dropping them is a TODO.
 
 `market_states` (`market/state-history.ts`, migrations `market-010` and
 `market-011`): every

@@ -51,24 +51,3 @@ export async function clearAnnotationsApi(symbol: string, tf: string, kind?: Ann
   await json<{ ok: boolean }>(url, { method: 'DELETE' });
 }
 
-/** Human-readable label for an annotation kind */
-export function annotationLabel(kind: AnnotationKind): string {
-  const MAP: Record<AnnotationKind, string> = {
-    sl: 'SL', tgt: 'TP1', tgt2: 'TP2', tgt3: 'TP3',
-    ob_bull: 'OB↑', ob_bear: 'OB↓',
-    fvg_bull: 'FVG↑', fvg_bear: 'FVG↓',
-    supply: 'Supply', demand: 'Demand',
-    bos: 'BOS', choch: 'CHoCH',
-    eqh: 'EQH', eql: 'EQL',
-    ssl: 'SSL', bsl: 'BSL',
-    breaker: 'Breaker',
-  };
-  return MAP[kind] ?? kind.toUpperCase();
-}
-
-/** Tone of an annotation for colour coding */
-export function annotationTone(kind: AnnotationKind): 'bearish' | 'bullish' | 'neutral' {
-  if (['sl', 'ob_bear', 'fvg_bear', 'supply', 'choch', 'eqh', 'ssl'].includes(kind)) return 'bearish';
-  if (['tgt', 'tgt2', 'tgt3', 'ob_bull', 'fvg_bull', 'demand', 'bsl', 'eql'].includes(kind)) return 'bullish';
-  return 'neutral';
-}

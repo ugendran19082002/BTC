@@ -47,9 +47,6 @@ export function withExitRule(c: StrategyConfig, leg: ExitLeg, rule: ExitRule): S
     : { ...c, stopMode: rule.mode, stopSteps: rule.steps, [field]: rule.value };
 }
 
-/** Whether a rule does anything at the entry. */
-export const exitOn = (r: ExitRule) => r.value > 0;
-
 /** Why one exit value cannot be used, in words; null when it can. The ticket and the form share it. */
 export function exitValueProblem(leg: ExitLeg, mode: ExitMode, v: number): string | null {
   const Leg = leg === 'target' ? 'Take profit' : 'Stop loss';

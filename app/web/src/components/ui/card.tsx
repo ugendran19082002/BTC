@@ -27,26 +27,6 @@ export function CardTitle({ children, right }: { children: React.ReactNode; righ
   );
 }
 
-/** A big number that leads a card. */
-export function CardLead({
-  children,
-  tone = 'plain',
-}: {
-  children: React.ReactNode;
-  tone?: 'plain' | 'up' | 'down' | 'warn';
-}) {
-  const colour =
-    tone === 'up' ? 'text-[var(--up)]'
-    : tone === 'down' ? 'text-[var(--down)]'
-    : tone === 'warn' ? 'text-[var(--warn)]'
-    : '';
-  return (
-    <div className={cn('font-mono text-[22px] font-semibold leading-tight', colour)}>
-      {children}
-    </div>
-  );
-}
-
 /** Short explanatory text under a card. Kept small and grey on purpose. */
 export function Note({
   children,

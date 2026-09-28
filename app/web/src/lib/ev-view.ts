@@ -40,12 +40,6 @@ export const SIGNAL_LABEL: Record<Signal, string> = {
   avoid: 'Avoid',
 };
 
-export const SIGNAL_TONE: Record<Signal, 'ok' | 'warn' | 'danger'> = {
-  sell: 'ok',
-  watch: 'warn',
-  avoid: 'danger',
-};
-
 /**
  * The richest expected values, best first, with everything clear ranked above
  * everything merely warned about.
