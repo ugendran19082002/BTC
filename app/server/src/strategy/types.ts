@@ -252,6 +252,9 @@ export const MAX_STOP_PCT = 20;
 export const MAX_EXIT_POINTS = 10_000;
 /** More steps than there are hours in a contract is a mistake, not a schedule. */
 export const MAX_EXIT_STEPS = 24;
+/** Bounds for a strategy's entry grace window, in minutes. A day-long grace is not a grace. */
+export const GRACE_MIN_MIN = 1;
+export const GRACE_MIN_MAX = 240;
 
 /**
  * The two exits of a config, read the one way everything reads them.
@@ -523,8 +526,8 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
   }
   if (c.legs !== 'CE' && c.legs !== 'PE' && c.legs !== 'both') bad.push('Legs must be CE, PE or both.');
   if (c.graceMin !== undefined
-    && (!Number.isInteger(c.graceMin) || c.graceMin < 1 || c.graceMin > 240)) {
-    bad.push('The late-entry window must be a whole number of minutes from 1 to 240.');
+    && (!Number.isInteger(c.graceMin) || c.graceMin < GRACE_MIN_MIN || c.graceMin > GRACE_MIN_MAX)) {
+    bad.push(`The late-entry window must be a whole number of minutes from ${GRACE_MIN_MIN} to ${GRACE_MIN_MAX}.`);
   }
   if (!Array.isArray(c.weekdays) || c.weekdays.some((d) => !Number.isInteger(d) || d < 0 || d > 6)) {
     bad.push('Days must be whole numbers from 0 (Sunday) to 6 (Saturday).');
