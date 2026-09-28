@@ -1,0 +1,182 @@
+/* The price chart (PriceChart.tsx): the canvas fills the card, and the HUD and
+   the toolbar float inside it. Nothing sits beside or under the chart. */
+
+.pc {
+  position: relative;
+  width: 100%;
+  background: #0a0e17;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.pc-full {
+  position: fixed;
+  inset: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px) 0;
+  z-index: 60;
+  border-radius: 0;
+}
+.pc-stage { position: relative; height: clamp(440px, 64vh, 780px); }
+.pc-full .pc-stage { height: 100%; }
+.pc-host { position: absolute; inset: 0; }
+.pc-empty {
+  display: grid;
+  place-items: center;
+  height: clamp(240px, 40vh, 420px);
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+/* ── toolbar, top right ─────────────────────────────────────────────── */
+.pc-toolbar {
+  position: absolute;
+  top: 8px;
+  right: 72px; /* clear of the price axis */
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: calc(100% - 90px);
+}
+.pc-tfs {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: rgba(10, 14, 23, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 7px;
+}
+.pc-tfs button,
+.pc-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 0 9px;
+  border-radius: 5px;
+  font: 600 11px/1 ui-sans-serif, system-ui, sans-serif;
+  color: #cbd5e1;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.pc-tfs button:hover,
+.pc-tool:hover { background: rgba(255, 255, 255, 0.06); }
+.pc-tfs button.on { background: rgba(56, 189, 248, 0.16); color: #7dd3fc; }
+.pc-tool {
+  background: rgba(10, 14, 23, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.pc-tool.on { color: #7dd3fc; border-color: rgba(56, 189, 248, 0.4); }
+.pc-tfs button:focus-visible,
+.pc-tool:focus-visible,
+.pc-hud-head:focus-visible { outline: 2px solid #38bdf8; outline-offset: 1px; }
+
+.pc-layers { display: grid; gap: 2px; min-width: 170px; padding: 8px; background: #0f1623; }
+.pc-layer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 6px;
+  border-radius: 5px;
+  font-size: 12px;
+  color: #cbd5e1;
+  cursor: pointer;
+}
+.pc-layer:hover { background: rgba(255, 255, 255, 0.05); }
+.pc-layer input { accent-color: #38bdf8; }
+.pc-clear {
+  margin-top: 6px;
+  min-height: 30px;
+  border-radius: 5px;
+  border: 1px solid rgba(226, 80, 79, 0.4);
+  background: transparent;
+  color: #fca5a5;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* ── HUD, top left ──────────────────────────────────────────────────── */
+.pc-hud {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  max-width: min(420px, calc(100% - 96px));
+  background: rgba(10, 14, 23, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-left: 3px solid #64748b;
+  border-radius: 8px;
+  color: #cbd5e1;
+  font: 12px/1.4 ui-sans-serif, system-ui, sans-serif;
+  backdrop-filter: blur(4px);
+}
+.pc-hud-long { border-left-color: #26a17b; }
+.pc-hud-short { border-left-color: #e2504f; }
+.pc-hud-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 10px 6px 8px;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.pc-hud-head b { font-size: 12px; letter-spacing: 0.02em; color: #f1f5f9; }
+.pc-hud-long .pc-hud-head b { color: #4ade80; }
+.pc-hud-short .pc-hud-head b { color: #f87171; }
+.pc-hud-tf {
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #94a3b8;
+  font-size: 10px;
+}
+.pc-hud-body { display: grid; gap: 6px; padding: 0 10px 9px; }
+.pc-hud-detail { margin: 0; color: #cbd5e1; }
+.pc-hud-checks { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.pc-hud-checks li {
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.pc-hud-checks li.ok { color: #4ade80; border-color: rgba(38, 161, 123, 0.45); }
+.pc-hud-checks li.wait { color: #94a3b8; }
+.pc-hud-plan { display: flex; flex-wrap: wrap; gap: 4px 10px; font-variant-numeric: tabular-nums; }
+.pc-hud-plan span { white-space: nowrap; }
+.pc-hud-plan i { font-style: normal; color: #94a3b8; margin-right: 3px; }
+.pc-hud-plan .sl { color: #f87171; }
+.pc-hud-plan .tp { color: #4ade80; }
+.pc-hud-plan small { color: #94a3b8; }
+.pc-hud-ctx { display: flex; flex-wrap: wrap; gap: 4px; }
+.pc-hud-ctx span {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 11px;
+  color: #94a3b8;
+}
+.pc-hud-ctx span.up { color: #4ade80; }
+.pc-hud-ctx span.down { color: #f87171; }
+.pc-hud-ctx b { color: #e2e8f0; font-weight: 600; }
+.pc-hud-record { margin: 0; font-size: 11px; color: #94a3b8; }
+.pc-hud-ohlc { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; font-size: 11px; color: #94a3b8; font-variant-numeric: tabular-nums; }
+.pc-hud-ohlc .up { color: #4ade80; }
+.pc-hud-ohlc .down { color: #f87171; }
+
+/* ── phones: the toolbar drops under the HUD's line, the HUD narrows ── */
+@media (max-width: 640px) {
+  .pc-stage { height: clamp(380px, 70vh, 620px); }
+  .pc-toolbar { top: auto; bottom: 34px; right: 8px; max-width: calc(100% - 16px); }
+  .pc-tfs button, .pc-tool { min-height: 32px; padding: 0 8px; }
+  .pc-tool span { display: none; }
+  .pc-hud { max-width: calc(100% - 16px); font-size: 11px; }
+}

@@ -4,7 +4,7 @@
  * SL/TGT boxes, SMC zones (OB, FVG, BOS, CHoCH etc.) saved to the desk DB.
  */
 
-import { json, post } from './client';
+import { json } from './client';
 
 export type AnnotationKind =
   | 'sl' | 'tgt' | 'tgt2' | 'tgt3'
@@ -35,14 +35,6 @@ export async function getAnnotations(symbol: string, tf: string): Promise<Annota
     `/api/chart/annotations?symbol=${encodeURIComponent(symbol)}&tf=${encodeURIComponent(tf)}`,
   );
   return r.annotations;
-}
-
-export async function createAnnotation(a: Omit<Annotation, 'id' | 'createdAt'>): Promise<Annotation> {
-  return post<Annotation>('/api/chart/annotations', a);
-}
-
-export async function deleteAnnotationById(id: number): Promise<void> {
-  await json<{ ok: boolean }>(`/api/chart/annotations/${id}`, { method: 'DELETE' });
 }
 
 export async function clearAnnotationsApi(symbol: string, tf: string, kind?: AnnotationKind): Promise<void> {

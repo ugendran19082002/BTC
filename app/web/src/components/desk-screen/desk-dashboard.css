@@ -175,33 +175,6 @@
   margin: 0 !important;
 }
 
-.desk-chart-panel .price-chart-head.is-compact {
-  display: flex !important;
-  justify-content: flex-end !important;
-  align-items: center !important;
-  padding: 4px 8px !important;
-  min-height: unset !important;
-  border: none !important;
-  background: transparent !important;
-}
-
-.desk-chart-panel .price-chart-head.is-compact .price-chart-controls {
-  margin-left: auto;
-  gap: 6px;
-}
-
-.desk-chart-panel .price-chart-plot {
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.desk-chart-panel .price-chart-note {
-  font-size: 11px;
-  color: var(--desk-text-dim);
-  padding: 6px 4px 0 4px;
-  margin: 0;
-}
-
 /* Overlaid Zone Badges */
 
 /* Expiry Prediction Card */
