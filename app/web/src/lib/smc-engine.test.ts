@@ -78,7 +78,9 @@ describe('smc-engine', () => {
     expect(res.tradePlan).not.toBeNull();
     const plan = res.tradePlan!;
     expect(plan.direction).toBe('LONG');
-    expect(plan.entry).toBe(Math.round(spot));
+    expect(plan.entry).toBeLessThanOrEqual(Math.round(spot));
+    expect(plan.poiSource).toBeDefined();
+    expect(plan.status).toBeDefined();
     expect(plan.sl.price).toBeLessThan(plan.entry);
     expect(plan.tp1.price).toBeGreaterThan(plan.entry);
     expect(plan.tp2.price).toBeGreaterThan(plan.tp1.price);

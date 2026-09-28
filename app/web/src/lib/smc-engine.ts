@@ -70,6 +70,13 @@ export type SmcLiquidityLevel = {
 export type AutoTradePlan = {
   direction: 'LONG' | 'SHORT';
   entry: number;
+  entryType: 'POI_RETEST' | 'POI_IN_ZONE' | 'BREAKOUT_RETEST' | 'DISCOUNT_OTE' | 'PREMIUM_OTE' | 'LIQUIDITY_RUN';
+  poiSource: string;
+  status: 'PENDING_RETRACEMENT' | 'TRIGGER_ACTIVE' | 'BREAKOUT_CONFIRMED';
+  statusLabel: string;
+  spotDistance: number;
+  invalidation: number;
+  breakEven: number;
   sl: {
     price: number;
     priceLow: number;
@@ -104,6 +111,7 @@ export type AutoTradePlan = {
   };
   riskReward: string;
   reason: string;
+  checklist: { element: string; status: 'CONFIRMED' | 'ALIGNING' | 'TARGET'; detail: string }[];
 };
 
 export type LiquiditySweep = {
@@ -589,143 +597,7 @@ export function analyzeSmc(
     }
   }
 
-  // ── 6. Automated Trade Setup (Stop Loss & Target Boxes) ───────────────────
-  // Best-practice execution: determine direction by Trend, CHoCH, or position relative to key OB
-  let tradeDir: 'LONG' | 'SHORT' = 'LONG';
-  if (currentTrend === 'DOWN') tradeDir = 'SHORT';
-  else if (currentTrend === 'UP') tradeDir = 'LONG';
-  else {
-    // If range, trade towards center or based on closest rejection
-    const nearestBullOb = orderBlocks.find((o) => o.type === 'bull');
-    const nearestBearOb = orderBlocks.find((o) => o.type === 'bear');
-    if (nearestBullOb && Math.abs(spot - nearestBullOb.priceHigh) < Math.abs(spot - (nearestBearOb?.priceLow ?? Infinity))) {
-      tradeDir = 'LONG';
-    } else if (nearestBearOb) {
-      tradeDir = 'SHORT';
-    }
-  }
 
-  let tradePlan: AutoTradePlan | null = null;
-  const entry = Math.round(spot);
-
-  if (tradeDir === 'LONG') {
-    // Stop loss: below nearest Bullish OB low or nearest Swing Low
-    const bullOb = orderBlocks.find((o) => o.type === 'bull');
-    const swingLow = swings.filter((s) => s.kind === 'low' && s.price < spot).slice(-1)[0];
-
-    const slPriceRaw = bullOb
-      ? Math.min(bullOb.priceLow - atr * 0.25, spot * 0.994)
-      : swingLow
-      ? Math.min(swingLow.price - atr * 0.3, spot * 0.994)
-      : spot - atr * 1.5;
-
-    const slPrice = Math.round(Math.min(slPriceRaw, spot - atr * 0.5));
-    const riskAmount = Math.max(entry - slPrice, 50);
-    const riskPct = (riskAmount / entry) * 100;
-
-    // Targets: 1:1.5, 1:2.5, 1:3.5 or nearest resistance/BSL
-    const bsl = liquidity.find((l) => l.type === 'BSL');
-    const tp1Price = Math.round(entry + riskAmount * 1.6);
-    const tp2Price = Math.round(bsl ? Math.max(bsl.price, entry + riskAmount * 2.5) : entry + riskAmount * 2.6);
-    const tp3Price = Math.round(entry + riskAmount * 3.8);
-
-    tradePlan = {
-      direction: 'LONG',
-      entry,
-      sl: {
-        price: slPrice,
-        priceLow: Math.round(slPrice - atr * 0.4),
-        priceHigh: slPrice,
-        riskPct,
-        riskAmount,
-        label: `SL: $${slPrice.toLocaleString()} (-${riskPct.toFixed(2)}%)`,
-      },
-      tp1: {
-        price: tp1Price,
-        priceLow: tp1Price,
-        priceHigh: Math.round(tp1Price + atr * 0.3),
-        gainPct: ((tp1Price - entry) / entry) * 100,
-        rr: 1.6,
-        label: `TP 1: $${tp1Price.toLocaleString()} (1:1.6)`,
-      },
-      tp2: {
-        price: tp2Price,
-        priceLow: tp2Price,
-        priceHigh: Math.round(tp2Price + atr * 0.4),
-        gainPct: ((tp2Price - entry) / entry) * 100,
-        rr: 2.6,
-        label: `TP 2: $${tp2Price.toLocaleString()} (1:2.6)`,
-      },
-      tp3: {
-        price: tp3Price,
-        priceLow: tp3Price,
-        priceHigh: Math.round(tp3Price + atr * 0.5),
-        gainPct: ((tp3Price - entry) / entry) * 100,
-        rr: 3.8,
-        label: `TP 3: $${tp3Price.toLocaleString()} (1:3.8)`,
-      },
-      riskReward: '1 : 2.6',
-      reason: `${tf} ${currentTrend} trend · Entry at spot, SL under ${bullOb ? 'OB' : 'swing low'}, TP targeting BSL liquidity`,
-    };
-  } else {
-    // SHORT SETUP
-    const bearOb = orderBlocks.find((o) => o.type === 'bear');
-    const swingHigh = swings.filter((s) => s.kind === 'high' && s.price > spot).slice(-1)[0];
-
-    const slPriceRaw = bearOb
-      ? Math.max(bearOb.priceHigh + atr * 0.25, spot * 1.006)
-      : swingHigh
-      ? Math.max(swingHigh.price + atr * 0.3, spot * 1.006)
-      : spot + atr * 1.5;
-
-    const slPrice = Math.round(Math.max(slPriceRaw, spot + atr * 0.5));
-    const riskAmount = Math.max(slPrice - entry, 50);
-    const riskPct = (riskAmount / entry) * 100;
-
-    const ssl = liquidity.find((l) => l.type === 'SSL');
-    const tp1Price = Math.round(entry - riskAmount * 1.6);
-    const tp2Price = Math.round(ssl ? Math.min(ssl.price, entry - riskAmount * 2.5) : entry - riskAmount * 2.6);
-    const tp3Price = Math.round(entry - riskAmount * 3.8);
-
-    tradePlan = {
-      direction: 'SHORT',
-      entry,
-      sl: {
-        price: slPrice,
-        priceLow: slPrice,
-        priceHigh: Math.round(slPrice + atr * 0.4),
-        riskPct,
-        riskAmount,
-        label: `SL: $${slPrice.toLocaleString()} (+${riskPct.toFixed(2)}%)`,
-      },
-      tp1: {
-        price: tp1Price,
-        priceLow: Math.round(tp1Price - atr * 0.3),
-        priceHigh: tp1Price,
-        gainPct: ((entry - tp1Price) / entry) * 100,
-        rr: 1.6,
-        label: `TP 1: $${tp1Price.toLocaleString()} (1:1.6)`,
-      },
-      tp2: {
-        price: tp2Price,
-        priceLow: Math.round(tp2Price - atr * 0.4),
-        priceHigh: tp2Price,
-        gainPct: ((entry - tp2Price) / entry) * 100,
-        rr: 2.6,
-        label: `TP 2: $${tp2Price.toLocaleString()} (1:2.6)`,
-      },
-      tp3: {
-        price: tp3Price,
-        priceLow: Math.round(tp3Price - atr * 0.5),
-        priceHigh: tp3Price,
-        gainPct: ((entry - tp3Price) / entry) * 100,
-        rr: 3.8,
-        label: `TP 3: $${tp3Price.toLocaleString()} (1:3.8)`,
-      },
-      riskReward: '1 : 2.6',
-      reason: `${tf} ${currentTrend} trend · Short from spot, SL above ${bearOb ? 'OB' : 'swing high'}, TP targeting SSL liquidity`,
-    };
-  }
 
   // ── 7. Liquidity Sweeps (Takes Sell Stops / Takes Buy Stops) ─────────────
   const sweeps: LiquiditySweep[] = [];
@@ -942,6 +814,284 @@ export function analyzeSmc(
         description: 'Consolidation & contraction before breakout expansion',
       });
     }
+  }
+
+  // ── 14. Institutional Automated Trade Plan (Real Trader Decision Engine) ───
+  // Evaluates previous SMC concepts (BOS/CHoCH, Liquidity Sweeps, Order Blocks, FVGs,
+  // Dealing Range & OTE) to identify high-probability POI limit entries, invalidation SL,
+  // and external liquidity TP targets.
+  let bullScore = 0;
+  let bearScore = 0;
+
+  // 1. Structure Breaks
+  for (const b of activeBreaks) {
+    if (b.direction === 'bullish') bullScore += b.type === 'CHoCH' ? 3 : 2;
+    else bearScore += b.type === 'CHoCH' ? 3 : 2;
+  }
+
+  // 2. Liquidity Sweeps (Reversal Precursors)
+  for (const sw of sweeps) {
+    if (sw.type === 'sell_stops') bullScore += 3; // Swept retail sell stops -> smart money buys!
+    else bearScore += 3; // Swept retail buy stops -> smart money sells!
+  }
+
+  // 3. Regime / Trend
+  if (currentTrend === 'UP') bullScore += 2;
+  else if (currentTrend === 'DOWN') bearScore += 2;
+
+  // 4. Dealing Range Discount vs Premium
+  if (dealingRange.currentZone === 'DISCOUNT' || dealingRange.currentZone === 'OTE') bullScore += 1;
+  else if (dealingRange.currentZone === 'PREMIUM') bearScore += 1;
+
+  const tradeDir: 'LONG' | 'SHORT' = bullScore >= bearScore ? 'LONG' : 'SHORT';
+  let tradePlan: AutoTradePlan | null = null;
+
+  if (tradeDir === 'LONG') {
+    // Look for high probability Bullish POIs
+    const bullOb = orderBlocks.find((o) => o.type === 'bull' && !o.mitigated && o.priceHigh <= spot * 1.008)
+      ?? orderBlocks.find((o) => o.type === 'bull' && o.priceHigh <= spot * 1.01);
+    const bullFvg = fvgs.find((f) => f.type === 'bull' && !f.mitigated && f.priceHigh <= spot * 1.008);
+    const demandZone = supplyDemandZones.find((z) => z.type === 'demand');
+
+    let poiEntry: number;
+    let poiSource: string;
+    let entryType: AutoTradePlan['entryType'] = 'POI_RETEST';
+    let poiLow: number;
+
+    if (bullOb) {
+      // 50% Consequent Encroachment (CE) of Bullish Order Block
+      poiEntry = Math.round((bullOb.priceHigh + bullOb.priceLow) / 2);
+      poiSource = 'Bullish OB↑ (50% CE)';
+      entryType = 'POI_RETEST';
+      poiLow = bullOb.priceLow;
+    } else if (bullFvg) {
+      // 50% Consequent Encroachment (CE) of Fair Value Gap
+      poiEntry = Math.round((bullFvg.priceHigh + bullFvg.priceLow) / 2);
+      poiSource = 'FVG↑ Imbalance (50% CE)';
+      entryType = 'POI_RETEST';
+      poiLow = bullFvg.priceLow;
+    } else if (dealingRange.ote.sweetSpot > 0 && dealingRange.ote.sweetSpot <= spot * 1.005) {
+      // 61.8% to 70.5% Fibonacci OTE
+      poiEntry = Math.round(dealingRange.ote.sweetSpot);
+      poiSource = 'Discount OTE (62%–79% Fib)';
+      entryType = 'DISCOUNT_OTE';
+      poiLow = Math.round(dealingRange.low);
+    } else if (demandZone && demandZone.priceHigh <= spot * 1.008) {
+      poiEntry = Math.round((demandZone.priceHigh + demandZone.priceLow) / 2);
+      poiSource = 'Demand Zone Support Retest';
+      entryType = 'BREAKOUT_RETEST';
+      poiLow = demandZone.priceLow;
+    } else {
+      const swingLow = swings.filter((s) => s.kind === 'low' && s.price < spot).slice(-1)[0];
+      poiEntry = swingLow ? Math.round(swingLow.price + atr * 0.3) : Math.round(spot);
+      poiSource = 'Structural Support Reclaim';
+      entryType = 'LIQUIDITY_RUN';
+      poiLow = swingLow ? swingLow.price : Math.round(spot - atr * 0.8);
+    }
+
+    // Stop Loss under POI invalidation
+    const slRaw = Math.min(poiLow - atr * 0.25, poiEntry - atr * 0.5);
+    const slPrice = Math.round(slRaw);
+    const riskAmount = Math.max(poiEntry - slPrice, Math.round(atr * 0.5), 60);
+    const riskPct = ((riskAmount) / poiEntry) * 100;
+
+    // Targets: Institutional Liquidity Targets (BSL, EQH, Structure High)
+    const bsl = liquidity.find((l) => l.type === 'BSL' && l.price > poiEntry);
+    const eqh = liquidity.find((l) => l.type === 'EQH' && l.price > poiEntry);
+    const targetLiquidity = bsl ?? eqh;
+
+    const tp1Price = Math.round(poiEntry + riskAmount * 2.0); // Minimum 1:2.0 R:R
+    const tp2Price = Math.round(targetLiquidity ? Math.max(targetLiquidity.price, poiEntry + riskAmount * 3.0) : poiEntry + riskAmount * 3.0);
+    const tp3Price = Math.round(poiEntry + riskAmount * 4.5);
+
+    // Status: Pending pullback vs in-zone trigger
+    let status: AutoTradePlan['status'] = 'PENDING_RETRACEMENT';
+    let statusLabel: string;
+    const spotDist = spot - poiEntry;
+
+    if (spotDist > atr * 0.25) {
+      status = 'PENDING_RETRACEMENT';
+      statusLabel = `⏳ Waiting for Retest to ${poiSource} ($${poiEntry.toLocaleString()})`;
+    } else if (Math.abs(spotDist) <= atr * 0.25) {
+      status = 'TRIGGER_ACTIVE';
+      statusLabel = `🔥 IN-ZONE TRIGGER: Price at ${poiSource} ($${poiEntry.toLocaleString()})`;
+    } else {
+      status = 'TRIGGER_ACTIVE';
+      statusLabel = `⚡ Discount Entry: Reclaiming ${poiSource} ($${poiEntry.toLocaleString()})`;
+    }
+
+    tradePlan = {
+      direction: 'LONG',
+      entry: poiEntry,
+      entryType,
+      poiSource,
+      status,
+      statusLabel,
+      spotDistance: spotDist,
+      invalidation: slPrice,
+      breakEven: poiEntry,
+      sl: {
+        price: slPrice,
+        priceLow: Math.round(slPrice - atr * 0.3),
+        priceHigh: slPrice,
+        riskPct,
+        riskAmount,
+        label: `SL: $${slPrice.toLocaleString()} (-${riskPct.toFixed(2)}%)`,
+      },
+      tp1: {
+        price: tp1Price,
+        priceLow: tp1Price,
+        priceHigh: Math.round(tp1Price + atr * 0.2),
+        gainPct: ((tp1Price - poiEntry) / poiEntry) * 100,
+        rr: 2.0,
+        label: `TP 1: $${tp1Price.toLocaleString()} (1:2.0 R:R)`,
+      },
+      tp2: {
+        price: tp2Price,
+        priceLow: tp2Price,
+        priceHigh: Math.round(tp2Price + atr * 0.3),
+        gainPct: ((tp2Price - poiEntry) / poiEntry) * 100,
+        rr: Math.round(((tp2Price - poiEntry) / riskAmount) * 10) / 10,
+        label: `TP 2: $${tp2Price.toLocaleString()} (${targetLiquidity ? targetLiquidity.type : '1:3.0 R:R'})`,
+      },
+      tp3: {
+        price: tp3Price,
+        priceLow: tp3Price,
+        priceHigh: Math.round(tp3Price + atr * 0.4),
+        gainPct: ((tp3Price - poiEntry) / poiEntry) * 100,
+        rr: 4.5,
+        label: `TP 3: $${tp3Price.toLocaleString()} (1:4.5 R:R)`,
+      },
+      riskReward: `1 : ${((tp2Price - poiEntry) / riskAmount).toFixed(1)}`,
+      reason: `${tf} Institutional Long Setup · POI: ${poiSource} at $${poiEntry.toLocaleString()} · SL under $${Math.round(poiLow).toLocaleString()} · Targeting BSL stops at $${tp2Price.toLocaleString()}`,
+      checklist: [
+        { element: 'Market Bias', status: bullScore >= 3 ? 'CONFIRMED' : 'ALIGNING', detail: `${currentTrend} trend (${bullScore} bull pts)` },
+        { element: 'Entry POI', status: bullOb || bullFvg ? 'CONFIRMED' : 'ALIGNING', detail: poiSource },
+        { element: 'Invalidation', status: 'CONFIRMED', detail: `SL below POI at $${slPrice.toLocaleString()}` },
+        { element: 'Liquidity Target', status: 'TARGET', detail: `BSL at $${tp2Price.toLocaleString()}` },
+      ],
+    };
+  } else {
+    // SHORT SETUP
+    const bearOb = orderBlocks.find((o) => o.type === 'bear' && !o.mitigated && o.priceLow >= spot * 0.992)
+      ?? orderBlocks.find((o) => o.type === 'bear' && o.priceLow >= spot * 0.99);
+    const bearFvg = fvgs.find((f) => f.type === 'bear' && !f.mitigated && f.priceLow >= spot * 0.992);
+    const supplyZone = supplyDemandZones.find((z) => z.type === 'supply');
+
+    let poiEntry: number;
+    let poiSource: string;
+    let entryType: AutoTradePlan['entryType'] = 'POI_RETEST';
+    let poiHigh: number;
+
+    if (bearOb) {
+      // 50% Consequent Encroachment (CE) of Bearish Order Block
+      poiEntry = Math.round((bearOb.priceHigh + bearOb.priceLow) / 2);
+      poiSource = 'Bearish OB↓ (50% CE)';
+      entryType = 'POI_RETEST';
+      poiHigh = bearOb.priceHigh;
+    } else if (bearFvg) {
+      // 50% Consequent Encroachment (CE) of Fair Value Gap
+      poiEntry = Math.round((bearFvg.priceHigh + bearFvg.priceLow) / 2);
+      poiSource = 'FVG↓ Imbalance (50% CE)';
+      entryType = 'POI_RETEST';
+      poiHigh = bearFvg.priceHigh;
+    } else if (dealingRange.ote.sweetSpot > 0 && dealingRange.ote.sweetSpot >= spot * 0.995) {
+      poiEntry = Math.round(dealingRange.ote.sweetSpot);
+      poiSource = 'Premium OTE (62%–79% Fib)';
+      entryType = 'PREMIUM_OTE';
+      poiHigh = Math.round(dealingRange.high);
+    } else if (supplyZone && supplyZone.priceLow >= spot * 0.992) {
+      poiEntry = Math.round((supplyZone.priceHigh + supplyZone.priceLow) / 2);
+      poiSource = 'Supply Zone Resistance Retest';
+      entryType = 'BREAKOUT_RETEST';
+      poiHigh = supplyZone.priceHigh;
+    } else {
+      const swingHigh = swings.filter((s) => s.kind === 'high' && s.price > spot).slice(-1)[0];
+      poiEntry = swingHigh ? Math.round(swingHigh.price - atr * 0.3) : Math.round(spot);
+      poiSource = 'Structural Resistance Rejection';
+      entryType = 'LIQUIDITY_RUN';
+      poiHigh = swingHigh ? swingHigh.price : Math.round(spot + atr * 0.8);
+    }
+
+    const slRaw = Math.max(poiHigh + atr * 0.25, poiEntry + atr * 0.5);
+    const slPrice = Math.round(slRaw);
+    const riskAmount = Math.max(slPrice - poiEntry, Math.round(atr * 0.5), 60);
+    const riskPct = ((riskAmount) / poiEntry) * 100;
+
+    const ssl = liquidity.find((l) => l.type === 'SSL' && l.price < poiEntry);
+    const eql = liquidity.find((l) => l.type === 'EQL' && l.price < poiEntry);
+    const targetLiquidity = ssl ?? eql;
+
+    const tp1Price = Math.round(poiEntry - riskAmount * 2.0); // Minimum 1:2.0 R:R
+    const tp2Price = Math.round(targetLiquidity ? Math.min(targetLiquidity.price, poiEntry - riskAmount * 3.0) : poiEntry - riskAmount * 3.0);
+    const tp3Price = Math.round(poiEntry - riskAmount * 4.5);
+
+    let status: AutoTradePlan['status'] = 'PENDING_RETRACEMENT';
+    let statusLabel: string;
+    const spotDist = poiEntry - spot;
+
+    if (spotDist > atr * 0.25) {
+      status = 'PENDING_RETRACEMENT';
+      statusLabel = `⏳ Waiting for Retest to ${poiSource} ($${poiEntry.toLocaleString()})`;
+    } else if (Math.abs(spotDist) <= atr * 0.25) {
+      status = 'TRIGGER_ACTIVE';
+      statusLabel = `🔥 IN-ZONE TRIGGER: Price at ${poiSource} ($${poiEntry.toLocaleString()})`;
+    } else {
+      status = 'TRIGGER_ACTIVE';
+      statusLabel = `⚡ Premium Entry: Rejecting from ${poiSource} ($${poiEntry.toLocaleString()})`;
+    }
+
+    tradePlan = {
+      direction: 'SHORT',
+      entry: poiEntry,
+      entryType,
+      poiSource,
+      status,
+      statusLabel,
+      spotDistance: spotDist,
+      invalidation: slPrice,
+      breakEven: poiEntry,
+      sl: {
+        price: slPrice,
+        priceLow: slPrice,
+        priceHigh: Math.round(slPrice + atr * 0.3),
+        riskPct,
+        riskAmount,
+        label: `SL: $${slPrice.toLocaleString()} (+${riskPct.toFixed(2)}%)`,
+      },
+      tp1: {
+        price: tp1Price,
+        priceLow: Math.round(tp1Price - atr * 0.2),
+        priceHigh: tp1Price,
+        gainPct: ((poiEntry - tp1Price) / poiEntry) * 100,
+        rr: 2.0,
+        label: `TP 1: $${tp1Price.toLocaleString()} (1:2.0 R:R)`,
+      },
+      tp2: {
+        price: tp2Price,
+        priceLow: Math.round(tp2Price - atr * 0.3),
+        priceHigh: tp2Price,
+        gainPct: ((poiEntry - tp2Price) / poiEntry) * 100,
+        rr: Math.round(((poiEntry - tp2Price) / riskAmount) * 10) / 10,
+        label: `TP 2: $${tp2Price.toLocaleString()} (${targetLiquidity ? targetLiquidity.type : '1:3.0 R:R'})`,
+      },
+      tp3: {
+        price: tp3Price,
+        priceLow: Math.round(tp3Price - atr * 0.4),
+        priceHigh: tp3Price,
+        gainPct: ((poiEntry - tp3Price) / poiEntry) * 100,
+        rr: 4.5,
+        label: `TP 3: $${tp3Price.toLocaleString()} (1:4.5 R:R)`,
+      },
+      riskReward: `1 : ${((poiEntry - tp2Price) / riskAmount).toFixed(1)}`,
+      reason: `${tf} Institutional Short Setup · POI: ${poiSource} at $${poiEntry.toLocaleString()} · SL above $${Math.round(poiHigh).toLocaleString()} · Targeting SSL stops at $${tp2Price.toLocaleString()}`,
+      checklist: [
+        { element: 'Market Bias', status: bearScore >= 3 ? 'CONFIRMED' : 'ALIGNING', detail: `${currentTrend} trend (${bearScore} bear pts)` },
+        { element: 'Entry POI', status: bearOb || bearFvg ? 'CONFIRMED' : 'ALIGNING', detail: poiSource },
+        { element: 'Invalidation', status: 'CONFIRMED', detail: `SL above POI at $${slPrice.toLocaleString()}` },
+        { element: 'Liquidity Target', status: 'TARGET', detail: `SSL at $${tp2Price.toLocaleString()}` },
+      ],
+    };
   }
 
   return {

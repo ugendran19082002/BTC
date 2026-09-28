@@ -512,10 +512,11 @@ export function PriceChart({
       return 0;
     };
 
-    // 1. Auto Trade Setup (Stop Loss Box & Target Boxes)
+    // 1. Auto Trade Setup (Stop Loss Box & Target Boxes + Setup Prediction)
     let autoTradeBox: {
       plan: AutoTradePlan;
       entryY: number;
+      spotY: number;
       slTop: number;
       slHeight: number;
       tp1Top: number;
@@ -524,11 +525,15 @@ export function PriceChart({
       tp2Height: number;
       xStart: number;
       xEnd: number;
+      poiX: number;
+      tp1X: number;
+      tp2X: number;
     } | null = null;
 
     if (showTradePlan && smc.tradePlan) {
       const p = smc.tradePlan;
       const entryY = safeY(p.entry);
+      const spotY = safeY(spot > 0 ? spot : p.entry);
       const slY = safeY(p.sl.price);
       const tp1Y = safeY(p.tp1.price);
       const tp2Y = safeY(p.tp2.price);
@@ -542,13 +547,17 @@ export function PriceChart({
       const tp2Top = Math.min(tp1Y, tp2Y);
       const tp2Height = Math.max(Math.abs(tp1Y - tp2Y), 16);
 
-      const lastBarX = c.x(0) ?? (xMax - 180);
-      const xStart = Math.max(0, lastBarX - 50);
+      const lastBarX = c.x(0) ?? (xMax - 220);
+      const xStart = Math.max(0, lastBarX - 40);
       const xEnd = xMax;
+      const poiX = Math.min(xEnd - 40, xStart + 80);
+      const tp1X = Math.min(xEnd - 20, xStart + 160);
+      const tp2X = Math.min(xEnd - 10, xStart + 240);
 
       autoTradeBox = {
         plan: p,
         entryY,
+        spotY,
         slTop,
         slHeight,
         tp1Top,
@@ -557,6 +566,9 @@ export function PriceChart({
         tp2Height,
         xStart,
         xEnd,
+        poiX,
+        tp1X,
+        tp2X,
       };
     }
 
@@ -853,11 +865,15 @@ export function PriceChart({
         <div className="smc-autoplan-strip">
           <div className="smc-autoplan-badge" data-direction={smc.tradePlan.direction}>
             {smc.tradePlan.direction === 'LONG' ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
-            <span>AUTO {smc.tradePlan.direction} SETUP</span>
+            <span>AUTO {smc.tradePlan.direction}</span>
           </div>
 
           <div className="smc-autoplan-metrics">
-            <span>Entry: <b>${smc.tradePlan.entry.toLocaleString()}</b></span>
+            <span className="smc-metric-entry" title={`POI Source: ${smc.tradePlan.poiSource}`}>
+              POI Entry: <b>${smc.tradePlan.entry.toLocaleString()}</b> <span className="smc-poi-tag">({smc.tradePlan.poiSource.split(' ')[0]})</span>
+            </span>
+            <span className="smc-sep">•</span>
+            <span className="smc-metric-status" style={{ color: '#38bdf8', fontWeight: 600 }}>{smc.tradePlan.statusLabel}</span>
             <span className="smc-sep">•</span>
             <span className="smc-metric-sl">SL: <b>${smc.tradePlan.sl.price.toLocaleString()}</b> (-{smc.tradePlan.sl.riskPct.toFixed(2)}%)</span>
             <span className="smc-sep">•</span>
@@ -907,6 +923,12 @@ export function PriceChart({
                   </marker>
                   <marker id="smc-arrow-purple" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto">
                     <path d="M 0 0 L 8 4 L 0 8 z" fill="#a855f7" />
+                  </marker>
+                  <marker id="smc-arrow-pred-entry" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+                    <path d="M 0 0 L 8 4 L 0 8 z" fill="#38bdf8" />
+                  </marker>
+                  <marker id="smc-arrow-pred-tp" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+                    <path d="M 0 0 L 8 4 L 0 8 z" fill="#10b981" />
                   </marker>
                 </defs>
 
@@ -1214,66 +1236,36 @@ export function PriceChart({
                   );
                 })}
 
-                {/* ── 6. Automated Trade Setup (Red SL & Green TP Boxes) ──── */}
+                {/* ── 6. Automated Trade Setup (Real Trader Boxes & Setup Prediction) ─── */}
                 {overlay.autoTradeBox && (
                   <g className="smc-trade-plan-group">
-                    {/* Entry Line */}
-                    <line
-                      x1={overlay.autoTradeBox.xStart}
-                      x2={overlay.autoTradeBox.xEnd}
-                      y1={overlay.autoTradeBox.entryY}
-                      y2={overlay.autoTradeBox.entryY}
-                      stroke="#ffffff"
-                      strokeWidth="1.8"
-                      strokeDasharray="5 3"
-                      opacity="0.95"
-                    />
-                    <rect
-                      x={overlay.autoTradeBox.xStart + 6}
-                      y={overlay.autoTradeBox.entryY - 10}
-                      width={112}
-                      height={20}
-                      rx={3}
-                      fill="rgba(10,14,23,0.96)"
-                      stroke="#ffffff"
-                      strokeWidth="1"
-                    />
-                    <text
-                      x={overlay.autoTradeBox.xStart + 12}
-                      y={overlay.autoTradeBox.entryY + 4}
-                      fontSize="10.5"
-                      fontWeight="800"
-                      fill="#ffffff">
-                      ENTRY ${overlay.autoTradeBox.plan.entry.toLocaleString()}
-                    </text>
-
                     {/* RED STOP LOSS BOX */}
                     <rect
                       x={overlay.autoTradeBox.xStart}
                       y={overlay.autoTradeBox.slTop}
                       width={overlay.autoTradeBox.xEnd - overlay.autoTradeBox.xStart}
                       height={overlay.autoTradeBox.slHeight}
-                      fill="rgba(226, 80, 79, 0.25)"
-                      stroke="#e2504f"
+                      fill="rgba(239, 68, 68, 0.2)"
+                      stroke="#ef4444"
                       strokeWidth="1.8"
                       rx={3}
                     />
                     <rect
                       x={overlay.autoTradeBox.xStart + 6}
                       y={overlay.autoTradeBox.slTop + 3}
-                      width={140}
-                      height={20}
+                      width={175}
+                      height={22}
                       rx={3}
                       fill="rgba(10,14,23,0.96)"
-                      stroke="#e2504f"
-                      strokeWidth="1"
+                      stroke="#ef4444"
+                      strokeWidth="1.2"
                     />
                     <text
                       x={overlay.autoTradeBox.xStart + 12}
-                      y={overlay.autoTradeBox.slTop + 17}
+                      y={overlay.autoTradeBox.slTop + 18}
                       fontSize="10.5"
                       fontWeight="800"
-                      fill="#e2504f">
+                      fill="#ef4444">
                       🛑 {overlay.autoTradeBox.plan.sl.label}
                     </text>
 
@@ -1283,27 +1275,27 @@ export function PriceChart({
                       y={overlay.autoTradeBox.tp1Top}
                       width={overlay.autoTradeBox.xEnd - overlay.autoTradeBox.xStart}
                       height={overlay.autoTradeBox.tp1Height}
-                      fill="rgba(38, 161, 123, 0.25)"
-                      stroke="#26a17b"
+                      fill="rgba(16, 185, 129, 0.2)"
+                      stroke="#10b981"
                       strokeWidth="1.8"
                       rx={3}
                     />
                     <rect
                       x={overlay.autoTradeBox.xStart + 6}
                       y={overlay.autoTradeBox.tp1Top + 3}
-                      width={140}
-                      height={20}
+                      width={160}
+                      height={22}
                       rx={3}
                       fill="rgba(10,14,23,0.96)"
-                      stroke="#26a17b"
-                      strokeWidth="1"
+                      stroke="#10b981"
+                      strokeWidth="1.2"
                     />
                     <text
                       x={overlay.autoTradeBox.xStart + 12}
-                      y={overlay.autoTradeBox.tp1Top + 17}
+                      y={overlay.autoTradeBox.tp1Top + 18}
                       fontSize="10.5"
                       fontWeight="800"
-                      fill="#26a17b">
+                      fill="#10b981">
                       🎯 {overlay.autoTradeBox.plan.tp1.label}
                     </text>
 
@@ -1313,8 +1305,8 @@ export function PriceChart({
                       y={overlay.autoTradeBox.tp2Top}
                       width={overlay.autoTradeBox.xEnd - overlay.autoTradeBox.xStart}
                       height={overlay.autoTradeBox.tp2Height}
-                      fill="rgba(52, 211, 153, 0.16)"
-                      stroke="#34d399"
+                      fill="rgba(5, 150, 105, 0.15)"
+                      stroke="#059669"
                       strokeWidth="1.4"
                       strokeDasharray="5 3"
                       rx={3}
@@ -1322,8 +1314,8 @@ export function PriceChart({
                     <rect
                       x={overlay.autoTradeBox.xStart + 6}
                       y={overlay.autoTradeBox.tp2Top + 3}
-                      width={132}
-                      height={19}
+                      width={175}
+                      height={20}
                       rx={3}
                       fill="rgba(10,14,23,0.96)"
                       stroke="#34d399"
@@ -1331,49 +1323,193 @@ export function PriceChart({
                     />
                     <text
                       x={overlay.autoTradeBox.xStart + 12}
-                      y={overlay.autoTradeBox.tp2Top + 16}
+                      y={overlay.autoTradeBox.tp2Top + 17}
                       fontSize="10"
                       fontWeight="800"
                       fill="#34d399">
                       🚀 {overlay.autoTradeBox.plan.tp2.label}
                     </text>
 
-                    {/* Summary Callout Banner in Gutter */}
+                    {/* Institutional POI Entry Line */}
+                    <line
+                      x1={overlay.autoTradeBox.xStart}
+                      x2={overlay.autoTradeBox.xEnd}
+                      y1={overlay.autoTradeBox.entryY}
+                      y2={overlay.autoTradeBox.entryY}
+                      stroke="#38bdf8"
+                      strokeWidth="2"
+                      strokeDasharray="6 3"
+                      opacity="0.95"
+                    />
                     <rect
-                      x={overlay.autoTradeBox.xEnd - 136}
-                      y={overlay.autoTradeBox.entryY - 28}
-                      width={130}
-                      height={54}
-                      rx={6}
+                      x={overlay.autoTradeBox.xStart + 6}
+                      y={overlay.autoTradeBox.entryY - 12}
+                      width={215}
+                      height={24}
+                      rx={4}
                       fill="rgba(10,14,23,0.97)"
-                      stroke="#60a5fa"
-                      strokeWidth="1.4"
+                      stroke="#38bdf8"
+                      strokeWidth="1.3"
                     />
                     <text
-                      x={overlay.autoTradeBox.xEnd - 71}
-                      y={overlay.autoTradeBox.entryY - 12}
-                      fontSize="11"
-                      fontWeight="800"
-                      fill="#60a5fa"
-                      textAnchor="middle">
-                      {overlay.autoTradeBox.plan.direction} SETUP
-                    </text>
-                    <text
-                      x={overlay.autoTradeBox.xEnd - 71}
+                      x={overlay.autoTradeBox.xStart + 14}
                       y={overlay.autoTradeBox.entryY + 4}
                       fontSize="10.5"
                       fontWeight="800"
+                      fill="#38bdf8">
+                      ⚡ POI ENTRY ${overlay.autoTradeBox.plan.entry.toLocaleString()}
+                    </text>
+                    <text
+                      x={overlay.autoTradeBox.xStart + 138}
+                      y={overlay.autoTradeBox.entryY + 4}
+                      fontSize="8.5"
+                      fontWeight="700"
+                      fill="#93c5fd">
+                      [{overlay.autoTradeBox.plan.poiSource.split(' ')[0]}]
+                    </text>
+
+                    {/* ── REAL-TRADER SETUP PREDICTION PATH (Future Projection Tool) ─── */}
+                    {/* Step 1: Retest/Pullback from current spot to POI Entry */}
+                    <path
+                      d={`M ${overlay.autoTradeBox.xStart + 15} ${overlay.autoTradeBox.spotY} Q ${(overlay.autoTradeBox.xStart + overlay.autoTradeBox.poiX) / 2} ${(overlay.autoTradeBox.spotY + overlay.autoTradeBox.entryY) / 2}, ${overlay.autoTradeBox.poiX} ${overlay.autoTradeBox.entryY}`}
+                      stroke="#38bdf8"
+                      strokeWidth="2.2"
+                      strokeDasharray="5 3"
+                      markerEnd="url(#smc-arrow-pred-entry)"
+                      fill="none"
+                    />
+                    <rect
+                      x={(overlay.autoTradeBox.xStart + overlay.autoTradeBox.poiX) / 2 - 50}
+                      y={(overlay.autoTradeBox.spotY + overlay.autoTradeBox.entryY) / 2 - 12}
+                      width={100}
+                      height={18}
+                      rx={3}
+                      fill="rgba(10,14,23,0.94)"
+                      stroke="#38bdf8"
+                      strokeWidth="1"
+                    />
+                    <text
+                      x={(overlay.autoTradeBox.xStart + overlay.autoTradeBox.poiX) / 2}
+                      y={(overlay.autoTradeBox.spotY + overlay.autoTradeBox.entryY) / 2 + 1}
+                      fontSize="8.5"
+                      fontWeight="800"
+                      fill="#38bdf8"
+                      textAnchor="middle">
+                      1. Retest POI
+                    </text>
+
+                    {/* Step 2: Impulsive Expansion from POI Entry to TP1 */}
+                    <path
+                      d={`M ${overlay.autoTradeBox.poiX} ${overlay.autoTradeBox.entryY} L ${overlay.autoTradeBox.tp1X} ${overlay.autoTradeBox.tp1Y}`}
+                      stroke="#10b981"
+                      strokeWidth="2.4"
+                      markerEnd="url(#smc-arrow-pred-tp)"
+                      fill="none"
+                    />
+                    <rect
+                      x={(overlay.autoTradeBox.poiX + overlay.autoTradeBox.tp1X) / 2 - 55}
+                      y={(overlay.autoTradeBox.entryY + overlay.autoTradeBox.tp1Y) / 2 - 12}
+                      width={110}
+                      height={18}
+                      rx={3}
+                      fill="rgba(10,14,23,0.94)"
+                      stroke="#10b981"
+                      strokeWidth="1"
+                    />
+                    <text
+                      x={(overlay.autoTradeBox.poiX + overlay.autoTradeBox.tp1X) / 2}
+                      y={(overlay.autoTradeBox.entryY + overlay.autoTradeBox.tp1Y) / 2 + 1}
+                      fontSize="8.5"
+                      fontWeight="800"
+                      fill="#10b981"
+                      textAnchor="middle">
+                      2. Impulse to TP1
+                    </text>
+
+                    {/* Step 3: Expansion to TP2 (Liquidity Target) */}
+                    <path
+                      d={`M ${overlay.autoTradeBox.tp1X} ${overlay.autoTradeBox.tp1Y} L ${overlay.autoTradeBox.tp2X} ${overlay.autoTradeBox.tp2Y}`}
+                      stroke="#34d399"
+                      strokeWidth="1.8"
+                      strokeDasharray="4 3"
+                      markerEnd="url(#smc-arrow-disp)"
+                      fill="none"
+                    />
+                    <rect
+                      x={(overlay.autoTradeBox.tp1X + overlay.autoTradeBox.tp2X) / 2 - 55}
+                      y={(overlay.autoTradeBox.tp1Y + overlay.autoTradeBox.tp2Y) / 2 - 12}
+                      width={110}
+                      height={18}
+                      rx={3}
+                      fill="rgba(10,14,23,0.94)"
+                      stroke="#34d399"
+                      strokeWidth="1"
+                    />
+                    <text
+                      x={(overlay.autoTradeBox.tp1X + overlay.autoTradeBox.tp2X) / 2}
+                      y={(overlay.autoTradeBox.tp1Y + overlay.autoTradeBox.tp2Y) / 2 + 1}
+                      fontSize="8.5"
+                      fontWeight="800"
                       fill="#34d399"
+                      textAnchor="middle">
+                      3. Sweep Target
+                    </text>
+
+                    {/* ── SMART MONEY TRADER HUD CARD (Floating Real-Trader Setup Card) ─── */}
+                    <rect
+                      x={overlay.autoTradeBox.xEnd - 165}
+                      y={Math.max(10, overlay.autoTradeBox.entryY - 42)}
+                      width={160}
+                      height={84}
+                      rx={6}
+                      fill="rgba(10,14,23,0.97)"
+                      stroke="#38bdf8"
+                      strokeWidth="1.4"
+                    />
+                    <text
+                      x={overlay.autoTradeBox.xEnd - 85}
+                      y={Math.max(10, overlay.autoTradeBox.entryY - 42) + 16}
+                      fontSize="11"
+                      fontWeight="800"
+                      fill={overlay.autoTradeBox.plan.direction === 'LONG' ? '#34d399' : '#f87171'}
+                      textAnchor="middle">
+                      INSTITUTIONAL {overlay.autoTradeBox.plan.direction} SETUP
+                    </text>
+                    <text
+                      x={overlay.autoTradeBox.xEnd - 85}
+                      y={Math.max(10, overlay.autoTradeBox.entryY - 42) + 32}
+                      fontSize="9.5"
+                      fontWeight="800"
+                      fill="#38bdf8"
+                      textAnchor="middle">
+                      POI: {overlay.autoTradeBox.plan.poiSource.slice(0, 22)}
+                    </text>
+                    <text
+                      x={overlay.autoTradeBox.xEnd - 85}
+                      y={Math.max(10, overlay.autoTradeBox.entryY - 42) + 48}
+                      fontSize="10"
+                      fontWeight="800"
+                      fill="#facc15"
                       textAnchor="middle">
                       R:R {overlay.autoTradeBox.plan.riskReward}
                     </text>
                     <text
-                      x={overlay.autoTradeBox.xEnd - 71}
-                      y={overlay.autoTradeBox.entryY + 18}
-                      fontSize="9.5"
-                      fill="rgba(206,216,230,0.85)"
+                      x={overlay.autoTradeBox.xEnd - 85}
+                      y={Math.max(10, overlay.autoTradeBox.entryY - 42) + 64}
+                      fontSize="8.5"
+                      fontWeight="700"
+                      fill="rgba(226,235,245,0.85)"
                       textAnchor="middle">
                       Risk {overlay.autoTradeBox.plan.sl.riskPct.toFixed(2)}% | TP +{overlay.autoTradeBox.plan.tp1.gainPct.toFixed(2)}%
+                    </text>
+                    <text
+                      x={overlay.autoTradeBox.xEnd - 85}
+                      y={Math.max(10, overlay.autoTradeBox.entryY - 42) + 76}
+                      fontSize="8"
+                      fontWeight="700"
+                      fill="#34d399"
+                      textAnchor="middle">
+                      ✓ BOS · OB · OTE · Liquidity
                     </text>
                   </g>
                 )}
