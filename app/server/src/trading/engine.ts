@@ -1301,14 +1301,6 @@ export class TradeEngine {
     return rec;
   }
 
-  private async replaceIfResized(oldCid: string | null, newCid: string, _size: number) {
-    if (!oldCid || oldCid === newCid) return;
-    const old = await this.exchange.getOrderByClientId(oldCid).catch(() => null);
-    if (old && (old.status === 'open' || old.status === 'partial')) {
-      await this.exchange.cancelOrder(old).catch((e) => this.note('cancel superseded', old, e));
-    }
-  }
-
   /** One exit won. Take the other one off the book. */
   private async cancelSiblings(recIn: TradeRecord, all = false): Promise<TradeRecord> {
     let rec = recIn;

@@ -14,8 +14,6 @@ import { appliedMigrations } from '../../db/migrate.js';
 import { lastOptionSnapshot, lastOptionSnapshotAt } from '../../market/option-snapshots.js';
 import { flowFeedHealth, flowSummary, liveBook, livePerp, oiPulse, optionFlowSummary } from '../../market/flow.js';
 import { readState, STATE_TFS, type StateTf } from '../../market/state-read.js';
-import { gradeStates, noteState } from '../../market/state-history.js';
-import { noteShock, settleShocks } from '../../market/shock-history.js';
 import { changes } from '../../market/changes.js';
 import { one } from '../../db/pool.js';
 import { strategyStore } from './strategy.routes.js';
@@ -148,14 +146,6 @@ export function registerDeskRoutes(app: FastifyInstance) {
     const tf = (STATE_TFS as readonly string[]).includes(q.tf ?? '') ? (q.tf as StateTf) : '15m';
     try {
       const read = await readState(tf);
-      /*
-       * Written down when it changes, so the card can be held to it later.
-       * Neither the writing nor the grading may fail the request: a journal
-       * that cannot be written is a warning, not a reason to leave the screen
-       * without a state on it.
-       */
-      void noteState(read).catch(() => null);
-      void gradeStates().catch(() => 0);
       // The bars are already on the screen from /api/candles; sending sixty
       // more of them with every poll would double the payload for nothing.
       const { bars, ...rest } = read;
@@ -288,21 +278,6 @@ export function registerDeskRoutes(app: FastifyInstance) {
         iv: iv && { changePct: iv.changePct, overMinutes: iv.overMinutes, from: iv.from, to: iv.to },
         window,
       }));
-
-      /*
-       * The warning, written down (24 Sep 2026).
-       *
-       * A warning nobody can look back at is a warning nobody can believe, so
-       * the shortest window -- the one that answers "is something happening
-       * now" -- is journalled when it changes, and settled a quarter of an
-       * hour later against where price actually went. Neither call blocks the
-       * response: the screen is not waiting on the record of itself.
-       */
-      const shortest = shocks.find((x) => x.window === Math.min(...SHOCK_WINDOWS));
-      if (shortest) {
-        void noteShock(shortest, Date.now(), snap.spot).catch(() => null);
-        void settleShocks(Date.now(), snap.spot).catch(() => 0);
-      }
 
       /*
        * Is there a side today, and would the desk's own gates take it?
