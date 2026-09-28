@@ -170,34 +170,7 @@ export function PriceChart({
   const [manualKind, setManualKind] = useState<AnnotationKind | null>(null);
   const [showOverride, setShowOverride] = useState(false);
 
-  // ── Always ensure bars exist so the chart NEVER fails to render ─────────────
-  const effectiveBars = useMemo(() => {
-    if (bars && bars.length >= 8) return bars;
-    if (bars && bars.length > 0 && bars.length < 8) return bars;
-    // Generate fallback candles around current spot so chart renders immediately
-    const now = Math.floor(Date.now() / 1000);
-    const baseP = spot > 0 ? spot : 76500;
-    const list: Candle[] = [];
-    let p = baseP - 250;
-    for (let i = 0; i < 40; i++) {
-      const isUp = i % 2 === 0 || i > 25;
-      const move = Math.sin(i * 0.45) * 160 + (isUp ? 35 : -25);
-      const o = p;
-      const c = p + move;
-      const h = Math.max(o, c) + 35 + (i % 3) * 15;
-      const l = Math.min(o, c) - 35 - (i % 3) * 15;
-      list.push({
-        time: now - (40 - i) * 300,
-        open: Math.round(o),
-        high: Math.round(h),
-        low: Math.round(l),
-        close: Math.round(c),
-        volume: 140 + Math.round(Math.abs(move) * 2),
-      });
-      p = c;
-    }
-    return list;
-  }, [bars, spot]);
+  const effectiveBars = bars ?? [];
 
   // ── Automated SMC & Price Action Engine ────────────────────────────────────
   const smc = useMemo<SmcAnalysisResult>(() => {
