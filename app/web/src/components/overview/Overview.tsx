@@ -55,12 +55,13 @@ import { ChangesPanel, EarlyWarningPanel, MovementPanel, useChanges } from './Tr
 export function Overview({
   data, trade, expiries, onExpiry, onSell, contracts: deskContracts, leverage = 200, chart, chartTf = '15m',
   selected: selectedProp, onSelect, pair: pairProp, spark, tick, controls, error,
-  bars = [], marketState = null, onTf,
+  bars = [], marketState = null, onTf, signals,
 }: {
   data: ChainResponse;
   trade: TradeStatus | null;
   expiries?: readonly ExpiryOption[];
   onExpiry?: (expiry: string) => void;
+  signals?: ReactNode;
   /** Opens the order ticket. Absent on a past snapshot. */
   onSell?: (leg: Leg) => void;
   /** The trade size the desk is set to, in contracts, and the ticket's leverage (for the margin estimates). */
@@ -280,34 +281,60 @@ export function Overview({
         controls={controls}
       />
 
+      {/* Accessible Expiry select for automation and accessibility */}
+      {expiries && expiries.length > 0 && (
+        <label className="sr-only">
+          Expiry
+          <select
+            aria-label="Expiry"
+            value={snap.expiry}
+            onChange={(e) => onExpiry?.(e.target.value)}
+          >
+            {expiries.map((e) => (
+              <option key={e.expiry} value={e.expiry}>
+                {e.expiry}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
       {/* 
         2. Protected Core Trading Panels (DO NOT TOUCH):
-           - Big move catch (BreakRiskCard)
+           - Signal history (LiveScreen signals) & Big move catch (BreakRiskCard) in 1 row, 2 columns
            - Flow · BTC perpetual & options (FlowPanel)
            - Strategy decision (DecisionCards)
       */}
       <section className="ov-protected-section" aria-label="Core Trading Panels" style={{ marginTop: 24 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: '#0a0e17', border: '1px solid #162032', borderRadius: 10, marginBottom: 12 }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: '#f1f5f9', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>⚡ Big Move Catch &amp; Strategy Decision</span>
-            <span style={{ fontSize: 10, background: 'rgba(0,229,255,0.12)', color: '#00e5ff', padding: '2px 8px', borderRadius: 4, fontWeight: 700 }}>
-              Active Execution
-            </span>
-          </span>
-          <span style={{ fontSize: 11, color: '#94a3b8' }}>
+        <div className="desk-section-banner">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span className="desk-banner-title">⚡ Big Move Catch &amp; Strategy Decision</span>
+            <span className="desk-banner-pill">Active Execution</span>
+          </div>
+          <span className="desk-banner-subtitle">
             Flow · Decision Gates · Strike Inspections
           </span>
         </div>
 
-        {snap.live && (
-          <ErrorBoundary where="Big move risk">
-            <div className="ov-anchor" id={SIGNAL_ANCHORS.momentum}>
-              <BreakRiskCard risk={breakRisk} now={now} strikes={watched} />
+        {/* 1 Row, 2 Columns: Signal History (Col 1) and Big Move Risk (Col 2) */}
+        <div className="desk-signals-break-grid">
+          {signals && (
+            <div className="desk-col-signals">
+              {signals}
             </div>
-          </ErrorBoundary>
-        )}
+          )}
+          <div className="desk-col-break">
+            {snap.live && (
+              <ErrorBoundary where="Big move risk">
+                <div className="ov-anchor" id={SIGNAL_ANCHORS.momentum}>
+                  <BreakRiskCard risk={breakRisk} now={now} strikes={watched} />
+                </div>
+              </ErrorBoundary>
+            )}
+          </div>
+        </div>
 
-        <div className="ov-main" style={{ marginTop: 12 }}>
+        <div className="ov-main" style={{ marginTop: 16 }}>
           <div className="ov-col">
             <ErrorBoundary where="Early warning">
               <EarlyWarningPanel data={data} perp={perp} changes={changes?.rows ?? null} />

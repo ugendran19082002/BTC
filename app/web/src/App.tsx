@@ -731,60 +731,24 @@ export default function App() {
                     />
                   </ErrorBoundary>
                 )}
+                signals={
+                  <LiveScreen
+                    expiry={snap.expiry}
+                    onlySignals={true}
+                    journal={{
+                      rows: stateHistory?.rows ?? NO_ROWS,
+                      rate: stateHistory?.hitRate,
+                      measured: stateHistory?.measured,
+                      checked: stateHistory?.checked,
+                      total: stateHistory?.total,
+                      tf: stateTf,
+                      range: journalRange,
+                      onRange: setJournalRange,
+                    }}
+                  />
+                }
               />
             </ErrorBoundary>
-          )}
-
-          {/*
-            The measured read, on the Live screen with the signal history rather
-            than on a tab of its own (27 Sep 2026).
-            
-            It was a second tab for half a day, which put "what the signal says
-            now" one click away from "what it said before and how those turned
-            out" -- two halves of one question on two screens. They are the same
-            question, so they are in the same place, directly under the card that
-            holds the history list. The weighted 12H-1M ladder, the momentum call
-            with its stop and target and what that shape has actually paid, and
-            the measured band to settlement. See docs/LIVE-SCREEN.md.
-          */}
-          {snap && (
-            <section className="live-signals" aria-label="Signals">
-              <div className="desk-section-header">
-                <div className="desk-section-title-wrap">
-                  <div className="desk-section-icon" style={{ background: 'rgba(0, 229, 255, 0.12)', color: '#00e5ff' }}>
-                    <Activity size={18} />
-                  </div>
-                  <div>
-                    <h2 className="desk-section-title">Signals &amp; Momentum Journal</h2>
-                    <span className="desk-section-subtitle">Real-Time State Transitions · Measured Outcomes · Timeframe Alignment</span>
-                  </div>
-                </div>
-                <div className="desk-section-badges">
-                  <span className="desk-badge-pill" style={{ background: 'rgba(0, 230, 118, 0.12)', color: '#00e676', border: '1px solid rgba(0, 230, 118, 0.3)' }}>
-                    ● LIVE VERIFIED
-                  </span>
-                  <span className="desk-badge-pill" style={{ background: 'rgba(255, 255, 255, 0.05)', color: '#94a3b8', border: '1px solid #1e293b' }}>
-                    5m Horizon
-                  </span>
-                </div>
-              </div>
-              <ErrorBoundary where="Signals">
-                <LiveScreen
-                  expiry={snap.expiry}
-                  onlySignals={true}
-                  journal={{
-                    rows: stateHistory?.rows ?? NO_ROWS,
-                    rate: stateHistory?.hitRate,
-                    measured: stateHistory?.measured,
-                    checked: stateHistory?.checked,
-                    total: stateHistory?.total,
-                    tf: stateTf,
-                    range: journalRange,
-                    onRange: setJournalRange,
-                  }}
-                />
-              </ErrorBoundary>
-            </section>
           )}
 
           {/*

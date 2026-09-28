@@ -35,7 +35,7 @@ export function DeskStatsBar({
         <span className="desk-stat-lbl">BTC Spot</span>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
           <span className="desk-stat-main" style={{ color: '#00e676' }}>
-            {spot.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+            {Math.round(spot).toLocaleString('en-US')}
           </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
