@@ -3,7 +3,7 @@ import { runSmc } from '@/lib/smc/engine';
 import { walk } from '@/test/bars';
 import { buildScene, DEFAULT_LAYERS, htfScene, LAYERS, type Layer, type SceneItem } from './scene';
 
-const bars = walk(3 * 288, 11);
+const bars = walk(3 * 288, 18);
 const st = runSmc(bars, { tfSec: 300 });
 const all = new Set<Layer>(LAYERS.map((l) => l.key));
 const xsOf = (it: SceneItem) => (it.t === 'mark' || it.t === 'vline' ? [it.x] : it.t === 'path' ? it.points.map((p) => p[0]) : [it.x1, ...(typeof it.x2 === 'number' ? [it.x2] : [])]);
@@ -55,12 +55,13 @@ describe('the scene', () => {
     const past = bars.slice(0, k + 1);
     const scene = buildScene(runSmc(past, { tfSec: 300 }), past, new Set<Layer>(['trade']));
     const labels = scene.flatMap((it) => (it.t === 'line' && it.label ? [it.label] : []));
-    expect(labels.some((l) => /^(LONG|SHORT) (limit|entry) /.test(l))).toBe(true);
-    expect(labels.some((l) => /^SL .*−1R$/.test(l))).toBe(true);
+    expect(labels.some((l) => /^(LONG|SHORT) (plan|entry) /.test(l))).toBe(true);
+    expect(labels.some((l) => /^SL [\d,]+ · risk [\d,]+ pts$/.test(l))).toBe(true);
     expect(labels.filter((l) => /^TP[123] /.test(l))).toHaveLength(3);
     // One box: the reward and the risk halves share their left and right edges and meet at the entry.
-    const boxes = scene.filter((it) => it.t === 'box');
+    const boxes = scene.filter((it) => it.t === 'box' && !it.label);
     expect(boxes).toHaveLength(2);
+    expect(scene.some((it) => it.t === 'box' && it.label?.startsWith('Entry zone'))).toBe(true);
     const [a, b] = boxes as Extract<SceneItem, { t: 'box' }>[];
     expect([a!.x1, a!.x2]).toEqual([b!.x1, b!.x2]);
     const entry = (scene.find((it) => it.t === 'line' && /^(LONG|SHORT)/.test(it.label ?? '')) as Extract<SceneItem, { t: 'line' }>).y;

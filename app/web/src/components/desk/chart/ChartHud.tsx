@@ -44,12 +44,15 @@ export const ChartHud = forwardRef<HTMLDivElement, {
 
           {read.plan && (
             <div className="pc-hud-plan" aria-label="Trade plan">
-              <span><i>Entry</i> {fmt(read.plan.entry)}{read.plan.filled ? ' ✓' : ''}</span>
-              <span className="sl"><i>{read.plan.breakEven ? 'SL → BE' : 'SL'}</i> {fmt(read.plan.breakEven ? read.plan.entry : read.plan.stop)}</span>
+              <span><i>{read.plan.filled ? 'Entry' : 'Plan'}</i> {fmt(read.plan.entry)}{read.plan.filled ? ' ✓' : ''}</span>
+              <span className="sl" title={read.plan.stopNote ?? 'Beyond the sweep and the zone, plus a volatility buffer'}>
+                <i>SL</i> {fmt(read.plan.stop)}{read.plan.stopNote ? <small> · moved</small> : <small> · risk {fmt(read.plan.risk)} pts</small>}
+              </span>
               {read.plan.targets.map((t, k) => (
-                <span key={k} className="tp"><i>TP{k + 1}</i> {fmt(t.price)} <small>{r1(t.rr)}{t.source === 'R-multiple' ? '' : ` · ${t.label}`}</small></span>
+                <span key={k} className="tp" title={t.reason}>
+                  <i>TP{k + 1}</i> {fmt(t.price)} <small>{r1(t.rNow)} · {t.reason}</small>
+                </span>
               ))}
-              <span className="risk"><i>1R</i> {fmt(read.plan.risk)} pts</span>
             </div>
           )}
 

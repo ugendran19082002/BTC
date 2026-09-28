@@ -4,7 +4,7 @@ import { readout } from './readout';
 import type { TfRead } from './context';
 import { walk } from '@/test/bars';
 
-const bars = walk(3 * 288, 11);
+const bars = walk(3 * 288, 18);
 const full = runSmc(bars, { tfSec: 300 });
 
 /** The chart as it was at a candle where a setup was READY and not yet filled. */

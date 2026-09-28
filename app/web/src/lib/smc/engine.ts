@@ -41,8 +41,12 @@ const monthOf = (t: number) => { const d = new Date(t * 1000); return d.getUTCFu
 const FORMING_BARS = 24;
 const READY_BARS = 30;
 const ACTIVE_BARS = 96;
-/** The share of the position closed at each of the three targets. */
-export const SCALE_OUT = 1 / 3;
+/** The share of the position closed at TP1, TP2 and TP3. */
+export const SCALE_OUT = [0.3, 0.3, 0.4] as const;
+/** The least the nearest target may pay for the risk: below this there is no trade. */
+export const MIN_TP1_R = 1.5;
+/** The stop's buffer beyond structure: a fraction of the ATR, never less than a point. */
+const stopBuffer = (atr: number) => Math.max(1, 0.15 * atr);
 
 type Extreme = { high: number; low: number; highAt: number; lowAt: number };
 
@@ -416,17 +420,29 @@ export class SmcEngine {
   // ---------------------------------------------------------------- setups
 
   /**
-   * The sequence the setup follows, long side (short mirrors it):
+   * The sequence a setup has to complete, long side (short mirrors it). No
+   * single event is an entry -- not the sweep, not the break, not the zone:
    *
-   *   sell-side liquidity swept → bullish CHoCH / BOS → POI (the break's OB,
-   *   else a bullish FVG since the sweep) → retest fills at the POI's top →
-   *   stop under the sweep and the POI, plus a tenth of an ATR → targets at the
-   *   buy-side liquidity already on the chart, R multiples only where there is
-   *   none.
+   *   1. sell-side liquidity swept                      FORMING
+   *   2. bullish CHoCH / BOS
+   *   3. displacement in that move -- a displacement     (else keep waiting)
+   *      candle, or the FVG such a move leaves
+   *   4. an OB or FVG left by the move                   READY: plan fixed
+   *   5. price comes back into it (the retest)
+   *   6. a candle closes back above it, bullish          ACTIVE at that close
    *
-   * The plan is fixed when the setup turns READY. Every target is at least 1R.
-   * A third of the position comes off at each target; after TP1 the stop moves
-   * to break-even, and that move is an event like any other.
+   * The plan, fixed at READY and never moved:
+   *   stop    beyond the POI's distal edge (the level whose loss says the
+   *           zone failed), plus max(1, 0.15 ATR); wider than 4 ATR is no trade.
+   *   TP1     the nearest internal liquidity (swing, EQH / EQL, session high / low)
+   *   TP2     the next external liquidity (previous day / week / month)
+   *   TP3     the opposing OB, or the next level out
+   *   filter  TP1 must pay at least 1.5R, from the plan and again at the fill.
+   *
+   * In the trade: 30% off at TP1, 30% at TP2, 40% at TP3. The stop goes to
+   * break-even only after TP1 *and* a new higher low (lower high) confirms;
+   * after TP2 it trails under each confirmed swing. It only ever tightens,
+   * and every move is recorded in `trail`.
    */
   private onSweep(pool: Pool, i: number) {
     const dir: Dir = pool.side === 'sell' ? 'bull' : 'bear';
@@ -434,76 +450,115 @@ export class SmcEngine {
     if (slot && slot.state !== 'FORMING') return; // a plan already made is not replaced by a newer sweep
     if (slot) this.finish(slot, 'INVALIDATED', i, null, 'superseded by a newer sweep');
     const bar = this.b[i]!;
+    const bull = dir === 'bull';
     const s: Setup = {
-      id: `${dir === 'bull' ? 'L' : 'S'}-${bar.time}`,
+      id: `${bull ? 'L' : 'S'}-${bar.time}`,
       dir,
       createdAt: i,
       state: 'FORMING',
       confirmations: [
-        { name: `${dir === 'bull' ? 'Sell' : 'Buy'}-side liquidity swept (${pool.kind})`, ok: true, at: i },
-        { name: `${dir === 'bull' ? 'Bullish' : 'Bearish'} CHoCH / BOS`, ok: false, at: null },
-        { name: 'POI: order block or FVG', ok: false, at: null },
-        { name: 'Retest of the POI', ok: false, at: null },
+        { name: `${bull ? 'SSL' : 'BSL'} swept (${pool.kind})`, ok: true, at: i },
+        { name: `${bull ? 'Bullish' : 'Bearish'} CHoCH / BOS`, ok: false, at: null },
+        { name: 'Displacement', ok: false, at: null },
+        { name: 'OB / FVG from the move', ok: false, at: null },
+        { name: 'Retest', ok: false, at: null },
+        { name: 'Close confirms', ok: false, at: null },
       ],
-      poi: null, entry: null, stop: null, targets: [], risk: null, htf: null,
-      events: [{ state: 'FORMING', at: i, known: i, price: dir === 'bull' ? bar.low : bar.high, note: `${pool.kind} ${Math.round(pool.price)} swept` }],
-      mfeR: null, maeR: null, resultR: null, closedAt: null,
+      poi: null, entry: null, stop: null, targets: [], risk: null, fill: null, htf: null,
+      events: [{ state: 'FORMING', at: i, known: i, price: bull ? bar.low : bar.high, note: `${pool.kind} ${Math.round(pool.price)} swept` }],
+      trail: [], mfeR: null, maeR: null, resultR: null, closedAt: null,
     };
     this.setups.push(s);
-    if (dir === 'bull') this.long = s; else this.short = s;
+    if (bull) this.long = s; else this.short = s;
   }
 
   private onStructure(brk: StructureBreak, ob: Zone | null, i: number) {
     const s = brk.dir === 'bull' ? this.long : this.short;
     if (!s || s.state !== 'FORMING' || s.createdAt >= i) return;
-    s.confirmations[1] = { ...s.confirmations[1]!, ok: true, at: i };
+    const ok = (k: number) => { s.confirmations[k] = { ...s.confirmations[k]!, ok: true, at: i }; };
+    ok(1);
+    /*
+     * The move must have been made with intent. Displacement is a move strong
+     * enough to leave an imbalance: a displacement candle, or the fair value
+     * gap such a move leaves, between the sweep and the break.
+     */
+    const disp = this.tags.some((t) => t.name === 'Displacement' && t.dir === brk.dir && t.at > s.createdAt && t.at <= i)
+      || this.zones.some((z) => z.kind === 'FVG' && z.dir === brk.dir && z.known > s.createdAt && z.known <= i);
+    if (!disp) return; // a break without displacement is not enough; a later break may still qualify
+    ok(2);
     const fvg = [...this.liveZones.values()].map((l) => l.zone).reverse()
       .find((z) => z.kind === 'FVG' && z.dir === brk.dir && z.known > s.createdAt && z.known <= i);
     const poi = ob ?? fvg ?? null;
-    if (!poi) { this.finish(s, 'INVALIDATED', i, null, `${brk.kind} with no OB or FVG to enter from`); return; }
-    s.confirmations[2] = { ...s.confirmations[2]!, ok: true, at: i };
+    if (!poi) { this.finish(s, 'INVALIDATED', i, null, `${brk.kind} left no OB or FVG to enter from`); return; }
+    ok(3);
 
     const bull = brk.dir === 'bull';
-    const sweepPrice = s.events[0]!.price!;
     const atr = this.atrs[i] ?? 0;
     const entry = bull ? poi.high : poi.low;
-    const stop = bull ? Math.min(sweepPrice, poi.low) - 0.1 * atr : Math.max(sweepPrice, poi.high) + 0.1 * atr;
+    // The stop: beyond the POI's distal edge -- the level whose loss says the zone failed -- plus the buffer.
+    const stop = bull ? poi.low - stopBuffer(atr) : poi.high + stopBuffer(atr);
     const risk = bull ? entry - stop : stop - entry;
     if (!(risk > 0) || risk > 4 * atr) { this.finish(s, 'INVALIDATED', i, null, 'stop wider than four ATR'); return; }
+    const targets = this.targetsFor(brk.dir, entry, risk, i);
+    if (!targets) { this.finish(s, 'INVALIDATED', i, null, 'no liquidity to aim at'); return; }
+    if (targets[0]!.rr < MIN_TP1_R) {
+      this.finish(s, 'INVALIDATED', i, null, `TP1 ${targets[0]!.label} pays ${targets[0]!.rr.toFixed(1)}R, under ${MIN_TP1_R}R`);
+      return;
+    }
 
     s.poi = poi;
     s.entry = entry;
     s.stop = stop;
     s.risk = risk;
-    s.targets = this.targetsFor(brk.dir, entry, risk, i);
-    const htf = this.o.htfTrendAt?.(this.b[i]!.time + this.o.tfSec) ?? null;
-    s.htf = htf;
+    s.targets = targets;
+    s.htf = this.o.htfTrendAt?.(this.b[i]!.time + this.o.tfSec) ?? null;
     s.state = 'READY';
-    s.events.push({ state: 'READY', at: i, known: i, price: entry, note: `${brk.kind} ${Math.round(brk.level)}; POI ${poi.kind} ${Math.round(poi.low)}–${Math.round(poi.high)}` });
+    s.events.push({ state: 'READY', at: i, known: i, price: entry, note: `${brk.mss ? 'MSS' : brk.kind} ${Math.round(brk.level)}; POI ${poi.kind} ${Math.round(poi.low)}–${Math.round(poi.high)}` });
   }
 
-  /** Liquidity already on the chart beyond the entry, nearest first; R multiples fill in only where there is none. */
-  private targetsFor(dir: Dir, entry: number, risk: number, i: number): Target[] {
+  /**
+   * TP1 the nearest internal liquidity, TP2 the next external level, TP3 the
+   * opposing zone -- each with the reason it is there. A tier with nothing in
+   * it borrows from the next; R multiples only when the chart has no level
+   * left. Null when there is no liquidity at all for TP1: a target needs a
+   * reason.
+   */
+  private targetsFor(dir: Dir, entry: number, risk: number, i: number): Target[] | null {
     const bull = dir === 'bull';
     const atr = this.atrs[i] ?? 0;
-    // A target nearer than the stop is not worth the risk it asks for: every target is at least 1R.
-    const beyond = (p: number) => (bull ? p - entry : entry - p) >= risk;
-    const candidates: { price: number; label: string; source: Target['source'] }[] = [];
+    const dist = (p: number) => (bull ? p - entry : entry - p);
+    const INTERNAL: readonly Pool['kind'][] = ['BSL', 'SSL', 'EQH', 'EQL', 'ASH', 'ASL', 'LSH', 'LSL'];
+    const REASON: Record<string, string> = {
+      BSL: 'swing high liquidity', SSL: 'swing low liquidity', EQH: 'equal highs', EQL: 'equal lows',
+      ASH: 'Asia high', ASL: 'Asia low', LSH: 'London high', LSL: 'London low',
+      PDH: 'previous day high', PDL: 'previous day low', PWH: 'previous week high', PWL: 'previous week low',
+      PMH: 'previous month high', PML: 'previous month low',
+    };
+    type C = { price: number; label: string; source: Target['source']; reason: string };
+    const pools: C[] = [];
     for (const p of this.livePools.values()) {
-      if (p.known > i || p.side !== (bull ? 'buy' : 'sell') || !beyond(p.price)) continue;
-      const level = !['BSL', 'SSL', 'EQH', 'EQL'].includes(p.kind);
-      candidates.push({ price: p.price, label: p.kind, source: level ? 'level' : 'liquidity' });
+      if (p.known > i || p.side !== (bull ? 'buy' : 'sell') || dist(p.price) <= 0) continue;
+      const internal = INTERNAL.includes(p.kind);
+      pools.push({ price: p.price, label: p.kind, source: internal ? 'internal' : 'external', reason: REASON[p.kind] ?? p.kind });
     }
-    candidates.sort((a, b) => (bull ? a.price - b.price : b.price - a.price));
+    // The opposing zone: a supply OB above a long (demand below a short), aimed at its near edge.
+    for (const { zone: z } of this.liveZones.values()) {
+      if (z.kind !== 'OB' || z.known > i || z.dir === dir) continue;
+      const near = bull ? z.low : z.high;
+      if (dist(near) > 0) pools.push({ price: near, label: bull ? 'Supply OB' : 'Demand OB', source: 'zone', reason: bull ? 'opposing supply' : 'opposing demand' });
+    }
+    const nearest = (xs: C[], beyond: number) => xs.filter((c) => dist(c.price) > beyond + 0.2 * atr).sort((a, b) => dist(a.price) - dist(b.price))[0] ?? null;
+    const of = (src: Target['source']) => pools.filter((c) => c.source === src);
+
+    const tp1 = nearest(of('internal'), 0) ?? nearest(pools, 0);
+    if (!tp1) return null;
+    const tp2 = nearest(of('external'), dist(tp1.price)) ?? nearest(pools, dist(tp1.price));
+    const tp3 = tp2 ? nearest(of('zone'), dist(tp2.price)) ?? nearest(pools, dist(tp2.price)) : null;
     const out: Target[] = [];
-    for (const c of candidates) {
-      if (out.some((t) => Math.abs(t.price - c.price) <= 0.2 * atr)) continue;
-      out.push({ ...c, rr: Math.abs(c.price - entry) / risk });
-      if (out.length === 3) break;
-    }
-    let r = Math.max(2, Math.ceil(out[out.length - 1]?.rr ?? 1) + 1);
+    for (const c of [tp1, tp2, tp3]) if (c) out.push({ ...c, rr: dist(c.price) / risk });
+    let r = Math.max(out.length + 1, Math.ceil(out[out.length - 1]!.rr) + 1);
     while (out.length < 3) {
-      out.push({ price: bull ? entry + r * risk : entry - r * risk, label: `${r}R`, source: 'R-multiple', rr: r });
+      out.push({ price: bull ? entry + r * risk : entry - r * risk, label: `${r}R`, source: 'R-multiple', rr: r, reason: 'no level beyond; R extension' });
       r += 1;
     }
     return out;
@@ -516,84 +571,108 @@ export class SmcEngine {
   private advance(s: Setup, i: number) {
     const bar = this.b[i]!;
     const bull = s.dir === 'bull';
-    const since = (state: SetupState) => i - (s.events.find((e) => e.state === state)?.at ?? i);
+    const beyond = (a: number, b: number) => (bull ? a > b : a < b); // a is further in the trade's favour than b
+    const ok = (k: number) => { s.confirmations[k] = { ...s.confirmations[k]!, ok: true, at: i }; };
 
     if (s.state === 'FORMING') {
       const sweepPrice = s.events[0]!.price!;
-      if (s.createdAt < i && (bull ? bar.close < sweepPrice : bar.close > sweepPrice)) this.finish(s, 'INVALIDATED', i, bar.close, 'closed beyond the sweep');
-      else if (since('FORMING') > FORMING_BARS) this.finish(s, 'EXPIRED', i, null, 'no structure shift');
+      if (s.createdAt < i && beyond(sweepPrice, bar.close)) this.finish(s, 'INVALIDATED', i, bar.close, 'closed beyond the sweep');
+      else if (i - s.createdAt > FORMING_BARS) this.finish(s, 'EXPIRED', i, null, 'no displaced structure shift');
       return;
     }
 
     if (s.state === 'READY') {
       const readyAt = s.events.find((e) => e.state === 'READY')!.at;
       if (readyAt >= i) return;
-      const entry = s.entry!;
-      const filled = bull ? bar.low <= entry : bar.high >= entry;
-      if (!filled) {
-        const tp1 = s.targets[0]!.price;
-        if (bull ? bar.high >= tp1 : bar.low <= tp1) this.finish(s, 'EXPIRED', i, null, 'ran to TP1 without a retest');
-        else if (i - readyAt > READY_BARS) this.finish(s, 'EXPIRED', i, null, 'no retest');
+      const poi = s.poi!;
+      const stop = s.stop!;
+      if (beyond(stop, bar.close)) { this.finish(s, 'INVALIDATED', i, bar.close, 'closed through the stop before entry'); return; }
+      const touched = s.confirmations[4]!.ok;
+      if (!touched) {
+        const into = bull ? bar.low <= poi.high : bar.high >= poi.low;
+        if (!into) {
+          const tp1 = s.targets[0]!.price;
+          if (bull ? bar.high >= tp1 : bar.low <= tp1) this.finish(s, 'EXPIRED', i, null, 'ran to TP1 without a retest');
+          else if (i - readyAt > READY_BARS) this.finish(s, 'EXPIRED', i, null, 'no retest');
+          return;
+        }
+        ok(4);
+      }
+      // The trigger: a candle that closes back out of the zone in the trade's direction.
+      const confirms = bull ? bar.close > poi.high && bar.close > bar.open : bar.close < poi.low && bar.close < bar.open;
+      if (!confirms) {
+        if (i - readyAt > READY_BARS) this.finish(s, 'EXPIRED', i, null, 'retest never closed back out');
         return;
       }
-      s.confirmations[3] = { ...s.confirmations[3]!, ok: true, at: i };
+      const risk = bull ? bar.close - stop : stop - bar.close;
+      const rr1 = (bull ? s.targets[0]!.price - bar.close : bar.close - s.targets[0]!.price) / risk;
+      if (!(risk > 0) || rr1 < MIN_TP1_R) {
+        this.finish(s, 'INVALIDATED', i, bar.close, `confirmed too far from the zone: TP1 ${rr1.toFixed(1)}R at the close`);
+        return;
+      }
+      ok(5);
+      s.fill = { at: i, price: bar.close, risk };
       s.state = 'ACTIVE';
-      s.events.push({ state: 'ACTIVE', at: i, known: i, price: entry, note: 'filled at the POI' });
+      s.events.push({ state: 'ACTIVE', at: i, known: i, price: bar.close, note: 'entered at the close that confirmed the retest' });
       s.mfeR = 0;
       s.maeR = 0;
+      return; // the fill candle is over: nothing in it happened after the entry
     }
-    /*
-     * A candle does not say whether its high came before or after the fill,
-     * so on the fill candle nothing favourable is counted: the excursion is
-     * taken at the close and no target is awarded. The stop still is -- the
-     * same ignorance, resolved against the trade.
-     */
-    const justFilled = s.state === 'ACTIVE' && s.events[s.events.length - 1]!.at === i;
 
-    // In the trade: the stop is checked before the targets inside one candle,
-    // the assumption that cannot flatter the record.
-    const entry = s.entry!;
-    const risk = s.risk!;
-    const best = justFilled ? bar.close : bull ? bar.high : bar.low;
-    s.mfeR = Math.max(s.mfeR ?? 0, (bull ? best - entry : entry - best) / risk);
-    s.maeR = Math.max(s.maeR ?? 0, (bull ? entry - bar.low : bar.high - entry) / risk);
-    const pastTp1 = s.state === 'TP1' || s.state === 'TP2';
-    const stop = pastTp1 ? entry : s.stop!;
-    if (bull ? bar.low <= stop : bar.high >= stop) {
-      this.finish(s, pastTp1 ? 'BREAKEVEN' : 'STOPPED', i, stop, pastTp1 ? 'stopped at break-even' : 'stop hit');
+    // In the trade. The stop in force is checked before the targets inside one
+    // candle, the assumption that cannot flatter the record.
+    const fill = s.fill!;
+    const rOf = (p: number) => (bull ? p - fill.price : fill.price - p) / fill.risk;
+    s.mfeR = Math.max(s.mfeR ?? 0, rOf(bull ? bar.high : bar.low));
+    s.maeR = Math.max(s.maeR ?? 0, -rOf(bull ? bar.low : bar.high));
+    const stopNow = s.trail[s.trail.length - 1]?.price ?? s.stop!;
+    if (bull ? bar.low <= stopNow : bar.high >= stopNow) {
+      const anyTp = s.state === 'TP1' || s.state === 'TP2';
+      this.finish(s, anyTp ? 'PROTECTED' : 'STOPPED', i, stopNow, anyTp ? 'stopped at the protected stop' : 'stop hit');
       return;
     }
-    if (justFilled) return;
     const order: SetupState[] = ['TP1', 'TP2', 'TP3'];
-    const reached = order.indexOf(s.state as 'TP1');
-    for (let k = reached + 1; k < 3; k++) {
+    for (let k = order.indexOf(s.state as 'TP1') + 1; k < 3; k++) {
       const t = s.targets[k]!;
       if (!(bull ? bar.high >= t.price : bar.low <= t.price)) break;
       if (k === 2) { this.finish(s, 'TP3', i, t.price, `${t.label} reached`); return; }
       s.state = order[k]!;
-      s.events.push({ state: s.state, at: i, known: i, price: t.price, note: k === 0 ? `${t.label} reached; stop to break-even` : `${t.label} reached` });
+      s.events.push({ state: s.state, at: i, known: i, price: t.price, note: `${t.label} reached; ${Math.round(SCALE_OUT[k]! * 100)}% off` });
+      if (k === 1) {
+        // TP2: trail behind the last confirmed swing, if that tightens the stop.
+        const sw = bull ? this.lastLow : this.lastHigh;
+        if (sw && sw.at > fill.at) this.tighten(s, bull ? sw.price - stopBuffer(this.atrs[i] ?? 0) : sw.price + stopBuffer(this.atrs[i] ?? 0), i, `trail behind ${sw.label ?? 'swing'} ${Math.round(sw.price)} after TP2`);
+      }
     }
-    if (since('ACTIVE') > ACTIVE_BARS) this.finish(s, 'EXPIRED', i, bar.close, 'time exit');
+
+    // A swing confirmed on this candle, in the trade's favour: the protected stop moves.
+    const sw = bull ? this.lastLow : this.lastHigh;
+    if (sw && sw.known === i && sw.at > fill.at && beyond(sw.price, fill.price)) {
+      if (s.state === 'TP1') this.tighten(s, fill.price, i, `break-even: ${sw.label ?? 'swing'} ${Math.round(sw.price)} confirmed after TP1`);
+      else if (s.state === 'TP2') this.tighten(s, bull ? sw.price - stopBuffer(this.atrs[i] ?? 0) : sw.price + stopBuffer(this.atrs[i] ?? 0), i, `trail behind ${sw.label ?? 'swing'} ${Math.round(sw.price)}`);
+    }
+    if (i - fill.at > ACTIVE_BARS) this.finish(s, 'EXPIRED', i, bar.close, 'time exit');
+  }
+
+  /** Move the stop, only ever towards the trade. */
+  private tighten(s: Setup, price: number, i: number, note: string) {
+    const bull = s.dir === 'bull';
+    const now = s.trail[s.trail.length - 1]?.price ?? s.stop!;
+    if (bull ? price <= now : price >= now) return;
+    s.trail.push({ at: i, known: i, price, note });
   }
 
   private finish(s: Setup, state: SetupState, i: number, price: number | null, note: string) {
     s.state = state;
     s.closedAt = i;
     s.events.push({ state, at: i, known: i, price, note });
-    if (s.entry !== null && s.risk && s.events.some((e) => e.state === 'ACTIVE')) {
-      /*
-       * A third off at each target, the rest on until the next one or the
-       * stop -- which is at break-even from TP1 on. So TP1 then back to entry
-       * banks a third of TP1's R, not nothing, and a stop before TP1 is -1R.
-       */
-      const hit = s.targets.filter((_, k) => s.events.some((e) => e.state === `TP${k + 1}`) || (k === 2 && state === 'TP3'));
-      const banked = hit.reduce((sum, t) => sum + t.rr * SCALE_OUT, 0);
-      const left = 1 - hit.length * SCALE_OUT;
-      const exitR = price === null ? 0 : (s.dir === 'bull' ? price - s.entry : s.entry - price) / s.risk;
-      if (state === 'STOPPED') s.resultR = -1;
-      else if (state === 'BREAKEVEN') s.resultR = banked;
-      else if (state === 'TP3') s.resultR = banked;
-      else if (state === 'EXPIRED') s.resultR = banked + left * exitR;
+    const fill = s.fill;
+    if (fill) {
+      const rOf = (p: number) => (s.dir === 'bull' ? p - fill.price : fill.price - p) / fill.risk;
+      const hits = s.events.filter((e) => e.state === 'TP1' || e.state === 'TP2' || e.state === 'TP3').length;
+      const banked = s.targets.slice(0, hits).reduce((sum, t, k) => sum + SCALE_OUT[k]! * rOf(t.price), 0);
+      const left = 1 - SCALE_OUT.slice(0, hits).reduce((a, b) => a + b, 0);
+      s.resultR = banked + (left > 1e-9 && price !== null ? left * rOf(price) : 0);
     }
     if (this.long === s) this.long = null;
     if (this.short === s) this.short = null;

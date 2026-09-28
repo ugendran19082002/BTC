@@ -256,8 +256,8 @@ function vwap(st: SmcState, bars: readonly Bar[], out: SceneItem[]) {
  * The trade, drawn the way a position tool draws it: one bounded box from the
  * entry candle, green from the entry to the last target and red from the entry
  * to the stop, with the entry, stop and targets as lines across that box only
- * and their prices at its right edge. The two halves share the entry line, so
- * risk and reward read as one thing.
+ * and their prices, R and reasons at its right edge. The two halves share the
+ * entry line, so risk and reward read as one thing.
  */
 function trade(st: SmcState, n: number, out: SceneItem[], blocked: readonly string[]) {
   const long = (s: Setup) => s.dir === 'bull';
@@ -265,61 +265,69 @@ function trade(st: SmcState, n: number, out: SceneItem[], blocked: readonly stri
   const endOf = (x1: number) => Math.max(n - 1 + 14, x1 + 24);
 
   for (const s of st.setups) {
-    const fill = s.events.find((e) => e.state === 'ACTIVE');
-    if (!fill || s.closedAt === null || s.closedAt < n - 150) continue;
+    if (!s.fill || s.closedAt === null || s.closedAt < n - 150) continue;
     // A finished trade is drawn as what happened: entry to exit, green or red.
-    const x1 = fill.at;
+    const x1 = s.fill.at;
     const x2 = Math.max(s.closedAt, x1 + 2);
     const bull = long(s);
-    const exit = s.events[s.events.length - 1]!.price ?? s.entry!;
+    const exit = s.events[s.events.length - 1]!.price ?? s.fill.price;
     const r = s.resultR;
-    const won = r !== null && r > 0;
+    const won = r !== null && r > 0.05;
+    const flat = r !== null && Math.abs(r) <= 0.05;
     out.push({
-      t: 'box', layer: 'trade', x1, x2, y1: Math.min(s.entry!, exit), y2: Math.max(s.entry!, exit) + (exit === s.entry ? 1 : 0),
-      fill: won ? 'rgba(38,161,123,0.12)' : r === 0 ? 'rgba(148,163,184,0.10)' : 'rgba(226,80,79,0.12)', stroke: won ? C.bull : r === 0 ? C.muted : C.bear, priority: 8,
+      t: 'box', layer: 'trade', x1, x2, y1: Math.min(s.fill.price, exit), y2: Math.max(s.fill.price, exit) + (exit === s.fill.price ? 1 : 0),
+      fill: won ? 'rgba(38,161,123,0.12)' : flat ? 'rgba(148,163,184,0.10)' : 'rgba(226,80,79,0.12)', stroke: won ? C.bull : flat ? C.muted : C.bear, priority: 8,
     });
-    out.push({ t: 'line', layer: 'trade', x1, x2, y: s.entry!, color: C.muted, width: 1, priority: 7 });
-    const word = s.state === 'TP3' ? 'TP3' : s.state === 'STOPPED' ? 'SL' : s.state === 'BREAKEVEN' ? 'BE' : 'Exit';
+    out.push({ t: 'line', layer: 'trade', x1, x2, y: s.fill.price, color: C.muted, width: 1, priority: 7 });
+    const word = s.state === 'TP3' ? 'TP3' : s.state === 'STOPPED' ? 'SL' : s.state === 'PROTECTED' ? (s.events.some((e) => e.state === 'TP2') ? 'TP2 · trail' : 'TP1 · BE') : 'Exit';
     out.push({
-      t: 'mark', layer: 'trade', x: s.closedAt, y: s.events[s.events.length - 1]!.price ?? s.entry!, color: r !== null && r > 0 ? C.bull : r === 0 ? C.muted : C.bear,
+      t: 'mark', layer: 'trade', x: s.closedAt, y: exit, color: won ? C.bull : flat ? C.muted : C.bear,
       side: bull ? 'above' : 'below', text: `${word} ${r === null ? '' : R(r)}`.trim(), priority: 75,
     });
-    out.push({ t: 'mark', layer: 'trade', x: x1, y: s.entry!, glyph: bull ? '▲' : '▼', color: bull ? C.bull : C.bear, side: bull ? 'below' : 'above', text: bull ? 'Long' : 'Short', priority: 74 });
+    out.push({ t: 'mark', layer: 'trade', x: x1, y: s.fill.price, glyph: bull ? '▲' : '▼', color: bull ? C.bull : C.bear, side: bull ? 'below' : 'above', text: bull ? 'Long' : 'Short', priority: 74 });
   }
 
   const live = [...st.setups].reverse().find((s) => s.closedAt === null && LIVE_SETUP.includes(s.state));
   if (!live) return;
   const ready = live.events.find((e) => e.state === 'READY')!.at;
-  const fill = live.events.find((e) => e.state === 'ACTIVE');
   const bull = long(live);
-  const entry = live.entry!;
-  const stop = live.stop!;
+  const fill = live.fill;
+  const entry = fill?.price ?? live.entry!;
+  const risk = fill?.risk ?? live.risk!;
+  const stopNow = live.trail[live.trail.length - 1]?.price ?? live.stop!;
   const tp3 = live.targets[2]!.price;
-  const pastTp1 = live.state === 'TP1' || live.state === 'TP2';
   const x1 = fill?.at ?? ready;
   const x2 = endOf(x1);
   const side = bull ? 'LONG' : 'SHORT';
-
+  const rOf = (p: number) => (bull ? p - entry : entry - p) / risk;
   // Against the 30M / 15M read the plan is still shown -- it is what the setup chart sees -- but faded and called what it is.
   const no = blocked.length > 0 && !fill;
-  out.push({ t: 'box', layer: 'trade', x1, x2, y1: Math.min(entry, tp3), y2: Math.max(entry, tp3), fill: no ? 'rgba(38,161,123,0.06)' : C.profit, stroke: C.bull, dash: no, priority: 9 });
-  out.push({ t: 'box', layer: 'trade', x1, x2, y1: Math.min(entry, stop), y2: Math.max(entry, stop), fill: no ? 'rgba(226,80,79,0.06)' : C.risk, stroke: C.bear, dash: no, priority: 9 });
+
+  out.push({ t: 'box', layer: 'trade', x1, x2, y1: Math.min(entry, tp3), y2: Math.max(entry, tp3), fill: no ? 'rgba(38,161,123,0.05)' : C.profit, stroke: C.bull, dash: no, priority: 9 });
+  out.push({ t: 'box', layer: 'trade', x1, x2, y1: Math.min(entry, live.stop!), y2: Math.max(entry, live.stop!), fill: no ? 'rgba(226,80,79,0.05)' : C.risk, stroke: C.bear, dash: no, priority: 9 });
+  if (!fill && live.poi) {
+    out.push({ t: 'box', layer: 'trade', x1: live.poi.at, x2, y1: live.poi.low, y2: live.poi.high, fill: 'rgba(229,231,235,0.06)', stroke: C.text, dash: true, label: `Entry zone · ${live.poi.dir === 'bull' ? 'Bull' : 'Bear'} ${live.poi.kind}`, labelColor: C.text, priority: 96 });
+  }
   // The spine: one line from the stop through the entry to the last target, at the box's left edge.
-  out.push({ t: 'vline', layer: 'trade', x: x1, y1: stop, y2: tp3, color: C.text, priority: 9 });
+  out.push({ t: 'vline', layer: 'trade', x: x1, y1: live.stop!, y2: tp3, color: C.text, priority: 9 });
   out.push({
     t: 'line', layer: 'trade', x1, x2, y: entry, color: C.text, width: 2,
-    label: `${no ? `NO TRADE (against ${blocked.join(', ')}) · ` : ''}${side} ${fill ? 'entry' : 'limit'} ${fmt(entry)} · 1R ${fmt(live.risk!)}`, labelAt: 'end', labelSide: bull ? 'below' : 'above', priority: 100,
+    label: `${no ? `NO TRADE (against ${blocked.join(', ')}) · ` : ''}${side} ${fill ? `entry ${fmt(entry)}` : `plan ${fmt(entry)} · waiting for a close back out`}`,
+    labelAt: 'end', labelSide: bull ? 'below' : 'above', priority: 100,
   });
+  const moved = live.trail.length > 0;
   out.push({
-    t: 'line', layer: 'trade', x1, x2, y: pastTp1 ? entry : stop, color: C.bear, width: 1.6, dash: pastTp1 ? 'dash' : undefined,
-    label: pastTp1 ? 'SL at break-even' : `SL ${fmt(stop)} · −1R`, labelAt: 'end', labelSide: bull ? 'below' : 'above', priority: 99,
+    t: 'line', layer: 'trade', x1, x2, y: stopNow, color: C.bear, width: 1.6, dash: moved ? 'dash' : undefined,
+    label: moved ? `SL ${fmt(stopNow)} · ${live.trail[live.trail.length - 1]!.note.startsWith('break-even') ? 'break-even' : `locks ${R(rOf(stopNow))}`}` : `SL ${fmt(stopNow)} · risk ${fmt(risk)} pts`,
+    labelAt: 'end', labelSide: bull ? 'below' : 'above', priority: 99,
   });
-  if (pastTp1) out.push({ t: 'line', layer: 'trade', x1, x2, y: stop, color: C.bear, width: 1, dash: 'dot', priority: 6 });
+  if (moved) out.push({ t: 'line', layer: 'trade', x1, x2, y: live.stop!, color: C.bear, width: 1, dash: 'dot', priority: 6 });
   live.targets.forEach((t, k) => {
     const hit = live.events.some((e) => e.state === `TP${k + 1}`);
     out.push({
       t: 'line', layer: 'trade', x1, x2, y: t.price, color: C.bull, width: k === 2 ? 1.6 : 1.2, dash: k === 2 ? undefined : 'dash',
-      label: `TP${k + 1} ${fmt(t.price)} · ${R(t.rr)}${t.source === 'R-multiple' ? '' : ` · ${t.label}`}${hit ? ' ✓' : ''}`, labelAt: 'end', labelSide: bull ? 'above' : 'below', priority: 98 - k,
+      label: `TP${k + 1} ${fmt(t.price)} · ${R(rOf(t.price))} · ${t.reason}${hit ? ' ✓' : ''}`,
+      labelAt: 'end', labelSide: bull ? 'above' : 'below', priority: 98 - k,
     });
   });
   if (fill) out.push({ t: 'mark', layer: 'trade', x: fill.at, y: entry, glyph: bull ? '▲' : '▼', color: bull ? C.bull : C.bear, side: bull ? 'below' : 'above', text: side, priority: 97 });

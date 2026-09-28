@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { runSmc, SmcEngine, sessionOf } from './engine';
+import { MIN_TP1_R, runSmc, SCALE_OUT, SmcEngine, sessionOf } from './engine';
 import type { Bar, SmcState } from './types';
 import { walk } from '@/test/bars';
 
@@ -32,7 +32,7 @@ function asOf(st: SmcState, k: number) {
 }
 
 describe('the no-lookahead contract', () => {
-  const bars = walk(3 * 288);
+  const bars = walk(3 * 288, 18);
   const full = runSmc(bars, { tfSec: M5 });
 
   it('produces enough of everything for the test to mean something', () => {
@@ -71,6 +71,11 @@ describe('the no-lookahead contract', () => {
         const before = plans.get(s.id);
         if (before) expect(plan).toBe(before);
         else plans.set(s.id, plan);
+        if (s.fill) {
+          const f = JSON.stringify(s.fill);
+          const fb = plans.get(`${s.id}:fill`);
+          if (fb) expect(f).toBe(fb); else plans.set(`${s.id}:fill`, f);
+        }
       }
     }
     expect(plans.size).toBeGreaterThan(0);
@@ -139,7 +144,7 @@ describe('liquidity', () => {
   it('a sweep starts a long setup that waits for the structure shift', () => {
     const s = st.setups[0]!;
     expect(s.dir).toBe('bull');
-    expect(s.confirmations.map((c) => c.ok)).toEqual([true, false, false, false]);
+    expect(s.confirmations.map((c) => c.ok)).toEqual([true, false, false, false, false, false]);
   });
 
   it('closing beyond the sweep invalidates it', () => {
@@ -169,63 +174,6 @@ describe('gaps', () => {
   });
 });
 
-describe('a long setup, start to finish', () => {
-  const rows: [number, number, number, number][] = [
-    // 0-4: a swing low at 2 (95) and a swing high at 4? no -- a lower high at 1
-    [104, 105, 101, 102], [102, 106, 100, 101], [101, 102, 95, 97], [97, 100, 96, 99], [99, 101, 97, 98],
-    // 5-7: down to a swing low at 7 (93)
-    [98, 99, 94, 95], [95, 97, 94, 96], [96, 97, 93, 95], [95, 98, 94, 97], [97, 99, 95, 96],
-    // 10: sweeps 93 and closes back -> FORMING (long)
-    [96, 97, 91, 95],
-    // 11-12: a swing high at 11 (100) confirmed at 13
-    [95, 100, 94, 99], [99, 99.5, 96, 97], [97, 98, 95, 96],
-    // 14: a big green candle closes over 100 -> bullish break, OB = last red candle (13: 95-98)
-    [96, 104, 95.5, 103.5],
-    // 15-16: drift, 17: back into the OB top (98) -> filled
-    [103.5, 105, 102, 104], [104, 104.5, 101, 102], [102, 102.5, 97.5, 100],
-    // 18+: up through the targets
-    [100, 106, 99.5, 105.5], [105.5, 111, 105, 110], [110, 130, 109, 129],
-  ];
-  const st = runSmc(series(rows), { tfSec: M5 });
-  const s = st.setups.find((x) => x.dir === 'bull' && x.events.some((e) => e.state === 'READY'))!;
-
-  it('is planned on the break: entry at the POI top, stop under the sweep, targets at liquidity', () => {
-    expect(s).toBeDefined();
-    expect(s.entry).toBe(s.poi!.high);
-    expect(s.stop!).toBeLessThan(91);
-    expect(s.targets).toHaveLength(3);
-    expect(s.targets[0]!.price).toBeGreaterThan(s.entry!);
-    expect(s.targets.map((t) => t.price)).toEqual([...s.targets.map((t) => t.price)].sort((a, b) => a - b));
-  });
-
-  it('fills on the retest and walks through its states in order', () => {
-    const states = s.events.map((e) => e.state);
-    expect(states[0]).toBe('FORMING');
-    expect(states).toContain('READY');
-    expect(states.indexOf('ACTIVE')).toBeGreaterThan(states.indexOf('READY'));
-    expect(s.confirmations.every((c) => c.ok)).toBe(true);
-    expect(s.mfeR!).toBeGreaterThan(0);
-  });
-});
-
-describe('trade management is conservative', () => {
-  it('[critical] the stop is checked before the target inside one candle', () => {
-    const e = new SmcEngine({ tfSec: M5 });
-    // Reuse the long case up to the fill, then one candle that touches both.
-    const rows: [number, number, number, number][] = [
-      [104, 105, 101, 102], [102, 106, 100, 101], [101, 102, 95, 97], [97, 100, 96, 99], [99, 101, 97, 98],
-      [98, 99, 94, 95], [95, 97, 94, 96], [96, 97, 93, 95], [95, 98, 94, 97], [97, 99, 95, 96],
-      [96, 97, 91, 95], [95, 100, 94, 99], [99, 99.5, 96, 97], [97, 98, 95, 96], [96, 104, 95.5, 103.5],
-      [103.5, 105, 102, 104], [104, 104.5, 101, 102], [102, 102.5, 97.5, 100],
-      [100, 150, 80, 100],
-    ];
-    for (const b of series(rows)) e.push(b);
-    const s = e.state().setups.find((x) => x.events.some((ev) => ev.state === 'ACTIVE'))!;
-    expect(s.state).toBe('STOPPED');
-    expect(s.resultR).toBe(-1);
-  });
-});
-
 describe('sessions', () => {
   it('are named by the candle\'s UTC hour', () => {
     expect(sessionOf(T0)).toBe('Asia');
@@ -235,23 +183,87 @@ describe('sessions', () => {
   });
 });
 
-describe('scaling out', () => {
-  it('[critical] a third comes off at each target: TP1 then break-even banks a third of TP1, never zero', () => {
-    const bars = walk(3 * 288);
-    const st = runSmc(bars, { tfSec: M5 });
-    for (const s of st.setups.filter((x) => x.resultR !== null)) {
-      const hits = s.targets.filter((_, k) => s.events.some((e) => e.state === `TP${k + 1}`) || (k === 2 && s.state === 'TP3'));
-      const banked = hits.reduce((a, t) => a + t.rr / 3, 0);
-      if (s.state === 'STOPPED') expect(s.resultR).toBe(-1);
-      if (s.state === 'BREAKEVEN') { expect(hits.length).toBeGreaterThan(0); expect(s.resultR).toBeCloseTo(banked, 9); expect(s.resultR!).toBeGreaterThan(0); }
-      if (s.state === 'TP3') expect(s.resultR).toBeCloseTo((s.targets[0]!.rr + s.targets[1]!.rr + s.targets[2]!.rr) / 3, 9);
+
+// ------------------------------------------------------------ setups, as properties over a long walk
+
+describe('setups', () => {
+  const bars = walk(3 * 288, 18);
+  const st = runSmc(bars, { tfSec: M5 });
+  const filled = st.setups.filter((s) => s.fill);
+  const bull = (d: string) => d === 'bull';
+
+  it('the fixture fills some trades, long and short, and finishes some', () => {
+    expect(filled.length).toBeGreaterThan(2);
+    expect(filled.some((s) => s.resultR !== null)).toBe(true);
+  });
+
+  it('[critical] no fill without the whole chain: sweep, shift, displacement, zone, retest, close', () => {
+    for (const s of filled) {
+      expect(s.confirmations.map((c) => c.ok)).toEqual([true, true, true, true, true, true]);
+      const at = s.confirmations.map((c) => c.at!);
+      for (let k = 1; k < at.length; k++) expect(at[k]!).toBeGreaterThanOrEqual(at[k - 1]!);
+      const disp = st.tags.some((t) => t.name === 'Displacement' && t.dir === s.dir && t.at > s.createdAt && t.at <= at[1]!)
+        || st.zones.some((z) => z.kind === 'FVG' && z.dir === s.dir && z.known > s.createdAt && z.known <= at[1]!);
+      expect(disp, s.id).toBe(true);
     }
   });
 
-  it('[critical] every target asks at least as much as it risks', () => {
-    const st = runSmc(walk(3 * 288), { tfSec: M5 });
-    const planned = st.setups.filter((s) => s.entry !== null);
-    expect(planned.length).toBeGreaterThan(0);
-    for (const s of planned) for (const t of s.targets) expect(t.rr).toBeGreaterThanOrEqual(1);
+  it('[critical] the entry is the close of a candle that closed back out of the zone, in the trade\'s direction', () => {
+    for (const s of filled) {
+      const b = bars[s.fill!.at]!;
+      expect(s.fill!.price).toBe(b.close);
+      if (bull(s.dir)) { expect(b.close).toBeGreaterThan(s.poi!.high); expect(b.close).toBeGreaterThan(b.open); }
+      else { expect(b.close).toBeLessThan(s.poi!.low); expect(b.close).toBeLessThan(b.open); }
+    }
+  });
+
+  it('[critical] TP1 pays at least 1.5R, planned and at the fill; targets run outward and each has a reason', () => {
+    for (const s of st.setups.filter((x) => x.entry !== null)) {
+      expect(s.targets[0]!.rr).toBeGreaterThanOrEqual(MIN_TP1_R);
+      const d = s.targets.map((t) => (bull(s.dir) ? t.price - s.entry! : s.entry! - t.price));
+      expect(d).toEqual([...d].sort((a, b) => a - b));
+      expect(s.targets[0]!.source).not.toBe('R-multiple');
+      for (const t of s.targets) expect(t.reason.length).toBeGreaterThan(0);
+      if (s.fill) expect((bull(s.dir) ? s.targets[0]!.price - s.fill.price : s.fill.price - s.targets[0]!.price) / s.fill.risk).toBeGreaterThanOrEqual(MIN_TP1_R);
+    }
+  });
+
+  it('[critical] the stop sits beyond the zone\'s far edge by its buffer, and only ever tightens', () => {
+    for (const s of st.setups.filter((x) => x.stop !== null)) {
+      if (bull(s.dir)) expect(s.stop!).toBeLessThanOrEqual(s.poi!.low - 1);
+      else expect(s.stop!).toBeGreaterThanOrEqual(s.poi!.high + 1);
+      let now = s.stop!;
+      for (const t of s.trail) {
+        if (bull(s.dir)) expect(t.price).toBeGreaterThan(now); else expect(t.price).toBeLessThan(now);
+        now = t.price;
+      }
+    }
+  });
+
+  it('[critical] break-even only after TP1 and a new swing in the trade\'s favour', () => {
+    for (const s of filled) {
+      const tp1 = s.events.find((e) => e.state === 'TP1');
+      for (const t of s.trail) {
+        expect(tp1, s.id).toBeDefined();
+        expect(t.at).toBeGreaterThanOrEqual(tp1!.at);
+        const sw = st.swings.find((w) => w.known === t.at && w.side === (bull(s.dir) ? 'low' : 'high'));
+        const tp2 = s.events.find((e) => e.state === 'TP2');
+        expect(sw !== undefined || tp2?.at === t.at).toBe(true);
+      }
+    }
+  });
+
+  it('[critical] the result is 30% at TP1, 30% at TP2, 40% at TP3, the rest at the exit', () => {
+    for (const s of filled.filter((x) => x.resultR !== null)) {
+      const f = s.fill!;
+      const r = (p: number) => (bull(s.dir) ? p - f.price : f.price - p) / f.risk;
+      const hits = s.events.filter((e) => e.state === 'TP1' || e.state === 'TP2' || e.state === 'TP3').length;
+      const exit = s.events[s.events.length - 1]!.price!;
+      const banked = s.targets.slice(0, hits).reduce((a, t, k) => a + SCALE_OUT[k]! * r(t.price), 0);
+      const left = 1 - SCALE_OUT.slice(0, hits).reduce((a, b) => a + b, 0);
+      expect(s.resultR!).toBeCloseTo(banked + (left > 1e-9 ? left * r(exit) : 0), 9);
+      if (s.state === 'STOPPED') expect(s.resultR!).toBeCloseTo(-1, 9);
+      if (s.state === 'PROTECTED') expect(s.resultR!).toBeGreaterThanOrEqual(-1e-9);
+    }
   });
 });

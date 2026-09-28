@@ -115,8 +115,8 @@ export type Target = { price: number; label: string; source: TargetSource; rr: n
 
 export type SetupState =
   | 'FORMING'      // liquidity swept, waiting for the structure shift
-  | 'READY'        // shift confirmed and a POI chosen, waiting for the retest
-  | 'ACTIVE'       // filled at the POI
+  | 'READY'        // shift and displacement confirmed, POI chosen, plan fixed; waiting for the retest and its close
+  | 'ACTIVE'       // entered at the close of the candle that confirmed the retest
   | 'TP1' | 'TP2'  // partial targets reached, still running
   | 'TP3'          // final: every target reached
   | 'STOPPED'      // final: stop before any target
@@ -142,11 +142,14 @@ export type Setup = {
   state: SetupState;
   confirmations: Confirmation[];
   poi: Zone | null;
+  /** The planned entry, fixed at READY: the POI's proximal edge. Targets' `rr` are measured from it. */
   entry: number | null;
   stop: number | null;
   targets: Target[];
-  /** Risk in price points, fixed at READY: entry to the structural stop plus its volatility buffer. */
+  /** Planned risk in price points, fixed at READY: entry to the structural stop plus its volatility buffer. */
   risk: number | null;
+  /** The actual entry, fixed at the fill: the close that confirmed the retest, and its risk to the same stop. */
+  fill: { at: number; price: number; risk: number } | null;
   /** The higher timeframe's trend at the time the plan was made, when one was given. */
   htf: Dir | null;
   events: SetupEvent[];

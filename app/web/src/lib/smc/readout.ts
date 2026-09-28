@@ -15,14 +15,15 @@ export type Readout = {
   headline: string;
   detail: string;
   confirmations: Confirmation[];
-  plan: { entry: number; stop: number; targets: Target[]; risk: number; filled: boolean; breakEven: boolean } | null;
+  /** Entry is the fill once there is one, else the planned zone edge; R is measured from it. `stopNote` says why the stop moved. */
+  plan: { entry: number; stop: number; originalStop: number; stopNote: string | null; targets: (Target & { rNow: number })[]; risk: number; filled: boolean } | null;
   nearest: { buy: Pool | null; sell: Pool | null };
-  record: Record | null;
+  record: TradeRecord | null;
   /** Why a setup the engine found is not a trade: the timeframes it runs against. */
   blocked: string[];
 };
 
-export type Record = {
+export type TradeRecord = {
   n: number;
   tp1Rate: number;
   stopRate: number;
@@ -46,7 +47,10 @@ export function readout(st: SmcState, bars: readonly Bar[], context: readonly Tf
   const last = bars[bars.length - 1]?.close ?? null;
   const nearest = nearestPools(st, last);
   const record = recordOf(st.setups);
-  const live = [...st.setups].reverse().find((s) => s.closedAt === null) ?? null;
+  // The most advanced open setup leads: a trade in progress, then a plan, then one still forming.
+  const STAGE: Record<string, number> = { TP2: 5, TP1: 4, ACTIVE: 3, READY: 2, FORMING: 1 };
+  const live = st.setups.filter((s) => s.closedAt === null)
+    .sort((a, b) => (STAGE[b.state] ?? 0) - (STAGE[a.state] ?? 0) || b.createdAt - a.createdAt)[0] ?? null;
 
   if (!live) {
     const pct = (p: Pool | null) => (p && last ? ` (${(((p.price - last) / last) * 100).toFixed(2)}%)` : '');
@@ -64,23 +68,17 @@ export function readout(st: SmcState, bars: readonly Bar[], context: readonly Tf
   const side = live.dir === 'bull' ? 'LONG' : 'SHORT';
   const tone = live.dir === 'bull' ? 'long' : 'short';
   const missingNames = live.confirmations.filter((c) => !c.ok).map((c) => c.name);
-  const plan = live.entry !== null
-    ? {
-      entry: live.entry, stop: live.stop!, targets: live.targets, risk: live.risk!,
-      filled: live.events.some((e) => e.state === 'ACTIVE'),
-      breakEven: live.state === 'TP1' || live.state === 'TP2',
-    }
-    : null;
+  const plan = live.entry !== null ? planOf(live) : null;
   const headline = live.state === 'FORMING' ? `${side} FORMING`
     : live.state === 'READY' ? `${side} READY — limit at the POI`
       : live.state === 'ACTIVE' ? `${side} ACTIVE`
-        : `${side} ACTIVE — ${live.state} reached, stop at break-even`;
+        : `${side} ACTIVE — ${live.state} reached`;
   const poi = live.poi ? `${live.poi.dir === 'bull' ? 'Bull' : 'Bear'} ${live.poi.kind} ${fmt(live.poi.low)}–${fmt(live.poi.high)}` : null;
   const detail = live.state === 'FORMING'
     ? `Waiting for: ${missingNames.join(' → ')}.`
     : live.state === 'READY'
-      ? `Waiting for the retest of ${poi}.${live.htf && live.htf !== live.dir ? ' Against the higher-timeframe trend.' : ''}`
-      : `Filled at ${fmt(live.entry!)}${poi ? ` from ${poi}` : ''}.`;
+      ? `${live.confirmations[4]!.ok ? `In ${poi}; waiting for a candle to close back out` : `Waiting for the retest of ${poi}`}.${live.htf && live.htf !== live.dir ? ' Against the 1H trend.' : ''}`
+      : `Entered at ${fmt(live.fill!.price)}${poi ? ` from ${poi}` : ''}.${live.trail.length ? ` Stop: ${live.trail[live.trail.length - 1]!.note}.` : ''}`;
   const blocked = context
     .filter((c) => (GATES as readonly string[]).includes(c.role) && c.trend !== null && c.trend !== live.dir)
     .map((c) => `${c.tf} ${c.role.toLowerCase()} ${c.trend === 'bull' ? '▲' : '▼'}`);
@@ -96,6 +94,18 @@ export function readout(st: SmcState, bars: readonly Bar[], context: readonly Tf
   return { tone, headline, detail, confirmations: live.confirmations, plan, nearest, record, blocked };
 }
 
+function planOf(s: Setup): NonNullable<Readout['plan']> {
+  const entry = s.fill?.price ?? s.entry!;
+  const risk = s.fill?.risk ?? s.risk!;
+  const rOf = (p: number) => (s.dir === 'bull' ? p - entry : entry - p) / risk;
+  const last = s.trail[s.trail.length - 1];
+  return {
+    entry, risk, filled: s.fill !== null,
+    stop: last?.price ?? s.stop!, originalStop: s.stop!, stopNote: last?.note ?? null,
+    targets: s.targets.map((t) => ({ ...t, rNow: rOf(t.price) })),
+  };
+}
+
 function nearestPools(st: SmcState, last: number | null): Readout['nearest'] {
   if (last === null) return { buy: null, sell: null };
   const ended = new Set(st.poolEvents.map((e) => e.pool));
@@ -106,11 +116,10 @@ function nearestPools(st: SmcState, last: number | null): Readout['nearest'] {
 }
 
 /** Completed trades only -- a setup that never filled has no result to count. */
-export function recordOf(setups: readonly Setup[]): Record | null {
-  const done = setups.filter((s) => s.closedAt !== null && s.resultR !== null && s.events.some((e) => e.state === 'ACTIVE'));
+export function recordOf(setups: readonly Setup[]): TradeRecord | null {
+  const done = setups.filter((s) => s.closedAt !== null && s.resultR !== null && s.fill !== null);
   if (!done.length) return null;
   const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
-  const fillAt = (s: Setup) => s.events.find((e) => e.state === 'ACTIVE')!.at;
   return {
     n: done.length,
     tp1Rate: done.filter((s) => s.events.some((e) => e.state === 'TP1' || e.state === 'TP3')).length / done.length,
@@ -118,6 +127,6 @@ export function recordOf(setups: readonly Setup[]): Record | null {
     avgR: mean(done.map((s) => s.resultR!)),
     avgMfeR: mean(done.map((s) => s.mfeR ?? 0)),
     avgMaeR: mean(done.map((s) => s.maeR ?? 0)),
-    avgBars: mean(done.map((s) => s.closedAt! - fillAt(s))),
+    avgBars: mean(done.map((s) => s.closedAt! - s.fill!.at)),
   };
 }
