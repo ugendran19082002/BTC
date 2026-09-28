@@ -1,10 +1,5 @@
 import type { Candle } from '../market/delta.js';
-import {
-  atr, ema, mean,
-  awesome, bollinger, cci, choppiness, clv, cmf, efficiencyRatio, macd, mfi, obvSlope,
-  relativeVolume, roc, stochastic, superTrend, trix, vortex, williamsR,
-  aroon, donchian, hma, realisedVol, zScore,
-} from '../domain/indicators.js';
+import { atr, ema, mean, awesome, bollinger, cci, choppiness, clv, cmf, efficiencyRatio, macd, mfi, obvSlope, relativeVolume, roc, stochastic, superTrend, trix, vortex, williamsR, aroon, hma, realisedVol, zScore } from '../domain/indicators.js';
 import { candlePatterns, marketStructure, structurePatterns } from '../domain/patterns.js';
 import { rsi, adx, vwapOf } from '../market/moves.js';
 import type { Side } from '../domain/market-state.js';

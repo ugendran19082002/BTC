@@ -1,24 +1,21 @@
 import type { FastifyInstance } from 'fastify';
 import { liveChain, historicalChain, liveExpiries, hoursSinceDeskOpen, simulationBacklog, WHOLE_BOARD, type Snapshot } from '../../market/chain.js';
-import { startOfDayIst } from '../../strategy/schedule.js';
 import { readMarket, seriesForAnalytics } from '../../market/moves.js';
 import { measuredOutlook } from '../../analytics/client.js';
-import { liveSpot, liveTickers, candles, tickerFeedHealth } from '../../market/delta.js';
-import { scoreLegs, pickSells, bias, verdict, maxLots, MARGIN_PER_LOT_USD, USDINR } from '../../domain/score.js';
+import { liveSpot, candles, tickerFeedHealth } from '../../market/delta.js';
+import { scoreLegs, pickSells, bias, verdict, USDINR } from '../../domain/score.js';
 import { recommend, type PickMode } from '../../domain/recommend.js';
 import { DEFAULT_WALL_WITHIN_EM, optionStructure } from '../../domain/structure.js';
 import { forecast, reloadHorizons } from '../../domain/forecast.js';
-import { loadCalibration, reloadCalibration } from '../../domain/calibration.js';
-import { loadDays, reloadDays, DEFAULTS } from '../../backtest/backtest.js';
+import { reloadCalibration } from '../../domain/calibration.js';
+import { loadDays, reloadDays } from '../../backtest/backtest.js';
 import { tradingService, SHORT_CAP_KEY } from '../../trading/service.js';
 import { appliedMigrations } from '../../db/migrate.js';
-import { termStructure } from '../../market/term.js';
 import { lastOptionSnapshot, lastOptionSnapshotAt } from '../../market/option-snapshots.js';
-import { flowFeedHealth, flowSummary, ivRank, liveBook, livePerp, oiPulse, optionFlowSummary, skewRank } from '../../market/flow.js';
-import { movementByWindow } from '../../market/movement.js';
+import { flowFeedHealth, flowSummary, liveBook, livePerp, oiPulse, optionFlowSummary } from '../../market/flow.js';
 import { readState, STATE_TFS, type StateTf } from '../../market/state-read.js';
-import { countStates, gradeStates, hitRate, lastCheck, noteState, recentStates } from '../../market/state-history.js';
-import { noteShock, recentShocks, settleShocks, shockOutcomes } from '../../market/shock-history.js';
+import { gradeStates, noteState } from '../../market/state-history.js';
+import { noteShock, settleShocks } from '../../market/shock-history.js';
 import { changes } from '../../market/changes.js';
 import { one } from '../../db/pool.js';
 import { strategyStore } from './strategy.routes.js';
@@ -33,9 +30,7 @@ import { noteOpenInterest, openInterestChange, ivChange, type OiChange } from '.
 import { chainBoard, recordBoard } from '../../market/chain-features.js';
 import { SHOCK_WINDOWS } from '../../domain/shock.js';
 import { shockFrom } from '../../market/shock-now.js';
-import { breakRiskNow } from '../../market/break-risk-now.js';
-import { liveRead, safetyOf } from '../../market/live-read.js';
-import { measuredFor, LIVE_POLICY } from '../../domain/momentum-signal.js';
+import { liveRead } from '../../market/live-read.js';
 
 /** Resolve the `at` query param: "now" (or absent) means live. */
 function resolveAt(at: string | undefined): number | null {
@@ -171,202 +166,19 @@ export function registerDeskRoutes(app: FastifyInstance) {
     }
   });
 
-  /**
-   * The last ten calls and how they turned out: the signal-history list.
-   *
-   * The hit rate rides along, as "3 of 4" rather than a bare percentage --
-   * four calls is not a hit rate, and a number that looks like one when it is
-   * not is exactly the thing this list exists to stop.
-   */
-  app.get('/api/market-state/history', async (req, reply) => {
-    const q = req.query as { tf?: string; limit?: string; days?: string };
-    const tf = (STATE_TFS as readonly string[]).includes(q.tf ?? '') ? (q.tf as StateTf) : null;
-    /*
-     * The screen shows today and keeps the rest behind "View all", so it asks
-     * for more than it draws. Two hundred is a few days of a five-minute
-     * timeframe -- enough to check last Tuesday, small enough to send.
-     */
-    const limit = Math.min(500, Math.max(1, Number(q.limit) || 10));
-    /*
-     * The range tabs: Today, 1 / 3 / 7 days, All. `days=0` means today since
-     * the desk's own 05:30 IST open, which is the day a trader means; the
-     * others are rolling windows back from now.
-     *
-     * A range as well as a limit because they answer different questions: on a
-     * quiet 4-hour frame "the last 200 calls" reaches back a fortnight while
-     * the reader believes they are looking at this morning.
-     */
-    const days = q.days === undefined ? null : Number(q.days);
-    const sinceMs = days === null || !Number.isFinite(days) || days < 0
-      ? null
-      : days === 0
-        ? startOfDayIst(Date.now())
-        : Date.now() - days * 24 * 3_600_000;
-    try {
-      await gradeStates().catch(() => 0);
-      const [rows, rate, total] = await Promise.all([
-        recentStates(tf, limit, sinceMs), hitRate(tf), countStates(tf),
-      ]);
-      /*
-       * What this timeframe's break shape has actually paid, beside the
-       * journal's own count (27 Sep 2026).
-       *
-       * The list answers "what has the desk called and how did those turn
-       * out" over a few dozen calls. That is a small sample taken from
-       * whatever hours the desk happened to be watched, and on its own it is
-       * the number docs/FULL-STUDY.md 7.5 was filed about: a hit rate with no
-       * cost beside it. The replay's row for the same timeframe -- thousands
-       * of calls, after fees, with 2026 held out -- is the context that makes
-       * the journal's count readable, so it is served from the same place
-       * rather than from a second request the screen could forget to make.
-       *
-       * Null for a timeframe the study never graded (2h, 4h), which the card
-       * says in words rather than drawing as a zero.
-       */
-      const measured = tf ? measuredFor(tf, LIVE_POLICY) : null;
-      /*
-       * When the journal last looked, whatever it saw (27 Sep 2026).
-       *
-       * Without it the list cannot tell a quiet market from a dead recorder:
-       * a timeframe holding RANGE writes no rows, and so does a recorder that
-       * stopped. On the morning of 27 Sep the second was true for thirteen
-       * hours and the screen looked exactly the same either way.
-       */
-      const checked = await lastCheck(tf).catch(() => null);
-      return { at: Date.now(), tf, rows, hitRate: rate, measured, checked, total, days };
-    } catch (e) {
-      reply.code(502);
-      return { error: (e as Error).message };
-    }
-  });
-
-  /**
-   * The warning's own record: what the big-move catch said, and what followed.
-   *
-   * A warning that cannot be looked back at is a warning nobody should act on,
-   * so the rows carry the move that came after each reading and the means are
-   * given with the count behind them -- four readings is not a finding.
-   */
-  app.get('/api/warning/history', async (req, reply) => {
-    const q = req.query as { window?: string; limit?: string };
-    const asked = Number(q.window);
-    const window = (SHOCK_WINDOWS as readonly number[]).includes(asked) ? asked : Math.min(...SHOCK_WINDOWS);
-    const limit = Math.min(50, Math.max(1, Number(q.limit) || 20));
-    try {
-      const [rows, outcomes] = await Promise.all([recentShocks(window, limit), shockOutcomes(window)]);
-      return { at: Date.now(), window, rows, outcomes };
-    } catch (e) {
-      reply.code(502);
-      return { error: (e as Error).message };
-    }
-  });
-
-
-  /**
-   * ATM IV across every listed expiry, from the live board, with the skew's
-   * and the IV's rank among every reading the desk has recorded.
-   *
-   * It used to carry "a week ago" and "a month ago" lines too, read from
-   * `iv_term_snapshots`. The card that showed them was removed on 22 September
-   * and the table on the 23rd (`market-009`), so the two questions this asked
-   * the database every minute, per open browser, are gone with them. The ranks
-   * are read from `chain_features`, which plenty else needs.
-   */
-  app.get('/api/term', async (req, reply) => {
-    try {
-      const now = Date.now();
-      const q = req.query as { skewPts?: string; atmIv?: string };
-      const skewPts = Number(q.skewPts);
-      const atmIv = Number(q.atmIv);
-      const [tickers, skew, iv] = await Promise.all([
-        liveTickers(),
-        skewRank(Number.isFinite(skewPts) ? skewPts : null).catch(() => null),
-        ivRank(Number.isFinite(atmIv) && atmIv > 0 ? atmIv : null).catch(() => null),
-      ]);
-      return { at: now, points: termStructure(tickers, Math.floor(now / 1000)), skew, iv };
-    } catch (e) {
-      reply.code(502);
-      return { error: (e as Error).message };
-    }
-  });
-
-  /**
-   * The perpetual: its ticker (funding, open interest, turnover), the top of
-   * its book, and the last hour's order flow by aggressor side. The three
-   * things docs/test.md §10 names as the desk's biggest gap; the flow is
-   * summed from every print on the socket, and says how many of the sixty
-   * minutes it actually has.
-   */
-  /**
-   * The character of the move by window -- long buildup, short covering,
-   * short buildup, long unwinding, or mixed -- from the perpetual's price,
-   * open interest and tape. Strength from volume against the day's pace; the
-   * aggressor read beside it as confirmation.
-   */
-  app.get('/api/movement', async (req, reply) => {
-    try {
-      const q = req.query as { entry?: string; expiry?: string };
-      const now = Date.now();
-      // The desk's marks for the price-change table: the entry window (epoch ms) and the contract's day start,
-      // the previous 17:30 IST settlement -- a day before the expiry's own (epoch seconds).
-      const entryMs = /^\d{12,13}$/.test(q.entry ?? '') ? Number(q.entry) : null;
-      const expiryTs = /^\d{9,10}$/.test(q.expiry ?? '') ? Number(q.expiry) : null;
-      const dayStartMs = expiryTs === null ? null : expiryTs * 1000 - 24 * 3_600_000;
-      return await movementByWindow(now, { entryMs, dayStartMs });
-    } catch (e) { reply.code(502); return { error: (e as Error).message }; }
-  });
-
   /*
-   * The hour after a confirmed break on 15m, 30m or 1h: how far it measured,
-   * and which way it went (a coin flip). `risk` is null outside that hour.
-   * See domain/break-risk.ts and research/MOMENTUM-MEASURED.txt.
-   */
-  app.get('/api/break-risk', async (_req, reply) => {
-    try {
-      return await breakRiskNow();
-    } catch (e) { reply.code(502); return { error: (e as Error).message }; }
-  });
-
-  /*
-   * The Live screen, in one read.
+   * The Live screen's momentum call, with the price it is measured from and
+   * the contract's hours and ATM IV. See market/live-read.ts.
    *
-   * The weighted 12H→1M ladder, the measured band to settlement, and the
-   * momentum call with its stop, its target and what that exact shape actually
-   * paid -- all off one set of bars with one timestamp, so no two rows on the
-   * screen are describing different moments. See market/live-read.ts.
-   *
-   * `expiry` picks the contract the band is drawn to; without it the nearest
-   * live one is used. `strikes` is an optional comma-separated list judged
-   * against the same band.
+   * `expiry` picks the contract; without it the nearest live one is used.
    */
   app.get('/api/live', async (req, reply) => {
     try {
-      const q = req.query as { expiry?: string; strikes?: string; at?: string };
+      const q = req.query as { expiry?: string; at?: string };
       const snap = await snapshotFor(q.at, WHOLE_BOARD, q.expiry);
-      // The tick, not the chain snapshot's spot and not a candle close: the
-      // band's centre and every strike distance are marks, and a mark is only
-      // worth the freshness of the price behind it.
+      // The tick, not the chain snapshot's spot and not a candle close.
       const ltp = await liveSpot().catch(() => null);
-      const read = await liveRead({
-        hoursToExpiry: snap.hoursToExpiry,
-        atmIv: snap.atmIv,
-        ltp,
-        strikeStep: snap.step,
-      });
-      const wanted = (q.strikes ?? '')
-        .split(',')
-        .map((x) => x.trim())
-        .filter((x) => /^[CP]:\d+$/.test(x))
-        .slice(0, 40);
-      const strikes = wanted
-        .map((x) => {
-          const [cp, k] = x.split(':') as ['C' | 'P', string];
-          return safetyOf({
-            cp, strike: Number(k), spot: read.spot,
-            hoursToExpiry: snap.hoursToExpiry, atmIv: snap.atmIv, path: read.path,
-          });
-        })
-        .filter((x): x is NonNullable<typeof x> => x !== null);
+      const read = await liveRead({ ltp });
       return {
         ...read,
         expiry: snap.expiry,
@@ -374,11 +186,16 @@ export function registerDeskRoutes(app: FastifyInstance) {
         hoursToExpiry: snap.hoursToExpiry,
         atmIv: snap.atmIv,
         atm: snap.atm,
-        strikes,
       };
     } catch (e) { reply.code(502); return { error: (e as Error).message }; }
   });
 
+  /**
+   * The perpetual: its ticker (funding, open interest, turnover), the top of
+   * its book, and the last hour's order flow by aggressor side; the flow is
+   * summed from every print on the socket, and says how many of the minutes
+   * it actually has.
+   */
   app.get('/api/perp', async (req, reply) => {
     try {
       const now = Date.now();
@@ -486,7 +303,6 @@ export function registerDeskRoutes(app: FastifyInstance) {
         void noteShock(shortest, Date.now(), snap.spot).catch(() => null);
         void settleShocks(Date.now(), snap.spot).catch(() => 0);
       }
-
 
       /*
        * Is there a side today, and would the desk's own gates take it?
@@ -695,31 +511,6 @@ export function registerDeskRoutes(app: FastifyInstance) {
       return { error: (e as Error).message, tf, resolution: span.resolution, bars: [] };
     }
   });
-
-  app.get('/api/sizing', async (req) => {
-    const funds = Number((req.query as { funds?: string }).funds ?? 100);
-    return {
-      availableUsd: funds,
-      availableInr: funds * USDINR,
-      marginPerLotUsd: MARGIN_PER_LOT_USD,
-      maxLots: maxLots(funds),
-    };
-  });
-
-  app.get('/api/presets', async () => ({
-    defaults: DEFAULTS,
-    presets: [
-      { name: 'A  CE 0-15 + PE 0-15', ce: { min: 0, max: 15 }, pe: { min: 0, max: 15 } },
-      { name: 'B  CE 0-15 + PE 15-30', ce: { min: 0, max: 15 }, pe: { min: 15, max: 30 } },
-      { name: 'C  CE 0-15 + PE 15-40', ce: { min: 0, max: 15 }, pe: { min: 15, max: 40 } },
-      { name: "D' CE 0-20 + PE 0-20", ce: { min: 0, max: 20 }, pe: { min: 0, max: 20 } },
-      { name: 'Min $15 both sides', ce: { min: 15, max: 60 }, pe: { min: 15, max: 60 } },
-      { name: 'CE only 0-15', ce: { min: 0, max: 15 }, pe: null },
-      { name: 'PE only 0-15', ce: null, pe: { min: 0, max: 15 } },
-    ],
-  }));
-
-  app.get('/api/calibration', async () => ({ buckets: loadCalibration() }));
 
   app.post('/api/reload', async () => ({
     days: reloadDays(),

@@ -57,12 +57,16 @@ test('[critical] the chain handler runs through, whatever the exchange says', as
   assert.notEqual(r.statusCode, 500, r.body.slice(0, 300));
 });
 
-test('the market-state and warning journals answer their own routes', async () => {
-  // Both were added late and both write on a timer from the chain route; a
-  // broken migration in either shows up here rather than on the screen.
-  for (const url of ['/api/market-state/history?tf=15m&limit=5', '/api/warning/history?window=5&limit=5']) {
-    const r = await app.inject({ method: 'GET', url, headers: { cookie: session() } });
-    assert.equal(r.statusCode, 200, `${url} → ${r.statusCode} ${r.body.slice(0, 200)}`);
-    assert.ok(!/before initialization/.test(r.body));
+test('[critical] the routes removed on 28 Sep 2026 stay removed', async () => {
+  // Signal history, the warning journal, the term structure, movement, big move
+  // risk, and the backtest / sizing / presets / calibration endpoints nothing called.
+  for (const [method, url] of [
+    ['GET', '/api/market-state/history?tf=15m&limit=5'], ['GET', '/api/warning/history?window=5&limit=5'],
+    ['GET', '/api/term'], ['GET', '/api/movement'], ['GET', '/api/break-risk'],
+    ['GET', '/api/sizing'], ['GET', '/api/presets'], ['GET', '/api/calibration'],
+    ['POST', '/api/backtest'], ['POST', '/api/backtest/byyear'],
+  ] as const) {
+    const r = await app.inject({ method, url, headers: { cookie: session() } });
+    assert.equal(r.statusCode, 404, `${method} ${url} → ${r.statusCode}`);
   }
 });

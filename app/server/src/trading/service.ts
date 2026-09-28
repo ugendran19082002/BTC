@@ -1,6 +1,6 @@
 import { config } from '../config.js';
 import { credsFromEnv } from '../delta/signed.js';
-import { TradeEngine, type AddRequest, type TradePlan, type TradeRecord } from './engine.js';
+import { TradeEngine, type AddRequest, type TradeRecord } from './engine.js';
 import { PgTradeStore } from './store.js';
 import { settings as deskSettings, type Settings } from '../db/settings.js';
 import { DeltaExchange } from './exchange/delta.js';
@@ -230,7 +230,6 @@ export class TradingService {
       },
     });
   }
-
 
   /** One strategy's trades touched since the start of the IST day. */
   async tradesTodayFor(strategyId: string, now = Date.now()): Promise<TradeRecord[]> {
@@ -968,7 +967,6 @@ export class TradingService {
     return this.currentMode === 'paper' ? this.paperExchange : null;
   }
 }
-
 
 /** An exit asked for in a way that cannot stand -- a person's mistake, answered 400, not logged as a fault. */
 export class ExitAskError extends Error {}

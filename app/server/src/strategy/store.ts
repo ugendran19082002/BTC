@@ -12,7 +12,7 @@
  * traded-and-not-marked doubles a position.
  */
 import { migrate, moveToPublic, type Migration } from '../db/migrate.js';
-import { one, query, rows, tx } from '../db/pool.js';
+import { one, query, rows } from '../db/pool.js';
 import { DEFAULT_CONFIG, type Strategy, type StrategyConfig, type StrategyRun } from './types.js';
 
 /**

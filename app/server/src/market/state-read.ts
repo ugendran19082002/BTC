@@ -3,7 +3,7 @@ import { atr, readMarket, type MarketRead } from './moves.js';
 import { flowSummary } from './flow.js';
 import { levelUnder, DEFAULT_LEVEL_MODE, LIVE_LEVEL_MODE, type LevelMode } from '../domain/level-mode.js';
 import { movementByWindow } from './movement.js';
-import { marketState, LEVEL_BARS, type MarketState, type Regime, type Side, type StateInput } from '../domain/market-state.js';
+import { marketState, type MarketState, type Regime, type Side, type StateInput } from '../domain/market-state.js';
 import {
   candlePatterns, marketStructure, relevant, structurePatterns, trendLines, type Pattern, type TrendLine,
 } from '../domain/patterns.js';
@@ -253,7 +253,6 @@ export async function readState(tf: StateTf = '15m', nowMs = Date.now()): Promis
     inputs,
   };
 }
-
 
 /**
  * What kind of market this is, in three words.

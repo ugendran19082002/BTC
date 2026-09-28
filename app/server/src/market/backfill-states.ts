@@ -4,7 +4,7 @@ import { marketState } from '../domain/market-state.js';
 import { levelUnder, LIVE_LEVEL_MODE } from '../domain/level-mode.js';
 import { query, one } from '../db/pool.js';
 import { gradeStates, EVAL_WINDOW_MIN } from './state-history.js';
-import { STATE_TFS, STATE_TF_MINUTES, type StateTf } from './state-read.js';
+import { STATE_TFS, STATE_TF_MINUTES } from './state-read.js';
 
 /**
  * Replay the bars the journal missed and write the state changes it should have

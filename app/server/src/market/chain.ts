@@ -1,4 +1,4 @@
-import { candles, liveTickers, spotAt, pool, type Ticker } from './delta.js';
+import { candles, liveTickers, spotAt, pool } from './delta.js';
 import { greeks, impliedVol, expectedMove } from '../domain/bs.js';
 import { pReachNearZero, strikeProbabilities, type StrikeProbabilities } from '../domain/probability.js';
 
