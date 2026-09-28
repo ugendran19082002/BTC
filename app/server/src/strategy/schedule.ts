@@ -72,9 +72,6 @@ export type DueVerdict =
  * setting existed reads as this number.
  */
 export const GRACE_MIN = 60;
-/** Bounds for the per-strategy window. A day-long grace is not a grace. */
-export const GRACE_MIN_MIN = 1;
-export const GRACE_MIN_MAX = 240;
 
 /** This strategy's own grace window, in minutes. */
 export const graceOf = (s: Strategy): number => {

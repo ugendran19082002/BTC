@@ -190,8 +190,6 @@ export const BODY_RATIO = 0.55;
 export const CLOSE_LOCATION = 0.70;
 /** A body this fraction of the ATR or more is a bar that meant it. */
 export const BODY_ATR = 0.3;
-/** A wick this share of the range is the market refusing the level. */
-export const WICK_SHARE = 0.4;
 /** Crossing the spread this much one way is a side with its hand up. */
 export const AGGRESSOR_PCT = 55;
 /** Within this much of the level, in ATR, is close enough to watch. */

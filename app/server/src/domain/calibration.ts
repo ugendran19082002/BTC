@@ -131,9 +131,6 @@ export type ZeroChance = {
    */
   comparableHorizon: boolean;
 };
-
-/** The table was built from 05:30 entries settling at 12:00 UTC. */
-export const CALIBRATED_HOURS = 12;
 export function horizonComparable(hoursToExpiry: number): boolean {
   return hoursToExpiry >= 8 && hoursToExpiry <= 16;
 }

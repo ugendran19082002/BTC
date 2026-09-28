@@ -159,11 +159,6 @@ export function startFlowSocket(log?: (line: string) => void): FlowSocket {
   return socket;
 }
 
-export function stopFlowSocket(): void {
-  socket?.stop();
-  socket = null;
-}
-
 /** For tests: read from this feed instead of the live one. */
 export function useFlowSocket(s: FlowSocket | null): void { socket = s; }
 

@@ -991,9 +991,3 @@ export const tradingService = (): TradingService => {
   if (!singleton) throw new Error('tradingService() before initTradingService(): the desk is built at boot, in index.ts');
   return singleton;
 };
-
-/** For tests that build a fresh desk against a fresh database. */
-export function resetTradingService(): void {
-  singleton?.stop();
-  singleton = null;
-}

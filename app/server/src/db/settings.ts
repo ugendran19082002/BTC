@@ -101,6 +101,3 @@ let singleton: SettingsCache | null = null;
 
 /** The process's settings. `load()` it once at boot; every store shares it. */
 export const settings = (): SettingsCache => (singleton ??= new SettingsCache());
-
-/** For tests that want a fresh cache against a fresh database. */
-export function resetSettings(): void { singleton = null; }
