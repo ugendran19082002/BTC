@@ -366,8 +366,19 @@
   margin: 0 !important;
 }
 
-.desk-chart-panel .price-chart-head {
-  display: none !important;
+.desk-chart-panel .price-chart-head.is-compact {
+  display: flex !important;
+  justify-content: flex-end !important;
+  align-items: center !important;
+  padding: 4px 8px !important;
+  min-height: unset !important;
+  border: none !important;
+  background: transparent !important;
+}
+
+.desk-chart-panel .price-chart-head.is-compact .price-chart-controls {
+  margin-left: auto;
+  gap: 6px;
 }
 
 .desk-chart-panel .price-chart-plot {
@@ -538,10 +549,22 @@
 
 .desk-sig-box.long {
   border: 1px solid rgba(0, 230, 118, 0.3);
+  transition: all 0.2s ease;
+}
+
+.desk-sig-box.long.is-active-sig {
+  border-color: rgba(0, 230, 118, 0.85);
+  box-shadow: 0 0 14px rgba(0, 230, 118, 0.25);
 }
 
 .desk-sig-box.short {
   border: 1px solid rgba(255, 59, 87, 0.3);
+  transition: all 0.2s ease;
+}
+
+.desk-sig-box.short.is-active-sig {
+  border-color: rgba(255, 59, 87, 0.85);
+  box-shadow: 0 0 14px rgba(255, 59, 87, 0.25);
 }
 
 .desk-sig-header {

@@ -106,6 +106,8 @@ export function DeskChart({
           onTf={onTf}
           loading={loading}
           error={error}
+          hideTfSelector={true}
+          hideHeadline={true}
         />
       </div>
     </div>

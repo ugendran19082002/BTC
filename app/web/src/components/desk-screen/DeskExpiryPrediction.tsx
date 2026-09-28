@@ -1,14 +1,20 @@
-import { Target } from 'lucide-react';
+import { Layers, Target } from 'lucide-react';
 import type { ExpiryPrediction } from '@/types/live';
+import type { ChartTf } from '@/components/desk/PriceChart';
+import type { MarketStateResponse } from '@/api/desk';
 
 export function DeskExpiryPrediction({
   prediction,
   spot = 84595,
   hoursToExpiry = 20.6,
+  tf = '5m',
+  marketState,
 }: {
   prediction?: ExpiryPrediction | null;
   spot?: number;
   hoursToExpiry?: number;
+  tf?: ChartTf | string;
+  marketState?: MarketStateResponse | null;
 }) {
   const h = Math.floor(hoursToExpiry);
   const m = Math.round((hoursToExpiry - h) * 60);
@@ -76,6 +82,19 @@ export function DeskExpiryPrediction({
     return `${fallbackPct}%`;
   };
 
+  // Breakout / Breakdown Probability calculations
+  const rLevel = marketState?.levels?.find((l) => l.side === 'resistance')?.price ?? (spot + 536);
+  const sLevel = marketState?.levels?.find((l) => l.side === 'support')?.price ?? (spot - 295);
+  const atrVal = marketState?.inputs?.atr ?? 160;
+
+  const breakoutPrice = Math.round(rLevel);
+  const breakdownPrice = Math.round(sLevel);
+
+  // Probabilities aligned with band probabilities
+  const pBreakout = pAbove;
+  const pRange = pInside;
+  const pBreakdown = pBelow;
+
   return (
     <div className="desk-pred-panel" aria-label="Expiry Prediction Card">
       <div className="desk-panel-title">
@@ -99,7 +118,7 @@ export function DeskExpiryPrediction({
           </span>
         </div>
 
-        {/* 3-segment pill probability bar matching docs/image.png */}
+        {/* 3-segment pill probability bar */}
         <div className="desk-prob-bar">
           <div className="desk-prob-low" style={{ width: `${wBelow}%` }}>{pBelow}%</div>
           <div className="desk-prob-mid" style={{ width: `${wInside}%` }}>{pInside}%</div>
@@ -148,6 +167,34 @@ export function DeskExpiryPrediction({
               </span>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Breakout / Breakdown Probability ({tf}) moved to Expiry Prediction bottom */}
+      <div className="desk-pred-breakout-box" style={{ marginTop: 'auto', borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: 10 }}>
+        <div style={{ fontSize: 11.5, fontWeight: 600, color: '#cbd5e1', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Layers size={13} color="#00e5ff" />
+          <span>Breakout / Breakdown Probability ({tf})</span>
+        </div>
+
+        <div className="desk-breakout-strip">
+          <div className="desk-breakout-tile desk-tile-breakout">
+            <span style={{ fontSize: 10.5, color: '#00e676', fontWeight: 600 }}>↗ Breakout &gt; {breakoutPrice.toLocaleString()}</span>
+            <span style={{ fontSize: 15, fontWeight: 700, color: '#fff', fontFamily: 'ui-monospace, monospace' }}>{pBreakout}%</span>
+            <span style={{ fontSize: 9.5, color: '#94a3b8' }}>If triggered, move to {Math.round(breakoutPrice + atrVal * 1.25).toLocaleString()} – {Math.round(breakoutPrice + atrVal * 2.5).toLocaleString()}</span>
+          </div>
+
+          <div className="desk-breakout-tile desk-tile-range">
+            <span style={{ fontSize: 10.5, color: '#fbbf24', fontWeight: 600 }}>⚡ Remain in Range</span>
+            <span style={{ fontSize: 15, fontWeight: 700, color: '#fff', fontFamily: 'ui-monospace, monospace' }}>{pRange}%</span>
+            <span style={{ fontSize: 9.5, color: '#94a3b8' }}>{breakdownPrice.toLocaleString()} – {breakoutPrice.toLocaleString()}</span>
+          </div>
+
+          <div className="desk-breakout-tile desk-tile-breakdown">
+            <span style={{ fontSize: 10.5, color: '#ff3b57', fontWeight: 600 }}>↘ Breakdown &lt; {breakdownPrice.toLocaleString()}</span>
+            <span style={{ fontSize: 15, fontWeight: 700, color: '#fff', fontFamily: 'ui-monospace, monospace' }}>{pBreakdown}%</span>
+            <span style={{ fontSize: 9.5, color: '#94a3b8' }}>If triggered, move to {Math.round(breakdownPrice - atrVal * 1.25).toLocaleString()} – {Math.round(breakdownPrice - atrVal * 2.5).toLocaleString()}</span>
+          </div>
         </div>
       </div>
     </div>

@@ -196,6 +196,8 @@ export const WICK_SHARE = 0.4;
 export const AGGRESSOR_PCT = 55;
 /** Within this much of the level, in ATR, is close enough to watch. */
 export const WATCH_ATR = 0.75;
+/** A bar that closes beyond this much of ATR past the level is overextended. */
+export const MAX_OVERSHOOT_ATR = 0.85;
 /** How many bars the highest high and lowest low are taken over. */
 export const LEVEL_BARS = 20;
 /** How many bars the median volume is taken over. */
@@ -339,21 +341,31 @@ export function marketState(input: StateInput): MarketState {
   if (brokeUp && resistance !== null) {
     // A second close above the level is the retest holding: the level was
     // given back to the market to test, and it held.
+    const isOvershot = atr !== null && atr > 0 && (bar.close - resistance) / atr > MAX_OVERSHOOT_ATR;
     const stage: EventStage = heldAboveBefore ? 'RETEST' : confirms(input, bar, ratio, atr, 'UP') ? 'CONFIRMED' : 'CANDIDATE';
     const event: MarketEvent = stage === 'RETEST' ? 'RETEST_HOLD'
       : stage === 'CONFIRMED' ? 'BREAKOUT_CONFIRMED' : 'BREAKOUT_CANDIDATE';
     return build(event, stage, 'UP', resistance, stage !== 'CANDIDATE', input, bar, prev, ratio, read, tol,
       stage === 'CANDIDATE'
-        ? `Closed over ${fmt(resistance)} without the volume to back it: unconfirmed.`
+        ? (ratio !== null && ratio < VOLUME_CONFIRM
+            ? `Closed over ${fmt(resistance)} without the volume to back it: unconfirmed.`
+            : isOvershot
+              ? `Closed over ${fmt(resistance)} but overextended (>0.85 ATR): wait for pullback/retest.`
+              : `Closed over ${fmt(resistance)} without the volume or trend alignment to back it: unconfirmed.`)
         : `Closed over ${fmt(resistance)} and stayed: the level has gone.`);
   }
   if (brokeDown && support !== null) {
+    const isOvershot = atr !== null && atr > 0 && (support - bar.close) / atr > MAX_OVERSHOOT_ATR;
     const stage: EventStage = heldBelowBefore ? 'RETEST' : confirms(input, bar, ratio, atr, 'DOWN') ? 'CONFIRMED' : 'CANDIDATE';
     const event: MarketEvent = stage === 'RETEST' ? 'RETEST_HOLD'
       : stage === 'CONFIRMED' ? 'BREAKDOWN_CONFIRMED' : 'BREAKDOWN_CANDIDATE';
     return build(event, stage, 'DOWN', support, stage !== 'CANDIDATE', input, bar, prev, ratio, read, tol,
       stage === 'CANDIDATE'
-        ? `Closed under ${fmt(support)} without the volume to back it: unconfirmed.`
+        ? (ratio !== null && ratio < VOLUME_CONFIRM
+            ? `Closed under ${fmt(support)} without the volume to back it: unconfirmed.`
+            : isOvershot
+              ? `Closed under ${fmt(support)} but overextended (>0.85 ATR): wait for pullback/retest.`
+              : `Closed under ${fmt(support)} without the volume or trend alignment to back it: unconfirmed.`)
         : `Closed under ${fmt(support)} and stayed: the level has gone.`);
   }
 
@@ -513,17 +525,19 @@ export function planFor(side: Side, level: number, atr: number | null): Plan | n
   };
 }
 
-export function executionNoteFor(stage: EventStage, volumeRatio: number | null): string | null {
+export function executionNoteFor(stage: EventStage, volumeRatio: number | null, overshootAtr?: number | null): string | null {
   if (stage === 'CONFIRMED') {
     return volumeRatio && volumeRatio >= 2.0
-      ? 'Strong momentum (volume > 2x) · Direct entry favorable'
-      : 'Confirmed on close · Wait for 1m micro-retest near level for optimal R:R';
+      ? 'Strong institutional volume (> 2.0x) · Direct entry favorable with tight stop'
+      : 'Confirmed on close · Standard entry or wait for 1m micro-retest near level';
   }
   if (stage === 'RETEST') {
-    return 'Retest holding · Prime entry zone with tight invalidation';
+    return 'Retest holding · Prime entry zone with tight invalidation and favorable R:R';
   }
   if (stage === 'CANDIDATE') {
-    return 'Unproven candle · Await completed close before entry';
+    return overshootAtr && overshootAtr > MAX_OVERSHOOT_ATR
+      ? 'Overextended candle (> 0.85 ATR past level) · Await pullback toward level before entering'
+      : 'Unproven candle or counter-trend · Await completed close and volume confirmation before entry';
   }
   if (stage === 'FAILED') {
     return 'Break refused · Counter-trend scalp only or wait for reclaim';
@@ -547,6 +561,9 @@ function build(
     up: resistance === null ? null : planFor('UP', resistance, input.atr),
     down: support === null ? null : planFor('DOWN', support, input.atr),
   };
+  const overshootAtr = against !== null && input.atr !== null && input.atr > 0
+    ? (side === 'UP' ? (bar.close - against) / input.atr : (against - bar.close) / input.atr)
+    : null;
   return {
     event,
     stage,
@@ -566,7 +583,7 @@ function build(
     volumeRead: read,
     words,
     insight: insightFor(stage, side, plans, tfWords(input)),
-    executionNote: executionNoteFor(stage, ratio),
+    executionNote: executionNoteFor(stage, ratio, overshootAtr),
   };
 }
 

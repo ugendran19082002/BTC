@@ -121,34 +121,6 @@ export function DeskBottomGrid({
             </div>
           ))}
         </div>
-
-        {/* Breakout / Breakdown Probability Strip */}
-        <div style={{ marginTop: 'auto', borderTop: '1px solid #162032', paddingTop: 10 }}>
-          <div style={{ fontSize: 11.5, fontWeight: 600, color: '#cbd5e1', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Layers size={13} color="#00e5ff" />
-            <span>Breakout / Breakdown Probability ({tf})</span>
-          </div>
-
-          <div className="desk-breakout-strip">
-            <div className="desk-breakout-tile desk-tile-breakout">
-              <span style={{ fontSize: 10.5, color: '#00e676', fontWeight: 600 }}>↗ Breakout &gt; 85,131</span>
-              <span style={{ fontSize: 15, fontWeight: 700, color: '#fff', fontFamily: 'ui-monospace, monospace' }}>32%</span>
-              <span style={{ fontSize: 9.5, color: '#94a3b8' }}>If triggered, move to 85,341 – 85,552</span>
-            </div>
-
-            <div className="desk-breakout-tile desk-tile-range">
-              <span style={{ fontSize: 10.5, color: '#fbbf24', fontWeight: 600 }}>⚡ Remain in Range</span>
-              <span style={{ fontSize: 15, fontWeight: 700, color: '#fff', fontFamily: 'ui-monospace, monospace' }}>53%</span>
-              <span style={{ fontSize: 9.5, color: '#94a3b8' }}>84,300 – 85,600</span>
-            </div>
-
-            <div className="desk-breakout-tile desk-tile-breakdown">
-              <span style={{ fontSize: 10.5, color: '#ff3b57', fontWeight: 600 }}>↘ Breakdown &lt; 84,300</span>
-              <span style={{ fontSize: 15, fontWeight: 700, color: '#fff', fontFamily: 'ui-monospace, monospace' }}>15%</span>
-              <span style={{ fontSize: 9.5, color: '#94a3b8' }}>If triggered, move to 84,089 – 83,800</span>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* ================= COLUMN 2: Technical Indicators ================= */}

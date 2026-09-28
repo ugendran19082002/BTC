@@ -97,6 +97,8 @@ export function DeskDashboard({
           prediction={liveData?.prediction}
           spot={effectiveSpot}
           hoursToExpiry={effectiveHours}
+          tf={tf}
+          marketState={marketState}
         />
 
         {/* Right: Big Momentum Signal (matching docs/image.png) */}

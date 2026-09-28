@@ -67,6 +67,7 @@ const DOWN = '#e2504f';
 export function PriceChart({
   bars, support, resistance, spot, zones = [], lines = [], projection = null,
   markers = [], trend = null, bias = null, tf, onTf, loading = false, error,
+  hideTfSelector = false, hideHeadline = false,
 }: {
   bars: readonly Candle[];
   /** Heaviest put strike, or null when the board has no open interest to read. */
@@ -97,6 +98,8 @@ export function PriceChart({
   onTf: (tf: ChartTf) => void;
   loading?: boolean;
   error?: string;
+  hideTfSelector?: boolean;
+  hideHeadline?: boolean;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -343,62 +346,66 @@ export function PriceChart({
   return (
     <Collapsible.Root ref={cardRef} open={open} onOpenChange={setOpen}
       className={`price-chart${full ? ' is-full' : ''}`}>
-      <div className="price-chart-head">
-        <div className="price-chart-headline">
-          <Collapsible.Trigger className="price-chart-title" aria-label="price chart">
-            <ChevronDown className={`smr-chev${open ? '' : ' shut'}`} size={13} aria-hidden />
-            BTC <span className="price-chart-dot" aria-hidden>•</span> {tf === '1d' ? '1D' : tf}
-          </Collapsible.Trigger>
+      <div className={`price-chart-head${hideHeadline ? ' is-compact' : ''}`}>
+        {!hideHeadline && (
+          <div className="price-chart-headline">
+            <Collapsible.Trigger className="price-chart-title" aria-label="price chart">
+              <ChevronDown className={`smr-chev${open ? '' : ' shut'}`} size={13} aria-hidden />
+              BTC <span className="price-chart-dot" aria-hidden>•</span> {tf === '1d' ? '1D' : tf}
+            </Collapsible.Trigger>
 
-          {/* One word for what the chart is doing, which is what it is opened
-              to find out. It is the regime the state engine measured, not a
-              second guess made here. */}
-          {trend ? (
-            <span className={`price-chart-trend is-${trend.toLowerCase()}`}>
-              {trend === 'UP' ? '↗ Uptrend' : trend === 'DOWN' ? '↘ Downtrend'
-                : trend === 'QUIET' ? '→ Quiet' : '↔ Range'}
-            </span>
-          ) : null}
+            {/* One word for what the chart is doing, which is what it is opened
+                to find out. It is the regime the state engine measured, not a
+                second guess made here. */}
+            {trend ? (
+              <span className={`price-chart-trend is-${trend.toLowerCase()}`}>
+                {trend === 'UP' ? '↗ Uptrend' : trend === 'DOWN' ? '↘ Downtrend'
+                  : trend === 'QUIET' ? '→ Quiet' : '↔ Range'}
+              </span>
+            ) : null}
 
-          {/* Which way everything measured is pointing, and by how much. The
-              share is given as weight for and against, never as a percentage
-              chance: what is true now is not how often it works out. */}
-          {bias ? (
-            <span className={`price-chart-bias is-${bias.side.toLowerCase()}`}
-              title={bias.reasons.length
-                ? `${bias.reasons.map((r) => r.text).join(' · ')} — a weighted vote of what is true now, not a probability`
-                : 'Nothing measured is pointing either way'}>
-              <b>{bias.side === 'UP' ? '▲ Up' : bias.side === 'DOWN' ? '▼ Down' : '● No lean'}</b>
-              {bias.up + bias.down > 0 ? (
-                <span>{Math.round(Math.max(bias.up, bias.down))} vs {Math.round(Math.min(bias.up, bias.down))}</span>
-              ) : null}
-            </span>
-          ) : null}
+            {/* Which way everything measured is pointing, and by how much. The
+                share is given as weight for and against, never as a percentage
+                chance: what is true now is not how often it works out. */}
+            {bias ? (
+              <span className={`price-chart-bias is-${bias.side.toLowerCase()}`}
+                title={bias.reasons.length
+                  ? `${bias.reasons.map((r) => r.text).join(' · ')} — a weighted vote of what is true now, not a probability`
+                  : 'Nothing measured is pointing either way'}>
+                <b>{bias.side === 'UP' ? '▲ Up' : bias.side === 'DOWN' ? '▼ Down' : '● No lean'}</b>
+                {bias.up + bias.down > 0 ? (
+                  <span>{Math.round(Math.max(bias.up, bias.down))} vs {Math.round(Math.min(bias.up, bias.down))}</span>
+                ) : null}
+              </span>
+            ) : null}
 
-          {open && shown && !error && (
-            <div className="price-chart-ohlc">
-              <span className="dim">{hover === null ? 'last' : IST_FULL.format(shown.time * 1000)}</span>
-              <span>O <b>{fmtStrike(Math.round(shown.open))}</b></span>
-              <span>H <b>{fmtStrike(Math.round(shown.high))}</b></span>
-              <span>L <b>{fmtStrike(Math.round(shown.low))}</b></span>
-              <span>C <b className={shown.close >= shown.open ? 'up' : 'down'}>{fmtStrike(Math.round(shown.close))}</b></span>
-              {change !== null && (
-                <b className={`price-chart-change ${change >= 0 ? 'up' : 'down'}`}>
-                  {change >= 0 ? '+' : '−'}{fmtStrike(Math.round(Math.abs(change)))} ({change >= 0 ? '+' : '−'}{Math.abs(changePct!).toFixed(2)}%)
-                </b>
-              )}
-              <span className="dim">{bars.length} bars</span>
-            </div>
-          )}
-        </div>
+            {open && shown && !error && (
+              <div className="price-chart-ohlc">
+                <span className="dim">{hover === null ? 'last' : IST_FULL.format(shown.time * 1000)}</span>
+                <span>O <b>{fmtStrike(Math.round(shown.open))}</b></span>
+                <span>H <b>{fmtStrike(Math.round(shown.high))}</b></span>
+                <span>L <b>{fmtStrike(Math.round(shown.low))}</b></span>
+                <span>C <b className={shown.close >= shown.open ? 'up' : 'down'}>{fmtStrike(Math.round(shown.close))}</b></span>
+                {change !== null && (
+                  <b className={`price-chart-change ${change >= 0 ? 'up' : 'down'}`}>
+                    {change >= 0 ? '+' : '−'}{fmtStrike(Math.round(Math.abs(change)))} ({change >= 0 ? '+' : '−'}{Math.abs(changePct!).toFixed(2)}%)
+                  </b>
+                )}
+                <span className="dim">{bars.length} bars</span>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="price-chart-controls">
-          <ToggleGroup type="single" value={tf} onValueChange={(v) => v && onTf(v as ChartTf)}
-            aria-label="chart timeframe">
-            {CHART_TFS.map((t) => (
-              <ToggleGroupItem key={t} value={t}>{t === '1d' ? '1D' : t}</ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+          {!hideTfSelector && (
+            <ToggleGroup type="single" value={tf} onValueChange={(v) => v && onTf(v as ChartTf)}
+              aria-label="chart timeframe">
+              {CHART_TFS.map((t) => (
+                <ToggleGroupItem key={t} value={t}>{t === '1d' ? '1D' : t}</ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          )}
 
           <div className="price-chart-tools" role="group" aria-label="zoom">
             <button type="button" className={`chain-chip${zoomOn ? ' on' : ''}`} aria-pressed={zoomOn}
