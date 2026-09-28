@@ -3985,8 +3985,9 @@ table.ov-mini.ov-levels { width: auto; min-width: 100%; }
 .sd-note-dim { color: var(--muted); }
 .sd-note-warn { color: var(--warn); }
 
-/* The list beside the market read. One column under 1100px. */
+/* The list beside the market read. One column under 1100px or when full width. */
 .sd-main { display: grid; gap: 10px; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }
+.sd-main.sd-full { grid-template-columns: minmax(0, 1fr); }
 @media (max-width: 1100px) { .sd-main { grid-template-columns: minmax(0, 1fr); } }
 .sd-list-wrap { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 10px 12px; min-width: 0; }
 .sd-list-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }

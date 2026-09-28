@@ -146,7 +146,7 @@ export default function App() {
    * strike is the default now, because a strike named on the screen has to be
    * findable on the screen; the narrower view is the option, not the rule.
    */
-  const [allStrikes, setAllStrikes] = usePersisted('chain:all', true);
+  const [allStrikes, setAllStrikes] = usePersisted('chain:show_all_strikes', true);
   const shownWidth = allStrikes ? 500 : width;
   const [storedCols, setCols] = usePersisted<Partial<ColumnState> | null>('chain:columns', null);
   // Where each column sits, kept beside which ones show. Both are preferences
@@ -483,6 +483,18 @@ export default function App() {
 
   const snap = data?.snapshot;
   snapRef.current = snap ?? null;
+
+  const distinctStrikes = useMemo(() => {
+    if (!data?.legs) return 0;
+    return new Set(data.legs.map((l) => l.strike)).size;
+  }, [data?.legs]);
+
+  const totalStrikes = useMemo(() => {
+    if (!snap?.coverage) return distinctStrikes;
+    return snap.coverage.above + snap.coverage.below + 1;
+  }, [snap?.coverage, distinctStrikes]);
+
+  const isShowingAllStrikes = allStrikes || (totalStrikes > 0 && distinctStrikes >= totalStrikes);
   // The last two hundred closes, for the spot KPI's sparkline.
   const sparkCloses = useMemo(() => (candles?.bars ?? NO_BARS).slice(-200).map((b) => b.close), [candles?.bars]);
 
@@ -797,7 +809,10 @@ export default function App() {
                   ATM: {snap?.atm ? snap.atm.toLocaleString() : '—'}
                 </span>
                 <span className="desk-badge-pill" style={{ background: 'rgba(255, 255, 255, 0.05)', color: '#94a3b8', border: '1px solid #1e293b' }}>
-                  {data?.legs?.length ?? 0} Strikes
+                  {distinctStrikes > 0 ? `${distinctStrikes} Strikes` : '— Strikes'}
+                </span>
+                <span className="desk-badge-pill" style={{ background: 'rgba(255, 255, 255, 0.05)', color: '#94a3b8', border: '1px solid #1e293b' }}>
+                  {data?.legs ? `${data.legs.length} Contracts` : '— Contracts'}
                 </span>
               </div>
             </div>
@@ -806,21 +821,27 @@ export default function App() {
             <>
               <div className="chain-bar">
                 <span className="dim">
-                  {data.legs.length} strikes · {snap.step} apart
+                  {isShowingAllStrikes
+                    ? `Showing all ${distinctStrikes} strikes (${data.legs.length} contracts) · ${snap.step} apart`
+                    : `Showing ${distinctStrikes} of ${totalStrikes} strikes (${data.legs.length} contracts) · ${snap.step} apart`}
                   {data.recommendation.ok && data.recommendation.sides.length > 0
                     ? ' · highlighted = desk’s pick'
                     : ' · nothing qualifies today'}
-                  {' · '}
-                  <button
-                    type="button"
-                    className="chain-link"
-                    aria-pressed={allStrikes}
-                    onClick={() => setAllStrikes(!allStrikes)}
-                  >
-                    {allStrikes
-                      ? `showing every strike Delta lists · show ${width} each side`
-                      : `show all ${snap.coverage.above + snap.coverage.below + 1} strikes`}
-                  </button>
+                  {totalStrikes > width * 2 && (
+                    <>
+                      {' · '}
+                      <button
+                        type="button"
+                        className="chain-link"
+                        aria-pressed={allStrikes}
+                        onClick={() => setAllStrikes(!allStrikes)}
+                      >
+                        {allStrikes
+                          ? `showing all strikes · show ±${width} near ATM`
+                          : `show all ${totalStrikes} strikes`}
+                      </button>
+                    </>
+                  )}
                 </span>
 
                 <ToggleGroup

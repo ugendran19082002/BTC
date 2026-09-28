@@ -1,11 +1,8 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { usePoll } from '@/hooks/usePoll';
 import { getLive } from '@/api/live';
 import type { LiveResponse } from '@/types/live';
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
-import { VerdictBar } from './VerdictBar';
-import { MomentumCard } from './MomentumCard';
-import { Ladder } from './Ladder';
 import { Card, Nothing } from './parts';
 import { SignalDesk } from './SignalDesk';
 import { DeskKpis } from './DeskKpis';
@@ -111,12 +108,6 @@ export function LiveScreen({
   /** When true, only renders the Signal history section without duplicate KPIs. */
   onlySignals?: boolean;
 }) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1_000);
-    return () => clearInterval(id);
-  }, []);
-
   /*
    * No `strikes`: the strike-safety card was removed on 27 Sep 2026, so the
    * screen stopped asking the server to judge strikes it no longer draws. The
@@ -158,24 +149,6 @@ export function LiveScreen({
             range={journal.range}
             onRange={journal.onRange}
             tfControl={journal.tfControl}
-            bigMove={(
-              <MomentumCard
-                signal={data.momentum}
-                id="live-momentum"
-                readout={(
-                  <VerdictBar
-                    ladder={data.ladder}
-                    readiness={data.readiness}
-                    hoursLeft={data.hoursToExpiry}
-                    asOf={data.asOf}
-                    now={now}
-                    stability={data.stability}
-                    penalties={data.penalties}
-                  />
-                )}
-              />
-            )}
-            timeframes={<Ladder ladder={data.ladder} id="live-ladder" />}
           />
         </ErrorBoundary>
       </div>
@@ -218,24 +191,6 @@ export function LiveScreen({
           range={journal.range}
           onRange={journal.onRange}
           tfControl={journal.tfControl}
-          bigMove={(
-            <MomentumCard
-              signal={data.momentum}
-              id="live-momentum"
-              readout={(
-                <VerdictBar
-                  ladder={data.ladder}
-                  readiness={data.readiness}
-                  hoursLeft={data.hoursToExpiry}
-                  asOf={data.asOf}
-                  now={now}
-                  stability={data.stability}
-                  penalties={data.penalties}
-                />
-              )}
-            />
-          )}
-          timeframes={<Ladder ladder={data.ladder} id="live-ladder" />}
         />
       </ErrorBoundary>
 

@@ -173,7 +173,7 @@ export function SignalDesk({
       </div>
 
       {/* 3 — the calls, beside the read they are the record of */}
-      <div className="sd-main">
+      <div className={cn('sd-main', !(bigMove || timeframes) && 'sd-full')}>
         <div className="sd-list-wrap">
           <div className="sd-list-head">
             <h3>Signal List</h3>
@@ -200,10 +200,12 @@ export function SignalDesk({
           )}
         </div>
 
-        <div className="sd-side">
-          {bigMove}
-          {timeframes}
-        </div>
+        {Boolean(bigMove || timeframes) && (
+          <div className="sd-side">
+            {bigMove}
+            {timeframes}
+          </div>
+        )}
       </div>
     </section>
   );
