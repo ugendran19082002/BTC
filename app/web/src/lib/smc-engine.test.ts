@@ -5,17 +5,6 @@ import type { Candle } from '@/types/desk';
 describe('smc-engine', () => {
   const baseTime = 1_700_000_000;
 
-  // Helper to generate simulated candles
-  function makeCandles(prices: { o: number; h: number; l: number; c: number; v?: number }[]): Candle[] {
-    return prices.map((p, idx) => ({
-      time: baseTime + idx * 300,
-      open: p.o,
-      high: p.h,
-      low: p.l,
-      close: p.c,
-      volume: p.v ?? 100,
-    }));
-  }
 
   it('handles empty or too few bars gracefully', () => {
     const res = analyzeSmc([], 70_000, '15m', 'UP');
