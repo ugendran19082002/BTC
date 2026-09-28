@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { createContext, useContext, useEffect, useRef, type ReactNode } from 'react';
 import { usePersisted } from '@/hooks/usePersisted';
 import { cn } from '@/lib/utils';
 

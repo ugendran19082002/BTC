@@ -1,18 +1,16 @@
 import { useState } from 'react';
 import { ArrowDownRight, ArrowUpRight, Check, Zap, ChevronRight } from 'lucide-react';
-import type { MomentumSignal, Ladder } from '@/types/live';
+import type { MomentumSignal } from '@/types/live';
 import type { MarketStateResponse } from '@/api/desk';
 
 export function DeskMomentumSignal({
   spot = 84595,
   momentum,
   marketState,
-  ladder,
 }: {
   spot?: number;
   momentum?: MomentumSignal | null;
   marketState?: MarketStateResponse | null;
-  ladder?: Ladder | null;
 }) {
   const [showFormula, setShowFormula] = useState(false);
 
@@ -46,7 +44,8 @@ export function DeskMomentumSignal({
   const shortReward = shortEntry - shortT2;
   const shortRr = shortRisk > 0 ? (shortReward / shortRisk).toFixed(1) : '2.5';
 
-  // Hierarchical Multi-Timeframe Checks (12H/6H -> 4H/2H -> 1H/30M -> 15M -> 5M -> 1M)
+  // The entry pipeline: levels -> setup -> trigger -> timing. The 12H/6H
+  // multi-timeframe gate went with the hierarchy on 28 Sep 2026.
   const volRatio = marketState?.state?.volumeRatio
     ?? (marketState?.indicators?.all?.find((i) => i.key === 'volume')?.value as number | undefined)
     ?? 1.2;
@@ -60,7 +59,6 @@ export function DeskMomentumSignal({
 
   // Hierarchical Gates for LONG
   const longGates = [
-    { tf: '12H/6H', gate: 'Macro Direction', check: 'Uptrend / Bullish Regime', done: ladder?.rows?.some(r => (r.tf === '12h' || r.tf === '6h') && r.way === 'UP') ?? true },
     { tf: '4H/2H', gate: 'Major Structure', check: `Support Held > ${Math.round(sLevel).toLocaleString()}`, done: spot > sLevel },
     { tf: '1H/30M', gate: 'Setup Formation', check: 'Higher Low / Compression Break', done: isLongTriggered || isRetestHeld },
     { tf: `${tf}/5M`, gate: 'Trigger Confirmed', check: `Close > ${longBreakPrice.toLocaleString()} + Vol 1.5x ${isOiUp ? '+ OI' : ''}`, done: isLongTriggered && isVolMet && isBodyMet },
@@ -69,7 +67,6 @@ export function DeskMomentumSignal({
 
   // Hierarchical Gates for SHORT
   const shortGates = [
-    { tf: '12H/6H', gate: 'Macro Direction', check: 'Downtrend / Bearish Regime', done: ladder?.rows?.some(r => (r.tf === '12h' || r.tf === '6h') && r.way === 'DOWN') ?? true },
     { tf: '4H/2H', gate: 'Major Structure', check: `Resistance Rejection < ${Math.round(rLevel).toLocaleString()}`, done: spot < rLevel },
     { tf: '1H/30M', gate: 'Setup Formation', check: 'Lower High / Channel Down', done: isShortTriggered || isRetestHeld },
     { tf: `${tf}/5M`, gate: 'Trigger Confirmed', check: `Close < ${shortBreakPrice.toLocaleString()} + Vol 1.5x ${isOiUp ? '+ OI' : ''}`, done: isShortTriggered && isVolMet && isBodyMet },
@@ -79,25 +76,25 @@ export function DeskMomentumSignal({
   const longPassed = longGates.filter((g) => g.done).length;
   const shortPassed = shortGates.filter((g) => g.done).length;
 
-  const isLongActive = (marketState?.state?.side === 'UP' && marketState?.state?.confirmed) || (longPassed >= 4 && isLongTriggered);
-  const isShortActive = (marketState?.state?.side === 'DOWN' && marketState?.state?.confirmed) || (shortPassed >= 4 && isShortTriggered);
+  const isLongActive = (marketState?.state?.side === 'UP' && marketState?.state?.confirmed) || (longPassed >= longGates.length - 1 && isLongTriggered);
+  const isShortActive = (marketState?.state?.side === 'DOWN' && marketState?.state?.confirmed) || (shortPassed >= shortGates.length - 1 && isShortTriggered);
 
-  const getStatus = (passed: number, active: boolean) => {
-    if (active && passed === 5) return { text: '🟢 ENTRY READY', bg: 'rgba(0,230,118,0.22)', color: '#00e676' };
+  const getStatus = (passed: number, total: number, active: boolean) => {
+    if (active && passed === total) return { text: '🟢 ENTRY READY', bg: 'rgba(0,230,118,0.22)', color: '#00e676' };
     if (active) return { text: '🟡 TRIGGERED', bg: 'rgba(251,191,36,0.22)', color: '#fbbf24' };
-    if (passed >= 3) return { text: '🔵 SETUP FORMING', bg: 'rgba(0,229,255,0.15)', color: '#00e5ff' };
+    if (passed >= total - 2) return { text: '🔵 SETUP FORMING', bg: 'rgba(0,229,255,0.15)', color: '#00e5ff' };
     return { text: '⚪ WATCHING', bg: 'rgba(148,163,184,0.12)', color: '#94a3b8' };
   };
 
-  const longStatus = getStatus(longPassed, isLongActive);
-  const shortStatus = getStatus(shortPassed, isShortActive);
+  const longStatus = getStatus(longPassed, longGates.length, isLongActive);
+  const shortStatus = getStatus(shortPassed, shortGates.length, isShortActive);
 
   return (
     <div className="desk-momentum-panel" aria-label="Big Momentum Signal Card">
       <div className="desk-panel-title">
         <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <Zap size={16} color="#fbbf24" />
-          <span>Big Momentum Signal · MTF Engine</span>
+          <span>Big Momentum Signal</span>
         </span>
         <button
           type="button"
@@ -123,7 +120,7 @@ export function DeskMomentumSignal({
       {showFormula && (
         <div style={{ background: '#070a12', border: '1px solid rgba(0,229,255,0.2)', borderRadius: 8, padding: '8px 10px', fontSize: 10.5, color: '#94a3b8', lineHeight: 1.4 }}>
           <div style={{ fontWeight: 700, color: '#f1f5f9', marginBottom: 2 }}>High-Accuracy 5-Gate Hierarchy:</div>
-          <div>1. <b>12H/6H</b> Direction → 2. <b>4H/2H</b> Levels → 3. <b>1H/30M</b> Setup → 4. <b>15M/5M</b> Trigger → 5. <b>1M</b> Timing</div>
+          <div>1. <b>4H/2H</b> Levels → 2. <b>1H/30M</b> Setup → 3. <b>15M/5M</b> Trigger → 4. <b>1M</b> Timing</div>
           <div style={{ color: '#64748b', fontSize: 9.5, marginTop: 2 }}>Eliminates false signals by requiring higher-timeframe confluence before lower-timeframe execution.</div>
         </div>
       )}
@@ -152,7 +149,7 @@ export function DeskMomentumSignal({
           {/* Checklist */}
           <div className="desk-sig-checklist">
             <span style={{ fontSize: 10, color: '#8492a6', fontWeight: 600, textTransform: 'uppercase' }}>
-              MTF Pipeline ({longPassed}/5)
+              Pipeline ({longPassed}/{longGates.length})
             </span>
             {longGates.map((g, i) => (
               <div key={i} className={`desk-check-item ${g.done ? 'done' : ''}`} style={{ fontSize: 10 }}>
@@ -217,7 +214,7 @@ export function DeskMomentumSignal({
           {/* Checklist */}
           <div className="desk-sig-checklist">
             <span style={{ fontSize: 10, color: '#8492a6', fontWeight: 600, textTransform: 'uppercase' }}>
-              MTF Pipeline ({shortPassed}/5)
+              Pipeline ({shortPassed}/{shortGates.length})
             </span>
             {shortGates.map((g, i) => (
               <div key={i} className={`desk-check-item ${g.done ? 'done' : ''}`} style={{ fontSize: 10 }}>

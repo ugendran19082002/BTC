@@ -3,20 +3,22 @@ import type { LiveResponse } from '@/types/live';
 import type { MarketStateResponse, PerpResponse } from '@/api/desk';
 import type { ChartTf } from '@/components/desk/PriceChart';
 import { DeskHeader } from './DeskHeader';
-import { DeskTopKpis } from './DeskTopKpis';
 import { DeskChart } from './DeskChart';
-import { DeskExpiryPrediction } from './DeskExpiryPrediction';
 import { DeskMomentumSignal } from './DeskMomentumSignal';
 import { DeskStatsBar } from './DeskStatsBar';
-import { DeskBottomGrid } from './DeskBottomGrid';
 import './desk-dashboard.css';
 
+/*
+ * The KPI strip (market state, direction, expiry, big move risk, decision,
+ * regime), the expiry prediction engine and the bottom analysis grid (key
+ * levels, the multi-timeframe hierarchy, option bias, market score, expiry
+ * chances) were removed on 28 Sep 2026. See docs/TODO.md.
+ */
 export function DeskDashboard({
   data,
   liveData,
   marketState,
   perp,
-  breakRisk,
   bars,
   spot,
   tf = '15m',
@@ -27,14 +29,12 @@ export function DeskDashboard({
   error,
   onAlerts,
   onSettings,
-  optionBias,
   controls,
 }: {
   data?: ChainResponse | null;
   liveData?: LiveResponse | null;
   marketState?: MarketStateResponse | null;
   perp?: PerpResponse | null;
-  breakRisk?: any;
   bars: readonly Candle[];
   spot: number;
   tf: ChartTf;
@@ -45,7 +45,6 @@ export function DeskDashboard({
   error?: string;
   onAlerts?: () => void;
   onSettings?: () => void;
-  optionBias?: any;
   controls?: React.ReactNode;
 }) {
   const effectiveHours = hoursToExpiry ?? liveData?.hoursToExpiry ?? 20.6;
@@ -71,17 +70,8 @@ export function DeskDashboard({
         controls={controls}
       />
 
-      {/* 2. Top 5 KPI Cards */}
-      <DeskTopKpis
-        liveData={liveData}
-        marketState={marketState}
-        breakRisk={breakRisk}
-        hoursToExpiry={effectiveHours}
-      />
-
-      {/* 3. Center 3-Column Row: Chart | Expiry Prediction | Momentum & Score */}
+      {/* 2. Center row: Chart | Momentum signal */}
       <div className="desk-center-row">
-        {/* Left: Candlestick Chart with Volume & Overlaid Zones */}
         <DeskChart
           bars={bars}
           spot={effectiveSpot}
@@ -92,25 +82,14 @@ export function DeskDashboard({
           error={error}
         />
 
-        {/* Middle: Expiry Prediction Card */}
-        <DeskExpiryPrediction
-          prediction={liveData?.prediction}
-          spot={effectiveSpot}
-          hoursToExpiry={effectiveHours}
-          tf={tf}
-          marketState={marketState}
-        />
-
-        {/* Right: Big Momentum Signal (matching docs/image.png) */}
         <DeskMomentumSignal
           spot={effectiveSpot}
           momentum={liveData?.momentum}
           marketState={marketState}
-          ladder={liveData?.ladder}
         />
       </div>
 
-      {/* 4. Stats Bar Strip (7 KPI metrics) */}
+      {/* 3. Stats Bar Strip (7 KPI metrics) */}
       <DeskStatsBar
         spot={effectiveSpot}
         perpTicker={perp?.ticker}
@@ -118,17 +97,6 @@ export function DeskDashboard({
         pcr={pcr}
         pcrVol={pcrVol}
         changePct={perp?.ticker?.change24hPct ?? 0.32}
-      />
-
-      {/* 5. Bottom 4-Column Analysis Grid */}
-      <DeskBottomGrid
-        bars={bars}
-        spot={effectiveSpot}
-        tf={tf}
-        marketState={marketState}
-        ladder={liveData?.ladder}
-        prediction={liveData?.prediction}
-        optionBias={optionBias}
       />
     </div>
   );
