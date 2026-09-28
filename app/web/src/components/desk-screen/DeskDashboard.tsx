@@ -64,8 +64,8 @@ export function DeskDashboard({
         controls={controls}
       />
 
-      {/* 2. Center row: Chart | Momentum signal */}
-      <div className="desk-center-row">
+      {/* 2. The price chart, full width on a row of its own */}
+      <div className="desk-chart-row">
         <DeskChart
           bars={bars}
           spot={effectiveSpot}
@@ -75,7 +75,10 @@ export function DeskDashboard({
           loading={loading}
           error={error}
         />
+      </div>
 
+      {/* 3. The momentum signal, under the chart */}
+      <div className="desk-signal-row">
         <DeskMomentumSignal
           spot={effectiveSpot}
           momentum={liveData?.momentum}
@@ -83,7 +86,7 @@ export function DeskDashboard({
         />
       </div>
 
-      {/* 3. Stats Bar Strip (7 KPI metrics) */}
+      {/* 4. Stats Bar Strip (7 KPI metrics) */}
       <DeskStatsBar
         spot={effectiveSpot}
         perpTicker={perp?.ticker}

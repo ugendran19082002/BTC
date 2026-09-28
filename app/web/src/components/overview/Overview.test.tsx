@@ -2,21 +2,15 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { ChainResponse } from '@/types/desk';
 import live from '@/test/fixtures/chain-live.json';
-import { Overview } from './Overview';
+import { Overview, screenSpot } from './Overview';
 
 vi.mock('@/api/desk', () => ({
-  getTerm: () => new Promise(() => {}),
   getPerp: () => new Promise(() => {}),
   getChanges: () => new Promise(() => {}),
 }));
 
 const data = live as unknown as ChainResponse;
 
-/**
- * The Live screen's decision panels against a real /api/chain response
- * (19 Sep 2026): every panel draws, and the screen -- not the panels -- owns
- * the selected strike when it asks to.
- */
 /**
  * One price on the screen, and it is the newest one available.
  *
@@ -27,28 +21,17 @@ const data = live as unknown as ChainResponse;
  * now tick → chain snapshot → 5m close, each step staler than the last.
  */
 describe('which price the screen measures from', () => {
-  const marketSpot = (data.market as { spot?: number } | null)?.spot;
-
   it('[critical] the one-second tick wins over the chain snapshot and the 5m close', () => {
-    render(<Overview data={data} trade={null} tick={99_111} />);
-    expect(screen.getByText('99,111.0')).toBeInTheDocument();
+    expect(screenSpot(99_111, 84_000, 83_900)).toBe(99_111);
   });
 
   it('[critical] with no tick it falls back to the chain snapshot, never to the 5m close', () => {
-    render(<Overview data={data} trade={null} />);
-    expect(screen.getByText(data.snapshot.spot.toLocaleString('en-US', {
-      minimumFractionDigits: 1, maximumFractionDigits: 1,
-    }))).toBeInTheDocument();
+    expect(screenSpot(null, 84_000, 83_900)).toBe(84_000);
+    expect(screenSpot(undefined, 84_000, 83_900)).toBe(84_000);
   });
 
-  it('[critical] the 5m candle close is never preferred over a ticker price', () => {
-    // The regression this guards: if the fixture's two spots differ, the stale
-    // one must not be the one drawn.
-    if (marketSpot === undefined || marketSpot === data.snapshot.spot) return;
-    render(<Overview data={data} trade={null} />);
-    expect(screen.queryByText(marketSpot.toLocaleString('en-US', {
-      minimumFractionDigits: 1, maximumFractionDigits: 1,
-    }))).not.toBeInTheDocument();
+  it('the 5m close only when there is nothing newer', () => {
+    expect(screenSpot(null, null, 83_900)).toBe(83_900);
   });
 });
 
@@ -59,12 +42,11 @@ describe('the market read', () => {
     // The early warning stays (owner's request, 28 Sep 2026).
     expect(screen.getByText('Big move catch', { selector: 'h3' })).toBeInTheDocument();
     expect(screen.getAllByText(/^(BTC perpetual|Options · CE \/ PE)$/).length).toBe(2);
-    expect(screen.getByText(/^Skew · /)).toBeInTheDocument();
   });
 
   it('[critical] the panels removed on 28 Sep 2026 stay removed', () => {
     render(<Overview data={data} trade={null} />);
-    for (const gone of ['Strategy decision', 'Multi-timeframe', 'Big move risk', /^What changed/]) {
+    for (const gone of ['Volatility & skew', 'Strategy decision', 'Multi-timeframe', 'Big move risk', /^What changed/]) {
       expect(screen.queryByText(gone, { selector: 'h3' })).toBeNull();
     }
     for (const gone of [/Big Move Catch/, 'Signal History', 'Expiry Prediction Engine', 'Market Analysis Score', /^Multi-Timeframe Hierarchy/, 'Key Levels', 'Market State', 'Market Regime']) {

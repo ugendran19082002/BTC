@@ -190,9 +190,7 @@ export function odds(leg: Leg): Odds {
 
 // ---------------------------------------------------------------- payoff
 
-
 // ------------------------------------------------------------ both sides
-
 
 // ---------------------------------------------------------- the decision
 
@@ -580,47 +578,6 @@ export function sideGates(input: {
   ];
 }
 
-/**
- * SELL when every gate passes; WATCH when only soft gates fail and no more
- * than `softFailsAllowed` of them; NOT PREFERRED otherwise. A hard gate
- * (direction, touch odds, distance, tail, margin) failing is never softened,
- * whatever the strictness.
- */
-export function sideStatusOf(gates: readonly SideGate[], softFailsAllowed = 2): SideStatus {
-  const hard = new Set(['Direction', 'PoT', 'Distance / EM', 'Tail risk', 'Margin']);
-  if (gates.every((g) => g.ok === true)) return 'SELL';
-  if (gates.some((g) => hard.has(g.name) && g.ok === false)) return 'NOT PREFERRED';
-  return gates.filter((g) => g.ok !== true).length <= softFailsAllowed ? 'WATCH' : 'NOT PREFERRED';
-}
-
-export type SideChoice = { side: 'CE' | 'PE' | 'BOTH' | 'NO_TRADE'; why: string };
-
-/**
- * The side, from the regime and the horizon consensus and each side's own
- * safety -- never from the score alone. Bullish and the put safe: PE.
- * Bearish and the call safe: CE. Range and both safe: BOTH. A conflict, or
- * a failed side: NO_TRADE.
- */
-export function sideSelector(regime: string | null, outlook: Outlook, ceStatus: SideStatus, peStatus: SideStatus, mtf?: MtfConsensus): SideChoice {
-  // The multi-timeframe consensus where the screen has one (the same table it shows); the horizon leans otherwise.
-  const c = mtf ? { up: mtf.up, down: mtf.down, scored: mtf.scored } : consensus(outlook);
-  const bull = c.scored > 0 && c.up > c.scored / 2;
-  const bear = c.scored > 0 && c.down > c.scored / 2;
-  const regUp = regime !== null && /up/i.test(regime);
-  const regDown = regime !== null && /down/i.test(regime);
-  const regRange = regime !== null && /quiet|mixed|range/i.test(regime);
-  const ceOk = ceStatus !== 'NOT PREFERRED', peOk = peStatus !== 'NOT PREFERRED';
-  if ((regUp && bear) || (regDown && bull)) return { side: 'NO_TRADE', why: `Regime "${regime}" against the horizons (${c.up} up · ${c.down} down)` };
-  if ((regUp || bull) && !regDown && !bear) return peOk ? { side: 'PE', why: 'Bullish regime and horizons; the put side passes' } : { side: 'NO_TRADE', why: 'Bullish, but the put side fails its gates' };
-  if ((regDown || bear) && !regUp && !bull) return ceOk ? { side: 'CE', why: 'Bearish regime and horizons; the call side passes' } : { side: 'NO_TRADE', why: 'Bearish, but the call side fails its gates' };
-  if (regRange || (!bull && !bear)) {
-    if (ceOk && peOk) return { side: 'BOTH', why: 'Range regime; both sides pass' };
-    if (ceOk) return { side: 'CE', why: 'Range regime; only the call side passes' };
-    if (peOk) return { side: 'PE', why: 'Range regime; only the put side passes' };
-  }
-  return { side: 'NO_TRADE', why: 'No side passes its gates' };
-}
-
 // --------------------------------------------------- execution estimate
 
 // ------------------------------------------------------- early warning
@@ -953,25 +910,6 @@ export function mtfConsensus(market: MarketRead | null, outlook: Outlook): MtfCo
   };
 }
 
-// ------------------------------------------------- support and resistance
-
-export type SrDistance = { name: string; price: number; usd: number; pct: number; atr: number | null };
-
-/** The nearest support below spot and the nearest resistance above, how far each is in dollars, percent and ATRs. */
-export function srDistances(levels: readonly NamedLevel[], spot: number, atrUsd: number | null): { support: SrDistance | null; resistance: SrDistance | null } {
-  const make = (l: NamedLevel | undefined): SrDistance | null => (l ? { name: l.name, price: l.price, usd: l.price - spot, pct: ((l.price - spot) / spot) * 100, atr: atrUsd && atrUsd > 0 ? Math.abs(l.price - spot) / atrUsd : null } : null);
-  const above = levels.filter((l) => l.price > spot).sort((a, b) => a.price - b.price)[0];
-  const below = levels.filter((l) => l.price < spot).sort((a, b) => b.price - a.price)[0];
-  return { support: make(below), resistance: make(above) };
-}
-
-/** Swing reading on one timeframe against its trend: a break of structure continues the trend; a change of character goes against it. */
-export function structureRead(structure: -1 | 0 | 1 | undefined, trend: -1 | 0 | 1): { swings: string; kind: 'BOS' | 'CHOCH' | null } {
-  const swings = structure === 1 ? 'HH / HL' : structure === -1 ? 'LH / LL' : 'no clear swings';
-  if (!structure) return { swings, kind: null };
-  return { swings, kind: trend === 0 || Math.sign(trend) === Math.sign(structure) ? 'BOS' : 'CHOCH' };
-}
-
 // ------------------------------------------------------------ option bias
 
 export type SideBias = {
@@ -1087,7 +1025,6 @@ export function windowMinutes(choice: WindowChoice, nowMs: number): number {
 export const windowLabel = (c: WindowChoice) => (c === 'start' ? 'since 05:30' : c === 'expiry' ? 'since last expiry' : c);
 
 // -------------------------------------------------------- the finder's best
-
 
 // ---------------------------------------------------------- skew richness
 

@@ -643,68 +643,6 @@ export type ChainResponse = {
 };
 
 export type Band = { min: number; max: number };
-export type Params = {
-  ce: Band | null;
-  pe: Band | null;
-  priceSource: 'ltp' | 'mark';
-  maxAgeMin: number;
-  pick: 'highest' | 'lowest';
-  lots: number;
-  slippage: number;
-  skipWeekdays: number[];
-  hedgeGap: number;
-  from?: string;
-  to?: string;
-};
-
-export type Summary = {
-  days: number;
-  wins: number;
-  losses: number;
-  winPct: number;
-  totalUsd: number;
-  totalInr: number;
-  avgUsd: number;
-  grossWin: number;
-  grossLoss: number;
-  profitFactor: number;
-  worstDayUsd: number;
-  worstDate: string | null;
-  bestDayUsd: number;
-  maxDrawdownUsd: number;
-  returnOverMdd: number;
-};
-
-export type TradeDay = {
-  date: string;
-  weekday: number;
-  spot: number;
-  settle: number;
-  legs: {
-    side: 'CE' | 'PE';
-    strike: number;
-    entry: number;
-    exit: number;
-    hedgeStrike: number | null;
-    pnlUsd: number;
-  }[];
-  pnlUsd: number;
-  pnlInr: number;
-  cum: number;
-};
-
-export type BacktestResponse = {
-  params: Params;
-  summary: Summary;
-  trades: TradeDay[];
-  truncated: boolean;
-  totalDays: number;
-};
-
-export type ByYearResponse = {
-  overall: Summary;
-  years: (Summary & { year: string })[];
-};
 
 export type Candle = {
   time: number;

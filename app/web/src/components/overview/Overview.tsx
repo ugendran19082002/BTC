@@ -2,25 +2,34 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { usePersisted } from '@/hooks/usePersisted';
 import type { Candle, ChainResponse, ExpiryOption } from '@/types/desk';
 import type { TradeStatus } from '@/types/trade';
-import { getPerp, getTerm, type MarketStateResponse } from '@/api/desk';
+import { getPerp, type MarketStateResponse } from '@/api/desk';
 import { getLive } from '@/api/live';
 import type { LiveResponse } from '@/types/live';
 import { DeskDashboard } from '@/components/desk-screen/DeskDashboard';
 import { usePoll } from '@/hooks/usePoll';
 import type { ChartTf } from '@/components/desk/PriceChart';
-import { bestLeg, ivRv, windowMinutes, skew, type WindowChoice } from '@/lib/overview';
+import { bestLeg, windowMinutes, type WindowChoice } from '@/lib/overview';
 import { PanelFold } from './parts';
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
-import { FlowPanel, VolatilityPanel } from './MarketPanels';
+import { FlowPanel } from './MarketPanels';
 import { findLeg, type Selected } from './DecisionPanels';
 import { EarlyWarningPanel, useChanges } from './TraderPanels';
 
 /**
+ * The price the screen measures from: the one-second tick, then the chain
+ * snapshot's own spot, then the 5-minute close -- each step staler than the
+ * last, so never the other way round (27 Sep 2026).
+ */
+export const screenSpot = (tick: number | null | undefined, snapshot: number | null | undefined, close5m: number | null | undefined): number =>
+  tick ?? snapshot ?? close5m ?? 0;
+
+/**
  * The Live screen: the desk dashboard (header, chart, momentum signal, stats
- * strip), then the market read -- the early warning ("Big move catch"),
- * volatility and the options' and perpetual's tape.
+ * strip), then the market read -- the early warning ("Big move catch") and
+ * the options' and perpetual's tape.
  *
- * The Big Move Catch section's signal history and big move risk, What changed, the multi-timeframe table and the strategy decision
+ * The Big Move Catch section's signal history and big move risk, What changed,
+ * volatility & skew, the multi-timeframe table and the strategy decision
  * were removed on 28 Sep 2026, with the dashboard's KPI strip, expiry
  * prediction and analysis grid. See docs/TODO.md.
  *
@@ -65,24 +74,20 @@ export function Overview({
     { deps: [snap.expiry] },
   );
 
-  const iv = ivRv(data.structure.atmIv, data.market?.realisedVol ?? null);
   /*
    * The price every figure on this screen is measured from — newest source first
    * (27 Sep 2026): the 1-second tick the header already polls, then the chain
    * snapshot's own `spot_price` (the option tickers, ~8s), then the 5-minute
    * close as a last resort. Every step down is a step staler.
    */
-  const spot = tick ?? snap.spot ?? data.market?.spot ?? 0;
+  const spot = screenSpot(tick, snap.spot, data.market?.spot);
 
   // The perpetual (funding, book, the hour's flow, OI acceleration) every five
-  // seconds; the term structure and the ranks once a minute -- they move slowly.
+  // seconds.
   // The tape's window, shared by the perp's flow and the options' flow; the request follows it.
   const [flowWindow, setFlowWindow] = usePersisted<WindowChoice>('live:flow:window', '1h');
   const flowMin = windowMinutes(flowWindow, now);
   const { data: perp } = usePoll(() => getPerp(flowMin, snap.expiry), 5_000, { enabled: snap.live, deps: [snap.expiry, flowMin] });
-  const skewPts = useMemo(() => skew(data.legs, data.structure.atmIv).putCallPts, [data.legs, data.structure.atmIv]);
-  const atmIv = data.structure.atmIv;
-  const { data: term } = usePoll(() => getTerm(skewPts, atmIv), 60_000, { deps: [skewPts === null, atmIv === null] });
 
   // The strike the early warning reads its premium and IV changes from: the
   // one clicked on the chain, else the server's own pick, the put first -- the
@@ -149,9 +154,6 @@ export function Overview({
         <div className="ov-col">
           <ErrorBoundary where="Early warning">
             <EarlyWarningPanel data={data} perp={perp} changes={changes?.rows ?? null} />
-          </ErrorBoundary>
-          <ErrorBoundary where="Volatility">
-            <VolatilityPanel data={data} iv={iv} skewRank={term?.skew ?? null} />
           </ErrorBoundary>
         </div>
         <div className="ov-col">
