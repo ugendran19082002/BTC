@@ -602,7 +602,41 @@ export function PriceChart({
       return { l, y, x1: 0, x2: xMax };
     });
 
-    // 7. DB Saved Annotations (manual or previously saved auto setups)
+    // 7. Liquidity Sweeps (Takes Sell Stops / Takes Buy Stops)
+    const sweepShapes = (showLiquidity ? smc.sweeps : []).map((sw) => {
+      const y = safeY(sw.price);
+      const x = safeX(sw.time, sw.barIndex);
+      return { ...sw, x, y };
+    });
+
+    // 8. Displacements (Strong Move)
+    const dispShapes = (showStructure ? smc.displacements : []).map((dp) => {
+      const y = safeY(dp.price);
+      const x = safeX(dp.time, dp.barIndex);
+      return { ...dp, x, y };
+    });
+
+    // 9. Mitigation Blocks (Retest)
+    const mitShapes = (showSmc ? smc.mitigations : []).map((mit) => {
+      const yHigh = safeY(mit.priceHigh);
+      const yLow = safeY(mit.priceLow);
+      const top = Math.min(yHigh, yLow);
+      const height = Math.max(Math.abs(yLow - yHigh), 12);
+      const xLeft = safeX(mit.time, mit.barIndex);
+      const xRight = xMax;
+      return { ...mit, top, height, xLeft, xRight };
+    });
+
+    // 10. Institutional Supply & Demand Zones
+    const supplyDemandShapes = (showSmc ? smc.supplyDemandZones : []).map((sd) => {
+      const yHigh = safeY(sd.priceHigh);
+      const yLow = safeY(sd.priceLow);
+      const top = Math.min(yHigh, yLow);
+      const height = Math.max(Math.abs(yLow - yHigh), 22);
+      return { ...sd, top, height };
+    });
+
+    // 11. DB Saved Annotations (manual or previously saved auto setups)
     const annShapes = annotations.map((ann) => {
       const meta = KIND_META[ann.kind] ?? { label: ann.label || 'Zone', fill: 'rgba(255,255,255,0.1)', border: '#60a5fa' };
       const yTop = safeY(ann.priceHigh);
@@ -622,6 +656,10 @@ export function PriceChart({
       breakShapes,
       liqShapes,
       annShapes,
+      sweepShapes,
+      dispShapes,
+      mitShapes,
+      supplyDemandShapes,
       zones: zoneShapes(zones, c),
       lines: lineShapes(lines, c),
       callouts: calloutShapes(projection, spot > 0 ? spot : effectiveBars[effectiveBars.length - 1]!.close, c),
@@ -826,95 +864,275 @@ export function PriceChart({
                   <marker id="pc-arrow-down" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="5" markerHeight="5" orient="auto">
                     <path d="M 0 0 L 8 4 L 0 8 z" fill={C_DOWN} />
                   </marker>
+                  <marker id="smc-arrow-bos" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+                    <path d="M 0 0 L 8 4 L 0 8 z" fill="#facc15" />
+                  </marker>
+                  <marker id="smc-arrow-choch" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+                    <path d="M 0 0 L 8 4 L 0 8 z" fill="#c084fc" />
+                  </marker>
+                  <marker id="smc-arrow-disp" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+                    <path d="M 0 0 L 8 4 L 0 8 z" fill="#34d399" />
+                  </marker>
+                  <marker id="smc-arrow-red" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+                    <path d="M 0 0 L 8 4 L 0 8 z" fill="#ef4444" />
+                  </marker>
+                  <marker id="smc-arrow-purple" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+                    <path d="M 0 0 L 8 4 L 0 8 z" fill="#a855f7" />
+                  </marker>
                 </defs>
 
-                {/* ── 1. Order Blocks (OB↑ & OB↓) ─────────────────────────── */}
+                {/* ── 1. Institutional Supply & Demand Zones ───────────────── */}
+                {overlay.supplyDemandShapes.map((zone, idx) => {
+                  const isSupply = zone.type === 'supply';
+                  const strokeColor = isSupply ? '#ef4444' : '#10b981';
+                  const fillColor = isSupply ? 'rgba(239, 68, 68, 0.16)' : 'rgba(16, 185, 129, 0.15)';
+                  const bannerX = isSupply ? Math.max(20, overlay.xMax - 230) : 24;
+                  return (
+                    <g key={`sd-${idx}`} className="smc-sd-zone">
+                      <rect x={0} y={zone.top} width={overlay.xMax} height={zone.height}
+                        fill={fillColor} stroke={strokeColor} strokeWidth="1.2" strokeDasharray="6 4" rx={2} />
+                      <rect x={bannerX} y={zone.top + 3} width={188} height={26} rx={4}
+                        fill="rgba(10,14,23,0.96)" stroke={strokeColor} strokeWidth="1.4" />
+                      <text x={bannerX + 94} y={zone.top + 15} fontSize="10.5" fontWeight="800"
+                        fill={strokeColor} textAnchor="middle">
+                        {zone.label}
+                      </text>
+                      <text x={bannerX + 94} y={zone.top + 25} fontSize="8.5" fontWeight="700"
+                        fill="rgba(226,235,245,0.85)" textAnchor="middle">
+                        {zone.sublabel}
+                      </text>
+                    </g>
+                  );
+                })}
+
+                {/* ── 2. Order Blocks (Bullish OB & Bearish OB with Entry Zone) */}
                 {overlay.obShapes.map(({ ob, top, height, xLeft, xRight }) => {
                   const isBull = ob.type === 'bull';
-                  const strokeColor = isBull ? C_UP : C_DOWN;
-                  const fillColor = isBull ? 'rgba(38,161,123,0.22)' : 'rgba(226,80,79,0.22)';
+                  const strokeColor = isBull ? '#10b981' : '#ef4444';
+                  const fillColor = isBull ? 'rgba(16, 185, 129, 0.18)' : 'rgba(239, 68, 68, 0.18)';
+                  const badgeWidth = 118;
+                  const badgeHeight = 28;
                   return (
                     <g key={ob.id} className="smc-ob-group" data-type={ob.type}>
-                      <rect x={xLeft} y={top} width={Math.max(xRight - xLeft, 20)} height={height}
-                        fill={fillColor} stroke={strokeColor} strokeWidth="1.5" rx={3} />
-                      {/* Left Badge */}
-                      <rect x={xLeft + 6} y={top + 2} width={isBull ? 116 : 112} height={18} rx={3}
-                        fill="rgba(10,14,23,0.92)" stroke={strokeColor} strokeWidth="1" />
-                      <text x={xLeft + 10} y={top + 15} fontSize="10.5" fontWeight="700" fill={strokeColor}>
-                        {ob.label}
+                      <rect x={xLeft} y={top} width={Math.max(xRight - xLeft, 30)} height={height}
+                        fill={fillColor} stroke={strokeColor} strokeWidth="1.6" rx={3} />
+                      {/* Left Badge with Dual-Line SMC Tag */}
+                      <rect x={xLeft + 4} y={top + 3} width={badgeWidth} height={badgeHeight} rx={4}
+                        fill="rgba(10,14,23,0.95)" stroke={strokeColor} strokeWidth="1.2" />
+                      <text x={xLeft + 10} y={top + 15} fontSize="10.5" fontWeight="800" fill={strokeColor}>
+                        {isBull ? 'Bullish OB' : 'Bearish OB'}
                       </text>
+                      <text x={xLeft + 10} y={top + 26} fontSize="8.5" fontWeight="600" fill={isBull ? '#a7f3d0' : '#fecaca'}>
+                        (Entry Zone)
+                      </text>
+                      {/* Bearish OB pointer arrow if bear */}
+                      {!isBull && (
+                        <path d={`M ${xLeft + badgeWidth + 8} ${top + 14} L ${xLeft + badgeWidth + 24} ${top + 14}`}
+                          stroke="#ef4444" strokeWidth="2" markerEnd="url(#smc-arrow-red)" />
+                      )}
                       {/* Price Range */}
-                      <text x={xRight - 8} y={top + 14} fontSize="10" fontWeight="600" fill="rgba(226,235,245,0.9)" textAnchor="end">
-                        {fmtStrike(Math.round(ob.priceHigh))} – {fmtStrike(Math.round(ob.priceLow))}
+                      <text x={xRight - 8} y={top + 17} fontSize="10" fontWeight="700" fill="rgba(226,235,245,0.9)" textAnchor="end">
+                        ${fmtStrike(Math.round(ob.priceHigh))} – ${fmtStrike(Math.round(ob.priceLow))}
                       </text>
                     </g>
                   );
                 })}
 
-                {/* ── 2. Fair Value Gaps (FVG) ────────────────────────────── */}
+                {/* ── 3. Fair Value Gaps (FVG - Vibrant Blue Box & 50% CE) ──── */}
                 {overlay.fvgShapes.map(({ fvg, top, height, xLeft, xRight }) => {
-                  const isBull = fvg.type === 'bull';
-                  const strokeColor = isBull ? C_BOS : C_CHOCH;
-                  const fillColor = isBull ? 'rgba(96,165,250,0.16)' : 'rgba(245,158,11,0.16)';
+                  const strokeColor = '#3b82f6';
+                  const fillColor = 'rgba(29, 78, 216, 0.45)';
+                  const ceY = top + height / 2;
+                  const fvgWidth = Math.max(xRight - xLeft, 40);
                   return (
-                    <g key={fvg.id} className="smc-fvg-group" data-type={fvg.type}>
-                      <rect x={xLeft} y={top} width={Math.max(xRight - xLeft, 20)} height={height}
-                        fill={fillColor} stroke={strokeColor} strokeWidth="1.2" strokeDasharray="5 3" rx={2} />
-                      <rect x={xLeft + 6} y={top + 2} width={74} height={16} rx={2}
-                        fill="rgba(10,14,23,0.92)" stroke={strokeColor} strokeWidth="0.8" />
-                      <text x={xLeft + 10} y={top + 14} fontSize="10" fontWeight="700" fill={strokeColor}>
-                        {fvg.label}
+                    <g key={fvg.id} className="smc-fvg-group">
+                      <rect x={xLeft} y={top} width={fvgWidth} height={height}
+                        fill={fillColor} stroke={strokeColor} strokeWidth="1.4" rx={2} />
+                      {/* 50% Consequent Encroachment (CE) Midline */}
+                      <line x1={xLeft} x2={xLeft + fvgWidth} y1={ceY} y2={ceY}
+                        stroke="#93c5fd" strokeWidth="1" strokeDasharray="4 3" opacity="0.85" />
+                      {/* Centered White FVG Badge */}
+                      <rect x={xLeft + Math.min(fvgWidth / 2 - 24, 70)} y={ceY - 10} width={48} height={20} rx={3}
+                        fill="rgba(10,14,23,0.92)" stroke={strokeColor} strokeWidth="1" />
+                      <text x={xLeft + Math.min(fvgWidth / 2, 94)} y={ceY + 4} fontSize="11" fontWeight="800"
+                        fill="#ffffff" textAnchor="middle">
+                        FVG
                       </text>
                     </g>
                   );
                 })}
 
-                {/* ── 3. Liquidity Lines (BSL & SSL) ──────────────────────── */}
+                {/* ── 4. Mitigation Blocks (Retest) ─────────────────────────── */}
+                {overlay.mitShapes.map((mit) => {
+                  return (
+                    <g key={mit.id} className="smc-mit-group">
+                      <rect x={mit.xLeft} y={mit.top} width={Math.max(mit.xRight - mit.xLeft, 30)} height={mit.height}
+                        fill="rgba(168, 85, 247, 0.16)" stroke="#c084fc" strokeWidth="1.4" strokeDasharray="5 3" rx={3} />
+                      <line x1={mit.xLeft} x2={mit.xRight} y1={mit.top} y2={mit.top}
+                        stroke="#c084fc" strokeWidth="1.2" strokeDasharray="4 3" />
+                      <rect x={mit.xLeft + 6} y={mit.top + 3} width={124} height={28} rx={4}
+                        fill="rgba(10,14,23,0.95)" stroke="#c084fc" strokeWidth="1.2" />
+                      <text x={mit.xLeft + 12} y={mit.top + 15} fontSize="10.5" fontWeight="800" fill="#c084fc">
+                        Mitigation Block
+                      </text>
+                      <text x={mit.xLeft + 12} y={mit.top + 26} fontSize="8.5" fontWeight="600" fill="#e9d5ff">
+                        (Retest)
+                      </text>
+                    </g>
+                  );
+                })}
+
+                {/* ── 5. Structure Breaks (BOS - Gold dual-line badge with arrow) */}
+                {overlay.breakShapes.filter(s => s.b.type === 'BOS').map(({ b, y, x1, x2 }, idx) => {
+                  const arrowMarker = 'url(#smc-arrow-bos)';
+                  const isBull = b.direction === 'bullish';
+                  const badgeX = Math.min(x2 - 110, overlay.xMax - 120);
+                  const badgeY = isBull ? y - 34 : y + 6;
+                  return (
+                    <g key={`bos-${idx}`} className="smc-bos-group">
+                      {/* Broken level horizontal line */}
+                      <line x1={x1} x2={x2} y1={y} y2={y} stroke="#facc15"
+                        strokeWidth="1.8" strokeDasharray="6 3" />
+                      {/* Pointer line & Arrow */}
+                      <path d={`M ${badgeX + 56} ${isBull ? badgeY + 28 : badgeY} L ${x2} ${y}`}
+                        stroke="#facc15" strokeWidth="1.4" markerEnd={arrowMarker} />
+                      {/* BOS Gold Pill Badge */}
+                      <rect x={badgeX} y={badgeY} width={112} height={28} rx={4}
+                        fill="rgba(10,14,23,0.95)" stroke="#facc15" strokeWidth="1.3" />
+                      <text x={badgeX + 56} y={badgeY + 12} fontSize="11" fontWeight="800"
+                        fill="#facc15" textAnchor="middle">
+                        BOS
+                      </text>
+                      <text x={badgeX + 56} y={badgeY + 23} fontSize="8.5" fontWeight="600"
+                        fill="#fef08a" textAnchor="middle">
+                        (Break of Structure)
+                      </text>
+                    </g>
+                  );
+                })}
+
+                {/* ── 6. Structure Breaks (CHoCH - Purple dual-line badge & circle) */}
+                {overlay.breakShapes.filter(s => s.b.type === 'CHoCH').map(({ b, y, x1, x2 }, idx) => {
+                  const arrowMarker = 'url(#smc-arrow-choch)';
+                  const isBull = b.direction === 'bullish';
+                  const badgeX = Math.min(x2 - 125, overlay.xMax - 135);
+                  const badgeY = isBull ? y - 34 : y + 6;
+                  return (
+                    <g key={`choch-${idx}`} className="smc-choch-group">
+                      {/* Broken level horizontal line */}
+                      <line x1={x1} x2={x2} y1={y} y2={y} stroke="#c084fc"
+                        strokeWidth="1.8" strokeDasharray="6 3" />
+                      {/* Pivot Circle */}
+                      <circle cx={x1} cy={y} r="5" fill="none" stroke="#c084fc" strokeWidth="2" />
+                      <circle cx={x1} cy={y} r="2" fill="#c084fc" />
+                      {/* Pointer line & Arrow */}
+                      <path d={`M ${badgeX + 62} ${isBull ? badgeY + 28 : badgeY} L ${x2} ${y}`}
+                        stroke="#c084fc" strokeWidth="1.4" markerEnd={arrowMarker} />
+                      {/* CHoCH Purple Pill Badge */}
+                      <rect x={badgeX} y={badgeY} width={124} height={28} rx={4}
+                        fill="rgba(10,14,23,0.95)" stroke="#c084fc" strokeWidth="1.3" />
+                      <text x={badgeX + 62} y={badgeY + 12} fontSize="11" fontWeight="800"
+                        fill="#c084fc" textAnchor="middle">
+                        CHoCH
+                      </text>
+                      <text x={badgeX + 62} y={badgeY + 23} fontSize="8.5" fontWeight="600"
+                        fill="#e9d5ff" textAnchor="middle">
+                        (Change of Character)
+                      </text>
+                    </g>
+                  );
+                })}
+
+                {/* ── 7. Equal Highs & Equal Lows (EQH / EQL with Circles ○) ── */}
+                {overlay.swingShapes.filter(s => s.s.type === 'EQH' || s.s.type === 'EQL').map(({ s, x, y }, idx) => {
+                  const isEqh = s.type === 'EQH';
+                  const circleColor = '#f472b6'; // pink
+                  const tagY = isEqh ? y - 22 : y + 10;
+                  return (
+                    <g key={`eq-${idx}`} className="smc-eq-marker">
+                      <circle cx={x} cy={y} r="5" fill="rgba(10,14,23,0.9)" stroke={circleColor} strokeWidth="1.8" />
+                      <circle cx={x} cy={y} r="2" fill={circleColor} />
+                      <text x={x} y={tagY + 8} fontSize="9.5" fontWeight="800" fill={circleColor} textAnchor="middle">
+                        {s.type}
+                      </text>
+                    </g>
+                  );
+                })}
+
+                {/* ── 8. Liquidity Sweeps (Takes Sell Stops / Takes Buy Stops) ─ */}
+                {overlay.sweepShapes.map((sw, idx) => {
+                  const isSellStops = sw.type === 'sell_stops';
+                  const arrowColor = '#a855f7';
+                  const badgeY = isSellStops ? sw.y + 14 : sw.y - 42;
+                  return (
+                    <g key={`sw-${idx}`} className="smc-sweep-group">
+                      <path d={`M ${sw.x} ${badgeY + (isSellStops ? 0 : 28)} L ${sw.x} ${sw.y}`}
+                        stroke={arrowColor} strokeWidth="1.8" markerEnd="url(#smc-arrow-purple)" />
+                      <rect x={sw.x - 62} y={badgeY} width={124} height={28} rx={4}
+                        fill="rgba(10,14,23,0.96)" stroke={arrowColor} strokeWidth="1.2" />
+                      <text x={sw.x} y={badgeY + 12} fontSize="10" fontWeight="800" fill="#c084fc" textAnchor="middle">
+                        {sw.label}
+                      </text>
+                      <text x={sw.x} y={badgeY + 23} fontSize="8.5" fontWeight="600" fill="#e9d5ff" textAnchor="middle">
+                        {sw.sublabel}
+                      </text>
+                      <text x={sw.x} y={isSellStops ? sw.y + 12 : sw.y - 6} fontSize="10.5" fontWeight="800"
+                        fill="#ffffff" textAnchor="middle">
+                        {sw.extremeLabel}
+                      </text>
+                    </g>
+                  );
+                })}
+
+                {/* ── 9. Displacements (Strong Move) ────────────────────────── */}
+                {overlay.dispShapes.map((dp, idx) => {
+                  const isBull = dp.direction === 'bull';
+                  const arrowColor = '#34d399';
+                  const badgeY = isBull ? dp.y + 16 : dp.y - 44;
+                  return (
+                    <g key={`dp-${idx}`} className="smc-disp-group">
+                      <path d={`M ${dp.x} ${badgeY + (isBull ? 0 : 28)} L ${dp.x} ${dp.y}`}
+                        stroke={arrowColor} strokeWidth="1.8" markerEnd="url(#smc-arrow-disp)" />
+                      <rect x={dp.x - 55} y={badgeY} width={110} height={28} rx={4}
+                        fill="rgba(10,14,23,0.96)" stroke={arrowColor} strokeWidth="1.2" />
+                      <text x={dp.x} y={badgeY + 12} fontSize="10" fontWeight="800" fill="#34d399" textAnchor="middle">
+                        {dp.label}
+                      </text>
+                      <text x={dp.x} y={badgeY + 23} fontSize="8.5" fontWeight="600" fill="#a7f3d0" textAnchor="middle">
+                        {dp.sublabel}
+                      </text>
+                    </g>
+                  );
+                })}
+
+                {/* ── 10. Liquidity Lines (BSL & SSL) ───────────────────────── */}
                 {overlay.liqShapes.map(({ l, y, x1, x2 }) => {
                   const isBsl = l.type === 'BSL';
-                  const color = isBsl ? C_UP : C_DOWN;
+                  const color = isBsl ? '#10b981' : '#ef4444';
                   return (
                     <g key={`liq-${l.type}-${l.time}`} className="smc-liq-group">
                       <line x1={x1} x2={x2} y1={y} y2={y} stroke={color}
-                        strokeWidth="1.5" strokeDasharray="4 3" opacity="0.9" />
-                      <rect x={x2 - 155} y={y - 10} width={150} height={20} rx={3}
-                        fill="rgba(10,14,23,0.94)" stroke={color} strokeWidth="1" />
-                      <text x={x2 - 148} y={y + 4} fontSize="10.5" fontWeight="700" fill={color}>
+                        strokeWidth="1.5" strokeDasharray="4 3" opacity="0.85" />
+                      <rect x={x2 - 160} y={y - 10} width={155} height={20} rx={3}
+                        fill="rgba(10,14,23,0.95)" stroke={color} strokeWidth="1" />
+                      <text x={x2 - 152} y={y + 4} fontSize="10.5" fontWeight="800" fill={color}>
                         {l.label}
                       </text>
                     </g>
                   );
                 })}
 
-                {/* ── 4. Structure Breaks (BOS & CHoCH) ───────────────────── */}
-                {overlay.breakShapes.map(({ b, y, x1, x2 }, idx) => {
-                  const isBos = b.type === 'BOS';
-                  const color = isBos ? C_BOS : C_CHOCH;
-                  return (
-                    <g key={`break-${idx}`} className="smc-break-group">
-                      <line x1={x1} x2={x2} y1={y} y2={y} stroke={color}
-                        strokeWidth="1.6" strokeDasharray="6 3" />
-                      <rect x={x2 - 64} y={y - 10} width={60} height={18} rx={3}
-                        fill="rgba(10,14,23,0.92)" stroke={color} strokeWidth="1" />
-                      <text x={x2 - 58} y={y + 3} fontSize="10.5" fontWeight="800" fill={color}>
-                        {b.label}
-                      </text>
-                    </g>
-                  );
-                })}
-
-                {/* ── 5. Market Structure Swings (HH, HL, LH, LL) ─────────── */}
-                {overlay.swingShapes.map(({ s, x, y }, idx) => {
+                {/* ── 11. Market Structure Swings (HH, HL, LH, LL) ──────────── */}
+                {overlay.swingShapes.filter(s => s.s.type !== 'EQH' && s.s.type !== 'EQL').map(({ s, x, y }, idx) => {
                   const isHigh = s.kind === 'high';
-                  const isBull = s.type === 'HH' || s.type === 'HL';
-                  const color = isBull ? C_UP : C_DOWN;
-                  const tagY = isHigh ? y - 16 : y + 6;
+                  const color = s.type === 'HH' || s.type === 'HL' ? '#34d399' : '#f87171';
+                  const tagY = isHigh ? y - 18 : y + 6;
                   return (
                     <g key={`swing-${idx}`} className="smc-swing-tag">
-                      <circle cx={x} cy={y} r="3" fill={color} />
-                      <rect x={x - 15} y={tagY} width={30} height={15} rx={3}
-                        fill="rgba(10,14,23,0.92)" stroke={color} strokeWidth="1" />
-                      <text x={x} y={tagY + 11} fontSize="9" fontWeight="800"
+                      <circle cx={x} cy={y} r="2.5" fill={color} />
+                      <rect x={x - 14} y={tagY} width={28} height={16} rx={3}
+                        fill="rgba(10,14,23,0.94)" stroke={color} strokeWidth="1" />
+                      <text x={x} y={tagY + 11} fontSize="9.5" fontWeight="800"
                         fill={color} textAnchor="middle">
                         {s.type}
                       </text>

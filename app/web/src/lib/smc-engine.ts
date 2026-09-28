@@ -106,6 +106,46 @@ export type AutoTradePlan = {
   reason: string;
 };
 
+export type LiquiditySweep = {
+  id: string;
+  time: number;
+  barIndex: number;
+  price: number;
+  type: 'sell_stops' | 'buy_stops';
+  label: string;
+  sublabel: string;
+  extremeLabel: 'SSL' | 'BSL';
+};
+
+export type Displacement = {
+  id: string;
+  time: number;
+  barIndex: number;
+  price: number;
+  direction: 'bull' | 'bear';
+  label: string;
+  sublabel: string;
+};
+
+export type MitigationBlock = {
+  id: string;
+  time: number;
+  barIndex: number;
+  priceLow: number;
+  priceHigh: number;
+  type: 'bull' | 'bear';
+  label: string;
+  sublabel: string;
+};
+
+export type SupplyDemandZone = {
+  type: 'supply' | 'demand';
+  priceLow: number;
+  priceHigh: number;
+  label: string;
+  sublabel: string;
+};
+
 export type SmcAnalysisResult = {
   swings: SwingPoint[];
   breaks: StructureBreak[];
@@ -115,6 +155,10 @@ export type SmcAnalysisResult = {
   tradePlan: AutoTradePlan | null;
   trend: 'UP' | 'DOWN' | 'RANGE';
   atr: number;
+  sweeps: LiquiditySweep[];
+  displacements: Displacement[];
+  mitigations: MitigationBlock[];
+  supplyDemandZones: SupplyDemandZone[];
 };
 
 /** Calculate Average True Range (ATR) */
@@ -183,6 +227,10 @@ export function analyzeSmc(
     tradePlan: null,
     trend: 'RANGE',
     atr: 0,
+    sweeps: [],
+    displacements: [],
+    mitigations: [],
+    supplyDemandZones: [],
   };
 
   if (!bars || bars.length < 8 || spot <= 0) return empty;
@@ -629,6 +677,102 @@ export function analyzeSmc(
     };
   }
 
+  // ── 7. Liquidity Sweeps (Takes Sell Stops / Takes Buy Stops) ─────────────
+  const sweeps: LiquiditySweep[] = [];
+  for (let i = 4; i < bars.length; i++) {
+    const cur = bars[i]!;
+    // Sweep prior low and close back above
+    const sweptLow = lows.find((l) => l.i < i && l.i >= i - 30 && cur.low < l.bar.low - tol * 0.2 && cur.close > l.bar.low);
+    if (sweptLow && sweeps.filter((s) => s.type === 'sell_stops').length < 2) {
+      sweeps.push({
+        id: `sweep-ssl-${cur.time}`,
+        time: cur.time,
+        barIndex: i,
+        price: cur.low,
+        type: 'sell_stops',
+        label: 'Liquidity Sweep',
+        sublabel: '(Takes Sell Stops)',
+        extremeLabel: 'SSL',
+      });
+    }
+
+    // Sweep prior high and close back below
+    const sweptHigh = highs.find((h) => h.i < i && h.i >= i - 30 && cur.high > h.bar.high + tol * 0.2 && cur.close < h.bar.high);
+    if (sweptHigh && sweeps.filter((s) => s.type === 'buy_stops').length < 2) {
+      sweeps.push({
+        id: `sweep-bsl-${cur.time}`,
+        time: cur.time,
+        barIndex: i,
+        price: cur.high,
+        type: 'buy_stops',
+        label: 'Liquidity Sweep',
+        sublabel: '(Takes Buy Stops)',
+        extremeLabel: 'BSL',
+      });
+    }
+  }
+
+  // ── 8. Displacements (Institutional Strong Moves) ─────────────────────────
+  const displacements: Displacement[] = [];
+  for (let i = Math.max(1, bars.length - 35); i < bars.length; i++) {
+    const b = bars[i]!;
+    const body = Math.abs(b.close - b.open);
+    if (body >= atr * 1.3) {
+      const isBull = b.close > b.open;
+      displacements.push({
+        id: `disp-${b.time}`,
+        time: b.time,
+        barIndex: i,
+        price: isBull ? b.low : b.high,
+        direction: isBull ? 'bull' : 'bear',
+        label: 'Displacement',
+        sublabel: '(Strong Move)',
+      });
+      if (displacements.length >= 2) break;
+    }
+  }
+
+  // ── 9. Mitigation Blocks (Retested Breached Order Blocks) ───────────────────
+  const mitigations: MitigationBlock[] = [];
+  for (const ob of orderBlocks) {
+    if (ob.mitigated && mitigations.length < 2) {
+      mitigations.push({
+        id: `mit-${ob.id}`,
+        time: ob.time,
+        barIndex: ob.barIndex,
+        priceLow: ob.priceLow,
+        priceHigh: ob.priceHigh,
+        type: ob.type,
+        label: 'Mitigation Block',
+        sublabel: '(Retest)',
+      });
+    }
+  }
+
+  // ── 10. Institutional Supply & Demand Zones ────────────────────────────────
+  const supplyDemandZones: SupplyDemandZone[] = [];
+  if (visibleBars.length >= 8) {
+    const highestP = Math.max(...visibleBars.map((b) => b.high));
+    const lowestP = Math.min(...visibleBars.map((b) => b.low));
+    const zHeight = Math.max(atr * 0.5, (highestP - lowestP) * 0.08);
+
+    supplyDemandZones.push({
+      type: 'supply',
+      priceHigh: Math.round(highestP),
+      priceLow: Math.round(highestP - zHeight),
+      label: 'Supply Zone',
+      sublabel: '(Resistance)',
+    });
+
+    supplyDemandZones.push({
+      type: 'demand',
+      priceHigh: Math.round(lowestP + zHeight),
+      priceLow: Math.round(lowestP),
+      label: 'Demand Zone',
+      sublabel: '(Support)',
+    });
+  }
+
   return {
     swings,
     breaks: activeBreaks,
@@ -638,5 +782,9 @@ export function analyzeSmc(
     tradePlan,
     trend: currentTrend,
     atr,
+    sweeps,
+    displacements,
+    mitigations,
+    supplyDemandZones,
   };
 }
