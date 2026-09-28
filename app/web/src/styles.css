@@ -1035,9 +1035,182 @@ td.evcol.down { color: var(--down); }
 
 @media (max-width: 560px) {
   .price-chart { padding: 10px 8px 10px; }
-  /* The third line is a caveat, not a key. It has its own line under the two
-     that are. */
   .price-chart-key .dim { flex-basis: 100%; }
+}
+
+/* ── SMC chart upgrade ──────────────────────────────────────────────────────
+   Full-width layout: chart takes the entire card, annotation panel below.
+   smc-chart class is added by the upgraded PriceChart component.             */
+.price-chart.smc-chart {
+  container-type: inline-size;
+}
+.smc-chart .price-chart-plot {
+  height: 480px;
+  border-radius: 6px;
+  background: #0a0e17;
+}
+.smc-chart.is-full .price-chart-plot { height: calc(100vh - 180px); }
+@media (max-width: 760px) {
+  .smc-chart .price-chart-plot { height: 340px; }
+}
+
+/* ── Annotation panel ───────────────────────────────────────────────────────
+   Lives below the candle chart. Add-form at the top, saved list below.      */
+.ann-panel {
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+/* Add form */
+.ann-add-form {
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  display: flex; flex-direction: column; gap: 10px;
+}
+.ann-add-title {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+
+/* Kind picker row */
+.ann-kind-row {
+  display: flex; flex-wrap: wrap; gap: 5px;
+}
+.ann-kind-btn {
+  font-size: 11px; font-weight: 600;
+  padding: 3px 9px; border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+.ann-kind-btn:hover {
+  border-color: var(--ann-color, var(--muted));
+  color: var(--ann-color, var(--text));
+  background: color-mix(in srgb, var(--ann-color, var(--muted)) 10%, transparent);
+}
+.ann-kind-btn.on {
+  border-color: var(--ann-color, var(--accent));
+  color: var(--ann-color, var(--text));
+  background: color-mix(in srgb, var(--ann-color, var(--accent)) 16%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ann-color, var(--accent)) 40%, transparent);
+}
+
+/* Price / label inputs */
+.ann-price-row {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+}
+.ann-price-input {
+  flex: 1 1 110px; min-width: 80px; max-width: 160px;
+  padding: 5px 9px; border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text); font-size: 12px;
+  outline: none;
+  transition: border-color 0.12s;
+}
+.ann-price-input:focus { border-color: #60a5fa; }
+.ann-price-input::placeholder { color: var(--dim); }
+/* Remove number spinners — visually noisy on a trading screen */
+.ann-price-input[type='number']::-webkit-inner-spin-button,
+.ann-price-input[type='number']::-webkit-outer-spin-button { -webkit-appearance: none; }
+.ann-price-input[type='number'] { -moz-appearance: textfield; appearance: textfield; }
+
+.ann-add-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 13px; border-radius: 6px;
+  background: #1a2740; border: 1px solid #2d4a7a;
+  color: #60a5fa; font-size: 12px; font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+.ann-add-btn:hover:not(:disabled) {
+  background: #1e3050; border-color: #3a5f99;
+}
+.ann-add-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Saved list */
+.ann-list { padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 10px; }
+.ann-group { display: flex; flex-direction: column; gap: 5px; }
+.ann-group-title {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 600; color: var(--dim);
+  text-transform: uppercase; letter-spacing: 0.05em;
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--line-soft);
+  margin-bottom: 2px;
+}
+.ann-rows { display: flex; flex-direction: column; gap: 3px; }
+.ann-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 8px; border-radius: 6px;
+  background: var(--panel-2);
+  font-size: 12px;
+  transition: background 0.1s;
+}
+.ann-row:hover { background: var(--panel-3); }
+
+.ann-row-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 1px 7px; border-radius: 999px;
+  font-size: 10px; font-weight: 700;
+  border: 1px solid;
+  white-space: nowrap; min-width: 40px;
+}
+.ann-row-prices {
+  flex: 1; font-variant-numeric: tabular-nums;
+  font-size: 12px; color: var(--text);
+}
+.ann-row-tf {
+  font-size: 10px; color: var(--dim);
+  padding: 1px 5px; border: 1px solid var(--line); border-radius: 3px;
+}
+.ann-del-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 4px;
+  color: var(--dim); background: transparent;
+  cursor: pointer; flex: none;
+  transition: color 0.12s, background 0.12s;
+}
+.ann-del-btn:hover { color: var(--down); background: var(--down-bg); }
+
+.ann-empty {
+  margin: 0; padding: 16px 14px;
+  font-size: 12px; color: var(--dim);
+  text-align: center;
+}
+
+/* SL box: red tint; TGT boxes: green tint — visible in the saved list */
+.ann-row[data-kind='sl']   { border-left: 3px solid #e2504f; }
+.ann-row[data-kind='tgt']  { border-left: 3px solid #26a17b; }
+.ann-row[data-kind='tgt2'] { border-left: 3px solid #34d399; }
+.ann-row[data-kind='tgt3'] { border-left: 3px solid #6ee7b7; }
+.ann-row[data-kind='ob_bull']  { border-left: 3px solid #26a17b; }
+.ann-row[data-kind='ob_bear']  { border-left: 3px solid #e2504f; }
+.ann-row[data-kind='fvg_bull'] { border-left: 3px solid #60a5fa; }
+.ann-row[data-kind='fvg_bear'] { border-left: 3px solid #f59e0b; }
+.ann-row[data-kind='supply']   { border-left: 3px solid #e2504f; }
+.ann-row[data-kind='demand']   { border-left: 3px solid #26a17b; }
+.ann-row[data-kind='bos']      { border-left: 3px solid #60a5fa; }
+.ann-row[data-kind='choch']    { border-left: 3px solid #f59e0b; }
+.ann-row[data-kind='ssl']      { border-left: 3px solid #e2504f; }
+.ann-row[data-kind='bsl']      { border-left: 3px solid #26a17b; }
+.ann-row[data-kind='eqh']      { border-left: 3px solid #94a3b8; }
+.ann-row[data-kind='eql']      { border-left: 3px solid #94a3b8; }
+.ann-row[data-kind='breaker']  { border-left: 3px solid #f59e0b; }
+
+@media (max-width: 560px) {
+  .ann-price-row { gap: 5px; }
+  .ann-price-input { flex: 1 1 80px; font-size: 11px; }
+  .ann-add-btn { padding: 5px 10px; font-size: 11px; }
+  .ann-list { padding: 8px 10px 10px; }
 }
 
 /* ── Best expected value ───────────────────────────────────────────────────
@@ -3757,6 +3930,88 @@ table.ov-mini.ov-levels { width: auto; min-width: 100%; }
   border-color: rgba(0, 229, 255, 0.3) !important;
   color: #00e5ff !important;
   font-weight: 700 !important;
+}
+
+.sd-filter-chips {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.sd-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-size: 11px;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sd-chip b {
+  font-size: 10.5px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+}
+
+.sd-chip:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.sd-chip.on {
+  background: rgba(37, 99, 235, 0.25);
+  border-color: rgba(59, 130, 246, 0.6);
+  color: #60a5fa;
+  font-weight: 600;
+}
+
+.sd-chip.hit.on {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: rgba(16, 185, 129, 0.5);
+  color: #34d399;
+}
+
+.sd-chip.pending.on {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: rgba(245, 158, 11, 0.5);
+  color: #fbbf24;
+}
+
+.sd-chip.stop.on {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #f87171;
+}
+
+.sig-badge.active {
+  background: rgba(14, 165, 233, 0.18) !important;
+  color: #38bdf8 !important;
+  border: 1px solid rgba(56, 189, 248, 0.45) !important;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.2);
+  animation: pulse-active 2s infinite ease-in-out;
+}
+
+@keyframes pulse-active {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.75; }
+}
+
+.sig-rr {
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 4px;
+  padding: 0 5px;
 }
 
 .sig-row {

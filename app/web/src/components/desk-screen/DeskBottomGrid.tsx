@@ -83,12 +83,12 @@ export function DeskBottomGrid({
 
   const patterns = [
     { name: 'Bearish FVG Test (84,551–84,626)', barsAgo: '2b', side: 'Bearish', icon: '⚠️' },
-    { name: 'Lower Highs', barsAgo: '', side: 'Bearish', icon: '📉' },
-    { name: 'Channel Down', barsAgo: '', side: 'Bearish', icon: '📉' },
-    { name: 'Lower Low', barsAgo: '1b', side: 'Bearish', icon: '📉' },
-    { name: 'Lower High', barsAgo: '5b', side: 'Bearish', icon: '📉' },
-    { name: 'Head & Shoulders', barsAgo: '5b', side: 'Bearish', icon: '📉' },
-    { name: 'Bullish Engulfing', barsAgo: '', side: 'Bullish', icon: '📈' },
+    { name: 'Order Block Rejection (84,800)', barsAgo: '3b', side: 'Bearish', icon: '🧱' },
+    { name: 'Lower Highs Sequence', barsAgo: '', side: 'Bearish', icon: '📉' },
+    { name: 'Channel Down Breakdown', barsAgo: '1b', side: 'Bearish', icon: '📉' },
+    { name: 'Liquidity Sweep High (85,150)', barsAgo: '5b', side: 'Bearish', icon: '⚡' },
+    { name: 'CHOCH / BOS Confirmed', barsAgo: '4b', side: 'Bearish', icon: '🔄' },
+    { name: 'Bullish Engulfing Retest', barsAgo: '', side: 'Bullish', icon: '📈' },
   ];
 
   return (
@@ -297,49 +297,91 @@ export function DeskBottomGrid({
         </div>
       </div>
 
-      {/* ================= COLUMN 4: Timeframe Alignment & Option Bias & Expiry Movement Chances ================= */}
+      {/* ================= COLUMN 4: Hierarchical Timeframe Alignment & Option Bias ================= */}
       <div className="desk-grid-card">
         <div className="desk-panel-title">
           <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <Layers size={15} color="#00e5ff" />
-            <span>Timeframe Alignment ({ladderRows.filter((r) => r.way === 'UP').length} of {ladderRows.length})</span>
+            <span>Multi-Timeframe Hierarchy ({ladderRows.filter((r) => r.way === 'UP').length} of {ladderRows.length} Up)</span>
+          </span>
+          <span style={{ fontSize: 10, background: 'rgba(0,229,255,0.12)', color: '#00e5ff', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>
+            WEIGHTED
           </span>
         </div>
 
-        <table className="desk-table">
-          <thead>
-            <tr>
-              <th>TF</th>
-              <th>Direction</th>
-              <th>Strength</th>
-              <th style={{ textAlign: 'right' }}>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {ladderRows.map((r, i) => {
-              const way = r.way;
-              const isUp = way === 'UP';
-              const isDown = way === 'DOWN';
-              const arrow = isUp ? '↑' : isDown ? '↓' : '→';
-              const color = isUp ? '#00e676' : isDown ? '#ff3b57' : '#94a3b8';
-              const status = isUp ? 'Bullish' : isDown ? 'Bearish' : 'Neutral';
-              const pct = Math.round(r.conviction * 100);
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, margin: '8px 0' }}>
+          {/* Group 1: 12H / 6H Macro Direction */}
+          <div style={{ background: '#0a0e17', borderRadius: 6, padding: '5px 8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#8492a6', fontWeight: 600, marginBottom: 3, textTransform: 'uppercase' }}>
+              <span>Direction (12H / 6H)</span>
+              <span style={{ color: '#00e5ff' }}>Weight: High</span>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {ladderRows.filter(r => r.tf === '12h' || r.tf === '6h').map((r, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
+                  <b style={{ color: '#cbd5e1' }}>{r.tf.toUpperCase()}:</b>
+                  <span style={{ color: r.way === 'UP' ? '#00e676' : r.way === 'DOWN' ? '#ff3b57' : '#94a3b8', fontWeight: 700 }}>
+                    {r.way === 'UP' ? '↑ UP' : r.way === 'DOWN' ? '↓ DOWN' : '→ SIDE'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
 
-              return (
-                <tr key={i}>
-                  <td style={{ color: '#cbd5e1', fontWeight: 600 }}>{r.tf}</td>
-                  <td style={{ color, fontWeight: 700 }}>{arrow}</td>
-                  <td style={{ color: '#94a3b8' }}>{pct}%</td>
-                  <td style={{ textAlign: 'right' }}>
-                    <span className={`desk-tag ${isUp ? 'desk-tag-bullish' : isDown ? 'desk-tag-bearish' : 'desk-tag-neutral'}`}>
-                      {status}
-                    </span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+          {/* Group 2: 4H / 2H Structure & Key Levels */}
+          <div style={{ background: '#0a0e17', borderRadius: 6, padding: '5px 8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#8492a6', fontWeight: 600, marginBottom: 3, textTransform: 'uppercase' }}>
+              <span>Structure (4H / 2H)</span>
+              <span style={{ color: '#a855f7' }}>Weight: High</span>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {ladderRows.filter(r => r.tf === '4h' || r.tf === '2h').map((r, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
+                  <b style={{ color: '#cbd5e1' }}>{r.tf.toUpperCase()}:</b>
+                  <span style={{ color: r.way === 'UP' ? '#00e676' : r.way === 'DOWN' ? '#ff3b57' : '#94a3b8', fontWeight: 700 }}>
+                    {r.way === 'UP' ? '↑ UP' : r.way === 'DOWN' ? '↓ DOWN' : '→ SIDE'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Group 3: 1H / 30M Setup & Liquidity */}
+          <div style={{ background: '#0a0e17', borderRadius: 6, padding: '5px 8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#8492a6', fontWeight: 600, marginBottom: 3, textTransform: 'uppercase' }}>
+              <span>Setup (1H / 30M)</span>
+              <span style={{ color: '#fbbf24' }}>Weight: Med</span>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {ladderRows.filter(r => r.tf === '1h' || r.tf === '30m').map((r, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
+                  <b style={{ color: '#cbd5e1' }}>{r.tf.toUpperCase()}:</b>
+                  <span style={{ color: r.way === 'UP' ? '#00e676' : r.way === 'DOWN' ? '#ff3b57' : '#94a3b8', fontWeight: 700 }}>
+                    {r.way === 'UP' ? '↑ UP' : r.way === 'DOWN' ? '↓ DOWN' : '→ SIDE'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Group 4: 15M / 5M / 1M Trigger & Execution */}
+          <div style={{ background: '#0a0e17', borderRadius: 6, padding: '5px 8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#8492a6', fontWeight: 600, marginBottom: 3, textTransform: 'uppercase' }}>
+              <span>Trigger &amp; Timing (15M / 5M)</span>
+              <span style={{ color: '#00e676' }}>Weight: High</span>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {ladderRows.filter(r => r.tf === '15m' || r.tf === '5m').map((r, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
+                  <b style={{ color: '#cbd5e1' }}>{r.tf.toUpperCase()}:</b>
+                  <span style={{ color: r.way === 'UP' ? '#00e676' : r.way === 'DOWN' ? '#ff3b57' : '#94a3b8', fontWeight: 700 }}>
+                    {r.way === 'UP' ? '↑ UP' : r.way === 'DOWN' ? '↓ DOWN' : '→ SIDE'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
 
         {/* Option Bias — CE / PE */}
         <div style={{ marginTop: 'auto', borderTop: '1px solid #162032', paddingTop: 10 }}>

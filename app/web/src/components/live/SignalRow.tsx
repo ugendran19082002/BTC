@@ -51,12 +51,24 @@ export function SignalRow({ row, spot }: {
 }) {
   const p = row.plan;
   const side = row.side;
+  const isRange = row.event === 'RANGE' || row.stage === 'RANGE' || !p;
   const title = row.event.toLowerCase().replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
   const outcome = row.outcome ? OUTCOME_WORDS[row.outcome] ?? null : null;
 
-  // Waiting: the window is open and the trigger has not been taken out.
-  const waiting = row.outcome === null || row.outcome === 'NOT_GRADED';
-  const triggered = row.triggeredAt != null;
+  // Live trigger check: either recorded in DB or spot has crossed trigger
+  const spotTriggered = p && spot != null && (
+    side === 'UP' ? spot >= p.trigger : spot <= p.trigger
+  );
+  const triggered = row.triggeredAt != null || Boolean(spotTriggered);
+
+  // Active: trade has triggered, but has not completed (outcome is null)
+  const active = row.outcome === null && triggered && !isRange;
+
+  // Waiting: setup is active, outcome is null, but price has NOT reached trigger yet
+  const waiting = row.outcome === null && !triggered && !isRange;
+
+  // Range/Neutral: regime state without a directional break plan
+  const rangeState = isRange || row.outcome === 'NOT_GRADED';
 
   // Where price ended up — the graded close, else the live price.
   const now = row.resolvedClose ?? spot ?? null;
@@ -70,6 +82,11 @@ export function SignalRow({ row, spot }: {
 
   // How far the trigger still is, for a call that has not started.
   const toTrigger = !triggered && p && now != null ? Math.abs(p.trigger - now) : null;
+
+  // Risk : Reward ratio
+  const risk = p ? Math.abs(p.trigger - p.invalidation) : 0;
+  const reward = p ? Math.abs(p.target1 - p.trigger) : 0;
+  const rr = risk > 0 ? (reward / risk).toFixed(1) : null;
 
   return (
     <li className="sig-row">
@@ -87,6 +104,7 @@ export function SignalRow({ row, spot }: {
           <b>{title}</b>
           {row.confidence != null && <span className="sig-score">({row.confidence})</span>}
           <span className="sig-tf">{row.tf}</span>
+          {rr && <span className="sig-rr" title={`Risk : Reward 1 : ${rr}`}>1:{rr} RR</span>}
         </div>
 
         {p && side && (
@@ -127,18 +145,26 @@ export function SignalRow({ row, spot }: {
       </div>
 
       <div className="sig-verdict">
-        {waiting
-          ? <span className="sig-badge waiting">WAITING</span>
-          : outcome
-            ? <span className={cn('sig-badge', outcome.tone)}>{outcome.text.toUpperCase()}</span>
-            : null}
+        {active ? (
+          <span className="sig-badge active">ACTIVE</span>
+        ) : waiting ? (
+          <span className="sig-badge waiting">WAITING</span>
+        ) : rangeState ? (
+          <span className="sig-badge dim">RANGE</span>
+        ) : outcome ? (
+          <span className={cn('sig-badge', outcome.tone)}>{outcome.text.toUpperCase()}</span>
+        ) : null}
+
         {toTrigger != null && waiting && (
           <span className="sig-to-trigger">{n0(toTrigger)} pts to trigger</span>
+        )}
+        {active && row.mfe != null && row.mfe > 0 && (
+          <span className="sig-to-trigger text-[var(--accent,#38bdf8)]">MFE +{n0(row.mfe)} pts</span>
         )}
       </div>
 
       <div className="sig-result">
-        <span className="sig-result-label">{waiting ? 'Current' : 'Result'}</span>
+        <span className="sig-result-label">{waiting || active ? 'Current' : 'Result'}</span>
         {row.movePts != null
           ? <b className={cn(row.movePts > 0 ? 'up' : row.movePts < 0 ? 'down' : 'flat')}>{signed(row.movePts)} pts</b>
           : <b className="flat">—</b>}

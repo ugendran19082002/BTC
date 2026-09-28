@@ -87,9 +87,48 @@ export function SignalDesk({
   timeframes?: ReactNode;
 }) {
   const [page, setPage] = useState(0);
-  const pages = Math.max(1, Math.ceil(rows.length / PAGE));
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'HITS' | 'ACTIVE_WAITING' | 'STOPS' | 'EXPIRED' | 'RANGE'>('ALL');
+
+  const counts = useMemo(() => {
+    let hits = 0;
+    let activeWaiting = 0;
+    let stops = 0;
+    let expired = 0;
+    let ranges = 0;
+
+    for (const r of rows) {
+      const isRange = r.event === 'RANGE' || r.stage === 'RANGE' || !r.plan;
+      if (isRange || r.outcome === 'NOT_GRADED') {
+        ranges++;
+      } else if (r.outcome === 'TARGET_HIT') {
+        hits++;
+      } else if (r.outcome === 'INVALIDATED') {
+        stops++;
+      } else if (r.outcome === 'NOT_TRIGGERED' || r.outcome === 'EXPIRED') {
+        expired++;
+      } else if (r.outcome === null) {
+        activeWaiting++;
+      }
+    }
+    return { all: rows.length, hits, activeWaiting, stops, expired, ranges };
+  }, [rows]);
+
+  const filtered = useMemo(() => {
+    if (statusFilter === 'ALL') return rows;
+    return rows.filter((r) => {
+      const isRange = r.event === 'RANGE' || r.stage === 'RANGE' || !r.plan;
+      if (statusFilter === 'RANGE') return isRange || r.outcome === 'NOT_GRADED';
+      if (statusFilter === 'HITS') return r.outcome === 'TARGET_HIT';
+      if (statusFilter === 'STOPS') return r.outcome === 'INVALIDATED';
+      if (statusFilter === 'EXPIRED') return r.outcome === 'NOT_TRIGGERED' || r.outcome === 'EXPIRED';
+      if (statusFilter === 'ACTIVE_WAITING') return r.outcome === null && !isRange;
+      return true;
+    });
+  }, [rows, statusFilter]);
+
+  const pages = Math.max(1, Math.ceil(filtered.length / PAGE));
   const at = Math.min(page, pages - 1);
-  const shown = useMemo(() => rows.slice(at * PAGE, at * PAGE + PAGE), [rows, at]);
+  const shown = useMemo(() => filtered.slice(at * PAGE, at * PAGE + PAGE), [filtered, at]);
 
   const graded = rate?.graded ?? 0;
   const hit = graded > 0 ? (rate!.correct / graded) : null;
@@ -176,13 +215,73 @@ export function SignalDesk({
       <div className={cn('sd-main', !(bigMove || timeframes) && 'sd-full')}>
         <div className="sd-list-wrap">
           <div className="sd-list-head">
-            <h3>Signal List</h3>
-            <span className="sd-count">{rows.length} signal{rows.length === 1 ? '' : 's'}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <h3>Signal List</h3>
+              <span className="sd-count">{filtered.length} of {rows.length} signals</span>
+            </div>
+            <div className="sd-filter-chips" role="group" aria-label="Filter status">
+              <button
+                type="button"
+                className={cn('sd-chip', statusFilter === 'ALL' && 'on')}
+                onClick={() => { setStatusFilter('ALL'); setPage(0); }}
+              >
+                All <b>{counts.all}</b>
+              </button>
+              {counts.hits > 0 && (
+                <button
+                  type="button"
+                  className={cn('sd-chip hit', statusFilter === 'HITS' && 'on')}
+                  onClick={() => { setStatusFilter('HITS'); setPage(0); }}
+                >
+                  Hits <b>{counts.hits}</b>
+                </button>
+              )}
+              {counts.activeWaiting > 0 && (
+                <button
+                  type="button"
+                  className={cn('sd-chip pending', statusFilter === 'ACTIVE_WAITING' && 'on')}
+                  onClick={() => { setStatusFilter('ACTIVE_WAITING'); setPage(0); }}
+                >
+                  Active / Waiting <b>{counts.activeWaiting}</b>
+                </button>
+              )}
+              {counts.stops > 0 && (
+                <button
+                  type="button"
+                  className={cn('sd-chip stop', statusFilter === 'STOPS' && 'on')}
+                  onClick={() => { setStatusFilter('STOPS'); setPage(0); }}
+                >
+                  Stops <b>{counts.stops}</b>
+                </button>
+              )}
+              {counts.expired > 0 && (
+                <button
+                  type="button"
+                  className={cn('sd-chip expired', statusFilter === 'EXPIRED' && 'on')}
+                  onClick={() => { setStatusFilter('EXPIRED'); setPage(0); }}
+                >
+                  Expired <b>{counts.expired}</b>
+                </button>
+              )}
+              {counts.ranges > 0 && (
+                <button
+                  type="button"
+                  className={cn('sd-chip range', statusFilter === 'RANGE' && 'on')}
+                  onClick={() => { setStatusFilter('RANGE'); setPage(0); }}
+                >
+                  Range <b>{counts.ranges}</b>
+                </button>
+              )}
+            </div>
           </div>
           {rows.length === 0 ? (
             <p className="sd-empty">
               No calls in this range. The journal records a change of state, so a quiet market writes nothing —
               the header says when it last looked.
+            </p>
+          ) : filtered.length === 0 ? (
+            <p className="sd-empty">
+              No calls match this filter in this range.
             </p>
           ) : (
             <>

@@ -202,6 +202,22 @@ const MIGRATIONS: Migration[] = [
         FOR EACH ROW EXECUTE FUNCTION market_states_skip_unchanged();
     `,
   },
+  {
+    /*
+     * Clean up RANGE rows and unplannable calls so they are marked NOT_GRADED
+     * immediately instead of lingering as NULL and blocking the grading queue.
+     */
+    id: 'market-018-clean-range-outcomes',
+    up: `
+      UPDATE market_states
+         SET outcome = 'NOT_GRADED'
+       WHERE outcome IS NULL
+         AND (event = 'RANGE' OR stage = 'RANGE' OR target1 IS NULL OR side IS NULL);
+      CREATE INDEX IF NOT EXISTS market_states_grading_queue
+        ON market_states (at ASC)
+        WHERE outcome IS NULL AND target1 IS NOT NULL AND side IS NOT NULL;
+    `,
+  },
 ];
 
 let ready: Promise<void> | null = null;
@@ -564,14 +580,19 @@ export async function lastCheck(tf: string | null): Promise<StateCheck | null> {
  *
  * Oldest first, a call is graded the first pass after its bars exist.
  */
-export async function gradeStates(nowMs = Date.now(), limit = 20): Promise<number> {
+export async function gradeStates(nowMs = Date.now(), limit = 100): Promise<number> {
   await stateHistorySchema();
+
   const due = await rows<{
     id: number; at: number; tf: StateTf; side: Side | null; close: number; stage: string;
     trigger: number | null; target1: number | null; target2: number | null; invalidation: number | null;
   }>(
     `SELECT id, at, tf, side, close, stage, trigger, target1, target2, invalidation
-       FROM market_states WHERE outcome IS NULL ORDER BY at ASC LIMIT $1`, [limit],
+       FROM market_states
+      WHERE outcome IS NULL
+      ORDER BY at ASC
+      LIMIT $1`,
+    [limit],
   );
   let graded = 0;
   for (const r of due) {
@@ -598,9 +619,25 @@ export async function gradeStates(nowMs = Date.now(), limit = 20): Promise<numbe
       windowMs,
       after,
     });
+
     // If window is still active, resolve early only when target or stop has been hit.
     // A trade still navigating towards target/stop stays open so the user sees live state.
     if (!isWindowClosed && audit.firstHit === 'NONE') {
+      // If the trade has triggered, persist triggered_at & excursions live so UI reflects ACTIVE state
+      if (audit.triggeredAt != null) {
+        await query(
+          `UPDATE market_states SET
+             triggered_at = COALESCE(triggered_at, $1),
+             confirmed_at = COALESCE(confirmed_at, $2),
+             mfe = $3, mae = $4, mfe_price = $5, mae_price = $6
+           WHERE id = $7 AND outcome IS NULL`,
+          [
+            audit.triggeredAt, audit.confirmedAt,
+            audit.mfe, audit.mae, audit.mfePrice, audit.maePrice,
+            r.id,
+          ],
+        );
+      }
       continue;
     }
     /*
