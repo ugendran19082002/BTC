@@ -1,0 +1,283 @@
+import type { Bar, Pool, PoolEvent, Setup, SmcState, Zone, ZoneEvent } from '@/lib/smc/types';
+
+/**
+ * What the chart draws, in *data* coordinates (bar index, price), built from
+ * one engine state. Pure: no canvas, no chart -- `smc-primitive.ts` turns it
+ * into pixels on every frame, so every shape stays pinned to its candles when
+ * the chart is panned or zoomed.
+ *
+ * Clutter is decided here, not left to chance: each layer keeps only what is
+ * near price and recent, and every label carries a priority so the renderer
+ * drops the least important one when two would overlap.
+ */
+
+export type Layer = 'structure' | 'liquidity' | 'zones' | 'levels' | 'pd' | 'sessions' | 'vwap' | 'candles' | 'trade';
+
+export const LAYERS: readonly { key: Layer; label: string }[] = [
+  { key: 'structure', label: 'Structure' },
+  { key: 'liquidity', label: 'Liquidity' },
+  { key: 'zones', label: 'OB / FVG' },
+  { key: 'levels', label: 'Levels' },
+  { key: 'pd', label: 'Prem / Disc' },
+  { key: 'sessions', label: 'Sessions' },
+  { key: 'vwap', label: 'VWAP' },
+  { key: 'candles', label: 'Candles' },
+  { key: 'trade', label: 'Trade' },
+];
+
+export const DEFAULT_LAYERS: readonly Layer[] = ['structure', 'liquidity', 'zones', 'levels', 'pd', 'trade'];
+
+/** 'right' runs to the chart's right edge: a level still in play. */
+type XEnd = number | 'right';
+
+export type SceneBox = {
+  t: 'box'; layer: Layer; x1: number; x2: XEnd; y1: number; y2: number;
+  fill: string; stroke?: string; dash?: boolean; label?: string; labelColor?: string; priority: number;
+};
+export type SceneLine = {
+  t: 'line'; layer: Layer; x1: number; x2: XEnd; y: number; color: string; width?: number; dash?: 'dash' | 'dot';
+  label?: string; labelAt?: 'mid' | 'end'; labelSide?: 'above' | 'below'; priority: number;
+};
+export type ScenePath = { t: 'path'; layer: Layer; points: [number, number][]; color: string; label?: string; priority: number };
+export type SceneMark = {
+  t: 'mark'; layer: Layer; x: number; y: number; text: string; color: string; side: 'above' | 'below';
+  glyph?: '▲' | '▼' | '✕'; priority: number;
+};
+export type SceneItem = SceneBox | SceneLine | ScenePath | SceneMark;
+
+export const C = {
+  bull: '#26a17b', bear: '#e2504f',
+  bullFill: 'rgba(38,161,123,0.16)', bearFill: 'rgba(226,80,79,0.16)',
+  fvgBull: 'rgba(96,165,250,0.15)', fvgBear: 'rgba(245,158,11,0.15)', fvgBullLine: '#60a5fa', fvgBearLine: '#f59e0b',
+  bsl: '#f59e0b', ssl: '#38bdf8', level: '#a78bfa', eq: '#94a3b8', ote: '#facc15',
+  vwap: '#e879f9', text: '#e5e7eb', muted: '#94a3b8',
+  premium: 'rgba(226,80,79,0.05)', discount: 'rgba(38,161,123,0.05)', oteFill: 'rgba(250,204,21,0.08)',
+  profit: 'rgba(38,161,123,0.13)', risk: 'rgba(226,80,79,0.13)',
+  session: { Asia: 'rgba(100,116,139,0.07)', London: 'rgba(59,130,246,0.07)', 'New York': 'rgba(249,115,22,0.07)' } as const,
+} as const;
+
+const fmt = (p: number) => Math.round(p).toLocaleString('en-US');
+const R = (r: number) => `${r >= 0 ? '+' : '−'}${Math.abs(r).toFixed(1)}R`;
+
+const SWING_POOLS: readonly Pool['kind'][] = ['BSL', 'SSL', 'EQH', 'EQL'];
+const LIVE_SETUP: readonly Setup['state'][] = ['READY', 'ACTIVE', 'TP1', 'TP2'];
+
+export function buildScene(st: SmcState, bars: readonly Bar[], layers: ReadonlySet<Layer>): SceneItem[] {
+  const n = bars.length;
+  if (!n) return [];
+  const last = bars[n - 1]!.close;
+  const out: SceneItem[] = [];
+  const on = (l: Layer) => layers.has(l);
+  const recent = (at: number, span: number) => at >= n - span;
+  const near = (p: number) => Math.abs(p - last);
+
+  if (on('sessions')) sessions(st, n, out);
+  if (on('pd')) premiumDiscount(st, out);
+  if (on('zones')) zones(st, n, last, out);
+  if (on('structure')) {
+    for (const s of st.swings.filter((x) => x.label && recent(x.at, 120)).slice(-40)) {
+      const good = s.label === 'HH' || s.label === 'HL';
+      const eq = s.label === 'EQH' || s.label === 'EQL';
+      out.push({ t: 'mark', layer: 'structure', x: s.at, y: s.price, text: s.label!, color: eq ? C.bsl : good ? C.bull : C.bear, side: s.side === 'high' ? 'above' : 'below', priority: 50 });
+    }
+    for (const b of st.breaks.filter((x) => recent(x.at, 200)).slice(-12)) {
+      out.push({
+        t: 'line', layer: 'structure', x1: b.from, x2: b.at, y: b.level, color: b.dir === 'bull' ? C.bull : C.bear,
+        dash: b.kind === 'CHoCH' ? 'dash' : undefined, width: 1.2,
+        label: b.mss ? 'MSS' : b.kind, labelAt: 'mid', labelSide: b.dir === 'bull' ? 'above' : 'below', priority: b.kind === 'CHoCH' ? 92 : 90,
+      });
+    }
+  }
+  if (on('liquidity') || on('levels')) liquidity(st, n, last, near, layers, out);
+  if (on('vwap')) vwap(st, bars, out);
+  if (on('candles')) {
+    const NAME: Record<string, string> = { 'Displacement': 'Disp', 'Bull engulfing': 'Eng', 'Bear engulfing': 'Eng', 'Pin bar': 'Pin', 'Inside bar': 'IB', 'Doji': 'Doji', 'Volume spike': 'Vol↑', 'Volume dry-up': 'Vol↓' };
+    for (const t of st.tags.filter((x) => recent(x.at, 60))) {
+      const b = bars[t.at]!;
+      const up = t.dir === 'bull';
+      const vol = t.name.startsWith('Volume');
+      out.push({
+        t: 'mark', layer: 'candles', x: t.at, y: vol || up ? b.low : b.high, text: NAME[t.name]!,
+        color: t.dir === 'bull' ? C.bull : t.dir === 'bear' ? C.bear : C.muted, side: vol || up ? 'below' : 'above',
+        priority: t.name === 'Displacement' ? 30 : vol ? 15 : 22,
+      });
+    }
+  }
+  if (on('trade')) trade(st, n, out);
+  return out;
+}
+
+// ------------------------------------------------------------------ layers
+
+function sessions(st: SmcState, n: number, out: SceneItem[]) {
+  for (const s of st.sessions.filter((x) => x.to >= n - 300).slice(-6)) {
+    out.push({ t: 'box', layer: 'sessions', x1: s.from, x2: s.to, y1: s.low, y2: s.high, fill: C.session[s.session], label: s.session === 'New York' ? 'NY' : s.session, labelColor: C.muted, priority: 35 });
+  }
+}
+
+function premiumDiscount(st: SmcState, out: SceneItem[]) {
+  const r = st.range;
+  if (!r) return;
+  const x1 = Math.max(r.highAt, r.lowAt);
+  out.push({ t: 'box', layer: 'pd', x1, x2: 'right', y1: r.equilibrium, y2: r.high, fill: C.premium, label: 'Premium', labelColor: C.bear, priority: 40 });
+  out.push({ t: 'box', layer: 'pd', x1, x2: 'right', y1: r.low, y2: r.equilibrium, fill: C.discount, label: 'Discount', labelColor: C.bull, priority: 40 });
+  out.push({ t: 'line', layer: 'pd', x1, x2: 'right', y: r.equilibrium, color: C.eq, dash: 'dash', label: 'EQ 50%', labelAt: 'end', labelSide: 'above', priority: 42 });
+  if (r.ote) out.push({ t: 'box', layer: 'pd', x1, x2: 'right', y1: r.ote.low, y2: r.ote.high, fill: C.oteFill, stroke: C.ote, dash: true, label: 'OTE', labelColor: C.ote, priority: 44 });
+}
+
+function eventsBy<E extends { at: number }>(events: readonly E[], key: (e: E) => string) {
+  const m = new Map<string, E[]>();
+  for (const e of events) { const k = key(e); const a = m.get(k); if (a) a.push(e); else m.set(k, [e]); }
+  return m;
+}
+
+function zones(st: SmcState, n: number, last: number, out: SceneItem[]) {
+  const ev = eventsBy<ZoneEvent>(st.zoneEvents, (e) => e.zone);
+  const mid = (z: Zone) => (z.low + z.high) / 2;
+  const byDistance = (a: Zone, b: Zone) => Math.abs(mid(a) - last) - Math.abs(mid(b) - last);
+  const live: Zone[] = [];
+  const breakers: { z: Zone; at: number }[] = [];
+  const filled: { z: Zone; at: number }[] = [];
+  for (const z of st.zones) {
+    if (z.at < n - 250) continue;
+    const e = ev.get(z.id) ?? [];
+    const broken = e.find((x) => x.type === 'broken');
+    const fill = e.find((x) => x.type === 'filled');
+    if (broken) { if (broken.at >= n - 120) breakers.push({ z, at: broken.at }); continue; }
+    if (z.kind === 'FVG' && fill) { if (fill.at >= n - 60) filled.push({ z, at: fill.at }); continue; }
+    live.push(z);
+  }
+  const tested = (z: Zone) => (ev.get(z.id) ?? []).some((x) => x.type === 'touched');
+  const pick = (kind: Zone['kind'], dir: Zone['dir'], k: number) => live.filter((z) => z.kind === kind && z.dir === dir).sort(byDistance).slice(0, k);
+
+  for (const z of [...pick('OB', 'bull', 3), ...pick('OB', 'bear', 3)]) {
+    const bull = z.dir === 'bull';
+    out.push({
+      t: 'box', layer: 'zones', x1: z.at, x2: 'right', y1: z.low, y2: z.high, fill: bull ? C.bullFill : C.bearFill, stroke: bull ? C.bull : C.bear,
+      label: `${bull ? 'Bull' : 'Bear'} OB · ${tested(z) ? 'tested' : 'fresh'}`, labelColor: bull ? C.bull : C.bear, priority: 72,
+    });
+  }
+  for (const z of [...pick('FVG', 'bull', 3), ...pick('FVG', 'bear', 3)]) {
+    const bull = z.dir === 'bull';
+    out.push({ t: 'box', layer: 'zones', x1: z.at, x2: 'right', y1: z.low, y2: z.high, fill: bull ? C.fvgBull : C.fvgBear, label: 'FVG', labelColor: bull ? C.fvgBullLine : C.fvgBearLine, priority: 68 });
+  }
+  for (const { z, at } of filled.slice(-5)) {
+    out.push({ t: 'box', layer: 'zones', x1: z.at, x2: at, y1: z.low, y2: z.high, fill: z.dir === 'bull' ? 'rgba(96,165,250,0.06)' : 'rgba(245,158,11,0.06)', priority: 10 });
+  }
+  // A broken OB is a breaker and a broken gap an inverse FVG: the same zone, now facing the other way.
+  for (const { z, at } of breakers.sort((a, b) => byDistance(a.z, b.z)).slice(0, 3)) {
+    const nowBull = z.dir === 'bear';
+    out.push({
+      t: 'box', layer: 'zones', x1: at, x2: 'right', y1: z.low, y2: z.high, fill: nowBull ? 'rgba(38,161,123,0.08)' : 'rgba(226,80,79,0.08)',
+      stroke: nowBull ? C.bull : C.bear, dash: true, label: z.kind === 'OB' ? 'Breaker' : 'IFVG', labelColor: nowBull ? C.bull : C.bear, priority: 66,
+    });
+  }
+}
+
+function liquidity(st: SmcState, n: number, last: number, near: (p: number) => number, layers: ReadonlySet<Layer>, out: SceneItem[]) {
+  const ended = new Map<string, PoolEvent>();
+  for (const e of st.poolEvents) if (!ended.has(e.pool)) ended.set(e.pool, e);
+  const swing = st.pools.filter((p) => SWING_POOLS.includes(p.kind));
+  const refs = st.pools.filter((p) => !SWING_POOLS.includes(p.kind));
+
+  if (layers.has('liquidity')) {
+    for (const side of ['buy', 'sell'] as const) {
+      const live = swing.filter((p) => p.side === side && !ended.has(p.id) && (side === 'buy' ? p.price >= last : p.price <= last))
+        .sort((a, b) => near(a.price) - near(b.price)).slice(0, 3);
+      for (const p of live) {
+        out.push({
+          t: 'line', layer: 'liquidity', x1: p.at, x2: 'right', y: p.price, color: side === 'buy' ? C.bsl : C.ssl, dash: 'dash',
+          label: `${p.kind} ${fmt(p.price)}`, labelAt: 'end', labelSide: side === 'buy' ? 'above' : 'below', priority: 80,
+        });
+      }
+    }
+    for (const p of swing) {
+      const e = ended.get(p.id);
+      if (!e || e.type !== 'swept' || e.at < n - 80) continue;
+      const buy = p.side === 'buy';
+      out.push({ t: 'line', layer: 'liquidity', x1: p.at, x2: e.at, y: p.price, color: buy ? C.bsl : C.ssl, dash: 'dot', priority: 5 });
+      out.push({
+        t: 'mark', layer: 'liquidity', x: e.at, y: p.price, glyph: '✕', color: buy ? C.bsl : C.ssl, side: buy ? 'above' : 'below',
+        text: `${e.session === 'London' || e.session === 'New York' ? `${e.session === 'London' ? 'London' : 'NY'} ` : ''}${buy ? 'BSL' : 'SSL'} sweep`, priority: 85,
+      });
+    }
+  }
+
+  if (layers.has('levels')) {
+    // The latest of each reference level; an older one of the same kind is history.
+    const latest = new Map<string, Pool>();
+    for (const p of refs) latest.set(p.kind, p);
+    for (const p of latest.values()) {
+      const e = ended.get(p.id);
+      const buy = p.side === 'buy';
+      const session = ['ASH', 'ASL', 'LSH', 'LSL'].includes(p.kind);
+      const name = session ? `${p.kind.startsWith('A') ? 'Asia' : 'London'} ${buy ? 'high' : 'low'}` : p.kind;
+      if (e && e.at < n - 80) continue;
+      out.push({
+        t: 'line', layer: 'levels', x1: p.at, x2: e ? e.at : 'right', y: p.price, color: C.level, dash: 'dot',
+        label: e ? undefined : `${name} ${fmt(p.price)}`, labelAt: 'end', labelSide: buy ? 'above' : 'below', priority: session ? 55 : 65,
+      });
+      if (e?.type === 'swept') out.push({ t: 'mark', layer: 'levels', x: e.at, y: p.price, glyph: '✕', color: C.level, side: buy ? 'above' : 'below', text: `${name} swept`, priority: 84 });
+    }
+    // The UTC day's open, from its first candle.
+    const open = st.dayOpen[n - 1];
+    if (open != null) {
+      let start = n - 1;
+      while (start > 0 && st.dayOpen[start - 1] === open) start--;
+      out.push({ t: 'line', layer: 'levels', x1: start, x2: 'right', y: open, color: C.eq, dash: 'dot', label: 'Day open', labelAt: 'end', labelSide: 'above', priority: 45 });
+    }
+  }
+}
+
+function vwap(st: SmcState, bars: readonly Bar[], out: SceneItem[]) {
+  const n = bars.length;
+  let pts: [number, number][] = [];
+  const flush = () => { if (pts.length > 1) out.push({ t: 'path', layer: 'vwap', points: pts, color: C.vwap, priority: 48 }); pts = []; };
+  for (let i = Math.max(0, n - 300); i < n; i++) {
+    const v = st.vwap[i];
+    if (i > 0 && st.dayOpen[i] !== st.dayOpen[i - 1]) flush();
+    if (v != null) pts.push([i, v]);
+  }
+  if (pts.length > 1) out.push({ t: 'path', layer: 'vwap', points: pts, color: C.vwap, label: 'VWAP', priority: 48 });
+}
+
+function trade(st: SmcState, n: number, out: SceneItem[]) {
+  const long = (s: Setup) => s.dir === 'bull';
+  for (const s of st.setups) {
+    const fill = s.events.find((e) => e.state === 'ACTIVE');
+    if (!fill || s.closedAt === null || s.closedAt < n - 150) continue;
+    const end = s.closedAt;
+    out.push({ t: 'box', layer: 'trade', x1: fill.at, x2: Math.max(end, fill.at + 1), y1: Math.min(s.entry!, s.stop!), y2: Math.max(s.entry!, s.stop!), fill: 'rgba(226,80,79,0.06)', priority: 8 });
+    out.push({ t: 'box', layer: 'trade', x1: fill.at, x2: Math.max(end, fill.at + 1), y1: Math.min(s.entry!, s.targets[2]!.price), y2: Math.max(s.entry!, s.targets[2]!.price), fill: 'rgba(38,161,123,0.06)', priority: 8 });
+    const r = s.resultR;
+    const word = s.state === 'TP3' ? 'TP3' : s.state === 'STOPPED' ? 'SL' : s.state === 'BREAKEVEN' ? 'BE' : 'Exit';
+    out.push({
+      t: 'mark', layer: 'trade', x: end, y: s.events[s.events.length - 1]!.price ?? s.entry!, color: r !== null && r > 0 ? C.bull : r === 0 ? C.muted : C.bear,
+      side: long(s) ? 'above' : 'below', text: `${word} ${r === null ? '' : R(r)}`.trim(), priority: 75,
+    });
+    out.push({ t: 'mark', layer: 'trade', x: fill.at, y: s.entry!, glyph: long(s) ? '▲' : '▼', color: long(s) ? C.bull : C.bear, side: long(s) ? 'below' : 'above', text: long(s) ? 'Long' : 'Short', priority: 74 });
+  }
+
+  const live = [...st.setups].reverse().find((s) => s.closedAt === null && LIVE_SETUP.includes(s.state));
+  if (!live) return;
+  const ready = live.events.find((e) => e.state === 'READY')!.at;
+  const fill = live.events.find((e) => e.state === 'ACTIVE');
+  const bull = long(live);
+  const entry = live.entry!;
+  const stop = live.stop!;
+  const tp3 = live.targets[2]!.price;
+  const pastTp1 = live.state === 'TP1' || live.state === 'TP2';
+  const x1 = fill?.at ?? ready;
+  out.push({ t: 'box', layer: 'trade', x1, x2: 'right', y1: Math.min(entry, tp3), y2: Math.max(entry, tp3), fill: C.profit, priority: 9 });
+  out.push({ t: 'box', layer: 'trade', x1, x2: 'right', y1: Math.min(entry, stop), y2: Math.max(entry, stop), fill: C.risk, priority: 9 });
+  out.push({ t: 'line', layer: 'trade', x1, x2: 'right', y: entry, color: C.text, width: 1.4, label: `${fill ? 'Entry' : 'Entry (limit)'} ${fmt(entry)}${pastTp1 ? ' · BE' : ''}`, labelAt: 'end', labelSide: bull ? 'below' : 'above', priority: 100 });
+  out.push({ t: 'line', layer: 'trade', x1, x2: 'right', y: stop, color: C.bear, width: 1.4, dash: pastTp1 ? 'dash' : undefined, label: `SL ${fmt(stop)} · −1R`, labelAt: 'end', labelSide: bull ? 'below' : 'above', priority: 99 });
+  live.targets.forEach((t, k) => {
+    const hit = live.events.some((e) => e.state === `TP${k + 1}`);
+    out.push({
+      t: 'line', layer: 'trade', x1, x2: 'right', y: t.price, color: C.bull, width: 1.2, dash: hit ? 'dot' : undefined,
+      label: `TP${k + 1} ${t.source === 'R-multiple' ? '' : `${t.label} `}${fmt(t.price)} · ${R(t.rr)}${hit ? ' ✓' : ''}`, labelAt: 'end', labelSide: bull ? 'above' : 'below', priority: 98 - k,
+    });
+  });
+  if (fill) out.push({ t: 'mark', layer: 'trade', x: fill.at, y: entry, glyph: bull ? '▲' : '▼', color: bull ? C.bull : C.bear, side: bull ? 'below' : 'above', text: bull ? 'Long' : 'Short', priority: 97 });
+}
