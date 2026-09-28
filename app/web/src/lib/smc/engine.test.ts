@@ -234,3 +234,24 @@ describe('sessions', () => {
     expect(sessionOf(T0 + 21 * 3600)).toBeNull();
   });
 });
+
+describe('scaling out', () => {
+  it('[critical] a third comes off at each target: TP1 then break-even banks a third of TP1, never zero', () => {
+    const bars = walk(3 * 288);
+    const st = runSmc(bars, { tfSec: M5 });
+    for (const s of st.setups.filter((x) => x.resultR !== null)) {
+      const hits = s.targets.filter((_, k) => s.events.some((e) => e.state === `TP${k + 1}`) || (k === 2 && s.state === 'TP3'));
+      const banked = hits.reduce((a, t) => a + t.rr / 3, 0);
+      if (s.state === 'STOPPED') expect(s.resultR).toBe(-1);
+      if (s.state === 'BREAKEVEN') { expect(hits.length).toBeGreaterThan(0); expect(s.resultR).toBeCloseTo(banked, 9); expect(s.resultR!).toBeGreaterThan(0); }
+      if (s.state === 'TP3') expect(s.resultR).toBeCloseTo((s.targets[0]!.rr + s.targets[1]!.rr + s.targets[2]!.rr) / 3, 9);
+    }
+  });
+
+  it('[critical] every target asks at least as much as it risks', () => {
+    const st = runSmc(walk(3 * 288), { tfSec: M5 });
+    const planned = st.setups.filter((s) => s.entry !== null);
+    expect(planned.length).toBeGreaterThan(0);
+    for (const s of planned) for (const t of s.targets) expect(t.rr).toBeGreaterThanOrEqual(1);
+  });
+});

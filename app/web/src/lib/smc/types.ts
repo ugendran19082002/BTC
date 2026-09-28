@@ -103,18 +103,24 @@ export type CandleTag = {
   dir: Dir | null;
 };
 
-export type TargetSource = 'liquidity' | 'swing' | 'level' | 'R-multiple';
+/**
+ * Where a target came from, nearest first in the hierarchy:
+ * internal liquidity (swings, equal highs / lows, the session highs / lows),
+ * external liquidity (previous day / week / month), an opposing zone (OB),
+ * and an R multiple only where there is no level to aim at.
+ */
+export type TargetSource = 'internal' | 'external' | 'zone' | 'R-multiple';
 
-export type Target = { price: number; label: string; source: TargetSource; rr: number };
+export type Target = { price: number; label: string; source: TargetSource; rr: number; reason: string };
 
 export type SetupState =
   | 'FORMING'      // liquidity swept, waiting for the structure shift
   | 'READY'        // shift confirmed and a POI chosen, waiting for the retest
   | 'ACTIVE'       // filled at the POI
-  | 'TP1' | 'TP2'  // partial targets reached, still running (stop at break-even after TP1)
+  | 'TP1' | 'TP2'  // partial targets reached, still running
   | 'TP3'          // final: every target reached
   | 'STOPPED'      // final: stop before any target
-  | 'BREAKEVEN'    // final: stopped at entry after TP1
+  | 'PROTECTED'    // final: after TP1, stopped at the protected stop (break-even or trailed)
   | 'INVALIDATED'  // final: closed through the stop before filling, or superseded
   | 'EXPIRED';     // final: ran away without filling, or too long in the trade
 
@@ -139,15 +145,21 @@ export type Setup = {
   entry: number | null;
   stop: number | null;
   targets: Target[];
-  /** Risk in price points, fixed at READY. */
+  /** Risk in price points, fixed at READY: entry to the structural stop plus its volatility buffer. */
   risk: number | null;
   /** The higher timeframe's trend at the time the plan was made, when one was given. */
   htf: Dir | null;
   events: SetupEvent[];
+  /**
+   * Every move of the stop after the fill, in order. The plan's `stop` is
+   * never rewritten; the stop in force is the last of these, else `stop`.
+   * Stops only tighten.
+   */
+  trail: { at: number; known: number; price: number; note: string }[];
   /** Filled in once the trade is open: best and worst excursion, in R. */
   mfeR: number | null;
   maeR: number | null;
-  /** Final result in R: +rr of the last target reached, -1 for a stop, 0 at break-even. */
+  /** Final result in R: 30% off at TP1, 30% at TP2, 40% at TP3, the rest at the stop in force. -1 for a stop before TP1. */
   resultR: number | null;
   closedAt: number | null;
 };

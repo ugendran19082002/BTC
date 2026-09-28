@@ -41,6 +41,8 @@ const monthOf = (t: number) => { const d = new Date(t * 1000); return d.getUTCFu
 const FORMING_BARS = 24;
 const READY_BARS = 30;
 const ACTIVE_BARS = 96;
+/** The share of the position closed at each of the three targets. */
+export const SCALE_OUT = 1 / 3;
 
 type Extreme = { high: number; low: number; highAt: number; lowAt: number };
 
@@ -422,8 +424,9 @@ export class SmcEngine {
    *   buy-side liquidity already on the chart, R multiples only where there is
    *   none.
    *
-   * The plan is fixed when the setup turns READY. After TP1 the stop moves to
-   * break-even, and that move is an event like any other.
+   * The plan is fixed when the setup turns READY. Every target is at least 1R.
+   * A third of the position comes off at each target; after TP1 the stop moves
+   * to break-even, and that move is an event like any other.
    */
   private onSweep(pool: Pool, i: number) {
     const dir: Dir = pool.side === 'sell' ? 'bull' : 'bear';
@@ -483,7 +486,8 @@ export class SmcEngine {
   private targetsFor(dir: Dir, entry: number, risk: number, i: number): Target[] {
     const bull = dir === 'bull';
     const atr = this.atrs[i] ?? 0;
-    const beyond = (p: number) => (bull ? p - entry : entry - p) >= 0.5 * risk;
+    // A target nearer than the stop is not worth the risk it asks for: every target is at least 1R.
+    const beyond = (p: number) => (bull ? p - entry : entry - p) >= risk;
     const candidates: { price: number; label: string; source: Target['source'] }[] = [];
     for (const p of this.livePools.values()) {
       if (p.known > i || p.side !== (bull ? 'buy' : 'sell') || !beyond(p.price)) continue;
@@ -576,14 +580,20 @@ export class SmcEngine {
     s.state = state;
     s.closedAt = i;
     s.events.push({ state, at: i, known: i, price, note });
-    if (s.entry !== null && s.risk) {
-      const bull = s.dir === 'bull';
+    if (s.entry !== null && s.risk && s.events.some((e) => e.state === 'ACTIVE')) {
+      /*
+       * A third off at each target, the rest on until the next one or the
+       * stop -- which is at break-even from TP1 on. So TP1 then back to entry
+       * banks a third of TP1's R, not nothing, and a stop before TP1 is -1R.
+       */
+      const hit = s.targets.filter((_, k) => s.events.some((e) => e.state === `TP${k + 1}`) || (k === 2 && state === 'TP3'));
+      const banked = hit.reduce((sum, t) => sum + t.rr * SCALE_OUT, 0);
+      const left = 1 - hit.length * SCALE_OUT;
+      const exitR = price === null ? 0 : (s.dir === 'bull' ? price - s.entry : s.entry - price) / s.risk;
       if (state === 'STOPPED') s.resultR = -1;
-      else if (state === 'BREAKEVEN') s.resultR = 0;
-      else if (state === 'TP3') s.resultR = s.targets[2]!.rr;
-      else if (state === 'EXPIRED' && price !== null && s.events.some((e) => e.state === 'ACTIVE')) {
-        s.resultR = (bull ? price - s.entry : s.entry - price) / s.risk;
-      }
+      else if (state === 'BREAKEVEN') s.resultR = banked;
+      else if (state === 'TP3') s.resultR = banked;
+      else if (state === 'EXPIRED') s.resultR = banked + left * exitR;
     }
     if (this.long === s) this.long = null;
     if (this.short === s) this.short = null;
