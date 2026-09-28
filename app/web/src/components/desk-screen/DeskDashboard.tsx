@@ -68,10 +68,8 @@ export function DeskDashboard({
       <div className="desk-chart-row">
         <DeskChart
           bars={bars}
-          spot={effectiveSpot}
           tf={tf}
           onTf={onTf}
-          marketState={marketState}
           loading={loading}
           error={error}
         />

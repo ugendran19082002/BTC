@@ -2,85 +2,63 @@ import { useMemo } from 'react';
 import type { Candle } from '@/types/desk';
 import type { ChartTf } from '@/components/desk/PriceChart';
 import { PriceChart } from '@/components/desk/PriceChart';
-import type { Zone, StateMarker } from '@/components/desk/chart-overlay';
-import type { MarketStateResponse } from '@/api/desk';
+import { getCandles } from '@/api/desk';
+import { usePoll } from '@/hooks/usePoll';
+import { aggregate, closedBars, readTf, type TfRead } from '@/lib/smc/context';
 
+const HOUR = 3600;
+const M5 = 300;
+const M1 = 60;
+
+/**
+ * The Live screen's chart, with the timeframe context the setup reads:
+ * 1H = regime, 30M = bias, 15M = structure, 5M = setup, 1M = trigger.
+ *
+ * Three requests a minute: the hour candles (fourteen days), the 5-minute
+ * (thirty-six hours, folded into 15m and 30m here) and the 1-minute. Only
+ * closed candles are read.
+ */
 export function DeskChart({
-  bars,
-  spot,
-  tf = '15m',
-  onTf,
-  marketState,
-  loading = false,
-  error,
+  bars, tf = '15m', onTf, loading = false, error,
 }: {
   bars: readonly Candle[];
-  spot: number;
   tf: ChartTf;
   onTf: (tf: ChartTf) => void;
-  marketState?: MarketStateResponse | null;
   loading?: boolean;
   error?: string;
 }) {
-  // Resistance & Support zones from levels or marketState
-  const rLevel = marketState?.levels?.find((l) => l.side === 'resistance')?.price ?? (spot + 530);
-  const sLevel = marketState?.levels?.find((l) => l.side === 'support')?.price ?? (spot - 300);
+  const { data: h1 } = usePoll(() => getCandles('1h'), 60_000);
+  const { data: m5 } = usePoll(() => getCandles('5m'), 60_000);
+  const { data: m1 } = usePoll(() => getCandles('1m'), 60_000);
 
-  const zones: Zone[] = useMemo(() => [
-    {
-      from: Math.round(rLevel - 20),
-      to: Math.round(rLevel + 25),
-      label: `Resistance Zone ${Math.round(rLevel - 20).toLocaleString()} – ${Math.round(rLevel + 25).toLocaleString()}`,
-      tone: 'down',
-    },
-    {
-      from: Math.round(sLevel - 25),
-      to: Math.round(sLevel + 20),
-      label: `Support Zone ${Math.round(sLevel - 25).toLocaleString()} – ${Math.round(sLevel + 20).toLocaleString()}`,
-      tone: 'up',
-    },
-  ], [rLevel, sLevel]);
-
-  // Swing markers
-  const markers: StateMarker[] = useMemo(() => {
-    if (bars.length < 5) return [];
-    const targetBar = bars[bars.length - 4] ?? bars[bars.length - 1];
-    if (!targetBar) return [];
-    return [
-      {
-        time: targetBar.time,
-        label: 'Lower High',
-        above: true,
-        tone: 'down',
-      },
-    ];
-  }, [bars]);
-
-  const trend = marketState?.inputs.regime === 'TREND_UP'
-    ? 'UP'
-    : marketState?.inputs.regime === 'TREND_DOWN'
-    ? 'DOWN'
-    : (marketState?.inputs.regime as 'UP' | 'DOWN' | 'RANGE' | 'QUIET') ?? null;
+  const minute = Math.floor(Date.now() / 60_000);
+  const context = useMemo<TfRead[]>(() => {
+    const now = minute * 60;
+    const out: TfRead[] = [];
+    const hour = closedBars(h1?.bars ?? [], HOUR, now);
+    const five = closedBars(m5?.bars ?? [], M5, now);
+    const one = closedBars(m1?.bars ?? [], M1, now);
+    if (hour.length) out.push(readTf('1H', 'Regime', hour, HOUR));
+    if (five.length) {
+      out.push(readTf('30M', 'Bias', aggregate(five, M5, 1800), 1800));
+      out.push(readTf('15M', 'Structure', aggregate(five, M5, 900), 900));
+      out.push(readTf('5M', 'Setup', five, M5));
+    }
+    if (one.length) out.push(readTf('1M', 'Trigger', one, M1));
+    return out;
+  }, [h1, m5, m1, minute]);
 
   return (
-    <div className="desk-chart-panel" aria-label="BTC Interactive Candlestick Chart">
+    <div className="desk-chart-panel" aria-label="BTC price chart">
       <div className="desk-chart-container">
         <PriceChart
           bars={bars}
-          support={Math.round(sLevel)}
-          resistance={Math.round(rLevel)}
-          spot={spot}
-          zones={zones}
-          lines={marketState?.lines ?? []}
-          markers={markers}
-          trend={trend}
-          bias={marketState?.bias ?? null}
           tf={tf}
           onTf={onTf}
           loading={loading}
           error={error}
-          hideTfSelector={false}
-          hideHeadline={false}
+          context={context}
+          regime={h1?.bars?.length ? { bars: h1.bars, tfSec: HOUR } : null}
         />
       </div>
     </div>

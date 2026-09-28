@@ -1,22 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { PriceChart, CHART_TFS } from '@/components/desk/PriceChart';
+import type { SceneItem } from '@/components/desk/chart/scene';
 import type { Candle } from '@/types/desk';
 
 /*
- * The candles are drawn by `lightweight-charts` onto a canvas, which jsdom
- * does not paint and a test cannot read. So the library is stubbed and what is
- * asserted is the contract with it: that the series are given the bars and the
- * volume in the right shape and colours, that the lock really does turn its
- * scrolling off, and that the desk's own overlay is drawn over it. Where the
- * overlay's shapes end up is `chart-overlay.test.ts`.
+ * The candles and the concepts are drawn by `lightweight-charts` onto a canvas,
+ * which jsdom does not paint. So the library is stubbed and what is asserted
+ * is the contract with it: the series get the bars, the scroll lock really
+ * locks, and the primitive is handed a scene built from closed candles only.
+ * What the scene contains is scene / engine tests' business.
  */
 
-const series = { candles: null as any, volume: null as any };
-const markerSets: any[][] = [];
 const setDataCalls: { which: string; data: any[] }[] = [];
 const applied: Record<string, unknown>[] = [];
-const priceLines: any[] = [];
+const primitives: { scene: readonly SceneItem[] }[] = [];
 
 vi.mock('lightweight-charts', () => {
   class Series {
@@ -24,54 +22,47 @@ vi.mock('lightweight-charts', () => {
     setData = vi.fn((data: any[]) => { setDataCalls.push({ which: this.which, data }); });
     priceScale = () => ({ applyOptions: vi.fn() });
     priceToCoordinate = (price: number) => 300 - (price - 77_000) / 10;
-    createPriceLine = vi.fn((o: unknown) => { priceLines.push(o); return o; });
-    removePriceLine = vi.fn();
+    attachPrimitive = vi.fn((p: any) => { primitives.push(p); p.attached?.({ chart: {}, series: this, requestUpdate: () => {} }); });
   }
   return {
-    createSeriesMarkers: vi.fn(() => ({ setMarkers: (m: any[]) => { markerSets.push(m); } })),
     ColorType: { Solid: 'solid' },
     CrosshairMode: { Normal: 0 },
-    LineStyle: { Dashed: 2 },
     CandlestickSeries: 'candles',
     HistogramSeries: 'volume',
     createChart: vi.fn(() => ({
-      addSeries: vi.fn((kind: string) => {
-        const s = new Series(kind);
-        if (kind === 'candles') series.candles = s; else series.volume = s;
-        return s;
-      }),
+      addSeries: vi.fn((kind: string) => new Series(kind)),
       applyOptions: vi.fn((o: Record<string, unknown>) => { applied.push(o); }),
       subscribeCrosshairMove: vi.fn(),
-      timeScale: () => ({
-        subscribeVisibleTimeRangeChange: vi.fn(),
-        setVisibleLogicalRange: vi.fn(),
-        fitContent: vi.fn(),
-        timeToCoordinate: (t: number) => (t % 1000) / 2,
-      }),
+      timeScale: () => ({ setVisibleLogicalRange: vi.fn(), logicalToCoordinate: (i: number) => i * 8 }),
       remove: vi.fn(),
     })),
   };
 });
 
-const bars = (n: number, base = 77_000): Candle[] =>
-  Array.from({ length: n }, (_, i) => ({
-    time: 1_757_000_000 + i * 3600,
+vi.mock('@/api/annotations', () => ({
+  getAnnotations: vi.fn(async () => []),
+  clearAnnotationsApi: vi.fn(async () => {}),
+}));
+
+const HOUR = 3600;
+/** Hourly candles ending with one still forming now. */
+const bars = (n: number, base = 77_000): Candle[] => {
+  const lastOpen = Math.floor(Date.now() / 1000 / HOUR) * HOUR;
+  return Array.from({ length: n }, (_, i) => ({
+    time: lastOpen - (n - 1 - i) * HOUR,
     open: base + i * 10, high: base + i * 10 + 60, low: base + i * 10 - 60,
     close: base + i * 10 + (i % 2 === 0 ? 20 : -20), volume: 100 + i,
   }));
+};
 
 const noop = () => {};
 const chart = (props: Partial<Parameters<typeof PriceChart>[0]> = {}) =>
-  render(
-    <PriceChart bars={bars(40)} support={74_400} resistance={80_000} spot={77_200}
-      tf="15m" onTf={noop} {...props} />,
-  );
+  render(<PriceChart bars={bars(60)} tf="1h" onTf={noop} {...props} />);
 
 beforeEach(() => {
-  markerSets.length = 0;
   setDataCalls.length = 0;
   applied.length = 0;
-  priceLines.length = 0;
+  primitives.length = 0;
   try { localStorage.clear(); } catch { /* no storage */ }
 });
 
@@ -80,140 +71,74 @@ describe('the price chart', () => {
     chart();
     const candles = setDataCalls.find((c) => c.which === 'candles')!;
     const volume = setDataCalls.find((c) => c.which === 'volume')!;
-    expect(candles.data).toHaveLength(40);
+    expect(candles.data).toHaveLength(60);
     expect(candles.data[0]).toMatchObject({ open: 77_000, high: 77_060, low: 76_940 });
-    expect(volume.data[0].value).toBe(100);
-    // an up bar is green, a down bar red: the histogram is read alongside the candles
     expect(volume.data[0].color).toContain('38,161,123');
     expect(volume.data[1].color).toContain('226,80,79');
   });
 
-  it('[critical] draws no price lines, and names the open-interest walls under the chart', () => {
-    /*
-     * The walls were two more horizontals through the candles, and spot was a
-     * third -- whose axis tag sat on top of the series' own last-price tag, a
-     * few dollars apart, both over the callouts. The candles already show
-     * where price is; the walls are where open interest sits, which is worth
-     * saying and not worth a line.
-     */
-    chart();
-    expect(priceLines).toHaveLength(0);
-    const note = screen.getByText(/where open interest sits/);
-    expect(note.textContent).toContain('74,400');
-    expect(note.textContent).toContain('80,000');
-  });
-
-  it('says so rather than showing a price when the board has no wall', () => {
-    chart({ support: null, resistance: null });
-    expect(screen.getByText(/where open interest sits/).textContent).toContain('—');
-  });
-
   it('[critical] zoom is off until it is asked for, so the page scrolls over the chart', () => {
-    /*
-     * The chart sits in the middle of a long page. A wheel that always zooms is
-     * a wheel that stops the page dead wherever the pointer is resting.
-     */
     chart();
-    expect(screen.getByRole('button', { name: 'Zoom off' })).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByText(/zoom is off, so the page scrolls over the chart/)).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Zoom off' }));
-    expect(applied.at(-1)).toMatchObject({ handleScroll: true, handleScale: true });
-    expect(screen.getByRole('button', { name: 'Zoom on' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: /^Zoom$/ }));
+    expect(applied.some((o) => o.handleScroll === true && o.handleScale === true)).toBe(true);
   });
 
-  it('[critical] offers one timeframe row, and it is the only one on the screen', () => {
-    /*
-     * Two timeframe controls for one question is two answers the moment they
-     * disagree: the chart owns the row and the analysis follows it. One minute
-     * is on the row for the candles even though the state engine does not read
-     * it -- the card stays on five minutes and says so on its own badge.
-     */
-    const seen: string[] = [];
-    chart({ onTf: (t) => seen.push(t) });
-    for (const t of CHART_TFS) expect(screen.getByRole('radio', { name: t })).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: '1m' })).toBeInTheDocument();
-    expect(screen.queryByRole('radio', { name: '1D' })).toBeNull();
-    fireEvent.click(screen.getByRole('radio', { name: '1h' }));
-    expect(seen).toEqual(['1h']);
+  it('[critical] offers one timeframe row, inside the chart', () => {
+    const onTf = vi.fn();
+    render(<PriceChart bars={bars(60)} tf="1h" onTf={onTf} />);
+    const row = screen.getByRole('group', { name: 'Timeframe' });
+    expect(row.querySelectorAll('button')).toHaveLength(CHART_TFS.length);
+    fireEvent.click(screen.getByRole('button', { name: '15m' }));
+    expect(onTf).toHaveBeenCalledWith('15m');
+    expect(screen.getByRole('button', { name: '1h' })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('shows the newest bar in the header until the crosshair says otherwise', () => {
+  it('[critical] draws through a primitive, and never reads the candle still forming', () => {
     chart();
-    expect(screen.getByText('last')).toBeInTheDocument();
-    expect(screen.getByText('40 bars')).toBeInTheDocument();
-    // the last bar of the fixture: open 77,390, close 77,370
-    expect(screen.getByText('77,390')).toBeInTheDocument();
+    expect(primitives).toHaveLength(1);
+    const scene = primitives[0]!.scene;
+    const xs = scene.flatMap((it) => (it.t === 'box' || it.t === 'line' ? [it.x1] : it.t === 'mark' ? [it.x] : it.points.map((p) => p[0])));
+    expect(Math.max(-1, ...xs)).toBeLessThan(59);
   });
 
-  it('[critical] flags what happened on the bar it happened on, and names the trend', () => {
-    /*
-     * "Bearish Engulfing" in a list under the chart means very little until
-     * you can see which candle it was. The flags are drawn by the library
-     * rather than by the overlay so they move with their bar through every pan
-     * and zoom.
-     */
+  it('[critical] says what it is waiting for instead of inventing a trade', () => {
+    chart();
+    const hud = screen.getByLabelText('Setup readout');
+    expect(hud.textContent).toMatch(/NO TRADE|FORMING|READY|ACTIVE/);
+    expect(hud.textContent).not.toMatch(/will (reach|hit)/i);
+  });
+
+  it('shows the timeframe context when it is given', () => {
     chart({
-      trend: 'DOWN',
-      markers: [
-        { time: 1_757_003_600, label: 'Rejection', above: true, tone: 'down' },
-        { time: 1_757_007_200, label: 'Support bounce', above: false, tone: 'up' },
+      context: [
+        { tf: '1H', role: 'Regime', trend: 'bull', last: { kind: 'BOS', dir: 'bull', barsAgo: 3 }, setup: null },
+        { tf: '5M', role: 'Setup', trend: 'bear', last: null, setup: { dir: 'bear', state: 'READY' } },
       ],
     });
-    const drawn = markerSets.at(-1)!;
-    expect(drawn.map((m) => m.text)).toEqual(['Rejection', 'Support bounce']);
-    expect(drawn[0]).toMatchObject({ position: 'aboveBar', shape: 'arrowDown' });
-    expect(drawn[1]).toMatchObject({ position: 'belowBar', shape: 'arrowUp' });
-    expect(screen.getByText('↘ Downtrend')).toBeInTheDocument();
+    const ctx = screen.getByLabelText('Timeframe context');
+    expect(ctx.textContent).toContain('1H ▲ Regime');
+    expect(ctx.textContent).toContain('5M ▼ Setup');
+    expect(ctx.textContent).toContain('short ready');
   });
 
-  it('[critical] says which way everything measured points, as a vote and not a chance', () => {
-    /*
-     * The one question the chart is opened to answer. The weight each way is
-     * printed beside it -- "8 vs 3" -- because a lone percentage would be read
-     * as "it goes up 73% of the time", which is a claim nothing here has
-     * earned.
-     */
-    const { container } = chart({ bias: { side: 'UP', strength: 45, up: 8.2, down: 3.1, reasons: [
-      { text: '5 of 6 timeframes up', side: 'UP', weight: 2.5 },
-    ] } });
-    const badge = container.querySelector('.price-chart-bias')!;
-    expect(badge.textContent).toContain('▲ Up');
-    expect(badge.textContent).toContain('8 vs 3');
-    expect(badge.textContent).not.toContain('%');
-    expect(badge.getAttribute('title')).toContain('not a probability');
+  it('remembers which layers are drawn', () => {
+    chart();
+    fireEvent.click(screen.getByRole('button', { name: 'Layers' }));
+    fireEvent.click(screen.getByLabelText('Structure'));
+    expect(JSON.parse(localStorage.getItem('desk:chart:layers') ?? localStorage.getItem('chart:layers') ?? '[]')).not.toContain('structure');
   });
 
-  it('says there is no lean rather than picking a side to fill the badge', () => {
-    chart({ bias: { side: 'NEUTRAL', strength: 4, up: 5, down: 4.7, reasons: [] } });
-    expect(screen.getByText('● No lean')).toBeInTheDocument();
+  it('folds the readout to one line', () => {
+    chart();
+    const head = screen.getByRole('button', { expanded: true });
+    fireEvent.click(head);
+    expect(screen.getByRole('button', { expanded: false })).toBeInTheDocument();
   });
 
-  it('[critical] the chart is built when the candles arrive, not only when the card mounts', () => {
-    /*
-     * The blank-chart bug (26 Sep 2026). The plot -- and so the element the
-     * library draws into -- only exists once there are bars, and the effect
-     * that creates the chart was keyed on the card being open. On a cold load
-     * the bars arrived second, the element mounted, and nothing ever created
-     * a chart in it: a drawn box, a note underneath, no candles.
-     */
-    const { rerender } = render(
-      <PriceChart bars={[]} support={null} resistance={null} spot={77_200} tf="15m" onTf={noop} loading />,
-    );
-    expect(setDataCalls).toHaveLength(0);
-
-    rerender(
-      <PriceChart bars={bars(40)} support={null} resistance={null} spot={77_200} tf="15m" onTf={noop} />,
-    );
-    const candles = setDataCalls.find((c) => c.which === 'candles');
-    expect(candles?.data).toHaveLength(40);
-    expect(setDataCalls.find((c) => c.which === 'volume')?.data).toHaveLength(40);
-  });
-
-  it('says what is wrong instead of drawing an empty chart', () => {
-    const { rerender } = chart({ bars: [], loading: true });
+  it('says it is loading, and what is wrong, instead of drawing an empty chart', () => {
+    const { rerender } = render(<PriceChart bars={[]} tf="15m" onTf={noop} loading />);
     expect(screen.getByText('Loading candles…')).toBeInTheDocument();
-    rerender(<PriceChart bars={[]} support={null} resistance={null} spot={77_200} tf="15m" onTf={noop} error="feed down" />);
-    expect(screen.getByText('feed down')).toBeInTheDocument();
+    rerender(<PriceChart bars={[]} tf="15m" onTf={noop} error="feed down" />);
+    expect(screen.getByRole('alert')).toHaveTextContent('feed down');
   });
 });

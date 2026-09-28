@@ -1,0 +1,85 @@
+import { forwardRef } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
+import type { TfRead } from '@/lib/smc/context';
+import type { Readout } from '@/lib/smc/readout';
+
+const fmt = (p: number) => Math.round(p).toLocaleString('en-US');
+const pct = (v: number) => `${Math.round(v * 100)}%`;
+const r1 = (v: number) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)}R`;
+
+type Shown = { open: number; high: number; low: number; close: number; when: string; hovering: boolean };
+
+/**
+ * The chart's corner readout: the live setup and what it is waiting for, the
+ * plan when there is one, the timeframe context, and this chart's own record.
+ * Inside the chart, over the candles' quietest corner, and folds to one line.
+ */
+export const ChartHud = forwardRef<HTMLDivElement, {
+  open: boolean;
+  onToggle: () => void;
+  tf: string;
+  read: Readout;
+  context: readonly TfRead[];
+  candle: Shown | null;
+}>(function ChartHud({ open, onToggle, tf, read, context, candle }, ref) {
+  const up = candle ? candle.close >= candle.open : true;
+  return (
+    <div ref={ref} className={`pc-hud pc-hud-${read.tone}`} aria-label="Setup readout">
+      <button type="button" className="pc-hud-head" onClick={onToggle} aria-expanded={open}>
+        {open ? <ChevronDown size={13} aria-hidden /> : <ChevronRight size={13} aria-hidden />}
+        <b>{read.headline}</b>
+        <span className="pc-hud-tf">{tf}</span>
+      </button>
+      {open && (
+        <div className="pc-hud-body">
+          <p className="pc-hud-detail">{read.detail}</p>
+
+          {read.confirmations.length > 0 && (
+            <ul className="pc-hud-checks" aria-label="Confirmations">
+              {read.confirmations.map((c) => (
+                <li key={c.name} className={c.ok ? 'ok' : 'wait'}>{c.ok ? '✓' : '○'} {c.name}</li>
+              ))}
+            </ul>
+          )}
+
+          {read.plan && (
+            <div className="pc-hud-plan" aria-label="Trade plan">
+              <span><i>Entry</i> {fmt(read.plan.entry)}{read.plan.filled ? ' ✓' : ''}</span>
+              <span className="sl"><i>{read.plan.breakEven ? 'SL → BE' : 'SL'}</i> {fmt(read.plan.breakEven ? read.plan.entry : read.plan.stop)}</span>
+              {read.plan.targets.map((t, k) => (
+                <span key={k} className="tp"><i>TP{k + 1}</i> {fmt(t.price)} <small>{r1(t.rr)}{t.source === 'R-multiple' ? '' : ` · ${t.label}`}</small></span>
+              ))}
+              <span className="risk"><i>1R</i> {fmt(read.plan.risk)} pts</span>
+            </div>
+          )}
+
+          {context.length > 0 && (
+            <div className="pc-hud-ctx" aria-label="Timeframe context">
+              {context.map((c) => (
+                <span key={c.tf} className={c.trend === 'bull' ? 'up' : c.trend === 'bear' ? 'down' : ''}
+                  title={c.last ? `${c.last.kind} ${c.last.dir === 'bull' ? 'up' : 'down'}, ${c.last.barsAgo} candles ago` : 'No break yet'}>
+                  <b>{c.tf}</b> {c.trend === 'bull' ? '▲' : c.trend === 'bear' ? '▼' : '–'} {c.role}
+                  {c.setup ? <small> · {c.setup.dir === 'bull' ? 'long' : 'short'} {c.setup.state.toLowerCase()}</small> : null}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {read.record && (
+            <p className="pc-hud-record" title="Setups this chart's candles produced and completed, each decided without seeing what came after it">
+              This chart: {read.record.n} trade{read.record.n === 1 ? '' : 's'} · TP1 {pct(read.record.tp1Rate)} · SL {pct(read.record.stopRate)} · avg {r1(read.record.avgR)} · MFE {read.record.avgMfeR.toFixed(1)}R · MAE {read.record.avgMaeR.toFixed(1)}R
+            </p>
+          )}
+
+          {candle && (
+            <p className="pc-hud-ohlc">
+              <span>{candle.hovering ? candle.when : 'Last'}</span>
+              <span>O {fmt(candle.open)}</span><span>H {fmt(candle.high)}</span><span>L {fmt(candle.low)}</span>
+              <span className={up ? 'up' : 'down'}>C {fmt(candle.close)}</span>
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+});
