@@ -28,7 +28,7 @@ export function DeskMarketScore({
   ];
 
   return (
-    <div className="desk-score-panel" aria-label="Market Analysis Score Card" style={{ marginTop: 12 }}>
+    <div className="desk-score-panel" aria-label="Market Analysis Score Card">
       <div className="desk-panel-title" style={{ marginBottom: 10 }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <Shield size={16} color="#00e5ff" />

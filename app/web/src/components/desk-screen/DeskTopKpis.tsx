@@ -1,4 +1,4 @@
-import { ArrowLeftRight, ArrowUp, Zap, Ban, BarChart3 } from 'lucide-react';
+import { ArrowDown, ArrowLeftRight, ArrowUp, Zap, Ban, BarChart3 } from 'lucide-react';
 import type { LiveResponse } from '@/types/live';
 import type { MarketStateResponse } from '@/api/desk';
 
@@ -36,10 +36,40 @@ export function DeskTopKpis({
   const h = Math.floor(hoursToExpiry);
   const m = Math.round((hoursToExpiry - h) * 60);
   const band = prediction?.band;
-  const pBelow = band?.pBelow != null ? Math.round(band.pBelow * 100) : 18;
-  const pInside = band?.pInside != null ? Math.round(band.pInside * 100) : 64;
-  const pAbove = band?.pAbove != null ? Math.round(band.pAbove * 100) : 18;
-  const atExpiryBias = ladder?.bias === 'UP' ? 'UP' : ladder?.bias === 'DOWN' ? 'DOWN' : 'UP';
+
+  const toPct = (v: any, fallback: number): number => {
+    if (v == null) return fallback;
+    const n = typeof v === 'number' ? v : Number(v);
+    if (!Number.isFinite(n)) return fallback;
+    return n <= 1 && n > 0 ? Math.round(n * 100) : Math.round(n);
+  };
+
+  const rawInside = band?.pInside;
+  const rawBelow = band?.pBelow;
+  const rawAbove = band?.pAbove;
+
+  let pInside: number;
+  let pBelow: number;
+  let pAbove: number;
+
+  if (rawInside != null) {
+    pInside = toPct(rawInside, 64);
+    const outside = Math.max(0, 100 - pInside);
+    pBelow = rawBelow != null ? toPct(rawBelow, Math.floor(outside / 2)) : Math.floor(outside / 2);
+    pAbove = 100 - pInside - pBelow;
+  } else {
+    pBelow = toPct(rawBelow, 18);
+    pAbove = toPct(rawAbove, 18);
+    pInside = Math.max(0, 100 - pBelow - pAbove);
+  }
+
+  const rawBias = ladder?.bias;
+  const atExpiryBias = rawBias === 'UP' ? 'UP' : rawBias === 'DOWN' ? 'DOWN' : 'RANGE';
+  const biasColor = atExpiryBias === 'UP' ? '#00e676' : atExpiryBias === 'DOWN' ? '#ff3b57' : '#00e5ff';
+  const biasIconClass = atExpiryBias === 'UP' ? 'desk-icon-expiry' : atExpiryBias === 'DOWN' ? 'desk-icon-risk' : 'desk-icon-regime';
+
+  const align = ladder?.alignment ?? 0.75;
+  const confWord = align >= 0.7 ? 'High' : align >= 0.4 ? 'Medium' : 'Low';
 
   // Big Move Risk
   const move1h = breakRisk?.hourly?.p68Usd ? Math.round(breakRisk.hourly.p68Usd)
@@ -76,21 +106,27 @@ export function DeskTopKpis({
         </div>
       </div>
 
-      {/* 2. At Expiry */}
+      {/* 2. At Expiry (matching DeskExpiryPrediction exactly) */}
       <div className="desk-kpi-card">
-        <div className="desk-kpi-icon-wrap desk-icon-expiry">
-          <ArrowUp size={18} />
+        <div className={`desk-kpi-icon-wrap ${biasIconClass}`}>
+          {atExpiryBias === 'UP' ? (
+            <ArrowUp size={18} />
+          ) : atExpiryBias === 'DOWN' ? (
+            <ArrowDown size={18} />
+          ) : (
+            <ArrowLeftRight size={18} />
+          )}
         </div>
         <div className="desk-kpi-content">
           <span className="desk-kpi-label">At Expiry ({h}h {String(m).padStart(2, '0')}m)</span>
           <span className="desk-kpi-val">
-            <span style={{ color: '#00e676', marginRight: 6 }}>{atExpiryBias}</span>
-            <span style={{ color: '#94a3b8', fontSize: 13, fontWeight: 500 }}>(Medium)</span>
+            <span style={{ color: biasColor, marginRight: 6 }}>{atExpiryBias}</span>
+            <span style={{ color: '#94a3b8', fontSize: 13, fontWeight: 500 }}>({confWord})</span>
           </span>
           <span className="desk-kpi-sub" style={{ fontFamily: 'ui-monospace, monospace' }}>
-            <span style={{ color: '#00e676' }}>● {pAbove + (atExpiryBias === 'UP' ? 29 : 0)}%</span>
-            <span style={{ color: '#cbd5e1', margin: '0 4px' }}>● {pInside > 40 ? 19 : pInside}%</span>
-            <span style={{ color: '#ff3b57' }}>● {pBelow + (atExpiryBias === 'DOWN' ? 20 : 16)}%</span>
+            <span style={{ color: '#00e676' }} title={`Above range: ${pAbove}%`}>● {pAbove}%</span>
+            <span style={{ color: '#cbd5e1', margin: '0 5px' }} title={`Inside range: ${pInside}%`}>● {pInside}%</span>
+            <span style={{ color: '#ff3b57' }} title={`Below range: ${pBelow}%`}>● {pBelow}%</span>
           </span>
         </div>
       </div>

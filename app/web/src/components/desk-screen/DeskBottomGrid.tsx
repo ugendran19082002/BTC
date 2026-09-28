@@ -1,8 +1,9 @@
 import { Activity, Compass, Layers, Lightbulb } from 'lucide-react';
 import type { Candle } from '@/types/desk';
-import type { Ladder } from '@/types/live';
+import type { Ladder, ExpiryPrediction } from '@/types/live';
 import type { MarketStateResponse } from '@/api/desk';
 import { calculateIndicators } from './indicators-calc';
+import { DeskMarketScore } from './DeskMarketScore';
 
 export function DeskBottomGrid({
   bars,
@@ -11,6 +12,7 @@ export function DeskBottomGrid({
   marketState,
   ladder,
   optionBias,
+  prediction,
 }: {
   bars: readonly Candle[];
   spot?: number;
@@ -18,8 +20,44 @@ export function DeskBottomGrid({
   marketState?: MarketStateResponse | null;
   ladder?: Ladder | null;
   optionBias?: any;
+  prediction?: ExpiryPrediction | null;
 }) {
   const calc = calculateIndicators(bars, spot);
+
+  // Settlement band from live prediction
+  const band = prediction?.band;
+  const predLow = band?.low ? Math.round(band.low) : 84300;
+  const predHigh = band?.high ? Math.round(band.high) : 85600;
+
+  const toPct = (v: any, fallback: number): number => {
+    if (v == null) return fallback;
+    const n = typeof v === 'number' ? v : Number(v);
+    if (!Number.isFinite(n)) return fallback;
+    return n <= 1 && n > 0 ? Math.round(n * 100) : Math.round(n);
+  };
+
+  const rawInside = band?.pInside;
+  const rawBelow = band?.pBelow;
+  const rawAbove = band?.pAbove;
+
+  let pInside: number;
+  let pBelow: number;
+  let pAbove: number;
+
+  if (rawInside != null) {
+    pInside = toPct(rawInside, 64);
+    const outside = Math.max(0, 100 - pInside);
+    pBelow = rawBelow != null ? toPct(rawBelow, Math.floor(outside / 2)) : Math.floor(outside / 2);
+    pAbove = 100 - pInside - pBelow;
+  } else {
+    pBelow = toPct(rawBelow, 18);
+    pAbove = toPct(rawAbove, 18);
+    pInside = Math.max(0, 100 - pBelow - pAbove);
+  }
+
+  const midUpper = Math.round(pInside * 0.35);
+  const midLower = pInside - midUpper;
+  const midStrike = Math.round((predLow + predHigh) / 2);
 
   // Key Levels
   const levels = marketState?.levels ?? [];
@@ -331,7 +369,7 @@ export function DeskBottomGrid({
           </tbody>
         </table>
 
-        {/* Option Bias & Expiry Movement Chances */}
+        {/* Option Bias — CE / PE */}
         <div style={{ marginTop: 'auto', borderTop: '1px solid #162032', paddingTop: 10 }}>
           <div style={{ fontSize: 11.5, fontWeight: 600, color: '#cbd5e1', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
             <span>Option Bias — CE / PE (Expiry)</span>
@@ -376,39 +414,43 @@ export function DeskBottomGrid({
               </div>
             </div>
           </div>
+        </div>
+      </div>
 
-          {/* Expiry Movement Chances */}
-          <div style={{ marginTop: 10 }}>
-            <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>Expiry Movement Chances</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 10.5, fontFamily: 'ui-monospace, monospace' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ color: '#94a3b8' }}>&gt; 85,600</span>
-                <div style={{ flex: 1, margin: '0 8px', height: 5, background: '#162032', borderRadius: 3 }}>
-                  <div style={{ width: '18%', height: '100%', background: '#ff3b57', borderRadius: 3 }} />
-                </div>
-                <span style={{ color: '#fff' }}>18%</span>
+      {/* ================= COLUMN 5: Market Analysis Score & Expiry Movement Chances ================= */}
+      <div className="desk-grid-card">
+        <DeskMarketScore ladder={ladder} marketState={marketState} />
+
+        <div style={{ marginTop: 'auto', borderTop: '1px solid #162032', paddingTop: 10 }}>
+          <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6, fontWeight: 600 }}>Expiry Movement Chances</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 10.5, fontFamily: 'ui-monospace, monospace' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8', minWidth: 70 }}>&gt; {predHigh.toLocaleString()}</span>
+              <div style={{ flex: 1, margin: '0 8px', height: 6, background: '#162032', borderRadius: 3, overflow: 'hidden' }}>
+                <div style={{ width: `${Math.max(8, pAbove)}%`, height: '100%', background: '#ff3b57', borderRadius: 3 }} />
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ color: '#94a3b8' }}>85,341 – 85,600</span>
-                <div style={{ flex: 1, margin: '0 8px', height: 5, background: '#162032', borderRadius: 3 }}>
-                  <div style={{ width: '20%', height: '100%', background: '#00e676', borderRadius: 3 }} />
-                </div>
-                <span style={{ color: '#fff' }}>20%</span>
+              <span style={{ color: '#fff', fontWeight: 600 }}>{pAbove}%</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8', minWidth: 70 }}>{midStrike.toLocaleString()} – {predHigh.toLocaleString()}</span>
+              <div style={{ flex: 1, margin: '0 8px', height: 6, background: '#162032', borderRadius: 3, overflow: 'hidden' }}>
+                <div style={{ width: `${Math.max(8, midUpper)}%`, height: '100%', background: '#00e676', borderRadius: 3 }} />
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ color: '#94a3b8' }}>84,300 – 85,341</span>
-                <div style={{ flex: 1, margin: '0 8px', height: 5, background: '#162032', borderRadius: 3 }}>
-                  <div style={{ width: '64%', height: '100%', background: '#00e5ff', borderRadius: 3 }} />
-                </div>
-                <span style={{ color: '#fff' }}>64%</span>
+              <span style={{ color: '#fff', fontWeight: 600 }}>{midUpper}%</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8', minWidth: 70 }}>{predLow.toLocaleString()} – {midStrike.toLocaleString()}</span>
+              <div style={{ flex: 1, margin: '0 8px', height: 6, background: '#162032', borderRadius: 3, overflow: 'hidden' }}>
+                <div style={{ width: `${Math.max(8, midLower)}%`, height: '100%', background: '#00e5ff', borderRadius: 3 }} />
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ color: '#94a3b8' }}>84,089 – 84,300</span>
-                <div style={{ flex: 1, margin: '0 8px', height: 5, background: '#162032', borderRadius: 3 }}>
-                  <div style={{ width: '12%', height: '100%', background: '#ff3b57', borderRadius: 3 }} />
-                </div>
-                <span style={{ color: '#fff' }}>12%</span>
+              <span style={{ color: '#fff', fontWeight: 600 }}>{midLower}%</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8', minWidth: 70 }}>&lt; {predLow.toLocaleString()}</span>
+              <div style={{ flex: 1, margin: '0 8px', height: 6, background: '#162032', borderRadius: 3, overflow: 'hidden' }}>
+                <div style={{ width: `${Math.max(8, pBelow)}%`, height: '100%', background: '#ff3b57', borderRadius: 3 }} />
               </div>
+              <span style={{ color: '#fff', fontWeight: 600 }}>{pBelow}%</span>
             </div>
           </div>
         </div>

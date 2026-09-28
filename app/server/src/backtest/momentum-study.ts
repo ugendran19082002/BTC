@@ -282,11 +282,41 @@ async function main() {
     // Filters, chosen in sample and then tested out of sample.
     type Row = { policy: string; filter: string; ins: Tally; y: Record<number, Tally>; oos: Tally };
     const rows: Row[] = [];
+    /*
+     * Which signals each filter admits, worked out once.
+     *
+     * `f.ok(s)` does not depend on the stop/target policy, so evaluating it
+     * inside the policy loop asked the same question six times over — about a
+     * hundred million redundant calls per timeframe, on a sweep that had already
+     * been killed once for taking too long. The membership is the same for every
+     * policy; only the results differ.
+     */
+    const admits = new Map<string, boolean[]>();
+    {
+      const anyRs = [...results.values()][0] ?? [];
+      /*
+       * The mask is indexed, so every policy's array must be the same signals in
+       * the same order. They are — each is `signals.map(...)` — but a silent
+       * mis-alignment would quietly attribute one signal's result to another
+       * filter's sample, and the whole sweep would still print a tidy table. So
+       * it is checked rather than assumed.
+       */
+      for (const rs of results.values()) {
+        if (rs.length !== anyRs.length) throw new Error('policy result arrays differ in length; the filter mask cannot be shared');
+        for (let i = 0; i < rs.length; i++) {
+          if (rs[i]!.s !== anyRs[i]!.s) throw new Error(`policy result arrays are not aligned at ${i}; the filter mask cannot be shared`);
+        }
+      }
+      for (const f of FILTERS) admits.set(f.name, anyRs.map(({ s }) => f.ok(s)));
+    }
+
     for (const [p, rs] of results) {
       for (const f of FILTERS) {
         const row: Row = { policy: p.name, filter: f.name, ins: emptyTally(), y: {}, oos: emptyTally() };
-        for (const { s, r } of rs) {
-          if (!f.ok(s)) continue;
+        const mask = admits.get(f.name)!;
+        for (let idx = 0; idx < rs.length; idx++) {
+          const { s, r } = rs[idx]!;
+          if (!mask[idx]) continue;
           const yr = s.features.year;
           (row.y[yr] ??= emptyTally());
           add(row.y[yr]!, r);

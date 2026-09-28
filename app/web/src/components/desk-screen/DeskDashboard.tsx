@@ -7,7 +7,6 @@ import { DeskTopKpis } from './DeskTopKpis';
 import { DeskChart } from './DeskChart';
 import { DeskExpiryPrediction } from './DeskExpiryPrediction';
 import { DeskMomentumSignal } from './DeskMomentumSignal';
-import { DeskMarketScore } from './DeskMarketScore';
 import { DeskStatsBar } from './DeskStatsBar';
 import { DeskBottomGrid } from './DeskBottomGrid';
 import './desk-dashboard.css';
@@ -100,19 +99,13 @@ export function DeskDashboard({
           hoursToExpiry={effectiveHours}
         />
 
-        {/* Right: Big Momentum Signal & Market Analysis Score */}
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <DeskMomentumSignal
-            spot={effectiveSpot}
-            momentum={liveData?.momentum}
-            marketState={marketState}
-            ladder={liveData?.ladder}
-          />
-          <DeskMarketScore
-            ladder={liveData?.ladder}
-            marketState={marketState}
-          />
-        </div>
+        {/* Right: Big Momentum Signal (matching docs/image.png) */}
+        <DeskMomentumSignal
+          spot={effectiveSpot}
+          momentum={liveData?.momentum}
+          marketState={marketState}
+          ladder={liveData?.ladder}
+        />
       </div>
 
       {/* 4. Stats Bar Strip (7 KPI metrics) */}
@@ -132,6 +125,8 @@ export function DeskDashboard({
         tf={tf}
         marketState={marketState}
         ladder={liveData?.ladder}
+        prediction={liveData?.prediction}
+        optionBias={optionBias}
       />
     </div>
   );

@@ -182,8 +182,31 @@ function biasOf(ps: readonly { bias: string }[]): -1 | 0 | 1 {
  * `bars` must already be truncated to the signal bar — this function has no way
  * to know what came after and must never be handed it.
  */
-export function readingsAt(bars: readonly Candle[], level: { resistance: number | null; support: number | null }): Readings {
-  if (bars.length < 30) return NO_READINGS;
+/**
+ * How many bars any reading here actually needs.
+ *
+ * Everything in `Readings` looks back 50 bars at most (EMA-50, z-score-50,
+ * MACD's 26+9, ADX's 29, realised vol's 30). 250 gives every one of them a long
+ * warm-up and bounds the work per signal.
+ *
+ * This is not a nicety. Without it `readingsAt` was handed the whole history up
+ * to the signal bar — growing to 260,000 bars — and `bars.map()` alone then ran
+ * hundreds of millions of times across a sweep, which is why the first run was
+ * killed at ninety minutes having produced nothing. Truncating makes each call
+ * constant-time.
+ *
+ * The one reading this changes at all is `superTrend`, which is path-dependent
+ * and so technically depends on where the walk started; 250 bars of warm-up
+ * settles it, and a reading that needed more history than that to stabilise
+ * would be too fragile to trade on anyway.
+ */
+const READING_BARS = 250;
+
+export function readingsAt(all: readonly Candle[], level: { resistance: number | null; support: number | null }): Readings {
+  if (all.length < 30) return NO_READINGS;
+  // Truncation is safe for lookahead by construction: this only ever drops the
+  // OLDEST bars, never anything at or after the signal bar.
+  const bars = all.length > READING_BARS ? all.slice(-READING_BARS) : all;
   const closes = bars.map((b) => b.close);
   const last = bars[bars.length - 1]!;
   const m = macd(closes);
@@ -191,6 +214,10 @@ export function readingsAt(bars: readonly Candle[], level: { resistance: number 
   const e21 = ema(closes, 21);
   const e50 = ema(closes, 50);
   const a = atr(bars, 14);
+  // Once each: these were computed twice apiece (for the bias and again for the
+  // count), and pattern detection is the most expensive thing in this function.
+  const candles = candlePatterns(bars);
+  const structures = structurePatterns({ bars, level, atr: a });
   return {
     macdHist: m?.histogram ?? null,
     percentB: bb?.percentB ?? null,
@@ -211,9 +238,9 @@ export function readingsAt(bars: readonly Candle[], level: { resistance: number 
     roc10: roc(closes, 10),
     clv: clv(last),
     emaStack: e21 === null || e50 === null ? 0 : e21 > e50 ? 1 : e21 < e50 ? -1 : 0,
-    candleBias: biasOf(candlePatterns(bars)),
-    structureBias: biasOf(structurePatterns({ bars, level, atr: a })),
-    patternCount: candlePatterns(bars).length + structurePatterns({ bars, level, atr: a }).length,
+    candleBias: biasOf(candles),
+    structureBias: biasOf(structures),
+    patternCount: candles.length + structures.length,
 
     rsi14: rsi(closes),
     adx14: adx([...bars]),
@@ -270,6 +297,7 @@ export function extractSignals(
   // From bar 115: the compression feature wants a hundred bars of true range behind it.
   const signals = confirmedBreaks(bars, 115, mode).map((k): Signal => {
     const bar = bars[k.i]!;
+    const window = bars.slice(Math.max(0, k.i + 1 - READING_BARS), k.i + 1);
     const closeT = bar.time + span;
     const dir = k.side === 'UP' ? 1 : -1;
     const prior = mean(trs.slice(k.i - 114, k.i - 14));
@@ -287,11 +315,17 @@ export function extractSignals(
         overshootAtr: Math.abs(k.entry - k.level) / k.atr,
         hourIst: Math.floor(((closeT + 19_800) % 86_400) / 3600),
         /*
-         * Bars up to and including the signal bar, and nothing after it. The
-         * slice is the no-lookahead guarantee: `readingsAt` cannot see the
-         * future because it is never given it.
+         * Bars up to and including the signal bar, and nothing after it — the
+         * slice IS the no-lookahead guarantee, because `readingsAt` cannot see
+         * a future it is never given.
+         *
+         * Bounded at the front as well as the back, and taken once. It was
+         * `bars.slice(0, k.i + 1)` twice per signal, each copying up to 262,000
+         * elements: about 2.6 billion element copies across one timeframe, which
+         * is what actually killed the first sweep. The window only ever drops
+         * the oldest bars, so the guarantee is untouched.
          */
-        ind: readingsAt(bars.slice(0, k.i + 1), levelUnder(bars.slice(0, k.i + 1), mode)),
+        ind: readingsAt(window, levelUnder(window, mode)),
       },
     };
   });

@@ -19,18 +19,18 @@ export type MeasuredPolicy = {
 
 export const MEASURED_FROM = "2024-04-01";
 export const MEASURED_TO = "2026-09-27";
-export const MEASURED_BARS = 261873;
+export const MEASURED_BARS = 262013;
 
 export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
   {
     "tf": "5m",
     "mode": "rolling",
     "policy": "live (level ± 1 ATR)",
-    "n": 7283,
+    "n": 7289,
     "noRoom": 2704,
-    "hitRate": 0.7166003020733215,
-    "avgR": -0.04278794698201449,
-    "netR": -0.6114621488292464,
+    "hitRate": 0.7165591987927014,
+    "avgR": -0.0429723165052893,
+    "netR": -0.6119075596365283,
     "byYear": {
       "2024": {
         "n": 2098,
@@ -43,9 +43,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.6336569486669558
       },
       "2026": {
-        "n": 2122,
-        "hitRate": 0.7243166823751178,
-        "netR": -0.6358848334933558
+        "n": 2128,
+        "hitRate": 0.7241541353383458,
+        "netR": -0.6373416301410503
       }
     }
   },
@@ -53,11 +53,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "5m",
     "mode": "rolling",
     "policy": "entry 1 ATR : 1 ATR",
-    "n": 9987,
+    "n": 9993,
     "noRoom": 0,
-    "hitRate": 0.464203464503855,
-    "avgR": -0.0634494807988135,
-    "netR": -0.9243951691360675,
+    "hitRate": 0.4642249574702292,
+    "avgR": -0.06341138444288506,
+    "netR": -0.9246697767462919,
     "byYear": {
       "2024": {
         "n": 2954,
@@ -70,9 +70,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.9687258361403172
       },
       "2026": {
-        "n": 2937,
-        "hitRate": 0.4654409261150834,
-        "netR": -0.9858845575412503
+        "n": 2943,
+        "hitRate": 0.4655113829425756,
+        "netR": -0.9866916311119402
       }
     }
   },
@@ -80,11 +80,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "5m",
     "mode": "rolling",
     "policy": "entry 1 ATR : 1.5 ATR",
-    "n": 9987,
+    "n": 9993,
     "noRoom": 0,
-    "hitRate": 0.36757785120656855,
-    "avgR": -0.04934726657025609,
-    "netR": -0.9102929549075116,
+    "hitRate": 0.36755729010307214,
+    "avgR": -0.049465018749332915,
+    "netR": -0.9107234110527413,
     "byYear": {
       "2024": {
         "n": 2954,
@@ -97,9 +97,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.9541332221639484
       },
       "2026": {
-        "n": 2937,
-        "hitRate": 0.37793667007150156,
-        "netR": -0.9517664775583036
+        "n": 2943,
+        "hitRate": 0.3778457356439008,
+        "netR": -0.9531435441989338
       }
     }
   },
@@ -107,11 +107,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "5m",
     "mode": "rolling",
     "policy": "entry 1 ATR : 2 ATR",
-    "n": 9987,
+    "n": 9993,
     "noRoom": 0,
-    "hitRate": 0.28877540803043955,
-    "avgR": -0.05723132771363908,
-    "netR": -0.9181770160508946,
+    "hitRate": 0.28880216151305915,
+    "avgR": -0.057244276093370274,
+    "netR": -0.9185026683967786,
     "byYear": {
       "2024": {
         "n": 2954,
@@ -124,9 +124,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.9530676431966163
       },
       "2026": {
-        "n": 2937,
-        "hitRate": 0.2989445011916922,
-        "netR": -0.9550683712331814
+        "n": 2943,
+        "hitRate": 0.29901461094121645,
+        "netR": -0.9560989168537473
       }
     }
   },
@@ -134,11 +134,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "5m",
     "mode": "rolling",
     "policy": "entry 1.5 ATR : 3 ATR",
-    "n": 9987,
+    "n": 9993,
     "noRoom": 0,
-    "hitRate": 0.22909782717532792,
-    "avgR": -0.03820667171944345,
-    "netR": -0.6121704639442835,
+    "hitRate": 0.229160412288602,
+    "avgR": -0.03815423472730402,
+    "netR": -0.6123264962629126,
     "byYear": {
       "2024": {
         "n": 2954,
@@ -151,9 +151,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.6306118963636421
       },
       "2026": {
-        "n": 2937,
-        "hitRate": 0.23425263874702076,
-        "netR": -0.645189397531329
+        "n": 2943,
+        "hitRate": 0.2344546381243629,
+        "netR": -0.6456518906874752
       }
     }
   },
@@ -161,11 +161,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "5m",
     "mode": "rolling",
     "policy": "bar extreme : 2R",
-    "n": 9987,
+    "n": 9993,
     "noRoom": 0,
-    "hitRate": 0.22409131871432864,
-    "avgR": -0.02824490611453573,
-    "netR": -0.6632849961441102,
+    "hitRate": 0.2240568397878515,
+    "avgR": -0.02849955935062467,
+    "netR": -0.6636770607316109,
     "byYear": {
       "2024": {
         "n": 2954,
@@ -178,9 +178,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.7119249247773661
       },
       "2026": {
-        "n": 2937,
-        "hitRate": 0.2216547497446374,
-        "netR": -0.6468668844806279
+        "n": 2943,
+        "hitRate": 0.22154264356099218,
+        "netR": -0.6482316177775617
       }
     }
   },
@@ -188,11 +188,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "15m",
     "mode": "rolling",
     "policy": "live (level ± 1 ATR)",
-    "n": 2045,
-    "noRoom": 790,
-    "hitRate": 0.7119804400977995,
-    "avgR": -0.027393746103521986,
-    "netR": -0.3209215937232859,
+    "n": 2047,
+    "noRoom": 791,
+    "hitRate": 0.7122618466047875,
+    "avgR": -0.027031051876363496,
+    "netR": -0.3206481346637919,
     "byYear": {
       "2024": {
         "n": 568,
@@ -205,9 +205,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.3475404900479589
       },
       "2026": {
-        "n": 613,
-        "hitRate": 0.7161500815660685,
-        "netR": -0.3343246455846292
+        "n": 615,
+        "hitRate": 0.7170731707317073,
+        "netR": -0.33337086217242295
       }
     }
   },
@@ -215,11 +215,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "15m",
     "mode": "rolling",
     "policy": "entry 1 ATR : 1 ATR",
-    "n": 2835,
+    "n": 2838,
     "noRoom": 0,
-    "hitRate": 0.4532627865961199,
-    "avgR": -0.06340413531162675,
-    "netR": -0.4959453093181082,
+    "hitRate": 0.45348837209302323,
+    "avgR": -0.06246551982302956,
+    "netR": -0.49523928721924837,
     "byYear": {
       "2024": {
         "n": 816,
@@ -232,9 +232,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.544592552965154
       },
       "2026": {
-        "n": 842,
-        "hitRate": 0.46199524940617576,
-        "netR": -0.5101807616896505
+        "n": 845,
+        "hitRate": 0.46272189349112425,
+        "netR": -0.5077589900048236
       }
     }
   },
@@ -242,11 +242,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "15m",
     "mode": "rolling",
     "policy": "entry 1 ATR : 1.5 ATR",
-    "n": 2835,
+    "n": 2838,
     "noRoom": 0,
-    "hitRate": 0.34462081128747796,
-    "avgR": -0.05746209879846896,
-    "netR": -0.49000327280495043,
+    "hitRate": 0.34460887949260044,
+    "avgR": -0.05705830575861716,
+    "netR": -0.489832073154836,
     "byYear": {
       "2024": {
         "n": 816,
@@ -259,9 +259,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.5511496581890704
       },
       "2026": {
-        "n": 842,
-        "hitRate": 0.3491686460807601,
-        "netR": -0.5104411216782572
+        "n": 845,
+        "hitRate": 0.34911242603550297,
+        "netR": -0.509793573567435
       }
     }
   },
@@ -269,11 +269,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "15m",
     "mode": "rolling",
     "policy": "entry 1 ATR : 2 ATR",
-    "n": 2835,
+    "n": 2838,
     "noRoom": 0,
-    "hitRate": 0.2744268077601411,
-    "avgR": -0.026611782179034104,
-    "netR": -0.4591529561855157,
+    "hitRate": 0.2741367159971811,
+    "avgR": -0.02712150251122542,
+    "netR": -0.45989526990744434,
     "byYear": {
       "2024": {
         "n": 816,
@@ -286,9 +286,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.5152174488689714
       },
       "2026": {
-        "n": 842,
-        "hitRate": 0.2684085510688836,
-        "netR": -0.4885204458224375
+        "n": 845,
+        "hitRate": 0.26745562130177514,
+        "netR": -0.4909093024779675
       }
     }
   },
@@ -296,11 +296,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "15m",
     "mode": "rolling",
     "policy": "entry 1.5 ATR : 3 ATR",
-    "n": 2835,
+    "n": 2838,
     "noRoom": 0,
-    "hitRate": 0.19223985890652556,
-    "avgR": 0.0039520004208951276,
-    "netR": -0.2844087822500929,
+    "hitRate": 0.19203664552501762,
+    "avgR": 0.0036019171416928485,
+    "netR": -0.28491392778912006,
     "byYear": {
       "2024": {
         "n": 816,
@@ -313,9 +313,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.2896002031267294
       },
       "2026": {
-        "n": 842,
-        "hitRate": 0.1840855106888361,
-        "netR": -0.32590214112568733
+        "n": 845,
+        "hitRate": 0.1834319526627219,
+        "netR": -0.32745139907022275
       }
     }
   },
@@ -323,11 +323,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "15m",
     "mode": "rolling",
     "policy": "bar extreme : 2R",
-    "n": 2835,
+    "n": 2838,
     "noRoom": 0,
-    "hitRate": 0.17848324514991182,
-    "avgR": 0.005655881240061057,
-    "netR": -0.29185411725932614,
+    "hitRate": 0.17829457364341086,
+    "avgR": 0.005098561463432049,
+    "netR": -0.29261370576738016,
     "byYear": {
       "2024": {
         "n": 816,
@@ -340,9 +340,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.3089034445901469
       },
       "2026": {
-        "n": 842,
-        "hitRate": 0.166270783847981,
-        "netR": -0.29950176894235614
+        "n": 845,
+        "hitRate": 0.16568047337278108,
+        "netR": -0.30202575619775063
       }
     }
   },
@@ -350,11 +350,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "30m",
     "mode": "rolling",
     "policy": "live (level ± 1 ATR)",
-    "n": 914,
+    "n": 916,
     "noRoom": 404,
-    "hitRate": 0.7188183807439825,
-    "avgR": -0.010571593725639209,
-    "netR": -0.20985479675208432,
+    "hitRate": 0.7194323144104804,
+    "avgR": -0.009950068043491626,
+    "netR": -0.2095585494471851,
     "byYear": {
       "2024": {
         "n": 263,
@@ -367,9 +367,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.20237017304431845
       },
       "2026": {
-        "n": 263,
-        "hitRate": 0.7186311787072244,
-        "netR": -0.2112165269303159
+        "n": 265,
+        "hitRate": 0.720754716981132,
+        "netR": -0.21018224016939466
       }
     }
   },
@@ -377,11 +377,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "30m",
     "mode": "rolling",
     "policy": "entry 1 ATR : 1 ATR",
-    "n": 1318,
+    "n": 1320,
     "noRoom": 0,
-    "hitRate": 0.48103186646433993,
-    "avgR": -0.006675881017942786,
-    "netR": -0.29578720571731554,
+    "hitRate": 0.4810606060606061,
+    "avgR": -0.006665766046703479,
+    "netR": -0.2961738361286904,
     "byYear": {
       "2024": {
         "n": 393,
@@ -394,9 +394,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.3210641108327765
       },
       "2026": {
-        "n": 376,
-        "hitRate": 0.523936170212766,
-        "netR": -0.22979455037306662
+        "n": 378,
+        "hitRate": 0.5238095238095238,
+        "netR": -0.23149385580614418
       }
     }
   },
@@ -404,11 +404,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "30m",
     "mode": "rolling",
     "policy": "entry 1 ATR : 1.5 ATR",
-    "n": 1318,
+    "n": 1320,
     "noRoom": 0,
-    "hitRate": 0.3626707132018209,
-    "avgR": 0.0022470480081042167,
-    "netR": -0.2868642766912685,
+    "hitRate": 0.3621212121212121,
+    "avgR": 0.0007284918747586044,
+    "netR": -0.28877957820722827,
     "byYear": {
       "2024": {
         "n": 393,
@@ -421,9 +421,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.29817888605506604
       },
       "2026": {
-        "n": 376,
-        "hitRate": 0.3882978723404255,
-        "netR": -0.22839108558474974
+        "n": 378,
+        "hitRate": 0.3862433862433862,
+        "netR": -0.2353888220484533
       }
     }
   },
@@ -431,11 +431,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "30m",
     "mode": "rolling",
     "policy": "entry 1 ATR : 2 ATR",
-    "n": 1318,
+    "n": 1320,
     "noRoom": 0,
-    "hitRate": 0.2845220030349014,
-    "avgR": 0.019064537630308808,
-    "netR": -0.27004678706906426,
+    "hitRate": 0.2840909090909091,
+    "avgR": 0.017520500452081065,
+    "netR": -0.27198756962990617,
     "byYear": {
       "2024": {
         "n": 393,
@@ -448,9 +448,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.27469113747633367
       },
       "2026": {
-        "n": 376,
-        "hitRate": 0.30319148936170215,
-        "netR": -0.20307003026455098
+        "n": 378,
+        "hitRate": 0.30158730158730157,
+        "netR": -0.21020174056592755
       }
     }
   },
@@ -458,11 +458,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "30m",
     "mode": "rolling",
     "policy": "entry 1.5 ATR : 3 ATR",
-    "n": 1318,
+    "n": 1320,
     "noRoom": 0,
-    "hitRate": 0.19802731411229135,
-    "avgR": 0.043870325860226975,
-    "netR": -0.14887055727268822,
+    "hitRate": 0.19772727272727272,
+    "avgR": 0.04341037753133451,
+    "netR": -0.14959500252332347,
     "byYear": {
       "2024": {
         "n": 393,
@@ -475,9 +475,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.17628245480705176
       },
       "2026": {
-        "n": 376,
-        "hitRate": 0.22340425531914893,
-        "netR": -0.09125550321070418
+        "n": 378,
+        "hitRate": 0.2222222222222222,
+        "netR": -0.09409015357832988
       }
     }
   },
@@ -485,11 +485,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "30m",
     "mode": "rolling",
     "policy": "bar extreme : 2R",
-    "n": 1318,
+    "n": 1320,
     "noRoom": 0,
-    "hitRate": 0.1638846737481032,
-    "avgR": 0.011393800969511975,
-    "netR": -0.180734712189976,
+    "hitRate": 0.16363636363636364,
+    "avgR": 0.010918600049906428,
+    "netR": -0.1814209369866237,
     "byYear": {
       "2024": {
         "n": 393,
@@ -502,9 +502,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.2037955510716233
       },
       "2026": {
-        "n": 376,
-        "hitRate": 0.17553191489361702,
-        "netR": -0.11516510718270885
+        "n": 378,
+        "hitRate": 0.1746031746031746,
+        "netR": -0.11790837686945356
       }
     }
   },
@@ -512,11 +512,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "1h",
     "mode": "rolling",
     "policy": "live (level ± 1 ATR)",
-    "n": 424,
+    "n": 425,
     "noRoom": 220,
-    "hitRate": 0.7617924528301887,
-    "avgR": 0.024068854261803913,
-    "netR": -0.10648554329832019,
+    "hitRate": 0.7623529411764706,
+    "avgR": 0.02459435070893064,
+    "netR": -0.10622787190666634,
     "byYear": {
       "2024": {
         "n": 124,
@@ -529,9 +529,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.11136879988931105
       },
       "2026": {
-        "n": 130,
-        "hitRate": 0.7769230769230769,
-        "netR": -0.08033056903540337
+        "n": 131,
+        "hitRate": 0.7786259541984732,
+        "netR": -0.07969426852250285
       }
     }
   },
@@ -539,11 +539,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "1h",
     "mode": "rolling",
     "policy": "entry 1 ATR : 1 ATR",
-    "n": 644,
+    "n": 645,
     "noRoom": 0,
-    "hitRate": 0.4720496894409938,
-    "avgR": -0.021518169232185073,
-    "netR": -0.21164702618010311,
+    "hitRate": 0.4728682170542636,
+    "avgR": -0.01993442013260029,
+    "netR": -0.21037601904500572,
     "byYear": {
       "2024": {
         "n": 184,
@@ -556,9 +556,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.25046571617575525
       },
       "2026": {
-        "n": 195,
-        "hitRate": 0.48717948717948717,
-        "netR": -0.1734886195583238
+        "n": 196,
+        "hitRate": 0.4897959183673469,
+        "netR": -0.16950065427507868
       }
     }
   },
@@ -566,11 +566,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "1h",
     "mode": "rolling",
     "policy": "entry 1 ATR : 1.5 ATR",
-    "n": 644,
+    "n": 645,
     "noRoom": 0,
-    "hitRate": 0.35714285714285715,
-    "avgR": -0.026217433901125443,
-    "netR": -0.2163462908490435,
+    "hitRate": 0.3581395348837209,
+    "avgR": -0.023851205321433776,
+    "netR": -0.21429280423383923,
     "byYear": {
       "2024": {
         "n": 184,
@@ -583,9 +583,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.2576755055312143
       },
       "2026": {
-        "n": 195,
-        "hitRate": 0.37948717948717947,
-        "netR": -0.14519027729323558
+        "n": 196,
+        "hitRate": 0.3826530612244898,
+        "netR": -0.13879567089909803
       }
     }
   },
@@ -593,11 +593,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "1h",
     "mode": "rolling",
     "policy": "entry 1 ATR : 2 ATR",
-    "n": 644,
+    "n": 645,
     "noRoom": 0,
-    "hitRate": 0.281055900621118,
-    "avgR": 0.002823303838445584,
-    "netR": -0.18730555310947264,
+    "hitRate": 0.2806201550387597,
+    "avgR": 0.001268539026292955,
+    "netR": -0.18917305988611266,
     "byYear": {
       "2024": {
         "n": 184,
@@ -610,9 +610,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.21270973290251438
       },
       "2026": {
-        "n": 195,
-        "hitRate": 0.29743589743589743,
-        "netR": -0.11863559945539691
+        "n": 196,
+        "hitRate": 0.29591836734693877,
+        "netR": -0.12513157815226875
       }
     }
   },
@@ -620,11 +620,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "1h",
     "mode": "rolling",
     "policy": "entry 1.5 ATR : 3 ATR",
-    "n": 644,
+    "n": 645,
     "noRoom": 0,
-    "hitRate": 0.18167701863354038,
-    "avgR": 0.0024657773245726666,
-    "netR": -0.12428679397403962,
+    "hitRate": 0.1813953488372093,
+    "avgR": 0.0009115668170927092,
+    "netR": -0.12604949912451116,
     "byYear": {
       "2024": {
         "n": 184,
@@ -637,9 +637,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.1251849952769202
       },
       "2026": {
-        "n": 195,
-        "hitRate": 0.15897435897435896,
-        "netR": -0.11380285622430103
+        "n": 196,
+        "hitRate": 0.15816326530612246,
+        "netR": -0.11965708459064739
       }
     }
   },
@@ -647,11 +647,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "1h",
     "mode": "rolling",
     "policy": "bar extreme : 2R",
-    "n": 644,
+    "n": 645,
     "noRoom": 0,
-    "hitRate": 0.15217391304347827,
-    "avgR": -0.001128019017288844,
-    "netR": -0.11610756696352219,
+    "hitRate": 0.15193798449612403,
+    "avgR": -0.0026766577474945977,
+    "netR": -0.1179024885450918,
     "byYear": {
       "2024": {
         "n": 184,
@@ -664,9 +664,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.09108305570903974
       },
       "2026": {
-        "n": 195,
-        "hitRate": 0.13846153846153847,
-        "netR": -0.10203207467619232
+        "n": 196,
+        "hitRate": 0.1377551020408163,
+        "netR": -0.10801064565782365
       }
     }
   },
@@ -674,11 +674,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "5m",
     "mode": "swing",
     "policy": "live (level ± 1 ATR)",
-    "n": 4347,
+    "n": 4351,
     "noRoom": 2113,
-    "hitRate": 0.7230273752012882,
-    "avgR": -0.046460759812787064,
-    "netR": -0.6143714575789474,
+    "hitRate": 0.7230521719145024,
+    "avgR": -0.046581558373182536,
+    "netR": -0.6145965510026353,
     "byYear": {
       "2024": {
         "n": 1207,
@@ -691,9 +691,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.62895588238632
       },
       "2026": {
-        "n": 1241,
-        "hitRate": 0.7219983883964545,
-        "netR": -0.6626045275420059
+        "n": 1245,
+        "hitRate": 0.7220883534136546,
+        "netR": -0.6632362136517354
       }
     }
   },
@@ -701,11 +701,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "5m",
     "mode": "swing",
     "policy": "entry 1 ATR : 1 ATR",
-    "n": 6460,
+    "n": 6464,
     "noRoom": 0,
-    "hitRate": 0.4630030959752322,
-    "avgR": -0.06719098261232587,
-    "netR": -0.9368604090860011,
+    "hitRate": 0.4630259900990099,
+    "avgR": -0.06714940403397665,
+    "netR": -0.9370019376934622,
     "byYear": {
       "2024": {
         "n": 1859,
@@ -718,9 +718,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.9765307930766454
       },
       "2026": {
-        "n": 1878,
-        "hitRate": 0.4536741214057508,
-        "netR": -1.0404669990716173
+        "n": 1882,
+        "hitRate": 0.4537725823591923,
+        "netR": -1.0407328941612481
       }
     }
   },
@@ -728,11 +728,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "5m",
     "mode": "swing",
     "policy": "entry 1 ATR : 1.5 ATR",
-    "n": 6460,
+    "n": 6464,
     "noRoom": 0,
-    "hitRate": 0.3696594427244582,
-    "avgR": -0.0499886548108109,
-    "netR": -0.9196580812844857,
+    "hitRate": 0.36958539603960394,
+    "avgR": -0.050262916337062875,
+    "netR": -0.9201154499965479,
     "byYear": {
       "2024": {
         "n": 1859,
@@ -745,9 +745,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.9482006324958356
       },
       "2026": {
-        "n": 1878,
-        "hitRate": 0.3679446219382322,
-        "netR": -1.007544983302678
+        "n": 1882,
+        "hitRate": 0.36769394261424015,
+        "netR": -1.0089290873126127
       }
     }
   },
@@ -755,11 +755,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "5m",
     "mode": "swing",
     "policy": "entry 1 ATR : 2 ATR",
-    "n": 6460,
+    "n": 6464,
     "noRoom": 0,
-    "hitRate": 0.29241486068111455,
-    "avgR": -0.055920233150002545,
-    "netR": -0.9255896596236761,
+    "hitRate": 0.29238861386138615,
+    "avgR": -0.05611347265995547,
+    "netR": -0.9259660063194393,
     "byYear": {
       "2024": {
         "n": 1859,
@@ -772,9 +772,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.9517423916615281
       },
       "2026": {
-        "n": 1878,
-        "hitRate": 0.2939297124600639,
-        "netR": -1.0038634937259896
+        "n": 1882,
+        "hitRate": 0.29383634431455896,
+        "netR": -1.0049897475543657
       }
     }
   },
@@ -782,11 +782,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "5m",
     "mode": "swing",
     "policy": "entry 1.5 ATR : 3 ATR",
-    "n": 6460,
+    "n": 6464,
     "noRoom": 0,
-    "hitRate": 0.24195046439628484,
-    "avgR": -0.025310505069788262,
-    "netR": -0.6050901227189036,
+    "hitRate": 0.24195544554455445,
+    "avgR": -0.02549830602838117,
+    "netR": -0.6053999951347033,
     "byYear": {
       "2024": {
         "n": 1859,
@@ -799,9 +799,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.6193913820243417
       },
       "2026": {
-        "n": 1878,
-        "hitRate": 0.2374866879659212,
-        "netR": -0.6762704145496087
+        "n": 1882,
+        "hitRate": 0.23751328374070138,
+        "netR": -0.6771834294956272
       }
     }
   },
@@ -809,11 +809,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "5m",
     "mode": "swing",
     "policy": "bar extreme : 2R",
-    "n": 6460,
+    "n": 6464,
     "noRoom": 0,
-    "hitRate": 0.22972136222910217,
-    "avgR": -0.023366075187014352,
-    "netR": -0.657777168233765,
+    "hitRate": 0.2297339108910891,
+    "avgR": -0.02346210781761088,
+    "netR": -0.657990756667536,
     "byYear": {
       "2024": {
         "n": 1859,
@@ -826,9 +826,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.7143780443103888
       },
       "2026": {
-        "n": 1878,
-        "hitRate": 0.22523961661341854,
-        "netR": -0.6682245983800666
+        "n": 1882,
+        "hitRate": 0.2252922422954304,
+        "netR": -0.6689359936591905
       }
     }
   },
@@ -836,11 +836,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "15m",
     "mode": "swing",
     "policy": "live (level ± 1 ATR)",
-    "n": 1075,
-    "noRoom": 618,
-    "hitRate": 0.7218604651162791,
-    "avgR": -0.038773885613920304,
-    "netR": -0.31497525480093136,
+    "n": 1076,
+    "noRoom": 619,
+    "hitRate": 0.7221189591078067,
+    "avgR": -0.038396622917838075,
+    "netR": -0.3147912030546728,
     "byYear": {
       "2024": {
         "n": 283,
@@ -853,9 +853,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.3613938919600521
       },
       "2026": {
-        "n": 323,
-        "hitRate": 0.7554179566563467,
-        "netR": -0.28342143322297175
+        "n": 324,
+        "hitRate": 0.7561728395061729,
+        "netR": -0.28290758798409443
       }
     }
   },
@@ -863,11 +863,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "15m",
     "mode": "swing",
     "policy": "entry 1 ATR : 1 ATR",
-    "n": 1693,
+    "n": 1695,
     "noRoom": 0,
-    "hitRate": 0.46012994683992914,
-    "avgR": -0.052803150643668244,
-    "netR": -0.4625999780401705,
+    "hitRate": 0.4607669616519174,
+    "avgR": -0.05156090503818899,
+    "netR": -0.46177400009327535,
     "byYear": {
       "2024": {
         "n": 479,
@@ -880,9 +880,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.5154400087542396
       },
       "2026": {
-        "n": 495,
-        "hitRate": 0.4707070707070707,
-        "netR": -0.4608012813468661
+        "n": 497,
+        "hitRate": 0.47283702213279677,
+        "netR": -0.45799155252070783
       }
     }
   },
@@ -890,11 +890,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "15m",
     "mode": "swing",
     "policy": "entry 1 ATR : 1.5 ATR",
-    "n": 1693,
+    "n": 1695,
     "noRoom": 0,
-    "hitRate": 0.3591258121677496,
-    "avgR": -0.03282145196203888,
-    "netR": -0.4426182793585412,
+    "hitRate": 0.35929203539823007,
+    "avgR": -0.03248773933435502,
+    "netR": -0.4427008343894415,
     "byYear": {
       "2024": {
         "n": 479,
@@ -907,9 +907,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.5129961875642888
       },
       "2026": {
-        "n": 495,
-        "hitRate": 0.3717171717171717,
-        "netR": -0.4315229022765456
+        "n": 497,
+        "hitRate": 0.3722334004024145,
+        "netR": -0.4318491025412135
       }
     }
   },
@@ -917,11 +917,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "15m",
     "mode": "swing",
     "policy": "entry 1 ATR : 2 ATR",
-    "n": 1693,
+    "n": 1695,
     "noRoom": 0,
-    "hitRate": 0.27997637330183106,
-    "avgR": -0.014332531148961374,
-    "netR": -0.4241293585454637,
+    "hitRate": 0.27964601769911507,
+    "avgR": -0.015495560610732512,
+    "netR": -0.42570865566581895,
     "byYear": {
       "2024": {
         "n": 479,
@@ -934,9 +934,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.4945133185089913
       },
       "2026": {
-        "n": 495,
-        "hitRate": 0.29292929292929293,
-        "netR": -0.40461422918650114
+        "n": 497,
+        "hitRate": 0.2917505030181087,
+        "netR": -0.41007889493644095
       }
     }
   },
@@ -944,11 +944,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "15m",
     "mode": "swing",
     "policy": "entry 1.5 ATR : 3 ATR",
-    "n": 1693,
+    "n": 1695,
     "noRoom": 0,
-    "hitRate": 0.1878322504430006,
-    "avgR": 0.0036262507503036167,
-    "netR": -0.2695716341806983,
+    "hitRate": 0.18761061946902655,
+    "avgR": 0.0028565447048267446,
+    "netR": -0.27061885199856456,
     "byYear": {
       "2024": {
         "n": 479,
@@ -961,9 +961,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.28537315240515115
       },
       "2026": {
-        "n": 495,
-        "hitRate": 0.18585858585858586,
-        "netR": -0.2830957055485372
+        "n": 497,
+        "hitRate": 0.1851106639839034,
+        "netR": -0.2866127801130194
       }
     }
   },
@@ -971,11 +971,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "15m",
     "mode": "swing",
     "policy": "bar extreme : 2R",
-    "n": 1693,
+    "n": 1695,
     "noRoom": 0,
-    "hitRate": 0.16952155936207916,
-    "avgR": 0.0006231779484139174,
-    "netR": -0.27015911103372187,
+    "hitRate": 0.16932153392330385,
+    "avgR": -0.0005574983677494028,
+    "netR": -0.2716509471386899,
     "byYear": {
       "2024": {
         "n": 479,
@@ -988,9 +988,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.2971120784334706
       },
       "2026": {
-        "n": 495,
-        "hitRate": 0.16161616161616163,
-        "netR": -0.2636918215353742
+        "n": 497,
+        "hitRate": 0.16096579476861167,
+        "netR": -0.26880569835009777
       }
     }
   },
@@ -998,11 +998,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "30m",
     "mode": "swing",
     "policy": "live (level ± 1 ATR)",
-    "n": 422,
+    "n": 424,
     "noRoom": 307,
-    "hitRate": 0.7251184834123223,
-    "avgR": -0.013621255747866457,
-    "netR": -0.18796405292000556,
+    "hitRate": 0.7264150943396226,
+    "avgR": -0.01226414053821636,
+    "netR": -0.18742730517561051,
     "byYear": {
       "2024": {
         "n": 113,
@@ -1015,9 +1015,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.18264597896706555
       },
       "2026": {
-        "n": 138,
-        "hitRate": 0.6956521739130435,
-        "netR": -0.21530824388046957
+        "n": 140,
+        "hitRate": 0.7,
+        "netR": -0.2132920336980093
       }
     }
   },
@@ -1025,11 +1025,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "30m",
     "mode": "swing",
     "policy": "entry 1 ATR : 1 ATR",
-    "n": 729,
+    "n": 731,
     "noRoom": 0,
-    "hitRate": 0.5020576131687243,
-    "avgR": 0.03083702736010977,
-    "netR": -0.23469566761958963,
+    "hitRate": 0.5020519835841313,
+    "avgR": 0.030752657928207968,
+    "netR": -0.23556096887705927,
     "byYear": {
       "2024": {
         "n": 209,
@@ -1042,9 +1042,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.2862985676597847
       },
       "2026": {
-        "n": 218,
-        "hitRate": 0.5321100917431193,
-        "netR": -0.18517647520551342
+        "n": 220,
+        "hitRate": 0.5318181818181819,
+        "netR": -0.18850180976932446
       }
     }
   },
@@ -1052,11 +1052,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "30m",
     "mode": "swing",
     "policy": "entry 1 ATR : 1.5 ATR",
-    "n": 729,
+    "n": 731,
     "noRoom": 0,
-    "hitRate": 0.37997256515775035,
-    "avgR": 0.043783055983583785,
-    "netR": -0.22174963899611558,
+    "hitRate": 0.3789329685362517,
+    "avgR": 0.04092728838855346,
+    "netR": -0.2253863384167137,
     "byYear": {
       "2024": {
         "n": 209,
@@ -1069,9 +1069,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.274703944133752
       },
       "2026": {
-        "n": 218,
-        "hitRate": 0.3853211009174312,
-        "netR": -0.1883917818333171
+        "n": 220,
+        "hitRate": 0.38181818181818183,
+        "netR": -0.20077879542778448
       }
     }
   },
@@ -1079,11 +1079,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "30m",
     "mode": "swing",
     "policy": "entry 1 ATR : 2 ATR",
-    "n": 729,
+    "n": 731,
     "noRoom": 0,
-    "hitRate": 0.29766803840877915,
-    "avgR": 0.06454509332719154,
-    "netR": -0.20098760165250773,
+    "hitRate": 0.2968536251709986,
+    "avgR": 0.061632521252424945,
+    "netR": -0.20468110555284216,
     "byYear": {
       "2024": {
         "n": 209,
@@ -1096,9 +1096,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.23889235806659492
       },
       "2026": {
-        "n": 218,
-        "hitRate": 0.3119266055045872,
-        "netR": -0.14649958885455291
+        "n": 220,
+        "hitRate": 0.3090909090909091,
+        "netR": -0.1592674405670091
       }
     }
   },
@@ -1106,11 +1106,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "30m",
     "mode": "swing",
     "policy": "entry 1.5 ATR : 3 ATR",
-    "n": 729,
+    "n": 731,
     "noRoom": 0,
-    "hitRate": 0.20713305898491083,
-    "avgR": 0.09351331118994144,
-    "netR": -0.08350848546319145,
+    "hitRate": 0.20656634746922026,
+    "avgR": 0.09254693941867265,
+    "netR": -0.08499547845150546,
     "byYear": {
       "2024": {
         "n": 209,
@@ -1123,9 +1123,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.12212670400416947
       },
       "2026": {
-        "n": 218,
-        "hitRate": 0.22018348623853212,
-        "netR": -0.05259111496803544
+        "n": 220,
+        "hitRate": 0.21818181818181817,
+        "netR": -0.057813054129162024
       }
     }
   },
@@ -1133,11 +1133,11 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
     "tf": "30m",
     "mode": "swing",
     "policy": "bar extreme : 2R",
-    "n": 729,
+    "n": 731,
     "noRoom": 0,
-    "hitRate": 0.15637860082304528,
-    "avgR": 0.05229550984072765,
-    "netR": -0.1124808226960241,
+    "hitRate": 0.15595075239398085,
+    "avgR": 0.05132551171265412,
+    "netR": -0.11390671121936592,
     "byYear": {
       "2024": {
         "n": 209,
@@ -1150,9 +1150,9 @@ export const MOMENTUM_MEASURED: readonly MeasuredPolicy[] = [
         "netR": -0.14611542641073874
       },
       "2026": {
-        "n": 218,
-        "hitRate": 0.1651376146788991,
-        "netR": -0.06566675948073855
+        "n": 220,
+        "hitRate": 0.16363636363636364,
+        "netR": -0.07083018055798147
       }
     }
   },

@@ -1,7 +1,10 @@
 Momentum call, replayed: every BREAKOUT/BREAKDOWN CONFIRMED the live card would have called.
-BTCUSD 5m bars 2024-04-01 → 2026-09-27 (261,873 bars). Same marketState(), same grader.
+BTCUSD 5m bars 2024-04-01 → 2026-09-27 (262,013 bars). Same marketState(), same grader.
 Entry at the signal bar's close. A bar touching both stop and target counts as the stop.
 Net = after 0.05% taker fee each side. R = profit ÷ risk. Chosen on 2024+2025; 2026 is out of sample.
+Every reading docs/New.md asks for is swept as a filter, taken at the signal bar with no lookahead.
+A null reading excludes the call rather than counting as neutral, so no filter is padded with calls it could not read.
+Read the "by chance" line under each table before the table: at this many filters, some survive on luck.
 
 ################################################################################################
 ## LEVEL MODE: rolling — the last 20 bars' high and low
@@ -10,69 +13,77 @@ Net = after 0.05% taker fee each side. R = profit ÷ risk. Chosen on 2024+2025; 
    screen printed the rolling record beside a swing call. See docs/TODO.md.
 
 ================================================================================================
-== 5m   9987 signals   horizon 12 bars (60 min)
-   live grader, live plan, live window (6 bars): target 7680 · stop 1917 · expired 390   → target first in 80.0% of the ones that finished
+== 5m   9993 signals   horizon 12 bars (60 min)
+   live grader, live plan, live window (6 bars): target 7684 · stop 1919 · expired 390   → target first in 80.0% of the ones that finished
    of which the target was ALREADY passed at the call: 2704 calls (27.1%), 2639 graded "target hit".   Without them: target first in 72.4%
 
    policy                     n      hit     avg R     net R      net R by year   (no room = target already behind the entry, not traded)
-   live (level ± 1 ATR)       7283+2704nr 71.7%   -0.043R   -0.611R    2024: -0.554R (2098, hit 70.8%)  2025: -0.634R (3063, hit 71.7%)  2026: -0.636R (2122, hit 72.4%)
-   entry 1 ATR : 1 ATR        9987   46.4%   -0.063R   -0.924R    2024: -0.802R (2954, hit 46.0%)  2025: -0.969R (4096, hit 46.7%)  2026: -0.986R (2937, hit 46.5%)
-   entry 1 ATR : 1.5 ATR      9987   36.8%   -0.049R   -0.910R    2024: -0.808R (2954, hit 35.7%)  2025: -0.954R (4096, hit 36.8%)  2026: -0.952R (2937, hit 37.8%)
-   entry 1 ATR : 2 ATR        9987   28.9%   -0.057R   -0.918R    2024: -0.833R (2954, hit 27.8%)  2025: -0.953R (4096, hit 29.0%)  2026: -0.955R (2937, hit 29.9%)
-   entry 1.5 ATR : 3 ATR      9987   22.9%   -0.038R   -0.612R    2024: -0.554R (2954, hit 23.3%)  2025: -0.631R (4096, hit 22.3%)  2026: -0.645R (2937, hit 23.4%)
-   bar extreme : 2R           9987   22.4%   -0.028R   -0.663R    2024: -0.612R (2954, hit 22.4%)  2025: -0.712R (4096, hit 22.6%)  2026: -0.647R (2937, hit 22.2%)
+   live (level ± 1 ATR)       7289+2704nr 71.7%   -0.043R   -0.612R    2024: -0.554R (2098, hit 70.8%)  2025: -0.634R (3063, hit 71.7%)  2026: -0.637R (2128, hit 72.4%)
+   entry 1 ATR : 1 ATR        9993   46.4%   -0.063R   -0.925R    2024: -0.802R (2954, hit 46.0%)  2025: -0.969R (4096, hit 46.7%)  2026: -0.987R (2943, hit 46.6%)
+   entry 1 ATR : 1.5 ATR      9993   36.8%   -0.049R   -0.911R    2024: -0.808R (2954, hit 35.7%)  2025: -0.954R (4096, hit 36.8%)  2026: -0.953R (2943, hit 37.8%)
+   entry 1 ATR : 2 ATR        9993   28.9%   -0.057R   -0.919R    2024: -0.833R (2954, hit 27.8%)  2025: -0.953R (4096, hit 29.0%)  2026: -0.956R (2943, hit 29.9%)
+   entry 1.5 ATR : 3 ATR      9993   22.9%   -0.038R   -0.612R    2024: -0.554R (2954, hit 23.3%)  2025: -0.631R (4096, hit 22.3%)  2026: -0.646R (2943, hit 23.4%)
+   bar extreme : 2R           9993   22.4%   -0.028R   -0.664R    2024: -0.612R (2954, hit 22.4%)  2025: -0.712R (4096, hit 22.6%)  2026: -0.648R (2943, hit 22.2%)
 
-   Filters positive after fees in BOTH 2024 and 2025 (≥30 each, ≥100 together): 0 of 582 tried.
+   Filters positive after fees in BOTH 2024 and 2025 (≥30 each, ≥100 together): 0 of 960 tried.
+   If every one of them were noise, about 240 would clear that bar anyway (two coin-flip years).
+   This run is below what chance alone gives — treat the list as candidates, not findings.
    Best ten by in-sample net R, and what they then did in 2026 without being re-chosen:
 
 ================================================================================================
-== 15m   2835 signals   horizon 8 bars (120 min)
-   live grader, live plan, live window (6 bars): target 2209 · stop 509 · expired 117   → target first in 81.3% of the ones that finished
-   of which the target was ALREADY passed at the call: 790 calls (27.9%), 775 graded "target hit".   Without them: target first in 73.8%
+== 15m   2838 signals   horizon 8 bars (120 min)
+   live grader, live plan, live window (6 bars): target 2212 · stop 509 · expired 117   → target first in 81.3% of the ones that finished
+   of which the target was ALREADY passed at the call: 791 calls (27.9%), 776 graded "target hit".   Without them: target first in 73.8%
 
    policy                     n      hit     avg R     net R      net R by year   (no room = target already behind the entry, not traded)
-   live (level ± 1 ATR)       2045+790nr 71.2%   -0.027R   -0.321R    2024: -0.266R (568, hit 72.5%)  2025: -0.348R (864, hit 70.0%)  2026: -0.334R (613, hit 71.6%)
-   entry 1 ATR : 1 ATR        2835   45.3%   -0.063R   -0.496R    2024: -0.411R (816, hit 46.4%)  2025: -0.545R (1177, hit 43.9%)  2026: -0.510R (842, hit 46.2%)
-   entry 1 ATR : 1.5 ATR      2835   34.5%   -0.057R   -0.490R    2024: -0.381R (816, hit 36.5%)  2025: -0.551R (1177, hit 32.7%)  2026: -0.510R (842, hit 34.9%)
-   entry 1 ATR : 2 ATR        2835   27.4%   -0.027R   -0.459R    2024: -0.348R (816, hit 29.5%)  2025: -0.515R (1177, hit 26.4%)  2026: -0.489R (842, hit 26.8%)
-   entry 1.5 ATR : 3 ATR      2835   19.2%   +0.004R   -0.284R    2024: -0.234R (816, hit 20.5%)  2025: -0.290R (1177, hit 18.9%)  2026: -0.326R (842, hit 18.4%)
-   bar extreme : 2R           2835   17.8%   +0.006R   -0.292R    2024: -0.259R (816, hit 17.6%)  2025: -0.309R (1177, hit 18.9%)  2026: -0.300R (842, hit 16.6%)
+   live (level ± 1 ATR)       2047+791nr 71.2%   -0.027R   -0.321R    2024: -0.266R (568, hit 72.5%)  2025: -0.348R (864, hit 70.0%)  2026: -0.333R (615, hit 71.7%)
+   entry 1 ATR : 1 ATR        2838   45.3%   -0.062R   -0.495R    2024: -0.411R (816, hit 46.4%)  2025: -0.545R (1177, hit 43.9%)  2026: -0.508R (845, hit 46.3%)
+   entry 1 ATR : 1.5 ATR      2838   34.5%   -0.057R   -0.490R    2024: -0.381R (816, hit 36.5%)  2025: -0.551R (1177, hit 32.7%)  2026: -0.510R (845, hit 34.9%)
+   entry 1 ATR : 2 ATR        2838   27.4%   -0.027R   -0.460R    2024: -0.348R (816, hit 29.5%)  2025: -0.515R (1177, hit 26.4%)  2026: -0.491R (845, hit 26.7%)
+   entry 1.5 ATR : 3 ATR      2838   19.2%   +0.004R   -0.285R    2024: -0.234R (816, hit 20.5%)  2025: -0.290R (1177, hit 18.9%)  2026: -0.327R (845, hit 18.3%)
+   bar extreme : 2R           2838   17.8%   +0.005R   -0.293R    2024: -0.259R (816, hit 17.6%)  2025: -0.309R (1177, hit 18.9%)  2026: -0.302R (845, hit 16.6%)
 
-   Filters positive after fees in BOTH 2024 and 2025 (≥30 each, ≥100 together): 0 of 582 tried.
+   Filters positive after fees in BOTH 2024 and 2025 (≥30 each, ≥100 together): 0 of 960 tried.
+   If every one of them were noise, about 240 would clear that bar anyway (two coin-flip years).
+   This run is below what chance alone gives — treat the list as candidates, not findings.
    Best ten by in-sample net R, and what they then did in 2026 without being re-chosen:
 
 ================================================================================================
-== 30m   1318 signals   horizon 8 bars (240 min)
-   live grader, live plan, live window (4 bars): target 1015 · stop 197 · expired 106   → target first in 83.7% of the ones that finished
-   of which the target was ALREADY passed at the call: 404 calls (30.7%), 396 graded "target hit".   Without them: target first in 75.9%
+== 30m   1320 signals   horizon 8 bars (240 min)
+   live grader, live plan, live window (4 bars): target 1017 · stop 197 · expired 106   → target first in 83.8% of the ones that finished
+   of which the target was ALREADY passed at the call: 404 calls (30.6%), 396 graded "target hit".   Without them: target first in 75.9%
 
    policy                     n      hit     avg R     net R      net R by year   (no room = target already behind the entry, not traded)
-   live (level ± 1 ATR)       914+404nr 71.9%   -0.011R   -0.210R    2024: -0.220R (263, hit 70.0%)  2025: -0.202R (388, hit 73.2%)  2026: -0.211R (263, hit 71.9%)
-   entry 1 ATR : 1 ATR        1318   48.1%   -0.007R   -0.296R    2024: -0.324R (393, hit 44.8%)  2025: -0.321R (549, hit 47.5%)  2026: -0.230R (376, hit 52.4%)
-   entry 1 ATR : 1.5 ATR      1318   36.3%   +0.002R   -0.287R    2024: -0.327R (393, hit 33.1%)  2025: -0.298R (549, hit 36.8%)  2026: -0.228R (376, hit 38.8%)
-   entry 1 ATR : 2 ATR        1318   28.5%   +0.019R   -0.270R    2024: -0.328R (393, hit 26.0%)  2025: -0.275R (549, hit 29.0%)  2026: -0.203R (376, hit 30.3%)
-   entry 1.5 ATR : 3 ATR      1318   19.8%   +0.044R   -0.149R    2024: -0.166R (393, hit 19.3%)  2025: -0.176R (549, hit 18.4%)  2026: -0.091R (376, hit 22.3%)
-   bar extreme : 2R           1318   16.4%   +0.011R   -0.181R    2024: -0.211R (393, hit 13.7%)  2025: -0.204R (549, hit 17.5%)  2026: -0.115R (376, hit 17.6%)
+   live (level ± 1 ATR)       916+404nr 71.9%   -0.010R   -0.210R    2024: -0.220R (263, hit 70.0%)  2025: -0.202R (388, hit 73.2%)  2026: -0.210R (265, hit 72.1%)
+   entry 1 ATR : 1 ATR        1320   48.1%   -0.007R   -0.296R    2024: -0.324R (393, hit 44.8%)  2025: -0.321R (549, hit 47.5%)  2026: -0.231R (378, hit 52.4%)
+   entry 1 ATR : 1.5 ATR      1320   36.2%   +0.001R   -0.289R    2024: -0.327R (393, hit 33.1%)  2025: -0.298R (549, hit 36.8%)  2026: -0.235R (378, hit 38.6%)
+   entry 1 ATR : 2 ATR        1320   28.4%   +0.018R   -0.272R    2024: -0.328R (393, hit 26.0%)  2025: -0.275R (549, hit 29.0%)  2026: -0.210R (378, hit 30.2%)
+   entry 1.5 ATR : 3 ATR      1320   19.8%   +0.043R   -0.150R    2024: -0.166R (393, hit 19.3%)  2025: -0.176R (549, hit 18.4%)  2026: -0.094R (378, hit 22.2%)
+   bar extreme : 2R           1320   16.4%   +0.011R   -0.181R    2024: -0.211R (393, hit 13.7%)  2025: -0.204R (549, hit 17.5%)  2026: -0.118R (378, hit 17.5%)
 
-   Filters positive after fees in BOTH 2024 and 2025 (≥30 each, ≥100 together): 2 of 582 tried.
+   Filters positive after fees in BOTH 2024 and 2025 (≥30 each, ≥100 together): 2 of 960 tried.
+   If every one of them were noise, about 240 would clear that bar anyway (two coin-flip years).
+   This run is below what chance alone gives — treat the list as candidates, not findings.
    Best ten by in-sample net R, and what they then did in 2026 without being re-chosen:
    fails  entry 1.5 ATR : 3 ATR    4h trend with + expanded before (ATR > 1.2x)               in +0.040R (154, hit 18.8%)  2026 -0.054R (61, hit 19.7%)
    fails  entry 1.5 ATR : 3 ATR    expanded before (ATR > 1.2x)                               in +0.025R (211, hit 17.5%)  2026 -0.043R (85, hit 18.8%)
 
 ================================================================================================
-== 1h   644 signals   horizon 8 bars (480 min)
-   live grader, live plan, live window (4 bars): target 518 · stop 90 · expired 36   → target first in 85.2% of the ones that finished
-   of which the target was ALREADY passed at the call: 220 calls (34.2%), 209 graded "target hit".   Without them: target first in 77.4%
+== 1h   645 signals   horizon 8 bars (480 min)
+   live grader, live plan, live window (4 bars): target 519 · stop 90 · expired 36   → target first in 85.2% of the ones that finished
+   of which the target was ALREADY passed at the call: 220 calls (34.1%), 209 graded "target hit".   Without them: target first in 77.5%
 
    policy                     n      hit     avg R     net R      net R by year   (no room = target already behind the entry, not traded)
-   live (level ± 1 ATR)       424+220nr 76.2%   +0.024R   -0.106R    2024: -0.127R (124, hit 75.0%)  2025: -0.111R (170, hit 75.9%)  2026: -0.080R (130, hit 77.7%)
-   entry 1 ATR : 1 ATR        644    47.2%   -0.022R   -0.212R    2024: -0.196R (184, hit 47.3%)  2025: -0.250R (265, hit 46.0%)  2026: -0.173R (195, hit 48.7%)
-   entry 1 ATR : 1.5 ATR      644    35.7%   -0.026R   -0.216R    2024: -0.232R (184, hit 34.8%)  2025: -0.258R (265, hit 34.7%)  2026: -0.145R (195, hit 37.9%)
-   entry 1 ATR : 2 ATR        644    28.1%   +0.003R   -0.187R    2024: -0.223R (184, hit 28.3%)  2025: -0.213R (265, hit 26.8%)  2026: -0.119R (195, hit 29.7%)
-   entry 1.5 ATR : 3 ATR      644    18.2%   +0.002R   -0.124R    2024: -0.134R (184, hit 21.2%)  2025: -0.125R (265, hit 17.7%)  2026: -0.114R (195, hit 15.9%)
-   bar extreme : 2R           644    15.2%   -0.001R   -0.116R    2024: -0.167R (184, hit 15.2%)  2025: -0.091R (265, hit 16.2%)  2026: -0.102R (195, hit 13.8%)
+   live (level ± 1 ATR)       425+220nr 76.2%   +0.025R   -0.106R    2024: -0.127R (124, hit 75.0%)  2025: -0.111R (170, hit 75.9%)  2026: -0.080R (131, hit 77.9%)
+   entry 1 ATR : 1 ATR        645    47.3%   -0.020R   -0.210R    2024: -0.196R (184, hit 47.3%)  2025: -0.250R (265, hit 46.0%)  2026: -0.170R (196, hit 49.0%)
+   entry 1 ATR : 1.5 ATR      645    35.8%   -0.024R   -0.214R    2024: -0.232R (184, hit 34.8%)  2025: -0.258R (265, hit 34.7%)  2026: -0.139R (196, hit 38.3%)
+   entry 1 ATR : 2 ATR        645    28.1%   +0.001R   -0.189R    2024: -0.223R (184, hit 28.3%)  2025: -0.213R (265, hit 26.8%)  2026: -0.125R (196, hit 29.6%)
+   entry 1.5 ATR : 3 ATR      645    18.1%   +0.001R   -0.126R    2024: -0.134R (184, hit 21.2%)  2025: -0.125R (265, hit 17.7%)  2026: -0.120R (196, hit 15.8%)
+   bar extreme : 2R           645    15.2%   -0.003R   -0.118R    2024: -0.167R (184, hit 15.2%)  2025: -0.091R (265, hit 16.2%)  2026: -0.108R (196, hit 13.8%)
 
-   Filters positive after fees in BOTH 2024 and 2025 (≥30 each, ≥100 together): 1 of 582 tried.
+   Filters positive after fees in BOTH 2024 and 2025 (≥30 each, ≥100 together): 1 of 960 tried.
+   If every one of them were noise, about 240 would clear that bar anyway (two coin-flip years).
+   This run is below what chance alone gives — treat the list as candidates, not findings.
    Best ten by in-sample net R, and what they then did in 2026 without being re-chosen:
    fails  bar extreme : 2R         4h trend with + late entry (> 1 ATR past level)            in +0.092R (113, hit 18.6%)  2026 -0.035R (49, hit 12.2%)
 
@@ -83,51 +94,57 @@ Net = after 0.05% taker fee each side. R = profit ÷ risk. Chosen on 2024+2025; 
    screen printed the rolling record beside a swing call. See docs/TODO.md.
 
 ================================================================================================
-== 5m   6460 signals   horizon 12 bars (60 min)
-   live grader, live plan, live window (6 bars): target 5099 · stop 1129 · expired 232   → target first in 81.9% of the ones that finished
+== 5m   6464 signals   horizon 12 bars (60 min)
+   live grader, live plan, live window (6 bars): target 5102 · stop 1130 · expired 232   → target first in 81.9% of the ones that finished
    of which the target was ALREADY passed at the call: 2113 calls (32.7%), 2058 graded "target hit".   Without them: target first in 72.9%
 
    policy                     n      hit     avg R     net R      net R by year   (no room = target already behind the entry, not traded)
-   live (level ± 1 ATR)       4347+2113nr 72.3%   -0.046R   -0.614R    2024: -0.542R (1207, hit 71.4%)  2025: -0.629R (1899, hit 72.9%)  2026: -0.663R (1241, hit 72.2%)
-   entry 1 ATR : 1 ATR        6460   46.3%   -0.067R   -0.937R    2024: -0.774R (1859, hit 46.3%)  2025: -0.977R (2723, hit 47.0%)  2026: -1.040R (1878, hit 45.4%)
-   entry 1 ATR : 1.5 ATR      6460   37.0%   -0.050R   -0.920R    2024: -0.789R (1859, hit 35.9%)  2025: -0.948R (2723, hit 37.8%)  2026: -1.008R (1878, hit 36.8%)
-   entry 1 ATR : 2 ATR        6460   29.2%   -0.056R   -0.926R    2024: -0.808R (1859, hit 28.3%)  2025: -0.952R (2723, hit 29.7%)  2026: -1.004R (1878, hit 29.4%)
-   entry 1.5 ATR : 3 ATR      6460   24.2%   -0.025R   -0.605R    2024: -0.512R (1859, hit 25.2%)  2025: -0.619R (2723, hit 23.8%)  2026: -0.676R (1878, hit 23.7%)
-   bar extreme : 2R           6460   23.0%   -0.023R   -0.658R    2024: -0.564R (1859, hit 23.1%)  2025: -0.714R (2723, hit 23.2%)  2026: -0.668R (1878, hit 22.5%)
+   live (level ± 1 ATR)       4351+2113nr 72.3%   -0.047R   -0.615R    2024: -0.542R (1207, hit 71.4%)  2025: -0.629R (1899, hit 72.9%)  2026: -0.663R (1245, hit 72.2%)
+   entry 1 ATR : 1 ATR        6464   46.3%   -0.067R   -0.937R    2024: -0.774R (1859, hit 46.3%)  2025: -0.977R (2723, hit 47.0%)  2026: -1.041R (1882, hit 45.4%)
+   entry 1 ATR : 1.5 ATR      6464   37.0%   -0.050R   -0.920R    2024: -0.789R (1859, hit 35.9%)  2025: -0.948R (2723, hit 37.8%)  2026: -1.009R (1882, hit 36.8%)
+   entry 1 ATR : 2 ATR        6464   29.2%   -0.056R   -0.926R    2024: -0.808R (1859, hit 28.3%)  2025: -0.952R (2723, hit 29.7%)  2026: -1.005R (1882, hit 29.4%)
+   entry 1.5 ATR : 3 ATR      6464   24.2%   -0.025R   -0.605R    2024: -0.512R (1859, hit 25.2%)  2025: -0.619R (2723, hit 23.8%)  2026: -0.677R (1882, hit 23.8%)
+   bar extreme : 2R           6464   23.0%   -0.023R   -0.658R    2024: -0.564R (1859, hit 23.1%)  2025: -0.714R (2723, hit 23.2%)  2026: -0.669R (1882, hit 22.5%)
 
-   Filters positive after fees in BOTH 2024 and 2025 (≥30 each, ≥100 together): 0 of 582 tried.
+   Filters positive after fees in BOTH 2024 and 2025 (≥30 each, ≥100 together): 0 of 960 tried.
+   If every one of them were noise, about 240 would clear that bar anyway (two coin-flip years).
+   This run is below what chance alone gives — treat the list as candidates, not findings.
    Best ten by in-sample net R, and what they then did in 2026 without being re-chosen:
 
 ================================================================================================
-== 15m   1693 signals   horizon 8 bars (120 min)
-   live grader, live plan, live window (6 bars): target 1375 · stop 257 · expired 61   → target first in 84.3% of the ones that finished
-   of which the target was ALREADY passed at the call: 618 calls (36.5%), 609 graded "target hit".   Without them: target first in 74.9%
+== 15m   1695 signals   horizon 8 bars (120 min)
+   live grader, live plan, live window (6 bars): target 1377 · stop 257 · expired 61   → target first in 84.3% of the ones that finished
+   of which the target was ALREADY passed at the call: 619 calls (36.5%), 610 graded "target hit".   Without them: target first in 74.9%
 
    policy                     n      hit     avg R     net R      net R by year   (no room = target already behind the entry, not traded)
-   live (level ± 1 ATR)       1075+618nr 72.2%   -0.039R   -0.315R    2024: -0.274R (283, hit 71.7%)  2025: -0.361R (469, hit 70.1%)  2026: -0.283R (323, hit 75.5%)
-   entry 1 ATR : 1 ATR        1693   46.0%   -0.053R   -0.463R    2024: -0.385R (479, hit 46.6%)  2025: -0.515R (719, hit 44.9%)  2026: -0.461R (495, hit 47.1%)
-   entry 1 ATR : 1.5 ATR      1693   35.9%   -0.033R   -0.443R    2024: -0.348R (479, hit 37.2%)  2025: -0.513R (719, hit 34.2%)  2026: -0.432R (495, hit 37.2%)
-   entry 1 ATR : 2 ATR        1693   28.0%   -0.014R   -0.424R    2024: -0.339R (479, hit 28.8%)  2025: -0.495R (719, hit 26.6%)  2026: -0.405R (495, hit 29.3%)
-   entry 1.5 ATR : 3 ATR      1693   18.8%   +0.004R   -0.270R    2024: -0.232R (479, hit 19.8%)  2025: -0.285R (719, hit 18.2%)  2026: -0.283R (495, hit 18.6%)
-   bar extreme : 2R           1693   17.0%   +0.001R   -0.270R    2024: -0.236R (479, hit 16.7%)  2025: -0.297R (719, hit 17.7%)  2026: -0.264R (495, hit 16.2%)
+   live (level ± 1 ATR)       1076+619nr 72.2%   -0.038R   -0.315R    2024: -0.274R (283, hit 71.7%)  2025: -0.361R (469, hit 70.1%)  2026: -0.283R (324, hit 75.6%)
+   entry 1 ATR : 1 ATR        1695   46.1%   -0.052R   -0.462R    2024: -0.385R (479, hit 46.6%)  2025: -0.515R (719, hit 44.9%)  2026: -0.458R (497, hit 47.3%)
+   entry 1 ATR : 1.5 ATR      1695   35.9%   -0.032R   -0.443R    2024: -0.348R (479, hit 37.2%)  2025: -0.513R (719, hit 34.2%)  2026: -0.432R (497, hit 37.2%)
+   entry 1 ATR : 2 ATR        1695   28.0%   -0.015R   -0.426R    2024: -0.339R (479, hit 28.8%)  2025: -0.495R (719, hit 26.6%)  2026: -0.410R (497, hit 29.2%)
+   entry 1.5 ATR : 3 ATR      1695   18.8%   +0.003R   -0.271R    2024: -0.232R (479, hit 19.8%)  2025: -0.285R (719, hit 18.2%)  2026: -0.287R (497, hit 18.5%)
+   bar extreme : 2R           1695   16.9%   -0.001R   -0.272R    2024: -0.236R (479, hit 16.7%)  2025: -0.297R (719, hit 17.7%)  2026: -0.269R (497, hit 16.1%)
 
-   Filters positive after fees in BOTH 2024 and 2025 (≥30 each, ≥100 together): 0 of 582 tried.
+   Filters positive after fees in BOTH 2024 and 2025 (≥30 each, ≥100 together): 0 of 960 tried.
+   If every one of them were noise, about 240 would clear that bar anyway (two coin-flip years).
+   This run is below what chance alone gives — treat the list as candidates, not findings.
    Best ten by in-sample net R, and what they then did in 2026 without being re-chosen:
 
 ================================================================================================
-== 30m   729 signals   horizon 8 bars (240 min)
-   live grader, live plan, live window (4 bars): target 591 · stop 83 · expired 55   → target first in 87.7% of the ones that finished
-   of which the target was ALREADY passed at the call: 307 calls (42.1%), 301 graded "target hit".   Without them: target first in 77.7%
+== 30m   731 signals   horizon 8 bars (240 min)
+   live grader, live plan, live window (4 bars): target 593 · stop 83 · expired 55   → target first in 87.7% of the ones that finished
+   of which the target was ALREADY passed at the call: 307 calls (42.0%), 301 graded "target hit".   Without them: target first in 77.9%
 
    policy                     n      hit     avg R     net R      net R by year   (no room = target already behind the entry, not traded)
-   live (level ± 1 ATR)       422+307nr 72.5%   -0.014R   -0.188R    2024: -0.163R (113, hit 75.2%)  2025: -0.183R (171, hit 73.1%)  2026: -0.215R (138, hit 69.6%)
-   entry 1 ATR : 1 ATR        729    50.2%   +0.031R   -0.235R    2024: -0.212R (209, hit 49.3%)  2025: -0.286R (302, hit 48.7%)  2026: -0.185R (218, hit 53.2%)
-   entry 1 ATR : 1.5 ATR      729    38.0%   +0.044R   -0.222R    2024: -0.180R (209, hit 38.3%)  2025: -0.275R (302, hit 37.4%)  2026: -0.188R (218, hit 38.5%)
-   entry 1 ATR : 2 ATR        729    29.8%   +0.065R   -0.201R    2024: -0.203R (209, hit 28.7%)  2025: -0.239R (302, hit 29.5%)  2026: -0.146R (218, hit 31.2%)
-   entry 1.5 ATR : 3 ATR      729    20.7%   +0.094R   -0.084R    2024: -0.060R (209, hit 21.1%)  2025: -0.122R (302, hit 19.5%)  2026: -0.053R (218, hit 22.0%)
-   bar extreme : 2R           729    15.6%   +0.052R   -0.112R    2024: -0.113R (209, hit 13.9%)  2025: -0.146R (302, hit 16.2%)  2026: -0.066R (218, hit 16.5%)
+   live (level ± 1 ATR)       424+307nr 72.6%   -0.012R   -0.187R    2024: -0.163R (113, hit 75.2%)  2025: -0.183R (171, hit 73.1%)  2026: -0.213R (140, hit 70.0%)
+   entry 1 ATR : 1 ATR        731    50.2%   +0.031R   -0.236R    2024: -0.212R (209, hit 49.3%)  2025: -0.286R (302, hit 48.7%)  2026: -0.189R (220, hit 53.2%)
+   entry 1 ATR : 1.5 ATR      731    37.9%   +0.041R   -0.225R    2024: -0.180R (209, hit 38.3%)  2025: -0.275R (302, hit 37.4%)  2026: -0.201R (220, hit 38.2%)
+   entry 1 ATR : 2 ATR        731    29.7%   +0.062R   -0.205R    2024: -0.203R (209, hit 28.7%)  2025: -0.239R (302, hit 29.5%)  2026: -0.159R (220, hit 30.9%)
+   entry 1.5 ATR : 3 ATR      731    20.7%   +0.093R   -0.085R    2024: -0.060R (209, hit 21.1%)  2025: -0.122R (302, hit 19.5%)  2026: -0.058R (220, hit 21.8%)
+   bar extreme : 2R           731    15.6%   +0.051R   -0.114R    2024: -0.113R (209, hit 13.9%)  2025: -0.146R (302, hit 16.2%)  2026: -0.071R (220, hit 16.4%)
 
-   Filters positive after fees in BOTH 2024 and 2025 (≥30 each, ≥100 together): 3 of 582 tried.
+   Filters positive after fees in BOTH 2024 and 2025 (≥30 each, ≥100 together): 3 of 960 tried.
+   If every one of them were noise, about 240 would clear that bar anyway (two coin-flip years).
+   This run is below what chance alone gives — treat the list as candidates, not findings.
    Best ten by in-sample net R, and what they then did in 2026 without being re-chosen:
    fails  entry 1.5 ATR : 3 ATR    4h trend with + expanded before (ATR > 1.2x)               in +0.051R (139, hit 18.7%)  2026 -0.024R (50, hit 22.0%)
    fails  entry 1.5 ATR : 3 ATR    expanded before (ATR > 1.2x)                               in +0.041R (162, hit 17.9%)  2026 -0.061R (61, hit 19.7%)
@@ -146,7 +163,9 @@ Net = after 0.05% taker fee each side. R = profit ÷ risk. Chosen on 2024+2025; 
    entry 1.5 ATR : 3 ATR      379    18.7%   -0.005R   -0.120R    2024: -0.121R (103, hit 20.4%)  2025: -0.098R (159, hit 19.5%)  2026: -0.150R (117, hit 16.2%)
    bar extreme : 2R           379    16.1%   +0.028R   -0.074R    2024: -0.091R (103, hit 15.5%)  2025: -0.055R (159, hit 17.6%)  2026: -0.084R (117, hit 14.5%)
 
-   Filters positive after fees in BOTH 2024 and 2025 (≥30 each, ≥100 together): 2 of 582 tried.
+   Filters positive after fees in BOTH 2024 and 2025 (≥30 each, ≥100 together): 2 of 960 tried.
+   If every one of them were noise, about 240 would clear that bar anyway (two coin-flip years).
+   This run is below what chance alone gives — treat the list as candidates, not findings.
    Best ten by in-sample net R, and what they then did in 2026 without being re-chosen:
    fails  bar extreme : 2R         late entry (> 1 ATR past level)                            in +0.036R (111, hit 15.3%)  2026 -0.027R (44, hit 11.4%)
    fails  bar extreme : 2R         1h trend with + late entry (> 1 ATR past level)            in +0.036R (111, hit 15.3%)  2026 -0.027R (44, hit 11.4%)
@@ -154,16 +173,16 @@ Net = after 0.05% taker fee each side. R = profit ÷ risk. Chosen on 2024+2025; 
 ================================================================================================
 == The hour after a break: how far, either way (in the break timeframe's ATR at the break)
    A break predicts a bigger hour, not a direction. This is the table the live risk card reads.
-   5m   n 9986  kept going after 1h 44.8% (2024 42.5% of 2954 · 2025 46.8% of 4096 · 2026 44.4% of 2936)
-        with the break  p50 1.648 p75 3.216 p90 5.423 p95 7.437 ATR   against  p50 1.834 p75 3.087 p90 4.599 p95 5.889 ATR
-        either way  p50 3.064 p90 6.546 ATR   vs any hour  p50 2.642 p90 5.816 ATR   → 16% bigger at the median
-   15m  n 2835  kept going after 1h 45.6% (2024 44.9% of 816 · 2025 46.7% of 1177 · 2026 44.7% of 842)
-        with the break  p50 1.016 p75 2.045 p90 3.466 p95 4.6 ATR   against  p50 1.056 p75 1.724 p90 2.725 p95 3.679 ATR
-        either way  p50 1.803 p90 4.13 ATR   vs any hour  p50 1.396 p90 3.168 ATR   → 29% bigger at the median
-   30m  n 1318  kept going after 1h 46.1% (2024 43.3% of 393 · 2025 48.1% of 549 · 2026 46.3% of 376)
+   5m   n 9992  kept going after 1h 44.8% (2024 42.5% of 2954 · 2025 46.8% of 4096 · 2026 44.4% of 2942)
+        with the break  p50 1.648 p75 3.217 p90 5.423 p95 7.437 ATR   against  p50 1.834 p75 3.088 p90 4.599 p95 5.892 ATR
+        either way  p50 3.064 p90 6.546 ATR   vs any hour  p50 2.643 p90 5.817 ATR   → 16% bigger at the median
+   15m  n 2838  kept going after 1h 45.6% (2024 44.9% of 816 · 2025 46.7% of 1177 · 2026 44.7% of 845)
+        with the break  p50 1.016 p75 2.036 p90 3.466 p95 4.6 ATR   against  p50 1.056 p75 1.724 p90 2.725 p95 3.679 ATR
+        either way  p50 1.802 p90 4.13 ATR   vs any hour  p50 1.396 p90 3.168 ATR   → 29% bigger at the median
+   30m  n 1320  kept going after 1h 46.1% (2024 43.3% of 393 · 2025 48.1% of 549 · 2026 46.3% of 378)
         with the break  p50 0.81 p75 1.489 p90 2.511 p95 3.619 ATR   against  p50 0.756 p75 1.25 p90 1.951 p95 2.441 ATR
-        either way  p50 1.333 p90 3.154 ATR   vs any hour  p50 0.954 p90 2.232 ATR   → 40% bigger at the median
-   1h   n 644   kept going after 1h 44.6% (2024 44.0% of 184 · 2025 44.9% of 265 · 2026 44.6% of 195)
-        with the break  p50 0.56 p75 1.049 p90 1.731 p95 2.412 ATR   against  p50 0.583 p75 0.965 p90 1.463 p95 1.859 ATR
-        either way  p50 0.987 p90 2.211 ATR   vs any hour  p50 0.651 p90 1.554 ATR   → 52% bigger at the median
+        either way  p50 1.332 p90 3.154 ATR   vs any hour  p50 0.954 p90 2.233 ATR   → 40% bigger at the median
+   1h   n 645   kept going after 1h 44.7% (2024 44.0% of 184 · 2025 44.9% of 265 · 2026 44.9% of 196)
+        with the break  p50 0.56 p75 1.048 p90 1.731 p95 2.412 ATR   against  p50 0.583 p75 0.964 p90 1.463 p95 1.859 ATR
+        either way  p50 0.985 p90 2.211 ATR   vs any hour  p50 0.651 p90 1.555 ATR   → 51% bigger at the median
 

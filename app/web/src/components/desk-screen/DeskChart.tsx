@@ -95,20 +95,6 @@ export function DeskChart({
       </div>
 
       <div className="desk-chart-container">
-        {/* Resistance Zone Badge Overlay */}
-        <div className="desk-zone-overlay-res">
-          <span className="desk-zone-label-res">
-            Resistance Zone {Math.round(rLevel - 20).toLocaleString()} – {Math.round(rLevel + 25).toLocaleString()}
-          </span>
-        </div>
-
-        {/* Support Zone Badge Overlay */}
-        <div className="desk-zone-overlay-sup">
-          <span className="desk-zone-label-sup">
-            Support Zone {Math.round(sLevel - 25).toLocaleString()} – {Math.round(sLevel + 20).toLocaleString()}
-          </span>
-        </div>
-
         <PriceChart
           bars={bars}
           support={Math.round(sLevel)}
