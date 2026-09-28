@@ -13,7 +13,6 @@ import { tradingService, SHORT_CAP_KEY } from '../../trading/service.js';
 import { appliedMigrations } from '../../db/migrate.js';
 import { lastOptionSnapshot, lastOptionSnapshotAt } from '../../market/option-snapshots.js';
 import { flowFeedHealth, flowSummary, liveBook, livePerp, oiPulse, optionFlowSummary } from '../../market/flow.js';
-import { readState, STATE_TFS, type StateTf } from '../../market/state-read.js';
 import { changes } from '../../market/changes.js';
 import { one } from '../../db/pool.js';
 import { strategyStore } from './strategy.routes.js';
@@ -28,7 +27,6 @@ import { noteOpenInterest, openInterestChange, ivChange, type OiChange } from '.
 import { chainBoard, recordBoard } from '../../market/chain-features.js';
 import { SHOCK_WINDOWS } from '../../domain/shock.js';
 import { shockFrom } from '../../market/shock-now.js';
-import { liveRead } from '../../market/live-read.js';
 
 /** Resolve the `at` query param: "now" (or absent) means live. */
 function resolveAt(at: string | undefined): number | null {
@@ -126,58 +124,6 @@ export function registerDeskRoutes(app: FastifyInstance) {
       spot: n('spot'), mark: n('mark'), oi: n('oi'), iv: n('iv'), volume: n('volume'),
       ceOi: n('ceOi'), peOi: n('peOi'), callVolume: n('callVolume'), putVolume: n('putVolume'), pcr: n('pcr'), atmIv: n('atmIv'),
     }, entry ?? null);
-  });
-
-  /**
-   * Where price is against the level that matters: the market-state card.
-   *
-   * Breakout, rejection, breakdown or range, on one timeframe, with the
-   * confirmation list, both sides' plans and every reading the score was built
-   * from. The rules are in `domain/market-state.ts` and are pure; this only
-   * chooses the timeframe and hands back what that module says.
-   *
-   * `confidence` is a score out of a hundred, by the weights in that module --
-   * **not** a probability. Nothing here is calibrated against history, and a
-   * number that looks like a probability and is not is worse than no number,
-   * so the field is named for what it is and the card says so too.
-   */
-  app.get('/api/market-state', async (req, reply) => {
-    const q = req.query as { tf?: string };
-    const tf = (STATE_TFS as readonly string[]).includes(q.tf ?? '') ? (q.tf as StateTf) : '15m';
-    try {
-      const read = await readState(tf);
-      // The bars are already on the screen from /api/candles; sending sixty
-      // more of them with every poll would double the payload for nothing.
-      const { bars, ...rest } = read;
-      return { ...rest, bars: bars.length };
-    } catch (e) {
-      reply.code(502);
-      return { error: (e as Error).message };
-    }
-  });
-
-  /*
-   * The Live screen's momentum call, with the price it is measured from and
-   * the contract's hours and ATM IV. See market/live-read.ts.
-   *
-   * `expiry` picks the contract; without it the nearest live one is used.
-   */
-  app.get('/api/live', async (req, reply) => {
-    try {
-      const q = req.query as { expiry?: string; at?: string };
-      const snap = await snapshotFor(q.at, WHOLE_BOARD, q.expiry);
-      // The tick, not the chain snapshot's spot and not a candle close.
-      const ltp = await liveSpot().catch(() => null);
-      const read = await liveRead({ ltp });
-      return {
-        ...read,
-        expiry: snap.expiry,
-        expiryTs: snap.expiryTs,
-        hoursToExpiry: snap.hoursToExpiry,
-        atmIv: snap.atmIv,
-        atm: snap.atm,
-      };
-    } catch (e) { reply.code(502); return { error: (e as Error).message }; }
   });
 
   /**

@@ -59,9 +59,11 @@ test('[critical] the chain handler runs through, whatever the exchange says', as
 
 test('[critical] the routes removed on 28 Sep 2026 stay removed', async () => {
   // Signal history, the warning journal, the term structure, movement, big move
-  // risk, and the backtest / sizing / presets / calibration endpoints nothing called.
+  // risk, the market state and the momentum read, and the backtest / sizing /
+  // presets / calibration endpoints nothing called.
   for (const [method, url] of [
     ['GET', '/api/market-state/history?tf=15m&limit=5'], ['GET', '/api/warning/history?window=5&limit=5'],
+    ['GET', '/api/market-state?tf=5m'], ['GET', '/api/live'],
     ['GET', '/api/term'], ['GET', '/api/movement'], ['GET', '/api/break-risk'],
     ['GET', '/api/sizing'], ['GET', '/api/presets'], ['GET', '/api/calibration'],
     ['POST', '/api/backtest'], ['POST', '/api/backtest/byyear'],

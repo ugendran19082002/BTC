@@ -5,7 +5,6 @@ import {
 } from '../../src/domain/level-mode.js';
 import { levelsFrom, LEVEL_BARS } from '../../src/domain/market-state.js';
 import { confirmedBreaks } from '../../src/domain/break-risk.js';
-import { measuredFor, LIVE_POLICY } from '../../src/domain/momentum-signal.js';
 import type { Candle } from '../../src/market/delta.js';
 
 /**
@@ -81,42 +80,6 @@ describe('the two level definitions', () => {
     for (const m of ['rolling', 'swing'] as const) {
       assert.ok(LEVEL_MODE_LABEL[m].length > 10, `${m} has no readable label`);
     }
-  });
-});
-
-describe('the live mode and the measured record cannot drift apart', () => {
-  test('[critical] the live mode is one the study has actually graded', () => {
-    /*
-     * The whole point. If `LIVE_LEVEL_MODE` is changed without re-running
-     * `momentum-study.ts` for it, every timeframe loses its measured record and
-     * this fails — loudly, here, rather than silently on the screen.
-     */
-    const graded = (['5m', '15m', '30m', '1h'] as const)
-      .map((tf) => measuredFor(tf, LIVE_POLICY, LIVE_LEVEL_MODE))
-      .filter((m) => m !== null);
-    assert.ok(
-      graded.length > 0,
-      `No timeframe has a measured record for LIVE_LEVEL_MODE="${LIVE_LEVEL_MODE}". `
-      + 'Re-run `npx tsx src/backtest/momentum-study.ts` for that mode, or put the mode back.',
-    );
-  });
-
-  test('[critical] every measured row it returns says which mode it came from', () => {
-    const m = measuredFor('5m', LIVE_POLICY, LIVE_LEVEL_MODE);
-    if (!m) return;
-    assert.equal(m.mode, LIVE_LEVEL_MODE);
-    assert.ok(m.modeLabel.length > 10);
-  });
-
-  test('[critical] asking for an ungraded mode returns null, never the other mode\'s row', () => {
-    const other = LIVE_LEVEL_MODE === 'rolling' ? 'swing' : 'rolling';
-    const m = measuredFor('5m', LIVE_POLICY, other);
-    // Either the study graded it too (fine, and it must say so), or null.
-    if (m !== null) assert.equal(m.mode, other, 'a row from the wrong mode was returned');
-  });
-
-  test('the live mode is the documented default until something is measured to beat it', () => {
-    assert.equal(LIVE_LEVEL_MODE, DEFAULT_LEVEL_MODE);
   });
 });
 
