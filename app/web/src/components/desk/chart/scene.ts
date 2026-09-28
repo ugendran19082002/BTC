@@ -11,7 +11,7 @@ import type { Bar, Pool, PoolEvent, Setup, SmcState, Zone, ZoneEvent } from '@/l
  * drops the least important one when two would overlap.
  */
 
-export type Layer = 'structure' | 'liquidity' | 'zones' | 'levels' | 'pd' | 'sessions' | 'vwap' | 'candles' | 'trade';
+export type Layer = 'structure' | 'liquidity' | 'zones' | 'levels' | 'pd' | 'sessions' | 'vwap' | 'candles' | 'trade' | 'saved';
 
 export const LAYERS: readonly { key: Layer; label: string }[] = [
   { key: 'structure', label: 'Structure' },
@@ -23,9 +23,10 @@ export const LAYERS: readonly { key: Layer; label: string }[] = [
   { key: 'vwap', label: 'VWAP' },
   { key: 'candles', label: 'Candles' },
   { key: 'trade', label: 'Trade' },
+  { key: 'saved', label: 'Saved levels' },
 ];
 
-export const DEFAULT_LAYERS: readonly Layer[] = ['structure', 'liquidity', 'zones', 'levels', 'pd', 'trade'];
+export const DEFAULT_LAYERS: readonly Layer[] = ['structure', 'liquidity', 'zones', 'levels', 'pd', 'trade', 'saved'];
 
 /** 'right' runs to the chart's right edge: a level still in play. */
 type XEnd = number | 'right';
