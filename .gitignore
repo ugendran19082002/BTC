@@ -54,3 +54,7 @@ analytics/.venv/
 # database dumps (deploy/backup-db.sh)
 backups/
 app/server/harness.tmp.mts
+
+# Local chart test pages and browser-automation output: never committed
+app/web/.harness/
+.playwright-mcp/

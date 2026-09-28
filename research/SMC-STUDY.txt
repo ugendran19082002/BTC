@@ -1,58 +1,61 @@
 == Variants (net of fees; per trade and total; 2024-25 chooses, 2026 judges)
-   A  as built: zone stop, close entry    24-25: n  568 win  24.5% net -0.74R/trade (-418.32R)   2026: n  213 win  22.1% net -0.77R/trade (-164.16R)
-   B  stop beyond the sweep too           24-25: n  285 win  22.8% net -0.64R/trade (-182.66R)   2026: n  102 win  22.5% net -0.71R/trade (-72.07R)
-   C  zone stop, floor 1.0 ATR            24-25: n  553 win  25.1% net -0.64R/trade (-356.42R)   2026: n  203 win  24.1% net -0.70R/trade (-141.17R)
-   D  zone stop, floor 1.5 ATR            24-25: n  422 win  28.2% net -0.53R/trade (-223.74R)   2026: n  160 win  26.3% net -0.68R/trade (-108.70R)
-   E  limit entry at the zone             24-25: n 1294 win  22.7% net -0.89R/trade (-1148.28R)   2026: n  491 win  21.6% net -1.09R/trade (-537.12R)
-   F  limit entry, floor 1.0 ATR          24-25: n 1279 win  23.3% net -0.77R/trade (-988.23R)   2026: n  473 win  24.1% net -0.90R/trade (-423.82R)
-   G  + continuation                      24-25: n  892 win  24.2% net -0.71R/trade (-631.82R)   2026: n  300 win  23.7% net -0.77R/trade (-232.17R)
-   H  + continuation, floor 1.0 ATR       24-25: n  856 win  25.1% net -0.62R/trade (-534.54R)   2026: n  288 win  24.3% net -0.73R/trade (-209.28R)
-   I  + continuation, floor 1.5 ATR       24-25: n  682 win  29.3% net -0.47R/trade (-320.04R)   2026: n  230 win  27.0% net -0.62R/trade (-141.77R)
-   J  I, no TP1 minimum                   24-25: n 1806 win  37.5% net -0.41R/trade (-742.06R)   2026: n  619 win  35.2% net -0.58R/trade (-356.18R)
-   K  I, TP1 = first liquidity over 1.5R  24-25: n 1331 win  28.9% net -0.46R/trade (-610.45R)   2026: n  464 win  26.1% net -0.64R/trade (-296.81R)
-   chosen on 2024-25 alone: J  I, no TP1 minimum -- its 2026 row is the honest test
-   the desk runs: {"continuation":true,"minStopAtr":1.5,"minTp1R":0}
+   A  as built: zone stop, close entry    24-25: n  568 win  24.5% gross -0.12 net -0.74R/trade   2026: n  213 win  22.1% gross -0.14 net -0.77R/trade
+   B  stop beyond the sweep too           24-25: n  285 win  22.8% gross -0.17 net -0.64R/trade   2026: n  102 win  22.5% gross -0.26 net -0.71R/trade
+   C  zone stop, floor 1.0 ATR            24-25: n  553 win  25.1% gross -0.12 net -0.64R/trade   2026: n  203 win  24.1% gross -0.11 net -0.70R/trade
+   D  zone stop, floor 1.5 ATR            24-25: n  422 win  28.2% gross -0.11 net -0.53R/trade   2026: n  160 win  26.3% gross -0.22 net -0.68R/trade
+   E  limit entry at the zone             24-25: n 1294 win  22.7% gross -0.01 net -0.89R/trade   2026: n  491 win  21.6% gross -0.15 net -1.09R/trade
+   F  limit entry, floor 1.0 ATR          24-25: n 1279 win  23.3% gross -0.06 net -0.77R/trade   2026: n  473 win  24.1% gross -0.09 net -0.90R/trade
+   G  + continuation                      24-25: n  892 win  24.2% gross -0.10 net -0.71R/trade   2026: n  300 win  23.7% gross -0.13 net -0.77R/trade
+   H  + continuation, floor 1.0 ATR       24-25: n  856 win  25.1% gross -0.11 net -0.62R/trade   2026: n  288 win  24.3% gross -0.14 net -0.73R/trade
+   I  + continuation, floor 1.5 ATR       24-25: n  682 win  29.3% gross -0.05 net -0.47R/trade   2026: n  230 win  27.0% gross -0.17 net -0.62R/trade
+   J  I, no TP1 minimum                   24-25: n 1806 win  37.5% gross -0.03 net -0.41R/trade   2026: n  619 win  35.2% gross -0.15 net -0.58R/trade
+   K  I, TP1 = first liquidity over 1.5R  24-25: n 1331 win  28.9% gross -0.05 net -0.46R/trade   2026: n  464 win  26.1% gross -0.17 net -0.64R/trade
+   L  J, entered at the break (no retest) 24-25: n 3909 win  46.2% gross -0.01 net -0.31R/trade   2026: n 1336 win  44.2% gross -0.11 net -0.46R/trade
+   M  J, hybrid: retest, or break if strong+1H 24-25: n 2052 win  39.4% gross -0.04 net -0.40R/trade   2026: n  695 win  36.4% gross -0.14 net -0.54R/trade
+   N  L, TP exits at the maker fee        24-25: n 3909 win  46.2% gross -0.01 net -0.29R/trade   2026: n 1336 win  44.2% gross -0.11 net -0.43R/trade
+   O  L on 15m candles                    24-25: n 1225 win  46.3% gross -0.02 net -0.18R/trade   2026: n  401 win  45.6% gross -0.01 net -0.17R/trade
+   P  L on 1H candles                     24-25: n  310 win  47.7% gross -0.05 net -0.12R/trade   2026: n  113 win  54.0% gross +0.07 net -0.01R/trade
+   Q  L, London + New York only           24-25: n 2400 win  45.7% gross -0.03 net -0.31R/trade   2026: n  806 win  44.8% gross -0.11 net -0.46R/trade
+   R  O with maker TPs (15m)              24-25: n 1225 win  46.3% gross -0.02 net -0.16R/trade   2026: n  401 win  45.6% gross -0.01 net -0.16R/trade
+   chosen on 2024-25 alone: P  L on 1H candles -- its 2026 row is the honest test
+   the desk runs: {"continuation":true,"minStopAtr":1.5,"minTp1R":0,"entry":"break"}
 
-== Detail for the desk's options: {"continuation":true,"minStopAtr":1.5,"minTp1R":0}
-SMC engine replay · 275,548 5m candles · 2024-01-10 → 2026-08-31 · 3.7 s
+== Detail for the desk's options: {"continuation":true,"minStopAtr":1.5,"minTp1R":0,"entry":"break"}
+SMC engine replay · 275,548 5m candles · 2024-01-10 → 2026-08-31 · 3.4 s
 fees: 0.05% a side (taker), charged in R on the whole position
 
 == Funnel
-   setups started (a sweep): 32,724  ·  planned (READY): 6,383 (19.5%)  ·  filled: 2426 (38.0% of plans)  ·  finished: 2425
-   ≈ 2.52 trades a day, 6.62 plans a day
+   setups started (a sweep): 27,932  ·  planned (READY): 5,264 (18.8%)  ·  filled: 5245 (99.6% of plans)  ·  finished: 5245
+   ≈ 5.44 trades a day, 5.46 plans a day
    how setups ended without a trade:
-      11728   35.8%  invalidated: superseded by a newer sweep
-       9638   29.5%  invalidated: closed beyond the sweep
-       4340   13.3%  invalidated: BOS without displacement
-       2816    8.6%  expired: ran to TP# without a retest
-        840    2.6%  invalidated: closed through the stop before entry
-        452    1.4%  expired: no displaced structure shift
-        212    0.6%  expired: no retest
-        171    0.5%  invalidated: no liquidity to aim at
-         69    0.2%  invalidated: confirmed too far from the zone: TP# # at the close
-         20    0.1%  expired: retest never closed back out
+      10609   38.0%  invalidated: superseded by a newer sweep
+       8282   29.7%  invalidated: closed beyond the sweep
+       3213   11.5%  invalidated: BOS without displacement
+        398    1.4%  expired: no displaced structure shift
+        154    0.6%  invalidated: no liquidity to aim at
+         19    0.1%  invalidated: break entry: TP# # at the close
          11    0.0%  invalidated: stop wider than four ATR
           1    0.0%  invalidated: BOS left no OB or FVG to enter from
 
 == Trades (every year is out of sample: nothing was fitted)
-   2024       n  907  win  37.5%  TP1  46.9%  SL  50.4%  avg -0.05R  net -0.39R  fee 0.35R  total net -356.89R  MFE 1.63R
-   2025       n  899  win  37.6%  TP1  46.9%  SL  51.2%  avg -0.01R  net -0.43R  fee 0.42R  total net -385.17R  MFE 1.59R
-   2026       n  619  win  35.2%  TP1  44.4%  SL  53.3%  avg -0.15R  net -0.58R  fee 0.43R  total net -356.18R  MFE 1.49R
-   long       n 1205  win  36.8%  TP1  45.2%  SL  52.2%  avg -0.07R  net -0.46R  fee 0.39R  total net -552.70R  MFE 1.57R
-   short      n 1220  win  37.0%  TP1  47.3%  SL  50.7%  avg -0.05R  net -0.45R  fee 0.39R  total net -545.54R  MFE 1.59R
-   ALL        n 2425  win  36.9%  TP1  46.3%  SL  51.4%  avg -0.06R  net -0.45R  fee 0.39R  total net -1098.24R  MFE 1.58R
-   exits: STOPPED 1247 · PROTECTED 777 · TP3 144 · EXPIRED 257
+   2024       n 1895  win  46.5%  TP1  65.3%  SL  32.9%  avg -0.01R  net -0.27R  fee 0.26R  total net -512.16R  MFE 1.41R
+   2025       n 2014  win  45.9%  TP1  63.6%  SL  34.8%  avg -0.02R  net -0.34R  fee 0.33R  total net -691.28R  MFE 1.37R
+   2026       n 1336  win  44.2%  TP1  62.6%  SL  35.2%  avg -0.11R  net -0.46R  fee 0.34R  total net -608.70R  MFE 1.30R
+   long       n 2630  win  46.8%  TP1  63.8%  SL  34.3%  avg -0.03R  net -0.34R  fee 0.30R  total net -882.13R  MFE 1.33R
+   short      n 2615  win  44.5%  TP1  64.1%  SL  34.1%  avg -0.05R  net -0.36R  fee 0.31R  total net -930.02R  MFE 1.41R
+   ALL        n 5245  win  45.7%  TP1  64.0%  SL  34.2%  avg -0.04R  net -0.35R  fee 0.31R  total net -1812.14R  MFE 1.37R
+   exits: STOPPED 1794 · PROTECTED 2420 · EXPIRED 620 · TP3 411
 
 == Big moves: 2249 one-hour moves of 1% or more (≈ 2.33 a day)
-   caught (a trade in the move's direction entered during it): 184 of 2249 (8.2%), avg +1.51R
+   caught (a trade in the move's direction entered during it): 814 of 2249 (36.2%), avg +0.67R
    missed, by what stopped a trade:
-       519   23.1%  invalidated: BOS without displacement
-       505   22.5%  expired: ran to TP# without a retest
-       337   15.0%  invalidated: closed beyond the sweep
-       160    7.1%  no setup: no sweep of opposite liquidity before the move
-        97    4.3%  stopped: stop hit
-        75    3.3%  invalidated: superseded by a newer sweep
-        73    3.2%  expired: no displaced structure shift
-        56    2.5%  expired: no retest
-        55    2.4%  protected: stopped at the protected stop
-        54    2.4%  invalidated: no liquidity to aim at
+       368   16.4%  invalidated: BOS without displacement
+       309   13.7%  no setup: no sweep of opposite liquidity before the move
+       287   12.8%  invalidated: closed beyond the sweep
+        99    4.4%  protected: stopped at the protected stop
+        84    3.7%  expired: time exit
+        62    2.8%  expired: no displaced structure shift
+        58    2.6%  invalidated: superseded by a newer sweep
+        47    2.1%  invalidated: no liquidity to aim at
+        39    1.7%  stopped: stop hit
+        30    1.3%  tp3: Supply OB reached

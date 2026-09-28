@@ -185,10 +185,12 @@ export type SmcOptions = {
   minStopAtr?: number;
   /**
    * How a READY setup is entered: at the close that confirms the retest (the
-   * default), a resting limit at the zone edge, or at the close of the break
-   * itself, without waiting for a retest ('break').
+   * default), a resting limit at the zone edge, at the close of the break
+   * itself without waiting for a retest ('break'), or 'hybrid': the break when
+   * it came with a displacement candle and the higher timeframe agrees, the
+   * retest otherwise.
    */
-  entry?: 'close' | 'limit' | 'break';
+  entry?: 'close' | 'limit' | 'break' | 'hybrid';
   /** Also trade continuation: a with-trend BOS made with displacement, entered on its retrace, no sweep needed. Off by default. */
   continuation?: boolean;
   /**
@@ -199,6 +201,8 @@ export type SmcOptions = {
   tp1?: 'nearest' | 'first-over-min';
   /** The least TP1 may pay, in R. 1.5 by default. */
   minTp1R?: number;
+  /** Start setups only in these sessions (by the triggering candle's UTC hour). All sessions, and outside them, by default. */
+  sessions?: readonly Session[];
   /** Fractal size. Two bars each side is the usual intraday choice. */
   pivotLeft?: number;
   pivotRight?: number;

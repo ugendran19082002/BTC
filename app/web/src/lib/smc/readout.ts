@@ -69,10 +69,12 @@ export function readout(st: SmcState, bars: readonly Bar[], context: readonly Tf
   const tone = live.dir === 'bull' ? 'long' : 'short';
   const missingNames = live.confirmations.filter((c) => !c.ok).map((c) => c.name);
   const plan = live.entry !== null ? planOf(live) : null;
-  const headline = live.state === 'FORMING' ? `${side} FORMING`
-    : live.state === 'READY' ? `${side} READY — limit at the POI`
-      : live.state === 'ACTIVE' ? `${side} ACTIVE`
-        : `${side} ACTIVE — ${live.state} reached`;
+  const momentum = live.events.some((e) => e.state === 'ACTIVE' && e.note.includes('break'));
+  const entered = momentum ? 'MOMENTUM ENTRY' : 'ENTRY CONFIRMED';
+  const headline = live.state === 'FORMING' ? `${side} SETUP FORMING`
+    : live.state === 'READY' ? `${side} RETEST READY`
+      : live.state === 'ACTIVE' ? `${side} ${entered}`
+        : `${side} ${entered} — ${live.state} reached`;
   const poi = live.poi ? `${live.poi.dir === 'bull' ? 'Bull' : 'Bear'} ${live.poi.kind} ${fmt(live.poi.low)}–${fmt(live.poi.high)}` : null;
   const detail = live.state === 'FORMING'
     ? `Waiting for: ${missingNames.join(' → ')}.`

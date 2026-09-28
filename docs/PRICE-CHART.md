@@ -68,39 +68,67 @@ Each is one function in `engine.ts`, and deliberately plain.
 ## The setup and the trade
 
 ```
-sell-side liquidity swept          FORMING    (24 candles to shift, or expired)
-  → bullish CHoCH / BOS
-  → POI: the break's OB, else a bullish FVG since the sweep
-                                   READY      (plan fixed now; 30 candles to fill)
-  → retest fills at the POI's top  ACTIVE
-  → TP1 / TP2 / TP3, or the stop   (96 candles, then a time exit)
+liquidity swept (SSL for a long)              FORMING
+  → CHoCH / BOS in the new direction
+  → displacement: a displacement candle, or the FVG such a move leaves
+  → an OB (else an FVG) left by the move      READY: plan fixed
+  → entry                                     ACTIVE
+  → TP1 / TP2 / TP3, or the stop
 ```
 
-Short is the mirror. The plan, fixed at READY and never moved:
+Continuation setups start at a with-trend BOS made with displacement, no sweep
+needed. Short is the mirror.
 
-- **Entry** -- the POI's proximal edge, as a resting limit.
-- **Stop** -- beyond both the sweep's extreme and the POI, plus 0.1 ATR. A stop
-  wider than 4 ATR is not taken.
-- **Targets** -- liquidity and levels already on the chart beyond the entry,
-  nearest first, **each at least 1R**; R multiples fill in only where there is
-  no liquidity.
-- **Management** -- a third off at each target; the stop to break-even after
-  TP1 (recorded as an event). A stop before TP1 is -1R; TP1 then back to entry
-  banks a third of TP1's R.
+**The plan, fixed at READY and never moved:**
 
-Inside one candle the stop is checked before the targets, and on the fill
-candle no target is awarded and the favourable excursion is taken at the
-close: a candle does not say which of its extremes came first, and the record
-is not allowed to guess in its own favour.
+- **Stop** -- beyond the POI's distal edge plus max(1 point, 0.15 ATR), and at
+  least 1.5 ATR from the entry. Wider than 4 ATR is no trade.
+- **Targets** -- TP1 the nearest internal liquidity (swing, EQH / EQL, Asia /
+  London high or low), TP2 the next external level (PDH / PWH / PMH ...), TP3
+  the opposing OB or the next level; each carries its reason. R multiples only
+  where the chart has no level left.
+- **Entry** -- at the close of the break itself (the desk's option; see the
+  research below). The engine also supports entering at the close that
+  confirms a retest, a resting limit, and a hybrid of the two.
+
+**In the trade:** 30% off at TP1, 30% at TP2, 40% at TP3. The stop moves to
+break-even only after TP1 *and* a new confirmed swing in the trade's favour;
+after TP2 it trails behind each confirmed swing; it only ever tightens, and
+each move is recorded in `trail`. Inside one candle the stop is checked before
+the targets.
 
 **Context gate.** A setup against the 30M bias or the 15M structure is shown
-but called **NO TRADE**, faded, with what it runs against. The 1M and 4H do
-not gate.
+but called **NO TRADE**, faded, with what it runs against.
 
-**The record.** The HUD counts this chart's completed trades: TP1 rate, stop
-rate, average R, MFE and MAE. Each setup was decided without seeing its
-future, so this is walk-forward -- but it is one chart's worth of candles, and
-the count is printed beside it for that reason.
+**Refused plans are marked** on the candle they ended -- "No long: ran, no
+retest", "No short: stop too wide" -- so the chart says why a visible move
+had no trade.
+
+---
+
+## What the research says (research/SMC-STUDY.txt)
+
+`app/web/scripts/smc-study.ts` replays the engine over every cached 5m candle
+(Jan 2024 - Aug 2026, 275,548 candles) with fees of 0.05% a side. Eighteen
+variants were declared in three rounds, each round chosen on 2024-25 and
+judged once on 2026. The findings:
+
+1. **Before fees every variant is near zero** (-0.17R to +0.07R a trade).
+   The rules describe the chart; they do not predict its direction on BTC.
+2. **Fees decide the result.** On 5m a round trip costs about 0.3R. The same
+   rules on 15m lose -0.17R a trade in 2026 and on 1H -0.01R (113 trades) --
+   bigger moves make the same fee a smaller share of R. Neither is an edge.
+3. **Retest vs momentum.** Waiting for the retest (J) caught 8% of 1-hour
+   moves of 1%+ and lost -0.58R a trade in 2026; entering at the break (L)
+   caught 36% and lost -0.46R. The hybrid (retest, or the break with a
+   displacement candle and the 1H agreeing) landed between them.
+4. A TP1 minimum of 1.5R removed more good trades than bad; the London / New
+   York filter changed nothing; maker-fee take-profits help by about 0.03R.
+
+The desk runs L on the 5m chart (`DESK_SMC_OPTIONS`), and the HUD prints its
+measured record -- 5,245 trades, 46% winners, -0.35R a trade after fees, 2026
+-0.46R -- beside every setup: information, not a signal. The search stopped at
+eighteen variants: more on the same data would find luck, not an edge.
 
 ---
 
@@ -127,4 +155,6 @@ toolbar is not drawn.
   record is recomputed from the candles on screen, which is deterministic.
 - BPR, liquidity voids, RSI divergence, internal vs external structure.
 - Live-only confirmations (the early warning's OI / CVD / book reads, the
-  options flow) as setup confirmations: see TODO.md.
+  options flow): recorded only since Sep 2026, so there is no history to test
+  them on yet. See TODO.md.
+- Same-candle stop and target resolved from 1m candles (today: stop first).

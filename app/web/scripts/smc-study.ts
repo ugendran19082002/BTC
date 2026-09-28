@@ -12,7 +12,8 @@
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DESK_SMC_OPTIONS, SmcEngine } from '../src/lib/smc/engine';
+import { DESK_SMC_OPTIONS, runSmc, SCALE_OUT, SmcEngine } from '../src/lib/smc/engine';
+import { aggregate, trendTimeline } from '../src/lib/smc/context';
 import type { Bar, Setup, SmcOptions } from '../src/lib/smc/types';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -21,6 +22,8 @@ const OUT = join(HERE, '../../../research/SMC-STUDY.txt');
 const DATA = join(HERE, '../src/lib/smc/measured.data.ts');
 /** Taker fee a side on Delta's BTC perpetual; a round trip is twice this. */
 const FEE = 0.0005;
+/** Maker fee a side: a resting take-profit limit order. Stops, time exits and market entries pay the taker fee. */
+const MAKER = 0.0002;
 /** A big move: at least this far, close to close, inside an hour. */
 const BIG_PCT = 1.0;
 const HOUR_BARS = 12;
@@ -37,7 +40,7 @@ const pct = (a: number, b: number) => (b ? `${((a / b) * 100).toFixed(1)}%` : '�
 const f2 = (x: number) => (x >= 0 ? '+' : '') + x.toFixed(2);
 
 // ── variants: declared before any was run, chosen on 2024-25, judged once on 2026 ──
-type Variant = { name: string; opts: Omit<SmcOptions, 'tfSec'> };
+type Variant = { name: string; opts: Omit<SmcOptions, 'tfSec'>; tfSec?: 300 | 900 | 3600; fees?: FeeModel };
 const VARIANTS: Variant[] = [
   { name: 'A  as built: zone stop, close entry', opts: {} },
   { name: 'B  stop beyond the sweep too', opts: { stopAt: 'sweep' } },
@@ -53,18 +56,42 @@ const VARIANTS: Variant[] = [
   { name: 'K  I, TP1 = first liquidity over 1.5R', opts: { continuation: true, minStopAtr: 1.5, tp1: 'first-over-min' } },
   // Added after the same trace: the rally never came back to its zone. Enter on the break instead.
   { name: 'L  J, entered at the break (no retest)', opts: { continuation: true, minStopAtr: 1.5, minTp1R: 0, entry: 'break' } },
+  // Added on the owner's reference: retest by default, the break only with a displacement candle and the 1H agreeing.
+  { name: 'M  J, hybrid: retest, or break if strong+1H', opts: { continuation: true, minStopAtr: 1.5, minTp1R: 0, entry: 'hybrid' } },
+  // Round three, declared together before running: fees as they are charged, a higher timeframe, the sessions.
+  { name: 'N  L, TP exits at the maker fee', opts: { continuation: true, minStopAtr: 1.5, minTp1R: 0, entry: 'break' }, fees: 'maker-tp' },
+  { name: 'O  L on 15m candles', opts: { continuation: true, minStopAtr: 1.5, minTp1R: 0, entry: 'break' }, tfSec: 900 },
+  { name: 'P  L on 1H candles', opts: { continuation: true, minStopAtr: 1.5, minTp1R: 0, entry: 'break' }, tfSec: 3600 },
+  { name: 'Q  L, London + New York only', opts: { continuation: true, minStopAtr: 1.5, minTp1R: 0, entry: 'break', sessions: ['London', 'New York'] } },
+  { name: 'R  O with maker TPs (15m)', opts: { continuation: true, minStopAtr: 1.5, minTp1R: 0, entry: 'break' }, tfSec: 900, fees: 'maker-tp' },
 ];
-const netOf = (xs: Setup[]) => xs.reduce((a, s) => a + s.resultR! - (2 * FEE * s.fill!.price) / s.fill!.risk, 0);
+// The 1H trend as it was known at each moment, from closed 1H candles only -- for the hybrid entry.
+const hours = aggregate(bars, 300, 3600);
+const htfTrendAt = trendTimeline(runSmc(hours, { tfSec: 3600 }), hours, 3600);
+type FeeModel = 'taker' | 'maker-tp';
+/** Fees in R: taker both ways, or ('maker-tp') a taker entry, maker on the thirds taken at the targets and taker on the rest. */
+const feeRof = (s: Setup, model: FeeModel) => {
+  if (model === 'taker') return (2 * FEE * s.fill!.price) / s.fill!.risk;
+  const hits = s.events.filter((e) => e.state === 'TP1' || e.state === 'TP2' || e.state === 'TP3').length;
+  const atTargets = SCALE_OUT.slice(0, hits).reduce((a, b) => a + b, 0);
+  return ((FEE + atTargets * MAKER + (1 - atTargets) * FEE) * s.fill!.price) / s.fill!.risk;
+};
+const netOf = (xs: Setup[], model: FeeModel = 'taker') => xs.reduce((a, s) => a + s.resultR! - feeRof(s, model), 0);
 say('== Variants (net of fees; per trade and total; 2024-25 chooses, 2026 judges)');
+const byTf = new Map<number, Bar[]>([[300, bars], [900, aggregate(bars, 300, 900)], [3600, hours]]);
 const runs = VARIANTS.map((v) => {
-  const e = new SmcEngine({ tfSec: 300, ...v.opts });
-  for (const b of bars) e.push(b);
+  const tf = v.tfSec ?? 300;
+  const src = byTf.get(tf)!;
+  const e = new SmcEngine({ tfSec: tf, htfTrendAt: tf < 3600 ? htfTrendAt : undefined, ...v.opts });
+  for (const b of src) e.push(b);
+  const yr = (i: number) => new Date(src[i]!.time * 1000).getUTCFullYear();
   const done = e.state().setups.filter((x) => x.fill && x.resultR !== null);
-  const ins = done.filter((x) => year(x.fill!.at) < 2026);
-  const oos = done.filter((x) => year(x.fill!.at) >= 2026);
-  const per = (xs: Setup[]) => (xs.length ? netOf(xs) / xs.length : 0);
+  const ins = done.filter((x) => yr(x.fill!.at) < 2026);
+  const oos = done.filter((x) => yr(x.fill!.at) >= 2026);
+  const per = (xs: Setup[]) => (xs.length ? netOf(xs, v.fees) / xs.length : 0);
   const win = (xs: Setup[]) => pct(xs.filter((x) => x.resultR! > 0).length, xs.length);
-  say(`   ${v.name.padEnd(38)} 24-25: n ${String(ins.length).padStart(4)} win ${win(ins).padStart(6)} net ${f2(per(ins))}R/trade (${f2(netOf(ins))}R)   2026: n ${String(oos.length).padStart(4)} win ${win(oos).padStart(6)} net ${f2(per(oos))}R/trade (${f2(netOf(oos))}R)`);
+  const gross = (xs: Setup[]) => (xs.length ? xs.reduce((a, x) => a + x.resultR!, 0) / xs.length : 0);
+  say(`   ${v.name.padEnd(38)} 24-25: n ${String(ins.length).padStart(4)} win ${win(ins).padStart(6)} gross ${f2(gross(ins))} net ${f2(per(ins))}R/trade   2026: n ${String(oos.length).padStart(4)} win ${win(oos).padStart(6)} gross ${f2(gross(oos))} net ${f2(per(oos))}R/trade`);
   return { v, ins: per(ins), n: ins.length };
 });
 const best = runs.filter((r) => r.n >= 100).sort((a, b) => b.ins - a.ins)[0]!;
@@ -73,7 +100,7 @@ say(`   the desk runs: ${JSON.stringify(DESK_SMC_OPTIONS)}`);
 say();
 
 const t0 = Date.now();
-const engine = new SmcEngine({ tfSec: 300, ...DESK_SMC_OPTIONS });
+const engine = new SmcEngine({ tfSec: 300, htfTrendAt, ...DESK_SMC_OPTIONS });
 for (const b of bars) engine.push(b);
 const st = engine.state();
 say(`== Detail for the desk's options: ${JSON.stringify(DESK_SMC_OPTIONS)}`);

@@ -5,6 +5,42 @@ Updated 28 Sep 2026
 
 ---
 
+## 28-29 Sep 2026 (night) — the price chart rebuilt, and what the research says
+
+The 5m chart is now the desk's one chart: every SMC / price-action concept
+drawn on the candles by a no-lookahead engine (`app/web/src/lib/smc`), a HUD in
+its corner, and the context (1H regime, 30M bias, 15M structure, 5M setup, 1M
+trigger) behind it. See docs/PRICE-CHART.md. Removed the same night at the
+owner's request: the Big Momentum Signal card and the stats strip (and with
+them `/api/live`, `/api/market-state` and six server modules), the header's
+spot and timeframe buttons, the timeframe selector, the 4H chip.
+
+**The research, in one line:** over 32 months of real 5m BTC, eighteen rule
+variants are all near zero before fees and negative after them; the desk runs
+the break-entry variant (36% of big moves caught, -0.35R a trade after fees)
+and the HUD says so. research/SMC-STUDY.txt.
+
+### Open -- needs the owner
+- [ ] The retired journals still to drop (`market_states`, `market_state_checks`,
+  `shock_snapshots`) -- see 28 Sep above.
+- [ ] Auto-trade / best-trade settings still have no screen -- see 28 Sep above.
+- [ ] Setup history in the database (the spec's "save every completed setup"):
+  a table whose schema waits for a go-ahead. The record is recomputed from the
+  candles until then.
+- [ ] If direction is to be traded at all, the research points at 15m / 1H
+  (cost drag), not 5m. Decide before building more on the 5m setup.
+
+### Open -- engineering
+- [ ] Resolve a candle that touches both stop and target from 1m candles
+  (today: the stop, the assumption that cannot flatter the record).
+- [ ] Data-failure states on the chart (gap, duplicate, stale feed) as
+  "DATA UNAVAILABLE" rather than drawing on bad candles.
+- [ ] Zone freshness by retest count (today: fresh / tested).
+- [ ] Early-warning and options-flow readings as setup confirmations, once a
+  few months of their recordings exist to test them on.
+
+---
+
 ## 28 Sep 2026 — dead code out, and the Live screen trimmed to what is used
 
 Two passes on one branch. First an audit for dead code (knip, `tsc
@@ -62,10 +98,8 @@ Web 841 tests, server 1,213, both typechecks and the production build pass.
   `AutoTradeSettings.tsx` and `BestTradeSettings.tsx` were already unmounted
   before today; the server still runs both from their saved settings. Mount
   them (Settings tab) or retire them -- kept until decided.
-- [ ] **Invented numbers on the dashboard.** `DeskDashboard` and
-  `DeskMomentumSignal` fall back to made-up figures when data is missing (spot
-  84,595, ATM IV 25.3, PCR 1.88 / 1.36, 24h +0.32%, resistance spot+536, ATR
-  160, volume 1.2x, candle 0.6). A missing number should read "—".
+- [x] **Invented numbers on the dashboard** -- gone with the stats strip and
+  the momentum card (28 Sep, night).
 
 ### Open -- hygiene
 
@@ -81,10 +115,8 @@ Web 841 tests, server 1,213, both typechecks and the production build pass.
 
 ### Next
 
-- [ ] **Price chart upgrade** -- every SMC / price-action concept drawn on the
-  candles (structure, liquidity, OB/FVG, premium/discount, sessions, levels,
-  entry/SL/TP), from a strict no-lookahead engine with a setup state machine
-  and saved setup history. Spec from the owner, 28 Sep 2026.
+- [x] **Price chart upgrade** -- done the same night; see the entry above and
+  docs/PRICE-CHART.md. Saved setup history is still open.
 
 ---
 

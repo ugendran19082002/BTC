@@ -53,7 +53,7 @@ const stopBuffer = (atr: number) => Math.max(1, 0.15 * atr);
 type Extreme = { high: number; low: number; highAt: number; lowAt: number };
 
 export class SmcEngine {
-  private readonly o: Required<Omit<SmcOptions, 'htfTrendAt'>> & Pick<SmcOptions, 'htfTrendAt'>;
+  private readonly o: Required<Omit<SmcOptions, 'htfTrendAt' | 'sessions'>> & Pick<SmcOptions, 'htfTrendAt' | 'sessions'>;
   private readonly b: Bar[] = [];
   private readonly atrs: number[] = [];
   private atr = 0;
@@ -463,7 +463,16 @@ export class SmcEngine {
    * after TP2 it trails under each confirmed swing. It only ever tightens,
    * and every move is recorded in `trail`.
    */
+  /** Whether a setup may start on this candle: always, unless the options name the sessions. */
+  private inSession(i: number) {
+    const allowed = this.o.sessions;
+    if (!allowed) return true;
+    const s = sessionOf(this.b[i]!.time);
+    return s !== null && allowed.includes(s);
+  }
+
   private onSweep(pool: Pool, i: number) {
+    if (!this.inSession(i)) return;
     const dir: Dir = pool.side === 'sell' ? 'bull' : 'bear';
     const slot = dir === 'bull' ? this.long : this.short;
     if (slot && slot.state !== 'FORMING') return; // a plan already made is not replaced by a newer sweep
@@ -504,6 +513,7 @@ export class SmcEngine {
    * never replaces a setup already running on that side.
    */
   private onContinuation(brk: StructureBreak, ob: Zone | null, swing: Swing, i: number) {
+    if (!this.inSession(i)) return;
     const bull = brk.dir === 'bull';
     if (bull ? this.long : this.short) return;
     const s: Setup = {
@@ -571,7 +581,12 @@ export class SmcEngine {
     s.state = 'READY';
     s.events.push({ state: 'READY', at: i, known: i, price: entry, note: `${brk.mss ? 'MSS' : brk.kind} ${Math.round(brk.level)}; POI ${poi.kind} ${Math.round(poi.low)}–${Math.round(poi.high)}` });
 
-    if (this.o.entry === 'break') {
+    // The momentum entry, for 'hybrid': only when the move was a displacement candle
+    // (not merely a gap) and the higher timeframe's trend, as known now, agrees.
+    const momentum = this.o.entry === 'break' || (this.o.entry === 'hybrid'
+      && someSince(this.tags, since, (t) => t.name === 'Displacement' && t.dir === brk.dir)
+      && (this.o.htfTrendAt?.(this.b[i]!.time + this.o.tfSec) ?? null) === brk.dir);
+    if (momentum) {
       // Momentum entry: at the close of the break itself, no retest. Same stop and targets.
       const close = this.b[i]!.close;
       const fillRisk = bull ? close - stop : stop - close;
@@ -798,12 +813,13 @@ function grow(e: Extreme, bar: Bar, i: number) {
 
 /**
  * The options the desk's chart runs with: continuation setups on, a stop at
- * least 1.5 ATR from the entry, and no minimum on TP1 (the nearest liquidity
- * is TP1 whatever it pays). Chosen on 2024-25 out of eleven variants, then
- * judged once on 2026 -- see research/SMC-STUDY.txt, which also shows that no
- * variant clears fees. The HUD prints that record beside every setup.
+ * least 1.5 ATR from the entry, no minimum on TP1 (the nearest liquidity is
+ * TP1 whatever it pays), and the entry at the close of the break -- momentum
+ * rarely comes back to its zone. Chosen on 2024-25 out of twelve variants,
+ * then judged once on 2026 -- see research/SMC-STUDY.txt, which also shows
+ * that no variant clears fees. The HUD prints that record beside every setup.
  */
-export const DESK_SMC_OPTIONS = { continuation: true, minStopAtr: 1.5, minTp1R: 0 } as const;
+export const DESK_SMC_OPTIONS = { continuation: true, minStopAtr: 1.5, minTp1R: 0, entry: 'break' } as const;
 
 /** Run the engine over closed candles. The forming candle, if any, must be left out by the caller. */
 export function runSmc(bars: readonly Bar[], opts: SmcOptions): SmcState {
