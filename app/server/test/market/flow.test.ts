@@ -2,7 +2,7 @@ import { after, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { FlowSocket, printOf, perpTickerOf, type Print } from '../../src/market/flow-socket.js';
 import {
-  bookOf, capturePerpSnapshot, flowSchema, flowSummary, flowBarsOf, flushTradeFlow, formingBar, largeOrdersOf, largePrints, liveLtp, minuteOf, minutesOf,
+  bookOf, capturePerpSnapshot, flowSchema, flowSummary, autoLargeMin, flowBarsOf, flushTradeFlow, formingBar, largeOrdersOf, largePrints, liveLtp, minuteOf, minutesOf,
   useFlowSocket, FLOW_BUCKET_MS, LARGE_PRINT_CONTRACTS,
 } from '../../src/market/flow.js';
 import { closePool, one, query } from '../../src/db/pool.js';
@@ -188,6 +188,21 @@ test('[critical] the current minute\'s flow is the perpetual\'s alone: an option
   useFlowSocket(s);
   const sum = await flowSummary(5, minute(30) + 5_000);
   assert.equal(sum.buyVolume, 4);
+});
+
+test('[critical] the big-trade threshold is the market\'s own: the top tenth of the recorded large orders, never under 0.2 BTC', async () => {
+  const L = LARGE_PRINT_CONTRACTS;
+  assert.deepEqual((await autoLargeMin(minute(0), minute(1))).min, L, 'nothing recorded: every large order');
+  // 100 recorded orders, 200 to 1,190 contracts: the 90th percentile is 1,100.
+  const sizes = Array.from({ length: 100 }, (_, k) => L + k * 10);
+  await query(
+    `INSERT INTO large_prints (at, side, price, size) SELECT * FROM unnest($1::bigint[], $2::text[], $3::float8[], $4::float8[])`,
+    [sizes.map((_, k) => minute(40) + k), sizes.map(() => 'buy'), sizes.map(() => 81_000), sizes] as never,
+  );
+  const auto = await autoLargeMin(minute(0), minute(50));
+  assert.equal(auto.min, L + 90 * 10);
+  assert.match(auto.basis, /top 10% of the 100 orders/);
+  assert.deepEqual((await autoLargeMin(minute(45), minute(50))).min, L, 'outside the window: too few to judge');
 });
 
 test('an empty window says so rather than showing zeros as flow', async () => {

@@ -1,0 +1,31 @@
+CRT family on BTCUSD 5m, 2024-01-10 to 2026-08-31, fees 0.05% a side
+Declared before running: see the header of app/web/scripts/crt-study.ts.
+
+== CRT-1H  (22949 windows)
+   2024-25    n 10251  win  24.0%  gross +0.087R  net -1.382R a trade (t -33.16)  total -14163.3R
+   2026       n  3425  win  21.5%  gross +0.051R  net -1.421R a trade (t -25.86)  total -4866.0R
+== CRT-1H +floor  (22949 windows)
+   2024-25    n   440  win  43.0%  gross -0.016R  net -0.165R a trade (t  -4.12)  total -72.8R
+   2026       n   112  win  42.0%  gross +0.119R  net -0.034R a trade (t  -0.45)  total -3.8R
+== CRT-4H  (5726 windows)
+   2024-25    n  2860  win  25.6%  gross +0.142R  net -0.926R a trade (t -13.01)  total -2649.3R
+   2026       n   953  win  23.4%  gross +0.071R  net -0.974R a trade (t  -9.61)  total -928.1R
+== CRT-4H +floor  (5726 windows)
+   2024-25    n   379  win  43.3%  gross +0.126R  net -0.015R a trade (t  -0.26)  total -5.7R
+   2026       n    88  win  42.0%  gross +0.071R  net -0.077R a trade (t  -0.64)  total -6.8R
+== CRT-1D  (941 windows)
+   2024-25    n   494  win  23.5%  gross +0.263R  net -0.237R a trade (t  -1.71)  total -117.1R
+   2026       n   174  win  23.6%  gross -0.052R  net -0.530R a trade (t  -2.96)  total -92.1R
+== CRT-1D +floor  (941 windows)
+   2024-25    n   172  win  32.6%  gross +0.113R  net -0.011R a trade (t  -0.08)  total -1.9R
+   2026       n    54  win  40.7%  gross +0.226R  net +0.106R a trade (t   0.46)  total 5.7R
+== ASIA  (949 windows)
+   2024-25    n   591  win  17.6%  gross +0.134R  net -0.868R a trade (t  -3.87)  total -513.0R
+   2026       n   204  win  18.6%  gross +0.047R  net -0.732R a trade (t  -3.37)  total -149.3R
+== ASIA +floor  (949 windows)
+   2024-25    n    94  win  29.8%  gross -0.065R  net -0.207R a trade (t  -1.38)  total -19.5R
+   2026       n    26  win  46.2%  gross +0.347R  net +0.208R a trade (t   0.75)  total 5.4R
+
+Chosen on 2024-25: CRT-1D +floor, net -0.011R a trade over 172 trades.
+Judged once on 2026: net +0.106R a trade over 54 trades (t 0.46).
+Not an edge by the declared rule: it needed to be positive on 2024-25 and again on 2026 with t >= 2.

@@ -82,8 +82,20 @@
 .pc-hud-head:focus-visible { outline: 2px solid #38bdf8; outline-offset: 1px; }
 
 .pc-layers { display: grid; gap: 2px; min-width: 170px; padding: 8px; background: #0f1623; }
-.pc-layer-sub { justify-content: space-between; padding-left: 24px; color: #94a3b8; }
-.pc-layer-sub select { background: #0a0e17; color: #e5e7eb; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 4px; padding: 2px 4px; font: inherit; }
+.pc-tip {
+  position: absolute;
+  z-index: 6;
+  pointer-events: none;
+  max-width: 260px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(10, 14, 23, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  font: 500 11px/1.45 ui-sans-serif, system-ui, sans-serif;
+  color: #cbd5e1;
+  font-variant-numeric: tabular-nums;
+}
+.pc-tip-head { font-weight: 700; color: #e5e7eb; }
 .pc-layer {
   display: flex;
   align-items: center;
@@ -184,6 +196,8 @@
 .pc-hud-ohlc .up { color: #4ade80; }
 .pc-hud-ohlc .down { color: #f87171; }
 .pc-hud-ohlc .hot { color: #fbbf24; font-weight: 700; }
+.pc-hud-ohlc .bbuy { color: #60a5fa; }
+.pc-hud-ohlc .bsell { color: #e879f9; }
 
 /* ── phones: the toolbar drops under the HUD's line, the HUD narrows ── */
 @media (max-width: 640px) {

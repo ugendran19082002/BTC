@@ -145,32 +145,75 @@ const btc = (contracts: number) => {
   return `${b >= 10 ? b.toFixed(0) : b.toFixed(1)} BTC`;
 };
 
+const usd = (v: number) => (v >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : `$${Math.round(v / 1e3)}k`);
+const IST_TIME = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+/** Bubbles on candles older than this are drawn faded: history behind the latest activity. */
+const RECENT_BARS = 48;
+
 /**
- * Large taker orders as bubbles centred on the candles they printed in, at
- * their price. `min` is the smallest drawn (contracts). Each carries its size
- * against the biggest shown -- the 98th percentile, so one outlier does not
- * shrink the rest to dots -- and the few biggest are labelled with it.
+ * Large taker orders as bubbles centred on the candles they printed in. All
+ * of one candle's big buys are one bubble, and all its big sells another, at
+ * their volume-weighted price -- so a candle carries at most two, never a
+ * stack of circles inside each other; the hover gives the count and the price
+ * range. `min` is the smallest order counted (contracts). Each bubble carries
+ * its size against the biggest shown -- the 98th percentile, so one outlier
+ * does not shrink the rest to dots. Largest first, so a smaller bubble on the
+ * same candle is drawn over it and stays visible. The five biggest are
+ * labelled with BTC and dollars; older than 48 candles, faded.
  */
 export function bigTradeScene(trades: readonly BigTrade[], bars: readonly Bar[], tfSec: number, min: number): SceneItem[] {
   if (!bars.length || !trades.length) return [];
   const first = bars[0]!.time;
   const end = bars[bars.length - 1]!.time + tfSec;
-  const shown = trades.filter((t) => t.size >= min && t.at / 1000 >= first && t.at / 1000 < end);
-  const bySize = shown.map((t) => t.size).sort((a, b) => a - b);
+  type Cluster = { x: number; side: 'buy' | 'sell'; size: number; notional: number; count: number; from: number; to: number; lo: number; hi: number };
+  const clusters = new Map<string, Cluster>();
+  let i = 0;
+  for (const t of trades) {
+    const sec = t.at / 1000;
+    if (t.size < min || sec < first || sec >= end) continue;
+    while (i < bars.length - 1 && bars[i + 1]!.time <= sec) i++;
+    const key = `${i}:${t.side}`;
+    const c = clusters.get(key) ?? clusters.set(key, { x: i, side: t.side, size: 0, notional: 0, count: 0, from: t.at, to: t.at, lo: t.price, hi: t.price }).get(key)!;
+    c.lo = Math.min(c.lo, t.price);
+    c.hi = Math.max(c.hi, t.price);
+    c.size += t.size;
+    c.notional += t.size * t.price;
+    c.count += 1;
+    c.from = Math.min(c.from, t.at);
+    c.to = Math.max(c.to, t.at);
+  }
+  const shown = [...clusters.values()].sort((a, b) => b.size - a.size);
+  const bySize = shown.map((c) => c.size).sort((a, b) => a - b);
   const top = bySize[Math.min(bySize.length - 1, Math.floor(bySize.length * 0.98))] ?? min;
   const labelFrom = bySize[Math.max(0, bySize.length - 5)] ?? Infinity;
-  const out: SceneItem[] = [];
-  let i = 0;
-  for (const t of shown) {
-    const sec = t.at / 1000;
-    while (i < bars.length - 1 && bars[i + 1]!.time <= sec) i++;
-    out.push({
-      t: 'bubble', layer: 'bigtrades', x: i, y: t.price,
-      rel: Math.sqrt(Math.min(1, t.size / top)),
-      side: t.side,
-      label: t.size >= labelFrom && t.size >= 2 * min ? `${t.side === 'buy' ? 'Buy' : 'Sell'} ${btc(t.size)}` : undefined,
+  return shown.map((c) => {
+    const price = c.notional / c.size;
+    const dollars = (c.size / CONTRACTS_PER_BTC) * price;
+    const who = c.side === 'buy' ? 'Buy' : 'Sell';
+    const times = c.from === c.to ? IST_TIME.format(c.from) : `${IST_TIME.format(c.from)}–${IST_TIME.format(c.to)}`;
+    return {
+      t: 'bubble' as const, layer: 'bigtrades' as const, x: c.x, y: price,
+      rel: Math.sqrt(Math.min(1, c.size / top)),
+      side: c.side,
+      label: c.size >= labelFrom && c.size >= 2 * min ? `${who} ${btc(c.size)} · ${usd(dollars)}${c.count > 1 ? ` ×${c.count}` : ''}` : undefined,
+      tip: `${who} ${btc(c.size)} · ${usd(dollars)}${c.count > 1 ? ` · ${c.count} orders` : ''}\n@ ${fmt(price)}${c.hi - c.lo >= 1 ? ` (${fmt(c.lo)}–${fmt(c.hi)})` : ''} · ${times} IST\n${c.side === 'buy' ? 'Taker bought: lifted the offer' : 'Taker sold: hit the bid'}`,
+      faint: c.x < bars.length - RECENT_BARS,
       priority: 34,
-    });
+    };
+  });
+}
+
+export type BigTradeSummary = { buys: number; sells: number; buyBtc: number; sellBtc: number };
+
+/** Big trades on bars `from`..`to` (inclusive): how many each side, and how much, in BTC. */
+export function bigTradeSummary(trades: readonly BigTrade[], bars: readonly Bar[], tfSec: number, min: number, from: number, to: number): BigTradeSummary {
+  const lo = bars[Math.max(0, Math.floor(from))]?.time ?? Infinity;
+  const hi = (bars[Math.min(bars.length - 1, Math.ceil(to))]?.time ?? -Infinity) + tfSec;
+  const out: BigTradeSummary = { buys: 0, sells: 0, buyBtc: 0, sellBtc: 0 };
+  for (const t of trades) {
+    const sec = t.at / 1000;
+    if (t.size < min || sec < lo || sec >= hi) continue;
+    if (t.side === 'buy') { out.buys++; out.buyBtc += t.size / CONTRACTS_PER_BTC; } else { out.sells++; out.sellBtc += t.size / CONTRACTS_PER_BTC; }
   }
   return out;
 }

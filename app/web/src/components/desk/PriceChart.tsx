@@ -15,7 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { SmcPrimitive } from './chart/smc-primitive';
 import { buildScene, C, DEFAULT_LAYERS, htfScene, LAYERS, type Layer, type SceneItem } from './chart/scene';
 import { ChartHud } from './chart/ChartHud';
-import { bigTradeScene, deltaSeries, flowRead, profileScene, volumeProfile, type BigTrade } from './chart/flow-layers';
+import { bigTradeScene, bigTradeSummary, deltaSeries, flowRead, profileScene, volumeProfile, type BigTrade } from './chart/flow-layers';
 import type { FlowBar } from '@/api/desk';
 import { LtpChip } from './chart/LtpChip';
 import './chart/price-chart.css';
@@ -25,8 +25,6 @@ export type ChartTf = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d';
 /** Bars shown when a timeframe opens -- about nine pixels each, at least thirty -- and the space kept right of the last one for levels and labels. */
 const openingBars = (width: number) => Math.max(30, Math.min(90, Math.floor(width / 9)));
 const RIGHT_BARS = 24;
-/** The big-trade filter's choices, in contracts (1,000 to a BTC). */
-const BIG_TRADE_MINS = [200, 500, 1_000, 2_000] as const;
 
 const IST_TICK = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
 const IST_FULL = new Intl.DateTimeFormat('en-IN', {
@@ -60,8 +58,8 @@ export function PriceChart({
   regime?: { bars: readonly Candle[]; tfSec: number } | null;
   /** Higher timeframes drawn on this chart: 1H order blocks, 15m structure. Ignored when not higher than this chart. */
   higher?: readonly { tf: string; tfSec: number; bars: readonly Candle[]; show: 'zones' | 'structure' }[];
-  /** Large taker orders for the bubbles, the smallest drawn (contracts), and how to change it. */
-  bigTrades?: { prints: readonly BigTrade[]; min: number; onMin?: (min: number) => void };
+  /** Large taker orders for the bubbles, the smallest drawn (contracts, set from the market), and how that was set. */
+  bigTrades?: { prints: readonly BigTrade[]; min: number; basis?: string };
   /** Aggressive flow per candle, for the delta / CVD pane and the readout. */
   flowBars?: readonly FlowBar[];
   /** The perp's last trade, from the stream, for the LTP chip. */
@@ -87,6 +85,8 @@ export function PriceChart({
   const [saved, setSaved] = useState<Annotation[]>([]);
   /** The bars in view, whole indices: what the volume profile is taken over. */
   const [inView, setInView] = useState<{ from: number; to: number } | null>(null);
+  /** The big-trade bubble under the pointer, and where. */
+  const [tip, setTip] = useState<{ x: number; y: number; text: string } | null>(null);
   const layers = useMemo(() => new Set(layerList), [layerList]);
   const tfSec = TF_SECONDS[tf] ?? 300;
 
@@ -187,6 +187,8 @@ export function PriceChart({
     chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
 
     chart.subscribeCrosshairMove((param) => {
+      const text = param.point ? primitive.bubbleAt(param.point.x, param.point.y) : null;
+      setTip((cur) => (text && param.point ? { x: param.point.x, y: param.point.y, text } : cur ? null : cur));
       const at = param.time === undefined ? null : param.seriesData.get(candles);
       setHover(at ? ({ ...(at as unknown as Candle), time: Number(param.time) }) : null);
     });
@@ -331,14 +333,6 @@ export function PriceChart({
                     <span>{label}</span>
                   </label>
                 ))}
-                {bigTrades?.onMin && layers.has('bigtrades') && (
-                  <label className="pc-layer pc-layer-sub">
-                    <span>Big trades from</span>
-                    <select value={bigTrades.min} onChange={(e) => bigTrades.onMin!(Number(e.target.value))} aria-label="Smallest big trade drawn">
-                      {BIG_TRADE_MINS.map((m) => <option key={m} value={m}>{m / 1_000} BTC</option>)}
-                    </select>
-                  </label>
-                )}
                 {saved.length > 0 && (
                   <button type="button" className="pc-clear" onClick={() => void clearSaved()}>Clear {saved.length} saved level{saved.length === 1 ? '' : 's'}</button>
                 )}
@@ -353,6 +347,12 @@ export function PriceChart({
             </button>
           </div>
 
+          {tip && (
+            <div className="pc-tip" role="tooltip" style={{ left: tip.x + 14, top: tip.y + 14 }}>
+              {tip.text.split('\n').map((l, i) => <div key={i} className={i === 0 ? 'pc-tip-head' : ''}>{l}</div>)}
+            </div>
+          )}
+
           <ChartHud
             ref={hudRef}
             open={hudOpen}
@@ -360,6 +360,10 @@ export function PriceChart({
             tf={tf}
             read={read}
             context={context}
+            big={layers.has('bigtrades') && bigTrades && bars.length ? {
+              ...bigTradeSummary(bigTrades.prints, bars, tfSec, bigTrades.min, inView?.from ?? bars.length - 90, inView?.to ?? bars.length - 1),
+              min: bigTrades.min, basis: bigTrades.basis,
+            } : null}
             candle={shown ? {
               ...shown, when: IST_FULL.format(shown.time * 1000), hovering: hover !== null,
               flow: flowBars?.length ? flowRead(flowBars, shown.time, tfSec, Math.floor(Date.now() / 1000)) : null,

@@ -67,7 +67,12 @@ export type SceneProfile = {
  * size against the biggest on the chart; the renderer turns it into pixels from
  * the zoom, so the area goes with the size and the bubbles scale with the candles.
  */
-export type SceneBubble = { t: 'bubble'; layer: Layer; x: number; y: number; rel: number; side: 'buy' | 'sell'; label?: string; priority: number };
+export type SceneBubble = {
+  t: 'bubble'; layer: Layer; x: number; y: number; rel: number; side: 'buy' | 'sell'; label?: string; priority: number;
+  /** The full detail, shown on hover. */
+  tip?: string;
+  faint?: boolean;
+};
 export type SceneItem = SceneBox | SceneLine | ScenePath | SceneMark | SceneVLine | SceneProfile | SceneBubble;
 
 export const C = {

@@ -68,11 +68,27 @@ describe('big trades', () => {
     expect(items).toHaveLength(1);
   });
 
-  it('[critical] size is relative: area in proportion to the biggest shown, which is full size', () => {
-    const trades = [500, 1_000, 4_000, 8_000].map((size, k) => ({ at: 1_000_000 + k * 1_000, side: 'buy' as const, price: 105, size }));
+  it('[critical] size is relative: area in proportion to the biggest shown, which is full size; largest drawn first', () => {
+    const trades = [500, 1_000, 4_000].map((size, k) => ({ at: (1_000 + k * 300) * 1_000, side: 'buy' as const, price: 105, size }));
     const items = bigTradeScene(trades, bars, 300, 500).flatMap((i) => (i.t === 'bubble' ? [i] : []));
-    expect(items.map((i) => i.rel)).toEqual([500, 1_000, 4_000, 8_000].map((s) => Math.sqrt(s / 8_000)));
-    expect(items.map((i) => i.label ?? null)).toEqual([null, 'Buy 1.0 BTC', 'Buy 4.0 BTC', 'Buy 8.0 BTC']);
+    expect(items.map((i) => i.rel)).toEqual([4_000, 1_000, 500].map((s) => Math.sqrt(s / 4_000)));
+    expect(items.map((i) => i.label?.split(' · ')[0] ?? null)).toEqual(['Buy 4.0 BTC', 'Buy 1.0 BTC', null]);
+  });
+
+  it('[critical] a candle\'s big buys are one bubble and its big sells another, with total, count, price range and dollars', () => {
+    const items = bigTradeScene([
+      { at: 1_000_000, side: 'buy', price: 110, size: 600 },
+      { at: 1_010_000, side: 'buy', price: 110.02, size: 900 },
+      { at: 1_020_000, side: 'sell', price: 110.01, size: 700 },
+      { at: 1_030_000, side: 'buy', price: 104, size: 500 },
+    ], bars, 300, 500).flatMap((i) => (i.t === 'bubble' ? [i] : []));
+    expect(items).toHaveLength(2);
+    const merged = items.find((i) => i.side === 'buy')!;
+    expect(merged.y).toBeCloseTo((600 * 110 + 900 * 110.02 + 500 * 104) / 2_000, 6);
+    expect(merged.tip).toContain('2.0 BTC');
+    expect(merged.tip).toContain('3 orders');
+    expect(merged.tip).toContain('(104–110)');
+    expect(merged.tip).toContain('$');
   });
 });
 

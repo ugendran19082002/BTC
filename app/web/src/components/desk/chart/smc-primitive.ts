@@ -22,6 +22,9 @@ type Target = Parameters<IPrimitivePaneRenderer['draw']>[0];
 type Ctx = CanvasRenderingContext2D;
 type Scope = { context: Ctx; mediaSize: { width: number; height: number } };
 
+/** Big-trade colours: apart from the candles' green / red. */
+const BUY = '#3b82f6';
+const SELL = '#d946ef';
 const FONT = '600 10px ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif';
 const LABEL_H = 15;
 const LABEL_PAD = 5;
@@ -34,6 +37,8 @@ export class SmcPrimitive implements ISeriesPrimitive<Time> {
   private requestUpdate: (() => void) | null = null;
   private scene: readonly SceneItem[] = [];
   private reserved: Rect[] = [];
+  /** Where each bubble was last drawn, for the hover. */
+  private hits: { x: number; y: number; r: number; tip: string }[] = [];
   private readonly views: IPrimitivePaneView[];
 
   constructor() {
@@ -59,6 +64,15 @@ export class SmcPrimitive implements ISeriesPrimitive<Time> {
   setScene(scene: readonly SceneItem[]) {
     this.scene = scene;
     this.requestUpdate?.();
+  }
+
+  /** The detail of the bubble under a point (pane CSS pixels), the smallest when they overlap; null when none. */
+  bubbleAt(x: number, y: number): string | null {
+    let best: { r: number; tip: string } | null = null;
+    for (const h of this.hits) {
+      if (Math.hypot(h.x - x, h.y - y) <= h.r + 3 && (!best || h.r < best.r)) best = h;
+    }
+    return best?.tip ?? null;
   }
 
   /** Screen areas labels must stay out of (in the pane's CSS pixels). */
@@ -135,6 +149,7 @@ export class SmcPrimitive implements ISeriesPrimitive<Time> {
     const labels: Label[] = [];
     let id = 0;
     const measure = (t: string) => Math.ceil(ctx.measureText(t).width) + LABEL_PAD * 2;
+    this.hits = [];
 
     for (const it of this.scene) {
       if (it.t === 'line') this.line(ctx, it, width, labels, () => id++, measure);
@@ -215,9 +230,12 @@ export class SmcPrimitive implements ISeriesPrimitive<Time> {
   }
 
   /**
-   * The biggest bubble is about one and a half candles wide, 9-28 px; the rest
-   * scale down by the square root of their size (area in proportion), never
-   * under a fifth of it so the smallest stay visible.
+   * The biggest bubble is about one candle wide, 6-18 px; the rest scale down
+   * by the square root of their size (area in proportion), never under a
+   * third of it. Blue for buyers, fuchsia for sellers -- not the candles'
+   * green and red, so a bubble never reads as a candle -- as a hollow ring
+   * with a light fill and a dot at the exact price, so the candle shows
+   * through.
    */
   private bubble(ctx: Ctx, it: SceneBubble, labels: Label[], nextId: () => number, measure: (t: string) => number) {
     const x = this.x(it.x, Infinity);
@@ -225,24 +243,28 @@ export class SmcPrimitive implements ISeriesPrimitive<Time> {
     const y = this.y(it.y);
     if (x === null || y === null) return;
     const spacing = next === null ? 8 : Math.abs(next - x);
-    const maxR = Math.min(28, Math.max(9, spacing * 1.5));
-    const r = Math.max(maxR * 0.2, maxR * it.rel);
-    const color = it.side === 'buy' ? '#26a17b' : '#e2504f';
+    const maxR = Math.min(18, Math.max(6, spacing * 1.1));
+    const r = Math.max(2.5, maxR * 0.3, maxR * it.rel);
+    const color = it.side === 'buy' ? BUY : SELL;
     ctx.save();
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fillStyle = color;
-    ctx.globalAlpha = 0.3;
+    ctx.globalAlpha = it.faint ? 0.06 : 0.16;
     ctx.fill();
-    ctx.globalAlpha = 0.9;
-    ctx.lineWidth = 1.2;
+    ctx.globalAlpha = it.faint ? 0.4 : 0.95;
+    ctx.lineWidth = 1.5;
     ctx.strokeStyle = color;
     ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x, y, 1.6, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
+    if (it.tip) this.hits.push({ x, y, r, tip: it.tip });
     if (!it.label) return;
     const w = measure(it.label);
     const first: Rect = { x: x - w / 2, y: y - r - LABEL_H - 3, w, h: LABEL_H };
-    labels.push({ id: nextId(), priority: it.priority, text: it.label, color, candidates: [first, { ...first, y: y + r + 3 }] });
+    labels.push({ id: nextId(), priority: it.priority - (it.faint ? 30 : 0), text: it.label, color, faint: it.faint, candidates: [first, { ...first, y: y + r + 3 }] });
   }
 
   private vline(ctx: Ctx, i: number, p1: number, p2: number, color: string) {

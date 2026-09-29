@@ -74,10 +74,14 @@ export type FlowBar = { time: number; buy: number; sell: number; trades: number;
 export const getFlowBars = (tf: '1m' | '5m', hours: number) =>
   json<{ tf: string; bars: FlowBar[] }>(`/api/flow/bars?tf=${tf}&hours=${hours}`);
 
-/** Large taker orders on the perpetual (contracts, 1,000 to a BTC), oldest first: the chart's big-trade bubbles. */
-export const getLargePrints = (hours: number, min: number) =>
-  json<{ min: number; since: number; prints: { at: number; side: 'buy' | 'sell'; price: number; size: number }[] }>(
-    `/api/flow/large-prints?hours=${hours}&min=${min}`,
+/**
+ * Large taker orders on the perpetual (contracts, 1,000 to a BTC), oldest
+ * first: the chart's big-trade bubbles. The size they must reach is set by the
+ * server from the market (`min`, and `basis` says how).
+ */
+export const getLargePrints = (hours: number) =>
+  json<{ min: number; basis?: string; since: number; prints: { at: number; side: 'buy' | 'sell'; price: number; size: number }[] }>(
+    `/api/flow/large-prints?hours=${hours}`,
   );
 
 export const getCandles = (tf: '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d') =>

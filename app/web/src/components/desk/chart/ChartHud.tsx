@@ -3,7 +3,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { TfRead } from '@/lib/smc/context';
 import type { Readout } from '@/lib/smc/readout';
 import { SMC_MEASURED } from '@/lib/smc/measured.data';
-import type { FlowRead } from './flow-layers';
+import type { BigTradeSummary, FlowRead } from './flow-layers';
 
 const fmt = (p: number) => Math.round(p).toLocaleString('en-US');
 const pct = (v: number) => `${Math.round(v * 100)}%`;
@@ -25,7 +25,9 @@ export const ChartHud = forwardRef<HTMLDivElement, {
   read: Readout;
   context: readonly TfRead[];
   candle: Shown | null;
-}>(function ChartHud({ open, onToggle, tf, read, context, candle }, ref) {
+  /** Big trades in view, the size they start at (contracts) and how it was set. */
+  big?: (BigTradeSummary & { min: number; basis?: string }) | null;
+}>(function ChartHud({ open, onToggle, tf, read, context, candle, big }, ref) {
   const up = candle ? candle.close >= candle.open : true;
   return (
     <div ref={ref} className={`pc-hud pc-hud-${read.tone}`} aria-label="Setup readout">
@@ -116,6 +118,14 @@ export const ChartHud = forwardRef<HTMLDivElement, {
               <span>{candle.hovering ? candle.when : 'Last'}</span>
               <span>O {fmt(candle.open)}</span><span>H {fmt(candle.high)}</span><span>L {fmt(candle.low)}</span>
               <span className={up ? 'up' : 'down'}>C {fmt(candle.close)}</span>
+            </p>
+          )}
+          {big && (
+            <p className="pc-hud-ohlc" aria-label="Big trades in view" title={`Big trades start at ${big.min / 1_000} BTC: ${big.basis ?? 'the market\'s own size'}. Taker orders, counted over the candles in view. Hover a bubble for its detail.`}>
+              <span>Big ≥{(big.min / 1_000).toFixed(1)} BTC</span>
+              <span className="bbuy">● {big.buys} buy · {big.buyBtc.toFixed(1)}</span>
+              <span className="bsell">● {big.sells} sell · {big.sellBtc.toFixed(1)}</span>
+              <span className={big.buyBtc >= big.sellBtc ? 'bbuy' : 'bsell'}>net {big.buyBtc - big.sellBtc >= 0 ? '+' : '−'}{Math.abs(big.buyBtc - big.sellBtc).toFixed(1)} BTC</span>
             </p>
           )}
           {candle?.flow && (

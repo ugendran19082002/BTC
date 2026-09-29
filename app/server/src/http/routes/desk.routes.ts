@@ -12,7 +12,7 @@ import { loadDays, reloadDays } from '../../backtest/backtest.js';
 import { tradingService, SHORT_CAP_KEY } from '../../trading/service.js';
 import { appliedMigrations } from '../../db/migrate.js';
 import { lastOptionSnapshot, lastOptionSnapshotAt } from '../../market/option-snapshots.js';
-import { flowBarsOf, flowFeedHealth, flowMinutes, flowSummary, largePrints, liveBook, livePerp, oiPulse, optionFlowSummary, LARGE_PRINT_CONTRACTS } from '../../market/flow.js';
+import { autoLargeMin, flowBarsOf, flowFeedHealth, flowMinutes, flowSummary, largePrints, liveBook, livePerp, oiPulse, optionFlowSummary, LARGE_PRINT_CONTRACTS } from '../../market/flow.js';
 import { changes } from '../../market/changes.js';
 import { one } from '../../db/pool.js';
 import { strategyStore } from './strategy.routes.js';
@@ -155,19 +155,25 @@ export function registerDeskRoutes(app: FastifyInstance) {
 
   /**
    * Large taker orders on the perpetual, each at its own price and time: the
-   * chart's big-trade bubbles. `hours` back (up to 48) and `min` contracts or
-   * more -- never under the recording threshold, since smaller ones are not kept.
+   * chart's big-trade bubbles, `hours` back (up to 48). The size they must
+   * reach is the market's own by default (`autoLargeMin`: the top tenth of the
+   * large orders in the window); a number in `min` overrides it, never under
+   * the recording threshold, since smaller ones are not kept.
    */
   app.get('/api/flow/large-prints', async (req, reply) => {
     const q = req.query as { hours?: string; min?: string };
     const hours = Math.min(48, Math.max(1, Number(q.hours ?? 36) || 36));
-    const min = Math.max(LARGE_PRINT_CONTRACTS, Number(q.min ?? LARGE_PRINT_CONTRACTS) || LARGE_PRINT_CONTRACTS);
-    const since = Date.now() - hours * 3_600_000;
+    const now = Date.now();
+    const since = now - hours * 3_600_000;
     try {
-      return { min, since, prints: await largePrints(since, min) };
+      const asked = Number(q.min);
+      const { min, basis } = q.min && Number.isFinite(asked)
+        ? { min: Math.max(LARGE_PRINT_CONTRACTS, asked), basis: 'set by the caller' }
+        : await autoLargeMin(since, now);
+      return { min, basis, since, prints: await largePrints(since, min) };
     } catch (e) {
       reply.code(502);
-      return { error: (e as Error).message, min, since, prints: [] };
+      return { error: (e as Error).message, min: LARGE_PRINT_CONTRACTS, since, prints: [] };
     }
   });
 

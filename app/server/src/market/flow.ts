@@ -302,6 +302,30 @@ export async function largePrints(sinceMs: number, minSize = LARGE_PRINT_CONTRAC
   return [...out, ...live].slice(-limit);
 }
 
+/** The share of recorded large orders the chart draws by default: the top tenth. */
+export const AUTO_LARGE_QUANTILE = 0.9;
+
+/**
+ * The size a big trade has to reach to be drawn, set by the market rather
+ * than chosen: the 90th percentile of the large orders (200 contracts or
+ * more) since `sinceMs` -- roughly the top 0.3% of all trades -- never under
+ * the recording threshold. With too few recorded yet (a fresh deploy), the
+ * socket's last hour is used; with too few there, the threshold itself.
+ */
+export async function autoLargeMin(sinceMs: number, nowMs = Date.now()): Promise<{ min: number; basis: string }> {
+  await flowSchema();
+  const saved = (await rows<{ size: number }>('SELECT size FROM large_prints WHERE at >= $1', [sinceMs])).map((r) => Number(r.size));
+  const live = socket ? largeOrdersOf(socket.printsSince(Math.max(sinceMs, nowMs - 3_600_000))).map((o) => o.size) : [];
+  const sizes = saved.length >= 50 ? saved : live.length >= 20 ? live : [];
+  if (!sizes.length) return { min: LARGE_PRINT_CONTRACTS, basis: 'too few recorded yet: every order of 0.2 BTC or more' };
+  sizes.sort((a, b) => a - b);
+  const q = sizes[Math.min(sizes.length - 1, Math.floor(sizes.length * AUTO_LARGE_QUANTILE))]!;
+  return {
+    min: Math.max(LARGE_PRINT_CONTRACTS, q),
+    basis: `top ${Math.round((1 - AUTO_LARGE_QUANTILE) * 100)}% of the ${sizes.length} orders of 0.2 BTC or more ${saved.length >= 50 ? 'on the chart' : 'in the last hour'}`,
+  };
+}
+
 let lastFlushedMinute = 0;
 
 /**
