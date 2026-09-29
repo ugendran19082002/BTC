@@ -7,6 +7,7 @@
 #   ./deploy/deploy.sh --check         validate only, change nothing
 #   ./deploy/deploy.sh --host user@ip  build locally, ship, run there
 #   ./deploy/deploy.sh --no-prune      deploy, but keep every old image
+#   ./deploy/deploy.sh --no-backup     deploy without the database backup first
 #
 # The script refuses to build if a credential is reachable from the build
 # context, and rolls back to the previous images if the new ones fail their
@@ -37,6 +38,7 @@ DESK_HOST="$WEB_BIND"; [[ "$DESK_HOST" == "0.0.0.0" ]] && DESK_HOST=127.0.0.1
 REMOTE=""
 CHECK_ONLY=0
 NO_TEST=0
+BACKUP=1
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -44,7 +46,8 @@ while [[ $# -gt 0 ]]; do
     --no-test|--fast|-f) NO_TEST=1; shift ;;
     --host)  REMOTE="${2:?--host needs user@host}"; shift 2 ;;
     --no-prune) PRUNE=0; shift ;;
-    -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
+    --no-backup) BACKUP=0; shift ;;
+    -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -62,7 +65,7 @@ fail() { printf '\033[31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 # most of the space and none of the build speed.
 prune_images() {
   local repo tag keep removed=0
-  for repo in btc-desk-api btc-desk-web btc-desk-analytics; do
+  for repo in btc-desk-api btc-desk-web; do
     keep="$(docker images "$repo" --format '{{.CreatedAt}}|{{.Tag}}' \
       | sort -r | cut -d'|' -f2 | grep -vx 'latest' | head -n "$KEEP_IMAGES" || true)"
     while IFS= read -r tag; do
@@ -136,29 +139,6 @@ if [[ $NO_TEST -ne 1 ]]; then
   ensure_deps "$ROOT/app/web"    web    || fail "web install failed"
 fi
 
-# The analytics service's test environment, rebuilt only when its requirements
-# change -- the same stamp idea as `ensure_deps`. uv when it is installed (fast,
-# and needs no system pip), the standard venv otherwise.
-ensure_py_deps() {
-  local dir="$ROOT/analytics" stamp want
-  stamp="$dir/.venv/.deploy-stamp"
-  want="$(cat "$dir/requirements.txt" "$dir/requirements-dev.txt" | sha256sum | cut -d' ' -f1)"
-  if [[ -x "$dir/.venv/bin/python" && -f "$stamp" && "$(cat "$stamp")" == "$want" ]]; then
-    say "analytics dependencies unchanged; skipping install"
-    return 0
-  fi
-  say "installing analytics dependencies"
-  if command -v uv >/dev/null; then
-    uv venv --allow-existing "$dir/.venv" >/dev/null && uv pip install --python "$dir/.venv/bin/python" -r "$dir/requirements-dev.txt" >/dev/null || return 1
-  else
-    python3 -m venv "$dir/.venv" && "$dir/.venv/bin/python" -m pip install -q -r "$dir/requirements-dev.txt" || return 1
-  fi
-  printf '%s' "$want" > "$stamp"
-}
-if [[ $NO_TEST -ne 1 ]]; then
-  ensure_py_deps || fail "analytics install failed"
-fi
-
 # Both suites and both type-checks at once.
 #
 # Four cores, and the two suites peak around 170 MB and 430 MB, so they fit
@@ -189,8 +169,8 @@ run_jobs() {
 if [[ $NO_TEST -eq 1 ]]; then
   say "skipping test suites and host type-checks (--no-test active)"
 else
-  # The server suite and the analytics database tests need a PostgreSQL to talk
-  # to: a throwaway one, on a port the desk never uses, gone again afterwards.
+  # The server suite needs a PostgreSQL to talk to: a throwaway one, on a port
+  # the desk never uses, gone again afterwards.
   say "starting the test database"
   TEST_PG_URL="$("$ROOT/deploy/test-db.sh" up)" || fail "could not start the test database"
   trap '"$ROOT/deploy/test-db.sh" down' EXIT
@@ -199,7 +179,6 @@ else
   declare -A TEST_JOBS=(
     ["server tests"]="cd '$ROOT/app/server' && TEST_PG_URL='$TEST_PG_URL' npm test"
     ["web tests"]="cd '$ROOT/app/web' && npm test"
-    ["analytics tests"]="cd '$ROOT/analytics' && TEST_PG_URL='$TEST_PG_URL' .venv/bin/python -m pytest -q"
   )
   run_jobs TEST_JOBS || fail "tests failed"
   "$ROOT/deploy/test-db.sh" down
@@ -238,7 +217,7 @@ TAG="$TAG" WEB_PORT="$WEB_PORT" WEB_BIND="$WEB_BIND" $COMPOSE build
 # reading that makes it safe to start from.
 tag_latest() {
   local want="$1" repo
-  for repo in btc-desk-api btc-desk-web btc-desk-analytics; do
+  for repo in btc-desk-api btc-desk-web; do
     # A rollback target may predate one of the three images; skip what is absent
     # rather than abort a rollback over a tag that was never built.
     docker image inspect "${repo}:${want}" >/dev/null 2>&1 || continue
@@ -250,7 +229,7 @@ tag_latest() {
 
 if [[ -n "$REMOTE" ]]; then
   say "shipping images to ${REMOTE}"
-  docker save "btc-desk-api:${TAG}" "btc-desk-web:${TAG}" "btc-desk-analytics:${TAG}" | gzip | \
+  docker save "btc-desk-api:${TAG}" "btc-desk-web:${TAG}" | gzip | \
     ssh "$REMOTE" 'gunzip | docker load'
   say "shipping compose files"
   ssh "$REMOTE" 'mkdir -p ~/btc-desk/deploy'
@@ -258,6 +237,12 @@ if [[ -n "$REMOTE" ]]; then
   # The database password travels with the compose file it belongs to, 0600.
   scp "$ROOT/deploy/.env" "$REMOTE:~/btc-desk/deploy/.env"
   ssh "$REMOTE" 'chmod 600 ~/btc-desk/deploy/.env'
+  if [[ $BACKUP -eq 1 ]]; then
+    scp "$ROOT/deploy/backup-db.sh" "$REMOTE:~/btc-desk/deploy/"
+    say "backing up the database on ${REMOTE} first"
+    ssh "$REMOTE" 'cd ~/btc-desk && if docker compose -f deploy/docker-compose.yml ps --status running -q db 2>/dev/null | grep -q .; then ./deploy/backup-db.sh; else echo "no database running yet: nothing to back up"; fi' \
+      || fail "backup on ${REMOTE} failed; nothing was started"
+  fi
   say "starting on ${REMOTE}"
   ssh "$REMOTE" "cd ~/btc-desk && TAG=${TAG} WEB_PORT=${WEB_PORT} WEB_BIND=${WEB_BIND} \
     docker compose -f deploy/docker-compose.yml up -d --no-build"
@@ -283,6 +268,15 @@ fi
 [[ "$PREV" == "$TAG" ]] && PREV=""
 say "running now: ${PREV:-nothing}"
 
+# A database backup before anything new starts: a deploy may carry migrations,
+# and a migration cannot be taken back without one (restore with
+# `deploy/backup-db.sh --restore FILE`). Skipped on a first deploy, when there
+# is no database yet, and with --no-backup.
+if [[ $BACKUP -eq 1 ]] && $COMPOSE ps --status running -q db 2>/dev/null | grep -q .; then
+  say "backing up the database first"
+  "$ROOT/deploy/backup-db.sh" || fail "backup failed; nothing was started"
+fi
+
 say "starting"
 TAG="$TAG" WEB_PORT="$WEB_PORT" WEB_BIND="$WEB_BIND" $COMPOSE up -d
 
@@ -293,11 +287,6 @@ for i in $(seq 1 30); do
     curl -fsS "http://${DESK_HOST}:${WEB_PORT}/api/health"; echo
     say "front end: http://${DESK_HOST}:${WEB_PORT}/"
     # Reported, never required: the desk is healthy without it.
-    if $COMPOSE exec -T analytics python -c "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8800/health', timeout=4).status == 200 else 1)" >/dev/null 2>&1; then
-      say "analytics: healthy"
-    else
-      say "analytics: not answering yet -- the cards show the desk's own figures until it does"
-    fi
     # Healthy: this is now the build a bare `docker compose up` should start.
     tag_latest "$TAG"
     if [[ $PRUNE -eq 1 ]]; then prune_images; fi
@@ -310,9 +299,9 @@ printf '\033[31m==>\033[0m health check failed; last 40 log lines:\n' >&2
 $COMPOSE logs --tail 40 >&2
 if [[ -n "$PREV" ]]; then
   say "rolling back to ${PREV}"
-  # api and web only: the desk runs without analytics, and a first deploy of it
-  # has no previous analytics image to roll back to. The database is never
-  # rolled back -- its image is not ours, and its data is the point.
+  # api and web only. The database is never rolled back -- its image is not
+  # ours, and its data is the point; the backup taken before this deploy is
+  # there if a migration has to be undone.
   TAG="$PREV" WEB_PORT="$WEB_PORT" WEB_BIND="$WEB_BIND" $COMPOSE up -d api web
   # And `latest` goes back with them, or the next bare `up` starts the build
   # that was just rolled back.

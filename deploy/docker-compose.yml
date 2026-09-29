@@ -9,7 +9,7 @@ name: btc-desk
 
 services:
   # The desk's database: trades, strategies, settings, sign-in, the error log,
-  # open-interest history and the analytics tables -- one PostgreSQL, one schema
+  # open-interest and order-flow history -- one PostgreSQL, one schema
   # each (docs/DB-INVENTORY.md). No host port: only the containers on this
   # network can reach it. Its data is its own volume, backed up by
   # deploy/backup-db.sh; chain.db stays a file on the `data` volume.
@@ -103,40 +103,6 @@ services:
         limits:
           cpus: "3.0"
           memory: 2G
-    logging:
-      driver: json-file
-      options: { max-size: "10m", max-file: "3" }
-
-  # Display-only models (Python): Down / Side / Up measured, and later the other
-  # analytics the screens read. Nothing on the trading path calls it, and the
-  # API falls back to its own figures when it is away.
-  analytics:
-    build:
-      context: ..
-      dockerfile: Dockerfile.analytics
-    image: btc-desk-analytics:${TAG:-latest}
-    restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      # The `analytics` schema of the desk's database, written by
-      # research/publish_outlook_states.py. See docs/ANALYTICS.md.
-      DATABASE_URL: postgres://desk:${POSTGRES_PASSWORD}@db:5432/btc_desk
-    expose:
-      - "8800"
-    read_only: true
-    tmpfs:
-      - /tmp:size=16m
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    deploy:
-      resources:
-        limits:
-          cpus: "1.0"
-          memory: 512M
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }

@@ -35,14 +35,14 @@ $COMPOSE ps --status running -q db 2>/dev/null | grep -q . || fail "the db conta
 if [[ "${1:-}" == "--restore" ]]; then
   FILE="${2:?--restore needs a dump file}"
   [[ -f "$FILE" ]] || fail "no such file: ${FILE}"
-  say "stopping the API and analytics"
-  $COMPOSE stop api analytics
+  say "stopping the API"
+  $COMPOSE stop api
   say "restoring ${FILE}"
   # --clean --if-exists: drop what is there first, so the restore is the dump and
   # nothing else. --no-owner: the roles on this server are what matter.
   $COMPOSE exec -T db pg_restore -U desk -d btc_desk --clean --if-exists --no-owner --single-transaction < "$FILE"
-  say "starting the API and analytics"
-  $COMPOSE start api analytics
+  say "starting the API"
+  $COMPOSE start api
   for _ in $(seq 1 30); do
     if curl -fsS "http://${DESK_HOST}:${WEB_PORT}/api/health" >/dev/null 2>&1; then
       curl -fsS "http://${DESK_HOST}:${WEB_PORT}/api/health"; echo; say "healthy"; exit 0
