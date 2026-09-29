@@ -482,24 +482,50 @@ export type FlowSummary = {
 };
 
 /** Buy against sell over the last `windowMin` minutes: the recorded minutes plus the one in progress. */
-export async function flowSummary(windowMin = 60, nowMs = Date.now()): Promise<FlowSummary> {
+/**
+ * Every minute of the perpetual's tape from `sinceMs` to now, oldest first:
+ * the recorded ones, then the minutes the socket holds that are not written
+ * yet (the current one, and any the flush has not reached).
+ */
+export async function flowMinutes(sinceMs: number, nowMs = Date.now()): Promise<FlowMinute[]> {
   await flowSchema();
   const current = Math.floor(nowMs / FLOW_BUCKET_MS) * FLOW_BUCKET_MS;
-  const since = current - (windowMin - 1) * FLOW_BUCKET_MS;
+  const since = Math.floor(sinceMs / FLOW_BUCKET_MS) * FLOW_BUCKET_MS;
   const stored = (await rows<{
     at: number; buy_volume: number; sell_volume: number; buy_count: number; sell_count: number;
     large_buy_volume: number; large_sell_volume: number; large_buy_count: number; large_sell_count: number;
     vwap: number | null; high: number | null; low: number | null;
   }>('SELECT * FROM trade_flow_1m WHERE at >= $1 AND at < $2 ORDER BY at', [since, current]))
     .map<FlowMinute>((r) => ({
-      at: r.at, buyVolume: r.buy_volume, sellVolume: r.sell_volume, buyCount: r.buy_count, sellCount: r.sell_count,
+      at: Number(r.at), buyVolume: r.buy_volume, sellVolume: r.sell_volume, buyCount: r.buy_count, sellCount: r.sell_count,
       largeBuyVolume: r.large_buy_volume, largeSellVolume: r.large_sell_volume, largeBuyCount: r.large_buy_count, largeSellCount: r.large_sell_count,
       vwap: r.vwap, high: r.high, low: r.low,
     }));
-  // Minutes the socket holds that are not written yet (the current one, and any the flush has not reached).
   const have = new Set(stored.map((m) => m.at));
-  const held = socket ? minutesOf(socket.printsSince(since)).filter((m) => !have.has(m.at)) : [];
-  const minutes = [...stored, ...held].sort((a, b) => a.at - b.at);
+  const held = socket ? minutesOf(socket.printsSince(since).filter((p) => !p.symbol)).filter((m) => !have.has(m.at)) : [];
+  return [...stored, ...held].sort((a, b) => a.at - b.at);
+}
+
+/** Aggressive flow per candle: taker buy and sell volume (contracts), trade count, and how many of its minutes were recorded. */
+export type FlowBar = { time: number; buy: number; sell: number; trades: number; minutes: number };
+
+/** Minutes folded into `tfSec` candles, `time` in epoch seconds like the exchange's. Pure. */
+export function flowBarsOf(minutes: readonly FlowMinute[], tfSec: number): FlowBar[] {
+  const out = new Map<number, FlowBar>();
+  for (const m of minutes) {
+    const time = Math.floor(m.at / 1000 / tfSec) * tfSec;
+    const b = out.get(time) ?? out.set(time, { time, buy: 0, sell: 0, trades: 0, minutes: 0 }).get(time)!;
+    b.buy += m.buyVolume;
+    b.sell += m.sellVolume;
+    b.trades += m.buyCount + m.sellCount;
+    b.minutes += 1;
+  }
+  return [...out.values()].sort((a, b) => a.time - b.time);
+}
+
+export async function flowSummary(windowMin = 60, nowMs = Date.now()): Promise<FlowSummary> {
+  const current = Math.floor(nowMs / FLOW_BUCKET_MS) * FLOW_BUCKET_MS;
+  const minutes = await flowMinutes(current - (windowMin - 1) * FLOW_BUCKET_MS, nowMs);
 
   const s: FlowSummary = {
     windowMin, minutesCovered: minutes.length,

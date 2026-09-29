@@ -69,6 +69,11 @@ export const setShortCap = (contracts: number) =>
  * open-interest walls against recent price does not need a year of 1m bars, and
  * a caller free to ask for one is a caller who can hang the page.
  */
+/** Aggressive flow per candle: taker buy / sell volume (contracts), trades, and how many of its minutes were recorded. */
+export type FlowBar = { time: number; buy: number; sell: number; trades: number; minutes: number };
+export const getFlowBars = (tf: '1m' | '5m', hours: number) =>
+  json<{ tf: string; bars: FlowBar[] }>(`/api/flow/bars?tf=${tf}&hours=${hours}`);
+
 /** Large taker orders on the perpetual (contracts, 1,000 to a BTC), oldest first: the chart's big-trade bubbles. */
 export const getLargePrints = (hours: number, min: number) =>
   json<{ min: number; since: number; prints: { at: number; side: 'buy' | 'sell'; price: number; size: number }[] }>(

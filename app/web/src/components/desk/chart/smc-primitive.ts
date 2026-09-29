@@ -198,6 +198,19 @@ export class SmcPrimitive implements ISeriesPrimitive<Time> {
       ctx.fillStyle = poc ? 'rgba(251,191,36,0.42)' : b.value ? 'rgba(148,163,184,0.26)' : 'rgba(148,163,184,0.11)';
       ctx.fillRect(width - len, Math.min(y1, y2) + 0.5, len, Math.max(1, Math.abs(y2 - y1) - 1));
     }
+    // Nodes: a short tick at the profile's left edge -- amber for acceptance (HVN), cyan for a thin area (LVN).
+    const tick = (price: number, color: string) => {
+      const y = this.y(price);
+      if (y === null) return;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(width - w - 10, Math.round(y) + 0.5);
+      ctx.lineTo(width - w, Math.round(y) + 0.5);
+      ctx.stroke();
+    };
+    for (const p of it.hvn) tick(p, 'rgba(251,191,36,0.8)');
+    for (const p of it.lvn) tick(p, 'rgba(56,189,248,0.9)');
     ctx.restore();
   }
 

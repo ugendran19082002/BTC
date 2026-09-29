@@ -3,13 +3,15 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { TfRead } from '@/lib/smc/context';
 import type { Readout } from '@/lib/smc/readout';
 import { SMC_MEASURED } from '@/lib/smc/measured.data';
+import type { FlowRead } from './flow-layers';
 
 const fmt = (p: number) => Math.round(p).toLocaleString('en-US');
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 const IST_HM = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
 const r1 = (v: number) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)}R`;
 
-type Shown = { open: number; high: number; low: number; close: number; when: string; hovering: boolean };
+type Shown = { open: number; high: number; low: number; close: number; when: string; hovering: boolean; flow?: FlowRead | null };
+const k = (v: number) => (Math.abs(v) >= 1_000 ? `${(v / 1_000).toFixed(1)}k` : `${Math.round(v)}`);
 
 /**
  * The chart's corner readout: the live setup and what it is waiting for, the
@@ -114,6 +116,16 @@ export const ChartHud = forwardRef<HTMLDivElement, {
               <span>{candle.hovering ? candle.when : 'Last'}</span>
               <span>O {fmt(candle.open)}</span><span>H {fmt(candle.high)}</span><span>L {fmt(candle.low)}</span>
               <span className={up ? 'up' : 'down'}>C {fmt(candle.close)}</span>
+            </p>
+          )}
+          {candle?.flow && (
+            <p className="pc-hud-ohlc" aria-label="Candle flow" title="Taker buying minus selling in this candle (contracts), the buyers' share, and its trade rate against the twenty candles before it.">
+              <span>Flow</span>
+              <span className={candle.flow.delta >= 0 ? 'up' : 'down'}>Δ {candle.flow.delta >= 0 ? '+' : '−'}{k(Math.abs(candle.flow.delta))}</span>
+              {candle.flow.buyPct !== null && <span>buy {pct(candle.flow.buyPct)}</span>}
+              <span>{candle.flow.trades} trades</span>
+              {candle.flow.velocity !== null && <span className={candle.flow.velocity >= 2 ? 'hot' : ''}>{candle.flow.velocity.toFixed(1)}× pace</span>}
+              {!candle.flow.whole && <span>· minutes missing</span>}
             </p>
           )}
         </div>

@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import type { Candle } from '@/types/desk';
 import type { ChartTf } from '@/components/desk/PriceChart';
 import { PriceChart } from '@/components/desk/PriceChart';
-import { getCandles, getLargePrints } from '@/api/desk';
+import { getCandles, getFlowBars, getLargePrints } from '@/api/desk';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import { isForming, withLiveBar, withLtp } from '@/lib/live-bar';
@@ -47,6 +47,7 @@ export function DeskChart({
   const [bigMin, setBigMin] = usePersisted<number>('chart:big-trade-min', 500);
   const bigHours = shown === '1m' ? 8 : 36;
   const { data: big } = usePoll(() => getLargePrints(bigHours, bigMin), 15_000, { deps: [bigHours, bigMin] });
+  const { data: flow } = usePoll(() => getFlowBars(shown === '1m' ? '1m' : '5m', bigHours), 10_000, { deps: [shown, bigHours] });
   const bigTrades = useMemo(() => ({ prints: big?.prints ?? [], min: bigMin, onMin: setBigMin }), [big, bigMin, setBigMin]);
 
   const minute = Math.floor(Date.now() / 60_000);
@@ -93,6 +94,7 @@ export function DeskChart({
           regime={h1?.bars?.length ? { bars: h1.bars, tfSec: HOUR } : null}
           higher={higher}
           bigTrades={bigTrades}
+          flowBars={flow?.bars}
           ltp={ltp}
         />
       </div>

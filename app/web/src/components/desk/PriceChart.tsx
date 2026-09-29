@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
-  CandlestickSeries, ColorType, CrosshairMode, HistogramSeries, createChart,
+  CandlestickSeries, ColorType, CrosshairMode, HistogramSeries, LineSeries, createChart,
   type IChartApi, type ISeriesApi, type LogicalRange, type Time, type UTCTimestamp,
 } from 'lightweight-charts';
 import { Expand, Layers, Lock, Minimize2, Unlock } from 'lucide-react';
@@ -15,7 +15,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { SmcPrimitive } from './chart/smc-primitive';
 import { buildScene, C, DEFAULT_LAYERS, htfScene, LAYERS, type Layer, type SceneItem } from './chart/scene';
 import { ChartHud } from './chart/ChartHud';
-import { bigTradeScene, profileScene, volumeProfile, type BigTrade } from './chart/flow-layers';
+import { bigTradeScene, deltaSeries, flowRead, profileScene, volumeProfile, type BigTrade } from './chart/flow-layers';
+import type { FlowBar } from '@/api/desk';
 import { LtpChip } from './chart/LtpChip';
 import './chart/price-chart.css';
 
@@ -44,7 +45,7 @@ const IST_FULL = new Intl.DateTimeFormat('en-IN', {
  * appears and then vanishes within a candle.
  */
 export function PriceChart({
-  bars, tf, views = [], onView, loading = false, error, context = [], regime, higher = [], bigTrades, ltp, symbol = 'BTCUSD',
+  bars, tf, views = [], onView, loading = false, error, context = [], regime, higher = [], bigTrades, flowBars, ltp, symbol = 'BTCUSD',
 }: {
   bars: readonly Candle[];
   tf: ChartTf;
@@ -61,6 +62,8 @@ export function PriceChart({
   higher?: readonly { tf: string; tfSec: number; bars: readonly Candle[]; show: 'zones' | 'structure' }[];
   /** Large taker orders for the bubbles, the smallest drawn (contracts), and how to change it. */
   bigTrades?: { prints: readonly BigTrade[]; min: number; onMin?: (min: number) => void };
+  /** Aggressive flow per candle, for the delta / CVD pane and the readout. */
+  flowBars?: readonly FlowBar[];
   /** The perp's last trade, from the stream, for the LTP chip. */
   ltp?: { price: number; at: number } | null;
   symbol?: string;
@@ -122,7 +125,7 @@ export function PriceChart({
       const to = Math.min(bars.length - 1, inView?.to ?? bars.length - 1);
       const from = Math.max(0, inView?.from ?? to - 90);
       const p = volumeProfile(bars, from, to);
-      if (p) items.push(...profileScene(p, from));
+      if (p) items.push(...profileScene(p, from, bars[bars.length - 1]!.close));
     }
     if (layers.has('bigtrades') && bigTrades) items.push(...bigTradeScene(bigTrades.prints, bars, tfSec, bigTrades.min));
     return items;
@@ -217,6 +220,39 @@ export function PriceChart({
   useEffect(() => {
     chartRef.current?.applyOptions({ handleScroll: zoomOn, handleScale: zoomOn });
   }, [zoomOn]);
+
+  // ── The delta / CVD pane, under the price, while its layer is on and there is flow ──
+  const flowPaneRef = useRef<{ delta: ISeriesApi<'Histogram'>; cvd: ISeriesApi<'Line'> } | null>(null);
+  const showFlow = layers.has('delta') && !!flowBars?.length;
+  useLayoutEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || !showFlow) return;
+    const delta = chart.addSeries(HistogramSeries, {
+      priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: true, title: 'Δ',
+    }, 1);
+    // CVD on its own overlay scale: its level runs to tens of thousands, the delta's to hundreds.
+    const cvd = chart.addSeries(LineSeries, {
+      color: '#a78bfa', lineWidth: 2, priceScaleId: 'cvd', priceLineVisible: false, lastValueVisible: false, title: 'CVD',
+    }, 1);
+    chart.panes()[1]?.setStretchFactor(0.28);
+    flowPaneRef.current = { delta, cvd };
+    return () => {
+      flowPaneRef.current = null;
+      // The chart may already be gone (unmount removes it first); a removed chart must not be touched.
+      if (chartRef.current !== chart) return;
+      chart.removeSeries(delta);
+      chart.removeSeries(cvd);
+      if (chart.panes().length > 1) chart.removePane(1);
+    };
+  }, [showFlow, error, bars.length === 0]);
+
+  useEffect(() => {
+    const pane = flowPaneRef.current;
+    if (!pane || !flowBars) return;
+    const { delta, cvd } = deltaSeries(flowBars, tfSec, Math.floor(Date.now() / 1000));
+    pane.delta.setData(delta.map((d) => ({ ...d, time: d.time as UTCTimestamp })));
+    pane.cvd.setData(cvd.map((d) => ({ ...d, time: d.time as UTCTimestamp })));
+  }, [flowBars, showFlow, tfSec, error, bars.length === 0]);
 
   useEffect(() => {
     const candles = candleRef.current;
@@ -324,7 +360,10 @@ export function PriceChart({
             tf={tf}
             read={read}
             context={context}
-            candle={shown ? { ...shown, when: IST_FULL.format(shown.time * 1000), hovering: hover !== null } : null}
+            candle={shown ? {
+              ...shown, when: IST_FULL.format(shown.time * 1000), hovering: hover !== null,
+              flow: flowBars?.length ? flowRead(flowBars, shown.time, tfSec, Math.floor(Date.now() / 1000)) : null,
+            } : null}
           />
         </div>
       )}

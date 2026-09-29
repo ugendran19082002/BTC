@@ -12,7 +12,7 @@ import { loadDays, reloadDays } from '../../backtest/backtest.js';
 import { tradingService, SHORT_CAP_KEY } from '../../trading/service.js';
 import { appliedMigrations } from '../../db/migrate.js';
 import { lastOptionSnapshot, lastOptionSnapshotAt } from '../../market/option-snapshots.js';
-import { flowFeedHealth, flowSummary, largePrints, liveBook, livePerp, oiPulse, optionFlowSummary, LARGE_PRINT_CONTRACTS } from '../../market/flow.js';
+import { flowBarsOf, flowFeedHealth, flowMinutes, flowSummary, largePrints, liveBook, livePerp, oiPulse, optionFlowSummary, LARGE_PRINT_CONTRACTS } from '../../market/flow.js';
 import { changes } from '../../market/changes.js';
 import { one } from '../../db/pool.js';
 import { strategyStore } from './strategy.routes.js';
@@ -168,6 +168,26 @@ export function registerDeskRoutes(app: FastifyInstance) {
     } catch (e) {
       reply.code(502);
       return { error: (e as Error).message, min, since, prints: [] };
+    }
+  });
+
+  /**
+   * Aggressive flow per candle -- taker buy and sell volume and the trade
+   * count -- for the chart's delta / CVD pane: `tf` 1m or 5m, `hours` back (up
+   * to 48). From the recorded minutes and the socket's current one; each
+   * candle says how many of its minutes were recorded, so a gap is not read
+   * as a quiet market.
+   */
+  app.get('/api/flow/bars', async (req, reply) => {
+    const q = req.query as { tf?: string; hours?: string };
+    const tfSec = q.tf === '1m' ? 60 : 300;
+    const hours = Math.min(48, Math.max(1, Number(q.hours ?? 36) || 36));
+    const now = Date.now();
+    try {
+      return { tf: tfSec === 60 ? '1m' : '5m', bars: flowBarsOf(await flowMinutes(now - hours * 3_600_000, now), tfSec) };
+    } catch (e) {
+      reply.code(502);
+      return { error: (e as Error).message, bars: [] };
     }
   });
 

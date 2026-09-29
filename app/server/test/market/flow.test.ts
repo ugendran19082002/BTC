@@ -2,7 +2,7 @@ import { after, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { FlowSocket, printOf, perpTickerOf, type Print } from '../../src/market/flow-socket.js';
 import {
-  bookOf, capturePerpSnapshot, flowSchema, flowSummary, flushTradeFlow, formingBar, largeOrdersOf, largePrints, liveLtp, minuteOf, minutesOf,
+  bookOf, capturePerpSnapshot, flowSchema, flowSummary, flowBarsOf, flushTradeFlow, formingBar, largeOrdersOf, largePrints, liveLtp, minuteOf, minutesOf,
   useFlowSocket, FLOW_BUCKET_MS, LARGE_PRINT_CONTRACTS,
 } from '../../src/market/flow.js';
 import { closePool, one, query } from '../../src/db/pool.js';
@@ -168,6 +168,26 @@ test('[critical] the live price is the socket\'s last perp trade, with the 1m an
   assert.deepEqual(live.bars['1m'], { time: t1 / 1000, open: 81_100, high: 81_100, low: 81_100, close: 81_100, volume: 2 });
   // 06:00:50 and 06:02:01 are both in the 06:00 five-minute candle.
   assert.equal(live.bars['5m']!.volume, 7);
+});
+
+test('[critical] the flow per candle: taker buy and sell, trades, and how many minutes it has', () => {
+  const m = (n: number, buy: number, sell: number) => minuteOf(minute(n), [p(minute(n), 'buy', buy), p(minute(n) + 1, 'sell', sell)]);
+  // 06:02 and 06:03 fall in the 06:00 candle, 06:11 in the 06:10 one.
+  const bars = flowBarsOf([m(0, 5, 1), m(1, 2, 2), m(9, 0, 7)], 300);
+  assert.deepEqual(bars, [
+    { time: Date.UTC(2026, 8, 19, 6, 0) / 1000, buy: 7, sell: 3, trades: 4, minutes: 2 },
+    { time: Date.UTC(2026, 8, 19, 6, 10) / 1000, buy: 0, sell: 7, trades: 2, minutes: 1 },
+  ]);
+});
+
+test('[critical] the current minute\'s flow is the perpetual\'s alone: an option print is not counted in it', async () => {
+  const s = new FlowSocket({ now: () => minute(30) + 5_000 });
+  const send = (x: Print & { symbol?: string }) => s.receive(JSON.stringify({ type: 'all_trades', symbol: x.symbol ?? 'BTCUSD', price: String(x.price), size: x.size, timestamp: x.at * 1000, buyer_role: x.side === 'buy' ? 'taker' : 'maker', seller_role: x.side === 'buy' ? 'maker' : 'taker' }));
+  send(p(minute(30) + 1_000, 'buy', 4));
+  send({ ...p(minute(30) + 2_000, 'buy', 900, 500), symbol: 'C-BTC-82000-200926' });
+  useFlowSocket(s);
+  const sum = await flowSummary(5, minute(30) + 5_000);
+  assert.equal(sum.buyVolume, 4);
 });
 
 test('an empty window says so rather than showing zeros as flow', async () => {

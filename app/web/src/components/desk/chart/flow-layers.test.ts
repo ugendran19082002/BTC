@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Bar } from '@/lib/smc/types';
-import { bigTradeScene, profileScene, volumeProfile } from './flow-layers';
+import { bigTradeScene, deltaSeries, flowRead, profileScene, volumeProfile } from './flow-layers';
 
 const bar = (time: number, low: number, high: number, volume: number): Bar => ({ time, open: low, high, low, close: high, volume });
 
@@ -73,5 +73,64 @@ describe('big trades', () => {
     const items = bigTradeScene(trades, bars, 300, 500).flatMap((i) => (i.t === 'bubble' ? [i] : []));
     expect(items.map((i) => i.rel)).toEqual([500, 1_000, 4_000, 8_000].map((s) => Math.sqrt(s / 8_000)));
     expect(items.map((i) => i.label ?? null)).toEqual([null, 'Buy 1.0 BTC', 'Buy 4.0 BTC', 'Buy 8.0 BTC']);
+  });
+});
+
+describe('volume nodes', () => {
+  it('[critical] finds a thin area between two areas of acceptance, and a second peak apart from the POC', () => {
+    // Two humps -- 100-110 heavy, 130-140 lighter -- with almost nothing traded between.
+    const bars = [
+      ...Array.from({ length: 10 }, (_, i) => bar(i * 300, 100, 110, 1_000)),
+      ...Array.from({ length: 6 }, (_, i) => bar((10 + i) * 300, 130, 140, 1_000)),
+      bar(16 * 300, 110, 130, 20),
+    ];
+    const p = volumeProfile(bars, 0, 16, 40)!;
+    expect(p.poc).toBeLessThan(110);
+    expect(p.hvn.some((h) => h > 130 && h < 140)).toBe(true);
+    expect(p.lvn.length).toBeGreaterThan(0);
+    expect(p.lvn[0]!).toBeGreaterThan(110);
+    expect(p.lvn[0]!).toBeLessThan(130);
+  });
+
+  it('labels the low-volume node nearest the last price', () => {
+    const bars = [
+      ...Array.from({ length: 10 }, (_, i) => bar(i * 300, 100, 110, 1_000)),
+      ...Array.from({ length: 6 }, (_, i) => bar((10 + i) * 300, 130, 140, 1_000)),
+      bar(16 * 300, 110, 130, 20),
+    ];
+    const p = volumeProfile(bars, 0, 16, 40)!;
+    const lines = profileScene(p, 0, 125).flatMap((i) => (i.t === 'line' ? [i.label ?? ''] : []));
+    expect(lines.some((l) => l.startsWith('LVN '))).toBe(true);
+  });
+});
+
+describe('delta and CVD', () => {
+  const day = 1_790_000_000 - (1_790_000_000 % 86_400); // a UTC midnight
+  const fb = (time: number, buy: number, sell: number, minutes = 5, trades = 10) => ({ time, buy, sell, trades, minutes });
+
+  it('[critical] delta is taker buying minus selling; CVD runs through the UTC day and starts again at midnight', () => {
+    const { delta, cvd } = deltaSeries([fb(day - 600, 10, 0), fb(day - 300, 0, 4), fb(day, 3, 1), fb(day + 300, 1, 2)], 300, day + 10_000);
+    expect(delta.map((d) => d.value)).toEqual([10, -4, 2, -1]);
+    expect(cvd.map((c) => c.value)).toEqual([10, 6, 2, 1]);
+  });
+
+  it('[critical] a candle with minutes missing is drawn faded, not as a full reading', () => {
+    const { delta } = deltaSeries([fb(day, 5, 1, 5), fb(day + 300, 5, 1, 2)], 300, day + 10_000);
+    expect(delta[0]!.color).toContain('0.8');
+    expect(delta[1]!.color).toContain('0.3');
+  });
+
+  it('the forming candle is whole with the minutes so far, and its pace is scaled to a whole candle', () => {
+    const flow = [...Array.from({ length: 10 }, (_, i) => fb(day + i * 300, 1, 1, 5, 100)), fb(day + 3_000, 4, 1, 1, 50)];
+    const r = flowRead(flow, day + 3_000, 300, day + 3_000 + 30)!; // 30 s in: 50 trades is 500 a candle
+    expect(r.whole).toBe(true);
+    expect(r.delta).toBe(3);
+    expect(r.buyPct).toBeCloseTo(0.8);
+    expect(r.velocity).toBeCloseTo(5);
+  });
+
+  it('says nothing of a candle it has no flow for, and gives no pace without five candles before', () => {
+    expect(flowRead([fb(day, 1, 1)], day + 300, 300, day + 1_000)).toBeNull();
+    expect(flowRead([fb(day, 1, 1)], day, 300, day + 1_000)!.velocity).toBeNull();
   });
 });

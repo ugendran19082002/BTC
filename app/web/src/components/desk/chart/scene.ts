@@ -14,7 +14,7 @@ import { SCALE_OUT } from '@/lib/smc/engine';
  */
 
 export type Layer = 'structure' | 'liquidity' | 'zones' | 'levels' | 'pd' | 'sessions' | 'vwap' | 'candles' | 'trade' | 'saved' | 'htf'
-  | 'profile' | 'bigtrades';
+  | 'profile' | 'bigtrades' | 'delta';
 
 export const LAYERS: readonly { key: Layer; label: string }[] = [
   { key: 'htf', label: 'HTF: 1H zones, 15m structure' },
@@ -30,9 +30,10 @@ export const LAYERS: readonly { key: Layer; label: string }[] = [
   { key: 'saved', label: 'Saved levels' },
   { key: 'profile', label: 'Volume profile' },
   { key: 'bigtrades', label: 'Big trades' },
+  { key: 'delta', label: 'Delta / CVD pane' },
 ];
 
-export const DEFAULT_LAYERS: readonly Layer[] = ['htf', 'structure', 'liquidity', 'zones', 'levels', 'pd', 'trade', 'saved', 'profile', 'bigtrades'];
+export const DEFAULT_LAYERS: readonly Layer[] = ['htf', 'structure', 'liquidity', 'zones', 'levels', 'pd', 'trade', 'saved', 'profile', 'bigtrades', 'delta'];
 
 /** 'right' runs to the chart's right edge: a level still in play. */
 type XEnd = number | 'right';
@@ -57,7 +58,10 @@ export type SceneMark = {
 /** A vertical segment at one candle: the trade's spine. */
 export type SceneVLine = { t: 'vline'; layer: Layer; x: number; y1: number; y2: number; color: string; priority: number };
 /** Volume at price, drawn as a histogram anchored to the chart's right edge (flow-layers.ts). */
-export type SceneProfile = { t: 'profile'; layer: Layer; bins: readonly { lo: number; hi: number; v: number; value: boolean }[]; max: number; poc: number };
+export type SceneProfile = {
+  t: 'profile'; layer: Layer; bins: readonly { lo: number; hi: number; v: number; value: boolean }[]; max: number; poc: number;
+  hvn: readonly number[]; lvn: readonly number[];
+};
 /**
  * One large taker order: a circle on its candle at its price. `rel` (0-1] is its
  * size against the biggest on the chart; the renderer turns it into pixels from

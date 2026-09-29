@@ -16,6 +16,7 @@ const setDataCalls: { which: string; data: any[] }[] = [];
 const applied: Record<string, unknown>[] = [];
 const primitives: { scene: readonly SceneItem[]; setReserved: (r: unknown[]) => void }[] = [];
 const repaints = vi.fn();
+const addedTo: { kind: string; pane: number }[] = [];
 
 vi.mock('lightweight-charts', () => {
   class Series {
@@ -32,8 +33,12 @@ vi.mock('lightweight-charts', () => {
     CrosshairMode: { Normal: 0 },
     CandlestickSeries: 'candles',
     HistogramSeries: 'volume',
+    LineSeries: 'line',
     createChart: vi.fn(() => ({
-      addSeries: vi.fn((kind: string) => new Series(kind)),
+      addSeries: vi.fn((kind: string, _o?: unknown, pane = 0) => { const s = new Series(kind); addedTo.push({ kind, pane }); return s; }),
+      removeSeries: vi.fn(),
+      removePane: vi.fn(),
+      panes: () => [{ setStretchFactor: vi.fn() }, { setStretchFactor: vi.fn() }],
       applyOptions: vi.fn((o: Record<string, unknown>) => { applied.push(o); }),
       subscribeCrosshairMove: vi.fn(),
       timeScale: () => ({ setVisibleLogicalRange: vi.fn(), logicalToCoordinate: (i: number) => i * 8, subscribeVisibleLogicalRangeChange: vi.fn(), unsubscribeVisibleLogicalRangeChange: vi.fn() }),
@@ -100,6 +105,15 @@ describe('the price chart', () => {
     expect(within(views).getByRole('radio', { name: '5m' }).getAttribute('aria-checked')).toBe('true');
     fireEvent.click(within(views).getByRole('radio', { name: '1m' }));
     expect(onView).toHaveBeenCalledWith('1m');
+  });
+
+  it('[critical] draws delta and CVD in their own pane under the price, only when there is flow', () => {
+    addedTo.length = 0;
+    chart({ tf: '5m' });
+    expect(addedTo.filter((a) => a.pane === 1)).toEqual([]);
+    const b = bars(60);
+    chart({ tf: '5m', flowBars: b.slice(-3).map((x) => ({ time: x.time, buy: 10, sell: 4, trades: 9, minutes: 5 })) });
+    expect(addedTo.filter((a) => a.pane === 1).map((a) => a.kind)).toEqual(['volume', 'line']);
   });
 
   it('[critical] never asks a removed chart to repaint (the "Object is disposed" crash)', () => {

@@ -183,6 +183,7 @@
 .pc-hud-ohlc { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; font-size: 11px; color: #94a3b8; font-variant-numeric: tabular-nums; }
 .pc-hud-ohlc .up { color: #4ade80; }
 .pc-hud-ohlc .down { color: #f87171; }
+.pc-hud-ohlc .hot { color: #fbbf24; font-weight: 700; }
 
 /* ── phones: the toolbar drops under the HUD's line, the HUD narrows ── */
 @media (max-width: 640px) {
