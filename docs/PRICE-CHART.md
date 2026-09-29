@@ -399,10 +399,27 @@ candles old, swept liquidity, HTF zones, older finished trades, big trades
 more than 48 candles old -- are drawn at reduced strength with lower label
 priority; the live setup is drawn last and strongest.
 
-**History.** The HUD's `Trades (n)` table lists this chart's completed trades,
-newest first: time (IST), side, entry, SL, TP1, exit, result, MFE, MAE,
-minutes, and the path ("TP1 → BE → stopped at the protected stop"). A finished
-trade is drawn as what happened: entry to exit, green or red, with the result.
+**History -- the Trades dialog.** The HUD's `Trades (n · trend m) ↗` button
+opens a dialog (a bottom sheet on a phone) with two tabs:
+
+- **SMC plan · this chart**: summary chips (trades, won, TP1 hit, stopped,
+  average and total R, MFE / MAE), then every completed trade newest first --
+  time (IST), side, entry, SL, TP1, exit, result, MFE, MAE, minutes, what
+  happened ("TP1 → BE → stopped at the protected stop") -- each with **show on
+  chart** (scrolls the chart to it and closes the dialog).
+- **Trend plan · paper log**: per timeframe the live forward test (closed,
+  net R, won, open) with the replayed trades counted apart; each trade with
+  its signal, stops, exit, result, live / replayed and its two filter flags.
+
+Rows can be **hidden** (× on the row), all at once (**Clear all**, after a
+confirm), shown again (**Show hidden**) and restored (**Restore all**).
+Hidden, never deleted, and per browser only: the SMC trades are recomputed
+from the candles, and the paper log is the forward test -- a delete button on
+it would make the test meaningless. The summary chips count every trade,
+hidden or not, so hiding a loss never flatters the record.
+
+A finished trade is drawn on the chart as what happened: entry to exit, green
+or red, with the result.
 
 **Clutter rules** (`scene.ts`): three resting pools a side (nearest), three OBs
 and three FVGs a direction (nearest), the latest six sweeps (one a candle and
