@@ -2,7 +2,7 @@ import { after, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { FlowSocket, printOf, perpTickerOf, type Print } from '../../src/market/flow-socket.js';
 import {
-  bookOf, capturePerpSnapshot, flowSchema, flowSummary, flushTradeFlow, minuteOf, minutesOf,
+  bookOf, capturePerpSnapshot, flowSchema, flowSummary, flushTradeFlow, largeOrdersOf, largePrints, minuteOf, minutesOf,
   useFlowSocket, FLOW_BUCKET_MS, LARGE_PRINT_CONTRACTS,
 } from '../../src/market/flow.js';
 import { closePool, one, query } from '../../src/db/pool.js';
@@ -15,7 +15,7 @@ const p = (at: number, side: 'buy' | 'sell', size: number, price = 81_000): Prin
 
 beforeEach(async () => {
   await flowSchema();
-  await query('TRUNCATE trade_flow_1m, perp_snapshots');
+  await query('TRUNCATE trade_flow_1m, perp_snapshots, large_prints');
   useFlowSocket(null);
 });
 after(() => closePool());
@@ -103,6 +103,43 @@ test('[critical] completed minutes are written once; the one in progress waits; 
   assert.equal(sum.aggressorBuyPct, 112 / 119);
   assert.deepEqual(sum.cvd.map((c) => c.cvd), [10, 6, 5, 105]);
   assert.equal(sum.source, 'socket');
+});
+
+test('[critical] a large order is the prints of one millisecond and side, at their average price; options and small ones are left out', () => {
+  const L = LARGE_PRINT_CONTRACTS;
+  const orders = largeOrdersOf([
+    p(T0, 'buy', L - 50, 81_000), p(T0, 'buy', 100, 81_010), // one order through two levels: large
+    p(T0, 'sell', 10),                                         // same millisecond, the other side: its own, small
+    p(T0 + 1, 'buy', L - 1),                                  // one contract short
+    p(T0 + 2, 'sell', L * 3, 80_990),
+    { ...p(T0 + 3, 'buy', L * 5), symbol: 'C-BTC-82000-200926' },
+  ]);
+  assert.deepEqual(orders.map((o) => [o.at, o.side, o.size]), [[T0, 'buy', L + 50], [T0 + 2, 'sell', L * 3]]);
+  assert.equal(orders[0]!.price, ((L - 50) * 81_000 + 100 * 81_010) / (L + 50));
+});
+
+test('[critical] large orders are written once with their minute, and read back with the socket\'s unwritten ones', async () => {
+  const L = LARGE_PRINT_CONTRACTS;
+  const s = new FlowSocket({ now: () => minute(12) + 10_000 });
+  for (const x of [
+    p(minute(10) + 1_000, 'buy', L * 2, 81_100), p(minute(10) + 2_000, 'sell', 5),
+    p(minute(11) + 1_000, 'sell', L, 81_050), p(minute(12) + 1_000, 'buy', L * 4, 81_200),
+  ]) s.receive(JSON.stringify({ type: 'all_trades', symbol: 'BTCUSD', price: String(x.price), size: x.size, timestamp: x.at * 1000, buyer_role: x.side === 'buy' ? 'taker' : 'maker', seller_role: x.side === 'buy' ? 'maker' : 'taker' }));
+  useFlowSocket(s);
+
+  await flushTradeFlow(minute(12) + 10_000);
+  await flushTradeFlow(minute(12) + 20_000);
+  const stored = await one<{ n: number }>('SELECT COUNT(*)::int AS n FROM large_prints');
+  assert.equal(stored?.n, 2, 'the two completed minutes\' large orders, once; the minute in progress waits');
+
+  const all = await largePrints(minute(0));
+  assert.deepEqual(all.map((o) => [o.at, o.side, o.size, o.price]), [
+    [minute(10) + 1_000, 'buy', L * 2, 81_100],
+    [minute(11) + 1_000, 'sell', L, 81_050],
+    [minute(12) + 1_000, 'buy', L * 4, 81_200],
+  ], 'recorded, then the socket\'s own, none twice');
+  assert.deepEqual((await largePrints(minute(0), L * 3)).map((o) => o.size), [L * 4], 'filtered by size');
+  assert.deepEqual((await largePrints(minute(11))).map((o) => o.at), [minute(11) + 1_000, minute(12) + 1_000], 'from the time asked');
 });
 
 test('an empty window says so rather than showing zeros as flow', async () => {

@@ -11,6 +11,7 @@ import { marketSchema } from './oi-history.js';
  *
  *   trade_flow_1m      every BTCUSD print, summed per minute by aggressor side
  *   option_flow_1m     every print on the two nearest expiries' options, per contract per minute, by aggressor side
+ *   large_prints       every large taker order on the perpetual, at its own price and time (the chart's bubbles)
  *   perp_snapshots     funding, open interest, turnover and the top of the book, every 5 minutes
  *
  * There was a fourth, `iv_term_snapshots`, for the IV term structure card's
@@ -117,6 +118,20 @@ const MIGRATIONS: Migration[] = [
     id: 'market-009-drop-iv-term',
     up: 'DROP TABLE IF EXISTS iv_term_snapshots;',
   },
+  {
+    // Each large taker order on the perpetual, at its own price and time: the chart's big-trade
+    // bubbles, and the history to test them on later. `trade_flow_1m` keeps only their sums.
+    id: 'market-015-large-prints',
+    up: `
+      CREATE TABLE IF NOT EXISTS large_prints (
+        at    BIGINT           NOT NULL,
+        side  TEXT             NOT NULL,
+        price DOUBLE PRECISION NOT NULL,
+        size  DOUBLE PRECISION NOT NULL,
+        PRIMARY KEY (at, side)
+      );
+    `,
+  },
 ];
 
 let ready: Promise<void> | null = null;
@@ -209,6 +224,47 @@ export function minutesOf(prints: readonly Print[], large = LARGE_PRINT_CONTRACT
   return [...groups.entries()].sort((a, b) => a[0] - b[0]).map(([at, ps]) => minuteOf(at, ps, large));
 }
 
+// ------------------------------------------------------------ large orders
+
+export type LargePrint = { at: number; side: 'buy' | 'sell'; price: number; size: number };
+
+/**
+ * The perpetual's prints as taker orders, keeping those of `large` contracts
+ * or more. Prints that share a millisecond and a side are one order filling
+ * through several levels; its price is their volume-weighted average. Pure.
+ */
+export function largeOrdersOf(prints: readonly Print[], large = LARGE_PRINT_CONTRACTS): LargePrint[] {
+  const orders = new Map<string, { at: number; side: 'buy' | 'sell'; size: number; notional: number }>();
+  for (const p of prints) {
+    if (p.symbol) continue;
+    const k = `${p.at}:${p.side}`;
+    const o = orders.get(k) ?? orders.set(k, { at: p.at, side: p.side, size: 0, notional: 0 }).get(k)!;
+    o.size += p.size;
+    o.notional += p.size * p.price;
+  }
+  return [...orders.values()]
+    .filter((o) => o.size >= large)
+    .sort((a, b) => a.at - b.at)
+    .map((o) => ({ at: o.at, side: o.side, price: o.notional / o.size, size: o.size }));
+}
+
+/**
+ * Large orders since `sinceMs` of `minSize` contracts or more, oldest first:
+ * the recorded ones, and the socket's own not yet written. At most `limit`,
+ * the most recent kept.
+ */
+export async function largePrints(sinceMs: number, minSize = LARGE_PRINT_CONTRACTS, limit = 5_000): Promise<LargePrint[]> {
+  await flowSchema();
+  const saved = await rows<{ at: string; side: 'buy' | 'sell'; price: number; size: number }>(
+    'SELECT at, side, price, size FROM large_prints WHERE at >= $1 AND size >= $2 ORDER BY at DESC LIMIT $3',
+    [sinceMs, minSize, limit],
+  );
+  const out: LargePrint[] = saved.reverse().map((r) => ({ at: Number(r.at), side: r.side, price: Number(r.price), size: Number(r.size) }));
+  const seen = new Set(out.map((o) => `${o.at}:${o.side}`));
+  const live = socket ? largeOrdersOf(socket.printsSince(sinceMs), minSize).filter((o) => !seen.has(`${o.at}:${o.side}`)) : [];
+  return [...out, ...live].slice(-limit);
+}
+
 let lastFlushedMinute = 0;
 
 /**
@@ -249,6 +305,16 @@ export async function flushTradeFlow(nowMs: number): Promise<number> {
       done.map((m) => m.largeBuyCount), done.map((m) => m.largeSellCount),
     ] as never,
   );
+  const big = largeOrdersOf(all.filter((p) => p.at < current));
+  if (big.length) {
+    await query(
+      `INSERT INTO large_prints (at, side, price, size)
+       SELECT * FROM unnest($1::bigint[], $2::text[], $3::float8[], $4::float8[])
+       ON CONFLICT (at, side) DO NOTHING`,
+      [big.map((o) => o.at), big.map((o) => o.side), big.map((o) => o.price), big.map((o) => o.size)] as never,
+    );
+    await query('DELETE FROM large_prints WHERE at < $1', [current - FLOW_KEEP_MS]);
+  }
   lastFlushedMinute = done[done.length - 1]!.at;
   await query('DELETE FROM trade_flow_1m WHERE at < $1', [current - FLOW_KEEP_MS]);
   return done.length + optionDone.length;

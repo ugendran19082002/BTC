@@ -3,7 +3,7 @@ import type {
   PrimitivePaneViewZOrder, SeriesAttachedParameter, SeriesType, Time,
 } from 'lightweight-charts';
 import { placeLabels, stacked, type LabelRequest, type Rect } from './label-layout';
-import type { SceneBox, SceneItem, SceneLine, SceneMark } from './scene';
+import type { SceneBox, SceneBubble, SceneItem, SceneLine, SceneMark, SceneProfile } from './scene';
 
 /**
  * Draws a scene (scene.ts) on the chart's own canvas, as a series primitive.
@@ -13,8 +13,8 @@ import type { SceneBox, SceneItem, SceneLine, SceneMark } from './scene';
  * no DOM overlay to fall a frame behind, and nothing clamped to the edge at a
  * price it does not have: a shape off the visible range is simply not drawn.
  *
- * Boxes go behind the candles (`drawBackground`); lines, marks and labels in
- * front. Labels are placed by priority (label-layout.ts), clear of `reserved`
+ * Boxes and the volume profile go behind the candles (`drawBackground`);
+ * lines, marks, big-trade bubbles and labels in front. Labels are placed by priority (label-layout.ts), clear of `reserved`
  * -- the HUD's corner.
  */
 
@@ -101,6 +101,7 @@ export class SmcPrimitive implements ISeriesPrimitive<Time> {
 
   private drawBack({ context: ctx, mediaSize }: Scope) {
     for (const it of this.scene) {
+      if (it.t === 'profile') { this.profile(ctx, it, mediaSize.width); continue; }
       if (it.t !== 'box') continue;
       const sx = this.span(it.x1, it.x2, mediaSize.width);
       const y1 = this.y(it.y1);
@@ -141,6 +142,7 @@ export class SmcPrimitive implements ISeriesPrimitive<Time> {
       else if (it.t === 'mark') this.mark(ctx, it, labels, () => id++, measure);
       else if (it.t === 'box' && it.label) this.boxLabel(it, width, labels, () => id++, measure);
       else if (it.t === 'vline') this.vline(ctx, it.x, it.y1, it.y2, it.color);
+      else if (it.t === 'bubble') this.bubble(ctx, it, labels, () => id++, measure);
     }
 
     const reqs: LabelRequest[] = labels.map((l) => ({ id: l.id, priority: l.priority, candidates: l.candidates }));
@@ -180,6 +182,45 @@ export class SmcPrimitive implements ISeriesPrimitive<Time> {
       id: nextId(), priority: it.priority - (it.faint ? 30 : 0), text: it.label, color: it.color, faint: it.faint,
       candidates: it.labelAt === 'end' ? [first, other, ...stacked(first, LABEL_H + 2).slice(1)] : [first, other],
     });
+  }
+
+  /** Right-anchored, at most a fifth of the width, so the latest candles stay readable through it. */
+  private profile(ctx: Ctx, it: SceneProfile, width: number) {
+    if (!(it.max > 0)) return;
+    const w = Math.min(width * 0.2, 170);
+    ctx.save();
+    for (const b of it.bins) {
+      const y1 = this.y(b.hi);
+      const y2 = this.y(b.lo);
+      if (y1 === null || y2 === null || !(b.v > 0)) continue;
+      const len = (w * b.v) / it.max;
+      const poc = it.poc >= b.lo && it.poc < b.hi;
+      ctx.fillStyle = poc ? 'rgba(251,191,36,0.42)' : b.value ? 'rgba(148,163,184,0.26)' : 'rgba(148,163,184,0.11)';
+      ctx.fillRect(width - len, Math.min(y1, y2) + 0.5, len, Math.max(1, Math.abs(y2 - y1) - 1));
+    }
+    ctx.restore();
+  }
+
+  private bubble(ctx: Ctx, it: SceneBubble, labels: Label[], nextId: () => number, measure: (t: string) => number) {
+    const x = this.x(it.x, Infinity);
+    const y = this.y(it.y);
+    if (x === null || y === null) return;
+    const color = it.side === 'buy' ? '#26a17b' : '#e2504f';
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, it.r, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.3;
+    ctx.fill();
+    ctx.globalAlpha = 0.9;
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = color;
+    ctx.stroke();
+    ctx.restore();
+    if (!it.label) return;
+    const w = measure(it.label);
+    const first: Rect = { x: x - w / 2, y: y - it.r - LABEL_H - 3, w, h: LABEL_H };
+    labels.push({ id: nextId(), priority: it.priority, text: it.label, color, candidates: [first, { ...first, y: y + it.r + 3 }] });
   }
 
   private vline(ctx: Ctx, i: number, p1: number, p2: number, color: string) {

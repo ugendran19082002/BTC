@@ -36,7 +36,7 @@ vi.mock('lightweight-charts', () => {
       addSeries: vi.fn((kind: string) => new Series(kind)),
       applyOptions: vi.fn((o: Record<string, unknown>) => { applied.push(o); }),
       subscribeCrosshairMove: vi.fn(),
-      timeScale: () => ({ setVisibleLogicalRange: vi.fn(), logicalToCoordinate: (i: number) => i * 8 }),
+      timeScale: () => ({ setVisibleLogicalRange: vi.fn(), logicalToCoordinate: (i: number) => i * 8, subscribeVisibleLogicalRangeChange: vi.fn(), unsubscribeVisibleLogicalRangeChange: vi.fn() }),
       remove: vi.fn(),
     })),
   };
@@ -117,7 +117,7 @@ describe('the price chart', () => {
     expect(primitives).toHaveLength(1);
     const scene = primitives[0]!.scene;
     const xs = scene.filter((it) => it.layer !== 'trade')
-      .flatMap((it) => (it.t === 'box' || it.t === 'line' ? [it.x1] : it.t === 'mark' || it.t === 'vline' ? [it.x] : it.points.map((p) => p[0])));
+      .flatMap((it) => (it.t === 'box' || it.t === 'line' ? [it.x1] : it.t === 'mark' || it.t === 'vline' || it.t === 'bubble' ? [it.x] : it.t === 'path' ? it.points.map((p) => p[0]) : []));
     expect(Math.max(-1, ...xs)).toBeLessThan(59);
   });
 

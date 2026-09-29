@@ -13,7 +13,8 @@ import { SCALE_OUT } from '@/lib/smc/engine';
  * drops the least important one when two would overlap.
  */
 
-export type Layer = 'structure' | 'liquidity' | 'zones' | 'levels' | 'pd' | 'sessions' | 'vwap' | 'candles' | 'trade' | 'saved' | 'htf';
+export type Layer = 'structure' | 'liquidity' | 'zones' | 'levels' | 'pd' | 'sessions' | 'vwap' | 'candles' | 'trade' | 'saved' | 'htf'
+  | 'profile' | 'bigtrades';
 
 export const LAYERS: readonly { key: Layer; label: string }[] = [
   { key: 'htf', label: 'HTF: 1H zones, 15m structure' },
@@ -27,9 +28,11 @@ export const LAYERS: readonly { key: Layer; label: string }[] = [
   { key: 'candles', label: 'Candles' },
   { key: 'trade', label: 'Trade' },
   { key: 'saved', label: 'Saved levels' },
+  { key: 'profile', label: 'Volume profile' },
+  { key: 'bigtrades', label: 'Big trades' },
 ];
 
-export const DEFAULT_LAYERS: readonly Layer[] = ['htf', 'structure', 'liquidity', 'zones', 'levels', 'pd', 'trade', 'saved'];
+export const DEFAULT_LAYERS: readonly Layer[] = ['htf', 'structure', 'liquidity', 'zones', 'levels', 'pd', 'trade', 'saved', 'profile', 'bigtrades'];
 
 /** 'right' runs to the chart's right edge: a level still in play. */
 type XEnd = number | 'right';
@@ -53,7 +56,11 @@ export type SceneMark = {
 };
 /** A vertical segment at one candle: the trade's spine. */
 export type SceneVLine = { t: 'vline'; layer: Layer; x: number; y1: number; y2: number; color: string; priority: number };
-export type SceneItem = SceneBox | SceneLine | ScenePath | SceneMark | SceneVLine;
+/** Volume at price, drawn as a histogram anchored to the chart's right edge (flow-layers.ts). */
+export type SceneProfile = { t: 'profile'; layer: Layer; bins: readonly { lo: number; hi: number; v: number; value: boolean }[]; max: number; poc: number };
+/** One large taker order: a circle at its time (a fractional bar index) and price, `r` pixels. */
+export type SceneBubble = { t: 'bubble'; layer: Layer; x: number; y: number; r: number; side: 'buy' | 'sell'; label?: string; priority: number };
+export type SceneItem = SceneBox | SceneLine | ScenePath | SceneMark | SceneVLine | SceneProfile | SceneBubble;
 
 export const C = {
   bull: '#26a17b', bear: '#e2504f',
@@ -61,7 +68,7 @@ export const C = {
   bullFill: 'rgba(38,161,123,0.10)', bearFill: 'rgba(226,80,79,0.10)',
   fvgBull: 'rgba(96,165,250,0.10)', fvgBear: 'rgba(245,158,11,0.10)', fvgBullLine: '#60a5fa', fvgBearLine: '#f59e0b',
   bsl: '#f59e0b', ssl: '#38bdf8', level: '#a78bfa', eq: '#94a3b8', ote: '#facc15',
-  vwap: '#e879f9', text: '#e5e7eb', muted: '#94a3b8',
+  vwap: '#e879f9', text: '#e5e7eb', muted: '#94a3b8', poc: '#fbbf24',
   premium: 'rgba(226,80,79,0.05)', discount: 'rgba(38,161,123,0.05)', oteFill: 'rgba(250,204,21,0.08)',
   profit: 'rgba(38,161,123,0.14)', risk: 'rgba(226,80,79,0.18)',
   session: { Asia: 'rgba(100,116,139,0.07)', London: 'rgba(59,130,246,0.07)', 'New York': 'rgba(249,115,22,0.07)' } as const,

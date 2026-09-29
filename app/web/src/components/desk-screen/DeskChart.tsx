@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import type { Candle } from '@/types/desk';
 import type { ChartTf } from '@/components/desk/PriceChart';
 import { PriceChart } from '@/components/desk/PriceChart';
-import { getCandles } from '@/api/desk';
+import { getCandles, getLargePrints } from '@/api/desk';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import { isForming, withLtp } from '@/lib/live-bar';
@@ -40,6 +40,11 @@ export function DeskChart({
   const [view, setView] = usePersisted<ChartTf>('chart:view', tf);
   const shown = VIEWS.includes(view) ? view : tf;
   const { data: m1 } = usePoll(() => getCandles('1m'), shown === '1m' ? 10_000 : 60_000);
+  // Big trades over what the chart spans (36 hours of 5m, 8 of 1m), from the smallest the viewer draws.
+  const [bigMin, setBigMin] = usePersisted<number>('chart:big-trade-min', 500);
+  const bigHours = shown === '1m' ? 8 : 36;
+  const { data: big } = usePoll(() => getLargePrints(bigHours, bigMin), 15_000, { deps: [bigHours, bigMin] });
+  const bigTrades = useMemo(() => ({ prints: big?.prints ?? [], min: bigMin, onMin: setBigMin }), [big, bigMin, setBigMin]);
 
   const minute = Math.floor(Date.now() / 60_000);
   const context = useMemo<TfRead[]>(() => {
@@ -81,6 +86,7 @@ export function DeskChart({
           context={context}
           regime={h1?.bars?.length ? { bars: h1.bars, tfSec: HOUR } : null}
           higher={higher}
+          bigTrades={bigTrades}
         />
       </div>
     </div>

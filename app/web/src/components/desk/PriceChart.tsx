@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   CandlestickSeries, ColorType, CrosshairMode, HistogramSeries, createChart,
-  type IChartApi, type ISeriesApi, type Time, type UTCTimestamp,
+  type IChartApi, type ISeriesApi, type LogicalRange, type Time, type UTCTimestamp,
 } from 'lightweight-charts';
 import { Expand, Layers, Lock, Minimize2, Unlock } from 'lucide-react';
 import type { Candle } from '@/types/desk';
@@ -15,6 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { SmcPrimitive } from './chart/smc-primitive';
 import { buildScene, C, DEFAULT_LAYERS, htfScene, LAYERS, type Layer, type SceneItem } from './chart/scene';
 import { ChartHud } from './chart/ChartHud';
+import { bigTradeScene, profileScene, volumeProfile, type BigTrade } from './chart/flow-layers';
 import './chart/price-chart.css';
 
 export type ChartTf = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d';
@@ -22,6 +23,8 @@ export type ChartTf = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d';
 /** Bars shown when a timeframe opens -- about nine pixels each, at least thirty -- and the space kept right of the last one for levels and labels. */
 const openingBars = (width: number) => Math.max(30, Math.min(90, Math.floor(width / 9)));
 const RIGHT_BARS = 24;
+/** The big-trade filter's choices, in contracts (1,000 to a BTC). */
+const BIG_TRADE_MINS = [200, 500, 1_000, 2_000] as const;
 
 const IST_TICK = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
 const IST_FULL = new Intl.DateTimeFormat('en-IN', {
@@ -40,7 +43,7 @@ const IST_FULL = new Intl.DateTimeFormat('en-IN', {
  * appears and then vanishes within a candle.
  */
 export function PriceChart({
-  bars, tf, views = [], onView, loading = false, error, context = [], regime, higher = [], symbol = 'BTCUSD',
+  bars, tf, views = [], onView, loading = false, error, context = [], regime, higher = [], bigTrades, symbol = 'BTCUSD',
 }: {
   bars: readonly Candle[];
   tf: ChartTf;
@@ -55,6 +58,8 @@ export function PriceChart({
   regime?: { bars: readonly Candle[]; tfSec: number } | null;
   /** Higher timeframes drawn on this chart: 1H order blocks, 15m structure. Ignored when not higher than this chart. */
   higher?: readonly { tf: string; tfSec: number; bars: readonly Candle[]; show: 'zones' | 'structure' }[];
+  /** Large taker orders for the bubbles, the smallest drawn (contracts), and how to change it. */
+  bigTrades?: { prints: readonly BigTrade[]; min: number; onMin?: (min: number) => void };
   symbol?: string;
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
@@ -67,12 +72,15 @@ export function PriceChart({
   const primitiveRef = useRef<SmcPrimitive | null>(null);
 
   const [zoomOn, setZoomOn] = usePersisted('zoom:price-chart', false);
-  const [layerList, setLayerList] = usePersisted<Layer[]>('chart:layers', [...DEFAULT_LAYERS]);
+  // v2: the order-flow layers were added; a list saved before them would hide them.
+  const [layerList, setLayerList] = usePersisted<Layer[]>('chart:layers:v2', [...DEFAULT_LAYERS]);
   // Folded by default on a phone, where it would cover half the candles; one tap opens it.
   const [hudOpen, setHudOpen] = usePersisted('chart:hud-open', typeof window === 'undefined' || window.innerWidth > 640);
   const [full, setFull] = useState(false);
   const [hover, setHover] = useState<Candle | null>(null);
   const [saved, setSaved] = useState<Annotation[]>([]);
+  /** The bars in view, whole indices: what the volume profile is taken over. */
+  const [inView, setInView] = useState<{ from: number; to: number } | null>(null);
   const layers = useMemo(() => new Set(layerList), [layerList]);
   const tfSec = TF_SECONDS[tf] ?? 300;
 
@@ -98,12 +106,25 @@ export function PriceChart({
     }), [higher, tfSec, nowMin]);
 
   // ── What is drawn ─────────────────────────────────────────────────────────
-  const scene = useMemo<SceneItem[]>(() => {
+  const base = useMemo<SceneItem[]>(() => {
     const items = buildScene(smc, closed, layers, read.blocked);
     if (layers.has('htf')) items.push(...htfScene(overlays, closed));
     if (layers.has('saved')) items.push(...savedBoxes(saved, bars));
     return items;
   }, [smc, layers, saved, bars.length, read.blocked, overlays]);
+  // The order-flow layers follow every tick and every scroll, so they are kept apart from the engine's scene.
+  const flow = useMemo<SceneItem[]>(() => {
+    const items: SceneItem[] = [];
+    if (layers.has('profile') && bars.length) {
+      const to = Math.min(bars.length - 1, inView?.to ?? bars.length - 1);
+      const from = Math.max(0, inView?.from ?? to - 90);
+      const p = volumeProfile(bars, from, to);
+      if (p) items.push(...profileScene(p, from));
+    }
+    if (layers.has('bigtrades') && bigTrades) items.push(...bigTradeScene(bigTrades.prints, bars, tfSec, bigTrades.min));
+    return items;
+  }, [layers, bars, inView, bigTrades, tfSec]);
+  const scene = useMemo(() => [...base, ...flow], [base, flow]);
 
   const loadSaved = useCallback(async () => {
     try { setSaved(await getAnnotations(symbol, tf)); } catch { /* the chart works without them */ }
@@ -151,6 +172,14 @@ export function PriceChart({
     const primitive = new SmcPrimitive();
     candles.attachPrimitive(primitive);
 
+    const onRange = (r: LogicalRange | null) => {
+      if (!r) return;
+      const from = Math.floor(r.from);
+      const to = Math.ceil(r.to);
+      setInView((v) => (v && v.from === from && v.to === to ? v : { from, to }));
+    };
+    chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
+
     chart.subscribeCrosshairMove((param) => {
       const at = param.time === undefined ? null : param.seriesData.get(candles);
       setHover(at ? ({ ...(at as unknown as Candle), time: Number(param.time) }) : null);
@@ -169,6 +198,7 @@ export function PriceChart({
     ro.observe(host);
     return () => {
       ro.disconnect();
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRange);
       // Detach first: `chart.remove()` does not detach series primitives, and the
       // label-measuring observer below can still fire once before its own cleanup.
       // A repaint asked of a removed chart throws "Object is disposed".
@@ -261,6 +291,14 @@ export function PriceChart({
                     <span>{label}</span>
                   </label>
                 ))}
+                {bigTrades?.onMin && layers.has('bigtrades') && (
+                  <label className="pc-layer pc-layer-sub">
+                    <span>Big trades from</span>
+                    <select value={bigTrades.min} onChange={(e) => bigTrades.onMin!(Number(e.target.value))} aria-label="Smallest big trade drawn">
+                      {BIG_TRADE_MINS.map((m) => <option key={m} value={m}>{m / 1_000} BTC</option>)}
+                    </select>
+                  </label>
+                )}
                 {saved.length > 0 && (
                   <button type="button" className="pc-clear" onClick={() => void clearSaved()}>Clear {saved.length} saved level{saved.length === 1 ? '' : 's'}</button>
                 )}

@@ -63,6 +63,8 @@
 .pc-hud-head:focus-visible { outline: 2px solid #38bdf8; outline-offset: 1px; }
 
 .pc-layers { display: grid; gap: 2px; min-width: 170px; padding: 8px; background: #0f1623; }
+.pc-layer-sub { justify-content: space-between; padding-left: 24px; color: #94a3b8; }
+.pc-layer-sub select { background: #0a0e17; color: #e5e7eb; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 4px; padding: 2px 4px; font: inherit; }
 .pc-layer {
   display: flex;
   align-items: center;
