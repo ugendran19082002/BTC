@@ -78,7 +78,7 @@ export function DeskChart({
   const bigHours = shown === '1m' ? 8 : 36;
   const { data: big } = usePoll(() => getLargePrints(bigHours), 15_000, { deps: [bigHours] });
   const heat = useHeatmap(shown === '1m' ? '1m' : '5m');
-  const { data: paper } = usePoll(getTrendPaper, 60_000);
+  const { data: paper } = usePoll(() => getTrendPaper(), 60_000);
   const { data: flow } = usePoll(() => getFlowBars(shown === '1m' ? '1m' : '5m', bigHours), 10_000, { deps: [shown, bigHours] });
   const bigTrades = useMemo(() => ({ prints: big?.prints ?? [], min: big?.min ?? 200, basis: big?.basis }), [big]);
 
