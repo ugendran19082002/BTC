@@ -1,5 +1,5 @@
 import type {
-  ChainResponse, Freshness, Leg, MarketRead, OptionStructure, Outlook, OutlookRow, SnapshotMeta,
+  ChainResponse, Leg, MarketRead, OptionStructure, Outlook, SnapshotMeta,
 } from '@/types/desk';
 
 /**
@@ -247,41 +247,7 @@ export function sideCards(data: Pick<ChainResponse, 'legs' | 'best' | 'recommend
   });
 }
 
-// ------------------------------------------------------------- the model view
-
-export type ModelView = {
-  /** Which horizon this is. */
-  label: string;
-  pUp: number;
-  pSide: number;
-  pDown: number;
-  /** Where the numbers come from: the analytics service's measured states, or the desk's own history. */
-  source: 'measured' | 'history';
-  windows: number | null;
-} | null;
-
-/**
- * Down / Side / Up for one horizon, from what was measured -- never invented.
- *
- * The analytics service's row where it answered; otherwise the plain history
- * (share of windows that closed higher) with Side left at zero, because the
- * history alone does not separate "flat" from "up a little".
- */
-export function modelView(outlook: Outlook, horizonMinutes = 720): ModelView {
-  const row = pickRow(outlook.rows, horizonMinutes);
-  if (!row) return null;
-  if (row.measured) {
-    return { label: row.label, pUp: row.measured.pUp, pSide: row.measured.pSide, pDown: row.measured.pDown, source: 'measured', windows: row.measured.windows };
-  }
-  if (row.pUp === null) return null;
-  return { label: row.label, pUp: row.pUp, pSide: 0, pDown: 1 - row.pUp, source: 'history', windows: outlook.sampleWindows };
-}
-
-function pickRow(rows: readonly OutlookRow[], minutes: number): OutlookRow | null {
-  let best: OutlookRow | null = null;
-  for (const r of rows) if (!best || Math.abs(r.minutes - minutes) < Math.abs(best.minutes - minutes)) best = r;
-  return best;
-}
+// ---------------------------------------------------------- horizon consensus
 
 /** How many horizons lean each way, and whether they agree enough to trust a side. */
 export function consensus(outlook: Outlook): { up: number; down: number; flat: number; scored: number; agree: boolean } {
@@ -779,37 +745,6 @@ export function contractValidity(snap: Pick<SnapshotMeta, 'live' | 'expiryTs'>, 
   if (!snap.live || hoursLeft <= 0) return { state: 'EXPIRED', hoursLeft: Math.min(0, hoursLeft), text: snap.live ? 'settled' : 'past snapshot' };
   if (hoursLeft <= expiringHours) return { state: 'EXPIRING', hoursLeft, text: `${Math.ceil(hoursLeft * 60)}m to settlement` };
   return { state: 'LIVE', hoursLeft, text: `${Math.floor(hoursLeft)}h ${String(Math.floor((hoursLeft % 1) * 60)).padStart(2, '0')}m to settlement` };
-}
-
-export type AgeItem = { key: 'market' | 'chain' | 'oi' | 'model'; label: string; ageMs: number | null; text: string; stale: boolean; /** What the age is of, and how often it can move. */ hint: string };
-
-/** An age as people say it: 4s, 3m, 2h, 2d. */
-export function ageText(ms: number | null): string {
-  if (ms === null) return '—';
-  const s = Math.max(0, Math.round(ms / 1000));
-  if (s < 60) return `${s}s`;
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  if (s < 86_400) return `${Math.floor(s / 3600)}h`;
-  return `${Math.floor(s / 86_400)}d`;
-}
-
-/**
- * How old each thing on the screen is, with a limit each: the market and the
- * chain move every few seconds, the OI record every five minutes, the model is
- * re-measured every few days. Past its limit an item is stale; no record is
- * stale too -- "not known" is not fresh.
- */
-export function dataFreshness(f: Freshness | null | undefined, nowMs: number, limits = { market: 30_000, chain: 30_000, oi: 15 * 60_000, model: 7 * 86_400_000 }): AgeItem[] {
-  const item = (key: AgeItem['key'], label: string, at: number | null | undefined, hint: string): AgeItem => {
-    const ageMs = at === null || at === undefined ? null : Math.max(0, nowMs - at);
-    return { key, label, ageMs, text: ageText(ageMs), stale: ageMs === null || ageMs > limits[key], hint };
-  };
-  return [
-    item('market', 'Market', f?.marketAt, 'The newest tick from the exchange feed; moves every second'),
-    item('chain', 'Chain', f?.chainAt, 'When this board was assembled; every five seconds while the screen is open'),
-    item('oi', 'OI record', f?.oiAt, 'The desk\'s own five-minute record of every strike (OI, quotes, greeks) — the one the hour-ago reads come from; 0–5m is normal, stale past 15m. Live OI on the board is as old as the chain'),
-    item('model', 'Model', f?.modelAt, 'When the measured model was last re-measured; days is normal, stale past a week'),
-  ];
 }
 
 // ------------------------------------------------- multi-timeframe consensus

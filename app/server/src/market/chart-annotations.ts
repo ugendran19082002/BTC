@@ -3,11 +3,13 @@
  *
  * Stored in `chart_annotations` in PostgreSQL. Each annotation belongs to a
  * symbol+timeframe and is kept until the trader deletes it or it expires.
- * The table is created by `ANNOTATION_SCHEMA` when the annotation routes are
- * registered -- outside the migration ledger (there is no `market-014-chart-
- * annotations`; `market-014` is `chain-band-pcts`). See docs/TODO.md.
+ * The table is migration `chart-001-annotations` (29 Sep 2026). Until then it
+ * was created by raw SQL when the routes registered, outside the ledger; the
+ * statement is `IF NOT EXISTS`, so on a database that already has the table
+ * the migration only records itself.
  */
 
+import { migrate, type Migration } from '../db/migrate.js';
 import { rows } from '../db/pool.js';
 
 export type AnnotationKind =
@@ -49,7 +51,7 @@ export type Annotation = {
   createdAt: number;
 };
 
-export const ANNOTATION_SCHEMA = `
+const ANNOTATION_SCHEMA = `
 CREATE TABLE IF NOT EXISTS public.chart_annotations (
   id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   symbol      TEXT    NOT NULL DEFAULT 'BTCUSD',
@@ -66,6 +68,15 @@ CREATE TABLE IF NOT EXISTS public.chart_annotations (
 CREATE INDEX IF NOT EXISTS chart_annotations_by_symbol
   ON public.chart_annotations (symbol, tf, to_time DESC);
 `;
+
+const MIGRATIONS: Migration[] = [{ id: 'chart-001-annotations', up: ANNOTATION_SCHEMA }];
+
+let ready: Promise<void> | null = null;
+export function annotationsSchema(): Promise<void> {
+  if (ready) return ready;
+  ready = migrate(MIGRATIONS).then(() => {}, (e) => { ready = null; throw e; });
+  return ready;
+}
 
 function row(r: {
   id: string; symbol: string; tf: string; kind: string;

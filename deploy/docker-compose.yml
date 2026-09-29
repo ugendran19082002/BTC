@@ -77,9 +77,6 @@ services:
       # Room for the heap to grow before V8 starts collecting hard. The desk
       # rests near 100 MB; this is headroom, not a need.
       NODE_OPTIONS: --max-old-space-size=1536
-      # Display-only models. Deliberately not a `depends_on`: the desk trades and
-      # serves its own cards whether or not this answers.
-      ANALYTICS_URL: http://analytics:8800
     volumes:
       # chain.db, and the retired SQLite files kept as the rollback path after
       # the cutover (docs/DEPLOY.md).

@@ -5,6 +5,35 @@ Updated 29 Sep 2026
 
 ---
 
+## 29 Sep 2026 (afternoon) — database audit, chart latency
+
+- [x] **Audit**: every table and column in a freshly migrated database checked
+  for a writer and a reader. The live schema is lean; the columns nothing reads
+  yet (option quotes and greeks, chain walls / max pain / band shares, the
+  perp's funding and OI, the index's mark) are recorded on purpose as research
+  history -- each module's header says so -- and stay.
+- [x] **Dead call removed**: `/api/chain` asked the analytics service for its
+  measured outlook on every request (up to 1.2 s when it was slow) for panels
+  that have gone; nothing read the answer. Also gone: the `freshness` block (a
+  database query a request, read by nothing), `analytics/client.ts`,
+  `seriesForAnalytics`, `withMeasured`, `modelView`, `dataFreshness`.
+- [x] **Chart latency**: the forming candle is `update()`d, not the whole
+  history re-sent; heatmap and bubbles rebuilt only when a candle is added;
+  the LTP push checks every 100 ms; flow / big-trade / heatmap reads shared
+  between pollers for 3-5 s.
+- [ ] **Owner: retire the analytics service?** Nothing in the desk uses it now.
+  Retiring it means: remove the `analytics` service from
+  `deploy/docker-compose.yml`, `Dockerfile.analytics`, `analytics/`,
+  `research/publish_outlook_states.py`, `src/db/analytics-schema.ts`; then,
+  after `deploy/backup-db.sh`, `DROP TABLE outlook_states, chain_states,
+  analytics_publish_meta;`.
+- [ ] **Owner: drop the retired journals** (still waiting, see 28 Sep): after
+  `deploy/backup-db.sh`, `DROP TABLE market_states, market_state_checks,
+  shock_snapshots;`. Their migrations stay in the ledger.
+- [ ] Dead web helpers left from the removed panels, found by knip:
+  `horizonRows`, `mtfConsensus`, `sideCards`, `tierOfTf`, `TradeFlowPanel`,
+  `OptionFlowPanel`, `WindowSelect`, `Sparkline` and others -- one sweep.
+
 ## 29 Sep 2026 (day) — order-flow layers, live LTP, CRT tested
 
 Four layers, each with its meaning kept apart (docs/PRICE-CHART.md §12):
@@ -151,8 +180,8 @@ Web 841 tests, server 1,213, both typechecks and the production build pass.
 
 ### Open -- hygiene
 
-- [ ] Put `chart_annotations` under the migration ledger (it is created by
-  raw SQL when the routes register; the comment claimed `market-014`).
+- [x] Put `chart_annotations` under the migration ledger -- `chart-001-annotations`
+  (29 Sep 2026).
 - [ ] Unused parameters `tsc --noUnusedParameters` still finds:
   `market-state.ts:417 input`, `score.ts:138/211 snap`,
   `option-snapshots.ts:174 c`, `select.ts:200 leg`.

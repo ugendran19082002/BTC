@@ -1,7 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { liveChain, historicalChain, liveExpiries, hoursSinceDeskOpen, simulationBacklog, WHOLE_BOARD, type Snapshot } from '../../market/chain.js';
-import { readMarket, seriesForAnalytics } from '../../market/moves.js';
-import { measuredOutlook } from '../../analytics/client.js';
+import { readMarket } from '../../market/moves.js';
 import { liveSpot, candles, tickerFeedHealth } from '../../market/delta.js';
 import { scoreLegs, pickSells, bias, verdict, USDINR } from '../../domain/score.js';
 import { recommend, type PickMode } from '../../domain/recommend.js';
@@ -11,7 +10,7 @@ import { reloadCalibration } from '../../domain/calibration.js';
 import { loadDays, reloadDays } from '../../backtest/backtest.js';
 import { tradingService, SHORT_CAP_KEY } from '../../trading/service.js';
 import { appliedMigrations } from '../../db/migrate.js';
-import { lastOptionSnapshot, lastOptionSnapshotAt } from '../../market/option-snapshots.js';
+import { lastOptionSnapshot } from '../../market/option-snapshots.js';
 import { heatColumnsOf, heatMinutes, persistentWalls } from '../../market/book-heat.js';
 import { ttlCache } from '../ttl-cache.js';
 import { autoLargeMin, flowBarsOf, flowFeedHealth, flowMinutes, flowSummary, largePrints, liveBook, livePerp, oiPulse, optionFlowSummary, LARGE_PRINT_CONTRACTS } from '../../market/flow.js';
@@ -22,11 +21,11 @@ import { refuse } from '../refuse.js';
 import { emBuffer, verdict as sideVerdict } from '../../domain/direction.js';
 import { DEFAULT_LIMITS } from '../../trading/precheck.js';
 import { bestTradeNow } from '../../domain/best-trade-now.js';
-import { outlook, withMeasured } from '../../domain/outlook.js';
+import { outlook } from '../../domain/outlook.js';
 import { pBetween } from '../../domain/probability.js';
 import { attachEv } from '../../domain/ev.js';
 import { noteOpenInterest, openInterestChange, ivChange, type OiChange } from '../../market/oi-history.js';
-import { chainBoard, recordBoard } from '../../market/chain-features.js';
+import { recordBoard } from '../../market/chain-features.js';
 import { SHOCK_WINDOWS } from '../../domain/shock.js';
 import { shockFrom } from '../../market/shock-now.js';
 
@@ -372,40 +371,23 @@ export function registerDeskRoutes(app: FastifyInstance) {
         : null;
 
       /*
-       * Down / Side / Up, measured, from the analytics service -- display only.
-       * Node's own outlook is built first and stands on its own; the service's
-       * rows are attached to it when they arrive inside the client's timeout,
-       * and simply absent when they do not.
+       * The implied and measured move at each horizon, from Node's own record.
+       * Until 29 Sep 2026 the analytics service's Down / Side / Up rows were
+       * attached here -- a network call on every chain request, up to 1.2 s
+       * when the service was slow or away -- for panels that have since gone;
+       * nothing on screen read them any more, so the call went with them.
        */
       const ownOutlook = outlook({ snap, market });
-      const settlement = ownOutlook.rows.find((r) => r.isExpiry);
 
       /*
-       * The option board, as raw marks and volumes.
-       *
-       * The service buckets it with the functions that labelled 735 mornings of
-       * chain.db, and only a reading that held in all three years may move a
-       * figure -- which, measured on 17 September, is the implied move alone,
-       * and only on the settlement card. The rest is context on the screen.
-       *
-       * Recorded on a live board (never a past one, which would file an old
-       * chain under now), because the readings nobody can measure yet -- open
-       * interest, its change, the walls, max pain -- have no history at all
-       * until this has been running for a year.
+       * The option board, recorded on a live board (never a past one, which
+       * would file an old chain under now), because the readings nobody can
+       * measure yet -- open interest, its change, the walls, max pain -- have
+       * no history at all until this has been running for a year.
        */
-      const board = chainBoard(snap, scored);
       if (snap.live) await recordBoard(snap, scored, structure, oiChanges);
 
       const feed = tickerFeedHealth();
-      const measured = await measuredOutlook({
-        now: Date.now(),
-        spot: snap.spot,
-        series: seriesForAnalytics(),
-        extra: settlement ? [{ label: settlement.label, minutes: settlement.minutes }] : [],
-        chain: board,
-      });
-
-      const fullOutlook = withMeasured(ownOutlook, measured);
       return {
         snapshot: { ...snap, legs: undefined },
         legs: attachEv(scored, {
@@ -440,7 +422,7 @@ export function registerDeskRoutes(app: FastifyInstance) {
          * them into one number is how "the market looks bullish" becomes
          * "sell this put".
          */
-        outlook: fullOutlook,
+        outlook: ownOutlook,
         recommendation,
         requireHedge,
         verdict: verdict(snap, picks, minPremium, lots, market, {
@@ -448,20 +430,6 @@ export function registerDeskRoutes(app: FastifyInstance) {
           hedgeMissing: recommendation.hedgeMissing,
         }),
         usdinr: USDINR,
-        /*
-         * How old each thing on the screen is, as epoch ms, so the bar can say
-         * "market 2s · chain 4s · OI 3m · model 2d" and go amber when one of
-         * them is not moving. Null where there is no record yet; null as a
-         * whole on a past snapshot, where age means nothing.
-         */
-        freshness: snap.live ? {
-          // The newer of the two feeds: a dead socket's last message must not
-          // age a board the REST poll refreshed seconds ago ("market 1d", 22 Sep).
-          marketAt: Math.max(feed.lastMessageAt ?? 0, feed.batchAt ?? 0) || null,
-          chainAt: snap.ts * 1000,
-          oiAt: await lastOptionSnapshotAt(),
-          modelAt: fullOutlook.model?.measuredAt && Number.isFinite(Date.parse(fullOutlook.model.measuredAt)) ? Date.parse(fullOutlook.model.measuredAt) : null,
-        } : null,
       };
     } catch (e) {
       const msg = (e as Error).message;

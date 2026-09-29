@@ -514,33 +514,6 @@ async function fetchSeriesFresh(): Promise<[Timeframe, Candle[]][]> {
  *   far away as it looked at entry.
  */
 /**
- * The bars the analytics service labels "now" from, as compact parallel arrays.
- *
- * Straight out of the cache `readMarket` already fills, so asking costs no
- * request to Delta. Every bar goes, the one still forming included: the service
- * drops it itself, the same way the history it was measured on never saw one.
- * Null until the first read has filled the cache.
- */
-type AnalyticsTf = '5m' | '15m' | '1h' | '4h' | '1d';
-/**
- * The five the analytics service was measured on -- named, not "everything
- * except 1m". When 30m, 2h, 6h and 12h joined the cache (26 Sep 2026) the old
- * "skip 1m" rule would have started posting four frames the service has never
- * seen a measurement for.
- */
-const ANALYTICS_TFS: readonly AnalyticsTf[] = ['5m', '15m', '1h', '4h', '1d'];
-
-export function seriesForAnalytics(): Partial<Record<AnalyticsTf, { t: number[]; c: number[] }>> | null {
-  if (!seriesCache) return null;
-  const out: Partial<Record<AnalyticsTf, { t: number[]; c: number[] }>> = {};
-  for (const [tf, bars] of seriesCache.data) {
-    if (!ANALYTICS_TFS.includes(tf as AnalyticsTf)) continue;
-    out[tf as AnalyticsTf] = { t: bars.map((b) => b.time), c: bars.map((b) => b.close) };
-  }
-  return out;
-}
-
-/**
  * BTC's close nearest `minutesAgo`, off the cached series: the 1-minute bars
  * for the last eight hours, the 5-minute ones beyond. Null before the first
  * read, or past what the cache holds.

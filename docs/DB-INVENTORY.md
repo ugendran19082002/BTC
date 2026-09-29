@@ -18,9 +18,9 @@ name's prefix wherever a bare name would be ambiguous (`auth_sessions`,
 | sign-in | `auth_user`, `auth_sessions`, `auth_recovery_codes`, `auth_limits`, `auth_events` | the sign-in | The one user, sessions, recovery codes, rate limits, the security log. |
 | errors | `errors` | everything | Every failure, from all three tiers, in one place. |
 | market | `oi_snapshots`, `chain_features`, `option_snapshots`, `option_snapshots_1m`, `trade_flow_1m`, `option_flow_1m`, `large_prints`, `book_heat_1m`, `perp_snapshots`, `index_1m` | the chain route, the API's recorders, the perp's trade socket, and the book sampler | What open interest and at-the-money volatility *were*, so a change in either is readable. Disposable. |
-| chart | `chart_annotations` | the annotation routes | Levels and zones saved on the price chart. Created outside the ledger (see TODO.md). |
+| chart | `chart_annotations` | the annotation routes | Levels and zones saved on the price chart. Under the ledger since 29 Sep 2026 (`chart-001-annotations`). |
 | retired | `market_states`, `market_state_checks`, `shock_snapshots` | nothing, since 28 Sep 2026 | The Signal History and big-move journals. Writers and readers removed; the tables are left for a drop that needs the owner's go-ahead and a backup first (TODO.md). |
-| analytics | `outlook_states`, `chain_states`, `analytics_publish_meta` | `research/publish_outlook_states.py` | The measured Down / Side / Up tables the Python service reads. |
+| analytics | `outlook_states`, `chain_states`, `analytics_publish_meta` | `research/publish_outlook_states.py` | The measured Down / Side / Up tables the Python service reads. **No reader in the desk since 29 Sep 2026** -- retirement waits for the owner (TODO.md). |
 | ledger | `schema_migrations` | `db/migrate.ts` | The one ledger of what has been done to the database. |
 | `chain.db` (SQLite) | 6 | the harvester, offline | Two years of settled option chains. Read-only at runtime. |
 
@@ -95,12 +95,19 @@ Ids are `<area>-NNN-what-it-does`. Applied on a fresh desk today:
 | Area | Migrations |
 |---|---|
 | trading | `trading-001-settings`, `trading-002-default-settings`, `trading-003-trades`, `trading-004-mtm-samples`, `trading-005-settings-to-public`, `trading-006-journal-to-public` |
-| market | `market-001-oi-snapshots`, `market-002-chain-features`, `market-003-to-public`, `market-004-option-snapshots`, `market-005-flow`, `market-006-flow-large-counts`, `market-007-option-flow`, `market-008-option-snapshots-1m`, `market-009-drop-iv-term`, `market-013-index-1m`, `market-014-chain-band-pcts` |
+| market | `market-001-oi-snapshots`, `market-002-chain-features`, `market-003-to-public`, `market-004-option-snapshots`, `market-005-flow`, `market-006-flow-large-counts`, `market-007-option-flow`, `market-008-option-snapshots-1m`, `market-009-drop-iv-term`, `market-013-index-1m`, `market-014-chain-band-pcts`, `market-015-large-prints`, `market-016-book-heat` |
 | market, retired | `market-010-market-states`, `market-011-state-detail`, `market-012-shock-snapshots`, `market-015-signal-lifecycle-audit`, `market-016-state-heartbeat`, `market-017-state-dedupe-at-db`, `market-018-clean-range-outcomes` -- applied lazily on first write, and removed from the code with their journals on 28 Sep 2026. They stay in a live ledger; a fresh database never runs them. |
 | errors | `errors-001-log`, `errors-002-to-public` |
 | strategy | `strategy-001-tables`, `strategy-002-seed`, `strategy-003-to-public`, `strategy-004-retire-extras`, `strategy-005-drop-retired-tables` |
 | sign-in | `auth-001-user-sessions`, `auth-002-to-public` |
 | analytics | `analytics-001-to-public` |
+| chart | `chart-001-annotations` (the table predates it; `IF NOT EXISTS`, so on a live database it only records itself) |
+
+`market-015` and `market-016` are numbers the retired journals also used
+(`market-015-signal-lifecycle-audit`, `market-016-state-heartbeat`). The
+ledger keys on the whole id, so both run and neither shadows the other; the
+new ones shipped before the clash was noticed and are not renamed, because a
+shipped migration is never edited. The next market migration is `market-019`.
 
 The `001`–`004` migrations still create each table in its old schema -- they
 have shipped, and are never edited -- and the `*-to-public` migrations after
@@ -476,7 +483,11 @@ minute; `/api/health` still reports the five-minute bucket.
 
 Written by `research/publish_outlook_states.py` from the repository's `chain.db`
 after `measure_outlook.py` / `measure_chain_outlook.py` have run; read by the
-Python service (`analytics/app/db.py`, `PgStates`). Nothing in Node reads it.
+Python service (`analytics/app/db.py`, `PgStates`). Nothing in Node reads it --
+and since 29 Sep 2026 nothing in the desk asks the service either: the chain
+route's call went with the panels that showed its rows (it cost up to 1.2 s a
+request when the service was slow). The service still runs and the tables
+still fill until the owner retires them (TODO.md).
 
 | Table | What it holds |
 |---|---|

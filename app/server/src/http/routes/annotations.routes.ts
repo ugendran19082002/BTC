@@ -13,19 +13,11 @@ import {
   createAnnotation,
   deleteAnnotation,
   clearAnnotations,
-  ANNOTATION_SCHEMA,
+  annotationsSchema,
   type AnnotationKind,
 } from '../../market/chart-annotations.js';
-import { rows } from '../../db/pool.js';
 
-let ready = false;
-
-async function ensureSchema() {
-  if (ready) return;
-  // Inline schema: simple enough not to need the full migration runner here.
-  await rows(ANNOTATION_SCHEMA);
-  ready = true;
-}
+const ensureSchema = annotationsSchema;
 
 const VALID_KINDS = new Set<string>([
   'sl', 'tgt', 'tgt2', 'tgt3',

@@ -543,39 +543,6 @@ export type OutlookRow = {
   lean: 'bullish' | 'bearish' | 'flat' | null;
   why: string;
   isExpiry: boolean;
-  /**
-   * Down / Side / Up as measured for moments like this one, from the analytics
-   * service. Absent or null when it did not answer: the card then shows the
-   * figures above instead.
-   */
-  measured?: MeasuredRow | null;
-};
-
-/** Mirrors app/server/src/analytics/client.ts. */
-export type MeasuredRow = {
-  label: string;
-  minutes: number;
-  measuredMinutes: number;
-  projected: number;
-  low: number;
-  high: number;
-  pDown: number;
-  pSide: number;
-  pUp: number;
-  sideBandPct: number;
-  sideBandUsd: number;
-  arrow: 'up' | 'down' | 'flat';
-  calm: 'calmer' | 'livelier' | null;
-  windows: number;
-  basis: {
-    feature: string;
-    bucket: string;
-    words: string;
-    windows: number;
-    independent: number;
-    leanHolds: boolean;
-    sideHolds: boolean;
-  } | null;
 };
 
 export type Outlook = {
@@ -589,36 +556,7 @@ export type Outlook = {
   /** How far the measured direction ever gets from a coin flip, in points. */
   directionEdgePts: number | null;
   sampleWindows: number | null;
-  /** The measured model that answered, and when it was measured. Null or absent when none did. */
-  model?: { name: string; measuredAt: string | null } | null;
-  /** The option board now, reading by reading, with what its measurement allows. */
-  context?: ChainContext[];
 };
-
-/**
- * One chain reading, and how far it is allowed to speak.
- *
- * `measured` false means nothing was ever counted for that bucket, so nothing
- * may be claimed from it. Measured on 17 September over 735 mornings: of the
- * implied move, the skew and put/call volume, only a large implied move held
- * anything (the day is livelier), and no chain reading held a direction.
- */
-export type ChainContext = {
-  feature: string;
-  value: number | null;
-  bucket: string | null;
-  words: string | null;
-  measured: boolean;
-  leanHolds: boolean;
-  sideHolds: boolean;
-  calm: 'calmer' | 'livelier' | null;
-  pDown: number | null;
-  pSide: number | null;
-  pUp: number | null;
-  windows: number | null;
-};
-
-export type Freshness = { marketAt: number | null; chainAt: number | null; oiAt: number | null; modelAt: number | null };
 
 export type ChainResponse = {
   snapshot: SnapshotMeta;
@@ -639,7 +577,6 @@ export type ChainResponse = {
   verdict: Verdict;
   usdinr: number;
   /** When each thing on the screen was last read, epoch ms; null where there is no record. Null as a whole on a past snapshot. */
-  freshness?: Freshness | null;
 };
 
 export type Band = { min: number; max: number };

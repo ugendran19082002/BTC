@@ -3,8 +3,8 @@ import type { ChainResponse, Leg, Outlook } from '@/types/desk';
 import live from '@/test/fixtures/chain-live.json';
 import {
   sideGates, bestLeg, consensus, expectedMove, feePerContract, freshness, gammaRisk,
-  ivRv, keyLevels, marginPerContract, modelView, odds, orderEstimate, premiumAnalysis, skew, volRegime,
-  ageText, contractValidity, dataFreshness, expiryDirection, mtfConsensus, optionBias, sellerImpact,
+  ivRv, keyLevels, marginPerContract, odds, orderEstimate, premiumAnalysis, skew, volRegime,
+  contractValidity, expiryDirection, mtfConsensus, optionBias, sellerImpact,
   sellerState, skewRichness, fundingRead, windowMinutes, triggerState, assessSides, horizonRows,
   namedLevels, earlyWarning, boardRead, movementVerdict, parseSymbol, positionState, positionViews,
   premiumMomentum, shortLossAt,
@@ -104,22 +104,7 @@ const outlook = (over: Partial<Outlook>): Outlook => ({
   directionEdgePts: null, sampleWindows: 105_120, ...over,
 });
 
-describe('model view and consensus', () => {
-  test('[critical] the measured row where the analytics service answered', () => {
-    const v = modelView(outlook({ rows: [
-      { label: '1h', minutes: 60, pUp: 0.5, measured: null } as never,
-      { label: '12h', minutes: 720, pUp: 0.52, measured: { pUp: 0.64, pSide: 0.12, pDown: 0.24, windows: 900 } } as never,
-    ] }), 720);
-    expect(v).toMatchObject({ label: '12h', pUp: 0.64, pSide: 0.12, pDown: 0.24, source: 'measured' });
-  });
-  test('without it, the plain history -- and Side left at zero, not guessed', () => {
-    const v = modelView(outlook({ rows: [{ label: '12h', minutes: 720, pUp: 0.52, measured: null } as never] }));
-    expect(v).toMatchObject({ pUp: 0.52, pSide: 0, source: 'history' });
-    expect(v!.pDown).toBeCloseTo(0.48, 9);
-  });
-  test('no rows is no view', () => {
-    expect(modelView(outlook({}))).toBeNull();
-  });
+describe('consensus', () => {
   test('horizons agree at five in seven', () => {
     expect(consensus(outlook({ bullish: 5, bearish: 1, flat: 1 })).agree).toBe(true);
     expect(consensus(outlook({ bullish: 4, bearish: 2, flat: 1 })).agree).toBe(false);
@@ -282,12 +267,6 @@ describe('the contract and the data', () => {
     expect(contractValidity(snap(0.5), now).state).toBe('EXPIRING');
     expect(contractValidity(snap(0), now).state).toBe('EXPIRED');
     expect(contractValidity(snap(5, false), now)).toMatchObject({ state: 'EXPIRED', text: 'past snapshot' });
-  });
-  it('ages are said as people say them, and each has its own limit', () => {
-    expect(ageText(4_000)).toBe('4s'); expect(ageText(190_000)).toBe('3m'); expect(ageText(7_200_000)).toBe('2h'); expect(ageText(2 * 86_400_000 + 5)).toBe('2d'); expect(ageText(null)).toBe('—');
-    const ages = dataFreshness({ marketAt: now - 2_000, chainAt: now - 45_000, oiAt: now - 4 * 60_000, modelAt: null }, now);
-    expect(ages.map((a) => [a.key, a.text, a.stale])).toEqual([['market', '2s', false], ['chain', '45s', true], ['oi', '4m', false], ['model', '—', true]]);
-    expect(dataFreshness(null, now).every((a) => a.stale)).toBe(true);
   });
 });
 
