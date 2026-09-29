@@ -5,6 +5,8 @@ import type { Readout } from '@/lib/smc/readout';
 import { SMC_MEASURED } from '@/lib/smc/measured.data';
 import type { BigTradeSummary, FlowRead, VolRegime } from './flow-layers';
 import type { PerpOiChange } from '@/api/desk';
+import { trendR, trendStop, type TrendTrade } from '@/lib/trend/breakout';
+import { TREND_MEASURED } from '@/lib/trend/measured.data';
 
 const fmt = (p: number) => Math.round(p).toLocaleString('en-US');
 const pct = (v: number) => `${Math.round(v * 100)}%`;
@@ -30,7 +32,9 @@ export const ChartHud = forwardRef<HTMLDivElement, {
   big?: (BigTradeSummary & { min: number; basis?: string }) | null;
   /** Positioning and volatility: the perp's OI against an hour ago, funding, and the chart's ATR against its usual. */
   derivs?: { oi: PerpOiChange | null; funding: number | null; vol: VolRegime | null } | null;
-}>(function ChartHud({ open, onToggle, tf, read, context, candle, big, derivs }, ref) {
+  /** The trend plan's open trade on 1H and 4H (null when flat), and the last price to mark them at. */
+  trend?: { h1: TrendTrade | null; h4: TrendTrade | null; mark: number | null } | null;
+}>(function ChartHud({ open, onToggle, tf, read, context, candle, big, derivs, trend }, ref) {
   const up = candle ? candle.close >= candle.open : true;
   return (
     <div ref={ref} className={`pc-hud pc-hud-${read.tone}`} aria-label="Setup readout">
@@ -121,6 +125,23 @@ export const ChartHud = forwardRef<HTMLDivElement, {
               <span>{candle.hovering ? candle.when : 'Last'}</span>
               <span>O {fmt(candle.open)}</span><span>H {fmt(candle.high)}</span><span>L {fmt(candle.low)}</span>
               <span className={up ? 'up' : 'down'}>C {fmt(candle.close)}</span>
+            </p>
+          )}
+          {trend && (
+            <p className="pc-hud-ohlc pc-hud-trend" aria-label="Trend plan"
+              title={`Trend plan: a close beyond the 20-candle channel, a 2 ATR stop, then a 3 ATR trailing stop, no target (lib/trend/breakout.ts). Measured ${TREND_MEASURED.from.slice(0, 4)}-${TREND_MEASURED.to.slice(2, 4)} after fees: 1H ${r1(TREND_MEASURED['1H'].ins.netR)} / ${r1(TREND_MEASURED['1H'].oos.netR)} a trade, 4H ${r1(TREND_MEASURED['4H'].ins.netR)} / ${r1(TREND_MEASURED['4H'].oos.netR)} (2024-25 / 2026) -- positive, not significant. Information, not a signal.`}>
+              <span>Trend</span>
+              {(['h1', 'h4'] as const).map((k) => {
+                const t = trend[k];
+                const label = k === 'h1' ? '1H' : '4H';
+                if (!t) return <span key={k}>{label} flat</span>;
+                const r = trend.mark === null ? null : trendR(t, trend.mark);
+                return (
+                  <span key={k} className="trend-on">
+                    {label} {t.dir === 1 ? 'LONG' : 'SHORT'} {fmt(t.entry)} · trail {fmt(trendStop(t))}{r === null ? '' : ` · ${r1(r)}`}
+                  </span>
+                );
+              })}
             </p>
           )}
           {derivs && (derivs.oi || derivs.funding !== null || derivs.vol) && (

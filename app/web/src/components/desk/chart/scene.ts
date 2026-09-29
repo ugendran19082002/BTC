@@ -14,7 +14,7 @@ import { SCALE_OUT } from '@/lib/smc/engine';
  */
 
 export type Layer = 'structure' | 'liquidity' | 'zones' | 'levels' | 'pd' | 'sessions' | 'vwap' | 'candles' | 'trade' | 'saved' | 'htf'
-  | 'profile' | 'bigtrades' | 'delta' | 'heatmap' | 'options';
+  | 'profile' | 'bigtrades' | 'delta' | 'heatmap' | 'options' | 'trend';
 
 /**
  * Every layer, with what the research says about it (docs/PRICE-CHART.md §14),
@@ -33,6 +33,7 @@ export const LAYERS: readonly { key: Layer; label: string; note?: string }[] = [
   { key: 'vwap', label: 'VWAP' },
   { key: 'candles', label: 'Candles' },
   { key: 'trade', label: 'Trade', note: 'The desk\'s record: −0.17R a trade after fees' },
+  { key: 'trend', label: 'Trend plan (1H breakout)', note: 'Measured 2024–26: +0.11R / +0.00R a trade, not significant; catches ~40% of big moves' },
   { key: 'saved', label: 'Saved levels' },
   { key: 'heatmap', label: 'Liquidity heatmap (book)', note: 'Recorded since 29 Sep 2026 — too new to measure' },
   { key: 'options', label: 'Options OI (strikes)', note: 'Positioning — no history to measure yet' },
@@ -47,8 +48,8 @@ export const LAYERS: readonly { key: Layer; label: string; note?: string }[] = [
  * every layer stays a checkbox below them.
  */
 export const LAYER_PRESETS: readonly { key: string; label: string; title: string; layers: readonly Layer[] }[] = [
-  { key: 'desk', label: 'Desk', title: 'The working set: the trade, structure, liquidity, zones, levels, option strikes, big trades, the profile and delta', layers: ['trade', 'structure', 'liquidity', 'zones', 'levels', 'saved', 'options', 'bigtrades', 'profile', 'delta'] },
-  { key: 'clean', label: 'Clean', title: 'Price action and the trade only', layers: ['trade', 'structure', 'liquidity', 'zones', 'saved'] },
+  { key: 'desk', label: 'Desk', title: 'The working set: the trade, the trend plan, structure, liquidity, zones, levels, option strikes, big trades, the profile and delta', layers: ['trade', 'trend', 'structure', 'liquidity', 'zones', 'levels', 'saved', 'options', 'bigtrades', 'profile', 'delta'] },
+  { key: 'clean', label: 'Clean', title: 'Price action, the trade and the trend plan only', layers: ['trade', 'trend', 'structure', 'liquidity', 'zones', 'saved'] },
   { key: 'flow', label: 'Order flow', title: 'Resting liquidity, big trades, the profile and delta, around the trade', layers: ['trade', 'heatmap', 'bigtrades', 'profile', 'delta', 'saved'] },
   { key: 'options', label: 'Options', title: 'Option strikes and max pain, levels and the profile, around the trade', layers: ['trade', 'options', 'levels', 'profile', 'saved'] },
   { key: 'all', label: 'All', title: 'Every layer', layers: LAYERS.map((l) => l.key) },

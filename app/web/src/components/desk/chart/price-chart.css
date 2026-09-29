@@ -211,6 +211,7 @@
 .pc-hud-ohlc .down { color: #f87171; }
 .pc-hud-ohlc .hot { color: #fbbf24; font-weight: 700; }
 .pc-hud-ohlc .bbuy { color: #60a5fa; }
+.pc-hud-trend .trend-on { color: #a3e635; font-weight: 600; }
 .pc-hud-ohlc .bsell { color: #e879f9; }
 
 /* ── phones: the toolbar drops under the HUD's line, the HUD narrows ── */

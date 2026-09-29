@@ -130,6 +130,19 @@ describe('the price chart', () => {
     expect(line).toMatch(/Vol (expanding|normal|quiet) \d\.\d× · ATR \d+ pts/);
   });
 
+  it('[critical] the readout shows the trend plan on 1H and 4H, open or flat, with its measured record in the tooltip', () => {
+    const hourly: Candle[] = Array.from({ length: 60 }, (_, i) => {
+      const t = Math.floor(Date.now() / 1000 / HOUR) * HOUR - (60 - i) * HOUR;
+      const c = i < 40 ? 77_000 : 77_000 + (i - 39) * 300;
+      return { time: t, open: c, high: c + 50, low: c - 50, close: c, volume: 1 };
+    });
+    chart({ trendBars: hourly });
+    const line = screen.getByLabelText('Trend plan');
+    expect(line.textContent).toMatch(/1H LONG 77,300 · trail [\d,]+ · \+[\d.]+R/);
+    expect(line.textContent).toContain('4H');
+    expect(line.getAttribute('title')).toMatch(/Measured 2024-26 after fees: 1H \+0\.1R/);
+  });
+
   it('[critical] zoom is off until it is asked for, so the page scrolls over the chart', () => {
     chart();
     fireEvent.click(screen.getByRole('button', { name: /^Zoom$/ }));
@@ -208,7 +221,7 @@ describe('the price chart', () => {
     chart();
     fireEvent.click(screen.getByRole('button', { name: 'Layers' }));
     fireEvent.click(screen.getByLabelText(/^Structure/));
-    const stored = JSON.parse(localStorage.getItem('btc-desk:chart:layers:v3')!) as string[];
+    const stored = JSON.parse(localStorage.getItem('btc-desk:chart:layers:v4')!) as string[];
     expect(stored).not.toContain('structure');
     expect(stored).toContain('liquidity');
   });

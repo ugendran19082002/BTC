@@ -129,6 +129,7 @@ export function DeskChart({
           heat={heat}
           strikes={strikes}
           derivs={derivs}
+          trendBars={h1?.bars}
           ltp={ltp}
         />
       </div>
