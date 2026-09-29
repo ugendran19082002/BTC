@@ -19,8 +19,6 @@ name's prefix wherever a bare name would be ambiguous (`auth_sessions`,
 | errors | `errors` | everything | Every failure, from all three tiers, in one place. |
 | market | `oi_snapshots`, `chain_features`, `option_snapshots`, `option_snapshots_1m`, `trade_flow_1m`, `option_flow_1m`, `large_prints`, `book_heat_1m`, `perp_snapshots`, `index_1m` | the chain route, the API's recorders, the perp's trade socket, and the book sampler | What open interest and at-the-money volatility *were*, so a change in either is readable. Disposable. |
 | chart | `chart_annotations` | the annotation routes | Levels and zones saved on the price chart. Under the ledger since 29 Sep 2026 (`chart-001-annotations`). |
-| retired | `market_states`, `market_state_checks`, `shock_snapshots` | nothing, since 28 Sep 2026 | The Signal History and big-move journals. Writers and readers removed; the tables are left for a drop that needs the owner's go-ahead and a backup first (TODO.md). |
-| retired | `outlook_states`, `chain_states`, `analytics_publish_meta` | nothing, since 29 Sep 2026 | The retired analytics service's tables. Service and code removed; the tables wait for the owner's drop, after a backup (TODO.md). |
 | ledger | `schema_migrations` | `db/migrate.ts` | The one ledger of what has been done to the database. |
 | `chain.db` (SQLite) | 6 | the harvester, offline | Two years of settled option chains. Read-only at runtime. |
 
@@ -486,8 +484,9 @@ service's measured Down / Side / Up states, written by
 `research/publish_outlook_states.py`. The service, its publisher, its
 measurement scripts and the desk's call to it were removed on 29 Sep 2026
 (nothing on screen read them); `docs/ANALYTICS.md` and the code are in git
-history before that commit. **The three tables are still in the production
-database**, no longer written or read, until the owner drops them (TODO.md).
+history before that commit. The three tables were dropped with the retired
+journals (`market_states`, `market_state_checks`, `shock_snapshots`) on
+29 Sep 2026 at 08:07 UTC, after the backup `backups/btc_desk-20260929-0807.dump`.
 
 ## `chain.db` — the evidence
 

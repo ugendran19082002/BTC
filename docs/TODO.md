@@ -28,15 +28,12 @@ Updated 29 Sep 2026
 - [x] **Every deploy backs the database up first** (`deploy.sh`,
   `deploy-fast.sh`; `--no-backup` to skip), on the target host, and stops if
   the backup fails.
-- [ ] **Owner: drop the six unused tables.** The drop could not be made a
-  migration here (the tool refused an irreversible deletion), so it is a
-  manual step, on the server, after a backup:
-  ```
-  ./deploy/backup-db.sh
-  docker compose -f deploy/docker-compose.yml exec -T db psql -U desk -d btc_desk -c \
-    "DROP TABLE IF EXISTS market_state_checks, market_states, shock_snapshots, outlook_states, chain_states, analytics_publish_meta;"
-  ```
-  Undo: `./deploy/backup-db.sh --restore backups/btc_desk-<stamp>.dump`.
+- [x] **The six unused tables dropped** on the owner's go-ahead (29 Sep 2026,
+  08:07 UTC): `market_state_checks`, `market_states`, `shock_snapshots`,
+  `outlook_states`, `chain_states`, `analytics_publish_meta` (~2,400 rows in
+  all, no dependants). Backup first: `backups/btc_desk-20260929-0807.dump`,
+  checked to hold all six with their data. Undo:
+  `./deploy/backup-db.sh --restore backups/btc_desk-20260929-0807.dump`.
 - [ ] Local leftovers, safe to delete: `analytics/` now holds only git-ignored
   caches (`.venv`, `__pycache__`, `.pytest_cache`).
 - [ ] Dead web helpers left from the removed panels, found by knip:
