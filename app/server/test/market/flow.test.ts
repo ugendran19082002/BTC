@@ -2,7 +2,7 @@ import { after, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { FlowSocket, printOf, perpTickerOf, type Print } from '../../src/market/flow-socket.js';
 import {
-  bookOf, capturePerpSnapshot, flowSchema, flowSummary, autoLargeMin, flowBarsOf, flushTradeFlow, formingBar, largeOrdersOf, largePrints, liveLtp, minuteOf, minutesOf,
+  bookOf, capturePerpSnapshot, flowSchema, flowSummary, autoLargeMin, flowBarsOf, oiRead, perpOiChange, flushTradeFlow, formingBar, largeOrdersOf, largePrints, liveLtp, minuteOf, minutesOf,
   useFlowSocket, FLOW_BUCKET_MS, LARGE_PRINT_CONTRACTS,
 } from '../../src/market/flow.js';
 import { closePool, one, query } from '../../src/db/pool.js';
@@ -203,6 +203,31 @@ test('[critical] the big-trade threshold is the market\'s own: the top tenth of 
   assert.equal(auto.min, L + 90 * 10);
   assert.match(auto.basis, /top 10% of the 100 orders/);
   assert.deepEqual((await autoLargeMin(minute(45), minute(50))).min, L, 'outside the window: too few to judge');
+});
+
+test('[critical] OI read with price: the four positioning reads, and flat under the thresholds', () => {
+  assert.equal(oiRead(1.2, 0.4), 'new longs');
+  assert.equal(oiRead(1.2, -0.4), 'new shorts');
+  assert.equal(oiRead(-1.2, 0.4), 'short covering');
+  assert.equal(oiRead(-1.2, -0.4), 'long unwinding');
+  assert.equal(oiRead(0.3, 1), 'flat', 'OI barely moved');
+  assert.equal(oiRead(2, 0.05), 'flat', 'price barely moved');
+  assert.equal(oiRead(2, null), 'flat');
+});
+
+test('[critical] the perp OI change is now against the record an hour ago, with the price over the same hour', async () => {
+  const now = minute(120);
+  assert.equal(await perpOiChange(now, { oiContracts: 1_000, mark: 80_000 }), null, 'no record from an hour ago');
+  await query('INSERT INTO perp_snapshots (at, mark, oi_contracts) VALUES ($1, $2, $3), ($4, $5, $6)',
+    [now - 65 * 60_000, 79_600, 900_000, now - 5 * 60_000, 79_900, 950_000]);
+  const c = (await perpOiChange(now, { oiContracts: 945_000, mark: 80_000 }))!;
+  assert.equal(c.change, 45_000);
+  assert.equal(c.changePct, 5);
+  assert.equal(c.overMinutes, 65);
+  assert.ok(Math.abs(c.priceChangePct! - (400 / 79_600) * 100) < 1e-9);
+  assert.equal(c.read, 'new longs');
+  // With no live ticker, the newest record stands in for now.
+  assert.equal((await perpOiChange(now, null))!.oiContracts, 950_000);
 });
 
 test('an empty window says so rather than showing zeros as flow', async () => {

@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Candle } from '@/types/desk';
 import type { ChartTf } from '@/components/desk/PriceChart';
 import { PriceChart } from '@/components/desk/PriceChart';
-import { getCandles, getFlowBars, getHeatmap, getLargePrints, type HeatColumn, type Wall } from '@/api/desk';
+import { getCandles, getFlowBars, getHeatmap, getLargePrints, type HeatColumn, type PerpOiChange, type Wall } from '@/api/desk';
+import type { Leg } from '@/types/desk';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import { isForming, withLiveBar, withLtp } from '@/lib/live-bar';
@@ -55,9 +56,13 @@ function useHeatmap(tf: '1m' | '5m'): Heat | null {
  * stream's `ltp`), or, with the stream down, carries the 5m bars' live price.
  */
 export function DeskChart({
-  bars, ltp = null, tf = '5m', loading = false, error,
+  bars, ltp = null, strikes = null, derivs = null, tf = '5m', loading = false, error,
 }: {
   bars: readonly Candle[];
+  /** The option board's strikes and max pain, for the strike levels. */
+  strikes?: { legs: readonly Leg[]; maxPain: number | null } | null;
+  /** The perp's OI change and funding, for the context line. */
+  derivs?: { oi: PerpOiChange | null; funding: number | null } | null;
   /** The perp's last trade and the candles in progress; null with the stream down. */
   ltp?: LiveLtp | null;
   tf: ChartTf;
@@ -122,6 +127,8 @@ export function DeskChart({
           bigTrades={bigTrades}
           flowBars={flow?.bars}
           heat={heat}
+          strikes={strikes}
+          derivs={derivs}
           ltp={ltp}
         />
       </div>

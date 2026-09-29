@@ -107,12 +107,18 @@ export function Overview({
   // Collapse all / expand all: a stamp each press, and what it asked for.
   const [fold] = useState({ stamp: 0, collapsed: false });
 
+  // The board and the perp's positioning, for the chart's strike levels and context line.
+  const strikes = useMemo(() => ({ legs: data.legs, maxPain: data.structure?.maxPain?.strike ?? null }), [data.legs, data.structure]);
+  const derivs = useMemo(() => (perp ? { oi: perp.perpOi ?? null, funding: perp.ticker?.fundingRate ?? null } : null), [perp]);
+
   return (
     <PanelFold.Provider value={fold}>
     <div className="ov">
       <DeskDashboard
         bars={bars}
         ltp={ltp}
+        strikes={strikes}
+        derivs={derivs}
         tf={chartTf}
         expiryLabel={snap.expiry ? `${snap.expiry} 17:30 IST` : undefined}
         hoursToExpiry={snap.hoursToExpiry}

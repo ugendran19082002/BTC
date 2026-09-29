@@ -644,6 +644,58 @@ export async function livePerp(nowMs = Date.now()): Promise<PerpTicker | null> {
   return perpRest;
 }
 
+/**
+ * The perpetual's open interest now against about `minutes` ago, from the
+ * five-minute record, with the price move over the same window -- OI alone
+ * says positions changed, not which way. Read together:
+ *
+ *   price up,   OI up    new longs          price up,   OI down   short covering
+ *   price down, OI up    new shorts         price down, OI down   long unwinding
+ *
+ * Under 0.5% of OI either way, or under 0.1% of price, it is "flat". A reading
+ * of positioning, never a signal on its own. Null without a record from then
+ * (within a quarter hour of the time asked).
+ */
+export type PerpOiChange = {
+  oiContracts: number;
+  change: number;
+  changePct: number;
+  priceChangePct: number | null;
+  overMinutes: number;
+  read: 'new longs' | 'new shorts' | 'short covering' | 'long unwinding' | 'flat';
+};
+
+export function oiRead(changePct: number, priceChangePct: number | null): PerpOiChange['read'] {
+  if (Math.abs(changePct) < 0.5 || priceChangePct === null || Math.abs(priceChangePct) < 0.1) return 'flat';
+  if (changePct > 0) return priceChangePct > 0 ? 'new longs' : 'new shorts';
+  return priceChangePct > 0 ? 'short covering' : 'long unwinding';
+}
+
+export async function perpOiChange(nowMs: number, live: { oiContracts: number | null; mark: number | null } | null, minutes = 60): Promise<PerpOiChange | null> {
+  await flowSchema();
+  const then = await one<{ at: number; oi_contracts: number; mark: number | null }>(
+    'SELECT at, oi_contracts, mark FROM perp_snapshots WHERE at <= $1 AND oi_contracts IS NOT NULL ORDER BY at DESC LIMIT 1',
+    [nowMs - minutes * 60_000],
+  );
+  if (!then || nowMs - minutes * 60_000 - Number(then.at) > 15 * 60_000) return null;
+  let oi = live?.oiContracts ?? null;
+  let mark = live?.mark ?? null;
+  if (oi === null) {
+    const last = await one<{ oi_contracts: number; mark: number | null }>('SELECT oi_contracts, mark FROM perp_snapshots WHERE oi_contracts IS NOT NULL ORDER BY at DESC LIMIT 1');
+    oi = last?.oi_contracts ?? null;
+    mark = mark ?? last?.mark ?? null;
+  }
+  const oiThen = Number(then.oi_contracts);
+  if (oi === null || !(oiThen > 0)) return null;
+  const changePct = ((oi - oiThen) / oiThen) * 100;
+  const priceChangePct = mark !== null && then.mark ? ((mark - then.mark) / then.mark) * 100 : null;
+  return {
+    oiContracts: oi, change: oi - oiThen, changePct, priceChangePct,
+    overMinutes: Math.round((nowMs - Number(then.at)) / 60_000),
+    read: oiRead(changePct, priceChangePct),
+  };
+}
+
 /** One five-minute bucket of funding, OI, turnover and the book. Idempotent per bucket. */
 export async function capturePerpSnapshot(nowMs: number): Promise<{ at: number } | null> {
   await flowSchema();

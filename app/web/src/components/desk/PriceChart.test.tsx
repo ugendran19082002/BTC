@@ -110,6 +110,26 @@ describe('the price chart', () => {
     expect(tailFrom(b, [...b, { ...b[4]! }])).toBe(-1);
   });
 
+  it('[critical] a preset sets the layers in one click; the default is the lean Desk set', () => {
+    chart();
+    fireEvent.click(screen.getByRole('button', { name: /Layers/ }));
+    const presets = screen.getByRole('group', { name: 'Layer presets' });
+    expect(within(presets).getByRole('button', { name: 'Desk' }).getAttribute('aria-pressed')).toBe('true');
+    expect((screen.getByLabelText('Liquidity heatmap (book)') as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(within(presets).getByRole('button', { name: 'Order flow' }));
+    expect((screen.getByLabelText('Liquidity heatmap (book)') as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText('Structure') as HTMLInputElement).checked).toBe(false);
+    expect(within(presets).getByRole('button', { name: 'Order flow' }).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('[critical] the readout carries the perp\'s positioning and the volatility regime', () => {
+    chart({ derivs: { oi: { oiContracts: 803_206, change: 14_200, changePct: 1.8, priceChangePct: 0.4, overMinutes: 60, read: 'new longs' }, funding: 0.01 } });
+    const line = screen.getByLabelText('Positioning and volatility').textContent ?? '';
+    expect(line).toContain('OI 803 BTC ▲1.8% 1h · new longs');
+    expect(line).toContain('Funding +0.0100%');
+    expect(line).toMatch(/Vol (expanding|normal|quiet) \d\.\d× · ATR \d+ pts/);
+  });
+
   it('[critical] zoom is off until it is asked for, so the page scrolls over the chart', () => {
     chart();
     fireEvent.click(screen.getByRole('button', { name: /^Zoom$/ }));
@@ -188,7 +208,7 @@ describe('the price chart', () => {
     chart();
     fireEvent.click(screen.getByRole('button', { name: 'Layers' }));
     fireEvent.click(screen.getByLabelText('Structure'));
-    const stored = JSON.parse(localStorage.getItem('btc-desk:chart:layers:v2')!) as string[];
+    const stored = JSON.parse(localStorage.getItem('btc-desk:chart:layers:v3')!) as string[];
     expect(stored).not.toContain('structure');
     expect(stored).toContain('liquidity');
   });

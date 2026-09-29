@@ -1,5 +1,6 @@
 import type { Bar } from '@/lib/smc/types';
 import type { FlowBar, HeatColumn, Wall } from '@/api/desk';
+import type { Leg } from '@/types/desk';
 import { C, type SceneItem } from './scene';
 
 /**
@@ -289,4 +290,63 @@ export function heatScene(cols: readonly HeatColumn[], step: number, walls: read
     });
   }
   return out;
+}
+
+/** Delta India's BTC options: 0.001 BTC a contract. */
+const OPTION_CONTRACT_BTC = 0.001;
+const CE_COLOR = '#fb923c';
+const PE_COLOR = '#2dd4bf';
+
+/**
+ * The option board's open interest as levels on price: the three biggest call
+ * strikes and the three biggest put strikes within 3% of price, each a dashed
+ * line across the chart as thick as its share of the biggest, labelled with
+ * its OI and the last hour's change -- calls where sellers are short above,
+ * puts where they are short below. And max pain, where the board's buyers
+ * would be paid least at settlement. Positioning to watch, not a level that
+ * must hold: OI does not say which side of each contract is the seller.
+ */
+export function strikeScene(legs: readonly Leg[], maxPain: number | null, last: number): SceneItem[] {
+  const near = legs.filter((l) => l.oi !== null && l.oi > 0 && Math.abs(l.strike - last) / last <= 0.03);
+  const top = (cp: 'C' | 'P') => near.filter((l) => l.cp === cp).sort((a, b) => b.oi! - a.oi!).slice(0, 3);
+  const picked = [...top('C'), ...top('P')];
+  const maxOi = Math.max(0, ...picked.map((l) => l.oi!));
+  const out: SceneItem[] = picked.map((l, i) => {
+    const change = l.oiChange ? l.oiChange.change * OPTION_CONTRACT_BTC : null;
+    const first = i === 0 || i === top('C').length;
+    return {
+      t: 'line', layer: 'options', x1: 0, x2: 'right', y: l.strike,
+      color: l.cp === 'C' ? CE_COLOR : PE_COLOR, dash: 'dash', width: 1 + 2 * (l.oi! / maxOi),
+      label: `${l.cp === 'C' ? 'CE' : 'PE'} ${fmt(l.strike)} · OI ${(l.oi! * OPTION_CONTRACT_BTC).toFixed(0)} BTC${change === null ? '' : ` · ${change >= 0 ? '+' : '−'}${Math.abs(change).toFixed(1)} ${l.oiChange!.overMinutes >= 55 ? '1h' : `${l.oiChange!.overMinutes}m`}`}`,
+      labelAt: 'end', labelSide: l.cp === 'C' ? 'above' : 'below', priority: first ? 64 : 48, faint: !first,
+    };
+  });
+  if (maxPain !== null && Math.abs(maxPain - last) / last <= 0.05) {
+    out.push({ t: 'line', layer: 'options', x1: 0, x2: 'right', y: maxPain, color: '#c084fc', dash: 'dot', label: `Max pain ${fmt(maxPain)}`, labelAt: 'end', labelSide: 'above', priority: 52 });
+  }
+  return out;
+}
+
+export type VolRegime = { atr: number; ratio: number; label: 'expanding' | 'normal' | 'quiet' };
+
+/**
+ * Is the chart moving more or less than usual: the latest ATR(14) against the
+ * median ATR over the candles given. Expanding from 1.3x, quiet under 0.7x --
+ * what the stop's ATR buffer and floor are sized from. Null under 30 candles.
+ */
+export function volRegime(bars: readonly Bar[]): VolRegime | null {
+  if (bars.length < 30) return null;
+  const atrs: number[] = [];
+  let atr = 0;
+  for (let i = 1; i < bars.length; i++) {
+    const b = bars[i]!;
+    const tr = Math.max(b.high - b.low, Math.abs(b.high - bars[i - 1]!.close), Math.abs(b.low - bars[i - 1]!.close));
+    atr = i <= 14 ? atr + tr / 14 : (atr * 13 + tr) / 14;
+    if (i >= 14) atrs.push(atr);
+  }
+  const sorted = [...atrs].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)]!;
+  if (!(median > 0)) return null;
+  const ratio = atr / median;
+  return { atr, ratio, label: ratio >= 1.3 ? 'expanding' : ratio <= 0.7 ? 'quiet' : 'normal' };
 }

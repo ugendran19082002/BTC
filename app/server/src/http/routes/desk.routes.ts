@@ -13,7 +13,7 @@ import { appliedMigrations } from '../../db/migrate.js';
 import { lastOptionSnapshot } from '../../market/option-snapshots.js';
 import { heatColumnsOf, heatMinutes, persistentWalls } from '../../market/book-heat.js';
 import { ttlCache } from '../ttl-cache.js';
-import { autoLargeMin, flowBarsOf, flowFeedHealth, flowMinutes, flowSummary, largePrints, liveBook, livePerp, oiPulse, optionFlowSummary, LARGE_PRINT_CONTRACTS } from '../../market/flow.js';
+import { autoLargeMin, flowBarsOf, flowFeedHealth, flowMinutes, flowSummary, largePrints, liveBook, livePerp, oiPulse, optionFlowSummary, perpOiChange, LARGE_PRINT_CONTRACTS } from '../../market/flow.js';
 import { changes } from '../../market/changes.js';
 import { one } from '../../db/pool.js';
 import { strategyStore } from './strategy.routes.js';
@@ -147,7 +147,8 @@ export function registerDeskRoutes(app: FastifyInstance) {
         expiry ? oiPulse(expiry, now).catch(() => null) : Promise.resolve(null),
         expiry ? optionFlowSummary(expiry, windowMin, now).catch(() => null) : Promise.resolve(null),
       ]);
-      return { at: now, ticker, book, flow, oi, optionFlow };
+      const perpOi = await perpOiChange(now, ticker ? { oiContracts: ticker.oiContracts, mark: ticker.mark } : null).catch(() => null);
+      return { at: now, ticker, book, flow, oi, optionFlow, perpOi };
     } catch (e) {
       reply.code(502);
       return { error: (e as Error).message };

@@ -144,7 +144,12 @@ export type OptionFlowSummary = {
   combined: { buyVolume: number; sellVolume: number; deltaVolume: number; bias: 'CALL BUYING' | 'CALL SELLING' | 'PUT BUYING' | 'PUT SELLING' | 'MIXED' | null };
   source: 'socket' | 'none';
 };
-export type PerpResponse = { at: number; ticker: PerpTicker | null; book: BookSnapshot | null; flow: FlowSummary; oi?: OiPulse | null; optionFlow?: OptionFlowSummary | null };
+/** The perpetual's open interest against about an hour ago, with the price over the same window, and what the pair reads as. */
+export type PerpOiChange = {
+  oiContracts: number; change: number; changePct: number; priceChangePct: number | null; overMinutes: number;
+  read: 'new longs' | 'new shorts' | 'short covering' | 'long unwinding' | 'flat';
+};
+export type PerpResponse = { at: number; ticker: PerpTicker | null; book: BookSnapshot | null; flow: FlowSummary; oi?: OiPulse | null; optionFlow?: OptionFlowSummary | null; perpOi?: PerpOiChange | null };
 export const getPerp = (windowMin = 60, expiry: string | null = null) =>
   json<PerpResponse>(`/api/perp?window=${windowMin}${expiry ? `&expiry=${expiry}` : ''}`);
 

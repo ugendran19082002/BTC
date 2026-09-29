@@ -13,10 +13,11 @@ import { readout } from '@/lib/smc/readout';
 import { clearAnnotationsApi, getAnnotations, type Annotation } from '@/api/annotations';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { SmcPrimitive } from './chart/smc-primitive';
-import { buildScene, C, DEFAULT_LAYERS, htfScene, LAYERS, type Layer, type SceneItem } from './chart/scene';
+import { buildScene, C, DEFAULT_LAYERS, htfScene, LAYER_PRESETS, LAYERS, type Layer, type SceneItem } from './chart/scene';
 import { ChartHud } from './chart/ChartHud';
-import { bigTradeScene, bigTradeSummary, deltaSeries, flowRead, heatScene, profileScene, volumeProfile, type BigTrade } from './chart/flow-layers';
-import type { FlowBar, HeatColumn, Wall } from '@/api/desk';
+import { bigTradeScene, bigTradeSummary, deltaSeries, flowRead, heatScene, profileScene, strikeScene, volRegime, volumeProfile, type BigTrade } from './chart/flow-layers';
+import type { FlowBar, HeatColumn, PerpOiChange, Wall } from '@/api/desk';
+import type { Leg } from '@/types/desk';
 import { LtpChip } from './chart/LtpChip';
 import './chart/price-chart.css';
 
@@ -43,7 +44,7 @@ const IST_FULL = new Intl.DateTimeFormat('en-IN', {
  * appears and then vanishes within a candle.
  */
 export function PriceChart({
-  bars, tf, views = [], onView, loading = false, error, context = [], regime, higher = [], bigTrades, flowBars, heat, ltp, symbol = 'BTCUSD',
+  bars, tf, views = [], onView, loading = false, error, context = [], regime, higher = [], bigTrades, flowBars, heat, strikes, derivs, ltp, symbol = 'BTCUSD',
 }: {
   bars: readonly Candle[];
   tf: ChartTf;
@@ -64,6 +65,10 @@ export function PriceChart({
   heat?: { step: number; columns: readonly HeatColumn[]; walls: readonly Wall[] } | null;
   /** Aggressive flow per candle, for the delta / CVD pane and the readout. */
   flowBars?: readonly FlowBar[];
+  /** The option board: every strike's OI and its last hour's change, and max pain, for the strike levels. */
+  strikes?: { legs: readonly Leg[]; maxPain: number | null } | null;
+  /** The perpetual's positioning: OI against an hour ago, and funding (percent a funding period). */
+  derivs?: { oi: PerpOiChange | null; funding: number | null } | null;
   /** The perp's last trade, from the stream, for the LTP chip. */
   ltp?: { price: number; at: number } | null;
   symbol?: string;
@@ -78,8 +83,8 @@ export function PriceChart({
   const primitiveRef = useRef<SmcPrimitive | null>(null);
 
   const [zoomOn, setZoomOn] = usePersisted('zoom:price-chart', false);
-  // v2: the order-flow layers were added; a list saved before them would hide them.
-  const [layerList, setLayerList] = usePersisted<Layer[]>('chart:layers:v2', [...DEFAULT_LAYERS]);
+  // v3: presets arrived and the default became the Desk set; a list saved before would miss the new layers.
+  const [layerList, setLayerList] = usePersisted<Layer[]>('chart:layers:v3', [...DEFAULT_LAYERS]);
   // Folded by default on a phone, where it would cover half the candles; one tap opens it.
   const [hudOpen, setHudOpen] = usePersisted('chart:hud-open', typeof window === 'undefined' || window.innerWidth > 640);
   const [full, setFull] = useState(false);
@@ -141,7 +146,14 @@ export function PriceChart({
     const p = volumeProfile(bars, from, to);
     return p ? profileScene(p, from, bars[bars.length - 1]!.close) : [];
   }, [layers, bars, inView]);
-  const scene = useMemo(() => [...base, ...heatItems, ...profileItems, ...bigItems], [base, heatItems, profileItems, bigItems]);
+  // Strike levels move with the board (every few seconds), not the tick; the price only picks which strikes are near.
+  const nearPrice = Math.round((bars[bars.length - 1]?.close ?? 0) / 100) * 100;
+  const strikeItems = useMemo<SceneItem[]>(
+    () => (layers.has('options') && strikes && nearPrice ? strikeScene(strikes.legs, strikes.maxPain, nearPrice) : []),
+    [layers, strikes, nearPrice],
+  );
+  const scene = useMemo(() => [...base, ...heatItems, ...strikeItems, ...profileItems, ...bigItems], [base, heatItems, strikeItems, profileItems, bigItems]);
+  const vol = useMemo(() => volRegime(closed), [closedKey]);
 
   const loadSaved = useCallback(async () => {
     try { setSaved(await getAnnotations(symbol, tf)); } catch { /* the chart works without them */ }
@@ -351,6 +363,16 @@ export function PriceChart({
                 <button type="button" className="pc-tool" aria-label="Layers" title="What the chart draws"><Layers size={14} /><span>Layers</span></button>
               </PopoverTrigger>
               <PopoverContent align="end" className="pc-layers">
+                <div className="pc-presets" role="group" aria-label="Layer presets">
+                  {LAYER_PRESETS.map((p) => {
+                    const on = p.layers.length === layerList.length && p.layers.every((l) => layers.has(l));
+                    return (
+                      <button key={p.key} type="button" className={`pc-preset${on ? ' on' : ''}`} aria-pressed={on} title={p.title} onClick={() => setLayerList([...p.layers])}>
+                        {p.label}
+                      </button>
+                    );
+                  })}
+                </div>
                 {LAYERS.map(({ key, label }) => (
                   <label key={key} className="pc-layer">
                     <input type="checkbox" checked={layers.has(key)} onChange={() => toggleLayer(key)} />
@@ -384,6 +406,7 @@ export function PriceChart({
             tf={tf}
             read={read}
             context={context}
+            derivs={derivs || vol ? { oi: derivs?.oi ?? null, funding: derivs?.funding ?? null, vol } : null}
             big={layers.has('bigtrades') && bigTrades && bars.length ? {
               ...bigTradeSummary(bigTrades.prints, bars, tfSec, bigTrades.min, inView?.from ?? bars.length - 90, inView?.to ?? bars.length - 1),
               min: bigTrades.min, basis: bigTrades.basis,

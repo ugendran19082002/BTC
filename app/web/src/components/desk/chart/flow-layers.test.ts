@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Bar } from '@/lib/smc/types';
-import { bigTradeScene, deltaSeries, flowRead, heatScene, profileScene, volumeProfile } from './flow-layers';
+import { bigTradeScene, deltaSeries, flowRead, heatScene, profileScene, strikeScene, volRegime, volumeProfile } from './flow-layers';
+import type { Leg } from '@/types/desk';
 
 const bar = (time: number, low: number, high: number, volume: number): Bar => ({ time, open: low, high, low, close: high, volume });
 
@@ -167,5 +168,45 @@ describe('delta and CVD', () => {
   it('says nothing of a candle it has no flow for, and gives no pace without five candles before', () => {
     expect(flowRead([fb(day, 1, 1)], day + 300, 300, day + 1_000)).toBeNull();
     expect(flowRead([fb(day, 1, 1)], day, 300, day + 1_000)!.velocity).toBeNull();
+  });
+});
+
+describe('option strikes on price', () => {
+  const leg = (cp: 'C' | 'P', strike: number, oi: number, change: number | null = null) =>
+    ({ cp, strike, oi, oiChange: change === null ? null : { change, changePct: null, overMinutes: 60, spotChangePct: null } }) as unknown as Leg;
+
+  it('[critical] the three biggest call and put strikes within 3% of price, thickest the biggest, with OI and the hour\'s change', () => {
+    const legs = [
+      leg('C', 82_000, 450_000, 12_000), leg('C', 82_500, 300_000), leg('C', 83_000, 100_000), leg('C', 83_500, 50_000),
+      leg('P', 80_000, 400_000, -5_000), leg('P', 79_000, 200_000),
+      leg('C', 90_000, 999_999), // 11% away: left out
+    ];
+    const lines = strikeScene(legs, 81_200, 81_000).flatMap((i) => (i.t === 'line' ? [i] : []));
+    expect(lines.map((l) => l.y)).toEqual([82_000, 82_500, 83_000, 80_000, 79_000, 81_200]);
+    expect(lines[0]!.label).toBe('CE 82,000 · OI 450 BTC · +12.0 1h');
+    expect(lines[3]!.label).toBe('PE 80,000 · OI 400 BTC · −5.0 1h');
+    expect(lines[0]!.width).toBe(3);
+    expect(lines[5]!.label).toBe('Max pain 81,200');
+  });
+
+  it('max pain far from price is not drawn', () => {
+    expect(strikeScene([], 95_000, 81_000)).toEqual([]);
+  });
+});
+
+describe('the volatility regime', () => {
+  const walk = (n: number, range: (i: number) => number) =>
+    Array.from({ length: n }, (_, i) => ({ time: i * 300, open: 100, high: 100 + range(i) / 2, low: 100 - range(i) / 2, close: 100, volume: 1 }));
+
+  it('[critical] the latest ATR against its median: expanding, quiet, normal', () => {
+    expect(volRegime(walk(100, (i) => (i < 80 ? 10 : 40)))!.label).toBe('expanding');
+    expect(volRegime(walk(100, (i) => (i < 80 ? 10 : 2)))!.label).toBe('quiet');
+    const flat = volRegime(walk(100, () => 10))!;
+    expect(flat.label).toBe('normal');
+    expect(flat.atr).toBeCloseTo(10, 6);
+  });
+
+  it('says nothing under thirty candles', () => {
+    expect(volRegime(walk(20, () => 10))).toBeNull();
   });
 });

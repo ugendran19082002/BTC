@@ -3,7 +3,8 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { TfRead } from '@/lib/smc/context';
 import type { Readout } from '@/lib/smc/readout';
 import { SMC_MEASURED } from '@/lib/smc/measured.data';
-import type { BigTradeSummary, FlowRead } from './flow-layers';
+import type { BigTradeSummary, FlowRead, VolRegime } from './flow-layers';
+import type { PerpOiChange } from '@/api/desk';
 
 const fmt = (p: number) => Math.round(p).toLocaleString('en-US');
 const pct = (v: number) => `${Math.round(v * 100)}%`;
@@ -27,7 +28,9 @@ export const ChartHud = forwardRef<HTMLDivElement, {
   candle: Shown | null;
   /** Big trades in view, the size they start at (contracts) and how it was set. */
   big?: (BigTradeSummary & { min: number; basis?: string }) | null;
-}>(function ChartHud({ open, onToggle, tf, read, context, candle, big }, ref) {
+  /** Positioning and volatility: the perp's OI against an hour ago, funding, and the chart's ATR against its usual. */
+  derivs?: { oi: PerpOiChange | null; funding: number | null; vol: VolRegime | null } | null;
+}>(function ChartHud({ open, onToggle, tf, read, context, candle, big, derivs }, ref) {
   const up = candle ? candle.close >= candle.open : true;
   return (
     <div ref={ref} className={`pc-hud pc-hud-${read.tone}`} aria-label="Setup readout">
@@ -118,6 +121,28 @@ export const ChartHud = forwardRef<HTMLDivElement, {
               <span>{candle.hovering ? candle.when : 'Last'}</span>
               <span>O {fmt(candle.open)}</span><span>H {fmt(candle.high)}</span><span>L {fmt(candle.low)}</span>
               <span className={up ? 'up' : 'down'}>C {fmt(candle.close)}</span>
+            </p>
+          )}
+          {derivs && (derivs.oi || derivs.funding !== null || derivs.vol) && (
+            <p className="pc-hud-ohlc" aria-label="Positioning and volatility">
+              {derivs.oi && (
+                <span className={derivs.oi.changePct >= 0 ? 'up' : 'down'}
+                  title={`Perpetual open interest, ${derivs.oi.overMinutes} min change, read with the price over the same window (${derivs.oi.priceChangePct === null ? 'price n/a' : `price ${derivs.oi.priceChangePct >= 0 ? '+' : ''}${derivs.oi.priceChangePct.toFixed(2)}%`}). Positioning context, not a signal.`}>
+                  OI {fmt(derivs.oi.oiContracts / 1_000)} BTC {derivs.oi.changePct >= 0 ? '▲' : '▼'}{Math.abs(derivs.oi.changePct).toFixed(1)}% 1h · {derivs.oi.read}
+                </span>
+              )}
+              {derivs.funding !== null && (
+                <span className={derivs.funding > 0.02 ? 'down' : derivs.funding < 0 ? 'up' : ''}
+                  title="Funding per period, as Delta publishes it. Positive: longs pay shorts -- the long side is the crowded one; high positive is a crowded long.">
+                  Funding {derivs.funding >= 0 ? '+' : ''}{derivs.funding.toFixed(4)}%
+                </span>
+              )}
+              {derivs.vol && (
+                <span className={derivs.vol.label === 'expanding' ? 'hot' : ''}
+                  title="This chart's ATR(14) against its median over the candles loaded: what the stop's buffer and floor are sized from. Expanding from 1.3x, quiet under 0.7x.">
+                  Vol {derivs.vol.label} {derivs.vol.ratio.toFixed(1)}× · ATR {Math.round(derivs.vol.atr)} pts
+                </span>
+              )}
             </p>
           )}
           {big && (

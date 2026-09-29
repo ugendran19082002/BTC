@@ -14,7 +14,7 @@ import { SCALE_OUT } from '@/lib/smc/engine';
  */
 
 export type Layer = 'structure' | 'liquidity' | 'zones' | 'levels' | 'pd' | 'sessions' | 'vwap' | 'candles' | 'trade' | 'saved' | 'htf'
-  | 'profile' | 'bigtrades' | 'delta' | 'heatmap';
+  | 'profile' | 'bigtrades' | 'delta' | 'heatmap' | 'options';
 
 export const LAYERS: readonly { key: Layer; label: string }[] = [
   { key: 'htf', label: 'HTF: 1H zones, 15m structure' },
@@ -29,12 +29,26 @@ export const LAYERS: readonly { key: Layer; label: string }[] = [
   { key: 'trade', label: 'Trade' },
   { key: 'saved', label: 'Saved levels' },
   { key: 'heatmap', label: 'Liquidity heatmap (book)' },
+  { key: 'options', label: 'Options OI (strikes)' },
   { key: 'profile', label: 'Volume profile' },
   { key: 'bigtrades', label: 'Big trades' },
   { key: 'delta', label: 'Delta / CVD pane' },
 ];
 
-export const DEFAULT_LAYERS: readonly Layer[] = ['htf', 'structure', 'liquidity', 'zones', 'levels', 'pd', 'trade', 'saved', 'heatmap', 'profile', 'bigtrades', 'delta'];
+/**
+ * One-click sets of layers. Everything on at once buries the trade box, so the
+ * default is the desk's working set and each preset answers one question;
+ * every layer stays a checkbox below them.
+ */
+export const LAYER_PRESETS: readonly { key: string; label: string; title: string; layers: readonly Layer[] }[] = [
+  { key: 'desk', label: 'Desk', title: 'The working set: the trade, structure, liquidity, zones, levels, option strikes, big trades, the profile and delta', layers: ['trade', 'structure', 'liquidity', 'zones', 'levels', 'saved', 'options', 'bigtrades', 'profile', 'delta'] },
+  { key: 'clean', label: 'Clean', title: 'Price action and the trade only', layers: ['trade', 'structure', 'liquidity', 'zones', 'saved'] },
+  { key: 'flow', label: 'Order flow', title: 'Resting liquidity, big trades, the profile and delta, around the trade', layers: ['trade', 'heatmap', 'bigtrades', 'profile', 'delta', 'saved'] },
+  { key: 'options', label: 'Options', title: 'Option strikes and max pain, levels and the profile, around the trade', layers: ['trade', 'options', 'levels', 'profile', 'saved'] },
+  { key: 'all', label: 'All', title: 'Every layer', layers: LAYERS.map((l) => l.key) },
+];
+
+export const DEFAULT_LAYERS: readonly Layer[] = LAYER_PRESETS[0]!.layers;
 
 /** 'right' runs to the chart's right edge: a level still in play. */
 type XEnd = number | 'right';
