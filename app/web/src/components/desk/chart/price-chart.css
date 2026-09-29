@@ -233,14 +233,74 @@
 .pc-hud-refused p { margin: 0; font-size: 11px; color: #cbd5e1; }
 .pc-hud-checks li.no { color: #f87171; border-color: rgba(226, 80, 79, 0.45); }
 .pc-hud-why { color: #94a3b8 !important; }
-.pc-hud-sub {
-  display: inline-flex; align-items: center; gap: 4px; min-height: 26px; padding: 0 6px;
-  border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 5px; background: transparent; color: #cbd5e1; font-size: 11px; cursor: pointer;
+
+/* ---- the trades button in the readout, and the trades dialog ---------------- */
+.pc-hud-trades {
+  display: inline-flex; align-items: center; gap: 5px; margin: 2px 0 4px; padding: 4px 9px;
+  border-radius: 5px; border: 1px solid rgba(56, 189, 248, 0.35); background: rgba(56, 189, 248, 0.08);
+  color: #7dd3fc; font: 600 11px/1.3 ui-sans-serif, system-ui, sans-serif; cursor: pointer;
 }
-.pc-hud-table-wrap { max-height: 220px; overflow: auto; margin-top: 4px; }
-.pc-hud-table { border-collapse: collapse; font-size: 10.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.pc-hud-table th, .pc-hud-table td { padding: 2px 6px; text-align: right; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
-.pc-hud-table th { color: #94a3b8; font-weight: 600; position: sticky; top: 0; background: #0f1623; }
-.pc-hud-table td.up { color: #4ade80; }
-.pc-hud-table td.down { color: #f87171; }
-.pc-hud-table td.path { text-align: left; color: #94a3b8; }
+.pc-hud-trades:hover { background: rgba(56, 189, 248, 0.16); }
+.pc-hud-trades:focus-visible { outline: 2px solid #38bdf8; outline-offset: 1px; }
+
+.pc-trades { color: #e5e7eb; }
+.pc-tabs { display: flex; gap: 4px; margin: 0 0 10px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+.pc-tab {
+  appearance: none; border: 0; background: transparent; color: #94a3b8; cursor: pointer;
+  padding: 7px 10px; font: 600 12px/1.3 ui-sans-serif, system-ui, sans-serif; border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.pc-tab b { margin-left: 4px; padding: 0 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); color: #cbd5e1; font-size: 11px; }
+.pc-tab.on { color: #e5e7eb; border-bottom-color: #38bdf8; }
+.pc-tab:focus-visible { outline: 2px solid #38bdf8; outline-offset: -2px; }
+
+.pc-stats { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.pc-stat {
+  display: grid; gap: 1px; min-width: 76px; padding: 6px 9px; border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.pc-stat.wide { min-width: 180px; }
+.pc-stat span { font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.04em; }
+.pc-stat b { font-size: 13px; font-variant-numeric: tabular-nums; }
+.pc-stat small { font-size: 10px; color: #64748b; }
+.pc-stat .up, .pc-trades-table .up { color: #4ade80; }
+.pc-stat .down, .pc-trades-table .down { color: #f87171; }
+
+.pc-list-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin: 2px 0 6px; }
+.pc-hidden-note { font-size: 11px; color: #94a3b8; margin-right: auto; }
+.pc-act {
+  display: inline-flex; align-items: center; gap: 4px; padding: 4px 9px; border-radius: 5px; cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.14); background: transparent; color: #cbd5e1;
+  font: 600 11px/1.3 ui-sans-serif, system-ui, sans-serif;
+}
+.pc-act:hover { background: rgba(255, 255, 255, 0.06); }
+.pc-act[aria-pressed='true'] { color: #7dd3fc; border-color: rgba(56, 189, 248, 0.45); }
+.pc-act.danger { color: #fca5a5; border-color: rgba(248, 113, 113, 0.5); background: rgba(248, 113, 113, 0.08); }
+.pc-act:focus-visible { outline: 2px solid #38bdf8; outline-offset: 1px; }
+.pc-confirm { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #fca5a5; }
+
+.pc-trades-wrap { overflow: auto; max-height: min(58vh, 520px); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 6px; }
+.pc-trades-table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pc-trades-table th, .pc-trades-table td { padding: 6px 8px; text-align: right; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
+.pc-trades-table th { position: sticky; top: 0; z-index: 1; background: #0f1623; color: #94a3b8; font-weight: 600; font-size: 11px; }
+.pc-trades-table tbody tr:hover { background: rgba(255, 255, 255, 0.03); }
+.pc-trades-table td.num { font-weight: 700; }
+.pc-trades-table td.path { text-align: left; color: #94a3b8; white-space: normal; min-width: 160px; }
+.pc-trades-table tr.is-hidden td { opacity: 0.45; }
+.pc-side { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+.pc-side.long { color: #4ade80; background: rgba(74, 222, 128, 0.12); }
+.pc-side.short { color: #f87171; background: rgba(248, 113, 113, 0.12); }
+.pc-badge { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 10.5px; color: #94a3b8; background: rgba(255, 255, 255, 0.06); }
+.pc-badge.live { color: #a3e635; background: rgba(163, 230, 53, 0.12); }
+.pc-jump {
+  display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 0;
+  border-radius: 5px; border: 1px solid transparent; background: transparent; color: #94a3b8; cursor: pointer;
+}
+.pc-jump:hover { color: #e5e7eb; background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.1); }
+.pc-jump:focus-visible { outline: 2px solid #38bdf8; outline-offset: 1px; }
+.pc-empty-note { margin: 12px 0; font-size: 12px; color: #94a3b8; }
+.pc-foot-note { margin: 8px 0 0; font-size: 11px; color: #64748b; }
+@media (max-width: 640px) {
+  .pc-trades-table { font-size: 11px; }
+  .pc-trades-table th, .pc-trades-table td { padding: 5px 6px; }
+  .pc-trades-wrap { max-height: 56dvh; }
+}

@@ -132,6 +132,7 @@ export function DeskChart({
           derivs={derivs}
           trendBars={h1?.bars}
           trendPaper={paper?.summary}
+          trendPaperTrades={paper?.trades}
           ltp={ltp}
         />
       </div>

@@ -1,5 +1,5 @@
-import { forwardRef, useState } from 'react';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { forwardRef } from 'react';
+import { ChevronDown, ChevronRight, History } from 'lucide-react';
 import type { TfRead } from '@/lib/smc/context';
 import type { Readout } from '@/lib/smc/readout';
 import { SMC_MEASURED } from '@/lib/smc/measured.data';
@@ -36,7 +36,11 @@ export const ChartHud = forwardRef<HTMLDivElement, {
   trend?: { h1: TrendTrade | null; h4: TrendTrade | null; mark: number | null; paper?: readonly TrendPaperSummary[] | null } | null;
   /** The live SMC setup against the 4H trend plan's position. */
   alignment?: 'with' | 'against' | 'flat' | null;
-}>(function ChartHud({ open, onToggle, tf, read, context, candle, big, derivs, trend, alignment }, ref) {
+  /** Open the trades dialog. */
+  onTrades?: () => void;
+  /** How many trend-plan paper trades there are, for the button. */
+  paperCount?: number;
+}>(function ChartHud({ open, onToggle, tf, read, context, candle, big, derivs, trend, alignment, onTrades, paperCount = 0 }, ref) {
   const up = candle ? candle.close >= candle.open : true;
   return (
     <div ref={ref} className={`pc-hud pc-hud-${read.tone}`} aria-label="Setup readout">
@@ -120,7 +124,11 @@ export const ChartHud = forwardRef<HTMLDivElement, {
             </div>
           )}
 
-          {read.history.length > 0 && <TradeHistory rows={read.history} />}
+          {onTrades && (
+            <button type="button" className="pc-hud-trades" onClick={onTrades} aria-haspopup="dialog">
+              <History size={12} aria-hidden /> Trades ({read.history.length}{paperCount ? ` · trend ${paperCount}` : ''}) <span aria-hidden>↗</span>
+            </button>
+          )}
 
           {read.record && (
             <p className="pc-hud-record" title="Setups this chart's candles produced and completed, each decided without seeing what came after it">
@@ -203,35 +211,3 @@ export const ChartHud = forwardRef<HTMLDivElement, {
   );
 });
 
-/** This chart's completed trades, newest first -- folded until asked for. */
-function TradeHistory({ rows }: { rows: Readout['history'] }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="pc-hud-history">
-      <button type="button" className="pc-hud-sub" aria-expanded={open} onClick={() => setOpen(!open)}>
-        {open ? <ChevronDown size={12} aria-hidden /> : <ChevronRight size={12} aria-hidden />} Trades ({rows.length})
-      </button>
-      {open && (
-        <div className="pc-hud-table-wrap">
-          <table className="pc-hud-table">
-            <thead>
-              <tr><th>Time (IST)</th><th>Side</th><th>Entry</th><th>SL</th><th>TP1</th><th>Exit</th><th>Result</th><th>MFE</th><th>MAE</th><th>Min</th><th>Path</th></tr>
-            </thead>
-            <tbody>
-              {rows.slice(0, 8).map((r) => (
-                <tr key={r.id}>
-                  <td>{IST_HM.format(r.time * 1000)}</td>
-                  <td className={r.dir === 'bull' ? 'up' : 'down'}>{r.dir === 'bull' ? 'Long' : 'Short'}</td>
-                  <td>{fmt(r.entry)}</td><td>{fmt(r.stop)}</td><td>{fmt(r.tp1)}</td><td>{fmt(r.exit)}</td>
-                  <td className={r.resultR > 0.05 ? 'up' : r.resultR < -0.05 ? 'down' : ''}>{r1(r.resultR)}</td>
-                  <td>{r.mfeR.toFixed(1)}R</td><td>{r.maeR.toFixed(1)}R</td><td>{r.minutes}</td>
-                  <td className="path">{r.path}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}

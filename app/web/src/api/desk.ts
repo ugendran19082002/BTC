@@ -82,7 +82,13 @@ export type TrendPaperSummary = {
   /** The pre-registered filters' subsets of the closed live trades (research/COMBO-STUDY.txt). */
   volBurst?: { closed: number; netR: number }; session?: { closed: number; netR: number };
 };
-export const getTrendPaper = () => json<{ since: number; summary: TrendPaperSummary[] }>('/api/trend/paper');
+/** One trend-plan paper trade; times are the signal / exit candles' close, epoch seconds. */
+export type TrendPaperTrade = {
+  tf: string; entryTime: number; dir: 1 | -1; entry: number; stop0: number; risk: number; stop: number;
+  exitTime: number | null; exit: number | null; rNet: number | null; live: boolean; firstSeen: number;
+  volBurst: boolean | null; session: boolean;
+};
+export const getTrendPaper = () => json<{ since: number; summary: TrendPaperSummary[]; trades: TrendPaperTrade[] }>('/api/trend/paper');
 
 /** Aggressive flow per candle: taker buy / sell volume (contracts), trades, and how many of its minutes were recorded. */
 export type FlowBar = { time: number; buy: number; sell: number; trades: number; minutes: number };

@@ -15,8 +15,9 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { SmcPrimitive } from './chart/smc-primitive';
 import { buildScene, C, DEFAULT_LAYERS, htfScene, LAYER_PRESETS, LAYERS, type Layer, type SceneItem } from './chart/scene';
 import { ChartHud } from './chart/ChartHud';
+import { TradesDialog } from './chart/TradesDialog';
 import { bigTradeScene, bigTradeSummary, deltaSeries, flowRead, heatScene, profileScene, strikeScene, volRegime, volumeProfile, type BigTrade } from './chart/flow-layers';
-import type { FlowBar, HeatColumn, PerpOiChange, TrendPaperSummary, Wall } from '@/api/desk';
+import type { FlowBar, HeatColumn, PerpOiChange, TrendPaperSummary, TrendPaperTrade, Wall } from '@/api/desk';
 import type { Leg } from '@/types/desk';
 import { LtpChip } from './chart/LtpChip';
 import { trendScene } from './chart/trend-layer';
@@ -46,7 +47,7 @@ const IST_FULL = new Intl.DateTimeFormat('en-IN', {
  * appears and then vanishes within a candle.
  */
 export function PriceChart({
-  bars, tf, views = [], onView, loading = false, error, context = [], regime, higher = [], bigTrades, flowBars, heat, strikes, derivs, trendBars, trendPaper, ltp, symbol = 'BTCUSD',
+  bars, tf, views = [], onView, loading = false, error, context = [], regime, higher = [], bigTrades, flowBars, heat, strikes, derivs, trendBars, trendPaper, trendPaperTrades, ltp, symbol = 'BTCUSD',
 }: {
   bars: readonly Candle[];
   tf: ChartTf;
@@ -73,8 +74,9 @@ export function PriceChart({
   derivs?: { oi: PerpOiChange | null; funding: number | null } | null;
   /** 1H candles for the trend plan (lib/trend/breakout.ts): run on 1H, and on 4H folded from them. */
   trendBars?: readonly Candle[];
-  /** The trend plan's paper log (the server's forward test), per timeframe. */
+  /** The trend plan's paper log (the server's forward test): per timeframe, and its trades. */
   trendPaper?: readonly TrendPaperSummary[];
+  trendPaperTrades?: readonly TrendPaperTrade[];
   /** The perp's last trade, from the stream, for the LTP chip. */
   ltp?: { price: number; at: number } | null;
   symbol?: string;
@@ -100,6 +102,7 @@ export function PriceChart({
   const [inView, setInView] = useState<{ from: number; to: number } | null>(null);
   /** The big-trade bubble under the pointer, and where. */
   const [tip, setTip] = useState<{ x: number; y: number; text: string } | null>(null);
+  const [tradesOpen, setTradesOpen] = useState(false);
   const layers = useMemo(() => new Set(layerList), [layerList]);
   const tfSec = TF_SECONDS[tf] ?? 300;
 
@@ -363,6 +366,15 @@ export function PriceChart({
     return () => ro.disconnect();
   }, [hudOpen, read, error, bars.length === 0]);
 
+  /** Put a moment (epoch seconds) in the middle of the view: the trades dialog's "show on chart". */
+  const jumpTo = useCallback((time: number) => {
+    const chart = chartRef.current;
+    if (!chart || !bars.length) return;
+    let i = bars.findIndex((b) => b.time >= time);
+    if (i < 0) i = bars.length - 1;
+    chart.timeScale().setVisibleLogicalRange({ from: i - 45, to: i + 45 });
+  }, [bars]);
+
   const toggleLayer = (l: Layer) => setLayerList((cur) => (cur.includes(l) ? cur.filter((x) => x !== l) : [...cur, l]));
   const shown = hover ?? bars[bars.length - 1] ?? null;
 
@@ -428,6 +440,15 @@ export function PriceChart({
             </div>
           )}
 
+          <TradesDialog
+            open={tradesOpen}
+            onOpenChange={setTradesOpen}
+            history={read.history}
+            record={read.record}
+            paper={trendPaper ? { summary: trendPaper, trades: trendPaperTrades ?? [] } : null}
+            onJump={jumpTo}
+          />
+
           <ChartHud
             ref={hudRef}
             open={hudOpen}
@@ -436,6 +457,8 @@ export function PriceChart({
             read={read}
             context={context}
             alignment={alignment}
+            onTrades={() => setTradesOpen(true)}
+            paperCount={trendPaperTrades?.length ?? 0}
             trend={trend ? { h1: trend.h1.open, h4: trend.h4?.open ?? null, mark: bars[bars.length - 1]?.close ?? null, paper: trendPaper ?? null } : null}
             derivs={derivs || vol ? { oi: derivs?.oi ?? null, funding: derivs?.funding ?? null, vol } : null}
             big={layers.has('bigtrades') && bigTrades && bars.length ? {
