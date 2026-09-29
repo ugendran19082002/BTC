@@ -3,9 +3,10 @@
 Built 28–29 Sep 2026. The Live screen's one chart: 5-minute BTCUSD (1m on a
 switch), with every price-action / SMC concept the engine finds drawn on the
 candles themselves, the order flow around them -- the book's resting
-liquidity, the volume profile, the aggressive flow and the big trades -- and a
-corner readout (the HUD) that says what the engine knows now and what it is
-waiting for. Nothing is explained beside the chart.
+liquidity, the volume profile, the aggressive flow and the big trades -- the
+option board's biggest strikes, and a corner readout (the HUD) that says what
+the engine knows now, what it is waiting for, and how the perpetual is
+positioned. Nothing is explained beside the chart.
 
 This document is the complete logic: what is read and from where, every
 detection rule, the setup state machine, the stop, the targets, the trade
@@ -13,26 +14,30 @@ management, every layer and how it is drawn, the tables behind them, and what
 the research over 32 months of real candles says.
 
 **Nothing on this chart is a signal on its own.** The SMC engine's own record
-is negative after fees (§14), and the order-flow layers have only been
-recorded since September 2026 -- they are context to look at and, later, to
-test. The HUD says so beside every setup.
+is negative after fees, and the volume profile, CVD / delta, OI, funding and
+top-trader positioning, measured over 2024-26 (the flow on Binance's history),
+showed no edge either (§14). The heatmap and big trades on Delta are too new to
+measure. They are context: where liquidity, size and positioning are. The HUD
+and the Layers menu say so beside every setup and every layer.
 
 ---
 
 ## 1. The screen
 
 ```
-┌─ HUD (top left) ───────────────────────┐   ┌─ toolbar (top right) ──────────────────────┐
-│ LONG MOMENTUM ENTRY — TP1 reached   5m │   │ LTP 83,104.5 2:31 · 5m│1m · Layers · Zoom · ⛶│
-│ ✓ SSL swept ✓ CHoCH ✓ Displacement …   │   └────────────────────────────────────────────┘
-│ Entry 83,374  SL 83,374 moved …        │
-│ TP1 84,034 +660 pts · +2.0R · reason   │     heatmap (book) behind everything
-│ 1H ▲ Regime 30M ▲ Bias 15M ▲ Structure │     candles + volume, SMC concepts on price
-│ Measured 2024–26: … after fees         │     big-trade bubbles · volume profile (right)
-│ Last  O H L C                          │     the trade as a position box, in front
-│ Big ≥0.7 BTC ● 8 buy 4.0 ● 4 sell 2.0  │
-│ Flow Δ −4.3k buy 40% 187 trades 1.3×   │   ├── Δ / CVD pane ───────────────────────────
-└────────────────────────────────────────┘   time axis in IST
+┌─ HUD (top left) ─────────────────────────┐  ┌─ toolbar (top right) ──────────────────────┐
+│ LONG MOMENTUM ENTRY — TP1 reached     5m │  │ LTP 83,104.5 2:31 · 5m│1m · Layers · Zoom · ⛶│
+│ ✓ SSL swept ✓ CHoCH ✓ Displacement …     │  └────────────────────────────────────────────┘
+│ Entry 83,374  SL 83,374 moved …          │   Layers: Desk | Clean | Order flow | Options | All
+│ TP1 84,034 +660 pts · +2.0R · reason     │   + every layer, with what the research found
+│ 1H ▲ Regime 30M ▲ Bias 15M ▲ Structure   │
+│ Measured 2024–26: … after fees           │    heatmap (book) behind everything
+│ Last  O H L C                            │    candles + volume, SMC concepts on price
+│ OI 803 BTC ▲1.8% 1h · new longs          │    CE / PE strike lines, max pain
+│ Funding +0.0049% · Vol normal 1.0× ATR …  │    big-trade bubbles · volume profile (right)
+│ Big ≥0.7 BTC ● 8 buy 4.0 ● 4 sell 2.0    │    the trade as a position box, in front
+│ Flow Δ −4.3k buy 40% 187 trades 1.3×     │  ├── Δ / CVD pane ───────────────────────────
+└──────────────────────────────────────────┘  time axis in IST
 ```
 
 - **5m is the chart; 1m is a switch in the toolbar** (remembered per browser),
@@ -45,13 +50,15 @@ test. The HUD says so beside every setup.
 - **The HUD** folds to one line (folded by default on a phone). It shows the
   setup's state, its confirmations, the plan with prices, points and R, the
   context row, the measured record after fees, this chart's own record, the
-  candle under the crosshair, the big trades in view, and that candle's flow.
-- **The toolbar**: the LTP chip, the 5m | 1m switch, Layers (what is drawn,
-  remembered per browser), Zoom (pan and zoom are off by default so the page
-  scrolls over the chart), full screen.
+  candle under the crosshair, the perp's positioning and the volatility regime,
+  the big trades in view, and that candle's flow.
+- **The toolbar**: the LTP chip, the 5m | 1m switch, Layers (presets, then
+  every layer with its research note; remembered per browser), Zoom (pan and
+  zoom are off by default so the page scrolls over the chart), full screen.
 - **Layering, back to front**: heatmap → sessions / premium-discount / zones →
-  volume profile → candles and volume → lines, marks, bubbles → labels. The
-  live trade's box and its labels are always the strongest thing drawn.
+  volume profile → candles and volume → lines (structure, liquidity, strikes,
+  walls), marks, bubbles → labels. The live trade's box and its labels are
+  always the strongest thing drawn.
 
 ---
 
@@ -66,20 +73,23 @@ test. The HUD says so beside every setup.
 | `app/web/src/lib/smc/measured.data.ts` | GENERATED by the study: the desk options' record after fees, printed in the HUD. |
 | `app/web/src/lib/live-bar.ts` | The forming candle: `withLiveBar` (from the tape), `withLtp` (the spot fallback). |
 | `app/web/src/components/desk/chart/scene.ts` | Engine state → boxes / lines / marks in bar index and price. Layers, colours, clutter rules. |
-| `app/web/src/components/desk/chart/flow-layers.ts` | The order-flow layers as scene items: heatmap and walls, volume profile and nodes, big trades, delta / CVD, the flow reading. |
+| `app/web/src/components/desk/chart/flow-layers.ts` | The order-flow layers as scene items: heatmap and walls, volume profile (nodes, the aggressor split), big trades, delta / CVD, the flow reading, option strikes, the volatility regime. |
 | `app/web/src/components/desk/chart/smc-primitive.ts` | Draws the scene on the chart's canvas (a lightweight-charts series primitive); the bubbles' hover hit-test. |
 | `app/web/src/components/desk/chart/label-layout.ts` | Label placement by priority; nothing is drawn over anything. |
 | `app/web/src/components/desk/chart/ChartHud.tsx` | The corner readout. |
 | `app/web/src/components/desk/chart/LtpChip.tsx` | The last traded price, tick colour and candle countdown. |
 | `app/web/src/components/desk/PriceChart.tsx` | The chart: candles, volume, the delta / CVD pane, the engine, the primitive, the HUD, the toolbar, the tooltip. |
 | `app/web/src/components/desk-screen/DeskChart.tsx` | Fetches the context candles, the flow, the big trades and the heatmap; the 5m / 1m view. |
+| `app/web/src/components/overview/Overview.tsx` | Hands the chart the option board (strikes, max pain) and the perp's positioning (OI change, funding) it already loads. |
 | `app/server/src/market/flow-socket.ts` | The perpetual's and the options' trade socket: every print, the last perp trade. |
 | `app/server/src/market/flow.ts` | Flow per minute, large orders, the auto big-trade size, the live candle, the flow per candle. |
 | `app/server/src/market/book-heat.ts` | The book sampler and the heatmap: minutes, columns, persistent walls. |
-| `app/server/src/http/routes/desk.routes.ts` | `/api/candles`, `/api/flow/bars`, `/api/flow/large-prints`, `/api/flow/heatmap`. |
+| `app/server/src/http/routes/desk.routes.ts` | `/api/candles`, `/api/chain`, `/api/perp` (with `perpOi`), `/api/flow/bars`, `/api/flow/large-prints`, `/api/flow/heatmap`. |
+| `app/server/src/http/ttl-cache.ts` | One shared read per key for a few seconds, for the chart's pollers. |
 | `app/server/src/http/routes/stream.routes.ts` | `/api/stream`, including the `ltp` event. |
 | `app/web/scripts/smc-study.ts` | The engine replayed over cached history: funnel, variants, `measured.data.ts`. |
 | `app/web/scripts/crt-study.ts`, `intraday-momentum-study.ts` | Declared studies of published / popular models (§14). |
+| `app/web/scripts/profile-study.ts`, `flow-study.ts` | Declared studies of the volume profile (Delta candles) and of CVD / delta, OI, funding and top traders (Binance history in `cache/binance`) (§14). |
 | `research/*.txt` | The studies' latest outputs. |
 
 ---
@@ -96,6 +106,8 @@ test. The HUD says so beside every setup.
 | Flow per candle | `/api/flow/bars` | 10 s | Δ / CVD pane, the Flow line. |
 | Large taker orders | `/api/flow/large-prints` | 15 s | Big-trade bubbles, the Big line. |
 | The book heatmap | `/api/flow/heatmap` | 20 s, newest columns only | Heatmap and walls. |
+| The option board | `/api/chain` (the screen's own load) | 5 s | Strike levels (OI, its 1h change), max pain. |
+| The perpetual | `/api/perp` (the screen's own load) | 5 s | OI against an hour ago and its read, funding. |
 
 **The live price is the perpetual's own tape.** The server's trade socket
 holds every BTCUSD print; the stream's `ltp` event carries the last trade and
@@ -390,14 +402,17 @@ shape off the visible range is not drawn rather than clamped to the edge.
 
 ## 12. What is drawn: order flow
 
-Four questions, four layers, kept apart so each keeps its meaning:
+Each layer answers one question, and they are kept apart so each keeps its
+meaning:
 
-| Layer | Question | Traders | Source |
-|---|---|---|---|
-| Liquidity heatmap + walls | Where are orders **resting**? | passive (limit orders) | the recorded order book |
-| Big-trade bubbles | Where did large orders **execute**? | big, aggressive | the recorded large taker orders |
-| Δ / CVD pane | Who is **crossing the spread**, and how hard? | aggressive (market orders) | the recorded tape per minute |
-| Volume profile | Where has volume been **accepted**? | everyone | the candles in view |
+| Layer | Question | Traders | Source | Measured (§14) |
+|---|---|---|---|---|
+| Liquidity heatmap + walls | Where are orders **resting**? | passive (limit orders) | the recorded order book | too new |
+| Big-trade bubbles | Where did large orders **execute**? | big, aggressive | the recorded large taker orders | too new |
+| Δ / CVD pane | Who is **crossing the spread**, and how hard? | aggressive (market orders) | the recorded tape per minute | no edge (Binance) |
+| Volume profile | Where has volume been **accepted**? | everyone | the candles in view (+ the flow's split) | no edge |
+| Option strikes | Where is the option board **positioned**? | option sellers and buyers | the live chain | no history |
+| Context line | Is the perp **adding or cutting** positions; how crowded; how volatile? | everyone | `/api/perp`, the chart's ATR | no edge (Binance) |
 
 ### Liquidity heatmap (passive traders)
 
@@ -511,6 +526,7 @@ Four questions, four layers, kept apart so each keeps its meaning:
 - Measured (§14, on Binance's history): none of the four OI reads, nor
   funding at its extremes, moved the next hour or day the same way in both
   halves of 2024-26.
+
 ---
 
 ## 13. The tables behind the layers
@@ -520,6 +536,8 @@ Four questions, four layers, kept apart so each keeps its meaning:
 | `trade_flow_1m` | `market/flow.ts`, every 20 s | the perp's tape per minute: buy / sell volume and count, large ones, VWAP, high, low | a year |
 | `large_prints` (`market-015`) | `market/flow.ts`, with the minute rows | every perp taker order ≥ 200 contracts: ms, side, average price, size | a year |
 | `book_heat_1m` (`market-016`) | `market/book-heat.ts`, every 20 s | the book each minute: average contracts per $10, bids and asks, the touch, samples | 14 days |
+| `perp_snapshots` | `market/flow.ts`, every 5 min | funding, OI, turnover, the top of the book; read for the OI change an hour back | a year |
+| `oi_snapshots` | `market/oi-history.ts`, every 5 min | each strike's OI; read for the strikes' 1h change | 48 hours |
 
 All are written `ON CONFLICT DO NOTHING` on their time key, so a restart or a
 replayed snapshot cannot double a row; details in docs/DB-INVENTORY.md.
@@ -631,7 +649,12 @@ cd app/web && ../server/node_modules/.bin/tsx scripts/flow-study.ts   # needs ca
 - **Liquidation clusters**: Delta publishes none; third-party heatmaps are
   model estimates behind a paid API.
 - **SMT divergence** (BTC vs ETH): needs ETH candles alongside.
-- **TPO / market profile**, **initial balance**, **single prints**.
+- **TPO / market profile**, **initial balance**, **single prints**: for a
+  round-the-clock market these largely repeat the volume profile.
+- **Anchored VWAP** (the day VWAP is a layer); **spread / depth** and **book
+  imbalance** as HUD figures (recorded in `perp_snapshots`); **gamma / greeks**
+  (recorded in `option_snapshots`, but with no dealer positioning published a
+  "dealer gamma" would be a guess).
 
 **Price action and the engine:**
 
