@@ -227,14 +227,14 @@ describe('the price chart', () => {
     expect(stored).toContain('liquidity');
   });
 
-  it('lists this chart\'s completed trades, with prices, result and path, when asked', () => {
+  it('[critical] the trades open in a dialog off the chart, not in the readout', () => {
     chart();
     const hud = screen.getByLabelText('Setup readout');
-    const toggle = within(hud).queryByRole('button', { name: /^Trades \(\d+\)$/ });
-    if (!toggle) return; // this fixture completed no trade
-    fireEvent.click(toggle);
-    const table = within(hud).getByRole('table');
-    expect(table.textContent).toMatch(/Entry.*SL.*TP1.*Exit.*Result.*Path/);
+    expect(within(hud).queryByRole('table')).toBeNull();
+    fireEvent.click(within(hud).getByRole('button', { name: /^Trades \(\d+/ }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByRole('tab', { name: /SMC plan/ }).getAttribute('aria-selected')).toBe('true');
+    expect(within(dialog).getByRole('tab', { name: /Trend plan/ })).toBeTruthy();
   });
 
   it('folds the readout to one line', () => {
