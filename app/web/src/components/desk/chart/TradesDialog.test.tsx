@@ -24,7 +24,7 @@ describe('the trades dialog', () => {
 
   it('[critical] a row can be hidden and restored; the record still counts it', () => {
     open();
-    fireEvent.click(screen.getByRole('button', { name: /Hide the .* trade/, exact: false }) as HTMLElement);
+    fireEvent.click(screen.getAllByRole('button', { name: /Hide the .* trade/ })[0]!);
     expect(rowsOf()).toHaveLength(2);
     expect(screen.getByText('1 hidden')).toBeTruthy();
     expect(screen.getByLabelText('SMC record on this chart').textContent).toContain('Trades3');
