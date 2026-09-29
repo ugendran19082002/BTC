@@ -1,5 +1,4 @@
 import React from 'react';
-import { Bell, Moon, Settings, Sun } from 'lucide-react';
 
 /**
  * The Live screen's header, in one row: who it is, that it is live, the
@@ -12,8 +11,6 @@ import { Bell, Moon, Settings, Sun } from 'lucide-react';
 export function DeskHeader({
   expiryLabel,
   hoursToExpiry,
-  onAlerts,
-  onSettings,
   controls,
 }: {
   expiryLabel?: string;
@@ -22,16 +19,9 @@ export function DeskHeader({
   onSettings?: () => void;
   controls?: React.ReactNode;
 }) {
-  const [theme, setTheme] = React.useState<'dark' | 'light'>('dark');
   const left = hoursToExpiry !== undefined && Number.isFinite(hoursToExpiry) && hoursToExpiry > 0 ? hoursToExpiry : null;
   const h = left === null ? 0 : Math.floor(left);
   const m = left === null ? 0 : Math.round((left - h) * 60);
-
-  const toggleTheme = () => {
-    const next = theme === 'dark' ? 'light' : 'dark';
-    setTheme(next);
-    document.documentElement.classList.toggle('dark', next === 'dark');
-  };
 
   return (
     <header className="desk-header desk-header-row">
@@ -55,23 +45,11 @@ export function DeskHeader({
         </div>
       )}
 
-      <div className="desk-header-actions">
-        {controls && <div className="desk-controls-wrap">{controls}</div>}
-
-        <button type="button" className="desk-btn-tool" onClick={onAlerts} title="Alerts">
-          <Bell size={14} />
-          <span>Alerts</span>
-        </button>
-
-        <button type="button" className="desk-btn-tool" onClick={onSettings} title="Settings">
-          <Settings size={14} />
-          <span>Settings</span>
-        </button>
-
-        <button type="button" className="desk-btn-tool" onClick={toggleTheme} title="Toggle dark / light mode" aria-label="Toggle dark / light mode">
-          {theme === 'dark' ? <Moon size={14} /> : <Sun size={14} />}
-        </button>
-      </div>
+      {controls && (
+        <div className="desk-header-actions">
+          <div className="desk-controls-wrap">{controls}</div>
+        </div>
+      )}
     </header>
   );
 }

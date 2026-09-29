@@ -314,6 +314,23 @@ inside their range they traded, so each candle's volume is spread evenly over
 its high-low (48 bins); the value area grows from the POC towards the busier
 neighbour until it holds 70% of the volume. `chart/flow-layers.ts`.
 
+**Volume nodes** -- on the same profile, smoothed over three bins so one
+noisy bin is not a node: HVNs (peaks of at least half the tallest, not the
+POC) as amber ticks at the profile's edge, LVNs (valleys under a third of the
+tallest with a peak twice as tall on both sides -- thin areas between two
+areas of acceptance) as cyan ticks, and the LVN nearest price as a labelled
+level (`LVN 83,210`).
+
+**Delta / CVD pane** -- a pane under the price: each candle's taker buying
+minus selling (`/api/flow/bars`, from the recorded minutes and the socket's
+current one), green / red, faded where the candle has minutes missing, and
+CVD, the running delta from 00:00 UTC (05:30 IST, the VWAP's day). A candle
+with no recorded minute has no bar -- a gap in the record is not a flat
+market. The readout adds a **Flow** line for the candle under the crosshair:
+delta, buyers' share, trades, and the pace against the twenty candles before
+(the forming candle's scaled to a whole candle; amber from 2×). Recorded since
+mid-September 2026 only.
+
 **Big trades** -- each taker order of the chosen size or more (Layers → "Big
 trades from": 0.2 / 0.5 / 1 / 2 BTC, 0.5 by default) as a bubble centred on
 its candle at its price: green a buyer lifting the offer, red a seller hitting
