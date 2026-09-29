@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { usePageVisible } from '@/hooks/usePageVisible';
 import type { TradeStatus } from '@/types/trade';
+import type { Candle } from '@/types/desk';
 
 /**
  * The desk, pushed: one connection instead of three polls a second.
@@ -23,6 +24,15 @@ import type { TradeStatus } from '@/types/trade';
 /** The server pings every 15s; missing two and a half of them is silence. */
 export const QUIET_MS = 40_000;
 
+/** The perpetual's last trade and the 1m / 5m candles in progress, from the tape (`/api/stream` event `ltp`). */
+export type LiveLtp = {
+  price: number;
+  /** Epoch ms of the trade. */
+  at: number;
+  side: 'buy' | 'sell';
+  bars: { '1m': Candle | null; '5m': Candle | null };
+};
+
 export type StreamState = {
   status: TradeStatus | null;
   statusAt: number | null;
@@ -30,11 +40,12 @@ export type StreamState = {
   spotAt: number | null;
   /** When the server's ticker batch last changed, and where it came from. */
   board: { at: number | null; source: 'socket' | 'rest' | 'none' } | null;
+  ltp: LiveLtp | null;
   /** Frames are arriving. */
   live: boolean;
 };
 
-const IDLE: StreamState = { status: null, statusAt: null, spot: null, spotAt: null, board: null, live: false };
+const IDLE: StreamState = { status: null, statusAt: null, spot: null, spotAt: null, board: null, ltp: null, live: false };
 
 /** The constructor, so a test can hand in a fake EventSource. */
 export type EventSourceLike = {
@@ -74,6 +85,13 @@ export function useStream(enabled: boolean, factory: EventSourceFactory = defaul
       try {
         const { spot } = JSON.parse(ev.data ?? '{}') as { spot?: number };
         if (typeof spot === 'number' && spot > 0) setState((s) => ({ ...s, spot, spotAt: Date.now(), live: true }));
+      } catch { /* ignored */ }
+    });
+    es.addEventListener('ltp', (ev) => {
+      heard();
+      try {
+        const ltp = JSON.parse(ev.data ?? 'null') as LiveLtp | null;
+        if (ltp && typeof ltp.price === 'number' && ltp.price > 0) setState((s) => ({ ...s, ltp, live: true }));
       } catch { /* ignored */ }
     });
     es.addEventListener('board', (ev) => {

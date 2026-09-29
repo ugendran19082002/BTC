@@ -88,6 +88,44 @@ export function withLtp(
 }
 
 /**
+ * Return `bars` with the candle in progress taken from the tape: `live` is
+ * built by the server from the perpetual's own trades (the stream's `ltp`),
+ * so unlike `withLtp` it is the chart's own instrument, every trade, with its
+ * volume.
+ *
+ *  - Same candle as the newest bar: `high` / `low` widen to the tape's,
+ *    `close` is the last trade, `volume` whichever saw more (the socket may
+ *    have joined late). `open` stays the exchange's.
+ *  - The next candle, not listed yet: added. It is not a guess -- every value
+ *    in it traded -- and it does not move an index: the bars before it are
+ *    untouched.
+ *  - A live candle that is over, older than the newest bar, or further ahead
+ *    than the next one changes nothing.
+ */
+export function withLiveBar(
+  bars: readonly Candle[],
+  live: Candle | null | undefined,
+  tfSeconds: number,
+  nowMs: number = Date.now(),
+): readonly Candle[] {
+  if (!live || !bars.length || !(tfSeconds > 0) || !isForming(live, tfSeconds, nowMs)) return bars;
+  const last = bars[bars.length - 1]!;
+  if (live.time === last.time) {
+    const merged: Candle = {
+      ...last,
+      high: Math.max(last.high, live.high),
+      low: Math.min(last.low, live.low),
+      close: live.close,
+      volume: Math.max(last.volume, live.volume),
+    };
+    const same = merged.high === last.high && merged.low === last.low && merged.close === last.close && merged.volume === last.volume;
+    return same ? bars : [...bars.slice(0, -1), merged];
+  }
+  if (live.time === last.time + tfSeconds) return [...bars, { ...live }];
+  return bars;
+}
+
+/**
  * How stale the newest bar is, in seconds — or null when it is still forming.
  *
  * A chart whose newest bar closed eleven minutes ago is not a live chart, and

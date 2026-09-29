@@ -224,6 +224,43 @@ export function minutesOf(prints: readonly Print[], large = LARGE_PRINT_CONTRACT
   return [...groups.entries()].sort((a, b) => a[0] - b[0]).map(([at, ps]) => minuteOf(at, ps, large));
 }
 
+// ------------------------------------------------------------ the live price
+
+/** A candle in progress, from the prints: `time` in epoch seconds like the exchange's candles, volume in contracts. */
+export type LiveBar = { time: number; open: number; high: number; low: number; close: number; volume: number };
+
+/** The `tfSec` candle that `nowMs` falls in, built from the perpetual's prints in it. Null before its first print. Pure. */
+export function formingBar(prints: readonly Print[], tfSec: number, nowMs: number): LiveBar | null {
+  const from = Math.floor(nowMs / (tfSec * 1000)) * tfSec * 1000;
+  let bar: LiveBar | null = null;
+  for (const p of prints) {
+    if (p.symbol || p.at < from || p.at > nowMs) continue;
+    if (!bar) bar = { time: from / 1000, open: p.price, high: p.price, low: p.price, close: p.price, volume: 0 };
+    bar.high = Math.max(bar.high, p.price);
+    bar.low = Math.min(bar.low, p.price);
+    bar.close = p.price;
+    bar.volume += p.size;
+  }
+  return bar;
+}
+
+export type LiveLtp = {
+  /** The perpetual's last traded price, when, and which side crossed the spread. */
+  price: number;
+  at: number;
+  side: 'buy' | 'sell';
+  /** The 1m and 5m candles in progress, from the tape. */
+  bars: { '1m': LiveBar | null; '5m': LiveBar | null };
+};
+
+/** The last trade and the candles in progress, off the socket; null before the first print. */
+export function liveLtp(nowMs = Date.now()): LiveLtp | null {
+  const last = socket?.lastPerpPrint();
+  if (!socket || !last) return null;
+  const prints = socket.perpSince(Math.floor(nowMs / 300_000) * 300_000);
+  return { price: last.price, at: last.at, side: last.side, bars: { '1m': formingBar(prints, 60, nowMs), '5m': formingBar(prints, 300, nowMs) } };
+}
+
 // ------------------------------------------------------------ large orders
 
 export type LargePrint = { at: number; side: 'buy' | 'sell'; price: number; size: number };

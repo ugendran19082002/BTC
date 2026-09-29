@@ -110,6 +110,8 @@ export function perpTickerOf(m: Record<string, unknown>, at: number): PerpTicker
 
 export class FlowSocket {
   private prints: Print[] = [];
+  /** The perpetual's newest print: the last traded price. */
+  private lastPerp: Print | null = null;
   private perp: PerpTicker | null = null;
   private socket: SocketLike | null = null;
   private stopped = true;
@@ -173,6 +175,20 @@ export class FlowSocket {
     return this.prints.filter((p) => p.at >= sinceMs);
   }
 
+  /** The perpetual's prints at or after `sinceMs`, oldest first. Scans back from the newest only, so the current candle costs its own prints. */
+  perpSince(sinceMs: number): Print[] {
+    const out: Print[] = [];
+    for (let i = this.prints.length - 1; i >= 0; i--) {
+      const p = this.prints[i]!;
+      if (p.at < sinceMs) break;
+      if (!p.symbol) out.push(p);
+    }
+    return out.reverse();
+  }
+
+  /** The perpetual's last trade, or null before the first. */
+  lastPerpPrint(): Print | null { return this.lastPerp; }
+
   perpTicker(): PerpTicker | null { return this.perp; }
 
   /** One raw message from the wire. Public so a test can feed the parser directly. */
@@ -212,6 +228,7 @@ export class FlowSocket {
       if (q.at === p.at && q.price === p.price && q.size === p.size && q.side === p.side && q.symbol === p.symbol) return;
     }
     this.prints.push(p);
+    if (!p.symbol && (!this.lastPerp || p.at >= this.lastPerp.at)) this.lastPerp = p;
     if (this.prints.length > 1 && p.at < this.prints[this.prints.length - 2]!.at) this.prints.sort((a, b) => a.at - b.at);
   }
 

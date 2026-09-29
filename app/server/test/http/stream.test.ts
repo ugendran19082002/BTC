@@ -100,6 +100,32 @@ test('[critical] the stream is behind the gate like every other route', async ()
   assert.equal(r.status, 401);
 });
 
+test('[critical] the stream carries the perp\'s last trade and the candles in progress', async () => {
+  const { FlowSocket } = await import('../../src/market/flow-socket.js');
+  const { useFlowSocket } = await import('../../src/market/flow.js');
+  const s = new FlowSocket({ now: () => Date.now() });
+  s.receive(JSON.stringify({ type: 'all_trades', symbol: 'BTCUSD', price: '81234.5', size: 3, timestamp: Date.now() * 1000, buyer_role: 'taker', seller_role: 'maker' }));
+  useFlowSocket(s);
+  const ctl = new AbortController();
+  const r = await fetch(`${base}/api/stream`, { headers: { cookie: `${COOKIE}=${encodeURIComponent('full-session-token')}` }, signal: ctl.signal });
+  const reader = r.body!.getReader();
+  let text = '';
+  const deadline = Date.now() + 5_000;
+  while (!text.includes('event: ltp') && Date.now() < deadline) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    text += Buffer.from(value).toString();
+  }
+  ctl.abort();
+  useFlowSocket(null);
+  const frame = /event: ltp\ndata: (.*)\n/.exec(text)?.[1];
+  assert.ok(frame, 'an ltp frame');
+  const live = JSON.parse(frame!) as { price: number; side: string; bars: { '1m': { close: number; volume: number } } };
+  assert.equal(live.price, 81_234.5);
+  assert.equal(live.side, 'buy');
+  assert.deepEqual([live.bars['1m'].close, live.bars['1m'].volume], [81_234.5, 3]);
+});
+
 test('[critical] a signed-in tab gets an event stream with the status in it', async () => {
   const ctl = new AbortController();
   const r = await fetch(`${base}/api/stream`, {

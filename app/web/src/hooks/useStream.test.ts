@@ -51,6 +51,17 @@ describe('useStream', () => {
     expect(result.current.live).toBe(true);
   });
 
+  it('[critical] takes the perp\'s last trade and its candles in progress, and ignores a frame without a price', () => {
+    const es = fakeSource();
+    const { result } = renderHook(() => useStream(true, () => es));
+    const bar = { time: 1_790_000_100, open: 1, high: 2, low: 1, close: 2, volume: 3 };
+    act(() => es.emit('ltp', { price: 81_234.5, at: 5, side: 'buy', bars: { '1m': bar, '5m': bar } }));
+    expect(result.current.ltp?.price).toBe(81_234.5);
+    expect(result.current.ltp?.bars['1m']).toEqual(bar);
+    act(() => es.emit('ltp', { price: 0, at: 6, side: 'sell', bars: { '1m': null, '5m': null } }));
+    expect(result.current.ltp?.price).toBe(81_234.5);
+  });
+
   it('[critical] an error from the browser means not live, so the polls take over', () => {
     const es = fakeSource();
     const factory = () => es;

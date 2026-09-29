@@ -5,7 +5,8 @@ import { PriceChart } from '@/components/desk/PriceChart';
 import { getCandles, getLargePrints } from '@/api/desk';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
-import { isForming, withLtp } from '@/lib/live-bar';
+import { isForming, withLiveBar, withLtp } from '@/lib/live-bar';
+import type { LiveLtp } from '@/hooks/useStream';
 import { aggregate, closedBars, readTf, type TfRead } from '@/lib/smc/context';
 
 const HOUR = 3600;
@@ -24,13 +25,15 @@ const VIEWS: readonly ChartTf[] = ['5m', '1m'];
  * candles are read.
  *
  * The viewer may switch the chart to 1m (eight hours of candles). The 1m poll
- * then runs every ten seconds and its forming candle carries the live price
- * from the 5m bars, which the screen already updates every second.
+ * then runs every ten seconds and its forming candle comes from the tape (the
+ * stream's `ltp`), or, with the stream down, carries the 5m bars' live price.
  */
 export function DeskChart({
-  bars, tf = '5m', loading = false, error,
+  bars, ltp = null, tf = '5m', loading = false, error,
 }: {
   bars: readonly Candle[];
+  /** The perp's last trade and the candles in progress; null with the stream down. */
+  ltp?: LiveLtp | null;
   tf: ChartTf;
   loading?: boolean;
   error?: string;
@@ -71,7 +74,10 @@ export function DeskChart({
   const now = Date.now();
   const lastFive = bars[bars.length - 1];
   const liveSpot = lastFive && isForming(lastFive, M5, now) ? lastFive.close : null;
-  const oneBars = useMemo(() => withLtp(m1?.bars ?? [], liveSpot, M1, now), [m1, liveSpot]);
+  const oneBars = useMemo(
+    () => (ltp?.bars['1m'] ? withLiveBar(m1?.bars ?? [], ltp.bars['1m'], M1, now) : withLtp(m1?.bars ?? [], liveSpot, M1, now)),
+    [m1, ltp, liveSpot],
+  );
 
   return (
     <div className="desk-chart-panel" aria-label="BTC price chart">
@@ -87,6 +93,7 @@ export function DeskChart({
           regime={h1?.bars?.length ? { bars: h1.bars, tfSec: HOUR } : null}
           higher={higher}
           bigTrades={bigTrades}
+          ltp={ltp}
         />
       </div>
     </div>

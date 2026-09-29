@@ -16,6 +16,7 @@ import { SmcPrimitive } from './chart/smc-primitive';
 import { buildScene, C, DEFAULT_LAYERS, htfScene, LAYERS, type Layer, type SceneItem } from './chart/scene';
 import { ChartHud } from './chart/ChartHud';
 import { bigTradeScene, profileScene, volumeProfile, type BigTrade } from './chart/flow-layers';
+import { LtpChip } from './chart/LtpChip';
 import './chart/price-chart.css';
 
 export type ChartTf = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d';
@@ -43,7 +44,7 @@ const IST_FULL = new Intl.DateTimeFormat('en-IN', {
  * appears and then vanishes within a candle.
  */
 export function PriceChart({
-  bars, tf, views = [], onView, loading = false, error, context = [], regime, higher = [], bigTrades, symbol = 'BTCUSD',
+  bars, tf, views = [], onView, loading = false, error, context = [], regime, higher = [], bigTrades, ltp, symbol = 'BTCUSD',
 }: {
   bars: readonly Candle[];
   tf: ChartTf;
@@ -60,6 +61,8 @@ export function PriceChart({
   higher?: readonly { tf: string; tfSec: number; bars: readonly Candle[]; show: 'zones' | 'structure' }[];
   /** Large taker orders for the bubbles, the smallest drawn (contracts), and how to change it. */
   bigTrades?: { prints: readonly BigTrade[]; min: number; onMin?: (min: number) => void };
+  /** The perp's last trade, from the stream, for the LTP chip. */
+  ltp?: { price: number; at: number } | null;
   symbol?: string;
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
@@ -271,6 +274,7 @@ export function PriceChart({
           <div ref={hostRef} className="pc-host" />
 
           <div ref={toolbarRef} className="pc-toolbar" role="toolbar" aria-label="Chart controls">
+            {ltp && <LtpChip price={ltp.price} at={ltp.at} tfSec={tfSec} />}
             {views.length > 1 && onView && (
               <div className="pc-views" role="radiogroup" aria-label="Chart timeframe">
                 {views.map((v) => (

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { usePersisted } from '@/hooks/usePersisted';
+import type { LiveLtp } from '@/hooks/useStream';
 import type { Candle, ChainResponse, ExpiryOption } from '@/types/desk';
 import type { TradeStatus } from '@/types/trade';
 import { getPerp } from '@/api/desk';
@@ -37,7 +38,7 @@ export const screenSpot = (tick: number | null | undefined, snapshot: number | n
 export function Overview({
   data, trade, expiries, onExpiry, chartTf = '15m',
   selected: selectedProp, onSelect, tick, controls, error,
-  bars = [],
+  bars = [], ltp = null,
 }: {
   data: ChainResponse;
   trade: TradeStatus | null;
@@ -54,6 +55,8 @@ export function Overview({
   /** The last load's error, if the chain on screen is older than it should be. */
   error?: string | null;
   bars?: readonly Candle[];
+  /** The perp's last trade and the candles in progress, from the stream; null when it is down. */
+  ltp?: LiveLtp | null;
 }) {
   // A clock for the flow window, ticking once a second.
   const [now, setNow] = useState(() => Date.now());
@@ -109,6 +112,7 @@ export function Overview({
     <div className="ov">
       <DeskDashboard
         bars={bars}
+        ltp={ltp}
         tf={chartTf}
         expiryLabel={snap.expiry ? `${snap.expiry} 17:30 IST` : undefined}
         hoursToExpiry={snap.hoursToExpiry}

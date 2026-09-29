@@ -75,6 +75,22 @@ time axis in IST
 | 1H candles, 14 days | `/api/candles?tf=1h` (DeskChart, every minute) | 1H regime; 1H order blocks drawn on the 5m chart; the trend each setup records. |
 | 5m candles again | same | Folded into 15m (structure, and 15m breaks drawn on the chart) and 30m (bias). |
 | 1m candles, 8 hours | `/api/candles?tf=1m` (every minute; every 10 s on the 1m view) | 1M trigger in the context row; the 1m view. |
+| The live price | `/api/stream`, event `ltp` (pushed as trades print, checked 4×/s) | The forming candle and the LTP chip -- see below. |
+| Large taker orders | `/api/flow/large-prints` (every 15 s) | Big-trade bubbles. |
+
+**The live price is the perpetual's own tape.** The server's trade socket
+holds every BTCUSD print; the stream's `ltp` event carries the last trade and
+the 1m and 5m candles in progress built from those prints. The chart merges
+that candle into the exchange's (`withLiveBar`): high and low widened to the
+trades', close the last trade, volume whichever saw more (the two agree to the
+contract when the socket saw the whole minute), open the exchange's. The next
+candle is added from the tape before the exchange lists it. Only with the
+stream down does the forming candle fall back to the index spot (`withLtp`),
+which differs from the perp by the basis and refreshes every eight seconds --
+until 29 Sep 2026 it was the only source, and the forming candle's high, low
+and close could be off by tens of dollars. The toolbar's **LTP chip** shows
+the last trade (green / red by tick), the time left in the candle, and "N m
+ago" when no trade has printed for a minute.
 
 **Closed candles only.** A candle opened at *t* closes at *t + tf*; anything
 not closed is left out of every engine (`closedBars`). The forming candle is

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { withLtp, isForming, barAgeSec, TF_SECONDS } from './live-bar';
+import { withLtp, withLiveBar, isForming, barAgeSec, TF_SECONDS } from './live-bar';
 import type { Candle } from '@/types/desk';
 
 const bar = (time: number, over: Partial<Candle> = {}): Candle => ({
@@ -109,5 +109,35 @@ describe('how stale the newest bar is', () => {
 
   it('no bars has no age', () => {
     expect(barAgeSec([], 300, MID)).toBeNull();
+  });
+});
+
+describe('the candle in progress from the tape', () => {
+  const T = 1_790_000_100; // a 5m boundary
+  const c = (time: number, o: number, h: number, l: number, cl: number, v: number) => ({ time, open: o, high: h, low: l, close: cl, volume: v });
+  const bars = [c(T - 300, 100, 110, 90, 105, 50), c(T, 105, 108, 104, 106, 10)];
+  const now = (T + 120) * 1000;
+
+  it('[critical] widens the exchange\'s forming candle to the trades, closes at the last one, keeps the open', () => {
+    const out = withLiveBar(bars, c(T, 999, 112, 103, 111, 25), 300, now);
+    expect(out[1]).toEqual(c(T, 105, 112, 103, 111, 25));
+    expect(out[0]).toBe(bars[0]);
+  });
+
+  it('keeps the exchange\'s volume when the socket saw less, and the same array when nothing changed', () => {
+    expect(withLiveBar(bars, c(T, 105, 108, 104, 106, 3), 300, now)).toBe(bars);
+  });
+
+  it('[critical] adds the next candle when the exchange has not listed it yet', () => {
+    const out = withLiveBar(bars, c(T + 300, 106, 107, 105, 107, 4), 300, (T + 330) * 1000);
+    expect(out).toHaveLength(3);
+    expect(out[2]).toEqual(c(T + 300, 106, 107, 105, 107, 4));
+  });
+
+  it('[critical] changes nothing with a candle that is over, older, or beyond the next', () => {
+    expect(withLiveBar(bars, c(T, 105, 200, 1, 150, 99), 300, (T + 301) * 1000)).toBe(bars);
+    expect(withLiveBar(bars, c(T - 300, 105, 200, 1, 150, 99), 300, (T - 10) * 1000)).toBe(bars);
+    expect(withLiveBar(bars, c(T + 600, 105, 200, 1, 150, 99), 300, (T + 700) * 1000)).toBe(bars);
+    expect(withLiveBar(bars, null, 300, now)).toBe(bars);
   });
 });

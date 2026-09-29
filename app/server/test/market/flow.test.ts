@@ -2,7 +2,7 @@ import { after, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { FlowSocket, printOf, perpTickerOf, type Print } from '../../src/market/flow-socket.js';
 import {
-  bookOf, capturePerpSnapshot, flowSchema, flowSummary, flushTradeFlow, largeOrdersOf, largePrints, minuteOf, minutesOf,
+  bookOf, capturePerpSnapshot, flowSchema, flowSummary, flushTradeFlow, formingBar, largeOrdersOf, largePrints, liveLtp, minuteOf, minutesOf,
   useFlowSocket, FLOW_BUCKET_MS, LARGE_PRINT_CONTRACTS,
 } from '../../src/market/flow.js';
 import { closePool, one, query } from '../../src/db/pool.js';
@@ -140,6 +140,34 @@ test('[critical] large orders are written once with their minute, and read back 
   ], 'recorded, then the socket\'s own, none twice');
   assert.deepEqual((await largePrints(minute(0), L * 3)).map((o) => o.size), [L * 4], 'filtered by size');
   assert.deepEqual((await largePrints(minute(11))).map((o) => o.at), [minute(11) + 1_000, minute(12) + 1_000], 'from the time asked');
+});
+
+test('[critical] the candle in progress is the perp\'s own prints since it opened: open, high, low, close, volume', () => {
+  const t5 = Math.floor(T0 / 300_000) * 300_000;
+  const bar = formingBar([
+    p(t5 - 1, 'buy', 9, 90_000),                                   // the candle before
+    p(t5 + 1_000, 'buy', 3, 81_000), p(t5 + 2_000, 'sell', 2, 81_050),
+    { ...p(t5 + 2_500, 'buy', 50, 99_999), symbol: 'C-BTC-82000-200926' }, // an option
+    p(t5 + 3_000, 'sell', 4, 80_990), p(t5 + 4_000, 'buy', 1, 81_020),
+  ], 300, t5 + 5_000);
+  assert.deepEqual(bar, { time: t5 / 1000, open: 81_000, high: 81_050, low: 80_990, close: 81_020, volume: 10 });
+  assert.equal(formingBar([p(t5 - 1, 'buy', 1)], 300, t5 + 5_000), null, 'no print yet in this candle');
+});
+
+test('[critical] the live price is the socket\'s last perp trade, with the 1m and 5m candles in progress', () => {
+  assert.equal(liveLtp(T0), null, 'no socket, no price');
+  const s = new FlowSocket({ now: () => T0 });
+  const send = (x: Print & { symbol?: string }) => s.receive(JSON.stringify({ type: 'all_trades', symbol: x.symbol ?? 'BTCUSD', price: String(x.price), size: x.size, timestamp: x.at * 1000, buyer_role: x.side === 'buy' ? 'taker' : 'maker', seller_role: x.side === 'buy' ? 'maker' : 'taker' }));
+  const t1 = Math.floor(T0 / 60_000) * 60_000;
+  send(p(t1 - 70_000, 'buy', 5, 81_200));
+  send(p(t1 + 1_000, 'sell', 2, 81_100));
+  send({ ...p(t1 + 2_000, 'buy', 7, 500), symbol: 'C-BTC-82000-200926' });
+  useFlowSocket(s);
+  const live = liveLtp(t1 + 3_000)!;
+  assert.deepEqual([live.price, live.side, live.at], [81_100, 'sell', t1 + 1_000], 'the option print is not the perp\'s price');
+  assert.deepEqual(live.bars['1m'], { time: t1 / 1000, open: 81_100, high: 81_100, low: 81_100, close: 81_100, volume: 2 });
+  // 06:00:50 and 06:02:01 are both in the 06:00 five-minute candle.
+  assert.equal(live.bars['5m']!.volume, 7);
 });
 
 test('an empty window says so rather than showing zeros as flow', async () => {

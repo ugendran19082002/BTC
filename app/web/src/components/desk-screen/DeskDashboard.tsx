@@ -1,4 +1,5 @@
 import type { Candle } from '@/types/desk';
+import type { LiveLtp } from '@/hooks/useStream';
 import type { ChartTf } from '@/components/desk/PriceChart';
 import { DeskHeader } from './DeskHeader';
 import { DeskChart } from './DeskChart';
@@ -13,6 +14,7 @@ import './desk-dashboard.css';
  */
 export function DeskDashboard({
   bars,
+  ltp = null,
   tf = '5m',
   expiryLabel,
   hoursToExpiry,
@@ -23,6 +25,7 @@ export function DeskDashboard({
   controls,
 }: {
   bars: readonly Candle[];
+  ltp?: LiveLtp | null;
   tf: ChartTf;
   expiryLabel?: string;
   hoursToExpiry?: number;
@@ -42,7 +45,7 @@ export function DeskDashboard({
         controls={controls}
       />
       <div className="desk-chart-row">
-        <DeskChart bars={bars} tf={tf} loading={loading} error={error} />
+        <DeskChart bars={bars} ltp={ltp} tf={tf} loading={loading} error={error} />
       </div>
     </div>
   );

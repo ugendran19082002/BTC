@@ -29,7 +29,7 @@ import { LoginPage } from '@/components/desk/LoginPage';
 import { LivePrice } from '@/components/desk/LivePrice';
 import { TODAY_MOVE } from '@/types/desk';
 import { tabTitle } from '@/lib/tab-title';
-import { TF_SECONDS, withLtp } from '@/lib/live-bar';
+import { TF_SECONDS, withLiveBar, withLtp } from '@/lib/live-bar';
 import { pnlTone, signedInr, usdToInr } from '@/lib/format';
 import type { ChartTf } from '@/components/desk/PriceChart';
 import { Select, SelectItem } from '@/components/ui/select';
@@ -430,8 +430,18 @@ export default function App() {
     // every second and is a dependency, so this recomputes as often as there is
     // anything new to draw. When the tick stops the bar stops being carried,
     // which is the right behaviour -- a dead feed must not keep painting.
-    () => withLtp(candles?.bars ?? NO_BARS, tick?.spot ?? null, TF_SECONDS[chartTf] ?? 0, Date.now()),
-    [candles?.bars, tick?.spot, chartTf],
+    //
+    // The tape first (29 Sep 2026): the stream's `ltp` is the perpetual's own
+    // trades, the chart's instrument, with the high, low and volume between
+    // ticks. The index spot is the fallback only while the stream is down --
+    // it differs from the perp by the basis and refreshes every eight seconds.
+    () => {
+      const tape = stream.live && stream.ltp ? stream.ltp.bars[chartTf as '1m' | '5m'] ?? null : null;
+      return tape
+        ? withLiveBar(candles?.bars ?? NO_BARS, tape, TF_SECONDS[chartTf] ?? 0, Date.now())
+        : withLtp(candles?.bars ?? NO_BARS, tick?.spot ?? null, TF_SECONDS[chartTf] ?? 0, Date.now());
+    },
+    [candles?.bars, tick?.spot, chartTf, stream.live, stream.ltp],
   );
 
   const openedAt = snap && dayMove?.changeUsd != null ? snap.spot - dayMove.changeUsd : null;
@@ -544,6 +554,7 @@ export default function App() {
                 tick={liveSpot}
                 error={err}
                 bars={liveBars}
+                ltp={stream.live ? stream.ltp : null}
                 chartTf={chartTf}
                 controls={
                   <>
