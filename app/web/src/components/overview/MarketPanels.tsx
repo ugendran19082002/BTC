@@ -1,7 +1,7 @@
 
 import type { ChainResponse, Leg, MarketRead } from '@/types/desk';
 import type { FlowSummary, PerpResponse, SideFlow } from '@/api/desk';
-import { fundingRead, ivRv, volRegime, WINDOW_CHOICES, windowLabel, type IvRv, type WindowChoice } from '@/lib/overview';
+import { fundingRead, volRegime, WINDOW_CHOICES, windowLabel, type IvRv, type WindowChoice } from '@/lib/overview';
 import { fmt, More, NotCaptured, Panel, Row, Tag } from './parts';
 
 // ------------------------------------------------------------------ KPI strip
@@ -17,7 +17,7 @@ const usdShort = (v: number | null | undefined) => {
  * Delta settles funding every eight hours, at 00:00, 08:00 and 16:00 UTC: the
  * product's annualised funding is the rate × 1,095, and 1,095 is three a day.
  */
-export function nextFundingIn(nowMs: number): string {
+function nextFundingIn(nowMs: number): string {
   const period = 8 * 3_600_000;
   const left = period - (nowMs % period);
   const h = Math.floor(left / 3_600_000), m = Math.floor((left % 3_600_000) / 60_000), s = Math.floor((left % 60_000) / 1000);
@@ -104,7 +104,7 @@ function Kpi({ label, value, sub, tone, muted, spark }: {
 }
 
 /** A small line of the last values, no axes: the shape of the day, not a chart. */
-export function Sparkline({ values, tone }: { values: readonly number[]; tone?: 'up' | 'down' }) {
+function Sparkline({ values, tone }: { values: readonly number[]; tone?: 'up' | 'down' }) {
   const W = 72, H = 22;
   const lo = Math.min(...values), hi = Math.max(...values);
   const d = values.map((v, i) => `${i ? 'L' : 'M'}${((i / (values.length - 1)) * W).toFixed(1)},${(H - 2 - ((v - lo) / (hi - lo || 1)) * (H - 4)).toFixed(1)}`).join(' ');
@@ -156,7 +156,7 @@ function Frame({ bare, title, right, children }: { bare: boolean; title: string;
  * top of its book. From the desk's own record of every print; a window the
  * socket was away for says how many minutes it actually has.
  */
-export function TradeFlowPanel({ perp, market, window: win, onWindow, bare = false }: { perp: PerpResponse | null; market: MarketRead | null; window?: WindowChoice; onWindow?: (w: WindowChoice) => void; bare?: boolean }) {
+function TradeFlowPanel({ perp, market, window: win, onWindow, bare = false }: { perp: PerpResponse | null; market: MarketRead | null; window?: WindowChoice; onWindow?: (w: WindowChoice) => void; bare?: boolean }) {
   const head = !bare && win && onWindow ? <WindowSelect value={win} onChange={onWindow} /> : null;
   const f = perp?.flow ?? null;
   const b = perp?.book ?? null;
@@ -213,7 +213,6 @@ function CvdLine({ cvd }: { cvd: FlowSummary['cvd'] }) {
   );
 }
 
-export { ivRv };
 
 // ------------------------------------------------------------ option flow
 
@@ -223,7 +222,7 @@ export { ivRv };
  * print on the two nearest expiries. Book imbalance and spread are the
  * perpetual's -- options have no book capture -- and are said so.
  */
-export function OptionFlowPanel({ perp, legs = [], atm = null, window: win, onWindow, bare = false }: { perp: PerpResponse | null; legs?: readonly Leg[]; atm?: number | null; window?: WindowChoice; onWindow?: (w: WindowChoice) => void; bare?: boolean }) {
+function OptionFlowPanel({ perp, legs = [], atm = null, window: win, onWindow, bare = false }: { perp: PerpResponse | null; legs?: readonly Leg[]; atm?: number | null; window?: WindowChoice; onWindow?: (w: WindowChoice) => void; bare?: boolean }) {
   const f = perp?.optionFlow ?? null;
   const head = !bare && win && onWindow ? <WindowSelect value={win} onChange={onWindow} /> : null;
   // The side's own book, as far as Delta shows one: the at-the-money option's top of book.
@@ -274,7 +273,7 @@ export function OptionFlowPanel({ perp, legs = [], atm = null, window: win, onWi
 }
 
 /** The window the tape is summed over: the fixed ones, since the desk opened, or since the last settlement. */
-export function WindowSelect({ value, onChange }: { value: WindowChoice; onChange: (w: WindowChoice) => void }) {
+function WindowSelect({ value, onChange }: { value: WindowChoice; onChange: (w: WindowChoice) => void }) {
   return (
     <select className="ov-select" aria-label="Window" value={value} onChange={(e) => onChange(e.target.value as WindowChoice)} title="How far back the tape is summed">
       {WINDOW_CHOICES.map((w) => <option key={w} value={w}>{windowLabel(w)}</option>)}

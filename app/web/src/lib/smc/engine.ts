@@ -1,5 +1,5 @@
 import type {
-  Bar, CandleTag, Confirmation, DealingRange, Dir, Pool, PoolEvent, Session, SessionRange, Setup, SetupState,
+  Bar, CandleTag, DealingRange, Dir, Pool, PoolEvent, Session, SessionRange, Setup, SetupState,
   SmcOptions, SmcState, StructureBreak, Swing, Target, Zone, ZoneEvent,
 } from './types';
 
@@ -903,5 +903,3 @@ export function runSmc(bars: readonly Bar[], opts: SmcOptions): SmcState {
   return e.state();
 }
 
-/** The confirmations still missing on a setup, in order. */
-export const missing = (s: Setup): Confirmation[] => s.confirmations.filter((c) => !c.ok);

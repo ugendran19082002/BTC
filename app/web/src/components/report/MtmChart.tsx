@@ -12,7 +12,7 @@ const H = 240;
 const PAD = { top: 12, right: 12, bottom: 24, left: 58 };
 
 const IST_TIME = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
-export const clockIst = (ms: number) => IST_TIME.format(ms);
+const clockIst = (ms: number) => IST_TIME.format(ms);
 
 export function MtmChart({ report }: { report: MtmReport }) {
   const s = report.samples;

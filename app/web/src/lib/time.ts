@@ -13,7 +13,7 @@ const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
 /** The daily contract settles at 17:30 IST. */
 export const SETTLEMENT = '17:30';
 /** How long before the exit the default latest-add time sits. */
-export const DEFAULT_ADD_CUTOFF_MIN = 30;
+const DEFAULT_ADD_CUTOFF_MIN = 30;
 
 export const isHhmm = (v: unknown): v is string => typeof v === 'string' && HHMM.test(v);
 

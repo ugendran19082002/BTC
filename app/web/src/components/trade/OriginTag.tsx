@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils';
  * The name of the strategy when there is one, because "strategy" alone does not
  * answer "which one" on a desk running four of them.
  */
-export const ORIGIN_WORDS: Record<TradeOrigin, string> = {
+const ORIGIN_WORDS: Record<TradeOrigin, string> = {
   manual: 'Manual',
   strategy: 'Strategy',
   'best-pick': 'Best pick',

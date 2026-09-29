@@ -204,7 +204,7 @@ function nearestPools(st: SmcState, last: number | null): Readout['nearest'] {
 }
 
 /** Completed trades only -- a setup that never filled has no result to count. */
-export function recordOf(setups: readonly Setup[]): TradeRecord | null {
+function recordOf(setups: readonly Setup[]): TradeRecord | null {
   const done = setups.filter((s) => s.closedAt !== null && s.resultR !== null && s.fill !== null);
   if (!done.length) return null;
   const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;

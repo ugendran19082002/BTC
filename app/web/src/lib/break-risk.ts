@@ -39,8 +39,8 @@ export function curveAt(steps: readonly number[], values: readonly number[], k: 
  * the card draws. A strike inside the first is in the move's way; inside the
  * second is worth watching; outside both, this break alone is no reason to act.
  */
-export const IN_THE_WAY = 0.25;
-export const WATCH = 0.1;
+const IN_THE_WAY = 0.25;
+const WATCH = 0.1;
 
 export function strikeRisk(r: BreakRisk, strike: number, cp: 'C' | 'P'): StrikeRisk {
   const distance = cp === 'C' ? strike - r.entry : r.entry - strike;

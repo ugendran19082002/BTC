@@ -1,7 +1,7 @@
 import type { Bar } from '@/lib/smc/types';
 
 /** Monday 21 Sep 2026, 00:00 UTC. */
-export const T0 = Date.UTC(2026, 8, 21) / 1000;
+const T0 = Date.UTC(2026, 8, 21) / 1000;
 const M5 = 300;
 
 /** A seeded random walk with trending and ranging stretches: realistic enough to produce every kind of event. */

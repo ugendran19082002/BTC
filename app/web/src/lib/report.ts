@@ -14,7 +14,7 @@ const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', '
 const pad = (n: number) => String(n).padStart(2, '0');
 
 /** `YYYY-MM-DD` for a UTC date -- the strings are day names, not moments. */
-export const dayKey = (d: Date) => `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+const dayKey = (d: Date) => `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
 
 /** Today in IST, from the clock. */
 export const todayIst = (now = Date.now()) => dayKey(new Date(now + 5.5 * 3_600_000));

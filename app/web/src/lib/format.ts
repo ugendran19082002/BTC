@@ -65,7 +65,7 @@ export const signedInr = (n: number | null | undefined) =>
  * in the 733-day record is converted at one number, and a rate that drifted
  * would make yesterday's report disagree with itself.
  */
-export const USDINR = 85;
+const USDINR = 85;
 
 export const usdToInr = (n: number | null | undefined) =>
   n === null || n === undefined || !Number.isFinite(n) ? null : n * USDINR;

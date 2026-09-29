@@ -36,15 +36,15 @@ const num = (s: string, fallback: number) => {
 };
 
 /** The server's own default and ceiling, in `http/add-body.ts`. */
-export const ADD_WINDOW_DEFAULT_MIN = 60;
+const ADD_WINDOW_DEFAULT_MIN = 60;
 /** What the desk has always done with an add by hand: walk to the bid over five seconds. */
-export const ADD_CHASE_DEFAULT_SEC = 5;
-export const ADD_CHASE_MAX_SEC = 600;
-export const ADD_WINDOW_MAX_MIN = 240;
+const ADD_CHASE_DEFAULT_SEC = 5;
+const ADD_CHASE_MAX_SEC = 600;
+const ADD_WINDOW_MAX_MIN = 240;
 const ADD_WINDOWS = [['15m', 15], ['1h', 60], ['4h', 240]] as const;
 
 /** "1h", "4h", "15 minutes" -- the way the number was picked. */
-export function describeWindow(minutes: number): string {
+function describeWindow(minutes: number): string {
   if (minutes % 60 === 0 && minutes >= 60) return `${minutes / 60}h`;
   return `${minutes} minute${minutes === 1 ? '' : 's'}`;
 }
