@@ -89,6 +89,16 @@ describe('the price chart', () => {
     expect(screen.getByLabelText('Setup readout').textContent).toContain('5m');
   });
 
+  it('[critical] offers only the views it is given -- 5m and 1m -- and says which is shown', () => {
+    const onView = vi.fn();
+    chart({ tf: '5m', views: ['5m', '1m'], onView });
+    const views = screen.getByRole('radiogroup', { name: 'Chart timeframe' });
+    expect(within(views).getAllByRole('radio').map((b) => b.textContent)).toEqual(['5m', '1m']);
+    expect(within(views).getByRole('radio', { name: '5m' }).getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(within(views).getByRole('radio', { name: '1m' }));
+    expect(onView).toHaveBeenCalledWith('1m');
+  });
+
   it('[critical] draws through a primitive, and never reads the candle still forming', () => {
     chart();
     expect(primitives).toHaveLength(1);
@@ -103,8 +113,8 @@ describe('the price chart', () => {
     const hud = screen.getByLabelText('Setup readout');
     expect(hud.textContent).toMatch(/NO TRADE|FORMING|READY|ACTIVE/);
     expect(hud.textContent).not.toMatch(/will (reach|hit)/i);
-    // A setup on the chart always carries the measured record of its rules, after fees.
-    if (/FORMING|READY|ACTIVE/.test(hud.textContent ?? '')) expect(hud.textContent).toMatch(/Measured .* after fees/);
+    // A setup on the chart always carries the measured record of its rules after fees, or says there is none for this timeframe.
+    if (/FORMING|READY|ACTIVE/.test(hud.textContent ?? '')) expect(hud.textContent).toMatch(/Measured .* after fees|Not measured on 1h/);
   });
 
   it('shows the timeframe context when it is given', () => {

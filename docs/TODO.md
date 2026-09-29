@@ -1,7 +1,21 @@
 # TODO
 
 Live: https://delta.thannigo.in
-Updated 28 Sep 2026
+Updated 29 Sep 2026
+
+---
+
+## 29 Sep 2026 — 1m view, published momentum tested, setup alerts
+
+- [x] **1m view.** A 5m | 1m switch in the chart's toolbar; 5m stays the
+  default. Same engine; on 1m it refuses nearly every plan because the stop is
+  smaller than the fees, and the HUD says the record is for 5m only.
+- [x] **Published intraday momentum tested** (Shen et al. 2022, first half
+  hour → last half hour): gross ≈ 0 on 2024–25, negative on 2026, fees twice
+  the edge would need. Not adopted. research/INTRADAY-MOMENTUM.txt.
+- [ ] **OI / volume / chain / early-warning as confirmations**: recorded only
+  since mid-September 2026. Testable once there are a few months -- earliest
+  honest look around December 2026, with the same choose-then-judge split.
 
 ---
 
@@ -15,10 +29,11 @@ owner's request: the Big Momentum Signal card and the stats strip (and with
 them `/api/live`, `/api/market-state` and six server modules), the header's
 spot and timeframe buttons, the timeframe selector, the 4H chip.
 
-**The research, in one line:** over 32 months of real 5m BTC, eighteen rule
+**The research, in one line:** over 32 months of real 5m BTC, twenty-four rule
 variants are all near zero before fees and negative after them; the desk runs
-the break-entry variant (36% of big moves caught, -0.35R a trade after fees)
-and the HUD says so. research/SMC-STUDY.txt.
+the swing-stop, 2R / 3R / 4R variant with the fee floor (25% of big moves
+caught, −0.17R a trade after fees, 2026 −0.27R) and the HUD says so.
+research/SMC-STUDY.txt.
 
 ### Open -- needs the owner
 - [ ] The retired journals still to drop (`market_states`, `market_state_checks`,

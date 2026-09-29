@@ -40,10 +40,13 @@ const IST_FULL = new Intl.DateTimeFormat('en-IN', {
  * appears and then vanishes within a candle.
  */
 export function PriceChart({
-  bars, tf, loading = false, error, context = [], regime, higher = [], symbol = 'BTCUSD',
+  bars, tf, views = [], onView, loading = false, error, context = [], regime, higher = [], symbol = 'BTCUSD',
 }: {
   bars: readonly Candle[];
   tf: ChartTf;
+  /** The timeframes the viewer may switch the chart to, shown as a switch in the toolbar; none, no switch. */
+  views?: readonly ChartTf[];
+  onView?: (tf: ChartTf) => void;
   loading?: boolean;
   error?: string;
   /** The higher / lower timeframe reads for the HUD's context row. */
@@ -234,6 +237,15 @@ export function PriceChart({
           <div ref={hostRef} className="pc-host" />
 
           <div ref={toolbarRef} className="pc-toolbar" role="toolbar" aria-label="Chart controls">
+            {views.length > 1 && onView && (
+              <div className="pc-views" role="radiogroup" aria-label="Chart timeframe">
+                {views.map((v) => (
+                  <button key={v} type="button" role="radio" aria-checked={v === tf} className={`pc-tool${v === tf ? ' on' : ''}`} onClick={() => onView(v)}>
+                    {v}
+                  </button>
+                ))}
+              </div>
+            )}
             <Popover>
               <PopoverTrigger asChild>
                 <button type="button" className="pc-tool" aria-label="Layers" title="What the chart draws"><Layers size={14} /><span>Layers</span></button>

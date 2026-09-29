@@ -15,9 +15,9 @@ drawn, and what the research over 32 months of real candles says about it.
 ## 1. The screen
 
 ```
-┌─ HUD (top left) ───────────────────────┐              ┌─ toolbar (top right) ──────┐
-│ LONG MOMENTUM ENTRY — TP1 reached   5m │              │ Layers · Zoom · Full screen│
-│ Entered at … Stop: break-even …        │              └────────────────────────────┘
+┌─ HUD (top left) ───────────────────────┐        ┌─ toolbar (top right) ────────────┐
+│ LONG MOMENTUM ENTRY — TP1 reached   5m │        │ 5m│1m · Layers · Zoom · Full scr │
+│ Entered at … Stop: break-even …        │        └──────────────────────────────────┘
 │ ✓ SSL swept ✓ CHoCH ✓ Displacement …   │
 │ Entry 83,374  SL 83,374 moved …        │          candles + volume, the 5m chart
 │ TP1 84,034 +660 pts · +2.0R · reason   │          every concept drawn on price
@@ -28,8 +28,16 @@ drawn, and what the research over 32 months of real candles says about it.
 time axis in IST
 ```
 
-- **One view: 5m.** No timeframe buttons. The other timeframes are context:
-  1H = regime, 30M = bias, 15M = structure, 5M = setup, 1M = trigger.
+- **5m is the chart; 1m is a switch in the toolbar** (remembered per browser),
+  for timing an entry the 5m already shows. No other timeframe buttons. The
+  other timeframes are context: 1H = regime, 30M = bias, 15M = structure,
+  5M = setup, 1M = trigger.
+- **On 1m** the same engine runs on eight hours of 1m candles, refreshed every
+  ten seconds, the forming candle carrying the live price. Expect it to refuse
+  nearly every plan: a 1m swing stop is tens of points and the fee floor is
+  0.5% of the price (~400 pts), which is the research's point (§12) -- on 1m
+  the fees are bigger than the stop. The HUD says the measured record is for
+  5m only.
 - **The HUD** folds to one line (folded by default on a phone). It shows the
   setup's state, its confirmations, the plan with prices, points and R, the
   context row, the measured record of these rules after fees, this chart's own
@@ -66,7 +74,7 @@ time axis in IST
 | 5m candles, ~36 hours | `/api/candles?tf=5m` (App, every minute) | The chart and its engine. |
 | 1H candles, 14 days | `/api/candles?tf=1h` (DeskChart, every minute) | 1H regime; 1H order blocks drawn on the 5m chart; the trend each setup records. |
 | 5m candles again | same | Folded into 15m (structure, and 15m breaks drawn on the chart) and 30m (bias). |
-| 1m candles, 8 hours | `/api/candles?tf=1m` | 1M trigger in the context row. |
+| 1m candles, 8 hours | `/api/candles?tf=1m` (every minute; every 10 s on the 1m view) | 1M trigger in the context row; the 1m view. |
 
 **Closed candles only.** A candle opened at *t* closes at *t + tf*; anything
 not closed is left out of every engine (`closedBars`). The forming candle is
@@ -376,6 +384,14 @@ setup: **1,665 trades, 35% winners, −0.17R a trade after fees (2026 −0.27R),
 25% of big moves caught. Information, not a signal.** Twenty-four variants on
 one data set is already a lot of looking; the next one would be more likely to
 find luck than an edge.
+
+**Published intraday momentum** (Shen, Urquhart & Wang, *Bitcoin intraday
+time series momentum*, Financial Review 2022: the day's first half hour
+predicts its last) was tested the same way, both of the paper's signals,
+declared before running (`app/web/scripts/intraday-momentum-study.ts`,
+`research/INTRADAY-MOMENTUM.txt`). On these 952 UTC days it does not hold:
+gross +0.5 bp a trade on 2024–25 (t 0.5), −4.4 bp on 2026 (t −2.3), against
+10 bp of fees on a last half hour that moves 18 bp on average. Not adopted.
 
 **Re-run** after changing a rule, and commit both outputs:
 

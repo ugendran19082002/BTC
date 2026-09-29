@@ -1,0 +1,9 @@
+BTC intraday time-series momentum · 952 UTC days with every half hour present · fees 0.05% a side
+   mean |last half hour| = +18.23 bp -- what a perfect call would make before fees
+
+== A first half hour
+   2024-25                n  695  hit 51.1%  gross +0.47 bp (t 0.47)  net -9.53 bp a trade  (fees +10.00 bp)
+   2026                   n  241  hit 47.3%  gross -4.36 bp (t -2.30)  net -14.36 bp a trade  (fees +10.00 bp)
+== B first + penultimate
+   2024-25                n  698  hit 50.4%  gross +0.63 bp (t 0.62)  net -9.37 bp a trade  (fees +10.00 bp)
+   2026                   n  242  hit 45.9%  gross -2.33 bp (t -1.22)  net -12.33 bp a trade  (fees +10.00 bp)
