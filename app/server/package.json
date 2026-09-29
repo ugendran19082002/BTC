@@ -9,7 +9,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --import ./test/env.ts --test \"test/**/*.test.ts\"",
     "auth": "tsx src/auth/cli.ts",
-    "db:import": "tsx src/db/import-sqlite.ts"
+    "db:import": "tsx src/db/import-sqlite.ts",
+    "sync:trend": "node scripts/sync-trend.mjs"
   },
   "dependencies": {
     "fastify": "^5.2.0",
