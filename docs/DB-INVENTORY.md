@@ -17,7 +17,7 @@ name's prefix wherever a bare name would be ambiguous (`auth_sessions`,
 | strategy | `strategies`, `strategy_runs` | the scheduler | Saved strategies and their run journal: what stops a strategy entering twice. |
 | sign-in | `auth_user`, `auth_sessions`, `auth_recovery_codes`, `auth_limits`, `auth_events` | the sign-in | The one user, sessions, recovery codes, rate limits, the security log. |
 | errors | `errors` | everything | Every failure, from all three tiers, in one place. |
-| market | `oi_snapshots`, `chain_features`, `option_snapshots`, `option_snapshots_1m`, `trade_flow_1m`, `option_flow_1m`, `large_prints`, `perp_snapshots`, `index_1m` | the chain route, the API's recorders, and the perp's trade socket | What open interest and at-the-money volatility *were*, so a change in either is readable. Disposable. |
+| market | `oi_snapshots`, `chain_features`, `option_snapshots`, `option_snapshots_1m`, `trade_flow_1m`, `option_flow_1m`, `large_prints`, `book_heat_1m`, `perp_snapshots`, `index_1m` | the chain route, the API's recorders, the perp's trade socket, and the book sampler | What open interest and at-the-money volatility *were*, so a change in either is readable. Disposable. |
 | chart | `chart_annotations` | the annotation routes | Levels and zones saved on the price chart. Created outside the ledger (see TODO.md). |
 | retired | `market_states`, `market_state_checks`, `shock_snapshots` | nothing, since 28 Sep 2026 | The Signal History and big-move journals. Writers and readers removed; the tables are left for a drop that needs the owner's go-ahead and a backup first (TODO.md). |
 | analytics | `outlook_states`, `chain_states`, `analytics_publish_meta` | `research/publish_outlook_states.py` | The measured Down / Side / Up tables the Python service reads. |
@@ -416,8 +416,19 @@ taker order on the perpetual of 200 contracts (0.2 BTC) or more, at its own
 millisecond, side, average price and size -- prints sharing a millisecond and
 a side are one order. Written with the minute rows, `PRIMARY KEY (at, side)`
 and `ON CONFLICT DO NOTHING`, so a replay cannot double one. Read by
-`GET /api/flow/large-prints` for the chart's big-trade bubbles. Kept a year,
-as the history to test big prints on. Roughly 100-400 rows an hour.
+`GET /api/flow/large-prints` for the chart's big-trade bubbles, and for the
+automatic big-trade size (the 90th percentile of the rows in the chart's
+window). Kept a year, as the history to test big prints on. Roughly 100-400
+rows an hour.
+
+`book_heat_1m` (`market/book-heat.ts`, migration `market-016-book-heat`): the
+perpetual's order book, read from REST every ten seconds (500 levels a side,
+about ±1.2% of price) and written a minute at a time: `base` (the lowest $10
+bin's price), `step` (10), `bid` and `ask` as `REAL[]` of the minute's average
+contracts per bin from `base` up, `samples`, and the touch (`best_bid`,
+`best_ask`). `PRIMARY KEY (at)`, `ON CONFLICT DO NOTHING`. Read by
+`GET /api/flow/heatmap` for the chart's heatmap and persistent walls. About
+1 KB a row, 1,440 a day; kept 14 days (~20 MB).
 
 `trade_flow_1m`, `perp_snapshots` (`market/flow.ts`, migration
 `market-005-flow`): the perpetual's tape summed per minute by

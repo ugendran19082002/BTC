@@ -1,49 +1,57 @@
 # The price chart
 
-Built 28–29 Sep 2026. The Live screen's one chart: 5-minute BTCUSD, with every
-price-action / SMC concept the engine finds drawn on the candles themselves, a
+Built 28–29 Sep 2026. The Live screen's one chart: 5-minute BTCUSD (1m on a
+switch), with every price-action / SMC concept the engine finds drawn on the
+candles themselves, the order flow around them -- the book's resting
+liquidity, the volume profile, the aggressive flow and the big trades -- and a
 corner readout (the HUD) that says what the engine knows now and what it is
-waiting for, and the other timeframes read behind it. Nothing is explained
-beside the chart.
+waiting for. Nothing is explained beside the chart.
 
-This document is the complete logic: what is read, every detection rule, the
-setup state machine, the stop, the targets, the trade management, what is
-drawn, and what the research over 32 months of real candles says about it.
+This document is the complete logic: what is read and from where, every
+detection rule, the setup state machine, the stop, the targets, the trade
+management, every layer and how it is drawn, the tables behind them, and what
+the research over 32 months of real candles says.
+
+**Nothing on this chart is a signal on its own.** The SMC engine's own record
+is negative after fees (§14), and the order-flow layers have only been
+recorded since September 2026 -- they are context to look at and, later, to
+test. The HUD says so beside every setup.
 
 ---
 
 ## 1. The screen
 
 ```
-┌─ HUD (top left) ───────────────────────┐        ┌─ toolbar (top right) ────────────┐
-│ LONG MOMENTUM ENTRY — TP1 reached   5m │        │ 5m│1m · Layers · Zoom · Full scr │
-│ Entered at … Stop: break-even …        │        └──────────────────────────────────┘
-│ ✓ SSL swept ✓ CHoCH ✓ Displacement …   │
-│ Entry 83,374  SL 83,374 moved …        │          candles + volume, the 5m chart
-│ TP1 84,034 +660 pts · +2.0R · reason   │          every concept drawn on price
-│ 1H ▲ Regime 30M ▲ Bias 15M ▲ Structure │          the trade as a position box
-│ Measured 2024–26: … after fees         │
-│ This chart: n trades · TP1 % · SL % …  │
-└────────────────────────────────────────┘
-time axis in IST
+┌─ HUD (top left) ───────────────────────┐   ┌─ toolbar (top right) ──────────────────────┐
+│ LONG MOMENTUM ENTRY — TP1 reached   5m │   │ LTP 83,104.5 2:31 · 5m│1m · Layers · Zoom · ⛶│
+│ ✓ SSL swept ✓ CHoCH ✓ Displacement …   │   └────────────────────────────────────────────┘
+│ Entry 83,374  SL 83,374 moved …        │
+│ TP1 84,034 +660 pts · +2.0R · reason   │     heatmap (book) behind everything
+│ 1H ▲ Regime 30M ▲ Bias 15M ▲ Structure │     candles + volume, SMC concepts on price
+│ Measured 2024–26: … after fees         │     big-trade bubbles · volume profile (right)
+│ Last  O H L C                          │     the trade as a position box, in front
+│ Big ≥0.7 BTC ● 8 buy 4.0 ● 4 sell 2.0  │
+│ Flow Δ −4.3k buy 40% 187 trades 1.3×   │   ├── Δ / CVD pane ───────────────────────────
+└────────────────────────────────────────┘   time axis in IST
 ```
 
 - **5m is the chart; 1m is a switch in the toolbar** (remembered per browser),
-  for timing an entry the 5m already shows. No other timeframe buttons. The
-  other timeframes are context: 1H = regime, 30M = bias, 15M = structure,
-  5M = setup, 1M = trigger.
-- **On 1m** the same engine runs on eight hours of 1m candles, refreshed every
-  ten seconds, the forming candle carrying the live price. Expect it to refuse
-  nearly every plan: a 1m swing stop is tens of points and the fee floor is
-  0.5% of the price (~400 pts), which is the research's point (§12) -- on 1m
-  the fees are bigger than the stop. The HUD says the measured record is for
-  5m only.
+  for timing an entry the 5m already shows. The other timeframes are context:
+  1H = regime, 30M = bias, 15M = structure, 5M = setup, 1M = trigger.
+- **On 1m** the same engine runs on eight hours of 1m candles. Expect it to
+  refuse nearly every plan: a 1m swing stop is tens of points and the fee floor
+  is 0.5% of price (~400 pts) -- on 1m the fees are bigger than the stop. The
+  HUD says the measured record is for 5m only.
 - **The HUD** folds to one line (folded by default on a phone). It shows the
   setup's state, its confirmations, the plan with prices, points and R, the
-  context row, the measured record of these rules after fees, this chart's own
-  record, and the candle under the crosshair.
-- **The toolbar**: Layers (what is drawn, remembered per browser), Zoom (pan and
-  zoom are off by default so the page scrolls over the chart), full screen.
+  context row, the measured record after fees, this chart's own record, the
+  candle under the crosshair, the big trades in view, and that candle's flow.
+- **The toolbar**: the LTP chip, the 5m | 1m switch, Layers (what is drawn,
+  remembered per browser), Zoom (pan and zoom are off by default so the page
+  scrolls over the chart), full screen.
+- **Layering, back to front**: heatmap → sessions / premium-discount / zones →
+  volume profile → candles and volume → lines, marks, bubbles → labels. The
+  live trade's box and its labels are always the strongest thing drawn.
 
 ---
 
@@ -56,47 +64,59 @@ time axis in IST
 | `app/web/src/lib/smc/context.ts` | Closed-candle filter, timeframe folding, trend-as-known-at, the context row. |
 | `app/web/src/lib/smc/readout.ts` | The HUD's words, the live setup (`liveSetup`), the context gate, the chart's own record. |
 | `app/web/src/lib/smc/measured.data.ts` | GENERATED by the study: the desk options' record after fees, printed in the HUD. |
-| `app/web/src/components/desk/chart/scene.ts` | Engine state → boxes / lines / marks in bar index and price. Clutter is decided here. |
-| `app/web/src/components/desk/chart/smc-primitive.ts` | Draws the scene on the chart's canvas (a lightweight-charts series primitive). |
+| `app/web/src/lib/live-bar.ts` | The forming candle: `withLiveBar` (from the tape), `withLtp` (the spot fallback). |
+| `app/web/src/components/desk/chart/scene.ts` | Engine state → boxes / lines / marks in bar index and price. Layers, colours, clutter rules. |
+| `app/web/src/components/desk/chart/flow-layers.ts` | The order-flow layers as scene items: heatmap and walls, volume profile and nodes, big trades, delta / CVD, the flow reading. |
+| `app/web/src/components/desk/chart/smc-primitive.ts` | Draws the scene on the chart's canvas (a lightweight-charts series primitive); the bubbles' hover hit-test. |
 | `app/web/src/components/desk/chart/label-layout.ts` | Label placement by priority; nothing is drawn over anything. |
 | `app/web/src/components/desk/chart/ChartHud.tsx` | The corner readout. |
-| `app/web/src/components/desk/PriceChart.tsx` | The chart: candles, volume, the engine, the primitive, the HUD, the toolbar. |
-| `app/web/src/components/desk-screen/DeskChart.tsx` | Fetches the context candles and hands the chart its context. |
-| `app/web/scripts/smc-study.ts` | The replay over cached history: funnel, variants, results, `measured.data.ts`. |
-| `research/SMC-STUDY.txt` | The study's latest output. |
+| `app/web/src/components/desk/chart/LtpChip.tsx` | The last traded price, tick colour and candle countdown. |
+| `app/web/src/components/desk/PriceChart.tsx` | The chart: candles, volume, the delta / CVD pane, the engine, the primitive, the HUD, the toolbar, the tooltip. |
+| `app/web/src/components/desk-screen/DeskChart.tsx` | Fetches the context candles, the flow, the big trades and the heatmap; the 5m / 1m view. |
+| `app/server/src/market/flow-socket.ts` | The perpetual's and the options' trade socket: every print, the last perp trade. |
+| `app/server/src/market/flow.ts` | Flow per minute, large orders, the auto big-trade size, the live candle, the flow per candle. |
+| `app/server/src/market/book-heat.ts` | The book sampler and the heatmap: minutes, columns, persistent walls. |
+| `app/server/src/http/routes/desk.routes.ts` | `/api/candles`, `/api/flow/bars`, `/api/flow/large-prints`, `/api/flow/heatmap`. |
+| `app/server/src/http/routes/stream.routes.ts` | `/api/stream`, including the `ltp` event. |
+| `app/web/scripts/smc-study.ts` | The engine replayed over cached history: funnel, variants, `measured.data.ts`. |
+| `app/web/scripts/crt-study.ts`, `intraday-momentum-study.ts` | Declared studies of published / popular models (§14). |
+| `research/*.txt` | The studies' latest outputs. |
 
 ---
 
-## 3. What the engine reads
+## 3. What is read, and from where
 
-| Input | Source | Used for |
-|---|---|---|
-| 5m candles, ~36 hours | `/api/candles?tf=5m` (App, every minute) | The chart and its engine. |
-| 1H candles, 14 days | `/api/candles?tf=1h` (DeskChart, every minute) | 1H regime; 1H order blocks drawn on the 5m chart; the trend each setup records. |
-| 5m candles again | same | Folded into 15m (structure, and 15m breaks drawn on the chart) and 30m (bias). |
-| 1m candles, 8 hours | `/api/candles?tf=1m` (every minute; every 10 s on the 1m view) | 1M trigger in the context row; the 1m view. |
-| The live price | `/api/stream`, event `ltp` (pushed as trades print, checked 4×/s) | The forming candle and the LTP chip -- see below. |
-| Large taker orders | `/api/flow/large-prints` (every 15 s) | Big-trade bubbles. |
+| Input | Source | Refresh | Used for |
+|---|---|---|---|
+| 5m candles, ~36 hours | `/api/candles?tf=5m` | every minute | The chart and its engine. |
+| 1H candles, 14 days | `/api/candles?tf=1h` | every minute | 1H regime; 1H order blocks on the chart; each setup's recorded trend. |
+| 5m folded to 15m / 30m | same | -- | 15m structure (and 15m breaks on the chart), 30m bias. |
+| 1m candles, 8 hours | `/api/candles?tf=1m` | every minute; 10 s on the 1m view | 1M trigger; the 1m view. |
+| The live price | `/api/stream`, event `ltp` | pushed on each new trade (checked 4×/s) | The forming candle and the LTP chip. |
+| Flow per candle | `/api/flow/bars` | 10 s | Δ / CVD pane, the Flow line. |
+| Large taker orders | `/api/flow/large-prints` | 15 s | Big-trade bubbles, the Big line. |
+| The book heatmap | `/api/flow/heatmap` | 20 s, newest columns only | Heatmap and walls. |
 
 **The live price is the perpetual's own tape.** The server's trade socket
 holds every BTCUSD print; the stream's `ltp` event carries the last trade and
 the 1m and 5m candles in progress built from those prints. The chart merges
 that candle into the exchange's (`withLiveBar`): high and low widened to the
-trades', close the last trade, volume whichever saw more (the two agree to the
+trades', close the last trade, volume whichever saw more (they agree to the
 contract when the socket saw the whole minute), open the exchange's. The next
-candle is added from the tape before the exchange lists it. Only with the
-stream down does the forming candle fall back to the index spot (`withLtp`),
-which differs from the perp by the basis and refreshes every eight seconds --
-until 29 Sep 2026 it was the only source, and the forming candle's high, low
-and close could be off by tens of dollars. The toolbar's **LTP chip** shows
-the last trade (green / red by tick), the time left in the candle, and "N m
-ago" when no trade has printed for a minute.
+candle is added from the tape before the exchange lists it -- every value in it
+traded. Only with the stream down does the forming candle fall back to the
+index spot (`withLtp`), which differs from the perp by the basis and refreshes
+every eight seconds; until 29 Sep 2026 that was the only source. The **LTP
+chip** shows the last trade (green / red by tick), the time left in the
+candle, and "N m ago" when nothing has printed for a minute.
 
-**Closed candles only.** A candle opened at *t* closes at *t + tf*; anything
-not closed is left out of every engine (`closedBars`). The forming candle is
-drawn, but nothing is read off it, so a label never appears and vanishes
-within a candle. A higher-timeframe bucket counts only when all of its 5m
-candles are there (`aggregate`).
+**Closed candles only, for the engine.** A candle opened at *t* closes at
+*t + tf*; anything not closed is left out of every engine (`closedBars`). The
+forming candle is drawn, but nothing is read off it, so a label never appears
+and vanishes within a candle. A higher-timeframe bucket counts only when all
+of its 5m candles are there (`aggregate`). The order-flow layers are facts as
+they happen (a trade that printed, an order resting now), so they do include
+the forming candle.
 
 ---
 
@@ -124,6 +144,8 @@ Tests that hold it (`engine.test.ts`):
   candles after it.
 - Higher timeframes: a 1H break is not the trend until its candle has closed
   (`context.test.ts`).
+- The chart hands the scene nothing past the last closed candle
+  (`PriceChart.test.tsx`, `scene.test.ts`).
 
 ---
 
@@ -194,7 +216,7 @@ advanced open setup (`liveSetup`), so they never describe different ones.
 ### Refusals (a plan made but no trade)
 
 - no OB or FVG left by the move
-- stop wider than four ATR
+- stop wider than four ATR, or under the fee floor
 - no liquidity at all to aim at
 - (retest entries) closed through the stop first, ran without a retest, the
   confirmation came too far from the zone
@@ -235,8 +257,8 @@ Every initial stop records why it is there (`stopNote`): "below 5m swing HL
 83,120 · buffer 30 pts", or "widened to 1 ATR (190 pts) from the entry". The
 chart's SL label and the HUD show it.
 
-If there is no confirmed swing beyond the entry, the zone's distal edge (below)
-is used. Other modes: `zone` -- beyond the POI's distal edge; `sweep` -- beyond
+If there is no confirmed swing beyond the entry, the zone's distal edge is
+used. Other modes: `zone` -- beyond the POI's distal edge; `sweep` -- beyond
 the sweep's extreme as well.
 
 **Once in the trade the stop only tightens:**
@@ -300,45 +322,12 @@ no level; `r-multiple` -- exact projections only.
 
 ---
 
-## 11. What is drawn
+## 11. What is drawn: price action and the trade
 
-**Layers** (remembered per browser; on by default: HTF, structure, liquidity,
-OB / FVG, levels, premium / discount, trade, saved levels, volume profile, big
-trades; off: sessions, VWAP, candle tags).
-
-**Volume profile** -- volume at price over the candles *in view*, recomputed
-as the chart is scrolled or zoomed: a histogram anchored to the right edge (at
-most a fifth of the width), the value area brighter, the POC bin amber, and
-`POC` / `VAH` / `VAL` levels with their prices. Candles do not say where
-inside their range they traded, so each candle's volume is spread evenly over
-its high-low (48 bins); the value area grows from the POC towards the busier
-neighbour until it holds 70% of the volume. `chart/flow-layers.ts`.
-
-**Volume nodes** -- on the same profile, smoothed over three bins so one
-noisy bin is not a node: HVNs (peaks of at least half the tallest, not the
-POC) as amber ticks at the profile's edge, LVNs (valleys under a third of the
-tallest with a peak twice as tall on both sides -- thin areas between two
-areas of acceptance) as cyan ticks, and the LVN nearest price as a labelled
-level (`LVN 83,210`).
-
-**Delta / CVD pane** -- a pane under the price: each candle's taker buying
-minus selling (`/api/flow/bars`, from the recorded minutes and the socket's
-current one), green / red, faded where the candle has minutes missing, and
-CVD, the running delta from 00:00 UTC (05:30 IST, the VWAP's day). A candle
-with no recorded minute has no bar -- a gap in the record is not a flat
-market. The readout adds a **Flow** line for the candle under the crosshair:
-delta, buyers' share, trades, and the pace against the twenty candles before
-(the forming candle's scaled to a whole candle; amber from 2×). Recorded since
-mid-September 2026 only.
-
-**Big trades** -- each taker order of the chosen size or more (Layers → "Big
-trades from": 0.2 / 0.5 / 1 / 2 BTC, 0.5 by default) as a bubble centred on
-its candle at its price: green a buyer lifting the offer, red a seller hitting
-the bid. Area in proportion to size against the biggest shown (98th
-percentile, so an outlier does not shrink the rest), and the largest bubble
-about one and a half candles wide, so they scale with zoom. The five biggest
-are labelled (`Buy 1.2 BTC`). From `large_prints`, recorded off the live tape
-since the recorder was deployed -- there is no bubble before that.
+**Layers** (Layers menu, remembered per browser under `chart:layers:v2`). On by
+default: HTF, structure, liquidity, OB / FVG, levels, premium / discount,
+trade, saved levels, liquidity heatmap, volume profile, big trades, Δ / CVD
+pane. Off: sessions, VWAP, candle tags.
 
 **The trade -- a position box.** One bounded box from the entry candle to a
 little past the last candle: green from the entry to TP3, red from the entry
@@ -357,33 +346,132 @@ The entry mark carries the entry candle's volume against the twenty before it,
 `vol 2.3× avg burst` -- volume as an event at the signal, not candle by candle.
 
 **Background and foreground.** History and context -- structure more than 48
-candles old, swept liquidity, HTF zones, older finished trades -- are drawn at
-half strength with lower label priority; the live setup is drawn last and
-strongest.
+candles old, swept liquidity, HTF zones, older finished trades, big trades
+more than 48 candles old -- are drawn at reduced strength with lower label
+priority; the live setup is drawn last and strongest.
 
 **History.** The HUD's `Trades (n)` table lists this chart's completed trades,
 newest first: time (IST), side, entry, SL, TP1, exit, result, MFE, MAE,
-minutes, and the path ("TP1 → BE → stopped at the protected stop").
-
-A finished trade is drawn as what happened: entry to exit, green or red, with
-`Long 83,374` at the entry and `TP1 · BE 83,374 · +0 pts · result +0.6R` at the
-exit (the points are the last leg's; the R is the whole trade's, thirds
-included). OB / FVG fills stay at 10% so the position box is always the
-strongest thing on the chart.
+minutes, and the path ("TP1 → BE → stopped at the protected stop"). A finished
+trade is drawn as what happened: entry to exit, green or red, with the result.
 
 **Clutter rules** (`scene.ts`): three resting pools a side (nearest), three OBs
 and three FVGs a direction (nearest), the latest six sweeps (one a candle and
 side), the latest twelve breaks, the latest of each reference level. Labels are
-placed by priority -- trade, structure breaks, sweeps, liquidity, zones, levels,
-swings, sessions, tags -- and one that would overlap a more important label, the
-HUD or the toolbar is not drawn. A shape off the visible range is not drawn
-rather than clamped to the edge.
+placed by priority -- trade, walls, structure breaks, sweeps, liquidity,
+POC, zones, levels, nodes, bubbles, swings, sessions, tags -- and one that
+would overlap a more important label, the HUD or the toolbar is not drawn. A
+shape off the visible range is not drawn rather than clamped to the edge.
 
 **Time axis** in IST, like the crosshair.
 
 ---
 
-## 12. What the research says
+## 12. What is drawn: order flow
+
+Four questions, four layers, kept apart so each keeps its meaning:
+
+| Layer | Question | Traders | Source |
+|---|---|---|---|
+| Liquidity heatmap + walls | Where are orders **resting**? | passive (limit orders) | the recorded order book |
+| Big-trade bubbles | Where did large orders **execute**? | big, aggressive | the recorded large taker orders |
+| Δ / CVD pane | Who is **crossing the spread**, and how hard? | aggressive (market orders) | the recorded tape per minute |
+| Volume profile | Where has volume been **accepted**? | everyone | the candles in view |
+
+### Liquidity heatmap (passive traders)
+
+- **Recorded**: the server reads Delta's order book every ten seconds (500
+  levels a side, about ±1.2% around price), puts each level in its $10 of
+  price, and writes each minute's **average** resting size per $10
+  (`book_heat_1m`). Averaging is the first defence against spoofing: an order
+  that sits for one snapshot of six shows at a sixth of its size.
+- **Drawn**: one column per candle, the candle's minutes averaged, in $25 bins
+  on 5m ($10 on 1m), behind everything else. Colour runs deep blue → cyan →
+  yellow by the square root of the size against the **95th percentile** in
+  view, so the one enormous bin at the touch does not wash out every other
+  level; faint cells are not drawn, and the strongest stays translucent over
+  the candles.
+- **Persistent walls**: a $25 level holding at least **3× the side's median**
+  resting size, in **every minute for at least five running, up to now**. The
+  three biggest a side are drawn as a yellow line from where the wall began,
+  labelled `Ask wall 84,200 · 12.4 BTC · 15m`.
+- **What it is not**: the whole market (one exchange's visible book), or a
+  promise (walls are pulled and moved). A wall is a place to watch, not a
+  level that will hold.
+
+### Big trades (big, aggressive traders)
+
+- **Recorded**: every taker order on the perpetual of 200 contracts (0.2 BTC)
+  or more, at its own millisecond, side, average price and size
+  (`large_prints`). Prints sharing a millisecond and a side are one order
+  filling through several levels.
+- **How big is big is set by the market, not chosen**: the server takes the
+  **90th percentile** of the recorded large orders over the chart's window
+  (roughly the top 0.3% of all trades), never under 0.2 BTC. With too few
+  recorded yet it uses the socket's last hour. The HUD's Big line shows the
+  size in use; its tooltip says how it was set.
+- **Drawn**: all of one candle's big buys are one bubble and all its big sells
+  another, at their volume-weighted price -- at most two a candle, never
+  circles stacked inside each other. **Blue for buyers, fuchsia for sellers**,
+  so a bubble never reads as a green or red candle; a hollow ring with a light
+  fill and a dot at the exact price, so the candle shows through. Area in
+  proportion to size against the 98th percentile shown; the largest about one
+  candle wide (6–18 px), so they scale with zoom; larger drawn first so a
+  smaller one on the same candle stays visible. The five biggest are labelled
+  (`Buy 2.1 BTC · $175k ×3`); older than 48 candles, faded.
+- **Hover** a bubble: side, size, dollars, the number of orders, the average
+  price and range, the time (IST), and what it means ("Taker bought: lifted the
+  offer").
+- **HUD**: `Big ≥0.7 BTC · ● 8 buy 4.0 · ● 4 sell 2.0 · net +2.0 BTC` -- the big
+  trades in the candles in view.
+
+### Δ / CVD pane (aggressive traders)
+
+- A pane under the price: each candle's **taker buying minus selling**
+  (contracts) as a histogram, green / red, **faded** where the candle has
+  minutes missing from the record, **absent** where nothing was recorded -- a
+  gap in the record is not a flat market. **CVD**, the running delta from
+  00:00 UTC (05:30 IST, the VWAP's day), on its own scale in the same pane.
+- **Flow line** in the HUD for the candle under the crosshair: delta, buyers'
+  share, trades, and its **pace** -- trades against the average of the twenty
+  whole candles before (the forming candle scaled to a whole one; amber from
+  2×). With fewer than five candles before, no pace is claimed.
+- From `/api/flow/bars`: the recorded minutes (`trade_flow_1m`) and the
+  socket's current one, the perpetual's prints only.
+
+### Volume profile
+
+- Volume at price over the candles **in view**, recomputed on every scroll and
+  zoom: a histogram anchored to the right edge (at most a fifth of the width),
+  the value area brighter, the POC bin amber, and **POC / VAH / VAL** levels
+  with their prices. Candles do not say where inside their range they traded,
+  so each candle's volume is spread evenly over its high-low (48 bins); the
+  value area grows from the POC towards the busier neighbour until it holds
+  70% of the volume.
+- **Nodes**, on the profile smoothed over three bins so one noisy bin is not a
+  node: **HVN** (a peak of at least half the tallest, not the POC) as an amber
+  tick at the profile's edge; **LVN** (a valley under a third of the tallest
+  with a peak twice as tall on both sides -- a thin area between two areas of
+  acceptance) as a cyan tick, and the LVN nearest price as a labelled level.
+
+---
+
+## 13. The tables behind the layers
+
+| Table | Written by | What | Kept |
+|---|---|---|---|
+| `trade_flow_1m` | `market/flow.ts`, every 20 s | the perp's tape per minute: buy / sell volume and count, large ones, VWAP, high, low | a year |
+| `large_prints` (`market-015`) | `market/flow.ts`, with the minute rows | every perp taker order ≥ 200 contracts: ms, side, average price, size | a year |
+| `book_heat_1m` (`market-016`) | `market/book-heat.ts`, every 20 s | the book each minute: average contracts per $10, bids and asks, the touch, samples | 14 days |
+
+All are written `ON CONFLICT DO NOTHING` on their time key, so a restart or a
+replayed snapshot cannot double a row; details in docs/DB-INVENTORY.md.
+
+---
+
+## 14. What the research says
+
+### The SMC engine
 
 `app/web/scripts/smc-study.ts` replays the engine over every cached 5m candle
 (10 Jan 2024 – 31 Aug 2026, 275,548 candles; `cache/candles`, git-ignored) with
@@ -403,66 +491,86 @@ fees:
 | V L, stop at the swing | −0.37 | −0.48 | 41% |
 | **X V, targets ≥ 2R / 3R / 4R (the desk)** | **−0.37** | **−0.46** | 31% |
 
-The full table, the funnel and the big-move capture are in
-`research/SMC-STUDY.txt`. What it adds up to:
-
 1. **Before fees every variant is near zero** (−0.24R to +0.04R a trade). The
    rules describe the chart; they do not predict its direction on BTC.
-2. **Fees decide the sign.** On 5m a round trip is about 0.3R. The same rules on
-   15m lose −0.20R a trade in 2026 and on 1H −0.05R -- bigger moves make the same
-   fee a smaller share of R. Neither is an edge.
-3. **The structural stop** (behind the last swing) beats the zone-edge stop in
-   every pairing, in both periods.
+2. **Fees decide the sign.** On 5m a round trip is about 0.3R; on 15m and 1H
+   the same rules lose less (−0.20R, −0.05R in 2026) because bigger moves make
+   the fee a smaller share of R. Neither is an edge.
+3. **The structural stop** beats the zone-edge stop in every pairing.
 4. **Momentum vs retest.** Entering at the break catches about 30% of 1-hour
    moves of 1% or more; waiting for the retest caught about 8%.
-5. **Target ladders** move the win rate more than the result: 2R / 3R / 4R wins
-   less often and pays more when it does.
-6. A TP1 *minimum* (no trade under 1.5R) removed more good trades than bad; the
-   London / New York filter changed nothing.
+5. **Target ladders** move the win rate more than the result.
+6. A TP1 *minimum* removed more good trades than bad; the London / New York
+   filter changed nothing.
 
-**Round five** (the owner's P0 list) added a fee-aware minimum edge -- no trade
-whose stop is under 0.5% of the price -- which cut the loss to −0.14R (2024–25)
-and −0.27R (2026) a trade; the desk runs it. A no-chase rule alone did not
-help. **Setup-quality segmentation** (swept-liquidity type, BOS / CHoCH / MSS,
+**Round five** added the fee floor (no trade whose stop is under 0.5% of
+price), which cut the loss to −0.14R (2024–25) and −0.27R (2026); the desk runs
+it. **Setup-quality segmentation** (swept-liquidity type, BOS / CHoCH / MSS,
 OB / FVG, displacement, entry volume, session, 1H agreement, risk size) found
-**no slice** that is positive on 2024–25 with t ≥ 2 and positive again on 2026.
+**no slice** positive on 2024–25 with t ≥ 2 and positive again on 2026. The
+HUD prints the desk's record beside every setup: **1,665 trades, 35% winners,
+−0.17R a trade after fees (2026 −0.27R), 25% of big moves caught.**
 
-The desk runs X (`DESK_SMC_OPTIONS`) on the 5m chart -- chosen for the owner's
-specification (a structural stop, TP1 at least double the risk), tied best on
-2024–25 and among the best on 2026. The HUD prints its record beside every
-setup: **1,665 trades, 35% winners, −0.17R a trade after fees (2026 −0.27R),
-25% of big moves caught. Information, not a signal.** Twenty-four variants on
-one data set is already a lot of looking; the next one would be more likely to
-find luck than an edge.
+### Published and popular models
 
-**Published intraday momentum** (Shen, Urquhart & Wang, *Bitcoin intraday
-time series momentum*, Financial Review 2022: the day's first half hour
-predicts its last) was tested the same way, both of the paper's signals,
-declared before running (`app/web/scripts/intraday-momentum-study.ts`,
-`research/INTRADAY-MOMENTUM.txt`). On these 952 UTC days it does not hold:
-gross +0.5 bp a trade on 2024–25 (t 0.5), −4.4 bp on 2026 (t −2.3), against
-10 bp of fees on a last half hour that moves 18 bp on average. Not adopted.
+| Study | Declared rules | 2024–25 | 2026 | Verdict |
+|---|---|---|---|---|
+| Intraday momentum (Shen, Urquhart & Wang 2022): first half hour → last half hour | both signals from the paper, 952 UTC days | gross +0.5 bp (t 0.5) | gross −4.4 bp (t −2.3) | fees are 10 bp; not adopted |
+| CRT-1H / 4H / 1D, Asia range (the CRT / Turtle Soup / PDH-PDL / PO3 family): range → first side swept → close back inside → target the far side, stop at the sweep | eight variants (four ranges × fee floor) | best: CRT-1D + floor −0.01R (172 trades) | +0.11R (54 trades, t 0.46) | slightly positive **before** fees, tight stops lose it to fees; no edge by the rule (t ≥ 2) |
 
-**Re-run** after changing a rule, and commit both outputs:
+`research/INTRADAY-MOMENTUM.txt`, `research/CRT-STUDY.txt`. Thirty-odd
+variants on one data set is already a lot of looking; the next one is more
+likely to find luck than an edge.
+
+### The order-flow layers
+
+Not yet testable: `trade_flow_1m` has been recorded since mid-September 2026,
+`large_prints` and `book_heat_1m` since 29 September. Each will be tested the
+same way -- the base model, then the base plus one layer (heatmap walls,
+CVD / delta, big trades, profile), declared first, chosen on the earlier
+months and judged once on the later -- once there are a few months (earliest
+honest look: December 2026 for the flow, early 2027 for the book).
+
+**Re-run** after changing a rule, and commit the outputs:
 
 ```
 app/server/node_modules/.bin/tsx app/web/scripts/smc-study.ts
 # writes research/SMC-STUDY.txt and app/web/src/lib/smc/measured.data.ts
+app/server/node_modules/.bin/tsx app/web/scripts/crt-study.ts
+app/server/node_modules/.bin/tsx app/web/scripts/intraday-momentum-study.ts
 ```
 
 ---
 
-## 13. Not built
+## 15. Not built
+
+**Order flow, needing a new recorder or source:**
+
+- **Footprint** (bid × ask volume at each price inside a candle), **stacked
+  imbalance** and **absorption** (aggressive volume into a level that holds):
+  the tape is summed per minute, not per price; a per-price, per-minute record
+  is the next recorder.
+- **Wall events**: pulled (gone as price came near), filled (traded through),
+  moving -- need the walls' own history, then the prints at their price.
+- **OI / ΔOI / funding / basis pane**: `perp_snapshots` has them every five
+  minutes; not on the chart yet.
+- **Options strike OI as levels on price**: the chain is live; its biggest
+  CE / PE open interest could be drawn as horizontal levels.
+- **Liquidation clusters**: Delta publishes none; third-party heatmaps are
+  model estimates behind a paid API.
+- **SMT divergence** (BTC vs ETH): needs ETH candles alongside.
+- **TPO / market profile**, **initial balance**, **single prints**.
+
+**Price action and the engine:**
 
 - Setup history in the database (every completed setup saved): needs a table
-  whose schema waits for the owner's go-ahead. Until then the record is
-  recomputed from the candles on screen, deterministically.
+  whose schema waits for the owner's go-ahead.
 - A candle that touches both the stop and a target resolved from 1m candles
   (today: the stop, the assumption that cannot flatter the record).
 - Data-failure states on the chart (a gap, a duplicate, a stale feed) as
   "DATA UNAVAILABLE".
 - Zone freshness by retest count (today: fresh / tested).
-- BPR, liquidity voids, RSI divergence, internal vs external structure.
-- The early warning's and the options flow's readings as confirmations: they
-  have been recorded only since September 2026, so there is no history to
-  test them on yet.
+- BPR, Unicorn (breaker ∩ FVG), liquidity voids, CISD, internal vs external
+  structure, RSI divergence.
+- NDOG / NWOG: BTC trades round the clock, so the day's "gap" is close to
+  nothing by construction; a definition would have to be chosen first.

@@ -5,6 +5,39 @@ Updated 29 Sep 2026
 
 ---
 
+## 29 Sep 2026 (day) — order-flow layers, live LTP, CRT tested
+
+Four layers, each with its meaning kept apart (docs/PRICE-CHART.md §12):
+
+- [x] **Liquidity heatmap + persistent walls** (passive traders). New recorder:
+  the order book every 10 s, a minute's average per $10 in `book_heat_1m`
+  (market-016, 14 days). Walls: 3× the side's median, held 5+ minutes running.
+- [x] **Big-trade bubbles** (big aggressive traders). `large_prints`
+  (market-015, a year). Size set by the market (90th percentile of recorded
+  large orders), one bubble per candle and side, blue / fuchsia rings apart
+  from the candles, hover detail, the HUD's Big line.
+- [x] **Δ / CVD pane + trade pace** (aggressive traders), from `trade_flow_1m`.
+- [x] **Volume profile** of the candles in view: POC / VAH / VAL, HVN / LVN.
+- [x] **Live LTP from the perp's own trades** (`/api/stream` event `ltp`): the
+  forming candle was carried to the index spot, off by the basis. LTP chip.
+- [x] **"Object is disposed" crash** on leaving the chart -- fixed.
+- [x] **Fix**: the flow summary's current minute counted option prints as perp
+  volume.
+- [x] **CRT family tested** (1H / 4H / 1D / Asia range, with and without the fee
+  floor): slightly positive before fees, not after; no edge by the declared
+  rule. research/CRT-STUDY.txt.
+- [ ] **Test the order-flow layers** once recorded long enough: base, then base
+  + one layer at a time, declared first, choose-then-judge. Flow from
+  December 2026; book and big trades early 2027.
+- [ ] **Next recorders**: footprint (volume per price per minute, for stacked
+  imbalance and absorption); wall events (pulled / filled / moving).
+- [ ] **OI / ΔOI / funding pane** from `perp_snapshots`; options strike OI as
+  levels on price.
+- [ ] Delta's docs mention public sockets moving to
+  `public-socket.india.delta.exchange`; the desk still uses
+  `socket.india.delta.exchange`, which answered on 29 Sep. Verify before it
+  is switched off.
+
 ## 29 Sep 2026 — 1m view, published momentum tested, setup alerts
 
 - [x] **1m view.** A 5m | 1m switch in the chart's toolbar; 5m stays the
