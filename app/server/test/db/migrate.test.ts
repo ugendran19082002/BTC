@@ -165,9 +165,8 @@ test('[critical] after boot every desk table is in public, and no desk schema is
   const { AuthStore } = await import('../../src/auth/store.js');
   const { ErrorLog } = await import('../../src/observability/errors.js');
   const { marketSchema } = await import('../../src/market/oi-history.js');
-  const { analyticsSchema } = await import('../../src/db/analytics-schema.js');
   await new SettingsCache().load(); await PgTradeStore.open(); await StrategyStore.open(new (await import('../../src/db/settings.js')).MemorySettings());
-  await AuthStore.open(); await new ErrorLog().ready; await marketSchema(); await analyticsSchema();
+  await AuthStore.open(); await new ErrorLog().ready; await marketSchema();
   const left = await rows<{ nspname: string }>(
     `SELECT nspname FROM pg_namespace WHERE nspname IN ('trading', 'strategy', 'auth', 'errors', 'market', 'analytics')`,
   );
