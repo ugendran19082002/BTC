@@ -13,6 +13,7 @@ import { appliedMigrations } from '../../db/migrate.js';
 import { lastOptionSnapshot } from '../../market/option-snapshots.js';
 import { heatColumnsOf, heatMinutes, persistentWalls } from '../../market/book-heat.js';
 import { ttlCache } from '../ttl-cache.js';
+import { trendPaper } from '../../strategy/trend-paper.js';
 import { autoLargeMin, flowBarsOf, flowFeedHealth, flowMinutes, flowSummary, largePrints, liveBook, livePerp, oiPulse, optionFlowSummary, perpOiChange, LARGE_PRINT_CONTRACTS } from '../../market/flow.js';
 import { changes } from '../../market/changes.js';
 import { one } from '../../db/pool.js';
@@ -235,6 +236,20 @@ export function registerDeskRoutes(app: FastifyInstance) {
     } catch (e) {
       reply.code(502);
       return { error: (e as Error).message, step, columns: [], walls: [] };
+    }
+  });
+
+  /**
+   * The trend plan's paper log: the latest trades and, per timeframe, the live
+   * forward test (trades first seen within 15 minutes of their signal) apart
+   * from those replayed later.
+   */
+  app.get('/api/trend/paper', async (_req, reply) => {
+    try {
+      return await trendPaper();
+    } catch (e) {
+      reply.code(502);
+      return { error: (e as Error).message, trades: [], summary: [] };
     }
   });
 

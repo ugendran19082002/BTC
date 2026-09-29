@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Candle } from '@/types/desk';
 import type { ChartTf } from '@/components/desk/PriceChart';
 import { PriceChart } from '@/components/desk/PriceChart';
-import { getCandles, getFlowBars, getHeatmap, getLargePrints, type HeatColumn, type PerpOiChange, type Wall } from '@/api/desk';
+import { getCandles, getFlowBars, getHeatmap, getLargePrints, getTrendPaper, type HeatColumn, type PerpOiChange, type Wall } from '@/api/desk';
 import type { Leg } from '@/types/desk';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
@@ -78,6 +78,7 @@ export function DeskChart({
   const bigHours = shown === '1m' ? 8 : 36;
   const { data: big } = usePoll(() => getLargePrints(bigHours), 15_000, { deps: [bigHours] });
   const heat = useHeatmap(shown === '1m' ? '1m' : '5m');
+  const { data: paper } = usePoll(getTrendPaper, 60_000);
   const { data: flow } = usePoll(() => getFlowBars(shown === '1m' ? '1m' : '5m', bigHours), 10_000, { deps: [shown, bigHours] });
   const bigTrades = useMemo(() => ({ prints: big?.prints ?? [], min: big?.min ?? 200, basis: big?.basis }), [big]);
 
@@ -130,6 +131,7 @@ export function DeskChart({
           strikes={strikes}
           derivs={derivs}
           trendBars={h1?.bars}
+          trendPaper={paper?.summary}
           ltp={ltp}
         />
       </div>

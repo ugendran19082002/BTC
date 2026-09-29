@@ -16,7 +16,7 @@ import { SmcPrimitive } from './chart/smc-primitive';
 import { buildScene, C, DEFAULT_LAYERS, htfScene, LAYER_PRESETS, LAYERS, type Layer, type SceneItem } from './chart/scene';
 import { ChartHud } from './chart/ChartHud';
 import { bigTradeScene, bigTradeSummary, deltaSeries, flowRead, heatScene, profileScene, strikeScene, volRegime, volumeProfile, type BigTrade } from './chart/flow-layers';
-import type { FlowBar, HeatColumn, PerpOiChange, Wall } from '@/api/desk';
+import type { FlowBar, HeatColumn, PerpOiChange, TrendPaperSummary, Wall } from '@/api/desk';
 import type { Leg } from '@/types/desk';
 import { LtpChip } from './chart/LtpChip';
 import { trendScene } from './chart/trend-layer';
@@ -46,7 +46,7 @@ const IST_FULL = new Intl.DateTimeFormat('en-IN', {
  * appears and then vanishes within a candle.
  */
 export function PriceChart({
-  bars, tf, views = [], onView, loading = false, error, context = [], regime, higher = [], bigTrades, flowBars, heat, strikes, derivs, trendBars, ltp, symbol = 'BTCUSD',
+  bars, tf, views = [], onView, loading = false, error, context = [], regime, higher = [], bigTrades, flowBars, heat, strikes, derivs, trendBars, trendPaper, ltp, symbol = 'BTCUSD',
 }: {
   bars: readonly Candle[];
   tf: ChartTf;
@@ -73,6 +73,8 @@ export function PriceChart({
   derivs?: { oi: PerpOiChange | null; funding: number | null } | null;
   /** 1H candles for the trend plan (lib/trend/breakout.ts): run on 1H, and on 4H folded from them. */
   trendBars?: readonly Candle[];
+  /** The trend plan's paper log (the server's forward test), per timeframe. */
+  trendPaper?: readonly TrendPaperSummary[];
   /** The perp's last trade, from the stream, for the LTP chip. */
   ltp?: { price: number; at: number } | null;
   symbol?: string;
@@ -424,7 +426,7 @@ export function PriceChart({
             tf={tf}
             read={read}
             context={context}
-            trend={trend ? { h1: trend.h1.open, h4: trend.h4?.open ?? null, mark: bars[bars.length - 1]?.close ?? null } : null}
+            trend={trend ? { h1: trend.h1.open, h4: trend.h4?.open ?? null, mark: bars[bars.length - 1]?.close ?? null, paper: trendPaper ?? null } : null}
             derivs={derivs || vol ? { oi: derivs?.oi ?? null, funding: derivs?.funding ?? null, vol } : null}
             big={layers.has('bigtrades') && bigTrades && bars.length ? {
               ...bigTradeSummary(bigTrades.prints, bars, tfSec, bigTrades.min, inView?.from ?? bars.length - 90, inView?.to ?? bars.length - 1),

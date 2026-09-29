@@ -136,10 +136,11 @@ describe('the price chart', () => {
       const c = i < 40 ? 77_000 : 77_000 + (i - 39) * 300;
       return { time: t, open: c, high: c + 50, low: c - 50, close: c, volume: 1 };
     });
-    chart({ trendBars: hourly });
+    chart({ trendBars: hourly, trendPaper: [{ tf: '1H', live: 3, closed: 2, open: 1, wins: 1, netR: 1.4, replayed: 0 }, { tf: '4H', live: 0, closed: 0, open: 0, wins: 0, netR: 0, replayed: 2 }] });
     const line = screen.getByLabelText('Trend plan');
     expect(line.textContent).toMatch(/1H LONG 77,300 · trail [\d,]+ · \+[\d.]+R/);
     expect(line.textContent).toContain('4H');
+    expect(line.textContent).toContain('paper 1H 2 closed +1.4R +1 open · 4H 0 closed');
     expect(line.getAttribute('title')).toMatch(/Measured 2024-26 after fees: 1H \+0\.1R/);
   });
 

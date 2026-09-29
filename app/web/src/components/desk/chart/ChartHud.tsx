@@ -4,7 +4,7 @@ import type { TfRead } from '@/lib/smc/context';
 import type { Readout } from '@/lib/smc/readout';
 import { SMC_MEASURED } from '@/lib/smc/measured.data';
 import type { BigTradeSummary, FlowRead, VolRegime } from './flow-layers';
-import type { PerpOiChange } from '@/api/desk';
+import type { PerpOiChange, TrendPaperSummary } from '@/api/desk';
 import { trendR, trendStop, type TrendTrade } from '@/lib/trend/breakout';
 import { TREND_MEASURED } from '@/lib/trend/measured.data';
 
@@ -33,7 +33,7 @@ export const ChartHud = forwardRef<HTMLDivElement, {
   /** Positioning and volatility: the perp's OI against an hour ago, funding, and the chart's ATR against its usual. */
   derivs?: { oi: PerpOiChange | null; funding: number | null; vol: VolRegime | null } | null;
   /** The trend plan's open trade on 1H and 4H (null when flat), and the last price to mark them at. */
-  trend?: { h1: TrendTrade | null; h4: TrendTrade | null; mark: number | null } | null;
+  trend?: { h1: TrendTrade | null; h4: TrendTrade | null; mark: number | null; paper?: readonly TrendPaperSummary[] | null } | null;
 }>(function ChartHud({ open, onToggle, tf, read, context, candle, big, derivs, trend }, ref) {
   const up = candle ? candle.close >= candle.open : true;
   return (
@@ -142,6 +142,11 @@ export const ChartHud = forwardRef<HTMLDivElement, {
                   </span>
                 );
               })}
+              {trend.paper && trend.paper.length > 0 && (
+                <span className="trend-paper" title="The server's paper log since 1 Sep 2026: trades recorded within 15 minutes of their signal (the forward test), closed and their net R after fees. Replayed trades are not counted.">
+                  paper {trend.paper.map((p) => `${p.tf} ${p.closed} closed${p.closed ? ` ${r1(p.netR)}` : ''}${p.open ? ` +${p.open} open` : ''}`).join(' · ')}
+                </span>
+              )}
             </p>
           )}
           {derivs && (derivs.oi || derivs.funding !== null || derivs.vol) && (

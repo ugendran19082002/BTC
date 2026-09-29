@@ -17,6 +17,7 @@ import { wallWithinEm } from './http/routes/desk.routes.js';
 import { captureIndex } from './market/index-1m.js';
 import { capturePerpSnapshot, flowSchema, flushTradeFlow, startFlowSocket } from './market/flow.js';
 import { flushBookHeat, startBookHeat } from './market/book-heat.js';
+import { recordTrendPaper } from './strategy/trend-paper.js';
 import { noteError } from './observability/errors.js';
 
 /**
@@ -159,4 +160,12 @@ setInterval(() => { flushTradeFlow(Date.now()).catch(warn('trade-flow')); }, 20_
  */
 startBookHeat();
 setInterval(() => { flushBookHeat(Date.now()).catch(warn('book-heat')); }, 20_000).unref();
+
+/*
+ * The trend plan's paper log: replayed on closed 1H / 4H candles every five
+ * minutes, each trade written as it happens (strategy/trend-paper.ts).
+ */
+const recordTrend = () => { recordTrendPaper(Date.now()).catch(warn('trend-paper')); };
+recordTrend();
+setInterval(recordTrend, 5 * 60_000).unref();
 
