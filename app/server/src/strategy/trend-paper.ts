@@ -21,6 +21,13 @@ import { runTrend, trendR, trendStop, type TrendBar, type TrendState } from './t
  *
  * The fixed start (1 Sep 2026) makes the replay the same on every restart: one
  * position at a time means a later start could otherwise take other trades.
+ *
+ * **Pre-registered filters.** research/COMBO-STUDY.txt found two layers that
+ * beat the plain plan in both halves of 2024-26, neither significantly: a
+ * volume burst on the signal candle (1.5x its 20-candle mean) and a signal in
+ * London / New York hours (07-20 UTC). Each trade records both flags at its
+ * signal, so the forward test can say whether they hold on data they were not
+ * found on. The plan itself does not use them.
  */
 
 export const TREND_PAPER_START = Date.UTC(2026, 8, 1) / 1000;
@@ -50,6 +57,14 @@ const MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    // The two pre-registered filters, recorded at each trade's signal (null where the volume was not known).
+    id: 'trend-002-paper-flags',
+    up: `
+      ALTER TABLE trend_paper ADD COLUMN IF NOT EXISTS vol_burst BOOLEAN;
+      ALTER TABLE trend_paper ADD COLUMN IF NOT EXISTS session   BOOLEAN;
+    `,
+  },
 ];
 
 let ready: Promise<void> | null = null;
@@ -59,16 +74,23 @@ export function trendPaperSchema(): Promise<void> {
   return ready;
 }
 
-/** Complete `sec` buckets folded from 1H candles, oldest first. Pure. */
-export function fold(hours: readonly TrendBar[], sec: number): TrendBar[] {
-  const out: TrendBar[] = [];
+/** A candle with its volume, where it is known: what the volume-burst flag reads. */
+export type VolBar = TrendBar & { volume?: number };
+
+/** Complete `sec` buckets folded from 1H candles, oldest first, volumes summed. Pure. */
+export function fold(hours: readonly VolBar[], sec: number): VolBar[] {
+  const out: VolBar[] = [];
   const per = sec / H;
   for (let i = 0; i < hours.length;) {
     const start = Math.floor(hours[i]!.time / sec) * sec;
-    const group: TrendBar[] = [];
+    const group: VolBar[] = [];
     while (i < hours.length && Math.floor(hours[i]!.time / sec) * sec === start) group.push(hours[i++]!);
     if (group.length !== per || group[0]!.time !== start) continue;
-    out.push({ time: start, open: group[0]!.open, close: group[per - 1]!.close, high: Math.max(...group.map((b) => b.high)), low: Math.min(...group.map((b) => b.low)) });
+    const vols = group.map((b) => b.volume);
+    out.push({
+      time: start, open: group[0]!.open, close: group[per - 1]!.close, high: Math.max(...group.map((b) => b.high)), low: Math.min(...group.map((b) => b.low)),
+      volume: vols.every((v) => v !== undefined) ? vols.reduce((a, v) => a + v!, 0) : undefined,
+    });
   }
   return out;
 }
@@ -76,16 +98,29 @@ export function fold(hours: readonly TrendBar[], sec: number): TrendBar[] {
 export type PaperRow = {
   tf: string; entryTime: number; dir: 1 | -1; entry: number; stop0: number; risk: number; stop: number;
   exitTime: number | null; exit: number | null; rNet: number | null;
+  /** The pre-registered filters at the signal: a volume burst (null when volume is unknown), London / New York hours. */
+  volBurst: boolean | null; session: boolean;
 };
 
+/** The signal candle's volume against its 20-candle mean: 1.5x or more is a burst. Null without the volumes. */
+function burst(bars: readonly VolBar[], at: number): boolean | null {
+  const v = bars[at]?.volume;
+  if (at < 20 || v === undefined) return null;
+  const prev = bars.slice(at - 20, at).map((b) => b.volume);
+  if (prev.some((x) => x === undefined)) return null;
+  return v >= 1.5 * (prev.reduce<number>((a, x) => a + (x ?? 0), 0) / 20);
+}
+
 /** The replay's trades as rows: times are the signal / exit candles' close, seconds. Pure. */
-export function paperRows(tf: string, st: TrendState, bars: readonly TrendBar[], sec: number): PaperRow[] {
+export function paperRows(tf: string, st: TrendState, bars: readonly VolBar[], sec: number): PaperRow[] {
   return st.trades.map((t) => {
     const closed = t.exitAt !== null && t.exit !== null;
     const r = closed ? trendR(t)! - ((t.entry + t.exit!) * FEE_PER_SIDE) / t.risk : null;
     return {
       tf, entryTime: bars[t.at]!.time + sec, dir: t.dir, entry: t.entry, stop0: t.stop0, risk: t.risk, stop: trendStop(t),
       exitTime: closed ? bars[t.exitAt!]!.time + sec : null, exit: closed ? t.exit : null, rNet: r,
+      volBurst: burst(bars, t.at),
+      session: (() => { const h = new Date((bars[t.at]!.time + sec) * 1000).getUTCHours(); return h >= 7 && h < 20; })(),
     };
   });
 }
@@ -97,23 +132,23 @@ export async function writePaper(list: readonly PaperRow[], nowSec: number): Pro
   for (const r of list) {
     const live = nowSec - r.entryTime <= LIVE_WITHIN_S;
     const res = await query(
-      `INSERT INTO trend_paper (tf, entry_time, dir, entry, stop0, risk, stop, exit_time, exit, r_net, first_seen, live, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $11)
+      `INSERT INTO trend_paper (tf, entry_time, dir, entry, stop0, risk, stop, exit_time, exit, r_net, first_seen, live, updated_at, vol_burst, session)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $11, $13, $14)
        ON CONFLICT (tf, entry_time) DO UPDATE SET stop = EXCLUDED.stop, exit_time = EXCLUDED.exit_time, exit = EXCLUDED.exit,
          r_net = EXCLUDED.r_net, updated_at = EXCLUDED.updated_at
        WHERE trend_paper.exit_time IS NULL
          AND (trend_paper.stop IS DISTINCT FROM EXCLUDED.stop OR trend_paper.exit_time IS DISTINCT FROM EXCLUDED.exit_time)`,
-      [r.tf, r.entryTime, r.dir, r.entry, r.stop0, r.risk, r.stop, r.exitTime, r.exit, r.rNet, nowSec, live],
+      [r.tf, r.entryTime, r.dir, r.entry, r.stop0, r.risk, r.stop, r.exitTime, r.exit, r.rNet, nowSec, live, r.volBurst, r.session],
     );
     written += res.rowCount ?? 0;
   }
   return written;
 }
 
-let hours: TrendBar[] = [];
+let hours: VolBar[] = [];
 
 /** The closed 1H candles from the start, fetched in pieces; after the first call only the new ones. */
-async function closedHours(nowSec: number, fetch: typeof candles): Promise<TrendBar[]> {
+async function closedHours(nowSec: number, fetch: typeof candles): Promise<VolBar[]> {
   const lastClosed = Math.floor(nowSec / H) * H - H; // the newest candle whose hour is over
   let from = hours.length ? hours[hours.length - 1]!.time + H : TREND_PAPER_START;
   while (from <= lastClosed) {
@@ -138,22 +173,33 @@ export async function recordTrendPaper(nowMs = Date.now(), fetch: typeof candles
 /** For tests: forget the fetched candles. */
 export function resetTrendPaper(): void { hours = []; }
 
-export type PaperSummary = { tf: string; live: number; closed: number; open: number; wins: number; netR: number; replayed: number };
+/** Closed live trades and their net R, for a subset. */
+export type PaperSubset = { closed: number; netR: number };
+export type PaperSummary = {
+  tf: string; live: number; closed: number; open: number; wins: number; netR: number; replayed: number;
+  /** The pre-registered filters' subsets of the closed live trades. */
+  volBurst: PaperSubset; session: PaperSubset;
+};
 
 /** The log: the latest trades and, per timeframe, the live forward test's count and result. */
 export async function trendPaper(limit = 50): Promise<{ since: number; trades: (PaperRow & { live: boolean; firstSeen: number })[]; summary: PaperSummary[] }> {
   await trendPaperSchema();
-  const all = await rows<{ tf: string; entry_time: number; dir: number; entry: number; stop0: number; risk: number; stop: number; exit_time: number | null; exit: number | null; r_net: number | null; first_seen: number; live: boolean }>(
+  const all = await rows<{ tf: string; entry_time: number; dir: number; entry: number; stop0: number; risk: number; stop: number; exit_time: number | null; exit: number | null; r_net: number | null; first_seen: number; live: boolean; vol_burst: boolean | null; session: boolean | null }>(
     'SELECT * FROM trend_paper ORDER BY entry_time DESC',
   );
   const summary: PaperSummary[] = ['1H', '4H'].map((tf) => {
     const mine = all.filter((r) => r.tf === tf);
     const live = mine.filter((r) => r.live);
     const closed = live.filter((r) => r.r_net !== null);
+    const subset = (keep: (r: (typeof closed)[number]) => boolean): PaperSubset => {
+      const xs = closed.filter(keep);
+      return { closed: xs.length, netR: xs.reduce((a, r) => a + r.r_net!, 0) };
+    };
     return {
       tf, live: live.length, closed: closed.length, open: live.length - closed.length,
       wins: closed.filter((r) => r.r_net! > 0).length, netR: closed.reduce((a, r) => a + r.r_net!, 0),
       replayed: mine.length - live.length,
+      volBurst: subset((r) => r.vol_burst === true), session: subset((r) => r.session === true),
     };
   });
   return {
@@ -161,6 +207,7 @@ export async function trendPaper(limit = 50): Promise<{ since: number; trades: (
     trades: all.slice(0, limit).map((r) => ({
       tf: r.tf, entryTime: Number(r.entry_time), dir: r.dir as 1 | -1, entry: r.entry, stop0: r.stop0, risk: r.risk, stop: r.stop,
       exitTime: r.exit_time === null ? null : Number(r.exit_time), exit: r.exit, rNet: r.r_net, live: r.live, firstSeen: Number(r.first_seen),
+      volBurst: r.vol_burst, session: r.session ?? false,
     })),
     summary,
   };

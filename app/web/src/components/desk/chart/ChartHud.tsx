@@ -34,7 +34,9 @@ export const ChartHud = forwardRef<HTMLDivElement, {
   derivs?: { oi: PerpOiChange | null; funding: number | null; vol: VolRegime | null } | null;
   /** The trend plan's open trade on 1H and 4H (null when flat), and the last price to mark them at. */
   trend?: { h1: TrendTrade | null; h4: TrendTrade | null; mark: number | null; paper?: readonly TrendPaperSummary[] | null } | null;
-}>(function ChartHud({ open, onToggle, tf, read, context, candle, big, derivs, trend }, ref) {
+  /** The live SMC setup against the 4H trend plan's position. */
+  alignment?: 'with' | 'against' | 'flat' | null;
+}>(function ChartHud({ open, onToggle, tf, read, context, candle, big, derivs, trend, alignment }, ref) {
   const up = candle ? candle.close >= candle.open : true;
   return (
     <div ref={ref} className={`pc-hud pc-hud-${read.tone}`} aria-label="Setup readout">
@@ -52,6 +54,12 @@ export const ChartHud = forwardRef<HTMLDivElement, {
               {read.confirmations.map((c) => (
                 <li key={c.name} className={c.ok ? 'ok' : 'wait'}>{c.ok ? '✓' : '○'} {c.name}</li>
               ))}
+              {alignment && (
+                <li className={alignment === 'with' ? 'ok' : alignment === 'against' ? 'no' : 'wait'}
+                  title="The 4H trend plan's position. Measured 2024-26: SMC trades with it lost -0.07R / -0.15R a trade after fees, against it -0.18R / -0.33R (research/COMBO-STUDY.txt). Better with it; not an edge either way.">
+                  {alignment === 'with' ? '✓ With the 4H trend' : alignment === 'against' ? '✗ Against the 4H trend' : '○ 4H trend flat'}
+                </li>
+              )}
             </ul>
           )}
 

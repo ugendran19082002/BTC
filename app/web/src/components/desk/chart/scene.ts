@@ -125,7 +125,8 @@ const SWING_POOLS: readonly Pool['kind'][] = ['BSL', 'SSL', 'EQH', 'EQL'];
 const LIVE_SETUP: readonly Setup['state'][] = ['READY', 'ACTIVE', 'TP1', 'TP2'];
 
 /** `blocked`: the timeframes the live setup runs against; it is then drawn faded and labelled as no trade. */
-export function buildScene(st: SmcState, bars: readonly Bar[], layers: ReadonlySet<Layer>, blocked: readonly string[] = []): SceneItem[] {
+/** `entryNote`: appended to the live trade's entry label -- the trend plan's alignment, say. */
+export function buildScene(st: SmcState, bars: readonly Bar[], layers: ReadonlySet<Layer>, blocked: readonly string[] = [], entryNote?: string): SceneItem[] {
   const n = bars.length;
   if (!n) return [];
   const last = bars[n - 1]!.close;
@@ -167,7 +168,7 @@ export function buildScene(st: SmcState, bars: readonly Bar[], layers: ReadonlyS
       });
     }
   }
-  if (on('trade')) trade(st, bars, out, blocked);
+  if (on('trade')) trade(st, bars, out, blocked, entryNote);
   return out;
 }
 
@@ -319,7 +320,7 @@ function vwap(st: SmcState, bars: readonly Bar[], out: SceneItem[]) {
  * and their prices, R and reasons at its right edge. The two halves share the
  * entry line, so risk and reward read as one thing.
  */
-function trade(st: SmcState, bars: readonly Bar[], out: SceneItem[], blocked: readonly string[]) {
+function trade(st: SmcState, bars: readonly Bar[], out: SceneItem[], blocked: readonly string[], entryNote?: string) {
   const n = bars.length;
   const long = (s: Setup) => s.dir === 'bull';
   // Box width: to a little past the last candle, and never narrower than 24 candles.
@@ -398,7 +399,7 @@ function trade(st: SmcState, bars: readonly Bar[], out: SceneItem[], blocked: re
   out.push({ t: 'vline', layer: 'trade', x: x1, y1: live.stop!, y2: tp3, color: C.text, priority: 9 });
   out.push({
     t: 'line', layer: 'trade', x1, x2, y: entry, color: C.text, width: 2,
-    label: `${no ? `NO TRADE (against ${blocked.join(', ')}) · ` : ''}${side} ${fill ? `entry ${fmt(entry)}` : `plan ${fmt(entry)} · waiting for a close back out`} · risk ${fmt(risk)} pts`,
+    label: `${no ? `NO TRADE (against ${blocked.join(', ')}) · ` : ''}${side} ${fill ? `entry ${fmt(entry)}` : `plan ${fmt(entry)} · waiting for a close back out`} · risk ${fmt(risk)} pts${entryNote ? ` · ${entryNote}` : ''}`,
     labelAt: 'end', labelSide: bull ? 'below' : 'above', priority: 100,
   });
   const moved = live.trail.length > 0;

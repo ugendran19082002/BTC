@@ -72,6 +72,9 @@ describe('the scene', () => {
     // Every trade line spans the box, not the chart.
     for (const it of scene) if (it.t === 'line') expect(it.x2).toBe(a!.x2);
     expect(scene.some((it) => it.t === 'vline')).toBe(true);
+    // The trend plan's alignment rides on the entry label when given.
+    const noted = buildScene(runSmc(past, { tfSec: 300 }), past, new Set<Layer>(['trade']), [], 'with the 4H trend ✓');
+    expect(noted.some((it) => it.t === 'line' && /^(LONG|SHORT) (plan|entry) .* · with the 4H trend ✓$/.test(it.label ?? ''))).toBe(true);
   });
 });
 

@@ -54,6 +54,20 @@ test('[critical] written once; an open trade follows its trail and then its exit
   assert.equal(log.summary[0]!.closed, 1);
 });
 
+test('[critical] each trade records the pre-registered filters at its signal, and the summary splits the closed live trades by them', async () => {
+  const hs = hours().map((b, i) => ({ ...b, volume: i === 30 ? 900 : 100 })); // the breakout hour on 9x volume
+  const rows = paperRows('1H', runTrend(hs), hs, H);
+  assert.equal(rows[0]!.volBurst, true);
+  assert.equal(typeof rows[0]!.session, 'boolean');
+  const quiet = paperRows('1H', runTrend(hours()), hours(), H);
+  assert.equal(quiet[0]!.volBurst, null, 'no volumes, no flag');
+  const closed = { ...rows[0]!, exitTime: rows[0]!.entryTime + 5 * H, exit: rows[0]!.entry + 10, rNet: 0.8 };
+  await writePaper([closed], rows[0]!.entryTime + 60);
+  const s = (await trendPaper()).summary.find((x) => x.tf === '1H')!;
+  assert.deepEqual(s.volBurst, { closed: 1, netR: 0.8 });
+  assert.equal(s.session.closed, rows[0]!.session ? 1 : 0);
+});
+
 test('the recorder fetches closed hours from the fixed start and writes the plan\'s trades', async () => {
   const hs = hours();
   const fetch = async (_s: string, from: number, to: number) => hs.filter((b) => b.time >= from && b.time <= to).map((b) => ({ ...b, volume: 1 }));

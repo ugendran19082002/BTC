@@ -9,7 +9,7 @@ import { usePersisted } from '@/hooks/usePersisted';
 import { TF_SECONDS } from '@/lib/live-bar';
 import { DESK_SMC_OPTIONS, runSmc } from '@/lib/smc/engine';
 import { aggregate, closedBars, trendTimeline, type TfRead } from '@/lib/smc/context';
-import { readout } from '@/lib/smc/readout';
+import { liveSetup, readout } from '@/lib/smc/readout';
 import { clearAnnotationsApi, getAnnotations, type Annotation } from '@/api/annotations';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { SmcPrimitive } from './chart/smc-primitive';
@@ -116,6 +116,23 @@ export function PriceChart({
   // Keyed on the closed candles, not the array: the forming candle changes every tick and must not re-run the engine.
   const smc = useMemo(() => runSmc(closed, { tfSec, htfTrendAt, ...DESK_SMC_OPTIONS }), [closedKey, htfTrendAt]);
   const read = useMemo(() => readout(smc, closed, context), [smc, context]);
+  // The trend plan, on closed 1H candles (and 4H folded from them), re-run when an hour closes.
+  const hClosed = trendBars ? closedBars(trendBars, 3600, Math.floor(Date.now() / 1000)) : [];
+  const hKey = `${hClosed.length}:${hClosed[hClosed.length - 1]?.time ?? 0}`;
+  const trend = useMemo(() => {
+    if (hClosed.length < 25) return null;
+    const h4 = aggregate(hClosed, 3600, 14_400);
+    return { h1: runTrend(hClosed), h1Bars: hClosed, h4: h4.length >= 25 ? runTrend(h4) : null };
+  }, [hKey]);
+  // The SMC plan against the 4H trend plan: measured, trades with it lost half as much as trades
+  // against it (research/COMBO-STUDY.txt) -- shown on the plan, not used to hide it.
+  const live = useMemo(() => liveSetup(smc), [smc]);
+  const alignment = useMemo<'with' | 'against' | 'flat' | null>(() => {
+    if (!live || !trend?.h4) return null;
+    const d = trend.h4.open?.dir ?? 0;
+    return d === 0 ? 'flat' : d === (live.dir === 'bull' ? 1 : -1) ? 'with' : 'against';
+  }, [live, trend]);
+  const entryNote = alignment === 'with' ? 'with the 4H trend ✓' : alignment === 'against' ? 'against the 4H trend ✗' : alignment === 'flat' ? '4H trend flat' : undefined;
   const nowMin = Math.floor(Date.now() / 60_000);
   const overlays = useMemo(() => higher
     .filter((h) => h.tfSec > tfSec)
@@ -126,11 +143,11 @@ export function PriceChart({
 
   // ── What is drawn ─────────────────────────────────────────────────────────
   const base = useMemo<SceneItem[]>(() => {
-    const items = buildScene(smc, closed, layers, read.blocked);
+    const items = buildScene(smc, closed, layers, read.blocked, entryNote);
     if (layers.has('htf')) items.push(...htfScene(overlays, closed));
     if (layers.has('saved')) items.push(...savedBoxes(saved, bars));
     return items;
-  }, [smc, layers, saved, bars.length, read.blocked, overlays]);
+  }, [smc, layers, saved, bars.length, read.blocked, overlays, entryNote]);
   // The order-flow layers are kept apart from the engine's scene. The heatmap and the bubbles place
   // themselves by candle *time* only, so they are rebuilt when a candle is added or their data
   // arrives -- not on every tick of the forming candle, which only the volume profile follows.
@@ -160,14 +177,6 @@ export function PriceChart({
     () => (layers.has('options') && strikes && nearPrice ? strikeScene(strikes.legs, strikes.maxPain, nearPrice) : []),
     [layers, strikes, nearPrice],
   );
-  // The trend plan, on closed 1H candles (and 4H folded from them), re-run when an hour closes.
-  const hClosed = trendBars ? closedBars(trendBars, 3600, Math.floor(Date.now() / 1000)) : [];
-  const hKey = `${hClosed.length}:${hClosed[hClosed.length - 1]?.time ?? 0}`;
-  const trend = useMemo(() => {
-    if (hClosed.length < 25) return null;
-    const h4 = aggregate(hClosed, 3600, 14_400);
-    return { h1: runTrend(hClosed), h1Bars: hClosed, h4: h4.length >= 25 ? runTrend(h4) : null };
-  }, [hKey]);
   const trendItems = useMemo<SceneItem[]>(
     () => (layers.has('trend') && trend ? trendScene(trend.h1, trend.h1Bars, 3600, barsRef.current) : []),
     [layers, trend, timesKey, nearPrice],
@@ -426,6 +435,7 @@ export function PriceChart({
             tf={tf}
             read={read}
             context={context}
+            alignment={alignment}
             trend={trend ? { h1: trend.h1.open, h4: trend.h4?.open ?? null, mark: bars[bars.length - 1]?.close ?? null, paper: trendPaper ?? null } : null}
             derivs={derivs || vol ? { oi: derivs?.oi ?? null, funding: derivs?.funding ?? null, vol } : null}
             big={layers.has('bigtrades') && bigTrades && bars.length ? {
