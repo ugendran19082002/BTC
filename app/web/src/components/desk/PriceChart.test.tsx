@@ -115,10 +115,10 @@ describe('the price chart', () => {
     fireEvent.click(screen.getByRole('button', { name: /Layers/ }));
     const presets = screen.getByRole('group', { name: 'Layer presets' });
     expect(within(presets).getByRole('button', { name: 'Desk' }).getAttribute('aria-pressed')).toBe('true');
-    expect((screen.getByLabelText('Liquidity heatmap (book)') as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByLabelText(/^Liquidity heatmap \(book\)/) as HTMLInputElement).checked).toBe(false);
     fireEvent.click(within(presets).getByRole('button', { name: 'Order flow' }));
-    expect((screen.getByLabelText('Liquidity heatmap (book)') as HTMLInputElement).checked).toBe(true);
-    expect((screen.getByLabelText('Structure') as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByLabelText(/^Liquidity heatmap \(book\)/) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText(/^Structure/) as HTMLInputElement).checked).toBe(false);
     expect(within(presets).getByRole('button', { name: 'Order flow' }).getAttribute('aria-pressed')).toBe('true');
   });
 
@@ -207,7 +207,7 @@ describe('the price chart', () => {
   it('remembers which layers are drawn', () => {
     chart();
     fireEvent.click(screen.getByRole('button', { name: 'Layers' }));
-    fireEvent.click(screen.getByLabelText('Structure'));
+    fireEvent.click(screen.getByLabelText(/^Structure/));
     const stored = JSON.parse(localStorage.getItem('btc-desk:chart:layers:v3')!) as string[];
     expect(stored).not.toContain('structure');
     expect(stored).toContain('liquidity');

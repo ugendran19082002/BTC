@@ -127,7 +127,7 @@ export const ChartHud = forwardRef<HTMLDivElement, {
             <p className="pc-hud-ohlc" aria-label="Positioning and volatility">
               {derivs.oi && (
                 <span className={derivs.oi.changePct >= 0 ? 'up' : 'down'}
-                  title={`Perpetual open interest, ${derivs.oi.overMinutes} min change, read with the price over the same window (${derivs.oi.priceChangePct === null ? 'price n/a' : `price ${derivs.oi.priceChangePct >= 0 ? '+' : ''}${derivs.oi.priceChangePct.toFixed(2)}%`}). Positioning context, not a signal.`}>
+                  title={`Perpetual open interest, ${derivs.oi.overMinutes} min change, read with the price over the same window (${derivs.oi.priceChangePct === null ? 'price n/a' : `price ${derivs.oi.priceChangePct >= 0 ? '+' : ''}${derivs.oi.priceChangePct.toFixed(2)}%`}). Positioning context, not a signal: over 2024-26 on Binance's perpetual, none of the four reads moved the next hour or four the same way in both halves (research/FLOW-STUDY.txt).`}>
                   OI {fmt(derivs.oi.oiContracts / 1_000)} BTC {derivs.oi.changePct >= 0 ? '▲' : '▼'}{Math.abs(derivs.oi.changePct).toFixed(1)}% 1h · {derivs.oi.read}
                 </span>
               )}

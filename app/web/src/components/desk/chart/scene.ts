@@ -16,9 +16,15 @@ import { SCALE_OUT } from '@/lib/smc/engine';
 export type Layer = 'structure' | 'liquidity' | 'zones' | 'levels' | 'pd' | 'sessions' | 'vwap' | 'candles' | 'trade' | 'saved' | 'htf'
   | 'profile' | 'bigtrades' | 'delta' | 'heatmap' | 'options';
 
-export const LAYERS: readonly { key: Layer; label: string }[] = [
+/**
+ * Every layer, with what the research says about it (docs/PRICE-CHART.md §14),
+ * shown beside its checkbox -- so a line on the chart is never read as more
+ * than it has been shown to be. `note` says whether it has been measured and
+ * what came out; nothing here is a signal on its own.
+ */
+export const LAYERS: readonly { key: Layer; label: string; note?: string }[] = [
   { key: 'htf', label: 'HTF: 1H zones, 15m structure' },
-  { key: 'structure', label: 'Structure' },
+  { key: 'structure', label: 'Structure', note: 'SMC rules measured 2024–26: no edge after fees' },
   { key: 'liquidity', label: 'Liquidity' },
   { key: 'zones', label: 'OB / FVG' },
   { key: 'levels', label: 'Levels' },
@@ -26,13 +32,13 @@ export const LAYERS: readonly { key: Layer; label: string }[] = [
   { key: 'sessions', label: 'Sessions' },
   { key: 'vwap', label: 'VWAP' },
   { key: 'candles', label: 'Candles' },
-  { key: 'trade', label: 'Trade' },
+  { key: 'trade', label: 'Trade', note: 'The desk\'s record: −0.17R a trade after fees' },
   { key: 'saved', label: 'Saved levels' },
-  { key: 'heatmap', label: 'Liquidity heatmap (book)' },
-  { key: 'options', label: 'Options OI (strikes)' },
-  { key: 'profile', label: 'Volume profile' },
-  { key: 'bigtrades', label: 'Big trades' },
-  { key: 'delta', label: 'Delta / CVD pane' },
+  { key: 'heatmap', label: 'Liquidity heatmap (book)', note: 'Recorded since 29 Sep 2026 — too new to measure' },
+  { key: 'options', label: 'Options OI (strikes)', note: 'Positioning — no history to measure yet' },
+  { key: 'profile', label: 'Volume profile', note: 'Measured: POC no magnet, 80% rule no edge' },
+  { key: 'bigtrades', label: 'Big trades', note: 'Recorded since 29 Sep 2026 — too new to measure' },
+  { key: 'delta', label: 'Delta / CVD pane', note: 'Measured (Binance 2024–26): divergence no edge' },
 ];
 
 /**
@@ -81,7 +87,7 @@ export type SceneVLine = { t: 'vline'; layer: Layer; x: number; y1: number; y2: 
 export type SceneHeat = { t: 'heat'; layer: Layer; step: number; cols: readonly { x: number; cells: readonly (readonly [number, number])[] }[]; cap: number };
 /** Volume at price, drawn as a histogram anchored to the chart's right edge (flow-layers.ts). */
 export type SceneProfile = {
-  t: 'profile'; layer: Layer; bins: readonly { lo: number; hi: number; v: number; value: boolean }[]; max: number; poc: number;
+  t: 'profile'; layer: Layer; bins: readonly { lo: number; hi: number; v: number; value: boolean; buy?: number; known?: number }[]; max: number; poc: number;
   hvn: readonly number[]; lvn: readonly number[];
 };
 /**

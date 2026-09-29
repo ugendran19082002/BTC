@@ -333,10 +333,22 @@ no level; `r-multiple` -- exact projections only.
 
 ## 11. What is drawn: price action and the trade
 
-**Layers** (Layers menu, remembered per browser under `chart:layers:v2`). On by
-default: HTF, structure, liquidity, OB / FVG, levels, premium / discount,
-trade, saved levels, liquidity heatmap, volume profile, big trades, Δ / CVD
-pane. Off: sessions, VWAP, candle tags.
+**Layers** (Layers menu, remembered per browser under `chart:layers:v3`).
+Everything on at once buries the trade box, so the menu opens with **presets**
+-- one click each -- and every layer stays a checkbox below them:
+
+| Preset | Layers |
+|---|---|
+| **Desk** (default) | trade, structure, liquidity, OB / FVG, levels, saved, option strikes, big trades, volume profile, Δ / CVD |
+| Clean | trade, structure, liquidity, OB / FVG, saved |
+| Order flow | trade, heatmap, big trades, volume profile, Δ / CVD, saved |
+| Options | trade, option strikes, levels, volume profile, saved |
+| All | every layer |
+
+Each layer carries **what the research says about it** under its name --
+"Measured: POC no magnet, 80% rule no edge", "Recorded since 29 Sep 2026 --
+too new to measure" -- so no line is read as more than it has been shown to be
+(§14).
 
 **The trade -- a position box.** One bounded box from the entry candle to a
 little past the last candle: green from the entry to TP3, red from the entry
@@ -462,7 +474,43 @@ Four questions, four layers, kept apart so each keeps its meaning:
   tick at the profile's edge; **LVN** (a valley under a third of the tallest
   with a peak twice as tall on both sides -- a thin area between two areas of
   acceptance) as a cyan tick, and the LVN nearest price as a labelled level.
+- **Split by the aggressor.** Where the desk recorded the candles' flow, each
+  candle's taker-buy share is spread over its range like its volume, and each
+  bar shows buyers (blue, nearest the price scale) against sellers (fuchsia) --
+  the bubbles' colours. A bar whose volume is mostly from candles without a
+  recorded split stays grey rather than implying one; the POC keeps an amber
+  outline.
+- Measured (§14): yesterday's POC is traded through no more often than a level
+  as far from the open on the other side, and the 80% rule loses before fees
+  -- the profile shows where volume was, not where price will go.
 
+### Option strikes on price
+
+- The option board's three biggest **call** strikes and three biggest **put**
+  strikes within 3% of price, each a dashed line across the chart (orange
+  calls, teal puts) as thick as its share of the biggest, labelled
+  `CE 83,000 · OI 236 BTC · +12.0 1h` -- open interest in BTC (0.001 a
+  contract) and its change over the last hour. The biggest of each side is
+  drawn full, the others faded. **Max pain** as a dotted violet line when it
+  is within 5%.
+- From the chain the screen already loads; moves with the board, not the tick.
+- Positioning, not a promise: OI does not say which side of each contract is
+  the seller, and there is no history before September 2026 to measure it on.
+
+### Positioning and volatility (the HUD's context line)
+
+- **Perp OI** now against an hour ago (`perp_snapshots`, every five minutes),
+  in BTC, with its change and the read it makes with the price over the same
+  hour: new longs / new shorts / short covering / long unwinding / flat (under
+  0.5% of OI or 0.1% of price). `/api/perp` → `perpOi`.
+- **Funding** as Delta publishes it, per period; red above 0.02% (crowded
+  longs), green below zero.
+- **Volatility regime**: this chart's ATR(14) against its median over the
+  candles loaded -- expanding from 1.3×, quiet under 0.7× -- with the ATR in
+  points, which is what the stop's buffer and floor are sized from.
+- Measured (§14, on Binance's history): none of the four OI reads, nor
+  funding at its extremes, moved the next hour or day the same way in both
+  halves of 2024-26.
 ---
 
 ## 13. The tables behind the layers
@@ -531,14 +579,29 @@ HUD prints the desk's record beside every setup: **1,665 trades, 35% winners,
 variants on one data set is already a lot of looking; the next one is more
 likely to find luck than an edge.
 
-### The order-flow layers
+### The profile and the order-flow layers (29 Sep 2026)
 
-Not yet testable: `trade_flow_1m` has been recorded since mid-September 2026,
-`large_prints` and `book_heat_1m` since 29 September. Each will be tested the
-same way -- the base model, then the base plus one layer (heatmap walls,
-CVD / delta, big trades, profile), declared first, chosen on the earlier
-months and judged once on the later -- once there are a few months (earliest
-honest look: December 2026 for the flow, early 2027 for the book).
+The desk's own flow is weeks old, so the flow was measured on **Binance's
+BTCUSDT perpetual** -- the dominant venue, its public 1-minute candles carry the
+taker-buy volume, and its archive has 5-minute open interest, funding and the
+top traders' positioning (`data.binance.vision`, cached in `cache/binance`).
+Declared first, 2024-25 then 2026, a 10 bp round trip.
+
+| Study | 2024–25 | 2026 | Verdict |
+|---|---|---|---|
+| A1 80% rule (open outside yesterday's value area, back inside for an hour → the far edge) | −0.17R (t −2.4) | −0.35R (t −3.1) | loses before fees |
+| A2 yesterday's POC as a magnet (hit vs its mirror) | 61.5% vs 59.2% (z 0.8) | 64.8% vs 64.8% | no magnet |
+| B1 CVD divergence at a new 1h high / low, faded 1h | +0.5 bp gross | +0.2 bp gross | no |
+| B2 the desk's SMC trades with vs against the entry candle's delta | −0.14R vs −0.11R | −0.27R vs −0.25R | 95% already agree; no change |
+| C1 OI / price reads → next 4h | +2.0 bp ("new longs") | +23.3 bp (t 3.0) | not the same in both halves |
+| C2 funding in its top / bottom tenth → next 24h | not significant | not significant | no |
+| D top traders adding / cutting longs → next 4h | −8.6 bp (t −3.1) / +5.8 | −2.3 (t −0.4) / +5.0 | contrarian hint, not significant on 2026 |
+
+`research/PROFILE-STUDY.txt`, `research/FLOW-STUDY.txt`. The layers stay --
+they show where volume, size and positioning are, which is worth seeing -- but
+nothing on the chart claims they predict, and no signal was built from them.
+The heatmap and big trades on Delta itself have no history yet; they will be
+measured the same way once there are a few months.
 
 **Re-run** after changing a rule, and commit the outputs:
 
@@ -547,6 +610,8 @@ app/server/node_modules/.bin/tsx app/web/scripts/smc-study.ts
 # writes research/SMC-STUDY.txt and app/web/src/lib/smc/measured.data.ts
 app/server/node_modules/.bin/tsx app/web/scripts/crt-study.ts
 app/server/node_modules/.bin/tsx app/web/scripts/intraday-momentum-study.ts
+cd app/web && ../server/node_modules/.bin/tsx scripts/profile-study.ts
+cd app/web && ../server/node_modules/.bin/tsx scripts/flow-study.ts   # needs cache/binance
 ```
 
 ---
@@ -561,10 +626,8 @@ app/server/node_modules/.bin/tsx app/web/scripts/intraday-momentum-study.ts
   is the next recorder.
 - **Wall events**: pulled (gone as price came near), filled (traded through),
   moving -- need the walls' own history, then the prints at their price.
-- **OI / ΔOI / funding / basis pane**: `perp_snapshots` has them every five
-  minutes; not on the chart yet.
-- **Options strike OI as levels on price**: the chain is live; its biggest
-  CE / PE open interest could be drawn as horizontal levels.
+- **Basis** (perp mark against the index): recorded (`index_1m`,
+  `perp_snapshots`), not shown -- small and steady on the perpetual.
 - **Liquidation clusters**: Delta publishes none; third-party heatmaps are
   model estimates behind a paid API.
 - **SMT divergence** (BTC vs ETH): needs ETH candles alongside.

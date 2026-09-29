@@ -239,8 +239,22 @@ export class SmcPrimitive implements ISeriesPrimitive<Time> {
       if (y1 === null || y2 === null || !(b.v > 0)) continue;
       const len = (w * b.v) / it.max;
       const poc = it.poc >= b.lo && it.poc < b.hi;
-      ctx.fillStyle = poc ? 'rgba(251,191,36,0.42)' : b.value ? 'rgba(148,163,184,0.26)' : 'rgba(148,163,184,0.11)';
-      ctx.fillRect(width - len, Math.min(y1, y2) + 0.5, len, Math.max(1, Math.abs(y2 - y1) - 1));
+      const top = Math.min(y1, y2) + 0.5;
+      const h = Math.max(1, Math.abs(y2 - y1) - 1);
+      // Split by the aggressor where most of the bin's volume has a recorded split: buyers nearest
+      // the price scale (blue), sellers beyond (fuchsia), as the bubbles; grey where it was not recorded.
+      if (b.known !== undefined && b.buy !== undefined && b.known >= b.v * 0.5 && b.known > 0) {
+        const a = b.value ? 0.42 : 0.2;
+        const buyLen = len * (b.buy / b.known);
+        ctx.fillStyle = `rgba(59,130,246,${a})`;
+        ctx.fillRect(width - buyLen, top, buyLen, h);
+        ctx.fillStyle = `rgba(217,70,239,${a})`;
+        ctx.fillRect(width - len, top, len - buyLen, h);
+        if (poc) { ctx.strokeStyle = 'rgba(251,191,36,0.9)'; ctx.lineWidth = 1; ctx.strokeRect(width - len + 0.5, top, len - 1, h); }
+      } else {
+        ctx.fillStyle = poc ? 'rgba(251,191,36,0.42)' : b.value ? 'rgba(148,163,184,0.26)' : 'rgba(148,163,184,0.11)';
+        ctx.fillRect(width - len, top, len, h);
+      }
     }
     // Nodes: a short tick at the profile's left edge -- amber for acceptance (HVN), cyan for a thin area (LVN).
     const tick = (price: number, color: string) => {

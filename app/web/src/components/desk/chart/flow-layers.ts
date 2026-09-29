@@ -25,7 +25,8 @@ import { C, type SceneItem } from './scene';
  */
 
 export type VolumeProfile = {
-  bins: { lo: number; hi: number; v: number; value: boolean }[];
+  /** `buy`: the taker-buy share of `known`, the volume whose candles' split was recorded. */
+  bins: { lo: number; hi: number; v: number; value: boolean; buy: number; known: number }[];
   poc: number;
   vah: number;
   val: number;
@@ -38,8 +39,13 @@ export type VolumeProfile = {
 /** The share of volume the value area holds, by convention. */
 const VALUE_AREA = 0.7;
 
-/** Volume at price over bars `from`..`to` (inclusive), in `nBins` equal steps. Null with no volume. */
-export function volumeProfile(bars: readonly Bar[], from: number, to: number, nBins = 48): VolumeProfile | null {
+/**
+ * Volume at price over bars `from`..`to` (inclusive), in `nBins` equal steps.
+ * With `buyShare` (a candle's taker-buy share of its volume, null where not
+ * recorded), each bin also carries how much of it was buying -- the candle's
+ * share spread over its range like its volume. Null with no volume.
+ */
+export function volumeProfile(bars: readonly Bar[], from: number, to: number, nBins = 48, buyShare?: (i: number) => number | null): VolumeProfile | null {
   const lo = Math.max(0, Math.floor(from));
   const hi = Math.min(bars.length - 1, Math.ceil(to));
   if (hi < lo) return null;
@@ -49,18 +55,25 @@ export function volumeProfile(bars: readonly Bar[], from: number, to: number, nB
   if (!(max > min)) return null;
   const step = (max - min) / nBins;
   const v = new Array<number>(nBins).fill(0);
+  const buy = new Array<number>(nBins).fill(0);
+  const known = new Array<number>(nBins).fill(0);
   let total = 0;
   for (let i = lo; i <= hi; i++) {
     const b = bars[i]!;
     if (!(b.volume > 0)) continue;
     total += b.volume;
+    const share = buyShare?.(i) ?? null;
+    const add = (k: number, vol: number) => {
+      v[k]! += vol;
+      if (share !== null) { known[k]! += vol; buy[k]! += vol * share; }
+    };
     const range = b.high - b.low;
     const first = Math.min(nBins - 1, Math.floor((b.low - min) / step));
     const last = Math.min(nBins - 1, Math.floor((b.high - min) / step));
-    if (range <= 0 || first === last) { v[first]! += b.volume; continue; }
+    if (range <= 0 || first === last) { add(first, b.volume); continue; }
     for (let k = first; k <= last; k++) {
       const overlap = Math.min(b.high, min + (k + 1) * step) - Math.max(b.low, min + k * step);
-      if (overlap > 0) v[k]! += b.volume * (overlap / range);
+      if (overlap > 0) add(k, b.volume * (overlap / range));
     }
   }
   if (!(total > 0)) return null;
@@ -78,7 +91,7 @@ export function volumeProfile(bars: readonly Bar[], from: number, to: number, nB
   const { hvn, lvn } = nodes(v, poc);
   const mid = (k: number) => min + (k + 0.5) * step;
   return {
-    bins: v.map((vol, k) => ({ lo: min + k * step, hi: min + (k + 1) * step, v: vol, value: k >= a && k <= z })),
+    bins: v.map((vol, k) => ({ lo: min + k * step, hi: min + (k + 1) * step, v: vol, value: k >= a && k <= z, buy: buy[k]!, known: known[k]! })),
     poc: mid(poc),
     vah: min + (z + 1) * step,
     val: min + a * step,

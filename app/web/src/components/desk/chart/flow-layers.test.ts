@@ -112,6 +112,20 @@ describe('big trades', () => {
   });
 });
 
+describe('the profile, split by the aggressor', () => {
+  it('[critical] each bin carries the buying of the candles over it, where their split was recorded', () => {
+    const bars = [bar(0, 100, 110, 1_000), bar(300, 100, 110, 1_000), bar(600, 120, 130, 500)];
+    const share = [0.8, 0.4, null];
+    const p = volumeProfile(bars, 0, 2, 3, (i) => share[i]!)!;
+    const low = p.bins[0]!; // 100-110: both of the first two candles
+    expect(low.known).toBeCloseTo(2_000, 6);
+    expect(low.buy / low.known).toBeCloseTo(0.6, 9);
+    const high = p.bins[2]!; // 120-130: the third, not recorded
+    expect(high.known).toBe(0);
+    expect(high.v).toBeCloseTo(500, 6);
+  });
+});
+
 describe('volume nodes', () => {
   it('[critical] finds a thin area between two areas of acceptance, and a second peak apart from the POC', () => {
     // Two humps -- 100-110 heavy, 130-140 lighter -- with almost nothing traded between.

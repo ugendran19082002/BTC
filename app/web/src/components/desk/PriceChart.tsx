@@ -143,9 +143,11 @@ export function PriceChart({
     if (!layers.has('profile') || !bars.length) return [];
     const to = Math.min(bars.length - 1, inView?.to ?? bars.length - 1);
     const from = Math.max(0, inView?.from ?? to - 90);
-    const p = volumeProfile(bars, from, to);
+    // Each candle's taker-buy share from the recorded flow, where there is one: the profile splits by it.
+    const split = new Map((flowBars ?? []).map((f) => [f.time, f.buy + f.sell > 0 ? f.buy / (f.buy + f.sell) : null]));
+    const p = volumeProfile(bars, from, to, 48, (i) => split.get(bars[i]!.time) ?? null);
     return p ? profileScene(p, from, bars[bars.length - 1]!.close) : [];
-  }, [layers, bars, inView]);
+  }, [layers, bars, inView, flowBars]);
   // Strike levels move with the board (every few seconds), not the tick; the price only picks which strikes are near.
   const nearPrice = Math.round((bars[bars.length - 1]?.close ?? 0) / 100) * 100;
   const strikeItems = useMemo<SceneItem[]>(
@@ -373,10 +375,10 @@ export function PriceChart({
                     );
                   })}
                 </div>
-                {LAYERS.map(({ key, label }) => (
+                {LAYERS.map(({ key, label, note }) => (
                   <label key={key} className="pc-layer">
                     <input type="checkbox" checked={layers.has(key)} onChange={() => toggleLayer(key)} />
-                    <span>{label}</span>
+                    <span>{label}{note && <small className="pc-layer-note">{note}</small>}</span>
                   </label>
                 ))}
                 {saved.length > 0 && (
