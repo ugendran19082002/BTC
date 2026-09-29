@@ -131,7 +131,7 @@ describe('the price chart', () => {
     expect(primitives).toHaveLength(1);
     const scene = primitives[0]!.scene;
     const xs = scene.filter((it) => it.layer !== 'trade')
-      .flatMap((it) => (it.t === 'box' || it.t === 'line' ? [it.x1] : it.t === 'mark' || it.t === 'vline' || it.t === 'bubble' ? [it.x] : it.t === 'path' ? it.points.map((p) => p[0]) : []));
+      .flatMap((it) => (it.t === 'box' || it.t === 'line' ? [it.x1] : it.t === 'mark' || it.t === 'vline' || it.t === 'bubble' ? [it.x] : it.t === 'path' ? it.points.map((p) => p[0]) : it.t === 'heat' ? it.cols.map((c) => c.x) : []));
     expect(Math.max(-1, ...xs)).toBeLessThan(59);
   });
 

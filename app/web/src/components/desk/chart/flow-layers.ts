@@ -1,5 +1,5 @@
 import type { Bar } from '@/lib/smc/types';
-import type { FlowBar } from '@/api/desk';
+import type { FlowBar, HeatColumn, Wall } from '@/api/desk';
 import { C, type SceneItem } from './scene';
 
 /**
@@ -261,4 +261,32 @@ export function flowRead(flow: readonly FlowBar[], time: number, tfSec: number, 
   const elapsed = Math.min(tfSec, Math.max(1, nowSec - b.time));
   const rate = b.trades * (tfSec / elapsed);
   return { delta: b.buy - b.sell, buyPct: total > 0 ? b.buy / total : null, trades: b.trades, velocity: avg ? rate / avg : null, whole: whole(b, tfSec, nowSec) };
+}
+
+const WALL = '#fde047';
+
+/**
+ * The book heatmap and its persistent walls. Columns are placed on the candles
+ * whose time they carry (none where there is no candle); colour is capped at
+ * the 95th percentile of the cells in the columns given. Walls: a level of at
+ * least three times the side's usual resting size, held five minutes running
+ * up to now -- a line from where it began, with side, price, size and how
+ * long. Resting orders can be pulled; a wall is a place, not a promise.
+ */
+export function heatScene(cols: readonly HeatColumn[], step: number, walls: readonly Wall[], bars: readonly Bar[], tfSec: number): SceneItem[] {
+  if (!bars.length) return [];
+  const index = new Map(bars.map((b, i) => [b.time, i]));
+  const placed = cols.flatMap((c) => { const x = index.get(c.time); return x === undefined ? [] : [{ x, cells: c.cells }]; });
+  const sizes = placed.flatMap((c) => c.cells.map((cell) => cell[1])).sort((a, b) => a - b);
+  const cap = sizes[Math.floor(sizes.length * 0.95)] ?? 0;
+  const out: SceneItem[] = [];
+  if (placed.length && cap > 0) out.push({ t: 'heat', layer: 'heatmap', step, cols: placed, cap });
+  const last = bars.length - 1;
+  for (const w of walls) {
+    out.push({
+      t: 'line', layer: 'heatmap', x1: Math.max(0, last - Math.ceil((w.minutes * 60) / tfSec)), x2: 'right', y: w.price, color: WALL, width: 2,
+      label: `${w.side === 'bid' ? 'Bid' : 'Ask'} wall ${fmt(w.price)} · ${btc(w.size)} · ${w.minutes}m`, labelAt: 'end', labelSide: w.side === 'bid' ? 'below' : 'above', priority: 72,
+    });
+  }
+  return out;
 }

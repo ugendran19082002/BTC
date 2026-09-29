@@ -1,8 +1,27 @@
 import { describe, expect, it } from 'vitest';
 import type { Bar } from '@/lib/smc/types';
-import { bigTradeScene, deltaSeries, flowRead, profileScene, volumeProfile } from './flow-layers';
+import { bigTradeScene, deltaSeries, flowRead, heatScene, profileScene, volumeProfile } from './flow-layers';
 
 const bar = (time: number, low: number, high: number, volume: number): Bar => ({ time, open: low, high, low, close: high, volume });
+
+describe('the book heatmap', () => {
+  const bars = [bar(1_000, 100, 110, 1), bar(1_300, 100, 110, 1), bar(1_600, 100, 110, 1)];
+
+  it('[critical] puts each column on the candle it belongs to, none where there is no candle, colour capped at the 95th percentile', () => {
+    const cells = (n: number) => Array.from({ length: n }, (_, k) => [k, k + 1] as [number, number]);
+    const items = heatScene([{ time: 1_300, cells: cells(20) }, { time: 9_999, cells: [[1, 5_000]] }], 25, [], bars, 300);
+    const heat = items.find((i) => i.t === 'heat');
+    expect(heat?.t === 'heat' && heat.cols.map((c) => c.x)).toEqual([1]);
+    expect(heat?.t === 'heat' && heat.cap).toBe(20);
+  });
+
+  it('[critical] draws each persistent wall from where it began, labelled with side, price, size and how long', () => {
+    const items = heatScene([], 25, [{ side: 'ask', price: 84_212.5, size: 12_400, minutes: 10 }], bars, 300);
+    const line = items.find((i) => i.t === 'line');
+    expect(line?.t === 'line' && [line.x1, line.x2, line.y]).toEqual([0, 'right', 84_212.5]);
+    expect(line?.t === 'line' && line.label).toBe('Ask wall 84,213 · 12 BTC · 10m');
+  });
+});
 
 describe('the volume profile', () => {
   it('[critical] spreads each candle over its range, and finds the busiest price', () => {

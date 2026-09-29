@@ -15,8 +15,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { SmcPrimitive } from './chart/smc-primitive';
 import { buildScene, C, DEFAULT_LAYERS, htfScene, LAYERS, type Layer, type SceneItem } from './chart/scene';
 import { ChartHud } from './chart/ChartHud';
-import { bigTradeScene, bigTradeSummary, deltaSeries, flowRead, profileScene, volumeProfile, type BigTrade } from './chart/flow-layers';
-import type { FlowBar } from '@/api/desk';
+import { bigTradeScene, bigTradeSummary, deltaSeries, flowRead, heatScene, profileScene, volumeProfile, type BigTrade } from './chart/flow-layers';
+import type { FlowBar, HeatColumn, Wall } from '@/api/desk';
 import { LtpChip } from './chart/LtpChip';
 import './chart/price-chart.css';
 
@@ -43,7 +43,7 @@ const IST_FULL = new Intl.DateTimeFormat('en-IN', {
  * appears and then vanishes within a candle.
  */
 export function PriceChart({
-  bars, tf, views = [], onView, loading = false, error, context = [], regime, higher = [], bigTrades, flowBars, ltp, symbol = 'BTCUSD',
+  bars, tf, views = [], onView, loading = false, error, context = [], regime, higher = [], bigTrades, flowBars, heat, ltp, symbol = 'BTCUSD',
 }: {
   bars: readonly Candle[];
   tf: ChartTf;
@@ -60,6 +60,8 @@ export function PriceChart({
   higher?: readonly { tf: string; tfSec: number; bars: readonly Candle[]; show: 'zones' | 'structure' }[];
   /** Large taker orders for the bubbles, the smallest drawn (contracts, set from the market), and how that was set. */
   bigTrades?: { prints: readonly BigTrade[]; min: number; basis?: string };
+  /** The recorded order book: one column of resting size per candle, and the persistent walls now. */
+  heat?: { step: number; columns: readonly HeatColumn[]; walls: readonly Wall[] } | null;
   /** Aggressive flow per candle, for the delta / CVD pane and the readout. */
   flowBars?: readonly FlowBar[];
   /** The perp's last trade, from the stream, for the LTP chip. */
@@ -121,6 +123,7 @@ export function PriceChart({
   // The order-flow layers follow every tick and every scroll, so they are kept apart from the engine's scene.
   const flow = useMemo<SceneItem[]>(() => {
     const items: SceneItem[] = [];
+    if (layers.has('heatmap') && heat) items.push(...heatScene(heat.columns, heat.step, heat.walls, bars, tfSec));
     if (layers.has('profile') && bars.length) {
       const to = Math.min(bars.length - 1, inView?.to ?? bars.length - 1);
       const from = Math.max(0, inView?.from ?? to - 90);
@@ -129,7 +132,7 @@ export function PriceChart({
     }
     if (layers.has('bigtrades') && bigTrades) items.push(...bigTradeScene(bigTrades.prints, bars, tfSec, bigTrades.min));
     return items;
-  }, [layers, bars, inView, bigTrades, tfSec]);
+  }, [layers, bars, inView, bigTrades, heat, tfSec]);
   const scene = useMemo(() => [...base, ...flow], [base, flow]);
 
   const loadSaved = useCallback(async () => {

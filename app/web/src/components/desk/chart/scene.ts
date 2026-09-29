@@ -14,7 +14,7 @@ import { SCALE_OUT } from '@/lib/smc/engine';
  */
 
 export type Layer = 'structure' | 'liquidity' | 'zones' | 'levels' | 'pd' | 'sessions' | 'vwap' | 'candles' | 'trade' | 'saved' | 'htf'
-  | 'profile' | 'bigtrades' | 'delta';
+  | 'profile' | 'bigtrades' | 'delta' | 'heatmap';
 
 export const LAYERS: readonly { key: Layer; label: string }[] = [
   { key: 'htf', label: 'HTF: 1H zones, 15m structure' },
@@ -28,12 +28,13 @@ export const LAYERS: readonly { key: Layer; label: string }[] = [
   { key: 'candles', label: 'Candles' },
   { key: 'trade', label: 'Trade' },
   { key: 'saved', label: 'Saved levels' },
+  { key: 'heatmap', label: 'Liquidity heatmap (book)' },
   { key: 'profile', label: 'Volume profile' },
   { key: 'bigtrades', label: 'Big trades' },
   { key: 'delta', label: 'Delta / CVD pane' },
 ];
 
-export const DEFAULT_LAYERS: readonly Layer[] = ['htf', 'structure', 'liquidity', 'zones', 'levels', 'pd', 'trade', 'saved', 'profile', 'bigtrades', 'delta'];
+export const DEFAULT_LAYERS: readonly Layer[] = ['htf', 'structure', 'liquidity', 'zones', 'levels', 'pd', 'trade', 'saved', 'heatmap', 'profile', 'bigtrades', 'delta'];
 
 /** 'right' runs to the chart's right edge: a level still in play. */
 type XEnd = number | 'right';
@@ -57,6 +58,13 @@ export type SceneMark = {
 };
 /** A vertical segment at one candle: the trade's spine. */
 export type SceneVLine = { t: 'vline'; layer: Layer; x: number; y1: number; y2: number; color: string; priority: number };
+/**
+ * Resting liquidity through time: one column per candle (`x`, a bar index),
+ * cells of `step` dollars from bin k (price k * step), contracts. `cap` is the
+ * size drawn at full colour -- the 95th percentile in view, so one huge bin by
+ * the touch does not wash out the rest.
+ */
+export type SceneHeat = { t: 'heat'; layer: Layer; step: number; cols: readonly { x: number; cells: readonly (readonly [number, number])[] }[]; cap: number };
 /** Volume at price, drawn as a histogram anchored to the chart's right edge (flow-layers.ts). */
 export type SceneProfile = {
   t: 'profile'; layer: Layer; bins: readonly { lo: number; hi: number; v: number; value: boolean }[]; max: number; poc: number;
@@ -73,7 +81,7 @@ export type SceneBubble = {
   tip?: string;
   faint?: boolean;
 };
-export type SceneItem = SceneBox | SceneLine | ScenePath | SceneMark | SceneVLine | SceneProfile | SceneBubble;
+export type SceneItem = SceneBox | SceneLine | ScenePath | SceneMark | SceneVLine | SceneProfile | SceneBubble | SceneHeat;
 
 export const C = {
   bull: '#26a17b', bear: '#e2504f',

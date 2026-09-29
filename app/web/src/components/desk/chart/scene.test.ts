@@ -6,7 +6,7 @@ import { buildScene, DEFAULT_LAYERS, htfScene, LAYERS, type Layer, type SceneIte
 const bars = walk(3 * 288, 18);
 const st = runSmc(bars, { tfSec: 300 });
 const all = new Set<Layer>(LAYERS.map((l) => l.key));
-const xsOf = (it: SceneItem) => (it.t === 'mark' || it.t === 'vline' || it.t === 'bubble' ? [it.x] : it.t === 'path' ? it.points.map((p) => p[0]) : it.t === 'profile' ? [] : [it.x1, ...(typeof it.x2 === 'number' ? [it.x2] : [])]);
+const xsOf = (it: SceneItem) => (it.t === 'mark' || it.t === 'vline' || it.t === 'bubble' ? [it.x] : it.t === 'path' ? it.points.map((p) => p[0]) : it.t === 'profile' ? [] : it.t === 'heat' ? it.cols.map((c) => c.x) : [it.x1, ...(typeof it.x2 === 'number' ? [it.x2] : [])]);
 
 describe('the scene', () => {
   it('[critical] draws nothing past the last closed candle, except the trade box reaching into the space on the right', () => {

@@ -12,6 +12,7 @@ import { loadDays, reloadDays } from '../../backtest/backtest.js';
 import { tradingService, SHORT_CAP_KEY } from '../../trading/service.js';
 import { appliedMigrations } from '../../db/migrate.js';
 import { lastOptionSnapshot, lastOptionSnapshotAt } from '../../market/option-snapshots.js';
+import { heatColumnsOf, heatMinutes, persistentWalls } from '../../market/book-heat.js';
 import { autoLargeMin, flowBarsOf, flowFeedHealth, flowMinutes, flowSummary, largePrints, liveBook, livePerp, oiPulse, optionFlowSummary, LARGE_PRINT_CONTRACTS } from '../../market/flow.js';
 import { changes } from '../../market/changes.js';
 import { one } from '../../db/pool.js';
@@ -194,6 +195,36 @@ export function registerDeskRoutes(app: FastifyInstance) {
     } catch (e) {
       reply.code(502);
       return { error: (e as Error).message, bars: [] };
+    }
+  });
+
+  /**
+   * The perpetual's resting liquidity for the chart's heatmap: one column per
+   * candle (`tf` 1m or 5m), [bin, contracts] cells at $10 (1m) or $25 (5m) a
+   * bin, and the persistent walls now. `since` (epoch seconds) asks only for
+   * the columns from that candle on -- the chart asks for everything once,
+   * then for the newest -- and `hours` caps how far back (up to 48).
+   */
+  app.get('/api/flow/heatmap', async (req, reply) => {
+    const q = req.query as { tf?: string; hours?: string; since?: string };
+    const tfSec = q.tf === '1m' ? 60 : 300;
+    const step = tfSec === 60 ? 10 : 25;
+    const hours = Math.min(48, Math.max(1, Number(q.hours ?? 36) || 36));
+    const now = Date.now();
+    const earliest = now - hours * 3_600_000;
+    const asked = Number(q.since) > 0 ? Number(q.since) * 1000 : earliest;
+    const from = Math.floor(Math.max(asked, earliest) / 1000 / tfSec) * tfSec * 1000;
+    const wallsFrom = now - 30 * 60_000;
+    try {
+      const minutes = await heatMinutes(Math.min(from, wallsFrom));
+      return {
+        tf: tfSec === 60 ? '1m' : '5m', step,
+        columns: heatColumnsOf(minutes.filter((m) => m.at >= from), tfSec, step),
+        walls: persistentWalls(minutes.filter((m) => m.at >= wallsFrom), step),
+      };
+    } catch (e) {
+      reply.code(502);
+      return { error: (e as Error).message, step, columns: [], walls: [] };
     }
   });
 

@@ -3,7 +3,7 @@ import type {
   PrimitivePaneViewZOrder, SeriesAttachedParameter, SeriesType, Time,
 } from 'lightweight-charts';
 import { placeLabels, stacked, type LabelRequest, type Rect } from './label-layout';
-import type { SceneBox, SceneBubble, SceneItem, SceneLine, SceneMark, SceneProfile } from './scene';
+import type { SceneBox, SceneBubble, SceneHeat, SceneItem, SceneLine, SceneMark, SceneProfile } from './scene';
 
 /**
  * Draws a scene (scene.ts) on the chart's own canvas, as a series primitive.
@@ -114,6 +114,8 @@ export class SmcPrimitive implements ISeriesPrimitive<Time> {
   // ---------------------------------------------------------------- back
 
   private drawBack({ context: ctx, mediaSize }: Scope) {
+    // The heatmap first: under the zones, the profile and the candles.
+    for (const it of this.scene) if (it.t === 'heat') this.heat(ctx, it, mediaSize.width);
     for (const it of this.scene) {
       if (it.t === 'profile') { this.profile(ctx, it, mediaSize.width); continue; }
       if (it.t !== 'box') continue;
@@ -197,6 +199,33 @@ export class SmcPrimitive implements ISeriesPrimitive<Time> {
       id: nextId(), priority: it.priority - (it.faint ? 30 : 0), text: it.label, color: it.color, faint: it.faint,
       candidates: it.labelAt === 'end' ? [first, other, ...stacked(first, LABEL_H + 2).slice(1)] : [first, other],
     });
+  }
+
+  /**
+   * Each candle's column of resting size, a cell per price step, coloured from
+   * deep blue through cyan to yellow as it nears the cap -- the usual heatmap
+   * scale -- by the square root, so middling walls still read. Faint cells are
+   * not drawn at all, and the strongest stays translucent over the candles.
+   */
+  private heat(ctx: Ctx, it: SceneHeat, width: number) {
+    const a = this.x(0, Infinity);
+    const b = this.x(1, Infinity);
+    const spacing = a !== null && b !== null ? Math.abs(b - a) : 8;
+    ctx.save();
+    for (const col of it.cols) {
+      const cx = this.x(col.x, Infinity);
+      if (cx === null || cx < -spacing || cx > width + spacing) continue;
+      for (const [k, v] of col.cells) {
+        const t = Math.sqrt(Math.min(1, v / it.cap));
+        if (t < 0.15) continue;
+        const y1 = this.y((k + 1) * it.step);
+        const y2 = this.y(k * it.step);
+        if (y1 === null || y2 === null) continue;
+        ctx.fillStyle = heatColor(t);
+        ctx.fillRect(cx - spacing / 2, Math.min(y1, y2), spacing + 0.5, Math.max(1, Math.abs(y2 - y1)));
+      }
+    }
+    ctx.restore();
   }
 
   /** Right-anchored, at most a fifth of the width, so the latest candles stay readable through it. */
@@ -345,6 +374,16 @@ export class SmcPrimitive implements ISeriesPrimitive<Time> {
       candidates: h >= LABEL_H + 4 ? [inside, above] : [above, { ...above, y: top + h + 2 }],
     });
   }
+}
+
+/** 0-1 to the heatmap scale: deep blue, cyan, yellow; alpha rising with it. */
+function heatColor(t: number): string {
+  const stops: [number, number, number][] = [[30, 58, 138], [6, 182, 212], [250, 204, 21]];
+  const f = Math.min(1, Math.max(0, t)) * (stops.length - 1);
+  const i = Math.min(stops.length - 2, Math.floor(f));
+  const u = f - i;
+  const [r, g, b] = stops[i]!.map((c, j) => Math.round(c + (stops[i + 1]![j]! - c) * u));
+  return `rgba(${r},${g},${b},${(0.1 + 0.42 * t).toFixed(3)})`;
 }
 
 function pill(ctx: Ctx, r: Rect, text: string, color: string) {

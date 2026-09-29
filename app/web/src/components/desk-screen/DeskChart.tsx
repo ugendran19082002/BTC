@@ -1,8 +1,8 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Candle } from '@/types/desk';
 import type { ChartTf } from '@/components/desk/PriceChart';
 import { PriceChart } from '@/components/desk/PriceChart';
-import { getCandles, getFlowBars, getLargePrints } from '@/api/desk';
+import { getCandles, getFlowBars, getHeatmap, getLargePrints, type HeatColumn, type Wall } from '@/api/desk';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import { isForming, withLiveBar, withLtp } from '@/lib/live-bar';
@@ -14,6 +14,32 @@ const M5 = 300;
 const M1 = 60;
 /** What the viewer may switch the chart to. 5m is the main chart; 1m is for timing an entry the 5m already shows. */
 const VIEWS: readonly ChartTf[] = ['5m', '1m'];
+
+type Heat = { tf: string; step: number; columns: HeatColumn[]; walls: Wall[] };
+
+/**
+ * The book heatmap: every column once, then only from the newest one on (it
+ * is still filling), merged in. Starts over when the timeframe changes.
+ */
+function useHeatmap(tf: '1m' | '5m'): Heat | null {
+  const [heat, setHeat] = useState<Heat | null>(null);
+  const ref = useRef(heat);
+  ref.current = heat;
+  const { data } = usePoll(() => {
+    const cur = ref.current;
+    return getHeatmap(tf, cur && cur.tf === tf ? cur.columns[cur.columns.length - 1]?.time : undefined);
+  }, 20_000, { deps: [tf] });
+  useEffect(() => {
+    if (!data) return;
+    setHeat((cur) => {
+      if (!cur || cur.tf !== data.tf || cur.step !== data.step) return data;
+      const from = data.columns[0]?.time ?? Infinity;
+      const oldest = Date.now() / 1000 - 48 * 3600;
+      return { ...data, columns: [...cur.columns.filter((c) => c.time < from && c.time >= oldest), ...data.columns] };
+    });
+  }, [data]);
+  return heat && heat.tf === tf ? heat : null;
+}
 
 /**
  * The Live screen's chart, with the timeframe context the setup reads:
@@ -46,6 +72,7 @@ export function DeskChart({
   // Big trades over what the chart spans (36 hours of 5m, 8 of 1m); how big is big, the server reads from the market.
   const bigHours = shown === '1m' ? 8 : 36;
   const { data: big } = usePoll(() => getLargePrints(bigHours), 15_000, { deps: [bigHours] });
+  const heat = useHeatmap(shown === '1m' ? '1m' : '5m');
   const { data: flow } = usePoll(() => getFlowBars(shown === '1m' ? '1m' : '5m', bigHours), 10_000, { deps: [shown, bigHours] });
   const bigTrades = useMemo(() => ({ prints: big?.prints ?? [], min: big?.min ?? 200, basis: big?.basis }), [big]);
 
@@ -94,6 +121,7 @@ export function DeskChart({
           higher={higher}
           bigTrades={bigTrades}
           flowBars={flow?.bars}
+          heat={heat}
           ltp={ltp}
         />
       </div>

@@ -17,6 +17,7 @@ import { captureBoard } from './market/chain-features.js';
 import { wallWithinEm } from './http/routes/desk.routes.js';
 import { captureIndex } from './market/index-1m.js';
 import { capturePerpSnapshot, flowSchema, flushTradeFlow, startFlowSocket } from './market/flow.js';
+import { flushBookHeat, startBookHeat } from './market/book-heat.js';
 import { noteError } from './observability/errors.js';
 
 /**
@@ -153,4 +154,11 @@ setTimeout(recordBoardNow, 25_000).unref();
  */
 startFlowSocket((line) => app.log.info(line));
 setInterval(() => { flushTradeFlow(Date.now()).catch(warn('trade-flow')); }, 20_000).unref();
+
+/*
+ * The perpetual's resting book, every ten seconds, averaged and written a
+ * minute at a time: the chart's liquidity heatmap (market/book-heat.ts).
+ */
+startBookHeat();
+setInterval(() => { flushBookHeat(Date.now()).catch(warn('book-heat')); }, 20_000).unref();
 
