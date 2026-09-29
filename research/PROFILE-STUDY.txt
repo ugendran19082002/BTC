@@ -1,0 +1,15 @@
+Volume profile on BTCUSD 5m, 941 UTC days with the day before whole; fees 0.05% a side
+Declared before running: see the header of app/web/scripts/profile-study.ts.
+
+== A1 the 80% rule (open outside yesterday's value area, two 30m closes back inside -> the far edge)
+   2024-25  n  226  win  45.1%  gross -0.040R  net -0.168R a trade (t -2.43)
+   2026     n   66  win  45.5%  gross -0.201R  net -0.352R a trade (t -3.10)
+== A1 + fee floor (stop >= 0.5% of price)
+   2024-25  n  181  win  48.1%  gross -0.005R  net -0.088R a trade (t -1.21)
+   2026     n   50  win  52.0%  gross -0.133R  net -0.221R a trade (t -2.08)
+
+== A2 the POC as a magnet (share of days that trade through it, against its mirror from the open)
+   2024-25  days 610  POC 61.5%  mirror 59.2%  difference 2.3 pts (z 0.82)
+   2026     days 213  POC 64.8%  mirror 64.8%  difference 0.0 pts (z 0.00)
+
+A1 does not hold by the declared rule; with the fee floor it does not hold.

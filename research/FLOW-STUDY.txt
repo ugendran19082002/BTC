@@ -1,0 +1,46 @@
+Order flow, OI, funding and top traders -- Binance BTCUSDT perpetual, 2024-01-01 to 2026-08-31
+280,512 5m candles from 1m klines, 280,382 5m OI / top-trader rows, 2922 funding prints. Round trip 10 bp.
+Declared before running: see the header of app/web/scripts/flow-study.ts.
+
+== B1 CVD divergence at a new 1-hour close high / low, faded for an hour (bp, before fees)
+   every new 1h extreme, faded    2024-25 n 30150  mean +0.39 bp (t   1.21)   2026 n 10138  mean +1.85 bp (t   3.73)
+   with CVD divergence, faded     2024-25 n  9045  mean +0.52 bp (t   0.94)   2026 n  2929  mean +0.21 bp (t   0.23)
+
+== B2 the desk's SMC trades, split by the entry candle's taker delta (net R a trade, taker fees)
+   every desk trade               2024-25 n  1282  mean -0.14 R (t  -3.65)   2026 n   383  mean -0.27 R (t  -4.51)
+   entry delta agrees             2024-25 n  1210  mean -0.14 R (t  -3.57)   2026 n   351  mean -0.27 R (t  -4.40)
+   entry delta against            2024-25 n    72  mean -0.11 R (t  -0.74)   2026 n    32  mean -0.25 R (t  -1.05)
+
+== C1 perp OI and price over the last hour, and what came next (bp)
+   new longs: next 1h             2024-25 n  1142  mean +0.45 bp (t   0.25)   2026 n   251  mean +10.61 bp (t   2.40)
+   new longs: next 4h             2024-25 n  1142  mean +2.04 bp (t   0.59)   2026 n   251  mean +23.33 bp (t   3.01)
+   new shorts: next 1h            2024-25 n   727  mean -0.46 bp (t  -0.19)   2026 n   198  mean -2.93 bp (t  -0.62)
+   new shorts: next 4h            2024-25 n   727  mean -2.83 bp (t  -0.57)   2026 n   198  mean -11.91 bp (t  -1.37)
+   short covering: next 1h        2024-25 n   806  mean -1.01 bp (t  -0.45)   2026 n   181  mean -1.48 bp (t  -0.32)
+   short covering: next 4h        2024-25 n   806  mean +2.88 bp (t   0.68)   2026 n   181  mean -1.74 bp (t  -0.24)
+   long unwinding: next 1h        2024-25 n  1078  mean +1.63 bp (t   0.75)   2026 n   289  mean -4.45 bp (t  -1.29)
+   long unwinding: next 4h        2024-25 n  1078  mean +1.45 bp (t   0.38)   2026 n   289  mean +9.62 bp (t   1.53)
+   flat: next 1h                  2024-25 n 13747  mean +0.63 bp (t   1.55)   2026 n  4910  mean -0.19 bp (t  -0.31)
+   flat: next 4h                  2024-25 n 13747  mean +2.34 bp (t   2.86)   2026 n  4910  mean -1.59 bp (t  -1.26)
+
+== C2 funding at its extremes (tenths from 2024-25) and the next 24 hours (bp)
+   thresholds: bottom tenth <= -0.0001%, top tenth >= 0.0100% a period
+   every funding print            2024-25 n  2192  mean +12.66 bp (t   2.44)   2026 n   727  mean -1.95 bp (t  -0.23)
+   top tenth (crowded longs)      2024-25 n   862  mean +11.97 bp (t   1.37)   2026 n    47  mean +12.85 bp (t   0.35)
+   bottom tenth (crowded shorts)  2024-25 n   220  mean +33.06 bp (t   1.96)   2026 n   206  mean +17.57 bp (t   1.02)
+
+== D top traders' long / short position ratio: its 4-hour change at the extremes, and the next 4 hours (bp)
+   thresholds: 4h change <= -0.044 (top traders cutting longs), >= 0.045 (adding longs)
+   every hour                     2024-25 n 17514  mean +2.19 bp (t   2.83)   2026 n  5829  mean -0.32 bp (t  -0.26)
+   top traders adding longs       2024-25 n  1752  mean -8.62 bp (t  -3.11)   2026 n   438  mean -2.30 bp (t  -0.42)
+   top traders cutting longs      2024-25 n  1752  mean +5.77 bp (t   2.18)   2026 n   502  mean +5.03 bp (t   1.03)
+
+== Verdicts, by the declared rule
+   B1 CVD divergence fade: does not hold (net of the 10 bp round trip: -9.5 / -9.8 bp).
+   B2 delta-agreeing SMC trades: no edge (-0.139R / -0.273R a trade after fees).
+   C1 new longs -> next 4h: does not hold (2.0 / 23.3 bp).
+   C1 new shorts -> next 4h: does not hold (-2.8 / -11.9 bp).
+   C1 short covering -> next 4h: does not hold (2.9 / -1.7 bp).
+   C1 long unwinding -> next 4h: does not hold (1.5 / 9.6 bp).
+   C2 high funding -> next 24h: does not hold; low funding: does not hold.
+   D top traders adding longs -> next 4h: does not hold; cutting: does not hold.
