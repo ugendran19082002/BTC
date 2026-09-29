@@ -373,7 +373,8 @@ Created directly in `public` by `market-004-option-snapshots`.
 
 > **Retired 28 Sep 2026.** Nothing writes or reads `market_states`,
 > `market_state_checks` or `shock_snapshots` any more; the two paragraphs
-> below describe what they held. Dropping them is a TODO.
+> below describe what they held. **Dropped 29 Sep 2026, 08:07 UTC**, after
+> the backup `backups/btc_desk-20260929-0807.dump`.
 
 `market_states` (`market/state-history.ts`, migrations `market-010` and
 `market-011`): every
