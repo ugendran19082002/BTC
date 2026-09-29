@@ -1,0 +1,52 @@
+Strategy search -- declared before running: see the header of app/web/scripts/combo-study.ts. Fees 0.05% a side.
+
+Part 1 -- daily trend following, Binance BTCUSDT perpetual, 2020-01-01 to 2026-08-31 (2435 days)
+== D0 buy and hold
+   2020-23  CAGR  +55.7%  Sharpe  1.00  max drawdown  -76.7%
+   2024-26  CAGR  +26.1%  Sharpe  0.72  max drawdown  -53.0%
+== D1 time-series momentum, 20 days
+   2020-23  CAGR  +38.9%  Sharpe  0.82  max drawdown  -59.9%
+   2024-26  CAGR   -8.2%  Sharpe  0.06  max drawdown  -61.2%
+== D2 time-series momentum, 60 days
+   2020-23  CAGR  +41.2%  Sharpe  0.84  max drawdown  -58.5%
+   2024-26  CAGR  +13.3%  Sharpe  0.50  max drawdown  -57.0%
+== D3 trend plan, 20-day channel, 2 ATR stop, 3 ATR trail
+   2020-23  CAGR  +18.4%  Sharpe  0.58  max drawdown  -45.8%
+   2024-26  CAGR   +1.9%  Sharpe  0.23  max drawdown  -43.5%
+== D4 trend plan, 55-day channel
+   2020-23  CAGR   +0.6%  Sharpe  0.23  max drawdown  -45.2%
+   2024-26  CAGR   +9.7%  Sharpe  0.47  max drawdown  -31.5%
+== D5 EMA 20 over EMA 100
+   2020-23  CAGR  +34.7%  Sharpe  0.79  max drawdown  -67.9%
+   2024-26  CAGR   +6.6%  Sharpe  0.37  max drawdown  -53.7%
+== D6 D1 sized to 40% annual volatility
+   2020-23  CAGR  +55.0%  Sharpe  1.15  max drawdown  -49.6%
+   2024-26  CAGR   +6.3%  Sharpe  0.36  max drawdown  -49.6%
+
+Part 2 -- the trend plan and one layer at a time (net R a trade after fees; a filter helps only if it beats the base in both halves)
+== 1H
+   base                                  2024-25 n  558  net +0.110R (t  1.06)   2026 n  184  net +0.003R (t  0.03)
+   F1 volatility expanding               2024-25 n  113  net +0.046R (t  0.25)   2026 n   27  net +0.156R (t  0.69)   
+   F2 volume burst                       2024-25 n  360  net +0.136R (t  0.92)   2026 n  126  net +0.016R (t  0.12)   better in both
+   F3 taker delta agrees (Binance)       2024-25 n  519  net +0.043R (t  0.55)   2026 n  177  net -0.022R (t -0.20)   
+   F4 open interest up over 4h (Binance) 2024-25 n  322  net +0.270R (t  1.65)   2026 n   93  net +0.077R (t  0.43)   better in both
+   F5 London / New York hours            2024-25 n  378  net +0.189R (t  1.32)   2026 n  118  net +0.013R (t  0.09)   better in both
+   F6 the daily trend agrees             2024-25 n  258  net +0.038R (t  0.34)   2026 n   97  net +0.118R (t  0.65)   
+== 4H
+   base                                  2024-25 n  131  net +0.289R (t  1.85)   2026 n   51  net +0.028R (t  0.11)
+   F1 volatility expanding               2024-25 n   16  net +0.784R (t  1.53)   2026 n    3  net +0.368R (t  0.43)   better in both
+   F2 volume burst                       2024-25 n   79  net +0.348R (t  1.65)   2026 n   26  net +0.173R (t  0.45)   better in both
+   F3 taker delta agrees (Binance)       2024-25 n  126  net +0.223R (t  1.55)   2026 n   49  net +0.014R (t  0.05)   
+   F4 open interest up over 4h (Binance) 2024-25 n   95  net +0.477R (t  2.32)   2026 n   32  net -0.182R (t -0.69)   
+   F5 London / New York hours            2024-25 n   67  net +0.336R (t  1.39)   2026 n   29  net +0.110R (t  0.32)   better in both
+   F6 the daily trend agrees             2024-25 n   65  net +0.305R (t  1.37)   2026 n   30  net +0.097R (t  0.26)   better in both
+
+Part 3 -- the desk's SMC trades by the trend plan's position at the entry (net R a trade after fees)
+== against the 1H trend plan
+   with the plan      2024-25 n  339  net -0.100R (t -1.34)   2026 n   99  net -0.168R (t -1.29)
+   against the plan   2024-25 n  376  net -0.139R (t -2.03)   2026 n   96  net -0.196R (t -1.70)
+   plan flat          2024-25 n  567  net -0.158R (t -2.81)   2026 n  188  net -0.362R (t -4.40)
+== against the 4H trend plan
+   with the plan      2024-25 n  372  net -0.074R (t -1.03)   2026 n  117  net -0.148R (t -1.23)
+   against the plan   2024-25 n  354  net -0.178R (t -2.56)   2026 n  126  net -0.327R (t -3.30)
+   plan flat          2024-25 n  556  net -0.154R (t -2.69)   2026 n  140  net -0.322R (t -3.40)
