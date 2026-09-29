@@ -41,6 +41,12 @@ Part E -- momentum entries: 20-candle breakout, 2 ATR stop, 3 ATR chandelier, no
    2026     n   154  win  36%  gross +0.093R  net -0.005R (t -0.04)  total    -1R  worst run -22R
    big moves (2% in 4h) positioned for: 31% / 37%   (1054 / 276 such hours)
 
+The trend plan (lib/trend/breakout.ts), replayed on its own code:
+   1H  2024-25 n   558  win  32%  gross +0.202R  net +0.110R (t  1.06)  total    62R  worst run -42R
+       2026    n   184  win  36%  gross +0.102R  net +0.003R (t  0.03)  total     1R  worst run -21R   matches E1
+   4H  2024-25 n   131  win  40%  gross +0.331R  net +0.289R (t  1.85)  total    38R  worst run -8R
+       2026    n    51  win  27%  gross +0.069R  net +0.028R (t  0.11)  total     1R  worst run -14R   matches E2
+
 Chosen on 2024-25: E2 breakout, 4H -- net +0.289R a trade over 131.
 Judged once on 2026: net +0.028R a trade over 51 (t 0.11); big moves positioned for 49%.
 Not an edge by the declared rule (net R > 0 on both, t >= 2 on 2026).
