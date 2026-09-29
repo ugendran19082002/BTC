@@ -267,7 +267,7 @@ describe('setups', () => {
       for (const a of all) for (const b of all) {
         if (a === b) continue;
         const aEnd = a.closedAt ?? Infinity;
-        // b entered while a was open: only allowed when b is the same side's... never: slots are one a side, so b must be opposite and a closed at b's fill.
+        // No entry while another trade is open; a reversal closes the open trade on the entry's own candle.
         if (b.fill!.at > a.fill!.at && b.fill!.at < aEnd) expect.fail(`${b.id} entered at ${b.fill!.at} while ${a.id} was open until ${aEnd}`);
       }
     }
