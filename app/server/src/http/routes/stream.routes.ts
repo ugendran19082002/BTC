@@ -15,8 +15,10 @@ import { liveLtp } from '../../market/flow.js';
  * behind.
  *
  * `ltp` is faster: the perpetual's last trade and the 1m / 5m candles in
- * progress, built from the tape, checked four times a second and written only
- * when a new trade has printed. The chart's forming candle is drawn from it,
+ * progress, built from the tape, checked ten times a second and written only
+ * when a new trade has printed -- a trade is on the screen within about a
+ * tenth of a second plus the network. A check costs a scan of the current
+ * candle's prints; a check with no new trade writes nothing. The chart's forming candle is drawn from it,
  * so its close, high and low are the perp's own trades -- not the index spot,
  * which differs by the basis and refreshes every eight seconds.
  *
@@ -25,7 +27,7 @@ import { liveLtp } from '../../market/flow.js';
  * stays open until the browser goes.
  */
 export const STREAM_TICK_MS = 1_000;
-export const LTP_TICK_MS = 250;
+export const LTP_TICK_MS = 100;
 const PING_MS = 15_000;
 
 export function registerStreamRoutes(app: FastifyInstance) {

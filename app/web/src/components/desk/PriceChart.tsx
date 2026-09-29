@@ -120,20 +120,28 @@ export function PriceChart({
     if (layers.has('saved')) items.push(...savedBoxes(saved, bars));
     return items;
   }, [smc, layers, saved, bars.length, read.blocked, overlays]);
-  // The order-flow layers follow every tick and every scroll, so they are kept apart from the engine's scene.
-  const flow = useMemo<SceneItem[]>(() => {
-    const items: SceneItem[] = [];
-    if (layers.has('heatmap') && heat) items.push(...heatScene(heat.columns, heat.step, heat.walls, bars, tfSec));
-    if (layers.has('profile') && bars.length) {
-      const to = Math.min(bars.length - 1, inView?.to ?? bars.length - 1);
-      const from = Math.max(0, inView?.from ?? to - 90);
-      const p = volumeProfile(bars, from, to);
-      if (p) items.push(...profileScene(p, from, bars[bars.length - 1]!.close));
-    }
-    if (layers.has('bigtrades') && bigTrades) items.push(...bigTradeScene(bigTrades.prints, bars, tfSec, bigTrades.min));
-    return items;
-  }, [layers, bars, inView, bigTrades, heat, tfSec]);
-  const scene = useMemo(() => [...base, ...flow], [base, flow]);
+  // The order-flow layers are kept apart from the engine's scene. The heatmap and the bubbles place
+  // themselves by candle *time* only, so they are rebuilt when a candle is added or their data
+  // arrives -- not on every tick of the forming candle, which only the volume profile follows.
+  const timesKey = `${bars.length}:${bars[0]?.time ?? 0}:${bars[bars.length - 1]?.time ?? 0}`;
+  const barsRef = useRef(bars);
+  barsRef.current = bars;
+  const heatItems = useMemo<SceneItem[]>(
+    () => (layers.has('heatmap') && heat ? heatScene(heat.columns, heat.step, heat.walls, barsRef.current, tfSec) : []),
+    [layers, heat, timesKey, tfSec],
+  );
+  const bigItems = useMemo<SceneItem[]>(
+    () => (layers.has('bigtrades') && bigTrades ? bigTradeScene(bigTrades.prints, barsRef.current, tfSec, bigTrades.min) : []),
+    [layers, bigTrades, timesKey, tfSec],
+  );
+  const profileItems = useMemo<SceneItem[]>(() => {
+    if (!layers.has('profile') || !bars.length) return [];
+    const to = Math.min(bars.length - 1, inView?.to ?? bars.length - 1);
+    const from = Math.max(0, inView?.from ?? to - 90);
+    const p = volumeProfile(bars, from, to);
+    return p ? profileScene(p, from, bars[bars.length - 1]!.close) : [];
+  }, [layers, bars, inView]);
+  const scene = useMemo(() => [...base, ...heatItems, ...profileItems, ...bigItems], [base, heatItems, profileItems, bigItems]);
 
   const loadSaved = useCallback(async () => {
     try { setSaved(await getAnnotations(symbol, tf)); } catch { /* the chart works without them */ }
@@ -259,15 +267,28 @@ export function PriceChart({
     pane.cvd.setData(cvd.map((d) => ({ ...d, time: d.time as UTCTimestamp })));
   }, [flowBars, showFlow, tfSec, error, bars.length === 0]);
 
+  // What the series were last given, so a tick sends only what changed. A tick moves the forming
+  // candle, and a new candle is one more: both are `update()` on the tail -- the library redraws one
+  // bar instead of re-reading the whole history four times a second. Anything else (the poll's
+  // fresh history, a switch of timeframe, a new chart) is `setData`.
+  const sentRef = useRef<{ series: ISeriesApi<'Candlestick'> | null; bars: readonly Candle[] }>({ series: null, bars: [] });
   useEffect(() => {
     const candles = candleRef.current;
     const volume = volumeRef.current;
     if (!candles || !volume) return;
-    candles.setData(bars.map((b) => ({ time: b.time as UTCTimestamp, open: b.open, high: b.high, low: b.low, close: b.close })));
-    volume.setData(bars.map((b) => ({
+    const toCandle = (b: Candle) => ({ time: b.time as UTCTimestamp, open: b.open, high: b.high, low: b.low, close: b.close });
+    const toVolume = (b: Candle) => ({
       time: b.time as UTCTimestamp, value: b.volume,
       color: b.close >= b.open ? 'rgba(38,161,123,0.45)' : 'rgba(226,80,79,0.45)',
-    })));
+    });
+    const tail = tailFrom(sentRef.current.series === candles ? sentRef.current.bars : [], bars);
+    if (tail >= 0) {
+      for (let i = tail; i < bars.length; i++) { candles.update(toCandle(bars[i]!)); volume.update(toVolume(bars[i]!)); }
+    } else {
+      candles.setData(bars.map(toCandle));
+      volume.setData(bars.map(toVolume));
+    }
+    sentRef.current = { series: candles, bars };
   }, [bars, error]);
 
   // Open each timeframe on its recent bars, with room on the right for the levels.
@@ -376,6 +397,23 @@ export function PriceChart({
       )}
     </div>
   );
+}
+
+/**
+ * Where `next` differs from what the series were last given (`prev`), when
+ * only the tail changed: the index to `update()` from, or -1 for `setData`.
+ * The tail changed alone when `next` is as long or one longer, every bar
+ * before `prev`'s last is the same object (the live candle only replaces the
+ * last one), and nothing goes back in time.
+ */
+export function tailFrom(prev: readonly Candle[], next: readonly Candle[]): number {
+  const m = prev.length;
+  const n = next.length;
+  if (!m || (n !== m && n !== m + 1)) return -1;
+  for (let i = 0; i < m - 1; i++) if (prev[i] !== next[i]) return -1;
+  if (next[m - 1]!.time !== prev[m - 1]!.time) return -1;
+  if (n === m + 1 && !(next[m]!.time > next[m - 1]!.time)) return -1;
+  return m - 1;
 }
 
 /** Saved levels from the database, as boxes on the bars their times fall on. */

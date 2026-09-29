@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { PriceChart } from '@/components/desk/PriceChart';
+import { PriceChart, tailFrom } from '@/components/desk/PriceChart';
 import type { SceneItem } from '@/components/desk/chart/scene';
 import type { Candle } from '@/types/desk';
 
@@ -13,6 +13,7 @@ import type { Candle } from '@/types/desk';
  */
 
 const setDataCalls: { which: string; data: any[] }[] = [];
+const updateCalls: { which: string; bar: any }[] = [];
 const applied: Record<string, unknown>[] = [];
 const primitives: { scene: readonly SceneItem[]; setReserved: (r: unknown[]) => void }[] = [];
 const repaints = vi.fn();
@@ -22,6 +23,7 @@ vi.mock('lightweight-charts', () => {
   class Series {
     constructor(public which: string) {}
     setData = vi.fn((data: any[]) => { setDataCalls.push({ which: this.which, data }); });
+    update = vi.fn((bar: any) => { updateCalls.push({ which: this.which, bar }); });
     priceScale = () => ({ applyOptions: vi.fn() });
     priceToCoordinate = (price: number) => 300 - (price - 77_000) / 10;
     attachPrimitive = vi.fn((p: any) => { primitives.push(p); p.attached?.({ chart: {}, series: this, requestUpdate: repaints }); });
@@ -82,6 +84,30 @@ describe('the price chart', () => {
     expect(candles.data[0]).toMatchObject({ open: 77_000, high: 77_060, low: 76_940 });
     expect(volume.data[0].color).toContain('38,161,123');
     expect(volume.data[1].color).toContain('226,80,79');
+  });
+
+  it('[critical] a tick of the forming candle is one update, not the whole history again', () => {
+    const b = bars(60);
+    const { rerender } = render(<PriceChart bars={b} tf="1h" />);
+    const loads = setDataCalls.filter((c) => c.which === 'candles').length;
+    updateCalls.length = 0;
+    const ticked = [...b.slice(0, -1), { ...b[59]!, close: b[59]!.close + 5, high: b[59]!.high + 5 }];
+    rerender(<PriceChart bars={ticked} tf="1h" />);
+    expect(setDataCalls.filter((c) => c.which === 'candles')).toHaveLength(loads);
+    expect(updateCalls.filter((c) => c.which === 'candles').map((c) => c.bar.close)).toEqual([b[59]!.close + 5]);
+    // Fresh history from the poll (new objects) is a full load again.
+    rerender(<PriceChart bars={bars(60)} tf="1h" />);
+    expect(setDataCalls.filter((c) => c.which === 'candles')).toHaveLength(loads + 1);
+  });
+
+  it('tailFrom: the tail alone changed, or a full load', () => {
+    const b = bars(5);
+    expect(tailFrom([], b)).toBe(-1);
+    expect(tailFrom(b, [...b.slice(0, -1), { ...b[4]! }])).toBe(4);
+    expect(tailFrom(b, [...b, { ...b[4]!, time: b[4]!.time + HOUR }])).toBe(4);
+    expect(tailFrom(b, [...b.slice(0, 3), { ...b[3]! }, b[4]!])).toBe(-1);
+    expect(tailFrom(b, b.slice(0, 4))).toBe(-1);
+    expect(tailFrom(b, [...b, { ...b[4]! }])).toBe(-1);
   });
 
   it('[critical] zoom is off until it is asked for, so the page scrolls over the chart', () => {

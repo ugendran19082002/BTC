@@ -13,6 +13,7 @@ import { tradingService, SHORT_CAP_KEY } from '../../trading/service.js';
 import { appliedMigrations } from '../../db/migrate.js';
 import { lastOptionSnapshot, lastOptionSnapshotAt } from '../../market/option-snapshots.js';
 import { heatColumnsOf, heatMinutes, persistentWalls } from '../../market/book-heat.js';
+import { ttlCache } from '../ttl-cache.js';
 import { autoLargeMin, flowBarsOf, flowFeedHealth, flowMinutes, flowSummary, largePrints, liveBook, livePerp, oiPulse, optionFlowSummary, LARGE_PRINT_CONTRACTS } from '../../market/flow.js';
 import { changes } from '../../market/changes.js';
 import { one } from '../../db/pool.js';
@@ -161,6 +162,11 @@ export function registerDeskRoutes(app: FastifyInstance) {
    * large orders in the window); a number in `min` overrides it, never under
    * the recording threshold, since smaller ones are not kept.
    */
+  // The chart's pollers (every 10-20 s, from every open tab) share one read for a few seconds.
+  const largeCache = ttlCache<{ min: number; basis: string; since: number; prints: Awaited<ReturnType<typeof largePrints>> }>(5_000);
+  const barsCache = ttlCache<ReturnType<typeof flowBarsOf>>(3_000);
+  const heatCache = ttlCache<{ tf: string; step: number; columns: ReturnType<typeof heatColumnsOf>; walls: ReturnType<typeof persistentWalls> }>(5_000);
+
   app.get('/api/flow/large-prints', async (req, reply) => {
     const q = req.query as { hours?: string; min?: string };
     const hours = Math.min(48, Math.max(1, Number(q.hours ?? 36) || 36));
@@ -168,10 +174,11 @@ export function registerDeskRoutes(app: FastifyInstance) {
     const since = now - hours * 3_600_000;
     try {
       const asked = Number(q.min);
-      const { min, basis } = q.min && Number.isFinite(asked)
-        ? { min: Math.max(LARGE_PRINT_CONTRACTS, asked), basis: 'set by the caller' }
-        : await autoLargeMin(since, now);
-      return { min, basis, since, prints: await largePrints(since, min) };
+      const fixed = q.min && Number.isFinite(asked) ? Math.max(LARGE_PRINT_CONTRACTS, asked) : null;
+      return await largeCache(`${hours}:${fixed ?? 'auto'}`, async () => {
+        const { min, basis } = fixed !== null ? { min: fixed, basis: 'set by the caller' } : await autoLargeMin(since, now);
+        return { min, basis, since, prints: await largePrints(since, min) };
+      });
     } catch (e) {
       reply.code(502);
       return { error: (e as Error).message, min: LARGE_PRINT_CONTRACTS, since, prints: [] };
@@ -191,7 +198,8 @@ export function registerDeskRoutes(app: FastifyInstance) {
     const hours = Math.min(48, Math.max(1, Number(q.hours ?? 36) || 36));
     const now = Date.now();
     try {
-      return { tf: tfSec === 60 ? '1m' : '5m', bars: flowBarsOf(await flowMinutes(now - hours * 3_600_000, now), tfSec) };
+      const bars = await barsCache(`${tfSec}:${hours}`, async () => flowBarsOf(await flowMinutes(now - hours * 3_600_000, now), tfSec));
+      return { tf: tfSec === 60 ? '1m' : '5m', bars };
     } catch (e) {
       reply.code(502);
       return { error: (e as Error).message, bars: [] };
@@ -216,12 +224,14 @@ export function registerDeskRoutes(app: FastifyInstance) {
     const from = Math.floor(Math.max(asked, earliest) / 1000 / tfSec) * tfSec * 1000;
     const wallsFrom = now - 30 * 60_000;
     try {
-      const minutes = await heatMinutes(Math.min(from, wallsFrom));
-      return {
-        tf: tfSec === 60 ? '1m' : '5m', step,
-        columns: heatColumnsOf(minutes.filter((m) => m.at >= from), tfSec, step),
-        walls: persistentWalls(minutes.filter((m) => m.at >= wallsFrom), step),
-      };
+      return await heatCache(`${tfSec}:${from}`, async () => {
+        const minutes = await heatMinutes(Math.min(from, wallsFrom));
+        return {
+          tf: tfSec === 60 ? '1m' : '5m', step,
+          columns: heatColumnsOf(minutes.filter((m) => m.at >= from), tfSec, step),
+          walls: persistentWalls(minutes.filter((m) => m.at >= wallsFrom), step),
+        };
+      });
     } catch (e) {
       reply.code(502);
       return { error: (e as Error).message, step, columns: [], walls: [] };
