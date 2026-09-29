@@ -14,7 +14,8 @@ import type { Candle } from '@/types/desk';
 
 const setDataCalls: { which: string; data: any[] }[] = [];
 const applied: Record<string, unknown>[] = [];
-const primitives: { scene: readonly SceneItem[] }[] = [];
+const primitives: { scene: readonly SceneItem[]; setReserved: (r: unknown[]) => void }[] = [];
+const repaints = vi.fn();
 
 vi.mock('lightweight-charts', () => {
   class Series {
@@ -22,7 +23,9 @@ vi.mock('lightweight-charts', () => {
     setData = vi.fn((data: any[]) => { setDataCalls.push({ which: this.which, data }); });
     priceScale = () => ({ applyOptions: vi.fn() });
     priceToCoordinate = (price: number) => 300 - (price - 77_000) / 10;
-    attachPrimitive = vi.fn((p: any) => { primitives.push(p); p.attached?.({ chart: {}, series: this, requestUpdate: () => {} }); });
+    attachPrimitive = vi.fn((p: any) => { primitives.push(p); p.attached?.({ chart: {}, series: this, requestUpdate: repaints }); });
+    // As the library does: detaching tells the primitive. `chart.remove()` below does not.
+    detachPrimitive = vi.fn((p: any) => { p.detached?.(); });
   }
   return {
     ColorType: { Solid: 'solid' },
@@ -97,6 +100,16 @@ describe('the price chart', () => {
     expect(within(views).getByRole('radio', { name: '5m' }).getAttribute('aria-checked')).toBe('true');
     fireEvent.click(within(views).getByRole('radio', { name: '1m' }));
     expect(onView).toHaveBeenCalledWith('1m');
+  });
+
+  it('[critical] never asks a removed chart to repaint (the "Object is disposed" crash)', () => {
+    const { unmount } = chart();
+    const primitive = primitives[primitives.length - 1]!;
+    unmount();
+    repaints.mockClear();
+    // A resize observed after the chart is gone, before the effect that measures it is cleaned up.
+    primitive.setReserved([{ x: 0, y: 0, w: 10, h: 10 }]);
+    expect(repaints).not.toHaveBeenCalled();
   });
 
   it('[critical] draws through a primitive, and never reads the candle still forming', () => {

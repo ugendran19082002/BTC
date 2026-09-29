@@ -169,6 +169,10 @@ export function PriceChart({
     ro.observe(host);
     return () => {
       ro.disconnect();
+      // Detach first: `chart.remove()` does not detach series primitives, and the
+      // label-measuring observer below can still fire once before its own cleanup.
+      // A repaint asked of a removed chart throws "Object is disposed".
+      candles.detachPrimitive(primitive);
       chart.remove();
       chartRef.current = null;
       candleRef.current = null;
