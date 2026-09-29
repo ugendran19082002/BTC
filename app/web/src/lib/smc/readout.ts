@@ -21,6 +21,20 @@ export type Readout = {
   record: TradeRecord | null;
   /** Why a setup the engine found is not a trade: the timeframes it runs against. */
   blocked: string[];
+  /** The last plan that ended without a trade, with its checklist and the check that failed. */
+  refused: Refused | null;
+  /** Completed trades, newest first. */
+  history: HistoryRow[];
+};
+
+export type Refused = { dir: 'bull' | 'bear'; at: number; time: number; checks: { name: string; ok: boolean }[]; reason: string };
+
+export type HistoryRow = {
+  id: string; dir: 'bull' | 'bear'; time: number;
+  entry: number; stop: number; tp1: number; exit: number;
+  resultR: number; mfeR: number; maeR: number; minutes: number;
+  /** What happened, in order: "TP1 → BE → stopped". */
+  path: string;
 };
 
 export type TradeRecord = {
@@ -48,6 +62,8 @@ export function readout(st: SmcState, bars: readonly Bar[], context: readonly Tf
   const nearest = nearestPools(st, last);
   const record = recordOf(st.setups);
   const live = liveSetup(st);
+  const refused = refusedOf(st, bars);
+  const history = historyOf(st, bars);
 
   if (!live) {
     const pct = (p: Pool | null) => (p && last ? ` (${(((p.price - last) / last) * 100).toFixed(2)}%)` : '');
@@ -58,7 +74,7 @@ export function readout(st: SmcState, bars: readonly Bar[], context: readonly Tf
       tone: 'flat',
       headline: 'NO TRADE — waiting for a sweep',
       detail: `${between} A long needs a sell-side sweep → bullish CHoCH/BOS → OB/FVG retest; a short the mirror.`,
-      confirmations: [], plan: null, nearest, record, blocked: [],
+      confirmations: [], plan: null, nearest, record, blocked: [], refused, history,
     };
   }
 
@@ -87,10 +103,10 @@ export function readout(st: SmcState, bars: readonly Bar[], context: readonly Tf
       tone: inTrade ? tone : 'flat',
       headline: inTrade ? `${headline} — against ${blocked.join(', ')}` : `NO TRADE — ${side.toLowerCase()} setup against ${blocked.join(', ')}`,
       detail: inTrade ? detail : `The ${side.toLowerCase()} plan below is what the setup chart sees; the higher timeframes disagree, so it is not taken.`,
-      confirmations: live.confirmations, plan, nearest, record, blocked,
+      confirmations: live.confirmations, plan, nearest, record, blocked, refused, history,
     };
   }
-  return { tone, headline, detail, confirmations: live.confirmations, plan, nearest, record, blocked };
+  return { tone, headline, detail, confirmations: live.confirmations, plan, nearest, record, blocked, refused, history };
 }
 
 /**
@@ -114,6 +130,55 @@ function planOf(s: Setup): NonNullable<Readout['plan']> {
     stop: last?.price ?? s.stop!, originalStop: s.stop!, stopNote: last?.note ?? null,
     targets: s.targets.map((t) => ({ ...t, rNow: rOf(t.price) })),
   };
+}
+
+/**
+ * The last setup that got as far as a structure shift and ended without a
+ * trade, within the last hour of candles: its checklist, and the check that
+ * failed, in the engine's own words and numbers.
+ */
+function refusedOf(st: SmcState, bars: readonly Bar[]): Refused | null {
+  const n = bars.length;
+  const s = [...st.setups].reverse().find((x) => !x.fill && x.closedAt !== null && x.closedAt >= n - 12 && x.confirmations[1]!.ok);
+  if (!s) return null;
+  const end = s.events[s.events.length - 1]!;
+  const reason = end.note;
+  // The check that failed, named for the checklist.
+  const RULES: [RegExp, string][] = [
+    [/retest|close back|too far from the zone/, 'Retest'],
+    [/^TP1 .* pays|break entry: TP1/, 'Reward : risk'],
+    [/fees/, 'Stop wide enough for the fees'],
+    [/four ATR/, 'Stop within 4 ATR'],
+    [/chase/, 'Not chasing'],
+    [/OB or FVG/, 'OB / FVG from the move'],
+    [/liquidity/, 'Liquidity to aim at'],
+  ];
+  const failed = RULES.find(([re]) => re.test(reason))?.[1] ?? 'Setup held';
+  const checks = s.confirmations.filter((c) => c.ok).map((c) => ({ name: c.name, ok: true }));
+  checks.push({ name: failed, ok: false });
+  return { dir: s.dir, at: s.closedAt!, time: bars[s.closedAt!]!.time, checks, reason };
+}
+
+/** Completed trades, newest first, with the path each took. */
+function historyOf(st: SmcState, bars: readonly Bar[]): HistoryRow[] {
+  return st.setups.filter((s) => s.fill && s.resultR !== null).reverse().map((s) => {
+    const steps: string[] = [];
+    for (const e of s.events) {
+      if (e.state === 'TP1' || e.state === 'TP2' || e.state === 'TP3') steps.push(e.state);
+      if (e.state === 'STOPPED') steps.push('stopped');
+      if (e.state === 'PROTECTED') steps.push('stopped at the protected stop');
+      if (e.state === 'EXPIRED') steps.push(e.note.includes('opposite') ? 'closed by the opposite entry' : 'time exit');
+    }
+    for (const t of s.trail) steps.splice(steps.length - 1, 0, t.note.startsWith('break-even') ? 'BE' : 'trail');
+    const exit = s.events[s.events.length - 1]!.price ?? s.fill!.price;
+    return {
+      id: s.id, dir: s.dir, time: bars[s.fill!.at]!.time,
+      entry: s.fill!.price, stop: s.stop!, tp1: s.targets[0]!.price, exit,
+      resultR: s.resultR!, mfeR: s.mfeR ?? 0, maeR: s.maeR ?? 0,
+      minutes: Math.round((bars[s.closedAt!]!.time - bars[s.fill!.at]!.time) / 60),
+      path: steps.join(' → '),
+    };
+  });
 }
 
 function nearestPools(st: SmcState, last: number | null): Readout['nearest'] {

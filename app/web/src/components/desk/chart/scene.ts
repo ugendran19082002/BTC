@@ -298,6 +298,7 @@ function trade(st: SmcState, n: number, out: SceneItem[], blocked: readonly stri
     [/^TP1 .* pays ([\d.]+R)/, 'TP1 only $1'], [/ran to TP1 without a retest/, 'ran, no retest'], [/no retest/, 'no retest'],
     [/closed through the stop/, 'stop broken first'], [/confirmed too far/, 'entry too late'], [/no liquidity/, 'no target'],
     [/wider than four ATR/, 'stop too wide'], [/left no OB or FVG/, 'no OB / FVG'], [/retest never closed/, 'no close back'],
+    [/too tight for the fees/, 'stop too tight for fees'], [/no chase/, 'no chase'],
   ];
   for (const s of st.setups) {
     if (s.fill || s.closedAt === null || s.closedAt < n - 150 || !s.confirmations[1]!.ok) continue;

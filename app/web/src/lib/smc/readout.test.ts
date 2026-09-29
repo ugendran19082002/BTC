@@ -54,3 +54,23 @@ describe('readout', () => {
     expect(r.blocked).toEqual([]);
   });
 });
+
+describe('history and refusals', () => {
+  it('[critical] every completed trade is listed with its path, newest first', () => {
+    const r = readout(full, bars);
+    expect(r.history.length).toBe(full.setups.filter((s) => s.fill && s.resultR !== null).length);
+    for (let k = 1; k < r.history.length; k++) expect(r.history[k - 1]!.time).toBeGreaterThanOrEqual(r.history[k]!.time);
+    for (const h of r.history) expect(h.path).toMatch(/TP1|TP3|stopped|exit|opposite/);
+  });
+
+  it("a refused plan says which check failed, and the engine's reason with its numbers", () => {
+    for (let k = 20; k < bars.length; k += 7) {
+      const past = bars.slice(0, k);
+      const r = readout(runSmc(past, { tfSec: 300 }), past);
+      if (!r.refused) continue;
+      expect(r.refused.checks.filter((c) => !c.ok)).toHaveLength(1);
+      expect(r.refused.reason.length).toBeGreaterThan(0);
+      return;
+    }
+  });
+});

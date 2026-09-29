@@ -216,6 +216,14 @@ export type SmcOptions = {
   targetMode?: 'liquidity' | 'r-min' | 'r-multiple';
   /** The R multiples for TP1, TP2, TP3 under 'r-min' / 'r-multiple'. [2, 3, 4] by default. */
   targetR?: readonly [number, number, number];
+  /**
+   * The fee-aware minimum edge: no trade whose risk is under this fraction of
+   * the price (a round trip at 0.05% a side is 0.1% of the price, so 0.005
+   * keeps the fee at or under 0.2R). Off (0) by default.
+   */
+  minRiskPct?: number;
+  /** No chase: no break entry more than this many ATRs past the zone's proximal edge. Off (0) by default. */
+  maxChaseAtr?: number;
   /** Start setups only in these sessions (by the triggering candle's UTC hour). All sessions, and outside them, by default. */
   sessions?: readonly Session[];
   /** Fractal size. Two bars each side is the usual intraday choice. */

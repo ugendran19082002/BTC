@@ -12,7 +12,7 @@
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DESK_SMC_OPTIONS, runSmc, SCALE_OUT, SmcEngine } from '../src/lib/smc/engine';
+import { DESK_SMC_OPTIONS, runSmc, SCALE_OUT, SmcEngine, sessionOf } from '../src/lib/smc/engine';
 import { aggregate, trendTimeline } from '../src/lib/smc/context';
 import type { Bar, Setup, SmcOptions } from '../src/lib/smc/types';
 
@@ -71,6 +71,11 @@ const VARIANTS: Variant[] = [
   { name: 'V  L, stop at the swing', opts: { continuation: true, minStopAtr: 1.5, minTp1R: 0, entry: 'break', stopAt: 'swing' } },
   { name: 'W  V, targets >= 1R / 2R / 3R', opts: { continuation: true, minStopAtr: 1.5, minTp1R: 0, entry: 'break', stopAt: 'swing', targetMode: 'r-min', targetR: [1, 2, 3] } },
   { name: 'X  V, targets >= 2R / 3R / 4R', opts: { continuation: true, minStopAtr: 1.5, minTp1R: 0, entry: 'break', stopAt: 'swing', targetMode: 'r-min', targetR: [2, 3, 4] } },
+  // Round five, the owner's P0 list, on the desk (X with the owner's 1 ATR floor), declared together:
+  { name: 'Y  desk, fee <= 0.2R (risk >= 0.5%)', opts: { ...DESK_SMC_OPTIONS, minRiskPct: 0.005 } },
+  { name: 'Z  desk, fee <= 0.1R (risk >= 1%)', opts: { ...DESK_SMC_OPTIONS, minRiskPct: 0.01 } },
+  { name: 'NC desk, no chase past 1 ATR', opts: { ...DESK_SMC_OPTIONS, maxChaseAtr: 1 } },
+  { name: 'YN desk, Y + no chase', opts: { ...DESK_SMC_OPTIONS, minRiskPct: 0.005, maxChaseAtr: 1 } },
 ];
 // The 1H trend as it was known at each moment, from closed 1H candles only -- for the hybrid entry.
 const hours = aggregate(bars, 300, 3600);
@@ -179,6 +184,63 @@ for (const m of moves) {
 say(`   caught (a trade in the move's direction entered during it): ${caught} of ${moves.length} (${pct(caught, moves.length)}), avg ${caught ? f2(caughtR / caught) : '—'}R`);
 say('   missed, by what stopped a trade:');
 for (const [k, v] of [...missed].sort((a, b) => b[1] - a[1]).slice(0, 10)) say(`     ${String(v).padStart(5)}  ${pct(v, moves.length).padStart(6)}  ${k}`);
+
+// ── segments (P2): described, not selected on ────────────────────────────
+say();
+say('== Segments of the desk\'s trades (descriptive only: nothing is chosen from these)');
+const seg = (label: string, xs: Setup[]) => {
+  if (!xs.length) { say(`   ${label.padEnd(24)} n 0`); return; }
+  say(`   ${label.padEnd(24)} n ${String(xs.length).padStart(5)}  win ${pct(xs.filter((s) => s.resultR! > 0).length, xs.length).padStart(6)}  gross ${f2(xs.reduce((a, s) => a + s.resultR!, 0) / xs.length)}R  net ${f2(netOf(xs) / xs.length)}R`);
+};
+const entryKind = (s: Setup) => (s.id.startsWith('C') ? 'continuation' : 'reversal (sweep)');
+for (const k of ['reversal (sweep)', 'continuation']) seg(k, done.filter((s) => entryKind(s) === k));
+for (const k of ['Asia', 'London', 'New York', null] as const) seg(`session ${k ?? 'off-hours'}`, done.filter((s) => sessionOf(bars[s.fill!.at]!.time) === k));
+seg('1H agrees', done.filter((s) => s.htf === s.dir));
+seg('1H against', done.filter((s) => s.htf !== null && s.htf !== s.dir));
+seg('1H unknown', done.filter((s) => s.htf === null));
+
+// ── setup quality: which combinations to avoid, or keep ───────────────────
+/*
+ * Every feature is known at the entry. A slice counts only if it is positive
+ * on 2024-25 with t >= 2 AND positive again on 2026 -- declared before the
+ * table was first printed. Slicing a dozen ways always finds a slice that
+ * looks good by luck; that bar is what separates it from one that holds.
+ */
+say();
+say('== Setup quality (net R a trade after fees; holds = 2024-25 > 0 with t >= 2, and 2026 > 0)');
+const netR = (x: Setup) => x.resultR! - feeRof(x, 'taker');
+const stat = (xs: Setup[]) => {
+  const v = xs.map(netR);
+  const n = v.length;
+  const mean = n ? v.reduce((a, b) => a + b, 0) / n : 0;
+  const sd = n > 1 ? Math.sqrt(v.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1)) : 0;
+  return { n, mean, t: sd > 0 ? mean / (sd / Math.sqrt(n)) : 0 };
+};
+const yearOf = (x: Setup) => year(x.fill!.at);
+const features: [string, (x: Setup) => string][] = [
+  ['kind', (x) => (x.id.startsWith('C') ? 'continuation' : 'reversal')],
+  ['liquidity swept', (x) => (x.id.startsWith('C') ? '(none)' : /\((\w+)\)/.exec(x.confirmations[0]!.name)?.[1] ?? '?')],
+  ['break', (x) => /^(MSS|CHoCH|BOS)/.exec(x.events.find((e) => e.state === 'READY')!.note)?.[1] ?? '?'],
+  ['POI', (x) => x.poi!.kind],
+  ['displacement', (x) => (st.tags.some((t) => t.name === 'Displacement' && t.dir === x.dir && t.at > x.createdAt - 30 && t.at <= x.fill!.at) ? 'candle' : 'gap only')],
+  ['volume on entry', (x) => (st.tags.some((t) => t.at === x.fill!.at && t.name === 'Volume spike') ? 'spike' : st.tags.some((t) => t.at === x.fill!.at && t.name === 'Volume dry-up') ? 'dry-up' : 'normal')],
+  ['session', (x) => sessionOf(bars[x.fill!.at]!.time) ?? 'off-hours'],
+  ['1H', (x) => (x.htf === null ? 'unknown' : x.htf === x.dir ? 'agrees' : 'against')],
+  ['risk % of price', (x) => { const p = (x.fill!.risk / x.fill!.price) * 100; return p < 0.75 ? '0.50-0.75%' : p < 1 ? '0.75-1.00%' : '>= 1.00%'; }],
+];
+const holds: string[] = [];
+for (const [name, f] of features) {
+  const values = [...new Set(done.map(f))].sort();
+  for (const v of values) {
+    const xs = done.filter((x) => f(x) === v);
+    const ins = stat(xs.filter((x) => yearOf(x) < 2026));
+    const oos = stat(xs.filter((x) => yearOf(x) >= 2026));
+    const ok = ins.mean > 0 && ins.t >= 2 && oos.mean > 0 && oos.n >= 20;
+    if (ok) holds.push(`${name} = ${v}`);
+    say(`   ${(name + ' = ' + v).padEnd(34)} 24-25 n ${String(ins.n).padStart(4)} ${f2(ins.mean)}R t ${ins.t.toFixed(1).padStart(5)}   2026 n ${String(oos.n).padStart(4)} ${f2(oos.mean)}R${ok ? '   HOLDS' : ''}`);
+  }
+}
+say(`   slices that hold: ${holds.length ? holds.join(' · ') : 'none'}`);
 
 writeFileSync(OUT, lines.join('\n') + '\n');
 

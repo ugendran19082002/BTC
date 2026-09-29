@@ -171,3 +171,20 @@
   .pc-hud-body { max-height: 38vh; overflow-y: auto; }
   .pc-hud-record, .pc-hud-ohlc { display: none; }
 }
+
+/* The last refused plan, and this chart's trades. */
+.pc-hud-refused { display: grid; gap: 4px; padding: 6px; border-radius: 6px; background: rgba(148, 163, 184, 0.06); }
+.pc-hud-refused p { margin: 0; font-size: 11px; color: #cbd5e1; }
+.pc-hud-checks li.no { color: #f87171; border-color: rgba(226, 80, 79, 0.45); }
+.pc-hud-why { color: #94a3b8 !important; }
+.pc-hud-sub {
+  display: inline-flex; align-items: center; gap: 4px; min-height: 26px; padding: 0 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 5px; background: transparent; color: #cbd5e1; font-size: 11px; cursor: pointer;
+}
+.pc-hud-table-wrap { max-height: 220px; overflow: auto; margin-top: 4px; }
+.pc-hud-table { border-collapse: collapse; font-size: 10.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pc-hud-table th, .pc-hud-table td { padding: 2px 6px; text-align: right; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
+.pc-hud-table th { color: #94a3b8; font-weight: 600; position: sticky; top: 0; background: #0f1623; }
+.pc-hud-table td.up { color: #4ade80; }
+.pc-hud-table td.down { color: #f87171; }
+.pc-hud-table td.path { text-align: left; color: #94a3b8; }

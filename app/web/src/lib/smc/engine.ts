@@ -89,7 +89,7 @@ export class SmcEngine {
   private session: { name: Session; day: number; from: number; ext: Extreme } | null = null;
 
   constructor(opts: SmcOptions) {
-    this.o = { pivotLeft: 2, pivotRight: 2, stopAt: 'zone', minStopAtr: 0, entry: 'close', continuation: false, tp1: 'nearest', minTp1R: MIN_TP1_R, targetMode: 'liquidity', targetR: [2, 3, 4], ...opts };
+    this.o = { pivotLeft: 2, pivotRight: 2, stopAt: 'zone', minStopAtr: 0, entry: 'close', continuation: false, tp1: 'nearest', minTp1R: MIN_TP1_R, targetMode: 'liquidity', targetR: [2, 3, 4], minRiskPct: 0, maxChaseAtr: 0, ...opts };
   }
 
   /** Feed the next closed candle. Candles must arrive in time order. */
@@ -576,7 +576,15 @@ export class SmcEngine {
     const floor = this.o.minStopAtr * atr;
     if (floor > 0) stop = bull ? Math.min(stop, entry - floor) : Math.max(stop, entry + floor);
     const risk = bull ? entry - stop : stop - entry;
-    if (!(risk > 0) || risk > 4 * atr) { this.finish(s, 'INVALIDATED', i, null, 'stop wider than four ATR'); return; }
+    if (!(risk > 0) || risk > 4 * atr) { this.finish(s, 'INVALIDATED', i, null, `stop wider than four ATR: ${(risk / atr).toFixed(1)} ATR`); return; }
+    if (risk < this.o.minRiskPct * entry) {
+      this.finish(s, 'INVALIDATED', i, null, `stop too tight for the fees: risk ${Math.round(risk)} pts, needs ${Math.round(this.o.minRiskPct * entry)} pts (${(this.o.minRiskPct * 100).toFixed(1)}% of price)`);
+      return;
+    }
+    if (momentum && this.o.maxChaseAtr > 0 && (bull ? close - poi.high : poi.low - close) > this.o.maxChaseAtr * atr) {
+      this.finish(s, 'INVALIDATED', i, close, `too far past the zone, no chase: ${((bull ? close - poi.high : poi.low - close) / atr).toFixed(1)} ATR past it (max ${this.o.maxChaseAtr})`);
+      return;
+    }
     const targets = this.targetsFor(brk.dir, entry, risk, i);
     if (!targets) { this.finish(s, 'INVALIDATED', i, null, 'no liquidity to aim at'); return; }
     if (targets[0]!.rr < this.o.minTp1R) {
@@ -857,16 +865,21 @@ function grow(e: Extreme, bar: Bar, i: number) {
  * - continuation setups on, entered at the close of the break (momentum
  *   rarely comes back to its zone);
  * - the stop beyond the last confirmed swing -- the displacement's base --
- *   plus the ATR buffer, and at least 1.5 ATR from the entry;
+ *   plus the ATR buffer, and at least 1 ATR from the entry (the owner's
+ *   setting, 29 Sep 2026; the study chose 1.5);
  * - TP1 at least 2R, TP2 3R, TP3 4R, each pulled to liquidity sitting within
  *   one R beyond, an exact projection otherwise.
+ *
+ * - no trade whose stop is under 0.5% of the price: at 0.05% a side the round
+ *   trip would cost more than 0.2R (round five: the fee-aware minimum edge).
  *
  * No variant clears fees; the HUD prints this one's record beside every setup.
  */
 export const DESK_SMC_OPTIONS = {
   continuation: true, entry: 'break', minTp1R: 0,
-  stopAt: 'swing', minStopAtr: 1.5,
+  stopAt: 'swing', minStopAtr: 1,
   targetMode: 'r-min', targetR: [2, 3, 4],
+  minRiskPct: 0.005,
 } as const;
 
 /** Run the engine over closed candles. The forming candle, if any, must be left out by the caller. */
