@@ -31,7 +31,7 @@
    the desk runs: {"continuation":true,"entry":"break","minTp1R":0,"stopAt":"swing","minStopAtr":1,"targetMode":"r-min","targetR":[2,3,4],"minRiskPct":0.005}
 
 == Detail for the desk's options: {"continuation":true,"entry":"break","minTp1R":0,"stopAt":"swing","minStopAtr":1,"targetMode":"r-min","targetR":[2,3,4],"minRiskPct":0.005}
-SMC engine replay · 275,548 5m candles · 2024-01-10 → 2026-08-31 · 3.3 s
+SMC engine replay · 275,548 5m candles · 2024-01-10 → 2026-08-31 · 2.9 s
 fees: 0.05% a side (taker), charged in R on the whole position
 
 == Funnel

@@ -157,6 +157,11 @@ no sweep needed. It never replaces a setup already running on that side.
 | `INVALIDATED` | Final: never entered (see the refusals below), or superseded. | -- |
 | `EXPIRED` | Final: never entered in time, a time exit, or **closed by the opposite entry**. | -- |
 
+**Refusal reasons carry their numbers**: "stop too tight for the fees: risk
+180 pts, needs 420 pts (0.5% of price)", "TP1 BSL pays 0.9R, under 1.5R". The
+HUD shows the last refused plan as a checklist -- ✓ each confirmation, ✗ the
+check that failed -- and the chart marks it on its candle.
+
 **One position at a time.** An entry in the other direction closes the open
 trade at the same price (stop and reverse); the closed trade keeps its record
 ("closed by the opposite entry"). The HUD and the chart both show the most
@@ -196,9 +201,15 @@ displacement's base -- plus the buffer:
 ```
 buffer   = max(1 point, 0.15 × ATR)
 stop     = last confirmed swing low − buffer            (long)
-floor    : at least 1.5 ATR from the entry, never nearer
+floor    : at least 1 ATR from the entry, never nearer        (the owner's setting)
 cap      : more than 4 ATR from the entry is no trade
+fees     : a stop under 0.5% of the price is no trade -- the round trip
+           (0.05% a side) would cost more than 0.2R of it
 ```
+
+Every initial stop records why it is there (`stopNote`): "below 5m swing HL
+83,120 · buffer 30 pts", or "widened to 1 ATR (190 pts) from the entry". The
+chart's SL label and the HUD show it.
 
 If there is no confirmed swing beyond the entry, the zone's distal edge (below)
 is used. Other modes: `zone` -- beyond the POI's distal edge; `sweep` -- beyond
@@ -281,6 +292,21 @@ to the stop, a dotted spine down its left edge, and lines only across the box:
 | Stop | `SL 83,044 · −330 pts · −1R`; after a move `SL 83,374 · break-even` or `SL 83,600 · locks +226 pts · +0.7R` |
 | TP1–3 | `TP1 84,034 · +660 pts · +2.0R · swing high liquidity ✓` |
 
+Each target reached is marked on its candle with what was closed and banked
+there -- `TP1 ✓ 30% closed · +0.6R banked` -- and the HUD keeps **realised** R
+(banked at the targets) apart from **open** R (the rest, at the last close).
+The entry mark carries the entry candle's volume against the twenty before it,
+`vol 2.3× avg burst` -- volume as an event at the signal, not candle by candle.
+
+**Background and foreground.** History and context -- structure more than 48
+candles old, swept liquidity, HTF zones, older finished trades -- are drawn at
+half strength with lower label priority; the live setup is drawn last and
+strongest.
+
+**History.** The HUD's `Trades (n)` table lists this chart's completed trades,
+newest first: time (IST), side, entry, SL, TP1, exit, result, MFE, MAE,
+minutes, and the path ("TP1 → BE → stopped at the protected stop").
+
 A finished trade is drawn as what happened: entry to exit, green or red, with
 `Long 83,374` at the entry and `TP1 · BE 83,374 · +0 pts · result +0.6R` at the
 exit (the points are the last leg's; the R is the whole trade's, thirds
@@ -336,11 +362,18 @@ The full table, the funnel and the big-move capture are in
 6. A TP1 *minimum* (no trade under 1.5R) removed more good trades than bad; the
    London / New York filter changed nothing.
 
+**Round five** (the owner's P0 list) added a fee-aware minimum edge -- no trade
+whose stop is under 0.5% of the price -- which cut the loss to −0.14R (2024–25)
+and −0.27R (2026) a trade; the desk runs it. A no-chase rule alone did not
+help. **Setup-quality segmentation** (swept-liquidity type, BOS / CHoCH / MSS,
+OB / FVG, displacement, entry volume, session, 1H agreement, risk size) found
+**no slice** that is positive on 2024–25 with t ≥ 2 and positive again on 2026.
+
 The desk runs X (`DESK_SMC_OPTIONS`) on the 5m chart -- chosen for the owner's
 specification (a structural stop, TP1 at least double the risk), tied best on
 2024–25 and among the best on 2026. The HUD prints its record beside every
-setup: **4,871 trades, 31% winners, −0.40R a trade after fees (2026 −0.46R),
-30% of big moves caught. Information, not a signal.** Twenty-four variants on
+setup: **1,665 trades, 35% winners, −0.17R a trade after fees (2026 −0.27R),
+25% of big moves caught. Information, not a signal.** Twenty-four variants on
 one data set is already a lot of looking; the next one would be more likely to
 find luck than an edge.
 
