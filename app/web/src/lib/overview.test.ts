@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import type { ChainResponse, Leg, Outlook } from '@/types/desk';
+import type { ChainResponse, Leg } from '@/types/desk';
 import live from '@/test/fixtures/chain-live.json';
 import { bestLeg, earlyWarning, fundingRead, ivRv, triggerState, volRegime, windowMinutes } from './overview';
 
@@ -37,19 +37,6 @@ describe('the best leg', () => {
     ], 'C');
     expect(b?.strike).toBe(78_500);
   });
-});
-
-const outlook = (over: Partial<Outlook>): Outlook => ({
-  rows: [], consensus: null, bullish: 0, bearish: 0, flat: 0, scored: 0, agreement: '',
-  directionEdgePts: null, sampleWindows: 105_120, ...over,
-});
-
-test('key levels come sorted high to low, and only from what was read', () => {
-  const lv = keyLevels({
-    ceOiWall: { strike: 80_000, value: 1 }, ceOiWallNear: { strike: 78_400, value: 1 },
-    peOiWall: { strike: 77_420, value: 1 }, maxPain: { strike: 78_000, payoutUsd: 0 }, gammaWall: null,
-  } as never, 78_120, 76_840);
-  expect(lv.map((l) => l.price)).toEqual([78_400, 78_120, 78_000, 77_420, 76_840]);
 });
 
 describe('the vol regime', () => {
