@@ -1,0 +1,46 @@
+Entries, stops and exits for big moves -- BTCUSD, 2024-01-10 to 2026-08-31, fees 0.05% a side
+Declared before running: see the header of app/web/scripts/momentum-study.ts.
+
+Part X -- the desk's 1665 SMC entries on 5m, exited four ways
+== X0 as the desk exits (>= 2R / 3R / 4R ladder, structure trail)
+   2024-25  n  1282  win  33%  gross +0.004R  net -0.137R (t -3.65)  total  -176R  worst run -186R
+   2026     n   383  win  33%  gross -0.128R  net -0.270R (t -4.51)  total  -104R  worst run -109R
+   big moves (2% in 4h) positioned for: 19% / 13%   (1054 / 276 such hours)
+== X1 all out at 2R
+   2024-25  n  1282  win  33%  gross -0.011R  net -0.153R (t -3.90)  total  -197R  worst run -204R
+   2026     n   383  win  34%  gross +0.006R  net -0.136R (t -1.90)  total   -52R  worst run -60R
+   big moves (2% in 4h) positioned for: 22% / 20%   (1054 / 276 such hours)
+== X2 no target, chandelier 3 ATR from entry
+   2024-25  n  1282  win  30%  gross -0.032R  net -0.174R (t -6.68)  total  -223R  worst run -225R
+   2026     n   383  win  27%  gross -0.067R  net -0.208R (t -4.87)  total   -80R  worst run -83R
+   big moves (2% in 4h) positioned for: 9% / 8%   (1054 / 276 such hours)
+== X3 break-even at 1R, then chandelier 3 ATR
+   2024-25  n  1282  win  42%  gross -0.019R  net -0.161R (t -4.72)  total  -206R  worst run -211R
+   2026     n   383  win  43%  gross -0.056R  net -0.198R (t -3.40)  total   -76R  worst run -82R
+   big moves (2% in 4h) positioned for: 16% / 14%   (1054 / 276 such hours)
+
+Part E -- momentum entries: 20-candle breakout, 2 ATR stop, 3 ATR chandelier, no target
+== E1 breakout, 1H
+   2024-25  n   558  win  32%  gross +0.202R  net +0.110R (t  1.06)  total    62R  worst run -42R
+   2026     n   184  win  36%  gross +0.102R  net +0.003R (t  0.03)  total     1R  worst run -21R
+   big moves (2% in 4h) positioned for: 38% / 45%   (1054 / 276 such hours)
+== E2 breakout, 4H
+   2024-25  n   131  win  40%  gross +0.331R  net +0.289R (t  1.85)  total    38R  worst run -8R
+   2026     n    51  win  27%  gross +0.069R  net +0.028R (t  0.11)  total     1R  worst run -14R
+   big moves (2% in 4h) positioned for: 44% / 49%   (1054 / 276 such hours)
+== E3 breakout, 15m
+   2024-25  n  2270  win  30%  gross -0.132R  net -0.341R (t -0.93)  total  -775R  worst run -776R
+   2026     n   808  win  28%  gross -0.020R  net -0.237R (t -4.21)  total  -192R  worst run -208R
+   big moves (2% in 4h) positioned for: 32% / 33%   (1054 / 276 such hours)
+== E4 breakout out of a squeeze, 1H
+   2024-25  n   256  win  31%  gross +0.366R  net +0.257R (t  1.29)  total    66R  worst run -27R
+   2026     n   101  win  31%  gross -0.093R  net -0.204R (t -1.70)  total   -21R  worst run -22R
+   big moves (2% in 4h) positioned for: 14% / 13%   (1054 / 276 such hours)
+== E5 breakout with the 200 EMA trend, 1H
+   2024-25  n   444  win  33%  gross +0.156R  net +0.067R (t  0.78)  total    30R  worst run -31R
+   2026     n   154  win  36%  gross +0.093R  net -0.005R (t -0.04)  total    -1R  worst run -22R
+   big moves (2% in 4h) positioned for: 31% / 37%   (1054 / 276 such hours)
+
+Chosen on 2024-25: E2 breakout, 4H -- net +0.289R a trade over 131.
+Judged once on 2026: net +0.028R a trade over 51 (t 0.11); big moves positioned for 49%.
+Not an edge by the declared rule (net R > 0 on both, t >= 2 on 2026).
