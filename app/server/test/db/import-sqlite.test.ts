@@ -95,6 +95,7 @@ function fixtures(): string {
   market.prepare('INSERT INTO oi_snapshots VALUES (?, ?, ?, ?, ?, ?, ?)').run(600_000, '090926', 'C', 79_600, 4_100, 77_100, 0.55);
   market.close();
 
+  // Left in the directory on purpose: the analytics service is retired, so its file must be passed over.
   const analytics = new DatabaseSync(join(dir, 'analytics.db'));
   analytics.exec(`
     CREATE TABLE outlook_states (minutes INTEGER, feature TEXT, bucket TEXT, windows INTEGER, independent INTEGER, side_band_pct REAL, p_down REAL, p_side REAL, p_up REAL, q16_pct REAL, q50_pct REAL, q84_pct REAL, by_year TEXT, lean_holds INTEGER, side_holds INTEGER, lean_z REAL, side_z REAL, measured_at TEXT, PRIMARY KEY (minutes, feature, bucket));
@@ -169,9 +170,9 @@ test('[critical] every table lands, and what the stores read back is what the SQ
   assert.equal((await log.list()).length, 1);
   assert.equal((await log.list())[0]?.count, 73);
 
-  // market history and the analytics tables
+  // market history; analytics.db is passed over (the service is retired) and no table is made for it
   assert.equal((await one<{ n: number }>('SELECT COUNT(*) AS n FROM oi_snapshots'))!.n, 2);
-  assert.deepEqual(await one('SELECT by_year, lean_holds FROM outlook_states'), { by_year: { 2024: 1 }, lean_holds: true });
+  assert.equal((await one<{ t: string | null }>("SELECT to_regclass('public.outlook_states')::text AS t"))!.t, null);
 });
 
 test('running it again changes nothing', async () => {

@@ -21,15 +21,24 @@ Updated 29 Sep 2026
   history re-sent; heatmap and bubbles rebuilt only when a candle is added;
   the LTP push checks every 100 ms; flow / big-trade / heatmap reads shared
   between pollers for 3-5 s.
-- [ ] **Owner: retire the analytics service?** Nothing in the desk uses it now.
-  Retiring it means: remove the `analytics` service from
-  `deploy/docker-compose.yml`, `Dockerfile.analytics`, `analytics/`,
-  `research/publish_outlook_states.py`, `src/db/analytics-schema.ts`; then,
-  after `deploy/backup-db.sh`, `DROP TABLE outlook_states, chain_states,
-  analytics_publish_meta;`.
-- [ ] **Owner: drop the retired journals** (still waiting, see 28 Sep): after
-  `deploy/backup-db.sh`, `DROP TABLE market_states, market_state_checks,
-  shock_snapshots;`. Their migrations stay in the ledger.
+- [x] **Analytics service retired** (owner's go-ahead): gone from compose, the
+  deploy scripts, the backup script, the SQLite importer; `analytics/`,
+  `Dockerfile.analytics`, `docs/ANALYTICS.md`, `src/db/analytics-schema.ts` and
+  the four outlook research scripts removed (all in git history).
+- [x] **Every deploy backs the database up first** (`deploy.sh`,
+  `deploy-fast.sh`; `--no-backup` to skip), on the target host, and stops if
+  the backup fails.
+- [ ] **Owner: drop the six unused tables.** The drop could not be made a
+  migration here (the tool refused an irreversible deletion), so it is a
+  manual step, on the server, after a backup:
+  ```
+  ./deploy/backup-db.sh
+  docker compose -f deploy/docker-compose.yml exec -T db psql -U desk -d btc_desk -c \
+    "DROP TABLE IF EXISTS market_state_checks, market_states, shock_snapshots, outlook_states, chain_states, analytics_publish_meta;"
+  ```
+  Undo: `./deploy/backup-db.sh --restore backups/btc_desk-<stamp>.dump`.
+- [ ] Local leftovers, safe to delete: `analytics/` now holds only git-ignored
+  caches (`.venv`, `__pycache__`, `.pytest_cache`).
 - [ ] Dead web helpers left from the removed panels, found by knip:
   `horizonRows`, `mtfConsensus`, `sideCards`, `tierOfTf`, `TradeFlowPanel`,
   `OptionFlowPanel`, `WindowSelect`, `Sparkline` and others -- one sweep.

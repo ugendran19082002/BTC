@@ -11,17 +11,10 @@ import { readMarket } from './moves.js';
 /**
  * The option board as figures a measurement can use — and a record of them.
  *
- * Two jobs, both display-only:
- *
- * **The board, for the analytics service.** It sends raw marks and volumes and
- * never a verdict: the service buckets them with the very same functions that
- * labelled 735 mornings of history (`analytics/app/chain_features.py`), so a
- * measured reading can only be applied to a state defined the way it was
- * measured. Node deciding "puts are dear" here and Python deciding it there is
- * exactly how the two come apart.
- *
- * **The record, for the measurement that cannot be run yet.** chain.db has one
- * chain a day — 05:30, twelve hours before settlement — which is why only three
+ * Its job, display-only: **the record, for the measurement that cannot be run
+ * yet.** (It also used to hand the board to the analytics service, retired
+ * 29 Sep 2026.) chain.db has one chain a day — 05:30, twelve hours before
+ * settlement — which is why only three
  * readings could be measured at all (the straddle, the skew and put/call
  * volume, over that one horizon). Open interest per strike, its change, the
  * walls, max pain and the volume-to-open-interest ratio have no history, so

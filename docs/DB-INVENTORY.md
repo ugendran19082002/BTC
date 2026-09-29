@@ -20,7 +20,7 @@ name's prefix wherever a bare name would be ambiguous (`auth_sessions`,
 | market | `oi_snapshots`, `chain_features`, `option_snapshots`, `option_snapshots_1m`, `trade_flow_1m`, `option_flow_1m`, `large_prints`, `book_heat_1m`, `perp_snapshots`, `index_1m` | the chain route, the API's recorders, the perp's trade socket, and the book sampler | What open interest and at-the-money volatility *were*, so a change in either is readable. Disposable. |
 | chart | `chart_annotations` | the annotation routes | Levels and zones saved on the price chart. Under the ledger since 29 Sep 2026 (`chart-001-annotations`). |
 | retired | `market_states`, `market_state_checks`, `shock_snapshots` | nothing, since 28 Sep 2026 | The Signal History and big-move journals. Writers and readers removed; the tables are left for a drop that needs the owner's go-ahead and a backup first (TODO.md). |
-| analytics | `outlook_states`, `chain_states`, `analytics_publish_meta` | `research/publish_outlook_states.py` | The measured Down / Side / Up tables the Python service reads. **No reader in the desk since 29 Sep 2026** -- retirement waits for the owner (TODO.md). |
+| retired | `outlook_states`, `chain_states`, `analytics_publish_meta` | nothing, since 29 Sep 2026 | The retired analytics service's tables. Service and code removed; the tables wait for the owner's drop, after a backup (TODO.md). |
 | ledger | `schema_migrations` | `db/migrate.ts` | The one ledger of what has been done to the database. |
 | `chain.db` (SQLite) | 6 | the harvester, offline | Two years of settled option chains. Read-only at runtime. |
 
@@ -100,7 +100,7 @@ Ids are `<area>-NNN-what-it-does`. Applied on a fresh desk today:
 | errors | `errors-001-log`, `errors-002-to-public` |
 | strategy | `strategy-001-tables`, `strategy-002-seed`, `strategy-003-to-public`, `strategy-004-retire-extras`, `strategy-005-drop-retired-tables` |
 | sign-in | `auth-001-user-sessions`, `auth-002-to-public` |
-| analytics | `analytics-001-to-public` |
+| analytics, retired | `analytics-001-to-public` -- ran; its code went with the service. |
 | chart | `chart-001-annotations` (the table predates it; `IF NOT EXISTS`, so on a live database it only records itself) |
 
 `market-015` and `market-016` are numbers the retired journals also used
@@ -479,23 +479,15 @@ minute; `/api/health` still reports the five-minute bucket.
 
 ---
 
-## `analytics` — the measured outlook
+## `analytics` — retired 29 Sep 2026
 
-Written by `research/publish_outlook_states.py` from the repository's `chain.db`
-after `measure_outlook.py` / `measure_chain_outlook.py` have run; read by the
-Python service (`analytics/app/db.py`, `PgStates`). Nothing in Node reads it --
-and since 29 Sep 2026 nothing in the desk asks the service either: the chain
-route's call went with the panels that showed its rows (it cost up to 1.2 s a
-request when the service was slow). The service still runs and the tables
-still fill until the owner retires them (TODO.md).
-
-| Table | What it holds |
-|---|---|
-| `outlook_states` | `(minutes, feature, bucket)` PK: the measured Down / Side / Up shares per state and horizon, the quantiles, whether the lean and the side held (`BOOLEAN`), `by_year` (JSONB), `measured_at`. |
-| `chain_states` | The same at the 05:30 → 17:30 horizon for the chain features, with the terciles (`lo`, `hi`) each was cut at. |
-| `analytics_publish_meta` | One row: `published_at`. Stamped in the same transaction as the tables; the service re-reads them when it changes, checking at most every 30 s. What the file's modification time used to give. |
-
----
+`outlook_states`, `chain_states`, `analytics_publish_meta`: the analytics
+service's measured Down / Side / Up states, written by
+`research/publish_outlook_states.py`. The service, its publisher, its
+measurement scripts and the desk's call to it were removed on 29 Sep 2026
+(nothing on screen read them); `docs/ANALYTICS.md` and the code are in git
+history before that commit. **The three tables are still in the production
+database**, no longer written or read, until the owner drops them (TODO.md).
 
 ## `chain.db` — the evidence
 

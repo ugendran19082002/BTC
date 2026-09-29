@@ -42,14 +42,16 @@ broke and why — which is worth reading before changing anything in `trading/`.
   chain.db ──► domain/, backtest/    (735 settled days; read-only at runtime)
 ```
 
-Four processes in production: `btc-desk-api` (Fastify), `btc-desk-web` (nginx
-serving the built bundle and proxying `/api`), `btc-desk-analytics` (Python,
-display-only models) and `db` (PostgreSQL 17). Everything the desk writes is
+Three processes in production: `btc-desk-api` (Fastify), `btc-desk-web` (nginx
+serving the built bundle and proxying `/api`) and `db` (PostgreSQL 17). A
+fourth, `btc-desk-analytics` (Python, display-only measured models), was
+retired on 29 Sep 2026 when nothing on screen read it any more. Everything the desk writes is
 in one PostgreSQL database, in its `public` schema: the journal and settings
 (`trades`, `trade_events`, `settings`), the strategies (`strategy_*`), the
 sign-in (`auth_*`), the error log (`errors`), open interest and at-the-money
 volatility in five-minute buckets so a *change* in either is readable at all
-(`oi_snapshots`, `chain_features`), and the analytics tables. The one file left is `chain.db`, the
+(`oi_snapshots`, `chain_features`), and the order flow and book the price
+chart draws (`trade_flow_1m`, `large_prints`, `book_heat_1m`). The one file left is `chain.db`, the
 harvester's read-only dataset, on the `data` volume. `DB-INVENTORY.md` has
 every table.
 

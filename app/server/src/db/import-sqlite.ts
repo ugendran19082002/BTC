@@ -15,9 +15,9 @@ import { marketSchema } from '../market/oi-history.js';
  *
  *   npm run db:import -- --data-dir /srv/data        (DATABASE_URL set)
  *
- * One pass per file -- trades.db, auth.db, errors.db, market.db, analytics.db
- * -- each table inside its own transaction, every row `ON CONFLICT DO NOTHING`,
- * so the script can be run again after a failure and copies only what is
+ * One pass per file -- trades.db, auth.db, errors.db, market.db (analytics.db
+ * went with the analytics service, retired 29 Sep 2026) -- each table inside
+ * its own transaction, every row `ON CONFLICT DO NOTHING`, so the script can be run again after a failure and copies only what is
  * missing. It never writes to the SQLite files: they are opened read-only and
  * stay on the volume as the rollback path.
  *
@@ -196,52 +196,6 @@ async function importMarket(dir: string, counts: Count[]): Promise<void> {
   db.close();
 }
 
-async function importAnalytics(dir: string, counts: Count[]): Promise<void> {
-  const db = openRo(join(dir, 'analytics.db'));
-  if (!db) { console.log('analytics.db: not present, skipped'); return; }
-  await query(ANALYTICS_SCHEMA);
-  const outlook = readAll(db, 'outlook_states');
-  await copy('outlook_states', OUTLOOK_COLS, outlook,
-    (r) => OUTLOOK_COLS.map((c) => (c === 'by_year' ? asJson(r[c]) : c === 'lean_holds' || c === 'side_holds' ? Number(r[c]) === 1 : r[c] ?? null)));
-  counts.push({ table: 'outlook_states', source: outlook.length, target: await count('outlook_states') });
-  const chain = readAll(db, 'chain_states');
-  await copy('chain_states', CHAIN_COLS, chain,
-    (r) => CHAIN_COLS.map((c) => (c === 'by_year' ? asJson(r[c]) : c === 'lean_holds' || c === 'side_holds' ? Number(r[c]) === 1 : r[c] ?? null)));
-  counts.push({ table: 'chain_states', source: chain.length, target: await count('chain_states') });
-  if (outlook.length) await one(`INSERT INTO analytics_publish_meta (id, published_at) VALUES (1, $1) ON CONFLICT (id) DO UPDATE SET published_at = EXCLUDED.published_at`, [Date.now()]);
-  db.close();
-}
-
-const OUTLOOK_COLS = ['minutes', 'feature', 'bucket', 'windows', 'independent', 'side_band_pct', 'p_down', 'p_side', 'p_up', 'q16_pct', 'q50_pct', 'q84_pct', 'by_year', 'lean_holds', 'side_holds', 'lean_z', 'side_z', 'measured_at'];
-const CHAIN_COLS = ['minutes', 'feature', 'bucket', 'lo', 'hi', ...OUTLOOK_COLS.slice(3)];
-
-/**
- * The analytics tables. Owned by the Python service and its publish script
- * (research/publish_outlook_states.py), which create them the same way; here
- * so an import on a fresh database has somewhere to put the rows.
- */
-export const ANALYTICS_SCHEMA = `
-  CREATE TABLE IF NOT EXISTS outlook_states (
-    minutes INTEGER NOT NULL, feature TEXT NOT NULL, bucket TEXT NOT NULL,
-    windows INTEGER, independent INTEGER, side_band_pct DOUBLE PRECISION,
-    p_down DOUBLE PRECISION, p_side DOUBLE PRECISION, p_up DOUBLE PRECISION,
-    q16_pct DOUBLE PRECISION, q50_pct DOUBLE PRECISION, q84_pct DOUBLE PRECISION,
-    by_year JSONB, lean_holds BOOLEAN, side_holds BOOLEAN, lean_z DOUBLE PRECISION, side_z DOUBLE PRECISION,
-    measured_at TEXT, PRIMARY KEY (minutes, feature, bucket)
-  );
-  CREATE TABLE IF NOT EXISTS chain_states (
-    minutes INTEGER NOT NULL, feature TEXT NOT NULL, bucket TEXT NOT NULL, lo DOUBLE PRECISION, hi DOUBLE PRECISION,
-    windows INTEGER, independent INTEGER, side_band_pct DOUBLE PRECISION,
-    p_down DOUBLE PRECISION, p_side DOUBLE PRECISION, p_up DOUBLE PRECISION,
-    q16_pct DOUBLE PRECISION, q50_pct DOUBLE PRECISION, q84_pct DOUBLE PRECISION,
-    by_year JSONB, lean_holds BOOLEAN, side_holds BOOLEAN, lean_z DOUBLE PRECISION, side_z DOUBLE PRECISION,
-    measured_at TEXT, PRIMARY KEY (minutes, feature, bucket)
-  );
-  CREATE TABLE IF NOT EXISTS analytics_publish_meta (
-    id INTEGER PRIMARY KEY CHECK (id = 1), published_at BIGINT NOT NULL
-  );
-`;
-
 /** Run every import against `dir`. Returns the count table; throws on a mismatch. */
 export async function importSqlite(dir: string): Promise<Count[]> {
   // Every schema first, the way the desk boots, so the tables exist.
@@ -258,7 +212,6 @@ export async function importSqlite(dir: string): Promise<Count[]> {
   await importAuth(dir, counts);
   await importErrors(dir, counts);
   await importMarket(dir, counts);
-  await importAnalytics(dir, counts);
 
   const bad = counts.filter((c) => c.target < c.source);
   if (bad.length) {
@@ -272,7 +225,7 @@ if (process.argv[1] && /import-sqlite\.(ts|js)$/.test(process.argv[1])) {
   const i = process.argv.indexOf('--data-dir');
   const dir = i >= 0 ? process.argv[i + 1] : undefined;
   if (!dir) {
-    console.error('usage: npm run db:import -- --data-dir <directory holding trades.db, auth.db, errors.db, market.db, analytics.db>');
+    console.error('usage: npm run db:import -- --data-dir <directory holding trades.db, auth.db, errors.db, market.db>');
     process.exit(2);
   }
   importSqlite(dir)
