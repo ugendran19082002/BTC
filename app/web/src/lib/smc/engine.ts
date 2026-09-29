@@ -89,7 +89,7 @@ export class SmcEngine {
   private session: { name: Session; day: number; from: number; ext: Extreme } | null = null;
 
   constructor(opts: SmcOptions) {
-    this.o = { pivotLeft: 2, pivotRight: 2, stopAt: 'zone', minStopAtr: 0, entry: 'close', continuation: false, tp1: 'nearest', minTp1R: MIN_TP1_R, ...opts };
+    this.o = { pivotLeft: 2, pivotRight: 2, stopAt: 'zone', minStopAtr: 0, entry: 'close', continuation: false, tp1: 'nearest', minTp1R: MIN_TP1_R, targetMode: 'liquidity', targetR: [2, 3, 4], ...opts };
   }
 
   /** Feed the next closed candle. Candles must arrive in time order. */
@@ -557,10 +557,22 @@ export class SmcEngine {
     const bull = brk.dir === 'bull';
     const atr = this.atrs[i] ?? 0;
     const buf = stopBuffer(atr);
-    const entry = bull ? poi.high : poi.low;
+    // The momentum entry: at the close of the break itself, no retest. For 'hybrid' only when the
+    // move was a displacement candle (not merely a gap) and the higher timeframe, as known now, agrees.
+    const momentum = this.o.entry === 'break' || (this.o.entry === 'hybrid'
+      && someSince(this.tags, since, (t) => t.name === 'Displacement' && t.dir === brk.dir)
+      && (this.o.htfTrendAt?.(this.b[i]!.time + this.o.tfSec) ?? null) === brk.dir);
+    const close = this.b[i]!.close;
+    // Everything below is measured from the entry the trade will actually have.
+    const entry = momentum ? close : bull ? poi.high : poi.low;
     // The stop: beyond the POI's distal edge -- the level whose loss says the zone failed -- plus the buffer.
     let stop = bull ? poi.low - buf : poi.high + buf;
     if (this.o.stopAt === 'sweep' && sweepPrice !== null) stop = bull ? Math.min(stop, sweepPrice - buf) : Math.max(stop, sweepPrice + buf);
+    if (this.o.stopAt === 'swing') {
+      // The structural invalidation: the last confirmed swing on the far side of the entry, known by now.
+      const sw = bull ? this.lastLow : this.lastHigh;
+      if (sw && sw.known <= i && (bull ? sw.price < entry : sw.price > entry)) stop = bull ? sw.price - buf : sw.price + buf;
+    }
     const floor = this.o.minStopAtr * atr;
     if (floor > 0) stop = bull ? Math.min(stop, entry - floor) : Math.max(stop, entry + floor);
     const risk = bull ? entry - stop : stop - entry;
@@ -581,20 +593,11 @@ export class SmcEngine {
     s.state = 'READY';
     s.events.push({ state: 'READY', at: i, known: i, price: entry, note: `${brk.mss ? 'MSS' : brk.kind} ${Math.round(brk.level)}; POI ${poi.kind} ${Math.round(poi.low)}–${Math.round(poi.high)}` });
 
-    // The momentum entry, for 'hybrid': only when the move was a displacement candle
-    // (not merely a gap) and the higher timeframe's trend, as known now, agrees.
-    const momentum = this.o.entry === 'break' || (this.o.entry === 'hybrid'
-      && someSince(this.tags, since, (t) => t.name === 'Displacement' && t.dir === brk.dir)
-      && (this.o.htfTrendAt?.(this.b[i]!.time + this.o.tfSec) ?? null) === brk.dir);
     if (momentum) {
-      // Momentum entry: at the close of the break itself, no retest. Same stop and targets.
-      const close = this.b[i]!.close;
-      const fillRisk = bull ? close - stop : stop - close;
-      const rr1 = (bull ? targets[0]!.price - close : close - targets[0]!.price) / fillRisk;
-      if (!(fillRisk > 0) || rr1 <= 0 || rr1 < this.o.minTp1R) { this.finish(s, 'INVALIDATED', i, close, `break entry: TP1 ${rr1.toFixed(1)}R at the close`); return; }
       ok(4);
       ok(5);
-      s.fill = { at: i, price: close, risk: fillRisk };
+      this.closeOpposite(s, i, close);
+      s.fill = { at: i, price: close, risk };
       s.state = 'ACTIVE';
       s.events.push({ state: 'ACTIVE', at: i, known: i, price: close, note: 'entered at the close of the break' });
       s.mfeR = 0;
@@ -635,6 +638,31 @@ export class SmcEngine {
     }
     const nearest = (xs: C[], beyond: number) => xs.filter((c) => dist(c.price) > beyond + 0.2 * atr).sort((a, b) => dist(a.price) - dist(b.price))[0] ?? null;
     const of = (src: Target['source']) => pools.filter((c) => c.source === src);
+
+    if (this.o.targetMode !== 'liquidity') {
+      /*
+       * Targets as multiples of the risk, which is itself measured in ATR: TP1
+       * at least 2R, TP2 3R, TP3 4R by default. Under 'r-min' each is pulled to
+       * the nearest liquidity between its R and one R further, when there is
+       * one -- the level is where orders sit -- and is the exact projection
+       * otherwise. Never nearer than the previous target.
+       */
+      const out: Target[] = [];
+      let prev = 0;
+      for (const r of this.o.targetR) {
+        const min = Math.max(r * risk, prev + 0.2 * atr);
+        const level = this.o.targetMode === 'r-min'
+          ? pools.filter((c) => dist(c.price) >= min && dist(c.price) <= min + risk).sort((a, b) => dist(a.price) - dist(b.price))[0]
+          : undefined;
+        const price = level ? level.price : bull ? entry + min : entry - min;
+        const rr = dist(price) / risk;
+        out.push(level
+          ? { price, label: level.label, source: level.source, rr, reason: level.reason }
+          : { price, label: `${r}R`, source: 'R-multiple', rr, reason: `${r}R · ${(min / Math.max(atr, 1e-9)).toFixed(1)} ATR projection` });
+        prev = dist(price);
+      }
+      return out;
+    }
 
     // 'first-over-min' passes over levels that would pay less than the minimum.
     const floor = this.o.tp1 === 'first-over-min' ? this.o.minTp1R * risk : 0;
@@ -689,6 +717,7 @@ export class SmcEngine {
           // Research option: a resting limit at the zone edge, filled on the touch. On the fill
           // candle only the stop is checked -- which extreme came first is unknown.
           ok(5);
+          this.closeOpposite(s, i, s.entry!);
           s.fill = { at: i, price: s.entry!, risk: s.risk! };
           s.state = 'ACTIVE';
           s.events.push({ state: 'ACTIVE', at: i, known: i, price: s.entry!, note: 'filled at the zone edge (limit)' });
@@ -711,6 +740,7 @@ export class SmcEngine {
         return;
       }
       ok(5);
+      this.closeOpposite(s, i, bar.close);
       s.fill = { at: i, price: bar.close, risk };
       s.state = 'ACTIVE';
       s.events.push({ state: 'ACTIVE', at: i, known: i, price: bar.close, note: 'entered at the close that confirmed the retest' });
@@ -752,6 +782,15 @@ export class SmcEngine {
       else if (s.state === 'TP2') this.tighten(s, bull ? sw.price - stopBuffer(this.atrs[i] ?? 0) : sw.price + stopBuffer(this.atrs[i] ?? 0), i, `trail behind ${sw.label ?? 'swing'} ${Math.round(sw.price)}`);
     }
     if (i - fill.at > ACTIVE_BARS) this.finish(s, 'EXPIRED', i, bar.close, 'time exit');
+  }
+
+  /**
+   * One position at a time. An entry the other way closes the open trade at
+   * the same price (stop and reverse); the closed trade keeps its record.
+   */
+  private closeOpposite(s: Setup, i: number, price: number) {
+    const other = s.dir === 'bull' ? this.short : this.long;
+    if (other && other.fill && other.closedAt === null) this.finish(other, 'EXPIRED', i, price, 'closed by the opposite entry');
   }
 
   /** Move the stop, only ever towards the trade. */
@@ -812,14 +851,23 @@ function grow(e: Extreme, bar: Bar, i: number) {
 }
 
 /**
- * The options the desk's chart runs with: continuation setups on, a stop at
- * least 1.5 ATR from the entry, no minimum on TP1 (the nearest liquidity is
- * TP1 whatever it pays), and the entry at the close of the break -- momentum
- * rarely comes back to its zone. Chosen on 2024-25 out of twelve variants,
- * then judged once on 2026 -- see research/SMC-STUDY.txt, which also shows
- * that no variant clears fees. The HUD prints that record beside every setup.
+ * The options the desk's chart runs with, chosen on 2024-25 and judged once
+ * on 2026 across twenty-four variants (research/SMC-STUDY.txt):
+ *
+ * - continuation setups on, entered at the close of the break (momentum
+ *   rarely comes back to its zone);
+ * - the stop beyond the last confirmed swing -- the displacement's base --
+ *   plus the ATR buffer, and at least 1.5 ATR from the entry;
+ * - TP1 at least 2R, TP2 3R, TP3 4R, each pulled to liquidity sitting within
+ *   one R beyond, an exact projection otherwise.
+ *
+ * No variant clears fees; the HUD prints this one's record beside every setup.
  */
-export const DESK_SMC_OPTIONS = { continuation: true, minStopAtr: 1.5, minTp1R: 0, entry: 'break' } as const;
+export const DESK_SMC_OPTIONS = {
+  continuation: true, entry: 'break', minTp1R: 0,
+  stopAt: 'swing', minStopAtr: 1.5,
+  targetMode: 'r-min', targetR: [2, 3, 4],
+} as const;
 
 /** Run the engine over closed candles. The forming candle, if any, must be left out by the caller. */
 export function runSmc(bars: readonly Bar[], opts: SmcOptions): SmcState {

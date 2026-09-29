@@ -179,8 +179,13 @@ export type DealingRange = {
 export type SmcOptions = {
   /** Seconds per bar, for session and day boundaries. */
   tfSec: number;
-  /** Where the stop goes: beyond the POI's far edge ('zone', the default), or beyond the sweep's extreme as well ('sweep'). */
-  stopAt?: 'zone' | 'sweep';
+  /**
+   * Where the stop goes: beyond the POI's far edge ('zone', the default),
+   * beyond the sweep's extreme as well ('sweep'), or beyond the last confirmed
+   * swing low (long) / high (short) at entry -- the displacement's base
+   * ('swing'). Always plus the buffer, and never nearer than `minStopAtr`.
+   */
+  stopAt?: 'zone' | 'sweep' | 'swing';
   /** A volatility floor: the stop is at least this many ATRs from the entry. 0, the default, is structure only. */
   minStopAtr?: number;
   /**
@@ -201,6 +206,16 @@ export type SmcOptions = {
   tp1?: 'nearest' | 'first-over-min';
   /** The least TP1 may pay, in R. 1.5 by default. */
   minTp1R?: number;
+  /**
+   * How targets are placed. 'liquidity' (the default): nearest internal, then
+   * external liquidity, then the opposing zone. 'r-min': each target at least
+   * its multiple of the risk (`targetR`) -- the nearest liquidity between R and
+   * R+1 when there is one, else an exact R projection. 'r-multiple': exact
+   * projections only.
+   */
+  targetMode?: 'liquidity' | 'r-min' | 'r-multiple';
+  /** The R multiples for TP1, TP2, TP3 under 'r-min' / 'r-multiple'. [2, 3, 4] by default. */
+  targetR?: readonly [number, number, number];
   /** Start setups only in these sessions (by the triggering candle's UTC hour). All sessions, and outside them, by default. */
   sessions?: readonly Session[];
   /** Fractal size. Two bars each side is the usual intraday choice. */

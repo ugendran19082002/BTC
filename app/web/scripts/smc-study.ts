@@ -64,6 +64,13 @@ const VARIANTS: Variant[] = [
   { name: 'P  L on 1H candles', opts: { continuation: true, minStopAtr: 1.5, minTp1R: 0, entry: 'break' }, tfSec: 3600 },
   { name: 'Q  L, London + New York only', opts: { continuation: true, minStopAtr: 1.5, minTp1R: 0, entry: 'break', sessions: ['London', 'New York'] } },
   { name: 'R  O with maker TPs (15m)', opts: { continuation: true, minStopAtr: 1.5, minTp1R: 0, entry: 'break' }, tfSec: 900, fees: 'maker-tp' },
+  // Round four, the stop and target frameworks, declared together on the desk's 5m break entry (L):
+  { name: 'S  L, targets >= 2R / 3R / 4R at liquidity', opts: { continuation: true, minStopAtr: 1.5, minTp1R: 0, entry: 'break', targetMode: 'r-min', targetR: [2, 3, 4] } },
+  { name: 'T  L, targets exactly 2R / 3R / 4R', opts: { continuation: true, minStopAtr: 1.5, minTp1R: 0, entry: 'break', targetMode: 'r-multiple', targetR: [2, 3, 4] } },
+  { name: 'U  L, targets >= 1R / 2R / 3R at liquidity', opts: { continuation: true, minStopAtr: 1.5, minTp1R: 0, entry: 'break', targetMode: 'r-min', targetR: [1, 2, 3] } },
+  { name: 'V  L, stop at the swing', opts: { continuation: true, minStopAtr: 1.5, minTp1R: 0, entry: 'break', stopAt: 'swing' } },
+  { name: 'W  V, targets >= 1R / 2R / 3R', opts: { continuation: true, minStopAtr: 1.5, minTp1R: 0, entry: 'break', stopAt: 'swing', targetMode: 'r-min', targetR: [1, 2, 3] } },
+  { name: 'X  V, targets >= 2R / 3R / 4R', opts: { continuation: true, minStopAtr: 1.5, minTp1R: 0, entry: 'break', stopAt: 'swing', targetMode: 'r-min', targetR: [2, 3, 4] } },
 ];
 // The 1H trend as it was known at each moment, from closed 1H candles only -- for the hybrid entry.
 const hours = aggregate(bars, 300, 3600);

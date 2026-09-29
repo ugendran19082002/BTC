@@ -113,8 +113,8 @@ export class SmcPrimitive implements ISeriesPrimitive<Time> {
       if (it.stroke) {
         ctx.save();
         ctx.strokeStyle = it.stroke;
-        ctx.globalAlpha = it.layer === 'trade' ? 0.85 : 0.55;
-        ctx.lineWidth = 1;
+        ctx.globalAlpha = it.layer === 'trade' ? 0.9 : 0.45;
+        ctx.lineWidth = it.layer === 'trade' ? 1.5 : 1;
         ctx.setLineDash(it.dash ? [4, 3] : []);
         ctx.strokeRect(Math.round(sx[0]) + 0.5, Math.round(top) + 0.5, Math.round(sx[1] - sx[0]), Math.round(h));
         ctx.restore();

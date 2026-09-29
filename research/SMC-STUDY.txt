@@ -10,52 +10,56 @@
    I  + continuation, floor 1.5 ATR       24-25: n  682 win  29.3% gross -0.05 net -0.47R/trade   2026: n  230 win  27.0% gross -0.17 net -0.62R/trade
    J  I, no TP1 minimum                   24-25: n 1806 win  37.5% gross -0.03 net -0.41R/trade   2026: n  619 win  35.2% gross -0.15 net -0.58R/trade
    K  I, TP1 = first liquidity over 1.5R  24-25: n 1331 win  28.9% gross -0.05 net -0.46R/trade   2026: n  464 win  26.1% gross -0.17 net -0.64R/trade
-   L  J, entered at the break (no retest) 24-25: n 3909 win  46.2% gross -0.01 net -0.31R/trade   2026: n 1336 win  44.2% gross -0.11 net -0.46R/trade
-   M  J, hybrid: retest, or break if strong+1H 24-25: n 2052 win  39.4% gross -0.04 net -0.40R/trade   2026: n  695 win  36.4% gross -0.14 net -0.54R/trade
-   N  L, TP exits at the maker fee        24-25: n 3909 win  46.2% gross -0.01 net -0.29R/trade   2026: n 1336 win  44.2% gross -0.11 net -0.43R/trade
-   O  L on 15m candles                    24-25: n 1225 win  46.3% gross -0.02 net -0.18R/trade   2026: n  401 win  45.6% gross -0.01 net -0.17R/trade
-   P  L on 1H candles                     24-25: n  310 win  47.7% gross -0.05 net -0.12R/trade   2026: n  113 win  54.0% gross +0.07 net -0.01R/trade
-   Q  L, London + New York only           24-25: n 2400 win  45.7% gross -0.03 net -0.31R/trade   2026: n  806 win  44.8% gross -0.11 net -0.46R/trade
-   R  O with maker TPs (15m)              24-25: n 1225 win  46.3% gross -0.02 net -0.16R/trade   2026: n  401 win  45.6% gross -0.01 net -0.16R/trade
+   L  J, entered at the break (no retest) 24-25: n 3982 win  40.8% gross -0.02 net -0.39R/trade   2026: n 1348 win  39.2% gross -0.11 net -0.55R/trade
+   M  J, hybrid: retest, or break if strong+1H 24-25: n 2026 win  38.3% gross -0.04 net -0.42R/trade   2026: n  690 win  35.1% gross -0.14 net -0.56R/trade
+   N  L, TP exits at the maker fee        24-25: n 3982 win  40.8% gross -0.02 net -0.37R/trade   2026: n 1348 win  39.2% gross -0.11 net -0.52R/trade
+   O  L on 15m candles                    24-25: n 1254 win  41.0% gross -0.03 net -0.22R/trade   2026: n  402 win  43.3% gross +0.02 net -0.19R/trade
+   P  L on 1H candles                     24-25: n  330 win  42.1% gross -0.06 net -0.14R/trade   2026: n  123 win  50.4% gross +0.11 net +0.02R/trade
+   Q  L, London + New York only           24-25: n 2412 win  40.0% gross -0.06 net -0.41R/trade   2026: n  803 win  40.0% gross -0.12 net -0.55R/trade
+   R  O with maker TPs (15m)              24-25: n 1254 win  41.0% gross -0.03 net -0.21R/trade   2026: n  402 win  43.3% gross +0.02 net -0.17R/trade
+   S  L, targets >= 2R / 3R / 4R at liquidity 24-25: n 3924 win  30.4% gross -0.05 net -0.41R/trade   2026: n 1323 win  30.0% gross -0.09 net -0.52R/trade
+   T  L, targets exactly 2R / 3R / 4R     24-25: n 3966 win  31.2% gross -0.05 net -0.42R/trade   2026: n 1332 win  31.0% gross -0.08 net -0.51R/trade
+   U  L, targets >= 1R / 2R / 3R at liquidity 24-25: n 4182 win  37.9% gross -0.05 net -0.41R/trade   2026: n 1413 win  37.6% gross -0.09 net -0.52R/trade
+   V  L, stop at the swing                24-25: n 3520 win  44.1% gross -0.04 net -0.35R/trade   2026: n 1150 win  43.7% gross -0.10 net -0.45R/trade
+   W  V, targets >= 1R / 2R / 3R          24-25: n 3587 win  39.1% gross -0.06 net -0.37R/trade   2026: n 1166 win  39.3% gross -0.08 net -0.42R/trade
+   X  V, targets >= 2R / 3R / 4R          24-25: n 3382 win  31.5% gross -0.04 net -0.35R/trade   2026: n 1112 win  32.0% gross -0.08 net -0.42R/trade
    chosen on 2024-25 alone: P  L on 1H candles -- its 2026 row is the honest test
-   the desk runs: {"continuation":true,"minStopAtr":1.5,"minTp1R":0,"entry":"break"}
+   the desk runs: {"continuation":true,"entry":"break","minTp1R":0,"stopAt":"swing","minStopAtr":1.5,"targetMode":"r-min","targetR":[2,3,4]}
 
-== Detail for the desk's options: {"continuation":true,"minStopAtr":1.5,"minTp1R":0,"entry":"break"}
-SMC engine replay · 275,548 5m candles · 2024-01-10 → 2026-08-31 · 3.4 s
+== Detail for the desk's options: {"continuation":true,"entry":"break","minTp1R":0,"stopAt":"swing","minStopAtr":1.5,"targetMode":"r-min","targetR":[2,3,4]}
+SMC engine replay · 275,548 5m candles · 2024-01-10 → 2026-08-31 · 3.3 s
 fees: 0.05% a side (taker), charged in R on the whole position
 
 == Funnel
-   setups started (a sweep): 27,932  ·  planned (READY): 5,264 (18.8%)  ·  filled: 5245 (99.6% of plans)  ·  finished: 5245
-   ≈ 5.44 trades a day, 5.46 plans a day
+   setups started (a sweep): 28,195  ·  planned (READY): 4,495 (15.9%)  ·  filled: 4495 (100.0% of plans)  ·  finished: 4494
+   ≈ 4.66 trades a day, 4.66 plans a day
    how setups ended without a trade:
-      10609   38.0%  invalidated: superseded by a newer sweep
-       8282   29.7%  invalidated: closed beyond the sweep
-       3213   11.5%  invalidated: BOS without displacement
-        398    1.4%  expired: no displaced structure shift
-        154    0.6%  invalidated: no liquidity to aim at
-         19    0.1%  invalidated: break entry: TP# # at the close
-         11    0.0%  invalidated: stop wider than four ATR
+      10374   36.8%  invalidated: superseded by a newer sweep
+       8178   29.0%  invalidated: closed beyond the sweep
+       3630   12.9%  invalidated: BOS without displacement
+       1115    4.0%  invalidated: stop wider than four ATR
+        402    1.4%  expired: no displaced structure shift
           1    0.0%  invalidated: BOS left no OB or FVG to enter from
 
 == Trades (every year is out of sample: nothing was fitted)
-   2024       n 1895  win  46.5%  TP1  65.3%  SL  32.9%  avg -0.01R  net -0.27R  fee 0.26R  total net -512.16R  MFE 1.41R
-   2025       n 2014  win  45.9%  TP1  63.6%  SL  34.8%  avg -0.02R  net -0.34R  fee 0.33R  total net -691.28R  MFE 1.37R
-   2026       n 1336  win  44.2%  TP1  62.6%  SL  35.2%  avg -0.11R  net -0.46R  fee 0.34R  total net -608.70R  MFE 1.30R
-   long       n 2630  win  46.8%  TP1  63.8%  SL  34.3%  avg -0.03R  net -0.34R  fee 0.30R  total net -882.13R  MFE 1.33R
-   short      n 2615  win  44.5%  TP1  64.1%  SL  34.1%  avg -0.05R  net -0.36R  fee 0.31R  total net -930.02R  MFE 1.41R
-   ALL        n 5245  win  45.7%  TP1  64.0%  SL  34.2%  avg -0.04R  net -0.35R  fee 0.31R  total net -1812.14R  MFE 1.37R
-   exits: STOPPED 1794 · PROTECTED 2420 · EXPIRED 620 · TP3 411
+   2024       n 1661  win  31.6%  TP1  26.0%  SL  65.6%  avg -0.03R  net -0.31R  fee 0.28R  total net -522.33R  MFE 1.49R
+   2025       n 1721  win  31.4%  TP1  23.8%  SL  64.1%  avg -0.05R  net -0.39R  fee 0.34R  total net -669.48R  MFE 1.40R
+   2026       n 1112  win  32.0%  TP1  23.1%  SL  64.2%  avg -0.08R  net -0.42R  fee 0.34R  total net -471.84R  MFE 1.42R
+   long       n 2258  win  32.6%  TP1  23.9%  SL  64.0%  avg -0.04R  net -0.35R  fee 0.31R  total net -796.80R  MFE 1.44R
+   short      n 2236  win  30.7%  TP1  25.0%  SL  65.3%  avg -0.07R  net -0.39R  fee 0.32R  total net -866.84R  MFE 1.44R
+   ALL        n 4494  win  31.6%  TP1  24.5%  SL  64.7%  avg -0.05R  net -0.37R  fee 0.32R  total net -1663.64R  MFE 1.44R
+   exits: STOPPED 2907 · PROTECTED 525 · EXPIRED 693 · TP3 369
 
 == Big moves: 2249 one-hour moves of 1% or more (≈ 2.33 a day)
-   caught (a trade in the move's direction entered during it): 814 of 2249 (36.2%), avg +0.67R
+   caught (a trade in the move's direction entered during it): 632 of 2249 (28.1%), avg +0.87R
    missed, by what stopped a trade:
-       368   16.4%  invalidated: BOS without displacement
-       309   13.7%  no setup: no sweep of opposite liquidity before the move
-       287   12.8%  invalidated: closed beyond the sweep
-        99    4.4%  protected: stopped at the protected stop
-        84    3.7%  expired: time exit
+       433   19.3%  invalidated: BOS without displacement
+       295   13.1%  invalidated: closed beyond the sweep
+       293   13.0%  no setup: no sweep of opposite liquidity before the move
+       176    7.8%  invalidated: stop wider than four ATR
+        78    3.5%  expired: time exit
+        73    3.2%  stopped: stop hit
+        69    3.1%  protected: stopped at the protected stop
         62    2.8%  expired: no displaced structure shift
-        58    2.6%  invalidated: superseded by a newer sweep
-        47    2.1%  invalidated: no liquidity to aim at
-        39    1.7%  stopped: stop hit
-        30    1.3%  tp3: Supply OB reached
+        59    2.6%  invalidated: superseded by a newer sweep
+        24    1.1%  tp3: # reached

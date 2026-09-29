@@ -56,7 +56,9 @@ describe('the scene', () => {
     const scene = buildScene(runSmc(past, { tfSec: 300 }), past, new Set<Layer>(['trade']));
     const labels = scene.flatMap((it) => (it.t === 'line' && it.label ? [it.label] : []));
     expect(labels.some((l) => /^(LONG|SHORT) (plan|entry) /.test(l))).toBe(true);
-    expect(labels.some((l) => /^SL [\d,]+ · risk [\d,]+ pts$/.test(l))).toBe(true);
+    expect(labels.some((l) => /^SL [\d,]+ · −[\d,]+ pts · −1R$/.test(l))).toBe(true);
+    // Every target says its price, its distance in points and its R.
+    for (const l of labels.filter((x) => /^TP[123] /.test(x))) expect(l).toMatch(/^TP[123] [\d,]+ · \+[\d,]+ pts · \+[\d.]+R · /);
     expect(labels.filter((l) => /^TP[123] /.test(l))).toHaveLength(3);
     // One box: the reward and the risk halves share their left and right edges and meet at the entry.
     const boxes = scene.filter((it) => it.t === 'box' && !it.label);

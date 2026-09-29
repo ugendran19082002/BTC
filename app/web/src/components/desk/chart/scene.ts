@@ -1,4 +1,5 @@
 import type { Bar, Pool, PoolEvent, Setup, SmcState, Zone, ZoneEvent } from '@/lib/smc/types';
+import { liveSetup } from '@/lib/smc/readout';
 
 /**
  * What the chart draws, in *data* coordinates (bar index, price), built from
@@ -51,17 +52,20 @@ export type SceneItem = SceneBox | SceneLine | ScenePath | SceneMark | SceneVLin
 
 export const C = {
   bull: '#26a17b', bear: '#e2504f',
-  bullFill: 'rgba(38,161,123,0.16)', bearFill: 'rgba(226,80,79,0.16)',
-  fvgBull: 'rgba(96,165,250,0.15)', fvgBear: 'rgba(245,158,11,0.15)', fvgBullLine: '#60a5fa', fvgBearLine: '#f59e0b',
+  // Zones stay quiet behind the trade: the position box must be the strongest thing on the chart.
+  bullFill: 'rgba(38,161,123,0.10)', bearFill: 'rgba(226,80,79,0.10)',
+  fvgBull: 'rgba(96,165,250,0.10)', fvgBear: 'rgba(245,158,11,0.10)', fvgBullLine: '#60a5fa', fvgBearLine: '#f59e0b',
   bsl: '#f59e0b', ssl: '#38bdf8', level: '#a78bfa', eq: '#94a3b8', ote: '#facc15',
   vwap: '#e879f9', text: '#e5e7eb', muted: '#94a3b8',
   premium: 'rgba(226,80,79,0.05)', discount: 'rgba(38,161,123,0.05)', oteFill: 'rgba(250,204,21,0.08)',
-  profit: 'rgba(38,161,123,0.11)', risk: 'rgba(226,80,79,0.15)',
+  profit: 'rgba(38,161,123,0.14)', risk: 'rgba(226,80,79,0.18)',
   session: { Asia: 'rgba(100,116,139,0.07)', London: 'rgba(59,130,246,0.07)', 'New York': 'rgba(249,115,22,0.07)' } as const,
 } as const;
 
 const fmt = (p: number) => Math.round(p).toLocaleString('en-US');
 const R = (r: number) => `${r >= 0 ? '+' : '−'}${Math.abs(r).toFixed(1)}R`;
+/** A distance in index points, signed in the trade's favour. */
+const pts = (d: number) => `${d >= 0 ? '+' : '−'}${fmt(Math.abs(d))} pts`;
 
 const SWING_POOLS: readonly Pool['kind'][] = ['BSL', 'SSL', 'EQH', 'EQL'];
 const LIVE_SETUP: readonly Setup['state'][] = ['READY', 'ACTIVE', 'TP1', 'TP2'];
@@ -280,11 +284,13 @@ function trade(st: SmcState, n: number, out: SceneItem[], blocked: readonly stri
     });
     out.push({ t: 'line', layer: 'trade', x1, x2, y: s.fill.price, color: C.muted, width: 1, priority: 7 });
     const word = s.state === 'TP3' ? 'TP3' : s.state === 'STOPPED' ? 'SL' : s.state === 'PROTECTED' ? (s.events.some((e) => e.state === 'TP2') ? 'TP2 · trail' : 'TP1 · BE') : 'Exit';
+    // The exit's points are the last leg; the R is the whole trade's, the thirds taken at the targets included.
+    const moved = bull ? exit - s.fill.price : s.fill.price - exit;
     out.push({
       t: 'mark', layer: 'trade', x: s.closedAt, y: exit, color: won ? C.bull : flat ? C.muted : C.bear,
-      side: bull ? 'above' : 'below', text: `${word} ${r === null ? '' : R(r)}`.trim(), priority: 75,
+      side: bull ? 'above' : 'below', text: `${word} ${fmt(exit)} · ${pts(moved)}${r === null ? '' : ` · result ${R(r)}`}`, priority: 75,
     });
-    out.push({ t: 'mark', layer: 'trade', x: x1, y: s.fill.price, glyph: bull ? '▲' : '▼', color: bull ? C.bull : C.bear, side: bull ? 'below' : 'above', text: bull ? 'Long' : 'Short', priority: 74 });
+    out.push({ t: 'mark', layer: 'trade', x: x1, y: s.fill.price, glyph: bull ? '▲' : '▼', color: bull ? C.bull : C.bear, side: bull ? 'below' : 'above', text: `${bull ? 'Long' : 'Short'} ${fmt(s.fill.price)}`, priority: 74 });
   }
 
   // Setups that got as far as a structure shift and ended without a trade: a quiet note of why, on the candle it ended.
@@ -307,7 +313,8 @@ function trade(st: SmcState, n: number, out: SceneItem[], blocked: readonly stri
     });
   }
 
-  const live = [...st.setups].reverse().find((s) => s.closedAt === null && LIVE_SETUP.includes(s.state));
+  const found = liveSetup(st);
+  const live = found && LIVE_SETUP.includes(found.state) ? found : null;
   if (!live) return;
   const ready = live.events.find((e) => e.state === 'READY')!.at;
   const bull = long(live);
@@ -332,13 +339,15 @@ function trade(st: SmcState, n: number, out: SceneItem[], blocked: readonly stri
   out.push({ t: 'vline', layer: 'trade', x: x1, y1: live.stop!, y2: tp3, color: C.text, priority: 9 });
   out.push({
     t: 'line', layer: 'trade', x1, x2, y: entry, color: C.text, width: 2,
-    label: `${no ? `NO TRADE (against ${blocked.join(', ')}) · ` : ''}${side} ${fill ? `entry ${fmt(entry)}` : `plan ${fmt(entry)} · waiting for a close back out`}`,
+    label: `${no ? `NO TRADE (against ${blocked.join(', ')}) · ` : ''}${side} ${fill ? `entry ${fmt(entry)}` : `plan ${fmt(entry)} · waiting for a close back out`} · risk ${fmt(risk)} pts`,
     labelAt: 'end', labelSide: bull ? 'below' : 'above', priority: 100,
   });
   const moved = live.trail.length > 0;
   out.push({
     t: 'line', layer: 'trade', x1, x2, y: stopNow, color: C.bear, width: 1.6, dash: moved ? 'dash' : undefined,
-    label: moved ? `SL ${fmt(stopNow)} · ${live.trail[live.trail.length - 1]!.note.startsWith('break-even') ? 'break-even' : `locks ${R(rOf(stopNow))}`}` : `SL ${fmt(stopNow)} · risk ${fmt(risk)} pts`,
+    label: moved
+      ? `SL ${fmt(stopNow)} · ${live.trail[live.trail.length - 1]!.note.startsWith('break-even') ? 'break-even' : `locks ${pts(bull ? stopNow - entry : entry - stopNow)} · ${R(rOf(stopNow))}`}`
+      : `SL ${fmt(stopNow)} · ${pts(-risk)} · −1R`,
     labelAt: 'end', labelSide: bull ? 'below' : 'above', priority: 99,
   });
   if (moved) out.push({ t: 'line', layer: 'trade', x1, x2, y: live.stop!, color: C.bear, width: 1, dash: 'dot', priority: 6 });
@@ -346,11 +355,11 @@ function trade(st: SmcState, n: number, out: SceneItem[], blocked: readonly stri
     const hit = live.events.some((e) => e.state === `TP${k + 1}`);
     out.push({
       t: 'line', layer: 'trade', x1, x2, y: t.price, color: C.bull, width: k === 2 ? 1.6 : 1.2, dash: k === 2 ? undefined : 'dash',
-      label: `TP${k + 1} ${fmt(t.price)} · ${R(rOf(t.price))} · ${t.reason}${hit ? ' ✓' : ''}`,
+      label: `TP${k + 1} ${fmt(t.price)} · ${pts(bull ? t.price - entry : entry - t.price)} · ${R(rOf(t.price))} · ${t.reason}${hit ? ' ✓' : ''}`,
       labelAt: 'end', labelSide: bull ? 'above' : 'below', priority: 98 - k,
     });
   });
-  if (fill) out.push({ t: 'mark', layer: 'trade', x: fill.at, y: entry, glyph: bull ? '▲' : '▼', color: bull ? C.bull : C.bear, side: bull ? 'below' : 'above', text: side, priority: 97 });
+  if (fill) out.push({ t: 'mark', layer: 'trade', x: fill.at, y: entry, glyph: bull ? '▲' : '▼', color: bull ? C.bull : C.bear, side: bull ? 'below' : 'above', text: `${side} ${fmt(entry)}`, priority: 97 });
 }
 
 // ------------------------------------------------------------------ higher timeframes

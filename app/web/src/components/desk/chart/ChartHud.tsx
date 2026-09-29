@@ -46,12 +46,12 @@ export const ChartHud = forwardRef<HTMLDivElement, {
           {read.plan && (
             <div className="pc-hud-plan" aria-label="Trade plan">
               <span><i>{read.plan.filled ? 'Entry' : 'Plan'}</i> {fmt(read.plan.entry)}{read.plan.filled ? ' ✓' : ''}</span>
-              <span className="sl" title={read.plan.stopNote ?? 'Beyond the sweep and the zone, plus a volatility buffer'}>
-                <i>SL</i> {fmt(read.plan.stop)}{read.plan.stopNote ? <small> · moved</small> : <small> · risk {fmt(read.plan.risk)} pts</small>}
+              <span className="sl" title={read.plan.stopNote ?? 'Beyond the last confirmed swing, plus the ATR buffer'}>
+                <i>SL</i> {fmt(read.plan.stop)} <small>{read.plan.stopNote ? `moved · ${read.plan.stopNote}` : `−${fmt(read.plan.risk)} pts · −1R`}</small>
               </span>
               {read.plan.targets.map((t, k) => (
                 <span key={k} className="tp" title={t.reason}>
-                  <i>TP{k + 1}</i> {fmt(t.price)} <small>{r1(t.rNow)} · {t.reason}</small>
+                  <i>TP{k + 1}</i> {fmt(t.price)} <small>+{fmt(Math.abs(t.price - read.plan!.entry))} pts · {r1(t.rNow)} · {t.reason}</small>
                 </span>
               ))}
             </div>

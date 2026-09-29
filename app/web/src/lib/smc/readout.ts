@@ -47,10 +47,7 @@ export function readout(st: SmcState, bars: readonly Bar[], context: readonly Tf
   const last = bars[bars.length - 1]?.close ?? null;
   const nearest = nearestPools(st, last);
   const record = recordOf(st.setups);
-  // The most advanced open setup leads: a trade in progress, then a plan, then one still forming.
-  const STAGE: Record<string, number> = { TP2: 5, TP1: 4, ACTIVE: 3, READY: 2, FORMING: 1 };
-  const live = st.setups.filter((s) => s.closedAt === null)
-    .sort((a, b) => (STAGE[b.state] ?? 0) - (STAGE[a.state] ?? 0) || b.createdAt - a.createdAt)[0] ?? null;
+  const live = liveSetup(st);
 
   if (!live) {
     const pct = (p: Pool | null) => (p && last ? ` (${(((p.price - last) / last) * 100).toFixed(2)}%)` : '');
@@ -94,6 +91,17 @@ export function readout(st: SmcState, bars: readonly Bar[], context: readonly Tf
     };
   }
   return { tone, headline, detail, confirmations: live.confirmations, plan, nearest, record, blocked };
+}
+
+/**
+ * The setup the screen is about: the most advanced open one -- a trade in
+ * progress, then a plan, then one still forming; the newest among equals.
+ * The HUD and the chart both ask this, so they never describe different setups.
+ */
+export function liveSetup(st: SmcState): Setup | null {
+  const STAGE: Record<string, number> = { TP2: 5, TP1: 4, ACTIVE: 3, READY: 2, FORMING: 1 };
+  return st.setups.filter((s) => s.closedAt === null)
+    .sort((a, b) => (STAGE[b.state] ?? 0) - (STAGE[a.state] ?? 0) || b.createdAt - a.createdAt)[0] ?? null;
 }
 
 function planOf(s: Setup): NonNullable<Readout['plan']> {

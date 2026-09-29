@@ -261,6 +261,18 @@ describe('setups', () => {
     }
   });
 
+  it('[critical] one position at a time: an opposite entry closes the open trade first', () => {
+    for (const opts of [{ tfSec: M5 }, { tfSec: M5, ...DESK_SMC_OPTIONS }]) {
+      const all = runSmc(bars, opts).setups.filter((x) => x.fill);
+      for (const a of all) for (const b of all) {
+        if (a === b) continue;
+        const aEnd = a.closedAt ?? Infinity;
+        // b entered while a was open: only allowed when b is the same side's... never: slots are one a side, so b must be opposite and a closed at b's fill.
+        if (b.fill!.at > a.fill!.at && b.fill!.at < aEnd) expect.fail(`${b.id} entered at ${b.fill!.at} while ${a.id} was open until ${aEnd}`);
+      }
+    }
+  });
+
   it('[critical] the result is 30% at TP1, 30% at TP2, 40% at TP3, the rest at the exit', () => {
     for (const s of filled.filter((x) => x.resultR !== null)) {
       const f = s.fill!;
