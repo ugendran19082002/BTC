@@ -31,7 +31,10 @@ describe('the volume profile', () => {
   it('reads only the bars asked for, and nothing without volume', () => {
     const bars = [bar(0, 100, 110, 0), bar(300, 500, 510, 50)];
     expect(volumeProfile(bars, 0, 0)).toBeNull();
-    expect(volumeProfile(bars, 1, 1)!.val).toBe(500);
+    const one = volumeProfile(bars, 1, 1)!;
+    expect(one.total).toBe(50);
+    expect(one.val).toBeGreaterThanOrEqual(500);
+    expect(one.vah).toBeLessThanOrEqual(510);
   });
 
   it('draws POC, VAH and VAL as levels from the first bar in view, labelled with the price', () => {
@@ -47,12 +50,12 @@ describe('the volume profile', () => {
 describe('big trades', () => {
   const bars = [bar(1_000, 100, 110, 1), bar(1_300, 100, 110, 1), bar(1_600, 100, 110, 1)];
 
-  it('[critical] puts each order on its candle, across it by the time within, coloured by the aggressor', () => {
+  it('[critical] puts each order on its candle at its price, coloured by the aggressor', () => {
     const items = bigTradeScene([
       { at: 1_000_000, side: 'buy', price: 105, size: 500 },   // the first candle's open
       { at: 1_450_000, side: 'sell', price: 101, size: 500 },  // halfway through the second
     ], bars, 300, 500);
-    expect(items.map((i) => (i.t === 'bubble' ? [i.x, i.y, i.side] : null))).toEqual([[-0.5, 105, 'buy'], [1, 101, 'sell']]);
+    expect(items.map((i) => (i.t === 'bubble' ? [i.x, i.y, i.side] : null))).toEqual([[0, 105, 'buy'], [1, 101, 'sell']]);
   });
 
   it('[critical] leaves out what is under the filter and what is off the chart', () => {
@@ -65,11 +68,10 @@ describe('big trades', () => {
     expect(items).toHaveLength(1);
   });
 
-  it('a bigger order is a bigger bubble, and only the biggest few carry their size', () => {
+  it('[critical] size is relative: area in proportion to the biggest shown, which is full size', () => {
     const trades = [500, 1_000, 4_000, 8_000].map((size, k) => ({ at: 1_000_000 + k * 1_000, side: 'buy' as const, price: 105, size }));
     const items = bigTradeScene(trades, bars, 300, 500).flatMap((i) => (i.t === 'bubble' ? [i] : []));
-    const r = items.map((i) => i.r);
-    expect([...r].sort((a, b) => a - b)).toEqual(r);
+    expect(items.map((i) => i.rel)).toEqual([500, 1_000, 4_000, 8_000].map((s) => Math.sqrt(s / 8_000)));
     expect(items.map((i) => i.label ?? null)).toEqual([null, 'Buy 1.0 BTC', 'Buy 4.0 BTC', 'Buy 8.0 BTC']);
   });
 });

@@ -9,9 +9,9 @@ import { C, type SceneItem } from './scene';
  *   the 70% of volume around it). Candles do not say where inside their range
  *   they traded, so each candle's volume is spread evenly over its high-low --
  *   the usual approximation without tick data.
- * - **Big trades**: each large taker order as a bubble at its own time and
- *   price, green for a buyer lifting the offer, red for a seller hitting the
- *   bid, its area in proportion to its size.
+ * - **Big trades**: each large taker order as a bubble on its candle at its
+ *   own price, green for a buyer lifting the offer, red for a seller hitting
+ *   the bid, its area in proportion to its size.
  *
  * Pure: the primitive turns these into pixels.
  */
@@ -97,26 +97,27 @@ const btc = (contracts: number) => {
 };
 
 /**
- * Large taker orders as bubbles on the candles they printed in, placed across
- * the candle by the time within it. `min` is the smallest drawn (contracts);
- * the bubble's area goes with its size, and the few biggest in the set are
- * labelled with it.
+ * Large taker orders as bubbles centred on the candles they printed in, at
+ * their price. `min` is the smallest drawn (contracts). Each carries its size
+ * against the biggest shown -- the 98th percentile, so one outlier does not
+ * shrink the rest to dots -- and the few biggest are labelled with it.
  */
 export function bigTradeScene(trades: readonly BigTrade[], bars: readonly Bar[], tfSec: number, min: number): SceneItem[] {
   if (!bars.length || !trades.length) return [];
   const first = bars[0]!.time;
   const end = bars[bars.length - 1]!.time + tfSec;
   const shown = trades.filter((t) => t.size >= min && t.at / 1000 >= first && t.at / 1000 < end);
-  const labelFrom = [...shown].sort((a, b) => b.size - a.size).slice(0, 5).at(-1)?.size ?? Infinity;
+  const bySize = shown.map((t) => t.size).sort((a, b) => a - b);
+  const top = bySize[Math.min(bySize.length - 1, Math.floor(bySize.length * 0.98))] ?? min;
+  const labelFrom = bySize[Math.max(0, bySize.length - 5)] ?? Infinity;
   const out: SceneItem[] = [];
   let i = 0;
   for (const t of shown) {
     const sec = t.at / 1000;
     while (i < bars.length - 1 && bars[i + 1]!.time <= sec) i++;
-    const within = Math.min(0.999, Math.max(0, (sec - bars[i]!.time) / tfSec));
     out.push({
-      t: 'bubble', layer: 'bigtrades', x: i - 0.5 + within, y: t.price,
-      r: Math.min(26, 4 + 5 * Math.sqrt(t.size / min - 1 + 0.2)),
+      t: 'bubble', layer: 'bigtrades', x: i, y: t.price,
+      rel: Math.sqrt(Math.min(1, t.size / top)),
       side: t.side,
       label: t.size >= labelFrom && t.size >= 2 * min ? `${t.side === 'buy' ? 'Buy' : 'Sell'} ${btc(t.size)}` : undefined,
       priority: 34,

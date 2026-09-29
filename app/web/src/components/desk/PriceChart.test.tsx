@@ -148,7 +148,7 @@ describe('the price chart', () => {
     chart();
     fireEvent.click(screen.getByRole('button', { name: 'Layers' }));
     fireEvent.click(screen.getByLabelText('Structure'));
-    const stored = JSON.parse(localStorage.getItem('btc-desk:chart:layers')!) as string[];
+    const stored = JSON.parse(localStorage.getItem('btc-desk:chart:layers:v2')!) as string[];
     expect(stored).not.toContain('structure');
     expect(stored).toContain('liquidity');
   });

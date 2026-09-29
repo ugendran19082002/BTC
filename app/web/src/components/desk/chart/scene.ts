@@ -58,8 +58,12 @@ export type SceneMark = {
 export type SceneVLine = { t: 'vline'; layer: Layer; x: number; y1: number; y2: number; color: string; priority: number };
 /** Volume at price, drawn as a histogram anchored to the chart's right edge (flow-layers.ts). */
 export type SceneProfile = { t: 'profile'; layer: Layer; bins: readonly { lo: number; hi: number; v: number; value: boolean }[]; max: number; poc: number };
-/** One large taker order: a circle at its time (a fractional bar index) and price, `r` pixels. */
-export type SceneBubble = { t: 'bubble'; layer: Layer; x: number; y: number; r: number; side: 'buy' | 'sell'; label?: string; priority: number };
+/**
+ * One large taker order: a circle on its candle at its price. `rel` (0-1] is its
+ * size against the biggest on the chart; the renderer turns it into pixels from
+ * the zoom, so the area goes with the size and the bubbles scale with the candles.
+ */
+export type SceneBubble = { t: 'bubble'; layer: Layer; x: number; y: number; rel: number; side: 'buy' | 'sell'; label?: string; priority: number };
 export type SceneItem = SceneBox | SceneLine | ScenePath | SceneMark | SceneVLine | SceneProfile | SceneBubble;
 
 export const C = {

@@ -201,14 +201,23 @@ export class SmcPrimitive implements ISeriesPrimitive<Time> {
     ctx.restore();
   }
 
+  /**
+   * The biggest bubble is about one and a half candles wide, 9-28 px; the rest
+   * scale down by the square root of their size (area in proportion), never
+   * under a fifth of it so the smallest stay visible.
+   */
   private bubble(ctx: Ctx, it: SceneBubble, labels: Label[], nextId: () => number, measure: (t: string) => number) {
     const x = this.x(it.x, Infinity);
+    const next = this.x(it.x + 1, Infinity);
     const y = this.y(it.y);
     if (x === null || y === null) return;
+    const spacing = next === null ? 8 : Math.abs(next - x);
+    const maxR = Math.min(28, Math.max(9, spacing * 1.5));
+    const r = Math.max(maxR * 0.2, maxR * it.rel);
     const color = it.side === 'buy' ? '#26a17b' : '#e2504f';
     ctx.save();
     ctx.beginPath();
-    ctx.arc(x, y, it.r, 0, Math.PI * 2);
+    ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fillStyle = color;
     ctx.globalAlpha = 0.3;
     ctx.fill();
@@ -219,8 +228,8 @@ export class SmcPrimitive implements ISeriesPrimitive<Time> {
     ctx.restore();
     if (!it.label) return;
     const w = measure(it.label);
-    const first: Rect = { x: x - w / 2, y: y - it.r - LABEL_H - 3, w, h: LABEL_H };
-    labels.push({ id: nextId(), priority: it.priority, text: it.label, color, candidates: [first, { ...first, y: y + it.r + 3 }] });
+    const first: Rect = { x: x - w / 2, y: y - r - LABEL_H - 3, w, h: LABEL_H };
+    labels.push({ id: nextId(), priority: it.priority, text: it.label, color, candidates: [first, { ...first, y: y + r + 3 }] });
   }
 
   private vline(ctx: Ctx, i: number, p1: number, p2: number, color: string) {

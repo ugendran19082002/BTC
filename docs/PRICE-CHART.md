@@ -286,9 +286,26 @@ no level; `r-multiple` -- exact projections only.
 
 ## 11. What is drawn
 
-**Layers** (remembered per browser; the first eight are on by default): HTF,
-structure, liquidity, OB / FVG, levels, premium / discount, trade, saved
-levels; then sessions, VWAP and candle tags (off by default).
+**Layers** (remembered per browser; on by default: HTF, structure, liquidity,
+OB / FVG, levels, premium / discount, trade, saved levels, volume profile, big
+trades; off: sessions, VWAP, candle tags).
+
+**Volume profile** -- volume at price over the candles *in view*, recomputed
+as the chart is scrolled or zoomed: a histogram anchored to the right edge (at
+most a fifth of the width), the value area brighter, the POC bin amber, and
+`POC` / `VAH` / `VAL` levels with their prices. Candles do not say where
+inside their range they traded, so each candle's volume is spread evenly over
+its high-low (48 bins); the value area grows from the POC towards the busier
+neighbour until it holds 70% of the volume. `chart/flow-layers.ts`.
+
+**Big trades** -- each taker order of the chosen size or more (Layers → "Big
+trades from": 0.2 / 0.5 / 1 / 2 BTC, 0.5 by default) as a bubble centred on
+its candle at its price: green a buyer lifting the offer, red a seller hitting
+the bid. Area in proportion to size against the biggest shown (98th
+percentile, so an outlier does not shrink the rest), and the largest bubble
+about one and a half candles wide, so they scale with zoom. The five biggest
+are labelled (`Buy 1.2 BTC`). From `large_prints`, recorded off the live tape
+since the recorder was deployed -- there is no bubble before that.
 
 **The trade -- a position box.** One bounded box from the entry candle to a
 little past the last candle: green from the entry to TP3, red from the entry
