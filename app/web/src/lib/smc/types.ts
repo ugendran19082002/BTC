@@ -148,6 +148,8 @@ export type Setup = {
   targets: Target[];
   /** Planned risk in price points, fixed at READY: entry to the structural stop plus its volatility buffer. */
   risk: number | null;
+  /** Why the initial stop is where it is: the structure it hides behind, the buffer, a floor that widened it. */
+  stopNote: string | null;
   /** The actual entry, fixed at the fill: the close that confirmed the retest, and its risk to the same stop. */
   fill: { at: number; price: number; risk: number } | null;
   /** The higher timeframe's trend at the time the plan was made, when one was given. */

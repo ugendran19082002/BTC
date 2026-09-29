@@ -27,7 +27,7 @@ describe('readout', () => {
     const r = readout(runSmc(bars.slice(0, 5), { tfSec: 300 }), bars.slice(0, 5));
     expect(r.tone).toBe('flat');
     expect(r.headline).toMatch(/^NO TRADE/);
-    expect(r.detail).toMatch(/sweep → .*CHoCH/);
+    expect(r.detail).toMatch(/^Waiting — long: .*sweep.* → displacement → entry; short: /);
   });
 
   it('a ready setup carries its plan and its confirmations', () => {

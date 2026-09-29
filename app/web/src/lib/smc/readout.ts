@@ -1,5 +1,6 @@
 import type { Bar, Confirmation, Pool, Setup, SmcState, Target } from './types';
 import type { TfRead } from './context';
+import { SCALE_OUT } from './engine';
 
 /**
  * What the chart says in words: the one live setup, or what the next one is
@@ -16,7 +17,14 @@ export type Readout = {
   detail: string;
   confirmations: Confirmation[];
   /** Entry is the fill once there is one, else the planned zone edge; R is measured from it. `stopNote` says why the stop moved. */
-  plan: { entry: number; stop: number; originalStop: number; stopNote: string | null; targets: (Target & { rNow: number })[]; risk: number; filled: boolean } | null;
+  plan: {
+    entry: number; stop: number; originalStop: number;
+    /** Why the stop in force is there: the initial reason, or what moved it. */
+    stopNote: string | null; stopMoved: boolean;
+    targets: (Target & { rNow: number; hit: boolean })[]; risk: number; filled: boolean;
+    /** R already banked at the targets reached, the share still open, and what that open part is worth at the last close. */
+    realisedR: number; openShare: number; openR: number;
+  } | null;
   nearest: { buy: Pool | null; sell: Pool | null };
   record: TradeRecord | null;
   /** Why a setup the engine found is not a trade: the timeframes it runs against. */
@@ -72,8 +80,8 @@ export function readout(st: SmcState, bars: readonly Bar[], context: readonly Tf
       : 'No resting liquidity marked yet.';
     return {
       tone: 'flat',
-      headline: 'NO TRADE — waiting for a sweep',
-      detail: `${between} A long needs a sell-side sweep → bullish CHoCH/BOS → OB/FVG retest; a short the mirror.`,
+      headline: 'NO TRADE',
+      detail: `Waiting — long: SSL sweep or a bullish BOS → displacement → entry; short: BSL sweep or a bearish BOS → displacement → entry. ${between}`,
       confirmations: [], plan: null, nearest, record, blocked: [], refused, history,
     };
   }
@@ -81,7 +89,7 @@ export function readout(st: SmcState, bars: readonly Bar[], context: readonly Tf
   const side = live.dir === 'bull' ? 'LONG' : 'SHORT';
   const tone = live.dir === 'bull' ? 'long' : 'short';
   const missingNames = live.confirmations.filter((c) => !c.ok).map((c) => c.name);
-  const plan = live.entry !== null ? planOf(live) : null;
+  const plan = live.entry !== null ? planOf(live, last) : null;
   const momentum = live.events.some((e) => e.state === 'ACTIVE' && e.note.includes('break'));
   const entered = momentum ? 'MOMENTUM ENTRY' : 'ENTRY CONFIRMED';
   const headline = live.state === 'FORMING' ? `${side} SETUP FORMING`
@@ -120,15 +128,20 @@ export function liveSetup(st: SmcState): Setup | null {
     .sort((a, b) => (STAGE[b.state] ?? 0) - (STAGE[a.state] ?? 0) || b.createdAt - a.createdAt)[0] ?? null;
 }
 
-function planOf(s: Setup): NonNullable<Readout['plan']> {
+function planOf(s: Setup, lastClose: number | null): NonNullable<Readout['plan']> {
   const entry = s.fill?.price ?? s.entry!;
   const risk = s.fill?.risk ?? s.risk!;
   const rOf = (p: number) => (s.dir === 'bull' ? p - entry : entry - p) / risk;
-  const last = s.trail[s.trail.length - 1];
+  const moved = s.trail[s.trail.length - 1];
+  const hit = s.targets.map((_, k) => s.events.some((e) => e.state === `TP${k + 1}`));
+  const realisedR = s.targets.reduce((a, t, k) => a + (hit[k] ? SCALE_OUT[k]! * rOf(t.price) : 0), 0);
+  const openShare = 1 - SCALE_OUT.reduce((a, w, k) => a + (hit[k] ? w : 0), 0);
   return {
     entry, risk, filled: s.fill !== null,
-    stop: last?.price ?? s.stop!, originalStop: s.stop!, stopNote: last?.note ?? null,
-    targets: s.targets.map((t) => ({ ...t, rNow: rOf(t.price) })),
+    stop: moved?.price ?? s.stop!, originalStop: s.stop!,
+    stopNote: moved?.note ?? s.stopNote, stopMoved: moved !== undefined,
+    targets: s.targets.map((t, k) => ({ ...t, rNow: rOf(t.price), hit: hit[k]! })),
+    realisedR, openShare, openR: s.fill && lastClose !== null ? openShare * rOf(lastClose) : 0,
   };
 }
 

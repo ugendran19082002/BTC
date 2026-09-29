@@ -26,7 +26,7 @@ const FONT = '600 10px ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans
 const LABEL_H = 15;
 const LABEL_PAD = 5;
 
-type Label = { id: number; priority: number; text: string; color: string; candidates: Rect[] };
+type Label = { id: number; priority: number; text: string; color: string; candidates: Rect[]; faint?: boolean };
 
 export class SmcPrimitive implements ISeriesPrimitive<Time> {
   private chart: IChartApi | null = null;
@@ -108,6 +108,8 @@ export class SmcPrimitive implements ISeriesPrimitive<Time> {
       if (!sx || y1 === null || y2 === null) continue;
       const top = Math.min(y1, y2);
       const h = Math.max(1, Math.abs(y2 - y1));
+      ctx.save();
+      if (it.faint) ctx.globalAlpha = 0.5;
       ctx.fillStyle = it.fill;
       ctx.fillRect(sx[0], top, sx[1] - sx[0], h);
       if (it.stroke) {
@@ -119,6 +121,7 @@ export class SmcPrimitive implements ISeriesPrimitive<Time> {
         ctx.strokeRect(Math.round(sx[0]) + 0.5, Math.round(top) + 0.5, Math.round(sx[1] - sx[0]), Math.round(h));
         ctx.restore();
       }
+      ctx.restore();
     }
   }
 
@@ -144,7 +147,11 @@ export class SmcPrimitive implements ISeriesPrimitive<Time> {
     const where = placeLabels(reqs, { x: 0, y: 0, w: width, h: height }, this.reserved);
     for (const l of labels) {
       const r = where.get(l.id);
-      if (r) pill(ctx, r, l.text, l.color);
+      if (!r) continue;
+      ctx.save();
+      if (l.faint) ctx.globalAlpha = 0.5;
+      pill(ctx, r, l.text, l.color);
+      ctx.restore();
     }
   }
 
@@ -153,6 +160,7 @@ export class SmcPrimitive implements ISeriesPrimitive<Time> {
     const y = this.y(it.y);
     if (!sx || y === null) return;
     ctx.save();
+    if (it.faint) ctx.globalAlpha = 0.45;
     ctx.strokeStyle = it.color;
     ctx.lineWidth = it.width ?? 1;
     ctx.setLineDash(it.dash === 'dash' ? [6, 4] : it.dash === 'dot' ? [2, 3] : []);
@@ -169,7 +177,7 @@ export class SmcPrimitive implements ISeriesPrimitive<Time> {
     const first: Rect = { x: lx, y: ly, w, h: LABEL_H };
     const other: Rect = { ...first, y: above ? y + 2 : y - LABEL_H - 2 };
     labels.push({
-      id: nextId(), priority: it.priority, text: it.label, color: it.color,
+      id: nextId(), priority: it.priority - (it.faint ? 30 : 0), text: it.label, color: it.color, faint: it.faint,
       candidates: it.labelAt === 'end' ? [first, other, ...stacked(first, LABEL_H + 2).slice(1)] : [first, other],
     });
   }
@@ -233,7 +241,7 @@ export class SmcPrimitive implements ISeriesPrimitive<Time> {
     const gap = it.glyph ? 15 : 4;
     const first: Rect = { x: x - w / 2, y: above ? y - gap - LABEL_H : y + gap, w, h: LABEL_H };
     const further: Rect = { ...first, y: above ? first.y - LABEL_H - 2 : first.y + LABEL_H + 2 };
-    labels.push({ id: nextId(), priority: it.priority, text: it.text, color: it.color, candidates: [first, further] });
+    labels.push({ id: nextId(), priority: it.priority - (it.faint ? 30 : 0), text: it.text, color: it.color, candidates: [first, further], faint: it.faint });
   }
 
   private boxLabel(it: SceneBox, width: number, labels: Label[], nextId: () => number, measure: (t: string) => number) {
@@ -248,7 +256,7 @@ export class SmcPrimitive implements ISeriesPrimitive<Time> {
     const inside: Rect = { x, y: top + 2, w, h: LABEL_H };
     const above: Rect = { x, y: top - LABEL_H - 2, w, h: LABEL_H };
     labels.push({
-      id: nextId(), priority: it.priority, text: it.label, color: it.labelColor ?? it.stroke ?? '#e5e7eb',
+      id: nextId(), priority: it.priority - (it.faint ? 30 : 0), faint: it.faint, text: it.label, color: it.labelColor ?? it.stroke ?? '#e5e7eb',
       candidates: h >= LABEL_H + 4 ? [inside, above] : [above, { ...above, y: top + h + 2 }],
     });
   }

@@ -56,7 +56,8 @@ describe('the scene', () => {
     const scene = buildScene(runSmc(past, { tfSec: 300 }), past, new Set<Layer>(['trade']));
     const labels = scene.flatMap((it) => (it.t === 'line' && it.label ? [it.label] : []));
     expect(labels.some((l) => /^(LONG|SHORT) (plan|entry) /.test(l))).toBe(true);
-    expect(labels.some((l) => /^SL [\d,]+ · −[\d,]+ pts · −1R$/.test(l))).toBe(true);
+    // The stop says its points, its R, and why it is there.
+    expect(labels.some((l) => /^SL [\d,]+ · −[\d,]+ pts · −1R · (below|above|widened) /.test(l))).toBe(true);
     // Every target says its price, its distance in points and its R.
     for (const l of labels.filter((x) => /^TP[123] /.test(x))) expect(l).toMatch(/^TP[123] [\d,]+ · \+[\d,]+ pts · \+[\d.]+R · /);
     expect(labels.filter((l) => /^TP[123] /.test(l))).toHaveLength(3);

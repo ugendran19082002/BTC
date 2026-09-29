@@ -1,5 +1,6 @@
 import type { Bar, Pool, PoolEvent, Setup, SmcState, Zone, ZoneEvent } from '@/lib/smc/types';
 import { liveSetup } from '@/lib/smc/readout';
+import { SCALE_OUT } from '@/lib/smc/engine';
 
 /**
  * What the chart draws, in *data* coordinates (bar index, price), built from
@@ -36,15 +37,19 @@ type XEnd = number | 'right';
 export type SceneBox = {
   t: 'box'; layer: Layer; x1: number; x2: XEnd; y1: number; y2: number;
   fill: string; stroke?: string; dash?: boolean; label?: string; labelColor?: string; priority: number;
+  /** Background: history and context, drawn quietly so the live setup always reads first. */
+  faint?: boolean;
 };
 export type SceneLine = {
   t: 'line'; layer: Layer; x1: number; x2: XEnd; y: number; color: string; width?: number; dash?: 'dash' | 'dot';
   label?: string; labelAt?: 'mid' | 'end'; labelSide?: 'above' | 'below'; priority: number;
+  faint?: boolean;
 };
 export type ScenePath = { t: 'path'; layer: Layer; points: [number, number][]; color: string; label?: string; priority: number };
 export type SceneMark = {
   t: 'mark'; layer: Layer; x: number; y: number; text: string; color: string; side: 'above' | 'below';
   glyph?: '▲' | '▼' | '✕'; priority: number;
+  faint?: boolean;
 };
 /** A vertical segment at one candle: the trade's spine. */
 export type SceneVLine = { t: 'vline'; layer: Layer; x: number; y1: number; y2: number; color: string; priority: number };
@@ -87,13 +92,14 @@ export function buildScene(st: SmcState, bars: readonly Bar[], layers: ReadonlyS
     for (const s of st.swings.filter((x) => x.label && recent(x.at, 120)).slice(-40)) {
       const good = s.label === 'HH' || s.label === 'HL';
       const eq = s.label === 'EQH' || s.label === 'EQL';
-      out.push({ t: 'mark', layer: 'structure', x: s.at, y: s.price, text: s.label!, color: eq ? C.bsl : good ? C.bull : C.bear, side: s.side === 'high' ? 'above' : 'below', priority: 50 });
+      out.push({ t: 'mark', layer: 'structure', x: s.at, y: s.price, text: s.label!, color: eq ? C.bsl : good ? C.bull : C.bear, side: s.side === 'high' ? 'above' : 'below', priority: 50, faint: s.at < n - 48 });
     }
     for (const b of st.breaks.filter((x) => recent(x.at, 200)).slice(-12)) {
       out.push({
         t: 'line', layer: 'structure', x1: b.from, x2: b.at, y: b.level, color: b.dir === 'bull' ? C.bull : C.bear,
         dash: b.kind === 'CHoCH' ? 'dash' : undefined, width: 1.2,
         label: b.mss ? 'MSS' : b.kind, labelAt: 'mid', labelSide: b.dir === 'bull' ? 'above' : 'below', priority: b.kind === 'CHoCH' ? 92 : 90,
+        faint: b.at < n - 48,
       });
     }
   }
@@ -112,7 +118,7 @@ export function buildScene(st: SmcState, bars: readonly Bar[], layers: ReadonlyS
       });
     }
   }
-  if (on('trade')) trade(st, n, out, blocked);
+  if (on('trade')) trade(st, bars, out, blocked);
   return out;
 }
 
@@ -210,10 +216,11 @@ function liquidity(st: SmcState, n: number, last: number, near: (p: number) => n
       .slice(0, 6);
     for (const { p, e } of sweeps) {
       const buy = p.side === 'buy';
-      out.push({ t: 'line', layer: 'liquidity', x1: p.at, x2: e.at, y: p.price, color: buy ? C.bsl : C.ssl, dash: 'dot', priority: 5 });
+      const old = e.at < n - 36;
+      out.push({ t: 'line', layer: 'liquidity', x1: p.at, x2: e.at, y: p.price, color: buy ? C.bsl : C.ssl, dash: 'dot', priority: 5, faint: true });
       out.push({
         t: 'mark', layer: 'liquidity', x: e.at, y: p.price, glyph: '✕', color: buy ? C.bsl : C.ssl, side: buy ? 'above' : 'below',
-        text: `${e.session === 'London' || e.session === 'New York' ? `${e.session === 'London' ? 'London' : 'NY'} ` : ''}${buy ? 'BSL' : 'SSL'} sweep`, priority: 85,
+        text: `${e.session === 'London' || e.session === 'New York' ? `${e.session === 'London' ? 'London' : 'NY'} ` : ''}${buy ? 'BSL' : 'SSL'} sweep`, priority: 85, faint: old,
       });
     }
   }
@@ -263,7 +270,8 @@ function vwap(st: SmcState, bars: readonly Bar[], out: SceneItem[]) {
  * and their prices, R and reasons at its right edge. The two halves share the
  * entry line, so risk and reward read as one thing.
  */
-function trade(st: SmcState, n: number, out: SceneItem[], blocked: readonly string[]) {
+function trade(st: SmcState, bars: readonly Bar[], out: SceneItem[], blocked: readonly string[]) {
+  const n = bars.length;
   const long = (s: Setup) => s.dir === 'bull';
   // Box width: to a little past the last candle, and never narrower than 24 candles.
   const endOf = (x1: number) => Math.max(n - 1 + 14, x1 + 24);
@@ -286,11 +294,12 @@ function trade(st: SmcState, n: number, out: SceneItem[], blocked: readonly stri
     const word = s.state === 'TP3' ? 'TP3' : s.state === 'STOPPED' ? 'SL' : s.state === 'PROTECTED' ? (s.events.some((e) => e.state === 'TP2') ? 'TP2 · trail' : 'TP1 · BE') : 'Exit';
     // The exit's points are the last leg; the R is the whole trade's, the thirds taken at the targets included.
     const moved = bull ? exit - s.fill.price : s.fill.price - exit;
+    const old = s.closedAt < n - 48;
     out.push({
       t: 'mark', layer: 'trade', x: s.closedAt, y: exit, color: won ? C.bull : flat ? C.muted : C.bear,
-      side: bull ? 'above' : 'below', text: `${word} ${fmt(exit)} · ${pts(moved)}${r === null ? '' : ` · result ${R(r)}`}`, priority: 75,
+      side: bull ? 'above' : 'below', text: `${word} ${fmt(exit)} · ${pts(moved)}${r === null ? '' : ` · trade total ${R(r)}`}`, priority: 75, faint: old,
     });
-    out.push({ t: 'mark', layer: 'trade', x: x1, y: s.fill.price, glyph: bull ? '▲' : '▼', color: bull ? C.bull : C.bear, side: bull ? 'below' : 'above', text: `${bull ? 'Long' : 'Short'} ${fmt(s.fill.price)}`, priority: 74 });
+    out.push({ t: 'mark', layer: 'trade', x: x1, y: s.fill.price, glyph: bull ? '▲' : '▼', color: bull ? C.bull : C.bear, side: bull ? 'below' : 'above', text: `${bull ? 'Long' : 'Short'} ${fmt(s.fill.price)}`, priority: 74, faint: old });
   }
 
   // Setups that got as far as a structure shift and ended without a trade: a quiet note of why, on the candle it ended.
@@ -344,14 +353,27 @@ function trade(st: SmcState, n: number, out: SceneItem[], blocked: readonly stri
     labelAt: 'end', labelSide: bull ? 'below' : 'above', priority: 100,
   });
   const moved = live.trail.length > 0;
+  const lastMove = live.trail[live.trail.length - 1];
+  // The stop says why it is there: the structure behind it, or what moved it.
+  const why = (note: string) => note.replace(/^break-even: (\w+) ([\d,]+) confirmed after TP1$/, 'TP1 + confirmed $1 $2').replace(/^trail behind /, 'behind ');
   out.push({
     t: 'line', layer: 'trade', x1, x2, y: stopNow, color: C.bear, width: 1.6, dash: moved ? 'dash' : undefined,
     label: moved
-      ? `SL ${fmt(stopNow)} · ${live.trail[live.trail.length - 1]!.note.startsWith('break-even') ? 'break-even' : `locks ${pts(bull ? stopNow - entry : entry - stopNow)} · ${R(rOf(stopNow))}`}`
-      : `SL ${fmt(stopNow)} · ${pts(-risk)} · −1R`,
+      ? `SL ${fmt(stopNow)} · ${lastMove!.note.startsWith('break-even') ? 'BE' : `locks ${pts(bull ? stopNow - entry : entry - stopNow)} · ${R(rOf(stopNow))}`} · ${why(lastMove!.note)}`
+      : `SL ${fmt(stopNow)} · ${pts(-risk)} · −1R${live.stopNote ? ` · ${live.stopNote.split(' · ')[0]}` : ''}`,
     labelAt: 'end', labelSide: bull ? 'below' : 'above', priority: 99,
   });
   if (moved) out.push({ t: 'line', layer: 'trade', x1, x2, y: live.stop!, color: C.bear, width: 1, dash: 'dot', priority: 6 });
+  // Each target reached: what was closed and banked there, on the candle it happened.
+  live.events.forEach((e) => {
+    if ((e.state !== 'TP1' && e.state !== 'TP2') || e.price === null) return;
+    const k = e.state === 'TP1' ? 0 : 1;
+    const share = SCALE_OUT[k];
+    out.push({
+      t: 'mark', layer: 'trade', x: e.at, y: e.price, color: C.bull, side: bull ? 'above' : 'below',
+      text: `TP${k + 1} ✓ ${Math.round(share * 100)}% closed · ${R(share * rOf(e.price))} banked`, priority: 95,
+    });
+  });
   live.targets.forEach((t, k) => {
     const hit = live.events.some((e) => e.state === `TP${k + 1}`);
     out.push({
@@ -360,7 +382,15 @@ function trade(st: SmcState, n: number, out: SceneItem[], blocked: readonly stri
       labelAt: 'end', labelSide: bull ? 'above' : 'below', priority: 98 - k,
     });
   });
-  if (fill) out.push({ t: 'mark', layer: 'trade', x: fill.at, y: entry, glyph: bull ? '▲' : '▼', color: bull ? C.bull : C.bear, side: bull ? 'below' : 'above', text: `${side} ${fmt(entry)}`, priority: 97 });
+  if (fill) {
+    // Volume as an event at the signal, not candle by candle: the entry candle against the twenty before it.
+    let sum = 0;
+    let k = 0;
+    for (let j = Math.max(0, fill.at - 20); j < fill.at; j++, k++) sum += bars[j]!.volume;
+    const ratio = k && sum > 0 ? bars[fill.at]!.volume / (sum / k) : null;
+    const vol = ratio === null ? '' : ` · vol ${ratio.toFixed(1)}× avg${ratio >= 2 ? ' burst' : ratio <= 0.5 ? ' thin' : ''}`;
+    out.push({ t: 'mark', layer: 'trade', x: fill.at, y: entry, glyph: bull ? '▲' : '▼', color: bull ? C.bull : C.bear, side: bull ? 'below' : 'above', text: `${side} ${fmt(entry)}${vol}`, priority: 97 });
+  }
 }
 
 // ------------------------------------------------------------------ higher timeframes
@@ -402,7 +432,7 @@ export function htfScene(overlays: readonly HtfOverlay[], main: readonly Bar[]):
           out.push({
             t: 'box', layer: 'htf', x1: indexAt(o.bars[z.at]!.time), x2: 'right', y1: z.low, y2: z.high,
             fill: bull ? 'rgba(38,161,123,0.07)' : 'rgba(226,80,79,0.07)', stroke: bull ? C.bull : C.bear, dash: true,
-            label: `${o.tf} ${bull ? 'Bull' : 'Bear'} OB`, labelColor: bull ? C.bull : C.bear, priority: 76,
+            label: `${o.tf} ${bull ? 'Bull' : 'Bear'} OB`, labelColor: bull ? C.bull : C.bear, priority: 76, faint: true,
           });
         }
       }
@@ -413,7 +443,7 @@ export function htfScene(overlays: readonly HtfOverlay[], main: readonly Bar[]):
         out.push({
           t: 'line', layer: 'htf', x1, x2: Math.max(x2, x1 + 1), y: b.level, color: b.dir === 'bull' ? C.bull : C.bear, width: 1.8,
           dash: b.kind === 'CHoCH' ? 'dash' : undefined, label: `${o.tf} ${b.mss ? 'MSS' : b.kind}`, labelAt: 'mid',
-          labelSide: b.dir === 'bull' ? 'above' : 'below', priority: 89,
+          labelSide: b.dir === 'bull' ? 'above' : 'below', priority: 89, faint: true,
         });
       }
     }

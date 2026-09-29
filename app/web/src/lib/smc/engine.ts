@@ -492,7 +492,7 @@ export class SmcEngine {
         { name: 'Retest', ok: false, at: null },
         { name: 'Close confirms', ok: false, at: null },
       ],
-      poi: null, entry: null, stop: null, targets: [], risk: null, fill: null, htf: null,
+      poi: null, entry: null, stop: null, targets: [], risk: null, stopNote: null, fill: null, htf: null,
       events: [{ state: 'FORMING', at: i, known: i, price: bull ? bar.low : bar.high, note: `${pool.kind} ${Math.round(pool.price)} swept` }],
       trail: [], mfeR: null, maeR: null, resultR: null, closedAt: null,
     };
@@ -526,7 +526,7 @@ export class SmcEngine {
         { name: 'Retest', ok: false, at: null },
         { name: 'Close confirms', ok: false, at: null },
       ],
-      poi: null, entry: null, stop: null, targets: [], risk: null, fill: null, htf: null,
+      poi: null, entry: null, stop: null, targets: [], risk: null, stopNote: null, fill: null, htf: null,
       events: [{ state: 'FORMING', at: i, known: i, price: null, note: `${bull ? 'bullish' : 'bearish'} BOS ${Math.round(brk.level)} with the trend` }],
       trail: [], mfeR: null, maeR: null, resultR: null, closedAt: null,
     };
@@ -566,15 +566,28 @@ export class SmcEngine {
     // Everything below is measured from the entry the trade will actually have.
     const entry = momentum ? close : bull ? poi.high : poi.low;
     // The stop: beyond the POI's distal edge -- the level whose loss says the zone failed -- plus the buffer.
+    const fmt = (p: number) => Math.round(p).toLocaleString('en-US');
+    const where = bull ? 'below' : 'above';
     let stop = bull ? poi.low - buf : poi.high + buf;
-    if (this.o.stopAt === 'sweep' && sweepPrice !== null) stop = bull ? Math.min(stop, sweepPrice - buf) : Math.max(stop, sweepPrice + buf);
+    let why = `${where} the ${poi.kind} edge ${fmt(bull ? poi.low : poi.high)}`;
+    if (this.o.stopAt === 'sweep' && sweepPrice !== null && (bull ? sweepPrice - buf < stop : sweepPrice + buf > stop)) {
+      stop = bull ? sweepPrice - buf : sweepPrice + buf;
+      why = `${where} the sweep ${fmt(sweepPrice)}`;
+    }
     if (this.o.stopAt === 'swing') {
       // The structural invalidation: the last confirmed swing on the far side of the entry, known by now.
       const sw = bull ? this.lastLow : this.lastHigh;
-      if (sw && sw.known <= i && (bull ? sw.price < entry : sw.price > entry)) stop = bull ? sw.price - buf : sw.price + buf;
+      if (sw && sw.known <= i && (bull ? sw.price < entry : sw.price > entry)) {
+        stop = bull ? sw.price - buf : sw.price + buf;
+        why = `${where} 5m swing ${sw.label ?? (bull ? 'low' : 'high')} ${fmt(sw.price)}`;
+      }
     }
+    why += ` · buffer ${Math.round(buf)} pts`;
     const floor = this.o.minStopAtr * atr;
-    if (floor > 0) stop = bull ? Math.min(stop, entry - floor) : Math.max(stop, entry + floor);
+    if (floor > 0 && (bull ? entry - floor < stop : entry + floor > stop)) {
+      stop = bull ? entry - floor : entry + floor;
+      why = `widened to ${this.o.minStopAtr} ATR (${Math.round(floor)} pts) from the entry`;
+    }
     const risk = bull ? entry - stop : stop - entry;
     if (!(risk > 0) || risk > 4 * atr) { this.finish(s, 'INVALIDATED', i, null, `stop wider than four ATR: ${(risk / atr).toFixed(1)} ATR`); return; }
     if (risk < this.o.minRiskPct * entry) {
@@ -596,6 +609,7 @@ export class SmcEngine {
     s.entry = entry;
     s.stop = stop;
     s.risk = risk;
+    s.stopNote = why;
     s.targets = targets;
     s.htf = this.o.htfTrendAt?.(this.b[i]!.time + this.o.tfSec) ?? null;
     s.state = 'READY';

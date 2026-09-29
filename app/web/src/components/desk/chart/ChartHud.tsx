@@ -47,14 +47,20 @@ export const ChartHud = forwardRef<HTMLDivElement, {
           {read.plan && (
             <div className="pc-hud-plan" aria-label="Trade plan">
               <span><i>{read.plan.filled ? 'Entry' : 'Plan'}</i> {fmt(read.plan.entry)}{read.plan.filled ? ' ✓' : ''}</span>
-              <span className="sl" title={read.plan.stopNote ?? 'Beyond the last confirmed swing, plus the ATR buffer'}>
-                <i>SL</i> {fmt(read.plan.stop)} <small>{read.plan.stopNote ? `moved · ${read.plan.stopNote}` : `−${fmt(read.plan.risk)} pts · −1R`}</small>
+              <span className="sl">
+                <i>SL</i> {fmt(read.plan.stop)} <small>{read.plan.stopMoved ? `moved · ${read.plan.stopNote}` : `−${fmt(read.plan.risk)} pts · −1R · ${read.plan.stopNote ?? ''}`}</small>
               </span>
               {read.plan.targets.map((t, k) => (
                 <span key={k} className="tp" title={t.reason}>
-                  <i>TP{k + 1}</i> {fmt(t.price)} <small>+{fmt(Math.abs(t.price - read.plan!.entry))} pts · {r1(t.rNow)} · {t.reason}</small>
+                  <i>TP{k + 1}</i> {fmt(t.price)}{t.hit ? ' ✓' : ''} <small>+{fmt(Math.abs(t.price - read.plan!.entry))} pts · {r1(t.rNow)} · {t.reason}</small>
                 </span>
               ))}
+              {read.plan.filled && (
+                <span className="pnl">
+                  <i>Realised</i> {r1(read.plan.realisedR)} <small>({Math.round((1 - read.plan.openShare) * 100)}% closed)</small>
+                  {' · '}<i>Open</i> {r1(read.plan.openR)} <small>on {Math.round(read.plan.openShare * 100)}%</small>
+                </span>
+              )}
             </div>
           )}
 

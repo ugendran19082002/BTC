@@ -25,56 +25,95 @@
    X  V, targets >= 2R / 3R / 4R          24-25: n 3668 win  31.2% gross -0.06 net -0.37R/trade   2026: n 1203 win  30.8% gross -0.12 net -0.46R/trade
    Y  desk, fee <= 0.2R (risk >= 0.5%)    24-25: n 1282 win  35.3% gross +0.00 net -0.14R/trade   2026: n  383 win  35.2% gross -0.13 net -0.27R/trade
    Z  desk, fee <= 0.1R (risk >= 1%)      24-25: n  241 win  40.7% gross +0.06 net -0.02R/trade   2026: n   70 win  30.0% gross -0.29 net -0.37R/trade
-   NC desk, no chase past 1 ATR           24-25: n 1824 win  31.6% gross -0.01 net -0.35R/trade   2026: n  624 win  29.6% gross -0.13 net -0.52R/trade
+   NC desk, no chase past 1 ATR           24-25: n  510 win  36.3% gross +0.01 net -0.14R/trade   2026: n  152 win  38.8% gross -0.08 net -0.23R/trade
    YN desk, Y + no chase                  24-25: n  510 win  36.3% gross +0.01 net -0.14R/trade   2026: n  152 win  38.8% gross -0.08 net -0.23R/trade
    chosen on 2024-25 alone: Z  desk, fee <= 0.1R (risk >= 1%) -- its 2026 row is the honest test
-   the desk runs: {"continuation":true,"entry":"break","minTp1R":0,"stopAt":"swing","minStopAtr":1,"targetMode":"r-min","targetR":[2,3,4]}
+   the desk runs: {"continuation":true,"entry":"break","minTp1R":0,"stopAt":"swing","minStopAtr":1,"targetMode":"r-min","targetR":[2,3,4],"minRiskPct":0.005}
 
-== Detail for the desk's options: {"continuation":true,"entry":"break","minTp1R":0,"stopAt":"swing","minStopAtr":1,"targetMode":"r-min","targetR":[2,3,4]}
-SMC engine replay · 275,548 5m candles · 2024-01-10 → 2026-08-31 · 3.6 s
+== Detail for the desk's options: {"continuation":true,"entry":"break","minTp1R":0,"stopAt":"swing","minStopAtr":1,"targetMode":"r-min","targetR":[2,3,4],"minRiskPct":0.005}
+SMC engine replay · 275,548 5m candles · 2024-01-10 → 2026-08-31 · 3.3 s
 fees: 0.05% a side (taker), charged in R on the whole position
 
 == Funnel
-   setups started (a sweep): 30,388  ·  planned (READY): 4,877 (16.0%)  ·  filled: 4877 (100.0% of plans)  ·  finished: 4876
-   ≈ 5.06 trades a day, 5.06 plans a day
+   setups started (a sweep): 37,565  ·  planned (READY): 1,665 (4.4%)  ·  filled: 1665 (100.0% of plans)  ·  finished: 1665
+   ≈ 1.73 trades a day, 1.73 plans a day
    how setups ended without a trade:
-      11140   36.7%  invalidated: superseded by a newer sweep
-       8927   29.4%  invalidated: closed beyond the sweep
-       3795   12.5%  invalidated: BOS without displacement
-       1219    4.0%  invalidated: stop wider than four ATR
-        429    1.4%  expired: no displaced structure shift
+      12536   33.4%  invalidated: superseded by a newer sweep
+      10451   27.8%  invalidated: closed beyond the sweep
+       6031   16.1%  invalidated: BOS without displacement
+       4882   13.0%  invalidated: stop too tight for the fees: risk # pts# needs # pts (#% of price)
+       1533    4.1%  invalidated: stop wider than four ATR: # ATR
+        466    1.2%  expired: no displaced structure shift
           1    0.0%  invalidated: BOS left no OB or FVG to enter from
 
 == Trades (every year is out of sample: nothing was fitted)
-   2024       n 1801  win  31.3%  TP1  21.3%  SL  45.1%  avg -0.05R  net -0.34R  fee 0.29R  total net -614.22R  MFE 1.35R
-   2025       n 1870  win  31.1%  TP1  20.8%  SL  47.0%  avg -0.07R  net -0.41R  fee 0.34R  total net -772.53R  MFE 1.29R
-   2026       n 1205  win  30.5%  TP1  19.2%  SL  47.6%  avg -0.12R  net -0.47R  fee 0.35R  total net -567.91R  MFE 1.29R
-   long       n 2454  win  31.8%  TP1  19.6%  SL  45.4%  avg -0.07R  net -0.39R  fee 0.32R  total net -968.36R  MFE 1.30R
-   short      n 2422  win  30.2%  TP1  21.6%  SL  47.4%  avg -0.08R  net -0.41R  fee 0.33R  total net -986.30R  MFE 1.33R
-   ALL        n 4876  win  31.0%  TP1  20.6%  SL  46.4%  avg -0.08R  net -0.40R  fee 0.32R  total net -1954.66R  MFE 1.31R
-   exits: STOPPED 2264 · EXPIRED 1910 · PROTECTED 365 · TP3 337
+   2024       n  730  win  34.1%  TP1  20.8%  SL  47.0%  avg -0.03R  net -0.17R  fee 0.14R  total net -125.26R  MFE 1.31R
+   2025       n  552  win  37.0%  TP1  20.8%  SL  43.7%  avg +0.05R  net -0.09R  fee 0.14R  total net -50.83R  MFE 1.27R
+   2026       n  383  win  35.2%  TP1  15.4%  SL  46.2%  avg -0.13R  net -0.27R  fee 0.14R  total net -103.53R  MFE 1.17R
+   long       n  828  win  36.0%  TP1  18.1%  SL  46.4%  avg -0.04R  net -0.18R  fee 0.14R  total net -148.92R  MFE 1.21R
+   short      n  837  win  34.6%  TP1  21.0%  SL  45.0%  avg -0.01R  net -0.16R  fee 0.14R  total net -130.69R  MFE 1.32R
+   ALL        n 1665  win  35.3%  TP1  19.6%  SL  45.7%  avg -0.03R  net -0.17R  fee 0.14R  total net -279.61R  MFE 1.26R
+   exits: EXPIRED 698 · STOPPED 761 · PROTECTED 119 · TP3 87
 
 == Big moves: 2249 one-hour moves of 1% or more (≈ 2.33 a day)
-   caught (a trade in the move's direction entered during it): 676 of 2249 (30.1%), avg +0.87R
+   caught (a trade in the move's direction entered during it): 556 of 2249 (24.7%), avg +0.52R
    missed, by what stopped a trade:
-       444   19.7%  invalidated: BOS without displacement
-       313   13.9%  invalidated: closed beyond the sweep
-       199    8.8%  no setup: no sweep of opposite liquidity before the move
-       188    8.4%  invalidated: stop wider than four ATR
-        91    4.0%  expired: closed by the opposite entry
-        65    2.9%  expired: no displaced structure shift
-        60    2.7%  invalidated: superseded by a newer sweep
-        58    2.6%  stopped: stop hit
-        50    2.2%  protected: stopped at the protected stop
-        26    1.2%  tp3: # reached
+       524   23.3%  invalidated: BOS without displacement
+       332   14.8%  invalidated: closed beyond the sweep
+       225   10.0%  invalidated: stop wider than four ATR: # ATR
+       180    8.0%  no setup: no sweep of opposite liquidity before the move
+        73    3.2%  invalidated: stop too tight for the fees: risk # pts# needs # pts (#% of price)
+        68    3.0%  expired: no displaced structure shift
+        61    2.7%  expired: closed by the opposite entry
+        61    2.7%  invalidated: superseded by a newer sweep
+        46    2.0%  protected: stopped at the protected stop
+        43    1.9%  stopped: stop hit
 
 == Segments of the desk's trades (descriptive only: nothing is chosen from these)
-   reversal (sweep)         n  3492  win  31.0%  gross -0.08R  net -0.41R
-   continuation             n  1384  win  31.0%  gross -0.06R  net -0.39R
-   session Asia             n  1412  win  32.9%  gross -0.03R  net -0.37R
-   session London           n   975  win  27.6%  gross -0.12R  net -0.51R
-   session New York         n  1706  win  32.5%  gross -0.07R  net -0.34R
-   session off-hours        n   783  win  28.6%  gross -0.13R  net -0.45R
-   1H agrees                n  2366  win  30.9%  gross -0.05R  net -0.38R
-   1H against               n  2510  win  31.1%  gross -0.10R  net -0.42R
+   reversal (sweep)         n  1134  win  36.4%  gross -0.01R  net -0.15R
+   continuation             n   531  win  33.0%  gross -0.06R  net -0.20R
+   session Asia             n   374  win  32.4%  gross -0.11R  net -0.25R
+   session London           n   205  win  35.1%  gross +0.06R  net -0.09R
+   session New York         n   831  win  36.8%  gross -0.01R  net -0.15R
+   session off-hours        n   255  win  34.9%  gross -0.03R  net -0.17R
+   1H agrees                n   826  win  34.5%  gross -0.01R  net -0.15R
+   1H against               n   839  win  36.1%  gross -0.05R  net -0.19R
    1H unknown               n 0
+
+== Setup quality (net R a trade after fees; holds = 2024-25 > 0 with t >= 2, and 2026 > 0)
+   kind = continuation                24-25 n  412 -0.12R t  -1.9   2026 n  119 -0.47R
+   kind = reversal                    24-25 n  870 -0.14R t  -3.1   2026 n  264 -0.18R
+   liquidity swept = (none)           24-25 n  412 -0.12R t  -1.9   2026 n  119 -0.47R
+   liquidity swept = ASH              24-25 n    6 +1.09R t   1.3   2026 n    2 -0.68R
+   liquidity swept = ASL              24-25 n   11 -0.41R t  -1.4   2026 n    4 +0.24R
+   liquidity swept = BSL              24-25 n  360 -0.18R t  -2.7   2026 n  118 -0.08R
+   liquidity swept = EQH              24-25 n   21 -0.21R t  -0.7   2026 n    6 -0.01R
+   liquidity swept = EQL              24-25 n   30 -0.33R t  -1.7   2026 n   10 -0.38R
+   liquidity swept = LSH              24-25 n   22 -0.12R t  -0.4   2026 n    4 -0.42R
+   liquidity swept = LSL              24-25 n   14 -0.84R t  -5.0   2026 n    2 -0.85R
+   liquidity swept = PDH              24-25 n   11 +0.36R t   0.9   2026 n    4 -0.03R
+   liquidity swept = PDL              24-25 n   16 +0.03R t   0.1   2026 n    2 +0.79R
+   liquidity swept = PML              24-25 n    1 -0.86R t   0.0   2026 n    1 -1.15R
+   liquidity swept = PWH              24-25 n    1 -1.17R t   0.0   2026 n    1 +0.01R
+   liquidity swept = PWL              24-25 n    1 -1.20R t   0.0   2026 n    0 +0.00R
+   liquidity swept = SSL              24-25 n  376 -0.09R t  -1.2   2026 n  110 -0.28R
+   break = BOS                        24-25 n  752 -0.21R t  -4.4   2026 n  238 -0.32R
+   break = CHoCH                      24-25 n  471 -0.02R t  -0.4   2026 n  118 -0.24R
+   break = MSS                        24-25 n   59 -0.09R t  -0.5   2026 n   27 -0.01R
+   POI = FVG                          24-25 n    2 -1.14R t -33.2   2026 n    0 +0.00R
+   POI = OB                           24-25 n 1280 -0.14R t  -3.6   2026 n  383 -0.27R
+   displacement = candle              24-25 n  791 -0.16R t  -3.3   2026 n  245 -0.27R
+   displacement = gap only            24-25 n  491 -0.11R t  -1.7   2026 n  138 -0.28R
+   volume on entry = dry-up           24-25 n   44 +0.02R t   0.1   2026 n    4 -0.81R
+   volume on entry = normal           24-25 n  894 -0.13R t  -3.0   2026 n  261 -0.28R
+   volume on entry = spike            24-25 n  344 -0.17R t  -2.3   2026 n  118 -0.24R
+   session = Asia                     24-25 n  290 -0.22R t  -3.0   2026 n   84 -0.37R
+   session = London                   24-25 n  143 -0.07R t  -0.6   2026 n   62 -0.15R
+   session = New York                 24-25 n  650 -0.12R t  -2.4   2026 n  181 -0.22R
+   session = off-hours                24-25 n  199 -0.10R t  -1.1   2026 n   56 -0.42R
+   1H = against                       24-25 n  653 -0.16R t  -3.1   2026 n  186 -0.29R
+   1H = agrees                        24-25 n  629 -0.12R t  -2.1   2026 n  197 -0.25R
+   risk % of price = 0.50-0.75%       24-25 n  778 -0.15R t  -3.0   2026 n  235 -0.31R
+   risk % of price = 0.75-1.00%       24-25 n  293 -0.20R t  -2.7   2026 n   90 -0.08R
+   risk % of price = >= 1.00%         24-25 n  211 -0.00R t  -0.0   2026 n   58 -0.41R
+   slices that hold: none
