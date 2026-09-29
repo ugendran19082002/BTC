@@ -383,7 +383,7 @@ function heatColor(t: number): string {
   const i = Math.min(stops.length - 2, Math.floor(f));
   const u = f - i;
   const [r, g, b] = stops[i]!.map((c, j) => Math.round(c + (stops[i + 1]![j]! - c) * u));
-  return `rgba(${r},${g},${b},${(0.1 + 0.42 * t).toFixed(3)})`;
+  return `rgba(${r},${g},${b},${(0.06 + 0.36 * t).toFixed(3)})`;
 }
 
 function pill(ctx: Ctx, r: Rect, text: string, color: string) {

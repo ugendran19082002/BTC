@@ -92,7 +92,7 @@ test. The HUD says so beside every setup.
 | 1H candles, 14 days | `/api/candles?tf=1h` | every minute | 1H regime; 1H order blocks on the chart; each setup's recorded trend. |
 | 5m folded to 15m / 30m | same | -- | 15m structure (and 15m breaks on the chart), 30m bias. |
 | 1m candles, 8 hours | `/api/candles?tf=1m` | every minute; 10 s on the 1m view | 1M trigger; the 1m view. |
-| The live price | `/api/stream`, event `ltp` | pushed on each new trade (checked 4×/s) | The forming candle and the LTP chip. |
+| The live price | `/api/stream`, event `ltp` | pushed on each new trade (checked 10×/s) | The forming candle and the LTP chip. |
 | Flow per candle | `/api/flow/bars` | 10 s | Δ / CVD pane, the Flow line. |
 | Large taker orders | `/api/flow/large-prints` | 15 s | Big-trade bubbles, the Big line. |
 | The book heatmap | `/api/flow/heatmap` | 20 s, newest columns only | Heatmap and walls. |
@@ -109,6 +109,15 @@ index spot (`withLtp`), which differs from the perp by the basis and refreshes
 every eight seconds; until 29 Sep 2026 that was the only source. The **LTP
 chip** shows the last trade (green / red by tick), the time left in the
 candle, and "N m ago" when nothing has printed for a minute.
+
+**Latency.** A trade reaches the screen within about 0.1 s plus the network:
+the stream checks for a new trade ten times a second and writes only when
+there is one. The chart sends the library only what changed -- a tick of the
+forming candle, or one new candle, is `update()` on the last bar, not the
+whole history again (`tailFrom`); the heatmap and bubbles are rebuilt only
+when a candle is added or their data arrives, not on every tick. The server
+shares each flow / big-trade / heatmap read between pollers for 3-5 s
+(`http/ttl-cache.ts`), so more open tabs do not mean more database reads.
 
 **Closed candles only, for the engine.** A candle opened at *t* closes at
 *t + tf*; anything not closed is left out of every engine (`closedBars`). The
