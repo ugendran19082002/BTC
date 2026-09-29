@@ -1,7 +1,8 @@
 import { clientId, clientStem, roleOfClientId } from '../../src/trading/engine.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { rig, ceProduct, peProduct, planFor, quote, T0 } from './harness.js';
+import { rig, ceProduct, peProduct, planFor, quote, holdOffer, T0 } from './harness.js';
+import { backstopFor } from '../../src/trading/engine.js';
 import { failureCodes, precheck, DEFAULT_LIMITS } from '../../src/trading/precheck.js';
 import { protectionSize } from '../../src/trading/machine.js';
 import { clientId } from '../../src/trading/engine.js';
@@ -208,15 +209,42 @@ test('13 a target that is approached but never traded stays open, and the positi
 
 // ------------------------------------------------------------- 14,15,16 stop
 
-test('14 the stop triggers and buys the position back', async () => {
+test('14 the stop triggers and buys the position back -- once the offer has held at it', async () => {
   const r = rig();
   const plan = planFor(ceProduct());
   await r.engine.open(plan);
   await r.engine.poll(plan.tradeId);
-  for (const px of [105, 109, 110]) r.ex.tick(quote(CE, px - 0.5, px + 0.5, { mark: px }));
-  const s = await r.engine.poll(plan.tradeId);
-  assert.equal(s?.position, 0);
-  assert.equal(s?.phase, 'flat');
+  for (const px of [105, 109]) r.ex.tick(quote(CE, px - 0.5, px + 0.5, { mark: px, ts: r.now() }));
+  const { first, held } = await holdOffer(r, CE, 109.5, 110.5, plan.tradeId, { mark: 110 });
+  assert.equal(first?.position, -100, 'an offer at the stop starts the count; it does not close');
+  assert.equal(held?.position, 0);
+  assert.equal(held?.phase, 'flat');
+});
+
+test('14b a mark spike with the offer under the stop is not a stop -- the 26 September C-84400 case', async () => {
+  // Marked 13.8 against a 4.4 / 5.2 book: the old stop fired on the mark and bought back at 7.9.
+  const r = rig();
+  const plan = planFor(ceProduct());
+  await r.engine.open(plan);
+  await r.engine.poll(plan.tradeId);
+  const { first, held } = await holdOffer(r, CE, 104, 105, plan.tradeId, { mark: 125 });
+  assert.equal(first?.position, -100);
+  assert.equal(held?.position, -100, 'the mark is through 110 and the backstop is not; the offer never reached the stop');
+});
+
+test('14c an offer that falls back under the stop starts the count again', async () => {
+  const r = rig();
+  const plan = planFor(ceProduct());
+  await r.engine.open(plan);
+  await r.engine.poll(plan.tradeId);
+  r.ex.tick(quote(CE, 110, 111, { ts: r.now() }));
+  await r.engine.poll(plan.tradeId);
+  r.advance(10_000);
+  r.ex.tick(quote(CE, 105, 106, { ts: r.now() }));
+  await r.engine.poll(plan.tradeId);
+  r.advance(10_000);
+  r.ex.tick(quote(CE, 110, 111, { ts: r.now() }));
+  assert.equal((await r.engine.poll(plan.tradeId))?.position, -100, '20 s since the first touch, but not 15 s in a row');
 });
 
 test('15 a gap through the stop books the price that actually filled, not the trigger', async () => {
@@ -224,12 +252,11 @@ test('15 a gap through the stop books the price that actually filled, not the tr
   const plan = planFor(ceProduct());
   await r.engine.open(plan);
   await r.engine.poll(plan.tradeId);
-  r.ex.tick(quote(CE, 109, 109.5, { mark: 109 }));
-  // straight from 109 to 115: the stop triggers and pays the offer there
-  r.ex.tick(quote(CE, 114.5, 115.5, { mark: 115 }));
-  const s = await r.engine.poll(plan.tradeId);
+  r.ex.tick(quote(CE, 109, 109.5, { mark: 109, ts: r.now() }));
+  // straight from 109 to 115: held there, the stop is reached and pays the offer
+  const { held: s } = await holdOffer(r, CE, 114.5, 115.5, plan.tradeId, { mark: 115 });
   assert.equal(s?.position, 0);
-  assert.equal(s?.exitAvgPrice, 115.5, 'the fill, not the 110 trigger');
+  assert.equal(s?.exitAvgPrice, 115.5, 'the fill, not the 110 stop');
   assert.equal(s?.realisedPnl, (100.5 - 115.5) * 100 * 0.001, 'a real loss, honestly counted');
 });
 
@@ -238,15 +265,19 @@ test('16 a stop that only partly fills leaves the rest short, and the desk keeps
   const plan = planFor(ceProduct());
   await r.engine.open(plan);
   await r.engine.poll(plan.tradeId);
-  r.ex.configure({ slippageLadder: [{ price: 111, size: 40 }] });
-  r.ex.tick(quote(CE, 110.5, 111, { mark: 111 }));
+  // The price runs to the backstop at the exchange, where only 40 are offered.
+  const back = backstopFor(110, 100.5);
+  r.ex.configure({ slippageLadder: [{ price: back + 1, size: 40 }] });
+  r.ex.tick(quote(CE, back, back + 1, { mark: back + 1, ts: r.now() }));
   const s = await r.engine.poll(plan.tradeId);
-  // 40 by the exchange stop; then, with the mark still above the stop, 40 more
-  // by the desk's own stop watch closing the rest at market. It used to stop at
-  // 60 short: a partial stop fill put the trade in exit_pending, where the desk
-  // stops watching the stop.
-  assert.equal(s?.position, -20, 'still short — the exit is not done');
+  // 40 by the exchange backstop; then, the offer being far through the stop,
+  // the desk's own watch starts its count on the rest. It used to stop at 60
+  // short: a partial stop fill put the trade in exit_pending, where the desk
+  // stopped watching the stop.
+  assert.equal(s?.position, -60, 'still short — the exit is not done');
   assert.notEqual(s?.phase, 'flat');
+  const { held } = await holdOffer(r, CE, back, back + 1, plan.tradeId);
+  assert.ok((held?.position ?? -60) > -60, 'and the desk keeps getting out');
 });
 
 // --------------------------------------------------------------- 17 & 18 OCO
@@ -638,8 +669,8 @@ test('78 the stop still fires the other way, and only the other way', async () =
   r.ex.tick(quote(CE, 40, 42, { mark: 41, ts: r.now() }));
   assert.equal((await r.engine.poll(plan.tradeId))?.position, -1, 'a stop does not fire on a gain');
 
-  r.ex.tick(quote(CE, 130, 132, { mark: 131, ts: r.now() }));
-  assert.equal((await r.engine.poll(plan.tradeId))?.position, 0, 'and does fire on a loss');
+  const { held } = await holdOffer(r, CE, 130, 132, plan.tradeId, { mark: 131 });
+  assert.equal(held?.position, 0, 'and does fire on a loss');
 });
 
 test('79 whichever fires first takes the other one off the book', async () => {
@@ -859,7 +890,8 @@ test('67 work on one trade runs in the order it was asked for', async () => {
   ]);
   const live = (await r.ex.getOpenOrders(CE)).filter((o) => o.type === 'stop_limit' || o.type === 'stop_market');
   assert.equal(live.length, 1, 'one stop, not two');
-  assert.equal(live[0]?.stopPrice, 200, 'and it is the one asked for last');
+  const entry = (await r.store.get(plan.tradeId))!.state.entryAvgPrice;
+  assert.equal(live[0]?.stopPrice, backstopFor(200, entry), 'and it is the backstop for the one asked for last');
 });
 
 test('68 a failure on one trade does not stall the next caller', async () => {
@@ -891,7 +923,8 @@ test('59 the stop is moved in place, not cancelled and replaced', async () => {
 
   const live = (await r.ex.getOpenOrders(CE)).filter((o) => o.reduceOnly);
   assert.equal(live.length, 2, 'exactly one target and one stop');
-  assert.ok(live.some((o) => o.stopPrice === 150));
+  const entry = (await r.store.get(plan.tradeId))!.state.entryAvgPrice;
+  assert.ok(live.some((o) => o.stopPrice === backstopFor(150, entry)), 'the backstop moved with the stop');
 });
 
 test('60 the old level is off the book before the new one goes on', async () => {

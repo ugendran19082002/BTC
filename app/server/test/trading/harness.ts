@@ -136,3 +136,21 @@ export function rig(opts: {
     setSpot: (usd) => { spot = usd; },
   };
 }
+
+/**
+ * The desk's stop, as it now fires (29 Sep 2026): the offer at `bid` / `ask`
+ * is shown, polled, held for STOP_CONFIRM_MS, shown again and polled. Returns
+ * the state after the first poll (the count has only started) and after the
+ * second (the stop has been held long enough).
+ */
+export async function holdOffer(
+  r: ReturnType<typeof rig>, symbol: string, bid: number, ask: number, tradeId: string, over: Partial<Quote> = {},
+) {
+  const { STOP_CONFIRM_MS } = await import('../../src/trading/engine.js');
+  r.ex.tick(quote(symbol, bid, ask, { ts: r.now(), ...over }));
+  const first = await r.engine.poll(tradeId);
+  r.advance(STOP_CONFIRM_MS);
+  r.ex.tick(quote(symbol, bid, ask, { ts: r.now(), ...over }));
+  const held = await r.engine.poll(tradeId);
+  return { first, held };
+}

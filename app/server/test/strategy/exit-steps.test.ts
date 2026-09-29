@@ -9,7 +9,7 @@ import { StrategyExitStepper, exitWords, type ExitStepperDeps } from '../../src/
 import {
   exitPriceProblem, orderPlan, protectionFor, stopFor, stopPriceByPoints, targetFor, targetPriceByPoints, type ExitAsk,
 } from '../../src/trading/order-plan.js';
-import type { TradeRecord } from '../../src/trading/engine.js';
+import { backstopFor, type TradeRecord } from '../../src/trading/engine.js';
 import { rig, ceProduct, planFor, quote, T0 } from '../trading/harness.js';
 
 /**
@@ -386,10 +386,10 @@ describe('real time: a strategy trade on the paper exchange, walked across its s
   test('[critical] sold at 15: target 3.00 and stop 25 on the book, then each step reprices the order on Delta\'s book', async () => {
     const { r, at, book } = await sold();
     assert.equal(r.store.peek('CE-1')!.state.position, -100, 'the entry filled');
-    assert.deepEqual(await book(), { target: [3], stop: [25] }, '80% target, stop entry + 10 points');
+    assert.deepEqual(await book(), { target: [3], stop: [backstopFor(25, 15)] }, '80% target; the stop (entry + 10 = 25) rests at Delta as its backstop');
 
-    assert.deepEqual(await at('03:59'), { target: [3], stop: [25] }, 'nothing moves a minute early');
-    assert.deepEqual(await at('04:00'), { target: [2.3], stop: [25] }, '85% from 4:00 -- the target only');
+    assert.deepEqual(await at('03:59'), { target: [3], stop: [backstopFor(25, 15)] }, 'nothing moves a minute early');
+    assert.deepEqual(await at('04:00'), { target: [2.3], stop: [backstopFor(25, 15)] }, '85% from 4:00 -- the target only');
     assert.deepEqual(await at('04:30'), { target: [2.3], stop: [35] }, 'stop to entry + 20 points from 4:30');
     assert.deepEqual(await at('05:00'), { target: [1.5], stop: [35] }, '90% from 5:00');
     assert.deepEqual(await at('06:00'), { target: [1.5], stop: [35] }, 'and holds there');
@@ -464,7 +464,7 @@ describe('real time: UG-PE as saved on 22 Sep -- price stop 70, target 80 → 85
   // 05:30 / 07:30 / 09:30 / 11:30 read as 03:40 / 05:40 / 07:40 / 09:40 here.
   const istOfRig = (hhmm: string) => (minutesOf(hhmm) - (3 * 60 + 43)) * 60_000 - 20_000;
 
-  test('[critical] sold at 18: stop rests at 70 all day; the target steps 3.6 → 2.7 → 1.8 → 0.9', async () => {
+  test('[critical] sold at 18: the stop (70) holds its backstop on the book all day; the target steps 3.6 → 2.7 → 1.8 → 0.9', async () => {
     const { peProduct } = await import('../trading/harness.js');
     const r = rig({ products: [peProduct()], quotes: [quote(PE, 18, 18.5)], limits: { maxShortContracts: 5_000 } });
     const s = strat({
@@ -497,10 +497,10 @@ describe('real time: UG-PE as saved on 22 Sep -- price stop 70, target 80 → 85
       return book();
     };
     assert.equal(r.store.peek('PE-1')!.state.position, -100, 'filled 100 at 18');
-    assert.deepEqual(await book(), { target: [3.6], stop: [70] }, '80% of 18, stop at the level typed');
-    assert.deepEqual(await at('05:40'), { target: [2.7], stop: [70] }, '85% from "7:30"');
-    assert.deepEqual(await at('07:40'), { target: [1.8], stop: [70] }, '90% from "9:30"');
-    assert.deepEqual(await at('09:40'), { target: [0.9], stop: [70] }, '95% from "11:30"');
+    assert.deepEqual(await book(), { target: [3.6], stop: [backstopFor(70, 18)] }, '80% of 18; the typed stop 70 rests at Delta as its backstop');
+    assert.deepEqual(await at('05:40'), { target: [2.7], stop: [backstopFor(70, 18)] }, '85% from "7:30"');
+    assert.deepEqual(await at('07:40'), { target: [1.8], stop: [backstopFor(70, 18)] }, '90% from "9:30"');
+    assert.deepEqual(await at('09:40'), { target: [0.9], stop: [backstopFor(70, 18)] }, '95% from "11:30"');
     assert.equal(70 - r.store.peek('PE-1')!.state.entryAvgPrice!, 52, 'the balance: 70 − 18');
     assert.equal((await r.ex.getOpenOrders(PE)).filter((o) => o.reduceOnly).length, 2, 'one target, one stop -- never two of either');
   });

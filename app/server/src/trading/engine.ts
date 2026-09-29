@@ -404,6 +404,32 @@ const PROTECT_RETRY_MS = 2_000;
  * because the feed stalled rather than because the price moved.
  */
 const MARK_STALE_MS = 15_000;
+
+/**
+ * How long the offer has to stay at or through the stop before the desk
+ * closes. A short is bought back at the offer, so the offer is the price that
+ * says the stop is really reached; fifteen seconds of it is a market that has
+ * moved, not one stray quote.
+ */
+export const STOP_CONFIRM_MS = 15_000;
+
+/**
+ * The stop resting at Delta is a backstop, not the stop (29 Sep 2026).
+ *
+ * Delta can only trigger a resting stop on the mark, the last trade or the
+ * spot -- and on thin near-expiry options the mark runs far above anything
+ * tradeable: on 26 September C-84400 marked 13.8 against a 4.4 / 5.2 book, its
+ * 16.0 stop fired a minute after the entry and bought back at 7.9, and the
+ * option then expired at 0.1; on 28 September C-83200's 44.2 stop filled at
+ * 24.8. So the stop the trader set is judged by the desk, on the offer
+ * (`stopIfReached`), and the order at the exchange sits further out -- the
+ * stop plus its distance from the entry, at least a quarter of the stop again
+ * -- where only a real run or this process being down will reach it.
+ */
+export function backstopFor(stop: number, entry: number | null): number {
+  const gap = Math.max(entry === null || !(entry > 0) ? 0 : Math.abs(stop - entry), stop * 0.25);
+  return stop + gap;
+}
 const PROTECT_RETRY_MAX_MS = 60_000;
 
 const ROLE_CODE: Record<OrderRole | 'exit', string> = {
@@ -439,6 +465,8 @@ export function roleOfClientId(clientOrderId: string | null, stem: string): Orde
 }
 
 export class TradeEngine {
+  /** When each trade's offer was first seen at or through its stop, for the confirmation. In memory: a restart starts the count again. */
+  private readonly stopSince = new Map<string, number>();
   private readonly limits: RiskLimits;
   /** Set while a trade is being resolved after a timeout. Nothing may be sent. */
   private entryDeadline = new Map<string, number>();
@@ -992,6 +1020,7 @@ export class TradeEngine {
     if (rec.state.position === 0 && rec.state.entrySize > 0 && rec.state.phase !== 'flat') {
       rec = await this.cancelSiblings(rec, true);
       rec = await this.commit(rec, { t: 'reconciled', position: 0, at: this.now(), note: 'closed' });
+      this.stopSince.delete(rec.state.tradeId);
     }
 
     return rec.state;
@@ -1232,12 +1261,14 @@ export class TradeEngine {
 
     /*
      * The stop stays a trigger at the exchange, because its whole value is that
-     * it works when this process does not. `stopIfReached` watches the level
-     * too, so an outage is covered from both ends.
+     * it works when this process does not -- but at the backstop, not at the
+     * stop itself: Delta triggers it on the mark, and the mark spikes on thin
+     * options. The stop the trader set is judged here, on the offer, by
+     * `stopIfReached`. See `backstopFor`.
      */
     const sl = await settle(
       'stop_loss',
-      rec.plan.stopPrice,
+      rec.plan.stopPrice === null ? null : backstopFor(rec.plan.stopPrice, rec.state.entryAvgPrice),
       // Either shape counts as the stop leg: a stop market placed before
       // 12 September is still a stop, and must be recognised to be replaced.
       (o) => o.type === 'stop_market' || o.type === 'stop_limit',
@@ -1395,11 +1426,15 @@ export class TradeEngine {
   /**
    * The desk's own eye on the stop.
    *
-   * Judged on the mark, and closed at the market, because a stop has to get
-   * out: a price running away is exactly when waiting for a better fill costs
-   * most. Every position this desk holds is short, so the stop is reached when
-   * the mark *rises* to it. The exchange stop stays on the book as well, since
-   * it is the only protection that survives this process dying.
+   * Judged on the **offer**, held for `STOP_CONFIRM_MS`, and closed at the
+   * market. Every position this desk holds is short, so it is bought back at
+   * the offer: the stop is reached when the offer has been at or above it for
+   * fifteen seconds running. Until 29 September it was judged on the mark, and
+   * the mark on a thin near-expiry option prints prices nothing trades at --
+   * two winning shorts were stopped out on it (see `backstopFor`). An offer
+   * back under the stop starts the count again; a missing or stale quote
+   * neither fires nor resets it. The backstop at the exchange stays on the book
+   * as well, since it is the only protection that survives this process dying.
    *
    * The target is deliberately not judged here any more. It used to be -- on
    * the mark, closing at the market -- and on 10 September that cancelled a
@@ -1432,17 +1467,22 @@ export class TradeEngine {
       return await this.d.store.get(rec.state.tradeId) ?? rec;
     }
 
+    const id = rec.state.tradeId;
     const quote = await this.exchange.getQuote(rec.plan.symbol).catch(() => null);
-    const mark = quote?.mark ?? null;
-    // A missing, stale, or nonsensical mark is not a reason to do anything.
-    if (mark === null || !Number.isFinite(mark) || mark <= 0) return rec;
-    if (quote !== null && this.now() - quote.ts > MARK_STALE_MS) return rec;
-    if (mark < stop) return rec;
+    const ask = quote?.ask ?? null;
+    // A missing, stale, or nonsensical offer is not a reason to do anything -- nor to forget the count.
+    if (quote === null || this.now() - quote.ts > MARK_STALE_MS) return rec;
+    if (ask === null || !Number.isFinite(ask) || ask <= 0) return rec;
+    if (ask < stop) { this.stopSince.delete(id); return rec; }
+    const since = this.stopSince.get(id) ?? this.now();
+    this.stopSince.set(id, since);
+    if (this.now() - since < STOP_CONFIRM_MS) return rec;
+    this.stopSince.delete(id);
 
     // Closing at the market gives up the spread, and for a stop that is the
     // trade being made: an exit that happens beats a better price that might not.
-    await this.closeNowInner(rec.state.tradeId, `stop reached at ${mark}`);
-    return await this.d.store.get(rec.state.tradeId) ?? rec;
+    await this.closeNowInner(id, `stop reached: the offer held at ${ask} (stop ${stop}) for ${Math.round((this.now() - since) / 1000)} s`);
+    return await this.d.store.get(id) ?? rec;
   }
 
   /**
