@@ -5,6 +5,34 @@ Updated 29 Sep 2026
 
 ---
 
+## 29 Sep 2026 (evening) — the trend plan, its paper log, the strategy search
+
+- [x] **Trend plan** (1H / 4H 20-candle breakout, 2 ATR stop, 3 ATR trail, no
+  target) on the chart, in the HUD, and in a server **paper log**
+  (`trend_paper`) that keeps live trades apart from replayed ones. One source
+  file for the study, the chart and the server (`npm run sync:trend`, checked
+  by a test).
+- [x] **SMC box shows the 4H trend alignment** (with it: half the loss).
+- [x] Studies: momentum (entries / exits for big moves), combo (daily trend on
+  fresh 2020-23 data, layers as filters, SMC vs trend). None an edge; the trend
+  plan is the only one positive after fees in both halves.
+- [ ] **Review the paper log** on 31 Oct 2026, then monthly: live 1H / 4H
+  trades, net R after fees, and the two pre-registered filters (volume burst,
+  London / NY). Drop the plan if it is negative after ~40 live trades.
+- [ ] **The desk's real edge may not be direction.** Every directional rule
+  tested on BTC 5m-4H is ~0 after fees; the documented edge in crypto options
+  is the volatility risk premium (implied above realised). Measure the desk's
+  own short-premium record the same way: implied vs realised by expiry, net of
+  fees and hedges, 2024-26.
+- [ ] Ideas from docs/NEW_IDEA.md still untested, in the order the evidence
+  and the data allow: volatility risk premium (above); funding / basis carry
+  (market-neutral, needs spot); liquidation-cascade reversal (needs a
+  liquidation history -- Binance publishes liquidation snapshots); BTC-ETH SMT
+  (ETH candles); footprint / absorption (a per-price recorder). SMC / ICT / CRT
+  variants: stop -- 30+ tested, none held.
+- [ ] Delta public socket URL (`public-socket.india.delta.exchange`): verify
+  before the old one is switched off.
+
 ## 29 Sep 2026 (afternoon) — database audit, chart latency
 
 - [x] **Audit**: every table and column in a freshly migrated database checked

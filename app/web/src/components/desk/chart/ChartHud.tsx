@@ -151,7 +151,7 @@ export const ChartHud = forwardRef<HTMLDivElement, {
                 );
               })}
               {trend.paper && trend.paper.length > 0 && (
-                <span className="trend-paper" title="The server's paper log since 1 Sep 2026: trades recorded within 15 minutes of their signal (the forward test), closed and their net R after fees. Replayed trades are not counted.">
+                <span className="trend-paper" title={`The server's paper log since 1 Sep 2026: trades recorded within 15 minutes of their signal (the forward test), closed and their net R after fees; replayed trades are not counted. Pre-registered filters, closed live trades: ${trend.paper.map((p) => `${p.tf} volume burst ${p.volBurst?.closed ?? 0} (${r1(p.volBurst?.netR ?? 0)}), London/NY ${p.session?.closed ?? 0} (${r1(p.session?.netR ?? 0)})`).join('; ')}.`}>
                   paper {trend.paper.map((p) => `${p.tf} ${p.closed} closed${p.closed ? ` ${r1(p.netR)}` : ''}${p.open ? ` +${p.open} open` : ''}`).join(' · ')}
                 </span>
               )}
