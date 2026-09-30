@@ -122,22 +122,53 @@ Table `entry_setups` (migration `entry-001-setups`), written by a recorder in
   TP2 and TP3 are drawn, not graded.
 
 `GET /api/entry/record` gives each method's setups, trades, wins, expired,
-average and total R, with the chain and without it, and the latest 50 setups.
+average and total R, profit factor, max drawdown and average win and loss, with
+the chain and without it; each way's total over all twelve; and the latest 50
+setups. `GET /api/entry/board` also carries each timeframe's trend and swings
+(`timeframes`).
 
 ## The screen
 
-On the **desk** tab, under the price chart:
+On the **desk** tab, under the price chart, laid out as the owner's reference
+(30 Sep 2026): the two ways **side by side** -- *12 methods · without
+timeframe* and *12 methods + timeframe* -- stacked on a phone. Each panel has:
 
-- **Board + chart** (default): two tables -- *With timeframe* (a tick per
-  timeframe: ✓ passed, ✗ failed, ? not read, · not part of it) and *Without
-  timeframe* -- each row with its state, R:R, score and paper record. Choosing
-  a row shows its chain, gates, levels and score; a TRADE is drawn on the chart
-  above: the entry zone as a box from its trigger bar, SL, TP1, TP2, TP3.
-- **12 charts**: the twelve methods of one mode as twelve small charts, each with
-  its own levels; built only while shown.
-- **Setups on chart**: off shows the plain price chart.
-- **Without timeframe on**: the timeframe the single-timeframe reads use
-  (1m-4H). The paper log records them at 5m.
+- **A chart** of its own: without timeframe, on the timeframe chosen there
+  (1m-4H, which is also what its reads use); with timeframe, a 1m-4H switch to
+  look at any timeframe of the chain. A TRADE's entry, SL, TP1, TP2 and TP3 are
+  labelled on the price axis. BTC's price and its move over the candles shown
+  sit above it.
+- **The 12 methods** as a table: a coloured number per group, the signal --
+  **BUY** / **SELL** (a TRADE), **WAIT**, **NO** -- and the quality score; with
+  timeframe, a tick per timeframe (✓ passed, ✗ failed, ? not read, · not part
+  of it). Hover a method for its paper record.
+- **Selected setup**: LONG / SHORT SETUP (or WAIT / NO TRADE with the reason),
+  method, timeframe, quality, entry, stop, each target with its R multiple, risk
+  and reward in points and percent, and R:R after fees.
+- **Key reasons**: every step of its chain, passed, failed or not read, and any
+  gate that refused it.
+- **Timeframe analysis** (with timeframe only): each of 4H-1m, its trend and
+  what its swings did (HH / HL, LH / LL, range), and a one-line trend strip.
+- **Paper record**: that way's trades, win rate, profit factor, net R and max
+  drawdown, over all twelve at 5m, after fees.
+
+Underneath, **Without vs with timeframe**: the two records compared metric by
+metric (setups, trades, win rate, average win and loss, profit factor, net R,
+max drawdown) -- the reference's historical comparison, from the real log only.
+A **12 charts** switch shows the twelve of one way as twelve small charts, and
+**Setups on chart** turns every drawn level off (the plain charts). The chosen
+TRADE is also drawn on the desk's main chart above.
+
+Three things differ from the reference on purpose:
+
+- **"Quality 72/100", not "Confidence 72%"** -- nothing measures a chance of
+  winning yet, and a score must not read as one.
+- **No TAKE TRADE button** -- these setups are paper-logged, never ordered
+  ([decision 0013](../decisions/0013-entry-setups-measured-before-trusted.md)),
+  and the desk has no order path for a BTC position.
+- **No example statistics** -- every figure is the paper log's; until trades
+  close it says "no record yet". (The pros-and-cons lists were removed at the
+  owner's request.)
 
 ## Code
 
@@ -150,5 +181,5 @@ On the **desk** tab, under the price chart:
 | [entry/read.ts](../../app/server/src/entry/read.ts) | the market context, best-effort |
 | [entry/paper.ts](../../app/server/src/entry/paper.ts) | the log, its grading and the record |
 | [entry.routes.ts](../../app/server/src/http/routes/entry.routes.ts) | `GET /api/entry/board`, `GET /api/entry/record` |
-| [EntrySection.tsx](../../app/web/src/components/desk/entry/EntrySection.tsx), [EntryGrid.tsx](../../app/web/src/components/desk/entry/EntryGrid.tsx), [entry-layer.ts](../../app/web/src/components/desk/chart/entry-layer.ts) | the screen |
+| [EntrySection.tsx](../../app/web/src/components/desk/entry/EntrySection.tsx), [ModePanel.tsx](../../app/web/src/components/desk/entry/ModePanel.tsx), [EntryChart.tsx](../../app/web/src/components/desk/entry/EntryChart.tsx), [EntryGrid.tsx](../../app/web/src/components/desk/entry/EntryGrid.tsx), [parts.tsx](../../app/web/src/components/desk/entry/parts.tsx), [entry-layer.ts](../../app/web/src/components/desk/chart/entry-layer.ts) | the screen |
 | `test/entry/*.test.ts` | every primitive, detector, gate and grading rule |

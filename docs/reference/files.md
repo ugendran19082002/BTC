@@ -5,7 +5,7 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-374 files listed, 161 test files counted below, images and lockfiles left out.
+377 files listed, 161 test files counted below, images and lockfiles left out.
 
 ## Test files
 
@@ -329,8 +329,11 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [EntryGrid.tsx](../../app/web/src/components/desk/entry/EntryGrid.tsx) | The twelve methods as twelve small charts, for one mode at a time: with the timeframe chain (5m candles, where its entry is read) or without it (on the timeframe chosen for that). |
-| [EntrySection.tsx](../../app/web/src/components/desk/entry/EntrySection.tsx) | The entry section: TEST.md's twelve entry methods, each read two ways -- with the timeframe chain (4H/1H context -> 30m/15m setup -> 5m entry -> 3m confirmation -> 1m execution) and without it (one... |
+| [EntryChart.tsx](../../app/web/src/components/desk/entry/EntryChart.tsx) | A small price chart for one entry setup: the candles of one timeframe and, for a TRADE, its entry zone, stop and targets as labelled lines on the price axis -- the reference layout's chart. 3m is f... |
+| [EntryGrid.tsx](../../app/web/src/components/desk/entry/EntryGrid.tsx) | The twelve methods as twelve small charts, one mode at a time: with the timeframe chain (5m, where its entry is read) or without it (on the timeframe chosen for that). |
+| [EntrySection.tsx](../../app/web/src/components/desk/entry/EntrySection.tsx) | The entry section: TEST.md's twelve entry methods, each read two ways -- without the timeframe chain (one timeframe alone) and with it (4H/1H -> 30m/15m -> 5m entry -> 3m confirm -> 1m execution) -... |
+| [ModePanel.tsx](../../app/web/src/components/desk/entry/ModePanel.tsx) | One half of the reference layout: the twelve methods read one way -- with the timeframe chain, or without it -- with their chart, table, the chosen setup, its reasons, (with the chain) the timefram... |
+| [parts.tsx](../../app/web/src/components/desk/entry/parts.tsx) | The entry section's small pieces, shared by the panels, the grid and the comparison: the signal chip, the method's number badge, the per-timeframe tick, and how a record and a number are written. |
 
 ## `app/web/src/components/layout/`
 
