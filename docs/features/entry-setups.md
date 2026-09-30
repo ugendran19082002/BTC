@@ -46,20 +46,23 @@ Each method is a chain of its own steps on the entry timeframe. A step the
 data cannot answer (the tape was not recorded, no option board) is **not read**
 and never counts as confirmed.
 
+The owner's reference formulas, and the audit that aligned the engine with
+them, are in [entry-methods-reference.md](entry-methods-reference.md).
+
 | # | Method | Group | Its chain | Entry zone | Stop (before the buffer) |
 |---|---|---|---|---|---|
-| 1 | Breakout | breakout | close past the 20-bar high/low · volume ≥ 1.3× median · strong close | just under the close | the breakout candle's far end |
-| 2 | Breakout + retest | pullback | broke the 20-bar range · came back to the level · no close back through · rejected it | at the level | the retest's extreme |
-| 3 | Liquidity sweep | reversal | swept a swing low/high and closed back · MSS through the swing before it · displacement · retest holds | at the MSS level | past the sweep |
-| 4 | FVG retest | pullback | a gap left by displacement · structure not against · price back in · reaction out | the gap | past the displacement's origin |
-| 5 | Order-block retest | pullback | an OB behind a structure break · price back in · closed back out of it | the block | past the block |
-| 6 | BOS | breakout | trend with it · close through the swing · by displacement · retest | at the broken level | the last HL / LH |
-| 7 | MSS / CHoCH | reversal | trend the other way · liquidity swept first · CHoCH · displacement · retest | at the CHoCH level | past the extreme since the sweep |
-| 8 | Momentum | breakout | a 1.5 ATR body · volume ≥ 1.8× · closed near its extreme; **not chased** if it opened > 3 ATR from the 20 EMA | just under the close | the bar's far end |
-| 9 | Pullback | pullback | trend (HH/HL over the EMAs) · back to the 20 EMA · resumed | just under the close | the pullback's extreme |
-| 10 | VWAP / mean reversion | reversal | 2σ from the day's VWAP · exhaustion (volume or wick) · reversal candle; **off on a trend day** (efficiency > 0.6); TP1 is VWAP | just under the close | the extreme |
-| 11 | Order flow | flow | at support/resistance (swing or book wall) · delta against it · it held (absorption) · delta turned · big prints its way | at the level | the level or the held extreme |
-| 12 | Options / derivatives | flow | at the put (call) OI wall · reacted · big-move reading not against; TP to max pain when it is that way | just under the close | past the wall |
+| 1 | Breakout | breakout | close past the 20-bar high/low · RVOL ≥ 1.5 · close location ≥ 0.70 (≤ 0.30 short) | just under the close | the breakout candle's far end |
+| 2 | Breakout + retest | pullback | broke the 20-bar range · no close back through since · the retest bar touched the level and closed beyond it · rejected it | at the level | the retest's extreme |
+| 3 | Liquidity sweep | reversal | swept an untouched swing by 0.1 ATR · closed back · MSS through the last lower high | a limit at the MSS level | past the sweep |
+| 4 | FVG retest | pullback | a gap left by displacement its way · price back in (last 3 bars) · closed up out of it | the gap | past the displacement's origin |
+| 5 | Order-block retest | pullback | an OB within 5 bars of a structure-breaking displacement · entered (last 3 bars) · closed back out of it | the block | past the block |
+| 6 | BOS | breakout | close through the swing · by displacement · trend aligned | a limit at the broken level | the last HL / LH |
+| 7 | MSS / CHoCH | reversal | structure the other way · liquidity swept first · CHoCH · displacement · retest | at the CHoCH level | past the extreme since the sweep |
+| 8 | Momentum | breakout | a 1.5 ATR body · RVOL ≥ 1.5 · close location ≥ 0.75 · the next bar closes further; **no chase** if it opened > 3 ATR from the 20 EMA | just under the close | the bar's far end |
+| 9 | Pullback | pullback | trend (HH/HL over the EMAs) · back to the 20 EMA · closed back over it · micro BOS | just under the close | the pullback's extreme |
+| 10 | VWAP / mean reversion | reversal | 2σ from the day's VWAP at the last 3 bars' extreme · reversal candle · delta improving · returning; **off on a trend day** (efficiency > 0.6); TP1 is VWAP | just under the close | the extreme |
+| 11 | Order flow | flow | at support/resistance (swing or book wall) · absorption · delta flipped · CVD turned · 1m micro BOS | at the level | the level or the held extreme |
+| 12 | Options / derivatives | flow | at the put (call) OI wall · the wall held · rejected · structure not against · big-move risk compatible · the tape its way; TP to max pain when it is that way | just under the close | past the wall |
 
 Footprint -- volume at each price -- is not recorded yet, so method 11 reads
 absorption from delta against price.
@@ -74,7 +77,7 @@ absorption from delta against price.
    | Data fresh | the newest 1m candle is over 3 min old (without the chain: the entry candle over one period + 3 min) |
    | Spread | the perpetual's spread is over 0.05% |
    | Stop outside the noise / not too wide | the stop is under 0.3 or over 2.5 ATR away |
-   | R:R 1.8 after fees | reward to TP1 over risk, with Delta's 0.05% taker fee both ways, is under 1.8 |
+   | R:R 1.8 after fees | reward to TP1 net of the fees in and out at TP1, over the risk plus the fees in and out at the stop, is under 1.8 |
    | Higher timeframes (with the chain) | 1H **and** 4H are both against it |
    | Big-move risk | the desk's big-move reading is high or sudden and points the other way |
    | Expected move | the day has already moved 80% of the expected daily move in this direction |
@@ -113,7 +116,8 @@ Table `entry_setups` (migration `entry-001-setups`), written by a recorder in
   the bar its trigger closed on, however long it stays on the board.
 - It is graded on the closed 1m candles: **filled** when price trades into the
   entry zone (at the zone's near edge, or the open if it gapped past it);
-  **expired** if not filled within 12 entry bars, or if price opens past the
+  **expired** if not filled within 12 entry bars of when the setup was first
+  on the board (graded from the next whole minute), or if price opens past the
   stop first; then **stop**, **TP1** or **timeout** after 48 entry bars. A bar
   that touches both the stop and TP1 is the stop, and in the fill bar only the
   stop counts -- a candle cannot say which came first, and the log does not
