@@ -92,6 +92,14 @@ test('[critical] /api/reload is refused to an outsider, and answers the containe
   assert.equal(typeof inside.json().days, 'number');
 });
 
+test('[critical] the entry section is behind the session; its record answers with one', async () => {
+  assert.equal((await app.inject({ method: 'GET', url: '/api/entry/board', remoteAddress: '203.0.113.9' })).statusCode, 401);
+  assert.equal((await app.inject({ method: 'GET', url: '/api/entry/record', remoteAddress: '203.0.113.9' })).statusCode, 401);
+  const r = await app.inject({ method: 'GET', url: '/api/entry/record', headers: { cookie: session() } });
+  assert.equal(r.statusCode, 200, r.body);
+  assert.ok(Array.isArray(r.json().records));
+});
+
 test('a session opens the protected routes', async () => {
   const r = await app.inject({ method: 'GET', url: '/api/strategies', headers: { cookie: session() } });
   assert.equal(r.statusCode, 200);

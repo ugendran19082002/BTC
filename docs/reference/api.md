@@ -9,7 +9,7 @@ also carry an `Origin` or `Referer` naming the desk's own host.
 
 What: the first sentence of the comment directly above the route. A dash means there is none.
 
-65 routes.
+67 routes.
 
 ## [annotations.routes.ts](../../app/server/src/http/routes/annotations.routes.ts)
 
@@ -38,6 +38,13 @@ What: the first sentence of the comment directly above the route. A dash means t
 | POST | `/api/settings` | signed in | Save one desk setting; the short cap may be lowered freely but never raised past what margin covers. |
 | GET | `/api/spot` | signed in | Just the price. |
 | GET | `/api/trend/paper` | signed in | The trend plan's paper log: the latest trades and, per timeframe, the live forward test (trades first seen within 15 minutes of their signal) apart from those replayed later. |
+
+## [entry.routes.ts](../../app/server/src/http/routes/entry.routes.ts)
+
+| Method | Path | Session | What |
+|---|---|---|---|
+| GET | `/api/entry/board` | signed in | The 24 reads: each method with the timeframe chain (entry on 5m), then without it on `tf` (default 5m). |
+| GET | `/api/entry/record` | signed in | Each method's paper record, with the chain and without it, and the latest setups written. |
 
 ## [errors.routes.ts](../../app/server/src/http/routes/errors.routes.ts)
 

@@ -20,6 +20,9 @@ import { bookHeatSchema, flushBookHeat, startBookHeat } from './market/book-heat
 import { annotationsSchema } from './market/chart-annotations.js';
 import { recordTrendPaper, trendPaperSchema } from './strategy/trend-paper.js';
 import { noteError } from './observability/errors.js';
+import { entrySchema, gradeSetups, recordSetups } from './entry/paper.js';
+import { entryBoard } from './entry/engine.js';
+import { readEntryContext } from './entry/read.js';
 
 /**
  * Start the desk.
@@ -50,6 +53,7 @@ await indexSchema();
 await bookHeatSchema();
 await annotationsSchema();
 await trendPaperSchema();
+await entrySchema();
 const strategies = await initStrategyStore();
 
 // One sign-in service for the process: the gate and the routes share the pool.
@@ -177,3 +181,18 @@ const recordTrend = () => { recordTrendPaper(Date.now()).catch(warn('trend-paper
 recordTrend();
 setInterval(recordTrend, 5 * 60_000).unref();
 
+/*
+ * The entry section's paper log: the 24 reads taken once a minute, each new
+ * TRADE written once, and every working setup graded on the closed 1m candles
+ * (entry/paper.ts). Nothing is ordered.
+ */
+const recordEntries = () => {
+  readEntryContext()
+    .then(async (ctx) => {
+      await recordSetups(entryBoard(ctx, '5m'), ctx.now);
+      await gradeSetups(ctx.frames['1m'] ?? []);
+    })
+    .catch(warn('entry-setups'));
+};
+setInterval(recordEntries, 60_000).unref();
+setTimeout(recordEntries, 40_000).unref();

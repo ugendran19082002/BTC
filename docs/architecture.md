@@ -66,6 +66,7 @@ every capability dropped. The analytics service was retired on 29 Sep 2026.
 | Area | Directory | What it owns |
 |---|---|---|
 | Trading | [`trading/`](../app/server/src/trading/) | The engine, the gates (`precheck.ts`), the journal, margin, charges, money rounding. The part that can lose money. |
+| Entry setups | [`entry/`](../app/server/src/entry/) | The twelve entry methods, with the timeframe chain and without it: gates, targets, state, and the paper log. See [features/entry-setups.md](features/entry-setups.md). |
 | Strategies | [`strategy/`](../app/server/src/strategy/) | Saved strategies, the scheduler, strike selection, stepped exits, the trend plan's paper log. See [features/strategies.md](features/strategies.md). |
 | Domain | [`domain/`](../app/server/src/domain/) | Pure maths, no I/O: Black-Scholes, probability, calibration against `chain.db`, scoring, indicators, patterns. |
 | Market data | [`market/`](../app/server/src/market/) | Delta's public REST and sockets, the chain, and the recorders that write the market tables. |
@@ -93,6 +94,7 @@ reach its journal must not take an order.
 | 10 s sample, 20 s write | The perp's order book, binned at $10 | `book_heat_1m` |
 | 5 min | The trend plan's paper log on closed 1H / 4H candles | `trend_paper` |
 | 1 min | The day's mark-to-market P&L | `mtm_samples` |
+| 1 min | The 24 entry setups read; each new TRADE written, working ones graded on 1m candles | `entry_setups` |
 
 A recorder that fails writes one warning to the error log; it never stops the
 desk.
@@ -100,7 +102,7 @@ desk.
 ## The screen
 
 [`app/web/src/App.tsx`](../app/web/src/App.tsx) holds seven tabs: **desk** (the
-price chart and the option chain), **trade** (order ticket, positions, account),
+price chart, the 24 entry setups under it, and the option chain), **trade** (order ticket, positions, account),
 **orders**, **strategy**, **pnl**, **settings** and **errors**. Prices stream over
 `/api/stream` (server-sent events); everything else is polled with `usePoll`,
 which keeps the last good answer and stops while the tab is hidden.

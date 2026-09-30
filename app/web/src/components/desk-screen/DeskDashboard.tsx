@@ -4,7 +4,10 @@ import type { Leg } from '@/types/desk';
 import type { PerpOiChange } from '@/api/desk';
 import type { ChartTf } from '@/components/desk/PriceChart';
 import { DeskHeader } from './DeskHeader';
+import { useState } from 'react';
 import { DeskChart } from './DeskChart';
+import { EntrySection } from '@/components/desk/entry/EntrySection';
+import type { EntryOverlay } from '@/types/entry';
 import './desk-dashboard.css';
 
 /*
@@ -41,6 +44,8 @@ export function DeskDashboard({
   onSettings?: () => void;
   controls?: React.ReactNode;
 }) {
+  // The entry section's chosen setup, drawn on the chart above it.
+  const [entry, setEntry] = useState<EntryOverlay | null>(null);
   return (
     <div className="desk-root" aria-label="BTC Live Desk">
       <DeskHeader
@@ -51,8 +56,9 @@ export function DeskDashboard({
         controls={controls}
       />
       <div className="desk-chart-row">
-        <DeskChart bars={bars} ltp={ltp} strikes={strikes} derivs={derivs} tf={tf} loading={loading} error={error} />
+        <DeskChart bars={bars} ltp={ltp} strikes={strikes} derivs={derivs} tf={tf} loading={loading} error={error} entry={entry} />
       </div>
+      <EntrySection bars={bars} onOverlay={setEntry} />
     </div>
   );
 }

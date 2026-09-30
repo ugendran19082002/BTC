@@ -11,6 +11,7 @@ import { registerStrategyRoutes } from './routes/strategy.routes.js';
 import { registerReportRoutes } from './routes/report.routes.js';
 import { registerStreamRoutes } from './routes/stream.routes.js';
 import { registerAnnotationRoutes } from './routes/annotations.routes.js';
+import { registerEntryRoutes } from './routes/entry.routes.js';
 import { noteError } from '../observability/errors.js';
 import { refuse, wasRefusal, worthLogging } from './refuse.js';
 
@@ -190,6 +191,7 @@ export async function buildApp(o: {
   registerReportRoutes(app);
   registerStreamRoutes(app);
   registerAnnotationRoutes(app);
+  registerEntryRoutes(app);
 
   return app;
 }

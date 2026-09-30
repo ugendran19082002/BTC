@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-353 files listed, 153 test files counted below, images and lockfiles left out.
+374 files listed, 161 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 88 |
-| `app/web` | 65 |
+| `app/server` | 93 |
+| `app/web` | 68 |
 
 ## `(root)`
 
@@ -24,6 +24,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [Dockerfile.harvester](../../Dockerfile.harvester) | Keeps the chain cache current. |
 | [Dockerfile.web](../../Dockerfile.web) | The screen: build the Vite bundle, then serve it from nginx, which also proxies /api to the API container (deploy/nginx.docker.conf). |
 | [README.md](../../README.md) | BTC options desk |
+| [TEST.md](../../TEST.md) | -- |
 
 ## `app/server/`
 
@@ -113,6 +114,17 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [shock.ts](../../app/server/src/domain/shock.ts) | Whether something is happening right now. |
 | [structure.ts](../../app/server/src/domain/structure.ts) | What the option board itself is saying: where open interest and gamma sit, how puts are priced against calls, and whether options are rich or cheap against what BTC has actually been doing. |
 
+## `app/server/src/entry/`
+
+| File | What it is |
+|---|---|
+| [engine.ts](../../app/server/src/entry/engine.ts) | The entry engine: twelve methods, each read with the timeframe chain and without it -- 24 reads -- and every read ending TRADE, WAIT or NO TRADE the same way (TEST.md): |
+| [methods.ts](../../app/server/src/entry/methods.ts) | The twelve entry methods of TEST.md, each as its own trigger chain on one timeframe. |
+| [paper.ts](../../app/server/src/entry/paper.ts) | The entry setups' paper log: the forward test the 24 reads need before any of them is believed. |
+| [prims.ts](../../app/server/src/entry/prims.ts) | The price-action pieces the twelve entry methods are built from. |
+| [read.ts](../../app/server/src/entry/read.ts) | The entry engine's view of the market, read once per board. |
+| [types.ts](../../app/server/src/entry/types.ts) | The shapes of the entry engine (docs/features/entry-setups.md). |
+
 ## `app/server/src/http/`
 
 | File | What it is |
@@ -131,6 +143,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [annotations.routes.ts](../../app/server/src/http/routes/annotations.routes.ts) | Chart annotations API routes. |
 | [desk.routes.ts](../../app/server/src/http/routes/desk.routes.ts) | The desk's read routes: health, the option chain, spot and candles, what changed, the perpetual's tape, book and big prints for the chart, the trend plan's paper log, chain.db reloads and the desk... |
+| [entry.routes.ts](../../app/server/src/http/routes/entry.routes.ts) | The entry section's routes: the 24 reads (twelve methods, with the timeframe chain and without it) and their paper record. |
 | [errors.routes.ts](../../app/server/src/http/routes/errors.routes.ts) | The error log, readable and writable from the browser. |
 | [report.routes.ts](../../app/server/src/http/routes/report.routes.ts) | The record as a calendar, and a day as a line. |
 | [session.routes.ts](../../app/server/src/http/routes/session.routes.ts) | Sign-in, two-step setup, and the account page. |
@@ -251,6 +264,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [annotations.ts](../../app/web/src/api/annotations.ts) | Chart annotations API client. |
 | [client.ts](../../app/web/src/api/client.ts) | One place that knows how to talk to the API: JSON in and out, the session cookie, "not signed in" as its own error, and which failures are worth reporting to the error log. |
 | [desk.ts](../../app/web/src/api/desk.ts) | The desk's read calls: the option chain, spot and candles, what changed, the perpetual's tape, book and big prints, the trend plan's paper log, health and settings. |
+| [entry.ts](../../app/web/src/api/entry.ts) | -- |
 | [errors.ts](../../app/web/src/api/errors.ts) | The error log: read it, resolve or delete a row, and report a failure from this browser into the same table the server writes to. |
 | [report.ts](../../app/web/src/api/report.ts) | The P&L screen's calls: the record as a calendar, one day's mark-to-market line, and the spreadsheet download. |
 | [session.ts](../../app/web/src/api/session.ts) | Sign-in and the account page. |
@@ -303,12 +317,20 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [ChartHud.tsx](../../app/web/src/components/desk/chart/ChartHud.tsx) | The chart's corner readout: the live setup and what it is waiting for, the plan when there is one, the timeframe context, and this chart's own record. |
 | [LtpChip.tsx](../../app/web/src/components/desk/chart/LtpChip.tsx) | The last traded price, where a trader looks for it: beside the chart's controls, green when it ticked up and red when it ticked down (kept until the next change, like the price scale's own label),... |
 | [TradesDialog.tsx](../../app/web/src/components/desk/chart/TradesDialog.tsx) | Every trade, in one place, off the chart: the SMC plan's trades on this chart, and the trend plan's paper log from the server. |
+| [entry-layer.ts](../../app/web/src/components/desk/chart/entry-layer.ts) | The chosen entry setup, drawn on the chart: the entry zone as a box from the bar the setup was anchored to, the stop and the targets as lines to the right edge. |
 | [flow-layers.ts](../../app/web/src/components/desk/chart/flow-layers.ts) | The order-flow layers, in the scene's data coordinates (bar index, price): |
 | [label-layout.ts](../../app/web/src/components/desk/chart/label-layout.ts) | Where each label goes, so that none is drawn over another. |
 | [price-chart.css](../../app/web/src/components/desk/chart/price-chart.css) | The price chart (PriceChart.tsx): the canvas fills the card, and the HUD and the toolbar float inside it. |
 | [scene.ts](../../app/web/src/components/desk/chart/scene.ts) | What the chart draws, in *data* coordinates (bar index, price), built from one engine state. |
 | [smc-primitive.ts](../../app/web/src/components/desk/chart/smc-primitive.ts) | Draws a scene (scene.ts) on the chart's own canvas, as a series primitive. |
 | [trend-layer.ts](../../app/web/src/components/desk/chart/trend-layer.ts) | The trend plan (lib/trend/breakout.ts, on 1H candles) drawn on the chart's own candles: its 20-candle channel as a faint step line, the open trade's entry, initial stop and trailing stop, and finis... |
+
+## `app/web/src/components/desk/entry/`
+
+| File | What it is |
+|---|---|
+| [EntryGrid.tsx](../../app/web/src/components/desk/entry/EntryGrid.tsx) | The twelve methods as twelve small charts, for one mode at a time: with the timeframe chain (5m candles, where its entry is read) or without it (on the timeframe chosen for that). |
+| [EntrySection.tsx](../../app/web/src/components/desk/entry/EntrySection.tsx) | The entry section: TEST.md's twelve entry methods, each read two ways -- with the timeframe chain (4H/1H context -> 30m/15m setup -> 5m entry -> 3m confirmation -> 1m execution) and without it (one... |
 
 ## `app/web/src/components/layout/`
 
@@ -338,9 +360,15 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [CumulativeChart.tsx](../../app/web/src/components/report/CumulativeChart.tsx) | The running total, day by day: the line that says whether the month is working. |
+| [DailyPnlChart.tsx](../../app/web/src/components/report/DailyPnlChart.tsx) | -- |
 | [MtmChart.tsx](../../app/web/src/components/report/MtmChart.tsx) | One day, minute by minute: what the day was worth at each reading, with every fall from a high shaded underneath. |
-| [PnlCalendar.tsx](../../app/web/src/components/report/PnlCalendar.tsx) | Every day in the range as a square: green made money, red lost it, the shade says how much against the biggest day. |
+| [PerformanceStats.tsx](../../app/web/src/components/report/PerformanceStats.tsx) | -- |
+| [PnlCalendar.tsx](../../app/web/src/components/report/PnlCalendar.tsx) | Professional Institutional P&L Calendar. |
+| [PnlCurveChart.tsx](../../app/web/src/components/report/PnlCurveChart.tsx) | -- |
+| [PnlKpiCards.tsx](../../app/web/src/components/report/PnlKpiCards.tsx) | -- |
 | [ReportPanel.tsx](../../app/web/src/components/report/ReportPanel.tsx) | How the trading has actually gone. |
+| [WinLossAnalysis.tsx](../../app/web/src/components/report/WinLossAnalysis.tsx) | -- |
+| [pnl-dashboard.css](../../app/web/src/components/report/pnl-dashboard.css) | ───────────────────────────────────────────────────────────────────────────── P&L Dashboard Upgraded Styling (Institutional / Premium Dark Theme) ───────────────────────────────────────────────────... |
 
 ## `app/web/src/components/research/`
 
@@ -458,6 +486,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [desk.ts](../../app/web/src/types/desk.ts) | What one strike is worth on average, and whether it clears the eligibility rules. |
+| [entry.ts](../../app/web/src/types/entry.ts) | The entry section's shapes, mirroring app/server/src/entry/types.ts: twelve entry methods, each read with the timeframe chain and without it. |
 | [errors.ts](../../app/web/src/types/errors.ts) | Mirrors app/server/src/observability/errors.ts |
 | [report.ts](../../app/web/src/types/report.ts) | Mirrors app/server/src/trading/pnl-history.ts. |
 | [strategy.ts](../../app/web/src/types/strategy.ts) | The shapes the strategy API returns. |
@@ -521,12 +550,14 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [0010-server-decides-paper-or-live.md](../decisions/0010-server-decides-paper-or-live.md) | 0010 — The server decides paper or live, and will not flip with a position open |
 | [0011-one-trade-per-contract.md](../decisions/0011-one-trade-per-contract.md) | 0011 — Two strategies may hold one contract; each trade keeps its own |
 | [0012-generated-reference-docs.md](../decisions/0012-generated-reference-docs.md) | 0012 — Reference docs are generated from the code and tested |
+| [0013-entry-setups-measured-before-trusted.md](../decisions/0013-entry-setups-measured-before-trusted.md) | 0013 — The 24 entry setups are drawn and paper-logged, never traded, until their record says otherwise |
 | [README.md](../decisions/README.md) | Decisions |
 
 ## `docs/features/`
 
 | File | What it is |
 |---|---|
+| [entry-setups.md](../features/entry-setups.md) | Entry setups — 12 methods × with / without timeframe |
 | [price-chart.md](../features/price-chart.md) | The price chart |
 | [strategies.md](../features/strategies.md) | Scheduled strategies |
 

@@ -15,6 +15,8 @@ is written by hand and says **why**.
   scheduler, strike rules, entries, exits, and why a run is refused.
 - [features/price-chart.md](features/price-chart.md) -- the price chart: every
   layer, detection rule and setup, and what the research says about each.
+- [features/entry-setups.md](features/entry-setups.md) -- the 24 entry setups: twelve
+  methods, with the timeframe chain and without it, their gates, targets and paper log.
 
 ## Do
 

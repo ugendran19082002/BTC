@@ -20,6 +20,7 @@ Read these before changing anything in `app/server/src/trading/`.
 | [0010](0010-server-decides-paper-or-live.md) | The server decides paper or live, and will not flip with a position open | Sep 2026 |
 | [0011](0011-one-trade-per-contract.md) | Two strategies may hold one contract; each trade keeps its own | 30 Sep 2026 |
 | [0012](0012-generated-reference-docs.md) | Reference docs are generated from the code and tested | 30 Sep 2026 |
+| [0013](0013-entry-setups-measured-before-trusted.md) | The 24 entry setups are drawn and paper-logged, never traded, until their record says otherwise | 30 Sep 2026 |
 
 A new decision gets the next number, the same headings, and a line here. A
 decision that is replaced is not deleted: its status says what replaced it.

@@ -10,6 +10,50 @@ Updated 30 Sep 2026 (evening): 25 items closed that afternoon -- see the history
 
 ---
 
+## Entry section -- 24 entry setups
+
+Built 30 Sep 2026: the twelve entry methods of `TEST.md`, each read **with the
+timeframe chain** and **without it** -- 24 setups -- on the desk tab, drawn and
+paper-logged, no orders. How it works: [features/entry-setups.md](features/entry-setups.md);
+why no orders: [decision 0013](decisions/0013-entry-setups-measured-before-trusted.md).
+The record of what was built is in [history/2026-09.md](history/2026-09.md).
+
+| # | Method | With timeframe | Without timeframe |
+|---|---|---|---|
+| 1 | Breakout | [x] | [x] |
+| 2 | Breakout + retest | [x] | [x] |
+| 3 | Liquidity sweep | [x] | [x] |
+| 4 | FVG retest | [x] | [x] |
+| 5 | Order-block retest | [x] | [x] |
+| 6 | BOS | [x] | [x] |
+| 7 | MSS / CHoCH | [x] | [x] |
+| 8 | Momentum | [x] | [x] |
+| 9 | Pullback | [x] | [x] |
+| 10 | VWAP / mean reversion | [x] | [x] |
+| 11 | Order flow | [x] | [x] |
+| 12 | Options / derivatives | [x] | [x] |
+
+Still open:
+
+- [ ] **Deploy it** (with the rest of 30 Sep): the log only starts once it runs.
+- [ ] **Read the log after a month** (end of October 2026): per method, with vs
+  without the timeframe chain -- trades, win rate, average R after fees. Judge
+  on data the thresholds were not tuned on. Nothing gets an alert or an order
+  button without a positive record over enough trades.
+- [ ] **On 5m almost everything is refused for fees** (live, 30 Sep: all 24 NO
+  TRADE, mostly "R:R after fees, no room"). If the owner wants a timeframe the
+  structure can pay for, log the without-timeframe reads at 15m / 1H too (one
+  line in `index.ts`), and compare.
+- [ ] **Footprint recorder** (volume per price per minute): method 11 reads
+  absorption from delta against price until it exists; the score's footprint
+  part scores nothing.
+- [ ] **A calibrated probability** for the score's last 5 points -- only from the
+  log, once there is one. Until then it scores nothing and says so.
+- [ ] The timeframe weights (5/10/10/15/30/15/15), R:R 1.8 and the 0.3-2.5 ATR
+  stop band are TEST.md's design, not measurements; revisit with the log.
+- [ ] `npm run test:responsive` on the desk tab with the entry section (needs a
+  running app).
+
 ## Needs the owner
 
 - [ ] **Deploy.** Nothing from 30 Sep is live: the desk runs `btc-desk-api:ed5f22d`

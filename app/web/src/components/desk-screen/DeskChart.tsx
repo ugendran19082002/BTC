@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { EntryOverlay } from '@/types/entry';
 import type { Candle } from '@/types/desk';
 import type { ChartTf } from '@/components/desk/PriceChart';
 import { PriceChart } from '@/components/desk/PriceChart';
@@ -62,8 +63,10 @@ function useHeatmap(tf: '1m' | '5m'): Heat | null {
  * stream's `ltp`), or, with the stream down, carries the 5m bars' live price.
  */
 export function DeskChart({
-  bars, ltp = null, strikes = null, derivs = null, tf = '5m', loading = false, error,
+  bars, ltp = null, strikes = null, derivs = null, tf = '5m', loading = false, error, entry = null,
 }: {
+  /** The entry section's chosen setup, for the chart to draw. */
+  entry?: EntryOverlay | null;
   bars: readonly Candle[];
   /** The option board's strikes and max pain, for the strike levels. */
   strikes?: { legs: readonly Leg[]; maxPain: number | null } | null;
@@ -138,6 +141,7 @@ export function DeskChart({
           derivs={derivs}
           trendBars={h1?.bars}
           trendPaper={paper?.summary}
+          entry={entry}
           trendPaperTrades={paper?.trades}
           ltp={ltp}
         />

@@ -531,6 +531,19 @@ export function spotMinutesAgo(minutesAgo: number, nowMs = Date.now()): number |
   return pick(minutesAgo <= 8 * 60 ? '1m' : '5m') ?? pick('5m') ?? pick('1h');
 }
 
+/**
+ * Every venue timeframe's candles, forming bar included, from the same cache
+ * `readMarket` reads: served as held, refreshed behind when older than
+ * SERIES_TTL_MS. The entry engine reads it; its data gate says when it is old.
+ */
+export async function venueSeries(): Promise<Map<Timeframe, Candle[]>> {
+  if (seriesCache) {
+    if (Date.now() - seriesCache.at >= SERIES_TTL_MS) void fetchSeriesFresh().catch(() => {});
+    return new Map(seriesCache.data);
+  }
+  return new Map(await fetchSeriesFresh());
+}
+
 export async function readMarket(sinceHours?: number): Promise<MarketRead> {
   let series: [Timeframe, Candle[]][];
   if (seriesCache) {

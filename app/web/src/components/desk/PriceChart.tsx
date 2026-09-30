@@ -21,6 +21,8 @@ import type { FlowBar, HeatColumn, PerpOiChange, TrendPaperSummary, TrendPaperTr
 import type { Leg } from '@/types/desk';
 import { LtpChip } from './chart/LtpChip';
 import { trendScene } from './chart/trend-layer';
+import { entryScene } from './chart/entry-layer';
+import type { EntryOverlay } from '@/types/entry';
 import { runTrend } from '@/lib/trend/breakout';
 import './chart/price-chart.css';
 
@@ -47,8 +49,10 @@ const IST_FULL = new Intl.DateTimeFormat('en-IN', {
  * appears and then vanishes within a candle.
  */
 export function PriceChart({
-  bars, tf, views = [], onView, loading = false, error, context = [], regime, higher = [], bigTrades, flowBars, heat, strikes, derivs, trendBars, trendPaper, trendPaperTrades, ltp, symbol = 'BTCUSD',
+  bars, tf, views = [], onView, loading = false, error, context = [], regime, higher = [], bigTrades, flowBars, heat, strikes, derivs, trendBars, trendPaper, trendPaperTrades, ltp, symbol = 'BTCUSD', entry = null,
 }: {
+  /** The entry section's chosen setup, drawn as its entry box, stop and targets. Null: nothing drawn. */
+  entry?: EntryOverlay | null;
   bars: readonly Candle[];
   tf: ChartTf;
   /** The timeframes the viewer may switch the chart to, shown as a switch in the toolbar; none, no switch. */
@@ -149,8 +153,10 @@ export function PriceChart({
     const items = buildScene(smc, closed, layers, read.blocked, entryNote);
     if (layers.has('htf')) items.push(...htfScene(overlays, closed));
     if (layers.has('saved')) items.push(...savedBoxes(saved, bars));
+    // The entry section's setup has its own on/off switch, so it is drawn whatever the layers say.
+    if (entry) items.push(...entryScene(entry, bars));
     return items;
-  }, [smc, layers, saved, bars.length, read.blocked, overlays, entryNote]);
+  }, [smc, layers, saved, bars.length, read.blocked, overlays, entryNote, entry]);
   // The order-flow layers are kept apart from the engine's scene. The heatmap and the bubbles place
   // themselves by candle *time* only, so they are rebuilt when a candle is added or their data
   // arrives -- not on every tick of the forming candle, which only the volume profile follows.
