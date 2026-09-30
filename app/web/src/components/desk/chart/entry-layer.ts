@@ -20,14 +20,14 @@ export function entryScene(e: EntryOverlay, bars: readonly Candle[]): SceneItem[
   }
   const items: SceneItem[] = [
     {
-      t: 'box', layer: 'trade', x1, x2: 'right', y1: e.entryLo, y2: Math.max(e.entryHi, e.entryLo + 1),
+      t: 'box', layer: 'entry', x1, x2: 'right', y1: e.entryLo, y2: Math.max(e.entryHi, e.entryLo + 1),
       fill: long ? C.bullFill : C.bearFill, stroke: long ? C.bull : C.bear,
       label: `${long ? 'LONG' : 'SHORT'} ${e.label} · entry ${fmt(e.entryLo)}–${fmt(e.entryHi)}`, labelColor: C.text, priority: 96,
     },
-    { t: 'line', layer: 'trade', x1, x2: 'right', y: e.stop, color: C.bear, width: 1.5, label: `SL ${fmt(e.stop)}`, labelAt: 'end', priority: 95 },
-    { t: 'line', layer: 'trade', x1, x2: 'right', y: e.tp1, color: C.bull, width: 1.5, label: `TP1 ${fmt(e.tp1)} · R:R ${e.rr.toFixed(1)}`, labelAt: 'end', priority: 95 },
+    { t: 'line', layer: 'entry', x1, x2: 'right', y: e.stop, color: C.bear, width: 1.5, label: `SL ${fmt(e.stop)}`, labelAt: 'end', priority: 95 },
+    { t: 'line', layer: 'entry', x1, x2: 'right', y: e.tp1, color: C.bull, width: 1.5, label: `TP1 ${fmt(e.tp1)} · R:R ${e.rr.toFixed(1)}`, labelAt: 'end', priority: 95 },
   ];
-  if (e.tp2 !== null) items.push({ t: 'line', layer: 'trade', x1, x2: 'right', y: e.tp2, color: C.bull, dash: 'dash', label: `TP2 ${fmt(e.tp2)}`, labelAt: 'end', priority: 94 });
-  if (e.tp3 !== null) items.push({ t: 'line', layer: 'trade', x1, x2: 'right', y: e.tp3, color: C.muted, dash: 'dot', label: `TP3 ${fmt(e.tp3)} (expected move)`, labelAt: 'end', priority: 93 });
+  if (e.tp2 !== null) items.push({ t: 'line', layer: 'entry', x1, x2: 'right', y: e.tp2, color: C.bull, dash: 'dash', label: `TP2 ${fmt(e.tp2)}`, labelAt: 'end', priority: 94 });
+  if (e.tp3 !== null) items.push({ t: 'line', layer: 'entry', x1, x2: 'right', y: e.tp3, color: C.muted, dash: 'dot', label: `TP3 ${fmt(e.tp3)} (expected move)`, labelAt: 'end', priority: 93 });
   return items;
 }

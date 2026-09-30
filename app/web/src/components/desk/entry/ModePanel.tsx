@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useMemo } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { PriceChart } from '@/components/desk/PriceChart';
 import type { EntryMode, EntryRecord, EntryTf, MethodRead, TimeframeRow } from '@/types/entry';
-import { EntryChart, useEntryCandles } from './EntryChart';
-import { NumberBadge, SignalChip, TICK_CLASS, fmt, recordText, signedR, tickOf } from './parts';
+import type { ChartFeed } from './feed';
+import { NumberBadge, SignalChip, TICK_CLASS, fmt, overlayOf, recordText, signedR, tickOf } from './parts';
 
 /**
  * One half of the reference layout: the twelve methods read one way -- with
@@ -35,7 +36,7 @@ const COPY: Record<EntryMode, { title: string; accent: string; sub: string; tag:
   },
 };
 
-export function ModePanel({ mode, reads, timeframes, selected, onChoose, total, recordOf, setupsOn, singleTf, onSingleTf }: {
+export function ModePanel({ mode, reads, timeframes, selected, onChoose, total, recordOf, setupsOn, singleTf, onSingleTf, chartTf, onChartTf, chart }: {
   mode: EntryMode;
   reads: readonly MethodRead[];
   timeframes: readonly TimeframeRow[];
@@ -48,12 +49,16 @@ export function ModePanel({ mode, reads, timeframes, selected, onChoose, total, 
   setupsOn: boolean;
   singleTf: EntryTf;
   onSingleTf: (tf: EntryTf) => void;
+  /** With the chain: the timeframe the chart shows (any of the chain's; the reads stay at 5m). */
+  chartTf: EntryTf;
+  onChartTf: (tf: EntryTf) => void;
+  /** The shared chart data, per timeframe (feed.ts). */
+  chart: (tf: EntryTf) => ChartFeed;
 }) {
   const copy = COPY[mode];
-  const [chartTf, setChartTf] = useState<EntryTf>('5m');
   const shownTf = mode === 'single' ? singleTf : chartTf;
-  const bars = useEntryCandles(shownTf);
-  const drawn = setupsOn && selected?.plan ? selected.plan : null;
+  // Kept while the choice holds: a new object each tick would rebuild the chart's whole scene.
+  const drawn = useMemo(() => overlayOf(selected, setupsOn), [selected, setupsOn]);
 
   return (
     <section aria-label={copy.title} className={cn('min-w-0 rounded-xl border border-border border-t-4 bg-[var(--card,transparent)] p-2.5', copy.accent)}>
@@ -81,7 +86,7 @@ export function ModePanel({ mode, reads, timeframes, selected, onChoose, total, 
         ) : (
           <div role="group" aria-label="chart timeframe" className="inline-flex overflow-hidden rounded border border-border">
             {SINGLE_TFS.map((x) => (
-              <button key={x} type="button" aria-pressed={chartTf === x} onClick={() => setChartTf(x)}
+              <button key={x} type="button" aria-pressed={chartTf === x} onClick={() => onChartTf(x)}
                       className={cn('px-1.5 py-0.5', chartTf === x ? 'bg-[#2563eb] text-white' : 'text-muted-foreground')}>
                 {x}
               </button>
@@ -89,7 +94,7 @@ export function ModePanel({ mode, reads, timeframes, selected, onChoose, total, 
           </div>
         )}
       </div>
-      <EntryChart bars={bars} plan={drawn} dir={selected?.dir ?? null} label={`${copy.title} chart`} />
+      <PriceChart {...chart(shownTf)} tf={shownTf} entry={drawn} size="panel" label={`${copy.title} chart`} />
 
       {/* The table full width, then the chosen setup beside its reasons: a panel is half the screen at most. */}
       <div className="mt-2 grid gap-2">

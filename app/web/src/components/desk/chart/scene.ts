@@ -1,6 +1,4 @@
-import type { Bar, Pool, PoolEvent, Setup, SmcState, Zone, ZoneEvent } from '@/lib/smc/types';
-import { liveSetup } from '@/lib/smc/readout';
-import { SCALE_OUT } from '@/lib/smc/engine';
+import type { Bar, Pool, PoolEvent, SmcState, Zone, ZoneEvent } from '@/lib/smc/types';
 
 /**
  * What the chart draws, in *data* coordinates (bar index, price), built from
@@ -13,8 +11,14 @@ import { SCALE_OUT } from '@/lib/smc/engine';
  * drops the least important one when two would overlap.
  */
 
-export type Layer = 'structure' | 'liquidity' | 'zones' | 'levels' | 'pd' | 'sessions' | 'vwap' | 'candles' | 'trade' | 'saved' | 'htf'
-  | 'profile' | 'bigtrades' | 'delta' | 'heatmap' | 'options' | 'trend';
+export type Layer = 'structure' | 'liquidity' | 'zones' | 'levels' | 'pd' | 'sessions' | 'vwap' | 'candles' | 'saved' | 'htf'
+  | 'profile' | 'bigtrades' | 'delta' | 'heatmap' | 'options';
+/**
+ * What an item is drawn as: one of the layers, or 'entry' -- the entry
+ * section's chosen setup (entry-layer.ts), which has its own on/off switch
+ * there and is not one of the chart's layers.
+ */
+export type SceneLayer = Layer | 'entry';
 
 /**
  * Every layer, with what the research says about it (docs/features/price-chart.md §14),
@@ -32,8 +36,6 @@ export const LAYERS: readonly { key: Layer; label: string; note?: string }[] = [
   { key: 'sessions', label: 'Sessions' },
   { key: 'vwap', label: 'VWAP' },
   { key: 'candles', label: 'Candles' },
-  { key: 'trade', label: 'Trade', note: 'The desk\'s record: −0.17R a trade after fees' },
-  { key: 'trend', label: 'Trend plan (1H breakout)', note: 'Measured 2024–26: +0.11R / +0.00R a trade, not significant; catches ~40% of big moves' },
   { key: 'saved', label: 'Saved levels' },
   { key: 'heatmap', label: 'Liquidity heatmap (book)', note: 'Recorded since 29 Sep 2026 — too new to measure' },
   { key: 'options', label: 'Options OI (strikes)', note: 'Positioning — no history to measure yet' },
@@ -43,15 +45,15 @@ export const LAYERS: readonly { key: Layer; label: string; note?: string }[] = [
 ];
 
 /**
- * One-click sets of layers. Everything on at once buries the trade box, so the
- * default is the desk's working set and each preset answers one question;
+ * One-click sets of layers. Everything on at once buries the entry setup, so
+ * the default is the desk's working set and each preset answers one question;
  * every layer stays a checkbox below them.
  */
 export const LAYER_PRESETS: readonly { key: string; label: string; title: string; layers: readonly Layer[] }[] = [
-  { key: 'desk', label: 'Desk', title: 'The working set: the trade, the trend plan, structure, liquidity, zones, levels, option strikes, big trades, the profile and delta', layers: ['trade', 'trend', 'structure', 'liquidity', 'zones', 'levels', 'saved', 'options', 'bigtrades', 'profile', 'delta'] },
-  { key: 'clean', label: 'Clean', title: 'Price action, the trade and the trend plan only', layers: ['trade', 'trend', 'structure', 'liquidity', 'zones', 'saved'] },
-  { key: 'flow', label: 'Order flow', title: 'Resting liquidity, big trades, the profile and delta, around the trade', layers: ['trade', 'heatmap', 'bigtrades', 'profile', 'delta', 'saved'] },
-  { key: 'options', label: 'Options', title: 'Option strikes and max pain, levels and the profile, around the trade', layers: ['trade', 'options', 'levels', 'profile', 'saved'] },
+  { key: 'desk', label: 'Desk', title: 'The working set: structure, liquidity, zones, levels, option strikes, big trades, the profile and delta', layers: ['structure', 'liquidity', 'zones', 'levels', 'saved', 'options', 'bigtrades', 'profile', 'delta'] },
+  { key: 'clean', label: 'Clean', title: 'Price action only', layers: ['structure', 'liquidity', 'zones', 'saved'] },
+  { key: 'flow', label: 'Order flow', title: 'Resting liquidity, big trades, the profile and delta', layers: ['heatmap', 'bigtrades', 'profile', 'delta', 'saved'] },
+  { key: 'options', label: 'Options', title: 'Option strikes and max pain, levels and the profile', layers: ['options', 'levels', 'profile', 'saved'] },
   { key: 'all', label: 'All', title: 'Every layer', layers: LAYERS.map((l) => l.key) },
 ];
 
@@ -61,34 +63,32 @@ export const DEFAULT_LAYERS: readonly Layer[] = LAYER_PRESETS[0]!.layers;
 type XEnd = number | 'right';
 
 export type SceneBox = {
-  t: 'box'; layer: Layer; x1: number; x2: XEnd; y1: number; y2: number;
+  t: 'box'; layer: SceneLayer; x1: number; x2: XEnd; y1: number; y2: number;
   fill: string; stroke?: string; dash?: boolean; label?: string; labelColor?: string; priority: number;
-  /** Background: history and context, drawn quietly so the live setup always reads first. */
+  /** Background: history and context, drawn quietly so the entry setup always reads first. */
   faint?: boolean;
 };
 export type SceneLine = {
-  t: 'line'; layer: Layer; x1: number; x2: XEnd; y: number; color: string; width?: number; dash?: 'dash' | 'dot';
+  t: 'line'; layer: SceneLayer; x1: number; x2: XEnd; y: number; color: string; width?: number; dash?: 'dash' | 'dot';
   label?: string; labelAt?: 'mid' | 'end'; labelSide?: 'above' | 'below'; priority: number;
   faint?: boolean;
 };
-export type ScenePath = { t: 'path'; layer: Layer; points: [number, number][]; color: string; label?: string; priority: number };
+export type ScenePath = { t: 'path'; layer: SceneLayer; points: [number, number][]; color: string; label?: string; priority: number };
 export type SceneMark = {
-  t: 'mark'; layer: Layer; x: number; y: number; text: string; color: string; side: 'above' | 'below';
+  t: 'mark'; layer: SceneLayer; x: number; y: number; text: string; color: string; side: 'above' | 'below';
   glyph?: '▲' | '▼' | '✕'; priority: number;
   faint?: boolean;
 };
-/** A vertical segment at one candle: the trade's spine. */
-export type SceneVLine = { t: 'vline'; layer: Layer; x: number; y1: number; y2: number; color: string; priority: number };
 /**
  * Resting liquidity through time: one column per candle (`x`, a bar index),
  * cells of `step` dollars from bin k (price k * step), contracts. `cap` is the
  * size drawn at full colour -- the 95th percentile in view, so one huge bin by
  * the touch does not wash out the rest.
  */
-export type SceneHeat = { t: 'heat'; layer: Layer; step: number; cols: readonly { x: number; cells: readonly (readonly [number, number])[] }[]; cap: number };
+export type SceneHeat = { t: 'heat'; layer: SceneLayer; step: number; cols: readonly { x: number; cells: readonly (readonly [number, number])[] }[]; cap: number };
 /** Volume at price, drawn as a histogram anchored to the chart's right edge (flow-layers.ts). */
 export type SceneProfile = {
-  t: 'profile'; layer: Layer; bins: readonly { lo: number; hi: number; v: number; value: boolean; buy?: number; known?: number }[]; max: number; poc: number;
+  t: 'profile'; layer: SceneLayer; bins: readonly { lo: number; hi: number; v: number; value: boolean; buy?: number; known?: number }[]; max: number; poc: number;
   hvn: readonly number[]; lvn: readonly number[];
 };
 /**
@@ -97,36 +97,29 @@ export type SceneProfile = {
  * the zoom, so the area goes with the size and the bubbles scale with the candles.
  */
 export type SceneBubble = {
-  t: 'bubble'; layer: Layer; x: number; y: number; rel: number; side: 'buy' | 'sell'; label?: string; priority: number;
+  t: 'bubble'; layer: SceneLayer; x: number; y: number; rel: number; side: 'buy' | 'sell'; label?: string; priority: number;
   /** The full detail, shown on hover. */
   tip?: string;
   faint?: boolean;
 };
-export type SceneItem = SceneBox | SceneLine | ScenePath | SceneMark | SceneVLine | SceneProfile | SceneBubble | SceneHeat;
+export type SceneItem = SceneBox | SceneLine | ScenePath | SceneMark | SceneProfile | SceneBubble | SceneHeat;
 
 export const C = {
   bull: '#26a17b', bear: '#e2504f',
-  // Zones stay quiet behind the trade: the position box must be the strongest thing on the chart.
+  // Zones stay quiet behind the entry setup: its box must be the strongest thing on the chart.
   bullFill: 'rgba(38,161,123,0.10)', bearFill: 'rgba(226,80,79,0.10)',
   fvgBull: 'rgba(96,165,250,0.10)', fvgBear: 'rgba(245,158,11,0.10)', fvgBullLine: '#60a5fa', fvgBearLine: '#f59e0b',
   bsl: '#f59e0b', ssl: '#38bdf8', level: '#a78bfa', eq: '#94a3b8', ote: '#facc15',
   vwap: '#e879f9', text: '#e5e7eb', muted: '#94a3b8', poc: '#fbbf24',
   premium: 'rgba(226,80,79,0.05)', discount: 'rgba(38,161,123,0.05)', oteFill: 'rgba(250,204,21,0.08)',
-  profit: 'rgba(38,161,123,0.14)', risk: 'rgba(226,80,79,0.18)',
   session: { Asia: 'rgba(100,116,139,0.07)', London: 'rgba(59,130,246,0.07)', 'New York': 'rgba(249,115,22,0.07)' } as const,
 } as const;
 
 const fmt = (p: number) => Math.round(p).toLocaleString('en-US');
-const R = (r: number) => `${r >= 0 ? '+' : '−'}${Math.abs(r).toFixed(1)}R`;
-/** A distance in index points, signed in the trade's favour. */
-const pts = (d: number) => `${d >= 0 ? '+' : '−'}${fmt(Math.abs(d))} pts`;
 
 const SWING_POOLS: readonly Pool['kind'][] = ['BSL', 'SSL', 'EQH', 'EQL'];
-const LIVE_SETUP: readonly Setup['state'][] = ['READY', 'ACTIVE', 'TP1', 'TP2'];
 
-/** `blocked`: the timeframes the live setup runs against; it is then drawn faded and labelled as no trade. */
-/** `entryNote`: appended to the live trade's entry label -- the trend plan's alignment, say. */
-export function buildScene(st: SmcState, bars: readonly Bar[], layers: ReadonlySet<Layer>, blocked: readonly string[] = [], entryNote?: string): SceneItem[] {
+export function buildScene(st: SmcState, bars: readonly Bar[], layers: ReadonlySet<Layer>): SceneItem[] {
   const n = bars.length;
   if (!n) return [];
   const last = bars[n - 1]!.close;
@@ -168,7 +161,6 @@ export function buildScene(st: SmcState, bars: readonly Bar[], layers: ReadonlyS
       });
     }
   }
-  if (on('trade')) trade(st, bars, out, blocked, entryNote);
   return out;
 }
 
@@ -311,136 +303,6 @@ function vwap(st: SmcState, bars: readonly Bar[], out: SceneItem[]) {
     if (v != null) pts.push([i, v]);
   }
   if (pts.length > 1) out.push({ t: 'path', layer: 'vwap', points: pts, color: C.vwap, label: 'VWAP', priority: 48 });
-}
-
-/**
- * The trade, drawn the way a position tool draws it: one bounded box from the
- * entry candle, green from the entry to the last target and red from the entry
- * to the stop, with the entry, stop and targets as lines across that box only
- * and their prices, R and reasons at its right edge. The two halves share the
- * entry line, so risk and reward read as one thing.
- */
-function trade(st: SmcState, bars: readonly Bar[], out: SceneItem[], blocked: readonly string[], entryNote?: string) {
-  const n = bars.length;
-  const long = (s: Setup) => s.dir === 'bull';
-  // Box width: to a little past the last candle, and never narrower than 24 candles.
-  const endOf = (x1: number) => Math.max(n - 1 + 14, x1 + 24);
-
-  for (const s of st.setups) {
-    if (!s.fill || s.closedAt === null || s.closedAt < n - 150) continue;
-    // A finished trade is drawn as what happened: entry to exit, green or red.
-    const x1 = s.fill.at;
-    const x2 = Math.max(s.closedAt, x1 + 2);
-    const bull = long(s);
-    const exit = s.events[s.events.length - 1]!.price ?? s.fill.price;
-    const r = s.resultR;
-    const won = r !== null && r > 0.05;
-    const flat = r !== null && Math.abs(r) <= 0.05;
-    out.push({
-      t: 'box', layer: 'trade', x1, x2, y1: Math.min(s.fill.price, exit), y2: Math.max(s.fill.price, exit) + (exit === s.fill.price ? 1 : 0),
-      fill: won ? 'rgba(38,161,123,0.12)' : flat ? 'rgba(148,163,184,0.10)' : 'rgba(226,80,79,0.12)', stroke: won ? C.bull : flat ? C.muted : C.bear, priority: 8,
-    });
-    out.push({ t: 'line', layer: 'trade', x1, x2, y: s.fill.price, color: C.muted, width: 1, priority: 7 });
-    const word = s.state === 'TP3' ? 'TP3' : s.state === 'STOPPED' ? 'SL' : s.state === 'PROTECTED' ? (s.events.some((e) => e.state === 'TP2') ? 'TP2 · trail' : 'TP1 · BE') : 'Exit';
-    // The exit's points are the last leg; the R is the whole trade's, the thirds taken at the targets included.
-    const moved = bull ? exit - s.fill.price : s.fill.price - exit;
-    const old = s.closedAt < n - 48;
-    out.push({
-      t: 'mark', layer: 'trade', x: s.closedAt, y: exit, color: won ? C.bull : flat ? C.muted : C.bear,
-      side: bull ? 'above' : 'below', text: `${word} ${fmt(exit)} · ${pts(moved)}${r === null ? '' : ` · trade total ${R(r)}`}`, priority: 75, faint: old,
-    });
-    out.push({ t: 'mark', layer: 'trade', x: x1, y: s.fill.price, glyph: bull ? '▲' : '▼', color: bull ? C.bull : C.bear, side: bull ? 'below' : 'above', text: `${bull ? 'Long' : 'Short'} ${fmt(s.fill.price)}`, priority: 74, faint: old });
-  }
-
-  // Setups that got as far as a structure shift and ended without a trade: a quiet note of why, on the candle it ended.
-  const SHORT: [RegExp, string][] = [
-    [/^TP1 .* pays ([\d.]+R)/, 'TP1 only $1'], [/ran to TP1 without a retest/, 'ran, no retest'], [/no retest/, 'no retest'],
-    [/closed through the stop/, 'stop broken first'], [/confirmed too far/, 'entry too late'], [/no liquidity/, 'no target'],
-    [/wider than four ATR/, 'stop too wide'], [/left no OB or FVG/, 'no OB / FVG'], [/retest never closed/, 'no close back'],
-    [/too tight for the fees/, 'stop too tight for fees'], [/no chase/, 'no chase'],
-  ];
-  for (const s of st.setups) {
-    if (s.fill || s.closedAt === null || s.closedAt < n - 150 || !s.confirmations[1]!.ok) continue;
-    const note = s.events[s.events.length - 1]!.note;
-    const hit = SHORT.find(([re]) => re.test(note));
-    if (!hit) continue;
-    const bar = s.closedAt;
-    const y = s.entry ?? s.poi?.high ?? null;
-    if (y === null) continue;
-    out.push({
-      t: 'mark', layer: 'trade', x: bar, y, color: C.muted, side: long(s) ? 'below' : 'above',
-      text: `No ${long(s) ? 'long' : 'short'}: ${hit[1].replace('$1', note.match(hit[0])?.[1] ?? '')}`, priority: 45,
-    });
-  }
-
-  const found = liveSetup(st);
-  const live = found && LIVE_SETUP.includes(found.state) ? found : null;
-  if (!live) return;
-  const ready = live.events.find((e) => e.state === 'READY')!.at;
-  const bull = long(live);
-  const fill = live.fill;
-  const entry = fill?.price ?? live.entry!;
-  const risk = fill?.risk ?? live.risk!;
-  const stopNow = live.trail[live.trail.length - 1]?.price ?? live.stop!;
-  const tp3 = live.targets[2]!.price;
-  const x1 = fill?.at ?? ready;
-  const x2 = endOf(x1);
-  const side = bull ? 'LONG' : 'SHORT';
-  const rOf = (p: number) => (bull ? p - entry : entry - p) / risk;
-  // Against the 30M / 15M read the plan is still shown -- it is what the setup chart sees -- but faded and called what it is.
-  const no = blocked.length > 0 && !fill;
-
-  out.push({ t: 'box', layer: 'trade', x1, x2, y1: Math.min(entry, tp3), y2: Math.max(entry, tp3), fill: no ? 'rgba(38,161,123,0.05)' : C.profit, stroke: C.bull, dash: no, priority: 9 });
-  out.push({ t: 'box', layer: 'trade', x1, x2, y1: Math.min(entry, live.stop!), y2: Math.max(entry, live.stop!), fill: no ? 'rgba(226,80,79,0.05)' : C.risk, stroke: C.bear, dash: no, priority: 9 });
-  if (!fill && live.poi) {
-    out.push({ t: 'box', layer: 'trade', x1: live.poi.at, x2, y1: live.poi.low, y2: live.poi.high, fill: 'rgba(229,231,235,0.06)', stroke: C.text, dash: true, label: `Entry zone · ${live.poi.dir === 'bull' ? 'Bull' : 'Bear'} ${live.poi.kind}`, labelColor: C.text, priority: 96 });
-  }
-  // The spine: one line from the stop through the entry to the last target, at the box's left edge.
-  out.push({ t: 'vline', layer: 'trade', x: x1, y1: live.stop!, y2: tp3, color: C.text, priority: 9 });
-  out.push({
-    t: 'line', layer: 'trade', x1, x2, y: entry, color: C.text, width: 2,
-    label: `${no ? `NO TRADE (against ${blocked.join(', ')}) · ` : ''}${side} ${fill ? `entry ${fmt(entry)}` : `plan ${fmt(entry)} · waiting for a close back out`} · risk ${fmt(risk)} pts${entryNote ? ` · ${entryNote}` : ''}`,
-    labelAt: 'end', labelSide: bull ? 'below' : 'above', priority: 100,
-  });
-  const moved = live.trail.length > 0;
-  const lastMove = live.trail[live.trail.length - 1];
-  // The stop says why it is there: the structure behind it, or what moved it.
-  const why = (note: string) => note.replace(/^break-even: (\w+) ([\d,]+) confirmed after TP1$/, 'TP1 + confirmed $1 $2').replace(/^trail behind /, 'behind ');
-  out.push({
-    t: 'line', layer: 'trade', x1, x2, y: stopNow, color: C.bear, width: 1.6, dash: moved ? 'dash' : undefined,
-    label: moved
-      ? `SL ${fmt(stopNow)} · ${lastMove!.note.startsWith('break-even') ? 'BE' : `locks ${pts(bull ? stopNow - entry : entry - stopNow)} · ${R(rOf(stopNow))}`} · ${why(lastMove!.note)}`
-      : `SL ${fmt(stopNow)} · ${pts(-risk)} · −1R${live.stopNote ? ` · ${live.stopNote.split(' · ')[0]}` : ''}`,
-    labelAt: 'end', labelSide: bull ? 'below' : 'above', priority: 99,
-  });
-  if (moved) out.push({ t: 'line', layer: 'trade', x1, x2, y: live.stop!, color: C.bear, width: 1, dash: 'dot', priority: 6 });
-  // Each target reached: what was closed and banked there, on the candle it happened.
-  live.events.forEach((e) => {
-    if ((e.state !== 'TP1' && e.state !== 'TP2') || e.price === null) return;
-    const k = e.state === 'TP1' ? 0 : 1;
-    const share = SCALE_OUT[k];
-    out.push({
-      t: 'mark', layer: 'trade', x: e.at, y: e.price, color: C.bull, side: bull ? 'above' : 'below',
-      text: `TP${k + 1} ✓ ${Math.round(share * 100)}% closed · ${R(share * rOf(e.price))} banked`, priority: 95,
-    });
-  });
-  live.targets.forEach((t, k) => {
-    const hit = live.events.some((e) => e.state === `TP${k + 1}`);
-    out.push({
-      t: 'line', layer: 'trade', x1, x2, y: t.price, color: C.bull, width: k === 2 ? 1.6 : 1.2, dash: k === 2 ? undefined : 'dash',
-      label: `TP${k + 1} ${fmt(t.price)} · ${pts(bull ? t.price - entry : entry - t.price)} · ${R(rOf(t.price))} · ${t.reason}${hit ? ' ✓' : ''}`,
-      labelAt: 'end', labelSide: bull ? 'above' : 'below', priority: 98 - k,
-    });
-  });
-  if (fill) {
-    // Volume as an event at the signal, not candle by candle: the entry candle against the twenty before it.
-    let sum = 0;
-    let k = 0;
-    for (let j = Math.max(0, fill.at - 20); j < fill.at; j++, k++) sum += bars[j]!.volume;
-    const ratio = k && sum > 0 ? bars[fill.at]!.volume / (sum / k) : null;
-    const vol = ratio === null ? '' : ` · vol ${ratio.toFixed(1)}× avg${ratio >= 2 ? ' burst' : ratio <= 0.5 ? ' thin' : ''}`;
-    out.push({ t: 'mark', layer: 'trade', x: fill.at, y: entry, glyph: bull ? '▲' : '▼', color: bull ? C.bull : C.bear, side: bull ? 'below' : 'above', text: `${side} ${fmt(entry)}${vol}`, priority: 97 });
-  }
 }
 
 // ------------------------------------------------------------------ higher timeframes

@@ -1,11 +1,12 @@
-import { useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import { getEntryBoard, getEntryRecord } from '@/api/entry';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
-import type { EntryMode, EntryOverlay, EntryRecord, EntryTf, MethodRead } from '@/types/entry';
+import type { EntryMode, EntryRecord, EntryTf, MethodRead } from '@/types/entry';
 import { EntryGrid } from './EntryGrid';
+import { useEntryFeed, type DeskFeed } from './feed';
 import { ModePanel, SINGLE_TFS } from './ModePanel';
 import { MethodLegend } from './MethodLegend';
 import { signedR } from './parts';
@@ -19,17 +20,20 @@ import './entry.css';
  * table, chosen setup, reasons and paper record, and the two records compared
  * underneath.
  *
+ * Each panel's chart is the desk's price chart (PriceChart), which decides no
+ * entry of its own: it draws the panel's chosen TRADE when Setups is on. The
+ * desk has no other chart since 30 Sep 2026.
+ *
  * The server decides every state (app/server/src/entry); this screen shows it.
- * The chosen TRADE is also drawn on the desk's main chart above when Setups is
- * on. No orders: every TRADE is paper-logged and graded after fees
+ * No orders: every TRADE is paper-logged and graded after fees
  * (docs/decisions/0013).
  */
 
 const keyOf = (r: Pick<MethodRead, 'mode' | 'id'>) => `${r.mode}:${r.id}`;
 
-export function EntrySection({ onOverlay }: {
-  /** The chosen TRADE's levels, for the main chart above; null when none, or Setups is off. */
-  onOverlay: (o: EntryOverlay | null) => void;
+export function EntrySection({ desk }: {
+  /** The desk's live 5m candles, last trade, option board and positioning, for the charts. */
+  desk: DeskFeed;
 }) {
   const [singleTf, setSingleTf] = usePersisted<EntryTf>('entry:single-tf', '5m');
   const [setupsOn, setSetupsOn] = usePersisted<boolean>('entry:setups-on', true);
@@ -38,7 +42,11 @@ export function EntrySection({ onOverlay }: {
   const [chosen, setChosen] = usePersisted<{ single: string | null; mtf: string | null; last: EntryMode }>(
     'entry:chosen-2', { single: null, mtf: null, last: 'mtf' },
   );
+  const [mtfChartTf, setMtfChartTf] = usePersisted<EntryTf>('entry:mtf-chart-tf', '5m');
   const tf = SINGLE_TFS.includes(singleTf) ? singleTf : '5m';
+  const mtfTf = SINGLE_TFS.includes(mtfChartTf) ? mtfChartTf : '5m';
+  const shownTfs: EntryTf[] = view === 'panels' ? [tf, mtfTf] : [gridMode === 'mtf' ? '5m' : tf];
+  const chart = useEntryFeed(desk, shownTfs);
 
   const { data: board, error } = usePoll(() => getEntryBoard(tf), 15_000, { deps: [tf] });
   const { data: record } = usePoll(() => getEntryRecord(), 60_000);
@@ -51,16 +59,6 @@ export function EntrySection({ onOverlay }: {
     return mine.find((r) => keyOf(r) === chosen[mode]) ?? mine.find((r) => r.state === 'TRADE') ?? mine.find((r) => r.state === 'WAIT') ?? formed ?? mine[0] ?? null;
   };
   const selected = { single: pick('single'), mtf: pick('mtf') };
-  const forChart = selected[chosen.last] ?? selected.mtf;
-
-  useEffect(() => {
-    const r = forChart;
-    const p = r?.plan;
-    onOverlay(setupsOn && r && p && r.dir ? {
-      dir: r.dir, entryLo: p.entryLo, entryHi: p.entryHi, stop: p.stop, tp1: p.tp1, tp2: p.tp2, tp3: p.tp3, rr: p.rr,
-      label: `#${r.n} ${r.name}${r.mode === 'mtf' ? ' (with TF)' : ` (${r.tf})`}`, triggerTime: r.triggerTime,
-    } : null);
-  }, [forChart, setupsOn, onOverlay]);
 
   const counts = { trade: reads.filter((r) => r.state === 'TRADE').length, wait: reads.filter((r) => r.state === 'WAIT').length };
   const recordOf = (r: MethodRead) => record?.records.find((x) => x.method === r.id && x.mode === r.mode && x.tf === r.tf) ?? null;
@@ -106,15 +104,15 @@ export function EntrySection({ onOverlay }: {
           <div className="grid gap-3 lg:grid-cols-2">
             <ModePanel mode="single" reads={reads.filter((r) => r.mode === 'single')} timeframes={board?.timeframes ?? []}
                        selected={selected.single} onChoose={choose} total={totalOf('single')} recordOf={recordOf}
-                       setupsOn={setupsOn} singleTf={tf} onSingleTf={setSingleTf} />
+                       setupsOn={setupsOn} singleTf={tf} onSingleTf={setSingleTf} chartTf={tf} onChartTf={setSingleTf} chart={chart} />
             <ModePanel mode="mtf" reads={reads.filter((r) => r.mode === 'mtf')} timeframes={board?.timeframes ?? []}
                        selected={selected.mtf} onChoose={choose} total={totalOf('mtf')} recordOf={recordOf}
-                       setupsOn={setupsOn} singleTf={tf} onSingleTf={setSingleTf} />
+                       setupsOn={setupsOn} singleTf={tf} onSingleTf={setSingleTf} chartTf={mtfTf} onChartTf={setMtfChartTf} chart={chart} />
           </div>
           <Comparison single={totalOf('single')} mtf={totalOf('mtf')} />
         </>
       ) : (
-        <EntryGrid mode={gridMode} onMode={setGridMode} reads={reads.filter((r) => r.mode === gridMode)} singleTf={tf} setupsOn={setupsOn} />
+        <EntryGrid mode={gridMode} onMode={setGridMode} reads={reads.filter((r) => r.mode === gridMode)} singleTf={tf} setupsOn={setupsOn} chart={chart} />
       )}
 
       <p className="m-0 mt-2 text-[11px] leading-relaxed text-[var(--dim)]">

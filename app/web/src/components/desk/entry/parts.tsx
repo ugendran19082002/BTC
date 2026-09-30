@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import type { EntryRecord, EntryTf, MethodRead } from '@/types/entry';
+import type { EntryOverlay, EntryRecord, EntryTf, MethodRead } from '@/types/entry';
 
 /**
  * The entry section's small pieces, shared by the panels, the grid and the
@@ -67,6 +67,16 @@ export function recordText(r: EntryRecord | null): string {
   if (r.trades === 0) return `${r.setups} logged, none closed`;
   const avg = r.avgR === null ? '' : ` · ${signedR(r.avgR)}`;
   return `${r.trades} trade${r.trades === 1 ? '' : 's'} · ${Math.round((100 * r.wins) / r.trades)}%${avg}`;
+}
+
+/** A TRADE's levels, for the price chart to draw; null for WAIT / NO TRADE, or with Setups off. */
+export function overlayOf(r: MethodRead | null, setupsOn: boolean): EntryOverlay | null {
+  const p = r?.plan;
+  if (!setupsOn || !r || !p || !r.dir) return null;
+  return {
+    dir: r.dir, entryLo: p.entryLo, entryHi: p.entryHi, stop: p.stop, tp1: p.tp1, tp2: p.tp2, tp3: p.tp3, rr: p.rr,
+    label: `#${r.n} ${r.name}${r.mode === 'mtf' ? ' (with TF)' : ` (${r.tf})`}`, triggerTime: r.triggerTime,
+  };
 }
 
 export const fmt = (p: number) => Math.round(p).toLocaleString('en-US');

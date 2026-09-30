@@ -34,6 +34,7 @@ import type { Candle } from '@/types/desk';
 /** Bar length in seconds, per chart timeframe. */
 export const TF_SECONDS: Record<string, number> = {
   '1m': 60,
+  '3m': 180,
   '5m': 300,
   '15m': 900,
   '30m': 1_800,

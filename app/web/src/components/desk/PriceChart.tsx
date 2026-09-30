@@ -7,26 +7,22 @@ import { Expand, Layers, Lock, Minimize2, Unlock } from 'lucide-react';
 import type { Candle } from '@/types/desk';
 import { usePersisted } from '@/hooks/usePersisted';
 import { TF_SECONDS } from '@/lib/live-bar';
-import { DESK_SMC_OPTIONS, runSmc } from '@/lib/smc/engine';
-import { aggregate, closedBars, trendTimeline, type TfRead } from '@/lib/smc/context';
-import { liveSetup, readout } from '@/lib/smc/readout';
+import { runSmc } from '@/lib/smc/engine';
+import { closedBars, type TfRead } from '@/lib/smc/context';
 import { clearAnnotationsApi, getAnnotations, type Annotation } from '@/api/annotations';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { SmcPrimitive } from './chart/smc-primitive';
 import { buildScene, C, DEFAULT_LAYERS, htfScene, LAYER_PRESETS, LAYERS, type Layer, type SceneItem } from './chart/scene';
 import { ChartHud } from './chart/ChartHud';
-import { TradesDialog } from './chart/TradesDialog';
 import { bigTradeScene, bigTradeSummary, deltaSeries, flowRead, heatScene, profileScene, strikeScene, volRegime, volumeProfile, type BigTrade } from './chart/flow-layers';
-import type { FlowBar, HeatColumn, PerpOiChange, TrendPaperSummary, TrendPaperTrade, Wall } from '@/api/desk';
+import type { FlowBar, HeatColumn, PerpOiChange, Wall } from '@/api/desk';
 import type { Leg } from '@/types/desk';
 import { LtpChip } from './chart/LtpChip';
-import { trendScene } from './chart/trend-layer';
 import { entryScene } from './chart/entry-layer';
 import type { EntryOverlay } from '@/types/entry';
-import { runTrend } from '@/lib/trend/breakout';
 import './chart/price-chart.css';
 
-export type ChartTf = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d';
+export type ChartTf = '1m' | '3m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d';
 
 /** Bars shown when a timeframe opens -- about nine pixels each, at least thirty -- and the space kept right of the last one for levels and labels. */
 const openingBars = (width: number) => Math.max(30, Math.min(90, Math.floor(width / 9)));
@@ -38,21 +34,29 @@ const IST_FULL = new Intl.DateTimeFormat('en-IN', {
 });
 
 /**
- * The price chart: candles, and every price-action concept the engine found,
- * drawn on the candles themselves -- structure, liquidity, OB / FVG, levels,
- * premium / discount, sessions, VWAP, candle tags and the live setup's entry,
- * stop and targets. Nothing is explained beside the chart; the HUD in its
- * corner says what the engine knows now and what it is waiting for.
+ * The price chart: candles, and the market context the engine found, drawn
+ * on the candles themselves -- structure, liquidity, OB / FVG, levels,
+ * premium / discount, sessions, VWAP, candle tags, the book, big trades,
+ * option strikes, the profile and delta. The HUD in its corner reads the
+ * candle and the market, never a setup.
+ *
+ * It decides no entry of its own. The one setup it draws is `entry`, the
+ * entry section's choice (components/desk/entry, decided on the server), so
+ * there is one entry logic on the desk and it is that one.
  *
  * The engine (lib/smc) is given closed candles only. The forming candle is
  * drawn, but no concept is read off it until it closes, so a label never
  * appears and then vanishes within a candle.
  */
 export function PriceChart({
-  bars, tf, views = [], onView, loading = false, error, context = [], regime, higher = [], bigTrades, flowBars, heat, strikes, derivs, trendBars, trendPaper, trendPaperTrades, ltp, symbol = 'BTCUSD', entry = null,
+  bars, tf, views = [], onView, loading = false, error, context = [], higher = [], bigTrades, flowBars, heat, strikes, derivs, ltp, symbol = 'BTCUSD', entry = null, size = 'full', label = 'Price chart',
 }: {
   /** The entry section's chosen setup, drawn as its entry box, stop and targets. Null: nothing drawn. */
   entry?: EntryOverlay | null;
+  /** 'full': the desk's height; 'panel': an entry panel's; 'compact': a small chart with no readout or toolbar (the twelve-chart grid). */
+  size?: 'full' | 'panel' | 'compact';
+  /** The chart's accessible name. */
+  label?: string;
   bars: readonly Candle[];
   tf: ChartTf;
   /** The timeframes the viewer may switch the chart to, shown as a switch in the toolbar; none, no switch. */
@@ -62,8 +66,6 @@ export function PriceChart({
   error?: string;
   /** The higher / lower timeframe reads for the HUD's context row. */
   context?: readonly TfRead[];
-  /** The regime timeframe's candles (1H): each setup records whether it agreed with that trend as it was known then. */
-  regime?: { bars: readonly Candle[]; tfSec: number } | null;
   /** Higher timeframes drawn on this chart: 1H order blocks, 15m structure. Ignored when not higher than this chart. */
   higher?: readonly { tf: string; tfSec: number; bars: readonly Candle[]; show: 'zones' | 'structure' }[];
   /** Large taker orders for the bubbles, the smallest drawn (contracts, set from the market), and how that was set. */
@@ -76,11 +78,6 @@ export function PriceChart({
   strikes?: { legs: readonly Leg[]; maxPain: number | null } | null;
   /** The perpetual's positioning: OI against an hour ago, and funding (percent a funding period). */
   derivs?: { oi: PerpOiChange | null; funding: number | null } | null;
-  /** 1H candles for the trend plan (lib/trend/breakout.ts): run on 1H, and on 4H folded from them. */
-  trendBars?: readonly Candle[];
-  /** The trend plan's paper log (the server's forward test): per timeframe, and its trades. */
-  trendPaper?: readonly TrendPaperSummary[];
-  trendPaperTrades?: readonly TrendPaperTrade[];
   /** The perp's last trade, from the stream, for the LTP chip. */
   ltp?: { price: number; at: number } | null;
   symbol?: string;
@@ -95,8 +92,8 @@ export function PriceChart({
   const primitiveRef = useRef<SmcPrimitive | null>(null);
 
   const [zoomOn, setZoomOn] = usePersisted('zoom:price-chart', false);
-  // v4: the trend plan joined the Desk set; a list saved before it would hide it.
-  const [layerList, setLayerList] = usePersisted<Layer[]>('chart:layers:v4', [...DEFAULT_LAYERS]);
+  // v5: the chart's own trade and trend-plan layers went (30 Sep 2026); a list saved before would still name them.
+  const [layerList, setLayerList] = usePersisted<Layer[]>('chart:layers:v5', [...DEFAULT_LAYERS]);
   // Folded by default on a phone, where it would cover half the candles; one tap opens it.
   const [hudOpen, setHudOpen] = usePersisted('chart:hud-open', typeof window === 'undefined' || window.innerWidth > 640);
   const [full, setFull] = useState(false);
@@ -106,40 +103,16 @@ export function PriceChart({
   const [inView, setInView] = useState<{ from: number; to: number } | null>(null);
   /** The big-trade bubble under the pointer, and where. */
   const [tip, setTip] = useState<{ x: number; y: number; text: string } | null>(null);
-  const [tradesOpen, setTradesOpen] = useState(false);
   const layers = useMemo(() => new Set(layerList), [layerList]);
   const tfSec = TF_SECONDS[tf] ?? 300;
+  const compact = size === 'compact';
 
   // ── The engine, on closed candles only ────────────────────────────────────
   const closed = closedBars(bars, tfSec, Math.floor(Date.now() / 1000));
   const lastClosed = closed[closed.length - 1];
   const closedKey = `${tf}:${closed.length}:${lastClosed?.time ?? 0}:${lastClosed?.close ?? 0}`;
-  const regimeClosed = regime ? closedBars(regime.bars, regime.tfSec, Math.floor(Date.now() / 1000)) : [];
-  const regimeKey = `${regimeClosed.length}:${regimeClosed[regimeClosed.length - 1]?.time ?? 0}`;
-  const htfTrendAt = useMemo(
-    () => (regime && regimeClosed.length ? trendTimeline(runSmc(regimeClosed, { tfSec: regime.tfSec }), regimeClosed, regime.tfSec) : undefined),
-    [regimeKey],
-  );
   // Keyed on the closed candles, not the array: the forming candle changes every tick and must not re-run the engine.
-  const smc = useMemo(() => runSmc(closed, { tfSec, htfTrendAt, ...DESK_SMC_OPTIONS }), [closedKey, htfTrendAt]);
-  const read = useMemo(() => readout(smc, closed, context), [smc, context]);
-  // The trend plan, on closed 1H candles (and 4H folded from them), re-run when an hour closes.
-  const hClosed = trendBars ? closedBars(trendBars, 3600, Math.floor(Date.now() / 1000)) : [];
-  const hKey = `${hClosed.length}:${hClosed[hClosed.length - 1]?.time ?? 0}`;
-  const trend = useMemo(() => {
-    if (hClosed.length < 25) return null;
-    const h4 = aggregate(hClosed, 3600, 14_400);
-    return { h1: runTrend(hClosed), h1Bars: hClosed, h4: h4.length >= 25 ? runTrend(h4) : null };
-  }, [hKey]);
-  // The SMC plan against the 4H trend plan: measured, trades with it lost half as much as trades
-  // against it (research/COMBO-STUDY.txt) -- shown on the plan, not used to hide it.
-  const live = useMemo(() => liveSetup(smc), [smc]);
-  const alignment = useMemo<'with' | 'against' | 'flat' | null>(() => {
-    if (!live || !trend?.h4) return null;
-    const d = trend.h4.open?.dir ?? 0;
-    return d === 0 ? 'flat' : d === (live.dir === 'bull' ? 1 : -1) ? 'with' : 'against';
-  }, [live, trend]);
-  const entryNote = alignment === 'with' ? 'with the 4H trend ✓' : alignment === 'against' ? 'against the 4H trend ✗' : alignment === 'flat' ? '4H trend flat' : undefined;
+  const smc = useMemo(() => runSmc(closed, { tfSec }), [closedKey]);
   const nowMin = Math.floor(Date.now() / 60_000);
   const overlays = useMemo(() => higher
     .filter((h) => h.tfSec > tfSec)
@@ -150,13 +123,13 @@ export function PriceChart({
 
   // ── What is drawn ─────────────────────────────────────────────────────────
   const base = useMemo<SceneItem[]>(() => {
-    const items = buildScene(smc, closed, layers, read.blocked, entryNote);
+    const items = buildScene(smc, closed, layers);
     if (layers.has('htf')) items.push(...htfScene(overlays, closed));
     if (layers.has('saved')) items.push(...savedBoxes(saved, bars));
     // The entry section's setup has its own on/off switch, so it is drawn whatever the layers say.
     if (entry) items.push(...entryScene(entry, bars));
     return items;
-  }, [smc, layers, saved, bars.length, read.blocked, overlays, entryNote, entry]);
+  }, [smc, layers, saved, bars.length, overlays, entry]);
   // The order-flow layers are kept apart from the engine's scene. The heatmap and the bubbles place
   // themselves by candle *time* only, so they are rebuilt when a candle is added or their data
   // arrives -- not on every tick of the forming candle, which only the volume profile follows.
@@ -186,11 +159,7 @@ export function PriceChart({
     () => (layers.has('options') && strikes && nearPrice ? strikeScene(strikes.legs, strikes.maxPain, nearPrice) : []),
     [layers, strikes, nearPrice],
   );
-  const trendItems = useMemo<SceneItem[]>(
-    () => (layers.has('trend') && trend ? trendScene(trend.h1, trend.h1Bars, 3600, barsRef.current) : []),
-    [layers, trend, timesKey, nearPrice],
-  );
-  const scene = useMemo(() => [...base, ...heatItems, ...strikeItems, ...profileItems, ...bigItems, ...trendItems], [base, heatItems, strikeItems, profileItems, bigItems, trendItems]);
+  const scene = useMemo(() => [...base, ...heatItems, ...strikeItems, ...profileItems, ...bigItems], [base, heatItems, strikeItems, profileItems, bigItems]);
   const vol = useMemo(() => volRegime(closed), [closedKey]);
 
   const loadSaved = useCallback(async () => {
@@ -370,22 +339,13 @@ export function PriceChart({
     covers.forEach((el) => ro.observe(el));
     ro.observe(host);
     return () => ro.disconnect();
-  }, [hudOpen, read, error, bars.length === 0]);
-
-  /** Put a moment (epoch seconds) in the middle of the view: the trades dialog's "show on chart". */
-  const jumpTo = useCallback((time: number) => {
-    const chart = chartRef.current;
-    if (!chart || !bars.length) return;
-    let i = bars.findIndex((b) => b.time >= time);
-    if (i < 0) i = bars.length - 1;
-    chart.timeScale().setVisibleLogicalRange({ from: i - 45, to: i + 45 });
-  }, [bars]);
+  }, [hudOpen, compact, error, bars.length === 0]);
 
   const toggleLayer = (l: Layer) => setLayerList((cur) => (cur.includes(l) ? cur.filter((x) => x !== l) : [...cur, l]));
   const shown = hover ?? bars[bars.length - 1] ?? null;
 
   return (
-    <div ref={cardRef} className={`pc${full ? ' pc-full' : ''}`} aria-label="Price chart">
+    <div ref={cardRef} className={`pc${size === 'full' ? '' : ` pc-${size}`}${full ? ' pc-full' : ''}`} aria-label={label}>
       {error ? (
         <div className="pc-empty" role="alert">Chart unavailable: {error}</div>
       ) : !bars.length ? (
@@ -394,7 +354,7 @@ export function PriceChart({
         <div className="pc-stage">
           <div ref={hostRef} className="pc-host" />
 
-          <div ref={toolbarRef} className="pc-toolbar" role="toolbar" aria-label="Chart controls">
+          {!compact && <div ref={toolbarRef} className="pc-toolbar" role="toolbar" aria-label="Chart controls">
             {ltp && <LtpChip price={ltp.price} at={ltp.at} tfSec={tfSec} />}
             {views.length > 1 && onView && (
               <div className="pc-views" role="radiogroup" aria-label="Chart timeframe">
@@ -438,7 +398,7 @@ export function PriceChart({
             <button type="button" className="pc-tool" onClick={() => setFull(!full)} aria-label={full ? 'Exit full screen' : 'Full screen'}>
               {full ? <Minimize2 size={14} /> : <Expand size={14} />}
             </button>
-          </div>
+          </div>}
 
           {tip && (
             <div className="pc-tip" role="tooltip" style={{ left: tip.x + 14, top: tip.y + 14 }}>
@@ -446,26 +406,12 @@ export function PriceChart({
             </div>
           )}
 
-          <TradesDialog
-            open={tradesOpen}
-            onOpenChange={setTradesOpen}
-            history={read.history}
-            record={read.record}
-            paper={trendPaper ? { summary: trendPaper, trades: trendPaperTrades ?? [] } : null}
-            onJump={jumpTo}
-          />
-
-          <ChartHud
+          {!compact && <ChartHud
             ref={hudRef}
             open={hudOpen}
             onToggle={() => setHudOpen(!hudOpen)}
             tf={tf}
-            read={read}
             context={context}
-            alignment={alignment}
-            onTrades={() => setTradesOpen(true)}
-            paperCount={trendPaperTrades?.length ?? 0}
-            trend={trend ? { h1: trend.h1.open, h4: trend.h4?.open ?? null, mark: bars[bars.length - 1]?.close ?? null, paper: trendPaper ?? null } : null}
             derivs={derivs || vol ? { oi: derivs?.oi ?? null, funding: derivs?.funding ?? null, vol } : null}
             big={layers.has('bigtrades') && bigTrades && bars.length ? {
               ...bigTradeSummary(bigTrades.prints, bars, tfSec, bigTrades.min, inView?.from ?? bars.length - 90, inView?.to ?? bars.length - 1),
@@ -475,7 +421,7 @@ export function PriceChart({
               ...shown, when: IST_FULL.format(shown.time * 1000), hovering: hover !== null,
               flow: flowBars?.length ? flowRead(flowBars, shown.time, tfSec, Math.floor(Date.now() / 1000)) : null,
             } : null}
-          />
+          />}
         </div>
       )}
     </div>

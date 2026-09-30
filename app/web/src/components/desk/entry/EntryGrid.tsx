@@ -1,22 +1,29 @@
+import { useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import type { EntryMode, EntryTf, MethodRead } from '@/types/entry';
-import { EntryChart, useEntryCandles } from './EntryChart';
-import { SignalChip } from './parts';
+import { PriceChart } from '@/components/desk/PriceChart';
+import type { ChartFeed } from './feed';
+import { SignalChip, overlayOf } from './parts';
 
 /**
  * The twelve methods as twelve small charts, one mode at a time: with the
  * timeframe chain (5m, where its entry is read) or without it (on the timeframe
- * chosen for that). Each draws its own TRADE's levels. Only built while shown
- * -- twelve charts are not free on a phone.
+ * chosen for that). Each is the desk's price chart, small -- no readout or
+ * toolbar -- and draws its own TRADE's levels. Only built while shown --
+ * twelve charts are not free on a phone.
  */
-export function EntryGrid({ mode, onMode, reads, singleTf, setupsOn }: {
+export function EntryGrid({ mode, onMode, reads, singleTf, setupsOn, chart }: {
   mode: EntryMode;
   onMode: (m: EntryMode) => void;
   reads: readonly MethodRead[];
   singleTf: EntryTf;
   setupsOn: boolean;
+  chart: (tf: EntryTf) => ChartFeed;
 }) {
-  const bars = useEntryCandles(mode === 'mtf' ? '5m' : singleTf, 120);
+  const tf = mode === 'mtf' ? '5m' : singleTf;
+  // Candles only: the order-flow layers are for the panels' larger charts.
+  const { bars, loading } = chart(tf);
+  const drawn = useMemo(() => new Map(reads.map((r) => [r.id, overlayOf(r, setupsOn)])), [reads, setupsOn]);
   return (
     <div>
       <div role="group" aria-label="grid mode" className="mb-2 inline-flex overflow-hidden rounded-md border border-border text-[12px]">
@@ -34,7 +41,7 @@ export function EntryGrid({ mode, onMode, reads, singleTf, setupsOn }: {
               <span><span className="text-muted-foreground">{r.n}</span> {r.name}</span>
               <SignalChip read={r} />
             </figcaption>
-            <EntryChart bars={bars} plan={setupsOn ? r.plan : null} dir={r.dir} height={170} label={`${r.name} price chart`} />
+            <PriceChart bars={bars} loading={loading} tf={tf} entry={drawn.get(r.id) ?? null} size="compact" label={`${r.name} price chart`} />
             <p className="m-0 mt-1 line-clamp-2 text-[11px] text-muted-foreground">{r.reason}</p>
           </figure>
         ))}

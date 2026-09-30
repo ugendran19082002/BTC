@@ -1,92 +1,43 @@
 import { forwardRef } from 'react';
-import { ChevronDown, ChevronRight, History } from 'lucide-react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { TfRead } from '@/lib/smc/context';
-import type { Readout } from '@/lib/smc/readout';
-import { SMC_MEASURED } from '@/lib/smc/measured.data';
 import type { BigTradeSummary, FlowRead, VolRegime } from './flow-layers';
-import type { PerpOiChange, TrendPaperSummary } from '@/api/desk';
-import { trendR, trendStop, type TrendTrade } from '@/lib/trend/breakout';
-import { TREND_MEASURED } from '@/lib/trend/measured.data';
+import type { PerpOiChange } from '@/api/desk';
 
 const fmt = (p: number) => Math.round(p).toLocaleString('en-US');
 const pct = (v: number) => `${Math.round(v * 100)}%`;
-const IST_HM = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
-const r1 = (v: number) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)}R`;
 
 type Shown = { open: number; high: number; low: number; close: number; when: string; hovering: boolean; flow?: FlowRead | null };
 const k = (v: number) => (Math.abs(v) >= 1_000 ? `${(v / 1_000).toFixed(1)}k` : `${Math.round(v)}`);
 
 /**
- * The chart's corner readout: the live setup and what it is waiting for, the
- * plan when there is one, the timeframe context, and this chart's own record.
- * Inside the chart, over the candles' quietest corner, and folds to one line.
+ * The chart's corner readout: the candle under the pointer (or the last), the
+ * timeframe context, positioning, big trades and the candle's flow -- what the
+ * market is doing, never a setup. Setups are the entry section's
+ * (components/desk/entry), drawn on the chart from there. Inside the chart,
+ * over the candles' quietest corner, and folds to one line.
  */
 export const ChartHud = forwardRef<HTMLDivElement, {
   open: boolean;
   onToggle: () => void;
   tf: string;
-  read: Readout;
   context: readonly TfRead[];
   candle: Shown | null;
   /** Big trades in view, the size they start at (contracts) and how it was set. */
   big?: (BigTradeSummary & { min: number; basis?: string }) | null;
   /** Positioning and volatility: the perp's OI against an hour ago, funding, and the chart's ATR against its usual. */
   derivs?: { oi: PerpOiChange | null; funding: number | null; vol: VolRegime | null } | null;
-  /** The trend plan's open trade on 1H and 4H (null when flat), and the last price to mark them at. */
-  trend?: { h1: TrendTrade | null; h4: TrendTrade | null; mark: number | null; paper?: readonly TrendPaperSummary[] | null } | null;
-  /** The live SMC setup against the 4H trend plan's position. */
-  alignment?: 'with' | 'against' | 'flat' | null;
-  /** Open the trades dialog. */
-  onTrades?: () => void;
-  /** How many trend-plan paper trades there are, for the button. */
-  paperCount?: number;
-}>(function ChartHud({ open, onToggle, tf, read, context, candle, big, derivs, trend, alignment, onTrades, paperCount = 0 }, ref) {
+}>(function ChartHud({ open, onToggle, tf, context, candle, big, derivs }, ref) {
   const up = candle ? candle.close >= candle.open : true;
   return (
-    <div ref={ref} className={`pc-hud pc-hud-${read.tone}`} aria-label="Setup readout">
+    <div ref={ref} className="pc-hud" aria-label="Chart readout">
       <button type="button" className="pc-hud-head" onClick={onToggle} aria-expanded={open}>
         {open ? <ChevronDown size={13} aria-hidden /> : <ChevronRight size={13} aria-hidden />}
-        <b>{read.headline}</b>
+        <b>BTCUSD{candle ? ` ${fmt(candle.close)}` : ''}</b>
         <span className="pc-hud-tf">{tf}</span>
       </button>
       {open && (
         <div className="pc-hud-body">
-          <p className="pc-hud-detail">{read.detail}</p>
-
-          {read.confirmations.length > 0 && (
-            <ul className="pc-hud-checks" aria-label="Confirmations">
-              {read.confirmations.map((c) => (
-                <li key={c.name} className={c.ok ? 'ok' : 'wait'}>{c.ok ? '✓' : '○'} {c.name}</li>
-              ))}
-              {alignment && (
-                <li className={alignment === 'with' ? 'ok' : alignment === 'against' ? 'no' : 'wait'}
-                  title="The 4H trend plan's position. Measured 2024-26: SMC trades with it lost -0.07R / -0.15R a trade after fees, against it -0.18R / -0.33R (research/COMBO-STUDY.txt). Better with it; not an edge either way.">
-                  {alignment === 'with' ? '✓ With the 4H trend' : alignment === 'against' ? '✗ Against the 4H trend' : '○ 4H trend flat'}
-                </li>
-              )}
-            </ul>
-          )}
-
-          {read.plan && (
-            <div className="pc-hud-plan" aria-label="Trade plan">
-              <span><i>{read.plan.filled ? 'Entry' : 'Plan'}</i> {fmt(read.plan.entry)}{read.plan.filled ? ' ✓' : ''}</span>
-              <span className="sl">
-                <i>SL</i> {fmt(read.plan.stop)} <small>{read.plan.stopMoved ? `moved · ${read.plan.stopNote}` : `−${fmt(read.plan.risk)} pts · −1R · ${read.plan.stopNote ?? ''}`}</small>
-              </span>
-              {read.plan.targets.map((t, k) => (
-                <span key={k} className="tp" title={t.reason}>
-                  <i>TP{k + 1}</i> {fmt(t.price)}{t.hit ? ' ✓' : ''} <small>+{fmt(Math.abs(t.price - read.plan!.entry))} pts · {r1(t.rNow)} · {t.reason}</small>
-                </span>
-              ))}
-              {read.plan.filled && (
-                <span className="pnl">
-                  <i>Realised</i> {r1(read.plan.realisedR)} <small>({Math.round((1 - read.plan.openShare) * 100)}% closed)</small>
-                  {' · '}<i>Open</i> {r1(read.plan.openR)} <small>on {Math.round(read.plan.openShare * 100)}%</small>
-                </span>
-              )}
-            </div>
-          )}
-
           {context.length > 0 && (
             <div className="pc-hud-ctx" aria-label="Timeframe context">
               {context.map((c) => (
@@ -98,71 +49,11 @@ export const ChartHud = forwardRef<HTMLDivElement, {
             </div>
           )}
 
-          {/*
-            What these exact rules did over the cached history, after fees -- beside every setup,
-            so a plan on the chart is never read as a promise. Regenerated by scripts/smc-study.ts.
-          */}
-          {(read.plan || read.confirmations.length > 0) && tf !== '5m' && (
-            <p className="pc-hud-measured">
-              Not measured on {tf}: the measured record is for the 5m chart only. Information, not a signal.
-            </p>
-          )}
-          {(read.plan || read.confirmations.length > 0) && tf === '5m' && (
-            <p className="pc-hud-measured" title={`${SMC_MEASURED.from} → ${SMC_MEASURED.to}, fees ${SMC_MEASURED.feePerSide * 100}% a side. research/SMC-STUDY.txt`}>
-              Measured {SMC_MEASURED.from.slice(0, 4)}–{SMC_MEASURED.to.slice(2, 4)}: {SMC_MEASURED.all.n} trades · win {pct(SMC_MEASURED.all.winRate)} · {r1(SMC_MEASURED.all.netR)}/trade after fees
-              (2026 {r1(SMC_MEASURED.heldOut2026.netR)}). Information, not a signal.
-            </p>
-          )}
-
-          {!read.plan && read.refused && (
-            <div className="pc-hud-refused" aria-label="Last plan refused">
-              <p><b>Last {read.refused.dir === 'bull' ? 'long' : 'short'} refused</b> · {IST_HM.format(read.refused.time * 1000)}</p>
-              <ul className="pc-hud-checks">
-                {read.refused.checks.map((c) => <li key={c.name} className={c.ok ? 'ok' : 'no'}>{c.ok ? '✓' : '✗'} {c.name}</li>)}
-              </ul>
-              <p className="pc-hud-why">{read.refused.reason}</p>
-            </div>
-          )}
-
-          {onTrades && (
-            <button type="button" className="pc-hud-trades" onClick={onTrades} aria-haspopup="dialog">
-              <History size={12} aria-hidden /> Trades ({read.history.length}{paperCount ? ` · trend ${paperCount}` : ''}) <span aria-hidden>↗</span>
-            </button>
-          )}
-
-          {read.record && (
-            <p className="pc-hud-record" title="Setups this chart's candles produced and completed, each decided without seeing what came after it">
-              This chart: {read.record.n} trade{read.record.n === 1 ? '' : 's'} · TP1 {pct(read.record.tp1Rate)} · SL {pct(read.record.stopRate)} · avg {r1(read.record.avgR)} · MFE {read.record.avgMfeR.toFixed(1)}R · MAE {read.record.avgMaeR.toFixed(1)}R
-            </p>
-          )}
-
           {candle && (
             <p className="pc-hud-ohlc">
               <span>{candle.hovering ? candle.when : 'Last'}</span>
               <span>O {fmt(candle.open)}</span><span>H {fmt(candle.high)}</span><span>L {fmt(candle.low)}</span>
               <span className={up ? 'up' : 'down'}>C {fmt(candle.close)}</span>
-            </p>
-          )}
-          {trend && (
-            <p className="pc-hud-ohlc pc-hud-trend" aria-label="Trend plan"
-              title={`Trend plan: a close beyond the 20-candle channel, a 2 ATR stop, then a 3 ATR trailing stop, no target (lib/trend/breakout.ts). Measured ${TREND_MEASURED.from.slice(0, 4)}-${TREND_MEASURED.to.slice(2, 4)} after fees: 1H ${r1(TREND_MEASURED['1H'].ins.netR)} / ${r1(TREND_MEASURED['1H'].oos.netR)} a trade, 4H ${r1(TREND_MEASURED['4H'].ins.netR)} / ${r1(TREND_MEASURED['4H'].oos.netR)} (2024-25 / 2026) -- positive, not significant. Information, not a signal.`}>
-              <span>Trend</span>
-              {(['h1', 'h4'] as const).map((k) => {
-                const t = trend[k];
-                const label = k === 'h1' ? '1H' : '4H';
-                if (!t) return <span key={k}>{label} flat</span>;
-                const r = trend.mark === null ? null : trendR(t, trend.mark);
-                return (
-                  <span key={k} className="trend-on">
-                    {label} {t.dir === 1 ? 'LONG' : 'SHORT'} {fmt(t.entry)} · trail {fmt(trendStop(t))}{r === null ? '' : ` · ${r1(r)}`}
-                  </span>
-                );
-              })}
-              {trend.paper && trend.paper.length > 0 && (
-                <span className="trend-paper" title={`The server's paper log since 1 Sep 2026: trades recorded within 15 minutes of their signal (the forward test), closed and their net R after fees; replayed trades are not counted. Pre-registered filters, closed live trades: ${trend.paper.map((p) => `${p.tf} volume burst ${p.volBurst?.closed ?? 0} (${r1(p.volBurst?.netR ?? 0)}), London/NY ${p.session?.closed ?? 0} (${r1(p.session?.netR ?? 0)})`).join('; ')}.`}>
-                  paper {trend.paper.map((p) => `${p.tf} ${p.closed} closed${p.closed ? ` ${r1(p.netR)}` : ''}${p.open ? ` +${p.open} open` : ''}`).join(' · ')}
-                </span>
-              )}
             </p>
           )}
           {derivs && (derivs.oi || derivs.funding !== null || derivs.vol) && (
