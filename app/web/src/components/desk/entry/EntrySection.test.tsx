@@ -24,6 +24,7 @@ const getEntryRecord = vi.fn();
 const getEntryGates = vi.fn();
 const setEntryGate = vi.fn();
 const getEntryAlerts = vi.fn();
+const getEntrySignals = vi.fn();
 const setEntryAlert = vi.fn();
 const sendEntryAlertTest = vi.fn();
 vi.mock('@/api/entry', () => ({
@@ -32,6 +33,7 @@ vi.mock('@/api/entry', () => ({
   getEntryGates: (...a: unknown[]) => getEntryGates(...a),
   setEntryGate: (...a: unknown[]) => setEntryGate(...a),
   getEntryAlerts: (...a: unknown[]) => getEntryAlerts(...a),
+  getEntrySignals: (...a: unknown[]) => getEntrySignals(...a),
   setEntryAlert: (...a: unknown[]) => setEntryAlert(...a),
   sendEntryAlertTest: (...a: unknown[]) => sendEntryAlertTest(...a),
 }));
@@ -113,6 +115,7 @@ beforeEach(() => {
   getEntryBoard.mockResolvedValue(board());
   getEntryGates.mockResolvedValue({ gates: SETTINGS });
   getEntryAlerts.mockResolvedValue(ALERTS_OFF);
+  getEntrySignals.mockResolvedValue({ signals: [] });
   getEntryRecord.mockResolvedValue({ records: [], totals: [total('mtf'), total('single', { trades: 0, setups: 3 })], recent: [] });
 });
 
@@ -343,12 +346,17 @@ describe('switching gates on and off', () => {
     expect(within(legend).getByLabelText('Liquidity sweep gates with timeframe')).toHaveTextContent('✓ 5/5');
   });
 
-  it('the record says how many setups were logged with a gate off, and that they are not counted', async () => {
-    getEntryRecord.mockResolvedValue({ records: [], totals: [total('mtf', { gatesOff: 3 }), total('single')], recent: [] });
+  it('[critical] setups taken with a gate off are shown under the record, labelled, never counted in it', async () => {
+    getEntryRecord.mockResolvedValue({
+      records: [], totals: [total('mtf', { gatesOff: 3 }), total('single')],
+      totalsAll: [total('mtf', { gatesOff: 3, trades: 13, wins: 5, sumR: -2.4, profitFactor: 0.7 }), total('single')], recent: [],
+    });
     render(<EntrySection desk={desk} />);
     const withTf = await panel(/12 methods \+ timeframe/);
     const rec = await within(withTf).findByRole('region', { name: 'paper record' });
-    await waitFor(() => expect(rec).toHaveTextContent('3 with a gate off, not counted'));
+    await waitFor(() => expect(within(rec).getByLabelText('including gate-off setups'))
+      .toHaveTextContent("Including 3 setups taken with a gate off: 13 trades · 38% won · PF 0.70 · −2.4R. Not the rules' record -- shown apart."));
+    expect(within(rec).getByText('40%')).toBeInTheDocument(); // the rules' own figures stand unchanged
   });
 });
 
@@ -466,5 +474,27 @@ describe('which timeframes alert, and the last alert', () => {
     await waitFor(() => expect(within(without).getByLabelText('last alert')).toHaveTextContent('last: 20:00 · #2 SELL 5m · sent ✓'));
     const withTf = screen.getByRole('region', { name: /12 methods \+ timeframe/ });
     expect(within(withTf).getByLabelText('last alert')).toHaveTextContent('#6 BUY 5m · failed ✗ -- Telegram did not accept it');
+  });
+});
+
+describe('the record in words, and the comparison with gate-off setups', () => {
+  it('with nothing closed, the record says what is happening instead of a row of dashes', async () => {
+    getEntryRecord.mockResolvedValue({ records: [], totals: [total('mtf', { trades: 0, wins: 0, working: 2, setups: 2 })], recent: [] });
+    render(<EntrySection desk={desk} />);
+    const withTf = await panel(/12 methods \+ timeframe/);
+    await waitFor(() => expect(within(withTf).getByRole('region', { name: 'paper record' })).toHaveTextContent('2 setups working -- figures appear as they close'));
+  });
+
+  it('[critical] the comparison switches between every gate on and gate-off setups included, and says which it shows', async () => {
+    getEntryRecord.mockResolvedValue({
+      records: [], totals: [total('mtf', { trades: 0, wins: 0 }), total('single', { trades: 0, wins: 0 })],
+      totalsAll: [total('mtf', { trades: 7, wins: 3, gatesOff: 7 }), total('single', { trades: 0, wins: 0 })], recent: [],
+    });
+    render(<EntrySection desk={desk} />);
+    const cmp = await screen.findByRole('region', { name: 'with and without timeframe compared' });
+    await waitFor(() => expect(cmp).toHaveTextContent('Nothing has closed yet with every gate on'));
+    fireEvent.click(within(cmp).getByRole('button', { name: /Incl. gates off \(7\)/ }));
+    expect(cmp).toHaveTextContent("Including setups taken with a hard gate switched off -- not the rules' record.");
+    expect(within(within(cmp).getByRole('row', { name: /Trades closed/ })).getAllByRole('cell').map((c) => c.textContent)).toEqual(['–', '7']);
   });
 });

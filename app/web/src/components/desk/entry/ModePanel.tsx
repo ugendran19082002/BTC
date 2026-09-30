@@ -37,7 +37,7 @@ const COPY: Record<EntryMode, { title: string; accent: string; sub: string; tag:
   },
 };
 
-export function ModePanel({ mode, reads, selected, onChoose, total, recordOf, setupsOn, chartTf, onChartTf, chart, alert, autoPicked = false, ltp = null }: {
+export function ModePanel({ mode, reads, selected, onChoose, total, recordOf, setupsOn, chartTf, onChartTf, chart, alert, autoPicked = false, ltp = null, totalAll = null }: {
   mode: EntryMode;
   reads: readonly MethodRead[];
   /** This panel's chosen read. */
@@ -61,6 +61,8 @@ export function ModePanel({ mode, reads, selected, onChoose, total, recordOf, se
   autoPicked?: boolean;
   /** The live last trade, for the selected TRADE's live strip. */
   ltp?: { price: number; at: number } | null;
+  /** This way's record with gate-off setups included, shown apart from `total`. */
+  totalAll?: EntryRecord | null;
 }) {
   const copy = COPY[mode];
   // Kept while the choice holds: a new object each tick would rebuild the chart's whole scene.
@@ -115,7 +117,7 @@ export function ModePanel({ mode, reads, selected, onChoose, total, recordOf, se
         </div>
       </div>
 
-      <RecordStrip total={total} tf={chartTf} mode={mode} />
+      <RecordStrip total={total} totalAll={totalAll} tf={chartTf} mode={mode} />
     </section>
   );
 }
@@ -248,7 +250,21 @@ function Reasons({ read }: { read: MethodRead | null }) {
   );
 }
 
-function RecordStrip({ total, tf, mode }: { total: EntryRecord | null; tf: EntryTf; mode: EntryMode }) {
+/** One line of a record: "12 trades · 42% won · PF 1.3 · +2.1R", or null with none closed. */
+function recordLine(r: EntryRecord | null): string | null {
+  if (!r || r.trades === 0) return null;
+  const pf = r.profitFactor === null ? '' : ` · PF ${r.profitFactor.toFixed(2)}`;
+  const net = r.sumR === null ? '' : ` · ${signedR(r.sumR, 1)}`;
+  return `${r.trades} trade${r.trades === 1 ? '' : 's'} · ${Math.round((100 * r.wins) / r.trades)}% won${pf}${net}`;
+}
+
+/**
+ * This way's paper record. The figures are the rules as designed -- every gate
+ * on. Setups taken with a gate switched off are shown under them, labelled,
+ * never mixed in. With nothing closed yet it says what is happening rather
+ * than a row of dashes.
+ */
+function RecordStrip({ total, totalAll, tf, mode }: { total: EntryRecord | null; totalAll: EntryRecord | null; tf: EntryTf; mode: EntryMode }) {
   const has = total !== null && total.trades > 0;
   const cells: [string, string, string?][] = [
     ['Trades', has ? String(total!.trades) : '–'],
@@ -257,14 +273,18 @@ function RecordStrip({ total, tf, mode }: { total: EntryRecord | null; tf: Entry
     ['Net R', has && total!.sumR !== null ? signedR(total!.sumR, 1) : '–', has && (total!.sumR ?? 0) < 0 ? 'text-[var(--down)]' : 'text-[var(--up)]'],
     ['Max DD', has && total!.maxDrawdownR !== null ? `${total!.maxDrawdownR.toFixed(1)}R` : '–', 'text-[var(--down)]'],
   ];
+  const offCount = totalAll?.gatesOff ?? total?.gatesOff ?? 0;
+  const offLine = offCount ? recordLine(totalAll) : null;
+  // What is going on, in words, while there is nothing closed to count.
+  const state = has ? null
+    : total && total.working ? `${total.working} setup${total.working === 1 ? '' : 's'} working -- figures appear as they close (TP1, stop or time-out).`
+      : total && total.setups ? `${total.setups} logged, ${total.expired} expired unfilled -- none closed yet.`
+        : 'No TRADE with every gate on yet. The log writes one the moment it forms, and grades it on the 1m candles after fees.';
   return (
     <section aria-label="paper record" className="mt-2 rounded-lg border border-border p-2">
       <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-2 text-[12px]">
         <span className="font-semibold">Paper record · all 12, at {mode === 'mtf' ? '5m' : tf}, after fees</span>
-        <span className="text-[11px] text-muted-foreground">
-          {total && total.setups ? `${total.setups} logged${total.working ? `, ${total.working} working` : ''}` : 'no setups logged yet'}
-          {total?.gatesOff ? ` · ${total.gatesOff} with a gate off, not counted` : ''}
-        </span>
+        <span className="text-[11px] text-muted-foreground">every gate on{total && total.setups ? ` · ${total.setups} logged${total.working ? `, ${total.working} working` : ''}` : ''}</span>
       </div>
       <dl className="m-0 grid grid-cols-3 gap-1 text-center sm:grid-cols-5">
         {cells.map(([k, v, c]) => (
@@ -274,6 +294,12 @@ function RecordStrip({ total, tf, mode }: { total: EntryRecord | null; tf: Entry
           </div>
         ))}
       </dl>
+      {state ? <p className="m-0 mt-1.5 text-[11px] text-muted-foreground">{state}</p> : null}
+      {offCount ? (
+        <p aria-label="including gate-off setups" className="m-0 mt-1.5 rounded border border-dashed border-[var(--warn)] px-2 py-1 text-[11px] text-[var(--warn)]">
+          Including {offCount} setup{offCount === 1 ? '' : 's'} taken with a gate off: {offLine ?? 'none closed yet'}. Not the rules' record -- shown apart.
+        </p>
+      ) : null}
     </section>
   );
 }

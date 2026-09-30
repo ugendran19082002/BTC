@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { pruneSignals, recentSignals, recordSignals } from '../../src/entry/signals.js';
 import { allReads, SINGLE_TFS } from '../../src/entry/engine.js';
 import type { MethodRead } from '../../src/entry/types.js';
-import { closePool, rows } from '../../src/db/pool.js';
+import { closePool, query, rows } from '../../src/db/pool.js';
+import { recordSetups } from '../../src/entry/paper.js';
 import { ctxOf } from './bars.js';
 
 after(closePool);
@@ -42,8 +43,21 @@ test('the journal reads back newest first, filtered by way, timeframe and state'
   assert.equal((await recentSignals({ limit: 1 })).length, 1);
 });
 
+test('[critical] a TRADE in the history carries what became of it in the paper log; a WAIT carries none; each has its method\'s name', async () => {
+  const t = read({ state: 'TRADE', plan: PLAN, triggerTime: T + 600, tf: '5m' });
+  await recordSignals([t, read({ triggerTime: T + 600, tf: '5m', id: 'bos' })], (T + 660) * 1000);
+  await recordSetups([t], (T + 660) * 1000);
+  await query(`UPDATE entry_setups SET status = 'tp1', fill_price = 84391, exit_price = 84000, exit_at = $1, r_net = 1.1 WHERE trigger_at = $2`, [T + 900, T + 600]);
+  const [trade] = await recentSignals({ tf: '5m', state: 'TRADE' });
+  assert.deepEqual(trade!.outcome, { status: 'tp1', fillPrice: 84_391, exitPrice: 84_000, exitAt: T + 900, rNet: 1.1 });
+  assert.deepEqual([trade!.n, trade!.name], [4, 'FVG retest']);
+  const [wait] = await recentSignals({ tf: '5m', state: 'WAIT' });
+  assert.equal(wait!.outcome, null);
+  assert.equal((await recentSignals({ since: (T + 650) * 1000 })).length, 2, 'since a moment');
+});
+
 test('signals older than the keep period go; the rest stay', async () => {
-  assert.equal(await pruneSignals((T + 400 * 86_400) * 1000, 365), 3);
+  assert.equal(await pruneSignals((T + 400 * 86_400) * 1000, 365), 5);
   assert.equal((await recentSignals()).length, 0);
 });
 

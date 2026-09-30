@@ -86,13 +86,14 @@ export function registerEntryRoutes(app: FastifyInstance, notifier: () => { send
 
   // The signal journal: every WAIT and TRADE shown, newest first; filter by mode, tf, state.
   app.get('/api/entry/signals', async (req) => {
-    const q = req.query as { limit?: string; mode?: string; tf?: string; state?: string };
+    const q = req.query as { limit?: string; mode?: string; tf?: string; state?: string; since?: string };
     return {
       signals: await recentSignals({
         limit: q.limit ? Number(q.limit) || 100 : 100,
         mode: q.mode && isMode(q.mode) ? q.mode : undefined,
         tf: q.tf && (SINGLE_TFS as readonly string[]).includes(q.tf) ? q.tf : undefined,
         state: q.state === 'WAIT' || q.state === 'TRADE' ? q.state : undefined,
+        since: q.since && Number.isFinite(Number(q.since)) ? Number(q.since) : undefined,
       }),
     };
   });

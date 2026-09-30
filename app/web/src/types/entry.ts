@@ -90,7 +90,17 @@ export type EntryRecord = {
   gatesOff?: number;
 };
 
-export type EntryRecordResponse = { records: EntryRecord[]; totals: EntryRecord[]; recent: unknown[] };
+/** `totals`: every gate on (the rules). `totalsAll`: gate-off setups included -- shown apart, labelled. */
+export type EntryRecordResponse = { records: EntryRecord[]; totals: EntryRecord[]; totalsAll?: EntryRecord[]; recent: unknown[] };
+
+/** One signal from the server's journal, with what became of it if it was a TRADE. */
+export type EntrySignal = {
+  method: string; n: number | null; name: string; mode: EntryMode; tf: EntryTf; dir: 1 | -1; state: 'WAIT' | 'TRADE';
+  triggerAt: number; firstSeen: number; lastSeen: number; score: number | null; reason: string;
+  entryLo: number | null; entryHi: number | null; stop: number | null; tp1: number | null; rr: number | null;
+  gatesOff: string[];
+  outcome: { status: string; fillPrice: number | null; exitPrice: number | null; exitAt: number | null; rNet: number | null } | null;
+};
 
 /** What the price chart draws for the chosen setup. */
 export type EntryOverlay = {

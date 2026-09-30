@@ -161,4 +161,8 @@ test('[critical] a setup taken with a gate off is logged with it, and kept out o
   const single = totals.find((t) => t.mode === 'single')!;
   assert.equal(single.setups, 1, 'only the setup taken with every gate on');
   assert.equal(single.gatesOff, 1, 'the other is counted apart, never mixed in');
+  const { totalsAll } = await entryRecord();
+  const everything = totalsAll.find((t) => t.mode === 'single')!;
+  assert.equal(everything.setups, 2, 'the including-gates-off total counts both -- shown apart, labelled');
+  assert.equal(everything.gatesOff, 1);
 });

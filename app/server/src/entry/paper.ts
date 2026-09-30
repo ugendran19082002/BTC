@@ -233,7 +233,12 @@ type ClosedRow = { method: string; mode: 'mtf' | 'single'; tf: Tf; status: Paper
  * Each method's record, with the timeframe chain and without it, and each
  * mode's total over all twelve -- the comparison the screen puts side by side.
  */
-export async function entryRecord(): Promise<{ records: MethodRecord[]; totals: MethodRecord[] }> {
+/**
+ * `totals` is the rules as designed -- every gate on. `totalsAll` counts every
+ * setup, those let through by a switched-off gate included, and is shown apart
+ * and labelled as such: the one figure never quietly stands in for the other.
+ */
+export async function entryRecord(): Promise<{ records: MethodRecord[]; totals: MethodRecord[]; totalsAll: MethodRecord[] }> {
   await entrySchema();
   const all = await rows<ClosedRow>(
     `SELECT method, mode, tf, status, r_net, first_seen, gates_off FROM entry_setups ORDER BY coalesce(exit_at, graded_to), id`,
@@ -244,8 +249,8 @@ export async function entryRecord(): Promise<{ records: MethodRecord[]; totals: 
     return m;
   };
   // The record is the rules as designed: a setup let through by a switched-off gate is counted apart.
-  const recordOf = (all: ClosedRow[], method: string): MethodRecord => {
-    const xs = all.filter((x) => !x.gates_off?.length);
+  const recordOf = (all: ClosedRow[], method: string, withGatesOff = false): MethodRecord => {
+    const xs = withGatesOff ? all : all.filter((x) => !x.gates_off?.length);
     const closed = xs.filter((x) => x.status === 'tp1' || x.status === 'stop' || x.status === 'timeout');
     return {
       method, mode: all[0]!.mode, tf: all[0]!.tf,
@@ -254,13 +259,15 @@ export async function entryRecord(): Promise<{ records: MethodRecord[]; totals: 
       working: xs.filter((x) => x.status === 'open' || x.status === 'filled').length,
       since: Math.min(...all.map((x) => x.first_seen)),
       ...statsOf(closed.map((x) => x.r_net ?? 0)),
-      gatesOff: all.length - xs.length,
+      gatesOff: all.filter((x) => x.gates_off?.length).length,
     };
   };
   const records = [...group((r) => `${r.method}|${r.mode}|${r.tf}`).values()].map((xs) => recordOf(xs, xs[0]!.method))
     .sort((a, b) => a.method.localeCompare(b.method) || a.mode.localeCompare(b.mode) || a.tf.localeCompare(b.tf));
-  const totals = [...group((r) => `${r.mode}|${r.tf}`).values()].map((xs) => recordOf(xs, 'all'));
-  return { records, totals };
+  const byWay = [...group((r) => `${r.mode}|${r.tf}`).values()];
+  const totals = byWay.map((xs) => recordOf(xs, 'all'));
+  const totalsAll = byWay.map((xs) => recordOf(xs, 'all', true));
+  return { records, totals, totalsAll };
 }
 
 /** The latest setups written, newest first, for the log under the board. */

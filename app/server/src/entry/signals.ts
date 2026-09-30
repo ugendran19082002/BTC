@@ -1,6 +1,8 @@
 import { query, rows, type Param } from '../db/pool.js';
 import { migrate, type Migration } from '../db/migrate.js';
 import type { MethodRead, Tf } from './types.js';
+import { METHODS } from './methods.js';
+import { entrySchema } from './paper.js';
 
 /**
  * The signal journal: every signal the entry engine gives -- every WAIT and
@@ -90,19 +92,33 @@ export type SignalRow = {
   triggerAt: number; firstSeen: number; lastSeen: number; score: number | null; reason: string;
   entryLo: number | null; entryHi: number | null; stop: number | null; tp1: number | null; rr: number | null;
   gatesOff: string[];
+  /** The method's number and name, for the screen. */
+  n: number | null; name: string;
+  /**
+   * What became of a TRADE in the paper log: open (waiting for price), filled,
+   * tp1, stop, timeout, expired -- with the fill, the exit and R after fees.
+   * Null for a WAIT, or a TRADE the log has not written.
+   */
+  outcome: { status: string; fillPrice: number | null; exitPrice: number | null; exitAt: number | null; rNet: number | null } | null;
 };
 
-/** The latest signals, newest first, optionally one way, timeframe or state. */
-export async function recentSignals(q: { limit?: number; mode?: string; tf?: string; state?: string } = {}): Promise<SignalRow[]> {
-  await signalsSchema();
+/** The latest signals, newest first, optionally one way, timeframe or state, or since a moment; each TRADE with its outcome. */
+export async function recentSignals(q: { limit?: number; mode?: string; tf?: string; state?: string; since?: number } = {}): Promise<SignalRow[]> {
+  // The history reads the paper log beside it (a TRADE's outcome): both tables first, whatever ran at boot.
+  await Promise.all([signalsSchema(), entrySchema()]);
   const where: string[] = [];
   const args: Param[] = [];
-  if (q.mode) { args.push(q.mode); where.push(`mode = $${args.length}`); }
-  if (q.tf) { args.push(q.tf); where.push(`tf = $${args.length}`); }
-  if (q.state) { args.push(q.state); where.push(`state = $${args.length}`); }
+  if (q.mode) { args.push(q.mode); where.push(`s.mode = $${args.length}`); }
+  if (q.tf) { args.push(q.tf); where.push(`s.tf = $${args.length}`); }
+  if (q.state) { args.push(q.state); where.push(`s.state = $${args.length}`); }
+  if (q.since) { args.push(q.since); where.push(`s.first_seen >= $${args.length}`); }
   args.push(Math.min(500, Math.max(1, q.limit ?? 100)));
   const rs = await rows<Record<string, unknown>>(
-    `SELECT * FROM entry_signals ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY first_seen DESC, id DESC LIMIT $${args.length}`,
+    `SELECT s.*, e.status AS e_status, e.fill_price AS e_fill, e.exit_price AS e_exit, e.exit_at AS e_exit_at, e.r_net AS e_r
+       FROM entry_signals s
+       LEFT JOIN entry_setups e ON s.state = 'TRADE' AND e.method = s.method AND e.mode = s.mode AND e.tf = s.tf
+                                AND e.dir = s.dir AND e.trigger_at = s.trigger_at
+       ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY s.first_seen DESC, s.id DESC LIMIT $${args.length}`,
     args,
   );
   const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
@@ -112,5 +128,10 @@ export async function recentSignals(q: { limit?: number; mode?: string; tf?: str
     score: num(r.score), reason: String(r.reason),
     entryLo: num(r.entry_lo), entryHi: num(r.entry_hi), stop: num(r.stop), tp1: num(r.tp1), rr: num(r.rr),
     gatesOff: (r.gates_off as string[] | null) ?? [],
+    n: METHODS.find((m) => m.id === r.method)?.n ?? null,
+    name: METHODS.find((m) => m.id === r.method)?.name ?? String(r.method),
+    outcome: r.e_status ? {
+      status: String(r.e_status), fillPrice: num(r.e_fill), exitPrice: num(r.e_exit), exitAt: num(r.e_exit_at), rNet: num(r.e_r),
+    } : null,
   }));
 }

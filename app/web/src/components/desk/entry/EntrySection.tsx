@@ -12,6 +12,7 @@ import { MethodLegend } from './MethodLegend';
 import { GateSwitches } from './GateSwitches';
 import { GateChecklist } from './GateChecklist';
 import { AlertSwitch } from './AlertSwitch';
+import { SignalHistory } from './SignalHistory';
 import { signedR } from './parts';
 import './entry.css';
 
@@ -106,6 +107,9 @@ export function EntrySection({ desk, onTimeframes }: {
   const recordOf = (r: MethodRead) => record?.records.find((x) => x.method === r.id && x.mode === r.mode && x.tf === r.tf) ?? null;
   // Each timeframe has its own record now (the server logs every one); the chain's entry is always 5m.
   const totalOf = (mode: EntryMode, at: EntryTf = '5m') => record?.totals.find((t) => t.mode === mode && t.tf === at) ?? null;
+  const totalAllOf = (mode: EntryMode, at: EntryTf = '5m') => record?.totalsAll?.find((t) => t.mode === mode && t.tf === at) ?? null;
+  // The comparison: every gate on (the rules), or with gate-off setups included -- a switch, never a quiet mix.
+  const [cmpAll, setCmpAll] = usePersisted<boolean>('entry:compare-gates-off', false);
   const choose = (r: MethodRead) => setChosen({ ...chosen, [r.mode]: keyOf(r) });
   // From the method table: the same method on both sides.
   const chooseBoth = (n: number) => {
@@ -155,15 +159,18 @@ export function EntrySection({ desk, onTimeframes }: {
           </div>
           <div className="grid gap-3 lg:grid-cols-2">
             <ModePanel mode="single" reads={reads.filter((r) => r.mode === 'single')}
-                       selected={selected.single} onChoose={choose} total={totalOf('single', tf)} recordOf={recordOf}
+                       selected={selected.single} onChoose={choose} total={totalOf('single', tf)} totalAll={totalAllOf('single', tf)} recordOf={recordOf}
                        setupsOn={setupsOn} chartTf={tf} onChartTf={setSingleTf} chart={chart}
                        ltp={ltp} alert={<AlertSwitch mode="single" alerts={alerts} onChanged={setAlerts} />} autoPicked={autoPicked('single')} />
             <ModePanel mode="mtf" reads={reads.filter((r) => r.mode === 'mtf')}
-                       selected={selected.mtf} onChoose={choose} total={totalOf('mtf')} recordOf={recordOf}
+                       selected={selected.mtf} onChoose={choose} total={totalOf('mtf')} totalAll={totalAllOf('mtf')} recordOf={recordOf}
                        setupsOn={setupsOn} chartTf={mtfTf} onChartTf={setMtfChartTf} chart={chart}
                        ltp={ltp} alert={<AlertSwitch mode="mtf" alerts={alerts} onChanged={setAlerts} />} autoPicked={autoPicked('mtf')} />
           </div>
-          <Comparison single={totalOf('single')} mtf={totalOf('mtf')} />
+          <Comparison single={cmpAll ? totalAllOf('single') : totalOf('single')} mtf={cmpAll ? totalAllOf('mtf') : totalOf('mtf')}
+                      includeOff={cmpAll} onIncludeOff={setCmpAll}
+                      offCount={(totalAllOf('single')?.gatesOff ?? 0) + (totalAllOf('mtf')?.gatesOff ?? 0)} />
+          <SignalHistory />
         </>
       ) : (
         <EntryGrid mode={gridMode} onMode={setGridMode} reads={reads.filter((r) => r.mode === gridMode)} singleTf={tf} setupsOn={setupsOn} chart={chart} />
@@ -179,7 +186,11 @@ export function EntrySection({ desk, onTimeframes }: {
 }
 
 /** The two ways' paper records side by side: the reference's historical comparison, from the real log. */
-function Comparison({ single, mtf }: { single: EntryRecord | null; mtf: EntryRecord | null }) {
+function Comparison({ single, mtf, includeOff, onIncludeOff, offCount }: {
+  single: EntryRecord | null; mtf: EntryRecord | null;
+  /** Gate-off setups included: the switch, and how many there are. */
+  includeOff: boolean; onIncludeOff: (v: boolean) => void; offCount: number;
+}) {
   const has = (r: EntryRecord | null) => r !== null && r.trades > 0;
   const row = (label: string, f: (r: EntryRecord) => string) => (
     <tr key={label} className="border-t border-border">
@@ -192,8 +203,20 @@ function Comparison({ single, mtf }: { single: EntryRecord | null; mtf: EntryRec
     <section aria-label="with and without timeframe compared" className="mt-3 rounded-xl border border-border p-2.5 text-[12px]">
       <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="m-0 text-[13px] font-bold">Without vs with timeframe · paper record</h3>
-        <span className="text-[11px] text-muted-foreground">all 12 methods, 5m entries, after fees{!has(single) && !has(mtf) ? ' · no closed trades yet' : ''}</span>
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+          <span>all 12 methods, 5m entries, after fees{!has(single) && !has(mtf) ? ' · no closed trades yet' : ''}</span>
+          <div role="group" aria-label="record basis" className="inline-flex overflow-hidden rounded border border-border">
+            <button type="button" aria-pressed={!includeOff} onClick={() => onIncludeOff(false)}
+                    className={cn('px-2 py-0.5', !includeOff ? 'bg-[#2563eb] text-white' : '')}>Every gate on</button>
+            <button type="button" aria-pressed={includeOff} onClick={() => onIncludeOff(true)}
+                    className={cn('px-2 py-0.5', includeOff ? 'bg-[var(--warn)] text-black' : '')}>Incl. gates off{offCount ? ` (${offCount})` : ''}</button>
+          </div>
+        </div>
       </div>
+      {includeOff ? <p className="m-0 mb-1 text-[11px] text-[var(--warn)]">Including setups taken with a hard gate switched off -- not the rules' record.</p> : null}
+      {!has(single) && !has(mtf) ? (
+        <p className="m-0 mb-1 text-[11px] text-muted-foreground">Nothing has closed yet{includeOff ? '' : ' with every gate on'}. The table fills as TRADEs hit TP1, the stop, or time out.</p>
+      ) : null}
       <div className="overflow-x-auto">
         <table className="w-full border-collapse">
           <thead className="text-[11px] text-muted-foreground">
