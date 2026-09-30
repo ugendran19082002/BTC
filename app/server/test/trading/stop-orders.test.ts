@@ -4,7 +4,7 @@ import { orderBody } from '../../src/trading/exchange/delta.js';
 import { stopFillLimit } from '../../src/trading/money.js';
 import { PaperExchange } from '../../src/trading/exchange/paper.js';
 import { rig, ceProduct, planFor, quote } from './harness.js';
-import { anchorExits } from '../../src/trading/engine.js';
+import { anchorExits, backstopFor } from '../../src/trading/engine.js';
 import type { PlaceOrderRequest, ProductSpec } from '../../src/trading/types.js';
 
 /**
@@ -122,13 +122,16 @@ test('[critical] the engine places the stop as a stop limit, and moving it moves
   await r.engine.poll(plan.tradeId);
   const [stop] = (await r.ex.getOpenOrders(ceProduct().symbol)).filter((o) => o.type === 'stop_limit');
   assert.ok(stop, 'the stop leg is a stop limit');
-  assert.equal(stop.stopPrice, 110);
-  assert.equal(stop.limitPrice, 126.5, 'priced through the trigger, 15% of it');
+  // At Delta the trigger is the backstop (29 Sep 2026): the 110 stop plus a
+  // quarter of it, 137.5 -- the desk watches the 110 itself, on the offer.
+  const entry = r.store.peek(plan.tradeId)!.state.entryAvgPrice;
+  assert.equal(stop.stopPrice, backstopFor(110, entry));
+  assert.equal(stop.limitPrice, stopFillLimit('buy', stop.stopPrice!, 0.1), 'priced through the trigger, 15% of it');
 
   await r.engine.updateProtection(plan.tradeId, { stopPrice: 130 });
   const [moved] = (await r.ex.getOpenOrders(ceProduct().symbol)).filter((o) => o.type === 'stop_limit');
-  assert.equal(moved?.stopPrice, 130);
-  assert.equal(moved?.limitPrice, 149.5, 'the limit travels with the trigger');
+  assert.equal(moved?.stopPrice, backstopFor(130, entry));
+  assert.equal(moved?.limitPrice, stopFillLimit('buy', moved!.stopPrice!, 0.1), 'the limit travels with the trigger');
 });
 
 // ------------------------------------- when Delta cannot price a market order

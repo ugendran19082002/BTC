@@ -37,6 +37,7 @@ const { AuthStore } = await import('../../src/auth/store.js');
 const { Secrets } = await import('../../src/auth/secrets.js');
 const { closePool, one, rows, query } = await import('../../src/db/pool.js');
 const { initTradingService, tradingService } = await import('../../src/trading/service.js');
+const { backstopFor } = await import('../../src/trading/engine.js');
 const { initStrategyStore, strategyStore } = await import('../../src/http/routes/strategy.routes.js');
 const { StrategyRunner, exitsNow } = await import('../../src/strategy/runner.js');
 const { StrategyExitStepper } = await import('../../src/strategy/exit-steps.js');
@@ -73,6 +74,8 @@ const until = async <T>(read: () => Promise<T>, ok: (v: T) => boolean, what: str
 /* The contract the day trades: a put, listed on the paper exchange, expiring tomorrow. */
 const EXPIRY_TS = Math.floor(Date.now() / 1000) + 86_400;
 const SYMBOL = 'P-BTC-83800-230926';
+/** Since 29 Sep 2026 the stop rests at Delta as its backstop; the desk watches the stop itself on the offer. */
+const BACKSTOP_70 = backstopFor(70, 20);
 const paper = () => tradingService().paper()!;
 const quote = (bid: number, ask: number) => paper().setQuote({ symbol: SYMBOL, bid, ask, bidSize: 5_000, askSize: 5_000, mark: (bid + ask) / 2, ts: Date.now() });
 
@@ -170,7 +173,8 @@ test('7 [critical] it fills, the target and the stop reach the book, and every s
     (o) => o.length === 2, 'the target and the stop on the book',
   );
   assert.deepEqual(book.filter((o) => o.type === 'limit').map((o) => o.limitPrice), [4]);
-  assert.deepEqual(book.filter((o) => o.type !== 'limit').map((o) => o.stopPrice), [70]);
+  // the stop the trader set is 70; at Delta it rests as the backstop, 70 + 50 from the 20 entry
+  assert.deepEqual(book.filter((o) => o.type !== 'limit').map((o) => o.stopPrice), [BACKSTOP_70]);
   const events = await until(
     () => rows<{ kind: string }>('SELECT kind FROM trade_events WHERE trade_id = $1 ORDER BY seq', [tradeId]),
     (evs) => evs.length >= 3,
@@ -202,7 +206,7 @@ test('9 [critical] at the step time the target moves on the book; the fixed stop
   assert.deepEqual(await stepper.consider(s), [tradeId]);
   const book = (await paper().getOpenOrders(SYMBOL)).filter((o) => o.reduceOnly);
   assert.deepEqual(book.filter((o) => o.type === 'limit').map((o) => o.limitPrice), [3], '85% of 20');
-  assert.deepEqual(book.filter((o) => o.type !== 'limit').map((o) => o.stopPrice), [70]);
+  assert.deepEqual(book.filter((o) => o.type !== 'limit').map((o) => o.stopPrice), [BACKSTOP_70], 'the stop, as its backstop, unmoved');
   assert.equal((await one<{ plan: any }>('SELECT plan FROM trades WHERE trade_id = $1', [tradeId]))!.plan.takeProfitPrice, 3);
 });
 
@@ -219,12 +223,12 @@ test('11 [critical] a stop moved by hand to a price is pinned there; one on the 
   const ok = await api('POST', '/api/trade/protection', { tradeId, stopPrice: 60 });
   assert.equal(ok.status, 200, JSON.stringify(ok.body));
   let book = (await paper().getOpenOrders(SYMBOL)).filter((o) => o.reduceOnly && o.type !== 'limit');
-  assert.deepEqual(book.map((o) => o.stopPrice), [60]);
+  assert.deepEqual(book.map((o) => o.stopPrice), [backstopFor(60, 20)], 'the 60 stop, as its backstop');
   const bad = await api('POST', '/api/trade/protection', { tradeId, stopPrice: 10 });
   assert.equal(bad.status, 400);
   assert.match(bad.body.error, /A stop of 10 must be over the 20 entry/);
   book = (await paper().getOpenOrders(SYMBOL)).filter((o) => o.reduceOnly && o.type !== 'limit');
-  assert.deepEqual(book.map((o) => o.stopPrice), [60], 'the refused edit changed nothing');
+  assert.deepEqual(book.map((o) => o.stopPrice), [backstopFor(60, 20)], 'the refused edit changed nothing');
 });
 
 test('12 [critical] at the position\'s own exit time it is closed at the market, and the day\'s record says so', async () => {

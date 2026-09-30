@@ -1,3 +1,5 @@
+// First: the scoring below reads calibration from CHAIN_DB, set by this import.
+import '../fixtures/chain-db.js';
 import { after, test } from 'node:test';
 import { closePool } from '../../src/db/pool.js';
 import assert from 'node:assert/strict';

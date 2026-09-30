@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { rig, ceProduct, planFor, quote } from './harness.js';
-import { missingProtection } from '../../src/trading/engine.js';
+import { rig, ceProduct, planFor, quote, holdOffer } from './harness.js';
+import { backstopFor, missingProtection } from '../../src/trading/engine.js';
 
 /**
  * A target that fills in pieces.
@@ -46,7 +46,7 @@ test('[critical] a target that fills in part does not take the stop off the rest
   const stop = book.find((o) => o.type === 'stop_limit');
   assert.ok(stop, 'the stop is still on the book');
   assert.equal(stop.size - stop.filledSize, 60, 'sized to what is still short, not to the 100 it was placed for');
-  assert.equal(stop.stopPrice, 60);
+  assert.equal(stop.stopPrice, backstopFor(60, 26), 'the backstop for the 60 stop: 60 + 34 from the 26 entry');
   assert.equal(s.alarm, null);
 });
 
@@ -63,8 +63,7 @@ test('[critical] the half-filled target keeps resting for the rest, and is not r
 test('[critical] a trade half-closed by its target still stops out when the price runs', async () => {
   const { r, plan } = await halfTakenByTarget();
   r.ex.configure({ partialFillSize: undefined });
-  r.ex.tick(quote(CE, 64, 66, { mark: 65, ts: r.now() }));
-  const s = await r.engine.poll(plan.tradeId);
+  const { held: s } = await holdOffer(r, CE, 64, 66, plan.tradeId, { mark: 65 });
   assert.equal(s?.position, 0, 'the desk watched the stop on the 60 that were left');
 });
 

@@ -49,7 +49,9 @@ export const CHASE_STEPS = 4;
  * journal, and it is a decision rather than a malfunction.
  */
 export const targetPriceFor = (entry: number, pct: number): number | null =>
-  pct > 0 ? round1(entry * (1 - Math.min(0.99, pct))) : null;
+  // Never under one tick: a 99% target on a 1.00 premium is 0.01, which rounds
+  // to 0 -- not a price a limit can rest at (the 17:01 legs of 27 Sep 2026).
+  pct > 0 ? Math.max(0.1, round1(entry * (1 - Math.min(0.99, pct)))) : null;
 
 export const stopPriceFor = (entry: number, pct: number): number | null =>
   pct > 0 ? round1(entry * (1 + pct)) : null;

@@ -13,6 +13,12 @@ import { rig, ceProduct, quote, type Rig } from './harness.js';
  * and a stop 55 over "the entry" has to be 55 over the entry that printed.
  * These run the real engine on the paper exchange and read the orders it
  * leaves on the book.
+ *
+ * Since 29 Sep 2026 the stop *on the book* is the backstop, not the stop: the
+ * stop the trader set is watched by the desk on the offer, and the trigger at
+ * Delta sits at `backstopFor(stop, entry)` -- the stop plus its distance from
+ * the fill. So each case pins both: the plan's stop, which is what follows the
+ * fill, and the backstop on the book, which follows the stop.
  */
 
 const CE = 'C-BTC-80000-080926';
@@ -70,7 +76,8 @@ test('[critical] Offer at 15 that walks to a 14 bid: stop typed as 70 stays at 7
   const r = rig({ products: [ceProduct()], quotes: [quote(CE, 14, 15)], limits: { maxShortContracts: 5_000 } });
   const rec = await sell(r, { limitPrice: 15, chaseSeconds: 4, stopAt: 70, takeProfitAt: 5 });
   assert.equal(rec.state.entryAvgPrice, 14, 'the chase ended at the bid');
-  assert.deepEqual(await book(r), { target: [5], stop: [70] }, 'the levels as typed');
+  assert.equal(rec.plan.stopPrice, 70, 'the stop as typed');
+  assert.deepEqual(await book(r), { target: [5], stop: [126] }, 'the target as typed; the backstop 70 + 56');
   assert.equal(rec.plan.stopPrice! - rec.state.entryAvgPrice!, 56, 'the balance, re-measured from the fill');
   assert.equal(rec.plan.exitAsk, undefined, 'nothing follows the fill');
 });
@@ -94,7 +101,8 @@ test('[critical] Bid now improved to 16: a 150% stop is 150% of 16, not of the 1
   const r = rig({ products: [ceProduct()], quotes: [quote(CE, 16, 16.5)], limits: { maxShortContracts: 5_000 } });
   const rec = await sell(r, { limitPrice: 15, stopLossPct: 1.5, takeProfitPct: 0.8 });
   assert.equal(rec.state.entryAvgPrice, 16);
-  assert.deepEqual(await book(r), { target: [3.2], stop: [40] });
+  assert.equal(rec.plan.stopPrice, 40, '150% over 16');
+  assert.deepEqual(await book(r), { target: [3.2], stop: [64] }, 'the backstop 40 + 24');
 });
 
 test('[critical] a market entry gets its exits off the fill -- before this it got none at all', async () => {
@@ -104,7 +112,8 @@ test('[critical] a market entry gets its exits off the fill -- before this it go
   r.ex.configure({ slippageLadder: undefined });
   assert.equal(rec.state.position, -100);
   assert.equal(rec.state.entryAvgPrice, 19.6, '60 at 20 and 40 at 19');
-  assert.deepEqual(await book(r), { target: [9.8], stop: [49.6] });
+  assert.equal(rec.plan.stopPrice, 49.6, '30 points over the 19.6 fill');
+  assert.deepEqual(await book(r), { target: [9.8], stop: [79.6] }, 'the backstop 49.6 + 30');
 });
 
 test('a fill in pieces at two prices moves the levels with the average, and keeps one of each on the book', async () => {
@@ -112,21 +121,24 @@ test('a fill in pieces at two prices moves the levels with the average, and keep
   r.ex.configure({ partialFillSize: 50 });
   await r.engine.open(orderPlan({ ...base, limitPrice: 15, stopLossPoints: 10 }, 'P'));
   await r.engine.poll('P');
-  assert.deepEqual((await book(r)).stop, [25], 'first 50 at 15: stop 25');
+  assert.equal(r.store.peek('P')!.plan.stopPrice, 25, 'first 50 at 15: stop 25');
+  assert.deepEqual((await book(r)).stop, [35], 'backstop 25 + 10');
   r.ex.configure({ partialFillSize: undefined });
   r.ex.tick(quote(CE, 17, 17.5, { ts: r.now() }));
   for (let i = 0; i < 4; i++) { r.advance(1_000); await r.engine.poll('P'); }
   const rec = r.store.peek('P')!;
   assert.equal(rec.state.position, -100);
   assert.equal(rec.state.entryAvgPrice, 16, 'the rest filled at 17');
-  assert.deepEqual((await book(r)).stop, [26], 'the stop moved to 10 over the new average -- one order, edited');
+  assert.equal(rec.plan.stopPrice, 26, 'the stop moved to 10 over the new average');
+  assert.deepEqual((await book(r)).stop, [36], 'and its backstop with it -- one order, edited');
 });
 
 test('[critical] a trade placed with exact prices behaves exactly as before: pinned where it was put', async () => {
   const r = rig({ products: [ceProduct()], quotes: [quote(CE, 16, 16.5)], limits: { maxShortContracts: 5_000 } });
   const rec = await sell(r, { limitPrice: 15, stopPrice: 40, takeProfitPrice: 3 });
   assert.equal(rec.plan.exitAsk, undefined);
-  assert.deepEqual(await book(r), { target: [3], stop: [40] });
+  assert.equal(rec.plan.stopPrice, 40, 'pinned where it was put');
+  assert.deepEqual(await book(r), { target: [3], stop: [64] }, 'the backstop 40 + 24 from the 16 fill');
 });
 
 test('editing a stop as a price pins it; editing it as points keeps it following', async () => {

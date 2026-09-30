@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { rig, peProduct, planFor, quote, type Rig } from './harness.js';
-import { TradeEngine, type AddRequest } from '../../src/trading/engine.js';
+import { rig, peProduct, planFor, quote, holdOffer, type Rig } from './harness.js';
+import { TradeEngine, backstopFor, type AddRequest } from '../../src/trading/engine.js';
 import { SubmitTimeout } from '../../src/trading/exchange/port.js';
 
 /**
@@ -73,8 +73,10 @@ test('[critical] an add appends to the same trade: one position, one average, on
   assert.equal(r.store.rows().length, 1, 'still one trade on the contract');
   assert.deepEqual((await book(r)).sort((a, b) => a.type.localeCompare(b.type)), [
     { type: 'limit', side: 'buy', left: 850, limit: 0.7, stop: null, reduceOnly: true },
-    // a stop limit: the trigger at 45, priced 15% through it so it fills
-    { type: 'stop_limit', side: 'buy', left: 850, limit: 51.8, stop: 45, reduceOnly: true },
+    // the backstop at Delta (29 Sep 2026): 45 plus its 34 from the 11 average
+    // entry = 79, as a stop limit priced 15% through it so it fills. The 45 the
+    // trader set is watched by the desk, on the offer.
+    { type: 'stop_limit', side: 'buy', left: 850, limit: 90.9, stop: backstopFor(45, 11), reduceOnly: true },
   ], "the leg's own target and stop, resized to 850 -- at the same prices");
   assert.equal((await r.ex.getPositions()).find((p) => p.symbol === PE)?.size, -850, 'and the exchange agrees');
 });
@@ -196,9 +198,8 @@ test('[critical] the desk\'s stop watch covers the added contracts too', async (
   const { r } = await shortPE();
   await r.engine.addToPosition('PE-1', addOf());
   await walk(r, 6_000);
-  r.ex.tick(quote(PE, 46, 47, { mark: 46.5, ts: r.now() }));
-  const s = (await r.engine.poll('PE-1'))!;
-  assert.equal(s.position, 0, 'all 850 closed');
+  const { held: s } = await holdOffer(r, PE, 46, 47, 'PE-1', { mark: 46.5 });
+  assert.equal(s?.position, 0, 'all 850 closed, once the offer held through the 45 stop');
 });
 
 test('[critical] one add at a time: a second while the first works is refused', async () => {

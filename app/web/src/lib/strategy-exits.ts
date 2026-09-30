@@ -157,7 +157,7 @@ export function exitPrice(leg: ExitLeg, mode: ExitMode, value: number, entry: nu
   if (leg === 'stop') return mode === 'points' ? r1(entry + value) : r1(entry * (1 + value));
   return mode === 'points'
     ? Math.max(0.1, r1(Math.max(entry * 0.01, entry - value)))
-    : r1(entry * (1 - Math.min(MAX_TARGET_PCT, value)));
+    : Math.max(0.1, r1(entry * (1 - Math.min(MAX_TARGET_PCT, value))));
 }
 
 /**

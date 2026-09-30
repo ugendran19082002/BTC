@@ -62,6 +62,8 @@ describe('prices -- the same arithmetic as the server', () => {
     ['stop', 'pct', 2.5, 10, 35],
     ['target', 'pct', 0.8, 15, 3],
     ['target', 'pct', 0.85, 15, 2.3],
+    ['target', 'pct', 0.99, 1, 0.1],
+    ['target', 'pct', 0.99, 4.1, 0.1],
   ] as const)('%s %s %s off %s is %s', (leg, mode, value, entry, want) => {
     expect(exitPrice(leg, mode, value, entry)).toBe(want);
   });

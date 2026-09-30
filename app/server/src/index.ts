@@ -12,12 +12,13 @@ import { readMarket } from './market/moves.js';
 import { marketSchema } from './market/oi-history.js';
 import { errorLog } from './observability/errors.js';
 import { captureOptionSnapshots, optionSnapshotsSchema } from './market/option-snapshots.js';
-import { captureBoard } from './market/chain-features.js';
+import { captureBoard, chainFeaturesSchema } from './market/chain-features.js';
 import { wallWithinEm } from './http/routes/desk.routes.js';
-import { captureIndex } from './market/index-1m.js';
+import { captureIndex, indexSchema } from './market/index-1m.js';
 import { capturePerpSnapshot, flowSchema, flushTradeFlow, startFlowSocket } from './market/flow.js';
-import { flushBookHeat, startBookHeat } from './market/book-heat.js';
-import { recordTrendPaper } from './strategy/trend-paper.js';
+import { bookHeatSchema, flushBookHeat, startBookHeat } from './market/book-heat.js';
+import { annotationsSchema } from './market/chart-annotations.js';
+import { recordTrendPaper, trendPaperSchema } from './strategy/trend-paper.js';
 import { noteError } from './observability/errors.js';
 
 /**
@@ -42,6 +43,13 @@ await marketSchema();
 await errorLog().ready;
 await optionSnapshotsSchema();
 await flowSchema();
+// These five were migrated on their first write until 30 Sep 2026, so a fresh
+// deploy reported healthy with their tables missing until a recorder ran.
+await chainFeaturesSchema();
+await indexSchema();
+await bookHeatSchema();
+await annotationsSchema();
+await trendPaperSchema();
 const strategies = await initStrategyStore();
 
 // One sign-in service for the process: the gate and the routes share the pool.

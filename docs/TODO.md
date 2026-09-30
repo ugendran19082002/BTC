@@ -48,9 +48,14 @@ items long since deployed were dropped; the history still has them.
 
 ## Trading engine and strategies
 
-- [ ] **Five server tests fail at HEAD** (seen 30 Sep; likely `4fc4551`, the
-  offer-confirmed stop): `e2e/strategy-lifecycle` 7, 9, 11, 12 and
-  `strategy/exit-steps` "real time: a strategy trade on the paper exchange".
+- [ ] **15 server tests fail** (1,178 of 1,193 pass, 30 Sep), all already
+  failing before that day's changes -- most likely since `4fc4551`, which moved
+  the stop resting at Delta out to a backstop while these tests still expect it
+  at the stop price: `trading/exits-follow-fill` (5), `e2e/strategy-lifecycle`
+  (4), `strategy/exit-steps` (2), `trading/partial-target` (2),
+  `trading/add-to-position` (1), `trading/stop-orders` (1). Separately,
+  `trading/best-trade-watch` (13) fails in a clean checkout without `chain.db`
+  and passes with it -- a test that depends on a git-ignored file.
 - [ ] **A 99% target can round to zero.** An entry of 1.0 x 0.01 is a target of
   0, which is not an order. Floor targets at one tick. Matters as soon as a
   cheap leg clears the floor.

@@ -7,7 +7,7 @@ import {
 } from '../../src/strategy/types.js';
 import { StrategyExitStepper, exitWords, type ExitStepperDeps } from '../../src/strategy/exit-steps.js';
 import {
-  exitPriceProblem, orderPlan, protectionFor, stopFor, stopPriceByPoints, targetFor, targetPriceByPoints, type ExitAsk,
+  exitPriceProblem, orderPlan, protectionFor, stopFor, stopPriceByPoints, targetFor, targetPriceByPoints, targetPriceFor, type ExitAsk,
 } from '../../src/trading/order-plan.js';
 import { backstopFor, type TradeRecord } from '../../src/trading/engine.js';
 import { rig, ceProduct, planFor, quote, T0 } from '../trading/harness.js';
@@ -176,6 +176,11 @@ describe('prices from points', () => {
   test('a target of more points than the premium buys back at 1% of it, never at zero', () => {
     assert.equal(targetPriceByPoints(15, 40), 0.2);
     assert.equal(targetPriceByPoints(3, 5), 0.1, 'and never under one tick');
+  });
+  test('[critical] a 99% target on a cheap premium is one tick, never zero', () => {
+    assert.equal(targetPriceFor(1, 0.99), 0.1, '1.00 x 1% is 0.01 -- rounded to 0 before 30 Sep 2026');
+    assert.equal(targetPriceFor(4.1, 0.99), 0.1);
+    assert.equal(targetPriceFor(15, 0.8), 3, 'an ordinary one is untouched');
   });
   test('zero points is off', () => {
     assert.equal(stopPriceByPoints(15, 0), null);
@@ -390,9 +395,9 @@ describe('real time: a strategy trade on the paper exchange, walked across its s
 
     assert.deepEqual(await at('03:59'), { target: [3], stop: [backstopFor(25, 15)] }, 'nothing moves a minute early');
     assert.deepEqual(await at('04:00'), { target: [2.3], stop: [backstopFor(25, 15)] }, '85% from 4:00 -- the target only');
-    assert.deepEqual(await at('04:30'), { target: [2.3], stop: [35] }, 'stop to entry + 20 points from 4:30');
-    assert.deepEqual(await at('05:00'), { target: [1.5], stop: [35] }, '90% from 5:00');
-    assert.deepEqual(await at('06:00'), { target: [1.5], stop: [35] }, 'and holds there');
+    assert.deepEqual(await at('04:30'), { target: [2.3], stop: [backstopFor(35, 15)] }, 'stop to entry + 20 points from 4:30 (35, resting as its backstop)');
+    assert.deepEqual(await at('05:00'), { target: [1.5], stop: [backstopFor(35, 15)] }, '90% from 5:00');
+    assert.deepEqual(await at('06:00'), { target: [1.5], stop: [backstopFor(35, 15)] }, 'and holds there');
 
     assert.equal(r.store.peek('CE-1')!.plan.takeProfitPrice, 1.5, 'the plan says what the book holds');
     assert.equal(r.store.peek('CE-1')!.plan.stopPrice, 35);
