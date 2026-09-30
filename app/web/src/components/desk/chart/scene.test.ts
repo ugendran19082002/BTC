@@ -6,13 +6,20 @@ import { buildScene, DEFAULT_LAYERS, htfScene, LAYERS, type Layer, type SceneIte
 const bars = walk(3 * 288, 18);
 const st = runSmc(bars, { tfSec: 300 });
 const all = new Set<Layer>(LAYERS.map((l) => l.key));
-const xsOf = (it: SceneItem) => (it.t === 'mark' || it.t === 'vline' || it.t === 'bubble' ? [it.x] : it.t === 'path' ? it.points.map((p) => p[0]) : it.t === 'profile' ? [] : it.t === 'heat' ? it.cols.map((c) => c.x) : [it.x1, ...(typeof it.x2 === 'number' ? [it.x2] : [])]);
+const xsOf = (it: SceneItem) => (it.t === 'mark' || it.t === 'bubble' ? [it.x] : it.t === 'path' ? it.points.map((p) => p[0]) : it.t === 'profile' ? [] : it.t === 'heat' ? it.cols.map((c) => c.x) : [it.x1, ...(typeof it.x2 === 'number' ? [it.x2] : [])]);
 
 describe('the scene', () => {
-  it('[critical] draws nothing past the last closed candle, except the trade box reaching into the space on the right', () => {
+  it('[critical] draws nothing past the last closed candle', () => {
     for (const it of buildScene(st, bars, all)) {
-      for (const x of xsOf(it)) expect(x).toBeLessThan(it.layer === 'trade' ? bars.length + 40 : bars.length);
+      for (const x of xsOf(it)) expect(x).toBeLessThan(bars.length);
     }
+  });
+
+  it('[critical] decides no entry: no layer draws a trade, a plan or a trend position (the entry section owns entries)', () => {
+    expect(LAYERS.map((l) => l.key)).not.toContain('trade');
+    expect(LAYERS.map((l) => l.key)).not.toContain('trend');
+    const labels = buildScene(st, bars, all).flatMap((it) => ('label' in it && it.label ? [it.label] : 'text' in it ? [it.text] : []));
+    expect(labels.filter((l) => /^(LONG|SHORT)\b|^SL |^TP[123] |^No (long|short)|^Entry zone/.test(l))).toEqual([]);
   });
 
   it('draws only the layers asked for', () => {
@@ -42,39 +49,6 @@ describe('the scene', () => {
       expect(typeof b.x2).toBe('number');
       expect(b.x2 as number).toBeGreaterThan(b.x1);
     }
-  });
-
-  it('[critical] a live setup is drawn with its entry, stop and three targets, and their R', () => {
-    // Find a candle where a setup was live, and draw the chart as it was then.
-    let k = -1;
-    for (const s of st.setups) {
-      const ready = s.events.find((ev) => ev.state === 'READY');
-      if (ready && (s.closedAt ?? Infinity) > ready.at) { k = ready.at; break; }
-    }
-    expect(k).toBeGreaterThan(0);
-    const past = bars.slice(0, k + 1);
-    const scene = buildScene(runSmc(past, { tfSec: 300 }), past, new Set<Layer>(['trade']));
-    const labels = scene.flatMap((it) => (it.t === 'line' && it.label ? [it.label] : []));
-    expect(labels.some((l) => /^(LONG|SHORT) (plan|entry) /.test(l))).toBe(true);
-    // The stop says its points, its R, and why it is there.
-    expect(labels.some((l) => /^SL [\d,]+ · −[\d,]+ pts · −1R · (below|above|widened) /.test(l))).toBe(true);
-    // Every target says its price, its distance in points and its R.
-    for (const l of labels.filter((x) => /^TP[123] /.test(x))) expect(l).toMatch(/^TP[123] [\d,]+ · \+[\d,]+ pts · \+[\d.]+R · /);
-    expect(labels.filter((l) => /^TP[123] /.test(l))).toHaveLength(3);
-    // One box: the reward and the risk halves share their left and right edges and meet at the entry.
-    const boxes = scene.filter((it) => it.t === 'box' && !it.label);
-    expect(boxes).toHaveLength(2);
-    expect(scene.some((it) => it.t === 'box' && it.label?.startsWith('Entry zone'))).toBe(true);
-    const [a, b] = boxes as Extract<SceneItem, { t: 'box' }>[];
-    expect([a!.x1, a!.x2]).toEqual([b!.x1, b!.x2]);
-    const entry = (scene.find((it) => it.t === 'line' && /^(LONG|SHORT)/.test(it.label ?? '')) as Extract<SceneItem, { t: 'line' }>).y;
-    expect([a!.y1, a!.y2, b!.y1, b!.y2].filter((y) => y === entry)).toHaveLength(2);
-    // Every trade line spans the box, not the chart.
-    for (const it of scene) if (it.t === 'line') expect(it.x2).toBe(a!.x2);
-    expect(scene.some((it) => it.t === 'vline')).toBe(true);
-    // The trend plan's alignment rides on the entry label when given.
-    const noted = buildScene(runSmc(past, { tfSec: 300 }), past, new Set<Layer>(['trade']), [], 'with the 4H trend ✓');
-    expect(noted.some((it) => it.t === 'line' && /^(LONG|SHORT) (plan|entry) .* · with the 4H trend ✓$/.test(it.label ?? ''))).toBe(true);
   });
 });
 

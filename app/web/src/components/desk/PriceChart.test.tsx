@@ -130,20 +130,6 @@ describe('the price chart', () => {
     expect(line).toMatch(/Vol (expanding|normal|quiet) \d\.\d× · ATR \d+ pts/);
   });
 
-  it('[critical] the readout shows the trend plan on 1H and 4H, open or flat, with its measured record in the tooltip', () => {
-    const hourly: Candle[] = Array.from({ length: 60 }, (_, i) => {
-      const t = Math.floor(Date.now() / 1000 / HOUR) * HOUR - (60 - i) * HOUR;
-      const c = i < 40 ? 77_000 : 77_000 + (i - 39) * 300;
-      return { time: t, open: c, high: c + 50, low: c - 50, close: c, volume: 1 };
-    });
-    chart({ trendBars: hourly, trendPaper: [{ tf: '1H', live: 3, closed: 2, open: 1, wins: 1, netR: 1.4, replayed: 0 }, { tf: '4H', live: 0, closed: 0, open: 0, wins: 0, netR: 0, replayed: 2 }] });
-    const line = screen.getByLabelText('Trend plan');
-    expect(line.textContent).toMatch(/1H LONG 77,300 · trail [\d,]+ · \+[\d.]+R/);
-    expect(line.textContent).toContain('4H');
-    expect(line.textContent).toContain('paper 1H 2 closed +1.4R +1 open · 4H 0 closed');
-    expect(line.getAttribute('title')).toMatch(/Measured 2024-26 after fees: 1H \+0\.1R/);
-  });
-
   it('[critical] zoom is off until it is asked for, so the page scrolls over the chart', () => {
     chart();
     fireEvent.click(screen.getByRole('button', { name: /^Zoom$/ }));
@@ -154,7 +140,7 @@ describe('the price chart', () => {
     chart({ tf: '5m' });
     expect(screen.queryByRole('group', { name: 'Timeframe' })).toBeNull();
     expect(screen.queryByRole('button', { name: '15m' })).toBeNull();
-    expect(screen.getByLabelText('Setup readout').textContent).toContain('5m');
+    expect(screen.getByLabelText('Chart readout').textContent).toContain('5m');
   });
 
   it('[critical] offers only the views it is given -- 5m and 1m -- and says which is shown', () => {
@@ -190,18 +176,9 @@ describe('the price chart', () => {
     chart();
     expect(primitives).toHaveLength(1);
     const scene = primitives[0]!.scene;
-    const xs = scene.filter((it) => it.layer !== 'trade')
+    const xs = scene
       .flatMap((it) => (it.t === 'box' || it.t === 'line' ? [it.x1] : it.t === 'mark' || it.t === 'bubble' ? [it.x] : it.t === 'path' ? it.points.map((p) => p[0]) : it.t === 'heat' ? it.cols.map((c) => c.x) : []));
     expect(Math.max(-1, ...xs)).toBeLessThan(59);
-  });
-
-  it('[critical] says what it is waiting for instead of inventing a trade', () => {
-    chart();
-    const hud = screen.getByLabelText('Setup readout');
-    expect(hud.textContent).toMatch(/NO TRADE|FORMING|READY|ACTIVE/);
-    expect(hud.textContent).not.toMatch(/will (reach|hit)/i);
-    // A setup on the chart always carries the measured record of its rules after fees, or says there is none for this timeframe.
-    if (/FORMING|READY|ACTIVE/.test(hud.textContent ?? '')) expect(hud.textContent).toMatch(/Measured .* after fees|Not measured on 1h/);
   });
 
   it('shows the timeframe context when it is given', () => {
@@ -214,7 +191,7 @@ describe('the price chart', () => {
     const ctx = screen.getByLabelText('Timeframe context');
     expect(ctx.textContent).toContain('1H ▲ Regime');
     expect(ctx.textContent).toContain('5M ▼ Setup');
-    // Trend only: setups are the 5m chart's, read in the headline, not a suffix on each timeframe.
+    // Trend only: the chart reads no setup.
     expect(ctx.textContent).not.toMatch(/forming|ready|active/i);
   });
 
@@ -222,27 +199,52 @@ describe('the price chart', () => {
     chart();
     fireEvent.click(screen.getByRole('button', { name: 'Layers' }));
     fireEvent.click(screen.getByLabelText(/^Structure/));
-    const stored = JSON.parse(localStorage.getItem('btc-desk:chart:layers:v4')!) as string[];
+    const stored = JSON.parse(localStorage.getItem('btc-desk:chart:layers:v5')!) as string[];
     expect(stored).not.toContain('structure');
     expect(stored).toContain('liquidity');
   });
 
-  it('[critical] the trades open in a dialog off the chart, not in the readout', () => {
-    chart();
-    const hud = screen.getByLabelText('Setup readout');
-    expect(within(hud).queryByRole('table')).toBeNull();
-    fireEvent.click(within(hud).getByRole('button', { name: /^Trades \(\d+/ }));
-    const dialog = screen.getByRole('dialog');
-    expect(within(dialog).getByRole('tab', { name: /SMC plan/ }).getAttribute('aria-selected')).toBe('true');
-    expect(within(dialog).getByRole('tab', { name: /Trend plan/ })).toBeTruthy();
-  });
-
   it('folds the readout to one line', () => {
     chart();
-    const hud = screen.getByLabelText('Setup readout');
+    const hud = screen.getByLabelText('Chart readout');
+    expect(within(hud).getByText('Last')).toBeInTheDocument();
     fireEvent.click(within(hud).getByRole('button', { expanded: true }));
     expect(within(hud).getByRole('button', { expanded: false })).toBeInTheDocument();
-    expect(within(hud).queryByText(/between|waiting|filled/i)).toBeNull();
+    expect(within(hud).queryByText('Last')).toBeNull();
+  });
+
+  it('[critical] decides no entry of its own: no plan, no trades, no trend plan -- only the market', () => {
+    chart();
+    const hud = screen.getByLabelText('Chart readout');
+    expect(hud.textContent).not.toMatch(/NO TRADE|FORMING|READY|ACTIVE|Plan|Trades|Measured/);
+    expect(screen.queryByLabelText('Trade plan')).toBeNull();
+    expect(screen.queryByLabelText('Trend plan')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Layers' }));
+    expect(screen.queryByLabelText(/^Trade/)).toBeNull();
+    expect(screen.queryByLabelText(/^Trend plan/)).toBeNull();
+    expect(primitives[0]!.scene.some((it) => it.layer === 'entry')).toBe(false);
+  });
+
+  it('[critical] draws the entry section\'s setup it is given: the entry zone, the stop and the targets, to the right edge', () => {
+    const b = bars(60);
+    chart({
+      bars: b,
+      entry: { dir: 'long', entryLo: 77_500, entryHi: 77_560, stop: 77_300, tp1: 78_100, tp2: 78_400, tp3: null, rr: 2.1, label: '#1 Breakout (with TF)', triggerTime: b[50]!.time },
+    });
+    const drawn = primitives[0]!.scene.filter((it) => it.layer === 'entry');
+    const labels = drawn.map((it) => ('label' in it ? it.label : ''));
+    expect(labels[0]).toMatch(/^LONG #1 Breakout \(with TF\) · entry 77,500–77,560$/);
+    expect(labels).toContain('SL 77,300');
+    expect(labels).toContain('TP1 78,100 · R:R 2.1');
+    expect(labels).toContain('TP2 78,400');
+    for (const it of drawn) if (it.t === 'box' || it.t === 'line') { expect(it.x1).toBe(50); expect(it.x2).toBe('right'); }
+  });
+
+  it('[critical] a compact chart (the twelve-chart grid) is candles and levels only: no readout, no toolbar', () => {
+    chart({ size: 'compact', label: 'Breakout price chart' });
+    expect(screen.getByLabelText('Breakout price chart').className).toContain('pc-compact');
+    expect(screen.queryByLabelText('Chart readout')).toBeNull();
+    expect(screen.queryByRole('toolbar')).toBeNull();
   });
 
   it('says it is loading, and what is wrong, instead of drawing an empty chart', () => {
