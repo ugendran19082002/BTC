@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import type { EntryOverlay, EntryRecord, EntryTf, MethodRead } from '@/types/entry';
+import type { EntryGate, EntryOverlay, EntryRecord, EntryTf, MethodRead } from '@/types/entry';
 
 /**
  * The entry section's small pieces, shared by the panels, the grid and the
@@ -67,6 +67,34 @@ export function recordText(r: EntryRecord | null): string {
   if (r.trades === 0) return `${r.setups} logged, none closed`;
   const avg = r.avgR === null ? '' : ` · ${signedR(r.avgR)}`;
   return `${r.trades} trade${r.trades === 1 ? '' : 's'} · ${Math.round((100 * r.wins) / r.trades)}%${avg}`;
+}
+
+const GATE_SHORT: Record<string, string> = {
+  data: 'Data', spread: 'Spread', stop: 'Stop', rr: 'R:R', htf: 'HTF', 'big-move': 'Big move', em: 'Exp. move', settle: 'Settle', method: 'Method',
+};
+/** A gate's verdict as a tick: ✓ passed, ✗ refused, – not read / not part of this mode. */
+export const gateTick = (g: Pick<EntryGate, 'ok'>) => (g.ok === true ? '✓' : g.ok === false ? '✗' : '–');
+
+/**
+ * The hard gates in one chip: "✓ 7/7" when none refuses (of those read), or
+ * the first that refuses, "✗ R:R". Hover for the whole checklist.
+ */
+export function GateChip({ read }: { read: Pick<MethodRead, 'gates' | 'dir'> | null }) {
+  if (!read || read.dir === null || !read.gates.length) {
+    return <span className="text-[11px] text-muted-foreground" title="Hard gates are read once a setup forms">–</span>;
+  }
+  // Only a gate that is on can refuse; one switched off is listed in the hover, marked off.
+  const on = read.gates.filter((g) => g.enabled !== false);
+  const failed = on.find((g) => g.ok === false);
+  const readCount = on.filter((g) => g.ok !== null).length;
+  const title = read.gates.map((g) => `${gateTick(g)} ${g.label}${g.enabled === false ? ' (off)' : ''}: ${g.value ?? 'not read'} (${g.rule})`).join('\n');
+  return (
+    <span title={title}
+          className={cn('inline-block whitespace-nowrap rounded px-1.5 py-px text-[10.5px] font-semibold',
+            failed ? 'bg-[rgba(226,80,79,0.15)] text-[var(--down)]' : 'bg-[rgba(38,161,123,0.15)] text-[var(--up)]')}>
+      {failed ? `✗ ${GATE_SHORT[failed.key] ?? failed.label}` : `✓ ${readCount}/${readCount}`}
+    </span>
+  );
 }
 
 /** A TRADE's levels, for the price chart to draw; null for WAIT / NO TRADE, or with Setups off. */

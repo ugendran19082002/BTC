@@ -5,13 +5,13 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-377 files listed, 161 test files counted below, images and lockfiles left out.
+382 files listed, 162 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 95 |
+| `app/server` | 96 |
 | `app/web` | 66 |
 
 ## `(root)`
@@ -119,7 +119,9 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
+| [alerts.ts](../../app/server/src/entry/alerts.ts) | Telegram alerts for the entry section's TRADEs, switched on or off for each way -- without the timeframe chain, with it -- from the screen. |
 | [engine.ts](../../app/server/src/entry/engine.ts) | The entry engine: twelve methods, each read with the timeframe chain and without it -- 24 reads -- and every read ending TRADE, WAIT or NO TRADE the same way (TEST.md): |
+| [gates.ts](../../app/server/src/entry/gates.ts) | Which of the entry engine's hard gates are switched on. |
 | [methods.ts](../../app/server/src/entry/methods.ts) | The twelve entry methods of TEST.md, each as its own trigger chain on one timeframe, to the owner's reference formulas (30 Sep 2026, docs/features/entry-methods-reference.md). |
 | [paper.ts](../../app/server/src/entry/paper.ts) | The entry setups' paper log: the forward test the 24 reads need before any of them is believed. |
 | [prims.ts](../../app/server/src/entry/prims.ts) | The price-action pieces the twelve entry methods are built from. |
@@ -327,8 +329,11 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
+| [AlertSwitch.tsx](../../app/web/src/components/desk/entry/AlertSwitch.tsx) | One way's Telegram alerts, on or off, in its panel's header: a TRADE is sent once, when the paper log first writes it (the server does the sending, so it works with no screen open). |
 | [EntryGrid.tsx](../../app/web/src/components/desk/entry/EntryGrid.tsx) | The twelve methods as twelve small charts, one mode at a time: with the timeframe chain (5m, where its entry is read) or without it (on the timeframe chosen for that). |
 | [EntrySection.tsx](../../app/web/src/components/desk/entry/EntrySection.tsx) | The entry section: TEST.md's twelve entry methods, each read two ways -- without the timeframe chain (one timeframe alone) and with it (4H/1H -> 30m/15m -> 5m entry -> 3m confirm -> 1m execution) -... |
+| [GateChecklist.tsx](../../app/web/src/components/desk/entry/GateChecklist.tsx) | The hard gates as a checklist, beside the Entry methods table: each gate's rule, what was read, and the verdict, for the method chosen there -- without the timeframe chain or with it. |
+| [GateSwitches.tsx](../../app/web/src/components/desk/entry/GateSwitches.tsx) | The hard gates' on/off switches, for the whole entry section: both ways, every panel, and the paper log's recorder. |
 | [MethodLegend.tsx](../../app/web/src/components/desk/entry/MethodLegend.tsx) | The twelve methods by number: 1 is Breakout, 2 Breakout + retest, and so on -- the one place their names are written, so the two panels below can show the number alone. |
 | [ModePanel.tsx](../../app/web/src/components/desk/entry/ModePanel.tsx) | One half of the reference layout: the twelve methods read one way -- with the timeframe chain, or without it -- with their chart, table, the chosen setup, its reasons, (with the chain) the timefram... |
 | [entry.css](../../app/web/src/components/desk/entry/entry.css) | The entry section's tables. |

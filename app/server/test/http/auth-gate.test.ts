@@ -100,6 +100,38 @@ test('[critical] the entry section is behind the session; its record answers wit
   assert.ok(Array.isArray(r.json().records));
 });
 
+test('[critical] the gate switches: behind the session, same-origin to change, Data fresh locked on', async () => {
+  assert.equal((await app.inject({ method: 'GET', url: '/api/entry/gates', remoteAddress: '203.0.113.9' })).statusCode, 401);
+  const own = { cookie: session(), origin: 'https://delta.thannigo.in', host: 'delta.thannigo.in' };
+  const list = await app.inject({ method: 'GET', url: '/api/entry/gates', headers: { cookie: session() } });
+  assert.equal(list.statusCode, 200, list.body);
+  assert.ok(list.json().gates.every((g: { enabled: boolean }) => g.enabled), 'every gate starts on');
+  const off = await app.inject({ method: 'POST', url: '/api/entry/gates/rr', payload: { enabled: false }, headers: own });
+  assert.equal(off.statusCode, 200, off.body);
+  assert.equal(off.json().gates.find((g: { key: string }) => g.key === 'rr').enabled, false);
+  const locked = await app.inject({ method: 'POST', url: '/api/entry/gates/data', payload: { enabled: false }, headers: own });
+  assert.equal(locked.statusCode, 422);
+  assert.equal((await app.inject({ method: 'POST', url: '/api/entry/gates/nope', payload: { enabled: false }, headers: own })).statusCode, 404);
+  assert.equal((await app.inject({ method: 'POST', url: '/api/entry/gates/rr', payload: { enabled: 'no' }, headers: own })).statusCode, 400);
+  assert.equal((await app.inject({ method: 'POST', url: '/api/entry/gates/rr', payload: { enabled: true }, headers: own })).statusCode, 200);
+});
+
+test('[critical] entry alerts: behind the session, same-origin to change, off until switched on; a test with no Telegram says so', async () => {
+  assert.equal((await app.inject({ method: 'GET', url: '/api/entry/alerts', remoteAddress: '203.0.113.9' })).statusCode, 401);
+  const own = { cookie: session(), origin: 'https://delta.thannigo.in', host: 'delta.thannigo.in' };
+  const list = await app.inject({ method: 'GET', url: '/api/entry/alerts', headers: { cookie: session() } });
+  assert.equal(list.statusCode, 200, list.body);
+  assert.ok(list.json().alerts.every((a: { enabled: boolean }) => !a.enabled), 'off by default');
+  const on = await app.inject({ method: 'POST', url: '/api/entry/alerts/single', payload: { enabled: true }, headers: own });
+  assert.equal(on.statusCode, 200, on.body);
+  assert.equal(on.json().alerts.find((a: { mode: string }) => a.mode === 'single').enabled, true);
+  assert.equal((await app.inject({ method: 'POST', url: '/api/entry/alerts/nope', payload: { enabled: true }, headers: own })).statusCode, 404);
+  assert.equal((await app.inject({ method: 'POST', url: '/api/entry/alerts/mtf', payload: {}, headers: own })).statusCode, 400);
+  const test = await app.inject({ method: 'POST', url: '/api/entry/alerts/test', payload: {}, headers: own });
+  assert.ok([200, 409, 502].includes(test.statusCode), test.body);
+  await app.inject({ method: 'POST', url: '/api/entry/alerts/single', payload: { enabled: false }, headers: own });
+});
+
 test('a session opens the protected routes', async () => {
   const r = await app.inject({ method: 'GET', url: '/api/strategies', headers: { cookie: session() } });
   assert.equal(r.statusCode, 200);

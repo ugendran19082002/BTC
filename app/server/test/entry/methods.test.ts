@@ -56,7 +56,7 @@ test('4. FVG: a gap left by displacement, price back into it, a reaction out', (
     { open: 84_070, high: 84_150, low: 84_065, close: 84_140 });
   const s = detect('fvg-retest', bars);
   assert.equal(s?.dir, 1);
-  assert.deepEqual(s?.zone, [84_010, 84_060]);
+  assert.deepEqual(s?.zone, [84_035, 84_060], 'from the edge price reaches first (the top) to the middle of the 84,010-84,060 gap');
   assert.deepEqual(oks(s), [true, true, true]);
 });
 

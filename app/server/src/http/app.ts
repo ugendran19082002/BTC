@@ -191,7 +191,8 @@ export async function buildApp(o: {
   registerReportRoutes(app);
   registerStreamRoutes(app);
   registerAnnotationRoutes(app);
-  registerEntryRoutes(app);
+  // Telegram for the entry section's test alert; none when the trading service or Telegram is not set up.
+  registerEntryRoutes(app, () => { try { return tradingService().notifier; } catch { return null; } });
 
   return app;
 }

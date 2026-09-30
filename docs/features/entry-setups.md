@@ -84,6 +84,21 @@ absorption from delta against price.
    | Settlement | the 17:30 IST settlement is under 15 minutes away |
    | The method's own | e.g. momentum already extended, mean reversion on a trend day |
 
+   Every read with a setup carries the whole list -- each gate's rule, what was
+   read, and ✓ passed / ✗ refused / – not read (no option board, no spread) or
+   not part of this mode (HTF without the chain). "Not read" refuses nothing
+   and is never shown as passed.
+
+   **Switching a gate off.** The *Hard gates* button in the entry section's
+   header turns any gate but **Data fresh** (locked on) off and on again. An
+   off gate is still read and shown -- "off · would refuse" -- but no longer
+   makes a read NO TRADE. The switches are stored (`entry_gates`, every change
+   in `entry_gate_changes`); each paper-logged setup carries the gates that
+   were off (`entry_setups.gates_off`), and the record counts only setups
+   taken with every gate on -- the others are counted apart (`gatesOff`), so
+   turning R:R off can never quietly change what the record says the rules
+   did. `GET /api/entry/gates`, `POST /api/entry/gates/:key {enabled}`.
+
 3. **A step not yet there** -> WAIT, naming it ("waiting for 3m: confirmation").
 4. **Everything holds** -> TRADE, and only then an entry, stop and targets.
 
@@ -156,15 +171,39 @@ phone, where a method is its **number only**. Each panel has:
   ? not read, · not part of it). Hover a number for the name and its paper
   record. Until one is chosen, a panel shows its TRADE, else its WAIT, else its
   most-formed refusal.
+- **Auto-select signals** (header switch, on by default, per browser): a *new*
+  TRADE -- one not seen before -- chooses itself in its panel, the strongest
+  first, and its row is marked **AUTO**. Only new ones: a signal that stays on
+  the board does not pull the panel back from a row picked by hand. The chosen
+  row, in both panels and the methods table, is tinted with a blue edge.
+- **Telegram** (each panel's header, *Telegram on / off*, off by default):
+  the server sends a TRADE once, when the paper log first writes it -- so it
+  works with no screen open, and a setup that stays on the board is not sent
+  again. Read on 5m (the paper log's timeframe), whatever the chart shows. The
+  message: BUY / SELL, the method, the way, entry, SL with its points, TP1-3,
+  R:R after fees, quality, any gate switched off, "no order placed". *test*
+  sends one now. Stored in `entry_alerts` (every change in
+  `entry_alert_changes`); `GET /api/entry/alerts`,
+  `POST /api/entry/alerts/:mode {enabled}`, `POST /api/entry/alerts/test`. With
+  no `TG_TOKEN` / `TG_CHAT_ID` on the server the switch says "not set up".
 - **Selected setup**: LONG / SHORT SETUP (or WAIT / NO TRADE with the reason),
   method, timeframe, quality, entry, stop, each target with its R multiple, risk
   and reward in points and percent, and R:R after fees.
-- **Key reasons**: every step of its chain, passed, failed or not read, and any
-  gate that refused it.
-- **Timeframe analysis** (with timeframe only): each of 4H-1m, its trend and
-  what its swings did (HH / HL, LH / LL, range), and a one-line trend strip.
+- **Key reasons**: every step of its chain, passed, failed or not read.
+- **Hard gates** (beside the Entry methods table, a quarter of its row; under
+  it below 1280 px): the chosen method's checklist, *Without TF* or *With TF*
+  -- each gate's rule, what was read, ✓ / ✗ / –, and "off" for a gate switched
+  off. The table itself carries the verdicts in two columns, *Gates · without*
+  and *Gates · with*: "✓ 6/6" (of those read), or the gate that refuses; hover
+  for the list.
 - **Paper record**: that way's trades, win rate, profit factor, net R and max
   drawdown, over all twelve at 5m, after fees.
+
+**Timeframe analysis** is a card of its own under the **Big move catch**
+(moved there from the with-timeframe panel on 30 Sep 2026): each of 4H-1m,
+its trend and what its swings did (HH / HL, LH / LL, range), its job in the
+chain, and a one-line trend strip. It is the entry board's own reading (the
+entry section hands it up), so it costs no second request.
 
 Underneath, **Without vs with timeframe**: the two records compared metric by
 metric (setups, trades, win rate, average win and loss, profit factor, net R,

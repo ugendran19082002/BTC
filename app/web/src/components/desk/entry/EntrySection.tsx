@@ -1,14 +1,17 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
-import { getEntryBoard, getEntryRecord } from '@/api/entry';
+import { getEntryAlerts, getEntryBoard, getEntryRecord } from '@/api/entry';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
-import type { EntryMode, EntryRecord, EntryTf, MethodRead } from '@/types/entry';
+import type { EntryMode, EntryRecord, EntryTf, MethodRead, TimeframeRow } from '@/types/entry';
 import { EntryGrid } from './EntryGrid';
 import { useEntryFeed, type DeskFeed } from './feed';
 import { ModePanel, SINGLE_TFS } from './ModePanel';
 import { MethodLegend } from './MethodLegend';
+import { GateSwitches } from './GateSwitches';
+import { GateChecklist } from './GateChecklist';
+import { AlertSwitch } from './AlertSwitch';
 import { signedR } from './parts';
 import './entry.css';
 
@@ -31,9 +34,11 @@ import './entry.css';
 
 const keyOf = (r: Pick<MethodRead, 'mode' | 'id'>) => `${r.mode}:${r.id}`;
 
-export function EntrySection({ desk }: {
+export function EntrySection({ desk, onTimeframes }: {
   /** The desk's live 5m candles, last trade, option board and positioning, for the charts. */
   desk: DeskFeed;
+  /** Each read's timeframe rows, handed up for the Timeframe analysis card under the Big move catch. */
+  onTimeframes?: (rows: TimeframeRow[]) => void;
 }) {
   const [singleTf, setSingleTf] = usePersisted<EntryTf>('entry:single-tf', '5m');
   const [setupsOn, setSetupsOn] = usePersisted<boolean>('entry:setups-on', true);
@@ -43,15 +48,23 @@ export function EntrySection({ desk }: {
     'entry:chosen-2', { single: null, mtf: null },
   );
   const [mtfChartTf, setMtfChartTf] = usePersisted<EntryTf>('entry:mtf-chart-tf', '5m');
+  const [gatesMode, setGatesMode] = usePersisted<EntryMode>('entry:gates-mode', 'mtf');
+  // A signal chooses itself: with this on, a TRADE (BUY / SELL) takes the panel over whatever was picked by hand.
+  const [autoSelect, setAutoSelect] = usePersisted<boolean>('entry:auto-select', true);
+  // Telegram switches for both ways, read once and updated from what the server answers.
+  const { data: alertsRead } = usePoll(() => getEntryAlerts(), 120_000);
+  const [alerts, setAlerts] = useState(alertsRead ?? null);
+  useEffect(() => { if (alertsRead) setAlerts(alertsRead); }, [alertsRead]);
   const tf = SINGLE_TFS.includes(singleTf) ? singleTf : '5m';
   const mtfTf = SINGLE_TFS.includes(mtfChartTf) ? mtfChartTf : '5m';
   const shownTfs: EntryTf[] = view === 'panels' ? [tf, mtfTf] : [gridMode === 'mtf' ? '5m' : tf];
   const chart = useEntryFeed(desk, shownTfs);
 
-  const { data: board, error } = usePoll(() => getEntryBoard(tf), 15_000, { deps: [tf] });
+  const { data: board, error, refresh: rereadBoard } = usePoll(() => getEntryBoard(tf), 15_000, { deps: [tf] });
   const { data: record } = usePoll(() => getEntryRecord(), 60_000);
 
   const reads = useMemo(() => board?.reads ?? [], [board]);
+  useEffect(() => { if (board) onTimeframes?.(board.timeframes); }, [board, onTimeframes]);
   const pick = (mode: EntryMode) => {
     const mine = reads.filter((r) => r.mode === mode);
     // Unchosen: a TRADE, else a WAIT, else the most-formed refusal -- never "nothing forming" when something is.
@@ -59,6 +72,32 @@ export function EntrySection({ desk }: {
     return mine.find((r) => keyOf(r) === chosen[mode]) ?? mine.find((r) => r.state === 'TRADE') ?? mine.find((r) => r.state === 'WAIT') ?? formed ?? mine[0] ?? null;
   };
   const selected = { single: pick('single'), mtf: pick('mtf') };
+
+  /*
+   * Auto-select: a **new** signal (a TRADE not seen before -- method, way,
+   * direction, trigger bar) chooses itself in its panel, the strongest first.
+   * Only new ones: a signal that has been on the board for ten minutes does not
+   * keep pulling the panel back from a row picked by hand. "AUTO" marks the
+   * row while the choice is still the signal's.
+   */
+  const seenSignals = useRef(new Set<string>());
+  const [autoKey, setAutoKey] = useState<Partial<Record<EntryMode, string>>>({});
+  useEffect(() => {
+    if (!autoSelect || !reads.length) return;
+    const next = { ...chosen };
+    const nextAuto = { ...autoKey };
+    let changed = false;
+    for (const mode of ['single', 'mtf'] as const) {
+      const signals = reads.filter((r) => r.mode === mode && r.state === 'TRADE')
+        .map((r) => ({ r, id: `${keyOf(r)}:${r.dir}:${r.triggerTime}` }));
+      const fresh = signals.filter((s) => !seenSignals.current.has(s.id)).sort((x, y) => (y.r.score ?? 0) - (x.r.score ?? 0))[0];
+      for (const s of signals) seenSignals.current.add(s.id);
+      if (fresh) { next[mode] = keyOf(fresh.r); nextAuto[mode] = keyOf(fresh.r); changed = true; }
+    }
+    if (changed) { setChosen(next); setAutoKey(nextAuto); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reads, autoSelect]);
+  const autoPicked = (mode: EntryMode) => autoSelect && !!autoKey[mode] && chosen[mode] === autoKey[mode];
 
   const counts = { trade: reads.filter((r) => r.state === 'TRADE').length, wait: reads.filter((r) => r.state === 'WAIT').length };
   const recordOf = (r: MethodRead) => record?.records.find((x) => x.method === r.id && x.mode === r.mode && x.tf === r.tf) ?? null;
@@ -90,6 +129,9 @@ export function EntrySection({ desk }: {
               </button>
             ))}
           </div>
+          <Switch label="Auto-select signals" checked={autoSelect} onCheckedChange={setAutoSelect}
+                  description={autoSelect ? 'A new BUY / SELL takes its panel.' : 'Rows are chosen by hand only.'} />
+          <GateSwitches onChanged={() => void rereadBoard()} />
           <Switch label="Setups on chart" checked={setupsOn} onCheckedChange={setSetupsOn}
                   description={setupsOn ? 'Entry, SL and TP drawn for a TRADE.' : 'Plain price charts.'} />
         </div>
@@ -99,15 +141,23 @@ export function EntrySection({ desk }: {
 
       {view === 'panels' ? (
         <>
-          <MethodLegend single={reads.filter((r) => r.mode === 'single')} mtf={reads.filter((r) => r.mode === 'mtf')}
-                        chosenN={bothN} onChoose={chooseBoth} />
+          {/* The methods table three parts wide, the chosen method's hard gates the fourth; stacked below xl. */}
+          <div className="mb-3 grid gap-3 xl:grid-cols-4">
+            <div className="min-w-0 xl:col-span-3">
+              <MethodLegend single={reads.filter((r) => r.mode === 'single')} mtf={reads.filter((r) => r.mode === 'mtf')}
+                            chosenN={bothN} onChoose={chooseBoth} />
+            </div>
+            <GateChecklist selected={selected} mode={gatesMode === 'single' ? 'single' : 'mtf'} onMode={setGatesMode} />
+          </div>
           <div className="grid gap-3 lg:grid-cols-2">
-            <ModePanel mode="single" reads={reads.filter((r) => r.mode === 'single')} timeframes={board?.timeframes ?? []}
+            <ModePanel mode="single" reads={reads.filter((r) => r.mode === 'single')}
                        selected={selected.single} onChoose={choose} total={totalOf('single')} recordOf={recordOf}
-                       setupsOn={setupsOn} chartTf={tf} onChartTf={setSingleTf} chart={chart} />
-            <ModePanel mode="mtf" reads={reads.filter((r) => r.mode === 'mtf')} timeframes={board?.timeframes ?? []}
+                       setupsOn={setupsOn} chartTf={tf} onChartTf={setSingleTf} chart={chart}
+                       alert={<AlertSwitch mode="single" alerts={alerts} onChanged={setAlerts} />} autoPicked={autoPicked('single')} />
+            <ModePanel mode="mtf" reads={reads.filter((r) => r.mode === 'mtf')}
                        selected={selected.mtf} onChoose={choose} total={totalOf('mtf')} recordOf={recordOf}
-                       setupsOn={setupsOn} chartTf={mtfTf} onChartTf={setMtfChartTf} chart={chart} />
+                       setupsOn={setupsOn} chartTf={mtfTf} onChartTf={setMtfChartTf} chart={chart}
+                       alert={<AlertSwitch mode="mtf" alerts={alerts} onChanged={setAlerts} />} autoPicked={autoPicked('mtf')} />
           </div>
           <Comparison single={totalOf('single')} mtf={totalOf('mtf')} />
         </>

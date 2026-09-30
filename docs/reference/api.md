@@ -9,7 +9,7 @@ also carry an `Origin` or `Referer` naming the desk's own host.
 
 What: the first sentence of the comment directly above the route. A dash means there is none.
 
-67 routes.
+71 routes.
 
 ## [annotations.routes.ts](../../app/server/src/http/routes/annotations.routes.ts)
 
@@ -43,7 +43,11 @@ What: the first sentence of the comment directly above the route. A dash means t
 
 | Method | Path | Session | What |
 |---|---|---|---|
+| GET | `/api/entry/alerts` | signed in | Telegram alerts for each way's TRADEs: whether each is on, and whether Telegram is set up at all. |
+| POST | `/api/entry/alerts/:mode` | signed in | -- |
 | GET | `/api/entry/board` | signed in | The 24 reads: each method with the timeframe chain (entry on 5m), then without it on `tf` (default 5m). |
+| GET | `/api/entry/gates` | signed in | The hard gates' switches: every gate, whether it is on, and whether it can be turned off. |
+| POST | `/api/entry/gates/:key` | signed in | Turn one gate on or off. |
 | GET | `/api/entry/record` | signed in | Each method's paper record, with the chain and without it, and the latest setups written. |
 
 ## [errors.routes.ts](../../app/server/src/http/routes/errors.routes.ts)

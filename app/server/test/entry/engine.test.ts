@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Candle } from '../../src/market/delta.js';
-import { entryBoard, readMethod, rrAfterFees, timeframeRows, MIN_RR } from '../../src/entry/engine.js';
+import { entryBoard, fillOf, readMethod, rrAfterFees, timeframeRows, MAX_ZONE_ATR, MIN_RR } from '../../src/entry/engine.js';
+import { atr } from '../../src/entry/prims.js';
 import { METHODS } from '../../src/entry/methods.js';
 import type { EntryContext, Frames } from '../../src/entry/types.js';
 import { ctxOf, path, wave } from './bars.js';
@@ -59,7 +60,7 @@ test('[critical] a step not yet there is WAIT, says which, and draws no box', ()
 test('[critical] no room to a target is NO TRADE, even with every step green -- 2R does not clear the fees here', () => {
   const r = readMethod(BREAKOUT, 'single', '5m', single({ walls: [] }));
   assert.equal(r.state, 'NO_TRADE');
-  assert.equal(r.gates.find((g) => !g.ok)?.key, 'rr');
+  assert.equal(r.gates.find((g) => g.ok === false)?.key, 'rr');
   assert.match(r.reason, /after fees -- no room/);
 });
 
@@ -67,24 +68,24 @@ test('[critical] stale candles are NO TRADE', () => {
   const bars = breakoutBars();
   const r = readMethod(BREAKOUT, 'single', '5m', single({ now: nowAfter(bars, 3_600) }, bars));
   assert.equal(r.state, 'NO_TRADE');
-  assert.equal(r.gates.find((g) => !g.ok)?.key, 'data');
+  assert.equal(r.gates.find((g) => g.ok === false)?.key, 'data');
 });
 
 test('big-move risk pointing the other way is NO TRADE', () => {
   const r = readMethod(BREAKOUT, 'single', '5m', single({ bigMove: { band: 'high', direction: -0.6 } }));
-  assert.equal(r.gates.find((g) => !g.ok)?.key, 'big-move');
+  assert.equal(r.gates.find((g) => g.ok === false)?.key, 'big-move');
 });
 
 test('fifteen minutes before settlement is NO TRADE', () => {
   const r = readMethod(BREAKOUT, 'single', '5m', single({
     options: { spot: 84_200, atmIv: 0.4, emDay: 2_000, callWall: null, putWall: null, maxPain: null, toSettleSec: 600 },
   }));
-  assert.equal(r.gates.find((g) => !g.ok)?.key, 'settle');
+  assert.equal(r.gates.find((g) => g.ok === false)?.key, 'settle');
 });
 
 test('a wide spread is NO TRADE', () => {
   const r = readMethod(BREAKOUT, 'single', '5m', single({ spreadPct: 0.2 }));
-  assert.equal(r.gates.find((g) => !g.ok)?.key, 'spread');
+  assert.equal(r.gates.find((g) => g.ok === false)?.key, 'spread');
 });
 
 test('nothing forming, or too few candles, says so', () => {
@@ -180,4 +181,63 @@ test('the timeframe rows: each of the chain\'s seven, its trend and what its swi
   assert.deepEqual([rows[0]!.label, rows[0]!.structure], ['Bullish', 'HH / HL']);
   assert.deepEqual([rows[1]!.label, rows[1]!.structure], ['Bearish', 'LH / LL']);
   assert.equal(rows[6]!.label, 'Not read', 'four 1m candles are not enough to read');
+});
+
+test('[critical] every read with a setup carries the whole hard-gate checklist: rule, value, verdict', () => {
+  const r = readMethod(BREAKOUT, 'single', '5m', single({}));
+  assert.deepEqual(r.gates.map((g) => g.key), ['data', 'spread', 'stop', 'rr', 'htf', 'big-move', 'em', 'settle']);
+  for (const g of r.gates) assert.ok(g.rule.length > 0 && g.value !== undefined, `${g.key} says its rule and what it read`);
+  const htf = r.gates.find((g) => g.key === 'htf')!;
+  assert.equal(htf.ok, null, 'without the chain the HTF gate is not part of the read -- listed, never "passed"');
+  assert.match(r.gates.find((g) => g.key === 'rr')!.value!, /^\d+\.\d\d$/);
+});
+
+test('[critical] a gate that was not read refuses nothing, and a failed one is the reason', () => {
+  const r = readMethod(BREAKOUT, 'single', '5m', single({ walls: [] }));
+  assert.equal(r.gates.find((g) => g.key === 'spread')?.ok, null, 'no spread read');
+  assert.equal(r.state, 'NO_TRADE');
+  assert.equal(r.gates.find((g) => g.ok === false)?.key, 'rr');
+});
+
+test('the method gate is listed only for the methods that have one', () => {
+  const bars = path([...wave(60, 84_000, 20, 10), 84_060, 84_120, 84_180, 84_240, 84_300, 84_360]);
+  const t = bars[bars.length - 1]!.time;
+  bars.push({ time: t + 300, open: 84_360, high: 84_705, low: 84_355, close: 84_700, volume: 900 });
+  const r = readMethod(MOMENTUM, 'single', '5m', single({ walls: [{ side: 'ask', price: 88_000, size: 1 }] }, bars));
+  assert.equal(r.gates.at(-1)?.key, 'method');
+  assert.match(r.gates.at(-1)!.rule, /no chase/);
+  assert.equal(readMethod(BREAKOUT, 'single', '5m', single({})).gates.some((g) => g.key === 'method'), false);
+});
+
+test('[critical] a gate switched off still reads and shows ✗, but refuses nothing; Data fresh cannot be switched off', () => {
+  const on = readMethod(BREAKOUT, 'single', '5m', single({ walls: [] }));
+  assert.equal(on.state, 'NO_TRADE');
+  const off = readMethod(BREAKOUT, 'single', '5m', single({ walls: [], gatesOff: ['rr'] }));
+  const rr = off.gates.find((g) => g.key === 'rr')!;
+  assert.deepEqual([rr.ok, rr.enabled], [false, false], 'still read, still refusing on its own terms, but switched off');
+  assert.equal(off.state, 'TRADE', 'nothing else refuses it');
+  const bars = breakoutBars();
+  const stale = readMethod(BREAKOUT, 'single', '5m', single({ now: nowAfter(bars, 3_600), gatesOff: ['data'] }, bars));
+  assert.equal(stale.gates.find((g) => g.key === 'data')?.enabled, true);
+  assert.equal(stale.state, 'NO_TRADE');
+});
+
+test('[critical] an entry zone is never wider than half an ATR, and it is kept at the edge price reaches first', () => {
+  const FVG = METHODS.find((m) => m.id === 'fvg-retest')!;
+  // A long: a wide gap under price. Whatever the method asks for, the plan narrows it from the top.
+  const bars = path(wave(60, 84_000, 20, 10));
+  const a = atr(bars)!;
+  const wide = { ...FVG, detect: () => ({ dir: 1 as const, steps: [], zone: [83_000, 83_900] as [number, number], stop: 82_900, triggerTime: bars.at(-1)!.time }) };
+  const r = readMethod(wide, 'single', '5m', single({ gatesOff: ['rr', 'stop'] }, bars));
+  assert.equal(r.state, 'TRADE');
+  assert.equal(r.plan!.entryHi, 83_900, 'the top: where a long fills');
+  assert.ok(Math.abs(r.plan!.entryHi - r.plan!.entryLo - MAX_ZONE_ATR * a) < 1e-6, 'half an ATR, not 900 points');
+});
+
+test('[critical] risk and R:R are measured from where the trade fills -- the near edge -- not the middle of the zone', () => {
+  assert.equal(fillOf({ entryLo: 100, entryHi: 110 }, 1), 110, 'a long fills at the top');
+  assert.equal(fillOf({ entryLo: 100, entryHi: 110 }, -1), 100, 'a short at the bottom');
+  const r = readMethod(BREAKOUT, 'single', '5m', single({ gatesOff: ['rr'] }));
+  const p = r.plan!;
+  assert.ok(Math.abs(p.rr - rrAfterFees(fillOf(p, r.dir === 'long' ? 1 : -1), p.stop, p.tp1)) < 1e-12);
 });

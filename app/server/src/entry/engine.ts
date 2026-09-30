@@ -43,6 +43,20 @@ export const SETTLE_GUARD_SEC = 15 * 60;
 export const EM_USED = 0.8;
 /** Bars a timeframe needs before it is read at all. */
 export const MIN_BARS = 60;
+/**
+ * The widest an entry zone may be, in ATRs, measured back from the edge price
+ * reaches first. A whole order-block candle or fair-value gap was up to 8 ATR
+ * (689 points) before the 30 Sep 2026 audit -- not an entry, a region.
+ */
+export const MAX_ZONE_ATR = 0.5;
+
+/**
+ * Where a trade in this zone fills: the edge price reaches first -- the top
+ * for a long (price comes down into it), the bottom for a short. The paper log
+ * fills there, so risk, R:R and the stop band are measured from it, not from
+ * the middle (which made a wide zone look cheaper than it was).
+ */
+export const fillOf = (p: Pick<Plan, 'entryLo' | 'entryHi'>, dir: 1 | -1) => (dir === 1 ? p.entryHi : p.entryLo);
 
 const fmt = (v: number) => Math.round(v).toLocaleString('en-US');
 const dirName = (d: 1 | -1) => (d === 1 ? 'long' : 'short');
@@ -85,8 +99,11 @@ export function rrAfterFees(entry: number, stop: number, target: number): number
 
 function planOf(setup: Setup, a: number, bars: readonly Candle[], ctx: EntryContext): Plan {
   const dir = setup.dir;
-  const [lo, hi] = setup.zone[0] <= setup.zone[1] ? setup.zone : [setup.zone[1], setup.zone[0]];
-  const entry = (lo + hi) / 2;
+  const [z0, z1] = setup.zone[0] <= setup.zone[1] ? setup.zone : [setup.zone[1], setup.zone[0]];
+  // Never wider than MAX_ZONE_ATR, kept at the edge price reaches first.
+  const lo = dir === 1 ? Math.max(z0, z1 - MAX_ZONE_ATR * a) : z0;
+  const hi = dir === 1 ? z1 : Math.min(z1, z0 + MAX_ZONE_ATR * a);
+  const entry = fillOf({ entryLo: lo, entryHi: hi }, dir);
   const stop = dir === 1 ? setup.stop - STOP_BUFFER_ATR * a : setup.stop + STOP_BUFFER_ATR * a;
   const risk = Math.abs(entry - stop);
   // A level closer than a fifth of an ATR past the zone is not a target, it is the zone.
@@ -116,54 +133,86 @@ const ageOf = (bars: readonly Candle[] | undefined, tf: Tf, nowSec: number) => {
   return b ? nowSec - (b.time + TF_SEC[tf]) : Infinity;
 };
 
+/**
+ * The hard gates, all of them, in the checklist's order: any one false and
+ * the read is NO TRADE, whatever else holds. A gate the data cannot answer is
+ * listed as not read (`ok` null) rather than left out, so the screen can show
+ * the whole list.
+ */
 function gatesOf(i: {
-  setup: Setup; plan: Plan; a: number; mode: Mode; tf: Tf; ctx: EntryContext; bars: readonly Candle[];
+  setup: Setup; plan: Plan; a: number; mode: Mode; tf: Tf; ctx: EntryContext; bars: readonly Candle[]; methodRule?: string;
 }): Gate[] {
   const { setup, plan, a, mode, tf, ctx } = i;
   const dir = setup.dir;
   const nowSec = Math.floor(ctx.now / 1000);
   const gates: Gate[] = [];
-  const g = (key: string, label: string, ok: boolean, why: string | null) => gates.push({ key, label, ok, why: ok ? null : why });
-  // The method's own "not now" first: it is the most specific reason there is.
-  if (setup.blocked) g('method', 'Method allows it now', false, setup.blocked);
+  const off = new Set(ctx.gatesOff ?? []);
+  // Data fresh cannot be switched off: on stale candles nothing else here means anything.
+  const g = (key: string, label: string, rule: string, value: string | null, ok: boolean | null, why: string | null) =>
+    gates.push({ key, label, rule, value, ok, why: ok === false ? why : null, enabled: key === 'data' || !off.has(key) });
 
   const dataTf: Tf = mode === 'mtf' ? '1m' : tf;
+  const maxAge = mode === 'mtf' ? DATA_MAX_AGE_SEC : TF_SEC[tf] + DATA_MAX_AGE_SEC;
   const age = ageOf(ctx.frames[dataTf], dataTf, nowSec);
-  g('data', 'Data fresh', age <= (mode === 'mtf' ? DATA_MAX_AGE_SEC : TF_SEC[tf] + DATA_MAX_AGE_SEC),
+  g('data', 'Data fresh', `newest ${dataTf} candle ≤ ${Math.round(maxAge / 60)} min old`,
+    Number.isFinite(age) ? `${(age / 60).toFixed(1)} min old` : `no ${dataTf} candles`, age <= maxAge,
     Number.isFinite(age) ? `the newest ${dataTf} candle is ${Math.round(age / 60)} min old` : `no ${dataTf} candles`);
-  g('spread', 'Spread', ctx.spreadPct === null || ctx.spreadPct <= SPREAD_MAX_PCT,
+
+  g('spread', 'Spread', `perp spread ≤ ${SPREAD_MAX_PCT}%`,
+    ctx.spreadPct === null ? 'not read' : `${ctx.spreadPct.toFixed(3)}%`,
+    ctx.spreadPct === null ? null : ctx.spreadPct <= SPREAD_MAX_PCT,
     `the perpetual's spread is ${ctx.spreadPct?.toFixed(3)}%`);
 
-  const risk = Math.abs((plan.entryLo + plan.entryHi) / 2 - plan.stop);
-  g('stop-min', 'Stop outside the noise', risk >= STOP_MIN_ATR * a, `the stop is ${(risk / a).toFixed(2)} ATR away -- inside the noise`);
-  g('stop-max', 'Stop not too wide', risk <= STOP_MAX_ATR * a, `the stop is ${(risk / a).toFixed(1)} ATR away -- too wide`);
-  g('rr', `R:R ${MIN_RR} after fees`, plan.rr >= MIN_RR,
+  const risk = Math.abs(fillOf(plan, dir) - plan.stop);
+  const inAtr = risk / a;
+  g('stop', 'Stop band', `stop ${STOP_MIN_ATR}–${STOP_MAX_ATR} ATR from the entry`, `${inAtr.toFixed(2)} ATR`,
+    inAtr >= STOP_MIN_ATR && inAtr <= STOP_MAX_ATR,
+    inAtr < STOP_MIN_ATR ? `the stop is ${inAtr.toFixed(2)} ATR away -- inside the noise` : `the stop is ${inAtr.toFixed(1)} ATR away -- too wide`);
+
+  g('rr', 'R:R after fees', `≥ ${MIN_RR} to TP1, taker fee both ways`, plan.rr.toFixed(2), plan.rr >= MIN_RR,
     `R:R to ${plan.tpWhy[0] ?? 'TP1'} is ${plan.rr.toFixed(2)} after fees -- no room`);
 
   if (mode === 'mtf') {
     const h1 = trendOf(ctx.frames['1h'] ?? []);
     const h4 = trendOf(ctx.frames['4h'] ?? []);
-    g('htf', 'Higher timeframes not both against', !(h1 === -dir && h4 === -dir), `1H and 4H are both ${dir === 1 ? 'down' : 'up'}`);
+    const word = (t: -1 | 0 | 1) => (t === 1 ? 'up' : t === -1 ? 'down' : 'flat');
+    g('htf', 'HTF alignment', '1H and 4H not both against', `1H ${word(h1)} · 4H ${word(h4)}`,
+      !(h1 === -dir && h4 === -dir), `1H and 4H are both ${dir === 1 ? 'down' : 'up'}`);
+  } else {
+    g('htf', 'HTF alignment', '1H and 4H not both against', 'not part of this mode', null, null);
   }
 
   const bm = ctx.bigMove;
-  g('big-move', 'Big-move risk not against',
-    !(bm && (bm.band === 'high' || bm.band === 'sudden') && bm.direction !== null && bm.direction * dir <= -0.3),
+  g('big-move', 'Big-move risk', 'not high / sudden pointing the other way',
+    bm ? `${bm.band}${bm.direction === null ? '' : bm.direction > 0 ? ' · up' : bm.direction < 0 ? ' · down' : ''}` : 'not read',
+    bm ? !((bm.band === 'high' || bm.band === 'sudden') && bm.direction !== null && bm.direction * dir <= -0.3) : null,
     `big-move risk ${bm?.band} pointing ${dir === 1 ? 'down' : 'up'}`);
 
   const o = ctx.options;
   const h1bars = ctx.frames['1h'] ?? [];
   const lastH1 = h1bars[h1bars.length - 1];
-  if (o && o.emDay !== null && lastH1) {
+  if (o && o.emDay !== null && o.emDay > 0 && lastH1) {
     const dayStart = lastH1.time - (lastH1.time % 86_400);
     const open = h1bars.find((b) => b.time >= dayStart)?.open ?? null;
     const moved = open === null ? 0 : (i.bars[i.bars.length - 1]!.close - open) * dir;
-    g('em', 'Expected move not used up', moved < EM_USED * o.emDay,
+    g('em', 'Expected move', `< ${EM_USED * 100}% of the day's expected move used this way`,
+      `${Math.max(0, Math.round((100 * moved) / o.emDay))}% used`, moved < EM_USED * o.emDay,
       `the day has moved ${fmt(moved)} of an expected ${fmt(o.emDay)} in this direction`);
+  } else {
+    g('em', 'Expected move', `< ${EM_USED * 100}% of the day's expected move used this way`, 'no option board', null, null);
   }
   if (o && o.toSettleSec !== null) {
-    g('settle', 'Not into the settlement', !(o.toSettleSec >= 0 && o.toSettleSec <= SETTLE_GUARD_SEC),
-      `settlement in ${Math.round(o.toSettleSec / 60)} min`);
+    const mins = Math.round(o.toSettleSec / 60);
+    g('settle', 'Settlement', `not within ${SETTLE_GUARD_SEC / 60} min of 17:30 IST`,
+      o.toSettleSec < 0 ? 'settled' : `${Math.floor(mins / 60)}h ${mins % 60}m to go`,
+      !(o.toSettleSec >= 0 && o.toSettleSec <= SETTLE_GUARD_SEC), `settlement in ${mins} min`);
+  } else {
+    g('settle', 'Settlement', `not within ${SETTLE_GUARD_SEC / 60} min of 17:30 IST`, 'no option board', null, null);
+  }
+
+  // The method's own "not now" (momentum extended, mean reversion on a trend day), for the methods that have one.
+  if (i.methodRule || setup.blocked) {
+    g('method', 'Method gate', i.methodRule ?? 'the method\'s own condition', setup.blocked ? 'refused' : 'clear', !setup.blocked, setup.blocked ?? null);
   }
   return gates;
 }
@@ -248,7 +297,7 @@ export function readMethod(m: (typeof METHODS)[number], mode: Mode, tf: Tf, ctx:
     ? [...chain.filter((s) => s.tf === '4h' || s.tf === '1h' || s.tf === '30m' || s.tf === '15m'), ...own, ...chain.filter((s) => s.tf === '3m' || s.tf === '1m')]
     : own;
   const plan = planOf(setup, a, bars, ctx);
-  const gates = gatesOf({ setup, plan, a, mode, tf: entryTf, ctx, bars });
+  const gates = gatesOf({ setup, plan, a, mode, tf: entryTf, ctx, bars, methodRule: m.gate });
   const scoreParts = scoreOf(setup, bars, a, trend, ctx);
   const score = scoreParts.reduce((s, p) => s + (p.got ?? 0), 0);
 
@@ -266,7 +315,10 @@ export function readMethod(m: (typeof METHODS)[number], mode: Mode, tf: Tf, ctx:
     alignment = of > 0 ? Math.round((100 * got) / of) : null;
   }
 
-  const failed = gates.find((x) => !x.ok);
+  // The method's own gate is the most specific reason there is, so it speaks first.
+  // A gate switched off still reads, and still shows ✗, but refuses nothing.
+  const refusing = gates.filter((x) => x.enabled && x.ok === false);
+  const failed = refusing.find((x) => x.key === 'method') ?? refusing[0];
   const missing = steps.find((s) => s.ok !== true);
   const state: EntryState = failed ? 'NO_TRADE' : missing ? 'WAIT' : 'TRADE';
   const reason = failed

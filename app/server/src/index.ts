@@ -21,6 +21,8 @@ import { annotationsSchema } from './market/chart-annotations.js';
 import { recordTrendPaper, trendPaperSchema } from './strategy/trend-paper.js';
 import { noteError } from './observability/errors.js';
 import { entrySchema, gradeSetups, recordSetups } from './entry/paper.js';
+import { gatesSchema } from './entry/gates.js';
+import { alertSettings, alertsSchema, entryAlertFor } from './entry/alerts.js';
 import { entryBoard } from './entry/engine.js';
 import { readEntryContext } from './entry/read.js';
 
@@ -54,6 +56,8 @@ await bookHeatSchema();
 await annotationsSchema();
 await trendPaperSchema();
 await entrySchema();
+await gatesSchema();
+await alertsSchema();
 const strategies = await initStrategyStore();
 
 // One sign-in service for the process: the gate and the routes share the pool.
@@ -189,7 +193,14 @@ setInterval(recordTrend, 5 * 60_000).unref();
 const recordEntries = () => {
   readEntryContext()
     .then(async (ctx) => {
-      await recordSetups(entryBoard(ctx, '5m'), ctx.now);
+      // Telegram for the ways switched on, once per setup as it is first written. Off by default.
+      const on = new Set((await alertSettings().catch(() => [])).filter((a) => a.enabled).map((a) => a.mode));
+      const notifier = on.size ? desk.notifier : null;
+      await recordSetups(entryBoard(ctx, '5m'), ctx.now, (r) => {
+        if (!notifier || !on.has(r.mode)) return;
+        const alert = entryAlertFor(r);
+        if (alert) notifier.notify(alert);
+      });
       await gradeSetups(ctx.frames['1m'] ?? []);
     })
     .catch(warn('entry-setups'));

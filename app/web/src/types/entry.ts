@@ -8,7 +8,18 @@ export type EntryMode = 'mtf' | 'single';
 export type EntryState = 'TRADE' | 'WAIT' | 'NO_TRADE';
 
 export type EntryStep = { tf: EntryTf | null; label: string; ok: boolean | null };
-export type EntryGate = { key: string; label: string; ok: boolean; why: string | null };
+/** A hard gate: its rule, what was read, the verdict. `ok` null: not read, or not part of this mode -- refuses nothing, never "passed". */
+export type EntryGate = {
+  key: string; label: string; rule: string; value: string | null; ok: boolean | null; why: string | null;
+  /** Switched on. Off: still read and shown, but it refuses nothing. */
+  enabled: boolean;
+};
+/** Telegram alerts for one way's TRADEs. */
+export type EntryAlertSetting = { mode: EntryMode; enabled: boolean; changedAt: number | null };
+export type EntryAlerts = { alerts: EntryAlertSetting[]; telegram: boolean };
+
+/** A gate's switch, as the settings list shows it. `locked`: why it cannot be switched off. */
+export type EntryGateSetting = { key: string; label: string; enabled: boolean; locked: string | null; changedAt: number | null };
 export type EntryPlan = {
   entryLo: number; entryHi: number; stop: number;
   tp1: number; tp2: number | null; tp3: number | null;
@@ -64,6 +75,8 @@ export type EntryRecord = {
   profitFactor: number | null; maxDrawdownR: number | null;
   avgWinR: number | null; avgLossR: number | null;
   since: number | null;
+  /** Setups logged while a gate was switched off: kept apart, in none of the figures. */
+  gatesOff?: number;
 };
 
 export type EntryRecordResponse = { records: EntryRecord[]; totals: EntryRecord[]; recent: unknown[] };

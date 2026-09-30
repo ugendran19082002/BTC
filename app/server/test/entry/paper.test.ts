@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import type { Candle } from '../../src/market/delta.js';
 import { FILL_WITHIN_BARS, HOLD_BARS, entryRecord, gradeRow, gradeSetups, rNetOf, recordSetups, statsOf, type PaperRow } from '../../src/entry/paper.js';
 import type { MethodRead } from '../../src/entry/types.js';
-import { closePool, rows } from '../../src/db/pool.js';
+import { closePool, query, rows } from '../../src/db/pool.js';
+import { gatesOff, gateSettings, setGate, GateLocked } from '../../src/entry/gates.js';
 
 after(closePool);
 
@@ -131,4 +132,33 @@ test('[critical] the record\'s figures: win rate, profit factor, and the deepest
   assert.equal(s.avgLossR, -1);
   assert.equal(statsOf([1, 2]).profitFactor, null, 'no loss to divide by');
   assert.equal(statsOf([]).trades, 0);
+});
+
+// ------------------------------------------------------------ the gate switches
+
+test('[critical] a gate switched off is stored, logged, and read back; Data fresh cannot be', async () => {
+  assert.deepEqual(await gatesOff(), []);
+  await setGate('rr', false, 1_000);
+  assert.deepEqual(await gatesOff(), ['rr'], 'read fresh after the change, not from a stale cache');
+  const rr = (await gateSettings()).find((g) => g.key === 'rr')!;
+  assert.deepEqual([rr.enabled, rr.changedAt], [false, 1_000]);
+  await assert.rejects(setGate('data', false), GateLocked);
+  const log = await rows<{ key: string; enabled: boolean }>('SELECT key, enabled FROM entry_gate_changes ORDER BY id');
+  assert.deepEqual(log.map((r) => [r.key, r.enabled]), [['rr', false]], 'every change is kept; the refused one is not a change');
+  await setGate('rr', true, 2_000);
+  assert.deepEqual(await gatesOff(), []);
+});
+
+test('[critical] a setup taken with a gate off is logged with it, and kept out of the record', async () => {
+  await query('DELETE FROM entry_setups');
+  const offRead = read({ id: 'fvg-retest', triggerTime: T + 900, gates: [
+    { key: 'rr', label: 'R:R after fees', rule: '', value: '1.20', ok: false, why: 'no room', enabled: false },
+  ] });
+  assert.equal(await recordSetups([read({ id: 'pullback' }), offRead], (T + 300) * 1000), 2);
+  const logged = await rows<{ method: string; gates_off: string[] }>('SELECT method, gates_off FROM entry_setups ORDER BY method');
+  assert.deepEqual(logged.map((r) => [r.method, r.gates_off]), [['fvg-retest', ['rr']], ['pullback', []]]);
+  const { totals } = await entryRecord();
+  const single = totals.find((t) => t.mode === 'single')!;
+  assert.equal(single.setups, 1, 'only the setup taken with every gate on');
+  assert.equal(single.gatesOff, 1, 'the other is counted apart, never mixed in');
 });

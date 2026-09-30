@@ -38,7 +38,17 @@ export type MethodId =
 /** One step of a chain. `ok` null: could not be read (no data), which never counts as confirmed. */
 export type Step = { tf: Tf | null; label: string; ok: boolean | null };
 
-export type Gate = { key: string; label: string; ok: boolean; why: string | null };
+/**
+ * A hard gate, as the checklist shows it: its rule, what was read, and the
+ * verdict. `ok` null: not read (no option board, no spread) or not part of
+ * this mode (the HTF gate without the chain) -- it refuses nothing, and never
+ * reads as passed.
+ */
+export type Gate = {
+  key: string; label: string; rule: string; value: string | null; ok: boolean | null; why: string | null;
+  /** Switched on (entry/gates.ts). Off: still read and shown, but it refuses nothing. */
+  enabled: boolean;
+};
 
 export type Plan = {
   entryLo: number;
@@ -109,4 +119,6 @@ export type EntryContext = {
   } | null;
   /** The desk's big-move reading over the next hour. */
   bigMove: { band: 'normal' | 'watch' | 'high' | 'sudden'; direction: number | null } | null;
+  /** Hard gates the owner switched off (entry/gates.ts): read and shown, refusing nothing. Absent: all on. */
+  gatesOff?: readonly string[];
 };

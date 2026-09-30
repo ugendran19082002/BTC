@@ -53,6 +53,33 @@ Still open:
   stop band are TEST.md's design, not measurements; revisit with the log.
 - [ ] `npm run test:responsive` on the desk tab with the entry section (needs a
   running app).
+- [x] **Hard-gate checklist** on screen (30 Sep 2026): a "Gates · without / with"
+  column pair in the Entry methods table ("✓ 6/6" or the gate that refuses), and
+  every gate's rule, value and ✓ / ✗ / – in each panel.
+- [x] **Gates switchable** (30 Sep 2026): each gate on / off from the entry
+  section (Data fresh locked on), stored in `entry_gates` with a change log;
+  setups logged with a gate off carry `gates_off` and are kept out of the record.
+- [x] **Auto-select and Telegram for entry setups** (30 Sep 2026): a new
+  signal chooses its row (AUTO), the chosen row is highlighted; each way has a
+  Telegram switch, off by default, one message per setup.
+- [ ] **Telegram for the entry setups needs `TG_TOKEN` / `TG_CHAT_ID` on the
+  server** -- the same ones the fill alerts use. After the deploy, switch a way
+  on and press *test* once to see it arrive.
+- [ ] **Read the gate switches with the log**: a month of setups with every gate
+  on is the record; anything logged with one off is counted apart
+  (`gatesOff`). Before trusting a gate-off result, it needs its own month.
+- [ ] **R&D finding -- R:R after fees is the gate that refuses most** (May-Aug
+  2026 replay, 35,124 5m bars): 9-74% of each method's reads. On 5m the round
+  trip in fees (~84 pts at $84k) is about one ATR. Log the without-timeframe
+  reads at 15m / 1H too and compare (one line in `index.ts`), rather than
+  lowering 1.8.
+- [ ] **R&D finding -- Liquidity sweep's stop is usually too wide**: 39% of its
+  reads refused for a stop over 2.5 ATR (the sweep low to the MSS level). Decide
+  with the owner whether its entry should be nearer the sweep; do not change it
+  before the paper log has a month.
+- [ ] **The replay cannot test methods 11 and 12, nor the with-timeframe 3m / 1m
+  steps**: there is no recorded tape, option board or 1m history for 2024-26.
+  Keep recording; re-run `scripts/entry-study.ts` once there is a quarter.
 - [ ] **The trend plan's paper log is no longer on screen** (the chart lost it
   on 30 Sep with its own entry logic). It is still written; its review at the
   end of October reads `GET /api/trend/paper` or `trend_paper` directly --

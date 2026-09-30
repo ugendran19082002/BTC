@@ -1,13 +1,14 @@
 import { cn } from '@/lib/utils';
 import type { MethodRead } from '@/types/entry';
-import { GROUP_NAME, NumberBadge, SignalChip } from './parts';
+import { GROUP_NAME, GateChip, NumberBadge, SignalChip } from './parts';
 
 /**
  * The twelve methods by number: 1 is Breakout, 2 Breakout + retest, and so on
  * -- the one place their names are written, so the two panels below can show
  * the number alone. Each row also carries the method's signal on both sides,
- * which is the comparison at a glance. Choosing a row chooses that method in
- * both panels.
+ * which is the comparison at a glance, and its hard gates both ways ("✓ 7/7",
+ * or the gate that refuses it). Choosing a row chooses that method in both
+ * panels.
  */
 export function MethodLegend({ single, mtf, chosenN, onChoose }: {
   single: readonly MethodRead[];
@@ -23,7 +24,7 @@ export function MethodLegend({ single, mtf, chosenN, onChoose }: {
   }));
   if (!rows.length) return null;
   return (
-    <section aria-label="entry methods" className="mb-3 rounded-xl border border-border p-2.5">
+    <section aria-label="entry methods" className="h-full rounded-xl border border-border p-2.5">
       <h3 className="m-0 mb-1 text-[13px] font-bold">Entry methods <span className="font-normal text-muted-foreground">· the numbers used on both sides below</span></h3>
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-[12px]" aria-label="entry methods by number">
@@ -35,11 +36,14 @@ export function MethodLegend({ single, mtf, chosenN, onChoose }: {
               <th className="hidden pr-2 sm:table-cell">Looks for</th>
               <th className="px-1 text-center">Without<span className="hidden sm:inline"> TF</span></th>
               <th className="px-1 text-center">With<span className="hidden sm:inline"> TF</span></th>
+              <th className="hidden px-1 text-center sm:table-cell" title="Hard gates without the timeframe chain: any one refusing is NO TRADE">Gates · without</th>
+              <th className="hidden px-1 text-center sm:table-cell" title="Hard gates with the timeframe chain">Gates · with</th>
             </tr>
           </thead>
           <tbody>
             {rows.map(({ m, without, with: withTf }) => (
-              <tr key={m.n} className={cn('border-t border-border', chosenN === m.n && 'bg-muted')}>
+              <tr key={m.n} aria-selected={chosenN === m.n}
+                  className={cn('border-t border-border', chosenN === m.n && 'bg-[rgba(37,99,235,0.16)] shadow-[inset_3px_0_0_#2563eb]')}>
                 <td className="py-1 pr-2"><NumberBadge read={m} /></td>
                 <td className="pr-2">
                   <button type="button" onClick={() => onChoose(m.n)} className="min-h-[28px] text-left font-medium hover:underline">{m.name}</button>
@@ -48,8 +52,17 @@ export function MethodLegend({ single, mtf, chosenN, onChoose }: {
                 </td>
                 <td className="hidden pr-2 text-muted-foreground md:table-cell">{GROUP_NAME[m.group]}</td>
                 <td className="hidden pr-2 text-muted-foreground sm:table-cell">{m.summary}</td>
-                <td className="px-1 text-center">{without ? <SignalChip read={without} /> : '–'}</td>
-                <td className="px-1 text-center">{withTf ? <SignalChip read={withTf} /> : '–'}</td>
+                <td className="px-1 text-center">
+                  {without ? <SignalChip read={without} /> : '–'}
+                  {/* On a phone the gates fold in under the signal. */}
+                  <span className="mt-0.5 block sm:hidden"><GateChip read={without} /></span>
+                </td>
+                <td className="px-1 text-center">
+                  {withTf ? <SignalChip read={withTf} /> : '–'}
+                  <span className="mt-0.5 block sm:hidden"><GateChip read={withTf} /></span>
+                </td>
+                <td className="hidden px-1 text-center sm:table-cell" aria-label={`${m.name} gates without timeframe`}><GateChip read={without} /></td>
+                <td className="hidden px-1 text-center sm:table-cell" aria-label={`${m.name} gates with timeframe`}><GateChip read={withTf} /></td>
               </tr>
             ))}
           </tbody>

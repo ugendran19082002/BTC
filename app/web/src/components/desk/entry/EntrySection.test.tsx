@@ -21,10 +21,25 @@ const drawnOn = (label: string) => screen.getByRole('img', { name: label }).getA
 
 const getEntryBoard = vi.fn();
 const getEntryRecord = vi.fn();
+const getEntryGates = vi.fn();
+const setEntryGate = vi.fn();
+const getEntryAlerts = vi.fn();
+const setEntryAlert = vi.fn();
+const sendEntryAlertTest = vi.fn();
 vi.mock('@/api/entry', () => ({
   getEntryBoard: (...a: unknown[]) => getEntryBoard(...a),
   getEntryRecord: (...a: unknown[]) => getEntryRecord(...a),
+  getEntryGates: (...a: unknown[]) => getEntryGates(...a),
+  setEntryGate: (...a: unknown[]) => setEntryGate(...a),
+  getEntryAlerts: (...a: unknown[]) => getEntryAlerts(...a),
+  setEntryAlert: (...a: unknown[]) => setEntryAlert(...a),
+  sendEntryAlertTest: (...a: unknown[]) => sendEntryAlertTest(...a),
 }));
+const ALERTS_OFF = { alerts: [{ mode: 'single', enabled: false, changedAt: null }, { mode: 'mtf', enabled: false, changedAt: null }], telegram: true };
+const SETTINGS = [
+  { key: 'data', label: 'Data fresh', enabled: true, locked: 'On stale candles nothing else means anything.', changedAt: null },
+  { key: 'rr', label: 'R:R after fees', enabled: true, locked: null, changedAt: null },
+];
 const getCandles = vi.fn(async (tf: string) => ({ tf, bars: [{ time: 1, open: 84_000, high: 84_200, low: 83_900, close: 84_120, volume: 1 }] }));
 const getFlowBars = vi.fn(async (tf: string) => ({ tf, bars: [] }));
 const getHeatmap = vi.fn(async (tf: string) => ({ tf, step: 10, columns: [], walls: [] }));
@@ -53,12 +68,21 @@ function read(n: number, mode: 'mtf' | 'single', over: Partial<MethodRead> = {})
   };
 }
 
+const gate = (key: string, label: string, value: string, ok: boolean | null, enabled = true) => ({ key, label, rule: `${label} rule`, value, ok, why: ok === false ? `${label} refused` : null, enabled });
+const PASSING = [
+  gate('data', 'Data fresh', '0.4 min old', true), gate('spread', 'Spread', '0.001%', true), gate('stop', 'Stop band', '1.10 ATR', true),
+  gate('rr', 'R:R after fees', '1.90', true), gate('htf', 'HTF alignment', '1H up · 4H up', true), gate('big-move', 'Big-move risk', 'normal', true),
+  gate('em', 'Expected move', 'no option board', null), gate('settle', 'Settlement', 'no option board', null),
+];
+
 const TRADE = read(3, 'mtf', {
+  gates: PASSING,
   state: 'TRADE', dir: 'long', score: 72, alignment: 100, reason: 'long -- Liquidity sweep with the timeframe chain', triggerTime: 1,
   plan: { entryLo: 84_120, entryHi: 84_160, stop: 83_980, tp1: 84_300, tp2: 84_500, tp3: null, tpWhy: ['5m swing high 84,300', 'ask wall 84,500'], rr: 1.9 },
   steps: [{ tf: '4h', label: 'macro context: with it', ok: true }, { tf: '5m', label: 'swept a swing low', ok: true }, { tf: '1m', label: 'execution: at the entry', ok: true }],
 });
 const WAITING = read(7, 'single', {
+  gates: PASSING.map((g) => (g.key === 'rr' ? gate('rr', 'R:R after fees', '1.20', false) : g.key === 'htf' ? gate('htf', 'HTF alignment', 'not part of this mode', null) : g)),
   state: 'WAIT', dir: 'short', score: 40, reason: 'waiting for 5m: liquidity swept first',
   steps: [{ tf: '5m', label: 'the trend was up', ok: true }, { tf: '5m', label: 'liquidity swept first', ok: false }, { tf: '5m', label: 'delta turned', ok: null }],
 });
@@ -87,6 +111,8 @@ beforeEach(() => {
   charts.clear();
   localStorage.clear();
   getEntryBoard.mockResolvedValue(board());
+  getEntryGates.mockResolvedValue({ gates: SETTINGS });
+  getEntryAlerts.mockResolvedValue(ALERTS_OFF);
   getEntryRecord.mockResolvedValue({ records: [], totals: [total('mtf'), total('single', { trades: 0, setups: 3 })], recent: [] });
 });
 
@@ -160,13 +186,12 @@ describe('the entry section, side by side', () => {
     expect(drawnOn('12 methods · without timeframe chart')).toBe('');
   });
 
-  it('the timeframe analysis is on the with-timeframe side only', async () => {
-    render(<EntrySection desk={desk} />);
-    const withTf = await panel(/12 methods \+ timeframe/);
-    const tfs = within(withTf).getByRole('region', { name: 'timeframe analysis' });
-    expect(within(tfs).getByText('↑ Bullish')).toBeInTheDocument();
-    expect(within(tfs).getByText('LH / LL')).toBeInTheDocument();
-    expect(within(screen.getByRole('region', { name: /12 methods · without timeframe/ })).queryByRole('region', { name: 'timeframe analysis' })).toBeNull();
+  it('the timeframe analysis is handed up for the card under the Big move catch, and is no longer in a panel', async () => {
+    const onTimeframes = vi.fn();
+    render(<EntrySection desk={desk} onTimeframes={onTimeframes} />);
+    await panel(/12 methods \+ timeframe/);
+    await waitFor(() => expect(onTimeframes).toHaveBeenCalledWith(board().timeframes));
+    expect(screen.queryByLabelText('timeframe analysis')).toBeNull();
   });
 
   it('[critical] the records are the paper log\'s, and "no record" where there is none', async () => {
@@ -247,5 +272,134 @@ describe('the method table: names once, numbers on both sides', () => {
       const card = within(screen.getByRole('region', { name })).getByRole('region', { name: 'selected setup' });
       expect(within(card).getByText('#8 Momentum')).toBeInTheDocument();
     }
+  });
+});
+
+describe('the hard gates', () => {
+  it('[critical] the methods table has a gates column for each way: "✓ 6/6" when none refuses, the refusing gate when one does', async () => {
+    render(<EntrySection desk={desk} />);
+    const legend = await screen.findByRole('table', { name: 'entry methods by number' });
+    expect(within(legend).getByRole('columnheader', { name: 'Gates · without' })).toBeInTheDocument();
+    expect(within(legend).getByRole('columnheader', { name: 'Gates · with' })).toBeInTheDocument();
+    expect(within(legend).getByLabelText('Liquidity sweep gates with timeframe')).toHaveTextContent('✓ 6/6');
+    expect(within(legend).getByLabelText('MSS / CHoCH gates without timeframe')).toHaveTextContent('✗ R:R');
+    expect(within(legend).getByLabelText('Breakout gates with timeframe')).toHaveTextContent('–');
+  });
+
+  it('[critical] beside the methods table, one checklist: every gate\'s rule, what was read, ✓ / ✗ / – (not read, never "passed"), either way', async () => {
+    render(<EntrySection desk={desk} />);
+    const list = await screen.findByRole('region', { name: 'hard gates' });
+    expect(screen.getAllByRole('region', { name: 'hard gates' })).toHaveLength(1);
+    // With the chain by default: #3 Liquidity sweep, the TRADE.
+    await waitFor(() => expect(list).toHaveTextContent('#3 Liquidity sweep'));
+    const rows = within(list).getAllByRole('row');
+    expect(rows).toHaveLength(8);
+    expect(within(rows[3]!).getByText('R:R after fees')).toBeInTheDocument();
+    expect(within(rows[3]!).getByText('1.90')).toBeInTheDocument();
+    expect(within(rows[3]!).getByLabelText('passed')).toHaveTextContent('✓');
+    expect(within(rows[6]!).getByLabelText('not read')).toHaveTextContent('–');
+    // Switched to without the chain: #7 MSS, refused on R:R.
+    fireEvent.click(within(list).getByRole('button', { name: 'Without TF' }));
+    expect(list).toHaveTextContent('#7 MSS / CHoCH');
+    const refused = within(list).getAllByLabelText('refused');
+    expect(refused.map((c) => c.closest('tr')!.textContent)).toEqual([expect.stringContaining('R:R after fees')]);
+  });
+
+  it('with nothing forming there is nothing to check, and it says so', async () => {
+    render(<EntrySection desk={desk} />);
+    await panel(/12 methods \+ timeframe/);
+    fireEvent.click(within(screen.getByRole('table', { name: 'entry methods by number' })).getByRole('button', { name: 'Breakout' }));
+    expect(within(screen.getByRole('region', { name: 'hard gates' })).getByText(/Read once a setup forms/)).toBeInTheDocument();
+  });
+});
+
+describe('switching gates on and off', () => {
+  it('[critical] the switches: Data fresh locked on, a gate turned off is saved on the server and the board read again', async () => {
+    setEntryGate.mockResolvedValue({ gates: [SETTINGS[0], { ...SETTINGS[1], enabled: false, changedAt: Date.UTC(2026, 8, 30, 13, 0) }] });
+    render(<EntrySection desk={desk} />);
+    const button = await screen.findByRole('button', { name: 'hard gate switches' });
+    await waitFor(() => expect(button).toHaveTextContent('Hard gates · all on'));
+    fireEvent.click(button);
+    expect(await screen.findByLabelText('locked on')).toBeInTheDocument();
+    expect(screen.queryByRole('switch', { name: /Data fresh/ })).toBeNull();
+    const reads = getEntryBoard.mock.calls.length;
+    fireEvent.click(screen.getByRole('switch', { name: /R:R after fees/ }));
+    await waitFor(() => expect(setEntryGate).toHaveBeenCalledWith('rr', false));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'hard gate switches' })).toHaveTextContent('1 off'));
+    await waitFor(() => expect(getEntryBoard.mock.calls.length).toBeGreaterThan(reads));
+  });
+
+  it('[critical] a gate that is off is marked off in the checklist -- "would refuse" -- and refuses nothing in the chip', async () => {
+    const offRead = { ...TRADE, gates: PASSING.map((g) => (g.key === 'rr' ? gate('rr', 'R:R after fees', '1.20', false, false) : g)) };
+    getEntryBoard.mockResolvedValue({ ...board(), reads: board().reads.map((r) => (r === TRADE ? offRead : r)) });
+    render(<EntrySection desk={desk} />);
+    const list = await screen.findByRole('region', { name: 'hard gates' });
+    await waitFor(() => expect(within(list).getByLabelText('off, would refuse')).toBeInTheDocument());
+    expect(within(list).getByText('would refuse')).toBeInTheDocument();
+    const legend = screen.getByRole('table', { name: 'entry methods by number' });
+    expect(within(legend).getByLabelText('Liquidity sweep gates with timeframe')).toHaveTextContent('✓ 5/5');
+  });
+
+  it('the record says how many setups were logged with a gate off, and that they are not counted', async () => {
+    getEntryRecord.mockResolvedValue({ records: [], totals: [total('mtf', { gatesOff: 3 }), total('single')], recent: [] });
+    render(<EntrySection desk={desk} />);
+    const withTf = await panel(/12 methods \+ timeframe/);
+    const rec = await within(withTf).findByRole('region', { name: 'paper record' });
+    await waitFor(() => expect(rec).toHaveTextContent('3 with a gate off, not counted'));
+  });
+});
+
+describe('auto-select and Telegram', () => {
+  const rowOf = (panelName: RegExp, n: number) => {
+    const p = screen.getByRole('region', { name: panelName });
+    return within(p).getByRole('button', { name: new RegExp(`^${n} `) }).closest('tr')!;
+  };
+
+  it('[critical] a signal chooses itself: the TRADE row is selected, highlighted, and marked AUTO', async () => {
+    render(<EntrySection desk={desk} />);
+    await panel(/12 methods \+ timeframe/);
+    await waitFor(() => expect(rowOf(/12 methods \+ timeframe/, 3)).toHaveAttribute('aria-selected', 'true'));
+    expect(within(rowOf(/12 methods \+ timeframe/, 3)).getByText('AUTO')).toBeInTheDocument();
+  });
+
+  it('[critical] a row picked by hand stays picked: the same signal does not pull the panel back', async () => {
+    render(<EntrySection desk={desk} />);
+    await panel(/12 methods \+ timeframe/);
+    await waitFor(() => expect(within(rowOf(/12 methods \+ timeframe/, 3)).getByText('AUTO')).toBeInTheDocument());
+    fireEvent.click(within(screen.getByRole('region', { name: /12 methods \+ timeframe/ })).getByRole('button', { name: '8 Momentum' }));
+    expect(rowOf(/12 methods \+ timeframe/, 8)).toHaveAttribute('aria-selected', 'true');
+    expect(within(rowOf(/12 methods \+ timeframe/, 3)).queryByText('AUTO')).toBeNull();
+  });
+
+  it('with auto-select off, a signal does not take over a choice made by hand', async () => {
+    localStorage.setItem('btc-desk:entry:auto-select', 'false');
+    localStorage.setItem('btc-desk:entry:chosen-2', JSON.stringify({ single: null, mtf: 'mtf:m8' }));
+    render(<EntrySection desk={desk} />);
+    await panel(/12 methods \+ timeframe/);
+    await waitFor(() => expect(rowOf(/12 methods \+ timeframe/, 8)).toHaveAttribute('aria-selected', 'true'));
+    expect(screen.queryByText('AUTO')).toBeNull();
+    expect(screen.getByRole('switch', { name: /Auto-select signals/ })).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('[critical] each section has its own Telegram switch: off until turned on, saved on the server', async () => {
+    setEntryAlert.mockResolvedValue({ ...ALERTS_OFF, alerts: [ALERTS_OFF.alerts[0], { mode: 'mtf', enabled: true, changedAt: 1 }] });
+    render(<EntrySection desk={desk} />);
+    const withTf = await panel(/12 methods \+ timeframe/);
+    const sw = await within(withTf).findByRole('switch', { name: 'Telegram alerts with timeframe' });
+    await waitFor(() => expect(sw).toHaveTextContent('Telegram off'));
+    expect(within(screen.getByRole('region', { name: /12 methods · without timeframe/ })).getByRole('switch', { name: 'Telegram alerts without timeframe' })).toBeInTheDocument();
+    fireEvent.click(sw);
+    await waitFor(() => expect(setEntryAlert).toHaveBeenCalledWith('mtf', true));
+    await waitFor(() => expect(within(withTf).getByRole('switch', { name: 'Telegram alerts with timeframe' })).toHaveTextContent('Telegram on'));
+    sendEntryAlertTest.mockResolvedValue({ ok: true });
+    fireEvent.click(within(withTf).getByRole('button', { name: 'test' }));
+    await waitFor(() => expect(within(withTf).getByRole('status')).toHaveTextContent('test sent'));
+  });
+
+  it('when Telegram is not set up on the server, the switch says so', async () => {
+    getEntryAlerts.mockResolvedValue({ ...ALERTS_OFF, telegram: false });
+    render(<EntrySection desk={desk} />);
+    const withTf = await panel(/12 methods \+ timeframe/);
+    await waitFor(() => expect(within(withTf).getByText('not set up')).toBeInTheDocument());
   });
 });

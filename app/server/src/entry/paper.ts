@@ -61,6 +61,10 @@ const MIGRATIONS: Migration[] = [{
     CREATE INDEX IF NOT EXISTS entry_setups_working ON entry_setups (status) WHERE status IN ('open', 'filled');
     CREATE INDEX IF NOT EXISTS entry_setups_by_method ON entry_setups (method, mode, first_seen DESC);
   `,
+}, {
+  // The hard gates switched off when a setup was taken (entry/gates.ts), so the record can keep them apart.
+  id: 'entry-003-setups-gates-off',
+  up: `ALTER TABLE entry_setups ADD COLUMN IF NOT EXISTS gates_off TEXT[] NOT NULL DEFAULT '{}';`,
 }];
 
 let ready: Promise<void> | null = null;
@@ -70,20 +74,25 @@ export function entrySchema(): Promise<void> {
   return ready;
 }
 
-/** Write each TRADE read once. Returns how many were new. */
-export async function recordSetups(reads: readonly MethodRead[], nowMs: number): Promise<number> {
+/**
+ * Write each TRADE read once. Returns how many were new; `onNew` hears each
+ * one as it is first written -- the moment an alert belongs to, once per setup.
+ */
+export async function recordSetups(reads: readonly MethodRead[], nowMs: number, onNew?: (r: MethodRead) => void): Promise<number> {
   await entrySchema();
   let n = 0;
   for (const r of reads) {
     if (r.state !== 'TRADE' || !r.plan || r.triggerTime === null || r.dir === null) continue;
     const res = await query(
-      `INSERT INTO entry_setups (method, mode, tf, dir, trigger_at, first_seen, entry_lo, entry_hi, stop, tp1, tp2, rr, score, graded_to)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      `INSERT INTO entry_setups (method, mode, tf, dir, trigger_at, first_seen, entry_lo, entry_hi, stop, tp1, tp2, rr, score, graded_to, gates_off)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
        ON CONFLICT (method, mode, tf, dir, trigger_at) DO NOTHING`,
       [r.id, r.mode, r.tf, r.dir === 'long' ? 1 : -1, r.triggerTime, nowMs, r.plan.entryLo, r.plan.entryHi,
-        r.plan.stop, r.plan.tp1, r.plan.tp2, r.plan.rr, r.score, Math.floor(nowMs / 60_000) * 60 - 60],
+        r.plan.stop, r.plan.tp1, r.plan.tp2, r.plan.rr, r.score, Math.floor(nowMs / 60_000) * 60 - 60,
+        // The gates this setup was taken under with any switched off: the record keeps these apart.
+        r.gates.filter((g) => !g.enabled).map((g) => g.key)],
     );
-    n += res.rowCount ?? 0;
+    if ((res.rowCount ?? 0) > 0) { n += 1; onNew?.(r); }
   }
   return n;
 }
@@ -194,6 +203,8 @@ export type MethodRecord = {
   maxDrawdownR: number | null;
   avgWinR: number | null;
   avgLossR: number | null;
+  /** Setups written while a hard gate was switched off: kept, but not in any figure above. */
+  gatesOff: number;
   since: number | null;
 };
 
@@ -216,7 +227,7 @@ export function statsOf(rs: readonly number[]): Pick<MethodRecord, 'trades' | 'w
   };
 }
 
-type ClosedRow = { method: string; mode: 'mtf' | 'single'; tf: Tf; status: PaperRow['status']; r_net: number | null; first_seen: number };
+type ClosedRow = { method: string; mode: 'mtf' | 'single'; tf: Tf; status: PaperRow['status']; r_net: number | null; first_seen: number; gates_off: string[] };
 
 /**
  * Each method's record, with the timeframe chain and without it, and each
@@ -225,22 +236,25 @@ type ClosedRow = { method: string; mode: 'mtf' | 'single'; tf: Tf; status: Paper
 export async function entryRecord(): Promise<{ records: MethodRecord[]; totals: MethodRecord[] }> {
   await entrySchema();
   const all = await rows<ClosedRow>(
-    `SELECT method, mode, tf, status, r_net, first_seen FROM entry_setups ORDER BY coalesce(exit_at, graded_to), id`,
+    `SELECT method, mode, tf, status, r_net, first_seen, gates_off FROM entry_setups ORDER BY coalesce(exit_at, graded_to), id`,
   );
   const group = (key: (r: ClosedRow) => string) => {
     const m = new Map<string, ClosedRow[]>();
     for (const r of all) m.set(key(r), [...(m.get(key(r)) ?? []), r]);
     return m;
   };
-  const recordOf = (xs: ClosedRow[], method: string): MethodRecord => {
+  // The record is the rules as designed: a setup let through by a switched-off gate is counted apart.
+  const recordOf = (all: ClosedRow[], method: string): MethodRecord => {
+    const xs = all.filter((x) => !x.gates_off?.length);
     const closed = xs.filter((x) => x.status === 'tp1' || x.status === 'stop' || x.status === 'timeout');
     return {
-      method, mode: xs[0]!.mode, tf: xs[0]!.tf,
+      method, mode: all[0]!.mode, tf: all[0]!.tf,
       setups: xs.length,
       expired: xs.filter((x) => x.status === 'expired').length,
       working: xs.filter((x) => x.status === 'open' || x.status === 'filled').length,
-      since: Math.min(...xs.map((x) => x.first_seen)),
+      since: Math.min(...all.map((x) => x.first_seen)),
       ...statsOf(closed.map((x) => x.r_net ?? 0)),
+      gatesOff: all.length - xs.length,
     };
   };
   const records = [...group((r) => `${r.method}|${r.mode}|${r.tf}`).values()].map((xs) => recordOf(xs, xs[0]!.method))

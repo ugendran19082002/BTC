@@ -1,15 +1,15 @@
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { PriceChart } from '@/components/desk/PriceChart';
-import type { EntryMode, EntryRecord, EntryTf, MethodRead, TimeframeRow } from '@/types/entry';
+import type { EntryMode, EntryRecord, EntryTf, MethodRead } from '@/types/entry';
 import type { ChartFeed } from './feed';
 import { NumberBadge, SignalChip, TICK_CLASS, fmt, overlayOf, recordText, signedR, tickOf } from './parts';
 
 /**
  * One half of the reference layout: the twelve methods read one way -- with
  * the timeframe chain, or without it -- with their chart, table, the chosen
- * setup, its reasons, (with the chain) the timeframe analysis, and that mode's
+ * setup, its reasons, and that mode's
  * paper record. (No pros-and-cons list: removed at the owner's request.)
  *
  * Two words differ from the reference on purpose: the quality score is shown
@@ -36,10 +36,9 @@ const COPY: Record<EntryMode, { title: string; accent: string; sub: string; tag:
   },
 };
 
-export function ModePanel({ mode, reads, timeframes, selected, onChoose, total, recordOf, setupsOn, chartTf, onChartTf, chart }: {
+export function ModePanel({ mode, reads, selected, onChoose, total, recordOf, setupsOn, chartTf, onChartTf, chart, alert, autoPicked = false }: {
   mode: EntryMode;
   reads: readonly MethodRead[];
-  timeframes: readonly TimeframeRow[];
   /** This panel's chosen read. */
   selected: MethodRead | null;
   onChoose: (r: MethodRead) => void;
@@ -55,6 +54,10 @@ export function ModePanel({ mode, reads, timeframes, selected, onChoose, total, 
   onChartTf: (tf: EntryTf) => void;
   /** The shared chart data, per timeframe (feed.ts). */
   chart: (tf: EntryTf) => ChartFeed;
+  /** This way's Telegram switch, for the header. */
+  alert?: ReactNode;
+  /** The selected read was chosen by auto-select (a signal came), not by hand. */
+  autoPicked?: boolean;
 }) {
   const copy = COPY[mode];
   // Kept while the choice holds: a new object each tick would rebuild the chart's whole scene.
@@ -67,7 +70,10 @@ export function ModePanel({ mode, reads, timeframes, selected, onChoose, total, 
           <h3 className="m-0 text-[14px] font-bold">{copy.title}</h3>
           <p className="m-0 text-[11.5px] text-muted-foreground">{copy.sub}</p>
         </div>
-        <span className="shrink-0 rounded border border-border px-1.5 py-0.5 text-[10.5px] text-muted-foreground">{copy.tag}</span>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <span className="rounded border border-border px-1.5 py-0.5 text-[10.5px] text-muted-foreground">{copy.tag}</span>
+          {alert}
+        </div>
       </header>
 
       {/* The chart, with its timeframe control. */}
@@ -97,12 +103,11 @@ export function ModePanel({ mode, reads, timeframes, selected, onChoose, total, 
 
       {/* The table full width, then the chosen setup beside its reasons: a panel is half the screen at most. */}
       <div className="mt-2 grid gap-2">
-        <MethodTable mode={mode} reads={reads} selected={selected} onChoose={onChoose} recordOf={recordOf} />
+        <MethodTable mode={mode} reads={reads} selected={selected} onChoose={onChoose} recordOf={recordOf} autoPicked={autoPicked} />
         <div className="grid gap-2 sm:grid-cols-2">
           <SelectedCard read={selected} />
           <div className="grid content-start gap-2">
             <Reasons read={selected} />
-            {mode === 'mtf' ? <TimeframeAnalysis rows={timeframes} /> : null}
           </div>
         </div>
       </div>
@@ -112,9 +117,10 @@ export function ModePanel({ mode, reads, timeframes, selected, onChoose, total, 
   );
 }
 
-function MethodTable({ mode, reads, selected, onChoose, recordOf }: {
+function MethodTable({ mode, reads, selected, onChoose, recordOf, autoPicked }: {
   mode: EntryMode; reads: readonly MethodRead[]; selected: MethodRead | null;
   onChoose: (r: MethodRead) => void; recordOf: (r: MethodRead) => EntryRecord | null;
+  autoPicked: boolean;
 }) {
   const chain = mode === 'mtf';
   return (
@@ -137,13 +143,16 @@ function MethodTable({ mode, reads, selected, onChoose, recordOf }: {
             {reads.map((r) => {
               const on = selected?.id === r.id;
               return (
-                <tr key={r.id} className={cn('border-t border-border', on && 'bg-muted outline outline-1 outline-[#38bdf8]')}>
+                // The chosen row, unmistakable: a tint, an edge on the left, and "AUTO" when a signal chose it.
+                <tr key={r.id} aria-selected={on}
+                    className={cn('border-t border-border', on && 'bg-[rgba(37,99,235,0.16)] shadow-[inset_3px_0_0_#2563eb]')}>
                   <td className="py-1 pl-2">
                     {/* The number only: the names are in the method table above both panels. */}
                     <button type="button" aria-pressed={on} onClick={() => onChoose(r)} aria-label={`${r.n} ${r.name}`}
-                            title={`${r.n}. ${r.name} -- ${recordText(recordOf(r))}`} className="flex items-center rounded-full">
+                            title={`${r.n}. ${r.name} -- ${recordText(recordOf(r))}`} className="inline-flex items-center rounded-full align-middle">
                       <NumberBadge read={r} />
                     </button>
+                    {on && autoPicked ? <span className="ml-1 rounded bg-[#2563eb] px-1 text-[9px] font-bold text-white" title="Chosen by auto-select: this is the signal">AUTO</span> : null}
                   </td>
                   {chain ? CHAIN_TFS.map((t) => {
                     const k = tickOf(r, t);
@@ -171,11 +180,12 @@ function SelectedCard({ read }: { read: MethodRead | null }) {
     : read.state === 'WAIT'
       ? { text: `WAIT${read.dir ? ` · ${read.dir} forming` : ''}`, cls: 'bg-[#b7791f] text-white' }
       : { text: read.dir ? `NO TRADE · ${read.dir} refused` : 'NO TRADE', cls: 'bg-muted text-muted-foreground' };
-  const mid = p ? (p.entryLo + p.entryHi) / 2 : null;
-  const risk = p && mid !== null ? Math.abs(mid - p.stop) : null;
-  const reward = p && mid !== null ? Math.abs(p.tp1 - mid) : null;
-  const rOf = (tp: number) => (risk && mid !== null ? Math.abs(tp - mid) / risk : null);
-  const pct = (pts: number) => (mid ? `${((100 * pts) / mid).toFixed(2)}%` : '');
+  // Measured from where it fills -- the edge price reaches first (the top for a long) -- as the server and the paper log do.
+  const fill = p ? (read.dir === 'short' ? p.entryLo : p.entryHi) : null;
+  const risk = p && fill !== null ? Math.abs(fill - p.stop) : null;
+  const reward = p && fill !== null ? Math.abs(p.tp1 - fill) : null;
+  const rOf = (tp: number) => (risk && fill !== null ? Math.abs(tp - fill) / risk : null);
+  const pct = (pts: number) => (fill ? `${((100 * pts) / fill).toFixed(2)}%` : '');
   const row = (k: string, v: React.ReactNode, cls?: string) => (
     <><dt className="text-muted-foreground">{k}</dt><dd className={cn('m-0 text-right', cls)}>{v}</dd></>
   );
@@ -210,7 +220,6 @@ function SelectedCard({ read }: { read: MethodRead | null }) {
 
 function Reasons({ read }: { read: MethodRead | null }) {
   if (!read || !read.steps.length) return null;
-  const blocking = read.gates.filter((g) => !g.ok);
   return (
     <section aria-label="key reasons" className="rounded-lg border border-border p-2 text-[12px]">
       <div className="mb-1 font-semibold">Key reasons</div>
@@ -222,38 +231,7 @@ function Reasons({ read }: { read: MethodRead | null }) {
             <span>{s.label}{s.ok === null ? ' (not read)' : ''}</span>
           </li>
         ))}
-        {blocking.map((g) => (
-          <li key={g.key} className="flex gap-1.5 text-[var(--down)]"><span>✗</span><span>{g.why ?? g.label}</span></li>
-        ))}
       </ul>
-    </section>
-  );
-}
-
-function TimeframeAnalysis({ rows }: { rows: readonly TimeframeRow[] }) {
-  if (!rows.length) return null;
-  const arrow = (t: -1 | 0 | 1, label: string) => (label === 'Not read' ? '?' : t === 1 ? '↑' : t === -1 ? '↓' : '→');
-  const cls = (t: -1 | 0 | 1) => (t === 1 ? 'text-[var(--up)]' : t === -1 ? 'text-[var(--down)]' : 'text-muted-foreground');
-  return (
-    <section aria-label="timeframe analysis" className="rounded-lg border border-border p-2 text-[12px]">
-      <div className="mb-1 font-semibold">Timeframe analysis</div>
-      <table className="w-full border-collapse">
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.tf} className="border-t border-border first:border-t-0">
-              <td className="py-0.5 pr-2 font-semibold">{r.tf.toUpperCase()}</td>
-              <td className={cn('pr-2', cls(r.trend))}>{arrow(r.trend, r.label)} {r.label}</td>
-              <td className="pr-2 text-muted-foreground">{r.structure}</td>
-              <td className="text-right text-[11px] text-muted-foreground">{r.role}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <div className="mt-1.5 flex flex-wrap gap-1" aria-label="timeframe trend view">
-        {rows.map((r) => (
-          <span key={r.tf} className={cn('rounded border border-border px-1 text-[10.5px]', cls(r.trend))}>{r.tf.toUpperCase()} {arrow(r.trend, r.label)}</span>
-        ))}
-      </div>
     </section>
   );
 }
@@ -271,7 +249,10 @@ function RecordStrip({ total }: { total: EntryRecord | null }) {
     <section aria-label="paper record" className="mt-2 rounded-lg border border-border p-2">
       <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-2 text-[12px]">
         <span className="font-semibold">Paper record · all 12, at 5m, after fees</span>
-        <span className="text-[11px] text-muted-foreground">{total && total.setups ? `${total.setups} logged${total.working ? `, ${total.working} working` : ''}` : 'no setups logged yet'}</span>
+        <span className="text-[11px] text-muted-foreground">
+          {total && total.setups ? `${total.setups} logged${total.working ? `, ${total.working} working` : ''}` : 'no setups logged yet'}
+          {total?.gatesOff ? ` · ${total.gatesOff} with a gate off, not counted` : ''}
+        </span>
       </div>
       <dl className="m-0 grid grid-cols-3 gap-1 text-center sm:grid-cols-5">
         {cells.map(([k, v, c]) => (

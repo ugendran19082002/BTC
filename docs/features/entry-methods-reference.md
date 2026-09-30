@@ -87,6 +87,29 @@ from liquidity nearest first; a bar touching the stop and TP1 graded as the
 stop; a gap through the stop filled at the open; the quality score never
 shown as a probability.
 
+## What refuses them (R&D, May-Aug 2026)
+
+Every 5m bar replayed, each method read without the chain, and the first
+thing that stopped it tallied (the engine itself, `readMethod`):
+
+| Method | nothing forming | refused by R:R after fees | stop too wide | TRADE |
+|---|---:|---:|---:|---:|
+| 1 Breakout | 89.5% | 9.3% | 0.7% | 44 |
+| 2 Breakout + retest | 37.6% | 42.5% | 12.5% | 95 |
+| 3 Liquidity sweep | 55.8% | 5.3% | 39.0% | 0 |
+| 4 FVG retest | 20.6% | 73.9% | 5.1% | 16 |
+| 5 Order-block retest | 27.4% | 71.4% | 0.0% | 44 |
+| 6 BOS | 59.8% | 20.1% | 19.9% | 2 |
+| 7 MSS / CHoCH | 93.7% | 4.5% | 1.8% | 0 |
+| 8 Momentum | 92.1% | 5.5% | 1.9% | 2 |
+| 9 Pullback | 81.5% | 15.0% | 2.8% | 8 |
+| 10 VWAP | 82.2% | 13.2% | 1.0% | 0 (its delta step needs the live tape) |
+
+Read: the methods form; what stops them is the fee. On 5m a round trip in
+taker fees (about 84 points at $84k) is close to one ATR, so the nearest
+liquidity rarely pays 1.8R after it. That is the gate working, not the method
+failing -- the question for the paper log is whether a longer timeframe pays.
+
 ## The replay
 
 [`app/server/scripts/entry-study.ts`](../../app/server/scripts/entry-study.ts)

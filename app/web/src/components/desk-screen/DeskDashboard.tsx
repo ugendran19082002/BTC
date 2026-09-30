@@ -5,6 +5,7 @@ import type { PerpOiChange } from '@/api/desk';
 import { useMemo } from 'react';
 import { DeskHeader } from './DeskHeader';
 import { EntrySection } from '@/components/desk/entry/EntrySection';
+import type { TimeframeRow } from '@/types/entry';
 import './desk-dashboard.css';
 
 /*
@@ -25,6 +26,7 @@ export function DeskDashboard({
   onAlerts,
   onSettings,
   controls,
+  onTimeframes,
 }: {
   bars: readonly Candle[];
   ltp?: LiveLtp | null;
@@ -35,6 +37,8 @@ export function DeskDashboard({
   onAlerts?: () => void;
   onSettings?: () => void;
   controls?: React.ReactNode;
+  /** The entry board's timeframe rows, for a card elsewhere on the screen. */
+  onTimeframes?: (rows: TimeframeRow[]) => void;
 }) {
   const desk = useMemo(() => ({ bars5m: bars, ltp, strikes, derivs }), [bars, ltp, strikes, derivs]);
   return (
@@ -46,7 +50,7 @@ export function DeskDashboard({
         onSettings={onSettings}
         controls={controls}
       />
-      <EntrySection desk={desk} />
+      <EntrySection desk={desk} onTimeframes={onTimeframes} />
     </div>
   );
 }

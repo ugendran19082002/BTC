@@ -207,7 +207,8 @@ const fvgRetest: Detector = ({ bars, a }) => {
       { label: 'price back in the gap', ok: cameBack },
       { label: `reaction: closed ${dir === 1 ? 'up' : 'down'} out of it`, ok: cameBack && withDir(b, dir) && (dir === 1 ? b.close > z.hi - 0.5 * (z.hi - z.lo) : b.close < z.lo + 0.5 * (z.hi - z.lo)) },
     ],
-    zone: [z.lo, z.hi],
+    // From the edge price reaches first to the gap's middle (its consequent encroachment), not the whole gap.
+    zone: dir === 1 ? [(z.lo + z.hi) / 2, z.hi] : [z.lo, (z.lo + z.hi) / 2],
     // Past the gap's first candle, the displacement's origin.
     stop: dir === 1 ? Math.min(bars[Math.max(0, z.i - 1)]!.low, z.lo - 0.1 * a) : Math.max(bars[Math.max(0, z.i - 1)]!.high, z.hi + 0.1 * a),
     triggerTime: z.time,
@@ -233,7 +234,8 @@ const obRetest: Detector = ({ bars }) => {
       { label: 'price entered the block', ok: entered },
       { label: 'rejected there: closed back out of it', ok: entered && withDir(b, dir) && (dir === 1 ? b.close > z.hi : b.close < z.lo) },
     ],
-    zone: [z.lo, z.hi],
+    // From the block's edge price reaches first to its mean threshold (the 50% line), not the whole candle.
+    zone: dir === 1 ? [(z.lo + z.hi) / 2, z.hi] : [z.lo, (z.lo + z.hi) / 2],
     stop: dir === 1 ? z.lo : z.hi,
     triggerTime: z.time,
   };
@@ -487,7 +489,8 @@ const optionsFlow: Detector = ({ bars, a, trend, ctx }) => {
   };
 };
 
-export const METHODS: readonly { id: MethodId; n: number; name: string; group: Group; summary: string; detect: Detector }[] = [
+/** `gate`: the method's own hard gate, in words, for the methods that have one. */
+export const METHODS: readonly { id: MethodId; n: number; name: string; group: Group; summary: string; gate?: string; detect: Detector }[] = [
   { id: 'breakout', n: 1, name: 'Breakout', group: 'breakout', summary: 'A close through the 20-bar range, RVOL 1.5, closing near its extreme', detect: breakout },
   { id: 'breakout-retest', n: 2, name: 'Breakout + retest', group: 'pullback', summary: 'A breakout, then a pullback to the level that holds', detect: breakoutRetest },
   { id: 'liquidity-sweep', n: 3, name: 'Liquidity sweep', group: 'reversal', summary: 'Stops taken past a swing, a close back, then the MSS', detect: liquiditySweep },
@@ -495,9 +498,9 @@ export const METHODS: readonly { id: MethodId; n: number; name: string; group: G
   { id: 'ob-retest', n: 5, name: 'Order-block retest', group: 'pullback', summary: 'Back into the last opposite candle before a break', detect: obRetest },
   { id: 'bos', n: 6, name: 'BOS', group: 'breakout', summary: 'A displacement close through a swing, with the trend', detect: bos },
   { id: 'mss', n: 7, name: 'MSS / CHoCH', group: 'reversal', summary: 'The trend turns: a sweep, then a close through the last swing', detect: mss },
-  { id: 'momentum', n: 8, name: 'Momentum', group: 'breakout', summary: 'A 1.5 ATR candle, RVOL 1.5, follow-through -- no chase when extended', detect: momentum },
+  { id: 'momentum', n: 8, name: 'Momentum', group: 'breakout', summary: 'A 1.5 ATR candle, RVOL 1.5, follow-through -- no chase when extended', gate: `not opened > ${MAX_EXTENSION_ATR} ATR from the 20 EMA (no chase)`, detect: momentum },
   { id: 'pullback', n: 9, name: 'Pullback', group: 'pullback', summary: 'A trend back to its 20 EMA, then resuming', detect: pullback },
-  { id: 'vwap-reversion', n: 10, name: 'VWAP / mean reversion', group: 'reversal', summary: 'Two σ from VWAP, turning, delta improving -- off on trend days', detect: vwapReversion },
+  { id: 'vwap-reversion', n: 10, name: 'VWAP / mean reversion', group: 'reversal', summary: 'Two σ from VWAP, turning, delta improving -- off on trend days', gate: `not a trend day (efficiency ≤ ${TREND_DAY_ER})`, detect: vwapReversion },
   { id: 'order-flow', n: 11, name: 'Order flow', group: 'flow', summary: 'At a level: absorption, delta flip, CVD turn, micro BOS', detect: orderFlow },
   { id: 'options-flow', n: 12, name: 'Options / derivatives', group: 'flow', summary: 'An OI wall that holds, with structure, flow and big-move risk', detect: optionsFlow },
 ];

@@ -8,6 +8,7 @@ import { expectedMoveOver } from '../domain/shock.js';
 import { shockFrom } from '../market/shock-now.js';
 import { wallWithinEm } from '../http/routes/desk.routes.js';
 import { TF_SEC, type EntryContext, type Frames, type Tf } from './types.js';
+import { gatesOff } from './gates.js';
 
 /**
  * The entry engine's view of the market, read once per board.
@@ -32,12 +33,14 @@ export async function readEntryContext(now = Date.now()): Promise<EntryContext> 
   for (const [tf, venue] of VENUE) frames[tf] = closedOnly(series.get(venue) ?? [], TF_SEC[tf], nowSec);
   frames['3m'] = resampleTf(frames['1m'] ?? [], 3);
 
-  const [flow, heat, book, snap, market] = await Promise.all([
+  const [flow, heat, book, snap, market, off] = await Promise.all([
     flowMinutes(now - 3 * 3_600_000, now).catch(() => []),
     heatMinutes(now - 2 * 3_600_000).catch(() => []),
     liveBook(now).catch(() => null),
     liveChain().catch(() => null),
     readMarket().catch(() => null),
+    // Unreadable switches fall back to every gate on: the safe direction.
+    gatesOff().catch(() => []),
   ]);
 
   let options: EntryContext['options'] = null;
@@ -64,6 +67,7 @@ export async function readEntryContext(now = Date.now()): Promise<EntryContext> 
   return {
     now,
     frames,
+    gatesOff: off,
     flow: flow.map((m) => ({
       time: Math.floor(m.at / 1000), buy: m.buyVolume, sell: m.sellVolume,
       largeBuy: m.largeBuyVolume, largeSell: m.largeSellVolume,

@@ -12,6 +12,8 @@ import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
 import { FlowPanel } from './MarketPanels';
 import { findLeg, type Selected } from './DecisionPanels';
 import { EarlyWarningPanel, useChanges } from './TraderPanels';
+import { TimeframeAnalysisPanel } from './TimeframeAnalysisPanel';
+import type { TimeframeRow } from '@/types/entry';
 
 /**
  * The price the screen measures from: the one-second tick, then the chain
@@ -102,6 +104,8 @@ export function Overview({
 
   // Collapse all / expand all: a stamp each press, and what it asked for.
   const [fold] = useState({ stamp: 0, collapsed: false });
+  // The entry board's timeframe rows, handed up by the entry section.
+  const [timeframes, setTimeframes] = useState<TimeframeRow[]>([]);
 
   // The board and the perp's positioning, for the chart's strike levels and context line.
   const strikes = useMemo(() => ({ legs: data.legs, maxPain: data.structure?.maxPain?.strike ?? null }), [data.legs, data.structure]);
@@ -111,6 +115,7 @@ export function Overview({
     <PanelFold.Provider value={fold}>
     <div className="ov">
       <DeskDashboard
+        onTimeframes={setTimeframes}
         bars={bars}
         ltp={ltp}
         strikes={strikes}
@@ -142,6 +147,10 @@ export function Overview({
         <div className="ov-col">
           <ErrorBoundary where="Early warning">
             <EarlyWarningPanel data={data} perp={perp} changes={changes?.rows ?? null} />
+          </ErrorBoundary>
+          {/* The timeframe chain, under the Big move catch (moved from the with-timeframe panel, 30 Sep 2026). */}
+          <ErrorBoundary where="Timeframe analysis">
+            <TimeframeAnalysisPanel rows={timeframes} />
           </ErrorBoundary>
         </div>
         <div className="ov-col">
