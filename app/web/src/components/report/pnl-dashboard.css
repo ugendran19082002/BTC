@@ -403,3 +403,69 @@
   height: 8px;
   border-radius: 50%;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Responsive Enhancements for Mobile, Tablet, and Desktop Windows
+   ───────────────────────────────────────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  .pnl-panel-card {
+    padding: 12px 14px;
+  }
+  .pnl-panel-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .pnl-pill-toggle {
+    overflow-x: auto;
+    max-width: 100%;
+  }
+  .pnl-pill-btn {
+    padding: 3px 8px;
+    font-size: 10.5px;
+  }
+}
+
+@media (max-width: 640px) {
+  .pnl-kpi-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .pnl-kpi-card {
+    padding: 10px 10px;
+    min-height: 76px;
+  }
+  .pnl-kpi-val {
+    font-size: 14.5px;
+  }
+  .pnl-perf-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .pnl-wl-content {
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+  .pnl-wl-legend {
+    width: 100%;
+  }
+  .pnl-panel-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .pnl-select {
+    width: 100%;
+  }
+  .pnl-tooltip-box {
+    font-size: 10.5px;
+    padding: 6px 10px;
+  }
+}
+
+@media (max-width: 420px) {
+  .pnl-kpi-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

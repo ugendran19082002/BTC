@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Download } from 'lucide-react';
 import { daysCsvUrl, getDays, getMtm } from '@/api/report';
-import { getTradeStatus } from '@/api/trade';
+import { getOrderHistory, getTradeStatus } from '@/api/trade';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import { Card, CardTitle } from '@/components/ui/card';
@@ -42,8 +42,11 @@ export function ReportPanel() {
   const days = usePoll(() => getDays(from, to), 60_000, { enabled: validRange, deps: [from, to] });
   const mtm = usePoll(() => getMtm(day), 60_000, { deps: [day] });
   const tradeStatus = usePoll(() => getTradeStatus().catch(() => null), 15_000);
+  const history = usePoll(() => getOrderHistory({ from, to }).catch(() => null), 60_000, { enabled: validRange, deps: [from, to] });
 
   const rows = days.data?.days ?? [];
+  const orders = history.data?.trades ?? [];
+
   const totals = useMemo(() => {
     const net = rows.reduce((n, r) => n + netOf(r, includeCharges), 0);
     const wins = rows.filter((r) => netOf(r, includeCharges) > 0).length;
@@ -105,6 +108,7 @@ export function ReportPanel() {
             totalsNetUsd={totals.net}
             includeCharges={includeCharges}
             status={tradeStatus.data}
+            orders={orders}
           />
         </div>
 
@@ -120,14 +124,14 @@ export function ReportPanel() {
 
       {/* 2. Performance Stats & Win/Loss Analysis Row */}
       <div className="pnl-analytics-row">
-        <PerformanceStats rows={rows} />
-        <WinLossAnalysis rows={rows} />
+        <PerformanceStats rows={rows} orders={orders} />
+        <WinLossAnalysis rows={rows} orders={orders} />
       </div>
 
       {/* 3. Daily P&L & P&L Curve Charts Row */}
       <div className="pnl-charts-row">
-        <DailyPnlChart rows={rows} includeCharges={includeCharges} />
-        <PnlCurveChart rows={rows} includeCharges={includeCharges} />
+        <DailyPnlChart rows={rows} />
+        <PnlCurveChart rows={rows} status={tradeStatus.data} />
       </div>
 
       {/* 4. Calendar & Cumulative Progress Card */}
