@@ -1,4 +1,4 @@
-# Adminer — the database console
+# Database console (Adminer)
 
 `https://adminer.thannigo.in` — a web console on the desk's PostgreSQL
 database. For looking, mostly: what is in the journal, why a strategy did not
@@ -46,7 +46,7 @@ recognises them. To try another, copy `designs/<name>/adminer.css` (or
 
 ## Setting it up (once)
 
-After the database cutover (`DEPLOY.md`), on the server:
+Once, after the first deploy on a host ([deploy.md](deploy.md)):
 
 ```bash
 # 1. secrets, into deploy/.env (see deploy/.env.example)
@@ -105,4 +105,4 @@ the password.
   (`plugins/login-servers.php`).
 
 All twenty desk tables are in the `public` schema, which is where Adminer opens
-(`docs/DB-INVENTORY.md` lists them).
+([reference/database.md](../reference/database.md) lists them).

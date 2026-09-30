@@ -218,8 +218,9 @@ export class StrategyRunner {
       cp: l.cp, strike: l.strike, sellPrice: l.sellPrice, pOtm: l.pOtm,
       moneyness: l.moneyness, ask: l.ask, oi: l.oi, emBuffer: l.emBuffer,
     }));
-    // The open-interest rule looks for its wall inside the desk's level band.
-    const sel = selectLegs(s, candidates, { wallWithinEm: wallWithinEm() });
+    // The open-interest rule looks for its wall inside the desk's level band;
+    // spot lets the strike nearest the money count when it has no intrinsic value.
+    const sel = selectLegs(s, candidates, { wallWithinEm: wallWithinEm(), spot: snap.spot });
     if (sel.legs.length === 0) {
       await this.claimAndFinish(s, day, 'refused', describeSelection(sel));
       return;

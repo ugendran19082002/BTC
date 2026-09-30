@@ -1,3 +1,13 @@
+# Strategy ideas
+
+A map of trading strategy families worth researching, written in Tamil and
+English (29 Sep 2026). A list of candidates, not findings: what has been tested
+and what it showed is in [findings.md](findings.md), and SMC / ICT / CRT
+variants have been tested and did not hold. Open research is in
+[TODO.md](../TODO.md).
+
+---
+
 ஆம். நீ “CRT மாதிரி இருக்கும் strategies மட்டும் இல்லாமல், trading-ல் R&D செய்யக்கூடிய major strategy/model families எல்லாம்” கேட்கிறாய். Literally எல்லா strategy-யும் list பண்ணுவது முடியாது; ஆனால் practical-ஆ R&D universe-ஐ இப்படி map பண்ணலாம்.
 
 CRT itself is commonly framed around a higher-timeframe candle range, one-side sweep/reclaim, and move toward the opposite side; related community frameworks explicitly connect it with liquidity sweeps, Turtle Soup, and Power of Three/AMD.

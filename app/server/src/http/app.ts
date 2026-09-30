@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyRequest, type RouteOptions } from 'fastify';
 import { config } from '../config.js';
 import { COOKIE, readCookie } from './session.js';
 import { registerSessionRoutes, type AuthLevel } from './routes/session.routes.js';
@@ -16,6 +16,16 @@ import { refuse, wasRefusal, worthLogging } from './refuse.js';
 
 /** Open without a session: the health probe. Sign-in routes say so on their own route. */
 const PUBLIC_ROUTES = new Set(['/api/health']);
+
+/**
+ * The session a matched route needs. Fail closed: a full session unless the
+ * route says otherwise (`config.auth`). The gate and the generated API
+ * reference both read it, so the page cannot describe a gate the code does not have.
+ */
+export function routeAuthLevel(url: string, routeConfig: unknown): AuthLevel {
+  if (PUBLIC_ROUTES.has(url)) return 'public';
+  return (routeConfig as { auth?: AuthLevel } | undefined)?.auth ?? 'full';
+}
 
 /**
  * Addresses of the proxies in front: the web container, and the edge proxy it
@@ -55,11 +65,17 @@ const refererOrigin = (ref: string | undefined): string | undefined => {
 
 const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
-export async function buildApp(o: { auth?: AuthService; now?: () => number } = {}): Promise<FastifyInstance> {
+export async function buildApp(o: {
+  auth?: AuthService;
+  now?: () => number;
+  /** Told of every route as it is registered; docs/gen-docs.ts lists the API from it. */
+  onRoute?: (route: RouteOptions) => void;
+} = {}): Promise<FastifyInstance> {
   const app = Fastify({
     logger: { level: config.logLevel },
     trustProxy: TRUSTED_PROXIES,
   });
+  if (o.onRoute) app.addHook('onRoute', o.onRoute);
 
   /*
    * No CORS. The page and the API share one origin through the proxy, so a
@@ -97,9 +113,7 @@ export async function buildApp(o: { auth?: AuthService; now?: () => number } = {
     if (UNSAFE.has(req.method) && !originAllowed(req, allowedOrigins)) {
       return reply.send(refuse(reply, 403, { error: 'cross-origin request refused' }));
     }
-    const level: AuthLevel = PUBLIC_ROUTES.has(route)
-      ? 'public'
-      : ((req.routeOptions.config as { auth?: AuthLevel } | undefined)?.auth ?? 'full');
+    const level = routeAuthLevel(route, req.routeOptions.config);
     if (level === 'public') return;
     if (!(await auth.configured())) {
       return reply.send(refuse(reply, 503, { error: 'Sign-in is not set up on this server.' }));

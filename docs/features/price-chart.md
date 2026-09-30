@@ -602,7 +602,7 @@ meaning:
 | `oi_snapshots` | `market/oi-history.ts`, every 5 min | each strike's OI; read for the strikes' 1h change | 48 hours |
 
 All are written `ON CONFLICT DO NOTHING` on their time key, so a restart or a
-replayed snapshot cannot double a row; details in docs/DB-INVENTORY.md.
+replayed snapshot cannot double a row; details in [reference/database.md](../reference/database.md).
 
 ---
 

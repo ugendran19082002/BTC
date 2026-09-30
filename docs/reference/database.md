@@ -1,20 +1,19 @@
-# Database inventory
+# Database
+
+What each table is for and why it is shaped that way. Column types, keys and
+indexes are generated from a freshly migrated database in
+[schema.md](schema.md), which is the authority where the two differ; the
+design is in [decision 0008](../decisions/0008-one-database-one-schema.md).
 
 One PostgreSQL database, `btc_desk`, holds everything the desk writes, all in
 the one schema, `public`; one SQLite file, `chain.db`, holds the evidence it
-reads. Every table and column below, what it holds, and why it is shaped that
-way.
-
-Until 19 September 2026 the desk kept six SQLite files. It then had a
-PostgreSQL schema per area for a few hours, and since the same afternoon every
-table is in `public` -- one list in a console, not seven. A table's area is its
-name's prefix wherever a bare name would be ambiguous (`auth_sessions`,
-`strategy_runs`), which is also the name the SQLite desk used.
+reads. A table's area is its name's prefix wherever a bare name would be
+ambiguous (`auth_sessions`, `strategy_runs`).
 
 | Area | Tables | Written by | Purpose |
 |---|---|---|---|
 | trading | `trades`, `trade_events`, `settings`, `mtm_samples` | the trading engine, the settings cache | The trade journal and the desk's remembered choices. What makes a restart safe. |
-| strategy | `strategies`, `strategy_runs` | the scheduler | Saved strategies and their run journal: what stops a strategy entering twice. |
+| strategy | `strategies`, `strategy_runs`, `trend_paper` | the scheduler; the trend plan's recorder | Saved strategies and their run journal (what stops a strategy entering twice), and the trend plan's paper log. |
 | sign-in | `auth_user`, `auth_sessions`, `auth_recovery_codes`, `auth_limits`, `auth_events` | the sign-in | The one user, sessions, recovery codes, rate limits, the security log. |
 | errors | `errors` | everything | Every failure, from all three tiers, in one place. |
 | market | `oi_snapshots`, `chain_features`, `option_snapshots`, `option_snapshots_1m`, `trade_flow_1m`, `option_flow_1m`, `large_prints`, `book_heat_1m`, `perp_snapshots`, `index_1m` | the chain route, the API's recorders, the perp's trade socket, and the book sampler | What open interest and at-the-money volatility *were*, so a change in either is readable. Disposable. |
@@ -88,24 +87,17 @@ Two rules for anyone adding one:
   two diverge silently. Add another.
 - **Ids are permanent.** They are the memory. Renaming one re-runs it.
 
-Ids are `<area>-NNN-what-it-does`. Applied on a fresh desk today:
+Ids are `<area>-NNN-what-it-does`. The list a fresh database applies is
+generated in [schema.md](schema.md#migrations-applied).
 
-| Area | Migrations |
-|---|---|
-| trading | `trading-001-settings`, `trading-002-default-settings`, `trading-003-trades`, `trading-004-mtm-samples`, `trading-005-settings-to-public`, `trading-006-journal-to-public` |
-| market | `market-001-oi-snapshots`, `market-002-chain-features`, `market-003-to-public`, `market-004-option-snapshots`, `market-005-flow`, `market-006-flow-large-counts`, `market-007-option-flow`, `market-008-option-snapshots-1m`, `market-009-drop-iv-term`, `market-013-index-1m`, `market-014-chain-band-pcts`, `market-015-large-prints`, `market-016-book-heat` |
-| market, retired | `market-010-market-states`, `market-011-state-detail`, `market-012-shock-snapshots`, `market-015-signal-lifecycle-audit`, `market-016-state-heartbeat`, `market-017-state-dedupe-at-db`, `market-018-clean-range-outcomes` -- applied lazily on first write, and removed from the code with their journals on 28 Sep 2026. They stay in a live ledger; a fresh database never runs them. |
-| errors | `errors-001-log`, `errors-002-to-public` |
-| strategy | `strategy-001-tables`, `strategy-002-seed`, `strategy-003-to-public`, `strategy-004-retire-extras`, `strategy-005-drop-retired-tables` |
-| sign-in | `auth-001-user-sessions`, `auth-002-to-public` |
-| analytics, retired | `analytics-001-to-public` -- ran; its code went with the service. |
-| chart | `chart-001-annotations` (the table predates it; `IF NOT EXISTS`, so on a live database it only records itself) |
-
-`market-015` and `market-016` are numbers the retired journals also used
-(`market-015-signal-lifecycle-audit`, `market-016-state-heartbeat`). The
-ledger keys on the whole id, so both run and neither shadows the other; the
-new ones shipped before the clash was noticed and are not renamed, because a
-shipped migration is never edited. The next market migration is `market-019`.
+Retired migrations stay in the live ledger and are never run on a fresh
+database: `market-010` to `market-012`, `market-015-signal-lifecycle-audit`,
+`market-016-state-heartbeat`, `market-017`, `market-018` (the market-state and
+shock journals, removed from the code on 28 Sep 2026 and their tables dropped
+on 29 Sep) and `analytics-001-to-public` (the analytics service, retired 29 Sep
+2026). `market-015` and `market-016` are therefore each used twice; the ledger
+keys on the whole id, so neither shadows the other, and a shipped migration is
+never renamed. **The next market migration is `market-019`.**
 
 The `001`–`004` migrations still create each table in its old schema -- they
 have shipped, and are never edited -- and the `*-to-public` migrations after
@@ -257,6 +249,23 @@ of a timetable a trade is on is not stored: it is a function of the clock.
 
 ---
 
+### `trend_paper` — the trend plan's forward test
+
+The 1H / 4H trend plan (`strategy/trend-breakout.ts`, the same code the chart
+and the study run), replayed every five minutes on closed candles from a fixed
+start (1 Sep 2026), one row per trade, keyed `(tf, entry_time)`. Nothing is
+ordered; it records what the plan would have done, as it happened: direction,
+entry, the first stop and the trailing one, exit, and `r_net` after taker fees.
+
+`live` is the column that matters. A trade is live when the recorder first saw
+it within fifteen minutes of the candle that made it -- on the log before
+anyone knew how it would end. Trades written later (the recorder was down, or a
+fresh database replayed history) are kept but apart: only the live ones are the
+forward test. `vol_burst` and `session` (`trend-002`) record the two filters
+`research/COMBO-STUDY.txt` pre-registered, at each trade's signal, so the
+forward test can say whether they hold on data they were not found on. Read by
+`GET /api/trend/paper`. Reviewed on 31 Oct 2026 ([TODO.md](../TODO.md)).
+
 ## `auth` — the sign-in
 
 One desk, one user. Only the SHA-256 of each session token is stored, so the
@@ -371,28 +380,6 @@ bucket per five, `ON CONFLICT DO NOTHING` so a restart cannot double a bucket)
 in one batched `unnest` insert; rows older than 365 days pruned as it writes.
 Created directly in `public` by `market-004-option-snapshots`.
 
-> **Retired 28 Sep 2026.** Nothing writes or reads `market_states`,
-> `market_state_checks` or `shock_snapshots` any more; the two paragraphs
-> below describe what they held. **Dropped 29 Sep 2026, 08:07 UTC**, after
-> the backup `backups/btc_desk-20260929-0807.dump`.
-
-`market_states` (`market/state-history.ts`, migrations `market-010` and
-`market-011`): every
-breakout / rejection / breakdown / range the desk has called, written **on
-change only** -- the state is read whenever somebody opens the Live screen, and
-a row per poll would be a journal of how often the page was looked at. Each row
-is graded four bars later against the candles that followed, by a rule fixed
-before the outcome was known, and carries `outcome` (CORRECT / WRONG /
-UNRESOLVED / NOT_GRADED) and `graded_at`, plus `resolved_close` and `move_pts`
--- where price actually finished the window and the BTC points from the call,
-recorded rather than worked out later from the next row. `market-011` added the
-rest of what the card said: `words`, `insight`, `volume_ratio`, `atr`, and
-`parts` / `inputs` / `patterns` / `indicators` as JSONB (their shape is the
-engine's, and a column per indicator would be a migration every time one is
-added). Without them a row lists a call and cannot answer which readings ever
-paid, since none of it can be reconstructed from bars afterwards. Kept 90 days.
-It is what makes the card's score answerable: see docs/MARKET-STATE.md.
-
 `index_1m` (`market/index-1m.ts`, migration `market-013`): BTC, once a minute,
 and nothing else. Every other recorder keeps a *reading* and carries the price
 as a column at its own cadence, so "what did BTC do between 13:18 and 13:33"
@@ -404,18 +391,6 @@ never happened is worse than a gap. Kept a year: half a million rows of three
 numbers. `moveOver()` gives the points and percent between two moments **with
 the minutes it actually covered**, because a move measured over 40 minutes of
 an hour is a different figure from one measured over the hour.
-
-`shock_snapshots` (`market/shock-history.ts`, migration `market-012`): the
-big-move catch, written down. Every sudden-move reading the server takes on the
-shortest window, kept when it says something new -- the band changed, the score
-moved eight points, or the ten-minute heartbeat came round so the series has no
-holes in a quiet afternoon. Each row carries the score, the band, the direction
-and its parts (JSONB, the shock engine's own shape), and is settled a quarter
-of an hour later with `move_pts` and `move_pct`: where price actually went
-after the warning, recorded then rather than worked out from whenever somebody
-next opened the screen. Read back by `GET /api/warning/history`, which also
-gives the mean absolute move per band **with the count behind it** -- a mean
-over four readings is not a finding. Kept 90 days.
 
 `large_prints` (`market/flow.ts`, migration `market-015-large-prints`): every
 taker order on the perpetual of 200 contracts (0.2 BTC) or more, at its own
@@ -478,25 +453,35 @@ minute; `/api/health` still reports the five-minute bucket.
 
 ---
 
-## `analytics` — retired 29 Sep 2026
+## `chart_annotations` — levels saved on the chart
 
-`outlook_states`, `chain_states`, `analytics_publish_meta`: the analytics
-service's measured Down / Side / Up states, written by
-`research/publish_outlook_states.py`. The service, its publisher, its
-measurement scripts and the desk's call to it were removed on 29 Sep 2026
-(nothing on screen read them); `docs/ANALYTICS.md` and the code are in git
-history before that commit. The three tables were dropped with the retired
-journals (`market_states`, `market_state_checks`, `shock_snapshots`) on
-29 Sep 2026 at 08:07 UTC, after the backup `backups/btc_desk-20260929-0807.dump`.
+Stop and target boxes, order blocks, fair-value gaps and liquidity lines the
+trader saves on the price chart, per symbol and timeframe, until deleted.
+`chart_annotations_by_symbol (symbol, tf, to_time DESC)` serves the chart's
+read. The table predates its migration: `chart-001-annotations` (29 Sep 2026)
+is `IF NOT EXISTS`, so on the live database it only recorded itself.
+Routes: `/api/chart/annotations` ([api.md](api.md)).
+
+## Retired tables
+
+Dropped on 29 Sep 2026 at 08:07 UTC, after the backup
+`backups/btc_desk-20260929-0807.dump`, which holds them with their data:
+`market_states`, `market_state_checks`, `shock_snapshots` (the market-state and
+shock journals) and `outlook_states`, `chain_states`, `analytics_publish_meta`
+(the retired analytics service). `strategy_adds` and `strategy_rebalances` went
+on 23 Sep 2026 (`strategy-005`), `iv_term_snapshots` on 23 Sep (`market-009`).
+Their descriptions are in [history/2026-09.md](../history/2026-09.md).
 
 ## `chain.db` — the evidence
 
 The one SQLite file. Built offline by `harvester/`, shipped to the desk by
 `deploy/refresh.sh` as a SQLite backup rather than a file copy, so a half-written
 WAL is never shipped. Read-only at runtime, opened by `backtest.ts`,
-`domain/forecast.ts` and `domain/calibration.ts` — and by the harvester, the
-analytics measurement and 35 research scripts with `sqlite3`, which is why it
-stayed a file when everything else moved. **735 days, 2024-09-04 to 2026-09-08.**
+`domain/forecast.ts` and `domain/calibration.ts` — and by the harvester and
+the research scripts with `sqlite3`, which is why it
+stayed a file when everything else moved. **735 days, 2024-09-04 to 2026-09-08** --
+and stuck there: the daily refresh has been writing to the wrong file since
+8 Sep ([TODO.md](../TODO.md), "The desk's dataset stopped on 8 Sep").
 
 ### `days` — one row per expiry day, 735 rows
 
@@ -594,7 +579,7 @@ ids carried over and the identity sequences moved past them; a count of every
 table on both sides at the end, and a non-zero exit if any pair differs. The
 SQLite files are opened read-only and stay on the volume as the rollback path.
 `test/db/import-sqlite.test.ts` runs it against files written in the old schema.
-The cutover itself is in `DEPLOY.md`.
+The cutover is recorded in [history/2026-09.md](../history/2026-09.md), 19 Sep 2026.
 
 Type mapping, for anyone reading an old row description: epoch-ms `INTEGER` →
 `BIGINT`; JSON in `TEXT` → `JSONB`; `REAL` → `DOUBLE PRECISION`; 0/1 flags →

@@ -322,3 +322,45 @@ test('when the fallback finds nothing either, the refusal names both numbers', (
   assert.deepEqual(sel.refusals, ['CE: nothing out of the money at or below $20, nor $25']);
 });
 
+
+// --- the strike nearest the money, when it has no intrinsic value ----------
+
+/**
+ * 29 Sep 2026, 17:01 IST, spot 84,150: the board as the 17:01 strategy saw it.
+ * 84,200 is the strike nearest spot, so both of its legs read ATM -- but the
+ * call is above spot and worth nothing now. AlgoTest sold CE 84,200 at 7.58 and
+ * PE 84,000 at 11.11; the desk skipped the call and went to 84,400 at 0.80.
+ */
+const AT_1701: Candidate[] = [
+  leg('C', 84_000, 150, 0.30, 'ITM'),
+  leg('C', 84_200, 7.6, 0.70, 'ATM'),
+  leg('C', 84_400, 0.8, 0.97),
+  leg('P', 84_200, 60, 0.30, 'ATM'),
+  leg('P', 84_000, 9, 0.80),
+  leg('P', 83_800, 2, 0.95),
+];
+const atMost42 = { strikeRule: 'premium', premium: { mode: 'atMost', usd: 42 } } as Partial<StrategyConfig>;
+
+test('[critical] a call at the money but above spot is out of the money, and "at most" sells it', () => {
+  const sel = selectLegs(strat(atMost42), AT_1701, { spot: 84_150 });
+  assert.deepEqual(sel.legs.map((l) => `${l.cp} ${l.strike}`), ['C 84200', 'P 84000']);
+});
+
+test('[critical] a put at the money but above spot is in the money, and is never sold', () => {
+  assert.equal(pickStrike(AT_1701, 'P', cfg(atMost42), { spot: 84_150 })?.strike, 84_000);
+});
+
+test('a strike exactly at spot is not out of the money on either side', () => {
+  assert.equal(pickStrike(AT_1701, 'C', cfg(atMost42), { spot: 84_200 })?.strike, 84_400);
+  assert.equal(pickStrike(AT_1701, 'P', cfg(atMost42), { spot: 84_200 })?.strike, 84_000);
+});
+
+test('without spot the nearest strike is left out, as it always was', () => {
+  assert.equal(pickStrike(AT_1701, 'C', cfg(atMost42))?.strike, 84_400);
+});
+
+test('the open-interest rule may take the nearest strike too, when it has no intrinsic value', () => {
+  const board = AT_1701.map((l) => ({ ...l, oi: l.strike === 84_200 ? 900 : 100, emBuffer: 0.1 }));
+  const got = pickStrike(board, 'C', cfg({ strikeRule: 'oiWall', premium: { mode: 'atLeast', usd: 5 } }), { spot: 84_150 });
+  assert.equal(got?.strike, 84_200);
+});

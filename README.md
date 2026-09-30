@@ -1,71 +1,55 @@
-# BTC — Delta Exchange (India) daily-expiry short-premium research
+# BTC options desk
 
-Backtest + R&D toolkit for a **short strangle on BTC daily-expiry options**
-on Delta Exchange India, replicating the AlgoTest `BTC_CE` strategy.
+A one-person trading desk for **BTC daily-expiry options on Delta Exchange
+India**. It sells out-of-the-money premium on the daily contract -- from an
+order ticket or on a schedule -- and manages each position to its exit:
+resting target, stop watched on the offer with a backstop at the exchange,
+exit time, settlement. Around that it records the option board and the
+perpetual's tape and book, and draws them on one price chart.
 
-## The strategy being studied
+**It trades real money.** The mode (paper or live) is decided by the server and
+shown on every screen; see [decision 0010](docs/decisions/0010-server-decides-paper-or-live.md).
 
-| Setting | Value |
-|---|---|
-| Underlying | BTCUSD (Delta India) |
-| Entry | **05:30 IST** (= 00:00 UTC, start of the contract's final day) |
-| Exit | **17:29 IST** (1 minute before the 17:30 IST / 12:00 UTC settlement) |
-| Legs | Sell 1 Call + Sell 1 Put, daily expiry |
-| Strike rule | `Premium <= 15` (richest strike at or below the cap) |
-| Size | 10 lots per leg, lot = 0.001 BTC |
-| Risk | no stop-loss, no target |
-| Costs | 5% slippage on entry and exit |
-| FX | 1 USD = 85 INR |
-
-Delta quotes option premium in **USD per 1 BTC**; a lot is 0.001 BTC, so
-`PnL = (entry - exit) x lots x 0.001`. AlgoTest displays P&L already
-multiplied by 85, i.e. in INR.
-
-## Files
-
-| File | Purpose |
-|---|---|
-| `research/harvest.py` | Pulls 1-minute option candles per expiry day (+ volume, MARK price, Open Interest) into `cache/` |
-| `research/features.py` | Daily BTCUSD technical features: RSI, MACD, ADX, ATR, EMA, Bollinger width, realised vol. Every value is computed from the **prior** daily close, so it is known at the 05:30 entry — no lookahead. |
-| `research/analyze.py` | The R&D engine: 19 strike-selection rules, 4 exit rules, ~28 regime filters, position sizing, cross-period stability test |
-| `research/backtest.py` | Simple standalone backtest of the baseline rule |
-| `RND-REPORT.txt` | Generated report. Sections are appended as they finish. |
-| `docs/test.md` | Margin / position-sizing model (funds, margin per lot, max lots) |
-
-## Usage
-
-```bash
-python3 research/harvest.py 2024-09-04 2026-09-03     # fetch data into cache/
-python3 research/analyze.py > research/RND-REPORT.txt          # run the full study
-python3 research/backtest.py 2025-01-01 2025-12-31 "2025 run"
+```
+app/server   Fastify API and the trading engine (TypeScript, Node 24)
+app/web      the screen (React 18, Vite, Tailwind, Radix, lightweight-charts)
+deploy/      docker compose, nginx, deploy / backup / refresh scripts
+harvester/   builds chain.db, two years of settled option chains
+research/    the studies the strategy rests on, and their reports
+docs/        how it works, why, and how to run it
 ```
 
-## What the data actually supports
+## Start here
 
-- Delta **India** BTCUSD perpetual candles start **2023-12-29**.
-- Daily-expiry BTC option contracts exist from **January 2024**; there are
-  **no** such contracts in 2023, and none anywhere before Delta launched BTC
-  options in 2020.
-- Deep-ITM strikes return only a flat post-expiry settlement stub, not real
-  quotes. Only near-the-money strikes have genuine intraday history.
-- AlgoTest's own backtest only covers **September 2025 onward**.
+| To | Read |
+|---|---|
+| understand how it fits together | [docs/architecture.md](docs/architecture.md) |
+| know why it is built the way it is -- **before changing `trading/`** | [docs/decisions/](docs/decisions/README.md) |
+| run it locally and run the tests | [docs/guides/local-development.md](docs/guides/local-development.md) |
+| deploy it, or look after it | [docs/guides/deploy.md](docs/guides/deploy.md), [docs/guides/operations.md](docs/guides/operations.md) |
+| find a file, route, table or setting | [docs/reference/](docs/README.md#reference) |
+| see what is open | [docs/TODO.md](docs/TODO.md) |
 
-## Findings so far (partial data — read `RND-REPORT.txt` for the current run)
+The full map of the docs is [docs/README.md](docs/README.md).
 
-- A **98% win rate does not mean profitable.** Over Jan–May 2025 the
-  `Premium <= 15` baseline won 98.1% of 108 trades and still finished
-  **negative**: a couple of large losing days outweighed ~106 small wins.
-- **Chasing rich far-OTM premium loses money.** A far strike is expensive
-  precisely when a large move is coming; that premium is fairly priced, not
-  free. Every `rich OTM` variant tested negative.
-- Selling the **nearest-the-money** strike is catastrophic (25% win rate).
-- Results **flip between regimes.** Rules that look excellent over one calm
-  quarter reverse over the next. Only rules marked `STABLE` in the
-  cross-period stability table survived both 2025 and 2026.
+## Quick start (paper)
 
-## Caveat
+```bash
+deploy/test-db.sh up                          # a throwaway PostgreSQL on :5433
+cd app/server && npm ci && cp .env.example .env
+#   set DATABASE_URL, and DELTA_LIVE_TRADING=0
+npm run auth -- create <username>
+npm run dev                                   # API on :8787
+cd ../web && npm ci && npm run dev            # screen on :5173
+```
 
-This is research on ~2 years of history for a naked short-premium strategy.
-The losses in this structure live in the tail, and two years is not enough to
-observe it. Brokerage is excluded in most runs; on a daily 4-fill schedule it
-is material. Nothing here is trading advice.
+Tests: `npm test` in `app/server`, `npx vitest run` in `app/web`.
+
+## What the research says
+
+Selling out-of-the-money premium on the daily contract made money over two
+years of settled chains, with its losses in the tail. Every directional rule
+tested on BTC -- momentum, SMC, CRT, order flow, volume profile -- was near
+zero before fees and negative after them. Details:
+[docs/research/findings.md](docs/research/findings.md). Nothing here is
+trading advice.

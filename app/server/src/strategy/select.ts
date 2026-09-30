@@ -80,6 +80,29 @@ export function pickByPosition(
   return outward.filter((l) => l.moneyness === 'ITM').reverse()[-step - 1] ?? null;
 }
 
+export type SelectOptions = {
+  /** The desk's level band, for the open-interest rule. Absent takes the default. */
+  wallWithinEm?: number | null;
+  /** BTC now. Without it the strike nearest the money is never sold under a premium rule. */
+  spot?: number | null;
+};
+
+/**
+ * Worth nothing if it expired now.
+ *
+ * `moneyness` calls the strike nearest spot ATM whichever side of spot it
+ * sits, and the premium rules used to skip it. On 29 Sep 2026 at 17:01, spot
+ * just under 84,200, that sent the call leg to 84,400 at 0.80 -- under the
+ * desk's floor -- while AlgoTest sold the 84,200 at 7.58. A call above spot
+ * and a put below it have no intrinsic value, so they are out of the money
+ * whatever the label says; a strike exactly at spot is not.
+ */
+export function outOfTheMoney(l: Candidate, spot: number | null | undefined): boolean {
+  if (l.moneyness === 'OTM') return true;
+  if (l.moneyness !== 'ATM' || spot === null || spot === undefined || !Number.isFinite(spot)) return false;
+  return l.cp === 'C' ? l.strike > spot : l.strike < spot;
+}
+
 /**
  * Pick one side's strike, under whichever rule the strategy uses.
  *
@@ -92,13 +115,12 @@ export function pickStrike(
   candidates: readonly Candidate[],
   cp: 'C' | 'P',
   cfg: StrategyConfig,
-  /** The desk's level band, for the open-interest rule. Absent takes the default. */
-  opts: { wallWithinEm?: number | null } = {},
+  opts: SelectOptions = {},
 ): Candidate | null {
   const priced = candidates.filter((l) => l.cp === cp && (l.sellPrice ?? 0) > 0);
   if (cfg.strikeRule === 'strict') return pickByPosition(priced, cp, cfg.strikeStep ?? 0);
 
-  const otm = priced.filter((l) => l.moneyness === 'OTM');
+  const otm = priced.filter((l) => outOfTheMoney(l, opts.spot));
   if (otm.length === 0) return null;
 
   /*
@@ -173,7 +195,7 @@ export function pickByPremium(
 export function selectLegs(
   s: Strategy,
   candidates: readonly Candidate[],
-  opts: { wallWithinEm?: number | null } = {},
+  opts: SelectOptions = {},
 ): Selection {
   const cfg = s.config;
   const wanted: ('CE' | 'PE')[] = cfg.legs === 'both' ? ['CE', 'PE'] : [cfg.legs];

@@ -58,7 +58,7 @@ const MIGRATIONS: Migration[] = [
 ];
 
 let _ready: Promise<void> | null = null;
-async function chainFeaturesSchema(): Promise<void> {
+export async function chainFeaturesSchema(): Promise<void> {
   await marketSchema();
   if (_ready) return _ready;
   _ready = migrate(MIGRATIONS).then(() => {}, (e) => { _ready = null; throw e; });

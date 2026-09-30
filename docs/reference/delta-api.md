@@ -1,4 +1,4 @@
-# Delta Exchange API — what this desk relies on
+# Delta Exchange API
 
 Read from https://docs.delta.exchange on 14 Sep 2026 (changelog then headed
 31.08.26). Only the parts this desk's code depends on, each with where the
@@ -48,7 +48,7 @@ Codes worth recognising by name when they appear in the error log:
 
 - `insufficient_margin`, `insufficient_commission` — the account, not the order.
 - `immediate_execution_post_only` — a post-only order priced through the book.
-  Relevant if `post_only` is ever sent (TODO.md lists it as not yet used).
+  Relevant if `post_only` is ever sent ([TODO.md](../TODO.md) lists it as not yet used).
 - `overlapping_buy_sell_orders` — would self-trade against a resting order of
   ours on the other side. The reduce-only target and stop sit on the buy side
   of a short, so an *add* priced at or under them would hit this.
@@ -112,6 +112,7 @@ both; a burst — a reconnect, several tabs — is what the 429 handling is for.
 
 Documented and unused by this desk: `post_only`, `time_in_force: ioc`, bracket
 orders (`Place Bracket order`, `Edit Bracket order`), batch create/edit/delete,
-trailing stops (`trail_amount`), and `mmp`. TODO.md's "Execution controls the
-desk does not have yet" and "Use Delta's bracket endpoint for protection"
-cover the case for each.
+trailing stops (`trail_amount`), and `mmp`. [TODO.md](../TODO.md) tracks them;
+the case for each is in [history/2026-09.md](../history/2026-09.md), "Execution
+controls the desk does not have yet" and "Use Delta's bracket endpoint for
+protection".
