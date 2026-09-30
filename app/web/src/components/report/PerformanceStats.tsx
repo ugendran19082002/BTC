@@ -24,6 +24,26 @@ export function PerformanceStats({ rows, orders = [] }: PerformanceStatsProps) {
   }, [orders, filter]);
 
   const stats = useMemo(() => {
+    // If a specific filter is selected (Strategy or Manual Trades)
+    if (filter !== 'All Trades') {
+      if (filteredOrders.length === 0) {
+        return {
+          totalTrades: 0,
+          winRate: '0%',
+          avgR: '—',
+          expectancy: '₹0',
+          largestWin: '—',
+          largestLoss: '—',
+          avgHolding: '—',
+          maxConsecutiveWins: 0,
+          maxConsecutiveLosses: 0,
+          sharpe: '—',
+          calmar: '—',
+          profitFactor: '—',
+        };
+      }
+    }
+
     // Priority 1: Compute from individual orders if available
     if (filteredOrders.length > 0) {
       const completed = filteredOrders.filter((o) => o.status === 'completed' || o.position === 0);
@@ -115,6 +135,23 @@ export function PerformanceStats({ rows, orders = [] }: PerformanceStatsProps) {
     }
 
     // Priority 2: Compute strictly from day rows
+    if (rows.length === 0) {
+      return {
+        totalTrades: 0,
+        winRate: '0%',
+        avgR: '—',
+        expectancy: '₹0',
+        largestWin: '—',
+        largestLoss: '—',
+        avgHolding: '—',
+        maxConsecutiveWins: 0,
+        maxConsecutiveLosses: 0,
+        sharpe: '—',
+        calmar: '—',
+        profitFactor: '—',
+      };
+    }
+
     const totalTrades = rows.reduce((acc, r) => acc + (r.trades || 0), 0);
     const winDays = rows.filter((r) => r.netUsd > 0);
     const lossDays = rows.filter((r) => r.netUsd < 0);
@@ -172,7 +209,7 @@ export function PerformanceStats({ rows, orders = [] }: PerformanceStatsProps) {
       calmar,
       profitFactor,
     };
-  }, [rows, filteredOrders]);
+  }, [rows, filteredOrders, filter]);
 
   return (
     <div className="pnl-panel-card" role="region" aria-label="Performance Stats">

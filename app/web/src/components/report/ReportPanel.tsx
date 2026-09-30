@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Download } from 'lucide-react';
+import { Download, RefreshCw } from 'lucide-react';
 import { daysCsvUrl, getDays, getMtm } from '@/api/report';
 import { getOrderHistory, getTradeStatus } from '@/api/trade';
 import { usePoll } from '@/hooks/usePoll';
@@ -37,6 +37,7 @@ export function ReportPanel() {
   const [to, setTo] = usePersisted('report:to', todayIst());
   const [includeCharges, setIncludeCharges] = usePersisted('report:charges', true);
   const [day, setDay] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const validRange = DAY_RE.test(from) && DAY_RE.test(to) && from <= to;
   const days = usePoll(() => getDays(from, to), 60_000, { enabled: validRange, deps: [from, to] });
@@ -46,6 +47,20 @@ export function ReportPanel() {
 
   const rows = days.data?.days ?? [];
   const orders = history.data?.trades ?? [];
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.allSettled([
+        days.refresh(),
+        tradeStatus.refresh(),
+        history.refresh(),
+        mtm.refresh(),
+      ]);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   const totals = useMemo(() => {
     const net = rows.reduce((n, r) => n + netOf(r, includeCharges), 0);
@@ -62,11 +77,27 @@ export function ReportPanel() {
       {/* 1. Primary Controls & Top KPI Cards */}
       <Card>
         <CardTitle
-          right={validRange && (
-            <a className="chain-chip" href={daysCsvUrl(from, to)} download>
-              <Download size={12} aria-hidden /> CSV
-            </a>
-          )}
+          right={
+            <div className="flex items-center gap-2">
+              <span className="pnl-live-badge" title="Dynamic live stream from Delta Exchange">
+                <span className="pnl-live-dot" /> Live
+              </span>
+              <button
+                type="button"
+                className="chain-chip"
+                onClick={handleRefresh}
+                title="Refresh live metrics"
+                disabled={isRefreshing}
+              >
+                <RefreshCw size={12} className={isRefreshing ? 'animate-spin' : ''} aria-hidden /> Refresh
+              </button>
+              {validRange && (
+                <a className="chain-chip" href={daysCsvUrl(from, to)} download>
+                  <Download size={12} aria-hidden /> CSV
+                </a>
+              )}
+            </div>
+          }
         >
           Profit and loss
         </CardTitle>
@@ -100,6 +131,12 @@ export function ReportPanel() {
 
         {!validRange && <p className="m-0 mt-2 text-[12px] text-[var(--down)]">The start date must not be after the end date.</p>}
         {days.error && <p className="m-0 mt-2 text-[12px] text-[var(--down)]">{days.error.message}</p>}
+
+        {days.data && rows.length === 0 && (
+          <div className="pnl-info-banner mt-2">
+            No trade history recorded for this date range. All cards and charts will update dynamically in real time when trades are placed.
+          </div>
+        )}
 
         {/* Top 7 KPI Cards Strip */}
         <div className="mt-3">

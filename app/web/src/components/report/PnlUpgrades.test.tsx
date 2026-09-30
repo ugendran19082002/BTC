@@ -121,3 +121,41 @@ describe('PnlCurveChart', () => {
     expect(weeklyBtn).toHaveClass('active');
   });
 });
+
+describe('Dynamic Clean Zero States (No Dummy Data)', () => {
+  it('renders clean zero state with no dummy numbers when rows is empty', () => {
+    render(
+      <>
+        <PnlKpiCards rows={[]} totalsNetUsd={0} includeCharges={true} />
+        <PerformanceStats rows={[]} />
+        <WinLossAnalysis rows={[]} />
+        <DailyPnlChart rows={[]} />
+        <PnlCurveChart rows={[]} />
+      </>
+    );
+
+    // Kpi cards show zero or clean state
+    expect(screen.getAllByText('₹0').length).toBeGreaterThan(0);
+    expect(screen.getByText('0 trades · Win rate 0.0%')).toBeInTheDocument();
+    expect(screen.getByText('0 open positions')).toBeInTheDocument();
+
+    // Daily & Curve empty states
+    expect(screen.getByText('No trading days in selected date range.')).toBeInTheDocument();
+    expect(screen.getByText('No equity curve data in selected date range.')).toBeInTheDocument();
+
+    // Win loss donut empty state
+    expect(screen.getByText('No trades')).toBeInTheDocument();
+  });
+
+  it('isolates category filters in PerformanceStats without falling back to all rows', () => {
+    render(<PerformanceStats rows={mockRows} orders={[]} />);
+
+    const select = screen.getByLabelText('Filter trades');
+    fireEvent.change(select, { target: { value: 'Strategy Trades' } });
+
+    // When Strategy Trades has 0 orders, it strictly shows 0 total trades
+    expect(screen.getByText('Performance Stats')).toBeInTheDocument();
+    const values = screen.getAllByText('0');
+    expect(values.length).toBeGreaterThan(0);
+  });
+});

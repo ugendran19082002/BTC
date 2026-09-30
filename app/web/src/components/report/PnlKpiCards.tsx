@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import type { DayRow } from '@/types/report';
 import type { TradeStatus, OrderRecord } from '@/types/trade';
 import { inr, signedInr, usdToInr } from '@/lib/format';
+import { daysAgoIst, todayIst } from '@/lib/report';
 
 export interface PnlKpiCardsProps {
   rows: DayRow[];
@@ -12,17 +13,21 @@ export interface PnlKpiCardsProps {
 }
 
 export function PnlKpiCards({ rows, totalsNetUsd, includeCharges, status, orders }: PnlKpiCardsProps) {
-  // 1. Total P&L
-  const totalNetInr = usdToInr(totalsNetUsd) ?? 0;
+  const todayStr = todayIst();
+
+  // 1. Total P&L (Strict dynamic: historical net + open unrealized MTM)
+  const liveUnrealizedUsd = status?.unrealisedPnlUsd ?? 0;
+  const totalCombinedUsd = totalsNetUsd + liveUnrealizedUsd;
+  const totalNetInr = usdToInr(totalCombinedUsd) ?? 0;
   const netInrDisplay = totalNetInr !== 0 ? signedInr(totalNetInr) : '₹0';
   const totalTone = totalNetInr > 0 ? 'up' : totalNetInr < 0 ? 'down' : 'neutral';
 
   const balanceUsd = status?.balanceUsd ?? 0;
   const returnPct = balanceUsd > 0
-    ? `${totalsNetUsd >= 0 ? '+' : ''}${((totalsNetUsd / balanceUsd) * 100).toFixed(1)}%`
+    ? `${totalCombinedUsd >= 0 ? '+' : ''}${((totalCombinedUsd / balanceUsd) * 100).toFixed(1)}%`
     : null;
 
-  // 2. Realized P&L
+  // 2. Realized P&L (Strict dynamic from closed rows)
   const totalRealizedUsd = rows.reduce((acc, r) => acc + r.realisedUsd, 0);
   const totalRealizedInr = usdToInr(totalRealizedUsd) ?? 0;
   const realizedInrDisplay = totalRealizedInr !== 0 ? signedInr(totalRealizedInr) : '₹0';
@@ -40,35 +45,40 @@ export function PnlKpiCards({ rows, totalsNetUsd, includeCharges, status, orders
     ? ((winTradesCount / totalTradesCount) * 100).toFixed(1)
     : '0.0';
 
-  // 3. Unrealized P&L
-  const liveUnrealizedUsd = status?.unrealisedPnlUsd ?? 0;
+  // 3. Unrealized P&L (Strict real-time from open position mark-to-market)
   const liveUnrealizedInr = usdToInr(liveUnrealizedUsd) ?? 0;
   const unrealizedInrDisplay = liveUnrealizedInr !== 0 ? signedInr(liveUnrealizedInr) : '₹0';
   const unrealizedTone = liveUnrealizedInr > 0 ? 'up' : liveUnrealizedInr < 0 ? 'down' : 'neutral';
   const openPositionsCount = status?.positions?.length ?? 0;
 
-  // 4. Today's P&L
-  const todayRow = rows.length > 0 ? rows[rows.length - 1] : null;
-  const todayNetUsd = status?.today?.netUsd ?? (todayRow ? todayRow.netUsd : 0);
+  // 4. Today's P&L (Strict dynamic: today's live session net, zero if no trade today)
+  const todayRow = rows.find((r) => r.day === todayStr) ?? null;
+  const todayNetUsd = status?.today?.netUsd !== undefined
+    ? status.today.netUsd
+    : (todayRow ? todayRow.netUsd : 0);
   const todayNetInr = usdToInr(todayNetUsd) ?? 0;
   const todayInrDisplay = todayNetInr !== 0 ? signedInr(todayNetInr) : '₹0';
   const todayTone = todayNetInr > 0 ? 'up' : todayNetInr < 0 ? 'down' : 'neutral';
 
-  // 5. This Week's P&L (last 7 days in rows)
-  const weekRows = rows.slice(-7);
+  // 5. This Week's P&L (Strict dynamic: past 7 days from today, or last 7 days of range)
+  const sevenDaysAgo = daysAgoIst(7);
+  const liveWeekRows = rows.filter((r) => r.day >= sevenDaysAgo && r.day <= todayStr);
+  const weekRows = liveWeekRows.length > 0 ? liveWeekRows : rows.slice(-7);
   const weekNetUsd = weekRows.reduce((acc, r) => acc + r.netUsd, 0);
   const weekNetInr = usdToInr(weekNetUsd) ?? 0;
   const weekInrDisplay = weekNetInr !== 0 ? signedInr(weekNetInr) : '₹0';
   const weekTone = weekNetInr > 0 ? 'up' : weekNetInr < 0 ? 'down' : 'neutral';
 
-  // 6. This Month's P&L (last 30 days or current calendar month)
-  const monthRows = rows.slice(-30);
+  // 6. This Month's P&L (Strict dynamic: current calendar month, or last 30 days of range)
+  const curMonthPrefix = todayStr.slice(0, 7);
+  const liveMonthRows = rows.filter((r) => r.day.startsWith(curMonthPrefix));
+  const monthRows = liveMonthRows.length > 0 ? liveMonthRows : rows.slice(-30);
   const monthNetUsd = monthRows.reduce((acc, r) => acc + r.netUsd, 0);
   const monthNetInr = usdToInr(monthNetUsd) ?? 0;
   const monthInrDisplay = monthNetInr !== 0 ? signedInr(monthNetInr) : '₹0';
   const monthTone = monthNetInr > 0 ? 'up' : monthNetInr < 0 ? 'down' : 'neutral';
 
-  // 7. Max Drawdown
+  // 7. Max Drawdown (Dynamic peak-to-trough drop from daily closed returns)
   const { maxDdInr, maxDdPct } = useMemo(() => {
     let peak = 0;
     let maxDd = 0;

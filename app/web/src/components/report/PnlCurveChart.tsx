@@ -269,6 +269,16 @@ export function PnlCurveChart({ rows, status }: PnlCurveChartProps) {
                 setHoverIndex(idx);
               }}
               onMouseLeave={() => setHoverIndex(null)}
+              onTouchMove={(e) => {
+                const touch = e.touches[0];
+                if (!touch) return;
+                const rect = e.currentTarget.getBoundingClientRect();
+                const relX = (touch.clientX - rect.left) * (W / rect.width);
+                const clampedX = Math.max(padLeft, Math.min(W - padRight, relX));
+                const idx = Math.round(((clampedX - padLeft) / chartW) * (points.length - 1));
+                setHoverIndex(idx);
+              }}
+              onTouchEnd={() => setHoverIndex(null)}
             >
               <defs>
                 <linearGradient id="pnlCurveGlow" x1="0" y1="0" x2="0" y2="1">
@@ -402,9 +412,10 @@ export function PnlCurveChart({ rows, status }: PnlCurveChartProps) {
               <div
                 className="pnl-tooltip-box absolute z-10"
                 style={{
-                  right: hoverIndex !== null && hoverIndex > points.length / 2 ? undefined : '24px',
-                  left: hoverIndex !== null && hoverIndex > points.length / 2 ? '65px' : undefined,
-                  top: '16px',
+                  right: hoverIndex !== null && hoverIndex > points.length / 2 ? undefined : '14px',
+                  left: hoverIndex !== null && hoverIndex > points.length / 2 ? '14px' : undefined,
+                  top: '12px',
+                  maxWidth: 'min(240px, calc(100% - 28px))',
                 }}
               >
                 <div className="font-semibold text-slate-300 mb-1">{activePoint.fullDate}</div>

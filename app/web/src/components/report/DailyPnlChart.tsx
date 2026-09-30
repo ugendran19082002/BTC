@@ -140,7 +140,20 @@ export function DailyPnlChart({ rows }: DailyPnlChartProps) {
           </div>
         ) : (
           <>
-            <svg viewBox={`0 0 ${W} ${H}`} className="pnl-chart-svg">
+            <svg
+              viewBox={`0 0 ${W} ${H}`}
+              className="pnl-chart-svg"
+              onTouchMove={(e) => {
+                const touch = e.touches[0];
+                if (!touch) return;
+                const rect = e.currentTarget.getBoundingClientRect();
+                const relX = (touch.clientX - rect.left) * (W / rect.width);
+                const clampedX = Math.max(padLeft, Math.min(W - padRight, relX));
+                const idx = Math.min(data.length - 1, Math.max(0, Math.floor((clampedX - padLeft) / (barWidth + barGap))));
+                setHoveredIdx(idx);
+              }}
+              onTouchEnd={() => setHoveredIdx(null)}
+            >
               <defs>
                 <linearGradient id="pnlGreenBar" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#10b981" />
@@ -232,31 +245,38 @@ export function DailyPnlChart({ rows }: DailyPnlChartProps) {
               })}
             </svg>
 
-            {/* Hover Tooltip Overlay */}
-            {hoveredIdx !== null && data[hoveredIdx] && (
-              <div
-                className="pnl-tooltip-box absolute z-10"
-                style={{
-                  left: `${Math.min(W - 140, Math.max(20, padLeft + hoveredIdx * (barWidth + barGap)))}px`,
-                  top: '10px',
-                }}
-              >
-                <div className="font-semibold text-slate-200">{data[hoveredIdx].fullDate}</div>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="text-slate-400">Net P&L:</span>
-                  <span
-                    className={`font-bold tabular-nums ${
-                      data[hoveredIdx].netInr >= 0 ? 'text-emerald-400' : 'text-rose-400'
-                    }`}
-                  >
-                    {signedInr(data[hoveredIdx].netInr)}
-                  </span>
+            {/* Hover Tooltip Overlay: Clamped percentage-based positioning */}
+            {hoveredIdx !== null && data[hoveredIdx] && (() => {
+              const item = data[hoveredIdx];
+              const pctX = ((padLeft + hoveredIdx * (barWidth + barGap) + barWidth / 2) / W) * 100;
+              const clampedPct = Math.min(80, Math.max(20, pctX));
+              return (
+                <div
+                  className="pnl-tooltip-box absolute z-10"
+                  style={{
+                    left: `${clampedPct}%`,
+                    transform: 'translateX(-50%)',
+                    top: '8px',
+                    maxWidth: 'min(240px, calc(100% - 20px))',
+                  }}
+                >
+                  <div className="font-semibold text-slate-200">{item.fullDate}</div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-slate-400">Net P&L:</span>
+                    <span
+                      className={`font-bold tabular-nums ${
+                        item.netInr >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                      }`}
+                    >
+                      {signedInr(item.netInr)}
+                    </span>
+                  </div>
+                  <div className="text-slate-400 text-[10.5px] mt-0.5">
+                    Trades: {item.trades}
+                  </div>
                 </div>
-                <div className="text-slate-400 text-[10.5px] mt-0.5">
-                  Trades: {data[hoveredIdx].trades}
-                </div>
-              </div>
-            )}
+              );
+            })()}
           </>
         )}
       </div>
