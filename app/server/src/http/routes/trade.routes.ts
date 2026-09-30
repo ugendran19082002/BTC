@@ -281,6 +281,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
    * numbers that made this necessary.
    */
   svc.provideStatus(statusNow);
+  // The desk now: mode, balance, positions, open trades with their live P&L, and alarms.
   app.get('/api/trade/status', async () => svc.status());
 
   async function statusNow() {
@@ -367,6 +368,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
     return res.ok ? res : refuse(reply, 409, res);
   });
 
+  // One contract's book and product details, for the ticket.
   app.get('/api/trade/quote', async (req, reply) => {
     const symbol = String((req.query as { symbol?: string }).symbol ?? '');
     if (!symbol) { reply.code(400); return { error: 'symbol is required' }; }
@@ -478,6 +480,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
     }
   });
 
+  // Place an order from the ticket: every gate runs again here, and a refusal comes back as 422 with the reasons.
   app.post('/api/trade/place', async (req, reply) => {
     try {
       const p = parse((req.body ?? {}) as PlaceBody);
@@ -580,6 +583,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
     return { start: q.ask, floor: q.bid, bid: q.bid, ask: q.ask };
   };
 
+  // What that add would do and whether the gates would take it. Sends nothing.
   app.post('/api/trade/add/preview', async (req, reply) => {
     const parsed = parseAddBody((req.body ?? {}) as AddBody);
     if (!parsed.ok) return refuse(reply, 422, { error: parsed.problems.join(' '), problems: parsed.problems });
@@ -601,6 +605,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
     };
   });
 
+  // Sell more of what an open trade holds, under the same trade and through the same gates.
   app.post('/api/trade/add', async (req, reply) => {
     const parsed = parseAddBody((req.body ?? {}) as AddBody);
     if (!parsed.ok) return refuse(reply, 422, { error: parsed.problems.join(' '), problems: parsed.problems });
@@ -655,6 +660,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
     telegram: { configured: svc.notifier !== null, on: svc.alertsOn },
   }));
 
+  // The best-pick alert: on or off, its premium floor, and how often one strike may be announced.
   app.post('/api/trade/best-trade/settings', async (req, reply) => {
     const b = (req.body ?? {}) as { alertOn?: unknown; minPremiumUsd?: unknown; repeat?: unknown };
     if (b.alertOn !== undefined) {
@@ -694,6 +700,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
     done: svc.autoTradeLedger(svc.autoTradeExpiry ?? '').entries,
   }));
 
+  // Arm, disarm or change the best pick's automatic trade, inside its limits.
   app.post('/api/trade/auto-trade', async (req, reply) => {
     const b = (req.body ?? {}) as Record<string, unknown>;
     /*
@@ -747,6 +754,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
     return { ok: true, done: {} };
   });
 
+  // Switch the Telegram fill alerts on or off.
   app.post('/api/trade/alerts', async (req, reply) => {
     const b = (req.body ?? {}) as { on?: unknown };
     if (typeof b.on !== 'boolean') { reply.code(400); return { error: 'on must be true or false' }; }
@@ -852,6 +860,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
     };
   });
 
+  // One trade with its whole event journal, for the Orders detail.
   app.get('/api/trade/:tradeId', async (req, reply) => {
     const { tradeId } = req.params as { tradeId: string };
     const rec = await svc.store.get(tradeId);

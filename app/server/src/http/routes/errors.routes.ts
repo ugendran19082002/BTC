@@ -39,6 +39,7 @@ export function registerErrorRoutes(app: FastifyInstance) {
     return null;
   });
 
+  // The error log, newest first: by source, resolved or not.
   app.get('/api/errors', async (req) => {
     const q = req.query as { limit?: string; source?: string; resolved?: string };
     const source = q.source && SOURCES.has(q.source as ErrorSource) ? (q.source as ErrorSource) : undefined;
@@ -71,6 +72,7 @@ export function registerErrorRoutes(app: FastifyInstance) {
     return { ok: true, deleted: 1 };
   });
 
+  // Mark error rows resolved, so they leave the list but stay on record.
   app.post('/api/errors/resolve', async (req, reply) => {
     const { id, all } = (req.body ?? {}) as { id?: number; all?: boolean };
     if (all) return { ok: true, resolved: await log.resolveAll() };

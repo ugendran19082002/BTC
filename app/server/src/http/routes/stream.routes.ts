@@ -82,6 +82,7 @@ export function registerStreamRoutes(app: FastifyInstance) {
     lastLtpKey = '';
   };
 
+  // Server-sent events: the live price as it prints, so the screen need not poll for it.
   app.get('/api/stream', (req, reply) => {
     reply.hijack();
     const res = reply.raw;

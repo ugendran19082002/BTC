@@ -111,6 +111,7 @@ const idFrom = (name: string) =>
 export function registerStrategyRoutes(app: FastifyInstance) {
   const svc = tradingService();
 
+  // Every saved strategy, today's runs, the scheduler switch and each strategy's next entry.
   app.get('/api/strategies', async () => {
     const s = strategyStore();
     const now = Date.now();
@@ -158,6 +159,7 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     };
   });
 
+  // Create or update a strategy, validated the way the form validates it.
   app.post('/api/strategies', async (req, reply) => {
     const b = (req.body ?? {}) as { id?: string; name?: string; enabled?: boolean; config?: unknown };
     const name = String(b.name ?? '').trim();
@@ -213,6 +215,7 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     };
   });
 
+  // Switch one strategy on or off.
   app.post('/api/strategies/:id/enabled', async (req, reply) => {
     const { id } = req.params as { id: string };
     const { enabled } = (req.body ?? {}) as { enabled?: boolean };
@@ -231,6 +234,7 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     return { ok: true, strategy: await s.setEnabled(id, Boolean(enabled)) };
   });
 
+  // Delete a strategy. Its run history stays in strategy_runs.
   app.delete('/api/strategies/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
     const s = strategyStore();

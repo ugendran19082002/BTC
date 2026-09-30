@@ -194,6 +194,7 @@ export function registerDeskRoutes(app: FastifyInstance) {
   const barsCache = ttlCache<ReturnType<typeof flowBarsOf>>(3_000);
   const heatCache = ttlCache<{ tf: string; step: number; columns: ReturnType<typeof heatColumnsOf>; walls: ReturnType<typeof persistentWalls> }>(5_000);
 
+  // The perpetual's big taker orders over the last hours, for the chart's bubbles, with the size that counts as big.
   app.get('/api/flow/large-prints', async (req, reply) => {
     const q = req.query as { hours?: string; min?: string };
     const hours = Math.min(48, Math.max(1, Number(q.hours ?? 36) || 36));
@@ -279,6 +280,7 @@ export function registerDeskRoutes(app: FastifyInstance) {
     }
   });
 
+  // The expiries Delta has listed, nearest first.
   app.get('/api/expiries', async (_req, reply) => {
     try {
       return { expiries: await liveExpiries() };
@@ -288,6 +290,7 @@ export function registerDeskRoutes(app: FastifyInstance) {
     }
   });
 
+  // The option board for an expiry, live or at a past moment, scored for a seller: EV, the best pick, bias and changes.
   app.get('/api/chain', async (req, reply) => {
     const q = req.query as ChainQuery;
     try {
@@ -601,6 +604,7 @@ export function registerDeskRoutes(app: FastifyInstance) {
     };
   });
 
+  // Save one desk setting; the short cap may be lowered freely but never raised past what margin covers.
   app.post('/api/settings', async (req, reply) => {
     const { key, value } = (req.body ?? {}) as { key?: string; value?: string };
     if (!key || typeof value !== 'string') {

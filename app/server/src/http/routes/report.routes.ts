@@ -39,6 +39,7 @@ export function registerReportRoutes(app: FastifyInstance) {
     return { mode: svc.mode, ...daysReport(records, { ...r, spot: svc.spot }) };
   });
 
+  // The P&L calendar as a spreadsheet that opens cleanly in Excel.
   app.get('/api/report/days.csv', async (req, reply) => {
     const r = rangeOf((req.query ?? {}) as { from?: unknown; to?: unknown });
     if (typeof r === 'string') return refuse(reply, 400, { error: r });
