@@ -165,8 +165,11 @@ or with no screen open at all:
 - **Paper log**: each new TRADE, on every timeframe, graded as below. The
   without-timeframe panel shows the record for its chosen timeframe; the
   with-vs-without comparison stays at 5m, like for like.
-- **Telegram** stays on the chain and on 5m without it: the same market seven
-  times would bury the one message that matters.
+- **Telegram**: the chain always (its entry is 5m); without it, the
+  timeframes the owner picks under its switch (5m until others are chosen).
+  Every attempt is written to `entry_alert_log` -- sent, or failed and why
+  (Telegram refused it, the network, not set up) -- and the switch shows the
+  last one: "last: 20:00 · #2 SELL 5m · sent ✓".
 
 Table `entry_setups` (migration `entry-001-setups`):
 

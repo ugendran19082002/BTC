@@ -83,8 +83,15 @@ Still open:
 - [ ] **A signal log on screen**: `GET /api/entry/signals` is there; a table
   of the day's signals (time, method, way, timeframe, WAIT / TRADE, how long
   it stood, what became of it) under the paper record.
-- [ ] **Telegram per timeframe**: alerts are the chain and 5m without it; if
-  the owner wants 15m / 1H alerts, a choice of timeframes per way.
+- [x] **Telegram per timeframe, and every alert on record** (30 Sep 2026):
+  the without-timeframe switch has timeframe chips (5m by default); every
+  attempt is in `entry_alert_log` with sent / failed and why, and the switch
+  shows the last one. (The owner's "one alert, then none": only one new 5m
+  TRADE came between 19:25 and 20:00 -- the rest were 1m-4H, not alerted then.)
+- [ ] **Six gates are switched off on the live desk** (spread, stop, R:R, HTF,
+  big-move, expected move, as of 30 Sep 20:00): every TRADE since is logged
+  "with a gate off" and kept out of the record. Turn them back on for the
+  paper log to measure the rules as designed.
 - [ ] **Re-run the replay** (`scripts/entry-study.ts`) on the corrected zones,
   stops and targets: the 30 Sep numbers were taken on the old ones.
 - [ ] **Read the gate switches with the log**: a month of setups with every gate
