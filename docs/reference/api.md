@@ -31,9 +31,9 @@ What: the first sentence of the comment directly above the route. A dash means t
 | GET | `/api/flow/bars` | signed in | Aggressive flow per candle -- taker buy and sell volume and the trade count -- for the chart's delta / CVD pane: `tf` 1m or 5m, `hours` back (up to 48). |
 | GET | `/api/flow/heatmap` | signed in | The perpetual's resting liquidity for the chart's heatmap: one column per candle (`tf` 1m or 5m), [bin, contracts] cells at $10 (1m) or $25 (5m) a bin, and the persistent walls now. |
 | GET | `/api/flow/large-prints` | signed in | -- |
-| GET | `/api/health` | none | -- |
+| GET | `/api/health` | none | The health probe. |
 | GET | `/api/perp` | signed in | The perpetual: its ticker (funding, open interest, turnover), the top of its book, and the last hour's order flow by aggressor side; the flow is summed from every print on the socket, and says how... |
-| POST | `/api/reload` | signed in | -- |
+| POST | `/api/reload` | none | Re-read chain.db after deploy/refresh.sh has shipped a new copy. |
 | GET | `/api/settings` | signed in | Desk settings that survive a restart. |
 | POST | `/api/settings` | signed in | -- |
 | GET | `/api/spot` | signed in | Just the price. |

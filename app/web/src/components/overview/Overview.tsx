@@ -152,7 +152,7 @@ export function Overview({
         </div>
         <div className="ov-col">
           <ErrorBoundary where="Flow">
-            <FlowPanel perp={perp} market={data.market} legs={data.legs} atm={snap.atm} window={flowWindow} onWindow={setFlowWindow} />
+            <FlowPanel perp={perp} legs={data.legs} atm={snap.atm} window={flowWindow} onWindow={setFlowWindow} />
           </ErrorBoundary>
         </div>
       </section>

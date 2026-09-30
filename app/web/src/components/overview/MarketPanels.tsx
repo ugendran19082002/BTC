@@ -126,13 +126,13 @@ const regimeTone = (r: string | undefined) =>
  * same window, and read together -- is the perp being bought, and are calls
  * or puts. One window picker drives both.
  */
-export function FlowPanel({ perp, market, legs, atm, window: win, onWindow }: {
-  perp: PerpResponse | null; market: MarketRead | null; legs: readonly Leg[]; atm: number | null;
+export function FlowPanel({ perp, legs, atm, window: win, onWindow }: {
+  perp: PerpResponse | null; legs: readonly Leg[]; atm: number | null;
   window: WindowChoice; onWindow: (w: WindowChoice) => void;
 }) {
   return (
     <Panel name="Flow" title="Flow · BTC perpetual & options" right={<WindowSelect value={win} onChange={onWindow} />}>
-      <TradeFlowPanel bare perp={perp} market={market} />
+      <TradeFlowPanel bare perp={perp} />
       <OptionFlowPanel bare perp={perp} legs={legs} atm={atm} />
     </Panel>
   );
@@ -156,7 +156,7 @@ function Frame({ bare, title, right, children }: { bare: boolean; title: string;
  * top of its book. From the desk's own record of every print; a window the
  * socket was away for says how many minutes it actually has.
  */
-function TradeFlowPanel({ perp, market, window: win, onWindow, bare = false }: { perp: PerpResponse | null; market: MarketRead | null; window?: WindowChoice; onWindow?: (w: WindowChoice) => void; bare?: boolean }) {
+function TradeFlowPanel({ perp, window: win, onWindow, bare = false }: { perp: PerpResponse | null; window?: WindowChoice; onWindow?: (w: WindowChoice) => void; bare?: boolean }) {
   const head = !bare && win && onWindow ? <WindowSelect value={win} onChange={onWindow} /> : null;
   const f = perp?.flow ?? null;
   const b = perp?.book ?? null;

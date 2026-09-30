@@ -5,13 +5,13 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-352 files listed, 148 test files counted below, images and lockfiles left out.
+356 files listed, 153 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 83 |
+| `app/server` | 88 |
 | `app/web` | 65 |
 
 ## `(root)`
@@ -216,6 +216,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [index.html](../../app/web/index.html) | -- |
+| [knip.json](../../app/web/knip.json) | -- |
 | [package.json](../../app/web/package.json) | -- |
 | [postcss.config.js](../../app/web/postcss.config.js) | -- |
 | [tailwind.config.js](../../app/web/tailwind.config.js) | -- |
@@ -564,6 +565,9 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
+| [chain.db.bad-presettlement-20260930](../../harvester/chain.db.bad-presettlement-20260930) | -- |
+| [chain.db.bad-presettlement-20260930-shm](../../harvester/chain.db.bad-presettlement-20260930-shm) | -- |
+| [chain.db.bad-presettlement-20260930-wal](../../harvester/chain.db.bad-presettlement-20260930-wal) | -- |
 | [harvest_chain.py](../../harvester/harvest_chain.py) | Harvest the BTC daily-option chain at 05:30 IST plus the 12:00 UTC settlement. |
 | [store.py](../../harvester/store.py) | SQLite store for harvested option-chain snapshots. |
 
