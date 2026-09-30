@@ -161,3 +161,36 @@ test('12. options: at the put OI wall, reacting, with the big-move reading unrea
 test('12. with no option board there is no options setup', () => {
   assert.equal(detect('options-flow', path(wave(60))), null);
 });
+
+// ------------------------------------------------------------ the 30 Sep 2026 audit
+
+test('[critical] 10. the stretch is read at the extreme of the last bars: the reversal that brings the close back is still the setup', () => {
+  const bars = add(path(wave(50, 84_000, 30, 10)),
+    { open: 84_000, high: 84_005, low: 83_700, close: 83_720 },
+    { open: 83_720, high: 84_015, low: 83_710, close: 84_010 });
+  const s = detect('vwap-reversion', bars);
+  assert.equal(s?.dir, 1, 'the close is back near VWAP, but the low two bars ago was far under it');
+  assert.deepEqual(oks(s), [true, true, null, true], 'stretched, a reversal candle, the tape unread, returning');
+  assert.equal(s?.stop, 83_700);
+});
+
+test('[critical] 12. a big-move reading with no direction is not against a trade', () => {
+  const bars = path(wave(60, 84_000, 20, 10));
+  const c = bars[bars.length - 1]!.close;
+  add(bars, { open: c, high: c + 2, low: 83_950, close: 83_960 }, { open: 83_960, high: c + 40, low: 83_955, close: c + 35 });
+  const s = detect('options-flow', bars, {
+    options: { spot: c, atmIv: 0.4, emDay: 1_500, callWall: 86_000, putWall: 83_950, maxPain: 84_500, toSettleSec: 20_000 },
+    bigMove: { band: 'normal', direction: null },
+  });
+  assert.equal(oks(s)?.[4], true);
+});
+
+test('[critical] 6. BOS: a counter-trend break is shown, and refused, not hidden', () => {
+  const down = path(wave(80, 84_000, 40, 10, -6));
+  const top = Math.max(...down.slice(-12).map((b) => b.high));
+  const c = down[down.length - 1]!.close;
+  add(down, { open: c, high: top + 125, low: c - 5, close: top + 120 });
+  const s = detect('bos', down);
+  assert.equal(s?.steps[2]?.label.startsWith('trend aligned'), true);
+  assert.equal(s?.steps[2]?.ok, false);
+});

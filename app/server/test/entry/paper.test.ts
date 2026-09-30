@@ -65,6 +65,18 @@ test(`an entry not reached within ${FILL_WITHIN_BARS} bars expires`, () => {
   assert.equal(gradeRow(long(), bars).status, 'expired');
 });
 
+test('[critical] the fill window runs from when the setup was on the board, not from its trigger bar', () => {
+  // An FVG formed forty bars before price came back to it: its trigger is old, the setup is new.
+  const old = long({ triggerAt: T - 40 * 300 });
+  const r = gradeRow(old, [minute(5, 84_100, 84_110, 84_090, 84_100), minute(6, 84_100, 84_110, 84_090, 84_100), minute(7, 84_050, 84_060, 84_005, 84_020)]);
+  assert.equal(r.status, 'filled', 'not expired on its first minute');
+});
+
+test('[critical] the minute the setup was seen in is not graded: it traded partly before the setup existed', () => {
+  const r = gradeRow(long({ firstSeen: (T + 300) * 1000 + 20_000 }), [minute(5, 84_050, 84_060, 84_005, 84_020)]);
+  assert.equal(r.status, 'open', 'a touch in that minute is not a fill');
+});
+
 test(`a filled trade still open after ${HOLD_BARS} bars is closed at the market`, () => {
   const bars = [minute(5, 84_050, 84_060, 84_005, 84_020),
     ...Array.from({ length: 5 * HOLD_BARS + 2 }, (_, k) => minute(6 + k, 84_100, 84_110, 84_090, 84_105))];
