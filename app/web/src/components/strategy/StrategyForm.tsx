@@ -508,6 +508,28 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                 </Stack>
               )}
 
+              {/*
+                The strategy's own premium floor. Off, the desk's $5 applies, as it
+                does to every order. For a late entry -- 29 minutes before settlement
+                most strikes pay under $5 -- the strategy has to say so itself.
+              */}
+              <div className="mt-3">
+                <Switch
+                  label="Its own minimum premium"
+                  description={c.minPremiumUsd != null
+                    ? `Sells down to $${c.minPremiumUsd} instead of the desk's $5.`
+                    : "Off — the desk's $5 minimum applies."}
+                  checked={c.minPremiumUsd != null}
+                  onCheckedChange={(on) => set('minPremiumUsd', on ? 1 : null)}
+                />
+                {c.minPremiumUsd != null && (
+                  <Stack label="Minimum premium" error={err('minPremium')} className="mt-1 w-40" hint="at least $0.10">
+                    <NumberField label="minimum premium usd" unitBefore="$" value={c.minPremiumUsd}
+                                 onChange={(n) => set('minPremiumUsd', n)} />
+                  </Stack>
+                )}
+              </div>
+
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <Stack label="Lots per leg" error={err('lots')} hint="1 lot = 0.001 BTC">
                   <Input value={String(c.lots)} aria-label="lots" inputMode="numeric"

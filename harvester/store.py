@@ -9,8 +9,11 @@ harvester writes.
 """
 import sqlite3, os, json, glob, sys, datetime
 
+# The repository root's chain.db, the one the desk, refresh.sh and the research
+# read. It defaulted to harvester/chain.db until 30 Sep 2026, so every daily
+# refresh from 8 Sep wrote there and the desk's copy never moved.
 DB = os.environ.get('CHAIN_DB') or os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), 'chain.db')
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'chain.db')
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS days (

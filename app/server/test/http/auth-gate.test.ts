@@ -65,6 +65,33 @@ test('the public routes stay public', async () => {
   assert.equal((await app.inject({ method: 'GET', url: '/api/me' })).statusCode, 200);
 });
 
+test('[critical] /api/health tells an outsider only that the desk is up', async () => {
+  const r = await app.inject({ method: 'GET', url: '/api/health', remoteAddress: '203.0.113.9' });
+  assert.equal(r.statusCode, 200);
+  assert.deepEqual(Object.keys(r.json()).sort(), ['db', 'now', 'ok'], 'no migration list, counts or feed state');
+  assert.deepEqual(r.json().db, { ok: true });
+});
+
+test('[critical] a request passed on by a proxy is an outsider, even from loopback', async () => {
+  const r = await app.inject({ method: 'GET', url: '/api/health', headers: { 'x-forwarded-for': '203.0.113.9' } });
+  assert.equal(r.json().schema, undefined);
+});
+
+test('/api/health gives the detail to a signed-in session, and from inside the container', async () => {
+  const signedIn = await app.inject({ method: 'GET', url: '/api/health', remoteAddress: '203.0.113.9', headers: { cookie: session() } });
+  assert.ok(Array.isArray(signedIn.json().schema), 'the migration ledger, to someone signed in');
+  const inside = await app.inject({ method: 'GET', url: '/api/health' });
+  assert.ok(Array.isArray(inside.json().schema), 'and to the container itself: the Docker healthcheck, docker compose exec');
+});
+
+test('[critical] /api/reload is refused to an outsider, and answers the container itself (refresh.sh)', async () => {
+  const outside = await app.inject({ method: 'POST', url: '/api/reload', remoteAddress: '203.0.113.9' });
+  assert.equal(outside.statusCode, 401);
+  const inside = await app.inject({ method: 'POST', url: '/api/reload' });
+  assert.equal(inside.statusCode, 200, inside.body);
+  assert.equal(typeof inside.json().days, 'number');
+});
+
 test('a session opens the protected routes', async () => {
   const r = await app.inject({ method: 'GET', url: '/api/strategies', headers: { cookie: session() } });
   assert.equal(r.statusCode, 200);

@@ -125,6 +125,16 @@ export type StrategyConfig = {
    */
   premium: { mode: PremiumMode; usd: number; fallbackUsd?: number | null };
   /**
+   * The lowest premium this strategy may sell, in dollars -- its own floor in
+   * place of the desk's ($5, `minPremiumUsd` in the precheck).
+   *
+   * Absent or null is the desk's floor, which is every strategy saved before
+   * this existed (30 Sep 2026). It exists for the late entry: 29 minutes before
+   * settlement most strikes pay under $5, and a strategy built to sell them has
+   * to say so rather than be refused every day. At least one tick, $0.10.
+   */
+  minPremiumUsd?: number | null;
+  /**
    * How the entry is priced.
    *
    * `offer` is the default and it is not a preference: resting at the offer
@@ -446,6 +456,9 @@ export const isHhmm = (v: unknown): v is string => typeof v === 'string' && HHMM
  */
 export const SETTLEMENT = '17:30';
 
+/** Minutes after the settlement that Delta auctions the new contract, rather than trading it. */
+export const LAUNCH_AUCTION_MIN = 5;
+
 /**
  * Check a config before it is stored, and say what is wrong in words.
  *
@@ -523,6 +536,14 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
   if (c.maxCrossSpreadPct !== undefined
       && (!(typeof c.maxCrossSpreadPct === 'number') || !(c.maxCrossSpreadPct > 0) || c.maxCrossSpreadPct > 1)) {
     bad.push('The spread limit for selling at the bid must be between 1% and 100%.');
+  }
+  if (c.minPremiumUsd !== null && c.minPremiumUsd !== undefined
+    && (typeof c.minPremiumUsd !== 'number' || !(c.minPremiumUsd >= 0.1) || c.minPremiumUsd > 10_000)) {
+    bad.push('The minimum premium must be at least $0.10, or left empty for the desk\'s $5.');
+  }
+  if (entryOk && minutesOf(c.entryTime!) >= minutesOf(SETTLEMENT) && minutesOf(c.entryTime!) < minutesOf(SETTLEMENT) + LAUNCH_AUCTION_MIN) {
+    bad.push(`Delta runs a launch auction for the new contract from 5:30 to 5:35 PM; an entry at ${time12(c.entryTime!)} `
+      + 'would be sent into it. Enter at 5:35 PM or later.');
   }
   if (c.legs !== 'CE' && c.legs !== 'PE' && c.legs !== 'both') bad.push('Legs must be CE, PE or both.');
   if (c.graceMin !== undefined

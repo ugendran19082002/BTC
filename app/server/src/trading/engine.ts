@@ -184,6 +184,12 @@ export type TradePlan = {
    */
   monitorOn?: 'ltp' | 'close';
   /**
+   * The lowest premium this trade may be sold at, when the strategy that
+   * placed it set its own (`StrategyConfig.minPremiumUsd`). Absent: the desk's
+   * floor. Only a strategy sets it; the ticket's route never passes it through.
+   */
+  minPremiumUsd?: number;
+  /**
    * Why the exits could not be anchored to the fill, when they could not.
    *
    * Set only where a fixed target or stop was overtaken by the entry itself.
@@ -603,7 +609,9 @@ export class TradeEngine {
       totalShortContracts: totalShort,
       dayPnlUsd: await this.dayPnl(),
       worstCaseLossUsd: worstCase,
-      limits: add ? { ...this.limits, minPremiumUsd: add.minPremiumUsd } : this.limits,
+      limits: add
+        ? { ...this.limits, minPremiumUsd: add.minPremiumUsd }
+        : plan.minPremiumUsd !== undefined ? { ...this.limits, minPremiumUsd: plan.minPremiumUsd } : this.limits,
     });
   }
 

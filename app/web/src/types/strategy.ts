@@ -59,6 +59,8 @@ export type StrategyConfig = {
    * at-least. Null or absent is no fallback.
    */
   premium: { mode: PremiumMode; usd: number; fallbackUsd?: number | null };
+  /** This strategy's own premium floor, in dollars. Null or absent: the desk's $5. */
+  minPremiumUsd?: number | null;
   entryPrice: EntryPrice;
   entryLimit: number | null;
   /** Seconds to wait at the offer before crossing. Zero rests until filled. */

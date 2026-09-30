@@ -142,6 +142,13 @@ def harvest_day(day):
             'settle': settle, 'atm': atm, 'step': STEP, 'legs': legs}
 
 
+def settled(day, now=None):
+    """True once the day's 12:00 UTC settlement, and the minute after it, are in the past."""
+    t_settle = datetime.datetime.combine(day, datetime.time(12, 0), datetime.timezone.utc)
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    return now >= t_settle + datetime.timedelta(minutes=2)
+
+
 def main():
     a = datetime.date.fromisoformat(sys.argv[1])
     b = datetime.date.fromisoformat(sys.argv[2])
@@ -149,6 +156,14 @@ def main():
     d = a
     n = 0
     while d <= b:
+        if not settled(d):
+            # A day is stored once and never looked at again, so harvesting it
+            # before the 12:00 UTC settlement stores the price at that moment as
+            # its settlement, for good. refresh.sh ran at 07:10 UTC every day
+            # from 8 to 29 Sep 2026 and wrote 22 such days.
+            print(f'{d}  SKIP not settled yet', flush=True)
+            d += datetime.timedelta(days=1)
+            continue
         if not store.have_day(con, d.isoformat(), VERSION):
             try:
                 rec = harvest_day(d)

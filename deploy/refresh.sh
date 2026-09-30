@@ -11,6 +11,11 @@ cd "$ROOT"
 TODAY="$(date -u +%F)"
 YESTERDAY="$(date -u -d yesterday +%F)"
 
+# The file this script ships. Named, not left to the harvester's default: until
+# 30 Sep 2026 that default was harvester/chain.db, and 22 days went there.
+export CHAIN_DB="$ROOT/chain.db"
+# Today is skipped until its 12:00 UTC settlement has passed; run before that,
+# this picks up yesterday.
 python3 harvester/harvest_chain.py "$YESTERDAY" "$TODAY"
 
 SNAP="$(mktemp -t chain-XXXXXX.db)"
@@ -33,7 +38,11 @@ if docker ps --format '{{.Names}}' | grep -qx btc-desk-api-1; then
     chmod 644 "$SNAP"
     docker cp "$SNAP" btc-desk-api-1:/srv/data/chain.db
     docker exec btc-desk-api-1 sh -c 'rm -f /srv/data/chain.db-wal /srv/data/chain.db-shm'
-    curl -fsS -X POST "http://${DESK_HOST:-172.17.0.1}:${WEB_PORT:-8099}/api/reload"
+    # From inside the container: /api/reload answers only a signed-in session or
+    # the container itself, and this script has no session (it got 401 from
+    # 11 Sep to 30 Sep 2026, and the desk kept the old dataset).
+    docker exec btc-desk-api-1 node -e \
+      "fetch('http://127.0.0.1:8787/api/reload',{method:'POST'}).then(async r=>{console.log(await r.text());process.exit(r.ok?0:1)})"
     echo
 else
     echo "btc-desk-api-1 is not running; database updated on disk only" >&2

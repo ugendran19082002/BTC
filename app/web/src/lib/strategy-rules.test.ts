@@ -60,3 +60,21 @@ describe('the other settings land on their tabs', () => {
     ]);
   });
 });
+
+describe('the launch auction and the minimum premium -- the server\'s words', () => {
+  it('[critical] an entry from 5:30 to 5:34 PM is refused on the When tab; 5:35 PM is fine', () => {
+    const at = (entryTime: string) => strategyProblems(cfg({ entryTime, exitTime: '05:00' }), 'S');
+    expect(at('17:30')).toEqual([{
+      field: 'entryTime', tab: 'when',
+      message: 'Delta runs a launch auction for the new contract from 5:30 to 5:35 PM; an entry at 5:30 PM would be sent into it. Enter at 5:35 PM or later.',
+    }]);
+    expect(at('17:34').map((p) => p.field)).toEqual(['entryTime']);
+    expect(at('17:35')).toEqual([]);
+  });
+
+  it('a minimum premium under one tick is refused; empty is the desk\'s', () => {
+    expect(messages(cfg({ minPremiumUsd: 0.05 }))).toEqual(["The minimum premium must be at least $0.10, or left empty for the desk's $5."]);
+    expect(messages(cfg({ minPremiumUsd: null }))).toEqual([]);
+    expect(messages(cfg({ minPremiumUsd: 0.5 }))).toEqual([]);
+  });
+});

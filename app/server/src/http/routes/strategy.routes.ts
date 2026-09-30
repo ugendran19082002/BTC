@@ -67,6 +67,10 @@ function cleanConfig(raw: unknown): StrategyConfig {
         ? null
         : Number(c.premium.fallbackUsd),
     },
+    // Absent or empty: the desk's floor, which is what every strategy used before it.
+    minPremiumUsd: c.minPremiumUsd === null || c.minPremiumUsd === undefined || (c.minPremiumUsd as unknown) === ''
+      ? null
+      : Number(c.minPremiumUsd),
     entryPrice: c.entryPrice === 'now' || c.entryPrice === 'set' ? c.entryPrice : 'offer',
     // Only a set entry has a price of its own; a leftover one from before the
     // entry was switched back to the offer or the bid is dropped, not kept.

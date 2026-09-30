@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { liveChain, historicalChain, liveExpiries, hoursSinceDeskOpen, simulationBacklog, WHOLE_BOARD, type Snapshot } from '../../market/chain.js';
 import { readMarket } from '../../market/moves.js';
 import { liveSpot, candles, tickerFeedHealth } from '../../market/delta.js';
@@ -19,6 +19,7 @@ import { changes } from '../../market/changes.js';
 import { one } from '../../db/pool.js';
 import { strategyStore } from './strategy.routes.js';
 import { refuse } from '../refuse.js';
+import type { AuthLevel } from './session.routes.js';
 import { emBuffer, verdict as sideVerdict } from '../../domain/direction.js';
 import { DEFAULT_LIMITS } from '../../trading/precheck.js';
 import { bestTradeNow } from '../../domain/best-trade-now.js';
@@ -59,15 +60,34 @@ export function wallWithinEm(): number {
   return Number.isFinite(raw) && raw >= 0.25 && raw <= 20 ? raw : DEFAULT_WALL_WITHIN_EM;
 }
 
+/**
+ * A request made from inside the API's own container: the Docker healthcheck,
+ * or `docker compose exec api node -e "fetch(...)"`. Loopback, and not passed
+ * on by a proxy -- anything from outside arrives through nginx, from another
+ * container's address, with `X-Forwarded-For` set.
+ */
+function fromInside(req: FastifyRequest): boolean {
+  const a = req.socket.remoteAddress;
+  return (a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1') && req.headers['x-forwarded-for'] === undefined;
+}
+
 export function registerDeskRoutes(app: FastifyInstance) {
-  app.get('/api/health', async () => {
-    const days = loadDays();
+  /*
+   * The health probe. Open, because the deploy scripts and Docker ask it without
+   * a session -- but only "up, and the database answers" to anyone else. The
+   * detail (every migration id, row counts, feed state, the clock) is a map of
+   * the system, so it goes to a signed-in session or from inside the container
+   * (security audit #13, docs/history/2026-09-11-security-audit.md; closed 30 Sep 2026).
+   */
+  app.get('/api/health', async (req) => {
     // One round trip, timed: a database that answers slowly is the first sign
-    // of one about to stop answering, and it should be readable from outside.
+    // of one about to stop answering.
     const t0 = Date.now();
     const db = await one('SELECT 1 AS ok')
       .then(() => ({ ok: true, latencyMs: Date.now() - t0 }))
       .catch((e: Error) => ({ ok: false, latencyMs: Date.now() - t0, error: e.message }));
+    if (!req.signedIn && !fromInside(req)) return { ok: true, db: { ok: db.ok }, now: new Date().toISOString() };
+    const days = loadDays();
     const optionSnapshots = db.ok ? await lastOptionSnapshot().catch(() => null) : null;
     return {
       ok: true,
@@ -502,11 +522,21 @@ export function registerDeskRoutes(app: FastifyInstance) {
     }
   });
 
-  app.post('/api/reload', async () => ({
-    days: reloadDays(),
-    calibrationBuckets: reloadCalibration(),
-    horizons: reloadHorizons(),
-  }));
+  /*
+   * Re-read chain.db after deploy/refresh.sh has shipped a new copy.
+   *
+   * Open to a signed-in session, and to the container itself, which is how
+   * refresh.sh asks (`docker exec ... fetch`): the script has no session, and
+   * behind the plain gate it got 401 every day from 11 to 30 Sep 2026.
+   */
+  app.post('/api/reload', { config: { auth: 'public' as AuthLevel } }, async (req, reply) => {
+    if (!req.signedIn && !fromInside(req)) return refuse(reply, 401, { error: 'not signed in' });
+    return {
+      days: reloadDays(),
+      calibrationBuckets: reloadCalibration(),
+      horizons: reloadHorizons(),
+    };
+  });
 
   /** Allowed setting keys and their valid values. */
   const ALLOWED_SETTINGS: Record<string, string[]> = {

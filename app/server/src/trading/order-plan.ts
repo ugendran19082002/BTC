@@ -208,6 +208,8 @@ export type PlaceInput = {
   marketFallback?: boolean;
   /** Sell into the bid only while the spread is at most this. Null walks to the bid regardless. */
   maxCrossSpreadPct?: number | null;
+  /** A strategy's own premium floor, in place of the desk's. Never set from the ticket. */
+  minPremiumUsd?: number;
 };
 
 export function orderPlan(input: PlaceInput, tradeId: string): TradePlan {
@@ -265,6 +267,7 @@ export function orderPlan(input: PlaceInput, tradeId: string): TradePlan {
         ? input.stopPrice
         : basis !== null ? stopFor(basis, input) : (input.stopAt ?? 0) > 0 ? round1(input.stopAt!) : null,
     exitAsk: followingAsk(input, basis),
+    ...(input.minPremiumUsd !== undefined ? { minPremiumUsd: input.minPremiumUsd } : {}),
     expect: {
       underlying: 'BTC',
       optionSide: input.optionSide,

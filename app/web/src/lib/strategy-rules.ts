@@ -13,16 +13,20 @@ import { exitRuleProblems, exitRules, premiumFallbackProblem } from '@/lib/strat
 
 export type FormTab = 'when' | 'sell' | 'trade';
 
+/** 17:30 IST, the daily settlement, in minutes; and the launch auction after it (server: `LAUNCH_AUCTION_MIN`). */
+const SETTLEMENT_MIN = 17 * 60 + 30;
+const LAUNCH_AUCTION_MIN = 5;
+
 export type FormField =
   | 'name' | 'entryTime' | 'exitTime' | 'weekdays' | 'graceMin'
-  | 'legs' | 'strikeRule' | 'strikeStep' | 'premium' | 'premiumFallback' | 'lots'
+  | 'legs' | 'strikeRule' | 'strikeStep' | 'premium' | 'premiumFallback' | 'minPremium' | 'lots'
   | 'entryLimit' | 'crossAfterSec' | 'maxCrossSpreadPct' | 'takeProfitPct' | 'stopLossPct';
 
 export type Problem = { field: FormField; tab: FormTab; message: string };
 
 const TAB: Record<FormField, FormTab> = {
   name: 'when', entryTime: 'when', exitTime: 'when', weekdays: 'when', graceMin: 'when',
-  legs: 'sell', strikeRule: 'sell', strikeStep: 'sell', premium: 'sell', premiumFallback: 'sell', lots: 'sell',
+  legs: 'sell', strikeRule: 'sell', strikeStep: 'sell', premium: 'sell', premiumFallback: 'sell', minPremium: 'sell', lots: 'sell',
   entryLimit: 'trade', crossAfterSec: 'trade', maxCrossSpreadPct: 'trade', takeProfitPct: 'trade', stopLossPct: 'trade',
 };
 
@@ -48,6 +52,10 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
         + `entered at ${time12(c.entryTime)}. The last exit is 5:29 PM.`);
     }
   }
+  if (entryOk && minutesOf(c.entryTime) >= SETTLEMENT_MIN && minutesOf(c.entryTime) < SETTLEMENT_MIN + LAUNCH_AUCTION_MIN) {
+    say('entryTime', `Delta runs a launch auction for the new contract from 5:30 to 5:35 PM; an entry at ${time12(c.entryTime)} `
+      + 'would be sent into it. Enter at 5:35 PM or later.');
+  }
   if (!Array.isArray(c.weekdays) || c.weekdays.length === 0) say('weekdays', 'Pick at least one day, or the strategy can never run.');
 
   if (c.strikeRule === 'strict' && (!Number.isInteger(c.strikeStep) || Math.abs(c.strikeStep) > MAX_STRIKE_STEP)) {
@@ -58,6 +66,10 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
   } else if (c.strikeRule === 'premium') {
     const f = premiumFallbackProblem(c.premium);
     if (f) say('premiumFallback', f);
+  }
+  if (c.minPremiumUsd !== null && c.minPremiumUsd !== undefined
+    && (!(c.minPremiumUsd >= 0.1) || c.minPremiumUsd > 10_000)) {
+    say('minPremium', 'The minimum premium must be at least $0.10, or left empty for the desk\'s $5.');
   }
   if (!Number.isInteger(c.lots) || c.lots < 1) say('lots', 'Lots must be a whole number, at least 1.');
 

@@ -348,6 +348,26 @@ describe('exits on a timetable', () => {
   });
 });
 
+describe('its own minimum premium', () => {
+  it('[critical] off by default -- the desk\'s $5 -- and switched on, set and saved', async () => {
+    show(editing({ premium: { mode: 'atMost', usd: 42 } }));
+    tab('Sell');
+    const sw = screen.getByRole('switch', { name: /Its own minimum premium/ });
+    expect(sw).not.toBeChecked();
+    expect(screen.getByText("Off — the desk's $5 minimum applies.")).toBeInTheDocument();
+    fireEvent.click(sw);
+    typeInto('minimum premium usd', '0.5');
+    expect(screen.getByText("Sells down to $0.5 instead of the desk's $5.")).toBeInTheDocument();
+    expect((await saved()).minPremiumUsd).toBe(0.5);
+  });
+
+  it('under one tick is refused beside the field', () => {
+    show(editing({ minPremiumUsd: 0.05 }));
+    tab('Sell');
+    expect(screen.getByText("The minimum premium must be at least $0.10, or left empty for the desk's $5.")).toBeInTheDocument();
+  });
+});
+
 describe('premium fallback', () => {
   it('[critical] at most $20, else the last strike at or below $50 -- switched on, set, and saved', async () => {
     show(editing({ premium: { mode: 'atMost', usd: 20 } }));

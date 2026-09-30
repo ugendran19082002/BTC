@@ -153,7 +153,10 @@ say "waiting for health"
 for i in $(seq 1 30); do
   if curl -fsS "http://${DESK_HOST}:${WEB_PORT}/api/health" >/dev/null 2>&1; then
     say "healthy after ${i}s"
-    curl -fsS "http://${DESK_HOST}:${WEB_PORT}/api/health"; echo
+    # The detail (migrations, feeds) is only given from inside the container.
+    $COMPOSE exec -T api node -e "fetch('http://127.0.0.1:8787/api/health').then(r=>r.text()).then(console.log)" \
+      || curl -fsS "http://${DESK_HOST}:${WEB_PORT}/api/health"
+    echo
     say "front end: http://${DESK_HOST}:${WEB_PORT}/"
     tag_latest "$TAG"
     if [[ $PRUNE -eq 1 ]]; then prune_images; fi

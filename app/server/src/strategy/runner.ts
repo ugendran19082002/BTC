@@ -331,6 +331,8 @@ function placeArgs(s: Strategy, o: Parameters<typeof svcPlace>[1]) {
     // Wait for a tight spread before selling into the bid, and give up at the
     // close of the entry window rather than resting into the day.
     maxCrossSpreadPct: c.entryPrice === 'offer' ? (c.maxCrossSpreadPct ?? 0.15) : null,
+    // The strategy's own premium floor, when it set one; otherwise the desk's.
+    ...(c.minPremiumUsd !== null && c.minPremiumUsd !== undefined ? { minPremiumUsd: c.minPremiumUsd } : {}),
     timeoutMs: c.entryPrice === 'offer' && c.crossAfterSec > 0 ? cancelAfterMs : undefined,
     ...exitsNow(s, Date.now()),
   };

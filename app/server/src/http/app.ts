@@ -65,6 +65,16 @@ const refererOrigin = (ref: string | undefined): string | undefined => {
 
 const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
+declare module 'fastify' {
+  interface FastifyRequest {
+    /**
+     * A full session came with this request. Set by the gate; on a public route
+     * it lets the route say more to someone signed in (`/api/health`).
+     */
+    signedIn: boolean;
+  }
+}
+
 export async function buildApp(o: {
   auth?: AuthService;
   now?: () => number;
@@ -76,6 +86,7 @@ export async function buildApp(o: {
     trustProxy: TRUSTED_PROXIES,
   });
   if (o.onRoute) app.addHook('onRoute', o.onRoute);
+  app.decorateRequest('signedIn', false);
 
   /*
    * No CORS. The page and the API share one origin through the proxy, so a
@@ -114,12 +125,19 @@ export async function buildApp(o: {
       return reply.send(refuse(reply, 403, { error: 'cross-origin request refused' }));
     }
     const level = routeAuthLevel(route, req.routeOptions.config);
-    if (level === 'public') return;
+    if (level === 'public') {
+      const token = readCookie(req.headers.cookie, COOKIE);
+      if (token && await auth.configured()) req.signedIn = (await auth.session(token))?.stage === 'full';
+      return;
+    }
     if (!(await auth.configured())) {
       return reply.send(refuse(reply, 503, { error: 'Sign-in is not set up on this server.' }));
     }
     const s = await auth.session(readCookie(req.headers.cookie, COOKIE));
-    if (s && s.stage === level) return;
+    if (s && s.stage === level) {
+      req.signedIn = s.stage === 'full';
+      return;
+    }
     reply.code(401);
     return reply.send({ error: 'not signed in', stage: s?.stage ?? 'none' });
   });
