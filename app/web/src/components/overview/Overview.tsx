@@ -6,7 +6,6 @@ import type { TradeStatus } from '@/types/trade';
 import { getPerp } from '@/api/desk';
 import { DeskDashboard } from '@/components/desk-screen/DeskDashboard';
 import { usePoll } from '@/hooks/usePoll';
-import type { ChartTf } from '@/components/desk/PriceChart';
 import { bestLeg, windowMinutes, type WindowChoice } from '@/lib/overview';
 import { PanelFold } from './parts';
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
@@ -36,24 +35,21 @@ export const screenSpot = (tick: number | null | undefined, snapshot: number | n
  * an order.
  */
 export function Overview({
-  data, trade, expiries, onExpiry, chartTf = '15m',
-  selected: selectedProp, onSelect, tick, controls, error,
+  data, trade, expiries, onExpiry,
+  selected: selectedProp, onSelect, tick, controls,
   bars = [], ltp = null,
 }: {
   data: ChainResponse;
   trade: TradeStatus | null;
   expiries?: readonly ExpiryOption[];
   onExpiry?: (expiry: string) => void;
-  /** The chart's timeframe. */
-  chartTf?: ChartTf;
   /** The selected strike, when the screen owns it; `null` means the desk's pick. */
   selected?: Selected | null;
   onSelect?: (s: Selected | null) => void;
   tick?: number | null;
   /** The screen's mode and refresh controls, drawn in the screen bar. */
   controls?: ReactNode;
-  /** The last load's error, if the chain on screen is older than it should be. */
-  error?: string | null;
+  /** The desk's live 5m candles, for the entry section's charts. */
   bars?: readonly Candle[];
   /** The perp's last trade and the candles in progress, from the stream; null when it is down. */
   ltp?: LiveLtp | null;
@@ -119,10 +115,8 @@ export function Overview({
         ltp={ltp}
         strikes={strikes}
         derivs={derivs}
-        tf={chartTf}
         expiryLabel={snap.expiry ? `${snap.expiry} 17:30 IST` : undefined}
         hoursToExpiry={snap.hoursToExpiry}
-        error={error ?? undefined}
         controls={controls}
       />
 

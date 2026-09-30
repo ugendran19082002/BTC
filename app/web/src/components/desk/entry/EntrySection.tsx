@@ -39,8 +39,8 @@ export function EntrySection({ desk }: {
   const [setupsOn, setSetupsOn] = usePersisted<boolean>('entry:setups-on', true);
   const [view, setView] = usePersisted<'panels' | 'grid'>('entry:view-2', 'panels');
   const [gridMode, setGridMode] = usePersisted<EntryMode>('entry:grid-mode', 'mtf');
-  const [chosen, setChosen] = usePersisted<{ single: string | null; mtf: string | null; last: EntryMode }>(
-    'entry:chosen-2', { single: null, mtf: null, last: 'mtf' },
+  const [chosen, setChosen] = usePersisted<{ single: string | null; mtf: string | null }>(
+    'entry:chosen-2', { single: null, mtf: null },
   );
   const [mtfChartTf, setMtfChartTf] = usePersisted<EntryTf>('entry:mtf-chart-tf', '5m');
   const tf = SINGLE_TFS.includes(singleTf) ? singleTf : '5m';
@@ -63,12 +63,12 @@ export function EntrySection({ desk }: {
   const counts = { trade: reads.filter((r) => r.state === 'TRADE').length, wait: reads.filter((r) => r.state === 'WAIT').length };
   const recordOf = (r: MethodRead) => record?.records.find((x) => x.method === r.id && x.mode === r.mode && x.tf === r.tf) ?? null;
   const totalOf = (mode: EntryMode) => record?.totals.find((t) => t.mode === mode && t.tf === '5m') ?? null;
-  const choose = (r: MethodRead) => setChosen({ ...chosen, [r.mode]: keyOf(r), last: r.mode });
+  const choose = (r: MethodRead) => setChosen({ ...chosen, [r.mode]: keyOf(r) });
   // From the method table: the same method on both sides.
   const chooseBoth = (n: number) => {
     const s = reads.find((r) => r.mode === 'single' && r.n === n);
     const m = reads.find((r) => r.mode === 'mtf' && r.n === n);
-    setChosen({ single: s ? keyOf(s) : chosen.single, mtf: m ? keyOf(m) : chosen.mtf, last: chosen.last });
+    setChosen({ single: s ? keyOf(s) : chosen.single, mtf: m ? keyOf(m) : chosen.mtf });
   };
   const bothN = selected.single && selected.mtf && selected.single.n === selected.mtf.n ? selected.single.n : null;
 
@@ -104,10 +104,10 @@ export function EntrySection({ desk }: {
           <div className="grid gap-3 lg:grid-cols-2">
             <ModePanel mode="single" reads={reads.filter((r) => r.mode === 'single')} timeframes={board?.timeframes ?? []}
                        selected={selected.single} onChoose={choose} total={totalOf('single')} recordOf={recordOf}
-                       setupsOn={setupsOn} singleTf={tf} onSingleTf={setSingleTf} chartTf={tf} onChartTf={setSingleTf} chart={chart} />
+                       setupsOn={setupsOn} chartTf={tf} onChartTf={setSingleTf} chart={chart} />
             <ModePanel mode="mtf" reads={reads.filter((r) => r.mode === 'mtf')} timeframes={board?.timeframes ?? []}
                        selected={selected.mtf} onChoose={choose} total={totalOf('mtf')} recordOf={recordOf}
-                       setupsOn={setupsOn} singleTf={tf} onSingleTf={setSingleTf} chartTf={mtfTf} onChartTf={setMtfChartTf} chart={chart} />
+                       setupsOn={setupsOn} chartTf={mtfTf} onChartTf={setMtfChartTf} chart={chart} />
           </div>
           <Comparison single={totalOf('single')} mtf={totalOf('mtf')} />
         </>

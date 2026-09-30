@@ -2,31 +2,26 @@ import type { Candle } from '@/types/desk';
 import type { LiveLtp } from '@/hooks/useStream';
 import type { Leg } from '@/types/desk';
 import type { PerpOiChange } from '@/api/desk';
-import type { ChartTf } from '@/components/desk/PriceChart';
+import { useMemo } from 'react';
 import { DeskHeader } from './DeskHeader';
-import { useState } from 'react';
-import { DeskChart } from './DeskChart';
 import { EntrySection } from '@/components/desk/entry/EntrySection';
-import type { EntryOverlay } from '@/types/entry';
 import './desk-dashboard.css';
 
 /*
- * The Live screen's top: a one-row header, then the price chart at full
- * width. The KPI strip, expiry prediction and analysis grid went on 28 Sep
- * 2026, and later that day the Big Momentum Signal card and the stats strip
- * (spot, perp, volume, OI, funding, IV, PCR) -- the chart's own readout carries
- * the setup now. See docs/history/2026-09.md.
+ * The Live screen's top: a one-row header, then the entry section -- whose
+ * two panels carry the desk's price charts. The full-width main chart went on
+ * 30 Sep 2026: it ran an entry logic of its own beside the entry section's,
+ * and the owner wanted one. Before that, the KPI strip, expiry prediction and
+ * analysis grid went on 28 Sep 2026, and later that day the Big Momentum Signal card and the stats strip
+ * (spot, perp, volume, OI, funding, IV, PCR). See docs/history/2026-09.md.
  */
 export function DeskDashboard({
   bars,
   ltp = null,
   strikes = null,
   derivs = null,
-  tf = '5m',
   expiryLabel,
   hoursToExpiry,
-  loading = false,
-  error,
   onAlerts,
   onSettings,
   controls,
@@ -35,17 +30,13 @@ export function DeskDashboard({
   ltp?: LiveLtp | null;
   strikes?: { legs: readonly Leg[]; maxPain: number | null } | null;
   derivs?: { oi: PerpOiChange | null; funding: number | null } | null;
-  tf: ChartTf;
   expiryLabel?: string;
   hoursToExpiry?: number;
-  loading?: boolean;
-  error?: string;
   onAlerts?: () => void;
   onSettings?: () => void;
   controls?: React.ReactNode;
 }) {
-  // The entry section's chosen setup, drawn on the chart above it.
-  const [entry, setEntry] = useState<EntryOverlay | null>(null);
+  const desk = useMemo(() => ({ bars5m: bars, ltp, strikes, derivs }), [bars, ltp, strikes, derivs]);
   return (
     <div className="desk-root" aria-label="BTC Live Desk">
       <DeskHeader
@@ -55,10 +46,7 @@ export function DeskDashboard({
         onSettings={onSettings}
         controls={controls}
       />
-      <div className="desk-chart-row">
-        <DeskChart bars={bars} ltp={ltp} strikes={strikes} derivs={derivs} tf={tf} loading={loading} error={error} entry={entry} />
-      </div>
-      <EntrySection onOverlay={setEntry} />
+      <EntrySection desk={desk} />
     </div>
   );
 }

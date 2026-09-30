@@ -36,7 +36,7 @@ const COPY: Record<EntryMode, { title: string; accent: string; sub: string; tag:
   },
 };
 
-export function ModePanel({ mode, reads, timeframes, selected, onChoose, total, recordOf, setupsOn, singleTf, onSingleTf, chartTf, onChartTf, chart }: {
+export function ModePanel({ mode, reads, timeframes, selected, onChoose, total, recordOf, setupsOn, chartTf, onChartTf, chart }: {
   mode: EntryMode;
   reads: readonly MethodRead[];
   timeframes: readonly TimeframeRow[];
@@ -47,16 +47,16 @@ export function ModePanel({ mode, reads, timeframes, selected, onChoose, total, 
   total: EntryRecord | null;
   recordOf: (r: MethodRead) => EntryRecord | null;
   setupsOn: boolean;
-  singleTf: EntryTf;
-  onSingleTf: (tf: EntryTf) => void;
-  /** With the chain: the timeframe the chart shows (any of the chain's; the reads stay at 5m). */
+  /**
+   * The chart's timeframe. Without the chain it is also the reads' timeframe;
+   * with it, any of the chain's, to look at (the reads stay at 5m).
+   */
   chartTf: EntryTf;
   onChartTf: (tf: EntryTf) => void;
   /** The shared chart data, per timeframe (feed.ts). */
   chart: (tf: EntryTf) => ChartFeed;
 }) {
   const copy = COPY[mode];
-  const shownTf = mode === 'single' ? singleTf : chartTf;
   // Kept while the choice holds: a new object each tick would rebuild the chart's whole scene.
   const drawn = useMemo(() => overlayOf(selected, setupsOn), [selected, setupsOn]);
 
@@ -73,12 +73,12 @@ export function ModePanel({ mode, reads, timeframes, selected, onChoose, total, 
       {/* The chart, with its timeframe control. */}
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-[11.5px]">
         <span className="text-muted-foreground">
-          BTCUSD · {shownTf}{selected ? ` · ${selected.name}` : ''}{drawn ? '' : setupsOn ? ' · no levels (not a TRADE)' : ' · setups off'}
+          BTCUSD · {chartTf}{selected ? ` · ${selected.name}` : ''}{drawn ? '' : setupsOn ? ' · no levels (not a TRADE)' : ' · setups off'}
         </span>
         {mode === 'single' ? (
           <label className="flex items-center gap-1 text-muted-foreground">
             timeframe
-            <select aria-label="timeframe without the chain" value={singleTf} onChange={(e) => onSingleTf(e.target.value as EntryTf)}
+            <select aria-label="timeframe without the chain" value={chartTf} onChange={(e) => onChartTf(e.target.value as EntryTf)}
                     className="rounded border border-border bg-transparent px-1 py-0.5 text-foreground">
               {SINGLE_TFS.map((x) => <option key={x} value={x}>{x}</option>)}
             </select>
@@ -94,7 +94,7 @@ export function ModePanel({ mode, reads, timeframes, selected, onChoose, total, 
           </div>
         )}
       </div>
-      <PriceChart {...chart(shownTf)} tf={shownTf} entry={drawn} size="panel" label={`${copy.title} chart`} />
+      <PriceChart {...chart(chartTf)} tf={chartTf} entry={drawn} size="panel" label={`${copy.title} chart`} />
 
       {/* The table full width, then the chosen setup beside its reasons: a panel is half the screen at most. */}
       <div className="mt-2 grid gap-2">

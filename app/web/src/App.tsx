@@ -552,10 +552,8 @@ export default function App() {
                 selected={focus}
                 onSelect={setFocus}
                 tick={liveSpot}
-                error={err}
                 bars={liveBars}
                 ltp={stream.live ? stream.ltp : null}
-                chartTf={chartTf}
                 controls={
                   <>
                     <Select ariaLabel="when" value={live ? 'live' : 'past'} onValueChange={(v) => setLive(v === 'live')}>
