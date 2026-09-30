@@ -46,9 +46,16 @@ export function LiveStrip({ plan, dir, ltp, now = Date.now() }: {
   const toStop = Math.abs(ltp.price - plan.stop);
   const toTp1 = Math.abs(plan.tp1 - ltp.price);
   const fresh = now - ltp.at <= 5_000;
+  // How far outside the zone, from its nearest edge -- not the fill, which for a short above it is the far edge.
+  const out = place === 'above' ? ltp.price - plan.entryHi : place === 'below' ? plan.entryLo - ltp.price : 0;
   const chip: Record<LivePlace, { text: string; cls: string }> = {
-    above: { text: dir === 'long' ? `${fmt(toEntry)} pts above the zone` : `past the zone by ${fmt(toEntry)} pts`, cls: 'bg-muted text-foreground' },
-    below: { text: dir === 'long' ? `under the zone by ${fmt(toEntry)} pts` : `${fmt(toEntry)} pts below the zone`, cls: 'bg-muted text-foreground' },
+    // Which side of the zone, and which way that is: toward the fill, or toward the stop.
+    above: dir === 'long'
+      ? { text: `${fmt(out)} pts above the zone · waiting for it to come down`, cls: 'bg-muted text-foreground' }
+      : { text: `${fmt(out)} pts above the zone · toward the SL`, cls: 'bg-[rgba(226,80,79,0.18)] text-[var(--down)]' },
+    below: dir === 'long'
+      ? { text: `${fmt(out)} pts under the zone · toward the SL`, cls: 'bg-[rgba(226,80,79,0.18)] text-[var(--down)]' }
+      : { text: `${fmt(out)} pts under the zone · waiting for it to come up`, cls: 'bg-muted text-foreground' },
     in: { text: 'IN THE ENTRY ZONE', cls: 'bg-[#3b82f6] text-white' },
     'past-sl': { text: 'PAST THE STOP', cls: 'bg-[#e2504f] text-white' },
     tp1: { text: 'AT / PAST TP1', cls: 'bg-[#26a17b] text-white' },

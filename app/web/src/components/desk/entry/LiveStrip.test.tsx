@@ -33,6 +33,16 @@ describe('the live price against a TRADE', () => {
     expect(s).toHaveTextContent('to TP1 100 pts');
   });
 
+  it('[critical] which side of the zone, and which way that is: toward the fill or toward the stop', () => {
+    const { rerender } = render(<LiveStrip plan={SHORT} dir="short" ltp={{ price: 84_604, at: 1_000 }} now={2_000} />);
+    expect(screen.getByLabelText('live price')).toHaveTextContent('81 pts above the zone · toward the SL');
+    expect(screen.getByLabelText('live price')).toHaveTextContent('to entry 213 pts'); // the fill is the zone's bottom
+    rerender(<LiveStrip plan={SHORT} dir="short" ltp={{ price: 84_350, at: 1_000 }} now={2_000} />);
+    expect(screen.getByLabelText('live price')).toHaveTextContent('41 pts under the zone · waiting for it to come up');
+    rerender(<LiveStrip plan={LONG} dir="long" ltp={{ price: 84_100, at: 1_000 }} now={2_000} />);
+    expect(screen.getByLabelText('live price')).toHaveTextContent('20 pts under the zone · toward the SL');
+  });
+
   it('in the zone it says so, loudly', () => {
     render(<LiveStrip plan={SHORT} dir="short" ltp={{ price: 84_450, at: 1_000 }} now={2_000} />);
     expect(within(screen.getByLabelText('live price')).getByText('IN THE ENTRY ZONE')).toBeInTheDocument();
