@@ -5,7 +5,7 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-332 files listed, 148 test files counted below, images and lockfiles left out.
+352 files listed, 148 test files counted below, images and lockfiles left out.
 
 ## Test files
 
@@ -23,7 +23,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [Dockerfile](../../Dockerfile) | ---------- build the API ---------- |
 | [Dockerfile.harvester](../../Dockerfile.harvester) | Keeps the chain cache current. |
 | [Dockerfile.web](../../Dockerfile.web) | -- |
-| [README.md](../../README.md) | BTC — Delta Exchange (India) daily-expiry short-premium research |
+| [README.md](../../README.md) | BTC options desk |
 
 ## `app/server/`
 
@@ -145,7 +145,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [book-heat.ts](../../app/server/src/market/book-heat.ts) | The perpetual's resting liquidity, recorded: the chart's heatmap. |
 | [chain-features.ts](../../app/server/src/market/chain-features.ts) | The option board as figures a measurement can use — and a record of them. |
 | [chain.ts](../../app/server/src/market/chain.ts) | -- |
-| [changes.ts](../../app/server/src/market/changes.ts) | What changed over the last 1m … 12h: BTC, one strike's premium / OI / IV / volume, and the board's call and put open interest, volume and PCR -- the "diff" a seller reads before entry (docs/test.md... |
+| [changes.ts](../../app/server/src/market/changes.ts) | What changed over the last 1m … 12h: BTC, one strike's premium / OI / IV / volume, and the board's call and put open interest, volume and PCR -- the "diff" a seller reads before entry (the desk spe... |
 | [chart-annotations.ts](../../app/server/src/market/chart-annotations.ts) | Chart annotations — SL/TGT boxes, SMC labels, OB zones saved by the trader. |
 | [delta-socket.ts](../../app/server/src/market/delta-socket.ts) | Delta's public ticker feed, over a socket. |
 | [delta.ts](../../app/server/src/market/delta.ts) | Delta Exchange India public market data. |
@@ -500,16 +500,65 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [ADMINER.md](../ADMINER.md) | Adminer — the database console |
-| [ARCHITECTURE.md](../ARCHITECTURE.md) | Architecture |
-| [DB-INVENTORY.md](../DB-INVENTORY.md) | Database inventory |
-| [DELTA-API-NOTES.md](../DELTA-API-NOTES.md) | Delta Exchange API — what this desk relies on |
-| [Data.md](../Data.md) | Market data — what Delta gives, and what the desk keeps |
-| [FILE-INVENTORY.md](../FILE-INVENTORY.md) | File inventory |
-| [NEW_IDEA.md](../NEW_IDEA.md) | -- |
-| [PRICE-CHART.md](../PRICE-CHART.md) | The price chart |
-| [SECURITY-AUDIT.md](../SECURITY-AUDIT.md) | Security audit — BTC Desk |
+| [README.md](../README.md) | Docs |
 | [TODO.md](../TODO.md) | TODO |
+| [architecture.md](../architecture.md) | Architecture |
+
+## `docs/decisions/`
+
+| File | What it is |
+|---|---|
+| [0001-read-the-exchange.md](../decisions/0001-read-the-exchange.md) | 0001 — Anything labelled as what the exchange is doing is read from the exchange |
+| [0002-simulator-is-not-the-venue.md](../decisions/0002-simulator-is-not-the-venue.md) | 0002 — A simulator is evidence about our logic, never about the venue's |
+| [0003-position-from-fills.md](../decisions/0003-position-from-fills.md) | 0003 — Position is counted from fills, never assumed |
+| [0004-engine-owns-no-clock.md](../decisions/0004-engine-owns-no-clock.md) | 0004 — The trading engine owns no clock |
+| [0005-error-log-only-what-needs-fixing.md](../decisions/0005-error-log-only-what-needs-fixing.md) | 0005 — The error log holds only what needs fixing |
+| [0006-target-is-a-price-stop-is-an-exit.md](../decisions/0006-target-is-a-price-stop-is-an-exit.md) | 0006 — A target is a resting limit; a stop is an exit, judged here and backstopped at Delta |
+| [0007-feed-age-is-the-newest-source.md](../decisions/0007-feed-age-is-the-newest-source.md) | 0007 — A feed's age is the age of the newest thing that arrived, from any source |
+| [0008-one-database-one-schema.md](../decisions/0008-one-database-one-schema.md) | 0008 — One PostgreSQL database, one schema; `chain.db` stays a file |
+| [0009-append-only-journal.md](../decisions/0009-append-only-journal.md) | 0009 — The trade journal is append-only and replayed |
+| [0010-server-decides-paper-or-live.md](../decisions/0010-server-decides-paper-or-live.md) | 0010 — The server decides paper or live, and will not flip with a position open |
+| [0011-one-trade-per-contract.md](../decisions/0011-one-trade-per-contract.md) | 0011 — One trade per contract, for now |
+| [0012-generated-reference-docs.md](../decisions/0012-generated-reference-docs.md) | 0012 — Reference docs are generated from the code and tested |
+| [README.md](../decisions/README.md) | Decisions |
+
+## `docs/features/`
+
+| File | What it is |
+|---|---|
+| [price-chart.md](../features/price-chart.md) | The price chart |
+| [strategies.md](../features/strategies.md) | Scheduled strategies |
+
+## `docs/guides/`
+
+| File | What it is |
+|---|---|
+| [database-console.md](../guides/database-console.md) | Database console (Adminer) |
+| [deploy.md](../guides/deploy.md) | Deploy |
+| [local-development.md](../guides/local-development.md) | Local development |
+| [operations.md](../guides/operations.md) | Operations |
+
+## `docs/history/`
+
+| File | What it is |
+|---|---|
+| [2026-09-11-security-audit.md](../history/2026-09-11-security-audit.md) | Security audit — BTC Desk |
+| [2026-09.md](../history/2026-09.md) | History — September 2026 |
+
+## `docs/reference/`
+
+| File | What it is |
+|---|---|
+| [database.md](database.md) | Database |
+| [delta-api.md](delta-api.md) | Delta Exchange API |
+| [market-data.md](market-data.md) | Market data |
+
+## `docs/research/`
+
+| File | What it is |
+|---|---|
+| [findings.md](../research/findings.md) | Research findings |
+| [ideas.md](../research/ideas.md) | Strategy ideas |
 
 ## `harvester/`
 
@@ -540,6 +589,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [OVERNIGHT-REPORT.txt](../../research/OVERNIGHT-REPORT.txt) | ==================================================================================== |
 | [PROBABILITY-GATES.txt](../../research/PROBABILITY-GATES.txt) | ======================================================================================== |
 | [PROFILE-STUDY.txt](../../research/PROFILE-STUDY.txt) | Volume profile on BTCUSD 5m, 941 UTC days with the day before whole; fees 0.05% a side |
+| [README.md](../../research/README.md) | Research — BTC daily-expiry short premium |
 | [SMC-STUDY.txt](../../research/SMC-STUDY.txt) | == Variants (net of fees; per trade and total; 2024-25 chooses, 2026 judges) |
 | [STEP-OUT.txt](../../research/STEP-OUT.txt) | ====================================================================================== |
 | [WEEKDAY-REPORT.txt](../../research/WEEKDAY-REPORT.txt) | ============================================================================================ |
