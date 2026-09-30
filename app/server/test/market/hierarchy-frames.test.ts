@@ -4,7 +4,8 @@ import { resampleTf, HIERARCHY_TIMEFRAMES } from '../../src/market/moves.js';
 import type { Candle } from '../../src/market/delta.js';
 
 /**
- * The frames the owner's hierarchy spec (`git show b9b5499^:docs/New.md`) needs that Delta India does not serve.
+ * The frames the owner's hierarchy spec (`git show b9b5499^:docs/New.md`)
+ * needs that Delta India does not serve.
  *
  * Measured 26 Sep 2026 against the live endpoint: 30m, 2h and 6h all return
  * bars; **12h returns none**. So the 12-hour frame is folded from 6-hour ones,
