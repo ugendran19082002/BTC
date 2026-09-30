@@ -60,14 +60,19 @@ Entry methods   1 Breakout · 2 Breakout + retest · … · 12 Options
   from the candle its trigger closed on, the stop and TP1-TP3 as lines to the
   right edge (`chart/entry-layer.ts`, layer `entry`). A WAIT or NO TRADE draws
   nothing; **Setups on chart** off draws nothing.
-- **The HUD** folds to one line (folded by default on a phone): BTCUSD's price
+- **The HUD** folds to one line (folded by default in a panel and on a phone,
+  remembered per chart size): BTCUSD's price
   and the timeframe, the context row (1H regime, 30M bias, 15M structure, 5M,
   1M -- each its last break), the candle under the crosshair, the perp's
   positioning and the volatility regime, the big trades in view, and that
   candle's flow. No setup, no plan, no record.
-- **The toolbar**: the LTP chip, Layers (presets, then every layer with its
-  research note; remembered per browser), Zoom (pan and zoom are off by
+- **The toolbar**: the LTP chip, Layers (presets -- **None** unchecks every
+  layer in one click -- then every layer with its research note; remembered
+  per browser, scrolling inside the screen on a phone), Zoom (pan and zoom are off by
   default so the page scrolls over the chart), full screen.
+- **Narrow charts**: the chart sizes its toolbar from its own width (a CSS
+  container query), so half a 1024 px screen gets the phone's icon-only
+  toolbar and it never runs over the readout.
 - **Layering, back to front**: heatmap → sessions / premium-discount / zones →
   volume profile → candles and volume → lines (structure, liquidity, strikes,
   walls), marks, bubbles → labels. The entry setup's box and its labels are
@@ -386,6 +391,7 @@ Everything on at once buries the entry setup, so the menu opens with **presets**
 | Order flow | heatmap, big trades, volume profile, Δ / CVD, saved |
 | Options | option strikes, levels, volume profile, saved |
 | All | every layer |
+| None | nothing: plain candles (and the entry setup, which has its own switch) |
 
 Each layer carries **what the research says about it** under its name --
 "Measured: POC no magnet, 80% rule no edge", "Recorded since 29 Sep 2026 --

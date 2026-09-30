@@ -93,6 +93,13 @@
 .pc-hud-head:focus-visible { outline: 2px solid #38bdf8; outline-offset: 1px; }
 
 .pc-layers { display: grid; gap: 2px; min-width: 250px; max-width: 290px; padding: 8px; background: #0f1623; }
+/* Sixteen layers are taller than a phone: the menu scrolls inside the room it has, the presets staying on top. */
+.pc-layers { max-height: min(560px, var(--radix-popover-content-available-height, 70vh)); overflow-y: auto; overscroll-behavior: contain; }
+.pc-layers .pc-presets { position: sticky; top: -8px; z-index: 1; margin-top: -8px; padding-top: 8px; background: #0f1623; }
+@media (max-width: 640px) {
+  /* Clear of the app's bottom tab bar. */
+  .pc-layers { max-height: min(480px, calc(var(--radix-popover-content-available-height, 70vh) - 76px)); }
+}
 .pc-layer-note { display: block; font-size: 10px; line-height: 1.3; color: #64748b; font-weight: 500; }
 .pc-presets { display: flex; flex-wrap: wrap; gap: 4px; padding-bottom: 6px; margin-bottom: 4px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
 .pc-preset {
