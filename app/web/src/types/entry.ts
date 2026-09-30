@@ -88,6 +88,8 @@ export type EntryRecord = {
   since: number | null;
   /** Setups logged while a gate was switched off: kept apart, in none of the figures. */
   gatesOff?: number;
+  /** Points made at TP1, lost at the stop, and the net -- from the fill to the exit. */
+  tgtPts?: number; slPts?: number; netPts?: number;
 };
 
 /** `totals`: every gate on (the rules). `totalsAll`: gate-off setups included -- shown apart, labelled. */
@@ -99,8 +101,17 @@ export type EntrySignal = {
   triggerAt: number; firstSeen: number; lastSeen: number; score: number | null; reason: string;
   entryLo: number | null; entryHi: number | null; stop: number | null; tp1: number | null; rr: number | null;
   gatesOff: string[];
+  /** The market when it was first seen: the perpetual's last trade, Delta's BTC index. */
+  ltp: number | null; indexPrice: number | null;
   outcome: { status: string; fillPrice: number | null; exitPrice: number | null; exitAt: number | null; rNet: number | null } | null;
 };
+
+/** Over every signal matching the filters: TP1 hits and points made, stops and points lost, the net. */
+export type EntrySignalSummary = {
+  trades: number; tp1: number; tp1Pts: number; stops: number; slPts: number; timeouts: number;
+  netPts: number; netR: number; open: number;
+};
+export type EntrySignalPage = { signals: EntrySignal[]; total: number; summary: EntrySignalSummary };
 
 /** What the price chart draws for the chosen setup. */
 export type EntryOverlay = {

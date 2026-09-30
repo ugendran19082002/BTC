@@ -1,5 +1,5 @@
 import { json, post } from './client';
-import type { EntryAlerts, EntryBoard, EntryGateSetting, EntryMode, EntryRecordResponse, EntrySignal, EntryTf } from '@/types/entry';
+import type { EntryAlerts, EntryBoard, EntryGateSetting, EntryMode, EntryRecordResponse, EntrySignalPage, EntryTf } from '@/types/entry';
 
 /** The 24 reads: with the timeframe chain (entry on 5m), and without it on `tf`. */
 export const getEntryBoard = (tf: EntryTf = '5m') => json<EntryBoard>(`/api/entry/board?tf=${tf}`);
@@ -24,9 +24,13 @@ export const setEntryAlert = (mode: EntryMode, enabled: boolean, tfs?: EntryTf[]
 /** Send a test message now (409 when Telegram is not set up). */
 export const sendEntryAlertTest = () => post<{ ok: true }>('/api/entry/alerts/test', {});
 
-/** The signal history: newest first, optionally one way, timeframe or state, since a moment (epoch ms). */
-export function getEntrySignals(q: { mode?: EntryMode; tf?: EntryTf; state?: 'WAIT' | 'TRADE'; since?: number; limit?: number } = {}) {
+/** One page of the signal history, the total matching, and the summary over all of it. */
+export type SignalFilter = {
+  mode?: EntryMode; tf?: EntryTf; state?: 'WAIT' | 'TRADE'; dir?: 1 | -1; since?: number;
+  limit?: number; offset?: number; sort?: 'time' | 'score' | 'rr'; asc?: boolean;
+};
+export function getEntrySignals(q: SignalFilter = {}) {
   const p = new URLSearchParams();
   for (const [k, v] of Object.entries(q)) if (v !== undefined) p.set(k, String(v));
-  return json<{ signals: EntrySignal[] }>(`/api/entry/signals${p.size ? `?${p}` : ''}`);
+  return json<EntrySignalPage>(`/api/entry/signals${p.size ? `?${p}` : ''}`);
 }

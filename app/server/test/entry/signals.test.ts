@@ -82,8 +82,23 @@ test('[critical] a page of the history: the total matching, a page from an offse
   assert.deepEqual((await signalPage({ tf: '4h', sort: 'score', asc: true })).signals.map((x) => x.score), [0, 10, 20, 30, 40, 50, 60]);
 });
 
+test('[critical] the summary over every match: TP1 hits and the points made, stops and the points lost, net points and R', async () => {
+  const mk = (k: number) => read({ id: 'bos', tf: '1m', triggerTime: T + 20_000 + k, dir: 'long', state: 'TRADE', plan: PLAN });
+  for (let k = 0; k < 4; k++) { await recordSignals([mk(k)], (T + 20_000 + k) * 1000); await recordSetups([mk(k)], (T + 20_000 + k) * 1000); }
+  const set = (k: number, status: string, fill: number, exit: number | null, r: number | null) =>
+    query(`UPDATE entry_setups SET status = $1, fill_price = $2, exit_price = $3, r_net = $4 WHERE tf = '1m' AND trigger_at = $5`, [status, fill, exit, r, T + 20_000 + k]);
+  await set(0, 'tp1', 84_000, 84_300, 1.5);   // +300
+  await set(1, 'tp1', 84_000, 84_150, 0.7);   // +150
+  await set(2, 'stop', 84_000, 83_800, -1.1); // -200
+  await set(3, 'filled', 84_000, null, null); // open
+  const { summary, total } = await signalPage({ tf: '1m', limit: 1 });
+  assert.equal(total, 4);
+  assert.deepEqual(summary, { trades: 4, tp1: 2, tp1Pts: 450, stops: 1, slPts: 200, timeouts: 0, netPts: 250, netR: 1.1, open: 1 },
+    'over all four, though the page holds one');
+});
+
 test('signals older than the keep period go; the rest stay', async () => {
-  assert.equal(await pruneSignals((T + 400 * 86_400) * 1000, 365), 13);
+  assert.equal(await pruneSignals((T + 400 * 86_400) * 1000, 365), 17);
   assert.equal((await recentSignals()).length, 0);
 });
 

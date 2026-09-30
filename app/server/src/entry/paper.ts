@@ -234,7 +234,7 @@ function pointsOf(closed: readonly { status: string; dir: number; fill_price: nu
   const p = (x: (typeof closed)[number]) => (x.fill_price === null || x.exit_price === null ? 0 : (Number(x.exit_price) - Number(x.fill_price)) * Number(x.dir));
   return {
     tgtPts: closed.filter((x) => x.status === 'tp1').reduce((a, x) => a + p(x), 0),
-    slPts: -closed.filter((x) => x.status === 'stop').reduce((a, x) => a + p(x), 0),
+    slPts: 0 - closed.filter((x) => x.status === 'stop').reduce((a, x) => a + p(x), 0),
     netPts: closed.reduce((a, x) => a + p(x), 0),
   };
 }

@@ -118,6 +118,7 @@ test('[critical] a TRADE is written once, however many minutes it stays on the b
   const { records, totals } = await entryRecord();
   assert.deepEqual(records.map((r) => [r.method, r.mode, r.trades, r.wins]), [['breakout', 'mtf', 1, 1], ['breakout', 'single', 1, 1]],
     'with the chain and without it, counted apart');
+  assert.deepEqual([records[1]!.tgtPts, records[1]!.slPts, records[1]!.netPts], [290, 0, 290], 'filled at 84,010, out at TP1 84,300: +290 pts');
   assert.deepEqual(totals.map((t) => [t.mode, t.trades]).sort(), [['mtf', 1], ['single', 1]], 'and each mode totalled');
 });
 
@@ -165,4 +166,5 @@ test('[critical] a setup taken with a gate off is logged with it, and kept out o
   const everything = totalsAll.find((t) => t.mode === 'single')!;
   assert.equal(everything.setups, 2, 'the including-gates-off total counts both -- shown apart, labelled');
   assert.equal(everything.gatesOff, 1);
+  assert.deepEqual([single.tgtPts, single.slPts], [0, 0], 'nothing closed with every gate on: no points either way');
 });
