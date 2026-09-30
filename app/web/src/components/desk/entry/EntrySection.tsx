@@ -9,8 +9,6 @@ import { EntryGrid } from './EntryGrid';
 import { ModePanel, SINGLE_TFS } from './ModePanel';
 import { signedR } from './parts';
 
-export { recordText, tickOf } from './parts';
-
 /**
  * The entry section: TEST.md's twelve entry methods, each read two ways --
  * without the timeframe chain (one timeframe alone) and with it (4H/1H ->

@@ -9,7 +9,7 @@ import { NumberBadge, SignalChip, TICK_CLASS, fmt, recordText, signedR, tickOf }
  * One half of the reference layout: the twelve methods read one way -- with
  * the timeframe chain, or without it -- with their chart, table, the chosen
  * setup, its reasons, (with the chain) the timeframe analysis, and that mode's
- * paper record.
+ * paper record. (No pros-and-cons list: removed at the owner's request.)
  *
  * Two words differ from the reference on purpose: the quality score is shown
  * as a score out of 100, not as "confidence %", because nothing measures a
@@ -20,22 +20,18 @@ import { NumberBadge, SignalChip, TICK_CLASS, fmt, recordText, signedR, tickOf }
 const CHAIN_TFS: readonly EntryTf[] = ['4h', '1h', '30m', '15m', '5m', '3m', '1m'];
 export const SINGLE_TFS: readonly EntryTf[] = ['1m', '3m', '5m', '15m', '30m', '1h', '4h'];
 
-const COPY: Record<EntryMode, { title: string; accent: string; sub: string; tag: string; pros: string[]; cons: string[] }> = {
+const COPY: Record<EntryMode, { title: string; accent: string; sub: string; tag: string }> = {
   single: {
     title: '12 methods · without timeframe',
     accent: 'border-t-[#d97706]',
     sub: 'Each method on one timeframe alone -- no higher-timeframe check.',
     tag: 'More signals',
-    pros: ['More setups, sooner', 'Simple: one timeframe, one chain', 'Works on any timeframe you pick'],
-    cons: ['No check against the bigger trend', 'More false starts in a choppy market', 'Can enter against a major trend'],
   },
   mtf: {
     title: '12 methods + timeframe',
     accent: 'border-t-[#26a17b]',
     sub: '4H/1H context → 30m/15m setup → 5m entry → 3m confirm → 1m execution.',
     tag: 'Fewer signals',
-    pros: ['Filters out setups against the bigger trend', 'Entry, stop and targets in the trend\'s context', 'Waits for the 3m and 1m to agree'],
-    cons: ['Fewer setups, and later entries', 'Needs every timeframe\'s candles to be fresh', 'Can miss the start of a move'],
   },
 };
 
@@ -103,15 +99,6 @@ export function ModePanel({ mode, reads, timeframes, selected, onChoose, total, 
           {mode === 'mtf' ? <TimeframeAnalysis rows={timeframes} /> : null}
         </div>
       </div>
-
-      <details className="mt-2 rounded-lg border border-border p-2 text-[12px]">
-        <summary className="cursor-pointer font-semibold">Pros and cons · {mode === 'mtf' ? 'with' : 'without'} timeframe</summary>
-        <div className="mt-1.5 grid gap-2 sm:grid-cols-2">
-          <ul className="m-0 list-none p-0" aria-label="pros">{copy.pros.map((p) => <li key={p}><span className="text-[var(--up)]">✓</span> {p}</li>)}</ul>
-          <ul className="m-0 list-none p-0" aria-label="cons">{copy.cons.map((p) => <li key={p}><span className="text-[var(--down)]">✗</span> {p}</li>)}</ul>
-        </div>
-        <p className="m-0 mt-1.5 text-[11px] text-muted-foreground">What each way is meant to do. Whether it does is the paper record below -- not this list.</p>
-      </details>
 
       <RecordStrip total={total} />
     </section>
