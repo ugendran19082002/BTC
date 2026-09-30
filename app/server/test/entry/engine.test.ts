@@ -261,3 +261,20 @@ test('[critical] targets are spaced: TP2 at least half an ATR past TP1 -- a leve
   const n = readMethod(none, 'single', '5m', single({ gatesOff: ['rr', 'stop'] }, bars));
   assert.ok(n.plan!.tp2 === null || (close - 100 - n.plan!.tp2) >= TP_STEP_ATR * a, 'never within half an ATR of TP1');
 });
+
+test('[critical] the execution step reads the live price: the tape\'s last trade while fresh, else the last closed 1m candle', () => {
+  const base = withChain();
+  const exec = (r: ReturnType<typeof readMethod>) => r.steps.find((s) => s.tf === '1m')!;
+  // Fresh LTP at the entry: in, and it says so.
+  const live = readMethod(BREAKOUT, 'mtf', '5m', { ...base, ltp: { price: 84_190, at: base.now - 2_000 } });
+  assert.equal(exec(live).ok, true);
+  assert.match(exec(live).label, /LTP 84,190/);
+  // Fresh LTP far above the zone: the price has left it, whatever the last closed candle said.
+  const gone = readMethod(BREAKOUT, 'mtf', '5m', { ...base, ltp: { price: 86_000, at: base.now - 2_000 } });
+  assert.equal(exec(gone).ok, false);
+  assert.equal(gone.state, 'WAIT');
+  // A stale LTP (the socket down) is not the price: the last closed 1m close is.
+  const stale = readMethod(BREAKOUT, 'mtf', '5m', { ...base, ltp: { price: 86_000, at: base.now - 60_000 } });
+  assert.match(exec(stale).label, /last 1m close/);
+  assert.equal(exec(stale).ok, true);
+});

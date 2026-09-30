@@ -72,6 +72,14 @@ Still open:
   0.5 ATR at the fill edge (FVG / OB were the whole gap / candle, up to 689
   pts); risk measured from the fill; FVG stop at the gap's far edge; each
   target 0.5 ATR past the last; entry drawn blue with R and points on every line.
+- [x] **Live LTP and latency** (30 Sep 2026): the execution step reads the
+  tape's last trade; a TRADE card shows LTP, where it is against the zone and
+  points to entry / SL / TP1 on every tick; board every 5 s (cache 3 s);
+  recorder 3 s after each 1m close.
+- [ ] **Grade fills from the tape, not 1m candles**: the paper log fills on 1m
+  OHLC (a candle touching stop and TP1 is the stop). The recorded prints
+  (`trade_flow_1m` is per minute; the raw prints are held 65 min in memory)
+  would say which came first -- needs a per-print record to replay.
 - [ ] **A signal log on screen**: `GET /api/entry/signals` is there; a table
   of the day's signals (time, method, way, timeframe, WAIT / TRADE, how long
   it stood, what became of it) under the paper record.

@@ -133,6 +133,24 @@ round trip at $84k) are larger than most of the structure; this is the same
 finding as the SMC and momentum studies, and the gates are meant to say it
 rather than hide it.
 
+## Live price and latency
+
+The signals are read on **closed** candles, on purpose -- a signal never
+appears and vanishes inside a candle. Everything around them is live:
+
+| Part | Source | Latency |
+|---|---|---|
+| Chart price, forming candle | the perpetual's tape, `/api/stream` `ltp` | ~0.1 s |
+| The 1m execution step ("price at the entry") | the tape's last trade while ≤ 15 s old, else the last closed 1m close | the tape |
+| A TRADE card's live strip: LTP, IN THE ENTRY ZONE / above / under / PAST THE STOP / AT TP1, points to entry, SL, TP1 | the stream's `ltp` | ~0.1 s, every tick |
+| The board (signals) | polled every 5 s, the server holding a read 3 s (~50 ms to compute) | ≤ ~8 s after the candle closes |
+| Journal, paper log, Telegram | the recorder, 3 s after every 1m close | seconds |
+
+**Fills** stay exact and conservative: a resting limit fills at the zone's
+near edge, or at the open when price gapped through it; the exit is TP1
+exactly, or the stop (the open, if gapped past it); a candle touching both is
+the stop. Fees come off both ways.
+
 ## The signal journal and the paper log
 
 Once a minute the server reads **every** way the screen can show -- the

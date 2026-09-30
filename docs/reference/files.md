@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-384 files listed, 164 test files counted below, images and lockfiles left out.
+385 files listed, 165 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 97 |
-| `app/web` | 67 |
+| `app/web` | 68 |
 
 ## `(root)`
 
@@ -335,6 +335,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [EntrySection.tsx](../../app/web/src/components/desk/entry/EntrySection.tsx) | The entry section: TEST.md's twelve entry methods, each read two ways -- without the timeframe chain (one timeframe alone) and with it (4H/1H -> 30m/15m -> 5m entry -> 3m confirm -> 1m execution) -... |
 | [GateChecklist.tsx](../../app/web/src/components/desk/entry/GateChecklist.tsx) | The hard gates as a checklist, beside the Entry methods table: each gate's rule, what was read, and the verdict, for the method chosen there -- without the timeframe chain or with it. |
 | [GateSwitches.tsx](../../app/web/src/components/desk/entry/GateSwitches.tsx) | The hard gates' on/off switches, for the whole entry section: both ways, every panel, and the paper log's recorder. |
+| [LiveStrip.tsx](../../app/web/src/components/desk/entry/LiveStrip.tsx) | Where the live price is against a TRADE's levels, on every tick: the perpetual's last trade (the stream's `ltp`, ~0.1 s) against the entry zone, the stop and TP1, in points. |
 | [MethodLegend.tsx](../../app/web/src/components/desk/entry/MethodLegend.tsx) | The twelve methods by number: 1 is Breakout, 2 Breakout + retest, and so on -- the one place their names are written, so the two panels below can show the number alone. |
 | [ModePanel.tsx](../../app/web/src/components/desk/entry/ModePanel.tsx) | One half of the reference layout: the twelve methods read one way -- with the timeframe chain, or without it -- with their chart, table, the chosen setup, its reasons, and that mode's paper record. |
 | [entry.css](../../app/web/src/components/desk/entry/entry.css) | The entry section's tables. |

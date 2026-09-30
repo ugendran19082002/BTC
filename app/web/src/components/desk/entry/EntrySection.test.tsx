@@ -35,7 +35,7 @@ vi.mock('@/api/entry', () => ({
   setEntryAlert: (...a: unknown[]) => setEntryAlert(...a),
   sendEntryAlertTest: (...a: unknown[]) => sendEntryAlertTest(...a),
 }));
-const ALERTS_OFF = { alerts: [{ mode: 'single', enabled: false, changedAt: null }, { mode: 'mtf', enabled: false, changedAt: null }], telegram: true };
+const ALERTS_OFF = { alerts: [{ mode: 'single', enabled: false, changedAt: null, tfs: ['5m'] }, { mode: 'mtf', enabled: false, changedAt: null, tfs: ['5m'] }], telegram: true, recent: [] };
 const SETTINGS = [
   { key: 'data', label: 'Data fresh', enabled: true, locked: 'On stale candles nothing else means anything.', changedAt: null },
   { key: 'rr', label: 'R:R after fees', enabled: true, locked: null, changedAt: null },
@@ -385,7 +385,7 @@ describe('auto-select and Telegram', () => {
   });
 
   it('[critical] each section has its own Telegram switch: off until turned on, saved on the server', async () => {
-    setEntryAlert.mockResolvedValue({ ...ALERTS_OFF, alerts: [ALERTS_OFF.alerts[0], { mode: 'mtf', enabled: true, changedAt: 1 }] });
+    setEntryAlert.mockResolvedValue({ ...ALERTS_OFF, alerts: [ALERTS_OFF.alerts[0], { mode: 'mtf', enabled: true, changedAt: 1, tfs: ['5m'] }] });
     render(<EntrySection desk={desk} />);
     const withTf = await panel(/12 methods \+ timeframe/);
     const sw = await within(withTf).findByRole('switch', { name: 'Telegram alerts with timeframe' });
@@ -416,5 +416,55 @@ describe('a TRADE that stands only because a gate is off', () => {
     const card = await within(withTf).findByRole('region', { name: 'selected setup' });
     await waitFor(() => expect(within(card).getByRole('alert')).toHaveTextContent('Only a TRADE because R:R after fees is switched off'));
     expect(within(card).getByRole('alert')).toHaveTextContent('R:R after fees 0.16');
+  });
+});
+
+describe('the live price on the card', () => {
+  it('[critical] a TRADE\'s card follows the stream\'s last trade: LTP, where it is against the zone, points to entry, SL, TP1', async () => {
+    render(<EntrySection desk={{ ...desk, ltp: { price: 84_140, at: Date.now(), side: 'buy', bars: { '1m': null, '5m': null } } }} />);
+    const withTf = await panel(/12 methods \+ timeframe/);
+    const strip = await within(withTf).findByLabelText('live price');
+    expect(strip).toHaveTextContent('LTP 84,140');
+    expect(strip).toHaveTextContent('IN THE ENTRY ZONE');
+    expect(strip).toHaveTextContent('to SL 160 pts');
+  });
+
+  it('a WAIT has no levels, so no live strip', async () => {
+    render(<EntrySection desk={desk} />);
+    const without = await panel(/12 methods · without timeframe/);
+    await within(without).findByRole('region', { name: 'selected setup' });
+    expect(within(without).queryByLabelText('live price')).toBeNull();
+  });
+});
+
+describe('which timeframes alert, and the last alert', () => {
+  it('[critical] without the chain, the owner picks the timeframes that reach the phone; the pick is saved on the server', async () => {
+    getEntryAlerts.mockResolvedValue({ ...ALERTS_OFF, alerts: [{ mode: 'single', enabled: true, changedAt: 1, tfs: ['5m'] }, ALERTS_OFF.alerts[1]] });
+    setEntryAlert.mockResolvedValue({ ...ALERTS_OFF, alerts: [{ mode: 'single', enabled: true, changedAt: 2, tfs: ['3m', '5m'] }, ALERTS_OFF.alerts[1]] });
+    render(<EntrySection desk={desk} />);
+    const without = await panel(/12 methods · without timeframe/);
+    const chips = await within(without).findByRole('group', { name: 'alert timeframes' });
+    expect(within(chips).getByRole('button', { name: '5m' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(within(chips).getByRole('button', { name: '3m' }));
+    await waitFor(() => expect(setEntryAlert).toHaveBeenCalledWith('single', true, ['3m', '5m']));
+    await waitFor(() => expect(within(within(without).getByRole('group', { name: 'alert timeframes' })).getByRole('button', { name: '3m' })).toHaveAttribute('aria-pressed', 'true'));
+    // With the chain there is no pick: its entry is 5m.
+    expect(within(screen.getByRole('region', { name: /12 methods \+ timeframe/ })).queryByRole('group', { name: 'alert timeframes' })).toBeNull();
+  });
+
+  it('[critical] the last alert each way tried to send, from the server log: sent ✓, or failed ✗ and why', async () => {
+    getEntryAlerts.mockResolvedValue({
+      ...ALERTS_OFF,
+      alerts: [{ mode: 'single', enabled: true, changedAt: 1, tfs: ['5m'] }, { mode: 'mtf', enabled: true, changedAt: 1, tfs: ['5m'] }],
+      recent: [
+        { at: Date.UTC(2026, 8, 30, 14, 30), mode: 'single', tf: '5m', method: 'breakout-retest', n: 2, name: 'Breakout + retest', dir: -1, status: 'sent', error: null },
+        { at: Date.UTC(2026, 8, 30, 14, 0), mode: 'mtf', tf: '5m', method: 'bos', n: 6, name: 'BOS', dir: 1, status: 'failed', error: 'Telegram did not accept it' },
+      ],
+    });
+    render(<EntrySection desk={desk} />);
+    const without = await panel(/12 methods · without timeframe/);
+    await waitFor(() => expect(within(without).getByLabelText('last alert')).toHaveTextContent('last: 20:00 · #2 SELL 5m · sent ✓'));
+    const withTf = screen.getByRole('region', { name: /12 methods \+ timeframe/ });
+    expect(within(withTf).getByLabelText('last alert')).toHaveTextContent('#6 BUY 5m · failed ✗ -- Telegram did not accept it');
   });
 });

@@ -17,8 +17,9 @@ export const setEntryGate = (key: string, enabled: boolean) =>
 /** Telegram alerts for each way's TRADEs, and whether Telegram is set up on the server. */
 export const getEntryAlerts = () => json<EntryAlerts>('/api/entry/alerts');
 
-/** Switch one way's alerts on or off. */
-export const setEntryAlert = (mode: EntryMode, enabled: boolean) => post<EntryAlerts>(`/api/entry/alerts/${mode}`, { enabled });
+/** Switch one way's alerts on or off; without the chain, `tfs` chooses the timeframes it alerts on. */
+export const setEntryAlert = (mode: EntryMode, enabled: boolean, tfs?: EntryTf[]) =>
+  post<EntryAlerts>(`/api/entry/alerts/${mode}`, tfs ? { enabled, tfs } : { enabled });
 
 /** Send a test message now (409 when Telegram is not set up). */
 export const sendEntryAlertTest = () => post<{ ok: true }>('/api/entry/alerts/test', {});

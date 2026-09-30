@@ -60,7 +60,10 @@ export function EntrySection({ desk, onTimeframes }: {
   const shownTfs: EntryTf[] = view === 'panels' ? [tf, mtfTf] : [gridMode === 'mtf' ? '5m' : tf];
   const chart = useEntryFeed(desk, shownTfs);
 
-  const { data: board, error, refresh: rereadBoard } = usePoll(() => getEntryBoard(tf), 15_000, { deps: [tf] });
+  // Every 5 s (the server holds a read 3 s): a signal shows within seconds of the candle that made it.
+  const { data: board, error, refresh: rereadBoard } = usePoll(() => getEntryBoard(tf), 5_000, { deps: [tf] });
+  // The live price for the cards: the stream's last trade (~0.1 s), else the board's own.
+  const ltp = desk.ltp ? { price: desk.ltp.price, at: desk.ltp.at } : board?.ltp ?? null;
   const { data: record } = usePoll(() => getEntryRecord(), 60_000);
 
   const reads = useMemo(() => board?.reads ?? [], [board]);
@@ -154,11 +157,11 @@ export function EntrySection({ desk, onTimeframes }: {
             <ModePanel mode="single" reads={reads.filter((r) => r.mode === 'single')}
                        selected={selected.single} onChoose={choose} total={totalOf('single', tf)} recordOf={recordOf}
                        setupsOn={setupsOn} chartTf={tf} onChartTf={setSingleTf} chart={chart}
-                       alert={<AlertSwitch mode="single" alerts={alerts} onChanged={setAlerts} />} autoPicked={autoPicked('single')} />
+                       ltp={ltp} alert={<AlertSwitch mode="single" alerts={alerts} onChanged={setAlerts} />} autoPicked={autoPicked('single')} />
             <ModePanel mode="mtf" reads={reads.filter((r) => r.mode === 'mtf')}
                        selected={selected.mtf} onChoose={choose} total={totalOf('mtf')} recordOf={recordOf}
                        setupsOn={setupsOn} chartTf={mtfTf} onChartTf={setMtfChartTf} chart={chart}
-                       alert={<AlertSwitch mode="mtf" alerts={alerts} onChanged={setAlerts} />} autoPicked={autoPicked('mtf')} />
+                       ltp={ltp} alert={<AlertSwitch mode="mtf" alerts={alerts} onChanged={setAlerts} />} autoPicked={autoPicked('mtf')} />
           </div>
           <Comparison single={totalOf('single')} mtf={totalOf('mtf')} />
         </>

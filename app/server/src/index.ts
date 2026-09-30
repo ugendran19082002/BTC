@@ -22,7 +22,7 @@ import { recordTrendPaper, trendPaperSchema } from './strategy/trend-paper.js';
 import { noteError } from './observability/errors.js';
 import { entrySchema, gradeSetups, recordSetups } from './entry/paper.js';
 import { gatesSchema } from './entry/gates.js';
-import { alertSettings, alertsSchema, entryAlertFor } from './entry/alerts.js';
+import { alertSettings, alertsSchema, sendEntryAlert, wanted } from './entry/alerts.js';
 import { allReads } from './entry/engine.js';
 import { pruneSignals, recordSignals, signalsSchema } from './entry/signals.js';
 import { readEntryContext } from './entry/read.js';
@@ -198,15 +198,13 @@ setInterval(recordTrend, 5 * 60_000).unref();
 const recordEntries = () => {
   readEntryContext()
     .then(async (ctx) => {
-      // Telegram for the ways switched on, once per setup as it is first written. Off by default.
-      const on = new Set((await alertSettings().catch(() => [])).filter((a) => a.enabled).map((a) => a.mode));
-      const notifier = on.size ? desk.notifier : null;
+      // Telegram for the ways switched on and their chosen timeframes, once per setup as it is first
+      // written, each attempt written down (entry_alert_log) -- sent or failed, and why.
+      const settings = await alertSettings().catch(() => []);
       const reads = allReads(ctx);
       await recordSignals(reads, ctx.now);
       await recordSetups(reads, ctx.now, (r) => {
-        if (!notifier || !on.has(r.mode) || (r.mode === 'single' && r.tf !== '5m')) return;
-        const alert = entryAlertFor(r);
-        if (alert) notifier.notify(alert);
+        if (wanted(r, settings)) void sendEntryAlert(r, desk.notifier);
       });
       await gradeSetups(ctx.frames['1m'] ?? []);
     })

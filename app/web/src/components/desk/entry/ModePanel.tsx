@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 import { PriceChart } from '@/components/desk/PriceChart';
 import type { EntryMode, EntryRecord, EntryTf, MethodRead } from '@/types/entry';
 import type { ChartFeed } from './feed';
+import { LiveStrip } from './LiveStrip';
 import { NumberBadge, SignalChip, TICK_CLASS, fmt, overlayOf, recordText, signedR, tickOf } from './parts';
 
 /**
@@ -36,7 +37,7 @@ const COPY: Record<EntryMode, { title: string; accent: string; sub: string; tag:
   },
 };
 
-export function ModePanel({ mode, reads, selected, onChoose, total, recordOf, setupsOn, chartTf, onChartTf, chart, alert, autoPicked = false }: {
+export function ModePanel({ mode, reads, selected, onChoose, total, recordOf, setupsOn, chartTf, onChartTf, chart, alert, autoPicked = false, ltp = null }: {
   mode: EntryMode;
   reads: readonly MethodRead[];
   /** This panel's chosen read. */
@@ -58,6 +59,8 @@ export function ModePanel({ mode, reads, selected, onChoose, total, recordOf, se
   alert?: ReactNode;
   /** The selected read was chosen by auto-select (a signal came), not by hand. */
   autoPicked?: boolean;
+  /** The live last trade, for the selected TRADE's live strip. */
+  ltp?: { price: number; at: number } | null;
 }) {
   const copy = COPY[mode];
   // Kept while the choice holds: a new object each tick would rebuild the chart's whole scene.
@@ -105,7 +108,7 @@ export function ModePanel({ mode, reads, selected, onChoose, total, recordOf, se
       <div className="mt-2 grid gap-2">
         <MethodTable mode={mode} reads={reads} selected={selected} onChoose={onChoose} recordOf={recordOf} autoPicked={autoPicked} />
         <div className="grid gap-2 sm:grid-cols-2">
-          <SelectedCard read={selected} />
+          <SelectedCard read={selected} ltp={ltp} />
           <div className="grid content-start gap-2">
             <Reasons read={selected} />
           </div>
@@ -172,7 +175,7 @@ function MethodTable({ mode, reads, selected, onChoose, recordOf, autoPicked }: 
   );
 }
 
-function SelectedCard({ read }: { read: MethodRead | null }) {
+function SelectedCard({ read, ltp }: { read: MethodRead | null; ltp: { price: number; at: number } | null }) {
   if (!read) return <div className="rounded-lg border border-border p-2 text-[12px] text-muted-foreground">Choose a method.</div>;
   const p = read.plan;
   const head = read.state === 'TRADE'
@@ -201,6 +204,7 @@ function SelectedCard({ read }: { read: MethodRead | null }) {
           ⚠ Only a TRADE because {overridden.map((g) => g.label).join(', ')} {overridden.length === 1 ? 'is' : 'are'} switched off -- with every gate on this is NO TRADE ({overridden.map((g) => `${g.label} ${g.value ?? ''}`.trim()).join(' · ')}).
         </p>
       ) : null}
+      {read.state === 'TRADE' && p && read.dir ? <LiveStrip plan={p} dir={read.dir} ltp={ltp} /> : null}
       <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 px-2 pb-2 tabular-nums">
         {row('Method', `#${read.n} ${read.name}`)}
         {row('Timeframe', read.mode === 'mtf' ? '4H/1H → 15m → 5m entry → 1m' : `${read.tf} only`)}

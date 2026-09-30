@@ -1,6 +1,6 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { alertSettings, entryAlertFor, setAlert } from '../../src/entry/alerts.js';
+import { alertSettings, entryAlertFor, recentAlerts, sendEntryAlert, setAlert, wanted } from '../../src/entry/alerts.js';
 import { recordSetups } from '../../src/entry/paper.js';
 import type { MethodRead } from '../../src/entry/types.js';
 import { closePool, rows } from '../../src/db/pool.js';
@@ -53,4 +53,37 @@ test('[critical] a setup is heard once, when the paper log first writes it -- no
 
 test('names are escaped for Telegram HTML', () => {
   assert.match(entryAlertFor(trade({ name: 'A & <B>' }))!.text, /#3 A &amp; &lt;B&gt;/);
+});
+
+// ------------------------------------------------------------ timeframes and the log
+
+test('[critical] without the chain a way alerts on the timeframes chosen -- 5m until the owner picks others; the chain always on its 5m entry', async () => {
+  const before = await alertSettings();
+  assert.deepEqual(before.find((a) => a.mode === 'single')!.tfs, ['5m']);
+  const after = await setAlert('single', true, 6_000, ['3m', '15m', 'nonsense']);
+  assert.deepEqual(after.find((a) => a.mode === 'single')!.tfs, ['3m', '15m'], 'kept, the unknown one dropped');
+  assert.deepEqual((await setAlert('single', true, 7_000)).find((a) => a.mode === 'single')!.tfs, ['3m', '15m'], 'switching keeps the pick');
+  await assert.rejects(setAlert('single', true, 8_000, []), /at least one timeframe/);
+  const settings = await alertSettings();
+  assert.equal(wanted(trade({ mode: 'single', tf: '3m' }), settings), true);
+  assert.equal(wanted(trade({ mode: 'single', tf: '5m' }), settings), false, 'not picked');
+  assert.equal(wanted(trade({ mode: 'mtf', tf: '5m' }), settings), true);
+  await setAlert('mtf', false, 9_000);
+  assert.equal(wanted(trade({ mode: 'mtf', tf: '5m' }), await alertSettings()), false, 'switched off');
+});
+
+test('[critical] every alert is written down with what became of it: sent, failed and why, or Telegram not set up', async () => {
+  const sent: string[] = [];
+  await sendEntryAlert(trade({ triggerTime: T + 1 }), { send: async (t) => { sent.push(t); return true; } });
+  await sendEntryAlert(trade({ triggerTime: T + 2 }), { send: async () => false });
+  await sendEntryAlert(trade({ triggerTime: T + 3 }), { send: async () => { throw new Error('socket hang up'); } });
+  await sendEntryAlert(trade({ triggerTime: T + 4 }), null);
+  await sendEntryAlert(trade({ state: 'WAIT', triggerTime: T + 5 }), { send: async () => true });
+  assert.equal(sent.length, 1);
+  const log = await recentAlerts(10);
+  assert.deepEqual(log.map((a) => a.status), ['failed', 'failed', 'failed', 'sent'], 'newest first; a WAIT is never an alert');
+  assert.match(log[0]!.error ?? '', /not set up/);
+  assert.match(log[1]!.error ?? '', /socket hang up/);
+  assert.match(log[2]!.error ?? '', /did not accept/);
+  assert.equal(log[3]!.error, null);
 });

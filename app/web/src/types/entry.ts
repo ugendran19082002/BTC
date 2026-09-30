@@ -15,8 +15,17 @@ export type EntryGate = {
   enabled: boolean;
 };
 /** Telegram alerts for one way's TRADEs. */
-export type EntryAlertSetting = { mode: EntryMode; enabled: boolean; changedAt: number | null };
-export type EntryAlerts = { alerts: EntryAlertSetting[]; telegram: boolean };
+export type EntryAlertSetting = {
+  mode: EntryMode; enabled: boolean; changedAt: number | null;
+  /** Timeframes it alerts on: without the chain the owner's pick (5m by default); with it, 5m. */
+  tfs: EntryTf[];
+};
+/** One alert the server tried to send, and what became of it. */
+export type EntryAlertLog = {
+  at: number; mode: EntryMode; tf: EntryTf; method: string; n: number | null; name: string; dir: 1 | -1;
+  status: 'sent' | 'failed'; error: string | null;
+};
+export type EntryAlerts = { alerts: EntryAlertSetting[]; telegram: boolean; recent?: EntryAlertLog[] };
 
 /** A gate's switch, as the settings list shows it. `locked`: why it cannot be switched off. */
 export type EntryGateSetting = { key: string; label: string; enabled: boolean; locked: string | null; changedAt: number | null };
@@ -66,6 +75,8 @@ export type EntryBoard = {
   reads: MethodRead[];
   chain: { tf: EntryTf; role: string; weight: number }[];
   timeframes: TimeframeRow[];
+  /** The perpetual's last trade when the board was read (the server's tape); null with the socket down. */
+  ltp?: { price: number; at: number } | null;
 };
 
 export type EntryRecord = {

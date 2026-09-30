@@ -3,7 +3,7 @@ import { SINGLE_TFS, entryBoard, timeframeRows, type TimeframeRow } from '../../
 import { readEntryContext } from '../../entry/read.js';
 import { entryRecord, recentSetups } from '../../entry/paper.js';
 import { GateLocked, gateSettings, gatesOff, isGateKey, setGate } from '../../entry/gates.js';
-import { alertSettings, isMode, setAlert } from '../../entry/alerts.js';
+import { alertSettings, isMode, recentAlerts, setAlert } from '../../entry/alerts.js';
 import { recentSignals } from '../../entry/signals.js';
 import { CHAIN, TF_SEC, type MethodRead, type Tf } from '../../entry/types.js';
 import { ttlCache } from '../ttl-cache.js';
@@ -59,11 +59,11 @@ export function registerEntryRoutes(app: FastifyInstance, notifier: () => { send
   });
 
   // Telegram alerts for each way's TRADEs: whether each is on, and whether Telegram is set up at all.
-  app.get('/api/entry/alerts', async () => ({ alerts: await alertSettings(), telegram: notifier() !== null }));
+  app.get('/api/entry/alerts', async () => ({ alerts: await alertSettings(), telegram: notifier() !== null, recent: await recentAlerts(20) }));
 
   app.post('/api/entry/alerts/:mode', async (req, reply) => {
     const { mode } = req.params as { mode: string };
-    const { enabled } = (req.body ?? {}) as { enabled?: unknown };
+    const { enabled, tfs } = (req.body ?? {}) as { enabled?: unknown; tfs?: unknown };
     if (mode === 'test') {
       const n = notifier();
       if (!n) { reply.code(409); return { error: 'Telegram is not set up on the server (TG_TOKEN, TG_CHAT_ID).' }; }
@@ -73,7 +73,14 @@ export function registerEntryRoutes(app: FastifyInstance, notifier: () => { send
     }
     if (!isMode(mode)) { reply.code(404); return { error: 'no such way: single or mtf' }; }
     if (typeof enabled !== 'boolean') { reply.code(400); return { error: 'enabled must be true or false' }; }
-    return { alerts: await setAlert(mode, enabled), telegram: notifier() !== null };
+    if (tfs !== undefined && (!Array.isArray(tfs) || !tfs.every((t) => typeof t === 'string'))) {
+      reply.code(400); return { error: 'tfs must be a list of timeframes' };
+    }
+    try {
+      return { alerts: await setAlert(mode, enabled, Date.now(), tfs as string[] | undefined), telegram: notifier() !== null, recent: await recentAlerts(20) };
+    } catch (e) {
+      reply.code(422); return { error: (e as Error).message };
+    }
   });
 
   // The signal journal: every WAIT and TRADE shown, newest first; filter by mode, tf, state.
