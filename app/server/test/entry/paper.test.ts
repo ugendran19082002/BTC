@@ -90,7 +90,7 @@ test('grading goes forward only: bars already graded are not read again', () => 
 // ------------------------------------------------------------ the table
 
 const read = (over: Partial<MethodRead> = {}): MethodRead => ({
-  id: 'breakout', n: 1, name: 'Breakout', group: 'breakout', mode: 'single', tf: '5m', dir: 'long', state: 'TRADE',
+  id: 'breakout', n: 1, name: 'Breakout', group: 'breakout', summary: '', mode: 'single', tf: '5m', dir: 'long', state: 'TRADE',
   steps: [], gates: [], score: 70, scoreParts: [], alignment: null, reason: '', triggerTime: T,
   plan: { entryLo: 84_000, entryHi: 84_010, stop: 83_900, tp1: 84_300, tp2: null, tp3: null, tpWhy: [], rr: 2.1 },
   ...over,

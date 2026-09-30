@@ -40,7 +40,7 @@ const NAMES = ['Breakout', 'Breakout + retest', 'Liquidity sweep', 'FVG retest',
 
 function read(n: number, mode: 'mtf' | 'single', over: Partial<MethodRead> = {}): MethodRead {
   return {
-    id: `m${n}`, n, name: NAMES[n - 1]!, group: 'breakout', mode, tf: '5m', dir: null, state: 'NO_TRADE',
+    id: `m${n}`, n, name: NAMES[n - 1]!, group: 'breakout', summary: `what ${NAMES[n - 1]} looks for`, mode, tf: '5m', dir: null, state: 'NO_TRADE',
     steps: [], gates: [], plan: null, score: null, scoreParts: [], alignment: null, reason: 'nothing forming', triggerTime: null, ...over,
   };
 }
@@ -89,7 +89,6 @@ describe('the entry section, side by side', () => {
     render(<EntrySection onOverlay={vi.fn()} />);
     const without = await panel(/12 methods · without timeframe/);
     const withTf = screen.getByRole('region', { name: /12 methods \+ timeframe/ });
-    expect(within(without).getAllByRole('button', { pressed: false }).filter((b) => NAMES.some((n) => b.textContent?.includes(n))).length).toBeGreaterThanOrEqual(11);
     expect(within(withTf).getByRole('table', { name: 'with timeframe methods' }).querySelectorAll('tbody tr')).toHaveLength(12);
     expect(within(without).getByRole('table', { name: 'without timeframe methods' }).querySelectorAll('tbody tr')).toHaveLength(12);
     expect(await screen.findByText(/1 trade · 1 wait · 22 no trade/)).toBeInTheDocument();
@@ -189,5 +188,31 @@ describe('the pieces', () => {
     expect(recordText(null)).toBe('no record yet');
     expect(recordText(total('mtf', { trades: 0, setups: 3 }))).toBe('3 logged, none closed');
     expect(recordText(total('mtf'))).toBe('10 trades · 40% · −0.12R');
+  });
+});
+
+describe('the method table: names once, numbers on both sides', () => {
+  it('[critical] the twelve names are written once, by number; the two panels show the number only', async () => {
+    render(<EntrySection onOverlay={vi.fn()} />);
+    const legend = await screen.findByRole('table', { name: 'entry methods by number' });
+    const rows = within(legend).getAllByRole('row').slice(1);
+    expect(rows.map((r) => within(r).getAllByRole('cell')[1]!.textContent)).toEqual(NAMES);
+    expect(within(rows[2]!).getByText('what Liquidity sweep looks for')).toBeInTheDocument();
+    expect(within(rows[2]!).getAllByText(/BUY|SELL|WAIT|NO/).map((c) => c.textContent)).toEqual(['NO', 'BUY']); // without, then with
+    const withTf = screen.getByRole('table', { name: 'with timeframe methods' });
+    const firstCell = withTf.querySelector('tbody tr td')!;
+    expect(firstCell.textContent).toBe('1');
+    expect(within(withTf).queryByText('Breakout')).toBeNull();
+    expect(within(withTf).getByRole('button', { name: '3 Liquidity sweep' })).toBeInTheDocument();
+  });
+
+  it('choosing a method by name chooses it on both sides', async () => {
+    render(<EntrySection onOverlay={vi.fn()} />);
+    const legend = await screen.findByRole('table', { name: 'entry methods by number' });
+    fireEvent.click(within(legend).getByRole('button', { name: 'Momentum' }));
+    for (const name of [/12 methods · without timeframe/, /12 methods \+ timeframe/]) {
+      const card = within(screen.getByRole('region', { name })).getByRole('region', { name: 'selected setup' });
+      expect(within(card).getByText('#8 Momentum')).toBeInTheDocument();
+    }
   });
 });

@@ -91,12 +91,15 @@ export function ModePanel({ mode, reads, timeframes, selected, onChoose, total, 
       </div>
       <EntryChart bars={bars} plan={drawn} dir={selected?.dir ?? null} label={`${copy.title} chart`} />
 
-      <div className="mt-2 grid gap-2 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+      {/* The table full width, then the chosen setup beside its reasons: a panel is half the screen at most. */}
+      <div className="mt-2 grid gap-2">
         <MethodTable mode={mode} reads={reads} selected={selected} onChoose={onChoose} recordOf={recordOf} />
-        <div className="grid content-start gap-2">
+        <div className="grid gap-2 sm:grid-cols-2">
           <SelectedCard read={selected} />
-          <Reasons read={selected} />
-          {mode === 'mtf' ? <TimeframeAnalysis rows={timeframes} /> : null}
+          <div className="grid content-start gap-2">
+            <Reasons read={selected} />
+            {mode === 'mtf' ? <TimeframeAnalysis rows={timeframes} /> : null}
+          </div>
         </div>
       </div>
 
@@ -117,10 +120,11 @@ function MethodTable({ mode, reads, selected, onChoose, recordOf }: {
         <table className="w-full border-collapse text-[12px] tabular-nums" aria-label={`${mode === 'mtf' ? 'with' : 'without'} timeframe methods`}>
           <thead className="text-left text-[10.5px] text-muted-foreground">
             <tr>
-              <th className="py-1 pl-2">Method</th>
+              <th className="py-1 pl-2" title="The method's number: names are in the table above">#</th>
               {chain ? CHAIN_TFS.map((t) => <th key={t} className="px-0.5 text-center font-normal">{t.toUpperCase()}</th>) : null}
               <th className="px-1 text-center">Signal</th>
               <th className="px-1 text-right" title="Setup quality out of 100 -- not a chance of winning">Quality</th>
+              <th className="px-1">Why</th>
               <th className="sr-only">Choose</th>
             </tr>
           </thead>
@@ -130,9 +134,10 @@ function MethodTable({ mode, reads, selected, onChoose, recordOf }: {
               return (
                 <tr key={r.id} className={cn('border-t border-border', on && 'bg-muted outline outline-1 outline-[#38bdf8]')}>
                   <td className="py-1 pl-2">
-                    <button type="button" aria-pressed={on} onClick={() => onChoose(r)} title={recordText(recordOf(r))}
-                            className="flex items-center gap-1.5 text-left hover:underline">
-                      <NumberBadge read={r} /><span className="truncate">{r.name}</span>
+                    {/* The number only: the names are in the method table above both panels. */}
+                    <button type="button" aria-pressed={on} onClick={() => onChoose(r)} aria-label={`${r.n} ${r.name}`}
+                            title={`${r.n}. ${r.name} -- ${recordText(recordOf(r))}`} className="flex items-center rounded-full">
+                      <NumberBadge read={r} />
                     </button>
                   </td>
                   {chain ? CHAIN_TFS.map((t) => {
@@ -140,7 +145,8 @@ function MethodTable({ mode, reads, selected, onChoose, recordOf }: {
                     return <td key={t} className={cn('px-0.5 text-center', TICK_CLASS[k])}>{k}</td>;
                   }) : null}
                   <td className="px-1 text-center"><SignalChip read={r} /></td>
-                  <td className="px-1 text-right">{r.score ?? '–'}</td>
+                  <td className="px-1 text-right tabular-nums">{r.score ?? '–'}</td>
+                  <td className="max-w-[14rem] px-1 text-[11px] text-muted-foreground"><span className="line-clamp-1" title={r.reason}>{r.reason}</span></td>
                   <td className="pr-1 text-muted-foreground"><ChevronRight aria-hidden size={14} /></td>
                 </tr>
               );

@@ -368,18 +368,18 @@ const optionsFlow: Detector = ({ bars, a, ctx }) => {
   };
 };
 
-export const METHODS: readonly { id: MethodId; n: number; name: string; group: Group; detect: Detector }[] = [
-  { id: 'breakout', n: 1, name: 'Breakout', group: 'breakout', detect: breakout },
-  { id: 'breakout-retest', n: 2, name: 'Breakout + retest', group: 'pullback', detect: breakoutRetest },
-  { id: 'liquidity-sweep', n: 3, name: 'Liquidity sweep', group: 'reversal', detect: liquiditySweep },
-  { id: 'fvg-retest', n: 4, name: 'FVG retest', group: 'pullback', detect: fvgRetest },
-  { id: 'ob-retest', n: 5, name: 'Order-block retest', group: 'pullback', detect: obRetest },
-  { id: 'bos', n: 6, name: 'BOS', group: 'breakout', detect: bos },
-  { id: 'mss', n: 7, name: 'MSS / CHoCH', group: 'reversal', detect: mss },
-  { id: 'momentum', n: 8, name: 'Momentum', group: 'breakout', detect: momentum },
-  { id: 'pullback', n: 9, name: 'Pullback', group: 'pullback', detect: pullback },
-  { id: 'vwap-reversion', n: 10, name: 'VWAP / mean reversion', group: 'reversal', detect: vwapReversion },
-  { id: 'order-flow', n: 11, name: 'Order flow', group: 'flow', detect: orderFlow },
-  { id: 'options-flow', n: 12, name: 'Options / derivatives', group: 'flow', detect: optionsFlow },
+export const METHODS: readonly { id: MethodId; n: number; name: string; group: Group; summary: string; detect: Detector }[] = [
+  { id: 'breakout', n: 1, name: 'Breakout', group: 'breakout', summary: 'A close through the 20-bar range, on volume', detect: breakout },
+  { id: 'breakout-retest', n: 2, name: 'Breakout + retest', group: 'pullback', summary: 'A breakout, then a pullback to the level that holds', detect: breakoutRetest },
+  { id: 'liquidity-sweep', n: 3, name: 'Liquidity sweep', group: 'reversal', summary: 'Stops taken past a swing, then MSS and a retest', detect: liquiditySweep },
+  { id: 'fvg-retest', n: 4, name: 'FVG retest', group: 'pullback', summary: 'Back into a gap left by displacement, and a reaction', detect: fvgRetest },
+  { id: 'ob-retest', n: 5, name: 'Order-block retest', group: 'pullback', summary: 'Back into the last opposite candle before a break', detect: obRetest },
+  { id: 'bos', n: 6, name: 'BOS', group: 'breakout', summary: 'A close through a swing with the trend, then the retest', detect: bos },
+  { id: 'mss', n: 7, name: 'MSS / CHoCH', group: 'reversal', summary: 'The trend turns: a sweep, then a close through the last swing', detect: mss },
+  { id: 'momentum', n: 8, name: 'Momentum', group: 'breakout', summary: 'A 1.5 ATR candle on heavy volume -- not chased when extended', detect: momentum },
+  { id: 'pullback', n: 9, name: 'Pullback', group: 'pullback', summary: 'A trend back to its 20 EMA, then resuming', detect: pullback },
+  { id: 'vwap-reversion', n: 10, name: 'VWAP / mean reversion', group: 'reversal', summary: 'Two deviations from VWAP and turning -- off on trend days', detect: vwapReversion },
+  { id: 'order-flow', n: 11, name: 'Order flow', group: 'flow', summary: 'At a level, the other side absorbed, then delta turns', detect: orderFlow },
+  { id: 'options-flow', n: 12, name: 'Options / derivatives', group: 'flow', summary: 'At an option OI wall, reacting, big-move risk not against', detect: optionsFlow },
 ];
 

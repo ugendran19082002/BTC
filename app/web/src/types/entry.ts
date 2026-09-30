@@ -22,6 +22,8 @@ export type MethodRead = {
   n: number;
   name: string;
   group: 'breakout' | 'pullback' | 'reversal' | 'flow';
+  /** What the method looks for, in one line. */
+  summary: string;
   mode: EntryMode;
   tf: EntryTf;
   dir: 'long' | 'short' | null;

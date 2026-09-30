@@ -226,7 +226,7 @@ function scoreOf(setup: Setup, bars: readonly Candle[], a: number, trend: -1 | 0
 /** One method, one mode, read to a state. */
 export function readMethod(m: (typeof METHODS)[number], mode: Mode, tf: Tf, ctx: EntryContext): MethodRead {
   const entryTf: Tf = mode === 'mtf' ? '5m' : tf;
-  const base = { id: m.id, n: m.n, name: m.name, group: m.group, mode, tf: entryTf };
+  const base = { id: m.id, n: m.n, name: m.name, group: m.group, summary: m.summary, mode, tf: entryTf };
   const empty = (reason: string, state: EntryState = 'NO_TRADE'): MethodRead => ({
     ...base, dir: null, state, steps: [], gates: [], plan: null, score: null, scoreParts: [], alignment: null, reason, triggerTime: null,
   });

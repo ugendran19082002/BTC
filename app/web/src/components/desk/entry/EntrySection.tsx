@@ -7,7 +7,9 @@ import { cn } from '@/lib/utils';
 import type { EntryMode, EntryOverlay, EntryRecord, EntryTf, MethodRead } from '@/types/entry';
 import { EntryGrid } from './EntryGrid';
 import { ModePanel, SINGLE_TFS } from './ModePanel';
+import { MethodLegend } from './MethodLegend';
 import { signedR } from './parts';
+import './entry.css';
 
 /**
  * The entry section: TEST.md's twelve entry methods, each read two ways --
@@ -62,6 +64,13 @@ export function EntrySection({ onOverlay }: {
   const recordOf = (r: MethodRead) => record?.records.find((x) => x.method === r.id && x.mode === r.mode && x.tf === r.tf) ?? null;
   const totalOf = (mode: EntryMode) => record?.totals.find((t) => t.mode === mode && t.tf === '5m') ?? null;
   const choose = (r: MethodRead) => setChosen({ ...chosen, [r.mode]: keyOf(r), last: r.mode });
+  // From the method table: the same method on both sides.
+  const chooseBoth = (n: number) => {
+    const s = reads.find((r) => r.mode === 'single' && r.n === n);
+    const m = reads.find((r) => r.mode === 'mtf' && r.n === n);
+    setChosen({ single: s ? keyOf(s) : chosen.single, mtf: m ? keyOf(m) : chosen.mtf, last: chosen.last });
+  };
+  const bothN = selected.single && selected.mtf && selected.single.n === selected.mtf.n ? selected.single.n : null;
 
   return (
     <section aria-label="entry setups" className="desk-entry mt-3">
@@ -90,6 +99,8 @@ export function EntrySection({ onOverlay }: {
 
       {view === 'panels' ? (
         <>
+          <MethodLegend single={reads.filter((r) => r.mode === 'single')} mtf={reads.filter((r) => r.mode === 'mtf')}
+                        chosenN={bothN} onChoose={chooseBoth} />
           <div className="grid gap-3 lg:grid-cols-2">
             <ModePanel mode="single" reads={reads.filter((r) => r.mode === 'single')} timeframes={board?.timeframes ?? []}
                        selected={selected.single} onChoose={choose} total={totalOf('single')} recordOf={recordOf}

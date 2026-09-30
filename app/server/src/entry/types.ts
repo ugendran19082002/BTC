@@ -60,6 +60,8 @@ export type MethodRead = {
   n: number;
   name: string;
   group: Group;
+  /** What the method looks for, in one line. */
+  summary: string;
   mode: Mode;
   /** The timeframe the entry is read on: 5m with the chain, the chart's own without it. */
   tf: Tf;

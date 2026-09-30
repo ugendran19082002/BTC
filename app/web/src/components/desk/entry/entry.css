@@ -1,0 +1,15 @@
+/*
+ * The entry section's tables. The app's base rule sets every th / td to
+ * right-aligned, monospace and nowrap -- right for the chain's numbers, wrong
+ * for method names and reasons, and nowrap pushed the panels past the screen's
+ * edge. `:where` keeps these at element weight, so a cell's own utility class
+ * (text-right, text-center) still wins.
+ */
+:where(.desk-entry) th,
+:where(.desk-entry) td {
+  text-align: left;
+  white-space: normal;
+  font-family: inherit;
+  padding: 3px 6px;
+}
+:where(.desk-entry) th { position: static; background: transparent; }

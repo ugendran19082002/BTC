@@ -36,6 +36,10 @@ const BADGE: Record<MethodRead['group'], string> = {
   flow: 'bg-[#d97706]',
 };
 
+export const GROUP_NAME: Record<MethodRead['group'], string> = {
+  breakout: 'Breakout', pullback: 'Pullback', reversal: 'Reversal', flow: 'Flow / derivatives',
+};
+
 export function NumberBadge({ read }: { read: Pick<MethodRead, 'n' | 'group'> }) {
   return (
     <span aria-hidden className={cn('inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10.5px] font-bold text-white', BADGE[read.group])}>
