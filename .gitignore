@@ -17,9 +17,11 @@ deploy/.env
 node_modules/
 dist/
 app/*.log
+# any copy of it, however named (a renamed one was committed by accident on 30 Sep 2026)
 chain.db
-chain.db-wal
-chain.db-shm
+chain.db*
+*.db-wal
+*.db-shm
 .playwright-mcp/
 desk.png
 
