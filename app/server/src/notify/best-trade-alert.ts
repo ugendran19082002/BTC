@@ -1,5 +1,11 @@
 import type { BestTrade } from '../domain/best-trade.js';
 
+/**
+ * "The best pick changed", said once: the rule for when a new pick is
+ * announced (a different strike, at most N times a contract, above the floor),
+ * and the message it is announced with.
+ */
+
 /** How many times one strike may be announced for one contract, by default. */
 export const BEST_TRADE_REPEAT_DEFAULT = 1;
 /** And at most, whatever the setting says. */

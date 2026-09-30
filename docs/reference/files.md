@@ -5,7 +5,7 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-356 files listed, 153 test files counted below, images and lockfiles left out.
+353 files listed, 153 test files counted below, images and lockfiles left out.
 
 ## Test files
 
@@ -65,7 +65,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [backtest.ts](../../app/server/src/backtest/backtest.ts) | Backtest over the harvested chain snapshots in chain.db. |
 | [candle-cache.ts](../../app/server/src/backtest/candle-cache.ts) | BTCUSD history for the research scripts, cached one file per month. |
-| [momentum-study.ts](../../app/server/src/backtest/momentum-study.ts) | -- |
+| [momentum-study.ts](../../app/server/src/backtest/momentum-study.ts) | How good is the momentum call, measured rather than claimed. |
 | [momentum.ts](../../app/server/src/backtest/momentum.ts) | The momentum call, replayed over history (26 Sep 2026). |
 | [signal-outcome.ts](../../app/server/src/backtest/signal-outcome.ts) | How a market-state call turned out, judged against the bars that followed. |
 
@@ -74,9 +74,9 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [import-sqlite.ts](../../app/server/src/db/import-sqlite.ts) | Copy the desk's SQLite files into PostgreSQL, once, at the cutover. |
-| [migrate.ts](../../app/server/src/db/migrate.ts) | -- |
+| [migrate.ts](../../app/server/src/db/migrate.ts) | Schema changes that run once and are remembered. |
 | [pool.ts](../../app/server/src/db/pool.ts) | The one connection pool to the desk's database. |
-| [settings.ts](../../app/server/src/db/settings.ts) | -- |
+| [settings.ts](../../app/server/src/db/settings.ts) | Desk settings that must outlive a restart: the mode, the default expiry, the short cap, the auto-trade block, whether alerts are on. |
 
 ## `app/server/src/delta/`
 
@@ -88,7 +88,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [gen-docs.ts](../../app/server/src/docs/gen-docs.ts) | -- |
+| [gen-docs.ts](../../app/server/src/docs/gen-docs.ts) | ------------------------------------------------------------------ files |
 
 ## `app/server/src/domain/`
 
@@ -100,7 +100,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [bs.ts](../../app/server/src/domain/bs.ts) | Black-Scholes with r = 0, which is how Delta prices its crypto options. |
 | [calibration.ts](../../app/server/src/domain/calibration.ts) | What the model says, against what actually happened. |
 | [direction.ts](../../app/server/src/domain/direction.ts) | Which way the tape is leaning, and whether that is worth acting on. |
-| [ev.ts](../../app/server/src/domain/ev.ts) | -- |
+| [ev.ts](../../app/server/src/domain/ev.ts) | What one short leg is worth on average, and whether it clears the eligibility rules -- per strike, for the whole board. |
 | [forecast.ts](../../app/server/src/domain/forecast.ts) | How far BTC could move over the next few hours, and which way. |
 | [indicators.ts](../../app/server/src/domain/indicators.ts) | The readings under the chart, and the arithmetic behind each one. |
 | [level-mode.ts](../../app/server/src/domain/level-mode.ts) | Which level the state machine judges against — named, shared, and measured. |
@@ -108,7 +108,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [outlook.ts](../../app/server/src/domain/outlook.ts) | Where BTC could be at each horizon, and how much of that is knowable. |
 | [patterns.ts](../../app/server/src/domain/patterns.ts) | What the last few bars are doing, named. |
 | [probability.ts](../../app/server/src/domain/probability.ts) | The three different questions people mean by "will it expire at zero". |
-| [recommend.ts](../../app/server/src/domain/recommend.ts) | -- |
+| [recommend.ts](../../app/server/src/domain/recommend.ts) | What to sell, on which side, and how many lots. |
 | [score.ts](../../app/server/src/domain/score.ts) | Ranking and sizing helpers. |
 | [shock.ts](../../app/server/src/domain/shock.ts) | Whether something is happening right now. |
 | [structure.ts](../../app/server/src/domain/structure.ts) | What the option board itself is saying: where open interest and gamma sit, how puts are priced against calls, and whether options are rich or cheap against what BTC has actually been doing. |
@@ -117,10 +117,10 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [add-body.ts](../../app/server/src/http/add-body.ts) | -- |
+| [add-body.ts](../../app/server/src/http/add-body.ts) | A person's add, as the position card sends it, checked and shaped. |
 | [app.ts](../../app/server/src/http/app.ts) | -- |
-| [close-body.ts](../../app/server/src/http/close-body.ts) | -- |
-| [refuse.ts](../../app/server/src/http/refuse.ts) | -- |
+| [close-body.ts](../../app/server/src/http/close-body.ts) | A person's close, as the position card sends it, checked and shaped. |
+| [refuse.ts](../../app/server/src/http/refuse.ts) | An answer of "no", said deliberately. |
 | [session.ts](../../app/server/src/http/session.ts) | Password login for a desk that sits on the open internet. |
 | [stream.ts](../../app/server/src/http/stream.ts) | The desk, pushed. |
 | [ttl-cache.ts](../../app/server/src/http/ttl-cache.ts) | -- |
@@ -132,10 +132,10 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [annotations.routes.ts](../../app/server/src/http/routes/annotations.routes.ts) | Chart annotations API routes. |
 | [desk.routes.ts](../../app/server/src/http/routes/desk.routes.ts) | -- |
 | [errors.routes.ts](../../app/server/src/http/routes/errors.routes.ts) | The error log, readable and writable from the browser. |
-| [report.routes.ts](../../app/server/src/http/routes/report.routes.ts) | -- |
+| [report.routes.ts](../../app/server/src/http/routes/report.routes.ts) | The record as a calendar, and a day as a line. |
 | [session.routes.ts](../../app/server/src/http/routes/session.routes.ts) | Sign-in, two-step setup, and the account page. |
 | [strategy.routes.ts](../../app/server/src/http/routes/strategy.routes.ts) | The strategy desk: what is saved, what is armed, and when it next runs. |
-| [stream.routes.ts](../../app/server/src/http/routes/stream.routes.ts) | -- |
+| [stream.routes.ts](../../app/server/src/http/routes/stream.routes.ts) | `GET /api/stream` -- the status, the price and "the board changed", pushed. |
 | [trade.routes.ts](../../app/server/src/http/routes/trade.routes.ts) | The order desk. |
 
 ## `app/server/src/market/`
@@ -144,7 +144,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [book-heat.ts](../../app/server/src/market/book-heat.ts) | The perpetual's resting liquidity, recorded: the chart's heatmap. |
 | [chain-features.ts](../../app/server/src/market/chain-features.ts) | The option board as figures a measurement can use — and a record of them. |
-| [chain.ts](../../app/server/src/market/chain.ts) | -- |
+| [chain.ts](../../app/server/src/market/chain.ts) | Fallback spacing when the listed strikes cannot be read. |
 | [changes.ts](../../app/server/src/market/changes.ts) | What changed over the last 1m … 12h: BTC, one strike's premium / OI / IV / volume, and the board's call and put open interest, volume and PCR -- the "diff" a seller reads before entry (the desk spe... |
 | [chart-annotations.ts](../../app/server/src/market/chart-annotations.ts) | Chart annotations — SL/TGT boxes, SMC labels, OB zones saved by the trader. |
 | [delta-socket.ts](../../app/server/src/market/delta-socket.ts) | Delta's public ticker feed, over a socket. |
@@ -177,10 +177,10 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [exit-steps.ts](../../app/server/src/strategy/exit-steps.ts) | Time-based exits: move a strategy's target and stop as the day goes on. |
 | [runner.ts](../../app/server/src/strategy/runner.ts) | The loop that turns a due strategy into orders. |
-| [schedule.ts](../../app/server/src/strategy/schedule.ts) | -- |
-| [select.ts](../../app/server/src/strategy/select.ts) | -- |
-| [store.ts](../../app/server/src/strategy/store.ts) | -- |
-| [trend-breakout.ts](../../app/server/src/strategy/trend-breakout.ts) | GENERATED from app/web/src/lib/trend/breakout.ts by `npm run sync:trend` -- edit that file, not this one. |
+| [schedule.ts](../../app/server/src/strategy/schedule.ts) | The IST calendar day a moment falls in, as `YYYY-MM-DD`. |
+| [select.ts](../../app/server/src/strategy/select.ts) | Which legs a strategy sells today, and how many lots each. |
+| [store.ts](../../app/server/src/strategy/store.ts) | Saved strategies and their run journal. |
+| [trend-breakout.ts](../../app/server/src/strategy/trend-breakout.ts) | The trend plan: a close beyond the 20-candle channel, a stop 2 ATR(14) from the entry, then a chandelier -- 3 ATR from the best price since entry, never loosened -- and no target. |
 | [trend-paper.ts](../../app/server/src/strategy/trend-paper.ts) | The trend plan's paper log: the forward test the backtest cannot be. |
 | [types.ts](../../app/server/src/strategy/types.ts) | A saved strategy: everything the desk needs to place a day's trade without being asked twice. |
 
@@ -199,7 +199,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [pnl-history.ts](../../app/server/src/trading/pnl-history.ts) | The record as a calendar, and a day as a line. |
 | [precheck.ts](../../app/server/src/trading/precheck.ts) | The gates a trade passes before a single byte goes to the exchange. |
 | [service.ts](../../app/server/src/trading/service.ts) | The one live trading service. |
-| [status.ts](../../app/server/src/trading/status.ts) | -- |
+| [status.ts](../../app/server/src/trading/status.ts) | What a trade looks like in a list of orders. |
 | [store.ts](../../app/server/src/trading/store.ts) | The trade journal. |
 | [types.ts](../../app/server/src/trading/types.ts) | The vocabulary of a live trade. |
 
@@ -207,9 +207,9 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [delta.ts](../../app/server/src/trading/exchange/delta.ts) | -- |
+| [delta.ts](../../app/server/src/trading/exchange/delta.ts) | The real account. |
 | [paper.ts](../../app/server/src/trading/exchange/paper.ts) | An exchange you can lie to. |
-| [port.ts](../../app/server/src/trading/exchange/port.ts) | -- |
+| [port.ts](../../app/server/src/trading/exchange/port.ts) | Move an order that is already on the book. |
 
 ## `app/web/`
 
@@ -221,28 +221,28 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [postcss.config.js](../../app/web/postcss.config.js) | -- |
 | [tailwind.config.js](../../app/web/tailwind.config.js) | -- |
 | [tsconfig.json](../../app/web/tsconfig.json) | -- |
-| [vite.config.ts](../../app/web/vite.config.ts) | -- |
+| [vite.config.ts](../../app/web/vite.config.ts) | The default pool, deliberately. |
 
 ## `app/web/scripts/`
 
 | File | What it is |
 |---|---|
-| [combo-study.ts](../../app/web/scripts/combo-study.ts) | -- |
-| [crt-study.ts](../../app/web/scripts/crt-study.ts) | -- |
-| [flow-study.ts](../../app/web/scripts/flow-study.ts) | -- |
-| [intraday-momentum-study.ts](../../app/web/scripts/intraday-momentum-study.ts) | -- |
-| [momentum-study.ts](../../app/web/scripts/momentum-study.ts) | -- |
-| [profile-study.ts](../../app/web/scripts/profile-study.ts) | -- |
+| [combo-study.ts](../../app/web/scripts/combo-study.ts) | ================================================================ Part 1 |
+| [crt-study.ts](../../app/web/scripts/crt-study.ts) | The CRT family on the cached 5m BTC history, declared before it ran. |
+| [flow-study.ts](../../app/web/scripts/flow-study.ts) | ---------------------------------------------------------------- data |
+| [intraday-momentum-study.ts](../../app/web/scripts/intraday-momentum-study.ts) | Intraday time-series momentum on BTC (Shen, Urquhart & Wang, Financial Review 2022): the day's first half hour predicts its last half hour. |
+| [momentum-study.ts](../../app/web/scripts/momentum-study.ts) | Entry, stop and exit for catching big moves -- on the cached Delta BTCUSD history, declared before it ran. |
+| [profile-study.ts](../../app/web/scripts/profile-study.ts) | Volume profile on the cached 5m BTC history, declared before it ran. |
 | [responsive-check.mjs](../../app/web/scripts/responsive-check.mjs) | -- |
-| [smc-study.ts](../../app/web/scripts/smc-study.ts) | -- |
+| [smc-study.ts](../../app/web/scripts/smc-study.ts) | The chart engine (src/lib/smc) replayed over every cached 5-minute BTCUSD candle, one at a time -- the same code the chart runs, on real history. |
 
 ## `app/web/src/`
 
 | File | What it is |
 |---|---|
-| [App.tsx](../../app/web/src/App.tsx) | -- |
+| [App.tsx](../../app/web/src/App.tsx) | The timeframes the market-state card offers, which the chart also draws. |
 | [main.tsx](../../app/web/src/main.tsx) | -- |
-| [styles.css](../../app/web/src/styles.css) | -- |
+| [styles.css](../../app/web/src/styles.css) | Slim, quiet scrollbars. |
 
 ## `app/web/src/api/`
 
@@ -254,7 +254,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [errors.ts](../../app/web/src/api/errors.ts) | -- |
 | [report.ts](../../app/web/src/api/report.ts) | -- |
 | [session.ts](../../app/web/src/api/session.ts) | Sign-in and the account page. |
-| [strategy.ts](../../app/web/src/api/strategy.ts) | -- |
+| [strategy.ts](../../app/web/src/api/strategy.ts) | Copy one, settings and all, as a new draft. |
 | [trade.ts](../../app/web/src/api/trade.ts) | The order desk. |
 
 ## `app/web/src/components/auth/`
@@ -262,7 +262,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [ChangePasswordForm.tsx](../../app/web/src/components/auth/ChangePasswordForm.tsx) | Change the password: the current one, the new one twice, and a fresh code. |
-| [CodeInput.tsx](../../app/web/src/components/auth/CodeInput.tsx) | -- |
+| [CodeInput.tsx](../../app/web/src/components/auth/CodeInput.tsx) | The 6-digit code from the authenticator app. |
 | [ProfileMenu.tsx](../../app/web/src/components/auth/ProfileMenu.tsx) | The profile button in the header, and the account sheet behind it. |
 | [TwoStepSetup.tsx](../../app/web/src/components/auth/TwoStepSetup.tsx) | -- |
 
@@ -270,7 +270,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [ChainTable.tsx](../../app/web/src/components/chain/ChainTable.tsx) | -- |
+| [ChainTable.tsx](../../app/web/src/components/chain/ChainTable.tsx) | Why a strike carries the pick mark. |
 
 ## `app/web/src/components/desk/`
 
@@ -300,15 +300,15 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [ChartHud.tsx](../../app/web/src/components/desk/chart/ChartHud.tsx) | -- |
-| [LtpChip.tsx](../../app/web/src/components/desk/chart/LtpChip.tsx) | -- |
+| [ChartHud.tsx](../../app/web/src/components/desk/chart/ChartHud.tsx) | The chart's corner readout: the live setup and what it is waiting for, the plan when there is one, the timeframe context, and this chart's own record. |
+| [LtpChip.tsx](../../app/web/src/components/desk/chart/LtpChip.tsx) | The last traded price, where a trader looks for it: beside the chart's controls, green when it ticked up and red when it ticked down (kept until the next change, like the price scale's own label),... |
 | [TradesDialog.tsx](../../app/web/src/components/desk/chart/TradesDialog.tsx) | Every trade, in one place, off the chart: the SMC plan's trades on this chart, and the trend plan's paper log from the server. |
 | [flow-layers.ts](../../app/web/src/components/desk/chart/flow-layers.ts) | The order-flow layers, in the scene's data coordinates (bar index, price): |
 | [label-layout.ts](../../app/web/src/components/desk/chart/label-layout.ts) | Where each label goes, so that none is drawn over another. |
 | [price-chart.css](../../app/web/src/components/desk/chart/price-chart.css) | The price chart (PriceChart.tsx): the canvas fills the card, and the HUD and the toolbar float inside it. |
 | [scene.ts](../../app/web/src/components/desk/chart/scene.ts) | What the chart draws, in *data* coordinates (bar index, price), built from one engine state. |
 | [smc-primitive.ts](../../app/web/src/components/desk/chart/smc-primitive.ts) | Draws a scene (scene.ts) on the chart's own canvas, as a series primitive. |
-| [trend-layer.ts](../../app/web/src/components/desk/chart/trend-layer.ts) | -- |
+| [trend-layer.ts](../../app/web/src/components/desk/chart/trend-layer.ts) | The trend plan (lib/trend/breakout.ts, on 1H candles) drawn on the chart's own candles: its 20-candle channel as a faint step line, the open trade's entry, initial stop and trailing stop, and finis... |
 
 ## `app/web/src/components/layout/`
 
@@ -329,7 +329,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [DecisionPanels.tsx](../../app/web/src/components/overview/DecisionPanels.tsx) | -- |
 | [MarketPanels.tsx](../../app/web/src/components/overview/MarketPanels.tsx) | ------------------------------------------------------------------ KPI strip |
-| [Overview.tsx](../../app/web/src/components/overview/Overview.tsx) | -- |
+| [Overview.tsx](../../app/web/src/components/overview/Overview.tsx) | The price the screen measures from: the one-second tick, then the chain snapshot's own spot, then the 5-minute close -- each step staler than the last, so never the other way round (27 Sep 2026). |
 | [TraderPanels.tsx](../../app/web/src/components/overview/TraderPanels.tsx) | ---------------------------------------------------------- early warning |
 | [parts.tsx](../../app/web/src/components/overview/parts.tsx) | The Overview's building blocks. |
 
@@ -337,16 +337,16 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [CumulativeChart.tsx](../../app/web/src/components/report/CumulativeChart.tsx) | -- |
-| [MtmChart.tsx](../../app/web/src/components/report/MtmChart.tsx) | -- |
-| [PnlCalendar.tsx](../../app/web/src/components/report/PnlCalendar.tsx) | -- |
-| [ReportPanel.tsx](../../app/web/src/components/report/ReportPanel.tsx) | -- |
+| [CumulativeChart.tsx](../../app/web/src/components/report/CumulativeChart.tsx) | The running total, day by day: the line that says whether the month is working. |
+| [MtmChart.tsx](../../app/web/src/components/report/MtmChart.tsx) | One day, minute by minute: what the day was worth at each reading, with every fall from a high shaded underneath. |
+| [PnlCalendar.tsx](../../app/web/src/components/report/PnlCalendar.tsx) | Every day in the range as a square: green made money, red lost it, the shade says how much against the biggest day. |
+| [ReportPanel.tsx](../../app/web/src/components/report/ReportPanel.tsx) | How the trading has actually gone. |
 
 ## `app/web/src/components/research/`
 
 | File | What it is |
 |---|---|
-| [DateTimePicker.tsx](../../app/web/src/components/research/DateTimePicker.tsx) | -- |
+| [DateTimePicker.tsx](../../app/web/src/components/research/DateTimePicker.tsx) | A date and time, always read as India time -- see `lib/ist-moment.ts` for why. |
 
 ## `app/web/src/components/strategy/`
 
@@ -363,7 +363,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [AccountCard.tsx](../../app/web/src/components/trade/AccountCard.tsx) | -- |
-| [AddLotsSheet.tsx](../../app/web/src/components/trade/AddLotsSheet.tsx) | -- |
+| [AddLotsSheet.tsx](../../app/web/src/components/trade/AddLotsSheet.tsx) | Sell more of a contract that is already held. |
 | [AlertSwitch.tsx](../../app/web/src/components/trade/AlertSwitch.tsx) | -- |
 | [CloseAllButton.tsx](../../app/web/src/components/trade/CloseAllButton.tsx) | -- |
 | [ClosePositionSheet.tsx](../../app/web/src/components/trade/ClosePositionSheet.tsx) | -- |
@@ -373,7 +373,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [ModeSwitch.tsx](../../app/web/src/components/trade/ModeSwitch.tsx) | -- |
 | [OrderTicket.tsx](../../app/web/src/components/trade/OrderTicket.tsx) | The order ticket. |
 | [OrdersPanel.tsx](../../app/web/src/components/trade/OrdersPanel.tsx) | Every order, looking back. |
-| [OriginTag.tsx](../../app/web/src/components/trade/OriginTag.tsx) | -- |
+| [OriginTag.tsx](../../app/web/src/components/trade/OriginTag.tsx) | Who asked for this order. |
 | [PositionsCard.tsx](../../app/web/src/components/trade/PositionsCard.tsx) | What is on right now. |
 
 ## `app/web/src/components/ui/`
@@ -381,14 +381,14 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [badge.tsx](../../app/web/src/components/ui/badge.tsx) | -- |
-| [button.tsx](../../app/web/src/components/ui/button.tsx) | -- |
+| [button.tsx](../../app/web/src/components/ui/button.tsx) | Tailwind's preflight is off in this project, so a bare <button> keeps the platform's own border, background and font. |
 | [calendar.tsx](../../app/web/src/components/ui/calendar.tsx) | -- |
 | [card.tsx](../../app/web/src/components/ui/card.tsx) | -- |
-| [checkbox.tsx](../../app/web/src/components/ui/checkbox.tsx) | -- |
+| [checkbox.tsx](../../app/web/src/components/ui/checkbox.tsx) | A tick box with a label that is part of the target. |
 | [collapsible-card.tsx](../../app/web/src/components/ui/collapsible-card.tsx) | -- |
 | [date-range-picker.tsx](../../app/web/src/components/ui/date-range-picker.tsx) | A date range, chosen in one place. |
 | [figure.tsx](../../app/web/src/components/ui/figure.tsx) | -- |
-| [input.tsx](../../app/web/src/components/ui/input.tsx) | -- |
+| [input.tsx](../../app/web/src/components/ui/input.tsx) | A number field with the spinner arrows gone. |
 | [kv.tsx](../../app/web/src/components/ui/kv.tsx) | -- |
 | [label.tsx](../../app/web/src/components/ui/label.tsx) | -- |
 | [money.tsx](../../app/web/src/components/ui/money.tsx) | -- |
@@ -420,10 +420,10 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [csv.ts](../../app/web/src/lib/csv.ts) | A CSV that opens cleanly in Excel. |
 | [ev-view.ts](../../app/web/src/lib/ev-view.ts) | Reading the server's per-strike arithmetic onto the screen. |
 | [exit-checks.ts](../../app/web/src/lib/exit-checks.ts) | Whether a stop and a target make sense against the price right now. |
-| [exit-input.ts](../../app/web/src/lib/exit-input.ts) | -- |
+| [exit-input.ts](../../app/web/src/lib/exit-input.ts) | How the ticket and Edit exits read one exit: |
 | [format.ts](../../app/web/src/lib/format.ts) | How numbers are written on this desk. |
-| [held.ts](../../app/web/src/lib/held.ts) | -- |
-| [ist-moment.ts](../../app/web/src/lib/ist-moment.ts) | -- |
+| [held.ts](../../app/web/src/lib/held.ts) | The strikes you are currently short, keyed the way the board looks them up. |
+| [ist-moment.ts](../../app/web/src/lib/ist-moment.ts) | A date and time, always read as India time. |
 | [live-bar.ts](../../app/web/src/lib/live-bar.ts) | The forming bar, carried to the last traded price. |
 | [overview.ts](../../app/web/src/lib/overview.ts) | ------------------------------------------------------------------ volatility |
 | [report-error.ts](../../app/web/src/lib/report-error.ts) | Send a browser failure to the server so it lands in the same log as everything else. |
@@ -442,7 +442,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [context.ts](../../app/web/src/lib/smc/context.ts) | The multi-timeframe context, read with the same no-lookahead rule as the engine: a higher-timeframe candle counts only once it has closed. |
 | [engine.ts](../../app/web/src/lib/smc/engine.ts) | A price-action / SMC engine that reads the market one closed candle at a time. |
-| [measured.data.ts](../../app/web/src/lib/smc/measured.data.ts) | GENERATED by app/web/scripts/smc-study.ts -- do not edit; rerun the study instead. |
+| [measured.data.ts](../../app/web/src/lib/smc/measured.data.ts) | -- |
 | [readout.ts](../../app/web/src/lib/smc/readout.ts) | What the chart says in words: the one live setup, or what the next one is waiting for, and how this chart's own completed setups have done. |
 | [types.ts](../../app/web/src/lib/smc/types.ts) | The vocabulary of the price-action / SMC engine (lib/smc/engine.ts). |
 
@@ -457,7 +457,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [desk.ts](../../app/web/src/types/desk.ts) | -- |
+| [desk.ts](../../app/web/src/types/desk.ts) | What one strike is worth on average, and whether it clears the eligibility rules. |
 | [errors.ts](../../app/web/src/types/errors.ts) | Mirrors app/server/src/observability/errors.ts |
 | [report.ts](../../app/web/src/types/report.ts) | Mirrors app/server/src/trading/pnl-history.ts. |
 | [strategy.ts](../../app/web/src/types/strategy.ts) | The shapes the strategy API returns. |
@@ -487,7 +487,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [001-login-servers.php](../../deploy/adminer/plugins-enabled/001-login-servers.php) | -- |
+| [001-login-servers.php](../../deploy/adminer/plugins-enabled/001-login-servers.php) | One server, and only this one. |
 | [002-no-permanent-login.php](../../deploy/adminer/plugins-enabled/002-no-permanent-login.php) | -- |
 
 ## `deploy/adminer/theme/`
@@ -565,9 +565,6 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [chain.db.bad-presettlement-20260930](../../harvester/chain.db.bad-presettlement-20260930) | -- |
-| [chain.db.bad-presettlement-20260930-shm](../../harvester/chain.db.bad-presettlement-20260930-shm) | -- |
-| [chain.db.bad-presettlement-20260930-wal](../../harvester/chain.db.bad-presettlement-20260930-wal) | -- |
 | [harvest_chain.py](../../harvester/harvest_chain.py) | Harvest the BTC daily-option chain at 05:30 IST plus the 12:00 UTC settlement. |
 | [store.py](../../harvester/store.py) | SQLite store for harvested option-chain snapshots. |
 

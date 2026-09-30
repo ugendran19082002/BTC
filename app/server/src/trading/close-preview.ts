@@ -2,6 +2,12 @@ import { fillChargesUsd } from './charges.js';
 import type { Quote, TradeState } from './types.js';
 
 /**
+ * What buying back part or all of a position would book, before it is sent:
+ * which sizes may be closed, and the net after every charge at the price the
+ * close would pay -- the ask, or a resting target or stop.
+ */
+
+/**
  * Whether this many contracts may be bought back by hand, and why not.
  *
  * Shared by the preview and the close itself, so the sheet can only ever offer

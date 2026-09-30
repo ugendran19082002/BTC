@@ -14,6 +14,12 @@ import { registerAnnotationRoutes } from './routes/annotations.routes.js';
 import { noteError } from '../observability/errors.js';
 import { refuse, wasRefusal, worthLogging } from './refuse.js';
 
+/**
+ * The Fastify app: the session gate, the CSRF origin check, trusted proxies,
+ * and the two hooks that put every failure in the error log. Routes register
+ * here; what each needs to be signed in for is `routeAuthLevel`.
+ */
+
 /** Open without a session: the health probe. Sign-in routes say so on their own route. */
 const PUBLIC_ROUTES = new Set(['/api/health']);
 

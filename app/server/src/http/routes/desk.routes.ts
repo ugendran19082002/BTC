@@ -31,6 +31,12 @@ import { recordBoard } from '../../market/chain-features.js';
 import { SHOCK_WINDOWS } from '../../domain/shock.js';
 import { shockFrom } from '../../market/shock-now.js';
 
+/**
+ * The desk's read routes: health, the option chain, spot and candles, what
+ * changed, the perpetual's tape, book and big prints for the chart, the trend
+ * plan's paper log, chain.db reloads and the desk settings.
+ */
+
 /** Resolve the `at` query param: "now" (or absent) means live. */
 function resolveAt(at: string | undefined): number | null {
   if (!at || at === 'now' || at === 'live') return null;

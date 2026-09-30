@@ -86,31 +86,36 @@ function paragraphOf(lines: string[]): string {
 /**
  * A code file's header comment, if it has one.
  *
- * Only a comment that stands on its own counts: at the top, or straight after
- * the imports, and followed by a blank line or another comment. A comment
- * directly above a declaration describes that declaration, not the file, and
- * quoting it as the file's purpose would be a confident wrong answer.
+ * This codebase puts a file's docblock after its imports, often directly above
+ * the first declaration. So, before the first function or class: the first
+ * comment that stands on its own (a blank line or another comment after it),
+ * else the longest block of three lines or more (two for `//` lines). A comment
+ * directly above a function or class documents that declaration, not the file
+ * -- quoting it as the file's purpose would be a confident wrong answer --
+ * unless that is the only function or class the file has.
  */
 function codeHeader(text: string): string {
   const lines = text.split('\n');
+  const DECL = /^(export\s+)?(default\s+)?(async\s+)?(function|class)\b/;
   let i = 0;
   let inImport = false;
-  while (i < lines.length) {
+  let best: { size: number; p: string } | null = null;
+  while (i < lines.length && i < 120) {
     const t = lines[i]!.trim();
     if (inImport) {
       if (/from\s+['"][^'"]+['"];?\s*$/.test(t) || /^\}\s*;?$/.test(t)) inImport = false;
       i++;
       continue;
     }
-    if (t === '' || t.startsWith('#!') || /^['"]use (strict|client)['"];?$/.test(t)) { i++; continue; }
-    if (/^(import|export\s+(\*|\{[^}]*\}\s+from))\b/.test(t) || /^@import\b/.test(t) || t.startsWith('<?php')) {
-      if (/^import\b/.test(t) && !/;\s*$/.test(t) && !/from\s+['"]/.test(t) && !/^import\s+['"]/.test(t)) inImport = true;
+    if (DECL.test(t)) break;
+    if (/^import\b/.test(t)) {
+      if (!/;\s*$/.test(t) && !/from\s+['"]/.test(t) && !/^import\s+['"]/.test(t)) inImport = true;
       i++;
       continue;
     }
     const block = t.startsWith('/*');
     const line = t.startsWith('//');
-    if (!block && !line) return '';
+    if (!block && !line) { i++; continue; }
     const start = i;
     if (block) {
       while (i < lines.length && !lines[i]!.includes('*/')) i++;
@@ -120,12 +125,19 @@ function codeHeader(text: string): string {
     }
     const next = lines[i]?.trim() ?? '';
     const standsAlone = next === '' || next.startsWith('/*') || next.startsWith('//');
-    if (!standsAlone) return '';
+    const size = i - start;
     const p = paragraphOf(lines.slice(start, i));
-    if (/^(eslint|@ts-|prettier)/.test(p)) continue;
-    return p;
+    if (!p || /^(eslint|@ts-|prettier|GENERATED)/i.test(p)) continue;
+    if (standsAlone) return p;
+    // Attached to a declaration: a candidate only if it is long, and not a
+    // function's or a class's own doc. The longest wins -- a file's docblock is
+    // nearly always bigger than the one-paragraph note on a constant beside it.
+    const long = block ? size >= 3 : size >= 2;
+    // The one function or class a module holds: its doc is the module's.
+    const onlyDecl = DECL.test(next) && lines.filter((l) => DECL.test(l)).length === 1;
+    if (long && (!DECL.test(next) || onlyDecl) && size > (best?.size ?? 0)) best = { size, p };
   }
-  return '';
+  return best?.p ?? '';
 }
 
 /** Leading `#` comments, after a shebang. */
