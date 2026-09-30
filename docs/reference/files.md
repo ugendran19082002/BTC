@@ -31,8 +31,8 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [.env.example](../../app/server/.env.example) | Optional. |
 | [hash-password.mjs](../../app/server/hash-password.mjs) | Turn a password into the hash to put in .env. |
-| [package.json](../../app/server/package.json) | -- |
-| [tsconfig.json](../../app/server/tsconfig.json) | -- |
+| [package.json](../../app/server/package.json) | npm package: btc-options-desk-server, its scripts and dependencies. |
+| [tsconfig.json](../../app/server/tsconfig.json) | TypeScript compiler settings. |
 
 ## `app/server/scripts/`
 
@@ -215,12 +215,12 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [index.html](../../app/web/index.html) | -- |
-| [knip.json](../../app/web/knip.json) | -- |
-| [package.json](../../app/web/package.json) | -- |
-| [postcss.config.js](../../app/web/postcss.config.js) | -- |
+| [index.html](../../app/web/index.html) | The page shell: "BTC Desk". |
+| [knip.json](../../app/web/knip.json) | knip settings: the entry points it cannot find by itself. |
+| [package.json](../../app/web/package.json) | npm package: btc-options-desk-web, its scripts and dependencies. |
+| [postcss.config.js](../../app/web/postcss.config.js) | PostCSS for the Vite build: Tailwind, then vendor prefixes. |
 | [tailwind.config.js](../../app/web/tailwind.config.js) | Preflight off on purpose: this app has its own hand-written stylesheet and Tailwind's reset would fight it. |
-| [tsconfig.json](../../app/web/tsconfig.json) | -- |
+| [tsconfig.json](../../app/web/tsconfig.json) | TypeScript compiler settings. |
 | [vite.config.ts](../../app/web/vite.config.ts) | The default pool, deliberately. |
 
 ## `app/web/scripts/`

@@ -91,7 +91,7 @@ export function registerSessionRoutes(app: FastifyInstance, auth: AuthService, n
     return { ok: true, recoveryCodes: r.recoveryCodes };
   });
 
-  // The account page: two-step status, recovery codes left, the signed-in devices and recent security events.
+  // The account page: when the password changed, two-step status, recovery codes left, and the signed-in devices.
   app.get('/api/security', async (req, reply) => {
     const a = await auth.account(tokenOf(req));
     if (!a) { reply.code(401); return { error: 'Sign in again.' }; }

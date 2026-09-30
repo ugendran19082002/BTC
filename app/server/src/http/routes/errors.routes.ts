@@ -72,7 +72,7 @@ export function registerErrorRoutes(app: FastifyInstance) {
     return { ok: true, deleted: 1 };
   });
 
-  // Mark error rows resolved, so they leave the list but stay on record.
+  // Mark one error row, or all of them, resolved: off the list, still on record.
   app.post('/api/errors/resolve', async (req, reply) => {
     const { id, all } = (req.body ?? {}) as { id?: number; all?: boolean };
     if (all) return { ok: true, resolved: await log.resolveAll() };

@@ -25,17 +25,17 @@ What: the first sentence of the comment directly above the route. A dash means t
 | Method | Path | Session | What |
 |---|---|---|---|
 | GET | `/api/candles` | signed in | BTC bars for the chart under the board, at the three resolutions the screen offers. |
-| GET | `/api/chain` | signed in | -- |
+| GET | `/api/chain` | signed in | The option board for an expiry, live or at a past moment, scored for a seller: EV per strike, picks, bias, OI change, structure. |
 | GET | `/api/changes` | signed in | What changed over 1m … 12h for BTC, one strike and its board, from the desk's own records. |
-| GET | `/api/expiries` | signed in | -- |
+| GET | `/api/expiries` | signed in | The expiries Delta has listed, nearest first. |
 | GET | `/api/flow/bars` | signed in | Aggressive flow per candle -- taker buy and sell volume and the trade count -- for the chart's delta / CVD pane: `tf` 1m or 5m, `hours` back (up to 48). |
 | GET | `/api/flow/heatmap` | signed in | The perpetual's resting liquidity for the chart's heatmap: one column per candle (`tf` 1m or 5m), [bin, contracts] cells at $10 (1m) or $25 (5m) a bin, and the persistent walls now. |
-| GET | `/api/flow/large-prints` | signed in | -- |
+| GET | `/api/flow/large-prints` | signed in | The perpetual's big taker orders over the last hours, for the chart's bubbles, with the size that counts as big. |
 | GET | `/api/health` | none | The health probe. |
 | GET | `/api/perp` | signed in | The perpetual: its ticker (funding, open interest, turnover), the top of its book, and the last hour's order flow by aggressor side; the flow is summed from every print on the socket, and says how... |
 | POST | `/api/reload` | none | Re-read chain.db after deploy/refresh.sh has shipped a new copy. |
 | GET | `/api/settings` | signed in | Desk settings that survive a restart. |
-| POST | `/api/settings` | signed in | -- |
+| POST | `/api/settings` | signed in | Save one desk setting; the short cap may be lowered freely but never raised past what margin covers. |
 | GET | `/api/spot` | signed in | Just the price. |
 | GET | `/api/trend/paper` | signed in | The trend plan's paper log: the latest trades and, per timeframe, the live forward test (trades first seen within 15 minutes of their signal) apart from those replayed later. |
 
@@ -43,43 +43,43 @@ What: the first sentence of the comment directly above the route. A dash means t
 
 | Method | Path | Session | What |
 |---|---|---|---|
-| GET | `/api/errors` | signed in | -- |
+| GET | `/api/errors` | signed in | The error log, newest first: by source, resolved or not. |
 | POST | `/api/errors` | signed in | The browser reports here. |
 | POST | `/api/errors/delete` | signed in | Delete rather than hide. |
-| POST | `/api/errors/resolve` | signed in | -- |
+| POST | `/api/errors/resolve` | signed in | Mark one error row, or all of them, resolved: off the list, still on record. |
 
 ## [report.routes.ts](../../app/server/src/http/routes/report.routes.ts)
 
 | Method | Path | Session | What |
 |---|---|---|---|
 | GET | `/api/report/days` | signed in | Every trading day in the range, with the running total. |
-| GET | `/api/report/days.csv` | signed in | -- |
+| GET | `/api/report/days.csv` | signed in | The P&L calendar as a spreadsheet that opens cleanly in Excel. |
 | GET | `/api/report/mtm` | signed in | One day, minute by minute. |
 
 ## [session.routes.ts](../../app/server/src/http/routes/session.routes.ts)
 
 | Method | Path | Session | What |
 |---|---|---|---|
-| POST | `/api/login` | none | -- |
-| POST | `/api/login/code` | password step | -- |
-| POST | `/api/logout` | none | -- |
+| POST | `/api/login` | none | Sign-in, step one: the password. |
+| POST | `/api/login/code` | password step | Sign-in, step two: the authenticator code or a recovery code. |
+| POST | `/api/logout` | none | End this session on the server, not just in the browser. |
 | GET | `/api/me` | none | Where this browser is in signing in. |
-| GET | `/api/security` | signed in | -- |
-| POST | `/api/security/enable` | two-step setup | -- |
-| POST | `/api/security/password` | signed in | -- |
-| POST | `/api/security/recovery-codes` | signed in | -- |
-| GET | `/api/security/setup` | two-step setup | -- |
-| POST | `/api/security/sign-out-others` | signed in | -- |
+| GET | `/api/security` | signed in | The account page: when the password changed, two-step status, recovery codes left, and the signed-in devices. |
+| POST | `/api/security/enable` | two-step setup | First sign-in: confirm the authenticator with a code, turn two-step on, and hand out the recovery codes once. |
+| POST | `/api/security/password` | signed in | Change the password (current one and a fresh code required); every other session ends. |
+| POST | `/api/security/recovery-codes` | signed in | A new set of recovery codes for a fresh code; the old set stops working. |
+| GET | `/api/security/setup` | two-step setup | First sign-in: the authenticator secret and its QR code. |
+| POST | `/api/security/sign-out-others` | signed in | End every session but this one. |
 
 ## [strategy.routes.ts](../../app/server/src/http/routes/strategy.routes.ts)
 
 | Method | Path | Session | What |
 |---|---|---|---|
-| GET | `/api/strategies` | signed in | -- |
-| POST | `/api/strategies` | signed in | -- |
-| DELETE | `/api/strategies/:id` | signed in | -- |
+| GET | `/api/strategies` | signed in | Every saved strategy, today's runs, the scheduler switch and each strategy's next entry. |
+| POST | `/api/strategies` | signed in | Create or update a strategy, validated the way the form validates it. |
+| DELETE | `/api/strategies/:id` | signed in | Delete a strategy. |
 | POST | `/api/strategies/:id/clone` | signed in | Copy a strategy, settings and all, as a new one that is not armed. |
-| POST | `/api/strategies/:id/enabled` | signed in | -- |
+| POST | `/api/strategies/:id/enabled` | signed in | Switch one strategy on or off. |
 | GET | `/api/strategies/runs` | signed in | The run journal on its own, for the history panel. |
 | POST | `/api/strategies/scheduler` | signed in | The master switch for the whole scheduler. |
 
@@ -87,31 +87,31 @@ What: the first sentence of the comment directly above the route. A dash means t
 
 | Method | Path | Session | What |
 |---|---|---|---|
-| GET | `/api/stream` | signed in | -- |
+| GET | `/api/stream` | signed in | Server-sent events: the live price as it prints, so the screen need not poll for it. |
 
 ## [trade.routes.ts](../../app/server/src/http/routes/trade.routes.ts)
 
 | Method | Path | Session | What |
 |---|---|---|---|
-| GET | `/api/trade/:tradeId` | signed in | -- |
-| POST | `/api/trade/add` | signed in | -- |
+| GET | `/api/trade/:tradeId` | signed in | One trade with its whole event journal, for the Orders detail. |
+| POST | `/api/trade/add` | signed in | Sell more of what an open trade holds, under the same trade and through the same gates. |
 | POST | `/api/trade/add/cancel` | signed in | Stop a working add now. |
-| POST | `/api/trade/add/preview` | signed in | -- |
-| POST | `/api/trade/alerts` | signed in | -- |
+| POST | `/api/trade/add/preview` | signed in | What that add would do and whether the gates would take it. |
+| POST | `/api/trade/alerts` | signed in | Switch the Telegram fill alerts on or off. |
 | GET | `/api/trade/auto-trade` | signed in | Selling the best pick by itself. |
-| POST | `/api/trade/auto-trade` | signed in | -- |
+| POST | `/api/trade/auto-trade` | signed in | Arm, disarm or change the best pick's automatic trade, inside its limits. |
 | POST | `/api/trade/auto-trade/clear` | signed in | "Consider these strikes again" — clears the note, never a position. |
 | GET | `/api/trade/best-trade/settings` | signed in | The best-pick card's own settings: whether the phone hears when the pick changes, and the premium floor the pool is cut at. |
-| POST | `/api/trade/best-trade/settings` | signed in | -- |
+| POST | `/api/trade/best-trade/settings` | signed in | The best-pick alert: on or off, its premium floor, and how often one strike may be announced. |
 | POST | `/api/trade/cancel` | signed in | Take a working entry off the book. |
 | POST | `/api/trade/close` | signed in | Close a position, all of it or part of it. |
 | POST | `/api/trade/close-all` | signed in | Square off everything. |
 | POST | `/api/trade/close/preview` | signed in | What closing that many would book, in money. |
 | GET | `/api/trade/history` | signed in | The order book, looking backwards. |
 | POST | `/api/trade/mode` | signed in | Throw the switch between the real exchange and the simulator. |
-| POST | `/api/trade/place` | signed in | -- |
+| POST | `/api/trade/place` | signed in | Place an order from the ticket: every gate runs again here, and a refusal comes back as 422 with the reasons. |
 | POST | `/api/trade/preview` | signed in | Every gate, no order. |
 | POST | `/api/trade/protection` | signed in | Move the stop or the target on a position that is already open. |
-| GET | `/api/trade/quote` | signed in | -- |
+| GET | `/api/trade/quote` | signed in | One contract's book and product details, for the ticket. |
 | POST | `/api/trade/reconcile` | signed in | Ask the exchange and believe it, on demand. |
-| GET | `/api/trade/status` | signed in | -- |
+| GET | `/api/trade/status` | signed in | The desk now: mode, balance, positions, open trades with their live P&L, and alarms. |

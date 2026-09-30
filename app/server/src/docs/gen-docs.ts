@@ -177,6 +177,13 @@ export function summaryOf(file: string, text: string): string {
     || name.endsWith('.example') || name.startsWith('.')) p = hashHeader(text);
   else if (ext === '.md') p = /^#\s+(.+)$/m.exec(text)?.[1] ?? '';
   else if (ext === '.txt') p = text.split('\n').find((l) => l.trim() !== '')?.trim() ?? '';
+  // JSON takes no comments: say what kind of file it is, from its name.
+  else if (ext === '.json') {
+    p = name === 'package.json' ? `npm package: ${(JSON.parse(text) as { name?: string }).name ?? 'unnamed'}, its scripts and dependencies.`
+      : /^tsconfig/.test(name) ? 'TypeScript compiler settings.'
+        : name === 'knip.json' ? 'knip settings: the entry points it cannot find by itself.'
+          : 'JSON settings.';
+  } else if (ext === '.html') p = /<title>([^<]*)<\/title>/.exec(text)?.[1] ? `The page shell: "${/<title>([^<]*)<\/title>/.exec(text)![1]}".` : '';
   return firstSentence(p);
 }
 

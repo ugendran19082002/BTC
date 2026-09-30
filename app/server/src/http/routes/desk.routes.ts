@@ -290,7 +290,7 @@ export function registerDeskRoutes(app: FastifyInstance) {
     }
   });
 
-  // The option board for an expiry, live or at a past moment, scored for a seller: EV, the best pick, bias and changes.
+  // The option board for an expiry, live or at a past moment, scored for a seller: EV per strike, picks, bias, OI change, structure.
   app.get('/api/chain', async (req, reply) => {
     const q = req.query as ChainQuery;
     try {
