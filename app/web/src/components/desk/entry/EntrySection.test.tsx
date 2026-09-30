@@ -115,7 +115,7 @@ beforeEach(() => {
   getEntryBoard.mockResolvedValue(board());
   getEntryGates.mockResolvedValue({ gates: SETTINGS });
   getEntryAlerts.mockResolvedValue(ALERTS_OFF);
-  getEntrySignals.mockResolvedValue({ signals: [] });
+  getEntrySignals.mockResolvedValue({ signals: [], total: 0, summary: { trades: 0, tp1: 0, tp1Pts: 0, stops: 0, slPts: 0, timeouts: 0, netPts: 0, netR: 0, open: 0 } });
   getEntryRecord.mockResolvedValue({ records: [], totals: [total('mtf'), total('single', { trades: 0, setups: 3 })], recent: [] });
 });
 
@@ -207,9 +207,18 @@ describe('the entry section, side by side', () => {
     await waitFor(() => expect(within(rec).getByText('40%')).toBeInTheDocument());
     expect(within(rec).getByText('0.80')).toBeInTheDocument();
     expect(within(rec).getByText('−1.2R')).toBeInTheDocument();
-    const cmp = screen.getByRole('region', { name: 'with and without timeframe compared' });
-    const trades = within(cmp).getByRole('row', { name: /Trades closed/ });
-    expect(within(trades).getAllByRole('cell').map((c) => c.textContent)).toEqual(['–', '10']);
+    // The without-vs-with comparison table was removed at the owner's request: the panels and the history carry it.
+    expect(screen.queryByRole('region', { name: 'with and without timeframe compared' })).toBeNull();
+  });
+
+  it('[critical] each record says its points: made at the target, lost at the stop, and the net', async () => {
+    getEntryRecord.mockResolvedValue({ records: [], totals: [total('mtf', { tgtPts: 1_210, slPts: 960, netPts: 250 }), total('single')], recent: [] });
+    render(<EntrySection desk={desk} />);
+    const withTf = await panel(/12 methods \+ timeframe/);
+    const pts = await within(withTf).findByLabelText('record points');
+    expect(pts).toHaveTextContent('Target pts +1,210');
+    expect(pts).toHaveTextContent('SL pts −960');
+    expect(pts).toHaveTextContent('Net +250 pts');
   });
 
   it('the timeframe without the chain is asked for from the server', async () => {
@@ -485,16 +494,4 @@ describe('the record in words, and the comparison with gate-off setups', () => {
     await waitFor(() => expect(within(withTf).getByRole('region', { name: 'paper record' })).toHaveTextContent('2 setups working -- figures appear as they close'));
   });
 
-  it('[critical] the comparison switches between every gate on and gate-off setups included, and says which it shows', async () => {
-    getEntryRecord.mockResolvedValue({
-      records: [], totals: [total('mtf', { trades: 0, wins: 0 }), total('single', { trades: 0, wins: 0 })],
-      totalsAll: [total('mtf', { trades: 7, wins: 3, gatesOff: 7 }), total('single', { trades: 0, wins: 0 })], recent: [],
-    });
-    render(<EntrySection desk={desk} />);
-    const cmp = await screen.findByRole('region', { name: 'with and without timeframe compared' });
-    await waitFor(() => expect(cmp).toHaveTextContent('Nothing has closed yet with every gate on'));
-    fireEvent.click(within(cmp).getByRole('button', { name: /Incl. gates off \(7\)/ }));
-    expect(cmp).toHaveTextContent("Including setups taken with a hard gate switched off -- not the rules' record.");
-    expect(within(within(cmp).getByRole('row', { name: /Trades closed/ })).getAllByRole('cell').map((c) => c.textContent)).toEqual(['–', '7']);
-  });
 });

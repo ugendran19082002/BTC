@@ -1,20 +1,36 @@
+import { useEffect } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
-import { getEntrySignals } from '@/api/entry';
+import { getEntrySignals, type SignalFilter } from '@/api/entry';
 import { cn } from '@/lib/utils';
-import type { EntryMode, EntrySignal, EntryTf } from '@/types/entry';
+import type { EntryMode, EntrySignal, EntrySignalSummary, EntryTf } from '@/types/entry';
 
 /**
- * Every signal the server kept (the journal, entry_signals): when, which
- * method, which way and timeframe, BUY / SELL, WAIT or TRADE, how long it
- * stood, its levels, the gates it stood on -- and for a TRADE, what became of
- * it in the paper log. Newest first, refreshed every 15 s; the filters are
- * remembered per browser.
+ * Every signal the server kept (the journal, entry_signals), as a data table:
+ * signal tabs (all, BUY & SELL, BUY, SELL, WAIT), way and timeframe filters,
+ * today or all days, columns sortable on the server, pages of 25 / 50 / 100 --
+ * and over everything matching, the TRADEs, TP1 hits and the points they made,
+ * stops and the points they lost, and the net. Each row: when, the price then
+ * (LTP and index), the levels, and for a TRADE the fill, the exit and why it
+ * exited, in points and R. Refreshed every 15 s; the choices are remembered.
  */
 
 const TFS: readonly EntryTf[] = ['1m', '3m', '5m', '15m', '30m', '1h', '4h'];
+const PAGE_SIZES = [25, 50, 100] as const;
 const TIME = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
-const fmt = (v: number | null) => (v === null ? '–' : Math.round(v).toLocaleString('en-US'));
+const fmt = (v: number | null | undefined) => (v === null || v === undefined ? '–' : Math.round(v).toLocaleString('en-US'));
+const signedPts = (v: number) => `${v >= 0 ? '+' : '−'}${fmt(Math.abs(v))}`;
+
+/** The signal tabs, and what each asks the server for. */
+export const TABS = {
+  all: { label: 'All', q: {} },
+  trades: { label: 'BUY & SELL', q: { state: 'TRADE' } },
+  buy: { label: 'BUY', q: { state: 'TRADE', dir: 1 } },
+  sell: { label: 'SELL', q: { state: 'TRADE', dir: -1 } },
+  wait: { label: 'WAIT', q: { state: 'WAIT' } },
+} as const satisfies Record<string, { label: string; q: Pick<SignalFilter, 'state' | 'dir'> }>;
+type Tab = keyof typeof TABS;
 
 /** How long a signal stood: "just now", "4 min", "1 h 12 min". */
 export function stood(ms: number): string {
@@ -23,7 +39,7 @@ export function stood(ms: number): string {
   return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ''}`;
 }
 
-/** What became of a TRADE, in words and a colour. */
+/** What became of a signal, in words and a colour. */
 export function outcomeOf(s: EntrySignal): { text: string; cls: string } {
   if (s.state === 'WAIT') return { text: 'waited', cls: 'text-muted-foreground' };
   const o = s.outcome;
@@ -40,59 +56,82 @@ export function outcomeOf(s: EntrySignal): { text: string; cls: string } {
   }
 }
 
-type Filter = { mode: 'all' | EntryMode; tf: 'all' | EntryTf; state: 'all' | 'TRADE' | 'WAIT'; today: boolean };
+/** The exit, and why: TGT (TP1), SL, or time. Null until it has exited. */
+export function exitOf(s: EntrySignal): { price: string; why: 'TGT' | 'SL' | 'time'; pts: number | null } | null {
+  const o = s.outcome;
+  if (!o || o.exitPrice === null || !['tp1', 'stop', 'timeout'].includes(o.status)) return null;
+  const why = o.status === 'tp1' ? 'TGT' : o.status === 'stop' ? 'SL' : 'time';
+  const pts = o.fillPrice === null ? null : (o.exitPrice - o.fillPrice) * s.dir;
+  return { price: fmt(o.exitPrice), why, pts };
+}
+
+type Filter = { tab: Tab; mode: 'all' | EntryMode; tf: 'all' | EntryTf; today: boolean; size: (typeof PAGE_SIZES)[number]; sort: 'time' | 'score' | 'rr'; asc: boolean };
+const DEFAULT: Filter = { tab: 'all', mode: 'all', tf: 'all', today: true, size: 25, sort: 'time', asc: false };
 
 export function SignalHistory() {
-  const [f, setF] = usePersisted<Filter>('entry:history-filter', { mode: 'all', tf: 'all', state: 'all', today: true });
+  const [saved, setF] = usePersisted<Filter>('entry:history-table', DEFAULT);
+  const f = { ...DEFAULT, ...saved };
+  const [page, setPage] = usePersisted<number>('entry:history-page', 0);
   const since = f.today ? startOfIstDay(Date.now()) : undefined;
-  const { data, loading, error } = usePoll(
-    () => getEntrySignals({
-      mode: f.mode === 'all' ? undefined : f.mode, tf: f.tf === 'all' ? undefined : f.tf,
-      state: f.state === 'all' ? undefined : f.state, since, limit: 200,
-    }),
-    15_000, { deps: [f.mode, f.tf, f.state, f.today] },
-  );
+  const query: SignalFilter = {
+    ...TABS[f.tab].q, mode: f.mode === 'all' ? undefined : f.mode, tf: f.tf === 'all' ? undefined : f.tf, since,
+    limit: f.size, offset: page * f.size, sort: f.sort, asc: f.asc || undefined,
+  };
+  const { data, loading, error } = usePoll(() => getEntrySignals(query), 15_000,
+    { deps: [f.tab, f.mode, f.tf, f.today, f.size, f.sort, f.asc, page] });
   const rows = data?.signals ?? [];
-  const trades = rows.filter((s) => s.state === 'TRADE');
+  const total = data?.total ?? 0;
+  const pages = Math.max(1, Math.ceil(total / f.size));
+  // A filter that shrinks the list must not leave the page past its end.
+  useEffect(() => { if (data && page > 0 && page >= pages) setPage(pages - 1); }, [data, page, pages, setPage]);
+  const set = (next: Partial<Filter>) => { setF({ ...f, ...next }); setPage(0); };
+  const sortBy = (col: Filter['sort']) => set(f.sort === col ? { asc: !f.asc } : { sort: col, asc: false });
   const chip = (on: boolean) => cn('px-2 py-0.5', on ? 'bg-[#2563eb] text-white' : 'text-muted-foreground');
+  const sortMark = (col: Filter['sort']) => (f.sort === col ? (f.asc ? ' ▲' : ' ▼') : '');
+  const aria = (col: Filter['sort']) => (f.sort === col ? (f.asc ? 'ascending' : 'descending') : 'none');
+  const from = total ? page * f.size + 1 : 0;
+  const to = Math.min(total, (page + 1) * f.size);
 
   return (
     <section aria-label="signal history" className="mt-3 rounded-xl border border-border p-2.5 text-[12px]">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="m-0 text-[13px] font-bold">Signal history</h3>
-          <p className="m-0 text-[11px] text-muted-foreground">
-            Every signal the server kept, whichever chart was on screen
-            {rows.length ? ` · ${rows.length} shown · ${trades.length} TRADE${trades.length === 1 ? '' : 's'}` : ''}
-          </p>
+          <p className="m-0 text-[11px] text-muted-foreground">Every signal the server kept, whichever chart was on screen</p>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-          <div role="group" aria-label="history way" className="inline-flex overflow-hidden rounded border border-border">
-            {(['all', 'single', 'mtf'] as const).map((m) => (
-              <button key={m} type="button" aria-pressed={f.mode === m} onClick={() => setF({ ...f, mode: m })} className={chip(f.mode === m)}>
-                {m === 'all' ? 'Both' : m === 'single' ? 'Without TF' : 'With TF'}
-              </button>
-            ))}
-          </div>
-          <div role="group" aria-label="history state" className="inline-flex overflow-hidden rounded border border-border">
-            {(['all', 'TRADE', 'WAIT'] as const).map((s) => (
-              <button key={s} type="button" aria-pressed={f.state === s} onClick={() => setF({ ...f, state: s })} className={chip(f.state === s)}>
-                {s === 'all' ? 'All' : s}
-              </button>
-            ))}
-          </div>
-<div role="group" aria-label="history timeframe" className="inline-flex overflow-hidden rounded border border-border">
-            {(['all', ...TFS] as const).map((t) => (
-              <button key={t} type="button" aria-pressed={f.tf === t} onClick={() => setF({ ...f, tf: t })} className={chip(f.tf === t)}>
-                {t === 'all' ? 'All TF' : t}
-              </button>
-            ))}
-          </div>
-          <button type="button" aria-pressed={f.today} onClick={() => setF({ ...f, today: !f.today })} className={cn('rounded border border-border', chip(f.today))}>
-            {f.today ? 'Today' : 'All days'}
-          </button>
+        <div role="tablist" aria-label="signal tabs" className="inline-flex overflow-hidden rounded-md border border-border text-[12px]">
+          {(Object.keys(TABS) as Tab[]).map((t) => (
+            <button key={t} type="button" role="tab" aria-selected={f.tab === t} onClick={() => set({ tab: t })}
+                    className={cn('px-2.5 py-1 font-semibold', f.tab === t
+                      ? t === 'buy' ? 'bg-[#26a17b] text-white' : t === 'sell' ? 'bg-[#e2504f] text-white' : t === 'wait' ? 'bg-[#b7791f] text-white' : 'bg-[#2563eb] text-white'
+                      : 'text-muted-foreground')}>
+              {TABS[t].label}
+            </button>
+          ))}
         </div>
       </div>
+
+      <div className="mb-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+        <div role="group" aria-label="history way" className="inline-flex overflow-hidden rounded border border-border">
+          {(['all', 'single', 'mtf'] as const).map((m) => (
+            <button key={m} type="button" aria-pressed={f.mode === m} onClick={() => set({ mode: m })} className={chip(f.mode === m)}>
+              {m === 'all' ? 'Both ways' : m === 'single' ? 'Without TF' : 'With TF'}
+            </button>
+          ))}
+        </div>
+        <div role="group" aria-label="history timeframe" className="inline-flex overflow-hidden rounded border border-border">
+          {(['all', ...TFS] as const).map((t) => (
+            <button key={t} type="button" aria-pressed={f.tf === t} onClick={() => set({ tf: t })} className={chip(f.tf === t)}>
+              {t === 'all' ? 'All TF' : t}
+            </button>
+          ))}
+        </div>
+        <button type="button" aria-pressed={f.today} onClick={() => set({ today: !f.today })} className={cn('rounded border border-border', chip(f.today))}>
+          {f.today ? 'Today' : 'All days'}
+        </button>
+      </div>
+
+      {data ? <Summary s={data.summary} /> : null}
 
       {error && !data ? <p role="alert" className="m-0 text-[var(--down)]">Could not read the history: {error.message}</p> : null}
       {!rows.length ? (
@@ -101,85 +140,149 @@ export function SignalHistory() {
         </p>
       ) : (
         <>
-        {/* On a phone, a card per signal -- a table there only scrolls sideways. */}
-        <ul aria-label="signals as cards" className="m-0 grid max-h-[520px] list-none gap-1.5 overflow-auto p-0 sm:hidden">
-          {rows.map((s) => {
-            const out = outcomeOf(s);
-            const side = s.dir === 1 ? 'BUY' : 'SELL';
-            return (
-              <li key={`c:${s.mode}:${s.tf}:${s.method}:${s.dir}:${s.triggerAt}:${s.state}`} className="rounded-lg border border-border p-2 tabular-nums">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-semibold">#{s.n ?? '?'} {s.name}</span>
-                  <span className={cn('rounded px-1 text-[11px] font-bold', s.state === 'WAIT' ? 'bg-[#b7791f] text-white' : s.dir === 1 ? 'bg-[#26a17b] text-white' : 'bg-[#e2504f] text-white')}>
-                    {s.state === 'WAIT' ? `WAIT ${side}` : side}
-                  </span>
-                </div>
-                <div className="text-[11px] text-muted-foreground">
-                  {TIME.format(s.firstSeen)} · {s.mode === 'mtf' ? 'With TF' : 'Without'} · {s.tf} · stood {stood(s.lastSeen - s.firstSeen)}
-                  {s.gatesOff.length ? <span className="text-[var(--warn)]"> · gates off</span> : null}
-                </div>
-                {s.entryLo !== null ? (
-                  <div className="mt-0.5 flex flex-wrap gap-x-3 text-[11.5px]">
-                    <span>Entry {fmt(s.entryLo)}–{fmt(s.entryHi)}</span>
-                    <span className="text-[var(--down)]">SL {fmt(s.stop)}</span>
-                    <span className="text-[var(--up)]">TP1 {fmt(s.tp1)}</span>
-                    {s.rr !== null ? <span className="text-muted-foreground">R:R {s.rr.toFixed(2)}</span> : null}
-                  </div>
-                ) : null}
-                <div className={cn('mt-0.5 text-[11.5px] font-semibold', out.cls)}>{out.text}</div>
-              </li>
-            );
-          })}
-        </ul>
-        <div className="hidden max-h-[480px] overflow-auto sm:block">
-          <table className="w-full border-collapse tabular-nums" aria-label="signals">
-            <thead className="sticky top-0 bg-[var(--card,#0b0f17)] text-left text-[10.5px] text-muted-foreground">
-              <tr>
-                <th className="py-1 pr-2">Time (IST)</th>
-                <th className="pr-2">Method</th>
-                <th className="pr-2">Way · TF</th>
-                <th className="pr-2">Signal</th>
-                <th className="hidden pr-2 md:table-cell">Stood</th>
-                <th className="pr-2">Entry</th>
-                <th className="hidden pr-2 sm:table-cell">SL</th>
-                <th className="hidden pr-2 sm:table-cell">TP1</th>
-                <th className="hidden pr-2 lg:table-cell">R:R</th>
-                <th className="hidden pr-2 lg:table-cell">Quality</th>
-                <th className="pr-2">What became of it</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((s) => {
-                const out = outcomeOf(s);
-                const side = s.dir === 1 ? 'BUY' : 'SELL';
-                return (
-                  <tr key={`${s.mode}:${s.tf}:${s.method}:${s.dir}:${s.triggerAt}:${s.state}`} className="border-t border-border align-top"
-                      title={`${s.reason}${s.gatesOff.length ? ` -- gates off: ${s.gatesOff.join(', ')}` : ''}`}>
-                    <td className="whitespace-nowrap py-1 pr-2">{TIME.format(s.firstSeen)}</td>
-                    <td className="pr-2">#{s.n ?? '?'} {s.name}</td>
-                    <td className="whitespace-nowrap pr-2 text-muted-foreground">{s.mode === 'mtf' ? 'With TF' : 'Without'} · {s.tf}</td>
-                    <td className="whitespace-nowrap pr-2">
-                      <span className={cn('rounded px-1 font-bold', s.state === 'WAIT' ? 'bg-[#b7791f] text-white' : s.dir === 1 ? 'bg-[#26a17b] text-white' : 'bg-[#e2504f] text-white')}>
-                        {s.state === 'WAIT' ? `WAIT ${side}` : side}
-                      </span>
-                      {s.gatesOff.length ? <span className="ml-1 text-[10px] text-[var(--warn)]" title={`gates off: ${s.gatesOff.join(', ')}`}>gates off</span> : null}
-                    </td>
-                    <td className="hidden whitespace-nowrap pr-2 text-muted-foreground md:table-cell">{stood(s.lastSeen - s.firstSeen)}</td>
-                    <td className="whitespace-nowrap pr-2">{s.entryLo === null ? '–' : `${fmt(s.entryLo)}–${fmt(s.entryHi)}`}</td>
-                    <td className="hidden whitespace-nowrap pr-2 text-[var(--down)] sm:table-cell">{fmt(s.stop)}</td>
-                    <td className="hidden whitespace-nowrap pr-2 text-[var(--up)] sm:table-cell">{fmt(s.tp1)}</td>
-                    <td className="hidden pr-2 lg:table-cell">{s.rr === null ? '–' : s.rr.toFixed(2)}</td>
-                    <td className="hidden pr-2 lg:table-cell">{s.score ?? '–'}</td>
-                    <td className={cn('whitespace-nowrap pr-2', out.cls)}>{out.text}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+          {/* On a phone, a card per signal -- a table there only scrolls sideways. */}
+          <ul aria-label="signals as cards" className="m-0 grid list-none gap-1.5 p-0 sm:hidden">
+            {rows.map((s) => <Card key={keyOf(s, 'c')} s={s} />)}
+          </ul>
+          <div className="hidden overflow-x-auto sm:block">
+            <table className="w-full border-collapse tabular-nums" aria-label="signals">
+              <thead className="text-left text-[10.5px] text-muted-foreground">
+                <tr>
+                  <th className="py-1 pr-2" aria-sort={aria('time')}>
+                    <button type="button" onClick={() => sortBy('time')} className="font-semibold uppercase">Time (IST){sortMark('time')}</button>
+                  </th>
+                  <th className="pr-2">Method</th>
+                  <th className="pr-2">Way · TF</th>
+                  <th className="pr-2">Signal</th>
+                  <th className="hidden pr-2 lg:table-cell" title="The market when the signal appeared: the perpetual's last trade, and Delta's BTC index">LTP · Index</th>
+                  <th className="pr-2">Entry</th>
+                  <th className="pr-2">SL</th>
+                  <th className="pr-2">TP1</th>
+                  <th className="pr-2" title="Where it filled, and where it went out: at the target, the stop, or on time">Fill → Exit</th>
+                  <th className="pr-2">Result</th>
+                  <th className="hidden pr-2 md:table-cell" aria-sort={aria('rr')}>
+                    <button type="button" onClick={() => sortBy('rr')} className="font-semibold uppercase">R:R{sortMark('rr')}</button>
+                  </th>
+                  <th className="hidden pr-2 md:table-cell" aria-sort={aria('score')}>
+                    <button type="button" onClick={() => sortBy('score')} className="font-semibold uppercase">Quality{sortMark('score')}</button>
+                  </th>
+                  <th className="hidden pr-2 xl:table-cell">Stood</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((s) => {
+                  const out = outcomeOf(s);
+                  const ex = exitOf(s);
+                  return (
+                    <tr key={keyOf(s, 'r')} className="border-t border-border align-top"
+                        title={`${s.reason}${s.gatesOff.length ? ` -- gates off: ${s.gatesOff.join(', ')}` : ''}`}>
+                      <td className="whitespace-nowrap py-1 pr-2">{TIME.format(s.firstSeen)}</td>
+                      <td className="pr-2">#{s.n ?? '?'} {s.name}</td>
+                      <td className="whitespace-nowrap pr-2 text-muted-foreground">{s.mode === 'mtf' ? 'With TF' : 'Without'} · {s.tf}</td>
+                      <td className="whitespace-nowrap pr-2"><SignalTag s={s} /></td>
+                      <td className="hidden whitespace-nowrap pr-2 text-muted-foreground lg:table-cell">{fmt(s.ltp)} · {fmt(s.indexPrice)}</td>
+                      <td className="whitespace-nowrap pr-2">{s.entryLo === null ? '–' : `${fmt(s.entryLo)}–${fmt(s.entryHi)}`}</td>
+                      <td className="whitespace-nowrap pr-2 text-[var(--down)]">{fmt(s.stop)}</td>
+                      <td className="whitespace-nowrap pr-2 text-[var(--up)]">{fmt(s.tp1)}</td>
+                      <td className="whitespace-nowrap pr-2">
+                        {s.outcome?.fillPrice != null ? fmt(s.outcome.fillPrice) : '–'}
+                        {ex ? <> → {ex.price} <span className={cn('text-[10.5px] font-bold', ex.why === 'TGT' ? 'text-[var(--up)]' : ex.why === 'SL' ? 'text-[var(--down)]' : 'text-muted-foreground')}>{ex.why}</span></> : null}
+                      </td>
+                      <td className={cn('whitespace-nowrap pr-2', out.cls)}>
+                        {out.text}{ex?.pts != null ? <span className="ml-1 text-[10.5px]">({signedPts(ex.pts)} pts)</span> : null}
+                      </td>
+                      <td className="hidden pr-2 md:table-cell">{s.rr === null ? '–' : s.rr.toFixed(2)}</td>
+                      <td className="hidden pr-2 md:table-cell">{s.score ?? '–'}</td>
+                      <td className="hidden whitespace-nowrap pr-2 text-muted-foreground xl:table-cell">{stood(s.lastSeen - s.firstSeen)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
+
+      {total ? (
+        <nav aria-label="history pages" className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11.5px]">
+          <span className="text-muted-foreground">{from}–{to} of {total}</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-muted-foreground">rows</span>
+            <div role="group" aria-label="rows per page" className="inline-flex overflow-hidden rounded border border-border">
+              {PAGE_SIZES.map((n) => (
+                <button key={n} type="button" aria-pressed={f.size === n} onClick={() => set({ size: n })} className={chip(f.size === n)}>{n}</button>
+              ))}
+            </div>
+            <button type="button" aria-label="previous page" disabled={page === 0} onClick={() => setPage(page - 1)}
+                    className="inline-flex items-center rounded border border-border px-1.5 py-0.5 disabled:opacity-40"><ChevronLeft size={14} aria-hidden /> Prev</button>
+            <span>Page {page + 1} of {pages}</span>
+            <button type="button" aria-label="next page" disabled={page + 1 >= pages} onClick={() => setPage(page + 1)}
+                    className="inline-flex items-center rounded border border-border px-1.5 py-0.5 disabled:opacity-40">Next <ChevronRight size={14} aria-hidden /></button>
+          </div>
+        </nav>
+      ) : null}
     </section>
+  );
+}
+
+const keyOf = (s: EntrySignal, p: string) => `${p}:${s.mode}:${s.tf}:${s.method}:${s.dir}:${s.triggerAt}:${s.state}`;
+
+function SignalTag({ s }: { s: EntrySignal }) {
+  const side = s.dir === 1 ? 'BUY' : 'SELL';
+  return (
+    <>
+      <span className={cn('rounded px-1 font-bold', s.state === 'WAIT' ? 'bg-[#b7791f] text-white' : s.dir === 1 ? 'bg-[#26a17b] text-white' : 'bg-[#e2504f] text-white')}>
+        {s.state === 'WAIT' ? `WAIT ${side}` : side}
+      </span>
+      {s.gatesOff.length ? <span className="ml-1 text-[10px] text-[var(--warn)]" title={`gates off: ${s.gatesOff.join(', ')}`}>gates off</span> : null}
+    </>
+  );
+}
+
+/** Over every signal matching the filters, not only this page. */
+function Summary({ s }: { s: EntrySignalSummary }) {
+  const cell = (k: string, v: string, cls = '') => (
+    <div className="rounded bg-muted px-2 py-1">
+      <div className="text-[10px] text-muted-foreground">{k}</div>
+      <div className={cn('text-[13px] font-bold tabular-nums', cls)}>{v}</div>
+    </div>
+  );
+  return (
+    <div aria-label="history totals" className="mb-2 grid grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-6">
+      {cell('TRADEs', `${s.trades}${s.open ? ` · ${s.open} open` : ''}`)}
+      {cell('TP1 hits · target pts', `${s.tp1} · ${signedPts(s.tp1Pts)}`, 'text-[var(--up)]')}
+      {cell('Stops · SL pts', `${s.stops} · −${fmt(s.slPts)}`, 'text-[var(--down)]')}
+      {cell('Timed out', String(s.timeouts))}
+      {cell('Net pts', signedPts(s.netPts), s.netPts >= 0 ? 'text-[var(--up)]' : 'text-[var(--down)]')}
+      {cell('Net R (after fees)', `${s.netR >= 0 ? '+' : '−'}${Math.abs(s.netR).toFixed(2)}R`, s.netR >= 0 ? 'text-[var(--up)]' : 'text-[var(--down)]')}
+    </div>
+  );
+}
+
+function Card({ s }: { s: EntrySignal }) {
+  const out = outcomeOf(s);
+  const ex = exitOf(s);
+  return (
+    <li className="rounded-lg border border-border p-2 tabular-nums">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-semibold">#{s.n ?? '?'} {s.name}</span>
+        <span><SignalTag s={s} /></span>
+      </div>
+      <div className="text-[11px] text-muted-foreground">
+        {TIME.format(s.firstSeen)} · {s.mode === 'mtf' ? 'With TF' : 'Without'} · {s.tf} · stood {stood(s.lastSeen - s.firstSeen)}
+        {s.ltp !== null ? ` · LTP ${fmt(s.ltp)}` : ''}{s.indexPrice !== null ? ` · index ${fmt(s.indexPrice)}` : ''}
+      </div>
+      {s.entryLo !== null ? (
+        <div className="mt-0.5 flex flex-wrap gap-x-3 text-[11.5px]">
+          <span>Entry {fmt(s.entryLo)}–{fmt(s.entryHi)}</span>
+          <span className="text-[var(--down)]">SL {fmt(s.stop)}</span>
+          <span className="text-[var(--up)]">TP1 {fmt(s.tp1)}</span>
+          {s.rr !== null ? <span className="text-muted-foreground">R:R {s.rr.toFixed(2)}</span> : null}
+        </div>
+      ) : null}
+      {ex ? <div className="text-[11.5px]">Fill {fmt(s.outcome?.fillPrice)} → exit {ex.price} ({ex.why}){ex.pts !== null ? ` · ${signedPts(ex.pts)} pts` : ''}</div> : null}
+      <div className={cn('mt-0.5 text-[11.5px] font-semibold', out.cls)}>{out.text}</div>
+    </li>
   );
 }
 

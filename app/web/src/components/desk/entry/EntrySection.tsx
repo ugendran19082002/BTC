@@ -4,7 +4,7 @@ import { usePersisted } from '@/hooks/usePersisted';
 import { getEntryAlerts, getEntryBoard, getEntryRecord } from '@/api/entry';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
-import type { EntryMode, EntryRecord, EntryTf, MethodRead, TimeframeRow } from '@/types/entry';
+import type { EntryMode, EntryTf, MethodRead, TimeframeRow } from '@/types/entry';
 import { EntryGrid } from './EntryGrid';
 import { useEntryFeed, type DeskFeed } from './feed';
 import { ModePanel, SINGLE_TFS } from './ModePanel';
@@ -13,7 +13,6 @@ import { GateSwitches } from './GateSwitches';
 import { GateChecklist } from './GateChecklist';
 import { AlertSwitch } from './AlertSwitch';
 import { SignalHistory } from './SignalHistory';
-import { signedR } from './parts';
 import './entry.css';
 
 /**
@@ -108,8 +107,6 @@ export function EntrySection({ desk, onTimeframes }: {
   // Each timeframe has its own record now (the server logs every one); the chain's entry is always 5m.
   const totalOf = (mode: EntryMode, at: EntryTf = '5m') => record?.totals.find((t) => t.mode === mode && t.tf === at) ?? null;
   const totalAllOf = (mode: EntryMode, at: EntryTf = '5m') => record?.totalsAll?.find((t) => t.mode === mode && t.tf === at) ?? null;
-  // The comparison: every gate on (the rules), or with gate-off setups included -- a switch, never a quiet mix.
-  const [cmpAll, setCmpAll] = usePersisted<boolean>('entry:compare-gates-off', false);
   const choose = (r: MethodRead) => setChosen({ ...chosen, [r.mode]: keyOf(r) });
   // From the method table: the same method on both sides.
   const chooseBoth = (n: number) => {
@@ -167,9 +164,6 @@ export function EntrySection({ desk, onTimeframes }: {
                        setupsOn={setupsOn} chartTf={mtfTf} onChartTf={setMtfChartTf} chart={chart}
                        ltp={ltp} alert={<AlertSwitch mode="mtf" alerts={alerts} onChanged={setAlerts} />} autoPicked={autoPicked('mtf')} />
           </div>
-          <Comparison single={cmpAll ? totalAllOf('single') : totalOf('single')} mtf={cmpAll ? totalAllOf('mtf') : totalOf('mtf')}
-                      includeOff={cmpAll} onIncludeOff={setCmpAll}
-                      offCount={(totalAllOf('single')?.gatesOff ?? 0) + (totalAllOf('mtf')?.gatesOff ?? 0)} />
           <SignalHistory />
         </>
       ) : (
@@ -185,59 +179,3 @@ export function EntrySection({ desk, onTimeframes }: {
   );
 }
 
-/** The two ways' paper records side by side: the reference's historical comparison, from the real log. */
-function Comparison({ single, mtf, includeOff, onIncludeOff, offCount }: {
-  single: EntryRecord | null; mtf: EntryRecord | null;
-  /** Gate-off setups included: the switch, and how many there are. */
-  includeOff: boolean; onIncludeOff: (v: boolean) => void; offCount: number;
-}) {
-  const has = (r: EntryRecord | null) => r !== null && r.trades > 0;
-  const row = (label: string, f: (r: EntryRecord) => string) => (
-    <tr key={label} className="border-t border-border">
-      <th scope="row" className="py-1 pr-3 text-left font-normal text-muted-foreground">{label}</th>
-      <td className="px-3 text-right tabular-nums">{has(single) ? f(single!) : '–'}</td>
-      <td className="px-3 text-right tabular-nums">{has(mtf) ? f(mtf!) : '–'}</td>
-    </tr>
-  );
-  return (
-    <section aria-label="with and without timeframe compared" className="mt-3 rounded-xl border border-border p-2.5 text-[12px]">
-      <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="m-0 text-[13px] font-bold">Without vs with timeframe · paper record</h3>
-        <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-          <span>all 12 methods, 5m entries, after fees{!has(single) && !has(mtf) ? ' · no closed trades yet' : ''}</span>
-          <div role="group" aria-label="record basis" className="inline-flex overflow-hidden rounded border border-border">
-            <button type="button" aria-pressed={!includeOff} onClick={() => onIncludeOff(false)}
-                    className={cn('px-2 py-0.5', !includeOff ? 'bg-[#2563eb] text-white' : '')}>Every gate on</button>
-            <button type="button" aria-pressed={includeOff} onClick={() => onIncludeOff(true)}
-                    className={cn('px-2 py-0.5', includeOff ? 'bg-[var(--warn)] text-black' : '')}>Incl. gates off{offCount ? ` (${offCount})` : ''}</button>
-          </div>
-        </div>
-      </div>
-      {includeOff ? <p className="m-0 mb-1 text-[11px] text-[var(--warn)]">Including setups taken with a hard gate switched off -- not the rules' record.</p> : null}
-      {!has(single) && !has(mtf) ? (
-        <p className="m-0 mb-1 text-[11px] text-muted-foreground">Nothing has closed yet{includeOff ? '' : ' with every gate on'}. The table fills as TRADEs hit TP1, the stop, or time out.</p>
-      ) : null}
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse">
-          <thead className="text-[11px] text-muted-foreground">
-            <tr><th className="text-left font-normal">Metric</th><th className="px-3 text-right">Without timeframe</th><th className="px-3 text-right">With timeframe</th></tr>
-          </thead>
-          <tbody>
-            <tr className="border-t border-border">
-              <th scope="row" className="py-1 pr-3 text-left font-normal text-muted-foreground">Setups logged</th>
-              <td className="px-3 text-right tabular-nums">{single?.setups ?? 0}</td>
-              <td className="px-3 text-right tabular-nums">{mtf?.setups ?? 0}</td>
-            </tr>
-            {row('Trades closed', (r) => String(r.trades))}
-            {row('Win rate', (r) => `${Math.round((100 * r.wins) / r.trades)}%`)}
-            {row('Avg win', (r) => (r.avgWinR === null ? '–' : signedR(r.avgWinR)))}
-            {row('Avg loss', (r) => (r.avgLossR === null ? '–' : signedR(r.avgLossR)))}
-            {row('Profit factor', (r) => (r.profitFactor === null ? '–' : r.profitFactor.toFixed(2)))}
-            {row('Net', (r) => (r.sumR === null ? '–' : signedR(r.sumR, 1)))}
-            {row('Max drawdown', (r) => (r.maxDrawdownR === null ? '–' : `${r.maxDrawdownR.toFixed(1)}R`))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}

@@ -294,6 +294,15 @@ function RecordStrip({ total, totalAll, tf, mode }: { total: EntryRecord | null;
           </div>
         ))}
       </dl>
+      {has ? (
+        <p aria-label="record points" className="m-0 mt-1.5 flex flex-wrap gap-x-3 text-[11.5px] tabular-nums">
+          <span className="text-[var(--up)]">Target pts +{Math.round(total!.tgtPts ?? 0).toLocaleString('en-US')}</span>
+          <span className="text-[var(--down)]">SL pts −{Math.round(total!.slPts ?? 0).toLocaleString('en-US')}</span>
+          <span className={(total!.netPts ?? 0) >= 0 ? 'text-[var(--up)]' : 'text-[var(--down)]'}>
+            Net {(total!.netPts ?? 0) >= 0 ? '+' : '−'}{Math.abs(Math.round(total!.netPts ?? 0)).toLocaleString('en-US')} pts
+          </span>
+        </p>
+      ) : null}
       {state ? <p className="m-0 mt-1.5 text-[11px] text-muted-foreground">{state}</p> : null}
       {offCount ? (
         <p aria-label="including gate-off setups" className="m-0 mt-1.5 rounded border border-dashed border-[var(--warn)] px-2 py-1 text-[11px] text-[var(--warn)]">
