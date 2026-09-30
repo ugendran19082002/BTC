@@ -134,8 +134,11 @@ describe('the entry section, side by side', () => {
     const card = await within(withTf).findByRole('region', { name: 'selected setup' });
     expect(within(card).getByText('LONG SETUP')).toBeInTheDocument();
     expect(within(card).getByText('84,120 – 84,160')).toBeInTheDocument();
-    expect(within(card).getByText('84,300 (1.0R)')).toBeInTheDocument();
-    expect(within(card).getAllByText('160 (0.19%)')).toHaveLength(2); // risk and reward: a 1.0R target
+    // Measured from where a long fills, the top of the zone (84,160): risk 180, reward 140.
+    expect(within(card).getByText('84,300 (0.8R)')).toBeInTheDocument();
+    expect(within(card).getByText('180 (0.21%)')).toBeInTheDocument();
+    expect(within(card).getByText('140 (0.17%)')).toBeInTheDocument();
+    expect(within(card).queryByRole('alert')).toBeNull();
     expect(within(card).getByText('72/100')).toBeInTheDocument();
     expect(within(card).getByText(/Paper-logged and graded after fees · no order is placed/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /take trade/i })).toBeNull();
@@ -401,5 +404,17 @@ describe('auto-select and Telegram', () => {
     render(<EntrySection desk={desk} />);
     const withTf = await panel(/12 methods \+ timeframe/);
     await waitFor(() => expect(within(withTf).getByText('not set up')).toBeInTheDocument());
+  });
+});
+
+describe('a TRADE that stands only because a gate is off', () => {
+  it('[critical] says so on the card, with the refusing values: with every gate on it is NO TRADE', async () => {
+    const offRead = { ...TRADE, gates: PASSING.map((g) => (g.key === 'rr' ? gate('rr', 'R:R after fees', '0.16', false, false) : g)) };
+    getEntryBoard.mockResolvedValue({ ...board(), reads: board().reads.map((r) => (r === TRADE ? offRead : r)) });
+    render(<EntrySection desk={desk} />);
+    const withTf = await panel(/12 methods \+ timeframe/);
+    const card = await within(withTf).findByRole('region', { name: 'selected setup' });
+    await waitFor(() => expect(within(card).getByRole('alert')).toHaveTextContent('Only a TRADE because R:R after fees is switched off'));
+    expect(within(card).getByRole('alert')).toHaveTextContent('R:R after fees 0.16');
   });
 });

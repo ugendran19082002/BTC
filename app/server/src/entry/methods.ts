@@ -209,8 +209,9 @@ const fvgRetest: Detector = ({ bars, a }) => {
     ],
     // From the edge price reaches first to the gap's middle (its consequent encroachment), not the whole gap.
     zone: dir === 1 ? [(z.lo + z.hi) / 2, z.hi] : [z.lo, (z.lo + z.hi) / 2],
-    // Past the gap's first candle, the displacement's origin.
-    stop: dir === 1 ? Math.min(bars[Math.max(0, z.i - 1)]!.low, z.lo - 0.1 * a) : Math.max(bars[Math.max(0, z.i - 1)]!.high, z.hi + 0.1 * a),
+    // Just past the gap's far edge, where the gap is invalidated -- not past its first candle, which could be
+    // far away (847 points on a 3m short, 30 Sep 2026, owner's screen).
+    stop: dir === 1 ? z.lo - 0.1 * a : z.hi + 0.1 * a,
     triggerTime: z.time,
   };
 };

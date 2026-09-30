@@ -180,6 +180,8 @@ function SelectedCard({ read }: { read: MethodRead | null }) {
     : read.state === 'WAIT'
       ? { text: `WAIT${read.dir ? ` · ${read.dir} forming` : ''}`, cls: 'bg-[#b7791f] text-white' }
       : { text: read.dir ? `NO TRADE · ${read.dir} refused` : 'NO TRADE', cls: 'bg-muted text-muted-foreground' };
+  // Gates switched off that would have refused this read.
+  const overridden = read.gates.filter((g) => !g.enabled && g.ok === false);
   // Measured from where it fills -- the edge price reaches first (the top for a long) -- as the server and the paper log do.
   const fill = p ? (read.dir === 'short' ? p.entryLo : p.entryHi) : null;
   const risk = p && fill !== null ? Math.abs(fill - p.stop) : null;
@@ -193,6 +195,12 @@ function SelectedCard({ read }: { read: MethodRead | null }) {
     <section aria-label="selected setup" className="rounded-lg border border-border text-[12px]">
       <div className="px-2 pt-1.5 font-semibold">Selected setup</div>
       <div className={cn('mx-2 my-1.5 rounded py-1 text-center text-[14px] font-bold', head.cls)}>{head.text}</div>
+      {/* A TRADE that only stands because a gate is switched off says so, loudly: with every gate on it would be NO TRADE. */}
+      {read.state === 'TRADE' && overridden.length ? (
+        <p role="alert" className="mx-2 mb-1.5 mt-0 rounded border border-[var(--warn)] bg-[rgba(240,185,11,0.08)] px-2 py-1 text-[11.5px] text-[var(--warn)]">
+          ⚠ Only a TRADE because {overridden.map((g) => g.label).join(', ')} {overridden.length === 1 ? 'is' : 'are'} switched off -- with every gate on this is NO TRADE ({overridden.map((g) => `${g.label} ${g.value ?? ''}`.trim()).join(' · ')}).
+        </p>
+      ) : null}
       <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 px-2 pb-2 tabular-nums">
         {row('Method', `#${read.n} ${read.name}`)}
         {row('Timeframe', read.mode === 'mtf' ? '4H/1H → 15m → 5m entry → 1m' : `${read.tf} only`)}
