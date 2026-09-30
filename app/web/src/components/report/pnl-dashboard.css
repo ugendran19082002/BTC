@@ -1,0 +1,405 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   P&L Dashboard Upgraded Styling (Institutional / Premium Dark Theme)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* Top KPI Cards Strip */
+.pnl-kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+@media (max-width: 1300px) {
+  .pnl-kpi-strip {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .pnl-kpi-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.pnl-kpi-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: rgba(13, 20, 34, 0.75);
+  border: 1px solid rgba(30, 41, 59, 0.85);
+  border-radius: 10px;
+  backdrop-filter: blur(8px);
+  min-height: 82px;
+  overflow: hidden;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.pnl-kpi-card:hover {
+  border-color: rgba(56, 189, 248, 0.35);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 12px rgba(14, 203, 129, 0.08);
+  transform: translateY(-1px);
+}
+
+.pnl-kpi-card.tone-down:hover {
+  border-color: rgba(244, 63, 94, 0.35);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 12px rgba(244, 63, 94, 0.08);
+}
+
+.pnl-kpi-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.pnl-kpi-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: #94a3b8;
+  letter-spacing: 0.2px;
+}
+
+.pnl-kpi-body {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pnl-kpi-val {
+  font-size: 16px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.3px;
+  color: #f8fafc;
+}
+
+.pnl-kpi-val.up {
+  color: #10b981;
+}
+
+.pnl-kpi-val.down {
+  color: #f43f5e;
+}
+
+.pnl-kpi-val.neutral {
+  color: #38bdf8;
+}
+
+.pnl-kpi-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pnl-kpi-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.pnl-kpi-badge.up {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.pnl-kpi-badge.down {
+  background: rgba(244, 63, 94, 0.15);
+  color: #f43f5e;
+}
+
+.pnl-kpi-spark {
+  display: flex;
+  align-items: center;
+}
+
+/* Row 2: Performance Stats & Win/Loss Row */
+.pnl-analytics-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+@media (max-width: 990px) {
+  .pnl-analytics-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Row 3: Daily P&L & P&L Curve Row */
+.pnl-charts-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+@media (max-width: 1080px) {
+  .pnl-charts-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Card Common Styling */
+.pnl-panel-card {
+  background: rgba(13, 20, 34, 0.75);
+  border: 1px solid rgba(30, 41, 59, 0.85);
+  border-radius: 10px;
+  padding: 16px 18px;
+  backdrop-filter: blur(8px);
+  position: relative;
+}
+
+.pnl-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.pnl-panel-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #f1f5f9;
+  letter-spacing: -0.2px;
+}
+
+.pnl-select {
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(51, 65, 85, 0.8);
+  color: #cbd5e1;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.pnl-select:hover, .pnl-select:focus {
+  border-color: #38bdf8;
+}
+
+.pnl-pill-toggle {
+  display: inline-flex;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(51, 65, 85, 0.8);
+  border-radius: 6px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.pnl-pill-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.pnl-pill-btn.active {
+  background: #0284c7;
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgba(2, 132, 199, 0.4);
+}
+
+.pnl-pill-btn:not(.active):hover {
+  color: #f1f5f9;
+}
+
+/* Performance Stats Grid */
+.pnl-perf-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (max-width: 600px) {
+  .pnl-perf-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.pnl-perf-tile {
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(30, 41, 59, 0.7);
+  border-radius: 8px;
+  padding: 10px 12px;
+  transition: all 0.15s ease;
+}
+
+.pnl-perf-tile:hover {
+  border-color: rgba(56, 189, 248, 0.3);
+  background: rgba(15, 23, 42, 0.8);
+}
+
+.pnl-perf-label {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-bottom: 4px;
+}
+
+.pnl-perf-val {
+  font-size: 16px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #f8fafc;
+}
+
+.pnl-perf-val.up {
+  color: #10b981;
+}
+
+.pnl-perf-val.down {
+  color: #f43f5e;
+}
+
+/* Win / Loss Donut Layout */
+.pnl-wl-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding: 6px 0 14px 0;
+  gap: 16px;
+}
+
+.pnl-donut-wrap {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  flex-shrink: 0;
+}
+
+.pnl-donut-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.pnl-donut-pct {
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #f8fafc;
+  line-height: 1.1;
+}
+
+.pnl-donut-sub {
+  font-size: 10px;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
+.pnl-wl-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+
+.pnl-wl-legend-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #cbd5e1;
+}
+
+.pnl-wl-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 6px;
+}
+
+.pnl-wl-bottom {
+  border-top: 1px solid rgba(30, 41, 59, 0.8);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pnl-wl-stat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+}
+
+.pnl-wl-stat-label {
+  color: #94a3b8;
+}
+
+.pnl-wl-stat-val {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Daily P&L Chart */
+.pnl-daily-badge {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #10b981;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pnl-chart-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+/* Tooltip Card */
+.pnl-tooltip-box {
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 16px rgba(2, 132, 199, 0.2);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 11.5px;
+  color: #f1f5f9;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.pnl-legend-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.pnl-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}

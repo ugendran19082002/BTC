@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Download } from 'lucide-react';
 import { daysCsvUrl, getDays, getMtm } from '@/api/report';
+import { getTradeStatus } from '@/api/trade';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import { Card, CardTitle } from '@/components/ui/card';
@@ -9,24 +10,25 @@ import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { PnlCalendar } from '@/components/report/PnlCalendar';
 import { CumulativeChart } from '@/components/report/CumulativeChart';
 import { MtmChart } from '@/components/report/MtmChart';
+import { PnlKpiCards } from '@/components/report/PnlKpiCards';
+import { PerformanceStats } from '@/components/report/PerformanceStats';
+import { WinLossAnalysis } from '@/components/report/WinLossAnalysis';
+import { DailyPnlChart } from '@/components/report/DailyPnlChart';
+import { PnlCurveChart } from '@/components/report/PnlCurveChart';
 import { daysAgoIst, netOf, todayIst } from '@/lib/report';
 import { inr, signedInr, signedUsd, usdToInr } from '@/lib/format';
+import './pnl-dashboard.css';
 
 /**
  * How the trading has actually gone.
  *
- * Three views of the same journal, each answering a different question a
- * person asks of it:
- *
- *   the calendar   -- which days made money, which lost it, how big;
- *   the line       -- whether the range is working, day by day;
- *   today's line   -- what the day has done, minute by minute, and the worst
- *                     fall on the way.
- *
- * Every figure is the server's, computed from the fills on the way out, so
- * nothing here can disagree with the journal or with the header. The one
- * choice made here is whether charges are in the numbers; it defaults to on,
- * because the number without them is a number nobody was paid.
+ * Professional Institutional P&L Dashboard:
+ *   - Top KPI Strip: Total P&L, Realized, Unrealized, Today's, Week, Month, Max Drawdown
+ *   - Performance Stats: 12 key trading metrics & expectancy
+ *   - Win / Loss: Donut analysis with Count vs P&L views
+ *   - Daily P&L: Interactive gradient bars with net badge & period picker
+ *   - P&L Curve: Multi-series equity curves with crosshair & tooltip
+ *   - Calendar & MTM: Detailed daily calendar and minute-by-minute intraday line
  */
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -39,6 +41,7 @@ export function ReportPanel() {
   const validRange = DAY_RE.test(from) && DAY_RE.test(to) && from <= to;
   const days = usePoll(() => getDays(from, to), 60_000, { enabled: validRange, deps: [from, to] });
   const mtm = usePoll(() => getMtm(day), 60_000, { deps: [day] });
+  const tradeStatus = usePoll(() => getTradeStatus().catch(() => null), 15_000);
 
   const rows = days.data?.days ?? [];
   const totals = useMemo(() => {
@@ -53,6 +56,7 @@ export function ReportPanel() {
 
   return (
     <div className="flex flex-col gap-3">
+      {/* 1. Primary Controls & Top KPI Cards */}
       <Card>
         <CardTitle
           right={validRange && (
@@ -64,15 +68,6 @@ export function ReportPanel() {
           Profit and loss
         </CardTitle>
 
-        {/*
-          One control for the range, the same one the orders screen uses.
-          Two `<input type="date">` boxes showed a different thing in every
-          browser -- a picker in Chrome, a wheel on a phone, a bare text box in
-          Firefox on Linux -- and asked for a range as two separate questions
-          that could contradict each other while it was being answered. The
-          picker takes both ends at once, keeps its own presets, and never hands
-          over half a range.
-        */}
         <div className="report-controls">
           <DateRangePicker
             value={{ from, to }}
@@ -103,6 +98,17 @@ export function ReportPanel() {
         {!validRange && <p className="m-0 mt-2 text-[12px] text-[var(--down)]">The start date must not be after the end date.</p>}
         {days.error && <p className="m-0 mt-2 text-[12px] text-[var(--down)]">{days.error.message}</p>}
 
+        {/* Top 7 KPI Cards Strip */}
+        <div className="mt-3">
+          <PnlKpiCards
+            rows={rows}
+            totalsNetUsd={totals.net}
+            includeCharges={includeCharges}
+            status={tradeStatus.data}
+          />
+        </div>
+
+        {/* Summary Totals Bar (Preserved for accessibility & unit test contracts) */}
         <div className="report-totals" aria-label="totals">
           <Total label={includeCharges ? 'Net' : 'Gross'} value={signedInr(usdToInr(totals.net))} sub={signedUsd(totals.net)} tone={tone(totals.net)} big />
           <Total label="Charges" value={`−${inr(usdToInr(days.data?.totals.chargesUsd ?? 0))}`} sub={`${signedUsd(-(days.data?.totals.chargesUsd ?? 0))}`} />
@@ -110,7 +116,23 @@ export function ReportPanel() {
           <Total label="Best day" value={totals.best ? signedInr(usdToInr(netOf(totals.best, includeCharges))) : '—'} sub={totals.best?.day} tone="up" />
           <Total label="Worst day" value={totals.worst ? signedInr(usdToInr(netOf(totals.worst, includeCharges))) : '—'} sub={totals.worst?.day} tone="down" />
         </div>
+      </Card>
 
+      {/* 2. Performance Stats & Win/Loss Analysis Row */}
+      <div className="pnl-analytics-row">
+        <PerformanceStats rows={rows} />
+        <WinLossAnalysis rows={rows} />
+      </div>
+
+      {/* 3. Daily P&L & P&L Curve Charts Row */}
+      <div className="pnl-charts-row">
+        <DailyPnlChart rows={rows} includeCharges={includeCharges} />
+        <PnlCurveChart rows={rows} includeCharges={includeCharges} />
+      </div>
+
+      {/* 4. Calendar & Cumulative Progress Card */}
+      <Card>
+        <CardTitle>Trading Calendar & Running Progress</CardTitle>
         <div className="report-grid">
           <div className="report-cal-wrap">
             <PnlCalendar rows={rows} from={from} to={to} includeCharges={includeCharges} selected={day} onSelect={setDay} />
@@ -128,6 +150,7 @@ export function ReportPanel() {
         </div>
       </Card>
 
+      {/* 5. Intraday Minute-by-Minute MTM Card */}
       <Card>
         <CardTitle
           right={mtm.data && mtm.data.days.length > 0 && (
@@ -167,3 +190,4 @@ function Total({ label, value, sub, tone, big }: {
     </div>
   );
 }
+
