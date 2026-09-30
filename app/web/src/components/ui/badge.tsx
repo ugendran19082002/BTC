@@ -2,7 +2,7 @@ import * as React from 'react';
 import { cn } from '@/lib/utils';
 
 /**
- * shadcn-style badge: a small label with a tone (default, outline, up, down, warn).
+ * A small bordered label in one of four tones: neutral, ok, warn, danger.
  */
 
 type Tone = 'neutral' | 'ok' | 'warn' | 'danger';

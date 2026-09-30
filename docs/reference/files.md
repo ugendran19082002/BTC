@@ -22,7 +22,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [.gitignore](../../.gitignore) | harvested option-chain cache - regenerate with research/harvest.py / harvester/harvest_chain.py |
 | [Dockerfile](../../Dockerfile) | ---------- build the API ---------- |
 | [Dockerfile.harvester](../../Dockerfile.harvester) | Keeps the chain cache current. |
-| [Dockerfile.web](../../Dockerfile.web) | -- |
+| [Dockerfile.web](../../Dockerfile.web) | The screen: build the Vite bundle, then serve it from nginx, which also proxies /api to the API container (deploy/nginx.docker.conf). |
 | [README.md](../../README.md) | BTC options desk |
 
 ## `app/server/`
@@ -249,10 +249,10 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [annotations.ts](../../app/web/src/api/annotations.ts) | Chart annotations API client. |
-| [client.ts](../../app/web/src/api/client.ts) | -- |
-| [desk.ts](../../app/web/src/api/desk.ts) | -- |
-| [errors.ts](../../app/web/src/api/errors.ts) | -- |
-| [report.ts](../../app/web/src/api/report.ts) | -- |
+| [client.ts](../../app/web/src/api/client.ts) | One place that knows how to talk to the API: JSON in and out, the session cookie, "not signed in" as its own error, and which failures are worth reporting to the error log. |
+| [desk.ts](../../app/web/src/api/desk.ts) | The desk's read calls: the option chain, spot and candles, what changed, the perpetual's tape, book and big prints, the trend plan's paper log, health and settings. |
+| [errors.ts](../../app/web/src/api/errors.ts) | The error log: read it, resolve or delete a row, and report a failure from this browser into the same table the server writes to. |
+| [report.ts](../../app/web/src/api/report.ts) | The P&L screen's calls: the record as a calendar, one day's mark-to-market line, and the spreadsheet download. |
 | [session.ts](../../app/web/src/api/session.ts) | Sign-in and the account page. |
 | [strategy.ts](../../app/web/src/api/strategy.ts) | Copy one, settings and all, as a new draft. |
 | [trade.ts](../../app/web/src/api/trade.ts) | The order desk. |
@@ -291,7 +291,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [DeskChart.tsx](../../app/web/src/components/desk-screen/DeskChart.tsx) | -- |
+| [DeskChart.tsx](../../app/web/src/components/desk-screen/DeskChart.tsx) | The desk tab's chart: the price chart with its order-flow layers fed in -- the book's heatmap, big trades, the delta / CVD pane and the trend plan -- each read on its own poll and shared between them. |
 | [DeskDashboard.tsx](../../app/web/src/components/desk-screen/DeskDashboard.tsx) | The Live screen's top: a one-row header, then the price chart at full width. |
 | [DeskHeader.tsx](../../app/web/src/components/desk-screen/DeskHeader.tsx) | The Live screen's header, in one row: who it is, that it is live, the contract and its time left, then the controls. |
 | [desk-dashboard.css](../../app/web/src/components/desk-screen/desk-dashboard.css) | ========================================================================== BTC LIVE DESK THEME & STYLES (MATCHING docs/image.png) ===================================================================... |
@@ -327,7 +327,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [DecisionPanels.tsx](../../app/web/src/components/overview/DecisionPanels.tsx) | -- |
+| [DecisionPanels.tsx](../../app/web/src/components/overview/DecisionPanels.tsx) | The strike the Live screen is about, and finding its leg on the board. |
 | [MarketPanels.tsx](../../app/web/src/components/overview/MarketPanels.tsx) | ------------------------------------------------------------------ KPI strip |
 | [Overview.tsx](../../app/web/src/components/overview/Overview.tsx) | The Live screen: the desk dashboard (header, then the chart), then the market read -- the early warning ("Big move catch") and the options' and perpetual's tape. |
 | [TraderPanels.tsx](../../app/web/src/components/overview/TraderPanels.tsx) | ---------------------------------------------------------- early warning |
@@ -352,7 +352,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [EntryCountdown.tsx](../../app/web/src/components/strategy/EntryCountdown.tsx) | -- |
+| [EntryCountdown.tsx](../../app/web/src/components/strategy/EntryCountdown.tsx) | How long until a strategy's next entry, ticking, and whether the scheduler is on to take it. |
 | [ExitRuleEditor.tsx](../../app/web/src/components/strategy/ExitRuleEditor.tsx) | One exit of a strategy -- the target or the stop -- typed, not dragged. |
 | [LogTable.tsx](../../app/web/src/components/strategy/LogTable.tsx) | A log of what the desk did, as a table. |
 | [StrategyForm.tsx](../../app/web/src/components/strategy/StrategyForm.tsx) | Everything a strategy is, in words rather than symbols -- in three short tabs. |
@@ -369,7 +369,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [ClosePositionSheet.tsx](../../app/web/src/components/trade/ClosePositionSheet.tsx) | "Close now", asked once more with everything on the table -- and with a size. |
 | [EditExitsSheet.tsx](../../app/web/src/components/trade/EditExitsSheet.tsx) | Change the stop and the target on a position that is already on. |
 | [ExitBars.tsx](../../app/web/src/components/trade/ExitBars.tsx) | The two exits, each behind a tick box, each a number you type. |
-| [ModeBanner.tsx](../../app/web/src/components/trade/ModeBanner.tsx) | -- |
+| [ModeBanner.tsx](../../app/web/src/components/trade/ModeBanner.tsx) | The alarm across the top of the page: a position with nothing behind it -- no stop, no target -- interrupts everything else until it is dealt with. |
 | [ModeSwitch.tsx](../../app/web/src/components/trade/ModeSwitch.tsx) | Which book the desk is trading on, and the switch between them. |
 | [OrderTicket.tsx](../../app/web/src/components/trade/OrderTicket.tsx) | The order ticket. |
 | [OrdersPanel.tsx](../../app/web/src/components/trade/OrdersPanel.tsx) | Every order, looking back. |
@@ -380,22 +380,22 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [badge.tsx](../../app/web/src/components/ui/badge.tsx) | -- |
+| [badge.tsx](../../app/web/src/components/ui/badge.tsx) | A small bordered label in one of four tones: neutral, ok, warn, danger. |
 | [button.tsx](../../app/web/src/components/ui/button.tsx) | Tailwind's preflight is off in this project, so a bare <button> keeps the platform's own border, background and font. |
-| [calendar.tsx](../../app/web/src/components/ui/calendar.tsx) | -- |
-| [card.tsx](../../app/web/src/components/ui/card.tsx) | -- |
+| [calendar.tsx](../../app/web/src/components/ui/calendar.tsx) | shadcn-style calendar on react-day-picker, styled for the desk; used by the date-range picker. |
+| [card.tsx](../../app/web/src/components/ui/card.tsx) | A card, its title, and a note: the panel shape most of the screens are built from. |
 | [checkbox.tsx](../../app/web/src/components/ui/checkbox.tsx) | A tick box with a label that is part of the target. |
 | [collapsible-card.tsx](../../app/web/src/components/ui/collapsible-card.tsx) | A card whose body folds away, remembered per card. |
 | [date-range-picker.tsx](../../app/web/src/components/ui/date-range-picker.tsx) | A date range, chosen in one place. |
 | [figure.tsx](../../app/web/src/components/ui/figure.tsx) | A label, a number, and optionally the same number in the other currency. |
 | [input.tsx](../../app/web/src/components/ui/input.tsx) | A number field with the spinner arrows gone. |
 | [kv.tsx](../../app/web/src/components/ui/kv.tsx) | A label on the left, its value on the right. |
-| [label.tsx](../../app/web/src/components/ui/label.tsx) | -- |
+| [label.tsx](../../app/web/src/components/ui/label.tsx) | shadcn-style form label on Radix. |
 | [money.tsx](../../app/web/src/components/ui/money.tsx) | An amount of money: rupees first, dollars small beside them. |
 | [number-field.tsx](../../app/web/src/components/ui/number-field.tsx) | A number typed, not dragged. |
-| [popover.tsx](../../app/web/src/components/ui/popover.tsx) | -- |
+| [popover.tsx](../../app/web/src/components/ui/popover.tsx) | shadcn-style popover on Radix: a panel anchored to its trigger. |
 | [select.tsx](../../app/web/src/components/ui/select.tsx) | A listbox, not a native <select>. |
-| [separator.tsx](../../app/web/src/components/ui/separator.tsx) | -- |
+| [separator.tsx](../../app/web/src/components/ui/separator.tsx) | shadcn-style separator on Radix: a horizontal or vertical rule. |
 | [sheet.tsx](../../app/web/src/components/ui/sheet.tsx) | A panel that comes up from the bottom on a phone and sits in the middle on a desktop. |
 | [swipe-confirm.tsx](../../app/web/src/components/ui/swipe-confirm.tsx) | Drag the thumb to the end to confirm. |
 | [switch.tsx](../../app/web/src/components/ui/switch.tsx) | On or off, with what it does beside it. |
@@ -407,7 +407,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [useMediaQuery.ts](../../app/web/src/hooks/useMediaQuery.ts) | Whether a CSS media query matches, following it as the window changes. |
-| [usePageVisible.ts](../../app/web/src/hooks/usePageVisible.ts) | -- |
+| [usePageVisible.ts](../../app/web/src/hooks/usePageVisible.ts) | False while the tab is hidden or the phone is locked, so polls stop -- a pocketed phone stops spending battery and filling the error log. |
 | [usePersisted.ts](../../app/web/src/hooks/usePersisted.ts) | State that survives a reload, kept in localStorage. |
 | [usePoll.ts](../../app/web/src/hooks/usePoll.ts) | Call something on a timer and keep the last good answer. |
 | [useStream.ts](../../app/web/src/hooks/useStream.ts) | The desk, pushed: one connection instead of three polls a second. |
@@ -434,7 +434,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [strategy-rules.ts](../../app/web/src/lib/strategy-rules.ts) | What is wrong with a strategy before it is saved, and where on the form. |
 | [tab-title.ts](../../app/web/src/lib/tab-title.ts) | What the browser tab says: the price, how far it has come today, and the day's P&L -- the three numbers somebody glances at from another tab. |
 | [time.ts](../../app/web/src/lib/time.ts) | Times of day, as the desk stores them and as a person reads them. |
-| [utils.ts](../../app/web/src/lib/utils.ts) | -- |
+| [utils.ts](../../app/web/src/lib/utils.ts) | Class-name helpers shared by every component. |
 
 ## `app/web/src/lib/smc/`
 
@@ -469,7 +469,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [.env.example](../../deploy/.env.example) | Read by docker compose from this directory (deploy/.env). |
 | [backup-db.sh](../../deploy/backup-db.sh) | A consistent dump of the desk's database, kept for a fortnight. |
-| [btc-desk-api.service](../../deploy/btc-desk-api.service) | -- |
+| [btc-desk-api.service](../../deploy/btc-desk-api.service) | A systemd unit for running the API straight on a host, without docker. |
 | [db-admin-role.sh](../../deploy/db-admin-role.sh) | A named admin login for a person, separate from the `desk` account the application uses. |
 | [db-readonly-role.sh](../../deploy/db-readonly-role.sh) | The read-only database account, `desk_ro`, for Adminer and anyone looking. |
 | [deploy-fast.sh](../../deploy/deploy-fast.sh) | Fast Direct Deploy for BTC Options Desk (Skips Test Suites). |
@@ -621,7 +621,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [probability_gates.py](../../research/probability_gates.py) | Gating the baseline on how likely the leg is to expire worthless. |
 | [recon_and_sweep.py](../../research/recon_and_sweep.py) | N. |
 | [reference_test.py](../../research/reference_test.py) | Test the claims and strike methods proposed in reference.md against 636 days of Delta India BTC daily-expiry data. |
-| [section_k_per_leg.py](../../research/section_k_per_leg.py) | -- |
+| [section_k_per_leg.py](../../research/section_k_per_leg.py) | Section K of the R&D report, per leg: each premium rule's record for the CE and PE legs apart, by year. |
 | [step_out.py](../../research/step_out.py) | When a leg fails the 95% gate, must the day be skipped -- or can you step out? |
 | [study_horizons.py](../../research/study_horizons.py) | How does BTC actually move over 5m, 15m, 1h, 2h, 3h, 4h, 6h and 12h? |
 | [study_premium.py](../../research/study_premium.py) | Does a minimum premium of $N ever give a 100% win rate? |

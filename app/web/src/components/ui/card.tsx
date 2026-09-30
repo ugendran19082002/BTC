@@ -2,7 +2,7 @@ import * as React from 'react';
 import { cn } from '@/lib/utils';
 
 /**
- * shadcn-style card: header, title, description, content and footer.
+ * A card, its title, and a note: the panel shape most of the screens are built from.
  */
 
 export const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
