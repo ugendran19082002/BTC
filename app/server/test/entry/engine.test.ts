@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Candle } from '../../src/market/delta.js';
-import { entryBoard, fillOf, readMethod, rrAfterFees, timeframeRows, MAX_ZONE_ATR, MIN_RR } from '../../src/entry/engine.js';
+import { entryBoard, fillOf, readMethod, rrAfterFees, timeframeRows, MAX_ZONE_ATR, MIN_RR, TP_STEP_ATR } from '../../src/entry/engine.js';
 import { atr } from '../../src/entry/prims.js';
 import { METHODS } from '../../src/entry/methods.js';
 import type { EntryContext, Frames } from '../../src/entry/types.js';
@@ -240,4 +240,24 @@ test('[critical] risk and R:R are measured from where the trade fills -- the nea
   const r = readMethod(BREAKOUT, 'single', '5m', single({ gatesOff: ['rr'] }));
   const p = r.plan!;
   assert.ok(Math.abs(p.rr - rrAfterFees(fillOf(p, r.dir === 'long' ? 1 : -1), p.stop, p.tp1)) < 1e-12);
+});
+
+test('[critical] targets are spaced: TP2 at least half an ATR past TP1 -- a level 29 points on is skipped, not a second target', () => {
+  const bars = path(wave(60, 84_000, 20, 10));
+  const a = atr(bars)!;
+  const close = bars.at(-1)!.close;
+  const FVG = METHODS.find((m) => m.id === 'fvg-retest')!;
+  // A short: entry just over the close, and three levels under it -- the second only 29 points past the first.
+  const shortSetup = { ...FVG, detect: () => ({
+    dir: -1 as const, steps: [], zone: [close, close + 20] as [number, number], stop: close + 300, triggerTime: bars.at(-1)!.time,
+    targets: [{ price: close - 100, why: 'first' }, { price: close - 129, why: 'too close' }, { price: close - 100 - Math.ceil(TP_STEP_ATR * a) - 5, why: 'far enough' }],
+  }) };
+  const r = readMethod(shortSetup, 'single', '5m', single({ gatesOff: ['rr', 'stop'] }, bars));
+  assert.equal(r.plan!.tp1, close - 100);
+  assert.equal(r.plan!.tp2, close - 100 - Math.ceil(TP_STEP_ATR * a) - 5, 'the level 29 points on is skipped');
+  assert.deepEqual(r.plan!.tpWhy.slice(0, 2), ['first', 'far enough']);
+  // No level far enough: no TP2, rather than an invented one.
+  const none = { ...FVG, detect: () => ({ ...shortSetup.detect(), targets: [{ price: close - 100, why: 'first' }, { price: close - 129, why: 'too close' }] }) };
+  const n = readMethod(none, 'single', '5m', single({ gatesOff: ['rr', 'stop'] }, bars));
+  assert.ok(n.plan!.tp2 === null || (close - 100 - n.plan!.tp2) >= TP_STEP_ATR * a, 'never within half an ATR of TP1');
 });

@@ -245,9 +245,11 @@ describe('the price chart', () => {
     const drawn = primitives[0]!.scene.filter((it) => it.layer === 'entry');
     const labels = drawn.map((it) => ('label' in it ? it.label : ''));
     expect(labels[0]).toMatch(/^LONG #1 Breakout \(with TF\) · entry 77,500–77,560$/);
-    expect(labels).toContain('SL 77,300');
-    expect(labels).toContain('TP1 78,100 · R:R 2.1');
-    expect(labels).toContain('TP2 78,400');
+    // Measured from the fill, the top of the zone (77,560): risk 260.
+    expect(labels).toContain('ENTRY 77,560');
+    expect(labels).toContain('SL 77,300 · −1.0R · 260 pts');
+    expect(labels).toContain('TP1 78,100 · +2.1R · 540 pts · R:R 2.1 after fees');
+    expect(labels).toContain('TP2 78,400 · +3.2R · 840 pts');
     for (const it of drawn) if (it.t === 'box' || it.t === 'line') { expect(it.x1).toBe(50); expect(it.x2).toBe('right'); }
   });
 

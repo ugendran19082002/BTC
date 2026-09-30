@@ -1,6 +1,6 @@
 import { readMarket, resampleTf, venueSeries, type Timeframe } from '../market/moves.js';
 import type { Candle } from '../market/delta.js';
-import { flowMinutes, liveBook } from '../market/flow.js';
+import { flowMinutes, liveBook, liveLtp } from '../market/flow.js';
 import { HEAT_STEP, heatMinutes, persistentWalls } from '../market/book-heat.js';
 import { liveChain } from '../market/chain.js';
 import { optionStructure } from '../domain/structure.js';
@@ -68,6 +68,8 @@ export async function readEntryContext(now = Date.now()): Promise<EntryContext> 
     now,
     frames,
     gatesOff: off,
+    // The tape's last trade, read now: the live price, milliseconds old while the socket is up.
+    ltp: (() => { try { const l = liveLtp(now); return l ? { price: l.price, at: l.at } : null; } catch { return null; } })(),
     flow: flow.map((m) => ({
       time: Math.floor(m.at / 1000), buy: m.buyVolume, sell: m.sellVolume,
       largeBuy: m.largeBuyVolume, largeSell: m.largeSellVolume,

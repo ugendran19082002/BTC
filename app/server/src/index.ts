@@ -23,7 +23,8 @@ import { noteError } from './observability/errors.js';
 import { entrySchema, gradeSetups, recordSetups } from './entry/paper.js';
 import { gatesSchema } from './entry/gates.js';
 import { alertSettings, alertsSchema, entryAlertFor } from './entry/alerts.js';
-import { entryBoard } from './entry/engine.js';
+import { allReads } from './entry/engine.js';
+import { pruneSignals, recordSignals, signalsSchema } from './entry/signals.js';
 import { readEntryContext } from './entry/read.js';
 
 /**
@@ -58,6 +59,7 @@ await trendPaperSchema();
 await entrySchema();
 await gatesSchema();
 await alertsSchema();
+await signalsSchema();
 const strategies = await initStrategyStore();
 
 // One sign-in service for the process: the gate and the routes share the pool.
@@ -186,9 +188,12 @@ recordTrend();
 setInterval(recordTrend, 5 * 60_000).unref();
 
 /*
- * The entry section's paper log: the 24 reads taken once a minute, each new
- * TRADE written once, and every working setup graded on the closed 1m candles
- * (entry/paper.ts). Nothing is ordered.
+ * The entry section, once a minute, on the server: every read on every
+ * timeframe (the chain's twelve, and the twelve without it on 1m-4H). Every
+ * WAIT and TRADE goes to the signal journal (entry/signals.ts); each new TRADE
+ * to the paper log (entry/paper.ts), graded on the closed 1m candles; Telegram
+ * for the ways switched on -- the chain, and without it on 5m only, so the
+ * phone is not told the same market seven times. Nothing is ordered.
  */
 const recordEntries = () => {
   readEntryContext()
@@ -196,8 +201,10 @@ const recordEntries = () => {
       // Telegram for the ways switched on, once per setup as it is first written. Off by default.
       const on = new Set((await alertSettings().catch(() => [])).filter((a) => a.enabled).map((a) => a.mode));
       const notifier = on.size ? desk.notifier : null;
-      await recordSetups(entryBoard(ctx, '5m'), ctx.now, (r) => {
-        if (!notifier || !on.has(r.mode)) return;
+      const reads = allReads(ctx);
+      await recordSignals(reads, ctx.now);
+      await recordSetups(reads, ctx.now, (r) => {
+        if (!notifier || !on.has(r.mode) || (r.mode === 'single' && r.tf !== '5m')) return;
         const alert = entryAlertFor(r);
         if (alert) notifier.notify(alert);
       });
@@ -205,5 +212,13 @@ const recordEntries = () => {
     })
     .catch(warn('entry-setups'));
 };
-setInterval(recordEntries, 60_000).unref();
-setTimeout(recordEntries, 40_000).unref();
+// Aligned to the minute: three seconds after each 1m candle closes, so a new signal is written, a fill
+// or an exit graded, and Telegram sent within seconds of the candle that made it -- not up to a minute later.
+const ENTRY_OFFSET_MS = 3_000;
+const nextEntryRun = () => {
+  const wait = 60_000 - (Date.now() % 60_000) + ENTRY_OFFSET_MS;
+  setTimeout(() => { recordEntries(); nextEntryRun(); }, wait).unref();
+};
+nextEntryRun();
+// The journal keeps a year; the paper log keeps its graded trades for good.
+setInterval(() => { pruneSignals(Date.now()).catch(warn('entry-signals')); }, 6 * 3_600_000).unref();

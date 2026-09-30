@@ -41,6 +41,9 @@ export const SPREAD_MAX_PCT = 0.05;
 export const SETTLE_GUARD_SEC = 15 * 60;
 /** The day's move past this share of the expected daily move, in the trade's direction: used up. */
 export const EM_USED = 0.8;
+/** The last trade is the live price while it is at most this old; older, the last closed 1m candle is. */
+export const LTP_FRESH_MS = 15_000;
+
 /** Bars a timeframe needs before it is read at all. */
 export const MIN_BARS = 60;
 /**
@@ -49,6 +52,12 @@ export const MIN_BARS = 60;
  * (689 points) before the 30 Sep 2026 audit -- not an entry, a region.
  */
 export const MAX_ZONE_ATR = 0.5;
+/**
+ * Each target at least this many ATRs past the one before it. Two swing levels
+ * 29 points apart were TP1 and TP2 on the owner's screen (30 Sep 2026): a
+ * second target that close adds nothing.
+ */
+export const TP_STEP_ATR = 0.5;
 
 /**
  * Where a trade in this zone fills: the edge price reaches first -- the top
@@ -115,14 +124,16 @@ function planOf(setup: Setup, a: number, bars: readonly Candle[], ctx: EntryCont
   if (levels.length) {
     tp1 = levels[0]!.price;
     why.push(levels[0]!.why);
-    if (levels[1]) { tp2 = levels[1].price; why.push(levels[1].why); }
+    // The next level far enough past TP1 to be a target of its own; none, no TP2 (never an invented one).
+    const next = levels.find((l) => (l.price - tp1) * dir >= TP_STEP_ATR * a);
+    if (next) { tp2 = next.price; why.push(next.why); }
   } else {
     tp1 = entry + dir * 2 * risk;
     why.push('2R -- no level found beyond the entry');
   }
   const o = ctx.options;
   const emEdge = o && o.emDay !== null ? o.spot + dir * o.emDay : null;
-  const tp3 = emEdge !== null && (dir === 1 ? emEdge > (tp2 ?? tp1) : emEdge < (tp2 ?? tp1)) ? emEdge : null;
+  const tp3 = emEdge !== null && (emEdge - (tp2 ?? tp1)) * dir >= TP_STEP_ATR * a ? emEdge : null;
   if (tp3 !== null) why.push(`expected-move edge ${fmt(tp3)}`);
   return { entryLo: lo, entryHi: hi, stop, tp1, tp2, tp3, tpWhy: why, rr: rrAfterFees(entry, stop, tp1) };
 }
@@ -243,8 +254,13 @@ function chainSteps(setup: Setup, ctx: EntryContext, a5: number): Step[] {
     steps.push({ tf: '1m', label: 'execution: no 1m candles', ok: null });
   } else {
     const [lo, hi] = setup.zone[0] <= setup.zone[1] ? setup.zone : [setup.zone[1], setup.zone[0]];
-    const atZone = dir === 1 ? c1.close <= hi + 0.3 * a5 && c1.low >= setup.stop : c1.close >= lo - 0.3 * a5 && c1.high <= setup.stop;
-    steps.push({ tf: '1m', label: atZone ? 'execution: price at the entry, the stop intact' : 'execution: price has left the entry zone', ok: atZone });
+    // The live price where there is one: the perpetual's last trade, fresh; else the last closed 1m close.
+    const live = ctx.ltp && ctx.now - ctx.ltp.at <= LTP_FRESH_MS ? ctx.ltp.price : null;
+    const px = live ?? c1.close;
+    const stopIntact = dir === 1 ? Math.min(c1.low, px) >= setup.stop : Math.max(c1.high, px) <= setup.stop;
+    const atZone = (dir === 1 ? px <= hi + 0.3 * a5 : px >= lo - 0.3 * a5) && stopIntact;
+    const where = live !== null ? `LTP ${fmt(live)}` : `last 1m close ${fmt(c1.close)}`;
+    steps.push({ tf: '1m', label: atZone ? `execution: ${where} at the entry, the stop intact` : `execution: ${where} has left the entry zone`, ok: atZone });
   }
   return steps;
 }
@@ -348,6 +364,21 @@ export function readMethod(m: (typeof METHODS)[number], mode: Mode, tf: Tf, ctx:
  */
 export function entryBoard(ctx: EntryContext, tf: Tf = '5m'): MethodRead[] {
   return (['mtf', 'single'] as const).flatMap((mode) => METHODS.map((m) => readMethod(m, mode, tf, ctx)));
+}
+
+/** Every timeframe a read without the chain may be taken on. */
+export const SINGLE_TFS: readonly Tf[] = ['1m', '3m', '5m', '15m', '30m', '1h', '4h'];
+
+/**
+ * Every read the screen can show: the twelve with the chain (read once -- its
+ * entry is 5m whatever is chosen) and the twelve without it on each timeframe.
+ * What the recorder writes, so a signal is kept whichever chip was on screen.
+ */
+export function allReads(ctx: EntryContext, tfs: readonly Tf[] = SINGLE_TFS): MethodRead[] {
+  return [
+    ...METHODS.map((m) => readMethod(m, 'mtf', '5m', ctx)),
+    ...tfs.flatMap((tf) => METHODS.map((m) => readMethod(m, 'single', tf, ctx))),
+  ];
 }
 
 export type TimeframeRow = {

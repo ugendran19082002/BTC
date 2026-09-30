@@ -121,4 +121,6 @@ export type EntryContext = {
   bigMove: { band: 'normal' | 'watch' | 'high' | 'sudden'; direction: number | null } | null;
   /** Hard gates the owner switched off (entry/gates.ts): read and shown, refusing nothing. Absent: all on. */
   gatesOff?: readonly string[];
+  /** The perpetual's last trade, from the tape (epoch ms): the live price for the execution step. Null with the socket down. */
+  ltp?: { price: number; at: number } | null;
 };

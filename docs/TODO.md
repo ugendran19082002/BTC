@@ -65,6 +65,20 @@ Still open:
 - [ ] **Telegram for the entry setups needs `TG_TOKEN` / `TG_CHAT_ID` on the
   server** -- the same ones the fill alerts use. After the deploy, switch a way
   on and press *test* once to see it arrive.
+- [x] **Every signal saved on the server** (30 Sep 2026): `entry_signals`
+  journal (every WAIT and TRADE, every timeframe, one row per setup per state,
+  kept a year) and the paper log on every timeframe, not only 5m.
+- [x] **Entry range, stop and targets corrected** (30 Sep 2026): zones at most
+  0.5 ATR at the fill edge (FVG / OB were the whole gap / candle, up to 689
+  pts); risk measured from the fill; FVG stop at the gap's far edge; each
+  target 0.5 ATR past the last; entry drawn blue with R and points on every line.
+- [ ] **A signal log on screen**: `GET /api/entry/signals` is there; a table
+  of the day's signals (time, method, way, timeframe, WAIT / TRADE, how long
+  it stood, what became of it) under the paper record.
+- [ ] **Telegram per timeframe**: alerts are the chain and 5m without it; if
+  the owner wants 15m / 1H alerts, a choice of timeframes per way.
+- [ ] **Re-run the replay** (`scripts/entry-study.ts`) on the corrected zones,
+  stops and targets: the 30 Sep numbers were taken on the old ones.
 - [ ] **Read the gate switches with the log**: a month of setups with every gate
   on is the record; anything logged with one off is counted apart
   (`gatesOff`). Before trusting a gate-off result, it needs its own month.

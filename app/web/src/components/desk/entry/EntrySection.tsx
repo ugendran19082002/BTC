@@ -101,7 +101,8 @@ export function EntrySection({ desk, onTimeframes }: {
 
   const counts = { trade: reads.filter((r) => r.state === 'TRADE').length, wait: reads.filter((r) => r.state === 'WAIT').length };
   const recordOf = (r: MethodRead) => record?.records.find((x) => x.method === r.id && x.mode === r.mode && x.tf === r.tf) ?? null;
-  const totalOf = (mode: EntryMode) => record?.totals.find((t) => t.mode === mode && t.tf === '5m') ?? null;
+  // Each timeframe has its own record now (the server logs every one); the chain's entry is always 5m.
+  const totalOf = (mode: EntryMode, at: EntryTf = '5m') => record?.totals.find((t) => t.mode === mode && t.tf === at) ?? null;
   const choose = (r: MethodRead) => setChosen({ ...chosen, [r.mode]: keyOf(r) });
   // From the method table: the same method on both sides.
   const chooseBoth = (n: number) => {
@@ -151,7 +152,7 @@ export function EntrySection({ desk, onTimeframes }: {
           </div>
           <div className="grid gap-3 lg:grid-cols-2">
             <ModePanel mode="single" reads={reads.filter((r) => r.mode === 'single')}
-                       selected={selected.single} onChoose={choose} total={totalOf('single')} recordOf={recordOf}
+                       selected={selected.single} onChoose={choose} total={totalOf('single', tf)} recordOf={recordOf}
                        setupsOn={setupsOn} chartTf={tf} onChartTf={setSingleTf} chart={chart}
                        alert={<AlertSwitch mode="single" alerts={alerts} onChanged={setAlerts} />} autoPicked={autoPicked('single')} />
             <ModePanel mode="mtf" reads={reads.filter((r) => r.mode === 'mtf')}

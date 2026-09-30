@@ -11,7 +11,8 @@ describe('the entry setup on the chart', () => {
     const box = items.find((x) => x.t === 'box');
     expect(box).toMatchObject({ x1: 12, x2: 'right', y1: 84_120, y2: 84_160 });
     const lines = items.filter((x) => x.t === 'line').map((x) => (x.t === 'line' ? x.label : ''));
-    expect(lines).toEqual(['ENTRY 84,160', 'SL 83,980', 'TP1 84,300 · R:R 2.4', 'TP2 84,500']);
+    // Each level in R from the fill (84,160 for a long) and in points: risk 180.
+    expect(lines).toEqual(['ENTRY 84,160', 'SL 83,980 · −1.0R · 180 pts', 'TP1 84,300 · +0.8R · 140 pts · R:R 2.4 after fees', 'TP2 84,500 · +1.9R · 340 pts']);
   });
 
   it('[critical] the entry has its own colour -- blue -- apart from the red stop and the green targets; its line is where the trade fills', () => {
@@ -20,11 +21,11 @@ describe('the entry setup on the chart', () => {
     const line = (l: string) => items.find((x) => x.t === 'line' && x.label?.startsWith(l)) as Extract<typeof items[number], { t: 'line' }>;
     expect(box.t === 'box' && box.stroke).toBe(ENTRY);
     expect(line('ENTRY').color).toBe(ENTRY);
-    expect(line('ENTRY').y).toBe(84_160, 'a long fills at the top of its zone');
+    expect(line('ENTRY').y).toBe(84_160); // a long fills at the top of its zone
     expect(line('SL').color).not.toBe(ENTRY);
     expect(line('TP1').color).not.toBe(ENTRY);
     const short = entryScene({ ...long, dir: 'short', stop: 84_300, tp1: 84_000, tp2: null }, bars);
-    expect((short.find((x) => x.t === 'line' && x.label?.startsWith('ENTRY')) as { y: number }).y).toBe(84_120, 'a short at the bottom');
+    expect((short.find((x) => x.t === 'line' && x.label?.startsWith('ENTRY')) as { y: number }).y).toBe(84_120); // a short at the bottom
   });
 
   it('a TP3 only when there is one, and nothing without candles', () => {

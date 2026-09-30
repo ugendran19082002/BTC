@@ -112,7 +112,7 @@ export function ModePanel({ mode, reads, selected, onChoose, total, recordOf, se
         </div>
       </div>
 
-      <RecordStrip total={total} />
+      <RecordStrip total={total} tf={chartTf} mode={mode} />
     </section>
   );
 }
@@ -244,7 +244,7 @@ function Reasons({ read }: { read: MethodRead | null }) {
   );
 }
 
-function RecordStrip({ total }: { total: EntryRecord | null }) {
+function RecordStrip({ total, tf, mode }: { total: EntryRecord | null; tf: EntryTf; mode: EntryMode }) {
   const has = total !== null && total.trades > 0;
   const cells: [string, string, string?][] = [
     ['Trades', has ? String(total!.trades) : '–'],
@@ -256,7 +256,7 @@ function RecordStrip({ total }: { total: EntryRecord | null }) {
   return (
     <section aria-label="paper record" className="mt-2 rounded-lg border border-border p-2">
       <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-2 text-[12px]">
-        <span className="font-semibold">Paper record · all 12, at 5m, after fees</span>
+        <span className="font-semibold">Paper record · all 12, at {mode === 'mtf' ? '5m' : tf}, after fees</span>
         <span className="text-[11px] text-muted-foreground">
           {total && total.setups ? `${total.setups} logged${total.working ? `, ${total.working} working` : ''}` : 'no setups logged yet'}
           {total?.gatesOff ? ` · ${total.gatesOff} with a gate off, not counted` : ''}

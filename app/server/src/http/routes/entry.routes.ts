@@ -1,9 +1,10 @@
 import type { FastifyInstance } from 'fastify';
-import { entryBoard, timeframeRows, type TimeframeRow } from '../../entry/engine.js';
+import { SINGLE_TFS, entryBoard, timeframeRows, type TimeframeRow } from '../../entry/engine.js';
 import { readEntryContext } from '../../entry/read.js';
 import { entryRecord, recentSetups } from '../../entry/paper.js';
 import { GateLocked, gateSettings, gatesOff, isGateKey, setGate } from '../../entry/gates.js';
 import { alertSettings, isMode, setAlert } from '../../entry/alerts.js';
+import { recentSignals } from '../../entry/signals.js';
 import { CHAIN, TF_SEC, type MethodRead, type Tf } from '../../entry/types.js';
 import { ttlCache } from '../ttl-cache.js';
 
@@ -12,8 +13,6 @@ import { ttlCache } from '../ttl-cache.js';
  * timeframe chain and without it) and their paper record.
  */
 
-/** Timeframes a read without the chain may be taken on. */
-const SINGLE_TFS: readonly Tf[] = ['1m', '3m', '5m', '15m', '30m', '1h', '4h'];
 
 /**
  * `notifier`: where a test alert is sent, or null when Telegram is not set up
@@ -21,8 +20,8 @@ const SINGLE_TFS: readonly Tf[] = ['1m', '3m', '5m', '15m', '30m', '1h', '4h'];
  * trading service themselves.
  */
 export function registerEntryRoutes(app: FastifyInstance, notifier: () => { send(text: string): Promise<boolean> } | null = () => null) {
-  // One read per timeframe for ten seconds, whatever the number of screens asking.
-  const boardCache = ttlCache<{ at: number; tf: Tf; reads: MethodRead[]; timeframes: TimeframeRow[] }>(10_000);
+  // One read per timeframe for three seconds, whatever the number of screens asking (a read is ~50 ms).
+  const boardCache = ttlCache<{ at: number; tf: Tf; reads: MethodRead[]; timeframes: TimeframeRow[]; ltp: { price: number; at: number } | null }>(3_000);
 
   // The 24 reads: each method with the timeframe chain (entry on 5m), then without it on `tf` (default 5m).
   app.get('/api/entry/board', async (req, reply) => {
@@ -33,7 +32,7 @@ export function registerEntryRoutes(app: FastifyInstance, notifier: () => { send
       const off = await gatesOff().catch(() => []);
       const board = await boardCache(`${tf}|${off.join(',')}`, async () => {
         const ctx = await readEntryContext();
-        return { at: ctx.now, tf, reads: entryBoard(ctx, tf), timeframes: timeframeRows(ctx) };
+        return { at: ctx.now, tf, reads: entryBoard(ctx, tf), timeframes: timeframeRows(ctx), ltp: ctx.ltp ?? null };
       });
       return { ...board, chain: CHAIN, tfSec: TF_SEC };
     } catch (e) {
@@ -75,6 +74,19 @@ export function registerEntryRoutes(app: FastifyInstance, notifier: () => { send
     if (!isMode(mode)) { reply.code(404); return { error: 'no such way: single or mtf' }; }
     if (typeof enabled !== 'boolean') { reply.code(400); return { error: 'enabled must be true or false' }; }
     return { alerts: await setAlert(mode, enabled), telegram: notifier() !== null };
+  });
+
+  // The signal journal: every WAIT and TRADE shown, newest first; filter by mode, tf, state.
+  app.get('/api/entry/signals', async (req) => {
+    const q = req.query as { limit?: string; mode?: string; tf?: string; state?: string };
+    return {
+      signals: await recentSignals({
+        limit: q.limit ? Number(q.limit) || 100 : 100,
+        mode: q.mode && isMode(q.mode) ? q.mode : undefined,
+        tf: q.tf && (SINGLE_TFS as readonly string[]).includes(q.tf) ? q.tf : undefined,
+        state: q.state === 'WAIT' || q.state === 'TRADE' ? q.state : undefined,
+      }),
+    };
   });
 
   // Each method's paper record, with the chain and without it, and the latest setups written.

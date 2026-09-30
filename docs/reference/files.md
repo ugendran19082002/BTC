@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-382 files listed, 162 test files counted below, images and lockfiles left out.
+384 files listed, 164 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 96 |
-| `app/web` | 66 |
+| `app/server` | 97 |
+| `app/web` | 67 |
 
 ## `(root)`
 
@@ -126,6 +126,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [paper.ts](../../app/server/src/entry/paper.ts) | The entry setups' paper log: the forward test the 24 reads need before any of them is believed. |
 | [prims.ts](../../app/server/src/entry/prims.ts) | The price-action pieces the twelve entry methods are built from. |
 | [read.ts](../../app/server/src/entry/read.ts) | The entry engine's view of the market, read once per board. |
+| [signals.ts](../../app/server/src/entry/signals.ts) | The signal journal: every signal the entry engine gives -- every WAIT and every TRADE, on every timeframe, with the chain and without it -- written on the server, so nothing depends on a screen bei... |
 | [types.ts](../../app/server/src/entry/types.ts) | The shapes of the entry engine (docs/features/entry-setups.md). |
 
 ## `app/server/src/http/`
@@ -335,7 +336,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [GateChecklist.tsx](../../app/web/src/components/desk/entry/GateChecklist.tsx) | The hard gates as a checklist, beside the Entry methods table: each gate's rule, what was read, and the verdict, for the method chosen there -- without the timeframe chain or with it. |
 | [GateSwitches.tsx](../../app/web/src/components/desk/entry/GateSwitches.tsx) | The hard gates' on/off switches, for the whole entry section: both ways, every panel, and the paper log's recorder. |
 | [MethodLegend.tsx](../../app/web/src/components/desk/entry/MethodLegend.tsx) | The twelve methods by number: 1 is Breakout, 2 Breakout + retest, and so on -- the one place their names are written, so the two panels below can show the number alone. |
-| [ModePanel.tsx](../../app/web/src/components/desk/entry/ModePanel.tsx) | One half of the reference layout: the twelve methods read one way -- with the timeframe chain, or without it -- with their chart, table, the chosen setup, its reasons, (with the chain) the timefram... |
+| [ModePanel.tsx](../../app/web/src/components/desk/entry/ModePanel.tsx) | One half of the reference layout: the twelve methods read one way -- with the timeframe chain, or without it -- with their chart, table, the chosen setup, its reasons, and that mode's paper record. |
 | [entry.css](../../app/web/src/components/desk/entry/entry.css) | The entry section's tables. |
 | [feed.ts](../../app/web/src/components/desk/entry/feed.ts) | What the entry section's price charts are drawn from, read once and shared by both panels and the twelve-chart grid (the desk's main chart used to read all of this for itself; it went on 30 Sep 2026). |
 | [parts.tsx](../../app/web/src/components/desk/entry/parts.tsx) | The entry section's small pieces, shared by the panels, the grid and the comparison: the signal chip, the method's number badge, the per-timeframe tick, and how a record and a number are written. |
@@ -360,6 +361,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [DecisionPanels.tsx](../../app/web/src/components/overview/DecisionPanels.tsx) | The strike the Live screen is about, and finding its leg on the board. |
 | [MarketPanels.tsx](../../app/web/src/components/overview/MarketPanels.tsx) | ------------------------------------------------------------------ KPI strip |
 | [Overview.tsx](../../app/web/src/components/overview/Overview.tsx) | The Live screen: the desk dashboard (header, then the chart), then the market read -- the early warning ("Big move catch") and the options' and perpetual's tape. |
+| [TimeframeAnalysisPanel.tsx](../../app/web/src/components/overview/TimeframeAnalysisPanel.tsx) | The timeframe chain at a glance, under the Big move catch: each of 4H-1M, its trend (EMA stack and swings agreeing) and what its last swings did -- the same reading every "with timeframe" entry ste... |
 | [TraderPanels.tsx](../../app/web/src/components/overview/TraderPanels.tsx) | ---------------------------------------------------------- early warning |
 | [parts.tsx](../../app/web/src/components/overview/parts.tsx) | The Overview's building blocks. |
 

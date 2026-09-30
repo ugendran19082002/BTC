@@ -6,7 +6,7 @@ The desk's PostgreSQL database as a fresh deploy creates it: every table in `pub
 the catalogue after every store's migrations have run. What each table is *for*, and why it is shaped
 the way it is, is in [database.md](database.md).
 
-30 tables, 35 migrations.
+31 tables, 36 migrations.
 
 ## Migrations applied
 
@@ -14,7 +14,7 @@ the way it is, is in [database.md](database.md).
 |---|---|
 | auth | `auth-001-user-sessions`, `auth-002-to-public` |
 | chart | `chart-001-annotations` |
-| entry | `entry-001-setups`, `entry-002-gates`, `entry-003-setups-gates-off`, `entry-004-alerts` |
+| entry | `entry-001-setups`, `entry-002-gates`, `entry-003-setups-gates-off`, `entry-004-alerts`, `entry-005-signals` |
 | errors | `errors-001-log`, `errors-002-to-public` |
 | market | `market-001-oi-snapshots`, `market-002-chain-features`, `market-003-to-public`, `market-004-option-snapshots`, `market-005-flow`, `market-006-flow-large-counts`, `market-007-option-flow`, `market-008-option-snapshots-1m`, `market-009-drop-iv-term`, `market-013-index-1m`, `market-014-chain-band-pcts`, `market-015-large-prints`, `market-016-book-heat` |
 | strategy | `strategy-001-tables`, `strategy-002-seed`, `strategy-003-to-public`, `strategy-004-retire-extras`, `strategy-005-drop-retired-tables` |
@@ -23,7 +23,7 @@ the way it is, is in [database.md](database.md).
 
 ## Tables
 
-[`auth_events`](#auth_events) · [`auth_limits`](#auth_limits) · [`auth_recovery_codes`](#auth_recovery_codes) · [`auth_sessions`](#auth_sessions) · [`auth_user`](#auth_user) · [`book_heat_1m`](#book_heat_1m) · [`chain_features`](#chain_features) · [`chart_annotations`](#chart_annotations) · [`entry_alert_changes`](#entry_alert_changes) · [`entry_alerts`](#entry_alerts) · [`entry_gate_changes`](#entry_gate_changes) · [`entry_gates`](#entry_gates) · [`entry_setups`](#entry_setups) · [`errors`](#errors) · [`index_1m`](#index_1m) · [`large_prints`](#large_prints) · [`mtm_samples`](#mtm_samples) · [`oi_snapshots`](#oi_snapshots) · [`option_flow_1m`](#option_flow_1m) · [`option_snapshots`](#option_snapshots) · [`option_snapshots_1m`](#option_snapshots_1m) · [`perp_snapshots`](#perp_snapshots) · [`schema_migrations`](#schema_migrations) · [`settings`](#settings) · [`strategies`](#strategies) · [`strategy_runs`](#strategy_runs) · [`trade_events`](#trade_events) · [`trade_flow_1m`](#trade_flow_1m) · [`trades`](#trades) · [`trend_paper`](#trend_paper)
+[`auth_events`](#auth_events) · [`auth_limits`](#auth_limits) · [`auth_recovery_codes`](#auth_recovery_codes) · [`auth_sessions`](#auth_sessions) · [`auth_user`](#auth_user) · [`book_heat_1m`](#book_heat_1m) · [`chain_features`](#chain_features) · [`chart_annotations`](#chart_annotations) · [`entry_alert_changes`](#entry_alert_changes) · [`entry_alerts`](#entry_alerts) · [`entry_gate_changes`](#entry_gate_changes) · [`entry_gates`](#entry_gates) · [`entry_setups`](#entry_setups) · [`entry_signals`](#entry_signals) · [`errors`](#errors) · [`index_1m`](#index_1m) · [`large_prints`](#large_prints) · [`mtm_samples`](#mtm_samples) · [`oi_snapshots`](#oi_snapshots) · [`option_flow_1m`](#option_flow_1m) · [`option_snapshots`](#option_snapshots) · [`option_snapshots_1m`](#option_snapshots_1m) · [`perp_snapshots`](#perp_snapshots) · [`schema_migrations`](#schema_migrations) · [`settings`](#settings) · [`strategies`](#strategies) · [`strategy_runs`](#strategy_runs) · [`trade_events`](#trade_events) · [`trade_flow_1m`](#trade_flow_1m) · [`trades`](#trades) · [`trend_paper`](#trend_paper)
 
 ### auth_events
 
@@ -238,6 +238,35 @@ the way it is, is in [database.md](database.md).
 - `entry_setups_dir_check` CHECK ((dir = ANY (ARRAY['-1'::integer, 1])))
 - `entry_setups_mode_check` CHECK ((mode = ANY (ARRAY['mtf'::text, 'single'::text])))
 - `entry_setups_status_check` CHECK ((status = ANY (ARRAY['open'::text, 'filled'::text, 'expired'::text, 'tp1'::text, 'stop'::text, 'timeout'::text])))
+
+### entry_signals
+
+| Column | Type | Null | Default |
+|---|---|---|---|
+| `id` | bigint |  | identity |
+| `method` | text |  |  |
+| `mode` | text |  |  |
+| `tf` | text |  |  |
+| `dir` | smallint |  |  |
+| `state` | text |  |  |
+| `trigger_at` | bigint |  |  |
+| `first_seen` | bigint |  |  |
+| `last_seen` | bigint |  |  |
+| `score` | smallint | yes |  |
+| `reason` | text |  |  |
+| `entry_lo` | double precision | yes |  |
+| `entry_hi` | double precision | yes |  |
+| `stop` | double precision | yes |  |
+| `tp1` | double precision | yes |  |
+| `rr` | double precision | yes |  |
+| `gates_off` | text[] |  | `'{}'::text[]` |
+
+- `entry_signals_by_time` (first_seen DESC)
+- `entry_signals_method_mode_tf_dir_trigger_at_state_key` unique (method, mode, tf, dir, trigger_at, state)
+- `entry_signals_pkey` unique (id)
+- `entry_signals_dir_check` CHECK ((dir = ANY (ARRAY['-1'::integer, 1])))
+- `entry_signals_mode_check` CHECK ((mode = ANY (ARRAY['mtf'::text, 'single'::text])))
+- `entry_signals_state_check` CHECK ((state = ANY (ARRAY['WAIT'::text, 'TRADE'::text])))
 
 ### errors
 

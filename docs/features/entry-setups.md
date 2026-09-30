@@ -102,10 +102,21 @@ absorption from delta against price.
 3. **A step not yet there** -> WAIT, naming it ("waiting for 3m: confirmation").
 4. **Everything holds** -> TRADE, and only then an entry, stop and targets.
 
+**The entry zone and where it fills.** A zone is at most 0.5 ATR wide, kept
+at the edge price reaches first -- the top for a long, the bottom for a short
+-- and that edge is where the trade fills: risk, R:R, the stop band, the card
+and the chart are all measured from it (not the middle, which made a wide
+zone look cheaper than it was). An FVG enters from its near edge to its middle
+(consequent encroachment), an order block from its near edge to its 50% line;
+until 30 Sep 2026 both used the whole gap or candle (up to 8 ATR). The FVG's
+stop is just past the gap's far edge, where it is invalidated.
+
 **Targets come from liquidity, not a fixed number:** TP1 is the nearest level
 past the entry -- a swing on this timeframe, 1H or 4H, a resting wall in the
 perpetual's book, the option OI wall that way, or the method's own (VWAP, max
-pain); TP2 the next; TP3 the expected-move boundary. Only when there is no level
+pain); TP2 the next that is at least 0.5 ATR past TP1 (a level 29 points on
+is not a second target; none far enough, no TP2 -- never an invented one); TP3
+the expected-move boundary, 0.5 ATR past TP2 likewise. Only when there is no level
 at all is TP1 set at 2R -- and after fees that usually fails the R:R gate, which
 is the point. **The stop** is the method's structure plus 0.25 ATR.
 
@@ -122,10 +133,24 @@ round trip at $84k) are larger than most of the structure; this is the same
 finding as the SMC and momentum studies, and the gates are meant to say it
 rather than hide it.
 
-## The paper log
+## The signal journal and the paper log
 
-Table `entry_setups` (migration `entry-001-setups`), written by a recorder in
-`index.ts` once a minute, both modes at 5m:
+Once a minute the server reads **every** way the screen can show -- the
+chain's twelve, and the twelve without it on each of 1m, 3m, 5m, 15m, 30m, 1H
+and 4H (96 reads, ~30 ms) -- so a signal is kept whichever chip was on screen,
+or with no screen open at all:
+
+- **Signal journal** (`entry_signals`, `entry-005-signals`): every WAIT and
+  TRADE, one row per setup per state (a WAIT that becomes a TRADE is two), with
+  when it was first and last seen, its score, reason, levels and any gates
+  switched off. Kept a year. `GET /api/entry/signals?mode=&tf=&state=&limit=`.
+- **Paper log**: each new TRADE, on every timeframe, graded as below. The
+  without-timeframe panel shows the record for its chosen timeframe; the
+  with-vs-without comparison stays at 5m, like for like.
+- **Telegram** stays on the chain and on 5m without it: the same market seven
+  times would bury the one message that matters.
+
+Table `entry_setups` (migration `entry-001-setups`):
 
 - A TRADE is written **once**: keyed by method, mode, timeframe, direction and
   the bar its trigger closed on, however long it stays on the board.
@@ -188,7 +213,12 @@ phone, where a method is its **number only**. Each panel has:
   no `TG_TOKEN` / `TG_CHAT_ID` on the server the switch says "not set up".
 - **Selected setup**: LONG / SHORT SETUP (or WAIT / NO TRADE with the reason),
   method, timeframe, quality, entry, stop, each target with its R multiple, risk
-  and reward in points and percent, and R:R after fees.
+  and reward in points and percent, and R:R after fees -- all from the fill.
+  A TRADE that stands only because a gate is switched off carries a warning:
+  which gates, their values, and that with every gate on it is NO TRADE.
+- **On the chart** the entry is blue -- a box for the zone and a solid ENTRY
+  line where it fills -- apart from the red stop and the green targets; every
+  line says its distance in R and points ("TP2 84,259 · +0.3R · 132 pts").
 - **Key reasons**: every step of its chain, passed, failed or not read.
 - **Hard gates** (beside the Entry methods table, a quarter of its row; under
   it below 1280 px): the chosen method's checklist, *Without TF* or *With TF*
