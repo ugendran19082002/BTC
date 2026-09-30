@@ -71,12 +71,16 @@ function targetLevels(dir: 1 | -1, from: number, bars: readonly Candle[], ctx: E
     .filter((t, i, xs) => i === 0 || Math.abs(t.price - xs[i - 1]!.price) > 1e-9);
 }
 
-/** R:R after taker fees on the way in and the way out. */
+/**
+ * R:R after taker fees on the way in and the way out: what the target pays
+ * net of the fees on entry and on the exit *at the target*, over what the stop
+ * costs plus the fees on entry and on the exit *at the stop*. (Until the
+ * 30 Sep 2026 audit the loss side was charged the target's exit fee.)
+ */
 export function rrAfterFees(entry: number, stop: number, target: number): number {
-  const risk = Math.abs(entry - stop);
-  const fees = FEE_PER_SIDE * (entry + target);
-  const reward = Math.abs(target - entry);
-  return risk + fees > 0 ? (reward - fees) / (risk + fees) : 0;
+  const loss = Math.abs(entry - stop) + FEE_PER_SIDE * (entry + stop);
+  const win = Math.abs(target - entry) - FEE_PER_SIDE * (entry + target);
+  return loss > 0 ? win / loss : 0;
 }
 
 function planOf(setup: Setup, a: number, bars: readonly Candle[], ctx: EntryContext): Plan {

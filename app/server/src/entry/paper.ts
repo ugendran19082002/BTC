@@ -106,9 +106,15 @@ export const rNetOf = (dir: 1 | -1, fill: number, exit: number, stop: number) =>
 export function gradeRow(row: PaperRow, bars1m: readonly Candle[]): PaperRow {
   let r = { ...row };
   const tfSec = TF_SEC[row.tf];
-  const fillBy = row.triggerAt + tfSec * (1 + FILL_WITHIN_BARS);
+  // Graded from the first whole minute after the setup was seen: the minute it
+  // was seen in had traded partly before it, and a fill there would be hindsight.
+  const from = Math.ceil(row.firstSeen / 60_000) * 60;
+  // The fill window runs from when the setup was on the board, not from its
+  // trigger bar -- an FVG or an order block can be forty bars old when price
+  // comes back to it, and was otherwise expired on its first minute.
+  const fillBy = Math.max(row.triggerAt + tfSec, from) + tfSec * FILL_WITHIN_BARS;
   for (const b of bars1m) {
-    if (b.time <= r.gradedTo || b.time * 1000 < Math.floor(row.firstSeen / 60_000) * 60_000) continue;
+    if (b.time <= r.gradedTo || b.time < from) continue;
     if (r.status !== 'open' && r.status !== 'filled') break;
     const d = r.dir;
     const stopHit = d === 1 ? b.low <= r.stop : b.high >= r.stop;
