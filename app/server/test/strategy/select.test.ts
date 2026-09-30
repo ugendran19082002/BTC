@@ -157,6 +157,13 @@ test('the description names what was sold', () => {
   assert.match(s, /PE 77000 x10/);
 });
 
+test('each leg carries the offer beside its bid, so the spread it sold into is on the record', () => {
+  const sel = selectLegs(strat({ legs: 'CE', premium: { mode: 'atMost', usd: 20 } }), [
+    { ...leg('C', 79_800, 18, 0.94), ask: 18.6 },
+  ]);
+  assert.equal(describeSelection(sel), 'CE 79800 x10 @ 18, ask 18.6');
+});
+
 test('selling nothing still says why', () => {
   const sel = selectLegs(strat({ premium: { mode: 'atLeast', usd: 999 } }), BOARD);
   assert.match(describeSelection(sel), /nothing out of the money paying \$999/);

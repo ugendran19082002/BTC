@@ -239,10 +239,17 @@ function viaFallback(cfg: StrategyConfig, c: Candidate): boolean {
     && !meetsPremium(c.sellPrice!, cfg.premium.mode, cfg.premium.usd);
 }
 
-/** A one-line account of what a run did, for the journal and the screen. */
+/**
+ * A one-line account of what a run did, for the journal and the screen.
+ *
+ * Each leg carries the offer beside the bid it was chosen on (30 Sep 2026), so
+ * the spread every scheduled entry sold into is on the record -- which is what
+ * `maxCrossSpreadPct` has to be measured against, rather than guessed.
+ */
 export function describeSelection(sel: Selection): string {
   const sold = sel.legs.map((l) => `${l.cp === 'C' ? 'CE' : 'PE'} ${l.strike} x${l.lots} @ ${l.price}`
-    + (l.fallbackUsd !== undefined ? ` (fallback $${l.fallbackUsd})` : ''));
+    + (l.fallbackUsd !== undefined ? ` (fallback $${l.fallbackUsd})` : '')
+    + (l.ask !== null && l.ask > 0 ? `, ask ${l.ask}` : ''));
   if (sold.length === 0) return sel.refusals.join('; ') || 'nothing to sell';
   return sold.join(', ') + (sel.refusals.length ? ` (${sel.refusals.join('; ')})` : '');
 }

@@ -30,8 +30,11 @@ import {
 export type ExitStepperDeps = {
   /** The strategy's open trades. */
   openTrades: (strategyId: string) => TradeRecord[] | Promise<TradeRecord[]>;
-  /** Move the exits: `TradingService.updateExits`, measured off each trade's own entry. */
-  move: (tradeId: string, ask: ExitAsk) => Promise<unknown>;
+  /**
+   * Move the exits: `TradingService.updateExits`, measured off each trade's own
+   * entry. `stage` is written on the trade, so a restart carries on from it.
+   */
+  move: (tradeId: string, ask: ExitAsk, stage: string) => Promise<unknown>;
   /** Said once per trade per stage, keyed by the trade it moved. */
   tell?: (text: string, tradeId: string) => void;
   now: () => number;
@@ -68,8 +71,9 @@ export class StrategyExitStepper {
     for (const trade of trades) {
       const id = trade.state.tradeId;
       if (trade.state.position === 0 || trade.state.entryAvgPrice === null) continue;
-      // A trade first seen here was placed with the starting values.
-      const prev = this.applied.get(id) ?? START;
+      // The stage written on the trade wins: it survives a restart, this map
+      // does not. A trade with neither was placed with the starting values.
+      const prev = trade.plan.exitStage ?? this.applied.get(id) ?? START;
       if (prev === key) { this.applied.set(id, key); continue; }
       const [prevTarget, prevStop] = prev.split(':');
       // Only the leg whose stage changed: the other may have been moved by hand.
@@ -78,7 +82,7 @@ export class StrategyExitStepper {
         ...(String(st.stage) !== prevStop ? exitAsk(stop, st.value, 'stop') : {}),
       };
       // Not marked until it lands: a move that throws is tried again next tick.
-      await this.d.move(id, ask);
+      await this.d.move(id, ask, key);
       this.applied.set(id, key);
       moved.push(id);
       this.d.tell?.(stepWords(s, trade.plan.symbol, target, t, prevTarget, stop, st, prevStop), id);

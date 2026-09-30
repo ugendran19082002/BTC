@@ -184,6 +184,14 @@ export type TradePlan = {
    */
   monitorOn?: 'ltp' | 'close';
   /**
+   * Which stage of its strategy's exit timetable this trade's exits are on
+   * ("target:stop", e.g. "2:0"), written when a stage is applied. Kept on the
+   * trade so a restart carries on from it: until 30 Sep 2026 it was only in
+   * memory, and after a restart the stage in force was applied again -- over
+   * any leg moved by hand since.
+   */
+  exitStage?: string;
+  /**
    * The lowest premium this trade may be sold at, when the strategy that
    * placed it set its own (`StrategyConfig.minPremiumUsd`). Absent: the desk's
    * floor. Only a strategy sets it; the ticket's route never passes it through.
@@ -832,8 +840,10 @@ export class TradeEngine {
      * and not in `follow` is pinned to that price from now on.
      */
     follow?: ExitAsk,
+    /** The exit-timetable stage this move applies, when a strategy's stepper makes it. */
+    exitStage?: string,
   ): Promise<TradeState | null> {
-    return this.withTrade(tradeId, () => this.updateProtectionInner(tradeId, next, follow));
+    return this.withTrade(tradeId, () => this.updateProtectionInner(tradeId, next, follow, exitStage));
   }
 
   /**
@@ -1459,6 +1469,7 @@ export class TradeEngine {
     tradeId: string,
     next: { takeProfitPrice?: number | null; stopPrice?: number | null },
     follow?: ExitAsk,
+    exitStage?: string,
   ): Promise<TradeState | null> {
     let rec = await this.d.store.get(tradeId);
     if (!rec) return null;
@@ -1475,6 +1486,7 @@ export class TradeEngine {
       takeProfitPrice: next.takeProfitPrice !== undefined ? next.takeProfitPrice : rec.plan.takeProfitPrice,
       stopPrice: next.stopPrice !== undefined ? next.stopPrice : rec.plan.stopPrice,
       exitAsk: Object.keys(ask).length ? ask : undefined,
+      ...(exitStage !== undefined ? { exitStage } : {}),
     };
     rec.state = { ...rec.state, wantsProtection: rec.plan.stopPrice !== null };
 

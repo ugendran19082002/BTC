@@ -361,15 +361,18 @@ describe('real time: a strategy trade on the paper exchange, walked across its s
       stopPrice: stopFor(15, { stopLossPoints: 10 }),
     }));
     await r.engine.poll('CE-1');
-    const stepper = new StrategyExitStepper({
+    const deps: ExitStepperDeps = {
       openTrades: () => r.store.rows().filter((t) => t.plan.strategyId === 's' && t.state.position !== 0),
       // What TradingService.updateExits does, with the same pure function.
-      move: async (id, ask) => {
+      move: async (id, ask, stage) => {
         const entry = r.store.peek(id)!.state.entryAvgPrice!;
-        return r.engine.updateProtection(id, protectionFor(entry, ask));
+        return r.engine.updateProtection(id, protectionFor(entry, ask), undefined, stage);
       },
       now: r.now,
-    });
+    };
+    let stepper = new StrategyExitStepper(deps);
+    /** A process restart: a new stepper, nothing in memory -- only what the trade carries. */
+    const restart = () => { stepper = new StrategyExitStepper(deps); };
     const book = async () => {
       const open = await r.ex.getOpenOrders(CE);
       return {
@@ -385,8 +388,19 @@ describe('real time: a strategy trade on the paper exchange, walked across its s
       await r.engine.poll('CE-1');
       return book();
     };
-    return { r, at, book };
+    return { r, at, book, restart };
   }
+
+  test('[critical] a restart does not apply the stage in force again over a leg moved by hand since', async () => {
+    const { r, at, book, restart } = await sold();
+    assert.deepEqual((await at('04:00')).target, [2.3], 'stage 1: 85%');
+    // Moved by hand after the stage: target pinned at 2.00.
+    await r.engine.updateProtection('CE-1', { takeProfitPrice: 2 });
+    assert.equal(r.store.peek('CE-1')!.plan.exitStage, '1:0', 'the stage is written on the trade');
+    restart();
+    assert.deepEqual((await at('04:10')).target, [2], 'still where it was put: the stage was already applied');
+    assert.deepEqual((await book()).stop, [backstopFor(25, 15)]);
+  });
 
   test('[critical] sold at 15: target 3.00 and stop 25 on the book, then each step reprices the order on Delta\'s book', async () => {
     const { r, at, book } = await sold();

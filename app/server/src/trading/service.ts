@@ -665,7 +665,7 @@ export class TradingService {
    * was actually opened at -- not off the mark, which would move the stop every
    * time the option did. A leg asked about neither way is left where it is.
    */
-  async updateExits(tradeId: string, ask: ExitAsk) {
+  async updateExits(tradeId: string, ask: ExitAsk, exitStage?: string) {
     const rec = await this.store.get(tradeId);
     if (!rec) return null;
     const entry = rec.state.entryAvgPrice;
@@ -684,7 +684,7 @@ export class TradingService {
       follow.stopLossPct = ask.stopLossPct ?? 0;
       follow.stopLossPoints = ask.stopLossPoints ?? 0;
     }
-    return this.engine.updateProtection(tradeId, protectionFor(entry, ask), follow);
+    return this.engine.updateProtection(tradeId, protectionFor(entry, ask), follow, exitStage);
   }
 
   /**
