@@ -5,7 +5,7 @@ import { CHASE_STEPS, exitPriceProblem, protectionFor, type ExitAsk } from './or
 import type { Candle } from '../market/delta.js';
 import { applyEvent, initialTrade, isDone, protectionSize } from './machine.js';
 import {
-  priceFor, lotsToContracts, slippageOf, stopFillLimit, stopPriceFor, SLIPPAGE_ALERT_PCT,
+  priceFor, lotsToContracts, slippageOf, stopFillLimit, stopPriceFor, targetTickFor, SLIPPAGE_ALERT_PCT,
 } from './money.js';
 import { DEFAULT_LIMITS, precheck, type Failure, type PrecheckResult, type RiskLimits } from './precheck.js';
 import { clampLeverage, fundsRequiredPerContract, liquidationRoom, premiumUsd } from './margin.js';
@@ -633,6 +633,7 @@ export class TradeEngine {
         side: 'sell', size, expect: plan.expect, price, reduceOnly: false,
         leverage: clampLeverage(plan.leverage), stopPrice: plan.stopPrice, takeProfitPrice: plan.takeProfitPrice,
         crossing: crossesSpread('sell', plan.entry.type, plan.entry.limitPrice ?? null, quote),
+        stopOnOffer: plan.monitorOn !== 'close',
       },
       spot,
       product,
@@ -1228,7 +1229,10 @@ export class TradeEngine {
       // Both legs round towards firing rather than towards a better price: a
       // level that misses by a tick is a level that does not exist. One tick of
       // slippage is cheaper than an exit that never happens.
-      const target = wanted === null ? null : stopPriceFor(role === 'stop_loss' ? 'buy' : 'sell', wanted, tick);
+      // Both are buy-backs of a short: the stop up through its level, the target
+      // up to the tick but never to the entry (`targetTickFor`).
+      const target = wanted === null ? null
+        : role === 'stop_loss' ? stopPriceFor('buy', wanted, tick) : targetTickFor(wanted, tick, rec.state.entryAvgPrice);
 
       // Right already, and the right size: keep it, and remember which it is.
       // The size that counts is what is still resting. A target that has bought

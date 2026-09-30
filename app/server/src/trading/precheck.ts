@@ -20,7 +20,7 @@ export type PrecheckCode =
   | 'PREMIUM_TOO_LOW'
   | 'INSUFFICIENT_MARGIN' | 'DUPLICATE_POSITION' | 'MAX_POSITION' | 'DAILY_LOSS_LIMIT'
   | 'WRONG_EXIT_SIDE' | 'KILL_SWITCH'
-  | 'LEVERAGE_TOO_HIGH' | 'STOP_BEYOND_LIQUIDATION' | 'EXIT_WRONG_SIDE_OF_ENTRY';
+  | 'LEVERAGE_TOO_HIGH' | 'STOP_BEYOND_LIQUIDATION' | 'EXIT_WRONG_SIDE_OF_ENTRY' | 'STOP_INSIDE_SPREAD';
 
 export type Failure = { code: PrecheckCode; message: string };
 export type PrecheckResult = { ok: true } | { ok: false; failures: Failure[] };
@@ -159,6 +159,8 @@ export type PrecheckInput = {
     stopPrice?: number | null;
     /** Where the target buys back, if there is one. */
     takeProfitPrice?: number | null;
+    /** The desk judges the stop on the offer (not on a closed bar): a stop inside the spread is then reached at once. */
+    stopOnOffer?: boolean;
   };
   /** BTC spot, for the margin model. */
   spot: number | null;
@@ -299,6 +301,28 @@ export function precheck(input: PrecheckInput): PrecheckResult {
     }
     if (intent.takeProfitPrice != null && !(intent.takeProfitPrice < intent.price)) {
       add('EXIT_WRONG_SIDE_OF_ENTRY', `A target of ${intent.takeProfitPrice} must be under the ${intent.price} entry: a short makes money as the price falls.`);
+    }
+    /*
+     * A stop no wider than the spread is reached the moment the entry fills.
+     *
+     * A short sold at the bid has the offer above it by the spread, and the
+     * desk judges the stop on the offer (`stopIfReached`). A stop 10% over a
+     * 5.00 sale is 5.50; with the offer at 5.80 it is already "reached", and
+     * fifteen seconds later the desk buys back for the spread and two fees --
+     * a certain loss that looks like a stop doing its job. The distance is
+     * measured the way the stop will be once it follows the fill: from the
+     * bid, as a percentage of the price asked (30 Sep 2026 audit).
+     */
+    const bid = quote?.bid ?? null;
+    const ask = quote?.ask ?? null;
+    if (intent.stopOnOffer && intent.stopPrice != null && intent.stopPrice > intent.price
+      && bid !== null && ask !== null && ask > bid && intent.price > 0) {
+      const room = Math.min(intent.stopPrice - intent.price, ((intent.stopPrice - intent.price) / intent.price) * bid);
+      if (room <= ask - bid) {
+        add('STOP_INSIDE_SPREAD',
+          `The stop is ${room.toFixed(2)} over a fill at the ${bid} bid, inside the ${(ask - bid).toFixed(2)} spread: `
+          + `the ${ask} offer is already there, and the desk would buy back seconds after selling. Widen the stop, or wait for a tighter book.`);
+      }
     }
   }
   if (!intent.reduceOnly) {

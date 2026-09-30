@@ -67,6 +67,21 @@ export const stopPriceFor = (side: 'buy' | 'sell', price: number, tick: number) 
 export const STOP_LIMIT_SLACK = 0.15;
 export const STOP_LIMIT_MIN_TICKS = 5;
 
+/**
+ * A short's target, on the tick: the price its reduce-only buy limit rests at.
+ *
+ * Rounded towards filling -- up, for a buy -- like the stop: a level that
+ * misses by a tick is a level that does not exist. (It was rounded down, as
+ * if the target were a sell, until the 30 Sep 2026 audit.) Never at or over
+ * the entry, which would buy back at once for nothing: then down instead.
+ * And never under one tick.
+ */
+export function targetTickFor(wanted: number, tick: number, entry: number | null): number {
+  const up = roundToTick(wanted, tick, 'up');
+  // Never under one tick either: zero is not a price a limit can rest at.
+  return Math.max(tick, entry !== null && entry > 0 && up >= entry ? roundToTick(wanted, tick, 'down') : up);
+}
+
 export function stopFillLimit(side: 'buy' | 'sell', trigger: number, tick: number): number {
   const slack = Math.max(trigger * STOP_LIMIT_SLACK, tick * STOP_LIMIT_MIN_TICKS);
   const through = side === 'buy' ? trigger + slack : Math.max(tick, trigger - slack);
@@ -77,19 +92,21 @@ export function stopFillLimit(side: 'buy' | 'sell', trigger: number, tick: numbe
  * What the exit actually cost against the price that was asked for.
  *
  * Positive is money lost to the fill: a stop at 70 filled at 79 is +9, +12.9%.
- * A stop is a buy-back, so paying more is worse; a target is a sell, so
- * receiving less is worse. Both are reported the same way -- the sign says
- * "against you" rather than "up" -- because the one question is how much the
- * exit cost, and a reader should not have to remember which side they were on.
+ * Every position this desk holds is a short option, so **both** exits are
+ * buy-backs: paying more than asked is worse, for the stop and the target
+ * alike. (Until the 30 Sep 2026 audit the target was read as a sell, so a
+ * target bought back *cheaper* than asked was reported as a cost -- and could
+ * raise a false slippage alert.) `role` stays in the signature for the alert's
+ * wording.
  *
  * `null` where there was nothing to compare against, which is not the same as
  * zero and must not be shown as it.
  */
 export function slippageOf(
-  role: 'stop_loss' | 'take_profit', wanted: number | null, filled: number | null,
+  _role: 'stop_loss' | 'take_profit', wanted: number | null, filled: number | null,
 ): { points: number; pct: number } | null {
   if (wanted === null || filled === null || !(wanted > 0) || !(filled > 0)) return null;
-  const points = role === 'stop_loss' ? filled - wanted : wanted - filled;
+  const points = filled - wanted;
   return { points: Math.round(points * 100) / 100, pct: Math.round((points / wanted) * 1000) / 10 };
 }
 

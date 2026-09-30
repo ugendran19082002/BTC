@@ -87,6 +87,13 @@ The stage a trade's exits are on is written on the trade (`plan.exitStage`), so
 a restart carries on from it rather than applying it again over a leg moved by
 hand.
 
+Every position is a short, so **both exits are buy-backs**. The target rests at
+Delta as a reduce-only buy limit, rounded up to the tick (towards filling) but
+never to the entry; the stop is judged on the **offer** and closed at the
+market. A slippage alert measures both the same way: paying more than asked is
+against the desk. Both are re-read off the actual fill for a percentage or
+points (a fill at 42 against a 39 limit moves a 185% stop to 119.7).
+
 ## Why a strategy is refused
 
 Every refusal is a sentence in `strategy_runs.detail`. The common ones:
@@ -97,6 +104,7 @@ Every refusal is a sentence in `strategy_runs.detail`. The common ones:
 | `This one pays X and the desk will not sell below 5.00` | `precheck` `PREMIUM_TOO_LOW` | The desk's premium floor, or the strategy's own (`minPremiumUsd`, "Its own minimum premium" on the form) when it sets one. Late in the day most strikes pay under $5. |
 | `Already holding -N on this contract.` | `precheck` `DUPLICATE_POSITION` | This strategy already holds the contract. (Another strategy's trade on it does not count -- [decision 0011](../decisions/0011-one-trade-per-contract.md).) |
 | `Spread is X%, limit is 15% for an order that crosses it.` | `precheck` | The book is too wide to cross. |
+| `The stop is X over a fill at the B bid, inside the S spread` | `precheck` `STOP_INSIDE_SPREAD` | A stop no wider than the spread would be reached as the entry fills (the offer is already there) and bought back seconds later. Widen the stop or wait for a tighter book. Not checked when `monitorOn` is `close`. |
 | `Would take total short to N, limit is M.` | `precheck` `MAX_POSITION` | The desk's `max_short_contracts` cap. |
 
 To see a day's runs:

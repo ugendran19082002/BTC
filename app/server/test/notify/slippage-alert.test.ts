@@ -36,8 +36,9 @@ describe('the real fill that went unreported', () => {
   });
 
   test('a target that fills better than asked is not slippage against the desk', () => {
-    const slip = slippageOf('take_profit', 0.3, 0.4);
-    assert.ok(slip!.points < 0, 'receiving more than asked was reported as a cost');
+    // A target buys a short back: 0.2 against an asked 0.3 is cheaper, which is better.
+    const slip = slippageOf('take_profit', 0.3, 0.2);
+    assert.ok(slip!.points < 0, 'paying less than asked was reported as a cost');
   });
 });
 

@@ -85,12 +85,12 @@ test('[critical] the stop limit clears the book without being a blank cheque', (
 
 test('[critical] slippage is measured against what was asked for, and signed against the desk', () => {
   /*
-   * A stop is a buy-back, so paying more is worse; a target is a sell, so
-   * receiving less is worse. Both read as "points against you", because the
+   * Every position is a short option, so both exits are buy-backs: paying
+   * more than asked is worse. Both read as "points against you", because the
    * one question is what the exit cost.
    */
   assert.deepEqual(slippageOf('stop_loss', 70, 79), { points: 9, pct: 12.9 });
-  assert.deepEqual(slippageOf('take_profit', 20, 18), { points: 2, pct: 10 });
+  assert.deepEqual(slippageOf('take_profit', 20, 22), { points: 2, pct: 10 });
   // Better than asked for is negative: it happens, and it is not a problem.
   assert.deepEqual(slippageOf('stop_loss', 70, 69.5), { points: -0.5, pct: -0.7 });
 });
