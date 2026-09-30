@@ -24,7 +24,7 @@ import { DeltaExchange } from '../../src/trading/exchange/delta.js';
  *
  * No test caught it because `PaperExchange.getOpenOrders` filters correctly.
  * The simulator was written to the reading of the docs the engine was written
- * to, so both agreed and the venue disagreed with both. ARCHITECTURE.md rule 2,
+ * to, so both agreed and the venue disagreed with both. docs/decisions/0002-simulator-is-not-the-venue.md,
  * a second time.
  *
  * These tests stub the transport, so they pin *our* filtering rather than

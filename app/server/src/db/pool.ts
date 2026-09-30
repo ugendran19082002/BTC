@@ -32,7 +32,7 @@ const options = (): pg.PoolConfig => {
   if (!config.databaseUrl) {
     throw new Error(
       'DATABASE_URL is not set. The desk keeps its trades, sign-in, settings and error log in '
-      + 'PostgreSQL; see docs/DB-INVENTORY.md and app/server/.env.example.',
+      + 'PostgreSQL; see docs/guides/local-development.md and app/server/.env.example.',
     );
   }
   return {

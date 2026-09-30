@@ -462,7 +462,7 @@ export class DeltaExchange implements ExchangePort {
    * a venue's filter is a request, not a guarantee.
    *
    * `PaperExchange` filters correctly, which is exactly why no test caught
-   * this. See rule 2 in ARCHITECTURE.md.
+   * this. See docs/decisions/0002-simulator-is-not-the-venue.md.
    */
   async getOpenOrders(symbol?: string): Promise<ExchangeOrder[]> {
     const q = symbol ? `?states=open,pending&product_symbol=${encodeURIComponent(symbol)}` : '?states=open,pending';

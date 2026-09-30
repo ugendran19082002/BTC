@@ -15,7 +15,7 @@ import { DEFAULT_CONFIG, type Strategy } from '../../src/strategy/types.js';
  *
  * Every case drives the real store against a real database file, because the
  * property being tested is the UNIQUE constraint and an in-memory fake would
- * only prove the fake agrees with the code. ARCHITECTURE.md rule 2.
+ * only prove the fake agrees with the code. docs/decisions/0002-simulator-is-not-the-venue.md.
  */
 // One database for the file; a fresh store starts with an empty run journal.
 await StrategyStore.open();

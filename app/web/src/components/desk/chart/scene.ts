@@ -17,7 +17,7 @@ export type Layer = 'structure' | 'liquidity' | 'zones' | 'levels' | 'pd' | 'ses
   | 'profile' | 'bigtrades' | 'delta' | 'heatmap' | 'options' | 'trend';
 
 /**
- * Every layer, with what the research says about it (docs/PRICE-CHART.md §14),
+ * Every layer, with what the research says about it (docs/features/price-chart.md §14),
  * shown beside its checkbox -- so a line on the chart is never read as more
  * than it has been shown to be. `note` says whether it has been measured and
  * what came out; nothing here is a signal on its own.

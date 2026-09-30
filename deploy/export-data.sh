@@ -10,7 +10,7 @@
 # journal), and `btc_desk.dump`, a `pg_dump -Fc` of the desk's PostgreSQL
 # database -- trades, strategies, settings, sign-in, the error log. Nothing is
 # stopped here; whether the old desk should be *trading* while its journal is
-# copied is the question in docs/NEW-SERVER.md §0, not this script's.
+# copied is the question in docs/guides/operations.md (and `git show 2ed9ef2^:docs/NEW-SERVER.md` §0), not this script's.
 #
 # chain.db is read from the Docker volume through a throwaway container,
 # because the volume's directory on the host is root-only. Then: scp the file,
@@ -71,7 +71,7 @@ fi
 
 # The desk's own .env files are NOT included: it holds the exchange key and the
 # session secret, and a tarball is a file that gets copied about. Carry it by
-# hand, and read docs/NEW-SERVER.md §3 before reusing any key. The dump holds
+# hand, and read `git show 2ed9ef2^:docs/NEW-SERVER.md` §3 before reusing any key. The dump holds
 # the sign-in tables, which open only under the same DESK_SESSION_SECRET.
 OUT="$OUT_DIR/btc-desk-data-${STAMP}.tar.gz"
 tar -C "$WORK" -czf "$OUT" .

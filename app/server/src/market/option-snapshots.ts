@@ -7,7 +7,7 @@ import { one, query } from '../db/pool.js';
  * Every strike of the traded expiries: a five-minute record kept for months,
  * and a one-minute record kept for hours.
  *
- * Delta publishes greeks, IV and quotes live only (docs/Data.md §2); without
+ * Delta publishes greeks, IV and quotes live only (docs/reference/market-data.md, "Historical"); without
  * this, "how did the 78,000 call's IV and OI move through the morning" has no
  * answer after the fact. It is the raw layer: features (premium momentum, OI
  * acceleration, IV change) are derived from it, never stored instead of it, so

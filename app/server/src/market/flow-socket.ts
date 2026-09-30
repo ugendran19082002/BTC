@@ -4,7 +4,7 @@ import { SOCKET_URL, type SocketLike } from './delta-socket.js';
  * The perpetual's public feed: every BTCUSD trade as it prints, and the perp
  * ticker (funding, open interest, turnover) as it changes.
  *
- * This is the order-flow data docs/test.md names as the desk's biggest gap:
+ * This is the order-flow data the desk spec (`git show 2ed9ef2^:docs/test.md`) names as the desk's biggest gap:
  * who is hitting the tape. Delta's REST `trades` call hands back the last 50
  * prints, about forty seconds' worth on an ordinary day and far less in a
  * burst, so polling it would drop exactly the trades that matter. The socket

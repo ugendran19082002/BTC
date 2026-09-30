@@ -4,7 +4,7 @@ import { resampleTf, HIERARCHY_TIMEFRAMES } from '../../src/market/moves.js';
 import type { Candle } from '../../src/market/delta.js';
 
 /**
- * The frames `docs/New.md`'s hierarchy needs that Delta India does not serve.
+ * The frames the owner's hierarchy spec (`git show b9b5499^:docs/New.md`) needs that Delta India does not serve.
  *
  * Measured 26 Sep 2026 against the live endpoint: 30m, 2h and 6h all return
  * bars; **12h returns none**. So the 12-hour frame is folded from 6-hour ones,
@@ -78,7 +78,7 @@ describe('folding 6h bars into 12h', () => {
 });
 
 describe('the hierarchy list', () => {
-  test('[critical] it is exactly the frames New.md names, coarsest first', () => {
+  test('[critical] it is exactly the frames the hierarchy spec names, coarsest first', () => {
     assert.deepEqual([...HIERARCHY_TIMEFRAMES], ['12h', '6h', '4h', '2h', '1h', '30m', '15m', '5m', '1m']);
   });
 });

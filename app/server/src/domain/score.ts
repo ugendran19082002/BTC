@@ -292,7 +292,7 @@ export function bias(snap: Snapshot, scored: ScoredLeg[]): Bias {
   return { score, label, pcr, ivSkew, components };
 }
 
-/** test.md sizing model: lots are capped by margin, not by conviction. */
+/** The desk spec's sizing model (test.md, since removed): lots are capped by margin, not by conviction. */
 /** Lots the backtest can carry. For a live order use trading/margin.ts. */
 export function maxLots(availableUsd: number): number {
   return Math.floor(availableUsd / MARGIN_PER_LOT_USD);

@@ -10,7 +10,7 @@ name: btc-desk
 services:
   # The desk's database: trades, strategies, settings, sign-in, the error log,
   # open-interest and order-flow history -- one PostgreSQL, one schema
-  # each (docs/DB-INVENTORY.md). No host port: only the containers on this
+  # each (docs/reference/database.md). No host port: only the containers on this
   # network can reach it. Its data is its own volume, backed up by
   # deploy/backup-db.sh; chain.db stays a file on the `data` volume.
   db:
@@ -79,7 +79,7 @@ services:
       NODE_OPTIONS: --max-old-space-size=1536
     volumes:
       # chain.db, and the retired SQLite files kept as the rollback path after
-      # the cutover (docs/DEPLOY.md).
+      # the cutover (docs/history/2026-09.md, 19 Sep).
       - data:/srv/data
     # No host port. The browser reaches the API through the web container over
     # the compose network, so nothing on the host can talk to it directly.
@@ -137,7 +137,7 @@ services:
 
   # Database console. OPT-IN: `docker compose --profile admin up -d adminer`,
   # and `stop adminer` when done -- it is open while someone is using it, not
-  # permanently. See docs/ADMINER.md.
+  # permanently. See docs/guides/database-console.md.
   #
   # Locks in series: basic auth at the edge (adminer.thannigo.in), a rate limit
   # on the login, then a database password. The login form

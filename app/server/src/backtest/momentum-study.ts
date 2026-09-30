@@ -55,7 +55,8 @@ function inHours(s: Signal, from: number, to: number) {
   return h >= from && h < to;
 }
 /**
- * Every reading `docs/New.md` asks for, as a filter on the call.
+ * Every reading the owner's hierarchy spec asks for, as a filter on the call
+ * (New.md, since removed: `git show b9b5499^:docs/New.md`).
  *
  * Direction-aware where the reading has a direction: a breakout with RSI-like
  * momentum *with* it is a different proposition from one against it, and
@@ -113,7 +114,7 @@ const READING_FILTERS: Filter[] = (() => {
   banded('Relative volume', (s) => i(s).relVolume, 0.8, 1.5);
   banded('Band width', (s) => i(s).bandWidth, 0.15, 0.5);
 
-  // The readings New.md leans on hardest, added 27 Sep 2026.
+  // The readings the hierarchy spec leans on hardest, added 27 Sep 2026.
   signed('Aroon', (s) => i(s).aroon, 30);
   signed('HMA slope', (s) => i(s).hmaSlope);
   signed('Market structure', (s) => i(s).structureWay);
@@ -200,7 +201,7 @@ async function main() {
   say(`BTCUSD 5m bars ${first} → ${last} (${bars5m.length.toLocaleString()} bars). Same marketState(), same grader.`);
   say('Entry at the signal bar\'s close. A bar touching both stop and target counts as the stop.');
   say('Net = after 0.05% taker fee each side. R = profit ÷ risk. Chosen on 2024+2025; 2026 is out of sample.');
-  say('Every reading docs/New.md asks for is swept as a filter, taken at the signal bar with no lookahead.');
+  say('Every reading the hierarchy spec asks for is swept as a filter, taken at the signal bar with no lookahead.');
   say('A null reading excludes the call rather than counting as neutral, so no filter is padded with calls it could not read.');
   say('Read the "by chance" line under each table before the table: at this many filters, some survive on luck.');
   say();
@@ -210,7 +211,7 @@ async function main() {
   say(`## LEVEL MODE: ${mode} — ${LEVEL_MODE_LABEL[mode]}`);
   say('   Both modes are graded because the live card and this study disagreed about the level until');
   say('   27 Sep 2026: live judged against swings, this judged against the rolling range, and the');
-  say('   screen printed the rolling record beside a swing call. See docs/TODO.md.');
+  say('   screen printed the rolling record beside a swing call. See docs/history/2026-09.md.');
   say();
   for (const tf of TFS) {
     const { signals, bars } = extractSignals(bars5m, tf, mode);

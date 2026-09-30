@@ -547,6 +547,7 @@ export function brokenLinks(files: readonly string[] = repoFiles()): string[] {
 
 /**
  * `docs/<name>.md` named in code or config, where no such page exists.
+ * `<rev>:docs/<name>.md` -- a page in git history -- is allowed.
  *
  * The dated history and the research reports are left out: they record what
  * was true when they were written, including pages that have since moved.
@@ -558,6 +559,8 @@ export function brokenDocMentions(files: readonly string[] = repoFiles()): strin
     if (!TEXT.test(f) || f.startsWith('docs/history/') || f.startsWith('research/')) continue;
     const text = readFileSync(join(ROOT, f), 'utf8');
     for (const m of text.matchAll(/\bdocs\/[A-Za-z0-9_./-]+\.md\b/g)) {
+      // `git show <rev>:docs/x.md` names a page in history, on purpose.
+      if (text[m.index! - 1] === ':') continue;
       if (!existsSync(join(ROOT, m[0]))) out.push(`${f} -> ${m[0]}`);
     }
   }

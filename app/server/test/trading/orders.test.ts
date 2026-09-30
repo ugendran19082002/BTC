@@ -596,7 +596,7 @@ test('76 the target rests as a limit, which can only ever fill at its price or b
  * had been written to my reading of them -- so the suite agreed with the bug
  * and 75 to 79 all passed while real orders lost money.
  *
- * The lesson is the one already written into docs/TODO.md, arriving from a new
+ * The lesson is the one already written into docs/history/2026-09.md, arriving from a new
  * direction: anything the exchange decides has to be *observed* at the exchange,
  * not asserted against a simulator built from the same assumption as the code.
  * What is left here is the property that does not depend on whose semantics are

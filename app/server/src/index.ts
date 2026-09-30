@@ -67,7 +67,7 @@ app.log.info(
  * They were lazy at first, behind the route that reads them -- and the route is
  * behind the session gate, so an unauthenticated probe got a 401, the store was
  * never constructed, and a deploy came up reporting healthy with the tables
- * missing. DB-INVENTORY.md already says why this is the wrong shape: a
+ * missing. docs/decisions/0008-one-database-one-schema.md says why this is the wrong shape: a
  * half-migrated database should stop the boot, and a migration that only runs
  * when somebody logs in cannot.
  */
@@ -120,7 +120,7 @@ liveTickers()
 
 /*
  * The per-strike recorder: every strike of the two nearest expiries, every
- * five minutes (docs/Data.md §4). Checked once a minute; the bucket guard in
+ * five minutes (docs/reference/market-data.md). Checked once a minute; the bucket guard in
  * the table makes it write once per five. Off the request path, and a failure
  * is one warning in the error log, never a stopped desk.
  */
@@ -149,7 +149,7 @@ setTimeout(recordBoardNow, 25_000).unref();
 /*
  * The perpetual's tape, off its own socket: every print, summed per minute
  * by which side crossed the spread, written every twenty seconds so a restart
- * loses at most that much of the hour's flow (docs/test.md §10).
+ * loses at most that much of the hour's flow (the desk spec's order-flow section, `git show 2ed9ef2^:docs/test.md` §10).
  */
 startFlowSocket((line) => app.log.info(line));
 setInterval(() => { flushTradeFlow(Date.now()).catch(warn('trade-flow')); }, 20_000).unref();

@@ -83,7 +83,8 @@ export type Signal = {
     /** Hour of the day, IST. */
     hourIst: number;
     /**
-     * Every reading `docs/New.md` asks for, taken at the signal bar's close.
+     * Every reading the owner's hierarchy spec asks for (New.md, since removed:
+     * `git show b9b5499^:docs/New.md`), taken at the signal bar's close.
      *
      * Two rules make these usable as evidence rather than decoration:
      *
@@ -130,7 +131,7 @@ export type Readings = {
   patternCount: number;
 
   /*
-   * The readings `docs/New.md` leans on hardest, added 27 Sep 2026.
+   * The readings the hierarchy spec leans on hardest, added 27 Sep 2026.
    *
    * RSI, ADX and VWAP come from `market/moves.ts` — the same functions the live
    * ladder reads, exported rather than rewritten. A second RSI written for the

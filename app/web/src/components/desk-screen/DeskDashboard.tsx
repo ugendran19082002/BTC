@@ -12,7 +12,7 @@ import './desk-dashboard.css';
  * width. The KPI strip, expiry prediction and analysis grid went on 28 Sep
  * 2026, and later that day the Big Momentum Signal card and the stats strip
  * (spot, perp, volume, OI, funding, IV, PCR) -- the chart's own readout carries
- * the setup now. See docs/TODO.md.
+ * the setup now. See docs/history/2026-09.md.
  */
 export function DeskDashboard({
   bars,

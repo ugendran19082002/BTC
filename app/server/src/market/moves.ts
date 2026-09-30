@@ -33,7 +33,7 @@ const TREND_TIMEFRAMES: readonly Timeframe[] = ['5m', '15m', '1h', '4h', '1d'];
 /**
  * Every timeframe the Live screen's hierarchy reads, coarsest first.
  *
- * `docs/New.md` asks for 12H / 6H (direction), 4H / 2H (structure),
+ * The owner's hierarchy spec (`git show b9b5499^:docs/New.md`) asks for 12H / 6H (direction), 4H / 2H (structure),
  * 1H / 30M (setup), 15M (pattern), 5M (trigger), 1M (execution). Delta India
  * serves 30m, 2h and 6h natively; **12h it does not** -- the endpoint answers
  * with an empty result, measured 26 Sep 2026 -- so the 12-hour series is built

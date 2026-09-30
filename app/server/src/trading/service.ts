@@ -188,7 +188,7 @@ export class TradingService {
        *
        * It was pushed onto `this.alarms` -- fifty entries in memory, returned by
        * `/api/trade/status`, drawn by no component, gone on restart. So the
-       * safeguard `ARCHITECTURE.md` describes as raising "an alarm, once, where
+       * safeguard docs/decisions/0006-target-is-a-price-stop-is-an-exit.md describes as raising "an alarm, once, where
        * the alerts already go" did not go where the alerts go. A stop asked at
        * 56.5 filled at 65 that day and was found by reading fills by hand.
        *

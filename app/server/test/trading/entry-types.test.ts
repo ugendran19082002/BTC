@@ -103,7 +103,7 @@ test('an exit is the mirror: buy, reduce-only, and a stop watches the mark', () 
 test('post_only is not sent, so a resting order can still be crossed into', () => {
   // post_only would make "rest at the offer" a guarantee: the exchange rejects
   // the order rather than let it take liquidity. Worth having on the ask
-  // button, and written up in docs/TODO.md.
+  // button, and written up in docs/history/2026-09.md.
   assert.equal('post_only' in orderBody(entry(BOOK.ask)), false);
 });
 

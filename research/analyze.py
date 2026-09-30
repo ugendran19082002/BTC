@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """R&D: compare strike-selection / exit / filter variants for the Delta India
 daily-expiry BTC short-premium setup.  CE and PE measured separately.
-Position sizing + margin model taken from test.md."""
+Position sizing + margin model taken from the desk spec test.md (since removed; `git show 2ed9ef2^:docs/test.md`)."""
 import json,os,glob,math,datetime,statistics as st
 IST=datetime.timezone(datetime.timedelta(hours=5,minutes=30))
 CACHE=os.path.join(os.path.dirname(os.path.abspath(__file__)),"cache")

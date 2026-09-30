@@ -81,7 +81,7 @@ def main():
     p('')
     p('  Read this as a description of what these rules would have done on this')
     p('  data. It is not a forecast, and it is not AlgoTest. The AlgoTest')
-    p('  reconciliation in TODO.md is still open; until it closes, treat every')
+    p('  reconciliation in docs/TODO.md is still open; until it closes, treat every')
     p('  number here as a hypothesis about your live results, not a measurement.')
     p('')
 

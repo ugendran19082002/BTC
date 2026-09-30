@@ -7,7 +7,7 @@ import { LOT_BTC } from './score.js';
  * against what BTC has actually been doing.
  *
  * All of it is description. None of it is wired into the recommendation,
- * because none of it survived the screen in feature_screen.py -- see TODO.md
+ * because none of it survived the screen in feature_screen.py -- see docs/history/2026-09.md
  * for what was tested and rejected. It is here so the reader can see the board,
  * not so the engine can quietly start trading it.
  */

@@ -31,7 +31,7 @@ PRUNE=1
 WEB_PORT="${WEB_PORT:-8099}"
 # The address the web port is published on. The docker bridge (the default)
 # reaches a containerised edge proxy and not the internet; 127.0.0.1 suits a
-# proxy on the host; 0.0.0.0 is the internet. See docs/NEW-SERVER.md.
+# proxy on the host; 0.0.0.0 is the internet. See docs/guides/deploy.md.
 WEB_BIND="${WEB_BIND:-172.17.0.1}"
 # Where this script (and its health check) reaches the desk.
 DESK_HOST="$WEB_BIND"; [[ "$DESK_HOST" == "0.0.0.0" ]] && DESK_HOST=127.0.0.1

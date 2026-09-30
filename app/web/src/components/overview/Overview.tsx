@@ -29,7 +29,7 @@ export const screenSpot = (tick: number | null | undefined, snapshot: number | n
  * The Big Move Catch section's signal history and big move risk, What changed,
  * volatility & skew, the multi-timeframe table and the strategy decision
  * were removed on 28 Sep 2026, with the dashboard's KPI strip, expiry
- * prediction and analysis grid. See docs/TODO.md.
+ * prediction and analysis grid. See docs/history/2026-09.md.
  *
  * Every figure is read from the chain response, the perp feed or the desk's
  * own record, or is arithmetic on them (lib/overview.ts). Nothing here places

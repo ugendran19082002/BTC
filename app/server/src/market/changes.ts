@@ -8,7 +8,7 @@ import { marketSchema } from './oi-history.js';
 /**
  * What changed over the last 1m … 12h: BTC, one strike's premium / OI / IV /
  * volume, and the board's call and put open interest, volume and PCR -- the
- * "diff" a seller reads before entry (docs/test.md §Premium Engine, §OI).
+ * "diff" a seller reads before entry (the desk spec, `git show 2ed9ef2^:docs/test.md`, §Premium Engine, §OI).
  *
  * Sources, each at its own resolution and said so: BTC from the cached
  * candles (1-minute for eight hours, 5-minute beyond); the strike and the
