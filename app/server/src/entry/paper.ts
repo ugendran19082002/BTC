@@ -182,31 +182,65 @@ export type MethodRecord = {
   working: number;
   avgR: number | null;
   sumR: number | null;
+  /** Gross R won over gross R lost. Null with no losing trade to divide by. */
+  profitFactor: number | null;
+  /** Deepest fall of the running R total from its high, in R (0 or negative). */
+  maxDrawdownR: number | null;
+  avgWinR: number | null;
+  avgLossR: number | null;
   since: number | null;
 };
 
-/** Each method's record, with the timeframe chain and without it. */
-export async function entryRecord(): Promise<MethodRecord[]> {
+/** The same figures over a set of closed trades' R, in the order they closed. Pure. */
+export function statsOf(rs: readonly number[]): Pick<MethodRecord, 'trades' | 'wins' | 'avgR' | 'sumR' | 'profitFactor' | 'maxDrawdownR' | 'avgWinR' | 'avgLossR'> {
+  if (!rs.length) return { trades: 0, wins: 0, avgR: null, sumR: null, profitFactor: null, maxDrawdownR: null, avgWinR: null, avgLossR: null };
+  const wins = rs.filter((r) => r > 0);
+  const losses = rs.filter((r) => r <= 0);
+  const sum = rs.reduce((a, b) => a + b, 0);
+  const won = wins.reduce((a, b) => a + b, 0);
+  const lost = -losses.reduce((a, b) => a + b, 0);
+  let run = 0;
+  let peak = 0;
+  let dd = 0;
+  for (const r of rs) { run += r; peak = Math.max(peak, run); dd = Math.min(dd, run - peak); }
+  return {
+    trades: rs.length, wins: wins.length, avgR: sum / rs.length, sumR: sum,
+    profitFactor: lost > 0 ? won / lost : null, maxDrawdownR: dd,
+    avgWinR: wins.length ? won / wins.length : null, avgLossR: losses.length ? -lost / losses.length : null,
+  };
+}
+
+type ClosedRow = { method: string; mode: 'mtf' | 'single'; tf: Tf; status: PaperRow['status']; r_net: number | null; first_seen: number };
+
+/**
+ * Each method's record, with the timeframe chain and without it, and each
+ * mode's total over all twelve -- the comparison the screen puts side by side.
+ */
+export async function entryRecord(): Promise<{ records: MethodRecord[]; totals: MethodRecord[] }> {
   await entrySchema();
-  const out = await rows<{
-    method: string; mode: 'mtf' | 'single'; tf: Tf; setups: number; trades: number; wins: number;
-    expired: number; working: number; avg_r: number | null; sum_r: number | null; since: number | null;
-  }>(
-    `SELECT method, mode, tf,
-            count(*)::int AS setups,
-            count(*) FILTER (WHERE status IN ('tp1', 'stop', 'timeout'))::int AS trades,
-            count(*) FILTER (WHERE status = 'tp1')::int AS wins,
-            count(*) FILTER (WHERE status = 'expired')::int AS expired,
-            count(*) FILTER (WHERE status IN ('open', 'filled'))::int AS working,
-            avg(r_net) FILTER (WHERE status IN ('tp1', 'stop', 'timeout')) AS avg_r,
-            sum(r_net) FILTER (WHERE status IN ('tp1', 'stop', 'timeout')) AS sum_r,
-            min(first_seen) AS since
-       FROM entry_setups GROUP BY method, mode, tf ORDER BY method, mode, tf`,
+  const all = await rows<ClosedRow>(
+    `SELECT method, mode, tf, status, r_net, first_seen FROM entry_setups ORDER BY coalesce(exit_at, graded_to), id`,
   );
-  return out.map((x) => ({
-    method: x.method, mode: x.mode, tf: x.tf, setups: x.setups, trades: x.trades, wins: x.wins,
-    expired: x.expired, working: x.working, avgR: x.avg_r, sumR: x.sum_r, since: x.since,
-  }));
+  const group = (key: (r: ClosedRow) => string) => {
+    const m = new Map<string, ClosedRow[]>();
+    for (const r of all) m.set(key(r), [...(m.get(key(r)) ?? []), r]);
+    return m;
+  };
+  const recordOf = (xs: ClosedRow[], method: string): MethodRecord => {
+    const closed = xs.filter((x) => x.status === 'tp1' || x.status === 'stop' || x.status === 'timeout');
+    return {
+      method, mode: xs[0]!.mode, tf: xs[0]!.tf,
+      setups: xs.length,
+      expired: xs.filter((x) => x.status === 'expired').length,
+      working: xs.filter((x) => x.status === 'open' || x.status === 'filled').length,
+      since: Math.min(...xs.map((x) => x.first_seen)),
+      ...statsOf(closed.map((x) => x.r_net ?? 0)),
+    };
+  };
+  const records = [...group((r) => `${r.method}|${r.mode}|${r.tf}`).values()].map((xs) => recordOf(xs, xs[0]!.method))
+    .sort((a, b) => a.method.localeCompare(b.method) || a.mode.localeCompare(b.mode) || a.tf.localeCompare(b.tf));
+  const totals = [...group((r) => `${r.mode}|${r.tf}`).values()].map((xs) => recordOf(xs, 'all'));
+  return { records, totals };
 }
 
 /** The latest setups written, newest first, for the log under the board. */

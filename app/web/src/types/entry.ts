@@ -38,18 +38,33 @@ export type MethodRead = {
   triggerTime: number | null;
 };
 
+/** One timeframe of the chain: its trend and what its last swings did. */
+export type TimeframeRow = {
+  tf: EntryTf;
+  role: string;
+  trend: -1 | 0 | 1;
+  label: 'Bullish' | 'Bearish' | 'Neutral' | 'Not read';
+  structure: string;
+};
+
 export type EntryBoard = {
   at: number;
   tf: EntryTf;
   reads: MethodRead[];
   chain: { tf: EntryTf; role: string; weight: number }[];
+  timeframes: TimeframeRow[];
 };
 
 export type EntryRecord = {
   method: string; mode: EntryMode; tf: EntryTf;
   setups: number; trades: number; wins: number; expired: number; working: number;
-  avgR: number | null; sumR: number | null; since: number | null;
+  avgR: number | null; sumR: number | null;
+  profitFactor: number | null; maxDrawdownR: number | null;
+  avgWinR: number | null; avgLossR: number | null;
+  since: number | null;
 };
+
+export type EntryRecordResponse = { records: EntryRecord[]; totals: EntryRecord[]; recent: unknown[] };
 
 /** What the price chart draws for the chosen setup. */
 export type EntryOverlay = {

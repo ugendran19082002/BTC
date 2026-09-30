@@ -58,7 +58,7 @@ export function DeskDashboard({
       <div className="desk-chart-row">
         <DeskChart bars={bars} ltp={ltp} strikes={strikes} derivs={derivs} tf={tf} loading={loading} error={error} entry={entry} />
       </div>
-      <EntrySection bars={bars} onOverlay={setEntry} />
+      <EntrySection onOverlay={setEntry} />
     </div>
   );
 }

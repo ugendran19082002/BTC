@@ -1,0 +1,69 @@
+import { cn } from '@/lib/utils';
+import type { EntryRecord, EntryTf, MethodRead } from '@/types/entry';
+
+/**
+ * The entry section's small pieces, shared by the panels, the grid and the
+ * comparison: the signal chip, the method's number badge, the per-timeframe
+ * tick, and how a record and a number are written.
+ */
+
+/** BUY / SELL for a TRADE, WAIT, NO -- the reference's words for the three states. */
+export function signalOf(r: Pick<MethodRead, 'state' | 'dir'>): 'BUY' | 'SELL' | 'WAIT' | 'NO' {
+  if (r.state === 'TRADE') return r.dir === 'short' ? 'SELL' : 'BUY';
+  return r.state === 'WAIT' ? 'WAIT' : 'NO';
+}
+
+const CHIP: Record<ReturnType<typeof signalOf>, string> = {
+  BUY: 'bg-[#26a17b] text-white',
+  SELL: 'bg-[#e2504f] text-white',
+  WAIT: 'bg-[#b7791f] text-white',
+  NO: 'bg-muted text-muted-foreground',
+};
+
+export function SignalChip({ read }: { read: Pick<MethodRead, 'state' | 'dir' | 'reason'> }) {
+  const s = signalOf(read);
+  return (
+    <span title={read.reason} className={cn('inline-block min-w-[44px] rounded px-1.5 py-px text-center text-[10.5px] font-bold', CHIP[s])}>
+      {s}
+    </span>
+  );
+}
+
+const BADGE: Record<MethodRead['group'], string> = {
+  breakout: 'bg-[#2563eb]',
+  pullback: 'bg-[#7c3aed]',
+  reversal: 'bg-[#db2777]',
+  flow: 'bg-[#d97706]',
+};
+
+export function NumberBadge({ read }: { read: Pick<MethodRead, 'n' | 'group'> }) {
+  return (
+    <span aria-hidden className={cn('inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10.5px] font-bold text-white', BADGE[read.group])}>
+      {read.n}
+    </span>
+  );
+}
+
+/** ✓ all of that timeframe's checks passed, ✗ one failed, ? could not be read, · not part of this read. */
+export function tickOf(read: MethodRead, tf: EntryTf): '✓' | '✗' | '?' | '·' {
+  const steps = read.steps.filter((s) => s.tf === tf);
+  if (!steps.length) return '·';
+  if (steps.some((s) => s.ok === false)) return '✗';
+  if (steps.some((s) => s.ok === null)) return '?';
+  return '✓';
+}
+
+export const TICK_CLASS: Record<ReturnType<typeof tickOf>, string> = {
+  '✓': 'text-[var(--up)]', '✗': 'text-[var(--down)]', '?': 'text-[var(--warn)]', '·': 'text-muted-foreground',
+};
+
+/** "12 trades · 42% · −0.08R", or how many are still working. */
+export function recordText(r: EntryRecord | null): string {
+  if (!r || r.setups === 0) return 'no record yet';
+  if (r.trades === 0) return `${r.setups} logged, none closed`;
+  const avg = r.avgR === null ? '' : ` · ${signedR(r.avgR)}`;
+  return `${r.trades} trade${r.trades === 1 ? '' : 's'} · ${Math.round((100 * r.wins) / r.trades)}%${avg}`;
+}
+
+export const fmt = (p: number) => Math.round(p).toLocaleString('en-US');
+export const signedR = (r: number, dp = 2) => `${r >= 0 ? '+' : '−'}${Math.abs(r).toFixed(dp)}R`;

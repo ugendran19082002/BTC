@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Candle } from '../../src/market/delta.js';
-import { entryBoard, readMethod, rrAfterFees, MIN_RR } from '../../src/entry/engine.js';
+import { entryBoard, readMethod, rrAfterFees, timeframeRows, MIN_RR } from '../../src/entry/engine.js';
 import { METHODS } from '../../src/entry/methods.js';
 import type { EntryContext, Frames } from '../../src/entry/types.js';
 import { ctxOf, path, wave } from './bars.js';
@@ -170,4 +170,12 @@ test('[critical] the score is quality out of 100, and what is not recorded is sa
 
 test('R:R counts the taker fee on the way in and on the way out', () => {
   assert.ok(Math.abs(rrAfterFees(100, 99, 102) - (2 - 0.0005 * 202) / (1 + 0.0005 * 202)) < 1e-12);
+});
+
+test('the timeframe rows: each of the chain\'s seven, its trend and what its swings did', () => {
+  const rows = timeframeRows(withChain({ h1: -6 }));
+  assert.deepEqual(rows.map((r) => r.tf), ['4h', '1h', '30m', '15m', '5m', '3m', '1m']);
+  assert.deepEqual([rows[0]!.label, rows[0]!.structure], ['Bullish', 'HH / HL']);
+  assert.deepEqual([rows[1]!.label, rows[1]!.structure], ['Bearish', 'LH / LL']);
+  assert.equal(rows[6]!.label, 'Not read', 'four 1m candles are not enough to read');
 });

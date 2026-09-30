@@ -293,3 +293,31 @@ export function readMethod(m: (typeof METHODS)[number], mode: Mode, tf: Tf, ctx:
 export function entryBoard(ctx: EntryContext, tf: Tf = '5m'): MethodRead[] {
   return (['mtf', 'single'] as const).flatMap((mode) => METHODS.map((m) => readMethod(m, mode, tf, ctx)));
 }
+
+export type TimeframeRow = {
+  tf: Tf;
+  role: string;
+  /** +1 up, −1 down, 0 neither -- EMA stack and swings agreeing (`trendOf`). */
+  trend: -1 | 0 | 1;
+  label: 'Bullish' | 'Bearish' | 'Neutral' | 'Not read';
+  /** What the last two swings did: "HH / HL", "LH / LL", "range". */
+  structure: string;
+};
+
+/**
+ * Each timeframe of the chain, read once for the whole board: the trend and
+ * what its last swings did. The same reading every method's chain step uses.
+ */
+export function timeframeRows(ctx: EntryContext): TimeframeRow[] {
+  return CHAIN.map(({ tf, role }) => {
+    const bars = ctx.frames[tf] ?? [];
+    if (bars.length < MIN_BARS) return { tf, role, trend: 0, label: 'Not read', structure: `${bars.length} candles` };
+    const t = trendOf(bars);
+    const hs = pivots(bars, 'high').slice(-2);
+    const ls = pivots(bars, 'low').slice(-2);
+    const hh = hs.length === 2 ? (hs[1]!.price > hs[0]!.price ? 'HH' : 'LH') : null;
+    const hl = ls.length === 2 ? (ls[1]!.price > ls[0]!.price ? 'HL' : 'LL') : null;
+    const structure = hh && hl ? (hh === 'HH' && hl === 'HL' ? 'HH / HL' : hh === 'LH' && hl === 'LL' ? 'LH / LL' : `range (${hh} / ${hl})`) : 'no swings yet';
+    return { tf, role, trend: t, label: t === 1 ? 'Bullish' : t === -1 ? 'Bearish' : 'Neutral', structure };
+  });
+}

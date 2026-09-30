@@ -1,7 +1,7 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Candle } from '../../src/market/delta.js';
-import { FILL_WITHIN_BARS, HOLD_BARS, entryRecord, gradeRow, gradeSetups, rNetOf, recordSetups, type PaperRow } from '../../src/entry/paper.js';
+import { FILL_WITHIN_BARS, HOLD_BARS, entryRecord, gradeRow, gradeSetups, rNetOf, recordSetups, statsOf, type PaperRow } from '../../src/entry/paper.js';
 import type { MethodRead } from '../../src/entry/types.js';
 import { closePool, rows } from '../../src/db/pool.js';
 
@@ -102,7 +102,21 @@ test('[critical] a TRADE is written once, however many minutes it stays on the b
   await gradeSetups([minute(5, 84_050, 84_060, 84_005, 84_020), minute(6, 84_020, 84_310, 84_015, 84_290)]);
   const [x] = await rows<{ status: string; r_net: number }>("SELECT status, r_net FROM entry_setups WHERE mode = 'single'");
   assert.equal(x?.status, 'tp1');
-  const rec = await entryRecord();
-  assert.deepEqual(rec.map((r) => [r.method, r.mode, r.trades, r.wins]), [['breakout', 'mtf', 1, 1], ['breakout', 'single', 1, 1]],
+  const { records, totals } = await entryRecord();
+  assert.deepEqual(records.map((r) => [r.method, r.mode, r.trades, r.wins]), [['breakout', 'mtf', 1, 1], ['breakout', 'single', 1, 1]],
     'with the chain and without it, counted apart');
+  assert.deepEqual(totals.map((t) => [t.mode, t.trades]).sort(), [['mtf', 1], ['single', 1]], 'and each mode totalled');
+});
+
+test('[critical] the record\'s figures: win rate, profit factor, and the deepest fall of the running total', () => {
+  const s = statsOf([2, -1, -1, -1, 3, -1]);
+  assert.equal(s.trades, 6);
+  assert.equal(s.wins, 2);
+  assert.equal(s.sumR, 1);
+  assert.equal(s.profitFactor, 5 / 4);
+  assert.equal(s.maxDrawdownR, -3, 'from +2 down to -1');
+  assert.equal(s.avgWinR, 2.5);
+  assert.equal(s.avgLossR, -1);
+  assert.equal(statsOf([1, 2]).profitFactor, null, 'no loss to divide by');
+  assert.equal(statsOf([]).trades, 0);
 });

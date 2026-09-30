@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { entryBoard } from '../../entry/engine.js';
+import { entryBoard, timeframeRows, type TimeframeRow } from '../../entry/engine.js';
 import { readEntryContext } from '../../entry/read.js';
 import { entryRecord, recentSetups } from '../../entry/paper.js';
 import { CHAIN, TF_SEC, type MethodRead, type Tf } from '../../entry/types.js';
@@ -15,7 +15,7 @@ const SINGLE_TFS: readonly Tf[] = ['1m', '3m', '5m', '15m', '30m', '1h', '4h'];
 
 export function registerEntryRoutes(app: FastifyInstance) {
   // One read per timeframe for ten seconds, whatever the number of screens asking.
-  const boardCache = ttlCache<{ at: number; tf: Tf; reads: MethodRead[] }>(10_000);
+  const boardCache = ttlCache<{ at: number; tf: Tf; reads: MethodRead[]; timeframes: TimeframeRow[] }>(10_000);
 
   // The 24 reads: each method with the timeframe chain (entry on 5m), then without it on `tf` (default 5m).
   app.get('/api/entry/board', async (req, reply) => {
@@ -24,7 +24,7 @@ export function registerEntryRoutes(app: FastifyInstance) {
     try {
       const board = await boardCache(tf, async () => {
         const ctx = await readEntryContext();
-        return { at: ctx.now, tf, reads: entryBoard(ctx, tf) };
+        return { at: ctx.now, tf, reads: entryBoard(ctx, tf), timeframes: timeframeRows(ctx) };
       });
       return { ...board, chain: CHAIN, tfSec: TF_SEC };
     } catch (e) {
@@ -35,7 +35,7 @@ export function registerEntryRoutes(app: FastifyInstance) {
 
   // Each method's paper record, with the chain and without it, and the latest setups written.
   app.get('/api/entry/record', async () => ({
-    records: await entryRecord(),
+    ...(await entryRecord()),
     recent: await recentSetups(50),
   }));
 }
