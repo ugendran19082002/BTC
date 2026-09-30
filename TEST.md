@@ -1381,3 +1381,385 @@ Execution = WHERE exactly?
 Exit engine = WHERE SL / TP?
 
 இதுதான் cleanest structure. 80 separate signals-ஐ chart-ல் காட்டாமல், backend-ல் process செய்து final-ஆ ENTRY / WAIT / NO TRADE + Entry / SL / TP மட்டும் காட்டுவது உங்க project-க்கு மிகவும் suitable.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ஆம். இந்த 12 methods-க்கும் exact formula/logic ஒரே structure-ல் define பண்ணலாம். முக்கியமாக Timeframe ஒரு separate method இல்லை — ஒவ்வொரு method-க்கும் HTF/MTF/LTF confirmation layer ஆக இருக்கும்.
+
+கீழே implementation-ready logic கொடுக்கிறேன்.
+
+Common notation
+C  = Close
+O  = Open
+H  = High
+L  = Low
+V  = Volume
+ATR = ATR(14)
+EMA20 = EMA(20)
+VWAP = Session VWAP
+RVOL = Volume / SMA(Volume,20)
+
+MSS = Market Structure Shift
+BOS = Break of Structure
+FVG = Fair Value Gap
+OB  = Order Block
+Δ   = Bid Volume - Ask Volume
+CVD = cumulative delta
+
+TF = timeframe alignment score
+12 Entry Methods — Formula Logic
+#	Method	Core formula / trigger
+1	Breakout	Close > RangeHigh20 AND RVOL >= 1.5 AND CloseLocation >= 0.7 → LONG
+2	Breakout + Retest	BreakoutConfirmed AND Low <= BrokenLevel + tolerance AND Close > BrokenLevel → LONG
+3	Liquidity Sweep	Low < SwingLow - sweepBuffer AND Close > SwingLow AND MSS_Bullish → LONG
+4	FVG Retest	BullishDisplacement AND FVG_exists AND Price ∈ FVG AND rejection/close_up → LONG
+5	Order Block Retest	ValidBullishOB AND Price enters OB AND rejection AND MSS/BOS → LONG
+6	BOS	Close > PreviousSwingHigh AND displacement AND trendAligned → LONG
+7	MSS / CHoCH	LiquiditySweep AND Close > LastLowerHigh → Bullish MSS
+8	Momentum	Body >= 1.5*ATR AND RVOL >= 1.5 AND FollowThrough = TRUE AND notExtended
+9	Pullback	TrendBullish AND Price≈EMA20 AND rejection AND previousHighBreak
+10	VWAP / Mean Reversion	DistanceFromVWAP >= 2σ AND reversalCandle AND VWAPReversionConfirm
+11	Order Flow	AtKeyLevel AND Absorption AND DeltaFlip AND CVDConfirm
+12	Options / Derivatives	NearOIWall AND WallReaction AND BigMoveRiskCompatible AND PriceConfirmation
+1. Breakout
+LONG
+RangeHigh = highest(high, 20)
+
+Breakout =
+    Close > RangeHigh
+    AND RVOL >= 1.5
+    AND CloseLocation >= 0.70
+
+Where:
+
+CloseLocation =
+    (Close - Low) / (High - Low)
+
+Meaning candle close should be near its high.
+
+SHORT
+Close < RangeLow20
+AND RVOL >= 1.5
+AND CloseLocation <= 0.30
+TF version
+4H/1H → direction
+30M/15M → important range
+5M → breakout
+3M → momentum confirmation
+1M → execution/retest
+2. Breakout + Retest
+
+Breakout மட்டும் போதாது.
+
+BreakoutConfirmed = TRUE
+
+Retest =
+    Price touches BrokenLevel ± tolerance
+    AND Close remains above BrokenLevel
+    AND rejection = TRUE
+
+Final:
+
+Breakout
+AND Retest
+AND Rejection
+→ ENTRY
+
+இதனால் fake breakout filter செய்ய முடியும்.
+
+3. Liquidity Sweep
+
+இதுதான் முக்கியமான reversal logic.
+
+Bullish
+Sweep =
+    Low < PreviousSwingLow - Buffer
+
+Recovery =
+    Close > PreviousSwingLow
+
+MSS =
+    Close > LastLowerHigh
+
+Final:
+
+Sweep
+AND Recovery
+AND MSS
+→ LONG
+Bearish
+High > PreviousSwingHigh + Buffer
+AND Close < PreviousSwingHigh
+AND Close < LastHigherLow
+→ SHORT
+4. FVG Retest
+
+Bullish displacement candle:
+
+Low[0] > High[2]
+
+So:
+
+FVG_Low  = High[2]
+FVG_High = Low[0]
+
+Retest:
+
+Price enters FVG
+AND rejection occurs
+AND displacement resumes
+
+Final:
+
+ValidFVG
+AND FVG_Retest
+AND Reaction
+→ ENTRY
+5. Order Block Retest
+
+Bullish OB:
+
+LastBearishCandle
+BEFORE
+StrongBullishDisplacement
++
+BOS/MSS
+
+OB zone:
+
+OB_High = CandleHigh
+OB_Low  = CandleLow
+
+Entry:
+
+Price ∈ OB
+AND rejection
+AND structure confirmation
+→ LONG
+
+Invalidation:
+
+Close < OB_Low
+6. BOS
+
+Bullish:
+
+PreviousSwingHigh = SH
+
+BOS =
+    Close > SH
+    AND displacement > minimumThreshold
+
+Then ideally:
+
+BOS
++
+Retest
++
+Continuation
+
+Final:
+
+BOSConfirmed
+AND TrendAligned
+→ LONG
+7. MSS / CHoCH
+
+This is different from simple BOS.
+
+Bullish reversal:
+
+1. Existing bearish structure
+2. Liquidity sweep
+3. Bullish displacement
+4. Close > LastLowerHigh
+
+Formula:
+
+SweepLow = TRUE
+AND Close > LastLH
+AND Displacement = TRUE
+→ Bullish MSS
+
+Then:
+
+MSS
++
+Retest
+→ ENTRY
+8. Momentum
+
+Don't simply use "big green candle".
+
+Use:
+
+BodySize = abs(Close - Open)
+
+BodySize >= 1.5 * ATR14
+AND RVOL >= 1.5
+AND CloseLocation >= 0.75
+AND FollowThrough = TRUE
+AND Extension < MaxExtension
+
+Then:
+
+MomentumScore >= threshold
+→ ENTRY
+Important
+
+If price already moved too far:
+
+Extension > MaxExtension
+→ NO CHASE
+9. Pullback / Trend Continuation
+
+Bullish trend:
+
+HH + HL structure
+
+Pullback:
+
+Price approaches EMA20
+AND trend remains bullish
+
+Confirmation:
+
+Rejection from EMA20
+AND Close > previous micro swing high
+
+Final:
+
+HTF_Bullish
+AND EMA20_Pullback
+AND Rejection
+AND MicroBOS
+→ LONG
+10. VWAP / Mean Reversion
+
+Calculate:
+
+Distance =
+    (Price - VWAP) / σ
+
+Extreme:
+
+abs(Distance) >= 2.0
+
+LONG:
+
+Distance <= -2
+AND reversal candle
+AND delta improves
+AND price starts returning toward VWAP
+
+SHORT:
+
+Distance >= +2
+AND reversal candle
+AND delta weakens
+Critical gate
+
+Trend day:
+
+StrongTrend = TRUE
+→ MeanReversion = DISABLED
+
+Otherwise you'll repeatedly short a strong rally / buy a strong dump.
+
+11. Order Flow / Footprint
+
+This should combine absorption + delta + CVD, not just one number.
+
+Example bullish:
+
+Price reaches Support
+AND
+Aggressive Sellers ↑
+BUT
+Price does NOT continue down
+
+That is absorption.
+
+Then:
+
+Delta flips positive
+AND CVD turns up
+AND price breaks micro structure
+
+Final:
+
+Absorption
+AND DeltaFlip
+AND CVDConfirm
+AND MicroBOS
+→ LONG
+
+Conceptually:
+
+Selling pressure ↑
+Price ↓ இல்லை
+        ↓
+ABSORPTION
+        ↓
+Delta ↑
+        ↓
+MSS/BOS
+        ↓
+LONG
+12. Options / Derivatives
+
+For your BTC options system, this can be the highest-level context layer.
+
+Inputs:
+
+OI Wall
+OI Change
+Funding
+IV
+Expected Move
+Expiry Time
+Price
+Volume
+Big-Move Risk
+
+Example bullish setup:
+
+Price near OI support
+AND
+OI wall holds
+AND
+Price rejects support
+AND
+Spot structure bullish
+AND
+BigMoveRisk != bearish
+
+Then:
+
+DerivativesContext = PASS
+
+But OI wall alone should never generate an entry.
+
+Better:
+
+OI Wall
++
+Price Reaction
++
+Structure Confirmation
++
+Flow Confirmation
+→ ENTRY

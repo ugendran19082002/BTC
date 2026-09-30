@@ -150,31 +150,6 @@
 
 /* Center 3-column row */
 
-.desk-chart-panel {
-  background: var(--desk-card-bg);
-  border: 1px solid var(--desk-border);
-  border-radius: 12px;
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  min-height: 480px;
-}
-
-.desk-chart-container {
-  position: relative;
-  flex: 1;
-  width: 100%;
-  min-height: 380px;
-}
-
-.desk-chart-panel .price-chart {
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  padding: 0 !important;
-  margin: 0 !important;
-}
-
 /* Overlaid Zone Badges */
 
 /* Expiry Prediction Card */
@@ -202,12 +177,6 @@
 /* 1. Large Laptops / Desktops (<= 1400px) */
 
 /* 2. Standard Laptops / Small Desktops (<= 1200px) */
-@media (max-width: 1200px) {
-  .desk-chart-panel {
-    grid-column: span 2;
-    min-height: 420px;
-  }
-}
 
 /* 3. Tablets / Portrait Monitors (<= 1024px) */
 @media (max-width: 1024px) {
@@ -219,10 +188,6 @@
     align-items: stretch;
     gap: 10px;
     padding: 10px 12px;
-  }
-  .desk-chart-panel {
-    grid-column: span 1;
-    min-height: 400px;
   }
 }
 
@@ -281,16 +246,6 @@
 
   /* 5 KPI Cards on Mobile */
 
-  /* Chart on Mobile */
-  .desk-chart-panel {
-    padding: 8px;
-    min-height: 360px;
-  }
-
-  .desk-chart-container {
-    min-height: 280px;
-  }
-
   /* Stats Strip on Mobile */
 
   /* Bottom Grid on Mobile */
@@ -331,10 +286,6 @@
   .desk-btn-tool {
     padding: 6px 8px;
   }
-
-  .desk-chart-container {
-    min-height: 240px;
-  }
 }
 
 /* 6. Tiny Mobile Phones (<= 360px) */
@@ -367,22 +318,4 @@
 @media (max-width: 600px) {
   .desk-header-row .desk-title-group span { display: none; }
   .desk-header-row .desk-header-actions { margin-left: 0; width: 100%; }
-}
-
-/* The price chart on a row of its own, full width (28 Sep 2026); the momentum
-   signal sits under it at the same width. */
-.desk-chart-row {
-  display: block;
-  width: 100%;
-  margin-bottom: 12px;
-}
-.desk-chart-row .desk-chart-panel {
-  width: 100%;
-  min-height: 520px;
-}
-@media (max-width: 1024px) {
-  .desk-chart-row .desk-chart-panel { min-height: 420px; }
-}
-@media (max-width: 600px) {
-  .desk-chart-row .desk-chart-panel { min-height: 340px; }
 }

@@ -75,24 +75,23 @@ export function ModePanel({ mode, reads, timeframes, selected, onChoose, total, 
         <span className="text-muted-foreground">
           BTCUSD · {chartTf}{selected ? ` · ${selected.name}` : ''}{drawn ? '' : setupsOn ? ' · no levels (not a TRADE)' : ' · setups off'}
         </span>
-        {mode === 'single' ? (
-          <label className="flex items-center gap-1 text-muted-foreground">
-            timeframe
-            <select aria-label="timeframe without the chain" value={chartTf} onChange={(e) => onChartTf(e.target.value as EntryTf)}
-                    className="rounded border border-border bg-transparent px-1 py-0.5 text-foreground">
-              {SINGLE_TFS.map((x) => <option key={x} value={x}>{x}</option>)}
-            </select>
-          </label>
-        ) : (
-          <div role="group" aria-label="chart timeframe" className="inline-flex overflow-hidden rounded border border-border">
+        {/*
+          One timeframe switch on both sides, chips rather than a native select:
+          the browser's own dropdown opened white-on-grey over the dark desk.
+          Without the chain it also moves the reads; with it, only the view.
+        */}
+        <div className="flex items-center gap-1.5">
+          <span className="text-muted-foreground">{mode === 'single' ? 'read on' : 'view'}</span>
+          <div role="group" aria-label={mode === 'single' ? 'timeframe without the chain' : 'chart timeframe'}
+               className="inline-flex overflow-hidden rounded border border-border">
             {SINGLE_TFS.map((x) => (
               <button key={x} type="button" aria-pressed={chartTf === x} onClick={() => onChartTf(x)}
-                      className={cn('px-1.5 py-0.5', chartTf === x ? 'bg-[#2563eb] text-white' : 'text-muted-foreground')}>
+                      className={cn('min-w-[30px] px-1.5 py-0.5', chartTf === x ? 'bg-[#2563eb] text-white' : 'text-muted-foreground hover:bg-muted')}>
                 {x}
               </button>
             ))}
           </div>
-        )}
+        </div>
       </div>
       <PriceChart {...chart(chartTf)} tf={chartTf} entry={drawn} size="panel" label={`${copy.title} chart`} />
 

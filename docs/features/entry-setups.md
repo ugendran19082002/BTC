@@ -129,7 +129,8 @@ setups. `GET /api/entry/board` also carries each timeframe's trend and swings
 
 ## The screen
 
-On the **desk** tab, under the price chart, laid out as the owner's reference
+On the **desk** tab, under its header -- the desk has no other chart since
+30 Sep 2026 -- laid out as the owner's reference
 (30 Sep 2026): first an **Entry methods** table -- the one place the twelve
 names are written, by number (1 Breakout, 2 Breakout + retest, ...), with each
 method's group, what it looks for, and its signal on both sides; choosing a name
@@ -137,11 +138,14 @@ chooses that method in both panels -- then the two ways **side by side** --
 *12 methods · without timeframe* and *12 methods + timeframe* -- stacked on a
 phone, where a method is its **number only**. Each panel has:
 
-- **A chart** of its own: without timeframe, on the timeframe chosen there
-  (1m-4H, which is also what its reads use); with timeframe, a 1m-4H switch to
-  look at any timeframe of the chain. A TRADE's entry, SL, TP1, TP2 and TP3 are
-  labelled on the price axis. BTC's price and its move over the candles shown
-  sit above it.
+- **The desk's price chart** ([price-chart.md](price-chart.md)) -- candles,
+  structure, liquidity, order flow, option strikes, its readout and Layers
+  menu -- on that panel's timeframe: without timeframe, the 1m-4H chips set
+  what its reads use and the chart follows; with timeframe, the chips only
+  change what the chart shows (the reads stay at 5m). The chart decides no
+  entry of its own: it draws the panel's chosen TRADE -- the entry zone as a
+  box from its trigger candle, SL and TP1-TP3 as lines to the right edge.
+  Both charts share one set of reads (`entry/feed.ts`).
 - **The 12 methods** as a table: the method's number (coloured by group), the
   signal -- **BUY** / **SELL** (a TRADE), **WAIT**, **NO** -- the quality score
   and a one-line why; with timeframe, a tick per timeframe (✓ passed, ✗ failed,
@@ -161,9 +165,15 @@ phone, where a method is its **number only**. Each panel has:
 Underneath, **Without vs with timeframe**: the two records compared metric by
 metric (setups, trades, win rate, average win and loss, profit factor, net R,
 max drawdown) -- the reference's historical comparison, from the real log only.
-A **12 charts** switch shows the twelve of one way as twelve small charts, and
-**Setups on chart** turns every drawn level off (the plain charts). The chosen
-TRADE is also drawn on the desk's main chart above.
+A **12 charts** switch shows the twelve of one way as twelve small price charts
+(no readout or toolbar), each with its own TRADE, and **Setups on chart** turns
+every drawn level off (the plain charts).
+
+Until 30 Sep 2026 the desk also had a full-width main chart above this
+section, with an entry logic of its own (the SMC engine's setup and the 1H
+trend plan), and the chosen TRADE was drawn there too. At the owner's request
+the chart lost its own logic, its main-chart place went, and it now lives in
+the two panels -- one entry logic on the desk, this one.
 
 Three things differ from the reference on purpose:
 
@@ -187,5 +197,6 @@ Three things differ from the reference on purpose:
 | [entry/read.ts](../../app/server/src/entry/read.ts) | the market context, best-effort |
 | [entry/paper.ts](../../app/server/src/entry/paper.ts) | the log, its grading and the record |
 | [entry.routes.ts](../../app/server/src/http/routes/entry.routes.ts) | `GET /api/entry/board`, `GET /api/entry/record` |
-| [EntrySection.tsx](../../app/web/src/components/desk/entry/EntrySection.tsx), [ModePanel.tsx](../../app/web/src/components/desk/entry/ModePanel.tsx), [EntryChart.tsx](../../app/web/src/components/desk/entry/EntryChart.tsx), [EntryGrid.tsx](../../app/web/src/components/desk/entry/EntryGrid.tsx), [parts.tsx](../../app/web/src/components/desk/entry/parts.tsx), [entry-layer.ts](../../app/web/src/components/desk/chart/entry-layer.ts) | the screen |
+| [EntrySection.tsx](../../app/web/src/components/desk/entry/EntrySection.tsx), [ModePanel.tsx](../../app/web/src/components/desk/entry/ModePanel.tsx), [EntryGrid.tsx](../../app/web/src/components/desk/entry/EntryGrid.tsx), [parts.tsx](../../app/web/src/components/desk/entry/parts.tsx) | the screen |
+| [feed.ts](../../app/web/src/components/desk/entry/feed.ts), [PriceChart.tsx](../../app/web/src/components/desk/PriceChart.tsx), [entry-layer.ts](../../app/web/src/components/desk/chart/entry-layer.ts) | the charts: their shared reads, the chart, the setup drawn on it |
 | `test/entry/*.test.ts` | every primitive, detector, gate and grading rule |

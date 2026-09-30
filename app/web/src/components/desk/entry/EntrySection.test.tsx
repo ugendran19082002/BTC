@@ -84,7 +84,7 @@ const total = (mode: 'mtf' | 'single', over: Partial<EntryRecord> = {}): EntryRe
 
 beforeEach(() => {
   vi.clearAllMocks();
-  priceLines.length = 0;
+  charts.clear();
   localStorage.clear();
   getEntryBoard.mockResolvedValue(board());
   getEntryRecord.mockResolvedValue({ records: [], totals: [total('mtf'), total('single', { trades: 0, setups: 3 })], recent: [] });
@@ -184,7 +184,9 @@ describe('the entry section, side by side', () => {
   it('the timeframe without the chain is asked for from the server', async () => {
     render(<EntrySection desk={desk} />);
     await panel(/12 methods · without timeframe/);
-    fireEvent.change(screen.getByRole('combobox', { name: 'timeframe without the chain' }), { target: { value: '15m' } });
+    fireEvent.click(within(screen.getByRole('group', { name: 'timeframe without the chain' })).getByRole('button', { name: '15m' }));
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.getByRole('img', { name: '12 methods · without timeframe chart' }).getAttribute('data-tf')).toBe('15m');
     await waitFor(() => expect(getEntryBoard).toHaveBeenLastCalledWith('15m'));
   });
 

@@ -82,20 +82,6 @@ export type Wall = { side: 'bid' | 'ask'; price: number; size: number; minutes: 
 export const getHeatmap = (tf: '1m' | '5m', since?: number) =>
   json<{ tf: string; step: number; columns: HeatColumn[]; walls: Wall[] }>(`/api/flow/heatmap?tf=${tf}${since ? `&since=${since}` : ''}`);
 
-/** The trend plan's paper log, per timeframe: live trades (seen within 15 min of their signal), closed, wins, net R after fees; and those replayed later. */
-export type TrendPaperSummary = {
-  tf: string; live: number; closed: number; open: number; wins: number; netR: number; replayed: number;
-  /** The pre-registered filters' subsets of the closed live trades (research/COMBO-STUDY.txt). */
-  volBurst?: { closed: number; netR: number }; session?: { closed: number; netR: number };
-};
-/** One trend-plan paper trade; times are the signal / exit candles' close, epoch seconds. */
-export type TrendPaperTrade = {
-  tf: string; entryTime: number; dir: 1 | -1; entry: number; stop0: number; risk: number; stop: number;
-  exitTime: number | null; exit: number | null; rNet: number | null; live: boolean; firstSeen: number;
-  volBurst: boolean | null; session: boolean;
-};
-export const getTrendPaper = () => json<{ since: number; summary: TrendPaperSummary[]; trades: TrendPaperTrade[] }>('/api/trend/paper');
-
 /** Aggressive flow per candle: taker buy / sell volume (contracts), trades, and how many of its minutes were recorded. */
 export type FlowBar = { time: number; buy: number; sell: number; trades: number; minutes: number };
 export const getFlowBars = (tf: '1m' | '5m', hours: number) =>
