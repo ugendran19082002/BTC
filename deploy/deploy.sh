@@ -81,6 +81,29 @@ prune_images() {
   say "docker disk now: $(docker system df --format '{{.Type}}={{.Size}}' | tr '\n' ' ')"
 }
 
+# The same pruning, on the host a `--host` deploy shipped to: until 30 Sep 2026
+# a remote deploy never pruned, and every release's images stayed there. There
+# is no running-tag lookup over there, so it keeps the tag just started and the
+# newest KEEP_IMAGES -- which include the one it replaced. `rmi` without -f
+# still refuses an image a container uses.
+prune_remote() {
+  say "pruning old images on ${REMOTE}"
+  ssh "$REMOTE" "KEEP=${KEEP_IMAGES} TAG=${TAG} bash -s" <<'SH' || say "pruning on ${REMOTE} failed; its images are as they were"
+set -u
+removed=0
+for repo in btc-desk-api btc-desk-web; do
+  keep="$(docker images "$repo" --format '{{.CreatedAt}}|{{.Tag}}' | sort -r | cut -d'|' -f2 | grep -vx latest | head -n "$KEEP" || true)"
+  while IFS= read -r tag; do
+    [[ -z "$tag" || "$tag" == latest || "$tag" == "$TAG" ]] && continue
+    grep -qx -- "$tag" <<<"$keep" && continue
+    if docker rmi "${repo}:${tag}" >/dev/null 2>&1; then removed=$((removed + 1)); fi
+  done < <(docker images "$repo" --format '{{.Tag}}')
+done
+docker image prune -f >/dev/null 2>&1 || true
+echo "removed ${removed} old image tags there; kept ${TAG} and the newest ${KEEP} of each"
+SH
+}
+
 # ---------------------------------------------------------------- preflight
 
 say "checking the build context for credentials"
@@ -249,6 +272,7 @@ if [[ -n "$REMOTE" ]]; then
   # Shipped and started there; nothing local was health-checked, but the images
   # are known good enough to have started, so local `latest` may follow them.
   tag_latest "$TAG"
+  if [[ $PRUNE -eq 1 ]]; then prune_remote; fi
   say "deployed. Point your reverse proxy at port ${WEB_PORT} on that host."
   exit 0
 fi
