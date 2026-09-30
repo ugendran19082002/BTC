@@ -1,56 +1,144 @@
 import { useMemo, useState } from 'react';
 import type { DayRow } from '@/types/report';
+import type { OrderRecord } from '@/types/trade';
 import { signedInr, usdToInr } from '@/lib/format';
 
 export interface PerformanceStatsProps {
   rows: DayRow[];
+  orders?: OrderRecord[];
 }
 
-export function PerformanceStats({ rows }: PerformanceStatsProps) {
-  const [filter, setFilter] = useState('All Trades');
+export function PerformanceStats({ rows, orders = [] }: PerformanceStatsProps) {
+  const [filter, setFilter] = useState<'All Trades' | 'Strategy Trades' | 'Manual Trades'>('All Trades');
+
+  // Filter orders dynamically based on user choice
+  const filteredOrders = useMemo(() => {
+    if (!orders || orders.length === 0) return [];
+    if (filter === 'Strategy Trades') {
+      return orders.filter((o) => (o as any).plan?.origin === 'strategy' || (o as any).strategyId);
+    }
+    if (filter === 'Manual Trades') {
+      return orders.filter((o) => (o as any).plan?.origin === 'manual');
+    }
+    return orders;
+  }, [orders, filter]);
 
   const stats = useMemo(() => {
-    if (!rows || rows.length === 0) {
+    // Priority 1: Compute from individual orders if available
+    if (filteredOrders.length > 0) {
+      const completed = filteredOrders.filter((o) => o.status === 'completed' || o.position === 0);
+      const totalTrades = completed.length;
+
+      const wins = completed.filter((o) => (o.netRealisedUsd ?? o.realisedPnl) > 0);
+      const losses = completed.filter((o) => (o.netRealisedUsd ?? o.realisedPnl) < 0);
+
+      const winRateVal = totalTrades > 0 ? (wins.length / totalTrades) * 100 : 0;
+      const winRate = totalTrades > 0 ? `${winRateVal.toFixed(1)}%` : '0%';
+
+      const grossWinsUsd = wins.reduce((sum, o) => sum + (o.netRealisedUsd ?? o.realisedPnl), 0);
+      const grossLossesUsd = Math.abs(losses.reduce((sum, o) => sum + (o.netRealisedUsd ?? o.realisedPnl), 0));
+      const pfVal = grossLossesUsd > 0 ? (grossWinsUsd / grossLossesUsd).toFixed(2) : grossWinsUsd > 0 ? '∞' : '—';
+
+      // Largest win & loss
+      const bestTrade = completed.reduce((max, o) => {
+        const val = o.netRealisedUsd ?? o.realisedPnl;
+        return val > max ? val : max;
+      }, 0);
+      const worstTrade = completed.reduce((min, o) => {
+        const val = o.netRealisedUsd ?? o.realisedPnl;
+        return val < min ? val : min;
+      }, 0);
+
+      const largestWin = bestTrade > 0 ? signedInr(usdToInr(bestTrade)) : '—';
+      const largestLoss = worstTrade < 0 ? signedInr(usdToInr(worstTrade)) : '—';
+
+      // Expectancy
+      const avgWinUsd = wins.length > 0 ? grossWinsUsd / wins.length : 0;
+      const avgLossUsd = losses.length > 0 ? grossLossesUsd / losses.length : 0;
+      const winProb = totalTrades > 0 ? wins.length / totalTrades : 0;
+      const lossProb = totalTrades > 0 ? losses.length / totalTrades : 0;
+      const expUsd = (winProb * avgWinUsd) - (lossProb * avgLossUsd);
+      const expectancy = expUsd !== 0 ? signedInr(usdToInr(expUsd)) : '₹0';
+
+      // Average holding duration
+      let totalHoldingMs = 0;
+      let holdingCount = 0;
+      for (const o of completed) {
+        if (o.fills && o.fills.length >= 2) {
+          const start = Math.min(...o.fills.map((f) => f.ts));
+          const end = Math.max(...o.fills.map((f) => f.ts));
+          if (end > start) {
+            totalHoldingMs += (end - start);
+            holdingCount++;
+          }
+        }
+      }
+      const avgHolding = holdingCount > 0 ? formatDurationMs(totalHoldingMs / holdingCount) : '—';
+
+      // Consecutive streaks
+      let maxWins = 0;
+      let curWins = 0;
+      let maxLosses = 0;
+      let curLosses = 0;
+      const sorted = [...completed].sort((a, b) => a.openedAt - b.openedAt);
+      for (const o of sorted) {
+        const pnl = o.netRealisedUsd ?? o.realisedPnl;
+        if (pnl > 0) {
+          curWins++;
+          curLosses = 0;
+          if (curWins > maxWins) maxWins = curWins;
+        } else if (pnl < 0) {
+          curLosses++;
+          curWins = 0;
+          if (curLosses > maxLosses) maxLosses = curLosses;
+        }
+      }
+
+      // Sharpe & Calmar from daily returns
+      const dailyReturns = rows.map((r) => r.netUsd);
+      const { sharpe, calmar } = computeRatios(dailyReturns);
+
       return {
-        totalTrades: 342,
-        winRate: '76.9%',
-        avgR: '1.82',
-        expectancy: '+₹3,340',
-        largestWin: '+₹1,82,400',
-        largestLoss: '-₹68,550',
-        avgHolding: '1h 24m',
-        maxConsecutiveWins: 18,
-        maxConsecutiveLosses: 4,
-        sharpe: '2.14',
-        calmar: '1.86',
-        profitFactor: '2.41',
+        totalTrades,
+        winRate,
+        avgR: totalTrades > 0 && losses.length > 0 ? (avgWinUsd / Math.max(0.01, avgLossUsd)).toFixed(2) : '—',
+        expectancy,
+        largestWin,
+        largestLoss,
+        avgHolding,
+        maxConsecutiveWins: maxWins,
+        maxConsecutiveLosses: maxLosses,
+        sharpe,
+        calmar,
+        profitFactor: pfVal,
       };
     }
 
-    const totalTrades = rows.reduce((acc, r) => acc + (r.trades || 0), 0) || 342;
+    // Priority 2: Compute strictly from day rows
+    const totalTrades = rows.reduce((acc, r) => acc + (r.trades || 0), 0);
     const winDays = rows.filter((r) => r.netUsd > 0);
     const lossDays = rows.filter((r) => r.netUsd < 0);
-    const winRateVal = rows.length > 0 ? (winDays.length / rows.length) * 100 : 76.9;
-    const winRate = `${winRateVal.toFixed(1)}%`;
+    const winRateVal = rows.length > 0 ? (winDays.length / rows.length) * 100 : 0;
+    const winRate = rows.length > 0 ? `${winRateVal.toFixed(1)}%` : '0%';
 
     const grossWinsUsd = winDays.reduce((acc, r) => acc + r.netUsd, 0);
     const grossLossesUsd = Math.abs(lossDays.reduce((acc, r) => acc + r.netUsd, 0));
-    const profitFactorVal = grossLossesUsd > 0 ? (grossWinsUsd / grossLossesUsd) : 2.41;
-    const profitFactor = profitFactorVal.toFixed(2);
+    const profitFactor = grossLossesUsd > 0 ? (grossWinsUsd / grossLossesUsd).toFixed(2) : grossWinsUsd > 0 ? '∞' : '—';
 
     const bestDay = rows.reduce((max, r) => (r.netUsd > max ? r.netUsd : max), 0);
     const worstDay = rows.reduce((min, r) => (r.netUsd < min ? r.netUsd : min), 0);
-    const largestWin = bestDay > 0 ? signedInr(usdToInr(bestDay)) : '+₹1,82,400';
-    const largestLoss = worstDay < 0 ? signedInr(usdToInr(worstDay)) : '-₹68,550';
+    const largestWin = bestDay > 0 ? signedInr(usdToInr(bestDay)) : '—';
+    const largestLoss = worstDay < 0 ? signedInr(usdToInr(worstDay)) : '—';
 
     // Expectancy
-    const avgWinInr = winDays.length > 0 ? (usdToInr(grossWinsUsd) ?? 0) / winDays.length : 18420;
-    const avgLossInr = lossDays.length > 0 ? (usdToInr(grossLossesUsd) ?? 0) / lossDays.length : 12860;
-    const winProb = winRateVal / 100;
-    const expectancyVal = (winProb * avgWinInr) - ((1 - winProb) * avgLossInr);
-    const expectancy = expectancyVal !== 0 ? signedInr(expectancyVal) : '+₹3,340';
+    const avgWinInr = winDays.length > 0 ? (usdToInr(grossWinsUsd) ?? 0) / winDays.length : 0;
+    const avgLossInr = lossDays.length > 0 ? (usdToInr(grossLossesUsd) ?? 0) / lossDays.length : 0;
+    const winProb = rows.length > 0 ? winDays.length / rows.length : 0;
+    const lossProb = rows.length > 0 ? lossDays.length / rows.length : 0;
+    const expectancyVal = (winProb * avgWinInr) - (lossProb * avgLossInr);
+    const expectancy = expectancyVal !== 0 ? signedInr(expectancyVal) : '₹0';
 
-    // Consecutive streaks
+    // Consecutive streaks from rows
     let maxWins = 0;
     let curWins = 0;
     let maxLosses = 0;
@@ -67,30 +155,24 @@ export function PerformanceStats({ rows }: PerformanceStatsProps) {
       }
     }
 
-    // Sharpe ratio
-    const returns = rows.map((r) => r.netUsd);
-    const mean = returns.length > 0 ? returns.reduce((a, b) => a + b, 0) / returns.length : 0;
-    const variance = returns.length > 1
-      ? returns.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (returns.length - 1)
-      : 0;
-    const sd = Math.sqrt(variance);
-    const sharpeVal = sd > 0 ? (mean / sd) * Math.sqrt(252) : 2.14;
+    const dailyReturns = rows.map((r) => r.netUsd);
+    const { sharpe, calmar } = computeRatios(dailyReturns);
 
     return {
       totalTrades,
       winRate,
-      avgR: '1.82',
+      avgR: winDays.length > 0 && lossDays.length > 0 ? (avgWinInr / Math.max(1, avgLossInr)).toFixed(2) : '—',
       expectancy,
       largestWin,
       largestLoss,
-      avgHolding: '1h 24m',
-      maxConsecutiveWins: maxWins || 18,
-      maxConsecutiveLosses: maxLosses || 4,
-      sharpe: Math.max(0.5, Math.min(sharpeVal, 4.5)).toFixed(2),
-      calmar: '1.86',
+      avgHolding: '—',
+      maxConsecutiveWins: maxWins,
+      maxConsecutiveLosses: maxLosses,
+      sharpe,
+      calmar,
       profitFactor,
     };
-  }, [rows]);
+  }, [rows, filteredOrders]);
 
   return (
     <div className="pnl-panel-card" role="region" aria-label="Performance Stats">
@@ -100,83 +182,70 @@ export function PerformanceStats({ rows }: PerformanceStatsProps) {
           className="pnl-select"
           aria-label="Filter trades"
           value={filter}
-          onChange={(e) => setFilter(e.target.value)}
+          onChange={(e) => setFilter(e.target.value as any)}
         >
           <option value="All Trades">All Trades</option>
           <option value="Strategy Trades">Strategy Trades</option>
           <option value="Manual Trades">Manual Trades</option>
-          <option value="Options Selling">Options Selling</option>
         </select>
       </div>
 
       <div className="pnl-perf-grid">
-        {/* Tile 1: Total trades */}
         <div className="pnl-perf-tile">
           <div className="pnl-perf-label">Total trades</div>
           <div className="pnl-perf-val">{stats.totalTrades}</div>
         </div>
 
-        {/* Tile 2: Win rate */}
         <div className="pnl-perf-tile">
           <div className="pnl-perf-label">Win rate</div>
           <div className="pnl-perf-val up">{stats.winRate}</div>
         </div>
 
-        {/* Tile 3: Avg R */}
         <div className="pnl-perf-tile">
           <div className="pnl-perf-label">Avg R</div>
           <div className="pnl-perf-val">{stats.avgR}</div>
         </div>
 
-        {/* Tile 4: Expectancy */}
         <div className="pnl-perf-tile">
           <div className="pnl-perf-label">Expectancy</div>
           <div className="pnl-perf-val up">{stats.expectancy}</div>
         </div>
 
-        {/* Tile 5: Largest win */}
         <div className="pnl-perf-tile">
           <div className="pnl-perf-label">Largest win</div>
           <div className="pnl-perf-val up">{stats.largestWin}</div>
         </div>
 
-        {/* Tile 6: Largest loss */}
         <div className="pnl-perf-tile">
           <div className="pnl-perf-label">Largest loss</div>
           <div className="pnl-perf-val down">{stats.largestLoss}</div>
         </div>
 
-        {/* Tile 7: Avg holding */}
         <div className="pnl-perf-tile">
           <div className="pnl-perf-label">Avg holding</div>
           <div className="pnl-perf-val">{stats.avgHolding}</div>
         </div>
 
-        {/* Tile 8: Max consecutive wins */}
         <div className="pnl-perf-tile">
           <div className="pnl-perf-label">Max consecutive wins</div>
           <div className="pnl-perf-val">{stats.maxConsecutiveWins}</div>
         </div>
 
-        {/* Tile 9: Max consecutive losses */}
         <div className="pnl-perf-tile">
           <div className="pnl-perf-label">Max consecutive losses</div>
           <div className="pnl-perf-val">{stats.maxConsecutiveLosses}</div>
         </div>
 
-        {/* Tile 10: Sharpe */}
         <div className="pnl-perf-tile">
           <div className="pnl-perf-label">Sharpe</div>
           <div className="pnl-perf-val">{stats.sharpe}</div>
         </div>
 
-        {/* Tile 11: Calmar */}
         <div className="pnl-perf-tile">
           <div className="pnl-perf-label">Calmar</div>
           <div className="pnl-perf-val">{stats.calmar}</div>
         </div>
 
-        {/* Tile 12: Profit factor */}
         <div className="pnl-perf-tile">
           <div className="pnl-perf-label">Profit factor</div>
           <div className="pnl-perf-val">{stats.profitFactor}</div>
@@ -184,4 +253,39 @@ export function PerformanceStats({ rows }: PerformanceStatsProps) {
       </div>
     </div>
   );
+}
+
+function computeRatios(dailyReturns: number[]): { sharpe: string; calmar: string } {
+  if (dailyReturns.length < 2) return { sharpe: '—', calmar: '—' };
+
+  const mean = dailyReturns.reduce((a, b) => a + b, 0) / dailyReturns.length;
+  const variance = dailyReturns.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (dailyReturns.length - 1);
+  const sd = Math.sqrt(variance);
+  const sharpeVal = sd > 0 ? (mean / sd) * Math.sqrt(252) : 0;
+
+  // Calmar: annualized return / max drawdown
+  let peak = 0;
+  let maxDd = 0;
+  let run = 0;
+  for (const r of dailyReturns) {
+    run += r;
+    if (run > peak) peak = run;
+    if (peak - run > maxDd) maxDd = peak - run;
+  }
+  const annualized = mean * 252;
+  const calmarVal = maxDd > 0 ? annualized / maxDd : 0;
+
+  return {
+    sharpe: sharpeVal > 0 ? sharpeVal.toFixed(2) : '—',
+    calmar: calmarVal > 0 ? calmarVal.toFixed(2) : '—',
+  };
+}
+
+function formatDurationMs(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return '—';
+  const totalMin = Math.round(ms / 60000);
+  const hours = Math.floor(totalMin / 60);
+  const mins = totalMin % 60;
+  if (hours > 0) return `${hours}h ${mins}m`;
+  return `${mins}m`;
 }

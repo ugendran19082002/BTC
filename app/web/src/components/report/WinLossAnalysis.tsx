@@ -1,18 +1,21 @@
 import { useMemo, useState } from 'react';
 import type { DayRow } from '@/types/report';
+import type { OrderRecord } from '@/types/trade';
 import { signedInr, usdToInr } from '@/lib/format';
 
 export interface WinLossAnalysisProps {
   rows: DayRow[];
+  orders?: OrderRecord[];
 }
 
-export function WinLossAnalysis({ rows }: WinLossAnalysisProps) {
+export function WinLossAnalysis({ rows, orders = [] }: WinLossAnalysisProps) {
   const [viewMode, setViewMode] = useState<'count' | 'pnl'>('count');
 
   const {
     winCount,
     lossCount,
     breakevenCount,
+    totalCount,
     winRateStr,
     winPct,
     lossPct,
@@ -22,57 +25,77 @@ export function WinLossAnalysis({ rows }: WinLossAnalysisProps) {
     winPnlStr,
     lossPnlStr,
   } = useMemo(() => {
-    if (!rows || rows.length === 0) {
+    // 1. From real orders if available
+    if (orders && orders.length > 0) {
+      const completed = orders.filter((o) => o.status === 'completed' || o.position === 0);
+      const wins = completed.filter((o) => (o.netRealisedUsd ?? o.realisedPnl) > 0);
+      const losses = completed.filter((o) => (o.netRealisedUsd ?? o.realisedPnl) < 0);
+      const bes = completed.filter((o) => (o.netRealisedUsd ?? o.realisedPnl) === 0);
+
+      const winTrades = wins.length;
+      const lossTrades = losses.length;
+      const beTrades = bes.length;
+      const total = completed.length;
+
+      const rate = total > 0 ? (winTrades / total) * 100 : 0;
+      const grossWinsUsd = wins.reduce((acc, o) => acc + (o.netRealisedUsd ?? o.realisedPnl), 0);
+      const grossLossesUsd = Math.abs(losses.reduce((acc, o) => acc + (o.netRealisedUsd ?? o.realisedPnl), 0));
+
+      const avgWinUsd = winTrades > 0 ? grossWinsUsd / winTrades : 0;
+      const avgLossUsd = lossTrades > 0 ? grossLossesUsd / lossTrades : 0;
+      const pf = grossLossesUsd > 0 ? (grossWinsUsd / grossLossesUsd).toFixed(2) : grossWinsUsd > 0 ? '∞' : '—';
+
       return {
-        winCount: 263,
-        lossCount: 79,
-        breakevenCount: 0,
-        winRateStr: '76.9%',
-        winPct: 76.9,
-        lossPct: 23.1,
-        avgWinStr: '+₹18,420',
-        avgLossStr: '-₹12,860',
-        profitFactorStr: '2.41',
-        winPnlStr: '+₹48,44,460',
-        lossPnlStr: '-₹10,15,940',
+        winCount: winTrades,
+        lossCount: lossTrades,
+        breakevenCount: beTrades,
+        totalCount: total,
+        winRateStr: `${rate.toFixed(1)}%`,
+        winPct: rate,
+        lossPct: 100 - rate,
+        avgWinStr: avgWinUsd > 0 ? signedInr(usdToInr(avgWinUsd)) : '—',
+        avgLossStr: avgLossUsd > 0 ? signedInr(usdToInr(-avgLossUsd)) : '—',
+        profitFactorStr: pf,
+        winPnlStr: grossWinsUsd > 0 ? signedInr(usdToInr(grossWinsUsd)) : '₹0',
+        lossPnlStr: grossLossesUsd > 0 ? signedInr(usdToInr(-grossLossesUsd)) : '₹0',
       };
     }
 
+    // 2. From real day rows
     const wins = rows.filter((r) => r.netUsd > 0);
     const losses = rows.filter((r) => r.netUsd < 0);
-    const be = rows.filter((r) => r.netUsd === 0);
+    const bes = rows.filter((r) => r.netUsd === 0);
 
-    const winTrades = wins.reduce((acc, r) => acc + (r.trades || 1), 0);
-    const lossTrades = losses.reduce((acc, r) => acc + (r.trades || 1), 0);
-    const beTrades = be.reduce((acc, r) => acc + (r.trades || 0), 0);
-    const total = winTrades + lossTrades + beTrades || 342;
+    const winDays = wins.length;
+    const lossDays = losses.length;
+    const beDays = bes.length;
+    const total = rows.length;
 
-    const rate = total > 0 ? (winTrades / total) * 100 : 76.9;
+    const rate = total > 0 ? (winDays / total) * 100 : 0;
     const grossWinsUsd = wins.reduce((acc, r) => acc + r.netUsd, 0);
     const grossLossesUsd = Math.abs(losses.reduce((acc, r) => acc + r.netUsd, 0));
 
-    const avgWinInr = wins.length > 0 ? (usdToInr(grossWinsUsd) ?? 0) / wins.length : 18420;
-    const avgLossInr = losses.length > 0 ? (usdToInr(grossLossesUsd) ?? 0) / losses.length : 12860;
-    const pf = grossLossesUsd > 0 ? (grossWinsUsd / grossLossesUsd).toFixed(2) : '2.41';
+    const avgWinInr = winDays > 0 ? (usdToInr(grossWinsUsd) ?? 0) / winDays : 0;
+    const avgLossInr = lossDays > 0 ? (usdToInr(grossLossesUsd) ?? 0) / lossDays : 0;
+    const pf = grossLossesUsd > 0 ? (grossWinsUsd / grossLossesUsd).toFixed(2) : grossWinsUsd > 0 ? '∞' : '—';
 
     return {
-      winCount: winTrades || 263,
-      lossCount: lossTrades || 79,
-      breakevenCount: beTrades,
+      winCount: winDays,
+      lossCount: lossDays,
+      breakevenCount: beDays,
       totalCount: total,
       winRateStr: `${rate.toFixed(1)}%`,
       winPct: rate,
       lossPct: 100 - rate,
-      avgWinStr: signedInr(avgWinInr) || '+₹18,420',
-      avgLossStr: signedInr(-Math.abs(avgLossInr)) || '-₹12,860',
+      avgWinStr: avgWinInr > 0 ? signedInr(avgWinInr) : '—',
+      avgLossStr: avgLossInr > 0 ? signedInr(-avgLossInr) : '—',
       profitFactorStr: pf,
-      winPnlStr: signedInr(usdToInr(grossWinsUsd)) || '+₹48,44,460',
-      lossPnlStr: signedInr(usdToInr(-grossLossesUsd)) || '-₹10,15,940',
+      winPnlStr: grossWinsUsd > 0 ? signedInr(usdToInr(grossWinsUsd)) : '₹0',
+      lossPnlStr: grossLossesUsd > 0 ? signedInr(usdToInr(-grossLossesUsd)) : '₹0',
     };
-  }, [rows]);
+  }, [rows, orders]);
 
   // Donut circumference & dash calculations
-  // Circumference for r = 44 is 2 * PI * 44 = 276.46
   const R = 44;
   const C = 2 * Math.PI * R;
   const winStroke = (winPct / 100) * C;
@@ -104,7 +127,6 @@ export function WinLossAnalysis({ rows }: WinLossAnalysisProps) {
         {/* Visual SVG Donut Chart */}
         <div className="pnl-donut-wrap">
           <svg width="120" height="120" viewBox="0 0 120 120" className="pnl-donut-svg">
-            {/* Background ring */}
             <circle
               cx="60"
               cy="60"
@@ -113,36 +135,38 @@ export function WinLossAnalysis({ rows }: WinLossAnalysisProps) {
               strokeWidth="12"
               fill="none"
             />
-            {/* Green Arc (Wins) */}
-            <circle
-              cx="60"
-              cy="60"
-              r={R}
-              stroke="#10b981"
-              strokeWidth="12"
-              strokeDasharray={`${winStroke} ${C}`}
-              strokeDashoffset="0"
-              strokeLinecap="round"
-              fill="none"
-              transform="rotate(-90 60 60)"
-            />
-            {/* Red Arc (Losses) */}
-            <circle
-              cx="60"
-              cy="60"
-              r={R}
-              stroke="#f43f5e"
-              strokeWidth="12"
-              strokeDasharray={`${lossStroke} ${C}`}
-              strokeDashoffset={-winStroke}
-              strokeLinecap="round"
-              fill="none"
-              transform="rotate(-90 60 60)"
-            />
+            {totalCount > 0 && winStroke > 0 && (
+              <circle
+                cx="60"
+                cy="60"
+                r={R}
+                stroke="#10b981"
+                strokeWidth="12"
+                strokeDasharray={`${winStroke} ${C}`}
+                strokeDashoffset="0"
+                strokeLinecap="round"
+                fill="none"
+                transform="rotate(-90 60 60)"
+              />
+            )}
+            {totalCount > 0 && lossStroke > 0 && (
+              <circle
+                cx="60"
+                cy="60"
+                r={R}
+                stroke="#f43f5e"
+                strokeWidth="12"
+                strokeDasharray={`${lossStroke} ${C}`}
+                strokeDashoffset={-winStroke}
+                strokeLinecap="round"
+                fill="none"
+                transform="rotate(-90 60 60)"
+              />
+            )}
           </svg>
           <div className="pnl-donut-center">
             <span className="pnl-donut-pct">{winRateStr}</span>
-            <span className="pnl-donut-sub">Win rate</span>
+            <span className="pnl-donut-sub">{totalCount > 0 ? 'Win rate' : 'No trades'}</span>
           </div>
         </div>
 
