@@ -20,17 +20,28 @@ export const range = (b: Candle) => b.high - b.low;
 export const bullish = (b: Candle) => b.close > b.open;
 export const bearish = (b: Candle) => b.close < b.open;
 
-/** Wilder's average true range. Null with too few bars. */
+/**
+ * Wilder's average true range, ATR(14): the first `n` true ranges averaged,
+ * then smoothed by 1/n a bar over every bar after them. (Until the 30 Sep 2026
+ * audit this was a plain average of the last 14 -- called Wilder's, but not.)
+ * Null with too few bars.
+ */
 export function atr(bars: readonly Candle[], n = 14): number | null {
   if (bars.length < n + 1) return null;
-  let sum = 0;
-  for (let i = bars.length - n; i < bars.length; i++) {
+  const tr = (i: number) => {
     const b = bars[i]!;
     const p = bars[i - 1]!;
-    sum += Math.max(b.high - b.low, Math.abs(b.high - p.close), Math.abs(b.low - p.close));
-  }
-  return sum / n;
+    return Math.max(b.high - b.low, Math.abs(b.high - p.close), Math.abs(b.low - p.close));
+  };
+  let a = 0;
+  for (let i = 1; i <= n; i++) a += tr(i);
+  a /= n;
+  for (let i = n + 1; i < bars.length; i++) a = (a * (n - 1) + tr(i)) / n;
+  return a;
 }
+
+/** Where the close sits in the bar's range: 1 at the high, 0 at the low (0.5 for a bar with no range). */
+export const closeLocation = (b: Candle) => (range(b) > 0 ? (b.close - b.low) / range(b) : 0.5);
 
 /** Exponential moving average of the closes, the last value. */
 export function ema(bars: readonly Candle[], n: number): number | null {
@@ -83,12 +94,20 @@ export function isDisplacement(b: Candle, a: number | null, atrs = 1.2): boolean
   return a !== null && a > 0 && body(b) >= atrs * a && range(b) > 0 && body(b) / range(b) >= 0.6;
 }
 
-/** The newest bar's volume against the median of the `n` before it. */
-export function rvol(bars: readonly Candle[], n = 20): number | null {
-  if (bars.length < n + 1) return null;
-  const prior = bars.slice(-n - 1, -1).map((b) => b.volume).sort((a, b) => a - b);
-  const med = prior[Math.floor(prior.length / 2)]!;
-  return med > 0 ? bars[bars.length - 1]!.volume / med : null;
+/** A swing only exists once its `PIVOT_K` bars after it have closed: known before bar `i` closes. */
+const knownBy = (p: Pivot, i: number) => p.i + PIVOT_K < i;
+
+/**
+ * RVOL: a bar's volume over the average of the `n` before it -- the owner's
+ * reference, Volume / SMA(Volume, 20). `at` picks the bar (default the newest).
+ * (The median was used until the 30 Sep 2026 audit.)
+ */
+export function rvol(bars: readonly Candle[], n = 20, at = bars.length - 1): number | null {
+  if (at < n) return null;
+  let sum = 0;
+  for (let i = at - n; i < at; i++) sum += bars[i]!.volume;
+  const avg = sum / n;
+  return avg > 0 ? bars[at]!.volume / avg : null;
 }
 
 export type Sweep = { dir: 1 | -1; level: number; extreme: number; i: number; time: number };
@@ -96,17 +115,22 @@ export type Sweep = { dir: 1 | -1; level: number; extreme: number; i: number; ti
 /**
  * The newest liquidity sweep in the last `look` bars.
  *
- * Bullish: a bar trades under a swing low that stood before it and closes back
- * above it -- the stops under the low were taken and the price did not stay.
- * Bearish is the mirror, over a swing high.
+ * Bullish: a bar trades under a swing low -- by more than `buffer` -- that
+ * stood before it and was still untouched, and closes back above it: the
+ * stops under the low were taken and the price did not stay (the reference:
+ * Low < SwingLow − buffer AND Close > SwingLow). A low some earlier bar had
+ * already traded through is not resting liquidity any more. Bearish is the
+ * mirror, over a swing high.
  */
-export function lastSweep(bars: readonly Candle[], look = 6): Sweep | null {
+export function lastSweep(bars: readonly Candle[], look = 6, buffer = 0): Sweep | null {
   const lows = pivots(bars, 'low');
   const highs = pivots(bars, 'high');
+  const untouched = (p: Pivot, i: number, side: 'low' | 'high') =>
+    bars.slice(p.i + 1, i).every((x) => (side === 'low' ? x.low >= p.price : x.high <= p.price));
   for (let i = bars.length - 1; i >= Math.max(0, bars.length - look); i--) {
     const b = bars[i]!;
-    const low = [...lows].reverse().find((p) => p.i < i - PIVOT_K && b.low < p.price && b.close > p.price);
-    const high = [...highs].reverse().find((p) => p.i < i - PIVOT_K && b.high > p.price && b.close < p.price);
+    const low = [...lows].reverse().find((p) => knownBy(p, i) && b.low < p.price - buffer && b.close > p.price && untouched(p, i, 'low'));
+    const high = [...highs].reverse().find((p) => knownBy(p, i) && b.high > p.price + buffer && b.close < p.price && untouched(p, i, 'high'));
     if (low) return { dir: 1, level: low.price, extreme: b.low, i, time: b.time };
     if (high) return { dir: -1, level: high.price, extreme: b.high, i, time: b.time };
   }
@@ -128,8 +152,9 @@ export function lastBreak(bars: readonly Candle[], look = 5): Break | null {
   for (let i = bars.length - 1; i >= Math.max(1, bars.length - look); i--) {
     const b = bars[i]!;
     const p = bars[i - 1]!;
-    const h = [...highs].reverse().find((x) => x.i < i);
-    const l = [...lows].reverse().find((x) => x.i < i);
+    // The swing as it was known at bar i: one confirmed later is not what that bar broke.
+    const h = [...highs].reverse().find((x) => knownBy(x, i));
+    const l = [...lows].reverse().find((x) => knownBy(x, i));
     if (h && b.close > h.price && p.close <= h.price) return { dir: 1, level: h.price, i, time: b.time };
     if (l && b.close < l.price && p.close >= l.price) return { dir: -1, level: l.price, i, time: b.time };
   }
@@ -137,6 +162,9 @@ export function lastBreak(bars: readonly Candle[], look = 5): Break | null {
 }
 
 export type Zone = { dir: 1 | -1; lo: number; hi: number; i: number; time: number };
+
+/** How far back from a displacement its order block may be. */
+export const OB_ORIGIN_BARS = 5;
 
 /**
  * Fair-value gaps from the last `look` bars that price has not closed through.
@@ -152,9 +180,10 @@ export function openFvgs(bars: readonly Candle[], look = 30): Zone[] {
     const mid = bars[i - 1]!;
     const z = bars[i]!;
     if (!isDisplacement(mid, a, 1)) continue;
+    // The gap must be the displacement's own: a bullish gap under a bullish bar.
     let zone: Zone | null = null;
-    if (x.high < z.low) zone = { dir: 1, lo: x.high, hi: z.low, i: i - 1, time: mid.time };
-    if (x.low > z.high) zone = { dir: -1, lo: z.high, hi: x.low, i: i - 1, time: mid.time };
+    if (x.high < z.low && bullish(mid)) zone = { dir: 1, lo: x.high, hi: z.low, i: i - 1, time: mid.time };
+    if (x.low > z.high && bearish(mid)) zone = { dir: -1, lo: z.high, hi: x.low, i: i - 1, time: mid.time };
     if (!zone) continue;
     const later = bars.slice(i + 1);
     const closedThrough = later.some((b) => (zone!.dir === 1 ? b.close < zone!.lo : b.close > zone!.hi));
@@ -178,11 +207,12 @@ export function orderBlocks(bars: readonly Candle[], look = 40): Zone[] {
     const d = bars[i]!;
     if (!isDisplacement(d, a)) continue;
     const up = bullish(d);
-    const swing = up ? [...highs].reverse().find((p) => p.i < i) : [...lows].reverse().find((p) => p.i < i);
+    const swing = up ? [...highs].reverse().find((p) => knownBy(p, i)) : [...lows].reverse().find((p) => knownBy(p, i));
     if (!swing || (up ? d.close <= swing.price : d.close >= swing.price)) continue;
+    // The last opposite candle *at the origin* of the move: a few bars back at most, not anywhere in the past.
     let j = i - 1;
-    while (j >= 0 && (up ? !bearish(bars[j]!) : !bullish(bars[j]!))) j--;
-    if (j < 0) continue;
+    while (j >= Math.max(0, i - OB_ORIGIN_BARS) && (up ? !bearish(bars[j]!) : !bullish(bars[j]!))) j--;
+    if (j < Math.max(0, i - OB_ORIGIN_BARS)) continue;
     const ob = bars[j]!;
     const zone: Zone = { dir: up ? 1 : -1, lo: ob.low, hi: ob.high, i: j, time: ob.time };
     const later = bars.slice(i + 1);
@@ -191,8 +221,12 @@ export function orderBlocks(bars: readonly Candle[], look = 40): Zone[] {
   return out.reverse();
 }
 
-/** VWAP of the bars since the desk's day began (00:00 UTC, 05:30 IST), and how far the close is from it in standard deviations. */
-export function vwapBand(bars: readonly Candle[]): { vwap: number; z: number | null } | null {
+/**
+ * VWAP of the bars since the desk's day began (00:00 UTC, 05:30 IST), the
+ * standard deviation of the day's closes about it, and how far the close is
+ * from it in those deviations: Distance = (Price − VWAP) / σ.
+ */
+export function vwapBand(bars: readonly Candle[]): { vwap: number; sd: number; z: number | null } | null {
   const last = bars[bars.length - 1];
   if (!last) return null;
   const dayStart = last.time - (last.time % 86_400);
@@ -208,7 +242,7 @@ export function vwapBand(bars: readonly Candle[]): { vwap: number; z: number | n
   const vwap = pv / v;
   const dev = day.map((b) => b.close - vwap);
   const sd = Math.sqrt(dev.reduce((a, x) => a + x * x, 0) / dev.length);
-  return { vwap, z: sd > 0 ? (last.close - vwap) / sd : null };
+  return { vwap, sd, z: sd > 0 ? (last.close - vwap) / sd : null };
 }
 
 /** How directly price travelled over `n` bars: 1 is a straight line, 0 is chop. */
