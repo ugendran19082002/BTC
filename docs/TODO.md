@@ -221,7 +221,7 @@ Web 841 tests, server 1,213, both typechecks and the production build pass.
   `option-snapshots.ts:174 c`, `select.ts:200 leg`.
 - [ ] 98 exports used only inside their own file could drop `export`.
 - [ ] Generate `FILE-INVENTORY.md` from the tree and test it; rewrite
-  `README.md` as the desk's front door (both from FULL-STUDY.md §9).
+  `README.md` as the desk's front door.
 - [ ] `/api/health` still answers without a session (SECURITY-AUDIT #13).
 
 ### Next

@@ -259,7 +259,7 @@ async function main() {
        * The live momentum card has to print what this exact (timeframe,
        * stop/target policy) pair actually did, beside the call it is making.
        * Without it the card shows a hit rate and no cost, which is the number
-       * that gets traded -- docs/FULL-STUDY.md §7.5.
+       * that gets traded.
        */
       scorecard.push({
         tf,
