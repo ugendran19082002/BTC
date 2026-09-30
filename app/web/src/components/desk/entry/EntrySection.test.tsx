@@ -228,8 +228,9 @@ describe('the method table: names once, numbers on both sides', () => {
     render(<EntrySection desk={desk} />);
     const legend = await screen.findByRole('table', { name: 'entry methods by number' });
     const rows = within(legend).getAllByRole('row').slice(1);
-    expect(rows.map((r) => within(r).getAllByRole('cell')[1]!.textContent)).toEqual(NAMES);
-    expect(within(rows[2]!).getByText('what Liquidity sweep looks for')).toBeInTheDocument();
+    expect(rows.map((r) => within(within(r).getAllByRole('cell')[1]!).getByRole('button').textContent)).toEqual(NAMES);
+    // Twice: under the name on a phone, in its own column on a wider screen (CSS shows one).
+    expect(within(rows[2]!).getAllByText('what Liquidity sweep looks for')).toHaveLength(2);
     expect(within(rows[2]!).getAllByText(/BUY|SELL|WAIT|NO/).map((c) => c.textContent)).toEqual(['NO', 'BUY']); // without, then with
     const withTf = screen.getByRole('table', { name: 'with timeframe methods' });
     const firstCell = withTf.querySelector('tbody tr td')!;

@@ -122,6 +122,17 @@ describe('the price chart', () => {
     expect(within(presets).getByRole('button', { name: 'Order flow' }).getAttribute('aria-pressed')).toBe('true');
   });
 
+  it('[critical] None unchecks every layer in one click, and the choice is remembered', () => {
+    chart();
+    fireEvent.click(screen.getByRole('button', { name: /Layers/ }));
+    const presets = screen.getByRole('group', { name: 'Layer presets' });
+    fireEvent.click(within(presets).getByRole('button', { name: 'None' }));
+    expect(within(presets).getByRole('button', { name: 'None' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getAllByRole('checkbox').every((c) => !(c as HTMLInputElement).checked)).toBe(true);
+    expect(primitives[primitives.length - 1]!.scene).toEqual([]);
+    expect(JSON.parse(localStorage.getItem('btc-desk:chart:layers:v5')!)).toEqual([]);
+  });
+
   it('[critical] the readout carries the perp\'s positioning and the volatility regime', () => {
     chart({ derivs: { oi: { oiContracts: 803_206, change: 14_200, changePct: 1.8, priceChangePct: 0.4, overMinutes: 60, read: 'new longs' }, funding: 0.01 } });
     const line = screen.getByLabelText('Positioning and volatility').textContent ?? '';

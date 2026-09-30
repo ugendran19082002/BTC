@@ -55,6 +55,7 @@ export const LAYER_PRESETS: readonly { key: string; label: string; title: string
   { key: 'flow', label: 'Order flow', title: 'Resting liquidity, big trades, the profile and delta', layers: ['heatmap', 'bigtrades', 'profile', 'delta', 'saved'] },
   { key: 'options', label: 'Options', title: 'Option strikes and max pain, levels and the profile', layers: ['options', 'levels', 'profile', 'saved'] },
   { key: 'all', label: 'All', title: 'Every layer', layers: LAYERS.map((l) => l.key) },
+  { key: 'none', label: 'None', title: 'Every layer off: the candles, and the entry setup when it is on', layers: [] },
 ];
 
 export const DEFAULT_LAYERS: readonly Layer[] = LAYER_PRESETS[0]!.layers;
