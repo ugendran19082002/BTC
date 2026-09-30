@@ -4,21 +4,20 @@ import { EntrySection } from './EntrySection';
 import { recordText, signalOf, tickOf } from './parts';
 import type { EntryBoard, EntryRecord, MethodRead } from '@/types/entry';
 
-const priceLines: { title: string; price: number }[] = [];
-vi.mock('lightweight-charts', () => ({
-  ColorType: { Solid: 'solid' },
-  LineStyle: { Solid: 0, Dotted: 1, Dashed: 2 },
-  CandlestickSeries: 'candles',
-  createChart: vi.fn(() => ({
-    addSeries: vi.fn(() => ({
-      setData: vi.fn(),
-      createPriceLine: vi.fn((o: { title: string; price: number }) => { priceLines.push(o); return o; }),
-      removePriceLine: vi.fn((o: { title: string; price: number }) => { priceLines.splice(priceLines.indexOf(o), 1); }),
-    })),
-    timeScale: () => ({ fitContent: vi.fn() }),
-    remove: vi.fn(),
-  })),
+/*
+ * Each panel's chart is the desk's PriceChart, which has its own tests; here it
+ * is a stub that shows what it was handed -- the timeframe, the size, and the
+ * setup it was asked to draw.
+ */
+type Drawn = { label: string; tf: string; size?: string; bars: unknown[]; entry: { label: string; entryLo: number; tp1: number; dir: string } | null };
+const charts = new Map<string, Drawn>();
+vi.mock('@/components/desk/PriceChart', () => ({
+  PriceChart: (p: Drawn) => {
+    charts.set(p.label, p);
+    return <div role="img" aria-label={p.label} data-tf={p.tf} data-size={p.size} data-entry={p.entry?.label ?? ''} />;
+  },
 }));
+const drawnOn = (label: string) => screen.getByRole('img', { name: label }).getAttribute('data-entry');
 
 const getEntryBoard = vi.fn();
 const getEntryRecord = vi.fn();
@@ -26,8 +25,17 @@ vi.mock('@/api/entry', () => ({
   getEntryBoard: (...a: unknown[]) => getEntryBoard(...a),
   getEntryRecord: (...a: unknown[]) => getEntryRecord(...a),
 }));
-const getCandles = vi.fn(async () => ({ bars: [{ time: 1, open: 84_000, high: 84_200, low: 83_900, close: 84_120, volume: 1 }] }));
-vi.mock('@/api/desk', () => ({ getCandles: (...a: unknown[]) => getCandles(...(a as [])) }));
+const getCandles = vi.fn(async (tf: string) => ({ tf, bars: [{ time: 1, open: 84_000, high: 84_200, low: 83_900, close: 84_120, volume: 1 }] }));
+const getFlowBars = vi.fn(async (tf: string) => ({ tf, bars: [] }));
+const getHeatmap = vi.fn(async (tf: string) => ({ tf, step: 10, columns: [], walls: [] }));
+vi.mock('@/api/desk', () => ({
+  getCandles: (tf: string) => getCandles(tf),
+  getFlowBars: (tf: string) => getFlowBars(tf),
+  getHeatmap: (tf: string) => getHeatmap(tf),
+  getLargePrints: async () => ({ min: 200, since: 0, prints: [] }),
+}));
+const five = [{ time: 300, open: 84_000, high: 84_200, low: 83_900, close: 84_120, volume: 1 }];
+const desk = { bars5m: five, ltp: null, strikes: null, derivs: null };
 
 /**
  * The reference layout: the twelve methods without the timeframe chain and
@@ -86,7 +94,7 @@ const panel = (name: RegExp) => screen.findByRole('region', { name });
 
 describe('the entry section, side by side', () => {
   it('[critical] 24 setups: twelve without the timeframe chain, twelve with it', async () => {
-    render(<EntrySection onOverlay={vi.fn()} />);
+    render(<EntrySection desk={desk} />);
     const without = await panel(/12 methods · without timeframe/);
     const withTf = screen.getByRole('region', { name: /12 methods \+ timeframe/ });
     expect(within(withTf).getByRole('table', { name: 'with timeframe methods' }).querySelectorAll('tbody tr')).toHaveLength(12);
@@ -95,7 +103,7 @@ describe('the entry section, side by side', () => {
   });
 
   it('[critical] a TRADE: BUY, LONG SETUP with entry, stop, targets in R, risk and reward -- and no TAKE TRADE', async () => {
-    render(<EntrySection onOverlay={vi.fn()} />);
+    render(<EntrySection desk={desk} />);
     const withTf = await panel(/12 methods \+ timeframe/);
     const card = await within(withTf).findByRole('region', { name: 'selected setup' });
     expect(within(card).getByText('LONG SETUP')).toBeInTheDocument();
@@ -109,19 +117,38 @@ describe('the entry section, side by side', () => {
     expect(within(withTf).getAllByText('BUY').length).toBe(1);
   });
 
-  it('[critical] the TRADE is drawn on its panel\'s chart and on the desk chart above; Setups off clears both', async () => {
-    const onOverlay = vi.fn();
-    render(<EntrySection onOverlay={onOverlay} />);
-    await waitFor(() => expect(onOverlay).toHaveBeenLastCalledWith(expect.objectContaining({ dir: 'long', entryLo: 84_120, tp1: 84_300, label: '#3 Liquidity sweep (with TF)' })));
-    await waitFor(() => expect(priceLines.map((l) => l.title)).toEqual(expect.arrayContaining(['ENTRY 84,120–84,160', 'SL 83,980', 'TP1 84,300', 'TP2 84,500'])));
+  it('[critical] each panel has the desk\'s price chart, drawing that panel\'s TRADE; Setups off draws none', async () => {
+    render(<EntrySection desk={desk} />);
+    await waitFor(() => expect(drawnOn('12 methods + timeframe chart')).toBe('#3 Liquidity sweep (with TF)'));
+    const drawn = charts.get('12 methods + timeframe chart')!;
+    expect(drawn).toMatchObject({ tf: '5m', size: 'panel', entry: { dir: 'long', entryLo: 84_120, tp1: 84_300 } });
+    // The 5m chart is the desk's own live candles, not a second poll.
+    expect(drawn.bars).toBe(five);
+    // The other panel's choice is a WAIT: nothing to draw.
+    expect(drawnOn('12 methods · without timeframe chart')).toBe('');
     fireEvent.click(screen.getByRole('switch', { name: /Setups on chart/ }));
-    expect(onOverlay).toHaveBeenLastCalledWith(null);
-    await waitFor(() => expect(priceLines).toHaveLength(0));
+    expect(drawnOn('12 methods + timeframe chart')).toBe('');
+  });
+
+  it('[critical] there is no other chart: the desk\'s main chart is gone, the two panels carry it', async () => {
+    render(<EntrySection desk={desk} />);
+    await panel(/12 methods \+ timeframe/);
+    expect(screen.getAllByRole('img').map((c) => c.getAttribute('aria-label'))).toEqual(['12 methods · without timeframe chart', '12 methods + timeframe chart']);
+  });
+
+  it('with the chain, the chart looks at any of the chain\'s timeframes; the reads stay at 5m', async () => {
+    render(<EntrySection desk={desk} />);
+    const withTf = await panel(/12 methods \+ timeframe/);
+    fireEvent.click(within(within(withTf).getByRole('group', { name: 'chart timeframe' })).getByRole('button', { name: '1h' }));
+    expect(screen.getByRole('img', { name: '12 methods + timeframe chart' }).getAttribute('data-tf')).toBe('1h');
+    await waitFor(() => expect(getCandles).toHaveBeenCalledWith('1h'));
+    expect(getEntryBoard).not.toHaveBeenCalledWith('1h');
+    // The book and the flow are read for 1m and 5m only, and only while one is shown.
+    expect(getHeatmap.mock.calls.map((c) => c[0])).not.toContain('1m');
   });
 
   it('[critical] a WAIT shows what it waits for and what was not read, and draws no levels', async () => {
-    const onOverlay = vi.fn();
-    render(<EntrySection onOverlay={onOverlay} />);
+    render(<EntrySection desk={desk} />);
     const without = await panel(/12 methods · without timeframe/);
     const card = await within(without).findByRole('region', { name: 'selected setup' });
     expect(within(card).getByText('WAIT · short forming')).toBeInTheDocument();
@@ -130,11 +157,11 @@ describe('the entry section, side by side', () => {
     const reasons = within(without).getByRole('region', { name: 'key reasons' });
     expect(within(reasons).getByText('delta turned (not read)')).toBeInTheDocument();
     fireEvent.click(within(without).getByRole('button', { name: /MSS \/ CHoCH/ }));
-    expect(onOverlay).toHaveBeenLastCalledWith(null);
+    expect(drawnOn('12 methods · without timeframe chart')).toBe('');
   });
 
   it('the timeframe analysis is on the with-timeframe side only', async () => {
-    render(<EntrySection onOverlay={vi.fn()} />);
+    render(<EntrySection desk={desk} />);
     const withTf = await panel(/12 methods \+ timeframe/);
     const tfs = within(withTf).getByRole('region', { name: 'timeframe analysis' });
     expect(within(tfs).getByText('↑ Bullish')).toBeInTheDocument();
@@ -143,7 +170,7 @@ describe('the entry section, side by side', () => {
   });
 
   it('[critical] the records are the paper log\'s, and "no record" where there is none', async () => {
-    render(<EntrySection onOverlay={vi.fn()} />);
+    render(<EntrySection desk={desk} />);
     const withTf = await panel(/12 methods \+ timeframe/);
     const rec = await within(withTf).findByRole('region', { name: 'paper record' });
     await waitFor(() => expect(within(rec).getByText('40%')).toBeInTheDocument());
@@ -155,17 +182,20 @@ describe('the entry section, side by side', () => {
   });
 
   it('the timeframe without the chain is asked for from the server', async () => {
-    render(<EntrySection onOverlay={vi.fn()} />);
+    render(<EntrySection desk={desk} />);
     await panel(/12 methods · without timeframe/);
     fireEvent.change(screen.getByRole('combobox', { name: 'timeframe without the chain' }), { target: { value: '15m' } });
     await waitFor(() => expect(getEntryBoard).toHaveBeenLastCalledWith('15m'));
   });
 
   it('12 charts: one mode at a time', async () => {
-    render(<EntrySection onOverlay={vi.fn()} />);
+    render(<EntrySection desk={desk} />);
     await panel(/12 methods \+ timeframe/);
     fireEvent.click(screen.getByRole('button', { name: '12 charts' }));
     expect(screen.getAllByRole('figure')).toHaveLength(12);
+    // Small price charts, each drawing its own method's TRADE.
+    expect(screen.getAllByRole('img').every((c) => c.getAttribute('data-size') === 'compact')).toBe(true);
+    expect(drawnOn('Liquidity sweep price chart')).toBe('#3 Liquidity sweep (with TF)');
     fireEvent.click(screen.getByRole('button', { name: /Without timeframe · 5m/ }));
     expect(screen.getAllByRole('figure')).toHaveLength(12);
   });
@@ -193,7 +223,7 @@ describe('the pieces', () => {
 
 describe('the method table: names once, numbers on both sides', () => {
   it('[critical] the twelve names are written once, by number; the two panels show the number only', async () => {
-    render(<EntrySection onOverlay={vi.fn()} />);
+    render(<EntrySection desk={desk} />);
     const legend = await screen.findByRole('table', { name: 'entry methods by number' });
     const rows = within(legend).getAllByRole('row').slice(1);
     expect(rows.map((r) => within(r).getAllByRole('cell')[1]!.textContent)).toEqual(NAMES);
@@ -207,7 +237,7 @@ describe('the method table: names once, numbers on both sides', () => {
   });
 
   it('choosing a method by name chooses it on both sides', async () => {
-    render(<EntrySection onOverlay={vi.fn()} />);
+    render(<EntrySection desk={desk} />);
     const legend = await screen.findByRole('table', { name: 'entry methods by number' });
     fireEvent.click(within(legend).getByRole('button', { name: 'Momentum' }));
     for (const name of [/12 methods · without timeframe/, /12 methods \+ timeframe/]) {
