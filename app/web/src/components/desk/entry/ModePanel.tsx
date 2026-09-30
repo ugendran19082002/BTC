@@ -128,7 +128,8 @@ function MethodTable({ mode, reads, selected, onChoose, recordOf }: {
               {chain ? CHAIN_TFS.map((t) => <th key={t} className="px-0.5 text-center font-normal">{t.toUpperCase()}</th>) : null}
               <th className="px-1 text-center">Signal</th>
               <th className="px-1 text-right" title="Setup quality out of 100 -- not a chance of winning">Quality</th>
-              <th className="px-1">Why</th>
+              {/* With the chain's seven ticks a phone has no room for the why: it is in the selected setup below. */}
+              <th className={cn('px-1', chain && 'hidden sm:table-cell')}>Why</th>
               <th className="sr-only">Choose</th>
             </tr>
           </thead>
@@ -150,7 +151,7 @@ function MethodTable({ mode, reads, selected, onChoose, recordOf }: {
                   }) : null}
                   <td className="px-1 text-center"><SignalChip read={r} /></td>
                   <td className="px-1 text-right tabular-nums">{r.score ?? '–'}</td>
-                  <td className="max-w-[14rem] px-1 text-[11px] text-muted-foreground"><span className="line-clamp-1" title={r.reason}>{r.reason}</span></td>
+                  <td className={cn('max-w-[14rem] px-1 text-[11px] text-muted-foreground', chain && 'hidden sm:table-cell')}><span className="line-clamp-1" title={r.reason}>{r.reason}</span></td>
                   <td className="pr-1 text-muted-foreground"><ChevronRight aria-hidden size={14} /></td>
                 </tr>
               );
@@ -268,11 +269,11 @@ function RecordStrip({ total }: { total: EntryRecord | null }) {
   ];
   return (
     <section aria-label="paper record" className="mt-2 rounded-lg border border-border p-2">
-      <div className="mb-1 flex items-baseline justify-between gap-2 text-[12px]">
+      <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-2 text-[12px]">
         <span className="font-semibold">Paper record · all 12, at 5m, after fees</span>
         <span className="text-[11px] text-muted-foreground">{total && total.setups ? `${total.setups} logged${total.working ? `, ${total.working} working` : ''}` : 'no setups logged yet'}</span>
       </div>
-      <dl className="m-0 grid grid-cols-5 gap-1 text-center">
+      <dl className="m-0 grid grid-cols-3 gap-1 text-center sm:grid-cols-5">
         {cells.map(([k, v, c]) => (
           <div key={k} className="rounded bg-muted px-1 py-1">
             <dt className="text-[10.5px] text-muted-foreground">{k}</dt>

@@ -94,8 +94,8 @@ export function PriceChart({
   const [zoomOn, setZoomOn] = usePersisted('zoom:price-chart', false);
   // v5: the chart's own trade and trend-plan layers went (30 Sep 2026); a list saved before would still name them.
   const [layerList, setLayerList] = usePersisted<Layer[]>('chart:layers:v5', [...DEFAULT_LAYERS]);
-  // Folded by default on a phone, where it would cover half the candles; one tap opens it.
-  const [hudOpen, setHudOpen] = usePersisted('chart:hud-open', typeof window === 'undefined' || window.innerWidth > 640);
+  // Folded by default in a panel and on a phone, where it would cover half the candles; one tap opens it.
+  const [hudOpen, setHudOpen] = usePersisted(`chart:hud-open:${size}`, size === 'full' && (typeof window === 'undefined' || window.innerWidth > 640));
   const [full, setFull] = useState(false);
   const [hover, setHover] = useState<Candle | null>(null);
   const [saved, setSaved] = useState<Annotation[]>([]);

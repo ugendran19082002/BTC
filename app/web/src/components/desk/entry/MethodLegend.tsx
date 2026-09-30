@@ -31,10 +31,10 @@ export function MethodLegend({ single, mtf, chosenN, onChoose }: {
             <tr>
               <th className="py-1 pr-2">#</th>
               <th className="pr-2">Method</th>
-              <th className="pr-2">Group</th>
-              <th className="pr-2">Looks for</th>
-              <th className="px-1 text-center">Without TF</th>
-              <th className="px-1 text-center">With TF</th>
+              <th className="hidden pr-2 md:table-cell">Group</th>
+              <th className="hidden pr-2 sm:table-cell">Looks for</th>
+              <th className="px-1 text-center">Without<span className="hidden sm:inline"> TF</span></th>
+              <th className="px-1 text-center">With<span className="hidden sm:inline"> TF</span></th>
             </tr>
           </thead>
           <tbody>
@@ -42,10 +42,12 @@ export function MethodLegend({ single, mtf, chosenN, onChoose }: {
               <tr key={m.n} className={cn('border-t border-border', chosenN === m.n && 'bg-muted')}>
                 <td className="py-1 pr-2"><NumberBadge read={m} /></td>
                 <td className="pr-2">
-                  <button type="button" onClick={() => onChoose(m.n)} className="text-left font-medium hover:underline">{m.name}</button>
+                  <button type="button" onClick={() => onChoose(m.n)} className="min-h-[28px] text-left font-medium hover:underline">{m.name}</button>
+                  {/* On a phone the "looks for" column folds in under the name. */}
+                  <span className="block text-[11px] leading-snug text-muted-foreground sm:hidden">{m.summary}</span>
                 </td>
-                <td className="pr-2 text-muted-foreground">{GROUP_NAME[m.group]}</td>
-                <td className="pr-2 text-muted-foreground">{m.summary}</td>
+                <td className="hidden pr-2 text-muted-foreground md:table-cell">{GROUP_NAME[m.group]}</td>
+                <td className="hidden pr-2 text-muted-foreground sm:table-cell">{m.summary}</td>
                 <td className="px-1 text-center">{without ? <SignalChip read={without} /> : '–'}</td>
                 <td className="px-1 text-center">{withTf ? <SignalChip read={withTf} /> : '–'}</td>
               </tr>

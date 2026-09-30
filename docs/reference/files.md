@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-379 files listed, 161 test files counted below, images and lockfiles left out.
+374 files listed, 159 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 93 |
-| `app/web` | 68 |
+| `app/web` | 66 |
 
 ## `(root)`
 
@@ -24,7 +24,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [Dockerfile.harvester](../../Dockerfile.harvester) | Keeps the chain cache current. |
 | [Dockerfile.web](../../Dockerfile.web) | The screen: build the Vite bundle, then serve it from nginx, which also proxies /api to the API container (deploy/nginx.docker.conf). |
 | [README.md](../../README.md) | BTC options desk |
-| [TEST.md](../../TEST.md) | -- |
+| [TEST.md](../../TEST.md) | Method Core formula / trigger |
 
 ## `app/server/`
 
@@ -294,7 +294,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [BestTradeSettings.tsx](../../app/web/src/components/desk/BestTradeSettings.tsx) | The best-pick card's own two controls. |
 | [LivePrice.tsx](../../app/web/src/components/desk/LivePrice.tsx) | Spot, ticking, and how far it has come. |
 | [LoginPage.tsx](../../app/web/src/components/desk/LoginPage.tsx) | The gate in front of the desk: a password, then the code from the authenticator app. |
-| [PriceChart.tsx](../../app/web/src/components/desk/PriceChart.tsx) | The price chart: candles, and every price-action concept the engine found, drawn on the candles themselves -- structure, liquidity, OB / FVG, levels, premium / discount, sessions, VWAP, candle tags... |
+| [PriceChart.tsx](../../app/web/src/components/desk/PriceChart.tsx) | The price chart: candles, and the market context the engine found, drawn on the candles themselves -- structure, liquidity, OB / FVG, levels, premium / discount, sessions, VWAP, candle tags, the bo... |
 | [SettingsPanel.tsx](../../app/web/src/components/desk/SettingsPanel.tsx) | Every number the desk works to, in one screen. |
 | [StrikeAnalysis.tsx](../../app/web/src/components/desk/StrikeAnalysis.tsx) | Everything known about one strike, on one screen, before any order exists. |
 | [TodayPnl.tsx](../../app/web/src/components/desk/TodayPnl.tsx) | Today's P&L, always in the header. |
@@ -305,8 +305,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [DeskChart.tsx](../../app/web/src/components/desk-screen/DeskChart.tsx) | The desk tab's chart: the price chart with its order-flow layers fed in -- the book's heatmap, big trades, the delta / CVD pane and the trend plan -- each read on its own poll and shared between them. |
-| [DeskDashboard.tsx](../../app/web/src/components/desk-screen/DeskDashboard.tsx) | The Live screen's top: a one-row header, then the price chart at full width. |
+| [DeskDashboard.tsx](../../app/web/src/components/desk-screen/DeskDashboard.tsx) | The Live screen's top: a one-row header, then the entry section -- whose two panels carry the desk's price charts. |
 | [DeskHeader.tsx](../../app/web/src/components/desk-screen/DeskHeader.tsx) | The Live screen's header, in one row: who it is, that it is live, the contract and its time left, then the controls. |
 | [desk-dashboard.css](../../app/web/src/components/desk-screen/desk-dashboard.css) | ========================================================================== BTC LIVE DESK THEME & STYLES (MATCHING docs/image.png) ===================================================================... |
 
@@ -314,27 +313,25 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [ChartHud.tsx](../../app/web/src/components/desk/chart/ChartHud.tsx) | The chart's corner readout: the live setup and what it is waiting for, the plan when there is one, the timeframe context, and this chart's own record. |
+| [ChartHud.tsx](../../app/web/src/components/desk/chart/ChartHud.tsx) | The chart's corner readout: the candle under the pointer (or the last), the timeframe context, positioning, big trades and the candle's flow -- what the market is doing, never a setup. |
 | [LtpChip.tsx](../../app/web/src/components/desk/chart/LtpChip.tsx) | The last traded price, where a trader looks for it: beside the chart's controls, green when it ticked up and red when it ticked down (kept until the next change, like the price scale's own label),... |
-| [TradesDialog.tsx](../../app/web/src/components/desk/chart/TradesDialog.tsx) | Every trade, in one place, off the chart: the SMC plan's trades on this chart, and the trend plan's paper log from the server. |
 | [entry-layer.ts](../../app/web/src/components/desk/chart/entry-layer.ts) | The chosen entry setup, drawn on the chart: the entry zone as a box from the bar the setup was anchored to, the stop and the targets as lines to the right edge. |
 | [flow-layers.ts](../../app/web/src/components/desk/chart/flow-layers.ts) | The order-flow layers, in the scene's data coordinates (bar index, price): |
 | [label-layout.ts](../../app/web/src/components/desk/chart/label-layout.ts) | Where each label goes, so that none is drawn over another. |
 | [price-chart.css](../../app/web/src/components/desk/chart/price-chart.css) | The price chart (PriceChart.tsx): the canvas fills the card, and the HUD and the toolbar float inside it. |
 | [scene.ts](../../app/web/src/components/desk/chart/scene.ts) | What the chart draws, in *data* coordinates (bar index, price), built from one engine state. |
 | [smc-primitive.ts](../../app/web/src/components/desk/chart/smc-primitive.ts) | Draws a scene (scene.ts) on the chart's own canvas, as a series primitive. |
-| [trend-layer.ts](../../app/web/src/components/desk/chart/trend-layer.ts) | The trend plan (lib/trend/breakout.ts, on 1H candles) drawn on the chart's own candles: its 20-candle channel as a faint step line, the open trade's entry, initial stop and trailing stop, and finis... |
 
 ## `app/web/src/components/desk/entry/`
 
 | File | What it is |
 |---|---|
-| [EntryChart.tsx](../../app/web/src/components/desk/entry/EntryChart.tsx) | A small price chart for one entry setup: the candles of one timeframe and, for a TRADE, its entry zone, stop and targets as labelled lines on the price axis -- the reference layout's chart. 3m is f... |
 | [EntryGrid.tsx](../../app/web/src/components/desk/entry/EntryGrid.tsx) | The twelve methods as twelve small charts, one mode at a time: with the timeframe chain (5m, where its entry is read) or without it (on the timeframe chosen for that). |
 | [EntrySection.tsx](../../app/web/src/components/desk/entry/EntrySection.tsx) | The entry section: TEST.md's twelve entry methods, each read two ways -- without the timeframe chain (one timeframe alone) and with it (4H/1H -> 30m/15m -> 5m entry -> 3m confirm -> 1m execution) -... |
 | [MethodLegend.tsx](../../app/web/src/components/desk/entry/MethodLegend.tsx) | The twelve methods by number: 1 is Breakout, 2 Breakout + retest, and so on -- the one place their names are written, so the two panels below can show the number alone. |
 | [ModePanel.tsx](../../app/web/src/components/desk/entry/ModePanel.tsx) | One half of the reference layout: the twelve methods read one way -- with the timeframe chain, or without it -- with their chart, table, the chosen setup, its reasons, (with the chain) the timefram... |
 | [entry.css](../../app/web/src/components/desk/entry/entry.css) | The entry section's tables. |
+| [feed.ts](../../app/web/src/components/desk/entry/feed.ts) | What the entry section's price charts are drawn from, read once and shared by both panels and the twelve-chart grid (the desk's main chart used to read all of this for itself; it went on 30 Sep 2026). |
 | [parts.tsx](../../app/web/src/components/desk/entry/parts.tsx) | The entry section's small pieces, shared by the panels, the grid and the comparison: the signal chip, the method's number badge, the per-timeframe tick, and how a record and a number are written. |
 
 ## `app/web/src/components/layout/`
@@ -475,7 +472,6 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [context.ts](../../app/web/src/lib/smc/context.ts) | The multi-timeframe context, read with the same no-lookahead rule as the engine: a higher-timeframe candle counts only once it has closed. |
 | [engine.ts](../../app/web/src/lib/smc/engine.ts) | A price-action / SMC engine that reads the market one closed candle at a time. |
-| [measured.data.ts](../../app/web/src/lib/smc/measured.data.ts) | GENERATED by app/web/scripts/smc-study.ts -- do not edit; rerun the study instead. |
 | [readout.ts](../../app/web/src/lib/smc/readout.ts) | What the chart says in words: the one live setup, or what the next one is waiting for, and how this chart's own completed setups have done. |
 | [types.ts](../../app/web/src/lib/smc/types.ts) | The vocabulary of the price-action / SMC engine (lib/smc/engine.ts). |
 
@@ -484,7 +480,6 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [breakout.ts](../../app/web/src/lib/trend/breakout.ts) | The trend plan: a close beyond the 20-candle channel, a stop 2 ATR(14) from the entry, then a chandelier -- 3 ATR from the best price since entry, never loosened -- and no target. |
-| [measured.data.ts](../../app/web/src/lib/trend/measured.data.ts) | GENERATED by app/web/scripts/momentum-study.ts -- do not edit by hand. |
 
 ## `app/web/src/types/`
 

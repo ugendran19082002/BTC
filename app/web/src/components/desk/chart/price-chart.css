@@ -17,6 +17,13 @@
 }
 .pc-stage { position: relative; height: clamp(440px, 64vh, 780px); }
 .pc-full .pc-stage { height: 100%; }
+/* The chart sizes its own furniture from its own width, not the window's: half a
+   1024 px screen is as tight as a phone, and the toolbar ran over the readout. */
+.pc { container-type: inline-size; }
+@container (max-width: 640px) {
+  .pc-tool span, .pc-ltp-k { display: none; }
+  .pc-hud { max-width: calc(100% - 16px); }
+}
 /* A panel's chart (the entry section's two), and a small one for the twelve-chart grid: no readout or toolbar. */
 .pc-panel .pc-stage { height: clamp(360px, 52vh, 560px); }
 .pc-compact .pc-stage { height: 190px; }
