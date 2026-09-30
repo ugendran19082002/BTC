@@ -22,7 +22,8 @@ trade's own target and stop still work, because the engine holds those.
    Not if the strategy already ran for that slot's IST day, not on a weekday it
    is not set for, not more than `graceMin` (default 60) minutes after
    `entryTime`, and never at or after its own exit time. A missed window is
-   reported once.
+   reported once. (An entry time from 17:30 to 17:34 IST cannot be saved: it
+   would land in Delta's launch auction for the new contract.)
 3. **Read the whole board.** No live board: try again next pass, without
    spending the day. Nearest expiry not the daily contract: the day is marked
    `skipped`.
@@ -56,7 +57,14 @@ AlgoTest every day (29 Sep: CE 84,400 at 0.80 against AlgoTest's 84,200 at
 7.58). `outOfTheMoney()` now counts it when it sits on the out-of-the-money
 side of spot; a strike exactly at spot is not out of the money on either side.
 
-Prices are the **bid** (`sellPrice`), what a seller can expect to receive.
+Prices are the **bid** (`sellPrice`), what a seller can expect to receive. The
+run's journal line gives the offer beside it (`CE 84200 x10 @ 7.6, ask 8.1`), so
+the spread every scheduled entry sold into is on the record.
+
+**The minimum premium.** Whatever the rule picks must also pay the desk's $5
+floor -- or the strategy's own, when "Its own minimum premium" is set
+(`minPremiumUsd`, at least $0.10). A 99% target on a cheap leg is never under
+one tick.
 
 ## Pricing the entry
 
@@ -75,6 +83,9 @@ function of the clock, not stored. `monitorOn` chooses whether the desk's stop
 watch reads the live price (`ltp`) or waits for the minute to close (`close`);
 the backstop at Delta triggers on the mark either way
 ([decision 0006](../decisions/0006-target-is-a-price-stop-is-an-exit.md)).
+The stage a trade's exits are on is written on the trade (`plan.exitStage`), so
+a restart carries on from it rather than applying it again over a leg moved by
+hand.
 
 ## Why a strategy is refused
 
@@ -83,8 +94,8 @@ Every refusal is a sentence in `strategy_runs.detail`. The common ones:
 | Refusal | Source | Meaning |
 |---|---|---|
 | `nothing out of the money at or below $N` | the rule | The board had no strike the rule could take. |
-| `This one pays X and the desk will not sell below 5.00` | `precheck` `PREMIUM_TOO_LOW` | The desk-wide premium floor. Late in the day most strikes pay less. |
-| `Already holding -N on this contract.` | `precheck` `DUPLICATE_POSITION` | Another trade -- often another strategy -- holds the same contract. The engine holds one trade per contract ([decision 0011](../decisions/0011-one-trade-per-contract.md)). |
+| `This one pays X and the desk will not sell below 5.00` | `precheck` `PREMIUM_TOO_LOW` | The desk's premium floor, or the strategy's own (`minPremiumUsd`, "Its own minimum premium" on the form) when it sets one. Late in the day most strikes pay under $5. |
+| `Already holding -N on this contract.` | `precheck` `DUPLICATE_POSITION` | This strategy already holds the contract. (Another strategy's trade on it does not count -- [decision 0011](../decisions/0011-one-trade-per-contract.md).) |
 | `Spread is X%, limit is 15% for an order that crosses it.` | `precheck` | The book is too wide to cross. |
 | `Would take total short to N, limit is M.` | `precheck` `MAX_POSITION` | The desk's `max_short_contracts` cap. |
 
@@ -95,11 +106,16 @@ SELECT strategy_id, run_date, status, detail
   FROM strategy_runs ORDER BY id DESC LIMIT 20;
 ```
 
+## Two strategies on one strike
+
+Since 30 Sep 2026 two strategies may hold the same contract: each is its own
+trade with its own orders, exits and P&L, and Delta's position is their sum
+([decision 0011](../decisions/0011-one-trade-per-contract.md)). One strategy
+still cannot enter a contract it already holds, and a manual ticket is still
+refused on any contract the desk holds. Paper-tested; the one-lot live test is
+open ([TODO.md](../TODO.md)).
+
 ## Known limits
 
-- Two strategies cannot hold the same contract at once
-  ([decision 0011](../decisions/0011-one-trade-per-contract.md)).
-- A 17:01 entry mostly finds premiums under the $5 floor. Whether a strategy
-  may set its own floor is open ([TODO.md](../TODO.md)).
-- An entry between 17:30 and 17:35 IST lands in Delta's launch auction.
-- A 99% target on a cheap leg can round to zero ([TODO.md](../TODO.md)).
+- Whether Delta holds four reduce-only orders on one contract (two strategies'
+  targets and stops) is not yet tested live.

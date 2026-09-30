@@ -116,3 +116,20 @@ trailing stops (`trail_amount`), and `mmp`. [TODO.md](../TODO.md) tracks them;
 the case for each is in [history/2026-09.md](../history/2026-09.md), "Execution
 controls the desk does not have yet" and "Use Delta's bracket endpoint for
 protection".
+
+## Public sockets: the new endpoint (checked 30 Sep 2026)
+
+Delta's docs say public sockets are moving to
+`wss://public-socket.india.delta.exchange`; the desk uses
+`wss://socket.india.delta.exchange`, which answered normally on 30 Sep. On the
+new one the channels the desk subscribes to are refused:
+
+```
+{"channels":[{"error":"subscription forbidden on this invalid channel","name":"v2/ticker"}],"type":"subscriptions"}
+{"channels":[{"error":"subscription forbidden on this invalid channel","name":"all_trades"}], ...}
+```
+
+It accepts `ticker` instead, and sends a compact shape (`{"d":[{"i":27,"m":"83306.23","oi":[...],...}]}`)
+with short field names. Moving means rewriting both socket readers
+(`market/delta-socket.ts`, `market/flow-socket.ts`), not changing a URL. Not
+done until Delta dates the old socket's end ([TODO.md](../TODO.md)).

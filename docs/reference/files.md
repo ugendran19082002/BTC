@@ -519,7 +519,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [0008-one-database-one-schema.md](../decisions/0008-one-database-one-schema.md) | 0008 — One PostgreSQL database, one schema; `chain.db` stays a file |
 | [0009-append-only-journal.md](../decisions/0009-append-only-journal.md) | 0009 — The trade journal is append-only and replayed |
 | [0010-server-decides-paper-or-live.md](../decisions/0010-server-decides-paper-or-live.md) | 0010 — The server decides paper or live, and will not flip with a position open |
-| [0011-one-trade-per-contract.md](../decisions/0011-one-trade-per-contract.md) | 0011 — One trade per contract, for now |
+| [0011-one-trade-per-contract.md](../decisions/0011-one-trade-per-contract.md) | 0011 — Two strategies may hold one contract; each trade keeps its own |
 | [0012-generated-reference-docs.md](../decisions/0012-generated-reference-docs.md) | 0012 — Reference docs are generated from the code and tested |
 | [README.md](../decisions/README.md) | Decisions |
 

@@ -45,7 +45,8 @@ What `deploy.sh` does, in order:
 
 ## After a deploy
 
-`GET /api/health` returns the applied migrations, the database round trip,
-both sockets' state and the dataset's date range -- so a deploy that did not
-migrate, or a feed that is not connected, is visible without a shell. Then look
-at the **errors** tab.
+`deploy.sh` prints `/api/health` as the container itself sees it: the applied
+migrations, the database round trip, both sockets' state and the dataset's date
+range -- so a deploy that did not migrate, or a feed that is not connected, is
+visible at once. (From outside, without a session, the route says only that the
+desk is up.) Then look at the **errors** tab.

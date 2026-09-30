@@ -11,8 +11,11 @@ On the host's crontab (`CRON_TZ=Asia/Kolkata`):
 | 12:40 | `deploy/refresh.sh` -- harvest the settled chain into `chain.db` and hand it to the API | `refresh.log` |
 | 18:00 | `deploy/backup-db.sh` -- `pg_dump`, keep 14 days | `backup.log` |
 
-**`refresh.sh` is not updating the desk's dataset** -- see
-[TODO.md](../TODO.md), "The desk's dataset stopped on 8 Sep".
+`refresh.sh` harvests yesterday and today into the repository's `chain.db` --
+a day is skipped until its 12:00 UTC settlement has passed, so at 12:40 IST it
+takes yesterday -- then copies the file into the API container and asks it to
+reload, from inside the container. It was broken from 8 to 30 Sep 2026
+([history](../history/2026-09.md), 30 Sep afternoon).
 
 ## Backups
 
@@ -58,8 +61,11 @@ each table holds: [reference/database.md](../reference/database.md).
 
 1. The **errors** tab -- server, browser, exchange and trading failures in one
    list, folded by fingerprint.
-2. `GET /api/health` -- `feed` (socket and REST freshness, reconnects), `db`,
-   the migration ledger.
+2. `/api/health` -- `feed` (socket and REST freshness, reconnects), `db`, the
+   migration ledger. From outside, without a session, it says only whether the
+   desk and its database are up; the detail comes to a signed-in browser, or
+   from inside the container:
+   `docker compose -f deploy/docker-compose.yml exec api node -e "fetch('http://127.0.0.1:8787/api/health').then(r=>r.text()).then(console.log)"`
 3. `docker logs btc-desk-api-1` -- `grep 'socket open'` against `reconnects`
    tells a silent socket from a working one
    ([decision 0007](../decisions/0007-feed-age-is-the-newest-source.md)).

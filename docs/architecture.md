@@ -86,7 +86,7 @@ reach its journal must not take an order.
 |---|---|---|
 | socket + 8 s REST | The option board (every BTC contract's ticker) | memory; the REST poll is the cold start and fallback |
 | 1 s (engine poll) | Each open trade: fills, protection, stop watch, exit time | `trades`, `trade_events` |
-| 20 s | The strategy scheduler: is an entry or exit due | `strategy_runs`, then orders |
+| 20 s | The strategy scheduler: is an entry or exit due, and has an exit stage come round | `strategy_runs`, then orders |
 | 1 min | Option snapshots (1-minute and 5-minute grains), the perp, BTC itself | `option_snapshots*`, `perp_snapshots`, `index_1m` |
 | 5 min | The board's own record: straddle, skew, walls, max pain | `chain_features`, `oi_snapshots` |
 | 20 s | The perp's tape from the `all_trades` socket, summed per minute | `trade_flow_1m`, `option_flow_1m`, `large_prints` |
@@ -177,6 +177,9 @@ costs an alert, never an order.
   limiter cannot be walked past with a forged `X-Forwarded-For`.
 - **Headers**: CSP, frame denial, `nosniff`, referrer policy on every nginx
   location.
+- **Open routes say little.** `/api/health` gives an outsider only
+  `{ok, db, now}`; its detail, and `/api/reload`, answer a signed-in session or
+  a request from inside the API container (loopback, not proxied).
 - The 11 Sep audit and what is still open:
   [history/2026-09-11-security-audit.md](history/2026-09-11-security-audit.md),
   [TODO.md](TODO.md).

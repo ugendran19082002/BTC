@@ -19,7 +19,8 @@ and a stop both printing would otherwise turn a short into a long.
 
 When the exchange and the fills disagree, the fills are looked for first
 (`recoverFills`), and only an unexplained gap is recorded as `reconciled`.
-That reconciliation assumes one trade per contract -- see
-[0011](0011-one-trade-per-contract.md).
+With two strategies on one contract, a trade's share is Delta's net less the
+other trades', and a gap nobody can attribute is not written into either --
+see [0011](0011-one-trade-per-contract.md).
 
 **Tests:** `test/trading/machine.test.ts`.
