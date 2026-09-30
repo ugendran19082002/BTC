@@ -43,7 +43,7 @@ test('[critical] 3. a sweep without the structure break is only its first step',
   bars[bars.length - 1] = { ...bars[bars.length - 1]!, low: 83_860, close: 83_950 };
   const s = detect('liquidity-sweep', bars);
   assert.equal(s?.dir, 1);
-  assert.deepEqual(oks(s)?.slice(0, 2), [true, false], 'swept, but no MSS yet');
+  assert.deepEqual(oks(s), [true, true, false], 'swept and recovered, but no MSS yet');
   assert.equal(s?.stop, 83_860, 'the stop is past the sweep');
 });
 
@@ -57,7 +57,7 @@ test('4. FVG: a gap left by displacement, price back into it, a reaction out', (
   const s = detect('fvg-retest', bars);
   assert.equal(s?.dir, 1);
   assert.deepEqual(s?.zone, [84_010, 84_060]);
-  assert.deepEqual(oks(s), [true, true, true, true]);
+  assert.deepEqual(oks(s), [true, true, true]);
 });
 
 test('5. order block: back into the block, and rejected there', () => {
@@ -78,7 +78,7 @@ test('6. BOS: an uptrend closing through its last swing high by displacement', (
   add(bars, { open: c, high: top + 125, low: c - 5, close: top + 120 });
   const s = detect('bos', bars);
   assert.equal(s?.dir, 1);
-  assert.equal(oks(s)?.[2], true, 'the break was a displacement');
+  assert.deepEqual(oks(s), [true, true, true], 'the break, by displacement, with the trend');
 });
 
 test('[critical] 6 and 7: the same close through a swing is a BOS with the trend and a CHoCH against it', () => {
@@ -86,7 +86,7 @@ test('[critical] 6 and 7: the same close through a swing is a BOS with the trend
   const top = Math.max(...down.slice(-12).map((b) => b.high));
   const c = down[down.length - 1]!.close;
   add(down, { open: c, high: top + 125, low: c - 5, close: top + 120 });
-  assert.equal(detect('bos', down), null, 'not a BOS: the trend was down');
+  assert.equal(oks(detect('bos', down))?.[2], false, 'not a BOS to take: the trend was down');
   const s = detect('mss', down);
   assert.equal(s?.dir, 1, 'a change of character');
   assert.equal(oks(s)?.[0], true);
@@ -98,8 +98,12 @@ test('8. momentum: a 1.5 ATR body on heavy volume, closed near its high', () => 
   bars.push({ time: bars[bars.length - 1]!.time + 300, open: c, high: c + 125, low: c - 3, close: c + 120, volume: 500 });
   const s = detect('momentum', bars);
   assert.equal(s?.dir, 1);
-  assert.deepEqual(oks(s), [true, true, true]);
+  assert.deepEqual(oks(s), [true, true, true, false], 'the follow-through is still to come');
   assert.equal(s?.blocked, undefined, 'not yet extended');
+  add(bars, { open: c + 120, high: c + 150, low: c + 110, close: c + 145 });
+  const t = detect('momentum', bars);
+  assert.deepEqual(oks(t), [true, true, true, true], 'the next bar closed further up');
+  assert.equal(t?.triggerTime, bars[bars.length - 2]!.time, 'anchored to the signal bar');
 });
 
 test('9. pullback: an uptrend back to its 20 EMA, then resuming', () => {
@@ -111,7 +115,7 @@ test('9. pullback: an uptrend back to its 20 EMA, then resuming', () => {
     { open: e + 2, high: c + 35, low: e, close: c + 30 });
   const s = detect('pullback', bars);
   assert.equal(s?.dir, 1);
-  assert.deepEqual(oks(s), [true, true, true]);
+  assert.deepEqual(oks(s), [true, true, true, true]);
 });
 
 test('[critical] 10. mean reversion is off on a trend day, however stretched', () => {
@@ -150,7 +154,7 @@ test('12. options: at the put OI wall, reacting, with the big-move reading unrea
     options: { spot: c, atmIv: 0.4, emDay: 1_500, callWall: 86_000, putWall: 83_950, maxPain: 84_500, toSettleSec: 20_000 },
   });
   assert.equal(s?.dir, 1);
-  assert.deepEqual(oks(s), [true, true, null]);
+  assert.deepEqual(oks(s), [true, true, true, true, null, null], 'the wall held, price rejected it, structure not against; big move and tape unread');
   assert.match(s?.targets?.[0]?.why ?? '', /max pain 84,500/);
 });
 

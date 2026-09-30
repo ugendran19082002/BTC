@@ -52,7 +52,7 @@ test('[critical] a breakout with room to its target is a TRADE on its own timefr
 test('[critical] a step not yet there is WAIT, says which, and draws no box', () => {
   const r = readMethod(BREAKOUT, 'single', '5m', single({}, breakoutBars({ volume: 100 })));
   assert.equal(r.state, 'WAIT');
-  assert.match(r.reason, /waiting for 5m: volume/);
+  assert.match(r.reason, /waiting for 5m: RVOL 1.5 or more/);
   assert.equal(r.plan, null, 'TEST.md: no entry / SL / TP until every confirmation holds');
 });
 
@@ -100,7 +100,7 @@ test('[critical] momentum that is already extended is not chased', () => {
   bars.push({ time: t + 300, open: 84_360, high: 84_705, low: 84_355, close: 84_700, volume: 900 });
   const r = readMethod(MOMENTUM, 'single', '5m', single({ walls: [{ side: 'ask', price: 88_000, size: 1 }] }, bars));
   assert.equal(r.state, 'NO_TRADE');
-  assert.match(r.reason, /extended: opened .* ATR from the 20 EMA -- not chased/);
+  assert.match(r.reason, /extended: opened .* ATR from the 20 EMA -- no chase/);
 });
 
 // ------------------------------------------------------------ with the timeframe chain
@@ -168,8 +168,10 @@ test('[critical] the score is quality out of 100, and what is not recorded is sa
   assert.equal(r.scoreParts.find((p) => p.name === 'Probability')?.got, null);
 });
 
-test('R:R counts the taker fee on the way in and on the way out', () => {
-  assert.ok(Math.abs(rrAfterFees(100, 99, 102) - (2 - 0.0005 * 202) / (1 + 0.0005 * 202)) < 1e-12);
+test('[critical] R:R counts the taker fee on the way in and on the way out -- the stop\'s exit on the loss side, the target\'s on the win side', () => {
+  assert.ok(Math.abs(rrAfterFees(100, 99, 102) - (2 - 0.0005 * 202) / (1 + 0.0005 * 199)) < 1e-12);
+  // A short: the same arithmetic mirrored.
+  assert.ok(Math.abs(rrAfterFees(100, 101, 98) - (2 - 0.0005 * 198) / (1 + 0.0005 * 201)) < 1e-12);
 });
 
 test('the timeframe rows: each of the chain\'s seven, its trend and what its swings did', () => {
