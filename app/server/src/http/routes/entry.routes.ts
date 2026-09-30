@@ -3,7 +3,7 @@ import { SINGLE_TFS, entryBoard, timeframeRows, type TimeframeRow } from '../../
 import { readEntryContext } from '../../entry/read.js';
 import { entryRecord, recentSetups } from '../../entry/paper.js';
 import { GateLocked, gateSettings, gatesOff, isGateKey, setGate } from '../../entry/gates.js';
-import { alertSettings, isMode, recentAlerts, setAlert } from '../../entry/alerts.js';
+import { alertSettings, isMode, recentAlerts, sampleAlertText, setAlert } from '../../entry/alerts.js';
 import { recentSignals } from '../../entry/signals.js';
 import { CHAIN, TF_SEC, type MethodRead, type Tf } from '../../entry/types.js';
 import { ttlCache } from '../ttl-cache.js';
@@ -67,7 +67,8 @@ export function registerEntryRoutes(app: FastifyInstance, notifier: () => { send
     if (mode === 'test') {
       const n = notifier();
       if (!n) { reply.code(409); return { error: 'Telegram is not set up on the server (TG_TOKEN, TG_CHAT_ID).' }; }
-      const ok = await n.send('🔔 <b>Entry setups</b>: a test alert. TRADE alerts arrive like this, once per setup.');
+      // A made-up signal in the real format, marked TEST: what a TRADE will look like on the phone.
+      const ok = await n.send(sampleAlertText());
       if (!ok) { reply.code(502); return { error: 'Telegram did not accept the message; see the error log.' }; }
       return { ok: true };
     }

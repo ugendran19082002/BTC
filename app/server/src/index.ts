@@ -204,7 +204,7 @@ const recordEntries = () => {
       const reads = allReads(ctx);
       await recordSignals(reads, ctx.now);
       await recordSetups(reads, ctx.now, (r) => {
-        if (wanted(r, settings)) void sendEntryAlert(r, desk.notifier);
+        if (wanted(r, settings)) void sendEntryAlert(r, desk.notifier, { ltp: ctx.ltp?.price ?? null, at: ctx.now });
       });
       await gradeSetups(ctx.frames['1m'] ?? []);
     })

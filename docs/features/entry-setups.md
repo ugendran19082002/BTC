@@ -225,10 +225,13 @@ phone, where a method is its **number only**. Each panel has:
 - **Telegram** (each panel's header, *Telegram on / off*, off by default):
   the server sends a TRADE once, when the paper log first writes it -- so it
   works with no screen open, and a setup that stays on the board is not sent
-  again. Read on 5m (the paper log's timeframe), whatever the chart shows. The
-  message: BUY / SELL, the method, the way, entry, SL with its points, TP1-3,
-  R:R after fees, quality, any gate switched off, "no order placed". *test*
-  sends one now. Stored in `entry_alerts` (every change in
+  again. The message comes in sections, every distance from the fill: the
+  signal (BUY / SELL, method, way and timeframe, time in IST, the LTP); 📍
+  ENTRY (the zone, and the fill edge); 🛑 STOP LOSS (points, %, −1R); 🎯
+  TARGETS (TP1-3, each in points and R); then R:R after fees, quality, the
+  method's own steps as the why, any gate switched off that let it through,
+  and "no order placed". *test* sends a made-up signal in that format, marked
+  TEST. Stored in `entry_alerts` (every change in
   `entry_alert_changes`); `GET /api/entry/alerts`,
   `POST /api/entry/alerts/:mode {enabled}`, `POST /api/entry/alerts/test`. With
   no `TG_TOKEN` / `TG_CHAT_ID` on the server the switch says "not set up".

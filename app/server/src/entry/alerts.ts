@@ -109,28 +109,69 @@ export async function setAlert(mode: Mode, enabled: boolean, now = Date.now(), t
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const fmt = (v: number) => Math.round(v).toLocaleString('en-US');
 
+const IST = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
+
 /**
- * A new TRADE, as the phone reads it. Telegram HTML: <b> and <i> only, every
- * `&`, `<` and `>` escaped. Null for anything that is not a TRADE with levels.
+ * A new TRADE, as the phone reads it -- in sections, so it can be taken in at
+ * a glance: what and where, the entry, the stop, the targets, then the odds and
+ * why. Every distance is from the fill (the zone's near edge), the way the
+ * card, the chart and the paper log measure it; the numbers sit in <code> so
+ * they line up. Telegram HTML: <b>, <i>, <code> only, every `&`, `<` and `>`
+ * escaped. Null for anything that is not a TRADE with levels.
+ *
+ * `live`: the last trade and the time, when the caller has them.
  */
-export function entryAlertFor(r: MethodRead): Alert | null {
+export function entryAlertFor(r: MethodRead, live: { ltp?: number | null; at?: number } = {}): Alert | null {
   const p = r.plan;
   if (r.state !== 'TRADE' || !p || !r.dir || r.triggerTime === null) return null;
   const long = r.dir === 'long';
-  const way = r.mode === 'mtf' ? 'with timeframe (5m entry)' : `without timeframe (${r.tf})`;
-  const risk = Math.abs((p.entryLo + p.entryHi) / 2 - p.stop);
-  const off = r.gates.filter((g) => !g.enabled).map((g) => g.label);
+  const sign = long ? 1 : -1;
+  const fill = long ? p.entryHi : p.entryLo;
+  const risk = Math.abs(fill - p.stop);
+  const pct = (pts: number) => `${((100 * pts) / fill).toFixed(2)}%`;
+  // A target: its points in the trade's favour and its R, from the fill.
+  const tp = (label: string, price: number, note = '') => {
+    const pts = (price - fill) * sign;
+    return `${label}   <code>${fmt(price)}</code>  +${fmt(pts)} pts · ${risk > 0 ? (pts / risk).toFixed(1) : '–'}R${note}`;
+  };
+  const way = r.mode === 'mtf' ? 'with timeframe · 5m entry' : `without timeframe · ${r.tf}`;
+  const why = r.steps.filter((s) => s.ok === true && (r.mode === 'single' || s.tf === '5m')).map((s) => s.label).slice(0, 3);
+  const off = r.gates.filter((g) => !g.enabled && g.ok === false).map((g) => `${g.label} ${g.value ?? ''}`.trim());
+  const at = live.at ?? Date.now();
   const lines = [
-    `${long ? '🟢 <b>BUY</b>' : '🔴 <b>SELL</b>'} · <b>#${r.n} ${esc(r.name)}</b>`,
-    `<i>${esc(way)}</i>`,
-    `Entry ${fmt(p.entryLo)}–${fmt(p.entryHi)}`,
-    `SL ${fmt(p.stop)} (${fmt(risk)} pts)`,
-    `TP1 ${fmt(p.tp1)}${p.tp2 !== null ? ` · TP2 ${fmt(p.tp2)}` : ''}${p.tp3 !== null ? ` · TP3 ${fmt(p.tp3)}` : ''}`,
-    `R:R ${p.rr.toFixed(2)} after fees · quality ${r.score ?? '–'}/100`,
-    ...(off.length ? [`⚠️ gates off: ${esc(off.join(', '))}`] : []),
+    `${long ? '🟢 <b>BUY SIGNAL</b>' : '🔴 <b>SELL SIGNAL</b>'} · BTCUSD`,
+    `<b>#${r.n} ${esc(r.name)}</b> · ${esc(way)}`,
+    `🕒 ${esc(IST.format(at))} IST${live.ltp ? ` · LTP <code>${fmt(live.ltp)}</code>` : ''}`,
+    '',
+    '📍 <b>ENTRY</b>',
+    `Zone   <code>${fmt(p.entryLo)} – ${fmt(p.entryHi)}</code>`,
+    `Fill   <code>${fmt(fill)}</code>  (the zone's ${long ? 'top' : 'bottom'} edge)`,
+    '',
+    '🛑 <b>STOP LOSS</b>',
+    `SL     <code>${fmt(p.stop)}</code>  −${fmt(risk)} pts · −${pct(risk)} · −1R`,
+    '',
+    '🎯 <b>TARGETS</b>',
+    tp('TP1', p.tp1),
+    ...(p.tp2 !== null ? [tp('TP2', p.tp2)] : []),
+    ...(p.tp3 !== null ? [tp('TP3', p.tp3, ' · expected move')] : []),
+    '',
+    `📊 R:R <b>${p.rr.toFixed(2)}</b> after fees · Quality ${r.score ?? '–'}/100`,
+    ...(why.length ? [`✅ Why: ${esc(why.join(' · '))}`] : []),
+    ...(off.length ? [`⚠️ <b>Only a TRADE because gates are off</b>: ${esc(off.join(' · '))}`] : []),
     '<i>Paper-logged · no order placed</i>',
   ];
   return { key: `entry:${r.mode}:${r.id}:${r.dir}:${r.triggerTime}`, text: lines.join('\n') };
+}
+
+/** A sample alert in the real format, for the switch's *test*: a made-up long, marked as a test. */
+export function sampleAlertText(at = Date.now()): string {
+  const sample = entryAlertFor({
+    id: 'fvg-retest', n: 4, name: 'FVG retest', group: 'pullback', summary: '', mode: 'single', tf: '5m', dir: 'long', state: 'TRADE',
+    steps: [{ tf: '5m', label: 'a bullish gap left by displacement', ok: true }, { tf: '5m', label: 'price back in the gap', ok: true }, { tf: '5m', label: 'reaction: closed up out of it', ok: true }],
+    gates: [], plan: { entryLo: 84_120, entryHi: 84_160, stop: 83_980, tp1: 84_500, tp2: 84_760, tp3: 85_400, tpWhy: [], rr: 1.9 },
+    score: 72, scoreParts: [], alignment: null, reason: '', triggerTime: 0,
+  }, { ltp: 84_205, at })!;
+  return `🔔 <b>TEST</b> -- a made-up signal, to show the format\n\n${sample.text}`;
 }
 
 /** Whether a new TRADE is one its way is set to alert on: the chain always (its entry is 5m), without it the chosen timeframes. */
@@ -167,8 +208,8 @@ export async function recentAlerts(limit = 20): Promise<AlertLogRow[]> {
  * Send one TRADE's alert and write down how it went. Never throws and never
  * holds the caller: the recorder goes on while Telegram answers.
  */
-export function sendEntryAlert(r: MethodRead, notifier: { send(text: string): Promise<boolean> } | null): Promise<void> {
-  const alert = entryAlertFor(r);
+export function sendEntryAlert(r: MethodRead, notifier: { send(text: string): Promise<boolean> } | null, live: { ltp?: number | null; at?: number } = {}): Promise<void> {
+  const alert = entryAlertFor(r, live);
   if (!alert) return Promise.resolve();
   if (!notifier) return logAlert(r, alert.text, 'failed', 'Telegram is not set up on the server (TG_TOKEN, TG_CHAT_ID)').catch(() => {});
   return notifier.send(alert.text)
