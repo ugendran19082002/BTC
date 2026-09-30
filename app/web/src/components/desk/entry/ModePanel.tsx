@@ -165,7 +165,7 @@ function SelectedCard({ read }: { read: MethodRead | null }) {
     ? { text: read.dir === 'short' ? 'SHORT SETUP' : 'LONG SETUP', cls: read.dir === 'short' ? 'bg-[#e2504f] text-white' : 'bg-[#26a17b] text-white' }
     : read.state === 'WAIT'
       ? { text: `WAIT${read.dir ? ` · ${read.dir} forming` : ''}`, cls: 'bg-[#b7791f] text-white' }
-      : { text: 'NO TRADE', cls: 'bg-muted text-muted-foreground' };
+      : { text: read.dir ? `NO TRADE · ${read.dir} refused` : 'NO TRADE', cls: 'bg-muted text-muted-foreground' };
   const mid = p ? (p.entryLo + p.entryHi) / 2 : null;
   const risk = p && mid !== null ? Math.abs(mid - p.stop) : null;
   const reward = p && mid !== null ? Math.abs(p.tp1 - mid) : null;

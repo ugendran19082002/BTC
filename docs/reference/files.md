@@ -5,7 +5,7 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-377 files listed, 161 test files counted below, images and lockfiles left out.
+379 files listed, 161 test files counted below, images and lockfiles left out.
 
 ## Test files
 
@@ -332,7 +332,9 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [EntryChart.tsx](../../app/web/src/components/desk/entry/EntryChart.tsx) | A small price chart for one entry setup: the candles of one timeframe and, for a TRADE, its entry zone, stop and targets as labelled lines on the price axis -- the reference layout's chart. 3m is f... |
 | [EntryGrid.tsx](../../app/web/src/components/desk/entry/EntryGrid.tsx) | The twelve methods as twelve small charts, one mode at a time: with the timeframe chain (5m, where its entry is read) or without it (on the timeframe chosen for that). |
 | [EntrySection.tsx](../../app/web/src/components/desk/entry/EntrySection.tsx) | The entry section: TEST.md's twelve entry methods, each read two ways -- without the timeframe chain (one timeframe alone) and with it (4H/1H -> 30m/15m -> 5m entry -> 3m confirm -> 1m execution) -... |
+| [MethodLegend.tsx](../../app/web/src/components/desk/entry/MethodLegend.tsx) | The twelve methods by number: 1 is Breakout, 2 Breakout + retest, and so on -- the one place their names are written, so the two panels below can show the number alone. |
 | [ModePanel.tsx](../../app/web/src/components/desk/entry/ModePanel.tsx) | One half of the reference layout: the twelve methods read one way -- with the timeframe chain, or without it -- with their chart, table, the chosen setup, its reasons, (with the chain) the timefram... |
+| [entry.css](../../app/web/src/components/desk/entry/entry.css) | The entry section's tables. |
 | [parts.tsx](../../app/web/src/components/desk/entry/parts.tsx) | The entry section's small pieces, shared by the panels, the grid and the comparison: the signal chip, the method's number badge, the per-timeframe tick, and how a record and a number are written. |
 
 ## `app/web/src/components/layout/`

@@ -46,7 +46,9 @@ export function EntrySection({ onOverlay }: {
   const reads = useMemo(() => board?.reads ?? [], [board]);
   const pick = (mode: EntryMode) => {
     const mine = reads.filter((r) => r.mode === mode);
-    return mine.find((r) => keyOf(r) === chosen[mode]) ?? mine.find((r) => r.state === 'TRADE') ?? mine.find((r) => r.state === 'WAIT') ?? mine[0] ?? null;
+    // Unchosen: a TRADE, else a WAIT, else the most-formed refusal -- never "nothing forming" when something is.
+    const formed = mine.filter((r) => r.dir !== null).sort((x, y) => (y.score ?? 0) - (x.score ?? 0))[0];
+    return mine.find((r) => keyOf(r) === chosen[mode]) ?? mine.find((r) => r.state === 'TRADE') ?? mine.find((r) => r.state === 'WAIT') ?? formed ?? mine[0] ?? null;
   };
   const selected = { single: pick('single'), mtf: pick('mtf') };
   const forChart = selected[chosen.last] ?? selected.mtf;

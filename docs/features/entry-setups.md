@@ -130,18 +130,24 @@ setups. `GET /api/entry/board` also carries each timeframe's trend and swings
 ## The screen
 
 On the **desk** tab, under the price chart, laid out as the owner's reference
-(30 Sep 2026): the two ways **side by side** -- *12 methods · without
-timeframe* and *12 methods + timeframe* -- stacked on a phone. Each panel has:
+(30 Sep 2026): first an **Entry methods** table -- the one place the twelve
+names are written, by number (1 Breakout, 2 Breakout + retest, ...), with each
+method's group, what it looks for, and its signal on both sides; choosing a name
+chooses that method in both panels -- then the two ways **side by side** --
+*12 methods · without timeframe* and *12 methods + timeframe* -- stacked on a
+phone, where a method is its **number only**. Each panel has:
 
 - **A chart** of its own: without timeframe, on the timeframe chosen there
   (1m-4H, which is also what its reads use); with timeframe, a 1m-4H switch to
   look at any timeframe of the chain. A TRADE's entry, SL, TP1, TP2 and TP3 are
   labelled on the price axis. BTC's price and its move over the candles shown
   sit above it.
-- **The 12 methods** as a table: a coloured number per group, the signal --
-  **BUY** / **SELL** (a TRADE), **WAIT**, **NO** -- and the quality score; with
-  timeframe, a tick per timeframe (✓ passed, ✗ failed, ? not read, · not part
-  of it). Hover a method for its paper record.
+- **The 12 methods** as a table: the method's number (coloured by group), the
+  signal -- **BUY** / **SELL** (a TRADE), **WAIT**, **NO** -- the quality score
+  and a one-line why; with timeframe, a tick per timeframe (✓ passed, ✗ failed,
+  ? not read, · not part of it). Hover a number for the name and its paper
+  record. Until one is chosen, a panel shows its TRADE, else its WAIT, else its
+  most-formed refusal.
 - **Selected setup**: LONG / SHORT SETUP (or WAIT / NO TRADE with the reason),
   method, timeframe, quality, entry, stop, each target with its R multiple, risk
   and reward in points and percent, and R:R after fees.
