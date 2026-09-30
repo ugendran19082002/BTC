@@ -68,7 +68,7 @@ const atOf = (p: { takeProfitPrice: number | null; stopPrice: number | null }) =
   ...(p.stopPrice !== null && p.stopPrice > 0 ? { stopAt: p.stopPrice } : {}),
 });
 
-const view = (
+export const tradeView = (
   r: TradeRecord,
   positions: ExchangePosition[] = [],
   contractValue = 0.001,
@@ -103,7 +103,10 @@ const view = (
   const pnl = unrealisedPnlUsd({
     entryPrice: entry,
     markPrice: mark,
-    size: live?.size ?? r.state.position,
+    // This trade's own contracts, never Delta's row for the symbol: two
+    // strategies may hold one contract (decision 0011), and each card would
+    // otherwise show the P&L of both.
+    size: r.state.position,
     contractValue,
   });
   // Delta's charges on every fill so far, and what closing the rest at the mark
@@ -180,8 +183,19 @@ const view = (
           : null),
       /** What Delta says, kept for comparison. Not what the screen shows. */
       exchangePnl: live?.unrealisedPnl ?? null,
-      /** What closing everything now would leave you with, after every charge in and out. */
-      netIfClosedUsd: pnl === null ? null : r.state.realisedPnl + pnl - charges.totalUsd - toCloseUsd,
+      /**
+       * What closing everything now would leave you with, after every charge in
+       * and out -- bought back at the **ask**, since closing a short is a buy.
+       * Priced at the mark until 30 Sep 2026, which read better than any close
+       * could print; the close sheet has always used the ask. The mark only when
+       * there is no offer.
+       */
+      netIfClosedUsd: netIfClosedAt({
+        state: r.state,
+        price: quote?.ask !== null && quote?.ask !== undefined && quote.ask > 0 ? quote.ask : mark,
+        spot,
+        paidUsd: charges.totalUsd,
+      }),
     },
     /**
      * The protective orders that are actually resting, read off the exchange.
@@ -289,7 +303,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
     const bySymbol = new Map(quotes);
     const restingBy = new Map(books);
     const open = trades.map((r) =>
-      view(
+      tradeView(
         r, positions, r.state.contractValue,
         bySymbol.get(r.state.symbol) ?? null, svc.spot,
         restingBy.get(r.state.symbol) ?? null,
@@ -819,8 +833,8 @@ export function registerTradeRoutes(app: FastifyInstance) {
     const rows = records
       .map((r) => ({
         ...(r.state.position !== 0
-          ? view(r, positions, r.state.contractValue, quoteFor.get(r.state.symbol) ?? null, svc.spot)
-          : view(r, [], r.state.contractValue, null, svc.spot)),
+          ? tradeView(r, positions, r.state.contractValue, quoteFor.get(r.state.symbol) ?? null, svc.spot)
+          : tradeView(r, [], r.state.contractValue, null, svc.spot)),
         status: orderStatusOf(r.state, r.events),
         outcome: orderOutcomeOf(r.state, r.events),
         openedAt: r.events[0]?.at ?? r.state.updatedAt,
@@ -842,6 +856,6 @@ export function registerTradeRoutes(app: FastifyInstance) {
     const { tradeId } = req.params as { tradeId: string };
     const rec = await svc.store.get(tradeId);
     if (!rec) { reply.code(404); return { error: 'no such trade' }; }
-    return { trade: view(rec), events: rec.events };
+    return { trade: tradeView(rec), events: rec.events };
   });
 }

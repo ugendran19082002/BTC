@@ -7,6 +7,8 @@ import { getSettings, setWallWithinEm } from '@/api/desk';
 import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import { AutoTradeSettings } from '@/components/desk/AutoTradeSettings';
+import { BestTradeSettings } from '@/components/desk/BestTradeSettings';
 
 /**
  * Every number the desk works to, in one screen.
@@ -24,13 +26,33 @@ import { cn } from '@/lib/utils';
 export function SettingsPanel() {
   return (
     <div className="grid gap-3">
+      <BestPickSwitchesCard />
       <AutoTradeLimitsCard />
       <LevelsCard />
       <p className="m-0 px-1 text-[11.5px] leading-relaxed text-[var(--dim)]">
-        The switches that actually place orders are where the orders are: the best-pick card on the Live screen,
-        and each strategy's own form. This screen sets the range those screens work inside.
+        The only switches here that place orders are the best pick's, above. Each strategy has its own, on its
+        form. The rest of this screen sets the range those work inside.
       </p>
     </div>
+  );
+}
+
+/**
+ * The best pick's own switches: tell me when it changes, and sell it by itself.
+ *
+ * They lived on the best-pick card until the Live screen was trimmed on
+ * 28 Sep 2026, and for two days had no screen at all while the server went on
+ * running both from their saved settings -- an armed switch nobody could see.
+ * Here they are visible again, with what each one is set to.
+ */
+function BestPickSwitchesCard() {
+  return (
+    <CollapsibleCard id="settings-best-pick" title="Best pick — alerts and automatic trade" ariaLabel="best pick switches">
+      <div className="grid gap-3">
+        <BestTradeSettings />
+        <AutoTradeSettings />
+      </div>
+    </CollapsibleCard>
   );
 }
 

@@ -4,9 +4,13 @@ import { SettingsPanel } from '@/components/desk/SettingsPanel';
 
 const getAutoTrade = vi.fn();
 const setAutoTrade = vi.fn();
+const getBestTradeSettings = vi.fn();
 vi.mock('@/api/trade', () => ({
   getAutoTrade: (...a: unknown[]) => getAutoTrade(...a),
   setAutoTrade: (...a: unknown[]) => setAutoTrade(...a),
+  clearAutoTrade: vi.fn(),
+  getBestTradeSettings: (...a: unknown[]) => getBestTradeSettings(...a),
+  setBestTradeSettings: vi.fn(),
 }));
 const getSettings = vi.fn();
 const setWallWithinEm = vi.fn();
@@ -35,6 +39,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
   getAutoTrade.mockResolvedValue(autoTrade);
+  getBestTradeSettings.mockResolvedValue({ alertOn: false, minPremiumUsd: 5, repeat: 1, telegram: { configured: true, on: true } });
   setAutoTrade.mockResolvedValue({ ok: true, settings: autoTrade.settings });
   getSettings.mockResolvedValue({ settings: { wall_within_em: '2' }, shortCap: { inForce: 1, ceiling: 1, chosen: null } });
   setWallWithinEm.mockResolvedValue({ ok: true, key: 'wall_within_em', value: '1.5' });
@@ -65,9 +70,9 @@ describe('the settings screen', () => {
     expect(screen.getByText('1 to 100,000')).toBeInTheDocument();
   });
 
-  it('says plainly that nothing here places an order', async () => {
+  it('says plainly which switches here place orders, and that the limits do not', async () => {
     render(<SettingsPanel />);
-    expect(await screen.findByText(/The switches that actually place orders are where the orders are/)).toBeInTheDocument();
+    expect(await screen.findByText(/The only switches here that place orders are the best pick's, above/)).toBeInTheDocument();
   });
 
   it('a server it cannot reach says so rather than showing invented numbers', async () => {
@@ -86,5 +91,13 @@ describe('the settings screen', () => {
     fireEvent.change(box, { target: { value: '0.1' } });
     fireEvent.blur(box);
     expect(setWallWithinEm).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the best pick\'s own switches', () => {
+  it('[critical] are on this screen -- the server runs them from saved settings, so they must be visible somewhere', async () => {
+    render(<SettingsPanel />);
+    expect(await screen.findByText('Best pick — alerts and automatic trade')).toBeInTheDocument();
+    await waitFor(() => expect(getBestTradeSettings).toHaveBeenCalled());
   });
 });

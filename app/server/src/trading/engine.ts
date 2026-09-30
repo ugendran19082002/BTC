@@ -420,6 +420,18 @@ const MARK_STALE_MS = 15_000;
 export const STOP_CONFIRM_MS = 15_000;
 
 /**
+ * How long a shared contract's position may fail to add up before the desk
+ * says so. A sibling trade absorbs its own fill on its own poll, a second or
+ * two later; a minute of it is not that.
+ */
+export const UNEXPLAINED_ALARM_MS = 60_000;
+
+/** How long a close at the market has to fill before what is left is sent again. */
+export const CLOSE_FOLLOW_UP_MS = 3_000;
+/** Closes at the market for one exit, the first included, before the desk stops and says so. */
+export const MAX_CLOSE_TRIES = 3;
+
+/**
  * The stop resting at Delta is a backstop, not the stop (29 Sep 2026).
  *
  * Delta can only trigger a resting stop on the mark, the last trade or the
@@ -473,6 +485,10 @@ export function roleOfClientId(clientOrderId: string | null, stem: string): Orde
 export class TradeEngine {
   /** When each trade's offer was first seen at or through its stop, for the confirmation. In memory: a restart starts the count again. */
   private readonly stopSince = new Map<string, number>();
+  /** Trades whose close has been given up on at the market, so that is said once. */
+  private readonly gaveUpClosing = new Set<string>();
+  /** When a shared contract's position first stopped adding up, per trade, and whether it has been said. */
+  private readonly unexplained = new Map<string, { since: number; said: boolean }>();
   private readonly limits: RiskLimits;
   /** Set while a trade is being resolved after a timeout. Nothing may be sent. */
   private entryDeadline = new Map<string, number>();
@@ -576,6 +592,17 @@ export class TradeEngine {
     ]);
     const size = product ? lotsToContracts(plan.lots, product.lotSize) : plan.lots;
     const held = positions.find((p) => p.symbol === plan.symbol)?.size ?? 0;
+    /*
+     * "Already holding" is about who is asking (0011). A strategy is refused
+     * only when it already holds this contract itself -- another strategy's
+     * trade on the same strike is not its position. A manual ticket keeps the
+     * desk-wide rule: anything held on the contract.
+     */
+    const alreadyHeld = plan.origin === 'strategy' && plan.strategyId
+      ? (await this.d.store.open())
+        .filter((t) => t.plan.symbol === plan.symbol && t.plan.strategyId === plan.strategyId && t.state.tradeId !== plan.tradeId)
+        .reduce((n, t) => n + t.state.position, 0)
+      : held;
     const totalShort = positions.reduce((n, p) => n + (p.size < 0 ? -p.size : 0), 0);
     const price = plan.entry.type === 'limit' ? plan.entry.limitPrice ?? null : quote?.bid ?? null;
 
@@ -605,7 +632,7 @@ export class TradeEngine {
       feedHealthy: this.feedHealthy(),
       tradingEnabled: this.d.tradingEnabled !== false,
       account: { availableUsd: balance },
-      existingPosition: add ? 0 : held,
+      existingPosition: add ? 0 : alreadyHeld,
       totalShortContracts: totalShort,
       dayPnlUsd: await this.dayPnl(),
       worstCaseLossUsd: worstCase,
@@ -1008,6 +1035,11 @@ export class TradeEngine {
     // An exit printed: the other side has to go before it can re-open us.
     if (rec.state.exitWinner) rec = await this.cancelSiblings(rec);
 
+    // A close at the market that bought back only part: follow up the rest.
+    if (rec.state.phase === 'exit_pending' && rec.state.position !== 0 && rec.state.closing) {
+      rec = await this.followUpClose(rec);
+    }
+
     // Exits asked for off the fill follow the fill: a partial fill at a new
     // price moves the average, and the levels move with it.
     const anchored = anchorExits(rec);
@@ -1064,6 +1096,24 @@ export class TradeEngine {
       } else throw e;
     }
     return rec;
+  }
+
+  /**
+   * The other open trades on this contract.
+   *
+   * Two strategies may hold the same contract (decision 0011, 30 Sep 2026).
+   * Each trade's orders and fills are its own -- its client ids say so -- and
+   * Delta's position for the symbol is their sum. Anything that reads the
+   * exchange by symbol has to leave a sibling's orders and contracts alone.
+   */
+  private async siblingsOn(rec: TradeRecord): Promise<TradeRecord[]> {
+    return (await this.d.store.open())
+      .filter((t) => t.plan.symbol === rec.plan.symbol && t.state.tradeId !== rec.state.tradeId);
+  }
+
+  /** An order some other open trade on this contract placed. Never this trade's to move or cancel. */
+  private static ownedByAnother(o: ExchangeOrder, siblings: readonly TradeRecord[]): boolean {
+    return siblings.some((t) => ownsClientId(t.state.tradeId, o.clientOrderId));
   }
 
   // ----------------------------------------------------------- protection
@@ -1149,7 +1199,11 @@ export class TradeEngine {
     ).length;
 
     if (book === null) return rec;
-    const resting = book.filter((o) => o.reduceOnly && (o.status === 'open' || o.status === 'partial'));
+    // A sibling trade's exits on the same contract are not this trade's to reconcile (0011).
+    // An order nobody owns -- placed by hand, or before client ids -- is still treated as this trade's.
+    const siblings = await this.siblingsOn(rec);
+    const resting = book.filter((o) => o.reduceOnly && (o.status === 'open' || o.status === 'partial')
+      && !TradeEngine.ownedByAnother(o, siblings));
 
     let failure: string | null = null;
     const settle = async (
@@ -1331,7 +1385,10 @@ export class TradeEngine {
   private async clearProtection(recIn: TradeRecord): Promise<TradeRecord> {
     let rec = recIn;
     const book = await this.exchange.getOpenOrders(rec.plan.symbol).catch(() => []);
-    for (const o of book.filter((x) => x.reduceOnly)) await this.cancelAndVerify(o);
+    const siblings = await this.siblingsOn(rec);
+    for (const o of book.filter((x) => x.reduceOnly && !TradeEngine.ownedByAnother(x, siblings))) {
+      await this.cancelAndVerify(o);
+    }
     if (rec.state.protection.takeProfit || rec.state.protection.stopLoss) {
       rec = await this.commit(rec, {
         t: 'protection_placed', takeProfit: null, stopLoss: null, size: 0, at: this.now(),
@@ -1572,15 +1629,62 @@ export class TradeEngine {
     return rec.state;
   }
 
+  /**
+   * The rest of a close that filled in part.
+   *
+   * A market buy on a thin book can take what is offered and no more. Until
+   * 30 Sep 2026 what was left then sat in `exit_pending` -- where the desk
+   * neither re-protects nor watches the stop -- short, with nothing behind it,
+   * until somebody noticed. Now, once the close has had `CLOSE_FOLLOW_UP_MS`,
+   * whatever of it is still resting is cancelled (verified), and the rest is
+   * sent again at the market: all of what is held for a close of everything,
+   * the rest of the size asked for otherwise. Whether Delta cancels the unfilled
+   * part of a market order or leaves it resting is the venue's business
+   * (decision 0002), so both are handled. After `MAX_CLOSE_TRIES` it stops
+   * trying and says so, rather than buying into an empty book every second.
+   */
+  private async followUpClose(recIn: TradeRecord): Promise<TradeRecord> {
+    let rec = recIn;
+    const closing = rec.state.closing!;
+    if (this.now() - closing.submittedAt < CLOSE_FOLLOW_UP_MS) return rec;
+    let order: ExchangeOrder | null;
+    try {
+      order = await this.exchange.getOrderByClientId(closing.clientOrderId);
+    } catch {
+      return rec;                                        // unknown is not gone: ask again next poll
+    }
+    if (order) rec = await this.absorb(rec, order, 'exit');
+    if (rec.state.position === 0 || rec.state.phase !== 'exit_pending') return rec;
+    if (order && (order.status === 'open' || order.status === 'partial')) {
+      if (!(await this.cancelAndVerify(order))) return rec;
+      const after = await this.exchange.getOrderByClientId(closing.clientOrderId).catch(() => null);
+      if (after) rec = await this.absorb(rec, after, 'exit');
+      if (rec.state.position === 0 || rec.state.phase !== 'exit_pending') return rec;
+    }
+    const tries = rec.events.filter((e) => e.t === 'exit_submitted').length;
+    const held = Math.abs(rec.state.position);
+    if (tries >= MAX_CLOSE_TRIES) {
+      if (!this.gaveUpClosing.has(rec.state.tradeId)) {
+        this.gaveUpClosing.add(rec.state.tradeId);
+        this.d.onAlarm?.(rec.state, `Close left ${held} contracts short after ${tries} tries at the market. `
+          + 'Nothing more is sent -- close the rest by hand.', rec.plan);
+      }
+      return rec;
+    }
+    const owed = closing.all ? undefined : closing.size - (closing.heldBefore - held);
+    if (owed !== undefined && owed < 1) return rec;
+    await this.closeNowInner(rec.state.tradeId, 'the rest of a close that filled in part', owed);
+    return (await this.d.store.get(rec.state.tradeId)) ?? rec;
+  }
+
   // ------------------------------------------------------------- adds
   /**
    * Sell more of the contract this trade already holds.
    *
-   * Under the same trade, not as a second one. Delta nets a contract into one
-   * position, so two trades on it would each read the other's contracts as
-   * their own, and each trade's protection would find -- and cancel -- the
-   * other's target. One trade keeps one position, one average price, one
-   * target and one stop, and `protect()` resizes the last two to the new size.
+   * Under the same trade, not as a second one: an add is more of the same
+   * decision, so it keeps one position, one average price, one target and one
+   * stop, and `protect()` resizes the last two to the new size. (Two *different*
+   * strategies on one contract are two trades -- decision 0011.)
    *
    * Refused while the trade is not simply open: still entering, closing, flat,
    * or already adding. It passes the same gates as any entry -- quote, spread
@@ -1850,7 +1954,16 @@ export class TradeEngine {
     let rec = recIn;
     const positions = await this.exchange.getPositions().catch(() => null);
     if (positions === null) return rec;
-    const held = positions.find((p) => p.symbol === rec.plan.symbol)?.size ?? 0;
+    const net = positions.find((p) => p.symbol === rec.plan.symbol)?.size ?? 0;
+    /*
+     * Delta's position is per contract; a trade's is its own share of it. With
+     * other open trades on the contract (0011), this trade's share is what the
+     * net leaves after theirs -- and a gap is only this trade's to write down
+     * when it cannot be anyone else's: no siblings, or nothing held at all.
+     */
+    const siblings = await this.siblingsOn(rec);
+    const theirs = siblings.reduce((n, t) => n + t.state.position, 0);
+    const held = net - theirs;
     if (held !== rec.state.position) {
       // The fills first: a position that can be explained by orders the desk
       // sent is a record with a gap, and the gap is filled with the fills.
@@ -1858,14 +1971,30 @@ export class TradeEngine {
       // without it.)
       rec = await this.recoverFills(rec);
     }
+    if (held !== rec.state.position && siblings.length > 0 && net !== 0) {
+      // Shared and not flat: which trade the difference belongs to is not
+      // knowable from here, and a guess would rewrite a book that may be right --
+      // a sibling that has not yet absorbed its own fill looks exactly like
+      // this. Wait for the siblings to catch up; say so if it lasts.
+      const u = this.unexplained.get(rec.state.tradeId) ?? { since: this.now(), said: false };
+      if (!u.said && this.now() - u.since >= UNEXPLAINED_ALARM_MS) {
+        u.said = true;
+        this.d.onAlarm?.(rec.state, `${rec.plan.symbol}: Delta holds ${net} across ${siblings.length + 1} trades that add up to `
+          + `${theirs + rec.state.position}. Not rewritten -- check the positions by hand.`, rec.plan);
+      }
+      this.unexplained.set(rec.state.tradeId, u);
+      return rec;
+    }
+    this.unexplained.delete(rec.state.tradeId);
     if (held !== rec.state.position) {
+      const position = siblings.length > 0 ? 0 : held;   // shared: only reached when the contract is flat
       rec = await this.commit(rec, {
-        t: 'reconciled', position: held, at: this.now(),
-        note: `exchange says ${held}, we had ${rec.state.position}`,
+        t: 'reconciled', position, at: this.now(),
+        note: `exchange says ${net}${siblings.length ? ` across ${siblings.length + 1} trades` : ''}, we had ${rec.state.position}`,
       });
       // The position moved under us, so anything resting is the wrong size.
       // protect() compares size as well as price, so it replaces them itself.
-      if (held !== 0) rec = await this.protect(rec);
+      if (position !== 0) rec = await this.protect(rec);
       else rec = await this.clearProtection(rec);
     }
     return rec;

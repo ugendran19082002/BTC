@@ -636,7 +636,7 @@ export class TradingService {
 
   // ------------------------------------------------------------------ api
   async place(input: PlaceInput) {
-    return this.engine.open(orderPlan(input, `${input.symbol}-${Date.now()}`));
+    return this.engine.open(orderPlan(input, `${input.symbol}-${nextTradeMs()}`));
   }
 
   /** Whether that order would be taken, without sending it. */
@@ -978,6 +978,21 @@ let singleton: TradingService | null = null;
  * engine wired. Called once from the composition root before anything that
  * might ask for it -- a route, the scheduler, a sign-in alert.
  */
+/**
+ * The millisecond a trade id is stamped with, never the same one twice.
+ *
+ * A trade id is used once, and a second order under an id already taken is
+ * read as the first one re-sent -- so two strategies placing the same contract
+ * in the same millisecond would have had the second silently dropped. Now two
+ * strategies may hold one contract (decision 0011), so the id moves on by a
+ * millisecond rather than repeat.
+ */
+let lastTradeMs = 0;
+export function nextTradeMs(now = Date.now()): number {
+  lastTradeMs = Math.max(now, lastTradeMs + 1);
+  return lastTradeMs;
+}
+
 export async function initTradingService(limits: Partial<RiskLimits> = {}): Promise<TradingService> {
   if (singleton) return singleton;
   const settings = await deskSettings().load();
