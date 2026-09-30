@@ -135,7 +135,6 @@ export type SellPick = {
  * @param hedgeGap how many strikes beyond the short to buy; 0 leaves it naked
  */
 export function pickSells(
-  snap: Snapshot,
   scored: ScoredLeg[],
   minPremium = 15,
   hedgeGap = 3,
@@ -208,7 +207,7 @@ export type Bias = {
  * over a 12-hour horizon its edge is small and it should never be the only
  * input to a trade.
  */
-export function bias(snap: Snapshot, scored: ScoredLeg[]): Bias {
+export function bias(scored: ScoredLeg[]): Bias {
   const ce = scored.filter((l) => l.cp === 'C');
   const pe = scored.filter((l) => l.cp === 'P');
   const sum = (xs: ScoredLeg[], f: (l: ScoredLeg) => number) => xs.reduce((a, l) => a + f(l), 0);

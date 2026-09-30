@@ -171,7 +171,7 @@ export async function captureOptionSnapshots(
 
   // One statement for the whole board: an array per column, unnested.
   const arrays = PICK.map((f) => snap.map(f));
-  const sel = COLS.map((c, i) => `$${i + 2}::${TYPES[i]}[]`).join(', ');
+  const sel = COLS.map((_c, i) => `$${i + 2}::${TYPES[i]}[]`).join(', ');
   const write = (table: string, bucket: number) => query(
     `INSERT INTO ${table} (at, ${COLS.join(', ')})
      SELECT $1, * FROM unnest(${sel})

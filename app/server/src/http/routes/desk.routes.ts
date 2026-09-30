@@ -305,7 +305,7 @@ export function registerDeskRoutes(app: FastifyInstance) {
       const requireHedge = q.requireHedge === '1' || q.requireHedge === 'true';
       const mode: PickMode = q.mode === 'safety' ? 'safety' : 'premium';
       const safetyBar = Math.min(0.999, Math.max(0.5, Number(q.safetyBar ?? 0.98)));
-      const picks = pickSells(snap, scored, minPremium, hedgeGap);
+      const picks = pickSells(scored, minPremium, hedgeGap);
 
       // Market context is best-effort: a throttled candle feed must not take the
       // chain down with it, it only costs the split its tested skew.
@@ -423,7 +423,6 @@ export function registerDeskRoutes(app: FastifyInstance) {
        */
       if (snap.live) await recordBoard(snap, scored, structure, oiChanges);
 
-      const feed = tickerFeedHealth();
       return {
         snapshot: { ...snap, legs: undefined },
         legs: attachEv(scored, {
@@ -432,7 +431,7 @@ export function registerDeskRoutes(app: FastifyInstance) {
         })
           .filter((l) => Math.abs(l.off) <= shown)
           .map((l) => ({ ...l, oiChange: oiChanges.get(`${l.cp}${l.strike}`) ?? null })),
-        bias: bias(snap, scored),
+        bias: bias(scored),
         picks,
         market,
         structure,

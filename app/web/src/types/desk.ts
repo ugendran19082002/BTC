@@ -579,8 +579,6 @@ export type ChainResponse = {
   /** When each thing on the screen was last read, epoch ms; null where there is no record. Null as a whole on a past snapshot. */
 };
 
-export type Band = { min: number; max: number };
-
 export type Candle = {
   time: number;
   open: number;

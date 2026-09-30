@@ -219,7 +219,7 @@ export function selectLegs(
   }
 
   return {
-    legs: [...picked.entries()].map(([leg, c]) => ({
+    legs: [...picked.values()].map((c) => ({
       cp: c.cp,
       strike: c.strike,
       price: c.sellPrice!,

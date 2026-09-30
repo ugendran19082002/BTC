@@ -340,7 +340,7 @@ export function marketState(input: StateInput): MarketState {
     // A second close above the level is the retest holding: the level was
     // given back to the market to test, and it held.
     const isOvershot = atr !== null && atr > 0 && (bar.close - resistance) / atr > MAX_OVERSHOOT_ATR;
-    const stage: EventStage = heldAboveBefore ? 'RETEST' : confirms(input, bar, ratio, atr, 'UP') ? 'CONFIRMED' : 'CANDIDATE';
+    const stage: EventStage = heldAboveBefore ? 'RETEST' : confirms(bar, ratio, atr, 'UP') ? 'CONFIRMED' : 'CANDIDATE';
     const event: MarketEvent = stage === 'RETEST' ? 'RETEST_HOLD'
       : stage === 'CONFIRMED' ? 'BREAKOUT_CONFIRMED' : 'BREAKOUT_CANDIDATE';
     return build(event, stage, 'UP', resistance, stage !== 'CANDIDATE', input, bar, prev, ratio, read, tol,
@@ -354,7 +354,7 @@ export function marketState(input: StateInput): MarketState {
   }
   if (brokeDown && support !== null) {
     const isOvershot = atr !== null && atr > 0 && (support - bar.close) / atr > MAX_OVERSHOOT_ATR;
-    const stage: EventStage = heldBelowBefore ? 'RETEST' : confirms(input, bar, ratio, atr, 'DOWN') ? 'CONFIRMED' : 'CANDIDATE';
+    const stage: EventStage = heldBelowBefore ? 'RETEST' : confirms(bar, ratio, atr, 'DOWN') ? 'CONFIRMED' : 'CANDIDATE';
     const event: MarketEvent = stage === 'RETEST' ? 'RETEST_HOLD'
       : stage === 'CONFIRMED' ? 'BREAKDOWN_CONFIRMED' : 'BREAKDOWN_CANDIDATE';
     return build(event, stage, 'DOWN', support, stage !== 'CANDIDATE', input, bar, prev, ratio, read, tol,
@@ -414,7 +414,7 @@ export function marketState(input: StateInput): MarketState {
  * business end of its range. A bar that gave most of the move back before the
  * close is not a bar to follow, however far it reached.
  */
-function confirms(input: StateInput, bar: Candle, ratio: number | null, atr: number | null, side: Side): boolean {
+function confirms(bar: Candle, ratio: number | null, atr: number | null, side: Side): boolean {
   const shape = bodyRatio(bar);
   const size = bodyStrength(bar, atr);
   const loc = closeLocation(bar);
