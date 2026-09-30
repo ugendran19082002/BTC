@@ -4,7 +4,7 @@ import { readEntryContext } from '../../entry/read.js';
 import { entryRecord, recentSetups } from '../../entry/paper.js';
 import { GateLocked, gateSettings, gatesOff, isGateKey, setGate } from '../../entry/gates.js';
 import { alertSettings, isMode, recentAlerts, sampleAlertText, setAlert } from '../../entry/alerts.js';
-import { recentSignals } from '../../entry/signals.js';
+import { signalPage } from '../../entry/signals.js';
 import { CHAIN, TF_SEC, type MethodRead, type Tf } from '../../entry/types.js';
 import { ttlCache } from '../ttl-cache.js';
 
@@ -86,16 +86,19 @@ export function registerEntryRoutes(app: FastifyInstance, notifier: () => { send
 
   // The signal journal: every WAIT and TRADE shown, newest first; filter by mode, tf, state.
   app.get('/api/entry/signals', async (req) => {
-    const q = req.query as { limit?: string; mode?: string; tf?: string; state?: string; since?: string };
-    return {
-      signals: await recentSignals({
-        limit: q.limit ? Number(q.limit) || 100 : 100,
-        mode: q.mode && isMode(q.mode) ? q.mode : undefined,
-        tf: q.tf && (SINGLE_TFS as readonly string[]).includes(q.tf) ? q.tf : undefined,
-        state: q.state === 'WAIT' || q.state === 'TRADE' ? q.state : undefined,
-        since: q.since && Number.isFinite(Number(q.since)) ? Number(q.since) : undefined,
-      }),
-    };
+    const q = req.query as Record<string, string | undefined>;
+    const num = (v?: string) => (v !== undefined && Number.isFinite(Number(v)) ? Number(v) : undefined);
+    return signalPage({
+      limit: num(q.limit) ?? 100,
+      offset: num(q.offset),
+      mode: q.mode && isMode(q.mode) ? q.mode : undefined,
+      tf: q.tf && (SINGLE_TFS as readonly string[]).includes(q.tf) ? q.tf : undefined,
+      state: q.state === 'WAIT' || q.state === 'TRADE' ? q.state : undefined,
+      dir: q.dir === '1' || q.dir === '-1' ? Number(q.dir) : undefined,
+      since: num(q.since),
+      sort: q.sort === 'score' || q.sort === 'rr' || q.sort === 'time' ? q.sort : undefined,
+      asc: q.asc === 'true',
+    });
   });
 
   // Each method's paper record, with the chain and without it, and the latest setups written.

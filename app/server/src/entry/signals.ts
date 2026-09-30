@@ -43,6 +43,13 @@ const MIGRATIONS: Migration[] = [{
     );
     CREATE INDEX IF NOT EXISTS entry_signals_by_time ON entry_signals (first_seen DESC);
   `,
+}, {
+  // The market when the signal was first seen: the perpetual's last trade and Delta's BTC index.
+  id: 'entry-007-signal-prices',
+  up: `
+    ALTER TABLE entry_signals ADD COLUMN IF NOT EXISTS ltp DOUBLE PRECISION;
+    ALTER TABLE entry_signals ADD COLUMN IF NOT EXISTS index_price DOUBLE PRECISION;
+  `,
 }];
 
 let ready: Promise<void> | null = null;
@@ -59,7 +66,11 @@ export const SIGNALS_KEEP_DAYS = 365;
  * Write every WAIT and TRADE read once, and move `last_seen` on those already
  * written. Returns how many were new.
  */
-export async function recordSignals(reads: readonly MethodRead[], nowMs: number): Promise<number> {
+export async function recordSignals(
+  reads: readonly MethodRead[], nowMs: number,
+  /** The market now -- written on a signal's first sighting only, so it is the price when it appeared. */
+  prices: { ltp?: number | null; index?: number | null } = {},
+): Promise<number> {
   await signalsSchema();
   let fresh = 0;
   for (const r of reads) {
@@ -67,13 +78,13 @@ export async function recordSignals(reads: readonly MethodRead[], nowMs: number)
     const p = r.state === 'TRADE' ? r.plan : null;
     const res = await rows<{ inserted: boolean }>(
       `INSERT INTO entry_signals (method, mode, tf, dir, state, trigger_at, first_seen, last_seen, score, reason,
-                                  entry_lo, entry_hi, stop, tp1, rr, gates_off)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                                  entry_lo, entry_hi, stop, tp1, rr, gates_off, ltp, index_price)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
        ON CONFLICT (method, mode, tf, dir, trigger_at, state) DO UPDATE SET last_seen = EXCLUDED.last_seen
        RETURNING (xmax = 0) AS inserted`,
       [r.id, r.mode, r.tf, r.dir === 'long' ? 1 : -1, r.state, r.triggerTime, nowMs, r.score, r.reason,
         p?.entryLo ?? null, p?.entryHi ?? null, p?.stop ?? null, p?.tp1 ?? null, p?.rr ?? null,
-        r.gates.filter((g) => !g.enabled).map((g) => g.key)],
+        r.gates.filter((g) => !g.enabled).map((g) => g.key), prices.ltp ?? null, prices.index ?? null],
     );
     if (res[0]?.inserted) fresh += 1;
   }
@@ -94,6 +105,8 @@ export type SignalRow = {
   gatesOff: string[];
   /** The method's number and name, for the screen. */
   n: number | null; name: string;
+  /** The market when it was first seen: the perpetual's last trade, Delta's BTC index. */
+  ltp: number | null; indexPrice: number | null;
   /**
    * What became of a TRADE in the paper log: open (waiting for price), filled,
    * tp1, stop, timeout, expired -- with the fill, the exit and R after fees.
@@ -102,8 +115,39 @@ export type SignalRow = {
   outcome: { status: string; fillPrice: number | null; exitPrice: number | null; exitAt: number | null; rNet: number | null } | null;
 };
 
+export type SignalQuery = {
+  limit?: number; offset?: number;
+  mode?: string; tf?: string; state?: string; since?: number;
+  /** 1 BUY, -1 SELL. */
+  dir?: number;
+  /** Column to sort by, newest / highest first unless `asc`. */
+  sort?: 'time' | 'score' | 'rr';
+  asc?: boolean;
+};
+
+/** Sortable columns, by name: a fixed list, never the caller's text in the SQL. */
+const SORT_SQL: Record<NonNullable<SignalQuery['sort']>, string> = { time: 's.first_seen', score: 's.score', rr: 's.rr' };
+
 /** The latest signals, newest first, optionally one way, timeframe or state, or since a moment; each TRADE with its outcome. */
-export async function recentSignals(q: { limit?: number; mode?: string; tf?: string; state?: string; since?: number } = {}): Promise<SignalRow[]> {
+export async function recentSignals(q: SignalQuery = {}): Promise<SignalRow[]> {
+  return (await signalPage(q)).signals;
+}
+
+/**
+ * One page of the history and the number matching the filters, for the
+ * screen's table: `limit` rows from `offset`, sorted by a fixed column.
+ */
+/**
+ * Over every signal matching the filters (not just the page): TRADEs, how many
+ * reached TP1 and the points they made, how many hit the stop and the points
+ * they lost, and the net in points and R -- each from the fill to the exit.
+ */
+export type SignalSummary = {
+  trades: number; tp1: number; tp1Pts: number; stops: number; slPts: number; timeouts: number;
+  netPts: number; netR: number; open: number;
+};
+
+export async function signalPage(q: SignalQuery = {}): Promise<{ signals: SignalRow[]; total: number; summary: SignalSummary }> {
   // The history reads the paper log beside it (a TRADE's outcome): both tables first, whatever ran at boot.
   await Promise.all([signalsSchema(), entrySchema()]);
   const where: string[] = [];
@@ -111,27 +155,56 @@ export async function recentSignals(q: { limit?: number; mode?: string; tf?: str
   if (q.mode) { args.push(q.mode); where.push(`s.mode = $${args.length}`); }
   if (q.tf) { args.push(q.tf); where.push(`s.tf = $${args.length}`); }
   if (q.state) { args.push(q.state); where.push(`s.state = $${args.length}`); }
+  if (q.dir === 1 || q.dir === -1) { args.push(q.dir); where.push(`s.dir = $${args.length}`); }
   if (q.since) { args.push(q.since); where.push(`s.first_seen >= $${args.length}`); }
+  const filter = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const JOIN = `LEFT JOIN entry_setups e ON s.state = 'TRADE' AND e.method = s.method AND e.mode = s.mode AND e.tf = s.tf
+                                AND e.dir = s.dir AND e.trigger_at = s.trigger_at`;
+  // Points from the fill to the exit, in the trade's favour: (exit - fill) x direction.
+  const pts = '(e.exit_price - e.fill_price) * e.dir';
+  const [agg] = await rows<Record<string, string | null>>(
+    `SELECT count(*) AS n,
+            count(*) FILTER (WHERE s.state = 'TRADE') AS trades,
+            count(*) FILTER (WHERE e.status = 'tp1') AS tp1, coalesce(sum(${pts}) FILTER (WHERE e.status = 'tp1'), 0) AS tp1_pts,
+            count(*) FILTER (WHERE e.status = 'stop') AS stops, coalesce(-sum(${pts}) FILTER (WHERE e.status = 'stop'), 0) AS sl_pts,
+            count(*) FILTER (WHERE e.status = 'timeout') AS timeouts,
+            coalesce(sum(${pts}) FILTER (WHERE e.status IN ('tp1', 'stop', 'timeout')), 0) AS net_pts,
+            coalesce(sum(e.r_net) FILTER (WHERE e.status IN ('tp1', 'stop', 'timeout')), 0) AS net_r,
+            count(*) FILTER (WHERE e.status IN ('open', 'filled')) AS open
+       FROM entry_signals s ${JOIN} ${filter}`,
+    args,
+  );
+  const n = Number(agg?.n ?? 0);
+  const summary: SignalSummary = {
+    trades: Number(agg?.trades ?? 0), tp1: Number(agg?.tp1 ?? 0), tp1Pts: Number(agg?.tp1_pts ?? 0),
+    stops: Number(agg?.stops ?? 0), slPts: Number(agg?.sl_pts ?? 0), timeouts: Number(agg?.timeouts ?? 0),
+    netPts: Number(agg?.net_pts ?? 0), netR: Number(agg?.net_r ?? 0), open: Number(agg?.open ?? 0),
+  };
+  const col = SORT_SQL[q.sort ?? 'time'] ?? SORT_SQL.time;
+  const order = `${col} ${q.asc ? 'ASC' : 'DESC'} NULLS LAST, s.first_seen DESC, s.id DESC`;
   args.push(Math.min(500, Math.max(1, q.limit ?? 100)));
+  const lim = args.length;
+  args.push(Math.max(0, Math.floor(q.offset ?? 0)));
+  const off = args.length;
   const rs = await rows<Record<string, unknown>>(
     `SELECT s.*, e.status AS e_status, e.fill_price AS e_fill, e.exit_price AS e_exit, e.exit_at AS e_exit_at, e.r_net AS e_r
-       FROM entry_signals s
-       LEFT JOIN entry_setups e ON s.state = 'TRADE' AND e.method = s.method AND e.mode = s.mode AND e.tf = s.tf
-                                AND e.dir = s.dir AND e.trigger_at = s.trigger_at
-       ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY s.first_seen DESC, s.id DESC LIMIT $${args.length}`,
+       FROM entry_signals s ${JOIN}
+       ${filter} ORDER BY ${order} LIMIT $${lim} OFFSET $${off}`,
     args,
   );
   const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
-  return rs.map((r) => ({
+  const signals = rs.map((r) => ({
     method: String(r.method), mode: r.mode as SignalRow['mode'], tf: r.tf as Tf, dir: Number(r.dir) as 1 | -1, state: r.state as SignalRow['state'],
     triggerAt: Number(r.trigger_at), firstSeen: Number(r.first_seen), lastSeen: Number(r.last_seen),
     score: num(r.score), reason: String(r.reason),
     entryLo: num(r.entry_lo), entryHi: num(r.entry_hi), stop: num(r.stop), tp1: num(r.tp1), rr: num(r.rr),
     gatesOff: (r.gates_off as string[] | null) ?? [],
+    ltp: num(r.ltp), indexPrice: num(r.index_price),
     n: METHODS.find((m) => m.id === r.method)?.n ?? null,
     name: METHODS.find((m) => m.id === r.method)?.name ?? String(r.method),
     outcome: r.e_status ? {
       status: String(r.e_status), fillPrice: num(r.e_fill), exitPrice: num(r.e_exit), exitAt: num(r.e_exit_at), rNet: num(r.e_r),
     } : null,
   }));
+  return { signals, total: n, summary };
 }

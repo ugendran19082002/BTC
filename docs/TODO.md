@@ -80,9 +80,9 @@ Still open:
   OHLC (a candle touching stop and TP1 is the stop). The recorded prints
   (`trade_flow_1m` is per minute; the raw prints are held 65 min in memory)
   would say which came first -- needs a per-print record to replay.
-- [ ] **A signal log on screen**: `GET /api/entry/signals` is there; a table
-  of the day's signals (time, method, way, timeframe, WAIT / TRADE, how long
-  it stood, what became of it) under the paper record.
+- [x] **Signal history on screen** (30 Sep 2026): every kept signal with its
+  levels and what became of it; filters; cards on a phone. The paper record
+  says what is happening when empty, and shows gate-off setups apart.
 - [x] **Telegram per timeframe, and every alert on record** (30 Sep 2026):
   the without-timeframe switch has timeframe chips (5m by default); every
   attempt is in `entry_alert_log` with sent / failed and why, and the switch

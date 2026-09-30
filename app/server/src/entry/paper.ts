@@ -205,6 +205,8 @@ export type MethodRecord = {
   avgLossR: number | null;
   /** Setups written while a hard gate was switched off: kept, but not in any figure above. */
   gatesOff: number;
+  /** Points made at TP1, lost at the stop, and the net over every closed trade -- each from the fill to the exit. */
+  tgtPts: number; slPts: number; netPts: number;
   since: number | null;
 };
 
@@ -227,7 +229,20 @@ export function statsOf(rs: readonly number[]): Pick<MethodRecord, 'trades' | 'w
   };
 }
 
-type ClosedRow = { method: string; mode: 'mtf' | 'single'; tf: Tf; status: PaperRow['status']; r_net: number | null; first_seen: number; gates_off: string[] };
+/** Points from the fill to the exit, in the trade's favour, summed by how the trades ended. */
+function pointsOf(closed: readonly { status: string; dir: number; fill_price: number | null; exit_price: number | null }[]) {
+  const p = (x: (typeof closed)[number]) => (x.fill_price === null || x.exit_price === null ? 0 : (Number(x.exit_price) - Number(x.fill_price)) * Number(x.dir));
+  return {
+    tgtPts: closed.filter((x) => x.status === 'tp1').reduce((a, x) => a + p(x), 0),
+    slPts: -closed.filter((x) => x.status === 'stop').reduce((a, x) => a + p(x), 0),
+    netPts: closed.reduce((a, x) => a + p(x), 0),
+  };
+}
+
+type ClosedRow = {
+  method: string; mode: 'mtf' | 'single'; tf: Tf; status: PaperRow['status']; r_net: number | null; first_seen: number; gates_off: string[];
+  dir: number; fill_price: number | null; exit_price: number | null;
+};
 
 /**
  * Each method's record, with the timeframe chain and without it, and each
@@ -241,7 +256,7 @@ type ClosedRow = { method: string; mode: 'mtf' | 'single'; tf: Tf; status: Paper
 export async function entryRecord(): Promise<{ records: MethodRecord[]; totals: MethodRecord[]; totalsAll: MethodRecord[] }> {
   await entrySchema();
   const all = await rows<ClosedRow>(
-    `SELECT method, mode, tf, status, r_net, first_seen, gates_off FROM entry_setups ORDER BY coalesce(exit_at, graded_to), id`,
+    `SELECT method, mode, tf, status, r_net, first_seen, gates_off, dir, fill_price, exit_price FROM entry_setups ORDER BY coalesce(exit_at, graded_to), id`,
   );
   const group = (key: (r: ClosedRow) => string) => {
     const m = new Map<string, ClosedRow[]>();
@@ -260,6 +275,7 @@ export async function entryRecord(): Promise<{ records: MethodRecord[]; totals: 
       since: Math.min(...all.map((x) => x.first_seen)),
       ...statsOf(closed.map((x) => x.r_net ?? 0)),
       gatesOff: all.filter((x) => x.gates_off?.length).length,
+      ...pointsOf(closed),
     };
   };
   const records = [...group((r) => `${r.method}|${r.mode}|${r.tf}`).values()].map((xs) => recordOf(xs, xs[0]!.method))

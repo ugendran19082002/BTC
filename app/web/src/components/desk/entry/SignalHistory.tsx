@@ -100,7 +100,38 @@ export function SignalHistory() {
           {loading && !data ? 'Reading…' : 'No signals for these filters yet. The server keeps every WAIT and TRADE as it forms, once a minute.'}
         </p>
       ) : (
-        <div className="max-h-[480px] overflow-auto">
+        <>
+        {/* On a phone, a card per signal -- a table there only scrolls sideways. */}
+        <ul aria-label="signals as cards" className="m-0 grid max-h-[520px] list-none gap-1.5 overflow-auto p-0 sm:hidden">
+          {rows.map((s) => {
+            const out = outcomeOf(s);
+            const side = s.dir === 1 ? 'BUY' : 'SELL';
+            return (
+              <li key={`c:${s.mode}:${s.tf}:${s.method}:${s.dir}:${s.triggerAt}:${s.state}`} className="rounded-lg border border-border p-2 tabular-nums">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-semibold">#{s.n ?? '?'} {s.name}</span>
+                  <span className={cn('rounded px-1 text-[11px] font-bold', s.state === 'WAIT' ? 'bg-[#b7791f] text-white' : s.dir === 1 ? 'bg-[#26a17b] text-white' : 'bg-[#e2504f] text-white')}>
+                    {s.state === 'WAIT' ? `WAIT ${side}` : side}
+                  </span>
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  {TIME.format(s.firstSeen)} · {s.mode === 'mtf' ? 'With TF' : 'Without'} · {s.tf} · stood {stood(s.lastSeen - s.firstSeen)}
+                  {s.gatesOff.length ? <span className="text-[var(--warn)]"> · gates off</span> : null}
+                </div>
+                {s.entryLo !== null ? (
+                  <div className="mt-0.5 flex flex-wrap gap-x-3 text-[11.5px]">
+                    <span>Entry {fmt(s.entryLo)}–{fmt(s.entryHi)}</span>
+                    <span className="text-[var(--down)]">SL {fmt(s.stop)}</span>
+                    <span className="text-[var(--up)]">TP1 {fmt(s.tp1)}</span>
+                    {s.rr !== null ? <span className="text-muted-foreground">R:R {s.rr.toFixed(2)}</span> : null}
+                  </div>
+                ) : null}
+                <div className={cn('mt-0.5 text-[11.5px] font-semibold', out.cls)}>{out.text}</div>
+              </li>
+            );
+          })}
+        </ul>
+        <div className="hidden max-h-[480px] overflow-auto sm:block">
           <table className="w-full border-collapse tabular-nums" aria-label="signals">
             <thead className="sticky top-0 bg-[var(--card,#0b0f17)] text-left text-[10.5px] text-muted-foreground">
               <tr>
@@ -146,6 +177,7 @@ export function SignalHistory() {
             </tbody>
           </table>
         </div>
+        </>
       )}
     </section>
   );

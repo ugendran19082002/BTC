@@ -202,7 +202,9 @@ const recordEntries = () => {
       // written, each attempt written down (entry_alert_log) -- sent or failed, and why.
       const settings = await alertSettings().catch(() => []);
       const reads = allReads(ctx);
-      await recordSignals(reads, ctx.now);
+      // With the market as it stood: the tape's last trade (fresh) and the option board's index.
+      const fresh = ctx.ltp && ctx.now - ctx.ltp.at <= 15_000 ? ctx.ltp.price : null;
+      await recordSignals(reads, ctx.now, { ltp: fresh, index: ctx.options?.spot ?? null });
       await recordSetups(reads, ctx.now, (r) => {
         if (wanted(r, settings)) void sendEntryAlert(r, desk.notifier, { ltp: ctx.ltp?.price ?? null, at: ctx.now });
       });

@@ -251,7 +251,11 @@ phone, where a method is its **number only**. Each panel has:
   and *Gates · with*: "✓ 6/6" (of those read), or the gate that refuses; hover
   for the list.
 - **Paper record**: that way's trades, win rate, profit factor, net R and max
-  drawdown, over all twelve at 5m, after fees.
+  drawdown, over all twelve, after fees -- every gate on. With nothing closed
+  it says what is happening ("2 setups working -- figures appear as they
+  close"). Setups taken with a gate switched off are shown under it in an
+  amber, dashed line -- "Including 12 setups taken with a gate off: 13 trades
+  · 38% won · PF 0.70 · −2.4R. Not the rules' record" -- never mixed in.
 
 **Timeframe analysis** is a card of its own under the **Big move catch**
 (moved there from the with-timeframe panel on 30 Sep 2026): each of 4H-1m,
@@ -261,7 +265,17 @@ entry section hands it up), so it costs no second request.
 
 Underneath, **Without vs with timeframe**: the two records compared metric by
 metric (setups, trades, win rate, average win and loss, profit factor, net R,
-max drawdown) -- the reference's historical comparison, from the real log only.
+max drawdown) -- the reference's historical comparison, from the real log only
+-- with a switch, *Every gate on* / *Incl. gates off (n)*, that says which it
+shows. (`GET /api/entry/record` gives `totals` and `totalsAll`.)
+
+Then the **Signal history**: every signal the server kept (the journal),
+newest first, every 15 s -- time (IST), method, way and timeframe, BUY / SELL
+or WAIT, how long it stood, entry, SL, TP1, R:R, quality, "gates off" -- and
+for a TRADE what became of it: waiting for price, in the trade @ fill, TP1 ✓
++R, stop ✗ −R, timed out, expired never filled. Filters (both / without /
+with, all / TRADE / WAIT, timeframe, today / all days) are remembered; on a
+phone each signal is a card.
 A **12 charts** switch shows the twelve of one way as twelve small price charts
 (no readout or toolbar), each with its own TRADE, and **Setups on chart** turns
 every drawn level off (the plain charts).

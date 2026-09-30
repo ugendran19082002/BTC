@@ -1,6 +1,6 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pruneSignals, recentSignals, recordSignals } from '../../src/entry/signals.js';
+import { pruneSignals, recentSignals, recordSignals, signalPage } from '../../src/entry/signals.js';
 import { allReads, SINGLE_TFS } from '../../src/entry/engine.js';
 import type { MethodRead } from '../../src/entry/types.js';
 import { closePool, query, rows } from '../../src/db/pool.js';
@@ -56,8 +56,34 @@ test('[critical] a TRADE in the history carries what became of it in the paper l
   assert.equal((await recentSignals({ since: (T + 650) * 1000 })).length, 2, 'since a moment');
 });
 
+test('[critical] the price when the signal appeared -- LTP and index -- is kept from its first sighting, not overwritten', async () => {
+  const x = read({ id: 'momentum', tf: '30m', triggerTime: T + 7_000 });
+  await recordSignals([x], (T + 7_060) * 1000, { ltp: 84_205.5, index: 84_190.2 });
+  await recordSignals([x], (T + 7_120) * 1000, { ltp: 85_000, index: 85_000 });
+  const [row] = await recentSignals({ tf: '30m' });
+  assert.deepEqual([row!.ltp, row!.indexPrice], [84_205.5, 84_190.2]);
+});
+
+test('[critical] a page of the history: the total matching, a page from an offset, BUY or SELL, sorted by a column', async () => {
+  for (let k = 0; k < 7; k++) {
+    await recordSignals([read({ id: 'pullback', tf: '4h', triggerTime: T + 10_000 + k, dir: k % 2 ? 'long' : 'short', state: 'TRADE', plan: { ...PLAN, rr: k }, score: 10 * k })], (T + 10_000 + k) * 1000);
+  }
+  const first = await signalPage({ tf: '4h', limit: 3 });
+  assert.equal(first.total, 7);
+  assert.equal(first.signals.length, 3);
+  const third = await signalPage({ tf: '4h', limit: 3, offset: 6 });
+  assert.equal(third.signals.length, 1, 'the last page holds what is left');
+  assert.equal(new Set([...first.signals, ...(await signalPage({ tf: '4h', limit: 3, offset: 3 })).signals, ...third.signals].map((x) => x.triggerAt)).size, 7, 'no row twice, none missed');
+  const buys = await signalPage({ tf: '4h', dir: 1 });
+  assert.deepEqual([buys.total, buys.signals.every((x) => x.dir === 1)], [3, true]);
+  const sells = await signalPage({ tf: '4h', dir: -1, state: 'TRADE' });
+  assert.equal(sells.total, 4);
+  assert.deepEqual((await signalPage({ tf: '4h', sort: 'rr' })).signals.map((x) => x.rr), [6, 5, 4, 3, 2, 1, 0]);
+  assert.deepEqual((await signalPage({ tf: '4h', sort: 'score', asc: true })).signals.map((x) => x.score), [0, 10, 20, 30, 40, 50, 60]);
+});
+
 test('signals older than the keep period go; the rest stay', async () => {
-  assert.equal(await pruneSignals((T + 400 * 86_400) * 1000, 365), 5);
+  assert.equal(await pruneSignals((T + 400 * 86_400) * 1000, 365), 13);
   assert.equal((await recentSignals()).length, 0);
 });
 
