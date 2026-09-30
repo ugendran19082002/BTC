@@ -1,10 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { PnlKpiCards } from '@/components/report/PnlKpiCards';
 import { PerformanceStats } from '@/components/report/PerformanceStats';
 import { WinLossAnalysis } from '@/components/report/WinLossAnalysis';
 import { DailyPnlChart } from '@/components/report/DailyPnlChart';
 import { PnlCurveChart } from '@/components/report/PnlCurveChart';
+import { PnlCalendar } from '@/components/report/PnlCalendar';
 import type { DayRow } from '@/types/report';
 
 const mockRows: DayRow[] = [
@@ -157,5 +158,51 @@ describe('Dynamic Clean Zero States (No Dummy Data)', () => {
     expect(screen.getByText('Performance Stats')).toBeInTheDocument();
     const values = screen.getAllByText('0');
     expect(values.length).toBeGreaterThan(0);
+  });
+});
+
+describe('PnlCalendar UI Upgrades', () => {
+  it('renders calendar toolbar, toggles Detailed / Heatmap mode, and shows day inspector', () => {
+    let selectedDay: string | null = '2026-09-24';
+    const onSelect = vi.fn((day: string) => {
+      selectedDay = day;
+    });
+
+    render(
+      <PnlCalendar
+        rows={mockRows}
+        from="2026-09-01"
+        to="2026-09-30"
+        includeCharges={true}
+        selected={selectedDay}
+        onSelect={onSelect}
+      />
+    );
+
+    // Toolbar elements
+    expect(screen.getByText('P&L CALENDAR')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Detailed' })).toHaveClass('active');
+    expect(screen.getByRole('button', { name: 'Heatmap' })).toBeInTheDocument();
+
+    // Toggle to Heatmap mode
+    fireEvent.click(screen.getByRole('button', { name: 'Heatmap' }));
+    expect(screen.getByRole('button', { name: 'Heatmap' })).toHaveClass('active');
+    expect(screen.getByRole('grid')).toHaveClass('mode-compact');
+
+    // Toggle back to Detailed mode
+    fireEvent.click(screen.getByRole('button', { name: 'Detailed' }));
+    expect(screen.getByRole('button', { name: 'Detailed' })).toHaveClass('active');
+    expect(screen.getByRole('grid')).toHaveClass('mode-detailed');
+
+    // Day Inspector Card renders for selected day
+    expect(screen.getByRole('region', { name: 'Day detail' })).toBeInTheDocument();
+    expect(screen.getByText(/Net P&L/)).toBeInTheDocument();
+    expect(screen.getByText(/Gross Realized/)).toBeInTheDocument();
+    expect(screen.getByText(/Charges & Fees/)).toBeInTheDocument();
+
+    // Clicking a day calls onSelect
+    const cell = screen.getByRole('gridcell', { name: /2026-09-21/ });
+    fireEvent.click(cell);
+    expect(onSelect).toHaveBeenCalledWith('2026-09-21');
   });
 });
