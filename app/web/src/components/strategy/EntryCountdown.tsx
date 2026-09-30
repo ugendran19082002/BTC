@@ -2,6 +2,11 @@ import { useEffect, useState } from 'react';
 import { Timer } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+/**
+ * How long until a strategy's next entry, ticking, and whether the scheduler
+ * is on to take it.
+ */
+
 /** "2h 05m 09s", "12m 34s", "45s"; a day or more reads "1d 3h". */
 export function countdownText(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));

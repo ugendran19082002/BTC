@@ -92,7 +92,7 @@ function paragraphOf(lines: string[]): string {
  * else the longest block of three lines or more (two for `//` lines). A comment
  * directly above a function or class documents that declaration, not the file
  * -- quoting it as the file's purpose would be a confident wrong answer --
- * unless that is the only function or class the file has.
+ * unless it is the only one the file has, or the first it exports.
  */
 function codeHeader(text: string): string {
   const lines = text.split('\n');
@@ -127,14 +127,16 @@ function codeHeader(text: string): string {
     const standsAlone = next === '' || next.startsWith('/*') || next.startsWith('//');
     const size = i - start;
     const p = paragraphOf(lines.slice(start, i));
-    if (!p || /^(eslint|@ts-|prettier|GENERATED)/i.test(p)) continue;
+    if (!p || /^(eslint|@ts-|prettier)/i.test(p)) continue;
     if (standsAlone) return p;
     // Attached to a declaration: a candidate only if it is long, and not a
     // function's or a class's own doc. The longest wins -- a file's docblock is
     // nearly always bigger than the one-paragraph note on a constant beside it.
     const long = block ? size >= 3 : size >= 2;
-    // The one function or class a module holds: its doc is the module's.
-    const onlyDecl = DECL.test(next) && lines.filter((l) => DECL.test(l)).length === 1;
+    // The one function or class a module holds, or the first one it exports
+    // (a component file's component): its doc, at length, is the module's.
+    const onlyDecl = DECL.test(next)
+      && (lines.filter((l) => DECL.test(l)).length === 1 || /^export\s/.test(next));
     if (long && (!DECL.test(next) || onlyDecl) && size > (best?.size ?? 0)) best = { size, p };
   }
   return best?.p ?? '';

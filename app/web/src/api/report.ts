@@ -1,6 +1,11 @@
 import { json } from '@/api/client';
 import type { DaysReport, MtmReport } from '@/types/report';
 
+/**
+ * The P&L screen's calls: the record as a calendar, one day's mark-to-market
+ * line, and the spreadsheet download.
+ */
+
 /** The record as a calendar, and a day as a line. Read-only. */
 export const getDays = (from: string, to: string) =>
   json<DaysReport>(`/api/report/days?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);

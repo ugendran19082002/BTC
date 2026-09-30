@@ -2,6 +2,10 @@ import * as React from 'react';
 import * as SeparatorPrimitive from '@radix-ui/react-separator';
 import { cn } from '@/lib/utils';
 
+/**
+ * shadcn-style separator on Radix: a horizontal or vertical rule.
+ */
+
 export const Separator = React.forwardRef<
   React.ElementRef<typeof SeparatorPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof SeparatorPrimitive.Root>

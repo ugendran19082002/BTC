@@ -2,6 +2,10 @@ import * as React from 'react';
 import * as PopoverPrimitive from '@radix-ui/react-popover';
 import { cn } from '@/lib/utils';
 
+/**
+ * shadcn-style popover on Radix: a panel anchored to its trigger.
+ */
+
 export const Popover = PopoverPrimitive.Root;
 export const PopoverTrigger = PopoverPrimitive.Trigger;
 

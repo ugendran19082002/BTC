@@ -1,4 +1,6 @@
 # syntax=docker/dockerfile:1.7
+# The screen: build the Vite bundle, then serve it from nginx, which also
+# proxies /api to the API container (deploy/nginx.docker.conf).
 
 FROM node:24.12-alpine AS build
 WORKDIR /build

@@ -1,6 +1,11 @@
 import { json, post } from '@/api/client';
 import type { ErrorList, ErrorSource } from '@/types/errors';
 
+/**
+ * The error log: read it, resolve or delete a row, and report a failure from
+ * this browser into the same table the server writes to.
+ */
+
 export function getErrors(opts: { source?: ErrorSource; resolved?: boolean; limit?: number } = {}) {
   const q = new URLSearchParams();
   if (opts.source) q.set('source', opts.source);

@@ -10,6 +10,12 @@ import { isForming, withLiveBar, withLtp } from '@/lib/live-bar';
 import type { LiveLtp } from '@/hooks/useStream';
 import { aggregate, closedBars, readTf, type TfRead } from '@/lib/smc/context';
 
+/**
+ * The desk tab's chart: the price chart with its order-flow layers fed in --
+ * the book's heatmap, big trades, the delta / CVD pane and the trend plan --
+ * each read on its own poll and shared between them.
+ */
+
 const HOUR = 3600;
 const M5 = 300;
 const M1 = 60;

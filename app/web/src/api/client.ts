@@ -1,5 +1,11 @@
 import { reportError } from '@/lib/report-error';
 
+/**
+ * One place that knows how to talk to the API: JSON in and out, the session
+ * cookie, "not signed in" as its own error, and which failures are worth
+ * reporting to the error log.
+ */
+
 export class NotSignedIn extends Error {
   constructor() {
     super('not signed in');

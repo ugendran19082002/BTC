@@ -2,6 +2,11 @@ import { AlertTriangle } from 'lucide-react';
 import type { TradeStatus } from '@/types/trade';
 import { clock } from '@/lib/format';
 
+/**
+ * The alarm across the top of the page: a position with nothing behind it --
+ * no stop, no target -- interrupts everything else until it is dealt with.
+ */
+
 /** A position with nothing behind it is the one thing that interrupts the page. */
 export function AlarmBanner({ status, onDismiss }: { status: TradeStatus | null; onDismiss?: () => void }) {
   const naked = status?.open.filter((t) => t.alarm) ?? [];

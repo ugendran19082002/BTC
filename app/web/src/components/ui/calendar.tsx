@@ -2,6 +2,10 @@ import { DayPicker } from 'react-day-picker';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+/**
+ * shadcn-style calendar on react-day-picker, styled for the desk; used by the date-range picker.
+ */
+
 export type CalendarProps = React.ComponentProps<typeof DayPicker>;
 
 export function Calendar({ className, classNames, showOutsideDays = true, ...props }: CalendarProps) {

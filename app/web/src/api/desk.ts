@@ -1,6 +1,12 @@
 import type { CandlesResponse, ChainResponse, ExpiryOption } from '@/types/desk';
 import { json, post } from '@/api/client';
 
+/**
+ * The desk's read calls: the option chain, spot and candles, what changed, the
+ * perpetual's tape, book and big prints, the trend plan's paper log, health and
+ * settings. One function per route, typed to what the route returns.
+ */
+
 export function getChain(
   at: string,
   width: number,

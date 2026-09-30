@@ -1,3 +1,4 @@
+"""Section K of the R&D report, per leg: each premium rule's record for the CE and PE legs apart, by year."""
 import analyze as A
 all_=A.add_context(A.load())
 def seg(a,b): return [d for d in all_ if a<=d["date"]<=b]

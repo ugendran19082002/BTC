@@ -1,3 +1,5 @@
+# A systemd unit for running the API straight on a host, without docker.
+# Not used by the compose deploy (deploy/deploy.sh); kept for a host without docker.
 [Unit]
 Description=BTC Options Desk API (Fastify)
 After=network-online.target

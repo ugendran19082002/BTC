@@ -1,6 +1,10 @@
 import * as React from 'react';
 import { cn } from '@/lib/utils';
 
+/**
+ * shadcn-style badge: a small label with a tone (default, outline, up, down, warn).
+ */
+
 type Tone = 'neutral' | 'ok' | 'warn' | 'danger';
 
 const TONE: Record<Tone, string> = {
