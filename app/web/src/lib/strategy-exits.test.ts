@@ -5,6 +5,37 @@ import {
 import { distanceOf, exitAskOf, inputProblem, levelOf, switchMode, valueOf } from '@/lib/exit-input';
 import { DEFAULT_CONFIG } from '@/types/strategy';
 
+describe('exitPrice never puts an exit on the entry (1 Oct 2026, as the server)', () => {
+  it('[critical] a target is under the entry and a stop over it, for every entry and every ask', () => {
+    const bad: string[] = [];
+    for (let i = 1; i <= 1000; i++) {
+      for (const e of [i / 10, Math.round((i / 10 + 0.05) * 100) / 100]) {
+        for (const v of [0.01, 0.05, 0.1, 0.5, 0.95, 0.99]) {
+          const t = exitPrice('target', 'pct', v, e);
+          if (t !== null ? !(t < e) : e > 0.1 + 1e-9) bad.push(`target ${e} ${v}% -> ${t}`);
+          const s = exitPrice('stop', 'pct', v, e);
+          if (s === null || !(s > e)) bad.push(`stop ${e} ${v}% -> ${s}`);
+        }
+        for (const v of [0.05, 0.1, 1, 10, 500]) {
+          const t = exitPrice('target', 'points', v, e);
+          if (t !== null ? !(t < e) : e > 0.1 + 1e-9) bad.push(`target ${e} ${v} pts -> ${t}`);
+          const s = exitPrice('stop', 'points', v, e);
+          if (s === null || !(s > e)) bad.push(`stop ${e} ${v} pts -> ${s}`);
+        }
+      }
+    }
+    expect(bad.slice(0, 10)).toEqual([]);
+  });
+
+  it('the cases by name, matching the server', () => {
+    expect(exitPrice('target', 'pct', 0.95, 0.1)).toBeNull();
+    expect(exitPrice('target', 'points', 0.05, 5)).toBe(4.9);
+    expect(exitPrice('stop', 'pct', 0.1, 0.3)).toBe(0.4);
+    expect(exitPrice('stop', 'pct', 1.85, 42)).toBe(119.7);
+    expect(exitPrice('target', 'pct', 0.99, 42)).toBe(0.4);
+  });
+});
+
 describe('fillSteps', () => {
   it('[critical] entry 5:30, 80%, every 2 h +5%: 7:30 85%, 9:30 90%, 11:30 95%, 13:30 99% -- and stops at the ceiling', () => {
     expect(fillSteps({ leg: 'target', mode: 'pct', entryTime: '05:30', exitTime: '17:29', start: 0.8, everyMin: 120, by: 0.05 }))

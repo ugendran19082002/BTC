@@ -154,10 +154,18 @@ export function exitPrice(leg: ExitLeg, mode: ExitMode, value: number, entry: nu
   // A price is the level whatever the entry; the others need one to measure from.
   if (mode === 'price') return r1(value);
   if (entry === null) return null;
-  if (leg === 'stop') return mode === 'points' ? r1(entry + value) : r1(entry * (1 + value));
-  return mode === 'points'
+  // Never the entry itself (1 Oct 2026, as the server): a stop goes to the first
+  // tick over it, a target to the first tick under it, or none at a 0.1 entry.
+  if (leg === 'stop') {
+    const s = mode === 'points' ? r1(entry + value) : r1(entry * (1 + value));
+    return s > entry ? s : r1((Math.floor(entry * 10 + 1e-9) + 1) / 10);
+  }
+  const t = mode === 'points'
     ? Math.max(0.1, r1(Math.max(entry * 0.01, entry - value)))
     : Math.max(0.1, r1(entry * (1 - Math.min(MAX_TARGET_PCT, value))));
+  if (t < entry) return t;
+  const below = r1((Math.ceil(entry * 10 - 1e-9) - 1) / 10);
+  return below >= 0.1 ? below : null;
 }
 
 /**
