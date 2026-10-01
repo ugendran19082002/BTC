@@ -33,7 +33,7 @@ export type EntryPlan = {
   entryLo: number; entryHi: number; stop: number;
   tp1: number; tp2: number | null; tp3: number | null;
   tpWhy: string[];
-  /** Reward to TP1 over risk, after taker fees both ways. */
+  /** Reward to TP1 over risk, in points from the fill edge. */
   rr: number;
 };
 
@@ -58,6 +58,8 @@ export type MethodRead = {
   alignment: number | null;
   reason: string;
   triggerTime: number | null;
+  /** A TRADE's state and clock in the paper log (board only); null until the recorder writes it, within the minute. */
+  paper?: SetupClock | null;
 };
 
 /** One timeframe of the chain: its trend and what its last swings did. */
@@ -105,7 +107,31 @@ export type EntrySignal = {
   gatesOff: string[];
   /** The market when it was first seen: the perpetual's last trade, Delta's BTC index. */
   ltp: number | null; indexPrice: number | null;
-  outcome: { status: string; fillPrice: number | null; exitPrice: number | null; exitAt: number | null; rNet: number | null } | null;
+  outcome: EntrySignalOutcome | null;
+  /** When the trigger bar closed (epoch s), and how long after it the server first saw the signal (ms). */
+  barCloseAt: number; seenAfterMs: number;
+  /** The Telegram alert, if one was tried: when (epoch ms) and whether it went. */
+  alert: { at: number; status: 'sent' | 'failed' } | null;
+};
+
+/** What became of a TRADE in the paper log, with its times (epoch s) and how the fill and exit stood against the plan. */
+export type EntrySignalOutcome = {
+  status: string; fillPrice: number | null; exitPrice: number | null; exitAt: number | null; rNet: number | null;
+  filledAt: number | null; fillBy: number; timeoutAt: number | null;
+  /** The zone's near edge, where a resting limit fills; + points means the fill was better (opened inside the zone). */
+  fillEdge: number; fillBetterPts: number | null;
+  /** The level the exit aimed at (SL or TP1), points past it against the trade, and why: at the level, a gap, or time. */
+  exitLevel: number | null; exitPastPts: number | null; exitWhy: 'level' | 'gap' | 'time' | null;
+};
+
+/**
+ * A setup's clock in the paper log: seen (ms), may fill until `fillBy`, filled
+ * in the 1m bar at `filledAt`, times out at `timeoutAt`, out at `exitAt` (epoch
+ * s), and when its Telegram alert was tried (ms).
+ */
+export type SetupClock = {
+  status: string; firstSeen: number; fillBy: number; filledAt: number | null; fillPrice: number | null;
+  timeoutAt: number | null; exitAt: number | null; exitPrice: number | null; alertAt: number | null;
 };
 
 /** Over every signal matching the filters: TP1 hits and points made, stops and points lost, the net. */

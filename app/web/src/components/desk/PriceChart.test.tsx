@@ -248,7 +248,7 @@ describe('the price chart', () => {
     // Measured from the fill, the top of the zone (77,560): risk 260.
     expect(labels).toContain('ENTRY 77,560');
     expect(labels).toContain('SL 77,300 · −1.0R · 260 pts');
-    expect(labels).toContain('TP1 78,100 · +2.1R · 540 pts · R:R 2.1 after fees');
+    expect(labels).toContain('TP1 78,100 · +2.1R · 540 pts · R:R 2.1');
     expect(labels).toContain('TP2 78,400 · +3.2R · 840 pts');
     for (const it of drawn) if (it.t === 'box' || it.t === 'line') { expect(it.x1).toBe(50); expect(it.x2).toBe('right'); }
   });

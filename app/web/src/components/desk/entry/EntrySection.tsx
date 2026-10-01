@@ -29,7 +29,7 @@ import './entry.css';
  * desk has no other chart since 30 Sep 2026.
  *
  * The server decides every state (app/server/src/entry); this screen shows it.
- * No orders: every TRADE is paper-logged and graded after fees
+ * No orders: every TRADE is paper-logged and graded on 1m candles, in points and R
  * (docs/decisions/0013).
  */
 
@@ -171,8 +171,8 @@ export function EntrySection({ desk, onTimeframes }: {
 
       <p className="m-0 mt-2 text-[11px] leading-relaxed text-[var(--dim)]">
         Quality is a setup score out of 100, not a chance of winning -- nothing measures that yet. Every TRADE is written to a
-        paper log and graded on 1m candles after taker fees; the records here are that log, from 30 Sep 2026, and nothing
-        else. The desk's research found no directional rule on BTC that clears fees, so no order is placed from here.
+        paper log and graded on 1m candles, in points and R; the records here are that log, from 30 Sep 2026, and nothing
+        else. No order is placed from here.
       </p>
     </section>
   );

@@ -12,7 +12,7 @@ describe('the entry setup on the chart', () => {
     expect(box).toMatchObject({ x1: 12, x2: 'right', y1: 84_120, y2: 84_160 });
     const lines = items.filter((x) => x.t === 'line').map((x) => (x.t === 'line' ? x.label : ''));
     // Each level in R from the fill (84,160 for a long) and in points: risk 180.
-    expect(lines).toEqual(['ENTRY 84,160', 'SL 83,980 · −1.0R · 180 pts', 'TP1 84,300 · +0.8R · 140 pts · R:R 2.4 after fees', 'TP2 84,500 · +1.9R · 340 pts']);
+    expect(lines).toEqual(['ENTRY 84,160', 'SL 83,980 · −1.0R · 180 pts', 'TP1 84,300 · +0.8R · 140 pts · R:R 2.4', 'TP2 84,500 · +1.9R · 340 pts']);
   });
 
   it('[critical] the entry has its own colour -- blue -- apart from the red stop and the green targets; its line is where the trade fills', () => {

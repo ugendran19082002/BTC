@@ -40,7 +40,7 @@ vi.mock('@/api/entry', () => ({
 const ALERTS_OFF = { alerts: [{ mode: 'single', enabled: false, changedAt: null, tfs: ['5m'] }, { mode: 'mtf', enabled: false, changedAt: null, tfs: ['5m'] }], telegram: true, recent: [] };
 const SETTINGS = [
   { key: 'data', label: 'Data fresh', enabled: true, locked: 'On stale candles nothing else means anything.', changedAt: null },
-  { key: 'rr', label: 'R:R after fees', enabled: true, locked: null, changedAt: null },
+  { key: 'rr', label: 'R:R', enabled: true, locked: null, changedAt: null },
 ];
 const getCandles = vi.fn(async (tf: string) => ({ tf, bars: [{ time: 1, open: 84_000, high: 84_200, low: 83_900, close: 84_120, volume: 1 }] }));
 const getFlowBars = vi.fn(async (tf: string) => ({ tf, bars: [] }));
@@ -73,7 +73,7 @@ function read(n: number, mode: 'mtf' | 'single', over: Partial<MethodRead> = {})
 const gate = (key: string, label: string, value: string, ok: boolean | null, enabled = true) => ({ key, label, rule: `${label} rule`, value, ok, why: ok === false ? `${label} refused` : null, enabled });
 const PASSING = [
   gate('data', 'Data fresh', '0.4 min old', true), gate('spread', 'Spread', '0.001%', true), gate('stop', 'Stop band', '1.10 ATR', true),
-  gate('rr', 'R:R after fees', '1.90', true), gate('htf', 'HTF alignment', '1H up · 4H up', true), gate('big-move', 'Big-move risk', 'normal', true),
+  gate('rr', 'R:R', '1.90', true), gate('htf', 'HTF alignment', '1H up · 4H up', true), gate('big-move', 'Big-move risk', 'normal', true),
   gate('em', 'Expected move', 'no option board', null), gate('settle', 'Settlement', 'no option board', null),
 ];
 
@@ -84,7 +84,7 @@ const TRADE = read(3, 'mtf', {
   steps: [{ tf: '4h', label: 'macro context: with it', ok: true }, { tf: '5m', label: 'swept a swing low', ok: true }, { tf: '1m', label: 'execution: at the entry', ok: true }],
 });
 const WAITING = read(7, 'single', {
-  gates: PASSING.map((g) => (g.key === 'rr' ? gate('rr', 'R:R after fees', '1.20', false) : g.key === 'htf' ? gate('htf', 'HTF alignment', 'not part of this mode', null) : g)),
+  gates: PASSING.map((g) => (g.key === 'rr' ? gate('rr', 'R:R', '1.20', false) : g.key === 'htf' ? gate('htf', 'HTF alignment', 'not part of this mode', null) : g)),
   state: 'WAIT', dir: 'short', score: 40, reason: 'waiting for 5m: liquidity swept first',
   steps: [{ tf: '5m', label: 'the trend was up', ok: true }, { tf: '5m', label: 'liquidity swept first', ok: false }, { tf: '5m', label: 'delta turned', ok: null }],
 });
@@ -143,7 +143,7 @@ describe('the entry section, side by side', () => {
     expect(within(card).getByText('140 (0.17%)')).toBeInTheDocument();
     expect(within(card).queryByRole('alert')).toBeNull();
     expect(within(card).getByText('72/100')).toBeInTheDocument();
-    expect(within(card).getByText(/Paper-logged and graded after fees · no order is placed/)).toBeInTheDocument();
+    expect(within(card).getByText(/Paper-logged and graded on 1m candles · no order is placed/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /take trade/i })).toBeNull();
     expect(screen.queryByText(/confidence/i)).toBeNull();
     expect(within(withTf).getAllByText('BUY').length).toBe(1);
@@ -313,7 +313,7 @@ describe('the hard gates', () => {
     await waitFor(() => expect(list).toHaveTextContent('#3 Liquidity sweep'));
     const rows = within(list).getAllByRole('row');
     expect(rows).toHaveLength(8);
-    expect(within(rows[3]!).getByText('R:R after fees')).toBeInTheDocument();
+    expect(within(rows[3]!).getByText('R:R')).toBeInTheDocument();
     expect(within(rows[3]!).getByText('1.90')).toBeInTheDocument();
     expect(within(rows[3]!).getByLabelText('passed')).toHaveTextContent('✓');
     expect(within(rows[6]!).getByLabelText('not read')).toHaveTextContent('–');
@@ -321,7 +321,7 @@ describe('the hard gates', () => {
     fireEvent.click(within(list).getByRole('button', { name: 'Without TF' }));
     expect(list).toHaveTextContent('#7 MSS / CHoCH');
     const refused = within(list).getAllByLabelText('refused');
-    expect(refused.map((c) => c.closest('tr')!.textContent)).toEqual([expect.stringContaining('R:R after fees')]);
+    expect(refused.map((c) => c.closest('tr')!.textContent)).toEqual([expect.stringContaining('R:R')]);
   });
 
   it('with nothing forming there is nothing to check, and it says so', async () => {
@@ -342,14 +342,14 @@ describe('switching gates on and off', () => {
     expect(await screen.findByLabelText('locked on')).toBeInTheDocument();
     expect(screen.queryByRole('switch', { name: /Data fresh/ })).toBeNull();
     const reads = getEntryBoard.mock.calls.length;
-    fireEvent.click(screen.getByRole('switch', { name: /R:R after fees/ }));
+    fireEvent.click(screen.getByRole('switch', { name: /^R:R/ }));
     await waitFor(() => expect(setEntryGate).toHaveBeenCalledWith('rr', false));
     await waitFor(() => expect(screen.getByRole('button', { name: 'hard gate switches' })).toHaveTextContent('1 off'));
     await waitFor(() => expect(getEntryBoard.mock.calls.length).toBeGreaterThan(reads));
   });
 
   it('[critical] a gate that is off is marked off in the checklist -- "would refuse" -- and refuses nothing in the chip', async () => {
-    const offRead = { ...TRADE, gates: PASSING.map((g) => (g.key === 'rr' ? gate('rr', 'R:R after fees', '1.20', false, false) : g)) };
+    const offRead = { ...TRADE, gates: PASSING.map((g) => (g.key === 'rr' ? gate('rr', 'R:R', '1.20', false, false) : g)) };
     getEntryBoard.mockResolvedValue({ ...board(), reads: board().reads.map((r) => (r === TRADE ? offRead : r)) });
     render(<EntrySection desk={desk} />);
     const list = await screen.findByRole('region', { name: 'hard gates' });
@@ -418,13 +418,13 @@ describe('auto-select and Telegram', () => {
 
 describe('a TRADE that stands only because a gate is off', () => {
   it('[critical] says so on the card, with the refusing values: with every gate on it is NO TRADE', async () => {
-    const offRead = { ...TRADE, gates: PASSING.map((g) => (g.key === 'rr' ? gate('rr', 'R:R after fees', '0.16', false, false) : g)) };
+    const offRead = { ...TRADE, gates: PASSING.map((g) => (g.key === 'rr' ? gate('rr', 'R:R', '0.16', false, false) : g)) };
     getEntryBoard.mockResolvedValue({ ...board(), reads: board().reads.map((r) => (r === TRADE ? offRead : r)) });
     render(<EntrySection desk={desk} />);
     const withTf = await panel(/12 methods \+ timeframe/);
     const card = await within(withTf).findByRole('region', { name: 'selected setup' });
-    await waitFor(() => expect(within(card).getByRole('alert')).toHaveTextContent('Only a TRADE because R:R after fees is switched off'));
-    expect(within(card).getByRole('alert')).toHaveTextContent('R:R after fees 0.16');
+    await waitFor(() => expect(within(card).getByRole('alert')).toHaveTextContent('Only a TRADE because R:R is switched off'));
+    expect(within(card).getByRole('alert')).toHaveTextContent('R:R 0.16');
   });
 });
 

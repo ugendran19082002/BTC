@@ -5,6 +5,7 @@ import { usePersisted } from '@/hooks/usePersisted';
 import { getEntrySignals, type SignalFilter } from '@/api/entry';
 import { cn } from '@/lib/utils';
 import type { EntryMode, EntrySignal, EntrySignalSummary, EntryTf } from '@/types/entry';
+import { MINS, SECS, clockText, lag, useNow } from './clock';
 
 /**
  * Every signal the server kept (the journal, entry_signals), as a data table:
@@ -59,6 +60,29 @@ export function outcomeOf(s: EntrySignal): { text: string; cls: string } {
   }
 }
 
+/**
+ * How the exit stood against its level, in words. TP1 is a limit: exactly the
+ * level. The stop is a stop-market: the level, or -- when the minute opened
+ * already past it -- that open, as a real stop would have filled.
+ */
+export function exitNote(s: EntrySignal): { text: string; gap: boolean } | null {
+  const o = s.outcome;
+  if (!o || o.exitWhy === null) return null;
+  if (o.exitWhy === 'time') return { text: 'closed on time (48 bars), at the bar close', gap: false };
+  const lvl = o.status === 'stop' ? 'SL' : 'TGT';
+  if (o.exitWhy === 'gap') return { text: `${fmt(o.exitPastPts)} pts past ${lvl} ${fmt(o.exitLevel)} -- the minute opened past it (gap)`, gap: true };
+  return { text: `exactly at ${lvl} ${fmt(o.exitLevel)}`, gap: false };
+}
+
+/** How the fill stood against the zone's near edge, where a resting limit fills. */
+export function fillNote(s: EntrySignal): string | null {
+  const o = s.outcome;
+  if (!o || o.fillPrice === null || o.fillBetterPts === null) return null;
+  return o.fillBetterPts > 0
+    ? `${fmt(o.fillBetterPts)} pts better than the ${fmt(o.fillEdge)} edge -- opened inside the zone`
+    : `at the zone edge ${fmt(o.fillEdge)}`;
+}
+
 /** The exit, and why: TGT (TP1), SL, or time. Null until it has exited. */
 export function exitOf(s: EntrySignal): { price: string; why: 'TGT' | 'SL' | 'time'; pts: number | null } | null {
   const o = s.outcome;
@@ -94,6 +118,8 @@ export function SignalHistory() {
   const aria = (col: Filter['sort']) => (f.sort === col ? (f.asc ? 'ascending' : 'descending') : 'none');
   const from = total ? page * f.size + 1 : 0;
   const to = Math.min(total, (page + 1) * f.size);
+  // Counters tick only while a row on this page is still in play.
+  const now = useNow(rows.some((s) => s.outcome?.status === 'open' || s.outcome?.status === 'filled'));
 
   return (
     <section aria-label="signal history" className="mt-3 rounded-xl border border-border p-2.5 text-[12px]">
@@ -147,7 +173,7 @@ export function SignalHistory() {
         <>
           {/* On a phone, a card per signal -- a table there only scrolls sideways. */}
           <ul aria-label="signals as cards" className="m-0 grid list-none gap-1.5 p-0 sm:hidden">
-            {rows.map((s) => <Card key={keyOf(s, 'c')} s={s} />)}
+            {rows.map((s) => <Card key={keyOf(s, 'c')} s={s} now={now} />)}
           </ul>
           <div className="hidden overflow-x-auto sm:block">
             <table className="w-full border-collapse tabular-nums" aria-label="signals">
@@ -163,7 +189,7 @@ export function SignalHistory() {
                   <th className="pr-2">Entry</th>
                   <th className="pr-2">SL</th>
                   <th className="pr-2">TP1</th>
-                  <th className="pr-2" title="Where it filled, and where it went out: at the target, the stop, or on time">Fill → Exit</th>
+                  <th className="pr-2" title="Where and when it filled, where and when it went out (the 1m bar), and how the exit stood against its level">Fill → Exit</th>
                   <th className="pr-2">Result</th>
                   <th className="hidden pr-2 md:table-cell" aria-sort={aria('rr')}>
                     <button type="button" onClick={() => sortBy('rr')} className="font-semibold uppercase">R:R{sortMark('rr')}</button>
@@ -181,7 +207,7 @@ export function SignalHistory() {
                   return (
                     <tr key={keyOf(s, 'r')} className="border-t border-border align-top"
                         title={`${s.reason}${s.gatesOff.length ? ` -- gates off: ${s.gatesOff.join(', ')}` : ''}`}>
-                      <td className="whitespace-nowrap py-1 pr-2">{TIME.format(s.firstSeen)}</td>
+                      <td className="whitespace-nowrap py-1 pr-2"><Times s={s} /></td>
                       <td className="pr-2">#{s.n ?? '?'} {s.name}</td>
                       <td className="whitespace-nowrap pr-2 text-muted-foreground">{s.mode === 'mtf' ? 'With TF' : 'Without'} · {s.tf}</td>
                       <td className="whitespace-nowrap pr-2"><SignalTag s={s} /></td>
@@ -192,9 +218,11 @@ export function SignalHistory() {
                       <td className="whitespace-nowrap pr-2">
                         {s.outcome?.fillPrice != null ? fmt(s.outcome.fillPrice) : '–'}
                         {ex ? <> → {ex.price} <span className={cn('text-[10.5px] font-bold', ex.why === 'TGT' ? 'text-[var(--up)]' : ex.why === 'SL' ? 'text-[var(--down)]' : 'text-muted-foreground')}>{ex.why}</span></> : null}
+                        <FillExitDetail s={s} />
                       </td>
                       <td className={cn('whitespace-nowrap pr-2', out.cls)}>
                         {out.text}{ex?.pts != null ? <>{' '}<span className="ml-1 text-[10.5px]">({signedPts(ex.pts)} pts)</span></> : null}
+                        <Counter s={s} now={now} />
                       </td>
                       <td className="hidden pr-2 md:table-cell">{s.rr === null ? '–' : s.rr.toFixed(2)}</td>
                       <td className="hidden pr-2 md:table-cell">{s.score ?? '–'}</td>
@@ -259,12 +287,52 @@ function Summary({ s }: { s: EntrySignalSummary }) {
       {cell('Stops · SL pts', `${s.stops} · −${fmt(s.slPts)}`, 'text-[var(--down)]')}
       {cell('Timed out', String(s.timeouts))}
       {cell('Net pts', signedPts(s.netPts), s.netPts >= 0 ? 'text-[var(--up)]' : 'text-[var(--down)]')}
-      {cell('Net R (after fees)', `${s.netR >= 0 ? '+' : '−'}${Math.abs(s.netR).toFixed(2)}R`, s.netR >= 0 ? 'text-[var(--up)]' : 'text-[var(--down)]')}
+      {cell('Net R', `${s.netR >= 0 ? '+' : '−'}${Math.abs(s.netR).toFixed(2)}R`, s.netR >= 0 ? 'text-[var(--up)]' : 'text-[var(--down)]')}
     </div>
   );
 }
 
-function Card({ s }: { s: EntrySignal }) {
+/** When: the signal (seen), the bar it closed on and how soon after it was seen, and the alert if one went. */
+function Times({ s }: { s: EntrySignal }) {
+  return (
+    <>
+      <div>{TIME.format(s.firstSeen)}</div>
+      <div className="text-[10.5px] text-muted-foreground" title="The trigger bar's close, and how long after it the server saw the signal (it reads each minute + 3 s)">
+        bar {SECS.format(s.barCloseAt * 1000)} · seen {lag(s.seenAfterMs)}
+      </div>
+      {s.alert ? (
+        <div className={cn('text-[10.5px]', s.alert.status === 'sent' ? 'text-muted-foreground' : 'text-[var(--down)]')}>
+          alert {s.alert.status === 'sent' ? '✓' : '✗'} {SECS.format(s.alert.at)} {lag(s.alert.at - s.barCloseAt * 1000)}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+/** Under the prices: when it filled and went out (the 1m bar), and how each stood against the plan. */
+function FillExitDetail({ s }: { s: EntrySignal }) {
+  const o = s.outcome;
+  if (!o || o.filledAt === null) return null;
+  const fn = fillNote(s);
+  const en = exitNote(s);
+  return (
+    <div className="text-[10.5px] text-muted-foreground">
+      <div title="The 1m bar the fill and the exit came in">in ~{MINS.format(o.filledAt * 1000)}{o.exitAt !== null ? ` → out ~${MINS.format(o.exitAt * 1000)}` : ''}</div>
+      {fn ? <div>fill {fn}</div> : null}
+      {en ? <div className={en.gap ? 'text-[var(--warn)]' : undefined}>exit {en.text}</div> : null}
+    </div>
+  );
+}
+
+/** A TRADE still in play: its fill window, or its time in the trade and to the time-out, counting. */
+function Counter({ s, now }: { s: EntrySignal; now: number }) {
+  const o = s.outcome;
+  if (!o || (o.status !== 'open' && o.status !== 'filled')) return null;
+  const c = clockText(o, now);
+  return c ? <div aria-label="counter" className="text-[10.5px] text-foreground">{c.label} <b className="tabular-nums">{c.value}</b></div> : null;
+}
+
+function Card({ s, now }: { s: EntrySignal; now: number }) {
   const out = outcomeOf(s);
   const ex = exitOf(s);
   return (
@@ -286,7 +354,13 @@ function Card({ s }: { s: EntrySignal }) {
         </div>
       ) : null}
       {ex ? <div className="text-[11.5px]">Fill {fmt(s.outcome?.fillPrice)} → exit {ex.price} ({ex.why}){ex.pts !== null ? ` · ${signedPts(ex.pts)} pts` : ''}</div> : null}
+      <FillExitDetail s={s} />
+      <div className="text-[10.5px] text-muted-foreground">
+        bar {SECS.format(s.barCloseAt * 1000)} · seen {lag(s.seenAfterMs)}
+        {s.alert ? ` · alert ${s.alert.status === 'sent' ? '✓' : '✗'} ${SECS.format(s.alert.at)}` : ''}
+      </div>
       <div className={cn('mt-0.5 text-[11.5px] font-semibold', out.cls)}>{out.text}</div>
+      <Counter s={s} now={now} />
     </li>
   );
 }

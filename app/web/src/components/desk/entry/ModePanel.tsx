@@ -5,6 +5,7 @@ import { PriceChart } from '@/components/desk/PriceChart';
 import type { EntryMode, EntryRecord, EntryTf, MethodRead } from '@/types/entry';
 import type { ChartFeed } from './feed';
 import { LiveStrip } from './LiveStrip';
+import { TradeClock } from './TradeClock';
 import { NumberBadge, SignalChip, TICK_CLASS, fmt, overlayOf, recordText, tickOf } from './parts';
 
 /**
@@ -112,7 +113,7 @@ export function ModePanel({ mode, reads, selected, onChoose, recordOf, setupsOn,
       {mode === 'single' && VIEW_ONLY_TFS.includes(chartTf) ? (
         <p role="note" aria-label="view only" className="m-0 mt-2 rounded-lg border border-dashed border-border px-3 py-2 text-[12px] text-muted-foreground">
           <b className="text-foreground">{chartTf} is chart-only.</b> No signals, no Telegram alerts and nothing in the signal history on {chartTf} --
-          its bars are too fast for these stops after fees. Pick 3m or higher to read the twelve methods.
+          its bars are too fast for these methods' stops. Pick 3m or higher to read the twelve methods.
         </p>
       ) : (
       <div className="mt-2 grid gap-2">
@@ -214,6 +215,7 @@ function SelectedCard({ read, ltp }: { read: MethodRead | null; ltp: { price: nu
         </p>
       ) : null}
       {read.state === 'TRADE' && p && read.dir ? <LiveStrip plan={p} dir={read.dir} ltp={ltp} /> : null}
+      {read.state === 'TRADE' ? <TradeClock read={read} /> : null}
       <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 px-2 pb-2 tabular-nums">
         {row('Method', `#${read.n} ${read.name}`)}
         {row('Timeframe', read.mode === 'mtf' ? '4H/1H → 15m → 5m entry → 1m' : `${read.tf} only`)}
@@ -227,13 +229,13 @@ function SelectedCard({ read, ltp }: { read: MethodRead | null; ltp: { price: nu
             {p.tp3 !== null ? row('Target 3', `${fmt(p.tp3)} (${rOf(p.tp3)!.toFixed(1)}R)`) : null}
             {row('Risk', `${fmt(risk)} (${pct(risk)})`)}
             {row('Reward', `${fmt(reward)} (${pct(reward)})`)}
-            {row('R:R after fees', p.rr.toFixed(2), 'font-semibold')}
+            {row('R:R', p.rr.toFixed(2), 'font-semibold')}
           </>
         ) : null}
       </dl>
       {read.state !== 'TRADE' ? <p className="m-0 px-2 pb-2 text-muted-foreground">{read.reason}</p> : null}
       <div className="mx-2 mb-2 rounded border border-dashed border-border py-1 text-center text-[11px] text-muted-foreground">
-        {read.state === 'TRADE' ? 'Paper-logged and graded after fees · no order is placed' : 'No levels until every confirmation holds'}
+        {read.state === 'TRADE' ? 'Paper-logged and graded on 1m candles · no order is placed' : 'No levels until every confirmation holds'}
       </div>
     </section>
   );
