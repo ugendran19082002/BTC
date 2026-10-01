@@ -220,6 +220,20 @@ describe('the entry section, side by side', () => {
     await waitFor(() => expect(getEntryBoard).toHaveBeenLastCalledWith('15m'));
   });
 
+  it('[critical] 1m without the chain is chart-only: the chart shows, no methods table, no 1m alert or history chip', async () => {
+    render(<EntrySection desk={desk} />);
+    const without = await panel(/12 methods · without timeframe/);
+    fireEvent.click(within(within(without).getByRole('group', { name: 'timeframe without the chain' })).getByRole('button', { name: '1m' }));
+    expect(screen.getByRole('img', { name: '12 methods · without timeframe chart' }).getAttribute('data-tf')).toBe('1m');
+    expect(within(without).getByRole('note', { name: 'view only' })).toHaveTextContent('1m is chart-only. No signals, no Telegram alerts');
+    expect(within(without).queryByRole('table', { name: 'without timeframe methods' })).toBeNull();
+    // The other panel is untouched: the chain reads on as ever.
+    expect(within(await panel(/12 methods \+ timeframe/)).getByRole('table')).toBeInTheDocument();
+    const chips = within(without).queryByRole('group', { name: 'alert timeframes' });
+    if (chips) expect(within(chips).queryByRole('button', { name: '1m' })).toBeNull();
+    expect(within(screen.getByRole('group', { name: 'history timeframe' })).queryByRole('button', { name: '1m' })).toBeNull();
+  });
+
   it('12 charts: one mode at a time', async () => {
     render(<EntrySection desk={desk} />);
     await panel(/12 methods \+ timeframe/);

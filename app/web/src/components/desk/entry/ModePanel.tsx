@@ -20,7 +20,12 @@ import { NumberBadge, SignalChip, TICK_CLASS, fmt, overlayOf, recordText, tickOf
  */
 
 const CHAIN_TFS: readonly EntryTf[] = ['4h', '1h', '30m', '15m', '5m', '3m', '1m'];
-export const SINGLE_TFS: readonly EntryTf[] = ['1m', '3m', '5m', '15m', '30m', '1h', '4h'];
+/** The timeframes the methods are read on without the chain -- signalled, alerted, kept. Not 1m (the server's SINGLE_TFS). */
+export const SINGLE_TFS: readonly EntryTf[] = ['3m', '5m', '15m', '30m', '1h', '4h'];
+/** 1m is a chart to look at only (owner, 1 Oct 2026): no reads, no signal, no alert, no history. */
+export const VIEW_ONLY_TFS: readonly EntryTf[] = ['1m'];
+/** Every chip a panel's chart offers. */
+export const CHART_TFS: readonly EntryTf[] = [...VIEW_ONLY_TFS, ...SINGLE_TFS];
 
 const COPY: Record<EntryMode, { title: string; accent: string; sub: string; tag: string }> = {
   single: {
@@ -91,8 +96,9 @@ export function ModePanel({ mode, reads, selected, onChoose, recordOf, setupsOn,
           <span className="text-muted-foreground">{mode === 'single' ? 'read on' : 'view'}</span>
           <div role="group" aria-label={mode === 'single' ? 'timeframe without the chain' : 'chart timeframe'}
                className="inline-flex overflow-hidden rounded border border-border">
-            {SINGLE_TFS.map((x) => (
+            {CHART_TFS.map((x) => (
               <button key={x} type="button" aria-pressed={chartTf === x} onClick={() => onChartTf(x)}
+                      title={VIEW_ONLY_TFS.includes(x) ? `${x}: chart only -- no signals, no alerts` : undefined}
                       className={cn('min-w-[30px] px-1.5 py-0.5', chartTf === x ? 'bg-[#2563eb] text-white' : 'text-muted-foreground hover:bg-muted')}>
                 {x}
               </button>
@@ -103,6 +109,12 @@ export function ModePanel({ mode, reads, selected, onChoose, recordOf, setupsOn,
       <PriceChart {...chart(chartTf)} tf={chartTf} entry={drawn} size="panel" label={`${copy.title} chart`} />
 
       {/* The table full width, then the chosen setup beside its reasons: a panel is half the screen at most. */}
+      {mode === 'single' && VIEW_ONLY_TFS.includes(chartTf) ? (
+        <p role="note" aria-label="view only" className="m-0 mt-2 rounded-lg border border-dashed border-border px-3 py-2 text-[12px] text-muted-foreground">
+          <b className="text-foreground">{chartTf} is chart-only.</b> No signals, no Telegram alerts and nothing in the signal history on {chartTf} --
+          its bars are too fast for these stops after fees. Pick 3m or higher to read the twelve methods.
+        </p>
+      ) : (
       <div className="mt-2 grid gap-2">
         <MethodTable mode={mode} reads={reads} selected={selected} onChoose={onChoose} recordOf={recordOf} autoPicked={autoPicked} />
         <div className="grid gap-2 sm:grid-cols-2">
@@ -112,6 +124,7 @@ export function ModePanel({ mode, reads, selected, onChoose, recordOf, setupsOn,
           </div>
         </div>
       </div>
+      )}
     </section>
   );
 }

@@ -111,7 +111,7 @@ test("[critical] a minute's pass reads every way the screen can show: the chain 
   assert.deepEqual([...new Set(reads.filter((r) => r.mode === 'single').map((r) => r.tf))], [...SINGLE_TFS]);
 });
 
-test('[critical] 1m without the chain is view-only: never read, never a signal, never in the history (the chain's 1m step is engine.test's)', async () => {
+test('[critical] 1m without the chain is view-only: never read, never a signal, never in the history (the chain keeps its 1m step: engine.test)', async () => {
   assert.deepEqual([SINGLE_TFS.includes('1m'), VIEW_ONLY_TFS], [false, ['1m']]);
   assert.ok(!allReads(ctxOf()).some((r) => r.mode === 'single' && r.tf === '1m'), 'the recorder reads no 1m');
   const board = entryBoard(ctxOf(), '1m');

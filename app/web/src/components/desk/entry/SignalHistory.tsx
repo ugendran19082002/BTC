@@ -16,7 +16,8 @@ import type { EntryMode, EntrySignal, EntrySignalSummary, EntryTf } from '@/type
  * exited, in points and R. Refreshed every 15 s; the choices are remembered.
  */
 
-const TFS: readonly EntryTf[] = ['1m', '3m', '5m', '15m', '30m', '1h', '4h'];
+// Not 1m: chart-only without the chain, so it gives no signal and the server keeps none.
+const TFS: readonly EntryTf[] = ['3m', '5m', '15m', '30m', '1h', '4h'];
 const PAGE_SIZES = [25, 50, 100] as const;
 const TIME = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
 const fmt = (v: number | null | undefined) => (v === null || v === undefined ? '–' : Math.round(v).toLocaleString('en-US'));

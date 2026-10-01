@@ -4,7 +4,8 @@ import { setEntryAlert, sendEntryAlertTest } from '@/api/entry';
 import { cn } from '@/lib/utils';
 import type { EntryAlerts, EntryMode, EntryTf } from '@/types/entry';
 
-const TFS: readonly EntryTf[] = ['1m', '3m', '5m', '15m', '30m', '1h', '4h'];
+// Not 1m: it is chart-only and never alerts (the server refuses it too).
+const TFS: readonly EntryTf[] = ['3m', '5m', '15m', '30m', '1h', '4h'];
 const HM = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
 
 /**

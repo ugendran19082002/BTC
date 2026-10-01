@@ -73,6 +73,8 @@ export type EntryBoard = {
   at: number;
   tf: EntryTf;
   reads: MethodRead[];
+  /** The without panel's timeframe is chart-only (1m): no reads without the chain. */
+  viewOnly?: boolean;
   chain: { tf: EntryTf; role: string; weight: number }[];
   timeframes: TimeframeRow[];
   /** The perpetual's last trade when the board was read (the server's tape); null with the socket down. */

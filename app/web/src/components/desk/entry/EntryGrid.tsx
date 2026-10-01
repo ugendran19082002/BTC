@@ -34,6 +34,9 @@ export function EntryGrid({ mode, onMode, reads, singleTf, setupsOn, chart }: {
           </button>
         ))}
       </div>
+      {mode === 'single' && !reads.length ? (
+        <p role="note" className="m-0 text-[12px] text-muted-foreground">{singleTf} is chart-only: no reads without the chain. Pick 3m or higher above the panels.</p>
+      ) : null}
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
         {reads.map((r) => (
           <figure key={`${r.mode}:${r.id}`} className="m-0 rounded-lg border border-border p-2" aria-label={`${r.name} chart`}>

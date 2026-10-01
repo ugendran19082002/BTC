@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 import type { EntryMode, EntryTf, MethodRead, TimeframeRow } from '@/types/entry';
 import { EntryGrid } from './EntryGrid';
 import { useEntryFeed, type DeskFeed } from './feed';
-import { ModePanel, SINGLE_TFS } from './ModePanel';
+import { CHART_TFS, ModePanel } from './ModePanel';
 import { MethodLegend } from './MethodLegend';
 import { GateSwitches } from './GateSwitches';
 import { GateChecklist } from './GateChecklist';
@@ -56,8 +56,9 @@ export function EntrySection({ desk, onTimeframes }: {
   const { data: alertsRead } = usePoll(() => getEntryAlerts(), 120_000);
   const [alerts, setAlerts] = useState(alertsRead ?? null);
   useEffect(() => { if (alertsRead) setAlerts(alertsRead); }, [alertsRead]);
-  const tf = SINGLE_TFS.includes(singleTf) ? singleTf : '5m';
-  const mtfTf = SINGLE_TFS.includes(mtfChartTf) ? mtfChartTf : '5m';
+  // The without panel's timeframe: its chart, and its reads unless it is a view-only one (1m: chart alone).
+  const tf = CHART_TFS.includes(singleTf) ? singleTf : '5m';
+  const mtfTf = CHART_TFS.includes(mtfChartTf) ? mtfChartTf : '5m';
   const shownTfs: EntryTf[] = view === 'panels' ? [tf, mtfTf] : [gridMode === 'mtf' ? '5m' : tf];
   const chart = useEntryFeed(desk, shownTfs);
 
