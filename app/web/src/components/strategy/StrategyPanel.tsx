@@ -103,6 +103,24 @@ export function StrategyPanel() {
             <p className="m-0 mt-0.5 text-[11.5px] text-muted-foreground">
               Today is {data.today} IST. Each strategy enters at most once a day.
             </p>
+            {/*
+              The switch stops the exit times as well as the entries, which is
+              not what "auto-trading off" reads as: a position a strategy opened
+              then stays on past its exit time. Its target and stop are the
+              engine's, and keep working either way.
+            */}
+            {data.runnerInstalled !== false && (data.schedulerOn
+              ? (
+                <p className="m-0 mt-0.5 text-[11.5px] text-muted-foreground">
+                  Turning it off stops the exit times too; targets and stops at Delta keep working.
+                </p>
+              )
+              : (
+                <p role="note" className="m-0 mt-0.5 text-[11.5px] font-medium text-[var(--warn)]">
+                  Exit times are off too: a strategy&apos;s open position is not closed at its exit time.
+                  Its target and stop at Delta still work.
+                </p>
+              ))}
           </div>
           <Button
             variant={data.schedulerOn ? 'outline' : 'default'}

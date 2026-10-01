@@ -113,3 +113,28 @@ describe('copying a strategy', () => {
     expect(await screen.findByDisplayValue('UG-CE copy')).toBeInTheDocument();
   });
 });
+
+describe('the scheduler switch says what it stops', () => {
+  it('[critical] off, it warns that the exit times are off too, and that the target and stop still work', async () => {
+    // "Auto-trading off" reads as "nothing new", not as "nothing closed at its exit time".
+    getStrategies.mockResolvedValue({ ...status(), schedulerOn: false });
+    render(<StrategyPanel />);
+    const note = await screen.findByRole('note');
+    expect(note).toHaveTextContent(/Exit times are off too/);
+    expect(note).toHaveTextContent(/target and stop at Delta still work/);
+  });
+
+  it('on, it says turning it off stops the exit times too', async () => {
+    getStrategies.mockResolvedValue(status());
+    render(<StrategyPanel />);
+    expect(await screen.findByText(/Turning it off stops the exit times too/)).toBeInTheDocument();
+    expect(screen.queryByRole('note')).toBeNull();
+  });
+
+  it('not installed, it promises nothing about exits either', async () => {
+    getStrategies.mockResolvedValue({ ...status(), runnerInstalled: false });
+    render(<StrategyPanel />);
+    await screen.findByText(/Not installed on this server/);
+    expect(screen.queryByText(/exit times/)).toBeNull();
+  });
+});

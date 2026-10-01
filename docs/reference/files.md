@@ -5,13 +5,13 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-397 files listed, 177 test files counted below, images and lockfiles left out.
+398 files listed, 178 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 103 |
+| `app/server` | 104 |
 | `app/web` | 74 |
 
 ## `(root)`
@@ -30,6 +30,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [.env.example](../../app/server/.env.example) | Optional. |
+| [audit.tmp.mts](../../app/server/audit.tmp.mts) | -- |
 | [hash-password.mjs](../../app/server/hash-password.mjs) | Turn a password into the hash to put in .env. |
 | [package.json](../../app/server/package.json) | npm package: btc-options-desk-server, its scripts and dependencies. |
 | [tsconfig.json](../../app/server/tsconfig.json) | TypeScript compiler settings. |
