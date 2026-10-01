@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-396 files listed, 176 test files counted below, images and lockfiles left out.
+397 files listed, 177 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 103 |
-| `app/web` | 73 |
+| `app/web` | 74 |
 
 ## `(root)`
 
@@ -336,6 +336,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [AlertSwitch.tsx](../../app/web/src/components/desk/entry/AlertSwitch.tsx) | One way's Telegram alerts, on or off, in its panel's header: a TRADE is sent once, when the paper log first writes it (the server does the sending, so it works with no screen open). |
+| [ClearHistoryDialog.tsx](../../app/web/src/components/desk/entry/ClearHistoryDialog.tsx) | Clear data (owner, 1 Oct 2026: "clear data button -- a dialog, from date-time and to date-time, clears that signal history"). |
 | [EntryGrid.tsx](../../app/web/src/components/desk/entry/EntryGrid.tsx) | The twelve methods as twelve small charts, one mode at a time: with the timeframe chain (5m, where its entry is read) or without it (on the timeframe chosen for that). |
 | [EntrySection.tsx](../../app/web/src/components/desk/entry/EntrySection.tsx) | The entry section: every entry method -- TEST.md's twelve first, then the rest by the owner's numbers (74 since 1 Oct 2026) -- each read two ways -- without the timeframe chain (one timeframe alone... |
 | [GateChecklist.tsx](../../app/web/src/components/desk/entry/GateChecklist.tsx) | The hard gates as a checklist, beside the Entry methods table: each gate's rule, what was read, and the verdict, for the method chosen there -- without the timeframe chain or with it. |

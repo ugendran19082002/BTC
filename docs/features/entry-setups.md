@@ -239,6 +239,18 @@ step.
   `GET /api/entry/signals?mode=&tf=&state=&dir=&live=&since=&sort=&asc=&limit=&offset=`
   gives a page, the number matching, and totals over every match;
   `GET /api/entry/signals.csv` (same filters) every matching row for Excel.
+- **Clear data** (the history's red button; owner, 1 Oct 2026): a dialog with
+  From and To in IST, to the minute (the To minute included), quick ranges
+  (last hour, today, yesterday, last 7 days), and a live count of what would
+  go before anything does: signals (TRADEs, WAITs), their paper trades, their
+  alerts. The clear needs "I understand this cannot be undone" ticked.
+  `GET /api/entry/signals/clear?from=&to=` counts; `POST` (same origin, signed
+  in) clears, in one transaction under the grading lock, and logs the clear in
+  `entry_history_clears` (`entry-020`). Each cleared key is kept two days in
+  `entry_cleared`, so a setup still on the board is not written back -- or
+  alerted again -- a minute later; a later state of it (a WAIT that turns
+  TRADE) is new and kept. Tabs and totals recount at once (the data version
+  moves).
 - **Paper log**: each new TRADE, on every timeframe, graded as below.
 - **Telegram**: the chain always (its entry is 5m); without it, the
   timeframes the owner picks under its switch (5m until others are chosen).
