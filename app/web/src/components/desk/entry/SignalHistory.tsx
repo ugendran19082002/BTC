@@ -256,7 +256,7 @@ export function SignalHistory() {
       {error && !data ? <p role="alert" className="m-0 text-[var(--down)]">Could not read the history: {error.message}</p> : null}
       {!rows.length ? (
         <p className="m-0 py-3 text-center text-muted-foreground">
-          {loading && !data ? 'Reading…' : f.tab === 'trading' ? 'Nothing in play right now -- no TRADE waiting at its zone or filled. Closed ones are under BUY & SELL.' : 'No signals for these filters yet. The server keeps every WAIT and TRADE as it forms, once a minute.'}
+          {loading && !data ? 'Reading…' : f.tab === 'trading' ? 'Nothing in play right now -- no TRADE waiting at its zone or filled. Closed ones are under BUY & SELL.' : 'outcome' in TABS[f.tab].q ? `No TRADE ended ${TABS[f.tab].label} for these filters.` : 'No signals for these filters yet. The server keeps every WAIT and TRADE as it forms, once a minute.'}
           {data && f.today ? (
             <> <button type="button" onClick={() => set({ today: false })} className="font-semibold text-[#3b82f6] underline">Show all days</button> -- &quot;Today&quot; starts at 00:00 IST.</>
           ) : null}

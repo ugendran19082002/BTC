@@ -66,11 +66,11 @@ describe('the signal history table', () => {
     expect(t).not.toHaveTextContent(/Net R|fees/);
   });
 
-  it('[critical] signal tabs: All, TRADING, BUY & SELL, BUY, SELL, WAIT -- each asks the server for exactly that', async () => {
+  it('[critical] signal tabs: All, TRADING, BUY & SELL, BUY, SELL, WAIT, then each ending -- each asks the server for exactly that', async () => {
     render(<SignalHistory />);
     await screen.findByRole('table', { name: 'signals' });
     const tabs = screen.getByRole('tablist', { name: 'signal tabs' });
-    expect(within(tabs).getAllByRole('tab').map((t) => t.textContent)).toEqual(['All', 'TRADING', 'BUY & SELL', 'BUY', 'SELL', 'WAIT']);
+    expect(within(tabs).getAllByRole('tab').map((t) => t.textContent)).toEqual(['All', 'TRADING', 'BUY & SELL', 'BUY', 'SELL', 'WAIT', 'TGT HIT', 'SL HIT', 'TIMED OUT', 'EXPIRED', 'MISSED']);
     const last = () => getEntrySignals.mock.lastCall![0];
     fireEvent.click(within(tabs).getByRole('tab', { name: 'TRADING' }));
     await waitFor(() => expect(last()).toMatchObject({ state: 'TRADE', live: true })); // in play now: at the zone or filled
@@ -83,6 +83,15 @@ describe('the signal history table', () => {
     fireEvent.click(within(tabs).getByRole('tab', { name: 'WAIT' }));
     await waitFor(() => expect(last()).toMatchObject({ state: 'WAIT' }));
     expect(within(tabs).getByRole('tab', { name: 'WAIT' })).toHaveAttribute('aria-selected', 'true');
+    // How each TRADE ended: exactly that ending, and only TRADEs; never a leftover filter from another tab.
+    for (const [name, outcome] of [['TGT HIT', 'tp1'], ['SL HIT', 'stop'], ['TIMED OUT', 'timeout'], ['EXPIRED', 'expired'], ['MISSED', 'missed']] as const) {
+      fireEvent.click(within(tabs).getByRole('tab', { name }));
+      await waitFor(() => expect(last()).toMatchObject({ state: 'TRADE', outcome }));
+      expect(last().dir).toBeUndefined();
+      expect(last().live).toBeUndefined();
+    }
+    fireEvent.click(within(tabs).getByRole('tab', { name: 'BUY' }));
+    await waitFor(() => { expect(last()).toMatchObject({ state: 'TRADE', dir: 1 }); expect(last().outcome).toBeUndefined(); });
   });
 
   it('[critical] pages: "1–25 of 60", next and previous ask for the right offset, the page size is a choice', async () => {
@@ -157,6 +166,8 @@ describe('the signal history table', () => {
     expect(await screen.findByText(/No signals for these filters yet/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: 'TRADING' }));
     expect(await screen.findByText(/Nothing in play right now/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: 'EXPIRED' }));
+    expect(await screen.findByText('No TRADE ended EXPIRED for these filters.', { exact: false })).toBeInTheDocument();
   });
 
   it('the pieces: how long it stood, what became of it, the exit and why, the desk\'s day', () => {
