@@ -1,5 +1,5 @@
 /**
- * The candidate entry methods (#13-#37, src/entry/candidates.ts) replayed over
+ * The candidate entry methods (#13-#37, src/entry/methods.ts) replayed over
  * the cached 5m history, through the same plan, gates and grading as the
  * twelve -- the evidence for which, if any, join the desk.
  *
@@ -26,7 +26,7 @@ import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Candle } from '../src/market/delta.js';
-import { CANDIDATES, prevDay } from '../src/entry/candidates.js';
+import { CANDIDATES, prevDay } from '../src/entry/methods.js';
 import { MIN_BARS, readMethod } from '../src/entry/engine.js';
 import { gradeRow, type PaperRow } from '../src/entry/paper.js';
 import { trendOf } from '../src/entry/prims.js';

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Candle } from '../../src/market/delta.js';
-import { CANDIDATES, prevDay, valueArea, weekVwap } from '../../src/entry/candidates.js';
+import { CANDIDATES, prevDay, valueArea, weekVwap } from '../../src/entry/methods.js';
 import { atr } from '../../src/entry/prims.js';
 import { ctxOf, path, wave } from './bars.js';
 

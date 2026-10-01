@@ -417,9 +417,9 @@ Three things differ from the reference on purpose:
 
 Beside the twelve, the **research candidates** -- the owner's list #13-#130,
 deduplicated in [research/entry-concepts.md](../research/entry-concepts.md):
-30 candle detectors (`entry/candidates.ts`; replayed on 2.7 years in
+30 candle detectors (`entry/methods.ts`; replayed on 2.7 years in
 `scripts/methods-study.ts`, none passed the bar) and 12 live-data detectors
-(`entry/candidates-live.ts`: tape, basis, mark, funding, the option board --
+(`entry/methods.ts`: tape, basis, mark, funding, the option board --
 no history to replay). From 1 Oct 2026 they run **live**: read every minute
 with the twelve, on the chain and every timeframe (a pass with them is ~38 ms
 against ~25 ms), written to the journal and the paper log with `research`

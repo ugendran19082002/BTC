@@ -1,8 +1,7 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { allReads, SINGLE_TFS } from '../../src/entry/engine.js';
-import { RESEARCH } from '../../src/entry/candidates.js';
-import { METHODS } from '../../src/entry/methods.js';
+import { METHODS, RESEARCH } from '../../src/entry/methods.js';
 import { recordSignals, signalPage } from '../../src/entry/signals.js';
 import { entryRecord, recordSetups } from '../../src/entry/paper.js';
 import { wanted } from '../../src/entry/alerts.js';

@@ -1,8 +1,7 @@
 import { query, rows, type Param } from '../db/pool.js';
 import { migrate, type Migration } from '../db/migrate.js';
 import { TF_SEC, type MethodRead, type SetupClock, type Tf } from './types.js';
-import { METHODS } from './methods.js';
-import { RESEARCH } from './candidates.js';
+import { METHODS, RESEARCH } from './methods.js';
 import { entrySchema, fillByOf, fillExitOf, timeoutAtOf } from './paper.js';
 import { SINGLE_TFS } from './engine.js';
 import { alertsSchema } from './alerts.js';

@@ -50,7 +50,7 @@ candidate for a longer week, not for the desk.
 
 ## Tested on candles — no edge (round 1 and round 2)
 
-Each row is a detector in `app/server/src/entry/candidates.ts`; results in
+Each row is a detector in `app/server/src/entry/methods.ts`; results in
 `research/METHODS-STUDY.txt` (5m, 2024-01 .. 2026-08, R in points, the live
 SL/TGT rules). **None passed.** All now run on the research track.
 
@@ -89,7 +89,7 @@ periods is not an edge.
 
 ## Research track — live data only
 
-In `app/server/src/entry/candidates-live.ts`. Each reads what the desk records
+In `app/server/src/entry/methods.ts`. Each reads what the desk records
 live and says nothing when it is missing.
 
 | # | Concept | Reads | Merged here |

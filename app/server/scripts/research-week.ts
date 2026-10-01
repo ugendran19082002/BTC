@@ -12,8 +12,7 @@
  */
 import { closePool, rows } from '../src/db/pool.js';
 import { entrySchema } from '../src/entry/paper.js';
-import { METHODS } from '../src/entry/methods.js';
-import { RESEARCH } from '../src/entry/candidates.js';
+import { METHODS, RESEARCH } from '../src/entry/methods.js';
 
 const days = Number(process.argv[2] ?? 7);
 const since = Date.now() - days * 86_400_000;

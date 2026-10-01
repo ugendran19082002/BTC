@@ -1,8 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Candle } from '../../src/market/delta.js';
-import { LIVE_CANDIDATES, barFlow } from '../../src/entry/candidates-live.js';
-import { RESEARCH } from '../../src/entry/candidates.js';
+import { LIVE_CANDIDATES, RESEARCH, barFlow } from '../../src/entry/methods.js';
 import type { FlowMinute } from '../../src/entry/types.js';
 import { ctxOf } from './bars.js';
 

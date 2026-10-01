@@ -3,8 +3,7 @@ import {
   CHAIN, TF_SEC,
   type EntryContext, type EntryState, type Gate, type MethodRead, type Mode, type Plan, type ScorePart, type Step, type Tf,
 } from './types.js';
-import { METHODS, type MethodDef, type Setup, type TargetSpec } from './methods.js';
-import { RESEARCH } from './candidates.js';
+import { METHODS, RESEARCH, type MethodDef, type Setup, type TargetSpec } from './methods.js';
 import { atr, isDisplacement, lastSweep, pivots, rvol, trendOf, bullish, bearish } from './prims.js';
 
 /**
