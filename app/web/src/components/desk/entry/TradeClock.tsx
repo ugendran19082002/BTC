@@ -25,11 +25,11 @@ export function TradeClock({ read }: { read: MethodRead }) {
       {state ? (
         <div aria-label="counter" className={cn('flex items-baseline justify-between gap-2 font-semibold',
           state.tone === 'wait' ? 'text-[var(--warn)]' : state.tone === 'live' ? 'text-[#3b82f6]' : 'text-muted-foreground')}>
-          <span>{state.label}</span><span className="text-[13px]">{state.value}</span>
+          <span>{state.label}</span>{' '}<span className="text-[13px]">{state.value}</span>
         </div>
       ) : (
         <div aria-label="counter" className="flex items-baseline justify-between gap-2 font-semibold text-[var(--warn)]">
-          <span>Since the signal bar closed</span><span className="text-[13px]">{barClose === null ? '–' : span(now - barClose)}</span>
+          <span>Since the signal bar closed</span>{' '}<span className="text-[13px]">{barClose === null ? '–' : span(now - barClose)}</span>
         </div>
       )}
       <dl className="m-0 mt-0.5 grid grid-cols-[auto_1fr] gap-x-3 text-[11px]">

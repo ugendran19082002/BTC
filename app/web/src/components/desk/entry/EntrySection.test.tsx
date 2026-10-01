@@ -30,6 +30,7 @@ const sendEntryAlertTest = vi.fn();
 vi.mock('@/api/entry', () => ({
   getEntryBoard: (...a: unknown[]) => getEntryBoard(...a),
   getEntryRecord: (...a: unknown[]) => getEntryRecord(...a),
+  entrySignalsCsvUrl: () => '/api/entry/signals.csv',
   getEntryGates: (...a: unknown[]) => getEntryGates(...a),
   setEntryGate: (...a: unknown[]) => setEntryGate(...a),
   getEntryAlerts: (...a: unknown[]) => getEntryAlerts(...a),
