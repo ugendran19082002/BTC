@@ -1413,6 +1413,423 @@ const expiryPin = ({ bars, a, ctx }: DetectInput): Setup | null => {
 
 
 /** The live-data candidates, by the owner's numbers. */
+// ------------------------------------------------------------------ the derivatives history (perp_snapshots, option_snapshots)
+// Read once a minute by entry/deriv.ts; each method needs hours of it, which the desk records since September 2026.
+
+/** The perpetual's snapshot about `minutes` before the newest (they come every five). */
+function perpAgo(ctx: EntryContext, minutes: number) {
+  const ps = ctx.deriv?.perp ?? [];
+  const last = ps[ps.length - 1];
+  if (!last) return null;
+  const want = last.at - minutes * 60_000;
+  let best: (typeof ps)[number] | null = null;
+  for (const p of ps) if (p.at <= want + 150_000) best = p;
+  return best && last.at - best.at >= (minutes - 3) * 60_000 ? { now: last, then: best } : null;
+}
+const pctChange = (now: number | null, then: number | null) => (now === null || then === null || then === 0 ? null : (100 * (now - then)) / then);
+const brokeOut = (bars: readonly Candle[], n = 20): 1 | -1 | 0 => {
+  const ref = bars.slice(-(n + 1), -1), b = last(bars);
+  return b.close > hiOf(ref) ? 1 : b.close < loOf(ref) ? -1 : 0;
+};
+/** Realised volatility of the bars' log returns, annualised (as a fraction, like IV). */
+function realisedVol(bars: readonly Candle[], n = 48): number | null {
+  const xs = bars.slice(-(n + 1));
+  if (xs.length < n + 1) return null;
+  const tf = xs[1]!.time - xs[0]!.time;
+  const rs = xs.slice(1).map((b, k) => Math.log(b.close / xs[k]!.close));
+  const m = rs.reduce((a, v) => a + v, 0) / rs.length;
+  const sd = Math.sqrt(rs.reduce((a, v) => a + (v - m) ** 2, 0) / (rs.length - 1));
+  return sd * Math.sqrt((365 * 86_400) / tf);
+}
+const front = (ctx: EntryContext) => ctx.deriv?.expiries[0] ?? null;
+
+/** 32 / 99. OI-confirmed breakout: a 20-bar break with open interest building (0.3% or more in half an hour) -- new positions, not short covering. */
+const oiBreakout = ({ bars, a, ctx }: DetectInput): Setup | null => {
+  const o = perpAgo(ctx, 30), dir = brokeOut(bars);
+  const oi = o ? pctChange(o.now.oi, o.then.oi) : null;
+  if (dir === 0 || oi === null || !(oi >= 0.3)) return null;
+  const b = last(bars);
+  return {
+    dir,
+    steps: [{ label: `a 20-bar ${dir === 1 ? 'high' : 'low'} broken`, ok: true }, { label: `open interest +${oi.toFixed(2)}% in 30 min: positions building`, ok: true }],
+    zone: atClose(b, dir, a), stop: dir === 1 ? b.low : b.high, triggerTime: b.time,
+  };
+};
+
+/** 33 / 100. OI flush: open interest falling 1% or more in half an hour after a 2-ATR move -- forced exits -- then a turn back. */
+const oiFlush = ({ bars, a, ctx }: DetectInput): Setup | null => {
+  const o = perpAgo(ctx, 30), oi = o ? pctChange(o.now.oi, o.then.oi) : null;
+  if (oi === null || !(oi <= -1)) return null;
+  const six = bars.slice(-7, -1), move = last(six).close - six[0]!.open, b = last(bars);
+  if (!(Math.abs(move) >= 2 * a)) return null;
+  const dir: 1 | -1 = move > 0 ? -1 : 1;
+  if (!turned(b, prev(bars), dir)) return null;
+  return {
+    dir,
+    steps: [{ label: `open interest ${oi.toFixed(2)}% in 30 min after a ${(Math.abs(move) / a).toFixed(1)} ATR move`, ok: true }, { label: 'turned back', ok: true }],
+    zone: atClose(b, dir, a), stop: dir === 1 ? loOf(bars.slice(-4)) : hiOf(bars.slice(-4)), triggerTime: b.time,
+  };
+};
+
+/** 48. Index leads, perpetual lags: the BTC index moved 0.1% or more in 15 minutes and the perpetual under half of it -- the perpetual catches up. */
+const leadLag = ({ bars, a, ctx }: DetectInput): Setup | null => {
+  const o = perpAgo(ctx, 15);
+  if (!o || o.now.index === null || o.then.index === null || o.now.mark === null || o.then.mark === null) return null;
+  const idx = pctChange(o.now.index, o.then.index)!, perp = pctChange(o.now.mark, o.then.mark)!;
+  const dir: 1 | -1 | 0 = idx >= 0.1 && perp < idx / 2 ? 1 : idx <= -0.1 && perp > idx / 2 ? -1 : 0;
+  if (dir === 0) return null;
+  const b = last(bars);
+  return {
+    dir,
+    steps: [{ label: `index ${idx >= 0 ? '+' : ''}${idx.toFixed(2)}% in 15 min, the perpetual ${perp >= 0 ? '+' : ''}${perp.toFixed(2)}%`, ok: true }],
+    zone: atClose(b, dir, a), stop: dir === 1 ? loOf(bars.slice(-4)) : hiOf(bars.slice(-4)), triggerTime: b.time,
+  };
+};
+
+/** 54. Funding flip: the funding rate changed sign within two hours, and price breaks against the side now paying -- the crowd turned. */
+const fundingFlip = ({ bars, a, ctx }: DetectInput): Setup | null => {
+  const o = perpAgo(ctx, 120);
+  if (!o || o.now.funding === null || o.then.funding === null || Math.sign(o.now.funding) === Math.sign(o.then.funding)) return null;
+  // Funding now negative: shorts pay, the crowd is short -- a break up. Positive: a break down.
+  const want: 1 | -1 = o.now.funding < 0 ? 1 : -1;
+  if (brokeOut(bars, 12) !== want) return null;
+  const b = last(bars);
+  return {
+    dir: want,
+    steps: [{ label: `funding flipped ${o.then.funding.toFixed(4)}% -> ${o.now.funding.toFixed(4)}%`, ok: true }, { label: `a 12-bar ${want === 1 ? 'high' : 'low'} broken against the payers`, ok: true }],
+    zone: atClose(b, want, a), stop: want === 1 ? b.low : b.high, triggerTime: b.time,
+  };
+};
+
+/** The front expiry's at-the-money IV now and `minutes` before. */
+function ivAgo(ctx: EntryContext, minutes: number) {
+  const xs = (ctx.deriv?.iv ?? []).filter((p) => p.front !== null);
+  const now = xs[xs.length - 1];
+  if (!now) return null;
+  const then = [...xs].reverse().find((p) => p.at <= now.at - minutes * 60_000 + 150_000);
+  return then ? { now: now.front!, then: then.front!, max: Math.max(...xs.map((p) => p.front!)), maxAt: xs.reduce((m, p) => (p.front! > m.front! ? p : m)).at, nowAt: now.at } : null;
+}
+
+/** 55. IV expansion breakout: front ATM IV up 5% or more in an hour, and a 20-bar break on volume -- the move the options are pricing. */
+const ivBreakout = ({ bars, a, ctx }: DetectInput): Setup | null => {
+  const iv = ivAgo(ctx, 60), dir = brokeOut(bars);
+  if (!iv || dir === 0 || !(iv.now >= iv.then * 1.05) || !((rvol(bars) ?? 0) >= 1.5)) return null;
+  const b = last(bars);
+  return {
+    dir,
+    steps: [{ label: `front IV ${(100 * iv.then).toFixed(1)}% -> ${(100 * iv.now).toFixed(1)}% in an hour`, ok: true }, { label: 'a 20-bar break on volume', ok: true }],
+    zone: atClose(b, dir, a), stop: dir === 1 ? b.low : b.high, triggerTime: b.time,
+  };
+};
+
+/** 56. IV crush: front IV 8% or more off a spike of the last three hours, and price stretched two deviations turning back -- the fear priced out. */
+const ivCrush = ({ bars, a, ctx }: DetectInput): Setup | null => {
+  const iv = ivAgo(ctx, 60);
+  if (!iv || !(iv.now <= iv.max * 0.92) || !(iv.nowAt - iv.maxAt <= 3 * 3_600_000)) return null;
+  const xs = bars.slice(-51, -1).map((x) => x.close), m = xs.reduce((s, v) => s + v, 0) / xs.length;
+  const sd = Math.sqrt(xs.reduce((s, v) => s + (v - m) ** 2, 0) / xs.length), b = last(bars);
+  if (!(sd > 0)) return null;
+  const z = (b.close - m) / sd, dir: 1 | -1 | 0 = z <= -2 ? 1 : z >= 2 ? -1 : 0;
+  if (dir === 0 || !turned(b, prev(bars), dir)) return null;
+  return {
+    dir,
+    steps: [{ label: `front IV ${(100 * iv.now).toFixed(1)}%, off a ${(100 * iv.max).toFixed(1)}% spike`, ok: true }, { label: `price ${Math.abs(z).toFixed(1)} deviations out, turning back`, ok: true }],
+    zone: atClose(b, dir, a), stop: dir === 1 ? loOf(bars.slice(-4)) : hiOf(bars.slice(-4)), triggerTime: b.time,
+    targets: [{ price: m, why: `50-bar mean ${fmt(m)}` }],
+  };
+};
+
+/** The front expiry's skew: puts' IV less calls' IV around 25 delta (0.15-0.35), on a board. */
+function skewOf(board: readonly StrikeRow[], expiry: string | null): number | null {
+  const xs = board.filter((s) => s.expiry === expiry && s.iv !== null && s.delta !== null && Math.abs(s.delta) >= 0.15 && Math.abs(s.delta) <= 0.35);
+  const p = xs.filter((s) => s.cp === 'P'), c = xs.filter((s) => s.cp === 'C');
+  if (!p.length || !c.length) return null;
+  return p.reduce((s, x) => s + x.iv!, 0) / p.length - c.reduce((s, x) => s + x.iv!, 0) / c.length;
+}
+type StrikeRow = NonNullable<EntryContext['deriv']>['board']['now'][number];
+
+/** 57 / 114. Skew against price: puts bid up two IV points or more in an hour while price rose (calls bid while it fell) -- the options disagree, and price turns. */
+const skewShift = ({ bars, a, ctx }: DetectInput): Setup | null => {
+  const d = ctx.deriv;
+  if (!d) return null;
+  const now = skewOf(d.board.now, front(ctx)), then = skewOf(d.board.before, front(ctx));
+  if (now === null || then === null) return null;
+  const hour = bars.filter((x) => x.time >= last(bars).time - 3600), move = last(bars).close - hour[0]!.open, ch = now - then, b = last(bars);
+  const dir: 1 | -1 | 0 = ch >= 0.02 && move > 0 ? -1 : ch <= -0.02 && move < 0 ? 1 : 0;
+  if (dir === 0 || !turned(b, prev(bars), dir)) return null;
+  return {
+    dir,
+    steps: [{ label: `skew ${ch >= 0 ? '+' : ''}${(100 * ch).toFixed(1)} IV points in an hour against a ${move > 0 ? 'rise' : 'fall'}`, ok: true }, { label: 'price turned', ok: true }],
+    zone: atClose(b, dir, a), stop: dir === 1 ? loOf(bars.slice(-4)) : hiOf(bars.slice(-4)), triggerTime: b.time,
+  };
+};
+
+/** 58 / 106-108. Gamma wall: the front strike with the most gamma x OI -- touched and rejected (a reversal), or closed through twice (a break). */
+const gammaWall = ({ bars, a, ctx }: DetectInput): Setup | null => {
+  const xs = (ctx.deriv?.board.now ?? []).filter((s) => s.expiry === front(ctx) && s.gamma !== null && s.oi !== null);
+  if (!xs.length) return null;
+  const by = new Map<number, number>();
+  for (const s of xs) by.set(s.strike, (by.get(s.strike) ?? 0) + Math.abs(s.gamma! * s.oi!));
+  const wall = [...by.entries()].reduce((m, e) => (e[1] > m[1] ? e : m))[0];
+  const b = last(bars), p = prev(bars), recent = bars.slice(-3);
+  const touched = recent.some((x) => x.low <= wall + 0.1 * a && x.high >= wall - 0.1 * a);
+  if (!touched) return null;
+  const through = (x: Candle, d: 1 | -1) => (d === 1 ? x.close > wall + 0.1 * a : x.close < wall - 0.1 * a);
+  for (const d of [1, -1] as const) {
+    if (through(b, d) && through(p, d) && bars.slice(-6, -2).some((x) => !through(x, d))) {
+      return { dir: d, steps: [{ label: `closed through the gamma wall ${fmt(wall)} twice`, ok: true }], zone: atClose(b, d, a), stop: d === 1 ? Math.min(p.low, b.low) : Math.max(p.high, b.high), triggerTime: b.time };
+    }
+  }
+  const dir: 1 | -1 = b.close > wall ? 1 : -1;
+  if (!turned(b, p, dir)) return null;
+  return {
+    dir,
+    steps: [{ label: `touched the gamma wall ${fmt(wall)}`, ok: true }, { label: 'rejected it', ok: true }],
+    zone: atClose(b, dir, a), stop: dir === 1 ? loOf(recent) : hiOf(recent), triggerTime: b.time,
+  };
+};
+
+/** The hour's option volume by side, from the board now and an hour before. */
+function hourVolume(ctx: EntryContext): { calls: number; puts: number } | null {
+  const d = ctx.deriv;
+  if (!d || !d.board.before.length) return null;
+  const vol = (rows: readonly StrikeRow[], cp: 'C' | 'P') => rows.filter((s) => s.cp === cp && s.expiry === front(ctx)).reduce((t, s) => t + (s.volume ?? 0), 0);
+  const calls = vol(d.board.now, 'C') - vol(d.board.before, 'C'), puts = vol(d.board.now, 'P') - vol(d.board.before, 'P');
+  return calls >= 0 && puts >= 0 ? { calls, puts } : null;
+}
+
+/** 109 / 110. Option volume one-sided: twice the calls of puts traded in the hour (or the reverse), and price breaks that way. */
+const optionVolume = ({ bars, a, ctx }: DetectInput): Setup | null => {
+  const v = hourVolume(ctx);
+  if (!v || v.calls + v.puts <= 0) return null;
+  const want: 1 | -1 | 0 = v.calls >= 2 * v.puts ? 1 : v.puts >= 2 * v.calls ? -1 : 0;
+  if (want === 0 || brokeOut(bars, 12) !== want) return null;
+  const b = last(bars);
+  return {
+    dir: want,
+    steps: [{ label: `the hour's option volume: calls ${fmt(v.calls)}, puts ${fmt(v.puts)}`, ok: true }, { label: `a 12-bar ${want === 1 ? 'high' : 'low'} broken`, ok: true }],
+    zone: atClose(b, want, a), stop: want === 1 ? b.low : b.high, triggerTime: b.time,
+  };
+};
+
+/** 111. OI against price: puts' OI building 1.5x the calls' while price rose (or calls' while it fell) -- positioning disagrees, and price turns. */
+const oiDivergence = ({ bars, a, ctx }: DetectInput): Setup | null => {
+  const d = ctx.deriv;
+  if (!d || !d.board.before.length) return null;
+  const oi = (rows: readonly StrikeRow[], cp: 'C' | 'P') => rows.filter((s) => s.cp === cp && s.expiry === front(ctx)).reduce((t, s) => t + (s.oi ?? 0), 0);
+  const dc = oi(d.board.now, 'C') - oi(d.board.before, 'C'), dp = oi(d.board.now, 'P') - oi(d.board.before, 'P');
+  const hour = bars.filter((x) => x.time >= last(bars).time - 3600), move = last(bars).close - hour[0]!.open, b = last(bars);
+  const dir: 1 | -1 | 0 = dp > 0 && dp >= 1.5 * Math.max(dc, 0) && move > 0 ? -1 : dc > 0 && dc >= 1.5 * Math.max(dp, 0) && move < 0 ? 1 : 0;
+  if (dir === 0 || !turned(b, prev(bars), dir)) return null;
+  return {
+    dir,
+    steps: [{ label: `the hour's OI: calls ${dc >= 0 ? '+' : ''}${fmt(dc)}, puts ${dp >= 0 ? '+' : ''}${fmt(dp)}, against a ${move > 0 ? 'rise' : 'fall'}`, ok: true }, { label: 'price turned', ok: true }],
+    zone: atClose(b, dir, a), stop: dir === 1 ? loOf(bars.slice(-4)) : hiOf(bars.slice(-4)), triggerTime: b.time,
+  };
+};
+
+/** 112. IV against realised: options cheap (front IV at 0.8 of realised or less) and a 20-bar break -- or rich (1.6 or more) and a stretched price turning. */
+const ivVsRv = ({ bars, a, ctx }: DetectInput): Setup | null => {
+  const iv = ivAgo(ctx, 0)?.now ?? null, rv = realisedVol(bars);
+  if (iv === null || rv === null || !(rv > 0)) return null;
+  const ratio = iv / rv, b = last(bars);
+  if (ratio <= 0.8) {
+    const dir = brokeOut(bars);
+    if (dir === 0) return null;
+    return { dir, steps: [{ label: `options cheap: IV ${(100 * iv).toFixed(0)}% against realised ${(100 * rv).toFixed(0)}%`, ok: true }, { label: 'a 20-bar break', ok: true }],
+      zone: atClose(b, dir, a), stop: dir === 1 ? b.low : b.high, triggerTime: b.time };
+  }
+  if (ratio >= 1.6) {
+    const recent = bars.slice(-4), ref = bars.slice(-24, -4);
+    const dir: 1 | -1 | 0 = hiOf(recent) > hiOf(ref) ? -1 : loOf(recent) < loOf(ref) ? 1 : 0;
+    if (dir === 0 || !turned(b, prev(bars), dir)) return null;
+    return { dir, steps: [{ label: `options rich: IV ${(100 * iv).toFixed(0)}% against realised ${(100 * rv).toFixed(0)}%`, ok: true }, { label: 'a stretched price turning back', ok: true }],
+      zone: atClose(b, dir, a), stop: dir === 1 ? loOf(recent) : hiOf(recent), triggerTime: b.time };
+  }
+  return null;
+};
+
+/** 113. Term structure inverted: the front expiry's IV five points or more over the next's -- stress now -- and a 20-bar break: follow it. */
+const termInversion = ({ bars, a, ctx }: DetectInput): Setup | null => {
+  const xs = (ctx.deriv?.iv ?? []).filter((p) => p.front !== null && p.next !== null), p = xs[xs.length - 1];
+  const dir = brokeOut(bars);
+  if (!p || dir === 0 || !(p.front! - p.next! >= 0.05)) return null;
+  const b = last(bars);
+  return {
+    dir,
+    steps: [{ label: `term structure inverted: front ${(100 * p.front!).toFixed(1)}% over next ${(100 * p.next!).toFixed(1)}%`, ok: true }, { label: 'a 20-bar break', ok: true }],
+    zone: atClose(b, dir, a), stop: dir === 1 ? b.low : b.high, triggerTime: b.time,
+  };
+};
+
+// ------------------------------------------------------------------ the book, the footprint, the other market
+
+/** 61. Book imbalance: 30% or more of the top five levels on one side, fresh, and price breaks that way. */
+const bookImbalance = ({ bars, a, ctx }: DetectInput): Setup | null => {
+  const k = ctx.book;
+  if (!k || k.imbalance === null || !fresh(ctx, k.at)) return null;
+  const want: 1 | -1 | 0 = k.imbalance >= 0.3 ? 1 : k.imbalance <= -0.3 ? -1 : 0;
+  if (want === 0 || brokeOut(bars, 12) !== want) return null;
+  const b = last(bars);
+  return {
+    dir: want,
+    steps: [{ label: `book imbalance ${(100 * k.imbalance).toFixed(0)}%`, ok: true }, { label: `a 12-bar ${want === 1 ? 'high' : 'low'} broken`, ok: true }],
+    zone: atClose(b, want, a), stop: want === 1 ? b.low : b.high, triggerTime: b.time,
+  };
+};
+
+/** 62 / 69. Microprice: the size-weighted price leaning a third of the spread or more off the middle, and the bar closing that way through the one before. */
+const microprice = ({ bars, a, ctx }: DetectInput): Setup | null => {
+  const k = ctx.book;
+  if (!k || k.bestBid === null || k.bestAsk === null || !(k.bestAsk > k.bestBid) || !(k.top5Bid + k.top5Ask > 0) || !fresh(ctx, k.at)) return null;
+  const mid = (k.bestBid + k.bestAsk) / 2, micro = (k.bestAsk * k.top5Bid + k.bestBid * k.top5Ask) / (k.top5Bid + k.top5Ask);
+  const lean = (micro - mid) / (k.bestAsk - k.bestBid), want: 1 | -1 | 0 = lean >= 0.33 ? 1 : lean <= -0.33 ? -1 : 0;
+  const b = last(bars), p = prev(bars);
+  if (want === 0 || !(want === 1 ? b.close > p.high : b.close < p.low)) return null;
+  return {
+    dir: want,
+    steps: [{ label: `microprice leaning ${(100 * lean).toFixed(0)}% of the spread ${want === 1 ? 'up' : 'down'}`, ok: true }, { label: 'closed through the bar before', ok: true }],
+    zone: atClose(b, want, a), stop: want === 1 ? b.low : b.high, triggerTime: b.time,
+  };
+};
+
+/** 63. Replenished wall: a resting wall touched in the last three bars and still standing -- it refilled -- and price turning off it. */
+const replenished = ({ bars, a, ctx }: DetectInput): Setup | null => {
+  const b = last(bars), recent = bars.slice(-3);
+  for (const w of ctx.walls) {
+    const dir: 1 | -1 = w.side === 'bid' ? 1 : -1;
+    const touched = recent.some((x) => (dir === 1 ? x.low <= w.price + 0.1 * a && x.low >= w.price - 0.3 * a : x.high >= w.price - 0.1 * a && x.high <= w.price + 0.3 * a));
+    if (!touched || !turned(b, prev(bars), dir)) continue;
+    return {
+      dir,
+      steps: [{ label: `a ${w.side} wall at ${fmt(w.price)} touched and still there`, ok: true }, { label: 'turned off it', ok: true }],
+      zone: atClose(b, dir, a), stop: dir === 1 ? Math.min(loOf(recent), w.price - 0.25 * a) : Math.max(hiOf(recent), w.price + 0.25 * a), triggerTime: b.time,
+    };
+  }
+  return null;
+};
+
+/** 64. Pulled wall: a wall within one ATR of price ten to twenty minutes ago, gone now (under 30% of it) as price came near -- the way is open. */
+const pulledWall = ({ bars, a, ctx }: DetectInput): Setup | null => {
+  const hs = ctx.heat ?? [], now = hs[hs.length - 1];
+  if (!now) return null;
+  const then = hs.filter((m) => m.at <= now.at - 10 * 60_000 && m.at >= now.at - 20 * 60_000);
+  const b = last(bars);
+  const sizeAt = (m: (typeof hs)[number], side: 'bid' | 'ask', price: number) => {
+    const i = Math.round((price - m.base) / m.step);
+    return (side === 'bid' ? m.bid : m.ask)[i] ?? 0;
+  };
+  for (const [side, dir] of [['ask', 1], ['bid', -1]] as const) {
+    for (const m of then) {
+      const xs = side === 'ask' ? m.ask : m.bid, med = [...xs].filter((v) => v > 0).sort((x, y) => x - y)[Math.floor(xs.filter((v) => v > 0).length / 2)] ?? 0;
+      for (let i = 0; i < xs.length; i++) {
+        const price = m.base + i * m.step, size = xs[i]!;
+        // A wall (three times the side's median size) in the way, within one ATR ahead of price...
+        if (!(med > 0 && size >= 3 * med) || Math.abs(price - b.close) > a || (dir === 1 ? price < b.close : price > b.close)) continue;
+        // ...and gone now: under 30% of what it was.
+        if (sizeAt(now, side, price) > 0.3 * size) continue;
+        return {
+          dir,
+          steps: [{ label: `an ${side} wall at ${fmt(price)} pulled as price came near`, ok: true }],
+          zone: atClose(b, dir, a), stop: dir === 1 ? b.low : b.high, triggerTime: b.time,
+        };
+      }
+    }
+  }
+  return null;
+};
+
+/** One bar's footprint from the tape: per $10 bucket, bought and sold. Null without the tape for that bar. */
+function footprint(ctx: EntryContext, bar: Candle, tfSec: number) {
+  const ps = (ctx.prints ?? []).filter((p) => p.at >= bar.time * 1000 && p.at < (bar.time + tfSec) * 1000);
+  if (ps.length < 20) return null;
+  const by = new Map<number, { buy: number; sell: number }>();
+  for (const p of ps) {
+    const k = Math.floor(p.price / 10) * 10, e = by.get(k) ?? { buy: 0, sell: 0 };
+    if (p.side === 'buy') e.buy += p.size; else e.sell += p.size;
+    by.set(k, e);
+  }
+  return [...by.entries()].sort((x, y) => x[0] - y[0]);
+}
+/** The longest run of buckets with one side 3x the other, and where it sits. */
+function stacked(fp: ReturnType<typeof footprint>, side: 'buy' | 'sell'): { n: number; lo: number; hi: number } {
+  let best = { n: 0, lo: 0, hi: 0 }, run = 0, start = 0;
+  for (const [k, e] of fp ?? []) {
+    const ok = side === 'buy' ? e.buy >= 3 * Math.max(e.sell, 1) : e.sell >= 3 * Math.max(e.buy, 1);
+    if (ok) { if (!run) start = k; run++; if (run > best.n) best = { n: run, lo: start, hi: k + 10 }; } else run = 0;
+  }
+  return best;
+}
+const tfOf = (bars: readonly Candle[]) => (bars.length > 1 ? bars[1]!.time - bars[0]!.time : 60);
+
+/** 73. Stacked imbalance, continuation: three or more $10 levels in a row bought 3x (sold 3x) in the bar, which closed that way. */
+const stackedContinuation = ({ bars, a, ctx }: DetectInput): Setup | null => {
+  const b = last(bars), fp = footprint(ctx, b, tfOf(bars));
+  if (!fp) return null;
+  for (const [side, dir] of [['buy', 1], ['sell', -1]] as const) {
+    const s = stacked(fp, side);
+    if (s.n < 3 || !(dir === 1 ? b.close > b.open && closeLocation(b) >= 0.6 : b.close < b.open && closeLocation(b) <= 0.4)) continue;
+    return {
+      dir,
+      steps: [{ label: `${s.n} levels in a row ${side === 'buy' ? 'bought' : 'sold'} 3x, ${fmt(s.lo)}-${fmt(s.hi)}`, ok: true }, { label: 'the bar closed that way', ok: true }],
+      zone: atClose(b, dir, a), stop: dir === 1 ? Math.min(s.lo, b.low) : Math.max(s.hi, b.high), triggerTime: b.time,
+    };
+  }
+  return null;
+};
+
+/** 74. Stacked imbalance, reversal: a run of levels bought 3x at the top of the bar (sold at the bottom) that did not hold -- the bar closed in its far third. */
+const stackedReversal = ({ bars, a, ctx }: DetectInput): Setup | null => {
+  const b = last(bars), fp = footprint(ctx, b, tfOf(bars));
+  if (!fp) return null;
+  const buy = stacked(fp, 'buy'), sell = stacked(fp, 'sell');
+  const top = buy.n >= 3 && buy.hi >= b.high - 0.3 * range(b) && closeLocation(b) <= 0.33;
+  const bottom = sell.n >= 3 && sell.lo <= b.low + 0.3 * range(b) && closeLocation(b) >= 0.67;
+  const dir: 1 | -1 | 0 = top ? -1 : bottom ? 1 : 0;
+  if (dir === 0) return null;
+  return {
+    dir,
+    steps: [{ label: `stacked ${dir === -1 ? 'buying at the top' : 'selling at the bottom'} that failed`, ok: true }, { label: `closed in the bar's ${dir === -1 ? 'low' : 'high'} third`, ok: true }],
+    zone: atClose(b, dir, a), stop: dir === -1 ? b.high : b.low, triggerTime: b.time,
+  };
+};
+
+/** 129. BTC against ETH: a new 24-bar high on BTC that ETH did not make (or low), then BTC turns -- one market alone. 5m only. */
+const ethDivergence = ({ bars, a, ctx }: DetectInput): Setup | null => {
+  const eth = ctx.eth ?? [];
+  if (tfOf(bars) !== 300 || eth.length < 30) return null;
+  const b = last(bars), e = eth[eth.length - 1]!;
+  if (Math.abs(e.time - b.time) > 300) return null;
+  const btcRef = bars.slice(-27, -3), btcNow = bars.slice(-3), ethRef = eth.slice(-27, -3), ethNow = eth.slice(-3);
+  const dir: 1 | -1 | 0 = hiOf(btcNow) > hiOf(btcRef) && hiOf(ethNow) <= hiOf(ethRef) ? -1 : loOf(btcNow) < loOf(btcRef) && loOf(ethNow) >= loOf(ethRef) ? 1 : 0;
+  if (dir === 0 || !turned(b, prev(bars), dir)) return null;
+  return {
+    dir,
+    steps: [{ label: `BTC a new 24-bar ${dir === -1 ? 'high' : 'low'}, ETH not`, ok: true }, { label: 'BTC turned', ok: true }],
+    zone: atClose(b, dir, a), stop: dir === -1 ? hiOf(btcNow) : loOf(btcNow), triggerTime: b.time,
+  };
+};
+
+/**
+ * 50 (proxy; also 34, 96). Forced-flow continuation: open interest falling 0.5% or more in a quarter hour while
+ * large prints run one way three to one, and price breaks that way. Delta publishes no liquidation feed: this
+ * reads the footprint a cascade leaves -- positions closing, big aggressive orders -- and says it is a proxy.
+ */
+const forcedFlow = ({ bars, a, ctx }: DetectInput): Setup | null => {
+  const o = perpAgo(ctx, 15), oi = o ? pctChange(o.now.oi, o.then.oi) : null;
+  if (oi === null || !(oi <= -0.5)) return null;
+  const now = Math.floor(ctx.now / 1000), ms = ctx.flow.filter((m) => m.time >= now - 5 * 60);
+  const lb = ms.reduce((s, m) => s + m.largeBuy, 0), ls = ms.reduce((s, m) => s + m.largeSell, 0);
+  const want: 1 | -1 | 0 = lb >= 3 * Math.max(ls, 1) ? 1 : ls >= 3 * Math.max(lb, 1) ? -1 : 0;
+  if (want === 0 || brokeOut(bars, 12) !== want) return null;
+  const b = last(bars);
+  return {
+    dir: want,
+    steps: [{ label: `proxy (no liquidation feed): open interest ${oi.toFixed(2)}% in 15 min`, ok: true }, { label: `large prints ${want === 1 ? 'bought' : 'sold'} 3 to 1, a 12-bar break`, ok: true }],
+    zone: atClose(b, want, a), stop: want === 1 ? b.low : b.high, triggerTime: b.time,
+  };
+};
+
 export const LIVE_CANDIDATES: readonly Candidate[] = [
   { id: 'cvd-divergence', n: 24, name: 'CVD divergence', family: 'flow', sl: 'the divergent swing', targets: tgt('nearest', 'next'), detect: cvdDivergence },
   { id: 'delta-divergence', n: 25, name: 'Delta divergence', family: 'flow', sl: 'the weak-delta extreme', targets: tgt('nearest', 'next'), detect: deltaDivergence },
@@ -1426,6 +1843,26 @@ export const LIVE_CANDIDATES: readonly Candidate[] = [
   { id: 'big-print', n: 66, name: 'Big-print follow-through', family: 'flow', sl: 'the print bar\'s far end', targets: tgt('nearest', 'next'), detect: bigPrint },
   { id: 'velocity', n: 67, name: 'Trade velocity / aggression spike', family: 'flow', sl: 'the spike\'s far end', targets: tgt('nearest', 'next'), detect: velocity },
   { id: 'cvd-shift', n: 70, name: 'CVD regime shift', family: 'flow', sl: 'the six-bar extreme', targets: tgt('nearest', 'next'), detect: cvdShift },
+  { id: 'oi-breakout', n: 32, name: 'OI-confirmed breakout', family: 'flow', sl: 'the break bar\'s far end', targets: tgt('nearest', 'htf'), detect: oiBreakout },
+  { id: 'oi-flush', n: 33, name: 'OI flush reversal', family: 'flow', sl: 'the turn extreme', targets: tgt('nearest', 'next'), detect: oiFlush },
+  { id: 'lead-lag', n: 48, name: 'Index leads, perp lags', family: 'flow', sl: 'the four-bar extreme', targets: tgt('nearest', 'next'), detect: leadLag },
+  { id: 'forced-flow', n: 50, name: 'Forced-flow continuation (liquidation proxy)', family: 'flow', sl: 'the break bar\'s far end', targets: tgt('nearest', 'next'), detect: forcedFlow },
+  { id: 'funding-flip', n: 54, name: 'Funding flip', family: 'flow', sl: 'the break bar\'s far end', targets: tgt('nearest', 'next'), detect: fundingFlip },
+  { id: 'iv-breakout', n: 55, name: 'IV expansion breakout', family: 'flow', sl: 'the break bar\'s far end', targets: tgt('nearest', 'next'), detect: ivBreakout },
+  { id: 'iv-crush', n: 56, name: 'IV crush reversion', family: 'flow', sl: 'the stretch extreme', targets: tgt('own', 'next'), detect: ivCrush },
+  { id: 'skew-shift', n: 57, name: 'Options skew divergence', family: 'flow', sl: 'the turn extreme', targets: tgt('nearest', 'next'), detect: skewShift },
+  { id: 'gamma-wall', n: 58, name: 'Gamma wall reaction', family: 'flow', sl: 'the touch extreme', targets: tgt('nearest', 'next'), detect: gammaWall },
+  { id: 'book-imbalance', n: 61, name: 'Order-book imbalance breakout', family: 'flow', sl: 'the break bar\'s far end', targets: tgt('nearest', 'next'), detect: bookImbalance },
+  { id: 'microprice', n: 62, name: 'Microprice / queue imbalance', family: 'flow', sl: 'the bar\'s far end', targets: tgt('nearest', 'next'), detect: microprice },
+  { id: 'replenished-wall', n: 63, name: 'Liquidity replenishment', family: 'flow', sl: 'past the wall', targets: tgt('nearest', 'next'), detect: replenished },
+  { id: 'pulled-wall', n: 64, name: 'Pulled wall (spoof / pull)', family: 'flow', sl: 'the bar\'s far end', targets: tgt('nearest', 'next'), detect: pulledWall },
+  { id: 'stacked-continuation', n: 73, name: 'Footprint stacked imbalance -- continuation', family: 'flow', sl: 'the stack\'s far side', targets: tgt('nearest', 'next'), detect: stackedContinuation },
+  { id: 'stacked-reversal', n: 74, name: 'Footprint stacked imbalance -- reversal', family: 'flow', sl: 'the bar\'s extreme', targets: tgt('nearest', 'next'), detect: stackedReversal },
+  { id: 'option-volume', n: 109, name: 'Option volume one-sided', family: 'flow', sl: 'the break bar\'s far end', targets: tgt('nearest', 'next'), detect: optionVolume },
+  { id: 'oi-divergence', n: 111, name: 'Call / put OI divergence', family: 'flow', sl: 'the turn extreme', targets: tgt('nearest', 'next'), detect: oiDivergence },
+  { id: 'iv-vs-rv', n: 112, name: 'IV vs realised volatility', family: 'flow', sl: 'the bar\'s far end', targets: tgt('nearest', 'next'), detect: ivVsRv },
+  { id: 'term-inversion', n: 113, name: 'Term-structure inversion', family: 'flow', sl: 'the break bar\'s far end', targets: tgt('nearest', 'next'), detect: termInversion },
+  { id: 'eth-divergence', n: 129, name: 'BTC vs ETH divergence', family: 'flow', sl: 'the new extreme', targets: tgt('nearest', 'next'), detect: ethDivergence },
 ];
 
 const GROUP: Record<string, MethodDef['group']> = {
