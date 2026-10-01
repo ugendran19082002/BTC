@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Candle } from '../../src/market/delta.js';
-import { entryBoard, fillOf, readMethod, rrOf, timeframeRows, MAX_ZONE_ATR, MIN_RR, TP_STEP_ATR } from '../../src/entry/engine.js';
+import { entryBoard, fillOf, pickTargets, readMethod, rrOf, timeframeRows, MAX_ZONE_ATR, MIN_RR, TP_STEP_ATR } from '../../src/entry/engine.js';
 import { atr } from '../../src/entry/prims.js';
 import { METHODS } from '../../src/entry/methods.js';
 import type { EntryContext, Frames } from '../../src/entry/types.js';
@@ -50,6 +50,8 @@ test('[critical] a breakout with room to its target is a TRADE on its own timefr
   assert.match(r.plan.tpWhy[0]!, /ask wall 84,900/);
   assert.ok(r.plan.rr >= MIN_RR);
   assert.ok(r.plan.stop < 84_120, 'the stop sits past the breakout candle, with a buffer');
+  assert.match(r.plan.why!.stop, /^the breakout candle's far end 84,120 − 0\.25 ATR$/, 'the SL says its structure and buffer');
+  assert.equal(r.plan.why!.tp1, 'ask wall 84,900');
 });
 
 test('[critical] a step not yet there is WAIT, says which, and draws no box', () => {
@@ -282,3 +284,51 @@ test('[critical] the execution step reads the live price: the tape\'s last trade
   assert.match(exec(stale).label, /last 1m close/);
   assert.equal(exec(stale).ok, true);
 });
+
+// ------------------------------------------------------------ the owner's SL/TP table (1 Oct 2026)
+
+const L = (price: number, kind: 'own' | 'entry' | 'htf' | 'wall' | 'oi', why = `${kind} ${price}`) => ({ price, why, kind });
+const PICK = { dir: 1 as const, a: 100, entry: 84_000, risk: 150, emEdge: null };
+
+test('[critical] TP2 is the next 1H/4H liquidity, not merely the next level; TP1 the nearest of any kind', () => {
+  const levels = [L(84_120, 'entry'), L(84_180, 'wall'), L(84_260, 'entry'), L(84_400, 'htf')];
+  const t = pickTargets({ tp1: 'nearest', tp2: 'htf' }, levels, PICK);
+  assert.deepEqual([t.tp1, t.tp2, t.tp3], [84_120, 84_400, null]);
+  // No HTF level past TP1: the next real level of any kind, never an invented one.
+  assert.equal(pickTargets({ tp1: 'nearest', tp2: 'htf' }, levels.slice(0, 3), PICK).tp2, 84_180, 'the wall, 60 past TP1 (over 0.5 ATR)');
+});
+
+test('[critical] VWAP reversion: TP1 is the VWAP even with a swing nearer, TP2 the band past it', () => {
+  const levels = [L(84_090, 'entry'), L(84_200, 'own', 'VWAP 84,200'), L(84_350, 'own', 'VWAP +1σ 84,350')];
+  const t = pickTargets({ tp1: 'own', tp2: 'own' }, levels, PICK);
+  assert.deepEqual([t.tp1, t.tp2, t.why.slice(0, 2)], [84_200, 84_350, ['VWAP 84,200', 'VWAP +1σ 84,350']]);
+});
+
+test('[critical] FVG and pullback take the previous swing on the entry timeframe as TP1', () => {
+  const t = pickTargets({ tp1: 'swing', tp2: 'next' }, [L(84_080, 'wall'), L(84_150, 'entry'), L(84_300, 'htf')], PICK);
+  assert.deepEqual([t.tp1, t.tp2], [84_150, 84_300]);
+});
+
+test('[critical] order flow aims TP2 at the next book wall; options at the next OI wall, with max pain as TP3 past it', () => {
+  const levels = [L(84_100, 'entry'), L(84_300, 'htf'), L(84_450, 'wall'), L(84_600, 'oi')];
+  assert.equal(pickTargets({ tp1: 'nearest', tp2: 'book' }, levels, PICK).tp2, 84_450);
+  const o = pickTargets({ tp1: 'nearest', tp2: 'oi' }, levels, { ...PICK, ownTp3: { price: 85_000, why: 'max pain 85,000' }, emEdge: 85_500 });
+  assert.deepEqual([o.tp1, o.tp2, o.tp3, o.why[2]], [84_100, 84_600, 85_000, 'max pain 85,000']);
+  // Max pain behind TP2 is no target: the expected-move edge instead.
+  assert.equal(pickTargets({ tp1: 'nearest', tp2: 'oi' }, levels, { ...PICK, ownTp3: { price: 84_550, why: 'mp' }, emEdge: 85_500 }).tp3, 85_500);
+});
+
+test('TP2 and TP3 are each at least half an ATR past the one before; with nothing past the zone, TP1 is 2R and says so', () => {
+  const t = pickTargets({ tp1: 'nearest', tp2: 'next' }, [L(84_100, 'entry'), L(84_130, 'entry')], { ...PICK, emEdge: 84_140 });
+  assert.deepEqual([t.tp2, t.tp3], [null, null], '30 and 40 points past TP1 are under 0.5 ATR (50)');
+  assert.deepEqual(pickTargets({ tp1: 'nearest', tp2: 'htf' }, [], PICK), { tp1: 84_300, tp2: null, tp3: null, why: ['2R -- no level found beyond the entry'] });
+});
+
+test('every method has its target rule from the table', () => {
+  const spec = Object.fromEntries(METHODS.map((m) => [m.n, `${m.targets.tp1}/${m.targets.tp2}`]));
+  assert.deepEqual(spec, {
+    1: 'nearest/htf', 2: 'nearest/htf', 3: 'nearest/htf', 4: 'swing/next', 5: 'nearest/htf', 6: 'nearest/htf',
+    7: 'nearest/htf', 8: 'nearest/next', 9: 'swing/htf', 10: 'own/own', 11: 'nearest/book', 12: 'nearest/oi',
+  });
+});
+

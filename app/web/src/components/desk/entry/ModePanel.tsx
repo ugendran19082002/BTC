@@ -223,10 +223,10 @@ function SelectedCard({ read, ltp }: { read: MethodRead | null; ltp: { price: nu
         {p && risk !== null && reward !== null ? (
           <>
             {row('Entry', `${fmt(p.entryLo)} – ${fmt(p.entryHi)}`)}
-            {row('Stop loss', fmt(p.stop), 'text-[var(--down)]')}
-            {row('Target 1', `${fmt(p.tp1)} (${rOf(p.tp1)!.toFixed(1)}R)`, 'text-[var(--up)]')}
-            {p.tp2 !== null ? row('Target 2', `${fmt(p.tp2)} (${rOf(p.tp2)!.toFixed(1)}R)`, 'text-[var(--up)]') : null}
-            {p.tp3 !== null ? row('Target 3', `${fmt(p.tp3)} (${rOf(p.tp3)!.toFixed(1)}R)`) : null}
+            {row('Stop loss', <>{fmt(p.stop)}<Why text={p.why?.stop} /></>, 'text-[var(--down)]')}
+            {row('Target 1', <>{fmt(p.tp1)} ({rOf(p.tp1)!.toFixed(1)}R)<Why text={p.why?.tp1} /></>, 'text-[var(--up)]')}
+            {p.tp2 !== null ? row('Target 2', <>{fmt(p.tp2)} ({rOf(p.tp2)!.toFixed(1)}R)<Why text={p.why?.tp2} /></>, 'text-[var(--up)]') : null}
+            {p.tp3 !== null ? row('Target 3', <>{fmt(p.tp3)} ({rOf(p.tp3)!.toFixed(1)}R)<Why text={p.why?.tp3} /></>) : null}
             {row('Risk', `${fmt(risk)} (${pct(risk)})`)}
             {row('Reward', `${fmt(reward)} (${pct(reward)})`)}
             {row('R:R', p.rr.toFixed(2), 'font-semibold')}
@@ -239,6 +239,11 @@ function SelectedCard({ read, ltp }: { read: MethodRead | null; ltp: { price: nu
       </div>
     </section>
   );
+}
+
+/** Under a level: why it is there, small -- the method's own SL/TP rule. */
+function Why({ text }: { text: string | null | undefined }) {
+  return text ? <span className="block text-[10.5px] font-normal text-muted-foreground">{text}</span> : null;
 }
 
 function Reasons({ read }: { read: MethodRead | null }) {

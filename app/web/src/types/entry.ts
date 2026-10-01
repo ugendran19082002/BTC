@@ -33,6 +33,8 @@ export type EntryPlan = {
   entryLo: number; entryHi: number; stop: number;
   tp1: number; tp2: number | null; tp3: number | null;
   tpWhy: string[];
+  /** Why the stop and each target are where they are, in words (the method's own SL/TP rule). */
+  why?: { stop: string; tp1: string; tp2: string | null; tp3: string | null };
   /** Reward to TP1 over risk, in points from the fill edge. */
   rr: number;
 };
@@ -108,6 +110,9 @@ export type EntrySignal = {
   /** The market when it was first seen: the perpetual's last trade, Delta's BTC index. */
   ltp: number | null; indexPrice: number | null;
   outcome: EntrySignalOutcome | null;
+  /** The rest of the plan, and why each level is where it is (null on rows from before 1 Oct 2026). */
+  tp2: number | null; tp3: number | null;
+  why: { stop: string | null; tp1: string | null; tp2: string | null; tp3: string | null } | null;
   /** When the trigger bar closed (epoch s), and how long after it the server first saw the signal (ms). */
   barCloseAt: number; seenAfterMs: number;
   /** The Telegram alert, if one was tried: when (epoch ms) and whether it went. */

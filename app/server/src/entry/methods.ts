@@ -27,8 +27,10 @@ export type Setup = {
   stop: number;
   /** The bar the setup is anchored to (epoch s): its identity in the log. */
   triggerTime: number;
-  /** Targets this method has of its own (VWAP, max pain), nearest first. */
+  /** Targets this method has of its own, nearest first: VWAP then the band past it (10). */
   targets?: { price: number; why: string }[];
+  /** A TP3 of its own, used when it lies past TP2: max pain (12). */
+  tp3?: { price: number; why: string };
   /** A reason this method must not be taken now, whatever else holds. */
   blocked?: string;
 };
@@ -191,7 +193,7 @@ const liquiditySweep: Detector = ({ bars, a }) => {
  * back in the gap AND a reaction (a candle closing up out of it), the touch
  * and the reaction within the last few bars.
  */
-const fvgRetest: Detector = ({ bars, a }) => {
+const fvgRetest: Detector = ({ bars }) => {
   const z = openFvgs(bars, 30)[0];
   if (!z) return null;
   const dir = z.dir;
@@ -209,9 +211,10 @@ const fvgRetest: Detector = ({ bars, a }) => {
     ],
     // From the edge price reaches first to the gap's middle (its consequent encroachment), not the whole gap.
     zone: dir === 1 ? [(z.lo + z.hi) / 2, z.hi] : [z.lo, (z.lo + z.hi) / 2],
-    // Just past the gap's far edge, where the gap is invalidated -- not past its first candle, which could be
-    // far away (847 points on a 3m short, 30 Sep 2026, owner's screen).
-    stop: dir === 1 ? z.lo - 0.1 * a : z.hi + 0.1 * a,
+    // The displacement's origin -- the far end of the candle that left the gap (owner's SL/TP table, 1 Oct
+    // 2026): the move is wrong once price trades back through where it started. Not past the gap's first
+    // candle, which could be far away (847 points on a 3m short, 30 Sep 2026); the stop band gate caps it.
+    stop: dir === 1 ? Math.min(bars[z.i]!.low, z.lo) : Math.max(bars[z.i]!.high, z.hi),
     triggerTime: z.time,
   };
 };
@@ -390,7 +393,11 @@ const vwapReversion: Detector = ({ bars, a, ctx }) => {
     zone: atClose(b, dir, a, 0.2),
     stop: dir === 1 ? ext.low : ext.high,
     triggerTime: ext.time,
-    targets: [{ price: vb.vwap, why: `VWAP ${Math.round(vb.vwap).toLocaleString('en-US')}` }],
+    // TP1 the VWAP itself; TP2 the band one σ past it on the other side.
+    targets: [
+      { price: vb.vwap, why: `VWAP ${Math.round(vb.vwap).toLocaleString('en-US')}` },
+      { price: vb.vwap + dir * vb.sd, why: `VWAP ${dir === 1 ? '+' : '−'}1σ ${Math.round(vb.vwap + dir * vb.sd).toLocaleString('en-US')}` },
+    ],
     ...(er !== null && er > TREND_DAY_ER ? { blocked: `trend day: price is travelling straight (efficiency ${er.toFixed(2)}), mean reversion is off` } : {}),
   };
 };
@@ -471,8 +478,8 @@ const optionsFlow: Detector = ({ bars, a, trend, ctx }) => {
   const bm = ctx.bigMove;
   // No big-move reading: not read. A reading with no direction is not against anything.
   const compatible = bm === null ? null : bm.direction === null ? true : !((bm.band === 'high' || bm.band === 'sudden') && bm.direction * dir <= -0.3);
-  const targets = o.maxPain !== null && (dir === 1 ? o.maxPain > b.close : o.maxPain < b.close)
-    ? [{ price: o.maxPain, why: `max pain ${o.maxPain.toLocaleString('en-US')}` }] : [];
+  const tp3 = o.maxPain !== null && (dir === 1 ? o.maxPain > b.close : o.maxPain < b.close)
+    ? { price: o.maxPain, why: `max pain ${o.maxPain.toLocaleString('en-US')}` } : undefined;
   return {
     dir,
     steps: [
@@ -486,23 +493,37 @@ const optionsFlow: Detector = ({ bars, a, trend, ctx }) => {
     zone: atClose(b, dir, a, 0.2),
     stop: dir === 1 ? Math.min(wall, b.low) : Math.max(wall, b.high),
     triggerTime: b.time,
-    targets,
+    ...(tp3 ? { tp3 } : {}),
   };
 };
 
+/**
+ * Where each method takes profit (owner's SL/TP table, 1 Oct 2026). TP1:
+ * `nearest` is the closest liquidity of any kind (a swing, a book wall, an OI
+ * wall); `swing` the previous swing on the entry timeframe; `own` the method's
+ * own first target (VWAP). TP2, the next target at least half an ATR past TP1:
+ * `htf` the next 1H/4H swing; `next` the next level of any kind; `own` the
+ * method's own second target; `book` the next book wall or swing; `oi` the next
+ * OI wall. Each falls back to the next real level of any kind -- never an
+ * invented one. TP3: the expected-move edge, or the method's own (max pain).
+ */
+export type TargetSpec = { tp1: 'nearest' | 'swing' | 'own'; tp2: 'htf' | 'next' | 'own' | 'book' | 'oi' };
+const tgt = (tp1: TargetSpec['tp1'], tp2: TargetSpec['tp2']): TargetSpec => ({ tp1, tp2 });
+
 /** `gate`: the method's own hard gate, in words, for the methods that have one. */
-export const METHODS: readonly { id: MethodId; n: number; name: string; group: Group; summary: string; gate?: string; detect: Detector }[] = [
-  { id: 'breakout', n: 1, name: 'Breakout', group: 'breakout', summary: 'A close through the 20-bar range, RVOL 1.5, closing near its extreme', detect: breakout },
-  { id: 'breakout-retest', n: 2, name: 'Breakout + retest', group: 'pullback', summary: 'A breakout, then a pullback to the level that holds', detect: breakoutRetest },
-  { id: 'liquidity-sweep', n: 3, name: 'Liquidity sweep', group: 'reversal', summary: 'Stops taken past a swing, a close back, then the MSS', detect: liquiditySweep },
-  { id: 'fvg-retest', n: 4, name: 'FVG retest', group: 'pullback', summary: 'Back into a gap left by displacement, and a reaction', detect: fvgRetest },
-  { id: 'ob-retest', n: 5, name: 'Order-block retest', group: 'pullback', summary: 'Back into the last opposite candle before a break', detect: obRetest },
-  { id: 'bos', n: 6, name: 'BOS', group: 'breakout', summary: 'A displacement close through a swing, with the trend', detect: bos },
-  { id: 'mss', n: 7, name: 'MSS / CHoCH', group: 'reversal', summary: 'The trend turns: a sweep, then a close through the last swing', detect: mss },
-  { id: 'momentum', n: 8, name: 'Momentum', group: 'breakout', summary: 'A 1.5 ATR candle, RVOL 1.5, follow-through -- no chase when extended', gate: `not opened > ${MAX_EXTENSION_ATR} ATR from the 20 EMA (no chase)`, detect: momentum },
-  { id: 'pullback', n: 9, name: 'Pullback', group: 'pullback', summary: 'A trend back to its 20 EMA, then resuming', detect: pullback },
-  { id: 'vwap-reversion', n: 10, name: 'VWAP / mean reversion', group: 'reversal', summary: 'Two σ from VWAP, turning, delta improving -- off on trend days', gate: `not a trend day (efficiency ≤ ${TREND_DAY_ER})`, detect: vwapReversion },
-  { id: 'order-flow', n: 11, name: 'Order flow', group: 'flow', summary: 'At a level: absorption, delta flip, CVD turn, micro BOS', detect: orderFlow },
-  { id: 'options-flow', n: 12, name: 'Options / derivatives', group: 'flow', summary: 'An OI wall that holds, with structure, flow and big-move risk', detect: optionsFlow },
+/** `sl`: where the method's stop goes, before the 0.25 ATR buffer (owner's SL/TP table, 1 Oct 2026). */
+export const METHODS: readonly { id: MethodId; n: number; name: string; group: Group; summary: string; gate?: string; sl: string; targets: TargetSpec; detect: Detector }[] = [
+  { id: 'breakout', n: 1, name: 'Breakout', group: 'breakout', summary: 'A close through the 20-bar range, RVOL 1.5, closing near its extreme', sl: "the breakout candle's far end", targets: tgt('nearest', 'htf'), detect: breakout },
+  { id: 'breakout-retest', n: 2, name: 'Breakout + retest', group: 'pullback', summary: 'A breakout, then a pullback to the level that holds', sl: "the retest extreme", targets: tgt('nearest', 'htf'), detect: breakoutRetest },
+  { id: 'liquidity-sweep', n: 3, name: 'Liquidity sweep', group: 'reversal', summary: 'Stops taken past a swing, a close back, then the MSS', sl: "the sweep extreme", targets: tgt('nearest', 'htf'), detect: liquiditySweep },
+  { id: 'fvg-retest', n: 4, name: 'FVG retest', group: 'pullback', summary: 'Back into a gap left by displacement, and a reaction', sl: "the displacement origin", targets: tgt('swing', 'next'), detect: fvgRetest },
+  { id: 'ob-retest', n: 5, name: 'Order-block retest', group: 'pullback', summary: 'Back into the last opposite candle before a break', sl: "the order block's far edge", targets: tgt('nearest', 'htf'), detect: obRetest },
+  { id: 'bos', n: 6, name: 'BOS', group: 'breakout', summary: 'A displacement close through a swing, with the trend', sl: "the last higher low / lower high", targets: tgt('nearest', 'htf'), detect: bos },
+  { id: 'mss', n: 7, name: 'MSS / CHoCH', group: 'reversal', summary: 'The trend turns: a sweep, then a close through the last swing', sl: "the post-sweep extreme", targets: tgt('nearest', 'htf'), detect: mss },
+  { id: 'momentum', n: 8, name: 'Momentum', group: 'breakout', summary: 'A 1.5 ATR candle, RVOL 1.5, follow-through -- no chase when extended', gate: `not opened > ${MAX_EXTENSION_ATR} ATR from the 20 EMA (no chase)`, sl: "the momentum candle's far end", targets: tgt('nearest', 'next'), detect: momentum },
+  { id: 'pullback', n: 9, name: 'Pullback', group: 'pullback', summary: 'A trend back to its 20 EMA, then resuming', sl: "the pullback extreme", targets: tgt('swing', 'htf'), detect: pullback },
+  { id: 'vwap-reversion', n: 10, name: 'VWAP / mean reversion', group: 'reversal', summary: 'Two σ from VWAP, turning, delta improving -- off on trend days', gate: `not a trend day (efficiency ≤ ${TREND_DAY_ER})`, sl: "the 2σ reversal extreme", targets: tgt('own', 'own'), detect: vwapReversion },
+  { id: 'order-flow', n: 11, name: 'Order flow', group: 'flow', summary: 'At a level: absorption, delta flip, CVD turn, micro BOS', sl: "the absorption / held-level extreme", targets: tgt('nearest', 'book'), detect: orderFlow },
+  { id: 'options-flow', n: 12, name: 'Options / derivatives', group: 'flow', summary: 'An OI wall that holds, with structure, flow and big-move risk', sl: "the OI wall / rejection extreme", targets: tgt('nearest', 'oi'), detect: optionsFlow },
 ];
 

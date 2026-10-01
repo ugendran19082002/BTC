@@ -18,7 +18,7 @@ const sig = (over: Partial<EntrySignal> = {}): EntrySignal => ({
   triggerAt: 1, firstSeen: T, lastSeen: T + 12 * 60_000, score: 50, reason: 'short -- FVG retest on 3m',
   entryLo: 84_391, entryHi: 84_523, stop: 84_825, tp1: 84_288, rr: 1.9, gatesOff: [], ltp: 84_402.5, indexPrice: 84_380.1,
   outcome: oc({ status: 'tp1', fillPrice: 84_391, exitPrice: 84_288, exitAt: S + 30 * 60, rNet: 0.21, filledAt: S + 120, fillBetterPts: 0, exitLevel: 84_288, exitPastPts: 0, exitWhy: 'level' }),
-  barCloseAt: S - 3, seenAfterMs: 3_000, alert: { at: T + 1_000, status: 'sent' }, ...over,
+  barCloseAt: S - 3, seenAfterMs: 3_000, alert: { at: T + 1_000, status: 'sent' }, tp2: null, tp3: null, why: null, ...over,
 });
 const SUMMARY = { trades: 9, tp1: 4, tp1Pts: 1_210, stops: 3, slPts: 960, timeouts: 1, netPts: 180, netR: 0.42, open: 1 };
 const page = (signals: EntrySignal[], total = signals.length): EntrySignalPage => ({ signals, total, summary: SUMMARY });
@@ -168,5 +168,15 @@ describe('the signal history table', () => {
     expect(exitNote(sig({ outcome: oc({ status: 'timeout', exitWhy: 'time' }) }))!.text).toBe('closed on time (48 bars), at the bar close');
     expect(exitNote(sig({ outcome: oc() }))).toBeNull();
     expect(fillNote(sig())).toBe('at the zone edge 84,391');
+  });
+
+  it('TP2 and TP3 under TP1, and why the SL and targets are where they are on hover', async () => {
+    getEntrySignals.mockResolvedValue(page([sig({ tp2: 84_100, tp3: 83_900, why: { stop: 'the displacement origin 84,520 + 0.25 ATR', tp1: 'entry swing low 84,288', tp2: '1h swing low 84,100', tp3: null } })]));
+    render(<SignalHistory />);
+    const table = await screen.findByRole('table', { name: 'signals' });
+    const [row] = within(table).getAllByRole('row').slice(1);
+    expect(row).toHaveTextContent('84,288TP2 84,100 · TP3 83,900');
+    expect(within(row!).getByTitle('the displacement origin 84,520 + 0.25 ATR')).toHaveTextContent('84,825');
+    expect(within(row!).getByTitle('entry swing low 84,288 · 1h swing low 84,100')).toBeInTheDocument();
   });
 });

@@ -213,8 +213,15 @@ export function SignalHistory() {
                       <td className="whitespace-nowrap pr-2"><SignalTag s={s} /></td>
                       <td className="hidden whitespace-nowrap pr-2 text-muted-foreground lg:table-cell">{fmt(s.ltp)} · {fmt(s.indexPrice)}</td>
                       <td className="whitespace-nowrap pr-2">{s.entryLo === null ? '–' : `${fmt(s.entryLo)}–${fmt(s.entryHi)}`}</td>
-                      <td className="whitespace-nowrap pr-2 text-[var(--down)]">{fmt(s.stop)}</td>
-                      <td className="whitespace-nowrap pr-2 text-[var(--up)]">{fmt(s.tp1)}</td>
+                      <td className="whitespace-nowrap pr-2 text-[var(--down)]" title={s.why?.stop ?? undefined}>{fmt(s.stop)}</td>
+                      <td className="whitespace-nowrap pr-2 text-[var(--up)]" title={[s.why?.tp1, s.why?.tp2, s.why?.tp3].filter(Boolean).join(' · ') || undefined}>
+                        {fmt(s.tp1)}
+                        {s.tp2 !== null || s.tp3 !== null ? (
+                          <div className="text-[10.5px] text-muted-foreground">
+                            {s.tp2 !== null ? `TP2 ${fmt(s.tp2)}` : ''}{s.tp2 !== null && s.tp3 !== null ? ' · ' : ''}{s.tp3 !== null ? `TP3 ${fmt(s.tp3)}` : ''}
+                          </div>
+                        ) : null}
+                      </td>
                       <td className="whitespace-nowrap pr-2">
                         {s.outcome?.fillPrice != null ? fmt(s.outcome.fillPrice) : '–'}
                         {ex ? <> → {ex.price} <span className={cn('text-[10.5px] font-bold', ex.why === 'TGT' ? 'text-[var(--up)]' : ex.why === 'SL' ? 'text-[var(--down)]' : 'text-muted-foreground')}>{ex.why}</span></> : null}
@@ -350,10 +357,13 @@ function Card({ s, now }: { s: EntrySignal; now: number }) {
           <span>Entry {fmt(s.entryLo)}–{fmt(s.entryHi)}</span>
           <span className="text-[var(--down)]">SL {fmt(s.stop)}</span>
           <span className="text-[var(--up)]">TP1 {fmt(s.tp1)}</span>
+          {s.tp2 !== null ? <span className="text-[var(--up)]">TP2 {fmt(s.tp2)}</span> : null}
+          {s.tp3 !== null ? <span className="text-muted-foreground">TP3 {fmt(s.tp3)}</span> : null}
           {s.rr !== null ? <span className="text-muted-foreground">R:R {s.rr.toFixed(2)}</span> : null}
         </div>
       ) : null}
       {ex ? <div className="text-[11.5px]">Fill {fmt(s.outcome?.fillPrice)} → exit {ex.price} ({ex.why}){ex.pts !== null ? ` · ${signedPts(ex.pts)} pts` : ''}</div> : null}
+      {s.why?.stop ? <div className="text-[10.5px] text-muted-foreground">SL at {s.why.stop}</div> : null}
       <FillExitDetail s={s} />
       <div className="text-[10.5px] text-muted-foreground">
         bar {SECS.format(s.barCloseAt * 1000)} · seen {lag(s.seenAfterMs)}

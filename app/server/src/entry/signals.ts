@@ -57,6 +57,16 @@ const MIGRATIONS: Migration[] = [{
   // The chain's rows are kept -- its entry is 5m. The paper log (entry_setups) is left as it was.
   id: 'entry-008-signals-no-1m',
   up: `DELETE FROM entry_signals WHERE mode = 'single' AND tf = '1m';`,
+}, {
+  // The whole plan, not just TP1: TP2, TP3, and why each level is where it is (owner's SL/TP table, 1 Oct 2026).
+  // Older rows keep NULLs -- their reasons were never recorded, and none is made up for them.
+  id: 'entry-011-signal-targets',
+  up: `
+    ALTER TABLE entry_signals ADD COLUMN IF NOT EXISTS tp2 DOUBLE PRECISION;
+    ALTER TABLE entry_signals ADD COLUMN IF NOT EXISTS tp3 DOUBLE PRECISION;
+    ALTER TABLE entry_signals ADD COLUMN IF NOT EXISTS stop_why TEXT;
+    ALTER TABLE entry_signals ADD COLUMN IF NOT EXISTS tp_why TEXT[];
+  `,
 }];
 
 let ready: Promise<void> | null = null;
@@ -86,13 +96,14 @@ export async function recordSignals(
     const p = r.state === 'TRADE' ? r.plan : null;
     const res = await rows<{ inserted: boolean }>(
       `INSERT INTO entry_signals (method, mode, tf, dir, state, trigger_at, first_seen, last_seen, score, reason,
-                                  entry_lo, entry_hi, stop, tp1, rr, gates_off, ltp, index_price)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+                                  entry_lo, entry_hi, stop, tp1, rr, gates_off, ltp, index_price, tp2, tp3, stop_why, tp_why)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
        ON CONFLICT (method, mode, tf, dir, trigger_at, state) DO UPDATE SET last_seen = EXCLUDED.last_seen
        RETURNING (xmax = 0) AS inserted`,
       [r.id, r.mode, r.tf, r.dir === 'long' ? 1 : -1, r.state, r.triggerTime, nowMs, r.score, r.reason,
         p?.entryLo ?? null, p?.entryHi ?? null, p?.stop ?? null, p?.tp1 ?? null, p?.rr ?? null,
-        r.gates.filter((g) => !g.enabled).map((g) => g.key), prices.ltp ?? null, prices.index ?? null],
+        r.gates.filter((g) => !g.enabled).map((g) => g.key), prices.ltp ?? null, prices.index ?? null,
+        p?.tp2 ?? null, p?.tp3 ?? null, p?.why?.stop ?? null, p?.why ? [p.why.tp1, p.why.tp2, p.why.tp3] : null],
     );
     if (res[0]?.inserted) fresh += 1;
   }
@@ -121,6 +132,9 @@ export type SignalRow = {
    * Null for a WAIT, or a TRADE the log has not written.
    */
   outcome: SignalOutcome | null;
+  /** The rest of the plan: TP2, TP3, and why the stop and each target are where they are (null on rows before 1 Oct 2026). */
+  tp2: number | null; tp3: number | null;
+  why: { stop: string | null; tp1: string | null; tp2: string | null; tp3: string | null } | null;
   /** When the trigger bar closed (epoch s) -- the earliest the signal could be known. */
   barCloseAt: number;
   /** How long after that close the server first saw it (ms): the recorder runs each minute + 3 s. */
@@ -259,6 +273,13 @@ export async function signalPage(q: SignalQuery = {}): Promise<{ signals: Signal
     n: METHODS.find((m) => m.id === r.method)?.n ?? null,
     name: METHODS.find((m) => m.id === r.method)?.name ?? String(r.method),
     outcome: r.e_status ? outcomeOf(r, r.tf as Tf) : null,
+    tp2: num(r.tp2), tp3: num(r.tp3),
+    why: r.stop_why === null && r.tp_why === null ? null : {
+      stop: (r.stop_why as string | null) ?? null,
+      tp1: (r.tp_why as (string | null)[] | null)?.[0] ?? null,
+      tp2: (r.tp_why as (string | null)[] | null)?.[1] ?? null,
+      tp3: (r.tp_why as (string | null)[] | null)?.[2] ?? null,
+    },
     barCloseAt: Number(r.trigger_at) + TF_SEC[r.tf as Tf],
     seenAfterMs: Number(r.first_seen) - (Number(r.trigger_at) + TF_SEC[r.tf as Tf]) * 1000,
     alert: r.al_at === null || r.al_at === undefined ? null : { at: Number(r.al_at), status: r.al_status as 'sent' | 'failed' },

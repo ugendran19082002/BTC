@@ -58,6 +58,7 @@ test('4. FVG: a gap left by displacement, price back into it, a reaction out', (
   assert.equal(s?.dir, 1);
   assert.deepEqual(s?.zone, [84_035, 84_060], 'from the edge price reaches first (the top) to the middle of the 84,010-84,060 gap');
   assert.deepEqual(oks(s), [true, true, true]);
+  assert.equal(s?.stop, 84_000, "SL at the displacement's origin -- the low of the candle that left the gap (the engine adds 0.25 ATR)");
 });
 
 test('5. order block: back into the block, and rejected there', () => {
@@ -155,7 +156,7 @@ test('12. options: at the put OI wall, reacting, with the big-move reading unrea
   });
   assert.equal(s?.dir, 1);
   assert.deepEqual(oks(s), [true, true, true, true, null, null], 'the wall held, price rejected it, structure not against; big move and tape unread');
-  assert.match(s?.targets?.[0]?.why ?? '', /max pain 84,500/);
+  assert.match(s?.tp3?.why ?? '', /max pain 84,500/, 'max pain is its TP3 (owner\'s SL/TP table), not TP1');
 });
 
 test('12. with no option board there is no options setup', () => {

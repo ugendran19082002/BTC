@@ -115,3 +115,11 @@ test('[critical] 1m never alerts: it is view-only without the chain, so it is no
   await assert.rejects(setAlert('single', true, 9_000_001, ['1m']), /at least one timeframe/);
 });
 
+
+test('[critical] the alert says why the SL and each target are where they are', () => {
+  const why = { stop: 'the sweep extreme 83,990 − 0.25 ATR', tp1: 'entry swing high 84,300', tp2: '4h swing high 84,500', tp3: null };
+  const text = entryAlertFor(trade({ plan: { entryLo: 84_120, entryHi: 84_160, stop: 83_980, tp1: 84_300, tp2: 84_500, tp3: null, tpWhy: [], rr: 1.9, why } }))!.text;
+  assert.match(text, /<i>the sweep extreme 83,990 − 0\.25 ATR<\/i>/);
+  assert.match(text, /TP1 .*R · entry swing high 84,300/);
+  assert.match(text, /TP2 .*R · 4h swing high 84,500/);
+});

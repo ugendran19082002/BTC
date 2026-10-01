@@ -3,7 +3,7 @@ import {
   CHAIN, TF_SEC,
   type EntryContext, type EntryState, type Gate, type MethodRead, type Mode, type Plan, type ScorePart, type Step, type Tf,
 } from './types.js';
-import { METHODS, type Setup } from './methods.js';
+import { METHODS, type Setup, type TargetSpec } from './methods.js';
 import { atr, isDisplacement, lastSweep, pivots, rvol, trendOf, bullish, bearish } from './prims.js';
 
 /**
@@ -74,23 +74,66 @@ const dirName = (d: 1 | -1) => (d === 1 ? 'long' : 'short');
  * then swing levels on this timeframe and the ones above it, the book's walls
  * and the option walls, then the expected-move boundary.
  */
-function targetLevels(dir: 1 | -1, from: number, bars: readonly Candle[], ctx: EntryContext, own: Setup['targets']): { price: number; why: string }[] {
-  const out: { price: number; why: string }[] = [...(own ?? [])];
-  const swingOf = (xs: readonly Candle[] | undefined, tf: string) =>
-    pivots(xs ?? [], dir === 1 ? 'high' : 'low').map((p) => ({ price: p.price, why: `${tf} swing ${dir === 1 ? 'high' : 'low'} ${fmt(p.price)}` }));
-  out.push(...swingOf(bars, 'entry'), ...swingOf(ctx.frames['1h'], '1h'), ...swingOf(ctx.frames['4h'], '4h'));
+type Level = { price: number; why: string; kind: 'own' | 'entry' | 'htf' | 'wall' | 'oi' };
+
+/**
+ * Every level price could be aimed at past `from`, nearest first, each with
+ * its kind: the method's own, a swing on the entry timeframe, a 1H/4H swing,
+ * a book wall, the OI wall.
+ */
+function targetLevels(dir: 1 | -1, from: number, bars: readonly Candle[], ctx: EntryContext, own: Setup['targets']): Level[] {
+  const out: Level[] = (own ?? []).map((t) => ({ ...t, kind: 'own' as const }));
+  const swingOf = (xs: readonly Candle[] | undefined, tf: string, kind: 'entry' | 'htf') =>
+    pivots(xs ?? [], dir === 1 ? 'high' : 'low').map((p) => ({ price: p.price, why: `${tf} swing ${dir === 1 ? 'high' : 'low'} ${fmt(p.price)}`, kind }));
+  out.push(...swingOf(bars, 'entry', 'entry'), ...swingOf(ctx.frames['1h'], '1h', 'htf'), ...swingOf(ctx.frames['4h'], '4h', 'htf'));
   for (const w of ctx.walls) {
-    if ((dir === 1 && w.side === 'ask') || (dir === -1 && w.side === 'bid')) out.push({ price: w.price, why: `${w.side} wall ${fmt(w.price)}` });
+    if ((dir === 1 && w.side === 'ask') || (dir === -1 && w.side === 'bid')) out.push({ price: w.price, why: `${w.side} wall ${fmt(w.price)}`, kind: 'wall' });
   }
   const o = ctx.options;
   if (o) {
     const wall = dir === 1 ? o.callWall : o.putWall;
-    if (wall !== null) out.push({ price: wall, why: `${dir === 1 ? 'call' : 'put'} OI wall ${fmt(wall)}` });
+    if (wall !== null) out.push({ price: wall, why: `${dir === 1 ? 'call' : 'put'} OI wall ${fmt(wall)}`, kind: 'oi' });
   }
   return out
     .filter((t) => (dir === 1 ? t.price > from : t.price < from))
     .sort((x, y) => Math.abs(x.price - from) - Math.abs(y.price - from))
     .filter((t, i, xs) => i === 0 || Math.abs(t.price - xs[i - 1]!.price) > 1e-9);
+}
+
+/** The kinds each TP2 pool draws from (methods.ts TargetSpec). */
+const TP2_KINDS: Record<TargetSpec['tp2'], readonly Level['kind'][]> = {
+  htf: ['htf'], next: ['own', 'entry', 'htf', 'wall', 'oi'], own: ['own'], book: ['wall', 'entry'], oi: ['oi'],
+};
+
+/**
+ * TP1, TP2 and TP3 by the method's own rule (owner's SL/TP table, 1 Oct 2026):
+ * TP1 the nearest liquidity (or the method's own -- VWAP -- or the previous
+ * swing), TP2 the next target of the method's pool at least TP_STEP_ATR past
+ * TP1, TP3 the expected-move edge or the method's own (max pain) past TP2.
+ * A pool with nothing in it falls back to the next real level of any kind;
+ * nothing at all past the zone, TP1 is 2R and says so. Never an invented TP2/TP3.
+ */
+export function pickTargets(spec: TargetSpec, levels: readonly Level[], i: {
+  dir: 1 | -1; a: number; entry: number; risk: number; ownTp3?: { price: number; why: string }; emEdge: number | null;
+}): { tp1: number; tp2: number | null; tp3: number | null; why: string[] } {
+  const { dir, a } = i;
+  const why: string[] = [];
+  const pick1 = spec.tp1 === 'own' ? levels.find((l) => l.kind === 'own')
+    : spec.tp1 === 'swing' ? levels.find((l) => l.kind === 'entry') : undefined;
+  const first = pick1 ?? levels[0];
+  if (!first) return { tp1: i.entry + dir * 2 * i.risk, tp2: null, tp3: null, why: ['2R -- no level found beyond the entry'] };
+  const tp1 = first.price;
+  why.push(first.why);
+  const past = (l: { price: number }, ref: number) => (l.price - ref) * dir >= TP_STEP_ATR * a;
+  const kinds = TP2_KINDS[spec.tp2];
+  const second = levels.find((l) => l !== first && kinds.includes(l.kind) && past(l, tp1)) ?? levels.find((l) => l !== first && past(l, tp1));
+  const tp2 = second?.price ?? null;
+  if (second) why.push(second.why);
+  const ref = tp2 ?? tp1;
+  const third = i.ownTp3 && past(i.ownTp3, ref) ? i.ownTp3
+    : i.emEdge !== null && past({ price: i.emEdge }, ref) ? { price: i.emEdge, why: `expected-move edge ${fmt(i.emEdge)}` } : null;
+  if (third) why.push(third.why);
+  return { tp1, tp2, tp3: third?.price ?? null, why };
 }
 
 /**
@@ -103,7 +146,7 @@ export function rrOf(entry: number, stop: number, target: number): number {
   return loss > 0 ? Math.abs(target - entry) / loss : 0;
 }
 
-function planOf(setup: Setup, a: number, bars: readonly Candle[], ctx: EntryContext): Plan {
+function planOf(setup: Setup, spec: TargetSpec, slRule: string, a: number, bars: readonly Candle[], ctx: EntryContext): Plan {
   const dir = setup.dir;
   const [z0, z1] = setup.zone[0] <= setup.zone[1] ? setup.zone : [setup.zone[1], setup.zone[0]];
   // Never wider than MAX_ZONE_ATR, kept at the edge price reaches first.
@@ -115,24 +158,14 @@ function planOf(setup: Setup, a: number, bars: readonly Candle[], ctx: EntryCont
   // A level closer than a fifth of an ATR past the zone is not a target, it is the zone.
   const beyond = dir === 1 ? hi + 0.2 * a : lo - 0.2 * a;
   const levels = targetLevels(dir, beyond, bars, ctx, setup.targets);
-  const why: string[] = [];
-  let tp1: number;
-  let tp2: number | null = null;
-  if (levels.length) {
-    tp1 = levels[0]!.price;
-    why.push(levels[0]!.why);
-    // The next level far enough past TP1 to be a target of its own; none, no TP2 (never an invented one).
-    const next = levels.find((l) => (l.price - tp1) * dir >= TP_STEP_ATR * a);
-    if (next) { tp2 = next.price; why.push(next.why); }
-  } else {
-    tp1 = entry + dir * 2 * risk;
-    why.push('2R -- no level found beyond the entry');
-  }
   const o = ctx.options;
   const emEdge = o && o.emDay !== null ? o.spot + dir * o.emDay : null;
-  const tp3 = emEdge !== null && (emEdge - (tp2 ?? tp1)) * dir >= TP_STEP_ATR * a ? emEdge : null;
-  if (tp3 !== null) why.push(`expected-move edge ${fmt(tp3)}`);
-  return { entryLo: lo, entryHi: hi, stop, tp1, tp2, tp3, tpWhy: why, rr: rrOf(entry, stop, tp1) };
+  const { tp1, tp2, tp3, why } = pickTargets(spec, levels, { dir, a, entry, risk, ownTp3: setup.tp3, emEdge });
+  const reasons = {
+    stop: `${slRule} ${fmt(setup.stop)} ${dir === 1 ? '−' : '+'} ${STOP_BUFFER_ATR} ATR`,
+    tp1: why[0]!, tp2: tp2 === null ? null : why[1]!, tp3: tp3 === null ? null : why[tp2 === null ? 1 : 2]!,
+  };
+  return { entryLo: lo, entryHi: hi, stop, tp1, tp2, tp3, tpWhy: why, rr: rrOf(entry, stop, tp1), why: reasons };
 }
 
 /** The age of the newest closed candle on a timeframe, in seconds. */
@@ -309,7 +342,7 @@ export function readMethod(m: (typeof METHODS)[number], mode: Mode, tf: Tf, ctx:
   const steps = mode === 'mtf'
     ? [...chain.filter((s) => s.tf === '4h' || s.tf === '1h' || s.tf === '30m' || s.tf === '15m'), ...own, ...chain.filter((s) => s.tf === '3m' || s.tf === '1m')]
     : own;
-  const plan = planOf(setup, a, bars, ctx);
+  const plan = planOf(setup, m.targets, m.sl, a, bars, ctx);
   const gates = gatesOf({ setup, plan, a, mode, tf: entryTf, ctx, bars, methodRule: m.gate });
   const scoreParts = scoreOf(setup, bars, a, trend, ctx);
   const score = scoreParts.reduce((s, p) => s + (p.got ?? 0), 0);

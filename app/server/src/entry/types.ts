@@ -61,6 +61,12 @@ export type Plan = {
   tpWhy: string[];
   /** Reward to TP1 over risk, from the fill edge of the entry zone, in points (no fee term). */
   rr: number;
+  /**
+   * Why each level is where it is, in words: the stop's structure and buffer
+   * ("sweep extreme 83,488 − 0.25 ATR"), and each target's level. Always set by
+   * the engine; absent only on hand-made plans.
+   */
+  why?: { stop: string; tp1: string; tp2: string | null; tp3: string | null };
 };
 
 export type ScorePart = { name: string; max: number; got: number | null };

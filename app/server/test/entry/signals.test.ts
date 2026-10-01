@@ -148,3 +148,12 @@ test('[critical] an exit past its stop says by how much and why (the minute open
   assert.equal(clock.fillBy, T + 33_660 + 3_600 * 12, 'from the first whole minute after it was seen, past the bar close');
 });
 
+test('[critical] the whole plan is kept with the signal: TP2, TP3, and why the SL and each target are where they are', async () => {
+  const why = { stop: 'the sweep extreme 83,488 − 0.25 ATR', tp1: 'entry swing high 83,865', tp2: '1h swing high 84,100', tp3: null };
+  const t = read({ id: 'liquidity-sweep', state: 'TRADE', dir: 'long', tf: '30m', triggerTime: T + 50_000,
+    plan: { ...PLAN, tp2: 84_100, tp3: null, why } });
+  await recordSignals([t], (T + 50_060) * 1000);
+  const [row] = await recentSignals({ tf: '30m', state: 'TRADE' });
+  assert.deepEqual([row!.tp2, row!.tp3, row!.why], [84_100, null, why]);
+});
+
