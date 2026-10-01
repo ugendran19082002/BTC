@@ -125,6 +125,22 @@ test('[critical] the gate switches: behind the session, same-origin to change, D
   assert.equal((await app.inject({ method: 'POST', url: '/api/entry/gates/rr', payload: { enabled: true }, headers: own })).statusCode, 200);
 });
 
+test('[critical] clear data: behind the session, same-origin to clear, a bad range refused, the preview first', async () => {
+  const now = Date.now(), q = `from=${now - 3_600_000}&to=${now}`;
+  const own = { cookie: session(), origin: 'https://delta.thannigo.in', host: 'delta.thannigo.in' };
+  assert.equal((await app.inject({ method: 'GET', url: `/api/entry/signals/clear?${q}`, remoteAddress: '203.0.113.9' })).statusCode, 401);
+  assert.equal((await app.inject({ method: 'POST', url: '/api/entry/signals/clear', payload: { from: now - 3_600_000, to: now }, remoteAddress: '203.0.113.9' })).statusCode, 401);
+  const foreign = await app.inject({ method: 'POST', url: '/api/entry/signals/clear', payload: { from: now - 3_600_000, to: now }, headers: { ...own, origin: 'https://evil.example' } });
+  assert.equal(foreign.statusCode, 403, 'another site cannot clear the history');
+  const preview = await app.inject({ method: 'GET', url: `/api/entry/signals/clear?${q}`, headers: { cookie: session() } });
+  assert.equal(preview.statusCode, 200, preview.body);
+  assert.deepEqual(Object.keys(preview.json().counts).sort(), ['alerts', 'setups', 'signals', 'trades', 'waits']);
+  assert.equal((await app.inject({ method: 'POST', url: '/api/entry/signals/clear', payload: { from: now, to: now - 1 }, headers: own })).statusCode, 400);
+  const done = await app.inject({ method: 'POST', url: '/api/entry/signals/clear', payload: { from: now - 3_600_000, to: now }, headers: own });
+  assert.equal(done.statusCode, 200, done.body);
+  assert.equal(done.json().recent[0].from, now - 3_600_000, 'the clear is logged');
+});
+
 test('[critical] entry alerts: behind the session, same-origin to change, off until switched on; a test with no Telegram says so', async () => {
   assert.equal((await app.inject({ method: 'GET', url: '/api/entry/alerts', remoteAddress: '203.0.113.9' })).statusCode, 401);
   const own = { cookie: session(), origin: 'https://delta.thannigo.in', host: 'delta.thannigo.in' };

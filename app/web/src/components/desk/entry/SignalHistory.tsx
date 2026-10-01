@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
@@ -6,6 +6,7 @@ import { entrySignalsCsvUrl, getEntrySignals, type SignalFilter, type SignalSort
 import { cn } from '@/lib/utils';
 import type { EntryMode, EntrySignal, EntrySignalSummary, EntryTf } from '@/types/entry';
 import { SECS, atText, clockText, lag, useNow } from './clock';
+import { ClearHistoryDialog } from './ClearHistoryDialog';
 
 /**
  * Every signal the server kept (the journal, entry_signals), as a data table:
@@ -228,7 +229,7 @@ export function SignalHistory() {
     ...TABS[f.tab].q, mode: f.mode === 'all' ? undefined : f.mode, tf: f.tf === 'all' ? undefined : f.tf, since,
     limit: f.size, offset: page * f.size, sort: f.sort, asc: f.asc || undefined,
   };
-  const { data, loading, error } = usePoll(() => getEntrySignals(query), 5_000,
+  const { data, loading, error, refresh } = usePoll(() => getEntrySignals(query), 5_000,
     { deps: [f.tab, f.mode, f.tf, f.today, f.size, f.sort, f.asc, page] });
   const rows = data?.signals ?? [];
   const total = data?.total ?? 0;
@@ -242,6 +243,8 @@ export function SignalHistory() {
   const from = total ? page * f.size + 1 : 0;
   const to = Math.min(total, (page + 1) * f.size);
   // Counters tick only while a row on this page is still in play.
+  const [cleared, setCleared] = useState<string | null>(null);
+  useEffect(() => { if (!cleared) return undefined; const t = setTimeout(() => setCleared(null), 6_000); return () => clearTimeout(t); }, [cleared]);
   const now = useNow(rows.some((s) => s.outcome?.status === 'open' || s.outcome?.status === 'filled' || s.outcome?.runner === 'running'));
 
   return (
@@ -298,13 +301,20 @@ export function SignalHistory() {
           </button>
         ) : null}
         {/* Every row the filters match, in this order -- not just the page on screen. */}
+        <div className="ml-auto flex items-center gap-2">
+        <ClearHistoryDialog onCleared={(c) => {
+          setCleared(`Cleared ${c.signals.toLocaleString('en-US')} signal${c.signals === 1 ? '' : 's'} (${c.trades} TRADE${c.trades === 1 ? '' : 's'}, ${c.alerts} alert${c.alerts === 1 ? '' : 's'}).`);
+          setPage(0); refresh();
+        }} />
         <a href={entrySignalsCsvUrl({ ...query, limit: undefined, offset: undefined } as Omit<SignalFilter, 'limit' | 'offset'>)} download
            aria-label="download for Excel" title={`Every signal these filters match${total ? ` (${total})` : ''}, in this order, as a spreadsheet (CSV, opens in Excel)`}
-           className="ml-auto inline-flex items-center gap-1 rounded-md border border-[#26a17b] px-2.5 py-1 font-semibold text-[#26a17b] hover:bg-[#26a17b]/10">
+           className="inline-flex items-center gap-1 rounded-md border border-[#26a17b] px-2.5 py-1 font-semibold text-[#26a17b] hover:bg-[#26a17b]/10">
           <Download size={13} aria-hidden /> Excel{total ? ` · ${total}` : ''}
         </a>
+        </div>
       </div>
 
+      {cleared ? <p role="status" className="m-0 mb-2 rounded-md bg-[#26a17b]/15 px-2 py-1 font-semibold text-[#26a17b]">{cleared}</p> : null}
       {data ? <Summary s={data.summary} /> : null}
 
       {error && !data ? <p role="alert" className="m-0 text-[var(--down)]">Could not read the history: {error.message}</p> : null}

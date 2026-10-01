@@ -45,3 +45,13 @@ export function getEntrySignals(q: SignalFilter = {}) {
 }
 /** The history as a spreadsheet: every row the filters match, in the table's order (the server builds it). */
 export const entrySignalsCsvUrl = (q: Omit<SignalFilter, 'limit' | 'offset'>) => `/api/entry/signals.csv${queryOf(q)}`;
+
+/** Clearing the history by hand: signals first seen from `from` up to (not incl.) `to`, epoch ms. */
+export type ClearRange = { from: number; to: number };
+export type ClearCounts = { signals: number; trades: number; waits: number; setups: number; alerts: number };
+export type HistoryClear = ClearRange & { at: number; signals: number; setups: number; alerts: number };
+export type ClearAnswer = { range: ClearRange; counts: ClearCounts; recent: HistoryClear[] };
+/** What clearing the range would take, and the last clears -- nothing goes. */
+export const previewClear = (r: ClearRange) => json<ClearAnswer>(`/api/entry/signals/clear?from=${r.from}&to=${r.to}`);
+/** Clear it: the signals, their paper trades and alerts. Cannot be undone. */
+export const clearHistory = (r: ClearRange) => post<ClearAnswer>('/api/entry/signals/clear', r);
