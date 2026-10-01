@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { SignalHistory, cleanFilter, exitNote, exitOf, fillNote, outcomeOf, startOfIstDay, stood } from './SignalHistory';
+import { SignalHistory, cleanFilter, seenText, exitNote, exitOf, fillNote, outcomeOf, startOfIstDay, stood } from './SignalHistory';
 import type { EntrySignal, EntrySignalOutcome, EntrySignalPage } from '@/types/entry';
 
 const getEntrySignals = vi.fn();
@@ -174,7 +174,7 @@ describe('the signal history table', () => {
     render(<SignalHistory />);
     const table = await screen.findByRole('table', { name: 'signals' });
     const [trade, , stopped] = within(table).getAllByRole('row').slice(1);
-    expect(trade).toHaveTextContent('bar 20:02:57 · seen +3 s');
+    expect(trade).toHaveTextContent('trigger bar 20:02:57 · seen +3 s');
     expect(trade).toHaveTextContent('alert ✓ 20:03:01 +4 s');
     expect(trade).toHaveTextContent('84,391~20:05 · at edge');
     expect(trade).toHaveTextContent('84,288 TGT~20:33 · at level');
@@ -235,5 +235,11 @@ describe('the signal history table', () => {
     render(<SignalHistory />);
     fireEvent.click(await screen.findByRole('button', { name: 'Show all days' }));
     await waitFor(() => expect(getEntrySignals.mock.lastCall![0].since).toBeUndefined());
+  });
+
+  it('[critical] seen a minute or less after its trigger bar is latency; an older trigger bar is not a delay, and says the time instead', () => {
+    expect(seenText({ barCloseAt: S, seenAfterMs: 3_000, firstSeen: T + 3_000 })).toBe('trigger bar 20:03:00 · seen +3 s');
+    // A retest anchored to the 06:51 bar, formed at 06:55:03 -- not "+4 min 3 s" of lag.
+    expect(seenText({ barCloseAt: S, seenAfterMs: 243_000, firstSeen: T + 243_000 })).toBe('trigger bar 20:03:00 · formed 20:07:03');
   });
 });

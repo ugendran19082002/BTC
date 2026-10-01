@@ -16,7 +16,8 @@ export function TradeClock({ read }: { read: MethodRead }) {
   const barClose = read.triggerTime === null ? null : (read.triggerTime + TF_SEC[read.tf]) * 1000;
   const state = c ? clockText(c, now) : null;
   // How long after the bar closed something happened: the latency, said plainly.
-  const after = (ms: number) => (barClose === null ? '' : ` (${lag(ms - barClose)})`);
+  // Within a minute of the trigger bar's close it is latency; later, the setup formed on an older bar -- no lag shown.
+  const after = (ms: number) => (barClose === null || ms - barClose > 60_000 ? '' : ` (${lag(ms - barClose)})`);
   const row = (k: string, v: React.ReactNode, cls?: string) => (
     <><dt className="text-muted-foreground">{k}</dt><dd className={cn('m-0 text-right', cls)}>{v}</dd></>
   );
@@ -33,7 +34,7 @@ export function TradeClock({ read }: { read: MethodRead }) {
         </div>
       )}
       <dl className="m-0 mt-0.5 grid grid-cols-[auto_1fr] gap-x-3 text-[11px]">
-        {barClose !== null ? row('Bar closed', SECS.format(barClose)) : null}
+        {barClose !== null ? row('Trigger bar closed', SECS.format(barClose)) : null}
         {c ? row('Seen', `${SECS.format(c.firstSeen)}${after(c.firstSeen)}`) : null}
         {c ? row('Alert', c.alertAt === null ? 'not sent' : `${SECS.format(c.alertAt)}${after(c.alertAt)}`) : null}
         {c?.filledAt != null ? row('Filled', `~${MINS.format(c.filledAt * 1000)} @ ${c.fillPrice === null ? '–' : fmt(c.fillPrice)}`, 'text-[#3b82f6]') : null}

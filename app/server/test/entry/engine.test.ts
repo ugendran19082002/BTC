@@ -18,8 +18,8 @@ import { ctxOf, path, wave } from './bars.js';
  */
 
 const BREAKOUT = METHODS.find((m) => m.id === 'breakout')!;
-/** An ask wall just over the breakout: R:R 1.12 to it -- no room (the 2R fallback with no wall clears 1.8). */
-const NEAR_WALL = [{ side: 'ask' as const, price: 84_300, size: 5_000 }];
+/** An ask wall just over the breakout and nothing past it: TP1 under 1R -- no room (the 2R fallback with no wall clears it). */
+const NEAR_WALL = [{ side: 'ask' as const, price: 84_250, size: 5_000 }];
 const MOMENTUM = METHODS.find((m) => m.id === 'momentum')!;
 
 function breakoutBars(o: { volume?: number } = {}): Candle[] {
@@ -61,11 +61,11 @@ test('[critical] a step not yet there is WAIT, says which, and draws no box', ()
   assert.equal(r.plan, null, 'TEST.md: no entry / SL / TP until every confirmation holds');
 });
 
-test('[critical] no room to a target is NO TRADE, even with every step green -- a near wall leaves R:R 1.12', () => {
+test('[critical] no room to a target is NO TRADE, even with every step green -- a near wall leaves TP1 under 1R', () => {
   const r = readMethod(BREAKOUT, 'single', '5m', single({ walls: NEAR_WALL }));
   assert.equal(r.state, 'NO_TRADE');
   assert.equal(r.gates.find((g) => g.ok === false)?.key, 'rr');
-  assert.match(r.reason, /R:R to ask wall 84,300 is 1\.12 -- no room/);
+  assert.match(r.reason, /R:R to ask wall 84,250 is 0\.\d\d -- no room/);
 });
 
 test('[critical] stale candles are NO TRADE', () => {
@@ -366,4 +366,14 @@ test('[critical] the entry zone never reaches past its own stop: kept 0.1 ATR on
   assert.deepEqual([sliver.lo, sliver.hi], [100, 100]);
   // A zone well clear of its stop is left as it was.
   assert.deepEqual(zoneOf(1, 84_000, 84_040, 83_800, 100), { lo: 84_000, hi: 84_040 });
+});
+
+test('[critical] the minimum is 1R (owner, 1 Oct 2026), no maximum: 0.75R skipped, 1.00R is TGT1; the gate agrees', () => {
+  assert.equal(MIN_RR, 1);
+  const levels = [L(84_150, 'entry'), L(84_200, 'entry'), L(84_400, 'entry'), L(84_800, 'htf'), L(85_200, 'htf')];
+  const { minRr: _, ...atDefault } = PICK;
+  const t = pickTargets({ tp1: 'nearest', tp2: 'htf' }, levels, atDefault);
+  assert.deepEqual([t.tp1, t.why[0], t.tp2], [84_200, 'entry 84200 (1 nearer under 1R skipped)', 84_800]);
+  // Nothing nearer than 1R: the far one is fine -- there is no upper limit.
+  assert.equal(pickTargets({ tp1: 'nearest', tp2: 'htf' }, [L(85_200, 'htf')], atDefault).tp1, 85_200, '6R');
 });

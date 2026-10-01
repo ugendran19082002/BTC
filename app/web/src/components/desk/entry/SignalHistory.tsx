@@ -384,13 +384,24 @@ function Summary({ s }: { s: EntrySignalSummary }) {
   );
 }
 
+/**
+ * When it was seen, against its trigger bar. Seen within a minute of that
+ * bar's close, it is latency ("trigger bar 06:51:00 · seen +3 s"). Later, it
+ * is not a delay: the setup is anchored to an older bar (a retest, a gap, an
+ * order block) and formed since -- so it says the time, not a lag.
+ */
+export function seenText(s: Pick<EntrySignal, 'barCloseAt' | 'seenAfterMs' | 'firstSeen'>): string {
+  const bar = `trigger bar ${SECS.format(s.barCloseAt * 1000)}`;
+  return s.seenAfterMs <= 60_000 ? `${bar} · seen ${lag(s.seenAfterMs)}` : `${bar} · formed ${SECS.format(s.firstSeen)}`;
+}
+
 /** When: the signal (seen), the bar it closed on and how soon after it was seen, and the alert if one went. */
 function Times({ s }: { s: EntrySignal }) {
   return (
     <>
       <div>{TIME.format(s.firstSeen)}</div>
       <div className="text-[10.5px] text-muted-foreground" title="The trigger bar's close, and how long after it the server saw the signal (it reads each minute + 3 s)">
-        bar {SECS.format(s.barCloseAt * 1000)} · seen {lag(s.seenAfterMs)}
+        {seenText(s)}
       </div>
       {s.alert ? (
         <div className={cn('text-[10.5px]', s.alert.status === 'sent' ? 'text-muted-foreground' : 'text-[var(--down)]')}>
@@ -454,7 +465,7 @@ function Card({ s, now }: { s: EntrySignal; now: number }) {
       {s.why?.stop ? <div className="text-[10.5px] text-muted-foreground">SL at {s.why.stop}</div> : null}
       <FillExitDetail s={s} />
       <div className="text-[10.5px] text-muted-foreground">
-        bar {SECS.format(s.barCloseAt * 1000)} · seen {lag(s.seenAfterMs)}
+        {seenText(s)}
         {s.alert ? ` · alert ${s.alert.status === 'sent' ? '✓' : '✗'} ${SECS.format(s.alert.at)}` : ''}
       </div>
       <div className={cn('mt-0.5 text-[11.5px] font-semibold', out.cls)}>{out.text}</div>

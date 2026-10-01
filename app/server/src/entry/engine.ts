@@ -25,8 +25,12 @@ import { atr, isDisplacement, lastSweep, pivots, rvol, trendOf, bullish, bearish
  * trusted.
  */
 
-/** Least reward to TP1 over risk for a TRADE (TEST.md: "R:R > 1.8"). */
-export const MIN_RR = 1.8;
+/**
+ * Least reward to TP1 over risk, from the fill: 1R -- TGT1 at least as far as
+ * the stop, and no maximum (owner, 1 Oct 2026; TEST.md had 1.8). One number
+ * for both TP1's choice and the R:R gate, so they can never disagree.
+ */
+export const MIN_RR = 1;
 /** The entry zone keeps at least this many ATRs from the stop. */
 export const ZONE_STOP_GAP_ATR = 0.1;
 /** The stop sits this many ATRs past the structure it protects. */
