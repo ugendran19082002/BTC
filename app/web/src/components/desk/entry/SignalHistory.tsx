@@ -148,6 +148,44 @@ function Target({ t }: { t: TargetState }) {
   );
 }
 
+/**
+ * The stop, and what became of it: guarding a limit not yet filled, watching
+ * a trade, hit (and when), moved to breakeven for the runner after TGT1,
+ * never hit (out at a target or on time), or no trade at all (expired or
+ * missed -- never filled).
+ */
+export type StopState = { text: string; tone: 'watch' | 'hit' | 'safe' | 'none' };
+export function stopOf(s: EntrySignal): StopState | null {
+  const o = s.outcome;
+  if (s.state !== 'TRADE' || s.stop === null || !o) return null;
+  switch (o.status) {
+    case 'open': return { text: 'guards the order', tone: 'watch' };
+    case 'filled': return { text: 'watching…', tone: 'watch' };
+    case 'stop': return { text: `✗ hit${o.exitAt !== null ? ` ${atText(o.exitAt)}` : ''}`, tone: 'hit' };
+    case 'tp1':
+      if (o.runner === 'running') return { text: `→ breakeven ${fmt(o.fillPrice)}`, tone: 'watch' };
+      return { text: o.runnerEnd === 'be' ? '✓ never hit · runner out at BE' : '✓ never hit', tone: 'safe' };
+    case 'timeout': return { text: '✓ never hit', tone: 'safe' };
+    case 'expired': return { text: 'not filled', tone: 'none' };
+    case 'missed': return { text: 'not filled -- missed', tone: 'none' };
+    default: return null;
+  }
+}
+
+function StopCell({ s }: { s: EntrySignal }) {
+  const st = stopOf(s);
+  return (
+    <>
+      <span className="text-[var(--down)]">{fmt(s.stop)}</span>
+      {st ? (
+        <div className={cn('text-[10.5px]', st.tone === 'hit' ? 'font-semibold text-[var(--down)]' : st.tone === 'safe' ? 'text-[var(--up)]' : 'text-muted-foreground')}>
+          {st.text}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 /** The exit, and why: TGT (TP1), SL, or time. Null until it has exited. */
 export function exitOf(s: EntrySignal): { price: string; why: 'TGT' | 'SL' | 'time'; pts: number | null } | null {
   const o = s.outcome;
@@ -311,7 +349,7 @@ export function SignalHistory() {
                       <td className="whitespace-nowrap pr-2"><SignalTag s={s} /></td>
                       <td className="hidden whitespace-nowrap pr-2 text-muted-foreground lg:table-cell">{fmt(s.ltp)} · {fmt(s.indexPrice)}</td>
                       <td className="whitespace-nowrap pr-2">{s.entryLo === null ? '–' : `${fmt(s.entryLo)}–${fmt(s.entryHi)}`}</td>
-                      <td className="whitespace-nowrap pr-2 text-[var(--down)]" title={s.why?.stop ?? undefined}>{fmt(s.stop)}</td>
+                      <td aria-label="SL" className="whitespace-nowrap pr-2" title={s.why?.stop ?? undefined}><StopCell s={s} /></td>
                       {targetsOf(s).map((t) => (
                         <td key={t.n} aria-label={`TGT${t.n}`} className="whitespace-nowrap pr-2" title={t.why ?? undefined}><Target t={t} /></td>
                       ))}
@@ -472,11 +510,11 @@ function Card({ s, now }: { s: EntrySignal; now: number }) {
       {s.entryLo !== null ? (
         <div className="mt-0.5 flex flex-wrap gap-x-3 text-[11.5px]">
           <span>Entry {fmt(s.entryLo)}–{fmt(s.entryHi)}</span>
-          <span className="text-[var(--down)]">SL {fmt(s.stop)}</span>
         </div>
       ) : null}
       {s.state === 'TRADE' && s.tp1 !== null ? (
-        <div aria-label="targets" className="mt-0.5 grid grid-cols-3 gap-1 text-[11.5px]">
+        <div aria-label="targets" className="mt-0.5 grid grid-cols-2 gap-1 text-[11.5px] min-[380px]:grid-cols-4">
+          <div className="rounded bg-muted/50 px-1.5 py-0.5"><span className="text-[10px] text-muted-foreground">SL </span><StopCell s={s} /></div>
           {targetsOf(s).map((t) => (
             <div key={t.n} className="rounded bg-muted/50 px-1.5 py-0.5"><span className="text-[10px] text-muted-foreground">TGT{t.n} </span><Target t={t} /></div>
           ))}

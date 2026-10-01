@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { SignalHistory, cleanFilter, seenText, exitNote, exitOf, fillNote, outcomeOf, startOfIstDay, stood } from './SignalHistory';
+import { SignalHistory, cleanFilter, seenText, stopOf, exitNote, exitOf, fillNote, outcomeOf, startOfIstDay, stood } from './SignalHistory';
 import type { EntrySignal, EntrySignalOutcome, EntrySignalPage } from '@/types/entry';
 
 const getEntrySignals = vi.fn();
@@ -276,5 +276,25 @@ describe('the signal history table', () => {
       expect([q.tf, q.outcome, q.state, q.since]).toEqual([undefined, undefined, undefined, startOfIstDay(Date.now())]);
     });
     expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
+  });
+
+  it('[critical] the SL says what became of it: guarding the order, watching, hit and when, at breakeven for the runner, never hit, or not filled', () => {
+    const at = (o: Partial<EntrySignalOutcome>) => stopOf(sig({ outcome: oc(o) }))!.text;
+    expect(at({ status: 'open' })).toBe('guards the order');
+    expect(at({ status: 'filled', fillPrice: 84_391 })).toBe('watching…');
+    expect(at({ status: 'stop', exitAt: S + 137 })).toMatch(/^✗ hit \d\d:\d\d:17$/);
+    expect(at({ status: 'tp1', runner: 'running', fillPrice: 84_391 })).toBe('→ breakeven 84,391');
+    expect(at({ status: 'tp1', runner: 'done', runnerEnd: 'be' })).toBe('✓ never hit · runner out at BE');
+    expect(at({ status: 'timeout' })).toBe('✓ never hit');
+    expect(at({ status: 'expired' })).toBe('not filled');
+    expect(at({ status: 'missed' })).toBe('not filled -- missed');
+    expect(stopOf(sig({ state: 'WAIT', outcome: null }))).toBeNull();
+  });
+
+  it('the SL column shows it in the table', async () => {
+    getEntrySignals.mockResolvedValue(page([sig({ outcome: oc({ status: 'filled', fillPrice: 84_391, filledAt: S + 60 }) })]));
+    render(<SignalHistory />);
+    const table = await screen.findByRole('table', { name: 'signals' });
+    expect(within(table).getByLabelText('SL')).toHaveTextContent('84,825watching…');
   });
 });
