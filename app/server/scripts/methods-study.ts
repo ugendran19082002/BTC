@@ -38,7 +38,7 @@ const CACHE = join(ROOT, 'cache/candles/BTCUSD-5m');
 const OUT = join(ROOT, 'research/METHODS-STUDY.txt');
 const [fromMonth = '2024-01', toMonth = '9999-99'] = process.argv.slice(2);
 const M5 = 300;
-/** Two days of 5m bars: the previous day's profile needs all of yesterday. */
+/** Two days of 5m bars: the previous day's profile needs all of yesterday (a naked POC keeps its own memory). */
 const WINDOW = 600;
 
 const bars: Candle[] = readdirSync(CACHE).filter((f) => f.endsWith('.json')).sort()
@@ -76,7 +76,8 @@ for (let i = start; i < bars.length - 1; i++) {
   const b = bars[i]!;
   if (month(b.time) > toMonth) break;
   const now = b.time + M5;
-  const frames = { '5m': bars.slice(i + 1 - WINDOW, i + 1), '1h': closedAt(h1, 3_600, now), '4h': closedAt(h4, 14_400, now) };
+  // 1H back two weeks (the previous week), 4H back two months (the previous month).
+  const frames = { '5m': bars.slice(i + 1 - WINDOW, i + 1), '1h': closedAt(h1, 3_600, now, 400), '4h': closedAt(h4, 14_400, now, 400) };
   const ctx: EntryContext = { now: now * 1000, frames, flow: [], walls: [], spreadPct: null, options: null, bigMove: null };
   let regime: { htf: Record<'1h' | '4h', -1 | 0 | 1>; consumed: number | null } | null = null;
   for (const c of CANDIDATES) {
