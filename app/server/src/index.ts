@@ -24,7 +24,7 @@ import { noteError } from './observability/errors.js';
 import { entrySchema, gradeSetups, recordSetups } from './entry/paper.js';
 import { gatesSchema } from './entry/gates.js';
 import { alertSettings, alertsSchema, sendEntryAlert, wanted } from './entry/alerts.js';
-import { SINGLE_TFS, allReads } from './entry/engine.js';
+import { allReads } from './entry/engine.js';
 import { pruneSignals, recordSignals, signalsSchema } from './entry/signals.js';
 import { readEntryContext } from './entry/read.js';
 
@@ -202,8 +202,7 @@ const recordEntries = () => {
       // Telegram for the ways switched on and their chosen timeframes, once per setup as it is first
       // written, each attempt written down (entry_alert_log) -- sent or failed, and why.
       const settings = await alertSettings().catch(() => []);
-      // The twelve and the research candidates (paper log only, never alerted): the week of forward evidence.
-      const reads = allReads(ctx, SINGLE_TFS, { research: true });
+      const reads = allReads(ctx);
       // With the market as it stood: the tape's last trade (fresh) and the option board's index.
       const fresh = ctx.ltp && ctx.now - ctx.ltp.at <= 15_000 ? ctx.ltp.price : null;
       await recordSignals(reads, ctx.now, { ltp: fresh, index: ctx.options?.spot ?? null });

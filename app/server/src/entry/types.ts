@@ -1,4 +1,6 @@
 import type { Candle } from '../market/delta.js';
+import type { HeatMinute } from '../market/book-heat.js';
+import type { DerivHistory } from './deriv.js';
 
 /**
  * The shapes of the entry engine (docs/features/entry-setups.md).
@@ -31,9 +33,8 @@ export type Mode = 'mtf' | 'single';
 export type EntryState = 'TRADE' | 'WAIT' | 'NO_TRADE';
 export type Group = 'breakout' | 'pullback' | 'reversal' | 'flow';
 
-export type MethodId =
-  | 'breakout' | 'breakout-retest' | 'liquidity-sweep' | 'fvg-retest' | 'ob-retest' | 'bos'
-  | 'mss' | 'momentum' | 'pullback' | 'vwap-reversion' | 'order-flow' | 'options-flow';
+/** A method's id: the twelve's ('breakout', 'liquidity-sweep', ...) and the rest's (methods.ts). */
+export type MethodId = string;
 
 /** One step of a chain. `ok` null: could not be read (no data), which never counts as confirmed. */
 export type Step = { tf: Tf | null; label: string; ok: boolean | null };
@@ -72,10 +73,7 @@ export type Plan = {
 export type ScorePart = { name: string; max: number; got: number | null };
 
 export type MethodRead = {
-  /** One of the twelve (MethodId), or a research candidate's id (methods.ts, the research section). */
-  id: MethodId | (string & {});
-  /** A research candidate, read beside the twelve and paper-logged, never alerted or shown with them. */
-  research?: boolean;
+  id: MethodId;
   n: number;
   name: string;
   group: Group;
@@ -155,4 +153,18 @@ export type EntryContext = {
    * a wick through a thin book, not a level); the index is context -- basis and divergence.
    */
   quote?: { mark: number | null; index: number | null; at: number; funding?: number | null } | null;
+  /*
+   * What the methods past the twelve read beyond the twelve's inputs (1 Oct 2026). Each optional and best-effort:
+   * absent or null, a method that needs it says nothing.
+   */
+  /** The recorded derivatives history: the perpetual each five minutes, the option board now and an hour ago, ATM IV. */
+  deriv?: DerivHistory | null;
+  /** The perpetual's book now: the touch, the top five levels' sizes each side, and its imbalance. */
+  book?: { at: number; bestBid: number | null; bestAsk: number | null; top5Bid: number; top5Ask: number; imbalance: number | null } | null;
+  /** The book's resting size by price, per minute, the last two hours. */
+  heat?: readonly HeatMinute[];
+  /** The perpetual's trades of the last half hour, oldest first. */
+  prints?: readonly { at: number; price: number; size: number; side: 'buy' | 'sell' }[];
+  /** ETHUSD 5m candles, closed: the other market. */
+  eth?: readonly Candle[];
 };

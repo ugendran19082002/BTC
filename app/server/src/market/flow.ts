@@ -174,6 +174,11 @@ export function startFlowSocket(log?: (line: string) => void): FlowSocket {
   return socket;
 }
 
+/** The perpetual's trades since `sinceMs`, off the socket's buffer (it holds about an hour); empty before it starts. */
+export function recentPerpPrints(sinceMs: number): Print[] {
+  return socket?.perpSince(sinceMs) ?? [];
+}
+
 /** The perpetual's ticker -- mark price and BTC index -- off the socket; null before its first message. */
 export function perpQuote(): { mark: number | null; index: number | null; at: number; funding: number | null } | null {
   const t = socket?.perpTicker();

@@ -1,6 +1,8 @@
 import { readMarket, resampleTf, venueSeriesSince, type Timeframe } from '../market/moves.js';
 import type { Candle } from '../market/delta.js';
-import { flowMinutes, liveBook, liveLtp, perpQuote } from '../market/flow.js';
+import { flowMinutes, liveBook, liveLtp, perpQuote, recentPerpPrints } from '../market/flow.js';
+import { candles } from '../market/delta.js';
+import { derivHistory } from './deriv.js';
 import { HEAT_STEP, heatMinutes, persistentWalls } from '../market/book-heat.js';
 import { liveChain } from '../market/chain.js';
 import { optionStructure } from '../domain/structure.js';
@@ -46,7 +48,7 @@ export async function readEntryContext(now = Date.now()): Promise<EntryContext> 
   for (const [tf, venue] of VENUE) frames[tf] = closedOnly(series.get(venue) ?? [], TF_SEC[tf], asOf);
   frames['3m'] = resampleTf(frames['1m'] ?? [], 3);
 
-  const [flow, heat, book, snap, market, off] = await Promise.all([
+  const [flow, heat, book, snap, market, off, deriv, eth] = await Promise.all([
     flowMinutes(now - 3 * 3_600_000, now).catch(() => []),
     heatMinutes(now - 2 * 3_600_000).catch(() => []),
     liveBook(now).catch(() => null),
@@ -54,6 +56,8 @@ export async function readEntryContext(now = Date.now()): Promise<EntryContext> 
     readMarket().catch(() => null),
     // Unreadable switches fall back to every gate on: the safe direction.
     gatesOff().catch(() => []),
+    derivHistory(now).catch(() => null),
+    ethSeries(now).catch(() => []),
   ]);
 
   let options: EntryContext['options'] = null;
@@ -91,7 +95,23 @@ export async function readEntryContext(now = Date.now()): Promise<EntryContext> 
     walls: persistentWalls(heat, HEAT_STEP).map((w) => ({ side: w.side, price: w.price, size: w.size })),
     // The book's spreadPct is a fraction; the engine's gate is in percent.
     spreadPct: book?.spreadPct === null || book?.spreadPct === undefined ? null : book.spreadPct * 100,
+    // The research methods' inputs (types.ts EntryContext).
+    deriv,
+    book: book ? { at: book.at, bestBid: book.bestBid, bestAsk: book.bestAsk, top5Bid: book.top5Bid, top5Ask: book.top5Ask, imbalance: book.imbalance } : null,
+    heat,
+    prints: (() => { try { return recentPerpPrints(now - 30 * 60_000).map((p) => ({ at: p.at, price: p.price, size: p.size, side: p.side })); } catch { return []; } })(),
+    eth: closedOnly(eth, 300, asOf),
     options,
     bigMove,
   };
 }
+
+/** ETHUSD 5m candles, about 17 hours of them, fetched at most once a minute: the other market for the research methods. */
+let ethHeld: { at: number; value: Promise<Candle[]> } | null = null;
+function ethSeries(now: number): Promise<Candle[]> {
+  if (ethHeld && now - ethHeld.at < 60_000) return ethHeld.value;
+  const end = Math.floor(now / 1000);
+  ethHeld = { at: now, value: candles('ETHUSD', end - 200 * 300, end, '5m').catch(() => []) };
+  return ethHeld.value;
+}
+

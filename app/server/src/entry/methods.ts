@@ -513,12 +513,13 @@ const tgt = (tp1: TargetSpec['tp1'], tp2: TargetSpec['tp2']): TargetSpec => ({ t
 
 /** `gate`: the method's own hard gate, in words, for the methods that have one. */
 /** `sl`: where the method's stop goes, before the 0.25 ATR buffer (owner's SL/TP table, 1 Oct 2026). */
-/** How a method is read: the twelve below, and the research candidates (further down this file) in the same shape. */
+/** How a method is read: every method in this file, the twelve and the rest, in the same shape. */
 export type MethodDef = {
-  id: MethodId | (string & {}); n: number; name: string; group: Group; summary: string; gate?: string; sl: string;
-  targets: TargetSpec; detect: Detector; research?: boolean;
+  id: MethodId; n: number; name: string; group: Group; summary: string; gate?: string; sl: string;
+  targets: TargetSpec; detect: Detector;
 };
-export const METHODS: readonly (MethodDef & { id: MethodId })[] = [
+/** The first twelve, TEST.md's (the rest follow further down, and METHODS is all of them). */
+const TWELVE: readonly MethodDef[] = [
   { id: 'breakout', n: 1, name: 'Breakout', group: 'breakout', summary: 'A close through the 20-bar range, RVOL 1.5, closing near its extreme', sl: "the breakout candle's far end", targets: tgt('swing', 'htf'), detect: breakout },
   { id: 'breakout-retest', n: 2, name: 'Breakout + retest', group: 'pullback', summary: 'A breakout, then a pullback to the level that holds', sl: "the retest extreme", targets: tgt('swing', 'htf'), detect: breakoutRetest },
   { id: 'liquidity-sweep', n: 3, name: 'Liquidity sweep', group: 'reversal', summary: 'Stops taken past a swing, a close back, then the MSS', sl: "the sweep extreme", targets: tgt('nearest', 'htf'), detect: liquiditySweep },
@@ -539,14 +540,14 @@ export const METHODS: readonly (MethodDef & { id: MethodId })[] = [
  *
  * Candidate entry methods, #13-#37 of the owner's list of 1 Oct 2026, written
  * the way the twelve are (methods.ts) so one that earns its place can join
- * them unchanged. They are research until then: scripts/methods-study.ts
+ * them unchanged. Since 1 Oct 2026 they are on the desk as methods like the twelve; scripts/methods-study.ts
  * replays each over the cached 5m history through the same plan, gates and
  * grading as the twelve, against a bar declared before it ran. None is on the
  * desk until it passes.
  *
  * Only the ones candles can answer are here; the ones that need the desk's
  * live data (tape, mark, index, funding, the option board) are in
- * the live-data section below and run on the research track only. Liquidations, L2
+ * the live-data section below. Liquidations, L2
  * order-book ticks, per-price footprint and ETH are not collected. #19 (range
  * consumed) is a regime, read beside every setup rather than as an entry;
  * #38 was declined by the owner.
@@ -1173,7 +1174,7 @@ export const CANDIDATES: readonly Candidate[] = [
  * Research candidates that need the desk's live data -- the perpetual's tape
  * per minute, its mark and index, the funding rate, the option board -- which
  * was not recorded for 2024-26, so they cannot be replayed (scripts/
- * methods-study.ts). They run on the research track instead: read every
+ * methods-study.ts). They run live like the twelve: read every
  * minute beside the twelve, paper-logged, never alerted, for a week or more
  * of forward evidence (owner, 1 Oct 2026). With the data missing -- the tape
  * down, no option board -- each says nothing rather than guessing.
@@ -1432,8 +1433,15 @@ const GROUP: Record<string, MethodDef['group']> = {
   reversal: 'reversal', liquidity: 'reversal', range: 'reversal', statistical: 'reversal', imbalance: 'reversal', vwap: 'reversal', 'volume profile': 'reversal',
   flow: 'flow',
 };
-/** The candidates as methods: read live beside the twelve, on the research track (paper log only, no alerts). */
-export const RESEARCH: readonly MethodDef[] = [...CANDIDATES, ...LIVE_CANDIDATES].map((c) => ({
-  id: c.id, n: c.n, name: c.name, group: GROUP[c.family] ?? 'reversal', summary: `research · ${c.family}`, sl: c.sl,
-  targets: c.targets, detect: c.detect, research: true,
-}));
+/**
+ * Every entry method: the twelve first, then the rest by the owner's numbers --
+ * read, shown, paper-logged and alerted alike (owner, 1 Oct 2026: "no separate
+ * research; append them like the first twelve"). The replay found no edge in
+ * the candle ones (research/METHODS-STUDY.txt); the live log is their record.
+ */
+export const METHODS: readonly MethodDef[] = [
+  ...TWELVE,
+  ...[...CANDIDATES, ...LIVE_CANDIDATES].map((c) => ({
+    id: c.id, n: c.n, name: c.name, group: GROUP[c.family] ?? 'reversal', summary: c.family, sl: c.sl, targets: c.targets, detect: c.detect,
+  })),
+];

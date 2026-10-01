@@ -1,7 +1,7 @@
 import { query, rows, type Param } from '../db/pool.js';
 import { migrate, type Migration } from '../db/migrate.js';
 import { TF_SEC, type MethodRead, type SetupClock, type Tf } from './types.js';
-import { METHODS, RESEARCH } from './methods.js';
+import { METHODS } from './methods.js';
 import { entrySchema, fillByOf, fillExitOf, timeoutAtOf } from './paper.js';
 import { SINGLE_TFS } from './engine.js';
 import { alertsSchema } from './alerts.js';
@@ -72,13 +72,6 @@ const MIGRATIONS: Migration[] = [{
   // The history's totals read TRADEs alone, newest first: a year is ~1.1M signals, a tenth of them TRADEs.
   id: 'entry-014-signals-trades-by-time',
   up: `CREATE INDEX IF NOT EXISTS entry_signals_trades_by_time ON entry_signals (first_seen DESC) WHERE state = 'TRADE';`,
-}, {
-  // The research track: candidates read live beside the twelve, kept out of the twelve's history by default.
-  id: 'entry-016-signals-research',
-  up: `
-    ALTER TABLE entry_signals ADD COLUMN IF NOT EXISTS research BOOLEAN NOT NULL DEFAULT false;
-    CREATE INDEX IF NOT EXISTS entry_signals_research_by_time ON entry_signals (research, first_seen DESC);
-  `,
 }];
 
 let ready: Promise<void> | null = null;
@@ -108,14 +101,14 @@ export async function recordSignals(
     const p = r.state === 'TRADE' ? r.plan : null;
     const res = await rows<{ inserted: boolean }>(
       `INSERT INTO entry_signals (method, mode, tf, dir, state, trigger_at, first_seen, last_seen, score, reason,
-                                  entry_lo, entry_hi, stop, tp1, rr, gates_off, ltp, index_price, tp2, tp3, stop_why, tp_why, research)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+                                  entry_lo, entry_hi, stop, tp1, rr, gates_off, ltp, index_price, tp2, tp3, stop_why, tp_why)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
        ON CONFLICT (method, mode, tf, dir, trigger_at, state) DO UPDATE SET last_seen = EXCLUDED.last_seen
        RETURNING (xmax = 0) AS inserted`,
       [r.id, r.mode, r.tf, r.dir === 'long' ? 1 : -1, r.state, r.triggerTime, nowMs, r.score, r.reason,
         p?.entryLo ?? null, p?.entryHi ?? null, p?.stop ?? null, p?.tp1 ?? null, p?.rr ?? null,
         r.gates.filter((g) => !g.enabled).map((g) => g.key), prices.ltp ?? null, prices.index ?? null,
-        p?.tp2 ?? null, p?.tp3 ?? null, p?.why?.stop ?? null, p?.why ? [p.why.tp1, p.why.tp2, p.why.tp3] : null, !!r.research],
+        p?.tp2 ?? null, p?.tp3 ?? null, p?.why?.stop ?? null, p?.why ? [p.why.tp1, p.why.tp2, p.why.tp3] : null],
     );
     if (res[0]?.inserted) fresh += 1;
   }
@@ -139,16 +132,16 @@ export async function pruneSignals(nowMs: number, keepDays = SIGNALS_KEEP_DAYS):
   return res.rowCount ?? 0;
 }
 
-/** A method by id: one of the twelve, or a research candidate. */
-const methodOf = (id: string) => METHODS.find((m) => m.id === id) ?? RESEARCH.find((m) => m.id === id);
+/** A method by id. */
+const methodOf = (id: string) => METHODS.find((m) => m.id === id);
 
 export type SignalRow = {
   method: string; mode: 'mtf' | 'single'; tf: Tf; dir: 1 | -1; state: 'WAIT' | 'TRADE';
   triggerAt: number; firstSeen: number; lastSeen: number; score: number | null; reason: string;
   entryLo: number | null; entryHi: number | null; stop: number | null; tp1: number | null; rr: number | null;
   gatesOff: string[];
-  /** The method's number and name, for the screen; research marks a candidate on the research track. */
-  n: number | null; name: string; research: boolean;
+  /** The method's number and name, for the screen. */
+  n: number | null; name: string;
   /** The market when it was first seen: the perpetual's last trade, Delta's BTC index. */
   ltp: number | null; indexPrice: number | null;
   /**
@@ -221,8 +214,6 @@ export type SignalQuery = {
   live?: boolean;
   /** Only TRADEs that ended one way in the paper log: TP1, the stop, the time-out, or expired (never filled). */
   outcome?: SignalOutcomeFilter;
-  /** The twelve (default), the research candidates, or both. */
-  track?: 'main' | 'research' | 'all';
   /** Column to sort by, newest / highest first unless `asc`. */
   sort?: SignalSort;
   asc?: boolean;
@@ -281,7 +272,6 @@ export async function signalPage(q: SignalQuery = {}): Promise<{ signals: Signal
   await Promise.all([signalsSchema(), entrySchema(), alertsSchema()]);
   const where: string[] = [];
   const args: Param[] = [];
-  if ((q.track ?? 'main') !== 'all') where.push(q.track === 'research' ? 's.research' : 'NOT s.research');
   if (q.mode) { args.push(q.mode); where.push(`s.mode = $${args.length}`); }
   if (q.tf) { args.push(q.tf); where.push(`s.tf = $${args.length}`); }
   if (q.state) { args.push(q.state); where.push(`s.state = $${args.length}`); }
@@ -365,7 +355,6 @@ export async function signalPage(q: SignalQuery = {}): Promise<{ signals: Signal
     ltp: num(r.ltp), indexPrice: num(r.index_price),
     n: methodOf(String(r.method))?.n ?? null,
     name: methodOf(String(r.method))?.name ?? String(r.method),
-    research: r.research === true,
     outcome: r.e_status ? outcomeOf(r, r.tf as Tf) : null,
     tp2: num(r.tp2), tp3: num(r.tp3),
     why: r.stop_why === null && r.tp_why === null ? null : {
