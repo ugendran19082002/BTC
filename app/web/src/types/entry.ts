@@ -127,6 +127,9 @@ export type EntrySignalOutcome = {
   fillEdge: number; fillBetterPts: number | null;
   /** The level the exit aimed at (SL or TP1), points past it against the trade, and why: at the level, a gap, or time. */
   exitLevel: number | null; exitPastPts: number | null; exitWhy: 'level' | 'gap' | 'time' | null;
+  /** TGT1 / TGT2 / TGT3: when each was reached (epoch s); the runner after TGT1, its stop at breakeven. */
+  tp1At: number | null; tp2At: number | null; tp3At: number | null;
+  runner: 'running' | 'done' | null; runnerEnd: 'be' | 'tp2' | 'tp3' | 'timeout' | null;
 };
 
 /**
@@ -137,12 +140,18 @@ export type EntrySignalOutcome = {
 export type SetupClock = {
   status: string; firstSeen: number; fillBy: number; filledAt: number | null; fillPrice: number | null;
   timeoutAt: number | null; exitAt: number | null; exitPrice: number | null; alertAt: number | null;
+  tp1At: number | null; tp2At: number | null; tp3At: number | null;
+  runner: 'running' | 'done' | null; runnerEnd: 'be' | 'tp2' | 'tp3' | 'timeout' | null;
 };
 
 /** Over every signal matching the filters: TP1 hits and points made, stops and points lost, the net. */
 export type EntrySignalSummary = {
   trades: number; tp1: number; tp1Pts: number; stops: number; slPts: number; timeouts: number;
-  netPts: number; netR: number; open: number;
+  timeoutPts: number;
+  /** Target pts − SL pts + time-out pts, exactly (each trade to the whole point). */
+  netPts: number; open: number;
+  /** How many runners went on to reach TGT2, and TGT3. */
+  tp2: number; tp3: number;
 };
 export type EntrySignalPage = { signals: EntrySignal[]; total: number; summary: EntrySignalSummary };
 

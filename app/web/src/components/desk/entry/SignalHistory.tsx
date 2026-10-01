@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
-import { getEntrySignals, type SignalFilter } from '@/api/entry';
+import { getEntrySignals, type SignalFilter, type SignalSort } from '@/api/entry';
 import { cn } from '@/lib/utils';
 import type { EntryMode, EntrySignal, EntrySignalSummary, EntryTf } from '@/types/entry';
 import { MINS, SECS, clockText, lag, useNow } from './clock';
@@ -35,6 +35,29 @@ export const TABS = {
   wait: { label: 'WAIT', q: { state: 'WAIT' } },
 } as const satisfies Record<string, { label: string; q: Pick<SignalFilter, 'state' | 'dir' | 'live'> }>;
 type Tab = keyof typeof TABS;
+
+/**
+ * The table's columns, each sortable both ways on the server (so the order
+ * holds across every page). A first click sorts high to low (newest first),
+ * a second low to high.
+ */
+const COLUMNS: { sort: SignalSort; label: string; cls?: string; title?: string }[] = [
+  { sort: 'time', label: 'Signal time' },
+  { sort: 'method', label: 'Method' },
+  { sort: 'way', label: 'Way · TF' },
+  { sort: 'signal', label: 'Signal' },
+  { sort: 'ltp', label: 'LTP · Index', cls: 'hidden lg:table-cell', title: "The market when the signal appeared: the perpetual's last trade, and Delta's BTC index" },
+  { sort: 'entry', label: 'Entry zone' },
+  { sort: 'sl', label: 'SL' },
+  { sort: 'tp1', label: 'TGT1', title: "TGT1 (TP1): where the record's trade exits" },
+  { sort: 'tp2', label: 'TGT2', title: 'TGT2: watched by the runner after TGT1, its stop at breakeven' },
+  { sort: 'tp3', label: 'TGT3', title: "TGT3: the runner's last target" },
+  { sort: 'fill', label: 'Entry', title: "Where and when it filled (the 1m bar), against the zone's edge" },
+  { sort: 'exit', label: 'Exit', title: 'Where and when it went out -- SL, TGT or time -- and how that stood against the level' },
+  { sort: 'result', label: 'Result', title: 'Points from the fill to the exit, in the trade’s favour, and R' },
+  { sort: 'score', label: 'Quality', cls: 'hidden md:table-cell' },
+  { sort: 'stood', label: 'Stood', cls: 'hidden xl:table-cell' },
+];
 
 /** How long a signal stood: "just now", "4 min", "1 h 12 min". */
 export function stood(ms: number): string {
@@ -83,6 +106,41 @@ export function fillNote(s: EntrySignal): string | null {
     : `at the zone edge ${fmt(o.fillEdge)}`;
 }
 
+/**
+ * TGT1, TGT2, TGT3: each level, why it is there, and what became of it --
+ * reached (and when), still watched (the trade or the runner is out), or not
+ * reached. TGT1 is where the record's trade exits; TGT2 and TGT3 are watched
+ * by the runner after it, its stop at breakeven.
+ */
+export type TargetState = { n: 1 | 2 | 3; level: number | null; why: string | null; hit: number | null; state: 'hit' | 'watching' | 'missed' | 'none' };
+export function targetsOf(s: EntrySignal): TargetState[] {
+  const o = s.outcome;
+  const live = o?.status === 'open' || o?.status === 'filled';
+  const running = o?.runner === 'running';
+  const t = (n: 1 | 2 | 3, level: number | null, why: string | null | undefined, hit: number | null | undefined, watching: boolean): TargetState => ({
+    n, level, why: why ?? null, hit: hit ?? null,
+    state: level === null || s.state !== 'TRADE' ? 'none' : hit != null ? 'hit' : watching ? 'watching' : 'missed',
+  });
+  return [
+    t(1, s.tp1, s.why?.tp1, o?.tp1At ?? (o?.status === 'tp1' ? o.exitAt : null), live),
+    t(2, s.tp2, s.why?.tp2, o?.tp2At, live || running),
+    t(3, s.tp3, s.why?.tp3, o?.tp3At, live || running),
+  ];
+}
+
+function Target({ t }: { t: TargetState }) {
+  if (t.level === null) return <span className="text-muted-foreground">–</span>;
+  if (t.state === 'none') return <span className="text-muted-foreground">{fmt(t.level)}</span>;
+  return (
+    <>
+      <span className={t.state === 'hit' ? 'font-semibold text-[var(--up)]' : t.state === 'missed' ? 'text-muted-foreground' : 'text-[var(--up)]'}>{fmt(t.level)}</span>
+      <div className="text-[10.5px] text-muted-foreground">
+        {t.state === 'hit' ? <span className="text-[var(--up)]">✓ ~{MINS.format(t.hit! * 1000)}</span> : t.state === 'watching' ? 'watching…' : '✗ not reached'}
+      </div>
+    </>
+  );
+}
+
 /** The exit, and why: TGT (TP1), SL, or time. Null until it has exited. */
 export function exitOf(s: EntrySignal): { price: string; why: 'TGT' | 'SL' | 'time'; pts: number | null } | null {
   const o = s.outcome;
@@ -92,7 +150,7 @@ export function exitOf(s: EntrySignal): { price: string; why: 'TGT' | 'SL' | 'ti
   return { price: fmt(o.exitPrice), why, pts };
 }
 
-type Filter = { tab: Tab; mode: 'all' | EntryMode; tf: 'all' | EntryTf; today: boolean; size: (typeof PAGE_SIZES)[number]; sort: 'time' | 'score' | 'rr'; asc: boolean };
+type Filter = { tab: Tab; mode: 'all' | EntryMode; tf: 'all' | EntryTf; today: boolean; size: (typeof PAGE_SIZES)[number]; sort: SignalSort; asc: boolean };
 const DEFAULT: Filter = { tab: 'all', mode: 'all', tf: 'all', today: true, size: 25, sort: 'time', asc: false };
 
 export function SignalHistory() {
@@ -114,12 +172,11 @@ export function SignalHistory() {
   const set = (next: Partial<Filter>) => { setF((cur) => ({ ...DEFAULT, ...cur, ...next })); setPage(0); };
   const sortBy = (col: Filter['sort']) => set(f.sort === col ? { asc: !f.asc } : { sort: col, asc: false });
   const chip = (on: boolean) => cn('px-2 py-0.5', on ? 'bg-[#2563eb] text-white' : 'text-muted-foreground');
-  const sortMark = (col: Filter['sort']) => (f.sort === col ? (f.asc ? ' ▲' : ' ▼') : '');
   const aria = (col: Filter['sort']) => (f.sort === col ? (f.asc ? 'ascending' : 'descending') : 'none');
   const from = total ? page * f.size + 1 : 0;
   const to = Math.min(total, (page + 1) * f.size);
   // Counters tick only while a row on this page is still in play.
-  const now = useNow(rows.some((s) => s.outcome?.status === 'open' || s.outcome?.status === 'filled'));
+  const now = useNow(rows.some((s) => s.outcome?.status === 'open' || s.outcome?.status === 'filled' || s.outcome?.runner === 'running'));
 
   return (
     <section aria-label="signal history" className="mt-3 rounded-xl border border-border p-2.5 text-[12px]">
@@ -179,31 +236,23 @@ export function SignalHistory() {
             <table className="w-full border-collapse tabular-nums" aria-label="signals">
               <thead className="text-left text-[10.5px] text-muted-foreground">
                 <tr>
-                  <th className="py-1 pr-2" aria-sort={aria('time')}>
-                    <button type="button" onClick={() => sortBy('time')} className="font-semibold uppercase">Time (IST){sortMark('time')}</button>
-                  </th>
-                  <th className="pr-2">Method</th>
-                  <th className="pr-2">Way · TF</th>
-                  <th className="pr-2">Signal</th>
-                  <th className="hidden pr-2 lg:table-cell" title="The market when the signal appeared: the perpetual's last trade, and Delta's BTC index">LTP · Index</th>
-                  <th className="pr-2">Entry</th>
-                  <th className="pr-2">SL</th>
-                  <th className="pr-2">TP1</th>
-                  <th className="pr-2" title="Where and when it filled, where and when it went out (the 1m bar), and how the exit stood against its level">Fill → Exit</th>
-                  <th className="pr-2">Result</th>
-                  <th className="hidden pr-2 md:table-cell" aria-sort={aria('rr')}>
-                    <button type="button" onClick={() => sortBy('rr')} className="font-semibold uppercase">R:R{sortMark('rr')}</button>
-                  </th>
-                  <th className="hidden pr-2 md:table-cell" aria-sort={aria('score')}>
-                    <button type="button" onClick={() => sortBy('score')} className="font-semibold uppercase">Quality{sortMark('score')}</button>
-                  </th>
-                  <th className="hidden pr-2 xl:table-cell">Stood</th>
+                  {COLUMNS.map((c) => (
+                    <th key={c.sort} className={cn('py-1 pr-2 align-bottom', c.cls)} aria-sort={aria(c.sort)} title={c.title}>
+                      <button type="button" onClick={() => sortBy(c.sort)}
+                              className={cn('inline-flex items-center gap-0.5 font-semibold uppercase hover:text-foreground', f.sort === c.sort && 'text-foreground')}>
+                        {c.label}<span aria-hidden className={cn('text-[9px]', f.sort === c.sort ? 'opacity-100' : 'opacity-30')}>{f.sort === c.sort ? (f.asc ? '▲' : '▼') : '↕'}</span>
+                      </button>
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {rows.map((s) => {
                   const out = outcomeOf(s);
                   const ex = exitOf(s);
+                  const o = s.outcome;
+                  const en = exitNote(s);
+                  const fn = fillNote(s);
                   return (
                     <tr key={keyOf(s, 'r')} className="border-t border-border align-top"
                         title={`${s.reason}${s.gatesOff.length ? ` -- gates off: ${s.gatesOff.join(', ')}` : ''}`}>
@@ -214,24 +263,22 @@ export function SignalHistory() {
                       <td className="hidden whitespace-nowrap pr-2 text-muted-foreground lg:table-cell">{fmt(s.ltp)} · {fmt(s.indexPrice)}</td>
                       <td className="whitespace-nowrap pr-2">{s.entryLo === null ? '–' : `${fmt(s.entryLo)}–${fmt(s.entryHi)}`}</td>
                       <td className="whitespace-nowrap pr-2 text-[var(--down)]" title={s.why?.stop ?? undefined}>{fmt(s.stop)}</td>
-                      <td className="whitespace-nowrap pr-2 text-[var(--up)]" title={[s.why?.tp1, s.why?.tp2, s.why?.tp3].filter(Boolean).join(' · ') || undefined}>
-                        {fmt(s.tp1)}
-                        {s.tp2 !== null || s.tp3 !== null ? (
-                          <div className="text-[10.5px] text-muted-foreground">
-                            {s.tp2 !== null ? `TP2 ${fmt(s.tp2)}` : ''}{s.tp2 !== null && s.tp3 !== null ? ' · ' : ''}{s.tp3 !== null ? `TP3 ${fmt(s.tp3)}` : ''}
-                          </div>
-                        ) : null}
+                      {targetsOf(s).map((t) => (
+                        <td key={t.n} aria-label={`TGT${t.n}`} className="whitespace-nowrap pr-2" title={t.why ?? undefined}><Target t={t} /></td>
+                      ))}
+                      <td className="whitespace-nowrap pr-2">
+                        {o?.fillPrice != null ? fmt(o.fillPrice) : '–'}
+                        {o?.filledAt != null ? <div className="text-[10.5px] text-muted-foreground">~{MINS.format(o.filledAt * 1000)}{fn ? ` · ${fn}` : ''}</div> : null}
                       </td>
                       <td className="whitespace-nowrap pr-2">
-                        {s.outcome?.fillPrice != null ? fmt(s.outcome.fillPrice) : '–'}
-                        {ex ? <> → {ex.price} <span className={cn('text-[10.5px] font-bold', ex.why === 'TGT' ? 'text-[var(--up)]' : ex.why === 'SL' ? 'text-[var(--down)]' : 'text-muted-foreground')}>{ex.why}</span></> : null}
-                        <FillExitDetail s={s} />
+                        {ex ? <>{ex.price} <span className={cn('text-[10.5px] font-bold', ex.why === 'TGT' ? 'text-[var(--up)]' : ex.why === 'SL' ? 'text-[var(--down)]' : 'text-muted-foreground')}>{ex.why}</span></> : '–'}
+                        {o?.exitAt != null ? <div className="text-[10.5px] text-muted-foreground">~{MINS.format(o.exitAt * 1000)}</div> : null}
+                        {en ? <div className={cn('text-[10.5px]', en.gap ? 'text-[var(--warn)]' : 'text-muted-foreground')}>{en.text}</div> : null}
                       </td>
                       <td className={cn('whitespace-nowrap pr-2', out.cls)}>
                         {out.text}{ex?.pts != null ? <>{' '}<span className="ml-1 text-[10.5px]">({signedPts(ex.pts)} pts)</span></> : null}
                         <Counter s={s} now={now} />
                       </td>
-                      <td className="hidden pr-2 md:table-cell">{s.rr === null ? '–' : s.rr.toFixed(2)}</td>
                       <td className="hidden pr-2 md:table-cell">{s.score ?? '–'}</td>
                       <td className="hidden whitespace-nowrap pr-2 text-muted-foreground xl:table-cell">{stood(s.lastSeen - s.firstSeen)}</td>
                     </tr>
@@ -292,9 +339,9 @@ function Summary({ s }: { s: EntrySignalSummary }) {
       {cell('TRADEs', `${s.trades}${s.open ? ` · ${s.open} open` : ''}`)}
       {cell('TP1 hits · target pts', `${s.tp1} · ${signedPts(s.tp1Pts)}`, 'text-[var(--up)]')}
       {cell('Stops · SL pts', `${s.stops} · −${fmt(s.slPts)}`, 'text-[var(--down)]')}
-      {cell('Timed out', String(s.timeouts))}
+      {cell('Timed out · pts', `${s.timeouts} · ${signedPts(s.timeoutPts)}`)}
+      {cell('TGT2 · TGT3 reached', `${s.tp2} · ${s.tp3}`, 'text-[var(--up)]')}
       {cell('Net pts', signedPts(s.netPts), s.netPts >= 0 ? 'text-[var(--up)]' : 'text-[var(--down)]')}
-      {cell('Net R', `${s.netR >= 0 ? '+' : '−'}${Math.abs(s.netR).toFixed(2)}R`, s.netR >= 0 ? 'text-[var(--up)]' : 'text-[var(--down)]')}
     </div>
   );
 }
@@ -334,7 +381,7 @@ function FillExitDetail({ s }: { s: EntrySignal }) {
 /** A TRADE still in play: its fill window, or its time in the trade and to the time-out, counting. */
 function Counter({ s, now }: { s: EntrySignal; now: number }) {
   const o = s.outcome;
-  if (!o || (o.status !== 'open' && o.status !== 'filled')) return null;
+  if (!o || (o.status !== 'open' && o.status !== 'filled' && o.runner !== 'running')) return null;
   const c = clockText(o, now);
   return c ? <div aria-label="counter" className="text-[10.5px] text-foreground">{c.label} <b className="tabular-nums">{c.value}</b></div> : null;
 }

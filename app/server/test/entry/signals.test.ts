@@ -53,6 +53,7 @@ test('[critical] a TRADE in the history carries what became of it in the paper l
     status: 'tp1', fillPrice: 84_391, exitPrice: 84_000, exitAt: T + 900, rNet: 1.1,
     filledAt: T + 720, fillBy: T + 900 + 300 * 12, timeoutAt: T + 720 + 300 * 48, // the window runs from the trigger bar's close, later than first seen here
     fillEdge: 84_391, fillBetterPts: 0, exitLevel: 84_000, exitPastPts: 0, exitWhy: 'level',
+    tp1At: null, tp2At: null, tp3At: null, runner: null, runnerEnd: null,
   }, 'a short fills at the zone\'s low edge; TP1 is a limit, exactly the level');
   assert.equal(trade!.barCloseAt, T + 900, 'the 5m trigger bar closed at its start + 5 min');
   assert.equal(trade!.seenAfterMs, (T + 660) * 1000 - (T + 900) * 1000);
@@ -89,7 +90,7 @@ test('[critical] a page of the history: the total matching, a page from an offse
   assert.deepEqual((await signalPage({ tf: '4h', sort: 'score', asc: true })).signals.map((x) => x.score), [0, 10, 20, 30, 40, 50, 60]);
 });
 
-test('[critical] the summary over every match: TP1 hits and the points made, stops and the points lost, net points and R', async () => {
+test('[critical] the summary over every match: TP1 hits and the points made, stops and the points lost, the net -- adding up exactly', async () => {
   const mk = (k: number) => read({ id: 'bos', tf: '15m', triggerTime: T + 20_000 + k, dir: 'long', state: 'TRADE', plan: PLAN });
   for (let k = 0; k < 4; k++) { await recordSignals([mk(k)], (T + 20_000 + k) * 1000); await recordSetups([mk(k)], (T + 20_000 + k) * 1000); }
   const set = (k: number, status: string, fill: number, exit: number | null, r: number | null) =>
@@ -100,7 +101,7 @@ test('[critical] the summary over every match: TP1 hits and the points made, sto
   await set(3, 'filled', 84_000, null, null); // open
   const { summary, total } = await signalPage({ tf: '15m', limit: 1 });
   assert.equal(total, 4);
-  assert.deepEqual(summary, { trades: 4, tp1: 2, tp1Pts: 450, stops: 1, slPts: 200, timeouts: 0, netPts: 250, netR: 1.1, open: 1 },
+  assert.deepEqual(summary, { trades: 4, tp1: 2, tp1Pts: 450, stops: 1, slPts: 200, timeouts: 0, timeoutPts: 0, netPts: 250, open: 1, tp2: 0, tp3: 0 },
     'over all four, though the page holds one');
   const live = await signalPage({ tf: '15m', live: true });
   assert.deepEqual([live.total, live.signals.map((x) => x.outcome?.status)], [1, ['filled']], 'trading now: the one still in, not the closed');
@@ -157,3 +158,44 @@ test('[critical] the whole plan is kept with the signal: TP2, TP3, and why the S
   assert.deepEqual([row!.tp2, row!.tp3, row!.why], [84_100, null, why]);
 });
 
+
+test('[critical] TGT1 / TGT2 / TGT3 reach the history, the totals count TGT2 and TGT3 hits, and a running runner is in play', async () => {
+  const t = read({ id: 'bos', state: 'TRADE', dir: 'long', tf: '4h', triggerTime: T + 70_000, plan: { ...PLAN, tp2: 84_600, tp3: 84_900 } });
+  await recordSignals([t], (T + 84_460) * 1000);
+  await recordSetups([t], (T + 84_460) * 1000);
+  await query(`UPDATE entry_setups SET status = 'tp1', fill_price = 84500, filled_at = $2, exit_price = 84000, exit_at = $3, r_net = 2,
+                      tp1_at = $3, tp2_at = $4, runner = 'running' WHERE method = 'bos' AND trigger_at = $1`, [T + 70_000, T + 84_480, T + 84_600, T + 84_660]);
+  const page = await signalPage({ tf: '4h', state: 'TRADE', since: (T + 84_000) * 1000 });
+  const o = page.signals[0]!.outcome!;
+  assert.deepEqual([o.tp1At, o.tp2At, o.tp3At, o.runner], [T + 84_600, T + 84_660, null, 'running']);
+  assert.deepEqual([page.summary.tp2, page.summary.tp3], [1, 0]);
+  assert.equal((await signalPage({ tf: '4h', live: true, since: (T + 84_000) * 1000 })).total, 1, 'a runner still out for TGT3 is trading');
+});
+
+test('[critical] every column sorts, both ways, on the server: method by number, way then timeframe, result in points; nothing else gets into the SQL', async () => {
+  const base = (k: number, over: Partial<MethodRead>) => read({ tf: '15m', triggerTime: T + 120_000 + k, state: 'TRADE', plan: { ...PLAN, rr: 2 }, ...over });
+  const xs = [base(0, { id: 'order-flow', score: 30 }), base(1, { id: 'breakout', score: 90 }), base(2, { id: 'fvg-retest', score: 60 })];
+  await recordSignals(xs, (T + 130_000) * 1000);
+  const since = (T + 129_000) * 1000;
+  const names = async (sort: string, asc = false) => (await signalPage({ tf: '15m', since, sort: sort as never, asc })).signals.map((x) => x.n);
+  assert.deepEqual(await names('method', true), [1, 4, 11]);
+  assert.deepEqual(await names('method'), [11, 4, 1]);
+  assert.deepEqual(await names('score'), [1, 4, 11]);
+  assert.deepEqual(await names('nonsense'), await names('time'), 'an unknown column is the default, never SQL');
+  for (const sort of ['time', 'way', 'signal', 'ltp', 'entry', 'sl', 'tp1', 'tp2', 'tp3', 'fill', 'exit', 'result', 'stood', 'rr']) {
+    assert.equal((await signalPage({ tf: '15m', since, sort: sort as never, asc: true })).signals.length, 3, sort);
+  }
+});
+
+test('[critical] the totals add up to the point: each trade rounded as its row shows it, net = target pts − SL pts + time-out pts', async () => {
+  const mk = (k: number) => read({ id: 'momentum', tf: '1h', triggerTime: T + 140_000 + k, dir: 'long', state: 'TRADE', plan: PLAN });
+  for (let k = 0; k < 3; k++) { await recordSignals([mk(k)], (T + 140_000 + k) * 1000); await recordSetups([mk(k)], (T + 140_000 + k) * 1000); }
+  const set = (k: number, status: string, exit: number) =>
+    query(`UPDATE entry_setups SET status = $1, fill_price = 84000, exit_price = $2 WHERE method = 'momentum' AND tf = '1h' AND trigger_at = $3`, [status, exit, T + 140_000 + k]);
+  await set(0, 'tp1', 84_300.4);  // +300
+  await set(1, 'stop', 83_799.6); // -200 (200.4 -> 200)
+  await set(2, 'timeout', 84_010.6); // +11
+  const { summary: s } = await signalPage({ tf: '1h', since: (T + 139_000) * 1000 });
+  assert.deepEqual([s.tp1Pts, s.slPts, s.timeoutPts, s.netPts], [300, 200, 11, 111]);
+  assert.equal(s.netPts, s.tp1Pts - s.slPts + s.timeoutPts);
+});

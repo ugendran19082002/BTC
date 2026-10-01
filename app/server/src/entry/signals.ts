@@ -153,6 +153,10 @@ export type SignalOutcome = {
   fillEdge: number; fillBetterPts: number | null;
   /** The level the exit was aimed at (stop or TP1), how many points past it, and why: at the level, a gap, or time. */
   exitLevel: number | null; exitPastPts: number | null; exitWhy: 'level' | 'gap' | 'time' | null;
+  /** TGT1 / TGT2 / TGT3: when each was reached (the 1m bar, epoch s), null if not (yet). */
+  tp1At: number | null; tp2At: number | null; tp3At: number | null;
+  /** After TP1, the runner with its stop at breakeven: still running, or how it ended. */
+  runner: 'running' | 'done' | null; runnerEnd: 'be' | 'tp2' | 'tp3' | 'timeout' | null;
 };
 
 
@@ -170,6 +174,8 @@ function outcomeOf(r: Record<string, unknown>, tf: Tf): SignalOutcome {
     filledAt, fillBy: fillByOf(Number(r.e_trigger), Number(r.e_first_seen), tf),
     timeoutAt: filledAt === null ? null : timeoutAtOf(filledAt, tf),
     fillEdge: fx.edge, fillBetterPts: fx.fillBetterPts, exitLevel: fx.level, exitPastPts: fx.pastPts, exitWhy: fx.why,
+    tp1At: num(r.e_tp1_at), tp2At: num(r.e_tp2_at), tp3At: num(r.e_tp3_at),
+    runner: (r.e_runner as SignalOutcome['runner']) ?? null, runnerEnd: (r.e_runner_end as SignalOutcome['runnerEnd']) ?? null,
   };
 }
 
@@ -181,12 +187,35 @@ export type SignalQuery = {
   /** Only TRADEs still in play: waiting at the zone or filled, not yet out (TP1, stop or time-out). */
   live?: boolean;
   /** Column to sort by, newest / highest first unless `asc`. */
-  sort?: 'time' | 'score' | 'rr';
+  sort?: SignalSort;
   asc?: boolean;
 };
 
 /** Sortable columns, by name: a fixed list, never the caller's text in the SQL. */
-const SORT_SQL: Record<NonNullable<SignalQuery['sort']>, string> = { time: 's.first_seen', score: 's.score', rr: 's.rr' };
+const ORDER_OF = (col: string, xs: readonly string[]) => `array_position(ARRAY[${xs.map((x) => `'${x}'`).join(', ')}]::text[], ${col})`;
+/**
+ * Every column of the history's table, by name, to its SQL: a fixed list,
+ * never the caller's text. Some are two keys (a way and its timeframe).
+ * The method sorts by its number, a timeframe by its length.
+ */
+const SORT_SQL = {
+  time: ['s.first_seen'],
+  method: [ORDER_OF('s.method', METHODS.map((m) => m.id))],
+  way: ['s.mode', ORDER_OF('s.tf', ['1m', '3m', '5m', '15m', '30m', '1h', '4h'])],
+  signal: ['s.state', 's.dir'],
+  ltp: ['s.ltp'],
+  entry: ['s.entry_lo'],
+  sl: ['s.stop'],
+  tp1: ['s.tp1'], tp2: ['s.tp2'], tp3: ['s.tp3'],
+  fill: ['e.fill_price'],
+  exit: ['e.exit_price'],
+  result: ['(e.exit_price - e.fill_price) * e.dir'],
+  score: ['s.score'],
+  stood: ['s.last_seen - s.first_seen'],
+  rr: ['s.rr'],
+} as const satisfies Record<string, readonly string[]>;
+export type SignalSort = keyof typeof SORT_SQL;
+export const isSignalSort = (x: unknown): x is SignalSort => typeof x === 'string' && Object.hasOwn(SORT_SQL, x);
 
 /** The latest signals, newest first, optionally one way, timeframe or state, or since a moment; each TRADE with its outcome. */
 export async function recentSignals(q: SignalQuery = {}): Promise<SignalRow[]> {
@@ -203,8 +232,11 @@ export async function recentSignals(q: SignalQuery = {}): Promise<SignalRow[]> {
  * they lost, and the net in points and R -- each from the fill to the exit.
  */
 export type SignalSummary = {
-  trades: number; tp1: number; tp1Pts: number; stops: number; slPts: number; timeouts: number;
-  netPts: number; netR: number; open: number;
+  trades: number; tp1: number; tp1Pts: number; stops: number; slPts: number; timeouts: number; timeoutPts: number;
+  /** Target pts - SL pts + time-out pts, exactly (each trade to the whole point). */
+  netPts: number; open: number;
+  /** How many runners went on to reach TGT2, and TGT3. */
+  tp2: number; tp3: number;
 };
 
 export async function signalPage(q: SignalQuery = {}): Promise<{ signals: SignalRow[]; total: number; summary: SignalSummary }> {
@@ -217,20 +249,22 @@ export async function signalPage(q: SignalQuery = {}): Promise<{ signals: Signal
   if (q.state) { args.push(q.state); where.push(`s.state = $${args.length}`); }
   if (q.dir === 1 || q.dir === -1) { args.push(q.dir); where.push(`s.dir = $${args.length}`); }
   if (q.since) { args.push(q.since); where.push(`s.first_seen >= $${args.length}`); }
-  if (q.live) where.push(`e.status IN ('open', 'filled')`);
+  // In play: waiting, filled, or a runner after TP1 still out for TP2/TP3.
+  if (q.live) where.push(`(e.status IN ('open', 'filled') OR e.runner = 'running')`);
   const filter = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const JOIN = `LEFT JOIN entry_setups e ON s.state = 'TRADE' AND e.method = s.method AND e.mode = s.mode AND e.tf = s.tf
                                 AND e.dir = s.dir AND e.trigger_at = s.trigger_at`;
-  // Points from the fill to the exit, in the trade's favour: (exit - fill) x direction.
-  const pts = '(e.exit_price - e.fill_price) * e.dir';
+  // Points from the fill to the exit, in the trade's favour: (exit - fill) x direction, each trade to the
+  // whole point as the rows show it -- so the totals add up exactly: net = target pts - SL pts + time-out pts.
+  const pts = 'round(((e.exit_price - e.fill_price) * e.dir)::numeric)';
   const [agg] = await rows<Record<string, string | null>>(
     `SELECT count(*) AS n,
             count(*) FILTER (WHERE s.state = 'TRADE') AS trades,
             count(*) FILTER (WHERE e.status = 'tp1') AS tp1, coalesce(sum(${pts}) FILTER (WHERE e.status = 'tp1'), 0) AS tp1_pts,
             count(*) FILTER (WHERE e.status = 'stop') AS stops, coalesce(-sum(${pts}) FILTER (WHERE e.status = 'stop'), 0) AS sl_pts,
-            count(*) FILTER (WHERE e.status = 'timeout') AS timeouts,
+            count(*) FILTER (WHERE e.status = 'timeout') AS timeouts, coalesce(sum(${pts}) FILTER (WHERE e.status = 'timeout'), 0) AS timeout_pts,
+            count(*) FILTER (WHERE e.tp2_at IS NOT NULL) AS tp2, count(*) FILTER (WHERE e.tp3_at IS NOT NULL) AS tp3,
             coalesce(sum(${pts}) FILTER (WHERE e.status IN ('tp1', 'stop', 'timeout')), 0) AS net_pts,
-            coalesce(sum(e.r_net) FILTER (WHERE e.status IN ('tp1', 'stop', 'timeout')), 0) AS net_r,
             count(*) FILTER (WHERE e.status IN ('open', 'filled')) AS open
        FROM entry_signals s ${JOIN} ${filter}`,
     args,
@@ -239,10 +273,11 @@ export async function signalPage(q: SignalQuery = {}): Promise<{ signals: Signal
   const summary: SignalSummary = {
     trades: Number(agg?.trades ?? 0), tp1: Number(agg?.tp1 ?? 0), tp1Pts: Number(agg?.tp1_pts ?? 0),
     stops: Number(agg?.stops ?? 0), slPts: Number(agg?.sl_pts ?? 0), timeouts: Number(agg?.timeouts ?? 0),
-    netPts: Number(agg?.net_pts ?? 0), netR: Number(agg?.net_r ?? 0), open: Number(agg?.open ?? 0),
+    timeoutPts: Number(agg?.timeout_pts ?? 0), netPts: Number(agg?.net_pts ?? 0), open: Number(agg?.open ?? 0),
+    tp2: Number(agg?.tp2 ?? 0), tp3: Number(agg?.tp3 ?? 0),
   };
-  const col = SORT_SQL[q.sort ?? 'time'] ?? SORT_SQL.time;
-  const order = `${col} ${q.asc ? 'ASC' : 'DESC'} NULLS LAST, s.first_seen DESC, s.id DESC`;
+  const cols = SORT_SQL[q.sort && isSignalSort(q.sort) ? q.sort : 'time'];
+  const order = `${cols.map((c) => `${c} ${q.asc ? 'ASC' : 'DESC'} NULLS LAST`).join(', ')}, s.first_seen DESC, s.id DESC`;
   args.push(Math.min(500, Math.max(1, q.limit ?? 100)));
   const lim = args.length;
   args.push(Math.max(0, Math.floor(q.offset ?? 0)));
@@ -251,6 +286,7 @@ export async function signalPage(q: SignalQuery = {}): Promise<{ signals: Signal
     `SELECT s.*, e.status AS e_status, e.fill_price AS e_fill, e.exit_price AS e_exit, e.exit_at AS e_exit_at, e.r_net AS e_r,
             e.dir AS e_dir, e.entry_lo AS e_lo, e.entry_hi AS e_hi, e.stop AS e_stop, e.tp1 AS e_tp1,
             e.filled_at AS e_filled_at, e.first_seen AS e_first_seen, e.trigger_at AS e_trigger,
+            e.tp1_at AS e_tp1_at, e.tp2_at AS e_tp2_at, e.tp3_at AS e_tp3_at, e.runner AS e_runner, e.runner_end AS e_runner_end,
             al.at AS al_at, al.status AS al_status
        FROM entry_signals s ${JOIN}
        -- The first alert tried for this setup, if any (entry_alert_log_by_setup).
@@ -299,6 +335,7 @@ export async function setupClocks(reads: readonly MethodRead[]): Promise<Map<str
   await Promise.all([entrySchema(), alertsSchema()]);
   const rs = await rows<Record<string, unknown>>(
     `SELECT e.method, e.mode, e.tf, e.dir, e.trigger_at, e.status, e.first_seen, e.filled_at, e.fill_price, e.exit_at, e.exit_price,
+            e.tp1_at, e.tp2_at, e.tp3_at, e.runner, e.runner_end,
             (SELECT min(a.at) FROM entry_alert_log a
               WHERE a.method = e.method AND a.mode = e.mode AND a.tf = e.tf AND a.dir = e.dir AND a.trigger_at = e.trigger_at) AS alert_at
        FROM entry_setups e WHERE e.trigger_at = ANY($1::bigint[])`,
@@ -312,6 +349,8 @@ export async function setupClocks(reads: readonly MethodRead[]): Promise<Map<str
       status: String(x.status), firstSeen: Number(x.first_seen), fillBy: fillByOf(Number(x.trigger_at), Number(x.first_seen), tf),
       filledAt, fillPrice: num(x.fill_price), timeoutAt: filledAt === null ? null : timeoutAtOf(filledAt, tf),
       exitAt: num(x.exit_at), exitPrice: num(x.exit_price), alertAt: num(x.alert_at),
+      tp1At: num(x.tp1_at), tp2At: num(x.tp2_at), tp3At: num(x.tp3_at),
+      runner: (x.runner as SetupClock['runner']) ?? null, runnerEnd: (x.runner_end as SetupClock['runnerEnd']) ?? null,
     });
   }
   return out;

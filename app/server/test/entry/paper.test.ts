@@ -102,6 +102,36 @@ test('grading goes forward only: bars already graded are not read again', () => 
 
 // ------------------------------------------------------------ the table
 
+// ------------------------------------------------------------ TGT1 / TGT2 / TGT3: the runner after TP1
+
+const FILL = minute(5, 84_050, 84_060, 84_005, 84_020); // filled at 84,010
+const TP1 = minute(6, 84_020, 84_310, 84_015, 84_290);  // TP1 84,300
+
+test('[critical] after TP1 the runner watches TP2 then TP3, its stop at breakeven; the record\'s R stays the TP1 exit', () => {
+  const r = gradeRow(long({ tp2: 84_500, tp3: 84_700 }), [FILL, TP1,
+    minute(7, 84_290, 84_520, 84_280, 84_510),   // TP2
+    minute(8, 84_510, 84_710, 84_500, 84_700)]); // TP3
+  assert.deepEqual([r.status, r.exitPrice, r.rNet], ['tp1', 84_300, (84_300 - 84_010) / 110], 'the record: out at TP1');
+  assert.deepEqual([r.tp1At, r.tp2At, r.tp3At, r.runner, r.runnerEnd], [T + 360, T + 420, T + 480, 'done', 'tp3']);
+});
+
+test('[critical] a runner back to the fill is breakeven, and a bar touching breakeven and TP2 is breakeven', () => {
+  const be = gradeRow(long({ tp2: 84_500, tp3: null }), [FILL, TP1, minute(7, 84_290, 84_300, 84_005, 84_100)]);
+  assert.deepEqual([be.tp2At, be.runner, be.runnerEnd], [null, 'done', 'be']);
+  const both = gradeRow(long({ tp2: 84_500, tp3: null }), [FILL, TP1, minute(7, 84_290, 84_520, 84_000, 84_100)]);
+  assert.deepEqual([both.tp2At, both.runnerEnd], [null, 'be'], 'which came first is not knowable: the reading that cannot flatter');
+});
+
+test('a runner with no TP3 ends at TP2; one still out stays running across passes; no TP2, no runner', () => {
+  const two = gradeRow(long({ tp2: 84_500, tp3: null }), [FILL, TP1, minute(7, 84_290, 84_520, 84_280, 84_510)]);
+  assert.deepEqual([two.tp2At, two.runnerEnd], [T + 420, 'tp2']);
+  const half = gradeRow(long({ tp2: 84_500, tp3: 84_700 }), [FILL, TP1, minute(7, 84_290, 84_520, 84_280, 84_510)]);
+  assert.deepEqual([half.tp2At, half.runner], [T + 420, 'running']);
+  const on = gradeRow(half, [minute(8, 84_510, 84_710, 84_500, 84_700)]);
+  assert.deepEqual([on.tp3At, on.runnerEnd], [T + 480, 'tp3'], 'picked up on the next pass');
+  assert.equal(gradeRow(long(), [FILL, TP1]).runner, null);
+});
+
 const read = (over: Partial<MethodRead> = {}): MethodRead => ({
   id: 'breakout', n: 1, name: 'Breakout', group: 'breakout', summary: '', mode: 'single', tf: '5m', dir: 'long', state: 'TRADE',
   steps: [], gates: [], score: 70, scoreParts: [], alignment: null, reason: '', triggerTime: T,
@@ -115,6 +145,8 @@ test('[critical] a TRADE is written once, however many minutes it stays on the b
   await gradeSetups([minute(5, 84_050, 84_060, 84_005, 84_020), minute(6, 84_020, 84_310, 84_015, 84_290)]);
   const [x] = await rows<{ status: string; r_net: number }>("SELECT status, r_net FROM entry_setups WHERE mode = 'single'");
   assert.equal(x?.status, 'tp1');
+  const [y] = await rows<{ tp1_at: number; runner: string | null }>("SELECT tp1_at, runner FROM entry_setups WHERE mode = 'single'");
+  assert.deepEqual([Number(y?.tp1_at), y?.runner], [T + 360, null], 'TGT1 reached at 6 min; no TP2 in this plan, no runner');
   const { records, totals } = await entryRecord();
   assert.deepEqual(records.map((r) => [r.method, r.mode, r.trades, r.wins]), [['breakout', 'mtf', 1, 1], ['breakout', 'single', 1, 1]],
     'with the chain and without it, counted apart');

@@ -25,11 +25,13 @@ export const setEntryAlert = (mode: EntryMode, enabled: boolean, tfs?: EntryTf[]
 export const sendEntryAlertTest = () => post<{ ok: true }>('/api/entry/alerts/test', {});
 
 /** One page of the signal history, the total matching, and the summary over all of it. */
+/** Every column of the history the server sorts by (app/server/src/entry/signals.ts SORT_SQL). */
+export type SignalSort = 'time' | 'method' | 'way' | 'signal' | 'ltp' | 'entry' | 'sl' | 'tp1' | 'tp2' | 'tp3' | 'fill' | 'exit' | 'result' | 'score' | 'stood' | 'rr';
 export type SignalFilter = {
   mode?: EntryMode; tf?: EntryTf; state?: 'WAIT' | 'TRADE'; dir?: 1 | -1; since?: number;
   /** Only TRADEs still in play: waiting at the zone or filled, not yet out. */
   live?: boolean;
-  limit?: number; offset?: number; sort?: 'time' | 'score' | 'rr'; asc?: boolean;
+  limit?: number; offset?: number; sort?: SignalSort; asc?: boolean;
 };
 export function getEntrySignals(q: SignalFilter = {}) {
   const p = new URLSearchParams();

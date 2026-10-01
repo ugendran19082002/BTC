@@ -18,6 +18,11 @@ import { TF_SEC, type MethodRead, type Tf } from './types.js';
  *            TP1 or HOLD_BARS, whichever comes first -- a bar touching both
  *            the stop and TP1 is the stop, the reading that cannot flatter
  *            the record
+ *   runner   after TP1, the rest of the trade with its stop at the fill
+ *            (breakeven), watched for TP2 then TP3 until breakeven, TP3 or
+ *            the time-out -- `tp1_at` / `tp2_at` / `tp3_at` say which
+ *            targets were reached and when. The record's R stays the TP1
+ *            exit; the runner says how far the move went.
  *   tp1 / stop / timeout  closed, with `r_net`: the points made over the risk
  *            (no fee term since 1 Oct 2026, entry-010)
  *
@@ -105,12 +110,27 @@ const MIGRATIONS: Migration[] = [{
   id: 'entry-003-setups-gates-off',
   up: `ALTER TABLE entry_setups ADD COLUMN IF NOT EXISTS gates_off TEXT[] NOT NULL DEFAULT '{}';`,
 }, {
+
   // "After fees" removed from the entry section (owner, 1 Oct 2026): every closed row's R recomputed
   // the way rOf now does it -- points made over the risk from the fill -- so old and new rows agree.
   id: 'entry-010-r-without-fees',
   up: `
     UPDATE entry_setups SET r_net = ((exit_price - fill_price) * dir) / abs(fill_price - stop)
      WHERE exit_price IS NOT NULL AND fill_price IS NOT NULL AND fill_price <> stop;
+  `,
+}, {
+  // TGT1 / TGT2 / TGT3 (owner, 1 Oct 2026): TP3 kept with the setup, when each target was reached, and the
+  // runner after TP1 (stop at breakeven) that watches for TP2 and TP3. Rows written before keep NULLs.
+  id: 'entry-012-setups-targets',
+  up: `
+    ALTER TABLE entry_setups ADD COLUMN IF NOT EXISTS tp3 DOUBLE PRECISION;
+    ALTER TABLE entry_setups ADD COLUMN IF NOT EXISTS tp1_at BIGINT;
+    ALTER TABLE entry_setups ADD COLUMN IF NOT EXISTS tp2_at BIGINT;
+    ALTER TABLE entry_setups ADD COLUMN IF NOT EXISTS tp3_at BIGINT;
+    ALTER TABLE entry_setups ADD COLUMN IF NOT EXISTS runner TEXT CHECK (runner IN ('running', 'done'));
+    ALTER TABLE entry_setups ADD COLUMN IF NOT EXISTS runner_end TEXT CHECK (runner_end IN ('be', 'tp2', 'tp3', 'timeout'));
+    UPDATE entry_setups SET tp1_at = exit_at WHERE status = 'tp1' AND tp1_at IS NULL;
+    CREATE INDEX IF NOT EXISTS entry_setups_running ON entry_setups (runner) WHERE runner = 'running';
   `,
 }];
 
@@ -131,13 +151,13 @@ export async function recordSetups(reads: readonly MethodRead[], nowMs: number, 
   for (const r of reads) {
     if (r.state !== 'TRADE' || !r.plan || r.triggerTime === null || r.dir === null) continue;
     const res = await query(
-      `INSERT INTO entry_setups (method, mode, tf, dir, trigger_at, first_seen, entry_lo, entry_hi, stop, tp1, tp2, rr, score, graded_to, gates_off)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      `INSERT INTO entry_setups (method, mode, tf, dir, trigger_at, first_seen, entry_lo, entry_hi, stop, tp1, tp2, rr, score, graded_to, gates_off, tp3)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
        ON CONFLICT (method, mode, tf, dir, trigger_at) DO NOTHING`,
       [r.id, r.mode, r.tf, r.dir === 'long' ? 1 : -1, r.triggerTime, nowMs, r.plan.entryLo, r.plan.entryHi,
         r.plan.stop, r.plan.tp1, r.plan.tp2, r.plan.rr, r.score, Math.floor(nowMs / 60_000) * 60 - 60,
         // The gates this setup was taken under with any switched off: the record keeps these apart.
-        r.gates.filter((g) => !g.enabled).map((g) => g.key)],
+        r.gates.filter((g) => !g.enabled).map((g) => g.key), r.plan.tp3],
     );
     if ((res.rowCount ?? 0) > 0) { n += 1; onNew?.(r); }
   }
@@ -150,7 +170,16 @@ export type PaperRow = {
   status: 'open' | 'filled' | 'expired' | 'tp1' | 'stop' | 'timeout';
   filledAt: number | null; fillPrice: number | null; exitAt: number | null; exitPrice: number | null;
   rNet: number | null; gradedTo: number;
+  /** The further targets, and when each target was reached (the 1m bar, epoch s). */
+  tp2?: number | null; tp3?: number | null;
+  tp1At?: number | null; tp2At?: number | null; tp3At?: number | null;
+  /** After TP1: the runner, watched for TP2/TP3 with its stop at breakeven, and how it ended. */
+  runner?: 'running' | 'done' | null;
+  runnerEnd?: RunnerEnd | null;
 };
+
+/** How a runner ended: back to breakeven, at its last target, or on time. */
+export type RunnerEnd = 'be' | 'tp2' | 'tp3' | 'timeout';
 
 /** R: the points made, (exit - fill) x direction, over the risk from the fill to the stop. No fee term. */
 export const rOf = (dir: 1 | -1, fill: number, exit: number, stop: number) => {
@@ -167,6 +196,7 @@ export function gradeRow(row: PaperRow, bars1m: readonly Candle[]): PaperRow {
   const fillBy = fillByOf(row.triggerAt, row.firstSeen, row.tf);
   for (const b of bars1m) {
     if (b.time <= r.gradedTo || b.time < from) continue;
+    if (r.status === 'tp1' && r.runner === 'running') { r = runOn(r, b); r.gradedTo = b.time; continue; }
     if (r.status !== 'open' && r.status !== 'filled') break;
     const d = r.dir;
     const stopHit = d === 1 ? b.low <= r.stop : b.high >= r.stop;
@@ -187,12 +217,33 @@ export function gradeRow(row: PaperRow, bars1m: readonly Candle[]): PaperRow {
       r = close(r, b.time, stopAt, 'stop');
     } else if (d === 1 ? b.high >= r.tp1 : b.low <= r.tp1) {
       r = close(r, b.time, r.tp1, 'tp1');
+      // A further target: the rest runs on from the next minute, its stop at breakeven.
+      r = { ...r, tp1At: b.time, tp2At: null, tp3At: null, runner: r.tp2 != null ? 'running' : null, runnerEnd: null };
     } else if (r.filledAt !== null && b.time >= timeoutAtOf(r.filledAt, r.tf)) {
       r = close(r, b.time, b.close, 'timeout');
     }
     r.gradedTo = b.time;
   }
   return r;
+}
+
+/**
+ * One minute of a runner after TP1: its stop is the fill (breakeven), checked
+ * first -- a bar touching both is breakeven, the reading that cannot flatter.
+ * Then TP2, then TP3 (a bar can reach both); the time-out ends it as for the
+ * trade. Pure.
+ */
+function runOn(r: PaperRow, b: Candle): PaperRow {
+  const d = r.dir;
+  const done = (end: RunnerEnd, x: Partial<PaperRow> = {}): PaperRow => ({ ...r, ...x, runner: 'done', runnerEnd: end });
+  if (d === 1 ? b.low <= r.fillPrice! : b.high >= r.fillPrice!) return done('be');
+  const reaches = (lvl: number) => (d === 1 ? b.high >= lvl : b.low <= lvl);
+  let x: Partial<PaperRow> = {};
+  if (r.tp2At == null && r.tp2 != null && reaches(r.tp2)) x = { tp2At: b.time };
+  if ((r.tp2At ?? x.tp2At) != null && r.tp3 != null && reaches(r.tp3)) return done('tp3', { ...x, tp3At: b.time });
+  if ((r.tp2At ?? x.tp2At) != null && r.tp3 == null) return done('tp2', x);
+  if (r.filledAt !== null && b.time >= timeoutAtOf(r.filledAt, r.tf)) return done('timeout', x);
+  return { ...r, ...x };
 }
 
 function close(r: PaperRow, at: number, price: number, status: 'tp1' | 'stop' | 'timeout'): PaperRow {
@@ -203,12 +254,14 @@ type DbRow = {
   id: number; dir: number; tf: Tf; trigger_at: number; first_seen: number; entry_lo: number; entry_hi: number;
   stop: number; tp1: number; status: PaperRow['status']; filled_at: number | null; fill_price: number | null;
   exit_at: number | null; exit_price: number | null; r_net: number | null; graded_to: number;
+  tp2: number | null; tp3: number | null; tp1_at: number | null; tp2_at: number | null; tp3_at: number | null;
+  runner: PaperRow['runner']; runner_end: RunnerEnd | null;
 };
 
 /** Grade every working row against the closed 1m candles. Returns how many changed status. */
 export async function gradeSetups(bars1m: readonly Candle[]): Promise<number> {
   await entrySchema();
-  const open = await rows<DbRow>(`SELECT * FROM entry_setups WHERE status IN ('open', 'filled')`);
+  const open = await rows<DbRow>(`SELECT * FROM entry_setups WHERE status IN ('open', 'filled') OR runner = 'running'`);
   let moved = 0;
   for (const x of open) {
     const before: PaperRow = {
@@ -216,14 +269,17 @@ export async function gradeSetups(bars1m: readonly Candle[]): Promise<number> {
       entryLo: x.entry_lo, entryHi: x.entry_hi, stop: x.stop, tp1: x.tp1, status: x.status,
       filledAt: x.filled_at, fillPrice: x.fill_price, exitAt: x.exit_at, exitPrice: x.exit_price,
       rNet: x.r_net, gradedTo: x.graded_to,
+      tp2: x.tp2, tp3: x.tp3, tp1At: x.tp1_at, tp2At: x.tp2_at, tp3At: x.tp3_at, runner: x.runner, runnerEnd: x.runner_end,
     };
     const after = gradeRow(before, bars1m);
     if (after.gradedTo === before.gradedTo) continue;
     if (after.status !== before.status) moved++;
     await query(
-      `UPDATE entry_setups SET status = $2, filled_at = $3, fill_price = $4, exit_at = $5, exit_price = $6, r_net = $7, graded_to = $8
+      `UPDATE entry_setups SET status = $2, filled_at = $3, fill_price = $4, exit_at = $5, exit_price = $6, r_net = $7, graded_to = $8,
+              tp1_at = $9, tp2_at = $10, tp3_at = $11, runner = $12, runner_end = $13
         WHERE id = $1`,
-      [x.id, after.status, after.filledAt, after.fillPrice, after.exitAt, after.exitPrice, after.rNet, after.gradedTo],
+      [x.id, after.status, after.filledAt, after.fillPrice, after.exitAt, after.exitPrice, after.rNet, after.gradedTo,
+        after.tp1At ?? null, after.tp2At ?? null, after.tp3At ?? null, after.runner ?? null, after.runnerEnd ?? null],
     );
   }
   return moved;

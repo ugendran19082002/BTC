@@ -108,6 +108,9 @@ export type MethodRead = {
 export type SetupClock = {
   status: string; firstSeen: number; fillBy: number; filledAt: number | null; fillPrice: number | null;
   timeoutAt: number | null; exitAt: number | null; exitPrice: number | null; alertAt: number | null;
+  /** When TGT1 / TGT2 / TGT3 were reached (epoch s), and the runner after TP1 (stop at breakeven). */
+  tp1At: number | null; tp2At: number | null; tp3At: number | null;
+  runner: 'running' | 'done' | null; runnerEnd: 'be' | 'tp2' | 'tp3' | 'timeout' | null;
 };
 
 /** One minute of the perpetual's tape, by aggressor side. */
