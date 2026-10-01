@@ -220,11 +220,24 @@ test('a refusal that is not about pricing is not retried', async () => {
 const bar = (close: number, at = 0): Candle =>
   ({ time: at, open: close, high: close + 1, low: close - 1, close, volume: 10 });
 
+/**
+ * One-minute bars ending at the moment asked for, oldest first. With `forming`
+ * the last close is the bar that started this minute; without it the series
+ * stops at the minute that just finished, as a thin option's does when nothing
+ * has traded yet this minute.
+ */
+const minuteBars = (closes: number[], forming: boolean) =>
+  async (_symbol: string, _from: number, to: number): Promise<Candle[]> => {
+    const minute = to - (to % 60);
+    const last = forming ? minute : minute - 60;
+    return closes.map((c, i) => bar(c, last - (closes.length - 1 - i) * 60));
+  };
+
 test('[critical] on the close, a wick through the stop is not an exit', async () => {
   // The mark is through the stop, and the last closed bar is not.
   const r = rig({
     quotes: [quote(ceProduct().symbol, 129.5, 130.5)],
-    candles: async () => [bar(104, 1), bar(107, 2), bar(131, 3)],
+    candles: minuteBars([104, 107, 131], true),
   });
   const plan = { ...planFor(ceProduct(), { lots: 1, stopPrice: 110 }), monitorOn: 'close' as const };
   await r.engine.open(plan);
@@ -238,7 +251,7 @@ test('[critical] on the close, a bar that finishes through the stop is an exit',
   // The second-to-last bar is the last finished one, and it closed through.
   const r = rig({
     quotes: [quote(ceProduct().symbol, 103.5, 104.5)],
-    candles: async () => [bar(104, 1), bar(118, 2), bar(107, 3)],
+    candles: minuteBars([104, 118, 107], true),
   });
   const plan = { ...planFor(ceProduct(), { lots: 1, stopPrice: 110 }), monitorOn: 'close' as const };
   await r.engine.open(plan);
@@ -246,6 +259,33 @@ test('[critical] on the close, a bar that finishes through the stop is an exit',
 
   const after = (await r.store.get(plan.tradeId))!;
   assert.equal(after.state.position, 0, 'closed on the bar, not on the wick');
+});
+
+test('[critical] on the close, with no bar forming yet, the minute that just finished is the one judged', async () => {
+  // Nothing has traded this minute, so the series ends at the bar that just
+  // closed through the stop. Taking the second-to-last bar judged the one
+  // before it (107) and ignored the break.
+  const r = rig({
+    quotes: [quote(ceProduct().symbol, 103.5, 104.5)],
+    candles: minuteBars([104, 107, 118], false),
+  });
+  const plan = { ...planFor(ceProduct(), { lots: 1, stopPrice: 110 }), monitorOn: 'close' as const };
+  await r.engine.open(plan);
+  await r.engine.poll(plan.tradeId);
+
+  const after = (await r.store.get(plan.tradeId))!;
+  assert.equal(after.state.position, 0, 'the bar that finished through the stop is acted on');
+});
+
+test('on the close, a finished bar under the stop is not an exit when no bar is forming', async () => {
+  const r = rig({
+    quotes: [quote(ceProduct().symbol, 129.5, 130.5)],
+    candles: minuteBars([104, 131, 107], false),
+  });
+  const plan = { ...planFor(ceProduct(), { lots: 1, stopPrice: 110 }), monitorOn: 'close' as const };
+  await r.engine.open(plan);
+  await r.engine.poll(plan.tradeId);
+  assert.notEqual((await r.store.get(plan.tradeId))!.state.position, 0, 'the latest finished bar (107) is under the stop');
 });
 
 test('a close-watched stop with no candles does nothing, rather than falling back to the touch', async () => {

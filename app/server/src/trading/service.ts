@@ -626,6 +626,9 @@ export class TradingService {
       for (const rec of await this.store.open()) {
         await this.engine.poll(rec.state.tradeId).catch(() => {});
       }
+      // A finished trade whose other exit could not be confirmed off the book is
+      // not polled any more; this is what keeps trying it.
+      await this.engine.sweepLeftovers().catch(() => {});
       this.feedOk = true;
     } catch {
       this.feedOk = false;

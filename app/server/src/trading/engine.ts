@@ -434,6 +434,13 @@ export const STOP_CONFIRM_MS = 15_000;
  */
 export const UNEXPLAINED_ALARM_MS = 60_000;
 
+/**
+ * How long an exit the venue would not confirm cancelled may go on being
+ * retried before the desk says so. A lookup that failed once is a blip; a
+ * minute of them is an order that may still be resting with nothing to cover.
+ */
+export const LEFTOVER_ALARM_MS = 60_000;
+
 /** How long a close at the market has to fill before what is left is sent again. */
 export const CLOSE_FOLLOW_UP_MS = 3_000;
 /** Closes at the market for one exit, the first included, before the desk stops and says so. */
@@ -497,6 +504,8 @@ export class TradeEngine {
   private readonly gaveUpClosing = new Set<string>();
   /** When a shared contract's position first stopped adding up, per trade, and whether it has been said. */
   private readonly unexplained = new Map<string, { since: number; said: boolean }>();
+  /** Trades with an exit not yet confirmed off the book, since when, and whether it has been said. See `cancelSiblings`. */
+  private readonly leftovers = new Map<string, { since: number; said: boolean }>();
   private readonly limits: RiskLimits;
   /** Set while a trade is being resolved after a timeout. Nothing may be sent. */
   private entryDeadline = new Map<string, number>();
@@ -1390,7 +1399,14 @@ export class TradeEngine {
   private async cancelAndVerify(order: ExchangeOrder): Promise<boolean> {
     await this.exchange.cancelOrder(order).catch((e) => this.note('cancel', order, e));
     if (!order.clientOrderId) return true;
-    const after = await this.exchange.getOrderByClientId(order.clientOrderId).catch(() => null);
+    let after: ExchangeOrder | null;
+    try {
+      after = await this.exchange.getOrderByClientId(order.clientOrderId);
+    } catch {
+      // Could not ask is not gone. Until 1 Oct 2026 a failed read counted as a
+      // confirmed cancel, which is the one answer this method exists to rule out.
+      return false;
+    }
     if (after === null) return true;                       // gone from the book
     return after.status !== 'open' && after.status !== 'partial';
   }
@@ -1411,23 +1427,79 @@ export class TradeEngine {
     return rec;
   }
 
-  /** One exit won. Take the other one off the book. */
+  /**
+   * One exit won. Take the other one off the book.
+   *
+   * A leg comes off the record only once the venue confirms it is off the book.
+   * Until 1 Oct 2026 it came off whatever happened: a lookup that failed, or a
+   * cancel Delta did not honour, still wrote `sibling_cancelled`, and the desk
+   * forgot an order that could still be resting -- a reduce-only buy which, with
+   * two trades on one contract (0011), buys back the other trade's contracts.
+   * A leg that cannot be confirmed stays on the record and is tried again: by
+   * the trade's own poll while it is open, by `sweepLeftovers` once it is done,
+   * and said out loud after `LEFTOVER_ALARM_MS`.
+   */
   private async cancelSiblings(recIn: TradeRecord, all = false): Promise<TradeRecord> {
     let rec = recIn;
     const winner = rec.state.exitWinner;
+    const unconfirmed: string[] = [];
     for (const [role, cid] of [
       ['take_profit', rec.state.protection.takeProfit],
       ['stop_loss', rec.state.protection.stopLoss],
     ] as const) {
       if (!cid) continue;
       if (!all && role === winner) continue;
-      const o = await this.exchange.getOrderByClientId(cid).catch(() => null);
-      if (o && (o.status === 'open' || o.status === 'partial')) {
-        await this.exchange.cancelOrder(o).catch((e) => this.note('cancel sibling', o, e));
+      let o: ExchangeOrder | null;
+      try {
+        o = await this.exchange.getOrderByClientId(cid);
+      } catch (e) {
+        this.note('cancel sibling', { orderId: cid, symbol: rec.plan.symbol }, e);
+        unconfirmed.push(role === 'take_profit' ? 'target' : 'stop');
+        continue;
+      }
+      if (o && (o.status === 'open' || o.status === 'partial') && !(await this.cancelAndVerify(o))) {
+        unconfirmed.push(role === 'take_profit' ? 'target' : 'stop');
+        continue;
       }
       rec = await this.commit(rec, { t: 'sibling_cancelled', role, at: this.now() });
     }
+    this.noteLeftover(rec, unconfirmed);
     return rec;
+  }
+
+  /** Keep count of a trade whose exits could not be confirmed off the book, and say so once it has gone on a minute. */
+  private noteLeftover(rec: TradeRecord, unconfirmed: readonly string[]): void {
+    const id = rec.state.tradeId;
+    if (unconfirmed.length === 0) { this.leftovers.delete(id); return; }
+    const seen = this.leftovers.get(id) ?? { since: this.now(), said: false };
+    this.leftovers.set(id, seen);
+    if (seen.said || this.now() - seen.since < LEFTOVER_ALARM_MS) return;
+    seen.said = true;
+    this.d.onAlarm?.(rec.state, `Could not confirm the ${unconfirmed.join(' and ')} cancelled at Delta for `
+      + `${Math.round((this.now() - seen.since) / 1000)} s. It may still be resting reduce-only on ${rec.plan.symbol}: `
+      + 'check the open orders and cancel it by hand.', rec.plan);
+  }
+
+  /**
+   * Try again to take off the book the exits of finished trades that could not
+   * be confirmed cancelled.
+   *
+   * A trade that is flat is never polled again, so its own poll cannot retry;
+   * the service calls this on every step. Open trades are left to their own
+   * poll, which retries the same way. In memory: a restart forgets the list.
+   *
+   * Returns the trades still waiting on a confirmation.
+   */
+  async sweepLeftovers(): Promise<string[]> {
+    for (const id of [...this.leftovers.keys()]) {
+      await this.withTrade(id, async () => {
+        const rec = await this.d.store.get(id);
+        if (!rec) { this.leftovers.delete(id); return; }
+        if (!isDone(rec.state)) return;
+        await this.cancelSiblings(rec, true);
+      });
+    }
+    return [...this.leftovers.keys()];
   }
 
   /**
@@ -1578,9 +1650,18 @@ export class TradeEngine {
   private async lastClosedBar(symbol: string): Promise<Candle | null> {
     const now = Math.floor(this.now() / 1000);
     const bars = await this.d.candles?.(symbol, now - 15 * 60, now, '1m').catch(() => []) ?? [];
-    // The last bar of the series is the one still being formed.
-    const closed = bars.length >= 2 ? bars[bars.length - 2]! : null;
-    return closed ?? null;
+    /*
+     * Finished by its time, not by its place in the list: a bar is finished once
+     * its minute is over, and the one that started this minute is still forming.
+     * Until 1 Oct 2026 this took the second-to-last bar, on the assumption that
+     * the last is always the forming one -- but a thin option with no trade yet
+     * this minute may have no forming bar, and then the bar that had just
+     * finished was skipped and the one before it judged instead.
+     */
+    const minute = now - (now % 60);
+    let closed: Candle | null = null;
+    for (const b of bars) if (b.time < minute && (closed === null || b.time > closed.time)) closed = b;
+    return closed;
   }
 
   // ------------------------------------------------------------ exits
