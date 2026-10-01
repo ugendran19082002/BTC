@@ -345,6 +345,7 @@ async function migrateEverything(): Promise<void> {
   const { gatesSchema } = await import('../entry/gates.js');
   const { alertsSchema } = await import('../entry/alerts.js');
   const { signalsSchema } = await import('../entry/signals.js');
+  const { methodsSchema } = await import('../entry/catalogue.js');
   await initTradingService();
   await marketSchema();
   await errorLog().ready;
@@ -361,6 +362,7 @@ async function migrateEverything(): Promise<void> {
   await gatesSchema();
   await alertsSchema();
   await signalsSchema();
+  await methodsSchema();
 }
 
 type Col = { table_name: string; column_name: string; data_type: string; udt_name: string; is_nullable: string; column_default: string | null; is_identity: string };

@@ -26,6 +26,7 @@ import { gatesSchema } from './entry/gates.js';
 import { alertSettings, alertsSchema, sendEntryAlert, wanted } from './entry/alerts.js';
 import { allReads } from './entry/engine.js';
 import { pruneSignals, recordSignals, signalsSchema } from './entry/signals.js';
+import { methodsSchema } from './entry/catalogue.js';
 import { readEntryContext } from './entry/read.js';
 
 /**
@@ -61,6 +62,7 @@ await entrySchema();
 await gatesSchema();
 await alertsSchema();
 await signalsSchema();
+await methodsSchema();
 const strategies = await initStrategyStore();
 
 // One sign-in service for the process: the gate and the routes share the pool.

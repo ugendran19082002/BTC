@@ -301,11 +301,11 @@ describe('the signal history table', () => {
   });
 
   it('[critical] every method in one history, each by its number', async () => {
-    getEntrySignals.mockResolvedValue(page([sig({ method: 'orb', n: 16, code: '16', name: 'Opening-range breakout (Asia · London · New York)' })]));
+    getEntrySignals.mockResolvedValue(page([sig({ method: 'orb', n: 15, code: '15', name: 'Opening-range breakout (Asia · London · New York)' })]));
     render(<SignalHistory />);
     const table = await screen.findByRole('table', { name: 'signals' });
     expect(getEntrySignals.mock.lastCall![0].track).toBeUndefined();
     expect(screen.queryByRole('group', { name: 'history methods' })).toBeNull();
-    expect(within(table).getAllByRole('row')[1]).toHaveTextContent('#16 Opening-range breakout (Asia · London · New York)');
+    expect(within(table).getAllByRole('row')[1]).toHaveTextContent('#15 Opening-range breakout (Asia · London · New York)');
   });
 });

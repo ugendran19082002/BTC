@@ -442,6 +442,15 @@ is [research/entry-concepts.md](../research/entry-concepts.md).
   measured on every TRADE and WAIT and kept with it (`regime`, `entry-017`),
   so the record can be sorted by it -- and each is also a method on its own
   trigger, with 38a (multi-factor) firing when they all agree.
+- **Numbered 1-81.** The screen, the alerts, the history and its CSV number
+  the methods 1, 2, 3 ... 81 -- the twelve as 1-12, the rest in research-number
+  order; each method's research number stays as `ref` (the map:
+  [research/entry-concepts.md](../research/entry-concepts.md#the-desks-numbers)).
+- **In the database.** `entry_methods` (`entry/catalogue.ts`, `entry-019`)
+  holds the 81 -- id, number, label, research number, name, group -- written
+  from methods.ts on every start; the signals, the paper setups and the alert
+  log can only name a method in it (foreign keys). A method the code drops is
+  kept, retired and unnumbered, because its rows are history.
 - **Nothing else.** The retired per-session ids (`orb-asia` … `session-sweep-ny`)
   are deleted from the signals, the paper setups and the alert log
   (`entry-018-*-retired-methods`).

@@ -157,6 +157,97 @@ large prints one way), #34 and #96 merged into it and #33.
 | 73, 74 | Footprint stacked imbalance (continuation / reversal) | volume per price per bar |
 | 128, 129 | Correlation breakdown, BTC–ETH divergence | ETH / market series |
 
+## The desk's numbers
+
+On the desk the 81 are numbered **1-81 in a series** (owner: "1, 2, 3, 4 --
+total 81, 1 to 81"): the twelve as 1-12, then the rest in the order of their
+numbers here. The numbers on this page are the research numbers -- kept with
+each method as `ref` (methods.ts, and `entry_methods.ref` in the database).
+
+| Desk # | Research # | Method |
+|---|---|---|
+| 1 | 1 | Breakout |
+| 2 | 2 | Breakout + retest |
+| 3 | 3 | Liquidity sweep |
+| 4 | 4 | FVG retest |
+| 5 | 5 | Order-block retest |
+| 6 | 6 | BOS |
+| 7 | 7 | MSS / CHoCH |
+| 8 | 8 | Momentum |
+| 9 | 9 | Pullback |
+| 10 | 10 | VWAP / mean reversion |
+| 11 | 11 | Order flow |
+| 12 | 12 | Options / derivatives |
+| 13 | 13 | Compression break |
+| 14 | 14 | Failed breakout / breakdown (trap) |
+| 15 | 16 | Opening-range breakout (Asia · London · New York) |
+| 16 | 17 | Previous day H/L rejection |
+| 17 | 18 | Previous day H/L break & hold |
+| 18 | 19 | Previous-day range expansion |
+| 19 | 20 | VWAP reclaim / loss |
+| 20 | 21 | Anchored VWAP (week) |
+| 21 | 22 | Value-area break |
+| 22 | 23 | POC reclaim / loss |
+| 23 | 24 | CVD divergence |
+| 24 | 25 | Delta divergence |
+| 25 | 27 | Exhaustion reversal |
+| 26 | 29 | Equal H/L sweep & reclaim |
+| 27 | 30 | Session H/L sweep (Asia · London · New York) |
+| 28 | 31 | Funding + price divergence |
+| 29 | 32 | OI-confirmed breakout |
+| 30 | 33 | OI flush reversal |
+| 31 | 35 | Expected-move edge reaction |
+| 32 | 36 | Volatility regime transition |
+| 33 | 37 | Z-score reversion |
+| 34 | 38a | Multi-factor regime entry |
+| 35 | 39 | Mid-range rejection |
+| 36 | 40 | Trendline break & retest |
+| 37 | 41 | Channel breakout |
+| 38 | 43 | Engulfing + structure |
+| 39 | 45 | NR7 / inside-bar break |
+| 40 | 46 | Dislocation reversion |
+| 41 | 47 | Basis divergence (perp vs index) |
+| 42 | 48 | Index leads, perp lags |
+| 43 | 49 | Mark-perp divergence |
+| 44 | 50 | Forced-flow continuation (liquidation proxy) |
+| 45 | 52 | OI wall break & retest |
+| 46 | 54 | Funding flip |
+| 47 | 55 | IV expansion breakout |
+| 48 | 56 | IV crush reversion |
+| 49 | 57 | Options skew divergence |
+| 50 | 58 | Gamma wall reaction |
+| 51 | 60 | Expiry pin / max-pain magnet |
+| 52 | 61 | Order-book imbalance breakout |
+| 53 | 62 | Microprice / queue imbalance |
+| 54 | 63 | Liquidity replenishment |
+| 55 | 64 | Pulled wall (spoof / pull) |
+| 56 | 66 | Big-print follow-through |
+| 57 | 67 | Trade velocity / aggression spike |
+| 58 | 70 | CVD regime shift |
+| 59 | 73 | Footprint stacked imbalance -- continuation |
+| 60 | 74 | Footprint stacked imbalance -- reversal |
+| 61 | 78 | Naked POC reaction |
+| 62 | 82 | Initial balance break |
+| 63 | 83 | Initial balance failed break |
+| 64 | 87 | Previous week H/L sweep |
+| 65 | 88 | Previous month H/L sweep |
+| 66 | 89 | Weekly range expansion |
+| 67 | 90 | Monthly range expansion |
+| 68 | 91 | Previous week H/L break-reclaim |
+| 69 | 92 | Previous month H/L break-reclaim |
+| 70 | 109 | Option volume one-sided |
+| 71 | 111 | Call / put OI divergence |
+| 72 | 112 | IV vs realised volatility |
+| 73 | 113 | Term-structure inversion |
+| 74 | 115 | Expiry OI migration |
+| 75 | 118 | Volatility z-score spike |
+| 76 | 119 | Volume z-score spike |
+| 77 | 123 | Autocorrelation regime entry |
+| 78 | 126 | Range-efficiency entry |
+| 79 | 127 | Trend-efficiency break |
+| 80 | 128 | Correlation breakdown (BTC vs ETH) |
+| 81 | 129 | BTC vs ETH divergence |
+
 ## Regime ideas, as methods
 
 Measured on every signal as its regime, and since 1 Oct 2026 each a method too

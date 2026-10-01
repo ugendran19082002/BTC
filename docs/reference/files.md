@@ -5,13 +5,13 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-395 files listed, 175 test files counted below, images and lockfiles left out.
+396 files listed, 176 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 102 |
+| `app/server` | 103 |
 | `app/web` | 73 |
 
 ## `(root)`
@@ -121,6 +121,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [alerts.ts](../../app/server/src/entry/alerts.ts) | Timeframes a without-the-chain alert may be asked for; 5m unless the owner picks others. |
+| [catalogue.ts](../../app/server/src/entry/catalogue.ts) | The methods, in the database too (owner, 1 Oct 2026: "methods db side handle best practice"). |
 | [deriv.ts](../../app/server/src/entry/deriv.ts) | The derivatives history the research methods read, once a minute (owner, 1 Oct 2026: "all live"). |
 | [engine.ts](../../app/server/src/entry/engine.ts) | The entry engine: twelve methods, each read with the timeframe chain and without it -- 24 reads -- and every read ending TRADE, WAIT or NO TRADE the same way (TEST.md): |
 | [gates.ts](../../app/server/src/entry/gates.ts) | Which of the entry engine's hard gates are switched on. |
