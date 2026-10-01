@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { SINGLE_TFS, entryBoard, timeframeRows, type TimeframeRow } from '../../entry/engine.js';
+import { SINGLE_TFS, VIEW_ONLY_TFS, entryBoard, timeframeRows, type TimeframeRow } from '../../entry/engine.js';
 import { readEntryContext } from '../../entry/read.js';
 import { entryRecord, recentSetups } from '../../entry/paper.js';
 import { GateLocked, gateSettings, gatesOff, isGateKey, setGate } from '../../entry/gates.js';
@@ -26,7 +26,9 @@ export function registerEntryRoutes(app: FastifyInstance, notifier: () => { send
   // The 24 reads: each method with the timeframe chain (entry on 5m), then without it on `tf` (default 5m).
   app.get('/api/entry/board', async (req, reply) => {
     const q = req.query as { tf?: string };
-    const tf = (SINGLE_TFS as readonly string[]).includes(q.tf ?? '') ? (q.tf as Tf) : '5m';
+    const tf = ([...SINGLE_TFS, ...VIEW_ONLY_TFS] as readonly string[]).includes(q.tf ?? '') ? (q.tf as Tf) : '5m';
+    // 1m is a chart only: the twelve with the chain as ever, none without it.
+    const viewOnly = VIEW_ONLY_TFS.includes(tf);
     try {
       // The switches are part of the key: a gate turned off shows on the next read, not ten seconds later.
       const off = await gatesOff().catch(() => []);
@@ -34,7 +36,7 @@ export function registerEntryRoutes(app: FastifyInstance, notifier: () => { send
         const ctx = await readEntryContext();
         return { at: ctx.now, tf, reads: entryBoard(ctx, tf), timeframes: timeframeRows(ctx), ltp: ctx.ltp ?? null };
       });
-      return { ...board, chain: CHAIN, tfSec: TF_SEC };
+      return { ...board, viewOnly, chain: CHAIN, tfSec: TF_SEC };
     } catch (e) {
       reply.code(502);
       return { error: (e as Error).message };

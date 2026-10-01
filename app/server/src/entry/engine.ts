@@ -363,11 +363,21 @@ export function readMethod(m: (typeof METHODS)[number], mode: Mode, tf: Tf, ctx:
  * without it, on `tf` alone.
  */
 export function entryBoard(ctx: EntryContext, tf: Tf = '5m'): MethodRead[] {
-  return (['mtf', 'single'] as const).flatMap((mode) => METHODS.map((m) => readMethod(m, mode, tf, ctx)));
+  // A view-only timeframe (1m) has no reads without the chain: the panel shows its chart alone.
+  const modes = SINGLE_TFS.includes(tf) ? (['mtf', 'single'] as const) : (['mtf'] as const);
+  return modes.flatMap((mode) => METHODS.map((m) => readMethod(m, mode, tf, ctx)));
 }
 
-/** Every timeframe a read without the chain may be taken on. */
-export const SINGLE_TFS: readonly Tf[] = ['1m', '3m', '5m', '15m', '30m', '1h', '4h'];
+/**
+ * Every timeframe a read without the chain is taken on -- and so signalled,
+ * alerted and kept in the history. Not 1m: at the owner's request (1 Oct 2026)
+ * 1m is a chart to look at only; its bars are too fast for these methods'
+ * stops and fees. The chain still reads 1m as its execution step.
+ */
+export const SINGLE_TFS: readonly Tf[] = ['3m', '5m', '15m', '30m', '1h', '4h'];
+
+/** Timeframes the without-the-chain panel may show as a chart only: no reads, no signal, no alert. */
+export const VIEW_ONLY_TFS: readonly Tf[] = ['1m'];
 
 /**
  * Every read the screen can show: the twelve with the chain (read once -- its

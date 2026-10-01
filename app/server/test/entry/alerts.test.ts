@@ -108,3 +108,10 @@ test('the test button sends a made-up signal in the real format, marked TEST', (
   assert.match(t, /^🔔 <b>TEST<\/b>/);
   assert.match(t, /📍 <b>ENTRY<\/b>[\s\S]*🛑 <b>STOP LOSS<\/b>[\s\S]*🎯 <b>TARGETS<\/b>/);
 });
+
+test('[critical] 1m never alerts: it is view-only without the chain, so it is no alert timeframe', async () => {
+  const s = await setAlert('single', true, 9_000_000, ['1m', '30m']);
+  assert.deepEqual(s.find((a) => a.mode === 'single')!.tfs, ['30m'], '1m dropped as unknown');
+  await assert.rejects(setAlert('single', true, 9_000_001, ['1m']), /at least one timeframe/);
+});
+

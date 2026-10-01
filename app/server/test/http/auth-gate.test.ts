@@ -96,7 +96,7 @@ test('[critical] the entry section is behind the session; its record answers wit
   assert.equal((await app.inject({ method: 'GET', url: '/api/entry/board', remoteAddress: '203.0.113.9' })).statusCode, 401);
   assert.equal((await app.inject({ method: 'GET', url: '/api/entry/record', remoteAddress: '203.0.113.9' })).statusCode, 401);
   assert.equal((await app.inject({ method: 'GET', url: '/api/entry/signals', remoteAddress: '203.0.113.9' })).statusCode, 401);
-  const sig = await app.inject({ method: 'GET', url: '/api/entry/signals?tf=3m&state=TRADE&limit=5', headers: { cookie: session() } });
+  const sig = await app.inject({ method: 'GET', url: '/api/entry/signals?tf=3m&state=TRADE&limit=5&live=true', headers: { cookie: session() } });
   assert.equal(sig.statusCode, 200, sig.body);
   assert.ok(Array.isArray(sig.json().signals));
   const r = await app.inject({ method: 'GET', url: '/api/entry/record', headers: { cookie: session() } });

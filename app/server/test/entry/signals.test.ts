@@ -1,7 +1,7 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { pruneSignals, recentSignals, recordSignals, signalPage } from '../../src/entry/signals.js';
-import { allReads, SINGLE_TFS } from '../../src/entry/engine.js';
+import { allReads, entryBoard, SINGLE_TFS, VIEW_ONLY_TFS } from '../../src/entry/engine.js';
 import type { MethodRead } from '../../src/entry/types.js';
 import { closePool, query, rows } from '../../src/db/pool.js';
 import { recordSetups } from '../../src/entry/paper.js';
@@ -83,19 +83,19 @@ test('[critical] a page of the history: the total matching, a page from an offse
 });
 
 test('[critical] the summary over every match: TP1 hits and the points made, stops and the points lost, net points and R', async () => {
-  const mk = (k: number) => read({ id: 'bos', tf: '1m', triggerTime: T + 20_000 + k, dir: 'long', state: 'TRADE', plan: PLAN });
+  const mk = (k: number) => read({ id: 'bos', tf: '15m', triggerTime: T + 20_000 + k, dir: 'long', state: 'TRADE', plan: PLAN });
   for (let k = 0; k < 4; k++) { await recordSignals([mk(k)], (T + 20_000 + k) * 1000); await recordSetups([mk(k)], (T + 20_000 + k) * 1000); }
   const set = (k: number, status: string, fill: number, exit: number | null, r: number | null) =>
-    query(`UPDATE entry_setups SET status = $1, fill_price = $2, exit_price = $3, r_net = $4 WHERE tf = '1m' AND trigger_at = $5`, [status, fill, exit, r, T + 20_000 + k]);
+    query(`UPDATE entry_setups SET status = $1, fill_price = $2, exit_price = $3, r_net = $4 WHERE tf = '15m' AND trigger_at = $5`, [status, fill, exit, r, T + 20_000 + k]);
   await set(0, 'tp1', 84_000, 84_300, 1.5);   // +300
   await set(1, 'tp1', 84_000, 84_150, 0.7);   // +150
   await set(2, 'stop', 84_000, 83_800, -1.1); // -200
   await set(3, 'filled', 84_000, null, null); // open
-  const { summary, total } = await signalPage({ tf: '1m', limit: 1 });
+  const { summary, total } = await signalPage({ tf: '15m', limit: 1 });
   assert.equal(total, 4);
   assert.deepEqual(summary, { trades: 4, tp1: 2, tp1Pts: 450, stops: 1, slPts: 200, timeouts: 0, netPts: 250, netR: 1.1, open: 1 },
     'over all four, though the page holds one');
-  const live = await signalPage({ tf: '1m', live: true });
+  const live = await signalPage({ tf: '15m', live: true });
   assert.deepEqual([live.total, live.signals.map((x) => x.outcome?.status)], [1, ['filled']], 'trading now: the one still in, not the closed');
 });
 
@@ -110,3 +110,14 @@ test("[critical] a minute's pass reads every way the screen can show: the chain 
   assert.equal(reads.filter((r) => r.mode === 'mtf').length, 12);
   assert.deepEqual([...new Set(reads.filter((r) => r.mode === 'single').map((r) => r.tf))], [...SINGLE_TFS]);
 });
+
+test('[critical] 1m without the chain is view-only: never read, never a signal, never in the history (the chain's 1m step is engine.test's)', async () => {
+  assert.deepEqual([SINGLE_TFS.includes('1m'), VIEW_ONLY_TFS], [false, ['1m']]);
+  assert.ok(!allReads(ctxOf()).some((r) => r.mode === 'single' && r.tf === '1m'), 'the recorder reads no 1m');
+  const board = entryBoard(ctxOf(), '1m');
+  assert.deepEqual([board.length, board.every((r) => r.mode === 'mtf')], [12, true], 'the board on 1m: the chain only, the chart alone without it');
+  // Even handed a 1m read, the journal does not keep it.
+  await recordSignals([read({ tf: '1m', triggerTime: T + 90_000 }), read({ tf: '3m', triggerTime: T + 90_000 })], (T + 90_060) * 1000);
+  assert.deepEqual((await recentSignals({ since: (T + 90_000) * 1000 })).map((x) => x.tf), ['3m']);
+});
+

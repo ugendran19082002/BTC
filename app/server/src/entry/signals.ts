@@ -3,6 +3,7 @@ import { migrate, type Migration } from '../db/migrate.js';
 import type { MethodRead, Tf } from './types.js';
 import { METHODS } from './methods.js';
 import { entrySchema } from './paper.js';
+import { SINGLE_TFS } from './engine.js';
 
 /**
  * The signal journal: every signal the entry engine gives -- every WAIT and
@@ -50,6 +51,11 @@ const MIGRATIONS: Migration[] = [{
     ALTER TABLE entry_signals ADD COLUMN IF NOT EXISTS ltp DOUBLE PRECISION;
     ALTER TABLE entry_signals ADD COLUMN IF NOT EXISTS index_price DOUBLE PRECISION;
   `,
+}, {
+  // 1m without the chain is view-only from 1 Oct 2026 (engine.ts SINGLE_TFS): its signals leave the history.
+  // The chain's rows are kept -- its entry is 5m. The paper log (entry_setups) is left as it was.
+  id: 'entry-008-signals-no-1m',
+  up: `DELETE FROM entry_signals WHERE mode = 'single' AND tf = '1m';`,
 }];
 
 let ready: Promise<void> | null = null;
@@ -75,6 +81,7 @@ export async function recordSignals(
   let fresh = 0;
   for (const r of reads) {
     if ((r.state !== 'WAIT' && r.state !== 'TRADE') || r.dir === null || r.triggerTime === null) continue;
+    if (r.mode === 'single' && !SINGLE_TFS.includes(r.tf)) continue; // 1m is view-only: never a signal
     const p = r.state === 'TRADE' ? r.plan : null;
     const res = await rows<{ inserted: boolean }>(
       `INSERT INTO entry_signals (method, mode, tf, dir, state, trigger_at, first_seen, last_seen, score, reason,

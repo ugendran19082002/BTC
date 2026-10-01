@@ -5,7 +5,8 @@ import type { MethodRead, Mode, Tf } from './types.js';
 import { METHODS } from './methods.js';
 
 /** Timeframes a without-the-chain alert may be asked for; 5m unless the owner picks others. */
-export const ALERT_TFS: readonly Tf[] = ['1m', '3m', '5m', '15m', '30m', '1h', '4h'];
+// Not 1m: it is view-only without the chain (engine.ts SINGLE_TFS), so it never alerts.
+export const ALERT_TFS: readonly Tf[] = ['3m', '5m', '15m', '30m', '1h', '4h'];
 const isTf = (t: string): t is Tf => (ALERT_TFS as readonly string[]).includes(t);
 
 /**
@@ -59,6 +60,14 @@ const MIGRATIONS: Migration[] = [{
       error      TEXT
     );
     CREATE INDEX IF NOT EXISTS entry_alert_log_by_time ON entry_alert_log (at DESC);
+  `,
+}, {
+  // 1m is view-only from 1 Oct 2026: out of every way's alert timeframes; a way left with none alerts on 5m.
+  // The alert log is history and is kept as it was.
+  id: 'entry-008-alerts-no-1m',
+  up: `
+    UPDATE entry_alerts SET tfs = CASE WHEN array_remove(tfs, '1m') = '{}' THEN '{5m}' ELSE array_remove(tfs, '1m') END
+     WHERE '1m' = ANY (tfs);
   `,
 }];
 
