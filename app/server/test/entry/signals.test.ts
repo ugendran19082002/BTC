@@ -1,6 +1,6 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { clockKeyOf, pruneSignals, recentSignals, recordSignals, setupClocks, signalPage } from '../../src/entry/signals.js';
+import { clockKeyOf, exportSignals, signalsCsv, pruneSignals, recentSignals, recordSignals, setupClocks, signalPage } from '../../src/entry/signals.js';
 import { allReads, entryBoard, SINGLE_TFS, VIEW_ONLY_TFS } from '../../src/entry/engine.js';
 import type { MethodRead } from '../../src/entry/types.js';
 import { closePool, query, rows } from '../../src/db/pool.js';
@@ -198,4 +198,17 @@ test('[critical] the totals add up to the point: each trade rounded as its row s
   const { summary: s } = await signalPage({ tf: '1h', since: (T + 139_000) * 1000 });
   assert.deepEqual([s.tp1Pts, s.slPts, s.timeoutPts, s.netPts], [300, 200, 11, 111]);
   assert.equal(s.netPts, s.tp1Pts - s.slPts + s.timeoutPts);
+});
+
+test("[critical] the Excel download: every row the filters match in the table's order, a BOM, CRLF, quoted fields, no formula can run", async () => {
+  const { rows: all, total } = await exportSignals({ tf: '15m', sort: 'method', asc: true, since: (T + 129_000) * 1000 });
+  assert.equal(all.length, total);
+  assert.deepEqual(all.map((x) => x.n), [1, 4, 11], 'the same order as the table');
+  const csv = signalsCsv([{ ...all[0]!, reason: '=HYPERLINK("x"), then "more"', name: 'A, B' }]);
+  assert.ok(csv.startsWith('﻿signal_time_ist,method_no,method,way,tf,signal,'), 'a BOM, then the header');
+  assert.ok(csv.endsWith('\r\n') && csv.split('\r\n').length === 3, 'CRLF lines: header, one row, the end');
+  const header = csv.slice(1).split('\r\n')[0]!.split(',');
+  assert.ok(['tgt1', 'tgt2', 'tgt3', 'tgt1_hit_ist', 'fill_ist', 'exit_ist', 'exit_by', 'result_pts', 'sl_why'].every((h) => header.includes(h)));
+  assert.match(csv, /,"A, B",/, 'a comma in a field is quoted');
+  assert.ok(csv.endsWith(`,"'=HYPERLINK(""x""), then ""more"""\r\n`), 'a leading = is defused with an apostrophe, quotes doubled');
 });

@@ -358,3 +358,85 @@ export async function setupClocks(reads: readonly MethodRead[]): Promise<Map<str
 
 export const clockKey = (method: string, mode: string, tf: string, dir: number, triggerAt: number) => `${method}|${mode}|${tf}|${dir}|${triggerAt}`;
 export const clockKeyOf = (r: MethodRead) => clockKey(r.id, r.mode, r.tf, r.dir === 'long' ? 1 : -1, r.triggerTime ?? 0);
+
+/** At most this many rows in one download: a year of every signal on every timeframe is well under it. */
+export const EXPORT_MAX_ROWS = 20_000;
+
+/** Every signal matching the filters, in the table's order -- not just a page -- up to EXPORT_MAX_ROWS. */
+export async function exportSignals(q: SignalQuery): Promise<{ rows: SignalRow[]; total: number }> {
+  const out: SignalRow[] = [];
+  let total = 0;
+  for (let offset = 0; offset < EXPORT_MAX_ROWS; offset += 500) {
+    const p = await signalPage({ ...q, limit: 500, offset });
+    total = p.total;
+    out.push(...p.signals);
+    if (p.signals.length < 500) break;
+  }
+  return { rows: out.slice(0, EXPORT_MAX_ROWS), total };
+}
+
+/** "2026-10-01 14:33:05", IST: a date-time Excel reads as one. */
+const istOf = (ms: number | null) => (ms === null ? '' : new Date(ms + 5.5 * 3_600_000).toISOString().slice(0, 19).replace('T', ' '));
+
+/**
+ * A field as CSV: quoted when it holds a comma, a quote or a line break (quotes
+ * doubled); and text that Excel would run as a formula (=, +, -, @ first) led
+ * with an apostrophe, so a reason or a label can never become one.
+ */
+const cell = (v: string | number | null | undefined): string => {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'number') return Number.isFinite(v) ? String(Math.round(v * 100) / 100) : '';
+  const s = /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
+
+/** The history's columns, one line per signal; numbers raw (no separators), times IST. */
+const CSV_COLUMNS: [string, (s: SignalRow) => string | number | null][] = [
+  ['signal_time_ist', (s) => istOf(s.firstSeen)],
+  ['method_no', (s) => s.n],
+  ['method', (s) => s.name],
+  ['way', (s) => (s.mode === 'mtf' ? 'with timeframe' : 'without timeframe')],
+  ['tf', (s) => s.tf],
+  ['signal', (s) => `${s.state === 'WAIT' ? 'WAIT ' : ''}${s.dir === 1 ? 'BUY' : 'SELL'}`],
+  ['gates_off', (s) => s.gatesOff.join(' ')],
+  ['ltp', (s) => s.ltp],
+  ['index', (s) => s.indexPrice],
+  ['bar_close_ist', (s) => istOf(s.barCloseAt * 1000)],
+  ['seen_after_s', (s) => Math.round(s.seenAfterMs / 1000)],
+  ['alert_ist', (s) => istOf(s.alert?.at ?? null)],
+  ['alert', (s) => s.alert?.status ?? ''],
+  ['entry_lo', (s) => s.entryLo],
+  ['entry_hi', (s) => s.entryHi],
+  ['sl', (s) => s.stop],
+  ['sl_why', (s) => s.why?.stop ?? ''],
+  ['tgt1', (s) => s.tp1],
+  ['tgt1_why', (s) => s.why?.tp1 ?? ''],
+  ['tgt1_hit_ist', (s) => istOf(s.outcome?.tp1At != null ? s.outcome.tp1At * 1000 : null)],
+  ['tgt2', (s) => s.tp2],
+  ['tgt2_why', (s) => s.why?.tp2 ?? ''],
+  ['tgt2_hit_ist', (s) => istOf(s.outcome?.tp2At != null ? s.outcome.tp2At * 1000 : null)],
+  ['tgt3', (s) => s.tp3],
+  ['tgt3_why', (s) => s.why?.tp3 ?? ''],
+  ['tgt3_hit_ist', (s) => istOf(s.outcome?.tp3At != null ? s.outcome.tp3At * 1000 : null)],
+  ['status', (s) => s.outcome?.status ?? (s.state === 'WAIT' ? 'waited' : '')],
+  ['fill', (s) => s.outcome?.fillPrice ?? null],
+  ['fill_ist', (s) => istOf(s.outcome?.filledAt != null ? s.outcome.filledAt * 1000 : null)],
+  ['fill_better_pts', (s) => s.outcome?.fillBetterPts ?? null],
+  ['exit', (s) => s.outcome?.exitPrice ?? null],
+  ['exit_ist', (s) => istOf(s.outcome?.exitAt != null ? s.outcome.exitAt * 1000 : null)],
+  ['exit_by', (s) => ({ tp1: 'TGT', stop: 'SL', timeout: 'time' } as Record<string, string>)[s.outcome?.status ?? ''] ?? ''],
+  ['exit_past_level_pts', (s) => s.outcome?.exitPastPts ?? null],
+  ['result_pts', (s) => (s.outcome?.fillPrice != null && s.outcome.exitPrice !== null ? Math.round((s.outcome.exitPrice - s.outcome.fillPrice) * s.dir) : null)],
+  ['result_r', (s) => s.outcome?.rNet ?? null],
+  ['runner', (s) => s.outcome?.runner === 'running' ? 'running' : s.outcome?.runnerEnd ?? ''],
+  ['rr', (s) => s.rr],
+  ['quality', (s) => s.score],
+  ['stood_min', (s) => Math.round((s.lastSeen - s.firstSeen) / 60_000)],
+  ['reason', (s) => s.reason],
+];
+
+/** The history as a CSV that opens cleanly in Excel: a BOM (so UTF-8 reads as UTF-8), CRLF lines. */
+export function signalsCsv(rows: readonly SignalRow[]): string {
+  const lines = [CSV_COLUMNS.map(([h]) => h).join(','), ...rows.map((s) => CSV_COLUMNS.map(([, f]) => cell(f(s))).join(','))];
+  return `﻿${lines.join('\r\n')}\r\n`;
+}

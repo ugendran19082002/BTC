@@ -4,7 +4,7 @@ import { readEntryContext } from '../../entry/read.js';
 import { entryRecord, recentSetups } from '../../entry/paper.js';
 import { GateLocked, gateSettings, gatesOff, isGateKey, setGate } from '../../entry/gates.js';
 import { alertSettings, isMode, recentAlerts, sampleAlertText, setAlert } from '../../entry/alerts.js';
-import { clockKeyOf, isSignalSort, setupClocks, signalPage } from '../../entry/signals.js';
+import { clockKeyOf, exportSignals, isSignalSort, setupClocks, signalPage, signalsCsv, type SignalQuery } from '../../entry/signals.js';
 import { CHAIN, TF_SEC, type MethodRead, type SetupClock, type Tf } from '../../entry/types.js';
 import { ttlCache } from '../ttl-cache.js';
 
@@ -91,21 +91,16 @@ export function registerEntryRoutes(app: FastifyInstance, notifier: () => { send
   });
 
   // The signal journal: every WAIT and TRADE shown, newest first; filter by mode, tf, state.
-  app.get('/api/entry/signals', async (req) => {
-    const q = req.query as Record<string, string | undefined>;
-    const num = (v?: string) => (v !== undefined && Number.isFinite(Number(v)) ? Number(v) : undefined);
-    return signalPage({
-      limit: num(q.limit) ?? 100,
-      offset: num(q.offset),
-      mode: q.mode && isMode(q.mode) ? q.mode : undefined,
-      tf: q.tf && (SINGLE_TFS as readonly string[]).includes(q.tf) ? q.tf : undefined,
-      state: q.state === 'WAIT' || q.state === 'TRADE' ? q.state : undefined,
-      dir: q.dir === '1' || q.dir === '-1' ? Number(q.dir) : undefined,
-      since: num(q.since),
-      live: q.live === 'true',
-      sort: isSignalSort(q.sort) ? q.sort : undefined,
-      asc: q.asc === 'true',
-    });
+  app.get('/api/entry/signals', async (req) => signalPage(signalQueryOf(req.query)));
+
+  // The same history as a spreadsheet: every row the filters match, in the table's order, not just a page.
+  app.get('/api/entry/signals.csv', async (req, reply) => {
+    const { rows: all } = await exportSignals(signalQueryOf(req.query));
+    const day = new Date(Date.now() + 5.5 * 3_600_000).toISOString().slice(0, 10);
+    reply.header('Content-Type', 'text/csv; charset=utf-8');
+    reply.header('Content-Disposition', `attachment; filename="signal-history-${day}.csv"`);
+    reply.header('Cache-Control', 'no-store');
+    return signalsCsv(all);
   });
 
   // Each method's paper record, with the chain and without it, and the latest setups written.
@@ -114,3 +109,22 @@ export function registerEntryRoutes(app: FastifyInstance, notifier: () => { send
     recent: await recentSetups(50),
   }));
 }
+
+/** The history's filters from a query string: each checked against its own list, anything else dropped. */
+function signalQueryOf(query: unknown): SignalQuery {
+  const q = (query ?? {}) as Record<string, string | undefined>;
+  const num = (v?: string) => (v !== undefined && Number.isFinite(Number(v)) ? Number(v) : undefined);
+  return {
+    limit: num(q.limit) ?? 100,
+    offset: num(q.offset),
+    mode: q.mode && isMode(q.mode) ? q.mode : undefined,
+    tf: q.tf && (SINGLE_TFS as readonly string[]).includes(q.tf) ? q.tf : undefined,
+    state: q.state === 'WAIT' || q.state === 'TRADE' ? q.state : undefined,
+    dir: q.dir === '1' || q.dir === '-1' ? Number(q.dir) : undefined,
+    since: num(q.since),
+    live: q.live === 'true',
+    sort: isSignalSort(q.sort) ? q.sort : undefined,
+    asc: q.asc === 'true',
+  };
+}
+

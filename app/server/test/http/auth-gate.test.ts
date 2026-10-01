@@ -96,6 +96,11 @@ test('[critical] the entry section is behind the session; its record answers wit
   assert.equal((await app.inject({ method: 'GET', url: '/api/entry/board', remoteAddress: '203.0.113.9' })).statusCode, 401);
   assert.equal((await app.inject({ method: 'GET', url: '/api/entry/record', remoteAddress: '203.0.113.9' })).statusCode, 401);
   assert.equal((await app.inject({ method: 'GET', url: '/api/entry/signals', remoteAddress: '203.0.113.9' })).statusCode, 401);
+  assert.equal((await app.inject({ method: 'GET', url: '/api/entry/signals.csv', remoteAddress: '203.0.113.9' })).statusCode, 401, 'the download too');
+  const csv = await app.inject({ method: 'GET', url: '/api/entry/signals.csv?tf=3m&sort=result', headers: { cookie: session() } });
+  assert.equal(csv.statusCode, 200, csv.body);
+  assert.match(String(csv.headers['content-type']), /text\/csv/);
+  assert.match(String(csv.headers['content-disposition']), /attachment; filename="signal-history-\d{4}-\d\d-\d\d\.csv"/);
   const sig = await app.inject({ method: 'GET', url: '/api/entry/signals?tf=3m&state=TRADE&limit=5&live=true', headers: { cookie: session() } });
   assert.equal(sig.statusCode, 200, sig.body);
   assert.ok(Array.isArray(sig.json().signals));
