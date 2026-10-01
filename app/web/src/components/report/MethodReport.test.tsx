@@ -19,8 +19,8 @@ const total = row(0, 'All 3 methods', { n: null, signals: 9, trades: 5, wins: 3,
 const report = (): MethodReportResponse => ({
   tf: null,
   sections: [
-    { mode: 'mtf', label: 'With the timeframe chain', rows, total },
-    { mode: 'single', label: 'Without the timeframe chain', rows, total },
+    { mode: 'mtf', label: 'With the timeframe chain', rows, total, gatesOffSignals: 4 },
+    { mode: 'single', label: 'Without the timeframe chain', rows, total, gatesOffSignals: 0 },
   ],
 });
 
@@ -50,9 +50,9 @@ describe('the Methods report', () => {
   it('a timeframe asks the server for that timeframe', async () => {
     render(<MethodReport />);
     await screen.findByRole('region', { name: 'With the timeframe chain' });
-    expect(getMethodReport).toHaveBeenLastCalledWith(null);
+    expect(getMethodReport).toHaveBeenLastCalledWith(null, false);
     fireEvent.click(screen.getByRole('button', { name: '15m' }));
-    await waitFor(() => expect(getMethodReport).toHaveBeenLastCalledWith('15m'));
+    await waitFor(() => expect(getMethodReport).toHaveBeenLastCalledWith('15m', false));
   });
 
   it('hiding methods with no trades keeps the totals', async () => {
@@ -68,5 +68,22 @@ describe('the Methods report', () => {
     expect(sortRows(rows, 'netR', false).map((r) => r.name)).toEqual(['Retest', 'Breakout', 'Momentum']);
     expect(sortRows(rows, 'netR', true).map((r) => r.name)).toEqual(['Breakout', 'Retest', 'Momentum']);
     expect(sortRows(rows, 'n', true).map((r) => r.n)).toEqual([1, 2, 3]);
+  });
+
+  it('[critical] every signal counts by default -- gate-off ones too -- and says how many were', async () => {
+    render(<MethodReport />);
+    const chain = await screen.findByRole('region', { name: 'With the timeframe chain' });
+    expect(getMethodReport).toHaveBeenLastCalledWith(null, false);
+    expect(within(chain).getByText(/4 signals taken with a gate off/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('switch', { name: /Only signals with every gate on/ }));
+    await waitFor(() => expect(getMethodReport).toHaveBeenLastCalledWith(null, true));
+  });
+
+  it('[critical] nothing recorded says so, rather than a table of zeros', async () => {
+    const empty = report();
+    for (const s of empty.sections) { s.rows = s.rows.map((r) => ({ ...r, signals: 0, trades: 0 })); s.total = { ...s.total, signals: 0, trades: 0 }; }
+    getMethodReport.mockResolvedValue(empty);
+    render(<MethodReport />);
+    expect(await screen.findByRole('status')).toHaveTextContent('No TRADE signals recorded yet');
   });
 });

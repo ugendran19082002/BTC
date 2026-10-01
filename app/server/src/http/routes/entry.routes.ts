@@ -121,9 +121,11 @@ export function registerEntryRoutes(app: FastifyInstance, notifier: () => { send
 
   // The report: every method, with the chain and without it -- signals, trades, wins, losses, win rate, profit, loss and net.
   app.get('/api/entry/report', async (req) => {
-    const { tf } = (req.query ?? {}) as { tf?: string };
+    const { tf, gates } = (req.query ?? {}) as { tf?: string; gates?: string };
     const one = tf && (SINGLE_TFS as readonly string[]).includes(tf) ? (tf as Tf) : null;
-    return { tf: one, sections: await methodReport(one) };
+    // Every signal, as in the history; `gates=on` keeps only those taken with every hard gate on.
+    const everyGate = gates === 'on';
+    return { tf: one, everyGate, sections: await methodReport(one, everyGate) };
   });
 
   // Each method's paper record, with the chain and without it, and the latest setups written.

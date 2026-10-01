@@ -109,7 +109,11 @@ export type MethodReportRow = {
   signals: number; trades: number; wins: number; losses: number; winPct: number | null;
   profitPts: number; lossPts: number; netPts: number; profitR: number; lossR: number; netR: number;
 };
-export type MethodReportSection = { mode: 'mtf' | 'single'; label: string; rows: MethodReportRow[]; total: MethodReportRow };
+export type MethodReportSection = {
+  mode: 'mtf' | 'single'; label: string; rows: MethodReportRow[]; total: MethodReportRow;
+  /** Of the signals counted, how many were taken with a hard gate switched off. */
+  gatesOffSignals: number;
+};
 
 /**
  * The report (owner, 1 Oct 2026: "two sections, 81 + 81: win rate, trades, win,
@@ -118,25 +122,30 @@ export type MethodReportSection = { mode: 'mtf' | 'single'; label: string; rows:
  *
  * A trade is a setup that filled and closed (TP1, stop, time-out); a win closed
  * above its fill, a loss at or under it. Points run from the fill to the exit in
- * the trade's favour; R is points over the risk to the stop. No fees. Setups
- * taken while a hard gate was switched off are left out, as in `entryRecord`.
+ * the trade's favour; R is points over the risk to the stop. No fees.
+ *
+ * Every signal counts by default, as in the signal history: the owner trades
+ * the board with gates switched off, and leaving those setups out emptied the
+ * report (1 Oct 2026). `everyGate` keeps only setups taken with every hard
+ * gate on -- the rules as designed, as `entryRecord`'s totals count them.
  * `tf` narrows the section without the chain to one timeframe; with the chain
  * the entry is always 5m.
  */
-export async function methodReport(tf: Tf | null = null): Promise<MethodReportSection[]> {
+export async function methodReport(tf: Tf | null = null, everyGate = false): Promise<MethodReportSection[]> {
   await entrySchema();
   await methodsSchema();
   const xs = await rows<Record<string, string | number | null>>(
     `WITH closed AS (
        SELECT method, mode, (exit_price - fill_price) * dir AS pts, r_net
          FROM entry_setups
-        WHERE status IN ('tp1', 'stop', 'timeout') AND cardinality(gates_off) = 0 AND ($1::text IS NULL OR mode = 'mtf' OR tf = $1)
+        WHERE status IN ('tp1', 'stop', 'timeout') AND (NOT $2::boolean OR cardinality(gates_off) = 0) AND ($1::text IS NULL OR mode = 'mtf' OR tf = $1)
      ), setups AS (
-       SELECT method, mode, count(*) AS signals FROM entry_setups
-        WHERE cardinality(gates_off) = 0 AND ($1::text IS NULL OR mode = 'mtf' OR tf = $1)
+       SELECT method, mode, count(*) AS signals, count(*) FILTER (WHERE cardinality(gates_off) > 0) AS gates_off
+         FROM entry_setups
+        WHERE (NOT $2::boolean OR cardinality(gates_off) = 0) AND ($1::text IS NULL OR mode = 'mtf' OR tf = $1)
         GROUP BY method, mode
      ), modes(mode) AS (VALUES ('mtf'), ('single'))
-     SELECT x.mode, m.n, m.id AS method, m.name, coalesce(s.signals, 0) AS signals,
+     SELECT x.mode, m.n, m.id AS method, m.name, coalesce(s.signals, 0) AS signals, coalesce(s.gates_off, 0) AS gates_off,
             count(c.pts) AS trades,
             count(*) FILTER (WHERE c.r_net > 0) AS wins,
             count(*) FILTER (WHERE c.r_net <= 0) AS losses,
@@ -149,9 +158,9 @@ export async function methodReport(tf: Tf | null = null): Promise<MethodReportSe
        LEFT JOIN setups s ON s.method = m.id AND s.mode = x.mode
        LEFT JOIN closed c ON c.method = m.id AND c.mode = x.mode
       WHERE m.active
-      GROUP BY x.mode, m.n, m.id, m.name, s.signals
+      GROUP BY x.mode, m.n, m.id, m.name, s.signals, s.gates_off
       ORDER BY x.mode, m.n`,
-    [tf],
+    [tf, everyGate],
   );
   const num = (v: string | number | null | undefined) => Number(v ?? 0);
   const lineOf = (n: number | null, method: string, name: string, v: Omit<MethodReportRow, 'n' | 'method' | 'name' | 'winPct' | 'netPts' | 'netR'>): MethodReportRow => ({
@@ -170,6 +179,7 @@ export async function methodReport(tf: Tf | null = null): Promise<MethodReportSe
       signals: sum('signals'), trades: sum('trades'), wins: sum('wins'), losses: sum('losses'),
       profitPts: sum('profitPts'), lossPts: sum('lossPts'), profitR: sum('profitR'), lossR: sum('lossR'),
     });
-    return { mode, label: LABEL[mode], rows: lines, total };
+    const gatesOffSignals = xs.filter((x) => x.mode === mode).reduce((a, x) => a + num(x.gates_off), 0);
+    return { mode, label: LABEL[mode], rows: lines, total, gatesOffSignals };
   });
 }

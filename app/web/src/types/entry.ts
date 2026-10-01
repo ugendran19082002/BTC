@@ -188,5 +188,9 @@ export type MethodReportRow = {
   /** The same in R (points over the risk to the stop). No fees. */
   profitR: number; lossR: number; netR: number;
 };
-export type MethodReportSection = { mode: EntryMode; label: string; rows: MethodReportRow[]; total: MethodReportRow };
-export type MethodReportResponse = { tf: EntryTf | null; sections: MethodReportSection[] };
+export type MethodReportSection = {
+  mode: EntryMode; label: string; rows: MethodReportRow[]; total: MethodReportRow;
+  /** Of the signals counted, how many were taken with a hard gate switched off. */
+  gatesOffSignals: number;
+};
+export type MethodReportResponse = { tf: EntryTf | null; everyGate?: boolean; sections: MethodReportSection[] };

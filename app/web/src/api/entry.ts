@@ -56,6 +56,13 @@ export const previewClear = (r: ClearRange) => json<ClearAnswer>(`/api/entry/sig
 /** Clear it: the signals, their paper trades and alerts. Cannot be undone. */
 export const clearHistory = (r: ClearRange) => post<ClearAnswer>('/api/entry/signals/clear', r);
 
-/** The Methods report: every method with the timeframe chain and without it; `tf` narrows the section without it. */
-export const getMethodReport = (tf: EntryTf | null = null) =>
-  json<MethodReportResponse>(`/api/entry/report${tf ? `?tf=${tf}` : ''}`);
+/**
+ * The Methods report: every method with the timeframe chain and without it; `tf` narrows the section without it.
+ * Every signal counts, as in the history; `everyGate` keeps only those taken with every hard gate on.
+ */
+export function getMethodReport(tf: EntryTf | null = null, everyGate = false) {
+  const p = new URLSearchParams();
+  if (tf) p.set('tf', tf);
+  if (everyGate) p.set('gates', 'on');
+  return json<MethodReportResponse>(`/api/entry/report${p.size ? `?${p}` : ''}`);
+}

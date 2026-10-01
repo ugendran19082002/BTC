@@ -44,8 +44,9 @@ export function sortRows(rows: readonly MethodReportRow[], key: SortKey, asc: bo
 export function MethodReport() {
   const [tf, setTf] = usePersisted<EntryTf | 'all'>('methodReport.tf', 'all');
   const [hideEmpty, setHideEmpty] = usePersisted<boolean>('methodReport.hideEmpty', false);
+  const [everyGate, setEveryGate] = usePersisted<boolean>('methodReport.everyGate', false);
   const [sort, setSort] = usePersisted<{ key: SortKey; asc: boolean }>('methodReport.sort', { key: 'n', asc: true });
-  const { data, error, loading, refresh } = usePoll(() => getMethodReport(tf === 'all' ? null : tf), 30_000, { deps: [tf] });
+  const { data, error, loading, refresh } = usePoll(() => getMethodReport(tf === 'all' ? null : tf, everyGate), 30_000, { deps: [tf, everyGate] });
 
   const onSort = (key: SortKey) => setSort(sort.key === key ? { key, asc: !sort.asc } : { key, asc: key === 'n' });
 
@@ -96,16 +97,25 @@ export function MethodReport() {
             ))}
           </div>
           <Switch label="Hide methods with no trades" checked={hideEmpty} onCheckedChange={setHideEmpty} />
+          <Switch label="Only signals with every gate on" checked={everyGate} onCheckedChange={setEveryGate}
+                  description={everyGate ? 'The rules as designed: gate-off signals left out.' : 'Every signal, as in the signal history.'} />
         </div>
         <p className="m-0 mt-2 text-[11px] leading-relaxed text-[var(--dim)]">
           The paper log: every TRADE signal, filled and closed at TGT1, the stop or the time-out. A win closed above its fill.
-          Points from the fill to the exit; R is points over the risk to the stop. Before fees. Signals taken with a hard gate
-          switched off are left out. The timeframe applies to the section without the chain; with it, the entry is always 5m.
+          Points from the fill to the exit; R is points over the risk to the stop. Before fees. Every signal counts, as in the
+          signal history, unless "Only signals with every gate on" is set. The timeframe applies to the section without the
+          chain; with it, the entry is always 5m.
         </p>
         {error && <p role="alert" className="m-0 mt-2 text-[12px] text-[var(--down)]">Could not read the report: {error.message}</p>}
       </Card>
 
       {!data && !error && <p className="m-0 text-[12px] text-muted-foreground">Loading the report…</p>}
+      {data && data.sections.every((s) => s.total.signals === 0) && (
+        <p role="status" className="m-0 rounded-md border border-border px-3 py-2 text-[12px] text-muted-foreground">
+          No TRADE signals recorded {tf === 'all' ? '' : `on ${tf} `}{everyGate ? 'with every gate on ' : ''}yet -- nothing to add up.
+          {everyGate ? ' Turn off "Only signals with every gate on" to count the rest.' : ''}
+        </p>
+      )}
       {data?.sections.map((s) => (
         <ReportSection key={s.mode} section={s} sort={sort} onSort={onSort} hideEmpty={hideEmpty} />
       ))}
@@ -154,7 +164,11 @@ function ReportSection({ section, sort, onSort, hideEmpty }: {
   return (
     <section aria-label={section.label}>
       <Card>
-        <CardTitle right={<span className="text-[11px] text-muted-foreground">{section.rows.length} methods</span>}>
+        <CardTitle right={
+          <span className="text-[11px] text-muted-foreground">
+            {section.rows.length} methods{section.gatesOffSignals > 0 ? ` · ${num(section.gatesOffSignals)} signals taken with a gate off` : ''}
+          </span>
+        }>
           {section.mode === 'mtf' ? '1' : '2'}. {section.label}
         </CardTitle>
         <dl className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-5">

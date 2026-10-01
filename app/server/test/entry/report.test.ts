@@ -45,7 +45,9 @@ test('[critical] two sections, every method in each, with the figures by hand', 
   assert.ok(Math.abs(b.netR - 0.3) < 1e-9 && Math.abs(b.lossR - 1.2) < 1e-9);
 
   const s = single!.rows.find((r) => r.method === 'breakout')!;
-  assert.deepEqual([s.signals, s.trades, s.wins, s.losses, s.netPts], [1, 1, 0, 1, -100], 'the gate-off TRADE is in neither figure');
+  assert.deepEqual([s.signals, s.trades, s.wins, s.losses, s.netPts], [2, 2, 1, 1, -40],
+    'every signal counts by default, as in the history -- the gate-off TRADE included');
+  assert.equal(single!.gatesOffSignals, 1, 'and the section says how many were taken with a gate off');
 
   const quiet = mtf!.rows.find((r) => r.method === 'momentum')!;
   assert.deepEqual([quiet.signals, quiet.trades, quiet.winPct], [0, 0, null], 'no trades: no win rate, not 0%');
@@ -55,6 +57,14 @@ test('[critical] two sections, every method in each, with the figures by hand', 
 
 test('one timeframe narrows the section without the chain; the chain\'s entry is always 5m', async () => {
   const [mtf, single] = await methodReport('5m');
-  assert.equal(single!.rows.find((r) => r.method === 'breakout')!.trades, 0, 'the 15m stop is not a 5m trade');
+  const s = single!.rows.find((r) => r.method === 'breakout')!;
+  assert.deepEqual([s.trades, s.netPts], [1, 60], 'the 5m TP1 only: the 15m stop is not a 5m trade');
   assert.equal(mtf!.rows.find((r) => r.method === 'breakout')!.trades, 3);
+});
+
+test('[critical] every gate on: only the setups taken under the rules as designed', async () => {
+  const [, single] = await methodReport(null, true);
+  const s = single!.rows.find((r) => r.method === 'breakout')!;
+  assert.deepEqual([s.signals, s.trades, s.wins, s.losses, s.netPts], [1, 1, 0, 1, -100], 'the gate-off TRADE is in neither figure');
+  assert.equal(single!.gatesOffSignals, 0);
 });
