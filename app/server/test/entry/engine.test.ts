@@ -161,11 +161,12 @@ test('[critical] without the chain the higher timeframes are not read: the same 
 
 // ------------------------------------------------------------ the board
 
-test('[critical] the board is 24 reads: the twelve methods with the chain, then the twelve without', () => {
-  const board = entryBoard(withChain());
-  assert.equal(board.length, 24);
-  assert.deepEqual(board.slice(0, 12).map((r) => [r.n, r.mode]), METHODS.map((m) => [m.n, 'mtf']));
-  assert.deepEqual(board.slice(12).map((r) => [r.n, r.mode]), METHODS.map((m) => [m.n, 'single']));
+test('[critical] the board is every method with the chain, then every method without -- the twelve first', () => {
+  const board = entryBoard(withChain()), n = METHODS.length;
+  assert.equal(board.length, 2 * n);
+  assert.deepEqual(board.slice(0, n).map((r) => [r.n, r.mode]), METHODS.map((m) => [m.n, 'mtf']));
+  assert.deepEqual(board.slice(n).map((r) => [r.n, r.mode]), METHODS.map((m) => [m.n, 'single']));
+  assert.deepEqual(board.slice(0, 12).map((r) => r.n), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], 'the twelve first');
 });
 
 test('[critical] the score is quality out of 100, and what is not recorded is said, not counted', () => {
@@ -351,7 +352,7 @@ test('[critical] a swing price has already traded through is consumed -- no targ
 });
 
 test('every method has its target rule from the tables', () => {
-  const spec = Object.fromEntries(METHODS.map((m) => [m.n, `${m.targets.tp1}/${m.targets.tp2}`]));
+  const spec = Object.fromEntries(METHODS.slice(0, 12).map((m) => [m.n, `${m.targets.tp1}/${m.targets.tp2}`]));
   assert.deepEqual(spec, {
     1: 'swing/htf', 2: 'swing/htf', 3: 'nearest/htf', 4: 'swing/next', 5: 'swing/htf', 6: 'swing/htf',
     7: 'nearest/htf', 8: 'nearest/next', 9: 'swing/htf', 10: 'own/own', 11: 'book/book', 12: 'oi/oi',

@@ -3,7 +3,7 @@ import {
   CHAIN, TF_SEC,
   type EntryContext, type EntryState, type Gate, type MethodRead, type Mode, type Plan, type ScorePart, type Step, type Tf,
 } from './types.js';
-import { METHODS, type MethodDef, type Setup, type TargetSpec } from './methods.js';
+import { METHODS, regimeOf, type MethodDef, type Regime, type Setup, type TargetSpec } from './methods.js';
 import { atr, isDisplacement, lastSweep, pivots, rvol, trendOf, bullish, bearish } from './prims.js';
 
 /**
@@ -474,8 +474,17 @@ export function readMethod(m: MethodDef, mode: Mode, tf: Tf, ctx: EntryContext):
     alignment,
     reason,
     triggerTime: setup.triggerTime,
+    // The market it formed in, for the record's R&D -- the same for every method on these bars, so read once.
+    ...(state !== 'NO_TRADE' ? { regime: regimeFor(bars, ctx) } : {}),
   };
 }
+
+const regimes = new WeakMap<readonly Candle[], Regime>();
+const regimeFor = (bars: readonly Candle[], ctx: EntryContext): Regime => {
+  let r = regimes.get(bars);
+  if (!r) { r = regimeOf(bars, ctx); regimes.set(bars, r); }
+  return r;
+};
 
 /**
  * The 24 reads: each method with the timeframe chain (entry on 5m), then each

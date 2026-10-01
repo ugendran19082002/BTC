@@ -72,6 +72,10 @@ const MIGRATIONS: Migration[] = [{
   // The history's totals read TRADEs alone, newest first: a year is ~1.1M signals, a tenth of them TRADEs.
   id: 'entry-014-signals-trades-by-time',
   up: `CREATE INDEX IF NOT EXISTS entry_signals_trades_by_time ON entry_signals (first_seen DESC) WHERE state = 'TRADE';`,
+}, {
+  // The market each signal formed in (methods.ts regimeOf): the owner's filters, measured and kept, not fired on.
+  id: 'entry-017-signals-regime',
+  up: `ALTER TABLE entry_signals ADD COLUMN IF NOT EXISTS regime JSONB;`,
 }];
 
 let ready: Promise<void> | null = null;
@@ -101,14 +105,14 @@ export async function recordSignals(
     const p = r.state === 'TRADE' ? r.plan : null;
     const res = await rows<{ inserted: boolean }>(
       `INSERT INTO entry_signals (method, mode, tf, dir, state, trigger_at, first_seen, last_seen, score, reason,
-                                  entry_lo, entry_hi, stop, tp1, rr, gates_off, ltp, index_price, tp2, tp3, stop_why, tp_why)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+                                  entry_lo, entry_hi, stop, tp1, rr, gates_off, ltp, index_price, tp2, tp3, stop_why, tp_why, regime)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
        ON CONFLICT (method, mode, tf, dir, trigger_at, state) DO UPDATE SET last_seen = EXCLUDED.last_seen
        RETURNING (xmax = 0) AS inserted`,
       [r.id, r.mode, r.tf, r.dir === 'long' ? 1 : -1, r.state, r.triggerTime, nowMs, r.score, r.reason,
         p?.entryLo ?? null, p?.entryHi ?? null, p?.stop ?? null, p?.tp1 ?? null, p?.rr ?? null,
         r.gates.filter((g) => !g.enabled).map((g) => g.key), prices.ltp ?? null, prices.index ?? null,
-        p?.tp2 ?? null, p?.tp3 ?? null, p?.why?.stop ?? null, p?.why ? [p.why.tp1, p.why.tp2, p.why.tp3] : null],
+        p?.tp2 ?? null, p?.tp3 ?? null, p?.why?.stop ?? null, p?.why ? [p.why.tp1, p.why.tp2, p.why.tp3] : null, r.regime ? JSON.stringify(r.regime) : null],
     );
     if (res[0]?.inserted) fresh += 1;
   }

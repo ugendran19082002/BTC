@@ -5,7 +5,7 @@ import { CANDIDATES, prevDay, valueArea, weekVwap } from '../../src/entry/method
 import { atr } from '../../src/entry/prims.js';
 import { ctxOf, path, wave } from './bars.js';
 
-/** The candidate methods' pieces: research only until one passes scripts/methods-study.ts. */
+/** The pieces of the methods past the twelve (candle-based), and that each reads an ordinary series without throwing. */
 
 const D = 1_790_726_400; // 2026-09-30 00:00 UTC, a Wednesday
 const hour = (t: number, lo: number, hi: number): Candle => ({ time: t, open: lo, high: hi, low: lo, close: hi, volume: 10 });

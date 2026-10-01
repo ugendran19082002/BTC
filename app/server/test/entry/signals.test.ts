@@ -6,6 +6,7 @@ import type { MethodRead } from '../../src/entry/types.js';
 import { closePool, query, rows } from '../../src/db/pool.js';
 import { recordSetups } from '../../src/entry/paper.js';
 import { ctxOf } from './bars.js';
+import { METHODS } from '../../src/entry/methods.js';
 
 after(closePool);
 
@@ -114,8 +115,8 @@ test('signals older than the keep period go; the rest stay', async () => {
 
 test("[critical] a minute's pass reads every way the screen can show: the chain once, and each timeframe without it", () => {
   const reads = allReads(ctxOf());
-  assert.equal(reads.length, 12 + 12 * SINGLE_TFS.length);
-  assert.equal(reads.filter((r) => r.mode === 'mtf').length, 12);
+  assert.equal(reads.length, METHODS.length * (1 + SINGLE_TFS.length));
+  assert.equal(reads.filter((r) => r.mode === 'mtf').length, METHODS.length);
   assert.deepEqual([...new Set(reads.filter((r) => r.mode === 'single').map((r) => r.tf))], [...SINGLE_TFS]);
 });
 
@@ -123,7 +124,7 @@ test('[critical] 1m without the chain is view-only: never read, never a signal, 
   assert.deepEqual([SINGLE_TFS.includes('1m'), VIEW_ONLY_TFS], [false, ['1m']]);
   assert.ok(!allReads(ctxOf()).some((r) => r.mode === 'single' && r.tf === '1m'), 'the recorder reads no 1m');
   const board = entryBoard(ctxOf(), '1m');
-  assert.deepEqual([board.length, board.every((r) => r.mode === 'mtf')], [12, true], 'the board on 1m: the chain only, the chart alone without it');
+  assert.deepEqual([board.length, board.every((r) => r.mode === 'mtf')], [METHODS.length, true], 'the board on 1m: the chain only, the chart alone without it');
   // Even handed a 1m read, the journal does not keep it.
   await recordSignals([read({ tf: '1m', triggerTime: T + 90_000 }), read({ tf: '3m', triggerTime: T + 90_000 })], (T + 90_060) * 1000);
   assert.deepEqual((await recentSignals({ since: (T + 90_000) * 1000 })).map((x) => x.tf), ['3m']);

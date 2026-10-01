@@ -1870,6 +1870,89 @@ const GROUP: Record<string, MethodDef['group']> = {
   reversal: 'reversal', liquidity: 'reversal', range: 'reversal', statistical: 'reversal', imbalance: 'reversal', vwap: 'reversal', 'volume profile': 'reversal',
   flow: 'flow',
 };
+// ------------------------------------------------------------------ the regime a signal forms in (filters, not entries)
+
+/**
+ * The owner's filters (#19, #89, #90, #118, #119, #123, #126, #127) and two
+ * readings that describe rather than fire (#115 expiry OI migration, #128
+ * BTC-ETH correlation): measured on every signal and kept with it, so the
+ * record can be sorted by the market each method was taken in. Each null when
+ * it cannot be read.
+ */
+export type Regime = {
+  /** #19 today's range so far over the previous day's. */
+  dayRange: number | null;
+  /** #89 / #90 this week's (month's) range so far over the previous one's. */
+  weekRange: number | null; monthRange: number | null;
+  /** #118 the last 14 bars' range against the last 200's, in deviations. */
+  volZ: number | null;
+  /** #119 the last bar's volume against the last 50, in deviations. */
+  volumeZ: number | null;
+  /** #123 lag-1 autocorrelation of the last 50 bars' returns: + trending, − mean-reverting. */
+  autocorr: number | null;
+  /** #126 efficiency of the last 20 bars (0 chop .. 1 straight); #127 its change over the 20 before. */
+  efficiency: number | null; efficiencyChange: number | null;
+  /** #115 the front expiry's share of the two nearest expiries' OI, change over the hour. */
+  frontOiShift: number | null;
+  /** #128 correlation of BTC and ETH 5m returns over four hours. */
+  ethCorr: number | null;
+};
+
+const r3 = (v: number | null) => (v === null || !Number.isFinite(v) ? null : Math.round(v * 1000) / 1000);
+const meanSd = (xs: readonly number[]) => {
+  const m = xs.reduce((s, v) => s + v, 0) / xs.length;
+  return { m, sd: Math.sqrt(xs.reduce((s, v) => s + (v - m) ** 2, 0) / xs.length) };
+};
+function periodRange(xs: readonly Candle[] | undefined, t: number, startOf: (t: number) => number) {
+  const s = startOf(t), p = prevPeriod(xs, t, startOf), cur = (xs ?? []).filter((b) => b.time >= s);
+  return p && cur.length ? (hiOf(cur) - loOf(cur)) / Math.max(p.hi - p.lo, 1e-9) : null;
+}
+
+export function regimeOf(bars: readonly Candle[], ctx: EntryContext): Regime {
+  const b = last(bars), t = b.time, closes = bars.map((x) => x.close);
+  const pd = prevDay(ctx.frames['1h'], t), today = bars.filter((x) => x.time >= t - (t % DAY));
+  const ranges = bars.slice(-200).map(range);
+  const vz = ranges.length >= 50 ? (() => { const { m, sd } = meanSd(ranges); const now = ranges.slice(-14).reduce((s, v) => s + v, 0) / 14; return sd > 0 ? (now - m) / sd : null; })() : null;
+  const vols = bars.slice(-51, -1).map((x) => x.volume);
+  const volumeZ = vols.length >= 20 ? (() => { const { m, sd } = meanSd(vols); return sd > 0 ? (b.volume - m) / sd : null; })() : null;
+  const rets = closes.slice(-51).map((c, k, xs) => (k ? Math.log(c / xs[k - 1]!) : 0)).slice(1);
+  const autocorr = rets.length >= 20 ? (() => {
+    const { m } = meanSd(rets); let num = 0, den = 0;
+    for (let k = 0; k < rets.length; k++) { den += (rets[k]! - m) ** 2; if (k) num += (rets[k]! - m) * (rets[k - 1]! - m); }
+    return den > 0 ? num / den : null;
+  })() : null;
+  const eff = efficiency(bars, 20), effBefore = bars.length > 41 ? efficiency(bars.slice(0, -20), 20) : null;
+  const d = ctx.deriv, fx = d?.expiries ?? [];
+  const share = (rows: readonly { expiry: string; oi: number | null }[]) => {
+    const f = rows.filter((s) => s.expiry === fx[0]).reduce((x, s) => x + (s.oi ?? 0), 0), n = rows.filter((s) => s.expiry === fx[1]).reduce((x, s) => x + (s.oi ?? 0), 0);
+    return f + n > 0 ? f / (f + n) : null;
+  };
+  const shNow = d ? share(d.board.now) : null, shBefore = d && d.board.before.length ? share(d.board.before) : null;
+  const eth = ctx.eth ?? [];
+  const ethCorr = bars.length > 1 && bars[1]!.time - bars[0]!.time === 300 && eth.length >= 49 ? (() => {
+    const byT = new Map(eth.map((e) => [e.time, e.close]));
+    const pairs: [number, number][] = [];
+    const xs = bars.slice(-49);
+    for (let k = 1; k < xs.length; k++) {
+      const e0 = byT.get(xs[k - 1]!.time), e1 = byT.get(xs[k]!.time);
+      if (e0 && e1) pairs.push([Math.log(xs[k]!.close / xs[k - 1]!.close), Math.log(e1 / e0)]);
+    }
+    if (pairs.length < 30) return null;
+    const ma = meanSd(pairs.map((p) => p[0])), mb = meanSd(pairs.map((p) => p[1]));
+    const cov = pairs.reduce((s, p) => s + (p[0] - ma.m) * (p[1] - mb.m), 0) / pairs.length;
+    return ma.sd > 0 && mb.sd > 0 ? cov / (ma.sd * mb.sd) : null;
+  })() : null;
+  return {
+    dayRange: r3(pd && today.length ? (hiOf(today) - loOf(today)) / Math.max(pd.hi - pd.lo, 1e-9) : null),
+    weekRange: r3(periodRange(ctx.frames['1h'], t, weekStart)),
+    monthRange: r3(periodRange(ctx.frames['4h'], t, monthStart)),
+    volZ: r3(vz), volumeZ: r3(volumeZ), autocorr: r3(autocorr),
+    efficiency: r3(eff), efficiencyChange: r3(eff !== null && effBefore !== null ? eff - effBefore : null),
+    frontOiShift: r3(shNow !== null && shBefore !== null ? shNow - shBefore : null),
+    ethCorr: r3(ethCorr),
+  };
+}
+
 /**
  * Every entry method: the twelve first, then the rest by the owner's numbers --
  * read, shown, paper-logged and alerted alike (owner, 1 Oct 2026: "no separate

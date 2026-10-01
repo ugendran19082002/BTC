@@ -22,8 +22,11 @@ const add = (bars: Candle[], ...xs: Omit<Candle, 'time' | 'volume'>[]) => {
   return bars;
 };
 
-test('there are twelve, numbered 1-12, in four groups', () => {
-  assert.deepEqual(METHODS.map((m) => m.n), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+test('[critical] the twelve first, numbered 1-12, then every other method by the owner\'s numbers -- each id once, in the four groups', () => {
+  assert.deepEqual(METHODS.slice(0, 12).map((m) => m.n), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  assert.equal(METHODS.length, 74);
+  assert.ok(METHODS.slice(12).every((m) => m.n > 12));
+  assert.equal(new Set(METHODS.map((m) => m.id)).size, METHODS.length);
   assert.deepEqual([...new Set(METHODS.map((m) => m.group))].sort(), ['breakout', 'flow', 'pullback', 'reversal']);
 });
 

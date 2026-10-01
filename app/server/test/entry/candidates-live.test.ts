@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Candle } from '../../src/market/delta.js';
-import { LIVE_CANDIDATES, RESEARCH, barFlow } from '../../src/entry/methods.js';
+import { LIVE_CANDIDATES, METHODS, barFlow } from '../../src/entry/methods.js';
 import type { FlowMinute } from '../../src/entry/types.js';
 import { ctxOf } from './bars.js';
 
-/** The live-data research candidates: each reads the desk's live data, and says nothing when it is missing. */
+/** The live-data methods: each reads the desk's live data, and says nothing when it is missing. */
 
 const T = 1_790_640_000; // a minute boundary
 const m1 = (k: number, o: number, h: number, l: number, c: number): Candle => ({ time: T + 60 * k, open: o, high: h, low: l, close: c, volume: 1 });
@@ -47,9 +47,7 @@ test('[critical] expiry pin: within two hours of settlement, away from max pain,
   assert.equal(det('expiry-pin')({ bars, a: 60, trend: 0, ctx: ctxOf({ options: opts(20_000) }) }), null, 'five hours out: no pin');
 });
 
-test('the research track carries both kinds: candle candidates and live ones, each id once', () => {
-  const ids = RESEARCH.map((m) => m.id);
-  assert.equal(new Set(ids).size, ids.length);
+test('every live-data method is on the desk, like the twelve', () => {
+  const ids = METHODS.map((m) => m.id);
   assert.ok(LIVE_CANDIDATES.every((c) => ids.includes(c.id)));
-  assert.ok(RESEARCH.every((m) => m.research === true));
 });

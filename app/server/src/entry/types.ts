@@ -97,6 +97,8 @@ export type MethodRead = {
   reason: string;
   /** The primary bar the trigger closed on (epoch s): with method, mode and direction, the setup's identity. */
   triggerTime: number | null;
+  /** The market the signal formed in (methods.ts regimeOf), on a TRADE or WAIT: kept with it for the record's R&D. */
+  regime?: import('./methods.js').Regime | null;
   /** A TRADE's state and clock in the paper log, on the board only (signals.ts setupClocks); absent until it is written. */
   paper?: SetupClock | null;
 };

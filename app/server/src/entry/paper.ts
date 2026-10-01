@@ -157,6 +157,10 @@ const MIGRATIONS: Migration[] = [{
     ALTER TABLE entry_setups ADD CONSTRAINT entry_setups_status_check
       CHECK (status IN ('open', 'filled', 'expired', 'tp1', 'stop', 'timeout'));
   `,
+}, {
+  // The market each setup was taken in (methods.ts regimeOf), for sorting the record by it.
+  id: 'entry-017-setups-regime',
+  up: `ALTER TABLE entry_setups ADD COLUMN IF NOT EXISTS regime JSONB;`,
 }];
 
 let ready: Promise<void> | null = null;
@@ -176,13 +180,13 @@ export async function recordSetups(reads: readonly MethodRead[], nowMs: number, 
   for (const r of reads) {
     if (r.state !== 'TRADE' || !r.plan || r.triggerTime === null || r.dir === null) continue;
     const res = await query(
-      `INSERT INTO entry_setups (method, mode, tf, dir, trigger_at, first_seen, entry_lo, entry_hi, stop, tp1, tp2, rr, score, graded_to, gates_off, tp3)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+      `INSERT INTO entry_setups (method, mode, tf, dir, trigger_at, first_seen, entry_lo, entry_hi, stop, tp1, tp2, rr, score, graded_to, gates_off, tp3, regime)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
        ON CONFLICT (method, mode, tf, dir, trigger_at) DO NOTHING`,
       [r.id, r.mode, r.tf, r.dir === 'long' ? 1 : -1, r.triggerTime, nowMs, r.plan.entryLo, r.plan.entryHi,
         r.plan.stop, r.plan.tp1, r.plan.tp2, r.plan.rr, r.score, Math.floor(nowMs / 60_000) * 60 - 60,
         // The gates this setup was taken under with any switched off: the record keeps these apart.
-        r.gates.filter((g) => !g.enabled).map((g) => g.key), r.plan.tp3],
+        r.gates.filter((g) => !g.enabled).map((g) => g.key), r.plan.tp3, r.regime ? JSON.stringify(r.regime) : null],
     );
     if ((res.rowCount ?? 0) > 0) { n += 1; bumpDataVersion(); onNew?.(r); }
   }
