@@ -358,8 +358,11 @@ entry section hands it up), so it costs no second request.
 Then the **Signal history** (a card of its own): every signal the server
 kept, a page at a time (25 / 50 / 100), every 5 s. Tabs: **All**,
 **TRADING** (in play now: waiting at its zone, filled, or a runner after
-TGT1), **BUY & SELL**, **BUY**, **SELL**, **WAIT**; filters for the way, the
-timeframe and today / all days (remembered; a filter saved before -- 1m, the
+TGT1), **BUY & SELL**, **BUY**, **SELL**, **WAIT**, then how each TRADE ended
+-- **TGT HIT**, **SL HIT**, **TIMED OUT**, **EXPIRED**, **MISSED**
+(`outcome=` on the API); one row that scrolls sideways on a phone. Filters,
+each named -- **Way**, **Timeframe**, **Range** (today / all days) -- with
+*Clear filters* when any is set (remembered; a filter saved before -- 1m, the
 old R:R column -- is cleaned, so the list never hides behind a chip that is
 not there; nothing yet today offers *Show all days*). Columns, **each sortable
 both ways on the server** (so the order holds across pages): signal time (its
@@ -399,6 +402,33 @@ Three things differ from the reference on purpose:
 - **No example statistics** -- every figure is the paper log's; until trades
   close it says "no record yet". (The pros-and-cons lists were removed at the
   owner's request.)
+
+## Speed
+
+Measured on a year of data at the live rate (1 Oct 2026: ~130 signals an
+hour, 1.1 M rows, 110 k paper rows, 55 k alerts) before changing anything:
+
+| History query | before | after |
+|---|---:|---:|
+| today, newest first (the default) | 280 ms | 30 ms |
+| all days, newest first | 1.8 s | 0.55 s |
+| all days, SL HIT | 0.8 s | 0.57 s |
+| today, WAIT, 1h | 14 ms | 13 ms |
+
+What did it: each signal's paper row is looked up through its unique index
+(a plain join had Postgres hash the whole paper log for a day's 972
+signals); the count and the totals are separate queries, the totals over
+TRADEs only with their own index (`entry-014`); newest-first walks the time
+index and stops at the page. A year sorted by an unindexed column (method,
+result) still costs 1-3 s the first time -- once per data change, because:
+
+**An exact cache in the API's memory, not Redis.** History pages are kept
+per filter and *data version* (`entry/version.ts`): every write to the entry
+tables -- a signal recorded, a setup logged or graded, an alert logged --
+moves the version, so a cached answer is never stale, and every poll between
+writes is free. The writers run in the API process, so a network cache would
+only add a hop and a server to run; Redis earns its place when several
+processes share one cache, which this desk does not.
 
 ## Code
 

@@ -2,6 +2,7 @@ import type { Candle } from '../market/delta.js';
 import { query, rows } from '../db/pool.js';
 import { migrate, type Migration } from '../db/migrate.js';
 import { TF_SEC, type MethodRead, type Tf } from './types.js';
+import { bumpDataVersion } from './version.js';
 
 /**
  * The entry setups' paper log: the forward test the 24 reads need before any
@@ -168,7 +169,7 @@ export async function recordSetups(reads: readonly MethodRead[], nowMs: number, 
         // The gates this setup was taken under with any switched off: the record keeps these apart.
         r.gates.filter((g) => !g.enabled).map((g) => g.key), r.plan.tp3],
     );
-    if ((res.rowCount ?? 0) > 0) { n += 1; onNew?.(r); }
+    if ((res.rowCount ?? 0) > 0) { n += 1; bumpDataVersion(); onNew?.(r); }
   }
   return n;
 }
@@ -345,6 +346,7 @@ export async function saveGraded(id: number, r: PaperRow): Promise<void> {
     [id, r.status, r.filledAt, r.fillPrice, r.exitAt, r.exitPrice, r.rNet, r.gradedTo,
       r.tp1At ?? null, r.tp2At ?? null, r.tp3At ?? null, r.runner ?? null, r.runnerEnd ?? null],
   );
+  bumpDataVersion();
 }
 
 const rowOf = (x: DbRow): PaperRow => ({

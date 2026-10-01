@@ -3,6 +3,7 @@ import { migrate, type Migration } from '../db/migrate.js';
 import type { Alert } from '../notify/messages.js';
 import type { MethodRead, Mode, Tf } from './types.js';
 import { METHODS } from './methods.js';
+import { bumpDataVersion } from './version.js';
 
 /** Timeframes a without-the-chain alert may be asked for; 5m unless the owner picks others. */
 // Not 1m: it is view-only without the chain (engine.ts SINGLE_TFS), so it never alerts.
@@ -202,6 +203,7 @@ export async function logAlert(r: MethodRead, text: string, status: 'sent' | 'fa
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
     [at, r.mode, r.tf, r.id, r.dir === 'long' ? 1 : -1, r.triggerTime ?? 0, text, status, error],
   );
+  bumpDataVersion();
 }
 
 export type AlertLogRow = { at: number; mode: Mode; tf: Tf; method: string; n: number | null; name: string; dir: 1 | -1; status: 'sent' | 'failed'; error: string | null };

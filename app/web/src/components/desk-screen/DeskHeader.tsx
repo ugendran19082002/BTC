@@ -19,6 +19,7 @@ export function DeskHeader({
   onSettings?: () => void;
   controls?: React.ReactNode;
 }) {
+  const shown = expiryLabel ? friendlyExpiry(expiryLabel) : null;
   const left = hoursToExpiry !== undefined && Number.isFinite(hoursToExpiry) && hoursToExpiry > 0 ? hoursToExpiry : null;
   const h = left === null ? 0 : Math.floor(left);
   const m = left === null ? 0 : Math.round((left - h) * 60);
@@ -38,10 +39,14 @@ export function DeskHeader({
         <span>LIVE</span>
       </div>
 
-      {expiryLabel && (
-        <div className="desk-expiry-pill">
-          <span>Expiry {expiryLabel}</span>
-          {left !== null && <span className="desk-expiry-countdown">{h}h {String(m).padStart(2, '0')}m left</span>}
+      {shown && (
+        <div className="desk-expiry-pill" title={`Expiry ${expiryLabel}`}>
+          <span>Expiry <b className="desk-expiry-date">{shown}</b></span>
+          {left !== null && (
+            <span className={`desk-expiry-countdown${left < 1 ? ' is-urgent' : left < 3 ? ' is-soon' : ''}`}>
+              {h}h {String(m).padStart(2, '0')}m left
+            </span>
+          )}
         </div>
       )}
 
@@ -53,3 +58,14 @@ export function DeskHeader({
     </header>
   );
 }
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** Delta's expiry code read as a date: "011026 17:30 IST" -> "1 Oct, 17:30 IST". Anything else as given. */
+export function friendlyExpiry(label: string): string {
+  const m = /^(\d{2})(\d{2})(\d{2})(.*)$/.exec(label);
+  if (!m) return label;
+  const month = MONTHS[Number(m[2]) - 1];
+  return month ? `${Number(m[1])} ${month},${m[4]}` : label;
+}
+

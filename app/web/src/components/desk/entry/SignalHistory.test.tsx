@@ -155,7 +155,7 @@ describe('the signal history table', () => {
     expect(getEntrySignals.mock.lastCall![0]).toMatchObject({ since: startOfIstDay(Date.now()) });
     fireEvent.click(within(screen.getByRole('group', { name: 'history way' })).getByRole('button', { name: 'With TF' }));
     fireEvent.click(within(screen.getByRole('group', { name: 'history timeframe' })).getByRole('button', { name: '15m' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+    fireEvent.click(within(screen.getByRole('group', { name: 'history range' })).getByRole('button', { name: 'All days' }));
     await waitFor(() => expect(getEntrySignals.mock.lastCall![0]).toMatchObject({ mode: 'mtf', tf: '15m', since: undefined }));
     expect(JSON.parse(localStorage.getItem('btc-desk:entry:history-table')!)).toMatchObject({ mode: 'mtf', tf: '15m', today: false });
   });
@@ -262,5 +262,19 @@ describe('the signal history table', () => {
     const [r] = within(table).getAllByRole('row').slice(1);
     expect(r).toHaveTextContent('84,39120:05:17'); // the fill, off the tape
     expect(r).toHaveTextContent('84,288 TGT~20:13'); // the exit, off a candle
+  });
+
+  it('Clear filters shows only when something is set, and puts every filter back', async () => {
+    render(<SignalHistory />);
+    await screen.findByRole('table', { name: 'signals' });
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
+    fireEvent.click(within(screen.getByRole('group', { name: 'history timeframe' })).getByRole('button', { name: '1h' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'SL HIT' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Clear filters' }));
+    await waitFor(() => {
+      const q = getEntrySignals.mock.lastCall![0];
+      expect([q.tf, q.outcome, q.state, q.since]).toEqual([undefined, undefined, undefined, startOfIstDay(Date.now())]);
+    });
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
   });
 });

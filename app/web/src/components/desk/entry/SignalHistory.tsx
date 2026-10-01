@@ -197,7 +197,7 @@ export function SignalHistory() {
   useEffect(() => { if (data && page > 0 && page >= pages) setPage(pages - 1); }, [data, page, pages, setPage]);
   const set = (next: Partial<Filter>) => { setF((cur) => ({ ...DEFAULT, ...cur, ...next })); setPage(0); };
   const sortBy = (col: Filter['sort']) => set(f.sort === col ? { asc: !f.asc } : { sort: col, asc: false });
-  const chip = (on: boolean) => cn('px-2 py-0.5', on ? 'bg-[#2563eb] text-white' : 'text-muted-foreground');
+  const chip = (on: boolean) => cn('px-2.5 py-1', on ? 'bg-[#2563eb] font-semibold text-white' : 'text-muted-foreground hover:bg-muted hover:text-foreground');
   const aria = (col: Filter['sort']) => (f.sort === col ? (f.asc ? 'ascending' : 'descending') : 'none');
   const from = total ? page * f.size + 1 : 0;
   const to = Math.min(total, (page + 1) * f.size);
@@ -225,28 +225,42 @@ export function SignalHistory() {
         ))}
       </div>
 
-      <div className="mb-2 flex flex-wrap items-center gap-1.5 text-[11px]">
-        <div role="group" aria-label="history way" className="inline-flex overflow-hidden rounded border border-border">
-          {(['all', 'single', 'mtf'] as const).map((m) => (
-            <button key={m} type="button" aria-pressed={f.mode === m} onClick={() => set({ mode: m })} className={chip(f.mode === m)}>
-              {m === 'all' ? 'Both ways' : m === 'single' ? 'Without TF' : 'With TF'}
-            </button>
-          ))}
-        </div>
-        <div role="group" aria-label="history timeframe" className="inline-flex overflow-hidden rounded border border-border">
-          {(['all', ...TFS] as const).map((t) => (
-            <button key={t} type="button" aria-pressed={f.tf === t} onClick={() => set({ tf: t })} className={chip(f.tf === t)}>
-              {t === 'all' ? 'All TF' : t}
-            </button>
-          ))}
-        </div>
-        <button type="button" aria-pressed={f.today} onClick={() => set({ today: !f.today })} className={cn('rounded border border-border', chip(f.today))}>
-          {f.today ? 'Today' : 'All days'}
-        </button>
+      {/* The filters, each group named; on a phone they wrap, and the timeframes scroll inside their own row. */}
+      <div className="mb-2 flex flex-wrap items-end gap-x-3 gap-y-2 text-[11.5px]">
+        <Field label="Way">
+          <div role="group" aria-label="history way" className="inline-flex overflow-hidden rounded-md border border-border">
+            {(['all', 'single', 'mtf'] as const).map((m) => (
+              <button key={m} type="button" aria-pressed={f.mode === m} onClick={() => set({ mode: m })} className={chip(f.mode === m)}>
+                {m === 'all' ? 'Both ways' : m === 'single' ? 'Without TF' : 'With TF'}
+              </button>
+            ))}
+          </div>
+        </Field>
+        <Field label="Timeframe" grow>
+          <div role="group" aria-label="history timeframe" className="flex max-w-full overflow-x-auto rounded-md border border-border [scrollbar-width:none]">
+            {(['all', ...TFS] as const).map((t) => (
+              <button key={t} type="button" aria-pressed={f.tf === t} onClick={() => set({ tf: t })} className={cn('shrink-0', chip(f.tf === t))}>
+                {t === 'all' ? 'All TF' : t}
+              </button>
+            ))}
+          </div>
+        </Field>
+        <Field label="Range">
+          <div role="group" aria-label="history range" className="inline-flex overflow-hidden rounded-md border border-border">
+            <button type="button" aria-pressed={f.today} onClick={() => set({ today: true })} className={chip(f.today)}>Today</button>
+            <button type="button" aria-pressed={!f.today} onClick={() => set({ today: false })} className={chip(!f.today)}>All days</button>
+          </div>
+        </Field>
+        {f.tab !== DEFAULT.tab || f.mode !== DEFAULT.mode || f.tf !== DEFAULT.tf || f.today !== DEFAULT.today ? (
+          <button type="button" onClick={() => set({ tab: DEFAULT.tab, mode: DEFAULT.mode, tf: DEFAULT.tf, today: DEFAULT.today })}
+                  className="rounded-md px-2 py-1 font-semibold text-[#3b82f6] hover:bg-muted">
+            Clear filters
+          </button>
+        ) : null}
         {/* Every row the filters match, in this order -- not just the page on screen. */}
         <a href={entrySignalsCsvUrl({ ...query, limit: undefined, offset: undefined } as Omit<SignalFilter, 'limit' | 'offset'>)} download
            aria-label="download for Excel" title={`Every signal these filters match${total ? ` (${total})` : ''}, in this order, as a spreadsheet (CSV, opens in Excel)`}
-           className="ml-auto inline-flex items-center gap-1 rounded border border-border px-2 py-0.5 font-semibold text-foreground hover:bg-muted">
+           className="ml-auto inline-flex items-center gap-1 rounded-md border border-[#26a17b] px-2.5 py-1 font-semibold text-[#26a17b] hover:bg-[#26a17b]/10">
           <Download size={13} aria-hidden /> Excel{total ? ` · ${total}` : ''}
         </a>
       </div>
@@ -478,6 +492,16 @@ function Card({ s, now }: { s: EntrySignal; now: number }) {
       <div className={cn('mt-0.5 text-[11.5px] font-semibold', out.cls)}>{out.text}</div>
       <Counter s={s} now={now} />
     </li>
+  );
+}
+
+/** A named group of filters: its label above it, small. */
+function Field({ label, grow = false, children }: { label: string; grow?: boolean; children: React.ReactNode }) {
+  return (
+    <div className={cn('flex min-w-0 flex-col gap-0.5', grow && 'max-w-full')}>
+      <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</span>
+      {children}
+    </div>
   );
 }
 

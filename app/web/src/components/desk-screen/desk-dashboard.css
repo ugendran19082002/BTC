@@ -116,6 +116,10 @@
   background: #080c13;
 }
 
+.desk-expiry-date { color: var(--desk-text, #e5e7eb); font-weight: 600; }
+.desk-expiry-countdown.is-soon { border-color: rgba(245, 158, 11, 0.7); }
+.desk-expiry-countdown.is-urgent { border-color: rgba(246, 70, 93, 0.6); background: rgba(246, 70, 93, 0.14); color: #f6465d; }
+
 .desk-expiry-countdown {
   border: 1px solid rgba(245, 158, 11, 0.4);
   background: rgba(245, 158, 11, 0.12);
@@ -312,10 +316,16 @@
   flex-wrap: wrap;
   gap: 6px;
 }
+/* The when-picker is as wide as its words, so the actions sit in one row on a window (1 Oct 2026). */
+.desk-header-row .desk-controls-wrap > button[role='combobox'] { width: auto; min-width: 128px; }
 @media (max-width: 1024px) {
   .desk-header.desk-header-row { flex-direction: row; align-items: center; gap: 8px; }
 }
 @media (max-width: 600px) {
   .desk-header-row .desk-title-group span { display: none; }
   .desk-header-row .desk-header-actions { margin-left: 0; width: 100%; }
+  /* On a phone the actions are one full-width row: the picker takes the room, the buttons their own. */
+  .desk-header-row .desk-controls-wrap { width: 100%; flex-wrap: nowrap; }
+  .desk-header-row .desk-controls-wrap > button[role='combobox'] { flex: 1 1 auto; min-width: 0; }
+  .desk-header-row .desk-expiry-pill { flex-wrap: wrap; }
 }

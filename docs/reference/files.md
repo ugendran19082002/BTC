@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-390 files listed, 171 test files counted below, images and lockfiles left out.
+391 files listed, 173 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 99 |
-| `app/web` | 72 |
+| `app/server` | 100 |
+| `app/web` | 73 |
 
 ## `(root)`
 
@@ -129,6 +129,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [read.ts](../../app/server/src/entry/read.ts) | The entry engine's view of the market, read once per board. |
 | [signals.ts](../../app/server/src/entry/signals.ts) | The signal journal: every signal the entry engine gives -- every WAIT and every TRADE, on every timeframe, with the chain and without it -- written on the server, so nothing depends on a screen bei... |
 | [types.ts](../../app/server/src/entry/types.ts) | The shapes of the entry engine (docs/features/entry-setups.md). |
+| [version.ts](../../app/server/src/entry/version.ts) | A counter that moves whenever the entry tables are written -- a signal recorded, a setup logged or graded, an alert logged. |
 
 ## `app/server/src/http/`
 

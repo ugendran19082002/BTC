@@ -4,7 +4,7 @@ import { readEntryContext } from '../../entry/read.js';
 import { entryRecord, recentSetups } from '../../entry/paper.js';
 import { GateLocked, gateSettings, gatesOff, isGateKey, setGate } from '../../entry/gates.js';
 import { alertSettings, isMode, recentAlerts, sampleAlertText, setAlert } from '../../entry/alerts.js';
-import { clockKeyOf, exportSignals, isOutcomeFilter, isSignalSort, setupClocks, signalPage, signalsCsv, type SignalQuery } from '../../entry/signals.js';
+import { cachedSignalPage, clockKeyOf, exportSignals, isOutcomeFilter, isSignalSort, setupClocks, signalsCsv, type SignalQuery } from '../../entry/signals.js';
 import { CHAIN, TF_SEC, type MethodRead, type SetupClock, type Tf } from '../../entry/types.js';
 import { ttlCache } from '../ttl-cache.js';
 
@@ -91,7 +91,7 @@ export function registerEntryRoutes(app: FastifyInstance, notifier: () => { send
   });
 
   // The signal journal: every WAIT and TRADE shown, newest first; filter by mode, tf, state.
-  app.get('/api/entry/signals', async (req) => signalPage(signalQueryOf(req.query)));
+  app.get('/api/entry/signals', async (req) => cachedSignalPage(signalQueryOf(req.query)));
 
   // The same history as a spreadsheet: every row the filters match, in the table's order, not just a page.
   app.get('/api/entry/signals.csv', async (req, reply) => {
