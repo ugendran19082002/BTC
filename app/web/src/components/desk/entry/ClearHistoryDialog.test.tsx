@@ -24,7 +24,7 @@ describe('clear data', () => {
     expect(fromIstInput('2026-10-01T10:00')).toBe(t);
     expect(fromIstInput('nonsense')).toBeNull();
     expect(rangeOf('2026-10-01T10:00', '2026-10-01T10:30')).toEqual({ from: t, to: t + 31 * 60_000 });
-    expect(rangeOf('2026-10-01T10:00', '2026-10-01T10:00')).toEqual({ from: t, to: t + 60_000 }, 'one minute');
+    expect(rangeOf('2026-10-01T10:00', '2026-10-01T10:00')).toEqual({ from: t, to: t + 60_000 }); // one minute
     expect(rangeOf('2026-10-01T10:30', '2026-10-01T10:00')).toEqual({ error: 'From must be before To.' });
     expect(rangeOf('', '2026-10-01T10:00')).toEqual({ error: 'Pick both times.' });
   });
