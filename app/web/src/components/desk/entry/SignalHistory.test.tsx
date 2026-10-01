@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { SignalHistory, exitNote, exitOf, fillNote, outcomeOf, startOfIstDay, stood } from './SignalHistory';
+import { SignalHistory, cleanFilter, exitNote, exitOf, fillNote, outcomeOf, startOfIstDay, stood } from './SignalHistory';
 import type { EntrySignal, EntrySignalOutcome, EntrySignalPage } from '@/types/entry';
 
 const getEntrySignals = vi.fn();
@@ -176,10 +176,14 @@ describe('the signal history table', () => {
     const [trade, , stopped] = within(table).getAllByRole('row').slice(1);
     expect(trade).toHaveTextContent('bar 20:02:57 · seen +3 s');
     expect(trade).toHaveTextContent('alert ✓ 20:03:01 +4 s');
-    expect(trade).toHaveTextContent('84,391~20:05 · at the zone edge 84,391');
-    expect(trade).toHaveTextContent('84,288 TGT~20:33exactly at TGT 84,288');
-    expect(stopped).toHaveTextContent('40 pts better than the 84,040 edge -- opened inside the zone');
-    expect(stopped).toHaveTextContent('22 pts past SL 83,800 -- the minute opened past it (gap)');
+    expect(trade).toHaveTextContent('84,391~20:05 · at edge');
+    expect(trade).toHaveTextContent('84,288 TGT~20:33 · at level');
+    expect(stopped).toHaveTextContent('84,000~20:04 · 40 better');
+    expect(stopped).toHaveTextContent('83,778 SL~20:13 · 22 past (gap)');
+    // The whole sentence on hover, kept short in the cell.
+    expect(within(stopped!).getByTitle('fill 40 pts better than the 84,040 edge -- opened inside the zone')).toBeInTheDocument();
+    expect(within(stopped!).getByTitle('exit 22 pts past SL 83,800 -- the minute opened past it (gap)')).toBeInTheDocument();
+    expect(within(trade!).getByTitle('exit exactly at TGT 84,288')).toBeInTheDocument();
   });
 
   it('[critical] a TRADE still in play counts: the fill window closing, then the time in the trade and to the time-out', async () => {
@@ -215,5 +219,21 @@ describe('the signal history table', () => {
     expect(within(row!).getByTitle('the displacement origin 84,520 + 0.25 ATR')).toHaveTextContent('84,825');
     expect(within(row!).getByLabelText('TGT1')).toHaveAttribute('title', 'entry swing low 84,288');
     expect(within(row!).getByLabelText('TGT2')).toHaveAttribute('title', '1h swing low 84,100');
+  });
+
+  it('[critical] a filter saved before -- 1m, the R:R column, a page size gone -- is cleaned, so the list never hides behind a chip that is not there', async () => {
+    expect(cleanFilter({ tf: '1m' as never, sort: 'rr' as never, size: 10 as never, tab: 'gone' as never, mode: 'x' as never }))
+      .toEqual({ tab: 'all', mode: 'all', tf: 'all', today: true, size: 25, sort: 'time', asc: false });
+    localStorage.setItem('btc-desk:entry:history-table', JSON.stringify({ tf: '1m', sort: 'rr' }));
+    render(<SignalHistory />);
+    await screen.findByRole('table', { name: 'signals' });
+    expect(getEntrySignals.mock.lastCall![0]).toMatchObject({ tf: undefined, sort: 'time' });
+  });
+
+  it('nothing yet today offers every day in one click', async () => {
+    getEntrySignals.mockResolvedValue(page([], 0));
+    render(<SignalHistory />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Show all days' }));
+    await waitFor(() => expect(getEntrySignals.mock.lastCall![0].since).toBeUndefined());
   });
 });

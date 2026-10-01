@@ -1,4 +1,4 @@
-import { readMarket, resampleTf, venueSeries, type Timeframe } from '../market/moves.js';
+import { readMarket, resampleTf, venueSeriesSince, type Timeframe } from '../market/moves.js';
 import type { Candle } from '../market/delta.js';
 import { flowMinutes, liveBook, liveLtp } from '../market/flow.js';
 import { HEAT_STEP, heatMinutes, persistentWalls } from '../market/book-heat.js';
@@ -24,13 +24,26 @@ import { gatesOff } from './gates.js';
 export const closedOnly = (bars: readonly Candle[], tfSec: number, nowSec: number) =>
   bars.filter((b) => b.time + tfSec <= nowSec);
 
+/** Seconds a closed candle is given to settle at the venue before it counts as whole. */
+export const CLOSE_SETTLE_SEC = 2;
+
+/**
+ * The moment up to which the series' candles are whole (epoch s): when it was
+ * asked for, less the settle time -- never later than now. A candle closing
+ * after that is not closed *in this data*, whatever the clock says now.
+ */
+export const wholeUntil = (askedAtMs: number, nowSec: number) => Math.min(nowSec, Math.floor(askedAtMs / 1000) - CLOSE_SETTLE_SEC);
+
 const VENUE: [Tf, Timeframe][] = [['1m', '1m'], ['5m', '5m'], ['15m', '15m'], ['30m', '30m'], ['1h', '1h'], ['4h', '4h']];
 
 export async function readEntryContext(now = Date.now()): Promise<EntryContext> {
   const nowSec = Math.floor(now / 1000);
-  const series = await venueSeries().catch(() => new Map<Timeframe, Candle[]>());
+  // Asked for after this minute began, so the minute that just closed is in it whole.
+  const { askedAt, data: series } = await venueSeriesSince(Math.floor(now / 60_000) * 60_000)
+    .catch(() => ({ askedAt: 0, data: new Map<Timeframe, Candle[]>() }));
+  const asOf = wholeUntil(askedAt, nowSec);
   const frames: Frames = {};
-  for (const [tf, venue] of VENUE) frames[tf] = closedOnly(series.get(venue) ?? [], TF_SEC[tf], nowSec);
+  for (const [tf, venue] of VENUE) frames[tf] = closedOnly(series.get(venue) ?? [], TF_SEC[tf], asOf);
   frames['3m'] = resampleTf(frames['1m'] ?? [], 3);
 
   const [flow, heat, book, snap, market, off] = await Promise.all([

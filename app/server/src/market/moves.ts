@@ -478,14 +478,16 @@ function moveOver(bars: Candle[], count: number, hours: number, label: string): 
 export const TODAY_MOVE = 'today, since 05:30';
 
 const SERIES_TTL_MS = 20_000;
-let seriesCache: { at: number; data: [Timeframe, Candle[]][] } | null = null;
+/** `at`: when the fetch finished (its age); `askedAt`: when it was asked for -- the bars it holds are whole up to then. */
+let seriesCache: { at: number; askedAt: number; data: [Timeframe, Candle[]][] } | null = null;
 let seriesInflight: Promise<[Timeframe, Candle[]][]> | null = null;
 
 async function fetchSeriesFresh(): Promise<[Timeframe, Candle[]][]> {
   if (seriesInflight) return seriesInflight;
   seriesInflight = (async () => {
     try {
-      const now = Math.floor(Date.now() / 1000);
+      const askedAt = Date.now();
+      const now = Math.floor(askedAt / 1000);
       const data = await Promise.all(
         VENUE_TIMEFRAMES.map(async (tf) => {
           const span = MINUTES[tf] * 60 * 220;
@@ -498,7 +500,7 @@ async function fetchSeriesFresh(): Promise<[Timeframe, Candle[]][]> {
       // ours, not whatever the endpoint would have chosen.
       const sixes = data.find(([tf]) => tf === '6h')?.[1] ?? [];
       data.push(['12h', resampleTf(sixes, 2)]);
-      seriesCache = { at: Date.now(), data };
+      seriesCache = { at: Date.now(), askedAt, data };
       return data;
     } finally {
       seriesInflight = null;
@@ -536,6 +538,32 @@ export function spotMinutesAgo(minutesAgo: number, nowMs = Date.now()): number |
  * `readMarket` reads: served as held, refreshed behind when older than
  * SERIES_TTL_MS. The entry engine reads it; its data gate says when it is old.
  */
+/**
+ * The venue series asked for no earlier than `minAskedAt` (epoch ms), with the
+ * moment it was asked for: a bar that closed before then is whole, one that
+ * closed after it may hold only its first seconds. The entry engine passes the
+ * start of the current minute, so the minute that just closed is read in full
+ * -- the cache's stale-while-refreshing answer can be from inside that minute,
+ * and grading or signalling on a minute's first seconds was wrong (1 Oct 2026:
+ * missed stop and TP1 touches, then "gaps" a minute later). A failed refresh
+ * falls back to the cache, with its own moment, so nothing partial passes.
+ */
+export async function venueSeriesSince(minAskedAt: number): Promise<{ askedAt: number; data: Map<Timeframe, Candle[]> }> {
+  const held = () => ({ askedAt: seriesCache!.askedAt, data: new Map(seriesCache!.data) });
+  if (seriesCache && seriesCache.askedAt >= minAskedAt) {
+    if (Date.now() - seriesCache.at >= SERIES_TTL_MS) void fetchSeriesFresh().catch(() => {});
+    return held();
+  }
+  try {
+    await fetchSeriesFresh();
+    // A fetch already in flight may have been asked for before the minute turned: once more, then.
+    if (seriesCache && seriesCache.askedAt < minAskedAt) await fetchSeriesFresh();
+  } catch (e) {
+    if (!seriesCache) throw e;
+  }
+  return held();
+}
+
 export async function venueSeries(): Promise<Map<Timeframe, Candle[]>> {
   if (seriesCache) {
     if (Date.now() - seriesCache.at >= SERIES_TTL_MS) void fetchSeriesFresh().catch(() => {});

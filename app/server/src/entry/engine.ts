@@ -27,6 +27,8 @@ import { atr, isDisplacement, lastSweep, pivots, rvol, trendOf, bullish, bearish
 
 /** Least reward to TP1 over risk for a TRADE (TEST.md: "R:R > 1.8"). */
 export const MIN_RR = 1.8;
+/** The entry zone keeps at least this many ATRs from the stop. */
+export const ZONE_STOP_GAP_ATR = 0.1;
 /** The stop sits this many ATRs past the structure it protects. */
 export const STOP_BUFFER_ATR = 0.25;
 /** A stop nearer than this many ATRs is inside the noise; further, too wide to be worth it. */
@@ -146,14 +148,29 @@ export function rrOf(entry: number, stop: number, target: number): number {
   return loss > 0 ? Math.abs(target - entry) / loss : 0;
 }
 
+/**
+ * The entry zone: never wider than MAX_ZONE_ATR, kept at the edge price
+ * reaches first, and wholly on the safe side of the stop -- at least
+ * ZONE_STOP_GAP_ATR from it. A retest zone could reach past its own stop
+ * (three 1m setups on 30 Sep - 1 Oct 2026, a long with its stop above the
+ * zone's low); clamped, a zone left as a sliver has a tiny risk, which the
+ * stop band gate refuses.
+ */
+export function zoneOf(dir: 1 | -1, z0: number, z1: number, stop: number, a: number): { lo: number; hi: number } {
+  let lo = dir === 1 ? Math.max(z0, z1 - MAX_ZONE_ATR * a) : z0;
+  let hi = dir === 1 ? z1 : Math.min(z1, z0 + MAX_ZONE_ATR * a);
+  if (dir === 1) lo = Math.min(hi, Math.max(lo, stop + ZONE_STOP_GAP_ATR * a));
+  else hi = Math.max(lo, Math.min(hi, stop - ZONE_STOP_GAP_ATR * a));
+  return { lo, hi };
+}
+
 function planOf(setup: Setup, spec: TargetSpec, slRule: string, a: number, bars: readonly Candle[], ctx: EntryContext): Plan {
   const dir = setup.dir;
   const [z0, z1] = setup.zone[0] <= setup.zone[1] ? setup.zone : [setup.zone[1], setup.zone[0]];
   // Never wider than MAX_ZONE_ATR, kept at the edge price reaches first.
-  const lo = dir === 1 ? Math.max(z0, z1 - MAX_ZONE_ATR * a) : z0;
-  const hi = dir === 1 ? z1 : Math.min(z1, z0 + MAX_ZONE_ATR * a);
-  const entry = fillOf({ entryLo: lo, entryHi: hi }, dir);
   const stop = dir === 1 ? setup.stop - STOP_BUFFER_ATR * a : setup.stop + STOP_BUFFER_ATR * a;
+  const { lo, hi } = zoneOf(dir, z0, z1, stop, a);
+  const entry = fillOf({ entryLo: lo, entryHi: hi }, dir);
   const risk = Math.abs(entry - stop);
   // A level closer than a fifth of an ATR past the zone is not a target, it is the zone.
   const beyond = dir === 1 ? hi + 0.2 * a : lo - 0.2 * a;

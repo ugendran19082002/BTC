@@ -153,9 +153,28 @@ export function exitOf(s: EntrySignal): { price: string; why: 'TGT' | 'SL' | 'ti
 type Filter = { tab: Tab; mode: 'all' | EntryMode; tf: 'all' | EntryTf; today: boolean; size: (typeof PAGE_SIZES)[number]; sort: SignalSort; asc: boolean };
 const DEFAULT: Filter = { tab: 'all', mode: 'all', tf: 'all', today: true, size: 25, sort: 'time', asc: false };
 
+/**
+ * A filter saved in this browser, made safe: a timeframe, way, tab, size or
+ * column that no longer exists (1m before it became chart-only, the R:R
+ * column) goes back to its default -- else it would filter or sort by
+ * something with no chip to see or undo it, and the list could look empty.
+ */
+export function cleanFilter(saved: Partial<Filter> | null | undefined): Filter {
+  const s = { ...DEFAULT, ...(saved ?? {}) };
+  return {
+    tab: Object.hasOwn(TABS, s.tab) ? s.tab : DEFAULT.tab,
+    mode: s.mode === 'single' || s.mode === 'mtf' ? s.mode : 'all',
+    tf: s.tf === 'all' || TFS.includes(s.tf) ? s.tf : 'all',
+    today: typeof s.today === 'boolean' ? s.today : DEFAULT.today,
+    size: (PAGE_SIZES as readonly number[]).includes(s.size) ? s.size : DEFAULT.size,
+    sort: COLUMNS.some((c) => c.sort === s.sort) ? s.sort : DEFAULT.sort,
+    asc: s.asc === true,
+  };
+}
+
 export function SignalHistory() {
   const [saved, setF] = usePersisted<Filter>('entry:history-table', DEFAULT);
-  const f = { ...DEFAULT, ...saved };
+  const f = cleanFilter(saved);
   const [page, setPage] = usePersisted<number>('entry:history-page', 0);
   const since = f.today ? startOfIstDay(Date.now()) : undefined;
   const query: SignalFilter = {
@@ -179,7 +198,7 @@ export function SignalHistory() {
   const now = useNow(rows.some((s) => s.outcome?.status === 'open' || s.outcome?.status === 'filled' || s.outcome?.runner === 'running'));
 
   return (
-    <section aria-label="signal history" className="mt-3 rounded-xl border border-border p-2.5 text-[12px]">
+    <section aria-label="signal history" className="mt-3 rounded-xl border border-border border-t-4 border-t-[#2563eb] bg-[var(--panel)] p-3 text-[12px] shadow-[0_2px_12px_rgba(0,0,0,0.35)]">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="m-0 text-[13px] font-bold">Signal history</h3>
@@ -231,6 +250,9 @@ export function SignalHistory() {
       {!rows.length ? (
         <p className="m-0 py-3 text-center text-muted-foreground">
           {loading && !data ? 'Reading…' : f.tab === 'trading' ? 'Nothing in play right now -- no TRADE waiting at its zone or filled. Closed ones are under BUY & SELL.' : 'No signals for these filters yet. The server keeps every WAIT and TRADE as it forms, once a minute.'}
+          {data && f.today ? (
+            <> <button type="button" onClick={() => set({ today: false })} className="font-semibold text-[#3b82f6] underline">Show all days</button> -- &quot;Today&quot; starts at 00:00 IST.</>
+          ) : null}
         </p>
       ) : (
         <>
@@ -263,7 +285,7 @@ export function SignalHistory() {
                     <tr key={keyOf(s, 'r')} className="border-t border-border align-top"
                         title={`${s.reason}${s.gatesOff.length ? ` -- gates off: ${s.gatesOff.join(', ')}` : ''}`}>
                       <td className="whitespace-nowrap py-1 pr-2"><Times s={s} /></td>
-                      <td className="pr-2">#{s.n ?? '?'} {s.name}</td>
+                      <td className="min-w-[110px] pr-2">#{s.n ?? '?'} {s.name}</td>
                       <td className="whitespace-nowrap pr-2 text-muted-foreground">{s.mode === 'mtf' ? 'With TF' : 'Without'} · {s.tf}</td>
                       <td className="whitespace-nowrap pr-2"><SignalTag s={s} /></td>
                       <td className="hidden whitespace-nowrap pr-2 text-muted-foreground lg:table-cell">{fmt(s.ltp)} · {fmt(s.indexPrice)}</td>
@@ -274,12 +296,19 @@ export function SignalHistory() {
                       ))}
                       <td className="whitespace-nowrap pr-2">
                         {o?.fillPrice != null ? fmt(o.fillPrice) : '–'}
-                        {o?.filledAt != null ? <div className="text-[10.5px] text-muted-foreground">~{MINS.format(o.filledAt * 1000)}{fn ? ` · ${fn}` : ''}</div> : null}
+                        {o?.filledAt != null ? (
+                          <div className="text-[10.5px] text-muted-foreground" title={fn ? `fill ${fn}` : undefined}>
+                            ~{MINS.format(o.filledAt * 1000)}{o.fillBetterPts ? <span className="text-[var(--up)]"> · {fmt(o.fillBetterPts)} better</span> : ' · at edge'}
+                          </div>
+                        ) : null}
                       </td>
                       <td className="whitespace-nowrap pr-2">
                         {ex ? <>{ex.price} <span className={cn('text-[10.5px] font-bold', ex.why === 'TGT' ? 'text-[var(--up)]' : ex.why === 'SL' ? 'text-[var(--down)]' : 'text-muted-foreground')}>{ex.why}</span></> : '–'}
-                        {o?.exitAt != null ? <div className="text-[10.5px] text-muted-foreground">~{MINS.format(o.exitAt * 1000)}</div> : null}
-                        {en ? <div className={cn('text-[10.5px]', en.gap ? 'text-[var(--warn)]' : 'text-muted-foreground')}>{en.text}</div> : null}
+                        {o?.exitAt != null ? (
+                          <div className={cn('text-[10.5px]', en?.gap ? 'text-[var(--warn)]' : 'text-muted-foreground')} title={en ? `exit ${en.text}` : undefined}>
+                            ~{MINS.format(o.exitAt * 1000)}{en ? ` · ${en.gap ? `${fmt(o.exitPastPts)} past (gap)` : o.exitWhy === 'time' ? 'on time' : 'at level'}` : ''}
+                          </div>
+                        ) : null}
                       </td>
                       <td className={cn('whitespace-nowrap pr-2', out.cls)}>
                         {out.text}{ex?.pts != null ? <>{' '}<span className="ml-1 text-[10.5px]">({signedPts(ex.pts)} pts)</span></> : null}
@@ -336,8 +365,8 @@ function SignalTag({ s }: { s: EntrySignal }) {
 function Summary({ s }: { s: EntrySignalSummary }) {
   const closed = s.tp1 + s.stops + s.timeouts;
   const cell = (k: string, v: string, sub: string, tone: 'up' | 'down' | 'none') => (
-    <div className={cn('rounded-lg border border-border border-l-4 bg-muted/40 px-2.5 py-1.5',
-      tone === 'up' ? 'border-l-[var(--up)]' : tone === 'down' ? 'border-l-[var(--down)]' : 'border-l-border')}>
+    <div className={cn('rounded-lg border border-border border-l-4 px-2.5 py-1.5',
+      tone === 'up' ? 'border-l-[var(--up)] bg-[var(--up-bg)]' : tone === 'down' ? 'border-l-[var(--down)] bg-[var(--down-bg)]' : 'border-l-[var(--dim)] bg-[var(--bg)]')}>
       <div className="text-[10.5px] uppercase tracking-wide text-muted-foreground">{k}</div>
       <div className={cn('text-[16px] font-bold leading-tight tabular-nums', tone === 'up' ? 'text-[var(--up)]' : tone === 'down' ? 'text-[var(--down)]' : '')}>{v}</div>
       <div className="text-[10.5px] text-muted-foreground tabular-nums">{sub}</div>
@@ -399,7 +428,7 @@ function Card({ s, now }: { s: EntrySignal; now: number }) {
   const out = outcomeOf(s);
   const ex = exitOf(s);
   return (
-    <li className="rounded-lg border border-border p-2 tabular-nums">
+    <li className="rounded-lg border border-border bg-[var(--bg)] p-2 tabular-nums">
       <div className="flex items-center justify-between gap-2">
         <span className="font-semibold">#{s.n ?? '?'} {s.name}</span>
         <span><SignalTag s={s} /></span>

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Candle } from '../../src/market/delta.js';
-import { entryBoard, fillOf, pickTargets, readMethod, rrOf, timeframeRows, MAX_ZONE_ATR, MIN_RR, TP_STEP_ATR } from '../../src/entry/engine.js';
+import { entryBoard, fillOf, pickTargets, readMethod, rrOf, zoneOf, timeframeRows, MAX_ZONE_ATR, MIN_RR, TP_STEP_ATR } from '../../src/entry/engine.js';
 import { atr } from '../../src/entry/prims.js';
 import { METHODS } from '../../src/entry/methods.js';
 import type { EntryContext, Frames } from '../../src/entry/types.js';
@@ -332,3 +332,17 @@ test('every method has its target rule from the table', () => {
   });
 });
 
+
+test('[critical] the entry zone never reaches past its own stop: kept 0.1 ATR on the safe side, either way', () => {
+  // The live 1m retest long: stop 83,789.71, zone 83,789.50-83,793.79 -- its low was below the stop.
+  const long = zoneOf(1, 83_789.5, 83_793.79, 83_789.71, 10);
+  assert.deepEqual([long.lo, long.hi], [83_790.71, 83_793.79]);
+  const short = zoneOf(-1, 83_470.55, 83_484, 83_483.45, 100); // its high was above its stop
+  assert.equal(short.lo, 83_470.55);
+  assert.ok(Math.abs(short.hi - 83_473.45) < 1e-6, `kept 10 under the stop: ${short.hi}`);
+  // Nothing left between the stop and the far edge: a zero-width zone at the fill edge; the stop band gate judges the risk.
+  const sliver = zoneOf(1, 99, 100, 99.95, 10);
+  assert.deepEqual([sliver.lo, sliver.hi], [100, 100]);
+  // A zone well clear of its stop is left as it was.
+  assert.deepEqual(zoneOf(1, 84_000, 84_040, 83_800, 100), { lo: 84_000, hi: 84_040 });
+});
