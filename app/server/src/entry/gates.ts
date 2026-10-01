@@ -26,7 +26,7 @@ export const GATES: readonly { key: GateKey; label: string; locked?: string }[] 
   { key: 'data', label: 'Data fresh', locked: 'On stale candles every other reading describes a market that has moved on.' },
   { key: 'spread', label: 'Spread' },
   { key: 'stop', label: 'Stop band' },
-  { key: 'rr', label: 'R:R after fees' },
+  { key: 'rr', label: 'R:R' },
   { key: 'htf', label: 'HTF alignment' },
   { key: 'big-move', label: 'Big-move risk' },
   { key: 'em', label: 'Expected move' },

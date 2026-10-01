@@ -15,7 +15,8 @@ import { atr, isDisplacement, lastSweep, pivots, rvol, trendOf, bullish, bearish
  *   2. with the chain: 4H / 1H / 30m / 15m not against it, 3m confirming,
  *      1m at the entry
  *   3. hard gates -- any one fails, NO TRADE, whatever else is green
- *   4. targets from real liquidity, and R:R after taker fees both ways
+ *   4. targets from real liquidity, and R:R to TP1 (reward over risk, in points;
+ *      no fee term -- the owner removed it from the entry section, 1 Oct 2026)
  *   5. a quality score, which is not a probability and never shown as one
  *
  * Nothing here has an edge until the paper log says so. The research on this
@@ -24,10 +25,8 @@ import { atr, isDisplacement, lastSweep, pivots, rvol, trendOf, bullish, bearish
  * trusted.
  */
 
-/** Least reward to TP1 over risk, after fees, for a TRADE (TEST.md: "R:R > 1.8"). */
+/** Least reward to TP1 over risk for a TRADE (TEST.md: "R:R > 1.8"). */
 export const MIN_RR = 1.8;
-/** Delta's taker fee, each side, as a share of price. */
-export const FEE_PER_SIDE = 0.0005;
 /** The stop sits this many ATRs past the structure it protects. */
 export const STOP_BUFFER_ATR = 0.25;
 /** A stop nearer than this many ATRs is inside the noise; further, too wide to be worth it. */
@@ -95,15 +94,13 @@ function targetLevels(dir: 1 | -1, from: number, bars: readonly Candle[], ctx: E
 }
 
 /**
- * R:R after taker fees on the way in and the way out: what the target pays
- * net of the fees on entry and on the exit *at the target*, over what the stop
- * costs plus the fees on entry and on the exit *at the stop*. (Until the
- * 30 Sep 2026 audit the loss side was charged the target's exit fee.)
+ * R:R: the points to the target over the points to the stop, from the fill.
+ * No fee term -- the owner removed "after fees" from the entry section on
+ * 1 Oct 2026; the levels and the record are in plain points and R.
  */
-export function rrAfterFees(entry: number, stop: number, target: number): number {
-  const loss = Math.abs(entry - stop) + FEE_PER_SIDE * (entry + stop);
-  const win = Math.abs(target - entry) - FEE_PER_SIDE * (entry + target);
-  return loss > 0 ? win / loss : 0;
+export function rrOf(entry: number, stop: number, target: number): number {
+  const loss = Math.abs(entry - stop);
+  return loss > 0 ? Math.abs(target - entry) / loss : 0;
 }
 
 function planOf(setup: Setup, a: number, bars: readonly Candle[], ctx: EntryContext): Plan {
@@ -135,7 +132,7 @@ function planOf(setup: Setup, a: number, bars: readonly Candle[], ctx: EntryCont
   const emEdge = o && o.emDay !== null ? o.spot + dir * o.emDay : null;
   const tp3 = emEdge !== null && (emEdge - (tp2 ?? tp1)) * dir >= TP_STEP_ATR * a ? emEdge : null;
   if (tp3 !== null) why.push(`expected-move edge ${fmt(tp3)}`);
-  return { entryLo: lo, entryHi: hi, stop, tp1, tp2, tp3, tpWhy: why, rr: rrAfterFees(entry, stop, tp1) };
+  return { entryLo: lo, entryHi: hi, stop, tp1, tp2, tp3, tpWhy: why, rr: rrOf(entry, stop, tp1) };
 }
 
 /** The age of the newest closed candle on a timeframe, in seconds. */
@@ -180,8 +177,8 @@ function gatesOf(i: {
     inAtr >= STOP_MIN_ATR && inAtr <= STOP_MAX_ATR,
     inAtr < STOP_MIN_ATR ? `the stop is ${inAtr.toFixed(2)} ATR away -- inside the noise` : `the stop is ${inAtr.toFixed(1)} ATR away -- too wide`);
 
-  g('rr', 'R:R after fees', `≥ ${MIN_RR} to TP1, taker fee both ways`, plan.rr.toFixed(2), plan.rr >= MIN_RR,
-    `R:R to ${plan.tpWhy[0] ?? 'TP1'} is ${plan.rr.toFixed(2)} after fees -- no room`);
+  g('rr', 'R:R', `≥ ${MIN_RR} to TP1`, plan.rr.toFixed(2), plan.rr >= MIN_RR,
+    `R:R to ${plan.tpWhy[0] ?? 'TP1'} is ${plan.rr.toFixed(2)} -- no room`);
 
   if (mode === 'mtf') {
     const h1 = trendOf(ctx.frames['1h'] ?? []);

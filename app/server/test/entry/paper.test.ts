@@ -1,7 +1,7 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Candle } from '../../src/market/delta.js';
-import { FILL_WITHIN_BARS, HOLD_BARS, entryRecord, gradeRow, gradeSetups, rNetOf, recordSetups, statsOf, type PaperRow } from '../../src/entry/paper.js';
+import { FILL_WITHIN_BARS, HOLD_BARS, entryRecord, gradeRow, gradeSetups, rOf, recordSetups, statsOf, type PaperRow } from '../../src/entry/paper.js';
 import type { MethodRead } from '../../src/entry/types.js';
 import { closePool, query, rows } from '../../src/db/pool.js';
 import { gatesOff, gateSettings, setGate, GateLocked } from '../../src/entry/gates.js';
@@ -23,7 +23,7 @@ const long = (over: Partial<PaperRow> = {}): PaperRow => ({
   status: 'open', filledAt: null, fillPrice: null, exitAt: null, exitPrice: null, rNet: null, gradedTo: T + 240, ...over,
 });
 
-test('[critical] fills at the zone, then TP1: closed at the target, R after fees', () => {
+test('[critical] fills at the zone, then TP1: closed at the target, R in plain points over risk', () => {
   const r = gradeRow(long(), [
     minute(5, 84_050, 84_060, 84_005, 84_020),   // trades into the zone: filled at 84,010
     minute(6, 84_020, 84_310, 84_015, 84_290),   // through TP1
@@ -31,14 +31,14 @@ test('[critical] fills at the zone, then TP1: closed at the target, R after fees
   assert.equal(r.status, 'tp1');
   assert.equal(r.fillPrice, 84_010);
   assert.equal(r.exitPrice, 84_300);
-  assert.equal(r.rNet, rNetOf(1, 84_010, 84_300, 83_900));
-  assert.ok(r.rNet! < (84_300 - 84_010) / 110, 'the fees come off');
+  assert.equal(r.rNet, rOf(1, 84_010, 84_300, 83_900));
+  assert.equal(r.rNet, (84_300 - 84_010) / 110, 'no fee term');
 });
 
 test('[critical] a bar touching both the stop and TP1 is the stop -- the reading that cannot flatter the record', () => {
   const r = gradeRow(long(), [minute(5, 84_050, 84_060, 84_005, 84_020), minute(6, 84_020, 84_320, 83_880, 84_000)]);
   assert.equal(r.status, 'stop');
-  assert.ok(r.rNet! < -1, 'a full R and the fees');
+  assert.equal(r.rNet, -1, 'a full R at the stop, no fee term');
 });
 
 test('[critical] in the fill bar only the stop counts', () => {
@@ -153,7 +153,7 @@ test('[critical] a gate switched off is stored, logged, and read back; Data fres
 test('[critical] a setup taken with a gate off is logged with it, and kept out of the record', async () => {
   await query('DELETE FROM entry_setups');
   const offRead = read({ id: 'fvg-retest', triggerTime: T + 900, gates: [
-    { key: 'rr', label: 'R:R after fees', rule: '', value: '1.20', ok: false, why: 'no room', enabled: false },
+    { key: 'rr', label: 'R:R', rule: '', value: '1.20', ok: false, why: 'no room', enabled: false },
   ] });
   assert.equal(await recordSetups([read({ id: 'pullback' }), offRead], (T + 300) * 1000), 2);
   const logged = await rows<{ method: string; gates_off: string[] }>('SELECT method, gates_off FROM entry_setups ORDER BY method');

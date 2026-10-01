@@ -59,7 +59,7 @@ export type Plan = {
   tp3: number | null;
   /** Where each target came from: "swing high 84,300", "call wall 85,000", "2R". */
   tpWhy: string[];
-  /** Reward to TP1 over risk, from the middle of the entry zone, after taker fees both ways. */
+  /** Reward to TP1 over risk, from the fill edge of the entry zone, in points (no fee term). */
   rr: number;
 };
 
@@ -90,6 +90,18 @@ export type MethodRead = {
   reason: string;
   /** The primary bar the trigger closed on (epoch s): with method, mode and direction, the setup's identity. */
   triggerTime: number | null;
+  /** A TRADE's state and clock in the paper log, on the board only (signals.ts setupClocks); absent until it is written. */
+  paper?: SetupClock | null;
+};
+
+/**
+ * A setup's clock in the paper log: seen (ms), may fill until `fillBy`, filled
+ * in the 1m bar at `filledAt`, times out at `timeoutAt`, out at `exitAt` (all
+ * epoch s), and when its Telegram alert was tried (ms).
+ */
+export type SetupClock = {
+  status: string; firstSeen: number; fillBy: number; filledAt: number | null; fillPrice: number | null;
+  timeoutAt: number | null; exitAt: number | null; exitPrice: number | null; alertAt: number | null;
 };
 
 /** One minute of the perpetual's tape, by aggressor side. */

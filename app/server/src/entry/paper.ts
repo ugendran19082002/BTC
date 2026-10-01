@@ -1,7 +1,6 @@
 import type { Candle } from '../market/delta.js';
 import { query, rows } from '../db/pool.js';
 import { migrate, type Migration } from '../db/migrate.js';
-import { FEE_PER_SIDE } from './engine.js';
 import { TF_SEC, type MethodRead, type Tf } from './types.js';
 
 /**
@@ -19,7 +18,8 @@ import { TF_SEC, type MethodRead, type Tf } from './types.js';
  *            TP1 or HOLD_BARS, whichever comes first -- a bar touching both
  *            the stop and TP1 is the stop, the reading that cannot flatter
  *            the record
- *   tp1 / stop / timeout  closed, with `r_net` after taker fees both ways
+ *   tp1 / stop / timeout  closed, with `r_net`: the points made over the risk
+ *            (no fee term since 1 Oct 2026, entry-010)
  *
  * Nothing is ordered. With the timeframe chain and without it are separate
  * rows, so the record can say whether the chain adds anything.
@@ -27,6 +27,45 @@ import { TF_SEC, type MethodRead, type Tf } from './types.js';
 
 export const FILL_WITHIN_BARS = 12;
 export const HOLD_BARS = 48;
+
+/**
+ * When a setup stops waiting for its fill (epoch s): FILL_WITHIN_BARS of its
+ * timeframe, counted from when it was on the board -- not from its trigger
+ * bar, since an FVG or an order block can be forty bars old when price comes
+ * back to it. The one rule the grading and the screen's counter both use.
+ */
+export function fillByOf(triggerAt: number, firstSeenMs: number, tf: Tf): number {
+  const tfSec = TF_SEC[tf];
+  return Math.max(triggerAt + tfSec, firstMinuteOf(firstSeenMs)) + tfSec * FILL_WITHIN_BARS;
+}
+
+/** When a filled setup is closed at the bar's close if neither the stop nor TP1 came (epoch s). */
+export const timeoutAtOf = (filledAt: number, tf: Tf): number => filledAt + TF_SEC[tf] * HOLD_BARS;
+
+/** The first whole minute after a moment (epoch s): the minute it was seen in had traded partly before it. */
+const firstMinuteOf = (ms: number) => Math.ceil(ms / 60_000) * 60;
+
+/**
+ * How a fill and an exit stand against the plan, in points, + in the trade's
+ * favour. A resting limit fills at the zone's near edge, or better when the
+ * minute opens already inside it. TP1 is a limit: exactly the level. The stop
+ * is a stop-market: the level, or the minute's open when price opened past it
+ * (a gap) -- what a real stop would have got, so the record never flatters.
+ */
+export function fillExitOf(x: {
+  dir: 1 | -1; status: string; entryLo: number; entryHi: number; stop: number; tp1: number;
+  fillPrice: number | null; exitPrice: number | null;
+}): { edge: number; fillBetterPts: number | null; level: number | null; pastPts: number | null; why: 'level' | 'gap' | 'time' | null } {
+  const edge = x.dir === 1 ? x.entryHi : x.entryLo;
+  const fillBetterPts = x.fillPrice === null ? null : round2((edge - x.fillPrice) * x.dir);
+  if (x.exitPrice === null) return { edge, fillBetterPts, level: null, pastPts: null, why: null };
+  if (x.status === 'timeout') return { edge, fillBetterPts, level: null, pastPts: null, why: 'time' };
+  const level = x.status === 'stop' ? x.stop : x.tp1;
+  // Points the exit was beyond the level, against the trade: 0 at the level.
+  const pastPts = round2(Math.max(0, (level - x.exitPrice) * x.dir));
+  return { edge, fillBetterPts, level, pastPts, why: pastPts > 0 ? 'gap' : 'level' };
+}
+const round2 = (v: number) => Math.round(v * 100) / 100 + 0;
 
 const MIGRATIONS: Migration[] = [{
   id: 'entry-001-setups',
@@ -65,6 +104,14 @@ const MIGRATIONS: Migration[] = [{
   // The hard gates switched off when a setup was taken (entry/gates.ts), so the record can keep them apart.
   id: 'entry-003-setups-gates-off',
   up: `ALTER TABLE entry_setups ADD COLUMN IF NOT EXISTS gates_off TEXT[] NOT NULL DEFAULT '{}';`,
+}, {
+  // "After fees" removed from the entry section (owner, 1 Oct 2026): every closed row's R recomputed
+  // the way rOf now does it -- points made over the risk from the fill -- so old and new rows agree.
+  id: 'entry-010-r-without-fees',
+  up: `
+    UPDATE entry_setups SET r_net = ((exit_price - fill_price) * dir) / abs(fill_price - stop)
+     WHERE exit_price IS NOT NULL AND fill_price IS NOT NULL AND fill_price <> stop;
+  `,
 }];
 
 let ready: Promise<void> | null = null;
@@ -105,23 +152,19 @@ export type PaperRow = {
   rNet: number | null; gradedTo: number;
 };
 
-/** R after taker fees both ways. */
-export const rNetOf = (dir: 1 | -1, fill: number, exit: number, stop: number) => {
+/** R: the points made, (exit - fill) x direction, over the risk from the fill to the stop. No fee term. */
+export const rOf = (dir: 1 | -1, fill: number, exit: number, stop: number) => {
   const risk = Math.abs(fill - stop);
-  return risk > 0 ? ((exit - fill) * dir - FEE_PER_SIDE * (fill + exit)) / risk : 0;
+  return risk > 0 ? ((exit - fill) * dir) / risk : 0;
 };
 
 /** A row moved on by the closed 1m candles after `gradedTo`. Pure. */
 export function gradeRow(row: PaperRow, bars1m: readonly Candle[]): PaperRow {
   let r = { ...row };
-  const tfSec = TF_SEC[row.tf];
   // Graded from the first whole minute after the setup was seen: the minute it
   // was seen in had traded partly before it, and a fill there would be hindsight.
-  const from = Math.ceil(row.firstSeen / 60_000) * 60;
-  // The fill window runs from when the setup was on the board, not from its
-  // trigger bar -- an FVG or an order block can be forty bars old when price
-  // comes back to it, and was otherwise expired on its first minute.
-  const fillBy = Math.max(row.triggerAt + tfSec, from) + tfSec * FILL_WITHIN_BARS;
+  const from = firstMinuteOf(row.firstSeen);
+  const fillBy = fillByOf(row.triggerAt, row.firstSeen, row.tf);
   for (const b of bars1m) {
     if (b.time <= r.gradedTo || b.time < from) continue;
     if (r.status !== 'open' && r.status !== 'filled') break;
@@ -144,7 +187,7 @@ export function gradeRow(row: PaperRow, bars1m: readonly Candle[]): PaperRow {
       r = close(r, b.time, stopAt, 'stop');
     } else if (d === 1 ? b.high >= r.tp1 : b.low <= r.tp1) {
       r = close(r, b.time, r.tp1, 'tp1');
-    } else if (r.filledAt !== null && b.time >= r.filledAt + tfSec * HOLD_BARS) {
+    } else if (r.filledAt !== null && b.time >= timeoutAtOf(r.filledAt, r.tf)) {
       r = close(r, b.time, b.close, 'timeout');
     }
     r.gradedTo = b.time;
@@ -153,7 +196,7 @@ export function gradeRow(row: PaperRow, bars1m: readonly Candle[]): PaperRow {
 }
 
 function close(r: PaperRow, at: number, price: number, status: 'tp1' | 'stop' | 'timeout'): PaperRow {
-  return { ...r, status, exitAt: at, exitPrice: price, rNet: rNetOf(r.dir, r.fillPrice!, price, r.stop) };
+  return { ...r, status, exitAt: at, exitPrice: price, rNet: rOf(r.dir, r.fillPrice!, price, r.stop) };
 }
 
 type DbRow = {

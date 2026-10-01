@@ -69,6 +69,10 @@ const MIGRATIONS: Migration[] = [{
     UPDATE entry_alerts SET tfs = CASE WHEN array_remove(tfs, '1m') = '{}' THEN '{5m}' ELSE array_remove(tfs, '1m') END
      WHERE '1m' = ANY (tfs);
   `,
+}, {
+  // The history and the board look an alert up by its setup.
+  id: 'entry-009-alert-log-by-setup',
+  up: `CREATE INDEX IF NOT EXISTS entry_alert_log_by_setup ON entry_alert_log (method, mode, tf, dir, trigger_at);`,
 }];
 
 let ready: Promise<void> | null = null;
@@ -164,7 +168,7 @@ export function entryAlertFor(r: MethodRead, live: { ltp?: number | null; at?: n
     ...(p.tp2 !== null ? [tp('TP2', p.tp2)] : []),
     ...(p.tp3 !== null ? [tp('TP3', p.tp3, ' · expected move')] : []),
     '',
-    `📊 R:R <b>${p.rr.toFixed(2)}</b> after fees · Quality ${r.score ?? '–'}/100`,
+    `📊 R:R <b>${p.rr.toFixed(2)}</b> · Quality ${r.score ?? '–'}/100`,
     ...(why.length ? [`✅ Why: ${esc(why.join(' · '))}`] : []),
     ...(off.length ? [`⚠️ <b>Only a TRADE because gates are off</b>: ${esc(off.join(' · '))}`] : []),
     '<i>Paper-logged · no order placed</i>',

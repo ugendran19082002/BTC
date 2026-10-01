@@ -4,8 +4,8 @@ import { readEntryContext } from '../../entry/read.js';
 import { entryRecord, recentSetups } from '../../entry/paper.js';
 import { GateLocked, gateSettings, gatesOff, isGateKey, setGate } from '../../entry/gates.js';
 import { alertSettings, isMode, recentAlerts, sampleAlertText, setAlert } from '../../entry/alerts.js';
-import { signalPage } from '../../entry/signals.js';
-import { CHAIN, TF_SEC, type MethodRead, type Tf } from '../../entry/types.js';
+import { clockKeyOf, setupClocks, signalPage } from '../../entry/signals.js';
+import { CHAIN, TF_SEC, type MethodRead, type SetupClock, type Tf } from '../../entry/types.js';
 import { ttlCache } from '../ttl-cache.js';
 
 /**
@@ -34,7 +34,11 @@ export function registerEntryRoutes(app: FastifyInstance, notifier: () => { send
       const off = await gatesOff().catch(() => []);
       const board = await boardCache(`${tf}|${off.join(',')}`, async () => {
         const ctx = await readEntryContext();
-        return { at: ctx.now, tf, reads: entryBoard(ctx, tf), timeframes: timeframeRows(ctx), ltp: ctx.ltp ?? null };
+        const reads = entryBoard(ctx, tf);
+        // Each TRADE's paper-log clock, for the panel's counter; the board stands without it if the read fails.
+        const clocks = await setupClocks(reads).catch(() => new Map<string, SetupClock>());
+        const withClocks = reads.map((r) => (r.state === 'TRADE' ? { ...r, paper: clocks.get(clockKeyOf(r)) ?? null } : r));
+        return { at: ctx.now, tf, reads: withClocks, timeframes: timeframeRows(ctx), ltp: ctx.ltp ?? null };
       });
       return { ...board, viewOnly, chain: CHAIN, tfSec: TF_SEC };
     } catch (e) {

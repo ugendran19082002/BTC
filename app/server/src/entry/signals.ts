@@ -1,9 +1,10 @@
 import { query, rows, type Param } from '../db/pool.js';
 import { migrate, type Migration } from '../db/migrate.js';
-import type { MethodRead, Tf } from './types.js';
+import { TF_SEC, type MethodRead, type SetupClock, type Tf } from './types.js';
 import { METHODS } from './methods.js';
-import { entrySchema } from './paper.js';
+import { entrySchema, fillByOf, fillExitOf, timeoutAtOf } from './paper.js';
 import { SINGLE_TFS } from './engine.js';
+import { alertsSchema } from './alerts.js';
 
 /**
  * The signal journal: every signal the entry engine gives -- every WAIT and
@@ -116,11 +117,47 @@ export type SignalRow = {
   ltp: number | null; indexPrice: number | null;
   /**
    * What became of a TRADE in the paper log: open (waiting for price), filled,
-   * tp1, stop, timeout, expired -- with the fill, the exit and R after fees.
+   * tp1, stop, timeout, expired -- with the fill, the exit and R.
    * Null for a WAIT, or a TRADE the log has not written.
    */
-  outcome: { status: string; fillPrice: number | null; exitPrice: number | null; exitAt: number | null; rNet: number | null } | null;
+  outcome: SignalOutcome | null;
+  /** When the trigger bar closed (epoch s) -- the earliest the signal could be known. */
+  barCloseAt: number;
+  /** How long after that close the server first saw it (ms): the recorder runs each minute + 3 s. */
+  seenAfterMs: number;
+  /** The Telegram alert for it, if one was tried: when (epoch ms) and whether it went. */
+  alert: { at: number; status: 'sent' | 'failed' } | null;
 };
+
+export type SignalOutcome = {
+  status: string; fillPrice: number | null; exitPrice: number | null; exitAt: number | null; rNet: number | null;
+  /** The 1m bar the fill came in (epoch s), and until when it could have (fill window). */
+  filledAt: number | null; fillBy: number;
+  /** When a filled trade is closed on time if nothing else came first (epoch s). */
+  timeoutAt: number | null;
+  /** The zone's near edge, where a resting limit fills, and how many points better the fill was (opened inside). */
+  fillEdge: number; fillBetterPts: number | null;
+  /** The level the exit was aimed at (stop or TP1), how many points past it, and why: at the level, a gap, or time. */
+  exitLevel: number | null; exitPastPts: number | null; exitWhy: 'level' | 'gap' | 'time' | null;
+};
+
+
+/** The setup's paper-log row: the outcome the screen shows, with its times and how the exit stood against the plan. */
+function outcomeOf(r: Record<string, unknown>, tf: Tf): SignalOutcome {
+  const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
+  const dir = Number(r.e_dir) === 1 ? 1 : -1;
+  const fx = fillExitOf({
+    dir, status: String(r.e_status), entryLo: Number(r.e_lo), entryHi: Number(r.e_hi), stop: Number(r.e_stop), tp1: Number(r.e_tp1),
+    fillPrice: num(r.e_fill), exitPrice: num(r.e_exit),
+  });
+  const filledAt = num(r.e_filled_at);
+  return {
+    status: String(r.e_status), fillPrice: num(r.e_fill), exitPrice: num(r.e_exit), exitAt: num(r.e_exit_at), rNet: num(r.e_r),
+    filledAt, fillBy: fillByOf(Number(r.e_trigger), Number(r.e_first_seen), tf),
+    timeoutAt: filledAt === null ? null : timeoutAtOf(filledAt, tf),
+    fillEdge: fx.edge, fillBetterPts: fx.fillBetterPts, exitLevel: fx.level, exitPastPts: fx.pastPts, exitWhy: fx.why,
+  };
+}
 
 export type SignalQuery = {
   limit?: number; offset?: number;
@@ -158,7 +195,7 @@ export type SignalSummary = {
 
 export async function signalPage(q: SignalQuery = {}): Promise<{ signals: SignalRow[]; total: number; summary: SignalSummary }> {
   // The history reads the paper log beside it (a TRADE's outcome): both tables first, whatever ran at boot.
-  await Promise.all([signalsSchema(), entrySchema()]);
+  await Promise.all([signalsSchema(), entrySchema(), alertsSchema()]);
   const where: string[] = [];
   const args: Param[] = [];
   if (q.mode) { args.push(q.mode); where.push(`s.mode = $${args.length}`); }
@@ -197,8 +234,17 @@ export async function signalPage(q: SignalQuery = {}): Promise<{ signals: Signal
   args.push(Math.max(0, Math.floor(q.offset ?? 0)));
   const off = args.length;
   const rs = await rows<Record<string, unknown>>(
-    `SELECT s.*, e.status AS e_status, e.fill_price AS e_fill, e.exit_price AS e_exit, e.exit_at AS e_exit_at, e.r_net AS e_r
+    `SELECT s.*, e.status AS e_status, e.fill_price AS e_fill, e.exit_price AS e_exit, e.exit_at AS e_exit_at, e.r_net AS e_r,
+            e.dir AS e_dir, e.entry_lo AS e_lo, e.entry_hi AS e_hi, e.stop AS e_stop, e.tp1 AS e_tp1,
+            e.filled_at AS e_filled_at, e.first_seen AS e_first_seen, e.trigger_at AS e_trigger,
+            al.at AS al_at, al.status AS al_status
        FROM entry_signals s ${JOIN}
+       -- The first alert tried for this setup, if any (entry_alert_log_by_setup).
+       LEFT JOIN LATERAL (
+         SELECT a.at, a.status FROM entry_alert_log a
+          WHERE s.state = 'TRADE' AND a.method = s.method AND a.mode = s.mode AND a.tf = s.tf AND a.dir = s.dir AND a.trigger_at = s.trigger_at
+          ORDER BY a.at LIMIT 1
+       ) al ON true
        ${filter} ORDER BY ${order} LIMIT $${lim} OFFSET $${off}`,
     args,
   );
@@ -212,9 +258,43 @@ export async function signalPage(q: SignalQuery = {}): Promise<{ signals: Signal
     ltp: num(r.ltp), indexPrice: num(r.index_price),
     n: METHODS.find((m) => m.id === r.method)?.n ?? null,
     name: METHODS.find((m) => m.id === r.method)?.name ?? String(r.method),
-    outcome: r.e_status ? {
-      status: String(r.e_status), fillPrice: num(r.e_fill), exitPrice: num(r.e_exit), exitAt: num(r.e_exit_at), rNet: num(r.e_r),
-    } : null,
+    outcome: r.e_status ? outcomeOf(r, r.tf as Tf) : null,
+    barCloseAt: Number(r.trigger_at) + TF_SEC[r.tf as Tf],
+    seenAfterMs: Number(r.first_seen) - (Number(r.trigger_at) + TF_SEC[r.tf as Tf]) * 1000,
+    alert: r.al_at === null || r.al_at === undefined ? null : { at: Number(r.al_at), status: r.al_status as 'sent' | 'failed' },
   }));
   return { signals, total: n, summary };
 }
+
+/**
+ * The paper log's clock for each TRADE on the board -- waiting for its fill
+ * (and until when), in the trade (since when, and when it times out), or out --
+ * with when its alert went. Keyed by setup (`clockKey`). One query.
+ */
+export async function setupClocks(reads: readonly MethodRead[]): Promise<Map<string, SetupClock>> {
+  const trades = reads.filter((r) => r.state === 'TRADE' && r.triggerTime !== null && r.dir !== null);
+  const out = new Map<string, SetupClock>();
+  if (!trades.length) return out;
+  await Promise.all([entrySchema(), alertsSchema()]);
+  const rs = await rows<Record<string, unknown>>(
+    `SELECT e.method, e.mode, e.tf, e.dir, e.trigger_at, e.status, e.first_seen, e.filled_at, e.fill_price, e.exit_at, e.exit_price,
+            (SELECT min(a.at) FROM entry_alert_log a
+              WHERE a.method = e.method AND a.mode = e.mode AND a.tf = e.tf AND a.dir = e.dir AND a.trigger_at = e.trigger_at) AS alert_at
+       FROM entry_setups e WHERE e.trigger_at = ANY($1::bigint[])`,
+    [[...new Set(trades.map((r) => r.triggerTime!))]],
+  );
+  const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
+  for (const x of rs) {
+    const tf = x.tf as Tf;
+    const filledAt = num(x.filled_at);
+    out.set(clockKey(String(x.method), String(x.mode), tf, Number(x.dir), Number(x.trigger_at)), {
+      status: String(x.status), firstSeen: Number(x.first_seen), fillBy: fillByOf(Number(x.trigger_at), Number(x.first_seen), tf),
+      filledAt, fillPrice: num(x.fill_price), timeoutAt: filledAt === null ? null : timeoutAtOf(filledAt, tf),
+      exitAt: num(x.exit_at), exitPrice: num(x.exit_price), alertAt: num(x.alert_at),
+    });
+  }
+  return out;
+}
+
+export const clockKey = (method: string, mode: string, tf: string, dir: number, triggerAt: number) => `${method}|${mode}|${tf}|${dir}|${triggerAt}`;
+export const clockKeyOf = (r: MethodRead) => clockKey(r.id, r.mode, r.tf, r.dir === 'long' ? 1 : -1, r.triggerTime ?? 0);

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Candle } from '../../src/market/delta.js';
-import { entryBoard, fillOf, readMethod, rrAfterFees, timeframeRows, MAX_ZONE_ATR, MIN_RR, TP_STEP_ATR } from '../../src/entry/engine.js';
+import { entryBoard, fillOf, readMethod, rrOf, timeframeRows, MAX_ZONE_ATR, MIN_RR, TP_STEP_ATR } from '../../src/entry/engine.js';
 import { atr } from '../../src/entry/prims.js';
 import { METHODS } from '../../src/entry/methods.js';
 import type { EntryContext, Frames } from '../../src/entry/types.js';
@@ -12,12 +12,14 @@ import { ctxOf, path, wave } from './bars.js';
  *
  * A 5m breakout is built to be a TRADE on its own timeframe -- a close over the
  * 20-bar high on four times the volume, a stop 2.2 ATR away, an ask wall far
- * enough above for R:R 3.7 after fees -- and each case changes one thing and
+ * enough above for R:R 3.7 -- and each case changes one thing and
  * says which state that must give, and why. TEST.md's rule throughout: a box
  * only when every critical confirmation holds.
  */
 
 const BREAKOUT = METHODS.find((m) => m.id === 'breakout')!;
+/** An ask wall just over the breakout: R:R 1.12 to it -- no room (the 2R fallback with no wall clears 1.8). */
+const NEAR_WALL = [{ side: 'ask' as const, price: 84_300, size: 5_000 }];
 const MOMENTUM = METHODS.find((m) => m.id === 'momentum')!;
 
 function breakoutBars(o: { volume?: number } = {}): Candle[] {
@@ -57,11 +59,11 @@ test('[critical] a step not yet there is WAIT, says which, and draws no box', ()
   assert.equal(r.plan, null, 'TEST.md: no entry / SL / TP until every confirmation holds');
 });
 
-test('[critical] no room to a target is NO TRADE, even with every step green -- 2R does not clear the fees here', () => {
-  const r = readMethod(BREAKOUT, 'single', '5m', single({ walls: [] }));
+test('[critical] no room to a target is NO TRADE, even with every step green -- a near wall leaves R:R 1.12', () => {
+  const r = readMethod(BREAKOUT, 'single', '5m', single({ walls: NEAR_WALL }));
   assert.equal(r.state, 'NO_TRADE');
   assert.equal(r.gates.find((g) => g.ok === false)?.key, 'rr');
-  assert.match(r.reason, /after fees -- no room/);
+  assert.match(r.reason, /R:R to ask wall 84,300 is 1\.12 -- no room/);
 });
 
 test('[critical] stale candles are NO TRADE', () => {
@@ -169,10 +171,12 @@ test('[critical] the score is quality out of 100, and what is not recorded is sa
   assert.equal(r.scoreParts.find((p) => p.name === 'Probability')?.got, null);
 });
 
-test('[critical] R:R counts the taker fee on the way in and on the way out -- the stop\'s exit on the loss side, the target\'s on the win side', () => {
-  assert.ok(Math.abs(rrAfterFees(100, 99, 102) - (2 - 0.0005 * 202) / (1 + 0.0005 * 199)) < 1e-12);
+test('[critical] R:R is the points to the target over the points to the stop -- no fee term (removed 1 Oct 2026)', () => {
+  assert.equal(rrOf(100, 99, 102), 2);
   // A short: the same arithmetic mirrored.
-  assert.ok(Math.abs(rrAfterFees(100, 101, 98) - (2 - 0.0005 * 198) / (1 + 0.0005 * 201)) < 1e-12);
+  assert.equal(rrOf(100, 101, 98), 2);
+  assert.equal(rrOf(84_000, 83_800, 84_370), 1.85);
+  assert.equal(rrOf(100, 100, 102), 0, 'no risk, no R:R');
 });
 
 test('the timeframe rows: each of the chain\'s seven, its trend and what its swings did', () => {
@@ -193,7 +197,7 @@ test('[critical] every read with a setup carries the whole hard-gate checklist: 
 });
 
 test('[critical] a gate that was not read refuses nothing, and a failed one is the reason', () => {
-  const r = readMethod(BREAKOUT, 'single', '5m', single({ walls: [] }));
+  const r = readMethod(BREAKOUT, 'single', '5m', single({ walls: NEAR_WALL }));
   assert.equal(r.gates.find((g) => g.key === 'spread')?.ok, null, 'no spread read');
   assert.equal(r.state, 'NO_TRADE');
   assert.equal(r.gates.find((g) => g.ok === false)?.key, 'rr');
@@ -210,9 +214,9 @@ test('the method gate is listed only for the methods that have one', () => {
 });
 
 test('[critical] a gate switched off still reads and shows ✗, but refuses nothing; Data fresh cannot be switched off', () => {
-  const on = readMethod(BREAKOUT, 'single', '5m', single({ walls: [] }));
+  const on = readMethod(BREAKOUT, 'single', '5m', single({ walls: NEAR_WALL }));
   assert.equal(on.state, 'NO_TRADE');
-  const off = readMethod(BREAKOUT, 'single', '5m', single({ walls: [], gatesOff: ['rr'] }));
+  const off = readMethod(BREAKOUT, 'single', '5m', single({ walls: NEAR_WALL, gatesOff: ['rr'] }));
   const rr = off.gates.find((g) => g.key === 'rr')!;
   assert.deepEqual([rr.ok, rr.enabled], [false, false], 'still read, still refusing on its own terms, but switched off');
   assert.equal(off.state, 'TRADE', 'nothing else refuses it');
@@ -239,7 +243,7 @@ test('[critical] risk and R:R are measured from where the trade fills -- the nea
   assert.equal(fillOf({ entryLo: 100, entryHi: 110 }, -1), 100, 'a short at the bottom');
   const r = readMethod(BREAKOUT, 'single', '5m', single({ gatesOff: ['rr'] }));
   const p = r.plan!;
-  assert.ok(Math.abs(p.rr - rrAfterFees(fillOf(p, r.dir === 'long' ? 1 : -1), p.stop, p.tp1)) < 1e-12);
+  assert.ok(Math.abs(p.rr - rrOf(fillOf(p, r.dir === 'long' ? 1 : -1), p.stop, p.tp1)) < 1e-12);
 });
 
 test('[critical] targets are spaced: TP2 at least half an ATR past TP1 -- a level 29 points on is skipped, not a second target', () => {

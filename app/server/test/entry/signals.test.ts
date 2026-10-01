@@ -1,6 +1,6 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pruneSignals, recentSignals, recordSignals, signalPage } from '../../src/entry/signals.js';
+import { clockKeyOf, pruneSignals, recentSignals, recordSignals, setupClocks, signalPage } from '../../src/entry/signals.js';
 import { allReads, entryBoard, SINGLE_TFS, VIEW_ONLY_TFS } from '../../src/entry/engine.js';
 import type { MethodRead } from '../../src/entry/types.js';
 import { closePool, query, rows } from '../../src/db/pool.js';
@@ -47,9 +47,16 @@ test('[critical] a TRADE in the history carries what became of it in the paper l
   const t = read({ state: 'TRADE', plan: PLAN, triggerTime: T + 600, tf: '5m' });
   await recordSignals([t, read({ triggerTime: T + 600, tf: '5m', id: 'bos' })], (T + 660) * 1000);
   await recordSetups([t], (T + 660) * 1000);
-  await query(`UPDATE entry_setups SET status = 'tp1', fill_price = 84391, exit_price = 84000, exit_at = $1, r_net = 1.1 WHERE trigger_at = $2`, [T + 900, T + 600]);
+  await query(`UPDATE entry_setups SET status = 'tp1', fill_price = 84391, filled_at = $3, exit_price = 84000, exit_at = $1, r_net = 1.1 WHERE trigger_at = $2`, [T + 900, T + 600, T + 720]);
   const [trade] = await recentSignals({ tf: '5m', state: 'TRADE' });
-  assert.deepEqual(trade!.outcome, { status: 'tp1', fillPrice: 84_391, exitPrice: 84_000, exitAt: T + 900, rNet: 1.1 });
+  assert.deepEqual(trade!.outcome, {
+    status: 'tp1', fillPrice: 84_391, exitPrice: 84_000, exitAt: T + 900, rNet: 1.1,
+    filledAt: T + 720, fillBy: T + 900 + 300 * 12, timeoutAt: T + 720 + 300 * 48, // the window runs from the trigger bar's close, later than first seen here
+    fillEdge: 84_391, fillBetterPts: 0, exitLevel: 84_000, exitPastPts: 0, exitWhy: 'level',
+  }, 'a short fills at the zone\'s low edge; TP1 is a limit, exactly the level');
+  assert.equal(trade!.barCloseAt, T + 900, 'the 5m trigger bar closed at its start + 5 min');
+  assert.equal(trade!.seenAfterMs, (T + 660) * 1000 - (T + 900) * 1000);
+  assert.equal(trade!.alert, null, 'no alert tried');
   assert.deepEqual([trade!.n, trade!.name], [4, 'FVG retest']);
   const [wait] = await recentSignals({ tf: '5m', state: 'WAIT' });
   assert.equal(wait!.outcome, null);
@@ -119,5 +126,25 @@ test('[critical] 1m without the chain is view-only: never read, never a signal, 
   // Even handed a 1m read, the journal does not keep it.
   await recordSignals([read({ tf: '1m', triggerTime: T + 90_000 }), read({ tf: '3m', triggerTime: T + 90_000 })], (T + 90_060) * 1000);
   assert.deepEqual((await recentSignals({ since: (T + 90_000) * 1000 })).map((x) => x.tf), ['3m']);
+});
+
+test('[critical] an exit past its stop says by how much and why (the minute opened past it: a gap); a fill inside the zone says how much better', async () => {
+  const t = read({ id: 'order-flow', state: 'TRADE', dir: 'long', tf: '1h', triggerTime: T + 30_000,
+    plan: { entryLo: 83_615, entryHi: 83_752, stop: 83_463, tp1: 83_865, tp2: null, tp3: null, tpWhy: [], rr: 1.9 } });
+  await recordSignals([t], (T + 33_660) * 1000);
+  await recordSetups([t], (T + 33_660) * 1000);
+  await query(`UPDATE entry_setups SET status = 'stop', fill_price = 83668, filled_at = $2, exit_price = 83441, exit_at = $3, r_net = -1.1
+                WHERE method = 'order-flow' AND trigger_at = $1`, [T + 30_000, T + 33_720, T + 34_000]);
+  await query(`INSERT INTO entry_alert_log (at, mode, tf, method, dir, trigger_at, text, status) VALUES ($1, 'single', '1h', 'order-flow', 1, $2, 'x', 'sent')`,
+    [(T + 33_663) * 1000, T + 30_000]);
+  const [row] = await recentSignals({ tf: '1h', state: 'TRADE' });
+  const o = row!.outcome!;
+  assert.deepEqual([o.fillEdge, o.fillBetterPts], [83_752, 84], 'a long rests at the top edge; it opened 84 pts lower, inside the zone');
+  assert.deepEqual([o.exitLevel, o.exitPastPts, o.exitWhy], [83_463, 22, 'gap'], 'SL 83,463, out at 83,441: 22 pts past, the minute opened there');
+  assert.deepEqual(row!.alert, { at: (T + 33_663) * 1000, status: 'sent' });
+  // The board's clock for the same setup: when it was seen, until when it may fill, when it times out, when the alert went.
+  const clock = (await setupClocks([t])).get(clockKeyOf(t))!;
+  assert.deepEqual([clock.status, clock.filledAt, clock.timeoutAt, clock.alertAt], ['stop', T + 33_720, T + 33_720 + 3_600 * 48, (T + 33_663) * 1000]);
+  assert.equal(clock.fillBy, T + 33_660 + 3_600 * 12, 'from the first whole minute after it was seen, past the bar close');
 });
 
