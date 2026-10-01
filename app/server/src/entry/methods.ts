@@ -498,32 +498,33 @@ const optionsFlow: Detector = ({ bars, a, trend, ctx }) => {
 };
 
 /**
- * Where each method takes profit (owner's SL/TP table, 1 Oct 2026). TP1:
- * `nearest` is the closest liquidity of any kind (a swing, a book wall, an OI
- * wall); `swing` the previous swing on the entry timeframe; `own` the method's
- * own first target (VWAP). TP2, the next target at least half an ATR past TP1:
+ * Where each method takes profit (owner's SL/TP tables, 1 Oct 2026). TP1, the
+ * kind looked at first (engine.ts pickTargets takes the nearest that pays the
+ * minimum R:R): `nearest` any liquidity; `swing` a swing on the entry
+ * timeframe (the continuation / reaction / previous swing); `book` a book wall,
+ * then a swing; `oi` an OI wall; `own` the method's own first target (VWAP). TP2, the next target at least half an ATR past TP1:
  * `htf` the next 1H/4H swing; `next` the next level of any kind; `own` the
  * method's own second target; `book` the next book wall or swing; `oi` the next
  * OI wall. Each falls back to the next real level of any kind -- never an
  * invented one. TP3: the expected-move edge, or the method's own (max pain).
  */
-export type TargetSpec = { tp1: 'nearest' | 'swing' | 'own'; tp2: 'htf' | 'next' | 'own' | 'book' | 'oi' };
+export type TargetSpec = { tp1: 'nearest' | 'swing' | 'own' | 'book' | 'oi'; tp2: 'htf' | 'next' | 'own' | 'book' | 'oi' };
 const tgt = (tp1: TargetSpec['tp1'], tp2: TargetSpec['tp2']): TargetSpec => ({ tp1, tp2 });
 
 /** `gate`: the method's own hard gate, in words, for the methods that have one. */
 /** `sl`: where the method's stop goes, before the 0.25 ATR buffer (owner's SL/TP table, 1 Oct 2026). */
 export const METHODS: readonly { id: MethodId; n: number; name: string; group: Group; summary: string; gate?: string; sl: string; targets: TargetSpec; detect: Detector }[] = [
-  { id: 'breakout', n: 1, name: 'Breakout', group: 'breakout', summary: 'A close through the 20-bar range, RVOL 1.5, closing near its extreme', sl: "the breakout candle's far end", targets: tgt('nearest', 'htf'), detect: breakout },
-  { id: 'breakout-retest', n: 2, name: 'Breakout + retest', group: 'pullback', summary: 'A breakout, then a pullback to the level that holds', sl: "the retest extreme", targets: tgt('nearest', 'htf'), detect: breakoutRetest },
+  { id: 'breakout', n: 1, name: 'Breakout', group: 'breakout', summary: 'A close through the 20-bar range, RVOL 1.5, closing near its extreme', sl: "the breakout candle's far end", targets: tgt('swing', 'htf'), detect: breakout },
+  { id: 'breakout-retest', n: 2, name: 'Breakout + retest', group: 'pullback', summary: 'A breakout, then a pullback to the level that holds', sl: "the retest extreme", targets: tgt('swing', 'htf'), detect: breakoutRetest },
   { id: 'liquidity-sweep', n: 3, name: 'Liquidity sweep', group: 'reversal', summary: 'Stops taken past a swing, a close back, then the MSS', sl: "the sweep extreme", targets: tgt('nearest', 'htf'), detect: liquiditySweep },
   { id: 'fvg-retest', n: 4, name: 'FVG retest', group: 'pullback', summary: 'Back into a gap left by displacement, and a reaction', sl: "the displacement origin", targets: tgt('swing', 'next'), detect: fvgRetest },
-  { id: 'ob-retest', n: 5, name: 'Order-block retest', group: 'pullback', summary: 'Back into the last opposite candle before a break', sl: "the order block's far edge", targets: tgt('nearest', 'htf'), detect: obRetest },
-  { id: 'bos', n: 6, name: 'BOS', group: 'breakout', summary: 'A displacement close through a swing, with the trend', sl: "the last higher low / lower high", targets: tgt('nearest', 'htf'), detect: bos },
+  { id: 'ob-retest', n: 5, name: 'Order-block retest', group: 'pullback', summary: 'Back into the last opposite candle before a break', sl: "the order block's far edge", targets: tgt('swing', 'htf'), detect: obRetest },
+  { id: 'bos', n: 6, name: 'BOS', group: 'breakout', summary: 'A displacement close through a swing, with the trend', sl: "the last higher low / lower high", targets: tgt('swing', 'htf'), detect: bos },
   { id: 'mss', n: 7, name: 'MSS / CHoCH', group: 'reversal', summary: 'The trend turns: a sweep, then a close through the last swing', sl: "the post-sweep extreme", targets: tgt('nearest', 'htf'), detect: mss },
   { id: 'momentum', n: 8, name: 'Momentum', group: 'breakout', summary: 'A 1.5 ATR candle, RVOL 1.5, follow-through -- no chase when extended', gate: `not opened > ${MAX_EXTENSION_ATR} ATR from the 20 EMA (no chase)`, sl: "the momentum candle's far end", targets: tgt('nearest', 'next'), detect: momentum },
   { id: 'pullback', n: 9, name: 'Pullback', group: 'pullback', summary: 'A trend back to its 20 EMA, then resuming', sl: "the pullback extreme", targets: tgt('swing', 'htf'), detect: pullback },
   { id: 'vwap-reversion', n: 10, name: 'VWAP / mean reversion', group: 'reversal', summary: 'Two σ from VWAP, turning, delta improving -- off on trend days', gate: `not a trend day (efficiency ≤ ${TREND_DAY_ER})`, sl: "the 2σ reversal extreme", targets: tgt('own', 'own'), detect: vwapReversion },
-  { id: 'order-flow', n: 11, name: 'Order flow', group: 'flow', summary: 'At a level: absorption, delta flip, CVD turn, micro BOS', sl: "the absorption / held-level extreme", targets: tgt('nearest', 'book'), detect: orderFlow },
-  { id: 'options-flow', n: 12, name: 'Options / derivatives', group: 'flow', summary: 'An OI wall that holds, with structure, flow and big-move risk', sl: "the OI wall / rejection extreme", targets: tgt('nearest', 'oi'), detect: optionsFlow },
+  { id: 'order-flow', n: 11, name: 'Order flow', group: 'flow', summary: 'At a level: absorption, delta flip, CVD turn, micro BOS', sl: "the absorption / held-level extreme", targets: tgt('book', 'book'), detect: orderFlow },
+  { id: 'options-flow', n: 12, name: 'Options / derivatives', group: 'flow', summary: 'An OI wall that holds, with structure, flow and big-move risk', sl: "the OI wall / rejection extreme", targets: tgt('oi', 'oi'), detect: optionsFlow },
 ];
 

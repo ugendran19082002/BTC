@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-386 files listed, 166 test files counted below, images and lockfiles left out.
+388 files listed, 169 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 97 |
-| `app/web` | 69 |
+| `app/server` | 98 |
+| `app/web` | 71 |
 
 ## `(root)`
 
@@ -119,7 +119,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [alerts.ts](../../app/server/src/entry/alerts.ts) | Telegram alerts for the entry section's TRADEs, switched on or off for each way -- without the timeframe chain, with it -- from the screen. |
+| [alerts.ts](../../app/server/src/entry/alerts.ts) | Timeframes a without-the-chain alert may be asked for; 5m unless the owner picks others. |
 | [engine.ts](../../app/server/src/entry/engine.ts) | The entry engine: twelve methods, each read with the timeframe chain and without it -- 24 reads -- and every read ending TRADE, WAIT or NO TRADE the same way (TEST.md): |
 | [gates.ts](../../app/server/src/entry/gates.ts) | Which of the entry engine's hard gates are switched on. |
 | [methods.ts](../../app/server/src/entry/methods.ts) | The twelve entry methods of TEST.md, each as its own trigger chain on one timeframe, to the owner's reference formulas (30 Sep 2026, docs/features/entry-methods-reference.md). |
@@ -268,7 +268,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [annotations.ts](../../app/web/src/api/annotations.ts) | Chart annotations API client. |
 | [client.ts](../../app/web/src/api/client.ts) | One place that knows how to talk to the API: JSON in and out, the session cookie, "not signed in" as its own error, and which failures are worth reporting to the error log. |
 | [desk.ts](../../app/web/src/api/desk.ts) | The desk's read calls: the option chain, spot and candles, what changed, the perpetual's tape, book and big prints, the trend plan's paper log, health and settings. |
-| [entry.ts](../../app/web/src/api/entry.ts) | -- |
+| [entry.ts](../../app/web/src/api/entry.ts) | One page of the signal history, the total matching, and the summary over all of it. |
 | [errors.ts](../../app/web/src/api/errors.ts) | The error log: read it, resolve or delete a row, and report a failure from this browser into the same table the server writes to. |
 | [report.ts](../../app/web/src/api/report.ts) | The P&L screen's calls: the record as a calendar, one day's mark-to-market line, and the spreadsheet download. |
 | [session.ts](../../app/web/src/api/session.ts) | Sign-in and the account page. |
@@ -337,8 +337,10 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [GateSwitches.tsx](../../app/web/src/components/desk/entry/GateSwitches.tsx) | The hard gates' on/off switches, for the whole entry section: both ways, every panel, and the paper log's recorder. |
 | [LiveStrip.tsx](../../app/web/src/components/desk/entry/LiveStrip.tsx) | Where the live price is against a TRADE's levels, on every tick: the perpetual's last trade (the stream's `ltp`, ~0.1 s) against the entry zone, the stop and TP1, in points. |
 | [MethodLegend.tsx](../../app/web/src/components/desk/entry/MethodLegend.tsx) | The twelve methods by number: 1 is Breakout, 2 Breakout + retest, and so on -- the one place their names are written, so the two panels below can show the number alone. |
-| [ModePanel.tsx](../../app/web/src/components/desk/entry/ModePanel.tsx) | One half of the reference layout: the twelve methods read one way -- with the timeframe chain, or without it -- with their chart, table, the chosen setup, its reasons, and that mode's paper record. |
-| [SignalHistory.tsx](../../app/web/src/components/desk/entry/SignalHistory.tsx) | Every signal the server kept (the journal, entry_signals): when, which method, which way and timeframe, BUY / SELL, WAIT or TRADE, how long it stood, its levels, the gates it stood on -- and for a... |
+| [ModePanel.tsx](../../app/web/src/components/desk/entry/ModePanel.tsx) | One half of the reference layout: the twelve methods read one way -- with the timeframe chain, or without it -- with their chart, table, the chosen setup and its reasons. |
+| [SignalHistory.tsx](../../app/web/src/components/desk/entry/SignalHistory.tsx) | Every signal the server kept (the journal, entry_signals), as a data table: signal tabs (all, BUY & SELL, BUY, SELL, WAIT), way and timeframe filters, today or all days, columns sortable on the ser... |
+| [TradeClock.tsx](../../app/web/src/components/desk/entry/TradeClock.tsx) | The selected TRADE's clock, from the moment its signal came: when the trigger bar closed, when the server saw it and when the alert went (each with its lag), then a counter -- the fill window closi... |
+| [clock.ts](../../app/web/src/components/desk/entry/clock.ts) | The entry section's clocks: a signal's times, to the second, in IST, and the counter that runs once a TRADE is out -- the fill window, then the time in the trade and to its time-out. |
 | [entry.css](../../app/web/src/components/desk/entry/entry.css) | The entry section's tables. |
 | [feed.ts](../../app/web/src/components/desk/entry/feed.ts) | What the entry section's price charts are drawn from, read once and shared by both panels and the twelve-chart grid (the desk's main chart used to read all of this for itself; it went on 30 Sep 2026). |
 | [parts.tsx](../../app/web/src/components/desk/entry/parts.tsx) | The entry section's small pieces, shared by the panels, the grid and the comparison: the signal chip, the method's number badge, the per-timeframe tick, and how a record and a number are written. |

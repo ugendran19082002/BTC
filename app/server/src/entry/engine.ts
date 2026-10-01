@@ -83,10 +83,13 @@ type Level = { price: number; why: string; kind: 'own' | 'entry' | 'htf' | 'wall
  * its kind: the method's own, a swing on the entry timeframe, a 1H/4H swing,
  * a book wall, the OI wall.
  */
-function targetLevels(dir: 1 | -1, from: number, bars: readonly Candle[], ctx: EntryContext, own: Setup['targets']): Level[] {
+export function targetLevels(dir: 1 | -1, from: number, bars: readonly Candle[], ctx: EntryContext, own: Setup['targets']): Level[] {
   const out: Level[] = (own ?? []).map((t) => ({ ...t, kind: 'own' as const }));
+  // A swing price has traded through since it formed is consumed -- its liquidity is taken -- and no target.
   const swingOf = (xs: readonly Candle[] | undefined, tf: string, kind: 'entry' | 'htf') =>
-    pivots(xs ?? [], dir === 1 ? 'high' : 'low').map((p) => ({ price: p.price, why: `${tf} swing ${dir === 1 ? 'high' : 'low'} ${fmt(p.price)}`, kind }));
+    pivots(xs ?? [], dir === 1 ? 'high' : 'low')
+      .filter((p) => !(xs ?? []).slice(p.i + 1).some((b) => (dir === 1 ? b.high > p.price : b.low < p.price)))
+      .map((p) => ({ price: p.price, why: `${tf} swing ${dir === 1 ? 'high' : 'low'} ${fmt(p.price)}`, kind }));
   out.push(...swingOf(bars, 'entry', 'entry'), ...swingOf(ctx.frames['1h'], '1h', 'htf'), ...swingOf(ctx.frames['4h'], '4h', 'htf'));
   for (const w of ctx.walls) {
     if ((dir === 1 && w.side === 'ask') || (dir === -1 && w.side === 'bid')) out.push({ price: w.price, why: `${w.side} wall ${fmt(w.price)}`, kind: 'wall' });
@@ -102,30 +105,51 @@ function targetLevels(dir: 1 | -1, from: number, bars: readonly Candle[], ctx: E
     .filter((t, i, xs) => i === 0 || Math.abs(t.price - xs[i - 1]!.price) > 1e-9);
 }
 
+/** The kinds each method looks at first for TP1, before any other (methods.ts TargetSpec). */
+const TP1_KINDS: Record<Exclude<TargetSpec['tp1'], 'own'>, readonly Level['kind'][]> = {
+  nearest: ['own', 'entry', 'htf', 'wall', 'oi'], swing: ['entry'], book: ['wall', 'entry'], oi: ['oi'],
+};
+
 /** The kinds each TP2 pool draws from (methods.ts TargetSpec). */
 const TP2_KINDS: Record<TargetSpec['tp2'], readonly Level['kind'][]> = {
   htf: ['htf'], next: ['own', 'entry', 'htf', 'wall', 'oi'], own: ['own'], book: ['wall', 'entry'], oi: ['oi'],
 };
 
 /**
- * TP1, TP2 and TP3 by the method's own rule (owner's SL/TP table, 1 Oct 2026):
- * TP1 the nearest liquidity (or the method's own -- VWAP -- or the previous
- * swing), TP2 the next target of the method's pool at least TP_STEP_ATR past
- * TP1, TP3 the expected-move edge or the method's own (max pain) past TP2.
- * A pool with nothing in it falls back to the next real level of any kind;
- * nothing at all past the zone, TP1 is 2R and says so. Never an invented TP2/TP3.
+ * TP1, TP2 and TP3 by the method's own rule (owner's SL/TP tables, 1 Oct 2026).
+ *
+ * TP1 is the nearest *valid* target, not merely the nearest: of the levels
+ * past the zone (each in the trade's direction, none consumed), the first in
+ * the method's own priority -- a continuation swing, a book wall, an OI wall
+ * -- that pays at least `minRr` from the fill; failing that, the first of any
+ * kind that does. A nearer level that pays less is skipped, and the reason
+ * says so. Only when no level pays enough is TP1 the nearest one -- and the
+ * R:R gate then refuses the read, honestly. VWAP reversion keeps VWAP as TP1
+ * whatever it pays: reverting to VWAP is the method.
+ *
+ * TP2 is the next target of the method's pool at least TP_STEP_ATR past TP1,
+ * TP3 the expected-move edge or the method's own (max pain) past TP2. A pool
+ * with nothing in it falls back to the next real level of any kind; nothing
+ * at all past the zone, TP1 is 2R and says so. Never an invented TP2/TP3.
  */
 export function pickTargets(spec: TargetSpec, levels: readonly Level[], i: {
-  dir: 1 | -1; a: number; entry: number; risk: number; ownTp3?: { price: number; why: string }; emEdge: number | null;
+  dir: 1 | -1; a: number; entry: number; risk: number; ownTp3?: { price: number; why: string }; emEdge: number | null; minRr?: number;
 }): { tp1: number; tp2: number | null; tp3: number | null; why: string[] } {
   const { dir, a } = i;
+  const minRr = i.minRr ?? MIN_RR;
   const why: string[] = [];
-  const pick1 = spec.tp1 === 'own' ? levels.find((l) => l.kind === 'own')
-    : spec.tp1 === 'swing' ? levels.find((l) => l.kind === 'entry') : undefined;
-  const first = pick1 ?? levels[0];
+  const pays = (l: Level) => i.risk > 0 && Math.abs(l.price - i.entry) / i.risk >= minRr;
+  let first: Level | undefined;
+  if (spec.tp1 === 'own') first = levels.find((l) => l.kind === 'own') ?? levels[0];
+  else {
+    const prefer = TP1_KINDS[spec.tp1];
+    first = levels.find((l) => prefer.includes(l.kind) && pays(l)) ?? levels.find(pays)
+      ?? levels.find((l) => prefer.includes(l.kind)) ?? levels[0];
+  }
   if (!first) return { tp1: i.entry + dir * 2 * i.risk, tp2: null, tp3: null, why: ['2R -- no level found beyond the entry'] };
   const tp1 = first.price;
-  why.push(first.why);
+  const skipped = levels.filter((l) => (l.price - i.entry) * dir < (tp1 - i.entry) * dir && !pays(l)).length;
+  why.push(spec.tp1 !== 'own' && skipped && pays(first) ? `${first.why} (${skipped} nearer under ${minRr}R skipped)` : first.why);
   const past = (l: { price: number }, ref: number) => (l.price - ref) * dir >= TP_STEP_ATR * a;
   const kinds = TP2_KINDS[spec.tp2];
   const second = levels.find((l) => l !== first && kinds.includes(l.kind) && past(l, tp1)) ?? levels.find((l) => l !== first && past(l, tp1));
@@ -177,7 +201,7 @@ function planOf(setup: Setup, spec: TargetSpec, slRule: string, a: number, bars:
   const levels = targetLevels(dir, beyond, bars, ctx, setup.targets);
   const o = ctx.options;
   const emEdge = o && o.emDay !== null ? o.spot + dir * o.emDay : null;
-  const { tp1, tp2, tp3, why } = pickTargets(spec, levels, { dir, a, entry, risk, ownTp3: setup.tp3, emEdge });
+  const { tp1, tp2, tp3, why } = pickTargets(spec, levels, { dir, a, entry, risk, ownTp3: setup.tp3, emEdge, minRr: MIN_RR });
   const reasons = {
     stop: `${slRule} ${fmt(setup.stop)} ${dir === 1 ? '−' : '+'} ${STOP_BUFFER_ATR} ATR`,
     tp1: why[0]!, tp2: tp2 === null ? null : why[1]!, tp3: tp3 === null ? null : why[tp2 === null ? 1 : 2]!,
