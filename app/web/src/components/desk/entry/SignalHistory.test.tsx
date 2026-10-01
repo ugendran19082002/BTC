@@ -12,7 +12,7 @@ const S = T / 1000;
 const oc = (over: Partial<EntrySignalOutcome> = {}): EntrySignalOutcome => ({
   status: 'open', fillPrice: null, exitPrice: null, exitAt: null, rNet: null, filledAt: null, fillBy: S + 3_600, timeoutAt: null,
   fillEdge: 84_391, fillBetterPts: null, exitLevel: null, exitPastPts: null, exitWhy: null,
-  tp1At: null, tp2At: null, tp3At: null, runner: null, runnerEnd: null, ...over,
+  tp1At: null, tp2At: null, tp3At: null, runner: null, runnerEnd: null, expireWhy: null, ...over,
 });
 const sig = (over: Partial<EntrySignal> = {}): EntrySignal => ({
   method: 'fvg-retest', n: 4, name: 'FVG retest', mode: 'single', tf: '3m', dir: -1, state: 'TRADE',
@@ -70,7 +70,7 @@ describe('the signal history table', () => {
     render(<SignalHistory />);
     await screen.findByRole('table', { name: 'signals' });
     const tabs = screen.getByRole('tablist', { name: 'signal tabs' });
-    expect(within(tabs).getAllByRole('tab').map((t) => t.textContent)).toEqual(['All', 'TRADING', 'BUY & SELL', 'BUY', 'SELL', 'WAIT', 'TGT HIT', 'SL HIT', 'TIMED OUT', 'EXPIRED', 'MISSED']);
+    expect(within(tabs).getAllByRole('tab').map((t) => t.textContent)).toEqual(['All', 'TRADING', 'BUY & SELL', 'BUY', 'SELL', 'WAIT', 'TGT HIT', 'SL HIT', 'TIMED OUT', 'EXPIRED']);
     const last = () => getEntrySignals.mock.lastCall![0];
     fireEvent.click(within(tabs).getByRole('tab', { name: 'TRADING' }));
     await waitFor(() => expect(last()).toMatchObject({ state: 'TRADE', live: true })); // in play now: at the zone or filled
@@ -84,7 +84,7 @@ describe('the signal history table', () => {
     await waitFor(() => expect(last()).toMatchObject({ state: 'WAIT' }));
     expect(within(tabs).getByRole('tab', { name: 'WAIT' })).toHaveAttribute('aria-selected', 'true');
     // How each TRADE ended: exactly that ending, and only TRADEs; never a leftover filter from another tab.
-    for (const [name, outcome] of [['TGT HIT', 'tp1'], ['SL HIT', 'stop'], ['TIMED OUT', 'timeout'], ['EXPIRED', 'expired'], ['MISSED', 'missed']] as const) {
+    for (const [name, outcome] of [['TGT HIT', 'tp1'], ['SL HIT', 'stop'], ['TIMED OUT', 'timeout'], ['EXPIRED', 'expired']] as const) {
       fireEvent.click(within(tabs).getByRole('tab', { name }));
       await waitFor(() => expect(last()).toMatchObject({ state: 'TRADE', outcome }));
       expect(last().dir).toBeUndefined();
@@ -174,7 +174,8 @@ describe('the signal history table', () => {
     expect([stood(20_000), stood(4 * 60_000), stood(72 * 60_000)]).toEqual(['just now', '4 min', '1 h 12 min']);
     expect(outcomeOf(sig({ outcome: oc({ status: 'open' }) })).text).toBe('waiting for price');
     expect(outcomeOf(sig({ outcome: oc({ status: 'expired' }) })).text).toBe('expired, never filled');
-    expect(outcomeOf(sig({ outcome: oc({ status: 'missed' }) })).text).toBe('missed -- ran to TGT1 unfilled');
+    expect(outcomeOf(sig({ outcome: oc({ status: 'expired', expireWhy: 'target' }) })).text).toBe('expired, never filled -- price ran to TGT1 without it');
+    expect(outcomeOf(sig({ outcome: oc({ status: 'expired', expireWhy: 'stop' }) })).text).toBe('expired, never filled -- SL broken before the fill');
     expect(exitOf(sig())).toEqual({ price: '84,288', why: 'TGT', pts: 103 });
     expect(exitOf(sig({ outcome: oc({ status: 'timeout', fillPrice: 84_391, exitPrice: 84_400, exitAt: S, rNet: -0.1, exitWhy: 'time' }) }))).toEqual({ price: '84,400', why: 'time', pts: -9 });
     expect(exitOf(sig({ outcome: oc({ status: 'filled', fillPrice: 84_391 }) }))).toBeNull();
@@ -287,7 +288,8 @@ describe('the signal history table', () => {
     expect(at({ status: 'tp1', runner: 'done', runnerEnd: 'be' })).toBe('✓ never hit · runner out at BE');
     expect(at({ status: 'timeout' })).toBe('✓ never hit');
     expect(at({ status: 'expired' })).toBe('not filled');
-    expect(at({ status: 'missed' })).toBe('not filled -- missed');
+    expect(at({ status: 'expired', expireWhy: 'stop' })).toBe('broken before the fill');
+    expect(at({ status: 'expired', expireWhy: 'target' })).toBe('not filled');
     expect(stopOf(sig({ state: 'WAIT', outcome: null }))).toBeNull();
   });
 

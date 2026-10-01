@@ -103,8 +103,9 @@ export function GateChip({ read }: { read: Pick<MethodRead, 'gates' | 'dir'> | n
  * levels are where the order rests, so a setup not yet filled -- or one price
  * ran away from -- must not look like a position.
  */
-const paperTag = (status: string | undefined) =>
-  ({ open: ' · waiting for fill', filled: ' · filled', missed: ' · MISSED (ran to TGT1 unfilled)', expired: ' · expired unfilled',
+const paperTag = (status: string | undefined, why?: string | null) =>
+  status === 'expired' && why === 'target' ? ' · EXPIRED (ran to TGT1 unfilled)' :
+  ({ open: ' · waiting for fill', filled: ' · filled', expired: ' · expired unfilled',
     tp1: ' · TGT1 hit', stop: ' · stopped', timeout: ' · timed out' } as Record<string, string>)[status ?? ''] ?? '';
 
 export function overlayOf(r: MethodRead | null, setupsOn: boolean): EntryOverlay | null {
@@ -112,7 +113,7 @@ export function overlayOf(r: MethodRead | null, setupsOn: boolean): EntryOverlay
   if (!setupsOn || !r || !p || !r.dir) return null;
   return {
     dir: r.dir, entryLo: p.entryLo, entryHi: p.entryHi, stop: p.stop, tp1: p.tp1, tp2: p.tp2, tp3: p.tp3, rr: p.rr,
-    label: `#${r.n} ${r.name}${r.mode === 'mtf' ? ' (with TF)' : ` (${r.tf})`}${paperTag(r.paper?.status)}`, triggerTime: r.triggerTime,
+    label: `#${r.n} ${r.name}${r.mode === 'mtf' ? ' (with TF)' : ` (${r.tf})`}${paperTag(r.paper?.status, r.paper?.expireWhy)}`, triggerTime: r.triggerTime,
   };
 }
 

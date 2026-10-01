@@ -22,9 +22,12 @@ describe('the entry clocks', () => {
       .toEqual({ label: 'Held', value: '9:00', tone: 'done' });
   });
 
-  it('[critical] a limit price ran away from is missed, not waiting', () => {
-    expect(clockText({ status: 'missed', fillBy: 0, filledAt: null, timeoutAt: null, exitAt: null }, 0))
-      .toEqual({ label: 'Missed', value: 'price ran to TGT1 without filling', tone: 'done' });
+  it('[critical] a limit price ran away from is expired -- never filled -- and says why', () => {
+    const exp = (expireWhy: 'window' | 'stop' | 'target' | null) => clockText({ status: 'expired', fillBy: 0, filledAt: null, timeoutAt: null, exitAt: null, expireWhy }, 0);
+    expect(exp('target')).toEqual({ label: 'Expired', value: 'price ran to TGT1 without it', tone: 'done' });
+    expect(exp('stop')!.value).toBe('SL broken before the fill');
+    expect(exp('window')!.value).toBe('never filled in its window');
+    expect(exp(null)!.value).toBe('never filled in its window');
   });
 
   it('a tape time to the second, a candle time as its minute', () => {

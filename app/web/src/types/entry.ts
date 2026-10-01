@@ -130,7 +130,12 @@ export type EntrySignalOutcome = {
   /** TGT1 / TGT2 / TGT3: when each was reached (epoch s); the runner after TGT1, its stop at breakeven. */
   tp1At: number | null; tp2At: number | null; tp3At: number | null;
   runner: 'running' | 'done' | null; runnerEnd: 'be' | 'tp2' | 'tp3' | 'timeout' | null;
+  /** Why an expired setup was never filled: its window passed, the stop came first, or price ran to TGT1 without it. */
+  expireWhy: ExpireWhy | null;
 };
+
+/** Why a setup expired -- never filled. */
+export type ExpireWhy = 'window' | 'stop' | 'target';
 
 /**
  * A setup's clock in the paper log: seen (ms), may fill until `fillBy`, filled
@@ -142,6 +147,7 @@ export type SetupClock = {
   timeoutAt: number | null; exitAt: number | null; exitPrice: number | null; alertAt: number | null;
   tp1At: number | null; tp2At: number | null; tp3At: number | null;
   runner: 'running' | 'done' | null; runnerEnd: 'be' | 'tp2' | 'tp3' | 'timeout' | null;
+  expireWhy: ExpireWhy | null;
 };
 
 /** Over every signal matching the filters: TP1 hits and points made, stops and points lost, the net. */

@@ -31,8 +31,8 @@ export type SignalFilter = {
   mode?: EntryMode; tf?: EntryTf; state?: 'WAIT' | 'TRADE'; dir?: 1 | -1; since?: number;
   /** Only TRADEs still in play: waiting at the zone or filled, not yet out. */
   live?: boolean;
-  /** Only TRADEs that ended one way: TGT1 hit, stopped, timed out, expired unfilled, or missed. */
-  outcome?: 'tp1' | 'stop' | 'timeout' | 'expired' | 'missed';
+  /** Only TRADEs that ended one way: TGT1 hit, stopped, timed out, or expired (never filled). */
+  outcome?: 'tp1' | 'stop' | 'timeout' | 'expired';
   limit?: number; offset?: number; sort?: SignalSort; asc?: boolean;
 };
 const queryOf = (q: SignalFilter) => {

@@ -10,7 +10,7 @@ const read = (paper: SetupClock | null): MethodRead => ({
 });
 const clock = (over: Partial<SetupClock> = {}): SetupClock => ({
   status: 'open', firstSeen: (NOW - 97) * 1000, fillBy: NOW + 125, filledAt: null, fillPrice: null, timeoutAt: null, exitAt: null, exitPrice: null,
-  alertAt: (NOW - 96) * 1000, tp1At: null, tp2At: null, tp3At: null, runner: null, runnerEnd: null, ...over,
+  alertAt: (NOW - 96) * 1000, tp1At: null, tp2At: null, tp3At: null, runner: null, runnerEnd: null, expireWhy: null, ...over,
 });
 
 describe('the entry clock on the selected TRADE', () => {

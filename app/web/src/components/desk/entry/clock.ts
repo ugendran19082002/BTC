@@ -53,7 +53,7 @@ export function lag(ms: number): string {
  * counting down, or out. Null for a state with no clock.
  */
 export function clockText(
-  c: Pick<SetupClock, 'status' | 'fillBy' | 'filledAt' | 'timeoutAt' | 'exitAt'> & Partial<Pick<SetupClock, 'runner' | 'tp2At'>>, now: number,
+  c: Pick<SetupClock, 'status' | 'fillBy' | 'filledAt' | 'timeoutAt' | 'exitAt'> & Partial<Pick<SetupClock, 'runner' | 'tp2At' | 'expireWhy'>>, now: number,
 ): { label: string; value: string; tone: 'wait' | 'live' | 'done' } | null {
   // After TGT1: the runner, its stop at breakeven, out for TGT2 then TGT3.
   if (c.status === 'tp1' && c.runner === 'running') {
@@ -65,8 +65,10 @@ export function clockText(
     const out = c.timeoutAt === null ? '' : ` · time-out in ${span(c.timeoutAt * 1000 - now)}`;
     return { label: 'In the trade', value: `${span(now - c.filledAt * 1000)}${out}`, tone: 'live' };
   }
-  if (c.status === 'expired') return { label: 'Expired', value: 'never filled in its window', tone: 'done' };
-  if (c.status === 'missed') return { label: 'Missed', value: 'price ran to TGT1 without filling', tone: 'done' };
+  if (c.status === 'expired') {
+    const why = c.expireWhy === 'target' ? 'price ran to TGT1 without it' : c.expireWhy === 'stop' ? 'SL broken before the fill' : 'never filled in its window';
+    return { label: 'Expired', value: why, tone: 'done' };
+  }
   if (c.exitAt !== null && c.filledAt !== null) return { label: 'Held', value: span((c.exitAt - c.filledAt) * 1000), tone: 'done' };
   return null;
 }

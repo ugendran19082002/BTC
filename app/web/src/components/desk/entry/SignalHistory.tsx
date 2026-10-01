@@ -37,8 +37,7 @@ export const TABS = {
   tgt: { label: 'TGT HIT', q: { state: 'TRADE', outcome: 'tp1' }, tone: '#26a17b', title: 'Out at TGT1' },
   sl: { label: 'SL HIT', q: { state: 'TRADE', outcome: 'stop' }, tone: '#e2504f', title: 'Out at the stop' },
   timeout: { label: 'TIMED OUT', q: { state: 'TRADE', outcome: 'timeout' }, tone: '#64748b', title: 'Closed on time, neither level reached' },
-  expired: { label: 'EXPIRED', q: { state: 'TRADE', outcome: 'expired' }, tone: '#64748b', title: 'Never filled in its window, or the stop came first' },
-  missed: { label: 'MISSED', q: { state: 'TRADE', outcome: 'missed' }, tone: '#b7791f', title: 'Price ran to TGT1 without coming back to fill' },
+  expired: { label: 'EXPIRED', q: { state: 'TRADE', outcome: 'expired' }, tone: '#64748b', title: 'Never filled: the window passed, the SL broke first, or price ran to TGT1 without it' },
 } as const satisfies Record<string, { label: string; q: Pick<SignalFilter, 'state' | 'dir' | 'live' | 'outcome'>; tone: string; title: string }>;
 type Tab = keyof typeof TABS;
 
@@ -72,6 +71,11 @@ export function stood(ms: number): string {
   return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ''}`;
 }
 
+/** Why a setup expired, in words. */
+export const EXPIRE_WHY: Record<string, string> = {
+  window: 'its window passed', stop: 'SL broken before the fill', target: 'price ran to TGT1 without it',
+};
+
 /** What became of a signal, in words and a colour. */
 export function outcomeOf(s: EntrySignal): { text: string; cls: string } {
   if (s.state === 'WAIT') return { text: 'waited', cls: 'text-muted-foreground' };
@@ -84,8 +88,7 @@ export function outcomeOf(s: EntrySignal): { text: string; cls: string } {
     case 'tp1': return { text: `TP1 ✓${r}`, cls: 'text-[var(--up)]' };
     case 'stop': return { text: `stop ✗${r}`, cls: 'text-[var(--down)]' };
     case 'timeout': return { text: `timed out${r}`, cls: 'text-muted-foreground' };
-    case 'expired': return { text: 'expired, never filled', cls: 'text-muted-foreground' };
-    case 'missed': return { text: 'missed -- ran to TGT1 unfilled', cls: 'text-[var(--warn)]' };
+    case 'expired': return { text: `expired, never filled${EXPIRE_WHY[o.expireWhy ?? ''] ? ` -- ${EXPIRE_WHY[o.expireWhy!]}` : ''}`, cls: 'text-muted-foreground' };
     default: return { text: o.status, cls: 'text-muted-foreground' };
   }
 }
@@ -119,14 +122,14 @@ export function fillNote(s: EntrySignal): string | null {
  * reached. TGT1 is where the record's trade exits; TGT2 and TGT3 are watched
  * by the runner after it, its stop at breakeven.
  */
-export type TargetState = { n: 1 | 2 | 3; level: number | null; why: string | null; hit: number | null; state: 'hit' | 'watching' | 'missed' | 'none' };
+export type TargetState = { n: 1 | 2 | 3; level: number | null; why: string | null; hit: number | null; state: 'hit' | 'watching' | 'unreached' | 'none' };
 export function targetsOf(s: EntrySignal): TargetState[] {
   const o = s.outcome;
   const live = o?.status === 'open' || o?.status === 'filled';
   const running = o?.runner === 'running';
   const t = (n: 1 | 2 | 3, level: number | null, why: string | null | undefined, hit: number | null | undefined, watching: boolean): TargetState => ({
     n, level, why: why ?? null, hit: hit ?? null,
-    state: level === null || s.state !== 'TRADE' ? 'none' : hit != null ? 'hit' : watching ? 'watching' : 'missed',
+    state: level === null || s.state !== 'TRADE' ? 'none' : hit != null ? 'hit' : watching ? 'watching' : 'unreached',
   });
   return [
     t(1, s.tp1, s.why?.tp1, o?.tp1At ?? (o?.status === 'tp1' ? o.exitAt : null), live),
@@ -140,7 +143,7 @@ function Target({ t }: { t: TargetState }) {
   if (t.state === 'none') return <span className="text-muted-foreground">{fmt(t.level)}</span>;
   return (
     <>
-      <span className={t.state === 'hit' ? 'font-semibold text-[var(--up)]' : t.state === 'missed' ? 'text-muted-foreground' : 'text-[var(--up)]'}>{fmt(t.level)}</span>
+      <span className={t.state === 'hit' ? 'font-semibold text-[var(--up)]' : t.state === 'unreached' ? 'text-muted-foreground' : 'text-[var(--up)]'}>{fmt(t.level)}</span>
       <div className="text-[10.5px] text-muted-foreground">
         {t.state === 'hit' ? <span className="text-[var(--up)]">✓ {atText(t.hit!)}</span> : t.state === 'watching' ? 'watching…' : '✗ not reached'}
       </div>
@@ -151,8 +154,8 @@ function Target({ t }: { t: TargetState }) {
 /**
  * The stop, and what became of it: guarding a limit not yet filled, watching
  * a trade, hit (and when), moved to breakeven for the runner after TGT1,
- * never hit (out at a target or on time), or no trade at all (expired or
- * missed -- never filled).
+ * never hit (out at a target or on time), or no trade at all (expired --
+ * never filled; broken before the fill when the stop is why).
  */
 export type StopState = { text: string; tone: 'watch' | 'hit' | 'safe' | 'none' };
 export function stopOf(s: EntrySignal): StopState | null {
@@ -166,8 +169,7 @@ export function stopOf(s: EntrySignal): StopState | null {
       if (o.runner === 'running') return { text: `→ breakeven ${fmt(o.fillPrice)}`, tone: 'watch' };
       return { text: o.runnerEnd === 'be' ? '✓ never hit · runner out at BE' : '✓ never hit', tone: 'safe' };
     case 'timeout': return { text: '✓ never hit', tone: 'safe' };
-    case 'expired': return { text: 'not filled', tone: 'none' };
-    case 'missed': return { text: 'not filled -- missed', tone: 'none' };
+    case 'expired': return { text: o.expireWhy === 'stop' ? 'broken before the fill' : 'not filled', tone: o.expireWhy === 'stop' ? 'hit' : 'none' };
     default: return null;
   }
 }

@@ -12,7 +12,8 @@ const read = (paper: Partial<SetupClock> | null): MethodRead => ({
 describe('the setup drawn on the chart', () => {
   it('[critical] says where it stands in the paper log: levels are where the order rests, not a position', () => {
     expect(overlayOf(read({ status: 'open' }), true)!.label).toBe('#10 VWAP / mean reversion (5m) · waiting for fill');
-    expect(overlayOf(read({ status: 'missed' }), true)!.label).toBe('#10 VWAP / mean reversion (5m) · MISSED (ran to TGT1 unfilled)');
+    expect(overlayOf(read({ status: 'expired', expireWhy: 'target' }), true)!.label).toBe('#10 VWAP / mean reversion (5m) · EXPIRED (ran to TGT1 unfilled)');
+    expect(overlayOf(read({ status: 'expired', expireWhy: 'window' }), true)!.label).toMatch(/· expired unfilled$/);
     expect(overlayOf(read({ status: 'filled' }), true)!.label).toMatch(/· filled$/);
     expect(overlayOf(read(null), true)!.label).toBe('#10 VWAP / mean reversion (5m)');
   });
