@@ -26,14 +26,20 @@ const signedPts = (v: number) => `${v >= 0 ? '+' : '−'}${fmt(Math.abs(v))}`;
 
 /** The signal tabs, and what each asks the server for. */
 export const TABS = {
-  all: { label: 'All', q: {} },
+  all: { label: 'All', q: {}, tone: '#2563eb', title: 'Every signal' },
   // In play now: waiting at the zone or filled, not yet out at TP1, the stop or time.
-  trading: { label: 'TRADING', q: { state: 'TRADE', live: true } },
-  trades: { label: 'BUY & SELL', q: { state: 'TRADE' } },
-  buy: { label: 'BUY', q: { state: 'TRADE', dir: 1 } },
-  sell: { label: 'SELL', q: { state: 'TRADE', dir: -1 } },
-  wait: { label: 'WAIT', q: { state: 'WAIT' } },
-} as const satisfies Record<string, { label: string; q: Pick<SignalFilter, 'state' | 'dir' | 'live'> }>;
+  trading: { label: 'TRADING', q: { state: 'TRADE', live: true }, tone: '#2563eb', title: 'In play now: waiting at the zone, filled, or a runner after TGT1' },
+  trades: { label: 'BUY & SELL', q: { state: 'TRADE' }, tone: '#2563eb', title: 'Every TRADE, either way' },
+  buy: { label: 'BUY', q: { state: 'TRADE', dir: 1 }, tone: '#26a17b', title: 'TRADEs to buy' },
+  sell: { label: 'SELL', q: { state: 'TRADE', dir: -1 }, tone: '#e2504f', title: 'TRADEs to sell' },
+  wait: { label: 'WAIT', q: { state: 'WAIT' }, tone: '#b7791f', title: 'Forming, not yet a TRADE' },
+  // How each TRADE ended in the paper log.
+  tgt: { label: 'TGT HIT', q: { state: 'TRADE', outcome: 'tp1' }, tone: '#26a17b', title: 'Out at TGT1' },
+  sl: { label: 'SL HIT', q: { state: 'TRADE', outcome: 'stop' }, tone: '#e2504f', title: 'Out at the stop' },
+  timeout: { label: 'TIMED OUT', q: { state: 'TRADE', outcome: 'timeout' }, tone: '#64748b', title: 'Closed on time, neither level reached' },
+  expired: { label: 'EXPIRED', q: { state: 'TRADE', outcome: 'expired' }, tone: '#64748b', title: 'Never filled in its window, or the stop came first' },
+  missed: { label: 'MISSED', q: { state: 'TRADE', outcome: 'missed' }, tone: '#b7791f', title: 'Price ran to TGT1 without coming back to fill' },
+} as const satisfies Record<string, { label: string; q: Pick<SignalFilter, 'state' | 'dir' | 'live' | 'outcome'>; tone: string; title: string }>;
 type Tab = keyof typeof TABS;
 
 /**
@@ -205,18 +211,18 @@ export function SignalHistory() {
           <h3 className="m-0 text-[13px] font-bold">Signal history</h3>
           <p className="m-0 text-[11px] text-muted-foreground">Every signal the server kept, whichever chart was on screen</p>
         </div>
-        <div role="tablist" aria-label="signal tabs" className="inline-flex overflow-hidden rounded-md border border-border text-[12px]">
-          {(Object.keys(TABS) as Tab[]).map((t) => (
-            <button key={t} type="button" role="tab" aria-selected={f.tab === t} onClick={() => set({ tab: t })}
-                    title={t === 'trading' ? 'In play now: waiting at the zone or filled, not yet out at TP1, the stop or time' : undefined}
-                    className={cn('px-2.5 py-1 font-semibold', f.tab === t
-                      ? t === 'buy' ? 'bg-[#26a17b] text-white' : t === 'sell' ? 'bg-[#e2504f] text-white' : t === 'wait' ? 'bg-[#b7791f] text-white' : 'bg-[#2563eb] text-white'
-                      : 'text-muted-foreground')}>
-              {t === 'trading' ? <span aria-hidden className="mr-1 inline-block size-1.5 rounded-full bg-[#26a17b] align-middle" /> : null}
-              {TABS[t].label}
-            </button>
-          ))}
-        </div>
+      </div>
+      {/* Signals, then how each TRADE ended; one row that scrolls sideways on a phone rather than wrapping into a block. */}
+      <div role="tablist" aria-label="signal tabs" className="mb-2 flex max-w-full gap-1 overflow-x-auto pb-0.5 text-[12px] [scrollbar-width:thin]">
+        {(Object.keys(TABS) as Tab[]).map((t, k) => (
+          <button key={t} type="button" role="tab" aria-selected={f.tab === t} onClick={() => set({ tab: t })} title={TABS[t].title}
+                  style={f.tab === t ? { background: TABS[t].tone, borderColor: TABS[t].tone } : undefined}
+                  className={cn('shrink-0 rounded-md border px-2.5 py-1 font-semibold', k === 6 && 'ml-2',
+                    f.tab === t ? 'text-white' : 'border-border text-muted-foreground hover:bg-muted hover:text-foreground')}>
+            {t === 'trading' ? <span aria-hidden className="mr-1 inline-block size-1.5 rounded-full bg-[#26a17b] align-middle" /> : null}
+            {TABS[t].label}
+          </button>
+        ))}
       </div>
 
       <div className="mb-2 flex flex-wrap items-center gap-1.5 text-[11px]">

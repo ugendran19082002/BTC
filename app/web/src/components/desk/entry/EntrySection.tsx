@@ -117,27 +117,51 @@ export function EntrySection({ desk, onTimeframes }: {
 
   return (
     <section aria-label="entry setups" className="desk-entry mt-3">
-      <header className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h2 className="m-0 text-[16px] font-bold">Entry setups <span className="font-normal text-muted-foreground">· 12 methods × without / with timeframe = 24</span></h2>
-          <p className="m-0 text-[11.5px] text-muted-foreground">
-            {board ? `${counts.trade} trade · ${counts.wait} wait · ${24 - counts.trade - counts.wait} no trade · read ${new Date(board.at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}` : 'reading…'}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <div role="group" aria-label="entry view" className="inline-flex overflow-hidden rounded-md border border-border text-[12px]">
-            {(['panels', 'grid'] as const).map((v) => (
-              <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}
-                      className={cn('px-2.5 py-1', view === v ? 'bg-muted text-foreground' : 'text-muted-foreground')}>
-                {v === 'panels' ? 'Side by side' : '12 charts'}
-              </button>
-            ))}
+      {/*
+        One card: what the board says now on the left, the controls on the right.
+        On a phone the controls drop under it as a two-column grid -- nothing
+        runs off the screen -- and on a window they sit in one toolbar.
+      */}
+      <header className="mb-3 rounded-xl border border-border bg-[var(--panel)] p-3 shadow-[0_2px_12px_rgba(0,0,0,0.3)]">
+        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+          <div className="min-w-0">
+            <h2 className="m-0 flex flex-wrap items-baseline gap-x-2 text-[16px] font-bold">
+              Entry setups
+              <span className="text-[12px] font-normal text-muted-foreground">12 methods × without / with timeframe = 24</span>
+            </h2>
+            <div aria-label="board status" className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11.5px]">
+              <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold', board ? 'bg-[var(--up-bg)] text-[var(--up)]' : 'bg-muted text-muted-foreground')}>
+                <span aria-hidden className={cn('size-1.5 rounded-full', board ? 'animate-pulse bg-[var(--up)]' : 'bg-muted-foreground')} />
+                {board ? 'Live' : 'Reading…'}
+              </span>
+              {board ? (
+                <>
+                  <span className="sr-only">{`${counts.trade} trade · ${counts.wait} wait · ${24 - counts.trade - counts.wait} no trade`}</span>
+                  <span aria-hidden className="rounded-full bg-[#26a17b]/20 px-2 py-0.5 font-semibold text-[#26a17b]">{counts.trade} TRADE</span>
+                  <span aria-hidden className="rounded-full bg-[#b7791f]/20 px-2 py-0.5 font-semibold text-[#d69e2e]">{counts.wait} WAIT</span>
+                  <span aria-hidden className="rounded-full bg-muted px-2 py-0.5 text-muted-foreground">{24 - counts.trade - counts.wait} NO TRADE</span>
+                  <span className="text-muted-foreground">read {new Date(board.at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })} · on closed candles</span>
+                </>
+              ) : null}
+            </div>
           </div>
-          <Switch label="Auto-select signals" checked={autoSelect} onCheckedChange={setAutoSelect}
-                  description={autoSelect ? 'A new BUY / SELL takes its panel.' : 'Rows are chosen by hand only.'} />
-          <GateSwitches onChanged={() => void rereadBoard()} />
-          <Switch label="Setups on chart" checked={setupsOn} onCheckedChange={setSetupsOn}
-                  description={setupsOn ? 'Entry, SL and TP drawn for a TRADE.' : 'Plain price charts.'} />
+          <div className="grid w-full grid-cols-2 items-center gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:gap-3">
+            <div role="group" aria-label="entry view" className="col-span-2 inline-flex overflow-hidden rounded-md border border-border text-[12px] sm:col-span-1">
+              {(['panels', 'grid'] as const).map((v) => (
+                <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}
+                        className={cn('flex-1 px-3 py-1.5 font-semibold sm:flex-none', view === v ? 'bg-[#2563eb] text-white' : 'text-muted-foreground hover:bg-muted')}>
+                  {v === 'panels' ? 'Side by side' : '12 charts'}
+                </button>
+              ))}
+            </div>
+            <span aria-hidden className="hidden h-8 w-px bg-border sm:block" />
+            <Switch label="Auto-select signals" checked={autoSelect} onCheckedChange={setAutoSelect}
+                    description={autoSelect ? 'A new BUY / SELL takes its panel.' : 'Rows are chosen by hand only.'} />
+            <Switch label="Setups on chart" checked={setupsOn} onCheckedChange={setSetupsOn}
+                    description={setupsOn ? 'Entry, SL and TP drawn for a TRADE.' : 'Plain price charts.'} />
+            <span aria-hidden className="hidden h-8 w-px bg-border sm:block" />
+            <div className="col-span-2 sm:col-span-1"><GateSwitches onChanged={() => void rereadBoard()} /></div>
+          </div>
         </div>
       </header>
 

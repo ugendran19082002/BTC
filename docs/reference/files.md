@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-388 files listed, 169 test files counted below, images and lockfiles left out.
+390 files listed, 171 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 98 |
-| `app/web` | 71 |
+| `app/server` | 99 |
+| `app/web` | 72 |
 
 ## `(root)`
 
@@ -39,7 +39,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [entry-study.ts](../../app/server/scripts/entry-study.ts) | The entry section's twelve methods replayed over the cached 5m history, graded the way the paper log grades them, after taker fees. |
+| [entry-study.ts](../../app/server/scripts/entry-study.ts) | The entry section's twelve methods replayed over the cached 5m history, graded the way the paper log grades them: R in points over risk, no fee term (removed from the entry section at the owner's r... |
 | [sync-trend.mjs](../../app/server/scripts/sync-trend.mjs) | Copies the trend plan (app/web/src/lib/trend/breakout.ts) into the server, which builds only its own src/ -- one rule for the chart, the study and the paper log. test/strategy/trend-copy.test.ts fa... |
 
 ## `app/server/src/`
@@ -122,6 +122,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [alerts.ts](../../app/server/src/entry/alerts.ts) | Timeframes a without-the-chain alert may be asked for; 5m unless the owner picks others. |
 | [engine.ts](../../app/server/src/entry/engine.ts) | The entry engine: twelve methods, each read with the timeframe chain and without it -- 24 reads -- and every read ending TRADE, WAIT or NO TRADE the same way (TEST.md): |
 | [gates.ts](../../app/server/src/entry/gates.ts) | Which of the entry engine's hard gates are switched on. |
+| [live-grade.ts](../../app/server/src/entry/live-grade.ts) | The paper log graded live, on the perpetual's own trades (owner, 1 Oct 2026: "everything on the live price, not on the candle close"). |
 | [methods.ts](../../app/server/src/entry/methods.ts) | The twelve entry methods of TEST.md, each as its own trigger chain on one timeframe, to the owner's reference formulas (30 Sep 2026, docs/features/entry-methods-reference.md). |
 | [paper.ts](../../app/server/src/entry/paper.ts) | The entry setups' paper log: the forward test the 24 reads need before any of them is believed. |
 | [prims.ts](../../app/server/src/entry/prims.ts) | The price-action pieces the twelve entry methods are built from. |
@@ -589,6 +590,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [2026-09-11-security-audit.md](../history/2026-09-11-security-audit.md) | Security audit — BTC Desk |
 | [2026-09.md](../history/2026-09.md) | History — September 2026 |
+| [2026-10.md](../history/2026-10.md) | History — October 2026 |
 
 ## `docs/reference/`
 

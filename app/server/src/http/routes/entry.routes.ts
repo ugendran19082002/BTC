@@ -4,7 +4,7 @@ import { readEntryContext } from '../../entry/read.js';
 import { entryRecord, recentSetups } from '../../entry/paper.js';
 import { GateLocked, gateSettings, gatesOff, isGateKey, setGate } from '../../entry/gates.js';
 import { alertSettings, isMode, recentAlerts, sampleAlertText, setAlert } from '../../entry/alerts.js';
-import { clockKeyOf, exportSignals, isSignalSort, setupClocks, signalPage, signalsCsv, type SignalQuery } from '../../entry/signals.js';
+import { clockKeyOf, exportSignals, isOutcomeFilter, isSignalSort, setupClocks, signalPage, signalsCsv, type SignalQuery } from '../../entry/signals.js';
 import { CHAIN, TF_SEC, type MethodRead, type SetupClock, type Tf } from '../../entry/types.js';
 import { ttlCache } from '../ttl-cache.js';
 
@@ -123,6 +123,7 @@ function signalQueryOf(query: unknown): SignalQuery {
     dir: q.dir === '1' || q.dir === '-1' ? Number(q.dir) : undefined,
     since: num(q.since),
     live: q.live === 'true',
+    outcome: isOutcomeFilter(q.outcome) ? q.outcome : undefined,
     sort: isSignalSort(q.sort) ? q.sort : undefined,
     asc: q.asc === 'true',
   };

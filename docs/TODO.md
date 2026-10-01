@@ -92,16 +92,32 @@ Still open:
   big-move, expected move, as of 30 Sep 20:00): every TRADE since is logged
   "with a gate off" and kept out of the record. Turn them back on for the
   paper log to measure the rules as designed.
-- [ ] **Re-run the replay** (`scripts/entry-study.ts`) on the corrected zones,
-  stops and targets: the 30 Sep numbers were taken on the old ones.
+- [x] **Re-run the replay** on the corrected zones, stops and targets (1 Oct
+  2026, Jan-Aug 2026, 5m): nearest TP1 -0.21R/trade (1,322 trades), nearest
+  valid >= 1.8R -0.10R (14,944), >= 1R -0.10R (15,064). The valid-target rule
+  halves the loss per trade; nothing is profitable on 5m. Numbers in
+  [features/entry-setups.md](features/entry-setups.md).
+- [x] **Per-method SL / TP, nearest-valid TP1 at 1R, TGT1-3 graded, live tape
+  grading, `missed`, 1m chart-only, whole candles only, no fee term** (1 Oct
+  2026) -- see [history/2026-10.md](history/2026-10.md).
+- [ ] **Watch the 1R minimum against the log.** The owner set TGT1 >= 1R (no
+  maximum) over TEST.md's 1.8. With 31% won on the replay, 1R needs over 50%
+  to pay; read the live log after a month and bring the owner the win rate
+  and average R per method at 1R before anything else changes.
+- [ ] **Signals still confirm on candle close** (by design: a forming-candle
+  signal repaints and its alert would be wrong). If the owner wants an early
+  view, add a "forming" preview on the board -- never journaled or alerted.
+- [ ] **Deploys from the working tree**: `btc-desk-api` / `web` were rebuilt
+  as `ee67f33-dirty` on 1 Oct ~06:58 IST without a release step; migrations
+  entry-008 to entry-013 run on the next start of whichever build carries
+  them (008 deletes the 1m signal rows -- asked for). Agree a deploy rule with
+  the owner.
 - [ ] **Read the gate switches with the log**: a month of setups with every gate
   on is the record; anything logged with one off is counted apart
   (`gatesOff`). Before trusting a gate-off result, it needs its own month.
-- [ ] **R&D finding -- R:R after fees is the gate that refuses most** (May-Aug
-  2026 replay, 35,124 5m bars): 9-74% of each method's reads. On 5m the round
-  trip in fees (~84 pts at $84k) is about one ATR. Log the without-timeframe
-  reads at 15m / 1H too and compare (one line in `index.ts`), rather than
-  lowering 1.8.
+- [x] **R&D finding -- R:R was the gate that refused most** (May-Aug 2026
+  replay): superseded on 1 Oct -- the fee term is gone, TP1 is the nearest
+  target paying 1R, and every timeframe 3m-4H is logged.
 - [ ] **R&D finding -- Liquidity sweep's stop is usually too wide**: 39% of its
   reads refused for a stop over 2.5 ATR (the sweep low to the MSS level). Decide
   with the owner whether its entry should be nearer the sweep; do not change it

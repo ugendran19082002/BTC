@@ -49,6 +49,7 @@ Regenerate the generated pages with `npm run docs` in `app/server`.
 ## Open and past
 
 - [TODO.md](TODO.md) -- open work, grouped, most important first.
+- [history/2026-10.md](history/2026-10.md) -- the record of October 2026, newest first.
 - [history/2026-09.md](history/2026-09.md) -- the record of September 2026:
   what broke, why, what it cost and what changed. Kept as written.
 - [history/2026-09-11-security-audit.md](history/2026-09-11-security-audit.md) --

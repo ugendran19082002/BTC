@@ -179,6 +179,11 @@ function outcomeOf(r: Record<string, unknown>, tf: Tf): SignalOutcome {
   };
 }
 
+/** The paper-log endings the history can be filtered by. */
+export const OUTCOME_FILTERS = ['tp1', 'stop', 'timeout', 'expired', 'missed'] as const;
+export type SignalOutcomeFilter = (typeof OUTCOME_FILTERS)[number];
+export const isOutcomeFilter = (x: unknown): x is SignalOutcomeFilter => (OUTCOME_FILTERS as readonly unknown[]).includes(x);
+
 export type SignalQuery = {
   limit?: number; offset?: number;
   mode?: string; tf?: string; state?: string; since?: number;
@@ -186,6 +191,8 @@ export type SignalQuery = {
   dir?: number;
   /** Only TRADEs still in play: waiting at the zone or filled, not yet out (TP1, stop or time-out). */
   live?: boolean;
+  /** Only TRADEs that ended one way in the paper log: TP1, the stop, the time-out, expired unfilled, or missed. */
+  outcome?: SignalOutcomeFilter;
   /** Column to sort by, newest / highest first unless `asc`. */
   sort?: SignalSort;
   asc?: boolean;
@@ -251,6 +258,7 @@ export async function signalPage(q: SignalQuery = {}): Promise<{ signals: Signal
   if (q.since) { args.push(q.since); where.push(`s.first_seen >= $${args.length}`); }
   // In play: waiting, filled, or a runner after TP1 still out for TP2/TP3.
   if (q.live) where.push(`(e.status IN ('open', 'filled') OR e.runner = 'running')`);
+  if (q.outcome && isOutcomeFilter(q.outcome)) { args.push(q.outcome); where.push(`e.status = $${args.length}`); }
   const filter = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const JOIN = `LEFT JOIN entry_setups e ON s.state = 'TRADE' AND e.method = s.method AND e.mode = s.mode AND e.tf = s.tf
                                 AND e.dir = s.dir AND e.trigger_at = s.trigger_at`;

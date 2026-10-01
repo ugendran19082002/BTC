@@ -212,3 +212,19 @@ test("[critical] the Excel download: every row the filters match in the table's 
   assert.match(csv, /,"A, B",/, 'a comma in a field is quoted');
   assert.ok(csv.endsWith(`,"'=HYPERLINK(""x""), then ""more"""\r\n`), 'a leading = is defused with an apostrophe, quotes doubled');
 });
+
+test('[critical] the history by ending: TGT hit, SL hit, timed out, expired, missed -- each exactly that; anything else is no filter', async () => {
+  const mk = (k: number) => read({ id: 'breakout', tf: '30m', triggerTime: T + 200_000 + k, dir: 'long', state: 'TRADE', plan: PLAN });
+  const ends = ['tp1', 'stop', 'timeout', 'expired', 'missed', 'open'];
+  for (let k = 0; k < ends.length; k++) {
+    await recordSignals([mk(k)], (T + 200_000 + k) * 1000);
+    await recordSetups([mk(k)], (T + 200_000 + k) * 1000);
+    await query(`UPDATE entry_setups SET status = $1 WHERE method = 'breakout' AND tf = '30m' AND trigger_at = $2`, [ends[k], T + 200_000 + k]);
+  }
+  const since = (T + 199_000) * 1000;
+  for (const o of ['tp1', 'stop', 'timeout', 'expired', 'missed'] as const) {
+    const p = await signalPage({ tf: '30m', since, outcome: o });
+    assert.deepEqual([p.total, p.signals[0]?.outcome?.status], [1, o], o);
+  }
+  assert.equal((await signalPage({ tf: '30m', since, outcome: 'nonsense' as never })).total, 6, 'not a filter');
+});
