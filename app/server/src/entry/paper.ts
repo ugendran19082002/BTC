@@ -166,6 +166,25 @@ const MIGRATIONS: Migration[] = [{
   // variants of #16 and #30 became one method each (orb, session-sweep); their paper setups go with them.
   id: 'entry-018-setups-retired-methods',
   up: `DELETE FROM entry_setups WHERE method IN ('orb-asia', 'orb-london', 'orb-ny', 'session-sweep-asia', 'session-sweep-london', 'session-sweep-ny');`,
+}, {
+  /*
+   * The history cleared by hand (owner, 1 Oct 2026: "clear data, from date-time to date-time"): each cleared
+   * signal's key, for two days, so a setup still on the board is not written back -- and alerted again -- a
+   * minute later as if new. Older keys are pruned: a setup that old is off the board.
+   */
+  id: 'entry-020-cleared',
+  up: `
+    CREATE TABLE IF NOT EXISTS entry_cleared (
+      method     TEXT     NOT NULL,
+      mode       TEXT     NOT NULL,
+      tf         TEXT     NOT NULL,
+      dir        SMALLINT NOT NULL,
+      trigger_at BIGINT   NOT NULL,
+      state      TEXT     NOT NULL,
+      cleared_at BIGINT   NOT NULL,
+      PRIMARY KEY (method, mode, tf, dir, trigger_at, state)
+    );
+  `,
 }];
 
 let ready: Promise<void> | null = null;
@@ -181,9 +200,11 @@ export function entrySchema(): Promise<void> {
  */
 export async function recordSetups(reads: readonly MethodRead[], nowMs: number, onNew?: (r: MethodRead) => void): Promise<number> {
   await entrySchema();
+  const cleared = await clearedOf(reads);
   let n = 0;
   for (const r of reads) {
     if (r.state !== 'TRADE' || !r.plan || r.triggerTime === null || r.dir === null) continue;
+    if (cleared.has(clearedKey(r))) continue; // cleared by hand: not written back, not alerted again
     const res = await query(
       `INSERT INTO entry_setups (method, mode, tf, dir, trigger_at, first_seen, entry_lo, entry_hi, stop, tp1, tp2, rr, score, graded_to, gates_off, tp3, regime)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
@@ -196,6 +217,19 @@ export async function recordSetups(reads: readonly MethodRead[], nowMs: number, 
     if ((res.rowCount ?? 0) > 0) { n += 1; bumpDataVersion(); onNew?.(r); }
   }
   return n;
+}
+
+/** How long a cleared signal's key is kept: longer than any setup stays on the board. */
+export const CLEARED_KEEP_SEC = 2 * 86_400;
+export const clearedKey = (r: { id?: string; method?: string; mode: string; tf: string; dir: 'long' | 'short' | 1 | -1 | number | null; triggerTime?: number | null; triggerAt?: number; state: string }) =>
+  `${r.id ?? r.method}|${r.mode}|${r.tf}|${r.dir === 'long' || r.dir === 1 ? 1 : -1}|${r.triggerTime ?? r.triggerAt}|${r.state}`;
+/** Which of these reads were cleared by hand (entry_cleared), in one query. */
+export async function clearedOf(reads: readonly MethodRead[]): Promise<Set<string>> {
+  const ats = [...new Set(reads.map((r) => r.triggerTime).filter((t): t is number => t !== null))];
+  if (!ats.length) return new Set();
+  const xs = await rows<{ method: string; mode: string; tf: string; dir: number; trigger_at: string; state: string }>(
+    'SELECT method, mode, tf, dir, trigger_at, state FROM entry_cleared WHERE trigger_at = ANY($1::bigint[])', [ats]);
+  return new Set(xs.map((x) => clearedKey({ method: x.method, mode: x.mode, tf: x.tf, dir: x.dir, triggerAt: Number(x.trigger_at), state: x.state })));
 }
 
 export type PaperRow = {

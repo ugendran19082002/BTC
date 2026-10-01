@@ -1,8 +1,8 @@
-import { query, rows, type Param } from '../db/pool.js';
+import { query, rows, tx, type Param } from '../db/pool.js';
 import { migrate, type Migration } from '../db/migrate.js';
 import { TF_SEC, type MethodRead, type SetupClock, type Tf } from './types.js';
 import { METHODS } from './methods.js';
-import { entrySchema, fillByOf, fillExitOf, timeoutAtOf } from './paper.js';
+import { CLEARED_KEEP_SEC, clearedKey, clearedOf, entrySchema, fillByOf, fillExitOf, timeoutAtOf, withGradeLock } from './paper.js';
 import { SINGLE_TFS } from './engine.js';
 import { alertsSchema } from './alerts.js';
 import { bumpDataVersion, versionCache } from './version.js';
@@ -81,6 +81,20 @@ const MIGRATIONS: Migration[] = [{
   // variants of #16 and #30 became one method each (orb, session-sweep); their signals go with them.
   id: 'entry-018-signals-retired-methods',
   up: `DELETE FROM entry_signals WHERE method IN ('orb-asia', 'orb-london', 'orb-ny', 'session-sweep-asia', 'session-sweep-london', 'session-sweep-ny');`,
+}, {
+  // Each time the history was cleared by hand: when, which range, and how much went -- the clear itself is history.
+  id: 'entry-020-history-clears',
+  up: `
+    CREATE TABLE IF NOT EXISTS entry_history_clears (
+      id      BIGINT  GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      at      BIGINT  NOT NULL,
+      from_ms BIGINT  NOT NULL,
+      to_ms   BIGINT  NOT NULL,
+      signals INTEGER NOT NULL,
+      setups  INTEGER NOT NULL,
+      alerts  INTEGER NOT NULL
+    );
+  `,
 }];
 
 let ready: Promise<void> | null = null;
@@ -102,11 +116,13 @@ export async function recordSignals(
   /** The market now -- written on a signal's first sighting only, so it is the price when it appeared. */
   prices: { ltp?: number | null; index?: number | null } = {},
 ): Promise<number> {
-  await signalsSchema();
+  await Promise.all([signalsSchema(), entrySchema()]);
+  const cleared = await clearedOf(reads);
   let fresh = 0;
   for (const r of reads) {
     if ((r.state !== 'WAIT' && r.state !== 'TRADE') || r.dir === null || r.triggerTime === null) continue;
     if (r.mode === 'single' && !SINGLE_TFS.includes(r.tf)) continue; // 1m is view-only: never a signal
+    if (cleared.has(clearedKey(r))) continue; // cleared by hand while still on the board: stays cleared
     const p = r.state === 'TRADE' ? r.plan : null;
     const res = await rows<{ inserted: boolean }>(
       `INSERT INTO entry_signals (method, mode, tf, dir, state, trigger_at, first_seen, last_seen, score, reason,
@@ -137,8 +153,78 @@ export const cachedSignalPage = (q: SignalQuery) => pageCache(JSON.stringify(q),
 export async function pruneSignals(nowMs: number, keepDays = SIGNALS_KEEP_DAYS): Promise<number> {
   await signalsSchema();
   const res = await query('DELETE FROM entry_signals WHERE last_seen < $1', [nowMs - keepDays * 86_400_000]);
+  await query('DELETE FROM entry_cleared WHERE cleared_at < $1', [nowMs - CLEARED_KEEP_SEC * 1000]);
   if (res.rowCount) bumpDataVersion();
   return res.rowCount ?? 0;
+}
+
+// ------------------------------------------------------------------ clearing the history by hand
+
+/** Signals first seen from `from` up to, not including, `to` (epoch ms) -- the history's own time. */
+export type ClearRange = { from: number; to: number };
+/** What a clear takes: the signals (TRADEs and WAITs), the TRADEs' paper trades, and their alerts. */
+export type ClearCounts = { signals: number; trades: number; waits: number; setups: number; alerts: number };
+export type HistoryClear = ClearRange & { at: number; signals: number; setups: number; alerts: number };
+
+/** The range a request asks to clear, or what is wrong with it. `to` past now is now: nothing is seen yet. */
+export function clearRangeOf(body: unknown, nowMs: number): ClearRange | { error: string } {
+  const { from, to } = (body ?? {}) as { from?: unknown; to?: unknown };
+  if (typeof from !== 'number' || typeof to !== 'number' || !Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0) {
+    return { error: 'from and to must be times (epoch ms)' };
+  }
+  if (from >= to) return { error: 'From must be before To.' };
+  if (from > nowMs) return { error: 'From is in the future: nothing to clear.' };
+  return { from, to: Math.min(to, nowMs + 1) };
+}
+
+// The TRADEs' paper rows and alerts go with them: matched on the setup's key.
+const SAME_SETUP = (t: string) => `${t}.method = s.method AND ${t}.mode = s.mode AND ${t}.tf = s.tf AND ${t}.dir = s.dir AND ${t}.trigger_at = s.trigger_at`;
+
+/** What clearing the range would take -- shown before anything goes. */
+export async function clearPreview(r: ClearRange): Promise<ClearCounts> {
+  await Promise.all([signalsSchema(), entrySchema(), alertsSchema()]);
+  const [x] = await rows<{ signals: number; trades: number; setups: number; alerts: number }>(`
+    WITH s AS (SELECT method, mode, tf, dir, trigger_at, state FROM entry_signals WHERE first_seen >= $1 AND first_seen < $2)
+    SELECT (SELECT count(*) FROM s)::int AS signals,
+           (SELECT count(*) FROM s WHERE state = 'TRADE')::int AS trades,
+           (SELECT count(*) FROM entry_setups e JOIN s ON s.state = 'TRADE' AND ${SAME_SETUP('e')})::int AS setups,
+           (SELECT count(*) FROM entry_alert_log a JOIN s ON s.state = 'TRADE' AND ${SAME_SETUP('a')})::int AS alerts`, [r.from, r.to]);
+  return { ...x!, waits: x!.signals - x!.trades };
+}
+
+/**
+ * Clear the range, in one transaction: the signals, their paper trades and
+ * alerts; each cleared key kept two days (entry_cleared) so a setup still on
+ * the board is not written back a minute later; and the clear itself logged.
+ * Under the grading lock, so no grade lands on a row mid-clear.
+ */
+export async function clearSignals(r: ClearRange, nowMs: number): Promise<ClearCounts> {
+  await Promise.all([signalsSchema(), entrySchema(), alertsSchema()]);
+  const out = await withGradeLock(() => tx(async (c) => {
+    const { rows: [x] } = await c.query<{ signals: number; trades: number; setups: number; alerts: number }>(`
+      WITH s AS (DELETE FROM entry_signals WHERE first_seen >= $1 AND first_seen < $2
+                 RETURNING method, mode, tf, dir, trigger_at, state),
+           setups AS (DELETE FROM entry_setups e USING s WHERE s.state = 'TRADE' AND ${SAME_SETUP('e')} RETURNING 1),
+           alerts AS (DELETE FROM entry_alert_log a USING s WHERE s.state = 'TRADE' AND ${SAME_SETUP('a')} RETURNING 1),
+           kept AS (INSERT INTO entry_cleared (method, mode, tf, dir, trigger_at, state, cleared_at)
+                    SELECT method, mode, tf, dir, trigger_at, state, $3 FROM s WHERE trigger_at >= $4
+                    ON CONFLICT DO NOTHING RETURNING 1)
+      SELECT (SELECT count(*) FROM s)::int AS signals, (SELECT count(*) FROM s WHERE state = 'TRADE')::int AS trades,
+             (SELECT count(*) FROM setups)::int AS setups, (SELECT count(*) FROM alerts)::int AS alerts,
+             (SELECT count(*) FROM kept)::int AS kept`, [r.from, r.to, nowMs, Math.floor(nowMs / 1000) - CLEARED_KEEP_SEC]);
+    await c.query('INSERT INTO entry_history_clears (at, from_ms, to_ms, signals, setups, alerts) VALUES ($1, $2, $3, $4, $5, $6)',
+      [nowMs, r.from, r.to, x!.signals, x!.setups, x!.alerts]);
+    return { signals: x!.signals, trades: x!.trades, waits: x!.signals - x!.trades, setups: x!.setups, alerts: x!.alerts };
+  }));
+  bumpDataVersion();
+  return out;
+}
+
+/** The last clears, newest first. */
+export async function recentClears(limit = 5): Promise<HistoryClear[]> {
+  await signalsSchema();
+  return (await rows<Record<string, string>>('SELECT at, from_ms, to_ms, signals, setups, alerts FROM entry_history_clears ORDER BY at DESC LIMIT $1', [limit]))
+    .map((x) => ({ at: Number(x.at), from: Number(x.from_ms), to: Number(x.to_ms), signals: Number(x.signals), setups: Number(x.setups), alerts: Number(x.alerts) }));
 }
 
 /** A method by id. */

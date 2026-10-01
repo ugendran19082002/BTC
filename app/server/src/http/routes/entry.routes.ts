@@ -4,7 +4,7 @@ import { readEntryContext } from '../../entry/read.js';
 import { entryRecord, recentSetups } from '../../entry/paper.js';
 import { GateLocked, gateSettings, gatesOff, isGateKey, setGate } from '../../entry/gates.js';
 import { alertSettings, isMode, recentAlerts, sampleAlertText, setAlert } from '../../entry/alerts.js';
-import { cachedSignalPage, clockKeyOf, exportSignals, isOutcomeFilter, isSignalSort, setupClocks, signalsCsv, type SignalQuery } from '../../entry/signals.js';
+import { cachedSignalPage, clearPreview, clearRangeOf, clearSignals, clockKeyOf, exportSignals, recentClears, isOutcomeFilter, isSignalSort, setupClocks, signalsCsv, type SignalQuery } from '../../entry/signals.js';
 import { CHAIN, TF_SEC, type MethodRead, type SetupClock, type Tf } from '../../entry/types.js';
 import { ttlCache } from '../ttl-cache.js';
 
@@ -94,6 +94,19 @@ export function registerEntryRoutes(app: FastifyInstance, notifier: () => { send
 
   // The signal journal: every WAIT and TRADE shown, newest first; filter by mode, tf, state.
   app.get('/api/entry/signals', async (req) => cachedSignalPage(signalQueryOf(req.query)));
+
+  // Clearing the history by hand: what a range would take (and the last clears), then the clear itself.
+  app.get('/api/entry/signals/clear', async (req, reply) => {
+    const { from, to } = (req.query ?? {}) as { from?: string; to?: string };
+    const range = clearRangeOf({ from: Number(from), to: Number(to) }, Date.now());
+    if ('error' in range) { reply.code(400); return { error: range.error }; }
+    return { range, counts: await clearPreview(range), recent: await recentClears() };
+  });
+  app.post('/api/entry/signals/clear', async (req, reply) => {
+    const range = clearRangeOf(req.body, Date.now());
+    if ('error' in range) { reply.code(400); return { error: range.error }; }
+    return { range, counts: await clearSignals(range, Date.now()), recent: await recentClears() };
+  });
 
   // The same history as a spreadsheet: every row the filters match, in the table's order, not just a page.
   app.get('/api/entry/signals.csv', async (req, reply) => {

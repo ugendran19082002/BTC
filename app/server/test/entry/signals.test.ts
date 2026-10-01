@@ -1,6 +1,6 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { clockKeyOf, exportSignals, signalsCsv, pruneSignals, recentSignals, recordSignals, setupClocks, signalPage } from '../../src/entry/signals.js';
+import { clearPreview, clearRangeOf, clearSignals, clockKeyOf, exportSignals, signalsCsv, pruneSignals, recentClears, recentSignals, recordSignals, setupClocks, signalPage } from '../../src/entry/signals.js';
 import { allReads, entryBoard, SINGLE_TFS, VIEW_ONLY_TFS } from '../../src/entry/engine.js';
 import type { MethodRead } from '../../src/entry/types.js';
 import { closePool, query, rows } from '../../src/db/pool.js';
@@ -230,4 +230,55 @@ test('[critical] the history by ending: TGT hit, SL hit, timed out, expired (wit
   }
   assert.equal((await signalPage({ tf: '30m', since, outcome: 'expired' })).signals[0]!.outcome!.expireWhy, 'target');
   assert.equal((await signalPage({ tf: '30m', since, outcome: 'missed' as never })).total, 5, 'missed is no ending: no filter');
+});
+
+test('[critical] clear data: a range of the history goes -- its signals, their paper trades and alerts -- from inclusive, to exclusive; nothing else; the clear is logged', async () => {
+  const at = (k: number) => (T + 300_000 + k) * 1000; // first seen
+  const trade = (k: number) => read({ id: 'momentum', tf: '4h', triggerTime: T + 300_000 + k, dir: 'long', state: 'TRADE', plan: PLAN });
+  const wait = (k: number) => read({ id: 'momentum', tf: '4h', triggerTime: T + 300_000 + k, state: 'WAIT' });
+  for (const k of [0, 10, 20, 30]) {
+    await recordSignals([wait(k), trade(k)], at(k));
+    await recordSetups([trade(k)], at(k));
+    await query(`INSERT INTO entry_alert_log (at, mode, tf, method, dir, trigger_at, text, status) VALUES ($1, 'single', '4h', 'momentum', 1, $2, 'x', 'sent')`, [at(k), T + 300_000 + k]);
+  }
+  const range = { from: at(10), to: at(30) }; // 10 and 20 -- not 0, not 30 (to is exclusive)
+  const before = await clearPreview(range);
+  assert.deepEqual(before, { signals: 4, trades: 2, waits: 2, setups: 2, alerts: 2 }, 'shown first');
+  assert.deepEqual(await clearSignals(range, at(40)), before, 'the clear takes what the preview said');
+
+  const left = await rows<{ trigger_at: string; state: string }>("SELECT trigger_at, state FROM entry_signals WHERE method = 'momentum' AND tf = '4h' ORDER BY trigger_at, state");
+  assert.deepEqual(left.map((x) => [Number(x.trigger_at) - T - 300_000, x.state]), [[0, 'TRADE'], [0, 'WAIT'], [30, 'TRADE'], [30, 'WAIT']]);
+  assert.equal((await rows("SELECT 1 FROM entry_setups WHERE method = 'momentum' AND tf = '4h'")).length, 2);
+  assert.equal((await rows("SELECT 1 FROM entry_alert_log WHERE method = 'momentum' AND tf = '4h'")).length, 2);
+  assert.deepEqual((await recentClears())[0], { at: at(40), from: at(10), to: at(30), signals: 4, setups: 2, alerts: 2 });
+  assert.deepEqual(await clearPreview(range), { signals: 0, trades: 0, waits: 0, setups: 0, alerts: 0 });
+});
+
+test('[critical] clear data: a setup still on the board stays cleared -- not written back, not alerted again; its later TRADE is new and kept', async () => {
+  const k = T + 400_000;
+  const trade = read({ id: 'pullback', tf: '4h', triggerTime: k, dir: 'long', state: 'TRADE', plan: PLAN });
+  const wait = read({ id: 'pullback', tf: '4h', triggerTime: k, state: 'WAIT' });
+  await recordSignals([wait], k * 1000);
+  await clearSignals({ from: k * 1000, to: k * 1000 + 1 }, k * 1000 + 5_000);
+  // A minute later the board still shows the WAIT -- and now its TRADE.
+  assert.equal(await recordSignals([wait, trade], k * 1000 + 60_000), 1, 'only the TRADE is new');
+  let alerted = 0;
+  await recordSetups([trade], k * 1000 + 60_000, () => { alerted += 1; });
+  assert.equal(alerted, 1, 'the TRADE was never cleared: it is a setup and alerts');
+  assert.deepEqual((await rows<{ state: string }>("SELECT state FROM entry_signals WHERE method = 'pullback' AND tf = '4h'")).map((x) => x.state), ['TRADE']);
+
+  // Clear the TRADE too: the board showing it again writes nothing and alerts nothing.
+  await clearSignals({ from: k * 1000 + 60_000, to: k * 1000 + 60_001 }, k * 1000 + 70_000);
+  alerted = 0;
+  assert.equal(await recordSignals([wait, trade], k * 1000 + 120_000), 0);
+  assert.equal(await recordSetups([trade], k * 1000 + 120_000, () => { alerted += 1; }), 0);
+  assert.equal(alerted, 0, 'no second alert for a cleared TRADE');
+});
+
+test('clear data: a range must be from before to, not in the future; to past now is now', () => {
+  const now = 1_790_000_000_000;
+  assert.deepEqual(clearRangeOf({ from: now - 10, to: now + 99_999 }, now), { from: now - 10, to: now + 1 });
+  assert.match((clearRangeOf({ from: now, to: now }, now) as { error: string }).error, /before/);
+  assert.match((clearRangeOf({ from: now + 5, to: now + 10 }, now) as { error: string }).error, /future/);
+  for (const bad of [{}, { from: '1', to: 2 }, { from: 1.5, to: 2 }, { from: -1, to: 2 }, null]) assert.ok('error' in (clearRangeOf(bad, now) as object));
 });
