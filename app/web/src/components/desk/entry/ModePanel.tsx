@@ -6,7 +6,8 @@ import type { EntryMode, EntryRecord, EntryTf, MethodRead } from '@/types/entry'
 import type { ChartFeed } from './feed';
 import { LiveStrip } from './LiveStrip';
 import { TradeClock } from './TradeClock';
-import { NumberBadge, SignalChip, TICK_CLASS, fmt, overlayOf, recordText, tickOf } from './parts';
+import { METHOD_VIEWS, NumberBadge, SignalChip, TICK_CLASS, ViewChips, fmt, overlayOf, recordText, tickOf, viewReads, type MethodView } from './parts';
+import { usePersisted } from '@/hooks/usePersisted';
 
 /**
  * One half of the reference layout: the twelve methods read one way -- with
@@ -28,24 +29,26 @@ export const VIEW_ONLY_TFS: readonly EntryTf[] = ['1m'];
 /** Every chip a panel's chart offers. */
 export const CHART_TFS: readonly EntryTf[] = [...VIEW_ONLY_TFS, ...SINGLE_TFS];
 
-const COPY: Record<EntryMode, { title: string; accent: string; sub: string; tag: string }> = {
+const COPY: Record<EntryMode, { title: (n: number) => string; accent: string; sub: string; tag: string }> = {
   single: {
-    title: '12 methods · without timeframe',
+    title: (n) => `${n} methods · without timeframe`,
     accent: 'border-t-[#d97706]',
     sub: 'Each method on one timeframe alone -- no higher-timeframe check.',
     tag: 'More signals',
   },
   mtf: {
-    title: '12 methods + timeframe',
+    title: (n) => `${n} methods + timeframe`,
     accent: 'border-t-[#26a17b]',
     sub: '4H/1H context → 30m/15m setup → 5m entry → 3m confirm → 1m execution.',
     tag: 'Fewer signals',
   },
 };
 
-export function ModePanel({ mode, reads, selected, onChoose, recordOf, setupsOn, chartTf, onChartTf, chart, alert, autoPicked = false, ltp = null }: {
+export function ModePanel({ mode, reads, selected, onChoose, recordOf, setupsOn, chartTf, onChartTf, chart, alert, autoPicked = false, ltp = null, count }: {
   mode: EntryMode;
   reads: readonly MethodRead[];
+  /** How many methods the section reads (the title's number), when this panel has none to show -- 1m is chart-only. */
+  count?: number;
   /** This panel's chosen read. */
   selected: MethodRead | null;
   onChoose: (r: MethodRead) => void;
@@ -71,10 +74,10 @@ export function ModePanel({ mode, reads, selected, onChoose, recordOf, setupsOn,
   const drawn = useMemo(() => overlayOf(selected, setupsOn), [selected, setupsOn]);
 
   return (
-    <section aria-label={copy.title} className={cn('min-w-0 rounded-xl border border-border border-t-4 bg-[var(--card,transparent)] p-2.5', copy.accent)}>
+    <section aria-label={copy.title(count ?? reads.length)} className={cn('min-w-0 rounded-xl border border-border border-t-4 bg-[var(--card,transparent)] p-2.5', copy.accent)}>
       <header className="mb-2 flex items-start justify-between gap-2">
         <div>
-          <h3 className="m-0 text-[14px] font-bold">{copy.title}</h3>
+          <h3 className="m-0 text-[14px] font-bold">{copy.title(count ?? reads.length)}</h3>
           <p className="m-0 text-[11.5px] text-muted-foreground">{copy.sub}</p>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
@@ -107,7 +110,7 @@ export function ModePanel({ mode, reads, selected, onChoose, recordOf, setupsOn,
           </div>
         </div>
       </div>
-      <PriceChart {...chart(chartTf)} tf={chartTf} entry={drawn} size="panel" label={`${copy.title} chart`} />
+      <PriceChart {...chart(chartTf)} tf={chartTf} entry={drawn} size="panel" label={`${copy.title(count ?? reads.length)} chart`} />
 
       {/* The table full width, then the chosen setup beside its reasons: a panel is half the screen at most. */}
       {mode === 'single' && VIEW_ONLY_TFS.includes(chartTf) ? (
@@ -136,12 +139,21 @@ function MethodTable({ mode, reads, selected, onChoose, recordOf, autoPicked }: 
   autoPicked: boolean;
 }) {
   const chain = mode === 'mtf';
+  const [view, setView] = usePersisted<MethodView>(`entry:${mode}-view`, 'all');
+  const shown = viewReads(reads, view);
+  const counts = Object.fromEntries(METHOD_VIEWS.map((v) => [v, viewReads(reads, v).length]));
+  // The chosen method stays in the table, whatever the view.
+  if (selected && !shown.some((r) => r.id === selected.id)) shown.unshift(selected);
   return (
     <div className="min-w-0 rounded-lg border border-border">
-      <div className="px-2 pt-1.5 text-[12.5px] font-semibold">12 entry methods <span className="font-normal text-muted-foreground">{chain ? '· with timeframe proof' : `· ${reads[0]?.tf ?? ''} only`}</span></div>
-      <div className="overflow-x-auto">
+      <div className="flex flex-wrap items-center justify-between gap-1.5 px-2 pt-1.5">
+        <span className="text-[12.5px] font-semibold">{reads.length} entry methods <span className="font-normal text-muted-foreground">{chain ? '· with timeframe proof' : `· ${reads[0]?.tf ?? ''} only`}</span></span>
+        <ViewChips value={view} onChange={setView} label={`${mode === 'mtf' ? 'with' : 'without'} timeframe view`} counts={counts} />
+      </div>
+      {/* A long list: signals first, the body scrolling under a fixed header. */}
+      <div className="mt-1 max-h-[420px] overflow-auto">
         <table className="w-full border-collapse text-[12px] tabular-nums" aria-label={`${mode === 'mtf' ? 'with' : 'without'} timeframe methods`}>
-          <thead className="text-left text-[10.5px] text-muted-foreground">
+          <thead className="sticky top-0 z-10 bg-[var(--card,var(--panel))] text-left text-[10.5px] text-muted-foreground">
             <tr>
               <th className="py-1 pl-2" title="The method's number: names are in the table above">#</th>
               {chain ? CHAIN_TFS.map((t) => <th key={t} className="px-0.5 text-center font-normal">{t.toUpperCase()}</th>) : null}
@@ -153,7 +165,7 @@ function MethodTable({ mode, reads, selected, onChoose, recordOf, autoPicked }: 
             </tr>
           </thead>
           <tbody>
-            {reads.map((r) => {
+            {shown.map((r) => {
               const on = selected?.id === r.id;
               return (
                 // The chosen row, unmistakable: a tint, an edge on the left, and "AUTO" when a signal chose it.
@@ -161,8 +173,8 @@ function MethodTable({ mode, reads, selected, onChoose, recordOf, autoPicked }: 
                     className={cn('border-t border-border', on && 'bg-[rgba(37,99,235,0.16)] shadow-[inset_3px_0_0_#2563eb]')}>
                   <td className="py-1 pl-2">
                     {/* The number only: the names are in the method table above both panels. */}
-                    <button type="button" aria-pressed={on} onClick={() => onChoose(r)} aria-label={`${r.n} ${r.name}`}
-                            title={`${r.n}. ${r.name} -- ${recordText(recordOf(r))}`} className="inline-flex items-center rounded-full align-middle">
+                    <button type="button" aria-pressed={on} onClick={() => onChoose(r)} aria-label={`${r.code ?? r.n} ${r.name}`}
+                            title={`${r.code ?? r.n}. ${r.name} -- ${recordText(recordOf(r))}`} className="inline-flex items-center rounded-full align-middle">
                       <NumberBadge read={r} />
                     </button>
                     {on && autoPicked ? <span className="ml-1 rounded bg-[#2563eb] px-1 text-[9px] font-bold text-white" title="Chosen by auto-select: this is the signal">AUTO</span> : null}
@@ -217,7 +229,7 @@ function SelectedCard({ read, ltp }: { read: MethodRead | null; ltp: { price: nu
       {read.state === 'TRADE' && p && read.dir ? <LiveStrip plan={p} dir={read.dir} ltp={ltp} /> : null}
       {read.state === 'TRADE' ? <TradeClock read={read} /> : null}
       <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 px-2 pb-2 tabular-nums">
-        {row('Method', `#${read.n} ${read.name}`)}
+        {row('Method', `#${read.code ?? read.n} ${read.name}`)}
         {row('Timeframe', read.mode === 'mtf' ? '4H/1H → 15m → 5m entry → 1m' : `${read.tf} only`)}
         {row('Quality', read.score === null ? '–' : `${read.score}/100`, 'text-foreground')}
         {p && risk !== null && reward !== null ? (

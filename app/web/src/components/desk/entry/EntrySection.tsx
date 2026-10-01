@@ -16,7 +16,8 @@ import { SignalHistory } from './SignalHistory';
 import './entry.css';
 
 /**
- * The entry section: TEST.md's twelve entry methods, each read two ways --
+ * The entry section: every entry method -- TEST.md's twelve first, then the
+ * rest by the owner's numbers (74 since 1 Oct 2026) -- each read two ways --
  * without the timeframe chain (one timeframe alone) and with it (4H/1H ->
  * 30m/15m -> 5m entry -> 3m confirm -> 1m execution) -- 24 setups, laid out as
  * the owner's reference: the two ways side by side, each with its chart,
@@ -108,12 +109,15 @@ export function EntrySection({ desk, onTimeframes }: {
   const recordOf = (r: MethodRead) => record?.records.find((x) => x.method === r.id && x.mode === r.mode && x.tf === r.tf) ?? null;
   const choose = (r: MethodRead) => setChosen({ ...chosen, [r.mode]: keyOf(r) });
   // From the method table: the same method on both sides.
-  const chooseBoth = (n: number) => {
-    const s = reads.find((r) => r.mode === 'single' && r.n === n);
-    const m = reads.find((r) => r.mode === 'mtf' && r.n === n);
+  const chooseBoth = (id: string) => {
+    const s = reads.find((r) => r.mode === 'single' && r.id === id);
+    const m = reads.find((r) => r.mode === 'mtf' && r.id === id);
     setChosen({ single: s ? keyOf(s) : chosen.single, mtf: m ? keyOf(m) : chosen.mtf });
   };
-  const bothN = selected.single && selected.mtf && selected.single.n === selected.mtf.n ? selected.single.n : null;
+  const bothId = selected.single && selected.mtf && selected.single.id === selected.mtf.id ? selected.single.id : null;
+  // How many methods the board reads each way (74 since 1 Oct 2026), and so how many reads in all.
+  const nMethods = new Set(reads.map((r) => r.id)).size || 12;
+  const nReads = reads.length || 2 * nMethods;
 
   return (
     <section aria-label="entry setups" className="desk-entry mt-3">
@@ -127,7 +131,7 @@ export function EntrySection({ desk, onTimeframes }: {
           <div className="min-w-0">
             <h2 className="m-0 flex flex-wrap items-baseline gap-x-2 text-[16px] font-bold">
               Entry setups
-              <span className="text-[12px] font-normal text-muted-foreground">12 methods × without / with timeframe = 24</span>
+              <span className="text-[12px] font-normal text-muted-foreground">{nMethods} methods × without / with timeframe = {nReads}</span>
             </h2>
             <div aria-label="board status" className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11.5px]">
               <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold', board ? 'bg-[var(--up-bg)] text-[var(--up)]' : 'bg-muted text-muted-foreground')}>
@@ -136,10 +140,10 @@ export function EntrySection({ desk, onTimeframes }: {
               </span>
               {board ? (
                 <>
-                  <span className="sr-only">{`${counts.trade} trade · ${counts.wait} wait · ${24 - counts.trade - counts.wait} no trade`}</span>
+                  <span className="sr-only">{`${counts.trade} trade · ${counts.wait} wait · ${nReads - counts.trade - counts.wait} no trade`}</span>
                   <span aria-hidden className="rounded-full bg-[#26a17b]/20 px-2 py-0.5 font-semibold text-[#26a17b]">{counts.trade} TRADE</span>
                   <span aria-hidden className="rounded-full bg-[#b7791f]/20 px-2 py-0.5 font-semibold text-[#d69e2e]">{counts.wait} WAIT</span>
-                  <span aria-hidden className="rounded-full bg-muted px-2 py-0.5 text-muted-foreground">{24 - counts.trade - counts.wait} NO TRADE</span>
+                  <span aria-hidden className="rounded-full bg-muted px-2 py-0.5 text-muted-foreground">{nReads - counts.trade - counts.wait} NO TRADE</span>
                   <span className="text-muted-foreground">read {new Date(board.at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })} · on closed candles</span>
                 </>
               ) : null}
@@ -151,7 +155,7 @@ export function EntrySection({ desk, onTimeframes }: {
               {(['panels', 'grid'] as const).map((v) => (
                 <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}
                         className={cn('flex-1 px-3 py-1.5 font-semibold sm:flex-none', view === v ? 'bg-[#2563eb] text-white' : 'text-muted-foreground hover:bg-muted')}>
-                  {v === 'panels' ? 'Side by side' : '12 charts'}
+                  {v === 'panels' ? 'Side by side' : 'Charts'}
                 </button>
               ))}
             </div>
@@ -174,16 +178,16 @@ export function EntrySection({ desk, onTimeframes }: {
           <div className="mb-3 grid gap-3 xl:grid-cols-4">
             <div className="min-w-0 xl:col-span-3">
               <MethodLegend single={reads.filter((r) => r.mode === 'single')} mtf={reads.filter((r) => r.mode === 'mtf')}
-                            chosenN={bothN} onChoose={chooseBoth} />
+                            chosenId={bothId} onChoose={chooseBoth} />
             </div>
             <GateChecklist selected={selected} mode={gatesMode === 'single' ? 'single' : 'mtf'} onMode={setGatesMode} />
           </div>
           <div className="grid gap-3 lg:grid-cols-2">
-            <ModePanel mode="single" reads={reads.filter((r) => r.mode === 'single')}
+            <ModePanel mode="single" reads={reads.filter((r) => r.mode === 'single')} count={nMethods}
                        selected={selected.single} onChoose={choose} recordOf={recordOf}
                        setupsOn={setupsOn} chartTf={tf} onChartTf={setSingleTf} chart={chart}
                        ltp={ltp} alert={<AlertSwitch mode="single" alerts={alerts} onChanged={setAlerts} />} autoPicked={autoPicked('single')} />
-            <ModePanel mode="mtf" reads={reads.filter((r) => r.mode === 'mtf')}
+            <ModePanel mode="mtf" reads={reads.filter((r) => r.mode === 'mtf')} count={nMethods}
                        selected={selected.mtf} onChoose={choose} recordOf={recordOf}
                        setupsOn={setupsOn} chartTf={mtfTf} onChartTf={setMtfChartTf} chart={chart}
                        ltp={ltp} alert={<AlertSwitch mode="mtf" alerts={alerts} onChanged={setAlerts} />} autoPicked={autoPicked('mtf')} />

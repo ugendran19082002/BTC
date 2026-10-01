@@ -75,6 +75,8 @@ export type ScorePart = { name: string; max: number; got: number | null };
 export type MethodRead = {
   id: MethodId;
   n: number;
+  /** The label on the screen: the number, lettered when shared (16a, 16b, 16c). */
+  code: string;
   name: string;
   group: Group;
   /** What the method looks for, in one line. */

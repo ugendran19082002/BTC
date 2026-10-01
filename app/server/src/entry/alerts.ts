@@ -154,7 +154,7 @@ export function entryAlertFor(r: MethodRead, live: { ltp?: number | null; at?: n
   const at = live.at ?? Date.now();
   const lines = [
     `${long ? '🟢 <b>BUY SIGNAL</b>' : '🔴 <b>SELL SIGNAL</b>'} · BTCUSD`,
-    `<b>#${r.n} ${esc(r.name)}</b> · ${esc(way)}`,
+    `<b>#${r.code ?? r.n} ${esc(r.name)}</b> · ${esc(way)}`,
     `🕒 ${esc(IST.format(at))} IST${live.ltp ? ` · LTP <code>${fmt(live.ltp)}</code>` : ''}`,
     '',
     '📍 <b>ENTRY</b>',
@@ -181,7 +181,7 @@ export function entryAlertFor(r: MethodRead, live: { ltp?: number | null; at?: n
 /** A sample alert in the real format, for the switch's *test*: a made-up long, marked as a test. */
 export function sampleAlertText(at = Date.now()): string {
   const sample = entryAlertFor({
-    id: 'fvg-retest', n: 4, name: 'FVG retest', group: 'pullback', summary: '', mode: 'single', tf: '5m', dir: 'long', state: 'TRADE',
+    id: 'fvg-retest', n: 4, code: '4', name: 'FVG retest', group: 'pullback', summary: '', mode: 'single', tf: '5m', dir: 'long', state: 'TRADE',
     steps: [{ tf: '5m', label: 'a bullish gap left by displacement', ok: true }, { tf: '5m', label: 'price back in the gap', ok: true }, { tf: '5m', label: 'reaction: closed up out of it', ok: true }],
     gates: [], plan: { entryLo: 84_120, entryHi: 84_160, stop: 83_980, tp1: 84_500, tp2: 84_760, tp3: 85_400, tpWhy: [], rr: 1.9 },
     score: 72, scoreParts: [], alignment: null, reason: '', triggerTime: 0,

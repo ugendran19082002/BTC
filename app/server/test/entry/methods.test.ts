@@ -198,3 +198,12 @@ test('[critical] 6. BOS: a counter-trend break is shown, and refused, not hidden
   assert.equal(s?.steps[2]?.label.startsWith('trend aligned'), true);
   assert.equal(s?.steps[2]?.ok, false);
 });
+
+test('[critical] every method has its own screen label: the number, lettered when shared -- 16a-16c are the three opening-range sessions', () => {
+  const codes = METHODS.map((m) => m.code!);
+  assert.equal(new Set(codes).size, codes.length);
+  assert.deepEqual(METHODS.filter((m) => m.n === 16).map((m) => `${m.code} ${m.name}`), [
+    '16a Opening-range breakout · Asia', '16b Opening-range breakout · London', '16c Opening-range breakout · New York',
+  ]);
+  assert.equal(METHODS.find((m) => m.id === 'breakout')!.code, '1');
+});

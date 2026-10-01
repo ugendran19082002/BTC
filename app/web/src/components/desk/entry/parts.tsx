@@ -40,11 +40,40 @@ export const GROUP_NAME: Record<MethodRead['group'], string> = {
   breakout: 'Breakout', pullback: 'Pullback', reversal: 'Reversal', flow: 'Flow / derivatives',
 };
 
-export function NumberBadge({ read }: { read: Pick<MethodRead, 'n' | 'group'> }) {
+export function NumberBadge({ read }: { read: Pick<MethodRead, 'n' | 'group'> & { code?: string } }) {
   return (
-    <span aria-hidden className={cn('inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10.5px] font-bold text-white', BADGE[read.group])}>
-      {read.n}
+    <span aria-hidden className={cn('inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1 text-[10.5px] font-bold text-white', BADGE[read.group])}>
+      {read.code ?? read.n}
     </span>
+  );
+}
+
+/**
+ * Which methods a table shows: all of them, only those with a signal, or one
+ * group -- always signals first (TRADE, then WAIT), then by number. With 74
+ * methods a table is long; the signals are what is looked for.
+ */
+export type MethodView = 'all' | 'signals' | MethodRead['group'];
+export const METHOD_VIEWS: readonly MethodView[] = ['all', 'signals', 'breakout', 'pullback', 'reversal', 'flow'];
+const RANK: Record<MethodRead['state'], number> = { TRADE: 0, WAIT: 1, NO_TRADE: 2 };
+export function viewReads<T extends Pick<MethodRead, 'state' | 'group' | 'n'>>(xs: readonly T[], view: MethodView, signalOf: (x: T) => MethodRead['state'] = (x) => x.state): T[] {
+  return xs
+    .filter((x) => (view === 'all' ? true : view === 'signals' ? signalOf(x) !== 'NO_TRADE' : x.group === view))
+    .map((x, i) => ({ x, i }))
+    .sort((p, q) => RANK[signalOf(p.x)] - RANK[signalOf(q.x)] || p.i - q.i)
+    .map((p) => p.x);
+}
+
+export function ViewChips({ value, onChange, label, counts }: { value: MethodView; onChange: (v: MethodView) => void; label: string; counts: Partial<Record<MethodView, number>> }) {
+  return (
+    <div role="group" aria-label={label} className="flex max-w-full gap-1 overflow-x-auto text-[11px] [scrollbar-width:none]">
+      {METHOD_VIEWS.map((v) => (
+        <button key={v} type="button" aria-pressed={value === v} onClick={() => onChange(v)}
+                className={cn('shrink-0 rounded border px-2 py-0.5', value === v ? 'border-[#2563eb] bg-[#2563eb] font-semibold text-white' : 'border-border text-muted-foreground hover:bg-muted')}>
+          {v === 'all' ? 'All' : v === 'signals' ? 'Signals' : GROUP_NAME[v]}{counts[v] !== undefined ? ` · ${counts[v]}` : ''}
+        </button>
+      ))}
+    </div>
   );
 }
 

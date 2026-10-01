@@ -1,36 +1,47 @@
 import { cn } from '@/lib/utils';
 import type { MethodRead } from '@/types/entry';
-import { GROUP_NAME, GateChip, NumberBadge, SignalChip } from './parts';
+import { usePersisted } from '@/hooks/usePersisted';
+import { GROUP_NAME, GateChip, METHOD_VIEWS, NumberBadge, SignalChip, ViewChips, viewReads, type MethodView } from './parts';
 
 /**
- * The twelve methods by number: 1 is Breakout, 2 Breakout + retest, and so on
- * -- the one place their names are written, so the two panels below can show
- * the number alone. Each row also carries the method's signal on both sides,
- * which is the comparison at a glance, and its hard gates both ways ("✓ 7/7",
- * or the gate that refuses it). Choosing a row chooses that method in both
- * panels.
+ * Every entry method by number -- the twelve first, then the rest (74 since
+ * 1 Oct 2026) -- the one place their names are written, so the two panels
+ * below can show the number alone. Each row carries the method's signal on
+ * both sides and its hard gates both ways ("✓ 7/7", or the gate that refuses
+ * it). Signals first; a view keeps a long list usable -- All, only those with
+ * a signal, or one group -- and the body scrolls under a fixed header.
+ * Choosing a row chooses that method in both panels.
  */
-export function MethodLegend({ single, mtf, chosenN, onChoose }: {
+export function MethodLegend({ single, mtf, chosenId, onChoose }: {
   single: readonly MethodRead[];
   mtf: readonly MethodRead[];
   /** The method chosen in the panels, when both sides are on the same one. */
-  chosenN: number | null;
-  onChoose: (n: number) => void;
+  chosenId: string | null;
+  onChoose: (id: string) => void;
 }) {
-  const rows = (mtf.length ? mtf : single).map((m) => ({
-    m,
-    without: single.find((x) => x.n === m.n) ?? null,
-    with: mtf.find((x) => x.n === m.n) ?? null,
+  const [view, setView] = usePersisted<MethodView>('entry:legend-view', 'all');
+  const all = (mtf.length ? mtf : single).map((m) => ({
+    m, n: m.n, group: m.group,
+    without: single.find((x) => x.id === m.id) ?? null,
+    with: mtf.find((x) => x.id === m.id) ?? null,
   }));
-  if (!rows.length) return null;
+  if (!all.length) return null;
+  // A row's signal is its better side's: a TRADE either way puts it first.
+  const best = (r: (typeof all)[number]) => (r.without?.state === 'TRADE' || r.with?.state === 'TRADE' ? 'TRADE'
+    : r.without?.state === 'WAIT' || r.with?.state === 'WAIT' ? 'WAIT' : 'NO_TRADE') as MethodRead['state'];
+  const rows = viewReads(all.map((r) => ({ ...r, state: best(r) })), view);
+  const counts = Object.fromEntries(METHOD_VIEWS.map((v) => [v, viewReads(all.map((r) => ({ ...r, state: best(r) })), v).length]));
   return (
     <section aria-label="entry methods" className="h-full rounded-xl border border-border p-2.5">
-      <h3 className="m-0 mb-1 text-[13px] font-bold">Entry methods <span className="font-normal text-muted-foreground">· the numbers used on both sides below</span></h3>
-      <div className="overflow-x-auto">
+      <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="m-0 text-[13px] font-bold">Entry methods <span className="font-normal text-muted-foreground">· {all.length}, the numbers used on both sides below</span></h3>
+        <ViewChips value={view} onChange={setView} label="methods view" counts={counts} />
+      </div>
+      <div className="max-h-[560px] overflow-auto rounded border border-border/60">
         <table className="w-full border-collapse text-[12px]" aria-label="entry methods by number">
-          <thead className="text-left text-[11px] text-muted-foreground">
+          <thead className="sticky top-0 z-10 bg-[var(--panel)] text-left text-[11px] text-muted-foreground">
             <tr>
-              <th className="py-1 pr-2">#</th>
+              <th className="py-1 pl-1.5 pr-2">#</th>
               <th className="pr-2">Method</th>
               <th className="hidden pr-2 md:table-cell">Group</th>
               <th className="hidden pr-2 sm:table-cell">Looks for</th>
@@ -42,11 +53,11 @@ export function MethodLegend({ single, mtf, chosenN, onChoose }: {
           </thead>
           <tbody>
             {rows.map(({ m, without, with: withTf }) => (
-              <tr key={m.n} aria-selected={chosenN === m.n}
-                  className={cn('border-t border-border', chosenN === m.n && 'bg-[rgba(37,99,235,0.16)] shadow-[inset_3px_0_0_#2563eb]')}>
-                <td className="py-1 pr-2"><NumberBadge read={m} /></td>
+              <tr key={m.id} aria-selected={chosenId === m.id}
+                  className={cn('border-t border-border', chosenId === m.id && 'bg-[rgba(37,99,235,0.16)] shadow-[inset_3px_0_0_#2563eb]')}>
+                <td className="py-1 pl-1.5 pr-2"><NumberBadge read={m} /></td>
                 <td className="pr-2">
-                  <button type="button" onClick={() => onChoose(m.n)} className="min-h-[28px] text-left font-medium hover:underline">{m.name}</button>
+                  <button type="button" onClick={() => onChoose(m.id)} className="min-h-[28px] text-left font-medium hover:underline">{m.name}</button>
                   {/* On a phone the "looks for" column folds in under the name. */}
                   <span className="block text-[11px] leading-snug text-muted-foreground sm:hidden">{m.summary}</span>
                 </td>
@@ -65,6 +76,7 @@ export function MethodLegend({ single, mtf, chosenN, onChoose }: {
                 <td className="hidden px-1 text-center sm:table-cell" aria-label={`${m.name} gates with timeframe`}><GateChip read={withTf} /></td>
               </tr>
             ))}
+            {!rows.length ? <tr><td colSpan={8} className="py-3 text-center text-muted-foreground">No method in this view has a signal right now.</td></tr> : null}
           </tbody>
         </table>
       </div>

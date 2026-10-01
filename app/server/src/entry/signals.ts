@@ -144,8 +144,8 @@ export type SignalRow = {
   triggerAt: number; firstSeen: number; lastSeen: number; score: number | null; reason: string;
   entryLo: number | null; entryHi: number | null; stop: number | null; tp1: number | null; rr: number | null;
   gatesOff: string[];
-  /** The method's number and name, for the screen. */
-  n: number | null; name: string;
+  /** The method's number, its screen label (lettered when shared) and name. */
+  n: number | null; code: string | null; name: string;
   /** The market when it was first seen: the perpetual's last trade, Delta's BTC index. */
   ltp: number | null; indexPrice: number | null;
   /**
@@ -358,6 +358,7 @@ export async function signalPage(q: SignalQuery = {}): Promise<{ signals: Signal
     gatesOff: (r.gates_off as string[] | null) ?? [],
     ltp: num(r.ltp), indexPrice: num(r.index_price),
     n: methodOf(String(r.method))?.n ?? null,
+    code: methodOf(String(r.method))?.code ?? null,
     name: methodOf(String(r.method))?.name ?? String(r.method),
     outcome: r.e_status ? outcomeOf(r, r.tf as Tf) : null,
     tp2: num(r.tp2), tp3: num(r.tp3),

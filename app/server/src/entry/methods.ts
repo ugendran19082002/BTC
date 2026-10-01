@@ -517,6 +517,8 @@ const tgt = (tp1: TargetSpec['tp1'], tp2: TargetSpec['tp2']): TargetSpec => ({ t
 export type MethodDef = {
   id: MethodId; n: number; name: string; group: Group; summary: string; gate?: string; sl: string;
   targets: TargetSpec; detect: Detector;
+  /** The label on the screen: the number, with a letter when several share it (16a-16c, the three sessions). Set in METHODS. */
+  code?: string;
 };
 /** The first twelve, TEST.md's (the rest follow further down, and METHODS is all of them). */
 const TWELVE: readonly MethodDef[] = [
@@ -1959,9 +1961,21 @@ export function regimeOf(bars: readonly Candle[], ctx: EntryContext): Regime {
  * research; append them like the first twelve"). The replay found no edge in
  * the candle ones (research/METHODS-STUDY.txt); the live log is their record.
  */
-export const METHODS: readonly MethodDef[] = [
+export const METHODS: readonly MethodDef[] = withCodes([
   ...TWELVE,
   ...[...CANDIDATES, ...LIVE_CANDIDATES].map((c) => ({
     id: c.id, n: c.n, name: c.name, group: GROUP[c.family] ?? 'reversal', summary: c.family, sl: c.sl, targets: c.targets, detect: c.detect,
   })),
-];
+]);
+
+/** Each method's screen label: its number, lettered a, b, c when the number is shared. */
+function withCodes(ms: readonly MethodDef[]): MethodDef[] {
+  const count = new Map<number, number>(), seen = new Map<number, number>();
+  for (const m of ms) count.set(m.n, (count.get(m.n) ?? 0) + 1);
+  return ms.map((m) => {
+    if (count.get(m.n) === 1) return { ...m, code: String(m.n) };
+    const k = seen.get(m.n) ?? 0;
+    seen.set(m.n, k + 1);
+    return { ...m, code: `${m.n}${'abcdefgh'[k]}` };
+  });
+}
