@@ -72,7 +72,10 @@ export type Plan = {
 export type ScorePart = { name: string; max: number; got: number | null };
 
 export type MethodRead = {
-  id: MethodId;
+  /** One of the twelve (MethodId), or a research candidate's id (candidates.ts). */
+  id: MethodId | (string & {});
+  /** A research candidate, read beside the twelve and paper-logged, never alerted or shown with them. */
+  research?: boolean;
   n: number;
   name: string;
   group: Group;
@@ -151,5 +154,5 @@ export type EntryContext = {
    * is the price of entry, SL and TP; the mark is the fair-price check (a last trade far from it is
    * a wick through a thin book, not a level); the index is context -- basis and divergence.
    */
-  quote?: { mark: number | null; index: number | null; at: number } | null;
+  quote?: { mark: number | null; index: number | null; at: number; funding?: number | null } | null;
 };

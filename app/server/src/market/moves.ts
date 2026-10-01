@@ -490,7 +490,8 @@ async function fetchSeriesFresh(): Promise<[Timeframe, Candle[]][]> {
       const now = Math.floor(askedAt / 1000);
       const data = await Promise.all(
         VENUE_TIMEFRAMES.map(async (tf) => {
-          const span = MINUTES[tf] * 60 * 220;
+          // 5m back two days: the entry research methods read the whole previous day's profile (1 Oct 2026).
+          const span = MINUTES[tf] * 60 * (tf === '5m' ? 600 : 220);
           const bars = await candles('BTCUSD', now - span, now, tf).catch(() => []);
           return [tf, bars] as [Timeframe, Candle[]];
         }),

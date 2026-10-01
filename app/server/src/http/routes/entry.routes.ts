@@ -126,6 +126,7 @@ function signalQueryOf(query: unknown): SignalQuery {
     since: num(q.since),
     live: q.live === 'true',
     outcome: isOutcomeFilter(q.outcome) ? q.outcome : undefined,
+    track: q.track === 'research' || q.track === 'all' ? q.track : 'main',
     sort: isSignalSort(q.sort) ? q.sort : undefined,
     asc: q.asc === 'true',
   };

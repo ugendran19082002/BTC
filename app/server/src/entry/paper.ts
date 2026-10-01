@@ -157,6 +157,14 @@ const MIGRATIONS: Migration[] = [{
     ALTER TABLE entry_setups ADD CONSTRAINT entry_setups_status_check
       CHECK (status IN ('open', 'filled', 'expired', 'tp1', 'stop', 'timeout'));
   `,
+}, {
+  // The research track (owner, 1 Oct 2026): candidate methods read live beside the twelve, paper-logged for a
+  // week of forward evidence, kept apart from the twelve's record.
+  id: 'entry-016-setups-research',
+  up: `
+    ALTER TABLE entry_setups ADD COLUMN IF NOT EXISTS research BOOLEAN NOT NULL DEFAULT false;
+    CREATE INDEX IF NOT EXISTS entry_setups_research ON entry_setups (research, first_seen DESC);
+  `,
 }];
 
 let ready: Promise<void> | null = null;
@@ -176,13 +184,13 @@ export async function recordSetups(reads: readonly MethodRead[], nowMs: number, 
   for (const r of reads) {
     if (r.state !== 'TRADE' || !r.plan || r.triggerTime === null || r.dir === null) continue;
     const res = await query(
-      `INSERT INTO entry_setups (method, mode, tf, dir, trigger_at, first_seen, entry_lo, entry_hi, stop, tp1, tp2, rr, score, graded_to, gates_off, tp3)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+      `INSERT INTO entry_setups (method, mode, tf, dir, trigger_at, first_seen, entry_lo, entry_hi, stop, tp1, tp2, rr, score, graded_to, gates_off, tp3, research)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
        ON CONFLICT (method, mode, tf, dir, trigger_at) DO NOTHING`,
       [r.id, r.mode, r.tf, r.dir === 'long' ? 1 : -1, r.triggerTime, nowMs, r.plan.entryLo, r.plan.entryHi,
         r.plan.stop, r.plan.tp1, r.plan.tp2, r.plan.rr, r.score, Math.floor(nowMs / 60_000) * 60 - 60,
         // The gates this setup was taken under with any switched off: the record keeps these apart.
-        r.gates.filter((g) => !g.enabled).map((g) => g.key), r.plan.tp3],
+        r.gates.filter((g) => !g.enabled).map((g) => g.key), r.plan.tp3, !!r.research],
     );
     if ((res.rowCount ?? 0) > 0) { n += 1; bumpDataVersion(); onNew?.(r); }
   }
@@ -461,7 +469,8 @@ type ClosedRow = {
 export async function entryRecord(): Promise<{ records: MethodRecord[]; totals: MethodRecord[]; totalsAll: MethodRecord[] }> {
   await entrySchema();
   const all = await rows<ClosedRow>(
-    `SELECT method, mode, tf, status, r_net, first_seen, gates_off, dir, fill_price, exit_price FROM entry_setups ORDER BY coalesce(exit_at, graded_to), id`,
+    // The twelve's record: research candidates are paper-logged apart and read by the research study, not here.
+    `SELECT method, mode, tf, status, r_net, first_seen, gates_off, dir, fill_price, exit_price FROM entry_setups WHERE NOT research ORDER BY coalesce(exit_at, graded_to), id`,
   );
   const group = (key: (r: ClosedRow) => string) => {
     const m = new Map<string, ClosedRow[]>();

@@ -513,7 +513,12 @@ const tgt = (tp1: TargetSpec['tp1'], tp2: TargetSpec['tp2']): TargetSpec => ({ t
 
 /** `gate`: the method's own hard gate, in words, for the methods that have one. */
 /** `sl`: where the method's stop goes, before the 0.25 ATR buffer (owner's SL/TP table, 1 Oct 2026). */
-export const METHODS: readonly { id: MethodId; n: number; name: string; group: Group; summary: string; gate?: string; sl: string; targets: TargetSpec; detect: Detector }[] = [
+/** How a method is read: the twelve below, and the research candidates (candidates.ts) in the same shape. */
+export type MethodDef = {
+  id: MethodId | (string & {}); n: number; name: string; group: Group; summary: string; gate?: string; sl: string;
+  targets: TargetSpec; detect: Detector; research?: boolean;
+};
+export const METHODS: readonly (MethodDef & { id: MethodId })[] = [
   { id: 'breakout', n: 1, name: 'Breakout', group: 'breakout', summary: 'A close through the 20-bar range, RVOL 1.5, closing near its extreme', sl: "the breakout candle's far end", targets: tgt('swing', 'htf'), detect: breakout },
   { id: 'breakout-retest', n: 2, name: 'Breakout + retest', group: 'pullback', summary: 'A breakout, then a pullback to the level that holds', sl: "the retest extreme", targets: tgt('swing', 'htf'), detect: breakoutRetest },
   { id: 'liquidity-sweep', n: 3, name: 'Liquidity sweep', group: 'reversal', summary: 'Stops taken past a swing, a close back, then the MSS', sl: "the sweep extreme", targets: tgt('nearest', 'htf'), detect: liquiditySweep },

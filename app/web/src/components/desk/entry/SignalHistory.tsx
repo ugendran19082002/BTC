@@ -197,8 +197,8 @@ export function exitOf(s: EntrySignal): { price: string; why: 'TGT' | 'SL' | 'ti
   return { price: fmt(o.exitPrice), why, pts };
 }
 
-type Filter = { tab: Tab; mode: 'all' | EntryMode; tf: 'all' | EntryTf; today: boolean; size: (typeof PAGE_SIZES)[number]; sort: SignalSort; asc: boolean };
-const DEFAULT: Filter = { tab: 'all', mode: 'all', tf: 'all', today: true, size: 25, sort: 'time', asc: false };
+type Filter = { tab: Tab; track: 'main' | 'research' | 'all'; mode: 'all' | EntryMode; tf: 'all' | EntryTf; today: boolean; size: (typeof PAGE_SIZES)[number]; sort: SignalSort; asc: boolean };
+const DEFAULT: Filter = { tab: 'all', track: 'main', mode: 'all', tf: 'all', today: true, size: 25, sort: 'time', asc: false };
 
 /**
  * A filter saved in this browser, made safe: a timeframe, way, tab, size or
@@ -210,6 +210,7 @@ export function cleanFilter(saved: Partial<Filter> | null | undefined): Filter {
   const s = { ...DEFAULT, ...(saved ?? {}) };
   return {
     tab: Object.hasOwn(TABS, s.tab) ? s.tab : DEFAULT.tab,
+    track: s.track === 'research' || s.track === 'all' ? s.track : 'main',
     mode: s.mode === 'single' || s.mode === 'mtf' ? s.mode : 'all',
     tf: s.tf === 'all' || TFS.includes(s.tf) ? s.tf : 'all',
     today: typeof s.today === 'boolean' ? s.today : DEFAULT.today,
@@ -225,11 +226,11 @@ export function SignalHistory() {
   const [page, setPage] = usePersisted<number>('entry:history-page', 0);
   const since = f.today ? startOfIstDay(Date.now()) : undefined;
   const query: SignalFilter = {
-    ...TABS[f.tab].q, mode: f.mode === 'all' ? undefined : f.mode, tf: f.tf === 'all' ? undefined : f.tf, since,
+    ...TABS[f.tab].q, track: f.track === 'main' ? undefined : f.track, mode: f.mode === 'all' ? undefined : f.mode, tf: f.tf === 'all' ? undefined : f.tf, since,
     limit: f.size, offset: page * f.size, sort: f.sort, asc: f.asc || undefined,
   };
   const { data, loading, error } = usePoll(() => getEntrySignals(query), 5_000,
-    { deps: [f.tab, f.mode, f.tf, f.today, f.size, f.sort, f.asc, page] });
+    { deps: [f.tab, f.track, f.mode, f.tf, f.today, f.size, f.sort, f.asc, page] });
   const rows = data?.signals ?? [];
   const total = data?.total ?? 0;
   const pages = Math.max(1, Math.ceil(total / f.size));
@@ -267,6 +268,16 @@ export function SignalHistory() {
 
       {/* The filters, each group named; on a phone they wrap, and the timeframes scroll inside their own row. */}
       <div className="mb-2 flex flex-wrap items-end gap-x-3 gap-y-2 text-[11.5px]">
+        <Field label="Methods">
+          <div role="group" aria-label="history methods" className="inline-flex overflow-hidden rounded-md border border-border">
+            {(['main', 'research', 'all'] as const).map((t) => (
+              <button key={t} type="button" aria-pressed={f.track === t} onClick={() => set({ track: t })} className={chip(f.track === t)}
+                      title={t === 'research' ? 'The research candidates: read live beside the twelve and paper-logged for evidence -- never alerted' : undefined}>
+                {t === 'main' ? 'The 12' : t === 'research' ? 'Research' : 'All'}
+              </button>
+            ))}
+          </div>
+        </Field>
         <Field label="Way">
           <div role="group" aria-label="history way" className="inline-flex overflow-hidden rounded-md border border-border">
             {(['all', 'single', 'mtf'] as const).map((m) => (
@@ -291,8 +302,8 @@ export function SignalHistory() {
             <button type="button" aria-pressed={!f.today} onClick={() => set({ today: false })} className={chip(!f.today)}>All days</button>
           </div>
         </Field>
-        {f.tab !== DEFAULT.tab || f.mode !== DEFAULT.mode || f.tf !== DEFAULT.tf || f.today !== DEFAULT.today ? (
-          <button type="button" onClick={() => set({ tab: DEFAULT.tab, mode: DEFAULT.mode, tf: DEFAULT.tf, today: DEFAULT.today })}
+        {f.tab !== DEFAULT.tab || f.track !== DEFAULT.track || f.mode !== DEFAULT.mode || f.tf !== DEFAULT.tf || f.today !== DEFAULT.today ? (
+          <button type="button" onClick={() => set({ tab: DEFAULT.tab, track: DEFAULT.track, mode: DEFAULT.mode, tf: DEFAULT.tf, today: DEFAULT.today })}
                   className="rounded-md px-2 py-1 font-semibold text-[#3b82f6] hover:bg-muted">
             Clear filters
           </button>
@@ -346,7 +357,7 @@ export function SignalHistory() {
                     <tr key={keyOf(s, 'r')} className="border-t border-border align-top"
                         title={`${s.reason}${s.gatesOff.length ? ` -- gates off: ${s.gatesOff.join(', ')}` : ''}`}>
                       <td className="whitespace-nowrap py-1 pr-2"><Times s={s} /></td>
-                      <td className="min-w-[110px] pr-2">#{s.n ?? '?'} {s.name}</td>
+                      <td className="min-w-[110px] pr-2">#{s.n ?? '?'} {s.name}{s.research ? <ResearchTag /> : null}</td>
                       <td className="whitespace-nowrap pr-2 text-muted-foreground">{s.mode === 'mtf' ? 'With TF' : 'Without'} · {s.tf}</td>
                       <td className="whitespace-nowrap pr-2"><SignalTag s={s} /></td>
                       <td className="hidden whitespace-nowrap pr-2 text-muted-foreground lg:table-cell">{fmt(s.ltp)} · {fmt(s.indexPrice)}</td>
@@ -502,7 +513,7 @@ function Card({ s, now }: { s: EntrySignal; now: number }) {
   return (
     <li className="rounded-lg border border-border bg-[var(--bg)] p-2 tabular-nums">
       <div className="flex items-center justify-between gap-2">
-        <span className="font-semibold">#{s.n ?? '?'} {s.name}</span>
+        <span className="font-semibold">#{s.n ?? '?'} {s.name}{s.research ? <ResearchTag /> : null}</span>
         <span><SignalTag s={s} /></span>
       </div>
       <div className="text-[11px] text-muted-foreground">
@@ -533,6 +544,11 @@ function Card({ s, now }: { s: EntrySignal; now: number }) {
       <Counter s={s} now={now} />
     </li>
   );
+}
+
+/** Marks a research candidate's row: paper-logged for evidence, not one of the twelve. */
+function ResearchTag() {
+  return <span title="Research track: paper-logged for evidence, never alerted" className="ml-1 rounded bg-[#7c3aed]/20 px-1 text-[9.5px] font-bold uppercase text-[#a78bfa]">research</span>;
 }
 
 /** A named group of filters: its label above it, small. */

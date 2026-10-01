@@ -3,7 +3,8 @@ import {
   CHAIN, TF_SEC,
   type EntryContext, type EntryState, type Gate, type MethodRead, type Mode, type Plan, type ScorePart, type Step, type Tf,
 } from './types.js';
-import { METHODS, type Setup, type TargetSpec } from './methods.js';
+import { METHODS, type MethodDef, type Setup, type TargetSpec } from './methods.js';
+import { RESEARCH } from './candidates.js';
 import { atr, isDisplacement, lastSweep, pivots, rvol, trendOf, bullish, bearish } from './prims.js';
 
 /**
@@ -412,9 +413,9 @@ function scoreOf(setup: Setup, bars: readonly Candle[], a: number, trend: -1 | 0
 }
 
 /** One method, one mode, read to a state. */
-export function readMethod(m: (typeof METHODS)[number], mode: Mode, tf: Tf, ctx: EntryContext): MethodRead {
+export function readMethod(m: MethodDef, mode: Mode, tf: Tf, ctx: EntryContext): MethodRead {
   const entryTf: Tf = mode === 'mtf' ? '5m' : tf;
-  const base = { id: m.id, n: m.n, name: m.name, group: m.group, summary: m.summary, mode, tf: entryTf };
+  const base = { id: m.id, n: m.n, name: m.name, group: m.group, summary: m.summary, mode, tf: entryTf, ...(m.research ? { research: true } : {}) };
   const empty = (reason: string, state: EntryState = 'NO_TRADE'): MethodRead => ({
     ...base, dir: null, state, steps: [], gates: [], plan: null, score: null, scoreParts: [], alignment: null, reason, triggerTime: null,
   });
@@ -503,10 +504,12 @@ export const VIEW_ONLY_TFS: readonly Tf[] = ['1m'];
  * entry is 5m whatever is chosen) and the twelve without it on each timeframe.
  * What the recorder writes, so a signal is kept whichever chip was on screen.
  */
-export function allReads(ctx: EntryContext, tfs: readonly Tf[] = SINGLE_TFS): MethodRead[] {
+export function allReads(ctx: EntryContext, tfs: readonly Tf[] = SINGLE_TFS, o: { research?: boolean } = {}): MethodRead[] {
+  // The research candidates, when asked for, read exactly as the twelve are -- the chain and every timeframe.
+  const ms: readonly MethodDef[] = o.research ? [...METHODS, ...RESEARCH] : METHODS;
   return [
-    ...METHODS.map((m) => readMethod(m, 'mtf', '5m', ctx)),
-    ...tfs.flatMap((tf) => METHODS.map((m) => readMethod(m, 'single', tf, ctx))),
+    ...ms.map((m) => readMethod(m, 'mtf', '5m', ctx)),
+    ...tfs.flatMap((tf) => ms.map((m) => readMethod(m, 'single', tf, ctx))),
   ];
 }
 

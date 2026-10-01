@@ -1,6 +1,7 @@
 import type { Candle } from '../market/delta.js';
-import type { DetectInput, Setup, TargetSpec } from './methods.js';
+import type { DetectInput, MethodDef, Setup, TargetSpec } from './methods.js';
 import { bearish, bullish, pivots, range, rvol, vwapBand } from './prims.js';
+import { LIVE_CANDIDATES } from './candidates-live.js';
 
 /**
  * Candidate entry methods, #13-#37 of the owner's list of 1 Oct 2026, written
@@ -10,10 +11,10 @@ import { bearish, bullish, pivots, range, rvol, vwapBand } from './prims.js';
  * grading as the twelve, against a bar declared before it ran. None is on the
  * desk until it passes.
  *
- * Only the ones candles can answer are here. CVD / delta divergence,
- * absorption, exhaustion (24-27), funding, OI, liquidations and the expected
- * move edge (31-35) need the tape, OI and option history, which were not
- * recorded for 2024-26; a liquidity void (28) needs trade counts. #19 (range
+ * Only the ones candles can answer are here; the ones that need the desk's
+ * live data (tape, mark, index, funding, the option board) are in
+ * candidates-live.ts and run on the research track only. Liquidations, L2
+ * order-book ticks, per-price footprint and ETH are not collected. #19 (range
  * consumed) is a regime, read beside every setup rather than as an entry;
  * #38 was declined by the owner.
  */
@@ -385,7 +386,9 @@ const zReversion = ({ bars, a }: DetectInput): Setup | null => {
 function prevPeriod(xs: readonly Candle[] | undefined, t: number, startOf: (t: number) => number): { hi: number; lo: number } | null {
   const s = startOf(t), p = startOf(s - 1);
   const ys = (xs ?? []).filter((b) => b.time >= p && b.time < s);
-  return ys.length >= 3 ? { hi: hiOf(ys), lo: loOf(ys) } : null;
+  // The whole period, or nothing: a month half in the window has a wrong high and low.
+  const per = ys.length > 1 ? ys[1]!.time - ys[0]!.time : 0;
+  return ys.length >= 3 && ys[0]!.time - p <= per && s - ys[ys.length - 1]!.time <= 2 * per ? { hi: hiOf(ys), lo: loOf(ys) } : null;
 }
 const weekStart = (t: number) => { const d0 = t - (t % DAY); return d0 - ((new Date(d0 * 1000).getUTCDay() + 6) % 7) * DAY; };
 const monthStart = (t: number) => { const d = new Date(t * 1000); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1) / 1000; };
@@ -636,3 +639,15 @@ export const CANDIDATES: readonly Candidate[] = [
   { id: 'week-reclaim', n: 91, name: 'Previous week H/L break-reclaim', family: 'reversal', sl: 'the failed-break extreme', targets: tgt('nearest', 'htf'), detect: weekReclaim },
   { id: 'month-reclaim', n: 92, name: 'Previous month H/L break-reclaim', family: 'reversal', sl: 'the failed-break extreme', targets: tgt('nearest', 'htf'), detect: monthReclaim },
 ];
+
+const GROUP: Record<string, MethodDef['group']> = {
+  volatility: 'breakout', breakout: 'breakout', session: 'breakout', structure: 'breakout',
+  reversal: 'reversal', liquidity: 'reversal', range: 'reversal', statistical: 'reversal', imbalance: 'reversal', vwap: 'reversal', 'volume profile': 'reversal',
+  flow: 'flow',
+};
+/** The candidates as methods: read live beside the twelve, on the research track (paper log only, no alerts). */
+export const RESEARCH: readonly MethodDef[] = [...CANDIDATES, ...LIVE_CANDIDATES].map((c) => ({
+  id: c.id, n: c.n, name: c.name, group: GROUP[c.family] ?? 'reversal', summary: `research · ${c.family}`, sl: c.sl,
+  targets: c.targets, detect: c.detect, research: true,
+}));
+

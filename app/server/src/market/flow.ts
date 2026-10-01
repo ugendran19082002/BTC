@@ -175,9 +175,9 @@ export function startFlowSocket(log?: (line: string) => void): FlowSocket {
 }
 
 /** The perpetual's ticker -- mark price and BTC index -- off the socket; null before its first message. */
-export function perpQuote(): { mark: number | null; index: number | null; at: number } | null {
+export function perpQuote(): { mark: number | null; index: number | null; at: number; funding: number | null } | null {
   const t = socket?.perpTicker();
-  return t ? { mark: t.mark, index: t.spot, at: t.at } : null;
+  return t ? { mark: t.mark, index: t.spot, at: t.at, funding: t.fundingRate } : null;
 }
 
 /** The perpetual's trades for the live paper-log grader (entry/live-grade.ts); null before the socket starts. */

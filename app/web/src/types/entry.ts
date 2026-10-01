@@ -106,6 +106,8 @@ export type EntryRecordResponse = { records: EntryRecord[]; totals: EntryRecord[
 /** One signal from the server's journal, with what became of it if it was a TRADE. */
 export type EntrySignal = {
   method: string; n: number | null; name: string; mode: EntryMode; tf: EntryTf; dir: 1 | -1; state: 'WAIT' | 'TRADE';
+  /** A research candidate (paper-logged for evidence, never alerted), not one of the twelve. */
+  research?: boolean;
   triggerAt: number; firstSeen: number; lastSeen: number; score: number | null; reason: string;
   entryLo: number | null; entryHi: number | null; stop: number | null; tp1: number | null; rr: number | null;
   gatesOff: string[];

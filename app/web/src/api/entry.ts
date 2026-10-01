@@ -33,6 +33,8 @@ export type SignalFilter = {
   live?: boolean;
   /** Only TRADEs that ended one way: TGT1 hit, stopped, timed out, or expired (never filled). */
   outcome?: 'tp1' | 'stop' | 'timeout' | 'expired';
+  /** The twelve (the default), the research candidates, or both. */
+  track?: 'main' | 'research' | 'all';
   limit?: number; offset?: number; sort?: SignalSort; asc?: boolean;
 };
 const queryOf = (q: SignalFilter) => {

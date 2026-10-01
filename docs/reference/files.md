@@ -5,13 +5,13 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-391 files listed, 173 test files counted below, images and lockfiles left out.
+396 files listed, 176 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 100 |
+| `app/server` | 103 |
 | `app/web` | 73 |
 
 ## `(root)`
@@ -24,7 +24,6 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [Dockerfile.harvester](../../Dockerfile.harvester) | Keeps the chain cache current. |
 | [Dockerfile.web](../../Dockerfile.web) | The screen: build the Vite bundle, then serve it from nginx, which also proxies /api to the API container (deploy/nginx.docker.conf). |
 | [README.md](../../README.md) | BTC options desk |
-| [TEST.md](../../TEST.md) | Method Core formula / trigger |
 
 ## `app/server/`
 
@@ -40,6 +39,8 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [entry-study.ts](../../app/server/scripts/entry-study.ts) | The entry section's twelve methods replayed over the cached 5m history, graded the way the paper log grades them: R in points over risk, no fee term (removed from the entry section at the owner's r... |
+| [methods-study.ts](../../app/server/scripts/methods-study.ts) | The candidate entry methods (#13-#37, src/entry/candidates.ts) replayed over the cached 5m history, through the same plan, gates and grading as the twelve -- the evidence for which, if any, join th... |
+| [research-week.ts](../../app/server/scripts/research-week.ts) | The research track's forward evidence, read from the paper log: every research candidate (and the twelve, for comparison) over the last N days, per method and per way -- set up, filled, closed, won... |
 | [sync-trend.mjs](../../app/server/scripts/sync-trend.mjs) | Copies the trend plan (app/web/src/lib/trend/breakout.ts) into the server, which builds only its own src/ -- one rule for the chart, the study and the paper log. test/strategy/trend-copy.test.ts fa... |
 
 ## `app/server/src/`
@@ -120,6 +121,8 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [alerts.ts](../../app/server/src/entry/alerts.ts) | Timeframes a without-the-chain alert may be asked for; 5m unless the owner picks others. |
+| [candidates-live.ts](../../app/server/src/entry/candidates-live.ts) | Research candidates that need the desk's live data -- the perpetual's tape per minute, its mark and index, the funding rate, the option board -- which was not recorded for 2024-26, so they cannot b... |
+| [candidates.ts](../../app/server/src/entry/candidates.ts) | Candidate entry methods, #13-#37 of the owner's list of 1 Oct 2026, written the way the twelve are (methods.ts) so one that earns its place can join them unchanged. |
 | [engine.ts](../../app/server/src/entry/engine.ts) | The entry engine: twelve methods, each read with the timeframe chain and without it -- 24 reads -- and every read ending TRADE, WAIT or NO TRADE the same way (TEST.md): |
 | [gates.ts](../../app/server/src/entry/gates.ts) | Which of the entry engine's hard gates are switched on. |
 | [live-grade.ts](../../app/server/src/entry/live-grade.ts) | The paper log graded live, on the perpetual's own trades (owner, 1 Oct 2026: "everything on the live price, not on the candle close"). |
@@ -605,6 +608,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
+| [entry-concepts.md](../research/entry-concepts.md) | Entry concepts — the owner's 130, deduplicated |
 | [findings.md](../research/findings.md) | Research findings |
 | [ideas.md](../research/ideas.md) | Strategy ideas |
 
@@ -630,6 +634,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [FLOW-STUDY.txt](../../research/FLOW-STUDY.txt) | Order flow, OI, funding and top traders -- Binance BTCUSDT perpetual, 2024-01-01 to 2026-08-31 |
 | [GATE-DECISION.txt](../../research/GATE-DECISION.txt) | ========================================================================================== |
 | [INTRADAY-MOMENTUM.txt](../../research/INTRADAY-MOMENTUM.txt) | BTC intraday time-series momentum · 952 UTC days with every half hour present · fees 0.05% a side |
+| [METHODS-STUDY.txt](../../research/METHODS-STUDY.txt) | METHODS STUDY -- candidate entry methods #13-#37 replayed on cached 5m history, graded like the paper log (R in points, no fees) |
 | [MOMENTUM-MEASURED.txt](../../research/MOMENTUM-MEASURED.txt) | Momentum call, replayed: every BREAKOUT/BREAKDOWN CONFIRMED the live card would have called. |
 | [MOMENTUM-STUDY.txt](../../research/MOMENTUM-STUDY.txt) | Entries, stops and exits for big moves -- BTCUSD, 2024-01-10 to 2026-08-31, fees 0.05% a side |
 | [MOVE-TIMETABLE.txt](../../research/MOVE-TIMETABLE.txt) | ==================================================================================================== |

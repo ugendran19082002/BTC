@@ -190,7 +190,9 @@ export function sampleAlertText(at = Date.now()): string {
 }
 
 /** Whether a new TRADE is one its way is set to alert on: the chain always (its entry is 5m), without it the chosen timeframes. */
-export const wanted = (r: Pick<MethodRead, 'mode' | 'tf'>, settings: readonly AlertSetting[]): boolean => {
+export const wanted = (r: Pick<MethodRead, 'mode' | 'tf' | 'research'>, settings: readonly AlertSetting[]): boolean => {
+  // The research track is paper-logged for evidence, never alerted.
+  if (r.research) return false;
   const s = settings.find((a) => a.mode === r.mode);
   return !!s?.enabled && (r.mode === 'mtf' || s.tfs.includes(r.tf));
 };
