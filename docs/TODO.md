@@ -33,6 +33,41 @@ The record of what was built is in [history/2026-09.md](history/2026-09.md).
 | 11 | Order flow | [x] | [x] |
 | 12 | Options / derivatives | [x] | [x] |
 
+### R&D from the first paper log (owner, 1 Oct 2026)
+
+The owner's read of the paper log so far (closed trades, R per trade). Small
+samples are candidates to replay, not proven; the losers are the first work.
+Desk numbers (1-81) with the research number in brackets.
+
+- [ ] **#55 Pulled wall (64) -- the biggest loss.** 96 closed, -52.80R, win
+  21.9%, PF 0.38. A wall pulled is not an entry by itself: make it a chain --
+  wall pulled -> did price actually move? -> did aggressive flow confirm? ->
+  did structure break? -> retest -> entry. Replay the chain against the
+  current one-step trigger before keeping it on the desk.
+- [ ] **#11 Order flow -- entry timing, not the targets.** 62 closed, -8.10R,
+  yet the raw TP1/SL median is 2.04R: the target geometry is fine, so look at
+  entry timing, confirmation, SL placement and false signals. Its own deeper
+  study.
+- [ ] **#4 FVG retest -- needs more than "price entered the gap".** 22 closed,
+  -14.22R, average -0.65R, PF 0.21. Test adding an HTF level, displacement
+  quality, FVG freshness, flow, an MSS and room to the target.
+- [ ] **#2 Breakout + retest -- right R:R, still losing.** 29 closed, -14.01R,
+  win 31%, TP1/SL median 1.71. R:R alone does not fix it: test false
+  breakouts, late retests and the wrong regime (the `regime` kept on every
+  signal).
+- [ ] **Candidates to replay (positive, samples small):** #38 Engulfing +
+  structure (43) 7 closed +11.80R, avg +1.69R; #37 Channel breakout (41) 14
+  closed +4.60R, PF 1.65; #50 Gamma wall reaction (58) 8 closed +4.01R, PF
+  2.32 -- the options-side logic further; #59 Footprint stacked continuation
+  (73) 27 closed +5.27R, win 48.1%, PF 1.37 -- the order-flow family's lead;
+  #54 Liquidity replenishment (63) 33 closed +3.79R, PF 1.19 -- split by
+  regime and timeframe; #29 OI-confirmed breakout (32) 6 closed +1.73R. None
+  is proven: replay each with the bar set before the run.
+- [ ] **The SL/TP lesson.** Across these, a good TP1/SL ratio did not make a
+  method pay: the entry -- its confirmation and timing -- decides. Every
+  method's change above is judged on the paper log's average R and PF, with
+  enough closed trades, not on its R:R.
+
 Still open:
 
 - [ ] **Deploy it** (with the rest of 30 Sep): the log only starts once it runs.
