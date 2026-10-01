@@ -26,6 +26,9 @@ test('[critical] the twelve first, numbered 1-12, then every other method by the
   assert.deepEqual(METHODS.slice(0, 12).map((m) => m.n), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
   assert.equal(METHODS.length, 81, 'one method per unique idea: the owner\'s 81');
   assert.ok(METHODS.slice(12).every((m) => m.n > 12));
+  assert.deepEqual(METHODS.map((m) => m.n), Array.from({ length: 81 }, (_, i) => i + 1), 'numbered 1-81, a series with no gaps');
+  const refs = METHODS.map((m) => parseInt(m.ref!, 10));
+  assert.deepEqual(refs, [...refs].sort((x, y) => x - y), 'in research-number order: #19 after #18, not at the end');
   assert.equal(new Set(METHODS.map((m) => m.id)).size, METHODS.length);
   assert.deepEqual([...new Set(METHODS.map((m) => m.group))].sort(), ['breakout', 'flow', 'pullback', 'reversal']);
 });
@@ -199,10 +202,10 @@ test('[critical] 6. BOS: a counter-trend break is shown, and refused, not hidden
   assert.equal(s?.steps[2]?.ok, false);
 });
 
-test('[critical] one method per unique idea: every number once, its label the number (38a its own) -- the sessions are one method, not three', () => {
-  const codes = METHODS.map((m) => m.code!);
-  assert.equal(new Set(METHODS.map((m) => m.n)).size, METHODS.length);
-  assert.ok(codes.every((c, i) => c === (METHODS[i]!.id === 'multi-factor' ? '38a' : String(METHODS[i]!.n))));
-  for (const n of [19, 89, 90, 115, 118, 119, 123, 126, 127, 128]) assert.ok(METHODS.some((m) => m.n === n), `regime idea #${n} is a method too`);
-  assert.deepEqual(METHODS.filter((m) => m.n === 16 || m.n === 30).map((m) => m.id), ['orb', 'session-sweep']);
+test('[critical] one method per unique idea, numbered 1-81 -- the research number kept -- the sessions are one method, not three', () => {
+  assert.ok(METHODS.every((m, i) => m.code === String(i + 1)), 'the label is the series number');
+  assert.equal(new Set(METHODS.map((m) => m.ref)).size, METHODS.length, 'every research idea once');
+  assert.equal(METHODS.find((m) => m.id === 'multi-factor')!.ref, '38a');
+  for (const n of [19, 89, 90, 115, 118, 119, 123, 126, 127, 128]) assert.ok(METHODS.some((m) => m.ref === String(n)), `regime idea #${n} is a method too`);
+  assert.deepEqual(METHODS.filter((m) => m.ref === '16' || m.ref === '30').map((m) => m.id), ['orb', 'session-sweep']);
 });

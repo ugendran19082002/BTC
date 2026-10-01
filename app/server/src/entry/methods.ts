@@ -517,8 +517,10 @@ const tgt = (tp1: TargetSpec['tp1'], tp2: TargetSpec['tp2']): TargetSpec => ({ t
 export type MethodDef = {
   id: MethodId; n: number; name: string; group: Group; summary: string; gate?: string; sl: string;
   targets: TargetSpec; detect: Detector;
-  /** The label on the screen: the number, with a letter when several share it (16a-16c, the three sessions). Set in METHODS. */
+  /** The label on the screen: the number, 1-81. Set in METHODS. */
   code?: string;
+  /** The idea's number in the owner's research list (docs/research/entry-concepts.md), e.g. '38a'. Set in METHODS. */
+  ref?: string;
 };
 /** The first twelve, TEST.md's (the rest follow further down, and METHODS is all of them). */
 const TWELVE: readonly MethodDef[] = [
@@ -2122,27 +2124,20 @@ export const REGIME_CANDIDATES: readonly Candidate[] = [
 ];
 
 /**
- * Every entry method: the twelve first, then the rest by the owner's numbers --
- * read, shown, paper-logged and alerted alike (owner, 1 Oct 2026: "no separate
- * research; append them like the first twelve"). The replay found no edge in
- * the candle ones (research/METHODS-STUDY.txt); the live log is their record.
+ * Every entry method, numbered 1-81 in a series (owner, 1 Oct 2026: "1, 2, 3, 4
+ * -- total 81, 1 to 81") -- the twelve as 1-12, then the rest in the order of
+ * their research numbers, kept as `ref` -- read, shown, paper-logged and
+ * alerted alike. The replay found no edge in the candle ones
+ * (research/METHODS-STUDY.txt); the live log is their record.
  */
-export const METHODS: readonly MethodDef[] = withCodes([
+export const METHODS: readonly MethodDef[] = numbered([
   ...TWELVE,
   ...[...CANDIDATES, ...LIVE_CANDIDATES, ...REGIME_CANDIDATES].map((c) => ({
     id: c.id, n: c.n, code: c.code, name: c.name, group: GROUP[c.family] ?? 'reversal', summary: c.summary ?? c.family, sl: c.sl, targets: c.targets, detect: c.detect,
   })),
 ]);
 
-/** Each method's screen label: its number, lettered a, b, c when the number is shared. */
-function withCodes(ms: readonly MethodDef[]): MethodDef[] {
-  const count = new Map<number, number>(), seen = new Map<number, number>();
-  for (const m of ms) count.set(m.n, (count.get(m.n) ?? 0) + 1);
-  return ms.map((m) => {
-    if (m.code) return m;
-    if (count.get(m.n) === 1) return { ...m, code: String(m.n) };
-    const k = seen.get(m.n) ?? 0;
-    seen.set(m.n, k + 1);
-    return { ...m, code: `${m.n}${'abcdefgh'[k]}` };
-  });
+/** In research-number order, then numbered 1, 2, 3 ... -- the screen's number; the research number stays as `ref`. */
+function numbered(ms: readonly MethodDef[]): MethodDef[] {
+  return [...ms].sort((x, y) => x.n - y.n).map((m, i) => ({ ...m, ref: m.code ?? String(m.n), n: i + 1, code: String(i + 1) }));
 }
