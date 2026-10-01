@@ -45,8 +45,14 @@ export function lag(ms: number): string {
  * fill window counting down, in the trade with its time and the time-out
  * counting down, or out. Null for a state with no clock.
  */
-export function clockText(c: Pick<SetupClock, 'status' | 'fillBy' | 'filledAt' | 'timeoutAt' | 'exitAt'>, now: number):
-  { label: string; value: string; tone: 'wait' | 'live' | 'done' } | null {
+export function clockText(
+  c: Pick<SetupClock, 'status' | 'fillBy' | 'filledAt' | 'timeoutAt' | 'exitAt'> & Partial<Pick<SetupClock, 'runner' | 'tp2At'>>, now: number,
+): { label: string; value: string; tone: 'wait' | 'live' | 'done' } | null {
+  // After TGT1: the runner, its stop at breakeven, out for TGT2 then TGT3.
+  if (c.status === 'tp1' && c.runner === 'running') {
+    const out = c.timeoutAt === null ? '' : ` · time-out in ${span(c.timeoutAt * 1000 - now)}`;
+    return { label: 'Runner, stop at breakeven', value: `${c.tp2At != null ? 'TGT2 ✓ · TGT3 next' : 'TGT2 next'}${out}`, tone: 'live' };
+  }
   if (c.status === 'open') return { label: 'Fill window closes in', value: span(c.fillBy * 1000 - now), tone: 'wait' };
   if (c.status === 'filled' && c.filledAt !== null) {
     const out = c.timeoutAt === null ? '' : ` · time-out in ${span(c.timeoutAt * 1000 - now)}`;
