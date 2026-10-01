@@ -42,6 +42,10 @@ export const STOP_MAX_ATR = 2.5;
 export const DATA_MAX_AGE_SEC = 180;
 /** The perpetual's spread above this, as a percentage of price, is too wide to enter. */
 export const SPREAD_MAX_PCT = 0.05;
+/** Most the perpetual's last trade may sit from its mark price, in percent, before it is a wick, not a price. */
+export const MARK_MAX_PCT = 0.15;
+/** A trade or a mark older than this is not "now". */
+const QUOTE_FRESH_MS = 30_000;
 /** No entry this close to the 17:30 IST settlement, in seconds. */
 export const SETTLE_GUARD_SEC = 15 * 60;
 /** The day's move past this share of the expected daily move, in the trade's direction: used up. */
@@ -248,6 +252,15 @@ function gatesOf(i: {
     ctx.spreadPct === null ? 'not read' : `${ctx.spreadPct.toFixed(3)}%`,
     ctx.spreadPct === null ? null : ctx.spreadPct <= SPREAD_MAX_PCT,
     `the perpetual's spread is ${ctx.spreadPct?.toFixed(3)}%`);
+
+  // Entry, SL and TP are the perpetual's prices; the mark is the fair-price check on them.
+  const q = ctx.quote, last = ctx.ltp;
+  const fresh = (at: number | undefined) => at !== undefined && ctx.now - at <= QUOTE_FRESH_MS;
+  const offMark = q && last && q.mark && fresh(q.at) && fresh(last.at) ? (100 * Math.abs(last.price - q.mark)) / q.mark : null;
+  g('mark', 'Perp at mark', `last trade within ${MARK_MAX_PCT}% of the mark price`,
+    offMark === null ? 'not read' : `${offMark.toFixed(3)}% off`,
+    offMark === null ? null : offMark <= MARK_MAX_PCT,
+    `the last trade is ${offMark?.toFixed(2)}% from the mark price -- a wick, not a level`);
 
   const risk = Math.abs(fillOf(plan, dir) - plan.stop);
   const inAtr = risk / a;

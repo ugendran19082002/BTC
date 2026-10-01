@@ -14,8 +14,11 @@ import { bumpDataVersion } from './version.js';
  * a resting limit would have done:
  *
  *   open     waiting for price to trade into the entry zone; `expired` if it
- *            does not within FILL_WITHIN_BARS, or if the stop is hit first;
- *            `missed` if price runs to TP1 first, never coming back to fill
+ *            is never filled -- `expire_why`: `window` (not within
+ *            FILL_WITHIN_BARS), `stop` (price went past the stop first: the
+ *            idea was wrong before it was in), `target` (price ran to TP1
+ *            without coming back: the move went without it, and a fill
+ *            after the move is not the trade that was signalled)
  *   filled   in at the zone's near edge (or better, at a gap); then the stop,
  *            TP1 or HOLD_BARS, whichever comes first -- a bar touching both
  *            the stop and TP1 is the stop, the reading that cannot flatter
@@ -142,6 +145,18 @@ const MIGRATIONS: Migration[] = [{
     ALTER TABLE entry_setups ADD CONSTRAINT entry_setups_status_check
       CHECK (status IN ('open', 'filled', 'expired', 'missed', 'tp1', 'stop', 'timeout'));
   `,
+}, {
+  // A setup ends filled-and-closed (TP1, stop, time-out) or never filled (expired) -- the owner, 1 Oct 2026:
+  // "missed" is not an ending of its own but a reason a setup expired. Each expiry keeps its reason;
+  // the missed rows become expired, by target. Older expired rows have no recorded reason (NULL).
+  id: 'entry-015-setups-expire-why',
+  up: `
+    ALTER TABLE entry_setups ADD COLUMN IF NOT EXISTS expire_why TEXT CHECK (expire_why IN ('window', 'stop', 'target'));
+    UPDATE entry_setups SET status = 'expired', expire_why = 'target' WHERE status = 'missed';
+    ALTER TABLE entry_setups DROP CONSTRAINT IF EXISTS entry_setups_status_check;
+    ALTER TABLE entry_setups ADD CONSTRAINT entry_setups_status_check
+      CHECK (status IN ('open', 'filled', 'expired', 'tp1', 'stop', 'timeout'));
+  `,
 }];
 
 let ready: Promise<void> | null = null;
@@ -177,7 +192,9 @@ export async function recordSetups(reads: readonly MethodRead[], nowMs: number, 
 export type PaperRow = {
   dir: 1 | -1; tf: Tf; triggerAt: number; firstSeen: number;
   entryLo: number; entryHi: number; stop: number; tp1: number;
-  status: 'open' | 'filled' | 'expired' | 'missed' | 'tp1' | 'stop' | 'timeout';
+  status: 'open' | 'filled' | 'expired' | 'tp1' | 'stop' | 'timeout';
+  /** Why an expired setup was never filled. */
+  expireWhy?: ExpireWhy | null;
   filledAt: number | null; fillPrice: number | null; exitAt: number | null; exitPrice: number | null;
   rNet: number | null; gradedTo: number;
   /** The further targets, and when each target was reached (the 1m bar, epoch s). */
@@ -187,6 +204,9 @@ export type PaperRow = {
   runner?: 'running' | 'done' | null;
   runnerEnd?: RunnerEnd | null;
 };
+
+/** Why a setup was never filled: its window passed, the stop came first, or price ran to TP1 without it. */
+export type ExpireWhy = 'window' | 'stop' | 'target';
 
 /** How a runner ended: back to breakeven, at its last target, or on time. */
 export type RunnerEnd = 'be' | 'tp2' | 'tp3' | 'timeout';
@@ -262,13 +282,13 @@ function stepOn(row: PaperRow, b: Candle, fillBy: number, restingLimit: boolean)
       // In the fill bar only the stop is counted: which came first is not knowable from a candle.
       if (stopHit) r = close(r, b.time, stopAt, 'stop');
     } else if (stopHit) {
-      r = { ...r, status: 'expired' };
+      r = { ...r, status: 'expired', expireWhy: 'stop' };
     } else if (d === 1 ? b.high >= r.tp1 : b.low <= r.tp1) {
       // Price ran to TP1 without coming back to the zone: the move went without us. The limit is
       // cancelled -- filling it later, after the move is done, is not the trade that was signalled.
-      r = { ...r, status: 'missed' };
+      r = { ...r, status: 'expired', expireWhy: 'target' };
     } else if (b.time >= fillBy) {
-      r = { ...r, status: 'expired' };
+      r = { ...r, status: 'expired', expireWhy: 'window' };
     }
   } else if (stopHit) {
     r = close(r, b.time, stopAt, 'stop');
@@ -310,7 +330,7 @@ type DbRow = {
   stop: number; tp1: number; status: PaperRow['status']; filled_at: number | null; fill_price: number | null;
   exit_at: number | null; exit_price: number | null; r_net: number | null; graded_to: number;
   tp2: number | null; tp3: number | null; tp1_at: number | null; tp2_at: number | null; tp3_at: number | null;
-  runner: PaperRow['runner']; runner_end: RunnerEnd | null;
+  runner: PaperRow['runner']; runner_end: RunnerEnd | null; expire_why: ExpireWhy | null;
 };
 
 /**
@@ -341,10 +361,10 @@ export async function workingRows(): Promise<(PaperRow & { id: number })[]> {
 export async function saveGraded(id: number, r: PaperRow): Promise<void> {
   await query(
     `UPDATE entry_setups SET status = $2, filled_at = $3, fill_price = $4, exit_at = $5, exit_price = $6, r_net = $7, graded_to = $8,
-            tp1_at = $9, tp2_at = $10, tp3_at = $11, runner = $12, runner_end = $13
+            tp1_at = $9, tp2_at = $10, tp3_at = $11, runner = $12, runner_end = $13, expire_why = $14
       WHERE id = $1`,
     [id, r.status, r.filledAt, r.fillPrice, r.exitAt, r.exitPrice, r.rNet, r.gradedTo,
-      r.tp1At ?? null, r.tp2At ?? null, r.tp3At ?? null, r.runner ?? null, r.runnerEnd ?? null],
+      r.tp1At ?? null, r.tp2At ?? null, r.tp3At ?? null, r.runner ?? null, r.runnerEnd ?? null, r.expireWhy ?? null],
   );
   bumpDataVersion();
 }
@@ -356,7 +376,7 @@ const rowOf = (x: DbRow): PaperRow => ({
   exitAt: x.exit_at === null ? null : Number(x.exit_at), exitPrice: x.exit_price,
   rNet: x.r_net, gradedTo: Number(x.graded_to),
   tp2: x.tp2, tp3: x.tp3, tp1At: x.tp1_at === null ? null : Number(x.tp1_at), tp2At: x.tp2_at === null ? null : Number(x.tp2_at),
-  tp3At: x.tp3_at === null ? null : Number(x.tp3_at), runner: x.runner, runnerEnd: x.runner_end,
+  tp3At: x.tp3_at === null ? null : Number(x.tp3_at), runner: x.runner, runnerEnd: x.runner_end, expireWhy: x.expire_why,
 });
 
 async function gradeSetupsNow(bars1m: readonly Candle[]): Promise<number> {
@@ -455,7 +475,7 @@ export async function entryRecord(): Promise<{ records: MethodRecord[]; totals: 
     return {
       method, mode: all[0]!.mode, tf: all[0]!.tf,
       setups: xs.length,
-      expired: xs.filter((x) => x.status === 'expired' || x.status === 'missed').length,
+      expired: xs.filter((x) => x.status === 'expired').length,
       working: xs.filter((x) => x.status === 'open' || x.status === 'filled').length,
       since: Math.min(...all.map((x) => x.first_seen)),
       ...statsOf(closed.map((x) => x.r_net ?? 0)),

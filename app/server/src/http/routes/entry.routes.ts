@@ -38,7 +38,9 @@ export function registerEntryRoutes(app: FastifyInstance, notifier: () => { send
         // Each TRADE's paper-log clock, for the panel's counter; the board stands without it if the read fails.
         const clocks = await setupClocks(reads).catch(() => new Map<string, SetupClock>());
         const withClocks = reads.map((r) => (r.state === 'TRADE' ? { ...r, paper: clocks.get(clockKeyOf(r)) ?? null } : r));
-        return { at: ctx.now, tf, reads: withClocks, timeframes: timeframeRows(ctx), ltp: ctx.ltp ?? null };
+        // The three prices, each for its job: the perpetual trades (entry, SL, TP), the mark checks, the index is context.
+        const quote = ctx.quote ? { mark: ctx.quote.mark, index: ctx.quote.index, at: ctx.quote.at } : null;
+        return { at: ctx.now, tf, reads: withClocks, timeframes: timeframeRows(ctx), ltp: ctx.ltp ?? null, quote };
       });
       return { ...board, viewOnly, chain: CHAIN, tfSec: TF_SEC };
     } catch (e) {

@@ -19,12 +19,13 @@ import { migrate, type Migration } from '../db/migrate.js';
  * turned off" has an answer.
  */
 
-export type GateKey = 'data' | 'spread' | 'stop' | 'rr' | 'htf' | 'big-move' | 'em' | 'settle' | 'method';
+export type GateKey = 'data' | 'spread' | 'mark' | 'stop' | 'rr' | 'htf' | 'big-move' | 'em' | 'settle' | 'method';
 
 /** The gates in the checklist's order, what each is called, and which cannot be switched off. */
 export const GATES: readonly { key: GateKey; label: string; locked?: string }[] = [
   { key: 'data', label: 'Data fresh', locked: 'On stale candles every other reading describes a market that has moved on.' },
   { key: 'spread', label: 'Spread' },
+  { key: 'mark', label: 'Perp at mark' },
   { key: 'stop', label: 'Stop band' },
   { key: 'rr', label: 'R:R' },
   { key: 'htf', label: 'HTF alignment' },

@@ -191,7 +191,7 @@ test('the timeframe rows: each of the chain\'s seven, its trend and what its swi
 
 test('[critical] every read with a setup carries the whole hard-gate checklist: rule, value, verdict', () => {
   const r = readMethod(BREAKOUT, 'single', '5m', single({}));
-  assert.deepEqual(r.gates.map((g) => g.key), ['data', 'spread', 'stop', 'rr', 'htf', 'big-move', 'em', 'settle']);
+  assert.deepEqual(r.gates.map((g) => g.key), ['data', 'spread', 'mark', 'stop', 'rr', 'htf', 'big-move', 'em', 'settle']);
   for (const g of r.gates) assert.ok(g.rule.length > 0 && g.value !== undefined, `${g.key} says its rule and what it read`);
   const htf = r.gates.find((g) => g.key === 'htf')!;
   assert.equal(htf.ok, null, 'without the chain the HTF gate is not part of the read -- listed, never "passed"');
@@ -201,6 +201,7 @@ test('[critical] every read with a setup carries the whole hard-gate checklist: 
 test('[critical] a gate that was not read refuses nothing, and a failed one is the reason', () => {
   const r = readMethod(BREAKOUT, 'single', '5m', single({ walls: NEAR_WALL }));
   assert.equal(r.gates.find((g) => g.key === 'spread')?.ok, null, 'no spread read');
+  assert.equal(r.gates.find((g) => g.key === 'mark')?.ok, null, 'no mark read: not read, never passed');
   assert.equal(r.state, 'NO_TRADE');
   assert.equal(r.gates.find((g) => g.ok === false)?.key, 'rr');
 });
@@ -376,4 +377,16 @@ test('[critical] the minimum is 1R (owner, 1 Oct 2026), no maximum: 0.75R skippe
   assert.deepEqual([t.tp1, t.why[0], t.tp2], [84_200, 'entry 84200 (1 nearer under 1R skipped)', 84_800]);
   // Nothing nearer than 1R: the far one is fine -- there is no upper limit.
   assert.equal(pickTargets({ tp1: 'nearest', tp2: 'htf' }, [L(85_200, 'htf')], atDefault).tp1, 85_200, '6R');
+});
+
+test('[critical] the perpetual is the price; the mark checks it: a last trade far from the mark refuses -- a wick, not a level', () => {
+  const at = (ltp: number, mark: number) => readMethod(BREAKOUT, 'single', '5m', single({
+    ltp: { price: ltp, at: nowAfter(breakoutBars()) - 1_000 }, quote: { mark, index: mark + 40, at: nowAfter(breakoutBars()) - 1_000 },
+  })).gates.find((g) => g.key === 'mark')!;
+  assert.deepEqual([at(84_200, 84_190).ok, at(84_200, 84_190).value], [true, '0.012% off']);
+  const wick = at(84_400, 84_200);
+  assert.deepEqual([wick.ok, wick.why], [false, 'the last trade is 0.24% from the mark price -- a wick, not a level']);
+  // A mark gone stale is not read.
+  const stale = readMethod(BREAKOUT, 'single', '5m', single({ ltp: { price: 84_400, at: 0 }, quote: { mark: 84_200, index: null, at: 0 } }));
+  assert.equal(stale.gates.find((g) => g.key === 'mark')!.ok, null);
 });

@@ -144,4 +144,10 @@ export type EntryContext = {
   gatesOff?: readonly string[];
   /** The perpetual's last trade, from the tape (epoch ms): the live price for the execution step. Null with the socket down. */
   ltp?: { price: number; at: number } | null;
+  /**
+   * Delta's mark price and BTC index for the perpetual, from its ticker (epoch ms). The perpetual
+   * is the price of entry, SL and TP; the mark is the fair-price check (a last trade far from it is
+   * a wick through a thin book, not a level); the index is context -- basis and divergence.
+   */
+  quote?: { mark: number | null; index: number | null; at: number } | null;
 };
