@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download } from 'lucide-react';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
-import { getEntrySignals, type SignalFilter, type SignalSort } from '@/api/entry';
+import { entrySignalsCsvUrl, getEntrySignals, type SignalFilter, type SignalSort } from '@/api/entry';
 import { cn } from '@/lib/utils';
 import type { EntryMode, EntrySignal, EntrySignalSummary, EntryTf } from '@/types/entry';
 import { MINS, SECS, clockText, lag, useNow } from './clock';
@@ -217,6 +217,12 @@ export function SignalHistory() {
         <button type="button" aria-pressed={f.today} onClick={() => set({ today: !f.today })} className={cn('rounded border border-border', chip(f.today))}>
           {f.today ? 'Today' : 'All days'}
         </button>
+        {/* Every row the filters match, in this order -- not just the page on screen. */}
+        <a href={entrySignalsCsvUrl({ ...query, limit: undefined, offset: undefined } as Omit<SignalFilter, 'limit' | 'offset'>)} download
+           aria-label="download for Excel" title={`Every signal these filters match${total ? ` (${total})` : ''}, in this order, as a spreadsheet (CSV, opens in Excel)`}
+           className="ml-auto inline-flex items-center gap-1 rounded border border-border px-2 py-0.5 font-semibold text-foreground hover:bg-muted">
+          <Download size={13} aria-hidden /> Excel{total ? ` · ${total}` : ''}
+        </a>
       </div>
 
       {data ? <Summary s={data.summary} /> : null}
@@ -328,20 +334,23 @@ function SignalTag({ s }: { s: EntrySignal }) {
 
 /** Over every signal matching the filters, not only this page. */
 function Summary({ s }: { s: EntrySignalSummary }) {
-  const cell = (k: string, v: string, cls = '') => (
-    <div className="rounded bg-muted px-2 py-1">
-      <div className="text-[10px] text-muted-foreground">{k}</div>
-      <div className={cn('text-[13px] font-bold tabular-nums', cls)}>{v}</div>
+  const closed = s.tp1 + s.stops + s.timeouts;
+  const cell = (k: string, v: string, sub: string, tone: 'up' | 'down' | 'none') => (
+    <div className={cn('rounded-lg border border-border border-l-4 bg-muted/40 px-2.5 py-1.5',
+      tone === 'up' ? 'border-l-[var(--up)]' : tone === 'down' ? 'border-l-[var(--down)]' : 'border-l-border')}>
+      <div className="text-[10.5px] uppercase tracking-wide text-muted-foreground">{k}</div>
+      <div className={cn('text-[16px] font-bold leading-tight tabular-nums', tone === 'up' ? 'text-[var(--up)]' : tone === 'down' ? 'text-[var(--down)]' : '')}>{v}</div>
+      <div className="text-[10.5px] text-muted-foreground tabular-nums">{sub}</div>
     </div>
   );
   return (
-    <div aria-label="history totals" className="mb-2 grid grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-6">
-      {cell('TRADEs', `${s.trades}${s.open ? ` · ${s.open} open` : ''}`)}
-      {cell('TP1 hits · target pts', `${s.tp1} · ${signedPts(s.tp1Pts)}`, 'text-[var(--up)]')}
-      {cell('Stops · SL pts', `${s.stops} · −${fmt(s.slPts)}`, 'text-[var(--down)]')}
-      {cell('Timed out · pts', `${s.timeouts} · ${signedPts(s.timeoutPts)}`)}
-      {cell('TGT2 · TGT3 reached', `${s.tp2} · ${s.tp3}`, 'text-[var(--up)]')}
-      {cell('Net pts', signedPts(s.netPts), s.netPts >= 0 ? 'text-[var(--up)]' : 'text-[var(--down)]')}
+    <div aria-label="history totals" className="mb-2 grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-6">
+      {cell('TRADEs', String(s.trades), `${closed} closed${s.open ? ` · ${s.open} open` : ''}`, 'none')}
+      {cell('TGT1 hits', `${s.tp1}`, `${signedPts(s.tp1Pts)} pts`, 'up')}
+      {cell('SL hits', `${s.stops}`, `−${fmt(s.slPts)} pts`, 'down')}
+      {cell('Timed out', `${s.timeouts}`, `${signedPts(s.timeoutPts)} pts`, 'none')}
+      {cell('TGT2 · TGT3', `${s.tp2} · ${s.tp3}`, 'reached by the runner', 'up')}
+      {cell('Net pts', signedPts(s.netPts), `= ${signedPts(s.tp1Pts)} − ${fmt(s.slPts)} ${s.timeoutPts < 0 ? '−' : '+'} ${fmt(Math.abs(s.timeoutPts))}`, s.netPts >= 0 ? 'up' : 'down')}
     </div>
   );
 }
@@ -403,10 +412,13 @@ function Card({ s, now }: { s: EntrySignal; now: number }) {
         <div className="mt-0.5 flex flex-wrap gap-x-3 text-[11.5px]">
           <span>Entry {fmt(s.entryLo)}–{fmt(s.entryHi)}</span>
           <span className="text-[var(--down)]">SL {fmt(s.stop)}</span>
-          <span className="text-[var(--up)]">TP1 {fmt(s.tp1)}</span>
-          {s.tp2 !== null ? <span className="text-[var(--up)]">TP2 {fmt(s.tp2)}</span> : null}
-          {s.tp3 !== null ? <span className="text-muted-foreground">TP3 {fmt(s.tp3)}</span> : null}
-          {s.rr !== null ? <span className="text-muted-foreground">R:R {s.rr.toFixed(2)}</span> : null}
+        </div>
+      ) : null}
+      {s.state === 'TRADE' && s.tp1 !== null ? (
+        <div aria-label="targets" className="mt-0.5 grid grid-cols-3 gap-1 text-[11.5px]">
+          {targetsOf(s).map((t) => (
+            <div key={t.n} className="rounded bg-muted/50 px-1.5 py-0.5"><span className="text-[10px] text-muted-foreground">TGT{t.n} </span><Target t={t} /></div>
+          ))}
         </div>
       ) : null}
       {ex ? <div className="text-[11.5px]">Fill {fmt(s.outcome?.fillPrice)} → exit {ex.price} ({ex.why}){ex.pts !== null ? ` · ${signedPts(ex.pts)} pts` : ''}</div> : null}

@@ -33,8 +33,13 @@ export type SignalFilter = {
   live?: boolean;
   limit?: number; offset?: number; sort?: SignalSort; asc?: boolean;
 };
-export function getEntrySignals(q: SignalFilter = {}) {
+const queryOf = (q: SignalFilter) => {
   const p = new URLSearchParams();
   for (const [k, v] of Object.entries(q)) if (v !== undefined) p.set(k, String(v));
-  return json<EntrySignalPage>(`/api/entry/signals${p.size ? `?${p}` : ''}`);
+  return p.size ? `?${p}` : '';
+};
+export function getEntrySignals(q: SignalFilter = {}) {
+  return json<EntrySignalPage>(`/api/entry/signals${queryOf(q)}`);
 }
+/** The history as a spreadsheet: every row the filters match, in the table's order (the server builds it). */
+export const entrySignalsCsvUrl = (q: Omit<SignalFilter, 'limit' | 'offset'>) => `/api/entry/signals.csv${queryOf(q)}`;
