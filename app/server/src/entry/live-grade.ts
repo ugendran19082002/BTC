@@ -51,7 +51,11 @@ export function gradeLive(tape: Tape | null): Promise<number> {
       seen.add(id);
       const cursor = cursors.get(id);
       // Never back over a minute the candle grader has done, nor a trade from before the setup was seen.
-      const from = Math.max(row.firstSeen, (row.gradedTo + 60) * 1000, cursor === undefined ? 0 : cursor + 1);
+      // But a minute this grader closed itself -- an event's -- it carries on through from its own last
+      // trade: until 1 Oct 2026 it jumped to the next minute, and the rest of the event's minute was
+      // graded by nobody (a stop seconds after the fill went unseen). A candle still never replays it.
+      const ownMinute = cursor !== undefined && Math.floor(cursor / 60_000) * 60 >= row.gradedTo;
+      const from = Math.max(row.firstSeen, ownMinute ? cursor + 1 : (row.gradedTo + 60) * 1000, cursor === undefined ? 0 : cursor + 1);
       const prints = tape.perpSince(from);
       if (!prints.length) continue;
       // Resting: the limit was in the market before these trades (a trade, or a graded minute, since it was seen).

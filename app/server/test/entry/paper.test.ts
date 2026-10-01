@@ -83,7 +83,44 @@ test(`a filled trade still open after ${HOLD_BARS} bars is closed at the market`
     ...Array.from({ length: 5 * HOLD_BARS + 2 }, (_, k) => minute(6 + k, 84_100, 84_110, 84_090, 84_105))];
   const r = gradeRow(long(), bars);
   assert.equal(r.status, 'timeout');
-  assert.equal(r.exitPrice, 84_105);
+  assert.equal(r.exitPrice, 84_100, 'at the open of the minute the hold ran out, not that minute\'s close');
+});
+
+/*
+ * The two clocks, to the minute (1 Oct 2026 audit). The fill window and the
+ * hold each end at a moment; a minute that starts at that moment is past it.
+ * Until 1 Oct 2026 that minute could still fill a setup, and a stop or TP1 in
+ * it beat the time-out, which then took the minute's close.
+ */
+const FILL_BY_K = 65;     // fillBy = T+300 (first seen) + 12 x 300 s = T + 65 min
+const TIMEOUT_K = 245;    // filled at T+300: + 48 x 300 s = T + 245 min
+
+test('[critical] the last minute inside the fill window can fill', () => {
+  const bars = [...Array.from({ length: FILL_BY_K - 1 - 5 }, (_, k) => minute(5 + k, 84_100, 84_110, 84_090, 84_100)),
+    minute(FILL_BY_K - 1, 84_050, 84_060, 84_005, 84_020)];
+  assert.equal(gradeRow(long(), bars).status, 'filled');
+});
+
+test('[critical] the minute that starts at the end of the fill window cannot: expired, window', () => {
+  const bars = [...Array.from({ length: FILL_BY_K - 5 }, (_, k) => minute(5 + k, 84_100, 84_110, 84_090, 84_100)),
+    minute(FILL_BY_K, 84_050, 84_060, 84_005, 84_020)];
+  const r = gradeRow(long(), bars);
+  assert.deepEqual([r.status, r.expireWhy, r.fillPrice], ['expired', 'window', null]);
+});
+
+test('[critical] when the hold runs out, it is a time-out at that moment -- a stop in the next minute is not the trade\'s', () => {
+  const bars = [minute(5, 84_050, 84_060, 84_005, 84_020),
+    ...Array.from({ length: TIMEOUT_K - 6 }, (_, k) => minute(6 + k, 84_100, 84_110, 84_090, 84_105)),
+    minute(TIMEOUT_K, 84_100, 84_110, 83_880, 83_890)];
+  const r = gradeRow(long(), bars);
+  assert.deepEqual([r.status, r.exitPrice, r.exitAt], ['timeout', 84_100, T + 60 * TIMEOUT_K]);
+});
+
+test('a stop in the hold\'s last minute is still a stop', () => {
+  const bars = [minute(5, 84_050, 84_060, 84_005, 84_020),
+    ...Array.from({ length: TIMEOUT_K - 7 }, (_, k) => minute(6 + k, 84_100, 84_110, 84_090, 84_105)),
+    minute(TIMEOUT_K - 1, 84_100, 84_110, 83_880, 83_890)];
+  assert.equal(gradeRow(long(), bars).status, 'stop');
 });
 
 test('a short is the mirror', () => {

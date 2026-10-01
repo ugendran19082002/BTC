@@ -80,6 +80,46 @@ test('[critical] live: filled and out at TP1 the second they print, a runner set
   assert.equal((await row(T - 300)).runner, 'running');
 });
 
+/*
+ * The rest of an event's minute (1 Oct 2026 audit).
+ *
+ * An event closes its minute to the candles, and the tape used to start its
+ * next pass at the minute after -- so the trades from the event to the end of
+ * its minute were graded by nobody. A stop hit seconds after the fill, the
+ * commonest way a setup fails, was not seen, and the trade could later be
+ * written as a TP1 win. The tape now carries on from its own last trade.
+ */
+test('[critical] live: a stop in the same minute as the fill, on the next pass, is a stop -- not skipped for a later TP1', async () => {
+  await recordSetups([read({ triggerTime: T - 900 })], ms(T));
+  const ts = [tick(T + 10, 84_030), tick(T + 21, 84_008), tick(T + 40, 83_895), tick(T + 75, 84_301)];
+  assert.equal(await gradeLive(tape(ts.slice(0, 2))), 1, 'filled at :21');
+  await gradeLive(tape(ts.slice(0, 3)));
+  const x = await row(T - 900);
+  assert.deepEqual([x.status, Number(x.exit_price), Number(x.exit_at)], ['stop', 83_895, T + 40], 'out at the :40 trade through the stop');
+  await gradeLive(tape(ts));
+  assert.equal((await row(T - 900)).status, 'stop', 'and the later TP1 trade does not change that');
+});
+
+test('[critical] live: a runner back to breakeven in the minute it reached TP1 ends at breakeven', async () => {
+  await recordSetups([read({ triggerTime: T - 1200 })], ms(T));
+  const ts = [tick(T + 10, 84_030), tick(T + 21, 84_008), tick(T + 30, 84_301), tick(T + 50, 84_009)];
+  await gradeLive(tape(ts.slice(0, 2)));
+  await gradeLive(tape(ts.slice(0, 3)));
+  assert.equal((await row(T - 1200)).runner, 'running', 'TP1 at :30, a runner out for TP2');
+  await gradeLive(tape(ts));
+  const x = await row(T - 1200);
+  assert.deepEqual([x.runner, x.runner_end], ['done', 'be'], 'the :50 trade back through the 84,010 fill');
+});
+
+test('a restart with no cursor still never goes back over a minute already graded', async () => {
+  await recordSetups([read({ triggerTime: T - 1500 })], ms(T));
+  await gradeLive(tape([tick(T + 10, 84_030), tick(T + 21, 84_008)]));
+  resetLiveGrade();
+  // A trade from before the graded minute's end, replayed after a restart, is not graded again.
+  await gradeLive(tape([tick(T + 21, 84_008), tick(T + 40, 83_895)]));
+  assert.equal((await row(T - 1500)).status, 'filled', 'without the cursor, the event minute stays closed');
+});
+
 test('[critical] a stale tape grades nothing -- the candles carry on; a reconnect starts again from what the candles graded', async () => {
   await recordSetups([read({ id: 'bos', triggerTime: T - 600 })], ms(T));
   assert.equal(await gradeLive(tape([tick(T + 10, 84_008)], { fresh: false })), 0);

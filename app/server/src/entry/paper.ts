@@ -318,7 +318,11 @@ function stepOn(row: PaperRow, b: Candle, fillBy: number, restingLimit: boolean)
   const stopAt = d === 1 ? Math.min(r.stop, b.open) : Math.max(r.stop, b.open);
   if (r.status === 'open') {
     const touches = d === 1 ? b.low <= r.entryHi : b.high >= r.entryLo;
-    if (touches && !(d === 1 ? b.open <= r.stop : b.open >= r.stop)) {
+    // The window first: a step that starts at `fillBy` is past it (1 Oct 2026 audit -- a fill in
+    // that minute was let through after the screen's counter had already run out).
+    if (b.time >= fillBy) {
+      r = { ...r, status: 'expired', expireWhy: 'window' };
+    } else if (touches && !(d === 1 ? b.open <= r.stop : b.open >= r.stop)) {
       const edge = d === 1 ? r.entryHi : r.entryLo;
       const fill = restingLimit ? edge : d === 1 ? Math.min(b.open, r.entryHi) : Math.max(b.open, r.entryLo);
       r = { ...r, status: 'filled', filledAt: b.time, fillPrice: fill };
@@ -330,17 +334,17 @@ function stepOn(row: PaperRow, b: Candle, fillBy: number, restingLimit: boolean)
       // Price ran to TP1 without coming back to the zone: the move went without us. The limit is
       // cancelled -- filling it later, after the move is done, is not the trade that was signalled.
       r = { ...r, status: 'expired', expireWhy: 'target' };
-    } else if (b.time >= fillBy) {
-      r = { ...r, status: 'expired', expireWhy: 'window' };
     }
+  } else if (r.filledAt !== null && b.time >= timeoutAtOf(r.filledAt, r.tf)) {
+    // Time first, at the price when it ran out -- the step's open. Until 1 Oct 2026 the stop and
+    // TP1 were judged on this step too and a time-out took its close: a minute past the hold.
+    r = close(r, b.time, b.open, 'timeout');
   } else if (stopHit) {
     r = close(r, b.time, stopAt, 'stop');
   } else if (d === 1 ? b.high >= r.tp1 : b.low <= r.tp1) {
     r = close(r, b.time, r.tp1, 'tp1');
     // A further target: the rest runs on from the next step, its stop at breakeven.
     r = { ...r, tp1At: b.time, tp2At: null, tp3At: null, runner: r.tp2 != null ? 'running' : null, runnerEnd: null };
-  } else if (r.filledAt !== null && b.time >= timeoutAtOf(r.filledAt, r.tf)) {
-    r = close(r, b.time, b.close, 'timeout');
   }
   return r;
 }
@@ -354,13 +358,14 @@ function stepOn(row: PaperRow, b: Candle, fillBy: number, restingLimit: boolean)
 function runOn(r: PaperRow, b: Candle): PaperRow {
   const d = r.dir;
   const done = (end: RunnerEnd, x: Partial<PaperRow> = {}): PaperRow => ({ ...r, ...x, runner: 'done', runnerEnd: end });
+  // The hold ran out before this step began: nothing in it is the runner's (as for the trade).
+  if (r.filledAt !== null && b.time >= timeoutAtOf(r.filledAt, r.tf)) return done('timeout');
   if (d === 1 ? b.low <= r.fillPrice! : b.high >= r.fillPrice!) return done('be');
   const reaches = (lvl: number) => (d === 1 ? b.high >= lvl : b.low <= lvl);
   let x: Partial<PaperRow> = {};
   if (r.tp2At == null && r.tp2 != null && reaches(r.tp2)) x = { tp2At: b.time };
   if ((r.tp2At ?? x.tp2At) != null && r.tp3 != null && reaches(r.tp3)) return done('tp3', { ...x, tp3At: b.time });
   if ((r.tp2At ?? x.tp2At) != null && r.tp3 == null) return done('tp2', x);
-  if (r.filledAt !== null && b.time >= timeoutAtOf(r.filledAt, r.tf)) return done('timeout', x);
   return { ...r, ...x };
 }
 
