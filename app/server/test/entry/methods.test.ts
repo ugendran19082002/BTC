@@ -24,7 +24,7 @@ const add = (bars: Candle[], ...xs: Omit<Candle, 'time' | 'volume'>[]) => {
 
 test('[critical] the twelve first, numbered 1-12, then every other method by the owner\'s numbers -- each id once, in the four groups', () => {
   assert.deepEqual(METHODS.slice(0, 12).map((m) => m.n), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
-  assert.equal(METHODS.length, 70, 'one method per unique idea');
+  assert.equal(METHODS.length, 81, 'one method per unique idea: the owner\'s 81');
   assert.ok(METHODS.slice(12).every((m) => m.n > 12));
   assert.equal(new Set(METHODS.map((m) => m.id)).size, METHODS.length);
   assert.deepEqual([...new Set(METHODS.map((m) => m.group))].sort(), ['breakout', 'flow', 'pullback', 'reversal']);
@@ -199,9 +199,10 @@ test('[critical] 6. BOS: a counter-trend break is shown, and refused, not hidden
   assert.equal(s?.steps[2]?.ok, false);
 });
 
-test('[critical] one method per unique idea: every number once, its label the number -- the sessions are one method, not three', () => {
+test('[critical] one method per unique idea: every number once, its label the number (38a its own) -- the sessions are one method, not three', () => {
   const codes = METHODS.map((m) => m.code!);
   assert.equal(new Set(METHODS.map((m) => m.n)).size, METHODS.length);
-  assert.ok(codes.every((c, i) => c === String(METHODS[i]!.n)));
+  assert.ok(codes.every((c, i) => c === (METHODS[i]!.id === 'multi-factor' ? '38a' : String(METHODS[i]!.n))));
+  for (const n of [19, 89, 90, 115, 118, 119, 123, 126, 127, 128]) assert.ok(METHODS.some((m) => m.n === n), `regime idea #${n} is a method too`);
   assert.deepEqual(METHODS.filter((m) => m.n === 16 || m.n === 30).map((m) => m.id), ['orb', 'session-sweep']);
 });

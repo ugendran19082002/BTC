@@ -74,6 +74,11 @@ const MIGRATIONS: Migration[] = [{
   // The history and the board look an alert up by its setup.
   id: 'entry-009-alert-log-by-setup',
   up: `CREATE INDEX IF NOT EXISTS entry_alert_log_by_setup ON entry_alert_log (method, mode, tf, dir, trigger_at);`,
+}, {
+  // One method per unique idea (owner, 1 Oct 2026: "keep the 81 unique, remove the rest"): the per-session
+  // variants of #16 and #30 became one method each (orb, session-sweep); their alerts sent go with them.
+  id: 'entry-018-alerts-retired-methods',
+  up: `DELETE FROM entry_alert_log WHERE method IN ('orb-asia', 'orb-london', 'orb-ny', 'session-sweep-asia', 'session-sweep-london', 'session-sweep-ny');`,
 }];
 
 let ready: Promise<void> | null = null;

@@ -92,3 +92,20 @@ test('the regime is read on every series: efficiency, volatility and volume z, a
   assert.equal(g.frontOiShift, null, 'no option board');
   assert.equal(g.ethCorr, null, 'no ETH');
 });
+
+// ------------------------------------------------------------ the regime ideas, as methods
+import { REGIME_CANDIDATES } from '../../src/entry/methods.js';
+const regimeDet = (id: string) => REGIME_CANDIDATES.find((c) => c.id === id)!.detect;
+const busy = (n: number) => flat(n).map((b, k) => ({ ...b, volume: 10 + (k % 5) }));
+
+test('[critical] with no reading -- flat price, no option board, no ETH -- every regime method says nothing', () => {
+  const bars = busy(80);
+  for (const c of REGIME_CANDIDATES) assert.equal(c.detect({ bars, a: 20, trend: 0, ctx: ctxOf({ frames: { '1m': bars } }) }), null, c.id);
+});
+
+test('[critical] 119. volume spike: a bar three deviations over the last 50, closing near its high, is a long -- near its middle, nothing', () => {
+  const up = [...busy(60), { ...m1(60, 84_000, 84_060, 83_995, 84_055), volume: 100 }];
+  assert.equal(regimeDet('volume-spike')({ bars: up, a: 20, trend: 0, ctx: ctxOf({}) })!.dir, 1);
+  const mid = [...busy(60), { ...m1(60, 84_000, 84_060, 83_940, 84_005), volume: 100 }];
+  assert.equal(regimeDet('volume-spike')({ bars: mid, a: 20, trend: 0, ctx: ctxOf({}) }), null);
+});

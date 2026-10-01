@@ -1,7 +1,7 @@
 # Entry concepts — the owner's 130, deduplicated
 
 The owner's research list of 1 Oct 2026 (#1-#130, from two lists — both used
-#38: **38a** "Multi-factor regime entry", declined by the owner, and **38b**
+#38: **38a** "Multi-factor regime entry" and **38b**
 "Range liquidity rotation"). Many are one idea at another level, timeframe or
 anchor; each is merged into its canonical concept below, and every number has
 exactly one status.
@@ -13,19 +13,21 @@ exactly one status.
 | **Live data** | needs the desk's live tape / quote / option board — no history to replay; on the desk since 1 Oct | 12 detectors (21 numbers) |
 | **Waiting for data** | recorded too briefly to *test*; since 1 Oct built live from the last hours | 20 (12 detectors) |
 | **Not collected** | since 1 Oct built from the live book, the tape's prints and ETH candles; liquidations as a proxy | 12 (8 detectors) |
-| **Filter, not an entry** | measured on every signal as its regime (`regime`) | 8 |
-| **Declined** | 38a, multi-factor composite | 1 |
+| **Regime entry** | measured on every signal as its regime (`regime`), and since 1 Oct a method of its own | 8 |
+| **Multi-factor** | 38a, every regime reading agreeing -- a method since 1 Oct | 1 |
 
 26 + 43 + 21 + 20 + 12 + 8 + 1 = 131: the 130 numbers, with #38 used twice.
 
 **How many are really different.** Of the 131 entries, **50 repeat another
-idea** (the "merged" ones) and **81 are unique**: 70 run as methods -- one
-each; #16 and #30 watch all three sessions in one method -- 10 are measured as
-each signal's regime (the 8 filters, #115 and #128), and 1 was declined (38a).
+idea** (the "merged" ones) and **81 are unique** -- and **81 run as methods**,
+one each (owner: "total 81, the 12 included, remove the rest"): #16 and #30
+watch all three sessions in one method; the 10 regime ideas (the 8 below, #115
+and #128) fire on their own triggers and are still kept on every signal as its
+regime; 38a fires when every regime reading agrees.
 
 Since 1 Oct 2026 every buildable concept is **on the desk as a method like the
 twelve** (owner: "no separate research"), **one method per unique idea** (owner:
-"keep the unique ideas, remove the rest") -- 70 methods in
+"keep the unique ideas, remove the rest") -- 81 methods in
 `app/server/src/entry/methods.ts`, read, shown, paper-logged and alerted alike.
 The "waiting for data" and "not collected" groups below were then built from
 what the desk records live (hours of it are enough to run a method; years were
@@ -155,14 +157,22 @@ large prints one way), #34 and #96 merged into it and #33.
 | 73, 74 | Footprint stacked imbalance (continuation / reversal) | volume per price per bar |
 | 128, 129 | Correlation breakdown, BTC–ETH divergence | ETH / market series |
 
-## Filters, not entries
+## Regime ideas, as methods
 
-19 range consumed (tested as a filter: no bucket positive), 89 weekly and 90
-monthly range expansion, 118 volatility z-score, 119 volume z-score, 123
-autocorrelation regime, 126 range efficiency, 127 trend-efficiency break. They
-describe the market a setup is taken in; their use is to sort the research
-track's evidence afterwards (which methods work in which regime), not to fire.
+Measured on every signal as its regime, and since 1 Oct 2026 each a method too
+(`REGIME_CANDIDATES` in methods.ts):
 
-## Declined
+| # | Method | Fires on |
+|---|---|---|
+| 19, 89, 90 | Day / week / month range expansion | past the last period's range: a new extreme on volume (continuation), or a new extreme turned back (exhaustion) |
+| 115 | Expiry OI migration | the front expiry's OI share down 5 points in the hour, and a 12-bar break |
+| 118 | Volatility z-score spike | volatility 2σ over usual, and a 20-bar break |
+| 119 | Volume z-score spike | volume 3σ over the last 50 bars, closed near the bar's extreme |
+| 123 | Autocorrelation regime | trending: the 20-bar break; reverting: a 2σ stretch turning back |
+| 126 | Range efficiency | efficiency ≥ 0.6, a pullback holding the 20 EMA, resuming |
+| 127 | Trend-efficiency break | efficiency 0.6+ to ≤ 0.3, and a close against the run |
+| 128 | Correlation breakdown | BTC–ETH correlation ≤ 0.3 (5m), and a 20-bar break |
+| 38a | Multi-factor regime entry | straight, not reverting, volatility and volume up, the hourly trend the same way, and a 20-bar break |
 
-38a Multi-factor regime entry — the owner: not as a method.
+#19 was tested as a filter (no bucket positive); none of these has a record
+yet -- the paper log is it.

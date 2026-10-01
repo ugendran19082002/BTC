@@ -161,6 +161,11 @@ const MIGRATIONS: Migration[] = [{
   // The market each setup was taken in (methods.ts regimeOf), for sorting the record by it.
   id: 'entry-017-setups-regime',
   up: `ALTER TABLE entry_setups ADD COLUMN IF NOT EXISTS regime JSONB;`,
+}, {
+  // One method per unique idea (owner, 1 Oct 2026: "keep the 81 unique, remove the rest"): the per-session
+  // variants of #16 and #30 became one method each (orb, session-sweep); their paper setups go with them.
+  id: 'entry-018-setups-retired-methods',
+  up: `DELETE FROM entry_setups WHERE method IN ('orb-asia', 'orb-london', 'orb-ny', 'session-sweep-asia', 'session-sweep-london', 'session-sweep-ny');`,
 }];
 
 let ready: Promise<void> | null = null;
@@ -455,7 +460,7 @@ type ClosedRow = {
 
 /**
  * Each method's record, with the timeframe chain and without it, and each
- * mode's total over all twelve -- the comparison the screen puts side by side.
+ * mode's total over every method -- the comparison the screen puts side by side.
  */
 /**
  * `totals` is the rules as designed -- every gate on. `totalsAll` counts every

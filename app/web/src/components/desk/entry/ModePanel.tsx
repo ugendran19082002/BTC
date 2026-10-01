@@ -10,7 +10,7 @@ import { METHOD_VIEWS, NumberBadge, SignalChip, TICK_CLASS, ViewChips, fmt, over
 import { usePersisted } from '@/hooks/usePersisted';
 
 /**
- * One half of the reference layout: the twelve methods read one way -- with
+ * One half of the reference layout: the 81 methods read one way -- with
  * the timeframe chain, or without it -- with their chart, table, the chosen
  * setup and its reasons. (No pros-and-cons list and no paper-record strip:
  * both removed at the owner's request; the record lives in the signal history.)
@@ -116,7 +116,7 @@ export function ModePanel({ mode, reads, selected, onChoose, recordOf, setupsOn,
       {mode === 'single' && VIEW_ONLY_TFS.includes(chartTf) ? (
         <p role="note" aria-label="view only" className="m-0 mt-2 rounded-lg border border-dashed border-border px-3 py-2 text-[12px] text-muted-foreground">
           <b className="text-foreground">{chartTf} is chart-only.</b> No signals, no Telegram alerts and nothing in the signal history on {chartTf} --
-          its bars are too fast for these methods' stops. Pick 3m or higher to read the twelve methods.
+          its bars are too fast for these methods' stops. Pick 3m or higher to read the methods.
         </p>
       ) : (
       <div className="mt-2 grid gap-2">

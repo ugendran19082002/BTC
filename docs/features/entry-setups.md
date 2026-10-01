@@ -416,9 +416,10 @@ Three things differ from the reference on purpose:
 ## Every method, on the desk
 
 Since 1 Oct 2026 (owner: "no separate research -- append them like the first
-twelve") the desk reads **70 methods -- one per unique idea**: TEST.md's
-twelve first, then the rest by the owner's numbers -- 26 on candles and 32 on
-the desk's live data, all in `entry/methods.ts` -- read, shown, paper-logged
+twelve"; "total 81, the 12 included, remove the rest") the desk reads **81
+methods -- one per unique idea**: TEST.md's twelve first, then the rest by the
+owner's numbers -- 26 on candles, 32 on the desk's live data and 11 regime
+ideas, all in `entry/methods.ts` -- read, shown, paper-logged
 and alerted alike. A duplicate idea is never a second method: the three
 sessions of #16 (opening range) and of #30 (session sweep) are one method
 each, watching whichever session is live. The deduplicated list of all 130 ideas
@@ -437,9 +438,13 @@ is [research/entry-concepts.md](../research/entry-concepts.md).
   before the run: none passed. The live-data ones have no history to replay.
   The paper log is their record: `npx tsx scripts/methods-week.ts 7` reads
   every method's week, and every closed trade by the regime it was taken in.
-- **The regime** (the owner's filters, #19, #89, #90, #118, #119, #123,
-  #126, #127, and #115, #128): measured on every TRADE and WAIT and kept with
-  it (`regime`, `entry-017`) -- not fired on; the record is sorted by it.
+- **The regime** (#19, #89, #90, #118, #119, #123, #126, #127, #115, #128):
+  measured on every TRADE and WAIT and kept with it (`regime`, `entry-017`),
+  so the record can be sorted by it -- and each is also a method on its own
+  trigger, with 38a (multi-factor) firing when they all agree.
+- **Nothing else.** The retired per-session ids (`orb-asia` … `session-sweep-ny`)
+  are deleted from the signals, the paper setups and the alert log
+  (`entry-018-*-retired-methods`).
 - **The screen.** The methods table and both panels list every method,
   signals first (TRADE, WAIT, then the rest), with a view -- All, Signals,
   or one group, each counted -- and a body that scrolls under a fixed header.

@@ -76,6 +76,11 @@ const MIGRATIONS: Migration[] = [{
   // The market each signal formed in (methods.ts regimeOf): the owner's filters, measured and kept, not fired on.
   id: 'entry-017-signals-regime',
   up: `ALTER TABLE entry_signals ADD COLUMN IF NOT EXISTS regime JSONB;`,
+}, {
+  // One method per unique idea (owner, 1 Oct 2026: "keep the 81 unique, remove the rest"): the per-session
+  // variants of #16 and #30 became one method each (orb, session-sweep); their signals go with them.
+  id: 'entry-018-signals-retired-methods',
+  up: `DELETE FROM entry_signals WHERE method IN ('orb-asia', 'orb-london', 'orb-ny', 'session-sweep-asia', 'session-sweep-london', 'session-sweep-ny');`,
 }];
 
 let ready: Promise<void> | null = null;

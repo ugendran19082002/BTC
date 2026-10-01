@@ -13,7 +13,7 @@ import {
  * A detector reads closed candles and answers: is this method's setup forming
  * here, which way, which of its steps have happened, where would it enter and
  * where is it wrong. It does not decide TRADE / WAIT / NO TRADE -- the engine
- * does, the same way for all twelve, after the gates, the targets and (with the
+ * does, the same way for all 81, after the gates, the targets and (with the
  * timeframe chain) the other timeframes. Null: nothing forming.
  */
 
@@ -1137,7 +1137,7 @@ const orbAny = (m: DetectInput): Setup | null => orb('asia')(m) ?? orb('london')
 /** 30. The previous session's high or low swept and rejected, in whichever session it is now. */
 const sessionSweepAny = (m: DetectInput): Setup | null => sessionSweep('asia')(m) ?? sessionSweep('london')(m) ?? sessionSweep('ny')(m);
 
-export type Candidate = { id: string; n: number; name: string; family: string; sl: string; targets: TargetSpec; summary?: string; detect: (m: DetectInput) => Setup | null };
+export type Candidate = { id: string; n: number; code?: string; name: string; family: string; sl: string; targets: TargetSpec; summary?: string; detect: (m: DetectInput) => Setup | null };
 
 /** The candidates, by the owner's numbers. */
 export const CANDIDATES: readonly Candidate[] = [
@@ -1871,9 +1871,9 @@ export const LIVE_CANDIDATES: readonly Candidate[] = [
 const GROUP: Record<string, MethodDef['group']> = {
   volatility: 'breakout', breakout: 'breakout', session: 'breakout', structure: 'breakout',
   reversal: 'reversal', liquidity: 'reversal', range: 'reversal', statistical: 'reversal', imbalance: 'reversal', vwap: 'reversal', 'volume profile': 'reversal',
-  flow: 'flow',
+  pullback: 'pullback', flow: 'flow',
 };
-// ------------------------------------------------------------------ the regime a signal forms in (filters, not entries)
+// ------------------------------------------------------------------ the regime a signal forms in (every signal's tags; each idea also a method below)
 
 /**
  * The owner's filters (#19, #89, #90, #118, #119, #123, #126, #127) and two
@@ -1956,6 +1956,171 @@ export function regimeOf(bars: readonly Candle[], ctx: EntryContext): Regime {
   };
 }
 
+// ------------------------------------------------------------------ the regime ideas as entries (owner, 1 Oct 2026: "81 unique")
+// Each regime reading above (regimeOf) also fires, on its own trigger. Read once per bars, shared by the ten.
+
+const regimeMemo = new WeakMap<readonly Candle[], Regime>();
+const regimeAt = (bars: readonly Candle[], ctx: EntryContext): Regime => {
+  let r = regimeMemo.get(bars);
+  if (!r) { r = regimeOf(bars, ctx); regimeMemo.set(bars, r); }
+  return r;
+};
+/** Today's (this week's, this month's) high and low so far, from the bars in hand or the hourly / 4h frames. */
+function periodSoFar(bars: readonly Candle[], ctx: EntryContext, startOf: (t: number) => number, frame?: '1h' | '4h') {
+  const t = last(bars).time, s = startOf(t);
+  const xs = [...(frame ? (ctx.frames[frame] ?? []) : []), ...bars].filter((x) => x.time >= s);
+  return xs.length ? { hi: hiOf(xs), lo: loOf(xs), hiNew: hiOf(bars.slice(-4)) >= hiOf(xs), loNew: loOf(bars.slice(-4)) <= loOf(xs) } : null;
+}
+const dayStart = (t: number) => t - (t % DAY);
+
+/** Range expansion (#19 day, #89 week, #90 month): past the previous period's range, a new extreme on volume continues; a new extreme that turns back is exhaustion. */
+const rangeExpansion = (key: 'dayRange' | 'weekRange' | 'monthRange', startOf: (t: number) => number, frame: '1h' | '4h' | undefined, what: string) =>
+  ({ bars, a, ctx }: DetectInput): Setup | null => {
+    const used = regimeAt(bars, ctx)[key], p = periodSoFar(bars, ctx, startOf, frame), b = last(bars);
+    if (used === null || !(used >= 1) || !p) return null;
+    const recent = bars.slice(-4);
+    // A fresh extreme closed through on volume: the expansion continues.
+    for (const dir of [1, -1] as const) {
+      const extreme = dir === 1 ? b.close >= p.hi - 0.05 * a && b.high >= p.hi : b.close <= p.lo + 0.05 * a && b.low <= p.lo;
+      if (extreme && (rvol(bars) ?? 0) >= 1.5 && (dir === 1 ? bullish(b) : bearish(b))) {
+        return { dir, steps: [{ label: `${what} range used ${(100 * used).toFixed(0)}% of the last one`, ok: true }, { label: 'a new extreme closed on volume: continuation', ok: true }],
+          zone: atClose(b, dir, a), stop: dir === 1 ? b.low : b.high, triggerTime: b.time };
+      }
+    }
+    // A fresh extreme in the last four bars, then a turn: exhaustion.
+    const dir: 1 | -1 | 0 = p.hiNew && turned(b, prev(bars), -1) ? -1 : p.loNew && turned(b, prev(bars), 1) ? 1 : 0;
+    if (dir === 0) return null;
+    return { dir, steps: [{ label: `${what} range used ${(100 * used).toFixed(0)}% of the last one`, ok: true }, { label: 'a new extreme, then a turn: exhaustion', ok: true }],
+      zone: atClose(b, dir, a), stop: dir === -1 ? hiOf(recent) : loOf(recent), triggerTime: b.time };
+  };
+
+/** 118. Volatility spike: the last 14 bars' range two deviations or more over usual, and a 20-bar break -- the expansion has a direction. */
+const volSpike = ({ bars, a, ctx }: DetectInput): Setup | null => {
+  const z = regimeAt(bars, ctx).volZ, dir = brokeOut(bars);
+  if (z === null || !(z >= 2) || dir === 0) return null;
+  const b = last(bars);
+  return { dir, steps: [{ label: `volatility ${z.toFixed(1)} deviations over usual`, ok: true }, { label: 'a 20-bar break', ok: true }],
+    zone: atClose(b, dir, a), stop: dir === 1 ? b.low : b.high, triggerTime: b.time };
+};
+
+/** 119. Volume spike: the bar's volume three deviations or more over the last 50, closing in its top (bottom) 30% -- continuation. */
+const volumeSpike = ({ bars, a, ctx }: DetectInput): Setup | null => {
+  const z = regimeAt(bars, ctx).volumeZ, b = last(bars);
+  if (z === null || !(z >= 3)) return null;
+  const dir: 1 | -1 | 0 = bullish(b) && closeLocation(b) >= 0.7 ? 1 : bearish(b) && closeLocation(b) <= 0.3 ? -1 : 0;
+  if (dir === 0) return null;
+  return { dir, steps: [{ label: `volume ${z.toFixed(1)} deviations over the last 50 bars`, ok: true }, { label: `closed near its ${dir === 1 ? 'high' : 'low'}`, ok: true }],
+    zone: atClose(b, dir, a), stop: dir === 1 ? b.low : b.high, triggerTime: b.time };
+};
+
+/** 123. Autocorrelation regime: returns trending (lag-1 autocorrelation 0.2 or more) -- take the 20-bar break; reverting (-0.2 or less) -- fade a two-deviation stretch as it turns. */
+const autocorrRegime = ({ bars, a, ctx }: DetectInput): Setup | null => {
+  const ac = regimeAt(bars, ctx).autocorr, b = last(bars);
+  if (ac === null) return null;
+  if (ac >= 0.2) {
+    const dir = brokeOut(bars);
+    if (dir === 0) return null;
+    return { dir, steps: [{ label: `returns trending (autocorrelation ${ac.toFixed(2)})`, ok: true }, { label: 'a 20-bar break', ok: true }],
+      zone: atClose(b, dir, a), stop: dir === 1 ? b.low : b.high, triggerTime: b.time };
+  }
+  if (ac <= -0.2) {
+    const xs = bars.slice(-21, -1).map((x) => x.close), m = xs.reduce((s2, v) => s2 + v, 0) / xs.length;
+    const sd = Math.sqrt(xs.reduce((s2, v) => s2 + (v - m) ** 2, 0) / xs.length);
+    if (!(sd > 0)) return null;
+    const z = (b.close - m) / sd, dir: 1 | -1 | 0 = z <= -2 ? 1 : z >= 2 ? -1 : 0;
+    if (dir === 0 || !turned(b, prev(bars), dir)) return null;
+    return { dir, steps: [{ label: `returns reverting (autocorrelation ${ac.toFixed(2)})`, ok: true }, { label: `${Math.abs(z).toFixed(1)} deviations out, turning back`, ok: true }],
+      zone: atClose(b, dir, a), stop: dir === 1 ? loOf(bars.slice(-4)) : hiOf(bars.slice(-4)), triggerTime: b.time,
+      targets: [{ price: m, why: `20-bar mean ${fmt(m)}` }] };
+  }
+  return null;
+};
+
+/** 126. Efficient trend: price travelling straight (efficiency 0.6 or more), a shallow pullback that holds the 20 EMA, then resuming. */
+const efficientTrend = ({ bars, a, ctx }: DetectInput): Setup | null => {
+  const eff = regimeAt(bars, ctx).efficiency, e20 = ema(bars, 20), b = last(bars);
+  if (eff === null || !(eff >= 0.6) || e20 === null) return null;
+  const dir: 1 | -1 = last(bars).close > bars[bars.length - 21]!.close ? 1 : -1;
+  const pull = bars.slice(-4, -1);
+  const pulled = dir === 1 ? pull.some((x) => x.low <= e20 + 0.3 * a) && pull.every((x) => x.close > e20 - 0.2 * a) : pull.some((x) => x.high >= e20 - 0.3 * a) && pull.every((x) => x.close < e20 + 0.2 * a);
+  if (!pulled || !turned(b, prev(bars), dir)) return null;
+  return { dir, steps: [{ label: `travelling straight (efficiency ${eff.toFixed(2)})`, ok: true }, { label: 'pulled back to the 20 EMA, held, resumed', ok: true }],
+    zone: atClose(b, dir, a), stop: dir === 1 ? loOf(pull) : hiOf(pull), triggerTime: b.time };
+};
+
+/** 127. Trend efficiency break: a straight run (0.6 or more twenty bars ago) turned to chop (0.3 or less), and a close against it -- the trend is over. */
+const efficiencyBreak = ({ bars, a, ctx }: DetectInput): Setup | null => {
+  const g = regimeAt(bars, ctx), b = last(bars);
+  if (g.efficiency === null || g.efficiencyChange === null || !(g.efficiency <= 0.3) || !(g.efficiency - g.efficiencyChange >= 0.6)) return null;
+  const prior: 1 | -1 = bars[bars.length - 21]!.close > bars[bars.length - 41]!.close ? 1 : -1, dir = (-prior) as 1 | -1;
+  if (!turned(b, prev(bars), dir)) return null;
+  return { dir, steps: [{ label: `efficiency ${(g.efficiency - g.efficiencyChange).toFixed(2)} -> ${g.efficiency.toFixed(2)}: the run is over`, ok: true }, { label: 'a close against it', ok: true }],
+    zone: atClose(b, dir, a), stop: dir === 1 ? loOf(bars.slice(-6)) : hiOf(bars.slice(-6)), triggerTime: b.time };
+};
+
+/** 115. Expiry OI migration: the front expiry's share of open interest down five points or more in the hour -- positions rolled out, the pin released -- and a 12-bar break. */
+const oiMigration = ({ bars, a, ctx }: DetectInput): Setup | null => {
+  const sh = regimeAt(bars, ctx).frontOiShift, dir = brokeOut(bars, 12);
+  if (sh === null || !(sh <= -0.05) || dir === 0) return null;
+  const b = last(bars);
+  return { dir, steps: [{ label: `front expiry's share of OI ${(100 * sh).toFixed(1)} points in the hour: rolled out`, ok: true }, { label: 'a 12-bar break', ok: true }],
+    zone: atClose(b, dir, a), stop: dir === 1 ? b.low : b.high, triggerTime: b.time };
+};
+
+/** 128. Correlation breakdown: BTC's 5m returns decoupled from ETH's (correlation 0.3 or less over four hours), and a 20-bar break -- a move of BTC's own. */
+const decoupled = ({ bars, a, ctx }: DetectInput): Setup | null => {
+  const c = regimeAt(bars, ctx).ethCorr, dir = brokeOut(bars);
+  if (c === null || !(c <= 0.3) || dir === 0) return null;
+  const b = last(bars);
+  return { dir, steps: [{ label: `BTC decoupled from ETH (correlation ${c.toFixed(2)})`, ok: true }, { label: 'a 20-bar break', ok: true }],
+    zone: atClose(b, dir, a), stop: dir === 1 ? b.low : b.high, triggerTime: b.time };
+};
+
+/**
+ * 38a. Multi-factor regime entry: every regime reading agreeing at once -- travelling straight (efficiency 0.4+),
+ * returns not reverting (autocorrelation 0 or more), volatility and volume both up, the hourly trend the same way --
+ * and a 20-bar break that way.
+ */
+const multiFactor = ({ bars, a, ctx }: DetectInput): Setup | null => {
+  const g = regimeAt(bars, ctx), dir = brokeOut(bars), h = ctx.frames['1h'] ?? [];
+  if (dir === 0 || g.efficiency === null || g.autocorr === null || g.volZ === null || g.volumeZ === null || h.length < 25) return null;
+  const e20 = ema(h, 20), e20Before = ema(h.slice(0, -3), 20);
+  if (e20 === null || e20Before === null || Math.sign(e20 - e20Before) !== dir) return null;
+  if (!(g.efficiency >= 0.4 && g.autocorr >= 0 && g.volZ >= 0.5 && g.volumeZ >= 1)) return null;
+  const b = last(bars);
+  return { dir, steps: [
+    { label: `straight (efficiency ${g.efficiency.toFixed(2)}), not reverting (autocorrelation ${g.autocorr.toFixed(2)})`, ok: true },
+    { label: `volatility +${g.volZ.toFixed(1)} and volume +${g.volumeZ.toFixed(1)} deviations`, ok: true },
+    { label: 'the hourly 20 EMA rising the same way, and a 20-bar break', ok: true },
+  ], zone: atClose(b, dir, a), stop: dir === 1 ? b.low : b.high, triggerTime: b.time };
+};
+
+/** The regime ideas, as methods. */
+export const REGIME_CANDIDATES: readonly Candidate[] = [
+  { id: 'multi-factor', n: 38, code: '38a', name: 'Multi-factor regime entry', family: 'breakout', sl: 'the break bar\'s far end', targets: tgt('nearest', 'htf'),
+    summary: 'Every regime reading agreeing -- straight, not reverting, volatility and volume up, the hourly trend the same way -- and a 20-bar break', detect: multiFactor },
+  { id: 'day-expansion', n: 19, name: 'Previous-day range expansion', family: 'volatility', sl: 'the extreme bar\'s far end', targets: tgt('nearest', 'htf'),
+    summary: "Past yesterday's range: a new extreme on volume continues, a new extreme that turns back is exhaustion", detect: rangeExpansion('dayRange', dayStart, '1h', "Today's") },
+  { id: 'week-expansion', n: 89, name: 'Weekly range expansion', family: 'volatility', sl: 'the extreme bar\'s far end', targets: tgt('nearest', 'htf'),
+    summary: "Past last week's range: a new weekly extreme on volume continues, one that turns back is exhaustion", detect: rangeExpansion('weekRange', weekStart, '1h', "This week's") },
+  { id: 'month-expansion', n: 90, name: 'Monthly range expansion', family: 'volatility', sl: 'the extreme bar\'s far end', targets: tgt('nearest', 'htf'),
+    summary: "Past last month's range: a new monthly extreme on volume continues, one that turns back is exhaustion", detect: rangeExpansion('monthRange', monthStart, '4h', "This month's") },
+  { id: 'expiry-oi-migration', n: 115, name: 'Expiry OI migration', family: 'flow', sl: 'the break bar\'s far end', targets: tgt('nearest', 'next'),
+    summary: "The front expiry's share of open interest falling five points in an hour -- the pin released -- and a 12-bar break", detect: oiMigration },
+  { id: 'vol-spike', n: 118, name: 'Volatility z-score spike', family: 'volatility', sl: 'the break bar\'s far end', targets: tgt('nearest', 'next'),
+    summary: 'Volatility two deviations over usual, and a 20-bar break: the expansion has a direction', detect: volSpike },
+  { id: 'volume-spike', n: 119, name: 'Volume z-score spike', family: 'volatility', sl: 'the bar\'s far end', targets: tgt('nearest', 'next'),
+    summary: "Volume three deviations over the last 50 bars, closing near the bar's extreme: continuation", detect: volumeSpike },
+  { id: 'autocorr-regime', n: 123, name: 'Autocorrelation regime entry', family: 'statistical', sl: 'the bar\'s far end / the stretch extreme', targets: tgt('nearest', 'next'),
+    summary: 'Trending returns: take the 20-bar break; mean-reverting returns: fade a two-deviation stretch as it turns', detect: autocorrRegime },
+  { id: 'efficient-trend', n: 126, name: 'Range-efficiency entry', family: 'pullback', sl: 'the pullback extreme', targets: tgt('nearest', 'htf'),
+    summary: 'Price travelling straight (efficiency 0.6+), a shallow pullback holding the 20 EMA, then resuming', detect: efficientTrend },
+  { id: 'efficiency-break', n: 127, name: 'Trend-efficiency break', family: 'reversal', sl: 'the six-bar extreme', targets: tgt('nearest', 'htf'),
+    summary: 'A straight run turned to chop (efficiency 0.6+ to 0.3 or less), and a close against it: the trend is over', detect: efficiencyBreak },
+  { id: 'eth-decoupled', n: 128, name: 'Correlation breakdown (BTC vs ETH)', family: 'flow', sl: 'the break bar\'s far end', targets: tgt('nearest', 'next'),
+    summary: "BTC's returns decoupled from ETH's, and a 20-bar break: a move of BTC's own", detect: decoupled },
+];
+
 /**
  * Every entry method: the twelve first, then the rest by the owner's numbers --
  * read, shown, paper-logged and alerted alike (owner, 1 Oct 2026: "no separate
@@ -1964,8 +2129,8 @@ export function regimeOf(bars: readonly Candle[], ctx: EntryContext): Regime {
  */
 export const METHODS: readonly MethodDef[] = withCodes([
   ...TWELVE,
-  ...[...CANDIDATES, ...LIVE_CANDIDATES].map((c) => ({
-    id: c.id, n: c.n, name: c.name, group: GROUP[c.family] ?? 'reversal', summary: c.summary ?? c.family, sl: c.sl, targets: c.targets, detect: c.detect,
+  ...[...CANDIDATES, ...LIVE_CANDIDATES, ...REGIME_CANDIDATES].map((c) => ({
+    id: c.id, n: c.n, code: c.code, name: c.name, group: GROUP[c.family] ?? 'reversal', summary: c.summary ?? c.family, sl: c.sl, targets: c.targets, detect: c.detect,
   })),
 ]);
 
@@ -1974,6 +2139,7 @@ function withCodes(ms: readonly MethodDef[]): MethodDef[] {
   const count = new Map<number, number>(), seen = new Map<number, number>();
   for (const m of ms) count.set(m.n, (count.get(m.n) ?? 0) + 1);
   return ms.map((m) => {
+    if (m.code) return m;
     if (count.get(m.n) === 1) return { ...m, code: String(m.n) };
     const k = seen.get(m.n) ?? 0;
     seen.set(m.n, k + 1);
