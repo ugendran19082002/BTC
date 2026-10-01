@@ -13,7 +13,8 @@ import { TF_SEC, type MethodRead, type Tf } from './types.js';
  * a resting limit would have done:
  *
  *   open     waiting for price to trade into the entry zone; `expired` if it
- *            does not within FILL_WITHIN_BARS, or if the stop is hit first
+ *            does not within FILL_WITHIN_BARS, or if the stop is hit first;
+ *            `missed` if price runs to TP1 first, never coming back to fill
  *   filled   in at the zone's near edge (or better, at a gap); then the stop,
  *            TP1 or HOLD_BARS, whichever comes first -- a bar touching both
  *            the stop and TP1 is the stop, the reading that cannot flatter
@@ -132,6 +133,14 @@ const MIGRATIONS: Migration[] = [{
     UPDATE entry_setups SET tp1_at = exit_at WHERE status = 'tp1' AND tp1_at IS NULL;
     CREATE INDEX IF NOT EXISTS entry_setups_running ON entry_setups (runner) WHERE runner = 'running';
   `,
+}, {
+  // `missed` (1 Oct 2026): a limit cancelled because price ran to TP1 without coming back to fill it.
+  id: 'entry-013-setups-missed',
+  up: `
+    ALTER TABLE entry_setups DROP CONSTRAINT IF EXISTS entry_setups_status_check;
+    ALTER TABLE entry_setups ADD CONSTRAINT entry_setups_status_check
+      CHECK (status IN ('open', 'filled', 'expired', 'missed', 'tp1', 'stop', 'timeout'));
+  `,
 }];
 
 let ready: Promise<void> | null = null;
@@ -167,7 +176,7 @@ export async function recordSetups(reads: readonly MethodRead[], nowMs: number, 
 export type PaperRow = {
   dir: 1 | -1; tf: Tf; triggerAt: number; firstSeen: number;
   entryLo: number; entryHi: number; stop: number; tp1: number;
-  status: 'open' | 'filled' | 'expired' | 'tp1' | 'stop' | 'timeout';
+  status: 'open' | 'filled' | 'expired' | 'missed' | 'tp1' | 'stop' | 'timeout';
   filledAt: number | null; fillPrice: number | null; exitAt: number | null; exitPrice: number | null;
   rNet: number | null; gradedTo: number;
   /** The further targets, and when each target was reached (the 1m bar, epoch s). */
@@ -210,6 +219,10 @@ export function gradeRow(row: PaperRow, bars1m: readonly Candle[]): PaperRow {
         if (stopHit) r = close(r, b.time, stopAt, 'stop');
       } else if (stopHit) {
         r = { ...r, status: 'expired' };
+      } else if (d === 1 ? b.high >= r.tp1 : b.low <= r.tp1) {
+        // Price ran to TP1 without coming back to the zone: the move went without us. The limit is
+        // cancelled -- filling it later, after the move is done, is not the trade that was signalled.
+        r = { ...r, status: 'missed' };
       } else if (b.time >= fillBy) {
         r = { ...r, status: 'expired' };
       }
@@ -369,7 +382,7 @@ export async function entryRecord(): Promise<{ records: MethodRecord[]; totals: 
     return {
       method, mode: all[0]!.mode, tf: all[0]!.tf,
       setups: xs.length,
-      expired: xs.filter((x) => x.status === 'expired').length,
+      expired: xs.filter((x) => x.status === 'expired' || x.status === 'missed').length,
       working: xs.filter((x) => x.status === 'open' || x.status === 'filled').length,
       since: Math.min(...all.map((x) => x.first_seen)),
       ...statsOf(closed.map((x) => x.r_net ?? 0)),

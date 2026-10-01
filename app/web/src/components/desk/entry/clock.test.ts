@@ -21,4 +21,9 @@ describe('the entry clocks', () => {
     expect(clockText({ status: 'tp1', fillBy: s, filledAt: s - 600, timeoutAt: null, exitAt: s - 60 }, now))
       .toEqual({ label: 'Held', value: '9:00', tone: 'done' });
   });
+
+  it('[critical] a limit price ran away from is missed, not waiting', () => {
+    expect(clockText({ status: 'missed', fillBy: 0, filledAt: null, timeoutAt: null, exitAt: null }, 0))
+      .toEqual({ label: 'Missed', value: 'price ran to TGT1 without filling', tone: 'done' });
+  });
 });

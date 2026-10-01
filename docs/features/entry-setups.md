@@ -77,7 +77,7 @@ absorption from delta against price.
    | Data fresh | the newest 1m candle is over 3 min old (without the chain: the entry candle over one period + 3 min) |
    | Spread | the perpetual's spread is over 0.05% |
    | Stop outside the noise / not too wide | the stop is under 0.3 or over 2.5 ATR away |
-   | R:R 1.8 after fees | reward to TP1 net of the fees in and out at TP1, over the risk plus the fees in and out at the stop, is under 1.8 |
+   | R:R 1 | the points from the fill to TP1 are fewer than the points from the fill to the stop -- TGT1 must be at least 1R, with no maximum (owner, 1 Oct 2026; TEST.md had 1.8 after fees -- the fee term is gone too) |
    | Higher timeframes (with the chain) | 1H **and** 4H are both against it |
    | Big-move risk | the desk's big-move reading is high or sudden and points the other way |
    | Expected move | the day has already moved 80% of the expected daily move in this direction |
@@ -107,18 +107,64 @@ at the edge price reaches first -- the top for a long, the bottom for a short
 -- and that edge is where the trade fills: risk, R:R, the stop band, the card
 and the chart are all measured from it (not the middle, which made a wide
 zone look cheaper than it was). An FVG enters from its near edge to its middle
-(consequent encroachment), an order block from its near edge to its 50% line;
-until 30 Sep 2026 both used the whole gap or candle (up to 8 ATR). The FVG's
-stop is just past the gap's far edge, where it is invalidated.
+(consequent encroachment), an order block from its near edge to its 50% line.
+A zone is kept wholly on the safe side of its stop, at least 0.1 ATR from it
+(`zoneOf`): until 1 Oct 2026 a retest zone could reach past its own stop
+(three live 1m setups); a zone left as a sliver has a tiny risk, which the
+stop band gate refuses.
 
-**Targets come from liquidity, not a fixed number:** TP1 is the nearest level
-past the entry -- a swing on this timeframe, 1H or 4H, a resting wall in the
-perpetual's book, the option OI wall that way, or the method's own (VWAP, max
-pain); TP2 the next that is at least 0.5 ATR past TP1 (a level 29 points on
-is not a second target; none far enough, no TP2 -- never an invented one); TP3
-the expected-move boundary, 0.5 ATR past TP2 likewise. Only when there is no level
-at all is TP1 set at 2R -- and after fees that usually fails the R:R gate, which
-is the point. **The stop** is the method's structure plus 0.25 ATR.
+**SL and targets, per method** (the owner's SL/TP tables, 1 Oct 2026). The
+stop is the method's own structure plus 0.25 ATR; the targets come from
+liquidity, in the method's own order:
+
+| # | Method | SL (+ 0.25 ATR) | TP1 looks first at | TP2 |
+|---|---|---|---|---|
+| 1 | Breakout | the breakout candle's far end | a continuation swing | next 1H/4H liquidity |
+| 2 | Breakout + retest | the retest extreme | a continuation swing | next 1H/4H liquidity |
+| 3 | Liquidity sweep | the sweep extreme | the nearest opposing liquidity | next 1H/4H swing |
+| 4 | FVG retest | the displacement origin | the previous swing | the next level |
+| 5 | Order-block retest | the block's far edge | the reaction swing | next 1H/4H liquidity |
+| 6 | BOS | the last higher low / lower high | the first post-BOS swing | next 1H/4H liquidity |
+| 7 | MSS / CHoCH | the post-sweep extreme | the first opposing liquidity | next 1H/4H swing |
+| 8 | Momentum | the momentum candle's far end | the first continuation level | the next level |
+| 9 | Pullback | the pullback extreme | the previous swing | next 1H/4H liquidity |
+| 10 | VWAP reversion | the 2σ reversal extreme | **VWAP** | the VWAP band past it (1σ) |
+| 11 | Order flow | the absorption / held-level extreme | a book wall, then a swing | the next book wall or swing |
+| 12 | Options | the OI wall / rejection extreme | the OI wall | the next OI wall |
+
+TP3 is the expected-move edge -- for options, max pain when it lies past TP2.
+
+**TP1 is the nearest *valid* target, not merely the nearest** (`pickTargets`).
+Of the levels past the zone -- swings on this timeframe, 1H and 4H, walls in
+the perpetual's book, the OI wall, the method's own -- a swing price has
+already traded through is **consumed** and dropped; of the rest, TP1 is the
+first in the method's own order that pays at least **1R** from the fill
+(`MIN_RR`, the same number the R:R gate uses; no maximum), else the first of
+any kind that does. A nearer level that pays less is skipped, and the reason
+says so: "1h swing high 84,200 (1 nearer under 1R skipped)". The owner's
+example -- a long filled at 84,000, SL 83,800: 84,150 (0.75R) is skipped,
+84,200 (1R) is TP1, 84,400, 84,800, 85,200 are further targets. Only when no
+level pays 1R is TP1 the nearest of its kind, and the R:R gate then refuses
+the read -- never a made-up far target. VWAP reversion keeps VWAP whatever it
+pays: reverting to it is the method. TP2 is the next of the method's pool at
+least 0.5 ATR past TP1 (none in the pool: the next real level of any kind;
+none at all: no TP2); TP3 0.5 ATR past TP2 likewise. With no level past the
+zone, TP1 is 2R and says so. Every plan carries why each level is where it is
+(`plan.why`), shown on the card, in the alert and in the history.
+
+**What the replay says** (5m, Jan-Aug 2026, `scripts/entry-study.ts`, R in
+points, no fees; methods 11-12 cannot be replayed from candles):
+
+| TP1 rule | TRADEs | won | avg R | PF |
+|---|---:|---:|---:|---:|
+| the nearest level (until 1 Oct) | 1,322 | 23% | −0.21R | 0.73 |
+| nearest valid, ≥ 1.8R | 14,944 | 25% | −0.10R | 0.87 |
+| nearest valid, ≥ 1R (now) | 15,064 | 31% | −0.10R | 0.86 |
+
+The valid-target rule halves the loss per trade; none of the three makes money
+on 5m before fees, and no method is believed on this -- only MSS / CHoCH is
+above zero (+0.37R with the chain, 18 trades, t 1.1: not distinguishable from
+nothing). The live paper log is what decides.
 
 **The quality score** (0-100): structure 20, liquidity 15, momentum 15, flow 15,
 CVD 10, footprint 10, options 10, probability 5. Footprint and a calibrated
@@ -128,10 +174,12 @@ quality; it is **not** a chance of winning and is never shown as one.
 ### What it says today
 
 On live data on 30 Sep 2026 every one of the 24 was NO TRADE -- mostly "R:R
-after fees, no room" or "stop too wide". On 5m, Delta's taker fees (≈ 84 points
-round trip at $84k) are larger than most of the structure; this is the same
-finding as the SMC and momentum studies, and the gates are meant to say it
-rather than hide it.
+after fees, no room" or "stop too wide". The owner then switched six gates off
+live, and the log filled with setups whose TP1 was a third of the risk away
+(1 Oct audit: average TP1 41 points against 130 of risk on 5m) -- wins too
+small to pay for the stops. The nearest-valid TP1 rule above is the answer to
+that. The fee term was removed from R:R and R at the owner's request; Delta's
+taker fees (≈ 84 points round trip at $84k) are real, if no longer counted.
 
 ## Live price and latency
 
@@ -146,25 +194,46 @@ appears and vanishes inside a candle. Everything around them is live:
 | The board (signals) | polled every 5 s, the server holding a read 3 s (~50 ms to compute) | ≤ ~8 s after the candle closes |
 | Journal, paper log, Telegram | the recorder, 3 s after every 1m close | seconds |
 
+**Whole candles only.** A candle counts as closed only if it closed before
+the data was *asked for* (less 2 s for the venue to settle), not merely before
+now: the candle cache answers stale while it refreshes, and at 12:05:03 it
+could hand back data asked for at 12:04:45, whose 12:04 minute held only its
+first 45 seconds. Until 1 Oct 2026 that part-minute was graded and signalled
+on and never read again -- stop and TP1 touches in its last seconds were
+missed and turned up a minute later as "gaps" (19 of 25 live 3m stops). The
+engine now asks for data fetched after the minute turned (`venueSeriesSince`,
+`wholeUntil`).
+
 **Fills** stay exact and conservative: a resting limit fills at the zone's
-near edge, or at the open when price gapped through it; the exit is TP1
-exactly, or the stop (the open, if gapped past it); a candle touching both is
-the stop. Fees come off both ways.
+near edge, or at the open when price opened inside the zone (better -- the
+history says by how much); TP1 is a limit, exactly the level; the stop is a
+stop-market, the level or the open when a minute opened past it (a gap -- the
+history says how many points past); a candle touching both is the stop. All of
+it on the **perpetual** (BTCUSD): the index runs some 40 points apart, so a
+target can look passed on the index (the tab title) and not be on the
+perpetual. Checked against Delta's own 1m candles on 1 Oct 2026: the live
+fills, stops and TP1s were exact.
 
 ## The signal journal and the paper log
 
 Once a minute the server reads **every** way the screen can show -- the
-chain's twelve, and the twelve without it on each of 1m, 3m, 5m, 15m, 30m, 1H
-and 4H (96 reads, ~30 ms) -- so a signal is kept whichever chip was on screen,
-or with no screen open at all:
+chain's twelve, and the twelve without it on each of 3m, 5m, 15m, 30m, 1H and
+4H (84 reads) -- so a signal is kept whichever chip was on screen, or with no
+screen open at all. **1m without the chain is chart-only** (owner, 1 Oct 2026):
+no reads, no signal, no alert, no history; `entry-008-signals-no-1m` removed
+its journal rows and `entry-008-alerts-no-1m` its alert timeframe (the paper
+log keeps its rows as they were). The chain still reads 1m as its execution
+step.
 
 - **Signal journal** (`entry_signals`, `entry-005-signals`): every WAIT and
   TRADE, one row per setup per state (a WAIT that becomes a TRADE is two), with
-  when it was first and last seen, its score, reason, levels and any gates
-  switched off. Kept a year. `GET /api/entry/signals?mode=&tf=&state=&limit=`.
-- **Paper log**: each new TRADE, on every timeframe, graded as below. The
-  without-timeframe panel shows the record for its chosen timeframe; the
-  with-vs-without comparison stays at 5m, like for like.
+  when it was first and last seen, its score, reason, the whole plan (entry,
+  SL, TP1-TP3 and why each is there -- `entry-011-signal-targets`), the LTP
+  and index when it appeared, and any gates switched off. Kept a year.
+  `GET /api/entry/signals?mode=&tf=&state=&dir=&live=&since=&sort=&asc=&limit=&offset=`
+  gives a page, the number matching, and totals over every match;
+  `GET /api/entry/signals.csv` (same filters) every matching row for Excel.
+- **Paper log**: each new TRADE, on every timeframe, graded as below.
 - **Telegram**: the chain always (its entry is 5m); without it, the
   timeframes the owner picks under its switch (5m until others are chosen).
   Every attempt is written to `entry_alert_log` -- sent, or failed and why
@@ -183,8 +252,15 @@ Table `entry_setups` (migration `entry-001-setups`):
   that touches both the stop and TP1 is the stop, and in the fill bar only the
   stop counts -- a candle cannot say which came first, and the log does not
   guess in the setup's favour. A gap through the stop exits at the open.
-- `r_net` is R after the taker fee both ways. The whole position exits at TP1;
-  TP2 and TP3 are drawn, not graded.
+- `r_net` is R: the points from the fill to the exit over the risk -- no fee
+  term since 1 Oct 2026 (`entry-010-r-without-fees` recomputed every closed
+  row the same way). The record's trade exits at TP1.
+- **TGT1 / TGT2 / TGT3** (`entry-012-setups-targets`): after TP1 a *runner*
+  goes on with its stop at the fill (breakeven), watched for TP2 then TP3
+  until breakeven, TP3 or the time-out; `tp1_at`, `tp2_at`, `tp3_at` say
+  which targets were reached and when (a bar touching breakeven and TP2 is
+  breakeven). The record's R stays the TP1 exit; the runner says how far the
+  move went.
 
 `GET /api/entry/record` gives each method's setups, trades, wins, expired,
 average and total R, profit factor, max drawdown and average win and loss, with
@@ -205,8 +281,9 @@ phone, where a method is its **number only**. Each panel has:
 
 - **The desk's price chart** ([price-chart.md](price-chart.md)) -- candles,
   structure, liquidity, order flow, option strikes, its readout and Layers
-  menu -- on that panel's timeframe: without timeframe, the 1m-4H chips set
-  what its reads use and the chart follows; with timeframe, the chips only
+  menu -- on that panel's timeframe: without timeframe, the 3m-4H chips set
+  what its reads use and the chart follows, and **1m is chart-only** (the
+  chart, and in place of the table a note that 1m gives no signal or alert); with timeframe, the chips only
   change what the chart shows (the reads stay at 5m). The chart decides no
   entry of its own: it draws the panel's chosen TRADE -- the entry zone as a
   box from its trigger candle, SL and TP1-TP3 as lines to the right edge.
@@ -228,16 +305,21 @@ phone, where a method is its **number only**. Each panel has:
   again. The message comes in sections, every distance from the fill: the
   signal (BUY / SELL, method, way and timeframe, time in IST, the LTP); 📍
   ENTRY (the zone, and the fill edge); 🛑 STOP LOSS (points, %, −1R); 🎯
-  TARGETS (TP1-3, each in points and R); then R:R after fees, quality, the
-  method's own steps as the why, any gate switched off that let it through,
+  TARGETS (TP1-3, each in points and R, and why each is there); the stop's
+  structure under the SL; then R:R, quality, the method's own steps as the why, any gate switched off that let it through,
   and "no order placed". *test* sends a made-up signal in that format, marked
   TEST. Stored in `entry_alerts` (every change in
   `entry_alert_changes`); `GET /api/entry/alerts`,
   `POST /api/entry/alerts/:mode {enabled}`, `POST /api/entry/alerts/test`. With
   no `TG_TOKEN` / `TG_CHAT_ID` on the server the switch says "not set up".
 - **Selected setup**: LONG / SHORT SETUP (or WAIT / NO TRADE with the reason),
-  method, timeframe, quality, entry, stop, each target with its R multiple, risk
-  and reward in points and percent, and R:R after fees -- all from the fill.
+  method, timeframe, quality, entry, stop, each target with its R multiple and
+  why it is there, risk and reward in points and percent, and R:R -- all from
+  the fill. Under the live strip, the **entry clock**: when the trigger bar
+  closed, when the server saw it and when the alert went (with the lag, when
+  it is one), then a counter -- "Fill window closes in 42:15", "In the trade
+  12:03 · time-out in 3:47:57", "Runner, stop at breakeven · TGT2 next" -- to
+  the paper log's own windows (the board carries each TRADE's `paper` clock).
   A TRADE that stands only because a gate is switched off carries a warning:
   which gates, their values, and that with every gate on it is NO TRADE.
 - **On the chart** the entry is blue -- a box for the zone and a solid ENTRY
@@ -250,12 +332,9 @@ phone, where a method is its **number only**. Each panel has:
   off. The table itself carries the verdicts in two columns, *Gates · without*
   and *Gates · with*: "✓ 6/6" (of those read), or the gate that refuses; hover
   for the list.
-- **Paper record**: that way's trades, win rate, profit factor, net R and max
-  drawdown, over all twelve, after fees -- every gate on. With nothing closed
-  it says what is happening ("2 setups working -- figures appear as they
-  close"). Setups taken with a gate switched off are shown under it in an
-  amber, dashed line -- "Including 12 setups taken with a gate off: 13 trades
-  · 38% won · PF 0.70 · −2.4R. Not the rules' record" -- never mixed in.
+- (The per-panel **paper record** strip, and the **without vs with timeframe**
+  comparison under the panels, were removed at the owner's request on
+  1 Oct 2026; the signal history carries the record.)
 
 **Timeframe analysis** is a card of its own under the **Big move catch**
 (moved there from the with-timeframe panel on 30 Sep 2026): each of 4H-1m,
@@ -263,19 +342,30 @@ its trend and what its swings did (HH / HL, LH / LL, range), its job in the
 chain, and a one-line trend strip. It is the entry board's own reading (the
 entry section hands it up), so it costs no second request.
 
-Underneath, **Without vs with timeframe**: the two records compared metric by
-metric (setups, trades, win rate, average win and loss, profit factor, net R,
-max drawdown) -- the reference's historical comparison, from the real log only
--- with a switch, *Every gate on* / *Incl. gates off (n)*, that says which it
-shows. (`GET /api/entry/record` gives `totals` and `totalsAll`.)
+Then the **Signal history** (a card of its own): every signal the server
+kept, a page at a time (25 / 50 / 100), every 15 s. Tabs: **All**,
+**TRADING** (in play now: waiting at its zone, filled, or a runner after
+TGT1), **BUY & SELL**, **BUY**, **SELL**, **WAIT**; filters for the way, the
+timeframe and today / all days (remembered; a filter saved before -- 1m, the
+old R:R column -- is cleaned, so the list never hides behind a chip that is
+not there; nothing yet today offers *Show all days*). Columns, **each sortable
+both ways on the server** (so the order holds across pages): signal time (its
+trigger bar, and "seen +3 s" when that is latency or "formed 06:55:03" when
+the setup sits on an older bar; when the alert went), method, way and
+timeframe, signal, LTP · index when it appeared, entry zone, SL, **TGT1**,
+**TGT2**, **TGT3** (each: reached ✓ and when, watching…, or ✗ not reached),
+**Entry** (the fill, its minute, at the edge or how many points better),
+**Exit** (the price, by SL / TGT / time, its minute, at the level or how many
+points past it -- a gap; the full sentence on hover), **Result** (R and
+points, and a live counter while in play), quality, how long it stood. No R:R
+column: the result carries R. Above it, totals over every match -- TRADEs,
+TGT1 hits and points, SL hits and points, timed out and points, TGT2 · TGT3
+reached, and **net points, which add up**: each trade is rounded to the point
+as its row shows it, and net = target − SL ± time-out (no Net R -- it
+disagreed with the points while R carried fees). **Excel** downloads every
+row the filters match, in this order (CSV with a BOM and CRLF; text Excel
+would run as a formula is defused). On a phone each signal is a card.
 
-Then the **Signal history**: every signal the server kept (the journal),
-newest first, every 15 s -- time (IST), method, way and timeframe, BUY / SELL
-or WAIT, how long it stood, entry, SL, TP1, R:R, quality, "gates off" -- and
-for a TRADE what became of it: waiting for price, in the trade @ fill, TP1 ✓
-+R, stop ✗ −R, timed out, expired never filled. Filters (both / without /
-with, all / TRADE / WAIT, timeframe, today / all days) are remembered; on a
-phone each signal is a card.
 A **12 charts** switch shows the twelve of one way as twelve small price charts
 (no readout or toolbar), each with its own TRADE, and **Setups on chart** turns
 every drawn level off (the plain charts).
@@ -306,8 +396,11 @@ Three things differ from the reference on purpose:
 | [entry/methods.ts](../../app/server/src/entry/methods.ts) | the twelve detectors |
 | [entry/engine.ts](../../app/server/src/entry/engine.ts) | gates, targets, the chain, score, state; the 24 reads |
 | [entry/read.ts](../../app/server/src/entry/read.ts) | the market context, best-effort |
-| [entry/paper.ts](../../app/server/src/entry/paper.ts) | the log, its grading and the record |
-| [entry.routes.ts](../../app/server/src/http/routes/entry.routes.ts) | `GET /api/entry/board`, `GET /api/entry/record` |
+| [entry/paper.ts](../../app/server/src/entry/paper.ts) | the log, its grading (fill, exit, runner), the windows (`fillByOf`, `timeoutAtOf`) and the record |
+| [entry/signals.ts](../../app/server/src/entry/signals.ts) | the journal, the history's page, totals, sorting and CSV, the board's clocks |
+| [entry/alerts.ts](../../app/server/src/entry/alerts.ts) | Telegram switches, the message, the alert log |
+| [entry.routes.ts](../../app/server/src/http/routes/entry.routes.ts) | `/api/entry/board`, `record`, `gates`, `alerts`, `signals`, `signals.csv` |
+| [SignalHistory.tsx](../../app/web/src/components/desk/entry/SignalHistory.tsx), [TradeClock.tsx](../../app/web/src/components/desk/entry/TradeClock.tsx), [clock.ts](../../app/web/src/components/desk/entry/clock.ts) | the history table, the entry clock, the counters |
 | [EntrySection.tsx](../../app/web/src/components/desk/entry/EntrySection.tsx), [ModePanel.tsx](../../app/web/src/components/desk/entry/ModePanel.tsx), [EntryGrid.tsx](../../app/web/src/components/desk/entry/EntryGrid.tsx), [parts.tsx](../../app/web/src/components/desk/entry/parts.tsx) | the screen |
 | [feed.ts](../../app/web/src/components/desk/entry/feed.ts), [PriceChart.tsx](../../app/web/src/components/desk/PriceChart.tsx), [entry-layer.ts](../../app/web/src/components/desk/chart/entry-layer.ts) | the charts: their shared reads, the chart, the setup drawn on it |
 | `test/entry/*.test.ts` | every primitive, detector, gate and grading rule |

@@ -59,6 +59,7 @@ export function clockText(
     return { label: 'In the trade', value: `${span(now - c.filledAt * 1000)}${out}`, tone: 'live' };
   }
   if (c.status === 'expired') return { label: 'Expired', value: 'never filled in its window', tone: 'done' };
+  if (c.status === 'missed') return { label: 'Missed', value: 'price ran to TGT1 without filling', tone: 'done' };
   if (c.exitAt !== null && c.filledAt !== null) return { label: 'Held', value: span((c.exitAt - c.filledAt) * 1000), tone: 'done' };
   return null;
 }

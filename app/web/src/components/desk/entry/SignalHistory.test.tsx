@@ -163,6 +163,7 @@ describe('the signal history table', () => {
     expect([stood(20_000), stood(4 * 60_000), stood(72 * 60_000)]).toEqual(['just now', '4 min', '1 h 12 min']);
     expect(outcomeOf(sig({ outcome: oc({ status: 'open' }) })).text).toBe('waiting for price');
     expect(outcomeOf(sig({ outcome: oc({ status: 'expired' }) })).text).toBe('expired, never filled');
+    expect(outcomeOf(sig({ outcome: oc({ status: 'missed' }) })).text).toBe('missed -- ran to TGT1 unfilled');
     expect(exitOf(sig())).toEqual({ price: '84,288', why: 'TGT', pts: 103 });
     expect(exitOf(sig({ outcome: oc({ status: 'timeout', fillPrice: 84_391, exitPrice: 84_400, exitAt: S, rNet: -0.1, exitWhy: 'time' }) }))).toEqual({ price: '84,400', why: 'time', pts: -9 });
     expect(exitOf(sig({ outcome: oc({ status: 'filled', fillPrice: 84_391 }) }))).toBeNull();

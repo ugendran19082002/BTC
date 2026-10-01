@@ -79,6 +79,7 @@ export function outcomeOf(s: EntrySignal): { text: string; cls: string } {
     case 'stop': return { text: `stop ✗${r}`, cls: 'text-[var(--down)]' };
     case 'timeout': return { text: `timed out${r}`, cls: 'text-muted-foreground' };
     case 'expired': return { text: 'expired, never filled', cls: 'text-muted-foreground' };
+    case 'missed': return { text: 'missed -- ran to TGT1 unfilled', cls: 'text-[var(--warn)]' };
     default: return { text: o.status, cls: 'text-muted-foreground' };
   }
 }
