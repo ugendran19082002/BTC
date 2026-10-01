@@ -300,12 +300,12 @@ describe('the signal history table', () => {
     expect(within(table).getByLabelText('SL')).toHaveTextContent('84,825watching…');
   });
 
-  it('[critical] every method in one history, each by its label -- 16a for a shared number', async () => {
-    getEntrySignals.mockResolvedValue(page([sig({ method: 'orb-asia', n: 16, code: '16a', name: 'Opening-range breakout · Asia' })]));
+  it('[critical] every method in one history, each by its number', async () => {
+    getEntrySignals.mockResolvedValue(page([sig({ method: 'orb', n: 16, code: '16', name: 'Opening-range breakout (Asia · London · New York)' })]));
     render(<SignalHistory />);
     const table = await screen.findByRole('table', { name: 'signals' });
     expect(getEntrySignals.mock.lastCall![0].track).toBeUndefined();
     expect(screen.queryByRole('group', { name: 'history methods' })).toBeNull();
-    expect(within(table).getAllByRole('row')[1]).toHaveTextContent('#16a Opening-range breakout · Asia');
+    expect(within(table).getAllByRole('row')[1]).toHaveTextContent('#16 Opening-range breakout (Asia · London · New York)');
   });
 });

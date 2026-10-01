@@ -416,11 +416,12 @@ Three things differ from the reference on purpose:
 ## Every method, on the desk
 
 Since 1 Oct 2026 (owner: "no separate research -- append them like the first
-twelve") the desk reads **74 methods**: TEST.md's twelve first, then the rest
-by the owner's numbers -- 30 on candles and 32 on the desk's live data, all in
-`entry/methods.ts` -- read, shown, paper-logged and alerted alike. A number
-shared by variants is lettered on screen (16a-16c: the three opening-range
-sessions; 30a-30c the session sweeps). The deduplicated list of all 130 ideas
+twelve") the desk reads **70 methods -- one per unique idea**: TEST.md's
+twelve first, then the rest by the owner's numbers -- 26 on candles and 32 on
+the desk's live data, all in `entry/methods.ts` -- read, shown, paper-logged
+and alerted alike. A duplicate idea is never a second method: the three
+sessions of #16 (opening range) and of #30 (session sweep) are one method
+each, watching whichever session is live. The deduplicated list of all 130 ideas
 is [research/entry-concepts.md](../research/entry-concepts.md).
 
 - **What they read.** Candles; the tape per minute and its prints of the last

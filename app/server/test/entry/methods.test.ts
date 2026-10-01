@@ -24,7 +24,7 @@ const add = (bars: Candle[], ...xs: Omit<Candle, 'time' | 'volume'>[]) => {
 
 test('[critical] the twelve first, numbered 1-12, then every other method by the owner\'s numbers -- each id once, in the four groups', () => {
   assert.deepEqual(METHODS.slice(0, 12).map((m) => m.n), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
-  assert.equal(METHODS.length, 74);
+  assert.equal(METHODS.length, 70, 'one method per unique idea');
   assert.ok(METHODS.slice(12).every((m) => m.n > 12));
   assert.equal(new Set(METHODS.map((m) => m.id)).size, METHODS.length);
   assert.deepEqual([...new Set(METHODS.map((m) => m.group))].sort(), ['breakout', 'flow', 'pullback', 'reversal']);
@@ -199,11 +199,9 @@ test('[critical] 6. BOS: a counter-trend break is shown, and refused, not hidden
   assert.equal(s?.steps[2]?.ok, false);
 });
 
-test('[critical] every method has its own screen label: the number, lettered when shared -- 16a-16c are the three opening-range sessions', () => {
+test('[critical] one method per unique idea: every number once, its label the number -- the sessions are one method, not three', () => {
   const codes = METHODS.map((m) => m.code!);
-  assert.equal(new Set(codes).size, codes.length);
-  assert.deepEqual(METHODS.filter((m) => m.n === 16).map((m) => `${m.code} ${m.name}`), [
-    '16a Opening-range breakout · Asia', '16b Opening-range breakout · London', '16c Opening-range breakout · New York',
-  ]);
-  assert.equal(METHODS.find((m) => m.id === 'breakout')!.code, '1');
+  assert.equal(new Set(METHODS.map((m) => m.n)).size, METHODS.length);
+  assert.ok(codes.every((c, i) => c === String(METHODS[i]!.n)));
+  assert.deepEqual(METHODS.filter((m) => m.n === 16 || m.n === 30).map((m) => m.id), ['orb', 'session-sweep']);
 });

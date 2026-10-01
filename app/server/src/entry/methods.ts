@@ -1132,15 +1132,18 @@ const nakedPoc = ({ bars, a }: DetectInput): Setup | null => {
   return null;
 };
 
+/** 16. Opening-range breakout, whichever session's range is live now -- Asia, London or New York: one idea, one method. */
+const orbAny = (m: DetectInput): Setup | null => orb('asia')(m) ?? orb('london')(m) ?? orb('ny')(m);
+/** 30. The previous session's high or low swept and rejected, in whichever session it is now. */
+const sessionSweepAny = (m: DetectInput): Setup | null => sessionSweep('asia')(m) ?? sessionSweep('london')(m) ?? sessionSweep('ny')(m);
+
 export type Candidate = { id: string; n: number; name: string; family: string; sl: string; targets: TargetSpec; summary?: string; detect: (m: DetectInput) => Setup | null };
 
 /** The candidates, by the owner's numbers. */
 export const CANDIDATES: readonly Candidate[] = [
   { id: 'compression-break', n: 13, name: 'Compression break', family: 'volatility', sl: 'the compression box\'s far side', targets: tgt('nearest', 'next'), summary: 'A tight hour (12 bars under 2.5 ATR wide), a close out of it on volume, then follow-through', detect: compressionBreak },
   { id: 'trap', n: 14, name: 'Failed breakout / breakdown (trap)', family: 'reversal', sl: 'the trap extreme', targets: tgt('own', 'own'), summary: 'A break of the 20-bar high (low) with no follow-through, closed back inside -- reversed', detect: trap },
-  { id: 'orb-asia', n: 16, name: 'Opening-range breakout · Asia', family: 'session', sl: 'the opening range middle', targets: tgt('nearest', 'next'), summary: 'The Asia session\'s first 30 minutes, then the first close out of that range on volume', detect: orb('asia') },
-  { id: 'orb-london', n: 16, name: 'Opening-range breakout · London', family: 'session', sl: 'the opening range middle', targets: tgt('nearest', 'next'), summary: 'London\'s first 30 minutes, then the first close out of that range on volume', detect: orb('london') },
-  { id: 'orb-ny', n: 16, name: 'Opening-range breakout · New York', family: 'session', sl: 'the opening range middle', targets: tgt('nearest', 'next'), summary: 'New York\'s first 30 minutes, then the first close out of that range on volume', detect: orb('ny') },
+  { id: 'orb', n: 16, name: 'Opening-range breakout (Asia · London · New York)', family: 'session', sl: 'the opening range middle', targets: tgt('nearest', 'next'), summary: 'Each session\'s first 30 minutes -- Asia, London, New York -- then the first close out of that range on volume', detect: orbAny },
   { id: 'pd-rejection', n: 17, name: 'Previous day H/L rejection', family: 'liquidity', sl: 'the sweep extreme', targets: tgt('nearest', 'htf'), summary: 'The previous day\'s high or low swept, then a turn back inside', detect: pdRejection },
   { id: 'pd-break-hold', n: 18, name: 'Previous day H/L break & hold', family: 'breakout', sl: 'the retest extreme', targets: tgt('nearest', 'htf'), summary: 'Previous day\'s high (low) broken, held, retested and rejected the trade\'s way', detect: pdBreakHold },
   { id: 'vwap-reclaim', n: 20, name: 'VWAP reclaim / loss', family: 'vwap', sl: 'the VWAP retest extreme', targets: tgt('nearest', 'next'), summary: 'From the other side, a close back over the day\'s VWAP, a retest, a hold', detect: vwapReclaim },
@@ -1148,9 +1151,7 @@ export const CANDIDATES: readonly Candidate[] = [
   { id: 'va-break', n: 22, name: 'Value-area break', family: 'volume profile', sl: 'back inside the value area', targets: tgt('nearest', 'next'), summary: 'A close out of the previous day\'s value area on volume, from inside it', detect: vaBreak },
   { id: 'poc-reclaim', n: 23, name: 'POC reclaim / loss', family: 'volume profile', sl: 'the hold extreme', targets: tgt('nearest', 'next'), summary: 'From the other side of the previous day\'s POC, a close over it that holds', detect: pocReclaim },
   { id: 'equal-sweep', n: 29, name: 'Equal H/L sweep & reclaim', family: 'liquidity', sl: 'the sweep extreme', targets: tgt('nearest', 'htf'), summary: 'Two swings within 0.15 ATR, traded through, closed back', detect: equalSweep },
-  { id: 'session-sweep-asia', n: 30, name: 'Session H/L sweep · Asia', family: 'liquidity', sl: 'the sweep extreme', targets: tgt('nearest', 'next'), summary: 'In Asia, the New York session\'s high or low swept, then rejected', detect: sessionSweep('asia') },
-  { id: 'session-sweep-london', n: 30, name: 'Session H/L sweep · London', family: 'liquidity', sl: 'the sweep extreme', targets: tgt('nearest', 'next'), summary: 'In London, the Asia session\'s high or low swept, then rejected', detect: sessionSweep('london') },
-  { id: 'session-sweep-ny', n: 30, name: 'Session H/L sweep · New York', family: 'liquidity', sl: 'the sweep extreme', targets: tgt('nearest', 'next'), summary: 'In New York, the London session\'s high or low swept, then rejected', detect: sessionSweep('ny') },
+  { id: 'session-sweep', n: 30, name: 'Session H/L sweep (Asia · London · New York)', family: 'liquidity', sl: 'the sweep extreme', targets: tgt('nearest', 'next'), summary: 'In each session, the previous session\'s high or low swept, then rejected', detect: sessionSweepAny },
   { id: 'vol-transition', n: 36, name: 'Volatility regime transition', family: 'volatility', sl: 'the break bar\'s far end', targets: tgt('nearest', 'next'), summary: 'A quiet stretch (bars under 0.6 of the usual range), then range expanding into a 20-bar break', detect: volTransition },
   { id: 'z-reversion', n: 37, name: 'Z-score reversion', family: 'statistical', sl: 'the stretch extreme', targets: tgt('own', 'next'), summary: 'Two and a half deviations from the 50-bar mean, then a turn back', detect: zReversion },
   // Round 2: the genuinely new candle concepts from the owner's #38-#130, after duplicates were merged (docs/research/entry-concepts.md).

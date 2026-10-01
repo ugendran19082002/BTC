@@ -18,8 +18,14 @@ exactly one status.
 
 26 + 43 + 21 + 20 + 12 + 8 + 1 = 131: the 130 numbers, with #38 used twice.
 
+**How many are really different.** Of the 131 entries, **50 repeat another
+idea** (the "merged" ones) and **81 are unique**: 70 run as methods -- one
+each; #16 and #30 watch all three sessions in one method -- 10 are measured as
+each signal's regime (the 8 filters, #115 and #128), and 1 was declined (38a).
+
 Since 1 Oct 2026 every buildable concept is **on the desk as a method like the
-twelve** (owner: "no separate research") -- 74 methods in
+twelve** (owner: "no separate research"), **one method per unique idea** (owner:
+"keep the unique ideas, remove the rest") -- 70 methods in
 `app/server/src/entry/methods.ts`, read, shown, paper-logged and alerted alike.
 The "waiting for data" and "not collected" groups below were then built from
 what the desk records live (hours of it are enough to run a method; years were
@@ -61,7 +67,7 @@ SL/TGT rules). **None passed.** All now run on the research track.
 |---|---|---|---:|---:|
 | 13 | Compression break | 120 ATR regime shift, 121 realised-vol breakout | −0.00 | +0.17 (n 9) |
 | 14 / 15 | Failed breakout / breakdown (trap) | 79, 80, 81 (failed auction, acceptance / rejection) | −0.06 | +0.01 |
-| 16 | Opening-range breakout · Asia / London / New York | — | −0.07 / +0.01 / −0.07 | −0.08 / −0.03 / +0.04 |
+| 16 | Opening-range breakout (one method, all three sessions) | — | −0.07 / +0.01 / −0.07 | −0.08 / −0.03 / +0.04 |
 | 17 | Previous day H/L rejection | 93 multi-day liquidity sweep | −0.02 | −0.09 |
 | 18 | Previous day H/L break & hold | — | −0.10 | +0.06 |
 | 20 | VWAP reclaim / loss | — | −0.04 | −0.06 |
@@ -69,7 +75,7 @@ SL/TGT rules). **None passed.** All now run on the research track.
 | 22 | Value-area break | 76 value-area migration | −0.05 | −0.03 |
 | 23 | POC reclaim / loss | 75 POC migration, 77 HVN/LVN | +0.01 | −0.05 |
 | 29 | Equal H/L sweep & reclaim | — | −0.02 | +0.04 |
-| 30 | Session H/L sweep · Asia / London / New York | — | −0.01 / −0.10 / +0.03 | −0.05 / +0.12 / −0.03 |
+| 30 | Session H/L sweep (one method, all three sessions) | — | −0.01 / −0.10 / +0.03 | −0.05 / +0.12 / −0.03 |
 | 36 | Volatility regime transition | — | −0.11 | −0.04 |
 | 37 | Z-score reversion | 117 return z-score, 122 RV mean reversion, 125 mean-reversion half-life | −0.05 | +0.01 |
 | 39 | Mid-range rejection | — | −0.04 | −0.18 |
@@ -118,18 +124,15 @@ last six hours (`entry/deriv.ts`).
 
 | # | Concept | Needs |
 |---|---|---|
-| 32 | OI + price matrix (as a regime) | OI history |
-| 33 | OI flush → reversal | OI history |
+| 32 | OI + price matrix → OI-confirmed breakout | OI, last 6 h (99 breakout + OI expansion merged) |
+| 33 | OI flush → reversal | OI, last 6 h (100 breakout + OI flush merged) |
 | 48 | Perp–spot lead / lag | index 1m history |
 | 54 | Funding flip | funding history |
 | 55 | IV expansion breakout | IV history |
 | 56 | IV crush reversion | IV history |
 | 57 | Options skew divergence | per-strike IV history (114 skew / smile shift merged) |
 | 58 | Gamma / dealer positioning | per-strike OI + greeks (106 gamma flip, 107 gamma-wall break, 108 gamma-wall rejection merged) |
-| 99 | Breakout + OI expansion | OI history |
-| 100 | Breakout + OI flush | OI history |
-| 109 | Options volume spike | option volume history |
-| 110 | Call / put volume imbalance | option volume history |
+| 109 | Options volume one-sided | option volume, last hour (110 call / put volume imbalance merged) |
 | 111 | Call OI vs put OI divergence | OI by strike history |
 | 112 | IV vs realised vol divergence | IV history |
 | 113 | Term-structure shift | IV by expiry history |
@@ -144,8 +147,11 @@ large prints one way), #34 and #96 merged into it and #33.
 
 | # | Concept | Missing |
 |---|---|---|
-| 34, 50, 96 | Liquidation cluster reversal, cascade continuation, HTF liquidity + LTF liquidation | liquidation feed |
-| 61, 62, 63, 64, 69 | Book-imbalance breakout, microprice, replenishment, spoof / pull, queue imbalance | L2 order book ticks |
+| 50 | Forced-flow continuation -- a **proxy** (no liquidation feed: OI falling + large prints one way) | 34 liquidation cluster reversal, 96 HTF liquidity + LTF liquidation merged |
+| 61 | Book-imbalance breakout | the live book |
+| 62 | Microprice | the live book (69 queue imbalance merged) |
+| 63 | Liquidity replenishment | the book's walls |
+| 64 | Spoof / pull | the book's heat by minute |
 | 73, 74 | Footprint stacked imbalance (continuation / reversal) | volume per price per bar |
 | 128, 129 | Correlation breakdown, BTC–ETH divergence | ETH / market series |
 
