@@ -51,10 +51,10 @@ export const CHASE_STEPS = 4;
 export const targetPriceFor = (entry: number, pct: number): number | null =>
   // Never under one tick: a 99% target on a 1.00 premium is 0.01, which rounds
   // to 0 -- not a price a limit can rest at (the 17:01 legs of 27 Sep 2026).
-  pct > 0 ? Math.max(0.1, round1(entry * (1 - Math.min(0.99, pct)))) : null;
+  pct > 0 ? underEntry(entry, Math.max(0.1, round1(entry * (1 - Math.min(0.99, pct))))) : null;
 
 export const stopPriceFor = (entry: number, pct: number): number | null =>
-  pct > 0 ? round1(entry * (1 + pct)) : null;
+  pct > 0 ? overEntry(entry, round1(entry * (1 + pct))) : null;
 
 /**
  * The same two exits as a fixed distance in the option's own price: sold at
@@ -65,10 +65,30 @@ export const stopPriceFor = (entry: number, pct: number): number | null =>
  * below, which is not a price a limit can rest at.
  */
 export const targetPriceByPoints = (entry: number, points: number): number | null =>
-  points > 0 ? Math.max(0.1, round1(Math.max(entry * 0.01, entry - points))) : null;
+  points > 0 ? underEntry(entry, Math.max(0.1, round1(Math.max(entry * 0.01, entry - points)))) : null;
 
 export const stopPriceByPoints = (entry: number, points: number): number | null =>
-  points > 0 ? round1(entry + points) : null;
+  points > 0 ? overEntry(entry, round1(entry + points)) : null;
+
+/*
+ * An exit is never the entry price (1 Oct 2026 audit).
+ *
+ * Rounding to the 0.1 tick can land either exit on the entry itself: a target
+ * on a 0.1 entry (nothing under it but zero), a target or stop asked for in
+ * less than a tick (0.05 points), a 10% stop on a 0.1-0.4 premium. A target on
+ * the entry buys back at the price sold -- nothing earned, the fees paid twice
+ * -- and a stop on it is reached by the offer the moment the entry fills. So a
+ * target goes to the first tick under the entry, or is none when there is no
+ * tick under it; a stop goes to the first tick over.
+ */
+const underEntry = (entry: number, target: number): number | null => {
+  if (target < entry) return target;
+  const below = round1((Math.ceil(entry * 10 - 1e-9) - 1) / 10);
+  return below >= 0.1 ? below : null;
+};
+
+const overEntry = (entry: number, stop: number): number =>
+  (stop > entry ? stop : round1((Math.floor(entry * 10 + 1e-9) + 1) / 10));
 
 /**
  * An exit asked for any of three ways: a percentage, points from the entry, or

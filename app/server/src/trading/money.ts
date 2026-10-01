@@ -75,11 +75,15 @@ export const STOP_LIMIT_MIN_TICKS = 5;
  * if the target were a sell, until the 30 Sep 2026 audit.) Never at or over
  * the entry, which would buy back at once for nothing: then down instead.
  * And never under one tick.
+ *
+ * Null when those two cannot both hold -- an entry of one tick has no tick
+ * under it -- rather than a target on the entry itself (1 Oct 2026 audit).
  */
-export function targetTickFor(wanted: number, tick: number, entry: number | null): number {
+export function targetTickFor(wanted: number, tick: number, entry: number | null): number | null {
   const up = roundToTick(wanted, tick, 'up');
   // Never under one tick either: zero is not a price a limit can rest at.
-  return Math.max(tick, entry !== null && entry > 0 && up >= entry ? roundToTick(wanted, tick, 'down') : up);
+  const at = Math.max(tick, entry !== null && entry > 0 && up >= entry ? roundToTick(wanted, tick, 'down') : up);
+  return entry !== null && entry > 0 && at >= entry ? null : at;
 }
 
 export function stopFillLimit(side: 'buy' | 'sell', trigger: number, tick: number): number {
