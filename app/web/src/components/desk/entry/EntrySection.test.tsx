@@ -66,7 +66,7 @@ const NAMES = ['Breakout', 'Breakout + retest', 'Liquidity sweep', 'FVG retest',
 
 function read(n: number, mode: 'mtf' | 'single', over: Partial<MethodRead> = {}): MethodRead {
   return {
-    id: `m${n}`, n, name: NAMES[n - 1]!, group: 'breakout', summary: `what ${NAMES[n - 1]} looks for`, mode, tf: '5m', dir: null, state: 'NO_TRADE',
+    id: `m${n}`, n, code: String(n), name: NAMES[n - 1]!, group: 'breakout', summary: `what ${NAMES[n - 1]} looks for`, mode, tf: '5m', dir: null, state: 'NO_TRADE',
     steps: [], gates: [], plan: null, score: null, scoreParts: [], alignment: null, reason: 'nothing forming', triggerTime: null, ...over,
   };
 }
@@ -235,10 +235,10 @@ describe('the entry section, side by side', () => {
     expect(within(screen.getByRole('group', { name: 'history timeframe' })).queryByRole('button', { name: '1m' })).toBeNull();
   });
 
-  it('12 charts: one mode at a time', async () => {
+  it('charts: one mode at a time, every method with a signal first', async () => {
     render(<EntrySection desk={desk} />);
     await panel(/12 methods \+ timeframe/);
-    fireEvent.click(screen.getByRole('button', { name: '12 charts' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Charts' }));
     expect(screen.getAllByRole('figure')).toHaveLength(12);
     // Small price charts, each drawing its own method's TRADE.
     expect(screen.getAllByRole('img').every((c) => c.getAttribute('data-size') === 'compact')).toBe(true);
@@ -273,15 +273,31 @@ describe('the method table: names once, numbers on both sides', () => {
     render(<EntrySection desk={desk} />);
     const legend = await screen.findByRole('table', { name: 'entry methods by number' });
     const rows = within(legend).getAllByRole('row').slice(1);
-    expect(rows.map((r) => within(within(r).getAllByRole('cell')[1]!).getByRole('button').textContent)).toEqual(NAMES);
+    const names = rows.map((r) => within(within(r).getAllByRole('cell')[1]!).getByRole('button').textContent);
+    expect([...names].sort()).toEqual([...NAMES].sort());
+    // Signals first: the TRADE heads the list.
+    expect(names[0]).toBe('Liquidity sweep');
+    const sweep = rows[names.indexOf('Liquidity sweep')]!;
     // Twice: under the name on a phone, in its own column on a wider screen (CSS shows one).
-    expect(within(rows[2]!).getAllByText('what Liquidity sweep looks for')).toHaveLength(2);
-    expect(within(rows[2]!).getAllByText(/BUY|SELL|WAIT|NO/).map((c) => c.textContent)).toEqual(['NO', 'BUY']); // without, then with
+    expect(within(sweep).getAllByText('what Liquidity sweep looks for')).toHaveLength(2);
+    expect(within(sweep).getAllByText(/BUY|SELL|WAIT|NO/).map((c) => c.textContent)).toEqual(['NO', 'BUY']); // without, then with
     const withTf = screen.getByRole('table', { name: 'with timeframe methods' });
     const firstCell = withTf.querySelector('tbody tr td')!;
-    expect(firstCell.textContent).toBe('1');
+    expect(firstCell.textContent).toMatch(/^3(AUTO)?$/); // the TRADE, auto-selected
     expect(within(withTf).queryByText('Breakout')).toBeNull();
     expect(within(withTf).getByRole('button', { name: '3 Liquidity sweep' })).toBeInTheDocument();
+  });
+
+  it('[critical] a long list stays usable: All, only those with a signal, or one group -- counted on each chip', async () => {
+    render(<EntrySection desk={desk} />);
+    const legend = await screen.findByRole('table', { name: 'entry methods by number' });
+    const view = screen.getByRole('group', { name: 'methods view' });
+    expect(within(view).getByRole('button', { name: /^All · 12$/ })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(within(view).getByRole('button', { name: /^Signals/ }));
+    const rows = within(legend).getAllByRole('row').slice(1);
+    expect(rows.every((r) => /BUY|SELL|WAIT/.test(r.textContent ?? ''))).toBe(true);
+    fireEvent.click(within(view).getByRole('button', { name: /^Flow/ }));
+    expect(within(legend).getAllByRole('row').slice(1).length).toBeLessThan(12);
   });
 
   it('choosing a method by name chooses it on both sides', async () => {

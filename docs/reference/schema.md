@@ -14,7 +14,7 @@ the way it is, is in [database.md](database.md).
 |---|---|
 | auth | `auth-001-user-sessions`, `auth-002-to-public` |
 | chart | `chart-001-annotations` |
-| entry | `entry-001-setups`, `entry-002-gates`, `entry-003-setups-gates-off`, `entry-004-alerts`, `entry-005-signals`, `entry-006-alert-log`, `entry-007-signal-prices`, `entry-008-alerts-no-1m`, `entry-008-signals-no-1m`, `entry-009-alert-log-by-setup`, `entry-010-r-without-fees`, `entry-011-signal-targets`, `entry-012-setups-targets`, `entry-013-setups-missed`, `entry-014-signals-trades-by-time`, `entry-015-setups-expire-why`, `entry-016-setups-research`, `entry-016-signals-research` |
+| entry | `entry-001-setups`, `entry-002-gates`, `entry-003-setups-gates-off`, `entry-004-alerts`, `entry-005-signals`, `entry-006-alert-log`, `entry-007-signal-prices`, `entry-008-alerts-no-1m`, `entry-008-signals-no-1m`, `entry-009-alert-log-by-setup`, `entry-010-r-without-fees`, `entry-011-signal-targets`, `entry-012-setups-targets`, `entry-013-setups-missed`, `entry-014-signals-trades-by-time`, `entry-015-setups-expire-why`, `entry-017-setups-regime`, `entry-017-signals-regime` |
 | errors | `errors-001-log`, `errors-002-to-public` |
 | market | `market-001-oi-snapshots`, `market-002-chain-features`, `market-003-to-public`, `market-004-option-snapshots`, `market-005-flow`, `market-006-flow-large-counts`, `market-007-option-flow`, `market-008-option-snapshots-1m`, `market-009-drop-iv-term`, `market-013-index-1m`, `market-014-chain-band-pcts`, `market-015-large-prints`, `market-016-book-heat` |
 | strategy | `strategy-001-tables`, `strategy-002-seed`, `strategy-003-to-public`, `strategy-004-retire-extras`, `strategy-005-drop-retired-tables` |
@@ -258,12 +258,11 @@ the way it is, is in [database.md](database.md).
 | `runner` | text | yes |  |
 | `runner_end` | text | yes |  |
 | `expire_why` | text | yes |  |
-| `research` | boolean |  | `false` |
+| `regime` | jsonb | yes |  |
 
 - `entry_setups_by_method` (method, mode, first_seen DESC)
 - `entry_setups_method_mode_tf_dir_trigger_at_key` unique (method, mode, tf, dir, trigger_at)
 - `entry_setups_pkey` unique (id)
-- `entry_setups_research` (research, first_seen DESC)
 - `entry_setups_running` (runner) WHERE (runner = 'running'::text)
 - `entry_setups_working` (status) WHERE (status = ANY (ARRAY['open'::text, 'filled'::text]))
 - `entry_setups_dir_check` CHECK ((dir = ANY (ARRAY['-1'::integer, 1])))
@@ -300,12 +299,11 @@ the way it is, is in [database.md](database.md).
 | `tp3` | double precision | yes |  |
 | `stop_why` | text | yes |  |
 | `tp_why` | text[] | yes |  |
-| `research` | boolean |  | `false` |
+| `regime` | jsonb | yes |  |
 
 - `entry_signals_by_time` (first_seen DESC)
 - `entry_signals_method_mode_tf_dir_trigger_at_state_key` unique (method, mode, tf, dir, trigger_at, state)
 - `entry_signals_pkey` unique (id)
-- `entry_signals_research_by_time` (research, first_seen DESC)
 - `entry_signals_trades_by_time` (first_seen DESC) WHERE (state = 'TRADE'::text)
 - `entry_signals_dir_check` CHECK ((dir = ANY (ARRAY['-1'::integer, 1])))
 - `entry_signals_mode_check` CHECK ((mode = ANY (ARRAY['mtf'::text, 'single'::text])))

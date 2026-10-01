@@ -142,7 +142,7 @@ export function overlayOf(r: MethodRead | null, setupsOn: boolean): EntryOverlay
   if (!setupsOn || !r || !p || !r.dir) return null;
   return {
     dir: r.dir, entryLo: p.entryLo, entryHi: p.entryHi, stop: p.stop, tp1: p.tp1, tp2: p.tp2, tp3: p.tp3, rr: p.rr,
-    label: `#${r.n} ${r.name}${r.mode === 'mtf' ? ' (with TF)' : ` (${r.tf})`}${paperTag(r.paper?.status, r.paper?.expireWhy)}`, triggerTime: r.triggerTime,
+    label: `#${r.code ?? r.n} ${r.name}${r.mode === 'mtf' ? ' (with TF)' : ` (${r.tf})`}${paperTag(r.paper?.status, r.paper?.expireWhy)}`, triggerTime: r.triggerTime,
   };
 }
 

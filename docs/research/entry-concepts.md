@@ -10,20 +10,23 @@ exactly one status.
 |---|---|---|
 | **LIVE** | one of the twelve on the desk (with the numbers merged into them) | 12 (26 numbers) |
 | **Tested — no edge** | replayed on 2.7 years of 5m candles (`scripts/methods-study.ts`), missed the bar | 30 detectors (43 numbers) |
-| **Research track (live data)** | needs the desk's live tape / quote / option board — no history to replay; runs live, paper-logged | 12 detectors (21 numbers) |
-| **Waiting for data** | the desk records the input, but not long enough to build or test on | 20 |
-| **Not collected** | needs data the desk does not record | 12 |
-| **Filter, not an entry** | a regime reading, used beside entries | 8 |
+| **Live data** | needs the desk's live tape / quote / option board — no history to replay; on the desk since 1 Oct | 12 detectors (21 numbers) |
+| **Waiting for data** | recorded too briefly to *test*; since 1 Oct built live from the last hours | 20 (12 detectors) |
+| **Not collected** | since 1 Oct built from the live book, the tape's prints and ETH candles; liquidations as a proxy | 12 (8 detectors) |
+| **Filter, not an entry** | measured on every signal as its regime (`regime`) | 8 |
 | **Declined** | 38a, multi-factor composite | 1 |
 
 26 + 43 + 21 + 20 + 12 + 8 + 1 = 131: the 130 numbers, with #38 used twice.
 
-All tested and research-track candidates run **live on the research track**
-(1 Oct 2026, owner): read every minute beside the twelve on every timeframe,
-written to the signal journal and paper log marked `research`, graded the
-same way, **never alerted**, kept out of the twelve's history (the *Methods*
-filter shows them) and record. After a week or more the forward evidence is
-read with the same bar as the replay.
+Since 1 Oct 2026 every buildable concept is **on the desk as a method like the
+twelve** (owner: "no separate research") -- 74 methods in
+`app/server/src/entry/methods.ts`, read, shown, paper-logged and alerted alike.
+The "waiting for data" and "not collected" groups below were then built from
+what the desk records live (hours of it are enough to run a method; years were
+for testing it) -- all but the liquidation feed, which Delta does not publish
+(#50 is a proxy). The filters are measured on every signal as its regime.
+After a week or more, `scripts/methods-week.ts` reads the forward evidence
+with the same bar as the replay.
 
 **The bar** (set before any run): average R above zero in 2024-25 **and** in
 2026, t ≥ 2 over both, ≥ 200 closed trades. For the research track's forward
@@ -87,7 +90,7 @@ The closest: #29 equal H/L sweep with the higher timeframes not against —
 +0.06R, t 2.42 in 2026, but −0.03R in 2024-25. A sign that flips between
 periods is not an edge.
 
-## Research track — live data only
+## Live data (on the desk)
 
 In `app/server/src/entry/methods.ts`. Each reads what the desk records
 live and says nothing when it is missing.
@@ -107,10 +110,11 @@ live and says nothing when it is missing.
 | 67 | Trade velocity / aggression spike | tape | 68 aggression acceleration |
 | 70 | CVD regime shift | tape | 71 delta acceleration |
 
-## Waiting for data
+## Waiting for data — built live
 
-Recorded since 18-29 Sep 2026 (tape, OI, funding, option snapshots, index):
-too short to build a fair test. Revisit with three months.
+Recorded since 18-29 Sep 2026: too short to *test* fairly (revisit with three
+months), long enough to *run*: each became a method on 1 Oct 2026 reading the
+last six hours (`entry/deriv.ts`).
 
 | # | Concept | Needs |
 |---|---|---|
@@ -131,7 +135,12 @@ too short to build a fair test. Revisit with three months.
 | 113 | Term-structure shift | IV by expiry history |
 | 115 | Expiry OI migration | OI by expiry history |
 
-## Not collected
+## Not collected — built from what is
+
+Built on 1 Oct 2026 from the live book (#61, #62/69, #63, #64), the tape's
+prints (#73, #74 -- the footprint) and ETHUSD candles (#129; #128 as a
+regime). Liquidations: no feed exists; #50 is a proxy (open interest falling,
+large prints one way), #34 and #96 merged into it and #33.
 
 | # | Concept | Missing |
 |---|---|---|

@@ -40,7 +40,7 @@ Delta does not serve 3m candles; they are folded from 1m, the way 12h is folded
 from 6h. Only **closed** candles are read: nothing is concluded from a forming
 bar, and a swing is only a swing once two bars after it exist.
 
-## The twelve methods
+## The twelve methods (TEST.md's; 62 more since 1 Oct 2026, below)
 
 Each method is a chain of its own steps on the entry timeframe. A step the
 data cannot answer (the tape was not recorded, no option board) is **not read**
@@ -413,22 +413,37 @@ Three things differ from the reference on purpose:
   close it says "no record yet". (The pros-and-cons lists were removed at the
   owner's request.)
 
-## The research track
+## Every method, on the desk
 
-Beside the twelve, the **research candidates** -- the owner's list #13-#130,
-deduplicated in [research/entry-concepts.md](../research/entry-concepts.md):
-30 candle detectors (`entry/methods.ts`; replayed on 2.7 years in
-`scripts/methods-study.ts`, none passed the bar) and 12 live-data detectors
-(`entry/methods.ts`: tape, basis, mark, funding, the option board --
-no history to replay). From 1 Oct 2026 they run **live**: read every minute
-with the twelve, on the chain and every timeframe (a pass with them is ~38 ms
-against ~25 ms), written to the journal and the paper log with `research`
-set (`entry-016`), graded the same way -- and **never alerted**, never in the
-twelve's record, and out of the history unless its *Methods* filter says
-Research or All (rows marked RESEARCH). After a week:
-`npx tsx scripts/research-week.ts 7` reads the forward evidence per method
-and way, the twelve beside it, against the same bar. A week is short: above
-the bar after one is a reason for another week, not for the desk.
+Since 1 Oct 2026 (owner: "no separate research -- append them like the first
+twelve") the desk reads **74 methods**: TEST.md's twelve first, then the rest
+by the owner's numbers -- 30 on candles and 32 on the desk's live data, all in
+`entry/methods.ts` -- read, shown, paper-logged and alerted alike. A number
+shared by variants is lettered on screen (16a-16c: the three opening-range
+sessions; 30a-30c the session sweeps). The deduplicated list of all 130 ideas
+is [research/entry-concepts.md](../research/entry-concepts.md).
+
+- **What they read.** Candles; the tape per minute and its prints of the last
+  half hour (the footprint); the book now and its heat by minute; the
+  perpetual's mark, index and funding; `perp_snapshots` and `option_snapshots`
+  for the last six hours (OI, funding, per-strike IV, gamma, OI and volume --
+  `entry/deriv.ts`, read once a minute); ETHUSD 5m candles. Each method says
+  nothing when its input is missing. **Liquidations**: Delta publishes no
+  feed; #50 reads the footprint a cascade leaves (open interest falling, large
+  prints one way) and its name says it is a proxy.
+- **The evidence.** The 30 candle methods were replayed on 2024-01..2026-08
+  (`scripts/methods-study.ts`, research/METHODS-STUDY.txt) against a bar set
+  before the run: none passed. The live-data ones have no history to replay.
+  The paper log is their record: `npx tsx scripts/methods-week.ts 7` reads
+  every method's week, and every closed trade by the regime it was taken in.
+- **The regime** (the owner's filters, #19, #89, #90, #118, #119, #123,
+  #126, #127, and #115, #128): measured on every TRADE and WAIT and kept with
+  it (`regime`, `entry-017`) -- not fired on; the record is sorted by it.
+- **The screen.** The methods table and both panels list every method,
+  signals first (TRADE, WAIT, then the rest), with a view -- All, Signals,
+  or one group, each counted -- and a body that scrolls under a fixed header.
+  The charts view draws the 24 with a signal first. A pass over all of them
+  takes ~45 ms a minute.
 
 ## Which price is which
 

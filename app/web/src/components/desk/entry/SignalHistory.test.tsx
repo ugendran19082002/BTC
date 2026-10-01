@@ -236,7 +236,7 @@ describe('the signal history table', () => {
 
   it('[critical] a filter saved before -- 1m, the R:R column, a page size gone -- is cleaned, so the list never hides behind a chip that is not there', async () => {
     expect(cleanFilter({ tf: '1m' as never, sort: 'rr' as never, size: 10 as never, tab: 'gone' as never, mode: 'x' as never }))
-      .toEqual({ tab: 'all', track: 'all', mode: 'all', tf: 'all', today: true, size: 25, sort: 'time', asc: false });
+      .toEqual({ tab: 'all', mode: 'all', tf: 'all', today: true, size: 25, sort: 'time', asc: false });
     localStorage.setItem('btc-desk:entry:history-table', JSON.stringify({ tf: '1m', sort: 'rr' }));
     render(<SignalHistory />);
     await screen.findByRole('table', { name: 'signals' });
@@ -300,17 +300,12 @@ describe('the signal history table', () => {
     expect(within(table).getByLabelText('SL')).toHaveTextContent('84,825watching…');
   });
 
-  it('[critical] every method by default -- the twelve and the research track; The 12 or Research on ask -- and a research row says so', async () => {
-    getEntrySignals.mockResolvedValue(page([sig({ method: 'trap', n: 14, name: 'Failed breakout / breakdown (trap)', research: true })]));
+  it('[critical] every method in one history, each by its label -- 16a for a shared number', async () => {
+    getEntrySignals.mockResolvedValue(page([sig({ method: 'orb-asia', n: 16, code: '16a', name: 'Opening-range breakout · Asia' })]));
     render(<SignalHistory />);
-    await screen.findByRole('table', { name: 'signals' });
-    expect(getEntrySignals.mock.lastCall![0]).toMatchObject({ track: 'all' });
-    const g = screen.getByRole('group', { name: 'history methods' });
-    fireEvent.click(within(g).getByRole('button', { name: 'The 12' }));
-    await waitFor(() => expect(getEntrySignals.mock.lastCall![0].track).toBeUndefined()); // the API's default: the twelve
-    fireEvent.click(within(g).getByRole('button', { name: 'Research' }));
-    await waitFor(() => expect(getEntrySignals.mock.lastCall![0]).toMatchObject({ track: 'research' }));
     const table = await screen.findByRole('table', { name: 'signals' });
-    expect(within(table).getAllByRole('row')[1]).toHaveTextContent('#14 Failed breakout / breakdown (trap)research');
+    expect(getEntrySignals.mock.lastCall![0].track).toBeUndefined();
+    expect(screen.queryByRole('group', { name: 'history methods' })).toBeNull();
+    expect(within(table).getAllByRole('row')[1]).toHaveTextContent('#16a Opening-range breakout · Asia');
   });
 });

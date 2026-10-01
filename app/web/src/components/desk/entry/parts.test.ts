@@ -3,7 +3,7 @@ import { overlayOf } from './parts';
 import type { MethodRead, SetupClock } from '@/types/entry';
 
 const read = (paper: Partial<SetupClock> | null): MethodRead => ({
-  id: 'vwap-reversion', n: 10, name: 'VWAP / mean reversion', group: 'reversal', summary: '', mode: 'single', tf: '5m', dir: 'short', state: 'TRADE',
+  id: 'vwap-reversion', n: 10, code: '10', name: 'VWAP / mean reversion', group: 'reversal', summary: '', mode: 'single', tf: '5m', dir: 'short', state: 'TRADE',
   steps: [], gates: [], score: 40, scoreParts: [], alignment: null, reason: '', triggerTime: 1,
   plan: { entryLo: 83_589, entryHi: 83_605, stop: 83_677, tp1: 83_507, tp2: null, tp3: null, tpWhy: [], rr: 1 },
   paper: paper === null ? null : ({ status: 'open', ...paper } as SetupClock),

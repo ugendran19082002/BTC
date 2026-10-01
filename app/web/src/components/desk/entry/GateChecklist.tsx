@@ -35,7 +35,7 @@ export function GateChecklist({ selected, mode, onMode }: {
         </div>
       </div>
       <p className="m-0 mb-1.5 text-[11px] text-muted-foreground">
-        {read ? <>#{read.n} {read.name} · </> : null}any ✗ is NO TRADE · off gates refuse nothing
+        {read ? <>#{read.code ?? read.n} {read.name} · </> : null}any ✗ is NO TRADE · off gates refuse nothing
       </p>
       {gates.length ? (
         <table className="w-full border-collapse">

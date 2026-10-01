@@ -5,7 +5,7 @@ import type { MethodRead, SetupClock } from '@/types/entry';
 
 const NOW = Math.floor(Date.now() / 1000);
 const read = (paper: SetupClock | null): MethodRead => ({
-  id: 'liquidity-sweep', n: 3, name: 'Liquidity sweep', group: 'reversal', summary: '', mode: 'single', tf: '5m', dir: 'long', state: 'TRADE',
+  id: 'liquidity-sweep', n: 3, code: '3', name: 'Liquidity sweep', group: 'reversal', summary: '', mode: 'single', tf: '5m', dir: 'long', state: 'TRADE',
   steps: [], gates: [], plan: null, score: 60, scoreParts: [], alignment: null, reason: '', triggerTime: NOW - 400, paper,
 });
 const clock = (over: Partial<SetupClock> = {}): SetupClock => ({
