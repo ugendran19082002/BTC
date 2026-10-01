@@ -53,7 +53,7 @@ test('[critical] a TRADE in the history carries what became of it in the paper l
     status: 'tp1', fillPrice: 84_391, exitPrice: 84_000, exitAt: T + 900, rNet: 1.1,
     filledAt: T + 720, fillBy: T + 900 + 300 * 12, timeoutAt: T + 720 + 300 * 48, // the window runs from the trigger bar's close, later than first seen here
     fillEdge: 84_391, fillBetterPts: 0, exitLevel: 84_000, exitPastPts: 0, exitWhy: 'level',
-    tp1At: null, tp2At: null, tp3At: null, runner: null, runnerEnd: null,
+    tp1At: null, tp2At: null, tp3At: null, runner: null, runnerEnd: null, expireWhy: null,
   }, 'a short fills at the zone\'s low edge; TP1 is a limit, exactly the level');
   assert.equal(trade!.barCloseAt, T + 900, 'the 5m trigger bar closed at its start + 5 min');
   assert.equal(trade!.seenAfterMs, (T + 660) * 1000 - (T + 900) * 1000);
@@ -213,18 +213,20 @@ test("[critical] the Excel download: every row the filters match in the table's 
   assert.ok(csv.endsWith(`,"'=HYPERLINK(""x""), then ""more"""\r\n`), 'a leading = is defused with an apostrophe, quotes doubled');
 });
 
-test('[critical] the history by ending: TGT hit, SL hit, timed out, expired, missed -- each exactly that; anything else is no filter', async () => {
+test('[critical] the history by ending: TGT hit, SL hit, timed out, expired (with why) -- each exactly that; anything else is no filter', async () => {
   const mk = (k: number) => read({ id: 'breakout', tf: '30m', triggerTime: T + 200_000 + k, dir: 'long', state: 'TRADE', plan: PLAN });
-  const ends = ['tp1', 'stop', 'timeout', 'expired', 'missed', 'open'];
+  const ends = ['tp1', 'stop', 'timeout', 'expired', 'open'];
   for (let k = 0; k < ends.length; k++) {
     await recordSignals([mk(k)], (T + 200_000 + k) * 1000);
     await recordSetups([mk(k)], (T + 200_000 + k) * 1000);
     await query(`UPDATE entry_setups SET status = $1 WHERE method = 'breakout' AND tf = '30m' AND trigger_at = $2`, [ends[k], T + 200_000 + k]);
   }
   const since = (T + 199_000) * 1000;
-  for (const o of ['tp1', 'stop', 'timeout', 'expired', 'missed'] as const) {
+  await query(`UPDATE entry_setups SET expire_why = 'target' WHERE method = 'breakout' AND tf = '30m' AND status = 'expired'`);
+  for (const o of ['tp1', 'stop', 'timeout', 'expired'] as const) {
     const p = await signalPage({ tf: '30m', since, outcome: o });
     assert.deepEqual([p.total, p.signals[0]?.outcome?.status], [1, o], o);
   }
-  assert.equal((await signalPage({ tf: '30m', since, outcome: 'nonsense' as never })).total, 6, 'not a filter');
+  assert.equal((await signalPage({ tf: '30m', since, outcome: 'expired' })).signals[0]!.outcome!.expireWhy, 'target');
+  assert.equal((await signalPage({ tf: '30m', since, outcome: 'missed' as never })).total, 5, 'missed is no ending: no filter');
 });

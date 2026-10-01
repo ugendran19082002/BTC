@@ -201,14 +201,18 @@ test('[critical] a setup taken with a gate off is logged with it, and kept out o
   assert.deepEqual([single.tgtPts, single.slPts], [0, 0], 'nothing closed with every gate on: no points either way');
 });
 
-test('[critical] price runs to TP1 without ever coming back to the zone: missed -- the limit is cancelled, never filled after the move', () => {
+test('[critical] never filled is EXPIRED, with its reason: price ran to TP1 without the zone (target), the stop came first (stop), the window passed (window)', () => {
   // The 1 Oct 07:00 VWAP short as a long: the zone below, price runs straight up through TP1 without touching it.
   const r = gradeRow(long(), [minute(5, 84_050, 84_200, 84_040, 84_190), minute(6, 84_190, 84_320, 84_180, 84_310), minute(7, 84_300, 84_300, 84_000, 84_010)]);
-  assert.equal(r.status, 'missed');
+  assert.deepEqual([r.status, r.expireWhy], ['expired', 'target']);
   assert.equal(r.fillPrice, null, 'and the dip back into the zone at minute 7 does not fill it');
+  const stopFirst = gradeRow(long(), [minute(5, 84_050, 84_060, 84_040, 84_045), minute(6, 83_890, 83_895, 83_850, 83_860)]);
+  assert.deepEqual([stopFirst.status, stopFirst.expireWhy], ['expired', 'stop'], 'opened past the stop before any fill');
+  const late = gradeRow(long(), Array.from({ length: 80 }, (_, k) => minute(5 + k, 84_100, 84_110, 84_090, 84_100)));
+  assert.deepEqual([late.status, late.expireWhy], ['expired', 'window']);
 });
 
-test('[critical] missed is stored: the status check allows it (entry-013), and it counts as never filled, not as a trade', async () => {
+test('[critical] an expiry and its reason are stored, and it counts as never filled, not as a trade', async () => {
   const at = T + 50_000;
   await recordSetups([read({ id: 'momentum', triggerTime: at })], (at + 300) * 1000);
   const k = (n: number) => minute((at - T) / 60 + 5 + n, 0, 0, 0, 0).time;
@@ -216,8 +220,8 @@ test('[critical] missed is stored: the status check allows it (entry-013), and i
     { time: k(0), open: 84_050, high: 84_200, low: 84_040, close: 84_190, volume: 1 },
     { time: k(1), open: 84_190, high: 84_320, low: 84_180, close: 84_310, volume: 1 },
   ]);
-  const [x] = await rows<{ status: string; fill_price: number | null }>("SELECT status, fill_price FROM entry_setups WHERE method = 'momentum' AND trigger_at = $1", [at]);
-  assert.deepEqual([x?.status, x?.fill_price], ['missed', null]);
+  const [x] = await rows<{ status: string; fill_price: number | null; expire_why: string }>("SELECT status, fill_price, expire_why FROM entry_setups WHERE method = 'momentum' AND trigger_at = $1", [at]);
+  assert.deepEqual([x?.status, x?.expire_why, x?.fill_price], ['expired', 'target', null]);
   const m = (await entryRecord()).records.find((r) => r.method === 'momentum')!;
   assert.deepEqual([m.trades, m.expired], [0, 1]);
 });

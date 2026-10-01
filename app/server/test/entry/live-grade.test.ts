@@ -43,9 +43,9 @@ test('[critical] in the trade: TP1 exactly at the level, the second it prints; a
   assert.deepEqual([loss.status, loss.exitPrice, loss.exitAt], ['stop', 83_897, T + 42], 'the trade that went through 83,900');
 });
 
-test('[critical] waiting, and price runs to TP1 without the zone: missed, on the trade that reached it', () => {
+test('[critical] waiting, and price runs to TP1 without the zone: expired by target, on the trade that reached it', () => {
   const r = gradeTicks(long(), [tick(T + 2, 84_100), tick(T + 30, 84_305), tick(T + 50, 84_005)], true).row;
-  assert.deepEqual([r.status, r.fillPrice], ['missed', null]);
+  assert.deepEqual([r.status, r.expireWhy, r.fillPrice], ['expired', 'target', null]);
 });
 
 test('trades from before the setup was seen are not its trades', () => {

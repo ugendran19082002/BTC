@@ -172,6 +172,8 @@ export type SignalOutcome = {
   tp1At: number | null; tp2At: number | null; tp3At: number | null;
   /** After TP1, the runner with its stop at breakeven: still running, or how it ended. */
   runner: 'running' | 'done' | null; runnerEnd: 'be' | 'tp2' | 'tp3' | 'timeout' | null;
+  /** Why an expired setup was never filled: its window passed, the stop came first, or price ran to TP1 without it. */
+  expireWhy: 'window' | 'stop' | 'target' | null;
 };
 
 
@@ -191,11 +193,12 @@ function outcomeOf(r: Record<string, unknown>, tf: Tf): SignalOutcome {
     fillEdge: fx.edge, fillBetterPts: fx.fillBetterPts, exitLevel: fx.level, exitPastPts: fx.pastPts, exitWhy: fx.why,
     tp1At: num(r.e_tp1_at), tp2At: num(r.e_tp2_at), tp3At: num(r.e_tp3_at),
     runner: (r.e_runner as SignalOutcome['runner']) ?? null, runnerEnd: (r.e_runner_end as SignalOutcome['runnerEnd']) ?? null,
+    expireWhy: (r.e_expire_why as SignalOutcome['expireWhy']) ?? null,
   };
 }
 
 /** The paper-log endings the history can be filtered by. */
-export const OUTCOME_FILTERS = ['tp1', 'stop', 'timeout', 'expired', 'missed'] as const;
+export const OUTCOME_FILTERS = ['tp1', 'stop', 'timeout', 'expired'] as const;
 export type SignalOutcomeFilter = (typeof OUTCOME_FILTERS)[number];
 export const isOutcomeFilter = (x: unknown): x is SignalOutcomeFilter => (OUTCOME_FILTERS as readonly unknown[]).includes(x);
 
@@ -206,7 +209,7 @@ export type SignalQuery = {
   dir?: number;
   /** Only TRADEs still in play: waiting at the zone or filled, not yet out (TP1, stop or time-out). */
   live?: boolean;
-  /** Only TRADEs that ended one way in the paper log: TP1, the stop, the time-out, expired unfilled, or missed. */
+  /** Only TRADEs that ended one way in the paper log: TP1, the stop, the time-out, or expired (never filled). */
   outcome?: SignalOutcomeFilter;
   /** Column to sort by, newest / highest first unless `asc`. */
   sort?: SignalSort;
@@ -327,7 +330,7 @@ export async function signalPage(q: SignalQuery = {}): Promise<{ signals: Signal
     `SELECT s.*, e.status AS e_status, e.fill_price AS e_fill, e.exit_price AS e_exit, e.exit_at AS e_exit_at, e.r_net AS e_r,
             e.dir AS e_dir, e.entry_lo AS e_lo, e.entry_hi AS e_hi, e.stop AS e_stop, e.tp1 AS e_tp1,
             e.filled_at AS e_filled_at, e.first_seen AS e_first_seen, e.trigger_at AS e_trigger,
-            e.tp1_at AS e_tp1_at, e.tp2_at AS e_tp2_at, e.tp3_at AS e_tp3_at, e.runner AS e_runner, e.runner_end AS e_runner_end,
+            e.tp1_at AS e_tp1_at, e.tp2_at AS e_tp2_at, e.tp3_at AS e_tp3_at, e.runner AS e_runner, e.runner_end AS e_runner_end, e.expire_why AS e_expire_why,
             al.at AS al_at, al.status AS al_status
        FROM entry_signals s ${needsSetup || bySetup ? JOIN : `LEFT JOIN LATERAL (${SETUP}) e ON true`}
        -- The first alert tried for this setup, if any (entry_alert_log_by_setup).
@@ -376,7 +379,7 @@ export async function setupClocks(reads: readonly MethodRead[]): Promise<Map<str
   await Promise.all([entrySchema(), alertsSchema()]);
   const rs = await rows<Record<string, unknown>>(
     `SELECT e.method, e.mode, e.tf, e.dir, e.trigger_at, e.status, e.first_seen, e.filled_at, e.fill_price, e.exit_at, e.exit_price,
-            e.tp1_at, e.tp2_at, e.tp3_at, e.runner, e.runner_end,
+            e.tp1_at, e.tp2_at, e.tp3_at, e.runner, e.runner_end, e.expire_why,
             (SELECT min(a.at) FROM entry_alert_log a
               WHERE a.method = e.method AND a.mode = e.mode AND a.tf = e.tf AND a.dir = e.dir AND a.trigger_at = e.trigger_at) AS alert_at
        FROM entry_setups e WHERE e.trigger_at = ANY($1::bigint[])`,
@@ -392,6 +395,7 @@ export async function setupClocks(reads: readonly MethodRead[]): Promise<Map<str
       exitAt: num(x.exit_at), exitPrice: num(x.exit_price), alertAt: num(x.alert_at),
       tp1At: num(x.tp1_at), tp2At: num(x.tp2_at), tp3At: num(x.tp3_at),
       runner: (x.runner as SetupClock['runner']) ?? null, runnerEnd: (x.runner_end as SetupClock['runnerEnd']) ?? null,
+      expireWhy: (x.expire_why as SetupClock['expireWhy']) ?? null,
     });
   }
   return out;
@@ -460,6 +464,7 @@ const CSV_COLUMNS: [string, (s: SignalRow) => string | number | null][] = [
   ['tgt3_why', (s) => s.why?.tp3 ?? ''],
   ['tgt3_hit_ist', (s) => istOf(s.outcome?.tp3At != null ? s.outcome.tp3At * 1000 : null)],
   ['status', (s) => s.outcome?.status ?? (s.state === 'WAIT' ? 'waited' : '')],
+  ['expired_why', (s) => s.outcome?.expireWhy ?? ''],
   ['fill', (s) => s.outcome?.fillPrice ?? null],
   ['fill_ist', (s) => istOf(s.outcome?.filledAt != null ? s.outcome.filledAt * 1000 : null)],
   ['fill_better_pts', (s) => s.outcome?.fillBetterPts ?? null],
