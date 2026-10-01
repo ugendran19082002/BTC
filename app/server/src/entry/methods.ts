@@ -513,7 +513,7 @@ const tgt = (tp1: TargetSpec['tp1'], tp2: TargetSpec['tp2']): TargetSpec => ({ t
 
 /** `gate`: the method's own hard gate, in words, for the methods that have one. */
 /** `sl`: where the method's stop goes, before the 0.25 ATR buffer (owner's SL/TP table, 1 Oct 2026). */
-/** How a method is read: the twelve below, and the research candidates (candidates.ts) in the same shape. */
+/** How a method is read: the twelve below, and the research candidates (further down this file) in the same shape. */
 export type MethodDef = {
   id: MethodId | (string & {}); n: number; name: string; group: Group; summary: string; gate?: string; sl: string;
   targets: TargetSpec; detect: Detector; research?: boolean;
@@ -546,7 +546,7 @@ export const METHODS: readonly (MethodDef & { id: MethodId })[] = [
  *
  * Only the ones candles can answer are here; the ones that need the desk's
  * live data (tape, mark, index, funding, the option board) are in
- * candidates-live.ts and run on the research track only. Liquidations, L2
+ * the live-data section below and run on the research track only. Liquidations, L2
  * order-book ticks, per-price footprint and ETH are not collected. #19 (range
  * consumed) is a regime, read beside every setup rather than as an entry;
  * #38 was declined by the owner.

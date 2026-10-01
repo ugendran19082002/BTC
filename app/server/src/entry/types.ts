@@ -72,7 +72,7 @@ export type Plan = {
 export type ScorePart = { name: string; max: number; got: number | null };
 
 export type MethodRead = {
-  /** One of the twelve (MethodId), or a research candidate's id (candidates.ts). */
+  /** One of the twelve (MethodId), or a research candidate's id (methods.ts, the research section). */
   id: MethodId | (string & {});
   /** A research candidate, read beside the twelve and paper-logged, never alerted or shown with them. */
   research?: boolean;

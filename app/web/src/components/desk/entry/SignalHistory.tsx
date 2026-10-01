@@ -198,7 +198,8 @@ export function exitOf(s: EntrySignal): { price: string; why: 'TGT' | 'SL' | 'ti
 }
 
 type Filter = { tab: Tab; track: 'main' | 'research' | 'all'; mode: 'all' | EntryMode; tf: 'all' | EntryTf; today: boolean; size: (typeof PAGE_SIZES)[number]; sort: SignalSort; asc: boolean };
-const DEFAULT: Filter = { tab: 'all', track: 'main', mode: 'all', tf: 'all', today: true, size: 25, sort: 'time', asc: false };
+// Every method's signals by default -- the twelve and the research track, research rows tagged (owner, 1 Oct 2026).
+const DEFAULT: Filter = { tab: 'all', track: 'all', mode: 'all', tf: 'all', today: true, size: 25, sort: 'time', asc: false };
 
 /**
  * A filter saved in this browser, made safe: a timeframe, way, tab, size or
@@ -210,7 +211,7 @@ export function cleanFilter(saved: Partial<Filter> | null | undefined): Filter {
   const s = { ...DEFAULT, ...(saved ?? {}) };
   return {
     tab: Object.hasOwn(TABS, s.tab) ? s.tab : DEFAULT.tab,
-    track: s.track === 'research' || s.track === 'all' ? s.track : 'main',
+    track: s.track === 'research' || s.track === 'main' ? s.track : 'all',
     mode: s.mode === 'single' || s.mode === 'mtf' ? s.mode : 'all',
     tf: s.tf === 'all' || TFS.includes(s.tf) ? s.tf : 'all',
     today: typeof s.today === 'boolean' ? s.today : DEFAULT.today,
