@@ -125,7 +125,7 @@ export function registerEntryRoutes(app: FastifyInstance, notifier: () => { send
     const one = tf && (SINGLE_TFS as readonly string[]).includes(tf) ? (tf as Tf) : null;
     // Every signal, as in the history; `gates=on` keeps only those taken with every hard gate on.
     const everyGate = gates === 'on';
-    return { tf: one, everyGate, sections: await methodReport(one, everyGate) };
+    return { tf: one, everyGate, ...(await methodReport(one, everyGate)) };
   });
 
   // Each method's paper record, with the chain and without it, and the latest setups written.

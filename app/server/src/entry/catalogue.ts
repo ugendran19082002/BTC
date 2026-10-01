@@ -4,6 +4,7 @@ import { migrate, type Migration } from '../db/migrate.js';
 import { METHODS } from './methods.js';
 import { entrySchema } from './paper.js';
 import type { Tf } from './types.js';
+import { SINGLE_TFS } from './engine.js';
 import { alertsSchema } from './alerts.js';
 import { signalsSchema } from './signals.js';
 
@@ -114,11 +115,18 @@ export type MethodReportSection = {
   /** Of the signals counted, how many were taken with a hard gate switched off. */
   gatesOffSignals: number;
 };
+export type MethodReport = {
+  /** With the timeframe chain, then without it (every timeframe, or `tf` alone). */
+  sections: MethodReportSection[];
+  /** Without the chain, one section per timeframe: the screen's tabs, read in the same pass. */
+  singleByTf: Partial<Record<Tf, MethodReportSection>>;
+};
 
 /**
  * The report (owner, 1 Oct 2026: "two sections, 81 + 81: win rate, trades, win,
  * loss, profit, loss, net"): every active method, with the timeframe chain and
  * without it, one line each -- a method with no signal yet still has its line.
+ * Without the chain it is also given per timeframe ("a tab each, and All").
  *
  * A trade is a setup that filled and closed (TP1, stop, time-out); a win closed
  * above its fill, a loss at or under it. Points run from the fill to the exit in
@@ -131,55 +139,56 @@ export type MethodReportSection = {
  * `tf` narrows the section without the chain to one timeframe; with the chain
  * the entry is always 5m.
  */
-export async function methodReport(tf: Tf | null = null, everyGate = false): Promise<MethodReportSection[]> {
+export async function methodReport(tf: Tf | null = null, everyGate = false): Promise<MethodReport> {
   await entrySchema();
   await methodsSchema();
+  const methods = await rows<{ id: string; n: number | null; name: string }>(
+    'SELECT id, n, name FROM entry_methods WHERE active ORDER BY n, id');
+  // One pass: every (method, way, timeframe) that has a setup, its signals and its closed trades.
   const xs = await rows<Record<string, string | number | null>>(
-    `WITH closed AS (
-       SELECT method, mode, (exit_price - fill_price) * dir AS pts, r_net
-         FROM entry_setups
-        WHERE status IN ('tp1', 'stop', 'timeout') AND (NOT $2::boolean OR cardinality(gates_off) = 0) AND ($1::text IS NULL OR mode = 'mtf' OR tf = $1)
-     ), setups AS (
-       SELECT method, mode, count(*) AS signals, count(*) FILTER (WHERE cardinality(gates_off) > 0) AS gates_off
-         FROM entry_setups
-        WHERE (NOT $2::boolean OR cardinality(gates_off) = 0) AND ($1::text IS NULL OR mode = 'mtf' OR tf = $1)
-        GROUP BY method, mode
-     ), modes(mode) AS (VALUES ('mtf'), ('single'))
-     SELECT x.mode, m.n, m.id AS method, m.name, coalesce(s.signals, 0) AS signals, coalesce(s.gates_off, 0) AS gates_off,
-            count(c.pts) AS trades,
-            count(*) FILTER (WHERE c.r_net > 0) AS wins,
-            count(*) FILTER (WHERE c.r_net <= 0) AS losses,
-            coalesce(sum(c.pts) FILTER (WHERE c.pts > 0), 0) AS profit_pts,
-            coalesce(-sum(c.pts) FILTER (WHERE c.pts <= 0), 0) AS loss_pts,
-            coalesce(sum(c.r_net) FILTER (WHERE c.r_net > 0), 0) AS profit_r,
-            coalesce(-sum(c.r_net) FILTER (WHERE c.r_net <= 0), 0) AS loss_r
-       FROM entry_methods m
-      CROSS JOIN modes x
-       LEFT JOIN setups s ON s.method = m.id AND s.mode = x.mode
-       LEFT JOIN closed c ON c.method = m.id AND c.mode = x.mode
-      WHERE m.active
-      GROUP BY x.mode, m.n, m.id, m.name, s.signals, s.gates_off
-      ORDER BY x.mode, m.n`,
-    [tf, everyGate],
+    `SELECT method, mode, tf,
+            count(*) AS signals,
+            count(*) FILTER (WHERE cardinality(gates_off) > 0) AS gates_off,
+            count(*) FILTER (WHERE status IN ('tp1', 'stop', 'timeout')) AS trades,
+            count(*) FILTER (WHERE status IN ('tp1', 'stop', 'timeout') AND r_net > 0) AS wins,
+            count(*) FILTER (WHERE status IN ('tp1', 'stop', 'timeout') AND r_net <= 0) AS losses,
+            coalesce(sum((exit_price - fill_price) * dir) FILTER (WHERE status IN ('tp1', 'stop', 'timeout') AND (exit_price - fill_price) * dir > 0), 0) AS profit_pts,
+            coalesce(-sum((exit_price - fill_price) * dir) FILTER (WHERE status IN ('tp1', 'stop', 'timeout') AND (exit_price - fill_price) * dir <= 0), 0) AS loss_pts,
+            coalesce(sum(r_net) FILTER (WHERE status IN ('tp1', 'stop', 'timeout') AND r_net > 0), 0) AS profit_r,
+            coalesce(-sum(r_net) FILTER (WHERE status IN ('tp1', 'stop', 'timeout') AND r_net <= 0), 0) AS loss_r
+       FROM entry_setups
+      WHERE (NOT $1::boolean OR cardinality(gates_off) = 0)
+      GROUP BY method, mode, tf`,
+    [everyGate],
   );
   const num = (v: string | number | null | undefined) => Number(v ?? 0);
-  const lineOf = (n: number | null, method: string, name: string, v: Omit<MethodReportRow, 'n' | 'method' | 'name' | 'winPct' | 'netPts' | 'netR'>): MethodReportRow => ({
+  type Sums = Omit<MethodReportRow, 'n' | 'method' | 'name' | 'winPct' | 'netPts' | 'netR'>;
+  const KEYS = ['signals', 'trades', 'wins', 'losses', 'profitPts', 'lossPts', 'profitR', 'lossR'] as const;
+  const zero = (): Sums => ({ signals: 0, trades: 0, wins: 0, losses: 0, profitPts: 0, lossPts: 0, profitR: 0, lossR: 0 });
+  const lineOf = (n: number | null, method: string, name: string, v: Sums): MethodReportRow => ({
     n, method, name, ...v,
     winPct: v.trades > 0 ? (100 * v.wins) / v.trades : null,
     netPts: v.profitPts - v.lossPts, netR: v.profitR - v.lossR,
   });
   const LABEL = { mtf: 'With the timeframe chain', single: 'Without the timeframe chain' } as const;
-  return (['mtf', 'single'] as const).map((mode) => {
-    const lines = xs.filter((x) => x.mode === mode).map((x) => lineOf(x.n === null ? null : Number(x.n), String(x.method), String(x.name), {
-      signals: num(x.signals), trades: num(x.trades), wins: num(x.wins), losses: num(x.losses),
-      profitPts: num(x.profit_pts), lossPts: num(x.loss_pts), profitR: num(x.profit_r), lossR: num(x.loss_r),
-    }));
-    const sum = (k: 'signals' | 'trades' | 'wins' | 'losses' | 'profitPts' | 'lossPts' | 'profitR' | 'lossR') => lines.reduce((a, l) => a + l[k], 0);
-    const total = lineOf(null, 'all', `All ${lines.length} methods`, {
-      signals: sum('signals'), trades: sum('trades'), wins: sum('wins'), losses: sum('losses'),
-      profitPts: sum('profitPts'), lossPts: sum('lossPts'), profitR: sum('profitR'), lossR: sum('lossR'),
-    });
-    const gatesOffSignals = xs.filter((x) => x.mode === mode).reduce((a, x) => a + num(x.gates_off), 0);
-    return { mode, label: LABEL[mode], rows: lines, total, gatesOffSignals };
-  });
+  const sectionOf = (mode: 'mtf' | 'single', keep: (tf: string) => boolean): MethodReportSection => {
+    const by = new Map<string, Sums>();
+    let gatesOffSignals = 0;
+    for (const x of xs) {
+      if (x.mode !== mode || !keep(String(x.tf))) continue;
+      const acc = by.get(String(x.method)) ?? zero();
+      acc.signals += num(x.signals); acc.trades += num(x.trades); acc.wins += num(x.wins); acc.losses += num(x.losses);
+      acc.profitPts += num(x.profit_pts); acc.lossPts += num(x.loss_pts); acc.profitR += num(x.profit_r); acc.lossR += num(x.loss_r);
+      by.set(String(x.method), acc);
+      gatesOffSignals += num(x.gates_off);
+    }
+    const lines = methods.map((m) => lineOf(m.n === null ? null : Number(m.n), m.id, m.name, by.get(m.id) ?? zero()));
+    const sums = zero();
+    for (const l of lines) for (const k of KEYS) sums[k] += l[k];
+    return { mode, label: LABEL[mode], rows: lines, total: lineOf(null, 'all', `All ${lines.length} methods`, sums), gatesOffSignals };
+  };
+  return {
+    sections: [sectionOf('mtf', () => true), sectionOf('single', (t) => tf === null || t === tf)],
+    singleByTf: Object.fromEntries(SINGLE_TFS.map((t) => [t, sectionOf('single', (x) => x === t)])),
+  };
 }

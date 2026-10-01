@@ -31,7 +31,7 @@ test('[critical] two sections, every method in each, with the figures by hand', 
   await add('breakout', 'single', '15m', 'stop', -1, 84_000, 84_100, -1);
   await add('breakout', 'single', '5m', 'tp1', 1, 84_000, 84_060, 2, ['rr']); // a gate off: left out
 
-  const [mtf, single] = await methodReport();
+  const { sections: [mtf, single] } = await methodReport();
   assert.equal(mtf!.mode, 'mtf');
   assert.equal(mtf!.rows.length, METHODS.length, `all ${METHODS.length} methods, a line each`);
   assert.equal(single!.rows.length, METHODS.length);
@@ -56,15 +56,29 @@ test('[critical] two sections, every method in each, with the figures by hand', 
 });
 
 test('one timeframe narrows the section without the chain; the chain\'s entry is always 5m', async () => {
-  const [mtf, single] = await methodReport('5m');
+  const { sections: [mtf, single] } = await methodReport('5m');
   const s = single!.rows.find((r) => r.method === 'breakout')!;
   assert.deepEqual([s.trades, s.netPts], [1, 60], 'the 5m TP1 only: the 15m stop is not a 5m trade');
   assert.equal(mtf!.rows.find((r) => r.method === 'breakout')!.trades, 3);
 });
 
 test('[critical] every gate on: only the setups taken under the rules as designed', async () => {
-  const [, single] = await methodReport(null, true);
+  const { sections: [, single] } = await methodReport(null, true);
   const s = single!.rows.find((r) => r.method === 'breakout')!;
   assert.deepEqual([s.signals, s.trades, s.wins, s.losses, s.netPts], [1, 1, 0, 1, -100], 'the gate-off TRADE is in neither figure');
   assert.equal(single!.gatesOffSignals, 0);
+});
+
+test('[critical] without the chain, one section per timeframe -- and they add up to All', async () => {
+  const { sections: [, all], singleByTf } = await methodReport();
+  assert.deepEqual(Object.keys(singleByTf), ['3m', '5m', '15m', '30m', '1h', '4h']);
+  const line = (tf: '3m' | '5m' | '15m') => singleByTf[tf]!.rows.find((r) => r.method === 'breakout')!;
+  assert.deepEqual([line('15m').trades, line('15m').netPts], [1, -100], 'the 15m stop');
+  assert.deepEqual([line('5m').trades, line('5m').netPts], [1, 60], 'the 5m TP1');
+  assert.equal(line('3m').trades, 0);
+  for (const tf of Object.keys(singleByTf) as (keyof typeof singleByTf)[]) {
+    assert.equal(singleByTf[tf]!.rows.length, all!.rows.length, `${tf}: every method a line`);
+  }
+  const sum = (k: 'trades' | 'netPts' | 'signals') => Object.values(singleByTf).reduce((a, s) => a + s!.total[k], 0);
+  assert.deepEqual([sum('signals'), sum('trades'), sum('netPts')], [all!.total.signals, all!.total.trades, all!.total.netPts]);
 });

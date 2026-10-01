@@ -193,4 +193,8 @@ export type MethodReportSection = {
   /** Of the signals counted, how many were taken with a hard gate switched off. */
   gatesOffSignals: number;
 };
-export type MethodReportResponse = { tf: EntryTf | null; everyGate?: boolean; sections: MethodReportSection[] };
+export type MethodReportResponse = {
+  tf: EntryTf | null; everyGate?: boolean; sections: MethodReportSection[];
+  /** Without the chain, one section per timeframe (3m-4h): the report's timeframe tabs. */
+  singleByTf: Partial<Record<EntryTf, MethodReportSection>>;
+};
