@@ -95,6 +95,8 @@ test('[critical] the summary over every match: TP1 hits and the points made, sto
   assert.equal(total, 4);
   assert.deepEqual(summary, { trades: 4, tp1: 2, tp1Pts: 450, stops: 1, slPts: 200, timeouts: 0, netPts: 250, netR: 1.1, open: 1 },
     'over all four, though the page holds one');
+  const live = await signalPage({ tf: '1m', live: true });
+  assert.deepEqual([live.total, live.signals.map((x) => x.outcome?.status)], [1, ['filled']], 'trading now: the one still in, not the closed');
 });
 
 test('signals older than the keep period go; the rest stay', async () => {

@@ -200,25 +200,15 @@ describe('the entry section, side by side', () => {
     expect(screen.queryByLabelText('timeframe analysis')).toBeNull();
   });
 
-  it('[critical] the records are the paper log\'s, and "no record" where there is none', async () => {
+  it('[critical] no paper-record strip and no with-vs-without comparison: removed at the owner\'s request', async () => {
     render(<EntrySection desk={desk} />);
     const withTf = await panel(/12 methods \+ timeframe/);
-    const rec = await within(withTf).findByRole('region', { name: 'paper record' });
-    await waitFor(() => expect(within(rec).getByText('40%')).toBeInTheDocument());
-    expect(within(rec).getByText('0.80')).toBeInTheDocument();
-    expect(within(rec).getByText('−1.2R')).toBeInTheDocument();
-    // The without-vs-with comparison table was removed at the owner's request: the panels and the history carry it.
+    const without = await panel(/12 methods · without timeframe/);
+    expect(within(withTf).queryByRole('region', { name: 'paper record' })).toBeNull();
+    expect(within(without).queryByRole('region', { name: 'paper record' })).toBeNull();
+    expect(screen.queryByText(/Paper record · all 12/)).toBeNull();
+    expect(screen.queryByText(/taken with a gate off/)).toBeNull();
     expect(screen.queryByRole('region', { name: 'with and without timeframe compared' })).toBeNull();
-  });
-
-  it('[critical] each record says its points: made at the target, lost at the stop, and the net', async () => {
-    getEntryRecord.mockResolvedValue({ records: [], totals: [total('mtf', { tgtPts: 1_210, slPts: 960, netPts: 250 }), total('single')], recent: [] });
-    render(<EntrySection desk={desk} />);
-    const withTf = await panel(/12 methods \+ timeframe/);
-    const pts = await within(withTf).findByLabelText('record points');
-    expect(pts).toHaveTextContent('Target pts +1,210');
-    expect(pts).toHaveTextContent('SL pts −960');
-    expect(pts).toHaveTextContent('Net +250 pts');
   });
 
   it('the timeframe without the chain is asked for from the server', async () => {
@@ -355,18 +345,6 @@ describe('switching gates on and off', () => {
     expect(within(legend).getByLabelText('Liquidity sweep gates with timeframe')).toHaveTextContent('✓ 5/5');
   });
 
-  it('[critical] setups taken with a gate off are shown under the record, labelled, never counted in it', async () => {
-    getEntryRecord.mockResolvedValue({
-      records: [], totals: [total('mtf', { gatesOff: 3 }), total('single')],
-      totalsAll: [total('mtf', { gatesOff: 3, trades: 13, wins: 5, sumR: -2.4, profitFactor: 0.7 }), total('single')], recent: [],
-    });
-    render(<EntrySection desk={desk} />);
-    const withTf = await panel(/12 methods \+ timeframe/);
-    const rec = await within(withTf).findByRole('region', { name: 'paper record' });
-    await waitFor(() => expect(within(rec).getByLabelText('including gate-off setups'))
-      .toHaveTextContent("Including 3 setups taken with a gate off: 13 trades · 38% won · PF 0.70 · −2.4R. Not the rules' record -- shown apart."));
-    expect(within(rec).getByText('40%')).toBeInTheDocument(); // the rules' own figures stand unchanged
-  });
 });
 
 describe('auto-select and Telegram', () => {
@@ -486,12 +464,3 @@ describe('which timeframes alert, and the last alert', () => {
   });
 });
 
-describe('the record in words, and the comparison with gate-off setups', () => {
-  it('with nothing closed, the record says what is happening instead of a row of dashes', async () => {
-    getEntryRecord.mockResolvedValue({ records: [], totals: [total('mtf', { trades: 0, wins: 0, working: 2, setups: 2 })], recent: [] });
-    render(<EntrySection desk={desk} />);
-    const withTf = await panel(/12 methods \+ timeframe/);
-    await waitFor(() => expect(within(withTf).getByRole('region', { name: 'paper record' })).toHaveTextContent('2 setups working -- figures appear as they close'));
-  });
-
-});

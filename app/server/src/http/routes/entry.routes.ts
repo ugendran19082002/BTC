@@ -96,6 +96,7 @@ export function registerEntryRoutes(app: FastifyInstance, notifier: () => { send
       state: q.state === 'WAIT' || q.state === 'TRADE' ? q.state : undefined,
       dir: q.dir === '1' || q.dir === '-1' ? Number(q.dir) : undefined,
       since: num(q.since),
+      live: q.live === 'true',
       sort: q.sort === 'score' || q.sort === 'rr' || q.sort === 'time' ? q.sort : undefined,
       asc: q.asc === 'true',
     });

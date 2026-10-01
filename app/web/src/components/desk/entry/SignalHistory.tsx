@@ -25,11 +25,13 @@ const signedPts = (v: number) => `${v >= 0 ? '+' : '−'}${fmt(Math.abs(v))}`;
 /** The signal tabs, and what each asks the server for. */
 export const TABS = {
   all: { label: 'All', q: {} },
+  // In play now: waiting at the zone or filled, not yet out at TP1, the stop or time.
+  trading: { label: 'TRADING', q: { state: 'TRADE', live: true } },
   trades: { label: 'BUY & SELL', q: { state: 'TRADE' } },
   buy: { label: 'BUY', q: { state: 'TRADE', dir: 1 } },
   sell: { label: 'SELL', q: { state: 'TRADE', dir: -1 } },
   wait: { label: 'WAIT', q: { state: 'WAIT' } },
-} as const satisfies Record<string, { label: string; q: Pick<SignalFilter, 'state' | 'dir'> }>;
+} as const satisfies Record<string, { label: string; q: Pick<SignalFilter, 'state' | 'dir' | 'live'> }>;
 type Tab = keyof typeof TABS;
 
 /** How long a signal stood: "just now", "4 min", "1 h 12 min". */
@@ -84,7 +86,7 @@ export function SignalHistory() {
   const pages = Math.max(1, Math.ceil(total / f.size));
   // A filter that shrinks the list must not leave the page past its end.
   useEffect(() => { if (data && page > 0 && page >= pages) setPage(pages - 1); }, [data, page, pages, setPage]);
-  const set = (next: Partial<Filter>) => { setF({ ...f, ...next }); setPage(0); };
+  const set = (next: Partial<Filter>) => { setF((cur) => ({ ...DEFAULT, ...cur, ...next })); setPage(0); };
   const sortBy = (col: Filter['sort']) => set(f.sort === col ? { asc: !f.asc } : { sort: col, asc: false });
   const chip = (on: boolean) => cn('px-2 py-0.5', on ? 'bg-[#2563eb] text-white' : 'text-muted-foreground');
   const sortMark = (col: Filter['sort']) => (f.sort === col ? (f.asc ? ' ▲' : ' ▼') : '');
@@ -102,9 +104,11 @@ export function SignalHistory() {
         <div role="tablist" aria-label="signal tabs" className="inline-flex overflow-hidden rounded-md border border-border text-[12px]">
           {(Object.keys(TABS) as Tab[]).map((t) => (
             <button key={t} type="button" role="tab" aria-selected={f.tab === t} onClick={() => set({ tab: t })}
+                    title={t === 'trading' ? 'In play now: waiting at the zone or filled, not yet out at TP1, the stop or time' : undefined}
                     className={cn('px-2.5 py-1 font-semibold', f.tab === t
                       ? t === 'buy' ? 'bg-[#26a17b] text-white' : t === 'sell' ? 'bg-[#e2504f] text-white' : t === 'wait' ? 'bg-[#b7791f] text-white' : 'bg-[#2563eb] text-white'
                       : 'text-muted-foreground')}>
+              {t === 'trading' ? <span aria-hidden className="mr-1 inline-block size-1.5 rounded-full bg-[#26a17b] align-middle" /> : null}
               {TABS[t].label}
             </button>
           ))}
@@ -136,7 +140,7 @@ export function SignalHistory() {
       {error && !data ? <p role="alert" className="m-0 text-[var(--down)]">Could not read the history: {error.message}</p> : null}
       {!rows.length ? (
         <p className="m-0 py-3 text-center text-muted-foreground">
-          {loading && !data ? 'Reading…' : 'No signals for these filters yet. The server keeps every WAIT and TRADE as it forms, once a minute.'}
+          {loading && !data ? 'Reading…' : f.tab === 'trading' ? 'Nothing in play right now -- no TRADE waiting at its zone or filled. Closed ones are under BUY & SELL.' : 'No signals for these filters yet. The server keeps every WAIT and TRADE as it forms, once a minute.'}
         </p>
       ) : (
         <>
@@ -189,7 +193,7 @@ export function SignalHistory() {
                         {ex ? <> → {ex.price} <span className={cn('text-[10.5px] font-bold', ex.why === 'TGT' ? 'text-[var(--up)]' : ex.why === 'SL' ? 'text-[var(--down)]' : 'text-muted-foreground')}>{ex.why}</span></> : null}
                       </td>
                       <td className={cn('whitespace-nowrap pr-2', out.cls)}>
-                        {out.text}{ex?.pts != null ? <span className="ml-1 text-[10.5px]">({signedPts(ex.pts)} pts)</span> : null}
+                        {out.text}{ex?.pts != null ? <>{' '}<span className="ml-1 text-[10.5px]">({signedPts(ex.pts)} pts)</span></> : null}
                       </td>
                       <td className="hidden pr-2 md:table-cell">{s.rr === null ? '–' : s.rr.toFixed(2)}</td>
                       <td className="hidden pr-2 md:table-cell">{s.score ?? '–'}</td>

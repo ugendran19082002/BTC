@@ -1763,3 +1763,291 @@ Structure Confirmation
 +
 Flow Confirmation
 → ENTRY
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+
+
+| #      | Method                | Entry                                 | SL                                    | TP1                           | TP2                             | TP3                                      |
+| ------ | --------------------- | ------------------------------------- | ------------------------------------- | ----------------------------- | ------------------------------- | ---------------------------------------- |
+| **1**  | Breakout              | Breakout close / zone                 | Breakout candle opposite end + buffer | Broken levelக்கு அடுத்த swing | Next HTF liquidity              | Expected-move boundary                   |
+| **2**  | Breakout + Retest     | Retest of broken level                | Retest extreme + buffer               | Retest continuation swing     | Next 1H/4H level                | Expected move                            |
+| **3**  | Liquidity Sweep       | MSS / sweep reclaim level             | **Sweep extreme + buffer**            | Nearest opposing liquidity    | Next HTF swing                  | Expected move                            |
+| **4**  | FVG Retest            | FVG reaction zone                     | FVG/displacement originக்கு beyond    | Previous micro swing          | Next structure/liquidity        | Expected move                            |
+| **5**  | Order Block Retest    | OB reaction                           | **OB opposite edge + buffer**         | Recent swing                  | Next HTF liquidity              | Expected move                            |
+| **6**  | BOS                   | Broken swing retest                   | Last HL/LL + buffer                   | New swing                     | Next HTF level                  | Expected move                            |
+| **7**  | MSS / CHoCH           | CHoCH retest                          | Sweep/reversal extreme + buffer       | First opposing liquidity      | Next major swing                | Expected move                            |
+| **8**  | Momentum              | Momentum candle / controlled pullback | Momentum candle far end + buffer      | First continuation level      | Next HTF liquidity              | Expected move                            |
+| **9**  | Pullback              | EMA20 rejection + micro BOS           | Pullback extreme + buffer             | Previous high/low             | Next HTF structure              | Expected move                            |
+| **10** | VWAP / Mean Reversion | Reversal after ±2σ                    | Extreme beyond reversal               | **VWAP**                      | VWAP opposite side / next level | Expected-move level                      |
+| **11** | Order Flow            | Absorption + delta/CVD + micro BOS    | Absorption level/extreme + buffer     | First liquidity               | Next wall/swing                 | Expected move                            |
+| **12** | Options / Derivatives | OI-wall rejection + structure/flow    | OI wall/rejection extreme + buffer    | Next liquidity / strike       | Next OI wall                    | Expected move / max pain when applicable |
+
+
+ஆம். ஒவ்வொரு method-க்கும் SL/TP ஒரே formula வைக்காமல், அந்த setup உருவாகும் structure-க்கு ஏற்ற மாதிரி வைப்பதுதான் best practice. உன் entry-setups.md-ல் இருக்கும் logic-ஐ base ஆக எடுத்துக்கொண்டு, practical version இதுதான்.
+
+12 Methods — Best-practice SL + TP
+#	Method	SL எங்கே?	TP1	TP2	TP3
+1	Breakout	Breakout candle opposite extreme + 0.25 ATR	Retest/nearest swing	Next HTF liquidity	Expected Move
+2	Breakout + Retest	Retest extreme + 0.25 ATR	Broken-level continuation swing	Next 1H/4H liquidity	Expected Move
+3	Liquidity Sweep	Sweep extreme + 0.25 ATR	MSS / nearest opposing liquidity	Next HTF swing	Expected Move
+4	FVG Retest	Displacement origin + 0.25 ATR	Previous micro swing	Next liquidity	Expected Move
+5	Order Block Retest	OB far edge + 0.25 ATR	First reaction swing	Next HTF liquidity	Expected Move
+6	BOS	Last HL/LL + 0.25 ATR	First continuation swing	Next HTF liquidity	Expected Move
+7	MSS / CHoCH	Post-sweep extreme + 0.25 ATR	CHoCH continuation swing	Next HTF liquidity	Expected Move
+8	Momentum	Momentum candle far end + 0.25 ATR	First continuation level	Next liquidity	Expected Move
+9	Pullback	Pullback extreme + 0.25 ATR	Previous swing	Next HTF liquidity	Expected Move
+10	VWAP Reversion	2σ/reversal extreme + 0.25 ATR	VWAP	Opposite VWAP-side level	Expected Move
+11	Order Flow	Absorption/held-level extreme + 0.25 ATR	First liquidity	Next book/swing wall	Expected Move
+12	Options	OI-wall invalidation + 0.25 ATR	Nearest liquidity/strike	Next OI wall	Expected Move / Max Pain
+
+Source-ல் SL-ஐ method structure-க்கு பின்னால் 0.25 ATR buffer உடன் வைத்திருக்கிறது; targets nearest liquidity → next level → expected-move boundary என்று உள்ளது.
+
+1️⃣ Breakout
+
+LONG:
+
+20-bar High break
+       ↓
+Entry
+       │
+       │
+SL ────┴── Breakout candle low - 0.25 ATR
+
+TP1 → nearest swing
+TP2 → 1H/4H liquidity
+TP3 → Expected Move
+
+Important: breakout candle-ஐ chase பண்ணாமல், level/retest கிடைத்தால் entry quality better.
+
+2️⃣ Breakout + Retest
+
+இது SL placement-க்கு clean method.
+
+Resistance ───────────────
+             ↑ breakout
+             │
+             ↓ retest
+          ENTRY
+             │
+SL ──────────┴── Retest low - 0.25 ATR
+
+TP1 → new swing high
+TP2 → next liquidity
+TP3 → expected move
+
+Retest extreme invalidated என்றால் setup invalid.
+
+3️⃣ Liquidity Sweep
+
+இதுக்கு sweep low/high தான் main SL reference.
+
+Previous Low ─────────
+                  ↓ sweep
+                  ●
+                  │
+               ENTRY ↑ MSS
+                  │
+SL ───────────────┴── sweep low - 0.25 ATR
+
+TP:
+
+TP1 = nearest opposing liquidity
+TP2 = next HTF swing
+TP3 = expected move
+
+இந்த method-க்கு random fixed SL போடக் கூடாது.
+
+4️⃣ FVG Retest
+
+FVG-வின் edge மட்டும் SL ஆக போடாமல், displacement origin invalidation-ஐ use பண்ணுவது safer.
+
+Displacement
+      ███
+       └──── FVG ────┐
+                     ↓
+                   ENTRY
+                     │
+SL ──────────────────┴── displacement origin - buffer
+
+TP1 = previous micro structure.
+
+5️⃣ Order Block Retest
+
+OB-க்கு உள்ளே entry வந்தவுடன் உடனே SL tight பண்ண வேண்டாம்.
+
+OB High ─────────────
+       │   ENTRY
+       │
+OB Low ──────────────
+       │
+SL ────┴── OB Low - 0.25 ATR
+
+TP1 = first reaction high/low
+TP2 = next HTF liquidity
+TP3 = expected move.
+
+6️⃣ BOS
+
+BOS candle itself-க்கு stop வைக்காமல், broken structure invalidation-ஐ use பண்ணலாம்.
+
+        BOS
+───────────╮
+           │
+           ↑ ENTRY
+           │
+Last HL ───┴────────
+SL ────────┴ - 0.25 ATR
+
+TP1 = first continuation swing.
+
+7️⃣ MSS / CHoCH
+
+இது reversal method. அதனால் sweep extreme மிகவும் important.
+
+Old Low ─────────────
+             ↓ sweep
+             ●
+             ↑ MSS
+             ↑ ENTRY
+
+SL ──────────┴── sweep extreme - buffer
+
+TP1 = first opposing liquidity
+TP2 = major HTF liquidity
+TP3 = expected move.
+
+8️⃣ Momentum
+
+Momentum-ல் biggest mistake:
+
+Huge candle வந்ததும் chase செய்வது.
+
+Current method already has a no-chase condition when opening is >3 ATR from EMA20.
+
+Better:
+
+Big displacement
+       ↓
+controlled entry / small pullback
+       ↓
+ENTRY
+
+SL → momentum candle far end
+TP1 → first continuation level
+TP2 → next liquidity
+TP3 → expected move
+9️⃣ Pullback
+
+EMA20 touch மட்டும் entry அல்ல.
+
+Trend
+  ↓
+Pullback → EMA20
+  ↓
+Rejection
+  ↓
+Micro BOS
+  ↓
+ENTRY
+
+SL → Pullback extreme - buffer
+TP1 → Previous swing
+TP2 → HTF liquidity
+TP3 → Expected move
+
+Current method-ன் chain-ம் trend + EMA20 return + close back + micro BOS என்று தான் உள்ளது.
+
+🔟 VWAP Mean Reversion
+
+இதில் TP1 = VWAP என்பது மிகவும் natural.
+
++2σ ───────────────
+       ↓
+    SHORT
+       ↓
+TP1 ── VWAP ───────
+       ↓
+TP2 ── next level
+       ↓
+TP3 ── expected move
+
+LONG:
+
+-2σ
+ ↓
+LONG
+ ↓
+VWAP = TP1
+
+Trend day-ல் இந்த method disable ஆக வேண்டும்; current design-லும் அதே gate உள்ளது.
+
+1️⃣1️⃣ Order Flow
+
+இங்கே absorption level தான் முக்கியமான invalidation.
+
+Resistance / Support
+────────────────────
+████ Absorption ████
+        ↓
+      ENTRY
+        │
+SL ─────┴── held extreme + buffer
+
+TP1 → nearest liquidity
+TP2 → next book/swing wall
+TP3 → expected move
+
+Current system footprint data இல்லாததால் absorption-ஐ delta vs price மூலம் infer செய்கிறது.
+
+1️⃣2️⃣ Options / Derivatives
+
+உன் BTC system-க்கு இது important.
+
+Example LONG from put OI support:
+
+CALL OI wall      → TP2 / resistance
+
+TP1 ───────────── nearest liquidity
+
+ENTRY ─────────── OI support reaction
+
+SL ────────────── OI wall invalidation - buffer
+
+OI wall மட்டும் போதாது:
+
+OI Wall
++
+Price rejection
++
+Structure
++
+Flow
++
+Big-move risk compatible
+       ↓
+ENTRY
+
+Current method-ன் chain-லும் இதே principle உள்ளது.

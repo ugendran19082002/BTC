@@ -27,6 +27,8 @@ export const sendEntryAlertTest = () => post<{ ok: true }>('/api/entry/alerts/te
 /** One page of the signal history, the total matching, and the summary over all of it. */
 export type SignalFilter = {
   mode?: EntryMode; tf?: EntryTf; state?: 'WAIT' | 'TRADE'; dir?: 1 | -1; since?: number;
+  /** Only TRADEs still in play: waiting at the zone or filled, not yet out. */
+  live?: boolean;
   limit?: number; offset?: number; sort?: 'time' | 'score' | 'rr'; asc?: boolean;
 };
 export function getEntrySignals(q: SignalFilter = {}) {

@@ -11,6 +11,10 @@ import { usePageVisible } from '@/hooks/usePageVisible';
  * spends battery and server time on a screen nobody sees, and every request the
  * phone kills on the way to sleep used to land in the error log as a failure.
  * It asks again the moment the page is back.
+ *
+ * When `deps` change (a filter, a page), it asks at once even with a call in
+ * flight, and an answer to the old question is dropped: the screen never shows
+ * the last tab's rows under the new tab, nor waits a whole interval for them.
  */
 export function usePoll<T>(
   fetcher: () => Promise<T>,
@@ -23,36 +27,41 @@ export function usePoll<T>(
   const [error, setError] = useState<Error | null>(null);
   const [loading, setLoading] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
-  const inFlight = useRef(false);
-  const alive = useRef(true);
+  // Each run of the effect -- a deps change, a hide, an unmount -- is a new generation;
+  // only the current one's answer is kept, and only a call of the same one is not stacked.
+  const gen = useRef(0);
+  const inFlight = useRef<number | null>(null);
   const fn = useRef(fetcher);
   fn.current = fetcher;
 
   const refresh = useCallback(async () => {
-    if (inFlight.current) return;
-    inFlight.current = true;
+    const mine = gen.current;
+    if (inFlight.current === mine) return;
+    inFlight.current = mine;
     setLoading(true);
     try {
       const next = await fn.current();
-      if (!alive.current) return;
+      if (gen.current !== mine) return; // the answer to an old question
       setData(next);
       setUpdatedAt(Date.now());
       setError(null);
     } catch (e) {
-      if (alive.current) setError(e as Error);
+      if (gen.current === mine) setError(e as Error);
     } finally {
-      inFlight.current = false;
-      if (alive.current) setLoading(false);
+      if (inFlight.current === mine) {
+        inFlight.current = null;
+        setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
-    alive.current = true;
-    if (!enabled || !visible) return;
+    gen.current += 1;
+    if (!enabled || !visible) return () => { gen.current += 1; };
     void refresh();
     const id = setInterval(() => { void refresh(); }, intervalMs);
     return () => {
-      alive.current = false;
+      gen.current += 1;
       clearInterval(id);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

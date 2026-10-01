@@ -55,14 +55,16 @@ describe('the signal history table', () => {
     expect(t).toHaveTextContent('Net R (after fees)+0.42R');
   });
 
-  it('[critical] signal tabs: All, BUY & SELL, BUY, SELL, WAIT -- each asks the server for exactly that', async () => {
+  it('[critical] signal tabs: All, TRADING, BUY & SELL, BUY, SELL, WAIT -- each asks the server for exactly that', async () => {
     render(<SignalHistory />);
     await screen.findByRole('table', { name: 'signals' });
     const tabs = screen.getByRole('tablist', { name: 'signal tabs' });
-    expect(within(tabs).getAllByRole('tab').map((t) => t.textContent)).toEqual(['All', 'BUY & SELL', 'BUY', 'SELL', 'WAIT']);
+    expect(within(tabs).getAllByRole('tab').map((t) => t.textContent)).toEqual(['All', 'TRADING', 'BUY & SELL', 'BUY', 'SELL', 'WAIT']);
     const last = () => getEntrySignals.mock.lastCall![0];
+    fireEvent.click(within(tabs).getByRole('tab', { name: 'TRADING' }));
+    await waitFor(() => expect(last()).toMatchObject({ state: 'TRADE', live: true })); // in play now: at the zone or filled
     fireEvent.click(within(tabs).getByRole('tab', { name: 'BUY' }));
-    await waitFor(() => expect(last()).toMatchObject({ state: 'TRADE', dir: 1 }));
+    await waitFor(() => { expect(last()).toMatchObject({ state: 'TRADE', dir: 1 }); expect(last().live).toBeUndefined(); });
     fireEvent.click(within(tabs).getByRole('tab', { name: 'SELL' }));
     await waitFor(() => expect(last()).toMatchObject({ state: 'TRADE', dir: -1 }));
     fireEvent.click(within(tabs).getByRole('tab', { name: 'BUY & SELL' }));
@@ -110,6 +112,8 @@ describe('the signal history table', () => {
     getEntrySignals.mockResolvedValue(page([], 0));
     render(<SignalHistory />);
     expect(await screen.findByText(/No signals for these filters yet/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: 'TRADING' }));
+    expect(await screen.findByText(/Nothing in play right now/)).toBeInTheDocument();
   });
 
   it('the pieces: how long it stood, what became of it, the exit and why, the desk\'s day', () => {

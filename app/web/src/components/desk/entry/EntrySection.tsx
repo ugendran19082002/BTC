@@ -20,8 +20,9 @@ import './entry.css';
  * without the timeframe chain (one timeframe alone) and with it (4H/1H ->
  * 30m/15m -> 5m entry -> 3m confirm -> 1m execution) -- 24 setups, laid out as
  * the owner's reference: the two ways side by side, each with its chart,
- * table, chosen setup, reasons and paper record, and the two records compared
- * underneath.
+ * table, chosen setup and reasons, and the signal history underneath (its
+ * TRADING tab is what is in play now). The per-panel paper-record strip and
+ * the two-way comparison were removed at the owner's request.
  *
  * Each panel's chart is the desk's price chart (PriceChart), which decides no
  * entry of its own: it draws the panel's chosen TRADE when Setups is on. The
@@ -104,9 +105,6 @@ export function EntrySection({ desk, onTimeframes }: {
 
   const counts = { trade: reads.filter((r) => r.state === 'TRADE').length, wait: reads.filter((r) => r.state === 'WAIT').length };
   const recordOf = (r: MethodRead) => record?.records.find((x) => x.method === r.id && x.mode === r.mode && x.tf === r.tf) ?? null;
-  // Each timeframe has its own record now (the server logs every one); the chain's entry is always 5m.
-  const totalOf = (mode: EntryMode, at: EntryTf = '5m') => record?.totals.find((t) => t.mode === mode && t.tf === at) ?? null;
-  const totalAllOf = (mode: EntryMode, at: EntryTf = '5m') => record?.totalsAll?.find((t) => t.mode === mode && t.tf === at) ?? null;
   const choose = (r: MethodRead) => setChosen({ ...chosen, [r.mode]: keyOf(r) });
   // From the method table: the same method on both sides.
   const chooseBoth = (n: number) => {
@@ -156,11 +154,11 @@ export function EntrySection({ desk, onTimeframes }: {
           </div>
           <div className="grid gap-3 lg:grid-cols-2">
             <ModePanel mode="single" reads={reads.filter((r) => r.mode === 'single')}
-                       selected={selected.single} onChoose={choose} total={totalOf('single', tf)} totalAll={totalAllOf('single', tf)} recordOf={recordOf}
+                       selected={selected.single} onChoose={choose} recordOf={recordOf}
                        setupsOn={setupsOn} chartTf={tf} onChartTf={setSingleTf} chart={chart}
                        ltp={ltp} alert={<AlertSwitch mode="single" alerts={alerts} onChanged={setAlerts} />} autoPicked={autoPicked('single')} />
             <ModePanel mode="mtf" reads={reads.filter((r) => r.mode === 'mtf')}
-                       selected={selected.mtf} onChoose={choose} total={totalOf('mtf')} totalAll={totalAllOf('mtf')} recordOf={recordOf}
+                       selected={selected.mtf} onChoose={choose} recordOf={recordOf}
                        setupsOn={setupsOn} chartTf={mtfTf} onChartTf={setMtfChartTf} chart={chart}
                        ltp={ltp} alert={<AlertSwitch mode="mtf" alerts={alerts} onChanged={setAlerts} />} autoPicked={autoPicked('mtf')} />
           </div>

@@ -120,6 +120,8 @@ export type SignalQuery = {
   mode?: string; tf?: string; state?: string; since?: number;
   /** 1 BUY, -1 SELL. */
   dir?: number;
+  /** Only TRADEs still in play: waiting at the zone or filled, not yet out (TP1, stop or time-out). */
+  live?: boolean;
   /** Column to sort by, newest / highest first unless `asc`. */
   sort?: 'time' | 'score' | 'rr';
   asc?: boolean;
@@ -157,6 +159,7 @@ export async function signalPage(q: SignalQuery = {}): Promise<{ signals: Signal
   if (q.state) { args.push(q.state); where.push(`s.state = $${args.length}`); }
   if (q.dir === 1 || q.dir === -1) { args.push(q.dir); where.push(`s.dir = $${args.length}`); }
   if (q.since) { args.push(q.since); where.push(`s.first_seen >= $${args.length}`); }
+  if (q.live) where.push(`e.status IN ('open', 'filled')`);
   const filter = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const JOIN = `LEFT JOIN entry_setups e ON s.state = 'TRADE' AND e.method = s.method AND e.mode = s.mode AND e.tf = s.tf
                                 AND e.dir = s.dir AND e.trigger_at = s.trigger_at`;

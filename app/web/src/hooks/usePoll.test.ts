@@ -37,6 +37,19 @@ describe('usePoll', () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
+  it('[critical] a deps change asks at once even with a call out, and the old answer is dropped', async () => {
+    const out: Record<string, (v: string) => void> = {};
+    const fetcher = vi.fn((q: string) => new Promise<string>((r) => { out[q] = r; }));
+    const { result, rerender } = renderHook(({ q }) => usePoll(() => fetcher(q), 15_000, { deps: [q] }), { initialProps: { q: 'BUY' } });
+    await waitFor(() => expect(fetcher).toHaveBeenLastCalledWith('BUY'));
+    rerender({ q: 'SELL' }); // a new tab while BUY is still out
+    expect(fetcher).toHaveBeenLastCalledWith('SELL');
+    await act(async () => { out.SELL!('sell rows'); });
+    await act(async () => { out.BUY!('buy rows'); }); // the old answer lands late
+    expect(result.current.data).toBe('sell rows');
+    expect(result.current.loading).toBe(false);
+  });
+
   it('keeps the last good answer when a poll fails', async () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce('good')
