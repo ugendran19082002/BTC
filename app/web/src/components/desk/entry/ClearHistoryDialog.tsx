@@ -70,7 +70,6 @@ export function ClearHistoryDialog({ onCleared }: { onCleared: (c: ClearCounts) 
         .finally(() => { if (live) setChecking(false); });
     }, 250);
     return () => { live = false; clearTimeout(t); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- the range is its two texts
   }, [open, fromText, toText]);
 
   const c = preview?.counts;
