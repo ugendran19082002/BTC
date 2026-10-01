@@ -138,7 +138,8 @@ function ReportSection({ section, sort, onSort, hideEmpty }: {
     <th scope="col" aria-sort={key && sort.key === key ? (sort.asc ? 'ascending' : 'descending') : undefined}
         className={cn('sticky top-0 z-[1] whitespace-nowrap bg-[var(--panel)] px-2 py-1.5 font-semibold text-muted-foreground', left ? 'text-left' : 'text-right')}>
       {key ? (
-        <button type="button" onClick={() => onSort(key)} className="inline-flex items-center gap-0.5 hover:text-foreground">
+        <button type="button" onClick={() => onSort(key)}
+                className="inline-flex items-center gap-0.5 [font:inherit] [letter-spacing:inherit] [text-transform:inherit] hover:text-foreground">
           {label}
           {sort.key === key && (sort.asc ? <ArrowUp className="h-3 w-3" aria-hidden /> : <ArrowDown className="h-3 w-3" aria-hidden />)}
         </button>
