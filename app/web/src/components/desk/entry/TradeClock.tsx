@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils';
 import type { MethodRead } from '@/types/entry';
-import { MINS, SECS, TF_SEC, clockText, lag, span, useNow } from './clock';
+import { SECS, TF_SEC, atText, clockText, lag, span, useNow } from './clock';
 import { fmt } from './parts';
 
 /**
@@ -37,8 +37,8 @@ export function TradeClock({ read }: { read: MethodRead }) {
         {barClose !== null ? row('Trigger bar closed', SECS.format(barClose)) : null}
         {c ? row('Seen', `${SECS.format(c.firstSeen)}${after(c.firstSeen)}`) : null}
         {c ? row('Alert', c.alertAt === null ? 'not sent' : `${SECS.format(c.alertAt)}${after(c.alertAt)}`) : null}
-        {c?.filledAt != null ? row('Filled', `~${MINS.format(c.filledAt * 1000)} @ ${c.fillPrice === null ? '–' : fmt(c.fillPrice)}`, 'text-[#3b82f6]') : null}
-        {c?.exitAt != null ? row('Out', `~${MINS.format(c.exitAt * 1000)} @ ${c.exitPrice === null ? '–' : fmt(c.exitPrice)}`) : null}
+        {c?.filledAt != null ? row('Filled', `${atText(c.filledAt)} @ ${c.fillPrice === null ? '–' : fmt(c.fillPrice)}`, 'text-[#3b82f6]') : null}
+        {c?.exitAt != null ? row('Out', `${atText(c.exitAt)} @ ${c.exitPrice === null ? '–' : fmt(c.exitPrice)}`) : null}
       </dl>
       {!c ? <p className="m-0 mt-0.5 text-[10.5px] text-muted-foreground">Being written to the paper log -- its fill window starts within the minute.</p> : null}
     </section>

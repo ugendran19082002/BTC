@@ -174,6 +174,12 @@ export function startFlowSocket(log?: (line: string) => void): FlowSocket {
   return socket;
 }
 
+/** The perpetual's trades for the live paper-log grader (entry/live-grade.ts); null before the socket starts. */
+export function perpTape(): { fresh(): boolean; perpSince(ms: number): Print[]; reconnects(): number } | null {
+  const s = socket;
+  return s ? { fresh: () => s.fresh(), perpSince: (ms) => s.perpSince(ms), reconnects: () => s.health().reconnects } : null;
+}
+
 /** For tests: read from this feed instead of the live one. */
 export function useFlowSocket(s: FlowSocket | null): void { socket = s; }
 

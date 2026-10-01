@@ -205,37 +205,78 @@ export function gradeRow(row: PaperRow, bars1m: readonly Candle[]): PaperRow {
   const fillBy = fillByOf(row.triggerAt, row.firstSeen, row.tf);
   for (const b of bars1m) {
     if (b.time <= r.gradedTo || b.time < from) continue;
-    if (r.status === 'tp1' && r.runner === 'running') { r = runOn(r, b); r.gradedTo = b.time; continue; }
-    if (r.status !== 'open' && r.status !== 'filled') break;
-    const d = r.dir;
-    const stopHit = d === 1 ? b.low <= r.stop : b.high >= r.stop;
-    const stopAt = d === 1 ? Math.min(r.stop, b.open) : Math.max(r.stop, b.open);
-    if (r.status === 'open') {
-      const touches = d === 1 ? b.low <= r.entryHi : b.high >= r.entryLo;
-      if (touches && !(d === 1 ? b.open <= r.stop : b.open >= r.stop)) {
-        const fill = d === 1 ? Math.min(b.open, r.entryHi) : Math.max(b.open, r.entryLo);
-        r = { ...r, status: 'filled', filledAt: b.time, fillPrice: fill };
-        // In the fill bar only the stop is counted: which came first is not knowable from a candle.
-        if (stopHit) r = close(r, b.time, stopAt, 'stop');
-      } else if (stopHit) {
-        r = { ...r, status: 'expired' };
-      } else if (d === 1 ? b.high >= r.tp1 : b.low <= r.tp1) {
-        // Price ran to TP1 without coming back to the zone: the move went without us. The limit is
-        // cancelled -- filling it later, after the move is done, is not the trade that was signalled.
-        r = { ...r, status: 'missed' };
-      } else if (b.time >= fillBy) {
-        r = { ...r, status: 'expired' };
-      }
+    if (!working(r)) break;
+    r = { ...stepOn(r, b, fillBy, false), gradedTo: b.time };
+  }
+  return r;
+}
+
+/** Still being graded: waiting for its fill, in the trade, or a runner out for TP2 / TP3. */
+export const working = (r: Pick<PaperRow, 'status' | 'runner'>) => r.status === 'open' || r.status === 'filled' || (r.status === 'tp1' && r.runner === 'running');
+
+/**
+ * A row moved on by the perpetual's trades, one at a time, as they print --
+ * the live grader (entry/live-grade.ts). Each trade is a one-price candle
+ * through the same rules as a 1m candle, with one difference: a limit that was
+ * already resting fills at its own price when a trade goes through it (a
+ * resting limit never fills better than its price), while one placed into a
+ * market already past it fills at that trade, as a marketable limit does.
+ * Stops fill at the first trade through them -- the stop and any slippage, as
+ * it printed. Times are the trade's second. Pure.
+ */
+export function gradeTicks(row: PaperRow, prints: readonly { at: number; price: number }[], resting: boolean): { row: PaperRow; lastAt: number | null } {
+  let r = { ...row };
+  const fillBy = fillByOf(row.triggerAt, row.firstSeen, row.tf);
+  let lastAt: number | null = null;
+  let rest = resting;
+  for (const p of prints) {
+    if (p.at < row.firstSeen) continue;
+    if (!working(r)) break;
+    const t = Math.floor(p.at / 1000);
+    r = stepOn(r, { time: t, open: p.price, high: p.price, low: p.price, close: p.price, volume: 0 }, fillBy, rest);
+    rest = true;
+    lastAt = p.at;
+  }
+  return { row: r, lastAt };
+}
+
+/**
+ * One step of the grading: a 1m candle, or one trade as a one-price candle.
+ * `restingLimit`: the entry limit has been resting since before this step, so
+ * it fills at its own price (ticks); otherwise at the open when price opened
+ * inside the zone (candles, or a limit placed into a market already past it).
+ */
+function stepOn(row: PaperRow, b: Candle, fillBy: number, restingLimit: boolean): PaperRow {
+  let r = row;
+  if (r.status === 'tp1' && r.runner === 'running') return runOn(r, b);
+  const d = r.dir;
+  const stopHit = d === 1 ? b.low <= r.stop : b.high >= r.stop;
+  const stopAt = d === 1 ? Math.min(r.stop, b.open) : Math.max(r.stop, b.open);
+  if (r.status === 'open') {
+    const touches = d === 1 ? b.low <= r.entryHi : b.high >= r.entryLo;
+    if (touches && !(d === 1 ? b.open <= r.stop : b.open >= r.stop)) {
+      const edge = d === 1 ? r.entryHi : r.entryLo;
+      const fill = restingLimit ? edge : d === 1 ? Math.min(b.open, r.entryHi) : Math.max(b.open, r.entryLo);
+      r = { ...r, status: 'filled', filledAt: b.time, fillPrice: fill };
+      // In the fill bar only the stop is counted: which came first is not knowable from a candle.
+      if (stopHit) r = close(r, b.time, stopAt, 'stop');
     } else if (stopHit) {
-      r = close(r, b.time, stopAt, 'stop');
+      r = { ...r, status: 'expired' };
     } else if (d === 1 ? b.high >= r.tp1 : b.low <= r.tp1) {
-      r = close(r, b.time, r.tp1, 'tp1');
-      // A further target: the rest runs on from the next minute, its stop at breakeven.
-      r = { ...r, tp1At: b.time, tp2At: null, tp3At: null, runner: r.tp2 != null ? 'running' : null, runnerEnd: null };
-    } else if (r.filledAt !== null && b.time >= timeoutAtOf(r.filledAt, r.tf)) {
-      r = close(r, b.time, b.close, 'timeout');
+      // Price ran to TP1 without coming back to the zone: the move went without us. The limit is
+      // cancelled -- filling it later, after the move is done, is not the trade that was signalled.
+      r = { ...r, status: 'missed' };
+    } else if (b.time >= fillBy) {
+      r = { ...r, status: 'expired' };
     }
-    r.gradedTo = b.time;
+  } else if (stopHit) {
+    r = close(r, b.time, stopAt, 'stop');
+  } else if (d === 1 ? b.high >= r.tp1 : b.low <= r.tp1) {
+    r = close(r, b.time, r.tp1, 'tp1');
+    // A further target: the rest runs on from the next step, its stop at breakeven.
+    r = { ...r, tp1At: b.time, tp2At: null, tp3At: null, runner: r.tp2 != null ? 'running' : null, runnerEnd: null };
+  } else if (r.filledAt !== null && b.time >= timeoutAtOf(r.filledAt, r.tf)) {
+    r = close(r, b.time, b.close, 'timeout');
   }
   return r;
 }
@@ -271,29 +312,59 @@ type DbRow = {
   runner: PaperRow['runner']; runner_end: RunnerEnd | null;
 };
 
+/**
+ * One grader at a time: the live tick grader (every second) and the 1m candle
+ * grader (each minute) read a row and write it back, and must never interleave
+ * -- one would overwrite the other's move.
+ */
+let gradeQueue: Promise<unknown> = Promise.resolve();
+export function withGradeLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = gradeQueue.then(fn, fn);
+  gradeQueue = run.catch(() => {});
+  return run;
+}
+
 /** Grade every working row against the closed 1m candles. Returns how many changed status. */
-export async function gradeSetups(bars1m: readonly Candle[]): Promise<number> {
+export function gradeSetups(bars1m: readonly Candle[]): Promise<number> {
+  return withGradeLock(() => gradeSetupsNow(bars1m));
+}
+
+/** The working rows as the graders read them. */
+export async function workingRows(): Promise<(PaperRow & { id: number })[]> {
   await entrySchema();
   const open = await rows<DbRow>(`SELECT * FROM entry_setups WHERE status IN ('open', 'filled') OR runner = 'running'`);
+  return open.map((x) => ({ id: Number(x.id), ...rowOf(x) }));
+}
+
+/** A row written back after grading: every field a grader moves. */
+export async function saveGraded(id: number, r: PaperRow): Promise<void> {
+  await query(
+    `UPDATE entry_setups SET status = $2, filled_at = $3, fill_price = $4, exit_at = $5, exit_price = $6, r_net = $7, graded_to = $8,
+            tp1_at = $9, tp2_at = $10, tp3_at = $11, runner = $12, runner_end = $13
+      WHERE id = $1`,
+    [id, r.status, r.filledAt, r.fillPrice, r.exitAt, r.exitPrice, r.rNet, r.gradedTo,
+      r.tp1At ?? null, r.tp2At ?? null, r.tp3At ?? null, r.runner ?? null, r.runnerEnd ?? null],
+  );
+}
+
+const rowOf = (x: DbRow): PaperRow => ({
+  dir: Number(x.dir) === 1 ? 1 : -1, tf: x.tf, triggerAt: Number(x.trigger_at), firstSeen: Number(x.first_seen),
+  entryLo: x.entry_lo, entryHi: x.entry_hi, stop: x.stop, tp1: x.tp1, status: x.status,
+  filledAt: x.filled_at === null ? null : Number(x.filled_at), fillPrice: x.fill_price,
+  exitAt: x.exit_at === null ? null : Number(x.exit_at), exitPrice: x.exit_price,
+  rNet: x.r_net, gradedTo: Number(x.graded_to),
+  tp2: x.tp2, tp3: x.tp3, tp1At: x.tp1_at === null ? null : Number(x.tp1_at), tp2At: x.tp2_at === null ? null : Number(x.tp2_at),
+  tp3At: x.tp3_at === null ? null : Number(x.tp3_at), runner: x.runner, runnerEnd: x.runner_end,
+});
+
+async function gradeSetupsNow(bars1m: readonly Candle[]): Promise<number> {
+  await entrySchema();
   let moved = 0;
-  for (const x of open) {
-    const before: PaperRow = {
-      dir: x.dir === 1 ? 1 : -1, tf: x.tf, triggerAt: x.trigger_at, firstSeen: x.first_seen,
-      entryLo: x.entry_lo, entryHi: x.entry_hi, stop: x.stop, tp1: x.tp1, status: x.status,
-      filledAt: x.filled_at, fillPrice: x.fill_price, exitAt: x.exit_at, exitPrice: x.exit_price,
-      rNet: x.r_net, gradedTo: x.graded_to,
-      tp2: x.tp2, tp3: x.tp3, tp1At: x.tp1_at, tp2At: x.tp2_at, tp3At: x.tp3_at, runner: x.runner, runnerEnd: x.runner_end,
-    };
+  for (const { id, ...before } of await workingRows()) {
     const after = gradeRow(before, bars1m);
     if (after.gradedTo === before.gradedTo) continue;
     if (after.status !== before.status) moved++;
-    await query(
-      `UPDATE entry_setups SET status = $2, filled_at = $3, fill_price = $4, exit_at = $5, exit_price = $6, r_net = $7, graded_to = $8,
-              tp1_at = $9, tp2_at = $10, tp3_at = $11, runner = $12, runner_end = $13
-        WHERE id = $1`,
-      [x.id, after.status, after.filledAt, after.fillPrice, after.exitAt, after.exitPrice, after.rNet, after.gradedTo,
-        after.tp1At ?? null, after.tp2At ?? null, after.tp3At ?? null, after.runner ?? null, after.runnerEnd ?? null],
-    );
+    await saveGraded(id, after);
   }
   return moved;
 }

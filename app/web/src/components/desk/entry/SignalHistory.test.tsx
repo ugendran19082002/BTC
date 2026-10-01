@@ -180,10 +180,10 @@ describe('the signal history table', () => {
     expect(trade).toHaveTextContent('84,391~20:05 · at edge');
     expect(trade).toHaveTextContent('84,288 TGT~20:33 · at level');
     expect(stopped).toHaveTextContent('84,000~20:04 · 40 better');
-    expect(stopped).toHaveTextContent('83,778 SL~20:13 · 22 past (gap)');
+    expect(stopped).toHaveTextContent('83,778 SL~20:13 · 22 past (slipped)');
     // The whole sentence on hover, kept short in the cell.
     expect(within(stopped!).getByTitle('fill 40 pts better than the 84,040 edge -- opened inside the zone')).toBeInTheDocument();
-    expect(within(stopped!).getByTitle('exit 22 pts past SL 83,800 -- the minute opened past it (gap)')).toBeInTheDocument();
+    expect(within(stopped!).getByTitle('exit 22 pts past SL 83,800 -- the first trade through it, or the minute opening past it (slipped)')).toBeInTheDocument();
     expect(within(trade!).getByTitle('exit exactly at TGT 84,288')).toBeInTheDocument();
   });
 
@@ -204,7 +204,7 @@ describe('the signal history table', () => {
   it('the exit and fill notes in words', () => {
     expect(exitNote(sig())).toEqual({ text: 'exactly at TGT 84,288', gap: false });
     expect(exitNote(sig({ outcome: oc({ status: 'stop', exitPrice: 83_441, exitLevel: 83_463, exitPastPts: 22, exitWhy: 'gap' }) })))
-      .toEqual({ text: '22 pts past SL 83,463 -- the minute opened past it (gap)', gap: true });
+      .toEqual({ text: '22 pts past SL 83,463 -- the first trade through it, or the minute opening past it (slipped)', gap: true });
     expect(exitNote(sig({ outcome: oc({ status: 'timeout', exitWhy: 'time' }) }))!.text).toBe('closed on time (48 bars), at the bar close');
     expect(exitNote(sig({ outcome: oc() }))).toBeNull();
     expect(fillNote(sig())).toBe('at the zone edge 84,391');
@@ -242,5 +242,14 @@ describe('the signal history table', () => {
     expect(seenText({ barCloseAt: S, seenAfterMs: 3_000, firstSeen: T + 3_000 })).toBe('trigger bar 20:03:00 · seen +3 s');
     // A retest anchored to the 06:51 bar, formed at 06:55:03 -- not "+4 min 3 s" of lag.
     expect(seenText({ barCloseAt: S, seenAfterMs: 243_000, firstSeen: T + 243_000 })).toBe('trigger bar 20:03:00 · formed 20:07:03');
+  });
+
+  it('[critical] a time the live tape graded is to the second; one a 1m candle graded is that minute, "~"', async () => {
+    getEntrySignals.mockResolvedValue(page([sig({ outcome: oc({ status: 'tp1', fillPrice: 84_391, filledAt: S + 137, exitPrice: 84_288, exitAt: S + 600, tp1At: S + 600 }) })]));
+    render(<SignalHistory />);
+    const table = await screen.findByRole('table', { name: 'signals' });
+    const [r] = within(table).getAllByRole('row').slice(1);
+    expect(r).toHaveTextContent('84,39120:05:17'); // the fill, off the tape
+    expect(r).toHaveTextContent('84,288 TGT~20:13'); // the exit, off a candle
   });
 });

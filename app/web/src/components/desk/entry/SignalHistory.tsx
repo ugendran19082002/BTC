@@ -5,7 +5,7 @@ import { usePersisted } from '@/hooks/usePersisted';
 import { entrySignalsCsvUrl, getEntrySignals, type SignalFilter, type SignalSort } from '@/api/entry';
 import { cn } from '@/lib/utils';
 import type { EntryMode, EntrySignal, EntrySignalSummary, EntryTf } from '@/types/entry';
-import { MINS, SECS, clockText, lag, useNow } from './clock';
+import { SECS, atText, clockText, lag, useNow } from './clock';
 
 /**
  * Every signal the server kept (the journal, entry_signals), as a data table:
@@ -14,7 +14,7 @@ import { MINS, SECS, clockText, lag, useNow } from './clock';
  * and over everything matching, the TRADEs, TP1 hits and the points they made,
  * stops and the points they lost, and the net. Each row: when, the price then
  * (LTP and index), the levels, and for a TRADE the fill, the exit and why it
- * exited, in points and R. Refreshed every 15 s; the choices are remembered.
+ * exited, in points and R. Refreshed every 5 s; the choices are remembered.
  */
 
 // Not 1m: chart-only without the chain, so it gives no signal and the server keeps none.
@@ -94,7 +94,7 @@ export function exitNote(s: EntrySignal): { text: string; gap: boolean } | null 
   if (!o || o.exitWhy === null) return null;
   if (o.exitWhy === 'time') return { text: 'closed on time (48 bars), at the bar close', gap: false };
   const lvl = o.status === 'stop' ? 'SL' : 'TGT';
-  if (o.exitWhy === 'gap') return { text: `${fmt(o.exitPastPts)} pts past ${lvl} ${fmt(o.exitLevel)} -- the minute opened past it (gap)`, gap: true };
+  if (o.exitWhy === 'gap') return { text: `${fmt(o.exitPastPts)} pts past ${lvl} ${fmt(o.exitLevel)} -- the first trade through it, or the minute opening past it (slipped)`, gap: true };
   return { text: `exactly at ${lvl} ${fmt(o.exitLevel)}`, gap: false };
 }
 
@@ -136,7 +136,7 @@ function Target({ t }: { t: TargetState }) {
     <>
       <span className={t.state === 'hit' ? 'font-semibold text-[var(--up)]' : t.state === 'missed' ? 'text-muted-foreground' : 'text-[var(--up)]'}>{fmt(t.level)}</span>
       <div className="text-[10.5px] text-muted-foreground">
-        {t.state === 'hit' ? <span className="text-[var(--up)]">✓ ~{MINS.format(t.hit! * 1000)}</span> : t.state === 'watching' ? 'watching…' : '✗ not reached'}
+        {t.state === 'hit' ? <span className="text-[var(--up)]">✓ {atText(t.hit!)}</span> : t.state === 'watching' ? 'watching…' : '✗ not reached'}
       </div>
     </>
   );
@@ -182,7 +182,7 @@ export function SignalHistory() {
     ...TABS[f.tab].q, mode: f.mode === 'all' ? undefined : f.mode, tf: f.tf === 'all' ? undefined : f.tf, since,
     limit: f.size, offset: page * f.size, sort: f.sort, asc: f.asc || undefined,
   };
-  const { data, loading, error } = usePoll(() => getEntrySignals(query), 15_000,
+  const { data, loading, error } = usePoll(() => getEntrySignals(query), 5_000,
     { deps: [f.tab, f.mode, f.tf, f.today, f.size, f.sort, f.asc, page] });
   const rows = data?.signals ?? [];
   const total = data?.total ?? 0;
@@ -299,7 +299,7 @@ export function SignalHistory() {
                         {o?.fillPrice != null ? fmt(o.fillPrice) : '–'}
                         {o?.filledAt != null ? (
                           <div className="text-[10.5px] text-muted-foreground" title={fn ? `fill ${fn}` : undefined}>
-                            ~{MINS.format(o.filledAt * 1000)}{o.fillBetterPts ? <span className="text-[var(--up)]"> · {fmt(o.fillBetterPts)} better</span> : ' · at edge'}
+                            {atText(o.filledAt)}{o.fillBetterPts ? <span className="text-[var(--up)]"> · {fmt(o.fillBetterPts)} better</span> : ' · at edge'}
                           </div>
                         ) : null}
                       </td>
@@ -307,7 +307,7 @@ export function SignalHistory() {
                         {ex ? <>{ex.price} <span className={cn('text-[10.5px] font-bold', ex.why === 'TGT' ? 'text-[var(--up)]' : ex.why === 'SL' ? 'text-[var(--down)]' : 'text-muted-foreground')}>{ex.why}</span></> : '–'}
                         {o?.exitAt != null ? (
                           <div className={cn('text-[10.5px]', en?.gap ? 'text-[var(--warn)]' : 'text-muted-foreground')} title={en ? `exit ${en.text}` : undefined}>
-                            ~{MINS.format(o.exitAt * 1000)}{en ? ` · ${en.gap ? `${fmt(o.exitPastPts)} past (gap)` : o.exitWhy === 'time' ? 'on time' : 'at level'}` : ''}
+                            {atText(o.exitAt)}{en ? ` · ${en.gap ? `${fmt(o.exitPastPts)} past (slipped)` : o.exitWhy === 'time' ? 'on time' : 'at level'}` : ''}
                           </div>
                         ) : null}
                       </td>
@@ -421,7 +421,7 @@ function FillExitDetail({ s }: { s: EntrySignal }) {
   const en = exitNote(s);
   return (
     <div className="text-[10.5px] text-muted-foreground">
-      <div title="The 1m bar the fill and the exit came in">in ~{MINS.format(o.filledAt * 1000)}{o.exitAt !== null ? ` → out ~${MINS.format(o.exitAt * 1000)}` : ''}</div>
+      <div title="The 1m bar the fill and the exit came in">in {atText(o.filledAt)}{o.exitAt !== null ? ` → out ${atText(o.exitAt)}` : ''}</div>
       {fn ? <div>fill {fn}</div> : null}
       {en ? <div className={en.gap ? 'text-[var(--warn)]' : undefined}>exit {en.text}</div> : null}
     </div>

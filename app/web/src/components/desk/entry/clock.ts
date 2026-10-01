@@ -13,6 +13,13 @@ export const SECS = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata',
 /** 14:33, IST. */
 export const MINS = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
 
+/**
+ * When a fill, an exit or a target happened (epoch s): to the second when the
+ * live tape graded it ("06:52:17"), "~06:52" when a 1m candle did -- that
+ * minute, not a second within it.
+ */
+export const atText = (sec: number) => (sec % 60 === 0 ? `~${MINS.format(sec * 1000)}` : SECS.format(sec * 1000));
+
 /** Now, re-read every second while `on`: for counters only, so a page without one never ticks. */
 export function useNow(on: boolean, everyMs = 1_000): number {
   const [now, setNow] = useState(() => Date.now());

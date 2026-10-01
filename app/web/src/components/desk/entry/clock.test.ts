@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clockText, lag, span } from './clock';
+import { atText, clockText, lag, span } from './clock';
 
 describe('the entry clocks', () => {
   it('a span as a counter, never below zero', () => {
@@ -25,5 +25,11 @@ describe('the entry clocks', () => {
   it('[critical] a limit price ran away from is missed, not waiting', () => {
     expect(clockText({ status: 'missed', fillBy: 0, filledAt: null, timeoutAt: null, exitAt: null }, 0))
       .toEqual({ label: 'Missed', value: 'price ran to TGT1 without filling', tone: 'done' });
+  });
+
+  it('a tape time to the second, a candle time as its minute', () => {
+    const m = 1_790_200_000 - (1_790_200_000 % 60);
+    expect(atText(m)).toMatch(/^~\d\d:\d\d$/);
+    expect(atText(m + 17)).toMatch(/^\d\d:\d\d:17$/);
   });
 });
