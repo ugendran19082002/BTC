@@ -20,14 +20,14 @@ const sec = (mode: 'mtf' | 'single', r = rows, t = total, gatesOffSignals = 0): 
   ({ mode, label: mode === 'mtf' ? 'With the timeframe chain' : 'Without the timeframe chain', rows: r, total: t, gatesOffSignals });
 
 /** 15m holds the trades; every other timeframe is quiet. */
-const fifteen = [row(1, 'Breakout', { signals: 2, trades: 2, wins: 1, losses: 1, winPct: 50, netPts: -40, netR: -0.5 }), row(2, 'Retest'), row(3, 'Momentum')];
+const fifteen = [row(1, 'Breakout', { signals: 2, trades: 2, wins: 1, losses: 1, winPct: 50, netPts: 40, netR: 0.5 }), row(2, 'Retest'), row(3, 'Momentum')];
 const quiet = [row(1, 'Breakout'), row(2, 'Retest'), row(3, 'Momentum')];
 const report = (): MethodReportResponse => ({
   tf: null,
   sections: [sec('mtf', rows, total, 4), sec('single')],
   singleByTf: Object.fromEntries((['3m', '5m', '15m', '30m', '1h', '4h'] as EntryTf[]).map((tf) => [tf,
     tf === '15m'
-      ? sec('single', fifteen, row(0, 'All 3 methods', { n: null, signals: 2, trades: 2, wins: 1, losses: 1, winPct: 50, netPts: -40, netR: -0.5 }))
+      ? sec('single', fifteen, row(0, 'All 3 methods', { n: null, signals: 2, trades: 2, wins: 1, losses: 1, winPct: 50, netPts: 40, netR: 0.5 }))
       : sec('single', quiet, row(0, 'All 3 methods', { n: null }))])),
 });
 
@@ -147,5 +147,15 @@ describe('the Methods report', () => {
     expect(lines[0]).toBe('section,timeframe,no,method,signals,trades,wins,losses,win_pct,profit_pts,loss_pts,net_pts,profit_r,loss_r,net_r');
     expect(lines).toHaveLength(1 + 8 * (rows.length + 1)); // with the chain, All, six timeframes
     expect(lines.filter((l) => l.includes(',15m,1,Breakout,'))[0]).toContain(',2,2,1,1,50,');
+  });
+
+  it('[critical] no timeframe is called best when none made money', async () => {
+    const losing = report();
+    const t15 = losing.singleByTf['15m']!;
+    losing.singleByTf['15m'] = { ...t15, total: { ...t15.total, netPts: -40, netR: -0.5 } };
+    getMethodReport.mockResolvedValue(losing);
+    render(<MethodReport />);
+    await chainSection();
+    expect(within(aloneSection()).queryByText('best net R')).toBeNull();
   });
 });

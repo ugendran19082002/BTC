@@ -162,7 +162,8 @@ function TimeframeTabs({ value, onChange, counts, all }: {
     go(to);
   };
   return (
-    <div role="tablist" aria-label="Timeframe" className="mb-3 flex flex-wrap gap-1 border-b border-border">
+    <div role="tablist" aria-label="Timeframe"
+         className="mb-3 flex flex-nowrap gap-1 overflow-x-auto border-b border-border [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {tabs.map((t, i) => {
         const on = t === value;
         const trades = (t === 'all' ? all : counts[t])?.total.trades ?? 0;
@@ -170,7 +171,7 @@ function TimeframeTabs({ value, onChange, counts, all }: {
           <button key={t} ref={(el) => { refs.current[i] = el; }} type="button" role="tab" id={`mr-tab-${t}`}
                   aria-selected={on} aria-controls={`mr-panel-${t}`} tabIndex={on ? 0 : -1}
                   onClick={() => onChange(t)} onKeyDown={(e) => onKey(e, i)}
-                  className={cn('-mb-px inline-flex items-center gap-1.5 rounded-t-md border border-b-0 px-3 py-1.5 text-[12px] font-semibold',
+                  className={cn('-mb-px inline-flex flex-none items-center gap-1.5 whitespace-nowrap rounded-t-md border border-b-0 px-3 py-1.5 text-[12px] font-semibold',
                     on ? 'border-border bg-[var(--panel)] text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground')}>
             {tabName(t)}
             <span aria-label={`${trades} trades`}
@@ -191,7 +192,8 @@ function ByTimeframe({ byTf, all, onOpen }: {
   onOpen: (t: EntryTf) => void;
 }) {
   const lines = TFS.map((tf) => ({ tf, t: byTf[tf]?.total })).filter((x): x is { tf: EntryTf; t: MethodReportRow } => !!x.t);
-  const best = lines.filter((x) => x.t.trades > 0).sort((a, b) => b.t.netR - a.t.netR)[0]?.tf ?? null;
+  // Named only when it made money: the least bad of six losers is not "best".
+  const best = lines.filter((x) => x.t.trades > 0 && x.t.netR > 0).sort((a, b) => b.t.netR - a.t.netR)[0]?.tf ?? null;
   const cell = 'px-2 py-1 text-right tabular-nums';
   return (
     <div className="mb-3 overflow-x-auto rounded-md border border-border">
