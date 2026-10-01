@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { SINGLE_TFS, VIEW_ONLY_TFS, entryBoard, timeframeRows, type TimeframeRow } from '../../entry/engine.js';
 import { readEntryContext } from '../../entry/read.js';
 import { entryRecord, recentSetups } from '../../entry/paper.js';
+import { methodReport } from '../../entry/catalogue.js';
 import { GateLocked, gateSettings, gatesOff, isGateKey, setGate } from '../../entry/gates.js';
 import { alertSettings, isMode, recentAlerts, sampleAlertText, setAlert } from '../../entry/alerts.js';
 import { cachedSignalPage, clearPreview, clearRangeOf, clearSignals, clockKeyOf, exportSignals, recentClears, isOutcomeFilter, isSignalSort, setupClocks, signalsCsv, type SignalQuery } from '../../entry/signals.js';
@@ -116,6 +117,13 @@ export function registerEntryRoutes(app: FastifyInstance, notifier: () => { send
     reply.header('Content-Disposition', `attachment; filename="signal-history-${day}.csv"`);
     reply.header('Cache-Control', 'no-store');
     return signalsCsv(all);
+  });
+
+  // The report: every method, with the chain and without it -- signals, trades, wins, losses, win rate, profit, loss and net.
+  app.get('/api/entry/report', async (req) => {
+    const { tf } = (req.query ?? {}) as { tf?: string };
+    const one = tf && (SINGLE_TFS as readonly string[]).includes(tf) ? (tf as Tf) : null;
+    return { tf: one, sections: await methodReport(one) };
   });
 
   // Each method's paper record, with the chain and without it, and the latest setups written.

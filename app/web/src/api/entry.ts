@@ -1,5 +1,5 @@
 import { json, post } from './client';
-import type { EntryAlerts, EntryBoard, EntryGateSetting, EntryMode, EntryRecordResponse, EntrySignalPage, EntryTf } from '@/types/entry';
+import type { EntryAlerts, EntryBoard, EntryGateSetting, EntryMode, EntryRecordResponse, EntrySignalPage, EntryTf, MethodReportResponse } from '@/types/entry';
 
 /** The 24 reads: with the timeframe chain (entry on 5m), and without it on `tf`. */
 export const getEntryBoard = (tf: EntryTf = '5m') => json<EntryBoard>(`/api/entry/board?tf=${tf}`);
@@ -55,3 +55,7 @@ export type ClearAnswer = { range: ClearRange; counts: ClearCounts; recent: Hist
 export const previewClear = (r: ClearRange) => json<ClearAnswer>(`/api/entry/signals/clear?from=${r.from}&to=${r.to}`);
 /** Clear it: the signals, their paper trades and alerts. Cannot be undone. */
 export const clearHistory = (r: ClearRange) => post<ClearAnswer>('/api/entry/signals/clear', r);
+
+/** The Methods report: every method with the timeframe chain and without it; `tf` narrows the section without it. */
+export const getMethodReport = (tf: EntryTf | null = null) =>
+  json<MethodReportResponse>(`/api/entry/report${tf ? `?tf=${tf}` : ''}`);

@@ -176,3 +176,17 @@ export type EntryOverlay = {
   label: string;
   triggerTime: number | null;
 };
+
+/** One method's line in the Methods report: its signals, and how its closed paper trades went. */
+export type MethodReportRow = {
+  n: number | null; method: string; name: string;
+  signals: number; trades: number; wins: number; losses: number;
+  /** Wins over trades, 0-100; null with no trade yet. */
+  winPct: number | null;
+  /** Points from the fill to the exit, in the trade's favour: won, lost (positive), and the net. */
+  profitPts: number; lossPts: number; netPts: number;
+  /** The same in R (points over the risk to the stop). No fees. */
+  profitR: number; lossR: number; netR: number;
+};
+export type MethodReportSection = { mode: EntryMode; label: string; rows: MethodReportRow[]; total: MethodReportRow };
+export type MethodReportResponse = { tf: EntryTf | null; sections: MethodReportSection[] };

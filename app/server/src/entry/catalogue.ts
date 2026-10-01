@@ -1,8 +1,9 @@
 import type pg from 'pg';
-import { getPool } from '../db/pool.js';
+import { getPool, rows } from '../db/pool.js';
 import { migrate, type Migration } from '../db/migrate.js';
 import { METHODS } from './methods.js';
 import { entrySchema } from './paper.js';
+import type { Tf } from './types.js';
 import { alertsSchema } from './alerts.js';
 import { signalsSchema } from './signals.js';
 
@@ -100,4 +101,75 @@ export function methodsSchema(): Promise<void> {
     .then(() => syncMethods())
     .then(() => {}, (e) => { ready = null; throw e; });
   return ready;
+}
+
+/** One method's line in the report: its signals, how its closed trades went, in points and R. */
+export type MethodReportRow = {
+  n: number | null; method: string; name: string;
+  signals: number; trades: number; wins: number; losses: number; winPct: number | null;
+  profitPts: number; lossPts: number; netPts: number; profitR: number; lossR: number; netR: number;
+};
+export type MethodReportSection = { mode: 'mtf' | 'single'; label: string; rows: MethodReportRow[]; total: MethodReportRow };
+
+/**
+ * The report (owner, 1 Oct 2026: "two sections, 81 + 81: win rate, trades, win,
+ * loss, profit, loss, net"): every active method, with the timeframe chain and
+ * without it, one line each -- a method with no signal yet still has its line.
+ *
+ * A trade is a setup that filled and closed (TP1, stop, time-out); a win closed
+ * above its fill, a loss at or under it. Points run from the fill to the exit in
+ * the trade's favour; R is points over the risk to the stop. No fees. Setups
+ * taken while a hard gate was switched off are left out, as in `entryRecord`.
+ * `tf` narrows the section without the chain to one timeframe; with the chain
+ * the entry is always 5m.
+ */
+export async function methodReport(tf: Tf | null = null): Promise<MethodReportSection[]> {
+  await entrySchema();
+  await methodsSchema();
+  const xs = await rows<Record<string, string | number | null>>(
+    `WITH closed AS (
+       SELECT method, mode, (exit_price - fill_price) * dir AS pts, r_net
+         FROM entry_setups
+        WHERE status IN ('tp1', 'stop', 'timeout') AND cardinality(gates_off) = 0 AND ($1::text IS NULL OR mode = 'mtf' OR tf = $1)
+     ), setups AS (
+       SELECT method, mode, count(*) AS signals FROM entry_setups
+        WHERE cardinality(gates_off) = 0 AND ($1::text IS NULL OR mode = 'mtf' OR tf = $1)
+        GROUP BY method, mode
+     ), modes(mode) AS (VALUES ('mtf'), ('single'))
+     SELECT x.mode, m.n, m.id AS method, m.name, coalesce(s.signals, 0) AS signals,
+            count(c.pts) AS trades,
+            count(*) FILTER (WHERE c.r_net > 0) AS wins,
+            count(*) FILTER (WHERE c.r_net <= 0) AS losses,
+            coalesce(sum(c.pts) FILTER (WHERE c.pts > 0), 0) AS profit_pts,
+            coalesce(-sum(c.pts) FILTER (WHERE c.pts <= 0), 0) AS loss_pts,
+            coalesce(sum(c.r_net) FILTER (WHERE c.r_net > 0), 0) AS profit_r,
+            coalesce(-sum(c.r_net) FILTER (WHERE c.r_net <= 0), 0) AS loss_r
+       FROM entry_methods m
+      CROSS JOIN modes x
+       LEFT JOIN setups s ON s.method = m.id AND s.mode = x.mode
+       LEFT JOIN closed c ON c.method = m.id AND c.mode = x.mode
+      WHERE m.active
+      GROUP BY x.mode, m.n, m.id, m.name, s.signals
+      ORDER BY x.mode, m.n`,
+    [tf],
+  );
+  const num = (v: string | number | null | undefined) => Number(v ?? 0);
+  const lineOf = (n: number | null, method: string, name: string, v: Omit<MethodReportRow, 'n' | 'method' | 'name' | 'winPct' | 'netPts' | 'netR'>): MethodReportRow => ({
+    n, method, name, ...v,
+    winPct: v.trades > 0 ? (100 * v.wins) / v.trades : null,
+    netPts: v.profitPts - v.lossPts, netR: v.profitR - v.lossR,
+  });
+  const LABEL = { mtf: 'With the timeframe chain', single: 'Without the timeframe chain' } as const;
+  return (['mtf', 'single'] as const).map((mode) => {
+    const lines = xs.filter((x) => x.mode === mode).map((x) => lineOf(x.n === null ? null : Number(x.n), String(x.method), String(x.name), {
+      signals: num(x.signals), trades: num(x.trades), wins: num(x.wins), losses: num(x.losses),
+      profitPts: num(x.profit_pts), lossPts: num(x.loss_pts), profitR: num(x.profit_r), lossR: num(x.loss_r),
+    }));
+    const sum = (k: 'signals' | 'trades' | 'wins' | 'losses' | 'profitPts' | 'lossPts' | 'profitR' | 'lossR') => lines.reduce((a, l) => a + l[k], 0);
+    const total = lineOf(null, 'all', `All ${lines.length} methods`, {
+      signals: sum('signals'), trades: sum('trades'), wins: sum('wins'), losses: sum('losses'),
+      profitPts: sum('profitPts'), lossPts: sum('lossPts'), profitR: sum('profitR'), lossR: sum('lossR'),
+    });
+    return { mode, label: LABEL[mode], rows: lines, total };
+  });
 }
