@@ -31,6 +31,15 @@ import { atr, isDisplacement, lastSweep, pivots, rvol, trendOf, bullish, bearish
  * for both TP1's choice and the R:R gate, so they can never disagree.
  */
 export const MIN_RR = 1;
+/**
+ * TGT1 is a real level no farther than this; past it, TGT1 is TP1_FALLBACK_R
+ * and the far level becomes TGT2 (owner, 1 Oct 2026). The live log's same
+ * trades regraded with TGT1 at 0.3-2R: average R best at 1.5-2R before and
+ * after 07:30, while TGT1s that averaged 2.8R (breakout 4.9R) were rarely
+ * reached before the stop.
+ */
+export const MAX_TP1_R = 2;
+export const TP1_FALLBACK_R = 1.5;
 /** The entry zone keeps at least this many ATRs from the stop. */
 export const ZONE_STOP_GAP_ATR = 0.1;
 /** The stop sits this many ATRs past the structure it protects. */
@@ -141,23 +150,45 @@ const TP2_KINDS: Record<TargetSpec['tp2'], readonly Level['kind'][]> = {
  * at all past the zone, TP1 is 2R and says so. Never an invented TP2/TP3.
  */
 export function pickTargets(spec: TargetSpec, levels: readonly Level[], i: {
-  dir: 1 | -1; a: number; entry: number; risk: number; ownTp3?: { price: number; why: string }; emEdge: number | null; minRr?: number;
+  dir: 1 | -1; a: number; entry: number; risk: number; ownTp3?: { price: number; why: string }; emEdge: number | null; minRr?: number; maxRr?: number;
 }): { tp1: number; tp2: number | null; tp3: number | null; why: string[] } {
   const { dir, a } = i;
   const minRr = i.minRr ?? MIN_RR;
+  const maxRr = i.maxRr ?? MAX_TP1_R;
   const why: string[] = [];
-  const pays = (l: Level) => i.risk > 0 && Math.abs(l.price - i.entry) / i.risk >= minRr;
+  const rOf = (l: { price: number }) => (i.risk > 0 ? Math.abs(l.price - i.entry) / i.risk : 0);
+  const pays = (l: Level) => i.risk > 0 && rOf(l) >= minRr;
+  const inBand = (l: Level) => pays(l) && rOf(l) <= maxRr;
+  const fallback = i.entry + dir * TP1_FALLBACK_R * i.risk;
   let first: Level | undefined;
-  if (spec.tp1 === 'own') first = levels.find((l) => l.kind === 'own') ?? levels[0];
-  else {
+  let tp1: number;
+  if (spec.tp1 === 'own') {
+    // VWAP reversion keeps VWAP whatever it pays: reverting to it is the method.
+    first = levels.find((l) => l.kind === 'own') ?? levels[0];
+    if (!first) return { tp1: fallback, tp2: null, tp3: null, why: [`${TP1_FALLBACK_R}R -- no level found beyond the entry`] };
+    tp1 = first.price;
+    why.push(first.why);
+  } else {
     const prefer = TP1_KINDS[spec.tp1];
-    first = levels.find((l) => prefer.includes(l.kind) && pays(l)) ?? levels.find(pays)
-      ?? levels.find((l) => prefer.includes(l.kind)) ?? levels[0];
+    // A real level between minRr and maxRr, the method's own kind first.
+    first = levels.find((l) => prefer.includes(l.kind) && inBand(l)) ?? levels.find(inBand);
+    const far = first ? undefined : levels.find(pays);
+    if (first) {
+      tp1 = first.price;
+      const skipped = levels.filter((l) => (l.price - i.entry) * dir < (tp1 - i.entry) * dir && !pays(l)).length;
+      why.push(skipped ? `${first.why} (${skipped} nearer under ${minRr}R skipped)` : first.why);
+    } else if (far || !levels.length) {
+      // Nothing real between minRr and maxRr: TGT1 at TP1_FALLBACK_R, and a far level is TGT2.
+      tp1 = fallback;
+      why.push(far ? `${TP1_FALLBACK_R}R -- no level between ${minRr}R and ${maxRr}R (the next, ${far.why}, is ${rOf(far).toFixed(1)}R)`
+        : `${TP1_FALLBACK_R}R -- no level found beyond the entry`);
+    } else {
+      // Every level pays under minRr: the nearest of its kind, and the R:R gate refuses -- never a made-up far target.
+      first = levels.find((l) => prefer.includes(l.kind)) ?? levels[0]!;
+      tp1 = first.price;
+      why.push(first.why);
+    }
   }
-  if (!first) return { tp1: i.entry + dir * 2 * i.risk, tp2: null, tp3: null, why: ['2R -- no level found beyond the entry'] };
-  const tp1 = first.price;
-  const skipped = levels.filter((l) => (l.price - i.entry) * dir < (tp1 - i.entry) * dir && !pays(l)).length;
-  why.push(spec.tp1 !== 'own' && skipped && pays(first) ? `${first.why} (${skipped} nearer under ${minRr}R skipped)` : first.why);
   const past = (l: { price: number }, ref: number) => (l.price - ref) * dir >= TP_STEP_ATR * a;
   const kinds = TP2_KINDS[spec.tp2];
   const second = levels.find((l) => l !== first && kinds.includes(l.kind) && past(l, tp1)) ?? levels.find((l) => l !== first && past(l, tp1));

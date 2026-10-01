@@ -139,9 +139,11 @@ TP3 is the expected-move edge -- for options, max pain when it lies past TP2.
 Of the levels past the zone -- swings on this timeframe, 1H and 4H, walls in
 the perpetual's book, the OI wall, the method's own -- a swing price has
 already traded through is **consumed** and dropped; of the rest, TP1 is the
-first in the method's own order that pays at least **1R** from the fill
-(`MIN_RR`, the same number the R:R gate uses; no maximum), else the first of
-any kind that does. A nearer level that pays less is skipped, and the reason
+first in the method's own order between **1R and 2R** from the fill
+(`MIN_RR`, the same number the R:R gate uses, and `MAX_TP1_R`), else the first
+of any kind in that band; with nothing real in the band, TGT1 is **1.5R** and
+says so ("1.5R -- no level between 1R and 2R (the next, 4h swing high 85,200,
+is 6.0R)"), and the far level becomes TGT2. A nearer level that pays less is skipped, and the reason
 says so: "1h swing high 84,200 (1 nearer under 1R skipped)". The owner's
 example -- a long filled at 84,000, SL 83,800: 84,150 (0.75R) is skipped,
 84,200 (1R) is TP1, 84,400, 84,800, 85,200 are further targets. Only when no
@@ -160,7 +162,8 @@ points, no fees; methods 11-12 cannot be replayed from candles):
 |---|---:|---:|---:|---:|
 | the nearest level (until 1 Oct) | 1,322 | 23% | −0.21R | 0.73 |
 | nearest valid, ≥ 1.8R | 14,944 | 25% | −0.10R | 0.87 |
-| nearest valid, ≥ 1R (now) | 15,064 | 31% | −0.10R | 0.86 |
+| nearest valid, ≥ 1R | 15,064 | 31% | −0.10R | 0.86 |
+| between 1R and 2R, else 1.5R (now) | 15,064 | 37% | −0.08R | 0.87 |
 
 The valid-target rule halves the loss per trade; none of the three makes money
 on 5m before fees, and no method is believed on this -- only MSS / CHoCH is
