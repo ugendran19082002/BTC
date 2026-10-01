@@ -144,6 +144,7 @@ export function EntrySection({ desk, onTimeframes }: {
                 </>
               ) : null}
             </div>
+            <PriceStrip perp={ltp?.price ?? null} mark={board?.quote?.mark ?? null} index={board?.quote?.index ?? null} />
           </div>
           <div className="grid w-full grid-cols-2 items-center gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:gap-3">
             <div role="group" aria-label="entry view" className="col-span-2 inline-flex overflow-hidden rounded-md border border-border text-[12px] sm:col-span-1">
@@ -199,6 +200,34 @@ export function EntrySection({ desk, onTimeframes }: {
         else. No order is placed from here.
       </p>
     </section>
+  );
+}
+
+/**
+ * The three prices, each named for its job, so one is never read for another
+ * (1 Oct 2026: a tab title showing the index was taken for the perpetual, and
+ * a target looked passed that was not). The perpetual is what trades -- entry,
+ * SL and TP are its levels; the mark is the fair-price check; the index is
+ * context, and the basis says how far apart they are.
+ */
+export function PriceStrip({ perp, mark, index }: { perp: number | null; mark: number | null; index: number | null }) {
+  if (perp === null && mark === null && index === null) return null;
+  const f = (v: number | null) => (v === null ? '–' : v.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }));
+  const basis = perp !== null && index !== null ? perp - index : null;
+  const item = (label: string, value: string, job: string, strong = false) => (
+    <span className="inline-flex items-baseline gap-1 whitespace-nowrap">
+      <span className={strong ? 'font-semibold text-foreground' : 'text-muted-foreground'}>{label}</span>
+      <b className={cn('tabular-nums', strong ? 'text-foreground' : 'font-medium text-muted-foreground')}>{value}</b>
+      <span className="text-[10px] text-muted-foreground">{job}</span>
+    </span>
+  );
+  return (
+    <div aria-label="prices" className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-[11.5px]">
+      {item('Perp', f(perp), 'entry · SL · TP', true)}
+      {item('Mark', f(mark), 'risk check')}
+      {item('Index', f(index), 'context')}
+      {basis !== null ? item('Basis', `${basis >= 0 ? '+' : '−'}${Math.abs(basis).toFixed(1)}`, 'perp − index') : null}
+    </div>
   );
 }
 

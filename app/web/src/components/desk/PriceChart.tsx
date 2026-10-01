@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   CandlestickSeries, ColorType, CrosshairMode, HistogramSeries, LineSeries, createChart,
-  type IChartApi, type ISeriesApi, type LogicalRange, type Time, type UTCTimestamp,
+  type AutoscaleInfo, type IChartApi, type ISeriesApi, type LogicalRange, type Time, type UTCTimestamp,
 } from 'lightweight-charts';
 import { Expand, Layers, Lock, Minimize2, Unlock } from 'lucide-react';
 import type { Candle } from '@/types/desk';
@@ -88,6 +88,12 @@ export function PriceChart({
   const toolbarRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const entryRef = useRef<EntryOverlay | null>(entry);
+  entryRef.current = entry;
+  // A new setup re-scales at once, not on the next tick: the provider is set again, which makes the chart ask it.
+  useEffect(() => {
+    candleRef.current?.applyOptions({ autoscaleInfoProvider: (base: () => AutoscaleInfo | null) => withEntryLevels(base(), entryRef.current) });
+  }, [entry]);
   const volumeRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const primitiveRef = useRef<SmcPrimitive | null>(null);
 
@@ -225,6 +231,9 @@ export function PriceChart({
 
     chartRef.current = chart;
     candleRef.current = candles;
+    // The price axis spans the drawn setup as well as the candles: a TGT 1R or more away is
+    // otherwise off the chart, and looks missing (1 Oct 2026, a 186-point short's TGT1).
+    candles.applyOptions({ autoscaleInfoProvider: (base: () => AutoscaleInfo | null) => withEntryLevels(base(), entryRef.current) });
     volumeRef.current = volume;
     primitiveRef.current = primitive;
 
@@ -462,3 +471,21 @@ function savedBoxes(saved: readonly Annotation[], bars: readonly Candle[]): Scen
     fill: 'rgba(148,163,184,0.08)', stroke: C.muted, dash: true, label: a.label ?? a.kind.toUpperCase(), labelColor: C.muted, priority: 58,
   }));
 }
+
+/**
+ * A price range widened to take in a setup's entry zone, stop, TGT1 and TGT2,
+ * so they are on the chart. Not TGT3: the expected-move edge can be far
+ * enough to squash the candles into a line. Pure.
+ */
+export function withEntryLevels(info: AutoscaleInfo | null, e: EntryOverlay | null): AutoscaleInfo | null {
+  if (!info || !info.priceRange || !e) return info;
+  const levels = [e.entryLo, e.entryHi, e.stop, e.tp1, ...(e.tp2 !== null ? [e.tp2] : [])];
+  return {
+    ...info,
+    priceRange: {
+      minValue: Math.min(info.priceRange.minValue, ...levels),
+      maxValue: Math.max(info.priceRange.maxValue, ...levels),
+    },
+  };
+}
+

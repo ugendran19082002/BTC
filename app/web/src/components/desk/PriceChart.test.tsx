@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { PriceChart, tailFrom } from '@/components/desk/PriceChart';
+import { PriceChart, tailFrom, withEntryLevels } from '@/components/desk/PriceChart';
 import type { SceneItem } from '@/components/desk/chart/scene';
 import type { Candle } from '@/types/desk';
 
@@ -17,6 +17,7 @@ const updateCalls: { which: string; bar: any }[] = [];
 const applied: Record<string, unknown>[] = [];
 const primitives: { scene: readonly SceneItem[]; setReserved: (r: unknown[]) => void }[] = [];
 const repaints = vi.fn();
+const autoscale: { fn: ((base: () => any) => any) | null } = { fn: null };
 const addedTo: { kind: string; pane: number }[] = [];
 
 vi.mock('lightweight-charts', () => {
@@ -25,6 +26,7 @@ vi.mock('lightweight-charts', () => {
     setData = vi.fn((data: any[]) => { setDataCalls.push({ which: this.which, data }); });
     update = vi.fn((bar: any) => { updateCalls.push({ which: this.which, bar }); });
     priceScale = () => ({ applyOptions: vi.fn() });
+    applyOptions = vi.fn((o: any) => { if (o.autoscaleInfoProvider) autoscale.fn = o.autoscaleInfoProvider; });
     priceToCoordinate = (price: number) => 300 - (price - 77_000) / 10;
     attachPrimitive = vi.fn((p: any) => { primitives.push(p); p.attached?.({ chart: {}, series: this, requestUpdate: repaints }); });
     // As the library does: detaching tells the primitive. `chart.remove()` below does not.
@@ -267,3 +269,25 @@ describe('the price chart', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('feed down');
   });
 });
+
+describe('the setup on the price axis', () => {
+  const e = { dir: 'short' as const, entryLo: 83_464, entryHi: 83_485, stop: 83_650, tp1: 83_278, tp2: 82_980, tp3: 81_500, rr: 1, label: '#9 Pullback', triggerTime: null };
+  it('[critical] the axis takes in the entry, the stop, TGT1 and TGT2 -- a target 1R away is never off the chart', () => {
+    const r = withEntryLevels({ priceRange: { minValue: 83_380, maxValue: 83_660 } }, e)!;
+    expect(r.priceRange).toEqual({ minValue: 82_980, maxValue: 83_660 });
+    expect(withEntryLevels({ priceRange: { minValue: 83_380, maxValue: 83_660 } }, { ...e, tp2: null })!.priceRange!.minValue).toBe(83_278);
+    expect(withEntryLevels(null, e)).toBeNull();
+    expect(withEntryLevels({ priceRange: { minValue: 1, maxValue: 2 } }, null)!.priceRange).toEqual({ minValue: 1, maxValue: 2 });
+  });
+
+  it('not TGT3: the expected-move edge would squash the candles', () => {
+    expect(withEntryLevels({ priceRange: { minValue: 83_380, maxValue: 83_660 } }, e)!.priceRange!.minValue).toBeGreaterThan(81_500);
+  });
+
+  it('the chart asks it: the candle series is given the provider, and it reads the setup drawn', () => {
+    chart({ entry: e });
+    expect(autoscale.fn).not.toBeNull();
+    expect(autoscale.fn!(() => ({ priceRange: { minValue: 83_380, maxValue: 83_660 } })).priceRange.minValue).toBe(82_980);
+  });
+});
+

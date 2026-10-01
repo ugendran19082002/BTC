@@ -6,7 +6,7 @@ The desk's PostgreSQL database as a fresh deploy creates it: every table in `pub
 the catalogue after every store's migrations have run. What each table is *for*, and why it is shaped
 the way it is, is in [database.md](database.md).
 
-32 tables, 46 migrations.
+32 tables, 47 migrations.
 
 ## Migrations applied
 
@@ -14,7 +14,7 @@ the way it is, is in [database.md](database.md).
 |---|---|
 | auth | `auth-001-user-sessions`, `auth-002-to-public` |
 | chart | `chart-001-annotations` |
-| entry | `entry-001-setups`, `entry-002-gates`, `entry-003-setups-gates-off`, `entry-004-alerts`, `entry-005-signals`, `entry-006-alert-log`, `entry-007-signal-prices`, `entry-008-alerts-no-1m`, `entry-008-signals-no-1m`, `entry-009-alert-log-by-setup`, `entry-010-r-without-fees`, `entry-011-signal-targets`, `entry-012-setups-targets`, `entry-013-setups-missed`, `entry-014-signals-trades-by-time` |
+| entry | `entry-001-setups`, `entry-002-gates`, `entry-003-setups-gates-off`, `entry-004-alerts`, `entry-005-signals`, `entry-006-alert-log`, `entry-007-signal-prices`, `entry-008-alerts-no-1m`, `entry-008-signals-no-1m`, `entry-009-alert-log-by-setup`, `entry-010-r-without-fees`, `entry-011-signal-targets`, `entry-012-setups-targets`, `entry-013-setups-missed`, `entry-014-signals-trades-by-time`, `entry-015-setups-expire-why` |
 | errors | `errors-001-log`, `errors-002-to-public` |
 | market | `market-001-oi-snapshots`, `market-002-chain-features`, `market-003-to-public`, `market-004-option-snapshots`, `market-005-flow`, `market-006-flow-large-counts`, `market-007-option-flow`, `market-008-option-snapshots-1m`, `market-009-drop-iv-term`, `market-013-index-1m`, `market-014-chain-band-pcts`, `market-015-large-prints`, `market-016-book-heat` |
 | strategy | `strategy-001-tables`, `strategy-002-seed`, `strategy-003-to-public`, `strategy-004-retire-extras`, `strategy-005-drop-retired-tables` |
@@ -257,6 +257,7 @@ the way it is, is in [database.md](database.md).
 | `tp3_at` | bigint | yes |  |
 | `runner` | text | yes |  |
 | `runner_end` | text | yes |  |
+| `expire_why` | text | yes |  |
 
 - `entry_setups_by_method` (method, mode, first_seen DESC)
 - `entry_setups_method_mode_tf_dir_trigger_at_key` unique (method, mode, tf, dir, trigger_at)
@@ -264,10 +265,11 @@ the way it is, is in [database.md](database.md).
 - `entry_setups_running` (runner) WHERE (runner = 'running'::text)
 - `entry_setups_working` (status) WHERE (status = ANY (ARRAY['open'::text, 'filled'::text]))
 - `entry_setups_dir_check` CHECK ((dir = ANY (ARRAY['-1'::integer, 1])))
+- `entry_setups_expire_why_check` CHECK ((expire_why = ANY (ARRAY['window'::text, 'stop'::text, 'target'::text])))
 - `entry_setups_mode_check` CHECK ((mode = ANY (ARRAY['mtf'::text, 'single'::text])))
 - `entry_setups_runner_check` CHECK ((runner = ANY (ARRAY['running'::text, 'done'::text])))
 - `entry_setups_runner_end_check` CHECK ((runner_end = ANY (ARRAY['be'::text, 'tp2'::text, 'tp3'::text, 'timeout'::text])))
-- `entry_setups_status_check` CHECK ((status = ANY (ARRAY['open'::text, 'filled'::text, 'expired'::text, 'missed'::text, 'tp1'::text, 'stop'::text, 'timeout'::text])))
+- `entry_setups_status_check` CHECK ((status = ANY (ARRAY['open'::text, 'filled'::text, 'expired'::text, 'tp1'::text, 'stop'::text, 'timeout'::text])))
 
 ### entry_signals
 

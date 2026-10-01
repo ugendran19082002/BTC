@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { EntrySection } from './EntrySection';
+import { EntrySection, PriceStrip } from './EntrySection';
 import { recordText, signalOf, tickOf } from './parts';
 import type { EntryBoard, EntryRecord, MethodRead } from '@/types/entry';
 
@@ -476,6 +476,17 @@ describe('which timeframes alert, and the last alert', () => {
     await waitFor(() => expect(within(without).getByLabelText('last alert')).toHaveTextContent('last: 20:00 · #2 SELL 5m · sent ✓'));
     const withTf = screen.getByRole('region', { name: /12 methods \+ timeframe/ });
     expect(within(withTf).getByLabelText('last alert')).toHaveTextContent('#6 BUY 5m · failed ✗ -- Telegram did not accept it');
+  });
+});
+
+describe('the prices, each for its job', () => {
+  it('[critical] perp is the trading price, mark the risk check, index context -- and the basis between them', () => {
+    render(<PriceStrip perp={83_539.5} mark={83_537.72} index={83_580.6} />);
+    const p = screen.getByLabelText('prices');
+    expect(p).toHaveTextContent('Perp83,539.5entry · SL · TP');
+    expect(p).toHaveTextContent('Mark83,537.7risk check');
+    expect(p).toHaveTextContent('Index83,580.6context');
+    expect(p).toHaveTextContent('Basis−41.1perp − index');
   });
 });
 

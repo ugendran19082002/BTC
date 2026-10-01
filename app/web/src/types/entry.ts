@@ -79,6 +79,8 @@ export type EntryBoard = {
   reads: MethodRead[];
   /** The without panel's timeframe is chart-only (1m): no reads without the chain. */
   viewOnly?: boolean;
+  /** Delta's mark price and BTC index for the perpetual (epoch ms): the fair-price check, and context. */
+  quote?: { mark: number | null; index: number | null; at: number } | null;
   chain: { tf: EntryTf; role: string; weight: number }[];
   timeframes: TimeframeRow[];
   /** The perpetual's last trade when the board was read (the server's tape); null with the socket down. */

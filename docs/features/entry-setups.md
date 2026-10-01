@@ -76,6 +76,7 @@ absorption from delta against price.
    |---|---|
    | Data fresh | the newest 1m candle is over 3 min old (without the chain: the entry candle over one period + 3 min) |
    | Spread | the perpetual's spread is over 0.05% |
+   | Perp at mark | the perpetual's last trade is over 0.15% from its mark price -- a wick through a thin book, not a level (not read without a fresh trade and mark) |
    | Stop outside the noise / not too wide | the stop is under 0.3 or over 2.5 ATR away |
    | R:R 1 | the points from the fill to TP1 are fewer than the points from the fill to the stop -- TGT1 must be at least 1R, with no maximum (owner, 1 Oct 2026; TEST.md had 1.8 after fees -- the fee term is gone too) |
    | Higher timeframes (with the chain) | 1H **and** 4H are both against it |
@@ -256,12 +257,16 @@ Table `entry_setups` (migration `entry-001-setups`):
   candles are the backstop: they grade only the minutes the tape did not see
   (a stale or reconnected socket), and the two graders never run at once.
   Times graded off the tape show to the second, off a candle as "~06:52".
-- The states: **filled**; **expired** if not filled within 12 entry bars of
-  when the setup was first on the board, or if price goes past the stop first;
-  **missed** if price runs to TP1 without coming back to the zone -- the move
-  went without it, and the limit is cancelled rather than filled late, after
-  the move (`entry-013-setups-missed`; counted with the never-filled, not as a
-  trade); then **stop**, **TP1** or **timeout** after 48 entry bars. On a
+- A setup ends one of four ways. Filled, it ends at **TP1**, the **stop**, or
+  on **time-out** (48 entry bars). Never filled, it is **expired**, with why
+  (`expire_why`, `entry-015`): its **window** passed (12 entry bars from when
+  it was first on the board), the **stop** broke first (the idea was wrong
+  before it was in), or price ran to TP1 without coming back to the zone --
+  **target** (the move went without it; the limit is cancelled rather than
+  filled late, after the move). An expired setup was never a trade and is not
+  counted as one. ("Missed" was its own state for a few hours on 1 Oct 2026;
+  at the owner's word it is a reason for expiring, and those rows became
+  expired by target.) On a
   candle, a bar touching both the stop and TP1 is the stop, and in the fill bar
   only the stop counts -- a candle cannot say which came first, and the log
   does not guess in the setup's favour.
@@ -359,8 +364,10 @@ Then the **Signal history** (a card of its own): every signal the server
 kept, a page at a time (25 / 50 / 100), every 5 s. Tabs: **All**,
 **TRADING** (in play now: waiting at its zone, filled, or a runner after
 TGT1), **BUY & SELL**, **BUY**, **SELL**, **WAIT**, then how each TRADE ended
--- **TGT HIT**, **SL HIT**, **TIMED OUT**, **EXPIRED**, **MISSED**
-(`outcome=` on the API); one row that scrolls sideways on a phone. Filters,
+-- **TGT HIT**, **SL HIT**, **TIMED OUT**, **EXPIRED** (with why) (`outcome=`
+on the API); the SL column says what became of the stop (guards the order,
+watching…, ✗ hit and when, → breakeven for the runner, ✓ never hit, not
+filled, broken before the fill); one row that scrolls sideways on a phone. Filters,
 each named -- **Way**, **Timeframe**, **Range** (today / all days) -- with
 *Clear filters* when any is set (remembered; a filter saved before -- 1m, the
 old R:R column -- is cleaned, so the list never hides behind a chip that is
@@ -402,6 +409,15 @@ Three things differ from the reference on purpose:
 - **No example statistics** -- every figure is the paper log's; until trades
   close it says "no record yet". (The pros-and-cons lists were removed at the
   owner's request.)
+
+## Which price is which
+
+The perpetual (BTCUSD) is the price that trades: entry, SL and TP are its
+levels, the candles and the live grader are its own. Delta's **mark** price
+is the fair-price check (the *Perp at mark* gate); the BTC **index** is
+context -- the history keeps it beside the LTP, and the strip under the entry
+header names all three, with the basis (perp − index), so one is never read
+for another.
 
 ## Speed
 
