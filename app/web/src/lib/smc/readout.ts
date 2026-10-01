@@ -160,7 +160,7 @@ function refusedOf(st: SmcState, bars: readonly Bar[]): Refused | null {
   const RULES: [RegExp, string][] = [
     [/retest|close back|too far from the zone/, 'Retest'],
     [/^TP1 .* pays|break entry: TP1/, 'Reward : risk'],
-    [/fees/, 'Stop wide enough for the fees'],
+    [/stop too tight/, 'Stop wide enough'],
     [/four ATR/, 'Stop within 4 ATR'],
     [/chase/, 'Not chasing'],
     [/OB or FVG/, 'OB / FVG from the move'],

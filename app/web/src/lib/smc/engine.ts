@@ -591,7 +591,7 @@ export class SmcEngine {
     const risk = bull ? entry - stop : stop - entry;
     if (!(risk > 0) || risk > 4 * atr) { this.finish(s, 'INVALIDATED', i, null, `stop wider than four ATR: ${(risk / atr).toFixed(1)} ATR`); return; }
     if (risk < this.o.minRiskPct * entry) {
-      this.finish(s, 'INVALIDATED', i, null, `stop too tight for the fees: risk ${Math.round(risk)} pts, needs ${Math.round(this.o.minRiskPct * entry)} pts (${(this.o.minRiskPct * 100).toFixed(1)}% of price)`);
+      this.finish(s, 'INVALIDATED', i, null, `stop too tight: risk ${Math.round(risk)} pts, needs ${Math.round(this.o.minRiskPct * entry)} pts (${(this.o.minRiskPct * 100).toFixed(1)}% of price)`);
       return;
     }
     if (momentum && this.o.maxChaseAtr > 0 && (bull ? close - poi.high : poi.low - close) > this.o.maxChaseAtr * atr) {

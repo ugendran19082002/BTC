@@ -28,7 +28,7 @@ export type SceneLayer = Layer | 'entry';
  */
 export const LAYERS: readonly { key: Layer; label: string; note?: string }[] = [
   { key: 'htf', label: 'HTF: 1H zones, 15m structure' },
-  { key: 'structure', label: 'Structure', note: 'SMC rules measured 2024–26: no edge after fees' },
+  { key: 'structure', label: 'Structure', note: 'SMC rules measured 2024–26: no edge' },
   { key: 'liquidity', label: 'Liquidity' },
   { key: 'zones', label: 'OB / FVG' },
   { key: 'levels', label: 'Levels' },

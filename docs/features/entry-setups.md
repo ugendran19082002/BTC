@@ -7,7 +7,7 @@ The desk tab's entry section: the twelve entry methods of `TEST.md`, each read
 ([`components/desk/entry/`](../../app/web/src/components/desk/entry/)).
 
 **Display and paper log only.** Nothing here places an order. Every TRADE is
-written to a paper log and graded after fees, and each method's own record sits
+written to a paper log and graded on the live tape, and each method's own record sits
 beside it -- because the desk's research found no directional rule on BTC that
 clears fees ([research/findings.md](../research/findings.md)), and none of these
 is believed until its log says otherwise ([decision 0013](../decisions/0013-entry-setups-measured-before-trusted.md)).
@@ -34,7 +34,7 @@ starting design, not a measurement.
 **Without the timeframe chain** the same method runs on one timeframe alone --
 the one chosen on the screen, 5m by default -- with no higher-timeframe check.
 Both are paper-logged at 5m, so the record answers the question TEST.md asks:
-does the chain add anything after fees?
+does the chain add anything?
 
 Delta does not serve 3m candles; they are folded from 1m, the way 12h is folded
 from 6h. Only **closed** candles are read: nothing is concluded from a forming
@@ -192,7 +192,9 @@ appears and vanishes inside a candle. Everything around them is live:
 | The 1m execution step ("price at the entry") | the tape's last trade while ≤ 15 s old, else the last closed 1m close | the tape |
 | A TRADE card's live strip: LTP, IN THE ENTRY ZONE / above / under / PAST THE STOP / AT TP1, points to entry, SL, TP1 | the stream's `ltp` | ~0.1 s, every tick |
 | The board (signals) | polled every 5 s, the server holding a read 3 s (~50 ms to compute) | ≤ ~8 s after the candle closes |
-| Journal, paper log, Telegram | the recorder, 3 s after every 1m close | seconds |
+| Journal, Telegram | the recorder, 3 s after every 1m close | seconds |
+| Paper-log fills, stops, targets | the perpetual's own trades, every second (`entry/live-grade.ts`); 1m candles only when the tape is down | ~1 s |
+| History | polled every 5 s | ≤ 5 s |
 
 **Whole candles only.** A candle counts as closed only if it closed before
 the data was *asked for* (less 2 s for the venue to settle), not merely before
@@ -244,14 +246,25 @@ Table `entry_setups` (migration `entry-001-setups`):
 
 - A TRADE is written **once**: keyed by method, mode, timeframe, direction and
   the bar its trigger closed on, however long it stays on the board.
-- It is graded on the closed 1m candles: **filled** when price trades into the
-  entry zone (at the zone's near edge, or the open if it gapped past it);
-  **expired** if not filled within 12 entry bars of when the setup was first
-  on the board (graded from the next whole minute), or if price opens past the
-  stop first; then **stop**, **TP1** or **timeout** after 48 entry bars. A bar
-  that touches both the stop and TP1 is the stop, and in the fill bar only the
-  stop counts -- a candle cannot say which came first, and the log does not
-  guess in the setup's favour. A gap through the stop exits at the open.
+- It is graded **live, on the perpetual's own trades** (1 Oct 2026,
+  `entry/live-grade.ts`): every second each working setup is moved on by the
+  trades printed since, through the same rules as a candle, one price at a
+  time -- **filled** when a trade goes through the zone's near edge (a resting
+  limit at its own price; one placed into a market already past it at that
+  trade), **stop** at the first trade through the stop (slippage and all),
+  **TP1** exactly at the level, each written the second it prints. The 1m
+  candles are the backstop: they grade only the minutes the tape did not see
+  (a stale or reconnected socket), and the two graders never run at once.
+  Times graded off the tape show to the second, off a candle as "~06:52".
+- The states: **filled**; **expired** if not filled within 12 entry bars of
+  when the setup was first on the board, or if price goes past the stop first;
+  **missed** if price runs to TP1 without coming back to the zone -- the move
+  went without it, and the limit is cancelled rather than filled late, after
+  the move (`entry-013-setups-missed`; counted with the never-filled, not as a
+  trade); then **stop**, **TP1** or **timeout** after 48 entry bars. On a
+  candle, a bar touching both the stop and TP1 is the stop, and in the fill bar
+  only the stop counts -- a candle cannot say which came first, and the log
+  does not guess in the setup's favour.
 - `r_net` is R: the points from the fill to the exit over the risk -- no fee
   term since 1 Oct 2026 (`entry-010-r-without-fees` recomputed every closed
   row the same way). The record's trade exits at TP1.
@@ -343,7 +356,7 @@ chain, and a one-line trend strip. It is the entry board's own reading (the
 entry section hands it up), so it costs no second request.
 
 Then the **Signal history** (a card of its own): every signal the server
-kept, a page at a time (25 / 50 / 100), every 15 s. Tabs: **All**,
+kept, a page at a time (25 / 50 / 100), every 5 s. Tabs: **All**,
 **TRADING** (in play now: waiting at its zone, filled, or a runner after
 TGT1), **BUY & SELL**, **BUY**, **SELL**, **WAIT**; filters for the way, the
 timeframe and today / all days (remembered; a filter saved before -- 1m, the
