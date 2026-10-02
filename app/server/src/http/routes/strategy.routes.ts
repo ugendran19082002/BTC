@@ -191,6 +191,8 @@ export function registerStrategyRoutes(app: FastifyInstance) {
       runs: await s.runs(40),
       // Each signal a signal strategy saw, and what became of it.
       signalRuns: await s.signalRuns(60),
+      // The signal strategies' trades, with the signal's perp levels, the paper log's verdict and the option's money.
+      signalTrades: await s.signalTrades(100),
     };
   });
 

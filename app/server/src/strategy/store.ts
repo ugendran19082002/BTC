@@ -220,6 +220,53 @@ type SignalRunRow = {
   id: number; strategy_id: string; signal_key: string; method: string; mode: string; tf: string; dir: number;
   status: SignalRunStatus; detail: string; trade_id: string | null; at: string | number;
 };
+/**
+ * One signal strategy trade, for the Live screen's history.
+ *
+ *   levels   the signal's own plan on the BTC perp: the entry zone, SL, TGT1-3
+ *   perp     what the paper log saw on the perp: waiting, filled, out at the
+ *            stop or TGT1, timed out or expired -- the only record a "would
+ *            sell" has
+ *   option   a real order's option: contract, fill, exit, why it closed, P&L
+ */
+export type SignalTrade = {
+  id: number; strategyId: string; at: number; method: string; mode: string; tf: string; dir: 1 | -1;
+  status: 'placed' | 'would-place'; detail: string; tradeId: string | null;
+  levels: { entryLo: number; entryHi: number; stop: number; tp1: number; tp2: number | null; tp3: number | null } | null;
+  perp: { status: string; fillPrice: number | null; filledAt: number | null; exitPrice: number | null; exitAt: number | null } | null;
+  option: {
+    side: string; strike: number | null; size: number; open: boolean;
+    entry: number | null; exit: number | null; pnlUsd: number; exitReason: string | null;
+    perpStop: number | null; perpTarget: number | null;
+  } | null;
+};
+type SignalTradeRow = SignalRunRow & {
+  t_position: number | null; t_plan: Record<string, any> | null; t_state: Record<string, any> | null;
+  p_status: string | null; entry_lo: number | null; entry_hi: number | null; stop: number | null;
+  tp1: number | null; tp2: number | null; tp3: number | null;
+  fill_price: number | null; filled_at: string | number | null; exit_price: number | null; exit_at: string | number | null;
+};
+const n = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
+const signalTradeFrom = (r: SignalTradeRow): SignalTrade => ({
+  id: Number(r.id), strategyId: r.strategy_id, at: Number(r.at), method: r.method, mode: r.mode, tf: r.tf,
+  dir: Number(r.dir) === 1 ? 1 : -1, status: r.status as SignalTrade['status'], detail: r.detail, tradeId: r.trade_id,
+  levels: r.p_status === null ? null : {
+    entryLo: Number(r.entry_lo), entryHi: Number(r.entry_hi), stop: Number(r.stop), tp1: Number(r.tp1), tp2: n(r.tp2), tp3: n(r.tp3),
+  },
+  perp: r.p_status === null ? null : {
+    // the paper log's times are epoch seconds; the screen's are ms
+    status: r.p_status, fillPrice: n(r.fill_price), filledAt: r.filled_at === null ? null : Number(r.filled_at) * 1_000,
+    exitPrice: n(r.exit_price), exitAt: r.exit_at === null ? null : Number(r.exit_at) * 1_000,
+  },
+  option: !r.t_plan || !r.t_state ? null : {
+    side: String(r.t_plan.optionSide), strike: n(r.t_plan.expect?.strike),
+    size: Number(r.t_state.entrySize ?? 0), open: Number(r.t_position ?? 0) !== 0,
+    entry: n(r.t_state.entryAvgPrice), exit: n(r.t_state.exitAvgPrice), pnlUsd: Number(r.t_state.realisedPnl ?? 0),
+    exitReason: r.t_state.exitReason ?? null,
+    perpStop: n(r.t_plan.underlying?.stop), perpTarget: n(r.t_plan.underlying?.target),
+  },
+});
+
 const signalRunFrom = (r: SignalRunRow): SignalRun => ({
   id: Number(r.id), strategyId: r.strategy_id, signalKey: r.signal_key, method: r.method, mode: r.mode, tf: r.tf,
   dir: Number(r.dir) === 1 ? 1 : -1, status: r.status, detail: r.detail, tradeId: r.trade_id, at: Number(r.at),
@@ -381,6 +428,30 @@ export class StrategyStore {
       [strategyId],
     );
     return r?.n ?? 0;
+  }
+
+  /**
+   * The signal strategies' trades, newest first: every signal sold (or, with
+   * live orders off, that would have been), with the signal's levels on the
+   * perp, what the paper log saw happen on the perp, and -- for a real order --
+   * the option's fill, exit, why it closed and the money.
+   */
+  async signalTrades(limit = 100, strategyId?: string): Promise<SignalTrade[]> {
+    const xs = await rows<SignalTradeRow>(
+      `SELECT r.id, r.strategy_id, r.signal_key, r.method, r.mode, r.tf, r.dir, r.status, r.detail, r.trade_id, r.at,
+              t.position AS t_position, t.plan AS t_plan, t.state AS t_state,
+              e.status AS p_status, e.entry_lo, e.entry_hi, e.stop, e.tp1, e.tp2, e.tp3,
+              e.fill_price, e.filled_at, e.exit_price, e.exit_at
+         FROM strategy_signal_runs r
+         LEFT JOIN trades t ON t.trade_id = r.trade_id
+         LEFT JOIN entry_setups e
+           ON e.method = r.method AND e.mode = r.mode AND e.tf = r.tf AND e.dir = r.dir
+          AND e.trigger_at = split_part(r.signal_key, '|', 5)::bigint
+        WHERE r.status IN ('placed', 'would-place') AND ($2::text IS NULL OR r.strategy_id = $2)
+        ORDER BY r.at DESC LIMIT $1`,
+      [limit, strategyId ?? null],
+    );
+    return xs.map(signalTradeFrom);
   }
 
   /** Add to the signal's row what became of the trade it placed: "closed at 5:29 PM". */

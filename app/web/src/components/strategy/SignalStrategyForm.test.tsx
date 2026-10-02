@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { SignalStrategyForm } from '@/components/strategy/SignalStrategyForm';
 import { StrategyForm } from '@/components/strategy/StrategyForm';
-import { matchingSignals, profitableIds } from '@/components/strategy/SignalRuleEditor';
+import { combineRows, matchingSignals, profitableIds } from '@/components/strategy/SignalRuleEditor';
 import { DEFAULT_CONFIG, DEFAULT_SIGNAL_RULE, type SignalRule, type Strategy } from '@/types/strategy';
 import type { MethodRead, MethodReportRow } from '@/types/entry';
 
@@ -172,15 +172,38 @@ describe('picking the methods', () => {
     expect(screen.getByText(/0 of 4 picked/)).toBeInTheDocument();
   });
 
-  it('without the chain: a timeframe to pick, and the record and board follow it', async () => {
+  it('[critical] without the chain: several timeframes, the record added up over them, a board read for each', async () => {
     show(signalStrategy({ methods: [] }));
     tab('Signals');
-    expect(screen.queryByRole('radiogroup', { name: 'signal timeframe' })).toBeNull();
+    expect(screen.queryByRole('group', { name: 'signal timeframes' })).toBeNull();
     radio('signal way', 'Without the chain');
-    radio('signal timeframe', '15m');
-    await waitFor(() => expect(getMethodReport).toHaveBeenLastCalledWith('15m'));
-    await waitFor(() => expect(getEntryBoard).toHaveBeenLastCalledWith('15m'));
+    const tfs = within(screen.getByRole('group', { name: 'signal timeframes' }));
+    expect(tfs.getByRole('button', { name: '5m' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(tfs.getByRole('button', { name: '15m' }));
+    fireEvent.click(tfs.getByRole('button', { name: '5m' }));
+    fireEvent.click(tfs.getByRole('button', { name: '1h' }));
+    expect(screen.getByText('Takes signals on 15m, 1h. The record beside each method is added up over these.')).toBeInTheDocument();
+    await waitFor(() => expect(getEntryBoard).toHaveBeenCalledWith('1h'));
+    expect(getEntryBoard).toHaveBeenCalledWith('15m');
+    // 15m has BOS +300 over 6 and order flow +250 over 7; 1h has nothing
     await waitFor(() => expect(screen.getByRole('button', { name: /Pick profitable so far \(2\)/ })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'No timeframes' }));
+    expect(screen.getByText('Pick at least one timeframe.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'All timeframes' }));
+    expect(tfs.getAllByRole('button', { pressed: true })).toHaveLength(6);
+  });
+
+  it('the win rate is a whole number, added up from the sums', () => {
+    const rows = combineRows([{ rows: [row('a', 3, 1, 10)] }, { rows: [row('a', 6, 3, -4), row('b', 1, 1, 2)] }]);
+    expect(rows.find((r) => r.method === 'a')).toMatchObject({ trades: 9, wins: 4, netPts: 6 });
+    expect(rows.find((r) => r.method === 'a')!.winPct).toBeCloseTo(44.44, 1);
+  });
+
+  it('[critical] the record shows a whole-number win rate, never 33.333…%', async () => {
+    getMethodReport.mockResolvedValue({ ...REPORT, sections: [section('mtf', [{ ...row('breakout', 15, 5, -379), winPct: 33.333333333333336 }]), section('single', [])] });
+    show(signalStrategy({ methods: [] }));
+    tab('Signals');
+    expect(await screen.findByText(/33% · 15t ·/)).toBeInTheDocument();
   });
 });
 
@@ -206,9 +229,22 @@ describe('the SL and TGT on the BTC perp, from the live signal', () => {
     expect(screen.getByRole('radio', { name: 'Offer' })).toHaveAttribute('aria-checked', 'true');
     expect(screen.getByLabelText('cross after seconds')).toHaveValue('5');
     radio('signal target', 'TGT2');
-    radio('max open', '3');
+    // typed, or a quick pick
+    fireEvent.change(screen.getByLabelText('max open'), { target: { value: '7' } });
+    expect(screen.getByLabelText('max open')).toHaveValue('7');
+    fireEvent.click(screen.getByRole('button', { name: '25' }));
+    expect(screen.getByRole('button', { name: '25' })).toHaveAttribute('aria-pressed', 'true');
     fireEvent.click(saveButton());
-    expect(saved().config.signal).toMatchObject({ target: 'tp2', maxOpen: 3 });
+    expect(saved().config.signal).toMatchObject({ target: 'tp2', maxOpen: 25 });
+  });
+
+  it('[critical] at most open: 0 or 101 is refused in words', () => {
+    show(signalStrategy());
+    tab('Entry & exit');
+    fireEvent.change(screen.getByLabelText('max open'), { target: { value: '101' } });
+    expect(screen.getByText('At most 1 to 100 of its trades open at once.')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('max open'), { target: { value: '0' } });
+    expect(screen.getByText('At most 1 to 100 of its trades open at once.')).toBeInTheDocument();
   });
 });
 
@@ -224,12 +260,12 @@ describe('saving', () => {
   });
 
   it('[critical] what is sent: the trigger, the whole rule, and live orders off', async () => {
-    show(signalStrategy({ mode: 'single', tf: '15m', methods: ['bos'] }));
+    show(signalStrategy({ mode: 'single', tf: '15m', tfs: ['15m', '4h'], methods: ['bos'] }));
     fireEvent.click(saveButton());
     await waitFor(() => expect(saveStrategy).toHaveBeenCalledTimes(1));
     expect(saved().config).toMatchObject({
       trigger: 'signal', liveOrders: false, lots: 1,
-      signal: { mode: 'single', tf: '15m', methods: ['bos'], target: 'tp1', maxOpen: 1 },
+      signal: { mode: 'single', tf: '15m', tfs: ['15m', '4h'], methods: ['bos'], target: 'tp1', maxOpen: 1 },
     });
   });
 

@@ -3,7 +3,7 @@ import { Search } from 'lucide-react';
 import { getEntryBoard, getEntryMethods, getMethodReport, type EntryMethodInfo } from '@/api/entry';
 import { usePoll } from '@/hooks/usePoll';
 import { Input } from '@/components/ui/input';
-import { legOfSignal, SIGNAL_TFS, type SignalRule, type SignalTf } from '@/types/strategy';
+import { legOfSignal, ruleTfs, SIGNAL_TFS, type SignalRule, type SignalTf } from '@/types/strategy';
 import type { MethodRead, MethodReportRow } from '@/types/entry';
 import { cn } from '@/lib/utils';
 
@@ -37,8 +37,29 @@ const px = (n: number | null | undefined) => (n == null ? '—' : Math.round(n).
 /** The picked methods' TRADE reads on this board, in this strategy's way. */
 export function matchingSignals(reads: readonly MethodRead[], rule: SignalRule): MethodRead[] {
   return reads.filter((r) => r.state === 'TRADE' && r.plan && r.dir
-    && r.mode === rule.mode && (rule.mode === 'mtf' || r.tf === rule.tf)
+    && r.mode === rule.mode && (rule.mode === 'mtf' || ruleTfs(rule).includes(r.tf as SignalTf))
     && rule.methods.includes(r.id));
+}
+
+/**
+ * One record per method over several timeframes: the timeframes' trades, wins,
+ * points and signals added up, and the win rate worked out again from the sums
+ * -- an average of win rates would weigh a 2-trade timeframe like a 50-trade one.
+ */
+export function combineRows(sections: readonly { rows: readonly MethodReportRow[] }[]): MethodReportRow[] {
+  const by = new Map<string, MethodReportRow>();
+  for (const sec of sections) {
+    for (const r of sec.rows) {
+      const a = by.get(r.method);
+      by.set(r.method, a ? {
+        ...a,
+        signals: a.signals + r.signals, trades: a.trades + r.trades, wins: a.wins + r.wins, losses: a.losses + r.losses,
+        profitPts: a.profitPts + r.profitPts, lossPts: a.lossPts + r.lossPts, netPts: a.netPts + r.netPts,
+        profitR: a.profitR + r.profitR, lossR: a.lossR + r.lossR, netR: a.netR + r.netR,
+      } : { ...r });
+    }
+  }
+  return [...by.values()].map((r) => ({ ...r, winPct: r.trades ? (r.wins / r.trades) * 100 : null }));
 }
 
 /** The methods with a record worth the name, and a positive net: the "profitable so far" pick. */
@@ -57,19 +78,26 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
 
   // The list changes with a deploy, not a minute: asked for once an hour.
   const { data: catalogue, error: catalogueError } = usePoll(getEntryMethods, 3_600_000);
-  // Each method's record in the chosen way -- every signal so far, as the Methods tab counts them.
-  const reportTf = rule.mode === 'single' ? rule.tf : null;
-  const { data: report } = usePoll(() => getMethodReport(reportTf), 300_000, { deps: [reportTf] });
-  // The board the signals stand on, in the chosen way, re-read as the desk re-reads it.
-  const boardTf = rule.mode === 'single' ? rule.tf : '5m';
-  const { data: board } = usePoll(() => getEntryBoard(boardTf), 10_000, { deps: [boardTf] });
+  const tfs = ruleTfs(rule);
+  const tfKey = tfs.join(',');
+  // Each method's record in the chosen way -- every signal so far, as the Methods tab counts them; one
+  // report, every timeframe in it, added up over the ones picked.
+  const { data: report } = usePoll(() => getMethodReport(null), 300_000);
+  // The boards the signals stand on: 5m for the chain (its reads ride on every board), each picked timeframe without it.
+  const boardTfs: SignalTf[] = rule.mode === 'single' ? tfs : ['5m'];
+  const { data: boards } = usePoll(() => Promise.all(boardTfs.map((tf) => getEntryBoard(tf))), 10_000, { deps: [rule.mode, tfKey] });
 
-  const section = useMemo(() => {
-    if (!report) return null;
-    if (rule.mode === 'single') return report.singleByTf[rule.tf] ?? report.sections.find((s) => s.mode === 'single') ?? null;
-    return report.sections.find((s) => s.mode === 'mtf') ?? null;
-  }, [report, rule.mode, rule.tf]);
-  const recordOf = useMemo(() => new Map((section?.rows ?? []).map((r) => [r.method, r])), [section]);
+  const rows = useMemo((): MethodReportRow[] => {
+    if (!report) return [];
+    if (rule.mode === 'mtf') return report.sections.find((s) => s.mode === 'mtf')?.rows ?? [];
+    return combineRows(tfs.map((tf) => report.singleByTf[tf]).filter((x): x is NonNullable<typeof x> => Boolean(x)));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [report, rule.mode, tfKey]);
+  const recordOf = useMemo(() => new Map(rows.map((r) => [r.method, r])), [rows]);
+  const board = boards?.[0] ?? null;
+  const reads = useMemo(() => (boards ?? []).flatMap((b, i) => b.reads.filter((r) => (rule.mode === 'mtf' ? r.mode === 'mtf' : r.mode === 'single' && r.tf === boardTfs[i]))),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+    [boards]);
 
   const methods: EntryMethodInfo[] = catalogue?.methods ?? [];
   const shown = useMemo(() => {
@@ -80,8 +108,13 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
   const picked = new Set(rule.methods);
   const toggle = (id: string) => set('methods', picked.has(id) ? rule.methods.filter((x) => x !== id) : [...rule.methods, id]);
   const addAll = (ids: string[]) => set('methods', [...new Set([...rule.methods, ...ids])]);
-  const winners = section ? profitableIds(section.rows) : [];
-  const live = board ? matchingSignals(board.reads, rule) : [];
+  const winners = profitableIds(rows);
+  const live = matchingSignals(reads, rule);
+  const way = rule.mode === 'mtf' ? 'with the chain' : `without it on ${tfs.join(' + ')}`;
+  const toggleTf = (tf: SignalTf) => {
+    const next = tfs.includes(tf) ? tfs.filter((x) => x !== tf) : SIGNAL_TFS.filter((x) => x === tf || tfs.includes(x));
+    onChange({ ...rule, tfs: next, tf: next[0] ?? rule.tf });
+  };
   const nameOf = (id: string) => methods.find((m) => m.id === id);
   const chip = (on: boolean) => cn(
     'm-0 h-8 appearance-none rounded-md border border-solid px-2.5 font-[inherit] text-[12px]',
@@ -112,14 +145,25 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
 
       {rule.mode === 'single' && (
         <div>
-          <div className="mb-1 text-[12px] text-muted-foreground">Timeframe</div>
-          <div role="radiogroup" aria-label="signal timeframe" className="grid grid-cols-6 gap-1">
+          <div className="mb-1 flex items-baseline justify-between gap-2">
+            <span className="text-[12px] text-muted-foreground">Timeframes — pick one or more</span>
+            <span className="flex gap-3">
+              <button type="button" className={link} disabled={tfs.length === SIGNAL_TFS.length} aria-label="All timeframes"
+                      onClick={() => onChange({ ...rule, tfs: [...SIGNAL_TFS], tf: SIGNAL_TFS[0]! })}>All</button>
+              <button type="button" className={link} disabled={tfs.length === 0} aria-label="No timeframes"
+                      onClick={() => onChange({ ...rule, tfs: [] })}>None</button>
+            </span>
+          </div>
+          <div role="group" aria-label="signal timeframes" className="grid grid-cols-6 gap-1">
             {SIGNAL_TFS.map((tf: SignalTf) => (
-              <button key={tf} type="button" role="radio" aria-checked={rule.tf === tf} onClick={() => set('tf', tf)} className={chip(rule.tf === tf)}>
+              <button key={tf} type="button" aria-pressed={tfs.includes(tf)} onClick={() => toggleTf(tf)} className={chip(tfs.includes(tf))}>
                 {tf}
               </button>
             ))}
           </div>
+          <p className="m-0 mt-1 text-[11px] text-[var(--dim)]">
+            {tfs.length ? `Takes signals on ${tfs.join(', ')}. The record beside each method is added up over these.` : ''}
+          </p>
           {errors.tf && <p role="alert" className="m-0 mt-1 text-[11.5px] text-[var(--down)]">{errors.tf}</p>}
         </div>
       )}
@@ -148,7 +192,7 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
             Pick all shown ({shown.length})
           </button>
           <button type="button" className={link} disabled={!winners.length}
-                  title={`Net points above zero over at least ${MIN_TRADES_FOR_RECORD} trades, ${rule.mode === 'mtf' ? 'with the chain' : `without it on ${rule.tf}`}`}
+                  title={`Net points above zero over at least ${MIN_TRADES_FOR_RECORD} trades, ${way}`}
                   onClick={() => addAll(winners)}>
             Pick profitable so far ({winners.length})
           </button>
@@ -179,7 +223,7 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
                         {rec && rec.trades > 0
                           ? (
                             <>
-                              {rec.winPct ?? 0}% · {rec.trades}t ·{' '}
+                              {Math.round(rec.winPct ?? 0)}% · {rec.trades}t ·{' '}
                               <span className={rec.netPts > 0 ? 'text-[var(--up)]' : rec.netPts < 0 ? 'text-[var(--down)]' : ''}>
                                 {pts(rec.netPts)} pts
                               </span>
@@ -199,7 +243,7 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
           )}
         </ul>
         <p className="m-0 mt-1 text-[10.5px] text-[var(--dim)]">
-          Record: win rate · trades · net BTC points, every signal so far {rule.mode === 'mtf' ? 'with the chain' : `without it on ${rule.tf}`} (the Methods tab).
+          Record: win rate · trades · net BTC points, every signal so far {way} (the Methods tab).
         </p>
       </div>
 
@@ -226,7 +270,7 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
                   const leg = legOfSignal(r.dir!);
                   return (
                     <li key={`${r.id}|${r.mode}|${r.tf}`} className="py-0.5 text-[11.5px] leading-snug tabular-nums">
-                      <span className="text-muted-foreground">#{r.n} {nameOf(r.id)?.name ?? r.name}</span>{' '}
+                      <span className="text-muted-foreground">#{r.n} {nameOf(r.id)?.name ?? r.name}{rule.mode === 'single' && tfs.length > 1 ? ` (${r.tf})` : ''}</span>{' '}
                       <span className={r.dir === 'long' ? 'text-[var(--up)]' : 'text-[var(--down)]'}>{r.dir === 'long' ? 'BUY' : 'SELL'}</span>
                       {' → sells '}<b className="font-semibold text-foreground">{leg}</b>
                       {' · perp SL '}{px(p.stop)}

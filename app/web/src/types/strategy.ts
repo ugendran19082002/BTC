@@ -152,8 +152,11 @@ export const legOfSignal = (dir: 'long' | 'short' | 1 | -1): 'CE' | 'PE' => (dir
 
 export const DEFAULT_SIGNAL_RULE: SignalRule = { mode: 'mtf', tf: '5m', tfs: ['5m'], methods: [], target: 'tp1', maxOpen: 1 };
 
-/** The timeframes a rule without the chain takes: `tfs`, or the one `tf` it was saved with (server: `ruleTfs`). */
-export const ruleTfs = (rule: Pick<SignalRule, 'tf' | 'tfs'>): SignalTf[] => (rule.tfs?.length ? rule.tfs : [rule.tf]);
+/**
+ * The timeframes a rule without the chain takes: `tfs`, or the one `tf` it was saved with. An empty `tfs` is
+ * the form's "None" -- nothing picked, said as a problem -- not a fall back to `tf` (the server never stores one).
+ */
+export const ruleTfs = (rule: Pick<SignalRule, 'tf' | 'tfs'>): SignalTf[] => rule.tfs ?? [rule.tf];
 
 /** "5m", "5m + 1h", or "with the chain" -- how a rule's timeframes are said. */
 export const ruleTfWords = (rule: SignalRule): string => (rule.mode === 'mtf' ? 'with the chain' : `on ${ruleTfs(rule).join(' + ')}`);
