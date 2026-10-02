@@ -593,8 +593,10 @@ export class TradingService {
       const quote = await this.quoteForDisplay(rec.state.symbol, now);
       const mark = live?.markPrice ?? quote?.mark ?? midOf(quote?.bid ?? null, quote?.ask ?? null);
       unrealisedUsd += unrealisedPnlUsd({
+        // This trade's own contracts, never Delta's row for the symbol: two trades may hold one contract
+        // (decision 0011), and each counted both -- "Net today" disagreed with the Open P&L above it (2 Oct 2026).
         entryPrice: rec.state.entryAvgPrice, markPrice: mark,
-        size: live?.size ?? rec.state.position, contractValue: rec.state.contractValue,
+        size: rec.state.position, contractValue: rec.state.contractValue,
       }) ?? 0;
     }
     const chargesUsd = (await this.store.between(dayStart, now + 1))

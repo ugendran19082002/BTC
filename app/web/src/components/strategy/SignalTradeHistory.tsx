@@ -37,7 +37,8 @@ export const PAGE = 10;
 type Outcome = { word: string; tone: 'up' | 'down' | 'open' | 'quiet'; at: number | null; price: number | null };
 
 const btc = (n: number | null | undefined) => (n === null || n === undefined ? '—' : Math.round(n).toLocaleString('en-US'));
-const opt = (n: number | null | undefined) => (n === null || n === undefined ? '—' : n.toLocaleString('en-US', { maximumFractionDigits: 2 }));
+/** An option's price, in dollars, as Delta quotes it: "$45", "$4.5". */
+const opt = (n: number | null | undefined) => (n === null || n === undefined ? '—' : `$${n.toLocaleString('en-US', { maximumFractionDigits: 2 })}`);
 
 /** The perp side, in the paper log's words. */
 const PERP: Record<string, { word: string; tone: Outcome['tone'] }> = {

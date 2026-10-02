@@ -279,6 +279,20 @@ export const replay = (init: TradeState, events: TradeEvent[]): TradeState =>
  * recomputes them. This does, on the way out of the store, so history is right
  * the moment the code is.
  */
+/**
+ * What this trade booked from `since` on: each exit fill at or after it, against the entry average -- the
+ * same arithmetic as `realisedPnl`, only over the buy-backs of the period. A trade closed yesterday and
+ * touched today books nothing today; one half-closed yesterday books only today's half (2 Oct 2026: the
+ * day's "Booked" summed every trade updated today, whole).
+ */
+export function realisedSinceOf(s: TradeState, since: number): number {
+  const entry = averageOf(s.fills, (f) => f.role === 'entry').avg;
+  if (entry === null) return 0;
+  return s.fills
+    .filter((f) => isExit(f.role) && f.ts >= since)
+    .reduce((n, f) => n + (entry - f.price) * f.size * (s.contractValue ?? 0.001), 0);
+}
+
 export function recompute(s: TradeState): TradeState {
   const entry = averageOf(s.fills, (f) => f.role === 'entry');
   const exit = averageOf(s.fills, (f) => isExit(f.role));

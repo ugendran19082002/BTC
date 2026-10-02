@@ -23,6 +23,11 @@ describe('the signal on a trade row', () => {
     expect(screen.getByLabelText('perp exits')).toHaveTextContent('perp entry 85,870 · SL 86,398 · TGT 85,353');
   });
 
+  it('[critical] closed: the perp entry and exit points; an approximate entry is marked', () => {
+    render(<SignalTag plan={plan({ underlying: { dir: 1, stop: 86_398, target: 85_353, source: 'BTC perp', entry: 85_870, entryApprox: true } })} perpExit={85_360} />);
+    expect(screen.getByLabelText('perp exits')).toHaveTextContent('perp entry ≈85,870 → exit 85,360 · SL 86,398 · TGT 85,353');
+  });
+
   it('with the timeframe chain, and a SELL', () => {
     render(<SignalTag plan={plan({ signal: { method: 'bos', n: 6, name: 'BOS', mode: 'mtf', tf: '5m', dir: -1, triggerTime: 1 } })} />);
     expect(screen.getByLabelText('signal')).toHaveTextContent('#6 BOS · SELL · 5m + TF chain');

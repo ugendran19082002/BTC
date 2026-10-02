@@ -32,7 +32,7 @@ beforeEach(() => localStorage.clear());
 
 describe('the signal trade history', () => {
   it('[critical] each trade: signal, option, perp entry, option entry, perp SL, perp TGT, exit, result, P&L -- with the times', () => {
-    const won = { ...LIVE_WON, option: { ...LIVE_WON.option!, perpEntry: 85_020, entryAt: AT + 30_000, exitAt: AT + 900_000 } };
+    const won = { ...LIVE_WON, option: { ...LIVE_WON.option!, perpEntry: 85_020, perpExit: 84_480, entryAt: AT + 30_000, exitAt: AT + 900_000 } };
     render(<SignalTradeHistory trades={[won, trade({})]} strategies={strategies} />);
     const [, liveRow, would] = within(screen.getByRole('table', { name: 'signal trades' })).getAllByRole('row');
     const cell = (row: HTMLElement, name: string) => within(row).getByLabelText(name);
@@ -40,10 +40,11 @@ describe('the signal trade history', () => {
     expect(liveRow).toHaveTextContent('5m + TF chain');
     expect(liveRow).toHaveTextContent('CE 86,000 ×1');
     expect(cell(liveRow!, 'perp entry')).toHaveTextContent('85,020');
-    expect(cell(liveRow!, 'option entry')).toHaveTextContent(/^18\d{2} Oct/);         // the price, and when it filled under it
+    expect(cell(liveRow!, 'option entry')).toHaveTextContent(/^\$18\d{2} Oct/);         // the price, and when it filled under it
     expect(cell(liveRow!, 'perp SL')).toHaveTextContent(/^85,400$/);                 // not hit: no time
     expect(cell(liveRow!, 'perp TGT')).toHaveTextContent(/^84,500\d{2} Oct/);         // hit: the exit time under it
-    expect(cell(liveRow!, 'exit')).toHaveTextContent(/^4\.5$/);
+    expect(cell(liveRow!, 'option exit')).toHaveTextContent(/^\$4\.5$/);              // the TGT was hit: its time is under the TGT
+    expect(cell(liveRow!, 'perp exit')).toHaveTextContent(/^84,480\d{2} Oct/);       // where the perp was as it was bought back, and when
     expect(liveRow).toHaveTextContent('perp TGT');
     expect(liveRow).toHaveTextContent('+₹1.15');
     // a would-sell: the perp's fill and when, the zone, TGT1 hit and when
@@ -136,5 +137,19 @@ describe('the tabs', () => {
     fireEvent.change(screen.getByLabelText('which strategy'), { target: { value: 'other' } });
     expect(screen.getByRole('button', { name: /^All/ })).toHaveTextContent('All 1');
     expect(screen.getByRole('button', { name: /^Skipped/ })).toHaveTextContent('Skipped 0');
+  });
+});
+
+describe('the perp points', () => {
+  it('[critical] approximate points (a trade from before they were kept) are marked ≈; a would-sell not filled says so', () => {
+    const old = { ...LIVE_WON, id: 21, option: { ...LIVE_WON.option!, perpEntry: 85_870, perpEntryApprox: true, perpExit: 84_500, perpExitApprox: true, entryAt: AT, exitAt: AT + 60_000 } };
+    const waiting = trade({ id: 22, perp: { status: 'open', fillPrice: null, filledAt: null, exitPrice: null, exitAt: null } });
+    const never = trade({ id: 23, perp: { status: 'expired', fillPrice: null, filledAt: null, exitPrice: null, exitAt: null } });
+    render(<SignalTradeHistory trades={[old, waiting, never]} strategies={strategies} />);
+    const [, a, b, c] = within(screen.getByRole('table', { name: 'signal trades' })).getAllByRole('row');
+    expect(within(a!).getByLabelText('perp entry')).toHaveTextContent(/^≈85,870/);
+    expect(within(a!).getByLabelText('perp exit')).toHaveTextContent(/^≈84,500/);
+    expect(within(b!).getByLabelText('perp entry')).toHaveTextContent(/^waitingzone/);
+    expect(within(c!).getByLabelText('perp entry')).toHaveTextContent(/^never filledzone/);
   });
 });
