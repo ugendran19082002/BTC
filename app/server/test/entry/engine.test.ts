@@ -195,7 +195,7 @@ test('the timeframe rows: each of the chain\'s seven, its trend and what its swi
 
 test('[critical] every read with a setup carries the whole hard-gate checklist: rule, value, verdict', () => {
   const r = readMethod(BREAKOUT, 'single', '5m', single({}));
-  assert.deepEqual(r.gates.map((g) => g.key), ['data', 'spread', 'mark', 'stop', 'rr', 'htf', 'big-move', 'em', 'settle']);
+  assert.deepEqual(r.gates.map((g) => g.key), ['data', 'plan', 'spread', 'mark', 'stop', 'rr', 'htf', 'big-move', 'em', 'settle']);
   for (const g of r.gates) assert.ok(g.rule.length > 0 && g.value !== undefined, `${g.key} says its rule and what it read`);
   const htf = r.gates.find((g) => g.key === 'htf')!;
   assert.equal(htf.ok, null, 'without the chain the HTF gate is not part of the read -- listed, never "passed"');
@@ -235,13 +235,18 @@ test('[critical] a gate switched off still reads and shows ✗, but refuses noth
 
 test('[critical] an entry zone is never wider than half an ATR, and it is kept at the edge price reaches first', () => {
   const FVG = METHODS.find((m) => m.id === 'fvg-retest')!;
-  // A long: a wide gap under price. Whatever the method asks for, the plan narrows it from the top.
+  // A long: a wide gap reaching up to just under the price. Whatever the method asks for, the plan narrows it
+  // from the top. (Right under the price, so the plan stays in play -- Plan valid, 1 Oct 2026 audit.)
   const bars = path(wave(60, 84_000, 20, 10));
   const a = atr(bars)!;
-  const wide = { ...FVG, detect: () => ({ dir: 1 as const, steps: [], zone: [83_000, 83_900] as [number, number], stop: 82_900, triggerTime: bars.at(-1)!.time }) };
+  const top = bars.at(-1)!.close - 5;
+  const wide = { ...FVG, detect: () => ({
+    dir: 1 as const, steps: [], zone: [top - 900, top] as [number, number], stop: top - 1_000, triggerTime: bars.at(-1)!.time,
+    targets: [{ price: top + 3_000, why: 'far above' }],
+  }) };
   const r = readMethod(wide, 'single', '5m', single({ gatesOff: ['rr', 'stop'] }, bars));
-  assert.equal(r.state, 'TRADE');
-  assert.equal(r.plan!.entryHi, 83_900, 'the top: where a long fills');
+  assert.equal(r.state, 'TRADE', JSON.stringify(r.gates.filter((g) => g.ok === false)));
+  assert.equal(r.plan!.entryHi, top, 'the top: where a long fills');
   assert.ok(Math.abs(r.plan!.entryHi - r.plan!.entryLo - MAX_ZONE_ATR * a) < 1e-6, 'half an ATR, not 900 points');
 });
 
@@ -283,7 +288,9 @@ test('[critical] the execution step reads the live price: the tape\'s last trade
   // Fresh LTP far above the zone: the price has left it, whatever the last closed candle said.
   const gone = readMethod(BREAKOUT, 'mtf', '5m', { ...base, ltp: { price: 86_000, at: base.now - 2_000 } });
   assert.equal(exec(gone).ok, false);
-  assert.equal(gone.state, 'WAIT');
+  // And the plan is no longer a trade at all: at 86,000 the price is past TGT1 (Plan valid, 1 Oct 2026 audit).
+  assert.equal(gone.state, 'NO_TRADE');
+  assert.match(gone.reason, /already reached TGT1|ATR from the price/);
   // A stale LTP (the socket down) is not the price: the last closed 1m close is.
   const stale = readMethod(BREAKOUT, 'mtf', '5m', { ...base, ltp: { price: 86_000, at: base.now - 60_000 } });
   assert.match(exec(stale).label, /last 1m close/);

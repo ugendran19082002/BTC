@@ -7,6 +7,7 @@ import { usePersisted } from '@/hooks/usePersisted';
 import { Card, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
+import { DayPicker } from '@/components/ui/day-picker';
 import { PnlCalendar } from '@/components/report/PnlCalendar';
 import { CumulativeChart } from '@/components/report/CumulativeChart';
 import { MtmChart } from '@/components/report/MtmChart';
@@ -194,17 +195,14 @@ export function ReportPanel() {
       {/* 5. Intraday Minute-by-Minute MTM Card */}
       <Card>
         <CardTitle
-          right={mtm.data && mtm.data.days.length > 0 && (
-            <select
-              className="report-day"
-              aria-label="which day"
+          right={mtm.data && (
+            // A calendar of the days that have a line (owner, 2 Oct 2026: "a date picker"), arrows to step
+            // through them. Today is held as null, so the line follows the day over midnight.
+            <DayPicker
               value={day ?? mtm.data.day}
-              onChange={(e) => setDay(e.target.value === todayIst() ? null : e.target.value)}
-            >
-              {[...new Set([todayIst(), ...mtm.data.days])].map((d) => (
-                <option key={d} value={d}>{d === todayIst() ? `Today · ${d}` : d}</option>
-              ))}
-            </select>
+              available={mtm.data.days}
+              onChange={(d) => setDay(d === todayIst() ? null : d)}
+            />
           )}
         >
           The day, minute by minute

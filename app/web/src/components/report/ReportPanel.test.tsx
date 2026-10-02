@@ -119,7 +119,8 @@ describe('the calendar', () => {
     expect(screen.queryByLabelText('from date')).toBeNull();
     getDays.mockClear();
     // the trigger says what the range is, which is also how it is found
-    fireEvent.click(screen.getByRole('button', { name: /last 90 days|\d+ \w+/i }));
+    // The range picker's own button, anchored: the day picker's button ("which day: Today · Fri 2 Oct") reads a date too.
+    fireEvent.click(screen.getByRole('button', { name: /^(last 90 days|\d+ \w+( – \d+ \w+)?)$/i }));
     fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'yesterday' }));
     await waitFor(() => expect(getDays).toHaveBeenCalledWith(daysAgoIst(1), daysAgoIst(1)));
   });
