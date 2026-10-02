@@ -1,14 +1,15 @@
 import {
-  asSignalConfig, DEFAULT_CONFIG, DEFAULT_SIGNAL_RULE, MAX_SIGNAL_OPEN, type SignalRule, type Strategy,
+  asSignalConfig, DEFAULT_CONFIG, DEFAULT_SIGNAL_RULE, MAX_OPEN_PRESETS, MAX_SIGNAL_OPEN, type SignalRule, type Strategy,
 } from '@/types/strategy';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
 import { describeStrategy } from '@/lib/strategy-preview';
 import { cn } from '@/lib/utils';
 import { useStrategyDraft } from '@/components/strategy/useStrategyDraft';
 import { SignalRuleEditor } from '@/components/strategy/SignalRuleEditor';
 import {
-  DaysField, EntryPriceFields, FormFooter, FormTabBar, NameField, OptionExitFields, RuleSentence,
+  DaysField, EntryPriceFields, num, FormFooter, FormTabBar, NameField, OptionExitFields, RuleSentence,
   Segmented, SizeFields, Stack, StrikeFields, TimeWindowFields, type TabDef,
 } from '@/components/strategy/form-parts';
 
@@ -137,11 +138,13 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
                   />
                 </Stack>
                 <Stack label="At most open at once" error={err('maxOpen')} className="mt-2"
-                       hint="A signal past this is written down and not taken.">
-                  <div className="grid grid-cols-5 gap-1" role="radiogroup" aria-label="max open">
-                    {Array.from({ length: MAX_SIGNAL_OPEN }, (_, i) => i + 1).map((n) => (
-                      <button key={n} type="button" role="radio" aria-checked={rule.maxOpen === n} onClick={() => setRule('maxOpen', n)}
-                              className={cn('m-0 h-9 appearance-none rounded-md border border-solid font-[inherit] text-[12.5px]',
+                       hint={`1 to ${MAX_SIGNAL_OPEN}. Live orders off counts the would-sells still in play. A signal past this is written down and not taken.`}>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Input value={String(rule.maxOpen)} aria-label="max open" inputMode="numeric" className="w-20"
+                           onChange={(e) => setRule('maxOpen', Math.trunc(num(e.target.value, 0)))} />
+                    {MAX_OPEN_PRESETS.map((n) => (
+                      <button key={n} type="button" aria-pressed={rule.maxOpen === n} onClick={() => setRule('maxOpen', n)}
+                              className={cn('m-0 h-9 min-w-9 appearance-none rounded-md border border-solid px-2 font-[inherit] text-[12.5px] tabular-nums',
                                 rule.maxOpen === n ? 'border-foreground bg-muted text-foreground' : 'border-border bg-transparent text-muted-foreground')}>
                         {n}
                       </button>

@@ -257,8 +257,10 @@ export type StrategyConfig = {
 export type SignalRule = {
   /** With the timeframe chain (entry on 5m), or without it on `tf`. */
   mode: 'mtf' | 'single';
-  /** The timeframe of a read without the chain; with it, the entry is always 5m. */
+  /** The timeframe of a read without the chain, as first saved; `tfs` is read when present. With the chain, the entry is always 5m. */
   tf: SignalTf;
+  /** Without the chain, every timeframe it takes signals on (2 Oct 2026: more than one). Absent: `[tf]`. */
+  tfs?: SignalTf[];
   /** The method ids (entry/methods.ts) whose TRADE signals it takes. At least one. */
   methods: string[];
   /** Which of the signal's targets the trade exits at: TGT1, or TGT2 / TGT3 where the signal has them (else TGT1). */
@@ -274,10 +276,13 @@ export const MAX_SIGNAL_OPEN = 100;
 /** The leg a signal is traded as: a BUY sells the put, a SELL the call -- each wins as the signal goes right. */
 export const legOfSignal = (dir: 'long' | 'short' | 1 | -1): 'CE' | 'PE' => (dir === 'long' || dir === 1 ? 'PE' : 'CE');
 
-/** Whether a signal strategy takes this read: its way, its timeframe, one of its methods. */
+/** The timeframes a rule without the chain takes: `tfs`, or the one `tf` it was saved with before there could be several. */
+export const ruleTfs = (rule: Pick<SignalRule, 'tf' | 'tfs'>): SignalTf[] => (rule.tfs?.length ? rule.tfs : [rule.tf]);
+
+/** Whether a signal strategy takes this read: its way, one of its timeframes, one of its methods. */
 export function signalMatches(rule: SignalRule, r: { id: string; mode: string; tf: string }): boolean {
   if (r.mode !== rule.mode) return false;
-  if (rule.mode === 'single' && r.tf !== rule.tf) return false;
+  if (rule.mode === 'single' && !ruleTfs(rule).includes(r.tf as SignalTf)) return false;
   return rule.methods.includes(r.id);
 }
 
@@ -615,7 +620,10 @@ export function signalRuleProblems(r: Partial<SignalRule> | undefined): string[]
   if (!r) return ['A signal strategy needs its signals: the way, the timeframe and at least one method.'];
   const bad: string[] = [];
   if (r.mode !== 'mtf' && r.mode !== 'single') bad.push('Pick with the timeframe chain or without it.');
-  if (r.mode === 'single' && !SIGNAL_TFS.includes(r.tf as SignalTf)) bad.push(`Pick a timeframe: ${SIGNAL_TFS.join(', ')}.`);
+  if (r.mode === 'single') {
+    const tfs = Array.isArray(r.tfs) && r.tfs.length ? r.tfs : [r.tf];
+    if (tfs.some((t) => !SIGNAL_TFS.includes(t as SignalTf))) bad.push(`Pick a timeframe: ${SIGNAL_TFS.join(', ')}.`);
+  }
   const ids = new Set(METHODS.map((m) => m.id));
   if (!Array.isArray(r.methods) || r.methods.length === 0) bad.push('Pick at least one method whose signals to take.');
   else if (r.methods.some((m) => !ids.has(m))) bad.push(`No such method: ${r.methods.filter((m) => !ids.has(m)).join(', ')}.`);

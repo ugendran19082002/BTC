@@ -63,6 +63,8 @@ export type Trade = {
     /** The other leg's target, or a person at the desk. */
     source: { tradeId: string; optionSide: OptionSide; boughtBack: number } | { manual: true };
   } | null;
+  /** Why the desk last closed it, in its words, when it was the desk's decision (the perp level, the stop watch, the exit time). */
+  exitReason?: string | null;
   updatedAt: number;
   plan?: {
     lots: number;
@@ -73,8 +75,12 @@ export type Trade = {
     origin?: TradeOrigin;
     /** Which saved strategy, when a strategy opened it. */
     strategyId?: string | null;
-    /** The strategy's name when the order was placed. Absent on orders placed before 27 Sep 2026. */
+    /** The strategy's name -- its current one, looked up by id; the name it was placed under once it is deleted. */
     strategyName?: string | null;
+    /** A signal strategy's trade: the signal it traded. */
+    signal?: TradeSignal | null;
+    /** A signal strategy's trade: its real exits, the signal's SL and TGT on the BTC perp. */
+    underlying?: { dir: 1 | -1; stop: number | null; target: number | null; source: string } | null;
     entry: { type: 'limit' | 'market'; limitPrice?: number; timeoutMs: number; marketFallback: boolean };
     takeProfitPrice: number | null;
     stopPrice: number | null;
@@ -329,4 +335,9 @@ export type OrderHistory = {
   to: string;
   counts: Partial<Record<OrderStatus, number>>;
   trades: OrderRecord[];
+};
+
+/** The signal a signal strategy traded (server: trading/engine.ts `TradeSignal`). */
+export type TradeSignal = {
+  method: string; n: number; name: string; mode: 'mtf' | 'single'; tf: string; dir: 1 | -1; triggerTime: number;
 };

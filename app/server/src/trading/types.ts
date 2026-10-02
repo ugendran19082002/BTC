@@ -256,6 +256,12 @@ export type TradeState = {
    * buy for the same contracts is two orders closing one position.
    */
   closing?: ExitWorking | null;
+  /**
+   * Why the desk last closed, in its words ("BTC perp at 84,590 reached the
+   * signal's stop 84,600"), from the close it sent. For the exit alert and the
+   * screens; absent on a target or stop that filled at Delta.
+   */
+  exitReason?: string | null;
   updatedAt: number;
 };
 

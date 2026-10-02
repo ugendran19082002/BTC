@@ -23,7 +23,8 @@ const ORIGIN_WORDS: Record<TradeOrigin, string> = {
 export function OriginTag({ origin, strategyName, strategyId, className }: {
   origin?: TradeOrigin | null;
   /**
-   * The strategy's name as stamped on the order when it was placed.
+   * The strategy's name: its current one (the server looks it up by id, so a
+   * rename shows here), or the one stamped when it was placed once deleted.
    *
    * Absent on orders placed before 27 Sep 2026, when the plan carried only the
    * id — `strategyId` is the fallback for those, and it is a poor label: the ids

@@ -127,7 +127,10 @@ export type StrategyConfig = {
 /** Mirrors the server's SignalRule (app/server/src/strategy/types.ts). */
 export type SignalTf = '3m' | '5m' | '15m' | '30m' | '1h' | '4h';
 export const SIGNAL_TFS: readonly SignalTf[] = ['3m', '5m', '15m', '30m', '1h', '4h'];
-export const MAX_SIGNAL_OPEN = 5;
+/** "At most open at once" is typed, 1 to this (server: MAX_SIGNAL_OPEN). */
+export const MAX_SIGNAL_OPEN = 100;
+/** The quick picks beside it. */
+export const MAX_OPEN_PRESETS = [1, 5, 10, 25, 50, 75, 100] as const;
 export type SignalTarget = 'tp1' | 'tp2' | 'tp3';
 export type SignalRule = {
   /** With the timeframe chain (entry on 5m), or without it on `tf`. */

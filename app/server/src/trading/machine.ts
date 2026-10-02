@@ -215,6 +215,7 @@ export function applyEvent(prev: TradeState, e: TradeEvent): TradeState {
         // Only a close the desk sent carries this; a protection leg filling is
         // not "a close working", it is the plan happening.
         closing: e.closing ?? s.closing ?? null,
+        exitReason: e.reason ?? s.exitReason ?? null,
         phase: s.position === 0 ? s.phase : 'exit_pending',
       };
 

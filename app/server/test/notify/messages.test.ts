@@ -267,3 +267,34 @@ test('an add turned down before it was sent is not announced by the engine -- th
   assert.equal(out.at(-1), null);
 });
 
+
+test('[critical] a signal strategy\'s trade: the signal, its SL and TGT on the BTC perp, the option exits as the backstop, and the strategy by name', () => {
+  const plan: TradePlan = {
+    ...PLAN, origin: 'strategy', strategyId: 'sig-bo', strategyName: 'Breakout <PE>',
+    underlying: { dir: 1, stop: 84_600, target: 85_500, source: 'BTC perp' },
+    signal: { method: 'breakout', n: 1, name: 'Breakout', mode: 'single', tf: '15m', dir: 1, triggerTime: 1 },
+  };
+  const entry = last([submitted(), fill('entry', 100, 100.5)], plan)!;
+  assert.match(entry.text, /📡 Signal <b>#1 Breakout<\/b> BUY · 15m, without the chain/);
+  assert.match(entry.text, /📈 BTC perp  🛑 SL <b>84,600<\/b>   🎯 TGT <b>85,500<\/b>/);
+  assert.match(entry.text, /Option backstop: 🎯 Target 90\.0   🛑 Stop 110\.0/);
+  assert.match(entry.text, /strategy “Breakout &lt;PE&gt;”/, 'named, and escaped');
+
+  const out = last([
+    submitted(), fill('entry', 100, 100.5),
+    { t: 'exit_submitted', clientOrderId: 'x', reason: 'BTC perp at 84590 reached the signal\'s stop 84600', at: AT },
+    fill('exit', 100, 120),
+  ], plan)!;
+  assert.match(out.text, /CLOSED AT MARKET/);
+  assert.match(out.text, /ℹ️ BTC perp at 84590 reached the signal's stop 84600/);
+  assert.match(out.text, /📡 Signal <b>#1 Breakout<\/b> BUY/);
+
+  const chain = last([submitted(), fill('entry', 100, 100.5)], { ...plan, signal: { ...plan.signal!, mode: 'mtf', tf: '5m', dir: -1 } })!;
+  assert.match(chain.text, /SELL · with the timeframe chain/);
+});
+
+test('a manual trade says none of it', () => {
+  const a = last([submitted(), fill('entry', 100, 100.5)])!;
+  assert.doesNotMatch(a.text, /Signal|BTC perp|backstop/);
+  assert.match(a.text, /· manual ·/);
+});

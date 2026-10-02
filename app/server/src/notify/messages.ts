@@ -427,6 +427,8 @@ function exitText(
     `${side === 'buy' ? 'Bought back' : 'Sold back'} <b>${qty(s.exitSize)}</b>${part ? ` of ${qty(s.entrySize)}` : ''}`
       + ` @ <b>${price(s.exitAvgPrice ?? 0)}</b>  (entry ${price(s.entryAvgPrice ?? 0)})`,
     part ? `${pnlIcon(s.realisedPnl)} Booked so far: ${signedMoney(s.realisedPnl, true)}` : pnlLine(s.realisedPnl),
+    // Why the desk closed it, when it was the desk's decision: the perp level, the stop watch, the exit time.
+    role === 'exit' && s.exitReason ? `ℹ️ ${escape(s.exitReason)}` : null,
     signalLine(plan),
     perpLine(plan),
     !part ? '✔️ Position is <b>flat</b>'

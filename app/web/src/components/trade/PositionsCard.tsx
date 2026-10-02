@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CloseAllButton } from '@/components/trade/CloseAllButton';
 import { OriginTag } from '@/components/trade/OriginTag';
+import { SignalTag } from '@/components/trade/SignalTag';
 import { EditExitsSheet } from '@/components/trade/EditExitsSheet';
 import { AddLotsSheet } from '@/components/trade/AddLotsSheet';
 import { ClosePositionSheet } from '@/components/trade/ClosePositionSheet';
@@ -91,6 +92,7 @@ function ContractName({ trade }: { trade: Trade }) {
       <Badge tone={trade.optionSide === 'CE' ? 'ok' : 'warn'}>{trade.optionSide}</Badge>
       {/* Three things place orders here; which one did is the first question. */}
       <OriginTag origin={trade.plan?.origin} strategyName={trade.plan?.strategyName ?? null} strategyId={trade.plan?.strategyId ?? null} />
+      <SignalTag plan={trade.plan} />
     </div>
   );
 }

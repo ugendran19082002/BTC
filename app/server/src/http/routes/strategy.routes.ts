@@ -3,7 +3,7 @@ import { refuse } from '../refuse.js';
 import { StrategyStore } from '../../strategy/store.js';
 import { entryDue, istDate, nextEntryAt } from '../../strategy/schedule.js';
 import { inSignalWindow } from '../../strategy/runner.js';
-import { DEFAULT_CONFIG, time12, validateConfig, type ExitStep, type SignalRule, type SignalTf, type StrategyConfig } from '../../strategy/types.js';
+import { DEFAULT_CONFIG, SIGNAL_TFS, time12, validateConfig, type ExitStep, type SignalRule, type SignalTf, type StrategyConfig } from '../../strategy/types.js';
 import { tradingService } from '../../trading/service.js';
 
 /**
@@ -109,11 +109,17 @@ function cleanConfig(raw: unknown): StrategyConfig {
 }
 
 /** A signal rule: only its own keys, the methods de-duplicated in the order sent. A mode or timeframe it cannot read is left for validation to name. */
+const TF_ORDER: readonly string[] = SIGNAL_TFS;
+
 function cleanSignal(raw: unknown): SignalRule {
   const r = (raw ?? {}) as Partial<SignalRule>;
   return {
     mode: r.mode as SignalRule['mode'],
     tf: (r.tf ?? '5m') as SignalTf,
+    // Several timeframes without the chain; kept in the desk's order, each once.
+    ...(Array.isArray(r.tfs) && r.tfs.length
+      ? { tfs: [...new Set(r.tfs.map(String))].sort((a, b) => TF_ORDER.indexOf(a) - TF_ORDER.indexOf(b)) as SignalTf[] }
+      : {}),
     methods: Array.isArray(r.methods) ? [...new Set(r.methods.map(String))] : [],
     target: (r.target ?? 'tp1') as SignalRule['target'],
     maxOpen: r.maxOpen === undefined ? 1 : Math.trunc(Number(r.maxOpen)),
