@@ -581,7 +581,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [entry-methods-reference.md](../features/entry-methods-reference.md) | Entry methods — the reference formulas, and the audit against them |
 | [entry-setups.md](../features/entry-setups.md) | Entry setups — 12 methods × with / without timeframe |
-| [entry-sl-tgt.md](../features/entry-sl-tgt.md) | Entry, SL and TGT -- all 81 methods |
+| [entry-sl-tgt.md](../features/entry-sl-tgt.md) | Entry, SL, TGT and exit -- all 81 methods, both ways |
 | [price-chart.md](../features/price-chart.md) | The price chart |
 | [strategies.md](../features/strategies.md) | Scheduled strategies |
 
