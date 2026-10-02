@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { FoldButton, useFold } from '@/components/ui/fold';
 import { usePersisted } from '@/hooks/usePersisted';
 import type { DayRow } from '@/types/report';
 import type { OrderRecord } from '@/types/trade';
@@ -10,6 +11,7 @@ export interface PerformanceStatsProps {
 }
 
 export function PerformanceStats({ rows, orders = [] }: PerformanceStatsProps) {
+  const [open, setOpen] = useFold('pnl-stats');
   const [filter, setFilter] = usePersisted<'All Trades' | 'Strategy Trades' | 'Manual Trades'>('report:stats-filter', 'All Trades');
 
   // Filter orders dynamically based on user choice
@@ -213,9 +215,9 @@ export function PerformanceStats({ rows, orders = [] }: PerformanceStatsProps) {
   }, [rows, filteredOrders, filter]);
 
   return (
-    <div className="pnl-panel-card" role="region" aria-label="Performance Stats">
-      <div className="pnl-panel-header">
-        <h2 className="pnl-panel-title">Performance Stats</h2>
+    <div className="pnl-panel-card fold-host" data-folded={!open} role="region" aria-label="Performance Stats">
+      <div className="pnl-panel-header fold-head">
+        <span className="inline-flex items-center gap-1"><FoldButton open={open} onToggle={() => setOpen(!open)} label="Performance Stats" /><h2 className="pnl-panel-title">Performance Stats</h2></span>
         <select
           className="pnl-select"
           aria-label="Filter trades"

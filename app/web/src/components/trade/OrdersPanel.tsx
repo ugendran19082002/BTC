@@ -1,11 +1,11 @@
 import { useState } from 'react';
+import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { usePersisted } from '@/hooks/usePersisted';
 import { ChevronRight, Download } from 'lucide-react';
 import * as Collapsible from '@radix-ui/react-collapsible';
 import { getOrderHistory } from '@/api/trade';
 import type { OrderRecord, OrderStatus } from '@/types/trade';
 import { usePoll } from '@/hooks/usePoll';
-import { Card, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { KV } from '@/components/ui/kv';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
@@ -96,9 +96,7 @@ export function OrdersPanel() {
   const rows = data?.trades ?? [];
 
   return (
-    <Card>
-      <CardTitle
-        right={
+    <CollapsibleCard id="orders" title="Orders" right={
           <Button
             size="sm"
             variant="outline"
@@ -110,10 +108,7 @@ export function OrdersPanel() {
             <Download className="h-3.5 w-3.5" />
             CSV
           </Button>
-        }
-      >
-        Orders
-      </CardTitle>
+        }>
 
       <div className="mb-2.5">
         <DateRangePicker value={range} onChange={setRange} />
@@ -147,7 +142,7 @@ export function OrdersPanel() {
           {rows.map((r) => <OrderRow key={r.tradeId} order={r} />)}
         </div>
       )}
-    </Card>
+    </CollapsibleCard>
   );
 }
 

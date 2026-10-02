@@ -70,7 +70,7 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
       <SheetContent
         title={editing ? `Edit ${editing.name}` : 'New signal strategy'}
         description="Each TRADE signal of the methods you pick, sold as one option. Times are IST."
-        className="sm:w-[520px]"
+        className="sm:w-[min(760px,94vw)]"
       >
         <NameField value={d.name} onChange={d.setName} touched={d.nameTouched} onTouched={() => d.setNameTouched(true)}
                    problem={d.nameProblem} inputRef={d.nameInput} placeholder="Name, e.g. Breakout signals 15m" />

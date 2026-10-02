@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { FoldButton, useFold } from '@/components/ui/fold';
 import { Bot, Loader2, Pencil, Plus } from 'lucide-react';
 import { getStrategies, saveStrategy, setStrategyEnabled } from '@/api/strategy';
 import { ruleTfWords, type Strategy, type StrategyStatus } from '@/types/strategy';
@@ -36,6 +37,7 @@ export function signalLine(s: Strategy): string {
 
 export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?: () => void }) {
   const { data, refresh } = usePoll<StrategyStatus>(getStrategies, 5_000);
+  const [open, setOpen] = useFold('signal-strategies');
   const [editing, setEditing] = useState<Strategy | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -69,9 +71,10 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
   const ids = new Set(mine.map((s) => s.id));
 
   return (
-    <section className="live-signal-strategies" aria-label="Signal strategies">
-      <div className="desk-section-header">
+    <section className="live-signal-strategies fold-host" data-folded={!open} aria-label="Signal strategies">
+      <div className="desk-section-header fold-head">
         <div className="desk-section-title-wrap">
+          <FoldButton open={open} onToggle={() => setOpen(!open)} label="signal strategies" />
           <div className="desk-section-icon" style={{ background: 'rgba(250, 204, 21, 0.12)', color: '#facc15' }}>
             <Bot size={18} />
           </div>

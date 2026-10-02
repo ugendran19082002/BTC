@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { FoldButton, useFold } from '@/components/ui/fold';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import { getEntryAlerts, getEntryBoard, getEntryRecord } from '@/api/entry';
@@ -45,6 +46,7 @@ export function EntrySection({ desk, onTimeframes, belowHeader }: {
   belowHeader?: React.ReactNode;
 }) {
   const [singleTf, setSingleTf] = usePersisted<EntryTf>('entry:single-tf', '5m');
+  const [open, setOpen] = useFold('entry-setups');
   const [setupsOn, setSetupsOn] = usePersisted<boolean>('entry:setups-on', true);
   const [view, setView] = usePersisted<'panels' | 'grid'>('entry:view-2', 'panels');
   const [gridMode, setGridMode] = usePersisted<EntryMode>('entry:grid-mode', 'mtf');
@@ -122,16 +124,17 @@ export function EntrySection({ desk, onTimeframes, belowHeader }: {
   const nReads = reads.length || 2 * nMethods;
 
   return (
-    <section aria-label="entry setups" className="desk-entry mt-3">
+    <section aria-label="entry setups" data-folded={!open} className="fold-host desk-entry mt-3">
       {/*
         One card: what the board says now on the left, the controls on the right.
         On a phone the controls drop under it as a two-column grid -- nothing
         runs off the screen -- and on a window they sit in one toolbar.
       */}
-      <header className="mb-3 rounded-xl border border-border bg-[var(--panel)] p-3 shadow-[0_2px_12px_rgba(0,0,0,0.3)]">
+      <header className="fold-head mb-3 rounded-xl border border-border bg-[var(--panel)] p-3 shadow-[0_2px_12px_rgba(0,0,0,0.3)]">
         <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
           <div className="min-w-0">
-            <h2 className="m-0 flex flex-wrap items-baseline gap-x-2 text-[16px] font-bold">
+            <h2 className="m-0 flex flex-wrap items-center gap-x-2 text-[16px] font-bold">
+              <FoldButton open={open} onToggle={() => setOpen(!open)} label="entry setups" className="-ml-1.5" />
               Entry setups
               <span className="text-[12px] font-normal text-muted-foreground">{nMethods} methods × without / with timeframe = {nReads}</span>
             </h2>
@@ -172,7 +175,8 @@ export function EntrySection({ desk, onTimeframes, belowHeader }: {
         </div>
       </header>
 
-      {belowHeader}
+      {/* Kept when the setups fold: the signal strategies have a fold of their own. */}
+      {belowHeader && <div className="fold-keep">{belowHeader}</div>}
 
       {error && !board ? <p role="alert" className="m-0 mb-2 text-[12px] text-[var(--down)]">Could not read the entry board: {error.message}</p> : null}
 

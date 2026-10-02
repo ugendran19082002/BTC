@@ -359,3 +359,32 @@ describe('"pick profitable" over the timeframes picked', () => {
     expect(screen.getByLabelText('#1 by timeframe')).toHaveTextContent('15m +50 (5t) · 1h —');
   });
 });
+
+describe('the method list: profitable by a rule you can see, and filtered by result', () => {
+  it('[critical] the minimum trades is shown and set; a profitable method under it says why it is left out', async () => {
+    show(signalStrategy({ methods: [] }));
+    tab('Signals');
+    // with the chain: breakout +900 over 12, the sweep +400 over 3, BOS -500 over 9
+    const btn = await screen.findByRole('button', { name: /^Pick profitable with the chain \(1\)/ });
+    expect(screen.getByLabelText('minimum trades')).toHaveValue('5');
+    expect(await screen.findByText('· 3 of 5 trades')).toBeInTheDocument();     // the sweep: profitable, too few
+    fireEvent.click(screen.getByRole('button', { name: '3', pressed: false }));
+    expect(btn).toHaveTextContent('(2)');
+    expect(screen.queryByText(/of 3 trades/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '1', pressed: false }));
+    expect(screen.getByText(/one or two trades is luck, not a record/)).toBeInTheDocument();
+  });
+
+  it('[critical] Profit / Loss / No trades, with counts that follow the search and family', async () => {
+    show(signalStrategy({ methods: [] }));
+    tab('Signals');
+    const by = await screen.findByRole('group', { name: 'methods by result' });
+    await waitFor(() => expect(within(by).getAllByRole('button').map((b) => b.textContent)).toEqual(['All 4', 'Profit 2', 'Loss 1', 'No trades 1']));
+    fireEvent.click(within(by).getByRole('button', { name: /^Loss/ }));
+    expect(screen.getAllByRole('checkbox').map((c) => c.getAttribute('aria-label'))).toEqual(['#6 BOS']);
+    fireEvent.click(within(by).getByRole('button', { name: /^Profit/ }));
+    expect(screen.getAllByRole('checkbox').map((c) => c.getAttribute('aria-label'))).toEqual(['#1 Breakout', '#3 Liquidity sweep']);
+    fireEvent.click(screen.getByRole('button', { name: 'Reversal', pressed: false }));
+    expect(within(by).getAllByRole('button').map((b) => b.textContent)).toEqual(['All 1', 'Profit 1', 'Loss 0', 'No trades 0']);
+  });
+});

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { FoldButton, useFold } from '@/components/ui/fold';
 import { usePersisted } from '@/hooks/usePersisted';
 import type { DayRow } from '@/types/report';
 import { signedInr, usdToInr } from '@/lib/format';
@@ -8,6 +9,7 @@ export interface DailyPnlChartProps {
 }
 
 export function DailyPnlChart({ rows }: DailyPnlChartProps) {
+  const [open, setOpen] = useFold('pnl-daily');
   const [period, setPeriod] = usePersisted<'Daily' | 'Weekly' | 'Monthly'>('report:daily-period', 'Daily');
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
 
@@ -113,10 +115,10 @@ export function DailyPnlChart({ rows }: DailyPnlChartProps) {
   ];
 
   return (
-    <div className="pnl-panel-card" role="region" aria-label="Daily P&L Chart">
-      <div className="pnl-panel-header">
+    <div className="pnl-panel-card fold-host" data-folded={!open} role="region" aria-label="Daily P&L Chart">
+      <div className="pnl-panel-header fold-head">
         <div className="flex items-center gap-2">
-          <h2 className="pnl-panel-title">Daily P&L</h2>
+          <span className="inline-flex items-center gap-1"><FoldButton open={open} onToggle={() => setOpen(!open)} label="Daily P&L Chart" /><h2 className="pnl-panel-title">Daily P&L</h2></span>
           <span className={`pnl-daily-badge ${netTotalInr < 0 ? 'text-rose-400 bg-rose-500/10 border-rose-500/20' : ''}`}>
             Net {signedInr(netTotalInr)}
           </span>

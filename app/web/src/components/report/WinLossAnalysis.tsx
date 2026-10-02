@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { FoldButton, useFold } from '@/components/ui/fold';
 import { usePersisted } from '@/hooks/usePersisted';
 import type { DayRow } from '@/types/report';
 import type { OrderRecord } from '@/types/trade';
@@ -10,6 +11,7 @@ export interface WinLossAnalysisProps {
 }
 
 export function WinLossAnalysis({ rows, orders = [] }: WinLossAnalysisProps) {
+  const [open, setOpen] = useFold('pnl-winloss');
   const [viewMode, setViewMode] = usePersisted<'count' | 'pnl'>('report:winloss-view', 'count');
 
   const {
@@ -103,9 +105,9 @@ export function WinLossAnalysis({ rows, orders = [] }: WinLossAnalysisProps) {
   const lossStroke = (lossPct / 100) * C;
 
   return (
-    <div className="pnl-panel-card" role="region" aria-label="Win Loss Analysis">
-      <div className="pnl-panel-header">
-        <h2 className="pnl-panel-title">Win / Loss</h2>
+    <div className="pnl-panel-card fold-host" data-folded={!open} role="region" aria-label="Win Loss Analysis">
+      <div className="pnl-panel-header fold-head">
+        <span className="inline-flex items-center gap-1"><FoldButton open={open} onToggle={() => setOpen(!open)} label="Win Loss Analysis" /><h2 className="pnl-panel-title">Win / Loss</h2></span>
         <div className="pnl-pill-toggle" role="group" aria-label="View mode">
           <button
             type="button"

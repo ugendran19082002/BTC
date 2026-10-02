@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
+import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { Download, RefreshCw } from 'lucide-react';
 import { daysCsvUrl, getDays, getMtm } from '@/api/report';
 import { getOrderHistory, getTradeStatus } from '@/api/trade';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
-import { Card, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { DayPicker } from '@/components/ui/day-picker';
@@ -76,9 +76,7 @@ export function ReportPanel() {
   return (
     <div className="flex flex-col gap-3">
       {/* 1. Primary Controls & Top KPI Cards */}
-      <Card>
-        <CardTitle
-          right={
+      <CollapsibleCard id="pnl-overview" title="Profit and loss" right={
             <div className="flex items-center gap-2">
               <span className="pnl-live-badge" title="Dynamic live stream from Delta Exchange">
                 <span className="pnl-live-dot" /> Live
@@ -98,10 +96,7 @@ export function ReportPanel() {
                 </a>
               )}
             </div>
-          }
-        >
-          Profit and loss
-        </CardTitle>
+          }>
 
         <div className="report-controls">
           <DateRangePicker
@@ -158,7 +153,7 @@ export function ReportPanel() {
           <Total label="Best day" value={totals.best ? signedInr(usdToInr(netOf(totals.best, includeCharges))) : '—'} sub={totals.best?.day} tone="up" />
           <Total label="Worst day" value={totals.worst ? signedInr(usdToInr(netOf(totals.worst, includeCharges))) : '—'} sub={totals.worst?.day} tone="down" />
         </div>
-      </Card>
+      </CollapsibleCard>
 
       {/* 2. Performance Stats & Win/Loss Analysis Row */}
       <div className="pnl-analytics-row">
@@ -173,8 +168,7 @@ export function ReportPanel() {
       </div>
 
       {/* 4. Calendar & Cumulative Progress Card */}
-      <Card>
-        <CardTitle>Trading Calendar & Running Progress</CardTitle>
+      <CollapsibleCard id="pnl-calendar" title="Trading Calendar & Running Progress">
         <div className="report-grid">
           <div className="report-cal-wrap">
             <PnlCalendar rows={rows} from={from} to={to} includeCharges={includeCharges} selected={day} onSelect={setDay} />
@@ -190,12 +184,10 @@ export function ReportPanel() {
             <CumulativeChart rows={rows} includeCharges={includeCharges} />
           </div>
         </div>
-      </Card>
+      </CollapsibleCard>
 
       {/* 5. Intraday Minute-by-Minute MTM Card */}
-      <Card>
-        <CardTitle
-          right={mtm.data && (
+      <CollapsibleCard id="pnl-mtm" title="The day, minute by minute" right={mtm.data && (
             // A calendar of the days that have a line (owner, 2 Oct 2026: "a date picker"), arrows to step
             // through them. Today is held as null, so the line follows the day over midnight.
             <DayPicker
@@ -203,17 +195,14 @@ export function ReportPanel() {
               available={mtm.data.days}
               onChange={(d) => setDay(d === todayIst() ? null : d)}
             />
-          )}
-        >
-          The day, minute by minute
-        </CardTitle>
+          )}>
         {mtm.error && <p className="m-0 text-[12px] text-[var(--down)]">{mtm.error.message}</p>}
         {mtm.data ? <MtmChart report={mtm.data} /> : <div className="pnl-empty">Loading…</div>}
         <p className="m-0 mt-2 text-[11.5px] leading-snug text-muted-foreground">
           Booked, plus what is open at the mark, less Delta's charges — the same number as the header,
           written down once a minute while something is on. Kept for ninety days.
         </p>
-      </Card>
+      </CollapsibleCard>
     </div>
   );
 }

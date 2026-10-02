@@ -1,11 +1,11 @@
 import { useState } from 'react';
+import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { usePersisted } from '@/hooks/usePersisted';
 import { Check, ChevronRight, Copy, Server, Globe, Landmark, Activity, Trash2 } from 'lucide-react';
 import * as Collapsible from '@radix-ui/react-collapsible';
 import { deleteAllErrors, deleteError, getErrors, resolveError, resolveAllErrors } from '@/api/errors';
 import type { ErrorRow, ErrorSource } from '@/types/errors';
 import { usePoll } from '@/hooks/usePoll';
-import { Card, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -86,9 +86,7 @@ export function ErrorLogPanel() {
   const rows = data?.errors ?? [];
 
   return (
-    <Card>
-      <CardTitle
-        right={
+    <CollapsibleCard id="errors" title="Errors" right={
           rows.length > 0 ? (
             <span className="flex items-center gap-1">
               {!resolved && (
@@ -111,10 +109,7 @@ export function ErrorLogPanel() {
               </Button>
             </span>
           ) : null
-        }
-      >
-        Errors
-      </CardTitle>
+        }>
 
       <div className="mb-2.5 flex flex-wrap items-center gap-2">
         <ToggleGroup
@@ -153,7 +148,7 @@ export function ErrorLogPanel() {
           ))}
         </div>
       )}
-    </Card>
+    </CollapsibleCard>
   );
 }
 

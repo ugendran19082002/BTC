@@ -1,4 +1,5 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FoldButton, useFold } from '@/components/ui/fold';
 import {
   Activity, AlertTriangle, BarChart3, Bot, Briefcase, ListChecks, ListOrdered, RefreshCw, SlidersHorizontal,
 } from 'lucide-react';
@@ -143,6 +144,7 @@ export default function App() {
    * findable on the screen; the narrower view is the option, not the rule.
    */
   const [allStrikes, setAllStrikes] = usePersisted('chain:show_all_strikes', true);
+  const [chainOpen, setChainOpen] = useFold('option-chain');
   const shownWidth = allStrikes ? 500 : width;
   const [storedCols, setCols] = usePersisted<Partial<ColumnState> | null>('chain:columns', null);
   // Where each column sits, kept beside which ones show. Both are preferences
@@ -605,9 +607,10 @@ export default function App() {
             controls. A tap on a price opens the same ticket; a tap on a strike
             makes it the one the panels above are about.
           */}
-          <section className="live-chain" aria-label="Option chain">
-            <div className="desk-section-header">
+          <section className="live-chain fold-host" data-folded={!chainOpen} aria-label="Option chain">
+            <div className="desk-section-header fold-head">
               <div className="desk-section-title-wrap">
+                <FoldButton open={chainOpen} onToggle={() => setChainOpen(!chainOpen)} label="option chain board" />
                 <div className="desk-section-icon" style={{ background: 'rgba(168, 85, 247, 0.12)', color: '#a855f7' }}>
                   <BarChart3 size={18} />
                 </div>

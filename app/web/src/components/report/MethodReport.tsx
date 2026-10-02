@@ -1,9 +1,9 @@
 import { useMemo, useRef } from 'react';
+import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { ArrowDown, ArrowUp, Download, RefreshCw } from 'lucide-react';
 import { getMethodReport } from '@/api/entry';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
-import { Card, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { DateRangePicker, describeRange, istToday, type DateRangeValue } from '@/components/ui/date-range-picker';
 import { TimePicker } from '@/components/ui/time-picker';
@@ -142,8 +142,7 @@ export function MethodReport() {
 
   return (
     <div className="flex flex-col gap-3">
-      <Card>
-        <CardTitle right={
+      <CollapsibleCard id="methods-report" title="Methods report" right={
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => void refresh()} aria-label="Refresh"
                     className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-muted">
@@ -154,7 +153,7 @@ export function MethodReport() {
               <Download className="h-3.5 w-3.5" aria-hidden /> CSV
             </button>
           </div>
-        }>Methods report</CardTitle>
+        }>
         <TabList
           label="Way" idPrefix="mrw" value={wayNow} onChange={setWay} large
           items={[
@@ -201,7 +200,7 @@ export function MethodReport() {
           on" is set. With the chain the entry is always 5m; without it, each timeframe has its own tab.
         </p>
         {error && <p role="alert" className="m-0 mt-2 text-[12px] text-[var(--down)]">Could not read the report: {error.message}</p>}
-      </Card>
+      </CollapsibleCard>
 
       {!data && !error && <p className="m-0 text-[12px] text-muted-foreground">Loading the report…</p>}
       {data && data.sections.every((s) => s.total.signals === 0) && (
@@ -412,20 +411,17 @@ function ReportSection({ section, period, sort, onSort, show, tabs, panelOf, abo
 
   return (
     <section aria-label={section.label}>
-      <Card>
-        <CardTitle right={
+      <CollapsibleCard id={`methods-report-${section.mode}`} title={section.label} right={
           <span className="text-[11px] text-muted-foreground">
             {period} · {show === 'all' ? `${section.rows.length} methods` : `${rows.length} of ${section.rows.length} methods`}
             {section.gatesOffSignals > 0 ? ` · ${num(section.gatesOffSignals)} signals taken with a gate off` : ''}
           </span>
         }>
-          {section.label}
-        </CardTitle>
         {tabs}
         {panelOf ? (
           <div role="tabpanel" id={`mr-panel-${panelOf}`} aria-labelledby={`mr-tab-${panelOf}`}>{body}</div>
         ) : body}
-      </Card>
+      </CollapsibleCard>
     </section>
   );
 }

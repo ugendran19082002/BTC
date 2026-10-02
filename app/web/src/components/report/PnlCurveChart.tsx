@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { FoldButton, useFold } from '@/components/ui/fold';
 import { usePersisted } from '@/hooks/usePersisted';
 import type { DayRow } from '@/types/report';
 import type { TradeStatus } from '@/types/trade';
@@ -20,6 +21,7 @@ interface CurvePoint {
 }
 
 export function PnlCurveChart({ rows, status }: PnlCurveChartProps) {
+  const [open, setOpen] = useFold('pnl-curve');
   const [viewMode, setViewMode] = usePersisted<'Cumulative' | 'Daily' | 'Weekly' | 'Monthly'>('report:curve-view', 'Cumulative');
   const [metricType, setMetricType] = usePersisted<'P&L' | '% Return'>('report:curve-metric', 'P&L');
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
@@ -207,10 +209,10 @@ export function PnlCurveChart({ rows, status }: PnlCurveChartProps) {
     : null;
 
   return (
-    <div className="pnl-panel-card" role="region" aria-label="P&L Curve Chart">
-      <div className="pnl-panel-header">
+    <div className="pnl-panel-card fold-host" data-folded={!open} role="region" aria-label="P&L Curve Chart">
+      <div className="pnl-panel-header fold-head">
         <div className="flex flex-wrap items-center gap-3">
-          <h2 className="pnl-panel-title">P&L Curve</h2>
+          <span className="inline-flex items-center gap-1"><FoldButton open={open} onToggle={() => setOpen(!open)} label="P&L Curve Chart" /><h2 className="pnl-panel-title">P&L Curve</h2></span>
 
           <div className="pnl-pill-toggle" role="group" aria-label="Curve timeframe">
             {(['Cumulative', 'Daily', 'Weekly', 'Monthly'] as const).map((m) => (

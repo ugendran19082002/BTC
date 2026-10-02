@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 import { getEntryBoard, getEntryMethods, getMethodReport, type EntryMethodInfo } from '@/api/entry';
 import { usePoll } from '@/hooks/usePoll';
+import { usePersisted } from '@/hooks/usePersisted';
 import { Input } from '@/components/ui/input';
 import { legOfSignal, ruleTfs, SIGNAL_TFS, type SignalRule, type SignalTf } from '@/types/strategy';
 import type { MethodRead, MethodReportRow } from '@/types/entry';
@@ -28,8 +29,18 @@ const GROUPS = [
 ] as const;
 type GroupFilter = (typeof GROUPS)[number]['id'];
 
+type ResultFilter = 'all' | 'profit' | 'loss' | 'none';
+const RESULTS: { id: ResultFilter; label: string; tone: string; test: (r: MethodReportRow | undefined) => boolean }[] = [
+  { id: 'all', label: 'All', tone: '', test: () => true },
+  { id: 'profit', label: 'Profit', tone: 'text-[var(--up)]', test: (r) => Boolean(r && r.trades > 0 && r.netPts > 0) },
+  { id: 'loss', label: 'Loss', tone: 'text-[var(--down)]', test: (r) => Boolean(r && r.trades > 0 && r.netPts < 0) },
+  { id: 'none', label: 'No trades', tone: 'text-[var(--dim)]', test: (r) => !r || r.trades === 0 },
+];
+
 /** Enough trades that a record means something; fewer and "profitable" is a coin's opinion. */
 export const MIN_TRADES_FOR_RECORD = 5;
+/** The quick picks for that minimum; it can be typed too. Shown beside the button, never hidden (owner, 2 Oct 2026). */
+const MIN_TRADE_PRESETS = [1, 3, 5, 10, 20] as const;
 
 const pts = (n: number) => `${n > 0 ? '+' : ''}${Math.round(n).toLocaleString('en-US')}`;
 const px = (n: number | null | undefined) => (n == null ? '—' : Math.round(n).toLocaleString('en-US'));
@@ -63,8 +74,8 @@ export function combineRows(sections: readonly { rows: readonly MethodReportRow[
 }
 
 /** The methods with a record worth the name, and a positive net: the "profitable so far" pick. */
-export function profitableIds(rows: readonly MethodReportRow[]): string[] {
-  return rows.filter((r) => r.trades >= MIN_TRADES_FOR_RECORD && r.netPts > 0).map((r) => r.method);
+export function profitableIds(rows: readonly MethodReportRow[], minTrades = MIN_TRADES_FOR_RECORD): string[] {
+  return rows.filter((r) => r.trades >= minTrades && r.netPts > 0).map((r) => r.method);
 }
 
 export function SignalRuleEditor({ rule, onChange, errors }: {
@@ -74,6 +85,8 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
 }) {
   const [query, setQuery] = useState('');
   const [group, setGroup] = useState<GroupFilter>('all');
+  // By record: everything, the ones up, the ones down, the ones with no trade -- over the timeframes picked.
+  const [result, setResult] = usePersisted<ResultFilter>('signal-rule:result', 'all');
   const set = <K extends keyof SignalRule>(k: K, v: SignalRule[K]) => onChange({ ...rule, [k]: v });
 
   // The list changes with a deploy, not a minute: asked for once an hour.
@@ -108,15 +121,21 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
     [boards]);
 
   const methods: EntryMethodInfo[] = catalogue?.methods ?? [];
-  const shown = useMemo(() => {
+  // Search and family first; the result filter on top, so its counts follow them.
+  const searched = useMemo(() => {
     const q = query.trim().toLowerCase();
     return methods.filter((m) => (group === 'all' || m.group === group)
       && (!q || String(m.n) === q || m.name.toLowerCase().includes(q) || m.summary.toLowerCase().includes(q)));
   }, [methods, query, group]);
+  const resultTab = RESULTS.find((x) => x.id === result) ?? RESULTS[0]!;
+  const shown = useMemo(() => searched.filter((m) => resultTab.test(recordOf.get(m.id))), [searched, resultTab, recordOf]);
   const picked = new Set(rule.methods);
   const toggle = (id: string) => set('methods', picked.has(id) ? rule.methods.filter((x) => x !== id) : [...rule.methods, id]);
   const addAll = (ids: string[]) => set('methods', [...new Set([...rule.methods, ...ids])]);
-  const winners = profitableIds(rows);
+  // How many trades a record needs before "profitable" means anything; kept in this browser.
+  const [minTrades, setMinTrades] = usePersisted<number>('signal-rule:min-trades', MIN_TRADES_FOR_RECORD);
+  const minT = Math.max(1, Math.trunc(minTrades) || 1);
+  const winners = profitableIds(rows, minT);
   const live = matchingSignals(reads, rule);
   const way = rule.mode === 'mtf' ? 'with the chain' : `without it on ${tfs.join(' + ')}`;
   const toggleTf = (tf: SignalTf) => {
@@ -195,12 +214,21 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
             </button>
           ))}
         </div>
+        {/* By record, with counts: the profitable ones, the losing ones, the ones with nothing yet. */}
+        <div role="group" aria-label="methods by result" className="mt-1.5 flex flex-wrap gap-1">
+          {RESULTS.map((x) => (
+            <button key={x.id} type="button" aria-pressed={resultTab.id === x.id} onClick={() => setResult(x.id)} className={chip(resultTab.id === x.id)}>
+              <span className={x.tone}>{x.label}</span>{' '}
+              <span className="tabular-nums text-[var(--dim)]">{searched.filter((m) => x.test(recordOf.get(m.id))).length}</span>
+            </button>
+          ))}
+        </div>
         <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
           <button type="button" className={link} disabled={!shown.length} onClick={() => addAll(shown.map((m) => m.id))}>
             Pick all shown ({shown.length})
           </button>
           <button type="button" className={link} disabled={!winners.length}
-                  title={`Net points above zero over at least ${MIN_TRADES_FOR_RECORD} trades, added up ${way} -- every timeframe picked, together: what this strategy would have taken`}
+                  title={`Net points above zero over at least ${minT} trade${minT === 1 ? '' : 's'}, added up ${way} -- every timeframe picked, together: what this strategy would have taken`}
                   onClick={() => addAll(winners)}>
             Pick profitable {rule.mode === 'mtf' ? 'with the chain' : `on ${tfs.join(' + ') || '—'}`} ({winners.length})
           </button>
@@ -208,12 +236,30 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
             Clear
           </button>
         </div>
+        {/*
+          The rule "profitable" is read by, out loud. It was a hidden five: a method at +578 on one trade
+          showed green and was not picked, and nothing on the screen said why.
+        */}
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11.5px] text-muted-foreground">
+          <span>Profitable = net above 0 over at least</span>
+          <Input value={String(minTrades)} aria-label="minimum trades" inputMode="numeric" className="h-7 w-12 px-1.5 text-center text-[12px]"
+                 onChange={(e) => setMinTrades(Math.max(1, Math.trunc(Number(e.target.value)) || 1))} />
+          <span>trades</span>
+          {MIN_TRADE_PRESETS.map((n) => (
+            <button key={n} type="button" aria-pressed={minT === n} onClick={() => setMinTrades(n)}
+                    className={cn('m-0 h-7 min-w-7 appearance-none rounded-md border border-solid px-1.5 font-[inherit] text-[11.5px] tabular-nums',
+                      minT === n ? 'border-foreground bg-muted text-foreground' : 'border-border bg-transparent text-muted-foreground')}>
+              {n}
+            </button>
+          ))}
+          {minT < 3 && <span className="text-[var(--warn)]">— one or two trades is luck, not a record</span>}
+        </div>
         {errors.methods && <p role="alert" className="m-0 mt-1 text-[11.5px] text-[var(--down)]">{errors.methods}</p>}
         {catalogueError && !methods.length && (
           <p role="alert" className="m-0 mt-1 text-[11.5px] text-[var(--down)]">Could not load the methods: {catalogueError.message}</p>
         )}
 
-        <ul aria-label="methods" className="m-0 mt-1.5 max-h-72 list-none overflow-y-auto rounded-lg border border-solid border-border p-0">
+        <ul aria-label="methods" className="m-0 mt-1.5 max-h-[26rem] list-none overflow-y-auto rounded-lg border border-solid border-border p-0">
           {shown.map((m) => {
             const rec = recordOf.get(m.id);
             const on = picked.has(m.id);
@@ -235,6 +281,11 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
                               <span className={rec.netPts > 0 ? 'text-[var(--up)]' : rec.netPts < 0 ? 'text-[var(--down)]' : ''}>
                                 {pts(rec.netPts)} pts
                               </span>
+                              {rec.netPts > 0 && rec.trades < minT && (
+                                <span className="ml-1 text-[var(--warn)]" title={`Profitable, but on ${rec.trades} of the ${minT} trades "Pick profitable" asks for`}>
+                                  · {rec.trades} of {minT} trades
+                                </span>
+                              )}
                             </>
                           )
                           : 'no trades yet'}

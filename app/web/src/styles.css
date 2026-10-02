@@ -2571,3 +2571,7 @@ table.ov-mini.ov-levels { width: auto; min-width: 100%; }
  * shrink: a tile squeezed to four characters is a tile nobody reads, and on a
  * phone two rows of readable tiles beat five unreadable ones.
  */
+
+/* A folded card that draws its own header (components/ui/fold.tsx): only the header, and what is marked to stay. */
+.fold-host[data-folded="true"] > :not(.fold-head):not(.fold-keep) { display: none !important; }
+.fold-host[data-folded="true"] > .fold-head { margin-bottom: 0 !important; }

@@ -69,7 +69,8 @@ describe('the signal strategies, under the entry setups', () => {
     const sig = screen.getByRole('region', { name: 'Signal strategies' });
     const read = screen.getByRole('region', { name: 'Market read' });
     expect(entry.contains(sig)).toBe(true);
-    expect(entry.querySelector(':scope > header')!.nextElementSibling).toBe(sig);
+    // right after the header card, in the part that stays when the setups fold
+    expect(entry.querySelector(':scope > header')!.nextElementSibling!.contains(sig)).toBe(true);
     expect(sig.compareDocumentPosition(read) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

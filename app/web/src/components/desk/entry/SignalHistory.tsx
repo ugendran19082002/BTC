@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { FoldButton, useFold } from '@/components/ui/fold';
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
@@ -222,6 +223,7 @@ export function cleanFilter(saved: Partial<Filter> | null | undefined): Filter {
 
 export function SignalHistory() {
   const [saved, setF] = usePersisted<Filter>('entry:history-table', DEFAULT);
+  const [open, setOpen] = useFold('signal-history');
   const f = cleanFilter(saved);
   const [page, setPage] = usePersisted<number>('entry:history-page', 0);
   const since = f.today ? startOfIstDay(Date.now()) : undefined;
@@ -248,11 +250,14 @@ export function SignalHistory() {
   const now = useNow(rows.some((s) => s.outcome?.status === 'open' || s.outcome?.status === 'filled' || s.outcome?.runner === 'running'));
 
   return (
-    <section aria-label="signal history" className="mt-3 rounded-xl border border-border border-t-4 border-t-[#2563eb] bg-[var(--panel)] p-3 text-[12px] shadow-[0_2px_12px_rgba(0,0,0,0.35)]">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <div>
+    <section aria-label="signal history" data-folded={!open} className="fold-host mt-3 rounded-xl border border-border border-t-4 border-t-[#2563eb] bg-[var(--panel)] p-3 text-[12px] shadow-[0_2px_12px_rgba(0,0,0,0.35)]">
+      <div className="fold-head mb-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-start gap-1">
+          <FoldButton open={open} onToggle={() => setOpen(!open)} label="signal history" />
+          <div>
           <h3 className="m-0 text-[13px] font-bold">Signal history</h3>
           <p className="m-0 text-[11px] text-muted-foreground">Every signal the server kept, whichever chart was on screen</p>
+          </div>
         </div>
       </div>
       {/* Signals, then how each TRADE ended; one row that scrolls sideways on a phone rather than wrapping into a block. */}
