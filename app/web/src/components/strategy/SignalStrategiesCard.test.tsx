@@ -7,7 +7,9 @@ const getStrategies = vi.fn();
 const saveStrategy = vi.fn();
 const setStrategyEnabled = vi.fn();
 const getSignalTrades = vi.fn();
+const cloneStrategy = vi.fn();
 vi.mock('@/api/strategy', () => ({
+  cloneStrategy: (...a: unknown[]) => cloneStrategy(...a),
   getStrategies: (...a: unknown[]) => getStrategies(...a),
   getSignalTrades: (...a: unknown[]) => getSignalTrades(...a),
   saveStrategy: (...a: unknown[]) => saveStrategy(...a),
@@ -122,5 +124,21 @@ describe('signal strategies on the Live screen', () => {
     expect(table).toHaveTextContent('in the trade');
     expect(screen.queryByRole('table', { name: 'signals taken' })).toBeNull();
     expect(screen.queryByText(/already 7 of its trades open/)).toBeNull();
+  });
+});
+
+describe('copy', () => {
+  it('[critical] Copy makes a copy and opens it, its name ready to change -- off, live orders off', async () => {
+    getStrategies.mockResolvedValue(status([strat('sig', { ...SIG, liveOrders: true })]));
+    cloneStrategy.mockResolvedValue({ ok: true, strategy: { ...strat('sig-copy', { ...SIG, liveOrders: false }, false), name: 'SIG copy' } });
+    render(<SignalStrategiesCard />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Copy SIG' }));
+    await waitFor(() => expect(cloneStrategy).toHaveBeenCalledWith('sig'));
+    expect(await screen.findByRole('dialog', { name: 'Edit SIG copy' })).toBeInTheDocument();
+    const name = screen.getByLabelText('strategy name');
+    expect(name).toHaveValue('SIG copy');
+    fireEvent.change(name, { target: { value: 'Breakout 15m only' } });
+    expect(name).toHaveValue('Breakout 15m only');
+    expect(screen.getByRole('switch', { name: /^Live orders/ })).toHaveAttribute('aria-checked', 'false');
   });
 });

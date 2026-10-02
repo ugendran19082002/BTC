@@ -266,7 +266,14 @@ export function registerStrategyRoutes(app: FastifyInstance) {
 
     return {
       ok: true,
-      strategy: await s.save({ id: newId, name, enabled: false, config: from.config }),
+      /*
+       * Off, and -- for a signal strategy -- with live orders off too: a copy is a draft to be renamed and
+       * changed, and enabling it must not start real orders before it has been looked at (2 Oct 2026).
+       */
+      strategy: await s.save({
+        id: newId, name, enabled: false,
+        config: from.config.trigger === 'signal' ? { ...from.config, liveOrders: false } : from.config,
+      }),
     };
   });
 

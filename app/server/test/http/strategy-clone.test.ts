@@ -93,3 +93,18 @@ test('a second copy of the same name gets a number, rather than eating the first
 test('cloning something that is not there says so', async () => {
   assert.equal((await api('POST', '/api/strategies/no-such-rule/clone', {})).status, 404);
 });
+
+test('[critical] a signal strategy\'s copy starts off with live orders off -- everything else the same', async () => {
+  const cfg = { ...DEFAULT_CONFIG, trigger: 'signal' as const, liveOrders: true, lots: 3,
+    signal: { mode: 'single' as const, tf: '15m' as const, tfs: ['15m' as const, '1h' as const], methods: ['breakout'], target: 'tp1' as const, maxOpen: 23, enterOn: 'zone' as const } };
+  await (await initStrategyStore()).save({ id: 'sig-src', name: 'Sig src', enabled: true, config: cfg });
+  const r = await app.inject({ method: 'POST', url: '/api/strategies/sig-src/clone', headers: cookie, payload: { name: 'Sig src 2' } });
+  assert.equal(r.statusCode, 200, r.body);
+  const copy = r.json().strategy;
+  assert.equal(copy.name, 'Sig src 2');
+  assert.equal(copy.enabled, false);
+  assert.equal(copy.config.liveOrders, false, 'live orders off on the copy');
+  assert.deepEqual(copy.config.signal, cfg.signal, 'the signals as they were');
+  assert.equal(copy.config.lots, 3);
+  assert.equal((await (await initStrategyStore()).get('sig-src'))!.config.liveOrders, true, 'the original untouched');
+});

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { FoldButton, useFold } from '@/components/ui/fold';
-import { Bot, Loader2, Pencil, Plus } from 'lucide-react';
-import { getStrategies, saveStrategy, setStrategyEnabled } from '@/api/strategy';
+import { Bot, Copy, Loader2, Pencil, Plus } from 'lucide-react';
+import { cloneStrategy, getStrategies, saveStrategy, setStrategyEnabled } from '@/api/strategy';
 import { ruleTfWords, type Strategy, type StrategyStatus } from '@/types/strategy';
 import { usePoll } from '@/hooks/usePoll';
 import { Button } from '@/components/ui/button';
@@ -156,6 +156,24 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
                   </Button>
                   <Button size="sm" variant="ghost" className="h-8" onClick={() => { setEditing(s); setFormOpen(true); }}>
                     <Pencil className="h-3 w-3" /> Edit
+                  </Button>
+                  {/*
+                    Copy, then the copy opens to be renamed and changed: how a second strategy is actually made.
+                    The server saves it switched off with live orders off -- a draft, not a second set of orders.
+                  */}
+                  <Button
+                    size="sm" variant="ghost" className="h-8"
+                    aria-label={`Copy ${s.name}`}
+                    title="A copy, switched off with live orders off, opened to rename and change"
+                    disabled={busy === `copy-${s.id}`}
+                    onClick={() => void act(`copy-${s.id}`, async () => {
+                      const { strategy } = await cloneStrategy(s.id);
+                      setEditing(strategy);
+                      setFormOpen(true);
+                    })}
+                  >
+                    {busy === `copy-${s.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : <Copy className="h-3 w-3" />}
+                    Copy
                   </Button>
                 </div>
               </div>
