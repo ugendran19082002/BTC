@@ -93,7 +93,7 @@ describe('a form of its own: only what a signal strategy has', () => {
     show(null);
     expect(screen.getByRole('dialog', { name: 'New signal strategy' })).toBeInTheDocument();
     expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Signals', 'Strike & lots', 'Entry & exit', 'When']);
-    expect(screen.getByRole('tab', { name: 'Signals' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: /^Signals/ })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('switch', { name: /Live orders/ })).toHaveAttribute('aria-checked', 'false');
     // none of the clock strategy's settings
     expect(screen.queryByRole('radiogroup', { name: 'trigger' })).toBeNull();

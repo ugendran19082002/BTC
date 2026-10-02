@@ -132,7 +132,7 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
         {mine.map((s) => {
           const live = Boolean(s.config.liveOrders);
           return (
-            <div key={s.id} className={cn('rounded-lg border px-2.5 py-2', s.enabled ? 'border-[var(--up)]' : 'border-[var(--line)]')}>
+            <div key={s.id} className={cn('rounded-lg border border-solid px-2.5 py-2', s.enabled ? 'border-[var(--up)]' : 'border-[var(--line)]')}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-baseline gap-2">
                   <span className="text-[13.5px] font-semibold text-foreground">{s.name}</span>

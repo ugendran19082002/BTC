@@ -61,3 +61,14 @@ describe('the market read', () => {
     expect(onExpiry).toHaveBeenCalledWith('220926');
   });
 });
+
+describe('the signal strategies, under the entry setups', () => {
+  it('[critical] drawn right after the Entry setups section, before the market read', () => {
+    render(<Overview data={data} trade={null} belowEntry={<section aria-label="Signal strategies">cards</section>} />);
+    const entry = screen.getByRole('region', { name: 'entry setups' });
+    const sig = screen.getByRole('region', { name: 'Signal strategies' });
+    const read = screen.getByRole('region', { name: 'Market read' });
+    expect(entry.nextElementSibling).toBe(sig);
+    expect(sig.compareDocumentPosition(read) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});

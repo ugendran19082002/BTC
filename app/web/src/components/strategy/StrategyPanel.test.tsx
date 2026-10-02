@@ -183,3 +183,20 @@ describe('what "on" means with a signal strategy', () => {
     expect(screen.getByText(/a signal strategy, once per signal/)).toBeInTheDocument();
   });
 });
+
+describe('Edit opens the form the strategy is', () => {
+  it('[critical] a signal strategy opens on the signal form; a clock one on the clock form', async () => {
+    getStrategies.mockResolvedValue({
+      ...status(),
+      strategies: [
+        { ...status().strategies[0]!, id: 'sig', name: 'SIG', config: { ...DEFAULT_CONFIG, trigger: 'signal', signal: { mode: 'mtf', tf: '5m', methods: ['breakout'], target: 'tp1', maxOpen: 1 } } },
+        { ...status().strategies[0]!, id: 'clk', name: 'CLK' },
+      ],
+    });
+    render(<StrategyPanel />);
+    await screen.findByText('SIG');
+    fireEvent.click(screen.getAllByRole('button', { name: /Edit/ })[0]!);
+    expect(await screen.findByRole('dialog', { name: 'Edit SIG' })).toBeInTheDocument();
+    expect(screen.getAllByRole('tab').map((t) => t.textContent?.replace('has a problem', ''))).toEqual(['Signals', 'Strike & lots', 'Entry & exit', 'When']);
+  });
+});
