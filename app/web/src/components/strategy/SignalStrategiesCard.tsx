@@ -68,7 +68,6 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
   };
 
   const mine = data?.strategies.filter((s) => s.config.trigger === 'signal') ?? [];
-  const ids = new Set(mine.map((s) => s.id));
 
   return (
     <section className="live-signal-strategies fold-host" data-folded={!open} aria-label="Signal strategies">
@@ -171,10 +170,7 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
       </div>
 
       {/* Every trade they took, or would have: SL, TGT, exit, result and money. */}
-      {data && (data.signalTrades?.length ?? 0) > 0 && (
-        <SignalTradeHistory trades={(data.signalTrades ?? []).filter((t) => ids.has(t.strategyId) || !data.strategies.some((s) => s.id === t.strategyId))}
-                            strategies={data.strategies} />
-      )}
+      {data && mine.length > 0 && <SignalTradeHistory strategies={data.strategies} />}
 
 
       {data && (

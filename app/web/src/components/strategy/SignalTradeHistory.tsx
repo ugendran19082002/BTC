@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Download, Search } from 'lucide-react';
 import { downloadCsv, toCsv, type CsvColumn } from '@/lib/csv';
+import { getSignalTrades } from '@/api/strategy';
+import { usePoll } from '@/hooks/usePoll';
+import { ALL_TIME_LABEL, DateRangePicker, describeRange, istToday, type DateRangeValue } from '@/components/ui/date-range-picker';
 import { Input } from '@/components/ui/input';
 import type { SignalTrade, Strategy } from '@/types/strategy';
 import { usePersisted } from '@/hooks/usePersisted';
@@ -164,7 +167,21 @@ const TONE: Record<Outcome['tone'], string> = {
   up: 'text-[var(--up)]', down: 'text-[var(--down)]', open: 'text-[var(--warn)]', quiet: 'text-[var(--dim)]',
 };
 
-export function SignalTradeHistory({ trades, strategies }: { trades: readonly SignalTrade[]; strategies: readonly Strategy[] }) {
+export function SignalTradeHistory({ trades: given, strategies }: {
+  /** Handed in (tests); otherwise the history is asked of the server for the days picked. */
+  trades?: readonly SignalTrade[];
+  strategies: readonly Strategy[];
+}) {
+  // The days, IST: today until something else is picked, and remembered (null is all time).
+  const [range, setRange] = usePersisted<DateRangeValue | null>('signal-trades:range', (() => { const t = istToday(); return { from: t, to: t }; })());
+  const rangeKey = range ? `${range.from}|${range.to}` : 'all';
+  const fetched = usePoll(() => getSignalTrades(range), 10_000, { enabled: given === undefined, deps: [rangeKey] });
+  const trades = useMemo((): readonly SignalTrade[] => {
+    if (given === undefined) return fetched.data?.trades ?? [];
+    if (!range) return given;
+    const ist = (ms: number) => new Date(ms + 330 * 60_000).toISOString().slice(0, 10);
+    return given.filter((t) => ist(t.at) >= range.from && ist(t.at) <= range.to);
+  }, [given, fetched.data, range]);
   const [show, setShow] = usePersisted<Show>('signal-trades:show', 'all');
   const [who, setWho] = usePersisted<string>('signal-trades:strategy', 'all');
   const nameOf = (id: string) => strategies.find((s) => s.id === id)?.name ?? id;
@@ -184,7 +201,7 @@ export function SignalTradeHistory({ trades, strategies }: { trades: readonly Si
   const [page, setPage] = useState(0);
   const pages = Math.max(1, Math.ceil(rows.length / PAGE));
   // A filter changed, or the list shrank: back to a page that exists.
-  useEffect(() => { setPage(0); }, [show, who, q, sort.key, sort.asc]);
+  useEffect(() => { setPage(0); }, [show, who, q, sort.key, sort.asc, rangeKey]);
   useEffect(() => { if (page > pages - 1) setPage(pages - 1); }, [page, pages]);
   const shown = rows.slice(page * PAGE, (page + 1) * PAGE);
   const totals = useMemo(() => {
@@ -205,7 +222,8 @@ export function SignalTradeHistory({ trades, strategies }: { trades: readonly Si
       <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
         <h3 className="m-0 text-[13.5px] font-semibold text-foreground">Trade history</h3>
         <div className="flex flex-wrap items-center gap-1.5">
-          <button type="button" onClick={() => downloadCsv(`signal-trades-${tab.v}-${istTime(Date.now())!.slice(0, 10)}.csv`, tradesCsv(rows, nameOf))}
+          <DateRangePicker allowAll value={range} onChange={setRange} />
+          <button type="button" onClick={() => downloadCsv(`signal-trades-${tab.v}-${range ? (range.from === range.to ? range.from : `${range.from}-to-${range.to}`) : 'all-time'}.csv`, tradesCsv(rows, nameOf))}
                   disabled={!rows.length} aria-label="download as a spreadsheet"
                   title="Every row shown here -- this tab, search, strategy and sort, all pages -- as a CSV that opens in Excel."
                   className="m-0 inline-flex h-8 appearance-none items-center gap-1 rounded-md border border-solid border-border bg-transparent px-2.5 font-[inherit] text-[12px] text-foreground disabled:opacity-40">
@@ -235,11 +253,11 @@ export function SignalTradeHistory({ trades, strategies }: { trades: readonly Si
 
       {tab.v === 'skipped' ? (
         <p className="m-0 mb-1.5 text-[11.5px] tabular-nums text-muted-foreground" aria-label="history totals">
-          {rows.length} signal{rows.length === 1 ? '' : 's'} not taken — the reason on each row.
+          <span className="text-foreground">{range ? describeRange(range) : ALL_TIME_LABEL}</span> · {rows.length} signal{rows.length === 1 ? '' : 's'} not taken — the reason on each row.
         </p>
       ) : (
       <p className="m-0 mb-1.5 text-[11.5px] tabular-nums text-muted-foreground" aria-label="history totals">
-        {rows.length} trade{rows.length === 1 ? '' : 's'} · <span className="text-[var(--up)]">{totals.won} won</span>
+        <span className="text-foreground">{range ? describeRange(range) : ALL_TIME_LABEL}</span> · {rows.length} trade{rows.length === 1 ? '' : 's'} · <span className="text-[var(--up)]">{totals.won} won</span>
         {' · '}<span className="text-[var(--down)]">{totals.lost} lost</span> · {totals.open} open
         {totals.decided > 0 && ` · win rate ${Math.round((totals.won / totals.decided) * 100)}%`}
         {rows.some((t) => t.option) && (
@@ -250,7 +268,7 @@ export function SignalTradeHistory({ trades, strategies }: { trades: readonly Si
 
       {rows.length === 0 ? (
         <p className="m-0 rounded-lg border border-dashed border-[var(--line)] px-3 py-3 text-[12px] text-muted-foreground">
-          {q ? `Nothing matches “${query.trim()}”${tab.v === 'all' ? '' : ` under ${tab.label}`}.` : `Nothing here yet${tab.v === 'all' ? '' : ` under ${tab.label}`}.`}
+          {fetched.error && given === undefined ? `Could not read the history: ${fetched.error.message}` : q ? `Nothing matches “${query.trim()}”${tab.v === 'all' ? '' : ` under ${tab.label}`}.` : `Nothing here yet${tab.v === 'all' ? '' : ` under ${tab.label}`}.`}
         </p>
       ) : (
         <>

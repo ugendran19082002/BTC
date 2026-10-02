@@ -407,3 +407,15 @@ test('[critical] at the zone: a fill reported late, or already out, is written d
   assert.equal((await runsOf('sig-multi')).length, n);
   await api('POST', '/api/strategies/sig-zone/enabled', { enabled: false });
 });
+
+test('[critical] the trade history by IST day: today has them, a day before has none, a bad range is refused', async () => {
+  const today = istDate(Date.now());
+  const r = await api('GET', `/api/strategies/signal-trades?from=${today}&to=${today}`);
+  assert.equal(r.status, 200);
+  assert.ok(r.body.trades.length > 0 && r.body.trades.every((t: any) => istDate(t.at) === today), 'only today\'s');
+  const before = await api('GET', '/api/strategies/signal-trades?from=2020-01-01&to=2020-01-02');
+  assert.deepEqual(before.body.trades, []);
+  const bad = await api('GET', `/api/strategies/signal-trades?from=${today}&to=2020-01-01`);
+  assert.equal(bad.status, 400);
+  assert.match(bad.body.error, /on or before/);
+});

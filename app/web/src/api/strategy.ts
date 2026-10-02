@@ -1,5 +1,5 @@
 import { json, post } from '@/api/client';
-import type { Strategy, StrategyConfig, StrategyStatus } from '@/types/strategy';
+import type { SignalTrade, Strategy, StrategyConfig, StrategyStatus } from '@/types/strategy';
 
 export const getStrategies = () => json<StrategyStatus>('/api/strategies');
 
@@ -32,3 +32,8 @@ export const cloneStrategy = (id: string, name?: string) =>
 export const deleteStrategy = (id: string) =>
   fetch(`/api/strategies/${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' })
     .then((r) => { if (!r.ok) throw new Error('could not delete'); });
+
+/** The signal strategies' trade history for IST days (YYYY-MM-DD); null range: the latest. */
+export const getSignalTrades = (range: { from: string; to: string } | null) =>
+  json<{ from: string | null; to: string | null; trades: SignalTrade[] }>(
+    `/api/strategies/signal-trades${range ? `?from=${range.from}&to=${range.to}` : ''}`);

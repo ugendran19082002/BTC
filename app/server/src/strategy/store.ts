@@ -468,7 +468,8 @@ export class StrategyStore {
    * perp, what the paper log saw happen on the perp, and -- for a real order --
    * the option's fill, exit, why it closed and the money.
    */
-  async signalTrades(limit = 100, strategyId?: string): Promise<SignalTrade[]> {
+  /** `range`: signals from `from` up to (not incl.) `to`, epoch ms -- the history's date picker. */
+  async signalTrades(limit = 100, strategyId?: string, range?: { from: number; to: number }): Promise<SignalTrade[]> {
     const xs = await rows<SignalTradeRow>(
       `SELECT r.id, r.strategy_id, r.signal_key, r.method, r.mode, r.tf, r.dir, r.status, r.detail, r.trade_id, r.at,
               t.position AS t_position, t.plan AS t_plan, t.state AS t_state,
@@ -480,8 +481,9 @@ export class StrategyStore {
            ON e.method = r.method AND e.mode = r.mode AND e.tf = r.tf AND e.dir = r.dir
           AND e.trigger_at = split_part(r.signal_key, '|', 5)::bigint
         WHERE r.status <> 'claimed' AND ($2::text IS NULL OR r.strategy_id = $2)
+          AND ($3::bigint IS NULL OR r.at >= $3) AND ($4::bigint IS NULL OR r.at < $4)
         ORDER BY r.at DESC LIMIT $1`,
-      [limit, strategyId ?? null],
+      [limit, strategyId ?? null, range?.from ?? null, range?.to ?? null],
     );
     const out = xs.map(signalTradeFrom);
     // A real order's perp entry where it was not kept on the trade: the perp that minute, marked approximate.

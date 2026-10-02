@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { istDayRange } from '../../entry/catalogue.js';
 import { noteError } from '../../observability/errors.js';
 import { refuse } from '../refuse.js';
 import { StrategyStore } from '../../strategy/store.js';
@@ -135,6 +136,17 @@ const idFrom = (name: string) =>
 
 export function registerStrategyRoutes(app: FastifyInstance) {
   const svc = tradingService();
+
+  /*
+   * The signal strategies' trade history for a range of IST days (or minutes): the Live screen's Trade
+   * history and its date picker. `from` / `to` as the Methods report takes them; neither, the latest.
+   */
+  app.get('/api/strategies/signal-trades', async (req, reply) => {
+    const { from, to } = (req.query ?? {}) as { from?: string; to?: string };
+    const range = istDayRange(from, to);
+    if (range && 'error' in range) { reply.code(400); return { error: range.error }; }
+    return { from: from ?? null, to: to ?? null, trades: await strategyStore().signalTrades(2_000, undefined, range ?? undefined) };
+  });
 
   // Every saved strategy, today's runs, the scheduler switch and each strategy's next entry.
   app.get('/api/strategies', async () => {
