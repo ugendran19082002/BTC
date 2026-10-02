@@ -47,6 +47,8 @@ export function overlapWarnings(strategies: readonly Pick<Strategy, 'id' | 'name
     for (let j = i + 1; j < strategies.length; j++) {
       const a = strategies[i]!;
       const b = strategies[j]!;
+      // A signal strategy's entry time is the start of a window, not an entry.
+      if (a.config.trigger === 'signal' || b.config.trigger === 'signal') continue;
       if (a.config.entryTime !== b.config.entryTime) continue;
       if (!a.config.weekdays.some((d) => b.config.weekdays.includes(d))) continue;
       const shared = sides(a.config.legs).filter((l) => sides(b.config.legs).includes(l));

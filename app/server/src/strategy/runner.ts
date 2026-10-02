@@ -4,9 +4,10 @@ import { wallWithinEm } from '../http/routes/desk.routes.js';
 import { tradingService } from '../trading/service.js';
 import { noteError } from '../observability/errors.js';
 import { StrategyStore } from './store.js';
-import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMinutes, openedAtOf } from './schedule.js';
+import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMinutes, istWeekday, openedAtOf } from './schedule.js';
 import { describeSelection, selectLegs, type Candidate } from './select.js';
-import { exitAsk, exitRules, exitValueAt, time12, type Strategy } from './types.js';
+import { exitAsk, exitRules, exitValueAt, legOfSignal, minutesForward, minutesOf, signalMatches, time12, type Strategy } from './types.js';
+import type { MethodRead } from '../entry/types.js';
 import { missedEntryAlert, runAlertFor, type Alert, type AlertContext } from '../notify/messages.js';
 import { StrategyExitStepper } from './exit-steps.js';
 
@@ -49,6 +50,35 @@ import { StrategyExitStepper } from './exit-steps.js';
 
 /** Often enough that the grace window has many chances; rarely enough to be dull. */
 const TICK_MS = 20_000;
+/** A signal strategy's entry rests at most this long; whatever is still unfilled then is cancelled. */
+export const SIGNAL_ENTRY_MS = 5 * 60_000;
+
+/** One signal's identity: the same as the paper log's -- method, way, timeframe, direction, the trigger bar. */
+export const signalKeyOf = (r: Pick<MethodRead, 'id' | 'mode' | 'tf' | 'dir' | 'triggerTime'>) =>
+  `${r.id}|${r.mode}|${r.tf}|${r.dir === 'long' ? 1 : -1}|${r.triggerTime ?? 0}`;
+
+/** The option board a signal is traded on: the daily contract's strikes, priced, and where BTC is. */
+export type SignalBoard = { live: boolean; isDaily: boolean; expiry: string; expiryTs: number; spot: number | null; candidates: Candidate[] };
+
+/** The live board, read the way the clock's entries read it. */
+async function liveSignalBoard(): Promise<SignalBoard | null> {
+  const snap = await liveChain(WHOLE_BOARD).catch(() => null);
+  if (!snap) return null;
+  return {
+    live: snap.live, isDaily: snap.isDaily, expiry: snap.expiry, expiryTs: snap.expiryTs, spot: snap.spot,
+    candidates: scoreLegs(snap).map((l) => ({
+      cp: l.cp, strike: l.strike, sellPrice: l.sellPrice, pOtm: l.pOtm,
+      moneyness: l.moneyness, ask: l.ask, oi: l.oi, emBuffer: l.emBuffer,
+    })),
+  };
+}
+
+/** Whether `now` is inside a signal strategy's window: one of its days, from its entry time to its exit time (IST). */
+export function inSignalWindow(s: Strategy, nowMs: number): boolean {
+  if (!s.config.weekdays.includes(istWeekday(nowMs))) return false;
+  const from = minutesOf(s.config.entryTime);
+  return minutesForward(from, istMinutes(nowMs)) < minutesForward(from, minutesOf(s.config.exitTime));
+}
 
 export class StrategyRunner {
   private timer: NodeJS.Timeout | null = null;
@@ -60,6 +90,8 @@ export class StrategyRunner {
   constructor(
     private readonly store: StrategyStore,
     private readonly now: () => number = Date.now,
+    /** The board a signal is traded on: the live one, or a test's. */
+    private readonly signalBoard: () => Promise<SignalBoard | null> = liveSignalBoard,
   ) {
     /*
      * Time-based exits: at each step's time, the target or stop of every open
@@ -189,6 +221,8 @@ export class StrategyRunner {
   }
 
   private async considerEntry(s: Strategy): Promise<void> {
+    // A signal strategy enters on its signals (`onSignal`), never on the clock.
+    if (s.config.trigger === 'signal') return;
     const now = this.now();
     const day = entrySlotDate(s, now);
     const due = entryDue(s, now, await this.store.lastRunDate(s.id));
@@ -264,6 +298,86 @@ export class StrategyRunner {
     await this.store.finish(s.id, day, status, detail);
     // Failed, or on one side only: somebody should know before the day moves on.
     this.alert((ctx) => runAlertFor({ strategy: s.name, status, detail, failedLegs: failed, at: now }, ctx));
+  }
+
+  /**
+   * A TRADE signal, the moment the entry section writes it (index.ts, each minute
+   * three seconds after the candles close): every switched-on signal strategy
+   * that takes it sells its leg -- a BUY the put, a SELL the call -- with the
+   * signal's own SL and TGT on the BTC perpetual as the trade's exits.
+   *
+   * Called for each new TRADE once (the paper log's first write), and claimed per
+   * strategy before anything is sent, so a signal is never traded twice. Every
+   * outcome is written to `strategy_signal_runs`, in words. With `liveOrders` off
+   * -- the default -- nothing is sent: what would have been placed is written down
+   * with the gates' answer, which is how a method earns a live switch.
+   */
+  async onSignal(r: MethodRead): Promise<void> {
+    if (r.state !== 'TRADE' || !r.plan || r.dir === null || r.triggerTime === null) return;
+    if (!this.armed()) return;
+    for (const s of await this.store.all()) {
+      if (!s.enabled || s.config.trigger !== 'signal' || !s.config.signal) continue;
+      if (!signalMatches(s.config.signal, r)) continue;
+      await this.takeSignal(s, r).catch((e) => this.note(s, 'signal', e));
+    }
+  }
+
+  private async takeSignal(s: Strategy, r: MethodRead): Promise<void> {
+    const now = this.now();
+    if (!inSignalWindow(s, now)) return;              // outside its days or hours: not its signal
+    const rule = s.config.signal!;
+    const plan = r.plan!;
+    const dir: 1 | -1 = r.dir === 'long' ? 1 : -1;
+    const key = signalKeyOf(r);
+    if (!await this.store.claimSignal(s.id, key, { method: r.id, mode: r.mode, tf: r.tf, dir }, now)) return;
+    const said = `#${r.n} ${r.name} ${dir === 1 ? 'BUY' : 'SELL'}`;
+    const finish = (status: Parameters<StrategyStore['finishSignal']>[2], detail: string, tradeId: string | null = null) =>
+      this.store.finishSignal(s.id, key, status, `${said} | ${detail}`, tradeId);
+
+    const svc = tradingService();
+    // Every trade of its own not yet finished -- a working entry included: one resting at the offer, not yet
+    // filled, is still a trade, and counting only positions let a second signal place a second order.
+    const open = (await svc.openTrades()).filter((t) => t.plan.strategyId === s.id);
+    if (open.length >= rule.maxOpen) {
+      await finish('skipped', `already ${open.length} of its trade${open.length === 1 ? '' : 's'} open (at most ${rule.maxOpen})`);
+      return;
+    }
+
+    const snap = await this.signalBoard().catch(() => null);
+    if (!snap || !snap.live) { await finish('skipped', 'no live option board'); return; }
+    if (!snap.isDaily) { await finish('skipped', 'the nearest expiry is not the daily contract'); return; }
+
+    // The signal's leg: one, whatever `legs` says.
+    const leg = legOfSignal(dir);
+    const sel = selectLegs({ ...s, config: { ...s.config, legs: leg } }, snap.candidates, { wallWithinEm: wallWithinEm(), spot: snap.spot });
+    const chosen = sel.legs[0];
+    if (!chosen) { await finish('refused', describeSelection(sel)); return; }
+
+    const target = (rule.target === 'tp3' ? plan.tp3 : rule.target === 'tp2' ? plan.tp2 : null) ?? plan.tp1;
+    const args = {
+      ...placeArgs(s, {
+        symbol: `${chosen.cp}-BTC-${chosen.strike}-${snap.expiry}`,
+        optionSide: leg, strike: chosen.strike, expiryTs: snap.expiryTs,
+        lots: chosen.lots, ask: chosen.ask, cancelAfterMs: SIGNAL_ENTRY_MS,
+      }),
+      // The signal's own levels, on the perp: the trade's real exits. The premium stop stays at Delta as the backstop.
+      underlying: { dir, stop: plan.stop, target, source: 'BTC perp' },
+    };
+    const what = `sell ${leg} ${chosen.strike} x${chosen.lots} @ ${chosen.price} · perp SL ${Math.round(plan.stop)} · TGT ${Math.round(target)}`;
+
+    if (!s.config.liveOrders) {
+      const p = await svc.wouldPlace(args);
+      await finish(p.ok ? 'would-place' : 'refused', `${p.ok ? 'live orders off: would' : 'refused:'} ${p.ok ? what : failureText(p)}`);
+      return;
+    }
+    const res = await svc.place(args);
+    if (!res.ok) {
+      await finish('refused', `${what} -- refused: ${res.precheck ? failureText(res.precheck) : 'refused'}`);
+      this.alert((ctx) => runAlertFor({ strategy: s.name, status: 'failed', detail: `${said}: refused`, failedLegs: [what], at: now }, ctx));
+      return;
+    }
+    await finish('placed', what, res.state.tradeId);
+    this.alert((ctx) => runAlertFor({ strategy: s.name, status: 'placed', detail: `${said}: ${what}`, failedLegs: [], at: now }, ctx));
   }
 
   private async claimAndFinish(s: Strategy, day: string, status: 'refused' | 'skipped', detail: string): Promise<void> {

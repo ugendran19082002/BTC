@@ -7,6 +7,8 @@
  * neither of them keeps state that is not in here or in the database.
  */
 
+import { METHODS } from '../entry/methods.js';
+
 /** Which way the premium rule reads. The two are opposites and both are real. */
 export type PremiumMode =
   /**
@@ -230,7 +232,53 @@ export type StrategyConfig = {
   graceMin: number;
   /** Days it may run. 0 = Sunday … 6 = Saturday. Empty means never. */
   weekdays: number[];
+  /**
+   * What starts an entry (2 Oct 2026): the clock -- `entryTime`, once a day --
+   * or a signal from the desk's entry methods. Absent: the clock, which is what
+   * every strategy saved before this did.
+   *
+   * A signal strategy sells one leg per signal: a BUY is a short put, a SELL a
+   * short call (`legOfSignal`), so `legs` is not read. Its `entryTime` to
+   * `exitTime` is the window it takes signals in, and anything it holds is
+   * closed at `exitTime`, as for the clock.
+   */
+  trigger?: 'time' | 'signal';
+  /** Which signals a signal strategy takes. Read only when `trigger` is 'signal'. */
+  signal?: SignalRule;
+  /**
+   * A signal strategy places real orders only with this on. Off -- the default --
+   * it writes down what it would have placed, gates and all, and sends nothing:
+   * the entry setups are measured before they are trusted (decision 0013).
+   */
+  liveOrders?: boolean;
 };
+
+/** A signal strategy's rule: which way of reading, which methods, which target, how many at once. */
+export type SignalRule = {
+  /** With the timeframe chain (entry on 5m), or without it on `tf`. */
+  mode: 'mtf' | 'single';
+  /** The timeframe of a read without the chain; with it, the entry is always 5m. */
+  tf: SignalTf;
+  /** The method ids (entry/methods.ts) whose TRADE signals it takes. At least one. */
+  methods: string[];
+  /** Which of the signal's targets the trade exits at: TGT1, or TGT2 / TGT3 where the signal has them (else TGT1). */
+  target: 'tp1' | 'tp2' | 'tp3';
+  /** At most this many of its trades open at once; a signal past it is written down and not taken. */
+  maxOpen: number;
+};
+export type SignalTf = '3m' | '5m' | '15m' | '30m' | '1h' | '4h';
+export const SIGNAL_TFS: readonly SignalTf[] = ['3m', '5m', '15m', '30m', '1h', '4h'];
+export const MAX_SIGNAL_OPEN = 5;
+
+/** The leg a signal is traded as: a BUY sells the put, a SELL the call -- each wins as the signal goes right. */
+export const legOfSignal = (dir: 'long' | 'short' | 1 | -1): 'CE' | 'PE' => (dir === 'long' || dir === 1 ? 'PE' : 'CE');
+
+/** Whether a signal strategy takes this read: its way, its timeframe, one of its methods. */
+export function signalMatches(rule: SignalRule, r: { id: string; mode: string; tf: string }): boolean {
+  if (r.mode !== rule.mode) return false;
+  if (rule.mode === 'single' && r.tf !== rule.tf) return false;
+  return rule.methods.includes(r.id);
+}
 
 /**
  * An exit is read one of two ways.
@@ -554,6 +602,25 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
     bad.push('Days must be whole numbers from 0 (Sunday) to 6 (Saturday).');
   } else if (c.weekdays.length === 0) {
     bad.push('Pick at least one day, or the strategy can never run.');
+  }
+  if (c.trigger !== undefined && c.trigger !== 'time' && c.trigger !== 'signal') bad.push('The trigger must be a time or a signal.');
+  if (c.trigger === 'signal') bad.push(...signalRuleProblems(c.signal));
+  if (c.liveOrders !== undefined && typeof c.liveOrders !== 'boolean') bad.push('Live orders must be on or off.');
+  return bad;
+}
+
+/** What is wrong with a signal rule, in words: an empty list when nothing is. */
+export function signalRuleProblems(r: Partial<SignalRule> | undefined): string[] {
+  if (!r) return ['A signal strategy needs its signals: the way, the timeframe and at least one method.'];
+  const bad: string[] = [];
+  if (r.mode !== 'mtf' && r.mode !== 'single') bad.push('Pick with the timeframe chain or without it.');
+  if (r.mode === 'single' && !SIGNAL_TFS.includes(r.tf as SignalTf)) bad.push(`Pick a timeframe: ${SIGNAL_TFS.join(', ')}.`);
+  const ids = new Set(METHODS.map((m) => m.id));
+  if (!Array.isArray(r.methods) || r.methods.length === 0) bad.push('Pick at least one method whose signals to take.');
+  else if (r.methods.some((m) => !ids.has(m))) bad.push(`No such method: ${r.methods.filter((m) => !ids.has(m)).join(', ')}.`);
+  if (r.target !== 'tp1' && r.target !== 'tp2' && r.target !== 'tp3') bad.push('The target must be TGT1, TGT2 or TGT3.');
+  if (!Number.isInteger(r.maxOpen) || (r.maxOpen ?? 0) < 1 || (r.maxOpen ?? 0) > MAX_SIGNAL_OPEN) {
+    bad.push(`At most 1 to ${MAX_SIGNAL_OPEN} of its trades open at once.`);
   }
   return bad;
 }

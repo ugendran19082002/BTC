@@ -1,4 +1,4 @@
-import { MAX_STRIKE_STEP, type StrategyConfig } from '@/types/strategy';
+import { MAX_SIGNAL_OPEN, MAX_STRIKE_STEP, SIGNAL_TFS, type StrategyConfig } from '@/types/strategy';
 import { isHhmm, minutesForward, minutesOf, minutesToSettlement, time12 } from '@/lib/time';
 import { exitRuleProblems, exitRules, premiumFallbackProblem } from '@/lib/strategy-exits';
 
@@ -11,7 +11,7 @@ import { exitRuleProblems, exitRules, premiumFallbackProblem } from '@/lib/strat
  * the tab it is on, and Save says what is left rather than failing afterwards.
  */
 
-export type FormTab = 'when' | 'sell' | 'trade';
+export type FormTab = 'when' | 'signal' | 'sell' | 'trade';
 
 /** 17:30 IST, the daily settlement, in minutes; and the launch auction after it (server: `LAUNCH_AUCTION_MIN`). */
 const SETTLEMENT_MIN = 17 * 60 + 30;
@@ -20,7 +20,8 @@ const LAUNCH_AUCTION_MIN = 5;
 export type FormField =
   | 'name' | 'entryTime' | 'exitTime' | 'weekdays' | 'graceMin'
   | 'legs' | 'strikeRule' | 'strikeStep' | 'premium' | 'premiumFallback' | 'minPremium' | 'lots'
-  | 'entryLimit' | 'crossAfterSec' | 'maxCrossSpreadPct' | 'takeProfitPct' | 'stopLossPct';
+  | 'entryLimit' | 'crossAfterSec' | 'maxCrossSpreadPct' | 'takeProfitPct' | 'stopLossPct'
+  | 'signalMode' | 'signalTf' | 'signalMethods' | 'signalTarget' | 'maxOpen';
 
 export type Problem = { field: FormField; tab: FormTab; message: string };
 
@@ -28,6 +29,7 @@ const TAB: Record<FormField, FormTab> = {
   name: 'when', entryTime: 'when', exitTime: 'when', weekdays: 'when', graceMin: 'when',
   legs: 'sell', strikeRule: 'sell', strikeStep: 'sell', premium: 'sell', premiumFallback: 'sell', minPremium: 'sell', lots: 'sell',
   entryLimit: 'trade', crossAfterSec: 'trade', maxCrossSpreadPct: 'trade', takeProfitPct: 'trade', stopLossPct: 'trade',
+  signalMode: 'signal', signalTf: 'signal', signalMethods: 'signal', signalTarget: 'trade', maxOpen: 'trade',
 };
 
 export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
@@ -87,6 +89,22 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
 
   if (!Number.isInteger(c.graceMin) || c.graceMin < 1 || c.graceMin > 240) {
     say('graceMin', 'The late-entry window must be a whole number of minutes from 1 to 240.');
+  }
+
+  // A signal strategy's rule -- the server's `signalRuleProblems`, in its words.
+  if (c.trigger === 'signal') {
+    const r = c.signal;
+    if (!r) {
+      say('signalMethods', 'A signal strategy needs its signals: the way, the timeframe and at least one method.');
+    } else {
+      if (r.mode !== 'mtf' && r.mode !== 'single') say('signalMode', 'Pick with the timeframe chain or without it.');
+      if (r.mode === 'single' && !SIGNAL_TFS.includes(r.tf)) say('signalTf', `Pick a timeframe: ${SIGNAL_TFS.join(', ')}.`);
+      if (!Array.isArray(r.methods) || r.methods.length === 0) say('signalMethods', 'Pick at least one method whose signals to take.');
+      if (r.target !== 'tp1' && r.target !== 'tp2' && r.target !== 'tp3') say('signalTarget', 'The target must be TGT1, TGT2 or TGT3.');
+      if (!Number.isInteger(r.maxOpen) || r.maxOpen < 1 || r.maxOpen > MAX_SIGNAL_OPEN) {
+        say('maxOpen', `At most 1 to ${MAX_SIGNAL_OPEN} of its trades open at once.`);
+      }
+    }
   }
   return out;
 }

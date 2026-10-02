@@ -19,6 +19,7 @@ import { midOf } from './money.js';
 import { istDate, startOfDayIst } from '../strategy/schedule.js';
 import type { MtmSample } from './pnl-history.js';
 import { candles } from '../market/delta.js';
+import { liveLtp } from '../market/flow.js';
 import { noteError } from '../observability/errors.js';
 import { alertFor, bookWentFlat, daySummaryFor, slippageAlert } from '../notify/messages.js';
 import { TelegramNotifier } from '../notify/telegram.js';
@@ -173,6 +174,8 @@ export class TradingService {
       // The option's own candles, for a stop the strategy asked to watch on
       // the close rather than on the touch.
       candles: (symbol, startSec, endSec, resolution) => candles(symbol, startSec, endSec, resolution),
+      // The perpetual's last trade off the tape, for a signal strategy's exits on the underlying.
+      underlying: () => { const l = liveLtp(); return l ? { price: l.price, at: l.at } : null; },
       onSwallowed: (what, order, error) => {
         noteError({
           source: 'trading',

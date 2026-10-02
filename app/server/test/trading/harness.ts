@@ -88,6 +88,8 @@ export function rig(opts: {
   onEvent?: EngineDeps['onEvent'];
   /** The option's own candles, for a stop watched on the close. */
   candles?: EngineDeps['candles'];
+  /** The BTC perpetual's last trade, for exits on the underlying. */
+  underlying?: EngineDeps['underlying'];
 } = {}): Rig {
   const ex = new PaperExchange({ balanceUsd: opts.balanceUsd ?? 100_000 });
   for (const p of opts.products ?? [ceProduct()]) ex.addProduct(p);
@@ -120,6 +122,7 @@ export function rig(opts: {
     spot: () => spot,
     onAlarm: (t, message) => alarms.push({ tradeId: t.tradeId, message }),
     candles: opts.candles,
+    underlying: opts.underlying,
     onSwallowed: (what, _order, error) => swallowed.push({ what, message: error.message }),
     onEvent: (event, before, after, plan) => {
       events.push({ event, before, after });

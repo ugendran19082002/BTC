@@ -1,0 +1,254 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { StrategyForm } from '@/components/strategy/StrategyForm';
+import { matchingSignals, profitableIds } from '@/components/strategy/SignalRuleEditor';
+import { DEFAULT_CONFIG, DEFAULT_SIGNAL_RULE, type SignalRule, type Strategy } from '@/types/strategy';
+import type { MethodRead, MethodReportRow } from '@/types/entry';
+
+const saveStrategy = vi.fn();
+vi.mock('@/api/strategy', () => ({
+  saveStrategy: (...a: unknown[]) => saveStrategy(...a),
+}));
+const getEntryMethods = vi.fn();
+const getMethodReport = vi.fn();
+const getEntryBoard = vi.fn();
+vi.mock('@/api/entry', () => ({
+  getEntryMethods: (...a: unknown[]) => getEntryMethods(...a),
+  getMethodReport: (...a: unknown[]) => getMethodReport(...a),
+  getEntryBoard: (...a: unknown[]) => getEntryBoard(...a),
+}));
+
+/**
+ * A signal strategy on the form (2 Oct 2026): the desk's entry signals sold as
+ * options -- BUY sells the put, SELL the call -- with the methods picked from
+ * the 81 against their record, the SL and TGT the signal's own on the BTC perp,
+ * one lot by default, and live orders off until switched on.
+ */
+
+const METHODS = [
+  { id: 'breakout', n: 1, name: 'Breakout', group: 'breakout', summary: 'A close through the 20-bar range', sl: 'the breakout candle' },
+  { id: 'liquidity-sweep', n: 3, name: 'Liquidity sweep', group: 'reversal', summary: 'Stops taken past a swing', sl: 'the sweep extreme' },
+  { id: 'bos', n: 6, name: 'BOS', group: 'breakout', summary: 'A displacement close through a swing', sl: 'the last higher low' },
+  { id: 'order-flow', n: 11, name: 'Order flow', group: 'flow', summary: 'Absorption at a level', sl: 'the absorption extreme' },
+];
+const row = (method: string, trades: number, wins: number, netPts: number): MethodReportRow => ({
+  n: null, method, name: method, signals: trades, trades, wins, losses: trades - wins,
+  winPct: trades ? Math.round((wins / trades) * 100) : null, profitPts: Math.max(netPts, 0), lossPts: Math.max(-netPts, 0), netPts,
+  profitR: 0, lossR: 0, netR: 0,
+});
+const section = (mode: 'mtf' | 'single', rows: MethodReportRow[]) => ({
+  mode, label: mode, rows, total: row('total', 0, 0, 0), gatesOffSignals: 0,
+});
+const REPORT = {
+  tf: null,
+  sections: [
+    section('mtf', [row('breakout', 12, 8, 900), row('liquidity-sweep', 3, 3, 400), row('bos', 9, 2, -500)]),
+    section('single', []),
+  ],
+  singleByTf: { '15m': section('single', [row('bos', 6, 4, 300), row('order-flow', 7, 5, 250)]) },
+};
+const read = (o: Partial<MethodRead>): MethodRead => ({
+  id: 'breakout', n: 1, code: '1', name: 'Breakout', group: 'breakout', summary: '', mode: 'mtf', tf: '5m',
+  dir: 'long', state: 'TRADE', steps: [], gates: [], score: 70, scoreParts: [], alignment: null,
+  plan: { entryLo: 84_950, entryHi: 85_000, stop: 84_600, tp1: 85_500, tp2: 85_900, tp3: null, tpWhy: [], rr: 1.25 },
+  ...o,
+} as MethodRead);
+const BOARD = {
+  at: 0, tf: '5m', chain: [], timeframes: [], ltp: { price: 85_010, at: 0 },
+  reads: [
+    read({}),
+    read({ id: 'bos', n: 6, name: 'BOS', dir: 'short', plan: { entryLo: 85_000, entryHi: 85_050, stop: 85_400, tp1: 84_500, tp2: null, tp3: null, tpWhy: [], rr: 1.2 } }),
+    read({ id: 'liquidity-sweep', n: 3, state: 'WAIT', plan: null }),
+    read({ id: 'breakout', mode: 'single', tf: '5m' }),
+  ],
+};
+
+const strategy = (over: Partial<Strategy['config']> = {}, name = 'Sig'): Strategy => ({
+  id: 'sig', name, enabled: false, createdAt: 0, updatedAt: 0,
+  lastRunDate: null, ranToday: false, nextEntryAt: null, status: 'off',
+  config: { ...DEFAULT_CONFIG, ...over },
+});
+const signalStrategy = (rule: Partial<SignalRule> = {}, over: Partial<Strategy['config']> = {}) =>
+  strategy({ trigger: 'signal', signal: { ...DEFAULT_SIGNAL_RULE, methods: ['breakout'], ...rule }, liveOrders: false, lots: 1, ...over });
+
+const show = (s: Strategy | null) =>
+  render(<StrategyForm editing={s} open onOpenChange={() => {}} onSaved={() => {}} balanceUsd={228} spot={85_000} />);
+const tab = (name: string) => fireEvent.click(screen.getByRole('tab', { name: new RegExp(`^${name}`) }));
+const radio = (group: string, name: string | RegExp) =>
+  fireEvent.click(within(screen.getByRole('radiogroup', { name: group })).getByRole('radio', { name }));
+const saveButton = () => screen.getByRole('button', { name: /^(Save|Fix \d+ to save)$/ });
+const saved = () => saveStrategy.mock.calls.at(-1)![0] as { name: string; config: Strategy['config'] };
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  saveStrategy.mockResolvedValue({ ok: true });
+  getEntryMethods.mockResolvedValue({ methods: METHODS });
+  getMethodReport.mockResolvedValue(REPORT);
+  getEntryBoard.mockResolvedValue(BOARD);
+});
+
+describe('choosing to enter on a signal', () => {
+  it('[critical] a new strategy switched to signals: a Signals tab, one lot, live orders off', () => {
+    show(null);
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['When', 'Sell', 'Entry & exit']);
+    radio('trigger', 'On a signal');
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['When', 'Signals', 'Sell', 'Entry & exit']);
+    expect(screen.getByRole('button', { name: /^Take signals from:/ })).toBeInTheDocument();
+    expect(screen.queryByLabelText('late entry window')).toBeNull();
+    const live = screen.getByRole('switch', { name: /Live orders/ });
+    expect(live).toHaveAttribute('aria-checked', 'false');
+    tab('Sell');
+    expect(screen.getByLabelText('lots')).toHaveValue('1');
+  });
+
+  it('[critical] the leg is the signal\'s: BUY sells the PE, SELL the CE -- no legs to choose', () => {
+    show(signalStrategy());
+    tab('Sell');
+    expect(screen.queryByRole('radiogroup', { name: 'legs' })).toBeNull();
+    const legs = screen.getByLabelText('leg from the signal');
+    expect(legs).toHaveTextContent(/BUY signal → sells PE/);
+    expect(legs).toHaveTextContent(/SELL signal → sells CE/);
+    // the strike rule is the one every strategy uses
+    expect(screen.getByRole('radio', { name: 'By premium' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'At most' })).toBeInTheDocument();
+  });
+
+  it('an existing strategy keeps its lots when switched to signals and back', () => {
+    show(strategy({ lots: 7 }));
+    radio('trigger', 'On a signal');
+    radio('trigger', 'At a time');
+    tab('Sell');
+    expect(screen.getByLabelText('lots')).toHaveValue('7');
+    expect(screen.getByRole('radiogroup', { name: 'legs' })).toBeInTheDocument();
+  });
+});
+
+describe('picking the methods', () => {
+  it('[critical] the 81 come from the server, each with its record in the chosen way', async () => {
+    show(signalStrategy({ methods: [] }));
+    tab('Signals');
+    const list = await screen.findByRole('list', { name: 'methods' });
+    expect(within(list).getAllByRole('checkbox')).toHaveLength(4);
+    await waitFor(() => expect(within(list).getByText(/67% · 12t ·/)).toBeInTheDocument());
+    expect(within(list).getByText('+900 pts')).toBeInTheDocument();
+    expect(screen.getByText(/0 of 4 picked/)).toBeInTheDocument();
+    expect(getMethodReport).toHaveBeenCalledWith(null);
+  });
+
+  it('search by name or number, and by family', async () => {
+    show(signalStrategy({ methods: [] }));
+    tab('Signals');
+    await screen.findByRole('checkbox', { name: '#1 Breakout' });
+    fireEvent.change(screen.getByLabelText('search methods'), { target: { value: 'sweep' } });
+    expect(screen.getAllByRole('checkbox').map((c) => c.getAttribute('aria-label'))).toEqual(['#3 Liquidity sweep']);
+    fireEvent.change(screen.getByLabelText('search methods'), { target: { value: '11' } });
+    expect(screen.getAllByRole('checkbox').map((c) => c.getAttribute('aria-label'))).toEqual(['#11 Order flow']);
+    fireEvent.change(screen.getByLabelText('search methods'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Breakout', pressed: false }));
+    expect(screen.getAllByRole('checkbox').map((c) => c.getAttribute('aria-label'))).toEqual(['#1 Breakout', '#6 BOS']);
+    fireEvent.click(screen.getByRole('button', { name: /Pick all shown \(2\)/ }));
+    expect(screen.getByText(/2 of 4 picked/)).toBeInTheDocument();
+  });
+
+  it('[critical] "profitable so far" picks only a positive net over at least 5 trades', async () => {
+    show(signalStrategy({ methods: [] }));
+    tab('Signals');
+    const pick = await screen.findByRole('button', { name: /Pick profitable so far \(1\)/ });
+    fireEvent.click(pick);
+    // breakout: 12 trades, +900. The sweep's +400 is 3 trades -- too few. BOS lost.
+    expect(screen.getByRole('checkbox', { name: '#1 Breakout' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: '#3 Liquidity sweep' })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: '#6 BOS' })).not.toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(screen.getByText(/0 of 4 picked/)).toBeInTheDocument();
+  });
+
+  it('without the chain: a timeframe to pick, and the record and board follow it', async () => {
+    show(signalStrategy({ methods: [] }));
+    tab('Signals');
+    expect(screen.queryByRole('radiogroup', { name: 'signal timeframe' })).toBeNull();
+    radio('signal way', 'Without the chain');
+    radio('signal timeframe', '15m');
+    await waitFor(() => expect(getMethodReport).toHaveBeenLastCalledWith('15m'));
+    await waitFor(() => expect(getEntryBoard).toHaveBeenLastCalledWith('15m'));
+    await waitFor(() => expect(screen.getByRole('button', { name: /Pick profitable so far \(2\)/ })).toBeEnabled());
+  });
+});
+
+describe('the SL and TGT on the BTC perp, from the live signal', () => {
+  it('[critical] the picked methods\' TRADE signals standing now, read as the order each would be', async () => {
+    show(signalStrategy({ methods: ['breakout', 'bos', 'liquidity-sweep'] }));
+    tab('Signals');
+    const box = screen.getByLabelText('live signals');
+    await waitFor(() => expect(within(box).getAllByRole('listitem')).toHaveLength(2));
+    const [buy, sell] = within(box).getAllByRole('listitem');
+    expect(buy).toHaveTextContent('#1 Breakout BUY → sells PE · perp SL 84,600 · TGT1 85,500 · TGT2 85,900');
+    expect(sell).toHaveTextContent('#6 BOS SELL → sells CE · perp SL 85,400 · TGT1 84,500');
+    expect(box).toHaveTextContent('BTC perp 85,010');
+  });
+
+  it('target and how many at once are chosen on Entry & exit; the option exits are the backstop', () => {
+    show(signalStrategy());
+    tab('Entry & exit');
+    expect(screen.getByLabelText('exits on the BTC perp')).toHaveTextContent(/the signal's own levels on the BTC perpetual/);
+    expect(screen.getByText(/Backstop on the option at Delta/)).toBeInTheDocument();
+    // the entry is still priced the same way: at the offer, at the bid after 5 s
+    expect(screen.getByRole('radio', { name: 'Offer' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByLabelText('cross after seconds')).toHaveValue('5');
+    radio('signal target', 'TGT2');
+    radio('max open', '3');
+    fireEvent.click(saveButton());
+    expect(saved().config.signal).toMatchObject({ target: 'tp2', maxOpen: 3 });
+  });
+});
+
+describe('saving', () => {
+  it('[critical] no method picked: said under the field, the Signals tab marked, nothing sent', async () => {
+    show(signalStrategy({ methods: [] }));
+    expect(screen.getByRole('tab', { name: /^Signals/ })).toContainElement(screen.getByLabelText('has a problem'));
+    expect(saveButton()).toHaveTextContent('Fix 1 to save');
+    fireEvent.click(saveButton());
+    expect(saveStrategy).not.toHaveBeenCalled();
+    expect(screen.getByRole('tab', { name: /^Signals/ })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('alert')).toHaveTextContent('Pick at least one method whose signals to take.');
+  });
+
+  it('[critical] what is sent: the trigger, the whole rule, and live orders off', async () => {
+    show(signalStrategy({ mode: 'single', tf: '15m', methods: ['bos'] }));
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(saveStrategy).toHaveBeenCalledTimes(1));
+    expect(saved().config).toMatchObject({
+      trigger: 'signal', liveOrders: false, lots: 1,
+      signal: { mode: 'single', tf: '15m', methods: ['bos'], target: 'tp1', maxOpen: 1 },
+    });
+  });
+
+  it('[critical] live orders: off says nothing is sent; on says real orders, and is saved on', async () => {
+    show(signalStrategy());
+    const sw = screen.getByRole('switch', { name: /Live orders/ });
+    expect(screen.getByText(/Nothing is sent/)).toBeInTheDocument();
+    fireEvent.click(sw);
+    expect(screen.getByText(/each signal places a real order at Delta/)).toBeInTheDocument();
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    expect(saved().config.liveOrders).toBe(true);
+  });
+
+  it('the rule read back as a sentence says what it does', () => {
+    show(signalStrategy({ methods: ['breakout', 'bos'] }));
+    expect(screen.getByText(/takes the TRADE signals of 2 methods with the timeframe chain: a BUY sells a put, a SELL a call/)).toBeInTheDocument();
+    expect(screen.getByText(/Live orders off/)).toBeInTheDocument();
+  });
+});
+
+describe('the helpers', () => {
+  const rule: SignalRule = { mode: 'mtf', tf: '5m', methods: ['breakout', 'bos'], target: 'tp1', maxOpen: 1 };
+  it('matchingSignals: its way, its timeframe without the chain, its methods, TRADE only', () => {
+    expect(matchingSignals(BOARD.reads, rule).map((r) => r.id)).toEqual(['breakout', 'bos']);
+    expect(matchingSignals(BOARD.reads, { ...rule, mode: 'single', tf: '5m' }).map((r) => `${r.id}|${r.mode}`)).toEqual(['breakout|single']);
+    expect(matchingSignals(BOARD.reads, { ...rule, mode: 'single', tf: '15m' })).toEqual([]);
+  });
+  it('profitableIds: net above zero over at least five trades', () => {
+    expect(profitableIds([row('a', 5, 3, 1), row('b', 4, 4, 100), row('c', 20, 5, -1), row('d', 6, 3, 0)])).toEqual(['a']);
+  });
+});

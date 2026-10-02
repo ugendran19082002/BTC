@@ -219,6 +219,19 @@ export type TradePlan = {
    * position, or a plan written before this existed).
    */
   exitAsk?: ExitAsk;
+  /**
+   * Exits on the underlying -- the BTC perpetual -- rather than on the option's
+   * own price (2 Oct 2026, signal strategies: the signal's SL and TGT are perp
+   * levels, and the option is sold to ride them).
+   *
+   * `dir` is the signal's: +1 a BUY, traded as a short put, which wins as BTC
+   * rises; -1 a SELL, a short call. The desk buys the option back at the market
+   * the moment the perp's last trade reaches `stop` (against the signal) or
+   * `target` (with it). Written on the plan, so a restart carries on watching.
+   * The premium stop resting at Delta stays as the backstop: this watch lives in
+   * this process, and a stop must still work when the process does not.
+   */
+  underlying?: { dir: 1 | -1; stop: number | null; target: number | null; source: string };
   expect: { underlying: string; optionSide: OptionSide; strike: number; expiryTs: number };
 };
 
@@ -351,6 +364,12 @@ export type EngineDeps = {
    * touch and tells nobody.
    */
   candles?: (symbol: string, startSec: number, endSec: number, resolution: string) => Promise<Candle[]>;
+  /**
+   * The BTC perpetual's last trade, for exits on the underlying (`plan.underlying`).
+   * Injected for the same reason as `candles`: an engine without it cannot act on
+   * an underlying level, which is safer than one that guesses one.
+   */
+  underlying?: () => { price: number; at: number } | null;
 };
 
 export type OpenResult =
@@ -1076,6 +1095,10 @@ export class TradeEngine {
     if (rec.state.position !== 0 && rec.state.phase !== 'exit_pending') {
       rec = await this.stopIfReached(rec);
     }
+    // And the underlying's levels, for a trade that has them (a signal strategy's).
+    if (rec.state.position !== 0 && rec.state.phase !== 'exit_pending') {
+      rec = await this.underlyingExit(rec);
+    }
 
     if (rec.state.position === 0 && rec.state.entrySize > 0 && rec.state.phase !== 'flat') {
       rec = await this.cancelSiblings(rec, true);
@@ -1639,6 +1662,31 @@ export class TradeEngine {
   }
 
   /**
+   * The underlying's own exit (`plan.underlying`): the perp's last trade at the
+   * signal's stop or target, and the option is bought back at the market.
+   *
+   * On the touch, not held: the perpetual is the most liquid price there is, the
+   * signal's stop already sits a quarter-ATR past its structure, and the paper
+   * log that measured these signals exits on the first trade through. A missing
+   * or stale price (over MARK_STALE_MS) does nothing -- the premium backstop at
+   * Delta is still there underneath.
+   */
+  private async underlyingExit(rec: TradeRecord): Promise<TradeRecord> {
+    const u = rec.plan.underlying;
+    if (!u || (u.stop === null && u.target === null)) return rec;
+    const px = this.d.underlying?.() ?? null;
+    if (px === null || !(px.price > 0) || this.now() - px.at > MARK_STALE_MS) return rec;
+    const hitStop = u.stop !== null && (px.price - u.stop) * u.dir <= 0;
+    const hitTarget = !hitStop && u.target !== null && (px.price - u.target) * u.dir >= 0;
+    if (!hitStop && !hitTarget) return rec;
+    const why = hitStop
+      ? `${u.source} at ${px.price} reached the signal's stop ${u.stop}`
+      : `${u.source} at ${px.price} reached the signal's target ${u.target}`;
+    await this.closeNowInner(rec.state.tradeId, why);
+    return await this.d.store.get(rec.state.tradeId) ?? rec;
+  }
+
+  /**
    * The last *finished* minute of this option's own chart.
    *
    * Null when the feed has nothing, which is read as "no reason to act": a
@@ -1712,6 +1760,7 @@ export class TradeEngine {
       role: 'manual',
       clientOrderId: cid,
       closing: { clientOrderId: cid, size, heldBefore: held, all, submittedAt: this.now() },
+      reason,
       at: this.now(),
     });
     try {

@@ -9,7 +9,7 @@ also carry an `Origin` or `Referer` naming the desk's own host.
 
 What: the first sentence of the comment directly above the route. A dash means there is none.
 
-76 routes.
+77 routes.
 
 ## [annotations.routes.ts](../../app/server/src/http/routes/annotations.routes.ts)
 
@@ -48,6 +48,7 @@ What: the first sentence of the comment directly above the route. A dash means t
 | GET | `/api/entry/board` | signed in | The 24 reads: each method with the timeframe chain (entry on 5m), then without it on `tf` (default 5m). |
 | GET | `/api/entry/gates` | signed in | The hard gates' switches: every gate, whether it is on, and whether it can be turned off. |
 | POST | `/api/entry/gates/:key` | signed in | Turn one gate on or off. |
+| GET | `/api/entry/methods` | signed in | Every entry method, in the desk's 1-81 order: the list a signal strategy picks its methods from. |
 | GET | `/api/entry/record` | signed in | Each method's paper record, with the chain and without it, and the latest setups written. |
 | GET | `/api/entry/report` | signed in | The report: every method, with the chain and without it -- signals, trades, wins, losses, win rate, profit, loss and net. |
 | GET | `/api/entry/signals` | signed in | The signal journal: every WAIT and TRADE shown, newest first; filter by mode, tf, state. |

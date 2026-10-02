@@ -143,3 +143,19 @@ describe('what the size actually costs', () => {
   });
 });
 
+
+describe('a signal strategy, sized and said', () => {
+  const sig = cfg({ trigger: 'signal', lots: 2, legs: 'both', signal: { mode: 'single', tf: '15m', methods: ['a', 'b', 'c'], target: 'tp2', maxOpen: 3 } });
+  it('[critical] sized as one leg per signal, up to its most open at once -- not both legs', () => {
+    expect(sizingOf(sig, null, 80_000).maxContracts).toBe(6);
+    expect(sizingOf({ ...sig, trigger: 'time' }, null, 80_000).maxContracts).toBe(4);
+  });
+  it('said: the window, the methods, the legs, the perp exits, and whether orders are live', () => {
+    const s = describeStrategy(sig);
+    expect(s).toMatch(/^From 5:30 AM to 5:29 PM IST on every day, takes the TRADE signals of 3 methods without the chain, on 15m: a BUY sells a put, a SELL a call/);
+    expect(s).toMatch(/2 lots, at most 3 open at once/);
+    expect(s).toMatch(/BTC perp reaches the signal's SL or TGT2 \(else TGT1\)/);
+    expect(s).toMatch(/Live orders off/);
+    expect(describeStrategy({ ...sig, liveOrders: true })).toMatch(/Live orders ON/);
+  });
+});

@@ -111,7 +111,57 @@ export type StrategyConfig = {
   graceMin: number;
   /** 0 = Sunday … 6 = Saturday. */
   weekdays: number[];
+  /**
+   * What starts an entry: the clock (`entryTime`, once a day), or a signal from
+   * the desk's entry methods. Absent: the clock. A signal strategy sells one leg
+   * per signal -- BUY sells the put, SELL the call -- so `legs` is not read, and
+   * `entryTime` to `exitTime` is the window it takes signals in.
+   */
+  trigger?: 'time' | 'signal';
+  /** Which signals a signal strategy takes. */
+  signal?: SignalRule;
+  /** Real orders only with this on. Off (the default): it writes down what it would have sold. */
+  liveOrders?: boolean;
 };
+
+/** Mirrors the server's SignalRule (app/server/src/strategy/types.ts). */
+export type SignalTf = '3m' | '5m' | '15m' | '30m' | '1h' | '4h';
+export const SIGNAL_TFS: readonly SignalTf[] = ['3m', '5m', '15m', '30m', '1h', '4h'];
+export const MAX_SIGNAL_OPEN = 5;
+export type SignalTarget = 'tp1' | 'tp2' | 'tp3';
+export type SignalRule = {
+  /** With the timeframe chain (entry on 5m), or without it on `tf`. */
+  mode: 'mtf' | 'single';
+  tf: SignalTf;
+  /** Method ids whose TRADE signals it takes. */
+  methods: string[];
+  /** The signal's target the trade exits at; TGT2/TGT3 fall back to TGT1 where the signal has none. */
+  target: SignalTarget;
+  /** At most this many of its trades open at once. */
+  maxOpen: number;
+};
+
+/** The leg a signal is sold as: a BUY sells the put, a SELL the call. */
+export const legOfSignal = (dir: 'long' | 'short' | 1 | -1): 'CE' | 'PE' => (dir === 'long' || dir === 1 ? 'PE' : 'CE');
+
+export const DEFAULT_SIGNAL_RULE: SignalRule = { mode: 'mtf', tf: '5m', methods: [], target: 'tp1', maxOpen: 1 };
+
+/**
+ * A config switched to signals: its rule, live orders off, and one lot -- a
+ * signal is one leg at a time, and an untested setup is sized to be measured,
+ * not to matter.
+ */
+export function asSignalConfig(c: StrategyConfig, fresh: boolean): StrategyConfig {
+  return {
+    ...c,
+    trigger: 'signal',
+    signal: c.signal ?? { ...DEFAULT_SIGNAL_RULE },
+    liveOrders: c.liveOrders ?? false,
+    ...(fresh ? { lots: 1 } : {}),
+  };
+}
+
+export const isSignalStrategy = (c: Pick<StrategyConfig, 'trigger'>) => c.trigger === 'signal';
 
 export type Strategy = {
   id: string;
@@ -136,6 +186,13 @@ export type StrategyRun = {
   at: number;
 };
 
+export type SignalRunStatus = 'claimed' | 'placed' | 'would-place' | 'refused' | 'skipped' | 'failed';
+/** What a signal strategy did with one signal, in the server's words. */
+export type SignalRun = {
+  id: number; strategyId: string; signalKey: string; method: string; mode: string; tf: string; dir: 1 | -1;
+  status: SignalRunStatus; detail: string; tradeId: string | null; at: number;
+};
+
 export type StrategyStatus = {
   today: string;
   schedulerOn: boolean;
@@ -147,6 +204,8 @@ export type StrategyStatus = {
   spot: number | null;
   strategies: Strategy[];
   runs: StrategyRun[];
+  /** The latest signals the signal strategies took, or wrote down; absent on an older server. */
+  signalRuns?: SignalRun[];
 };
 
 export const DEFAULT_CONFIG: StrategyConfig = {

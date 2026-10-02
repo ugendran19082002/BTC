@@ -123,7 +123,54 @@ still cannot enter a contract it already holds, and a manual ticket is still
 refused on any contract the desk holds. Paper-tested; the one-lot live test is
 open ([TODO.md](../TODO.md)).
 
+## Signal strategies
+
+Since 2 Oct 2026 a strategy can enter on a **signal** instead of a time: the
+desk's entry methods ([entry-sl-tgt.md](entry-sl-tgt.md)), traded as a short
+option. Chosen on the form's **When** tab ("Enters: At a time / On a signal").
+
+| | |
+|---|---|
+| Leg | from the signal: **BUY sells the PE**, **SELL sells the CE** (`legOfSignal`). `legs` is not read. |
+| Which signals | the **Signals** tab: with the timeframe chain, or without it on 3m / 5m / 15m / 30m / 1h / 4h, and the methods, picked from the 81 with each one's record so far (win rate, trades, net points; "Pick profitable so far" = net above zero over at least 5 trades). |
+| Strike | the same rule as every strategy: by premium (at least / at most), by strike (ATM ± n), or the OI wall. |
+| Lots | per signal; **1** on a new signal strategy. |
+| Entry price | the same: at the offer, then at the bid after N seconds (5 by default) if the spread allows; the entry is cancelled if still unfilled 5 minutes after the signal (`SIGNAL_ENTRY_MS`). |
+| SL / TGT | **the signal's own levels on the BTC perpetual**, made per signal by its method: SL = the structure ± 0.25 ATR, TGT = TGT1, or TGT2 / TGT3 where the signal has them (else TGT1). Carried on the trade as `plan.underlying`. |
+| Backstop | the option's own target and stop (the form's take profit / stop loss), resting at Delta as for any strategy: they still work when the desk cannot see the perp. |
+| At once | at most 1-5 of its trades open (`maxOpen`); a signal past it is written down as skipped. |
+| Window | `entryTime` to `exitTime` is when it takes signals; whatever is open closes at `exitTime`. |
+| **Live orders** | **off by default** ([decision 0013](../decisions/0013-entry-setups-measured-before-trusted.md)): each signal is written down as the order it would have been ("would sell PE 84000 x1 @ 18 · perp SL 84600 · TGT 85500") and nothing is sent. On, it places the order. The switch sits in the form's footer on every tab; the list marks the row LIVE ORDERS. |
+
+How a signal becomes an order (`StrategyRunner.onSignal`, `strategy/runner.ts`):
+
+1. The entry recorder writes a new TRADE (3 s after each minute closes) and
+   hands it to the runner at once -- the same moment Telegram is told.
+2. Each enabled signal strategy whose way, timeframe and methods match, inside
+   its window, with auto-trading on, **claims** the signal
+   (`strategy_signal_runs`, unique on strategy and signal): a signal is taken
+   once, whatever restarts or repeats.
+3. Its open trades are counted against `maxOpen`; the board must be live and
+   the daily expiry's.
+4. The strike is picked by the strategy's rule for the signal's leg, and the
+   order is placed with the perp SL and TGT on its plan -- or, with live
+   orders off, written down as `would-place`.
+5. The engine, every second, reads the perp's last trade (fresh within 15 s)
+   and buys the option back the moment it reaches the SL or the TGT; a stale or
+   missing price closes nothing and leaves the backstop at Delta.
+
+What each signal did is under **Signals taken** on the Strategies screen:
+
+```sql
+SELECT strategy_id, method, mode, tf, dir, status, detail, at
+  FROM strategy_signal_runs ORDER BY at DESC LIMIT 20;
+```
+
 ## Known limits
 
 - Whether Delta holds four reduce-only orders on one contract (two strategies'
   targets and stops) is not yet tested live.
+- Signal strategies are paper-tested end to end (`test/e2e/signal-strategy.test.ts`);
+  no real order has been placed by one. The perp SL / TGT is watched by the
+  desk, so it acts only while the desk is up; the option backstop at Delta is
+  what holds when it is not.

@@ -71,10 +71,16 @@ export function SheetContent({
   );
 }
 
-/** A row of actions pinned under the content, where a thumb expects them. */
+/**
+ * A row of actions pinned under the content, where a thumb expects them.
+ *
+ * Pinned 1rem below the content edge, over the scroll area's own bottom
+ * padding: at `bottom-0` that padding stayed open under the footer and the
+ * settings scrolling past showed through it.
+ */
 export function SheetFooter({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={cn('sticky bottom-0 -mx-4 mt-3 flex gap-2 border-t border-border bg-background px-4 pb-1 pt-3', className)}>
+    <div className={cn('sticky -bottom-4 -mx-4 -mb-4 mt-3 flex gap-2 border-t border-border bg-background px-4 pb-5 pt-3', className)}>
       {children}
     </div>
   );

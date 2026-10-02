@@ -78,3 +78,23 @@ describe('the launch auction and the minimum premium -- the server\'s words', ()
     expect(messages(cfg({ minPremiumUsd: 0.5 }))).toEqual([]);
   });
 });
+
+describe('a signal strategy: the server\'s signalRuleProblems, in its words', () => {
+  const sig = (r: Partial<NonNullable<StrategyConfig['signal']>> = {}) =>
+    cfg({ trigger: 'signal', signal: { mode: 'mtf', tf: '5m', methods: ['breakout'], target: 'tp1', maxOpen: 1, ...r } });
+  it('a whole rule passes', () => {
+    expect(messages(sig())).toEqual([]);
+  });
+  it('[critical] each part refused, on its own tab', () => {
+    expect(messages(sig({ methods: [] }))).toContain('Pick at least one method whose signals to take.');
+    expect(messages(sig({ mode: 'single', tf: '2m' as never }))).toContain('Pick a timeframe: 3m, 5m, 15m, 30m, 1h, 4h.');
+    expect(messages(sig({ target: 'tp4' as never }))).toContain('The target must be TGT1, TGT2 or TGT3.');
+    expect(messages(sig({ maxOpen: 6 }))).toContain('At most 1 to 5 of its trades open at once.');
+    expect(messages(cfg({ trigger: 'signal' }))).toContain('A signal strategy needs its signals: the way, the timeframe and at least one method.');
+    const tabs = Object.fromEntries(strategyProblems(sig({ methods: [], maxOpen: 0 }), 'S').map((p) => [p.field, p.tab]));
+    expect(tabs).toEqual({ signalMethods: 'signal', maxOpen: 'trade' });
+  });
+  it('a clock strategy carrying an old rule is not judged on it', () => {
+    expect(messages(cfg({ trigger: 'time', signal: { mode: 'mtf', tf: '5m', methods: [], target: 'tp1', maxOpen: 1 } }))).toEqual([]);
+  });
+});

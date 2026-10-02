@@ -68,3 +68,11 @@ export function getMethodReport(tf: EntryTf | null = null, everyGate = false, ra
   if (range) { p.set('from', range.from); p.set('to', range.to); }
   return json<MethodReportResponse>(`/api/entry/report${p.size ? `?${p}` : ''}`);
 }
+
+/** The 81 methods, each with its number, name, family and one line: the signal strategy's picker. */
+export type EntryMethodInfo = {
+  id: string; n: number; name: string; group: 'breakout' | 'pullback' | 'reversal' | 'flow'; summary: string;
+  /** Where its stop goes, in words, before the 0.25 ATR buffer. */
+  sl: string;
+};
+export const getEntryMethods = () => json<{ methods: EntryMethodInfo[] }>('/api/entry/methods');

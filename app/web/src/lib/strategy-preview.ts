@@ -86,7 +86,21 @@ function ladderWords(r: ExitRule): string {
 }
 
 /** One sentence covering the whole rule, for the list and the form header. */
+/** "TGT1", "TGT2 (else TGT1)". */
+export const signalTargetLabel = (t: 'tp1' | 'tp2' | 'tp3') => (t === 'tp1' ? 'TGT1' : `TGT${t.slice(2)} (else TGT1)`);
+
 export function describeStrategy(c: StrategyConfig): string {
+  if (c.trigger === 'signal' && c.signal) {
+    const r = c.signal;
+    const n = r.methods.length;
+    const way = r.mode === 'mtf' ? 'with the timeframe chain' : `without the chain, on ${r.tf}`;
+    return `From ${time12(c.entryTime)} to ${time12(c.exitTime)} IST on ${describeDays(c.weekdays)}, takes the TRADE signals of `
+      + `${n === 0 ? 'no method yet' : `${n} method${n === 1 ? '' : 's'}`} ${way}: a BUY sells a put, a SELL a call, `
+      + `${describeStrike(c)}, ${c.lots} lot${c.lots === 1 ? '' : 's'}, at most ${r.maxOpen} open at once. `
+      + `It ${describeEntry(c)}, then exits when the BTC perp reaches the signal's SL or ${signalTargetLabel(r.target)}; `
+      + `on the option itself (the backstop) it ${describeExit(c)}; whatever is open closes at ${time12(c.exitTime)}. `
+      + (c.liveOrders ? 'Live orders ON: it places real orders.' : 'Live orders off: it only writes down what it would sell.');
+  }
   const legs = c.legs === 'both' ? 'a call and a put' : `a ${c.legs === 'CE' ? 'call' : 'put'}`;
   return `At ${time12(c.entryTime)} IST on ${describeDays(c.weekdays)}, sells ${legs} `
     + `${describeStrike(c)}, ${c.lots} lot${c.lots === 1 ? '' : 's'} each. `
@@ -120,7 +134,8 @@ export function sizingOf(
   spot: number | null,
   usdInr = 85,
 ): Sizing {
-  const legsOn = c.legs === 'both' ? 2 : 1;
+  // A signal strategy sells one leg per signal, up to `maxOpen` of them at once.
+  const legsOn = c.trigger === 'signal' ? (c.signal?.maxOpen ?? 1) : c.legs === 'both' ? 2 : 1;
   const maxContracts = c.lots * legsOn;
   const per = spot && spot > 0 ? MARGIN_PER_CONTRACT(spot) : 0;
   const marginUsd = per * maxContracts;

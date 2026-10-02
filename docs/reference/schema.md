@@ -6,7 +6,7 @@ The desk's PostgreSQL database as a fresh deploy creates it: every table in `pub
 the catalogue after every store's migrations have run. What each table is *for*, and why it is shaped
 the way it is, is in [database.md](database.md).
 
-35 tables, 55 migrations.
+36 tables, 56 migrations.
 
 ## Migrations applied
 
@@ -17,13 +17,13 @@ the way it is, is in [database.md](database.md).
 | entry | `entry-001-setups`, `entry-002-gates`, `entry-003-setups-gates-off`, `entry-004-alerts`, `entry-005-signals`, `entry-006-alert-log`, `entry-007-signal-prices`, `entry-008-alerts-no-1m`, `entry-008-signals-no-1m`, `entry-009-alert-log-by-setup`, `entry-010-r-without-fees`, `entry-011-signal-targets`, `entry-012-setups-targets`, `entry-013-setups-missed`, `entry-014-signals-trades-by-time`, `entry-015-setups-expire-why`, `entry-017-setups-regime`, `entry-017-signals-regime`, `entry-018-alerts-retired-methods`, `entry-018-setups-retired-methods`, `entry-018-signals-retired-methods`, `entry-019-methods`, `entry-020-cleared`, `entry-020-history-clears` |
 | errors | `errors-001-log`, `errors-002-to-public` |
 | market | `market-001-oi-snapshots`, `market-002-chain-features`, `market-003-to-public`, `market-004-option-snapshots`, `market-005-flow`, `market-006-flow-large-counts`, `market-007-option-flow`, `market-008-option-snapshots-1m`, `market-009-drop-iv-term`, `market-013-index-1m`, `market-014-chain-band-pcts`, `market-015-large-prints`, `market-016-book-heat` |
-| strategy | `strategy-001-tables`, `strategy-002-seed`, `strategy-003-to-public`, `strategy-004-retire-extras`, `strategy-005-drop-retired-tables` |
+| strategy | `strategy-001-tables`, `strategy-002-seed`, `strategy-003-to-public`, `strategy-004-retire-extras`, `strategy-005-drop-retired-tables`, `strategy-006-signal-runs` |
 | trading | `trading-001-settings`, `trading-002-default-settings`, `trading-003-trades`, `trading-004-mtm-samples`, `trading-005-settings-to-public`, `trading-006-journal-to-public` |
 | trend | `trend-001-paper`, `trend-002-paper-flags` |
 
 ## Tables
 
-[`auth_events`](#auth_events) · [`auth_limits`](#auth_limits) · [`auth_recovery_codes`](#auth_recovery_codes) · [`auth_sessions`](#auth_sessions) · [`auth_user`](#auth_user) · [`book_heat_1m`](#book_heat_1m) · [`chain_features`](#chain_features) · [`chart_annotations`](#chart_annotations) · [`entry_alert_changes`](#entry_alert_changes) · [`entry_alert_log`](#entry_alert_log) · [`entry_alerts`](#entry_alerts) · [`entry_cleared`](#entry_cleared) · [`entry_gate_changes`](#entry_gate_changes) · [`entry_gates`](#entry_gates) · [`entry_history_clears`](#entry_history_clears) · [`entry_methods`](#entry_methods) · [`entry_setups`](#entry_setups) · [`entry_signals`](#entry_signals) · [`errors`](#errors) · [`index_1m`](#index_1m) · [`large_prints`](#large_prints) · [`mtm_samples`](#mtm_samples) · [`oi_snapshots`](#oi_snapshots) · [`option_flow_1m`](#option_flow_1m) · [`option_snapshots`](#option_snapshots) · [`option_snapshots_1m`](#option_snapshots_1m) · [`perp_snapshots`](#perp_snapshots) · [`schema_migrations`](#schema_migrations) · [`settings`](#settings) · [`strategies`](#strategies) · [`strategy_runs`](#strategy_runs) · [`trade_events`](#trade_events) · [`trade_flow_1m`](#trade_flow_1m) · [`trades`](#trades) · [`trend_paper`](#trend_paper)
+[`auth_events`](#auth_events) · [`auth_limits`](#auth_limits) · [`auth_recovery_codes`](#auth_recovery_codes) · [`auth_sessions`](#auth_sessions) · [`auth_user`](#auth_user) · [`book_heat_1m`](#book_heat_1m) · [`chain_features`](#chain_features) · [`chart_annotations`](#chart_annotations) · [`entry_alert_changes`](#entry_alert_changes) · [`entry_alert_log`](#entry_alert_log) · [`entry_alerts`](#entry_alerts) · [`entry_cleared`](#entry_cleared) · [`entry_gate_changes`](#entry_gate_changes) · [`entry_gates`](#entry_gates) · [`entry_history_clears`](#entry_history_clears) · [`entry_methods`](#entry_methods) · [`entry_setups`](#entry_setups) · [`entry_signals`](#entry_signals) · [`errors`](#errors) · [`index_1m`](#index_1m) · [`large_prints`](#large_prints) · [`mtm_samples`](#mtm_samples) · [`oi_snapshots`](#oi_snapshots) · [`option_flow_1m`](#option_flow_1m) · [`option_snapshots`](#option_snapshots) · [`option_snapshots_1m`](#option_snapshots_1m) · [`perp_snapshots`](#perp_snapshots) · [`schema_migrations`](#schema_migrations) · [`settings`](#settings) · [`strategies`](#strategies) · [`strategy_runs`](#strategy_runs) · [`strategy_signal_runs`](#strategy_signal_runs) · [`trade_events`](#trade_events) · [`trade_flow_1m`](#trade_flow_1m) · [`trades`](#trades) · [`trend_paper`](#trend_paper)
 
 ### auth_events
 
@@ -574,6 +574,26 @@ the way it is, is in [database.md](database.md).
 - `strategy_runs_by_time` (at DESC)
 - `strategy_runs_pkey` unique (id)
 - `strategy_runs_strategy_id_run_date_key` unique (strategy_id, run_date)
+
+### strategy_signal_runs
+
+| Column | Type | Null | Default |
+|---|---|---|---|
+| `id` | bigint |  | identity |
+| `strategy_id` | text |  |  |
+| `signal_key` | text |  |  |
+| `method` | text |  |  |
+| `mode` | text |  |  |
+| `tf` | text |  |  |
+| `dir` | smallint |  |  |
+| `status` | text |  |  |
+| `detail` | text |  | `''::text` |
+| `trade_id` | text | yes |  |
+| `at` | bigint |  |  |
+
+- `strategy_signal_runs_by_time` (at DESC)
+- `strategy_signal_runs_pkey` unique (id)
+- `strategy_signal_runs_strategy_id_signal_key_key` unique (strategy_id, signal_key)
 
 ### trade_events
 

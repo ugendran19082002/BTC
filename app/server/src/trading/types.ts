@@ -337,6 +337,8 @@ export type TradeEvent =
        * position could be closed -- both of which mean the whole position.
        */
       closing?: ExitWorking;
+      /** Why the desk closed, in words, when it was the desk's own decision (a stop, an underlying level, the exit time). */
+      reason?: string;
       at: number;
     }
   | { t: 'sibling_cancelled'; role: OrderRole; at: number }

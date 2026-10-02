@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { Copy, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { cloneStrategy, deleteStrategy, getStrategies, setScheduler, setStrategyEnabled } from '@/api/strategy';
-import type { Strategy, StrategyStatus } from '@/types/strategy';
+import type { SignalRunStatus, Strategy, StrategyStatus } from '@/types/strategy';
 import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { Button } from '@/components/ui/button';
 import { StrategyForm } from '@/components/strategy/StrategyForm';
 import { usePoll } from '@/hooks/usePoll';
 import { clock, stamp } from '@/lib/format';
-import { describeDays, describeStrike } from '@/lib/strategy-preview';
+import { describeDays, describeStrike, signalTargetLabel } from '@/lib/strategy-preview';
 import { time12 } from '@/lib/time';
 import { exitRules, exitWords, type ExitRule } from '@/lib/strategy-exits';
 import { cn } from '@/lib/utils';
@@ -30,8 +30,11 @@ function summarise(s: Strategy): string {
   const c = s.config;
   const exits = exitRules(c);
   const steps = (r: ExitRule) => (r.steps.length ? ` → ${r.steps.map((st) => exitWords(r.mode, st.value)).join(' → ')}` : '');
+  const sig = c.trigger === 'signal' ? c.signal : undefined;
   const parts = [
-    c.legs === 'both' ? 'CE + PE' : c.legs,
+    sig
+      ? `on signal: ${sig.methods.length} method${sig.methods.length === 1 ? '' : 's'} ${sig.mode === 'mtf' ? 'with the chain' : `on ${sig.tf}`}, BUY → PE · SELL → CE`
+      : c.legs === 'both' ? 'CE + PE' : c.legs,
     // The rule that picks the strike, whichever one it is. It used to read the
     // premium rule out loud whatever `strikeRule` said, so a strategy selling
     // at the open-interest wall described itself as "at least $15".
@@ -42,11 +45,16 @@ function summarise(s: Strategy): string {
       ? `sell at offer${c.crossAfterSec ? `, bid after ${c.crossAfterSec}s if spread ≤ ${Math.round((c.maxCrossSpreadPct ?? 0.15) * 100)}%` : ', wait'}`
       : `sell at ${c.entryPrice}`,
     // In the exit's own mode, and with its timetable when it has one.
+    ...(sig ? [`perp SL / ${signalTargetLabel(sig.target)} from the signal`, `max ${sig.maxOpen} open`] : []),
     exits.target.value > 0 ? `target ${exitWords(exits.target.mode, exits.target.value)}${steps(exits.target)}` : 'hold to expiry',
   ];
   if (exits.stop.value > 0) parts.push(`stop ${exitWords(exits.stop.mode, exits.stop.value)}${steps(exits.stop)}`);
   return parts.join(' · ');
 }
+
+const SIGNAL_OUTCOME: Record<SignalRunStatus, string> = {
+  placed: 'sold', 'would-place': 'would sell', refused: 'stood aside', skipped: 'skipped', failed: 'failed', claimed: 'taking…',
+};
 
 export function StrategyPanel() {
   const { data, refresh } = usePoll<StrategyStatus>(getStrategies, 5_000);
@@ -71,7 +79,10 @@ export function StrategyPanel() {
   };
 
   if (!data) return null;
-  const armed = data.strategies.filter((s) => s.enabled).length;
+  // A signal strategy with live orders off places nothing: it is on, but it only writes down.
+  const armed = data.strategies.filter((s) => s.enabled && (s.config.trigger !== 'signal' || s.config.liveOrders)).length;
+  const watching = data.strategies.filter((s) => s.enabled && s.config.trigger === 'signal' && !s.config.liveOrders).length;
+  const anySignal = data.strategies.some((s) => s.config.trigger === 'signal');
 
   return (
     <div className="grid gap-3">
@@ -97,11 +108,12 @@ export function StrategyPanel() {
               {data.runnerInstalled === false
                 ? 'Not installed on this server — nothing will run.'
                 : data.schedulerOn
-                  ? `On — ${armed} strateg${armed === 1 ? 'y' : 'ies'} will place orders automatically.`
+                  ? `On — ${armed} strateg${armed === 1 ? 'y' : 'ies'} will place orders automatically`
+                    + `${watching ? `; ${watching} signal strateg${watching === 1 ? 'y writes' : 'ies write'} down what ${watching === 1 ? 'it' : 'they'} would sell` : ''}.`
                   : 'Off — nothing runs automatically.'}
             </p>
             <p className="m-0 mt-0.5 text-[11.5px] text-muted-foreground">
-              Today is {data.today} IST. Each strategy enters at most once a day.
+              Today is {data.today} IST. Each strategy enters at most once a day{anySignal ? '; a signal strategy, once per signal' : ''}.
             </p>
             {/*
               The switch stops the exit times as well as the entries, which is
@@ -175,6 +187,12 @@ export function StrategyPanel() {
                     {s.enabled ? 'on' : 'off'}
                   </span>
                   {s.ranToday && <span className="text-[11px] text-muted-foreground">ran today</span>}
+                  {s.config.trigger === 'signal' && (
+                    <span className={cn('rounded px-1.5 text-[10.5px] font-semibold',
+                      s.config.liveOrders ? 'bg-[var(--down)]/15 text-[var(--down)]' : 'bg-muted text-muted-foreground')}>
+                      {s.config.liveOrders ? 'LIVE ORDERS' : 'paper: writes down'}
+                    </span>
+                  )}
                 </div>
                 <div className="flex w-full flex-none gap-1.5 sm:w-auto">
                   <Button
@@ -283,6 +301,26 @@ export function StrategyPanel() {
         </CollapsibleCard>
       )}
 
+
+      {(data.signalRuns?.length ?? 0) > 0 && (
+        <CollapsibleCard id="strategy-signal-runs" title="Signals taken">
+          {/* Each signal a signal strategy saw, and what it did: sold, would have sold, or why not. */}
+          <LogTable
+            label="signals taken"
+            extraHead="Signal"
+            rows={data.signalRuns!.map((r) => ({
+              id: r.id,
+              at: stamp(r.at),
+              who: data.strategies.find((s) => s.id === r.strategyId)?.name ?? r.strategyId,
+              extra: `${r.dir === 1 ? 'BUY → PE' : 'SELL → CE'} · ${r.mode === 'mtf' ? 'chain' : r.tf}`,
+              outcome: SIGNAL_OUTCOME[r.status],
+              tone: r.status === 'placed' ? 'ok' as const
+                : r.status === 'failed' ? 'bad' as const : 'quiet' as const,
+              detail: r.detail,
+            }))}
+          />
+        </CollapsibleCard>
+      )}
 
       <StrategyForm
         // Remounts when the target changes, so the form never opens holding the

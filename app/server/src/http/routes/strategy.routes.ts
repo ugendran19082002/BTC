@@ -2,7 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { refuse } from '../refuse.js';
 import { StrategyStore } from '../../strategy/store.js';
 import { entryDue, istDate, nextEntryAt } from '../../strategy/schedule.js';
-import { DEFAULT_CONFIG, validateConfig, type ExitStep, type StrategyConfig } from '../../strategy/types.js';
+import { inSignalWindow } from '../../strategy/runner.js';
+import { DEFAULT_CONFIG, time12, validateConfig, type ExitStep, type SignalRule, type SignalTf, type StrategyConfig } from '../../strategy/types.js';
 import { tradingService } from '../../trading/service.js';
 
 /**
@@ -100,6 +101,22 @@ function cleanConfig(raw: unknown): StrategyConfig {
     weekdays: Array.isArray(c.weekdays)
       ? [...new Set(c.weekdays.map((d) => Math.floor(Number(d))))].sort()
       : [...DEFAULT_CONFIG.weekdays],
+    // A client that predates signal strategies sends none of these, and means the clock.
+    ...(c.trigger === 'signal'
+      ? { trigger: 'signal' as const, signal: cleanSignal(c.signal), liveOrders: c.liveOrders === true }
+      : {}),
+  };
+}
+
+/** A signal rule: only its own keys, the methods de-duplicated in the order sent. A mode or timeframe it cannot read is left for validation to name. */
+function cleanSignal(raw: unknown): SignalRule {
+  const r = (raw ?? {}) as Partial<SignalRule>;
+  return {
+    mode: r.mode as SignalRule['mode'],
+    tf: (r.tf ?? '5m') as SignalTf,
+    methods: Array.isArray(r.methods) ? [...new Set(r.methods.map(String))] : [],
+    target: (r.target ?? 'tp1') as SignalRule['target'],
+    maxOpen: r.maxOpen === undefined ? 1 : Math.trunc(Number(r.maxOpen)),
   };
 }
 
@@ -144,6 +161,16 @@ export function registerStrategyRoutes(app: FastifyInstance) {
       balanceUsd: svc.lastBalanceUsd,
       spot: svc.spot,
       strategies: await Promise.all((await s.all()).map(async (x) => {
+        if (x.config.trigger === 'signal') {
+          // A signal strategy has no entry time to count down to: it is taking signals now, or it is not.
+          const on = inSignalWindow(x, now);
+          return {
+            ...x, lastRunDate: null, ranToday: false, nextEntryAt: null,
+            status: on
+              ? `taking signals until ${time12(x.config.exitTime)}${x.config.liveOrders ? '' : ' -- live orders off: writing down what it would place'}`
+              : `outside its window (${time12(x.config.entryTime)} to ${time12(x.config.exitTime)} IST, its days)`,
+          };
+        }
         const last = await s.lastRunDate(x.id);
         const due = entryDue(x, now, last);
         return {
@@ -156,6 +183,8 @@ export function registerStrategyRoutes(app: FastifyInstance) {
         };
       })),
       runs: await s.runs(40),
+      // Each signal a signal strategy saw, and what became of it.
+      signalRuns: await s.signalRuns(60),
     };
   });
 

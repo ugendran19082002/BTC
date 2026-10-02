@@ -48,3 +48,12 @@ describe('the mistakes the live desk actually had', () => {
       .toMatch(/lowers the target from 95% to 80%/);
   });
 });
+
+describe('signal strategies and the same-minute overlap', () => {
+  it('a signal strategy\'s entry time is a window, not an entry: no overlap warning', () => {
+    const a = { id: 'a', name: 'A', config: { ...DEFAULT_CONFIG, legs: 'PE' as const } };
+    const b = { id: 'b', name: 'B', config: { ...DEFAULT_CONFIG, legs: 'PE' as const, trigger: 'signal' as const } };
+    expect(overlapWarnings([a, b])).toEqual([]);
+    expect(overlapWarnings([a, { ...b, config: { ...b.config, trigger: 'time' as const } }])).toHaveLength(1);
+  });
+});

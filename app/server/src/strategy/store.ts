@@ -171,6 +171,33 @@ const MIGRATIONS: Migration[] = [
       DROP TABLE IF EXISTS strategy_rebalances;
     `,
   },
+  {
+    /*
+     * Signal strategies (2 Oct 2026): a strategy that trades the desk's entry
+     * signals takes many a day, so a day is not its unit -- a signal is. One row
+     * per strategy per signal, claimed before anything is sent: the UNIQUE key is
+     * what stops a signal seen on two minutes, or by two processes, being traded
+     * twice. The status says how it went, in words in `detail`.
+     */
+    id: 'strategy-006-signal-runs',
+    up: `
+      CREATE TABLE IF NOT EXISTS strategy_signal_runs (
+        id          BIGINT   GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        strategy_id TEXT     NOT NULL,
+        signal_key  TEXT     NOT NULL,
+        method      TEXT     NOT NULL,
+        mode        TEXT     NOT NULL,
+        tf          TEXT     NOT NULL,
+        dir         SMALLINT NOT NULL,
+        status      TEXT     NOT NULL,
+        detail      TEXT     NOT NULL DEFAULT '',
+        trade_id    TEXT,
+        at          BIGINT   NOT NULL,
+        UNIQUE (strategy_id, signal_key)
+      );
+      CREATE INDEX IF NOT EXISTS strategy_signal_runs_by_time ON strategy_signal_runs (at DESC);
+    `,
+  },
 ];
 
 /** A config without the settings the desk no longer has. */
@@ -182,6 +209,21 @@ function withoutRetired(cfg: StrategyConfig): StrategyConfig {
 
 type StrategyRow = { id: string; name: string; enabled: boolean; config: StrategyConfig; created_at: number; updated_at: number };
 type RunRow = { id: number; strategy_id: string; run_date: string; status: StrategyRun['status']; detail: string; at: number };
+
+/** What became of one signal for one signal strategy. */
+export type SignalRunStatus = 'claimed' | 'placed' | 'would-place' | 'refused' | 'skipped' | 'failed';
+export type SignalRun = {
+  id: number; strategyId: string; signalKey: string; method: string; mode: string; tf: string; dir: 1 | -1;
+  status: SignalRunStatus; detail: string; tradeId: string | null; at: number;
+};
+type SignalRunRow = {
+  id: number; strategy_id: string; signal_key: string; method: string; mode: string; tf: string; dir: number;
+  status: SignalRunStatus; detail: string; trade_id: string | null; at: string | number;
+};
+const signalRunFrom = (r: SignalRunRow): SignalRun => ({
+  id: Number(r.id), strategyId: r.strategy_id, signalKey: r.signal_key, method: r.method, mode: r.mode, tf: r.tf,
+  dir: Number(r.dir) === 1 ? 1 : -1, status: r.status, detail: r.detail, tradeId: r.trade_id, at: Number(r.at),
+});
 
 const runFrom = (r: RunRow): StrategyRun => ({
   id: r.id, strategyId: r.strategy_id, runDate: r.run_date, status: r.status, detail: r.detail, at: r.at,
@@ -295,5 +337,35 @@ export class StrategyStore {
 
   async runs(limit = 60): Promise<StrategyRun[]> {
     return (await rows<RunRow>('SELECT * FROM strategy_runs ORDER BY at DESC LIMIT $1', [limit])).map(runFrom);
+  }
+
+  /**
+   * Claim a signal for a signal strategy, before anything is sent: false when it
+   * is already claimed -- the UNIQUE key decides, not a check-then-write.
+   */
+  async claimSignal(strategyId: string, key: string, s: { method: string; mode: string; tf: string; dir: 1 | -1 }, at = Date.now()): Promise<boolean> {
+    const r = await query(
+      `INSERT INTO strategy_signal_runs (strategy_id, signal_key, method, mode, tf, dir, status, detail, at)
+       VALUES ($1, $2, $3, $4, $5, $6, 'claimed', 'claimed, not yet run', $7)
+       ON CONFLICT (strategy_id, signal_key) DO NOTHING`,
+      [strategyId, key, s.method, s.mode, s.tf, s.dir, at],
+    );
+    return (r.rowCount ?? 0) > 0;
+  }
+
+  /** Say how a claimed signal went. */
+  async finishSignal(strategyId: string, key: string, status: SignalRunStatus, detail: string, tradeId: string | null = null): Promise<void> {
+    await query(
+      'UPDATE strategy_signal_runs SET status = $1, detail = $2, trade_id = $3, at = $4 WHERE strategy_id = $5 AND signal_key = $6',
+      [status, detail.slice(0, 500), tradeId, Date.now(), strategyId, key],
+    );
+  }
+
+  /** The signal journal, newest first; one strategy's when `strategyId` is given. */
+  async signalRuns(limit = 60, strategyId?: string): Promise<SignalRun[]> {
+    const xs = strategyId
+      ? await rows<SignalRunRow>('SELECT * FROM strategy_signal_runs WHERE strategy_id = $1 ORDER BY at DESC LIMIT $2', [strategyId, limit])
+      : await rows<SignalRunRow>('SELECT * FROM strategy_signal_runs ORDER BY at DESC LIMIT $1', [limit]);
+    return xs.map(signalRunFrom);
   }
 }

@@ -210,6 +210,8 @@ const recordEntries = () => {
       await recordSignals(reads, ctx.now, { ltp: fresh, index: ctx.options?.spot ?? null });
       await recordSetups(reads, ctx.now, (r) => {
         if (wanted(r, settings)) void sendEntryAlert(r, desk.notifier, { ltp: ctx.ltp?.price ?? null, at: ctx.now });
+        // Signal strategies take it the moment it is written -- the first sighting, once (strategy/runner.ts).
+        void runner.onSignal(r).catch(warn('signal-strategy'));
       });
       await gradeSetups(ctx.frames['1m'] ?? []);
     })

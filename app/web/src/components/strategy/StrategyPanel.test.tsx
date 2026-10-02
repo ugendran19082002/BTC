@@ -138,3 +138,48 @@ describe('the scheduler switch says what it stops', () => {
     expect(screen.queryByText(/exit times/)).toBeNull();
   });
 });
+
+describe('a signal strategy on the list', () => {
+  const sig = { trigger: 'signal' as const, signal: { mode: 'mtf' as const, tf: '5m' as const, methods: ['breakout', 'bos'], target: 'tp1' as const, maxOpen: 2 }, lots: 1 };
+
+  it('[critical] says it enters on signals, BUY → PE and SELL → CE, its perp exits -- and that live orders are off', async () => {
+    getStrategies.mockResolvedValue(status({ ...sig, liveOrders: false }));
+    render(<StrategyPanel />);
+    expect(await screen.findByText(/on signal: 2 methods with the chain, BUY → PE · SELL → CE · .* · perp SL \/ TGT1 from the signal · max 2 open/)).toBeInTheDocument();
+    expect(screen.getByText('paper: writes down')).toBeInTheDocument();
+  });
+
+  it('[critical] live orders on is said in red, on the row', async () => {
+    getStrategies.mockResolvedValue(status({ ...sig, liveOrders: true }));
+    render(<StrategyPanel />);
+    expect(await screen.findByText('LIVE ORDERS')).toBeInTheDocument();
+  });
+
+  it('[critical] each signal it saw, and what it did with it', async () => {
+    getStrategies.mockResolvedValue({
+      ...status({ ...sig }),
+      signalRuns: [
+        { id: 2, strategyId: 's', signalKey: 'k2', method: 'bos', mode: 'mtf', tf: '5m', dir: -1, status: 'skipped', detail: 'already 2 of its trades open (at most 2)', tradeId: null, at: Date.now() },
+        { id: 1, strategyId: 's', signalKey: 'k1', method: 'breakout', mode: 'mtf', tf: '5m', dir: 1, status: 'would-place', detail: '#1 Breakout BUY | live orders off: would sell PE 84000 x1 @ 18 · perp SL 84600 · TGT 85500', tradeId: null, at: Date.now() },
+      ],
+    });
+    render(<StrategyPanel />);
+    const table = await screen.findByRole('table', { name: 'signals taken' });
+    expect(table).toHaveTextContent(/SELL → CE · chain/);
+    expect(table).toHaveTextContent(/skipped/);
+    expect(table).toHaveTextContent(/would sell/);
+    expect(table).toHaveTextContent(/perp SL 84600 · TGT 85500/);
+  });
+});
+
+describe('what "on" means with a signal strategy', () => {
+  it('[critical] one with live orders off is not counted as placing orders', async () => {
+    getStrategies.mockResolvedValue(status({ trigger: 'signal', liveOrders: false, signal: { mode: 'mtf', tf: '5m', methods: ['breakout'], target: 'tp1', maxOpen: 1 } }));
+    const st = await getStrategies();
+    st.strategies[0].enabled = true;
+    getStrategies.mockResolvedValue(st);
+    render(<StrategyPanel />);
+    expect(await screen.findByText('On — 0 strategies will place orders automatically; 1 signal strategy writes down what it would sell.')).toBeInTheDocument();
+    expect(screen.getByText(/a signal strategy, once per signal/)).toBeInTheDocument();
+  });
+});

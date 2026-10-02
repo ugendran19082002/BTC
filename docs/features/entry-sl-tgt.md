@@ -403,6 +403,15 @@ ETH (#80, #81); on a quiet or unrecorded feed they WAIT rather than guess.
 
 ---
 
+## Traded as options -- signal strategies
+
+Every level on this page is on the BTC perpetual, and the paper log grades
+them there. A **signal strategy** ([strategies.md](strategies.md#signal-strategies))
+takes the same TRADEs and sells an option instead: a BUY sells the PE, a SELL
+the CE, at the strategy's strike rule. The trade exits when the perp reaches
+this page's SL or the chosen TGT (1, 2 or 3), with the option's own stop and
+target resting at Delta as the backstop. Live orders are off until switched on.
+
 ## Open, for the owner
 
 From the 2 Oct 2026 audit ([history](../history/2026-10.md)):
