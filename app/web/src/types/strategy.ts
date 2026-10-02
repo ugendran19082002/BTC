@@ -213,7 +213,8 @@ export type SignalRun = {
 /** A signal strategy's trade, for the history (server: strategy/store.ts `SignalTrade`). */
 export type SignalTrade = {
   id: number; strategyId: string; at: number; method: string; mode: string; tf: string; dir: 1 | -1;
-  status: 'placed' | 'would-place'; detail: string; tradeId: string | null;
+  /** placed / would-place are trades; skipped, refused and failed are signals not taken, the reason in `detail`. */
+  status: Exclude<SignalRunStatus, 'claimed'>; detail: string; tradeId: string | null;
   /** The signal's own plan on the BTC perp. */
   levels: { entryLo: number; entryHi: number; stop: number; tp1: number; tp2: number | null; tp3: number | null } | null;
   /** What the paper log saw on the perp: open (waiting at the zone), filled, tp1, stop, timeout, expired. */

@@ -17,7 +17,21 @@ import { cn } from '@/lib/utils';
  * shows. The filters are kept in this browser.
  */
 
-type Show = 'all' | 'live' | 'paper';
+type Show = 'all' | 'live' | 'paper' | 'open' | 'won' | 'lost' | 'skipped';
+
+/** A trade -- sold, or written down as one -- rather than a signal not taken. */
+export const isTrade = (t: SignalTrade) => t.status === 'placed' || t.status === 'would-place';
+
+/** The tabs, in the order a person asks: everything, which kind, how they went, and what was passed over. */
+const TABS: { v: Show; label: string; test: (t: SignalTrade) => boolean }[] = [
+  { v: 'all', label: 'All', test: isTrade },
+  { v: 'live', label: 'Live orders', test: (t) => t.status === 'placed' },
+  { v: 'paper', label: 'Would sell', test: (t) => t.status === 'would-place' },
+  { v: 'open', label: 'Open', test: (t) => isTrade(t) && outcomeOf(t).tone === 'open' },
+  { v: 'won', label: 'Won', test: (t) => isTrade(t) && outcomeOf(t).tone === 'up' },
+  { v: 'lost', label: 'Lost', test: (t) => isTrade(t) && outcomeOf(t).tone === 'down' },
+  { v: 'skipped', label: 'Skipped', test: (t) => !isTrade(t) },
+];
 /** Rows a page holds. */
 export const PAGE = 10;
 type Outcome = { word: string; tone: 'up' | 'down' | 'open' | 'quiet'; at: number | null; price: number | null };
@@ -63,8 +77,10 @@ export function SignalTradeHistory({ trades, strategies }: { trades: readonly Si
   const nameOf = (id: string) => strategies.find((s) => s.id === id)?.name ?? id;
   const ids = [...new Set(trades.map((t) => t.strategyId))];
 
-  const rows = useMemo(() => trades.filter((t) => (show === 'all' || (show === 'live' ? t.status === 'placed' : t.status === 'would-place'))
-    && (who === 'all' || t.strategyId === who)), [trades, show, who]);
+  const mine = useMemo(() => trades.filter((t) => who === 'all' || t.strategyId === who), [trades, who]);
+  const tab = TABS.find((x) => x.v === show) ?? TABS[0]!;
+  const rows = useMemo(() => mine.filter(tab.test), [mine, tab]);
+  const count = (x: (typeof TABS)[number]) => mine.filter(x.test).length;
   const [page, setPage] = useState(0);
   const pages = Math.max(1, Math.ceil(rows.length / PAGE));
   // A filter changed, or the list shrank: back to a page that exists.
@@ -90,8 +106,10 @@ export function SignalTradeHistory({ trades, strategies }: { trades: readonly Si
         <h3 className="m-0 text-[13.5px] font-semibold text-foreground">Trade history</h3>
         <div className="flex flex-wrap items-center gap-1.5">
           <div role="group" aria-label="which trades" className="flex gap-1">
-            {([['all', 'All'], ['live', 'Live orders'], ['paper', 'Would sell']] as const).map(([v, label]) => (
-              <button key={v} type="button" aria-pressed={show === v} onClick={() => setShow(v)} className={chip(show === v)}>{label}</button>
+            {TABS.map((x) => (
+              <button key={x.v} type="button" aria-pressed={tab.v === x.v} onClick={() => setShow(x.v)} className={chip(tab.v === x.v)}>
+                {x.label} <span className="tabular-nums text-[var(--dim)]">{count(x)}</span>
+              </button>
             ))}
           </div>
           {ids.length > 1 && (
@@ -104,6 +122,11 @@ export function SignalTradeHistory({ trades, strategies }: { trades: readonly Si
         </div>
       </div>
 
+      {tab.v === 'skipped' ? (
+        <p className="m-0 mb-1.5 text-[11.5px] tabular-nums text-muted-foreground" aria-label="history totals">
+          {rows.length} signal{rows.length === 1 ? '' : 's'} not taken — the reason on each row.
+        </p>
+      ) : (
       <p className="m-0 mb-1.5 text-[11.5px] tabular-nums text-muted-foreground" aria-label="history totals">
         {rows.length} trade{rows.length === 1 ? '' : 's'} · <span className="text-[var(--up)]">{totals.won} won</span>
         {' · '}<span className="text-[var(--down)]">{totals.lost} lost</span> · {totals.open} open
@@ -112,10 +135,11 @@ export function SignalTradeHistory({ trades, strategies }: { trades: readonly Si
           <> · live P&amp;L <span className={totals.pnl > 0 ? 'text-[var(--up)]' : totals.pnl < 0 ? 'text-[var(--down)]' : ''}>{signedInr(usdToInr(totals.pnl))}</span></>
         )}
       </p>
+      )}
 
       {rows.length === 0 ? (
         <p className="m-0 rounded-lg border border-dashed border-[var(--line)] px-3 py-3 text-[12px] text-muted-foreground">
-          No trades {show === 'live' ? 'with live orders' : show === 'paper' ? 'written down' : ''} yet.
+          Nothing here yet{tab.v === 'all' ? '' : ` under ${tab.label}`}.
         </p>
       ) : (
         <>
@@ -129,7 +153,9 @@ export function SignalTradeHistory({ trades, strategies }: { trades: readonly Si
                 </tr>
               </thead>
               <tbody>
-                {shown.map((t) => <Row key={t.id} t={t} name={nameOf(t.strategyId)} />)}
+                {shown.map((t) => (isTrade(t)
+                  ? <Row key={t.id} t={t} name={nameOf(t.strategyId)} />
+                  : <SkippedRow key={t.id} t={t} name={nameOf(t.strategyId)} />))}
               </tbody>
             </table>
           </div>
@@ -219,6 +245,27 @@ function Row({ t, name }: { t: SignalTrade; name: string }) {
       <td className={cn('px-2 py-1.5', TONE[o.tone])} title={t.option?.exitReason ?? undefined}>{o.word}</td>
       <td className={cn('whitespace-nowrap px-2 py-1.5', t.option ? (t.option.pnlUsd > 0 ? 'text-[var(--up)]' : t.option.pnlUsd < 0 ? 'text-[var(--down)]' : '') : 'text-[var(--dim)]')}>
         {t.option ? (t.option.open ? '—' : signedInr(usdToInr(t.option.pnlUsd))) : 'paper'}
+      </td>
+    </tr>
+  );
+}
+
+/** A signal not taken: the signal, and why, across the row. */
+function SkippedRow({ t, name }: { t: SignalTrade; name: string }) {
+  const [said, ...why] = t.detail.split(' | ');
+  return (
+    <tr className="border-0 border-t border-solid border-border align-top">
+      <td className="px-2 py-1.5">
+        <span className={t.dir === 1 ? 'text-[var(--up)]' : 'text-[var(--down)]'}>{said}</span>
+        <div className="text-[10.5px] text-[var(--dim)]">{t.mode === 'mtf' ? '5m + TF chain' : t.tf} · {name}</div>
+        <div className="text-[10.5px] text-[var(--dim)]">signal {stamp(t.at)}</div>
+      </td>
+      <td colSpan={8} className="px-2 py-1.5" aria-label="why not taken">
+        <span className={cn('mr-1.5 rounded px-1.5 py-px text-[10.5px] font-semibold uppercase',
+          t.status === 'failed' ? 'bg-[var(--down)]/12 text-[var(--down)]' : 'bg-muted text-muted-foreground')}>
+          {t.status}
+        </span>
+        <span className="text-muted-foreground">{why.join(' | ') || '—'}</span>
       </td>
     </tr>
   );
