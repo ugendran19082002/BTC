@@ -369,6 +369,8 @@ export type EngineDeps = {
    * caller is already holding.
    */
   onAlarm?: (trade: TradeState, message: string, plan: TradePlan) => void;
+  /** Pause before a confirming read (`syncPosition`). Tests pass one that does not wait. */
+  wait?: (ms: number) => Promise<void>;
   /**
    * Every journal event as it is written, with the trade either side of it.
    *
@@ -524,6 +526,9 @@ const ROLE_CODE: Record<OrderRole | 'exit', string> = {
  * matters: the same trade asking for the same order twice produces the same id,
  * which is what makes a retry after a timeout safe.
  */
+/** How long `syncPosition` waits before reading a flat contract again to confirm it. */
+export const FLAT_CONFIRM_MS = 2_000;
+
 export const clientId = (tradeId: string, role: OrderRole | 'exit', n = 0): string =>
   `${clientStem(tradeId)}${ROLE_CODE[role]}${n}`;
 
@@ -2179,6 +2184,27 @@ export class TradeEngine {
       return rec;
     }
     this.unexplained.delete(rec.state.tradeId);
+    /*
+     * Flat at Delta, held here, and no fill of ours to explain it: read the positions once more, a moment
+     * later, before believing it. On 2 Oct 2026 two trades on the 88,800 CE were written off as closed by the
+     * startup check a minute after a restart, with no buy-back anywhere -- and whether Delta had really closed
+     * them, or answered the first read without them, could not be told after. One read is not enough to take a
+     * position off the desk's hands: off its hands, nothing watches its perp SL.
+     */
+    if (net === 0 && rec.state.position !== 0 && held !== rec.state.position) {
+      await (this.d.wait ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms))))(FLAT_CONFIRM_MS);
+      const again = await this.exchange.getPositions().catch(() => null);
+      const net2 = again?.find((p) => p.symbol === rec.plan.symbol)?.size ?? 0;
+      if (again === null || net2 !== 0) {
+        // Not flat after all (or not readable): leave the trade as it is; the next check looks again.
+        this.d.onAlarm?.(rec.state, `${rec.plan.symbol}: Delta answered once with no position, then ${again === null ? 'did not answer' : `with ${net2}`}. `
+          + 'Nothing written off.', rec.plan);
+        return rec;
+      }
+      // Flat twice, and nothing the desk sent explains it: closed on Delta itself. Said out loud.
+      this.d.onAlarm?.(rec.state, `${rec.plan.symbol}: Delta shows no position and no buy-back of the desk's explains it -- `
+        + 'closed on Delta itself (its app, a liquidation, or a stop the desk did not send). Check Delta\'s order history for the price.', rec.plan);
+    }
     if (held !== rec.state.position) {
       const position = siblings.length > 0 ? 0 : held;   // shared: only reached when the contract is flat
       rec = await this.commit(rec, {

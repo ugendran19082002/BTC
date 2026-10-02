@@ -53,6 +53,15 @@ export default defineConfig({
      * down so the next person does not spend an afternoon rediscovering it.
      */
     globals: true,
+    /*
+     * Fifteen seconds a test, not vitest's five.
+     *
+     * The first test of a screen pays for loading and drawing all of it: the P&L screen's first takes 1.3 s on
+     * an idle machine, and the full suite -- 78 files at once -- runs it about four times slower. On 2 Oct 2026
+     * that tipped it past five seconds on one run and not the next. A test that truly hangs still fails; it fails
+     * at fifteen, not at five.
+     */
+    testTimeout: 15_000,
     setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.test.{ts,tsx}'],
   },

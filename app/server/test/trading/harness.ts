@@ -123,6 +123,8 @@ export function rig(opts: {
     onAlarm: (t, message) => alarms.push({ tradeId: t.tradeId, message }),
     candles: opts.candles,
     underlying: opts.underlying,
+    // A confirming read waits for real in the desk; not in a test.
+    wait: async () => {},
     onSwallowed: (what, _order, error) => swallowed.push({ what, message: error.message }),
     onEvent: (event, before, after, plan) => {
       events.push({ event, before, after });

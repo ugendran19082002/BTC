@@ -156,3 +156,27 @@ test('two orders in the same millisecond get different trade ids', () => {
   const b = nextTradeMs(at);
   assert.ok(b > a, 'the second moves on rather than repeat -- a repeated id is read as the first order re-sent');
 });
+
+test('[critical] one read of Delta with the contract missing writes nothing off; flat twice is written off, out loud', async () => {
+  // 2 Oct 2026: two trades on the 88,800 CE "closed" by the startup check a minute after a restart, no buy-back.
+  const r = rig({ quotes: [quote(CE, 100.5, 101)] });
+  const plan = planFor(ceProduct(), { lots: 10, stopPrice: null, takeProfitPrice: 4 });
+  await r.engine.open(plan);
+  await r.engine.poll(plan.tradeId);
+  assert.equal(r.store.peek(plan.tradeId)!.state.position, -10);
+
+  // Delta answers once without the contract, then with it again
+  const real = r.ex.getPositions.bind(r.ex);
+  let n = 0;
+  r.ex.getPositions = async () => (n++ === 0 ? [] : real());
+  await r.engine.reconcile(plan.tradeId);
+  assert.equal(r.store.peek(plan.tradeId)!.state.position, -10, 'not written off on one read');
+  assert.equal(r.store.peek(plan.tradeId)!.events.some((e) => e.t === 'reconciled'), false);
+  assert.ok(r.alarms.some((a) => /answered once with no position, then with -10\. Nothing written off/.test(a.message)));
+
+  // Delta flat twice, nothing of the desk's filled: closed on Delta itself -- written off, and said
+  r.ex.getPositions = async () => [];
+  await r.engine.reconcile(plan.tradeId);
+  assert.equal(r.store.peek(plan.tradeId)!.state.position, 0);
+  assert.ok(r.alarms.some((a) => /no buy-back of the desk's explains it -- closed on Delta itself/.test(a.message)));
+});
