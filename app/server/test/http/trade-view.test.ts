@@ -51,3 +51,23 @@ test('[critical] the P&L is this trade\'s own contracts, not Delta\'s row for th
   assert.equal(shared.live.unrealisedPnl, alone.live.unrealisedPnl, 'another strategy\'s 100 on the same strike is not this card\'s');
   assert.equal(alone.live.unrealisedPnl, (20 - 10) * 100 * 0.001);
 });
+
+test('[critical] two trades on one contract: each card shows its own target and stop -- a trade with no stop shows none', async () => {
+  // 2 Oct 2026: three signal trades on the 86,000 PE; one stop of 183.40 on the book, and every card said "Stop 183.40".
+  const withStop = await shortAt(38.1);
+  const noStop = { ...withStop, state: { ...withStop.state, tradeId: 'b', protection: { takeProfit: 'b-tp', stopLoss: null } } };
+  const a = { ...withStop, state: { ...withStop.state, protection: { takeProfit: 'a-tp', stopLoss: 'a-sl' } } };
+  const order = (id: string, type: 'limit' | 'stop_limit', at: number) => ({
+    orderId: id, clientOrderId: id, symbol: CE, productId: 1, side: 'buy' as const, type, size: 2, filledSize: 0, averageFillPrice: null,
+    limitPrice: type === 'limit' ? at : at + 20, stopPrice: type === 'limit' ? null : at, status: 'open' as const, reduceOnly: true, createdAt: 0, updatedAt: 0,
+  });
+  const book = [order('a-sl', 'stop_limit', 183.4), order('a-tp', 'limit', 1.9), order('b-tp', 'limit', 2.5)];
+  const va = tradeView(a, [], 0.001, quote(CE, 20, 30), 86_000, book);
+  const vb = tradeView(noStop, [], 0.001, quote(CE, 20, 30), 86_000, book);
+  assert.deepEqual(va.onBook, { target: 1.9, stop: 183.4 });
+  assert.deepEqual(vb.onBook, { target: 2.5, stop: null }, "B's own target, and no stop -- not A's 183.40");
+  assert.equal(vb.ifExits!.stop, null);
+  // an order nobody owns (placed by hand) is still read as the trade's, as the engine reads it
+  const hand = { ...order('x', 'stop_limit', 150), clientOrderId: null };
+  assert.equal(tradeView(noStop, [], 0.001, quote(CE, 20, 30), 86_000, [hand]).onBook!.stop, 150);
+});

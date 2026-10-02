@@ -132,6 +132,23 @@ export async function forScreens(recs: TradeRecord[]): Promise<TradeRecord[]> {
   return withPerpEntries(recs.map((r) => withStrategyName(r, names)));
 }
 
+/**
+ * This trade's own target and stop on the book: the orders whose client ids it recorded when it placed them.
+ *
+ * It took the first reduce-only limit and the first stop on the contract, whoever's they were. With one
+ * trade a contract that was the same thing; with several on one strike (signal strategies, 2 Oct 2026) every
+ * card showed the same order, and a trade placed with no stop showed another trade's at 183.40. An order with
+ * no client id -- placed by hand, or before ids -- is still read as this trade's, as the engine reads it.
+ */
+export function ownExits(r: TradeRecord, resting: readonly ExchangeOrder[]): { target: ExchangeOrder | null; stop: ExchangeOrder | null } {
+  const isStop = (o: ExchangeOrder) => o.type === 'stop_limit' || o.type === 'stop_market';
+  const pick = (id: string | null, isType: (o: ExchangeOrder) => boolean) =>
+    resting.find((o) => o.reduceOnly && isType(o) && id !== null && o.clientOrderId === id)
+    ?? resting.find((o) => o.reduceOnly && isType(o) && !o.clientOrderId)
+    ?? null;
+  return { target: pick(r.state.protection.takeProfit, (o) => o.type === 'limit'), stop: pick(r.state.protection.stopLoss, isStop) };
+}
+
 export const tradeView = (
   r: TradeRecord,
   positions: ExchangePosition[] = [],
@@ -290,13 +307,13 @@ export const tradeView = (
     ifExits: resting === null ? null : {
       target: netIfClosedAt({
         state: r.state,
-        price: resting.find((o) => o.reduceOnly && o.type === 'limit')?.limitPrice ?? null,
+        price: ownExits(r, resting).target?.limitPrice ?? null,
         spot,
         paidUsd: charges.totalUsd,
       }),
       stop: netIfClosedAt({
         state: r.state,
-        price: resting.find((o) => o.reduceOnly && (o.type === 'stop_limit' || o.type === 'stop_market'))?.stopPrice ?? null,
+        price: ownExits(r, resting).stop?.stopPrice ?? null,
         spot,
         paidUsd: charges.totalUsd,
       }),
@@ -304,11 +321,11 @@ export const tradeView = (
     onBook: resting === null ? null : {
       // The target rests as a limit and carries its level in limitPrice; the
       // stop is a trigger and carries its level in stopPrice.
-      target: resting.find((o) => o.reduceOnly && o.type === 'limit')?.limitPrice ?? null,
+      target: ownExits(r, resting).target?.limitPrice ?? null,
       // Either shape is the stop: a stop limit is what the desk places since
       // 12 September, a stop market is what it placed before. Matching only the
       // old shape would report "no stop" over a stop that is right there.
-      stop: resting.find((o) => o.reduceOnly && (o.type === 'stop_limit' || o.type === 'stop_market'))?.stopPrice ?? null,
+      stop: ownExits(r, resting).stop?.stopPrice ?? null,
     },
   };
 };
