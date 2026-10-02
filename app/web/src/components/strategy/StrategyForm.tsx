@@ -1,32 +1,20 @@
-import { useMemo, useRef, useState } from 'react';
-import { ChevronDown, Loader2 } from 'lucide-react';
-import { saveStrategy } from '@/api/strategy';
-import {
-  asSignalConfig, DAY_NAMES, DEFAULT_CONFIG, DEFAULT_SIGNAL_RULE, MAX_SIGNAL_OPEN, MAX_STRIKE_STEP, strikeLabel,
-  type SignalRule, type Strategy, type StrategyConfig,
-} from '@/types/strategy';
-import { Sheet, SheetContent, SheetFooter } from '@/components/ui/sheet';
-import { Button } from '@/components/ui/button';
+import type { Strategy } from '@/types/strategy';
+import { DEFAULT_CONFIG } from '@/types/strategy';
+import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
-import { TimePicker } from '@/components/ui/time-picker';
-import { describeStrategy, sizingOf } from '@/lib/strategy-preview';
-import { exitRules, suggestedFallback, withExitRule } from '@/lib/strategy-exits';
-import { nameWarning, stepWarnings } from '@/lib/strategy-checks';
-import { ExitRuleEditor } from '@/components/strategy/ExitRuleEditor';
-import { SignalRuleEditor } from '@/components/strategy/SignalRuleEditor';
-import { NumberField } from '@/components/ui/number-field';
-import { problemFor, strategyProblems, type FormField, type FormTab, type Problem } from '@/lib/strategy-rules';
-import { SETTLEMENT, hhmmOf, isHhmm, minutesOf, spanLabel, time12, wrapsMidnight } from '@/lib/time';
-import { inr, usd } from '@/lib/format';
+import { describeStrategy } from '@/lib/strategy-preview';
+import { nameWarning } from '@/lib/strategy-checks';
+import { time12 } from '@/lib/time';
 import { cn } from '@/lib/utils';
+import { useStrategyDraft } from '@/components/strategy/useStrategyDraft';
+import {
+  Affix, DaysField, EntryPriceFields, FormFooter, FormTabBar, NameField, OptionExitFields, RuleSentence,
+  Segmented, SizeFields, Stack, StrikeFields, TimeWindowFields, Warnings, num, type TabDef,
+} from '@/components/strategy/form-parts';
 
 /**
- * Everything a strategy is, in words rather than symbols -- in three short tabs.
- *
- * It used to be one column of every setting, each choice a pair of tall cards
- * with a sentence on each, and on a phone that was a long scroll to reach Save
- * past settings that had nothing to do with the one being changed. Now:
+ * A clock strategy -- everything it is, in words rather than symbols, in three
+ * short tabs:
  *
  *   When     entry and exit on a clock, and the days
  *   Sell     which legs, which strike, how many lots, and what that ties up
@@ -36,118 +24,30 @@ import { cn } from '@/lib/utils';
  * under the field that has it, and Save says how much is left and takes you
  * there. The server still validates and answers; what it says is shown too.
  * The rule read back as a sentence stays at the top, folded to two lines.
+ *
+ * A signal strategy has a form of its own (SignalStrategyForm), made of the
+ * same parts (form-parts.tsx); one opened here for editing is passed to it.
  */
 
-const TABS: { id: FormTab; label: string }[] = [
+const TABS: TabDef[] = [
   { id: 'when', label: 'When' },
   { id: 'sell', label: 'Sell' },
   { id: 'trade', label: 'Entry & exit' },
 ];
-/** A signal strategy has one more: which signals it takes. */
-const SIGNAL_TABS: { id: FormTab; label: string }[] = [
-  { id: 'when', label: 'When' },
-  { id: 'signal', label: 'Signals' },
-  { id: 'sell', label: 'Sell' },
-  { id: 'trade', label: 'Entry & exit' },
-];
 
-const num = (v: string, fallback: number) => {
-  const n = Number(v);
-  return v.trim() !== '' && Number.isFinite(n) ? n : fallback;
-};
-
-const WEEKDAYS = [1, 2, 3, 4, 5];
-/** The server's SIGNAL_ENTRY_MS: how long a signal's entry rests before it is cancelled. */
-const SIGNAL_TAKE_MIN = 5;
-const WEEKEND = [0, 6];
-const LAST_MINUTE = hhmmOf(minutesOf(SETTLEMENT) - 1);
-
-export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd, spot, startOnSignal = false }: {
+export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd, spot }: {
   editing: Strategy | null;
-  /** A new strategy opened from the Live screen: already a signal strategy, on its Signals tab. */
-  startOnSignal?: boolean;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onSaved: () => void;
   balanceUsd?: number | null;
   spot?: number | null;
 }) {
-  const [name, setName] = useState(editing?.name ?? '');
-  const [c, setC] = useState<StrategyConfig>(editing?.config ?? (startOnSignal ? asSignalConfig(DEFAULT_CONFIG, true) : DEFAULT_CONFIG));
-  const [tab, setTab] = useState<FormTab>(!editing && startOnSignal ? 'signal' : 'when');
-  const [busy, setBusy] = useState(false);
-  const [refused, setRefused] = useState<string[]>([]);
-  const [readAll, setReadAll] = useState(false);
-  // An empty name on a form just opened is not a mistake yet. It is said once
-  // the name has been touched, or Save has been pressed.
-  const [nameTouched, setNameTouched] = useState(false);
-  const nameInput = useRef<HTMLInputElement>(null);
-
-  const set = <K extends keyof StrategyConfig>(k: K, v: StrategyConfig[K]) =>
-    setC((p) => ({ ...p, [k]: v }));
-  const onSignal = c.trigger === 'signal';
-  const tabs = onSignal ? SIGNAL_TABS : TABS;
-  const rule: SignalRule = c.signal ?? DEFAULT_SIGNAL_RULE;
-  const setRule = <K extends keyof SignalRule>(k: K, v: SignalRule[K]) => setC((p) => ({ ...p, signal: { ...(p.signal ?? DEFAULT_SIGNAL_RULE), [k]: v } }));
-  const setTrigger = (t: 'time' | 'signal') => setC((p) => (t === 'signal' ? asSignalConfig(p, !editing) : { ...p, trigger: 'time' }));
-  const problems = useMemo(() => strategyProblems(c, name), [c, name]);
-  const exits = useMemo(() => exitRules(c), [c]);
-  /*
-   * The entry the exits are shown against, before there is one. Your own price
-   * when the entry is set; otherwise the premium rule's number -- where the
-   * offer or the bid will be, near enough -- and nothing for a rule that picks
-   * the strike by position, whose price is not known until it runs.
-   */
-  const reference = useMemo((): { price: number | null; label: string } => {
-    if (c.entryPrice === 'set' && (c.entryLimit ?? 0) > 0) return { price: c.entryLimit!, label: 'your price' };
-    if (c.strikeRule === 'premium' && c.premium.usd > 0) return { price: c.premium.usd, label: c.entryPrice === 'now' ? 'bid ≈' : 'offer ≈' };
-    return { price: null, label: '' };
-  }, [c.entryPrice, c.entryLimit, c.strikeRule, c.premium.usd]);
-  /*
-   * The name box sits above the tabs, so its problem belongs to no tab. It used
-   * to count for When: a new strategy opened with a red dot on When and "1 thing
-   * to fix on When", and nothing on When was wrong.
-   */
-  const nameProblem = problemFor(problems, 'name');
-  const tabProblems = problems.filter((p) => p.field !== 'name');
-  const tabHasProblem = (t: FormTab) => tabProblems.some((p) => p.tab === t);
-  const shownCount = tabProblems.length + (nameTouched && nameProblem ? 1 : 0);
-  const sizing = sizingOf(c, balanceUsd ?? null, spot ?? null);
-  // "No days" is a problem now, said under its own field.
-  const warnings = sizing.warnings.filter((w) => !/No days/.test(w));
-
-  const toggleDay = (d: number) =>
-    set('weekdays', c.weekdays.includes(d) ? c.weekdays.filter((x) => x !== d) : [...c.weekdays, d].sort());
-
-  const save = async () => {
-    if (problems.length) {
-      setNameTouched(true);
-      if (tabProblems.length) setTab(tabProblems[0]!.tab);
-      else nameInput.current?.focus();
-      return;
-    }
-    setBusy(true);
-    setRefused([]);
-    try {
-      await saveStrategy({ id: editing?.id, name: name.trim(), config: c });
-      onSaved();
-      onOpenChange(false);
-    } catch (e) {
-      setRefused((e as Error).message.split(/(?<=\.)\s+/).filter(Boolean));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const err = (f: FormField) => problemFor(problems, f);
-  const entryPlusOne = isHhmm(c.entryTime) ? hhmmOf(minutesOf(c.entryTime) + 1) : null;
-  const daytime = isHhmm(c.entryTime) && minutesOf(c.entryTime) < minutesOf(SETTLEMENT);
-  // An exit earlier on the clock than the entry: 11:30 PM to 5:30 AM.
-  const overnight = wrapsMidnight(c.entryTime, c.exitTime);
-  // Offered whenever 5:29 PM would actually settle the objection, rather than
-  // only on a daytime entry -- an overnight window can be fixed by it too.
-  const lastMinuteFixes = Boolean(err('exitTime'))
-    && !strategyProblems({ ...c, exitTime: LAST_MINUTE }, name).some((p) => p.field === 'exitTime');
+  const d = useStrategyDraft({
+    editing, initial: DEFAULT_CONFIG, firstTab: 'when', balanceUsd, spot, onSaved, onClose: () => onOpenChange(false),
+  });
+  const { c, set, err, tab } = d;
+  const nameWarnings = [nameWarning(d.name, c.legs)].filter((w): w is string => w !== null);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -156,183 +56,25 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
         description="Times are IST. Nothing runs until this strategy and auto-trading are both on."
         className="sm:w-[480px]"
       >
-        <label className="block">
-          <span className="sr-only">Name</span>
-          <Input ref={nameInput} value={name} aria-label="strategy name" placeholder="Name, e.g. Double one-sided"
-                 aria-invalid={(nameTouched && Boolean(nameProblem)) || undefined}
-                 className={cn(nameTouched && nameProblem && 'border-[var(--down)]')}
-                 onBlur={() => setNameTouched(true)}
-                 onChange={(e) => { setName(e.target.value); setNameTouched(true); }} />
-        </label>
-        <FieldError text={nameTouched ? nameProblem : null} />
-        {!onSignal && <Warnings items={[nameWarning(name, c.legs)].filter((w): w is string => w !== null)} />}
-
-        {/*
-          The rule read back as a sentence: how a wrong setting gets noticed
-          before it is saved. Two lines unless asked for more, so it does not
-          push the settings off a phone screen.
-        */}
-        <button
-          type="button"
-          onClick={() => setReadAll((v) => !v)}
-          aria-expanded={readAll}
-          className="m-0 mt-2 flex w-full appearance-none items-start gap-1.5 rounded-lg border-0 bg-muted px-2.5 py-2 text-left font-[inherit]"
-        >
-          <span className={cn('min-w-0 flex-1 text-[12px] leading-relaxed text-foreground', !readAll && 'line-clamp-2')}>
-            {describeStrategy(c)}
-          </span>
-          <ChevronDown className={cn('mt-0.5 h-3.5 w-3.5 flex-none text-muted-foreground transition-transform', readAll && 'rotate-180')} />
-        </button>
-
-        {/* The tabs stay in reach while a tab scrolls. */}
-        <div
-          role="tablist"
-          aria-label="strategy settings"
-          className="sticky top-0 z-10 -mx-4 mt-2 flex gap-1 border-b border-border bg-background px-4 pb-2 pt-1"
-          onKeyDown={(e) => {
-            if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
-            const i = tabs.findIndex((t) => t.id === tab);
-            const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length]!;
-            setTab(next.id);
-            document.getElementById(`tab-${next.id}`)?.focus();
-          }}
-        >
-          {tabs.map((t) => (
-            <button
-              key={t.id}
-              id={`tab-${t.id}`}
-              type="button"
-              role="tab"
-              aria-selected={tab === t.id}
-              aria-controls={`panel-${t.id}`}
-              tabIndex={tab === t.id ? 0 : -1}
-              onClick={() => setTab(t.id)}
-              className={cn(
-                'relative m-0 h-9 flex-1 appearance-none whitespace-nowrap rounded-md border-0 px-1 font-[inherit] text-[12.5px] font-medium',
-                tab === t.id ? 'bg-muted text-foreground' : 'bg-transparent text-muted-foreground',
-              )}
-            >
-              {t.label}
-              {tabHasProblem(t.id) && (
-                <span aria-label="has a problem" className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-[var(--down)]" />
-              )}
-            </button>
-          ))}
-        </div>
+        <NameField value={d.name} onChange={d.setName} touched={d.nameTouched} onTouched={() => d.setNameTouched(true)}
+                   problem={d.nameProblem} inputRef={d.nameInput} placeholder="Name, e.g. Double one-sided" warnings={nameWarnings} />
+        <RuleSentence text={describeStrategy(c)} />
+        <FormTabBar tabs={TABS} tab={tab} onTab={d.setTab} hasProblem={d.tabHasProblem} />
 
         <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} className="pt-2">
           {tab === 'when' && (
             <>
-              {/*
-                What starts the entry: the clock, once a day, or each signal from
-                the desk's entry methods. A signal strategy reads the two times
-                as the window it takes signals in.
-              */}
-              <Stack label="Enters" className="mb-3">
-                <Segmented
-                  label="trigger"
-                  value={onSignal ? 'signal' : 'time'}
-                  onChange={setTrigger}
-                  options={[
-                    { v: 'time', label: 'At a time', note: 'Once a day at the entry time — the tested short-premium strategy.' },
-                    { v: 'signal', label: 'On a signal', note: 'Each TRADE signal of the methods you pick: a BUY sells the put (PE), a SELL the call (CE).' },
-                  ]}
-                />
-              </Stack>
-              <div className="grid grid-cols-2 gap-2">
-                <Stack label={onSignal ? 'Take signals from' : 'Entry time'} error={err('entryTime')}>
-                  <TimePicker
-                    label={onSignal ? 'Take signals from' : 'Entry time'}
-                    value={c.entryTime}
-                    onChange={(v) => set('entryTime', v)}
-                    invalid={Boolean(err('entryTime'))}
-                    presets={[{ label: '5:30 AM · contract opens', value: '05:30' }]}
-                    className="w-full"
-                  />
-                </Stack>
-                <Stack label={onSignal ? 'Until — closes what is open' : 'Exit time'} error={err('exitTime')}>
-                  <TimePicker
-                    label={onSignal ? 'Signals until' : 'Exit time'}
-                    value={c.exitTime}
-                    onChange={(v) => set('exitTime', v)}
-                    min={entryPlusOne}
-                    max={LAST_MINUTE}
-                    invalid={Boolean(err('exitTime'))}
-                    presets={[{ label: '5:29 PM · last minute', value: LAST_MINUTE }]}
-                    className="w-full"
-                  />
-                </Stack>
-              </div>
-              {lastMinuteFixes && (
-                <QuickFix onClick={() => set('exitTime', LAST_MINUTE)}>Set exit to 5:29 PM</QuickFix>
-              )}
-              <p className="m-0 mt-1.5 text-[11.5px] leading-snug text-muted-foreground">
-                {!err('exitTime') && spanLabel(c.entryTime, c.exitTime)
-                  ? `Runs ${spanLabel(c.entryTime, c.exitTime)}${overnight ? ', into the next day' : ''}. `
-                  : ''}
-                {overnight
-                  ? 'An exit earlier on the clock than the entry means the next day.'
-                  : daytime
-                    ? 'The contract settles at 5:30 PM, so 5:29 PM is the last exit.'
-                    : 'An evening entry holds tomorrow’s contract.'}
-              </p>
+              <TimeWindowFields c={c} set={set} err={err} name={d.name}
+                                labels={{ from: 'Entry time', until: 'Exit time', fromPicker: 'Entry time', untilPicker: 'Exit time' }} />
+              <DaysField c={c} set={set} err={err} />
 
               {/*
-                Which day a tick means is not obvious once a strategy runs past
-                midnight: a Saturday 11:30 PM entry finishes on Sunday, and the
-                Sunday box has nothing to do with it. Say which end is meant.
-              */}
-              <Stack
-                label="Days"
-                error={err('weekdays')}
-                className="mt-3"
-                hint={overnight ? 'The day the entry starts — this one finishes the next day.' : undefined}
-              >
-                <div className="grid grid-cols-7 gap-1">
-                  {DAY_NAMES.map((d, i) => {
-                    const on = c.weekdays.includes(i);
-                    return (
-                      <button
-                        key={d}
-                        type="button"
-                        aria-label={d}
-                        aria-pressed={on}
-                        onClick={() => toggleDay(i)}
-                        className={cn('m-0 h-10 appearance-none rounded-md border border-solid font-[inherit] text-[12px] font-medium',
-                          on ? 'border-[var(--warn)] bg-[var(--warn)] text-black' : 'border-[var(--line)] bg-transparent text-[var(--dim)]')}
-                      >
-                        {d}
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="mt-1.5 flex gap-3 text-[12px]">
-                  {([['Every day', [0, 1, 2, 3, 4, 5, 6]], ['Weekdays', WEEKDAYS], ['Weekends', WEEKEND]] as const).map(([label, days]) => (
-                    <button key={label} type="button" onClick={() => set('weekdays', [...days])}
-                            className="m-0 appearance-none border-0 bg-transparent p-0 font-[inherit] text-muted-foreground underline underline-offset-2">
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </Stack>
-
-              {/*
-                How late is too late.
-                It was one constant for the whole desk -- sixty minutes, raised
-                from thirty when a restart cost a day -- and invisible, so a
-                strategy that quietly did not run at 07:00 looked broken rather
-                than late. It belongs to the strategy: an hour into a
-                twelve-hour contract is nothing, ten minutes into a signal is
-                everything.
-              */}
-              {/*
-                What the stop and the target are watched on.
-                A wick through a level is not a break, and a thin option's mark
-                can print a price nothing traded at -- so a stop on the touch
-                exits on noise a close would have ridden out. The other way
-                round, waiting for the close gives back the distance between
-                the wick and the close when the move is real. Both are right
-                sometimes, which is why it is a choice and not a default.
+                What the stop and the target are watched on. A wick through a
+                level is not a break, and a thin option's mark can print a price
+                nothing traded at -- so a stop on the touch exits on noise a
+                close would have ridden out. The other way round, waiting for the
+                close gives back the distance between the wick and the close
+                when the move is real. Both are right sometimes.
               */}
               <div className="mt-3">
                 <div className="mb-1 truncate text-[12px] text-muted-foreground">Trade monitoring</div>
@@ -356,14 +98,10 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                             : 'border-border bg-muted/20 opacity-60 hover:opacity-80',
                         )}
                       >
-                        <span className="mt-0.5 text-sm flex-none">{icon}</span>
+                        <span className="mt-0.5 flex-none text-sm">{icon}</span>
                         <span className="min-w-0">
-                          <span className="block text-[12.5px] font-medium leading-tight text-foreground">
-                            {label}
-                          </span>
-                          <span className="mt-0.5 block text-[10.5px] leading-snug text-muted-foreground">
-                            {desc}
-                          </span>
+                          <span className="block text-[12.5px] font-medium leading-tight text-foreground">{label}</span>
+                          <span className="mt-0.5 block text-[10.5px] leading-snug text-muted-foreground">{desc}</span>
                         </span>
                       </button>
                     );
@@ -371,7 +109,12 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                 </div>
               </div>
 
-              {!onSignal && <Stack
+              {/*
+                How late is too late. It belongs to the strategy: an hour into a
+                twelve-hour contract is nothing, ten minutes into a move is
+                everything.
+              */}
+              <Stack
                 label="Still enter if late by"
                 error={err('graceMin')}
                 className="mt-3"
@@ -406,40 +149,12 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                     ))}
                   </div>
                 </div>
-              </Stack>}
-              {onSignal && (
-                <p className="m-0 mt-3 text-[11.5px] leading-snug text-muted-foreground">
-                  Each signal is taken once, within seconds of the candle that makes it. An entry still unfilled
-                  {` ${SIGNAL_TAKE_MIN} `}minutes later is cancelled — a late fill on a signal is a different trade.
-                </p>
-              )}
+              </Stack>
             </>
-          )}
-
-          {tab === 'signal' && (
-            <SignalRuleEditor
-              rule={rule}
-              onChange={(r) => set('signal', r)}
-              errors={{ mode: err('signalMode'), tf: err('signalTf'), methods: err('signalMethods') }}
-            />
           )}
 
           {tab === 'sell' && (
             <>
-              {onSignal ? (
-                <Stack label="Leg — from the signal">
-                  <div className="grid grid-cols-2 gap-2" aria-label="leg from the signal">
-                    <div className="rounded-lg bg-muted px-2.5 py-2 text-[12px]">
-                      <span className="font-semibold text-[var(--up)]">BUY</span> signal → sells <b>PE</b>
-                      <span className="mt-0.5 block text-[10.5px] text-muted-foreground">wins as BTC rises or holds</span>
-                    </div>
-                    <div className="rounded-lg bg-muted px-2.5 py-2 text-[12px]">
-                      <span className="font-semibold text-[var(--down)]">SELL</span> signal → sells <b>CE</b>
-                      <span className="mt-0.5 block text-[10.5px] text-muted-foreground">wins as BTC falls or holds</span>
-                    </div>
-                  </div>
-                </Stack>
-              ) : (<>
               <Stack label="Legs">
                 <Segmented
                   label="legs"
@@ -452,468 +167,34 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
                   ]}
                 />
               </Stack>
-              <Warnings items={[nameWarning(name, c.legs)].filter((w): w is string => w !== null)} />
-              </>)}
-
-              <Stack label="How to pick the strike" className="mt-3">
-                <Segmented
-                  label="strike rule"
-                  value={c.strikeRule}
-                  onChange={(v) => set('strikeRule', v)}
-                  options={[
-                    { v: 'premium', label: 'By premium', note: 'Whichever strike pays what you ask — the tested rule.' },
-                    { v: 'strict', label: 'By strike', note: 'The strike you name — ATM, OTM 1, ITM 2 — whatever it pays.' },
-                    {
-                      v: 'oiWall',
-                      label: 'By open interest',
-                      note: 'The heaviest strike out of the money — the wall. Untested: open interest was measured as a trading rule and did not hold up across 2024, 2025 and 2026.',
-                    },
-                  ]}
-                />
-              </Stack>
-
-              {/*
-                The wall asks for nothing.
-                It is picked from the board at the moment the strategy runs --
-                whatever spot is then, whichever strike carries the most open
-                interest out from it -- so there is no strike to name and no
-                premium to ask for. The form showed the strike stepper here,
-                because it was written as premium-or-strict and the wall fell
-                into the second branch.
-              */}
-              {c.strikeRule === 'oiWall' && (
-                <div className="mt-3">
-                  <p className="m-0 text-[11.5px] leading-snug text-muted-foreground">
-                    Picked when the strategy runs, from wherever BTC is then: the call leg
-                    takes the heaviest call strike above the price, the put leg the heaviest
-                    put strike below it — the same walls the Live screen draws as support and
-                    resistance, looked for within the level band set on Settings, and only
-                    where the strike still pays at least ${c.premium.usd}. The heaviest open
-                    interest on the whole board sits at far strikes that pay nothing; those are
-                    levels, not trades, and are never picked.
-                  </p>
-                  <p className="m-0 mt-2 text-[11.5px] leading-snug text-[var(--warn)]">
-                    This one is a claim, not a record: that the strike carrying the most open
-                    interest is a better one to sell. The desk shows the walls because traders
-                    watch them, and every attempt to <i>trade</i> them failed the cross-period
-                    screen. The premium rule is the one with 733 days behind it.
-                  </p>
-                </div>
-              )}
-
-              {c.strikeRule === 'oiWall' ? null : c.strikeRule === 'premium' ? (
-                <Stack label="Premium rule" error={err('premium')} className="mt-3">
-                  <div className="flex items-stretch gap-2">
-                    <Segmented
-                      label="premium rule"
-                      value={c.premium.mode}
-                      onChange={(v) => set('premium', { ...c.premium, mode: v })}
-                      className="flex-1"
-                      options={[
-                        { v: 'atLeast', label: 'At least', note: 'Furthest strike still paying this — more premium, more risk.' },
-                        { v: 'atMost', label: 'At most', note: 'Best strike paying up to this — less premium, less risk.' },
-                      ]}
-                    />
-                    <Affix before="$">
-                      <Input value={String(c.premium.usd)} aria-label="premium usd" inputMode="decimal" className="w-20 pl-5"
-                             onChange={(e) => set('premium', { ...c.premium, usd: num(e.target.value, 0) })} />
-                    </Affix>
-                  </div>
-                </Stack>
-              ) : null}
-
-              {/*
-                A second number on the same rule, tried only when the first finds
-                no strike: "at most $20 -- and if nothing is at or under $20, the
-                last strike at or under $50". Off until it is switched on.
-              */}
-              {c.strikeRule === 'oiWall' ? null : c.strikeRule === 'premium' ? (
-                <div className="mt-2">
-                  <Switch
-                    label={c.premium.mode === 'atMost' ? 'If nothing is at or below it, try a higher cap' : 'If nothing pays it, try a lower floor'}
-                    description={c.premium.fallbackUsd != null
-                      ? (c.premium.mode === 'atMost'
-                        ? `No strike at or below $${c.premium.usd}? Sells the last strike at or below $${c.premium.fallbackUsd}.`
-                        : `No strike paying $${c.premium.usd}? Sells the furthest still paying $${c.premium.fallbackUsd}.`)
-                      : 'Off — no strike means that leg is not sold today.'}
-                    checked={c.premium.fallbackUsd != null}
-                    onCheckedChange={(on) => set('premium', { ...c.premium, fallbackUsd: on ? suggestedFallback(c.premium) : null })}
-                  />
-                  {c.premium.fallbackUsd != null && (
-                    <Stack label={c.premium.mode === 'atMost' ? 'Fallback cap' : 'Fallback floor'} error={err('premiumFallback')} className="mt-1 w-40"
-                           hint={c.premium.mode === 'atMost' ? `above $${c.premium.usd}` : `below $${c.premium.usd}`}>
-                      <NumberField label="premium fallback usd" unitBefore="$" value={c.premium.fallbackUsd}
-                                   onChange={(n) => set('premium', { ...c.premium, fallbackUsd: n })} />
-                    </Stack>
-                  )}
-                  {err('premiumFallback') && (
-                    <QuickFix onClick={() => set('premium', { ...c.premium, fallbackUsd: suggestedFallback(c.premium) })}>
-                      Use ${suggestedFallback(c.premium)}
-                    </QuickFix>
-                  )}
-                </div>
-              ) : (
-                <Stack
-                  label="Which strike"
-                  error={err('strikeStep')}
-                  className="mt-3"
-                  hint="counted over the strikes Delta has listed, out from the money"
-                >
-                  <StrikeStepper value={c.strikeStep} onChange={(v) => set('strikeStep', v)} />
-                  {c.strikeStep <= 0 && (
-                    <p className="m-0 mt-1.5 text-[11.5px] leading-snug text-[var(--warn)]">
-                      {c.strikeStep < 0
-                        ? 'In the money — it starts with intrinsic value against it'
-                        : 'At the money — the richest premium and the most risk'}
-                      .
-                    </p>
-                  )}
-                </Stack>
-              )}
-
-              {/*
-                The strategy's own premium floor. Off, the desk's $5 applies, as it
-                does to every order. For a late entry -- 29 minutes before settlement
-                most strikes pay under $5 -- the strategy has to say so itself.
-              */}
-              <div className="mt-3">
-                <Switch
-                  label="Its own minimum premium"
-                  description={c.minPremiumUsd != null
-                    ? `Sells down to $${c.minPremiumUsd} instead of the desk's $5.`
-                    : "Off — the desk's $5 minimum applies."}
-                  checked={c.minPremiumUsd != null}
-                  onCheckedChange={(on) => set('minPremiumUsd', on ? 1 : null)}
-                />
-                {c.minPremiumUsd != null && (
-                  <Stack label="Minimum premium" error={err('minPremium')} className="mt-1 w-40" hint="at least $0.10">
-                    <NumberField label="minimum premium usd" unitBefore="$" value={c.minPremiumUsd}
-                                 onChange={(n) => set('minPremiumUsd', n)} />
-                  </Stack>
-                )}
-              </div>
-
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <Stack label={onSignal ? 'Lots per signal' : 'Lots per leg'} error={err('lots')} hint="1 lot = 0.001 BTC">
-                  <Input value={String(c.lots)} aria-label="lots" inputMode="numeric"
-                         onChange={(e) => set('lots', Math.floor(num(e.target.value, 0)))} />
-                </Stack>
-                <div className="rounded-lg bg-muted px-2.5 py-2 text-[11.5px] leading-relaxed">
-                  <div className="flex justify-between gap-2">
-                    <span className="text-muted-foreground">Max at once</span>
-                    <span className="tabular-nums text-foreground">{sizing.maxContracts}</span>
-                  </div>
-                  <div className="flex justify-between gap-2">
-                    <span className="text-muted-foreground">Margin</span>
-                    <span className="tabular-nums text-foreground">{spot ? inr(sizing.marginInr) : '—'}</span>
-                  </div>
-                  {sizing.shareOfAccount !== null && (
-                    <div className="flex justify-between gap-2">
-                      <span className="text-muted-foreground" title="Measured against free margin.">Of free</span>
-                      <span className={cn('tabular-nums', sizing.shareOfAccount > 0.5 ? 'text-[var(--down)]' : 'text-foreground')}>
-                        {Math.round(sizing.shareOfAccount * 100)}%
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-              {spot ? <p className="m-0 mt-1 text-right text-[11px] text-[var(--dim)]">{usd(sizing.marginUsd)} at 200x</p> : null}
-              <Warnings items={warnings.filter((w) => /margin|account|funded/i.test(w))} />
+              <Warnings items={nameWarnings} />
+              <StrikeFields c={c} set={set} err={err} />
+              <SizeFields c={c} set={set} err={err} sizing={d.sizing} spot={spot} label="Lots per leg" warnings={d.warnings} />
             </>
           )}
 
           {tab === 'trade' && (
             <>
-              <Stack label="Entry price">
-                <Segmented
-                  label="entry price"
-                  value={c.entryPrice}
-                  onChange={(v) => set('entryPrice', v)}
-                  options={[
-                    { v: 'offer', label: 'Offer', note: 'Rests at the offer — a better price if someone takes it.' },
-                    { v: 'now', label: 'Bid now', note: 'Sells at the bid at once — fills, at a lower price.' },
-                    { v: 'set', label: 'My price', note: 'Waits at your price until it fills.' },
-                  ]}
-                />
-              </Stack>
-
-              {c.entryPrice === 'set' && (
-                <Stack label="Limit price" error={err('entryLimit')} className="mt-3">
-                  <Input value={String(c.entryLimit ?? '')} aria-label="entry limit" inputMode="decimal" className="w-32"
-                         onChange={(e) => set('entryLimit', num(e.target.value, 0))} />
-                </Stack>
-              )}
-              {c.entryPrice === 'offer' && (
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <Stack label="Bid after" error={err('crossAfterSec')}
-                         hint={c.crossAfterSec > 0 ? 'then sells at the bid' : '0 waits until filled'}>
-                    <Affix after="sec">
-                      <Input value={String(c.crossAfterSec)} aria-label="cross after seconds" inputMode="numeric" className="pr-9"
-                             onChange={(e) => set('crossAfterSec', Math.floor(num(e.target.value, 0)))} />
-                    </Affix>
-                  </Stack>
-                  {c.crossAfterSec > 0 && (
-                    <Stack label="Max spread" error={err('maxCrossSpreadPct')} hint="wider than this waits at the mid">
-                      <Affix after="%">
-                        <Input value={String(Math.round((c.maxCrossSpreadPct ?? 0.15) * 100))} aria-label="max spread to sell at bid pct"
-                               inputMode="numeric" className="pr-7"
-                               onChange={(e) => set('maxCrossSpreadPct', Math.min(100, Math.max(1, num(e.target.value, 15))) / 100)} />
-                      </Affix>
-                    </Stack>
-                  )}
-                </div>
-              )}
-
-              {/*
-                The two exits, typed rather than dragged, each as a percentage or
-                fixed points, and each able to move on a timetable between the
-                entry and the exit. Shown against the premium the rule asks for,
-                so "80%" reads as the price it is.
-              */}
-              {onSignal && (
-                <div className="mt-3 rounded-lg border border-solid border-border px-2.5 py-2" aria-label="exits on the BTC perp">
-                  <div className="text-[12.5px] font-medium text-foreground">Exits on the BTC perp — from each signal</div>
-                  <p className="m-0 mt-0.5 text-[11.5px] leading-snug text-muted-foreground">
-                    The SL and TGT are the signal&apos;s own levels on the BTC perpetual, made by its method for each signal
-                    (SL past the structure by 0.25 ATR). The desk watches the perp&apos;s last trade and buys the option back
-                    the moment either is reached.
-                  </p>
-                  <Stack label="Target" error={err('signalTarget')} className="mt-2">
-                    <Segmented
-                      label="signal target"
-                      value={rule.target}
-                      onChange={(v) => setRule('target', v)}
-                      options={[
-                        { v: 'tp1', label: 'TGT1', note: 'The nearest target, within 1–2R — taken most often.' },
-                        { v: 'tp2', label: 'TGT2', note: 'Further, where the signal has one; else TGT1.' },
-                        { v: 'tp3', label: 'TGT3', note: 'The expected-move edge, where the signal has one; else TGT1.' },
-                      ]}
-                    />
-                  </Stack>
-                  <Stack label="At most open at once" error={err('maxOpen')} className="mt-2"
-                         hint="A signal past this is written down and not taken.">
-                    <div className="grid grid-cols-5 gap-1" role="radiogroup" aria-label="max open">
-                      {Array.from({ length: MAX_SIGNAL_OPEN }, (_, i) => i + 1).map((n) => (
-                        <button key={n} type="button" role="radio" aria-checked={rule.maxOpen === n} onClick={() => setRule('maxOpen', n)}
-                                className={cn('m-0 h-9 appearance-none rounded-md border border-solid font-[inherit] text-[12.5px]',
-                                  rule.maxOpen === n ? 'border-foreground bg-muted text-foreground' : 'border-border bg-transparent text-muted-foreground')}>
-                          {n}
-                        </button>
-                      ))}
-                    </div>
-                  </Stack>
-                </div>
-              )}
-              {onSignal && (
-                <div className="mt-3 text-[12px] text-muted-foreground">
-                  Backstop on the option at Delta — in case the desk cannot see the perp
-                </div>
-              )}
-              <div className={cn('flex flex-col gap-2', onSignal ? 'mt-1' : 'mt-3')}>
-                {(['target', 'stop'] as const).map((leg) => (
-                  <ExitRuleEditor
-                    key={leg}
-                    leg={leg}
-                    rule={exits[leg]}
-                    onChange={(r) => setC((p) => withExitRule(p, leg, r))}
-                    onMode={(mode) => setC((p) => (leg === 'target'
-                      ? { ...p, targetMode: mode, targetSteps: [] }
-                      : { ...p, stopMode: mode, stopSteps: [] }))}
-                    entryTime={c.entryTime}
-                    exitTime={c.exitTime}
-                    samplePrice={reference.price}
-                    sampleLabel={reference.label}
-                    error={err(leg === 'target' ? 'takeProfitPct' : 'stopLossPct')}
-                  />
-                ))}
-              </div>
-              <Warnings items={warnings.filter((w) => /target and no stop/.test(w))} />
-              <Warnings items={[...stepWarnings(c, 'target'), ...stepWarnings(c, 'stop')]} />
+              <EntryPriceFields c={c} set={set} err={err} />
+              <OptionExitFields c={c} setC={d.setC} exits={d.exits} err={err} reference={d.reference} warnings={d.warnings} className="mt-3" />
             </>
           )}
         </div>
 
-        <SheetFooter className="flex-col gap-2">
-          {/*
-            Live orders, on every tab of a signal strategy: the one switch that
-            decides whether a signal becomes an order at Delta. Off, the
-            default, each signal is written down as the order it would have
-            been (decision 0013).
-          */}
-          {onSignal && (
-            <div className={cn('rounded-lg border border-solid px-2.5 py-1.5',
-              c.liveOrders ? 'border-[var(--down)] bg-[var(--down)]/10' : 'border-border')}>
-              <Switch
-                label="Live orders"
-                description={c.liveOrders
-                  ? 'ON — each signal places a real order at Delta.'
-                  : 'Off — each signal is written down as the order it would be. Nothing is sent.'}
-                checked={Boolean(c.liveOrders)}
-                onCheckedChange={(on) => set('liveOrders', on)}
-              />
-            </div>
-          )}
-          {refused.map((p) => (
-            <p key={p} className="m-0 text-[11.5px] leading-snug text-[var(--down)]">{p}</p>
-          ))}
-          {(tabProblems.length > 0 || (nameTouched && nameProblem)) && (
-            <LeftToFix
-              tabs={tabs}
-              problems={tabProblems}
-              needsName={nameTouched && Boolean(nameProblem)}
-              onName={() => nameInput.current?.focus()}
-              onGo={setTab}
-            />
-          )}
-          <div className="flex gap-2">
-            <Button variant="outline" className="h-11 flex-none px-4" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button className="h-11 flex-1" disabled={busy} onClick={() => void save()}>
-              {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-              {shownCount ? `Fix ${shownCount} to save` : 'Save'}
-            </Button>
-          </div>
-          {!editing && problems.length === 0 && (
-            <p className="m-0 text-center text-[11px] text-[var(--dim)]">Saved switched off. Turn it on from the list.</p>
-          )}
-        </SheetFooter>
+        <FormFooter
+          refused={d.refused}
+          tabs={TABS}
+          tabProblems={d.tabProblems}
+          needsName={d.nameTouched && Boolean(d.nameProblem)}
+          onName={() => d.nameInput.current?.focus()}
+          onGo={d.setTab}
+          busy={d.busy}
+          shownCount={d.shownCount}
+          onCancel={() => onOpenChange(false)}
+          onSave={() => void d.save()}
+          note={!editing && d.problems.length === 0 ? 'Saved switched off. Turn it on from the list.' : null}
+        />
       </SheetContent>
     </Sheet>
-  );
-}
-
-/**
- * ATM, OTM 1..n, ITM 1..n — one strike at a time, with the name read back.
- *
- * A stepper rather than a number box: the useful range is small, the sign
- * carries the meaning, and "-2" typed into a box is not something anybody
- * should have to translate into "two strikes in the money".
- */
-function StrikeStepper({ value, onChange }: { value: number; onChange: (v: number) => void }) {
-  const go = (by: number) => onChange(Math.max(-MAX_STRIKE_STEP, Math.min(MAX_STRIKE_STEP, value + by)));
-  const btn = 'm-0 h-11 w-12 flex-none appearance-none rounded-md border border-solid border-border bg-muted '
-    + 'font-[inherit] text-[18px] text-foreground disabled:opacity-35';
-  return (
-    <div className="flex items-center gap-2">
-      <button type="button" aria-label="one strike nearer the money" className={btn}
-              disabled={value <= -MAX_STRIKE_STEP} onClick={() => go(-1)}>−</button>
-      <div
-        role="status"
-        aria-label="which strike"
-        className="flex h-11 flex-1 items-center justify-center rounded-md border border-solid border-border bg-muted text-[15px] font-semibold text-foreground"
-      >
-        {strikeLabel(value)}
-      </div>
-      <button type="button" aria-label="one strike further out" className={btn}
-              disabled={value >= MAX_STRIKE_STEP} onClick={() => go(1)}>+</button>
-    </div>
-  );
-}
-
-/** A label over its control, with the control's problem under it. */
-function Stack({ label, hint, error, className, children }: {
-  label: string; hint?: string; error?: string | null; className?: string; children: React.ReactNode;
-}) {
-  return (
-    <div className={cn('min-w-0', className)}>
-      <div className="mb-1 truncate text-[12px] text-muted-foreground">{label}</div>
-      {children}
-      {/* under the field, where it can wrap -- beside a label on a phone it was cut off */}
-      {hint && !error && <div className="mt-0.5 text-[10.5px] leading-snug text-[var(--dim)]">{hint}</div>}
-      <FieldError text={error ?? null} />
-    </div>
-  );
-}
-
-function FieldError({ text }: { text: string | null }) {
-  if (!text) return null;
-  return <p role="alert" className="m-0 mt-1 text-[11.5px] leading-snug text-[var(--down)]">{text}</p>;
-}
-
-function Warnings({ items }: { items: string[] }) {
-  return (
-    <>
-      {items.map((w) => <p key={w} className="m-0 mt-2 text-[11.5px] leading-snug text-[var(--warn)]">{w}</p>)}
-    </>
-  );
-}
-
-function QuickFix({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button type="button" onClick={onClick}
-            className="m-0 mt-1 appearance-none border-0 bg-transparent p-0 font-[inherit] text-[12px] text-[var(--accent)] underline underline-offset-2">
-      {children}
-    </button>
-  );
-}
-
-/** A unit inside the field, so "$" and "%" do not need a row of their own. */
-function Affix({ before, after, children }: { before?: string; after?: string; children: React.ReactNode }) {
-  return (
-    <div className="relative h-9 self-start">
-      {before && <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[12px] text-muted-foreground">{before}</span>}
-      {children}
-      {after && <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[12px] text-muted-foreground">{after}</span>}
-    </div>
-  );
-}
-
-/** Two or three choices on one line; only the chosen one's sentence is shown. */
-function Segmented<T extends string>({ label, value, options, onChange, className }: {
-  label: string;
-  value: T;
-  options: { v: T; label: string; note: string }[];
-  onChange: (v: T) => void;
-  className?: string;
-}) {
-  const chosen = options.find((o) => o.v === value);
-  return (
-    <div className={cn('min-w-0', className)}>
-      <div role="radiogroup" aria-label={label} className="flex gap-0.5 rounded-lg bg-muted p-0.5">
-        {options.map((o) => (
-          <button
-            key={o.v}
-            type="button"
-            role="radio"
-            aria-checked={value === o.v}
-            onClick={() => onChange(o.v)}
-            className={cn(
-              'm-0 h-9 flex-1 appearance-none whitespace-nowrap rounded-md border-0 px-2 font-[inherit] text-[12.5px] font-medium',
-              value === o.v ? 'bg-background text-foreground shadow-sm' : 'bg-transparent text-muted-foreground',
-            )}
-          >
-            {o.label}
-          </button>
-        ))}
-      </div>
-      {chosen && <p className="m-0 mt-1 text-[11.5px] leading-snug text-muted-foreground">{chosen.note}</p>}
-    </div>
-  );
-}
-
-/** What stops the save, and a way to each thing: the name box, and each tab with a problem. */
-function LeftToFix({ tabs: all, problems, needsName, onName, onGo }: {
-  tabs: { id: FormTab; label: string }[]; problems: Problem[]; needsName: boolean; onName: () => void; onGo: (t: FormTab) => void;
-}) {
-  const tabs = all.filter((t) => problems.some((p) => p.tab === t.id));
-  const count = problems.length + (needsName ? 1 : 0);
-  const link = 'm-0 appearance-none border-0 bg-transparent p-0 font-[inherit] text-[12px] text-[var(--down)] underline underline-offset-2';
-  return (
-    <p className="m-0 text-[12px] leading-snug text-[var(--down)]" aria-live="polite">
-      {count === 1 ? '1 thing to fix' : `${count} things to fix`}:{' '}
-      {needsName && (
-        <button type="button" onClick={onName} className={link}>Name</button>
-      )}
-      {needsName && tabs.length > 0 && ', '}
-      {tabs.map((t, i) => (
-        <span key={t.id}>
-          {i > 0 && ', '}
-          <button type="button" onClick={() => onGo(t.id)} className={link}>
-            {t.label}
-          </button>
-        </span>
-      ))}
-    </p>
   );
 }

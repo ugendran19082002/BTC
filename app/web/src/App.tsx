@@ -559,6 +559,14 @@ export default function App() {
                 tick={liveSpot}
                 bars={liveBars}
                 ltp={stream.live ? stream.ltp : null}
+                // Right under Entry setups: the signal strategies that trade those signals.
+                belowEntry={
+                  <ErrorBoundary where="Signal strategies">
+                    <Suspense fallback={null}>
+                      <SignalStrategiesCard onOpenStrategyTab={() => setTab('strategy')} />
+                    </Suspense>
+                  </ErrorBoundary>
+                }
                 controls={
                   <>
                     <Select ariaLabel="when" value={live ? 'live' : 'past'} onValueChange={(v) => setLive(v === 'live')}>
@@ -590,14 +598,6 @@ export default function App() {
             </ErrorBoundary>
           )}
 
-          {/*
-            The signal strategies, beside the methods that make the signals
-            (2 Oct 2026): the same strategies as the Strategy tab, the ones that
-            enter on a signal, with their switches and the last signals taken.
-          */}
-          <ErrorBoundary where="Signal strategies">
-            <SignalStrategiesCard onOpenStrategyTab={() => setTab('strategy')} />
-          </ErrorBoundary>
 
           {/*
             The full board, at the bottom of the Live screen (22 Sep 2026) rather

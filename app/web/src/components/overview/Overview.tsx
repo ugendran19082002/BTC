@@ -39,7 +39,7 @@ export const screenSpot = (tick: number | null | undefined, snapshot: number | n
 export function Overview({
   data, trade, expiries, onExpiry,
   selected: selectedProp, onSelect, tick, controls,
-  bars = [], ltp = null,
+  bars = [], ltp = null, belowEntry,
 }: {
   data: ChainResponse;
   trade: TradeStatus | null;
@@ -55,6 +55,8 @@ export function Overview({
   bars?: readonly Candle[];
   /** The perp's last trade and the candles in progress, from the stream; null when it is down. */
   ltp?: LiveLtp | null;
+  /** Drawn right under the entry setups: the signal strategies that trade them. */
+  belowEntry?: ReactNode;
 }) {
   // A clock for the flow window, ticking once a second.
   const [now, setNow] = useState(() => Date.now());
@@ -123,6 +125,7 @@ export function Overview({
         expiryLabel={snap.expiry ? `${snap.expiry} 17:30 IST` : undefined}
         hoursToExpiry={snap.hoursToExpiry}
         controls={controls}
+        belowEntry={belowEntry}
       />
 
       {/* Accessible Expiry select for automation and accessibility */}

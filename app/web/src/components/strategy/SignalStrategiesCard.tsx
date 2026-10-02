@@ -4,7 +4,7 @@ import { getStrategies, saveStrategy, setStrategyEnabled } from '@/api/strategy'
 import type { SignalRunStatus, Strategy, StrategyStatus } from '@/types/strategy';
 import { usePoll } from '@/hooks/usePoll';
 import { Button } from '@/components/ui/button';
-import { StrategyForm } from '@/components/strategy/StrategyForm';
+import { SignalStrategyForm } from '@/components/strategy/SignalStrategyForm';
 import { LogTable } from '@/components/strategy/LogTable';
 import { describeStrike, signalTargetLabel } from '@/lib/strategy-preview';
 import { stamp } from '@/lib/format';
@@ -191,10 +191,9 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
       )}
 
       {data && (
-        <StrategyForm
+        <SignalStrategyForm
           key={editing?.id ?? 'new-signal'}
           editing={editing}
-          startOnSignal
           open={formOpen}
           onOpenChange={setFormOpen}
           onSaved={refresh}

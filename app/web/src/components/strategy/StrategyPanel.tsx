@@ -5,6 +5,7 @@ import type { SignalRunStatus, Strategy, StrategyStatus } from '@/types/strategy
 import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { Button } from '@/components/ui/button';
 import { StrategyForm } from '@/components/strategy/StrategyForm';
+import { SignalStrategyForm } from '@/components/strategy/SignalStrategyForm';
 import { usePoll } from '@/hooks/usePoll';
 import { clock, stamp } from '@/lib/format';
 import { describeDays, describeStrike, signalTargetLabel } from '@/lib/strategy-preview';
@@ -322,17 +323,30 @@ export function StrategyPanel() {
         </CollapsibleCard>
       )}
 
-      <StrategyForm
-        // Remounts when the target changes, so the form never opens holding the
-        // previous strategy's numbers.
-        key={editing?.id ?? 'new'}
-        editing={editing}
-        open={formOpen}
-        onOpenChange={setFormOpen}
-        onSaved={refresh}
-        balanceUsd={data.balanceUsd}
-        spot={data.spot}
-      />
+      {/* A signal strategy is edited on its own form; the clock strategies on this one. */}
+      {editing?.config.trigger === 'signal' ? (
+        <SignalStrategyForm
+          key={editing.id}
+          editing={editing}
+          open={formOpen}
+          onOpenChange={setFormOpen}
+          onSaved={refresh}
+          balanceUsd={data.balanceUsd}
+          spot={data.spot}
+        />
+      ) : (
+        <StrategyForm
+          // Remounts when the target changes, so the form never opens holding the
+          // previous strategy's numbers.
+          key={editing?.id ?? 'new'}
+          editing={editing}
+          open={formOpen}
+          onOpenChange={setFormOpen}
+          onSaved={refresh}
+          balanceUsd={data.balanceUsd}
+          spot={data.spot}
+        />
+      )}
     </div>
   );
 }
