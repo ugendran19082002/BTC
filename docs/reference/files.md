@@ -5,7 +5,7 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-404 files listed, 187 test files counted below, images and lockfiles left out.
+407 files listed, 187 test files counted below, images and lockfiles left out.
 
 ## Test files
 
@@ -408,8 +408,11 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [LogTable.tsx](../../app/web/src/components/strategy/LogTable.tsx) | A log of what the desk did, as a table. |
 | [SignalRuleEditor.tsx](../../app/web/src/components/strategy/SignalRuleEditor.tsx) | Which signals a signal strategy takes: the way (with the timeframe chain, or without it on one timeframe), and the methods -- picked from the 81, each with its record so far in that way, so the cho... |
 | [SignalStrategiesCard.tsx](../../app/web/src/components/strategy/SignalStrategiesCard.tsx) | The signal strategies, on the Live screen beside the methods that make the signals: each one's switch, its live-orders switch, what it is set to, and what the last signals did. |
-| [StrategyForm.tsx](../../app/web/src/components/strategy/StrategyForm.tsx) | Everything a strategy is, in words rather than symbols -- in three short tabs. |
+| [SignalStrategyForm.tsx](../../app/web/src/components/strategy/SignalStrategyForm.tsx) | A signal strategy: the desk's entry signals sold as options. |
+| [StrategyForm.tsx](../../app/web/src/components/strategy/StrategyForm.tsx) | A clock strategy -- everything it is, in words rather than symbols, in three short tabs: |
 | [StrategyPanel.tsx](../../app/web/src/components/strategy/StrategyPanel.tsx) | The strategies, what is armed, and when each one next runs. |
+| [form-parts.tsx](../../app/web/src/components/strategy/form-parts.tsx) | The strategy forms' parts: every field group a strategy has, written once. |
+| [useStrategyDraft.ts](../../app/web/src/components/strategy/useStrategyDraft.ts) | A strategy being edited: the config, the name, what is wrong with them and on which tab, and saving -- the part both strategy forms share, so the clock form and the signal form check and save the s... |
 
 ## `app/web/src/components/trade/`
 

@@ -127,20 +127,27 @@ open ([TODO.md](../TODO.md)).
 
 Since 2 Oct 2026 a strategy can enter on a **signal** instead of a time: the
 desk's entry methods ([entry-sl-tgt.md](entry-sl-tgt.md)), traded as a short
-option. Chosen on the form's **When** tab ("Enters: At a time / On a signal").
+option. Made on the **Live** screen, in **Signal Strategies** right under the
+Entry setups header card: **New signal strategy** opens a form of its own --
+four tabs, **Signals / Strike & lots / Entry & exit / When**, and only what a
+signal strategy has (no legs, no entry time, no late-entry window). The
+Strategy tab lists them with the rest, and Edit there opens the same form. Both
+strategy forms are built from one set of parts
+(`app/web/src/components/strategy/form-parts.tsx`) and check and save the same
+way (`useStrategyDraft`).
 
 | | |
 |---|---|
 | Leg | from the signal: **BUY sells the PE**, **SELL sells the CE** (`legOfSignal`). `legs` is not read. |
 | Which signals | the **Signals** tab: with the timeframe chain, or without it on 3m / 5m / 15m / 30m / 1h / 4h, and the methods, picked from the 81 with each one's record so far (win rate, trades, net points; "Pick profitable so far" = net above zero over at least 5 trades). |
-| Strike | the same rule as every strategy: by premium (at least / at most), by strike (ATM ± n), or the OI wall. |
+| Strike | by premium (at least / at most, with a fallback) or by strike (ATM ± n), the same parts as every strategy. |
 | Lots | per signal; **1** on a new signal strategy. |
-| Entry price | the same: at the offer, then at the bid after N seconds (5 by default) if the spread allows; the entry is cancelled if still unfilled 5 minutes after the signal (`SIGNAL_ENTRY_MS`). |
+| Entry price | at the offer, then at the bid after N seconds (5 by default) if the spread allows, or at the bid now; the entry is cancelled if still unfilled 5 minutes after the signal (`SIGNAL_ENTRY_MS`). |
 | SL / TGT | **the signal's own levels on the BTC perpetual**, made per signal by its method: SL = the structure ± 0.25 ATR, TGT = TGT1, or TGT2 / TGT3 where the signal has them (else TGT1). Carried on the trade as `plan.underlying`. |
 | Backstop | the option's own target and stop (the form's take profit / stop loss), resting at Delta as for any strategy: they still work when the desk cannot see the perp. |
 | At once | at most 1-5 of its trades open (`maxOpen`); a signal past it is written down as skipped. |
 | Window | `entryTime` to `exitTime` is when it takes signals; whatever is open closes at `exitTime`. |
-| **Live orders** | **off by default** ([decision 0013](../decisions/0013-entry-setups-measured-before-trusted.md)): each signal is written down as the order it would have been ("would sell PE 84000 x1 @ 18 · perp SL 84600 · TGT 85500") and nothing is sent. On, it places the order. The switch sits in the form's footer on every tab; the list marks the row LIVE ORDERS. |
+| **Live orders** | **off by default** ([decision 0013](../decisions/0013-entry-setups-measured-before-trusted.md)): each signal is written down as the order it would have been ("would sell PE 84000 x1 @ 18 · perp SL 84600 · TGT 85500") and nothing is sent. On, it places the order. The switch sits in the form's footer on every tab, and on each row of Signal Strategies (turning it on takes a second tap); the list marks the row LIVE ORDERS. |
 
 How a signal becomes an order (`StrategyRunner.onSignal`, `strategy/runner.ts`):
 
@@ -159,7 +166,7 @@ How a signal becomes an order (`StrategyRunner.onSignal`, `strategy/runner.ts`):
    and buys the option back the moment it reaches the SL or the TGT; a stale or
    missing price closes nothing and leaves the backstop at Delta.
 
-What each signal did is under **Signals taken** on the Strategies screen:
+What each signal did is under Signal Strategies on the Live screen and **Signals taken** on the Strategy tab; a trade closed at the end of the window adds "closed at 5:29 PM, the end of its window" to its signal's row:
 
 ```sql
 SELECT strategy_id, method, mode, tf, dir, status, detail, at

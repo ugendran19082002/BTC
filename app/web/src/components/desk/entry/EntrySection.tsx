@@ -36,11 +36,13 @@ import './entry.css';
 
 const keyOf = (r: Pick<MethodRead, 'mode' | 'id'>) => `${r.mode}:${r.id}`;
 
-export function EntrySection({ desk, onTimeframes }: {
+export function EntrySection({ desk, onTimeframes, belowHeader }: {
   /** The desk's live 5m candles, last trade, option board and positioning, for the charts. */
   desk: DeskFeed;
   /** Each read's timeframe rows, handed up for the Timeframe analysis card under the Big move catch. */
   onTimeframes?: (rows: TimeframeRow[]) => void;
+  /** Right under the header card (Perp / Mark / Index / Basis), before the panels: the signal strategies. */
+  belowHeader?: React.ReactNode;
 }) {
   const [singleTf, setSingleTf] = usePersisted<EntryTf>('entry:single-tf', '5m');
   const [setupsOn, setSetupsOn] = usePersisted<boolean>('entry:setups-on', true);
@@ -169,6 +171,8 @@ export function EntrySection({ desk, onTimeframes }: {
           </div>
         </div>
       </header>
+
+      {belowHeader}
 
       {error && !board ? <p role="alert" className="m-0 mb-2 text-[12px] text-[var(--down)]">Could not read the entry board: {error.message}</p> : null}
 

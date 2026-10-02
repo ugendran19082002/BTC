@@ -63,12 +63,13 @@ describe('the market read', () => {
 });
 
 describe('the signal strategies, under the entry setups', () => {
-  it('[critical] drawn right after the Entry setups section, before the market read', () => {
+  it('[critical] drawn right under the Entry setups header card (Perp / Mark / Index / Basis), before the panels', () => {
     render(<Overview data={data} trade={null} belowEntry={<section aria-label="Signal strategies">cards</section>} />);
     const entry = screen.getByRole('region', { name: 'entry setups' });
     const sig = screen.getByRole('region', { name: 'Signal strategies' });
     const read = screen.getByRole('region', { name: 'Market read' });
-    expect(entry.nextElementSibling).toBe(sig);
+    expect(entry.contains(sig)).toBe(true);
+    expect(entry.querySelector(':scope > header')!.nextElementSibling).toBe(sig);
     expect(sig.compareDocumentPosition(read) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

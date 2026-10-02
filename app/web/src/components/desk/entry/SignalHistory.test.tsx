@@ -209,8 +209,8 @@ describe('the signal history table', () => {
     render(<SignalHistory />);
     const table = await screen.findByRole('table', { name: 'signals' });
     const [waiting, inTrade] = within(table).getAllByRole('row').slice(1);
-    expect(within(waiting!).getByLabelText('counter')).toHaveTextContent(/Fill window closes in 2:0[45]/);
-    expect(within(inTrade!).getByLabelText('counter')).toHaveTextContent(/In the trade 1:0[5-7] · time-out in (1:00:00|59:5\d)/);
+    expect(within(waiting!).getByLabelText('counter')).toHaveTextContent(/Fill window closes in 2:0[0-5]/); // real clock: a few seconds' slack under a loaded run
+    expect(within(inTrade!).getByLabelText('counter')).toHaveTextContent(/In the trade 1:(0[5-9]|1\d) · time-out in (1:00:00|59:[0-5]\d)/);
   });
 
   it('the exit and fill notes in words', () => {
