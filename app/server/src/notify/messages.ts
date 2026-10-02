@@ -383,7 +383,9 @@ function entryText(e: FillEvent | null, s: TradeState, plan: TradePlan, ctx: Ale
       : e === null ? `✖️ The other ${qty(wanted - s.entrySize)} were cancelled`
         : '⏳ The rest of the order is still working',
     `Premium ${side === 'sell' ? 'collected' : 'paid'}: <b>${inr(credit)}</b> (${usd(credit)})`,
+    signalLine(plan),
     '',
+    perpLine(plan),
     exits(plan),
     footer(s.updatedAt, plan, ctx),
   );
@@ -425,6 +427,8 @@ function exitText(
     `${side === 'buy' ? 'Bought back' : 'Sold back'} <b>${qty(s.exitSize)}</b>${part ? ` of ${qty(s.entrySize)}` : ''}`
       + ` @ <b>${price(s.exitAvgPrice ?? 0)}</b>  (entry ${price(s.entryAvgPrice ?? 0)})`,
     part ? `${pnlIcon(s.realisedPnl)} Booked so far: ${signedMoney(s.realisedPnl, true)}` : pnlLine(s.realisedPnl),
+    signalLine(plan),
+    perpLine(plan),
     !part ? '✔️ Position is <b>flat</b>'
       : partOnPurpose ? `📉 Still ${held} — the rest stays on, with its target and stop put back over it`
         : role === 'take_profit' && plan.takeProfitPrice !== null
@@ -467,7 +471,26 @@ function exits(plan: TradePlan): string {
   // Same rule as the engine's alarm: running without a stop is allowed, but it
   // is said out loud every time rather than left for someone to notice.
   const stop = plan.stopPrice === null ? '⚠️ <b>No stop-loss</b>' : `🛑 Stop ${price(plan.stopPrice)}`;
-  return `${target}   ${stop}`;
+  // A signal strategy's trade exits on the perp; the option's own levels are the backstop at Delta.
+  return `${hasPerpExits(plan) ? 'Option backstop: ' : ''}${target}   ${stop}`;
+}
+
+const hasPerpExits = (plan: TradePlan) => Boolean(plan.underlying && (plan.underlying.stop !== null || plan.underlying.target !== null));
+const btc = (n: number | null) => (n === null ? '—' : Math.round(n).toLocaleString('en-US'));
+
+/** The signal a signal strategy traded: "#1 Breakout BUY · 15m, without the chain". */
+function signalLine(plan: TradePlan): string | null {
+  const g = plan.signal;
+  if (!g) return null;
+  const way = g.mode === 'mtf' ? 'with the timeframe chain' : `${escape(g.tf)}, without the chain`;
+  return `📡 Signal <b>#${g.n} ${escape(g.name)}</b> ${g.dir === 1 ? 'BUY' : 'SELL'} · ${way}`;
+}
+
+/** The trade's real exits, on the BTC perpetual: the signal's SL and TGT. */
+function perpLine(plan: TradePlan): string | null {
+  if (!hasPerpExits(plan)) return null;
+  const u = plan.underlying!;
+  return `📈 BTC perp  🛑 SL <b>${btc(u.stop)}</b>   🎯 TGT <b>${btc(u.target)}</b>`;
 }
 
 /** What the footer calls each origin. "best-pick" is a slug; nobody reads slugs. */
@@ -478,7 +501,9 @@ const ORIGIN_WORDS: Record<string, string> = {
 };
 
 function footer(at: number, plan: TradePlan, ctx: AlertContext): string {
-  const origin = ORIGIN_WORDS[plan.origin ?? (plan.strategyId ? 'strategy' : 'manual')];
+  const kind = plan.origin ?? (plan.strategyId ? 'strategy' : 'manual');
+  // Which strategy, by name: "strategy" alone does not say which of five.
+  const origin = kind === 'strategy' && plan.strategyName ? `strategy “${escape(plan.strategyName)}”` : ORIGIN_WORDS[kind];
   const mode = ctx.mode === 'live' ? 'LIVE' : 'PAPER — simulated, no real order';
   return `🕒 ${istTime(at)} IST · ${origin} · ${mode}`;
 }

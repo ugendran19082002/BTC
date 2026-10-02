@@ -193,6 +193,11 @@ export type PlaceInput = {
    * the id is what everything else joins on; it is not a label. Until 27 Sep
    * 2026 the screen showed the id, so an order placed at 15:55 by a strategy
    * called "3.55" was tagged `5-01-copy`, which reads as 5:01.
+   *
+   * The screens show the strategy's *current* name, looked up by id
+   * (trade.routes.ts `withStrategyName`, 2 Oct 2026: a rename has to reach
+   * Positions and Orders); this stamp is what they fall back on once the
+   * strategy is deleted.
    */
   strategyName?: string;
   /** Who asked for it: the ticket, a strategy, or the best-pick auto-trade. */
@@ -232,6 +237,8 @@ export type PlaceInput = {
   minPremiumUsd?: number;
   /** Exits on the BTC perpetual, for a signal strategy's trade (engine.ts `TradePlan.underlying`). Never set from the ticket. */
   underlying?: TradePlan['underlying'];
+  /** The signal a signal strategy traded (engine.ts `TradePlan.signal`). Never set from the ticket. */
+  signal?: TradePlan['signal'];
 };
 
 export function orderPlan(input: PlaceInput, tradeId: string): TradePlan {
@@ -243,6 +250,8 @@ export function orderPlan(input: PlaceInput, tradeId: string): TradePlan {
     tradeId,
     symbol: input.symbol,
     strategyId: input.strategyId,
+    // The name it was placed under. It used to be dropped here, so a trade never carried one.
+    ...(input.strategyName ? { strategyName: input.strategyName } : {}),
     // Written down once, where it is known. Absent means manual, which is what
     // every trade opened before this field existed was.
     origin: input.origin ?? (input.strategyId ? 'strategy' : 'manual'),
@@ -291,6 +300,7 @@ export function orderPlan(input: PlaceInput, tradeId: string): TradePlan {
     exitAsk: followingAsk(input, basis),
     ...(input.minPremiumUsd !== undefined ? { minPremiumUsd: input.minPremiumUsd } : {}),
     ...(input.underlying ? { underlying: input.underlying } : {}),
+    ...(input.signal ? { signal: input.signal } : {}),
     expect: {
       underlying: 'BTC',
       optionSide: input.optionSide,

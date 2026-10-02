@@ -120,6 +120,10 @@ export function chaseFloor(bid: number, ask: number | null, maxSpreadPct: number
 
 export type TradeOrigin = 'manual' | 'strategy' | 'best-pick';
 
+export type TradeSignal = {
+  method: string; n: number; name: string; mode: 'mtf' | 'single'; tf: string; dir: 1 | -1; triggerTime: number;
+};
+
 export type TradePlan = {
   tradeId: string;
   symbol: string;
@@ -140,6 +144,11 @@ export type TradePlan = {
    * the id is what everything else joins on; it is not a label. Until 27 Sep
    * 2026 the screen showed the id, so an order placed at 15:55 by a strategy
    * called "3.55" was tagged `5-01-copy`, which reads as 5:01.
+   *
+   * The screens show the strategy's *current* name, looked up by id
+   * (trade.routes.ts `withStrategyName`, 2 Oct 2026: a rename has to reach
+   * Positions and Orders); this stamp is what they fall back on once the
+   * strategy is deleted.
    */
   strategyName?: string;
   /**
@@ -232,6 +241,12 @@ export type TradePlan = {
    * this process, and a stop must still work when the process does not.
    */
   underlying?: { dir: 1 | -1; stop: number | null; target: number | null; source: string };
+  /**
+   * The signal a signal strategy traded: which method, which way of reading,
+   * which timeframe, which direction, and its candle (epoch seconds). For the
+   * labels on Positions and Orders and the Telegram alerts.
+   */
+  signal?: TradeSignal;
   expect: { underlying: string; optionSide: OptionSide; strike: number; expiryTs: number };
 };
 

@@ -361,6 +361,28 @@ export class StrategyStore {
     );
   }
 
+  /**
+   * How many of this strategy's "would sell" signals are still in play: their
+   * signal, in the paper log, waiting at its zone or filled and not yet out.
+   *
+   * With live orders off nothing is placed, so counting open trades found none,
+   * and "at most 2 open" let seven signals through (2 Oct 2026). The paper log
+   * grades every signal on the live tape (entry/live-grade.ts), so it knows
+   * when the trade that would have been is over.
+   */
+  async wouldBeOpen(strategyId: string): Promise<number> {
+    const r = await one<{ n: number }>(
+      `SELECT COUNT(*)::int AS n
+         FROM strategy_signal_runs r
+         JOIN entry_setups e
+           ON e.method = r.method AND e.mode = r.mode AND e.tf = r.tf AND e.dir = r.dir
+          AND e.trigger_at = split_part(r.signal_key, '|', 5)::bigint
+        WHERE r.strategy_id = $1 AND r.status = 'would-place' AND e.status IN ('open', 'filled')`,
+      [strategyId],
+    );
+    return r?.n ?? 0;
+  }
+
   /** Add to the signal's row what became of the trade it placed: "closed at 5:29 PM". */
   async noteSignalTrade(tradeId: string, note: string): Promise<void> {
     await query(

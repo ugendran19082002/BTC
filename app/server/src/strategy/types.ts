@@ -268,7 +268,8 @@ export type SignalRule = {
 };
 export type SignalTf = '3m' | '5m' | '15m' | '30m' | '1h' | '4h';
 export const SIGNAL_TFS: readonly SignalTf[] = ['3m', '5m', '15m', '30m', '1h', '4h'];
-export const MAX_SIGNAL_OPEN = 5;
+/** "At most open at once" is typed, 1 to this. */
+export const MAX_SIGNAL_OPEN = 100;
 
 /** The leg a signal is traded as: a BUY sells the put, a SELL the call -- each wins as the signal goes right. */
 export const legOfSignal = (dir: 'long' | 'short' | 1 | -1): 'CE' | 'PE' => (dir === 'long' || dir === 1 ? 'PE' : 'CE');

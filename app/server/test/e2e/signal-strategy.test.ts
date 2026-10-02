@@ -32,6 +32,7 @@ type SignalBoard = import('../../src/strategy/runner.js').SignalBoard;
 
 await initTradingService();
 await initStrategyStore();
+await (await import('../../src/entry/paper.js')).entrySchema();
 const auth = await AuthStore.open();
 await auth.seedUser('desk', hashPassword('correct horse battery'), Date.now());
 await auth.createSession({ token: 'sig-session', stage: 'full', now: Date.now(), ttlMs: 3_600_000, ip: null, userAgent: null });
@@ -238,4 +239,76 @@ test('[critical] auto-trading off, or outside its window: nothing taken', async 
   await runner.onSignal(signal({ dir: 'short' }));
   clock = TEN;
   assert.equal((await runsOf('sig-bo-sell')).length, n);
+});
+
+// ------------------------------------------------------------ renamed
+
+test('[critical] renamed: its open position, its order history and the order detail all say the new name', async () => {
+  const open = (await runsOf('sig-bo-sell')).find((x) => x.status === 'placed')!;
+  const closed = (await runsOf('sig-bo')).find((x) => x.status === 'placed')!;
+  const before = await api('GET', '/api/trade/status');
+  assert.equal(before.body.open.find((t: any) => t.tradeId === open.trade_id).plan.strategyName, 'Sig BO sell', 'the name it was placed under');
+
+  const sell = (await strategyStore().get('sig-bo-sell'))!;
+  assert.equal((await api('POST', '/api/strategies', { id: 'sig-bo-sell', name: 'Breakout CE', config: sell.config })).status, 200);
+  const bo = (await strategyStore().get('sig-bo'))!;
+  assert.equal((await api('POST', '/api/strategies', { id: 'sig-bo', name: 'Breakout PE', config: bo.config })).status, 200);
+
+  await new Promise((r) => setTimeout(r, 1_000));     // past the status cache (STATUS_TTL_MS)
+  const status = await api('GET', '/api/trade/status');
+  const pos = status.body.open.find((t: any) => t.tradeId === open.trade_id);
+  assert.equal(pos.plan.strategyName, 'Breakout CE', 'Positions');
+  assert.equal(pos.plan.strategyId, 'sig-bo-sell', 'the id does not change');
+
+  const history = await api('GET', '/api/trade/history');
+  const names = new Map(history.body.trades.map((t: any) => [t.tradeId, t.plan.strategyName]));
+  assert.equal(names.get(open.trade_id), 'Breakout CE', 'Orders, open');
+  assert.equal(names.get(closed.trade_id), 'Breakout PE', 'Orders, closed');
+
+  const detail = await api('GET', `/api/trade/${encodeURIComponent(closed.trade_id!)}`);
+  assert.equal(detail.body.trade.plan.strategyName, 'Breakout PE', 'the order detail');
+  // the journal keeps what was true when it was placed
+  const stored = await one<{ plan: any }>('SELECT plan FROM trades WHERE trade_id = $1', [closed.trade_id]);
+  assert.equal(stored!.plan.strategyName, 'Sig BO');
+  // and the signal it traded, for the labels
+  assert.deepEqual(detail.body.trade.plan.signal, { method: 'breakout', n: 1, name: 'Breakout', mode: 'single', tf: '5m', dir: 1, triggerTime: stored!.plan.signal.triggerTime });
+  assert.deepEqual(detail.body.trade.plan.underlying, { dir: 1, stop: 84_600, target: 85_500, source: 'BTC perp' });
+});
+
+// ------------------------------------------------------------ at most N open, with live orders off
+
+test('[critical] live orders off: "at most 2 open" counts the would-sells still in play -- the third waits', async () => {
+  const cfg2 = { ...config, signal: { ...config.signal, maxOpen: 2 }, liveOrders: false };
+  assert.equal((await api('POST', '/api/strategies', { name: 'Sig cap', config: cfg2 })).status, 200);
+  await api('POST', '/api/strategies/sig-cap/enabled', { enabled: true });
+  await api('POST', '/api/strategies/sig-bo-sell/enabled', { enabled: false });
+  const take = async () => {
+    const s = signal();
+    // the paper log writes every TRADE before the runner sees it (index.ts recordSetups)
+    await rows(`INSERT INTO entry_setups (method, mode, tf, dir, trigger_at, first_seen, entry_lo, entry_hi, stop, tp1, rr, graded_to)
+                VALUES ($1, $2, $3, 1, $4, $5, 84950, 85000, 84600, 85500, 1.25, 0)`, [s.id, s.mode, s.tf, s.triggerTime, Date.now()]);
+    return s;
+  };
+  for (const sym of [`P-BTC-${PUT}-${EXPIRY}`, `C-BTC-${CALL}-${EXPIRY}`]) {
+    paper().setQuote({ symbol: sym, bid: 18, ask: 18.5, bidSize: 5_000, askSize: 5_000, mark: 18.2, ts: Date.now() });
+  }
+  // seven signals in the same minute, side by side, as the recorder hands them over
+  const seven = await Promise.all(Array.from({ length: 7 }, take));
+  await Promise.all(seven.map((s) => runner.onSignal(s)));
+  const runs = await runsOf('sig-cap');
+  assert.equal(runs[0]!.status, 'would-place', runs[0]!.detail);
+  assert.deepEqual(runs.map((r) => r.status), ['would-place', 'would-place', 'skipped', 'skipped', 'skipped', 'skipped', 'skipped']);
+  assert.match(runs[2]!.detail, /already 2 of its trades open \(at most 2\)/);
+
+  // one of the two ends (its paper trade stopped out): the next signal is taken
+  await rows(`UPDATE entry_setups SET status = 'stop' WHERE trigger_at = $1`, [seven[0]!.triggerTime]);
+  await runner.onSignal(await take());
+  assert.equal((await runsOf('sig-cap')).at(-1)!.status, 'would-place');
+});
+
+test('a deleted strategy\'s trades keep the name they were placed under', async () => {
+  const closed = (await runsOf('sig-bo')).find((x) => x.status === 'placed')!;
+  await app.inject({ method: 'DELETE', url: '/api/strategies/sig-bo', headers: cookie });
+  const history = await api('GET', '/api/trade/history');
+  assert.equal(history.body.trades.find((t: any) => t.tradeId === closed.trade_id).plan.strategyName, 'Sig BO');
 });

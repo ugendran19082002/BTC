@@ -18,6 +18,7 @@ import {
 import { refuse } from '../refuse.js';
 import { parseAddBody, toAddRequest, type AddBody } from '../add-body.js';
 import { parseCloseBody, type CloseBody } from '../close-body.js';
+import { strategyStore } from './strategy.routes.js';
 
 /**
  * The order desk.
@@ -67,6 +68,30 @@ const atOf = (p: { takeProfitPrice: number | null; stopPrice: number | null }) =
   ...(p.takeProfitPrice !== null && p.takeProfitPrice > 0 ? { takeProfitAt: p.takeProfitPrice } : {}),
   ...(p.stopPrice !== null && p.stopPrice > 0 ? { stopAt: p.stopPrice } : {}),
 });
+
+/**
+ * Every strategy's name as it is now, by id.
+ *
+ * A trade keeps the id of the strategy that placed it, and the id is made from
+ * the name the strategy was first saved with -- so a strategy renamed from
+ * "Sig BO" to "Breakout PE" went on showing "sig-bo" on its positions and its
+ * orders while the list said "Breakout PE". The name is looked up here, as it
+ * stands, each time a trade is shown. Empty when the strategy tables are not
+ * open (a test that never started them); the screen then shows the id.
+ */
+export async function strategyNames(): Promise<Map<string, string>> {
+  try {
+    return new Map((await strategyStore().all()).map((x) => [x.id, x.name]));
+  } catch {
+    return new Map();
+  }
+}
+
+/** A trade with its strategy's current name on the plan; a deleted strategy keeps the name it placed the trade under. */
+export const withStrategyName = (r: TradeRecord, names: ReadonlyMap<string, string>): TradeRecord => {
+  const now = r.plan.strategyId ? names.get(r.plan.strategyId) : undefined;
+  return now === undefined || now === r.plan.strategyName ? r : { ...r, plan: { ...r.plan, strategyName: now } };
+};
 
 export const tradeView = (
   r: TradeRecord,
@@ -130,6 +155,11 @@ export const tradeView = (
        */
       origin: r.plan.origin ?? (r.plan.strategyId ? 'strategy' : 'manual'),
       strategyId: r.plan.strategyId ?? null,
+      /** The strategy's name -- its current one when the route looked it up (`withStrategyName`). */
+      strategyName: r.plan.strategyName ?? null,
+      /** A signal strategy's trade: the signal, and its SL and TGT on the BTC perp. */
+      signal: r.plan.signal ?? null,
+      underlying: r.plan.underlying ?? null,
       entry: r.plan.entry,
       takeProfitPrice: r.plan.takeProfitPrice,
       stopPrice: r.plan.stopPrice,
@@ -289,7 +319,8 @@ export function registerTradeRoutes(app: FastifyInstance) {
       svc.balanceForDisplay().catch(() => null),
       svc.positionsForDisplay().catch(() => []),
     ]);
-    const trades = await svc.openTrades();
+    const names = await strategyNames();
+    const trades = (await svc.openTrades()).map((t) => withStrategyName(t, names));
     // Both cached at the server for under a second, so this costs nothing per poll.
     const symbols = [...new Set(trades.map((t) => t.state.symbol))];
     // Each trade carries its own contract value, so there is no product to look
@@ -817,7 +848,9 @@ export function registerTradeRoutes(app: FastifyInstance) {
     const wanted = ORDER_STATUSES.find((x) => x === q.status) ?? null;
     const limit = Math.min(1_000, Number(q.limit ?? 500));
 
-    const records = await svc.store.between(Math.min(from, to), Math.max(from + 86_400_000, to), limit);
+    const names = await strategyNames();
+    const records = (await svc.store.between(Math.min(from, to), Math.max(from + 86_400_000, to), limit))
+      .map((r) => withStrategyName(r, names));
 
     /*
      * Prices for the trades still open, so their row can say what closing now
@@ -865,6 +898,6 @@ export function registerTradeRoutes(app: FastifyInstance) {
     const { tradeId } = req.params as { tradeId: string };
     const rec = await svc.store.get(tradeId);
     if (!rec) { reply.code(404); return { error: 'no such trade' }; }
-    return { trade: tradeView(rec), events: rec.events };
+    return { trade: tradeView(withStrategyName(rec, await strategyNames())), events: rec.events };
   });
 }

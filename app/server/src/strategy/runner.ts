@@ -318,6 +318,20 @@ export class StrategyRunner {
    * with the gates' answer, which is how a method earns a live switch.
    */
   async onSignal(r: MethodRead): Promise<void> {
+    /*
+     * One signal at a time. The recorder hands over every new TRADE of a minute
+     * at once, and taken side by side each counted the open trades before any
+     * of them had placed -- so all of them passed "at most N open". In turn,
+     * each one sees the ones before it.
+     */
+    const mine = this.signalQueue.then(() => this.onSignalNow(r));
+    this.signalQueue = mine.catch(() => {});
+    return mine;
+  }
+
+  private signalQueue: Promise<void> = Promise.resolve();
+
+  private async onSignalNow(r: MethodRead): Promise<void> {
     if (r.state !== 'TRADE' || !r.plan || r.dir === null || r.triggerTime === null) return;
     if (!this.armed()) return;
     for (const s of await this.store.all()) {
@@ -342,9 +356,11 @@ export class StrategyRunner {
     const svc = tradingService();
     // Every trade of its own not yet finished -- a working entry included: one resting at the offer, not yet
     // filled, is still a trade, and counting only positions let a second signal place a second order.
-    const open = (await svc.openTrades()).filter((t) => t.plan.strategyId === s.id);
-    if (open.length >= rule.maxOpen) {
-      await finish('skipped', `already ${open.length} of its trade${open.length === 1 ? '' : 's'} open (at most ${rule.maxOpen})`);
+    // And, with live orders off, every "would sell" whose signal is still in play in the paper log.
+    const open = (await svc.openTrades()).filter((t) => t.plan.strategyId === s.id).length
+      + await this.store.wouldBeOpen(s.id);
+    if (open >= rule.maxOpen) {
+      await finish('skipped', `already ${open} of its trade${open === 1 ? '' : 's'} open (at most ${rule.maxOpen})`);
       return;
     }
 
@@ -367,6 +383,7 @@ export class StrategyRunner {
       }),
       // The signal's own levels, on the perp: the trade's real exits. The premium stop stays at Delta as the backstop.
       underlying: { dir, stop: plan.stop, target, source: 'BTC perp' },
+      signal: { method: r.id, n: r.n, name: r.name, mode: r.mode, tf: r.tf, dir, triggerTime: r.triggerTime! },
     };
     const what = `sell ${leg} ${chosen.strike} x${chosen.lots} @ ${chosen.price} · perp SL ${Math.round(plan.stop)} · TGT ${Math.round(target)}`;
 
