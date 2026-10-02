@@ -6,8 +6,10 @@ import { DEFAULT_CONFIG, type Strategy, type StrategyStatus } from '@/types/stra
 const getStrategies = vi.fn();
 const saveStrategy = vi.fn();
 const setStrategyEnabled = vi.fn();
+const getSignalTrades = vi.fn();
 vi.mock('@/api/strategy', () => ({
   getStrategies: (...a: unknown[]) => getStrategies(...a),
+  getSignalTrades: (...a: unknown[]) => getSignalTrades(...a),
   saveStrategy: (...a: unknown[]) => saveStrategy(...a),
   setStrategyEnabled: (...a: unknown[]) => setStrategyEnabled(...a),
 }));
@@ -32,6 +34,8 @@ const status = (strategies: Strategy[], over: Partial<StrategyStatus> = {}): Str
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
+  getSignalTrades.mockImplementation(async () => ({ from: null, to: null, trades: (await getStrategies()).signalTrades ?? [] }));
   saveStrategy.mockResolvedValue({ ok: true });
   setStrategyEnabled.mockResolvedValue({ ok: true });
 });
@@ -112,6 +116,8 @@ describe('signal strategies on the Live screen', () => {
     }));
     render(<SignalStrategiesCard />);
     const table = await screen.findByRole('table', { name: 'signal trades' });
+    // asked of the server for today, by IST day
+    expect(getSignalTrades).toHaveBeenCalledWith({ from: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), to: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
     expect(within(table).getByText('#6 BOS SELL')).toBeInTheDocument();
     expect(table).toHaveTextContent('in the trade');
     expect(screen.queryByRole('table', { name: 'signals taken' })).toBeNull();

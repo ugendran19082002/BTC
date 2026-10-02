@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import { FoldButton, useFold } from '@/components/ui/fold';
 import type { MethodRead } from '@/types/entry';
 import { usePersisted } from '@/hooks/usePersisted';
 import { GROUP_NAME, GateChip, METHOD_VIEWS, NumberBadge, SignalChip, ViewChips, viewReads, type MethodView } from './parts';
@@ -19,6 +20,7 @@ export function MethodLegend({ single, mtf, chosenId, onChoose }: {
   chosenId: string | null;
   onChoose: (id: string) => void;
 }) {
+  const [open, setOpen] = useFold('entry-methods');
   const [view, setView] = usePersisted<MethodView>('entry:legend-view', 'all');
   const all = (mtf.length ? mtf : single).map((m) => ({
     m, n: m.n, group: m.group,
@@ -32,9 +34,9 @@ export function MethodLegend({ single, mtf, chosenId, onChoose }: {
   const rows = viewReads(all.map((r) => ({ ...r, state: best(r) })), view);
   const counts = Object.fromEntries(METHOD_VIEWS.map((v) => [v, viewReads(all.map((r) => ({ ...r, state: best(r) })), v).length]));
   return (
-    <section aria-label="entry methods" className="h-full rounded-xl border border-border p-2.5">
-      <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-        <h3 className="m-0 text-[13px] font-bold">Entry methods <span className="font-normal text-muted-foreground">· {all.length}, the numbers used on both sides below</span></h3>
+    <section aria-label="entry methods" data-folded={!open} className="fold-host h-full rounded-xl border border-border bg-[var(--panel)] p-2.5">
+      <div className="fold-head mb-1.5 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="m-0 flex items-center gap-1 text-[13px] font-bold"><FoldButton open={open} onToggle={() => setOpen(!open)} label="entry methods" className="-ml-1" />Entry methods <span className="font-normal text-muted-foreground">· {all.length}, the numbers used on both sides below</span></h3>
         <ViewChips value={view} onChange={setView} label="methods view" counts={counts} />
       </div>
       <div className="max-h-[560px] overflow-auto rounded border border-border/60">

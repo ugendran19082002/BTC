@@ -70,8 +70,8 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
   const mine = data?.strategies.filter((s) => s.config.trigger === 'signal') ?? [];
 
   return (
-    <section className="live-signal-strategies fold-host" data-folded={!open} aria-label="Signal strategies">
-      <div className="desk-section-header fold-head">
+    <section className="live-signal-strategies fold-host mt-3 rounded-xl border border-solid border-border bg-[var(--panel)] p-3" data-folded={!open} aria-label="Signal strategies">
+      <div className="desk-section-header fold-head !mt-0">
         <div className="desk-section-title-wrap">
           <FoldButton open={open} onToggle={() => setOpen(!open)} label="signal strategies" />
           <div className="desk-section-icon" style={{ background: 'rgba(250, 204, 21, 0.12)', color: '#facc15' }}>

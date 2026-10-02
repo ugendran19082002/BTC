@@ -1115,15 +1115,22 @@ export class TradeEngine {
       if (moved) await this.d.store.save(rec);
     }
 
-    // The stop is judged here as well as at the exchange. This runs after
-    // protection, so a stop reached on the very first poll still exits. The
-    // target is not judged here at all -- see `stopIfReached` for why.
-    if (rec.state.position !== 0 && rec.state.phase !== 'exit_pending') {
-      rec = await this.stopIfReached(rec);
-    }
-    // And the underlying's levels, for a trade that has them (a signal strategy's).
+    /*
+     * The exits the desk judges itself, in order (owner, 2 Oct 2026: "the perp first, else the option"):
+     *
+     *   1. the underlying's levels -- a signal trade's SL and TGT on the BTC perp, its real exits;
+     *   2. the option's own stop, judged here as well as at the exchange (after protection, so a stop
+     *      reached on the very first poll still exits). The option's target is not judged here at all --
+     *      it rests at Delta; see `stopIfReached`.
+     *
+     * Both in one poll only matters when both are reached in the same second; then the perp's reason is
+     * the one written, and the option stop finds the position already closing.
+     */
     if (rec.state.position !== 0 && rec.state.phase !== 'exit_pending') {
       rec = await this.underlyingExit(rec);
+    }
+    if (rec.state.position !== 0 && rec.state.phase !== 'exit_pending') {
+      rec = await this.stopIfReached(rec);
     }
 
     if (rec.state.position === 0 && rec.state.entrySize > 0 && rec.state.phase !== 'flat') {

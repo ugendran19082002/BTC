@@ -195,6 +195,12 @@ test('[critical] the put fills -- at the bid after 5 s -- and at the end of its 
   );
   const fill = filled!.state.fills.find((f: any) => f.role === 'entry');
   assert.equal(fill.price, 18, 'crossed to the bid after 5 s');
+  // The option's own target and stop reach Delta as well: the backstop, working with the desk down.
+  const book = await until(
+    async () => (await paper().getOpenOrders(`P-BTC-${PUT}-${EXPIRY}`)).filter((o) => o.reduceOnly),
+    (o) => o.length === 2, 'the option target and stop on the book');
+  assert.ok(book.some((o) => o.type === 'limit' && o.limitPrice! < 18), 'the option target, a buy-back under the entry');
+  assert.ok(book.some((o) => o.type !== 'limit' && o.stopPrice! > 18), 'the option stop, the backstop above it');
   clock = TEN + 7 * 3_600_000 + 60_000;              // 17:01 IST, past its 17:00 end
   await (runner as unknown as { considerExit(s: unknown): Promise<void> }).considerExit((await strategyStore().get('sig-bo'))!);
   clock = TEN;

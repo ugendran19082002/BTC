@@ -607,8 +607,8 @@ export default function App() {
             controls. A tap on a price opens the same ticket; a tap on a strike
             makes it the one the panels above are about.
           */}
-          <section className="live-chain fold-host" data-folded={!chainOpen} aria-label="Option chain">
-            <div className="desk-section-header fold-head">
+          <section className="live-chain fold-host rounded-xl border border-solid border-border bg-[var(--panel)] p-3" data-folded={!chainOpen} aria-label="Option chain">
+            <div className="desk-section-header fold-head !mt-0">
               <div className="desk-section-title-wrap">
                 <FoldButton open={chainOpen} onToggle={() => setChainOpen(!chainOpen)} label="option chain board" />
                 <div className="desk-section-icon" style={{ background: 'rgba(168, 85, 247, 0.12)', color: '#a855f7' }}>

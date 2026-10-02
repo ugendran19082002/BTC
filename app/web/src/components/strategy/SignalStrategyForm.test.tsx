@@ -224,7 +224,7 @@ describe('the SL and TGT on the BTC perp, from the live signal', () => {
     tab('Entry & exit');
     expect(screen.getByText(/Still unfilled 5 minutes\s+later, it is cancelled/)).toBeInTheDocument();
     expect(screen.getByLabelText('exits on the BTC perp')).toHaveTextContent(/the signal's own levels on the BTC perpetual/);
-    expect(screen.getByText(/Backstop on the option at Delta/)).toBeInTheDocument();
+    expect(screen.getByText(/Option TP \/ SL — the backstop at Delta/)).toBeInTheDocument();
     // the entry is still priced the same way: at the offer, at the bid after 5 s
     expect(screen.getByRole('radio', { name: 'Offer' })).toHaveAttribute('aria-checked', 'true');
     expect(screen.getByLabelText('cross after seconds')).toHaveValue('5');
@@ -386,5 +386,24 @@ describe('the method list: profitable by a rule you can see, and filtered by res
     expect(screen.getAllByRole('checkbox').map((c) => c.getAttribute('aria-label'))).toEqual(['#1 Breakout', '#3 Liquidity sweep']);
     fireEvent.click(screen.getByRole('button', { name: 'Reversal', pressed: false }));
     expect(within(by).getAllByRole('button').map((b) => b.textContent)).toEqual(['All 1', 'Profit 1', 'Loss 0', 'No trades 0']);
+  });
+});
+
+describe('the exits: the perp first, the option as the backstop', () => {
+  it('[critical] the order is said; a new strategy starts with a backstop stop', () => {
+    show(null);
+    tab('Entry & exit');
+    expect(screen.getByLabelText('exit order')).toHaveTextContent(/BTC perp SL \/ TGT.*Checked first.*Option TP \/ SL.*resting at Delta/);
+    expect(screen.getByLabelText('Stop loss percent')).toHaveValue('200');
+    expect(screen.queryByText(/No option stop/)).toBeNull();
+  });
+
+  it('[critical] with the option stop off it says what that means, and one tap sets a backstop', () => {
+    show(signalStrategy({}, { stopLossPct: 0 }));
+    tab('Entry & exit');
+    expect(screen.getByText(/No option stop: if the desk cannot see the perp/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Set a backstop stop at \+200%/ }));
+    expect(screen.queryByText(/No option stop/)).toBeNull();
+    expect(screen.getByLabelText('Stop loss percent')).toHaveValue('200');
   });
 });

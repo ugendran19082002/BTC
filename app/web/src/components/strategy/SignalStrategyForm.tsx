@@ -169,10 +169,28 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
                 </Stack>
               </div>
 
+              {/*
+                The order the exits are judged in, said once (owner, 2 Oct 2026: "the perp first, else the
+                option"): the desk checks the perp every second; the option's target and stop rest at Delta
+                all the while, and work when the desk is down.
+              */}
+              <ol className="m-0 mt-3 list-decimal space-y-0.5 pl-5 text-[11.5px] leading-snug text-muted-foreground" aria-label="exit order">
+                <li><b className="text-foreground">BTC perp SL / TGT</b> — the signal&apos;s levels, checked by the desk every second. Checked first.</li>
+                <li><b className="text-foreground">Option TP / SL</b> — resting at Delta: whichever is reached first closes the trade, and they still work if the desk is down.</li>
+              </ol>
               <div className="mt-3 text-[12px] text-muted-foreground">
-                Backstop on the option at Delta — in case the desk cannot see the perp
+                Option TP / SL — the backstop at Delta
               </div>
               <OptionExitFields c={c} setC={d.setC} exits={d.exits} err={err} reference={d.reference} warnings={d.warnings} className="mt-1" />
+              {d.exits.stop.value <= 0 && !d.exits.stop.steps.some((st) => st.value > 0) && (
+                <p role="alert" className="m-0 mt-2 rounded-md border border-solid border-[var(--warn)]/40 bg-[var(--warn)]/10 px-2.5 py-2 text-[11.5px] leading-snug text-[var(--warn)]">
+                  No option stop: if the desk cannot see the perp (down, restarting, no feed), nothing limits the loss.{' '}
+                  <button type="button" onClick={() => d.setC((p) => ({ ...p, stopMode: 'pct', stopLossPct: 2, stopSteps: [] }))}
+                          className="m-0 appearance-none border-0 bg-transparent p-0 font-[inherit] text-[11.5px] text-[var(--accent)] underline underline-offset-2">
+                    Set a backstop stop at +200% (buys back at 3× the entry)
+                  </button>
+                </p>
+              )}
             </>
           )}
 

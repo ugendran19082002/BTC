@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import { FoldButton, useFold } from '@/components/ui/fold';
 import type { EntryMode, MethodRead } from '@/types/entry';
 import { gateTick } from './parts';
 
@@ -19,12 +20,13 @@ export function GateChecklist({ selected, mode, onMode }: {
   mode: EntryMode;
   onMode: (m: EntryMode) => void;
 }) {
+  const [open, setOpen] = useFold('entry-gates');
   const read = selected[mode];
   const gates = read?.dir ? read.gates : [];
   return (
-    <section aria-label="hard gates" className="h-full rounded-xl border border-border p-2.5 text-[12px]">
-      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-        <h3 className="m-0 text-[13px] font-bold">Hard gates</h3>
+    <section aria-label="hard gates" data-folded={!open} className="fold-host h-full rounded-xl border border-border bg-[var(--panel)] p-2.5 text-[12px]">
+      <div className="fold-head mb-1 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="m-0 flex items-center gap-1 text-[13px] font-bold"><FoldButton open={open} onToggle={() => setOpen(!open)} label="hard gates" className="-ml-1" />Hard gates</h3>
         <div role="group" aria-label="hard gates for" className="inline-flex overflow-hidden rounded border border-border text-[11px]">
           {(['single', 'mtf'] as const).map((m) => (
             <button key={m} type="button" aria-pressed={mode === m} onClick={() => onMode(m)}

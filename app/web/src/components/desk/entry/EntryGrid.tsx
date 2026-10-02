@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { FoldButton, useFold } from '@/components/ui/fold';
 import { cn } from '@/lib/utils';
 import type { EntryMode, EntryTf, MethodRead } from '@/types/entry';
 import { PriceChart } from '@/components/desk/PriceChart';
@@ -22,6 +23,7 @@ export function EntryGrid({ mode, onMode, reads, singleTf, setupsOn, chart }: {
   setupsOn: boolean;
   chart: (tf: EntryTf) => ChartFeed;
 }) {
+  const [open, setOpen] = useFold('entry-grid');
   const tf = mode === 'mtf' ? '5m' : singleTf;
   // Candles only: the order-flow layers are for the panels' larger charts.
   const { bars, loading } = chart(tf);
@@ -29,7 +31,11 @@ export function EntryGrid({ mode, onMode, reads, singleTf, setupsOn, chart }: {
   // Signals first, at most GRID_MAX charts: each is a whole price chart.
   const shown = useMemo(() => viewReads(reads, 'all').slice(0, GRID_MAX), [reads]);
   return (
-    <div>
+    <section aria-label="entry charts" data-folded={!open} className="fold-host rounded-xl border border-border bg-[var(--panel)] p-2.5">
+      <div className="fold-head mb-2 flex items-center gap-1">
+        <FoldButton open={open} onToggle={() => setOpen(!open)} label="entry charts" className="-ml-1" />
+        <h3 className="m-0 text-[13px] font-bold">Charts</h3>
+      </div>
       <div role="group" aria-label="grid mode" className="mb-2 inline-flex overflow-hidden rounded-md border border-border text-[12px]">
         {(['single', 'mtf'] as const).map((m) => (
           <button key={m} type="button" aria-pressed={mode === m} onClick={() => onMode(m)}
@@ -58,6 +64,6 @@ export function EntryGrid({ mode, onMode, reads, singleTf, setupsOn, chart }: {
           </figure>
         ))}
       </div>
-    </div>
+    </section>
   );
 }

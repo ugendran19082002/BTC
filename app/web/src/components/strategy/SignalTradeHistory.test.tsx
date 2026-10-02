@@ -28,7 +28,11 @@ const strategies = [
   { id: 'other', name: 'BOS chain', enabled: true, config: DEFAULT_CONFIG },
 ] as unknown as Strategy[];
 
-beforeEach(() => localStorage.clear());
+beforeEach(() => {
+  localStorage.clear();
+  // these tests hand their trades in, on fixed days: all time, not today
+  localStorage.setItem('btc-desk:signal-trades:range', 'null');
+});
 
 describe('the signal trade history', () => {
   it('[critical] each trade: signal, option, perp entry, option entry, perp SL, perp TGT, exit, result, P&L -- with the times', () => {
@@ -236,5 +240,41 @@ describe('the Excel download', () => {
     expect(screen.getByRole('button', { name: 'download as a spreadsheet' })).toBeEnabled();
     fireEvent.click(screen.getByRole('button', { name: /^Live orders/ }));
     expect(screen.getByRole('button', { name: 'download as a spreadsheet' })).toBeDisabled();
+  });
+});
+
+describe('the date picker', () => {
+  it('[critical] today by default; a day picked shows only that day, and is said in the totals', () => {
+    localStorage.removeItem('btc-desk:signal-trades:range');
+    const today = Date.now();
+    render(<SignalTradeHistory trades={[trade({ id: 1, at: today }), trade({ id: 2, at: today - 3 * 86_400_000 })]} strategies={strategies} />);
+    expect(screen.getByLabelText('history totals')).toHaveTextContent(/^today · 1 trade/);
+  });
+
+  it('all time shows every day', () => {
+    render(<SignalTradeHistory trades={[trade({ id: 1, at: Date.now() }), trade({ id: 2, at: Date.now() - 3 * 86_400_000 })]} strategies={strategies} />);
+    expect(screen.getByLabelText('history totals')).toHaveTextContent(/^all time · 2 trades/);
+  });
+});
+
+describe('which exit closed it', () => {
+  const closedBy = (exitBy: NonNullable<NonNullable<SignalTrade['option']>['exitBy']>, pnlUsd = 0.01) =>
+    ({ ...LIVE_WON, option: { ...LIVE_WON.option!, exitBy, pnlUsd, optionTarget: 2.5, optionStop: null, exitAt: AT + 60_000 } });
+
+  it('[critical] the Result names the exit: perp SL/TGT, option TGT/SL, window end, by hand', () => {
+    expect(outcomeOf(closedBy('perp-tgt')).word).toBe('perp TGT');
+    expect(outcomeOf(closedBy('perp-sl', -0.01)).word).toBe('perp SL');
+    expect(outcomeOf(closedBy('option-tgt')).word).toBe('option TGT');
+    expect(outcomeOf(closedBy('option-sl', -0.01)).word).toBe('option SL');
+    expect(outcomeOf(closedBy('window-end')).word).toBe('window end');
+    expect(outcomeOf(closedBy('manual')).word).toBe('closed by hand');
+  });
+
+  it('[critical] an option exit puts its time under the option exit, not the perp levels; the option TP/SL are shown, an off stop said', () => {
+    render(<SignalTradeHistory trades={[closedBy('option-tgt')]} strategies={strategies} />);
+    const [, row] = within(screen.getByRole('table', { name: 'signal trades' })).getAllByRole('row');
+    expect(within(row!).getByLabelText('perp TGT')).toHaveTextContent(/^84,500(TGT2.*)?$/);   // no exit time: not the perp's TGT
+    expect(within(row!).getByLabelText('option exit')).toHaveTextContent(/^\$4\.5\d{2} Oct/);
+    expect(within(row!).getByLabelText('option exits')).toHaveTextContent('TP $2.5 · SL off');
   });
 });

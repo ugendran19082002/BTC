@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Download, Search } from 'lucide-react';
 import { downloadCsv, toCsv, type CsvColumn } from '@/lib/csv';
 import { getSignalTrades } from '@/api/strategy';
@@ -152,7 +153,9 @@ export function outcomeOf(t: SignalTrade): Outcome {
   if (o) {
     if (o.entry === null) return { word: o.open ? 'entry working' : 'not filled', tone: o.open ? 'open' : 'quiet', at: null, price: null };
     if (o.open) return { word: 'open', tone: 'open', at: null, price: null };
-    const why = o.exitReason
+    // The server names the exit (strategy/store.ts `exitByOf`); an older server, guessed from the reason.
+    const BY = { 'perp-sl': 'perp SL', 'perp-tgt': 'perp TGT', 'option-tgt': 'option TGT', 'option-sl': 'option SL', 'window-end': 'window end', manual: 'closed by hand' } as const;
+    const why = o.exitBy ? BY[o.exitBy] : o.exitReason
       ? /stop/i.test(o.exitReason) ? 'perp SL' : /target/i.test(o.exitReason) ? 'perp TGT' : /window|exit time/i.test(o.exitReason) ? 'window end' : 'closed'
       : o.pnlUsd > 0 ? 'target' : 'stop / closed';
     return { word: why, tone: o.pnlUsd > 0 ? 'up' : o.pnlUsd < 0 ? 'down' : 'quiet', at: null, price: o.exit };
@@ -218,9 +221,8 @@ export function SignalTradeHistory({ trades: given, strategies }: {
     on ? 'border-foreground bg-muted text-foreground' : 'border-border bg-transparent text-muted-foreground');
 
   return (
-    <div className="mt-3" aria-label="signal trade history">
-      <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-        <h3 className="m-0 text-[13.5px] font-semibold text-foreground">Trade history</h3>
+    <CollapsibleCard id="signal-trade-history" title="Trade history" ariaLabel="signal trade history" className="mt-3 bg-[var(--panel)]"
+      right={
         <div className="flex flex-wrap items-center gap-1.5">
           <DateRangePicker allowAll value={range} onChange={setRange} />
           <button type="button" onClick={() => downloadCsv(`signal-trades-${tab.v}-${range ? (range.from === range.to ? range.from : `${range.from}-to-${range.to}`) : 'all-time'}.csv`, tradesCsv(rows, nameOf))}
@@ -229,6 +231,10 @@ export function SignalTradeHistory({ trades: given, strategies }: {
                   className="m-0 inline-flex h-8 appearance-none items-center gap-1 rounded-md border border-solid border-border bg-transparent px-2.5 font-[inherit] text-[12px] text-foreground disabled:opacity-40">
             <Download className="h-3.5 w-3.5" aria-hidden /> Excel
           </button>
+        </div>
+      }
+    >
+      <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
           <div className="relative">
             <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input value={query} onChange={(e) => setQuery(e.target.value)} aria-label="search trades"
@@ -248,7 +254,6 @@ export function SignalTradeHistory({ trades: given, strategies }: {
               {ids.map((id) => <option key={id} value={id}>{nameOf(id)}</option>)}
             </select>
           )}
-        </div>
       </div>
 
       {tab.v === 'skipped' ? (
@@ -326,14 +331,16 @@ export function SignalTradeHistory({ trades: given, strategies }: {
       <p className="m-0 mt-1 text-[10.5px] text-[var(--dim)]">
         A would-sell&apos;s result is the paper log&apos;s on the perp (entry at the zone, out at the SL or TGT1); a live order&apos;s is its option&apos;s own.
       </p>
-    </div>
+    </CollapsibleCard>
   );
 }
 
 /** Which exit was reached, so its time is shown under it: the SL, the TGT, or neither (window end, time-out, by hand). */
 export function hitOf(t: SignalTrade): 'sl' | 'tgt' | null {
   if (t.option) {
-    if (t.option.open || !t.option.exitReason) return null;
+    if (t.option.open) return null;
+    if (t.option.exitBy !== undefined) return t.option.exitBy === 'perp-sl' ? 'sl' : t.option.exitBy === 'perp-tgt' ? 'tgt' : null;
+    if (!t.option.exitReason) return null;
     return /stop/i.test(t.option.exitReason) ? 'sl' : /target/i.test(t.option.exitReason) ? 'tgt' : null;
   }
   return t.perp?.status === 'stop' ? 'sl' : t.perp?.status === 'tp1' ? 'tgt' : null;
@@ -378,6 +385,12 @@ function Row({ t, name }: { t: SignalTrade; name: string }) {
       <td className="whitespace-nowrap px-2 py-1.5" aria-label="option entry">
         {t.option ? opt(t.option.entry) : <span className="text-[var(--dim)]">—</span>}
         {t.option && <When at={entryAt} />}
+        {/* The option's own exits, the backstop at Delta -- or said to be off. */}
+        {t.option && (t.option.optionTarget !== undefined || t.option.optionStop !== undefined) && (
+          <div className="text-[10.5px] text-[var(--dim)]" aria-label="option exits">
+            TP {t.option.optionTarget != null ? opt(t.option.optionTarget) : 'off'} · SL {t.option.optionStop != null ? opt(t.option.optionStop) : <span className="text-[var(--warn)]">off</span>}
+          </div>
+        )}
       </td>
       <td className="whitespace-nowrap px-2 py-1.5 text-[var(--down)]" aria-label="perp SL">
         {btc(sl)}

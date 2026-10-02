@@ -1,4 +1,5 @@
 import { useMemo, type ReactNode } from 'react';
+import { FoldButton, useFold } from '@/components/ui/fold';
 import { ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { PriceChart } from '@/components/desk/PriceChart';
@@ -69,15 +70,16 @@ export function ModePanel({ mode, reads, selected, onChoose, recordOf, setupsOn,
   /** The live last trade, for the selected TRADE's live strip. */
   ltp?: { price: number; at: number } | null;
 }) {
+  const [open, setOpen] = useFold(`entry-panel-${mode}`);
   const copy = COPY[mode];
   // Kept while the choice holds: a new object each tick would rebuild the chart's whole scene.
   const drawn = useMemo(() => overlayOf(selected, setupsOn), [selected, setupsOn]);
 
   return (
-    <section aria-label={copy.title(count ?? reads.length)} className={cn('min-w-0 rounded-xl border border-border border-t-4 bg-[var(--card,transparent)] p-2.5', copy.accent)}>
-      <header className="mb-2 flex items-start justify-between gap-2">
+    <section aria-label={copy.title(count ?? reads.length)} data-folded={!open} className={cn('fold-host min-w-0 rounded-xl border border-border border-t-4 bg-[var(--panel)] p-2.5', copy.accent)}>
+      <header className="fold-head mb-2 flex items-start justify-between gap-2">
         <div>
-          <h3 className="m-0 text-[14px] font-bold">{copy.title(count ?? reads.length)}</h3>
+          <h3 className="m-0 flex items-center gap-1 text-[14px] font-bold"><FoldButton open={open} onToggle={() => setOpen(!open)} label={copy.title(count ?? reads.length)} className="-ml-1" />{copy.title(count ?? reads.length)}</h3>
           <p className="m-0 text-[11.5px] text-muted-foreground">{copy.sub}</p>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">

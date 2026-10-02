@@ -174,7 +174,9 @@ export function asSignalConfig(c: StrategyConfig, fresh: boolean): StrategyConfi
     trigger: 'signal',
     signal: c.signal ?? { ...DEFAULT_SIGNAL_RULE },
     liveOrders: c.liveOrders ?? false,
-    ...(fresh ? { lots: 1 } : {}),
+    // A new one starts with a backstop stop on the option: +200%, three times the entry. The perp's SL is the real
+    // exit; this is what limits the loss while the desk cannot see the perp. Off is a choice, said on the form.
+    ...(fresh ? { lots: 1, stopMode: 'pct' as const, stopLossPct: c.stopLossPct > 0 ? c.stopLossPct : 2, stopSteps: [] } : {}),
   };
 }
 
@@ -230,6 +232,10 @@ export type SignalTrade = {
     /** The perp's price as the option was bought back; `perpExitApprox`: the perp that minute. */
     perpExit?: number | null;
     perpExitApprox?: boolean;
+    /** The option's own target and stop, as placed (the backstop at Delta); null when off. */
+    optionTarget?: number | null; optionStop?: number | null;
+    /** Which exit closed it: the perp's SL/TGT, the option's, the window's end, or by hand. Null while open. */
+    exitBy?: 'perp-sl' | 'perp-tgt' | 'option-tgt' | 'option-sl' | 'window-end' | 'manual' | null;
     /** When the option filled in, and when it was last bought back (epoch ms). */
     entryAt?: number | null; exitAt?: number | null;
   } | null;

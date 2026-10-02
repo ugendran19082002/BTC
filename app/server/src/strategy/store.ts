@@ -250,6 +250,17 @@ export type SignalTrade = {
      */
     perpExit: number | null;
     perpExitApprox?: boolean;
+    /** The option's own target and stop, as placed (the backstop at Delta); null when off. */
+    optionTarget: number | null; optionStop: number | null;
+    /**
+     * Which exit closed it -- the perp first, then the option (engine.ts `pollInner`):
+     *   perp-sl / perp-tgt      the signal's levels on the BTC perp, judged by the desk
+     *   option-tgt / option-sl  the option's own target or stop: at Delta, or the desk's stop watch
+     *   window-end              the strategy's exit time
+     *   manual                  a close by hand
+     * Null while open.
+     */
+    exitBy: ExitBy | null;
     /** When the option filled in, and when it was last bought back (epoch ms). */
     entryAt: number | null; exitAt: number | null;
   } | null;
@@ -260,6 +271,19 @@ type SignalTradeRow = SignalRunRow & {
   tp1: number | null; tp2: number | null; tp3: number | null;
   fill_price: number | null; filled_at: string | number | null; exit_price: number | null; exit_at: string | number | null;
 };
+export type ExitBy = 'perp-sl' | 'perp-tgt' | 'option-tgt' | 'option-sl' | 'window-end' | 'manual';
+
+/** Which exit closed a trade, from the desk's close reason and which order filled the close. */
+export function exitByOf(reason: string | null, winner: string | null): ExitBy {
+  if (reason && /perp at .*stop/i.test(reason)) return 'perp-sl';
+  if (reason && /perp at .*target/i.test(reason)) return 'perp-tgt';
+  if (winner === 'take_profit') return 'option-tgt';
+  if (winner === 'stop_loss') return 'option-sl';
+  if (reason && /^stop/i.test(reason)) return 'option-sl';                // the desk's own option stop watch
+  if (reason && /exit time|end of its window/i.test(reason)) return 'window-end';
+  return 'manual';
+}
+
 /** The perp's price in the desk's own close reason: "BTC perp at 84590 reached the signal's stop 84600". */
 export function perpInReason(reason: string | null): number | null {
   const m = reason ? /perp at ([\d,.]+)/i.exec(reason) : null;
@@ -291,6 +315,8 @@ const signalTradeFrom = (r: SignalTradeRow): SignalTrade => ({
     size: Number(r.t_state.entrySize ?? 0), open: Number(r.t_position ?? 0) !== 0,
     entry: n(r.t_state.entryAvgPrice), exit: n(r.t_state.exitAvgPrice), pnlUsd: Number(r.t_state.realisedPnl ?? 0),
     exitReason: r.t_state.exitReason ?? null,
+    optionTarget: n(r.t_plan.takeProfitPrice), optionStop: n(r.t_plan.stopPrice),
+    exitBy: Number(r.t_position ?? 0) !== 0 || !Number(r.t_state.exitSize ?? 0) ? null : exitByOf(r.t_state.exitReason ?? null, r.t_state.exitWinner ?? null),
     // Exact first: the perp as the option's exit filled; else the price in the desk's close reason.
     perpExit: n(r.t_state.perpExit) ?? perpInReason(r.t_state.exitReason ?? null),
     perpStop: n(r.t_plan.underlying?.stop), perpTarget: n(r.t_plan.underlying?.target), perpEntry: n(r.t_state.perpEntry) ?? n(r.t_plan.underlying?.entry),
