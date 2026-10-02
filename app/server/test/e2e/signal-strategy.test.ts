@@ -26,7 +26,7 @@ const { closePool, one, rows } = await import('../../src/db/pool.js');
 const { initTradingService, tradingService } = await import('../../src/trading/service.js');
 const { initStrategyStore, strategyStore } = await import('../../src/http/routes/strategy.routes.js');
 const { StrategyRunner, signalKeyOf } = await import('../../src/strategy/runner.js');
-const { istDate } = await import('../../src/strategy/schedule.js');
+const { exitMomentFor, istDate } = await import('../../src/strategy/schedule.js');
 type MethodRead = import('../../src/entry/types.js').MethodRead;
 type SignalBoard = import('../../src/strategy/runner.js').SignalBoard;
 
@@ -201,7 +201,9 @@ test('[critical] the put fills -- at the bid after 5 s -- and at the end of its 
     (o) => o.length === 2, 'the option target and stop on the book');
   assert.ok(book.some((o) => o.type === 'limit' && o.limitPrice! < 18), 'the option target, a buy-back under the entry');
   assert.ok(book.some((o) => o.type !== 'limit' && o.stopPrice! > 18), 'the option stop, the backstop above it');
-  clock = TEN + 7 * 3_600_000 + 60_000;              // 17:01 IST, past its 17:00 end
+  // A second past its 17:00 end, measured from the fill -- which carries the real clock, so a test run after
+  // 17:00 IST would otherwise read as filled after the end and roll to tomorrow's.
+  clock = exitMomentFor('17:00', fill.ts) + 1_000;
   await (runner as unknown as { considerExit(s: unknown): Promise<void> }).considerExit((await strategyStore().get('sig-bo'))!);
   clock = TEN;
   await until(
