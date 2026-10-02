@@ -77,7 +77,7 @@ describe('the Methods report', () => {
     expect(tfs.map((t) => t.textContent)).toEqual(['All5', '3m0', '5m0', '15m2', '30m0', '1h0', '4h0']);
   });
 
-  it('[critical] Profit and Loss list the methods whose net points are up or down -- the totals stay the whole way', async () => {
+  it('[critical] Profit and Loss list the methods whose net points are up or down -- and the totals follow', async () => {
     render(<MethodReport />);
     const table = await screen.findByRole('table', { name: 'With the timeframe chain' });
     const filter = within(screen.getByRole('group', { name: 'Show methods' }));
@@ -85,7 +85,12 @@ describe('the Methods report', () => {
     fireEvent.click(filter.getByRole('button', { name: /Profit/ }));
     expect(within(table).queryByText('Breakout')).toBeNull();
     expect(within(table).getByText('Retest')).toBeInTheDocument();
-    expect(within(table).getByText('All 3 methods').closest('tr')).toHaveTextContent('+170');
+    // The totals follow the filter -- top and bottom: Retest alone, +200, not the way's +170.
+    expect(within(table).getByText('Profit · 1 method').closest('tr')).toHaveTextContent('+200');
+    expect(within(table).queryByText('All 3 methods')).toBeNull();
+    const kpis = within(screen.getByRole('region', { name: 'With the timeframe chain' }));
+    expect(kpis.getByText('Net points').nextElementSibling).toHaveTextContent('+200');
+    expect(kpis.getByText('Win rate').nextElementSibling).toHaveTextContent('100.0%');
     expect(screen.getByText(/1 of 3 methods/)).toBeInTheDocument();
     fireEvent.click(filter.getByRole('button', { name: /Loss/ }));
     expect(within(table).getByText('Breakout')).toBeInTheDocument();
@@ -220,5 +225,24 @@ describe('the Methods report', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'all time' }));
     await waitFor(() => expect(getMethodReport).toHaveBeenLastCalledWith(null, false, null));
     expect(await screen.findByText(/all time · 3 methods/)).toBeInTheDocument();
+  });
+
+  it('[critical] a From time narrows the day to the minute: the server is asked for IST minutes', async () => {
+    render(<MethodReport />);
+    await screen.findByRole('table', { name: 'With the timeframe chain' });
+    fireEvent.click(screen.getByRole('button', { name: /From time: 12:00 AM/ }));
+    fireEvent.click(await screen.findByRole('button', { name: '9:00 AM' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Set 9:00 AM' }));
+    await waitFor(() => expect(getMethodReport).toHaveBeenLastCalledWith(null, false, { from: '2026-10-02T09:00', to: '2026-10-02' }));
+    expect(await screen.findByText(/today, 9:00 AM – 11:59 PM · 3 methods/)).toBeInTheDocument();
+  });
+
+  it('"all time" has no times to pick', async () => {
+    render(<MethodReport />);
+    await screen.findByRole('table', { name: 'With the timeframe chain' });
+    expect(screen.getByRole('button', { name: /From time/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /today/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'all time' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: /From time/ })).toBeNull());
   });
 });

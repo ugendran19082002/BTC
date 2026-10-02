@@ -111,3 +111,29 @@ test('the range is checked: both ends, real days, in order', () => {
     assert.ok('error' in (istDayRange(f, t) as object), `${f} .. ${t} refused`);
   }
 });
+
+test('[critical] a range to the minute: from 09:00 to 17:30 IST takes 17:30:59 and not 17:31', () => {
+  const r = istDayRange('2026-10-01T09:00', '2026-10-01T17:30') as { from: number; to: number };
+  assert.equal(r.from, Date.parse('2026-10-01T03:30:00Z'));
+  assert.equal(r.to, Date.parse('2026-10-01T12:01:00Z'), '17:30 IST counted whole');
+  // A day and a minute mix: from a day's start to a minute of a later day.
+  assert.deepEqual(istDayRange('2026-09-30', '2026-10-01T00:00'), { from: Date.parse('2026-09-29T18:30:00Z'), to: Date.parse('2026-09-30T18:31:00Z') });
+  for (const [f, t] of [['2026-10-01T24:00', '2026-10-01T25:00'], ['2026-10-01T09:60', '2026-10-01T10:00'], ['2026-10-01T17:30', '2026-10-01T09:00'], ['2026-10-01T9:00', '2026-10-01T10:00']] as const) {
+    assert.ok('error' in (istDayRange(f, t) as object), `${f} .. ${t} refused`);
+  }
+});
+
+test('[critical] the report counts signals by the minute they appeared', async () => {
+  const at = (iso: string) => Date.parse(iso);
+  const seen = (ms: number) => query(
+    `INSERT INTO entry_setups (method, mode, tf, dir, trigger_at, first_seen, entry_lo, entry_hi, stop, tp1, rr, status, graded_to,
+                               fill_price, exit_price, r_net)
+     VALUES ('mss', 'mtf', '5m', 1, $1, $2, 100, 101, 90, 120, 1.5, 'tp1', 0, 84000, 84010, 1)`, [trigger++, ms]);
+  await seen(at('2026-10-01T03:29:59Z')); // 08:59:59 IST
+  await seen(at('2026-10-01T03:30:00Z')); // 09:00 IST
+  await seen(at('2026-10-01T12:00:59Z')); // 17:30:59 IST
+  await seen(at('2026-10-01T12:01:00Z')); // 17:31 IST
+  const r = istDayRange('2026-10-01T09:00', '2026-10-01T17:30') as { from: number; to: number };
+  const mss = (await methodReport(null, false, r)).sections[0]!.rows.find((x) => x.method === 'mss')!;
+  assert.equal(mss.trades, 2, '09:00 and 17:30:59 in; 08:59:59 and 17:31 out');
+});

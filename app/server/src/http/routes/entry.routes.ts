@@ -120,7 +120,7 @@ export function registerEntryRoutes(app: FastifyInstance, notifier: () => { send
   });
 
   // The report: every method, with the chain and without it -- signals, trades, wins, losses, win rate, profit, loss and net.
-  // `from` / `to`: IST days (YYYY-MM-DD), the signals first seen in them; neither, every signal.
+  // `from` / `to`: IST days (YYYY-MM-DD) or minutes (YYYY-MM-DDTHH:MM), the signals first seen in them; neither, every signal.
   app.get('/api/entry/report', async (req, reply) => {
     const { tf, gates, from, to } = (req.query ?? {}) as { tf?: string; gates?: string; from?: string; to?: string };
     const one = tf && (SINGLE_TFS as readonly string[]).includes(tf) ? (tf as Tf) : null;

@@ -201,21 +201,31 @@ export async function methodReport(
 
 const IST_MS = 5.5 * 3_600_000;
 const DAY_MS = 86_400_000;
-const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+const ISO_DAY = /^(\d{4}-\d{2}-\d{2})$/;
+const ISO_MINUTE = /^(\d{4}-\d{2}-\d{2})T([01]\d|2[0-3]):([0-5]\d)$/;
+
+/** An IST day or minute as epoch ms of its start, and how long it lasts; null when malformed or no such day. */
+function istMoment(v: string): { at: number; span: number } | null {
+  const day = ISO_DAY.exec(v), minute = ISO_MINUTE.exec(v);
+  const d = day?.[1] ?? minute?.[1];
+  if (!d) return null;
+  const midnight = Date.parse(`${d}T00:00:00Z`);
+  if (!Number.isFinite(midnight) || new Date(midnight).toISOString().slice(0, 10) !== d) return null;
+  if (day) return { at: midnight - IST_MS, span: DAY_MS };
+  return { at: midnight - IST_MS + (Number(minute![2]) * 60 + Number(minute![3])) * 60_000, span: 60_000 };
+}
 
 /**
- * IST calendar days, `YYYY-MM-DD`, as the half-open window [from 00:00, the day
- * after `to` 00:00) in epoch ms; null when either is missing. Malformed, a day
- * that does not exist, or `from` after `to`: an error in words.
+ * IST days (`YYYY-MM-DD`) or minutes (`YYYY-MM-DDTHH:MM`) as the half-open window
+ * [from, the end of `to`) in epoch ms -- `to` counts whole: to a day, all of it;
+ * to 17:30, up to 17:31. Null when neither is given. Missing one, malformed, a
+ * day that does not exist, or `from` after `to`: an error in words.
  */
 export function istDayRange(from?: string, to?: string): { from: number; to: number } | null | { error: string } {
   if (!from && !to) return null;
-  if (!from || !to) return { error: 'from and to go together: both IST days, YYYY-MM-DD' };
-  if (!ISO_DAY.test(from) || !ISO_DAY.test(to)) return { error: 'from and to must be IST days, YYYY-MM-DD' };
-  const a = Date.parse(`${from}T00:00:00Z`), b = Date.parse(`${to}T00:00:00Z`);
-  if (!Number.isFinite(a) || !Number.isFinite(b) || new Date(a).toISOString().slice(0, 10) !== from || new Date(b).toISOString().slice(0, 10) !== to) {
-    return { error: 'no such day' };
-  }
-  if (a > b) return { error: 'from must be on or before to' };
-  return { from: a - IST_MS, to: b + DAY_MS - IST_MS };
+  if (!from || !to) return { error: 'from and to go together: IST days (YYYY-MM-DD) or minutes (YYYY-MM-DDTHH:MM)' };
+  const a = istMoment(from), b = istMoment(to);
+  if (!a || !b) return { error: 'from and to must be IST days (YYYY-MM-DD) or minutes (YYYY-MM-DDTHH:MM) that exist' };
+  if (a.at > b.at) return { error: 'from must be on or before to' };
+  return { from: a.at, to: b.at + b.span };
 }

@@ -6,6 +6,8 @@ import { usePersisted } from '@/hooks/usePersisted';
 import { Card, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { DateRangePicker, describeRange, istToday, type DateRangeValue } from '@/components/ui/date-range-picker';
+import { TimePicker } from '@/components/ui/time-picker';
+import { time12 } from '@/lib/time';
 import { downloadCsv, toCsv } from '@/lib/csv';
 import { cn } from '@/lib/utils';
 import type { EntryMode, EntryTf, MethodReportResponse, MethodReportRow, MethodReportSection } from '@/types/entry';
@@ -53,6 +55,21 @@ export const shows = (r: MethodReportRow, show: Show): boolean =>
       : show === 'profit' ? r.trades > 0 && r.netPts > 0
         : r.trades > 0 && r.netPts < 0;
 
+/** The total of the lines shown: what a filtered table adds up to (owner, 2 Oct 2026: "the total follows the filter"). */
+export function totalOf(rows: readonly MethodReportRow[], name: string): MethodReportRow {
+  const sum = (k: 'signals' | 'trades' | 'wins' | 'losses' | 'profitPts' | 'lossPts' | 'profitR' | 'lossR') => rows.reduce((a, r) => a + r[k], 0);
+  const t = {
+    signals: sum('signals'), trades: sum('trades'), wins: sum('wins'), losses: sum('losses'),
+    profitPts: sum('profitPts'), lossPts: sum('lossPts'), profitR: sum('profitR'), lossR: sum('lossR'),
+  };
+  return { n: null, method: 'shown', name, ...t, winPct: t.trades > 0 ? (100 * t.wins) / t.trades : null, netPts: t.profitPts - t.lossPts, netR: t.profitR - t.lossR };
+}
+
+/** A day and a time of it as the server reads them: the bare day for the whole of it, else `YYYY-MM-DDTHH:MM` (IST). */
+export const momentOf = (day: string, hhmm: string, whole: string) => (hhmm === whole ? day : `${day}T${hhmm}`);
+const DAY_START = '00:00';
+const DAY_END = '23:59';
+
 /** Sorted by the chosen column; methods without a trade always last, so a sort by win rate is not led by blanks. */
 export function sortRows(rows: readonly MethodReportRow[], key: SortKey, asc: boolean): MethodReportRow[] {
   const val = (r: MethodReportRow) => (key === 'winPct' ? r.winPct : r[key]);
@@ -99,10 +116,17 @@ export function MethodReport() {
   const [sortStored, setSort] = usePersisted<Sort>('methodReport.sort', { key: 'n', asc: true });
   // Today by default, every time the tab opens; null is "all time".
   const [range, setRange] = useState<DateRangeValue | null>(() => { const t = istToday(); return { from: t, to: t }; });
+  // The times of those days, IST: the whole of them unless narrowed. Not remembered, like the days.
+  const [fromTime, setFromTime] = useState(DAY_START);
+  const [toTime, setToTime] = useState(DAY_END);
+  const oneDay = range !== null && range.from === range.to;
+  const onFromTime = (v: string) => { setFromTime(v); if (oneDay && toTime < v) setToTime(DAY_END); };
+  const asked = range && { from: momentOf(range.from, fromTime, DAY_START), to: momentOf(range.to, toTime, DAY_END) };
+  const timed = range !== null && (fromTime !== DAY_START || toTime !== DAY_END);
   // Every way and timeframe in one answer: a tab or a filter change draws, it does not fetch; a new range does.
-  const { data, error, loading, refresh } = usePoll(() => getMethodReport(null, everyGate, range), 30_000,
-    { deps: [everyGate, range?.from, range?.to] });
-  const period = range ? describeRange(range) : 'all time';
+  const { data, error, loading, refresh } = usePoll(() => getMethodReport(null, everyGate, asked), 30_000,
+    { deps: [everyGate, asked?.from, asked?.to] });
+  const period = range ? `${describeRange(range)}${timed ? `, ${time12(fromTime)} – ${time12(toTime)}` : ''}` : 'all time';
 
   // Anything remembered from an older build (a removed column, a removed tab) falls back rather than blanking.
   const sort: Sort = SORT_KEYS.includes(sortStored?.key) ? sortStored : { key: 'n', asc: true };
@@ -137,9 +161,18 @@ export function MethodReport() {
           ]}
         />
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-[11px] uppercase tracking-[0.6px] text-muted-foreground">Signals from</span>
             <DateRangePicker allowAll value={range} onChange={setRange} />
+            {range && (
+              <>
+                <TimePicker label="From time" value={fromTime} onChange={onFromTime}
+                            presets={[{ label: 'start of day', value: DAY_START }, { label: '5:30 AM', value: '05:30' }, { label: '9:00 AM', value: '09:00' }]} />
+                <span className="text-[12px] text-muted-foreground">to</span>
+                <TimePicker label="To time" value={toTime} onChange={setToTime} min={oneDay ? fromTime : null}
+                            presets={[{ label: '5:30 PM', value: '17:30' }, { label: 'end of day', value: DAY_END }]} />
+              </>
+            )}
           </div>
           <div role="group" aria-label="Show methods" className="inline-flex overflow-hidden rounded-md border border-border text-[12px]">
             {SHOWS.map((s) => {
@@ -161,8 +194,8 @@ export function MethodReport() {
         <p className="m-0 mt-2 text-[11px] leading-relaxed text-[var(--dim)]">
           The paper log: every TRADE signal, filled and closed at TGT1, the stop or the time-out. A win closed above its fill.
           The dates are the IST days the signals appeared on (a trade that closed the next day counts on its signal's day).
-          Points from the fill to the exit, before fees. Profit and Loss list the methods whose net points are up or down; the
-          totals are always the whole way. Every signal counts, as in the signal history, unless "Only signals with every gate
+          Points from the fill to the exit, before fees. Profit and Loss list the methods whose net points are up or down, and
+          the totals -- top and bottom -- add up the methods shown. Every signal counts, as in the signal history, unless "Only signals with every gate
           on" is set. With the chain the entry is always 5m; without it, each timeframe has its own tab.
         </p>
         {error && <p role="alert" className="m-0 mt-2 text-[12px] text-[var(--down)]">Could not read the report: {error.message}</p>}
@@ -316,7 +349,8 @@ function ReportSection({ section, period, sort, onSort, show, tabs, panelOf, abo
     () => sortRows(section.rows.filter((r) => shows(r, show)), sort.key, sort.asc),
     [section.rows, sort.key, sort.asc, show],
   );
-  const t = section.total;
+  // The totals follow the filter: All is the server's own total; a filter adds up the lines it shows.
+  const t = show === 'all' ? section.total : totalOf(rows, `${SHOWS.find((x) => x.id === show)!.name} · ${rows.length} method${rows.length === 1 ? '' : 's'}`);
   const head = (label: string, key?: SortKey, left = false) => (
     <th scope="col" aria-sort={key && sort.key === key ? (sort.asc ? 'ascending' : 'descending') : undefined}
         className={cn('sticky top-0 z-[1] whitespace-nowrap bg-[var(--panel)] px-2 py-1.5 font-semibold text-muted-foreground', left ? 'text-left' : 'text-right')}>
