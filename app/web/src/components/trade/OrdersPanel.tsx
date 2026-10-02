@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { usePersisted } from '@/hooks/usePersisted';
 import { ChevronRight, Download } from 'lucide-react';
 import * as Collapsible from '@radix-ui/react-collapsible';
 import { getOrderHistory } from '@/api/trade';
@@ -83,8 +84,8 @@ function summarise(rows: OrderRecord[]) {
 }
 
 export function OrdersPanel() {
-  const [range, setRange] = useState(() => ({ from: istToday(), to: istToday() }));
-  const [status, setStatus] = useState<OrderStatus | 'all'>('all');
+  const [range, setRange] = usePersisted('orders:range', { from: istToday(), to: istToday() });
+  const [status, setStatus] = usePersisted<OrderStatus | 'all'>('orders:status', 'all');
   const { from, to } = range;
 
   const { data, loading } = usePoll(

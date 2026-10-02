@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { usePersisted } from '@/hooks/usePersisted';
 import type { DayRow } from '@/types/report';
 import { signedInr, usdToInr } from '@/lib/format';
 
@@ -7,7 +8,7 @@ export interface DailyPnlChartProps {
 }
 
 export function DailyPnlChart({ rows }: DailyPnlChartProps) {
-  const [period, setPeriod] = useState<'Daily' | 'Weekly' | 'Monthly'>('Daily');
+  const [period, setPeriod] = usePersisted<'Daily' | 'Weekly' | 'Monthly'>('report:daily-period', 'Daily');
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
 
   // Group and map data dynamically strictly from live rows

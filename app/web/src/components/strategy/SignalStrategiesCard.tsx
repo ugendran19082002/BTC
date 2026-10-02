@@ -1,14 +1,12 @@
 import { useState } from 'react';
 import { Bot, Loader2, Pencil, Plus } from 'lucide-react';
 import { getStrategies, saveStrategy, setStrategyEnabled } from '@/api/strategy';
-import { ruleTfWords, type SignalRunStatus, type Strategy, type StrategyStatus } from '@/types/strategy';
+import { ruleTfWords, type Strategy, type StrategyStatus } from '@/types/strategy';
 import { usePoll } from '@/hooks/usePoll';
 import { Button } from '@/components/ui/button';
 import { SignalStrategyForm } from '@/components/strategy/SignalStrategyForm';
-import { LogTable } from '@/components/strategy/LogTable';
 import { SignalTradeHistory } from '@/components/strategy/SignalTradeHistory';
 import { describeStrike, signalTargetLabel } from '@/lib/strategy-preview';
-import { stamp } from '@/lib/format';
 import { time12 } from '@/lib/time';
 import { cn } from '@/lib/utils';
 
@@ -19,9 +17,6 @@ import { cn } from '@/lib/utils';
  * tab, already on signals -- one strategy, two places to reach it.
  */
 
-const OUTCOME: Record<SignalRunStatus, string> = {
-  placed: 'sold', 'would-place': 'would sell', refused: 'stood aside', skipped: 'skipped', failed: 'failed', claimed: 'taking…',
-};
 
 /** One line: the methods and way, the leg rule, the strike, lots, exits. */
 export function signalLine(s: Strategy): string {
@@ -72,7 +67,6 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
 
   const mine = data?.strategies.filter((s) => s.config.trigger === 'signal') ?? [];
   const ids = new Set(mine.map((s) => s.id));
-  const runs = (data?.signalRuns ?? []).filter((r) => ids.has(r.strategyId));
 
   return (
     <section className="live-signal-strategies" aria-label="Signal strategies">
@@ -179,23 +173,6 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
                             strategies={data.strategies} />
       )}
 
-      {runs.length > 0 && (
-        <div className="mt-2">
-          <LogTable
-            label="signals taken"
-            extraHead="Signal"
-            rows={runs.map((r) => ({
-              id: r.id,
-              at: stamp(r.at),
-              who: mine.find((s) => s.id === r.strategyId)?.name ?? r.strategyId,
-              extra: `${r.dir === 1 ? 'BUY → PE' : 'SELL → CE'} · ${r.mode === 'mtf' ? 'chain' : r.tf}`,
-              outcome: OUTCOME[r.status],
-              tone: r.status === 'placed' ? 'ok' as const : r.status === 'failed' ? 'bad' as const : 'quiet' as const,
-              detail: r.detail,
-            }))}
-          />
-        </div>
-      )}
 
       {data && (
         <SignalStrategyForm

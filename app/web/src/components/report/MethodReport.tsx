@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef } from 'react';
 import { ArrowDown, ArrowUp, Download, RefreshCw } from 'lucide-react';
 import { getMethodReport } from '@/api/entry';
 import { usePoll } from '@/hooks/usePoll';
@@ -114,11 +114,13 @@ export function MethodReport() {
   const [show, setShow] = usePersisted<Show>('methodReport.show', 'all');
   const [everyGate, setEveryGate] = usePersisted<boolean>('methodReport.everyGate', false);
   const [sortStored, setSort] = usePersisted<Sort>('methodReport.sort', { key: 'n', asc: true });
-  // Today by default, every time the tab opens; null is "all time".
-  const [range, setRange] = useState<DateRangeValue | null>(() => { const t = istToday(); return { from: t, to: t }; });
-  // The times of those days, IST: the whole of them unless narrowed. Not remembered, like the days.
-  const [fromTime, setFromTime] = useState(DAY_START);
-  const [toTime, setToTime] = useState(DAY_END);
+  /*
+   * The days and their times, IST -- remembered, like every other filter here (owner, 2 Oct 2026: "set once,
+   * a refresh must not change it"). Today, the whole of it, until something else is chosen; null is all time.
+   */
+  const [range, setRange] = usePersisted<DateRangeValue | null>('methodReport.range', (() => { const t = istToday(); return { from: t, to: t }; })());
+  const [fromTime, setFromTime] = usePersisted<string>('methodReport.fromTime', DAY_START);
+  const [toTime, setToTime] = usePersisted<string>('methodReport.toTime', DAY_END);
   const oneDay = range !== null && range.from === range.to;
   const onFromTime = (v: string) => { setFromTime(v); if (oneDay && toTime < v) setToTime(DAY_END); };
   const asked = range && { from: momentOf(range.from, fromTime, DAY_START), to: momentOf(range.to, toTime, DAY_END) };

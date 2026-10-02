@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { usePersisted } from '@/hooks/usePersisted';
 import { Check, ChevronRight, Copy, Server, Globe, Landmark, Activity, Trash2 } from 'lucide-react';
 import * as Collapsible from '@radix-ui/react-collapsible';
 import { deleteAllErrors, deleteError, getErrors, resolveError, resolveAllErrors } from '@/api/errors';
@@ -74,8 +75,8 @@ const SOURCE_TONE: Record<ErrorSource, string> = {
 };
 
 export function ErrorLogPanel() {
-  const [source, setSource] = useState<ErrorSource | 'all'>('all');
-  const [resolved, setResolved] = useState(false);
+  const [source, setSource] = usePersisted<ErrorSource | 'all'>('errors:source', 'all');
+  const [resolved, setResolved] = usePersisted('errors:resolved', false);
   const { data, refresh } = usePoll(
     () => getErrors({ source: source === 'all' ? undefined : source, resolved }),
     10_000,

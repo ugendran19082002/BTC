@@ -298,3 +298,23 @@ describe('the helpers', () => {
     expect(profitableIds([row('a', 5, 3, 1), row('b', 4, 4, 100), row('c', 20, 5, -1), row('d', 6, 3, 0)])).toEqual(['a']);
   });
 });
+
+describe('when the option is sold', () => {
+  it('[critical] "In the trade" (the perp at the entry zone) by default; "At the signal" by choice -- and saved', async () => {
+    show(null);
+    tab('Entry & exit');
+    expect(screen.getByRole('radio', { name: 'In the trade' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByText(/the fill the signal history counts/)).toBeInTheDocument();
+    expect(screen.getByText(/within a second of the perp reaching the zone/)).toBeInTheDocument();
+    radio('enter on', 'At the signal');
+    expect(screen.getByText(/within a second of the candle that makes the signal/)).toBeInTheDocument();
+  });
+
+  it('a saved strategy enters in the trade unless it said otherwise', async () => {
+    show(signalStrategy({ mode: 'mtf' }));
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    expect(saved().config.signal!.enterOn).toBe('zone');
+    expect(screen.getByText(/When the BTC perp trades into the signal's entry zone it rests at the offer/)).toBeInTheDocument();
+  });
+});

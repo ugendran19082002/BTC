@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { usePersisted } from '@/hooks/usePersisted';
 import type { DayRow } from '@/types/report';
 import type { OrderRecord } from '@/types/trade';
 import { signedInr, usdToInr } from '@/lib/format';
@@ -9,7 +10,7 @@ export interface WinLossAnalysisProps {
 }
 
 export function WinLossAnalysis({ rows, orders = [] }: WinLossAnalysisProps) {
-  const [viewMode, setViewMode] = useState<'count' | 'pnl'>('count');
+  const [viewMode, setViewMode] = usePersisted<'count' | 'pnl'>('report:winloss-view', 'count');
 
   const {
     winCount,

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { usePersisted } from '@/hooks/usePersisted';
 import type { DayRow } from '@/types/report';
 import type { OrderRecord } from '@/types/trade';
 import { signedInr, usdToInr } from '@/lib/format';
@@ -9,7 +10,7 @@ export interface PerformanceStatsProps {
 }
 
 export function PerformanceStats({ rows, orders = [] }: PerformanceStatsProps) {
-  const [filter, setFilter] = useState<'All Trades' | 'Strategy Trades' | 'Manual Trades'>('All Trades');
+  const [filter, setFilter] = usePersisted<'All Trades' | 'Strategy Trades' | 'Manual Trades'>('report:stats-filter', 'All Trades');
 
   // Filter orders dynamically based on user choice
   const filteredOrders = useMemo(() => {

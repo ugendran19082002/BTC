@@ -31,22 +31,53 @@ const strategies = [
 beforeEach(() => localStorage.clear());
 
 describe('the signal trade history', () => {
-  it('[critical] each trade: signal, option, entry, perp SL, perp TGT, exit, result, P&L', () => {
-    render(<SignalTradeHistory trades={[LIVE_WON, trade({})]} strategies={strategies} />);
-    const [, won, would] = within(screen.getByRole('table', { name: 'signal trades' })).getAllByRole('row');
-    expect(won).toHaveTextContent('#6 BOS SELL');
-    expect(won).toHaveTextContent('5m + TF chain');
-    expect(won).toHaveTextContent('CE 86,000 ×1');
-    expect(won).toHaveTextContent('85,400');            // perp SL
-    expect(won).toHaveTextContent('84,500');            // perp TGT
-    expect(won).toHaveTextContent('4.5');               // the option bought back
-    expect(won).toHaveTextContent('perp TGT');
-    expect(won).toHaveTextContent('+₹1.15');            // 0.0135 USD at 85
+  it('[critical] each trade: signal, option, perp entry, option entry, perp SL, perp TGT, exit, result, P&L -- with the times', () => {
+    const won = { ...LIVE_WON, option: { ...LIVE_WON.option!, perpEntry: 85_020, entryAt: AT + 30_000, exitAt: AT + 900_000 } };
+    render(<SignalTradeHistory trades={[won, trade({})]} strategies={strategies} />);
+    const [, liveRow, would] = within(screen.getByRole('table', { name: 'signal trades' })).getAllByRole('row');
+    const cell = (row: HTMLElement, name: string) => within(row).getByLabelText(name);
+    expect(liveRow).toHaveTextContent('#6 BOS SELL');
+    expect(liveRow).toHaveTextContent('5m + TF chain');
+    expect(liveRow).toHaveTextContent('CE 86,000 ×1');
+    expect(cell(liveRow!, 'perp entry')).toHaveTextContent('85,020');
+    expect(cell(liveRow!, 'option entry')).toHaveTextContent(/^18\d{2} Oct/);         // the price, and when it filled under it
+    expect(cell(liveRow!, 'perp SL')).toHaveTextContent(/^85,400$/);                 // not hit: no time
+    expect(cell(liveRow!, 'perp TGT')).toHaveTextContent(/^84,500\d{2} Oct/);         // hit: the exit time under it
+    expect(cell(liveRow!, 'exit')).toHaveTextContent(/^4\.5$/);
+    expect(liveRow).toHaveTextContent('perp TGT');
+    expect(liveRow).toHaveTextContent('+₹1.15');
+    // a would-sell: the perp's fill and when, the zone, TGT1 hit and when
+    expect(cell(would!, 'perp entry')).toHaveTextContent(/^84,990zone 84,950–85,000\d{2} Oct/);
+    expect(cell(would!, 'perp TGT')).toHaveTextContent(/^85,500\d{2} Oct.*TGT2 85,900$/);
     expect(would).toHaveTextContent('PE · would sell');
-    expect(would).toHaveTextContent('zone 84,950–85,000');
     expect(would).toHaveTextContent('TGT1 hit');
-    expect(would).toHaveTextContent('TGT2 85,900');
     expect(would).toHaveTextContent('paper');
+  });
+
+  it('[critical] an SL hit puts the exit time under the SL', () => {
+    render(<SignalTradeHistory trades={[LOST]} strategies={strategies} />);
+    const [, row] = within(screen.getByRole('table', { name: 'signal trades' })).getAllByRole('row');
+    expect(within(row!).getByLabelText('perp SL')).toHaveTextContent(/^84,600\d{2} Oct/);
+    expect(within(row!).getByLabelText('perp TGT')).toHaveTextContent(/^85,500TGT2/);
+  });
+
+  it('[critical] ten to a page, with the way through them', () => {
+    const many = Array.from({ length: 23 }, (_, i) => trade({ id: 100 + i, at: AT - i * 60_000 }));
+    render(<SignalTradeHistory trades={many} strategies={strategies} />);
+    const rowsNow = () => within(screen.getByRole('table', { name: 'signal trades' })).getAllByRole('row').length - 1;
+    expect(rowsNow()).toBe(10);
+    expect(screen.getByRole('navigation', { name: 'trade history pages' })).toHaveTextContent('1–10 of 23 · page 1 of 3');
+    expect(screen.getByRole('button', { name: 'previous page' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'next page' }));
+    fireEvent.click(screen.getByRole('button', { name: 'next page' }));
+    expect(rowsNow()).toBe(3);
+    expect(screen.getByRole('navigation', { name: 'trade history pages' })).toHaveTextContent('21–23 of 23 · page 3 of 3');
+    expect(screen.getByRole('button', { name: 'next page' })).toBeDisabled();
+    // the totals are over every page, not just this one
+    expect(screen.getByLabelText('history totals')).toHaveTextContent('23 trades · 23 won');
+    // a filter goes back to page 1
+    fireEvent.click(screen.getByRole('button', { name: 'Would sell' }));
+    expect(screen.getByRole('navigation', { name: 'trade history pages' })).toHaveTextContent('page 1 of 3');
   });
 
   it('[critical] the totals follow the filter: won, lost, open, win rate, live P&L', () => {

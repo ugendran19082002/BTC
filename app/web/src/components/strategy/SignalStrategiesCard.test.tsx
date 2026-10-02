@@ -98,16 +98,23 @@ describe('signal strategies on the Live screen', () => {
     expect(go).toHaveBeenCalled();
   });
 
-  it('[critical] the last signals its strategies took, and what each did', async () => {
+  it('[critical] the trade history is shown; the raw signals log is not', async () => {
     getStrategies.mockResolvedValue(status([strat('sig', SIG), strat('clock')], {
       signalRuns: [
-        { id: 1, strategyId: 'sig', signalKey: 'k', method: 'bos', mode: 'single', tf: '15m', dir: -1, status: 'would-place', detail: 'would sell CE 86000 x1 @ 18 · perp SL 85400 · TGT 84500', tradeId: null, at: Date.now() },
+        { id: 1, strategyId: 'sig', signalKey: 'k', method: 'bos', mode: 'single', tf: '15m', dir: -1, status: 'skipped', detail: 'already 7 of its trades open (at most 2)', tradeId: null, at: Date.now() },
       ],
+      signalTrades: [{
+        id: 2, strategyId: 'sig', at: Date.now(), method: 'bos', mode: 'single', tf: '15m', dir: -1, status: 'would-place',
+        detail: '#6 BOS SELL | live orders off: would sell CE 86000 x1 @ 18', tradeId: null,
+        levels: { entryLo: 85_000, entryHi: 85_050, stop: 85_400, tp1: 84_500, tp2: null, tp3: null },
+        perp: { status: 'filled', fillPrice: 85_040, filledAt: Date.now(), exitPrice: null, exitAt: null }, option: null,
+      }],
     }));
     render(<SignalStrategiesCard />);
-    const table = await screen.findByRole('table', { name: 'signals taken' });
-    expect(within(table).getByText(/SELL → CE · 15m/)).toBeInTheDocument();
-    expect(table).toHaveTextContent(/would sell/);
-    expect(table).toHaveTextContent(/perp SL 85400 · TGT 84500/);
+    const table = await screen.findByRole('table', { name: 'signal trades' });
+    expect(within(table).getByText('#6 BOS SELL')).toBeInTheDocument();
+    expect(table).toHaveTextContent('in the trade');
+    expect(screen.queryByRole('table', { name: 'signals taken' })).toBeNull();
+    expect(screen.queryByText(/already 7 of its trades open/)).toBeNull();
   });
 });
