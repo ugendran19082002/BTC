@@ -17,6 +17,8 @@ is written by hand and says **why**.
   layer, detection rule and setup, and what the research says about each.
 - [features/entry-setups.md](features/entry-setups.md) -- the 24 entry setups: twelve
   methods, with the timeframe chain and without it, their gates, targets and paper log.
+- [features/entry-sl-tgt.md](features/entry-sl-tgt.md) -- all 81 methods: where each enters, where its
+  stop and targets go, and the logic they share (gates, the paper log).
 
 ## Do
 

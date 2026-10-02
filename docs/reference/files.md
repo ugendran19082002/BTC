@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-399 files listed, 182 test files counted below, images and lockfiles left out.
+402 files listed, 183 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 107 |
-| `app/web` | 75 |
+| `app/web` | 76 |
 
 ## `(root)`
 
@@ -23,6 +23,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [Dockerfile](../../Dockerfile) | ---------- build the API ---------- |
 | [Dockerfile.harvester](../../Dockerfile.harvester) | Keeps the chain cache current. |
 | [Dockerfile.web](../../Dockerfile.web) | The screen: build the Vite bundle, then serve it from nginx, which also proxies /api to the API container (deploy/nginx.docker.conf). |
+| [ENTRY.md](../../ENTRY.md) | Method Entry SL (+0.25 ATR) TGT1 / TGT2 |
 | [README.md](../../README.md) | BTC options desk |
 
 ## `app/server/`
@@ -437,6 +438,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [checkbox.tsx](../../app/web/src/components/ui/checkbox.tsx) | A tick box with a label that is part of the target. |
 | [collapsible-card.tsx](../../app/web/src/components/ui/collapsible-card.tsx) | A card whose body folds away, remembered per card. |
 | [date-range-picker.tsx](../../app/web/src/components/ui/date-range-picker.tsx) | A date range, chosen in one place. |
+| [day-picker.tsx](../../app/web/src/components/ui/day-picker.tsx) | One IST day, chosen on a calendar -- the single-day partner of the date-range picker (the P&L's minute-by-minute line, owner 2 Oct 2026: "a date picker", in place of a dropdown of dates). |
 | [figure.tsx](../../app/web/src/components/ui/figure.tsx) | A label, a number, and optionally the same number in the other currency. |
 | [input.tsx](../../app/web/src/components/ui/input.tsx) | A number field with the spinner arrows gone. |
 | [kv.tsx](../../app/web/src/components/ui/kv.tsx) | A label on the left, its value on the right. |
@@ -579,6 +581,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [entry-methods-reference.md](../features/entry-methods-reference.md) | Entry methods — the reference formulas, and the audit against them |
 | [entry-setups.md](../features/entry-setups.md) | Entry setups — 12 methods × with / without timeframe |
+| [entry-sl-tgt.md](../features/entry-sl-tgt.md) | Entry, SL and TGT -- all 81 methods |
 | [price-chart.md](../features/price-chart.md) | The price chart |
 | [strategies.md](../features/strategies.md) | Scheduled strategies |
 
