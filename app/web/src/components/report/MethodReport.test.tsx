@@ -246,3 +246,14 @@ describe('the Methods report', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: /From time/ })).toBeNull());
   });
 });
+
+describe('the date filter is remembered', () => {
+  it('[critical] the days and times chosen survive a refresh', () => {
+    localStorage.setItem('btc-desk:methodReport.range', JSON.stringify({ from: '2026-09-28', to: '2026-10-01' }));
+    localStorage.setItem('btc-desk:methodReport.fromTime', JSON.stringify('09:15'));
+    localStorage.setItem('btc-desk:methodReport.toTime', JSON.stringify('15:30'));
+    render(<MethodReport />);
+    // asked of the server with the remembered range, not today
+    expect(getMethodReport).toHaveBeenCalledWith(null, false, { from: '2026-09-28T09:15', to: '2026-10-01T15:30' });
+  });
+});
