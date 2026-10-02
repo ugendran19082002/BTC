@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Search } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Download, Search } from 'lucide-react';
+import { downloadCsv, toCsv, type CsvColumn } from '@/lib/csv';
 import { Input } from '@/components/ui/input';
 import type { SignalTrade, Strategy } from '@/types/strategy';
 import { usePersisted } from '@/hooks/usePersisted';
@@ -71,6 +72,54 @@ export function sortTrades(rows: readonly SignalTrade[], s: Sort): SignalTrade[]
     return (s.asc ? d : -d) || b.at - a.at;
   });
 }
+/** ISO-like IST time for the sheet: "2026-10-02 11:10:05", which Excel reads as a date. */
+const istTime = (ms: number | null | undefined) => (ms
+  ? new Date(ms + 330 * 60_000).toISOString().replace('T', ' ').slice(0, 19)
+  : null);
+
+/**
+ * The sheet: one row per trade (or signal not taken), every figure the table
+ * shows and the ones it keeps on hover -- unformatted numbers, so Excel can add
+ * them up. Times are IST.
+ */
+export function tradesCsv(rows: readonly SignalTrade[], nameOf: (id: string) => string): string {
+  const entryAt = (t: SignalTrade) => (t.option ? t.option.entryAt ?? null : t.perp?.filledAt ?? null);
+  const exitAt = (t: SignalTrade) => (t.option ? t.option.exitAt ?? null : t.perp?.exitAt ?? null);
+  const cols: CsvColumn<SignalTrade>[] = [
+    { header: 'Signal time (IST)', value: (t) => istTime(t.at) },
+    { header: 'Strategy', value: (t) => nameOf(t.strategyId) },
+    { header: 'Kind', value: (t) => (t.status === 'placed' ? 'live order' : t.status === 'would-place' ? 'would sell' : t.status) },
+    { header: 'Signal', value: (t) => t.detail.split(' | ')[0] },
+    { header: 'Method', value: (t) => t.method },
+    { header: 'Timeframe', value: (t) => (t.mode === 'mtf' ? '5m + TF chain' : t.tf) },
+    { header: 'Direction', value: (t) => (t.dir === 1 ? 'BUY' : 'SELL') },
+    { header: 'Option', value: (t) => t.option?.side ?? (isTrade(t) ? (t.dir === 1 ? 'PE' : 'CE') : null) },
+    { header: 'Strike', value: (t) => t.option?.strike ?? null },
+    { header: 'Lots', value: (t) => t.option?.size ?? null },
+    { header: 'Entry zone low', value: (t) => t.levels?.entryLo ?? null },
+    { header: 'Entry zone high', value: (t) => t.levels?.entryHi ?? null },
+    { header: 'Perp entry', value: (t) => sortValue(t, 'perpEntry') },
+    { header: 'Perp entry approx', value: (t) => (t.option?.perpEntryApprox ? 'yes' : null) },
+    { header: 'Entry time (IST)', value: (t) => istTime(entryAt(t)) },
+    { header: 'Option entry ($)', value: (t) => t.option?.entry ?? null },
+    { header: 'Perp SL', value: (t) => sortValue(t, 'sl') },
+    { header: 'Perp TGT', value: (t) => sortValue(t, 'tgt') },
+    { header: 'TGT2', value: (t) => t.levels?.tp2 ?? null },
+    { header: 'TGT3', value: (t) => t.levels?.tp3 ?? null },
+    { header: 'Hit', value: (t) => (hitOf(t) === 'sl' ? 'SL' : hitOf(t) === 'tgt' ? 'TGT' : null) },
+    { header: 'Perp exit', value: (t) => sortValue(t, 'perpExit') },
+    { header: 'Perp exit approx', value: (t) => (t.option?.perpExitApprox ? 'yes' : null) },
+    { header: 'Exit time (IST)', value: (t) => istTime(exitAt(t)) },
+    { header: 'Option exit ($)', value: (t) => t.option?.exit ?? null },
+    { header: 'Result', value: (t) => (isTrade(t) ? outcomeOf(t).word : t.status) },
+    { header: 'P&L ($)', value: (t) => (t.option && !t.option.open ? Number(t.option.pnlUsd.toFixed(4)) : null) },
+    { header: 'P&L (₹)', value: (t) => (t.option && !t.option.open ? Number((usdToInr(t.option.pnlUsd) ?? 0).toFixed(2)) : null) },
+    { header: 'Why closed / not taken', value: (t) => t.option?.exitReason ?? (isTrade(t) ? null : t.detail.split(' | ').slice(1).join(' | ')) },
+    { header: 'Trade id', value: (t) => t.tradeId },
+  ];
+  return toCsv(rows, cols);
+}
+
 /** Everything a row says, lower-cased, for the search box: the signal, strategy, timeframe, option, result and why. */
 function haystack(t: SignalTrade, name: string): string {
   return [t.detail, name, t.method, t.mode === 'mtf' ? 'chain' : t.tf, t.status,
@@ -156,6 +205,12 @@ export function SignalTradeHistory({ trades, strategies }: { trades: readonly Si
       <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
         <h3 className="m-0 text-[13.5px] font-semibold text-foreground">Trade history</h3>
         <div className="flex flex-wrap items-center gap-1.5">
+          <button type="button" onClick={() => downloadCsv(`signal-trades-${tab.v}-${istTime(Date.now())!.slice(0, 10)}.csv`, tradesCsv(rows, nameOf))}
+                  disabled={!rows.length} aria-label="download as a spreadsheet"
+                  title="Every row shown here -- this tab, search, strategy and sort, all pages -- as a CSV that opens in Excel."
+                  className="m-0 inline-flex h-8 appearance-none items-center gap-1 rounded-md border border-solid border-border bg-transparent px-2.5 font-[inherit] text-[12px] text-foreground disabled:opacity-40">
+            <Download className="h-3.5 w-3.5" aria-hidden /> Excel
+          </button>
           <div className="relative">
             <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input value={query} onChange={(e) => setQuery(e.target.value)} aria-label="search trades"

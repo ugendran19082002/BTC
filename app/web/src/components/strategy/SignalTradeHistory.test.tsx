@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { outcomeOf, SignalTradeHistory, sortTrades } from '@/components/strategy/SignalTradeHistory';
+import { outcomeOf, SignalTradeHistory, sortTrades, tradesCsv } from '@/components/strategy/SignalTradeHistory';
 import { DEFAULT_CONFIG, type SignalTrade, type Strategy } from '@/types/strategy';
 
 /** The signal strategies' trade history: the signal, the option, the perp SL and TGT, the exit, the result, the money. */
@@ -205,5 +205,36 @@ describe('search, sort, and the live tabs', () => {
     const x = [trade({ id: 1, at: 1, levels: { ...levels, stop: 300 } }), trade({ id: 2, at: 2, levels: null, perp: null }), trade({ id: 3, at: 3, levels: { ...levels, stop: 100 } })];
     expect(sortTrades(x, { key: 'sl', asc: true }).map((t) => t.id)).toEqual([3, 1, 2]);
     expect(sortTrades(x, { key: 'sl', asc: false }).map((t) => t.id)).toEqual([1, 3, 2]);
+  });
+});
+
+describe('the Excel download', () => {
+  it('[critical] one row per trade, every figure, plain numbers, IST times', () => {
+    const won = { ...LIVE_WON, option: { ...LIVE_WON.option!, perpEntry: 85_020, perpExit: 84_480, entryAt: AT + 30_000, exitAt: AT + 900_000 } };
+    const csv = tradesCsv([won, trade({})], (id) => (id === 'sig' ? 'Breakout PE' : id));
+    const [head, live, would] = csv.split('\r\n');
+    const h = head!.split(',');
+    const at = (line: string, col: string) => line.split(',')[h.indexOf(col)];
+    expect(h.slice(0, 4)).toEqual(['Signal time (IST)', 'Strategy', 'Kind', 'Signal']);
+    expect(at(live!, 'Signal time (IST)')).toBe('2026-10-02 10:30:00');      // 05:00 UTC
+    expect(at(live!, 'Kind')).toBe('live order');
+    expect(at(live!, 'Strike')).toBe('86000');
+    expect(at(live!, 'Perp entry')).toBe('85020');
+    expect(at(live!, 'Option entry ($)')).toBe('18');
+    expect(at(live!, 'Perp TGT')).toBe('84500');
+    expect(at(live!, 'Hit')).toBe('TGT');
+    expect(at(live!, 'Perp exit')).toBe('84480');
+    expect(at(live!, 'Exit time (IST)')).toBe('2026-10-02 10:45:00');
+    expect(at(live!, 'P&L (₹)')).toBe('1.15');
+    expect(at(would!, 'Kind')).toBe('would sell');
+    expect(at(would!, 'Result')).toBe('TGT1 hit');
+    expect(at(would!, 'P&L ($)')).toBe('');
+  });
+
+  it('the button downloads what is shown, and is off with nothing to download', () => {
+    render(<SignalTradeHistory trades={[trade({})]} strategies={strategies} />);
+    expect(screen.getByRole('button', { name: 'download as a spreadsheet' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: /^Live orders/ }));
+    expect(screen.getByRole('button', { name: 'download as a spreadsheet' })).toBeDisabled();
   });
 });
