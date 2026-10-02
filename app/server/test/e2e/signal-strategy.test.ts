@@ -425,3 +425,20 @@ test('[critical] the trade history by IST day: today has them, a day before has 
   assert.equal(bad.status, 400);
   assert.match(bad.body.error, /on or before/);
 });
+
+test('[critical] two different signals, the same strike: both sold, each its own trade with its own perp levels', async () => {
+  const two = { ...config, signal: { ...config.signal, maxOpen: 5 }, liveOrders: true };
+  assert.equal((await api('POST', '/api/strategies', { name: 'Sig same strike', config: two })).status, 200);
+  await api('POST', '/api/strategies/sig-same-strike/enabled', { enabled: true });
+  for (const sym of [`P-BTC-${PUT}-${EXPIRY}`, `C-BTC-${CALL}-${EXPIRY}`]) {
+    paper().setQuote({ symbol: sym, bid: 18, ask: 18.5, bidSize: 5_000, askSize: 5_000, mark: 18.2, ts: Date.now() });
+  }
+  await runner.onSignal(signal());
+  await runner.onSignal(signal({ plan: { entryLo: 84_900, entryHi: 84_950, stop: 84_500, tp1: 85_400, tp2: null, tp3: null, tpWhy: [], rr: 1.4 } }));
+  const runs = await runsOf('sig-same-strike');
+  assert.deepEqual(runs.map((r) => r.status), ['placed', 'placed'], runs.map((r) => r.detail).join(' / '));
+  const plans = await Promise.all(runs.map((r) => one<{ plan: any }>('SELECT plan FROM trades WHERE trade_id = $1', [r.trade_id])));
+  assert.deepEqual(plans.map((p) => p!.plan.symbol), [`P-BTC-${PUT}-${EXPIRY}`, `P-BTC-${PUT}-${EXPIRY}`], 'one strike');
+  assert.deepEqual(plans.map((p) => p!.plan.underlying.stop), [84_600, 84_500], 'each signal its own SL');
+  await api('POST', '/api/strategies/sig-same-strike/enabled', { enabled: false });
+});

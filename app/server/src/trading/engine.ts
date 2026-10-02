@@ -657,8 +657,14 @@ export class TradeEngine {
      * only when it already holds this contract itself -- another strategy's
      * trade on the same strike is not its position. A manual ticket keeps the
      * desk-wide rule: anything held on the contract.
+     *
+     * A signal strategy's trade is one signal's (2 Oct 2026, owner: "different signals, the same strike --
+     * allow it"): its own perp SL and TGT, its own option exits, its own P&L. Two signals choosing the same
+     * strike are two trades, not a doubled position by mistake; what bounds them is the strategy's "at most
+     * N open" (runner.ts), each signal taken once (its claim), and the margin and loss gates below. A clock
+     * strategy keeps the rule: it enters once a day, and a second trade on its strike would be a fault.
      */
-    const alreadyHeld = plan.origin === 'strategy' && plan.strategyId
+    const alreadyHeld = plan.signal ? 0 : plan.origin === 'strategy' && plan.strategyId
       ? (await this.d.store.open())
         .filter((t) => t.plan.symbol === plan.symbol && t.plan.strategyId === plan.strategyId && t.state.tradeId !== plan.tradeId)
         .reduce((n, t) => n + t.state.position, 0)
