@@ -180,3 +180,23 @@ test('[critical] one read of Delta with the contract missing writes nothing off;
   assert.equal(r.store.peek(plan.tradeId)!.state.position, 0);
   assert.ok(r.alarms.some((a) => /no buy-back of the desk's explains it -- closed on Delta itself/.test(a.message)));
 });
+
+test('[critical] Delta sweeps reduce-only orders after one trade\'s target fills -- the other trade\'s stop is put back', async () => {
+  // 3 Oct 2026, Delta's notice: "Your buy reduce-only order(s) in C-BTC-86200-031026 have been cancelled."
+  const { r, A, B } = await both();
+  r.ex.configure({ cancelExcessReduceOnly: true });
+  // A's target at 90 fills; B's at 80 does not. Delta now holds 100 with two stops of 100 resting: one goes.
+  r.ex.tick(quote(CE, 88.5, 89));
+  assert.equal(await net(r), -100);
+  const swept = [...(await r.ex.getOrderHistory(CE, 50))].filter((o) => o.status === 'cancelled' && /more than the position/.test(o.reason ?? ''));
+  assert.ok(swept.length >= 1, 'Delta cancelled a stop that no longer fitted');
+
+  // The desk's next looks: A sees its target filled and is flat; B sees its stop gone and puts it back.
+  for (let i = 0; i < 3; i++) { await r.engine.poll(A.tradeId); await r.engine.poll(B.tradeId); }
+  assert.equal(r.store.peek(A.tradeId)!.state.position, 0, 'A: target filled, flat');
+  assert.equal(r.store.peek(B.tradeId)!.state.position, -100, 'B: still short its own 100');
+  const b = await own(r, B.tradeId);
+  assert.deepEqual(b.filter((o) => o.type === 'limit').map((o) => o.limitPrice), [80], "B's target resting");
+  assert.equal(b.filter((o) => o.type !== 'limit').length, 1, "B's stop resting again");
+  assert.deepEqual(await own(r, A.tradeId), [], "nothing of A's left resting");
+});

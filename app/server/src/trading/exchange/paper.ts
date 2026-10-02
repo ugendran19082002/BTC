@@ -26,6 +26,12 @@ export type PaperConfig = {
   slippageLadder?: { price: number; size: number }[];
   /** Applied to the next placeOrder only, then cleared. */
   nextFault?: PaperFault;
+  /**
+   * Delta's sweep: when a fill shrinks a position, resting reduce-only orders that now add up to more than it are
+   * cancelled, newest first -- the "Reduce only orders cancelled" notice. Limits and stops are counted apart (a
+   * target and a stop over the same contracts is allowed). Off by default: the older tests predate it.
+   */
+  cancelExcessReduceOnly?: boolean;
 };
 
 let seq = 0;
@@ -239,6 +245,23 @@ export class PaperExchange implements ExchangePort {
         markPrice: null,
         liquidationPrice: null,
       });
+    }
+    if (this.cfg.cancelExcessReduceOnly && Math.abs(next) < Math.abs(held?.size ?? 0)) this.sweepReduceOnly(o.symbol, o.orderId);
+  }
+
+  /** Delta's "reduce only orders cancelled": what no longer fits under the position goes, newest first. */
+  private sweepReduceOnly(symbol: string, except: string) {
+    const held = Math.abs(this.positions.get(symbol)?.size ?? 0);
+    const resting = [...this.orders.values()].filter((x) => x.symbol === symbol && x.reduceOnly && x.orderId !== except
+      && (x.status === 'open' || x.status === 'partial'));
+    for (const isStop of [false, true]) {
+      const kind = resting.filter((x) => (x.type !== 'limit') === isStop).sort((a, b) => a.createdAt - b.createdAt || Number(a.orderId) - Number(b.orderId));
+      let room = held;
+      for (const x of kind) {
+        const left = x.size - x.filledSize;
+        if (left <= room) { room -= left; continue; }
+        this.settle(x, 'cancelled', 'reduce only order cancelled: more than the position');
+      }
     }
   }
 
