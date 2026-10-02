@@ -361,6 +361,14 @@ export class StrategyStore {
     );
   }
 
+  /** Add to the signal's row what became of the trade it placed: "closed at 5:29 PM". */
+  async noteSignalTrade(tradeId: string, note: string): Promise<void> {
+    await query(
+      "UPDATE strategy_signal_runs SET detail = LEFT(detail || ' | ' || $1, 500) WHERE trade_id = $2",
+      [note, tradeId],
+    );
+  }
+
   /** The signal journal, newest first; one strategy's when `strategyId` is given. */
   async signalRuns(limit = 60, strategyId?: string): Promise<SignalRun[]> {
     const xs = strategyId

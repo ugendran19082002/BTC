@@ -174,6 +174,50 @@ test('[critical] a SELL sells the call', async () => {
   assert.deepEqual(t!.plan.underlying, { dir: -1, stop: 85_400, target: 84_500, source: 'BTC perp' });
 });
 
+// ------------------------------------------------------------ filled, then closed at the end of its window
+
+const until = async <T>(read: () => Promise<T>, ok: (v: T) => boolean, what: string, ms = 15_000): Promise<T> => {
+  const end = Date.now() + ms;
+  for (;;) {
+    const v = await read();
+    if (ok(v)) return v;
+    if (Date.now() > end) throw new Error(`timed out waiting for ${what}: ${JSON.stringify(v).slice(0, 300)}`);
+    await new Promise((r) => setTimeout(r, 200));
+  }
+};
+
+test('[critical] the put fills -- at the bid after 5 s -- and at the end of its window it is bought back, said on its signal', async () => {
+  const run = (await runsOf('sig-bo')).find((x) => x.status === 'placed')!;
+  const filled = await until(
+    () => one<{ position: number; state: any }>('SELECT position, state FROM trades WHERE trade_id = $1', [run.trade_id]),
+    (t) => t?.position === -1, 'the entry filled',
+  );
+  const fill = filled!.state.fills.find((f: any) => f.role === 'entry');
+  assert.equal(fill.price, 18, 'crossed to the bid after 5 s');
+  clock = TEN + 7 * 3_600_000 + 60_000;              // 17:01 IST, past its 17:00 end
+  await (runner as unknown as { considerExit(s: unknown): Promise<void> }).considerExit((await strategyStore().get('sig-bo'))!);
+  clock = TEN;
+  await until(
+    () => one<{ position: number }>('SELECT position FROM trades WHERE trade_id = $1', [run.trade_id]),
+    (t) => t?.position === 0, 'the put bought back',
+  );
+  const after = (await runsOf('sig-bo')).find((x) => x.trade_id === run.trade_id)!;
+  assert.match(after.detail, /\| closed at 5:00 PM, the end of its window$/);
+  assert.equal((await rows('SELECT 1 FROM strategy_runs WHERE strategy_id = $1', ['sig-bo'])).length, 0, 'no daily run row made up for it');
+});
+
+test('the list carries each signal run in the shape the screen reads', async () => {
+  const r = await api('GET', '/api/strategies');
+  const run = r.body.signalRuns.find((x: any) => x.strategyId === 'sig-bo' && x.status === 'placed');
+  assert.ok(run, JSON.stringify(r.body.signalRuns).slice(0, 300));
+  for (const k of ['id', 'signalKey', 'method', 'mode', 'tf', 'dir', 'status', 'detail', 'tradeId', 'at']) assert.ok(k in run, k);
+  assert.equal(run.dir, 1);
+  assert.equal(run.method, 'breakout');
+  const m = await api('GET', '/api/entry/methods');
+  assert.equal(m.body.methods.length, 81);
+  assert.deepEqual(Object.keys(m.body.methods[0]).sort(), ['group', 'id', 'n', 'name', 'sl', 'summary']);
+});
+
 // ------------------------------------------------------------ what it does not take
 
 test('another method, another timeframe, another way: not its signal -- nothing written', async () => {

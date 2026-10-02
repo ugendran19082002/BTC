@@ -201,6 +201,11 @@ export class StrategyRunner {
     for (const t of due) {
       await svc.close(t.state.tradeId);
     }
+    // A signal strategy's trades belong to their signals, not to a day: the close is said on each signal's row.
+    if (s.config.trigger === 'signal') {
+      for (const t of due) await this.store.noteSignalTrade(t.state.tradeId, `closed at ${time12(s.config.exitTime)}, the end of its window`);
+      return;
+    }
     /*
      * Add to the day's record rather than replace it: `finish` overwrites, and
      * the row already holds what was sold. The day is the run the position
