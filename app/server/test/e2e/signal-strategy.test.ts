@@ -160,7 +160,7 @@ test('[critical] the same signal again is not traded twice; a new one while one 
   await runner.onSignal(signal());
   const skip = (await runsOf('sig-bo')).at(-1)!;
   assert.equal(skip.status, 'skipped');
-  assert.match(skip.detail, /already 1 of its trade open \(at most 1\)/);
+  assert.match(skip.detail, /already 1 of its trade open \(1 live\) -- at most 1/);
 });
 
 test('[critical] a SELL sells the call', async () => {
@@ -324,7 +324,7 @@ test('[critical] live orders off: "at most 2 open" counts the would-sells still 
   const runs = await runsOf('sig-cap');
   assert.equal(runs[0]!.status, 'would-place', runs[0]!.detail);
   assert.deepEqual(runs.map((r) => r.status), ['would-place', 'would-place', 'skipped', 'skipped', 'skipped', 'skipped', 'skipped']);
-  assert.match(runs[2]!.detail, /already 2 of its trades open \(at most 2\)/);
+  assert.match(runs[2]!.detail, /already 2 of its trades open \(2 would-sell\) -- at most 2/);
 
   // one of the two ends (its paper trade stopped out): the next signal is taken
   await rows(`UPDATE entry_setups SET status = 'stop' WHERE trigger_at = $1`, [seven[0]!.triggerTime]);
@@ -466,4 +466,20 @@ test('[critical] option TP and SL at 0: nothing is placed on the option, no alar
   const st = await one<{ state: any }>('SELECT state FROM trades WHERE trade_id = $1', [run.trade_id]);
   assert.equal(st!.state.alarm ?? null, null, 'no "unprotected" alarm: it asked for no option stop');
   await api('POST', '/api/strategies/sig-bare/enabled', { enabled: false });
+});
+
+test('[critical] live orders switched ON: the would-sells written down while it was off no longer count toward "at most N"', async () => {
+  // sig-cap: at most 2, with 2 would-sells still in play in the paper log from the test above
+  const cap = (await strategyStore().get('sig-cap'))!;
+  await api('POST', '/api/strategies/sig-cap/enabled', { enabled: true });
+  for (const sym of [`P-BTC-${PUT}-${EXPIRY}`, `C-BTC-${CALL}-${EXPIRY}`]) {
+    paper().setQuote({ symbol: sym, bid: 18, ask: 18.5, bidSize: 5_000, askSize: 5_000, mark: 18.2, ts: Date.now() });
+  }
+  await runner.onSignal(signal());
+  assert.match((await runsOf('sig-cap')).at(-1)!.detail, /already 2 of its trades open \(2 would-sell\)/, 'off: they count');
+  assert.equal((await api('POST', '/api/strategies', { id: 'sig-cap', name: cap.name, config: { ...cap.config, liveOrders: true } })).status, 200);
+  await runner.onSignal(signal());
+  const last = (await runsOf('sig-cap')).at(-1)!;
+  assert.equal(last.status, 'placed', `on: a real order, not blocked by would-sells -- ${last.detail}`);
+  await api('POST', '/api/strategies/sig-cap/enabled', { enabled: false });
 });

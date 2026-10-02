@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-410 files listed, 189 test files counted below, images and lockfiles left out.
+411 files listed, 192 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 109 |
-| `app/web` | 80 |
+| `app/server` | 111 |
+| `app/web` | 81 |
 
 ## `(root)`
 
@@ -448,6 +448,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [date-range-picker.tsx](../../app/web/src/components/ui/date-range-picker.tsx) | A date range, chosen in one place. |
 | [day-picker.tsx](../../app/web/src/components/ui/day-picker.tsx) | One IST day, chosen on a calendar -- the single-day partner of the date-range picker (the P&L's minute-by-minute line, owner 2 Oct 2026: "a date picker", in place of a dropdown of dates). |
 | [figure.tsx](../../app/web/src/components/ui/figure.tsx) | A label, a number, and optionally the same number in the other currency. |
+| [fold.tsx](../../app/web/src/components/ui/fold.tsx) | Folding for a card that draws its own header -- the P&L panels, the Live screen's sections -- the same way `CollapsibleCard` folds the plain ones, and remembered under the same keys (`open:<id>`). |
 | [input.tsx](../../app/web/src/components/ui/input.tsx) | A number field with the spinner arrows gone. |
 | [kv.tsx](../../app/web/src/components/ui/kv.tsx) | A label on the left, its value on the right. |
 | [label.tsx](../../app/web/src/components/ui/label.tsx) | shadcn-style form label on Radix. |
