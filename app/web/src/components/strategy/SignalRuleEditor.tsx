@@ -94,6 +94,14 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [report, rule.mode, tfKey]);
   const recordOf = useMemo(() => new Map(rows.map((r) => [r.method, r])), [rows]);
+  // Without the chain on more than one timeframe: each method's record on each, under the sum, so the pick can be checked.
+  const byTf = useMemo((): Map<string, { tf: SignalTf; row: MethodReportRow | undefined }[]> => {
+    if (!report || rule.mode !== 'single' || tfs.length < 2) return new Map();
+    const per = tfs.map((tf) => ({ tf, rows: new Map((report.singleByTf[tf]?.rows ?? []).map((r) => [r.method, r])) }));
+    const ids = [...new Set(per.flatMap((p) => [...p.rows.keys()]))];
+    return new Map(ids.map((id) => [id, per.map((p) => ({ tf: p.tf, row: p.rows.get(id) }))]));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [report, rule.mode, tfKey]);
   const board = boards?.[0] ?? null;
   const reads = useMemo(() => (boards ?? []).flatMap((b, i) => b.reads.filter((r) => (rule.mode === 'mtf' ? r.mode === 'mtf' : r.mode === 'single' && r.tf === boardTfs[i]))),
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -192,9 +200,9 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
             Pick all shown ({shown.length})
           </button>
           <button type="button" className={link} disabled={!winners.length}
-                  title={`Net points above zero over at least ${MIN_TRADES_FOR_RECORD} trades, ${way}`}
+                  title={`Net points above zero over at least ${MIN_TRADES_FOR_RECORD} trades, added up ${way} -- every timeframe picked, together: what this strategy would have taken`}
                   onClick={() => addAll(winners)}>
-            Pick profitable so far ({winners.length})
+            Pick profitable {rule.mode === 'mtf' ? 'with the chain' : `on ${tfs.join(' + ') || '—'}`} ({winners.length})
           </button>
           <button type="button" className={link} disabled={!rule.methods.length} onClick={() => set('methods', [])}>
             Clear
@@ -232,6 +240,19 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
                           : 'no trades yet'}
                       </span>
                     </span>
+                    {byTf.has(m.id) && (
+                      <span className="mt-0.5 block text-[10.5px] tabular-nums text-muted-foreground" aria-label={`#${m.n} by timeframe`}>
+                        {byTf.get(m.id)!.map(({ tf, row }, i) => (
+                          <span key={tf}>
+                            {i > 0 && ' · '}
+                            {tf}{' '}
+                            {row && row.trades > 0
+                              ? <span className={row.netPts > 0 ? 'text-[var(--up)]' : row.netPts < 0 ? 'text-[var(--down)]' : ''}>{pts(row.netPts)} ({row.trades}t)</span>
+                              : <span className="text-[var(--dim)]">—</span>}
+                          </span>
+                        ))}
+                      </span>
+                    )}
                     <span className="mt-0.5 block text-[10.5px] leading-snug text-[var(--dim)]">{m.summary} · SL: {m.sl}</span>
                   </span>
                 </label>

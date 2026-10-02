@@ -162,7 +162,7 @@ describe('picking the methods', () => {
   it('[critical] "profitable so far" picks only a positive net over at least 5 trades', async () => {
     show(signalStrategy({ methods: [] }));
     tab('Signals');
-    const pick = await screen.findByRole('button', { name: /Pick profitable so far \(1\)/ });
+    const pick = await screen.findByRole('button', { name: /Pick profitable with the chain \(1\)/ });
     fireEvent.click(pick);
     // breakout: 12 trades, +900. The sweep's +400 is 3 trades -- too few. BOS lost.
     expect(screen.getByRole('checkbox', { name: '#1 Breakout' })).toBeChecked();
@@ -186,7 +186,7 @@ describe('picking the methods', () => {
     await waitFor(() => expect(getEntryBoard).toHaveBeenCalledWith('1h'));
     expect(getEntryBoard).toHaveBeenCalledWith('15m');
     // 15m has BOS +300 over 6 and order flow +250 over 7; 1h has nothing
-    await waitFor(() => expect(screen.getByRole('button', { name: /Pick profitable so far \(2\)/ })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: /Pick profitable on 15m \+ 1h \(2\)/ })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'No timeframes' }));
     expect(screen.getByText('Pick at least one timeframe.')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'All timeframes' }));
@@ -316,5 +316,46 @@ describe('when the option is sold', () => {
     await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
     expect(saved().config.signal!.enterOn).toBe('zone');
     expect(screen.getByText(/When the BTC perp trades into the signal's entry zone it rests at the offer/)).toBeInTheDocument();
+  });
+});
+
+describe('"pick profitable" over the timeframes picked', () => {
+  // order flow: +300 on 15m, -400 on 1h. BOS: -100 on 15m, +500 on 1h. Breakout: +50 on 15m only.
+  const R = {
+    ...REPORT,
+    singleByTf: {
+      '15m': section('single', [row('order-flow', 6, 4, 300), row('bos', 6, 2, -100), row('breakout', 5, 3, 50)]),
+      '1h': section('single', [row('order-flow', 6, 1, -400), row('bos', 7, 5, 500)]),
+    },
+  };
+  const pickOn = async (tfs: string[]) => {
+    getMethodReport.mockResolvedValue(R);
+    show(signalStrategy({ mode: 'single', tf: tfs[0] as never, tfs: tfs as never, methods: [] }));
+    tab('Signals');
+    return screen.findByRole('button', { name: new RegExp(`^Pick profitable on ${tfs.join(' \\+ ')}`) });
+  };
+
+  it('[critical] every timeframe picked counts, added together -- not the last one clicked', async () => {
+    const btn = await pickOn(['15m', '1h']);
+    await waitFor(() => expect(btn).toHaveTextContent('(2)'));
+    fireEvent.click(btn);
+    // order flow nets -100 over both: out. BOS +400: in. Breakout +50 over 5: in.
+    expect(screen.getByRole('checkbox', { name: '#11 Order flow' })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: '#6 BOS' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: '#1 Breakout' })).toBeChecked();
+  });
+
+  it('on 15m alone, it is 15m\'s record', async () => {
+    const btn = await pickOn(['15m']);
+    await waitFor(() => expect(btn).toHaveTextContent('(2)'));
+    fireEvent.click(btn);
+    expect(screen.getByRole('checkbox', { name: '#11 Order flow' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: '#6 BOS' })).not.toBeChecked();
+  });
+
+  it('[critical] each method shows its record on every timeframe picked, under the sum', async () => {
+    await pickOn(['15m', '1h']);
+    expect(await screen.findByLabelText('#11 by timeframe')).toHaveTextContent('15m +300 (6t) · 1h -400 (6t)');
+    expect(screen.getByLabelText('#1 by timeframe')).toHaveTextContent('15m +50 (5t) · 1h —');
   });
 });
