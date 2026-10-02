@@ -351,6 +351,7 @@ test('[critical] the trade history: the signal\'s perp levels, the paper log\'s 
   assert.equal(closed.option.open, false);
   assert.ok(closed.option.exit > 0);
   assert.equal(typeof closed.option.pnlUsd, 'number');
+  assert.ok(closed.option.entryAt > 0 && closed.option.exitAt >= closed.option.entryAt, 'when it went in, and when it came out');
 
   const would = trades.find((t) => t.strategyId === 'sig-cap' && t.status === 'would-place' && t.perp?.status === 'stop');
   assert.ok(would, 'a would-sell, with what the paper log saw on the perp');

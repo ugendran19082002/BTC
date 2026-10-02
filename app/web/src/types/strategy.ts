@@ -225,6 +225,8 @@ export type SignalTrade = {
     perpStop: number | null; perpTarget: number | null;
     /** The perp's price when it was entered. */
     perpEntry?: number | null;
+    /** When the option filled in, and when it was last bought back (epoch ms). */
+    entryAt?: number | null; exitAt?: number | null;
   } | null;
 };
 

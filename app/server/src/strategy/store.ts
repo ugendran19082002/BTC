@@ -240,6 +240,8 @@ export type SignalTrade = {
     perpStop: number | null; perpTarget: number | null;
     /** The perp's price when it was entered: the zone fill, or the last trade at the signal. */
     perpEntry: number | null;
+    /** When the option filled in, and when it was last bought back (epoch ms). */
+    entryAt: number | null; exitAt: number | null;
   } | null;
 };
 type SignalTradeRow = SignalRunRow & {
@@ -248,6 +250,13 @@ type SignalTradeRow = SignalRunRow & {
   tp1: number | null; tp2: number | null; tp3: number | null;
   fill_price: number | null; filled_at: string | number | null; exit_price: number | null; exit_at: string | number | null;
 };
+/** The first entry fill and the last exit fill, from a trade's fills. */
+function fillTimes(fills: unknown): { entryAt: number | null; exitAt: number | null } {
+  const fs = Array.isArray(fills) ? (fills as { role?: string; ts?: number }[]) : [];
+  const entries = fs.filter((f) => f.role === 'entry' && Number(f.ts) > 0).map((f) => Number(f.ts));
+  const exits = fs.filter((f) => f.role && f.role !== 'entry' && Number(f.ts) > 0).map((f) => Number(f.ts));
+  return { entryAt: entries.length ? Math.min(...entries) : null, exitAt: exits.length ? Math.max(...exits) : null };
+}
 const n = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
 const signalTradeFrom = (r: SignalTradeRow): SignalTrade => ({
   id: Number(r.id), strategyId: r.strategy_id, at: Number(r.at), method: r.method, mode: r.mode, tf: r.tf,
@@ -266,6 +275,7 @@ const signalTradeFrom = (r: SignalTradeRow): SignalTrade => ({
     entry: n(r.t_state.entryAvgPrice), exit: n(r.t_state.exitAvgPrice), pnlUsd: Number(r.t_state.realisedPnl ?? 0),
     exitReason: r.t_state.exitReason ?? null,
     perpStop: n(r.t_plan.underlying?.stop), perpTarget: n(r.t_plan.underlying?.target), perpEntry: n(r.t_plan.underlying?.entry),
+    ...fillTimes(r.t_state.fills),
   },
 });
 
