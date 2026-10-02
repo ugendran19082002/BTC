@@ -76,3 +76,23 @@ test('the levels travel on the plan, so a restart carries on watching them', asy
   const { r, id } = await shortPut();
   assert.deepEqual(r.store.peek(id)!.plan.underlying, { dir: 1, stop: 84_000, target: 86_000, source: 'BTC perp' });
 });
+
+test('[critical] the perp to the point: where it was as the option filled in, and as it was bought back -- and the times', async () => {
+  const { r, perp, id } = await shortPut();
+  const inState = r.store.peek(id)!.state;
+  assert.equal(inState.perpEntry, 85_000, 'the perp as the entry filled');
+  const entryFill = inState.fills.find((f) => f.role === 'entry')!;
+  assert.ok(entryFill.ts > 0, 'and when');
+  perp.price = 86_010;
+  await r.engine.poll(id);
+  const out = r.store.peek(id)!.state;
+  assert.equal(out.position, 0);
+  assert.equal(out.perpEntry, 85_000, 'the entry point is kept');
+  assert.equal(out.perpExit, 86_010, 'the perp as the exit filled');
+  assert.ok(out.fills.filter((f) => f.role !== 'entry').every((f) => f.ts >= entryFill.ts));
+});
+
+test('a trade without perp exits records no perp points', async () => {
+  const { r, id } = await shortPut(null);
+  assert.equal(r.store.peek(id)!.state.perpEntry ?? null, null);
+});

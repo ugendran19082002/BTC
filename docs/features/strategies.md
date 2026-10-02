@@ -139,13 +139,14 @@ way (`useStrategyDraft`).
 | | |
 |---|---|
 | Leg | from the signal: **BUY sells the PE**, **SELL sells the CE** (`legOfSignal`). `legs` is not read. |
-| Which signals | the **Signals** tab: with the timeframe chain, or without it on 3m / 5m / 15m / 30m / 1h / 4h, and the methods, picked from the 81 with each one's record so far (win rate, trades, net points; "Pick profitable so far" = net above zero over at least 5 trades). |
+| Which signals | the **Signals** tab: with the timeframe chain, or without it on any of 3m / 5m / 15m / 30m / 1h / 4h (several at once, `tfs`), and the methods, picked from the 81 with each one's record so far (win rate, trades, net points; "Pick profitable so far" = net above zero over at least 5 trades). |
 | Strike | by premium (at least / at most, with a fallback) or by strike (ATM ± n), the same parts as every strategy. |
 | Lots | per signal; **1** on a new signal strategy. |
 | Entry price | at the offer, then at the bid after N seconds (5 by default) if the spread allows, or at the bid now; the entry is cancelled if still unfilled 5 minutes after the signal (`SIGNAL_ENTRY_MS`). |
 | SL / TGT | **the signal's own levels on the BTC perpetual**, made per signal by its method: SL = the structure ± 0.25 ATR, TGT = TGT1, or TGT2 / TGT3 where the signal has them (else TGT1). Carried on the trade as `plan.underlying`. |
 | Backstop | the option's own target and stop (the form's take profit / stop loss), resting at Delta as for any strategy: they still work when the desk cannot see the perp. |
-| At once | at most 1-5 of its trades open (`maxOpen`); a signal past it is written down as skipped. |
+| Enter | **In the trade** (default, `enterOn: 'zone'`): when the BTC perp trades into the signal's entry zone -- the paper log's fill, the moment the signal history says "in the trade" -- so a signal that never fills is never traded, and the strategy takes exactly the trades the record counts. Or **At the signal** (`'signal'`): the moment it is written. A fill reported more than 90 s late, or one already out at its SL/TGT1, is skipped. |
+| At once | at most 1-100 of its trades open (`maxOpen`, typed, quick picks 1/5/10/25/50/75/100); a signal past it is written down as skipped. With live orders off, the "would sell"s still in play in the paper log count; signals are taken one at a time, so a minute's worth cannot all pass at once. |
 | Window | `entryTime` to `exitTime` is when it takes signals; whatever is open closes at `exitTime`. |
 | **Live orders** | **off by default** ([decision 0013](../decisions/0013-entry-setups-measured-before-trusted.md)): each signal is written down as the order it would have been ("would sell PE 84000 x1 @ 18 · perp SL 84600 · TGT 85500") and nothing is sent. On, it places the order. The switch sits in the form's footer on every tab, and on each row of Signal Strategies (turning it on takes a second tap); the list marks the row LIVE ORDERS. |
 
@@ -165,6 +166,8 @@ How a signal becomes an order (`StrategyRunner.onSignal`, `strategy/runner.ts`):
 5. The engine, every second, reads the perp's last trade (fresh within 15 s)
    and buys the option back the moment it reaches the SL or the TGT; a stale or
    missing price closes nothing and leaves the backstop at Delta.
+
+**On the screens.** Positions and Orders label a signal trade with its method, BUY/SELL and timeframe, and `perp entry · SL · TGT`; Orders says why the desk closed it. The strategy's name is its current one (looked up by id), so a rename shows everywhere; a deleted strategy's trades keep the name they were placed under. **Telegram**: the fill and exit alerts carry the signal, the perp SL and TGT, the option exits as the backstop, the strategy's name, and why the desk closed it. **Trade history** (Signal Strategies, 10 a page): tabs All / Live orders / Would sell / Open / Won / Lost / Skipped, with counts; each trade's perp entry and option entry with their times, the perp SL and TGT with the exit time under whichever was hit, the exit, the result and the P&L.
 
 What each signal did is under Signal Strategies on the Live screen and **Signals taken** on the Strategy tab; a trade closed at the end of the window adds "closed at 5:29 PM, the end of its window" to its signal's row:
 

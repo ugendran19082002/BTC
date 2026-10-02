@@ -262,6 +262,12 @@ export type TradeState = {
    * screens; absent on a target or stop that filled at Delta.
    */
   exitReason?: string | null;
+  /**
+   * The BTC perp's last trade at this trade's first entry fill and its last exit fill, for a trade with exits on
+   * the perp (a signal strategy's): the points the trade actually went in and came out at, on the perp.
+   */
+  perpEntry?: number | null;
+  perpExit?: number | null;
   updatedAt: number;
 };
 
@@ -321,7 +327,11 @@ export type TradeEvent =
   | { t: 'entry_submitted'; clientOrderId: string; size: number; at: number }
   | { t: 'entry_submit_unknown'; at: number }
   | { t: 'entry_rejected'; reason: string; at: number }
-  | { t: 'fill'; role: OrderRole; side: OrderSide; size: number; price: number; orderId: string; at: number }
+  | {
+      t: 'fill'; role: OrderRole; side: OrderSide; size: number; price: number; orderId: string; at: number;
+      /** The BTC perp's last trade (fresh) the moment this fill was seen -- a signal trade's perp entry and exit. */
+      perp?: number | null;
+    }
   | { t: 'entry_timeout'; at: number }
   | { t: 'entry_cancelled'; remaining: number; at: number }
   | {

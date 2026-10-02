@@ -12,6 +12,7 @@
  * traded-and-not-marked doubles a position.
  */
 import { migrate, moveToPublic, type Migration } from '../db/migrate.js';
+import { perpAtMinutes } from '../market/perp-minute.js';
 import { one, query, rows } from '../db/pool.js';
 import { DEFAULT_CONFIG, type Strategy, type StrategyConfig, type StrategyRun } from './types.js';
 
@@ -241,6 +242,14 @@ export type SignalTrade = {
     perpStop: number | null; perpTarget: number | null;
     /** The perp's price when it was entered: the zone fill, or the last trade at the signal. */
     perpEntry: number | null;
+    /** `perpEntry` is the perp's price over the minute the option filled: a trade placed before the exact price was kept. */
+    perpEntryApprox?: boolean;
+    /**
+     * The perp's price when it came out: exact when the desk closed it on the perp's own SL or TGT (the
+     * price is in its reason), else the perp over the minute of the last exit fill (`perpExitApprox`).
+     */
+    perpExit: number | null;
+    perpExitApprox?: boolean;
     /** When the option filled in, and when it was last bought back (epoch ms). */
     entryAt: number | null; exitAt: number | null;
   } | null;
@@ -251,6 +260,13 @@ type SignalTradeRow = SignalRunRow & {
   tp1: number | null; tp2: number | null; tp3: number | null;
   fill_price: number | null; filled_at: string | number | null; exit_price: number | null; exit_at: string | number | null;
 };
+/** The perp's price in the desk's own close reason: "BTC perp at 84590 reached the signal's stop 84600". */
+export function perpInReason(reason: string | null): number | null {
+  const m = reason ? /perp at ([\d,.]+)/i.exec(reason) : null;
+  const p = m ? Number(m[1]!.replace(/,/g, '')) : NaN;
+  return Number.isFinite(p) && p > 0 ? p : null;
+}
+
 /** The first entry fill and the last exit fill, from a trade's fills. */
 function fillTimes(fills: unknown): { entryAt: number | null; exitAt: number | null } {
   const fs = Array.isArray(fills) ? (fills as { role?: string; ts?: number }[]) : [];
@@ -275,7 +291,9 @@ const signalTradeFrom = (r: SignalTradeRow): SignalTrade => ({
     size: Number(r.t_state.entrySize ?? 0), open: Number(r.t_position ?? 0) !== 0,
     entry: n(r.t_state.entryAvgPrice), exit: n(r.t_state.exitAvgPrice), pnlUsd: Number(r.t_state.realisedPnl ?? 0),
     exitReason: r.t_state.exitReason ?? null,
-    perpStop: n(r.t_plan.underlying?.stop), perpTarget: n(r.t_plan.underlying?.target), perpEntry: n(r.t_plan.underlying?.entry),
+    // Exact first: the perp as the option's exit filled; else the price in the desk's close reason.
+    perpExit: n(r.t_state.perpExit) ?? perpInReason(r.t_state.exitReason ?? null),
+    perpStop: n(r.t_plan.underlying?.stop), perpTarget: n(r.t_plan.underlying?.target), perpEntry: n(r.t_state.perpEntry) ?? n(r.t_plan.underlying?.entry),
     ...fillTimes(r.t_state.fills),
   },
 });
@@ -465,7 +483,25 @@ export class StrategyStore {
         ORDER BY r.at DESC LIMIT $1`,
       [limit, strategyId ?? null],
     );
-    return xs.map(signalTradeFrom);
+    const out = xs.map(signalTradeFrom);
+    // A real order's perp entry where it was not kept on the trade: the perp that minute, marked approximate.
+    // ...and its perp exit where the close did not say it: the perp over the minute of the last exit fill.
+    const needIn = out.filter((t) => t.option && t.option.perpEntry === null && t.option.entryAt !== null);
+    const needOut = out.filter((t) => t.option && !t.option.open && t.option.perpExit === null && t.option.exitAt !== null);
+    if (needIn.length || needOut.length) {
+      const price = await perpAtMinutes([...needIn.map((t) => t.option!.entryAt!), ...needOut.map((t) => t.option!.exitAt!)])
+        .catch(() => new Map<number, number>());
+      const at = (ms: number) => price.get(Math.floor(ms / 60_000) * 60_000);
+      for (const t of needIn) {
+        const p = at(t.option!.entryAt!);
+        if (p !== undefined) t.option = { ...t.option!, perpEntry: p, perpEntryApprox: true };
+      }
+      for (const t of needOut) {
+        const p = at(t.option!.exitAt!);
+        if (p !== undefined) t.option = { ...t.option!, perpExit: p, perpExitApprox: true };
+      }
+    }
+    return out;
   }
 
   /** Add to the signal's row what became of the trade it placed: "closed at 5:29 PM". */

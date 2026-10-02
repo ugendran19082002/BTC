@@ -244,6 +244,11 @@ export type TradePlan = {
     dir: 1 | -1; stop: number | null; target: number | null; source: string;
     /** The perp's price when the trade was entered: the zone fill, or the last trade at the signal. For the labels. */
     entry?: number | null;
+    /**
+     * Set by the screens' read (trade.routes.ts `withPerpEntries`), never stored: `entry` is the perp's average
+     * traded price over the minute the option filled, for a trade placed before the exact price was kept.
+     */
+    entryApprox?: boolean;
   };
   /**
    * The signal a signal strategy traded: which method, which way of reading,
@@ -817,6 +822,8 @@ export class TradeEngine {
       rec = await this.commit(rec, {
         t: 'fill', role, side: order.side, size: fresh, price,
         orderId: order.orderId, at: this.now(),
+        // A trade with exits on the perp: where the perp was as the option filled, to the point.
+        ...(rec.plan.underlying ? { perp: this.perpNow() } : {}),
       });
       /*
        * What the exit cost against the price that was asked for.
@@ -1690,6 +1697,12 @@ export class TradeEngine {
    * or stale price (over MARK_STALE_MS) does nothing -- the premium backstop at
    * Delta is still there underneath.
    */
+  /** The perp's last trade, when fresh (as `underlyingExit` reads it); null when stale or absent. */
+  private perpNow(): number | null {
+    const px = this.d.underlying?.() ?? null;
+    return px !== null && px.price > 0 && this.now() - px.at <= MARK_STALE_MS ? px.price : null;
+  }
+
   private async underlyingExit(rec: TradeRecord): Promise<TradeRecord> {
     const u = rec.plan.underlying;
     if (!u || (u.stop === null && u.target === null)) return rec;

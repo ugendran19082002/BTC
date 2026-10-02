@@ -19,6 +19,7 @@ import { refuse } from '../refuse.js';
 import { parseAddBody, toAddRequest, type AddBody } from '../add-body.js';
 import { parseCloseBody, type CloseBody } from '../close-body.js';
 import { strategyStore } from './strategy.routes.js';
+import { perpAtMinutes } from '../../market/perp-minute.js';
 
 /**
  * The order desk.
@@ -92,6 +93,44 @@ export const withStrategyName = (r: TradeRecord, names: ReadonlyMap<string, stri
   const now = r.plan.strategyId ? names.get(r.plan.strategyId) : undefined;
   return now === undefined || now === r.plan.strategyName ? r : { ...r, plan: { ...r.plan, strategyName: now } };
 };
+
+/**
+ * A signal trade's perp entry, where it was not kept: the perp's average traded
+ * price over the minute its option filled (the tape, `trade_flow_1m`), else the
+ * perp's mark that minute (`index_1m`) -- marked approximate. Trades placed
+ * before 2 Oct 2026 carried the perp SL and TGT but not where the perp was when
+ * they went in, and the label read "perp SL · TGT" with no entry. Read-only:
+ * the journal is not rewritten. Unchanged when the minute was not recorded.
+ */
+export async function withPerpEntries(recs: TradeRecord[]): Promise<TradeRecord[]> {
+  const minuteOf = (r: TradeRecord) => {
+    const ts = r.state.fills.filter((f) => f.role === 'entry').map((f) => f.ts).filter((t) => t > 0);
+    return ts.length ? Math.floor(Math.min(...ts) / 60_000) * 60_000 : null;
+  };
+  // The perp as the option filled, where it was recorded (2 Oct 2026 on): exact, nothing to look up.
+  recs = recs.map((r) => (r.plan.underlying && r.state.perpEntry != null
+    ? { ...r, plan: { ...r.plan, underlying: { ...r.plan.underlying, entry: r.state.perpEntry, entryApprox: false } } }
+    : r));
+  const need = recs.filter((r) => r.plan.underlying && r.plan.underlying.entry == null && minuteOf(r) !== null);
+  if (!need.length) return recs;
+  let price: Map<number, number>;
+  try {
+    price = await perpAtMinutes(need.map((r) => minuteOf(r)!));
+  } catch {
+    return recs;                          // the minute tables missing: the label goes without, as before
+  }
+  return recs.map((r) => {
+    if (!need.includes(r)) return r;
+    const p = price.get(minuteOf(r)!);
+    return p === undefined ? r : { ...r, plan: { ...r.plan, underlying: { ...r.plan.underlying!, entry: p, entryApprox: true } } };
+  });
+}
+
+/** Everything the screens add to a trade on the way out: the strategy's current name, the perp entry where it was not kept. */
+export async function forScreens(recs: TradeRecord[]): Promise<TradeRecord[]> {
+  const names = await strategyNames();
+  return withPerpEntries(recs.map((r) => withStrategyName(r, names)));
+}
 
 export const tradeView = (
   r: TradeRecord,
@@ -319,8 +358,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
       svc.balanceForDisplay().catch(() => null),
       svc.positionsForDisplay().catch(() => []),
     ]);
-    const names = await strategyNames();
-    const trades = (await svc.openTrades()).map((t) => withStrategyName(t, names));
+    const trades = await forScreens(await svc.openTrades());
     // Both cached at the server for under a second, so this costs nothing per poll.
     const symbols = [...new Set(trades.map((t) => t.state.symbol))];
     // Each trade carries its own contract value, so there is no product to look
@@ -848,9 +886,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
     const wanted = ORDER_STATUSES.find((x) => x === q.status) ?? null;
     const limit = Math.min(1_000, Number(q.limit ?? 500));
 
-    const names = await strategyNames();
-    const records = (await svc.store.between(Math.min(from, to), Math.max(from + 86_400_000, to), limit))
-      .map((r) => withStrategyName(r, names));
+    const records = await forScreens(await svc.store.between(Math.min(from, to), Math.max(from + 86_400_000, to), limit));
 
     /*
      * Prices for the trades still open, so their row can say what closing now
@@ -898,6 +934,6 @@ export function registerTradeRoutes(app: FastifyInstance) {
     const { tradeId } = req.params as { tradeId: string };
     const rec = await svc.store.get(tradeId);
     if (!rec) { reply.code(404); return { error: 'no such trade' }; }
-    return { trade: tradeView(withStrategyName(rec, await strategyNames())), events: rec.events };
+    return { trade: tradeView((await forScreens([rec]))[0]!), events: rec.events };
   });
 }

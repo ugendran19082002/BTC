@@ -106,6 +106,11 @@ export function applyEvent(prev: TradeState, e: TradeEvent): TradeState {
 
     case 'fill': {
       s.fills.push({ orderId: e.orderId, role: e.role, side: e.side, size: e.size, price: e.price, ts: e.at });
+      // The perp where it went in (the first entry fill) and where it came out (the last exit fill).
+      if (e.perp != null) {
+        if (e.role === 'entry') s.perpEntry ??= e.perp;
+        else s.perpExit = e.perp;
+      }
       const entry = averageOf(s.fills, (f) => f.role === 'entry');
       const exit = averageOf(s.fills, (f) => isExit(f.role));
       s.entrySize = entry.size;
